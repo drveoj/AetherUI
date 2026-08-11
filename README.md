@@ -1103,6 +1103,77 @@ Abandon always routes through Blizzard's own confirmation popup and never calls
 `AbandonQuest` directly. Losing a quest chain to a stray click in a tracker is
 not something this addon is going to be responsible for.
 
+### Navigate with TomTom (Core/Nav.lua)
+
+With **Questie** and **TomTom** both installed, the row menu grows a fifth item
+that asks Questie where the quest wants you and hands the coordinates to TomTom.
+Without either addon the item does not exist; with them, but with no location
+for that particular quest, it stays in place greyed and reads "No location
+known", so the menu keeps one shape.
+
+The whole file is about one asymmetry: **TomTom's API is public and Questie's is
+not.** TomTom's README lists `AddWaypoint`/`RemoveWaypoint` under "Supported
+Addon API". Questie's `Questie.API` is five things — `isReady`,
+`RegisterOnReady`, `RegisterForQuestUpdates`, an icon lookup and an enum table —
+and not one of them knows a coordinate. Everything about quest locations is
+behind `QuestieLoader:ImportModule`, which its own docs decline to promise
+anything about. So we use internals deliberately, and the design is about that
+being survivable:
+
+```
+QuestieDB.GetQuest(questID)                  -- dot call
+DistanceUtils.GetNearestSpawnForQuest(quest) -- spawn{x,y} 0-100, areaId, name
+ZoneDB:GetUiMapIdByAreaId(areaId)            -- colon call, uiMapID or nil
+TomTom:AddWaypoint(uiMapID, x/100, y/100, ...)
+```
+
+`ImportModule` **never fails**. Given a name it does not know — a typo, or a
+module renamed in an update — it creates and returns an empty table, which is
+also what the real module would have filled in. A wrong name is therefore not an
+error, it is a table of nils that raises much later, inside a right-click,
+looking like our bug. Every one of the five functions is type-checked before the
+feature offers itself, and if any is missing the menu item quietly stops
+existing.
+
+Order matters inside `Locate`: objectives, then the database, then the turn-in.
+`GetQuest` fills `Finisher` for **every** quest it knows, so a "no objectives?
+use the finisher" test placed any earlier is true always, and would send you to
+the NPC you hand the quest *in* to while you still have eight boars to kill. The
+database pass exists because `GetQuest` returns a quest whose `Objectives` are
+empty — they are populated separately from the quest log, and skipped entirely
+for quests *Questie* does not consider tracked, which since we replace its
+tracker can be all of them. `ObjectiveData` is filled unconditionally, so
+monsters, objects and "collect 8 hides" items all resolve without the quest log
+being involved.
+
+Four traps in TomTom, all of which look like success:
+
+- **`AddWaypoint` deduplicates** on map/x/y/title and returns the existing uid
+  *before* pointing its arrow. Ours is removed first — but the duplicate it
+  refuses to make may be **Questie's**, built from the same call with the same
+  spawn name as its title. So the returned uid is checked for our own `from`
+  stamp; when it is theirs we leave it alone and just point the arrow, rather
+  than adopting a handle whose removal would delete their waypoint.
+- **`persistent` defaults to true.** A uid restored from saved variables is a
+  *different table*, and TomTom clears frames by identity while deleting records
+  by key — so removing a restored uid orphans its minimap pin permanently. Ours
+  are `persistent = false` and the handle never leaves memory.
+- **A stale handle deletes by key.** TomTom removes a waypoint by itself once
+  you walk within `cleardistance` of it, silently, so before removing anything
+  we check the registry still holds *our exact table*.
+- **A nil uiMapID is not an error.** TomTom creates the waypoint, arms the
+  arrow and draws nothing at all. The map id is checked for a number first.
+
+The waypoint is retired when its quest leaves the tracker — turned in, abandoned
+or dismissed — because an arrow still pointing at the boars of a quest you
+finished half an hour ago is how you stop trusting the arrow.
+
+One known cosmetic wart: opening the menu asks Questie for the location so the
+item can be greyed or not, and for objectives inside a dungeon with no mapping
+Questie prints its own red `[ERROR]` line asking you to report it. Questie only
+hits that on *click*; we hit it on *open*. Once per zone per session, and it
+reads like a Questie bug you caused with our menu.
+
 ### Folding
 
 `PLAYER_REGEN_DISABLED` folds the panel to its heading and `PLAYER_REGEN_ENABLED`

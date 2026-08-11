@@ -373,7 +373,13 @@ local function MenuItem(menu, i)
 	return item
 end
 
---- entries: { { text = "...", action = fn, danger = bool }, ... }
+--- entries: { { text = "...", action = fn, danger = bool, disabled = bool }, ... }
+--
+--  A disabled entry is shown and does nothing. It exists for one case: the
+--  quest Questie has no location for. Dropping the row instead would make the
+--  menu change shape from quest to quest, so "Navigate" would sometimes be the
+--  third item and sometimes the fourth, and a menu you cannot learn the shape
+--  of is worse than one carrying a greyed line that says why.
 local function ShowMenu(anchor, entries)
 	QT.menu = QT.menu or BuildMenu()
 	local menu = QT.menu
@@ -384,9 +390,15 @@ local function ShowMenu(anchor, entries)
 		shown = shown + 1
 		local item = MenuItem(menu, shown)
 		item.text:SetText(e.text)
-		W.Color(item.text, e.danger and c.danger or c.text)
-		item.hl:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 0.18)
-		item.action = e.action
+		if e.disabled then
+			W.Color(item.text, c.textFaint)
+		else
+			W.Color(item.text, e.danger and c.danger or c.text)
+		end
+		-- No hover glow on a dead row either, or it still reads as clickable.
+		local hi = e.disabled and 0 or 0.18
+		item.hl:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], hi)
+		item.action = (not e.disabled) and e.action or nil
 		item:ClearAllPoints()
 		item:SetPoint("LEFT", menu, "LEFT", 6, 0)
 		item:SetPoint("RIGHT", menu, "RIGHT", -6, 0)
@@ -444,17 +456,48 @@ local function AbandonQuestAt(index, title)
 	end
 end
 
+--- Hand the quest to TomTom, by way of Questie. See Core/Nav.lua for why that
+--  sentence is three paragraphs of caveats.
+--
+--  `loc` is the one the menu already resolved to decide whether to grey the
+--  item. Passing it on rather than asking again keeps a single click to a
+--  single trip through Questie.
+local function Navigate(questID, title, loc)
+	local ok, detail = A.Nav:Route(questID, title, loc)
+	if ok then
+		A:Print("routing to " .. (detail or title or "the quest") .. ".")
+	else
+		A:Print(detail or "can't route to that quest.")
+	end
+end
+
 local function RowClicked(row, button)
 	if not row.questID then return end
 
 	if button == "RightButton" then
-		ShowMenu(row, {
+		local entries = {
 			{ text = "Open quest log", action = function() OpenLog(row.index) end },
 			{ text = "Stop tracking",  action = function() Untrack(row.questID) end },
 			{ text = "Share quest",    action = function() ShareQuest(row.index) end },
-			{ text = "Abandon quest",  danger = true,
-			  action = function() AbandonQuestAt(row.index, row.questTitle) end },
-		})
+		}
+
+		-- Only when BOTH addons are actually there. A menu item that exists to
+		-- tell you an addon is missing is an advert, not a feature - and this
+		-- one would be on screen for every player who has neither.
+		if A.Nav:Available() then
+			local questID, title = row.questID, row.questTitle
+			local loc = A.Nav:Locate(questID)
+			entries[#entries + 1] = {
+				text = loc and "Navigate with TomTom" or "No location known",
+				disabled = (loc == nil),
+				action = function() Navigate(questID, title, loc) end,
+			}
+		end
+
+		entries[#entries + 1] = { text = "Abandon quest", danger = true,
+			action = function() AbandonQuestAt(row.index, row.questTitle) end }
+
+		ShowMenu(row, entries)
 		return
 	end
 
@@ -592,6 +635,20 @@ function QT:Refresh()
 
 	AdoptWatches()
 	local quests, numQuests = Collect()
+
+	-- A waypoint outlives its quest otherwise. Turned in, abandoned or just
+	-- dismissed, the quest drops out of this list and nothing else would ever
+	-- retire the arrow - and an arrow still pointing at the boars of a quest you
+	-- handed in half an hour ago is how you stop trusting the arrow at all.
+	-- This is the one place that sees all three of those happen.
+	local routed = A.Nav:Routed()
+	if routed then
+		local live = false
+		for _, q in ipairs(quests) do
+			if q.questID == routed then live = true break end
+		end
+		if not live then A.Nav:Clear() end
+	end
 
 	panel.header.count:SetText(string.format("%d / %d", numQuests or 0,
 		_G.MAX_QUESTLOG_QUESTS or _G.MAX_QUESTS or 20))

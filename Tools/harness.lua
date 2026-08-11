@@ -1959,7 +1959,7 @@ print("== loading addon files ==")
 for _, f in ipairs({
 	"Core/Core.lua", "Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
-	"Core/Commands.lua", "Core/Options.lua",
+	"Core/Nav.lua", "Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
@@ -4164,6 +4164,654 @@ do
 	QT.menu.items[4]:GetScript("OnClick")(QT.menu.items[4])
 	check(_G.__abandonPopup == "ABANDON_QUEST",
 		"abandon goes through Blizzard's confirmation, never straight to AbandonQuest")
+end
+
+-- ---------------------------------------------------------------------------
+-- Questie and TomTom mocks
+--
+-- Modelled on the contracts read out of the installed copies - Questie 11.33.2
+-- and TomTom v4.3.8-release - rather than on how they are usually described,
+-- because every detail below is a way this integration can be wrong while
+-- looking perfectly right on screen:
+--
+--   * QuestieLoader:ImportModule returns an EMPTY STUB for a name it does not
+--     know. Never nil, never an error. A module renamed out from under us is
+--     therefore a table whose functions are all nil, and the only way to notice
+--     is to type-check each one.
+--   * Questie's spawn tables are keyed by AREA id, not uiMapID, and hold {x, y}
+--     in 0-100. TomTom wants a uiMapID and 0-1. Two conversions, either of
+--     which silently produces a waypoint somewhere else entirely.
+--   * GetNearestSpawnForQuest returns the FINISHER when quest:IsComplete() == 1.
+--   * ZoneDB:GetUiMapIdByAreaId is a COLON call - DistanceUtils' are not - and
+--     returns nil for an area it has no mapping for.
+--   * TomTom:AddWaypoint returns a uid TABLE, and deduplicates on map/x/y/title
+--     without re-pointing its arrow, so a repeat call is a silent no-op.
+-- ---------------------------------------------------------------------------
+
+local questieNPCs = {
+	-- npcId = { name, spawns keyed by areaId with 0-100 coords, dist = Questie's
+	-- own ordering number, which is NOT yards and whose "nothing" is 999999999 }
+	[3271] = { name = "Savannah Prowler", dist = 100, spawns = { [17] = { { 45.0, 62.0 } } } },
+	[3441] = { name = "Mankrik",          dist = 100, spawns = { [17] = { { 52.5, 31.0 } } } },
+	[3272] = { name = "Distant Prowler",  dist = 900, spawns = { [17] = { { 80.0, 20.0 } } } },
+	[3273] = { name = "Near Prowler",     dist =  10, spawns = { [17] = { { 30.0, 40.0 } } } },
+	[9999] = { name = "Somewhere Odd",    dist = 100, spawns = { [4242] = { { 10.0, 10.0 } } } },
+	[8888] = { name = "In A Dungeon",     dist = 100, spawns = { [17] = { { -1, -1 } } } },
+	[7777] = { name = "Off The Map",      dist = 100, spawns = { [17] = { { 150.0, 20.0 } } } },
+	[6666] = { name = "Malformed",        dist = 100, spawns = "not a table" },
+}
+
+local questieObjects = {
+	[1617] = { name = "Silverleaf", dist = 100, spawns = { [17] = { { 22.0, 74.0 } } } },
+}
+
+local questieItems = {
+	-- What GetItem returns: an item has no location of its own, only sources.
+	[4632] = { Sources = { { Id = 3273, Type = "monster" }, { Id = 1617, Type = "object" } } },
+}
+
+-- Counters for the things we should never hand another addon: a spawn table
+-- that is not a table, or a nil area id. Both are guarded in Nav, and without
+-- these the guards look redundant - the pcall around them would swallow the
+-- error and the result would be nil either way, which is what the caller wanted
+-- anyway. The property being tested is not "we survive it", it is "we do not do
+-- it": an error raised inside Questie shows up in the player's chat as Questie's
+-- bug, with our name nowhere near it.
+local questieCalls = { getQuest = 0, badSpawns = 0, nilArea = 0 }
+
+local function questieQuest(id, opts)
+	opts = opts or {}
+	local q = {
+		Id = id,
+		Objectives = opts.objectives or {},
+		SpecialObjectives = {},
+		ObjectiveData = opts.objectiveData or {},
+		-- ALWAYS a table, exactly as QuestieDB.GetQuest builds it - it assigns
+		-- Finisher unconditionally for every quest it knows. Modelling this as
+		-- optional is what let an ordering bug through review: a `if not spawn
+		-- and quest.Finisher` test placed too early is true for every quest
+		-- alive, and it silently swallowed the database fallback underneath it.
+		Finisher = opts.finisher or { NPC = { 3441 } },
+		_complete = opts.complete and 1 or 0,
+	}
+	function q:IsComplete() return self._complete end
+	return q
+end
+
+local questieQuests = {}
+
+local function InstallQuestie()
+	local modules = {}
+	_G.QuestieLoader = {
+		-- The real one hands back a stub rather than failing. That is the whole
+		-- reason Nav type-checks every function it uses.
+		ImportModule = function(_, name)
+			modules[name] = modules[name] or { private = {} }
+			return modules[name]
+		end,
+	}
+
+	local db = _G.QuestieLoader:ImportModule("QuestieDB")
+	local dist = _G.QuestieLoader:ImportModule("DistanceUtils")
+	local zone = _G.QuestieLoader:ImportModule("ZoneDB")
+
+	-- GetQuest is a DOT call; GetNPC / GetObject / GetItem are COLON calls. A
+	-- mock that ignored the difference would hide the one class of mistake this
+	-- integration is most likely to make.
+	db.GetQuest = function(questId)
+		questieCalls.getQuest = questieCalls.getQuest + 1
+		return questieQuests[questId]
+	end
+	db.GetNPC = function(_, npcId) return questieNPCs[npcId] end
+	db.GetObject = function(_, objectId) return questieObjects[objectId] end
+	db.GetItem = function(_, itemId) return questieItems[itemId] end
+
+	dist.GetNearestSpawn = function(spawns)
+		if type(spawns) ~= "table" then
+			-- The real one walks it with pairs() and no guard at all.
+			questieCalls.badSpawns = questieCalls.badSpawns + 1
+			error("GetNearestSpawn: spawns is not a table")
+		end
+		for areaId, coords in pairs(spawns) do
+			if coords[1] then
+				-- The real one ranks candidates; a mock that returned one
+				-- constant would make "nearest" untestable.
+				local d = 100
+				for _, npc in pairs(questieNPCs) do if npc.spawns == spawns then d = npc.dist end end
+				for _, obj in pairs(questieObjects) do if obj.spawns == spawns then d = obj.dist end end
+				return coords[1], areaId, d
+			end
+		end
+		return nil, nil, 999999999
+	end
+	dist.GetNearestObjective = function(spawnList)
+		for _, entry in pairs(spawnList or {}) do
+			local spawn, areaId = dist.GetNearestSpawn(entry.Spawns)
+			if spawn then return spawn, areaId, entry.Name, 100 end
+		end
+		return nil, nil, nil, 999999999
+	end
+	dist.GetNearestFinisherOrStarter = function(finisher)
+		for _, npcId in pairs((finisher or {}).NPC or {}) do
+			local npc = questieNPCs[npcId]
+			if npc then
+				local spawn, areaId = dist.GetNearestSpawn(npc.spawns)
+				if spawn then return spawn, areaId, npc.name, 100 end
+			end
+		end
+		return nil, nil, nil, 999999999
+	end
+	dist.GetNearestSpawnForQuest = function(quest)
+		if quest:IsComplete() == 1 then
+			return dist.GetNearestFinisherOrStarter(quest.Finisher)
+		end
+		for _, objective in pairs(quest.Objectives) do
+			local spawn, areaId, name = dist.GetNearestObjective(objective.spawnList)
+			if spawn then return spawn, areaId, name, 100 end
+		end
+		return nil, nil, nil, 999999999
+	end
+
+	local areaToMap = { [17] = 1411 }  -- Barrens -> its uiMapID
+	zone.GetUiMapIdByAreaId = function(_, areaId)
+		if areaId == nil then questieCalls.nilArea = questieCalls.nilArea + 1 end
+		return areaToMap[areaId]
+	end
+
+	_G.Questie = { API = { isReady = true } }
+	return db, dist, zone
+end
+
+local tomtom
+local function InstallTomTom()
+	tomtom = { added = {}, removed = {}, arrows = {}, profile = { arrow = { arrival = 15 } } }
+
+	local live = {}   -- TomTom.waypoints: [uiMapId][key] = uid
+	local function key(m, x, y, title)
+		return string.format("%d:%s:%s:%s", m, tostring(x), tostring(y), tostring(title))
+	end
+
+	_G.TomTom = {
+		profile = tomtom.profile,
+		waypoints = live,
+		GetKey = function(_, uid) return key(uid[1], uid[2], uid[3], uid.title) end,
+
+		--- The real one DEDUPLICATES on map/x/y/title and returns the existing
+		--  uid early - before it sets the waypoint and before it points the
+		--  arrow. Modelling that matters: the duplicate it refuses to make can
+		--  be somebody ELSE's waypoint, which it then hands to us.
+		AddWaypoint = function(_, m, x, y, opts)
+			local k = key(m, x, y, opts.title)
+			if live[m] and live[m][k] then return live[m][k] end
+
+			local uid = { m, x, y, title = opts.title, from = opts.from, opts = opts }
+			live[m] = live[m] or {}
+			live[m][k] = uid
+			tomtom.added[#tomtom.added + 1] = uid
+			return uid
+		end,
+
+		RemoveWaypoint = function(_, uid)
+			-- Errors on a non-table, like the real one.
+			if type(uid) ~= "table" then error("RemoveWaypoint: uid is not a table") end
+			tomtom.removed[#tomtom.removed + 1] = uid
+			local m = uid[1]
+			-- Deletes by KEY, not by identity - which is exactly how a stale uid
+			-- deletes a live waypoint that merely looks like it.
+			if live[m] then live[m][key(m, uid[2], uid[3], uid.title)] = nil end
+		end,
+
+		SetCrazyArrow = function(_, uid, _, title)
+			tomtom.arrows[#tomtom.arrows + 1] = { uid = uid, title = title }
+		end,
+	}
+	return tomtom
+end
+
+local function UninstallQuestieAndTomTom()
+	A.Nav:Clear()
+	_G.QuestieLoader, _G.Questie, _G.TomTom, tomtom = nil, nil, nil, nil
+end
+
+print("== nav: nothing installed ==")
+do
+	check(not A.Nav:Available(),
+		"with neither addon there is nothing to offer")
+	check(A.Nav:Locate(861) == nil, "and no location to be had")
+	local ok, why = A.Nav:Route(861, "Prowlers of the Barrens")
+	check(ok == false and type(why) == "string",
+		"routing fails with a reason rather than raising")
+
+	local r = QT.panel.rows[1]
+	r:GetScript("OnMouseUp")(r, "RightButton")
+	local texts = {}
+	for _, item in ipairs(QT.menu.items) do
+		if item:IsShown() then texts[#texts + 1] = item.text:GetText() end
+	end
+	check(#texts == 4 and texts[4] == "Abandon quest",
+		"and the menu carries no Navigate item at all - a line that exists to"
+		.. " advertise an addon you do not have is not a feature (" .. #texts .. ")")
+	QT.menu:Hide()
+end
+
+print("== nav: questie to tomtom ==")
+do
+	InstallQuestie()
+	local tt = InstallTomTom()
+
+	-- A live quest with one objective: prowlers, in the Barrens, at 45/62.
+	questieQuests[861] = questieQuest(861, {
+		objectives = { { spawnList = { {
+			Name = "Savannah Prowler",
+			Spawns = { [17] = { { 45.0, 62.0 } } },
+		} } } },
+		finisher = { NPC = { 3441 } },
+	})
+
+	check(A.Nav:Available(), "with both addons present the feature exists")
+
+	local loc = A.Nav:Locate(861)
+	check(loc and loc.map == 1411,
+		"the AREA id is converted to a uiMapID, which is the only thing TomTom"
+		.. " understands (" .. tostring(loc and loc.map) .. ")")
+	check(loc and math.abs(loc.x - 0.45) < 0.0001 and math.abs(loc.y - 0.62) < 0.0001,
+		"and 0-100 spawn coordinates become the 0-1 fractions it wants ("
+		.. tostring(loc and loc.x) .. ", " .. tostring(loc and loc.y) .. ")")
+	check(loc and loc.name == "Savannah Prowler",
+		"carrying the name of the thing you are being sent to")
+
+	local ok = A.Nav:Route(861, "Prowlers of the Barrens")
+	check(ok, "routing succeeds")
+	check(#tt.added == 1, "one waypoint was set")
+	local w = tt.added[1]
+	check(w[1] == 1411 and math.abs(w[2] - 0.45) < 0.0001 and math.abs(w[3] - 0.62) < 0.0001,
+		"at the right place on the right map")
+	check(w.opts.from == "AetherUI", "stamped as ours, so its tooltip says where it came from")
+	check(w.opts.crazy == true, "with the arrow armed - it is the whole point of asking")
+	-- The trap that costs a phantom minimap pin per reload.
+	check(w.opts.persistent == false,
+		"and explicitly NOT persistent: TomTom's default is true, and a uid that"
+		.. " comes back from saved variables is a different table, so removing it"
+		.. " deletes the record and orphans the pin forever")
+
+	-- The dedup trap: same map/x/y/title returns the old uid and does NOT
+	-- re-point the arrow, so ours has to go first every time.
+	A.Nav:Route(861, "Prowlers of the Barrens")
+	check(#tt.removed == 1 and tt.removed[1] == w,
+		"routing again removes our previous waypoint before adding one, or"
+		.. " TomTom deduplicates the call away and the arrow never moves")
+	check(#tt.added == 2, "and a fresh waypoint is what actually arms the arrow")
+end
+
+print("== nav: what it does with awkward quests ==")
+do
+	local tt = tomtom
+
+	-- Complete: the target is the turn-in, not the boars. Questie decides this
+	-- inside GetNearestSpawnForQuest, so the check is that we let it.
+	questieQuests[862] = questieQuest(862, {
+		complete = true,
+		objectives = { { spawnList = { {
+			Name = "Savannah Prowler", Spawns = { [17] = { { 45.0, 62.0 } } },
+		} } } },
+		finisher = { NPC = { 3441 } },
+	})
+	local loc = A.Nav:Locate(862)
+	check(loc and loc.name == "Mankrik" and math.abs(loc.y - 0.31) < 0.0001,
+		"a complete quest routes to its turn-in NPC, not back to its objectives ("
+		.. tostring(loc and loc.name) .. ")")
+
+	-- Objectives never populated. Questie only fills them from the quest log,
+	-- and skips that for quests IT does not consider tracked - which, since we
+	-- replace its tracker, can be all of them.
+	questieQuests[863] = questieQuest(863, {
+		objectiveData = { { Type = "monster", Id = 3271, Text = "Prowlers slain" } },
+	})
+	loc = A.Nav:Locate(863)
+	check(loc and loc.map == 1411 and math.abs(loc.x - 0.45) < 0.0001,
+		"a quest with no populated objectives still routes, out of the database"
+		.. " rather than out of the quest log")
+
+	-- An area ZoneDB has no uiMapID for. TomTom would take the nil, create the
+	-- waypoint, arm the arrow and render nothing at all.
+	questieQuests[864] = questieQuest(864, {
+		objectiveData = { { Type = "monster", Id = 9999, Text = "Odd things" } },
+	})
+	local before = #tt.added
+	check(A.Nav:Locate(864) == nil, "an area with no uiMapID is refused")
+	local ok, why = A.Nav:Route(864, "Odd Quest")
+	check(ok == false and #tt.added == before,
+		"and TomTom is never called: it would have accepted the nil map, armed"
+		.. " the arrow, and drawn nothing - the one failure that looks like it worked")
+	check(why and #why > 0, "with a reason, which is what the chat line says")
+
+	-- Questie's in-a-dungeon sentinel, if it ever reaches us unresolved.
+	questieQuests[865] = questieQuest(865, {
+		objectiveData = { { Type = "monster", Id = 8888, Text = "Inside" } },
+	})
+	check(A.Nav:Locate(865) == nil,
+		"and {-1,-1} is refused rather than sent as a coordinate off the map")
+
+	-- A quest Questie has never heard of.
+	check(A.Nav:Locate(99999) == nil, "an unknown quest is nil, not an error")
+
+	-- Nothing anywhere except a turn-in NPC: the last resort, and the only case
+	-- where routing to the finisher of an unfinished quest is right.
+	questieQuests[866] = questieQuest(866, { finisher = { NPC = { 3441 } } })
+	loc = A.Nav:Locate(866)
+	check(loc and loc.name == "Mankrik",
+		"a quest with no objectives Questie can place at all falls back to its"
+		.. " turn-in, rather than offering nothing")
+
+	-- ...but only AFTER the database. Objectives outrank the turn-in, and the
+	-- ordering is the whole correctness of Locate: GetQuest fills Finisher for
+	-- every quest alive, so a finisher test placed first is always true and
+	-- would send you to the hand-in of a quest you have not started killing.
+	questieQuests[867] = questieQuest(867, {
+		objectiveData = { { Type = "monster", Id = 3271, Text = "Prowlers slain" } },
+		finisher = { NPC = { 3441 } },
+	})
+	loc = A.Nav:Locate(867)
+	check(loc and loc.name == "Savannah Prowler",
+		"a quest with both goes to the mobs, not to the hand-in ("
+		.. tostring(loc and loc.name) .. ")")
+
+	-- Nearest, out of several. Questie's "distance" is an ordering number, so
+	-- this is checking we order by it rather than take whatever pairs() gives
+	-- us first.
+	questieQuests[868] = questieQuest(868, {
+		objectiveData = {
+			{ Type = "monster", Id = 3272, Text = "Distant" },
+			{ Type = "monster", Id = 3273, Text = "Near" },
+			{ Type = "monster", Id = 3271, Text = "Middling" },
+		},
+	})
+	loc = A.Nav:Locate(868)
+	check(loc and loc.name == "Near Prowler",
+		"with several candidates it takes the nearest, not the first ("
+		.. tostring(loc and loc.name) .. ")")
+
+	-- An objective that is a game object rather than a creature.
+	questieQuests[869] = questieQuest(869, {
+		objectiveData = { { Type = "object", Id = 1617, Text = "Silverleaf" } },
+	})
+	loc = A.Nav:Locate(869)
+	check(loc and loc.name == "Silverleaf" and math.abs(loc.x - 0.22) < 0.0001,
+		"objects are placed as well as creatures - half of Classic's objectives"
+		.. " are a herb or a crate")
+
+	-- "Collect 8 hides" - the most common quest shape in the game. An item has
+	-- no location; what has a location is whatever drops it.
+	questieQuests[870] = questieQuest(870, {
+		objectiveData = { { Type = "item", Id = 4632, Text = "Hides" } },
+	})
+	loc = A.Nav:Locate(870)
+	check(loc and loc.name == "Near Prowler",
+		"a collect quest routes to the nearest thing that DROPS the item ("
+		.. tostring(loc and loc.name) .. ")")
+
+	-- Coordinates off the map, from the other side of the range check.
+	questieQuests[871] = questieQuest(871, {
+		objectiveData = { { Type = "monster", Id = 7777, Text = "Off the map" } },
+		finisher = { NPC = { 4321 } },
+	})
+	check(A.Nav:Locate(871) == nil,
+		"a coordinate past 100 is refused too - TomTom does not range check, it"
+		.. " extrapolates off the zone and points confidently at nowhere")
+
+	-- A spawn table that is not a table. The real GetNearestSpawn walks it with
+	-- pairs() and no guard, so this raises inside Questie unless we check first.
+	questieQuests[872] = questieQuest(872, {
+		objectiveData = { { Type = "monster", Id = 6666, Text = "Malformed" } },
+		finisher = { NPC = { 4321 } },
+	})
+	local bad = questieCalls.badSpawns
+	local ok = pcall(function() return A.Nav:Locate(872) end)
+	check(ok and A.Nav:Locate(872) == nil,
+		"malformed spawn data is refused rather than raised - pairs() on a"
+		.. " string is an error inside Questie that would read as ours")
+	check(questieCalls.badSpawns == bad,
+		"and Questie is never handed it in the first place: a pcall would hide"
+		.. " the throw from us, but the [ERROR] line it prints is in the"
+		.. " player's chat either way, with Questie's name on our bug")
+
+	-- A spawn with no zone. Nothing in the real data does this, but the guard
+	-- is one `and` away from being dropped as redundant.
+	local dist = QuestieLoader:ImportModule("DistanceUtils")
+	local was = dist.GetNearestSpawnForQuest
+	dist.GetNearestSpawnForQuest = function() return { 45.0, 62.0 }, nil, "Nowhere", 100 end
+	local nilAreas = questieCalls.nilArea
+	check(A.Nav:Locate(861) == nil, "a spawn with no area id is refused")
+	check(questieCalls.nilArea == nilAreas,
+		"without asking ZoneDB to convert a nil, which is how you get a nil"
+		.. " uiMapID and a waypoint that renders nowhere")
+	dist.GetNearestSpawnForQuest = was
+end
+
+print("== nav: the menu item ==")
+do
+	local r = QT.panel.rows[1]
+	questieQuests[r.questID] = questieQuest(r.questID, {
+		objectives = { { spawnList = { {
+			Name = "Savannah Prowler", Spawns = { [17] = { { 45.0, 62.0 } } },
+		} } } },
+	})
+
+	r:GetScript("OnMouseUp")(r, "RightButton")
+	local texts, navItem = {}, nil
+	for _, item in ipairs(QT.menu.items) do
+		if item:IsShown() then
+			texts[#texts + 1] = item.text:GetText()
+			if item.text:GetText() == "Navigate with TomTom" then navItem = item end
+		end
+	end
+	check(#texts == 5 and navItem, "the item appears once both addons are there")
+	check(texts[5] == "Abandon quest",
+		"and it goes ABOVE Abandon - the destructive one stays last, where the"
+		.. " muscle memory for it already is")
+
+	local tt = tomtom
+	local before = #tt.added
+	navItem:GetScript("OnClick")(navItem)
+	check(#tt.added == before + 1, "clicking it sets the waypoint")
+	check(not QT.menu:IsShown(), "and the menu closes behind it")
+
+	-- Now a quest with no location at all: no objectives Questie populated, no
+	-- database objectives, and a turn-in NPC it has no spawn for either. All
+	-- three routes have to come back empty before the item goes grey.
+	questieQuests[r.questID] = questieQuest(r.questID, { finisher = { NPC = { 4321 } } })
+	r:GetScript("OnMouseUp")(r, "RightButton")
+	local dead
+	for _, item in ipairs(QT.menu.items) do
+		if item:IsShown() and item.text:GetText() == "No location known" then dead = item end
+	end
+	check(dead, "a quest Questie cannot place says so in the menu")
+	check(dead.action == nil, "and carries no action, so clicking it cannot half-work")
+	check(dead.text.__color[1] == A.Palette.c.textFaint[1],
+		"drawn faint, or it still reads as something you can click")
+	local stillAdded = #tomtom.added
+	dead:GetScript("OnClick")(dead)
+	check(#tomtom.added == stillAdded, "clicking it does nothing at all")
+	QT.menu:Hide()
+end
+
+print("== nav: when questie moves under us ==")
+do
+	-- The realistic failure. `ImportModule` cannot report a bad name: it hands
+	-- back an empty stub that the real module would have filled. So a renamed
+	-- function is not an error, it is a table of nils that raises later, inside
+	-- a right-click, looking like OUR bug.
+	-- EVERY function we depend on, one at a time. Checking only the obvious one
+	-- would leave the other four resting on a type-check nothing exercises,
+	-- which is the same as not having it.
+	local depends = {
+		{ "QuestieDB",     "GetQuest" },
+		{ "DistanceUtils", "GetNearestSpawnForQuest" },
+		{ "DistanceUtils", "GetNearestSpawn" },
+		{ "DistanceUtils", "GetNearestFinisherOrStarter" },
+		{ "ZoneDB",        "GetUiMapIdByAreaId" },
+	}
+	local gone = {}
+	for _, dep in ipairs(depends) do
+		local module = QuestieLoader:ImportModule(dep[1])
+		local was = module[dep[2]]
+		module[dep[2]] = nil
+		if A.Nav:Available() then gone[#gone + 1] = dep[1] .. "." .. dep[2] end
+		module[dep[2]] = was
+	end
+	check(#gone == 0,
+		"ANY of the five functions renamed out from under us takes the feature"
+		.. " away quietly - ImportModule cannot report a bad name, it hands back"
+		.. " an empty table, so each one has to be checked (" .. table.concat(gone, ", ") .. ")")
+
+	local dist = QuestieLoader:ImportModule("DistanceUtils")
+	local was = dist.GetNearestSpawnForQuest
+	dist.GetNearestSpawnForQuest = nil
+
+	local r = QT.panel.rows[1]
+	r:GetScript("OnMouseUp")(r, "RightButton")
+	local n = 0
+	for _, item in ipairs(QT.menu.items) do if item:IsShown() then n = n + 1 end end
+	check(n == 4, "the menu goes back to four items rather than raising on click")
+	QT.menu:Hide()
+	dist.GetNearestSpawnForQuest = was
+
+	-- Questie loaded but its database not built yet. Calling in here would raise
+	-- inside Questie itself - GetQuest's query function is not assigned until
+	-- its own init has run.
+	_G.Questie.API.isReady = false
+	check(not A.Nav:Available(), "and nothing is offered until Questie says it is ready")
+	check(A.Nav:Locate(861) == nil, "or asked for, which would raise inside Questie")
+	_G.Questie.API.isReady = true
+	check(A.Nav:Available(), "and it comes back when it is")
+
+	-- TomTom gone, Questie fine.
+	local hadTomTom = _G.TomTom
+	_G.TomTom = nil
+	check(not A.Nav:Available(), "no TomTom, no item")
+	local ok, why = A.Nav:Route(861, "Prowlers")
+	check(ok == false and why and why:find("TomTom"),
+		"and routing says which addon is missing")
+	_G.TomTom = hadTomTom
+end
+
+print("== nav: the waypoint is ours and stays ours ==")
+do
+	A.Nav:Route(861, "Prowlers of the Barrens")
+	check(type(A.Nav:Waypoint()) == "table", "we hold the uid ourselves")
+
+	-- Questie keeps its handle in `Questie.db.char._tom_waypoint`, a SAVED
+	-- variable, and clears it from three separate places. Ours is a file-local
+	-- upvalue: not in our saved variables either, because a uid restored from
+	-- disk is a different table and removing it orphans the pin.
+	local held = A.Nav:Waypoint()
+	local function findsUid(t, depth, seen)
+		if depth > 4 or type(t) ~= "table" then return false end
+		seen = seen or {}
+		if seen[t] then return false end
+		seen[t] = true
+		for _, v in pairs(t) do
+			if v == held then return true end
+			if findsUid(v, depth + 1, seen) then return true end
+		end
+		return false
+	end
+	check(not findsUid(A.db, 0), "and it is nowhere in our saved variables")
+
+	A.Nav:Clear()
+	check(A.Nav:Waypoint() == nil and tomtom.removed[#tomtom.removed] == held,
+		"clearing removes exactly the one we made")
+	local removals = #tomtom.removed
+	A.Nav:Clear()
+	check(#tomtom.removed == removals,
+		"and clearing again asks TomTom nothing - a second RemoveWaypoint would"
+		.. " be deleting by key something we no longer own")
+end
+
+print("== nav: not stepping on Questie's waypoints ==")
+do
+	-- The dedup trap from the other side. Questie builds its waypoints from the
+	-- same call we do - same map, same coordinates, and the same spawn NAME as
+	-- the title - so all four parts of TomTom's key match and AddWaypoint hands
+	-- us back QUESTIE'S uid, early, with its arrow untouched.
+	questieQuests[880] = questieQuest(880, {
+		objectiveData = { { Type = "monster", Id = 3271, Text = "Prowlers" } },
+	})
+	local theirs = TomTom:AddWaypoint(1411, 0.45, 0.62,
+		{ title = "Savannah Prowler", from = "Questie" })
+	local arrows = #tomtom.arrows
+	local added = #tomtom.added
+
+	local ok = A.Nav:Route(880, "Prowlers of the Barrens")
+	check(ok, "routing still reports success")
+	check(#tomtom.added == added,
+		"TomTom made no new waypoint - it deduplicated ours away against theirs")
+	check(A.Nav:Waypoint() == nil,
+		"and we do NOT adopt it: their uid in our hands means our next route"
+		.. " deletes their waypoint, which is the whole thing this avoids")
+	check(#tomtom.arrows == arrows + 1 and tomtom.arrows[#tomtom.arrows].uid == theirs,
+		"we point the arrow at it instead, which is all that was missing")
+
+	A.Nav:Clear()
+	check(tomtom.removed[#tomtom.removed] ~= theirs, "and clearing leaves theirs alone")
+	-- Out of the way, or every waypoint below dedups against it as well.
+	TomTom:RemoveWaypoint(theirs)
+
+	-- Now the stale-handle case. TomTom removes a waypoint by itself once you
+	-- walk within `cleardistance` of it, and nothing tells us. Our handle is
+	-- then a dead table - and RemoveWaypoint deletes by KEY while clearing
+	-- frames by identity, so calling it would delete a live waypoint that
+	-- merely looks the same and orphan its pins until a reload.
+	questieQuests[873] = questieQuest(873, {
+		objectiveData = { { Type = "monster", Id = 3271, Text = "Prowlers" } },
+	})
+	A.Nav:Route(873, "Prowlers")
+	local ours = A.Nav:Waypoint()
+	TomTom:RemoveWaypoint(ours)                       -- as if we had arrived
+	local impostor = TomTom:AddWaypoint(ours[1], ours[2], ours[3],
+		{ title = ours.title, from = "Questie" })     -- same key, different table
+	local before = #tomtom.removed
+
+	A.Nav:Clear()
+	check(#tomtom.removed == before,
+		"a handle TomTom has already retired is dropped, not removed again")
+	local live = TomTom.waypoints[impostor[1]][TomTom:GetKey(impostor)]
+	check(live == impostor,
+		"so the waypoint that now owns that key survives, rather than losing its"
+		.. " record while its pins stay on the minimap forever")
+	TomTom:RemoveWaypoint(impostor)
+end
+
+print("== nav: a waypoint does not outlive its quest ==")
+do
+	local r = QT.panel.rows[1]
+	questieQuests[r.questID] = questieQuest(r.questID, {
+		objectiveData = { { Type = "monster", Id = 3271, Text = "Prowlers" } },
+	})
+	A.Nav:Route(r.questID, r.questTitle)
+	check(A.Nav:Routed() == r.questID, "the waypoint knows which quest it is for")
+
+	-- One click, one trip through Questie: the menu already resolved the
+	-- location to decide whether to grey the item, and asking again is both
+	-- wasted work and racy, since the answer is ranked by where you are standing.
+	local calls = questieCalls.getQuest
+	A.Nav:Route(r.questID, r.questTitle, { map = 1411, x = 0.5, y = 0.5 })
+	check(questieCalls.getQuest == calls,
+		"routing with a location already in hand does not ask Questie again")
+
+	-- Untracking is the one gesture that covers turn-in, abandon and dismissal:
+	-- all three take the quest out of the tracker's list.
+	local QTmod = A:GetModule("questtracker")
+	QTmod.SetTracked(r.questID, false)
+	QTmod:Refresh()
+	check(A.Nav:Waypoint() == nil and A.Nav:Routed() == nil,
+		"a quest leaving the tracker retires its waypoint, rather than leaving an"
+		.. " arrow pointing at the boars of a quest you handed in")
+	QTmod.SetTracked(r.questID, true)
+	QTmod:Refresh()
+
+	UninstallQuestieAndTomTom()
+	check(not A.Nav:Available(), "teardown leaves the rest of the run as it was")
 end
 
 print("== quest tracker: combat fold ==")
