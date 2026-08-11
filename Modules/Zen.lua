@@ -336,19 +336,52 @@ end
 
 --- The frames `UIParent`'s alpha does not reach.
 --
---  `Minimap` is the whole list, and it is here for a reason worth writing down.
---  Our own module re-parents the map into its holder, the holder is a child of
---  UIParent, and fading UIParent left the map sitting there at full brightness
---  anyway. It is not an ordinary Frame - it is a widget type the client renders
---  into, and the map surface is composited outside the normal alpha cascade, the
---  same family of quirk as it refusing to composite against a sibling at its own
---  strata. Its *own* SetAlpha is honoured, so it gets driven by hand.
+--  `Minimap` is here for a reason worth writing down. Our own module re-parents
+--  the map into its holder, the holder is a child of UIParent, and fading
+--  UIParent left the map sitting there at full brightness anyway. It is not an
+--  ordinary Frame - it is a widget type the client renders into, and the map
+--  surface is composited outside the normal alpha cascade, the same family of
+--  quirk as it refusing to composite against a sibling at its own strata. Its
+--  *own* SetAlpha is honoured, so it gets driven by hand.
+--
+--  **And so does every frame hanging off it.** Minimap being outside the
+--  cascade means its children are outside it too, and dimming the parent does
+--  not reach them. Anything an addon hangs on the minimap - a Questie marker, a
+--  TomTom waypoint - lands in that set, so it cannot be a list of names, it has
+--  to be a walk.
+--
+--  What the walk still does NOT reach is the layers the ENGINE draws into the
+--  minimap: the POI blips and the player arrow. Those are not regions and not
+--  children, they are part of what the widget renders, and no SetAlpha we can
+--  make reaches them. On screen that left a flight-master icon and the player
+--  arrow hanging over an empty hillside in the middle of zen mode. The only
+--  thing that takes them is Hide, which is why DimUI does that as well.
 --
 --  Resolved on each call rather than cached: the global is not guaranteed to
---  exist before PLAYER_LOGIN, and another addon replacing it is exactly the sort
---  of thing that happens.
-local function Escapees()
-	return _G.Minimap
+--  exist before PLAYER_LOGIN, another addon replacing it is exactly the sort of
+--  thing that happens, and pins come and go while zen is running.
+local function Escapees(out)
+	out = out or {}
+	local mm = _G.Minimap
+	if not mm then return out end
+	if mm.IsForbidden and mm:IsForbidden() then return out end
+
+	out[#out + 1] = mm
+
+	if not mm.GetChildren then return out end
+	local kids = { pcall(mm.GetChildren, mm) }
+	if not kids[1] then return out end
+	for i = 2, #kids do
+		local k = kids[i]
+		-- IsForbidden first, and a failed call counts as forbidden: any method
+		-- on a forbidden frame raises, including GetName.
+		local ok, forbidden = true, false
+		if k and k.IsForbidden then ok, forbidden = pcall(k.IsForbidden, k) end
+		if k and k.SetAlpha and ok and not forbidden then
+			out[#out + 1] = k
+		end
+	end
+	return out
 end
 
 --- `a` is the readout's own alpha, so the interface is exactly its inverse.
@@ -362,8 +395,37 @@ function Zen:DimUI(a)
 	local ui = 1 - a * (1 - (cfg.hudAlpha or 0))
 	UIParent:SetAlpha(ui)
 
-	local mm = Escapees()
-	if mm and mm.SetAlpha then mm:SetAlpha(ui) end
+	-- Each escapee is dimmed against the alpha it already had, not slammed to
+	-- `ui`. A minimap pin an addon is deliberately holding at half alpha must
+	-- come back at half alpha, not at full.
+	self._escapeeAlpha = self._escapeeAlpha or {}
+	local base = self._escapeeAlpha
+	for _, f in ipairs(Escapees()) do
+		if base[f] == nil then base[f] = f:GetAlpha() or 1 end
+		pcall(f.SetAlpha, f, base[f] * ui)
+	end
+
+	-- The engine's own layers -- POI blips and the player arrow -- ignore every
+	-- alpha we can set, so at the bottom of the fade the map is hidden outright.
+	--
+	-- At the BOTTOM, not throughout, because Hide has no half measure: hiding it
+	-- when zen starts would pop the map off a second before everything around it
+	-- had finished fading. The blips stay bright through the fade and go with
+	-- the rest of it, which is the least visible of the three wrong answers.
+	--
+	-- Minimap is a plain widget, so Hide is combat-safe. Whether it was shown is
+	-- recorded, because the player may have had no minimap to begin with and
+	-- handing them one back is not a restore.
+	local mm = _G.Minimap
+	if mm and mm.IsShown and not (mm.IsForbidden and mm:IsForbidden()) then
+		if ui <= 0.02 then
+			if self._mmShown == nil then self._mmShown = mm:IsShown() and true or false end
+			if mm:IsShown() then pcall(mm.Hide, mm) end
+		elseif self._mmShown ~= nil then
+			if self._mmShown then pcall(mm.Show, mm) end
+			self._mmShown = nil
+		end
+	end
 
 	self._dimmed = a > 0
 end
@@ -372,8 +434,24 @@ function Zen:RestoreUI()
 	if not self._dimmed then return end
 	self._dimmed = false
 	UIParent:SetAlpha(1)
-	local mm = Escapees()
-	if mm and mm.SetAlpha then mm:SetAlpha(1) end
+
+	-- Everything we touched, put back to what it was -- including anything that
+	-- has since gone away, which is why this walks the RECORD rather than the
+	-- minimap. A pin that vanished mid-zen and came back is not our business;
+	-- one we dimmed and never restored is.
+	local base = self._escapeeAlpha
+	if base then
+		for f, a in pairs(base) do
+			if f and f.SetAlpha then pcall(f.SetAlpha, f, a) end
+		end
+	end
+	self._escapeeAlpha = nil
+
+	local mm = _G.Minimap
+	if self._mmShown ~= nil then
+		if self._mmShown and mm and mm.Show then pcall(mm.Show, mm) end
+		self._mmShown = nil
+	end
 end
 
 -- ---------------------------------------------------------------------------

@@ -1024,6 +1024,11 @@ end
 -- recreated, so the module reshapes Blizzard's. Everything it touches on that
 -- object is modelled here, plus the furniture it banishes.
 Minimap = CreateFrame("Frame", "Minimap")
+-- A third-party pin, hung on the minimap the way Questie and TomTom hang one.
+-- It carries a deliberately non-default alpha, because "put it back to 1" and
+-- "put it back the way it was" are different promises.
+_G.__minimapPin = CreateFrame("Frame", "HarnessMinimapPin", Minimap)
+_G.__minimapPin:SetAlpha(0.5)
 Minimap:SetSize(140, 140)
 function Minimap:SetMaskTexture(t) self.__mask = t end
 function Minimap:GetZoom() return self.__zoom or 0 end
@@ -2701,6 +2706,40 @@ do
 		"including the minimap, which is driven by hand: it is a widget the client"
 		.. " renders into, and the map surface ignores the alpha it inherits even"
 		.. " though our module parents it into a frame under UIParent")
+
+	-- Everything hung ON the minimap is outside the cascade for the same reason
+	-- the minimap is, so dimming the parent does not reach it.
+	check(_G.__minimapPin:GetAlpha() < 0.05,
+		"and so is anything an addon hung on it - a quest marker or a waypoint"
+		.. " is outside the cascade for exactly the same reason the map is ("
+		.. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
+
+	-- The engine's own layers are neither children nor regions: the POI blips
+	-- and the player arrow are part of what the widget draws, and no SetAlpha
+	-- reaches them. Hide is the only thing that does.
+	check(not Minimap:IsShown(),
+		"and the map is HIDDEN at the bottom of the fade, not merely faded - the"
+		.. " flight-master blip and the player arrow are drawn by the engine into"
+		.. " the widget, so they ignore its alpha and would otherwise be left"
+		.. " hanging over an empty hillside")
+	-- RestoreUI on its own, which is the path the panic handler and OnDisable
+	-- take. The ordinary wake never reaches its restore loop -- DimUI walks the
+	-- alphas back up itself and clears the dimmed flag on the way -- so without
+	-- this the one thing standing between a bug in here and somebody's entire
+	-- interface at zero alpha is never run at all.
+	do
+		local pinWas = _G.__minimapPin:GetAlpha()
+		check(pinWas < 0.05, "still dimmed going in")
+		Z:RestoreUI()
+		check(UIParent:GetAlpha() == 1, "RestoreUI alone puts the interface back")
+		check(Minimap:IsShown(), "and shows the map again")
+		check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
+			"and puts the pin back to what it WAS, from the record it kept ("
+			.. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
+		-- and back into the dim, so the checks below still measure zen
+		Z:DimUI(Z.frame:GetAlpha())
+	end
+
 	check(Z.keys and Z.keys:IsKeyboardEnabled(), "the key watcher is listening")
 
 	local k = Z.keys
@@ -2717,6 +2756,11 @@ do
 	check(Z.frame:GetAlpha() < 0.05, "and the readout goes away again")
 	check(UIParent:GetAlpha() == 1 and Minimap:GetAlpha() == 1,
 		"with the interface, and the minimap, put back")
+	check(Minimap:IsShown(), "and the map shown again")
+	check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
+		"and the pin restored to the alpha it HAD, not to 1 - an addon holding"
+		.. " its own marker at half is not asking us to brighten it ("
+		.. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
 	check(not k:IsKeyboardEnabled(),
 		"the key watcher stops listening the moment it is not needed")
 
