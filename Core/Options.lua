@@ -571,6 +571,54 @@ local function QuestGroup()
 	})
 end
 
+local function BagsGroup()
+	local function at(k) return { "modules", "bags", k } end
+	return group("Bags", {
+		enabled = toggle("Enabled", nil, at("enabled")),
+		desc = note("One window for the backpack and your four bags, sorted into"
+			.. " categories, with the equipped bags and the keyring on a flyout"
+			.. " off the right edge. At a banker the bank opens beside it. This"
+			.. " replaces Blizzard's bags rather than reskinning them; turning it"
+			.. " off gives them back, including the B key."),
+		hideBlizzard = toggle("Hide Blizzard's bags", nil, at("hideBlizzard")),
+
+		gridHeader = header("Grid"),
+		columns = range("Columns",
+			"The window is as wide as the grid: eight columns of 44 is the"
+			.. " concept's 442px panel.", at("columns"), 4, 16, 1),
+		slotSize = range("Slot size", nil, at("slotSize"), 24, 64, 1),
+		slotGap = range("Gap between slots", nil, at("slotGap"), 0, 16, 1),
+		maxHeight = range("Height budget",
+			"The panel hugs its contents up to this, then the grid scrolls on"
+			.. " the wheel. There is no scroll bar; the concept has none.",
+			at("maxHeight"), 200, 1200, 10),
+
+		lookHeader = header("Look"),
+		showSearch = toggle("Show the search box",
+			"Typing dims what does not match rather than removing it, so nothing"
+			.. " moves under the cursor while you narrow it down.",
+			at("showSearch"), { defaultTrue = true }),
+		qualityRim = toggle("Colour slots by quality", nil, at("qualityRim"),
+			{ defaultTrue = true }),
+		dimJunk = toggle("Dim poor-quality items", nil, at("dimJunk"),
+			{ defaultTrue = true }),
+		showKeyring = toggle("Show the keyring", nil, at("showKeyring"),
+			{ defaultTrue = true }),
+		showEmpty = toggle("Show free slots",
+			"A FREE section at the foot of the grid. Off, the panel is the"
+			.. " concept's exactly - but with no empty slot on screen there is"
+			.. " nowhere to drop something you are carrying.",
+			at("showEmpty"), { defaultTrue = true }),
+
+		sellHeader = header("Junk"),
+		junkAutoSell = toggle("Sell junk at a merchant",
+			"Sells every poor-quality item that has a value the moment you open"
+			.. " any merchant, one item at a time, and tells you what it made."
+			.. " Off by default: this is the only thing here that spends your"
+			.. " items for you.", at("junkAutoSell")),
+	})
+end
+
 local function ChatGroup()
 	local function at(k) return { "modules", "chat", k } end
 	return group("Chat", {
@@ -697,7 +745,7 @@ end
 --  last" a matter of guessing a bigger number. These are the numbers instead.
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
-	quests = 6, chat = 7, fader = 8, xpbar = 9,
+	quests = 6, bags = 7, chat = 8, fader = 9, xpbar = 10,
 	profiles = 99,     -- last, always
 }
 
@@ -714,6 +762,7 @@ function Options:Build()
 			minimap = MinimapGroup(),
 			actionbars = ActionBarsGroup(),
 			quests = QuestGroup(),
+			bags = BagsGroup(),
 			chat = ChatGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),

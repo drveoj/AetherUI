@@ -30,6 +30,7 @@ local function usage()
 		"|cff9d7bff/aether diag|r  ·  why is a Blizzard frame still on screen",
 		"|cff9d7bff/aether auras|r <refresh>  ·  what the aura API is actually saying",
 		"|cff9d7bff/aether chat|r <reskin · lines/badges on|off · whispers on|off>",
+		"|cff9d7bff/aether bags|r <open · sort · sell · junk on|off>  ·  what the container API is saying",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
 end
@@ -320,6 +321,48 @@ handlers.auras = function(arg)
 		return
 	end
 	Au:Diagnose()
+end
+
+handlers.bags = function(arg, rest)
+	local B = A:GetModule("bags")
+	if not B or not B.enabled then A:Print("bags module is not enabled.") return end
+
+	if arg == "open" then
+		B:Toggle()
+		return
+	elseif arg == "sort" then
+		local f = B.frames and B.frames.bags
+		if f then B:StartSort(f) end
+		A:Print("compacting stacks.")
+		return
+	elseif arg == "sell" then
+		local list, value = B:JunkList()
+		if #list == 0 then A:Print("no junk to sell.") return end
+		if not _G.MerchantFrame or not _G.MerchantFrame:IsShown() then
+			A:Print(("|cffece6ff%d|r junk item%s worth |cffece6ff%s|r - open a merchant first.")
+				:format(#list, #list == 1 and "" or "s",
+					(_G.GetCoinTextureString and _G.GetCoinTextureString(value)) or (value .. "c")))
+			return
+		end
+		-- Deliberately bypasses the junkAutoSell setting: this is an explicit
+		-- instruction, not the automatic behaviour, and refusing to obey it
+		-- because a checkbox is off would be obtuse.
+		B.selling = { list = list, index = 1, worth = value, earned = 0, sold = 0 }
+		B:SellStep()
+		return
+	elseif arg == "junk" then
+		local cfg = A.Config:Module("bags")
+		if rest == "on" then cfg.junkAutoSell = true
+		elseif rest == "off" then cfg.junkAutoSell = false
+		else cfg.junkAutoSell = not cfg.junkAutoSell end
+		A:Print("junk auto-sell " .. (cfg.junkAutoSell
+			and "|cff9fe8b4on|r - poor-quality items go the moment a merchant opens."
+			or "|cff888888off|r."))
+		B:Invalidate()
+		return
+	end
+
+	B:Diagnose()
 end
 
 handlers.chat = function(arg, rest)

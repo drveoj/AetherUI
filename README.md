@@ -32,6 +32,10 @@ Modules/
   ActionBars.lua independent bars: secure buttons, stance/pet/extra, keybinds
   Auras.lua      four aura trays: buffs above each capsule, debuffs below
   QuestTracker.lua  the glass panel: tracked quests, objectives, combat fold
+  QuestLog.lua   the full log window; replaces Blizzard's rather than skinning it
+  Bags.lua       one unified inventory panel, plus the bank beside it at a banker
+  Chat.lua       Blizzard's chat frames, skinned in place
+  Zen.lua        the second stage of the fade
   Minimap.lua    round map, zone/coords/clock pill, addon-button drawer
   XPBar.lua      the bottom-of-screen experience hairline
 Media/
@@ -367,9 +371,37 @@ that combat-gated work actually defers and replays.
 Runs in about a second:
 
 ```sh
-lua5.1 Tools/harness.lua      # 586 checks
+lua5.1 Tools/harness.lua      # ~1000 checks
 python3 Tools/preview.py      # re-render the skin preview
 ```
+
+**If there is no `lua5.1` on the machine**, run it through Python's `lupa`, which
+embeds a real 5.1. The Ace libraries need 5.1 specifically -- bare `unpack`,
+`setfenv` -- so `lupa.LuaRuntime` is the wrong entry point; it is 5.4.
+
+```sh
+python3 -m pip install lupa
+cd <repo root>                 # required: harness.lua loads by relative path
+python3 -c "import lupa.lua51 as l; \
+  l.LuaRuntime(unpack_returned_tuples=True).execute(open('Tools/harness.lua').read())"
+```
+
+`os.exit(1)` on failure exits the Python process with status 1, so it works as a
+CI gate unchanged.
+
+### Mutation-test the assertions
+
+A check that cannot fail is worse than no check, because it is also a claim. The
+routine that has caught the most here is: break the thing on purpose, one edit at
+a time, and confirm the harness goes red. Every `== bags:` block was written that
+way -- 31 deliberate breakages, all caught -- and three of the assertions were
+rewritten because the first version of them passed against the broken code. One
+compared two values that came from the same suspect source and therefore always
+agreed with itself; two others tested a state the scenario never actually
+reached.
+
+**When a mutation is NOT caught, check whether the scenario reaches that code at
+all before concluding the guard works.**
 
 It catches the class of bug you cannot see by reading — nil field access, methods
 that don't exist on the widget type you used, file ordering, anchors pointing at
@@ -2203,6 +2235,155 @@ and `W.Restyle` are now nil-tolerant too: they are called from passes that walk
 whole collections of widgets, and not every member of a collection has every
 region. A missing font string there is a fact about the widget, not a reason to
 take the whole restyle down.
+
+## Bags
+
+`Modules/Bags.lua`, concept 5. One panel for the backpack and the four bags,
+sorted into categories, with the equipped bags and the keyring on a flyout off
+the right edge; at a banker the bank opens as a second panel to its left.
+
+A replacement, not a reskin -- Blizzard draws five independent `ContainerFrame`s
+that each remember their own position and each carry their own header, and there
+is no arrangement of those five that becomes a single categorised grid.
+
+### The item button is Blizzard's, and its OnClick is left alone
+
+`ContainerFrameItemButtonTemplate` is **not secure on Classic Era**. It inherits
+`ItemButtonTemplate` and nothing else (`Classic/ContainerFrame.xml:68`), and
+every one of its handlers is ordinary Lua. Left in place they give us use,
+equip, pick up, split, sell, shift-click-to-link and ctrl-click-to-dress-up, all
+correct, for nothing. Reimplementing that is a lot of code whose only possible
+outcome is being subtly wrong about one of them.
+
+What they ask in return is rigid:
+
+* `self:GetParent():GetID()` must be the **bag** id
+* `self:GetID()` must be the **slot** index
+* `self.hasItem` and `self.readable` must be kept up to date
+
+Hence the proxy frames: one invisible frame per bag, carrying that bag's id,
+covering the scroll child, parenting that bag's buttons. The buttons are
+*anchored* to the grid but *parented* to the proxy, which is legal and is the
+only way to have both a per-bag id and a per-category layout.
+
+Because nothing in the tree is secure, **the grid reflows in combat**. That is
+the opposite of the action bars, and it is only true for as long as no protected
+frame is ever parented in here. Do not put one in.
+
+### A button belongs to one slot for the life of the session
+
+Pooled by `(bag, slot)`, never by display position. A pool indexed by where a
+thing appears means a button's identity changes every time a category empties --
+which is the stale-index bug the quest log paid for, except this one moves items
+rather than showing the wrong text.
+
+### The bank is the one frame you must not hide
+
+`BankFrame_OnHide` calls `CloseBankFrame()`, and `CloseBankFrame` is what tells
+the **server** you have walked away from the banker. Blizzard's own handler also
+reads `if not self:IsShown() then CloseBankFrame() end` immediately after showing
+it. So hiding it ends the session it was opened for, and the bank comes back
+empty.
+
+It is therefore kept logically shown, its `OnHide` is nil'd, and it is reparented
+into a frame that is itself hidden. It also leaves `UIPanelWindows`, so the left
+panel slot is not reserved for something that will never be drawn -- with no
+entry there, `ShowUIPanel` short-circuits to a plain `Show()` and `IsShown()`
+stays true, which is what keeps Blizzard's guard happy.
+
+The mirror of that: **our** window's `OnHide` must call `CloseBankFrame()`. Not
+just our close paths -- `OnHide`, because the window is in `UISpecialFrames` and
+`CloseSpecialWindows` reaches it directly.
+
+Bank containers are `-1` and `NUM_BAG_SLOTS+1 .. NUM_BAG_SLOTS+NUM_BANKBAGSLOTS`
+-- **5..10** here. `Enum.BagIndex.BankBag_1` is 6 and is wrong on Era: it is the
+shared modern enum and assumes a reagent bag at 5 that this client does not have.
+
+### The toggle funnel is replaced, not hooked
+
+`ToggleAllBags`, `ToggleBackpack`, `ToggleBag`, `OpenBag`, `OpenBackpack`,
+`OpenAllBags`, `CloseAllBags`, `CloseBag`, `CloseBackpack` are all plain insecure
+globals, and every route into the bag UI goes through them -- the `B` key, the
+bag bar, shift-click on the backpack, and the merchant, mail and bank windows
+opening your bags for you.
+
+Replacing them beats hooking them for one specific reason: Blizzard's
+`ToggleAllBags` internally calls `OpenBackpack`, which calls `ToggleBackpack`,
+which calls `ToggleBag`. A hook on all nine fires six times for one keypress and
+the window toggles itself shut again. Bagnon filters that out afterwards by
+inspecting `debugstack()`. Replacing them means the inner calls never happen and
+the problem does not exist.
+
+`ToggleBag(id)` keeps its argument. Blizzard's bank calls `ToggleBag(5..10)` for
+its own bag slots, and answering that by toggling the *inventory* window is how
+clicking a bank bag closes your bags.
+
+### There is no SortBags on this client
+
+The only occurrence in the entire Era source tree is inside an XML comment on a
+button Blizzard disabled. So sorting is ours, and it does exactly one thing:
+**merge partial stacks**. It does not reorder. The grid is already sorted -- we
+decide the order it is drawn in -- so shuffling the physical bags buys the player
+nothing and costs them a hundred item moves they did not ask for. Merging stacks
+is the part that actually gives slots back.
+
+Three things it has to get right, all learned from Bagnon's `sorting.lua`:
+
+* **`ClearCursor()` before every pickup pair, not once per pass.** A merge that
+  overflows -- 18 linen onto 15, cap 20 -- leaves the remainder on the cursor,
+  and the next pair's first pickup then *drops* it into whatever slot it was
+  reaching for and picks up what was there instead. Nothing is destroyed; items
+  land in slots nobody chose.
+* **Pace it.** A move locks both slots until the server confirms, and a second
+  move on a locked slot is dropped silently rather than queued. One pass, wait
+  50ms, pass again, stop when a pass moves nothing.
+* **A ceiling, and a generation token.** A run that keeps finding work forever
+  means an assumption in here is wrong; 40 passes and it gives up, out loud.
+  `C_Timer.After` cannot be cancelled, so each run tags itself and an orphaned
+  timer from a stopped run finds a state that is no longer its own -- otherwise
+  restarting inside the 50ms step leaves two chains driving one sort.
+
+### Junk auto-sell is off, and every guard is ours
+
+There is no `SellItem` API. You sell by **using** an item while a merchant window
+is open -- the same call that, with no merchant open, uses it instead. So:
+
+* `MerchantFrame:IsShown()` is re-checked before **every** item, not once at the
+  start. The window can close mid-run.
+* `hasNoValue` is the authoritative "cannot be sold" flag. It is not the same
+  question as `sellPrice == 0`.
+* **Quest items are excluded**, even grey ones. Quality wins over class when
+  deciding where to *show* something -- a grey sword belongs under JUNK, because
+  you are looking at it to decide whether to sell it. It must not win when
+  deciding what to *spend*: a quest starter sold by an automatic sweep is a quest
+  you have to earn again.
+* A listed slot is revalidated **by itemID**, not by "whatever is in here is
+  grey". Over a run of several seconds the player can loot into a slot the sweep
+  has listed but not yet reached.
+* What it reports having earned is what actually sold, not what the list was
+  worth when it started. Those are different numbers the moment anything
+  interrupts it.
+
+It ships off. It is the only thing in the addon that spends the player's things,
+and the dimmed JUNK section is honest about what it *would* take without anybody
+having to switch it on to find out.
+
+### Two deliberate departures from the concept
+
+* **A FREE section.** The deck reports "22 slots free" in the footer and draws no
+  empty slots. But with no empty slot on screen there is nowhere to drop
+  something you are carrying, and moving an item out of the bank by dragging
+  becomes impossible. It is drawn, and it is a setting for anyone who wants the
+  concept's grid exactly.
+* **Sort compacts, it does not reorder** -- see above.
+
+### Still open
+
+Panel position is not persisted. `Bags:Show` anchors to `UIParent` once and
+nothing writes it back, because `Movers`' `SavePosition` is a file-local and a
+window that drags itself has no supported way to save. **`QuestLog` has exactly
+the same gap.** It is a Movers limitation, not a Bags one, and it should be
+fixed in both or neither.
 
 ## Deliberate omissions
 

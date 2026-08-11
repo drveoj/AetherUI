@@ -281,6 +281,51 @@ Config.defaults = {
 				enabled = true,
 			},
 
+			-- Concept 5. One window for the backpack, the four bags and, at a
+			-- banker, the bank and its own bags beside them. A replacement, not a
+			-- reskin: Blizzard draws five independent ContainerFrames that each
+			-- remember their own position, and there is no arrangement of those
+			-- that turns into a single categorised grid.
+			bags = {
+				enabled      = true,
+				hideBlizzard = true,
+
+				-- Eight columns of 44 is what makes the panel 442 wide, which is
+				-- the deck's number. Changing columns changes the window width;
+				-- nothing else has to move.
+				columns      = 8,
+				slotSize     = 44,
+				slotGap      = 6,
+
+				-- The panel hugs its contents, up to this. Past it the grid
+				-- scrolls on the wheel -- there is no bar, the concept has none.
+				maxHeight    = 720,
+
+				-- Which physical bag holds an item is invisible by design. This
+				-- puts it back for anyone who wants to see it, at the cost of the
+				-- whole idea.
+				grouped      = false,
+
+				showSearch   = true,
+				qualityRim   = true,
+				dimJunk      = true,
+				showKeyring  = true,
+
+				-- A FREE section at the foot of the grid. The concept does not
+				-- draw one -- it reports "22 slots free" in the footer and stops
+				-- there -- but with no empty slot on screen there is nowhere to
+				-- drop an item you are carrying, and moving something out of the
+				-- bank becomes impossible by drag. So it is drawn, and it is a
+				-- setting for anyone who wants the concept's grid exactly.
+				showEmpty    = true,
+
+				-- Off by default, and it stays off until it is asked for. This
+				-- setting sells things. The dimmed JUNK section is honest about
+				-- what would go without it, so nobody has to switch it on to find
+				-- out what it would have done.
+				junkAutoSell = false,
+			},
+
 			-- A round map with a frosted rim and a glass pill under it carrying
 			-- the zone, your coordinates and the time. Everything Blizzard hangs off
 			-- the minimap goes, except mail: zoom moves to the wheel and tracking to

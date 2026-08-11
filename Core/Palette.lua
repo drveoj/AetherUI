@@ -103,6 +103,40 @@ Palette.skins = {
 		dangerEdge  = C(255, 138, 120, 0.30),
 		dangerHover = C(255, 138, 120, 0.12),
 
+		-- Bags. The bank is a second window of the same anatomy, told apart by a
+		-- blue accent rather than by its shape. Modelled on the info/infoBg/
+		-- infoEdge triple, which is already this skin's blue "tag" family --
+		-- deliberately NOT on `cast`, whose #8ec8ff it shares to a digit, because
+		-- cast means "a spell is going off" and would drag the bank with it the
+		-- next time the cast bar is retuned.
+		bankAccent  = C(142, 200, 255, 1.00),
+		bankBg      = C(140, 200, 255, 0.16),
+		bankEdge    = C(140, 200, 255, 0.34),
+
+		-- Poor-quality items are dimmed rather than hidden: still there, still
+		-- clickable, visibly not worth the space. junkTint is a VERTEX colour on
+		-- the icon (there is no grayscale filter in this UI, so desaturation plus
+		-- a grey multiply is the nearest thing), junkText is the section's ink.
+		junkTint    = C(150, 150, 150, 0.42),
+		junkText    = C(220, 210, 255, 0.38),
+
+		-- Item quality rims, softer than Blizzard's. The deck tunes these to sit
+		-- on a dark frosted panel rather than on Blizzard's opaque slate, so they
+		-- are its numbers, not ITEM_QUALITY_COLORS'.
+		--
+		-- `edge` is the 1px rim; `glow` is the outer bloom, and only rare and
+		-- above have one -- that is what makes a purple readable at a glance in a
+		-- grid of eighty. nil glow means no bloom, which is not the same as a
+		-- transparent one.
+		itemQuality = {
+			[0] = { edge = C(157, 157, 157, 0.55) },                                  -- poor
+			[1] = { edge = C(255, 255, 255, 0.30) },                                  -- common
+			[2] = { edge = C(111, 220, 127, 0.85) },                                  -- uncommon
+			[3] = { edge = C(111, 168, 255, 0.90), glow = C(111, 168, 255, 0.35) },   -- rare
+			[4] = { edge = C(180, 127, 255, 0.90), glow = C(180, 127, 255, 0.45) },   -- epic
+			[5] = { edge = C(255, 168,  92, 0.90), glow = C(255, 168,  92, 0.45) },   -- legendary
+		},
+
 		-- A modal is the one surface that must NOT be glass. Frosted-on-frosted
 		-- over a lit world is unreadable, and a confirmation nobody can read is
 		-- worse than no confirmation. Near-opaque, with a scrim behind it.
@@ -201,6 +235,27 @@ Palette.skins = {
 		dangerText  = C(255, 212, 200, 1.00),
 		dangerEdge  = C(255, 180, 160, 0.55),
 		dangerHover = C(255, 160, 140, 0.18),
+
+		-- Bags. Same triple as info/infoBg/infoEdge above: on a pale panel the
+		-- blue has to be the INK and the fill has to be near-solid, or the chip
+		-- reads as a smudge.
+		bankAccent  = C( 18,  56,  78, 1.00),
+		bankBg      = C(190, 228, 255, 0.85),
+		bankEdge    = C(255, 255, 255, 0.45),
+
+		junkTint    = C(120, 116, 112, 0.45),
+		junkText    = C(255, 255, 255, 0.42),
+
+		-- Deepened against a pale fill. The hues are the deck's; the values are
+		-- not, because a light green rim on a near-white panel is not a rim.
+		itemQuality = {
+			[0] = { edge = C(120, 120, 120, 0.60) },
+			[1] = { edge = C( 90,  86,  80, 0.35) },
+			[2] = { edge = C( 34, 148,  62, 0.90) },
+			[3] = { edge = C( 30, 108, 208, 0.95), glow = C( 60, 140, 232, 0.30) },
+			[4] = { edge = C(124,  56, 208, 0.95), glow = C(150,  90, 232, 0.38) },
+			[5] = { edge = C(206, 108,  16, 0.95), glow = C(232, 148,  56, 0.38) },
+		},
 
 		-- The modal stays dark on both skins. It sits over the chrome rather than
 		-- over the world, and the light button text works unchanged on either.

@@ -174,6 +174,8 @@ end
 local function newTexture(owner, layer, sub)
 	local t = widgetBase("Texture")
 	t.__layer, t.__sub = layer, sub
+	function t:SetDrawLayer(l, s2) self.__layer, self.__sub = l, s2 end
+	function t:GetDrawLayer() return self.__layer, self.__sub end
 	function t:SetTexture(path) self.__tex = path end
 	function t:GetTexture() return self.__tex end
 	function t:GetTexCoord()
@@ -217,6 +219,12 @@ end
 
 local function newFontString(owner, layer)
 	local f = widgetBase("FontString")
+	f.__layer = layer
+	-- Real FontStrings and Textures both carry this. Anything drawn on top of
+	-- another region in the same layer needs it, and a mock without it turns a
+	-- legitimate call into a nil-index at draw time.
+	function f:SetDrawLayer(l, sub) self.__layer, self.__sub = l, sub end
+	function f:GetDrawLayer() return self.__layer, self.__sub end
 	function f:SetFont(path, size, flags)
 		if type(path) ~= "string" then fail("SetFont path " .. tostring(path)) return false end
 		if type(size) ~= "number" then fail("SetFont size " .. tostring(size)) return false end
@@ -1001,7 +1009,26 @@ function C_Timer.NewTicker(interval, fn, iterations)
 	_G.__tickers[#_G.__tickers + 1] = t
 	return t
 end
-function C_Timer.After(_, fn) fn() end
+--- Deferred, not inline.
+--
+--  C_Timer.After running its callback immediately is a fixture that LIES: in
+--  the client it lands on a later frame, and anything that paces itself with it
+--  -- moving items, selling items -- would recurse straight through its own
+--  pacing here and the test would prove the opposite of what it claims.
+_G.__pending = {}
+function C_Timer.After(_, fn) _G.__pending[#_G.__pending + 1] = fn end
+
+--- Run whatever After has queued, up to `rounds` times. Each round drains the
+--  queue as it stood at the start, so a callback that queues another one is
+--  advanced by exactly one step per round.
+function _G.__drainTimers(rounds)
+	for _ = 1, rounds or 1 do
+		local queue = _G.__pending
+		if #queue == 0 then return end
+		_G.__pending = {}
+		for _, fn in ipairs(queue) do fn() end
+	end
+end
 --- Run every live ticker once, the way the client would.
 function _G.__tick()
 	for _, t in ipairs(_G.__tickers) do
@@ -1263,6 +1290,7 @@ _G.QuestLogFrame:Hide()
 
 _G.UIPanelWindows = {
 	QuestLogFrame = { area = "left", pushable = 0, width = 353, height = 424 },
+	BankFrame = { area = "left", pushable = 6, width = 353, height = 424 },
 }
 _G.UISpecialFrames = {}
 
@@ -1271,6 +1299,275 @@ function _G.QuestLogMicroButton:SetButtonState(state) self.__state = state end
 
 _G.__blizzToggled = 0
 function ToggleQuestLog() _G.__blizzToggled = _G.__blizzToggled + 1 end
+
+-- containers ----------------------------------------------------------------
+--
+-- The bags fixture. Modelled on __questLog: a plain table of what is really in
+-- each container, plus a reading layer that answers the way the CLIENT answers
+-- rather than the way the table is written.
+--
+-- The reading layer is the point. C_Container.GetContainerItemInfo returns a
+-- TABLE on 1.15, not the legacy tuple, and it returns NOTHING AT ALL for a bank
+-- container while the bank is shut -- "the items are still in my table" is
+-- exactly the assumption that draws a bank you cannot see.
+
+NUM_BAG_SLOTS       = 4
+NUM_BANKBAGSLOTS    = 6
+NUM_BANKGENERIC_SLOTS = 24
+BACKPACK_CONTAINER  = 0
+BANK_CONTAINER      = -1
+KEYRING_CONTAINER   = -2
+NUM_CONTAINER_FRAMES = 13
+ITEM_INVENTORY_BANK_BAG_OFFSET = 4
+
+Enum = _G.Enum or {}
+Enum.BagIndex = { Backpack = 0, Bank = -1, Keyring = -2, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4 }
+Enum.ItemClass = {
+	Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5,
+	Projectile = 6, Tradegoods = 7, ItemEnhancement = 8, Recipe = 9,
+	Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15,
+}
+Enum.ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 }
+
+-- itemID -> { name, classID, subclassID, quality, maxStack, sellPrice, icon }
+_G.__items = {
+	[6948]  = { "Hearthstone",        15, 0, 1, 1,   0,    "hearth.tga" },
+	[2589]  = { "Linen Cloth",         7, 5, 1, 20,  15,   "linen.tga"  },
+	[2592]  = { "Wool Cloth",          7, 5, 1, 20,  40,   "wool.tga"   },
+	[159]   = { "Refreshing Water",    0, 0, 1, 20,  5,    "water.tga"  },
+	[117]   = { "Tough Jerky",         0, 0, 1, 20,  6,    "jerky.tga"  },
+	[7005]  = { "Skinning Knife",      2, 0, 1, 1,   85,   "knife.tga"  },
+	[2381]  = { "Wooden Maul",         2, 4, 2, 1,  1200,  "maul.tga"   },
+	[10250] = { "Councillor's Robe",   4, 1, 3, 1,  9000,  "robe.tga"   },
+	[19019] = { "Thunderfury",         2, 7, 5, 1, 100000, "tf.tga"     },
+	[2251]  = { "Grinding Stone",      7, 5, 1, 10,  50,   "stone.tga"  },
+	[3300]  = { "Rabbit's Foot",      15, 0, 0, 1,   30,   "foot.tga"   },
+	[1183]  = { "Chipped Claw",       15, 0, 0, 1,   12,   "claw.tga"   },
+	[5758]  = { "Worthless Rock",     15, 0, 0, 1,   0,    "rock.tga"   },
+	[4306]  = { "Silk Cloth",          7, 5, 1, 20,  90,   "silk.tga"   },
+	[1266]  = { "Battered Journal",   12, 0, 1, 1,   0,    "journal.tga"},
+	[5976]  = { "Guild Tabard",        4, 0, 1, 1,   10,   "tabard.tga" },
+	[1424]  = { "Rusty Key",          13, 0, 1, 1,   0,    "key.tga"    },
+	-- Grey AND a quest item. It files under JUNK, because quality wins when
+	-- deciding where something is shown -- and it must never be sold, because
+	-- quality must NOT win when deciding what to spend.
+	[9901]  = { "Cracked Talisman",   12, 0, 0, 1,   5,    "talis.tga"  },
+}
+
+-- { itemID, count } per slot; a nil entry is an empty slot.
+_G.__bags = {
+	[0]  = { size = 8, slots = {
+		[1] = { 6948, 1 }, [2] = { 2589, 12 }, [3] = { 159, 20 },
+		[4] = { 3300, 1 }, [6] = { 2589, 5 },  [7] = { 10250, 1 },
+	} },
+	[1]  = { size = 6, slots = {
+		[1] = { 2592, 8 }, [2] = { 2592, 3 }, [3] = { 117, 20 },
+		[4] = { 1183, 1 }, [5] = { 19019, 1 },
+	} },
+	[2]  = { size = 4, slots = { [1] = { 2381, 1 }, [2] = { 5758, 1 },
+		[4] = { 9901, 1 } } },
+	[3]  = { size = 0, slots = {} },
+	[4]  = { size = 0, slots = {} },
+	[-2] = { size = 2, slots = { [1] = { 1424, 1 } } },
+	[-1] = { size = 6, slots = {
+		[1] = { 4306, 20 }, [2] = { 2251, 4 }, [3] = { 5976, 1 }, [4] = { 1266, 1 },
+	} },
+	[5]  = { size = 4, slots = { [1] = { 4306, 6 } } },
+}
+
+_G.__atBank = false
+_G.__bankSlotsBought = 1
+_G.__pickups = {}
+_G.__used = {}
+
+local function bagOpen(bag)
+	if bag == -1 or bag >= NUM_BAG_SLOTS + 1 then return _G.__atBank end
+	return true
+end
+
+C_Container = {}
+
+function C_Container.GetContainerNumSlots(bag)
+	local b = _G.__bags[bag]
+	if not b or not bagOpen(bag) then return 0 end
+	return b.size
+end
+
+function C_Container.GetContainerItemInfo(bag, slot)
+	local b = _G.__bags[bag]
+	if not b or not bagOpen(bag) then return nil end
+	local e = b.slots[slot]
+	if not e then return nil end
+	local it = _G.__items[e[1]]
+	if not it then return nil end
+	return {
+		iconFileID = it[7], stackCount = e[2], isLocked = e.locked or false,
+		quality = it[4], isReadable = false, hasLoot = false,
+		hyperlink = "|cffffffff|Hitem:" .. e[1] .. "|h[" .. it[1] .. "]|h|r",
+		isFiltered = false, hasNoValue = (it[6] == 0), itemID = e[1],
+		isBound = false, itemName = it[1],
+	}
+end
+
+function C_Container.GetContainerItemLink(bag, slot)
+	local info = C_Container.GetContainerItemInfo(bag, slot)
+	return info and info.hyperlink
+end
+
+function C_Container.GetContainerNumFreeSlots(bag)
+	local b = _G.__bags[bag]
+	if not b or not bagOpen(bag) then return 0, 0 end
+	local n = 0
+	for i = 1, b.size do if not b.slots[i] then n = n + 1 end end
+	return n, b.family or 0
+end
+
+function C_Container.GetContainerItemQuestInfo(bag, slot)
+	local info = C_Container.GetContainerItemInfo(bag, slot)
+	local it = info and _G.__items[info.itemID]
+	local isQuest = it and it[2] == 12 or false
+	return { isQuestItem = isQuest, questID = nil, isActive = false }
+end
+
+function C_Container.GetContainerItemCooldown() return 0, 0, 0 end
+function C_Container.ContainerIDToInventoryID(bag) return bag > 0 and (19 + bag) or nil end
+
+-- A real cursor. Recording the calls and stopping there would let a sort that
+-- moves nothing look identical to one that works, and would let a sort that
+-- never terminates pass -- which is exactly what the first version of this
+-- fixture did.
+_G.__cursor = nil
+
+function C_Container.PickupContainerItem(bag, slot)
+	_G.__pickups[#_G.__pickups + 1] = { bag, slot }
+	local b = _G.__bags[bag]
+	if not b then return end
+	local cur = _G.__cursor
+
+	if not cur then
+		local e = b.slots[slot]
+		if e then
+			_G.__cursor = { bag = bag, slot = slot, id = e[1], count = e[2] }
+			b.slots[slot] = nil
+		end
+		return
+	end
+
+	local e = b.slots[slot]
+	_G.__cursor = nil
+	if not e then
+		b.slots[slot] = { cur.id, cur.count }
+	elseif e[1] == cur.id then
+		local it = _G.__items[e[1]]
+		local room = (it and it[5] or 1) - e[2]
+		local moved = math.min(room, cur.count)
+		e[2] = e[2] + moved
+		if moved < cur.count then
+			_G.__bags[cur.bag].slots[cur.slot] = { cur.id, cur.count - moved }
+		end
+	else
+		b.slots[slot] = { cur.id, cur.count }
+		_G.__bags[cur.bag].slots[cur.slot] = { e[1], e[2] }
+	end
+end
+
+--- On this client you sell by USING an item while a merchant is open. With no
+--  merchant open the same call uses it instead, which is why the module checks
+--  every step and why the fixture models both.
+function C_Container.UseContainerItem(bag, slot)
+	_G.__used[#_G.__used + 1] = { bag, slot }
+	if _G.MerchantFrame and _G.MerchantFrame:IsShown() then
+		local b = _G.__bags[bag]
+		if b then b.slots[slot] = nil end
+	end
+end
+function C_Container.SplitContainerItem() end
+
+C_Item = {}
+function C_Item.GetItemInfoInstant(id)
+	local it = _G.__items[id]
+	if not it then return nil end
+	-- itemID, itemType, itemSubType, itemEquipLoc, icon, classID, subclassID
+	return id, "type", "subtype", "", it[7], it[2], it[3]
+end
+function C_Item.GetItemInfo(id)
+	if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) end
+	local it = _G.__items[id]
+	if not it then return nil end
+	-- name, link, quality, level, minLevel, type, subType, stackCount,
+	-- equipLoc, texture, sellPrice, classID, subclassID, ...
+	return it[1], "|Hitem:" .. id .. "|h[" .. it[1] .. "]|h", it[4], 1, 1,
+		"type", "subtype", it[5], "", it[7], it[6], it[2], it[3], 0
+end
+function C_Item.GetItemFamily() return 0 end
+GetItemInfo, GetItemInfoInstant = C_Item.GetItemInfo, C_Item.GetItemInfoInstant
+
+ITEM_QUALITY_COLORS = {}
+for i = 0, 5 do ITEM_QUALITY_COLORS[i] = { r = 1, g = 1, b = 1 } end
+
+function HasKey() return true end
+function GetKeyRingSize() return _G.__bags[-2].size end
+function KeyRingButtonIDToInvSlotID(slot) return 80 + slot end
+function BankButtonIDToInvSlotID(id) return 60 + id end
+
+function GetNumBankSlots() return _G.__bankSlotsBought, false end
+function GetBankSlotCost(n) return 100000 * ((n or _G.__bankSlotsBought) + 1) end
+_G.__purchased = 0
+function PurchaseSlot() _G.__purchased = _G.__purchased + 1 end
+_G.__bankClosed = 0
+function CloseBankFrame() _G.__bankClosed = _G.__bankClosed + 1 _G.__atBank = false end
+
+function GetInventoryItemTexture(_, slot) return "bag" .. tostring(slot) .. ".tga" end
+function GetInventoryItemLink(_, slot) return "|Hitem:1|h[Traveler's Pack]|h" end
+function GetInventoryItemID() return 1 end
+function IsInventoryItemLocked() return false end
+function PickupBagFromSlot() end
+function PutItemInBag() end
+function PutItemInBackpack() end
+function PutKeyInKeyRing() end
+function CursorHasItem() return _G.__cursor ~= nil end
+function ClearCursor()
+	local cur = _G.__cursor
+	if cur then
+		_G.__bags[cur.bag].slots[cur.slot] = { cur.id, cur.count }
+		_G.__cursor = nil
+	end
+end
+function CooldownFrame_Set() end
+function HandleModifiedItemClick() end
+
+-- Blizzard's container frames and the bank, carrying the events they really
+-- register. Hiding a container frame is not enough on its own, and BankFrame is
+-- the one frame in the game that must NOT be hidden -- its OnHide ends the
+-- banker session -- so the fixture keeps a real OnHide for the module to
+-- neutralise.
+for i = 1, NUM_CONTAINER_FRAMES do
+	local f = CreateFrame("Frame", "ContainerFrame" .. i, UIParent)
+	f:RegisterEvent("BAG_UPDATE")
+	f:Hide()
+end
+
+_G.__bankOnHideRan = 0
+_G.BankFrame = CreateFrame("Frame", "BankFrame", UIParent)
+_G.BankFrame:SetScript("OnHide", function()
+	_G.__bankOnHideRan = _G.__bankOnHideRan + 1
+	CloseBankFrame()
+end)
+_G.BankFrame.selectedTab = 1
+
+_G.MerchantFrame = CreateFrame("Frame", "MerchantFrame", UIParent)
+_G.MerchantFrame:Hide()
+
+_G.__bagToggled = 0
+function ToggleAllBags() _G.__bagToggled = _G.__bagToggled + 1 end
+function ToggleBackpack() _G.__bagToggled = _G.__bagToggled + 1 end
+function ToggleBag() _G.__bagToggled = _G.__bagToggled + 1 end
+function OpenAllBags() end
+function CloseAllBags() end
+function OpenBackpack() end
+function CloseBackpack() end
+function OpenBag() end
+function CloseBag() end
 
 -- xp ------------------------------------------------------------------------
 _G.__xp, _G.__xpMax, _G.__rested = 8600, 10000, 1200
@@ -1961,7 +2258,7 @@ for _, f in ipairs({
 	"Core/Widgets.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
-	"Modules/QuestTracker.lua", "Modules/QuestLog.lua",
+	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
 	"Modules/Chat.lua",
 	"Modules/Zen.lua",
@@ -6871,6 +7168,762 @@ do
 	check((trow.chip.text.__shadow or {})[4] == 0.55,
 		"back on midnight the light digits get the shadow back")
 	QLog:Hide()
+end
+
+-- ---------------------------------------------------------------------------
+-- bags
+--
+-- The failure modes here are expensive in a way the quest log's were not: this
+-- module MOVES ITEMS. A stale index in the quest log shows the wrong text; a
+-- stale index here sells the wrong thing. So the checks lean hardest on
+-- identity (a button is bound to one slot forever), on the guards around the
+-- two destructive paths, and on the bank -- which is the only container in the
+-- game that stops answering while you are looking at it.
+-- ---------------------------------------------------------------------------
+
+local Bg = A:GetModule("bags")
+
+print("== bags: taking over from Blizzard ==")
+do
+	check(Bg and Bg.enabled, "bags module enabled")
+	check(Bg.frames and Bg.frames.bags, "the inventory window is built at login, not"
+		.. " on first use - creating frames in combat is blocked")
+	check(Bg.frames.bags:GetName() == "AetherUIBags", "and it has a global name, so"
+		.. " UISpecialFrames can address it")
+	check(not Bg.frames.bags:IsShown(), "and starts closed")
+
+	-- The expensive one for containers is not visibility, it is events: a merely
+	-- hidden ContainerFrame still answers BAG_UPDATE.
+	check(not _G.ContainerFrame1:IsEventRegistered("BAG_UPDATE"),
+		"Blizzard's container frames are UNREGISTERED, not just hidden")
+	check(not _G.ContainerFrame1:IsShown(), "and hidden as well")
+	check(_G.ContainerFrame1:GetScript("OnShow") ~= nil,
+		"with an OnShow hook, so anything that shows one bounces")
+	check(_G.ContainerFrame1.__aetherSuppress == true,
+		"and the hook is gated on a FLAG, because a HookScript can never be"
+		.. " removed and one left armed looks like 'my bags stopped opening'")
+
+	local found = false
+	for _, n in ipairs(_G.UISpecialFrames) do if n == "AetherUIBags" then found = true end end
+	check(found, "and it is in UISpecialFrames, which other addons walk")
+end
+
+print("== bags: the BankFrame is parked, never hidden ==")
+do
+	-- Blizzard's BankFrame_OnHide calls CloseBankFrame(), and CloseBankFrame is
+	-- what tells the SERVER you have walked away from the banker. Hiding it ends
+	-- the session it was opened for.
+	check(_G.BankFrame:GetScript("OnHide") == nil,
+		"BankFrame's OnHide is neutralised - it calls CloseBankFrame(), which"
+		.. " ends the banker session the moment the frame is hidden")
+	check(_G.BankFrame:GetParent() == Bg.hidden,
+		"and it is reparented into a hidden frame rather than hidden itself, so"
+		.. " it stays logically shown and nothing is drawn")
+	check(Bg.hidden and not Bg.hidden:IsShown(), "and that frame really is hidden")
+	check(_G.UIPanelWindows["BankFrame"] == nil,
+		"and it leaves the panel manager, or the left slot stays reserved")
+	check(_G.__bankOnHideRan == 0,
+		"and nothing has run its OnHide even once (" .. _G.__bankOnHideRan .. ")")
+end
+
+print("== bags: the toggle funnel is replaced, not hooked ==")
+do
+	local before = _G.__bagToggled
+	_G.ToggleAllBags()
+	check(Bg.frames.bags:IsShown(), "ToggleAllBags opens our window")
+	check(_G.__bagToggled == before,
+		"and Blizzard's body never runs - it is REPLACED, not hooked, because"
+		.. " its ToggleAllBags calls OpenBackpack calls ToggleBackpack calls"
+		.. " ToggleBag, so a hook on all of them fires six times per keypress")
+	_G.ToggleAllBags()
+	check(not Bg.frames.bags:IsShown(), "and toggles it shut again")
+end
+
+print("== bags: one unified grid, categorised ==")
+do
+	Bg:Show()
+	local f = Bg.frames.bags
+	check(f:IsShown(), "the window opens")
+	check(f.drawn, "and draws on OnShow")
+
+	-- 8 + 6 + 4 slots across bags 0..2, nothing in 3 and 4.
+	check(f.total == 18, "it counts every slot in every bag as one pool (" .. tostring(f.total) .. ")")
+	check(f.used == 14, "and every occupied one (" .. tostring(f.used) .. ")")
+
+	-- Which physical bag holds an item must be invisible. Wool Cloth lives in
+	-- bag 1 and Linen in bag 0; both are trade goods and must sit together.
+	local trade = {}
+	for bag, row in pairs(f.buttons) do
+		for slot, b in pairs(row) do
+			if b:IsShown() and b.info and (b.info.itemID == 2589 or b.info.itemID == 2592) then
+				trade[#trade + 1] = bag
+			end
+		end
+	end
+	check(#trade == 4, "cloth from two different bags is all on screen (" .. #trade .. ")")
+
+	local bags = {}
+	for _, bag in ipairs(trade) do bags[bag] = true end
+	check(bags[0] and bags[1],
+		"and it comes from bags 0 and 1 both - which physical bag holds an item"
+		.. " is invisible, which is the whole idea")
+
+	-- Junk is its own section and is dimmed, not hidden.
+	local junk, dimmed = 0, 0
+	for _, row in pairs(f.buttons) do
+		for _, b in pairs(row) do
+			if b:IsShown() and b.info and b.info.quality == 0 then
+				junk = junk + 1
+				if b:GetAlpha() < 1 then dimmed = dimmed + 1 end
+			end
+		end
+	end
+	check(junk == 4, "four poor-quality items are on screen (" .. junk .. ")")
+	check(dimmed == junk,
+		"and every one of them is dimmed rather than removed - it stays"
+		.. " clickable and stays where it is, so selling it is still one gesture")
+end
+
+print("== bags: an item button is bound to one slot, forever ==")
+do
+	local f = Bg.frames.bags
+	local b = f.buttons[0][2]
+	check(b:GetID() == 2, "the button's own id is the SLOT")
+
+	-- Checked on a bag that is NOT zero, deliberately. Asserting bag 0 against
+	-- GetID() == 0 is a test that passes when every proxy carries the same id,
+	-- which is precisely the bug it exists to catch.
+	local b1 = f.buttons[1][1]
+	check(b1:GetParent():GetID() == 1,
+		"and its parent's id is the BAG - Blizzard's own handlers read the bag"
+		.. " off GetParent():GetID(), which is why the proxy frames exist")
+	check(b:GetParent():GetID() == 0 and b1:GetParent():GetID() == 1,
+		"and two buttons in different bags report different parents (0 and 1)")
+
+	check(b.hasItem == true,
+		"and hasItem is maintained, because the template's OnEnter and OnClick"
+		.. " both read it off the button")
+	local empty = f.buttons[0][5]
+	check(empty.hasItem == nil, "while an empty slot's is cleared, not left set")
+
+	-- Re-pool it and confirm it is the same object with the same identity.
+	Bg:Rebuild(f)
+	check(f.buttons[0][2] == b, "a redraw returns the same button object")
+	check(b:GetID() == 2 and b:GetParent():GetID() == 0,
+		"still bound to bag 0 slot 2 - pooling is by (bag, slot), never by"
+		.. " display position, so no button can ever address a different item")
+end
+
+print("== bags: typing filters without moving anything ==")
+do
+	local f = Bg.frames.bags
+	local before = _G.__frameCount()
+
+	local function positions()
+		local t = {}
+		for bag, row in pairs(f.buttons) do
+			for slot, b in pairs(row) do
+				if b:IsShown() then
+					local p, _, _, x, y = b:GetPoint()
+					t[bag .. ":" .. slot] = tostring(x) .. "," .. tostring(y)
+				end
+			end
+		end
+		return t
+	end
+
+	local was = positions()
+	f.search.box:SetText("cloth")
+	local now = positions()
+
+	local moved = 0
+	for k, v in pairs(was) do if now[k] ~= v then moved = moved + 1 end end
+	check(moved == 0,
+		"filtering moves nothing - a grid whose cells shift under the cursor"
+		.. " while you type keeps changing the address of the thing you are"
+		.. " hunting for (" .. moved .. " moved)")
+
+	local lit, dim = 0, 0
+	for _, row in pairs(f.buttons) do
+		for _, b in pairs(row) do
+			if b:IsShown() and b.info then
+				if b:GetAlpha() >= 0.9 then lit = lit + 1 else dim = dim + 1 end
+			end
+		end
+	end
+	check(lit == 4, "four cloth stacks stay lit (" .. lit .. ")")
+	check(dim > 0, "and everything else is dimmed rather than hidden (" .. dim .. ")")
+
+	for _, s in ipairs({ "cl", "c", "", "wool", "" }) do f.search.box:SetText(s) end
+	check(_G.__frameCount() == before,
+		"and typing leaks no frames at all - WoW never frees one, and this grid"
+		.. " is eighty buttons (" .. _G.__frameCount() .. " vs " .. before .. ")")
+end
+
+print("== bags: a closed window is never drawn ==")
+do
+	local f = Bg.frames.bags
+	Bg:Hide()
+	f.drawn = false
+	Bg:Invalidate()
+	Bg:Flush()
+	check(not f.drawn,
+		"a rebuild queued against a closed window does nothing - at a banker the"
+		.. " bank's containers answer for a session that can end at any moment")
+	-- And Rebuild refuses on its own, not only because Flush filtered it out.
+	-- A restyle, a resolution change and OnConfigChanged all call it directly.
+	Bg:Rebuild(f)
+	check(not f.drawn,
+		"and calling Rebuild on it directly is refused too - a guard that only"
+		.. " exists in the caller is a guard the next caller will not have")
+	check(f.dirty, "but it is remembered as dirty")
+	Bg:Show()
+	check(f.drawn, "and drawn the moment it opens")
+end
+
+print("== bags: it opens in combat ==")
+do
+	Bg:Hide()
+	_G.__inCombat = true
+	Bg:Show()
+	check(Bg.frames.bags:IsShown(),
+		"the window opens mid-fight - nothing here is a secure template, and"
+		.. " ShowUIPanel is combat-blocked and fails SILENTLY on this client")
+	Bg:Rebuild(Bg.frames.bags)
+	check(Bg.frames.bags.drawn, "and the grid still reflows")
+	_G.__inCombat = false
+end
+
+print("== bags: escape is not an input trap ==")
+do
+	local f = Bg.frames.bags
+	f:GetScript("OnKeyDown")(f, "W")
+	check(f.__propagate == true,
+		"a key we do not act on is propagated - swallowing everything is a"
+		.. " total input lockout: no movement, no keybinds, no chat")
+	f:GetScript("OnKeyDown")(f, "ESCAPE")
+	check(f.__propagate == false, "and escape is swallowed")
+	check(not f:IsShown(), "and closes the window")
+	f:GetScript("OnKeyDown")(f, "SPACE")
+	check(f.__propagate == true, "and propagation is restored on the next key -"
+		.. " the client resets the flag per event, so it has to be re-asserted")
+end
+
+print("== bags: the bank only exists while you are at it ==")
+do
+	check(C_Container.GetContainerNumSlots(-1) == 0,
+		"away from the banker the bank answers with nothing at all - 'the items"
+		.. " are still in my table' is how you draw a bank you cannot see")
+
+	_G.__atBank = true
+	_G.__bankClosed = 0
+	fire("BANKFRAME_OPENED")
+
+	local bank = Bg.frames.bank
+	check(bank and bank:IsShown(), "BANKFRAME_OPENED opens the bank window")
+	check(bank:GetName() == "AetherUIBank", "as its own panel")
+	check(Bg.frames.bags:IsShown(), "and the bags window with it, for drag-between")
+
+	local p, rel, relP = bank:GetPoint()
+	check(p == "TOPRIGHT" and relP == "TOPLEFT" and rel == Bg.frames.bags,
+		"anchored to the bags window rather than to the screen, so dragging one"
+		.. " moves the pair and the gap survives")
+
+	-- -1 has 6 slots and bank bag 5 has 4, of which 1 is filled.
+	check(bank.total == 10, "it draws the bank container and the bank bags as one"
+		.. " pool (" .. tostring(bank.total) .. ")")
+	check(bank.used == 5, "and counts what is in them (" .. tostring(bank.used) .. ")")
+
+	check(_G.__bankClosed == 0, "and nothing has closed the banker session")
+
+	-- The session can end without us: walking away, a disconnect, the NPC
+	-- despawning. When it does the window has to go, because everything in it
+	-- is about to start answering nil.
+	fire("BANKFRAME_CLOSED")
+	check(not bank:IsShown(), "and BANKFRAME_CLOSED takes the window away again")
+	check(not Bg.atBank, "and the module stops believing it is at a banker")
+	_G.__atBank = true
+	fire("BANKFRAME_OPENED")
+end
+
+print("== bags: closing the bank tells the server ==")
+do
+	_G.__bankClosed = 0
+	Bg:Hide()
+	check(not Bg.frames.bank:IsShown(), "closing the bags closes the bank with it")
+	check(_G.__bankClosed == 1,
+		"and calls CloseBankFrame exactly once - without it the character stays"
+		.. " flagged as standing at the banker (" .. _G.__bankClosed .. ")")
+	check(not Bg.atBank, "and the module stops believing it is there")
+
+	-- And by any other route. The window is in UISpecialFrames, and
+	-- CloseSpecialWindows reaches it directly rather than through our own close
+	-- path -- so the session has to end on OnHide, not on Bags:Hide.
+	_G.__atBank = true
+	_G.__bankClosed = 0
+	fire("BANKFRAME_OPENED")
+	Bg.frames.bank:Hide()
+	check(_G.__bankClosed == 1,
+		"and hiding the bank window directly ends the session too, because the"
+		.. " ESC list closes it without going through us (" .. _G.__bankClosed
+		.. ")")
+	_G.__atBank = false
+end
+
+print("== bags: buying a bank slot re-reads the price at the click ==")
+do
+	_G.__atBank = true
+	_G.__bankSlotsBought = 1
+	_G.__purchased = 0
+	fire("BANKFRAME_OPENED")
+
+	Bg:AskBuyBankSlot()
+	check(Bg.confirm and Bg.confirm:IsShown(), "the confirmation opens")
+	check(Bg.pendingSlot == 2, "and remembers WHICH slot was asked about")
+
+	-- The world moves while a modal sits open. A second client, a refund, a
+	-- patch - the number the dialog opened with is not the number at the click.
+	_G.__bankSlotsBought = 2
+	Bg:ConfirmBuyBankSlot()
+	check(_G.__purchased == 0,
+		"a slot bought elsewhere while the dialog was open cancels the purchase"
+		.. " rather than buying the NEXT one - the dialog asked about slot 2 and"
+		.. " slot 2 no longer exists to buy")
+
+	_G.__bankSlotsBought = 1
+	Bg:AskBuyBankSlot()
+	Bg:ConfirmBuyBankSlot()
+	check(_G.__purchased == 1, "and an unchanged world buys exactly one (" .. _G.__purchased .. ")")
+	check(not Bg.confirm:IsShown(), "and the dialog closes")
+	check(Bg.pendingSlot == nil, "and forgets what it was asking about")
+end
+
+print("== bags: only the next bank slot is buyable ==")
+do
+	_G.__atBank = true
+	_G.__bankSlotsBought = 1
+	fire("BANKFRAME_OPENED")
+	local tiles = Bg.frames.bank.foot.tiles
+
+	check(tiles[1]:IsShown(), "the one you own is drawn")
+	check(tiles[2]:IsShown() and tiles[2]:GetScript("OnClick") ~= nil,
+		"the next one is drawn with a price and is clickable")
+	check(tiles[3]:IsShown(),
+		"the one after it is drawn too, dimmer - 'and then this'")
+	check(tiles[3]:GetScript("OnClick") == nil,
+		"but it is INERT. PurchaseSlot takes no argument and Blizzard sells them"
+		.. " in order, so a click on it would buy the slot before it while"
+		.. " showing the price of the slot after")
+	check(not tiles[4]:IsShown(), "and nothing further ahead is shown at all")
+
+	Bg:Hide()
+	_G.__atBank = false
+end
+
+print("== bags: the confirmation is not an input trap ==")
+do
+	Bg:AskBuyBankSlot()
+	local dim = Bg.confirm
+	dim:GetScript("OnKeyDown")(dim, "W")
+	check(dim.__propagate == true, "a key the dialog does not act on is propagated")
+	dim:GetScript("OnKeyDown")(dim, "ESCAPE")
+	check(dim.__propagate == false and not dim:IsShown(), "and escape closes it")
+
+	Bg:AskBuyBankSlot()
+	dim:GetScript("OnMouseDown")(dim, "RightButton")
+	check(dim:IsShown(),
+		"a right-click outside does NOT dismiss it - an aimed camera drag would"
+		.. " otherwise cancel the dialog under the cursor")
+	dim:GetScript("OnMouseDown")(dim, "LeftButton")
+	check(not dim:IsShown(), "but a left-click does")
+end
+
+print("== bags: the modal is not glass ==")
+do
+	Bg:AskBuyBankSlot()
+	local box = Bg.confirm.box
+	check((box._fillColor[4] or 1) >= 0.9,
+		"the dialog is near-opaque (" .. string.format("%.2f", box._fillColor[4]) .. ") -"
+		.. " it sits over the chrome, not over the world, so it has nothing to be"
+		.. " translucent against")
+	local _, _, _, sa = Bg.confirm.scrim:GetVertexColor()
+	check((sa or 0) > 0.2,
+		"and a full-screen scrim is drawn behind it (" .. string.format("%.2f", sa or 0)
+		.. ") - that is what gives the dialog something to sit against, and it"
+		.. " says 'modal' without a word")
+	check(box._shadowOpacity == 1,
+		"with the full shadow whatever the profile says - that setting governs"
+		.. " ambient chrome, not modals")
+	Bg:CloseConfirm()
+	_G.__atBank = false
+	Bg:Hide()
+end
+
+print("== bags: sorting compacts stacks and never reorders ==")
+do
+	_G.__pickups = {}
+	_G.__pending = {}
+	Bg:Show()
+	local f = Bg.frames.bags
+
+	-- Wool is split 8 + 3 across bag 1 slots 1 and 2; linen is 12 + 5 across
+	-- bag 0 slots 2 and 6. Both stack to 20, so both should end up as one.
+	local freeBefore = select(1, C_Container.GetContainerNumFreeSlots(0))
+		+ select(1, C_Container.GetContainerNumFreeSlots(1))
+
+	Bg:StartSort(f)
+	_G.__drainTimers(20)
+
+	check(Bg.sorting == nil,
+		"it stops on its own once a pass moves nothing - a routine that moves"
+		.. " the player's items in a loop until they log out is much worse than"
+		.. " one that gives up")
+
+	local wool, linen = {}, {}
+	for slot = 1, _G.__bags[1].size do
+		local e = _G.__bags[1].slots[slot]
+		if e and e[1] == 2592 then wool[#wool + 1] = e[2] end
+	end
+	for slot = 1, _G.__bags[0].size do
+		local e = _G.__bags[0].slots[slot]
+		if e and e[1] == 2589 then linen[#linen + 1] = e[2] end
+	end
+
+	check(#wool == 1 and wool[1] == 11,
+		"two partial wool stacks became one of 11 (" .. #wool .. " stack(s))")
+	check(#linen == 1 and linen[1] == 17,
+		"and two partial linen stacks became one of 17 (" .. #linen .. " stack(s))")
+
+	local freeAfter = select(1, C_Container.GetContainerNumFreeSlots(0))
+		+ select(1, C_Container.GetContainerNumFreeSlots(1))
+	check(freeAfter == freeBefore + 2,
+		"which is two slots given back (" .. freeBefore .. " -> " .. freeAfter
+		.. ") - that is the entire point of the button; the grid is already"
+		.. " sorted by us, so reordering the physical bags buys nothing")
+
+	check(_G.__cursor == nil,
+		"and the cursor is empty at the end - an item left on it is an item the"
+		.. " next click drops somewhere nobody asked for")
+
+	-- Unstackables must be left where they are.
+	check(_G.__bags[0].slots[1] and _G.__bags[0].slots[1][1] == 6948,
+		"the Hearthstone never moved - it does not stack, so there is nothing"
+		.. " to compact and no reason to touch it")
+	check(_G.__bags[1].slots[5] and _G.__bags[1].slots[5][1] == 19019,
+		"and neither did Thunderfury")
+
+	-- Put the fixture back for the tests below.
+	_G.__bags[1].slots[1] = { 2592, 8 }
+	_G.__bags[1].slots[2] = { 2592, 3 }
+	_G.__bags[0].slots[2] = { 2589, 12 }
+	_G.__bags[0].slots[6] = { 2589, 5 }
+	Bg:Rebuild(f)
+end
+
+print("== bags: sorting refuses to run in combat ==")
+do
+	_G.__pickups = {}
+	_G.__pending = {}
+	_G.__inCombat = true
+	Bg.sorting = nil
+	Bg:StartSort(Bg.frames.bags)
+	check(#_G.__pickups == 0, "no items are moved while a fight is on")
+	check(Bg.sorting == nil, "and it does not leave itself half-started")
+	_G.__inCombat = false
+
+	-- The harder case: a fight starting DURING a run.
+	--
+	-- Refusing to begin is easy. A routine already walking the bags has to
+	-- notice too, and the only place it can notice is inside the pass -- so the
+	-- fixture is arranged to need MORE THAN ONE pass. Three wool stacks of 15,
+	-- 12 and 10 cannot fit in one: the first merge fills a stack to its cap of
+	-- 20 and pushes 7 back, and the leftovers need a second pass. That is what
+	-- makes "it stopped" distinguishable from "it had already finished".
+	_G.__bags[1].slots[1] = { 2592, 15 }
+	_G.__bags[1].slots[2] = { 2592, 12 }
+	_G.__bags[3].size = 4
+	_G.__bags[3].slots = { [1] = { 2592, 10 } }
+	_G.__pickups, _G.__pending = {}, {}
+	Bg.sorting = nil
+	Bg:StartSort(Bg.frames.bags)
+	local afterFirst = #_G.__pickups
+	check(afterFirst > 0, "a sort out of combat does start (" .. afterFirst .. ")")
+	check(#_G.__pending > 0, "and has more passes queued (" .. #_G.__pending .. ")")
+
+	_G.__inCombat = true
+	_G.__drainTimers(10)
+	check(#_G.__pickups == afterFirst,
+		"and a fight starting mid-run stops it where it stands (" .. #_G.__pickups
+		.. " vs " .. afterFirst .. ")")
+	check(Bg.sorting == nil, "and it lets go rather than waiting to resume")
+	_G.__inCombat = false
+
+	-- And the ceiling.
+	--
+	-- A pass that keeps finding work forever means an assumption here is wrong
+	-- -- most plausibly that the server confirms a move -- and an addon that
+	-- shuffles somebody's bags in a loop until they log out is far worse than
+	-- one that gives up. The fixture cannot produce that state (its pickups
+	-- really do merge, and the module binds C_Container at load, so it cannot
+	-- be stubbed out from here) so the counter is driven directly.
+	_G.__pickups, _G.__pending = {}, {}
+	_G.__bags[3].size = 4
+	_G.__bags[3].slots = { [1] = { 2592, 4 }, [2] = { 2592, 5 } }
+	Bg.sorting = { kind = "bags", passes = 40 }
+	Bg:SortPass()
+	check(Bg.sorting == nil,
+		"the pass ceiling stops a run that would otherwise never end")
+	check(#_G.__pickups == 0,
+		"and it stops before moving anything else (" .. #_G.__pickups .. ")")
+
+	-- One under the ceiling still works, so the guard is a ceiling and not an
+	-- off-by-one that quietly halves how much a sort is allowed to do.
+	_G.__pickups, _G.__pending = {}, {}
+	Bg.sorting = { kind = "bags", passes = 38 }
+	Bg:SortPass()
+	check(#_G.__pickups > 0, "while a pass under it runs normally ("
+		.. #_G.__pickups .. " pickups)")
+	Bg.sorting = nil
+
+	-- A timer from a stopped run must not drive the next one.
+	--
+	-- C_Timer.After cannot be cancelled, so stopping and restarting inside the
+	-- 50ms step leaves an orphan in flight. Left unguarded it runs a pass
+	-- against the new run's state, and from then on two chains drive one sort
+	-- at double the rate the server will accept moves.
+	_G.__pickups, _G.__pending = {}, {}
+	_G.__bags[3].size = 4
+	_G.__bags[3].slots = { [1] = { 2592, 10 } }
+	_G.__bags[1].slots[1] = { 2592, 15 }
+	_G.__bags[1].slots[2] = { 2592, 12 }
+	Bg.sorting = nil
+	Bg:StartSort(Bg.frames.bags)
+	local orphan = _G.__pending[1]
+	check(orphan ~= nil, "a run queues its next pass")
+	Bg:StopSort()
+
+	_G.__pending = {}
+	Bg.sorting = nil
+	Bg:StartSort(Bg.frames.bags)
+
+	-- Work is put back so that a pass firing now WOULD move something. Without
+	-- that, "the orphan did nothing" is indistinguishable from "there was
+	-- nothing left to do", which is how this test passes against no guard at
+	-- all.
+	_G.__bags[3].slots = { [1] = { 2592, 4 }, [2] = { 2592, 5 } }
+	local settled = #_G.__pickups
+	_G.__pending = {}
+	orphan()
+	check(#_G.__pickups == settled,
+		"and an orphan from the run before it does nothing at all, even with"
+		.. " work sitting there for it (" .. #_G.__pickups .. " vs " .. settled
+		.. ")")
+	Bg.sorting = nil
+
+	-- A dirty cursor at the start. Anything can be on it -- a half-finished
+	-- drag, a spell -- and picking up onto a full cursor DROPS what was there.
+	_G.__pickups, _G.__pending = {}, {}
+	_G.__bags[0].slots = { [1] = { 6948, 1 }, [2] = { 2589, 12 }, [3] = { 159, 20 },
+		[4] = { 3300, 1 }, [6] = { 2589, 5 }, [7] = { 10250, 1 } }
+	_G.__bags[1].slots = { [1] = { 2592, 8 }, [2] = { 2592, 3 }, [3] = { 117, 20 },
+		[4] = { 1183, 1 }, [5] = { 19019, 1 } }
+	_G.__bags[3].size = 4
+	_G.__bags[3].slots = { [1] = { 2592, 4 } }
+	_G.__cursor = { bag = 3, slot = 2, id = 2251, count = 2 }
+	Bg.sorting = nil
+	Bg:StartSort(Bg.frames.bags)
+	_G.__drainTimers(20)
+	check(_G.__cursor == nil, "a sort empties the cursor before it touches anything")
+	local back = _G.__bags[3].slots[2]
+	check(back and back[1] == 2251 and back[2] == 2,
+		"and what was on it goes back where it came from rather than being"
+		.. " dropped into whatever slot the sort happened to be looking at")
+
+	_G.__inCombat = false
+	_G.__cursor = nil
+	_G.__bags[3].size = 0
+	_G.__bags[3].slots = {}
+	_G.__bags[1].slots[1] = { 2592, 8 }
+	_G.__bags[1].slots[2] = { 2592, 3 }
+	_G.__bags[0].slots[2] = { 2589, 12 }
+	_G.__bags[0].slots[6] = { 2589, 5 }
+	Bg.sorting = nil
+end
+
+print("== bags: junk auto-sell is off, and guarded when on ==")
+do
+	local cfg = A.Config:Module("bags")
+	check(cfg.junkAutoSell == false,
+		"auto-sell ships OFF - it is the only thing here that spends the"
+		.. " player's items, and the dimmed JUNK section is honest about what it"
+		.. " would take without anybody having to switch it on to find out")
+
+	local list, value = Bg:JunkList()
+	check(#list == 2,
+		"the junk list is poor-quality items that HAVE a value (" .. #list .. ")")
+	local hasWorthless = false
+	for _, e in ipairs(list) do
+		local info = C_Container.GetContainerItemInfo(e.bag, e.slot)
+		if info.itemID == 5758 then hasWorthless = true end
+	end
+	check(not hasWorthless,
+		"and the Worthless Rock is not among them - hasNoValue is the"
+		.. " authoritative 'cannot be sold' flag, and is not the same question"
+		.. " as 'sellPrice is zero'")
+	check(value == 42, "with the total the vendor would pay (" .. value .. ")")
+
+	local hasQuest = false
+	for _, e in ipairs(list) do
+		local info = C_Container.GetContainerItemInfo(e.bag, e.slot)
+		if info.itemID == 9901 then hasQuest = true end
+	end
+	check(not hasQuest,
+		"and the grey QUEST item is not among them either - quality wins over"
+		.. " class when deciding where to show something, and must not win when"
+		.. " deciding what to spend; a quest starter sold by an automatic sweep"
+		.. " is a quest you have to earn again")
+
+	-- Identity, not properties. Over a run of several seconds the player can
+	-- loot into a slot the sweep has already listed but not yet reached.
+	_G.__used, _G.__pending = {}, {}
+	_G.MerchantFrame:Show()
+	Bg.selling = nil
+	local listed = select(1, Bg:JunkList())
+	Bg.selling = { list = listed, index = 1, worth = 0, earned = 0, sold = 0 }
+	local victim = listed[1]
+	local was = _G.__bags[victim.bag].slots[victim.slot]
+	_G.__bags[victim.bag].slots[victim.slot] = { 1183, 1 }   -- a DIFFERENT grey
+	Bg:SellStep()
+	_G.__bags[victim.bag].slots[victim.slot] = was
+	check(#_G.__used == 0,
+		"a slot whose contents changed since it was listed is skipped, even"
+		.. " though what is in it now is also grey and also sellable - the"
+		.. " question is 'is this still the item I listed', not 'is this junk'")
+	Bg.selling = nil
+	_G.MerchantFrame:Hide()
+
+	_G.__used, _G.__pending = {}, {}
+	cfg.junkAutoSell = true
+	_G.MerchantFrame:Hide()
+	Bg.selling = nil
+	Bg:SellJunk()
+	check(#_G.__used == 0,
+		"and nothing is sold with no merchant open - UseContainerItem with no"
+		.. " merchant window USES the item instead of selling it")
+
+	_G.MerchantFrame:Show()
+	Bg.selling = nil
+	Bg:SellJunk()
+	check(#_G.__used == 1,
+		"one item goes per step, not the whole list in a loop - the server drops"
+		.. " calls that arrive too fast (" .. #_G.__used .. ")")
+
+	-- The merchant closing mid-run is the dangerous case, because the same call
+	-- that sells with a merchant open USES the item without one.
+	_G.MerchantFrame:Hide()
+	_G.__drainTimers(5)
+	check(#_G.__used == 1,
+		"and the merchant closing mid-run stops it dead rather than using the"
+		.. " rest of the items where they stand (" .. #_G.__used .. ")")
+	check(Bg.selling == nil, "and it does not leave a run half-open")
+	check(Bg.lastSale and Bg.lastSale.sold == 1 and Bg.lastSale.earned == 30,
+		"and an interrupted run reports one item and its price, not the whole"
+		.. " list's - reporting money that never arrived is a lie about money ("
+		.. tostring(Bg.lastSale and Bg.lastSale.earned) .. ")")
+
+	-- All the way through, with the merchant staying open. The fixture is put
+	-- back first, because the interrupted run above really did sell one.
+	_G.__bags[0].slots[4] = { 3300, 1 }
+	_G.__bags[1].slots[4] = { 1183, 1 }
+	_G.__used, _G.__pending = {}, {}
+	_G.MerchantFrame:Show()
+	Bg.selling = nil
+	Bg:SellJunk()
+	_G.__drainTimers(10)
+	check(#_G.__used == 2, "with it open the whole list goes (" .. #_G.__used .. ")")
+	check(Bg.lastSale and Bg.lastSale.earned == 42,
+		"and it reports what it actually EARNED, not what the list was worth"
+		.. " when it started (" .. tostring(Bg.lastSale and Bg.lastSale.earned) .. ")")
+	check(#(select(1, Bg:JunkList())) == 0, "and there is no junk left")
+	check(_G.__bags[2].slots[2] and _G.__bags[2].slots[2][1] == 5758,
+		"except the Worthless Rock, which is still there - it has no value, so"
+		.. " it was never on the list")
+
+	_G.MerchantFrame:Hide()
+	Bg.selling = nil
+	cfg.junkAutoSell = false
+end
+
+print("== bags: turning it off gives Blizzard's back ==")
+do
+	local toggleBefore = _G.ToggleAllBags
+	A:SetModuleEnabled("bags", false)
+
+	check(_G.ToggleAllBags ~= toggleBefore, "the global toggle is handed back")
+	local before = _G.__bagToggled
+	_G.ToggleAllBags()
+	check(_G.__bagToggled == before + 1, "and it is Blizzard's again, not ours")
+
+	check(_G.ContainerFrame1.__aetherSuppress == nil,
+		"the OnShow suppressor is disarmed - the hook itself can never be"
+		.. " removed, so it is gated on this flag or the player has no bags at"
+		.. " all until /reload")
+	_G.ContainerFrame1:Show()
+	check(_G.ContainerFrame1:IsShown(), "and a container frame really does show again")
+	_G.ContainerFrame1:Hide()
+
+	check(_G.BankFrame:GetScript("OnHide") ~= nil, "BankFrame gets its OnHide back")
+	check(_G.BankFrame:GetParent() == UIParent, "and is reparented to UIParent")
+	check(_G.UIPanelWindows["BankFrame"] ~= nil, "and returns to the panel manager")
+
+	local found = false
+	for _, n in ipairs(_G.UISpecialFrames) do if n == "AetherUIBags" then found = true end end
+	check(not found, "and it leaves UISpecialFrames")
+
+	A:SetModuleEnabled("bags", true)
+	check(Bg.enabled, "and it comes back on")
+	check(_G.ContainerFrame1.__aetherSuppress == true, "re-arming the suppressor")
+end
+
+print("== bags: restyle ==")
+do
+	Bg:Show()
+	local f = Bg.frames.bags
+	A.Palette:Apply("daylight")
+	Bg:OnSkinChanged()
+	check(math.abs((f._fillColor[4] or 1) - A.Palette:ReadingFill()[4]) < 0.001,
+		"the window takes the READING fill on Daylight too - it carries stack"
+		.. " counts and a money string over moving scenery")
+	A.Palette:Apply("midnight")
+	Bg:OnSkinChanged()
+	check(math.abs((f._fillColor[4] or 1) - A.Palette:ReadingFill()[4]) < 0.001,
+		"and again on Midnight, from the one shared helper")
+
+	local c = A.Palette.c
+	check(c.itemQuality and c.itemQuality[4] and c.itemQuality[4].glow,
+		"epic carries a glow as well as a rim - that is what makes a purple"
+		.. " findable at a glance in a grid of eighty")
+	check(c.itemQuality[1].glow == nil,
+		"and common does not, which is not the same as a transparent one")
+	Bg:Hide()
+end
+
+print("== bags: every quality band exists in both skins ==")
+do
+	-- The vocabulary check below only compares TOP-LEVEL keys, so a nested band
+	-- missing from one skin is a nil index in the middle of a redraw and would
+	-- sail straight past it.
+	local mid = A.Palette.skins.midnight.itemQuality
+	local day = A.Palette.skins.daylight.itemQuality
+	local missing = {}
+	for q = 0, 5 do
+		if not mid[q] then missing[#missing + 1] = "midnight " .. q end
+		if not day[q] then missing[#missing + 1] = "daylight " .. q end
+		if mid[q] and not mid[q].edge then missing[#missing + 1] = "midnight " .. q .. ".edge" end
+		if day[q] and not day[q].edge then missing[#missing + 1] = "daylight " .. q .. ".edge" end
+	end
+	check(#missing == 0, "all six bands, both skins, each with a rim ("
+		.. table.concat(missing, ", ") .. ")")
 end
 
 -- ---------------------------------------------------------------------------

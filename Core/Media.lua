@@ -195,6 +195,25 @@ Media.style = {
 	qlObjCount   = { "semibold", 13, "" },
 	qlBtn        = { "semibold", 14, "" },   -- the filled Track button
 	qlBtnAlt     = { "medium",   14, "" },   -- Share / Abandon outlines
+
+	-- Bags. The deck's sizes are a point or two under the quest log's at every
+	-- role, because a bag panel is a dense grid rather than a page of prose, so
+	-- these are their own roles rather than borrowed ql* ones.
+	--
+	-- None of them carry OUTLINE. The stack count does, and it uses the shared
+	-- `stack` role for exactly that reason: it is the only string here that has
+	-- to stay legible on top of an arbitrary item icon.
+	bagTitle     = { "semibold", 18, "" },   -- "Bags" / "Bank"
+	bagChip      = { "bold",     11, "" },   -- the 58 / 80 capacity chip
+	bagLabel     = { "semibold", 11, "" },   -- letter-spaced EQUIPMENT / JUNK
+	bagCount     = { "medium",   10, "" },   -- the count trailing a section label
+	bagMoney     = { "semibold", 13, "" },   -- 142g
+	bagFoot      = { "regular",  12, "" },   -- "22 slots free"
+	bagSearch    = { "light",    13, "" },
+	bagBag       = { "medium",   12, "" },   -- a bag's name in the flyout
+	bagBagSub    = { "light",    10, "" },   -- "20 - herbs only"
+	bagGlyph     = { "bold",     12, "" },   -- the letter on a bag tile
+	bagPrice     = { "semibold",  9, "" },   -- "10g" on a purchasable bank slot
 }
 
 -- ---------------------------------------------------------------------------
