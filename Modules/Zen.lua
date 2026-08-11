@@ -228,11 +228,21 @@ local function Layout()
 		cp:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -24, -24)
 	end
 
-	local glyph = liveMap and 0 or 16
-	cp.glyphW = glyph
-	cp.disc:SetAlpha(liveMap and 0 or 1)
-	cp.rim:SetAlpha(liveMap and 0 or 1)
-	cp.blip:SetAlpha(liveMap and 0 or 1)
+	-- The glyph keeps a real SIZE whether or not it is drawn, and is taken off
+	-- screen with Hide.
+	--
+	-- Sizing it to 0 to "remove" it is how the whole thing went wrong once: a
+	-- Texture given a zero width and height does not vanish, it falls back to
+	-- the dimensions of the file behind it, so the ring drew at its native 512
+	-- and put a purple hoop most of the way across the screen. Zero is not a
+	-- size, it is the absence of one.
+	--
+	-- Hide rather than alpha, and only here: the note further up is about
+	-- FRAMES, which are refused mid-combat when something protected hangs off
+	-- them. A texture region is never protected, so this is safe from anywhere.
+	local glyph = 16
+	cp.glyphW = liveMap and 0 or glyph
+
 	cp.disc:ClearAllPoints()
 	cp.disc:SetPoint("LEFT", cp, "LEFT", 10, 0)
 	cp.disc:SetSize(glyph, glyph)
@@ -244,6 +254,10 @@ local function Layout()
 	cp.blip:ClearAllPoints()
 	cp.blip:SetPoint("CENTER", cp.disc, "CENTER", 0, 0)
 	cp.blip:SetSize(6, 6)
+
+	cp.disc:SetShown(not liveMap)
+	cp.rim:SetShown(not liveMap)
+	cp.blip:SetShown(not liveMap)
 
 	cp.zone:ClearAllPoints()
 	if liveMap then

@@ -2243,6 +2243,28 @@ takes three things, not one:
   measure and doing it on the way in would pop the map off a second before
   everything around it had finished fading.
 
+### Zero is not a size
+
+Hiding the stand-in glyph by sizing it to `0` put a purple hoop most of the way
+across the screen.
+
+**A Texture given zero width and height does not vanish - it falls back to the
+dimensions of the file behind it.** `Ring.tga` is 512 square, so that is what it
+drew, centred on a 16px glyph slot. Zero is not a size, it is the absence of
+one, and a region with no size and no opposing anchors takes its own.
+
+The two places zero *is* correct, and neither is this:
+
+* a **FontString** with `SetWidth(0)` - documented auto-width from the text, and
+  what `Chat.lua` and the minimap's coordinate field both rely on;
+* a region with **opposing anchors**, like the quest log's list rule, which is
+  pinned top and bottom and resolves its height from them.
+
+Regions here are taken off screen with `Hide` and keep a real size. `Hide` is
+safe on a texture from anywhere, including mid-combat - the "alpha rather than
+Hide" rule elsewhere is about *frames*, which are refused when something
+protected hangs off them. A texture region is never protected.
+
 ### A near-black fill at high opacity is a hole, not a glyph
 
 The stand-in disc was painted with the `glass` token's RGB -- Midnight's is

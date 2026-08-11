@@ -2688,8 +2688,13 @@ do
 		.. " flight-master blip and the player arrow are drawn by the engine into"
 		.. " the widget, so they ignore its alpha and would otherwise be left"
 		.. " hanging over an empty hillside with no map under them")
-	check(Z.frame.corner.disc:GetAlpha() == 1,
+	check(Z.frame.corner.disc:IsShown() and Z.frame.corner.rim:IsShown(),
 		"and the drawn glyph comes back, because there is no real map to defer to")
+	for _, key in ipairs({ "disc", "rim", "blip" }) do
+		local r = Z.frame.corner[key]
+		check((r:GetWidth() or 0) > 0 and (r:GetHeight() or 0) > 0,
+			"the " .. key .. " is sized (" .. tostring(r:GetWidth()) .. ")")
+	end
 
 	-- And it is a glass disc, not a hole. Midnight's glass token is
 	-- C(12, 10, 28) -- very nearly black -- so painting it at a high opacity
@@ -2800,9 +2805,24 @@ do
 	check(cpPoint == "TOP" and cpRel == MMod.frame,
 		"and the zone and clock move under the map, into the space the minimap"
 		.. " module's own pill has just vacated")
-	check(Z.frame.corner.disc:GetAlpha() == 0,
+	check(not Z.frame.corner.disc:IsShown() and not Z.frame.corner.rim:IsShown(),
 		"with the drawn stand-in glyph switched off, because the real one is"
 		.. " right above it")
+
+	-- Taken off screen with Hide, and still carrying a real size.
+	--
+	-- The first version sized these to 0 to remove them. A Texture given zero
+	-- width and height does not vanish - it falls back to the dimensions of the
+	-- file behind it, and the ring drew at its native 512, putting a purple hoop
+	-- most of the way across the screen. Zero is not a size, it is the absence
+	-- of one, and every region here is checked for it.
+	for _, key in ipairs({ "disc", "rim", "blip" }) do
+		local r = Z.frame.corner[key]
+		check((r:GetWidth() or 0) > 0 and (r:GetHeight() or 0) > 0,
+			"the " .. key .. " keeps a real size even while hidden ("
+			.. tostring(r:GetWidth()) .. "x" .. tostring(r:GetHeight())
+			.. ") - a zero-sized texture draws at its file's native size")
+	end
 	check(Z.keys and Z.keys:IsKeyboardEnabled(), "the key watcher is listening")
 
 	local k = Z.keys
