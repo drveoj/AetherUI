@@ -2661,9 +2661,91 @@ for i = 1, 30 do tick(0.1) end
 check(UF.player:GetAlpha() > 0.95, "combat overrides the idle fade")
 _G.__inCombat = false
 
+print("== zen: with keepMinimap off, the map really goes ==")
+do
+	local Z = A:GetModule("zen")
+	local zcfg = A.db.profile.modules.zen
+	zcfg.keepMinimap = false
+	Z:OnConfigChanged()
+
+	_G.__minimapPin:SetAlpha(0.5)
+	Z:DimUI(1)
+
+	check(Minimap:GetAlpha() < 0.05,
+		"the map is driven by hand: it is a widget the client renders into and"
+		.. " ignores the alpha it inherits, even though our module parents it"
+		.. " into a frame under UIParent")
+	check(_G.__minimapPin:GetAlpha() < 0.05,
+		"and so is anything an addon hung on it - being outside the cascade"
+		.. " applies to the children too, so a quest marker gets no alpha from"
+		.. " anywhere (" .. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
+
+	-- The engine's layers are neither children nor regions: the POI blips and
+	-- the player arrow are part of what the widget draws, and no SetAlpha we can
+	-- make reaches them. Hide is the only thing that does.
+	check(not Minimap:IsShown(),
+		"and the map is HIDDEN at the bottom of the fade, not merely faded - the"
+		.. " flight-master blip and the player arrow are drawn by the engine into"
+		.. " the widget, so they ignore its alpha and would otherwise be left"
+		.. " hanging over an empty hillside with no map under them")
+	check(Z.frame.corner.disc:GetAlpha() == 1,
+		"and the drawn glyph comes back, because there is no real map to defer to")
+
+	-- And it is a glass disc, not a hole. Midnight's glass token is
+	-- C(12, 10, 28) -- very nearly black -- so painting it at a high opacity
+	-- draws a solid dark dot, which on screen reads as a rendering fault rather
+	-- than as a glyph. Checked on both skins, because the trap is the SKIN's
+	-- colour being dark, not a number in this module.
+	for _, skin in ipairs({ "midnight", "daylight" }) do
+		A.Palette:Apply(skin)
+		Z:Restyle()
+		local dr, dg, db, da = Z.frame.corner.disc:GetVertexColor()
+		local lum = 0.299 * dr + 0.587 * dg + 0.114 * db
+		local own = A.Palette.c.glass[4] or 1
+		check(da <= own + 0.001,
+			skin .. ": the glyph is drawn at the glass token's own opacity, not"
+			.. " deepened past it (" .. string.format("%.2f vs %.2f", da, own) .. ")")
+		check(lum > 0.25 or da < 0.7,
+			skin .. ": and a near-black fill is never near-opaque - that is a"
+			.. " hole, not a disc (luminance " .. string.format("%.2f", lum)
+			.. ", alpha " .. string.format("%.2f", da) .. ")")
+
+		-- The rim is what carries the shape, exactly as it does for a pale
+		-- panel on Daylight.
+		-- Brightness ON the screen, which is luminance times alpha. Comparing
+		-- the alphas alone says the two are equal on Midnight and misses that
+		-- one of them is nearly white and the other is nearly black.
+		local rr, rg, rb, ra = Z.frame.corner.rim:GetVertexColor()
+		local rimLum = (0.299 * rr + 0.587 * rg + 0.114 * rb) * ra
+		check(rimLum > lum * da,
+			skin .. ": and the rim reads stronger than the fill, which is what"
+			.. " makes it a disc at all ("
+			.. string.format("%.2f vs %.2f", rimLum, lum * da) .. ")")
+	end
+	A.Palette:Apply("midnight")
+	Z:Restyle()
+
+	-- RestoreUI on its own is the path the panic handler and OnDisable take. An
+	-- ordinary wake never reaches its restore loop -- DimUI walks the alphas
+	-- back up itself and clears the dimmed flag on the way -- so without this
+	-- the one thing standing between a bug in here and somebody's whole
+	-- interface at zero alpha is never run at all.
+	Z:RestoreUI()
+	check(UIParent:GetAlpha() == 1, "RestoreUI alone puts the interface back")
+	check(Minimap:IsShown() and Minimap:GetAlpha() == 1, "and the map with it")
+	check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
+		"and puts the pin back to the alpha it HAD, from the record it kept - an"
+		.. " addon holding its own marker at half is not asking us to brighten"
+		.. " it (" .. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
+
+	zcfg.keepMinimap = true
+	Z:OnConfigChanged()
+end
+
 print("== zen: stage two ==")
 do
 	local Z = A:GetModule("zen")
+	local MMod = A:GetModule("minimap")
 	local zcfg = A.db.profile.modules.zen
 	check(Z and Z.enabled, "zen module enabled")
 	check(Z.frame and Z.frame:GetAlpha() == 0, "the readout starts parked at nothing")
@@ -2702,44 +2784,25 @@ do
 		.. string.format("%.2f", UIParent:GetAlpha()) .. ")")
 	check(Z.frame.__parent == nil,
 		"which only works because the readout lives outside UIParent")
-	check(Minimap:GetAlpha() < 0.05,
-		"including the minimap, which is driven by hand: it is a widget the client"
-		.. " renders into, and the map surface ignores the alpha it inherits even"
-		.. " though our module parents it into a frame under UIParent")
+	-- ...except the map, which is the point of keepMinimap. It escapes the
+	-- cascade on its own, so "left alone" and "left visible" are the same thing.
+	check(Minimap:GetAlpha() == 1 and Minimap:IsShown(),
+		"but NOT the minimap, which stays exactly as it was - it is the one part"
+		.. " of the HUD still telling you something while you are not playing")
+	check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
+		"and neither is anything hung on it - a quest marker on a map that is"
+		.. " still there is not debris (" ..
+		string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
 
-	-- Everything hung ON the minimap is outside the cascade for the same reason
-	-- the minimap is, so dimming the parent does not reach it.
-	check(_G.__minimapPin:GetAlpha() < 0.05,
-		"and so is anything an addon hung on it - a quest marker or a waypoint"
-		.. " is outside the cascade for exactly the same reason the map is ("
-		.. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
-
-	-- The engine's own layers are neither children nor regions: the POI blips
-	-- and the player arrow are part of what the widget draws, and no SetAlpha
-	-- reaches them. Hide is the only thing that does.
-	check(not Minimap:IsShown(),
-		"and the map is HIDDEN at the bottom of the fade, not merely faded - the"
-		.. " flight-master blip and the player arrow are drawn by the engine into"
-		.. " the widget, so they ignore its alpha and would otherwise be left"
-		.. " hanging over an empty hillside")
-	-- RestoreUI on its own, which is the path the panic handler and OnDisable
-	-- take. The ordinary wake never reaches its restore loop -- DimUI walks the
-	-- alphas back up itself and clears the dimmed flag on the way -- so without
-	-- this the one thing standing between a bug in here and somebody's entire
-	-- interface at zero alpha is never run at all.
-	do
-		local pinWas = _G.__minimapPin:GetAlpha()
-		check(pinWas < 0.05, "still dimmed going in")
-		Z:RestoreUI()
-		check(UIParent:GetAlpha() == 1, "RestoreUI alone puts the interface back")
-		check(Minimap:IsShown(), "and shows the map again")
-		check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
-			"and puts the pin back to what it WAS, from the record it kept ("
-			.. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
-		-- and back into the dim, so the checks below still measure zen
-		Z:DimUI(Z.frame:GetAlpha())
-	end
-
+	-- The block moves under the map, where the minimap module's own zone pill
+	-- sits -- and that one has faded out by now.
+	local cpPoint, cpRel = Z.frame.corner:GetPoint()
+	check(cpPoint == "TOP" and cpRel == MMod.frame,
+		"and the zone and clock move under the map, into the space the minimap"
+		.. " module's own pill has just vacated")
+	check(Z.frame.corner.disc:GetAlpha() == 0,
+		"with the drawn stand-in glyph switched off, because the real one is"
+		.. " right above it")
 	check(Z.keys and Z.keys:IsKeyboardEnabled(), "the key watcher is listening")
 
 	local k = Z.keys
@@ -2756,11 +2819,6 @@ do
 	check(Z.frame:GetAlpha() < 0.05, "and the readout goes away again")
 	check(UIParent:GetAlpha() == 1 and Minimap:GetAlpha() == 1,
 		"with the interface, and the minimap, put back")
-	check(Minimap:IsShown(), "and the map shown again")
-	check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
-		"and the pin restored to the alpha it HAD, not to 1 - an addon holding"
-		.. " its own marker at half is not asking us to brighten it ("
-		.. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
 	check(not k:IsKeyboardEnabled(),
 		"the key watcher stops listening the moment it is not needed")
 

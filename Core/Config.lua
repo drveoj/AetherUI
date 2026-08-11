@@ -460,6 +460,12 @@ Config.defaults = {
 				-- See the note at the top of Modules\Zen.lua: the list of things
 				-- that were still on screen otherwise had no end to it.
 				dimUI       = true,
+				-- The minimap survives zen, and the zone/clock block moves under
+				-- it. It is the one part of the HUD still telling you something
+				-- while you are not playing, and a drawn glyph standing in for it
+				-- was never going to say where you are. Off, the map goes with
+				-- everything else and the block keeps its glyph.
+				keepMinimap = true,
 				width       = 250,   -- the capsule holding both bars
 				yOffset     = 14,    -- above the screen's bottom edge
 				showCaption = true,

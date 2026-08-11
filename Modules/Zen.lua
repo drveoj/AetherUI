@@ -215,9 +215,24 @@ local function Layout()
 
 	local cp = f.corner
 	cp:ClearAllPoints()
-	cp:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -24, -24)
 
-	local glyph = 16
+	-- With the real map on screen, the zone and the clock belong under it --
+	-- which is where the minimap module's own pill sits, and that one has faded
+	-- out by the time this is on. Without it, the block stands on its own in the
+	-- corner and keeps the drawn glyph.
+	local MM = A:GetModule("minimap")
+	local liveMap = cfg.keepMinimap ~= false and MM and MM.enabled and MM.frame
+	if liveMap then
+		cp:SetPoint("TOP", MM.frame, "BOTTOM", 0, -10)
+	else
+		cp:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -24, -24)
+	end
+
+	local glyph = liveMap and 0 or 16
+	cp.glyphW = glyph
+	cp.disc:SetAlpha(liveMap and 0 or 1)
+	cp.rim:SetAlpha(liveMap and 0 or 1)
+	cp.blip:SetAlpha(liveMap and 0 or 1)
 	cp.disc:ClearAllPoints()
 	cp.disc:SetPoint("LEFT", cp, "LEFT", 10, 0)
 	cp.disc:SetSize(glyph, glyph)
@@ -231,7 +246,11 @@ local function Layout()
 	cp.blip:SetSize(6, 6)
 
 	cp.zone:ClearAllPoints()
-	cp.zone:SetPoint("LEFT", cp.disc, "RIGHT", 8, 0)
+	if liveMap then
+		cp.zone:SetPoint("LEFT", cp, "LEFT", 12, 0)
+	else
+		cp.zone:SetPoint("LEFT", cp.disc, "RIGHT", 8, 0)
+	end
 	cp.clock:ClearAllPoints()
 	cp.clock:SetPoint("LEFT", cp.zone, "RIGHT", 8, 0)
 	-- Alpha rather than Hide, all the way down. Layout runs from OnConfigChanged,
@@ -261,8 +280,9 @@ function Zen:UpdateText()
 	cp.clock:SetText(date("%H:%M"))
 
 	-- Measured, not guessed: the zone name is whatever the zone is called.
-	cp:SetWidth(10 + 16 + 8 + (cp.zone:GetStringWidth() or 0) + 8
-		+ (cp.clock:GetStringWidth() or 0) + 12)
+	local glyphW = cp.glyphW or 16
+	cp:SetWidth(10 + glyphW + (glyphW > 0 and 8 or 0) + (cp.zone:GetStringWidth() or 0)
+		+ 8 + (cp.clock:GetStringWidth() or 0) + 12)
 end
 
 local function Fraction(cur, max)
@@ -309,9 +329,14 @@ function Zen:Restyle()
 	W.Color(f.corner.zone, c.text)
 	W.Color(f.corner.clock, c.textDim)
 
-	f.corner.disc:SetVertexColor(c.glass[1], c.glass[2], c.glass[3], 0.85)
-	f.corner.rim:SetVertexColor(c.glassEdge[1], c.glassEdge[2], c.glassEdge[3],
-		c.glassEdge[4] or 1)
+	-- The disc takes the glass token's OWN alpha, not 0.85 of it. Midnight's
+	-- glass is C(12, 10, 28) -- very nearly black -- and a near-black fill at
+	-- 0.85 is not a glass disc, it is a hole. On screen it read as a rendering
+	-- fault rather than as a glyph. The rim carries the shape instead, which is
+	-- the same rule a pale panel follows on Daylight.
+	f.corner.disc:SetVertexColor(c.glass[1], c.glass[2], c.glass[3], c.glass[4] or 0.55)
+	f.corner.rim:SetVertexColor(c.glassEdgeHi[1], c.glassEdgeHi[2], c.glassEdgeHi[3],
+		c.glassEdgeHi[4] or 1)
 	f.corner.blip:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 0.9)
 
 	for _, d in ipairs(f.dots) do
@@ -394,6 +419,23 @@ function Zen:DimUI(a)
 
 	local ui = 1 - a * (1 - (cfg.hudAlpha or 0))
 	UIParent:SetAlpha(ui)
+
+	-- The map stays. Zen used to draw a small glass disc in the corner as a
+	-- stand-in for it; the real thing, left exactly where it already is, is a
+	-- better answer than any glyph -- it is the one part of the HUD that is
+	-- still telling you something while you are not playing.
+	--
+	-- Left ALONE rather than moved. Shrinking it into the corner block means
+	-- handing it back on wake, and zen wakes on PLAYER_REGEN_DISABLED -- so the
+	-- hand-back always runs with combat already locked down, where SetParent is
+	-- refused for anything with a protected frame hanging off it. Getting that
+	-- wrong strands the minimap in the corner for the whole fight.
+	--
+	-- Nothing to dim, nothing to hide, nothing to put back.
+	if cfg.keepMinimap ~= false then
+		self._dimmed = a > 0
+		return
+	end
 
 	-- Each escapee is dimmed against the alpha it already had, not slammed to
 	-- `ui`. A minimap pin an addon is deliberately holding at half alpha must

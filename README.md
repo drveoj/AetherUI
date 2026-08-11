@@ -2212,6 +2212,46 @@ Zone names come from `GetMinimapZoneText()` (which returns the subzone when
 you're in one) and are tinted by `GetZonePVPInfo` using Blizzard's own colours,
 so a contested zone reads the same amber here as it does everywhere else.
 
+### Zen keeps the minimap
+
+The map survives zen and the zone/clock block moves under it, into the space the
+minimap module's own pill has just vacated. It is the one part of the HUD still
+telling you something while you are not playing, and a drawn glyph standing in
+for it was never going to say where you are.
+
+**Left where it is, not shrunk into the corner block**, and the reason is the
+wake path: zen exits on `PLAYER_REGEN_DISABLED`, so any "hand the map back" step
+runs with combat *already* locked down, where `SetParent` is refused for
+anything with a protected frame hanging off it. Getting that wrong strands the
+minimap in the corner for the whole fight. Borrowing something you can only
+return out of combat is not borrowing.
+
+With `keepMinimap` off, the map goes with everything else -- and going properly
+takes three things, not one:
+
+* `Minimap` escapes UIParent's alpha cascade, so its own alpha is driven by hand.
+  This part was already here.
+* **So does everything hanging off it.** A Questie marker or a TomTom waypoint is
+  outside the cascade for exactly the same reason the map is, and gets no alpha
+  from anywhere. It cannot be a list of names, it has to be a walk -- and each
+  one is dimmed against the alpha it already had, because an addon holding its
+  own marker at half is not asking to have it brightened.
+* **The engine's layers are neither children nor regions.** The POI blips and the
+  player arrow are part of what the widget draws and ignore every alpha we can
+  set. Only `Hide` takes them, so the map is hidden outright at the bottom of the
+  fade -- at the bottom rather than throughout, because `Hide` has no half
+  measure and doing it on the way in would pop the map off a second before
+  everything around it had finished fading.
+
+### A near-black fill at high opacity is a hole, not a glyph
+
+The stand-in disc was painted with the `glass` token's RGB -- Midnight's is
+`C(12, 10, 28)` -- at `0.85`. On screen that is a solid dark dot, and it read as
+a rendering fault rather than as a glyph. It now takes the token's *own* alpha
+and lets the rim carry the shape, which is the same rule a pale panel follows on
+Daylight. The harness checks it on both skins, because the trap is the skin's
+colour being dark rather than a number in the module.
+
 ## A pcall that only prints is a test that never fails
 
 `Restyle` and `Reconfigure` run every module inside a `pcall`, which is right —

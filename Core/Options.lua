@@ -294,6 +294,12 @@ local function FaderGroup()
 			.. " screen. Off leaves only AetherUI's own frames fading, which means"
 			.. " everything else stays up.",
 			{ "modules", "zen", "dimUI" }, { after = "none", defaultTrue = true }),
+		zenKeepMap = toggle("Keep the minimap",
+			"The map survives zen and the zone and clock move under it. It is the"
+			.. " one part of the HUD still telling you something while you are"
+			.. " not playing. Off, it goes with everything else and the block"
+			.. " draws a small glass disc in its place.",
+			{ "modules", "zen", "keepMinimap" }, { defaultTrue = true }),
 		zenWidth = range("Capsule width", nil, { "modules", "zen", "width" },
 			160, 600, 5),
 		zenY = range("Height above the bottom edge", nil, { "modules", "zen", "yOffset" },
