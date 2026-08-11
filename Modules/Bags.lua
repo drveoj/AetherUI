@@ -464,7 +464,7 @@ local function BuildItemButton(proxy, bag, slot, size)
 	-- The keyring needs no such help: ContainerFrame_OnEnter special-cases
 	-- KEYRING_CONTAINER itself.
 	if bag == BANK then
-		b:SetScript("OnEnter", function(self)
+		local function bankTooltip(self)
 			-- Blizzard's own anchor helper reads self:GetRight() and errors if
 			-- the button has no computed rect yet.
 			if not self:GetRight() then return end
@@ -474,8 +474,30 @@ local function BuildItemButton(proxy, bag, slot, size)
 			_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			pcall(_G.GameTooltip.SetInventoryItem, _G.GameTooltip, "player", invSlot)
 			_G.GameTooltip:Show()
+		end
+
+		b:SetScript("OnEnter", bankTooltip)
+		b:SetScript("OnLeave", function()
+			if _G.GameTooltip_Hide then _G.GameTooltip_Hide() else _G.GameTooltip:Hide() end
+			if _G.ResetCursor then _G.ResetCursor() end
 		end)
-		b:SetScript("OnLeave", function() _G.GameTooltip:Hide() end)
+
+		-- And `UpdateTooltip`, which is the half that matters.
+		--
+		-- GameTooltip's OnUpdate re-runs `owner:UpdateTooltip()` every
+		-- TOOLTIP_UPDATE_TIME (0.2s) -- GameTooltip.lua:461. The template's
+		-- OnLoad points that at ContainerFrameItemButton_OnEnter, which opens
+		-- with SetOwner(ANCHOR_NONE) -- wiping the tooltip -- and then calls
+		-- GameTooltip:SetBagItem(-1, slot).
+		--
+		-- Blizzard's own bank NEVER makes that call: BankFrameItemButton_OnEnter
+		-- uses SetInventoryItem with BankButtonIDToInvSlotID. So the refresh
+		-- emptied the tooltip and an empty tooltip hides itself -- which on
+		-- screen is a tooltip that appears and then vanishes a fifth of a second
+		-- later, whatever OnEnter did.
+		--
+		-- Overriding OnEnter alone is not enough. This is the one that repeats.
+		b.UpdateTooltip = bankTooltip
 	end
 
 	return b
@@ -716,9 +738,6 @@ local function BuildHeader(frame)
 	head.title:SetPoint("LEFT", head, "LEFT", HEAD_PAD_X, 0)
 	head.title:SetText(frame.kind == "bank" and "Bank" or "Bags")
 
-	-- The capacity chip doubles as the flyout's handle on the bags window, which
-	-- is the deck's own instruction ("opens from the bags header (bag icon or
-	-- capacity chip)") and saves inventing an icon for it.
 	head.count = W.Pill(head, "bagChip", { height = 20, padX = 9 })
 	head.count:SetPoint("LEFT", head.title, "RIGHT", HEAD_GAP, 0)
 
@@ -727,11 +746,6 @@ local function BuildHeader(frame)
 
 	head.sort = BuildIconButton(head, "sort", function() Bags:StartSort(frame) end)
 	head.sort:SetPoint("RIGHT", head.close, "LEFT", -6, 0)
-
-	if frame.kind == "bags" then
-		head.count:EnableMouse(true)
-		head.count:SetScript("OnMouseUp", function() Bags:ToggleFlyout() end)
-	end
 
 	return head
 end
@@ -922,7 +936,6 @@ local function BuildFlyout(frame)
 	-- corners are never seen.
 	fly:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
 	fly:SetPoint("TOPLEFT", frame, "TOPRIGHT", -FLY_CORNER, -FLY_TOP)
-	fly:Hide()
 	frame.flyout = fly
 
 	fly.label = W.Text(fly, "bagLabel", "LEFT")
@@ -1060,7 +1073,6 @@ local function BuildFrame(kind)
 	end)
 	frame:SetScript("OnHide", function(self)
 		if self.search then self.search.box:ClearFocus() end
-		if self.flyout then self.flyout:Hide() end
 		-- A confirmation left floating over a closed window is a click waiting
 		-- to spend gold on something nobody is looking at any more.
 		Bags:CloseConfirm()
@@ -1203,7 +1215,10 @@ function Bags:Rebuild(frame)
 	frame.used, frame.total = used, total
 	self:RefreshHeader(frame)
 	self:RefreshFooter(frame)
-	if frame.kind == "bags" then self:RefreshFlyout(frame) end
+	if frame.kind == "bags" then
+		self:RefreshFlyout(frame)
+		frame.flyout:SetShown(cfg.showFlyout ~= false)
+	end
 
 	frame.drawn = true
 	frame.dirty = false
@@ -1787,15 +1802,17 @@ function Bags:HideBank()
 	end
 end
 
-function Bags:ToggleFlyout()
+--- The flyout is part of the window, not a thing you open.
+--
+--  It started life behind a click on the capacity chip, which is what the deck
+--  describes. On screen that was a control nobody could find: no affordance, no
+--  hover state, and the one time it appeared it was not clear what had done it.
+--  A panel edge that is sometimes there is worse than one that always is.
+function Bags:SetFlyoutShown(shown)
+	local cfg = A.Config:Module("bags")
+	cfg.showFlyout = shown and true or false
 	local f = self.frames and self.frames.bags
-	if not f or not f.flyout then return end
-	if f.flyout:IsShown() then
-		f.flyout:Hide()
-	else
-		self:RefreshFlyout(f)
-		f.flyout:Show()
-	end
+	if f and f.flyout then f.flyout:SetShown(cfg.showFlyout) end
 end
 
 -- ---------------------------------------------------------------------------

@@ -602,6 +602,10 @@ local function BagsGroup()
 			{ defaultTrue = true }),
 		dimJunk = toggle("Dim poor-quality items", nil, at("dimJunk"),
 			{ defaultTrue = true }),
+		showFlyout = toggle("Show the equipped-bags rail",
+			"The rail off the right edge carrying your equipped bags and, under"
+			.. " it, the keyring. Drag a new bag onto one to swap it.",
+			at("showFlyout"), { defaultTrue = true }),
 		showKeyring = toggle("Show the keyring", nil, at("showKeyring"),
 			{ defaultTrue = true }),
 		showEmpty = toggle("Show free slots",

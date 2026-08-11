@@ -2299,6 +2299,9 @@ Bank containers are `-1` and `NUM_BAG_SLOTS+1 .. NUM_BAG_SLOTS+NUM_BANKBAGSLOTS`
 -- **5..10** here. `Enum.BagIndex.BankBag_1` is 6 and is wrong on Era: it is the
 shared modern enum and assumes a reagent bag at 5 that this client does not have.
 
+Confirmed in game on 11509: `NUM_BAG_SLOTS = 4`, `NUM_BANKBAGSLOTS = 6`,
+`NUM_BANKGENERIC_SLOTS = 24`.
+
 ### The toggle funnel is replaced, not hooked
 
 `ToggleAllBags`, `ToggleBackpack`, `ToggleBag`, `OpenBag`, `OpenBackpack`,
@@ -2317,6 +2320,44 @@ the problem does not exist.
 `ToggleBag(id)` keeps its argument. Blizzard's bank calls `ToggleBag(5..10)` for
 its own bag slots, and answering that by toggling the *inventory* window is how
 clicking a bank bag closes your bags.
+
+### Overriding OnEnter is half a tooltip fix
+
+Bank item tooltips appeared and then vanished a fifth of a second later. The
+cause is worth writing down because it will happen again to anything that
+reuses a Blizzard button template.
+
+`GameTooltip`'s OnUpdate re-runs **`owner:UpdateTooltip()`** every
+`TOOLTIP_UPDATE_TIME`
+(`Blizzard_GameTooltip/Classic/GameTooltip.lua:461`), and
+`ContainerFrameItemButton_OnLoad` points that at
+`ContainerFrameItemButton_OnEnter`. That function opens with
+`GameTooltip:SetOwner(self, "ANCHOR_NONE")` -- which **clears** the tooltip --
+and then fills it with `GameTooltip:SetBagItem(self:GetParent():GetID(), ...)`.
+
+For container `-1` that call answers nothing. Blizzard's own bank never makes
+it: `BankFrameItemButton_OnEnter` uses
+`SetInventoryItem("player", BankButtonIDToInvSlotID(id))`. So our `OnEnter` drew
+the tooltip correctly, and 0.2s later the refresh emptied it -- and an empty
+tooltip hides itself.
+
+**Replacing `OnEnter` is not enough. `UpdateTooltip` is the one that repeats.**
+Set both, or neither.
+
+Bank *bags* (5..10) are ordinary containers and keep Blizzard's path unchanged,
+because `SetBagItem` is correct for them. Overriding every bank-side button
+would have been the wrong fix for the right bug.
+
+### The rail is part of the window, not a thing you open
+
+The concept opens the equipped-bags flyout from the capacity chip. Built that
+way it was a control nobody could find -- no affordance, no hover state, and the
+one time it appeared it was not obvious what had caused it. It is now
+permanently open, parented to the window so it goes with it, and a setting for
+anyone who wants the panel on its own.
+
+A redraw asserts the setting rather than leaving the rail in whatever state it
+was in, so nothing can leave it closed by accident.
 
 ### There is no SortBags on this client
 

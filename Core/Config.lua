@@ -309,6 +309,13 @@ Config.defaults = {
 				showSearch   = true,
 				qualityRim   = true,
 				dimJunk      = true,
+
+				-- The equipped bags and the keyring, on a rail off the right
+				-- edge. Permanently open rather than behind a handle: the deck
+				-- opens it from the capacity chip, and on screen that was a
+				-- control nobody could find. A panel edge that is sometimes
+				-- there is worse than one that always is.
+				showFlyout   = true,
 				showKeyring  = true,
 
 				-- A FREE section at the foot of the grid. The concept does not

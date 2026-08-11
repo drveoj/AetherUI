@@ -104,7 +104,23 @@ local function widgetBase(kind)
 		if was then dispatch(self, "OnHide") end
 	end
 	function o:IsShown() return self.__shown end
-	function o:IsVisible() return self.__shown end
+	--- IsShown is the frame's OWN flag; IsVisible walks the parent chain.
+	--
+	--  The two are not the same question and conflating them hides a whole
+	--  class of bug: hiding a window leaves every child's IsShown true, so
+	--  "the child is still shown" is not evidence the child is on screen, and
+	--  "the child is shown" is not evidence it is either. Bounded, because a
+	--  parent cycle should fail the run rather than hang it.
+	function o:IsVisible()
+		local f, depth = self, 0
+		while f do
+			if not f.__shown then return false end
+			f = f.__parent
+			depth = depth + 1
+			if depth > 64 then fail("IsVisible: parent chain loops") return false end
+		end
+		return true
+	end
 	function o:SetShown(v) self.__shown = v and true or false end
 
 	function o:SetAlpha(a) self.__alpha = a end
@@ -565,6 +581,22 @@ function CreateFrame(kind, name, parent, template)
 		function f:UpdateScrollChildRect() end
 	end
 
+	-- Blizzard's ContainerFrameItemButtonTemplate does real work in its OnLoad
+	-- and its XML scripts, and a mock that skips it cannot catch anything about
+	-- what a module inherits from it. The two that matter here:
+	--
+	--   OnEnter      -> ContainerFrameItemButton_OnEnter
+	--   UpdateTooltip -> the same function, which is what GameTooltip's OnUpdate
+	--                    calls every 0.2s for as long as the cursor sits there
+	--
+	-- The second one is the trap. Replacing OnEnter and leaving UpdateTooltip
+	-- alone gives a tooltip that appears and then vanishes.
+	if template == "ContainerFrameItemButtonTemplate" then
+		f.UpdateTooltip = function(self) ContainerFrameItemButton_OnEnter(self) end
+		f:SetScript("OnEnter", function(self) ContainerFrameItemButton_OnEnter(self) end)
+		f:SetScript("OnLeave", function() ContainerFrameItemButton_OnLeave() end)
+	end
+
 	return f
 end
 
@@ -802,16 +834,84 @@ function RegisterUnitWatch(f)
 end
 function UnregisterUnitWatch(f) _G.__unitWatched[f] = nil; f.__unitWatch = nil end
 
+-- The tooltip, modelled far enough to catch the class of bug where something
+-- SHOWS a tooltip correctly and something else empties it a moment later.
+--
+-- Two behaviours matter and both are the client's, not ours:
+--
+--   * SetOwner CLEARS the tooltip. Blizzard's own handlers open with it, so a
+--     refresh that then fails to fill the tooltip leaves it empty.
+--   * an EMPTY tooltip does not draw. Show() on one is a hide.
+--
+-- and the driver: GameTooltip's OnUpdate re-runs `owner:UpdateTooltip()` every
+-- TOOLTIP_UPDATE_TIME (Blizzard_GameTooltip/Classic/GameTooltip.lua:461). That
+-- is modelled as __tooltipTick() rather than a real timer.
 GameTooltip = CreateFrame("Frame", "GameTooltip")
-function GameTooltip:SetOwner(o) self.__owner = o end
+GameTooltip:Hide()
+
+function GameTooltip:SetOwner(o)
+	self.__owner = o
+	self.__shows = nil          -- SetOwner clears. This is the whole point.
+end
+function GameTooltip:GetOwner() return self.__owner end
+function GameTooltip:IsOwned(f) return self.__owner == f end
+
 function GameTooltip:SetQuestLogItem(kind, i)
 	self.__shows = { "item", kind, i, _G.__questSelected }
 end
 function GameTooltip:SetSpellByID(id) self.__shows = { "spell", id } end
-function GameTooltip:SetOwner() end
+
+--- The container path. Correct for a real bag and for a bank BAG; it answers
+--  nothing for the generic bank container, which is why Blizzard's own bank
+--  frame uses SetInventoryItem instead and never calls this for bag -1.
+function GameTooltip:SetBagItem(bag, slot)
+	if bag == BANK_CONTAINER then
+		self.__shows = nil
+		return nil
+	end
+	local info = C_Container.GetContainerItemInfo(bag, slot)
+	self.__shows = info and { "bagitem", bag, slot } or nil
+	return info and true or nil
+end
+
+function GameTooltip:SetInventoryItem(unit, slot)
+	self.__shows = slot and { "invitem", unit, slot } or nil
+	return slot and true or nil
+end
+function GameTooltip:SetHyperlink(link) self.__shows = link and { "link", link } or nil end
+
 function GameTooltip:SetAction() end
 function GameTooltip:SetText() end
 function GameTooltip:AddLine() end
+function GameTooltip:NumLines() return self.__shows and 1 or 0 end
+
+local rawTooltipShow, rawTooltipHide = GameTooltip.Show, GameTooltip.Hide
+function GameTooltip:Show()
+	-- An empty tooltip is a hidden tooltip.
+	if self.__shows then rawTooltipShow(self) else rawTooltipHide(self) end
+end
+
+function GameTooltip_Hide() GameTooltip.__shows = nil GameTooltip:Hide() end
+function ResetCursor() end
+function CursorUpdate() end
+function ShowInspectCursor() end
+TOOLTIP_UPDATE_TIME = 0.2
+
+--- One turn of GameTooltip's OnUpdate.
+function _G.__tooltipTick()
+	local owner = GameTooltip:GetOwner()
+	if owner and owner.UpdateTooltip then owner:UpdateTooltip(owner) end
+end
+
+--- Blizzard's own container tooltip handler, which our buttons inherit unless
+--  we replace it. Faithful in the one respect that matters: it re-owns the
+--  tooltip (clearing it) and then fills it with SetBagItem.
+function ContainerFrameItemButton_OnEnter(self)
+	GameTooltip:SetOwner(self, "ANCHOR_NONE")
+	GameTooltip:SetBagItem(self:GetParent():GetID(), self:GetID())
+	GameTooltip:Show()
+end
+function ContainerFrameItemButton_OnLeave() GameTooltip_Hide() ResetCursor() end
 
 function ToggleDropDownMenu() end
 PlayerFrameDropDown = CreateFrame("Frame", "PlayerFrameDropDown")
@@ -7282,6 +7382,107 @@ do
 	check(dimmed == junk,
 		"and every one of them is dimmed rather than removed - it stays"
 		.. " clickable and stays where it is, so selling it is still one gesture")
+end
+
+print("== bags: the equipped-bags rail is part of the window ==")
+do
+	local f = Bg.frames.bags
+	check(f.flyout ~= nil, "the rail is built with the window")
+	check(f.flyout:IsShown(),
+		"and is on screen whenever the window is - it started life behind a"
+		.. " click on the capacity chip, which is what the concept describes,"
+		.. " and on screen that was a control nobody could find")
+
+	check(#f.flyout.rows == 5,
+		"it lists every equipped bag, backpack included (" .. #f.flyout.rows .. ")")
+	check(f.flyout.keyButtons and f.flyout.keyButtons[1]
+		and f.flyout.keyButtons[1]:IsShown(),
+		"and the keyring sits open under them")
+	check(f.flyout.keyButtons[1]:GetParent():GetID() == -2,
+		"with its buttons parented to a KEYRING proxy, which is what makes"
+		.. " Blizzard's own OnEnter take the SetInventoryItem branch for them")
+
+	-- Parented to the window rather than to UIParent, which is what makes it
+	-- go with it. Note IsVisible, not IsShown: hiding a parent leaves every
+	-- child's own shown flag set, so IsShown would answer true here and prove
+	-- nothing at all.
+	check(f.flyout:GetParent() == f, "it hangs off the window itself")
+	Bg:Hide()
+	check(not f.flyout:IsVisible(), "so it goes off screen with it")
+	Bg:Show()
+	check(f.flyout:IsVisible(), "and comes back with it, without being asked")
+
+	-- A redraw asserts the setting rather than leaving whatever state the rail
+	-- happened to be in. Otherwise "it is shown" only holds because nothing has
+	-- hidden it yet, which is not the same claim.
+	f.flyout:Hide()
+	Bg:Rebuild(f)
+	check(f.flyout:IsShown(),
+		"a redraw puts it back, so nothing can leave it closed by accident")
+
+	-- Still a setting, for anyone who wants the panel on its own.
+	Bg:SetFlyoutShown(false)
+	check(not f.flyout:IsShown(), "turning it off hides it")
+	Bg:Rebuild(f)
+	check(not f.flyout:IsShown(), "and a redraw does not bring it back")
+	Bg:SetFlyoutShown(true)
+	Bg:Rebuild(f)
+	check(f.flyout:IsShown(), "and turning it back on restores it")
+end
+
+print("== bags: a bank tooltip survives the tooltip's own refresh ==")
+do
+	_G.__atBank = true
+	fire("BANKFRAME_OPENED")
+	local bank = Bg.frames.bank
+
+	-- A generic bank slot: container -1.
+	local b = bank.buttons[-1][1]
+	check(b ~= nil and b.info ~= nil, "there is an item in the first bank slot")
+
+	b:GetScript("OnEnter")(b)
+	check(GameTooltip:IsShown(), "hovering it shows a tooltip")
+	check(GameTooltip.__shows[1] == "invitem",
+		"filled through SetInventoryItem, which is what Blizzard's own bank"
+		.. " uses - its frame never calls SetBagItem for container -1")
+
+	-- The half that was broken. GameTooltip's OnUpdate re-runs the owner's
+	-- UpdateTooltip every 0.2s, and the template points that at
+	-- ContainerFrameItemButton_OnEnter, which re-owns the tooltip (clearing it)
+	-- and then fills it with the SetBagItem call that answers nothing here.
+	_G.__tooltipTick()
+	check(GameTooltip:IsShown(),
+		"and it is still there a tick later - overriding OnEnter alone leaves"
+		.. " UpdateTooltip pointing at Blizzard's, which empties the tooltip a"
+		.. " fifth of a second after it appears")
+	check(GameTooltip.__shows and GameTooltip.__shows[1] == "invitem",
+		"and still showing the item, not an empty frame")
+
+	for _ = 1, 5 do _G.__tooltipTick() end
+	check(GameTooltip:IsShown(), "and it survives being sat on")
+
+	b:GetScript("OnLeave")(b)
+	check(not GameTooltip:IsShown(), "moving off closes it")
+
+	-- A bank BAG is an ordinary container and must keep Blizzard's path, which
+	-- is correct for it. Overriding every bank-side button would be the wrong
+	-- fix for the right bug.
+	local inBag = bank.buttons[5] and bank.buttons[5][1]
+	check(inBag ~= nil, "there is an item in a bank bag too")
+	inBag:GetScript("OnEnter")(inBag)
+	check(GameTooltip:IsShown() and GameTooltip.__shows[1] == "bagitem",
+		"which still goes through SetBagItem, because for a real container that"
+		.. " is the supported call")
+	_G.__tooltipTick()
+	check(GameTooltip:IsShown(), "and survives the refresh unchanged")
+	inBag:GetScript("OnLeave")(inBag)
+
+	-- Put the window back the way this block found it. Leaving it closed makes
+	-- every Rebuild below a no-op, and a block that silently stops drawing is
+	-- the kind of thing that makes four later assertions lie in unison.
+	Bg:Hide()
+	_G.__atBank = false
+	Bg:Show()
 end
 
 print("== bags: an item button is bound to one slot, forever ==")
