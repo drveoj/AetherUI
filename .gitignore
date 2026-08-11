@@ -1,0 +1,21 @@
+# WoW writes these next to the addon; they are per-character state, not source.
+SavedVariables/
+*.lua.bak
+
+# One-time setup script, not part of the addon.
+git-setup.sh
+
+# Editor / OS noise
+*.bak
+*.orig
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python scratch from Tools/
+__pycache__/
+*.pyc
+.venv/
+venv/

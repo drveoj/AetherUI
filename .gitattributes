@@ -1,0 +1,9 @@
+# The working tree is authored with LF endings and is copied verbatim into the
+# WoW AddOns folder. Never let git rewrite line endings on checkout — a CRLF
+# conversion would rewrite every Lua file and produce diffs that are not changes.
+* -text
+
+# Assets: binary, no diff, no merge.
+*.tga binary
+*.ttf binary
+*.png binary

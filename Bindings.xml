@@ -1,0 +1,26 @@
+<Bindings>
+	<!--
+		Bar 2 is the one action page Blizzard never gave a binding to: 1 is
+		ACTIONBUTTON, and 3-6 are the four MULTIACTIONBAR sets. Without a name of
+		its own there is nothing for a key to be assigned *to*, so bar 2 could be
+		enabled and shown and still be unreachable from the keyboard.
+
+		The bindings have no body on purpose. AetherUI reads whatever key you put
+		here and points an override binding at the button, exactly as it does for
+		Blizzard's own action bindings - so one mechanism serves every bar, and
+		the keys live in Blizzard's binding set where they belong rather than in
+		our saved variables.
+	-->
+	<Binding name="AETHERUI_BAR2BUTTON1"  header="AETHERUI" />
+	<Binding name="AETHERUI_BAR2BUTTON2"  />
+	<Binding name="AETHERUI_BAR2BUTTON3"  />
+	<Binding name="AETHERUI_BAR2BUTTON4"  />
+	<Binding name="AETHERUI_BAR2BUTTON5"  />
+	<Binding name="AETHERUI_BAR2BUTTON6"  />
+	<Binding name="AETHERUI_BAR2BUTTON7"  />
+	<Binding name="AETHERUI_BAR2BUTTON8"  />
+	<Binding name="AETHERUI_BAR2BUTTON9"  />
+	<Binding name="AETHERUI_BAR2BUTTON10" />
+	<Binding name="AETHERUI_BAR2BUTTON11" />
+	<Binding name="AETHERUI_BAR2BUTTON12" />
+</Bindings>

@@ -1,0 +1,20 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<Script file="LibStub\LibStub.lua"/>
+	<Include file="CallbackHandler-1.0\CallbackHandler-1.0.xml"/>
+	<Include file="AceDB-3.0\AceDB-3.0.xml"/>
+	<Include file="LibSharedMedia-3.0\lib.xml"/>
+
+	<!-- The options panel. Ace3 is distributed under a permissive licence that
+	     exists precisely so addons can ship it; every Ace addon on your disk has
+	     its own copy for the same reason. AceConfigCmd is what lets the same
+	     option tree answer to /aether as well as to the dialog. -->
+	<Include file="AceGUI-3.0\AceGUI-3.0.xml"/>
+	<Include file="AceConsole-3.0\AceConsole-3.0.xml"/>
+	<Include file="AceConfig-3.0\AceConfig-3.0.xml"/>
+	<Include file="AceDBOptions-3.0\AceDBOptions-3.0.xml"/>
+	<!-- Cast data for units other than the player. Classic Era does not report it
+	     natively; this infers it from the combat log. Both ShadowedUnitFrames and
+	     Gnosis ship the same library for the same reason. It no-ops on any
+	     non-Classic client. -->
+	<Script file="LibClassicCasterino\LibClassicCasterino.lua"/>
+</Ui>

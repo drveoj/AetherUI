@@ -1,0 +1,382 @@
+--[[--------------------------------------------------------------------------
+	AetherUI :: Glass
+
+	The frosted-glass surface, which is the whole visual identity of the concept
+	deck, rebuilt with the tools Classic Era actually gives us.
+
+	What we cannot do
+	-----------------
+	The concepts use CSS `backdrop-filter: blur()`. There is no runtime blur in
+	the WoW UI at all: no shader hooks, no render-to-texture for arbitrary frames.
+	Nothing will ever sample and blur the world behind a frame.
+
+	What sells it instead
+	---------------------
+	Frosted glass reads from four cues, and blur is only one of them:
+	  1. translucency          -> a tinted, partly transparent fill
+	  2. a bright catching rim -> a separate edge texture, tinted apart
+	  3. a top-light falloff   -> baked into the fill's alpha ramp
+	  4. fine surface grain    -> baked into the fill's ALPHA channel
+	Three of those four survive intact. In motion the missing blur is genuinely
+	hard to notice; what people actually recognise is the rim and the falloff.
+
+	The grain is baked into the fill textures rather than layered at runtime, and
+	it lives in alpha rather than RGB. Both of those are the result of getting it
+	wrong first: a separate noise texture can only be anchored to the centre
+	slice, which left a visibly brighter rectangle between the rounded caps with
+	hard seams at both ends; and RGB variation is multiplied away to nothing once
+	a white texture is tinted with a dark colour, so only alpha variation - more
+	or less of the world showing through per texel - actually reads as frost.
+
+	Geometry
+	--------
+	Panels are 9-slice, pills are 3-slice, both driven from a single texture with
+	SetTexCoord. Slice fractions come from Core\Media.lua and are guaranteed by
+	Tools/generate_textures.py:
+	  * Glass-Panel  128x128, corner 32  -> 0.25
+	  * Glass-Pill   256x128, cap    64  -> 0.25
+	  * Glass-Shadow 128x128, corner 48  -> 0.375   (wider: blur spill must fit)
+
+	A pill's caps must stay circular, so their width is always half the pill's
+	height and is recomputed on resize.
+----------------------------------------------------------------------------]]
+
+local ADDON, A = ...
+
+local Glass = {}
+A.Glass = Glass
+
+local Media = A.Media
+
+local TL, T, TR, L, C, R, BL, B, BR = 1, 2, 3, 4, 5, 6, 7, 8, 9
+
+--- Pixel snapping is left ON, and that is deliberate. Do not turn it off here.
+--
+--  It was turned off once, on the reasoning that nine pieces each rounding their
+--  own edges to the grid must be what seams a nine-slice. That reasoning has it
+--  exactly backwards, and the result was worse rather than better.
+--
+--  These slices *abut*: the centre's left edge is the left cap's right edge.
+--  Snapped, both land on the same integer pixel and the shape tiles seamlessly.
+--  Unsnapped, they land on the same *fractional* pixel - so the boundary pixel
+--  is partially covered by both quads, and the rim there gets alpha-blended
+--  twice. Two 50% fragments compose to 75%, not 50%, which is a bright dot in
+--  the rim wherever a seam crosses it.
+--
+--  A 3-slice pill's seam runs vertically at x = cap, which is precisely where
+--  the cap's arc becomes the straight top and bottom edge. Four seam crossings,
+--  four bright dots, one at each corner. Snapping is what prevents that, and it
+--  is the whole reason the feature exists.
+--
+--  If a seam ever does show, the fix is in the *texture* - a rim wide enough and
+--  soft enough to survive a pixel of misalignment - not in the snapping.
+
+-- ---------------------------------------------------------------------------
+-- low level: build and lay out a nine-piece texture set
+-- ---------------------------------------------------------------------------
+
+local function Build9(frame, texPath, layer, sub)
+	local t = {}
+	for i = 1, 9 do
+		local tex = frame:CreateTexture(nil, layer, nil, sub)
+		tex:SetTexture(texPath)
+		t[i] = tex
+	end
+	return t
+end
+
+--- `size` is {width, height} of the source texture. Internal slice boundaries
+--  are pulled in by half a texel so no slice can sample its neighbour; the outer
+--  edges are left alone, since clamping already handles those.
+local function ApplyTexCoords(t, q, size)
+	local a, b = q, 1 - q
+	local hx = size and (0.5 / size[1]) or 0
+	local hy = size and (0.5 / size[2]) or 0
+
+	local aL, aR = a - hx, a + hx      -- left/right side of the vertical seam at a
+	local bL, bR = b - hx, b + hx
+	local aT, aB = a - hy, a + hy      -- top/bottom side of the horizontal seam
+	local bT, bB = b - hy, b + hy
+
+	t[TL]:SetTexCoord(0,  aL, 0,  aT)
+	t[T ]:SetTexCoord(aR, bL, 0,  aT)
+	t[TR]:SetTexCoord(bR, 1,  0,  aT)
+	t[L ]:SetTexCoord(0,  aL, aB, bT)
+	t[C ]:SetTexCoord(aR, bL, aB, bT)
+	t[R ]:SetTexCoord(bR, 1,  aB, bT)
+	t[BL]:SetTexCoord(0,  aL, bB, 1)
+	t[B ]:SetTexCoord(aR, bL, bB, 1)
+	t[BR]:SetTexCoord(bR, 1,  bB, 1)
+end
+
+--- Anchor the nine pieces around `anchorTo`, expanded outward by `pad`.
+local function Layout9(t, anchorTo, corner, pad)
+	pad = pad or 0
+
+	t[TL]:ClearAllPoints()
+	t[TL]:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", -pad, pad)
+	t[TL]:SetSize(corner, corner)
+
+	t[TR]:ClearAllPoints()
+	t[TR]:SetPoint("TOPRIGHT", anchorTo, "TOPRIGHT", pad, pad)
+	t[TR]:SetSize(corner, corner)
+
+	t[BL]:ClearAllPoints()
+	t[BL]:SetPoint("BOTTOMLEFT", anchorTo, "BOTTOMLEFT", -pad, -pad)
+	t[BL]:SetSize(corner, corner)
+
+	t[BR]:ClearAllPoints()
+	t[BR]:SetPoint("BOTTOMRIGHT", anchorTo, "BOTTOMRIGHT", pad, -pad)
+	t[BR]:SetSize(corner, corner)
+
+	t[T]:ClearAllPoints()
+	t[T]:SetPoint("TOPLEFT", t[TL], "TOPRIGHT")
+	t[T]:SetPoint("BOTTOMRIGHT", t[TR], "BOTTOMLEFT")
+
+	t[B]:ClearAllPoints()
+	t[B]:SetPoint("TOPLEFT", t[BL], "TOPRIGHT")
+	t[B]:SetPoint("BOTTOMRIGHT", t[BR], "BOTTOMLEFT")
+
+	t[L]:ClearAllPoints()
+	t[L]:SetPoint("TOPLEFT", t[TL], "BOTTOMLEFT")
+	t[L]:SetPoint("BOTTOMRIGHT", t[BL], "TOPRIGHT")
+
+	t[R]:ClearAllPoints()
+	t[R]:SetPoint("TOPLEFT", t[TR], "BOTTOMLEFT")
+	t[R]:SetPoint("BOTTOMRIGHT", t[BR], "TOPRIGHT")
+
+	t[C]:ClearAllPoints()
+	t[C]:SetPoint("TOPLEFT", t[TL], "BOTTOMRIGHT")
+	t[C]:SetPoint("BOTTOMRIGHT", t[BR], "TOPLEFT")
+end
+
+local function Tint(t, c)
+	local r, g, b, a = c[1], c[2], c[3], c[4] or 1
+	for i = 1, #t do t[i]:SetVertexColor(r, g, b, a) end
+end
+
+local function ShowAll(t, show)
+	for i = 1, #t do
+		if show then t[i]:Show() else t[i]:Hide() end
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- three-piece (pill) variant
+-- ---------------------------------------------------------------------------
+
+--- Round a length in a *frame's* own units onto the physical pixel grid.
+--
+--  A.pixel is in UIParent units; a frame at profile scale is not, so the step
+--  has to be converted across. Without this a pill's two cap quads round to
+--  different widths - the frame's left edge and its right edge sit at different
+--  sub-pixel phases, so `left + cap` and `right - cap` round in opposite
+--  directions and one cap comes out a pixel wider than the other. That is the
+--  "right border is wider than the left", and it also drags the join between
+--  the arc and the straight edge a pixel out of true on one side.
+local function SnapIn(frame, v)
+	local us = UIParent:GetEffectiveScale() or 1
+	local fs = (frame.GetEffectiveScale and frame:GetEffectiveScale()) or us
+	local step = (A.pixel or 1) * us / (fs > 0 and fs or 1)
+	if not step or step <= 0 or step ~= step then return v end
+	return math.floor(v / step + 0.5) * step
+end
+
+local PL, PC, PR = 1, 2, 3
+
+local function Build3(frame, texPath, layer, sub, frac, size)
+	local t = {}
+	for i = 1, 3 do
+		local tex = frame:CreateTexture(nil, layer, nil, sub)
+		tex:SetTexture(texPath)
+		t[i] = tex
+	end
+	local q = frac or 0.25
+	local hx = size and (0.5 / size[1]) or 0   -- see ApplyTexCoords
+	t[PL]:SetTexCoord(0, q - hx, 0, 1)
+	t[PC]:SetTexCoord(q + hx, 1 - q - hx, 0, 1)
+	t[PR]:SetTexCoord(1 - q + hx, 1, 0, 1)
+	return t
+end
+
+local function Layout3(t, anchorTo, cap, pad)
+	pad = pad or 0
+
+	t[PL]:ClearAllPoints()
+	t[PL]:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", -pad, pad)
+	t[PL]:SetPoint("BOTTOMLEFT", anchorTo, "BOTTOMLEFT", -pad, -pad)
+	t[PL]:SetWidth(cap)
+
+	t[PR]:ClearAllPoints()
+	t[PR]:SetPoint("TOPRIGHT", anchorTo, "TOPRIGHT", pad, pad)
+	t[PR]:SetPoint("BOTTOMRIGHT", anchorTo, "BOTTOMRIGHT", pad, -pad)
+	t[PR]:SetWidth(cap)
+
+	t[PC]:ClearAllPoints()
+	t[PC]:SetPoint("TOPLEFT", t[PL], "TOPRIGHT")
+	t[PC]:SetPoint("BOTTOMRIGHT", t[PR], "BOTTOMLEFT")
+end
+
+-- ---------------------------------------------------------------------------
+-- surface object
+-- ---------------------------------------------------------------------------
+
+local Surface = {}
+
+function Surface:SetFillColor(c)
+	self._fillColor = c
+	Tint(self._fill, c)
+end
+
+function Surface:SetEdgeColor(c)
+	self._edgeColor = c
+	Tint(self._edge, c)
+end
+
+function Surface:SetEdgeShown(show)
+	ShowAll(self._edge, show)
+end
+
+--- Ambient drop shadow. `opacity` is 0..1; 0 turns it off.
+--
+--  Note that the *geometry* is not configurable, and that is deliberate. Both
+--  shadow textures are authored for one fixed relationship to the shape they sit
+--  under, because that is the only way the hole in the shadow can line up with
+--  the shape's own curve:
+--
+--    panels  drawn with a corner piece of 2*corner, offset corner/2 outward.
+--            At that ratio the hole renders at exactly the panel's corner radius.
+--    pills   drawn at spread = height/4, which puts the body edge on texel 21
+--            and the cap on texel 64 regardless of the pill's size.
+--
+--  Letting the caller pick a free spread distance is what produced the original
+--  bug: the hole ended up near-square under a 14px rounded corner, leaving a
+--  transparent notch at each corner with no panel and no shadow in it.
+function Surface:SetShadow(opacity)
+	opacity = opacity and math.min(1, opacity) or 0
+	if opacity <= 0 then
+		if self._shadow then ShowAll(self._shadow, false) end
+		self._shadowOpacity = nil
+		return
+	end
+
+	self._shadowOpacity = opacity
+
+	if self._kind == "pill" then
+		if not self._shadow then
+			self._shadow = Build3(self, Media.texture.pillShadow, "BACKGROUND", -8, Media.slice.pillShadow, Media.textureSize.pillShadow)
+		end
+		self:_LayoutPillShadow()
+	else
+		if not self._shadow then
+			self._shadow = Build9(self, Media.texture.shadow, "BACKGROUND", -8)
+			ApplyTexCoords(self._shadow, Media.slice.shadow, Media.textureSize.shadow)
+		end
+		self:_LayoutPanelShadow()
+	end
+
+	local c = A.Palette.c.shadow
+	Tint(self._shadow, { c[1], c[2], c[3], (c[4] or 1) * opacity })
+	ShowAll(self._shadow, true)
+end
+
+function Surface:_LayoutPanelShadow()
+	if not self._shadow then return end
+	local c = SnapIn(self, self._corner or 12)
+	Layout9(self._shadow, self, c * 2, c / 2)
+end
+
+function Surface:_LayoutPillShadow()
+	if not self._shadow then return end
+	local h = self:GetHeight() or 0
+	if h <= 0 then return end
+	local s = SnapIn(self, h / 4)
+	Layout3(self._shadow, self, SnapIn(self, (h + 2 * s) / 2), s)
+end
+
+function Surface:ApplySkin(fillToken, edgeToken)
+	local c = A.Palette.c
+	self:SetFillColor(c[fillToken or "glass"] or c.glass)
+	self:SetEdgeColor(c[edgeToken or "glassEdge"] or c.glassEdge)
+	if self._shadowOpacity then self:SetShadow(self._shadowOpacity) end
+end
+
+-- ---------------------------------------------------------------------------
+-- constructors
+-- ---------------------------------------------------------------------------
+
+local function Adopt(frame)
+	for k, v in pairs(Surface) do frame[k] = v end
+	return frame
+end
+
+--- Surfaces are usually plain Frames, but a unit capsule or a dock has to be a
+--  real Button carrying a secure template. opts.frameType / opts.template let a
+--  caller ask for that without duplicating the whole constructor.
+local function NewSurfaceFrame(parent, opts)
+	return CreateFrame(opts.frameType or "Frame", opts.name, parent or UIParent, opts.template)
+end
+
+--- Rounded rectangle panel (quest tracker, dock, tooltips).
+--  opts: { corner, shadow, fill, edge, frameType, template, name }
+function Glass.CreatePanel(parent, opts)
+	opts = opts or {}
+	local f = NewSurfaceFrame(parent, opts)
+	Adopt(f)
+
+	f._kind   = "panel"
+	f._corner = opts.corner or 12
+
+	f._fill = Build9(f, Media.texture.panel, "BACKGROUND", 0)
+	ApplyTexCoords(f._fill, Media.slice.panel, Media.textureSize.panel)
+	Layout9(f._fill, f, f._corner, 0)
+
+	f._edge = Build9(f, Media.texture.panelEdge, "BORDER", 0)
+	ApplyTexCoords(f._edge, Media.slice.panel, Media.textureSize.panel)
+	Layout9(f._edge, f, f._corner, 0)
+
+	f:ApplySkin(opts.fill, opts.edge)
+	if opts.shadow then f:SetShadow(opts.shadow) end
+
+	return f
+end
+
+function Glass.SetPanelCorner(f, corner)
+	f._corner = corner
+	Layout9(f._fill, f, corner, 0)
+	Layout9(f._edge, f, corner, 0)
+	-- the shadow's geometry is derived from the corner, so it has to follow
+	f:_LayoutPanelShadow()
+end
+
+--- Capsule (unit frames, buffs, cast bar, nameplates).
+--  Cap width tracks height automatically so the ends stay circular.
+--  Same opts as CreatePanel, minus corner.
+function Glass.CreatePill(parent, opts)
+	opts = opts or {}
+	local f = NewSurfaceFrame(parent, opts)
+	Adopt(f)
+
+	f._kind = "pill"
+
+	f._fill = Build3(f, Media.texture.pill, "BACKGROUND", 0, Media.slice.pill, Media.textureSize.pill)
+	f._edge = Build3(f, Media.texture.pillEdge, "BORDER", 0, Media.slice.pill, Media.textureSize.pill)
+
+	local function resize(self)
+		local cap = SnapIn(self, (self:GetHeight() or 0) / 2)
+		if cap <= 0 then return end
+		Layout3(self._fill, self, cap, 0)
+		Layout3(self._edge, self, cap, 0)
+		self:_LayoutPillShadow()
+	end
+	f._Resize = resize
+	f:SetScript("OnSizeChanged", resize)
+
+	-- Lay out once now in case the caller sized the frame before this point.
+	resize(f)
+
+	f:ApplySkin(opts.fill, opts.edge)
+	if opts.shadow then f:SetShadow(opts.shadow) end
+
+	return f
+end

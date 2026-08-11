@@ -1,0 +1,410 @@
+--[[--------------------------------------------------------------------------
+	AetherUI :: Widgets
+
+	The small parts every module builds out of: bars, orbs, text, icon slots.
+	Nothing here knows about units or combat; it is all pure presentation.
+----------------------------------------------------------------------------]]
+
+local ADDON, A = ...
+
+local W = {}
+A.Widgets = W
+
+local Media = A.Media
+
+-- ---------------------------------------------------------------------------
+-- gradients
+--
+-- The colour-gradient API was reshaped in 10.0: SetGradientAlpha(orientation,
+-- r,g,b,a, r,g,b,a) became SetGradient(orientation, ColorMixin, ColorMixin).
+-- Classic Era has been rebased onto the newer one, but pinned/older clients and
+-- some private builds still expose the old shape, so probe once and cache.
+-- ---------------------------------------------------------------------------
+
+local gradientMode
+
+local function SetGradient(tex, orientation, c1, c2)
+	local r1, g1, b1, a1 = c1[1], c1[2], c1[3], c1[4] or 1
+	local r2, g2, b2, a2 = c2[1], c2[2], c2[3], c2[4] or 1
+
+	if gradientMode == nil then
+		if tex.SetGradient and CreateColor then
+			local ok = pcall(tex.SetGradient, tex, orientation,
+				CreateColor(r1, g1, b1, a1), CreateColor(r2, g2, b2, a2))
+			gradientMode = ok and "new" or false
+			if ok then return end
+		end
+		if tex.SetGradientAlpha then
+			local ok = pcall(tex.SetGradientAlpha, tex, orientation, r1, g1, b1, a1, r2, g2, b2, a2)
+			gradientMode = ok and "old" or false
+			if ok then return end
+		end
+		gradientMode = false
+	end
+
+	if gradientMode == "new" then
+		tex:SetGradient(orientation, CreateColor(r1, g1, b1, a1), CreateColor(r2, g2, b2, a2))
+	elseif gradientMode == "old" then
+		tex:SetGradientAlpha(orientation, r1, g1, b1, a1, r2, g2, b2, a2)
+	else
+		-- No gradient support at all: fall back to the mean of the two stops.
+		tex:SetVertexColor((r1 + r2) / 2, (g1 + g2) / 2, (b1 + b2) / 2, (a1 + a2) / 2)
+	end
+end
+
+W.SetGradient = SetGradient
+
+-- ---------------------------------------------------------------------------
+-- masks
+--
+-- Classic Era does have MaskTexture, but guard anyway: an addon that hard-errors
+-- on a client without it is worse than one that renders square corners.
+-- ---------------------------------------------------------------------------
+
+local function AddMask(region, owner, maskPath, anchorTo)
+	if not region or not region.AddMaskTexture or not owner.CreateMaskTexture then return nil end
+	local ok, mask = pcall(function()
+		local m = owner:CreateMaskTexture()
+		m:SetTexture(maskPath, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+		m:SetAllPoints(anchorTo or region)
+		region:AddMaskTexture(m)
+		return m
+	end)
+	return ok and mask or nil
+end
+
+W.AddMask = AddMask
+
+-- ---------------------------------------------------------------------------
+-- text
+-- ---------------------------------------------------------------------------
+
+function W.Text(parent, style, justify, layer)
+	local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+	Media:SetFont(fs, style)
+	fs:SetJustifyH(justify or "LEFT")
+	fs:SetJustifyV("MIDDLE")
+	-- A soft shadow is the only thing keeping light type legible against the
+	-- Barrens at midday. The concepts lean on text-shadow for exactly this.
+	fs:SetShadowColor(0, 0, 0, 0.55)
+	fs:SetShadowOffset(0, -1)
+	local c = A.Palette.c.text
+	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+	fs._aetherStyle = style
+	return fs
+end
+
+-- Both of these are nil-tolerant on purpose. They are called from skin and
+-- config passes that walk whole collections of widgets, and not every member of
+-- a collection has every region - an adopted Blizzard button has none of ours at
+-- all. A missing font string there is a fact about the widget, not a bug worth
+-- taking the whole restyle down for.
+function W.Restyle(fs, style)
+	if not fs then return end
+	Media:SetFont(fs, style or fs._aetherStyle)
+end
+
+function W.Color(fs, c)
+	if not fs or not c then return end
+	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+end
+
+-- ---------------------------------------------------------------------------
+-- bars
+-- ---------------------------------------------------------------------------
+
+local Bar = {}
+
+--- colors: either {r,g,b} or a { {r,g,b}, {r,g,b} } gradient pair.
+function Bar:SetColors(colors)
+	if not colors then return end
+	local tex = self:GetStatusBarTexture()
+	if type(colors[1]) == "table" then
+		SetGradient(tex, "HORIZONTAL", colors[1], colors[2] or colors[1])
+	else
+		tex:SetVertexColor(colors[1], colors[2], colors[3], colors[4] or 1)
+	end
+	self._colors = colors
+end
+
+function Bar:SetBackdropColor(c)
+	if self.bg then self.bg:SetVertexColor(c[1], c[2], c[3], c[4] or 1) end
+end
+
+--- Smooth value changes so a health tick does not snap. Cheap lerp on the
+--  shared ticker rather than a per-bar OnUpdate.
+function Bar:SetSmoothValue(v)
+	self._target = v
+	if not self._smooth then
+		self:SetValue(v)
+		return
+	end
+	if not self._animating then
+		self._animating = true
+		A:RegisterTicker(self, Bar._Step)
+	end
+end
+
+function Bar:_Step(dt)
+	local cur = self:GetValue() or 0
+	local target = self._target or cur
+	local diff = target - cur
+	local _, max = self:GetMinMaxValues()
+	local epsilon = math.max((max or 1) * 0.002, 0.0001)
+	if math.abs(diff) <= epsilon then
+		self:SetValue(target)
+		self._animating = false
+		A:UnregisterTicker(self)
+		return
+	end
+	self:SetValue(cur + diff * math.min(1, dt * 9))
+end
+
+--- opts: { height, rounded = true, smooth = true, bgAlpha = 0.14 }
+function W.CreateBar(parent, opts)
+	opts = opts or {}
+	local bar = CreateFrame("StatusBar", nil, parent)
+	bar:SetStatusBarTexture(Media.texture.bar)
+	bar:SetMinMaxValues(0, 1)
+	bar:SetValue(1)
+	if opts.height then bar:SetHeight(opts.height) end
+
+	local bg = bar:CreateTexture(nil, "BACKGROUND")
+	bg:SetTexture(Media.texture.flat)
+	bg:SetAllPoints(bar)
+	bg:SetVertexColor(1, 1, 1, opts.bgAlpha or 0.14)
+	bar.bg = bg
+
+	for k, v in pairs(Bar) do bar[k] = v end
+	bar._smooth = opts.smooth ~= false
+
+	if opts.rounded ~= false then
+		-- One mask anchored to the bar's full extent, shared by fill and
+		-- background. The fill keeps a square leading edge as it depletes, which
+		-- is what you want: a rounded head would read as "nearly empty".
+		local m = AddMask(bar:GetStatusBarTexture(), bar, Media.texture.barMask, bar)
+		if m and bg.AddMaskTexture then
+			pcall(bg.AddMaskTexture, bg, m)
+			bar._mask = m
+		end
+	end
+
+	return bar
+end
+
+-- ---------------------------------------------------------------------------
+-- orb (portrait / level badge)
+-- ---------------------------------------------------------------------------
+
+local Orb = {}
+
+function Orb:SetColor(c1, c2)
+	SetGradient(self.disc, "VERTICAL", c1, c2 or c1)
+end
+
+function Orb:SetRingColor(c)
+	self.ring:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+end
+
+function Orb:SetLabel(text)
+	self.label:SetText(text or "")
+end
+
+--- Resize the disc and refit the label with it. The level number is ~26% of the
+--  orb in the concept; hard-coding a point size means it stops fitting the
+--  moment orbSize is changed.
+function Orb:Resize(size)
+	self:SetSize(size, size)
+	Media:SetFont(self.label, "level", math.max(9, math.floor(size * 0.26 + 0.5)))
+	if self.glow then self.glow:SetSize(size * 2, size * 2) end
+end
+
+function Orb:SetGlow(shown, c)
+	if not self.glow then
+		if not shown then return end
+		local g = self:CreateTexture(nil, "BACKGROUND", nil, -1)
+		g:SetTexture(Media.texture.ringGlow)
+		g:SetBlendMode("ADD")
+		g:SetPoint("CENTER")
+		self.glow = g
+	end
+	if shown then
+		local s = self:GetWidth() * 2
+		self.glow:SetSize(s, s)
+		c = c or A.Palette.c.accent
+		self.glow:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+		self.glow:Show()
+	else
+		self.glow:Hide()
+	end
+end
+
+--- opts: { size = 46, portrait = false }
+function W.CreateOrb(parent, opts)
+	opts = opts or {}
+	local size = opts.size or 46
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetSize(size, size)
+
+	local disc = f:CreateTexture(nil, "ARTWORK")
+	disc:SetTexture(Media.texture.flat)
+	disc:SetAllPoints(f)
+	AddMask(disc, f, Media.texture.circleMask, f)
+	f.disc = disc
+
+	if opts.portrait then
+		local p = f:CreateTexture(nil, "ARTWORK", nil, 1)
+		p:SetAllPoints(f)
+		AddMask(p, f, Media.texture.circleMask, f)
+		f.portrait = p
+	end
+
+	local ring = f:CreateTexture(nil, "OVERLAY")
+	ring:SetTexture(Media.texture.ring)
+	ring:SetAllPoints(f)
+	f.ring = ring
+
+	local label = W.Text(f, "level", "CENTER")
+	label:SetPoint("CENTER", f, "CENTER", 0, 0)
+	-- Sits on a coloured disc, so it gets a harder shadow than body text.
+	label:SetShadowColor(0, 0, 0, 0.85)
+	label:SetShadowOffset(0, -1)
+	f.label = label
+
+	for k, v in pairs(Orb) do f[k] = v end
+	f:Resize(size)
+	return f
+end
+
+-- ---------------------------------------------------------------------------
+-- icon slot (aura icons now, action buttons later)
+-- ---------------------------------------------------------------------------
+
+local Slot = {}
+
+function Slot:SetIcon(texture)
+	self.icon:SetTexture(texture)
+end
+
+function Slot:SetActive(shown, c)
+	if shown then
+		c = c or A.Palette.c.cast[1]
+		self.glow:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+		self.glow:Show()
+	else
+		self.glow:Hide()
+	end
+end
+
+function Slot:SetEdgeColor(c)
+	self.edge:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+end
+
+--- Attach the slot layer stack to an existing frame.
+--
+--  Split out from CreateSlot because an action button has to *be* a secure
+--  CheckButton created from a template - we cannot wrap one in a plain frame and
+--  keep the click behaviour. So the chrome is applied to whatever frame the
+--  caller already has.
+--
+--  Layer stack, bottom to top, mirroring the concept's CSS order:
+--    icon           masked to a rounded square
+--    inner shadow   inset 0 0 14px rgba(0,0,10,.45)
+--    top gloss      linear-gradient(180deg, rgba(255,255,255,.16), transparent 45%)
+--    1px rim        border: 1px solid ...
+--    glow           active state, drawn at 2x and centred
+function W.DecorateSlot(f, size, opts)
+	opts = opts or {}
+
+	local icon = f:CreateTexture(nil, "ARTWORK")
+	icon:SetAllPoints(f)
+	-- Trim the 1px transparent gutter Blizzard bakes into every icon file.
+	icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	AddMask(icon, f, Media.texture.slotMask, f)
+	f.icon = icon
+
+	local shade = f:CreateTexture(nil, "ARTWORK", nil, 1)
+	shade:SetTexture(Media.texture.slotShade)
+	shade:SetAllPoints(f)
+	f.shade = shade
+
+	local gloss = f:CreateTexture(nil, "ARTWORK", nil, 2)
+	gloss:SetTexture(Media.texture.slotGloss)
+	gloss:SetAllPoints(f)
+	gloss:SetBlendMode("ADD")
+	f.gloss = gloss
+
+	local edge = f:CreateTexture(nil, "OVERLAY")
+	edge:SetTexture(Media.texture.slotEdge)
+	edge:SetAllPoints(f)
+	local e = A.Palette.c.glassEdge
+	edge:SetVertexColor(e[1], e[2], e[3], e[4] or 1)
+	f.edge = edge
+
+	local glow = f:CreateTexture(nil, "OVERLAY", nil, 1)
+	glow:SetTexture(Media.texture.slotGlow)
+	glow:SetBlendMode("ADD")
+	glow:SetPoint("CENTER")
+	glow:SetSize(size * 2, size * 2)
+	glow:Hide()
+	f.glow = glow
+
+	local count = W.Text(f, "stack", "RIGHT")
+	count:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+	f.count = count
+
+	for k, v in pairs(Slot) do f[k] = v end
+	return f
+end
+
+function W.CreateSlot(parent, opts)
+	opts = opts or {}
+	local size = opts.size or 30
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetSize(size, size)
+	return W.DecorateSlot(f, size, opts)
+end
+
+-- ---------------------------------------------------------------------------
+-- misc
+-- ---------------------------------------------------------------------------
+
+--- Faint hairline used between stacked rows.
+function W.Divider(parent)
+	local t = parent:CreateTexture(nil, "ARTWORK")
+	t:SetTexture(Media.texture.divider)
+	t:SetHeight(A:Px(1))
+	local c = A.Palette.c.textFaint
+	t:SetVertexColor(c[1], c[2], c[3], 0.25)
+	return t
+end
+
+--- Short numbers, Classic style: 12.4k rather than 12400.
+function W.Short(n)
+	if not n then return "" end
+	if n >= 1000000 then return string.format("%.1fm", n / 1000000) end
+	if n >= 10000 then return string.format("%.0fk", n / 1000) end
+	if n >= 1000 then return string.format("%.1fk", n / 1000) end
+	return tostring(math.floor(n + 0.5))
+end
+
+--- Aura clocks read differently from cooldowns: the concept shows "6m" and
+--  "4s", i.e. a unit is always present and precision drops as the number grows.
+--  Returns "" for a permanent aura so the pill just omits the field.
+function W.AuraTime(expiration, duration)
+	if not expiration or expiration == 0 or not duration or duration == 0 then return "" end
+	local remain = expiration - GetTime()
+	if remain <= 0 then return "" end
+	if remain >= 3600 then return string.format("%dh", math.floor(remain / 3600 + 0.5)) end
+	if remain >= 60 then return string.format("%dm", math.floor(remain / 60 + 0.5)) end
+	if remain >= 1 then return string.format("%ds", math.floor(remain)) end
+	return string.format("%.1fs", remain)
+end
+
+function W.Duration(sec)
+	if not sec or sec <= 0 then return "" end
+	if sec >= 3600 then return string.format("%dh", math.floor(sec / 3600 + 0.5)) end
+	if sec >= 60 then return string.format("%dm", math.floor(sec / 60 + 0.5)) end
+	if sec >= 10 then return string.format("%d", math.floor(sec)) end
+	return string.format("%.1f", sec)
+end
