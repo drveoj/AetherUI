@@ -2661,12 +2661,58 @@ for i = 1, 30 do tick(0.1) end
 check(UF.player:GetAlpha() > 0.95, "combat overrides the idle fade")
 _G.__inCombat = false
 
-print("== zen: with keepMinimap off, the map really goes ==")
+print("== zen: keepMinimap is off by the time it ships ==")
+do
+	-- Read off the DEFAULTS table, not off the live profile, and asserted before
+	-- anything below has had a chance to write to it. The live map was built,
+	-- shown to Joe and turned back off again; a default that quietly drifted
+	-- back on would be a thing nobody asked for arriving in a later commit.
+	check(A.Config.defaults.profile.modules.zen.keepMinimap == false,
+		"zen ships with the minimap going away, and the corner block drawing a"
+		.. " glyph beside the zone in its place")
+end
+
+print("== zen: with keepMinimap ON, the real map stays ==")
+do
+	local Z = A:GetModule("zen")
+	local MMod = A:GetModule("minimap")
+	local zcfg = A.db.profile.modules.zen
+	zcfg.keepMinimap = true
+	Z:OnConfigChanged()
+
+	_G.__minimapPin:SetAlpha(0.5)
+	Z:DimUI(1)
+
+	check(Minimap:GetAlpha() == 1 and Minimap:IsShown(),
+		"the map is left exactly as it was - it escapes the cascade on its own,"
+		.. " so 'left alone' and 'left visible' are the same thing")
+	check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
+		"and so is anything hung on it - a quest marker on a map that is still"
+		.. " there is not debris")
+
+	local cpPoint, cpRel = Z.frame.corner:GetPoint()
+	check(cpPoint == "TOP" and cpRel == MMod.frame,
+		"and the zone and clock move under the map, into the space the minimap"
+		.. " module's own pill has just vacated")
+	check(not Z.frame.corner.disc:IsShown(),
+		"with the drawn stand-in switched off, because the real one is above it")
+	for _, key in ipairs({ "disc", "rim", "blip" }) do
+		local r = Z.frame.corner[key]
+		check((r:GetWidth() or 0) > 0 and (r:GetHeight() or 0) > 0,
+			"and the " .. key .. " keeps a real size even while hidden ("
+			.. tostring(r:GetWidth()) .. ") - a zero-sized texture draws at its"
+			.. " file's native size")
+	end
+
+	Z:RestoreUI()
+	zcfg.keepMinimap = false
+	Z:OnConfigChanged()
+end
+
+print("== zen: the map goes, and going takes three things ==")
 do
 	local Z = A:GetModule("zen")
 	local zcfg = A.db.profile.modules.zen
-	zcfg.keepMinimap = false
-	Z:OnConfigChanged()
 
 	_G.__minimapPin:SetAlpha(0.5)
 	Z:DimUI(1)
@@ -2743,7 +2789,6 @@ do
 		.. " addon holding its own marker at half is not asking us to brighten"
 		.. " it (" .. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
 
-	zcfg.keepMinimap = true
 	Z:OnConfigChanged()
 end
 
@@ -2789,40 +2834,39 @@ do
 		.. string.format("%.2f", UIParent:GetAlpha()) .. ")")
 	check(Z.frame.__parent == nil,
 		"which only works because the readout lives outside UIParent")
-	-- ...except the map, which is the point of keepMinimap. It escapes the
-	-- cascade on its own, so "left alone" and "left visible" are the same thing.
-	check(Minimap:GetAlpha() == 1 and Minimap:IsShown(),
-		"but NOT the minimap, which stays exactly as it was - it is the one part"
-		.. " of the HUD still telling you something while you are not playing")
-	check(math.abs(_G.__minimapPin:GetAlpha() - 0.5) < 0.001,
-		"and neither is anything hung on it - a quest marker on a map that is"
-		.. " still there is not debris (" ..
-		string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
+	-- ...including the map, which is the default. Three separate things have to
+	-- happen for it to go, and each one covers a layer the one before it misses:
+	-- the widget's own alpha, the frames hung on it, and the layers the engine
+	-- draws into it.
+	check(Minimap:GetAlpha() < 0.05,
+		"the map is driven by hand: it is a widget the client renders into and"
+		.. " ignores the alpha it inherits, even though our module parents it"
+		.. " into a frame under UIParent")
+	check(_G.__minimapPin:GetAlpha() < 0.05,
+		"and so is anything an addon hung on it - being outside the cascade"
+		.. " applies to the children too, so a quest marker gets no alpha from"
+		.. " anywhere (" .. string.format("%.2f", _G.__minimapPin:GetAlpha()) .. ")")
+	check(not Minimap:IsShown(),
+		"and the map is HIDDEN at the bottom of the fade, not merely faded - the"
+		.. " flight-master blip and the player arrow are drawn by the engine into"
+		.. " the widget, so they ignore its alpha and would otherwise be left"
+		.. " hanging over an empty hillside with no map under them")
 
-	-- The block moves under the map, where the minimap module's own zone pill
-	-- sits -- and that one has faded out by now.
+	-- And the block keeps the drawn glyph, in the corner, on its own.
 	local cpPoint, cpRel = Z.frame.corner:GetPoint()
-	check(cpPoint == "TOP" and cpRel == MMod.frame,
-		"and the zone and clock move under the map, into the space the minimap"
-		.. " module's own pill has just vacated")
-	check(not Z.frame.corner.disc:IsShown() and not Z.frame.corner.rim:IsShown(),
-		"with the drawn stand-in glyph switched off, because the real one is"
-		.. " right above it")
-
-	-- Taken off screen with Hide, and still carrying a real size.
-	--
-	-- The first version sized these to 0 to remove them. A Texture given zero
-	-- width and height does not vanish - it falls back to the dimensions of the
-	-- file behind it, and the ring drew at its native 512, putting a purple hoop
-	-- most of the way across the screen. Zero is not a size, it is the absence
-	-- of one, and every region here is checked for it.
+	check(cpPoint == "TOPRIGHT" and cpRel == UIParent,
+		"the zone and clock stand on their own in the corner, since there is no"
+		.. " map left to sit under")
+	check(Z.frame.corner.disc:IsShown() and Z.frame.corner.rim:IsShown(),
+		"and keep the drawn glyph beside them")
 	for _, key in ipairs({ "disc", "rim", "blip" }) do
 		local r = Z.frame.corner[key]
 		check((r:GetWidth() or 0) > 0 and (r:GetHeight() or 0) > 0,
-			"the " .. key .. " keeps a real size even while hidden ("
-			.. tostring(r:GetWidth()) .. "x" .. tostring(r:GetHeight())
-			.. ") - a zero-sized texture draws at its file's native size")
+			"the " .. key .. " is sized (" .. tostring(r:GetWidth()) .. ") - zero"
+			.. " is not a size, it is the absence of one, and a texture with no"
+			.. " size draws at its file's native dimensions")
 	end
+
 	check(Z.keys and Z.keys:IsKeyboardEnabled(), "the key watcher is listening")
 
 	local k = Z.keys

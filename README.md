@@ -2212,22 +2212,23 @@ Zone names come from `GetMinimapZoneText()` (which returns the subzone when
 you're in one) and are tinted by `GetZonePVPInfo` using Blizzard's own colours,
 so a contested zone reads the same amber here as it does everywhere else.
 
-### Zen keeps the minimap
+### Zen takes the minimap, and taking it needs three things
 
-The map survives zen and the zone/clock block moves under it, into the space the
-minimap module's own pill has just vacated. It is the one part of the HUD still
-telling you something while you are not playing, and a drawn glyph standing in
-for it was never going to say where you are.
+`keepMinimap` is **off** by default: the map goes with everything else and the
+corner block draws a small glass disc beside the zone and the clock.
 
-**Left where it is, not shrunk into the corner block**, and the reason is the
-wake path: zen exits on `PLAYER_REGEN_DISABLED`, so any "hand the map back" step
-runs with combat *already* locked down, where `SetParent` is refused for
-anything with a protected frame hanging off it. Getting that wrong strands the
-minimap in the corner for the whole fight. Borrowing something you can only
-return out of combat is not borrowing.
+The live map was built and tried first -- it is the better argument on paper,
+being the one part of the HUD still saying something while you are not playing.
+On screen it is not what zen is for. Joe, having seen both: *"I preferred that
+even if it was imperfect."* A quiet screen beats an informative one here. It is
+still there behind the setting, and when it is on the map is **left where it is
+rather than shrunk into the corner block** -- zen exits on
+`PLAYER_REGEN_DISABLED`, so any "hand the map back" step runs with combat
+*already* locked down, where `SetParent` is refused for anything with a
+protected frame hanging off it. Borrowing something you can only return out of
+combat is not borrowing.
 
-With `keepMinimap` off, the map goes with everything else -- and going properly
-takes three things, not one:
+Taking the map away properly needs three things, not one:
 
 * `Minimap` escapes UIParent's alpha cascade, so its own alpha is driven by hand.
   This part was already here.

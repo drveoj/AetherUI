@@ -295,11 +295,12 @@ local function FaderGroup()
 			.. " everything else stays up.",
 			{ "modules", "zen", "dimUI" }, { after = "none", defaultTrue = true }),
 		zenKeepMap = toggle("Keep the minimap",
-			"The map survives zen and the zone and clock move under it. It is the"
-			.. " one part of the HUD still telling you something while you are"
-			.. " not playing. Off, it goes with everything else and the block"
-			.. " draws a small glass disc in its place.",
-			{ "modules", "zen", "keepMinimap" }, { defaultTrue = true }),
+			"On, the map survives zen and the zone and clock move under it -"
+			.. " the one part of the HUD still telling you something while you"
+			.. " are not playing. Off, which is the default, it goes with"
+			.. " everything else and the block draws a small glass disc beside"
+			.. " the zone in its place.",
+			{ "modules", "zen", "keepMinimap" }),
 		zenWidth = range("Capsule width", nil, { "modules", "zen", "width" },
 			160, 600, 5),
 		zenY = range("Height above the bottom edge", nil, { "modules", "zen", "yOffset" },

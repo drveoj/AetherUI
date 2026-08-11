@@ -460,12 +460,16 @@ Config.defaults = {
 				-- See the note at the top of Modules\Zen.lua: the list of things
 				-- that were still on screen otherwise had no end to it.
 				dimUI       = true,
-				-- The minimap survives zen, and the zone/clock block moves under
-				-- it. It is the one part of the HUD still telling you something
-				-- while you are not playing, and a drawn glyph standing in for it
-				-- was never going to say where you are. Off, the map goes with
-				-- everything else and the block keeps its glyph.
-				keepMinimap = true,
+				-- Off: zen takes the minimap with everything else, and the
+				-- corner block draws a small glass disc beside the zone and the
+				-- clock in its place.
+				--
+				-- The live map was tried and is the better argument on paper --
+				-- it is the one part of the HUD still saying something while you
+				-- are not playing. On screen it is not what zen is for. Joe,
+				-- having seen both: "I preferred that even if it was imperfect."
+				-- A quiet screen beats an informative one here.
+				keepMinimap = false,
 				width       = 250,   -- the capsule holding both bars
 				yOffset     = 14,    -- above the screen's bottom edge
 				showCaption = true,
