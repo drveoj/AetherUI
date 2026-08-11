@@ -4132,6 +4132,28 @@ do
 	check(#QT.menu.items >= 4, "menu has open / untrack / share / abandon")
 	check(QT.menu.items[1].text:GetText() == "Open quest log", "first item opens the log")
 
+	-- The menu opens ON TOP of the tracker's own panel, so it is a surface you
+	-- read through two layers of glass unless it stops being glass. It takes the
+	-- modal fill for exactly the reason the palette gives that token.
+	check(QT.menu._fillColor == A.Palette.c.dialogFill,
+		"the menu is not glass - it takes the same fill as the abandon dialog")
+	check((QT.menu._fillColor[4] or 1) > (A.Palette.c.glassStrong[4] or 1),
+		"which is more opaque than the panel underneath it (" .. (QT.menu._fillColor[4] or 1)
+		.. " vs " .. (A.Palette.c.glassStrong[4] or 1) .. ")")
+	check(QT.menu._edgeColor == A.Palette.c.glassEdgeHi,
+		"with the brighter rim, or an opaque fill in a dim rim reads as a hole")
+
+	-- And it follows a skin change, which goes through ApplySkin rather than
+	-- through the constructor - the one place the two can disagree.
+	local wasSkin = A.db.profile.skin
+	A.db.profile.skin = "daylight"
+	A:Restyle()
+	check(QT.menu._fillColor == A.Palette.c.dialogFill
+		and QT.menu._edgeColor == A.Palette.c.glassEdgeHi,
+		"and it is still the dialog surface after a skin change, not glass again")
+	A.db.profile.skin = wasSkin
+	A:Restyle()
+
 	_G.__questShared = nil
 	QT.menu.items[3]:GetScript("OnClick")(QT.menu.items[3])
 	check(_G.__questShared == r.index, "share quest routes through SelectQuestLogEntry")

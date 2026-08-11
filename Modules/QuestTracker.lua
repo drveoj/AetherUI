@@ -314,8 +314,19 @@ local function BuildMenu()
 	closer:EnableMouse(true)
 	closer:Hide()
 
+	-- `dialogFill`, not glass, for the reason the palette gives that token: a
+	-- surface you have to READ must not be frosted-on-frosted. This one opens
+	-- directly on top of the tracker's own panel, so at the control-surface
+	-- opacity it was two translucent layers over a lit world and the item text
+	-- had to compete with the quest titles showing through it. The abandon
+	-- confirmation and the log's search box already sit on this same surface, so
+	-- the menu now matches them rather than being a third treatment.
+	--
+	-- `glassEdgeHi` with it: the brighter rim is what separates a pop-over from
+	-- the panel underneath, and an opaque fill inside a dim rim reads as a hole.
 	local menu = Glass.CreatePanel(UIParent, {
-		corner = 8, shadow = A.db.profile.glass.shadow, fill = "glassStrong",
+		corner = 8, shadow = A.db.profile.glass.shadow,
+		fill = "dialogFill", edge = "glassEdgeHi",
 	})
 	menu:SetFrameStrata("FULLSCREEN_DIALOG")
 	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
@@ -789,7 +800,7 @@ end
 function QT:OnSkinChanged()
 	if not self.panel then return end
 	self.panel:ApplySkin()
-	if self.menu then self.menu:ApplySkin("glassStrong") end
+	if self.menu then self.menu:ApplySkin("dialogFill", "glassEdgeHi") end
 	self:Refresh()
 end
 
