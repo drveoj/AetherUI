@@ -1061,17 +1061,26 @@ would leave about six characters of aura name, which is no name at all.
 
 ### Difficulty colours
 
-Titles are tinted by `GetQuestDifficultyColor`, the game's own function, so the
-tracker matches the quest log exactly — grey means stop bothering, red means come
-back later, and that is the fastest read on a quest list. `showLevel` puts the
-number in front as well. The fallback reproduces Blizzard's thresholds (including
-`GetQuestGreenRange`) for a client that doesn't expose the function.
+The level rides in a tinted chip in front of the title, the same chip the quest
+log's rows wear and the same five band colours — grey means stop bothering, red
+means come back later, and that is the fastest read on a quest list. The titles
+themselves stay plain body text: colour belongs to the level, not to the name,
+and a column of white titles is a list you read rather than one you decode.
 
-Complete quests keep their difficulty colour rather than turning green: the full
-green bar and a "Complete" line below already say so, and overriding the hue
-would throw away the one thing you scan the list for. That Complete line also
-covers the case a bar can't — a quest with no objectives at all, which otherwise
-had nothing on screen to say it was ready to hand in.
+The banding is `QuestLog.DifficultyBand`, called across from the tracker rather
+than reimplemented here. The two lists are on screen together, and a threshold
+that drifted between them would show the same quest in two colours at once. It
+uses Blizzard's own thresholds (including `GetQuestGreenRange`) rather than
+`GetQuestDifficultyColor`, which returns one colour where a chip needs two — a
+tinted fill and an ink to read against it.
+
+`showLevel` turns the chip off, and with it the difficulty: it has nowhere else
+to go now that the titles are not tinted.
+
+Complete quests keep their band rather than turning green: the full green bar and
+a "Complete" line below already say so. That Complete line also covers the case a
+bar can't — a quest with no objectives at all, which otherwise had nothing on
+screen to say it was ready to hand in.
 
 ### Progress
 

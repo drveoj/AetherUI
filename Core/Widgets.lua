@@ -101,14 +101,84 @@ end
 -- a collection has every region - an adopted Blizzard button has none of ours at
 -- all. A missing font string there is a fact about the widget, not a bug worth
 -- taking the whole restyle down for.
+-- An explicit size override (W.Pill's `size`) outlives a restyle. It was set
+-- because the role's own number was wrong for where the string sits, and that is
+-- still true after a skin change.
 function W.Restyle(fs, style)
 	if not fs then return end
-	Media:SetFont(fs, style or fs._aetherStyle)
+	Media:SetFont(fs, style or fs._aetherStyle, fs._aetherSize)
 end
 
 function W.Color(fs, c)
 	if not fs or not c then return end
 	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+end
+
+-- ---------------------------------------------------------------------------
+-- pills
+-- ---------------------------------------------------------------------------
+
+--- A tinted capsule carrying short text: a level chip, a count, a type tag.
+--
+--  Lives here rather than in the quest log because the tracker wears the same
+--  chip, and a level chip that drifted between the two lists - a different
+--  height, a different pad, a different set of band colours - would read as two
+--  unrelated widgets sitting one above the other on the same screen.
+--
+--  opts: { height, padX, edge, size }. The edge is OFF by default: the concept's
+--  level chip has none, and it is the type tag that is the exception. `size`
+--  overrides the role's own point size, for a chip sitting beside body text that
+--  is smaller than the text the role was drawn for - a label bigger than the
+--  thing it labels is the one thing it must never be.
+local PILL_H = 19
+
+function W.Pill(parent, style, opts)
+	opts = opts or {}
+	local pill = A.Glass.CreatePill(parent, { fill = "glass", edge = "glassEdge" })
+	pill:SetHeight(opts.height or PILL_H)
+	if not opts.edge then pill:SetEdgeShown(false) end
+
+	pill.text = W.Text(pill, style, "CENTER")
+	if opts.size then
+		Media:SetFont(pill.text, style, opts.size)
+		-- Recorded, or the next W.Restyle quietly puts the role's own size back.
+		pill.text._aetherSize = opts.size
+	end
+	pill.text:SetPoint("CENTER", pill, "CENTER", 0, 0)
+	pill._padX = opts.padX or 10
+
+	--- Pills size to their text unless the caller pinned a width (the level
+	--  chip is a fixed width so a column of them lines up).
+	function pill:SetLabel(text, fixedWidth)
+		self.text:SetText(text or "")
+		if fixedWidth then
+			self:SetWidth(fixedWidth)
+		else
+			local w = math.ceil(self.text:GetStringWidth() or 0)
+			self:SetWidth(w + self._padX * 2)
+		end
+	end
+
+	--- The ink decides the shadow.
+	--
+	--  W.Text gives every string the soft black shadow that is the only thing
+	--  keeping light type legible against the Barrens at midday. A chip inverts
+	--  that: on Daylight the band colours are DARK ink on a near-opaque pale
+	--  fill, and there the same shadow is not legibility, it is mud around every
+	--  glyph. Chat's tab labels hit this first and turn it off by hand; this is
+	--  the same rule, applied where the colour is actually known.
+	function pill:SetColors(bg, fg)
+		if bg then self:SetFillColor(bg) end
+		if fg then
+			W.Color(self.text, fg)
+			if self.text.SetShadowColor then
+				local lum = 0.299 * fg[1] + 0.587 * fg[2] + 0.114 * fg[3]
+				self.text:SetShadowColor(0, 0, 0, lum < 0.5 and 0 or 0.55)
+			end
+		end
+	end
+
+	return pill
 end
 
 -- ---------------------------------------------------------------------------

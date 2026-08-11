@@ -4206,24 +4206,116 @@ do
 	local byId = {}
 	for _, q in ipairs(QT.quests) do byId[q.questID] = q end
 
-	check(byId[861] and byId[861].difficulty, "quests carry a difficulty colour")
-	check(byId[5041] and byId[5041].difficulty
-		and byId[5041].difficulty[1] > byId[861].difficulty[3],
-		"a level-18 quest reads redder than a level-15 one for a level-15 player")
+	check(byId[861] and byId[861].band == "difficult",
+		"a quest at the player's own level is the neutral band (got "
+		.. tostring(byId[861] and byId[861].band) .. ")")
+	check(byId[5041] and byId[5041].band == "verydifficult",
+		"and one three levels up moves a band redder (got "
+		.. tostring(byId[5041] and byId[5041].band) .. ")")
+
+	-- The band is the quest log's, not a second copy of the thresholds living
+	-- here. Same call, same answer, or the two lists disagree on screen.
+	check(byId[5041].band == A:GetModule("questlog").DifficultyBand(18),
+		"and it is the quest log's own banding, not a private reimplementation")
 
 	-- and it must move with the player, not be baked in at build time
-	local before = QT.quests[1].difficulty
+	local before = QT.quests[1].band
 	_G.__units.player.level = 40
 	QT:Refresh()
-	local after = QT.quests[1].difficulty
-	check(after[1] ~= before[1] or after[2] ~= before[2],
-		"levelling up recolours the list - the same quest is grey now")
+	local after = QT.quests[1].band
+	check(after ~= before and after == "trivial",
+		"levelling up rebands the list - the same quest is trivial now (got "
+		.. tostring(after) .. ")")
 	_G.__units.player.level = 15
 	QT:Refresh()
 
+	-- The row wears a level CHIP, like a quest log row, rather than a "[15]"
+	-- prefix - and the difficulty is on the chip, never on the title.
 	local row = QT.panel.rows[1]
-	check(row.level:IsShown() and row.level:GetText() == "[15]",
-		"the level is shown in front of the title (got " .. tostring(row.level:GetText()) .. ")")
+	check(row.chip:IsShown() and row.chip.text:GetText() == "15",
+		"the level is shown in a chip in front of the title (got "
+		.. tostring(row.chip.text:GetText()) .. ")")
+	local band = A.Palette.c.questDiff[QT.quests[1].band]
+	check(row.chip._fillColor == band.bg, "tinted with its difficulty band's fill")
+	-- The chip is a label on the title, so it must not be drawn louder than the
+	-- title. The qlChip role's own 12 was picked against the log's 14pt rows.
+	local _, chipPt = row.chip.text:GetFont()
+	local _, titlePt = row.title:GetFont()
+	check(chipPt and titlePt and chipPt < titlePt,
+		"the chip's digits are smaller than the title beside them ("
+		.. tostring(chipPt) .. " vs " .. tostring(titlePt) .. ")")
+	-- All three components. On the neutral band the ink and the fill both start
+	-- at 255, so comparing only the red channel passes with the digits painted
+	-- in the background colour.
+	local ink = row.chip.text.__color
+	check(ink and ink[1] == band.text[1] and ink[2] == band.text[2]
+		and ink[3] == band.text[3], "and the digits take the band's ink")
+	check(row.title.__color and row.title.__color[1] == A.Palette.c.text[1]
+		and row.title.__color[2] == A.Palette.c.text[2]
+		and row.title.__color[3] == A.Palette.c.text[3],
+		"while the title itself stays plain body text, whatever the difficulty")
+
+	-- The chip has to fit the title's own line. It is anchored at the top of the
+	-- row and RowHeight() budgets TITLE_H for that line, so a chip taller than
+	-- the title draws straight through the first objective and the bar.
+	check(row.chip:GetHeight() <= row.title:GetHeight(),
+		"the chip fits inside the title line rather than overrunning the objectives ("
+		.. row.chip:GetHeight() .. " vs " .. row.title:GetHeight() .. ")")
+	-- PINNED, not just non-zero: the chip is a fixed width so that a two-digit
+	-- level and a one-digit level start their titles on the same edge. Sized to
+	-- its text instead, the column steps in and out as you read down it.
+	check(row.chip:GetWidth() == 28,
+		"and a pinned width, so the titles line up down the column (got "
+		.. row.chip:GetWidth() .. ")")
+
+	local titleLeft, gap, titleRight
+	for i = 1, 4 do
+		local p, rel, _, x = row.title:GetPoint(i)
+		if p == "TOPLEFT" then titleLeft, gap = rel, x end
+		if p == "TOPRIGHT" then titleRight = rel end
+	end
+	check(titleLeft == row.chip and (gap or 0) > 0,
+		"and the title hangs off the chip's right edge, not off the row")
+	-- TOPRIGHT rather than RIGHT, and it matters. RIGHT plus TOPLEFT pins the
+	-- top edge and the vertical centre at once, so on a row with three objective
+	-- lines under it the title's box stretches to the whole row and the text,
+	-- being MIDDLE-justified, drifts down among its own objectives.
+	check(titleRight == row, "with its right edge pinned by the TOP corner, not the middle")
+
+	-- The band -> palette step, checked on a quest whose band is NOT the neutral
+	-- fallback. Every assertion above rides on quests[1], a level-15 quest for a
+	-- level-15 player, which lands on exactly the band the `or` degrades to - so
+	-- a tracker that painted every chip one colour would satisfy all of them.
+	local hard, hardRow
+	for i, q in ipairs(QT.quests) do
+		if q.questID == 5041 then hard, hardRow = q, QT.panel.rows[i] end
+	end
+	local hardBand = A.Palette.c.questDiff[hard and hard.band]
+	check(hard and hard.band == "verydifficult" and hardRow.chip.text:GetText() == "18",
+		"the level-18 quest has its own row and its own band")
+	check(hardRow.chip._fillColor == hardBand.bg
+		and hardRow.chip._fillColor ~= band.bg,
+		"and a chip in a different colour from the level-15 one beside it")
+	local hardInk = hardRow.chip.text.__color
+	check(hardInk[1] == hardBand.text[1] and hardInk[2] == hardBand.text[2]
+		and hardInk[3] == hardBand.text[3], "with the matching ink")
+
+	-- Turning the level off must move the title back to the row's edge. An
+	-- anchor to a hidden region still resolves, so a stale one would indent
+	-- every title by the width of a chip that is not on screen.
+	local cfgQT = A.db.profile.modules.questtracker
+	cfgQT.showLevel = false
+	QT:Refresh()
+	local row1 = QT.panel.rows[1]
+	check(not row1.chip:IsShown(), "with the level off the chip goes away")
+	local anchored
+	for i = 1, 4 do
+		local p, rel = row1.title:GetPoint(i)
+		if p == "TOPLEFT" then anchored = rel end
+	end
+	check(anchored == row1, "and the title re-anchors to the row, not to the hidden chip")
+	cfgQT.showLevel = true
+	QT:Refresh()
 
 	-- a complete quest says so in words, not only in colour
 	local complete
@@ -4232,6 +4324,50 @@ do
 	end
 	check(complete and complete.lines[#complete.lines].text == "Complete",
 		"a complete quest gets a Complete line, so an objective-less one is not silent")
+end
+
+print("== widgets: pill defaults ==")
+do
+	-- A scratch parent, so these never join the tracker's own children.
+	local scratch = CreateFrame("Frame", nil, UIParent)
+
+	-- Five callers lean on these two defaults and none of them pass the value,
+	-- so a change here is silent everywhere it matters.
+	local p = A.Widgets.Pill(scratch, "qlChip")
+	check(p:GetHeight() == 19, "a pill with no height asked for is 19 (got " .. p:GetHeight() .. ")")
+	check(p._edge and not p._edge[1]:IsShown(),
+		"and it wears no rim unless the caller asks - the concept's level chip has none")
+
+	local e = A.Widgets.Pill(scratch, "qlTag", { edge = true })
+	check(e._edge[1]:IsShown(), "while edge = true keeps it")
+
+	-- The size override has to survive a restyle: it exists precisely because
+	-- the role's own number is wrong where the string sits.
+	local s = A.Widgets.Pill(scratch, "qlChip", { size = 9 })
+	local _, before = s.text:GetFont()
+	A.Widgets.Restyle(s.text)
+	local _, after = s.text:GetFont()
+	check(before == 9 and after == 9,
+		"a pill's size override outlives W.Restyle (" .. tostring(before)
+		.. " -> " .. tostring(after) .. ")")
+
+	-- Dark ink FIRST. W.Text builds every string with the 0.55 shadow already on,
+	-- so asserting the light case against a fresh pill proves nothing - it is
+	-- green with the restoring branch deleted entirely.
+	s:SetColors(nil, { 0.10, 0.08, 0.03 })
+	check((s.text.__shadow or {})[4] == 0, "dark ink on a pill drops its shadow")
+	s:SetColors(nil, { 1, 1, 1 })
+	check((s.text.__shadow or {})[4] == 0.55, "and light ink gets it back again")
+
+	-- The threshold has to sit below the DIMMEST ink either palette hands a
+	-- pill, not merely below white: midnight's trivial band is the darkest light
+	-- type on screen, and it is the first thing a raised threshold would strip.
+	s:SetColors(nil, A.Palette.skins.midnight.questDiff.trivial.text)
+	check((s.text.__shadow or {})[4] == 0.55,
+		"midnight's dimmest band is still light type, and keeps its shadow")
+	s:SetColors(nil, A.Palette.skins.daylight.questDiff.trivial.text)
+	check((s.text.__shadow or {})[4] == 0,
+		"while daylight's palest band ink is still dark type, and does not")
 end
 
 print("== options tree ==")
@@ -6029,8 +6165,41 @@ do
 	check(row and row.chip._fillColor == A.Palette.c.questDiff[QLog.entries[2].band].bg,
 		"and the level chips pick up the daylight difficulty table, which exists"
 		.. " even though only midnight was built to")
+
+	-- On a row whose band is NOT the neutral one. Every other chip assertion in
+	-- this file rides on a quest within two levels of the player, which lands on
+	-- the exact band the `or` in the lookup degrades to - so a log that painted
+	-- all five bands the same colour would pass every one of them. The whole
+	-- fixture spans 15-18, so the player is dropped rather than the log touched.
+	local wasLevel = _G.__units.player.level
+	_G.__units.player.level = 10
+	QLog:Refresh()
+	local odd
+	for _, e in ipairs(QLog.entries) do
+		if e.kind == "quest" and e.band ~= "difficult" and e.row then odd = e end
+	end
+	check(odd and odd.row.chip._fillColor == A.Palette.c.questDiff[odd.band].bg
+		and odd.row.chip._fillColor ~= A.Palette.c.questDiff.difficult.bg,
+		"and a chip off the neutral band is a different colour, rather than five"
+		.. " bands drawn one way (" .. tostring(odd and odd.band) .. ")")
+	_G.__units.player.level = wasLevel
+	QLog:Refresh()
+
+	-- The tracker wears the same chip, and on daylight it is the one dark-ink
+	-- element in a module that is otherwise light type throughout - so it is the
+	-- one that has to give up the shadow keeping everything else legible.
+	local QTd = A:GetModule("questtracker")
+	local trow = QTd.panel.rows[1]
+	local tband = QTd.quests[1] and A.Palette.c.questDiff[QTd.quests[1].band]
+	check(trow and tband and trow.chip._fillColor == tband.bg,
+		"the tracker's chip follows the skin too, rather than staying midnight")
+	check((trow.chip.text.__shadow or {})[4] == 0,
+		"and its dark digits cast no shadow, which on a pale chip is only mud")
+
 	A.db.profile.skin = "midnight"
 	A:Restyle()
+	check((trow.chip.text.__shadow or {})[4] == 0.55,
+		"back on midnight the light digits get the shadow back")
 	QLog:Hide()
 end
 

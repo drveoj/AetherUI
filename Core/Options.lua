@@ -544,7 +544,9 @@ local function QuestGroup()
 			.. " mid-fight wins over the automatic restore.", at("combatCollapse")),
 		showObjectives = toggle("Show objective lines", nil, at("showObjectives")),
 		showLevel = toggle("Show quest level",
-			"Titles are tinted by difficulty either way.", at("showLevel")),
+			"A tinted chip in front of each title, coloured by difficulty the same"
+			.. " way the quest log colours it. Off, the titles start at the edge.",
+			at("showLevel")),
 
 		sizeHeader = header("Size"),
 		width = range("Width", nil, at("width"), 180, 420, 1),

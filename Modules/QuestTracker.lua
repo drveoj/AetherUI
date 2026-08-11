@@ -2,9 +2,13 @@
 	AetherUI :: QuestTracker
 
 	The glass panel from concept 2a: a letter-spaced QUESTS heading with the log
-	count on the right, then a row per tracked quest - title, objective lines,
-	and a hairline progress bar - and the whole thing folds down to just the
-	heading when you enter combat.
+	count on the right, then a row per tracked quest - a difficulty-tinted level
+	chip, the title, objective lines, and a hairline progress bar - and the whole
+	thing folds down to just the heading when you enter combat.
+
+	The chip is the quest log's own widget and the quest log's own band colours,
+	because the two lists are read together and one difficulty scheme drawn two
+	ways is worse than either way on its own.
 
 	Quest API on Classic Era
 	------------------------
@@ -52,6 +56,11 @@ local PAD_X, PAD_TOP, PAD_BOTTOM = 18, 14, 14
 local HEADER_H  = 22
 local ROW_GAP   = 10
 local TITLE_H   = 16
+-- The level chip. A point shorter than the quest log's 30x17 so it sits inside
+-- the 16px title line rather than pushing the row rhythm out, and two narrower
+-- to match, this panel being a third of the log's width.
+local CHIP_W, CHIP_H = 28, 16
+local CHIP_GAP  = 8
 local LINE_H    = 14
 local BAR_H     = 3
 local BAR_GAP   = 5
@@ -83,29 +92,24 @@ local function LogTitle(index)
 	return title, level, isHeader, isComplete, questID
 end
 
---- The colour Blizzard would tint this quest's level in the log.
+--- Which of the five difficulty bands this quest's level falls in.
 --
 --  Difficulty is the fastest read on a quest list - grey means stop bothering,
---  red means come back later - and a tracker that paints every title the same
---  colour throws that away. GetQuestDifficultyColor is the game's own answer, so
---  ours matches the quest log exactly; the fallback reproduces its thresholds
---  for a client that does not expose it.
-local function DifficultyColor(level)
-	if not level or level <= 0 then return nil end
-
-	if GetQuestDifficultyColor then
-		local ok, col = pcall(GetQuestDifficultyColor, level)
-		if ok and col and col.r then return { col.r, col.g, col.b } end
-	end
-
-	local player = UnitLevel and UnitLevel("player") or level
-	local diff = level - player
-	if diff >= 5 then return { 1.00, 0.24, 0.24 } end        -- red
-	if diff >= 3 then return { 1.00, 0.60, 0.30 } end        -- orange
-	if diff >= -2 then return { 1.00, 0.94, 0.45 } end       -- yellow
-	local green = GetQuestGreenRange and GetQuestGreenRange() or 5
-	if -diff <= green then return { 0.51, 0.86, 0.51 } end   -- green
-	return { 0.62, 0.62, 0.62 }                              -- grey
+--  red means come back later - and a tracker that threw that away would be
+--  poorer for it. But it is carried by the *level chip*, exactly as the quest
+--  log carries it, rather than by tinting the title: five colours of body text
+--  stacked up the side of the screen is a list you have to decode, and the title
+--  is the thing you are actually reading.
+--
+--  Delegated to the quest log rather than reimplemented. The two are on screen
+--  together and a threshold that drifted between them would show the same quest
+--  in two colours at once. QuestLog.lua loads AFTER this file, so it is resolved
+--  per call rather than captured up top; the fallback is the neutral band, which
+--  is what an unknown level gets in the log as well.
+local function DifficultyBand(level)
+	local QL = A:GetModule("questlog")
+	if QL and QL.DifficultyBand then return QL.DifficultyBand(level) end
+	return "difficult"
 end
 
 --- Objective lines plus a completion fraction.
@@ -237,7 +241,7 @@ local function Collect()
 				out[#out + 1] = {
 					index = index, questID = questID, title = title, level = level,
 					lines = lines, pct = pct, complete = complete,
-					difficulty = DifficultyColor(level),
+					band = DifficultyBand(level),
 				}
 			end
 		end
@@ -472,13 +476,23 @@ local function BuildRow(parent)
 	row:SetScript("OnEnter", function(self) self.hl:Show() end)
 	row:SetScript("OnLeave", function(self) self.hl:Hide() end)
 
-	row.level = W.Text(row, "questTitle", "LEFT")
-	row.level:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-	row.level:SetHeight(TITLE_H)
-	row.level:Hide()
+	-- The level chip. Fixed width, so a column of them lines up and the titles
+	-- start on one edge rather than stepping in and out with the digit count -
+	-- which is the whole reason the quest log pins its own.
+	--
+	-- Sized DOWN from the title beside it rather than taken at the chip role's
+	-- own 12. That role was drawn against the log's 14pt rows; here the title is
+	-- 12, and a bold 12 chip next to a medium 12 title reads as the louder of the
+	-- two - which inverts what the row is for.
+	row.chip = W.Pill(row, "qlChip", {
+		height = CHIP_H, size = math.max(9, Media:Size("questTitle") - 1),
+	})
+	row.chip:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+	row.chip:Hide()
 
+	-- No anchors here on purpose: Refresh sets all of them, because whether the
+	-- left edge hangs off the chip or off the row changes with a setting.
 	row.title = W.Text(row, "questTitle", "LEFT")
-	row.title:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 	row.title:SetHeight(TITLE_H)
 	if row.title.SetWordWrap then row.title:SetWordWrap(false) end
 
@@ -600,23 +614,30 @@ function QT:Refresh()
 
 		row.index, row.questID, row.questTitle = q.index, q.questID, q.title
 
-		-- Level prefix dim, title in the game's own difficulty colour. Complete
-		-- quests keep their difficulty colour rather than going green: the green
-		-- bar and the Complete line below already say so, and overriding the hue
-		-- would throw away the one thing you glance at the list for.
+		-- Difficulty rides in the chip, the title stays white. Same treatment as a
+		-- row in the quest log, and for the same reason: the colour is a property
+		-- of the level, not of the name, and a column of white titles is a list
+		-- you read rather than one you decode. Complete quests are no exception -
+		-- the green bar and the Complete line below already say so.
+		local band = c.questDiff[q.band] or c.questDiff.difficult
+
+		-- Re-anchored rather than left pinned to a hidden chip: an anchor to a
+		-- hidden region still resolves, so turning the level off would otherwise
+		-- indent every title by the width of a chip that is not there.
+		row.title:ClearAllPoints()
+		row.title:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
 		if cfg.showLevel and q.level and q.level > 0 then
-			row.level:SetText("[" .. q.level .. "]")
-			W.Color(row.level, q.difficulty or c.textDim)
-			row.level:Show()
-			row.title:SetPoint("TOPLEFT", row, "TOPLEFT",
-				math.ceil(row.level:GetStringWidth() or 0) + 5, 0)
+			row.chip:SetLabel(tostring(q.level), CHIP_W)
+			row.chip:SetColors(band.bg, band.text)
+			row.chip:Show()
+			row.title:SetPoint("TOPLEFT", row.chip, "TOPRIGHT", CHIP_GAP, 0)
 		else
-			row.level:Hide()
+			row.chip:Hide()
 			row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
 		end
 
 		row.title:SetText(q.title)
-		W.Color(row.title, q.difficulty or c.text)
+		W.Color(row.title, c.text)
 		row.hl:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 0.10)
 
 		local y = TITLE_H

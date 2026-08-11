@@ -22,3 +22,4 @@ venv/
 
 # Commit helper, same as git-setup.sh: a script for you to run, not addon source.
 commit-chat.sh
+commit-tracker-chip.sh

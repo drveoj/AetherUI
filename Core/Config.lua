@@ -255,10 +255,11 @@ Config.defaults = {
 				maxHeight      = 420,
 				max            = 20,
 				showObjectives = true,
-				-- Titles are tinted by quest difficulty, the same colours the
-				-- quest log uses, because grey-means-stop and red-means-later is
-				-- the fastest read on a list. showLevel puts the number in front
-				-- of them as well.
+				-- The level rides in a difficulty-tinted chip in front of the
+				-- title, exactly as it does in the quest log: grey-means-stop and
+				-- red-means-later is the fastest read on a list, and putting it in
+				-- the chip leaves the titles themselves white and readable. Off,
+				-- the difficulty is not shown at all - it has nowhere else to go.
 				showLevel      = true,
 				-- Fold to just the heading when a fight starts, per concept 2a,
 				-- and unfold again after - unless you folded it yourself mid-fight,

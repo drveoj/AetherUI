@@ -84,7 +84,6 @@ local CHIP_W, CHIP_H   = 30, 17
 
 local DET_PAD_X, DET_PAD_Y = 32, 26
 local DET_GAP          = 18
-local PILL_H           = 19
 local CARD_CORNER      = 16
 local CARD_PAD_X, CARD_PAD_Y = 18, 14
 local BAR_H            = 4
@@ -627,36 +626,9 @@ end
 -- ---------------------------------------------------------------------------
 
 --- A tinted capsule carrying short text: the level chip, the count chip, the
---  type pill. Edge is optional because the concept's level chip has none.
-local function BuildPill(parent, style, opts)
-	opts = opts or {}
-	local pill = Glass.CreatePill(parent, { fill = "glass", edge = "glassEdge" })
-	pill:SetHeight(opts.height or PILL_H)
-	if not opts.edge then pill:SetEdgeShown(false) end
-
-	pill.text = W.Text(pill, style, "CENTER")
-	pill.text:SetPoint("CENTER", pill, "CENTER", 0, 0)
-	pill._padX = opts.padX or 10
-
-	--- Pills size to their text unless the caller pinned a width (the level
-	--  chip is a fixed 30 so a column of them lines up).
-	function pill:SetLabel(text, fixedWidth)
-		self.text:SetText(text or "")
-		if fixedWidth then
-			self:SetWidth(fixedWidth)
-		else
-			local w = math.ceil(self.text:GetStringWidth() or 0)
-			self:SetWidth(w + self._padX * 2)
-		end
-	end
-
-	function pill:SetColors(bg, fg)
-		if bg then self:SetFillColor(bg) end
-		if fg then W.Color(self.text, fg) end
-	end
-
-	return pill
-end
+--  type pill. It lives in Widgets because the quest tracker wears the same level
+--  chip, and one that drifted between the two would read as two widgets.
+local BuildPill = W.Pill
 
 --- A one-pixel rule. Hairlines are everywhere in this concept and they are the
 --  first thing to go blurry, so they are snapped to the physical grid.
