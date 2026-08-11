@@ -148,6 +148,12 @@ local function Build()
 	f.corner = cp
 
 	cp.disc = Disc(cp)
+	-- The zone's own map art, cropped to a circle around where you are standing.
+	-- Above the disc, which stays as the backing for everywhere the art cannot
+	-- be had: an instance, a battleground, anywhere GetBestMapForUnit shrugs.
+	cp.map = cp:CreateTexture(nil, "ARTWORK", nil, 1)
+	W.AddMask(cp.map, cp, Media.texture.circleMask)
+	cp.map:Hide()
 	cp.rim = cp:CreateTexture(nil, "OVERLAY")
 	cp.rim:SetTexture(Media.texture.ring)
 	cp.blip = cp:CreateTexture(nil, "OVERLAY")
@@ -240,7 +246,11 @@ local function Layout()
 	-- Hide rather than alpha, and only here: the note further up is about
 	-- FRAMES, which are refused mid-combat when something protected hangs off
 	-- them. A texture region is never protected, so this is safe from anywhere.
-	local glyph = 16
+	-- Bigger than it was, because it is a picture now rather than a dot. The
+	-- pill grows with it rather than the glyph being squeezed into a height
+	-- chosen when there was nothing in it.
+	local glyph = math.max(10, math.min(48, tonumber(cfg.glyphSize) or 22))
+	cp:SetHeight(math.max(24, glyph + 8))
 	cp.glyphW = liveMap and 0 or glyph
 
 	cp.disc:ClearAllPoints()
@@ -255,9 +265,14 @@ local function Layout()
 	cp.blip:SetPoint("CENTER", cp.disc, "CENTER", 0, 0)
 	cp.blip:SetSize(6, 6)
 
+	cp.map:ClearAllPoints()
+	cp.map:SetPoint("CENTER", cp.disc, "CENTER", 0, 0)
+	cp.map:SetSize(glyph, glyph)
+
 	cp.disc:SetShown(not liveMap)
 	cp.rim:SetShown(not liveMap)
 	cp.blip:SetShown(not liveMap)
+	if liveMap then cp.map:Hide() end
 
 	cp.zone:ClearAllPoints()
 	if liveMap then
@@ -273,6 +288,107 @@ local function Layout()
 
 	Zen:UpdateText()
 	Zen:Restyle()
+end
+
+-- ---------------------------------------------------------------------------
+-- the map crop
+--
+-- The world map's own art, cropped to a small circle around the player. NOT the
+-- minimap: there is no way to capture what the minimap is rendering - the client
+-- exposes no render-to-texture and no frame capture to an addon, and the only
+-- screenshot path writes a file to disk. The zone art is the one picture of your
+-- surroundings an addon can actually hold.
+--
+-- It is also the better one for this. It is static: no blips, no player arrow,
+-- nothing moving. A calm mode is the wrong place for the only animated thing on
+-- screen.
+--
+-- The tile arithmetic is Blizzard's own, from MapCanvasDetailLayerMixin: a layer
+-- is a grid of fixed-size tiles, row-major, and the texture for a tile is at
+-- (row - 1) * columns + column.
+-- ---------------------------------------------------------------------------
+
+--- How much of a tile to show, as a half-extent in tile units. Small, because
+--  this is a glyph: at 0.5 you would be showing a whole tile, which for most
+--  zones is a quarter of the continent and reads as brown soup.
+local MAP_CROP = 0.11
+
+local function MapArt()
+	if not C_Map or not C_Map.GetMapArtLayers then return nil end
+
+	local ok, uiMap = pcall(C_Map.GetBestMapForUnit, "player")
+	if not ok or not uiMap then return nil end
+
+	local ok2, pos = pcall(C_Map.GetPlayerMapPosition, uiMap, "player")
+	if not ok2 or not pos or not pos.x then return nil end
+
+	local ok3, layers = pcall(C_Map.GetMapArtLayers, uiMap)
+	if not ok3 or type(layers) ~= "table" then return nil end
+
+	-- Layer one, always: the layers run coarse to fine and the finer ones are
+	-- more tiles of more pixels for a picture that ends up 22 across.
+	local info = layers[1]
+	if type(info) ~= "table" or not info.tileWidth or info.tileWidth <= 0 then return nil end
+	if not info.layerWidth or info.layerWidth <= 0 then return nil end
+
+	local ok4, textures = pcall(C_Map.GetMapArtLayerTextures, uiMap, 1)
+	if not ok4 or type(textures) ~= "table" or #textures == 0 then return nil end
+
+	local cols = math.ceil(info.layerWidth / info.tileWidth)
+	local rows = math.ceil(info.layerHeight / info.tileHeight)
+	if cols < 1 or rows < 1 then return nil end
+
+	-- Where the player is, in the layer's own pixels.
+	local ax = math.max(0, math.min(1, pos.x)) * info.layerWidth
+	local ay = math.max(0, math.min(1, pos.y)) * info.layerHeight
+
+	local col = math.min(cols, math.floor(ax / info.tileWidth) + 1)
+	local row = math.min(rows, math.floor(ay / info.tileHeight) + 1)
+
+	local file = textures[(row - 1) * cols + col]
+	if not file then return nil end
+
+	-- ...and within that tile, 0..1.
+	local tx = (ax - (col - 1) * info.tileWidth) / info.tileWidth
+	local ty = (ay - (row - 1) * info.tileHeight) / info.tileHeight
+
+	-- Slid rather than squashed at an edge. Clamping the two sides
+	-- independently would stretch the crop into an oval as you walked into a
+	-- corner of the zone; moving the whole window keeps it square and simply
+	-- stops following you the last few yards.
+	local h = MAP_CROP
+	local function window(c)
+		if c - h < 0 then return 0, 2 * h end
+		if c + h > 1 then return 1 - 2 * h, 1 end
+		return c - h, c + h
+	end
+	local l, r = window(tx)
+	local t, b = window(ty)
+	return file, l, r, t, b
+end
+
+--- Returns true if real art went on screen.
+function Zen:UpdateMap()
+	local f = self.frame
+	if not f or not f.corner or not f.corner.map then return false end
+	local cfg = A.Config:Module("zen")
+	local m = f.corner.map
+
+	if cfg.showMapArt == false or cfg.keepMinimap ~= false then
+		m:Hide()
+		return false
+	end
+
+	local file, l, r, t, b = MapArt()
+	if not file then
+		m:Hide()
+		return false
+	end
+
+	m:SetTexture(file)
+	m:SetTexCoord(l, r, t, b)
+	m:Show()
+	return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -292,6 +408,10 @@ function Zen:UpdateText()
 
 	cp.zone:SetText(zone)
 	cp.clock:SetText(date("%H:%M"))
+
+	-- Same one-second beat as the zone name. The crop only moves when you do,
+	-- and a glyph this size does not need to know sooner than that.
+	self:UpdateMap()
 
 	-- Measured, not guessed: the zone name is whatever the zone is called.
 	local glyphW = cp.glyphW or 16

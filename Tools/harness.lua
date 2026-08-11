@@ -1085,9 +1085,29 @@ C_Map = {
 		if not uiMap or not _G.__playerPos then return nil end
 		return { x = _G.__playerPos[1], y = _G.__playerPos[2] }
 	end,
+
+	-- The zone art, as a grid of fixed-size tiles. Deliberately NOT square and
+	-- deliberately not a whole number of tiles: 900x700 over 256x256 tiles is
+	-- 4 columns by 3 rows with the last of each only part full, which is the
+	-- normal case and the one the crop arithmetic can get wrong.
+	GetMapArtLayers = function(uiMap)
+		if not uiMap or not _G.__mapArt then return nil end
+		return { { layerWidth = 900, layerHeight = 700,
+			tileWidth = 256, tileHeight = 256, minScale = 1, maxScale = 1 } }
+	end,
+
+	-- Row-major, the way MapCanvasDetailLayerMixin lays them out:
+	-- (row - 1) * columns + column.
+	GetMapArtLayerTextures = function(uiMap, layer)
+		if not uiMap or not _G.__mapArt or layer ~= 1 then return nil end
+		local t = {}
+		for i = 1, 12 do t[i] = "tile" .. i end
+		return t
+	end,
 }
 _G.__uiMap = 1413
 _G.__playerPos = { 0.45, 0.58 }
+_G.__mapArt = true
 
 -- Blizzard's globals are secure and an addon's are not; the module leans on that
 -- to sort furniture from arrivals without a hardcoded list.
@@ -2660,6 +2680,78 @@ fire("PLAYER_REGEN_DISABLED")
 for i = 1, 30 do tick(0.1) end
 check(UF.player:GetAlpha() > 0.95, "combat overrides the idle fade")
 _G.__inCombat = false
+
+print("== zen: the corner glyph is a crop of the zone's own map art ==")
+do
+	local Z = A:GetModule("zen")
+	local map = Z.frame.corner.map
+
+	-- The fixture: 900x700 of art in 256x256 tiles, so 4 columns by 3 rows with
+	-- the right-hand column and the bottom row only part full.
+	_G.__playerPos = { 0.45, 0.58 }
+	check(Z:UpdateMap(), "there is art for this zone, so it is drawn")
+	check(map:IsShown(), "and the texture is on screen")
+
+	-- 0.45 * 900 = 405px -> column 2 (256..512). 0.58 * 700 = 406px -> row 2.
+	-- Row-major: (2 - 1) * 4 + 2 = tile 6.
+	check(map:GetTexture() == "tile6",
+		"the tile under the player is picked row-major, the way Blizzard's own"
+		.. " MapCanvasDetailLayerMixin lays them out - (row-1)*columns+column"
+		.. " (got " .. tostring(map:GetTexture()) .. ")")
+
+	local l, r, t, b = map:GetTexCoord()
+	-- 405 - 256 = 149 into a 256 tile = 0.582.
+	check(math.abs(((l + r) / 2) - 0.582) < 0.01,
+		"and the crop is centred on the player WITHIN that tile, horizontally ("
+		.. string.format("%.3f", (l + r) / 2) .. ")")
+	check(math.abs(((t + b) / 2) - 0.586) < 0.01,
+		"and vertically (" .. string.format("%.3f", (t + b) / 2) .. ")")
+	check(math.abs((r - l) - (b - t)) < 0.001,
+		"and it is square - a crop stretched on one axis is an oval once the"
+		.. " circular mask is over it")
+
+	-- Walking into a corner of the zone. The window has to SLIDE rather than be
+	-- clamped on one side, or it deforms exactly where the player is least able
+	-- to tell that it has.
+	local w = r - l
+	_G.__playerPos = { 0.001, 0.001 }
+	Z:UpdateMap()
+	local l2, r2, t2, b2 = map:GetTexCoord()
+	check(l2 >= 0 and t2 >= 0, "at the zone's edge the crop stays inside the tile")
+	check(math.abs((r2 - l2) - w) < 0.001 and math.abs((b2 - t2) - w) < 0.001,
+		"and keeps its size rather than being squashed against the edge ("
+		.. string.format("%.3f x %.3f", r2 - l2, b2 - t2) .. ")")
+
+	_G.__playerPos = { 0.999, 0.999 }
+	Z:UpdateMap()
+	local l3, r3, t3, b3 = map:GetTexCoord()
+	check(r3 <= 1 and b3 <= 1, "and the same at the far corner")
+	check(math.abs((r3 - l3) - w) < 0.001, "still its own size")
+
+	-- Nowhere to draw. An instance answers a map with no position; a
+	-- battleground can answer no map at all. Neither is an error, and both have
+	-- to leave the glass disc behind rather than a blank hole.
+	_G.__playerPos = { 0.45, 0.58 }
+	_G.__mapArt = false
+	check(not Z:UpdateMap(), "a zone with no art draws none")
+	check(not map:IsShown(), "and the texture goes away")
+	check(Z.frame.corner.disc:IsShown(),
+		"leaving the glass disc behind it, which is what it is for")
+
+	_G.__mapArt = true
+	local savedMap = _G.__uiMap
+	_G.__uiMap = nil
+	check(not Z:UpdateMap(), "and an instance, which has no map at all, is not an error")
+	_G.__uiMap = savedMap
+
+	local savedPos = _G.__playerPos
+	_G.__playerPos = nil
+	check(not Z:UpdateMap(), "nor is a map that reports no position on it")
+	_G.__playerPos = savedPos
+
+	Z:UpdateMap()
+	check(map:IsShown(), "and it comes back when there is something to draw again")
+end
 
 print("== zen: keepMinimap is off by the time it ships ==")
 do

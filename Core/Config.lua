@@ -470,6 +470,17 @@ Config.defaults = {
 				-- having seen both: "I preferred that even if it was imperfect."
 				-- A quiet screen beats an informative one here.
 				keepMinimap = false,
+				-- The corner glyph draws the zone's own map art, cropped to a
+				-- circle around where you are standing, with the accent dot in
+				-- the middle marking you.
+				--
+				-- It is the WORLD map's art, not the minimap's view. Nothing can
+				-- capture what the minimap renders - the client exposes no
+				-- render-to-texture and no frame capture to an addon. The zone
+				-- art is the one picture of your surroundings we can hold, and
+				-- being static suits a calm mode better than the live one would.
+				showMapArt  = true,
+				glyphSize   = 22,
 				width       = 250,   -- the capsule holding both bars
 				yOffset     = 14,    -- above the screen's bottom edge
 				showCaption = true,

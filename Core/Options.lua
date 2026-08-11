@@ -294,6 +294,16 @@ local function FaderGroup()
 			.. " screen. Off leaves only AetherUI's own frames fading, which means"
 			.. " everything else stays up.",
 			{ "modules", "zen", "dimUI" }, { after = "none", defaultTrue = true }),
+		zenMapArt = toggle("Draw the map glyph",
+			"The corner block shows a circle of the zone's own map art around"
+			.. " where you are standing, with the accent dot marking you. It is"
+			.. " the world map's art rather than the minimap's view - nothing"
+			.. " can capture what the minimap renders - and being static suits a"
+			.. " calm mode better. Off, or anywhere there is no art, it falls"
+			.. " back to a plain glass disc.",
+			{ "modules", "zen", "showMapArt" }, { defaultTrue = true }),
+		zenGlyph = range("Glyph size", nil, { "modules", "zen", "glyphSize" },
+			10, 48, 1),
 		zenKeepMap = toggle("Keep the minimap",
 			"On, the map survives zen and the zone and clock move under it -"
 			.. " the one part of the HUD still telling you something while you"

@@ -2266,6 +2266,39 @@ safe on a texture from anywhere, including mid-combat - the "alpha rather than
 Hide" rule elsewhere is about *frames*, which are refused when something
 protected hangs off them. A texture region is never protected.
 
+### The corner glyph is a crop of the zone's own map art
+
+The block in zen's corner draws a circle of the **world map's** art centred on
+where you are standing, with the accent dot marking you.
+
+It is not the minimap's view, and it cannot be. **There is no way for an addon
+to capture what the minimap is rendering** - the client exposes no
+render-to-texture and no frame capture, and the only screenshot path writes a
+file to disk that cannot be read back into a texture. The zone art is the one
+picture of your surroundings an addon can hold.
+
+It is also the better one here. It is static: no blips, no player arrow, nothing
+moving. A calm mode is the wrong place for the only animated thing on screen.
+
+The tile arithmetic is Blizzard's own, from `MapCanvasDetailLayerMixin`
+(`Blizzard_MapCanvas/Blizzard_MapCanvasDetailLayer.lua:45-72`): a layer is a grid
+of fixed-size tiles laid out **row-major**, and the texture for a tile is at
+`(row - 1) * columns + column`. Layer 1 always - the layers run coarse to fine,
+and the finer ones are more tiles of more pixels for a picture that ends up 22
+across.
+
+Two things the maths has to get right, and both are checked:
+
+* the crop is centred on the player **within its tile**, not within the zone -
+  the two are only the same thing for a single-tile zone;
+* at a zone edge the crop **slides** rather than being clamped on one side.
+  Clamping each axis independently stretches it into an oval exactly where the
+  player is least able to tell that it has.
+
+Where there is no art - an instance, or a map that reports no position - it
+falls back to the glass disc rather than to a blank hole. Neither case is an
+error, and both happen routinely.
+
 ### A near-black fill at high opacity is a hole, not a glyph
 
 The stand-in disc was painted with the `glass` token's RGB -- Midnight's is
