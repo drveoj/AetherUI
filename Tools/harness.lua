@@ -1471,6 +1471,9 @@ _G.__bags = {
 	[-2] = { size = 2, slots = { [1] = { 1424, 1 } } },
 	[-1] = { size = 6, slots = {
 		[1] = { 4306, 20 }, [2] = { 2251, 4 }, [3] = { 5976, 1 }, [4] = { 1266, 1 },
+		-- Food, in the bank. The thing you eat must not file under a heading
+		-- that means "things you are keeping".
+		[5] = { 159, 12 },
 	} },
 	[5]  = { size = 4, slots = { [1] = { 4306, 6 } } },
 }
@@ -7633,7 +7636,7 @@ do
 	-- -1 has 6 slots and bank bag 5 has 4, of which 1 is filled.
 	check(bank.total == 10, "it draws the bank container and the bank bags as one"
 		.. " pool (" .. tostring(bank.total) .. ")")
-	check(bank.used == 5, "and counts what is in them (" .. tostring(bank.used) .. ")")
+	check(bank.used == 6, "and counts what is in them (" .. tostring(bank.used) .. ")")
 
 	check(_G.__bankClosed == 0, "and nothing has closed the banker session")
 
@@ -7645,6 +7648,70 @@ do
 	check(not Bg.atBank, "and the module stops believing it is at a banker")
 	_G.__atBank = true
 	fire("BANKFRAME_OPENED")
+end
+
+print("== bags: an item's category does not depend on which panel it is in ==")
+do
+	_G.__atBank = true
+	fire("BANKFRAME_OPENED")
+	local bank, bags = Bg.frames.bank, Bg.frames.bags
+
+	--- Which heading a button actually sits under, read off the layout rather
+	--  than off our own bookkeeping: the lowest label still above it.
+	local function sectionOf(frame, button)
+		local _, _, _, _, by = button:GetPoint()
+		local best, bestY
+		for _, lab in ipairs(frame.labels) do
+			if lab:IsShown() then
+				local _, _, _, _, ly = lab:GetPoint()
+				if ly and by and ly >= by and (bestY == nil or ly < bestY) then
+					best, bestY = lab, ly
+				end
+			end
+		end
+		return best and ((best.text:GetText() or ""):gsub("%s+", "")) or nil
+	end
+
+	local function headings(frame)
+		local out = {}
+		for _, lab in ipairs(frame.labels) do
+			if lab:IsShown() then
+				out[(lab.text:GetText() or ""):gsub("%s+", "")] = true
+			end
+		end
+		return out
+	end
+
+	local h = headings(bank)
+	check(not h["STORAGE"],
+		"the bank draws no STORAGE heading. It used to: the concept describes"
+		.. " the bank's sections as 'fewer, storage-oriented', so equipment,"
+		.. " consumables and miscellaneous were folded into one -- which filed a"
+		.. " cooked fish, an item whose entire purpose is that you eat it, under"
+		.. " 'storage'")
+
+	-- Refreshing Water, in bank slot 5.
+	local food = bank.buttons[-1][5]
+	check(food and food.info and food.info.itemID == 159, "there is food in the bank")
+	check(sectionOf(bank, food) == "CONSUMABLES",
+		"and it sits under CONSUMABLES, not under a heading that means 'things"
+		.. " you are keeping' (" .. tostring(sectionOf(bank, food)) .. ")")
+
+	-- The same item, in a bag, must answer the same. The category is a fact
+	-- about the ITEM; filing it under two different headings depending on which
+	-- panel it is in means learning two schemes and translating between them.
+	local carried = bags.buttons[0][3]
+	check(carried and carried.info and carried.info.itemID == 159,
+		"and the same item is in a bag")
+	check(sectionOf(bags, carried) == sectionOf(bank, food),
+		"and both panels call it the same thing (" .. tostring(sectionOf(bags, carried))
+		.. " / " .. tostring(sectionOf(bank, food)) .. ")")
+
+	local armour = bank.buttons[-1][3]
+	check(sectionOf(bank, armour) == "EQUIPMENT",
+		"the tabard is equipment in the bank too (" .. tostring(sectionOf(bank, armour)) .. ")")
+
+	_G.__atBank = false
 end
 
 print("== bags: closing the bank tells the server ==")

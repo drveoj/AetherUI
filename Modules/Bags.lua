@@ -223,19 +223,17 @@ local CATEGORIES = {
 	{ key = "junk",       label = "JUNK"        },
 }
 
--- The bank is storage: the fine distinctions that matter in a bag you are
--- carrying do not matter in a room you visit. Everything that is not clearly
--- trade goods, a quest item or junk collapses into one heading.
-local BANK_CATEGORIES = {
-	{ key = "storage", label = "STORAGE"     },
-	{ key = "trade",   label = "TRADE GOODS" },
-	{ key = "quest",   label = "QUEST"       },
-	{ key = "junk",    label = "JUNK"        },
-}
-
-local BANK_FOLD = {
-	equipment = "storage", consumable = "storage", misc = "storage",
-}
+-- The bank uses the SAME categories, and that is deliberate.
+--
+-- It did not to begin with. The concept describes the bank's sections as
+-- "fewer, storage-oriented", so equipment, consumables and miscellaneous were
+-- folded into one STORAGE heading -- which put a cooked Longjaw Mud Snapper,
+-- an item whose entire purpose is that you eat it, under "storage".
+--
+-- The category is a fact about the ITEM, not about the room it is standing in.
+-- Filing the same thing under two different headings depending on which panel
+-- it is in means the player has to learn two schemes and translate between
+-- them, which is the opposite of what a categorised bag is for.
 
 --- itemID -> classID/subclassID/equipLoc, memoised.
 --
@@ -1112,7 +1110,7 @@ function Bags:Rebuild(frame)
 	local cfg = A.Config:Module("bags")
 	local c = Palette.c
 	local cols, size, gap, gridW = Metrics(cfg)
-	local cats = frame.kind == "bank" and BANK_CATEGORIES or CATEGORIES
+	local cats = CATEGORIES
 	local child = frame.scroll.child
 
 	local filter = frame.filter or ""
@@ -1128,7 +1126,6 @@ function Bags:Rebuild(frame)
 			if info then
 				used = used + 1
 				local key = CategoryOf(info, bag, slot)
-				if frame.kind == "bank" then key = BANK_FOLD[key] or key end
 				buckets[key] = buckets[key] or {}
 				buckets[key][#buckets[key] + 1] = b
 

@@ -2409,6 +2409,18 @@ It ships off. It is the only thing in the addon that spends the player's things,
 and the dimmed JUNK section is honest about what it *would* take without anybody
 having to switch it on to find out.
 
+### The bank uses the same categories as the bags
+
+It did not to begin with. The concept describes the bank's sections as "fewer,
+storage-oriented", so equipment, consumables and miscellaneous were folded into
+one **STORAGE** heading. On screen that filed a cooked Longjaw Mud Snapper -- an
+item whose entire purpose is that you eat it -- under "storage".
+
+**A category is a fact about the item, not about the room it is standing in.**
+Filing the same thing under two headings depending on which panel it is in means
+the player has to learn two schemes and translate between them, which is the
+opposite of what a categorised bag is for. One vocabulary, both panels.
+
 ### Two deliberate departures from the concept
 
 * **A FREE section.** The deck reports "22 slots free" in the footer and draws no
