@@ -58,19 +58,31 @@ local Chat = A:NewModule("chat")
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 
 local PAD      = 10    -- panel inset around the chat frame
+-- The band the tab row is allowed to occupy, NOT the tab's own height. A docked
+-- ChatFrameTab is 32 tall (ChatTabArtTemplate, `<Size x="64" y="32"/>`) and the
+-- dock it sits in is 26 (DockManagerTemplate), so the tab overhangs the dock by
+-- 3px top and bottom. The divider is placed from this number.
 local TAB_H    = 20
 local TAB_PAD  = 10    -- horizontal padding inside a tab pill
+-- The pill is NOT the tab. It used to be anchored to the tab's corners inset by
+-- 2, which made it 32 - 4 = 28 tall: a slab rather than a pill, and 3px of it
+-- sat on top of the divider. Tabs are anchored by LEFT - i.e. by their vertical
+-- CENTRE - so the pill is centred on the same line and given its own height,
+-- which leaves 2px of clearance above the divider and does not depend on
+-- Blizzard's tab art at all.
+local PILL_H   = 18
 local EDIT_H   = 26
 local EDIT_GAP = 6
 -- The channel capsule inside the composer is sized from the typing font rather
 -- than fixed - see Chat:TagHeight. This is the padding around the code in it.
 local TAG_PAD_Y = 5
 
--- Chat sits over moving, high-contrast scenery; it needs a little more opacity
--- than a small utility panel to remain comfortable to read.
+-- Chat is a READING surface - see Palette:ReadingFill. It sits over moving,
+-- high-contrast scenery and carries paragraphs of small text, so it takes more
+-- opacity than a control surface does. The quest log takes the same treatment
+-- and from the same helper, so the two cannot drift apart.
 local function ChatFill(c)
-	local base = c.glassStrong or c.glass
-	return { base[1], base[2], base[3], math.min(0.88, (base[4] or 1) + 0.14) }
+	return Palette:ReadingFill(c)
 end
 
 -- Blizzard's own list, with a fallback for the unlikely case of it being absent.
@@ -196,8 +208,10 @@ function Chat:SkinTab(tab)
 		local pill = Glass.CreatePill(tab, {})
 		pill:SetFrameLevel(math.max(0, tab:GetFrameLevel() - 1))
 		pill:EnableMouse(false)
-		pill:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, -2)
-		pill:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 2)
+		-- Anchored in StyleTab, not here: it has to be re-asserted on every pass
+		-- anyway, and one place that decides the geometry is worth more than an
+		-- initial guess plus a repair.
+		pill:SetHeight(PILL_H)
 		tab._pill = pill
 
 		-- Blizzard flashes an unselected tab when something arrives on it. The
@@ -258,25 +272,171 @@ function Chat:SkinTab(tab)
 	self:StyleTab(tab)
 end
 
+--- Which chat frame the dock currently has selected, as an ID.
+--
+--  `dock.selected` is a FRAME, not an index. Blizzard's own
+--  `FCFDock_SelectWindow` ends with `dock.selected = chatFrame`, and
+--  `FCFDock_GetSelectedWindow` hands that straight back. Comparing it to
+--  `tab:GetID()` is comparing a table to a number, which is never equal - so
+--  the selected tab never lit up in game, and the harness's mock stored a
+--  number and let it pass offline for weeks.
+--
+--  Both shapes are accepted here: a frame is asked for its id, a number is
+--  taken as one. That costs nothing and means a client that ships the other
+--  shape does not silently lose the highlight again.
+local function SelectedChatID(dock)
+	-- Called with a colon, `dock` is the module table: non-nil, no `.selected`,
+	-- and every tab quietly goes unselected with no error to show for it.
+	if dock == Chat then dock = nil end
+	dock = dock or _G.GeneralDockManager
+	if not dock then return nil end
+
+	local sel = dock.selected
+	if _G.FCFDock_GetSelectedWindow then
+		local ok, w = pcall(_G.FCFDock_GetSelectedWindow, dock)
+		if ok and w ~= nil then sel = w end
+	end
+
+	if type(sel) == "table" and sel.GetID then
+		local ok, id = pcall(sel.GetID, sel)
+		if ok and type(id) == "number" then return id end
+	end
+	if type(sel) == "number" then return sel end
+	return nil
+end
+
+Chat.SelectedChatID = SelectedChatID
+
+--- Should this tab read as the one you are looking at?
+--
+--  Three answers, in order of how much they know:
+--
+--  1. `FCFTab_UpdateColors(tab, selected)` is Blizzard telling us directly, and
+--     it is right for docked and undocked windows alike. The hook stashes it.
+--     `SkinAllTabs` clears the stash first so a stale flag cannot strand a pill
+--     on a tab the dock has since moved away from.
+--  2. An undocked window is not *in* the dock, so it can never be the dock's
+--     selection - but it is the window you are reading, and Blizzard's own
+--     colour logic treats it as selected. Without this, undocking the combat
+--     log left its tab permanently dimmed.
+--
+--     `not f.isDocked`, NOT `f.isDocked == false`. The client only ever writes
+--     `1` or `nil` (FloatingChatFrame.lua:1787 and :1821 are the only two
+--     assignments in the file), and its own predicate at :135 and :534 reads
+--     `not chatFrame.isDocked`. Written as `== false` this tier never fired on
+--     a real client at all - it only fired in the harness, against a value the
+--     game does not use, which is the most flattering kind of wrong.
+--
+--     `IsShown` matters because a CLOSED window is undocked too: FCF_Close
+--     leaves it in CHAT_FRAMES with `isDocked = nil` forever.
+--  3. Otherwise ask the dock.
+local function TabIsSelected(tab, alt)
+	-- Called with a colon, `tab` is the module table. Same trap `SelectedChatID`
+	-- grew a guard for one function ago; no sense leaving it open here.
+	if tab == Chat then tab = alt end
+	if not tab then return false end
+
+	if tab._aetherSelected ~= nil then
+		return tab._aetherSelected and true or false
+	end
+
+	local id = tab.GetID and tab:GetID()
+	if not id then return false end   -- else `nil == nil` lights an unknown tab
+
+	local f = _G["ChatFrame" .. id]
+	if f and not f.isDocked and f.IsShown and f:IsShown() then return true end
+
+	return SelectedChatID() == id
+end
+
+Chat.TabIsSelected = TabIsSelected
+
 --- Colour a tab for its current state and size the pill to its text.
 function Chat:StyleTab(tab)
 	if not tab or not tab._aether then return end
 	local c = Palette.c
 	local fs = TabText(tab)
-	local dock = _G.GeneralDockManager
-	local selected = dock and dock.selected == tab:GetID()
+	local selected = TabIsSelected(tab)
 	local hovered = tab.IsMouseOver and tab:IsMouseOver()
 
 	if fs then
+		-- Hand the label back its own dimensions before measuring it.
+		--
+		-- PanelTemplates_TabResize runs twice per click (FCF_SelectDockFrame
+		-- rebuilds the tabs, then FCF_DockUpdate rebuilds them again with
+		-- forceUpdate) and for every tab but ChatFrame1's it ends
+		-- `tabText:SetWidth(dynTabSize - 32)` - a hard 28 to 58 pixels, from
+		-- FCFDock_CalculateTabSize's 60..90 clamp. The XML template also gives
+		-- the string a fixed height of 8 that nothing ever clears.
+		--
+		-- A FontString with a hard width narrower than its text WRAPS, and a
+		-- rect that is not the size of its own text is what makes "CENTER" stop
+		-- meaning centred. Both are why the label drifted off the middle of the
+		-- pill after the first click and stayed there. Zero restores auto-size,
+		-- which is what Blizzard's own code uses to measure (line 372).
+		if fs.SetWidth then fs:SetWidth(0) end
+		if fs.SetHeight then fs:SetHeight(0) end
+		if fs.SetJustifyV then fs:SetJustifyV("MIDDLE") end
+
 		local w = (fs:GetStringWidth() or 30) + TAB_PAD * 2
 		tab:SetWidth(w)
 		-- Selected is a filled pill with dark type on it, exactly inverted from
 		-- everything else in the UI. That inversion is the whole signal.
-		W.Color(fs, selected and c.glass or (hovered and c.text or c.textDim))
+		--
+		-- At FULL alpha. `c.glass` is the panel fill and carries alpha 0.55 -
+		-- passing it straight through drew the label at 55% over the accent
+		-- while the shadow behind it stayed fully opaque, so the smudge was
+		-- darker than the letters casting it.
+		if selected then
+			W.Color(fs, { c.glass[1], c.glass[2], c.glass[3], 1 })
+		else
+			W.Color(fs, hovered and c.text or c.textDim)
+		end
+
+		-- GameFontNormalSmall inherits SystemFont_Shadow_Small, which bakes in
+		-- an opaque black shadow at (1,-1). That is right for pale type on the
+		-- dark panel and wrong for dark type on a pale pill, where it is just
+		-- mud around every glyph - and SetFont does not clear it, so it has to
+		-- be turned off by hand and turned back on again.
+		if fs.SetShadowColor then
+			if selected then
+				fs:SetShadowColor(0, 0, 0, 0)
+			else
+				fs:SetShadowColor(0, 0, 0, 0.6)
+				if fs.SetShadowOffset then fs:SetShadowOffset(1, -1) end
+			end
+		end
 	end
 
 	local pill = tab._pill
 	if pill then
+		-- Anchored to the LABEL, not to the tab.
+		--
+		-- The tab is not ours: PanelTemplates_TabResize overwrites its width on
+		-- every dock update, to `dynTabSize` for a dynamic tab and to
+		-- `textWidth + sideWidths` (a hard 32 of Blizzard's own art padding) for
+		-- ChatFrame1's. A pill measured from the tab inherits every one of those
+		-- and drifts away from the word it is supposed to be wrapping. Measured
+		-- from the text it cannot drift: the pill IS the text plus its padding,
+		-- and its centre IS the text's centre, so the label cannot end up
+		-- off-centre in it no matter what the tab does.
+		--
+		-- Re-anchored every pass rather than once at creation, because that is
+		-- the only way it survives a client that rewrites the tab twice a click.
+		pill:ClearAllPoints()
+		if fs then
+			pill:SetPoint("LEFT", fs, "LEFT", -TAB_PAD, 0)
+			pill:SetPoint("RIGHT", fs, "RIGHT", TAB_PAD, 0)
+		else
+			pill:SetPoint("LEFT", tab, "LEFT", 0, 0)
+			pill:SetPoint("RIGHT", tab, "RIGHT", 0, 0)
+		end
+		-- FCFDock_UpdateTabs re-parents the tab (SetParent(dock) or
+		-- SetParent(scrollChild)), which moves its frame level out from under
+		-- the level the pill was given once at creation. Re-asserted here, or
+		-- the fill eventually draws over the label it is meant to sit behind.
+		pill:SetHeight(PILL_H)
+		pill:SetFrameLevel(math.max(0, tab:GetFrameLevel() - 1))
 		-- No rim on a tab, selected or not. A filled pill already has an edge -
 		-- the fill's own boundary - and drawing a second one in the same colour
 		-- on top of it doubles the value at the boundary and reads as a bright
@@ -316,7 +476,13 @@ end
 function Chat:SkinAllTabs()
 	EachFrame(function(f)
 		local name = f:GetName()
-		if name then Chat:SkinTab(_G[name .. "Tab"]) end
+		local tab = name and _G[name .. "Tab"]
+		if not tab then return end
+		-- Drop what Blizzard last told us about this tab. This runs when the
+		-- selection has just moved, so the flag from the previous selection is
+		-- exactly the thing that would leave two pills lit at once.
+		tab._aetherSelected = nil
+		Chat:SkinTab(tab)
 	end)
 end
 
@@ -847,7 +1013,7 @@ function Chat:StyleEditBox(eb)
 		eb._tag:SetEdgeShown(true)
 	end
 
-	-- The code reads at the size you type at. The `chatTab` role is 11 and the
+	-- The code reads at the size you type at. The `chatTab` role is 10 and the
 	-- typing size here is 9, so taking the role's own number put a label next to
 	-- the text that was visibly bigger than the text - which is the one thing a
 	-- label should never be.
@@ -928,11 +1094,10 @@ end
 --  top of each other in the same place, which is what put two labels side by
 --  side at the bottom of the panel.
 --
---  The winner is the box that is actually open if there is one, and the
---  selected docked window otherwise - so the composer is on screen at all times
---  the way the concept draws it, rather than appearing only while typing.
+--  The winner is the box that is actually open if there is one, and ChatFrame1's
+--  otherwise - so the composer is on screen at all times the way the concept
+--  draws it, rather than appearing only while typing.
 function Chat:UpdateComposers()
-	local dock = _G.GeneralDockManager
 	local active
 
 	local function boxOf(f)
@@ -945,16 +1110,28 @@ function Chat:UpdateComposers()
 		if eb and eb._pill and eb.IsShown and eb:IsShown() then active = eb end
 	end)
 
+	-- Nothing is focused, so preview the box pressing Enter would actually open,
+	-- and that is ChatFrame1's - NOT the dock's selected window.
+	--
+	-- This used to consult the selection first, written as
+	-- `selected == id or f == ChatFrame1` inside a loop over CHAT_FRAMES; since
+	-- ChatFrame1 is first in that list the fallback always won on iteration one
+	-- and the selection test decided nothing, ever. Promoting the selection to
+	-- its own pass ahead of the fallback made it decide - and made it wrong,
+	-- which is worse than dead.
+	--
+	-- Era's OPENCHAT binding is `ChatFrameUtil.OpenChat("")` with no frame, and
+	-- ChooseBoxForSend's FIRST branch is
+	-- `if GetCVar("chatStyle") == "classic" then return DEFAULT_CHAT_FRAME.editBox`,
+	-- which ignores the dock entirely. Selecting the guild tab changes which
+	-- window you READ, not where your typing goes, so a capsule that followed
+	-- the selection would advertise a channel you are not about to type in.
+	--
+	-- Under `chatStyle = "im"` the answer does move - but there the previous box
+	-- is hidden and the new one shown, so the loop above already has it.
 	if not active then
-		EachFrame(function(f)
-			if active then return end
-			local eb = boxOf(f)
-			if not eb or not eb._pill then return end
-			local id = f.GetID and f:GetID()
-			if (dock and dock.selected == id) or f == _G.ChatFrame1 then
-				active = eb
-			end
-		end)
+		local eb = boxOf(_G.ChatFrame1)
+		if eb and eb._pill then active = eb end
 	end
 
 	EachFrame(function(f)
@@ -1701,16 +1878,24 @@ local function InstallHooks()
 	local function live() return Chat.enabled end
 
 	if _G.FCFTab_UpdateColors then
-		hooksecurefunc("FCFTab_UpdateColors", function(tab)
-			if live() then Chat:SkinTab(tab) end
+		hooksecurefunc("FCFTab_UpdateColors", function(tab, selected)
+			if live() then
+				-- The second argument is the answer, handed to us for free, and
+				-- it is right for undocked windows too. The old hook declared
+				-- `function(tab)` and threw it away.
+				if tab then tab._aetherSelected = selected and true or false end
+				Chat:SkinTab(tab)
+			end
 		end)
 	end
 	if _G.FCFDock_SelectWindow then
 		hooksecurefunc("FCFDock_SelectWindow", function()
 			if live() then
 				Chat:SkinAllTabs()
-				-- The composer belongs to the selected window, so it moves with
-				-- the selection.
+				-- NOT because the composer follows the selection - it does not,
+				-- see UpdateComposers. Under `chatStyle = "im"` selecting a tab
+				-- hides one edit box and shows another, and this is where we
+				-- find out.
 				Chat:UpdateComposers()
 			end
 		end)

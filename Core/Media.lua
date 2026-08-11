@@ -161,10 +161,40 @@ Media.style = {
 	-- on screen somebody actually reads a paragraph of, and it is read against
 	-- whatever the world happens to be doing behind it.
 	chatText     = { "regular",  12, "" },
-	chatTab      = { "semibold", 11, "" },
+	-- 10, not 11. At 11 the channel names read a shade heavier than the messages
+	-- beside them, which inverts the emphasis: the tabs are navigation, the lines
+	-- are the content. The composer's channel capsule does NOT inherit this - it
+	-- is re-sized from Chat:FontSize so the code reads at the size you type at.
+	chatTab      = { "semibold", 10, "" },
 	chatBadge    = { "bold",      8, "" },   -- the channel tag, uppercase
 	questTitle   = { "medium",   12, "" },
 	questLine    = { "light",    11, "" },   -- objective lines under a quest
+
+	-- Quest log window (concept 3b). Sizes are the deck's own, because the whole
+	-- window is drawn at profile.scale like the rest of the module geometry - the
+	-- deck's 24px title at 0.71 is 17 virtual units, which on a 1600-tall display
+	-- lands back on 35 physical pixels, exactly where the deck put it.
+	--
+	-- The deck uses half-point sizes (11.5, 13.5, 14.5). SetFont takes them, but
+	-- the glyph rasteriser rounds anyway and a half point is invisible at this
+	-- scale, so each is rounded to the nearest whole point here rather than
+	-- carrying a fraction through the layout arithmetic.
+	qlHeading    = { "semibold", 19, "" },   -- "Quest Log"
+	qlTitle      = { "semibold", 24, "" },   -- the selected quest's name
+	qlCount      = { "medium",   13, "" },   -- the 17 / 20 chip
+	qlSearch     = { "light",    13, "" },
+	qlZone       = { "semibold", 12, "" },   -- letter-spaced zone heading
+	qlRow        = { "regular",  14, "" },
+	qlRowSel     = { "semibold", 14, "" },   -- the selected row goes up a weight
+	qlChip       = { "bold",     12, "" },   -- level chip
+	qlTag        = { "semibold", 11, "" },   -- "Dungeon"
+	qlSummary    = { "light",    15, "" },
+	qlBody       = { "light",    14, "" },   -- description paragraph
+	qlLabel      = { "semibold", 12, "" },   -- letter-spaced DESCRIPTION
+	qlObjName    = { "medium",   14, "" },
+	qlObjCount   = { "semibold", 13, "" },
+	qlBtn        = { "semibold", 14, "" },   -- the filled Track button
+	qlBtnAlt     = { "medium",   14, "" },   -- Share / Abandon outlines
 }
 
 -- ---------------------------------------------------------------------------
@@ -218,9 +248,24 @@ end
 
 --- WoW has no letter-spacing. Section labels in the concepts are widely tracked
 --  ("Q U E S T S"), so we fake it by injecting thin spaces between characters.
+--
+--  Iterates CODE POINTS, not bytes. The first version walked `text:sub(i, i)`,
+--  which was safe only while every caller passed a hard-coded ASCII literal. The
+--  quest log feeds it zone names straight from the client, and those are
+--  localized: byte-splitting "Düstermarschen" tears the ü in half and draws a
+--  replacement box, and on ruRU or zhCN every character is multi-byte, so the
+--  whole heading becomes a run of garbage.
+--
+--  CJK is passed through untouched. Those scripts have no letter-spacing
+--  convention to imitate and the result reads as broken rather than as tracked.
 function Media:Track(text, spaces)
+	if not text or text == "" then return "" end
+	if text:find("[\224-\244]") then return text end
+
 	local sep = string.rep(" ", spaces or 1)
 	local out = {}
-	for i = 1, #text do out[#out + 1] = text:sub(i, i) end
+	for ch in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+		out[#out + 1] = ch
+	end
 	return table.concat(out, sep)
 end

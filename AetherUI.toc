@@ -23,6 +23,7 @@ Modules\UnitFrames.lua
 Modules\ActionBars.lua
 Modules\Auras.lua
 Modules\QuestTracker.lua
+Modules\QuestLog.lua
 Modules\Minimap.lua
 Modules\XPBar.lua
 Modules\Chat.lua

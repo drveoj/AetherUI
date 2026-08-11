@@ -189,6 +189,14 @@ local function GeneralGroup()
 			{ "glass", "shadow" }, 0, 1, 0.05, { after = "restyle" }),
 		corner = range("Panel corner radius", nil, { "glass", "corner" }, 4, 24, 1,
 			{ after = "restyle" }),
+		readOpacity = range("Reading panel opacity",
+			"How much deeper chat and the quest log sit than the rest of the HUD."
+			.. " 0% matches the action bars and capsules; 100% is solid. They"
+			.. " carry paragraphs of small text over moving scenery, so they need"
+			.. " more than a surface you only glance at - how much more depends on"
+			.. " your eyes.",
+			{ "glass", "readOpacity" }, 0, 1, 0.05,
+			{ after = "restyle", percent = true }),
 
 		posHeader = header("Positions and keys"),
 		bind = action("Keybind mode",

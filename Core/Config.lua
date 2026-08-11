@@ -46,6 +46,14 @@ Config.defaults = {
 			-- curve. See Core\Glass.lua.
 			shadow  = 1.0,
 			corner  = 12,      -- panel corner radius
+			-- How much deeper a READING surface sits than a control surface.
+			--
+			-- Chat and the quest log carry paragraphs of small text over moving
+			-- scenery; the bars and capsules are glanced at. 0 makes them match
+			-- the rest of the HUD, 1 makes them solid. Exposed because how much
+			-- background clutter a person can read through is a matter of eyes
+			-- and taste, not a number anyone can pick for them.
+			readOpacity = 0.35,
 		},
 
 		-- the "HUD breathes out" behaviour from concept 1c / 2b
@@ -263,6 +271,13 @@ Config.defaults = {
 				-- addon's state for no reason is how you break someone's day.
 				adoptWatches   = true,
 				hideBlizzard   = true,
+			},
+
+			-- The full log window from concept 3b, which REPLACES Blizzard's
+			-- rather than reskinning it. Turning this off restores the stock
+			-- quest log, including the L key and the micro button.
+			questlog = {
+				enabled = true,
 			},
 
 			-- A round map with a frosted rim and a glass pill under it carrying

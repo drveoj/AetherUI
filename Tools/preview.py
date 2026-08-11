@@ -13,6 +13,7 @@ Out:  Tools/preview.png
 """
 
 import os
+import re
 import struct
 
 import numpy as np
@@ -123,40 +124,87 @@ def C(r, g, b, a=1.0):
     return (r / 255.0, g / 255.0, b / 255.0, a)
 
 
-SKINS = {
-    "Midnight": dict(
-        glass=C(12, 10, 28, 0.55), glassStrong=C(12, 10, 28, 0.68),
-        edge=C(150, 130, 235, 0.32), shadow=C(0, 0, 0, 0.50),
-        noise=C(255, 255, 255, 0.05),
-        text=C(236, 230, 255), textDim=C(220, 210, 255, 0.55),
-        health=(C(159, 232, 180), C(95, 198, 134)),
-        power=(C(138, 180, 255), C(106, 144, 232)),
-        hostileBar=(C(255, 154, 118), C(240, 110, 90)),
-        targetGlass=C(24, 10, 20, 0.55), targetEdge=C(255, 138, 138, 0.35),
-        targetText=C(255, 217, 196),
-        cast=(C(142, 200, 255), C(212, 236, 255)), castEdge=C(150, 200, 255, 0.45),
-        castGlow=C(140, 200, 255, 0.55),
-        accent=C(185, 154, 245), xp=(C(138, 106, 224), C(185, 154, 245)),
-        classOrb=(C(78, 139, 167), C(36, 66, 87)),      # Mage 69CCF0 through OrbColor
-        mobOrb=(C(161, 124, 84), C(77, 59, 47)),        # hostile orange through OrbColor
-    ),
-    "Daylight": dict(
-        glass=C(252, 248, 240, 0.17), glassStrong=C(252, 248, 240, 0.24),
-        edge=C(255, 255, 255, 0.36), shadow=C(30, 15, 0, 0.35),
-        noise=C(255, 255, 255, 0.05),
-        text=C(255, 255, 255), textDim=C(255, 255, 255, 0.62),
-        health=(C(159, 232, 180), C(111, 214, 150)),
-        power=(C(168, 204, 245), C(127, 176, 236)),
-        hostileBar=(C(255, 154, 118), C(240, 110, 90)),
-        targetGlass=C(252, 248, 240, 0.17), targetEdge=C(255, 255, 255, 0.36),
-        targetText=C(255, 255, 255),
-        cast=(C(142, 200, 255), C(212, 236, 255)), castEdge=C(180, 220, 255, 0.50),
-        castGlow=C(160, 210, 255, 0.45),
-        accent=C(255, 235, 190, 0.95), xp=(C(185, 138, 224), C(217, 184, 240)),
-        classOrb=(C(78, 139, 167), C(36, 66, 87)),
-        mobOrb=(C(161, 124, 84), C(77, 59, 47)),
-    ),
-}
+# --------------------------------------------------------------------------
+# skins
+#
+# Parsed straight out of Core/Palette.lua rather than duplicated here. The two
+# were hand-kept copies of each other until 2026-08-11, which meant the preview
+# could render a skin the game does not have - and it did: every quest-log token
+# added that day was missing from this file, so the preview was quietly a
+# generation behind whenever a colour changed.
+#
+# Only what the painters below actually use is extracted, and a missing token is
+# a hard error rather than a silent black.
+# --------------------------------------------------------------------------
+
+PALETTE_LUA = os.path.join(ROOT, "Core", "Palette.lua")
+
+
+def parse_palette():
+    """Read Core/Palette.lua and return {Skin: {token: colour or pair}}."""
+    src = open(PALETTE_LUA, encoding="utf-8").read()
+
+    call = re.compile(r"C\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)")
+    entry = re.compile(r"^\t\t(\w+)\s*=\s*(\{\s*C\([^}]*\}|C\([^)]*\))", re.M)
+
+    def to_c(r, g, b, a):
+        return C(int(r), int(g), int(b), float(a) if a else 1.0)
+
+    skins = {}
+    for name in ("midnight", "daylight"):
+        head = src.index("\n\t%s = {" % name)
+        depth, i = 0, head
+        while True:
+            if src[i] == "{":
+                depth += 1
+            elif src[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = src[head:i]
+
+        table = {"_light": re.search(r"light\s*=\s*true", body) is not None}
+        for tok, raw in entry.findall(body):
+            cols = [to_c(*m) for m in call.findall(raw)]
+            if not cols:
+                continue
+            table[tok] = tuple(cols) if raw.lstrip().startswith("{") else cols[0]
+        skins[name.capitalize()] = table
+    return skins
+
+
+def build_skins():
+    """Map Palette.lua's vocabulary onto the names the painters below use."""
+    out = {}
+    for label, t in parse_palette().items():
+        def need(tok, _t=t, _l=label):
+            if tok not in _t:
+                raise KeyError("%s: Palette.lua has no '%s' - preview.py and the "
+                               "palette have drifted apart" % (_l, tok))
+            return _t[tok]
+
+        out[label] = dict(
+            glass=need("glass"), glassStrong=need("glassStrong"),
+            edge=need("glassEdge"), shadow=need("shadow"),
+            noise=C(255, 255, 255, 0.05),
+            text=need("text"), textDim=need("textDim"),
+            health=need("health"), power=need("power"),
+            hostileBar=need("hostileBar"),
+            targetGlass=need("targetGlass"), targetEdge=need("targetEdge"),
+            targetText=need("targetText"),
+            cast=need("cast"), castEdge=need("castEdge"), castGlow=need("castGlow"),
+            accent=need("accent"), xp=need("xp"),
+            light=t["_light"],
+            # The orb is pulled toward a dark base on both skins by
+            # Palette:OrbColor, so these stay fixed rather than tracking `text`.
+            classOrb=(C(78, 139, 167), C(36, 66, 87)),
+            mobOrb=(C(161, 124, 84), C(77, 59, 47)),
+        )
+    return out
+
+
+SKINS = build_skins()
 
 
 def font(weight, size):

@@ -245,7 +245,20 @@ local function Collect()
 
 	-- Forget IDs that are no longer in the log at all - turned in, abandoned, or
 	-- belonging to another character. Left alone either set would grow forever.
-	if entries > 0 then
+	--
+	-- But NOT while any zone header is collapsed. A collapsed header's quests are
+	-- not in the log at all, so `seen` is missing them and the prune would read
+	-- "hidden" as "gone" and delete them from the saved variables: in auto mode
+	-- dismissed quests come back, and in whitelist mode tracked quests stop being
+	-- tracked, permanently and with no message. The player collapsing a zone in
+	-- Blizzard's log is enough to trigger it.
+	local anyCollapsed = false
+	for index = 1, entries do
+		local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(index)
+		if isHeader and isCollapsed then anyCollapsed = true break end
+	end
+
+	if entries > 0 and not anyCollapsed then
 		local tracked, untracked = Sets()
 		for questID in pairs(tracked) do
 			if not seen[questID] then tracked[questID] = nil end
@@ -556,7 +569,7 @@ function QT:Refresh()
 	local quests, numQuests = Collect()
 
 	panel.header.count:SetText(string.format("%d / %d", numQuests or 0,
-		_G.MAX_QUESTS or 20))
+		_G.MAX_QUESTLOG_QUESTS or _G.MAX_QUESTS or 20))
 	W.Color(panel.header.count, c.textDim)
 	W.Color(panel.header.title, c.text)
 

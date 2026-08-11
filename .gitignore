@@ -19,3 +19,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Commit helper, same as git-setup.sh: a script for you to run, not addon source.
+commit-chat.sh

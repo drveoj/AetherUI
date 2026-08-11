@@ -85,7 +85,8 @@ function W.Text(parent, style, justify, layer)
 	fs:SetJustifyH(justify or "LEFT")
 	fs:SetJustifyV("MIDDLE")
 	-- A soft shadow is the only thing keeping light type legible against the
-	-- Barrens at midday. The concepts lean on text-shadow for exactly this.
+	-- Barrens at midday. The concepts lean on text-shadow for exactly this, and
+	-- both skins draw light type, so this is a constant rather than a skin token.
 	fs:SetShadowColor(0, 0, 0, 0.55)
 	fs:SetShadowOffset(0, -1)
 	local c = A.Palette.c.text
@@ -93,6 +94,7 @@ function W.Text(parent, style, justify, layer)
 	fs._aetherStyle = style
 	return fs
 end
+
 
 -- Both of these are nil-tolerant on purpose. They are called from skin and
 -- config passes that walk whole collections of widgets, and not every member of

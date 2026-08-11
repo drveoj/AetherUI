@@ -72,18 +72,80 @@ Palette.skins = {
 
 		danger      = C(255, 138, 138, 1.00),
 		xp          = { C(138, 106, 224), C(185, 154, 245) },
+
+		-- Quest log (concept 3b). The level chip's five difficulty bands, the
+		-- blue "Dungeon" tag, and the two list-row states.
+		rowSel      = C(205, 188, 255, 0.20),
+		rowHover    = C(150, 130, 235, 0.14),
+		info        = C(164, 216, 245, 1.00),
+		infoBg      = C(140, 200, 255, 0.13),
+		infoEdge    = C(140, 200, 255, 0.30),
+		questDiff = {
+			impossible    = { text = C(255, 154, 138), bg = C(255, 120, 105, 0.16) },
+			verydifficult = { text = C(255, 180, 106), bg = C(255, 160,  80, 0.15) },
+			difficult     = { text = C(255, 232, 154), bg = C(255, 220, 120, 0.14) },
+			standard      = { text = C(159, 232, 180), bg = C(120, 230, 160, 0.14) },
+			trivial       = { text = C(168, 164, 184), bg = C(180, 176, 200, 0.12) },
+		},
+
+		-- Reward cards and the action footer. The filled button is the one place
+		-- the deck asks for an OPAQUE accent with dark text on it, which is why
+		-- it is its own token rather than `accent` at full alpha.
+		cardBg      = C(255, 255, 255, 0.06),
+		cardEdge    = C(150, 130, 235, 0.30),
+		cardEdgeHi  = C(205, 188, 255, 0.70),
+		btnFill     = C(205, 188, 255, 1.00),
+		btnFillHi   = C(222, 212, 255, 1.00),
+		btnFillText = C(20,   16,  31, 1.00),
+		btnEdge     = C(150, 130, 235, 0.32),
+		btnHover    = C(150, 130, 235, 0.14),
+		dangerText  = C(255, 150, 140, 0.80),
+		dangerEdge  = C(255, 138, 120, 0.30),
+		dangerHover = C(255, 138, 120, 0.12),
+
+		-- A modal is the one surface that must NOT be glass. Frosted-on-frosted
+		-- over a lit world is unreadable, and a confirmation nobody can read is
+		-- worse than no confirmation. Near-opaque, with a scrim behind it.
+		--
+		-- Dark in both skins, deliberately: the deck dims the world behind the
+		-- window in both, and a dark modal over a light UI is the normal reading.
+		-- It also means the light button text works unchanged on either skin.
+		dialogFill  = C(14, 11, 32, 0.97),
+		scrim       = C(0, 0, 0, 0.45),
 	},
 
 	-- 1a in the deck: warm light glass, sits better over Classic's palette.
+	--
+	-- Two failed attempts are worth writing down, because both looked reasonable
+	-- on paper and neither survived a screenshot:
+	--
+	--   fill 0.17, white text   the deck's own values. But the deck has a 38px
+	--                           backdrop blur under the panel and we have none,
+	--                           so over real terrain the fill did nothing at all
+	--                           and the text floated on the world with no surface
+	--                           under it.
+	--   fill 0.72, dark ink     a genuine light theme. Legible, and horrible: a
+	--                           bright slab in the corner of a warm desert. Worse,
+	--                           WoW's OUTLINE flag is always BLACK, so every role
+	--                           carrying it - the level orb, stack counts, keybinds
+	--                           - drew dark text inside a black rim on white.
+	--
+	-- What was actually wrong with the first one was not the fill, it was the
+	-- EDGE. A panel reads as a panel because it has a boundary. So the rim goes
+	-- to 0.85 and the drop shadow to 0.65, the fill lifts only as far as 0.30,
+	-- and the text stays white - which keeps every OUTLINE role, every class
+	-- colour and every difficulty colour working exactly as they do on Midnight.
 	daylight = {
 		label       = "Daylight",
 
-		glass       = C(252, 248, 240, 0.17),
-		glassSoft   = C(252, 248, 240, 0.12),
-		glassStrong = C(252, 248, 240, 0.24),
-		glassEdge   = C(255, 255, 255, 0.36),
-		glassEdgeHi = C(255, 255, 255, 0.55),
-		shadow      = C(30, 15, 0, 0.35),
+		glass       = C(252, 246, 236, 0.30),
+		glassSoft   = C(252, 246, 236, 0.22),
+		glassStrong = C(252, 246, 236, 0.40),
+		-- The rim is doing the work here, not the fill. Nearly solid.
+		glassEdge   = C(255, 252, 244, 0.85),
+		glassEdgeHi = C(255, 255, 255, 0.98),
+		-- And the shadow is what lifts a pale panel off pale ground.
+		shadow      = C(24, 12, 0, 0.65),
 
 		text        = C(255, 255, 255, 1.00),
 		textDim     = C(255, 255, 255, 0.62),
@@ -102,8 +164,8 @@ Palette.skins = {
 		hostileBar  = { C(255, 154, 118), C(240, 110, 90) },
 		neutral     = C(240, 190, 120, 1.00),
 		friendly    = C(159, 232, 180, 1.00),
-		targetGlass = C(252, 248, 240, 0.17),
-		targetEdge  = C(255, 255, 255, 0.36),
+		targetGlass = C(252, 246, 236, 0.30),
+		targetEdge  = C(255, 255, 255, 0.55),
 		targetText  = C(255, 255, 255, 1.00),
 
 		cast        = { C(142, 200, 255), C(212, 236, 255) },
@@ -112,6 +174,38 @@ Palette.skins = {
 
 		danger      = C(255, 138, 138, 1.00),
 		xp          = { C(185, 138, 224), C(217, 184, 240) },
+
+		-- Quest log. Chips carry their own light backgrounds with dark text on
+		-- them, which is the deck's own treatment and works against either skin.
+		rowSel      = C(255, 252, 245, 0.30),
+		rowHover    = C(255, 252, 245, 0.20),
+		info        = C(18, 56, 78, 1.00),
+		infoBg      = C(190, 228, 255, 0.85),
+		infoEdge    = C(255, 255, 255, 0.45),
+		questDiff = {
+			impossible    = { text = C(110, 26, 16), bg = C(255, 185, 165, 0.92) },
+			verydifficult = { text = C(110, 58,  8), bg = C(255, 212, 155, 0.92) },
+			difficult     = { text = C( 94, 74,  8), bg = C(255, 238, 175, 0.92) },
+			standard      = { text = C( 20, 80, 42), bg = C(185, 240, 200, 0.92) },
+			trivial       = { text = C( 74, 70, 80), bg = C(228, 226, 235, 0.88) },
+		},
+
+		cardBg      = C(255, 252, 245, 0.16),
+		cardEdge    = C(255, 255, 255, 0.40),
+		cardEdgeHi  = C(255, 255, 255, 0.80),
+		btnFill     = C(255, 252, 245, 0.92),
+		btnFillHi   = C(255, 255, 255, 1.00),
+		btnFillText = C( 42,  36,  24, 1.00),
+		btnEdge     = C(255, 255, 255, 0.45),
+		btnHover    = C(255, 252, 245, 0.20),
+		dangerText  = C(255, 212, 200, 1.00),
+		dangerEdge  = C(255, 180, 160, 0.55),
+		dangerHover = C(255, 160, 140, 0.18),
+
+		-- The modal stays dark on both skins. It sits over the chrome rather than
+		-- over the world, and the light button text works unchanged on either.
+		dialogFill  = C(28, 22, 12, 0.96),
+		scrim       = C(20, 12, 0, 0.40),
 	},
 }
 
@@ -131,6 +225,46 @@ function Palette:List()
 	for k, v in pairs(Palette.skins) do out[#out + 1] = { key = k, label = v.label } end
 	table.sort(out, function(a, b) return a.key < b.key end)
 	return out
+end
+
+--- The fill for a surface you READ from, as opposed to one you operate.
+--
+--  Two kinds of panel live on this HUD and they want different opacities:
+--
+--    control surfaces   action bars, unit capsules, the dock. Glanced at, not
+--                       read. They stay translucent so the world shows through
+--                       and the HUD keeps breathing.
+--    reading surfaces   chat and the quest log. Paragraphs of small text over
+--                       moving, high-contrast scenery. At the control-surface
+--                       opacity the clutter behind competes with every glyph.
+--
+--  Chat has had this treatment since the start and it is the reason chat reads
+--  comfortably where the quest log did not. Shared rather than duplicated so
+--  the two cannot drift, and so there is one number to tune.
+--
+--  The boost closes a fixed FRACTION OF THE REMAINING TRANSPARENCY rather than
+--  adding a constant. Two earlier formulations were wrong for instructive
+--  reasons: a flat +0.14 is +21% on a 0.68 base and +58% on a 0.24 one, so the
+--  two skins disagreed visibly; and a x1.2 multiplier overshoots into fully
+--  opaque once the base is already high, so it clamps and they disagree again.
+--  A fraction of the gap cannot overshoot and behaves the same at any base.
+--  The fraction is `profile.glass.readOpacity`, a user setting rather than a
+--  constant: how much background clutter a person can comfortably read through
+--  is a matter of eyesight and taste. `readBoost` is only the fallback for the
+--  window before the database exists.
+Palette.readBoost = 0.35
+
+function Palette:ReadingFill(skin)
+	local c = skin or Palette.c
+	local base = c.glassStrong or c.glass
+	local a = base[4] or 1
+
+	local boost = Palette.readBoost
+	local cfg = A.db and A.db.profile and A.db.profile.glass
+	if cfg and type(cfg.readOpacity) == "number" then boost = cfg.readOpacity end
+	if boost < 0 then boost = 0 elseif boost > 1 then boost = 1 end
+
+	return { base[1], base[2], base[3], a + (1 - a) * boost }
 end
 
 --- A token as the six hex digits an inline `|cff` escape wants.
@@ -224,6 +358,7 @@ function Palette:HealthColor(unit)
 			-- which drove the pale classes (Hunter, Mage, Rogue, Priest) to within
 			-- a hair of white and made the bar read as cream rather than as the
 			-- class. Keep the lift small enough that the hue survives.
+			--
 			return {
 				{ Mix(cc.r, 1, 0.18), Mix(cc.g, 1, 0.18), Mix(cc.b, 1, 0.18) },
 				{ cc.r * 0.70, cc.g * 0.70, cc.b * 0.70 },
