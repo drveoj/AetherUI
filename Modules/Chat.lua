@@ -72,6 +72,9 @@ local TAB_PAD  = 10    -- horizontal padding inside a tab pill
 -- Blizzard's tab art at all.
 local PILL_H   = 18
 local EDIT_H   = 26
+-- The resize grip's hit target. Bigger than the mark drawn inside it, because a
+-- corner grip is found with a cursor rather than read.
+local GRIP     = 20
 local EDIT_GAP = 6
 -- The channel capsule inside the composer is sized from the typing font rather
 -- than fixed - see Chat:TagHeight. This is the padding around the code in it.
@@ -590,10 +593,56 @@ end
 --  Blizzard's version already persists into its own saved variables where the
 --  rest of the chat settings live - so a resize survives this addon being turned
 --  off, which a private copy of the number would not.
+--- Find the resize grip WHEREVER this client keeps it.
+--
+--  It is not always a child of the chat frame. On clients that hang it off the
+--  button frame it is `$parentButtonFrame`'s, with the matching global name -
+--  and that is the frame ParkButtons moves to -10000 and calls SetClipsChildren
+--  on. Both of those take the grip with it: off screen, and clipped to a rect
+--  that is off screen, so no anchor of ours can bring it back.
+--
+--  That is the whole of "there doesn't seem to be a way to resize it". Not
+--  locked, not disabled - parked, along with the scroll buttons it happened to
+--  be sitting next to.
+--
+--  Named lookups first, because they are exact. The scan is last and matches on
+--  the NAME ending rather than on a list of known globals, since the thing we
+--  are compensating for is not knowing which layout this client uses.
+local function FindGrip(f)
+	local name = f.GetName and f:GetName() or ""
+	local bf = f.buttonFrame or _G[name .. "ButtonFrame"]
+
+	local grip = f.ResizeButton or _G[name .. "ResizeButton"]
+		or (bf and bf.ResizeButton) or _G[name .. "ButtonFrameResizeButton"]
+	if grip then return grip, bf end
+
+	if bf and bf.GetChildren then
+		local ok, kids = pcall(function() return { bf:GetChildren() } end)
+		if ok then
+			for _, kid in ipairs(kids) do
+				local kn = kid.GetName and kid:GetName()
+				if kn and kn:find("ResizeButton$") then return kid, bf end
+			end
+		end
+	end
+	return nil, bf
+end
+
 function Chat:SkinResize(f)
 	local cfg = A.Config:Module("chat")
-	local grip = f.ResizeButton or _G[(f:GetName() or "") .. "ResizeButton"]
+	local grip, bf = FindGrip(f)
 	if not grip then return end
+
+	-- Out of the parked frame, if that is where it was. Reparenting rather than
+	-- re-anchoring, because the problem is not only position: a parked button
+	-- frame also clips its children, and a clipped child cannot be dragged no
+	-- matter where it is anchored.
+	--
+	-- To the chat frame rather than to our panel: the grip drives StartSizing on
+	-- ITS parent chain and Blizzard's own scripts are what we are keeping.
+	if bf and grip:GetParent() == bf and grip.SetParent then
+		pcall(grip.SetParent, grip, f)
+	end
 
 	if cfg.resizable == false then
 		Kill(grip)
@@ -619,15 +668,53 @@ function Chat:SkinResize(f)
 	end
 
 	grip:Show()
-	grip:SetSize(16, 16)
+	grip:EnableMouse(true)
+	-- Twenty, not sixteen. This is a corner hit target you have to find with a
+	-- cursor, and the visible mark inside it is smaller than the frame.
+	grip:SetSize(GRIP, GRIP)
 	grip:ClearAllPoints()
 	local p = self.panel
-	grip:SetPoint("BOTTOMRIGHT", p or f, "BOTTOMRIGHT", -3, 3)
+	-- The panel's bottom-right corner, OUTSIDE the composer capsule - which
+	-- spans the panel inset by PAD on both sides, so a grip inset by less than
+	-- that is sitting on top of an edit box and losing every click to it.
+	grip:SetPoint("BOTTOMRIGHT", p or f, "BOTTOMRIGHT", -2, 2)
 	grip:SetFrameStrata("MEDIUM")
+	-- Above the composer, which is drawn later and would otherwise be on top.
+	if p and p.GetFrameLevel then
+		pcall(grip.SetFrameLevel, grip, p:GetFrameLevel() + 20)
+	end
+
 	local c = Palette.c
 	if grip._dots then
-		grip._dots:SetVertexColor(c.glassEdge[1], c.glassEdge[2], c.glassEdge[3], 0.5)
+		grip._dots:SetSize(GRIP - 6, GRIP - 6)
+		grip._dots:ClearAllPoints()
+		grip._dots:SetPoint("CENTER", grip, "CENTER", 0, 0)
 	end
+
+	-- Findable. A corner mark at half alpha is a decoration; one that answers
+	-- when the cursor crosses it is a control, and this is the only way to
+	-- resize the window.
+	if not grip._aetherHover then
+		grip._aetherHover = true
+		grip:HookScript("OnEnter", function(g)
+			if g._dots then
+				local a = Palette.c.accent or Palette.c.text
+				g._dots:SetVertexColor(a[1], a[2], a[3], 1)
+			end
+		end)
+		grip:HookScript("OnLeave", function(g) Chat:GripInk(g) end)
+	end
+	self:GripInk(grip)
+end
+
+--- The grip's resting colour: brighter while frames are unlocked, because that
+--  is when somebody is arranging things and looking for exactly this.
+function Chat:GripInk(grip)
+	if not grip or not grip._dots then return end
+	local c = Palette.c
+	local unlocked = A.Movers and A.Movers.unlocked
+	local col = unlocked and (c.accent or c.text) or c.glassEdge
+	grip._dots:SetVertexColor(col[1], col[2], col[3], unlocked and 0.9 or 0.55)
 end
 
 --- Unlocking is what makes the frame movable *and* resizable, both through

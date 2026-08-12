@@ -2749,8 +2749,24 @@ local function MakeChatFrame(id)
 	f.ScrollToBottomButton = CreateFrame("Button", nil, f)
 	f.buttonFrame = CreateFrame("Frame", name .. "ButtonFrame", f)
 	_G[name .. "ButtonFrame"] = f.buttonFrame
-	f.ResizeButton = CreateFrame("Button", name .. "ResizeButton", f)
-	_G[name .. "ResizeButton"] = f.ResizeButton
+	-- WHERE THE GRIP LIVES IS NOT THE SAME ON EVERY CLIENT, and this mock only
+	-- ever modelled the easy layout - a child of the chat frame, with the
+	-- obvious global. The other one hangs it off the button frame, which is the
+	-- frame ParkButtons moves to -10000 and clips, so the grip goes with it and
+	-- there is no way to resize the window at all.
+	--
+	-- __gripInButtonFrame switches between them, so the awkward layout is a
+	-- thing the suite can actually run rather than a thing to reason about.
+	if _G.__gripInButtonFrame then
+		f.ResizeButton = nil
+		local g = CreateFrame("Button", name .. "ButtonFrameResizeButton", f.buttonFrame)
+		f.buttonFrame.ResizeButton = g
+		_G[name .. "ButtonFrameResizeButton"] = g
+		_G[name .. "ResizeButton"] = nil
+	else
+		f.ResizeButton = CreateFrame("Button", name .. "ResizeButton", f)
+		_G[name .. "ResizeButton"] = f.ResizeButton
+	end
 
 	local tab = CreateFrame("Button", name .. "Tab", GeneralDockManager)
 	-- 32, from ChatTabArtTemplate `<Size x="64" y="32"/>`; nothing in the client
@@ -4794,6 +4810,49 @@ do
 	check(_G.ChatFrame1ResizeButton:IsShown(),
 		"but the resize corner stays - it is what makes the frame resizable, and"
 		.. " Blizzard's own version is what saves the new size")
+
+	-- ...INCLUDING on a client that keeps the grip inside the button frame.
+	--
+	-- "There doesn't seem to be a way to resize it in either state" was this:
+	-- the grip is not locked or disabled, it is PARKED, having been sitting
+	-- next to the scroll buttons when they were moved to -10000 and clipped.
+	-- Reparenting it out is the fix; anchoring alone is not, because a clipped
+	-- child cannot be dragged wherever you put it.
+	do
+		local Cm = A:GetModule("chat")
+		local g = _G.ChatFrame1ButtonFrameResizeButton
+			or CreateFrame("Button", "ChatFrame1ButtonFrameResizeButton",
+				_G.ChatFrame1ButtonFrame)
+		_G.ChatFrame1ButtonFrame.ResizeButton = g
+		-- BOTH ways in have to go, or the named lookup finds the easy layout's
+		-- grip and the awkward one is never exercised. The first version of
+		-- this test nilled the parentKey and left the global, and passed
+		-- against code that could not do the thing it claimed to test.
+		local saved, savedG = _G.ChatFrame1.ResizeButton, _G.ChatFrame1ResizeButton
+		_G.ChatFrame1.ResizeButton = nil
+		_G.ChatFrame1ResizeButton = nil
+
+		Cm:SkinResize(_G.ChatFrame1)
+
+		check(g:GetParent() ~= _G.ChatFrame1ButtonFrame,
+			"a grip found inside the parked button frame is taken out of it -"
+			.. " off screen AND clipped is two reasons it cannot be dragged, and"
+			.. " an anchor fixes neither")
+		check(g:IsShown() and g:IsMouseEnabled(),
+			"and it is shown and takes the mouse")
+		local px, py = select(4, g:GetPoint(1)), select(5, g:GetPoint(1))
+		check(px and px > -1000,
+			"anchored somewhere a cursor can reach (" .. tostring(px) .. ", "
+			.. tostring(py) .. ")")
+		check(g:GetWidth() >= 20,
+			"with a hit target you can find with a cursor rather than read ("
+			.. tostring(g:GetWidth()) .. ")")
+
+		_G.ChatFrame1.ResizeButton = saved
+		_G.ChatFrame1ResizeButton = savedG
+		_G.ChatFrame1ButtonFrame.ResizeButton = nil
+		Cm:SkinResize(_G.ChatFrame1)
+	end
 	check(tab1:GetAlpha() == 1 and tab2:GetAlpha() == 1,
 		"every tab is on screen, not just the hovered one")
 	tab2:SetAlpha(0.4)
