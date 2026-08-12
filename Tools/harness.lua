@@ -611,7 +611,16 @@ function CreateFrame(kind, name, parent, template)
 	function f:SetResizable() end
 	function f:RegisterForDrag() end
 	function f:StartMoving() end
-	function f:StopMovingOrSizing() end
+	-- Sizing, recorded. A grip that calls StartSizing and never StopSizing is a
+	-- frame the cursor keeps for the rest of the session, and a grip that calls
+	-- neither is a decoration - both look identical from outside.
+	function f:StartSizing(point) self.__sizing = point or true end
+	function f:StopMovingOrSizing() self.__sizing = nil end
+	function f:SetResizable(v) self.__resizable = v and true or false end
+	function f:IsResizable() return self.__resizable and true or false end
+	function f:SetResizeBounds(minW, minH, maxW, maxH)
+		self.__bounds = { minW, minH, maxW, maxH }
+	end
 	function f:SetClampedToScreen() end
 	-- Strata and level are modelled rather than swallowed: the last minimap bug
 	-- was purely an ordering one, and a mock that forgets both cannot see it.
@@ -4851,6 +4860,77 @@ do
 		_G.ChatFrame1.ResizeButton = saved
 		_G.ChatFrame1ResizeButton = savedG
 		_G.ChatFrame1ButtonFrame.ResizeButton = nil
+		Cm:SkinResize(_G.ChatFrame1)
+	end
+
+	-- AND A CLIENT WITH NO GRIP AT ALL, which is the one in the report: nothing
+	-- to see and nothing to drag, locked or unlocked. "Use Blizzard's, it saves
+	-- the size for us" was sound reasoning resting on a button that is not
+	-- there, and it resolved to "the chat window cannot be resized".
+	do
+		local Cm = A:GetModule("chat")
+		-- ALL FOUR ways in, or FindGrip does its job and the fallback is never
+		-- reached. The previous block left ChatFrame1ButtonFrameResizeButton as
+		-- a global, and this test found it and asserted against a grip it had
+		-- not built.
+		local saved  = _G.ChatFrame1.ResizeButton
+		local savedG = _G.ChatFrame1ResizeButton
+		local savedB = _G.ChatFrame1ButtonFrameResizeButton
+		_G.ChatFrame1.ResizeButton, _G.ChatFrame1ResizeButton = nil, nil
+		_G.ChatFrame1ButtonFrame.ResizeButton = nil
+		_G.ChatFrame1ButtonFrameResizeButton = nil
+
+		Cm:SkinResize(_G.ChatFrame1)
+		local g = Cm._grip
+		check(g ~= nil, "a client with no resize button gets one of ours")
+
+		-- GUARDED. `check` records and carries on, so everything below would
+		-- otherwise index a nil and take the whole suite down with a traceback
+		-- instead of one red line - which is what happened the first time the
+		-- fallback was mutated away, and a crash tells you far less than a
+		-- failure does.
+		if g then
+		check(g:IsShown() and g:IsMouseEnabled(),
+			"shown, and it takes the mouse")
+		check(g:GetWidth() >= 20, "with a hit target you can find")
+
+		-- It has to actually START and STOP sizing. A grip that starts and never
+		-- stops leaves the cursor holding the frame for the rest of the session;
+		-- one that does neither is a decoration. Both look the same from outside.
+		local cf = _G.ChatFrame1
+		local function Fire(which)
+			local fn = g:GetScript(which)
+			check(fn ~= nil, "the grip has an " .. which .. " script")
+			if fn then fn(g) end
+		end
+
+		Fire("OnMouseDown")
+		check(cf.__sizing == "BOTTOMRIGHT",
+			"pressing it starts sizing from the corner it is drawn in (got "
+			.. tostring(cf.__sizing) .. ")")
+		check(cf:IsResizable(), "having made the frame resizable first")
+		check(cf.__bounds and cf.__bounds[1] == 200,
+			"with a floor, so it cannot be dragged into a sliver")
+
+		Fire("OnMouseUp")
+		check(cf.__sizing == nil,
+			"and letting go stops - a grip that never stops hands the cursor a"
+			.. " frame it keeps for the session")
+		check(_G.__fcfSaved[cf:GetID()] ~= nil,
+			"and the new size goes into BLIZZARD's record, so it survives this"
+			.. " addon being turned off")
+
+		-- Releasing outside the button, and a hide mid-drag, must both land.
+		Fire("OnMouseDown")
+		Fire("OnHide")
+		check(cf.__sizing == nil,
+			"hiding mid-drag stops sizing too - the mouse-up never arrives if"
+			.. " the frame goes away under the cursor")
+		end
+
+		_G.ChatFrame1.ResizeButton = saved
+		_G.ChatFrame1ResizeButton = savedG
+		_G.ChatFrame1ButtonFrameResizeButton = savedB
 		Cm:SkinResize(_G.ChatFrame1)
 	end
 	check(tab1:GetAlpha() == 1 and tab2:GetAlpha() == 1,

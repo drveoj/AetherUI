@@ -593,6 +593,32 @@ end
 --  Blizzard's version already persists into its own saved variables where the
 --  rest of the chat settings live - so a resize survives this addon being turned
 --  off, which a private copy of the number would not.
+--- Tell BLIZZARD where the chat frame ended up, as well as ourselves.
+--
+--  ChatFrame1 is not ours. It belongs to the FCF dock, which keeps its own
+--  per-character record of position and size and re-applies it on events we do
+--  not all hear - and it has no idea we moved anything, because we drag it
+--  directly rather than through its tab.
+--
+--  On a character that has been played, Blizzard's record is near enough to
+--  where you had things that nothing looks wrong. On a NEW one it is the
+--  default, so a chat window you have just dragged goes back to the corner a
+--  few seconds later and it reads as our position not having saved. Ours had
+--  saved; theirs simply disagreed and got the last word.
+--
+--  Written THROUGH Blizzard's own function rather than into its saved variables,
+--  which is the same rule as locking a LibDBIcon button through the library: the
+--  supported call knows about the parts of the record we do not.
+--
+--  Guarded and pcalled. This is the same treatment FCF_SetLocked gets a few
+--  lines below, for the same reason - a client without it should cost us the
+--  handshake, not the drag.
+local function SaveToBlizzard(f)
+	if not f or not f.GetID then return end
+	if not _G.FCF_SavePositionAndDimensions then return end
+	pcall(_G.FCF_SavePositionAndDimensions, f)
+end
+
 --- Find the resize grip WHEREVER this client keeps it.
 --
 --  It is not always a child of the chat frame. On clients that hang it off the
@@ -628,9 +654,88 @@ local function FindGrip(f)
 	return nil, bf
 end
 
+--- A grip of OUR OWN, for a client that has not got one to borrow.
+--
+--  The first version of this leaned entirely on Blizzard's button and said so:
+--  driving StartSizing by hand means owning the clamping, the minimum size and
+--  the save. That reasoning was right and the premise was wrong - on this
+--  client there is no button to find, in any of the four places it could be, so
+--  "use Blizzard's" resolved to "there is no way to resize the chat window".
+--
+--  So the three things that reasoning was protecting are done explicitly:
+--
+--    clamping   SetResizeBounds, guarded - the call is 10.x and later, and a
+--               client without it has its own bounds from the XML template
+--    sizing     StartSizing / StopMovingOrSizing, which is what Blizzard's own
+--               grip calls; we are not reimplementing the drag, only starting it
+--    the save   FCF_SavePositionAndDimensions on release, so the new size lands
+--               in Blizzard's saved variables where the rest of the chat
+--               settings live and survives this addon being turned off
+function Chat:BuildGrip(f)
+	local p = self.panel
+	if not p or self._grip then return self._grip end
+
+	local g = CreateFrame("Button", ADDON .. "ChatGrip", p)
+	g:SetSize(GRIP, GRIP)
+	g:EnableMouse(true)
+	g:RegisterForDrag("LeftButton")
+
+	local dots = g:CreateTexture(nil, "OVERLAY")
+	dots:SetTexture(Media.texture.chevron)
+	-- The chevron on its side reads as a corner grip, and it is already in the
+	-- pack. A second asset for a corner mark would be silly.
+	dots:SetRotation(math.rad(-45))
+	dots:SetSize(GRIP - 6, GRIP - 6)
+	dots:SetPoint("CENTER", g, "CENTER", 0, 0)
+	g._dots = dots
+
+	local function Start()
+		local cf = g._frame
+		if not cf or InCombatLockdown() then return end
+		if cf.SetResizable then pcall(cf.SetResizable, cf, true) end
+		-- Floor only. A maximum is the screen, and inventing one here would be
+		-- a limit nobody asked for that outlives whatever made it seem sensible.
+		if cf.SetResizeBounds then pcall(cf.SetResizeBounds, cf, 200, 90) end
+		pcall(cf.StartSizing, cf, "BOTTOMRIGHT")
+		g._sizing = true
+	end
+
+	local function Stop()
+		local cf = g._frame
+		if not cf or not g._sizing then return end
+		g._sizing = nil
+		pcall(cf.StopMovingOrSizing, cf)
+		-- Blizzard's record, the same handshake the drag uses - see SaveToBlizzard.
+		SaveToBlizzard(cf)
+		Chat:Reskin()
+	end
+
+	g:SetScript("OnMouseDown", Start)
+	g:SetScript("OnMouseUp", Stop)
+	g:SetScript("OnDragStart", Start)
+	g:SetScript("OnDragStop", Stop)
+	g:SetScript("OnHide", Stop)
+
+	g:HookScript("OnEnter", function(self2)
+		local a = Palette.c.accent or Palette.c.text
+		self2._dots:SetVertexColor(a[1], a[2], a[3], 1)
+	end)
+	g:HookScript("OnLeave", function(self2) Chat:GripInk(self2) end)
+
+	self._grip = g
+	return g
+end
+
 function Chat:SkinResize(f)
 	local cfg = A.Config:Module("chat")
 	local grip, bf = FindGrip(f)
+
+	-- No button to borrow. Build one rather than leave the window unresizable,
+	-- which is what "use Blizzard's if it has one" quietly meant.
+	if not grip and f == _G.ChatFrame1 and cfg.resizable ~= false then
+		grip = self:BuildGrip(f)
+		if grip then grip._frame = f end
+	end
 	if not grip then return end
 
 	-- Out of the parked frame, if that is where it was. Reparenting rather than
@@ -724,32 +829,6 @@ end
 --
 --  Drag a tab to move it. The tabs are on screen at all times now, so there is
 --  something to grab.
---- Tell BLIZZARD where the chat frame ended up, as well as ourselves.
---
---  ChatFrame1 is not ours. It belongs to the FCF dock, which keeps its own
---  per-character record of position and size and re-applies it on events we do
---  not all hear - and it has no idea we moved anything, because we drag it
---  directly rather than through its tab.
---
---  On a character that has been played, Blizzard's record is near enough to
---  where you had things that nothing looks wrong. On a NEW one it is the
---  default, so a chat window you have just dragged goes back to the corner a
---  few seconds later and it reads as our position not having saved. Ours had
---  saved; theirs simply disagreed and got the last word.
---
---  Written THROUGH Blizzard's own function rather than into its saved variables,
---  which is the same rule as locking a LibDBIcon button through the library: the
---  supported call knows about the parts of the record we do not.
---
---  Guarded and pcalled. This is the same treatment FCF_SetLocked gets a few
---  lines below, for the same reason - a client without it should cost us the
---  handshake, not the drag.
-local function SaveToBlizzard(f)
-	if not f or not f.GetID then return end
-	if not _G.FCF_SavePositionAndDimensions then return end
-	pcall(_G.FCF_SavePositionAndDimensions, f)
-end
-
 function Chat:SetUnlocked(f)
 	local cfg = A.Config:Module("chat")
 	if not _G.FCF_SetLocked or not f.GetID then return end
