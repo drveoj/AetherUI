@@ -89,14 +89,21 @@ Media.texture = {
 -- icons and no error anywhere.
 Media.icons = {
 	file = TEX .. "Toolbox-Icons",
-	cell = 128,
-	cols = 4,
-	rows = 4,
+	-- A FIXED 8x8 of 64px cells. Fixed because sizing the sheet to the number
+	-- of icons gives a non-power-of-two height the moment there are seventeen,
+	-- and 64 rather than 128 because these are drawn at twenty-odd pixels: a
+	-- 128 cell is minified five times and its stroke falls under a pixel, which
+	-- is the speckling this file's rim notes already record. Sixty-four slots,
+	-- and adding one never moves an existing one.
+	cell = 64,
+	cols = 8,
+	rows = 8,
 	order = {
 		"character", "spellbook", "talents", "quests",
 		"social", "guild", "map", "menu",
 		"help", "zen", "damage", "keybind",
 		"combat", "gear", "pin", "pinned",
+		"whatsnew",
 	},
 }
 
@@ -294,13 +301,17 @@ Media.style = {
 	-- 14.5 widget value, 11 label, 11 section heading. The section headings are
 	-- letter-spaced in the deck; the client has no letter-spacing, so those are
 	-- drawn with the spacing baked into the string instead (see Toolbox.lua).
+	-- Whole points, and nothing lighter than Regular. The deck's 12.5 Light
+	-- body is a web weight at a web size; drawn at profile.scale 0.71 it is a
+	-- nine-pixel Light, which is spidery rather than quiet and reads as the
+	-- text being badly rendered rather than as a light weight.
 	tbTitle      = { "semibold", 18, "" },
 	tbChip       = { "bold",     11, "" },
 	tbCardTitle  = { "semibold", 14, "" },
-	tbCardBody   = { "light",    12.5, "" },
+	tbCardBody   = { "regular",  13, "" },
 	tbSection    = { "semibold", 11, "" },
-	tbValue      = { "semibold", 14.5, "" },
-	tbLabel      = { "light",    11, "" },
+	tbValue      = { "semibold", 15, "" },
+	tbLabel      = { "medium",   11, "" },
 	ttChip       = { "bold",     10, "" },   -- ELITE
 	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
 }
@@ -338,7 +349,14 @@ end
 function Media:SetFont(fontString, styleName, sizeOverride)
 	local style = Media.style[styleName] or Media.style.unitSub
 	local path  = Media.font[style[1]] or Media.font.regular
+	-- ROUNDED. A font size is a request for a pixel grid, and 12.5 is not one:
+	-- the rasteriser rounds it anyway, but it rounds AFTER the frame's scale has
+	-- been applied, so the same role lands on a different fraction in every
+	-- module and the hinting differs with it. Rounding here means the deck's
+	-- half-points (12.5, 14.5, 10.5) become one consistent size rather than
+	-- whatever 0.71 of them happened to be.
 	local size  = sizeOverride or style[2]
+	size = math.floor((tonumber(size) or 12) + 0.5)
 	local flags = style[3]
 
 	if not fontString:SetFont(path, size, flags) then

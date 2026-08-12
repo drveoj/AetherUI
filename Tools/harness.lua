@@ -8660,6 +8660,61 @@ do
 		check(tile and tile.icon:IsShown()
 			and tile.icon:GetTexture() == A.Media.icons.file,
 			"and a settings tile carries its own mark rather than a bare chip")
+
+		-- The chip is the BADGE widget, not a pill. A 30x30 pill draws the
+		-- 512-wide pill art with its rim minified past half a pixel, which is
+		-- the speckled circle that got reported; the badge laps its rim one
+		-- physical pixel proud of a masked disc and snaps the diameter.
+		check(tile.chip.disc ~= nil and tile.chip.ring ~= nil,
+			"the chip is a badge - masked disc plus a rim lapped proud - rather"
+			.. " than a pill whose caps are minified eight times")
+		do
+			local _, _, _, proudL = tile.chip.ring:GetPoint(1)
+			check(proudL and proudL < 0,
+				"and the rim really does lap OVER the disc rather than sitting"
+				.. " flush on its anti-aliased edge, which is what leaves the"
+				.. " mask's own stair-stepping showing outside it ("
+				.. string.format("%.2f", proudL or 0) .. ")")
+		end
+
+		-- The version chip is the deck's one filled pill: dark ink on accent.
+		check(TBm.content.chip._fillColor == A.Palette.c.btnFill,
+			"the version chip carries the accent fill rather than glass - it is"
+			.. " the one place the deck asks for a filled pill")
+		local tc = { TBm.content.chip.text:GetTextColor() }
+		check(math.abs(tc[1] - A.Palette.c.btnFillText[1]) < 0.01,
+			"with DARK ink on it, which is why btnFillText is its own token -"
+			.. " `text` on `accent` is unreadable")
+
+		-- Type: one PHYSICAL pixel of shadow, and whole-point sizes.
+		do
+			local host = CreateFrame("Frame", nil, UIParent)
+			host:SetScale(0.71)
+			local fs = A.Widgets.Text(host, "tbCardBody", "LEFT")
+			local off = fs.__shadowOffset and fs.__shadowOffset[2]
+			local want = A:PxIn(host)
+			check(off and math.abs(math.abs(off) - want) < 0.01,
+				"a text shadow is one PHYSICAL pixel, not one frame unit -"
+				.. " everything here draws at profile.scale, so a flat -1 is"
+				.. " 0.71 of a pixel, lands between rows and smears the glyph's"
+				.. " underside across two of them. On nine-pixel body text that"
+				.. " reads as an outline nobody asked for (got "
+				.. string.format("%.2f", math.abs(off or 0)) .. ", want "
+				.. string.format("%.2f", want) .. ")")
+
+			local _, size = fs:GetFont()
+			check(size == math.floor(size),
+				"and the size is a whole point - the rasteriser rounds anyway,"
+				.. " but it rounds AFTER the frame scale, so 12.5 lands on a"
+				.. " different fraction in every module (got " .. tostring(size)
+				.. ")")
+			host:Hide()
+		end
+
+		-- ...and the What's-new card has a mark of its own.
+		check(TBm.content.news.tile.spark ~= nil
+			and TBm.content.news.tile.spark:GetTexture() == A.Media.icons.file,
+			"and the What's-new card carries the spark rather than an empty tile")
 	end
 
 	-- Pinned and unpinned are two different marks, not one tinted twice.

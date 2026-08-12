@@ -882,9 +882,19 @@ def divider():
 # trick to line art looking like one family rather than sixteen drawings.
 # --------------------------------------------------------------------------
 
-ICON_CELL = 128
-ICON_COLS = 4
-ICON_STROKE = 8.5          # final pixels, matched to the chevron's 10 at 64 tall
+# DRAWN at 128 and STORED at 64. The glyphs are drawn at 26px on the rail and
+# 20px in the menu row, so a 128 cell is minified five or six times and its
+# stroke falls under a pixel - which is the speckling the rims elsewhere in this
+# file already record. Stored at 64 it is minified two or three times, which is
+# the ratio the panel corners use and the one that comes out clean.
+#
+# Drawing at 128 first is not waste: it is the 2x supersample the curves want,
+# and LANCZOS down to 64 is what puts four samples on every arc.
+ICON_DRAW = 128
+ICON_CELL = 64
+ICON_COLS = 8
+ICON_ROWS = 8
+ICON_STROKE = 8.5          # in DRAW space, so ~4 stored texels
 
 # The order IS the index Core/Media.lua reads. Change one and change the other;
 # the harness checks they still agree.
@@ -895,6 +905,8 @@ ICON_ORDER = [
     # ...then help, the settings tiles, and the rail's gear
     "help", "zen", "damage", "keybind",
     "combat", "gear", "pin", "pinned",
+    # and the What's-new card's own mark
+    "whatsnew",
 ]
 
 
@@ -1049,19 +1061,40 @@ def _glyph(name, cell):
         # in two states rather than as two different marks.
         return U(disc(64, 48, 22) - ICON_STROKE / 2, seg(64, 70, 64, 106))
 
+    if name == "whatsnew":
+        # A spark: a four-point star with a smaller one beside it. "Something
+        # arrived" rather than "a plus", which reads as an add button.
+        big = U(seg(52, 22, 52, 86), seg(20, 54, 84, 54),
+                seg(34, 36, 70, 72), seg(70, 36, 34, 72))
+        small = U(seg(96, 74, 96, 108), seg(79, 91, 113, 91))
+        return U(big, small)
+
     return INF
 
 
 def toolbox_icons():
-    cell, cols = ICON_CELL, ICON_COLS
-    rows = (len(ICON_ORDER) + cols - 1) // cols
+    cell, cols, draw = ICON_CELL, ICON_COLS, ICON_DRAW
+
+    # The sheet is a FIXED 8x8. Sizing it to the number of icons gives 512x192
+    # at seventeen of them, and the client wants power-of-two on both axes - so
+    # the grid is constant and the spare cells are empty. Sixty-four slots in a
+    # megabyte, and adding an icon never moves an existing one.
+    rows = ICON_ROWS
+    assert len(ICON_ORDER) <= cols * rows, "icon sheet is full"
     w, h = cell * cols, cell * rows
 
     out = np.zeros((h, w, 4), dtype=np.float32)
     for i, name in enumerate(ICON_ORDER):
         r, c = divmod(i, cols)
-        d = _glyph(name, cell)
+        d = _glyph(name, draw)
         a = _cover(d - ICON_STROKE / 2)
+
+        # Down to the stored cell with LANCZOS, which is what puts four samples
+        # on every arc rather than the one the rasteriser would give at 64.
+        img = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8), mode="L")
+        img = img.resize((cell, cell), Image.LANCZOS)
+        a = np.asarray(img, dtype=np.float32) / 255.0
+
         out[r * cell:(r + 1) * cell, c * cell:(c + 1) * cell] = rgba_lum(1.0, a)
 
     return out

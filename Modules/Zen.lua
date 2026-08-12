@@ -744,8 +744,15 @@ local function Layout()
 	cp.disc:SetSize(glyph, glyph)
 
 	cp.rim:ClearAllPoints()
+	-- The rim laps OVER the disc rather than sitting flush on it, which is the
+	-- same correction W.CreateBadge records and generate_textures.py's
+	-- minimap_border() records before that: the disc is masked, a mask's edge is
+	-- the client's to anti-alias and it does that poorly, so a rim stopping
+	-- exactly on it leaves the mask's own stair-stepping showing outside. Flush,
+	-- this read as a second rougher circle just outside the first.
+	local proud = A:PxIn(cp)
 	cp.rim:SetPoint("CENTER", cp.disc, "CENTER", 0, 0)
-	cp.rim:SetSize(glyph, glyph)
+	cp.rim:SetSize(glyph + proud * 2, glyph + proud * 2)
 
 	cp.blip:ClearAllPoints()
 	cp.blip:SetPoint("CENTER", cp.disc, "CENTER", 0, 0)

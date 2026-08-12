@@ -852,11 +852,19 @@ function TB:BuildContent()
 	title:SetText("Toolbox")
 	content.title = title
 
+	-- The version pill: DARK TEXT ON THE ACCENT, which is the one place the
+	-- deck asks for a filled chip rather than a glass one. `btnFill` and
+	-- `btnFillText` exist as their own tokens for exactly this - `accent` at
+	-- full alpha is not the same colour, and text at `text` on top of it is
+	-- unreadable.
 	local chip = Glass.CreatePill(content, {})
 	chip:SetHeight(18)
+	chip:ApplySkin("btnFill", "btnFill")
 	local chipText = W.Text(chip, "tbChip", "CENTER")
 	chipText:SetPoint("CENTER", chip, "CENTER", 0, 0)
 	chipText:SetText("Aether UI " .. (A.version or "0.1.0"))
+	W.Color(chipText, Palette.c.btnFillText)
+	chipText:SetShadowColor(0, 0, 0, 0)
 	chip:SetWidth((chipText:GetStringWidth() or 60) + 18)
 	chip.text = chipText
 	content.chip = chip
@@ -875,6 +883,15 @@ function TB:BuildContent()
 	local tile = Glass.CreatePanel(card, { corner = 11 })
 	tile:SetSize(38, 38)
 	tile:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -14)
+	tile:ApplySkin("btnFill", "cardEdgeHi")
+	local spark = tile:CreateTexture(nil, "OVERLAY")
+	spark:SetPoint("CENTER", tile, "CENTER", 0, 0)
+	spark:SetSize(20, 20)
+	if Media:SetIcon(spark, "whatsnew") then
+		local c = Palette.c.btnFillText
+		spark:SetVertexColor(c[1], c[2], c[3], 1)
+	end
+	tile.spark = spark
 	card.tile = tile
 
 	local ct = W.Text(card, "tbCardTitle", "LEFT")
@@ -1126,14 +1143,22 @@ function TB:RefreshTiles()
 			-- art, and a new .tga needs a client restart rather than a reload -
 			-- so the chip reads its state by fill alone for now, which is the
 			-- half of it the deck leans on anyway.
-			local chip = Glass.CreatePill(tile, {})
-			chip:SetSize(30, 30)
+			-- W.CreateBadge, not a pill. A 30x30 pill draws the 512-wide pill
+			-- art with its caps minified eight times, and its rim - three
+			-- texels there - lands under half a pixel here, which is the
+			-- speckled circle that got reported. The badge is the solved
+			-- version of exactly this shape: a masked disc, a rim lapped one
+			-- PHYSICAL pixel proud of it, and a diameter snapped in the badge's
+			-- own units so the ring does not sit across a pixel boundary all
+			-- the way round.
+			local chip = W.CreateBadge(tile, { size = 30 })
 			chip:SetPoint("TOPLEFT", tile, "TOPLEFT", 12, -10)
+			chip.label:Hide()
 			tile.chip = chip
 
-			local icon = chip:CreateTexture(nil, "ARTWORK")
+			local icon = chip:CreateTexture(nil, "OVERLAY")
 			icon:SetPoint("CENTER", chip, "CENTER", 0, 0)
-			icon:SetSize(18, 18)
+			icon:SetSize(17, 17)
 			tile.icon = icon
 
 			tile.state = W.Text(tile, "tbLabel", "RIGHT")
@@ -1187,7 +1212,14 @@ function TB:RefreshTiles()
 		-- NOT an invented name: ApplySkin falls back to plain glass for a token
 		-- it does not know, so a typo here would make On and Off identical and
 		-- say nothing at all.
-		tile.chip:ApplySkin(on and "btnFill" or "cardBg", on and "cardEdgeHi" or "cardEdge")
+		-- The chip carries the state: the deck's opaque accent when on, the
+		-- quiet fill when off. Vertex colours rather than ApplySkin, because a
+		-- badge is two plain textures rather than a Glass surface.
+		local fill = on and Palette.c.btnFill or Palette.c.cardBg
+		local edge = on and Palette.c.cardEdgeHi or Palette.c.cardEdge
+		tile.chip.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1)
+		tile.chip.ring:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1)
+		tile.chip._fillColor = fill
 		tile:Show()
 	end
 

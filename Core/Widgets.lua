@@ -87,8 +87,18 @@ function W.Text(parent, style, justify, layer)
 	-- A soft shadow is the only thing keeping light type legible against the
 	-- Barrens at midday. The concepts lean on text-shadow for exactly this, and
 	-- both skins draw light type, so this is a constant rather than a skin token.
+	--
+	-- ONE PHYSICAL PIXEL, not one frame unit. Everything here is drawn at
+	-- profile.scale, so a flat -1 is 0.71 of a pixel at the default: the shadow
+	-- lands between rows and the client resolves it by smearing the glyph's
+	-- underside across two of them. On body text at nine pixels that reads as
+	-- the type being badly rendered - or as an outline nobody asked for - rather
+	-- than as a shadow.
+	--
+	-- A:PxIn converts a real screen pixel into the frame's own units, which is
+	-- the same correction the tooltip badge needed for its rim.
 	fs:SetShadowColor(0, 0, 0, 0.55)
-	fs:SetShadowOffset(0, -1)
+	fs:SetShadowOffset(0, -(A.PxIn and A:PxIn(parent) or 1))
 	local c = A.Palette.c.text
 	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
 	fs._aetherStyle = style
