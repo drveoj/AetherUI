@@ -616,42 +616,20 @@ end
 local function SaveToBlizzard(f)
 	if not f or not f.GetID then return end
 	if not _G.FCF_SavePositionAndDimensions then return end
+
+	-- pcall, and NOT a docked check.
+	--
+	-- The obvious reading of the crash report was "never call this on a docked
+	-- frame", and that is wrong here: ChatFrame1 is itself docked in the default
+	-- layout, so the guard would switch off the handshake in the only case it
+	-- exists for. The crash was Blizzard's OWN handler running on ChatFrame2 -
+	-- a window we should never have been showing a grip on - and it is fixed by
+	-- not showing those grips, which is where the fix belongs.
+	--
+	-- If the client cannot save a docked window's position, this quietly does
+	-- nothing, which is what it did before and no worse. What actually holds our
+	-- position is the hook on FCF_RestorePositionAndDimensions.
 	pcall(_G.FCF_SavePositionAndDimensions, f)
-end
-
---- Find the resize grip WHEREVER this client keeps it.
---
---  It is not always a child of the chat frame. On clients that hang it off the
---  button frame it is `$parentButtonFrame`'s, with the matching global name -
---  and that is the frame ParkButtons moves to -10000 and calls SetClipsChildren
---  on. Both of those take the grip with it: off screen, and clipped to a rect
---  that is off screen, so no anchor of ours can bring it back.
---
---  That is the whole of "there doesn't seem to be a way to resize it". Not
---  locked, not disabled - parked, along with the scroll buttons it happened to
---  be sitting next to.
---
---  Named lookups first, because they are exact. The scan is last and matches on
---  the NAME ending rather than on a list of known globals, since the thing we
---  are compensating for is not knowing which layout this client uses.
-local function FindGrip(f)
-	local name = f.GetName and f:GetName() or ""
-	local bf = f.buttonFrame or _G[name .. "ButtonFrame"]
-
-	local grip = f.ResizeButton or _G[name .. "ResizeButton"]
-		or (bf and bf.ResizeButton) or _G[name .. "ButtonFrameResizeButton"]
-	if grip then return grip, bf end
-
-	if bf and bf.GetChildren then
-		local ok, kids = pcall(function() return { bf:GetChildren() } end)
-		if ok then
-			for _, kid in ipairs(kids) do
-				local kn = kid.GetName and kid:GetName()
-				if kn and kn:find("ResizeButton$") then return kid, bf end
-			end
-		end
-	end
-	return nil, bf
 end
 
 --- A grip of OUR OWN, for a client that has not got one to borrow.
@@ -684,7 +662,11 @@ function Chat:BuildGrip(f)
 	dots:SetTexture(Media.texture.chevron)
 	-- The chevron on its side reads as a corner grip, and it is already in the
 	-- pack. A second asset for a corner mark would be silly.
-	dots:SetRotation(math.rad(-45))
+	-- +45, not -45. Chevron.tga points DOWN, and rotation is counter-clockwise,
+	-- so (0,-1) at +45 becomes (0.707,-0.707) - down and to the RIGHT, which is
+	-- the corner this sits in. At -45 it pointed down-LEFT, across the window it
+	-- is meant to be dragging outward, which is the "weirdly oriented".
+	dots:SetRotation(math.rad(45))
 	dots:SetSize(GRIP - 6, GRIP - 6)
 	dots:SetPoint("CENTER", g, "CENTER", 0, 0)
 	g._dots = dots
@@ -726,104 +708,54 @@ function Chat:BuildGrip(f)
 	return g
 end
 
+--- ONE grip, ours, on the window our panel is wrapped around.
+--
+--  Blizzard's resize buttons are left entirely alone now, and the reason is in
+--  the error report this came from:
+--
+--    FloatingChatFrame.lua:1026: attempt to perform arithmetic on a nil value
+--    FCF_SavePositionAndDimensions(ChatFrame2)   -- isDocked = 1
+--
+--  Blizzard hides those buttons on DOCKED windows, because a docked window
+--  cannot be resized on its own and its own save path errors if you try. We were
+--  showing every chat frame's button and anchoring all of them to the same
+--  corner of our panel - so the General tab and the Combat Log tab each had one
+--  stacked in the same place, whichever tab was up decided which you saw, and
+--  clicking the Combat Log's ran Blizzard's handler on a docked frame and took
+--  the chat window with it.
+--
+--  Our own grip has none of that trouble: it drives StartSizing on ChatFrame1,
+--  which is the window the panel is drawn around, and the dock follows it.
 function Chat:SkinResize(f)
 	local cfg = A.Config:Module("chat")
-	local grip, bf = FindGrip(f)
+	-- Every other chat frame is somebody else's business. Blizzard shows or
+	-- hides their grips according to whether they are docked, and it is right.
+	if f ~= _G.ChatFrame1 then return end
 
-	-- No button to borrow. Build one rather than leave the window unresizable,
-	-- which is what "use Blizzard's if it has one" quietly meant.
-	if not grip and f == _G.ChatFrame1 and cfg.resizable ~= false then
-		grip = self:BuildGrip(f)
-		if grip then grip._frame = f end
-	end
+	local grip = self._grip or self:BuildGrip(f)
 	if not grip then return end
-
-	-- Out of the parked frame, if that is where it was. Reparenting rather than
-	-- re-anchoring, because the problem is not only position: a parked button
-	-- frame also clips its children, and a clipped child cannot be dragged no
-	-- matter where it is anchored.
-	--
-	-- To the chat frame rather than to our panel: the grip drives StartSizing on
-	-- ITS parent chain and Blizzard's own scripts are what we are keeping.
-	if bf and grip:GetParent() == bf and grip.SetParent then
-		pcall(grip.SetParent, grip, f)
-	end
+	grip._frame = f
 
 	if cfg.resizable == false then
-		Kill(grip)
+		grip:Hide()
 		return
 	end
 
-	for _, get in ipairs({ "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture" }) do
-		if grip[get] then
-			local ok, t = pcall(grip[get], grip)
-			if ok and t then pcall(t.SetTexture, t, nil) end
-		end
-	end
-
-	if not grip._aether then
-		grip._aether = true
-		local dots = grip:CreateTexture(nil, "OVERLAY")
-		dots:SetTexture(Media.texture.chevron)
-		-- The chevron on its side reads as a corner grip, and it is already in
-		-- the pack. A second asset for three pixels of hint would be silly.
-		dots:SetRotation(math.rad(-45))
-		dots:SetAllPoints(grip)
-		grip._dots = dots
-	end
-
 	-- SHOW **AND** ALPHA. Kill() in this file is Hide + SetTexture(nil) +
-	-- SetAlpha(0), and two paths run it over this button:
-	--
-	--   * the BACKDROP loop at the top of SkinFrame, which walks Blizzard's own
-	--     CHAT_FRAME_TEXTURES - a longer list on a real client than the one this
-	--     file falls back to, and it reaches the button frame's furniture
-	--   * turning "resizable" off, which is meant to
-	--
-	-- Show() undoes the Hide and nothing undid the alpha, so the grip came back
-	-- as a fully-formed, correctly-placed, completely transparent frame. That is
-	-- "there's no grabber I can see (or interact with) in either state": it was
-	-- there the whole time at alpha 0.
-	--
-	-- Restoring what Kill takes is the rule, not the exception - the same
-	-- symmetry OnDisable follows for the card and the border.
+	-- SetAlpha(0), and a grip that comes back Shown and transparent is exactly
+	-- as useful as no grip - which is what the first three attempts at this were
+	-- looking at without knowing it.
 	grip:Show()
 	grip:SetAlpha(1)
 	grip:EnableMouse(true)
-	-- Twenty, not sixteen. This is a corner hit target you have to find with a
-	-- cursor, and the visible mark inside it is smaller than the frame.
 	grip:SetSize(GRIP, GRIP)
+
 	grip:ClearAllPoints()
 	local p = self.panel
-	-- The panel's bottom-right corner, OUTSIDE the composer capsule - which
-	-- spans the panel inset by PAD on both sides, so a grip inset by less than
-	-- that is sitting on top of an edit box and losing every click to it.
 	grip:SetPoint("BOTTOMRIGHT", p or f, "BOTTOMRIGHT", -2, 2)
 	grip:SetFrameStrata("MEDIUM")
-	-- Above the composer, which is drawn later and would otherwise be on top.
 	if p and p.GetFrameLevel then
 		pcall(grip.SetFrameLevel, grip, p:GetFrameLevel() + 20)
-	end
-
-	local c = Palette.c
-	if grip._dots then
-		grip._dots:SetSize(GRIP - 6, GRIP - 6)
-		grip._dots:ClearAllPoints()
-		grip._dots:SetPoint("CENTER", grip, "CENTER", 0, 0)
-	end
-
-	-- Findable. A corner mark at half alpha is a decoration; one that answers
-	-- when the cursor crosses it is a control, and this is the only way to
-	-- resize the window.
-	if not grip._aetherHover then
-		grip._aetherHover = true
-		grip:HookScript("OnEnter", function(g)
-			if g._dots then
-				local a = Palette.c.accent or Palette.c.text
-				g._dots:SetVertexColor(a[1], a[2], a[3], 1)
-			end
-		end)
-		grip:HookScript("OnLeave", function(g) Chat:GripInk(g) end)
 	end
 	self:GripInk(grip)
 end

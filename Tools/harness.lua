@@ -4834,143 +4834,109 @@ do
 	local _, _, _, bx = bf:GetPoint(1)
 	check(bx and bx < -1000, "the buttons are parked off screen rather than hidden")
 	check(bf:IsShown(), "which means nothing has to keep hiding them")
-	check(_G.ChatFrame1ResizeButton:IsShown(),
-		"but the resize corner stays - it is what makes the frame resizable, and"
-		.. " Blizzard's own version is what saves the new size")
-	check(_G.ChatFrame1ResizeButton:GetAlpha() == 1,
-		"and it is VISIBLE, not merely shown - Kill() is Hide plus SetAlpha(0),"
-		.. " CHAT_FRAME_TEXTURES reaches this button on a real client, and Show()"
-		.. " undoes only the first half. A correctly placed transparent grip is"
-		.. " exactly as useful as no grip (got "
-		.. tostring(_G.ChatFrame1ResizeButton:GetAlpha()) .. ")")
-
-	-- ...and turning the option off and on again, which runs Kill on purpose.
+	-- THE GRIP IS OURS, and Blizzard's are left entirely alone.
+	--
+	-- The error that settled this, after three wrong diagnoses:
+	--   FloatingChatFrame.lua:1026 attempt to perform arithmetic on a nil value
+	--   FCF_SavePositionAndDimensions(ChatFrame2)   -- isDocked = 1
+	--
+	-- Blizzard hides resize buttons on DOCKED windows, because a docked window
+	-- cannot be resized alone and its own save path errors if you try. We were
+	-- showing EVERY chat frame's and anchoring all of them to one corner of our
+	-- panel - so whichever tab was up decided which one you saw, and clicking
+	-- the Combat Log's ran Blizzard's handler on a docked frame and took the
+	-- chat window with it.
 	do
 		local Cm, conf = A:GetModule("chat"), A.Config:Module("chat")
+		local g = Cm._grip
+		check(g ~= nil, "the chat panel has a resize grip of its own")
+		if g then
+			check(g:IsShown() and g:GetAlpha() == 1,
+				"shown AND visible - Kill() here is Hide plus SetAlpha(0), and a"
+				.. " grip that comes back Shown and transparent is exactly as"
+				.. " useful as no grip (alpha " .. tostring(g:GetAlpha()) .. ")")
+			check(g:IsMouseEnabled(), "and it takes the mouse")
+			check(g:GetWidth() >= 20, "with a hit target you can find")
+			check(g:GetParent() == Cm.panel,
+				"parented to our panel, so it travels with the glass")
+		end
+
+		-- Blizzard's own buttons are not ours to move, show or hide. Docked or
+		-- not is its decision and it is the one that knows.
+		check(_G.ChatFrame1ResizeButton:GetParent() ~= Cm.panel,
+			"Blizzard's own resize button is not dragged onto our panel")
+
+		-- Every OTHER chat frame is left alone entirely - that is what stacked
+		-- four grips in one corner.
+		local moved = {}
+		for _, n in ipairs(CHAT_FRAMES or {}) do
+			local other = _G[n]
+			local ob = other and (other.ResizeButton or _G[n .. "ResizeButton"])
+			if other ~= _G.ChatFrame1 and ob and ob:GetParent() == Cm.panel then
+				moved[#moved + 1] = n
+			end
+		end
+		check(#moved == 0,
+			"and no other chat window's is either ("
+			.. (#moved > 0 and table.concat(moved, ", ") or "none moved") .. ")")
+
+		-- Off then on has to round-trip. Off and permanently invisible is a
+		-- switch that cannot be switched back.
 		conf.resizable = false
 		Cm:SkinResize(_G.ChatFrame1)
-		check(_G.ChatFrame1ResizeButton:GetAlpha() == 0, "off really hides it")
+		check(not Cm._grip:IsShown(), "off hides it")
 		conf.resizable = true
 		Cm:SkinResize(_G.ChatFrame1)
-		check(_G.ChatFrame1ResizeButton:GetAlpha() == 1,
-			"and on brings it back - a switch that cannot be switched back is"
-			.. " worse than one that is not there (got "
-			.. tostring(_G.ChatFrame1ResizeButton:GetAlpha()) .. ")")
+		check(Cm._grip:IsShown() and Cm._grip:GetAlpha() == 1,
+			"and on brings it back VISIBLE (alpha "
+			.. tostring(Cm._grip:GetAlpha()) .. ")")
+
+		-- A reskin RESTORES the alpha rather than assuming it. Three attempts
+		-- at this bug were spent looking at a grip that was present, placed and
+		-- transparent, so a skin pass that only calls Show is a skin pass that
+		-- can leave it invisible again the first time anything zeroes it - the
+		-- fader is on this panel, and Kill() is used freely a few lines away.
+		Cm._grip:SetAlpha(0)
+		Cm:SkinResize(_G.ChatFrame1)
+		check(Cm._grip:GetAlpha() == 1,
+			"and a reskin brings back a grip somebody else made transparent -"
+			.. " Show() undoes a Hide and nothing else (alpha "
+			.. tostring(Cm._grip:GetAlpha()) .. ")")
 	end
 
-	-- ...INCLUDING on a client that keeps the grip inside the button frame.
-	--
-	-- "There doesn't seem to be a way to resize it in either state" was this:
-	-- the grip is not locked or disabled, it is PARKED, having been sitting
-	-- next to the scroll buttons when they were moved to -10000 and clipped.
-	-- Reparenting it out is the fix; anchoring alone is not, because a clipped
-	-- child cannot be dragged wherever you put it.
+	-- What the grip actually DOES, which is the half you cannot see.
 	do
 		local Cm = A:GetModule("chat")
-		local g = _G.ChatFrame1ButtonFrameResizeButton
-			or CreateFrame("Button", "ChatFrame1ButtonFrameResizeButton",
-				_G.ChatFrame1ButtonFrame)
-		_G.ChatFrame1ButtonFrame.ResizeButton = g
-		-- BOTH ways in have to go, or the named lookup finds the easy layout's
-		-- grip and the awkward one is never exercised. The first version of
-		-- this test nilled the parentKey and left the global, and passed
-		-- against code that could not do the thing it claimed to test.
-		local saved, savedG = _G.ChatFrame1.ResizeButton, _G.ChatFrame1ResizeButton
-		_G.ChatFrame1.ResizeButton = nil
-		_G.ChatFrame1ResizeButton = nil
-
-		Cm:SkinResize(_G.ChatFrame1)
-
-		check(g:GetParent() ~= _G.ChatFrame1ButtonFrame,
-			"a grip found inside the parked button frame is taken out of it -"
-			.. " off screen AND clipped is two reasons it cannot be dragged, and"
-			.. " an anchor fixes neither")
-		check(g:IsShown() and g:IsMouseEnabled(),
-			"and it is shown and takes the mouse")
-		local px, py = select(4, g:GetPoint(1)), select(5, g:GetPoint(1))
-		check(px and px > -1000,
-			"anchored somewhere a cursor can reach (" .. tostring(px) .. ", "
-			.. tostring(py) .. ")")
-		check(g:GetWidth() >= 20,
-			"with a hit target you can find with a cursor rather than read ("
-			.. tostring(g:GetWidth()) .. ")")
-
-		_G.ChatFrame1.ResizeButton = saved
-		_G.ChatFrame1ResizeButton = savedG
-		_G.ChatFrame1ButtonFrame.ResizeButton = nil
-		Cm:SkinResize(_G.ChatFrame1)
-	end
-
-	-- AND A CLIENT WITH NO GRIP AT ALL, which is the one in the report: nothing
-	-- to see and nothing to drag, locked or unlocked. "Use Blizzard's, it saves
-	-- the size for us" was sound reasoning resting on a button that is not
-	-- there, and it resolved to "the chat window cannot be resized".
-	do
-		local Cm = A:GetModule("chat")
-		-- ALL FOUR ways in, or FindGrip does its job and the fallback is never
-		-- reached. The previous block left ChatFrame1ButtonFrameResizeButton as
-		-- a global, and this test found it and asserted against a grip it had
-		-- not built.
-		local saved  = _G.ChatFrame1.ResizeButton
-		local savedG = _G.ChatFrame1ResizeButton
-		local savedB = _G.ChatFrame1ButtonFrameResizeButton
-		_G.ChatFrame1.ResizeButton, _G.ChatFrame1ResizeButton = nil, nil
-		_G.ChatFrame1ButtonFrame.ResizeButton = nil
-		_G.ChatFrame1ButtonFrameResizeButton = nil
-
-		Cm:SkinResize(_G.ChatFrame1)
 		local g = Cm._grip
-		check(g ~= nil, "a client with no resize button gets one of ours")
-
-		-- GUARDED. `check` records and carries on, so everything below would
-		-- otherwise index a nil and take the whole suite down with a traceback
-		-- instead of one red line - which is what happened the first time the
-		-- fallback was mutated away, and a crash tells you far less than a
-		-- failure does.
-		if g then
-		check(g:IsShown() and g:IsMouseEnabled(),
-			"shown, and it takes the mouse")
-		check(g:GetWidth() >= 20, "with a hit target you can find")
-
-		-- It has to actually START and STOP sizing. A grip that starts and never
-		-- stops leaves the cursor holding the frame for the rest of the session;
-		-- one that does neither is a decoration. Both look the same from outside.
 		local cf = _G.ChatFrame1
-		local function Fire(which)
-			local fn = g:GetScript(which)
-			check(fn ~= nil, "the grip has an " .. which .. " script")
-			if fn then fn(g) end
+		if g then
+			local function Fire(which)
+				local fn = g:GetScript(which)
+				check(fn ~= nil, "the grip has an " .. which .. " script")
+				if fn then fn(g) end
+			end
+
+			Fire("OnMouseDown")
+			check(cf.__sizing == "BOTTOMRIGHT",
+				"pressing it starts sizing from the corner it is drawn in (got "
+				.. tostring(cf.__sizing) .. ")")
+			check(cf:IsResizable(), "having made the frame resizable first")
+			check(cf.__bounds and cf.__bounds[1] == 200,
+				"with a floor, so it cannot be dragged into a sliver")
+
+			Fire("OnMouseUp")
+			check(cf.__sizing == nil,
+				"and letting go stops - a grip that never stops hands the cursor"
+				.. " a frame it keeps for the rest of the session")
+
+			Fire("OnMouseDown")
+			Fire("OnHide")
+			check(cf.__sizing == nil,
+				"hiding mid-drag stops sizing too - the mouse-up never arrives"
+				.. " if the frame goes away under the cursor")
 		end
-
-		Fire("OnMouseDown")
-		check(cf.__sizing == "BOTTOMRIGHT",
-			"pressing it starts sizing from the corner it is drawn in (got "
-			.. tostring(cf.__sizing) .. ")")
-		check(cf:IsResizable(), "having made the frame resizable first")
-		check(cf.__bounds and cf.__bounds[1] == 200,
-			"with a floor, so it cannot be dragged into a sliver")
-
-		Fire("OnMouseUp")
-		check(cf.__sizing == nil,
-			"and letting go stops - a grip that never stops hands the cursor a"
-			.. " frame it keeps for the session")
-		check(_G.__fcfSaved[cf:GetID()] ~= nil,
-			"and the new size goes into BLIZZARD's record, so it survives this"
-			.. " addon being turned off")
-
-		-- Releasing outside the button, and a hide mid-drag, must both land.
-		Fire("OnMouseDown")
-		Fire("OnHide")
-		check(cf.__sizing == nil,
-			"hiding mid-drag stops sizing too - the mouse-up never arrives if"
-			.. " the frame goes away under the cursor")
-		end
-
-		_G.ChatFrame1.ResizeButton = saved
-		_G.ChatFrame1ResizeButton = savedG
-		_G.ChatFrame1ButtonFrameResizeButton = savedB
-		Cm:SkinResize(_G.ChatFrame1)
 	end
+
 	check(tab1:GetAlpha() == 1 and tab2:GetAlpha() == 1,
 		"every tab is on screen, not just the hovered one")
 	tab2:SetAlpha(0.4)
