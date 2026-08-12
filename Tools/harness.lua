@@ -1929,6 +1929,17 @@ C_QuestInfoSystem = {
 }
 
 _G.__money = 5000
+-- Widget sources the Toolbox publishes. GetNetStats answers four values and the
+-- last two are the ones anybody wants; the client refreshes them about every
+-- 30 seconds, which is why the module polls at 1Hz and not faster.
+function GetNetStats() return 0, 0, 31, 28 end
+function GetFramerate() return _G.__fps or 144 end
+function GetInventoryItemDurability(slot)
+	local d = _G.__durability
+	if not d then return nil end
+	return d[slot], d[slot] and 100 or nil
+end
+
 function GetMoney() return _G.__money end
 function GetCoinTextureString(c) return tostring(c) .. "c" end
 function GetQuestLogIndexByID(id)
@@ -7665,6 +7676,126 @@ do
 	UIParent:SetSize(oldW, oldH)
 	A.db.profile.scale = oldScale
 	TBm:SetDock("LEFT")
+	TBm:SetOpen(false, true)
+end
+
+print("== toolbox: widgets are published, not drawn ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local ldb = LibStub("LibDataBroker-1.1")
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+
+	-- Published, so anybody displaying LDB gets them. That is the point: a
+	-- player running Titan sees AetherUI's XP/hr without us doing anything.
+	local missing = {}
+	for _, p in ipairs(TBm.PROVIDERS) do
+		if not ldb:GetDataObjectByName("AetherUI_" .. p.key) then
+			missing[#missing + 1] = p.key
+		end
+	end
+	check(#missing == 0,
+		"all six widgets are registered as LDB data sources rather than drawn"
+		.. " straight onto the panel - so Titan and Bazooka show them for free,"
+		.. " and somebody else can write a seventh in ten lines (missing: "
+		.. (#missing > 0 and table.concat(missing, ",") or "none") .. ")")
+
+	local gold = ldb:GetDataObjectByName("AetherUI_Gold")
+	check(gold and gold.type == "data source",
+		"and as `data source`, not `launcher` - they are readouts, and a"
+		.. " launcher is a thing you click")
+
+	-- One card each, and the value/label mapping the deck draws.
+	check(#TBm.content.cards >= 6, "the grid draws a card per source")
+	check(TBm.content.cards[1].label:GetText() == "Gold",
+		"with the object's own label under the value, not a name we invented")
+
+	-- THE mapping test. A third-party source that writes only `text` - which is
+	-- what almost all of them do - must render, and must fall back to its
+	-- registered name when it has no label to offer.
+	do
+		local big, small = TBm:CardText("SomeAddon_Thing", { text = "42" })
+		check(big == "42" and small == "SomeAddon_Thing",
+			"a source with only `text` renders it, and falls back to its"
+			.. " registered name for the label - which is at least a true"
+			.. " statement about where the number came from")
+
+		local b2, s2 = TBm:CardText("X", { value = "17", suffix = "ms", label = "Ping" })
+		check(b2 == "17ms" and s2 == "Ping",
+			"and value + suffix + label is the deck's own shape")
+
+		-- Render, do not interpret. These arrive with escapes already in them.
+		local b3 = TBm:CardText("X", { text = "|cff00ff0042|r" })
+		check(b3 == "|cff00ff0042|r",
+			"a `text` that already carries colour escapes is passed through"
+			.. " untouched - parsing somebody else's formatting to recover a"
+			.. " number is how a display breaks on the addon it was not tested"
+			.. " against")
+
+		local b4 = TBm:CardText("X", nil)
+		check(b4 == "\226\128\148",
+			"and a source that is not there at all reads as an em dash rather"
+			.. " than as a zero, which is a number and would be a lie")
+	end
+
+	-- A third party's source joins the grid because the grid is a LIST.
+	do
+		_G.__makeLDB("ThirdParty_Widget", "data source", { text = "99", label = "Theirs" })
+		local c = A.db.char.toolbox
+		local was = c.widgets
+		c.widgets = { "AetherUI_Gold", "ThirdParty_Widget" }
+		TBm:RefreshWidgets()
+		check(TBm.content.cards[2].label:GetText() == "Theirs"
+			and TBm.content.cards[2].value:GetText() == "99",
+			"somebody else's data source draws in the grid with no wiring at"
+			.. " all - the grid is a list of names, not a layout of six")
+		check(not TBm.content.cards[3]:IsShown(),
+			"and a shorter list hides the surplus cards rather than leaving"
+			.. " stale ones on screen - frames cannot be destroyed, so the pool"
+			.. " is by index and the tail is hidden")
+		c.widgets = was
+		TBm:RefreshWidgets()
+	end
+
+	-- XP/hr is the one that can confidently lie.
+	do
+		TBm._xp = { gained = 0, from = GetTime(), last = 500, lastMax = 1000 }
+		check(TBm:XPRate() == nil,
+			"under a minute of session there is NO rate - only a short window"
+			.. " with a big number extrapolated out of it, which is the aura"
+			.. " tile's rule about refusing to print a timer it does not have")
+
+		-- A level-up resets the numerator, not the session. UnitXP drops to near
+		-- zero and UnitXPMax changes, so the delta across the boundary is
+		-- (max - before) + after. Getting this wrong silently loses a level's
+		-- worth of XP from the rate every time somebody dings.
+		TBm._xp = { gained = 0, from = GetTime() - 3600, last = 900, lastMax = 1000 }
+		local wasXP, wasMax = _G.__xp, _G.__xpMax
+		_G.__xp, _G.__xpMax = 50, 1200
+		TBm:XPTick(true)
+		check(TBm._xp.gained == 150,
+			"and a level-up counts the crossing - (1000-900) + 50 = 150, not"
+			.. " 50-900 = -850 (got " .. TBm._xp.gained .. ")")
+		_G.__xp, _G.__xpMax = wasXP, wasMax
+	end
+
+	-- Polling follows the drawer. A closed drawer shows no numbers.
+	TBm:SetOpen(false, true)
+	check(not TBm._polling,
+		"a shut drawer polls nothing - the two widgets that cannot be"
+		.. " event-driven are the only pollers, and nobody is looking at them")
+	TBm:SetOpen(true, true)
+	check(TBm._polling, "and it starts again when the drawer opens")
+
+	-- The unread dot needs a notion of read, or it is always lit or never.
+	A.db.char.toolbox.newsSeen = nil
+	check(TBm:NewsUnread(), "the what's-new dot is lit before the notes are read")
+	TBm:MarkNewsRead()
+	check(not TBm:NewsUnread(), "and goes out once they have been")
+	check(A.db.char.toolbox.newsSeen == TBm.NEWS_VERSION,
+		"remembering WHICH version was read, so the next release lights it"
+		.. " again rather than it being a one-time dismissal")
+
 	TBm:SetOpen(false, true)
 end
 

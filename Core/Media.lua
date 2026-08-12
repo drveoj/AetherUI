@@ -238,6 +238,18 @@ Media.style = {
 	ttSmall      = { "light",    12, "" },
 	ttSub        = { "light",    12, "" },   -- "Humanoid - Hostile"
 	ttBadge      = { "semibold", 12, "" },   -- the number in the level badge
+
+	-- Toolbox. The deck's own sizes: 18 header, 14 card title, 12.5 body,
+	-- 14.5 widget value, 11 label, 11 section heading. The section headings are
+	-- letter-spaced in the deck; the client has no letter-spacing, so those are
+	-- drawn with the spacing baked into the string instead (see Toolbox.lua).
+	tbTitle      = { "semibold", 18, "" },
+	tbChip       = { "bold",     11, "" },
+	tbCardTitle  = { "semibold", 14, "" },
+	tbCardBody   = { "light",    12.5, "" },
+	tbSection    = { "semibold", 11, "" },
+	tbValue      = { "semibold", 14.5, "" },
+	tbLabel      = { "light",    11, "" },
 	ttChip       = { "bold",     10, "" },   -- ELITE
 	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
 }
