@@ -4895,6 +4895,23 @@ do
 			"anchored to the message area rather than to the panel corner the"
 			.. " composer already occupies")
 
+		-- ABOVE THE MOVER HANDLE. The handle covers the whole chat frame at
+		-- DIALOG strata and is on screen for exactly as long as the grip is, so
+		-- a grip below it is a grip that can never be clicked - every press
+		-- lands on the handle and drags the window instead.
+		local ORDER = {
+			BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
+			FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8,
+		}
+		local handle = A.Movers.registry.chat.handle
+		check(handle ~= nil, "the mover handle exists while unlocked")
+		check(ORDER[g:GetFrameStrata()] > ORDER[handle:GetFrameStrata()],
+			"and the grip sits ABOVE it - they are on screen together, and the"
+			.. " handle covers the whole window (" .. tostring(g:GetFrameStrata())
+			.. " vs " .. tostring(handle:GetFrameStrata()) .. ")")
+		check(ORDER[g:GetFrameStrata()] < ORDER.TOOLTIP,
+			"but below a tooltip, which still has to draw over everything")
+
 		-- Blizzard's, on a docked window: off, because clicking it errors.
 		local bz = _G.ChatFrame1ResizeButton
 		_G.ChatFrame1.isDocked = 1

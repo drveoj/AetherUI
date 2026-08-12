@@ -798,10 +798,15 @@ function Chat:SkinResize(f)
 	-- inset by PAD - so a grip there is jammed against the SAY box and taking
 	-- clicks that were meant for it.
 	grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
-	grip:SetFrameStrata("MEDIUM")
-	if p and p.GetFrameLevel then
-		pcall(grip.SetFrameLevel, grip, p:GetFrameLevel() + 20)
-	end
+	-- ABOVE THE MOVER HANDLE, which is the only other thing on screen when this
+	-- is - and which covers the entire chat frame at DIALOG strata, so at MEDIUM
+	-- the grip was drawn under it and every click on it went to the handle. That
+	-- is "grabbing the grip just drags the window": the grip was never grabbed.
+	--
+	-- FULLSCREEN_DIALOG rather than TOOLTIP, so a tooltip still draws over it.
+	-- Safe to sit this high because it is only on screen while frames are
+	-- unlocked, which is a mode, not a state you play in.
+	grip:SetFrameStrata("FULLSCREEN_DIALOG")
 	self:ShowGrip(A.Movers and A.Movers.unlocked)
 end
 
