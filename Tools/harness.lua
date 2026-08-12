@@ -7799,6 +7799,137 @@ do
 	TBm:SetOpen(false, true)
 end
 
+print("== toolbox: settings tiles, three kinds of thing ==")
+do
+	local TBm = A:GetModule("toolbox")
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+
+	check(TBm.content.tiles and #TBm.content.tiles >= 4, "the tile grid is built")
+
+	-- A config path, written the way the options panel writes it.
+	local zen = TBm.TILES[1]
+	check(zen.kind == "setting" and zen.path[2] == "zen", "the first tile is Zen")
+	local wasZen = A.db.profile.modules.zen.enabled
+	A.db.profile.modules.zen.enabled = true
+	check(TBm:TileState(zen) == true, "reading a setting tile reads the config")
+	TBm:ToggleTile(zen)
+	check(A.db.profile.modules.zen.enabled == false, "and toggling writes it")
+
+	-- ...and the module actually goes down. Writing `enabled = false` and
+	-- stopping there leaves it running with its own setting saying it is off,
+	-- which is the bug the options panel already paid for once.
+	check(A:GetModule("zen").enabled == false,
+		"and the MODULE is torn down, not just the flag - `modules.<n>.enabled`"
+		.. " is recognised by the shape of the path, exactly as Options.Set does"
+		.. " it, so a tile cannot forget what a page remembered")
+	TBm:ToggleTile(zen)
+	check(A:GetModule("zen").enabled == true, "and comes back")
+	A.db.profile.modules.zen.enabled = wasZen
+
+	-- A CVar. Ours to write and NOT ours to keep - a player turning damage
+	-- numbers off here has made a choice, not lent us a CVar.
+	local dmg
+	for _, t in ipairs(TBm.TILES) do if t.kind == "cvar" then dmg = t end end
+	check(dmg ~= nil, "there is a CVar tile")
+	_G.__cvars[dmg.cvar] = "1"
+	check(TBm:TileState(dmg) == true, "a CVar tile reads the client setting")
+	TBm:ToggleTile(dmg)
+	check(_G.__cvars[dmg.cvar] == "0", "and toggling writes it")
+	TBm:ToggleTile(dmg)
+	check(_G.__cvars[dmg.cvar] == "1", "both ways")
+
+	-- A CVar this client does not have is refused rather than thrown at.
+	do
+		local ghost = { kind = "cvar", key = "ghost", label = "Nope",
+		                cvar = "aetherui_no_such_cvar" }
+		check(TBm:TileState(ghost) == false, "a CVar that is not here reads false")
+		-- The RETURN VALUE proves nothing here: ToggleTile pcalls SetCVar, so it
+		-- answers false whether it probed first or fired blind and swallowed the
+		-- throw. The client logs the blind one, which is why the mock counts it.
+		local before = _G.__badCVarWrites
+		check(TBm:ToggleTile(ghost) == false,
+			"writing a CVar this client does not have is refused")
+		check(_G.__badCVarWrites == before,
+			"and refused by PROBING rather than by throwing and catching - the"
+			.. " client logs a blind write, so a pcall around it looks identical"
+			.. " from in here and is not the same thing at all")
+	end
+
+	-- Daylight is deferred, so the tile is NOT BUILT rather than built and
+	-- hidden. A hidden control is still a control somebody has to maintain.
+	do
+		local found
+		for _, t in ipairs(TBm.TILES) do
+			if t.path and t.path[#t.path] == "skin" then found = true end
+			if (t.label or ""):lower():find("daylight") then found = true end
+		end
+		check(not found,
+			"there is no Daylight tile at all - the skin pass is deferred, and"
+			.. " a tile built and hidden is a control somebody still has to keep"
+			.. " working")
+	end
+
+	-- The chip carries state, and it has to carry it VISIBLY. ApplySkin falls
+	-- back to plain glass for a token it does not recognise, so an invented
+	-- name would leave On and Off identical while every other check still
+	-- passed - which is exactly what the first version of this did.
+	do
+		A.db.profile.modules.zen.enabled = true
+		TBm:RefreshTiles()
+		local onFill = TBm.content.tiles[1].chip._fillColor
+		A.db.profile.modules.zen.enabled = false
+		TBm:RefreshTiles()
+		local offFill = TBm.content.tiles[1].chip._fillColor
+		-- Not merely "they differ": an invented token falls back to plain glass,
+		-- which ALSO differs from the off colour, so a difference check passes
+		-- against a chip that is saying nothing. It has to be the ACCENT.
+		check(onFill == A.Palette.c.btnFill,
+			"the chip's On fill is the deck's opaque accent, by its real token"
+			.. " name - ApplySkin falls back to plain glass for a name it does"
+			.. " not know, so a typo would leave a chip that merely differs from"
+			.. " Off while carrying no meaning")
+		check(offFill == A.Palette.c.cardBg and onFill ~= offFill,
+			"and Off is the quiet one")
+		A.db.profile.modules.zen.enabled = wasZen
+		TBm:RefreshTiles()
+	end
+
+	-- A launcher is not a toggle, and must not pretend to be one.
+	do
+		local clicked = false
+		_G.__makeLDB("TileLauncher", "launcher", {
+			label = "Tile Launcher",
+			OnClick = function() clicked = true end,
+		})
+		A:GetModule("minimap"):Scan()
+
+		local c = A.db.char.toolbox
+		c.tiles = { "TileLauncher" }
+		TBm:RefreshTiles()
+
+		local list = TBm:TileList()
+		local lt = list[#list]
+		check(lt and lt.kind == "launcher", "a launcher joins the tile grid")
+		check(TBm:TileState(lt) == nil,
+			"and has NO state - an LDB launcher is a button, not a toggle, and"
+			.. " nothing in the protocol can answer 'are you on'")
+
+		local frame = TBm.content.tiles[#list]
+		check(frame and frame.state:GetText() == "",
+			"so the tile draws no On/Off chip. Inventing one would be a control"
+			.. " saying something it cannot know")
+
+		TBm:ToggleTile(lt)
+		check(clicked, "and clicking it runs the launcher instead of toggling")
+
+		c.tiles = nil
+		TBm:RefreshTiles()
+	end
+
+	TBm:SetOpen(false, true)
+end
+
 print("== combat gating ==")
 _G.__inCombat = true
 A.db.profile.scale = 1.0

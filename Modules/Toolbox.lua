@@ -778,6 +778,7 @@ function TB:BuildContent()
 
 	content.cards = {}
 	self:RefreshWidgets()
+	self:BuildTiles()
 end
 
 --- One card per chosen data source. Frames are POOLED by index, because WoW has
@@ -857,6 +858,273 @@ function TB:LayoutContent()
 			card:ClearAllPoints()
 			card:SetPoint("TOPLEFT", content.widgetsHead, "BOTTOMLEFT",
 				c * (cw + CARD_GAP), -(10 + r * (CARD_H + CARD_GAP)))
+		end
+	end
+
+	self:LayoutTiles()
+end
+
+-- ---------------------------------------------------------------------------
+-- UI settings - a list of tiles, not a layout of six
+--
+-- The handoff names six settings and draws six tiles. Four of the six are not
+-- the same KIND of thing, which is the finding: two are config paths, one is a
+-- client CVar, one is not a setting at all, and one is deferred.
+--
+--   setting   a path into the profile, written exactly the way the options
+--             panel writes it - including the `modules.<name>.enabled` rule,
+--             or a module could be switched off in here and carry on running
+--   cvar      a client setting; ours to write, NOT ours to keep (see below)
+--   launcher  an addon, from Core/Launchers.lua. Not a toggle at all
+--
+-- "Daylight skin" is deliberately absent: the skin pass is deferred, so the
+-- tile is not built rather than built and hidden.
+--
+-- A LAUNCHER TILE HAS NO STATE TO SHOW. LDB launchers are buttons, not
+-- toggles - there is no attribute that answers "are you on", and a `data
+-- source` can carry text but a launcher cannot. So launcher tiles draw their
+-- icon and name with no On/Off chip, and the chip stays reserved for entries
+-- that genuinely have two states. Drawing a fake one would be the chat badge
+-- mistake in different clothes: a control that says something it cannot know.
+-- ---------------------------------------------------------------------------
+
+TB.TILES = {
+	{ kind = "setting", key = "zen",      label = "Zen",
+	  path = { "modules", "zen", "enabled" } },
+	{ kind = "setting", key = "combat",   label = "Combat collapse",
+	  path = { "modules", "questtracker", "combatCollapse" } },
+	{ kind = "setting", key = "keybinds", label = "Keybind chips",
+	  path = { "modules", "actionbars", "showKeybinds" } },
+	-- A client setting rather than one of ours. Written directly and left
+	-- written: a player who turns damage numbers off in this panel has made a
+	-- choice, not lent us a CVar. Zen borrows and gives back because zen is
+	-- TEMPORARY - it holds a value for as long as it is on screen and the player
+	-- never asked for it. This is the opposite, and restoring it on disable
+	-- would quietly undo something somebody deliberately did.
+	{ kind = "cvar",    key = "damage",   label = "Damage numbers",
+	  cvar = "floatingCombatTextCombatDamage" },
+}
+
+local function Resolve(path)
+	if not path or #path == 0 then return nil end
+	local t = A.db.profile
+	for i = 1, #path - 1 do
+		t = t and t[path[i]]
+	end
+	return t, path[#path]
+end
+
+--- true, false, or nil for "this has no state" - which is a launcher.
+function TB:TileState(tile)
+	if not tile then return nil end
+
+	if tile.kind == "setting" then
+		local t, k = Resolve(tile.path)
+		if not t then return false end
+		-- Several of ours default to nil-meaning-true, the same convention the
+		-- options panel's `defaultTrue` covers.
+		return t[k] ~= false
+	end
+
+	if tile.kind == "cvar" then
+		if not GetCVar then return false end
+		local ok, v = pcall(GetCVar, tile.cvar)
+		if not ok then return false end
+		return v == "1" or v == 1 or v == true
+	end
+
+	return nil
+end
+
+function TB:ToggleTile(tile)
+	if not tile then return false end
+
+	if tile.kind == "launcher" then
+		local entry = tile.entry or (A.Launchers and A.Launchers.byKey[tile.key])
+		if entry then return A.Launchers:Click(entry, "LeftButton") end
+		return false
+	end
+
+	local want = not self:TileState(tile)
+
+	if tile.kind == "setting" then
+		local t, k = Resolve(tile.path)
+		if not t then return false end
+		t[k] = want
+
+		-- The same three-element rule the options panel uses. A module being
+		-- switched off has to be told to tear itself down and one switched on
+		-- has to be built; writing the flag and stopping there leaves a module
+		-- running with its own setting saying it is off.
+		local p = tile.path
+		if #p == 3 and p[1] == "modules" and p[3] == "enabled" and A.modules[p[2]] then
+			A:SetModuleEnabled(p[2], want)
+		else
+			A:Reconfigure()
+		end
+		self:RefreshTiles()
+		return true
+	end
+
+	if tile.kind == "cvar" then
+		if not SetCVar then return false end
+		-- A CVar this client does not have throws rather than returning nil, so
+		-- it is probed rather than fired blind - the same rule Zen follows for
+		-- the nameplate and audio families.
+		-- Probed by VALUE, not by whether the read threw. GetCVar answers nil for
+		-- a name the client does not have - it does not error - so a pcall around
+		-- it succeeds and tells you nothing. Only the nil says the CVar is
+		-- missing, and SetCVar on a missing one is what the client logs.
+		if not GetCVar then return false end
+		local okRead, cur = pcall(GetCVar, tile.cvar)
+		if not okRead or cur == nil then return false end
+		if not pcall(SetCVar, tile.cvar, want and "1" or "0") then return false end
+		self:RefreshTiles()
+		return true
+	end
+
+	return false
+end
+
+--- Ours, then whatever launchers the player has put in the grid. A list, so the
+--  order is theirs and a third party's launcher sits alongside our settings.
+function TB:TileList()
+	local out = {}
+	for _, t in ipairs(self.TILES) do out[#out + 1] = t end
+
+	local c = Char()
+	local chosen = c and c.tiles
+	if type(chosen) == "table" and A.Launchers then
+		for _, key in ipairs(chosen) do
+			local entry = A.Launchers.byKey[key]
+			if entry then
+				out[#out + 1] = {
+					kind = "launcher", key = key,
+					label = entry.label or key, entry = entry,
+				}
+			end
+		end
+	end
+
+	return out
+end
+
+-- ---------------------------------------------------------------------------
+
+local TILE_H, TILE_GAP = 62, 8
+
+function TB:BuildTiles()
+	if not self.content or self.content.tiles then return end
+	local head = W.Text(self.content, "tbSection", "LEFT")
+	head:SetText(Spaced("UI SETTINGS"))
+	self.content.tilesHead = head
+	self.content.tiles = {}
+	self:RefreshTiles()
+end
+
+function TB:RefreshTiles()
+	if not self.content or not self.content.tiles then return end
+	local list = self:TileList()
+
+	for i, t in ipairs(list) do
+		local tile = self.content.tiles[i]
+		if not tile then
+			tile = Glass.CreatePanel(self.content, { corner = 16 })
+			tile:SetHeight(TILE_H)
+
+			-- The chip carries the state, which is what the deck says state is
+			-- carried by: an accent fill when on, a dim one when off. The
+			-- per-setting glyph inside it is not drawn yet - there is no such
+			-- art, and a new .tga needs a client restart rather than a reload -
+			-- so the chip reads its state by fill alone for now, which is the
+			-- half of it the deck leans on anyway.
+			local chip = Glass.CreatePill(tile, {})
+			chip:SetSize(30, 30)
+			chip:SetPoint("TOPLEFT", tile, "TOPLEFT", 12, -10)
+			tile.chip = chip
+
+			local icon = chip:CreateTexture(nil, "ARTWORK")
+			icon:SetPoint("CENTER", chip, "CENTER", 0, 0)
+			icon:SetSize(18, 18)
+			tile.icon = icon
+
+			tile.state = W.Text(tile, "tbLabel", "RIGHT")
+			tile.state:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -12, -16)
+
+			tile.name = W.Text(tile, "tbCardBody", "LEFT")
+			tile.name:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 12, 10)
+
+			tile:EnableMouse(true)
+			tile:SetScript("OnMouseUp", function(self2)
+				if self2.__tile then TB:ToggleTile(self2.__tile) end
+			end)
+			self.content.tiles[i] = tile
+		end
+
+		tile.__tile = t
+		tile.name:SetText(t.label or t.key)
+
+		local on = self:TileState(t)
+		if on == nil then
+			-- A launcher. No state, so no chip label - and its own icon, which
+			-- is the one thing it does have that our settings do not.
+			tile.state:SetText("")
+			local ic = t.entry and t.entry.obj and t.entry.obj.icon
+			if ic then tile.icon:SetTexture(ic) end
+			tile.icon:SetShown(ic ~= nil)
+			W.Color(tile.chip.text or tile.name, Palette.c.text)
+		else
+			tile.state:SetText(on and "On" or "Off")
+			tile.icon:SetShown(false)
+			W.Color(tile.state, on and Palette.c.accent or Palette.c.textDim)
+		end
+		-- `btnFill` is the deck's opaque accent - already its own token because
+		-- the deck asks for dark text on it, which is exactly the chip's "on".
+		-- NOT an invented name: ApplySkin falls back to plain glass for a token
+		-- it does not know, so a typo here would make On and Off identical and
+		-- say nothing at all.
+		tile.chip:ApplySkin(on and "btnFill" or "cardBg", on and "cardEdgeHi" or "cardEdge")
+		tile:Show()
+	end
+
+	for i = #list + 1, #self.content.tiles do
+		self.content.tiles[i]:Hide()
+	end
+
+	self:LayoutTiles()
+end
+
+function TB:LayoutTiles()
+	if not self.content or not self.content.tiles or not self.content.tilesHead then return end
+	local content = self.content
+	local w = self.panel:GetWidth()
+
+	-- Under the widget grid, which is where the deck puts it. The anchor is the
+	-- LAST VISIBLE widget card rather than a computed row count, so the two
+	-- sections cannot drift apart when the widget list changes length.
+	local last
+	for _, c in ipairs(content.cards) do
+		if c:IsShown() then last = c end
+	end
+
+	content.tilesHead:ClearAllPoints()
+	if last then
+		content.tilesHead:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
+		content.tilesHead:SetPoint("TOP", last, "BOTTOM", 0, -18)
+	else
+		content.tilesHead:SetPoint("TOPLEFT", content.widgetsHead, "BOTTOMLEFT", 0, -18)
+	end
+
+	local cols = 2
+	local avail = w - PAD * 2
+	local tw = (avail - TILE_GAP * (cols - 1)) / cols
+	for i, tile in ipairs(content.tiles) do
+		if tile:IsShown() then
+			local r, c = math.floor((i - 1) / cols), (i - 1) % cols
+			tile:SetWidth(tw)
+			tile:ClearAllPoints()
+			tile:SetPoint("TOPLEFT", content.tilesHead, "BOTTOMLEFT",
+				c * (tw + TILE_GAP), -(10 + r * (TILE_H + TILE_GAP)))
 		end
 	end
 end
