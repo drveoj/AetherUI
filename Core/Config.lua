@@ -440,6 +440,81 @@ Config.defaults = {
 				showText = true,
 			},
 
+			-- Tooltips (concept 6a / 6b).
+			--
+			-- Every one of these is a switch on a RESKIN. The module never
+			-- replaces the client's tooltip, so turning any of them off returns
+			-- that piece to Blizzard's behaviour rather than removing it - see
+			-- the header of Modules\Tooltips.lua for why that distinction is the
+			-- whole design.
+			tooltips = {
+				enabled      = true,
+				-- On top of profile.scale, not instead of it. A tooltip is the
+				-- surface people most often want a size apart from the HUD,
+				-- because it is the one they read at arm's length.
+				scale        = 1.0,
+				corner       = 18,      -- the deck's radius; panels default to 12
+
+				-- Restyle GameTooltipHeaderText / GameTooltipText /
+				-- GameTooltipTextSmall. Reaches every line in every tooltip
+				-- INCLUDING lines other addons add, which is the point rather
+				-- than a side effect. Off leaves the client's own faces alone.
+				restyleFonts = true,
+
+				-- Take over the default anchor, so a world mouseover lands in the
+				-- corner rather than following the mouse. Only the DEFAULT anchor;
+				-- anything that called SetOwner itself is untouched either way.
+				unitAnchor   = true,
+
+				-- Cursor-follow for item and spell tooltips, at the deck's
+				-- +24/-22. Scoped to tooltips that took the default anchor or
+				-- whose owner is UIParent - a bag slot keeps the position it
+				-- asked for. Widening this is the fastest way to make every
+				-- other addon's tooltips feel broken.
+				cursorItems  = true,
+
+				-- The level badge, and with it the only text surgery in the
+				-- module: the leading "Level 18" token comes off whichever line
+				-- carries it so the number can go in the disc. Order-independent
+				-- and idempotent, and it declines rather than guesses when the
+				-- line does not parse. Off means the line reads as Blizzard
+				-- wrote it and no badge is drawn.
+				levelBadge   = true,
+				-- ...and the guard that makes that default safe.
+				--
+				-- MobInfo2 does not only append to the level line, it READS the
+				-- level number back out of it to find where a mob's extra info
+				-- starts (MobInfo2.lua:2118-2131), on its shipped default path.
+				-- Take the digits out for the badge and its harvest comes back
+				-- empty. There is no having this both ways - the number is either
+				-- in the line or in the disc - so the badge yields, and says so in
+				-- /aether tooltips rather than silently doing nothing.
+				--
+				-- Turn this off to keep the badge anyway. It is your tooltip.
+				deferToLevelReaders = true,
+				eliteChip    = true,
+				-- Append the reaction to the creature type: "Humanoid - Hostile".
+				-- Content rather than styling, which is why it is separable.
+				reactionWord = true,
+
+				-- Numbers under the health hairline. The bar itself is always
+				-- restyled when it appears; this is only its readout.
+				healthValues = true,
+
+				-- Quality-coloured title, rim and bloom on items.
+				qualityBorder = true,
+				-- The deck's lore gold on a spell's body copy. Only lines the
+				-- client left plain white are touched - anything another addon
+				-- coloured on purpose keeps its colour.
+				loreGold     = true,
+
+				-- The deck colours a friendly player's name #8ec8ff rather than
+				-- by class. Class colours are the commoner preference and read
+				-- faster in a group, so this is one switch either way; the deck
+				-- wins by default because that is what it asked for.
+				classColorNames = false,
+			},
+
 			-- Stage two of the fader. The timings live here rather than under
 			-- `fader` because the module owning the readout is also the thing
 			-- that decides whether zen is available at all - one enabled flag

@@ -85,6 +85,29 @@ function A:Px(n)
 	return (n or 1) * A.pixel
 end
 
+--- One physical pixel, in a particular FRAME's own units.
+--
+--  A.pixel is in UIParent units. A frame at profile.scale is not in UIParent
+--  units, so anything that wants to land on the pixel grid inside a scaled frame
+--  - a 1px rim, a snapped diameter - has to convert across first. A tooltip runs
+--  at 0.71, so "one pixel" there is 1.4 of its own units, and using A.pixel
+--  directly draws a rim seven tenths of a pixel wide: present, sub-pixel, and
+--  grey wherever it lands across a boundary.
+function A:PxIn(frame)
+	local us = UIParent:GetEffectiveScale() or 1
+	local fs = (frame and frame.GetEffectiveScale and frame:GetEffectiveScale()) or us
+	if not fs or fs <= 0 then fs = us end
+	local step = (A.pixel or 1) * us / fs
+	if not step or step <= 0 or step ~= step then return A.pixel or 1 end
+	return step
+end
+
+--- Snap a length onto the physical pixel grid, in a frame's own units.
+function A:SnapIn(frame, v)
+	local step = A:PxIn(frame)
+	return math.floor(v / step + 0.5) * step
+end
+
 -- ---------------------------------------------------------------------------
 -- module registry
 -- ---------------------------------------------------------------------------

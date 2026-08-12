@@ -127,7 +127,27 @@ local function widgetBase(kind)
 	function o:GetAlpha() return self.__alpha end
 	function o:SetScale(s) self.__scale = s end
 	function o:GetScale() return self.__scale end
-	function o:GetEffectiveScale() return self.__scale end
+
+	--- EFFECTIVE scale walks the parent chain, as the client's does.
+	--
+	--  It used to return the frame's own scale and nothing more, which quietly
+	--  flattened every scaled container in the UI: a badge inside a tooltip at
+	--  0.71 reported 1, so anything converting "one physical pixel" into that
+	--  badge's units got the same answer whether it converted or not - and a test
+	--  asserting that it DID convert could not fail.
+	--
+	--  Depth-capped rather than trusted to terminate: a mock frame can be given
+	--  any parent, including a cycle, and a stack overflow inside a getter is a
+	--  miserable thing to diagnose.
+	function o:GetEffectiveScale()
+		local s, cur, depth = self.__scale or 1, self.__parent, 0
+		while cur and depth < 16 do
+			s = s * (cur.__scale or 1)
+			cur = cur.__parent
+			depth = depth + 1
+		end
+		return s
+	end
 
 	function o:SetID(id) self.__id = id end
 	function o:GetID() return self.__id or 0 end
@@ -226,9 +246,20 @@ local function newTexture(owner, layer, sub)
 		if type(orient) ~= "string" then fail("SetGradient orientation " .. tostring(orient)) end
 		if type(c1) ~= "table" then fail("SetGradient c1 not a colour object") end
 	end
+	--- Recorded, not just validated.
+	--
+	--  Whether a region is cut out with a mask or drawn as ordinary artwork is a
+	--  real visual decision - a mask edge is the client's to anti-alias and it
+	--  does that poorly, which is why the level badge draws its disc rather than
+	--  masking it. A mock that only checked the argument's type could not answer
+	--  "is this masked?", so a test asserting it is not was a test that could
+	--  never fail.
+	t.__masks = {}
 	function t:AddMaskTexture(m)
 		if not m or m.__kind ~= "MaskTexture" then fail("AddMaskTexture got " .. tostring(m and m.__kind)) end
+		self.__masks[#self.__masks + 1] = m
 	end
+	function t:GetNumMaskTextures() return #self.__masks end
 	function t:SetRotation() end
 	return t
 end
@@ -452,7 +483,39 @@ function CreateFrame(kind, name, parent, template)
 
 	function f:SetScript(s, fn) self.__scripts[s] = fn end
 	function f:GetScript(s) return self.__scripts[s] end
-	function f:HookScript(s, fn) self.__scripts[s] = fn end
+
+	--- HookScript CHAINS. It does not replace.
+	--
+	--  The mock replaced for a long time, and that quietly made it blind to the
+	--  single most important property of the tooltip module: that AetherUI, and
+	--  MobInfo2, and LibExtraTip can all hang off OnTooltipSetUnit at once and
+	--  each still run. With a replacing HookScript the last registration wins,
+	--  every test passes, and the thing the tests exist to prove is untested.
+	--
+	--  Order is the real client's: the existing handler runs FIRST, then the
+	--  hook. That ordering is load-order-dependent in the game, which is why
+	--  Modules/Tooltips.lua has to be correct under both - and why the suite
+	--  below drives it both ways round.
+	function f:HookScript(s, fn)
+		local prev = self.__scripts[s]
+		if not prev then
+			self.__scripts[s] = fn
+			return
+		end
+		self.__scripts[s] = function(...)
+			prev(...)
+			return fn(...)
+		end
+	end
+
+	--- Whether the widget type has this script at all. Real frames answer false
+	--  for OnTooltipSetUnit; real GameTooltips answer true. The tooltip module
+	--  branches on it before hooking, so a mock without it silently exercises
+	--  the wrong path.
+	function f:HasScript(s)
+		if self.__hasScript then return self.__hasScript[s] and true or false end
+		return true
+	end
 
 	f.__attrs = {}
 	function f:SetAttribute(k, v) self.__attrs[k] = v end
@@ -532,9 +595,17 @@ function CreateFrame(kind, name, parent, template)
 		function f:SetStatusBarColor(r, g, b, a) self.__barTex:SetVertexColor(r, g, b, a) end
 		function f:SetMinMaxValues(a, b) self.__min, self.__max = a, b end
 		function f:GetMinMaxValues() return self.__min, self.__max end
+		--- SetValue fires OnValueChanged, exactly as the client does.
+		--
+		--  Modelled rather than swallowed because that script is the ONLY hook a
+		--  tooltip health bar has: nothing in Lua shows or fills GameTooltipStatusBar
+		--  - the C tooltip code drives it when SetUnit runs - so a readout that
+		--  updates from anywhere else is updating from nowhere.
 		function f:SetValue(v)
 			if type(v) ~= "number" then fail("StatusBar:SetValue got " .. tostring(v)) return end
 			self.__value = v
+			local fn = self.__scripts and self.__scripts.OnValueChanged
+			if fn then fn(self, v) end
 		end
 		function f:GetValue() return self.__value end
 		function f:SetReverseFill() end
@@ -881,14 +952,268 @@ end
 function GameTooltip:SetHyperlink(link) self.__shows = link and { "link", link } or nil end
 
 function GameTooltip:SetAction() end
-function GameTooltip:SetText() end
-function GameTooltip:AddLine() end
-function GameTooltip:NumLines() return self.__shows and 1 or 0 end
 
 local rawTooltipShow, rawTooltipHide = GameTooltip.Show, GameTooltip.Hide
 function GameTooltip:Show()
 	-- An empty tooltip is a hidden tooltip.
-	if self.__shows then rawTooltipShow(self) else rawTooltipHide(self) end
+	if self.__shows or (self.__lines and #self.__lines > 0) then
+		rawTooltipShow(self)
+	else
+		rawTooltipHide(self)
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- the tooltip's LINES
+--
+-- Everything above models the tooltip as an opaque box that is either full or
+-- empty, which was enough while the only question was "did something empty it".
+-- Modules/Tooltips.lua asks a different question - what does line 2 SAY, and is
+-- it still saying it after another addon has been at it - so the lines have to
+-- be real FontStrings under their real global names.
+--
+-- Faithful in the details that decide the module's correctness:
+--
+--   * both GameTooltipTextLeft1 (global) and GameTooltip.TextLeft1 (parentKey)
+--     resolve, because both are declared in GameTooltipTemplate.xml:25
+--   * SetUnit CLEARS first, fires OnTooltipCleared, then fills, then fires
+--     OnTooltipSetUnit - which is the cycle Tooltips.lua's ResetCard and OnUnit
+--     are two halves of
+--   * the level line is written in the client's own shape, "Level 18 Humanoid"
+--     for a plain mob and "Level 20 Elite Humanoid" for an elite, so the strip
+--     is tested against the string it will actually meet
+--   * NineSlice exists and is a child FRAME, not a backdrop
+-- ---------------------------------------------------------------------------
+
+local function tooltipLines(tip)
+	tip.__lines = {}
+	tip.__hasScript = {
+		OnTooltipSetUnit = true, OnTooltipSetItem = true,
+		OnTooltipSetSpell = true, OnTooltipCleared = true,
+		OnShow = true, OnHide = true, OnSizeChanged = true, OnUpdate = true,
+	}
+
+	-- The NineSlice border. A child frame with a Center texture, exactly as
+	-- TooltipBackdropTemplate builds it - NOT a backdrop, which GameTooltip has
+	-- never had on this branch.
+	local ns = CreateFrame("Frame", nil, tip)
+	ns.Center = ns:CreateTexture(nil, "BACKGROUND")
+	tip.NineSlice = ns
+	tip.layoutType = "TooltipDefaultLayout"
+
+	function tip:SetBackdropColor(r, g, b, a) self.__bdColor = { r, g, b, a } end
+	function tip:SetBackdropBorderColor(r, g, b, a) self.__bdBorder = { r, g, b, a } end
+
+	local function lineFor(self, i, side)
+		local name = self:GetName()
+		local key = (side or "Left") .. i
+		self.__strings = self.__strings or {}
+		if not self.__strings[key] then
+			local fs = self:CreateFontString(name and (name .. "Text" .. key) or nil, "ARTWORK")
+			self.__strings[key] = fs
+			self["Text" .. key] = fs
+		end
+		return self.__strings[key]
+	end
+	tip.__lineFor = lineFor
+
+	function tip:ClearLines()
+		self.__lines = {}
+		self.__shows = nil
+		self.__unit = nil
+		self.__item = nil
+		for _, fs in pairs(self.__strings or {}) do fs:SetText(nil) end
+		local h = self.__scripts and self.__scripts.OnTooltipCleared
+		if h then h(self) end
+	end
+
+	function tip:AddLine(text, r, g, b)
+		self.__lines[#self.__lines + 1] = text
+		local fs = lineFor(self, #self.__lines, "Left")
+		fs:SetText(text)
+		fs:SetTextColor(r or 1, g or 1, b or 1, 1)
+		self.__shows = self.__shows or { "text" }
+		-- Adding a line resizes the tooltip. Firing OnSizeChanged here is what
+		-- makes the Pawn case - lines appended after the tooltip is already up -
+		-- reachable from a test at all.
+		local h = self.__scripts and self.__scripts.OnSizeChanged
+		if h then h(self) end
+	end
+
+	function tip:AddDoubleLine(l, r)
+		self:AddLine(l)
+		lineFor(self, #self.__lines, "Right"):SetText(r)
+	end
+
+	function tip:SetText(text, r, g, b)
+		self:ClearLines()
+		self:AddLine(text, r, g, b)
+	end
+
+	function tip:NumLines()
+		if self.__lines and #self.__lines > 0 then return #self.__lines end
+		return self.__shows and 1 or 0
+	end
+	function tip:GetLeftLine(i) return lineFor(self, i, "Left") end
+
+	function tip:SetPadding(w, h) self.__padding = { w, h } end
+	function tip:GetPadding() return (self.__padding or { 0, 0 })[1] end
+	function tip:SetMinimumWidth(w) self.__minWidth = w end
+	function tip:GetMinimumWidth() return self.__minWidth or 0 end
+
+	function tip:GetUnit() return self.__unit and UnitName(self.__unit), self.__unit end
+	function tip:IsUnit(token) return self.__unit == token end
+	function tip:GetItem() return self.__itemName, self.__item end
+	function tip:GetSpell() return self.__spellName, self.__spellID end
+
+	--- The client's own SetUnit, in the order the client does it.
+	function tip:SetUnit(unit)
+		self:ClearLines()
+		self.__unit = unit
+		local d = _G.__units[unit]
+		if not d then return end
+
+		self:AddLine(d.name or "Unknown")
+		if d.guild then self:AddLine("<" .. d.guild .. ">") end
+
+		local lvl = (d.level == -1) and "??" or tostring(d.level or 1)
+		local words = {}
+		local cls = d.classification
+		if cls == "elite" then words[#words + 1] = ELITE
+		elseif cls == "rareelite" then
+			-- TWO words, spaced, as the client writes them. Jammed together as
+			-- "RareElite" this quietly stopped exercising the case it exists for:
+			-- a strip that only removes one classification word.
+			words[#words + 1] = RARE
+			words[#words + 1] = ELITE
+		elseif cls == "rare" then words[#words + 1] = RARE end
+		words[#words + 1] = d.isPlayer and (d.class or "Warrior") or (d.creature or "Humanoid")
+		-- string.format, not the `format` alias: that is assigned further down the
+		-- file than this, and while it happens to be in place by the time a test
+		-- runs, depending on it is depending on an ordering nobody wrote down.
+		self:AddLine(string.format(UNIT_LEVEL_TEMPLATE, lvl) .. " " .. table.concat(words, " "))
+
+		local sb = _G[(self:GetName() or "") .. "StatusBar"]
+		if sb then
+			sb:SetMinMaxValues(0, d.hpMax or 100)
+			sb:SetValue(d.hp or d.hpMax or 100)
+			sb:Show()
+		end
+
+		local h = self.__scripts and self.__scripts.OnTooltipSetUnit
+		if h then h(self) end
+	end
+
+	function tip:SetItemByID(id, name, quality)
+		self:ClearLines()
+		self.__item = "|Hitem:" .. tostring(id) .. "|h"
+		self.__itemName = name or "Test Item"
+		self.__itemQuality = quality or 3
+		local qc = ITEM_QUALITY_COLORS[self.__itemQuality] or { r = 1, g = 1, b = 1 }
+		self:AddLine(self.__itemName, qc.r, qc.g, qc.b)
+		local h = self.__scripts and self.__scripts.OnTooltipSetItem
+		if h then h(self) end
+	end
+
+	function tip:SetSpell(id, name, body)
+		self:ClearLines()
+		self.__spellID, self.__spellName = id, name or "Conjure Water"
+		self:AddLine(self.__spellName)
+		self:AddLine(body or "Conjures 14 bottles of fresh water.")
+		local h = self.__scripts and self.__scripts.OnTooltipSetSpell
+		if h then h(self) end
+	end
+
+	return tip
+end
+
+tooltipLines(GameTooltip)
+
+--- The tooltip's own status bar. Note the NAME: the XML declares
+--  $parentStatusBar with NO parentKey, so GameTooltip.StatusBar is nil on this
+--  branch and only the global exists. A mock that offered the parentKey would
+--  hide a real nil-index.
+do
+	local sb = CreateFrame("StatusBar", "GameTooltipStatusBar", GameTooltip)
+	sb:SetHeight(8)
+	sb:Hide()
+end
+
+--- The other tooltips a skin has to cover.
+--
+--  Exposed as a global as well, so the suite can stand up a tooltip that another
+--  addon hooked BEFORE we did. Both hook orders are reachable in the game and
+--  the module has to be right under either.
+function _G.__makeTooltip(name)
+	return tooltipLines(CreateFrame("Frame", name, UIParent))
+end
+
+for _, n in ipairs({ "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2",
+	"EmbeddedItemTooltip", "WorldMapTooltip" }) do
+	_G.__makeTooltip(n)
+end
+
+--- The font OBJECTS. Not FontStrings - a font object has SetFont and nothing
+--  else we use, and Tooltips.lua restyling these is what silently carries the
+--  typeface into every line another addon adds.
+for _, n in ipairs({ "GameTooltipHeaderText", "GameTooltipText", "GameTooltipTextSmall" }) do
+	_G[n] = {
+		-- Starts with the client's real face, at the sizes FontStyles.xml gives
+		-- these three. A mock that started blank would let a module capture nil as
+		-- "the original" and call putting nothing back a successful restore.
+		__font = { [[Fonts\FRIZQT__.TTF]], n:find("Small") and 10 or 12, "" },
+		SetFont = function(self, path, size, flags)
+			if type(path) ~= "string" then fail(n .. ":SetFont path " .. tostring(path)) return false end
+			self.__font = { path, size, flags }
+			return true
+		end,
+		GetFont = function(self)
+			local c = self.__font
+			if not c then return nil end
+			return c[1], c[2], c[3]
+		end,
+	}
+end
+
+--- The globals Tooltips.lua hooksecurefuncs. Each one has to EXIST, and each
+--  one has to do the thing the hook is compensating for - in particular
+--  SharedTooltip_SetBackdropStyle really does put the border back, which is the
+--  whole reason StripArt is called from four places.
+function SharedTooltip_SetBackdropStyle(tip)
+	if not tip or not tip.NineSlice then return end
+	tip.NineSlice:Show()
+	tip.NineSlice:SetAlpha(1)
+end
+
+function GameTooltip_SetDefaultAnchor(tip, parent)
+	tip:SetOwner(parent, "ANCHOR_NONE")
+	tip:ClearAllPoints()
+	tip:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -13, 70)
+	tip.default = 1
+end
+
+function GameTooltip_ShowStatusBar() end
+function GameTooltip_ClearStatusBars() end
+
+UNIT_LEVEL_TEMPLATE = "Level %s"
+LEVEL = "Level"
+ELITE = "Elite"
+RARE = "Rare"
+BOSS = "Boss"
+HEALTH = "Health"
+FACTION_STANDING_LABEL2 = "Hostile"
+FACTION_STANDING_LABEL4 = "Neutral"
+FACTION_STANDING_LABEL5 = "Friendly"
+
+function UnitClassification(u)
+	local d = _G.__units and _G.__units[u]
+	return d and d.classification or "normal"
+end
+
+function BreakUpLargeNumbers(n)
+	local s = tostring(math.floor(tonumber(n) or 0))
+	local out = (s:reverse():gsub("(%d%d%d)", "%1,"):reverse())
+	return (out:gsub("^,", ""))
 end
 
 function GameTooltip_Hide() GameTooltip.__shows = nil GameTooltip:Hide() end
@@ -1630,8 +1955,19 @@ end
 function C_Item.GetItemFamily() return 0 end
 GetItemInfo, GetItemInfoInstant = C_Item.GetItemInfo, C_Item.GetItemInfoInstant
 
-ITEM_QUALITY_COLORS = {}
-for i = 0, 5 do ITEM_QUALITY_COLORS[i] = { r = 1, g = 1, b = 1 } end
+--- Blizzard's own quality colours, at their real values rather than as six
+--  identical whites. Modules/Tooltips.lua reads the colour back off line 1 to
+--  recover an item's quality when GameTooltip:GetItem is unavailable, and a
+--  table where every entry is white makes that lookup answer "poor" for
+--  everything - a green test that proves nothing.
+ITEM_QUALITY_COLORS = {
+	[0] = { r = 0.62, g = 0.62, b = 0.62 },   -- poor
+	[1] = { r = 1.00, g = 1.00, b = 1.00 },   -- common
+	[2] = { r = 0.12, g = 1.00, b = 0.00 },   -- uncommon
+	[3] = { r = 0.00, g = 0.44, b = 0.87 },   -- rare
+	[4] = { r = 0.64, g = 0.21, b = 0.93 },   -- epic
+	[5] = { r = 1.00, g = 0.50, b = 0.00 },   -- legendary
+}
 
 function HasKey() return true end
 function GetKeyRingSize() return _G.__bags[-2].size end
@@ -1746,6 +2082,16 @@ local units = {
 		exists = true, name = "Savannah Prowler", level = 16, isPlayer = false,
 		creature = "Beast", hp = 640, hpMax = 1000,
 		power = 0, powerMax = 0, powerType = 0, powerToken = "MANA", reaction = 2,
+	},
+	-- The unit a tooltip is actually about. Separate from `target` because a
+	-- tooltip's whole job is describing something you are NOT targeting, and
+	-- because the tooltip tests need to move a unit's classification and guild
+	-- about without disturbing what the unit frames are asserting on.
+	mouseover = {
+		exists = true, name = "Gazrog", level = 20, isPlayer = false,
+		creature = "Humanoid", hp = 4820, hpMax = 4820,
+		power = 0, powerMax = 0, powerType = 0, powerToken = "MANA", reaction = 2,
+		classification = "elite",
 	},
 }
 _G.__units = units
@@ -2389,6 +2735,7 @@ for _, f in ipairs({
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
 	"Modules/Chat.lua",
+	"Modules/Tooltips.lua",
 	"Modules/Zen.lua",
 }) do
 	load(f)
@@ -2440,6 +2787,28 @@ local function check(cond, msg)
 		print("  ok  " .. msg)
 	else
 		fail(msg)
+	end
+end
+
+--- A block of checks that cannot take the rest of the suite down with it.
+--
+--  The suite is one straight-line chunk, so a nil-index anywhere in it aborts
+--  everything after that point. That is the difference between "one assertion
+--  went stale" and "the last eight hundred checks did not run and nobody
+--  noticed" - and the second is exactly what a refactor in progress looks like
+--  from the next person's chair.
+--
+--  Same principle the addon itself is written to (report per-frame results so a
+--  wrong name reads as `absent` rather than as silence), applied to the tests.
+--  An error inside becomes one named failure and the run carries on.
+--
+--  `do ... end` blocks elsewhere in this file predate it and are fine to convert
+--  as they are next touched; nothing needs doing to them at once.
+local function section(name, fn)
+	print("== " .. name .. " ==")
+	local ok, err = pcall(fn)
+	if not ok then
+		fail(name .. " -- the block itself errored: " .. tostring(err))
 	end
 end
 
@@ -8962,6 +9331,650 @@ do
 			"while the composer capsule is sized from the typing font, not from"
 			.. " the tab role (" .. tostring(size) .. ")")
 	end
+end
+
+-- ---------------------------------------------------------------------------
+-- tooltips
+--
+-- This module reskins frames it does not own, alongside other addons doing the
+-- same thing to the same frames. So most of what is worth asserting is not
+-- "does it look right" - it is "does it still leave room for everybody else".
+-- ---------------------------------------------------------------------------
+
+print("== tooltips: the card, and what it is drawn instead of ==")
+do
+	local T = A:GetModule("tooltips")
+	check(T and T.enabled, "tooltips module enabled")
+	check(T.skinned[GameTooltip], "GameTooltip adopted")
+	check(GameTooltip.aetherCard ~= nil, "and given a glass card")
+	check(#GameTooltip.aetherCard._fill == 9, "which is a 9-slice panel, not a pill")
+
+	-- The stone border has to be OFF, and it has to stay off. Classic's
+	-- SharedTooltip_SetBackdropStyle re-applies the default NineSlice layout on
+	-- every OnHide and on every item tooltip, so suppressing it once at login
+	-- lasts until the first thing you hover.
+	check(not GameTooltip.NineSlice:IsShown(), "Blizzard's NineSlice is suppressed")
+	SharedTooltip_SetBackdropStyle(GameTooltip)
+	check(not GameTooltip.NineSlice:IsShown(),
+		"and is suppressed AGAIN after SharedTooltip_SetBackdropStyle puts it back")
+
+	-- Every other tooltip in the family, so a linked item or a shift-compare does
+	-- not open a stone box next to a glass one.
+	for _, n in ipairs({ "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2",
+		"EmbeddedItemTooltip", "WorldMapTooltip" }) do
+		check(_G[n] and T.skinned[_G[n]], n .. " adopted too")
+	end
+end
+
+print("== tooltips: the card follows lines added AFTER the tooltip is up ==")
+do
+	-- Pawn hooksecurefuncs about thirty GameTooltip:Set*Item methods and adds its
+	-- lines once the tooltip is already on screen; VendorPricePlus and every
+	-- LibExtraTip consumer do the same. A card measured at OnShow is the wrong
+	-- height for all of them, which is why the module sizes from OnSizeChanged.
+	GameTooltip:SetItemByID(1234, "Staff of the Blessed Seer", 3)
+	GameTooltip:Show()
+
+	local card = GameTooltip.aetherCard
+	card:ClearAllPoints()
+	check(#card.__points == 0, "card points cleared, as a sentinel")
+
+	GameTooltip:AddLine("|cff20ff20Pawn: 41.2 DPS|r")   -- what Pawn does
+	check(#card.__points == 2,
+		"adding a line after Show re-lays the card (the Pawn case)")
+	local p1, rel1 = card:GetPoint(1)
+	check(p1 == "TOPLEFT" and rel1 == GameTooltip,
+		"and it is re-anchored to the tooltip, not to whatever it last held")
+end
+
+print("== tooltips: the level strip keeps what other addons appended ==")
+do
+	local T = A:GetModule("tooltips")
+
+	-- MobInfo2 appends to the same line the badge takes the level out of:
+	--     GameTooltipTextLeft2:SetText( txt.." "..mobData.class )   MI2_Tooltip.lua:381
+	-- Our hook is already installed, so registering this one AFTER means our
+	-- handler runs first and MobInfo2's runs second - one of the two load orders.
+	-- Gated on a flag rather than installed and forgotten, for the same reason
+	-- the addon gates its own hook bodies: a HookScript hook can never be taken
+	-- off again. Left running, this one goes on appending to line 2 for the rest
+	-- of the suite and quietly becomes part of every later assertion's fixture.
+	local appended = false
+	_G.__mi2Active = true
+	GameTooltip:HookScript("OnTooltipSetUnit", function(self)
+		if not _G.__mi2Active then return end
+		local fs = _G.GameTooltipTextLeft2
+		if fs and fs:GetText() then
+			fs:SetText(fs:GetText() .. " MI2:8-11 dmg")
+			appended = true
+		end
+	end)
+
+	GameTooltip:SetUnit("mouseover")
+	check(appended, "the simulated MobInfo2 hook ran at all")
+
+	local line2 = _G.GameTooltipTextLeft2:GetText()
+	check(not line2:find("Level"),
+		"the level token is out of the line (" .. tostring(line2) .. ")")
+	check(line2:find("Humanoid", 1, true),
+		"the creature type survived")
+	check(line2:find("MI2:8%-11 dmg"),
+		"and so did everything MobInfo2 appended - THE point of the whole design")
+
+	-- The other load order, done honestly rather than argued: a fresh tooltip
+	-- that the simulated MobInfo2 hooked BEFORE we did.
+	local other = _G.__makeTooltip("HarnessOrderTooltip")
+	other:HookScript("OnTooltipSetUnit", function(self)
+		local fs = _G.HarnessOrderTooltipTextLeft2
+		if fs and fs:GetText() then fs:SetText(fs:GetText() .. " MI2-first") end
+	end)
+	T:Register(other)
+	other:SetUnit("mouseover")
+	local o2 = _G.HarnessOrderTooltipTextLeft2:GetText()
+	check(o2 and not o2:find("Level") and o2:find("MI2%-first"),
+		"and it works with the hooks installed the other way round too")
+
+	_G.__mi2Active = nil
+end
+
+print("== tooltips: the strip is idempotent, and declines what it cannot parse ==")
+do
+	local T = A:GetModule("tooltips")
+
+	-- The client re-runs SetUnit about five times a second for a mouseover, so a
+	-- strip that ate one more word per pass would look fine for a frame.
+	GameTooltip:SetUnit("mouseover")
+	local first = _G.GameTooltipTextLeft2:GetText()
+	GameTooltip:SetUnit("mouseover")
+	GameTooltip:SetUnit("mouseover")
+	check(_G.GameTooltipTextLeft2:GetText() == first,
+		"three SetUnit passes produce the same line (" .. tostring(first) .. ")")
+
+	-- A line that is not a level line is not a line we touch. This is the
+	-- graceful-degradation path: wrong locale, or another addon rewrote it first.
+	check(T.ParseLevelLine("Binds when equipped", false) == nil,
+		"a non-level line does not parse")
+	check(T.ParseLevelLine(nil, false) == nil, "and neither does nil")
+
+	local lvl, rest = T.ParseLevelLine("Level 20 Elite Humanoid trailing junk", true)
+	check(lvl == "20", "a level parses out of a full line")
+	check(rest == "Humanoid trailing junk",
+		"with the classification word dropped and the trailing text kept ("
+		.. tostring(rest) .. ")")
+
+	local lvl2, rest2 = T.ParseLevelLine("Level 20 Elite Humanoid", false)
+	check(lvl2 == "20" and rest2 == "Elite Humanoid",
+		"and the classification word is KEPT when no chip is going to say it")
+
+	local skull = T.ParseLevelLine("Level ?? Boss", false)
+	check(skull == "??", "the skull parses as a level, not as a failure")
+
+	-- The pattern comes from the client's own string, not from an English
+	-- literal, or every non-enUS player loses the badge.
+	check(T.LevelPattern():find("Level"),
+		"and the pattern is built from UNIT_LEVEL_TEMPLATE")
+end
+
+print("== tooltips: the elite chip, the badge, and the gutter that makes room ==")
+do
+	GameTooltip:SetUnit("mouseover")     -- Gazrog, elite
+
+	local badge, chip = GameTooltip.aetherBadge, GameTooltip.aetherChip
+	check(badge and badge:IsShown(), "the level badge is drawn")
+	check(badge.label:GetText() == "20", "carrying the unit's level")
+	check(chip and chip:IsShown(), "and an elite chip beside the name")
+
+	-- The badge gets its room from the CARD growing left, not from re-anchoring
+	-- the tooltip's own FontStrings - which would fight the C layout code and
+	-- break LibExtraTip's right-column arithmetic (LibExtraTip.lua:1222).
+	check(GameTooltip.aetherGutter and GameTooltip.aetherGutter > 0,
+		"the card carries a left gutter for it (" .. tostring(GameTooltip.aetherGutter) .. ")")
+	local _, _, _, x = GameTooltip.aetherCard:GetPoint(1)
+	check(x and x < 0,
+		"so the card's TOPLEFT sits left of the tooltip's (" .. tostring(x) .. ")")
+
+	local anchorTo = select(2, badge:GetPoint(1))
+	check(anchorTo == _G.GameTooltipTextLeft1,
+		"and the badge hangs off line 1, so it tracks the name's own baseline")
+
+	-- A plain mob gets neither, and the gutter goes back to nothing.
+	_G.__units.mouseover.classification = "normal"
+	GameTooltip:SetUnit("mouseover")
+	check(not GameTooltip.aetherChip:IsShown(), "a normal mob gets no chip")
+	_G.__units.mouseover.classification = "elite"
+end
+
+print("== tooltips: the health hairline ==")
+do
+	local T = A:GetModule("tooltips")
+	local bar = _G.GameTooltipStatusBar
+	check(bar and bar.aetherStyled, "the status bar is restyled in place")
+	check(bar and bar.lockColor,
+		"with lockColor set, or HealthBar_OnValueChanged forces it back to flat green")
+	check(bar and bar:GetHeight() == 7, "at the deck's 7px")
+
+	-- Guarded rather than indexed straight through. A regression that loses the
+	-- readout entirely should show up here as a failed check naming what is
+	-- missing, not as a nil-index that takes the rest of the suite with it.
+	check(bar and bar.aetherValue ~= nil, "and a readout under it")
+	if bar and bar.aetherValue then
+		local function readout() return bar.aetherValue:GetText() or "<nil>" end
+
+		GameTooltip:SetUnit("mouseover")
+		check(readout() == "4,820  /  4,820",
+			"which is grouped (" .. readout() .. ")")
+
+		-- Driven from OnValueChanged, which is the only hook there is: nothing in
+		-- Lua shows or fills this bar, the C tooltip code does it.
+		_G.__units.mouseover.hp = 2410
+		bar:SetValue(2410)
+		check(readout() == "2,410  /  4,820", "a value change alone updates it")
+		_G.__units.mouseover.hp = 4820
+
+		local conf = A.Config:Module("tooltips")
+		conf.healthValues = false
+		T:UpdateStatusBar(bar)
+		check(readout() == "", "and the readout is separable from the bar")
+		conf.healthValues = true
+	end
+end
+
+print("== tooltips: quality drives the rim, not just the title ==")
+do
+	GameTooltip:SetItemByID(1234, "Staff of the Blessed Seer", 3)   -- rare
+	local card = GameTooltip.aetherCard
+	local rare = A.Palette.c.itemQuality[3].edge
+	local e = card._edgeColor
+	check(e and math.abs(e[1] - rare[1]) < 0.001 and math.abs(e[3] - rare[3]) < 0.001,
+		"a rare item tints the card's rim")
+	check(card._rim ~= nil and card._rim[1]:IsShown(),
+		"and rare and above get an outer bloom")
+
+	local ink = { _G.GameTooltipTextLeft1:GetTextColor() }
+	check(math.abs(ink[1] - rare[1]) < 0.001, "the title takes the quality colour")
+
+	GameTooltip:SetItemByID(99, "Linen Cloth", 1)                    -- common
+	check(GameTooltip.aetherCard._rim == nil
+		or not GameTooltip.aetherCard._rim[1]:IsShown(),
+		"a common item gets no bloom - that is what makes a purple readable")
+
+	-- The title's INK is not the same value as the rim, and Midnight cannot show
+	-- you that: there the two share an RGB to the digit, so a test on this skin
+	-- passes either way. Daylight is where it matters - its itemQuality rims are
+	-- deliberately DARK, because a rim on a pale panel has to be, and reusing one
+	-- as text put a near-black item name on a pale wash while every other string
+	-- in the tooltip stayed white.
+	local was = A.db.profile.skin
+	A.db.profile.skin = "daylight"
+	A:Restyle()
+	GameTooltip:SetItemByID(99, "Linen Cloth", 1)
+	local r, g, b = _G.GameTooltipTextLeft1:GetTextColor()
+	local lum = 0.299 * r + 0.587 * g + 0.114 * b
+	local rim = A.Palette.c.itemQuality[1].edge
+	local rimLum = 0.299 * rim[1] + 0.587 * rim[2] + 0.114 * rim[3]
+	check(rimLum < 0.5, "on Daylight the common-quality RIM is dark, by design ("
+		.. string.format("%.2f", rimLum) .. ")")
+	check(lum > 0.7, "but the title stays light type, like every other string on"
+		.. " the card (" .. string.format("%.2f", lum) .. ")")
+
+	A.db.profile.skin = was
+	A:Restyle()
+end
+
+print("== tooltips: lore gold does not paint over another addon's line ==")
+do
+	GameTooltip:SetSpell(5504, "Conjure Water", "Conjures 14 bottles of fresh water.")
+	local gold = A.Palette.c.ttLore
+	local body = { _G.GameTooltipTextLeft2:GetTextColor() }
+	check(math.abs(body[1] - gold[1]) < 0.001,
+		"the client's own body copy goes lore gold")
+
+	-- Pawn's score line is green on purpose. Recolouring it would be exactly the
+	-- kind of thing this module exists not to do.
+	GameTooltip:AddLine("Pawn: 41.2", 0.12, 1.0, 0.0)
+	A:GetModule("tooltips"):OnSpell(GameTooltip)
+	local pawn = { _G.GameTooltipTextLeft3:GetTextColor() }
+	check(math.abs(pawn[2] - 1.0) < 0.001 and pawn[1] < 0.5,
+		"but a line another addon deliberately coloured keeps its colour")
+end
+
+print("== tooltips: anchoring is scoped ==")
+do
+	local T = A:GetModule("tooltips")
+	check(T.anchor ~= nil, "there is a mover anchor for unit tooltips")
+	local entry = A.Movers.registry and A.Movers.registry.tooltip
+	check(entry and entry.frame == T.anchor,
+		"and Movers is actually holding it - `x ~= nil or true` is a check that"
+		.. " cannot fail, which is not a check")
+
+	GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+	local _, rel = GameTooltip:GetPoint(1)
+	check(rel == T.anchor,
+		"a default-anchored tooltip lands on the mover frame, not Blizzard's corner")
+
+	-- The scoping rule. A bag slot that called SetOwner on itself keeps the
+	-- position it asked for; only default/world tooltips get dragged to the
+	-- cursor. Widening this is the fastest way to make every other addon's
+	-- tooltips feel broken.
+	GameTooltip.default = nil
+	GameTooltip:SetOwner(_G.ContainerFrame1 or CreateFrame("Frame", nil, UIParent), "ANCHOR_RIGHT")
+	check(not T.WantsCursor(GameTooltip),
+		"a tooltip with its own owner is NOT dragged to the cursor")
+
+	GameTooltip.default = 1
+	check(T.WantsCursor(GameTooltip), "a default-anchored one is")
+
+	local conf = A.Config:Module("tooltips")
+	conf.cursorItems = false
+	check(not T.WantsCursor(GameTooltip), "and the whole behaviour is one switch")
+	conf.cursorItems = true
+end
+
+print("== tooltips: the typeface reaches lines we never see ==")
+do
+	-- Restyling the three FONT OBJECTS is the highest-leverage thing in the
+	-- module: every line inherits from one of them, including the ones Pawn and
+	-- MobInfo2 add later, so their lines come out in Outfit without either addon
+	-- knowing we exist.
+	local size = {}
+	for _, n in ipairs({ "GameTooltipHeaderText", "GameTooltipText", "GameTooltipTextSmall" }) do
+		local path, pt = _G[n]:GetFont()
+		size[n] = pt
+		check(path and path:find("Outfit"), n .. " is drawn in Outfit")
+		check(type(pt) == "number" and pt > 0, "  at a real size (" .. tostring(pt) .. ")")
+	end
+
+	-- `size.a > size.b` on two nils is an error, not a failure, and an error here
+	-- eats every check after it. Ask the question only once both answers exist.
+	check(size.GameTooltipHeaderText and size.GameTooltipText
+		and size.GameTooltipHeaderText > size.GameTooltipText,
+		"and the name outranks the body copy")
+end
+
+print("== tooltips: the badge stands down for an addon that READS that line ==")
+do
+	local T = A:GetModule("tooltips")
+	local conf = A.Config:Module("tooltips")
+
+	-- MobInfo2 does not only append to line 2. It locates a mob's extra info by
+	-- scanning for the level NUMBER as a substring (MobInfo2.lua:2118-2131):
+	--     if string.find(ttLeft, levelInfo) then levelLine = idx
+	-- Move the digits into the badge and that scan finds nothing, on its shipped
+	-- default path (MobInfoConfig.UseGameTT == 0). There is no having it both
+	-- ways, so the badge yields.
+	_G.MobInfoConfig = { UseGameTT = 0 }
+	_G.MI2_BuildTooltipMob = function() end
+
+	GameTooltip:SetUnit("mouseover")
+	local line = _G.GameTooltipTextLeft2:GetText()
+	check(line and line:find("20", 1, true),
+		"with MobInfo2 loaded the level NUMBER stays in the line (" .. tostring(line) .. ")")
+	check(not GameTooltip.aetherBadge:IsShown(),
+		"and the badge stands down rather than blinding it")
+
+	-- ...but it is the player's tooltip. One switch takes it back.
+	conf.deferToLevelReaders = false
+	GameTooltip:SetUnit("mouseover")
+	check(GameTooltip.aetherBadge:IsShown(), "overriding the deference restores the badge")
+	conf.deferToLevelReaders = true
+
+	-- MobInfo2 in its own-window mode does not do that scan, so it is not a
+	-- reason to give up the badge. Detected by the SETTING, not by the addon.
+	_G.MobInfoConfig.UseGameTT = 1
+	GameTooltip:SetUnit("mouseover")
+	check(GameTooltip.aetherBadge:IsShown(),
+		"and MobInfo2 in its own-window mode is not a reason to stand down")
+
+	_G.MobInfoConfig, _G.MI2_BuildTooltipMob = nil, nil
+end
+
+print("== tooltips: re-entry, and the two-word classification ==")
+do
+	local T = A:GetModule("tooltips")
+
+	GameTooltip:SetUnit("mouseover")
+	check(GameTooltip.aetherBadge:IsShown(), "badge up after a fill")
+	local before = _G.GameTooltipTextLeft2:GetText()
+
+	-- Running the handler again over text it has ALREADY stripped finds no level
+	-- - correctly, we took it out. Reading that as "no badge here" would hide the
+	-- badge drawn a moment ago, so the fill remembers it was stripped.
+	T:OnUnit(GameTooltip)
+	check(GameTooltip.aetherBadge:IsShown(),
+		"and still up after the handler is re-entered on the same text")
+	check(_G.GameTooltipTextLeft2:GetText() == before, "with the line unchanged")
+	check(GameTooltip.aetherGutter > 0, "and the gutter still held open")
+
+	-- The badge number comes from UnitLevel, not from the parsed token, so a
+	-- locale or an addon that reformatted the line cannot put a wrong number in
+	-- the disc.
+	check(GameTooltip.aetherBadge.label:GetText() == tostring(UnitLevel("mouseover")),
+		"and the number is the unit's own level, not the parsed string")
+
+	-- A rare elite writes TWO classification words in front of the type. Breaking
+	-- after the first left "Elite Humanoid" under a chip already saying "Rare+".
+	local _, rest = T.ParseLevelLine("Level 20 Rare Elite Humanoid", true)
+	check(rest == "Humanoid", "both classification words come off a rare elite ("
+		.. tostring(rest) .. ")")
+end
+
+section("tooltips: the level badge is a circle, not a rumour of one", function()
+	local T = A:GetModule("tooltips")
+
+	-- Pinned, not inherited. By the time this runs the suite has flipped every
+	-- toggle in the options tree both ways and the tooltip happens to be sitting
+	-- at scale 1 - where "snap in the badge's own units" and "snap in UIParent's"
+	-- give the same answer, and the assertion below cannot tell them apart. The
+	-- whole point of the fix is what happens at the scale it actually ships at.
+	local wasScale = GameTooltip:GetScale()
+	GameTooltip:SetScale(0.71)
+
+	_G.__units.mouseover.isPlayer = false
+	GameTooltip:SetUnit("mouseover")
+	local badge = GameTooltip.aetherBadge
+	check(badge and badge:IsShown(), "badge drawn")
+	check(math.abs(badge:GetEffectiveScale() - 0.71) < 1e-6,
+		"and it inherits the tooltip's scale (" .. string.format("%.3f", badge:GetEffectiveScale()) .. ")")
+
+	-- 1. No MaskTexture. A mask edge is the client's to anti-alias and it does
+	--    that poorly - the same fact Tools/generate_textures.py records against
+	--    minimap_border. At 46px with a portrait in it that is a fair trade; at
+	--    26px the stair-stepping IS the shape.
+	local masked = false
+	for _, r in ipairs({ badge.disc, badge.ring }) do
+		if r.__masks and #r.__masks > 0 then masked = true end
+	end
+	check(not masked, "the disc is drawn from Circle-Mask as artwork, not cut out"
+		.. " with a mask")
+
+	-- 2. The rim laps OVER the disc rather than sitting flush inside it, so the
+	--    disc's own outer texel row cannot peek out from under it.
+	local p1, rel1, _, x1, y1 = badge.ring:GetPoint(1)
+	check(p1 == "TOPLEFT" and rel1 == badge and x1 < 0 and y1 > 0,
+		"and the rim is drawn proud of it on every side (" .. tostring(x1) .. ")")
+	check(math.abs(x1) == A:PxIn(badge),
+		"by exactly one physical pixel, in the badge's own units - not UIParent's,"
+		.. " which at the tooltip's 0.71 would be seven tenths of one")
+
+	-- 3. The diameter lands on the pixel grid. Unsnapped, a 26-unit disc inside a
+	--    frame scaled to 0.71 is 18.46 physical pixels and its rim crosses a
+	--    boundary the whole way round, which the client resolves as half-lit grey.
+	local step = A:PxIn(badge)
+	local q = badge:GetWidth() / step
+	check(math.abs(q - math.floor(q + 0.5)) < 1e-6,
+		"and the diameter is a whole number of physical pixels ("
+		.. string.format("%.3f", q) .. ")")
+	check(math.abs(step - A.pixel) > 1e-6,
+		"measured in the badge's OWN units, which at 0.71 are not UIParent's"
+		.. " (" .. string.format("%.4f vs %.4f", step, A.pixel) .. ")")
+
+	-- 4. An NPC's badge takes the reaction; a PLAYER's does not.
+	--    Screen 6a tints only the three NPC variants and leaves the anchored
+	--    player card's badge in the skin's own purple. A player's reaction is
+	--    friendly nearly every time you see it, so tinting by it says nothing and
+	--    spends the card's accent saying it.
+	local hostile = A.Palette.c.ttHostile
+	local dr, dg, db, da = badge.disc:GetVertexColor()
+	check(math.abs(dr - hostile[1]) < 0.001 and math.abs(da - 0.15) < 0.001,
+		"a hostile NPC's badge is its reaction colour at .15")
+
+	_G.__units.mouseover.isPlayer = true
+	_G.__units.mouseover.class = "Shaman"
+	GameTooltip:SetUnit("mouseover")
+	local want = A.Palette.c.ttBadgeBg
+	local pr, pg, pb, pa = badge.disc:GetVertexColor()
+	check(math.abs(pr - want[1]) < 0.001 and math.abs(pa - want[4]) < 0.001,
+		"but a player's is the skin's own purple, as screen 6a draws it")
+	local ir = { badge.label:GetTextColor() }
+	local ink = A.Palette.c.ttBadgeInk
+	check(math.abs(ir[1] - ink[1]) < 0.001, "with #cdbcff on it, not the name's blue")
+
+	_G.__units.mouseover.isPlayer = false
+	GameTooltip:SetScale(wasScale)
+end)
+
+section("tooltips: the cursor follow, and the flip at a screen edge", function()
+	local T = A:GetModule("tooltips")
+
+	-- A flat coordinate space to reason in. The maths is done entirely in the
+	-- TOOLTIP's own units - GetCursorPosition returns physical pixels, and
+	-- SetPoint offsets are read in the space of the frame being positioned - so
+	-- scale 1 everywhere is the case where the two agree and any arithmetic slip
+	-- shows up as a plain wrong number rather than as a scale factor.
+	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+	UIParent:SetSize(1000, 600)
+	UIParent.__scale = 1
+	GameTooltip.__scale = 1
+	GameTooltip:SetSize(300, 120)
+
+	GameTooltip.default = 1
+	GameTooltip:SetItemByID(1234, "Staff of the Blessed Seer", 3)
+	check(GameTooltip.aetherFollow, "a default-anchored item tooltip is marked to follow")
+
+	cursorX, cursorY = 200, 400
+	GameTooltip.__scripts.OnUpdate(GameTooltip)
+	local p, rel, relP, x, y = GameTooltip:GetPoint(1)
+	check(p == "TOPLEFT" and rel == UIParent and relP == "BOTTOMLEFT",
+		"it hangs its TOPLEFT off the screen origin")
+	check(x == 224 and y == 378,
+		"at the deck's +24 / -22 from the cursor (" .. tostring(x) .. ", " .. tostring(y) .. ")")
+
+	-- Near the right edge it FLIPS rather than clamping. Clamping slides the card
+	-- under the cursor, which is worse than putting it on the other side.
+	cursorX, cursorY = 900, 400
+	GameTooltip.__scripts.OnUpdate(GameTooltip)
+	local _, _, _, fx = GameTooltip:GetPoint(1)
+	check(fx == 900 - 24 - 300,
+		"crowded on the right it flips to the other side of the cursor ("
+		.. tostring(fx) .. ")")
+	check(fx + 300 <= 900, "so the card never lands under the pointer")
+
+	-- And at the bottom.
+	cursorX, cursorY = 200, 60
+	GameTooltip.__scripts.OnUpdate(GameTooltip)
+	local _, _, _, _, fy = GameTooltip:GetPoint(1)
+	check(fy == 60 + 22 + 120, "and flips upward at the bottom edge (" .. tostring(fy) .. ")")
+
+	-- A tooltip nobody marked is left exactly where its owner put it.
+	GameTooltip.aetherFollow = nil
+	GameTooltip:ClearAllPoints()
+	GameTooltip.__scripts.OnUpdate(GameTooltip)
+	check(#GameTooltip.__points == 0,
+		"and an unmarked tooltip is not moved at all - the follow flag is decided"
+		.. " once per tooltip, not per frame")
+
+	cursorX, cursorY = 500, 400
+	UIParent:SetSize(oldW, oldH)
+end)
+
+section("tooltips: the anchor corner comes from where the frame SITS", function()
+	local T = A:GetModule("tooltips")
+
+	-- Not from the point string saved beside it. Movers re-anchors every drag to
+	-- BOTTOMLEFT of UIParent and saves what it set, so that string reads
+	-- BOTTOMRIGHT until the first drag and BOTTOMLEFT forever after - never a TOP
+	-- variant, whatever the player actually did with the frame. A tooltip grows
+	-- away from the corner it is pinned by, so believing it means one parked near
+	-- the top of the screen grows off it.
+	UIParent:SetSize(1000, 600)
+	UIParent.__scale = 1
+
+	T.anchor:SetGeom({ cx = 100, cy = 500 })      -- top-left quadrant
+	GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+	check(GameTooltip:GetPoint(1) == "TOPLEFT",
+		"parked top-left, the tooltip presents its TOPLEFT and grows down-right")
+
+	T.anchor:SetGeom({ cx = 900, cy = 80 })       -- bottom-right, the default
+	GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+	check(GameTooltip:GetPoint(1) == "BOTTOMRIGHT", "and bottom-right, the other way")
+
+	-- Saved anchor data says BOTTOMLEFT; the frame is bottom-RIGHT. The screen
+	-- wins, which is the whole point.
+	A.db.profile.anchors.tooltip = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 0, y = 0 }
+	GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+	check(GameTooltip:GetPoint(1) == "BOTTOMRIGHT",
+		"even when the saved point string disagrees")
+	A.db.profile.anchors.tooltip = nil
+
+	T.anchor:SetGeom(nil)
+end)
+
+section("tooltips: adopting frames whose names cannot be known in advance", function()
+	local T = A:GetModule("tooltips")
+
+	-- LibExtraTip - how Informant, Enchantrix and BeanCounter reach a tooltip -
+	-- names its frames from its own version string:
+	--     LIBSTRING = LIBNAME.."_"..MAJOR.."_"..MINOR      LibExtraTip.lua:63
+	--     CreateFrame("GameTooltip", LIBSTRING.."Tooltip"..n, ...)          :1112
+	-- so they carry a version number and cannot be in a static list.
+	local lx = _G.__makeTooltip("LibExtraTip_1_400Tooltip1")
+	check(not T.skinned[lx], "a LibExtraTip frame starts unskinned")
+	local n = T:Sweep()
+	check(n >= 1 and T.skinned[lx],
+		"and the sweep adopts it (" .. tostring(n) .. " new)")
+	check(lx.aetherCard ~= nil, "with a card of its own, so Auctioneer's extra tip"
+		.. " is not a stone box glued under a glass one")
+	check(T:Sweep() == 0, "and sweeping again adopts nothing twice")
+
+	check(T:Register(GameTooltip) == false, "registering an adopted frame is a no-op")
+
+	-- An anonymous frame has no global line strings to find. It must decline to
+	-- decorate rather than nil-index its way through the unit handler.
+	local anon = CreateFrame("Frame", nil, UIParent)
+	anon.__hasScript = {}
+	T:Register(anon)
+	check(pcall(T.OnUnit, T, anon), "a nameless tooltip does not throw the unit handler")
+
+	check(pcall(T.Diagnose, T), "and /aether tooltips reports without erroring")
+end)
+
+section("tooltips: a template this cannot parse costs a badge, not a line", function()
+	local T = A:GetModule("tooltips")
+	local real = _G.UNIT_LEVEL_TEMPLATE
+
+	-- A positional placeholder - which some locales use - is a shape the pattern
+	-- builder does not know. The dangerous outcome is not "no badge": it is a
+	-- pattern left with one trailing capture, which matches the WHOLE line, hands
+	-- back nil as the remainder, and writes an empty string over the text.
+	_G.UNIT_LEVEL_TEMPLATE = "Level %1$d"
+	check(T.LevelPattern() == nil, "an unparseable template yields no pattern at all")
+	check(T.ParseLevelLine("Level 20 Humanoid", false) == nil,
+		"so nothing parses, and nothing is rewritten")
+
+	_G.UNIT_LEVEL_TEMPLATE = "Stufe %d"
+	check(select(2, T.ParseLevelLine("Stufe 20 Humanoid", false)) == "Humanoid",
+		"and the pattern re-derives when the client's template is not English")
+
+	_G.UNIT_LEVEL_TEMPLATE = real
+	check(T.LevelPattern() ~= nil, "back to the real one")
+end)
+
+section("tooltips: the guild line", function()
+	local u = _G.__units.mouseover
+	local was, wasGuild, wasClass = u.isPlayer, u.guild, u.classification
+	u.isPlayer, u.guild, u.classification = true, "Samophlange", nil
+	u.class = "Shaman"
+
+	GameTooltip:SetUnit("mouseover")
+	local fs = _G.GameTooltipTextLeft2
+	check(fs:GetText() == "<Samophlange>", "the client writes the guild on its own line")
+	local r, g, b = fs:GetTextColor()
+	local want = A.Palette.c.ttGuild
+	check(math.abs(r - want[1]) < 0.001 and math.abs(b - want[3]) < 0.001,
+		"and it takes the accent, matched on the <brackets> rather than on a line"
+		.. " index - an unguilded player has no such line at all")
+
+	u.isPlayer, u.guild, u.classification = was, wasGuild, wasClass
+end)
+
+print("== tooltips: turning it off gives Blizzard's back ==")
+do
+	local T = A:GetModule("tooltips")
+	A:SetModuleEnabled("tooltips", false)
+	check(GameTooltip.NineSlice:IsShown(),
+		"disabling restores the client's own border - a hook that cannot be"
+		.. " removed still has to be able to become a no-op")
+	check(not GameTooltip.aetherCard:IsShown(), "and hides the card")
+
+	-- The parts that are easy to forget, because leaving them is not visible the
+	-- way a leftover card would be. "Off" has to mean the client's tooltip, not a
+	-- slightly haunted one.
+	local bar = _G.GameTooltipStatusBar
+	check(bar:GetHeight() == 8, "the health bar goes back to Blizzard's 8px")
+	check(not bar.lockColor, "and stops refusing the client's own colour")
+	check(not bar.aetherValue:IsShown(), "and our readout goes with it")
+	local path = _G.GameTooltipText:GetFont()
+	check(path and not path:find("Outfit"),
+		"and the client's own tooltip face comes back (" .. tostring(path) .. ")")
+
+	A:SetModuleEnabled("tooltips", true)
+	check(T.enabled, "and it comes back")
+	check(not GameTooltip.NineSlice:IsShown(),
+		"with the stone border off again - re-enabling has to redo what disabling"
+		.. " undid, or off-then-on is a third state neither of them describes")
+	local back = _G.GameTooltipText:GetFont()
+	check(back and back:find("Outfit"), "and Outfit back")
+	check(_G.GameTooltipStatusBar:GetHeight() == 7, "and the hairline back")
 end
 
 print("")

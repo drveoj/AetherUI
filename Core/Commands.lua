@@ -31,6 +31,7 @@ local function usage()
 		"|cff9d7bff/aether auras|r <refresh>  ·  what the aura API is actually saying",
 		"|cff9d7bff/aether chat|r <reskin · lines/badges on|off · whispers on|off>",
 		"|cff9d7bff/aether bags|r <open · sort · sell · junk on|off>  ·  what the container API is saying",
+		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
 end
@@ -544,6 +545,41 @@ handlers.bar = function(arg, rest)
 	barCfg[what] = v
 	A:Reconfigure()
 	A:Print(("bar %s %s -> %s"):format(tostring(barCfg.id), what, v))
+end
+
+--- /aether tooltips
+--
+--  The diagnostic matters more here than in most modules. This one reskins
+--  frames it does not own, alongside other addons that are doing the same thing,
+--  so "which frames did you actually find" and "is the stone border really off"
+--  are the two questions worth being able to answer without a screenshot.
+handlers.tooltips = function(arg)
+	local T = A:GetModule("tooltips")
+	if not T or not T.enabled then A:Print("tooltips module is not enabled.") return end
+	local cfg = A.Config:Module("tooltips")
+
+	if arg == "cursor" then
+		cfg.cursorItems = not cfg.cursorItems
+		A:Print("item and spell tooltips " .. (cfg.cursorItems
+			and "|cff9fe8b4follow the cursor|r."
+			or "|cff888888stay where whatever opened them put them|r."))
+	elseif arg == "anchor" then
+		cfg.unitAnchor = not cfg.unitAnchor
+		A:Print("unit tooltips " .. (cfg.unitAnchor
+			and "anchored to their corner - /aether unlock to move it."
+			or "back on Blizzard's default anchor."))
+	elseif arg == "badge" then
+		cfg.levelBadge = not cfg.levelBadge
+		A:Print("level badge " .. (cfg.levelBadge and "on" or "off")
+			.. " - this is the one setting that rewrites tooltip text.")
+	elseif arg == "sweep" then
+		local n = T:Sweep()
+		A:Print(("swept: |cffece6ff%d|r new tooltip frame%s adopted.")
+			:format(n, n == 1 and "" or "s"))
+	else
+		T:Diagnose()
+		A:Print("usage: /aether tooltips cursor|anchor|badge|sweep")
+	end
 end
 
 handlers.quests = function(arg)

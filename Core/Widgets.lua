@@ -349,6 +349,85 @@ function W.CreateOrb(parent, opts)
 end
 
 -- ---------------------------------------------------------------------------
+-- badge (a small circular chip carrying a number)
+-- ---------------------------------------------------------------------------
+
+local Badge = {}
+
+function Badge:SetLabel(text)
+	self.label:SetText(text or "")
+end
+
+--- fill, edge and ink, in that order. All three, because at this size the three
+--  have to be chosen together - a rim at 40% of a colour the disc is also 15% of
+--  is a different thing from a rim at 40% over nothing.
+function Badge:SetColors(fill, edge, ink)
+	if fill then self.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1) end
+	if edge then self.ring:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1) end
+	if ink then W.Color(self.label, ink) end
+end
+
+function Badge:Resize(size)
+	-- Snapped in the BADGE's own units, not UIParent's. A tooltip runs at 0.71,
+	-- so a 26-unit disc is 18.46 physical pixels: its rim lands across a pixel
+	-- boundary all the way round and the client resolves that as a ring of half
+	-- -lit greys. That is the whole of what "janky" looked like on screen.
+	local snapped = A:SnapIn(self, size)
+	self:SetSize(snapped, snapped)
+
+	-- And the rim laps OVER the disc rather than sitting flush inside it.
+	--
+	-- This is the lesson minimap_border() in Tools/generate_textures.py already
+	-- records: an edge the client anti-aliases is an edge that stair-steps, so
+	-- the border has to overlap it rather than stop short and leave the fringe
+	-- showing. Flush, the disc's own outer texel row peeked out from under a rim
+	-- too thin to cover it, which read as a second, rougher circle.
+	local proud = A:PxIn(self)
+	self.ring:ClearAllPoints()
+	self.ring:SetPoint("TOPLEFT", self, "TOPLEFT", -proud, proud)
+	self.ring:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", proud, -proud)
+end
+
+--- A small circular chip: a tinted disc, a rim, and a number.
+--
+--  Deliberately NOT W.CreateOrb at a smaller size, and not a pill either.
+--
+--  CreateOrb cuts its disc out with a MaskTexture, which is right at 46px with a
+--  portrait in it and wrong at 26: a mask edge is the client's to anti-alias and
+--  it does that poorly, so at this size the mask's stair-stepping is a visible
+--  part of the shape. Here the disc is drawn from Circle-Mask as ordinary
+--  ARTWORK instead - it is a 256px anti-aliased filled circle, and drawing it
+--  rather than masking with it puts the anti-aliasing back in our hands.
+--
+--  A pill at width == height would also be a circle, and would bring the pixel
+--  snapping for free, but its two cap slices would meet in the middle with a
+--  zero-width centre between them - the seam case Core\Glass.lua's header warns
+--  about, and the one place it cannot be avoided by snapping.
+--
+--  opts: { size = 26, style = "ttBadge" }
+function W.CreateBadge(parent, opts)
+	opts = opts or {}
+	local f = CreateFrame("Frame", nil, parent)
+
+	local disc = f:CreateTexture(nil, "ARTWORK")
+	disc:SetTexture(Media.texture.circleMask)
+	disc:SetAllPoints(f)
+	f.disc = disc
+
+	local ring = f:CreateTexture(nil, "OVERLAY")
+	ring:SetTexture(Media.texture.ring)
+	f.ring = ring
+
+	local label = W.Text(f, opts.style or "ttBadge", "CENTER")
+	label:SetPoint("CENTER", f, "CENTER", 0, 0)
+	f.label = label
+
+	for k, v in pairs(Badge) do f[k] = v end
+	f:Resize(opts.size or 26)
+	return f
+end
+
+-- ---------------------------------------------------------------------------
 -- icon slot (aura icons now, action buttons later)
 -- ---------------------------------------------------------------------------
 

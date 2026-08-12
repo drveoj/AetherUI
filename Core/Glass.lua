@@ -294,6 +294,44 @@ function Surface:_LayoutPillShadow()
 	Layout3(self._shadow, self, SnapIn(self, (h + 2 * s) / 2), s)
 end
 
+--- An outer bloom in an arbitrary colour: the deck's `box-shadow: 0 0 24px <c>`.
+--
+--  Distinct from SetShadow, which is the ambient drop shadow every surface wears
+--  and is always the skin's near-black. This one is a *signal* - an elite mob, an
+--  epic item - so the caller picks the colour, and it draws additively so it
+--  brightens what is behind it rather than tinting it.
+--
+--  It reuses the shadow texture rather than Glow-Soft deliberately. Glow-Soft is
+--  a radial blob, which stretched across a 300x120 tooltip card reads as an oval
+--  hovering behind a rectangle. The shadow art is the panel's own silhouette,
+--  blurred, so its bloom follows the corner radius the way a real one would.
+--
+--  Sub-layer -7: above the drop shadow at -8, below the fill at 0.
+function Surface:SetRimGlow(color)
+	if not color then
+		if self._rim then ShowAll(self._rim, false) end
+		self._rimColor = nil
+		return
+	end
+
+	if not self._rim then
+		self._rim = Build9(self, Media.texture.shadow, "BACKGROUND", -7)
+		ApplyTexCoords(self._rim, Media.slice.shadow, Media.textureSize.shadow)
+		for i = 1, 9 do self._rim[i]:SetBlendMode("ADD") end
+	end
+
+	self._rimColor = color
+	self:_LayoutRimGlow()
+	Tint(self._rim, color)
+	ShowAll(self._rim, true)
+end
+
+function Surface:_LayoutRimGlow()
+	if not self._rim then return end
+	local c = SnapIn(self, self._corner or 12)
+	Layout9(self._rim, self, c * 2, c / 2)
+end
+
 function Surface:ApplySkin(fillToken, edgeToken)
 	local c = A.Palette.c
 	self:SetFillColor(c[fillToken or "glass"] or c.glass)
@@ -347,6 +385,7 @@ function Glass.SetPanelCorner(f, corner)
 	Layout9(f._edge, f, corner, 0)
 	-- the shadow's geometry is derived from the corner, so it has to follow
 	f:_LayoutPanelShadow()
+	f:_LayoutRimGlow()
 end
 
 --- Capsule (unit frames, buffs, cast bar, nameplates).

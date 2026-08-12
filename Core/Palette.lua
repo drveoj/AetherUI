@@ -137,6 +137,66 @@ Palette.skins = {
 			[5] = { edge = C(255, 168,  92, 0.90), glow = C(255, 168,  92, 0.45) },   -- legendary
 		},
 
+		-- Tooltips (concept 6a / 6b).
+		--
+		-- These get their own names rather than borrowing, for the same reason the
+		-- bank triple above does. ttFriendly is #8ec8ff to a digit, which is also
+		-- `cast[1]`; ttHostile and ttNeutral are within a shade of `hostile` and
+		-- `neutral`. Aliasing them would mean the next time somebody retunes the
+		-- cast bar for readability mid-pull, every friendly player's name in every
+		-- tooltip moves with it. A tooltip name is answering a different question.
+		--
+		-- ttTitle, ttLore and ttElite are genuinely new: the deck's title ink is a
+		-- half-step brighter than `text`, and neither gold exists anywhere else in
+		-- this UI.
+		ttTitle     = C(240, 236, 255, 1.00),   -- spell/item name
+		ttLore      = C(232, 212, 154, 1.00),   -- spell body copy
+		ttElite     = C(232, 200, 106, 1.00),   -- the ELITE chip and its rim
+		ttEliteInk  = C( 20,  16,  31, 1.00),   -- dark text ON the gold chip
+		ttGuild     = C(205, 188, 255, 0.80),   -- <Samophlange>
+		ttFriendly  = C(142, 200, 255, 1.00),   -- a friendly player's name
+		ttHostile   = C(240, 138, 122, 1.00),
+		ttNeutral   = C(232, 200, 106, 1.00),
+		ttFriendlyNPC = C(159, 224, 168, 1.00),
+		-- The deck's health fill, which is a shade deeper than the HUD's `health`
+		-- because it sits on a 7px hairline rather than on a 12px capsule and a
+		-- pale green that thin reads as grey.
+		ttHealth    = { C(127, 214, 138), C(74, 168, 88) },
+		ttHealthBg  = C(255, 255, 255, 0.08),
+		ttDivider   = C(150, 130, 235, 0.18),
+		-- The level badge when the unit has no reaction worth colouring (your own
+		-- pet, a friendly player). Reaction badges tint from the name colour at
+		-- .15 bg / .40 edge, which is the deck's recipe rather than a token.
+		-- The level badge when the unit is a PLAYER. Screen 6a is explicit about
+		-- this and it is easy to miss: the anchored player card's badge is the
+		-- skin's own purple - bg .18, rim .35, number #cdbcff - while only the
+		-- three NPC variants tint theirs from the reaction. It reads correctly
+		-- once you see why: a player's reaction is nearly always friendly, so
+		-- tinting the badge by it says nothing and costs the card its accent.
+		ttBadgeBg   = C(150, 130, 235, 0.18),
+		ttBadgeEdge = C(150, 130, 235, 0.35),
+		ttBadgeInk  = C(205, 188, 255, 1.00),
+
+		-- An item title's INK, which is not the same value as its rim.
+		--
+		-- The first pass reused itemQuality[q].edge for both, which is right on
+		-- this skin and wrong on Daylight: those numbers are deliberately dark
+		-- there, because a rim on a pale panel has to be. Reused as text they put
+		-- a near-black item name on a pale wash while every other string in the
+		-- tooltip stayed white. A rim is read as a shape and ink is read as
+		-- letters; they want different contrast, so they get different tokens.
+		--
+		-- These are the deck's own scale: #9d9d9d, white at .90, #6fdc7f, #6fa8ff,
+		-- #b47fff, plus a legendary the deck does not draw.
+		ttQuality = {
+			[0] = C(157, 157, 157, 1.00),
+			[1] = C(255, 255, 255, 0.90),
+			[2] = C(111, 220, 127, 1.00),
+			[3] = C(111, 168, 255, 1.00),
+			[4] = C(180, 127, 255, 1.00),
+			[5] = C(255, 168,  92, 1.00),
+		},
+
 		-- A modal is the one surface that must NOT be glass. Frosted-on-frosted
 		-- over a lit world is unreadable, and a confirmation nobody can read is
 		-- worse than no confirmation. Near-opaque, with a scrim behind it.
@@ -255,6 +315,44 @@ Palette.skins = {
 			[3] = { edge = C( 30, 108, 208, 0.95), glow = C( 60, 140, 232, 0.30) },
 			[4] = { edge = C(124,  56, 208, 0.95), glow = C(150,  90, 232, 0.38) },
 			[5] = { edge = C(206, 108,  16, 0.95), glow = C(232, 148,  56, 0.38) },
+		},
+
+		-- Tooltips. Light type again, for the reason the header of this skin gives:
+		-- the rim and the shadow make the panel, the fill does not, so the ink can
+		-- stay white and every OUTLINE role keeps working.
+		--
+		-- The two golds are the exception and they move. Daylight's fill is a warm
+		-- pale wash, and #e8d49a lore gold on it is a cream note on a cream field -
+		-- the body copy stops being distinguishable from the labels above it, which
+		-- is the one job that colour has. Both are pulled down and saturated until
+		-- they read as gold ON something rather than as part of it.
+		ttTitle     = C(255, 255, 255, 1.00),
+		ttLore      = C(255, 232, 176, 1.00),
+		ttElite     = C(255, 214, 120, 1.00),
+		ttEliteInk  = C( 58,  42,  10, 1.00),
+		ttGuild     = C(255, 252, 245, 0.80),
+		ttFriendly  = C(190, 228, 255, 1.00),
+		ttHostile   = C(255, 154, 118, 1.00),
+		ttNeutral   = C(255, 214, 120, 1.00),
+		ttFriendlyNPC = C(159, 232, 180, 1.00),
+		ttHealth    = { C(159, 232, 180), C(111, 214, 150) },
+		ttHealthBg  = C(255, 255, 255, 0.16),
+		ttDivider   = C(255, 255, 255, 0.30),
+		ttBadgeBg   = C(255, 252, 245, 0.22),
+		ttBadgeEdge = C(255, 255, 255, 0.55),
+		ttBadgeInk  = C(255, 255, 255, 1.00),
+
+		-- Item title ink. Lifted well clear of this skin's itemQuality RIMS, which
+		-- are dark on purpose - see the note beside the Midnight set. Poor and
+		-- common in particular have to stay legible as light type on a pale fill,
+		-- so they go to a dimmed white rather than to a grey.
+		ttQuality = {
+			[0] = C(230, 228, 235, 0.60),
+			[1] = C(255, 255, 255, 0.92),
+			[2] = C(150, 255, 170, 1.00),
+			[3] = C(160, 205, 255, 1.00),
+			[4] = C(212, 175, 255, 1.00),
+			[5] = C(255, 200, 140, 1.00),
 		},
 
 		-- The modal stays dark on both skins. It sits over the chrome rather than

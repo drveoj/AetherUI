@@ -214,6 +214,27 @@ Media.style = {
 	bagBagSub    = { "light",    10, "" },   -- "20 - herbs only"
 	bagGlyph     = { "bold",     12, "" },   -- the letter on a bag tile
 	bagPrice     = { "semibold",  9, "" },   -- "10g" on a purchasable bank slot
+
+	-- Tooltips (concept 6a / 6b). The deck's own sizes, because the tooltip is
+	-- drawn at profile.scale like every other module - 15 at 0.71 is 10.7 virtual
+	-- units, which is where the deck put it.
+	--
+	-- ttBody is the one that matters and it is Light rather than Regular, unlike
+	-- chatText. Chat is a paragraph you read; a tooltip is a table you scan, and
+	-- the deck weights it at 300 throughout precisely so the ONE thing carrying
+	-- weight on the card - the name - is the thing your eye lands on first.
+	--
+	-- These three are also the roles applied to the client's own font OBJECTS
+	-- (GameTooltipHeaderText / GameTooltipText / GameTooltipTextSmall), so every
+	-- line another addon adds inherits them without knowing we exist. ttName maps
+	-- to the header object, ttBody to the body object, ttSmall to the small one.
+	ttName       = { "semibold", 15, "" },   -- unit / spell / item name
+	ttBody       = { "light",    13, "" },   -- everything the client writes
+	ttSmall      = { "light",    12, "" },
+	ttSub        = { "light",    12, "" },   -- "Humanoid - Hostile"
+	ttBadge      = { "semibold", 12, "" },   -- the number in the level badge
+	ttChip       = { "bold",     10, "" },   -- ELITE
+	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
 }
 
 -- ---------------------------------------------------------------------------

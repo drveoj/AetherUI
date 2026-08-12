@@ -29,4 +29,5 @@ Modules\Bags.lua
 Modules\Minimap.lua
 Modules\XPBar.lua
 Modules\Chat.lua
+Modules\Tooltips.lua
 Modules\Zen.lua

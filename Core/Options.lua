@@ -764,9 +764,69 @@ end
 --  The counter is fine inside a page - it just needs to increase in declaration
 --  order - but across pages it lands in the hundreds, which made "put profiles
 --  last" a matter of guessing a bigger number. These are the numbers instead.
+--- Tooltips. Grouped by what a switch actually does rather than by which part of
+--  the card it touches, because the honest division here is "styling" versus
+--  "changes the words" - and the second group is the one somebody debugging an
+--  interaction with MobInfo2 or Pawn will want to reach first.
+local function TooltipsGroup()
+	local function at(k) return { "modules", "tooltips", k } end
+	return group("Tooltips", {
+		enabled = toggle("Enabled", nil, at("enabled")),
+		scale = range("Size", "On top of the global scale.", at("scale"), 0.6, 1.6, 0.05,
+			{ after = "reconfigure" }),
+		corner = range("Corner radius", nil, at("corner"), 4, 24, 1, { after = "reconfigure" }),
+		restyleFonts = toggle("Aether typography", "Restyles the client's tooltip"
+			.. " fonts, so every line - including lines other addons add - comes"
+			.. " out in Outfit.", at("restyleFonts"), { after = "reconfigure" }),
+
+		anchoring = group("Anchoring", {
+			unitAnchor = toggle("Anchor unit tooltips", "World mouseovers go to the"
+				.. " corner instead of following the mouse. Drag it in unlock mode."
+				.. " Only affects tooltips that took the default anchor.",
+				at("unitAnchor")),
+			cursorItems = toggle("Item and spell tooltips follow the cursor",
+				"Only where nothing else asked for a position - a bag slot or a"
+				.. " merchant row keeps the anchor it chose.", at("cursorItems")),
+		}, { inline = true }),
+
+		content = group("Unit header", {
+			-- Named, not positional. An AceConfig args table is keyed by STRING;
+			-- a bare note() lands in the array part and the registry rejects the
+			-- whole tree, taking every page down with it.
+			caution = note("|cffcdbcffThese four change the tooltip's text|r, not just its"
+				.. " colour. Everything else on this page is styling. If a tooltip"
+				.. " ever reads oddly alongside MobInfo2 or another mob addon,"
+				.. " this is the group to turn off first."),
+			levelBadge = toggle("Level badge", "Moves the level out of the type line"
+				.. " and into a disc beside the name. Declines silently if the line"
+				.. " does not parse.", at("levelBadge")),
+			deferToLevelReaders = toggle("...unless an addon is reading that line",
+				"MobInfo2 finds a mob's extra info by looking for the level NUMBER in"
+				.. " the tooltip line. Move it into the badge and it finds nothing."
+				.. " Leave this on and the badge stands down while MobInfo2 is"
+				.. " running; /aether tooltips will tell you it has.",
+				at("deferToLevelReaders"), { defaultTrue = true }),
+			eliteChip = toggle("Elite chip", nil, at("eliteChip")),
+			reactionWord = toggle("Append the reaction", "\"Humanoid\" becomes"
+				.. " \"Humanoid - Hostile\".", at("reactionWord")),
+			healthValues = toggle("Health numbers", nil, at("healthValues")),
+		}, { inline = true }),
+
+		colour = group("Colour", {
+			qualityBorder = toggle("Quality rim on items", nil, at("qualityBorder")),
+			loreGold = toggle("Lore gold on spell text", "Only lines the client left"
+				.. " white - anything another addon coloured keeps its colour.",
+				at("loreGold")),
+			classColorNames = toggle("Class-colour player names", "Off is the deck's"
+				.. " own treatment: one blue for every friendly player.",
+				at("classColorNames")),
+		}, { inline = true }),
+	})
+end
+
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
-	quests = 6, bags = 7, chat = 8, fader = 9, xpbar = 10,
+	quests = 6, bags = 7, chat = 8, tooltips = 9, fader = 10, xpbar = 11,
 	profiles = 99,     -- last, always
 }
 
@@ -785,6 +845,7 @@ function Options:Build()
 			quests = QuestGroup(),
 			bags = BagsGroup(),
 			chat = ChatGroup(),
+			tooltips = TooltipsGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
 		},
