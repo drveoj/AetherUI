@@ -401,8 +401,25 @@ function Glass.CreatePill(parent, opts)
 	f._fill = Build3(f, Media.texture.pill, "BACKGROUND", 0, Media.slice.pill, Media.textureSize.pill)
 	f._edge = Build3(f, Media.texture.pillEdge, "BORDER", 0, Media.slice.pill, Media.textureSize.pill)
 
+	--- A pill is a HORIZONTAL capsule: the caps sit left and right and their
+	--  width comes from the height, so the ends stay circular however wide the
+	--  frame is. That holds only while the frame is at least as wide as it is
+	--  tall.
+	--
+	--  Taller than wide, the two caps are each half the HEIGHT and are anchored
+	--  to opposite edges of a narrower frame - so they overlap through the
+	--  middle and the whole thing renders as one enormous circle bulging out of
+	--  its own bounds. A vertical rail built with CreatePill came out looking
+	--  like a black balloon.
+	--
+	--  Clamped rather than asserted, because the failure is silent and the
+	--  degraded shape is the right one anyway: at w < h the cap becomes w/2 and
+	--  the pill is a rounded rectangle with semicircular sides, which is what
+	--  anybody asking for a tall capsule meant. Anything genuinely wanting a
+	--  tall rounded shape should use CreatePanel with a corner radius.
 	local function resize(self)
-		local cap = SnapIn(self, (self:GetHeight() or 0) / 2)
+		local h, w = self:GetHeight() or 0, self:GetWidth() or 0
+		local cap = SnapIn(self, math.min(h, w) / 2)
 		if cap <= 0 then return end
 		Layout3(self._fill, self, cap, 0)
 		Layout3(self._edge, self, cap, 0)

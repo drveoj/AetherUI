@@ -145,7 +145,14 @@ function TB:Build()
 	-- The rail is a surface of its own rather than a region of the panel: it
 	-- stays on screen when the drawer is shut, so it cannot be part of the thing
 	-- that slides away.
-	local rail = Glass.CreatePill(UIParent, {
+	--
+	-- A PANEL, not a pill. A pill's caps sit left and right and take their width
+	-- from the height, which is right for the version chip and wrong for a rail
+	-- that is four times taller than it is wide: the caps overlap through the
+	-- middle and it renders as one huge circle. A 9-slice panel is the same
+	-- rounded shape at any aspect.
+	local rail = Glass.CreatePanel(UIParent, {
+		corner = RAIL_CORNER,
 		shadow = A.db.profile.glass.shadow,
 	})
 	rail:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -328,21 +335,45 @@ function TB:Layout()
 	self:PointChevron()
 end
 
+-- Which way the chevron points, as a rotation of the art.
+--
+-- `Chevron.tga` IS A V - it points DOWN. The generator says so in as many
+-- words ("A small V, for 'there is something folded away under here'"), and the
+-- first version of this file assumed it pointed RIGHT and built its rotations
+-- from there. Every dock was ninety degrees out: docked left, closed, it drew a
+-- downward V on a drawer that opens sideways.
+--
+-- Rotation is counter-clockwise, so a down-pointing arrow (0, -1) becomes
+-- (1, 0) - right - at +pi/2.
+local CHEV_DOWN, CHEV_UP    = 0, math.pi
+local CHEV_RIGHT, CHEV_LEFT = math.pi / 2, -math.pi / 2
+
 --- The chevron points the way the drawer will go if you click it.
+--
+--  Left and right docks get < and >; top and bottom get ^ and v. The drawer
+--  moves along the axis it is docked on, so an arrow across that axis would be
+--  pointing at nothing.
 function TB:PointChevron()
 	local edge = self:Dock()
-	local opening = (self._want or 0) > 0.5
+	local open = (self._want or 0) > 0.5
 	local g = self.rail and self.rail.chev and self.rail.chev.glyph
 	if not g then return end
 
-	-- The art points right. Rotate rather than ship four textures.
-	local turns = {
-		LEFT   = opening and math.pi or 0,
-		RIGHT  = opening and 0 or math.pi,
-		TOP    = opening and -math.pi / 2 or math.pi / 2,
-		BOTTOM = opening and math.pi / 2 or -math.pi / 2,
-	}
-	if g.SetRotation then pcall(g.SetRotation, g, turns[edge] or 0) end
+	-- Open, the click RETREATS the drawer to its own edge; shut, it emerges
+	-- away from it.
+	local turns
+	if edge == "LEFT" then
+		turns = open and CHEV_LEFT or CHEV_RIGHT
+	elseif edge == "RIGHT" then
+		turns = open and CHEV_RIGHT or CHEV_LEFT
+	elseif edge == "TOP" then
+		turns = open and CHEV_UP or CHEV_DOWN
+	else
+		turns = open and CHEV_DOWN or CHEV_UP
+	end
+
+	self._chevronFacing = turns
+	if g.SetRotation then pcall(g.SetRotation, g, turns) end
 end
 
 -- ---------------------------------------------------------------------------

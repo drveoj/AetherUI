@@ -49,9 +49,32 @@ local function widgetBase(kind)
 	function o:ClearAllPoints() self.__points = {} end
 	function o:SetAllPoints(other) self.__points = { { "ALL", other } } end
 
-	function o:SetSize(w, h) self.__w, self.__h = w, h end
-	function o:SetWidth(w) self.__w = w end
-	function o:SetHeight(h) self.__h = h end
+	-- Resizing FIRES OnSizeChanged, as the client does. Without this a pill
+	-- never lays out in a test: Glass.CreatePill hangs its cap arithmetic off
+	-- that script and calls it once at creation, when the frame is still 0x0 -
+	-- so every pill in the suite was a zero-size shape that no assertion could
+	-- see the geometry of. A vertical rail rendering as one enormous circle
+	-- went through the whole suite unnoticed for exactly that reason.
+	local function sized(self, ow, oh)
+		if self.__w == ow and self.__h == oh then return end
+		local fn = self.__scripts and self.__scripts.OnSizeChanged
+		if fn then fn(self, self.__w or 0, self.__h or 0) end
+	end
+	function o:SetSize(w, h)
+		local ow, oh = self.__w, self.__h
+		self.__w, self.__h = w, h
+		sized(self, ow, oh)
+	end
+	function o:SetWidth(w)
+		local ow = self.__w
+		self.__w = w
+		sized(self, ow, self.__h)
+	end
+	function o:SetHeight(h)
+		local oh = self.__h
+		self.__h = h
+		sized(self, self.__w, oh)
+	end
 	-- SetAllPoints really does size the frame, so a mock that ignored that would
 	-- report 0 for anything that fills its parent. Resolved lazily rather than
 	-- copied, so a later resize of the parent still propagates.
@@ -239,6 +262,11 @@ local function newTexture(owner, layer, sub)
 	-- A nine-slice's pieces each round their own edges to the pixel grid unless
 	-- this is turned off, which is what puts a bright or dark hairline exactly
 	-- where the arc meets the straight edge.
+	-- Recorded, not swallowed. Which way a chevron points is a real question
+	-- with a real answer, and a no-op SetRotation makes "it rotated the art"
+	-- unaskable - the module can record its intent and never reach the texture.
+	function t:SetRotation(r) self.__rotation = r end
+	function t:GetRotation() return self.__rotation or 0 end
 	function t:SetSnapToPixelGrid(v) self.__snap = v end
 	function t:SetTexelSnappingBias(v) self.__bias = v end
 	function t:SetVertexColor(r, g, b, a)
@@ -271,7 +299,6 @@ local function newTexture(owner, layer, sub)
 		self.__masks[#self.__masks + 1] = m
 	end
 	function t:GetNumMaskTextures() return #self.__masks end
-	function t:SetRotation() end
 	return t
 end
 
@@ -8375,6 +8402,73 @@ do
 			.. " largest thing on the rail (" .. TBm.rail.chev:GetWidth()
 			.. " vs " .. TBm.rail.gear:GetWidth() .. ")")
 		check(TBm.rail.gear ~= nil, "and there is a gear")
+
+		-- The chevron points along the axis the drawer MOVES on: < and > for the
+		-- side docks, ^ and v for the top and bottom. An arrow across that axis
+		-- points at nothing.
+		--
+		-- Chevron.tga is a V - it points DOWN - and the first version of this
+		-- assumed it pointed right, which put every dock ninety degrees out.
+		-- Rotation is counter-clockwise, so down (0,-1) becomes right at +pi/2.
+		do
+			local DOWN, UP    = 0, math.pi
+			local RIGHT, LEFT = math.pi / 2, -math.pi / 2
+			local want = {
+				LEFT   = { open = LEFT,  shut = RIGHT },
+				RIGHT  = { open = RIGHT, shut = LEFT },
+				TOP    = { open = UP,    shut = DOWN },
+				BOTTOM = { open = DOWN,  shut = UP },
+			}
+			local bad = {}
+			for _, e in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
+				TBm:SetDock(e)
+				TBm:SetOpen(true, true)
+				if math.abs(TBm._chevronFacing - want[e].open) > 0.01 then
+					bad[#bad + 1] = e .. " open"
+				end
+				TBm:SetOpen(false, true)
+				if math.abs(TBm._chevronFacing - want[e].shut) > 0.01 then
+					bad[#bad + 1] = e .. " shut"
+				end
+			end
+			check(#bad == 0,
+				"the chevron faces the way the drawer will go, at every dock and"
+				.. " both ways - side docks get < and >, top and bottom get ^ and"
+				.. " v (" .. (#bad > 0 and table.concat(bad, ", ") or "all eight")
+				.. ")")
+
+			-- ...and it really is rotating the art, not just recording a number.
+			TBm:SetDock("LEFT"); TBm:SetOpen(false, true)
+			check(TBm.rail.chev.glyph.__rotation ~= nil,
+				"and the rotation reaches the texture")
+			TBm:SetOpen(true, true)
+		end
+
+		-- A PILL is a horizontal capsule: its caps sit left and right and take
+		-- their width from the HEIGHT, so the ends stay circular however wide it
+		-- gets. Four times taller than wide, those two caps are each half the
+		-- height, anchored to opposite edges of a narrower frame - they overlap
+		-- through the middle and the rail renders as one enormous circle. It
+		-- did, on screen, and nothing in here noticed.
+		check(TBm.rail._kind == "panel",
+			"the rail is a 9-slice PANEL, which is the same rounded shape at any"
+			.. " aspect - a pill is only a capsule while it is wider than it is"
+			.. " tall (kind = " .. tostring(TBm.rail._kind) .. ")")
+
+		-- ...and a pill misused that way now degrades instead of exploding.
+		do
+			local tall = A.Glass.CreatePill(UIParent, {})
+			tall:SetSize(40, 200)
+			local cap = tall._fill[1]:GetWidth()
+			check(cap <= 20 + 0.5,
+				"and a pill asked for a tall shape clamps its caps to half the"
+				.. " WIDTH rather than half the height, so it can never draw"
+				.. " outside its own bounds - the degraded shape is a rounded"
+				.. " rectangle, which is what anybody asking for a tall capsule"
+				.. " meant anyway (cap " .. string.format("%.0f", cap)
+				.. " of a 40-wide frame)")
+			tall:Hide()
+		end
 
 		local opened = false
 		local wasOpen = A.Options.Open
