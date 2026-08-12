@@ -932,6 +932,8 @@ ICON_ORDER = [
     "whatsnew",
     # mail, empty and full
     "mail", "mailfull",
+    # the frame lock
+    "lock",
 ]
 
 
@@ -1110,6 +1112,19 @@ def _glyph(name, cell):
         clapper = arc(64, 92, 8, 200, 340)
         crown = seg(64, 30, 64, 36)
         return U(dome, sides, lip, clapper, crown)
+
+    if name == "lock":
+        # A padlock: a body and a shackle. ONE glyph for both states, because
+        # the tile carries on and off in its chip the way every other settings
+        # tile does - a second drawing would be a second thing saying the same
+        # thing, and they can disagree.
+        #
+        # The shackle is an arc rather than a squared-off staple: at 17px in the
+        # chip a staple's two corners land on the same texel and it reads as a
+        # blob with a bite out of it.
+        return U(rect(34, 62, 94, 108),
+                 arc(64, 62, 20, 0, 180),
+                 seg(44, 62, 44, 54), seg(84, 62, 84, 54))
 
     # An envelope, twice: an outline for "no mail" and a solid one for "mail".
     # Same silhouette, same corners, so the two read as one control in two

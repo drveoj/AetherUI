@@ -139,6 +139,12 @@ local function choice(name, desc, path, values, opts)
 	}
 end
 
+--- `name` may be a STRING or a FUNCTION returning one.
+--
+--  Ace resolves a function member when the page is built
+--  (AceConfigDialog-3.0.lua:187), which is what lets a button that leaves a
+--  mode running name what it will do NEXT rather than what it did first. See
+--  `unlock` and `bind`.
 local function action(name, desc, fn)
 	return {
 		type = "execute", name = name, desc = desc, order = next_(), func = fn,
@@ -210,7 +216,21 @@ local function GeneralGroup()
 			{ after = "restyle", percent = true }),
 
 		posHeader = header("Positions and keys"),
-		bind = action("Keybind mode",
+		-- BOTH of these name what pressing them will DO, not what they did the
+		-- first time. They are toggles wearing a button's clothes: each one
+		-- closes this panel and leaves a mode running, so the next time anybody
+		-- opens this page the mode is already on and a button still offering to
+		-- turn it on is a button lying about the state of the screen.
+		--
+		-- Ace calls a `name` that is a function (AceConfigDialog-3.0.lua:187,
+		-- via GetOptionsMemberValue), and it calls it when the page is BUILT -
+		-- which is the moment that matters, because the panel is shut for the
+		-- whole time the mode is on.
+		bind = action(function()
+				local AB = A:GetModule("actionbars")
+				return (AB and AB.enabled and AB.bindMode)
+					and "Leave keybind mode" or "Keybind mode"
+			end,
 			"Hover a button and press a key. Keys go into Blizzard's own binding"
 			.. " set, so they survive this addon being disabled and show up in the"
 			.. " keybinding panel.",
@@ -218,7 +238,10 @@ local function GeneralGroup()
 				local AB = A:GetModule("actionbars")
 				if AB and AB.enabled then A.Options:Close(); AB:ToggleBindMode() end
 			end),
-		unlock = action("Unlock frames", "Drag to move, scroll to nudge.",
+		unlock = action(function()
+				return A.Movers.unlocked and "Lock frames" or "Unlock frames"
+			end,
+			"Drag to move, scroll to nudge. Also on a tile in the Toolbox.",
 			function() A.Options:Close(); A.Movers:Toggle() end),
 		reset = action("Reset positions", "Forget every saved anchor.",
 			function() A.Movers:ResetAll() end),

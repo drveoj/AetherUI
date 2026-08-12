@@ -7237,6 +7237,52 @@ do
 	check((kinds.toggle or 0) > 0 and (kinds.range or 0) > 0 and (kinds.select or 0) > 0,
 		"toggles, ranges and selects all present")
 
+	-- A button that leaves a MODE running has to name what it will do next.
+	--
+	-- Both of these close the panel and leave something switched on, so the
+	-- next time anybody opens this page the mode is already running - and a
+	-- button still offering to start it is a button lying about the state of
+	-- the screen. Ace resolves a function `name` when the page is built, which
+	-- is exactly the moment that matters here.
+	do
+		local function Find(node, key)
+			for k, opt in pairs(node.args or {}) do
+				if k == key then return opt end
+				if opt.type == "group" then
+					local hit = Find(opt, key)
+					if hit then return hit end
+				end
+			end
+		end
+
+		local unlock = Find(tree, "unlock")
+		check(unlock and type(unlock.name) == "function",
+			"the unlock button names itself dynamically rather than carrying a"
+			.. " fixed string")
+
+		A.Movers:Lock()
+		check(unlock.name() == "Unlock frames", "locked, it offers to unlock")
+		A.Movers:Unlock()
+		check(unlock.name() == "Lock frames",
+			"and once they ARE unlocked it offers to lock - the panel is shut"
+			.. " for the whole time the mode is on, so this is read on the next"
+			.. " open (got " .. tostring(unlock.name()) .. ")")
+		A.Movers:Lock()
+
+		local bind = Find(tree, "bind")
+		check(bind and type(bind.name) == "function",
+			"and keybind mode does the same - it has the identical shape and"
+			.. " would have the identical bug")
+		local AB = A:GetModule("actionbars")
+		if AB and AB.enabled then
+			AB:SetBindMode(false)
+			check(bind.name() == "Keybind mode", "off, it offers to enter")
+			AB:SetBindMode(true)
+			check(bind.name() == "Leave keybind mode", "on, it offers to leave")
+			AB:SetBindMode(false)
+		end
+	end
+
 	-- and the accessors round-trip through the real db
 	local widthOpt = tree.args.unitframes.args.width
 	local before = widthOpt.get({ arg = widthOpt.arg, type = "range" })
@@ -8153,33 +8199,83 @@ do
 	check(A:GetModule("zen").enabled == true, "and comes back")
 	A.db.profile.modules.zen.enabled = wasZen
 
-	-- A CVar. Ours to write and NOT ours to keep - a player turning damage
-	-- numbers off here has made a choice, not lent us a CVar.
-	local dmg
-	for _, t in ipairs(TBm.TILES) do if t.kind == "cvar" then dmg = t end end
-	check(dmg ~= nil, "there is a CVar tile")
-	_G.__cvars[dmg.cvar] = "1"
-	check(TBm:TileState(dmg) == true, "a CVar tile reads the client setting")
-	TBm:ToggleTile(dmg)
-	check(_G.__cvars[dmg.cvar] == "0", "and toggling writes it")
-	TBm:ToggleTile(dmg)
-	check(_G.__cvars[dmg.cvar] == "1", "both ways")
+	-- A MODE. No stored value behind it at all: it is read off the module that
+	-- owns the state, and it is off at every login by definition.
+	local lock
+	for _, t in ipairs(TBm.TILES) do if t.key == "lock" then lock = t end end
+	check(lock and lock.kind == "mode", "there is an Unlock frames tile")
 
-	-- A CVar this client does not have is refused rather than thrown at.
+	A.Movers:Lock()
+	check(TBm:TileState(lock) == false, "locked reads Off")
+	TBm:ToggleTile(lock)
+	check(A.Movers.unlocked == true,
+		"and toggling it moves the MOVERS flag rather than a copy in the"
+		.. " profile - /aether lock and the options panel move the same one, and"
+		.. " a second answer would go stale the first time either was used")
+	check(TBm:TileState(lock) == true, "which reads back On")
+
+	-- Changed BEHIND the tile's back, which is the case a cached value gets
+	-- wrong and the whole reason `mode` reads through to the module.
+	A.Movers:Lock()
+	check(TBm:TileState(lock) == false,
+		"and /aether lock, which never touches the Toolbox, is seen by the tile"
+		.. " on the next read")
+
+	-- Switching a mode ON gets the drawer out of the way. You cannot drag a
+	-- frame that is underneath the panel you used to unlock it.
+	TBm:SetOpen(true, true)
+	TBm:ToggleTile(lock)
+	check(not TBm:IsOpen(),
+		"turning a mode on closes the drawer - both of these are things you do"
+		.. " TO the screen, and the drawer is over half of it")
+	A.Movers:Lock()
+
+	TBm:SetOpen(true, true)
+	check(TBm:IsOpen(), "...and the drawer reopens")
+	A.Movers:Unlock()
+	TBm:ToggleTile(lock)
+	check(TBm:IsOpen(),
+		"but switching one OFF leaves it open - then you are finished rather"
+		.. " than starting")
+	A.Movers:Lock()
+
+	-- Every tile explains itself. Two of these four do something drastic
+	-- enough to the screen that finding out by pressing it is not reasonable.
 	do
-		local ghost = { kind = "cvar", key = "ghost", label = "Nope",
-		                cvar = "aetherui_no_such_cvar" }
-		check(TBm:TileState(ghost) == false, "a CVar that is not here reads false")
-		-- The RETURN VALUE proves nothing here: ToggleTile pcalls SetCVar, so it
-		-- answers false whether it probed first or fired blind and swallowed the
-		-- throw. The client logs the blind one, which is why the mock counts it.
-		local before = _G.__badCVarWrites
-		check(TBm:ToggleTile(ghost) == false,
-			"writing a CVar this client does not have is refused")
-		check(_G.__badCVarWrites == before,
-			"and refused by PROBING rather than by throwing and catching - the"
-			.. " client logs a blind write, so a pcall around it looks identical"
-			.. " from in here and is not the same thing at all")
+		local missing = {}
+		for _, t in ipairs(TBm.TILES) do
+			if not t.tip or t.tip == "" then missing[#missing + 1] = t.key end
+		end
+		check(#missing == 0,
+			"every settings tile carries a tooltip ("
+			.. (#missing > 0 and table.concat(missing, ", ") or "all four") .. ")")
+
+		-- Read at HOVER time off __tile, not captured when the frame was built.
+		-- These frames are reused - a launcher the player adds takes whichever
+		-- slot is next - so a closed-over tile describes what the frame used to
+		-- be.
+		local f = TBm.content.tiles[1]
+		f.__tile = TBm.TILES[2]
+		TBm:TileTooltip(f)
+		local shown = _G.GameTooltipTextLeft1:GetText()
+		check(shown == TBm.TILES[2].label,
+			"and the tooltip describes whatever the frame is showing NOW (got "
+			.. tostring(shown) .. ")")
+		f.__tile = TBm.TILES[1]
+	end
+
+	-- The four the deck asks for, and nothing else.
+	do
+		local keys = {}
+		for _, t in ipairs(TBm.TILES) do keys[#keys + 1] = t.key end
+		check(table.concat(keys, ",") == "zen,combat,lock,keybinds",
+			"the four settings tiles, in order (got " .. table.concat(keys, ",")
+			.. ")")
+		for _, t in ipairs(TBm.TILES) do
+			check(A.Media:Icon(t.key) ~= nil,
+				t.key .. " has a glyph on the sheet - a tile's key IS its icon"
+				.. " name, so a rename here is a blank chip there")
+		end
 	end
 
 	-- Daylight is deferred, so the tile is NOT BUILT rather than built and

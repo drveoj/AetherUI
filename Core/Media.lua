@@ -110,6 +110,7 @@ Media.icons = {
 		"combat", "gear", "pin", "pinned",
 		"whatsnew",
 		"mail", "mailfull",
+		"lock",
 	},
 }
 

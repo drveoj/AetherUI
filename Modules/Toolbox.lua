@@ -1158,21 +1158,78 @@ end
 -- mistake in different clothes: a control that says something it cannot know.
 -- ---------------------------------------------------------------------------
 
+-- The four the deck asks for, and they are three different KINDS of thing:
+--
+--   setting   a path into the profile, written exactly the way the options
+--             panel writes it - including the `modules.<name>.enabled` rule,
+--             or a module could be switched off in here and carry on running
+--   mode      a RUNTIME state with nothing saved behind it. Unlocked frames
+--             and keybind mode are both like this: they are off at every
+--             login by definition, they are read off the module that owns
+--             them, and there is no default to configure because there is no
+--             stored value to default.
+--   launcher  an addon, from Core/Launchers.lua. Not a toggle at all
+--
+-- `cvar` was a fourth and is gone with the damage-numbers tile it existed for.
+-- The mechanism is worth remembering rather than the tile: a client setting is
+-- ours to write and NOT ours to keep, so it was never restored on disable -
+-- unlike zen, which borrows CVars and gives them back because zen is temporary
+-- and the player never asked for it.
+--
+-- Every tile carries a `tip`. A two-word label on a chip is a reminder for
+-- somebody who already knows what it does; the tooltip is for everybody else,
+-- and two of these four do something drastic enough to the screen that finding
+-- out by pressing it is not reasonable.
+--
+-- A LAUNCHER TILE HAS NO STATE TO SHOW. LDB launchers are buttons, not
+-- toggles - there is no attribute that answers "are you on", and a `data
+-- source` can carry text but a launcher cannot. So launcher tiles draw their
+-- icon and name with no On/Off chip, and the chip stays reserved for entries
+-- that genuinely have two states. Drawing a fake one would be the chat badge
+-- mistake in different clothes: a control that says something it cannot know.
+
 TB.TILES = {
-	{ kind = "setting", key = "zen",      label = "Zen",
-	  path = { "modules", "zen", "enabled" } },
-	{ kind = "setting", key = "combat",   label = "Combat collapse",
-	  path = { "modules", "questtracker", "combatCollapse" } },
-	{ kind = "setting", key = "keybinds", label = "Keybind chips",
-	  path = { "modules", "actionbars", "showKeybinds" } },
-	-- A client setting rather than one of ours. Written directly and left
-	-- written: a player who turns damage numbers off in this panel has made a
-	-- choice, not lent us a CVar. Zen borrows and gives back because zen is
-	-- TEMPORARY - it holds a value for as long as it is on screen and the player
-	-- never asked for it. This is the opposite, and restoring it on disable
-	-- would quietly undo something somebody deliberately did.
-	{ kind = "cvar",    key = "damage",   label = "Damage numbers",
-	  cvar = "floatingCombatTextCombatDamage" },
+	{ kind = "setting", key = "zen", label = "Zen",
+	  path = { "modules", "zen", "enabled" },
+	  tip = "Fades the interface away when you stand still, and brings it"
+	     .. " straight back the moment anything happens. Your character sits"
+	     .. " down and the camera pulls back for the view." },
+
+	{ kind = "setting", key = "combat", label = "Combat collapse",
+	  path = { "modules", "questtracker", "combatCollapse" },
+	  tip = "Collapses the quest tracker to its title while you are fighting,"
+	     .. " and opens it again when you are not." },
+
+	-- Both of the below are MODES. They are read from the module that owns the
+	-- state rather than from the profile, because that is where the truth is:
+	-- /aether lock, the options panel and this tile all move the same flag, and
+	-- a copy of it in the profile would be a second answer that goes stale the
+	-- first time somebody uses the slash command.
+	{ kind = "mode", key = "lock", label = "Unlock frames",
+	  get = function() return A.Movers and A.Movers.unlocked or false end,
+	  set = function(want)
+		if not A.Movers then return false end
+		if want then A.Movers:Unlock() else A.Movers:Lock() end
+		return true
+	  end,
+	  tip = "Drag any part of the interface to move it, or scroll to nudge it a"
+	     .. " pixel at a time - hold shift to nudge sideways. Locked again from"
+	     .. " here or with /aether lock." },
+
+	{ kind = "mode", key = "keybinds", label = "Keybind mode",
+	  get = function()
+		local AB = A:GetModule("actionbars")
+		return (AB and AB.enabled and AB.bindMode) and true or false
+	  end,
+	  set = function(want)
+		local AB = A:GetModule("actionbars")
+		if not AB or not AB.enabled then return false end
+		AB:SetBindMode(want)
+		return true
+	  end,
+	  tip = "Hover an action button and press a key to bind it. Keys go into"
+	     .. " Blizzard's own binding set, so they survive this addon being"
+	     .. " disabled and show up in the keybinding panel." },
 }
 
 local function Resolve(path)
@@ -1196,14 +1253,43 @@ function TB:TileState(tile)
 		return t[k] ~= false
 	end
 
-	if tile.kind == "cvar" then
-		if not GetCVar then return false end
-		local ok, v = pcall(GetCVar, tile.cvar)
-		if not ok then return false end
-		return v == "1" or v == 1 or v == true
+	-- Asked of the module that owns it, every time. A mode has no stored value
+	-- to read and three different ways to be changed - this tile, the options
+	-- panel and a slash command - so anything cached here is a second answer
+	-- waiting to disagree with the first.
+	if tile.kind == "mode" then
+		local ok, v = pcall(tile.get)
+		return ok and v and true or false
 	end
 
 	return nil
+end
+
+--- What a settings tile says when you hover it.
+--
+--  The state goes in the tooltip as well as on the chip, because On/Off in
+--  eleven point beside a coloured disc is the sort of thing you read wrong once
+--  and then distrust - and one of these four unlocks every frame on the screen.
+function TB:TileTooltip(frame)
+	local t = frame and frame.__tile
+	if not t or not GameTooltip then return end
+
+	GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+	GameTooltip:SetText(t.label or t.key, 1, 1, 1)
+
+	local on = self:TileState(t)
+	if on ~= nil then
+		local c = on and Palette.c.accent or Palette.c.textDim
+		GameTooltip:AddLine(on and "On" or "Off", c[1], c[2], c[3])
+	end
+
+	if t.tip then
+		-- Wrapped. These run to three lines and an unwrapped AddLine draws one
+		-- that reaches the far side of the screen.
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(t.tip, 0.8, 0.8, 0.85, true)
+	end
+	GameTooltip:Show()
 end
 
 function TB:ToggleTile(tile)
@@ -1236,19 +1322,17 @@ function TB:ToggleTile(tile)
 		return true
 	end
 
-	if tile.kind == "cvar" then
-		if not SetCVar then return false end
-		-- A CVar this client does not have throws rather than returning nil, so
-		-- it is probed rather than fired blind - the same rule Zen follows for
-		-- the nameplate and audio families.
-		-- Probed by VALUE, not by whether the read threw. GetCVar answers nil for
-		-- a name the client does not have - it does not error - so a pcall around
-		-- it succeeds and tells you nothing. Only the nil says the CVar is
-		-- missing, and SetCVar on a missing one is what the client logs.
-		if not GetCVar then return false end
-		local okRead, cur = pcall(GetCVar, tile.cvar)
-		if not okRead or cur == nil then return false end
-		if not pcall(SetCVar, tile.cvar, want and "1" or "0") then return false end
+	if tile.kind == "mode" then
+		local ok, done = pcall(tile.set, want)
+		if not ok or done == false then return false end
+
+		-- The drawer gets out of the way when a mode is switched ON. Both of
+		-- these are things you do TO the screen - drag a frame, hover a button
+		-- and press a key - and neither is possible with a panel over half of
+		-- it. Switching one off does not close anything, because then you are
+		-- finished rather than starting.
+		if want then self:SetOpen(false) end
+
 		self:RefreshTiles()
 		return true
 	end
@@ -1401,6 +1485,18 @@ function TB:RefreshTiles()
 			tile:EnableMouse(true)
 			tile:SetScript("OnMouseUp", function(self2)
 				if self2.__tile then TB:ToggleTile(self2.__tile) end
+			end)
+
+			-- Read off __tile at hover time rather than captured when the frame
+			-- was made. These tiles are REUSED - RefreshTiles hands frame 3 to
+			-- whichever entry is third now, and a launcher the player added can
+			-- put a different one there - so a closed-over tile would describe
+			-- whatever this frame used to be.
+			tile:SetScript("OnEnter", function(self2)
+				TB:TileTooltip(self2)
+			end)
+			tile:SetScript("OnLeave", function()
+				if GameTooltip then GameTooltip:Hide() end
 			end)
 			self.content.tiles[i] = tile
 		end
