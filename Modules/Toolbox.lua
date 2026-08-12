@@ -487,7 +487,18 @@ function TB:SetOpen(open, instant)
 	self._want = open and 1 or 0
 	self:PointChevron()
 	self:SetPolling(open and true or false)
-	if open then self:RefreshWidgets() end
+	if open then
+		-- Re-read EVERYTHING first, then draw. Opening the drawer is the moment
+		-- somebody looks at these, and it costs six function calls.
+		--
+		-- The specific bug was Gold, and it is fixed above by giving it the
+		-- login event the others had. This is the general version: any provider
+		-- whose value was not available yet at login, or whose event we have
+		-- not thought of, is correct by the time it is seen rather than correct
+		-- only after the thing it measures happens to change.
+		self:RefreshProviders()
+		self:RefreshWidgets()
+	end
 
 	if instant or not self.panel then
 		self._travel = self._want
@@ -539,6 +550,12 @@ end
 function TB:SetPolling(on)
 	if on and not self._polling then
 		self._polling = true
+		-- Due IMMEDIATELY, not in a second's time. Latency and framerate are the
+		-- two that cannot be event-driven, so a fresh accumulator means the
+		-- first thing you see on opening the drawer is up to a second old - and
+		-- on the very first open of a session it is whatever GetNetStats said
+		-- before the client had pinged anything, which is nothing.
+		self._pollAccum = POLL_EVERY
 		A:RegisterTicker(self._pollToken, function(_, dt) PollTick(TB, dt) end)
 	elseif not on and self._polling then
 		self._polling = nil
@@ -683,10 +700,20 @@ local PREFIX = "AetherUI_"
 
 --- Our six. `poll` marks the two that genuinely cannot be event-driven.
 TB.PROVIDERS = {
-	{ key = "Gold",       label = "Gold",       events = { "PLAYER_MONEY" } },
+	-- PLAYER_ENTERING_WORLD on every event-driven one, INCLUDING Gold.
+	--
+	-- Gold had only PLAYER_MONEY, which fires when your money CHANGES. At login
+	-- GetMoney answers 0 before the client has been told otherwise, so the one
+	-- read at enable wrote "0s" and nothing looked again until you earned or
+	-- spent something. Bag space and durability were right on the same screen
+	-- because they carry this event and Gold did not - which is exactly the
+	-- kind of difference that reads as "sometimes it works".
+	{ key = "Gold",       label = "Gold",
+	  events = { "PLAYER_MONEY", "PLAYER_ENTERING_WORLD" } },
 	{ key = "BagSpace",   label = "Bag space",  events = { "BAG_UPDATE", "PLAYER_ENTERING_WORLD" } },
 	{ key = "Durability", label = "Durability", events = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_ENTERING_WORLD" } },
-	{ key = "XPHour",     label = "XP / hr",    events = { "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP" } },
+	{ key = "XPHour",     label = "XP / hr",
+	  events = { "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" } },
 	{ key = "Latency",    label = "Latency",    poll = true },
 	{ key = "FPS",        label = "FPS",        poll = true },
 }

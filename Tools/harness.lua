@@ -7640,6 +7640,80 @@ do
 	check(MMm.pill.zone:GetText() == "The Barrens", "and comes back afterwards")
 end
 
+print("== toolbox: a widget nobody has poked is still right ==")
+do
+	local TBm = A:GetModule("toolbox")
+	TBm:SetDock("LEFT")
+
+	-- THE GOLD WIDGET SAID "0s" while the bag window on the same screen said
+	-- 3g 38s 13c.
+	--
+	-- GetMoney answers 0 at login, before the client has been told otherwise.
+	-- Gold carried only PLAYER_MONEY, which fires when your money CHANGES - so
+	-- the single read at enable wrote a zero and nothing looked again until you
+	-- earned or spent something. Bag space and durability were right on that
+	-- same screen because they carry PLAYER_ENTERING_WORLD and Gold did not.
+	do
+		local gold
+		for _, p in ipairs(TBm.PROVIDERS) do if p.key == "Gold" then gold = p end end
+		local hasLogin = false
+		for _, e in ipairs(gold.events or {}) do
+			if e == "PLAYER_ENTERING_WORLD" then hasLogin = true end
+		end
+		check(hasLogin,
+			"Gold is swept at login like every other event-driven widget - an"
+			.. " event that only fires on CHANGE cannot establish a first value")
+
+		-- Every event-driven provider, not just the one that was reported. A
+		-- widget whose only event is a change event has the same bug waiting.
+		local missing = {}
+		for _, p in ipairs(TBm.PROVIDERS) do
+			if p.events then
+				local ok = false
+				for _, e in ipairs(p.events) do
+					if e == "PLAYER_ENTERING_WORLD" then ok = true end
+				end
+				if not ok then missing[#missing + 1] = p.key end
+			end
+		end
+		check(#missing == 0,
+			"and so is every other one (" ..
+			(#missing > 0 and table.concat(missing, ", ") or "all of them") .. ")")
+	end
+
+	-- ...and the general version: opening the drawer re-reads the lot, so a
+	-- value that was not available at login is right by the time it is seen.
+	do
+		TBm:SetOpen(false, true)
+		_G.__money = 0
+		TBm:RefreshProviders("Gold")
+		local zero = TBm._published.Gold.value
+
+		-- The client finally knows, and says nothing about it.
+		_G.__money = 33813
+		check(TBm._published.Gold.value == zero,
+			"a value that changed with no event still reads stale while shut")
+
+		TBm:SetOpen(true, true)
+		check(TBm._published.Gold.value ~= zero,
+			"and opening the drawer re-reads it (was " .. tostring(zero)
+			.. ", now " .. tostring(TBm._published.Gold.value) .. ")")
+	end
+
+	-- The two that cannot be event-driven answer on the FIRST tick after the
+	-- drawer opens rather than a second later - and on the first open of a
+	-- session, a second later is the difference between a number and nothing.
+	do
+		TBm:SetOpen(false, true)
+		TBm:SetOpen(true, true)
+		check(TBm._pollAccum ~= nil and TBm._pollAccum >= 1.0,
+			"the poll is due immediately on opening rather than after a full"
+			.. " period (got " .. tostring(TBm._pollAccum) .. ")")
+	end
+
+	TBm:SetOpen(false, true)
+end
+
 print("== toolbox: nothing on the rail sits on anything else ==")
 do
 	local TBm = A:GetModule("toolbox")
