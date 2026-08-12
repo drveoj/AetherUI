@@ -2700,10 +2700,23 @@ end
 -- holds name *strings*, the backdrop regions are `<frame><suffix>` globals, and
 -- the tab art has global names that do not match its parentKeys - all three are
 -- things Modules/Chat.lua has to get right and all three are silent when wrong.
+--- THE REAL LIST, not the nine textures this mock used to carry.
+--
+--  Blizzard's own CHAT_FRAME_TEXTURES reaches past the backdrop into the button
+--  frame's furniture, and Modules/Chat.lua walks it with Kill() - which is Hide
+--  plus SetTexture(nil) plus SetAlpha(0). A mock holding only the nine obvious
+--  ones meant the resize grip was never killed in here, so the suite could not
+--  see a grip that came back Shown and transparent.
 CHAT_FRAME_TEXTURES = {
 	"Background",
 	"TopLeftTexture", "BottomLeftTexture", "TopRightTexture", "BottomRightTexture",
 	"LeftTexture", "RightTexture", "BottomTexture", "TopTexture",
+	"ButtonFrameBackground",
+	"ButtonFrameTopLeftTexture", "ButtonFrameBottomLeftTexture",
+	"ButtonFrameTopRightTexture", "ButtonFrameBottomRightTexture",
+	"ButtonFrameLeftTexture", "ButtonFrameRightTexture",
+	"ButtonFrameBottomTexture", "ButtonFrameTopTexture",
+	"ResizeButton",
 }
 CHAT_FRAMES = {}
 
@@ -4620,9 +4633,14 @@ do
 	-- CHAT_FRAME_TEXTURES and skip anything that is not shown, so a region left
 	-- shown with a nil texture stays in both loops and keeps having its alpha
 	-- animated back. Hiding is what gets it out of them for good.
+	-- The resize grip is on that list and is DELIBERATELY brought back - it is
+	-- the only way to resize the window, and Blizzard's list does not
+	-- distinguish "backdrop art" from "control that happens to live next to the
+	-- backdrop art". Everything else on it goes.
+	local KEEP = { ResizeButton = true }
 	local stillShown = {}
 	for _, suffix in ipairs(CHAT_FRAME_TEXTURES) do
-		local r = _G["ChatFrame1" .. suffix]
+		local r = not KEEP[suffix] and _G["ChatFrame1" .. suffix]
 		if r and r:IsShown() then stillShown[#stillShown + 1] = suffix end
 	end
 	check(#stillShown == 0,
@@ -4819,6 +4837,26 @@ do
 	check(_G.ChatFrame1ResizeButton:IsShown(),
 		"but the resize corner stays - it is what makes the frame resizable, and"
 		.. " Blizzard's own version is what saves the new size")
+	check(_G.ChatFrame1ResizeButton:GetAlpha() == 1,
+		"and it is VISIBLE, not merely shown - Kill() is Hide plus SetAlpha(0),"
+		.. " CHAT_FRAME_TEXTURES reaches this button on a real client, and Show()"
+		.. " undoes only the first half. A correctly placed transparent grip is"
+		.. " exactly as useful as no grip (got "
+		.. tostring(_G.ChatFrame1ResizeButton:GetAlpha()) .. ")")
+
+	-- ...and turning the option off and on again, which runs Kill on purpose.
+	do
+		local Cm, conf = A:GetModule("chat"), A.Config:Module("chat")
+		conf.resizable = false
+		Cm:SkinResize(_G.ChatFrame1)
+		check(_G.ChatFrame1ResizeButton:GetAlpha() == 0, "off really hides it")
+		conf.resizable = true
+		Cm:SkinResize(_G.ChatFrame1)
+		check(_G.ChatFrame1ResizeButton:GetAlpha() == 1,
+			"and on brings it back - a switch that cannot be switched back is"
+			.. " worse than one that is not there (got "
+			.. tostring(_G.ChatFrame1ResizeButton:GetAlpha()) .. ")")
+	end
 
 	-- ...INCLUDING on a client that keeps the grip inside the button frame.
 	--

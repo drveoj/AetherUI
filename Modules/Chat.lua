@@ -772,7 +772,23 @@ function Chat:SkinResize(f)
 		grip._dots = dots
 	end
 
+	-- SHOW **AND** ALPHA. Kill() in this file is Hide + SetTexture(nil) +
+	-- SetAlpha(0), and two paths run it over this button:
+	--
+	--   * the BACKDROP loop at the top of SkinFrame, which walks Blizzard's own
+	--     CHAT_FRAME_TEXTURES - a longer list on a real client than the one this
+	--     file falls back to, and it reaches the button frame's furniture
+	--   * turning "resizable" off, which is meant to
+	--
+	-- Show() undoes the Hide and nothing undid the alpha, so the grip came back
+	-- as a fully-formed, correctly-placed, completely transparent frame. That is
+	-- "there's no grabber I can see (or interact with) in either state": it was
+	-- there the whole time at alpha 0.
+	--
+	-- Restoring what Kill takes is the rule, not the exception - the same
+	-- symmetry OnDisable follows for the card and the border.
 	grip:Show()
+	grip:SetAlpha(1)
 	grip:EnableMouse(true)
 	-- Twenty, not sixteen. This is a corner hit target you have to find with a
 	-- cursor, and the visible mark inside it is smaller than the frame.
