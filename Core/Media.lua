@@ -350,45 +350,36 @@ end
 -- helpers
 -- ---------------------------------------------------------------------------
 
--- Whether a face is really loadable, asked ONCE per path through a scratch
--- FontString.
+-- Fallback by READ-BACK, which is the only question that has one answer for
+-- both kinds of thing we call SetFont on.
 --
--- This used to be `if not fontString:SetFont(...) then fall back`, reading the
--- return of the very call being made. That is right for a FontString, whose
--- SetFont answers isValid - and wrong for a font OBJECT, whose SetFont answers
--- nothing at all. `not nil` is true, so every font object we styled fell
--- straight through to FRIZQT__.TTF: the three tooltip objects
--- (GameTooltipHeaderText / GameTooltipText / GameTooltipTextSmall) came out in
--- the client's own face at OUR sizes, which reads as "huge Friz Quadrata"
--- rather than as a font that failed. Every FontString in the addon was fine,
--- which is exactly why it took so long to see: the only things wrong on screen
--- were the three objects, and they are the three we never draw ourselves.
+-- This has now been wrong twice, in opposite directions, and both times because
+-- it tried to learn something from a RETURN VALUE:
 --
--- The harness had the same hole in reverse - its font-object mock returned
--- true, so the fallback was never once exercised in a test.
+--   1. `if not fontString:SetFont(...) then fall back` read the return of the
+--      call it had just made. Right for a FontString, whose SetFont answers
+--      isValid. Wrong for a font OBJECT, whose SetFont answers nothing - so
+--      `not nil` was true and the three tooltip objects were stamped with
+--      FRIZQT__.TTF a microsecond after being given Outfit.
 --
--- Probing separately also means the fallback answers the question it was
--- written for ("is this install missing its TTFs?") rather than the question
--- the call site happened to answer.
-local probe, verified = nil, {}
-local function Usable(path)
-	if verified[path] ~= nil then return verified[path] end
-
-	if probe == nil then
-		local ok, fs = pcall(function()
-			return UIParent and UIParent:CreateFontString(nil, "BACKGROUND")
-		end)
-		probe = (ok and fs) or false
-	end
-	-- No probe, no verdict: assume the face is good rather than condemning
-	-- every string in the addon to the game font on the strength of not being
-	-- able to ask.
-	if not probe then verified[path] = true return true end
-
-	local ok, valid = pcall(probe.SetFont, probe, path, 12, "")
-	verified[path] = (ok and valid) and true or false
-	return verified[path]
-end
+--   2. Probing each face ONCE through a scratch FontString and caching the
+--      verdict. That answered false for Outfit on a real client - and being
+--      cached, it condemned EVERY string in the addon to the game font for the
+--      rest of the session. Worse than the bug it replaced: the first version
+--      lost three font objects, this one lost the whole interface, and it
+--      passed its tests either way because the mock's SetFont returns true.
+--
+-- So nothing is read from a return and nothing is cached. Set the font, then
+-- ask the object what font it HAS. Both FontStrings and font objects answer
+-- GetFont, and the answer is the truth rather than a report about it.
+--
+-- The fallback fires only when there is NO font at all afterwards, which is the
+-- case it was written for: one of our own new FontStrings whose face failed to
+-- load has nothing, and nothing draws as invisible text. A font OBJECT that
+-- refuses our face keeps the client's, and the client's face is exactly what
+-- the fallback would have set anyway - so there is nothing to correct and no
+-- opinion to have about it.
+local FALLBACK = [[Fonts\FRIZQT__.TTF]]
 
 --- Apply a named style from Media.style to a FontString OR a font object.
 --  Falls back to the game font if the TTF fails to load, so a bad install
@@ -406,10 +397,14 @@ function Media:SetFont(fontString, styleName, sizeOverride)
 	size = math.floor((tonumber(size) or 12) + 0.5)
 	local flags = style[3]
 
-	if not Usable(path) then
-		path = STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]]
-	end
 	fontString:SetFont(path, size, flags)
+
+	-- Read back. No return value is consulted, so it cannot matter whether this
+	-- particular widget type answers one.
+	local ok, got = pcall(fontString.GetFont, fontString)
+	if not ok or got == nil or got == "" then
+		fontString:SetFont(STANDARD_TEXT_FONT or FALLBACK, size, flags)
+	end
 	return fontString
 end
 

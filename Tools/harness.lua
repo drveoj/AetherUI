@@ -310,16 +310,22 @@ local function newFontString(owner, layer)
 	-- legitimate call into a nil-index at draw time.
 	function f:SetDrawLayer(l, sub) self.__layer, self.__sub = l, sub end
 	function f:GetDrawLayer() return self.__layer, self.__sub end
+	--- RETURNS NOTHING, deliberately, and neither does the font-object mock.
+	--
+	--  A real FontString does answer isValid. The mock refuses to, because
+	--  Media:SetFont has now been wrong TWICE by trying to learn something from
+	--  a return value - once reading a font object's (which is nil) and once
+	--  caching a scratch FontString's (which came back false for Outfit on a
+	--  real client and took the whole interface to Friz Quadrata). A mock that
+	--  answers makes both of those look fine in here.
+	--
+	--  A face the client cannot load leaves the font UNCHANGED, which is what
+	--  the client does and is the only signal that survives read-back.
 	function f:SetFont(path, size, flags)
-		if type(path) ~= "string" then fail("SetFont path " .. tostring(path)) return false end
-		if type(size) ~= "number" then fail("SetFont size " .. tostring(size)) return false end
-		-- A FontString answers isValid, and answers FALSE for a face the client
-		-- cannot load. That return is the only honest signal either the addon or
-		-- this harness has about a missing TTF, which is why Media probes with a
-		-- scratch FontString rather than reading it off a font object.
-		if _G.__badFonts and _G.__badFonts[path] then return false end
+		if type(path) ~= "string" then fail("SetFont path " .. tostring(path)) return end
+		if type(size) ~= "number" then fail("SetFont size " .. tostring(size)) return end
+		if _G.__badFonts and _G.__badFonts[path] then return end
 		self.__font = { path, size, flags }
-		return true
 	end
 	-- Real FontStrings read back what they were set to. A mock that only
 	-- records the write can't answer "and what size did this actually end up?",
@@ -1417,6 +1423,10 @@ for _, n in ipairs({ "GameTooltipHeaderText", "GameTooltipText", "GameTooltipTex
 		-- Media:SetFont read this return and fell through on every call.
 		SetFont = function(self, path, size, flags)
 			if type(path) ~= "string" then fail(n .. ":SetFont path " .. tostring(path)) return end
+			-- Refusing a face leaves the object on the one it already had -
+			-- the client's own - which is why a font OBJECT needs no fallback:
+			-- what it keeps is what the fallback would have set.
+			if _G.__badFonts and _G.__badFonts[path] then return end
 			self.__font = { path, size, flags }
 		end,
 		GetFont = function(self)
@@ -12191,6 +12201,72 @@ do
 	for _, n in ipairs({ "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2",
 		"EmbeddedItemTooltip", "WorldMapTooltip" }) do
 		check(_G[n] and T.skinned[_G[n]], n .. " adopted too")
+	end
+end
+
+print("== media: every role reaches the real face ==")
+do
+	-- THE WHOLE INTERFACE went to Friz Quadrata once, and it got there through
+	-- this one function. Media:SetFont is the chokepoint every string in the
+	-- addon passes through, so a gate in front of it that answers wrong once
+	-- answers wrong for everything - which is exactly what happened when the
+	-- fallback probed each face through a scratch FontString and CACHED the
+	-- verdict. The client said no, the cache remembered it, and the only text
+	-- left in Outfit was chat's, because Modules/Chat.lua sets the message font
+	-- directly and never comes through here.
+	--
+	-- So: every role, not a sample. A gate cannot fail for one and not the rest.
+	local bad = {}
+	for name, style in pairs(A.Media.style) do
+		local fs = UIParent:CreateFontString(nil, "ARTWORK")
+		A.Media:SetFont(fs, name)
+		local got, size = fs:GetFont()
+		local want = A.Media.font[style[1]]
+		if got ~= want then
+			bad[#bad + 1] = name .. " -> " .. tostring(got)
+		elseif size ~= math.floor(style[2] + 0.5) then
+			bad[#bad + 1] = name .. " @ " .. tostring(size)
+		end
+	end
+	check(#bad == 0,
+		"every role in Media.style lands on its own Outfit weight at its own"
+		.. " size (" .. (#bad > 0 and table.concat(bad, ", ") or "all of them")
+		.. ")")
+
+	-- ...and it does that without reading a return value from anything. Both
+	-- SetFont mocks answer nothing on purpose; if this passes, nothing in the
+	-- path depends on a client being generous enough to reply.
+	do
+		local fs = UIParent:CreateFontString(nil, "ARTWORK")
+		check(fs:SetFont(A.Media.font.regular, 12, "") == nil,
+			"the mock's SetFont answers nothing, as the worst plausible client"
+			.. " does")
+		A.Media:SetFont(fs, "chatText")
+		check(select(1, fs:GetFont()) == A.Media.font[A.Media.style.chatText[1]],
+			"and the face still lands - verified by READ-BACK rather than by"
+			.. " whatever the call felt like returning")
+	end
+
+	-- The fallback still exists for the thing it is for: one of OUR OWN new
+	-- FontStrings whose face will not load has no font at all, and no font
+	-- draws as nothing.
+	do
+		_G.__badFonts = { [A.Media.font.light] = true }
+		local fs = UIParent:CreateFontString(nil, "ARTWORK")
+		A.Media:SetFont(fs, "ttBody")
+		check(select(1, fs:GetFont()) == [[Fonts\FRIZQT__.TTF]],
+			"a face that will not load degrades to the game font rather than to"
+			.. " invisible text (got " .. tostring(select(1, fs:GetFont())) .. ")")
+
+		-- A font OBJECT that refuses keeps the client's own face, which IS the
+		-- fallback. Nothing to correct, and nothing to have an opinion about.
+		local obj = _G.GameTooltipText
+		local before = select(1, obj:GetFont())
+		A.Media:SetFont(obj, "ttBody")
+		check(select(1, obj:GetFont()) == before,
+			"and a font object that refuses one keeps the face it had - the"
+			.. " client's, which is what the fallback would have set anyway")
+		_G.__badFonts = nil
 	end
 end
 
