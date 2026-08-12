@@ -857,15 +857,20 @@ function TB:BuildContent()
 	-- `btnFillText` exist as their own tokens for exactly this - `accent` at
 	-- full alpha is not the same colour, and text at `text` on top of it is
 	-- unreadable.
+	-- Small, and beside the title rather than competing with it. The first cut
+	-- was an 18-tall lozenge carrying "Aether UI 0.1.0" at 11pt, which next to
+	-- an 18pt "Toolbox" is two headings - and the version is the least
+	-- interesting thing on the panel. Just the number, at 10, in a pill only as
+	-- tall as the text needs.
 	local chip = Glass.CreatePill(content, {})
-	chip:SetHeight(18)
+	chip:SetHeight(15)
 	chip:ApplySkin("btnFill", "btnFill")
-	local chipText = W.Text(chip, "tbChip", "CENTER")
+	local chipText = W.Text(chip, "tbChip", "CENTER", nil, 10)
 	chipText:SetPoint("CENTER", chip, "CENTER", 0, 0)
-	chipText:SetText("Aether UI " .. (A.version or "0.1.0"))
+	chipText:SetText("v" .. (A.version or "0.1.0"))
 	W.Color(chipText, Palette.c.btnFillText)
 	chipText:SetShadowColor(0, 0, 0, 0)
-	chip:SetWidth((chipText:GetStringWidth() or 60) + 18)
+	chip:SetWidth((chipText:GetStringWidth() or 40) + 14)
 	chip.text = chipText
 	content.chip = chip
 
@@ -1216,9 +1221,19 @@ function TB:RefreshTiles()
 		-- quiet fill when off. Vertex colours rather than ApplySkin, because a
 		-- badge is two plain textures rather than a Glass surface.
 		local fill = on and Palette.c.btnFill or Palette.c.cardBg
-		local edge = on and Palette.c.cardEdgeHi or Palette.c.cardEdge
 		tile.chip.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1)
-		tile.chip.ring:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1)
+
+		-- A FILLED chip needs no rim, and putting one on it is what made these
+		-- read as smudges rather than circles: a bright ring lapped one pixel
+		-- proud of a bright disc doubles the coverage in the outer pixel, so the
+		-- edge stops being an edge and becomes a two-pixel gradient. The rim is
+		-- for the QUIET state, where the disc is nearly the panel colour and has
+		-- nothing else to define it.
+		tile.chip.ring:SetShown(not on)
+		if not on then
+			local edge = Palette.c.cardEdge
+			tile.chip.ring:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1)
+		end
 		tile.chip._fillColor = fill
 		tile:Show()
 	end

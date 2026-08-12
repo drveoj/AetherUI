@@ -79,9 +79,13 @@ W.AddMask = AddMask
 -- text
 -- ---------------------------------------------------------------------------
 
-function W.Text(parent, style, justify, layer)
+--- `size` overrides the role's own point size without inventing a new role.
+--  Media:Size exists for the same reason - a caller that needs to deviate
+--  OFFSETS from a role rather than hard-coding a face, so the roles stay the
+--  single source of truth for weight and family.
+function W.Text(parent, style, justify, layer, size)
 	local fs = parent:CreateFontString(nil, layer or "OVERLAY")
-	Media:SetFont(fs, style)
+	Media:SetFont(fs, style, size)
 	fs:SetJustifyH(justify or "LEFT")
 	fs:SetJustifyV("MIDDLE")
 	-- A soft shadow is the only thing keeping light type legible against the
@@ -419,13 +423,18 @@ function W.CreateBadge(parent, opts)
 	opts = opts or {}
 	local f = CreateFrame("Frame", nil, parent)
 
+	-- Chip-Disc and Chip-Rim, not Circle-Mask and Ring. Those are 256 because
+	-- the minimap MAGNIFIES them; a badge is 26-32 across, so drawing them here
+	-- minifies eight times and the client does not mipmap UI textures - the
+	-- anti-aliasing ramp compresses under a texel and the edge comes back
+	-- crunchy. Same shapes at 64, for the opposite job.
 	local disc = f:CreateTexture(nil, "ARTWORK")
-	disc:SetTexture(Media.texture.circleMask)
+	disc:SetTexture(Media.texture.chipDisc)
 	disc:SetAllPoints(f)
 	f.disc = disc
 
 	local ring = f:CreateTexture(nil, "OVERLAY")
-	ring:SetTexture(Media.texture.ring)
+	ring:SetTexture(Media.texture.chipRim)
 	f.ring = ring
 
 	local label = W.Text(f, opts.style or "ttBadge", "CENTER")

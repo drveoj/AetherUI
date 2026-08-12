@@ -579,6 +579,29 @@ def circle_mask():
     return rgba_lum(1.0, ellipse_mask((256, 256)))
 
 
+def chip_disc():
+    """A filled circle for a 26-32px chip.
+
+    64, not 256. The client does not mipmap UI textures, so a 256px disc drawn
+    at 30 is sampled 2x2 out of an image eight times too big - its
+    anti-aliasing ramp compresses to well under a texel and the edge comes back
+    crunchy. Circle-Mask stays 256 because it is MAGNIFIED onto the minimap;
+    this is the same shape for the opposite job.
+    """
+    return rgba_lum(1.0, ellipse_mask((64, 64)))
+
+
+def chip_rim():
+    """The matching rim, ~4 texels of 64 rather than 5 of 256.
+
+    A rim's width has to be a fraction of the RADIUS, not a fixed count of
+    texels, or it vanishes the moment the art is drawn smaller than it was
+    authored. At 64 with a 4-texel band, a 30px chip still lands on nearly two
+    real pixels of rim; the 256 version landed on half of one.
+    """
+    return rgba_lum(1.0, rim_from_sdf(ellipse_sdf((64, 64), MARGIN), 4.0, peak=1.25))
+
+
 def ring():
     """Circular rim for the level orb, the portrait and the aura icons.
 
@@ -903,7 +926,7 @@ ICON_ORDER = [
     "character", "spellbook", "talents", "quests",
     "social", "guild", "map", "menu",
     # ...then help, the settings tiles, and the rail's gear
-    "help", "zen", "damage", "keybind",
+    "help", "zen", "damage", "keybinds",
     "combat", "gear", "pin", "pinned",
     # and the What's-new card's own mark
     "whatsnew",
@@ -1031,7 +1054,7 @@ def _glyph(name, cell):
         return U(seg(44, 26, 34, 102), seg(84, 26, 74, 102),
                  seg(26, 48, 100, 48), seg(24, 76, 98, 76))
 
-    if name == "keybind":
+    if name == "keybinds":
         # A key cap: a rounded square with a lozenge inside it.
         return U(rect(24, 36, 104, 92), rect(44, 54, 84, 74))
 
@@ -1062,12 +1085,19 @@ def _glyph(name, cell):
         return U(disc(64, 48, 22) - ICON_STROKE / 2, seg(64, 70, 64, 106))
 
     if name == "whatsnew":
-        # A spark: a four-point star with a smaller one beside it. "Something
-        # arrived" rather than "a plus", which reads as an add button.
-        big = U(seg(52, 22, 52, 86), seg(20, 54, 84, 54),
-                seg(34, 36, 70, 72), seg(70, 36, 34, 72))
-        small = U(seg(96, 74, 96, 108), seg(79, 91, 113, 91))
-        return U(big, small)
+        # A BELL. The first attempt was a four-point star with a smaller one
+        # beside it, which is talents wearing a plus - two marks in the same
+        # panel saying the same thing, and the one place a reader looks to find
+        # out what changed reading as "sparkle" twice.
+        #
+        # A bell is unambiguous, and it is the shape every other piece of
+        # software uses for "there is something new here".
+        dome = arc(64, 62, 26, 0, 180)
+        sides = U(seg(38, 62, 38, 84), seg(90, 62, 90, 84))
+        lip = seg(28, 84, 100, 84)
+        clapper = arc(64, 92, 8, 200, 340)
+        crown = seg(64, 30, 64, 36)
+        return U(dome, sides, lip, clapper, crown)
 
     return INF
 
@@ -1115,6 +1145,8 @@ ASSETS = {
     "Slot-Edge": slot_edge,
     "Slot-Glow": slot_glow,
     "Circle-Mask": circle_mask,
+    "Chip-Disc": chip_disc,
+    "Chip-Rim": chip_rim,
     "Ring": ring,
     "Ring-Glow": ring_glow,
     "Minimap-Border": minimap_border,

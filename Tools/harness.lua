@@ -8636,6 +8636,29 @@ do
 			if not file then clash = clash or (name .. " has no file") end
 		end
 		check(not clash, "each icon has its own cell (" .. tostring(clash) .. ")")
+		-- EVERY key the module asks for must exist in the sheet. The settings
+		-- tile keyed "keybinds" asked for an icon the atlas called "keybind",
+		-- SetIcon returned false, the glyph was hidden, and the tile shipped as
+		-- a bare lilac blob - no error, nothing in the log, and every other
+		-- assertion about tiles still green. A name is not a contract until
+		-- something checks it.
+		do
+			local missing = {}
+			for _, t in ipairs(TBm.TILES) do
+				if not A.Media:Icon(t.key) then missing[#missing + 1] = "tile:" .. t.key end
+			end
+			for _, m in ipairs(TBm.MICRO) do
+				if not A.Media:Icon(m.key) then missing[#missing + 1] = "menu:" .. m.key end
+			end
+			for _, extra in ipairs({ "gear", "pin", "pinned", "whatsnew" }) do
+				if not A.Media:Icon(extra) then missing[#missing + 1] = extra end
+			end
+			check(#missing == 0,
+				"every key the module asks the sheet for is IN the sheet ("
+				.. (#missing > 0 and table.concat(missing, ", ") or "all present")
+				.. ")")
+		end
+
 		check(A.Media:Icon("no_such_icon") == nil,
 			"and an unknown name answers nil rather than a default - a texture"
 			.. " pointed at the sheet with no TexCoord draws the WHOLE atlas,"
@@ -8665,9 +8688,33 @@ do
 		-- 512-wide pill art with its rim minified past half a pixel, which is
 		-- the speckled circle that got reported; the badge laps its rim one
 		-- physical pixel proud of a masked disc and snaps the diameter.
+		-- A filled chip carries no rim. A bright ring lapped one pixel proud of
+		-- a bright disc doubles the coverage in the outer pixel, so the edge
+		-- becomes a two-pixel gradient - which is why these read as smudges
+		-- rather than circles. The rim is for the quiet state.
+		do
+			A.db.profile.modules.zen.enabled = true
+			TBm:RefreshTiles()
+			check(not TBm.content.tiles[1].chip.ring:IsShown(),
+				"an ON chip draws no rim - its own filled edge is the edge")
+			A.db.profile.modules.zen.enabled = false
+			TBm:RefreshTiles()
+			check(TBm.content.tiles[1].chip.ring:IsShown(),
+				"and an OFF one does, because a disc at nearly the panel colour"
+				.. " has nothing else to define it")
+			A.db.profile.modules.zen.enabled = true
+			TBm:RefreshTiles()
+		end
+
 		check(tile.chip.disc ~= nil and tile.chip.ring ~= nil,
 			"the chip is a badge - masked disc plus a rim lapped proud - rather"
 			.. " than a pill whose caps are minified eight times")
+		check(tile.chip.disc:GetTexture() == A.Media.texture.chipDisc
+			and tile.chip.ring:GetTexture() == A.Media.texture.chipRim,
+			"and it draws the 64px chip art rather than the 256px minimap art -"
+			.. " the client does not mipmap UI textures, so a 256 circle drawn"
+			.. " at 30 is sampled out of an image eight times too big and its"
+			.. " anti-aliasing ramp compresses under a texel")
 		do
 			local _, _, _, proudL = tile.chip.ring:GetPoint(1)
 			check(proudL and proudL < 0,

@@ -45,6 +45,11 @@ Media.texture = {
 
 	-- round things
 	circleMask  = TEX .. "Circle-Mask",
+	-- The same two shapes at 64, for chips drawn near that size rather than
+	-- magnified onto the minimap. A 256px circle drawn at 30 is minified eight
+	-- times and the client does not mipmap.
+	chipDisc    = TEX .. "Chip-Disc",
+	chipRim     = TEX .. "Chip-Rim",
 	ring        = TEX .. "Ring",
 	ringGlow    = TEX .. "Ring-Glow",         -- drawn at 2x, centred
 	-- The map's whole edge in one texture: dark band inside, hairline on the
@@ -101,7 +106,7 @@ Media.icons = {
 	order = {
 		"character", "spellbook", "talents", "quests",
 		"social", "guild", "map", "menu",
-		"help", "zen", "damage", "keybind",
+		"help", "zen", "damage", "keybinds",
 		"combat", "gear", "pin", "pinned",
 		"whatsnew",
 	},
