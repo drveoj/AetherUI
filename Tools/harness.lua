@@ -8205,6 +8205,87 @@ do
 	TBm:SetOpen(false, true)
 end
 
+print("== toolbox: the options page and the diagnostic ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local run = SlashCmdList["AETHERUI"]
+
+	-- The page exists and its paths resolve. The options walker already asserts
+	-- every path in the tree resolves; what it CANNOT assert is that moving a
+	-- control changes anything, which is the same silent no-op as a mistyped
+	-- path and is what the next two blocks are for.
+	local tree = A.Options:Build()
+	check(tree.args.toolbox ~= nil, "there is a Toolbox page")
+	check(tree.args.toolbox.order == A.Options.PAGE_ORDER.toolbox,
+		"in its declared slot rather than wherever the running counter landed")
+
+	-- A column slider that writes a number nothing re-reads is a control that
+	-- does nothing, which is exactly what a typo in a path produces - and the
+	-- walker cannot tell the two apart.
+	do
+		local cfg = A.db.profile.modules.toolbox
+		TBm:SetDock("LEFT")
+		TBm:SetOpen(true, true)
+
+		local was = cfg.widgetColumns
+		cfg.widgetColumns = 3
+		A:Reconfigure()
+		local w3 = TBm.content.cards[1]:GetWidth()
+		cfg.widgetColumns = 2
+		A:Reconfigure()
+		local w2 = TBm.content.cards[1]:GetWidth()
+		check(w2 > w3,
+			"the widget column slider actually re-lays the grid - two columns"
+			.. " make wider cards than three (" .. string.format("%.0f", w2)
+			.. " vs " .. string.format("%.0f", w3) .. ")")
+		cfg.widgetColumns = was
+
+		local wasS = cfg.scrim
+		cfg.scrim = 0.5
+		A:Reconfigure()
+		check(math.abs(TBm.scrim:GetAlpha() - 0.5) < 0.01,
+			"and the scrim slider reaches the scrim (" ..
+			string.format("%.2f", TBm.scrim:GetAlpha()) .. ")")
+		cfg.scrim = wasS
+		A:Reconfigure()
+	end
+
+	-- The command.
+	run("toolbox dock bottom")
+	check(TBm:Dock() == "BOTTOM", "/aether toolbox dock moves it")
+	run("toolbox dock sideways")
+	check(TBm:Dock() == "BOTTOM", "and an edge that is not one is refused")
+	run("toolbox dock left")
+	run("toolbox open")
+	check(TBm:IsOpen(), "/aether toolbox open opens it")
+	run("toolbox close")
+	check(not TBm:IsOpen(), "and close shuts it")
+
+	do
+		_G.__makeLDB("CmdLauncher", "launcher", { label = "Cmd Launcher" })
+		A:GetModule("minimap"):Scan()
+		run("toolbox pin CmdLauncher")
+		check(TBm:IsPinned("CmdLauncher"), "/aether toolbox pin pins")
+		run("toolbox pin CmdLauncher")
+		check(not TBm:IsPinned("CmdLauncher"), "and unpins")
+		run("toolbox pin NoSuchAddon")
+		check(not TBm:IsPinned("NoSuchAddon"),
+			"the command refuses a name that resolves to no launcher")
+		-- ...and so does the module, which is a separate guard. The command's
+		-- own resolve loop bails first, so going through it never reaches this
+		-- one - and a pin recorded against nothing is a rail slot that can
+		-- never draw and never be cleared from the panel.
+		check(TBm:SetPinned("NoSuchAddon", true) == false
+			and not TBm:IsPinned("NoSuchAddon"),
+			"and SetPinned refuses it directly too, rather than recording a pin"
+			.. " that can never draw")
+	end
+
+	check(pcall(run, "toolbox"),
+		"and /aether toolbox reports without erroring - a diagnostic that throws"
+		.. " is the one thing worse than no diagnostic")
+end
+
 print("== combat gating ==")
 _G.__inCombat = true
 A.db.profile.scale = 1.0

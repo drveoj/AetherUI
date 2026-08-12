@@ -239,6 +239,45 @@ local function GeneralGroup()
 	})
 end
 
+local function ToolboxGroup()
+	return group("Toolbox", {
+		desc = note("A drawer that docks to the centre of any screen edge, with a"
+			.. " rail that stays on screen when the drawer is shut."
+			.. "\n\nThe edge it is docked to and whether it is open are remembered"
+			.. " per |cff9d7bffcharacter|r rather than per profile - a drawer edge"
+			.. " is a habit somebody forms on one character."),
+		enabled = toggle("Enabled", nil, { "modules", "toolbox", "enabled" },
+			{ defaultTrue = true }),
+
+		widgetsHeader = header("Widgets"),
+		widgetsNote = note("The six widgets are published as |cff9d7bffLibDataBroker"
+			.. " data sources|r rather than drawn straight onto the panel. Two"
+			.. " consequences: anything that displays LDB - Titan, Bazooka,"
+			.. " ChocolateBar - shows AetherUI's numbers without being told, and"
+			.. " anyone can write a seventh widget in about ten lines."
+			.. "\n\nOnly latency and FPS are polled, and only while the drawer is"
+			.. " open; the rest follow their own events."),
+		widgetColumns = range("Widget columns", nil,
+			{ "modules", "toolbox", "widgetColumns" }, 1, 6, 1, { after = "reconfigure" }),
+
+		gridHeader = header("Grids"),
+		tileColumns = range("Setting tile columns", nil,
+			{ "modules", "toolbox", "tileColumns" }, 1, 4, 1, { after = "reconfigure" }),
+		addonColumns = range("Addon list columns", nil,
+			{ "modules", "toolbox", "addonColumns" }, 1, 4, 1, { after = "reconfigure" }),
+
+		lookHeader = header("The overlay"),
+		lookNote = note("The drawer slides out |cff9d7bffover|r the HUD. Nothing"
+			.. " underneath moves or resizes; the covered strip is dimmed instead,"
+			.. " so it reads as being behind rather than merely dark."),
+		scrim = range("Dim the covered strip", nil,
+			{ "modules", "toolbox", "scrim" }, 0, 1, 0.02, { after = "reconfigure" }),
+	})
+	-- No order argument: group()'s third parameter is `opts`, and the page order
+	-- is applied to the whole tree from PAGE_ORDER afterwards. Passing a number
+	-- there indexes it as a table and takes Build() down with it.
+end
+
 local function FaderGroup()
 	-- The client's own auto-AFK delay, from Core\Fader.lua. Read here rather than
 	-- written twice so the slider and the state machine cannot drift apart.
@@ -994,7 +1033,8 @@ end
 
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
-	quests = 6, bags = 7, chat = 8, tooltips = 9, fader = 10, xpbar = 11,
+	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
+	xpbar = 12,
 	profiles = 99,     -- last, always
 }
 
@@ -1014,6 +1054,7 @@ function Options:Build()
 			bags = BagsGroup(),
 			chat = ChatGroup(),
 			tooltips = TooltipsGroup(),
+			toolbox = ToolboxGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
 		},

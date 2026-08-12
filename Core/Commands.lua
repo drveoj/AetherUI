@@ -36,6 +36,7 @@ local function usage()
 		"|cff9d7bff/aether chat|r <reskin · lines/badges on|off · whispers on|off>",
 		"|cff9d7bff/aether bags|r <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
+		"|cff9d7bff/aether toolbox|r <dock left/right/top/bottom · open · close · pin NAME>",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
 end
@@ -663,6 +664,120 @@ end
 --  frames it does not own, alongside other addons that are doing the same thing,
 --  so "which frames did you actually find" and "is the stone border really off"
 --  are the two questions worth being able to answer without a screenshot.
+handlers.toolbox = function(arg, rest)
+	local TB = A:GetModule("toolbox")
+	if not TB or not TB.enabled then
+		A:Print("toolbox module is not enabled.")
+		return
+	end
+	local cfg = A.Config:Module("toolbox")
+
+	if arg == "dock" then
+		if not TB:SetDock(rest or "") then
+			A:Print("dock takes |cffece6ffleft|r, |cffece6ffright|r, "
+				.. "|cffece6fftop|r or |cffece6ffbottom|r.")
+			return
+		end
+		A:Print("toolbox docked -> |cffece6ff" .. TB:Dock():lower() .. "|r")
+		return
+	elseif arg == "open" then
+		TB:SetOpen(true)
+		return
+	elseif arg == "close" then
+		TB:SetOpen(false)
+		return
+	elseif arg == "toggle" then
+		TB:Toggle()
+		return
+	elseif arg == "pin" then
+		if not rest or rest == "" then
+			local p = TB:Pinned()
+			A:Print("pinned: " .. (#p > 0 and table.concat(p, ", ") or "|cff888888nothing|r"))
+			return
+		end
+		-- The dispatcher lowercases `rest`, and LDB object names are
+		-- case-sensitive - "CmdLauncher" arrives as "cmdlauncher" and matches
+		-- nothing. Resolved case-insensitively rather than by un-lowercasing the
+		-- dispatcher, which every other handler depends on; and it is the better
+		-- answer anyway, since nobody types an addon's LDB name in its exact
+		-- case from memory.
+		local key
+		if A.Launchers then
+			for e in A.Launchers:Iterate() do
+				if tostring(e.key):lower() == rest then key = e.key break end
+			end
+		end
+		if not key or not TB:TogglePin(key) then
+			A:Print("nothing called |cffece6ff" .. rest .. "|r offers a launcher."
+				.. " |cff9d7bff/aether toolbox|r lists what does.")
+			return
+		end
+		A:Print("pin " .. key .. " -> " .. (TB:IsPinned(key) and "on" or "off"))
+		return
+	end
+
+	-- the diagnostic
+	A:Print("toolbox  ·  docked |cffece6ff" .. TB:Dock():lower() .. "|r  ·  "
+		.. (TB:IsOpen() and "open" or "shut")
+		.. "  ·  scrim " .. string.format("%.2f", tonumber(cfg.scrim) or 0.28))
+
+	local w, h = TB:PanelSize(TB:Dock())
+	local sc = A.db.profile.scale
+	say("   panel %.0fx%.0f at scale %.2f = %.0fx%.0f on a %.0fx%.0f screen",
+		w, h, sc, w * sc, h * sc,
+		UIParent:GetWidth() or 0, UIParent:GetHeight() or 0)
+
+	-- widgets: ours are LDB data sources like anybody else's, so this reports
+	-- what the GRID is showing rather than what the module happens to compute.
+	local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
+	local list = TB:WidgetList()
+	say("   widgets: %d shown%s", #list, ldb and "" or " |cffff8a8a(no LibDataBroker!)|r")
+	for _, name in ipairs(list) do
+		local obj = ldb and ldb:GetDataObjectByName(name)
+		local big, small = TB:CardText(name, obj)
+		say("      %-24s %-10s %s", name, tostring(big), tostring(small))
+	end
+
+	-- launchers: the whole point is that neither mechanism contains the other,
+	-- so the counts are worth seeing separately.
+	local L = A.Launchers
+	if L then
+		local ldbN, iconN, mapN = 0, 0, 0
+		for e in L:Iterate() do
+			if e.source == "ldb" then ldbN = ldbN + 1
+			elseif e.source == "dbicon" then iconN = iconN + 1
+			else mapN = mapN + 1 end
+		end
+		say("   launchers: %d total  ·  %d from LDB  ·  %d LibDBIcon  ·  %d hand-rolled",
+			L:Count(), ldbN, iconN, mapN)
+		if L.scanError then
+			say("      |cffff8a8aminimap scan failed: %s|r", tostring(L.scanError))
+		end
+		for e in L:Iterate() do
+			local owner = L:OwnerOf(e)
+			say("      %-26s %-8s %s%s", tostring(e.key), tostring(e.source),
+				owner == TB and "|cff9fe8b4rail|r"
+					or owner and "|cff888888drawer|r" or "|cff888888unclaimed|r",
+				TB:IsPinned(e.key) and "  |cff9d7bffpinned|r" or "")
+		end
+	end
+
+	-- the addon list is a SUPERSET: most rows have nothing behind them.
+	local rows = TB:AddonRows()
+	local live = 0
+	for _, r in ipairs(rows) do if r.entry then live = live + 1 end end
+	say("   addons: %d loaded, %d with something to click%s", #rows, live,
+		(TB._addonsCut or 0) > 0 and (", " .. TB._addonsCut .. " cut for room") or "")
+
+	-- micro menu: nine declared, eight ever on screen.
+	local micro = TB:MicroList()
+	local names = {}
+	for _, m in ipairs(micro) do names[#names + 1] = m.key end
+	say("   micro: %d of %d  ·  %s", #micro, #TB.MICRO, table.concat(names, " "))
+	say("      |cff888888Social and Guild are exclusive on useClassicGuildUI (%s)|r",
+		tostring(GetCVarBool and GetCVarBool("useClassicGuildUI")))
+end
+
 handlers.tooltips = function(arg)
 	local T = A:GetModule("tooltips")
 	if not T or not T.enabled then A:Print("tooltips module is not enabled.") return end

@@ -276,7 +276,7 @@ function TB:Layout()
 	-- it rather than sitting still and being revealed.
 	self.scrim:SetSize(w, h)
 	self.scrim:SetPoint("CENTER", self.panel, "CENTER", 0, 0)
-	self.scrim:SetAlpha(0.28 * t)
+	self.scrim:SetAlpha((tonumber(A.Config:Module('toolbox').scrim) or 0.28) * t)
 	self.scrim:SetShown(t > 0.001)
 
 	self:PointChevron()
@@ -465,6 +465,14 @@ function TB:OnConfigChanged()
 	self.panel:Show()
 	self.rail:Show()
 	self:Layout()
+	-- The grids too. A column slider that writes a number nothing re-reads is
+	-- the same silent no-op as a mistyped option path, and the options walker
+	-- only proves the path RESOLVES.
+	self:RefreshWidgets()
+	self:RefreshTiles()
+	self:RefreshAddons()
+	self:RefreshMicro()
+	self:LayoutRail()
 end
 
 -- ---------------------------------------------------------------------------
@@ -867,7 +875,7 @@ function TB:LayoutContent()
 
 	self:LayoutMicro()
 
-	local cols = 3
+	local cols = math.max(1, tonumber(A.Config:Module('toolbox').widgetColumns) or 3)
 	local avail = w - PAD * 2
 	local cw = (avail - CARD_GAP * (cols - 1)) / cols
 	for i, card in ipairs(content.cards) do
@@ -1134,7 +1142,7 @@ function TB:LayoutTiles()
 		content.tilesHead:SetPoint("TOPLEFT", content.widgetsHead, "BOTTOMLEFT", 0, -18)
 	end
 
-	local cols = 2
+	local cols = math.max(1, tonumber(A.Config:Module('toolbox').tileColumns) or 2)
 	local avail = w - PAD * 2
 	local tw = (avail - TILE_GAP * (cols - 1)) / cols
 	for i, tile in ipairs(content.tiles) do
@@ -1450,7 +1458,7 @@ function TB:LayoutAddons()
 	content.addonsHint:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
 	content.addonsHint:SetPoint("TOP", content.addonsHead, "TOP", 0, 0)
 
-	local cols = 2
+	local cols = math.max(1, tonumber(A.Config:Module('toolbox').addonColumns) or 2)
 	local avail = w - PAD * 2
 	local rw = (avail - ROW_GAP * (cols - 1)) / cols
 
