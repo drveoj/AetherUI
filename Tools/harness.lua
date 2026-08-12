@@ -8091,6 +8091,51 @@ do
 			"the button moves onto the rail, where it is reachable with the"
 			.. " drawer shut")
 
+		-- ...and it STAYS visible after the library refreshes itself.
+		--
+		-- LibDBIcon pins strata and level so reparenting cannot shuffle its
+		-- buttons behind things, and re-applies that on its own Refresh and
+		-- Show. Once it has, our SetFrameStrata is refused: the button sits at
+		-- MEDIUM level 8 while the rail is FULLSCREEN_DIALOG, the rail's own
+		-- panel art paints over it, and the pin looks like it disappeared -
+		-- coming back on a reload, because nothing had refreshed yet.
+		--
+		-- A REAL LibDBIcon button, not one of our proxies: Prepare skips frames
+		-- we made, and a proxy is the one kind no library ever touches. The
+		-- first version of this test used one and proved nothing.
+		do
+			_G.__makeLDB("RefreshMe", "launcher", { label = "Refresh Me" })
+			local rb = _G.__makeDBIcon("RefreshMe")
+			LN:Scan()
+			TBm:ClaimPins()
+			TBm:SetPinned("RefreshMe", true)
+
+			local re = LN.byKey["RefreshMe"]
+			check(re and re.button == rb and not re.owned,
+				"a real LibDBIcon button backs the entry")
+
+			-- What Refresh does, in this order: unpin, restore its own strata
+			-- and level, re-pin. Setting the flags first would have the mock
+			-- refuse the change, which is how a broken version passes.
+			rb.__fixedStrata, rb.__fixedLevel = false, false
+			rb:SetFrameStrata("MEDIUM")
+			rb:SetFrameLevel(8)
+			rb.__fixedStrata, rb.__fixedLevel = true, true
+			check(rb:GetFrameStrata() == "MEDIUM",
+				"the library really has dragged it back down first")
+
+			TBm:LayoutRail()
+			check(rb:GetFrameStrata() == TBm.rail:GetFrameStrata(),
+				"a library that re-pins its button between layouts does not"
+				.. " strand it behind the rail - Prepare runs on EVERY layout,"
+				.. " not just when the entry is claimed (got "
+				.. rb:GetFrameStrata() .. ")")
+			check(rb:GetFrameLevel() > TBm.rail:GetFrameLevel(),
+				"and it sits above the rail's own art rather than under it")
+
+			TBm:SetPinned("RefreshMe", false)
+		end
+
 		-- ...and UNPINNING has to take it off again. It used to only stop being
 		-- laid out: the drawer filters on ownership too, so an unowned button
 		-- was laid out by neither surface and simply stayed on the rail, sitting

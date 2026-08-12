@@ -1454,6 +1454,22 @@ function TB:LayoutRail()
 		local b = entry and entry.button
 		if b and L:OwnerOf(entry) == self then
 			n = n + 1
+
+			-- RE-PREPARED on every layout, not just when claimed. LibDBIcon pins
+			-- both strata and level with SetFixedFrameStrata/SetFixedFrameLevel
+			-- so reparenting cannot shuffle its buttons behind things, and it
+			-- re-applies that on its own Refresh and Show. Once it does, our
+			-- SetFrameStrata below is quietly REFUSED: the button stays at
+			-- MEDIUM level 8 while the rail sits at FULLSCREEN_DIALOG, the
+			-- rail's own panel art is painted over the top of it, and the pin
+			-- looks like it vanished. A reload brought them back because nothing
+			-- had refreshed yet.
+			--
+			-- The drawer did exactly this on every layout and said why; that
+			-- line went with the drawer and did not come to the rail.
+			entry._prepared = nil
+			L:Prepare(entry)
+
 			pcall(L.RawSetParent, b, self.rail)
 			pcall(L.RawClearAllPoints, b)
 			local off = RAIL_PAD + RAIL_CHEV + RAIL_PAD + (n - 1) * (RAIL_ICON + RAIL_PAD)
