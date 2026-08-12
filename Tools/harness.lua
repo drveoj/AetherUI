@@ -8391,12 +8391,29 @@ do
 	-- The rail: a hint, not the biggest thing on it, and it bites into the panel
 	-- rather than floating beside it as a second capsule.
 	do
-		local _, rel, _, x = TBm.rail:GetPoint(1)
-		check(rel == TBm.panel, "the rail hangs off the panel")
-		check(x < 0,
-			"and BITES into it, so the curve on that side is hidden behind the"
-			.. " drawer and the two read as one shape rather than two with a"
-			.. " gap of shadow between them (" .. string.format("%.0f", x) .. ")")
+		-- Anchored to the SCREEN, not to the panel, and clamped there. Hung off
+		-- the panel the rail travelled with it: shut, the panel is a full width
+		-- off screen and the rail went too, sitting a bite past the edge with
+		-- its icons cut off. The bite is a join with the panel, and there is
+		-- nothing to join to once the panel has gone.
+		TBm:SetDock("LEFT")
+		TBm:SetOpen(true, true)
+		local _, relOpen, _, xOpen = TBm.rail:GetPoint(1)
+		check(relOpen == UIParent, "the rail is anchored to the screen")
+		check(math.abs(xOpen - (TBm.panel:GetWidth() - 14)) < 0.5,
+			"open, it sits INSIDE the panel's edge by the bite, so the curve on"
+			.. " that side hides behind the drawer and the two read as one shape"
+			.. " (" .. string.format("%.0f", xOpen) .. " against a "
+			.. string.format("%.0f", TBm.panel:GetWidth()) .. "-wide panel)")
+
+		TBm:SetOpen(false, true)
+		local _, _, _, xShut = TBm.rail:GetPoint(1)
+		check(xShut >= -0.5,
+			"and SHUT it stops flush at the screen edge rather than following"
+			.. " the panel off it - which is what cut the left side off the"
+			.. " handle and everything on it (" .. string.format("%.0f", xShut)
+			.. ")")
+		TBm:SetOpen(true, true)
 		check(TBm.rail.chev:GetWidth() < TBm.rail.gear:GetWidth(),
 			"the chevron is smaller than a rail icon - it is a hint, not the"
 			.. " largest thing on the rail (" .. TBm.rail.chev:GetWidth()
@@ -8502,6 +8519,62 @@ do
 
 	UIParent:SetSize(oldW, oldH)
 	A.db.profile.scale = oldScale
+	TBm:SetOpen(false, true)
+end
+
+print("== toolbox: pins survive a reload ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local LN  = A.Launchers
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+
+	-- Pin something, then simulate the shape of a reload: the saved list is
+	-- still there, but the launcher registry starts empty and refills over the
+	-- next fifteen seconds as each addon finishes loading and LibDBIcon
+	-- announces its button.
+	--
+	-- Claiming pins ONCE at enable caught only whatever had already arrived. An
+	-- addon that loaded a moment later stayed in the saved list and never
+	-- reached the rail - which from the outside is indistinguishable from the
+	-- pin not having been saved at all, and was reported as exactly that.
+	_G.__makeLDB("SlowAddon", "launcher", { label = "Slow Addon" })
+	A:GetModule("minimap"):Scan()
+	TBm:TogglePin("SlowAddon")
+	check(TBm:IsPinned("SlowAddon"), "pinned")
+
+	local saved = A.db.char.toolbox.pinned
+	check(saved and #saved == 1 and saved[1] == "SlowAddon",
+		"and the pin is in the CHARACTER scope, which is what a reload restores")
+
+	-- The reload. Registry cleared, saved list kept.
+	local keptEntries, keptSeen, keptOwners = LN.entries, LN.seen, LN.owners
+	local keptByKey = LN.byKey
+	LN.entries, LN.byKey, LN.seen, LN.owners = {}, {}, {}, {}
+
+	TBm:ClaimPins()
+	TBm:LayoutRail()
+	check(TBm:IsPinned("SlowAddon"),
+		"straight after the reload the pin is still recorded, even though the"
+		.. " addon it names has not loaded yet")
+
+	-- ...and now the addon arrives, the way it really does.
+	_G.__makeLDB("SlowAddon2", "launcher", { label = "Slow Addon" })
+	LN.byKey["SlowAddon"] = { key = "SlowAddon", label = "Slow Addon",
+		source = "ldb", button = CreateFrame("Button", nil, UIParent), owned = true }
+	LN.entries[1] = LN.byKey["SlowAddon"]
+	LN:Changed()
+
+	local entry = LN.byKey["SlowAddon"]
+	check(LN:OwnerOf(entry) == TBm,
+		"and when it finally arrives the pin CLAIMS it - re-claimed on every"
+		.. " launcher change rather than once at enable, or a slow addon is a"
+		.. " pin that silently never draws")
+	check(entry.button:GetParent() == TBm.rail,
+		"so it lands on the rail without anybody touching the pin again")
+
+	LN.entries, LN.byKey, LN.seen, LN.owners = keptEntries, keptByKey, keptSeen, keptOwners
+	TBm:SetPinned("SlowAddon", false)
 	TBm:SetOpen(false, true)
 end
 

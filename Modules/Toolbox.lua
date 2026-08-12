@@ -70,7 +70,11 @@ local RAIL_W     = RAIL_ICON + RAIL_PAD * 2
 -- and read as the largest thing on the rail. Half that, and the rail reads as a
 -- seam with a handle rather than a column of controls.
 local RAIL_CHEV  = 14
-local RAIL_CORNER = 16
+-- A DRAWER-PULL, not a capsule. At 16 on a 40-wide rail the two corner slices
+-- are 32 of the 40 and the ends read as semicircles - which is a pill, which is
+-- exactly what it looked like. 8 leaves a flat run down the middle of each end
+-- and the shape reads as a handle on the side of a drawer.
+local RAIL_CORNER = 8
 
 -- How far the rail sits INTO the panel. Without this it is a separate capsule
 -- floating beside the drawer with its own rounded inner edge - two shapes with
@@ -78,7 +82,7 @@ local RAIL_CORNER = 16
 -- curve is hidden behind the panel and the rail reads as a tab growing out of
 -- the drawer's edge. When the drawer is shut the same overlap puts that curve
 -- off the screen edge, so it hugs there too.
-local RAIL_BITE  = RAIL_CORNER
+local RAIL_BITE  = 14
 
 local PANEL_CORNER = 28
 
@@ -173,9 +177,18 @@ function TB:Build()
 	-- rail because it has to be reachable with the drawer shut.
 	local gear = CreateFrame("Button", nil, rail)
 	gear:SetSize(RAIL_ICON, RAIL_ICON)
-	local gg = W.Text(gear, "tbLabel", "CENTER")
+	-- NOT a unicode gear. Outfit is a text face with no geometric shapes in it -
+	-- generate_textures.py says as much where it draws the chevron from line
+	-- segments rather than borrowing a glyph - so U+2699 came out as the three
+	-- bytes of its own UTF-8 rendered as latin: "]lk" on the rail.
+	--
+	-- A ring stands in until there is real art. It is a shape rather than a
+	-- symbol, which is the honest version of "we have no gear yet"; the concept
+	-- wants a gear or the star, and both need a generator pass.
+	local gg = gear:CreateTexture(nil, "ARTWORK")
 	gg:SetPoint("CENTER", gear, "CENTER", 0, 0)
-	gg:SetText("lk")          -- gear glyph, until there is art
+	gg:SetSize(RAIL_ICON - 10, RAIL_ICON - 10)
+	gg:SetTexture(Media.texture.ring)
 	gear.glyph = gg
 	gear:SetScript("OnClick", function()
 		if A.Options and A.Options.Open then A.Options:Open() end
@@ -295,20 +308,34 @@ function TB:Layout()
 	self.rail:ClearAllPoints()
 	self.scrim:ClearAllPoints()
 
-	-- The rail bites INTO the panel by its own corner radius, so the curve on
-	-- that side disappears behind the drawer and the two read as one shape.
+	-- The rail bites INTO the panel so the curve on that side disappears behind
+	-- the drawer and the two read as one shape - but it is anchored to the
+	-- SCREEN and clamped, not hung off the panel.
+	--
+	-- Hung off the panel it travelled with it: shut, the panel is a full width
+	-- off screen, so the rail went with it and sat a bite's worth past the
+	-- screen edge with its left side - and the icons on it - cut off. The bite
+	-- is a join with the panel, and there is nothing to join to once the panel
+	-- has gone.
+	--
+	-- So the offset is computed and clamped at the edge. Open it lands inside
+	-- the panel by RAIL_BITE; shut it stops flush against the screen, whole.
 	if edge == "LEFT" then
 		self.panel:SetPoint("LEFT", UIParent, "LEFT", dx, 0)
-		self.rail:SetPoint("LEFT", self.panel, "RIGHT", -RAIL_BITE, 0)
+		self.rail:SetPoint("LEFT", UIParent, "LEFT",
+			math.max(0, dx + w - RAIL_BITE), 0)
 	elseif edge == "RIGHT" then
 		self.panel:SetPoint("RIGHT", UIParent, "RIGHT", dx, 0)
-		self.rail:SetPoint("RIGHT", self.panel, "LEFT", RAIL_BITE, 0)
+		self.rail:SetPoint("RIGHT", UIParent, "RIGHT",
+			math.min(0, dx - w + RAIL_BITE), 0)
 	elseif edge == "TOP" then
 		self.panel:SetPoint("TOP", UIParent, "TOP", 0, dy)
-		self.rail:SetPoint("TOP", self.panel, "BOTTOM", 0, RAIL_BITE)
+		self.rail:SetPoint("TOP", UIParent, "TOP", 0,
+			math.min(0, dy - h + RAIL_BITE))
 	else
 		self.panel:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, dy)
-		self.rail:SetPoint("BOTTOM", self.panel, "TOP", 0, -RAIL_BITE)
+		self.rail:SetPoint("BOTTOM", UIParent, "BOTTOM", 0,
+			math.max(0, dy + h - RAIL_BITE))
 	end
 
 	-- Chevron at the inboard end, gear at the far one, pins between. The rail
@@ -506,15 +533,19 @@ function TB:OnEnable()
 	self:SetOpen(self:IsOpen(), true)
 	self:SetPolling(self:IsOpen())
 
-	-- Pins are claimed on the way in, or a rail restored from saved variables
-	-- would draw nothing until somebody toggled a pin.
-	for _, key in ipairs(self:Pinned()) do
-		local e = A.Launchers and A.Launchers.byKey[key]
-		if e then A.Launchers:Claim(e, self, true) end
-	end
+	self:ClaimPins()
 	self:LayoutRail()
 
 	A.Launchers:OnChanged("toolbox", function()
+		-- Re-claim on every change, not only at enable. A pin restored from
+		-- saved variables names an addon whose button may not exist yet: the
+		-- launcher sweep runs for fifteen seconds after login and LibDBIcon
+		-- announces buttons as their addons finish loading. Claiming once at
+		-- enable caught only whatever had already arrived, so a pinned addon
+		-- that loaded a moment later stayed in the saved list and never
+		-- appeared on the rail - which reads exactly like the pin not being
+		-- saved at all.
+		TB:ClaimPins()
 		TB:RefreshAddons()
 		TB:LayoutRail()
 	end)
@@ -1251,6 +1282,25 @@ function TB:SetPinned(key, on)
 	self:LayoutRail()
 	self:RefreshAddons()
 	return true
+end
+
+--- Take ownership of every pinned entry that exists right now.
+--
+--  Idempotent and cheap, so it can run on every launcher change rather than
+--  only at enable - which is the difference between a pin surviving a reload
+--  and appearing to have been forgotten.
+function TB:ClaimPins()
+	local L = A.Launchers
+	if not L then return 0 end
+	local n = 0
+	for _, key in ipairs(self:Pinned()) do
+		local e = L.byKey[key]
+		if e and L:OwnerOf(e) ~= self then
+			L:Claim(e, self, true)
+			n = n + 1
+		end
+	end
+	return n
 end
 
 function TB:TogglePin(key)
