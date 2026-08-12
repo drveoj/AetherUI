@@ -22,6 +22,8 @@ local function usage()
 		"|cff9d7bff/aether fade|r <on|off|delay N|idle 0-1>  ·  stage one, the dim",
 		"|cff9d7bff/aether zen|r <on|off|delay N|afk on/off|test>  ·  stage two",
 		"|cff9d7bff/aether zen|r <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
+		"|cff9d7bff/aether zen|r <zoom|pitch> N  ·  the shot, live",
+		"|cff9d7bff/aether zen shoulder|r <left|centre|right|N>  ·  which side, how far",
 		"|cff9d7bff/aether zen|r <track NAME|preview>  ·  the music",
 		"|cff9d7bff/aether shadow|r <0-1>  ·  ambient shadow opacity",
 		"|cff9d7bff/aether health|r <class|deck>  ·  bar colour for players",
@@ -324,6 +326,61 @@ handlers.zen = function(arg, rest)
 		-- be a setting that does the opposite of what it says.
 		if not cfg.camera and Z and Z.RestoreCamera then Z:RestoreCamera() end
 		A:Print("move the camera in zen -> " .. (cfg.camera and "on" or "off"))
+	elseif arg == "zoom" or arg == "pitch" or arg == "shoulder" then
+		-- Live, because none of these three can be reasoned about from a number.
+		-- The zoom is metres, the shoulder is a multiplier on a curve, and the
+		-- pitch is SECONDS of movement at a rate the client documents nowhere -
+		-- so the only way to find a value anybody likes is to try one, watch it,
+		-- and try another. Reloading between each is what makes that unbearable.
+		local KEYS = {
+			zoom     = { key = "cameraZoom",     lo = 0, hi = 15, what = "metres behind you" },
+			pitch    = { key = "cameraPitch",    lo = 0, hi = 3,
+				what = "seconds of DOWNWARD movement - higher looks further out at the world" },
+			shoulder = { key = "cameraShoulder", lo = 0, hi = 3,
+				what = "how far to the side; takes left/centre/right too" },
+		}
+		local k = KEYS[arg]
+
+		-- `shoulder` takes a side as well as a number, because which side the
+		-- camera sits on is a choice and not a magnitude - asking somebody to
+		-- remember that -1 is left is the sort of interface that gets used once.
+		if arg == "shoulder" then
+			local SIDES = { left = "LEFT", centre = "CENTRE", center = "CENTRE", right = "RIGHT" }
+			local side = SIDES[(rest or ""):lower()]
+			if side then
+				cfg.cameraShoulderSide = side
+				A:Print("zen shoulder -> |cffece6ff" .. side:lower() .. "|r  ·  "
+					.. (side == "CENTRE" and "the character sits in the middle of the frame"
+						or "the camera sits over that shoulder, so the character is on the other side"))
+				local Z = A:GetModule("zen")
+				if Z and Z._cam and Z.RestoreCamera and Z.SetCamera then
+					Z:RestoreCamera()
+					Z:SetCamera(1)
+				end
+				return
+			end
+		end
+
+		local v = tonumber(rest)
+		if not v then
+			A:Print("zen " .. arg .. " -> |cffece6ff" .. tostring(cfg[k.key]) .. "|r  ·  "
+				.. k.what)
+			A:Print("|cff9d7bffzen " .. arg .. " " .. k.lo .. "-" .. k.hi .. "|r to change it")
+			return
+		end
+		cfg[k.key] = math.max(k.lo, math.min(k.hi, v))
+		A:Print("zen " .. arg .. " -> |cffece6ff" .. cfg[k.key] .. "|r  ·  " .. k.what)
+
+		-- Re-stage it on the spot if the shot is up, so the new value is visible
+		-- now rather than at the next zen. Restore first: the camera is set ONCE
+		-- on the way in and `_cam` is what says it has been, so without putting
+		-- the player's own back first the next zen would restore to a distance
+		-- this preview had already moved them to.
+		local Z = A:GetModule("zen")
+		if Z and Z._cam and Z.RestoreCamera and Z.SetCamera then
+			Z:RestoreCamera()
+			Z:SetCamera(1)
+		end
 	elseif arg == "audio" then
 		cfg.audio = (rest ~= "off")
 		local Z = A:GetModule("zen")

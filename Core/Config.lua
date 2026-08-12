@@ -636,15 +636,51 @@ Config.defaults = {
 				-- is put back rather than guessed at.
 				camera        = true,
 				cameraZoom    = 3.0,
-				-- Seconds of upward tilt, NOT an angle. Pitch has no getter and
-				-- no setter in this client; the only control is movement over
-				-- time, so an amount can be asked for and never measured. The
-				-- way back is the same movement reversed for the same duration.
-				cameraPitch   = 0.35,
-				-- The over-the-shoulder lateral offset. `test_cameraOverShoulder`
-				-- appears nowhere in the Classic Era interface source, so it may
-				-- simply not exist here - it is probed like every other CVar and
-				-- the shot is centred without it.
+				-- Seconds of DOWNWARD movement, NOT an angle. Pitch has no
+				-- getter and no setter in this client; the only control is
+				-- movement over time, so an amount can be asked for and never
+				-- measured. The way back is the same movement reversed for the
+				-- same duration.
+				--
+				-- Down, because the shot is the player looking OUT at the world
+				-- from about where they are sitting. The first pass moved the
+				-- camera up, which points it at the top of the character's head
+				-- and frames the floor around them.
+				--
+				-- Relative, so where it ends up depends on where the player's
+				-- camera already was. Tune it live with `/aether zen pitch N`
+				-- rather than by reloading - the client's rate for this is not
+				-- documented anywhere and 1.0 is a guess at its units.
+				--
+				-- 0.4 rather than 0.8: at 0.8 the camera swings PAST level, ends
+				-- up below the character and looks at the sky. Level is roughly
+				-- half of it. Somewhere near here is also the ceiling on what
+				-- this mechanism can promise - see the clamp note in Zen.lua.
+				cameraPitch   = 0.4,
+				-- Which side the camera sits on: CENTRE, LEFT or RIGHT.
+				--
+				-- CENTRE by default. "Over the shoulder" is the phrase the shot
+				-- was described with, but the picture it was describing has the
+				-- character in the MIDDLE of the frame - the offset is a
+				-- cinematography habit rather than something this mode wanted,
+				-- and off-centre reads as the camera being slightly wrong rather
+				-- than as a composition when there is nothing else on screen.
+				--
+				-- The two sides are still worth having, so it is a choice rather
+				-- than a number somebody has to work out the sign of.
+				cameraShoulderSide = "CENTRE",
+
+				-- How FAR to that side, as a MULTIPLIER on a curve derived from
+				-- the zoom rather than as a distance. The offset is measured at
+				-- the camera, so the angle it subtends falls away as you pull
+				-- back and a fixed number is only ever right at one cameraZoom.
+				-- 1 is DialogueUI's calibration for this client. Ignored while
+				-- the side is CENTRE.
+				--
+				-- Writing test_cameraOverShoulder alone moves nothing: the
+				-- client re-centres the character every frame unless
+				-- CameraKeepCharacterCentered is 0, so the module borrows that
+				-- and CameraReduceUnexpectedMovement alongside it.
 				cameraShoulder = 1.0,
 
 				-- The audio profile

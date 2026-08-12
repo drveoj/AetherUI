@@ -423,16 +423,31 @@ local function FaderGroup()
 			.. " rather than ours - asking it to move ten times a second is a"
 			.. " camera that never arrives anywhere.",
 			{ "modules", "zen", "cameraZoom" }, 0, 15, 0.5, { after = "none" }),
-		zenCameraPitch = range("Tilt above the head",
-			"Seconds of upward movement, not an angle - the client will not tell"
+		zenCameraPitch = range("Drop toward the horizon",
+			"How far the camera comes |cff9d7bffdown|r, so you are looking out at"
+			.. " the world from about where the character is sitting rather than"
+			.. " down at the top of their head."
+			.. "\n\nSeconds of movement, not an angle - the client will not tell"
 			.. " anybody what the camera's pitch actually is, so there is no angle"
-			.. " to ask for. 0 keeps your current height.",
-			{ "modules", "zen", "cameraPitch" }, 0, 1.5, 0.05, { after = "none" }),
-		zenCameraShoulder = range("Over the shoulder",
-			"Sideways offset, so you are looking past the character rather than"
-			.. " through them. This one depends on a setting Classic Era may not"
-			.. " have at all; where it is missing the shot is simply centred and"
-			.. " nothing goes wrong.",
+			.. " to ask for and this is relative to wherever your camera already"
+			.. " was. 0 keeps your current height.",
+			{ "modules", "zen", "cameraPitch" }, 0, 3, 0.05, { after = "none" }),
+		zenCameraSide = choice("Camera sits",
+			"Centred by default. An offset camera is a cinematography habit, and"
+			.. " with nothing else on screen it reads as the shot being slightly"
+			.. " wrong rather than as a composition."
+			.. "\n\nOver the |cff9d7bffright|r shoulder puts the character on the"
+			.. " left of the frame, and the other way round - the camera is what"
+			.. " moves, not the character.",
+			{ "modules", "zen", "cameraShoulderSide" },
+			{ CENTRE = "Centred", LEFT = "Over the left shoulder",
+			  RIGHT = "Over the right shoulder" },
+			{ after = "none" }),
+		zenCameraShoulder = range("How far to that side",
+			"A |cff9d7bffmultiplier|r rather than a distance: the offset is scaled"
+			.. " to how far back the camera is going, because one fixed number is"
+			.. " only ever right at one distance. 1 is the calibrated shot."
+			.. "\n\nIgnored while the camera is centred.",
 			{ "modules", "zen", "cameraShoulder" }, 0, 3, 0.1, { after = "none" }),
 
 		zenAudioHeader = header("The audio profile"),

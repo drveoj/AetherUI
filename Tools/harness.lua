@@ -895,6 +895,12 @@ _G.__cvars = {
 	-- genuinely not exist on a live 1.15 client.
 	test_cameraOverShoulder = "0",
 
+	-- The two that decide whether the shoulder offset does anything. Writing the
+	-- offset without these is what shipped, and the camera did not move - so the
+	-- mock carries them purely so a test can assert they were written.
+	CameraKeepCharacterCentered    = "1",
+	CameraReduceUnexpectedMovement = "1",
+
 	-- Deliberately ABSENT: nameplateShowFriends, and the four pet/guardian name
 	-- CVars the module lists from DialogueUI. Between them they cover both
 	-- halves of the probe: a name that is gone from this flavour, and names that
@@ -997,7 +1003,11 @@ local function moveStart(dir)
 		-- The reversal is a movement followed immediately by a C_Timer stop.
 		-- Flagging it here lets that stop's delay be captured as THIS movement's
 		-- duration rather than as whatever timer happened to be scheduled last.
-		if dir == "Down" then c.awaitingDelay = true end
+		--
+		-- "Up" because the shot drops the camera DOWN and the reversal is
+		-- therefore the upward one. It was "Down" while the shot tilted up, and
+		-- flipping the module without flipping this measures the wrong movement.
+		if dir == "Up" then c.awaitingDelay = true end
 	end
 end
 
@@ -4110,32 +4120,54 @@ do
 	check(math.abs(cam.zoom - zcfg.cameraZoom) < 0.001,
 		"zen pulls the camera back to the configured distance ("
 		.. string.format("%.1f", cam.zoom) .. ")")
-	check(cam.pitchMoving == nil and cam.pitchUp > 0,
-		"tilts it up by a measured amount and STOPS - a pitch movement left"
+	check(cam.pitchMoving == nil and cam.pitchDown > 0,
+		"drops it DOWN by a measured amount and STOPS - a pitch movement left"
 		.. " running rotates the camera through the floor until the player"
 		.. " reloads, which is the one failure here that is not cosmetic ("
-		.. string.format("%.2fs", cam.pitchUp) .. ")")
-	check(math.abs(tonumber(cv.test_cameraOverShoulder) - zcfg.cameraShoulder) < 0.001,
-		"and offsets it over the shoulder, where the client has that setting")
+		.. string.format("%.2fs", cam.pitchDown) .. ")")
+	check(cam.pitchUp == 0,
+		"and not up, which points the camera at the top of the character's head"
+		.. " and frames the floor around them - the shot is the player looking OUT"
+		.. " at the world from about where they are sitting")
+	-- Centred by DEFAULT, and centred by writing a real 0 rather than by leaving
+	-- the CVar alone. Anyone running an over-the-shoulder camera of their own
+	-- would otherwise sit off to one side for the whole of zen, which is the one
+	-- thing "centred" is meant to rule out.
+	check(tonumber(cv.test_cameraOverShoulder) == 0,
+		"and leaves the character in the MIDDLE of the frame by default - the shot"
+		.. " was described as over-the-shoulder, but the picture it described has"
+		.. " them centred, and off-centre with nothing else on screen reads as the"
+		.. " camera being slightly wrong rather than as a composition")
+	check(tonumber(cv.CameraKeepCharacterCentered) == 0
+		and tonumber(cv.CameraReduceUnexpectedMovement) == 0,
+		"with the two CVars that decide whether an offset is visible AT ALL."
+		.. " Writing the offset alone is what shipped: the CVar read back as the"
+		.. " value we wrote and the camera never moved, because the client"
+		.. " re-centres the character every frame and damps movement the player"
+		.. " did not ask for")
 
-	local upRan = cam.pitchUp
+	local dropRan = cam.pitchDown
 	cam.backDelay = nil
 	leaveZen()
 	check(math.abs(cam.zoom - 12) < 0.001,
 		"leaving puts the player's own distance back EXACTLY, because"
 		.. " GetCameraZoom will tell us what it was rather than us guessing ("
 		.. string.format("%.2f", cam.zoom) .. ")")
-	check(cam.backDelay and math.abs(cam.backDelay - upRan) < 0.001,
-		"and reverses the tilt for the same duration it applied - pitch has no"
+	check(cam.backDelay and math.abs(cam.backDelay - dropRan) < 0.001,
+		"and raises it back for the same duration it dropped - pitch has no"
 		.. " getter in this client, so an equal-and-opposite nudge is the only"
-		.. " way back there is (up " .. string.format("%.2f", upRan) .. ", back "
-		.. tostring(cam.backDelay) .. ")")
+		.. " way back there is (down " .. string.format("%.2f", dropRan)
+		.. ", back " .. tostring(cam.backDelay) .. ")")
 	check(cam.pitchMoving == nil,
 		"with nothing left moving. The stop for the way back is on C_Timer, not"
 		.. " on the tick: the paths that start it unregister the ticker a few"
 		.. " lines later, so a tick-driven stop would never fire at all")
 	check(tonumber(cv.test_cameraOverShoulder) == 0,
 		"and the shoulder offset goes back like every other borrowed CVar")
+	check(tonumber(cv.CameraKeepCharacterCentered) == 1
+		and tonumber(cv.CameraReduceUnexpectedMovement) == 1,
+		"and so do the two centring ones - a player left permanently off-centre"
+		.. " by an addon has no way to guess what did it")
 
 	-- Cut short PART-WAY through the tilt, which is the case that matters and
 	-- the one the first version got wrong. Zen can end at any moment - combat, a
@@ -4149,19 +4181,19 @@ do
 	A.db.profile.fader.delay = 1
 	A.Fader:ForceZen()
 	tick(0.1)
-	check(cam.pitchMoving == "Up", "the tilt is still running one tick in")
+	check(cam.pitchMoving == "Down", "the drop is still running one tick in")
 
 	A.Fader:Touch()
 	A.Fader:Update()
 	for i = 1, 20 do tick(0.1) end
-	local upRan = cam.pitchUp
-	check(cam.backDelay and math.abs(cam.backDelay - upRan) < 0.001,
+	local dropRan = cam.pitchDown
+	check(cam.backDelay and math.abs(cam.backDelay - dropRan) < 0.001,
 		"cut short, it reverses by what actually RAN and not by what was asked"
-		.. " for (up " .. string.format("%.2f", upRan) .. ", back "
+		.. " for (down " .. string.format("%.2f", dropRan) .. ", back "
 		.. tostring(cam.backDelay) .. ")")
-	check(upRan > 0 and upRan < zcfg.cameraPitch,
+	check(dropRan > 0 and dropRan < zcfg.cameraPitch,
 		"and that really is less than the full nudge, or this proves nothing ("
-		.. string.format("%.2f of %.2f", upRan, zcfg.cameraPitch) .. ")")
+		.. string.format("%.2f of %.2f", dropRan, zcfg.cameraPitch) .. ")")
 	settle()
 	check(cam.pitchMoving == nil, "and nothing is left rotating afterwards")
 	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 60, 2.5, 0.30
@@ -4194,6 +4226,87 @@ do
 	check(math.abs(cam.zoom - 12) < 0.001, "the switch turns it off")
 	leaveZen()
 	zcfg.camera = true
+
+	-- The two sides, and which way each one goes. Positive puts the CAMERA over
+	-- the right shoulder, which places the CHARACTER on the left - they read as
+	-- opposites, and the sign was settled by a screenshot rather than by any
+	-- documentation.
+	do
+		local curve = zcfg.cameraZoom * 0.4314 + 0.1057
+		for _, case in ipairs({ { side = "RIGHT", sign = 1 }, { side = "LEFT", sign = -1 } }) do
+			zcfg.cameraShoulderSide = case.side
+            cam.zoom = 12
+			enterZen()
+			local got  = tonumber(cv.test_cameraOverShoulder)
+			local want = curve * zcfg.cameraShoulder * case.sign
+			check(math.abs(got - want) < 0.001,
+				case.side .. " offsets the camera that way, scaled to the distance it"
+				.. " is going TO rather than flat - one fixed number is only ever"
+				.. " right at one zoom (got " .. string.format("%.3f", got)
+				.. ", want " .. string.format("%.3f", want) .. ")")
+			check(math.abs(got - zcfg.cameraShoulder * case.sign) > 0.001,
+				"and that really is not the setting written straight through, or the"
+				.. " check above proves nothing")
+			leaveZen()
+			check(tonumber(cv.test_cameraOverShoulder) == 0,
+				"and it goes back afterwards")
+		end
+		zcfg.cameraShoulderSide = "CENTRE"
+	end
+
+	-- Tuning the shot live. None of these three can be reasoned about from a
+	-- number - the pitch especially, which is seconds of movement at a rate the
+	-- client documents nowhere - so the only way to land on a value is to try one
+	-- and look at it, and a reload between each try is what makes that unbearable.
+	do
+		local run = SlashCmdList["AETHERUI"]
+		run("zen zoom 5")
+		check(math.abs(zcfg.cameraZoom - 5) < 0.001, "/aether zen zoom sets the distance")
+		run("zen pitch 1.2")
+		check(math.abs(zcfg.cameraPitch - 1.2) < 0.001, "/aether zen pitch sets the drop")
+		run("zen shoulder 2")
+		check(math.abs(zcfg.cameraShoulder - 2) < 0.001, "/aether zen shoulder sets the offset")
+
+		-- The same word takes a SIDE as well as a number, because which side the
+		-- camera sits on is a choice and not a magnitude.
+		run("zen shoulder left")
+		check(zcfg.cameraShoulderSide == "LEFT", "/aether zen shoulder left picks a side")
+		run("zen shoulder center")
+		check(zcfg.cameraShoulderSide == "CENTRE",
+			"and takes the American spelling, because somebody will type it")
+		run("zen shoulder right")
+		check(zcfg.cameraShoulderSide == "RIGHT", "and the other side")
+		check(math.abs(zcfg.cameraShoulder - 2) < 0.001,
+			"without disturbing how FAR - the side and the distance are two"
+			.. " settings sharing one word, and one must not eat the other")
+		run("zen shoulder centre")
+		zcfg.cameraShoulder = 1
+
+		run("zen zoom 99")
+		check(zcfg.cameraZoom == 15, "and each one clamps rather than taking whatever"
+			.. " was typed - 99 metres of zoom is a camera in orbit")
+		run("zen pitch -5")
+		check(zcfg.cameraPitch == 0, "including at the bottom of the range")
+
+		-- Re-staged on the spot when the shot is already up, and the restore has
+		-- to happen FIRST: the camera is set once on the way in and `_cam` is what
+		-- records that, so without putting the player's own distance back the next
+		-- restore would return them to a distance this preview had moved them to.
+		zcfg.cameraZoom, zcfg.cameraPitch, zcfg.cameraShoulder = 3, 0.8, 1
+		cam.zoom = 12
+		enterZen()
+		run("zen zoom 8")
+		check(math.abs(cam.zoom - 8) < 0.001,
+			"tuning it mid-zen re-stages the shot there and then, rather than at"
+			.. " the next one (" .. string.format("%.1f", cam.zoom) .. ")")
+		leaveZen()
+		check(math.abs(cam.zoom - 12) < 0.001,
+			"and leaving still returns the distance the PLAYER had, not the one the"
+			.. " preview moved them to - the restore runs before the re-stage, or"
+			.. " every tweak quietly becomes the new home ("
+			.. string.format("%.1f", cam.zoom) .. ")")
+		zcfg.cameraZoom, zcfg.cameraPitch, zcfg.cameraShoulder = 3, 0.8, 1
+	end
 end
 
 

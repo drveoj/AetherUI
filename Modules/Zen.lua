@@ -348,12 +348,54 @@ local WORLD_TEXT_CVARS = {
 	"UnitNameEnemyGuardianName",
 }
 
---- The over-the-shoulder offset, if this client has it at all.
+--- The over-the-shoulder offset.
 --
---  It does not appear anywhere in the Classic Era interface source, and the one
---  addon here that sets it only does so on its retail path - so this is probed
---  like everything else and the shot simply has no lateral offset without it.
+--  It appears nowhere in the Classic Era interface source, which is why the
+--  first pass here assumed it might not exist and treated a missing one as the
+--  normal case. It does exist: DialogueUI writes it on this client, on this
+--  branch, and reads it back with GetCVar. Blizzard's own UI simply never
+--  touches it. Still probed, because a CVar not in the source is a CVar with
+--  nothing promising it will stay.
 local SHOULDER_CVAR = "test_cameraOverShoulder"
+
+--- The two that decide whether the offset does anything at all.
+--
+--  Writing test_cameraOverShoulder on its own is what shipped, and it moved
+--  nothing. CameraKeepCharacterCentered re-centres the character every frame,
+--  which is the offset undone as fast as it is applied, and
+--  CameraReduceUnexpectedMovement damps exactly the kind of camera change that
+--  does not come from the player's own hand. DialogueUI sets both to 0
+--  alongside every shoulder write and marks them "11.0.2 Fix"; without them the
+--  CVar reads back as the value we wrote while the camera sits where it was,
+--  which is the most confusing shape a bug can have.
+local CENTRE_CVARS = {
+	CameraKeepCharacterCentered   = 0,
+	CameraReduceUnexpectedMovement = 0,
+}
+
+--- How much lateral offset a given zoom wants.
+--
+--  The offset is a distance at the camera, so the angle it subtends falls away
+--  as you pull back: a value that frames the character over one shoulder at
+--  three metres is barely a nudge at ten. A flat number is therefore only ever
+--  right at one distance, and cameraZoom is a setting.
+--
+--  The curve is DialogueUI's own (Code/Camera.lua, GetShoulderOffsetByZoom),
+--  calibrated against this client rather than derived here - 3m wants ~1.4,
+--  10m wants ~4.4. `cameraShoulder` multiplies it, so 1 is that calibration and
+--  0 is centred.
+local function ShoulderForZoom(zoom)
+	return (tonumber(zoom) or 0) * 0.4314 + 0.1057
+end
+
+--- Which way each side pushes the offset.
+--
+--  Positive puts the CAMERA over the right shoulder, which places the character
+--  on the LEFT of the frame - the two read as opposites and it is worth being
+--  explicit about which one the name refers to. Not read off any documentation:
+--  the first build of this shipped a positive offset and the character came out
+--  left of centre on screen, which settles it.
+local SIDE_SIGN = { CENTRE = 0, LEFT = -1, RIGHT = 1 }
 
 -- ---------------------------------------------------------------------------
 -- construction
@@ -1451,17 +1493,56 @@ function Zen:SetCamera(a)
 	end
 
 	-- The lateral offset, through the same borrow/give-back as every other CVar
-	-- so it is handed back by the paths that already exist. Absent on this
-	-- client, Borrow declines and the shot is simply centred.
-	local shoulder = tonumber(cfg.cameraShoulder) or 0
-	if shoulder ~= 0 then
-		cam.store = {}
-		Borrow(cam.store, SHOULDER_CVAR, shoulder)
-	end
+	-- so it is handed back by the paths that already exist - including the
+	-- PLAYER_LOGOUT one, which matters more for these three than for the audio:
+	-- a player left permanently off-centre has no way to guess what did it.
+	--
+	-- The two centring CVars go first and unconditionally. They are what makes
+	-- the offset visible at all, and borrowing them separately means a client
+	-- missing one still gets whatever the others can do.
+	--
+	-- Derived from `goal` rather than from `current`: the offset has to suit the
+	-- distance the camera is travelling TO, and the zoom above is a glide, so
+	-- GetCameraZoom for the next second or so answers with where it used to be.
+	--
+	-- CENTRE writes a real 0 rather than skipping the CVar, and the difference
+	-- matters for anyone who runs an over-the-shoulder camera of their own: left
+	-- alone they would sit off to one side through the whole of zen, which is the
+	-- one thing "centre" is meant to rule out. It is borrowed like any other
+	-- value, so their own comes straight back at the end.
+	local side = SIDE_SIGN[tostring(cfg.cameraShoulderSide or "CENTRE"):upper()] or 0
+	local mult = (tonumber(cfg.cameraShoulder) or 0) * side
 
-	local pitch = math.max(0, math.min(2, tonumber(cfg.cameraPitch) or 0.35))
-	if pitch > 0 and MoveViewUpStart then
-		pcall(MoveViewUpStart, PITCH_SPEED)
+	cam.store = {}
+	for name, value in pairs(CENTRE_CVARS) do
+		Borrow(cam.store, name, value)
+	end
+	Borrow(cam.store, SHOULDER_CVAR, ShoulderForZoom(goal) * mult)
+
+	-- DOWN, not up. MoveViewUp raises the camera and points it at the top of the
+	-- character's head, which is a shot looking at the floor around them; the
+	-- first pass did exactly that and the result was a table top seen from above.
+	-- The shot wants the opposite - the camera dropped to about where the player
+	-- is sitting, looking out at the world with the character in the frame rather
+	-- than down at them. So `cameraPitch` is seconds of DOWNWARD movement and the
+	-- reversal on the way out is the upward one.
+	--
+	-- Two things this mechanism cannot do, both worth knowing before reaching for
+	-- a bigger number:
+	--
+	--   * It is RELATIVE. Without a getter there is no absolute pitch to aim at,
+	--     so the same duration lands somewhere different depending on where the
+	--     player's camera already was. The shot is therefore approximately right
+	--     rather than framed, and that is why the value is tunable live.
+	--   * The equal-and-opposite reversal is exact ONLY while nothing clamps. The
+	--     client stops the camera at its pitch limit, so a duration long enough to
+	--     hit the bottom moves less than it asked for and the reversal - which
+	--     goes by the clock, not by the angle - then overshoots upward by the
+	--     difference. Keeping the drop well short of the limit is what keeps the
+	--     restore honest, and is the real argument against a large default.
+	local pitch = math.max(0, math.min(3, tonumber(cfg.cameraPitch) or 0.8))
+	if pitch > 0 and MoveViewDownStart then
+		pcall(MoveViewDownStart, PITCH_SPEED)
 		cam.pitch     = pitch
 		cam.pitchFrom = GetTime()
 		cam.pitchStop = GetTime() + pitch
@@ -1502,7 +1583,7 @@ function Zen:TickCamera()
 	-- Banked before the stop, so the reversal has an exact figure rather than
 	-- one derived from a clock that has moved on since.
 	cam.pitchDone = math.max(0, GetTime() - (cam.pitchFrom or GetTime()))
-	if MoveViewUpStop then pcall(MoveViewUpStop) end
+	if MoveViewDownStop then pcall(MoveViewDownStop) end
 end
 
 function Zen:RestoreCamera()
@@ -1532,23 +1613,24 @@ function Zen:RestoreCamera()
 		end
 	end
 
-	-- The same nudge, downward.
+	-- The same nudge, upward - the reverse of the drop that took the camera down
+	-- to the character's own level on the way in.
 	--
-	-- On C_Timer rather than on the tick, which is the opposite of the tilt UP,
-	-- and the difference is the whole reason this is worth reading twice. The
-	-- tilt up runs while zen is on screen, so the tick is guaranteed to be
+	-- On C_Timer rather than on the tick, which is the opposite of the drop
+	-- itself, and the difference is the whole reason this is worth reading twice.
+	-- The drop runs while zen is on screen, so the tick is guaranteed to be
 	-- running and can be trusted to stop it. This runs while zen is ENDING - and
 	-- the paths that call it (parking, OnDisable) unregister the ticker within a
 	-- few lines. A stop that depended on the tick would therefore never fire, and
-	-- the failure mode is not a cosmetic one: the camera rotates downward for
-	-- ever, through the floor, until the player reloads.
+	-- the failure mode is not a cosmetic one: the camera rotates upward for ever,
+	-- over the top and through the floor, until the player reloads.
 	--
 	-- The usual objection to a pending callback - that it arrives after teardown
-	-- and touches something that has gone - does not apply. MoveViewDownStop
-	-- takes no state of ours and is safe to call when nothing is moving.
-	if done > 0 and MoveViewDownStart then
-		pcall(MoveViewDownStart, PITCH_SPEED)
-		local stop = function() if MoveViewDownStop then pcall(MoveViewDownStop) end end
+	-- and touches something that has gone - does not apply. MoveViewUpStop takes
+	-- no state of ours and is safe to call when nothing is moving.
+	if done > 0 and MoveViewUpStart then
+		pcall(MoveViewUpStart, PITCH_SPEED)
+		local stop = function() if MoveViewUpStop then pcall(MoveViewUpStop) end end
 		if C_Timer and C_Timer.After then
 			C_Timer.After(done, stop)
 		else

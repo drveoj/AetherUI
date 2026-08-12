@@ -2069,6 +2069,100 @@ way to lock somebody out of their keyboard if any of this is ever wrong, and
 there is no reason to be listening during the 99% of playtime when nobody needs
 waking. `zen.keyboardWake` turns it off entirely.
 
+### The shot, and the CVar that reads back correct while doing nothing
+
+Zen sets up a camera rather than only clearing a screen: the character sits, and
+the view pulls back over their shoulder. Sitting goes through
+`C_ChatInfo.PerformEmote`, not `SitStandOrDescendStart` — the latter is what the
+keybind runs and it is a **toggle**, so on a player who is already sitting it
+stands them up, which is the wrong way round on exactly the players most likely
+to have been idle long enough to get here.
+
+The camera divides into a half that is reversible and a half that is not. Zoom is
+exact: `GetCameraZoom` reads the current distance, so the target is a difference
+and the player's own goes back precisely. Pitch is write-only — no getter, no
+setter, only `MoveView{Up,Down}Start`/`Stop`, which is movement over time — so the
+only way back is the same movement reversed for the same duration, and reversed by
+what actually **ran** rather than what was asked for. The tick is 0.1s, so a 0.8s
+nudge stops at 0.9s; undoing the 0.8 we intended would drift the player's pitch a
+little further off with every zen.
+
+**The camera goes down, not up, and the first pass had it backwards.**
+`MoveViewUp` raises the camera and points it at the top of the character's head,
+which frames the floor around them — a screenshot of a table top seen from above.
+The shot wants the opposite: the camera dropped to about where the player is
+sitting, looking *out* at the world with the character in frame. So `cameraPitch`
+is seconds of **downward** movement and the reversal on the way out is the upward
+one. Easy to get wrong twice, because both directions are "a pitch nudge that is
+reversed by its own duration" and only the picture tells them apart.
+
+Because there is no getter, the drop is **relative** — where it ends up depends on
+where the player's camera already was — and the client's rate for it is documented
+nowhere, so `PITCH_SPEED` is a guess at its units. That combination is why
+`/aether zen zoom|pitch|shoulder N` exists: all three re-stage the shot on the spot
+when zen is already up, so a value can be found by looking at it rather than by
+reloading between guesses. The re-stage restores the player's own camera *before*
+setting the new one, or each tweak quietly becomes the distance the next restore
+returns them to.
+
+**And then the lateral offset did nothing at all.** `test_cameraOverShoulder` was
+written, read back as exactly the value we wrote, and the camera stayed where it
+was. That is the most confusing shape a bug can have: every check you would think
+to run says it worked.
+
+Two causes, and the first is the one worth knowing:
+
+- **`CameraKeepCharacterCentered` re-centres the character every frame**, which
+  is the offset undone as fast as it is applied, and
+  `CameraReduceUnexpectedMovement` damps precisely the kind of camera change that
+  does not come from the player's own hand. Both have to go to 0 alongside the
+  offset. DialogueUI sets them on every shoulder write and marks them
+  `--11.0.2 Fix`; neither appears anywhere in Blizzard's own Classic Era source,
+  so there is nothing to find by reading the client.
+- **The offset has to scale with distance.** It is a lateral shift measured at
+  the camera, so the angle it subtends falls away as you pull back: a value that
+  frames the character over one shoulder at three metres is barely a nudge at
+  ten. A flat number is only ever right at one `cameraZoom`. The curve is
+  DialogueUI's own — `zoom * 0.4314 + 0.1057`, calibrated against this client —
+  and `cameraShoulder` multiplies it, so 1 is that calibration rather than a raw
+  distance somebody has to re-tune every time they move the zoom slider.
+
+**And then the shot did not want an offset at all.** "Over the shoulder" was the
+phrase this was specified with, and it is a cinematography habit rather than
+something the mode was asking for: the picture behind the request has the
+character in the *middle* of the frame. With nothing else on screen, off-centre
+reads as the camera being slightly wrong rather than as a composition. So
+`cameraShoulderSide` is `CENTRE`, `LEFT` or `RIGHT`, defaulting to centred, and
+`cameraShoulder` is only how far to that side.
+
+Centred writes a real **0** rather than skipping the CVar. Anyone running an
+over-the-shoulder camera of their own would otherwise sit off to one side for the
+whole of zen, which is the one thing "centred" exists to rule out — and it is
+borrowed like every other value, so their own comes straight back at the end.
+
+Which sign is which was settled by a screenshot rather than by any documentation:
+the first build wrote a positive offset and the character came out on the **left**
+of the frame. Positive moves the *camera* over the right shoulder, and camera and
+character move opposite ways, which is exactly the sort of thing worth writing
+down once rather than re-deriving from a picture every time.
+
+The offset is derived from the zoom the camera is travelling **to**, not from
+`GetCameraZoom`: the zoom is a glide, so for the next second or so the getter
+answers with where the camera used to be.
+
+**The wider lesson is about what the harness can and cannot prove.** All of this
+was green throughout — the suite mocks `SetCVar`, so it faithfully confirmed that
+the module wrote the value it meant to write. No mock can know that the client
+ignores it. The comment in the source said the CVar "appears nowhere in the
+Classic Era interface source, so it may simply not exist here", which was true
+about the source and wrong about the client, and the probe's silent-skip path
+made a working CVar and a dead one look identical from the outside.
+
+**When Blizzard's source says nothing, read the addons that already do it.**
+`DialogueUI` and `CinematicTaxi` were both sitting in the same AddOns folder,
+both moving the camera on this exact client, and between them they settled in
+minutes what the client's own source could not answer at all.
+
 ### The map glyph is drawn, not borrowed
 
 The corner pill wants to show a tiny minimap. It doesn't: it draws a 16px disc, a
