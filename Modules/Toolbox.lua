@@ -187,8 +187,8 @@ function TB:Build()
 	-- wants a gear or the star, and both need a generator pass.
 	local gg = gear:CreateTexture(nil, "ARTWORK")
 	gg:SetPoint("CENTER", gear, "CENTER", 0, 0)
-	gg:SetSize(RAIL_ICON - 10, RAIL_ICON - 10)
-	gg:SetTexture(Media.texture.ring)
+	gg:SetSize(RAIL_ICON - 8, RAIL_ICON - 8)
+	Media:SetIcon(gg, "gear")
 	gear.glyph = gg
 	gear:SetScript("OnClick", function()
 		if A.Options and A.Options.Open then A.Options:Open() end
@@ -1152,6 +1152,16 @@ function TB:RefreshTiles()
 		tile.__tile = t
 		tile.name:SetText(t.label or t.key)
 
+		-- The chip's glyph. Settings tiles name their own; a launcher tile uses
+		-- the addon's own icon, which it has and we do not.
+		if t.kind ~= "launcher" then
+			if Media:SetIcon(tile.icon, t.key) then
+				tile.icon:Show()
+			else
+				tile.icon:Hide()
+			end
+		end
+
 		local on = self:TileState(t)
 		if on == nil then
 			-- A launcher. No state, so no chip label - and its own icon, which
@@ -1163,8 +1173,14 @@ function TB:RefreshTiles()
 			W.Color(tile.chip.text or tile.name, Palette.c.text)
 		else
 			tile.state:SetText(on and "On" or "Off")
-			tile.icon:SetShown(false)
 			W.Color(tile.state, on and Palette.c.accent or Palette.c.textDim)
+			-- Dark ink on the accent chip, dim ink on the quiet one. The deck
+			-- carries the state in the CHIP, and a light glyph on a light fill
+			-- is the one combination that says nothing.
+			if tile.icon:IsShown() then
+				local c = on and Palette.c.btnFillText or Palette.c.textDim
+				tile.icon:SetVertexColor(c[1], c[2], c[3], on and 1 or 0.55)
+			end
 		end
 		-- `btnFill` is the deck's opaque accent - already its own token because
 		-- the deck asks for dark text on it, which is exactly the chip's "on".
@@ -1411,7 +1427,7 @@ function TB:RefreshAddons()
 			row.pin:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 			row.pin.glyph = row.pin:CreateTexture(nil, "ARTWORK")
 			row.pin.glyph:SetAllPoints(row.pin)
-			row.pin.glyph:SetTexture(Media.texture.circleMask or Media.texture.ring)
+			Media:SetIcon(row.pin.glyph, "pin")
 			row.pin:SetScript("OnClick", function(self2)
 				local rr = self2:GetParent().__row
 				if rr and rr.entry then TB:TogglePin(rr.entry.key) end
@@ -1455,6 +1471,7 @@ function TB:RefreshAddons()
 			row.pin:Show()
 			W.Color(row.name, Palette.c.text)
 			local pinned = self:IsPinned(r.entry.key)
+			Media:SetIcon(row.pin.glyph, pinned and "pinned" or "pin")
 			row.pin.glyph:SetVertexColor(
 				pinned and Palette.c.accent[1] or Palette.c.textDim[1],
 				pinned and Palette.c.accent[2] or Palette.c.textDim[2],
@@ -1608,8 +1625,9 @@ function TB:RefreshMicro()
 			-- is a generator pass of its own. The initial stands in, with the
 			-- name UNDER it rather than only on a tooltip: a label you can read
 			-- is worth more than a letter you have to decode.
-			b.glyph = W.Text(b, "tbCardTitle", "CENTER")
-			b.glyph:SetPoint("TOP", b, "TOP", 0, -4)
+			b.glyph = b:CreateTexture(nil, "ARTWORK")
+			b.glyph:SetPoint("TOP", b, "TOP", 0, -5)
+			b.glyph:SetSize(20, 20)
 
 			b.name = W.Text(b, "tbLabel", "CENTER")
 			b.name:SetPoint("TOP", b.glyph, "BOTTOM", 0, -4)
@@ -1634,7 +1652,26 @@ function TB:RefreshMicro()
 		end
 
 		b.__micro = m
-		b.glyph:SetText((m.label or "?"):sub(1, 1):upper())
+		-- The icon, and the initial only if the sheet has nothing for it. A
+		-- missing name draws the WHOLE atlas without a SetTexCoord, which is
+		-- unmistakable rather than subtle - but the fallback means a key added
+		-- here before its glyph is drawn degrades to a letter instead.
+		if Media:SetIcon(b.glyph, m.key) then
+			b.glyph:Show()
+			if b.initial then b.initial:SetText("") end
+		else
+			b.glyph:Hide()
+			if not b.initial then
+				b.initial = W.Text(b, "tbCardTitle", "CENTER")
+				b.initial:SetPoint("TOP", b, "TOP", 0, -4)
+			end
+			b.initial:SetText((m.label or "?"):sub(1, 1):upper())
+		end
+		W.Color(b.glyph and b.name or b.name, Palette.c.textDim)
+		if b.glyph.SetVertexColor then
+			local c = Palette.c.text
+			b.glyph:SetVertexColor(c[1], c[2], c[3], 0.9)
+		end
 		b.name:SetText(m.label or "")
 		W.Color(b.name, Palette.c.textDim)
 		b:Show()

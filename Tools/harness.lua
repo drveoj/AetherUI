@@ -8578,6 +8578,112 @@ do
 	TBm:SetOpen(false, true)
 end
 
+print("== toolbox: the icon sheet ==")
+do
+	local TBm = A:GetModule("toolbox")
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	TBm:RefreshMicro(); TBm:RefreshTiles(); TBm:RefreshAddons()
+
+	-- THE ORDER HAS TO AGREE WITH THE GENERATOR. Media indexes the atlas by
+	-- position, so one name inserted in Tools/generate_textures.py and not here
+	-- shifts every icon after it - sixteen wrong pictures, no error anywhere,
+	-- and nothing on screen that looks like a bug rather than a bad choice.
+	--
+	-- So the generator is READ rather than trusted. It is the only way this can
+	-- be checked at all without a human comparing two lists.
+	do
+		local f = io.open("Tools/generate_textures.py", "r")
+		check(f ~= nil, "the generator is readable from here")
+		if f then
+			local src = f:read("*a")
+			f:close()
+
+			local block = src:match("ICON_ORDER%s*=%s*%[(.-)%]")
+			check(block ~= nil, "and declares an ICON_ORDER")
+
+			local fromPy = {}
+			for name in (block or ""):gmatch('"([%w_]+)"') do
+				fromPy[#fromPy + 1] = name
+			end
+
+			local order = A.Media.icons.order
+			check(#fromPy == #order,
+				"the two lists are the same length (" .. #fromPy .. " in the"
+				.. " generator, " .. #order .. " in Media)")
+
+			local bad = {}
+			for i = 1, math.max(#fromPy, #order) do
+				if fromPy[i] ~= order[i] then
+					bad[#bad + 1] = i .. ": " .. tostring(fromPy[i]) .. " vs " .. tostring(order[i])
+				end
+			end
+			check(#bad == 0,
+				"and every position agrees - one name inserted on one side"
+				.. " silently shifts every icon after it ("
+				.. (#bad > 0 and table.concat(bad, "; ") or "all match") .. ")")
+		end
+	end
+
+	-- Every icon resolves to its own corner of the sheet.
+	do
+		local seen, clash = {}, nil
+		for _, name in ipairs(A.Media.icons.order) do
+			local file, l, r, t, b = A.Media:Icon(name)
+			local key = string.format("%.3f,%.3f,%.3f,%.3f", l, r, t, b)
+			if seen[key] then clash = name .. " and " .. seen[key] end
+			seen[key] = name
+			if not file then clash = clash or (name .. " has no file") end
+		end
+		check(not clash, "each icon has its own cell (" .. tostring(clash) .. ")")
+		check(A.Media:Icon("no_such_icon") == nil,
+			"and an unknown name answers nil rather than a default - a texture"
+			.. " pointed at the sheet with no TexCoord draws the WHOLE atlas,"
+			.. " which is unmistakable, but only if somebody checked")
+	end
+
+	-- The module actually uses them: a real glyph, cropped to one cell.
+	do
+		local b = TBm.content.micro[1]
+		check(b and b.glyph and b.glyph:GetTexture() == A.Media.icons.file,
+			"a MENU button draws from the sheet")
+		local l, r = b.glyph:GetTexCoord()
+		check(r - l < 0.9,
+			"cropped to ONE cell rather than the whole sheet (" ..
+			string.format("%.2f..%.2f", l, r) .. ")")
+
+		check(TBm.rail.gear.glyph:GetTexture() == A.Media.icons.file,
+			"the rail's gear is the drawn gear, not a unicode glyph the bundled"
+			.. " font has never had")
+
+		local tile = TBm.content.tiles[1]
+		check(tile and tile.icon:IsShown()
+			and tile.icon:GetTexture() == A.Media.icons.file,
+			"and a settings tile carries its own mark rather than a bare chip")
+	end
+
+	-- Pinned and unpinned are two different marks, not one tinted twice.
+	do
+		local rows = TBm:AddonRows()
+		if rows[1] and rows[1].entry then
+			local key = rows[1].entry.key
+			TBm:SetPinned(key, false); TBm:RefreshAddons()
+			local l0 = select(1, TBm.content.addons[1].pin.glyph:GetTexCoord())
+			local t0 = select(3, TBm.content.addons[1].pin.glyph:GetTexCoord())
+			TBm:SetPinned(key, true); TBm:RefreshAddons()
+			local l1 = select(1, TBm.content.addons[1].pin.glyph:GetTexCoord())
+			local t1 = select(3, TBm.content.addons[1].pin.glyph:GetTexCoord())
+			check(l0 ~= l1 or t0 ~= t1,
+				"pinned and unpinned are different CELLS - an outline and a"
+				.. " filled pin - rather than the same mark at two alphas, which"
+				.. " reads as a dimmed control instead of a state")
+			TBm:SetPinned(key, false); TBm:RefreshAddons()
+		end
+	end
+
+	TBm:SetOpen(false, true)
+end
+
 print("== combat gating ==")
 _G.__inCombat = true
 A.db.profile.scale = 1.0

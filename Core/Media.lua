@@ -76,6 +76,57 @@ Media.texture = {
 --
 --  A contract with Tools/generate_textures.py: the BADGES list there is these
 --  row numbers, in order. The harness checks the two still agree.
+-- The Toolbox icon sheet: line art on a 4x4 grid of 128px cells.
+--
+-- ONE atlas rather than sixteen files, for the reason the chat badges are one:
+-- a new .tga needs a client RESTART and not a reload, so the fewer files there
+-- are the fewer times anybody has to quit the game. SetTexCoord costs nothing
+-- at the call site.
+--
+-- THE ORDER HERE IS THE ORDER IN Tools/generate_textures.py (ICON_ORDER).
+-- Change one and you must change the other; the harness asserts the two agree
+-- by reading the generator, because a silently shifted atlas is sixteen wrong
+-- icons and no error anywhere.
+Media.icons = {
+	file = TEX .. "Toolbox-Icons",
+	cell = 128,
+	cols = 4,
+	rows = 4,
+	order = {
+		"character", "spellbook", "talents", "quests",
+		"social", "guild", "map", "menu",
+		"help", "zen", "damage", "keybind",
+		"combat", "gear", "pin", "pinned",
+	},
+}
+
+do
+	local ix = {}
+	for i, name in ipairs(Media.icons.order) do ix[name] = i - 1 end
+	Media.icons.index = ix
+end
+
+--- Texel coordinates for one icon, ready for SetTexCoord.
+function Media:Icon(name)
+	local a = Media.icons
+	local i = a.index[name]
+	if not i then return nil end
+	local c, r = i % a.cols, math.floor(i / a.cols)
+	return a.file, c / a.cols, (c + 1) / a.cols, r / a.rows, (r + 1) / a.rows
+end
+
+--- Point a texture at one. Returns false when the name is unknown, so a caller
+--- can fall back rather than draw the whole sheet - which is what a texture
+--- with no SetTexCoord does, and it is unmistakable on screen.
+function Media:SetIcon(tex, name)
+	if not tex then return false end
+	local file, l, r, t, b = Media:Icon(name)
+	if not file then return false end
+	tex:SetTexture(file)
+	tex:SetTexCoord(l, r, t, b)
+	return true
+end
+
 Media.badges = {
 	file   = TEX .. "Chat-Badges",
 	-- The file's own dimensions, which a `|T` escape needs to make sense of the

@@ -863,6 +863,210 @@ def divider():
     return rgba_lum(1.0, a * fade[None, :])
 
 
+# --------------------------------------------------------------------------
+# Toolbox icons
+#
+# One atlas, sixteen 128px cells in a 4x4 grid. Line art, drawn from distance
+# fields exactly as the chevron and the send glyph are, and for the same reason
+# they are: Outfit is a text face with no geometric shapes in it, and the client
+# has no vector layer. A unicode gear rendered as the three bytes of its own
+# UTF-8 drawn as latin, which is what "]lk" on the rail was.
+#
+# An atlas rather than sixteen files because a new .tga needs a client RESTART
+# and not a reload - so the fewer of them there are, the fewer times anybody has
+# to quit the game - and because an inline texture takes texel coordinates
+# natively, which makes the call site no more expensive than a separate file.
+#
+# Stroke is uniform: every glyph is the set of points within STROKE/2 of some
+# skeleton, so they carry the same weight beside each other. That is the whole
+# trick to line art looking like one family rather than sixteen drawings.
+# --------------------------------------------------------------------------
+
+ICON_CELL = 128
+ICON_COLS = 4
+ICON_STROKE = 8.5          # final pixels, matched to the chevron's 10 at 64 tall
+
+# The order IS the index Core/Media.lua reads. Change one and change the other;
+# the harness checks they still agree.
+ICON_ORDER = [
+    # the micro menu, in the order Blizzard's own Vanilla overrides declare them
+    "character", "spellbook", "talents", "quests",
+    "social", "guild", "map", "menu",
+    # ...then help, the settings tiles, and the rail's gear
+    "help", "zen", "damage", "keybind",
+    "combat", "gear", "pin", "pinned",
+]
+
+
+def _icon_field(cell):
+    """Coordinate grids for one cell, in cell-local pixels."""
+    yy, xx = np.mgrid[0:cell, 0:cell].astype(np.float32)
+    return xx + 0.5, yy + 0.5
+
+
+def _icon_ops(px, py):
+    """Distance primitives. Each returns distance to a SKELETON, unstroked."""
+
+    def seg(ax, ay, bx, by):
+        vx, vy = bx - ax, by - ay
+        dd = vx * vx + vy * vy
+        t = np.clip(((px - ax) * vx + (py - ay) * vy) / max(dd, 1e-6), 0, 1)
+        return np.sqrt((px - ax - t * vx) ** 2 + (py - ay - t * vy) ** 2)
+
+    def circ(cx, cy, r):
+        """The OUTLINE of a circle, not the disc."""
+        return np.abs(np.hypot(px - cx, py - cy) - r)
+
+    def disc(cx, cy, r):
+        return np.hypot(px - cx, py - cy) - r
+
+    def arc(cx, cy, r, a0, a1):
+        """A circle outline kept only between two angles, in degrees, measured
+        anticlockwise from east. Built by masking the outline rather than by
+        walking segments, so the curvature stays exact."""
+        ang = np.degrees(np.arctan2(-(py - cy), px - cx)) % 360.0
+        a0, a1 = a0 % 360.0, a1 % 360.0
+        inside = (ang >= a0) & (ang <= a1) if a0 <= a1 else (ang >= a0) | (ang <= a1)
+        # Outside the sweep, fall back to the distance to the nearer endpoint so
+        # the stroke ends in a round cap rather than a hard cut.
+        ex0 = (cx + r * np.cos(np.radians(a0)), cy - r * np.sin(np.radians(a0)))
+        ex1 = (cx + r * np.cos(np.radians(a1)), cy - r * np.sin(np.radians(a1)))
+        caps = np.minimum(np.hypot(px - ex0[0], py - ex0[1]),
+                          np.hypot(px - ex1[0], py - ex1[1]))
+        return np.where(inside, np.abs(np.hypot(px - cx, py - cy) - r), caps)
+
+    def rect(x0, y0, x1, y1):
+        """The outline of a rectangle."""
+        return np.minimum(np.minimum(seg(x0, y0, x1, y0), seg(x1, y0, x1, y1)),
+                          np.minimum(seg(x1, y1, x0, y1), seg(x0, y1, x0, y0)))
+
+    return seg, circ, disc, arc, rect
+
+
+def _glyph(name, cell):
+    px, py = _icon_field(cell)
+    seg, circ, disc, arc, rect = _icon_ops(px, py)
+    INF = np.full_like(px, 1e6)
+
+    def U(*ds):
+        out = ds[0]
+        for d in ds[1:]:
+            out = np.minimum(out, d)
+        return out
+
+    if name == "character":
+        # A head and a pair of shoulders. The shoulders are an arc rather than a
+        # curve fitted from segments, so they stay a true circle at any size.
+        return U(circ(64, 44, 19), arc(64, 100, 32, 20, 160))
+
+    if name == "spellbook":
+        # A book: covers and a spine.
+        return U(rect(26, 26, 102, 102), seg(64, 26, 64, 102))
+
+    if name == "talents":
+        # A four-point star. Two crossing strokes with the diagonals shorter, so
+        # it reads as a sparkle rather than as an asterisk.
+        return U(seg(64, 20, 64, 108), seg(20, 64, 108, 64),
+                 seg(38, 38, 90, 90), seg(90, 38, 38, 90))
+
+    if name == "quests":
+        # A sheet with lines on it.
+        return U(rect(30, 22, 98, 106),
+                 seg(46, 48, 82, 48), seg(46, 66, 82, 66), seg(46, 84, 68, 84))
+
+    if name == "social":
+        # Two figures, the second smaller and behind.
+        return U(circ(50, 46, 16), arc(50, 98, 27, 25, 155),
+                 circ(88, 52, 12), arc(88, 98, 21, 20, 90))
+
+    if name == "guild":
+        # A shield: shoulders, sides, and a point.
+        return U(seg(64, 22, 26, 40), seg(26, 40, 26, 68), seg(26, 68, 64, 108),
+                 seg(64, 108, 102, 68), seg(102, 68, 102, 40), seg(102, 40, 64, 22))
+
+    if name == "map":
+        # A folded map: three panels, the folds alternating.
+        return U(seg(24, 34, 24, 96), seg(24, 96, 64, 82), seg(64, 82, 104, 96),
+                 seg(104, 96, 104, 34), seg(104, 34, 64, 48), seg(64, 48, 24, 34),
+                 seg(64, 48, 64, 82))
+
+    if name == "menu":
+        # Three bars. The game menu, and the one glyph everybody already knows.
+        return U(seg(28, 42, 100, 42), seg(28, 64, 100, 64), seg(28, 86, 100, 86))
+
+    if name == "help":
+        # A ring, a hook and a dot - a question mark built as a shape, since
+        # there is no font glyph to borrow.
+        #
+        # The hook sweeps ANTICLOCKWISE from 340 through 90 to 200, which is the
+        # top and left of the circle. The first attempt asked for 200 to 20,
+        # which sweeps the other way round through the bottom and drew the mark
+        # upside down - a Y with a dot under it.
+        return U(circ(64, 64, 42),
+                 arc(64, 50, 13, 340, 200),
+                 seg(76, 55, 64, 70),
+                 disc(64, 84, 3.0))
+
+    if name == "zen":
+        # Three breaths, each shorter than the last, curling at the end. The
+        # concept's zen mark is wind rather than a person sitting.
+        return U(seg(26, 44, 82, 44), arc(82, 52, 8, 270, 90),
+                 seg(26, 64, 94, 64), arc(94, 72, 8, 270, 90),
+                 seg(26, 84, 70, 84), arc(70, 92, 8, 270, 90))
+
+    if name == "damage":
+        # A hash: floating combat text is numbers.
+        return U(seg(44, 26, 34, 102), seg(84, 26, 74, 102),
+                 seg(26, 48, 100, 48), seg(24, 76, 98, 76))
+
+    if name == "keybind":
+        # A key cap: a rounded square with a lozenge inside it.
+        return U(rect(24, 36, 104, 92), rect(44, 54, 84, 74))
+
+    if name == "combat":
+        # Two crossed blades. Diagonals with a guard across each.
+        return U(seg(30, 100, 92, 34), seg(84, 26, 100, 42), seg(78, 44, 90, 56),
+                 seg(98, 100, 36, 34), seg(44, 26, 28, 42), seg(50, 44, 38, 56))
+
+    if name == "gear":
+        # A ring with eight teeth and a hub. Teeth are radial stubs rather than
+        # a toothed outline: at 26px on the rail the difference is invisible and
+        # the stub version cannot alias into a blur.
+        d = U(circ(64, 64, 30), circ(64, 64, 11))
+        for k in range(8):
+            a = np.radians(k * 45.0)
+            ca, sa = np.cos(a), np.sin(a)
+            d = np.minimum(d, seg(64 + 30 * ca, 64 - 30 * sa,
+                                  64 + 44 * ca, 64 - 44 * sa))
+        return d
+
+    if name == "pin":
+        # An outline pin, for a row that is not pinned.
+        return U(circ(64, 48, 22), seg(64, 70, 64, 106))
+
+    if name == "pinned":
+        # The same pin, filled. Drawn as a disc so the two read as one control
+        # in two states rather than as two different marks.
+        return U(disc(64, 48, 22) - ICON_STROKE / 2, seg(64, 70, 64, 106))
+
+    return INF
+
+
+def toolbox_icons():
+    cell, cols = ICON_CELL, ICON_COLS
+    rows = (len(ICON_ORDER) + cols - 1) // cols
+    w, h = cell * cols, cell * rows
+
+    out = np.zeros((h, w, 4), dtype=np.float32)
+    for i, name in enumerate(ICON_ORDER):
+        r, c = divmod(i, cols)
+        d = _glyph(name, cell)
+        a = _cover(d - ICON_STROKE / 2)
+        out[r * cell:(r + 1) * cell, c * cell:(c + 1) * cell] = rgba_lum(1.0, a)
+
+    return out
+
+
 ASSETS = {
     "Glass-Panel": glass_panel,
     "Glass-Panel-Edge": glass_panel_edge,
@@ -891,6 +1095,7 @@ ASSETS = {
     "Divider": divider,
     "Chevron": chevron,
     "Chat-Badges": chat_badges,
+    "Toolbox-Icons": toolbox_icons,
 }
 
 NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette",
