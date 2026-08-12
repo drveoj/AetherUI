@@ -17,6 +17,7 @@ Core\Config.lua
 Core\Movers.lua
 Core\Fader.lua
 Core\Nav.lua
+Core\Launchers.lua
 Core\Commands.lua
 Core\Options.lua
 

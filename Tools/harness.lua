@@ -2380,6 +2380,13 @@ end
 load("Libs/LibStub/LibStub.lua")
 load("Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua")
 load("Libs/AceDB-3.0/AceDB-3.0.lua")
+-- The REAL LibDataBroker, not a stand-in, and deliberately so: its whole
+-- character is the metatable that puts every field in `attributestorage` behind
+-- an __index and declares the metatable "access denied". A mock that stored
+-- fields on the table would be the one shape in which `pairs(dataobj)` works -
+-- and that bug, which is the easiest one to write against this library, could
+-- then never be caught here. Ninety lines; loading it costs nothing.
+load("Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua")
 
 -- LibClassicCasterino bails on any non-Classic client, and the mock is not one,
 -- so stand in for it. The point under test is our wiring, not the library.
@@ -2417,6 +2424,18 @@ do
 		local b = self.objects[name]
 		if b then b.__locked = true end
 	end
+	--- Register an LDB object the way an addon would.
+	--
+	--  `kind` is "launcher" or "data source"; only the first is an addon entry.
+	--  Returns the dataobj, whose fields are NOT on the table - see the note on
+	--  the load above.
+	function _G.__makeLDB(name, kind, fields)
+		local ldb = LibStub("LibDataBroker-1.1")
+		local t = { type = kind or "launcher", icon = "Interface\Icons\INV_Misc_Gear_01" }
+		for k, v in pairs(fields or {}) do t[k] = v end
+		return ldb:NewDataObject(name, t)
+	end
+
 	--- Make one the way an addon would, and announce it.
 	function _G.__makeDBIcon(name)
 		local b = CreateFrame("Button", "LibDBIcon10_" .. name, Minimap)
@@ -2962,7 +2981,7 @@ print("== loading addon files ==")
 for _, f in ipairs({
 	"Core/Core.lua", "Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
-	"Core/Nav.lua", "Core/Commands.lua", "Core/Options.lua",
+	"Core/Nav.lua", "Core/Launchers.lua", "Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
@@ -7423,6 +7442,90 @@ do
 	end
 	own:Show()
 	MMm:LayoutDrawer()
+end
+
+print("== launchers: the two mechanisms, merged ==")
+do
+	local LN = A.Launchers
+	local ldb = LibStub("LibDataBroker-1.1")
+
+	-- The guard test. Everything else in this block is only meaningful if the
+	-- library really is the one with the metatable, so prove it first: a real
+	-- dataobj keeps nothing on the table itself.
+	do
+		local obj = _G.__makeLDB("ProbeAddon", "launcher")
+		local n = 0
+		for _ in pairs(obj) do n = n + 1 end
+		check(n == 0 and obj.type == "launcher",
+			"a real LDB dataobj is EMPTY to pairs() while indexing fine - every"
+			.. " field lives in the library's attributestorage behind __index."
+			.. " A mock that stored them on the table would be the one shape in"
+			.. " which walking one works, and this whole block would prove"
+			.. " nothing (" .. n .. " keys, type=" .. tostring(obj.type) .. ")")
+	end
+
+	-- A launcher whose addon never made a minimap button. The OLD collector
+	-- could not see this at all: it only ever walked what was already parented
+	-- onto the map.
+	local clicked
+	_G.__makeLDB("LauncherOnly", "launcher", {
+		label = "Launcher Only",
+		OnClick = function(_, btn) clicked = btn or true end,
+	})
+	MMm:Scan()
+
+	local e = LN.byKey["LauncherOnly"]
+	check(e ~= nil, "an LDB launcher with no minimap button is found at all -"
+		.. " which the minimap-only collector could never do")
+	check(e and e.button and e.owned,
+		"and is given a proxy frame of OUR making, so every consumer has exactly"
+		.. " one job: place entry.button")
+	check(e and MMm.buttons[e.button] ~= nil,
+		"and it lands in the drawer alongside the real buttons")
+
+	-- Read at call time, never captured. An addon is entitled to swap its own
+	-- handler after login.
+	LN:Click(e, "LeftButton")
+	check(clicked == "LeftButton", "clicking it runs the object's OnClick")
+	e.obj.OnClick = function() clicked = "replaced" end
+	LN:Click(e, "LeftButton")
+	check(clicked == "replaced",
+		"and a handler swapped AFTER registration is the one that runs - Titan"
+		.. " re-reads it at click time for this reason, and a captured reference"
+		.. " would go stale silently rather than erroring")
+
+	-- Both mechanisms, one addon. LibDBIcon keys lib.objects by the LDB name,
+	-- which is the whole basis of the dedupe.
+	local before = LN:Count()
+	_G.__makeLDB("BothWays", "launcher", { label = "Both Ways" })
+	local btn = _G.__makeDBIcon("BothWays")
+	MMm:Scan()
+	check(LN:Count() == before + 1,
+		"an addon offering a launcher AND a LibDBIcon button is ONE entry, not"
+		.. " two - they share a name, which is what LibDBIcon keys on ("
+		.. before .. " -> " .. LN:Count() .. ")")
+	local both = LN.byKey["BothWays"]
+	check(both and both.button == btn and not both.owned,
+		"and the real button wins over the proxy - it is the one carrying that"
+		.. " addon's own click behaviour")
+
+	-- A data source is a readout, not something to click.
+	_G.__makeLDB("SomeReadout", "data source", { text = "1234" })
+	MMm:Scan()
+	check(LN.byKey["SomeReadout"] == nil,
+		"a `data source` is NOT an addon entry - it is a number to display, and"
+		.. " the Toolbox puts those to a different use entirely")
+
+	-- One owner. Two surfaces positioning the same borrowed frame is a bug that
+	-- only appears for whoever has both switched on.
+	local other = {}
+	check(not LN:Claim(both, other),
+		"a second surface cannot claim an entry the first one holds")
+	check(LN:OwnerOf(both) == MMm, "the first owner keeps it")
+	LN:Release(both, MMm)
+	check(LN:Claim(both, other), "and it can be handed over once released")
+	LN:Release(both, other)
+	LN:Claim(both, MMm)
 end
 
 print("== xp hairline ==")

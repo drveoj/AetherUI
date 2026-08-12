@@ -52,15 +52,14 @@ local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 -- Widget methods captured unbound, so a collected button that has stomped its
 -- own `SetPoint` (some do, to keep themselves welded to the ring) can still be
 -- placed. Called as plain functions with the frame as the first argument.
-local RawSetParent, RawClearAllPoints, RawSetPoint, RawSetSize, RawGetName
-do
-	local probe = CreateFrame("Frame")
-	RawSetParent      = probe.SetParent
-	RawClearAllPoints = probe.ClearAllPoints
-	RawSetPoint       = probe.SetPoint
-	RawSetSize        = probe.SetSize
-	RawGetName        = probe.GetName
-end
+-- Captured once, in Core/Launchers.lua, and shared: this module and the Toolbox
+-- both place borrowed frames and there is no reason for two copies.
+local Launchers = A.Launchers
+local RawSetParent      = Launchers.RawSetParent
+local RawClearAllPoints = Launchers.RawClearAllPoints
+local RawSetPoint       = Launchers.RawSetPoint
+local RawSetSize        = Launchers.RawSetSize
+local RawGetName        = Launchers.RawGetName
 
 -- ---------------------------------------------------------------------------
 -- Blizzard's furniture
@@ -215,83 +214,13 @@ end
 
 -- Names that are map *pins*, not buttons. A pin addon can put thousands of
 -- children on the minimap; letting one into the drawer is the least of it.
-local PIN_PREFIX = {
-	"^HandyNotes", "^TomTom", "^HereBeDragons", "^Questie", "^GatherMate",
-	"^Routes", "^pin", "^Pin", "^Nx",
-}
+-- Discovery - which children of the minimap are somebody's addon button, and
+-- the pin-addon hazards that go with the question - now lives in
+-- Core/Launchers.lua, because the Toolbox rail asks it too.
 
--- What an addon button tends to be called. Anything matching none of these is
--- assumed not to be one, which errs toward leaving things where they are.
-local BUTTON_PATTERN = {
-	"^LibDBIcon10_", "MinimapButton", "MinimapFrame", "MinimapIcon",
-	"[%-_]Minimap[%-_]", "Minimap$", "^BT4",
-}
-
-local function Matches(name, list)
-	for _, pat in ipairs(list) do
-		if name:find(pat) then return true end
-	end
-	return false
-end
-
---- Is this child of the minimap something we should collect?
-local function IsAddonButton(frame, own)
-	if type(frame) ~= "table" then return false end
-	if own[frame] then return false end
-	if not frame.IsObjectType or not frame:IsObjectType("Frame") then return false end
-	if Forbidden(frame) then return false end
-
-	local ok, name = pcall(RawGetName, frame)
-	if not ok or not name or name == "" then return false end
-
-	-- Blizzard declares its globals securely and addons cannot, so this sorts
-	-- the furniture from the arrivals without a list to keep up to date.
-	if issecurevariable then
-		local secure = select(1, issecurevariable(name))
-		if secure then return false end
-	end
-
-	if Matches(name, PIN_PREFIX) then return false end
-	-- Pins are numbered; buttons are not. A name ending in a digit is almost
-	-- always the ninetieth copy of something.
-	if name:find("%d$") and not name:find("^LibDBIcon10_") then return false end
-	if not Matches(name, BUTTON_PATTERN) then return false end
-
-	return true
-end
-
---- Stop a button putting itself back on the ring.
---
---  LibDBIcon's drag handlers recompute an angle from the cursor and re-anchor to
---  the minimap's centre every frame while held, and its own Show/Refresh do the
---  same on demand. `Lock` is the library's supported way to switch that off and
---  it survives a refresh, so use it when the library is there.
---- Let go of a strata and level the button is holding onto.
---
---  LibDBIcon pins both - `SetFixedFrameStrata(true)` and `SetFixedFrameLevel(true)`
---  - so that reparenting cannot shuffle its buttons around behind things. Good
---  hygiene for a library, and it means our own SetFrameStrata is quietly refused:
---  the button stays at MEDIUM while the drawer sits at DIALOG, so the drawer's
---  own panel art is painted over the top of it and the click never lands.
---
---  This is exactly what the diagnostics showed - a hand-rolled button took the
---  level we gave it and worked; the two LibDBIcon ones kept their own and did
---  not. Unpin first, then set.
-local function Unpin(f)
-	if f.SetFixedFrameStrata then pcall(f.SetFixedFrameStrata, f, false) end
-	if f.SetFixedFrameLevel then pcall(f.SetFixedFrameLevel, f, false) end
-end
-
-local function Pacify(button, name)
-	local ldbi = LibStub and LibStub("LibDBIcon-1.0", true)
-	if ldbi and name and ldbi.IsRegistered and ldbi:IsRegistered(name) then
-		pcall(ldbi.Lock, ldbi, name)
-	end
-	if button.SetScript then
-		pcall(button.SetScript, button, "OnDragStart", nil)
-		pcall(button.SetScript, button, "OnDragStop", nil)
-	end
-end
+-- Pacifying a LibDBIcon button and letting go of its pinned strata are the
+-- service's job as well: they are facts about that library, not about a drawer.
+-- `Launchers:Claim` does both.
 
 -- What a third-party button hangs off itself, none of which is ours to keep:
 -- a bevelled ring, a tracking-border, a plate behind the icon. LibDBIcon names
@@ -398,8 +327,6 @@ function MM:Collect(button, ldbiName)
 	local ok, name = pcall(RawGetName, button)
 	if not ok then return end
 
-	Pacify(button, ldbiName)
-
 	self.buttons[button] = name or true
 	self.buttonOrder[#self.buttonOrder + 1] = button
 
@@ -408,7 +335,6 @@ function MM:Collect(button, ldbiName)
 	end
 
 	pcall(RawSetParent, button, self.drawer.tray)
-	Unpin(button)
 	if button.SetFrameStrata then pcall(button.SetFrameStrata, button, "DIALOG") end
 	if button.SetIgnoreParentScale then
 		pcall(button.SetIgnoreParentScale, button, false)
@@ -427,61 +353,45 @@ function MM:Collect(button, ldbiName)
 	return true
 end
 
---- One sweep: the LibDBIcon registry, then the minimap's own children.
+--- Ask the service what exists, then take the ones we can place.
+--
+--  Discovery moved to Core/Launchers.lua when the Toolbox rail turned out to
+--  want the same set. What is left here is the half that was always this
+--  module's: claiming an entry so nothing else moves it, and putting the frame
+--  in the drawer.
+--
+--  An entry whose frame is a PROXY - an LDB launcher whose addon never made a
+--  minimap button - is taken too. Those are new: the old collector could only
+--  ever see what was already parented onto the map, so an addon that offers a
+--  launcher and no button was invisible to it.
 function MM:Scan()
 	if not self.drawer then return 0 end
 	local cfg = A.Config:Module("minimap")
 	if cfg.drawer == false then return 0 end
 
-	local found = 0
-
-	local ldbi = LibStub and LibStub("LibDBIcon-1.0", true)
-	if ldbi and ldbi.GetButtonList then
-		local okList, list = pcall(ldbi.GetButtonList, ldbi)
-		for _, name in ipairs(okList and list or {}) do
-			local b = ldbi:GetMinimapButton(name)
-			if b and self:Collect(b, name) then found = found + 1 end
-		end
-	end
-
-	-- With a pin addon running this vararg is enormous, and expanding it into a
-	-- table has been known to throw outright. Nobody's day should end here.
 	local own = { [self.frame] = true, [self.pill] = true, [self.drawer] = true }
-	local results = { pcall(_G.Minimap.GetChildren, _G.Minimap) }
-	if results[1] then
-		for i = 2, #results do
-			local child = results[i]
-			if IsAddonButton(child, own) and self:Collect(child) then
+	Launchers:Scan(own)
+	self.scanError = Launchers.scanError
+
+	local found = 0
+	for entry in Launchers:Iterate() do
+		if entry.button and not self.buttons[entry.button] then
+			if Launchers:Claim(entry, self) and self:Collect(entry.button, entry.ldbiName) then
 				found = found + 1
 			end
 		end
-	else
-		self.scanError = results[2]
 	end
 
 	return found
 end
 
---- Sweep repeatedly for a while after login.
---
---  There is no event for "a child was added to the minimap" - this was checked
---  against three addons that all solve it the same way - and an addon creates
---  its button whenever it happens to finish loading. So: sweep now, sweep again
---  on a timer for fifteen seconds, and subscribe to LibDBIcon's own creation
---  callback forever after.
+--- The retry loop and the creation callbacks belong to the service now; this
+--  just asks it to start and takes whatever each sweep turns up.
 function MM:StartScanning()
+	local own = { [self.frame] = true, [self.pill] = true, [self.drawer] = true }
+	Launchers:OnChanged("minimap", function() MM:Scan() end)
+	Launchers:StartScanning(own)
 	self:Scan()
-	if not C_Timer or not C_Timer.NewTicker then return end
-	if self._ticker then return end
-	local left = 7
-	self._ticker = C_Timer.NewTicker(2, function()
-		MM:Scan()
-		left = left - 1
-		if left <= 0 and MM._ticker then
-			MM._ticker:Cancel()
-			MM._ticker = nil
-		end
-	end, 7)
 end
 
 -- ---------------------------------------------------------------------------
@@ -529,8 +439,10 @@ function MM:LayoutDrawer()
 
 		-- Re-applied on every layout, not just on collection: a button whose
 		-- addon puts its strata back is a button that stops working, and this is
-		-- the cheapest place to notice.
-		Unpin(b)
+		-- the cheapest place to notice. `Unpin` is inside Prepare, which is
+		-- idempotent for exactly this reason.
+		local e = Launchers.seen[b]
+		if e then e._prepared = nil; Launchers:Prepare(e) end
 		pcall(b.SetFrameStrata, b, self.drawer:GetFrameStrata())
 
 		-- Level as well as strata. These arrive owning their own frame level -
@@ -1099,14 +1011,11 @@ function MM:OnEnable()
 	-- Blizzard registers the zone events on MinimapCluster itself and its
 	-- handler writes MinimapZoneText. Ours is a different frame, so leave that
 	-- alone - the frame it writes into is banished either way.
-	local ldbi = LibStub and LibStub("LibDBIcon-1.0", true)
-	if ldbi and ldbi.RegisterCallback and not self._ldbiHooked then
-		self._ldbiHooked = true
-		-- CallbackHandler's embed takes the *registering* object first, not the
-		-- library: ldbi.RegisterCallback(me, event, handler).
-		pcall(ldbi.RegisterCallback, self, "LibDBIcon_IconCreated",
-			function(_, button, name) MM:Collect(button, name) end)
-	end
+	-- LibDBIcon's own creation callback used to land here, calling Collect
+	-- directly. It belongs to Core/Launchers.lua now, and deliberately so: two
+	-- entry points into Collect meant one of them skipped Claim, so a button
+	-- could sit in the drawer with no owner recorded and the next surface to ask
+	-- would be told it was free. Everything arrives through Scan.
 
 	-- One ticker drives the clock, the coordinates and the hover grace period.
 	-- Coordinates are the only expensive part and they are the part that can

@@ -4,6 +4,17 @@
 	<Include file="AceDB-3.0\AceDB-3.0.xml"/>
 	<Include file="LibSharedMedia-3.0\lib.xml"/>
 
+	<!-- The display-addon protocol. Two halves, and this addon uses both for
+	     opposite purposes: `launcher` objects are addon entries in the Toolbox,
+	     and our own widgets are published as `data source` objects so somebody
+	     else can write one in ten lines.
+
+	     Ninety lines, minor 4, and every one of the fifteen copies on this
+	     machine is that same version - LibStub hands out whichever loads first
+	     and they are interchangeable. Must load after CallbackHandler-1.0, which
+	     it asserts on at file scope rather than at call time. -->
+	<Script file="LibDataBroker-1.1\LibDataBroker-1.1.lua"/>
+
 	<!-- The options panel. Ace3 is distributed under a permissive licence that
 	     exists precisely so addons can ship it; every Ace addon on your disk has
 	     its own copy for the same reason. AceConfigCmd is what lets the same
