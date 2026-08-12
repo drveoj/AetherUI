@@ -6034,9 +6034,20 @@ print("== quest tracker: clicks ==")
 do
 	local row = QT.panel.rows[1]
 
+	-- This check used to read `__questLogOpenedTo == row.index`, which asserted
+	-- that Blizzard's QuestLog_OpenToQuest had been called - and that WAS the
+	-- bug. A test can only ever pin down the behaviour somebody wrote into it;
+	-- this one pinned down opening the very window the addon replaces, and went
+	-- green for as long as it kept happening.
+	local QL = A:GetModule("questlog")
+	QL:Hide()
 	_G.__questLogOpenedTo = nil
 	row:GetScript("OnMouseUp")(row, "LeftButton")
-	check(_G.__questLogOpenedTo == row.index, "left-click opens the log to that quest")
+	check(QL.win and QL.win:IsShown() and QL.selectedID == row.questID,
+		"left-click opens OUR log at that quest")
+	check(_G.__questLogOpenedTo == nil,
+		"and leaves Blizzard's frame alone (it is the one we replaced)")
+	QL:Hide()
 
 	-- shift-click untracks
 	_G.__shift = true
@@ -6054,6 +6065,56 @@ do
 	check(QT.menu and QT.menu:IsShown(), "right-click opens the menu")
 	check(#QT.menu.items >= 4, "menu has open / untrack / share / abandon")
 	check(QT.menu.items[1].text:GetText() == "Open quest log", "first item opens the log")
+
+	-- ...and it had better be OURS. Every route this used to take reached for
+	-- Blizzard's QuestLogFrame - the frame Modules/QuestLog.lua exists to replace
+	-- - so clicking a row opened the window the addon spends a module hiding, and
+	-- threw on the way there: QuestLog_OnShow calls QuestLog_SetSelection BEFORE
+	-- QuestLog_Update, and the selection path reads titleButton.r, which only
+	-- Update ever writes. On a frame nobody has drawn that is SetVertexColor(nil).
+	do
+		local QL = A:GetModule("questlog")
+		QL:Hide()
+		_G.__questLogOpenedTo = nil
+
+		local row = QT.panel.rows[1]
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+
+		check(QL.win and QL.win:IsShown(),
+			"clicking a row opens OUR quest log, not the one this addon replaced")
+		check(_G.__questLogOpenedTo == nil,
+			"and never calls Blizzard's QuestLog_OpenToQuest, which shows their"
+			.. " frame and takes the SetVertexColor(nil) crash with it")
+		QL:Hide()
+
+		-- Opened AT the clicked quest - and this has to be checked against a row
+		-- the log would NOT have landed on by itself. Asserting it on row 1 is
+		-- vacuous: EnsureSelection picks the first quest on show, so removing the
+		-- Select call entirely leaves the check green. (Confirmed by mutation:
+		-- deleting the select passed until this block used a different row.)
+		local default_ = nil
+		QL:Show()
+		default_ = QL.selectedID
+		QL:Hide()
+
+		local other
+		for i = 1, #QT.panel.rows do
+			local r2 = QT.panel.rows[i]
+			if r2:IsShown() and r2.questID and r2.questID ~= default_ then other = r2 break end
+		end
+		check(other ~= nil,
+			"there is a tracked row the log would not select on its own, or the"
+			.. " check below proves nothing (default " .. tostring(default_) .. ")")
+		if other then
+			other:GetScript("OnMouseUp")(other, "LeftButton")
+			check(QL.selectedID == other.questID,
+				"opened AT the quest that was clicked rather than at whatever the"
+				.. " log picks for itself (got " .. tostring(QL.selectedID)
+				.. ", want " .. tostring(other.questID) .. ", default "
+				.. tostring(default_) .. ")")
+		end
+		QL:Hide()
+	end
 
 	-- The menu opens ON TOP of the tracker's own panel, so it is a surface you
 	-- read through two layers of glass unless it stops being glass. It takes the

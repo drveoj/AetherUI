@@ -424,11 +424,50 @@ local function Untrack(questID)
 	QT:Refresh()
 end
 
-local function OpenLog(index)
+--- Open OUR quest log at this quest, and only fall back to Blizzard's when
+--  there isn't one.
+--
+--  Every route this used to take - `QuestLog_OpenToQuest`, then
+--  `ShowUIPanel(QuestLogFrame)` - reaches for the frame `Modules/QuestLog.lua`
+--  exists to replace, so clicking a row opened the window this addon spends a
+--  module hiding. It also threw on the way:
+--
+--    QuestLogFrame.lua:343: bad argument #1 to 'SetVertexColor'
+--
+--  `QuestLog_OnShow` calls `QuestLog_SetSelection` BEFORE `QuestLog_Update`, and
+--  the selection path reads `titleButton.r` - which only Update ever writes. On
+--  a frame nobody has drawn, because we replaced it, that is
+--  `SetVertexColor(nil)`.
+--
+--  Note the `pcall` around `ShowUIPanel` never stood a chance of catching it:
+--  the error is raised inside the frame's own OnShow, which the C `Show()` runs,
+--  so it goes to the global error handler rather than back through our pcall. A
+--  pcall around a call that shows a frame protects nothing that happens in that
+--  frame's scripts.
+local function OpenLog(index, questID)
+	local QL = A:GetModule("questlog")
+	if QL and QL.enabled and QL.win and QL.Show then
+		-- Show first, then select. Showing populates the entry list from its own
+		-- OnShow, and Select matches against that list - the other order picks a
+		-- key out of whatever happened to be there last time.
+		QL:Show()
+		-- The same key shape the log builds its own entries with: the questID
+		-- where the client gave us one, and the index otherwise. Log indices
+		-- renumber whenever a quest is accepted or abandoned, so the fallback is
+		-- the weaker of the two on purpose.
+		local key = questID or (index and ("i" .. tostring(index)))
+		if key ~= nil and QL.Select then pcall(QL.Select, QL, key) end
+		return
+	end
+
+	-- Blizzard's, for a client where our own log is switched off. The update is
+	-- forced BEFORE the show for the ordering reason above: on a frame that has
+	-- never been drawn, selecting first is the crash.
+	if SelectQuestLogEntry then pcall(SelectQuestLogEntry, index) end
+	if _G.QuestLogFrame and QuestLog_Update then pcall(QuestLog_Update) end
 	if QuestLog_OpenToQuest then
 		if pcall(QuestLog_OpenToQuest, index) then return end
 	end
-	if SelectQuestLogEntry then pcall(SelectQuestLogEntry, index) end
 	if ShowUIPanel and _G.QuestLogFrame then
 		pcall(ShowUIPanel, _G.QuestLogFrame)
 	elseif ToggleQuestLog then
@@ -476,7 +515,7 @@ local function RowClicked(row, button)
 
 	if button == "RightButton" then
 		local entries = {
-			{ text = "Open quest log", action = function() OpenLog(row.index) end },
+			{ text = "Open quest log", action = function() OpenLog(row.index, row.questID) end },
 			{ text = "Stop tracking",  action = function() Untrack(row.questID) end },
 			{ text = "Share quest",    action = function() ShareQuest(row.index) end },
 		}
@@ -506,7 +545,7 @@ local function RowClicked(row, button)
 		return
 	end
 
-	OpenLog(row.index)
+	OpenLog(row.index, row.questID)
 end
 
 -- ---------------------------------------------------------------------------

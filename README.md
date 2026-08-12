@@ -1152,6 +1152,42 @@ Abandon always routes through Blizzard's own confirmation popup and never calls
 `AbandonQuest` directly. Losing a quest chain to a stray click in a tracker is
 not something this addon is going to be responsible for.
 
+#### "Opens the log" meant Blizzard's, and it threw on the way
+
+`OpenLog` tried `QuestLog_OpenToQuest`, then `ShowUIPanel(QuestLogFrame)` — both
+of which reach for the frame `Modules/QuestLog.lua` exists to replace. So
+clicking a row opened the window this addon spends a module hiding, *and* raised:
+
+```
+QuestLogFrame.lua:343: bad argument #1 to 'SetVertexColor'
+```
+
+`QuestLog_OnShow` calls `QuestLog_SetSelection` **before** `QuestLog_Update`, and
+the selection path reads `titleButton.r` — which only `Update` ever writes. On
+Blizzard's own UI that frame has always been drawn at least once; here it never
+has, so `.r` is nil. The crash is downstream of replacing the log, and would have
+found anyone who replaced it the same way.
+
+Two things worth keeping from it.
+
+**A `pcall` around a call that shows a frame protects nothing in that frame's
+scripts.** The `ShowUIPanel` call was already wrapped, and the error still
+reached the player: it is raised inside `OnShow`, which the C `Show()` invokes,
+so it goes to the global error handler rather than back up through our `pcall`.
+The wrapper looked like a guard and was scenery.
+
+**A test can only pin down the behaviour somebody wrote into it.** The existing
+check read `__questLogOpenedTo == row.index` — it asserted that Blizzard's
+`QuestLog_OpenToQuest` *had been called*, which is precisely the bug, and stayed
+green for exactly as long as the bug survived. It now asserts our window is open
+at the clicked quest and that Blizzard's function was never called.
+
+And the replacement was nearly vacuous in the same way. Checking "opened at the
+right quest" on **row 1** passes whether the code selects anything or not, because
+`EnsureSelection` picks the first quest on show anyway — deleting the select
+entirely left the suite green. It now clicks a row the log would *not* have
+landed on by itself, and asserts up front that such a row exists.
+
 ### Navigate with TomTom (Core/Nav.lua)
 
 With **Questie** and **TomTom** both installed, the row menu grows a fifth item
