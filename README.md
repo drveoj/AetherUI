@@ -383,11 +383,28 @@ embeds a real 5.1. The Ace libraries need 5.1 specifically -- bare `unpack`,
 python3 -m pip install lupa
 cd <repo root>                 # required: harness.lua loads by relative path
 python3 -c "import lupa.lua51 as l; \
-  l.LuaRuntime(unpack_returned_tuples=True).execute(open('Tools/harness.lua').read())"
+  l.LuaRuntime(unpack_returned_tuples=True).execute( \
+    open('Tools/harness.lua', encoding='utf-8').read())"
 ```
 
 `os.exit(1)` on failure exits the Python process with status 1, so it works as a
 CI gate unchanged.
+
+**`encoding='utf-8'` is load-bearing, and leaving it off costs three failures
+that look like real ones.** Python's text mode decodes with the *platform*
+default, which on Windows is `cp1252`. The middot in `"45 · 58"` is `C2 B7` on
+disk; read as cp1252 that is two characters, `Â·`, which lupa then re-encodes on
+the way into Lua as `C3 82 C2 B7`. Only the *harness* goes through Python — the
+addon's own files are read by Lua itself, raw — so the module still produces
+`C2 B7` and the literal it is compared against no longer does.
+
+The failure is invisible in every way that matters: the three assertions that
+break are the only ones comparing a non-ASCII literal against module output, and
+the diagnostic prints `got 45 · 58` against an expected `"45 · 58"`, which are
+the same eight characters on screen. Suspect the harness *invocation* before the
+assertions when a check fails on a string that looks identical to the one it
+wanted. `lua5.1 Tools/harness.lua` never had the problem, because nothing
+decodes anything.
 
 ### Mutation-test the assertions
 
