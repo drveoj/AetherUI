@@ -7617,6 +7617,27 @@ do
 	check(rail.mail:GetHeight() > 0 and rail.gear:GetHeight() > 0,
 		"the envelope and the gear are both real sizes")
 
+	-- The rail's OWN controls are bare glyphs - no chip, no rim - because they
+	-- are part of the rail. A launcher looks different because it IS different:
+	-- somebody else's art in its own circle. That only works if the bare glyphs
+	-- carry comparable weight; at 18 against 26 they read as an afterthought
+	-- rather than as a deliberately quieter treatment.
+	--
+	-- A ratio rather than the number itself. The number is a taste decision and
+	-- restating it here would test nothing; "not visibly smaller than the
+	-- launchers, and still inside its slot" is the rule that was broken.
+	for _, part in ipairs({ { "envelope", rail.mail }, { "gear", rail.gear } }) do
+		local g = part[2].glyph
+		local slot = part[2]:GetHeight()
+		check(g:GetHeight() <= slot,
+			part[1] .. "'s glyph fits its slot (" .. tostring(g:GetHeight())
+			.. " in " .. tostring(slot) .. ")")
+		check(g:GetHeight() >= slot * 0.8,
+			"and fills enough of it to sit beside a launcher rather than under"
+			.. " it (" .. tostring(g:GetHeight()) .. " of " .. tostring(slot)
+			.. ", want >= " .. tostring(slot * 0.8) .. ")")
+	end
+
 	-- The lowest pinned button, from its own anchor.
 	local lowest = 0
 	for _, key in ipairs(TBm:Pinned()) do
@@ -7833,8 +7854,30 @@ do
 			"which cost something real here rather than fitting anyway - the"
 			.. " check above is blind on a screen with room to spare")
 
+		-- The sender's own initial, not a third copy of the envelope the
+		-- heading already carries. The only thing that varied down that column
+		-- was the name, which is what made it read as flat as it was.
+		check(TBm.content.mail[1].chip ~= nil
+			and TBm.content.mail[1].chip.label:GetText() == "T",
+			"each row carries its sender's initial (got "
+			.. tostring(TBm.content.mail[1].chip
+				and TBm.content.mail[1].chip.label:GetText()) .. ")")
+		check(TBm.content.mail[2].chip.label:GetText() == "S",
+			"and they differ down the column, which is the job of a list")
+
 		UIParent:SetSize(oldW, oldH)
 		TBm:SetDock("LEFT")
+	end
+
+	-- A name that starts with a multi-byte character. Lua has no unicode, so
+	-- who:sub(1,1) takes one BYTE and half a character draws as a box.
+	do
+		_G.__mail, _G.__mailFrom = true, { "\195\150lrun", "Thrall" }
+		fire("UPDATE_PENDING_MAIL")
+		check(TBm.content.mail[1].chip.label:GetText() == "\195\150",
+			"a name beginning with a multi-byte character gives a whole one -"
+			.. " sub(1,1) would hand the font half a codepoint (got "
+			.. tostring(TBm.content.mail[1].chip.label:GetText()) .. ")")
 	end
 
 	-- Reading it at a mailbox clears the flag without UPDATE_PENDING_MAIL

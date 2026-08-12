@@ -74,6 +74,19 @@ local RAIL_CHEV  = 14
 -- are 32 of the 40 and the ends read as semicircles - which is a pill, which is
 -- exactly what it looked like. 8 leaves a flat run down the middle of each end
 -- and the shape reads as a handle on the side of a drawer.
+-- How big the rail's OWN glyphs are drawn.
+--
+-- These are bare line glyphs on the rail itself - no chip, no rim - and that is
+-- deliberate: the envelope and the gear are part of the rail, and the launchers
+-- look different because they ARE different, being other addons' art in their
+-- own circles. What was wrong was the size. At RAIL_ICON - 8 they were 18px of
+-- thin line beside 26px filled discs and read as an afterthought.
+--
+-- Two off the icon size rather than flush with it: a line glyph needs a little
+-- air inside a 26 slot where a filled disc does not, and at 24 the envelope's
+-- stroke lands on a comfortable pixel and a half.
+local RAIL_GLYPH = RAIL_ICON - 2
+
 local RAIL_CORNER = 8
 
 -- How far the rail sits INTO the panel. Without this it is a separate capsule
@@ -194,7 +207,7 @@ function TB:Build()
 	-- wants a gear or the star, and both need a generator pass.
 	local gg = gear:CreateTexture(nil, "ARTWORK")
 	gg:SetPoint("CENTER", gear, "CENTER", 0, 0)
-	gg:SetSize(RAIL_ICON - 8, RAIL_ICON - 8)
+	gg:SetSize(RAIL_GLYPH, RAIL_GLYPH)
 	Media:SetIcon(gg, "gear")
 	gear.glyph = gg
 	gear:SetScript("OnClick", function()
@@ -221,7 +234,7 @@ function TB:Build()
 	mail:SetSize(RAIL_ICON, RAIL_ICON)
 	local mg = mail:CreateTexture(nil, "ARTWORK")
 	mg:SetPoint("CENTER", mail, "CENTER", 0, 0)
-	mg:SetSize(RAIL_ICON - 8, RAIL_ICON - 8)
+	mg:SetSize(RAIL_GLYPH, RAIL_GLYPH)
 	Media:SetIcon(mg, "mail")
 	mail.glyph = mg
 	mail:SetScript("OnClick", function() TB:Toggle() end)
@@ -1371,7 +1384,8 @@ local TILE_H, TILE_GAP = 62, 8
 -- the MAIL section
 -- ---------------------------------------------------------------------------
 
-local MAIL_ROW_H, MAIL_ROW_GAP = 24, 4
+local MAIL_ROW_H, MAIL_ROW_GAP = 30, 5
+local MAIL_CHIP = 24
 
 function TB:BuildMail()
 	if not self.content or self.content.mail then return end
@@ -1402,19 +1416,50 @@ function TB:RefreshMailRows()
 			row = CreateFrame("Frame", nil, self.content)
 			row:SetHeight(MAIL_ROW_H)
 
-			local dot = row:CreateTexture(nil, "ARTWORK")
-			dot:SetSize(12, 12)
-			dot:SetPoint("LEFT", row, "LEFT", 2, 0)
-			Media:SetIcon(dot, "mailfull")
-			row.dot = dot
+			-- A sender's INITIAL in a chip, not a repeated envelope.
+			--
+			-- Three rows carrying the same small mail glyph is three copies of
+			-- what the section heading already said, and it read as flat as it
+			-- was: the only thing that varied down the column was the name. The
+			-- initial varies with the row, which is the whole job of a list.
+			--
+			-- Chips are the drawer's own language - the settings tiles are built
+			-- from the same widget - and they are wrong on the RAIL for the
+			-- opposite reason: out there the bare glyphs ARE the rail, and only
+			-- a launcher, which is somebody else's art, gets a circle.
+			local chip = W.CreateBadge(row, { size = MAIL_CHIP, style = "tbChip" })
+			chip:SetPoint("LEFT", row, "LEFT", 0, 0)
+			row.chip = chip
 
-			row.name = W.Text(row, "tbCardBody", "LEFT")
-			row.name:SetPoint("LEFT", dot, "RIGHT", 8, 0)
+			row.name = W.Text(row, "tbCardTitle", "LEFT")
+			row.name:SetPoint("LEFT", chip, "RIGHT", 10, 0)
 			self.content.mail[i] = row
 		end
 		local who = senders[i]
 		row.name:SetText(who or "")
 		row:SetShown(who ~= nil)
+
+		if who then
+			-- The first LETTER, not the first byte. A name can begin with a
+			-- multi-byte character on any client, and half of one draws as a
+			-- box. Lua has no unicode, so the continuation bytes are counted
+			-- from the lead byte's own high bits, which is the one thing UTF-8
+			-- guarantees without a library.
+			local b1 = who:byte(1) or 0
+			local n = (b1 < 0x80 and 1) or (b1 < 0xE0 and 2) or (b1 < 0xF0 and 3) or 4
+			local initial = who:sub(1, n)
+			if n == 1 then initial = initial:upper() end
+			row.chip.label:SetText(initial)
+
+			local c = Palette.c
+			local fill, ink = c.btnFill, c.btnFillText
+			row.chip.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1)
+			-- Filled chip, no rim - see the settings tiles. A bright ring lapped
+			-- a pixel proud of a bright disc doubles the coverage in the outer
+			-- pixel and the edge stops being an edge.
+			row.chip.ring:Hide()
+			W.Color(row.chip.label, ink)
+		end
 	end
 
 	-- "You have mail but we cannot say from whom" is a real state - auction
@@ -2299,7 +2344,16 @@ function TB:LayoutContent()
 		and (mailRows * (MAIL_ROW_H + MAIL_ROW_GAP) - MAIL_ROW_GAP) or 0
 	local mailBlock = has and (SECTION_H + mailRowsH + SECTION_GAP) or 0
 
-	local roomLeft = h - y - PAD - mailBlock
+	-- The addon section's own HEADER is fixed cost too, and it was missing from
+	-- this sum. Its ROWS give way to nothing, which is what "the addon list
+	-- gives way" means - but the heading and the gap under it are drawn whether
+	-- there is one row or twenty, so the tiles were being handed room that the
+	-- heading was always going to take. It overflowed by exactly SECTION_H the
+	-- moment anything above got taller, which is how taller mail rows found it.
+	local addonFixed = (#(self._addonRows or {}) > 0 and content.addonsHead)
+		and (SECTION_H + SECTION_GAP) or 0
+
+	local roomLeft = h - y - PAD - mailBlock - addonFixed
 	local maxTileRows = math.max(0, math.floor((roomLeft - SECTION_H) / (TILE_H + TILE_GAP)))
 	if tileRows > maxTileRows then tileRows = maxTileRows end
 	local shownTiles = math.min(#tiles, tileRows * tileCols)

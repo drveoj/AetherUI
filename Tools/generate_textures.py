@@ -1131,10 +1131,16 @@ def _glyph(name, cell):
     # states rather than as two drawings - which is the pin/pinned rule, and the
     # reason the flap is in exactly the same place in both.
     #
-    # The body is WIDER than it is tall at 5:3, because a square envelope reads
-    # as a note or a card. At 26px on the rail the proportion is most of what
-    # says "envelope" before the flap is even legible.
-    MAIL = (22, 42, 106, 92)
+    # FILLS THE CELL, like the gear it sits next to on the rail. The first
+    # version was 84x50 in a 128 cell while the gear is an 88 circle, so it
+    # carried about half the ink of its neighbour and read as both smaller and
+    # thinner - the stroke was identical, there was just less of it. An icon
+    # family is matched on how much of the cell it uses, not only on stroke.
+    #
+    # Still wider than tall, at 3:2, because a square envelope reads as a note
+    # or a card. At 18px on the rail the proportion is most of what says
+    # "envelope" before the flap is legible at all.
+    MAIL = (16, 32, 112, 96)
 
     if name == "mail":
         x0, y0, x1, y1 = MAIL
@@ -1142,8 +1148,8 @@ def _glyph(name, cell):
         # which is where a real one folds - level with the top edge it reads as
         # a triangle sitting on a box.
         return U(rect(x0, y0, x1, y1),
-                 seg(x0, y0, (x0 + x1) / 2, y0 + 26),
-                 seg(x1, y0, (x0 + x1) / 2, y0 + 26))
+                 seg(x0, y0, (x0 + x1) / 2, y0 + 34),
+                 seg(x1, y0, (x0 + x1) / 2, y0 + 34))
 
     if name == "mailfull":
         x0, y0, x1, y1 = MAIL
@@ -1161,8 +1167,8 @@ def _glyph(name, cell):
         # the icon read as a plain white rectangle at the only size it is ever
         # seen. This is the same reason the gear's teeth are stubs.
         CARVE = ICON_STROKE * 1.5
-        crease = np.minimum(seg(x0, y0, (x0 + x1) / 2, y0 + 30),
-                            seg(x1, y0, (x0 + x1) / 2, y0 + 30))
+        crease = np.minimum(seg(x0, y0, (x0 + x1) / 2, y0 + 36),
+                            seg(x1, y0, (x0 + x1) / 2, y0 + 36))
         return np.maximum(body, CARVE - crease)
 
     return INF
