@@ -151,6 +151,50 @@
 	Tooltips need nothing at all. GameTooltip is a child of UIParent and goes
 	with it.
 
+	The shot
+	--------
+	Zen sets up a camera rather than only clearing a screen: the character sits,
+	and the view pulls back over their shoulder.
+
+	Sitting goes through `C_ChatInfo.PerformEmote`, not `SitStandOrDescendStart`
+	- the latter is what the keybind runs and it is a TOGGLE, so on a player who
+	is already sitting it stands them up. That is the wrong way round on exactly
+	the players most likely to have been idle long enough to get here. And not
+	`DoEmote` either, which on 1.15 exists only when `loadDeprecationFallbacks`
+	is set, so the fallback runs the other way from usual: the modern call first.
+
+	Nothing can ask whether the player is already sitting - Classic exposes no
+	such query - which is why standing up at the end is unconditional rather than
+	conditional on us having been the ones who sat them down.
+
+	The camera divides cleanly into a half that is reversible and a half that is
+	not, and the difference is worth knowing before touching it:
+
+	  zoom   exact. `GetCameraZoom` reads the current distance, so the target is
+	         a difference and the player's own distance goes back precisely. One
+	         call each way: each CameraZoom call starts the client's own glide,
+	         and issuing a new one every tick restarts that glide every tick,
+	         which is a camera that never arrives.
+	  pitch  write-only. There is no getter and no setter - only
+	         MoveViewUpStart/Stop, which is movement over time. An amount can be
+	         asked for and never measured, so the only way back is the same
+	         movement reversed for the same duration.
+
+	`SaveView(5)`/`SetView(5)` would restore both exactly. It costs the player a
+	saved-view slot for ever and DialogueUI's own camera module carries a note
+	that it breaks the camera-following style, which is too high a price for a
+	nudge. In practice the window where the reversal is wrong is small: moving
+	the camera means moving the mouse, and the mouse is the fader's most reliable
+	wake signal, so a player who grabs the camera has already ended zen.
+
+	The one thing here that must never be got wrong is stopping a pitch movement.
+	Everything else this module borrows fails visibly and harmlessly; a nudge
+	that is started and not stopped leaves the camera rotating through the floor
+	until the player reloads. The tilt up is stopped from the tick, which is
+	running by definition while zen is on screen. The tilt back down is stopped
+	from C_Timer, because the paths that start it unregister the ticker a few
+	lines later and a tick-driven stop would never fire at all.
+
 	The audio profile
 	-----------------
 	Zen borrows the sound channels for as long as it is on screen and gives them
@@ -294,7 +338,22 @@ local WORLD_TEXT_CVARS = {
 	"UnitNameFriendlyMinionName",
 	"UnitNameEnemyPlayerName",
 	"UnitNameEnemyMinionName",
+	-- Four more that DialogueUI's camera module lists and the Classic settings
+	-- panel does not expose. They may well not exist on this client; the probe
+	-- means listing one that does not is free, and listing one that DOES exist
+	-- and forgetting it is a pet's name left hanging in the middle of the shot.
+	"UnitNameFriendlyPetName",
+	"UnitNameFriendlyGuardianName",
+	"UnitNameEnemyPetName",
+	"UnitNameEnemyGuardianName",
 }
+
+--- The over-the-shoulder offset, if this client has it at all.
+--
+--  It does not appear anywhere in the Classic Era interface source, and the one
+--  addon here that sets it only does so on its retail path - so this is probed
+--  like everything else and the shot simply has no lateral offset without it.
+local SHOULDER_CVAR = "test_cameraOverShoulder"
 
 -- ---------------------------------------------------------------------------
 -- construction
@@ -1258,6 +1317,246 @@ function Zen:RestoreAudio()
 	GiveBack(store)
 end
 
+-- ---------------------------------------------------------------------------
+-- the chair
+--
+-- `C_ChatInfo.PerformEmote` rather than `DoEmote`, which is deprecated on 1.15
+-- and only exists at all when `loadDeprecationFallbacks` is on - so the fallback
+-- is the other way round from usual: the modern call first, the old global only
+-- if this client has not got the new one.
+--
+-- And rather than `SitStandOrDescendStart()`, which is what the keybind runs.
+-- That one is a TOGGLE, so on a player who is already sitting it stands them up
+-- - the exact opposite of the request, on the exact players most likely to be
+-- idle enough to trigger zen. The emote is not a toggle: sit when sitting is
+-- sitting.
+--
+-- Nothing here can ask whether the player is already sitting. Classic exposes no
+-- such query, which is why "only stand up if we were the ones who sat them down"
+-- is not on offer and standing up is unconditional.
+-- ---------------------------------------------------------------------------
+
+local function Emote(token)
+	if C_ChatInfo and C_ChatInfo.PerformEmote then
+		return pcall(C_ChatInfo.PerformEmote, token)
+	end
+	if DoEmote then return pcall(DoEmote, token) end
+	return false
+end
+
+--- Every state in which sitting is impossible, refused, or simply wrong.
+--
+--  Checked rather than attempted. A refused emote puts a red error across the
+--  middle of the screen, and a red error across the middle of a mode whose whole
+--  purpose is a quiet screen is worse than not sitting.
+local function CanSit()
+	if InCombatLockdown() then return false end
+	if IsMounted and IsMounted() then return false end
+	if UnitOnTaxi and UnitOnTaxi("player") then return false end
+	if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return false end
+	return true
+end
+
+function Zen:SetSitting(a)
+	local cfg = A.Config:Module("zen")
+	if cfg.sit == false then
+		self:StandUp()
+		return
+	end
+
+	-- At the TOP of the fade rather than the bottom, unlike the plates and the
+	-- audio. Those are things being taken away, and taking them away early means
+	-- taking them away from somebody who has not gone yet. This is the opposite:
+	-- it is the shot being set up, and watching the character settle while the
+	-- HUD breathes out is the whole picture. At the bottom of the fade they would
+	-- simply snap into a sitting pose on an already-still screen.
+	if a < 0.02 then
+		if self._sat then self:StandUp() end
+		return
+	end
+	if self._sat then return end
+	if not CanSit() then return end
+
+	if Emote("SIT") then self._sat = true end
+end
+
+function Zen:StandUp()
+	if not self._sat then return end
+	self._sat = false
+	-- Not gated on CanSit: if combat started, standing is exactly what we want,
+	-- and standing while mounted or dead is a no-op rather than an error.
+	Emote("STAND")
+end
+
+-- ---------------------------------------------------------------------------
+-- the camera
+--
+-- Over the shoulder, three metres back, tilted a little above the head.
+--
+-- Zoom is exact and reversible: GetCameraZoom() reads the current distance, so
+-- the target is set by asking for the difference and the player's own distance
+-- is put back the same way. One call each way rather than a per-tick ramp - each
+-- CameraZoom call starts the client's own glide, and issuing a new one ten times
+-- a second restarts that glide ten times a second, which is a camera that never
+-- arrives.
+--
+-- Pitch is NOT. There is no getter for it and no setter either: the only control
+-- is MoveViewUpStart/Stop, which is movement over time. So "a little above" can
+-- be asked for but never measured, and the only way back is to run the same
+-- movement in reverse for the same duration. That is exact if nothing else moved
+-- the camera in between, and wrong if something did.
+--
+-- The alternative was SaveView(5)/SetView(5), which restores pitch and zoom
+-- together and exactly. It costs the player a saved-view slot for ever, and
+-- DialogueUI's own camera module carries a note that it breaks the camera
+-- following style. A slot the player owns is too high a price for a nudge.
+--
+-- In practice the window for getting it wrong is small: moving the camera means
+-- moving the mouse, and moving the mouse is the fader's most reliable wake
+-- signal, so a player who grabs the camera during zen has already ended zen.
+-- ---------------------------------------------------------------------------
+
+--- Radians per second-ish; the client's own units, not documented anywhere.
+--  The pitch setting is a DURATION at this speed, which is the only handle
+--  there is on an amount you cannot read back.
+local PITCH_SPEED = 1.0
+
+function Zen:SetCamera(a)
+	local cfg = A.Config:Module("zen")
+	if cfg.camera == false then
+		self:RestoreCamera()
+		return
+	end
+
+	if a < 0.02 then
+		if self._cam then self:RestoreCamera() end
+		return
+	end
+	if self._cam then return end
+
+	-- A taxi flies the camera itself, and a second addon fighting it for the
+	-- same camera is how you get a spinning screen over the Barrens.
+	if UnitOnTaxi and UnitOnTaxi("player") then return end
+	if not GetCameraZoom or not CameraZoomIn or not CameraZoomOut then return end
+
+	local ok, current = pcall(GetCameraZoom)
+	if not ok or type(current) ~= "number" then return end
+
+	local cam = { zoom = current, pitch = 0 }
+
+	local goal = math.max(0, tonumber(cfg.cameraZoom) or 3)
+	local diff = current - goal
+	if math.abs(diff) > 0.05 then
+		if diff > 0 then pcall(CameraZoomIn, diff) else pcall(CameraZoomOut, -diff) end
+	end
+
+	-- The lateral offset, through the same borrow/give-back as every other CVar
+	-- so it is handed back by the paths that already exist. Absent on this
+	-- client, Borrow declines and the shot is simply centred.
+	local shoulder = tonumber(cfg.cameraShoulder) or 0
+	if shoulder ~= 0 then
+		cam.store = {}
+		Borrow(cam.store, SHOULDER_CVAR, shoulder)
+	end
+
+	local pitch = math.max(0, math.min(2, tonumber(cfg.cameraPitch) or 0.35))
+	if pitch > 0 and MoveViewUpStart then
+		pcall(MoveViewUpStart, PITCH_SPEED)
+		cam.pitch     = pitch
+		cam.pitchFrom = GetTime()
+		cam.pitchStop = GetTime() + pitch
+	end
+
+	self._cam = cam
+end
+
+--- How far the camera actually got, in seconds of movement.
+--
+--  Not the same as what was ASKED for, and that is the point. Zen can end at any
+--  moment - combat, a keypress, the module being switched off - including
+--  part-way through the tilt. Reversing by the requested duration in that case
+--  points the camera further down than it started, every time, by however much
+--  of the nudge had not run yet. It is a small error and a permanent one: the
+--  player's pitch is quietly wrong from then on, with nothing to say why.
+--  NOT capped at the duration that was asked for, which is the sort of clamp
+--  that looks defensive and is actively wrong. The tick runs at 0.1s, so a nudge
+--  asked to last 0.35s is stopped at 0.4s and the camera really did move for
+--  0.4s. Reversing by the 0.35 we intended undershoots by the overshoot, every
+--  time, in the same direction - and the player's pitch drifts a little further
+--  down with every zen. What the camera did is what has to be undone.
+local function PitchDone(cam)
+	if not cam.pitch or cam.pitch <= 0 then return 0 end
+	if cam.pitchDone then return cam.pitchDone end
+	if not cam.pitchFrom then return cam.pitch end
+	return math.max(0, GetTime() - cam.pitchFrom)
+end
+
+--- Stop a pitch movement once it has run long enough. Driven from the tick
+--  rather than from C_Timer, so a zen that ends mid-nudge cannot leave the
+--  camera rotating: there is no pending callback to arrive after the teardown.
+function Zen:TickCamera()
+	local cam = self._cam
+	if not cam or not cam.pitchStop then return end
+	if GetTime() < cam.pitchStop then return end
+	cam.pitchStop = nil
+	-- Banked before the stop, so the reversal has an exact figure rather than
+	-- one derived from a clock that has moved on since.
+	cam.pitchDone = math.max(0, GetTime() - (cam.pitchFrom or GetTime()))
+	if MoveViewUpStop then pcall(MoveViewUpStop) end
+end
+
+function Zen:RestoreCamera()
+	local cam = self._cam
+	if not cam then return end
+	self._cam = nil
+
+	-- Measured BEFORE the stop, because the moment the movement ends there is no
+	-- longer anything to measure - and a nudge that is still running is exactly
+	-- the case this has to get right.
+	local done = PitchDone(cam)
+
+	-- First, and unconditionally. Whatever else fails below, the camera must not
+	-- be left turning.
+	if MoveViewUpStop then pcall(MoveViewUpStop) end
+	if MoveViewDownStop then pcall(MoveViewDownStop) end
+
+	if cam.store then GiveBack(cam.store) end
+
+	if cam.zoom and GetCameraZoom then
+		local ok, now = pcall(GetCameraZoom)
+		if ok and type(now) == "number" then
+			local diff = now - cam.zoom
+			if math.abs(diff) > 0.05 then
+				if diff > 0 then pcall(CameraZoomIn, diff) else pcall(CameraZoomOut, -diff) end
+			end
+		end
+	end
+
+	-- The same nudge, downward.
+	--
+	-- On C_Timer rather than on the tick, which is the opposite of the tilt UP,
+	-- and the difference is the whole reason this is worth reading twice. The
+	-- tilt up runs while zen is on screen, so the tick is guaranteed to be
+	-- running and can be trusted to stop it. This runs while zen is ENDING - and
+	-- the paths that call it (parking, OnDisable) unregister the ticker within a
+	-- few lines. A stop that depended on the tick would therefore never fire, and
+	-- the failure mode is not a cosmetic one: the camera rotates downward for
+	-- ever, through the floor, until the player reloads.
+	--
+	-- The usual objection to a pending callback - that it arrives after teardown
+	-- and touches something that has gone - does not apply. MoveViewDownStop
+	-- takes no state of ours and is safe to call when nothing is moving.
+	if done > 0 and MoveViewDownStart then
+		pcall(MoveViewDownStart, PITCH_SPEED)
+		local stop = function() if MoveViewDownStop then pcall(MoveViewDownStop) end end
+		if C_Timer and C_Timer.After then
+			C_Timer.After(done, stop)
+		else
+			stop()
+		end
+	end
+end
+
 --- Hand back everything zen borrowed, whatever state it is in.
 --
 --  Deliberately not "and also park the readout": this is called from the logout
@@ -1266,6 +1565,9 @@ end
 function Zen:ReleaseAll()
 	pcall(self.RestoreWorldText, self)
 	pcall(self.RestoreAudio, self)
+	-- The camera's shoulder offset is a CVar like any other, so it is written to
+	-- Config.wtf on the way out with everything else.
+	pcall(self.RestoreCamera, self)
 end
 
 --- Play a track from the options panel, so somebody choosing one can hear it
@@ -1360,6 +1662,8 @@ local function TickBody(self, dt)
 		self:SetFrost(0)
 		self:RestoreWorldText()
 		self:RestoreAudio()
+		self:RestoreCamera()
+		self:StandUp()
 		return
 	end
 
@@ -1378,6 +1682,11 @@ local function TickBody(self, dt)
 			self:SetFrost(0)
 			self:RestoreWorldText()
 			self:RestoreAudio()
+			-- The camera and the chair go back HERE rather than the moment the
+			-- fader said wake, so the shot unwinds with the readout instead of
+			-- snapping the instant somebody twitches the mouse.
+			self:RestoreCamera()
+			self:StandUp()
 			A:UnregisterTicker(self)
 			self:SetKeysEnabled(false)
 			return
@@ -1394,6 +1703,9 @@ local function TickBody(self, dt)
 	self:DriftFrost(dt)
 	self:SetWorldText(f:GetAlpha())
 	self:SetAudio(f:GetAlpha())
+	self:SetSitting(f:GetAlpha())
+	self:SetCamera(f:GetAlpha())
+	self:TickCamera()
 	self:UpdateBars()
 	if cfg.showDots ~= false then Breathe(f, GetTime()) end
 
@@ -1421,6 +1733,11 @@ local function Tick(self, dt)
 	pcall(self.SetFrost, self, 0)
 	pcall(self.RestoreWorldText, self)
 	pcall(self.RestoreAudio, self)
+	-- The camera one is not optional. Everything else on this list leaves the
+	-- player with something wrong on screen; a half-finished pitch nudge leaves
+	-- the camera ROTATING, and it does not stop until they reload.
+	pcall(self.RestoreCamera, self)
+	pcall(self.StandUp, self)
 	self.want = 0
 	if self.frame then self.frame:SetAlpha(0) end
 	self:SetKeysEnabled(false)
@@ -1490,6 +1807,8 @@ function Zen:OnDisable()
 	self:SetFrost(0)
 	self:RestoreWorldText()
 	self:RestoreAudio()
+	self:RestoreCamera()
+	self:StandUp()
 	A:UnregisterTicker(self)
 	-- The fader gates zen on this module being enabled, so it has to be told the
 	-- ground moved - otherwise the HUD stays at zen's alpha with nothing to show

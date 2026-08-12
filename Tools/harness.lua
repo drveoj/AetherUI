@@ -890,7 +890,15 @@ _G.__cvars = {
 	UnitNameEnemyPlayerName        = "1",
 	UnitNameEnemyMinionName        = "1",
 
-	-- Deliberately ABSENT: nameplateShowFriends. It is the name older clients
+	-- The over-the-shoulder offset. Present here, but the module must not
+	-- REQUIRE it: it appears nowhere in the Classic Era interface source and may
+	-- genuinely not exist on a live 1.15 client.
+	test_cameraOverShoulder = "0",
+
+	-- Deliberately ABSENT: nameplateShowFriends, and the four pet/guardian name
+	-- CVars the module lists from DialogueUI. Between them they cover both
+	-- halves of the probe: a name that is gone from this flavour, and names that
+	-- may only exist on another one. It is the name older clients
 	-- use and the module lists it, so its absence here is the test that the
 	-- module probes before it writes rather than assuming.
 }
@@ -925,6 +933,90 @@ function PlayMusic(file)
 	_G.__music = file
 end
 function StopMusic() _G.__music = nil end
+
+-- ---------------------------------------------------------------------------
+-- the body and the camera
+--
+-- The camera mock keeps a real zoom NUMBER, because the interesting property is
+-- that the player's own distance comes back exactly - a mock that only recorded
+-- "zoom was called" could not tell an exact restore from an approximate one.
+--
+-- Pitch is modelled as what it really is: a movement with a start and a stop,
+-- and a running total of how long it has been moving. That is the only way to
+-- catch the failure that actually matters here, which is a nudge that gets
+-- started and never stopped.
+-- ---------------------------------------------------------------------------
+
+_G.__camera = { zoom = 12, pitchMoving = nil, pitchUp = 0, pitchDown = 0 }
+_G.__mounted = false
+_G.__emotes = {}
+
+function IsMounted() return _G.__mounted end
+
+function GetCameraZoom() return _G.__camera.zoom end
+
+function CameraZoomIn(d)
+	if type(d) ~= "number" then fail("CameraZoomIn got " .. tostring(d)) end
+	_G.__camera.zoom = math.max(0, _G.__camera.zoom - d)
+end
+
+function CameraZoomOut(d)
+	if type(d) ~= "number" then fail("CameraZoomOut got " .. tostring(d)) end
+	_G.__camera.zoom = _G.__camera.zoom + d
+end
+
+local function bankPitch()
+	local c = _G.__camera
+	if not c.pitchMoving then return end
+	c["pitch" .. c.pitchMoving] = c["pitch" .. c.pitchMoving]
+		+ (time - (c.startedAt or time))
+	c.pitchMoving = nil
+end
+
+--- Starting a movement while another is running is NOT an error.
+--
+--  It was, in the first version of this mock, and the rule was invented: the
+--  client simply changes direction, and asserting otherwise produced twenty
+--  failures describing a bug that did not exist. Worse, it cascaded - the failed
+--  start left the mock's idea of the current direction wrong, so the stop that
+--  arrived later matched nothing and every subsequent start failed too.
+--
+--  The property that actually matters is not "one at a time". It is "nothing is
+--  left moving when zen is over", and that is `pitchMoving == nil`, asserted
+--  where the test controls the timers rather than globally. A pitch movement
+--  left running rotates the camera through the floor until the player reloads.
+local function moveStart(dir)
+	return function()
+		local c = _G.__camera
+		if c.pitchMoving then
+			c.restarts = (c.restarts or 0) + 1
+			bankPitch()
+		end
+		c.pitchMoving = dir
+		c.startedAt = time
+		-- The reversal is a movement followed immediately by a C_Timer stop.
+		-- Flagging it here lets that stop's delay be captured as THIS movement's
+		-- duration rather than as whatever timer happened to be scheduled last.
+		if dir == "Down" then c.awaitingDelay = true end
+	end
+end
+
+local function moveStop(dir)
+	return function()
+		if _G.__camera.pitchMoving ~= dir then return end
+		bankPitch()
+	end
+end
+
+MoveViewUpStart, MoveViewUpStop     = moveStart("Up"), moveStop("Up")
+MoveViewDownStart, MoveViewDownStop = moveStart("Down"), moveStop("Down")
+
+C_ChatInfo = C_ChatInfo or {}
+function C_ChatInfo.PerformEmote(token)
+	_G.__emotes[#_G.__emotes + 1] = token
+	_G.__emote = token
+	return true
+end
 
 local bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "SHIFT-BUTTON4", ACTIONBUTTON3 = "NUMPAD7" }
 _G.__bindingSet = bindings
@@ -1554,7 +1646,26 @@ end
 --  -- moving items, selling items -- would recurse straight through its own
 --  pacing here and the test would prove the opposite of what it claims.
 _G.__pending = {}
-function C_Timer.After(_, fn) _G.__pending[#_G.__pending + 1] = fn end
+_G.__pendingDelay = {}
+function C_Timer.After(delay, fn)
+	_G.__pending[#_G.__pending + 1] = fn
+	_G.__pendingDelay[#_G.__pendingDelay + 1] = tonumber(delay) or 0
+	-- Zen's camera schedules the END of its pitch reversal here, and the SCHEDULED
+	-- delay is the only honest measure of it. Elapsed harness time is not: this
+	-- clock is driven by tick() and runs on long after a callback is queued, so
+	-- "how long did the camera move for" comes out as "how many ticks happened to
+	-- run before somebody drained the queue" - which is what reported a 0.10s
+	-- nudge being reversed over 2.00s.
+	--
+	-- Paired with the movement rather than simply remembered as "the last delay
+	-- scheduled by anyone", so an unrelated timer landing in the same window
+	-- cannot quietly stand in for the one being measured.
+	local c = _G.__camera
+	if c and c.awaitingDelay then
+		c.awaitingDelay = nil
+		c.backDelay = tonumber(delay) or 0
+	end
+end
 
 --- Run whatever After has queued, up to `rounds` times. Each round drains the
 --  queue as it stood at the start, so a callback that queues another one is
@@ -1563,8 +1674,31 @@ function _G.__drainTimers(rounds)
 	for _ = 1, rounds or 1 do
 		local queue = _G.__pending
 		if #queue == 0 then return end
-		_G.__pending = {}
+		_G.__pending, _G.__pendingDelay = {}, {}
 		for _, fn in ipairs(queue) do fn() end
+	end
+end
+
+--- The same, but the clock moves forward by each callback's own delay first.
+--
+--  For anything whose CORRECTNESS is a duration rather than an ordering. Zen's
+--  camera reverses a pitch nudge by running the opposite movement for the time
+--  the first one ran; fire the stop at the same instant it was scheduled and the
+--  reversal measures zero, so a mock that ignores the delay cannot tell an exact
+--  reversal from no reversal at all.
+--
+--  Kept separate from __drainTimers rather than replacing it, because the bag
+--  and merchant tests use that one to prove PACING - that work is spread across
+--  frames - and moving the clock under them would change what they are asserting.
+function _G.__drainTimersTimed(rounds)
+	for _ = 1, rounds or 1 do
+		local queue, delays = _G.__pending, _G.__pendingDelay
+		if #queue == 0 then return end
+		_G.__pending, _G.__pendingDelay = {}, {}
+		for i, fn in ipairs(queue) do
+			time = time + (delays[i] or 0)
+			fn()
+		end
 	end
 end
 --- Run every live ticker once, the way the client would.
@@ -3537,8 +3671,22 @@ end
 -- written once here rather than eight times.
 -- ---------------------------------------------------------------------------
 
+--- Anything the client would have fired by now has fired.
+--
+--  Zen's camera schedules the end of its pitch reversal on C_Timer, because the
+--  paths that start it unregister the ticker immediately afterwards. In the game
+--  that callback lands a fraction of a second later and the movement stops. In
+--  here it sits in a queue until something drains it - so without this, every
+--  zen after the first one starts an upward pitch while a downward one is still
+--  notionally running, which is a mock failure twenty times over describing a
+--  bug that does not exist.
+local function settle()
+	_G.__drainTimersTimed(3)
+end
+
 local function enterZen()
 	local zcfg = A.db.profile.modules.zen
+	settle()
 	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 0.1, 0.1
 	A.db.profile.fader.delay = 1
 	A.Fader:ForceZen()
@@ -3556,6 +3704,7 @@ local function leaveZen()
 	A.Fader:Touch()
 	A.Fader:Update()
 	for i = 1, 20 do tick(0.1) end
+	settle()
 end
 
 
@@ -3897,6 +4046,154 @@ do
 		.. " a request to enter zen")
 	check(Z:PreviewTrack("water") == false and _G.__music == nil,
 		"and a second press stops it")
+end
+
+
+print("== zen: the chair ==")
+do
+	local Z = A:GetModule("zen")
+	local zcfg = A.db.profile.modules.zen
+
+	_G.__emotes = {}
+	enterZen()
+	check(_G.__emote == "SIT", "entering zen sits the character down")
+
+	-- The emote, not SitStandOrDescendStart. That one is what the keybind runs
+	-- and it TOGGLES, so on a player who is already sitting it would stand them
+	-- up - which is the wrong way round on exactly the players idle enough to
+	-- have got here in the first place.
+	check(#_G.__emotes == 1, "once, not on every tick of the fade")
+
+	leaveZen()
+	check(_G.__emote == "STAND", "and leaving stands them back up")
+
+	-- Nothing in Classic can ask whether you are sitting, so the guards are the
+	-- only protection there is against firing an emote that will be refused -
+	-- and a refusal is a red error across the middle of a deliberately quiet
+	-- screen.
+	for _, state in ipairs({ "__mounted", "__onTaxi" }) do
+		_G.__emotes, _G.__emote = {}, nil
+		_G[state] = true
+		enterZen()
+		check(_G.__emote == nil, "no sitting while " .. state:gsub("__", ""))
+		leaveZen()
+		_G[state] = false
+	end
+
+	_G.__emotes, _G.__emote = {}, nil
+	_G.__units.player.dead = true
+	enterZen()
+	check(_G.__emote == nil, "nor while dead")
+	leaveZen()
+	_G.__units.player.dead = false
+
+	zcfg.sit = false
+	_G.__emotes, _G.__emote = {}, nil
+	enterZen()
+	check(_G.__emote == nil, "and the switch turns it off")
+	leaveZen()
+	zcfg.sit = true
+end
+
+
+print("== zen: the camera ==")
+do
+	local Z = A:GetModule("zen")
+	local zcfg = A.db.profile.modules.zen
+	local cam = _G.__camera
+	local cv = _G.__cvars
+
+	cam.zoom = 12
+	cam.pitchUp, cam.pitchDown = 0, 0
+
+	enterZen()
+	check(math.abs(cam.zoom - zcfg.cameraZoom) < 0.001,
+		"zen pulls the camera back to the configured distance ("
+		.. string.format("%.1f", cam.zoom) .. ")")
+	check(cam.pitchMoving == nil and cam.pitchUp > 0,
+		"tilts it up by a measured amount and STOPS - a pitch movement left"
+		.. " running rotates the camera through the floor until the player"
+		.. " reloads, which is the one failure here that is not cosmetic ("
+		.. string.format("%.2fs", cam.pitchUp) .. ")")
+	check(math.abs(tonumber(cv.test_cameraOverShoulder) - zcfg.cameraShoulder) < 0.001,
+		"and offsets it over the shoulder, where the client has that setting")
+
+	local upRan = cam.pitchUp
+	cam.backDelay = nil
+	leaveZen()
+	check(math.abs(cam.zoom - 12) < 0.001,
+		"leaving puts the player's own distance back EXACTLY, because"
+		.. " GetCameraZoom will tell us what it was rather than us guessing ("
+		.. string.format("%.2f", cam.zoom) .. ")")
+	check(cam.backDelay and math.abs(cam.backDelay - upRan) < 0.001,
+		"and reverses the tilt for the same duration it applied - pitch has no"
+		.. " getter in this client, so an equal-and-opposite nudge is the only"
+		.. " way back there is (up " .. string.format("%.2f", upRan) .. ", back "
+		.. tostring(cam.backDelay) .. ")")
+	check(cam.pitchMoving == nil,
+		"with nothing left moving. The stop for the way back is on C_Timer, not"
+		.. " on the tick: the paths that start it unregister the ticker a few"
+		.. " lines later, so a tick-driven stop would never fire at all")
+	check(tonumber(cv.test_cameraOverShoulder) == 0,
+		"and the shoulder offset goes back like every other borrowed CVar")
+
+	-- Cut short PART-WAY through the tilt, which is the case that matters and
+	-- the one the first version got wrong. Zen can end at any moment - combat, a
+	-- keypress, the module switched off - and reversing by the duration that was
+	-- ASKED for rather than the duration that RAN points the camera further down
+	-- than it started. A small error, a permanent one, and completely silent.
+	cam.zoom = 12
+	cam.pitchUp, cam.pitchDown = 0, 0
+	cam.backDelay = nil
+	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 0.1, 0.1
+	A.db.profile.fader.delay = 1
+	A.Fader:ForceZen()
+	tick(0.1)
+	check(cam.pitchMoving == "Up", "the tilt is still running one tick in")
+
+	A.Fader:Touch()
+	A.Fader:Update()
+	for i = 1, 20 do tick(0.1) end
+	local upRan = cam.pitchUp
+	check(cam.backDelay and math.abs(cam.backDelay - upRan) < 0.001,
+		"cut short, it reverses by what actually RAN and not by what was asked"
+		.. " for (up " .. string.format("%.2f", upRan) .. ", back "
+		.. tostring(cam.backDelay) .. ")")
+	check(upRan > 0 and upRan < zcfg.cameraPitch,
+		"and that really is less than the full nudge, or this proves nothing ("
+		.. string.format("%.2f of %.2f", upRan, zcfg.cameraPitch) .. ")")
+	settle()
+	check(cam.pitchMoving == nil, "and nothing is left rotating afterwards")
+	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 60, 2.5, 0.30
+	A.db.profile.fader.delay = 6
+
+	-- A client without the CVar must still get the rest of the shot.
+	local had = cv.test_cameraOverShoulder
+	cv.test_cameraOverShoulder = nil
+	cam.zoom = 12
+	enterZen()
+	check(math.abs(cam.zoom - zcfg.cameraZoom) < 0.001,
+		"a client with no over-the-shoulder setting still gets the zoom and the"
+		.. " tilt - the offset is probed, not required")
+	leaveZen()
+	cv.test_cameraOverShoulder = had
+
+	-- On a taxi the client is flying the camera itself.
+	cam.zoom = 12
+	_G.__onTaxi = true
+	enterZen()
+	check(math.abs(cam.zoom - 12) < 0.001,
+		"and on a taxi it keeps its hands off entirely, rather than fighting the"
+		.. " client for the same camera")
+	leaveZen()
+	_G.__onTaxi = false
+
+	zcfg.camera = false
+	cam.zoom = 12
+	enterZen()
+	check(math.abs(cam.zoom - 12) < 0.001, "the switch turns it off")
+	leaveZen()
+	zcfg.camera = true
 end
 
 

@@ -21,7 +21,7 @@ local function usage()
 		"|cff9d7bff/aether scale|r <0.6-1.6>  ·  0.71 = the concept deck's proportions",
 		"|cff9d7bff/aether fade|r <on|off|delay N|idle 0-1>  ·  stage one, the dim",
 		"|cff9d7bff/aether zen|r <on|off|delay N|afk on/off|test>  ·  stage two",
-		"|cff9d7bff/aether zen|r <frost|plates|audio> on/off  ·  what zen takes away",
+		"|cff9d7bff/aether zen|r <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
 		"|cff9d7bff/aether zen|r <track NAME|preview>  ·  the music",
 		"|cff9d7bff/aether shadow|r <0-1>  ·  ambient shadow opacity",
 		"|cff9d7bff/aether health|r <class|deck>  ·  bar colour for players",
@@ -311,6 +311,19 @@ handlers.zen = function(arg, rest)
 		A:Print("nameplates |cff9d7bffand names|r go with zen -> "
 			.. (cfg.hideNameplates and "on" or "off")
 			.. " |cff9d7bff(two separate CVar families; one switch drives both)|r")
+	elseif arg == "sit" then
+		cfg.sit = (rest ~= "off")
+		local Z = A:GetModule("zen")
+		if not cfg.sit and Z and Z.StandUp then Z:StandUp() end
+		A:Print("sit down in zen -> " .. (cfg.sit and "on" or "off"))
+	elseif arg == "camera" then
+		cfg.camera = (rest ~= "off")
+		local Z = A:GetModule("zen")
+		-- Straight back if it is being switched off mid-shot. Leaving somebody
+		-- zoomed in over their own shoulder because they flipped a switch would
+		-- be a setting that does the opposite of what it says.
+		if not cfg.camera and Z and Z.RestoreCamera then Z:RestoreCamera() end
+		A:Print("move the camera in zen -> " .. (cfg.camera and "on" or "off"))
 	elseif arg == "audio" then
 		cfg.audio = (rest ~= "off")
 		local Z = A:GetModule("zen")

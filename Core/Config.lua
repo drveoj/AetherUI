@@ -619,6 +619,34 @@ Config.defaults = {
 				-- go with it.
 				hideNameplates = true,
 
+				-- The shot
+				-- --------
+				-- Sitting uses the emote rather than SitStandOrDescendStart,
+				-- which is what the keybind runs and is a TOGGLE - on somebody
+				-- already sitting it stands them up, which is the wrong way
+				-- round on exactly the players most likely to be idle.
+				--
+				-- Skipped outright while mounted, on a taxi, in combat or dead:
+				-- a refused emote puts a red error across the middle of a screen
+				-- whose entire purpose is being quiet.
+				sit           = true,
+
+				-- Metres behind the character. Exact and exactly reversible -
+				-- GetCameraZoom reads the current distance, so the player's own
+				-- is put back rather than guessed at.
+				camera        = true,
+				cameraZoom    = 3.0,
+				-- Seconds of upward tilt, NOT an angle. Pitch has no getter and
+				-- no setter in this client; the only control is movement over
+				-- time, so an amount can be asked for and never measured. The
+				-- way back is the same movement reversed for the same duration.
+				cameraPitch   = 0.35,
+				-- The over-the-shoulder lateral offset. `test_cameraOverShoulder`
+				-- appears nowhere in the Classic Era interface source, so it may
+				-- simply not exist here - it is probed like every other CVar and
+				-- the shot is centred without it.
+				cameraShoulder = 1.0,
+
 				-- The audio profile
 				-- -----------------
 				-- Zen borrows the sound channels for as long as it is on screen

@@ -401,6 +401,40 @@ local function FaderGroup()
 			{ "modules", "zen", "hideNameplates" },
 			{ after = "none", defaultTrue = true }),
 
+		zenShotHeader = header("The shot"),
+		zenShotNote = note("Zen sets up a camera rather than just clearing the"
+			.. " screen: the character settles, and the view pulls back over their"
+			.. " shoulder."
+			.. "\n\nThe zoom is exact and exactly reversible - the game will tell us"
+			.. " the current distance, so yours is put back rather than guessed at."
+			.. " |cff9d7bffThe tilt is not|r: the client offers no way to read the"
+			.. " camera's pitch, only to move it, so the way back is the same"
+			.. " movement reversed for the same time."),
+		zenSit = toggle("Sit down",
+			"Skipped while you are mounted, on a taxi, in combat or dead - a"
+			.. " refused emote puts a red error across the middle of a screen"
+			.. " whose whole point is being quiet. You are stood back up when zen"
+			.. " ends.",
+			{ "modules", "zen", "sit" }, { after = "none", defaultTrue = true }),
+		zenCamera = toggle("Move the camera", nil, { "modules", "zen", "camera" },
+			{ after = "none", defaultTrue = true }),
+		zenCameraZoom = range("Distance behind you",
+			"Roughly metres. The camera glides there at the client's own pace"
+			.. " rather than ours - asking it to move ten times a second is a"
+			.. " camera that never arrives anywhere.",
+			{ "modules", "zen", "cameraZoom" }, 0, 15, 0.5, { after = "none" }),
+		zenCameraPitch = range("Tilt above the head",
+			"Seconds of upward movement, not an angle - the client will not tell"
+			.. " anybody what the camera's pitch actually is, so there is no angle"
+			.. " to ask for. 0 keeps your current height.",
+			{ "modules", "zen", "cameraPitch" }, 0, 1.5, 0.05, { after = "none" }),
+		zenCameraShoulder = range("Over the shoulder",
+			"Sideways offset, so you are looking past the character rather than"
+			.. " through them. This one depends on a setting Classic Era may not"
+			.. " have at all; where it is missing the shot is simply centred and"
+			.. " nothing goes wrong.",
+			{ "modules", "zen", "cameraShoulder" }, 0, 3, 0.1, { after = "none" }),
+
 		zenAudioHeader = header("The audio profile"),
 		zenAudioNote = note("Zen borrows the sound channels while it is on screen"
 			.. " and gives them back when it ends."
