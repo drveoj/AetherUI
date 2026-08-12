@@ -627,6 +627,19 @@ function TB:OnEnable()
 
 	self:RefreshMail()
 
+	-- The HUD breathes and this was the one thing that did not.
+	--
+	-- Every other module registers what it draws, and the Toolbox registered
+	-- nothing at all - so the rail sat at full brightness against a dimmed
+	-- interface, which is the one place a missing registration is visible.
+	--
+	-- The rail and the panel, NOT the scrim: the scrim's alpha is ours, written
+	-- on every Layout from the slide position, and a second writer would fight
+	-- it once per frame while the drawer moves. That is the rule the aura trays
+	-- and the minimap mail pill already follow - one owner per alpha.
+	A.Fader:Register(self.rail, {})
+	A.Fader:Register(self.panel, {})
+
 	A.Launchers:OnChanged("toolbox", function()
 		-- Re-claim on every change, not only at enable. A pin restored from
 		-- saved variables names an addon whose button may not exist yet: the
@@ -643,6 +656,13 @@ function TB:OnEnable()
 end
 
 function TB:OnDisable()
+	if A.Fader then
+		-- Unregister puts the alpha back to 1. A module switched off mid-fade
+		-- would otherwise leave its frames parked at whatever the fade had
+		-- reached, and nothing left running to bring them up.
+		if self.rail then A.Fader:Unregister(self.rail) end
+		if self.panel then A.Fader:Unregister(self.panel) end
+	end
 	self:SetPolling(false)
 	if self.panel then
 		self._want, self._travel = 0, 0

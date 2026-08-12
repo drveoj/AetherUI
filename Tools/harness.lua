@@ -7853,6 +7853,40 @@ do
 	TBm:SetOpen(false, true)
 end
 
+print("== toolbox: the drawer breathes with everything else ==")
+do
+	local TBm = A:GetModule("toolbox")
+
+	-- The HUD dims when you stand still and the rail did not, which is the one
+	-- place a missing fader registration is actually visible: it sits on screen
+	-- at all times, next to things that ARE dimming.
+	check(A.Fader.watched[TBm.rail] ~= nil,
+		"the rail is registered with the fader")
+	check(A.Fader.watched[TBm.panel] ~= nil, "and so is the drawer")
+
+	-- ...but NOT the scrim. Its alpha is written on every Layout from the slide
+	-- position, so a second writer fights it once per frame while the drawer
+	-- moves. One owner per alpha, the same rule the aura trays follow.
+	check(A.Fader.watched[TBm.scrim] == nil,
+		"the scrim is NOT - its alpha is written by Layout from the slide"
+		.. " position, and two writers on one alpha is a fight per frame")
+
+	-- Every fadeable thing this module draws, so a new surface added later has
+	-- to make the same decision rather than default to being forgotten.
+	do
+		local unregistered = {}
+		for _, part in ipairs({ { "rail", TBm.rail }, { "panel", TBm.panel } }) do
+			if part[2] and not A.Fader.watched[part[2]] then
+				unregistered[#unregistered + 1] = part[1]
+			end
+		end
+		check(#unregistered == 0,
+			"nothing the module draws is left out of the breathing ("
+			.. (#unregistered > 0 and table.concat(unregistered, ", ")
+				or "all registered") .. ")")
+	end
+end
+
 print("== toolbox: nothing on the rail sits on anything else ==")
 do
 	local TBm = A:GetModule("toolbox")
