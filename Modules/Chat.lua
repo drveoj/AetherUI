@@ -637,6 +637,32 @@ end
 --
 --  Drag a tab to move it. The tabs are on screen at all times now, so there is
 --  something to grab.
+--- Tell BLIZZARD where the chat frame ended up, as well as ourselves.
+--
+--  ChatFrame1 is not ours. It belongs to the FCF dock, which keeps its own
+--  per-character record of position and size and re-applies it on events we do
+--  not all hear - and it has no idea we moved anything, because we drag it
+--  directly rather than through its tab.
+--
+--  On a character that has been played, Blizzard's record is near enough to
+--  where you had things that nothing looks wrong. On a NEW one it is the
+--  default, so a chat window you have just dragged goes back to the corner a
+--  few seconds later and it reads as our position not having saved. Ours had
+--  saved; theirs simply disagreed and got the last word.
+--
+--  Written THROUGH Blizzard's own function rather than into its saved variables,
+--  which is the same rule as locking a LibDBIcon button through the library: the
+--  supported call knows about the parts of the record we do not.
+--
+--  Guarded and pcalled. This is the same treatment FCF_SetLocked gets a few
+--  lines below, for the same reason - a client without it should cost us the
+--  handshake, not the drag.
+local function SaveToBlizzard(f)
+	if not f or not f.GetID then return end
+	if not _G.FCF_SavePositionAndDimensions then return end
+	pcall(_G.FCF_SavePositionAndDimensions, f)
+end
+
 function Chat:SetUnlocked(f)
 	local cfg = A.Config:Module("chat")
 	if not _G.FCF_SetLocked or not f.GetID then return end
@@ -2181,7 +2207,8 @@ function Chat:OnEnable()
 	-- variables; this is the one that matches the rest of the addon, which is
 	-- what anyone would reach for first.
 	A.Movers:Register("chat", _G.ChatFrame1,
-		{ point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 34, y = 66 }, "Chat")
+		{ point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 34, y = 66 }, "Chat",
+		{ onPlaced = SaveToBlizzard })
 
 	self:Reskin()
 

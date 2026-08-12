@@ -1450,6 +1450,32 @@ end
 --  one has to do the thing the hook is compensating for - in particular
 --  SharedTooltip_SetBackdropStyle really does put the border back, which is the
 --  whole reason StripArt is called from four places.
+--- Blizzard's FCF dock keeps its OWN record of where a chat frame goes, per
+--  character, and re-applies it on events an addon does not all hear. Moving
+--  the frame without telling it leaves two records disagreeing.
+_G.__fcfSaved = {}
+function FCF_SavePositionAndDimensions(f)
+	if not f or not f.GetID then error("FCF_SavePositionAndDimensions: not a chat frame") end
+	local point, _, _, x, y = f:GetPoint(1)
+	_G.__fcfSaved[f:GetID()] = { point = point, x = x, y = y }
+end
+
+--- ...and what it does with that record later. This is the "few seconds later"
+--  in the report: an event fires, Blizzard restores ITS answer, and a position
+--  we saved correctly is undone by one we never updated.
+function FCF_RestorePositionAndDimensions(f)
+	local rec = f and f.GetID and _G.__fcfSaved[f:GetID()]
+	if not rec or not rec.point then
+		-- A NEW CHARACTER has no record, which is the case that made this
+		-- visible: Blizzard falls back to its default corner.
+		f:ClearAllPoints()
+		f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 32, 32)
+		return
+	end
+	f:ClearAllPoints()
+	f:SetPoint(rec.point, UIParent, rec.point, rec.x, rec.y)
+end
+
 function SharedTooltip_SetBackdropStyle(tip)
 	if not tip or not tip.NineSlice then return end
 	tip.NineSlice:Show()
@@ -5173,6 +5199,50 @@ do
 	f.__geom = nil
 	f.__scale = 1
 	SlashCmdList["AETHERUI"]("lock")
+end
+
+print("== movers: a borrowed frame's real owner gets told too ==")
+do
+	-- The report: on a NEW character, unlock, drag the chat window, and a few
+	-- seconds later it is back where it started - "like the new position isn't
+	-- properly stored and the next sweep shoves it back".
+	--
+	-- It WAS stored. Ours was. ChatFrame1 belongs to Blizzard's FCF dock, which
+	-- keeps its own per-character record and re-applies it on events we do not
+	-- all hear - and it had no idea we moved anything, because we drag the frame
+	-- directly rather than through its tab. On a played character its record is
+	-- near enough to where you had things that nothing looks wrong; on a new one
+	-- it is the default corner.
+	local cf = _G.ChatFrame1
+	check(cf ~= nil and A.Movers.registry.chat ~= nil,
+		"the chat frame is registered as a mover")
+
+	-- A NEW CHARACTER: Blizzard has no record of this window at all.
+	_G.__fcfSaved = {}
+
+	A.Movers:Unlock()
+	local h = A.Movers.registry.chat.handle
+	check(h ~= nil, "and it has a handle to drag")
+
+	cf:ClearAllPoints()
+	cf:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 300, 400)
+	h:GetScript("OnMouseWheel")(h, 1)      -- a nudge, which saves the same way
+
+	check(A.db.profile.anchors.chat ~= nil, "our own record is written")
+	check(_G.__fcfSaved[cf:GetID()] ~= nil,
+		"and so is BLIZZARD's - a frame we borrowed has an owner that keeps its"
+		.. " own answer, and two records that disagree are decided by whoever"
+		.. " restores last")
+
+	-- Now the thing that happens a few seconds later.
+	local before = select(5, cf:GetPoint(1))
+	FCF_RestorePositionAndDimensions(cf)
+	check(select(5, cf:GetPoint(1)) == before,
+		"so when the dock restores its own position, it restores OURS (want "
+		.. tostring(before) .. ", got " .. tostring(select(5, cf:GetPoint(1)))
+		.. ")")
+
+	A.Movers:Lock()
 end
 
 print("== movers ==")

@@ -34,6 +34,22 @@ local function SavePosition(entry)
 		point = point, relPoint = relPoint,
 		x = math.floor(x + 0.5), y = math.floor(y + 0.5),
 	}
+
+	-- Some frames are not ours, and the system that owns them keeps its OWN
+	-- record of where they go. Writing our answer down and stopping there
+	-- leaves two records disagreeing, and the other one wins the next time its
+	-- owner feels like restoring.
+	--
+	-- The chat frame is the one that matters: it belongs to Blizzard's FCF
+	-- dock, which stores position per character and puts it back on events we
+	-- do not all hear. On an established character its record happens to be
+	-- roughly where you left things and nobody notices; on a NEW one it is the
+	-- default, so a frame you just dragged goes home a few seconds later.
+	--
+	-- So a module that borrows somebody else's frame says how to tell them.
+	-- pcall because this is somebody else's function and it is being handed a
+	-- frame we have just re-anchored.
+	if entry.onPlaced then pcall(entry.onPlaced, f) end
 end
 
 local function RestorePosition(entry)
@@ -447,6 +463,12 @@ end
 --  opts:
 --    growsDown = true      pin by the top edge when dropped, for a frame whose
 --                          height changes with its contents
+--    onPlaced = function(frame)
+--                          called after a drop or a nudge, once our own answer
+--                          is written down. For a frame we have BORROWED, this
+--                          is where its real owner gets told - otherwise two
+--                          records of "where does this go" disagree and the
+--                          other one wins later. See Modules/Chat.lua.
 --    preview = function(show)
 --                          called on unlock and lock. Some frames are only on
 --                          screen when the game says so - the pet bar with no
@@ -463,6 +485,7 @@ function Movers:Register(name, frame, default, label, opts)
 	end
 	entry.growsDown = opts and opts.growsDown or nil
 	entry.preview = opts and opts.preview or entry.preview
+	entry.onPlaced = opts and opts.onPlaced or entry.onPlaced
 
 	frame:SetClampedToScreen(true)
 	RestorePosition(entry)
