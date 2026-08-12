@@ -2552,6 +2552,26 @@ do
 	end
 
 	--- Make one the way an addon would, and announce it.
+	--- What Leatrix Plus (and anything else with a "hide addon buttons" option)
+	--  calls. Setting the flag is not enough on its own - the library also drops
+	--  the button to alpha 0 there and then, which is what makes it look like
+	--  the button was never laid out.
+	function ldbi:ShowOnEnter(n, value)
+		local b = ldbi.objects[n]
+		if not b then return end
+		b.showOnMouseover = value and true or false
+		b.fadeOut:Stop()
+		b:SetAlpha(value and 0 or 1)
+	end
+
+	--- ...and what its handlers do on the way out: every button, not just this
+	--  one, which is why hovering anything at all took ours away again.
+	function ldbi:__mouseLeftEverything()
+		for _, b in pairs(ldbi.objects) do
+			if b.showOnMouseover then b.fadeOut:Play() end
+		end
+	end
+
 	function _G.__makeDBIcon(name)
 		local b = CreateFrame("Button", "LibDBIcon10_" .. name, Minimap)
 		b:SetSize(31, 31)
@@ -2567,6 +2587,15 @@ do
 		b.background = b:CreateTexture(nil, "BACKGROUND")
 		b:SetScript("OnDragStart", function() end)
 		b:SetScript("OnDragStop", function() end)
+		-- The fade the library gives every button, and the flag that gates it.
+		-- Any addon can turn the flag on for the whole registry - Leatrix Plus's
+		-- "Hide addon buttons" does - and the library's own handlers then walk
+		-- EVERY button in lib.objects rather than the one under the cursor.
+		b.showOnMouseover = false
+		b.fadeOut = {
+			Play = function(self) self.__playing = true; b:SetAlpha(0) end,
+			Stop = function(self) self.__playing = false end,
+		}
 		ldbi.objects[name] = b
 		ldbi.callbacks:Fire("LibDBIcon_IconCreated", b, name)
 		return b
@@ -7512,6 +7541,49 @@ do
 	check(LN.seen[late] ~= nil,
 		"a button created after the sweep arrives through LibDBIcon's own"
 		.. " creation callback")
+
+	-- Somebody else's "hide until you hover the minimap".
+	--
+	-- This is the one that looked most like our bug and was least like it. The
+	-- flag is per button, but the library's handlers walk the WHOLE registry, so
+	-- hovering anything anywhere faded every adopted button back out a second
+	-- later. On a minimap that preference is reasonable; on a rail in a drawer
+	-- it is just a missing icon, and it followed the button when we adopted it.
+	do
+		local ldbi = LibStub("LibDBIcon-1.0", true) or _G.__ldbi
+		local fade = _G.__makeDBIcon("Fader")
+		_G.__makeLDB("Fader", "launcher")
+		ldbi:ShowOnEnter("Fader", true)
+		check(fade.showOnMouseover and fade:GetAlpha() == 0,
+			"an addon really can hide a registered button until mouseover")
+
+		-- Note the ORDER this test happens in, because it is the order the game
+		-- happens in: __makeDBIcon fires LibDBIcon_IconCreated, we adopt the
+		-- button in that callback, and only THEN does the other addon's handler
+		-- for the same callback set the flag. Prepare has already run and will
+		-- early-out for the rest of the session, so a fix that only lives there
+		-- leaves the button faded until the next full layout.
+		LN:Scan()
+		local fe = LN.seen[fade]
+		check(fe and fe._prepared,
+			"the button was adopted BEFORE the flag was set - both addons are"
+			.. " listening to the same LibDBIcon callback")
+
+		LN:Claim(fe, {})
+
+		check(not fade.showOnMouseover,
+			"adopting a button clears it - alpha alone would lose to the next"
+			.. " fadeOut, and the flag is the only thing gating that call")
+		check(fade:GetAlpha() == 1, "and the button is visible now")
+
+		ldbi:__mouseLeftEverything()
+		check(fade:GetAlpha() == 1,
+			"so the cursor leaving something else entirely no longer takes it"
+			.. " away - the library fades every button it knows about, not the"
+			.. " one being hovered")
+
+		LN:Release(fe)
+	end
 
 	LN:Release(LN.seen[dbi]); LN:Release(LN.seen[own])
 end

@@ -175,6 +175,32 @@ end
 --  the minimap's centre every frame while held, and its own Show/Refresh do the
 --  same on demand. `Lock` is the library's supported way to switch that off and
 --  it survives a refresh, so use it when the library is there.
+--- Stop somebody else's "hide until you hover the minimap" from following the
+--  button onto our rail.
+--
+--  LibDBIcon carries a per-button `showOnMouseover` flag and a `fadeOut`
+--  animation group. Any addon can turn it on for every registered button -
+--  Leatrix Plus's "Hide addon buttons" does exactly that, and there is nothing
+--  wrong with it: on a minimap, buttons that appear when you look at the ring
+--  are a real preference. On a rail in a drawer they are just missing.
+--
+--  What made it look like OUR bug is that the library's own onEnter/onLeave and
+--  its Minimap OnEnter/OnLeave hooks walk **every** button in lib.objects, not
+--  the one under the cursor. So hovering anything, anywhere, faded ours back
+--  out a second later - buttons that came back on hover, vanished again, and
+--  survived just long enough after being pinned to look like a layout race.
+--
+--  Cleared rather than merely overridden: setting alpha back to 1 loses to the
+--  next fadeOut:Play(), and the flag is the only thing gating that call. This is
+--  what lib:ShowOnEnter(name, false) does, done directly because the button may
+--  be one we found on the minimap without a registered LibDBIcon name.
+local function Unfade(f)
+	if f.showOnMouseover == nil and not f.fadeOut then return end
+	f.showOnMouseover = false
+	if f.fadeOut and f.fadeOut.Stop then pcall(f.fadeOut.Stop, f.fadeOut) end
+	if f.SetAlpha then pcall(f.SetAlpha, f, 1) end
+end
+
 local function Pacify(button, ldbiName)
 	local ldbi = DBIcon()
 	if ldbi and ldbiName and ldbi.IsRegistered and ldbi:IsRegistered(ldbiName) then
@@ -184,6 +210,7 @@ local function Pacify(button, ldbiName)
 		pcall(button.SetScript, button, "OnDragStart", nil)
 		pcall(button.SetScript, button, "OnDragStop", nil)
 	end
+	Unfade(button)
 end
 
 --- Let go of a strata and level the button is holding onto.
@@ -687,6 +714,16 @@ end
 --  a bigger one; a flag makes the caller say out loud that it is overriding.
 function L:Claim(entry, owner, force)
 	if not entry or not owner then return false end
+
+	-- Unconditionally, and NOT left to Prepare, which runs once per entry and
+	-- early-outs afterwards. LibDBIcon fires LibDBIcon_IconCreated to every
+	-- listener, so an addon that hides buttons until mouseover is racing us for
+	-- the same callback - and when it wins, the flag lands on a button we have
+	-- already prepared and Prepare will never look at again. That is the "a new
+	-- pin stays for a while, then goes" shape: nothing had gone wrong at pin
+	-- time, and the loser of a callback race was us.
+	if entry.button then Unfade(entry.button) end
+
 	local held = self.owners[entry]
 	if held and held ~= owner then
 		if not force then return false end
