@@ -763,6 +763,33 @@ STANDARD_TEXT_FONT = [[Fonts\FRIZQT__.TTF]]
 
 function GetTime() return time end
 function GetCursorPosition() return cursorX, cursorY end
+--- Move it. Tests that drag things were setting the upvalue directly, which
+--  only works from the one file scope that can see it.
+function __setCursor(x, y) cursorX, cursorY = x, y end
+
+--- What the client keeps a chat window's SIZE in - separate from its position,
+--  which a docked window has not got. FCF_SavePositionAndDimensions is the call
+--  that errors on one; this is the half that does not.
+_G.__savedDims = nil
+function SetChatWindowSavedDimensions(id, w, h)
+	_G.__savedDims = { id = id, w = w, h = h }
+end
+
+function FCF_DockUpdate() _G.__dockUpdated = (_G.__dockUpdated or 0) + 1 end
+
+--- Locking a chat window is also what SHOWS or hides its resize button, and
+--  that is the whole mechanism behind the crash: unlocking every frame - which
+--  Chat:SetUnlocked does - puts Blizzard's grip on a docked window, where its
+--  own OnMouseUp errors. This mock did not exist at all, so Chat:SetUnlocked
+--  returned at its first line and none of that code had ever run in here.
+function FCF_SetLocked(f, locked)
+	if not f then return end
+	f.isLocked = locked and true or false
+	local bz = f.ResizeButton or _G[(f:GetName() or "") .. "ResizeButton"]
+	if bz then
+		if locked then bz:Hide() else bz:Show(); bz:EnableMouse(true) end
+	end
+end
 function GetPhysicalScreenSize() return 2560, 1440 end
 function InCombatLockdown() return _G.__inCombat or false end
 function IsShiftKeyDown() return _G.__shift or false end
@@ -4834,106 +4861,109 @@ do
 	local _, _, _, bx = bf:GetPoint(1)
 	check(bx and bx < -1000, "the buttons are parked off screen rather than hidden")
 	check(bf:IsShown(), "which means nothing has to keep hiding them")
-	-- THE GRIP IS OURS, and Blizzard's are left entirely alone.
+	-- THE GRIP IS OURS, it appears only while frames are UNLOCKED, and
+	-- Blizzard's is switched off on a docked window because Blizzard's own
+	-- handler errors on one:
 	--
-	-- The error that settled this, after three wrong diagnoses:
-	--   FloatingChatFrame.lua:1026 attempt to perform arithmetic on a nil value
+	--   FloatingChatFrame.lua:1026 arithmetic on a nil value
 	--   FCF_SavePositionAndDimensions(ChatFrame2)   -- isDocked = 1
 	--
-	-- Blizzard hides resize buttons on DOCKED windows, because a docked window
-	-- cannot be resized alone and its own save path errors if you try. We were
-	-- showing EVERY chat frame's and anchoring all of them to one corner of our
-	-- panel - so whichever tab was up decided which one you saw, and clicking
-	-- the Combat Log's ran Blizzard's handler on a docked frame and took the
-	-- chat window with it.
+	-- FCF_SetLocked is what shows that button, and we call it on every frame,
+	-- so "leave Blizzard's alone" put a working-looking control inside the
+	-- Combat Log that took the chat window down when clicked.
 	do
 		local Cm, conf = A:GetModule("chat"), A.Config:Module("chat")
 		local g = Cm._grip
 		check(g ~= nil, "the chat panel has a resize grip of its own")
-		if g then
-			check(g:IsShown() and g:GetAlpha() == 1,
-				"shown AND visible - Kill() here is Hide plus SetAlpha(0), and a"
-				.. " grip that comes back Shown and transparent is exactly as"
-				.. " useful as no grip (alpha " .. tostring(g:GetAlpha()) .. ")")
-			check(g:IsMouseEnabled(), "and it takes the mouse")
-			check(g:GetWidth() >= 20, "with a hit target you can find")
-			check(g:GetParent() == Cm.panel,
-				"parented to our panel, so it travels with the glass")
-		end
 
-		-- Blizzard's own buttons are not ours to move, show or hide. Docked or
-		-- not is its decision and it is the one that knows.
-		check(_G.ChatFrame1ResizeButton:GetParent() ~= Cm.panel,
-			"Blizzard's own resize button is not dragged onto our panel")
+		A.Movers:Lock()
+		check(g and not g:IsShown(),
+			"locked, there is no grip at all - resizing is something you do"
+			.. " while arranging the interface, not while reading it")
 
-		-- Every OTHER chat frame is left alone entirely - that is what stacked
-		-- four grips in one corner.
-		local moved = {}
-		for _, n in ipairs(CHAT_FRAMES or {}) do
-			local other = _G[n]
-			local ob = other and (other.ResizeButton or _G[n .. "ResizeButton"])
-			if other ~= _G.ChatFrame1 and ob and ob:GetParent() == Cm.panel then
-				moved[#moved + 1] = n
-			end
-		end
-		check(#moved == 0,
-			"and no other chat window's is either ("
-			.. (#moved > 0 and table.concat(moved, ", ") or "none moved") .. ")")
+		A.Movers:Unlock()
+		check(g:IsShown() and g:GetAlpha() == 1,
+			"unlocking brings it up, shown AND visible (alpha "
+			.. tostring(g:GetAlpha()) .. ")")
+		check(g:IsMouseEnabled(), "and it takes the mouse")
+		check(g:GetWidth() >= 20, "with a hit target you can find")
 
-		-- Off then on has to round-trip. Off and permanently invisible is a
-		-- switch that cannot be switched back.
+		-- Off the MESSAGE AREA, not the panel. The panel's own corner is level
+		-- with the composer capsule, which spans the full width inset by PAD,
+		-- so a grip there is jammed against the SAY box and stealing its clicks.
+		check(select(2, g:GetPoint(1)) == _G.ChatFrame1,
+			"anchored to the message area rather than to the panel corner the"
+			.. " composer already occupies")
+
+		-- Blizzard's, on a docked window: off, because clicking it errors.
+		local bz = _G.ChatFrame1ResizeButton
+		_G.ChatFrame1.isDocked = 1
+		Cm:SetUnlocked(_G.ChatFrame1)
+		check(not bz:IsShown() and not bz:IsMouseEnabled(),
+			"Blizzard's own grip is switched off on a DOCKED window - its"
+			.. " OnMouseUp does arithmetic on a saved position a docked frame"
+			.. " has not got, so it is a control that only errors")
+
+		_G.ChatFrame1.isDocked = nil
+		Cm:SetUnlocked(_G.ChatFrame1)
+		check(bz:IsShown(),
+			"but an UNDOCKED window keeps its own, where it works and where our"
+			.. " panel is not drawn")
+		_G.ChatFrame1.isDocked = 1
+
 		conf.resizable = false
-		Cm:SkinResize(_G.ChatFrame1)
-		check(not Cm._grip:IsShown(), "off hides it")
+		Cm:ShowGrip(true)
+		check(not Cm._grip:IsShown(), "the option still turns it off")
 		conf.resizable = true
-		Cm:SkinResize(_G.ChatFrame1)
+		Cm:ShowGrip(true)
 		check(Cm._grip:IsShown() and Cm._grip:GetAlpha() == 1,
-			"and on brings it back VISIBLE (alpha "
-			.. tostring(Cm._grip:GetAlpha()) .. ")")
-
-		-- A reskin RESTORES the alpha rather than assuming it. Three attempts
-		-- at this bug were spent looking at a grip that was present, placed and
-		-- transparent, so a skin pass that only calls Show is a skin pass that
-		-- can leave it invisible again the first time anything zeroes it - the
-		-- fader is on this panel, and Kill() is used freely a few lines away.
-		Cm._grip:SetAlpha(0)
-		Cm:SkinResize(_G.ChatFrame1)
-		check(Cm._grip:GetAlpha() == 1,
-			"and a reskin brings back a grip somebody else made transparent -"
-			.. " Show() undoes a Hide and nothing else (alpha "
-			.. tostring(Cm._grip:GetAlpha()) .. ")")
+			"and back on VISIBLE (alpha " .. tostring(Cm._grip:GetAlpha()) .. ")")
 	end
 
-	-- What the grip actually DOES, which is the half you cannot see.
+	-- What it DOES, which is the half you cannot see.
 	do
 		local Cm = A:GetModule("chat")
-		local g = Cm._grip
-		local cf = _G.ChatFrame1
+		local g, cf = Cm._grip, _G.ChatFrame1
 		if g then
-			local function Fire(which)
-				local fn = g:GetScript(which)
-				check(fn ~= nil, "the grip has an " .. which .. " script")
-				if fn then fn(g) end
-			end
+			A.Movers:Unlock()
+			cf:SetSize(400, 200)
+			local w0, h0 = cf:GetWidth(), cf:GetHeight()
 
-			Fire("OnMouseDown")
-			check(cf.__sizing == "BOTTOMRIGHT",
-				"pressing it starts sizing from the corner it is drawn in (got "
-				.. tostring(cf.__sizing) .. ")")
-			check(cf:IsResizable(), "having made the frame resizable first")
-			check(cf.__bounds and cf.__bounds[1] == 200,
-				"with a floor, so it cannot be dragged into a sliver")
+			-- Sized BY HAND rather than with StartSizing. StartSizing hands the
+			-- frame to the cursor and the dock re-flows it straight back, which
+			-- is exactly "I can see it now but it does nothing".
+			__setCursor(500, 500)
+			g:GetScript("OnMouseDown")(g)
+			check(g._sizing == true, "pressing it starts a drag")
 
-			Fire("OnMouseUp")
-			check(cf.__sizing == nil,
-				"and letting go stops - a grip that never stops hands the cursor"
-				.. " a frame it keeps for the rest of the session")
+			__setCursor(560, 460)      -- right and down: wider and taller
+			g:GetScript("OnUpdate")(g, 0.016)
+			check(cf:GetWidth() > w0 and cf:GetHeight() > h0,
+				"dragging out makes the window bigger (" .. tostring(w0) .. "x"
+				.. tostring(h0) .. " -> " .. tostring(cf:GetWidth()) .. "x"
+				.. tostring(cf:GetHeight()) .. ")")
 
-			Fire("OnMouseDown")
-			Fire("OnHide")
-			check(cf.__sizing == nil,
-				"hiding mid-drag stops sizing too - the mouse-up never arrives"
-				.. " if the frame goes away under the cursor")
+			-- And it cannot be dragged into a sliver.
+			__setCursor(0, 5000)
+			g:GetScript("OnUpdate")(g, 0.016)
+			check(cf:GetWidth() >= 200 and cf:GetHeight() >= 90,
+				"with a floor under both axes (" .. tostring(cf:GetWidth())
+				.. "x" .. tostring(cf:GetHeight()) .. ")")
+
+			_G.__savedDims = nil
+			g:GetScript("OnMouseUp")(g)
+			check(g._sizing == nil, "letting go ends the drag")
+			check(_G.__savedDims ~= nil,
+				"and the new size is handed to the client's own record -"
+				.. " DIMENSIONS, not position: a docked window has none of the"
+				.. " latter, which is the call that was erroring")
+
+			g:GetScript("OnMouseDown")(g)
+			g:GetScript("OnHide")(g)
+			check(g._sizing == nil,
+				"hiding mid-drag ends it too - the mouse-up never arrives if"
+				.. " the frame goes away under the cursor")
+			A.Movers:Lock()
 		end
 	end
 

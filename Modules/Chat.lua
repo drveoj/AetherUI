@@ -671,24 +671,66 @@ function Chat:BuildGrip(f)
 	dots:SetPoint("CENTER", g, "CENTER", 0, 0)
 	g._dots = dots
 
+	-- SIZED BY HAND, not with StartSizing.
+	--
+	-- StartSizing hands the frame to the cursor and lets the client resize it,
+	-- which is what Blizzard's own grip does - and on a DOCKED window the dock
+	-- re-flows the frame immediately afterwards, so the drag did nothing you
+	-- could see. That is "I can see it now on both tabs but it does nothing".
+	--
+	-- Setting the size directly and then telling the dock about it is the way
+	-- round that: the dock is the thing that decides, so it has to be the thing
+	-- that is told.
+	local MIN_W, MIN_H = 200, 90
+
+	local function Drag(self2)
+		local cf = g._frame
+		if not cf or InCombatLockdown() then return self2:SetScript("OnUpdate", nil) end
+		local us = UIParent:GetEffectiveScale() or 1
+		local fs = cf:GetEffectiveScale() or 1
+		if us <= 0 or fs <= 0 then return end
+
+		local mx, my = GetCursorPosition()
+		mx, my = mx / fs, my / fs
+
+		-- The corner is dragged; the TOPLEFT stays where the dock put it.
+		local w = math.max(MIN_W, g._w0 + (mx - g._x0))
+		local h = math.max(MIN_H, g._h0 - (my - g._y0))
+		pcall(cf.SetSize, cf, w, h)
+		Chat:AnchorPanel()
+	end
+
 	local function Start()
 		local cf = g._frame
 		if not cf or InCombatLockdown() then return end
 		if cf.SetResizable then pcall(cf.SetResizable, cf, true) end
-		-- Floor only. A maximum is the screen, and inventing one here would be
-		-- a limit nobody asked for that outlives whatever made it seem sensible.
-		if cf.SetResizeBounds then pcall(cf.SetResizeBounds, cf, 200, 90) end
-		pcall(cf.StartSizing, cf, "BOTTOMRIGHT")
+		local mx, my = GetCursorPosition()
+		local fs = cf:GetEffectiveScale() or 1
+		if fs <= 0 then return end
+		g._x0, g._y0 = mx / fs, my / fs
+		g._w0, g._h0 = cf:GetWidth(), cf:GetHeight()
 		g._sizing = true
+		g:SetScript("OnUpdate", Drag)
 	end
 
 	local function Stop()
-		local cf = g._frame
-		if not cf or not g._sizing then return end
+		if not g._sizing then return end
 		g._sizing = nil
-		pcall(cf.StopMovingOrSizing, cf)
-		-- Blizzard's record, the same handshake the drag uses - see SaveToBlizzard.
-		SaveToBlizzard(cf)
+		g:SetScript("OnUpdate", nil)
+		local cf = g._frame
+		if not cf then return end
+
+		-- The dock owns the layout of every window docked into it, so a size we
+		-- set behind its back lasts until the next thing that makes it think.
+		if _G.FCF_DockUpdate then pcall(_G.FCF_DockUpdate) end
+
+		-- Dimensions, not position: a docked window has no position of its own,
+		-- which is the call that was erroring. This one takes the numbers we
+		-- already have.
+		if _G.SetChatWindowSavedDimensions then
+			pcall(_G.SetChatWindowSavedDimensions, cf:GetID(),
+				cf:GetWidth(), cf:GetHeight())
+		end
 		Chat:Reskin()
 	end
 
@@ -745,19 +787,40 @@ function Chat:SkinResize(f)
 	-- SetAlpha(0), and a grip that comes back Shown and transparent is exactly
 	-- as useful as no grip - which is what the first three attempts at this were
 	-- looking at without knowing it.
-	grip:Show()
 	grip:SetAlpha(1)
 	grip:EnableMouse(true)
 	grip:SetSize(GRIP, GRIP)
 
 	grip:ClearAllPoints()
 	local p = self.panel
-	grip:SetPoint("BOTTOMRIGHT", p or f, "BOTTOMRIGHT", -2, 2)
+	-- The bottom-right of the MESSAGE AREA, not of the panel. The panel's own
+	-- corner is level with the composer capsule, which spans the full width
+	-- inset by PAD - so a grip there is jammed against the SAY box and taking
+	-- clicks that were meant for it.
+	grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
 	grip:SetFrameStrata("MEDIUM")
 	if p and p.GetFrameLevel then
 		pcall(grip.SetFrameLevel, grip, p:GetFrameLevel() + 20)
 	end
-	self:GripInk(grip)
+	self:ShowGrip(A.Movers and A.Movers.unlocked)
+end
+
+--- Shown only while frames are unlocked.
+--
+--  Resizing the chat window is a thing you do while arranging the interface,
+--  not while reading it, and a permanent mark in the corner of a reading
+--  surface is one more thing on screen for the ninety-nine per cent of the time
+--  nobody is dragging it. /aether unlock already means "I am moving things".
+--
+--  Driven from the mover's `preview` callback, which Movers calls on unlock and
+--  on lock for exactly this - a frame that is only on screen when the UI says
+--  so. Nothing new had to be invented to hear about it.
+function Chat:ShowGrip(show)
+	local g = self._grip
+	if not g then return end
+	local cfg = A.Config:Module("chat")
+	g:SetShown(show and cfg.resizable ~= false and true or false)
+	self:GripInk(g)
 end
 
 --- The grip's resting colour: brighter while frames are unlocked, because that
@@ -765,9 +828,11 @@ end
 function Chat:GripInk(grip)
 	if not grip or not grip._dots then return end
 	local c = Palette.c
-	local unlocked = A.Movers and A.Movers.unlocked
-	local col = unlocked and (c.accent or c.text) or c.glassEdge
-	grip._dots:SetVertexColor(col[1], col[2], col[3], unlocked and 0.9 or 0.55)
+	-- Quiet. It only appears while you are arranging things, so it does not have
+	-- to shout to be found - and at 0.9 accent it was the brightest thing on a
+	-- reading surface, which is the opposite of what a corner mark is for.
+	local col = c.textDim or c.text
+	grip._dots:SetVertexColor(col[1], col[2], col[3], 0.5)
 end
 
 --- Unlocking is what makes the frame movable *and* resizable, both through
@@ -783,6 +848,22 @@ function Chat:SetUnlocked(f)
 	pcall(_G.FCF_SetLocked, f, cfg.unlocked == false)
 	if f.SetResizable then pcall(f.SetResizable, f, cfg.resizable ~= false) end
 	if f.SetMovable then pcall(f.SetMovable, f, cfg.unlocked ~= false) end
+
+	-- FCF_SetLocked is what SHOWS Blizzard's resize button, and on a docked
+	-- window that button is broken by Blizzard's own code: its OnMouseUp calls
+	-- FCF_SavePositionAndDimensions, which does arithmetic on a saved position
+	-- a docked frame has not got. FloatingChatFrame.lua:1026, every time.
+	--
+	-- Leaving them alone was the last attempt and it put a working-looking
+	-- control inside the Combat Log that took the chat window down when
+	-- clicked. So on a DOCKED frame it is hidden - not because it is Blizzard's
+	-- furniture and we are restyling, but because it errors. An undocked window
+	-- keeps its own, where it works and where our panel is not drawn anyway.
+	local bz = f.ResizeButton or _G[(f:GetName() or "") .. "ResizeButton"]
+	if bz and f.isDocked then
+		pcall(bz.Hide, bz)
+		pcall(bz.EnableMouse, bz, false)
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -2348,7 +2429,11 @@ function Chat:OnEnable()
 	-- what anyone would reach for first.
 	A.Movers:Register("chat", _G.ChatFrame1,
 		{ point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 34, y = 66 }, "Chat",
-		{ onPlaced = SaveToBlizzard })
+		{ onPlaced = SaveToBlizzard,
+		  -- Movers calls this on unlock and on lock. It exists for frames that
+		  -- are only on screen when the game says so; the grip is one that is
+		  -- only on screen when the PLAYER says so, and the hook is the same.
+		  preview = function(show) Chat:ShowGrip(show) end })
 
 	self:Reskin()
 
