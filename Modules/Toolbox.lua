@@ -794,6 +794,7 @@ function TB:BuildContent()
 	self:RefreshWidgets()
 	self:BuildTiles()
 	self:BuildAddons()
+	self:BuildMicro()
 end
 
 --- One card per chosen data source. Frames are POOLED by index, because WoW has
@@ -856,12 +857,15 @@ function TB:LayoutContent()
 	content.close:SetShown(IsVertical(self:Dock()))
 
 	content.news:ClearAllPoints()
-	content.news:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -(PAD + 34))
+	-- Below the micro row, which sits between the header and the card.
+	content.news:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -(PAD + 30 + 26 + 14))
 	content.news:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
 	content.news.dot:SetShown(self:NewsUnread())
 
 	content.widgetsHead:ClearAllPoints()
 	content.widgetsHead:SetPoint("TOPLEFT", content.news, "BOTTOMLEFT", 0, -16)
+
+	self:LayoutMicro()
 
 	local cols = 3
 	local avail = w - PAD * 2
@@ -1478,5 +1482,179 @@ function TB:LayoutAddons()
 	if self._addonsCut > 0 then
 		content.addonsHint:SetText(total .. " installed \194\183 +"
 			.. self._addonsCut .. " more")
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- the micro menu
+--
+-- Not in the design handoff; added because hiding MainMenuBar takes the micro
+-- menu with it and the README has owed it a home ever since.
+--
+-- OUR buttons, not Blizzard's. The first plan adopted the real frames -
+-- reparenting them is legal, they are plain <Button>s with no Secure inherit
+-- and Blizzard's own container does exactly that - but adopting them buys a
+-- three-way argument over who owns them: ActionBars banishes them, QuestLog
+-- hooks UpdateMicroButtons for the quest button's lit state, and this module
+-- would want their position. Building nine of our own costs a table of
+-- functions and ends the argument. The originals stay hidden, exactly as the
+-- action bar sweep already leaves them.
+--
+-- The ACTIONS are read off Blizzard's own handlers rather than guessed, because
+-- guessing gets one of nine subtly wrong and nobody notices until they click it:
+--
+--   Character  ToggleCharacter("PaperDollFrame")   XML OnClick
+--   Spellbook  ToggleSpellBook(BOOKTYPE_SPELL)     XML OnClick
+--   Talents    ToggleTalentFrame()                 XML OnClick
+--   Quest log  ToggleQuestLog()                    XML OnClick - and OURS, the
+--                                                  quest log module replaces it
+--   Social     ToggleFriendsFrame()                SocialsMicroButtonMixin
+--   Guild      ToggleGuildFrame()                  GuildMicroButtonMixin
+--   Map        ToggleWorldMap()                    XML OnClick
+--   Menu       ToggleGameMenu()                    bound in Bindings_Vanilla
+--   Help       ToggleHelpFrame()                   XML OnClick
+--
+-- SOCIAL AND GUILD ARE MUTUALLY EXCLUSIVE, which is the one thing here that is
+-- not obvious. Both mixins carry an UpdateVisibility that reads the
+-- `useClassicGuildUI` CVar, and each shows only when the other does not:
+-- Socials with the classic guild UI, Guild without it. So there are nine
+-- buttons declared and eight on screen, and a row that drew both would have one
+-- that opens a window this client does not use.
+--
+-- Every action is probed before its button is built. A global that is not there
+-- is a button that is not drawn, rather than a button that errors on click.
+-- ---------------------------------------------------------------------------
+
+local MICRO_SIZE, MICRO_GAP = 26, 6
+
+TB.MICRO = {
+	{ key = "character", label = "Character",
+	  fn = function() ToggleCharacter("PaperDollFrame") end,
+	  probe = function() return ToggleCharacter ~= nil end },
+	{ key = "spellbook", label = "Spellbook",
+	  fn = function() ToggleSpellBook(BOOKTYPE_SPELL or "spell") end,
+	  probe = function() return ToggleSpellBook ~= nil end },
+	{ key = "talents",   label = "Talents",
+	  fn = function() ToggleTalentFrame() end,
+	  probe = function() return ToggleTalentFrame ~= nil end },
+	{ key = "quests",    label = "Quest log",
+	  fn = function() ToggleQuestLog() end,
+	  probe = function() return ToggleQuestLog ~= nil end },
+	{ key = "social",    label = "Social",
+	  fn = function() ToggleFriendsFrame() end,
+	  probe = function()
+		  if not ToggleFriendsFrame then return false end
+		  -- Only with the classic guild UI; otherwise Guild takes this slot.
+		  if GetCVarBool then return GetCVarBool("useClassicGuildUI") and true or false end
+		  return true
+	  end },
+	{ key = "guild",     label = "Guild",
+	  fn = function() ToggleGuildFrame() end,
+	  probe = function()
+		  if not ToggleGuildFrame then return false end
+		  if GetCVarBool then return not GetCVarBool("useClassicGuildUI") end
+		  return false
+	  end },
+	{ key = "map",       label = "Map",
+	  fn = function() ToggleWorldMap() end,
+	  probe = function() return ToggleWorldMap ~= nil end },
+	{ key = "menu",      label = "Menu",
+	  fn = function()
+		  if ToggleGameMenu then return ToggleGameMenu() end
+		  -- What MainMenuMicroButtonMixin:OnMouseUp does by hand, for a client
+		  -- without the global.
+		  if GameMenuFrame and GameMenuFrame:IsShown() then
+			  if HideUIPanel then HideUIPanel(GameMenuFrame) end
+		  elseif GameMenuFrame and ShowUIPanel then
+			  ShowUIPanel(GameMenuFrame)
+		  end
+	  end,
+	  probe = function() return ToggleGameMenu ~= nil or GameMenuFrame ~= nil end },
+	{ key = "help",      label = "Help",
+	  fn = function() ToggleHelpFrame() end,
+	  probe = function() return ToggleHelpFrame ~= nil end },
+}
+
+--- Which of the nine this client actually offers.
+function TB:MicroList()
+	local out = {}
+	for _, m in ipairs(self.MICRO) do
+		local ok, present = pcall(m.probe)
+		if ok and present then out[#out + 1] = m end
+	end
+	return out
+end
+
+function TB:BuildMicro()
+	if not self.content or self.content.micro then return end
+	self.content.micro = {}
+	self:RefreshMicro()
+end
+
+function TB:RefreshMicro()
+	if not self.content or not self.content.micro then return end
+	local list = self:MicroList()
+	self._microList = list
+
+	for i, m in ipairs(list) do
+		local b = self.content.micro[i]
+		if not b then
+			b = CreateFrame("Button", nil, self.content)
+			b:SetSize(MICRO_SIZE, MICRO_SIZE)
+
+			b.chip = Glass.CreatePill(b, {})
+			b.chip:SetAllPoints(b)
+
+			-- No glyph art yet. The concept's icon language is lucide-style
+			-- strokes and there is no such .tga in Media/Textures - and a new
+			-- texture file needs a client RESTART rather than a reload, so it is
+			-- a generator pass of its own. The initial is the honest stand-in
+			-- and the tooltip carries the name, which is the half that matters
+			-- for a control you use by memory.
+			b.glyph = W.Text(b, "tbLabel", "CENTER")
+			b.glyph:SetPoint("CENTER", b, "CENTER", 0, 0)
+
+			b:SetScript("OnClick", function(self2)
+				local mm = self2.__micro
+				if mm then pcall(mm.fn) end
+			end)
+			b:SetScript("OnEnter", function(self2)
+				if not GameTooltip or not self2.__micro then return end
+				GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+				GameTooltip:SetText(self2.__micro.label)
+				GameTooltip:Show()
+			end)
+			b:SetScript("OnLeave", function()
+				if GameTooltip then GameTooltip:Hide() end
+			end)
+
+			self.content.micro[i] = b
+		end
+
+		b.__micro = m
+		b.glyph:SetText((m.label or "?"):sub(1, 1):upper())
+		b.chip:ApplySkin("cardBg", "cardEdge")
+		b:Show()
+	end
+
+	for i = #list + 1, #self.content.micro do
+		self.content.micro[i]:Hide()
+	end
+
+	self:LayoutMicro()
+end
+
+--- A row under the header and above What's-new. It is chrome rather than
+--  content, and putting it at the bottom means scrolling past the addon list to
+--  reach the character sheet.
+function TB:LayoutMicro()
+	if not self.content or not self.content.micro then return end
+	local content = self.content
+	for i, b in ipairs(content.micro) do
+		if b:IsShown() then
+			b:ClearAllPoints()
+			b:SetPoint("TOPLEFT", content, "TOPLEFT",
+				PAD + (i - 1) * (MICRO_SIZE + MICRO_GAP), -(PAD + 30))
+		end
 	end
 end

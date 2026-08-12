@@ -342,6 +342,38 @@ which puts a third consumer (the settings grid) on the same data.
 
 ### 3.4 The micro menu inside the drawer
 
+**Superseded 2026-08-12: the buttons are ours, not Blizzard's.** Adopting the
+real frames is legal — §1.1 stands, they are plain `<Button>`s and Blizzard's own
+container reparents them — but adoption buys a three-way argument over ownership
+between ActionBars, QuestLog and this module, and nine of our own cost a table of
+functions. The originals stay hidden exactly where the action bar sweep leaves
+them, §1.2 and §1.3 stop being interlocks, and what matters instead is getting
+the nine ACTIONS right, which are read off Blizzard's handlers rather than
+guessed:
+
+| button | call | read from |
+|---|---|---|
+| Character | `ToggleCharacter("PaperDollFrame")` | XML OnClick |
+| Spellbook | `ToggleSpellBook(BOOKTYPE_SPELL)` | XML OnClick |
+| Talents | `ToggleTalentFrame()` | XML OnClick |
+| Quest log | `ToggleQuestLog()` | XML OnClick — and ours, the log module replaced it |
+| Social | `ToggleFriendsFrame()` | `SocialsMicroButtonMixin` |
+| Guild | `ToggleGuildFrame()` | `GuildMicroButtonMixin` |
+| Map | `ToggleWorldMap()` | XML OnClick |
+| Menu | `ToggleGameMenu()` | `Bindings_Vanilla.xml` |
+| Help | `ToggleHelpFrame()` | XML OnClick |
+
+**Social and Guild are mutually exclusive.** Both mixins carry an
+`UpdateVisibility` reading the `useClassicGuildUI` CVar and each shows only when
+the other does not — so nine are declared and **eight** are ever on screen. A row
+drawing both puts up a button that opens a window this client does not use.
+
+The original adoption design is kept below, because it is still the right answer
+if the buttons ever need to carry Blizzard's own state (the quest log's lit
+flag, the tutorial alerts) rather than just its actions.
+
+#### The adoption design, kept for reference
+
 Not on the rail. The rail is for things you reach for constantly and its slots are
 spoken for by pinned addons; the micro menu is nine buttons you want occasionally
 and want to *find*, which is a job for the drawer.

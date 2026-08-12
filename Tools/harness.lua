@@ -855,7 +855,14 @@ function IsModifiedClick(what)
 	if _G.__clickAnswer == nil then return true end
 	return _G.__clickAnswer == what
 end
-function GetCVarBool() return false end
+-- Reads the SAME table SetCVar writes. It used to answer a constant false,
+-- which made every CVar-driven branch in the addon untestable: a feature gated
+-- on one could never be seen to turn on, and a test that flipped the CVar was
+-- testing nothing at all.
+function GetCVarBool(name)
+	local v = _G.__cvars[name]
+	return v == "1" or v == 1 or v == true
+end
 
 -- ---------------------------------------------------------------------------
 -- CVars
@@ -910,6 +917,9 @@ _G.__cvars = {
 	-- REQUIRE it: it appears nowhere in the Classic Era interface source and may
 	-- genuinely not exist on a live 1.15 client.
 	test_cameraOverShoulder = "0",
+
+	-- Socials and Guild are mutually exclusive on this one.
+	useClassicGuildUI              = "1",
 
 	-- The two that decide whether the shoulder offset does anything. Writing the
 	-- offset without these is what shipped, and the camera did not move - so the
@@ -1944,6 +1954,20 @@ function GetInventoryItemDurability(slot)
 	if not d then return nil end
 	return d[slot], d[slot] and 100 or nil
 end
+
+-- What the micro menu buttons call. Every one is read off Blizzard's own
+-- handler in Blizzard_MicroMenu/Classic - the XML OnClick for most, the mixin
+-- for Socials and Guild, and Bindings_Vanilla for the game menu.
+_G.__toggled = {}
+function ToggleCharacter(which) _G.__toggled.character = which end
+function ToggleSpellBook(which) _G.__toggled.spellbook = which end
+function ToggleTalentFrame() _G.__toggled.talents = true end
+function ToggleFriendsFrame() _G.__toggled.social = true end
+function ToggleGuildFrame() _G.__toggled.guild = true end
+function ToggleWorldMap() _G.__toggled.map = true end
+function ToggleGameMenu() _G.__toggled.menu = true end
+function ToggleHelpFrame() _G.__toggled.help = true end
+BOOKTYPE_SPELL = "spell"
 
 function GetMoney() return _G.__money end
 function GetCoinTextureString(c) return tostring(c) .. "c" end
@@ -8087,6 +8111,95 @@ do
 			.. " drawer follow")
 		_G.__inCombat = false
 		TBm:TogglePin("Questie")
+	end
+
+	TBm:SetOpen(false, true)
+end
+
+print("== toolbox: the micro menu, rebuilt rather than adopted ==")
+do
+	local TBm = A:GetModule("toolbox")
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+
+	-- Blizzard's own frames are left exactly where the action bar sweep put
+	-- them. Adopting them would start a three-way argument over ownership with
+	-- ActionBars and QuestLog; building nine of our own costs a table.
+	check(_G.CharacterMicroButton == nil or not _G.CharacterMicroButton:IsShown(),
+		"Blizzard's micro buttons stay hidden - these are ours, so nothing has"
+		.. " to negotiate who owns theirs")
+
+	local list = TBm:MicroList()
+	check(#list >= 6, "the row is built (" .. #list .. " buttons)")
+
+	-- SOCIAL AND GUILD ARE MUTUALLY EXCLUSIVE. Both Blizzard mixins carry an
+	-- UpdateVisibility reading `useClassicGuildUI`, and each shows only when the
+	-- other does not - so nine are declared and eight are ever on screen.
+	do
+		local function has(key)
+			for _, m in ipairs(TBm:MicroList()) do if m.key == key then return true end end
+			return false
+		end
+
+		_G.__cvars.useClassicGuildUI = "1"
+		check(has("social") and not has("guild"),
+			"with the classic guild UI it is Social and not Guild")
+		_G.__cvars.useClassicGuildUI = "0"
+		check(has("guild") and not has("social"),
+			"and without it, Guild and not Social - drawing both would put a"
+			.. " button on screen that opens a window this client does not use")
+		_G.__cvars.useClassicGuildUI = "1"
+	end
+
+	-- Every action is probed. A global that is not there is a button that is
+	-- not drawn, rather than one that errors when somebody clicks it.
+	do
+		local was = _G.ToggleTalentFrame
+		_G.ToggleTalentFrame = nil
+		local gone = true
+		for _, m in ipairs(TBm:MicroList()) do
+			if m.key == "talents" then gone = false end
+		end
+		check(gone,
+			"a button whose global this client does not have is not drawn at"
+			.. " all - not drawn and dead, which is a button that errors the"
+			.. " first time somebody trusts it")
+		_G.ToggleTalentFrame = was
+	end
+
+	-- The actions are Blizzard's own, read off their handlers rather than
+	-- guessed - guessing gets one of nine subtly wrong and nobody notices until
+	-- they click it.
+	do
+		TBm:RefreshMicro()
+		local fired = {}
+		local saved = {}
+		local names = {
+			character = "ToggleCharacter", spellbook = "ToggleSpellBook",
+			quests = "ToggleQuestLog", map = "ToggleWorldMap",
+			help = "ToggleHelpFrame",
+		}
+		for key, g in pairs(names) do
+			saved[g] = _G[g]
+			_G[g] = function(arg) fired[key] = arg or true end
+		end
+
+		for i, m in ipairs(TBm._microList) do
+			local btn = TBm.content.micro[i]
+			if btn and names[m.key] then btn:GetScript("OnClick")(btn) end
+		end
+
+		check(fired.character == "PaperDollFrame",
+			"the character button calls ToggleCharacter with the frame name"
+			.. " Blizzard's own XML passes, not a bare toggle")
+		check(fired.spellbook == "spell",
+			"the spellbook passes BOOKTYPE_SPELL")
+		check(fired.quests == true, "and the quest log goes through"
+			.. " ToggleQuestLog - which is OURS, since the quest log module"
+			.. " replaced the global")
+		check(fired.map == true and fired.help == true, "map and help fire too")
+
+		for g, fn in pairs(saved) do _G[g] = fn end
 	end
 
 	TBm:SetOpen(false, true)
