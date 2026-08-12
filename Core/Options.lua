@@ -1041,9 +1041,10 @@ local function TooltipsGroup()
 			loreGold = toggle("Lore gold on spell text", "Only lines the client left"
 				.. " white - anything another addon coloured keeps its colour.",
 				at("loreGold")),
-			classColorNames = toggle("Class-colour player names", "Off is the deck's"
-				.. " own treatment: one blue for every friendly player.",
-				at("classColorNames")),
+			classColorNames = toggle("Class-colour player names", "On by default,"
+				.. " to agree with the unit frames. Off is the deck's own"
+				.. " treatment: one blue for every friendly player.",
+				at("classColorNames"), { defaultTrue = true }),
 		}, { inline = true }),
 	})
 end

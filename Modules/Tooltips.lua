@@ -333,10 +333,9 @@ local function ReactionInk(unit)
 	local c = Palette.c
 	if not unit or not UnitExists(unit) then return c.ttTitle end
 
-	if cfg().classColorNames and UnitIsPlayer(unit) then
-		local _, class = UnitClass(unit)
-		local cc = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
-		if cc then return { cc.r, cc.g, cc.b, 1 } end
+	if cfg().classColorNames ~= false then
+		local cc = Palette:ClassColor(unit)
+		if cc then return cc end
 	end
 
 	local reaction = UnitReaction(unit, "player")

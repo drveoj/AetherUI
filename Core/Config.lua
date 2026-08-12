@@ -528,10 +528,13 @@ Config.defaults = {
 				loreGold     = true,
 
 				-- The deck colours a friendly player's name #8ec8ff rather than
-				-- by class. Class colours are the commoner preference and read
-				-- faster in a group, so this is one switch either way; the deck
-				-- wins by default because that is what it asked for.
-				classColorNames = false,
+				-- by class, and that is what this defaulted to. It was wrong on
+				-- its own terms: the unit frames class-colour by default, so the
+				-- same player was blue in a tooltip and their own colour in the
+				-- capsule beside it, and the tooltip read as having LOST class
+				-- colours rather than as expressing a preference. One deck,
+				-- one answer. The switch is still here for the deck's version.
+				classColorNames = true,
 			},
 
 			-- Stage two of the fader. The timings live here rather than under

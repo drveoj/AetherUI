@@ -457,12 +457,28 @@ end
 --  The concept's orb is a muted mid-to-dark disc (#7fb3e8 -> #4a5fa8), so that
 --  is what this reproduces: pull the hue down toward a dark, slightly blue-
 --  shifted base rather than up toward white.
+--- A player's class colour, or nil.
+--
+--  CUSTOM_CLASS_COLORS FIRST, which is what a colour-blind or ClassColors addon
+--  publishes. Modules/Chat.lua already did this and the other two places did
+--  not, so somebody running one of those got recoloured names in chat and
+--  Blizzard's palette everywhere else - the kind of inconsistency that reads as
+--  a bug in whichever half you noticed second.
+function Palette:ClassColor(unit)
+	if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then return nil end
+	local _, class = UnitClass(unit)
+	if type(class) ~= "string" then return nil end
+	local colors = _G.CUSTOM_CLASS_COLORS or _G.RAID_CLASS_COLORS
+	local cc = colors and colors[class]
+	if not cc or not cc.r then return nil end
+	return { cc.r, cc.g, cc.b, 1 }
+end
+
 function Palette:OrbColor(unit)
 	local base
-	if unit and UnitExists(unit) and UnitIsPlayer(unit) then
-		local _, class = UnitClass(unit)
-		local cc = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
-		if cc then base = { cc.r, cc.g, cc.b } end
+	do
+		local cc = Palette:ClassColor(unit)
+		if cc then base = { cc[1], cc[2], cc[3] } end
 	end
 
 	if not base then

@@ -13197,6 +13197,72 @@ do
 	end
 end
 
+print("== tooltips: a player is their class colour ==")
+do
+	local T = A:GetModule("tooltips")
+
+	-- The report: everybody appeared in "mage blue". They were - one blue for
+	-- every friendly player is the deck's own treatment, and it was the default
+	-- here while the unit frames class-coloured by default. Same player, two
+	-- answers, a tooltip's width apart. That reads as class colours having been
+	-- LOST rather than as a preference being expressed.
+	check(A.Config:Module("tooltips").classColorNames ~= false,
+		"tooltips class-colour by default, like the unit frames")
+
+	-- The tooltip's own unit, not the target - see the note on __units.mouseover.
+	local mo = _G.__units.mouseover
+	local was = { mo.isPlayer, mo.class, mo.classToken, mo.reaction, mo.creature }
+	mo.isPlayer, mo.class, mo.classToken = true, "Rogue", "ROGUE"
+	mo.reaction, mo.creature = 5, nil
+	GameTooltip:SetUnit("mouseover")
+
+	local r, g, b = _G.GameTooltipTextLeft1:GetTextColor()
+	-- Rogue yellow, chosen because it is nowhere near the deck's blue: a class
+	-- colour that happens to look like the thing it replaced proves nothing.
+	local want = RAID_CLASS_COLORS.ROGUE
+	check(math.abs(r - want.r) < 0.01 and math.abs(g - want.g) < 0.01
+		and math.abs(b - want.b) < 0.01,
+		"a friendly player's name is their class colour (got "
+		.. string.format("%.2f %.2f %.2f", r, g, b) .. ", want "
+		.. string.format("%.2f %.2f %.2f", want.r, want.g, want.b) .. ")")
+
+	-- ...and CUSTOM_CLASS_COLORS wins, which is what a colour-blind or
+	-- ClassColors addon publishes. Chat already honoured it and the other two
+	-- places did not, so one addon got recoloured names in chat and Blizzard's
+	-- palette everywhere else.
+	_G.CUSTOM_CLASS_COLORS = { ROGUE = { r = 0.1, g = 0.9, b = 0.2 } }
+	GameTooltip:SetUnit("mouseover")
+	local r2, g2, b2 = _G.GameTooltipTextLeft1:GetTextColor()
+	check(math.abs(r2 - 0.1) < 0.01 and math.abs(g2 - 0.9) < 0.01,
+		"an addon's own class colours are used ahead of Blizzard's (got "
+		.. string.format("%.2f %.2f %.2f", r2, g2, b2) .. ")")
+	_G.CUSTOM_CLASS_COLORS = nil
+
+	-- The deck's treatment is still one switch away.
+	A.Config:Module("tooltips").classColorNames = false
+	GameTooltip:SetUnit("mouseover")
+	local r3 = select(1, _G.GameTooltipTextLeft1:GetTextColor())
+	check(math.abs(r3 - A.Palette.c.ttFriendly[1]) < 0.01,
+		"and off gives the deck's one blue for every friendly player")
+	A.Config:Module("tooltips").classColorNames = true
+
+	-- An NPC that DOES have a class token, which is the realistic case: the
+	-- client happily answers UnitClass for a great many of them. Class colouring
+	-- has to be gated on being a PLAYER, not on there being a class to use -
+	-- and an NPC left with a class token is the only way to tell those apart.
+	mo.isPlayer = false
+	mo.class, mo.classToken = "Rogue", "ROGUE"
+	mo.creature = "Humanoid"
+	GameTooltip:SetUnit("mouseover")
+	local r4 = select(1, _G.GameTooltipTextLeft1:GetTextColor())
+	check(math.abs(r4 - A.Palette.c.ttFriendlyNPC[1]) < 0.01,
+		"an NPC keeps the friendly-NPC green - 'that is a person' is different"
+		.. " information from 'that is a quest giver'")
+
+	mo.isPlayer, mo.class, mo.classToken = was[1], was[2], was[3]
+	mo.reaction, mo.creature = was[4], was[5]
+end
+
 print("== tooltips: quality drives the rim, not just the title ==")
 do
 	GameTooltip:SetItemByID(1234, "Staff of the Blessed Seer", 3)   -- rare
