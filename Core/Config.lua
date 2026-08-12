@@ -371,7 +371,6 @@ Config.defaults = {
 				showZone     = true,
 				showCoords   = true,
 				showClock    = true,
-				showMail     = true,
 				pillOffset   = 10,
 				-- Opacity of the whole border - the dark band around the inside
 				-- of the map's edge plus the hairline on it. One texture, so one

@@ -3,8 +3,12 @@
 
 	A round map with a frosted rim, an "N" above it, and a glass pill under it
 	carrying the zone, your coordinates and the time. In a fight the pill's
-	contents swap for a red dot and "In combat". Mail, when you have some, gets
-	a small pill of its own beside the block.
+	contents swap for a red dot and "In combat".
+
+	No mail indicator. It lived here because the minimap is where Blizzard put
+	one, and it moved to the Toolbox rail with everything else you have to be
+	able to reach with the drawer shut - see Modules/Toolbox.lua, which is also
+	where the client's very short list of mail APIs is written down.
 
 	Everything else Blizzard hangs off the minimap - zoom, tracking, the
 	day/night dial, the battleground eye, the border art, the toggle tab - is
@@ -337,46 +341,6 @@ function MM:SizePill()
 	p:SetWidth(math.max(60, w - gap + pad))
 end
 
---- Which side of the zone block the mail pill sits on.
---
---  The map's default home is the top right of the screen, and the first version
---  put the pill to the *right* of the block - which is to say, off the edge,
---  where it could never be seen. It picks the side with room now, re-checked
---  whenever the map moves, so dragging the whole thing to the left of the
---  screen flips it back.
-function MM:AnchorMail()
-	if not self.mail or not self.pill then return end
-	local f = self.frame
-	local cx = f and select(1, f:GetCenter())
-	local us = UIParent:GetEffectiveScale() or 1
-	local fs = (f and f:GetEffectiveScale()) or 1
-
-	local onLeft = true
-	if cx and us > 0 and fs > 0 then
-		onLeft = (cx * fs / us) > (UIParent:GetWidth() / 2)
-	end
-	if onLeft == self._mailLeft then return end
-	self._mailLeft = onLeft
-
-	self.mail:ClearAllPoints()
-	if onLeft then
-		self.mail:SetPoint("RIGHT", self.pill, "LEFT", -8, 0)
-	else
-		self.mail:SetPoint("LEFT", self.pill, "RIGHT", 8, 0)
-	end
-end
-
-function MM:UpdateMail()
-	self:AnchorMail()
-	if not self.mail then return end
-	local cfg = A.Config:Module("minimap")
-	local has = cfg.showMail ~= false and HasNewMail and HasNewMail()
-	-- Alpha rather than Show, for the reason the aura trays use it: this can
-	-- flip mid-fight and it costs nothing to stay out of that argument.
-	self.mail:SetAlpha(has and 1 or 0)
-	self.mail:EnableMouse(has and true or false)
-end
-
 -- ---------------------------------------------------------------------------
 -- build
 -- ---------------------------------------------------------------------------
@@ -531,8 +495,6 @@ function MM:AnchorAll()
 	self.pill:ClearAllPoints()
 	self.pill:SetPoint("TOP", f, "BOTTOM", 0, -(cfg.pillOffset or 10))
 
-	self.mail:SetScale(A.db.profile.scale)
-	self:AnchorMail()
 
 
 	f.north:SetShown(cfg.showNorth ~= false)
@@ -546,24 +508,6 @@ function MM:OnEnable()
 	if not self.frame then
 		self.frame  = BuildFrame()
 		self.pill   = BuildPill(self.frame)
-
-		-- mail, its own small pill beside the block
-		local m = Glass.CreatePill(UIParent, { shadow = A.db.profile.glass.shadow })
-		m:SetSize(30, 26)
-		m:SetAlpha(0)
-		m:EnableMouse(false)
-		local icon = m:CreateTexture(nil, "ARTWORK")
-		icon:SetTexture("Interface\\Minimap\\Tracking\\Mailbox")
-		icon:SetSize(16, 16)
-		icon:SetPoint("CENTER")
-		m.icon = icon
-		m:SetScript("OnEnter", function(self_)
-			GameTooltip:SetOwner(self_, "ANCHOR_RIGHT")
-			GameTooltip:SetText(_G.HAVE_MAIL or "You have unread mail", 1, 1, 1)
-			GameTooltip:Show()
-		end)
-		m:SetScript("OnLeave", function() GameTooltip:Hide() end)
-		self.mail = m
 
 		-- the map's own mouse: wheel zooms, right-click tracks
 		if _G.Minimap then
@@ -612,8 +556,6 @@ function MM:OnEnable()
 	}) do
 		A:RegisterEvent(self, e, function() MM:UpdateZone() end)
 	end
-	A:RegisterEvent(self, "UPDATE_PENDING_MAIL", function() MM:UpdateMail() end)
-	A:RegisterEvent(self, "MAIL_INBOX_UPDATE", function() MM:UpdateMail() end)
 	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function() MM:UpdateZone() end)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
 		MM:UpdateZone()
@@ -640,7 +582,6 @@ function MM:OnEnable()
 	end)
 
 	self:UpdateZone()
-	self:UpdateMail()
 end
 
 function MM:OnDisable()
@@ -661,7 +602,6 @@ function MM:OnSkinChanged()
 	W.Color(self.frame.north, c.textDim)
 	self.pill:ApplySkin()
 	self.pill:SetShadow(A.db.profile.glass.shadow)
-	self.mail:ApplySkin()
 	self.pill.dot:SetVertexColor(c.danger[1], c.danger[2], c.danger[3], 1)
 	W.Color(self.pill.coords, c.textDim)
 	W.Color(self.pill.clock, c.textDim)
@@ -676,6 +616,5 @@ function MM:OnConfigChanged()
 	self:HideBlizzard()
 	self:AnchorAll()
 	self:UpdateZone()
-	self:UpdateMail()
 	A.Fader:Refresh()
 end

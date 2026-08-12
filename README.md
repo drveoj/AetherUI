@@ -1466,10 +1466,13 @@ there is no saved position, so moving it once settles it.
 
 A round map with a frosted rim, an "N" above it, and a glass pill under it
 carrying the zone, your coordinates and the time. In a fight the pill's contents
-swap for a red dot and **In combat**. Mail, when you have some, gets a small pill
-of its own beside the block — on **whichever side has room**, because the map's
-default home is the top right of the screen and the first version put it off the
-edge.
+swap for a red dot and **In combat**.
+
+**No mail indicator.** There was one — a small pill beside the block, on
+whichever side had room — and it lived here for the same reason Blizzard's does:
+the minimap is where you look for it. It is on the Toolbox rail now, with
+everything else you have to be able to reach with the drawer shut. See
+[Mail](#mail) for what the client will and will not tell us.
 
 **Blizzard's `Minimap` cannot be rebuilt.** It is a special widget type the
 client draws into; there is no way to make another one. So this module reshapes
@@ -2008,8 +2011,8 @@ is the only one that is in the same place every time you glance at it.
 The first version faded only the frames registered with the fader, and the list
 of things still on screen afterwards was long and getting longer: **the minimap**
 (our module re-*positions* Blizzard's map but never re-parents it, so fading the
-holder never touched it), **the mail pill** and **the XP hairline** (both
-top-level frames nobody had registered), **Blizzard's chat**, **nameplates**.
+holder never touched it), **the mail pill** (since retired to the Toolbox rail)
+and **the XP hairline** (both top-level frames nobody had registered), **Blizzard's chat**, **nameplates**.
 That set has no end — every module added from here would have to remember to join
 in, and every Blizzard frame would have to be found by hand.
 
@@ -2343,7 +2346,7 @@ Same rule as the aura trays, for the same reason. A collected button belongs to
 another addon and may well carry a secure template; hiding a frame with a
 protected descendant is refused in combat, and hovering a pill is exactly the
 sort of thing you do mid-fight. So the drawer opens and closes on **alpha and
-`EnableMouse`**, never `Show`/`Hide`, and the mail pill does the same.
+`EnableMouse`**, never `Show`/`Hide`.
 
 ### Coordinates have two different ways to be nothing
 
@@ -2680,6 +2683,46 @@ nothing writes it back, because `Movers`' `SavePosition` is a file-local and a
 window that drags itself has no supported way to save. **`QuestLog` has exactly
 the same gap.** It is a Movers limitation, not a Bags one, and it should be
 fixed in both or neither.
+
+## Toolbox
+
+A drawer that docks to any screen edge, with a rail beside it carrying the
+chevron that opens it, your pinned addon launchers, an envelope, and the gear
+that opens these settings. The rail is what you see with the drawer shut, so
+everything on it is something you need without opening anything.
+
+### Mail
+
+The envelope is empty when there is no mail and filled, in the accent, when
+there is. Inside the drawer a **MAIL** section lists who it is from.
+
+**What the client will tell us, in full:**
+
+| call | answers |
+| --- | --- |
+| `HasNewMail()` | a boolean, and that is the whole of it |
+| `GetLatestThreeSenders()` | up to **three** sender names — no subject, no item, no timestamp |
+| `UPDATE_PENDING_MAIL` | fires when either of the above changes |
+
+**There is no unread count.** `GetInboxNumItems` only answers once the inbox has
+been read at a real mailbox, and it goes stale the moment you walk away — a
+number from it is a number about the last time you checked rather than about now.
+Blizzard settle the question themselves: `HAVE_MAIL` is *"You have new mail."*
+and `HAVE_MAIL_FROM` is *"You have new mail from:"*. Neither carries a figure,
+because the client does not have one to give.
+
+So the chip counts **senders**, and reads `3+` at three — three is the client's
+cap, not necessarily the total. Two is exactly two; three might be nine.
+
+`GetLatestThreeSenders` can also come back **empty while `HasNewMail` is true**:
+auction house and NPC mail arrives with no name attached. "You have mail, and we
+cannot say from whom" is a real state rather than a bug, so the section still
+appears carrying the client's own wording instead of a list.
+
+`MAIL_INBOX_UPDATE` is registered alongside `UPDATE_PENDING_MAIL` because
+reading your mail at a mailbox clears the flag without necessarily firing the
+first one — an envelope still glowing after you have emptied the box is the
+version of this anybody would notice.
 
 ## Deliberate omissions
 

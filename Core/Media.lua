@@ -109,6 +109,7 @@ Media.icons = {
 		"help", "zen", "damage", "keybinds",
 		"combat", "gear", "pin", "pinned",
 		"whatsnew",
+		"mail", "mailfull",
 	},
 }
 

@@ -649,10 +649,6 @@ local function MinimapGroup()
 			"Unavailable inside an instance, where the pill simply drops them.",
 			at("showCoords"), { defaultTrue = true }),
 		showClock = toggle("Clock", nil, at("showClock"), { defaultTrue = true }),
-		showMail = toggle("Mail pill",
-			"A small pill beside the block, and only when you have unread mail.",
-			at("showMail"), { defaultTrue = true }),
-
 		blizzHeader = header("Blizzard's own"),
 		hideBlizzard = toggle("Hide the minimap furniture",
 			"Zoom, tracking, the day/night dial, the battleground eye, the border"

@@ -930,6 +930,8 @@ ICON_ORDER = [
     "combat", "gear", "pin", "pinned",
     # and the What's-new card's own mark
     "whatsnew",
+    # mail, empty and full
+    "mail", "mailfull",
 ]
 
 
@@ -975,12 +977,22 @@ def _icon_ops(px, py):
         return np.minimum(np.minimum(seg(x0, y0, x1, y0), seg(x1, y0, x1, y1)),
                           np.minimum(seg(x1, y1, x0, y1), seg(x0, y1, x0, y0)))
 
-    return seg, circ, disc, arc, rect
+    def box(x0, y0, x1, y1):
+        """A FILLED rectangle, signed: negative inside. `rect` is the outline of
+        the same shape, and the two together are how one silhouette gets an
+        empty state and a full one - the pin/pinned pair, done with corners."""
+        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        hx, hy = (x1 - x0) / 2.0, (y1 - y0) / 2.0
+        dx, dy = np.abs(px - cx) - hx, np.abs(py - cy) - hy
+        return (np.hypot(np.maximum(dx, 0), np.maximum(dy, 0))
+                + np.minimum(np.maximum(dx, dy), 0))
+
+    return seg, circ, disc, arc, rect, box
 
 
 def _glyph(name, cell):
     px, py = _icon_field(cell)
-    seg, circ, disc, arc, rect = _icon_ops(px, py)
+    seg, circ, disc, arc, rect, box = _icon_ops(px, py)
     INF = np.full_like(px, 1e6)
 
     def U(*ds):
@@ -1098,6 +1110,45 @@ def _glyph(name, cell):
         clapper = arc(64, 92, 8, 200, 340)
         crown = seg(64, 30, 64, 36)
         return U(dome, sides, lip, clapper, crown)
+
+    # An envelope, twice: an outline for "no mail" and a solid one for "mail".
+    # Same silhouette, same corners, so the two read as one control in two
+    # states rather than as two drawings - which is the pin/pinned rule, and the
+    # reason the flap is in exactly the same place in both.
+    #
+    # The body is WIDER than it is tall at 5:3, because a square envelope reads
+    # as a note or a card. At 26px on the rail the proportion is most of what
+    # says "envelope" before the flap is even legible.
+    MAIL = (22, 42, 106, 92)
+
+    if name == "mail":
+        x0, y0, x1, y1 = MAIL
+        # The flap creases from the top corners down to a point below centre,
+        # which is where a real one folds - level with the top edge it reads as
+        # a triangle sitting on a box.
+        return U(rect(x0, y0, x1, y1),
+                 seg(x0, y0, (x0 + x1) / 2, y0 + 26),
+                 seg(x1, y0, (x0 + x1) / 2, y0 + 26))
+
+    if name == "mailfull":
+        x0, y0, x1, y1 = MAIL
+        body = box(x0, y0, x1, y1) + ICON_STROKE / 2
+
+        # The flap is CARVED OUT rather than drawn on: a stroke of the same
+        # colour on a solid fill is invisible, and negative space is the only
+        # thing that survives on a filled shape. max() with a negated distance
+        # is subtraction - everything within CARVE of the crease is taken back
+        # out of the body.
+        #
+        # CARVE is a whole stroke and a half, not the half-stroke that draws a
+        # line. A cut has to survive being minified to a 64px cell and then
+        # drawn at 26, and at half a stroke it came out under a stored texel:
+        # the icon read as a plain white rectangle at the only size it is ever
+        # seen. This is the same reason the gear's teeth are stubs.
+        CARVE = ICON_STROKE * 1.5
+        crease = np.minimum(seg(x0, y0, (x0 + x1) / 2, y0 + 30),
+                            seg(x1, y0, (x0 + x1) / 2, y0 + 30))
+        return np.maximum(body, CARVE - crease)
 
     return INF
 

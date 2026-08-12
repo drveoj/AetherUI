@@ -209,6 +209,26 @@ function TB:Build()
 	gear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	rail.gear = gear
 
+	-- Mail, immediately above the gear. On the rail rather than only inside the
+	-- drawer because "you have mail" is the one thing here you need to see with
+	-- the drawer SHUT - it is the reason the minimap carried an indicator at all,
+	-- and that indicator is gone now.
+	--
+	-- Always present, never hidden: an envelope that only exists when there is
+	-- mail is an icon that moves the gear every time the postman calls. Empty
+	-- and full are two cells of the sheet, the way pin and pinned are.
+	local mail = CreateFrame("Button", nil, rail)
+	mail:SetSize(RAIL_ICON, RAIL_ICON)
+	local mg = mail:CreateTexture(nil, "ARTWORK")
+	mg:SetPoint("CENTER", mail, "CENTER", 0, 0)
+	mg:SetSize(RAIL_ICON - 8, RAIL_ICON - 8)
+	Media:SetIcon(mg, "mail")
+	mail.glyph = mg
+	mail:SetScript("OnClick", function() TB:Toggle() end)
+	mail:SetScript("OnEnter", function(self2) TB:MailTooltip(self2) end)
+	mail:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	rail.mail = mail
+
 	self._travel = self:IsOpen() and 1 or 0
 	self._want   = self._travel
 
@@ -224,6 +244,10 @@ function TB:ApplySkin()
 	if self.rail.chev and c.text then
 		self.rail.chev.glyph:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.75)
 	end
+	-- Re-tinted here rather than only on a mail event: a restyle changes what
+	-- the accent IS, and the envelope is the one glyph on the rail that carries
+	-- it.
+	self:RefreshMail()
 	if self.scrim then
 		-- Re-asserted on a skin change, because ApplySkin is what a restyle calls
 		-- and it would otherwise put the glass tint back on a frame that is
@@ -352,12 +376,15 @@ function TB:Layout()
 	local vertical = IsVertical(edge)
 	self.rail.chev:ClearAllPoints()
 	self.rail.gear:ClearAllPoints()
+	self.rail.mail:ClearAllPoints()
 	if vertical then
 		self.rail.chev:SetPoint("TOP", self.rail, "TOP", 0, -RAIL_PAD)
 		self.rail.gear:SetPoint("BOTTOM", self.rail, "BOTTOM", 0, RAIL_PAD)
+		self.rail.mail:SetPoint("BOTTOM", self.rail.gear, "TOP", 0, RAIL_PAD)
 	else
 		self.rail.chev:SetPoint("LEFT", self.rail, "LEFT", RAIL_PAD, 0)
 		self.rail.gear:SetPoint("RIGHT", self.rail, "RIGHT", -RAIL_PAD, 0)
+		self.rail.mail:SetPoint("RIGHT", self.rail.gear, "LEFT", -RAIL_PAD, 0)
 	end
 
 	-- The scrim covers exactly the strip the panel is over, so it travels with
@@ -550,6 +577,18 @@ function TB:OnEnable()
 
 	self:ClaimPins()
 	self:LayoutRail()
+
+	-- UPDATE_PENDING_MAIL is the only event the client fires for this, and it
+	-- covers both the flag and the sender list. MAIL_INBOX_UPDATE is registered
+	-- too because reading your mail at a mailbox clears the flag without
+	-- necessarily firing the first one, and an envelope still glowing purple
+	-- after you have emptied the box is the version of this anybody would
+	-- notice.
+	for _, ev in ipairs({ "UPDATE_PENDING_MAIL", "MAIL_INBOX_UPDATE",
+		"MAIL_CLOSED", "PLAYER_ENTERING_WORLD" }) do
+		A:RegisterEvent(self, ev, function() TB:RefreshMail() end)
+	end
+	self:RefreshMail()
 
 	A.Launchers:OnChanged("toolbox", function()
 		-- Re-claim on every change, not only at enable. A pin restored from
@@ -838,6 +877,112 @@ local function Spaced(s)
 	return (s:gsub("(.)", "%1 "):gsub(" $", ""))
 end
 
+-- ---------------------------------------------------------------------------
+-- mail
+--
+-- WHAT THE CLIENT WILL TELL US, which is very little and worth writing down so
+-- nobody goes looking for the rest of it:
+--
+--   HasNewMail()            -> boolean. That is the whole of it.
+--   GetLatestThreeSenders() -> up to three sender NAMES. No subject, no item,
+--                              no timestamp, no count. Capped at three by the
+--                              client, not by us.
+--   UPDATE_PENDING_MAIL     -> fires when either of the above changes.
+--
+-- There is no unread COUNT away from a mailbox. GetInboxNumItems only answers
+-- once the inbox has been read at a real mailbox and goes stale the moment you
+-- walk away, so a number taken from it is a number from the last time you
+-- checked rather than a number about now. Blizzard's own strings settle the
+-- question: HAVE_MAIL is "You have new mail." and HAVE_MAIL_FROM is "You have
+-- new mail from:" - neither carries a figure, because the client does not have
+-- one to put there.
+--
+-- So the chip counts SENDERS, and says "3+" at three, because three is the
+-- client's cap and not necessarily the total. Two is exactly two; three might
+-- be nine.
+--
+-- GetLatestThreeSenders can also come back empty while HasNewMail is true -
+-- mail from an auction house or an NPC arrives without a name attached. "You
+-- have mail" with no list is a real state, not a bug, and both the tooltip and
+-- the section have to say something sensible in it.
+-- ---------------------------------------------------------------------------
+
+TB.MAIL_ROWS = 3
+
+--- `has` and the senders the client knows about, as a fresh list every time.
+--
+--  Read at call time, never cached: the senders change under us on
+--  UPDATE_PENDING_MAIL and a stale list is worse than no list.
+function TB:MailState()
+	local has = HasNewMail and HasNewMail() and true or false
+	local senders = {}
+	if has and GetLatestThreeSenders then
+		-- pcall because this is one of the few calls that can be answered by a
+		-- client that has not finished logging in yet.
+		local ok, a, b, c = pcall(GetLatestThreeSenders)
+		if ok then
+			for _, s in ipairs({ a, b, c }) do
+				if type(s) == "string" and s ~= "" then senders[#senders + 1] = s end
+			end
+		end
+	end
+	return has, senders
+end
+
+--- The count for the chip, or nil when there is nothing honest to show.
+function TB:MailCount()
+	local has, senders = self:MailState()
+	if not has or #senders == 0 then return nil end
+	return #senders, #senders >= self.MAIL_ROWS
+end
+
+--- Empty envelope or full one, and the full one in the accent.
+function TB:RefreshMail()
+	if not self.rail or not self.rail.mail then return end
+	local has = self:MailState()
+	Media:SetIcon(self.rail.mail.glyph, has and "mailfull" or "mail")
+
+	local c = Palette.c
+	if has then
+		local a = c.accent or c.text
+		self.rail.mail.glyph:SetVertexColor(a[1], a[2], a[3], 1)
+	else
+		-- Dimmer than the gear beside it. An empty postbox is not a control you
+		-- are being asked to look at.
+		self.rail.mail.glyph:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.45)
+	end
+
+	-- Relaid out, not just refreshed. The section appears and disappears with
+	-- the mail, so everything under it - the settings tiles - moves, and a
+	-- refresh that only rewrote the rows would leave them overlapping.
+	if self.content then
+		self:RefreshMailRows()
+		self:LayoutContent()
+	end
+end
+
+function TB:MailTooltip(owner)
+	if not GameTooltip then return end
+	local has, senders = self:MailState()
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	if not has then
+		GameTooltip:SetText(_G.NO_MAIL or "No new mail")
+	elseif #senders == 0 then
+		-- The client's own wording for "mail, but we cannot say who from".
+		GameTooltip:SetText(_G.HAVE_MAIL or "You have new mail.")
+	else
+		GameTooltip:SetText(_G.HAVE_MAIL_FROM or "You have new mail from:")
+		for _, s in ipairs(senders) do
+			GameTooltip:AddLine(s, 1, 1, 1)
+		end
+		if #senders >= self.MAIL_ROWS then
+			GameTooltip:AddLine("and possibly more - the client only names three",
+				0.6, 0.6, 0.6)
+		end
+	end
+	GameTooltip:Show()
+end
+
 TB.NEWS_VERSION = "0.1.0"
 TB.NEWS = "The Toolbox has arrived: a drawer that docks to any screen edge, with"
 	.. " your addon launchers on the rail beside it."
@@ -945,6 +1090,7 @@ function TB:BuildContent()
 
 	content.cards = {}
 	self:RefreshWidgets()
+	self:BuildMail()
 	self:BuildTiles()
 	self:BuildAddons()
 	self:BuildMicro()
@@ -1136,6 +1282,71 @@ end
 -- ---------------------------------------------------------------------------
 
 local TILE_H, TILE_GAP = 62, 8
+
+-- ---------------------------------------------------------------------------
+-- the MAIL section
+-- ---------------------------------------------------------------------------
+
+local MAIL_ROW_H, MAIL_ROW_GAP = 24, 4
+
+function TB:BuildMail()
+	if not self.content or self.content.mail then return end
+	local head = W.Text(self.content, "tbSection", "LEFT")
+	head:SetText(Spaced("MAIL"))
+	self.content.mailHead = head
+
+	local hint = W.Text(self.content, "tbLabel", "RIGHT")
+	self.content.mailHint = hint
+
+	self.content.mail = {}
+	self:RefreshMailRows()
+end
+
+--- One row per sender the client named, up to its cap of three.
+--
+--  Rows are REUSED and hidden rather than destroyed, like every other list
+--  here: mail arrives mid-combat and creating frames then is a thing to avoid
+--  on principle even where it is currently allowed.
+function TB:RefreshMailRows()
+	if not self.content or not self.content.mail then return end
+	local has, senders = self:MailState()
+	self._mailSenders = senders
+
+	for i = 1, self.MAIL_ROWS do
+		local row = self.content.mail[i]
+		if not row then
+			row = CreateFrame("Frame", nil, self.content)
+			row:SetHeight(MAIL_ROW_H)
+
+			local dot = row:CreateTexture(nil, "ARTWORK")
+			dot:SetSize(12, 12)
+			dot:SetPoint("LEFT", row, "LEFT", 2, 0)
+			Media:SetIcon(dot, "mailfull")
+			row.dot = dot
+
+			row.name = W.Text(row, "tbCardBody", "LEFT")
+			row.name:SetPoint("LEFT", dot, "RIGHT", 8, 0)
+			self.content.mail[i] = row
+		end
+		local who = senders[i]
+		row.name:SetText(who or "")
+		row:SetShown(who ~= nil)
+	end
+
+	-- "You have mail but we cannot say from whom" is a real state - auction
+	-- house and NPC mail arrives with no name on it - so the section still
+	-- appears, carrying the client's own wording instead of a list.
+	if self.content.mailHint then
+		if not has then
+			self.content.mailHint:SetText("")
+		elseif #senders == 0 then
+			self.content.mailHint:SetText(_G.HAVE_MAIL or "New mail")
+		else
+			self.content.mailHint:SetText(#senders
+				.. (#senders >= self.MAIL_ROWS and "+" or ""))
+		end
+	end
+end
 
 function TB:BuildTiles()
 	if not self.content or self.content.tiles then return end
@@ -1880,6 +2091,7 @@ function TB:LayoutContent()
 	local cards  = content.cards  or {}
 	local addons = content.addons or {}
 	local tilesF = content.tiles  or {}
+	local mails  = content.mail   or {}
 
 	local function place(region, x, y, width)
 		region:ClearAllPoints()
@@ -1960,7 +2172,30 @@ function TB:LayoutContent()
 	-- Cutting the addon list to nothing and stopping there was not enough: with
 	-- zero addon rows the column still wanted 614 of a 506 panel. So the tiles
 	-- are cut too, and both say what they dropped.
-	local roomLeft = h - y - PAD
+	-- MAIL is measured here too, for the same reason and before the same
+	-- subtraction: it is drawn under the addon list, so the list can only be
+	-- told how much room it has once this block's height is known.
+	--
+	-- It is NOT cut to fit. Three rows of 24 is the smallest fixed section on
+	-- the panel, and a mail list that drops the sender you were looking for to
+	-- make room for a settings tile has its priorities backwards.
+	local has = self:MailState()
+	local mailRows = has and #(self._mailSenders or {}) or 0
+
+	-- Measured ONCE and reused below, rather than written out twice. The
+	-- reserved height and the height the rows are actually placed into have to
+	-- agree, and two copies of an expression are two things that can drift -
+	-- the failure being a section that reserves a row it never draws, or draws
+	-- one it never reserved.
+	--
+	-- Zero rows costs nothing beyond the heading, because the "you have mail
+	-- but we cannot say from whom" wording is the HINT, which sits on the
+	-- heading's own line at its right-hand end.
+	local mailRowsH = (mailRows > 0)
+		and (mailRows * (MAIL_ROW_H + MAIL_ROW_GAP) - MAIL_ROW_GAP) or 0
+	local mailBlock = has and (SECTION_H + mailRowsH + SECTION_GAP) or 0
+
+	local roomLeft = h - y - PAD - mailBlock
 	local maxTileRows = math.max(0, math.floor((roomLeft - SECTION_H) / (TILE_H + TILE_GAP)))
 	if tileRows > maxTileRows then tileRows = maxTileRows end
 	local shownTiles = math.min(#tiles, tileRows * tileCols)
@@ -1984,7 +2219,7 @@ function TB:LayoutContent()
 		-- is reported - the quest tracker's rule, for the same reason: a list
 		-- that silently drops the row you were looking for is worse than one
 		-- that admits it ran out of room.
-		local room = h - y - PAD - tileBlock - SECTION_GAP
+		local room = h - y - PAD - tileBlock - mailBlock - SECTION_GAP
 		local maxRows = math.max(0, math.floor(room / (ROW_H + ROW_GAP)))
 		local maxShown = maxRows * addonCols
 
@@ -2010,6 +2245,32 @@ function TB:LayoutContent()
 
 		y = y + RowsFor(shown, addonCols) * (ROW_H + ROW_GAP) - ROW_GAP + SECTION_GAP
 	end
+
+	-- MAIL -------------------------------------------------------------------
+	--
+	-- Only when there IS mail. An empty section every time you open the drawer
+	-- is a row of furniture reporting nothing; the rail's envelope is the thing
+	-- that is always there, and it says "empty" by being empty.
+	local showMail = has and content.mailHead ~= nil
+	if showMail then
+		place(content.mailHead, PAD, y)
+		content.mailHint:ClearAllPoints()
+		content.mailHint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
+		y = y + SECTION_H
+		for i, row in ipairs(mails) do
+			row:ClearAllPoints()
+			row:SetWidth(avail)
+			row:SetPoint("TOPLEFT", content, "TOPLEFT",
+				PAD, -(y + (i - 1) * (MAIL_ROW_H + MAIL_ROW_GAP)))
+		end
+		y = y + mailRowsH + SECTION_GAP
+	end
+	-- Driven by the SAME boolean the block above is. Two conditions that have
+	-- to agree are two conditions that can stop agreeing, and the failure is a
+	-- section header shown at whatever position it last had.
+	if content.mailHead then content.mailHead:SetShown(showMail) end
+	if content.mailHint then content.mailHint:SetShown(showMail) end
+	if not showMail then for _, row in ipairs(mails) do row:Hide() end end
 
 	-- UI SETTINGS ------------------------------------------------------------
 	if shownTiles > 0 then

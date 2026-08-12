@@ -1652,7 +1652,22 @@ function GetZoneText() return "The Barrens" end
 function GetSubZoneText() return _G.__zoneText or "" end
 GetZonePVPInfo = function() return _G.__pvpType end
 function HasNewMail() return _G.__mail or false end
+
+--- The ONLY other thing the client will say about mail away from a mailbox: up
+--  to three sender names, capped by the client. No subject, no count, no
+--  timestamp. It can also come back empty while HasNewMail is true - auction
+--  house and NPC mail arrives with no name on it - and __mailFrom nil models
+--  exactly that, which is a state the Toolbox has to handle rather than a
+--  broken mock.
+function GetLatestThreeSenders()
+	local t = _G.__mailFrom
+	if not t then return nil end
+	return t[1], t[2], t[3]
+end
+
 HAVE_MAIL = "You have unread mail"
+HAVE_MAIL_FROM = "You have new mail from:"
+NO_MAIL = "No new mail"
 
 -- C_Map has two separate ways to answer "nowhere": no map for the unit, and a
 -- map with no position on it - which is what an instance does.
@@ -7432,42 +7447,202 @@ do
 	check(MMm.pill.zone:GetText() == "The Barrens", "and comes back afterwards")
 end
 
-print("== mail ==")
+print("== toolbox: mail, and what the client will not tell us ==")
 do
-	_G.__mail = false
-	MMm:UpdateMail()
-	check(MMm.mail:GetAlpha() == 0, "no mail, no pill")
-	_G.__mail = true
-	fire("UPDATE_PENDING_MAIL")
-	check(MMm.mail:GetAlpha() == 1, "unread mail puts the pill up")
-	check(select(2, MMm.mail:GetPoint(1)) == MMm.pill,
-		"beside the zone block, not on the map")
-	-- The map's default home is the top right of the screen, so a pill hung off
-	-- the block's right edge is a pill hung off the screen.
-	MMm.frame:SetGeom({ cx = 880, cy = 600, left = 800, right = 960,
-		bottom = 520, top = 680 })
-	MMm._mailLeft = nil
-	MMm:AnchorMail()
-	local mp, _, mrel = MMm.mail:GetPoint(1)
-	check(mp == "RIGHT" and mrel == "LEFT",
-		"and on the inboard side - with the map top right the pill goes to the"
-		.. " left of the block, where there is room for it (got "
-		.. tostring(mp) .. " -> " .. tostring(mrel) .. ")")
+	local TBm = A:GetModule("toolbox")
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
 
-	MMm.frame:SetGeom({ cx = 120, cy = 600, left = 40, right = 200,
-		bottom = 520, top = 680 })
-	MMm:AnchorMail()
-	check(select(1, MMm.mail:GetPoint(1)) == "LEFT",
-		"drag the map to the other side of the screen and it flips")
-	MMm.frame.__geom = nil
-	-- Alpha rather than Show: this flips mid-fight and there is no reason to
-	-- have that argument with the client.
-	_G.__inCombat = true
-	_G.__mail = false
+	-- The minimap used to carry this and no longer does. Nothing in Minimap.lua
+	-- should mention mail, and the module must not have kept a frame for it - a
+	-- leftover pill at alpha 0 is invisible until somebody re-enables it.
+	check(MMm.mail == nil,
+		"the minimap has no mail pill any more - it lives on the toolbox rail,"
+		.. " which is reachable with the drawer shut")
+
+	_G.__mail, _G.__mailFrom = false, nil
 	fire("UPDATE_PENDING_MAIL")
-	check(MMm.mail:GetAlpha() == 0, "and drops it again mid-combat without a"
-		.. " blocked call")
-	_G.__inCombat = false
+
+	local mailBtn = TBm.rail.mail
+	check(mailBtn ~= nil, "the rail carries an envelope")
+	check(select(2, mailBtn:GetPoint(1)) == TBm.rail.gear,
+		"anchored off the gear, so the two travel together whichever edge the"
+		.. " drawer is docked to")
+
+	local empty = select(2, A.Media:Icon("mail"))
+	local full  = select(2, A.Media:Icon("mailfull"))
+	check(empty ~= full, "empty and full are different cells of the sheet")
+	check(select(1, mailBtn.glyph:GetTexCoord()) == empty,
+		"no mail draws the outline envelope")
+	check(TBm.content.mailHead == nil or not TBm.content.mailHead:IsShown(),
+		"and the drawer shows no MAIL section at all - an empty section every"
+		.. " time you open it is furniture reporting nothing")
+
+	-- Mail arrives.
+	_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas" }
+	fire("UPDATE_PENDING_MAIL")
+
+	check(select(1, mailBtn.glyph:GetTexCoord()) == full,
+		"mail swaps the glyph for the filled one")
+	local r, g, b = mailBtn.glyph:GetVertexColor()
+	local ac = A.Palette.c.accent
+	check(ac and math.abs(r - ac[1]) < 0.01 and math.abs(g - ac[2]) < 0.01
+		and math.abs(b - ac[3]) < 0.01,
+		"in the accent, which is what makes it readable at 26px without a badge")
+
+	check(TBm.content.mailHead:IsShown(), "and the MAIL section appears")
+	check(TBm.content.mail[1]:IsShown() and TBm.content.mail[1].name:GetText() == "Thrall",
+		"listing the senders the client named")
+	check(TBm.content.mail[2].name:GetText() == "Sylvanas", "in order")
+	check(not TBm.content.mail[3]:IsShown(),
+		"and no row for a sender that does not exist")
+	check(TBm.content.mailHint:GetText() == "2",
+		"the count is EXACT below the client's cap (got "
+		.. tostring(TBm.content.mailHint:GetText()) .. ")")
+
+	-- At the cap the number stops being a total.
+	_G.__mailFrom = { "Thrall", "Sylvanas", "Jaina" }
+	fire("UPDATE_PENDING_MAIL")
+	check(TBm.content.mailHint:GetText() == "3+",
+		"at three it reads 3+, because three is the CLIENT's cap and not"
+		.. " necessarily the total - GetLatestThreeSenders is named for what it"
+		.. " does, and there is no call that counts (got "
+		.. tostring(TBm.content.mailHint:GetText()) .. ")")
+	check(TBm.content.mail[3]:IsShown(), "and the third row is used")
+
+	-- Mail with nobody's name on it. Real, and not a broken mock: this is what
+	-- auction house and NPC mail looks like from outside a mailbox.
+	_G.__mailFrom = nil
+	fire("UPDATE_PENDING_MAIL")
+	check(TBm.content.mailHead:IsShown(),
+		"mail with no sender still shows the section - HasNewMail is true and"
+		.. " saying nothing would be a lie")
+	check(not TBm.content.mail[1]:IsShown(), "with no rows in it")
+	check(TBm.content.mailHint:GetText() == HAVE_MAIL,
+		"and the client's own wording instead of a number (got "
+		.. tostring(TBm.content.mailHint:GetText()) .. ")")
+
+	-- The section takes part in the ONE top-down accumulator rather than being
+	-- drawn over whatever was already there.
+	--
+	-- Measured on the accumulator itself, not on the settings tiles: the panel
+	-- in here is 505 units tall and every tile is already cut, so a tile's
+	-- position is stale rather than informative. The first version of this
+	-- check read one anyway and passed a stale -430 against itself.
+	do
+		_G.__mail, _G.__mailFrom = false, nil
+		fire("UPDATE_PENDING_MAIL")
+		local dry = TBm._contentHeight
+
+		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
+		fire("UPDATE_PENDING_MAIL")
+		local wet = TBm._contentHeight
+
+		check(dry and wet and wet > dry,
+			"the content grows by the mail block rather than the section landing"
+			.. " on top of what was already laid out (" .. tostring(dry)
+			.. " -> " .. tostring(wet) .. ")")
+
+		-- Mail with nobody's name on it still has to take up room. It is a
+		-- section with a header and no rows, and a version that skipped the
+		-- accumulator entirely would leave the header on top of the tiles.
+		_G.__mail, _G.__mailFrom = true, nil
+		fire("UPDATE_PENDING_MAIL")
+		check(TBm._contentHeight > dry,
+			"a nameless mail section still advances the accumulator ("
+			.. tostring(dry) .. " -> " .. tostring(TBm._contentHeight) .. ")")
+
+		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
+		fire("UPDATE_PENDING_MAIL")
+
+		local mailY = select(5, TBm.content.mailHead:GetPoint(1))
+		local newsY = select(5, TBm.content.news:GetPoint(1))
+		check(mailY < newsY,
+			"and it lands BELOW the fixed sections above it rather than at the"
+			.. " top of the panel")
+	end
+
+	-- On a TALL screen, where the settings tiles actually fit.
+	--
+	-- At the harness's default 1024x768 the panel clamps to 505 units and every
+	-- tile is cut, so nothing below the mail section is laid out and the
+	-- arithmetic that gives it room is never run. The first version of this
+	-- test read a cut tile's stale position and passed a value against itself.
+	do
+		local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+		UIParent:SetSize(1365, 1600)
+
+		_G.__mail, _G.__mailFrom = false, nil
+		TBm:SetDock("LEFT")           -- re-measures the panel against the screen
+		fire("UPDATE_PENDING_MAIL")
+		check(TBm.content.tiles[1]:IsShown(),
+			"the settings tiles fit on a tall screen (cut " ..
+			tostring(TBm._tilesCut) .. ")")
+		local dryTile = select(5, TBm.content.tiles[1]:GetPoint(1))
+
+		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
+		fire("UPDATE_PENDING_MAIL")
+		local wetTile = select(5, TBm.content.tiles[1]:GetPoint(1))
+		check(wetTile < dryTile,
+			"and they move DOWN when the mail section appears above them rather"
+			.. " than being drawn under it - y is negative here, so lower is"
+			.. " smaller (" .. tostring(dryTile) .. " -> " .. tostring(wetTile)
+			.. ")")
+
+		UIParent:SetSize(oldW, oldH)
+		TBm:SetDock("LEFT")
+	end
+
+	-- ...and on a screen where it does NOT all fit, which is the only place the
+	-- arithmetic that hands out the room can be observed at all.
+	--
+	-- 1365x780 was found by sweeping: below it everything is cut anyway and
+	-- above it everything fits, so both are blind to whether the mail block was
+	-- subtracted from what is left. Here the section costs exactly two rows of
+	-- settings tiles, and a version that forgot to subtract it lays them out
+	-- past the bottom of the panel where nobody can reach them.
+	do
+		local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+		UIParent:SetSize(1365, 780)
+
+		-- A long addon list too, so the OTHER list that gives way is not empty.
+		for i = 1, 10 do _G.__makeLDB("RoomTest" .. i, "launcher") end
+		A.Launchers:Scan()
+		TBm:RefreshAddons()
+
+		TBm:SetDock("LEFT")
+		_G.__mail, _G.__mailFrom = false, nil
+		fire("UPDATE_PENDING_MAIL")
+		local panelH = TBm.panel:GetHeight()
+		check(TBm._contentHeight <= panelH + 1,
+			"with no mail, everything laid out fits the panel ("
+			.. string.format("%.0f of %.0f", TBm._contentHeight, panelH) .. ")")
+
+		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
+		fire("UPDATE_PENDING_MAIL")
+		check(TBm._contentHeight <= panelH + 1,
+			"and WITH mail it still does - the lists below give way by exactly"
+			.. " the mail block rather than being laid out past the bottom edge"
+			.. " ("  .. string.format("%.0f of %.0f", TBm._contentHeight, panelH)
+			.. ")")
+		check(TBm._tilesCut > 0,
+			"which cost something real here rather than fitting anyway - the"
+			.. " check above is blind on a screen with room to spare")
+
+		UIParent:SetSize(oldW, oldH)
+		TBm:SetDock("LEFT")
+	end
+
+	-- Reading it at a mailbox clears the flag without UPDATE_PENDING_MAIL
+	-- necessarily firing, which is why MAIL_INBOX_UPDATE is registered too.
+	_G.__mail, _G.__mailFrom = false, nil
+	fire("MAIL_INBOX_UPDATE")
+	check(select(1, mailBtn.glyph:GetTexCoord()) == empty,
+		"emptying the box at a mailbox puts the envelope back - an indicator"
+		.. " still glowing after you have read your mail is the version of this"
+		.. " anybody would notice")
+
+	TBm:SetOpen(false, true)
 end
 
 print("== launchers: what counts as somebody's button ==")
