@@ -148,7 +148,16 @@ local function widgetBase(kind)
 
 	function o:SetAlpha(a) self.__alpha = a end
 	function o:GetAlpha() return self.__alpha end
-	function o:SetScale(s) self.__scale = s end
+	-- Counted, so a test can tell "set it to the right value" from "wrote to it
+	-- again for no reason". SetScale re-lays out everything anchored to a frame.
+	function o:SetScale(s)
+		-- EVERY call, not every change. The question a caller wants answered is
+		-- "did you touch this frame", and a counter that only moves when the
+		-- value differs cannot tell a guard that skipped the write from one
+		-- that wrote the same number back.
+		self.__scaleWrites = (self.__scaleWrites or 0) + 1
+		self.__scale = s
+	end
 	function o:GetScale() return self.__scale end
 
 	--- EFFECTIVE scale walks the parent chain, as the client's does.
@@ -12404,6 +12413,70 @@ do
 	A.Config:Module("tooltips").restyleFonts = true
 	T:ApplyFonts()
 	check(GameTooltipHeaderText:GetFont() == before, "and ticking it goes back")
+end
+
+print("== tooltips: drawn at the deck's scale, and kept there ==")
+do
+	local T = A:GetModule("tooltips")
+	local was = A.db.profile.scale
+
+	A.db.profile.scale = 0.71
+	T:OnConfigChanged()
+	check(math.abs(GameTooltip:GetScale() - 0.71) < 0.001,
+		"the tooltip is drawn at profile.scale like every other module - the"
+		.. " deck's 15pt title only lands where the deck put it if the surface"
+		.. " under it is the same size as the rest of the HUD (got "
+		.. tostring(GameTooltip:GetScale()) .. ")")
+
+	-- ...and SOMEBODY ELSE writes to this.
+	--
+	-- Leatrix Plus's "Enhance tooltip" sets GameTooltip:SetScale from its own
+	-- slider at startup, across the whole family - Leatrix_Plus.lua:10309. Its
+	-- default is 100%, so on a UI at 0.71 it lands after us and the tooltip
+	-- comes out forty per cent bigger than everything around it. That is not a
+	-- preference, it is two addons disagreeing in public, and the one drawing
+	-- the card should be the one that answers.
+	GameTooltip:Hide()
+	GameTooltip:SetScale(1.0)
+	check(math.abs(GameTooltip:GetScale() - 1.0) < 0.001,
+		"another addon really can take it away")
+
+	GameTooltip:Show()
+	check(math.abs(GameTooltip:GetScale() - 0.71) < 0.001,
+		"and showing the tooltip takes it back - same rule as StripArt, and the"
+		.. " same reason: setting either one once at login lasts until the first"
+		.. " thing you hover (got " .. tostring(GameTooltip:GetScale()) .. ")")
+
+	-- The per-module multiplier still rides on top, because a tooltip is the
+	-- one surface people most often want a size apart from the HUD.
+	-- Hide first: OnShow only fires on a hidden->shown transition, here and in
+	-- the client. A test that calls Show on something already up is asserting
+	-- against a hook that never ran.
+	A.Config:Module("tooltips").scale = 1.2
+	GameTooltip:Hide()
+	GameTooltip:SetScale(1.0)
+	GameTooltip:Show()
+	check(math.abs(GameTooltip:GetScale() - 0.71 * 1.2) < 0.001,
+		"profile scale times the tooltip's own (got "
+		.. tostring(GameTooltip:GetScale()) .. ", want "
+		.. tostring(0.71 * 1.2) .. ")")
+	A.Config:Module("tooltips").scale = 1.0
+
+	-- No write when it is already right. SetScale re-lays out everything
+	-- anchored to the frame and this runs on every show.
+	do
+		GameTooltip:Hide(); GameTooltip:Show()
+		local n = GameTooltip.__scaleWrites or 0
+		GameTooltip:Hide(); GameTooltip:Show()
+		GameTooltip:Hide(); GameTooltip:Show()
+		check((GameTooltip.__scaleWrites or 0) == n,
+			"and a tooltip already at the right scale is not written to again -"
+			.. " this runs on every show, and SetScale re-lays out everything"
+			.. " anchored to the frame")
+	end
+
+	A.db.profile.scale = was
+	T:OnConfigChanged()
 end
 
 print("== tooltips: the card follows lines added AFTER the tooltip is up ==")

@@ -392,6 +392,46 @@ TT.order   = {}          -- registration order, for /aether tooltips
 --  the default centre colour unconditionally, and it runs on every OnHide
 --  (GameTooltip.lua:414) and on every item tooltip via GameTooltip_UpdateStyle
 --  (:505). Doing this once at login lasts until the first item you hover.
+--- The scale this tooltip is supposed to be drawn at.
+--
+--  profile.scale like every other module, times the tooltip's own multiplier -
+--  a tooltip is the one surface people most often want a size apart from the
+--  rest of the HUD.
+local function WantScale()
+	local profile = A.db and A.db.profile
+	return (profile and profile.scale or 1) * (cfg().scale or 1)
+end
+
+--- ...and re-asserted on every show, because somebody else is writing to it.
+--
+--  Leatrix Plus's "Enhance tooltip" sets GameTooltip:SetScale (and the whole
+--  family: ItemRef, Shopping, Embedded, NamePlate, LibDBIcon) from its own
+--  slider at startup - Leatrix_Plus.lua:10309. Its default is 100%, so on a UI
+--  at 0.71 it lands after us and the tooltip comes out forty per cent bigger
+--  than everything around it. Ours is a 15pt title in a card sized to the deck;
+--  a tooltip at a different scale from the HUD is not a preference, it is two
+--  addons disagreeing in public.
+--
+--  Same rule and same reason as StripArt: SharedTooltip_SetBackdropStyle keeps
+--  putting the stone border back, so it comes off again on every show. Setting
+--  either one once at login lasts until the first thing you hover.
+--
+--  Cheap, and NOT a fight: Leatrix writes this at startup and when its slider
+--  moves, not on show, so re-asserting here wins outright rather than ping-
+--  ponging. It also means our own scale setting is the one that answers, which
+--  it should be - we are the addon drawing the card.
+local function ApplyScale(tip)
+	if not tip or not tip.SetScale then return end
+	local want = WantScale()
+	if tip.GetScale then
+		local ok, has = pcall(tip.GetScale, tip)
+		-- Only when it has actually moved. SetScale re-lays out everything
+		-- anchored to the frame, and this runs on every tooltip show.
+		if ok and has and math.abs(has - want) < 0.001 then return end
+	end
+	pcall(tip.SetScale, tip, want)
+end
+
 local function StripArt(tip)
 	local ns = tip.NineSlice
 	if ns then
@@ -482,12 +522,14 @@ function TT:Register(tip)
 	card:SetFillColor(Palette:ReadingFill())
 	tip.aetherCard = card
 
+	ApplyScale(tip)
 	StripArt(tip)
 	LayoutCard(tip)
 
 	-- HookScript, never SetScript. See the header.
 	tip:HookScript("OnShow", function(self)
 		if not TT.enabled then return end
+		ApplyScale(self)
 		StripArt(self)
 		LayoutCard(self)
 	end)
@@ -1323,13 +1365,7 @@ function TT:OnConfigChanged()
 			Glass.SetPanelCorner(card, conf.corner or 18)
 			card:SetFillColor(Palette:ReadingFill())
 		end
-		-- The tooltip is drawn at profile.scale like every other module, which is
-		-- what makes the deck's raw 15px title land where the deck put it. The
-		-- per-module multiplier is on top of that, because a tooltip is the one
-		-- surface people most often want a size apart from the rest of the HUD.
-		if tip.SetScale then
-			tip:SetScale((profile and profile.scale or 1) * (conf.scale or 1))
-		end
+		ApplyScale(tip)
 
 		-- And the health bar, which OnDisable handed back to the client. Symmetry
 		-- here is the whole point: whatever the off path undid, the on path has to
