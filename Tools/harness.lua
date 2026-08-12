@@ -214,6 +214,17 @@ local function newTexture(owner, layer, sub)
 	function t:GetDrawLayer() return self.__layer, self.__sub end
 	function t:SetTexture(path) self.__tex = path end
 	function t:GetTexture() return self.__tex end
+	-- A solid of a given colour. Real on this client - Blizzard's own colour
+	-- picker and EditMode both call it - and it is how a plain scrim or divider
+	-- is drawn without shipping a one-pixel .tga to do it.
+	function t:SetColorTexture(r, g, b, a)
+		if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+			fail("SetColorTexture got non-number (" .. tostring(r) .. ","
+				.. tostring(g) .. "," .. tostring(b) .. ")")
+		end
+		self.__tex = "SOLID"
+		self.__color = { r, g, b, a }
+	end
 	function t:GetTexCoord()
 		local c = self.__texcoord or { 0, 1, 0, 1 }
 		return c[1], c[2], c[3], c[4]
@@ -2988,6 +2999,7 @@ for _, f in ipairs({
 	"Modules/Chat.lua",
 	"Modules/Tooltips.lua",
 	"Modules/Zen.lua",
+	"Modules/Toolbox.lua",
 }) do
 	load(f)
 end
@@ -7539,6 +7551,122 @@ fire("PLAYER_LEVEL_UP")
 check(not XPm.frame:IsShown(), "xp bar hides at max level")
 _G.__units.player.level = 15
 fire("PLAYER_LEVEL_UP")
+
+print("== toolbox: the drawer, at every dock and every scale ==")
+do
+	local TBm = A:GetModule("toolbox")
+	check(TBm and TBm.enabled and TBm.panel, "toolbox module built")
+	check(TBm.panel:GetFrameStrata() == "FULLSCREEN_DIALOG",
+		"the drawer sits above the HUD - it overlays, and nothing beneath it"
+		.. " moves or resizes")
+
+	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+	local oldScale   = A.db.profile.scale
+	UIParent:SetSize(1365, 768)          -- the real virtual screen at 16:9
+
+	-- THE check this layer exists to pass. The deck's vertical panel is 910px
+	-- against a 1080 canvas; at scale 1.0 that is 910 against a 768-unit screen,
+	-- which hangs off both ends. A panel that fits at the design scale and
+	-- overflows at 1.0 is a panel nobody running a full UI scale can use.
+	for _, sc in ipairs({ 0.71, 1.0 }) do
+		A.db.profile.scale = sc
+		for _, edge in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
+			TBm:SetDock(edge)
+			TBm:SetOpen(true, true)
+			local w, h = TBm.panel:GetWidth(), TBm.panel:GetHeight()
+			check(w * sc <= 1365 + 0.5 and h * sc <= 768 + 0.5,
+				"at scale " .. sc .. " docked " .. edge .. " the drawer fits on"
+				.. " screen (" .. string.format("%.0fx%.0f", w * sc, h * sc)
+				.. " of 1365x768)")
+		end
+	end
+
+	-- ...and the cap must not be doing nothing. At 0.71 the deck's own number
+	-- has to survive untouched, or the clamp is quietly redesigning the drawer
+	-- for everybody rather than rescuing the one case that needed it.
+	A.db.profile.scale = 0.71
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	check(math.abs(TBm.panel:GetHeight() - 910) < 1,
+		"and at the DESIGN scale the deck's 910 is untouched, so the clamp"
+		.. " rescues scale 1.0 without redesigning the drawer for anybody else"
+		.. " (got " .. string.format("%.0f", TBm.panel:GetHeight()) .. ")")
+	A.db.profile.scale = 1.0
+	TBm:Layout()
+	check(TBm.panel:GetHeight() < 910,
+		"while at 1.0 it really does clamp, or the check above proves nothing"
+		.. " (got " .. string.format("%.0f", TBm.panel:GetHeight()) .. ")")
+	A.db.profile.scale = 0.71
+
+	-- Open and closed. Closed means fully off screen on the docking axis, with
+	-- the rail still on screen - that is the whole point of the rail.
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	local openPt = select(4, TBm.panel:GetPoint(1))
+	TBm:SetOpen(false, true)
+	local shutPt = select(4, TBm.panel:GetPoint(1))
+	check(math.abs(openPt) < 0.5, "open, the drawer is flush to its edge")
+	check(shutPt <= -TBm.panel:GetWidth() + 0.5,
+		"closed, it is off screen by its own width rather than merely hidden -"
+		.. " it slides, so there is nothing to hide (" .. string.format("%.0f", shutPt)
+		.. " vs -" .. string.format("%.0f", TBm.panel:GetWidth()) .. ")")
+	check(TBm.rail:IsShown(), "and the rail stays, which is what it is for")
+
+	-- The scrim travels with the panel and fades with it.
+	check(not TBm.scrim:IsShown(), "shut, there is no scrim")
+	TBm:SetOpen(true, true)
+	check(TBm.scrim:IsShown() and math.abs(TBm.scrim:GetAlpha() - 0.28) < 0.01,
+		"open, the covered strip is dimmed rather than left at full brightness"
+		.. " under a translucent panel")
+
+	-- Interruptible. Clicking the chevron twice quickly must REVERSE, not queue
+	-- a second animation behind the first.
+	TBm:SetOpen(false, true)
+	TBm:SetOpen(true)                    -- start opening, no instant
+	tick(0.1)
+	tick(0.1)                            -- two ticks, so the reversal below has
+	local mid = TBm._travel              -- somewhere to land that is not zero
+	check(mid > 0 and mid < 1, "mid-slide, the drawer is part way (" ..
+		string.format("%.2f", mid) .. ")")
+	TBm:SetOpen(false)                   -- reverse before it arrives
+	tick(0.1)
+	check(TBm._travel < mid and TBm._travel > 0,
+		"reversing mid-slide carries on from where it had got to rather than"
+		.. " snapping back to the start or queueing behind the first move. It"
+		.. " has to land BETWEEN, or a drawer that simply snapped shut would"
+		.. " pass this too (" .. string.format("%.2f", mid) .. " -> "
+		.. string.format("%.2f", TBm._travel) .. ")")
+	-- Ticks, not settle(): settle drains C_Timer, and the slide runs on the
+	-- shared ticker. Draining timers advances this by exactly nothing.
+	tick(0.1); tick(0.1)
+	check(TBm._travel == 0, "and it arrives, exactly, rather than creeping"
+		.. " toward zero for ever (" .. tostring(TBm._travel) .. ")")
+
+	-- Persistence, per character.
+	TBm:SetDock("BOTTOM")
+	TBm:SetOpen(true, true)
+	check(A.db.char.toolbox.docked == "BOTTOM" and A.db.char.toolbox.open == true,
+		"the edge and the open state persist in the CHARACTER scope - a drawer"
+		.. " edge is a habit somebody forms on one character")
+	check(not TBm:SetDock("SIDEWAYS"), "and an edge that is not an edge is refused")
+	check(TBm:Dock() == "BOTTOM", "leaving the last good one in place")
+
+	-- The horizontal dock really is the other layout, not the same panel turned.
+	TBm:SetDock("BOTTOM")
+	TBm:Layout()
+	local hw = TBm.panel:GetWidth()
+	TBm:SetDock("LEFT")
+	TBm:Layout()
+	check(hw > TBm.panel:GetWidth(),
+		"top and bottom use the WIDE layout and left and right the narrow one -"
+		.. " two layouts, not one panel rotated (" .. string.format("%.0f", hw)
+		.. " vs " .. string.format("%.0f", TBm.panel:GetWidth()) .. ")")
+
+	UIParent:SetSize(oldW, oldH)
+	A.db.profile.scale = oldScale
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(false, true)
+end
 
 print("== combat gating ==")
 _G.__inCombat = true

@@ -32,3 +32,4 @@ Modules\XPBar.lua
 Modules\Chat.lua
 Modules\Tooltips.lua
 Modules\Zen.lua
+Modules\Toolbox.lua

@@ -20,6 +20,11 @@ Config.defaults = {
 	-- A quest log belongs to a character, not to a profile. Tracked quest IDs
 	-- shared across an alt would just be noise in everybody's tracker.
 	char = {
+		-- Which edge the Toolbox is docked to and whether it is open. Per
+		-- character rather than per profile, per the handoff: a drawer edge is a
+		-- habit somebody forms on one character, the way tracked quests are.
+		toolbox   = { docked = "LEFT", open = false },
+
 		tracked   = {},   -- whitelist, used when autoTrack is off
 		untracked = {},   -- blacklist, used when autoTrack is on
 	},
@@ -239,6 +244,13 @@ Config.defaults = {
 					-- on the target, yours are the ones you act on.
 					onlyMine = true,
 				},
+			},
+
+			-- Concept 4. Layer 1 only for now - the drawer, the rail and the
+			-- dock. What goes INSIDE it (widgets, addons, settings tiles, the
+			-- micro menu) lands in later layers; see docs/PLAN-Toolbox.md.
+			toolbox = {
+				enabled = true,
 			},
 
 			questtracker = {
