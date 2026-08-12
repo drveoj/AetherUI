@@ -597,10 +597,17 @@ function TB:OnEnable()
 	-- necessarily firing the first one, and an envelope still glowing purple
 	-- after you have emptied the box is the version of this anybody would
 	-- notice.
-	for _, ev in ipairs({ "UPDATE_PENDING_MAIL", "MAIL_INBOX_UPDATE",
-		"MAIL_CLOSED", "PLAYER_ENTERING_WORLD" }) do
+	for _, ev in ipairs({ "UPDATE_PENDING_MAIL", "MAIL_CLOSED",
+		"PLAYER_ENTERING_WORLD" }) do
 		A:RegisterEvent(self, ev, function() TB:RefreshMail() end)
 	end
+
+	-- MAIL_INBOX_UPDATE is the one moment the client will tell us everything:
+	-- it fires when the inbox arrives at a mailbox, and that is the only place
+	-- GetInboxHeaderInfo answers. Read and remembered there, so the section has
+	-- something to say for the rest of the time - see TB:ReadInbox.
+	A:RegisterEvent(self, "MAIL_INBOX_UPDATE", function() TB:ReadInbox() end)
+
 	self:RefreshMail()
 
 	A.Launchers:OnChanged("toolbox", function()
@@ -922,14 +929,86 @@ end
 
 TB.MAIL_ROWS = 3
 
---- `has` and the senders the client knows about, as a fresh list every time.
+--- Read the inbox while we are standing at one, and remember what it said.
 --
---  Read at call time, never cached: the senders change under us on
---  UPDATE_PENDING_MAIL and a stale list is worse than no list.
+--  This is the ONLY way to learn anything real. GetLatestThreeSenders knows
+--  about mail that arrived while you were logged in and nothing else, so mail
+--  sitting in the box from before login has no names attached at all - which is
+--  why the section could show "you have mail" and nothing under it, and why it
+--  looked intermittent rather than broken.
+--
+--  At a mailbox the client will finally say everything: GetInboxHeaderInfo
+--  gives a sender, a subject and wasRead per item, so there is a true unread
+--  COUNT here and nowhere else. Remembered per character, because that is what
+--  it is about.
+--
+--  Written down as "what the box held when you last looked", never as "what is
+--  in the box". Those are different claims and the section says which one it is
+--  making.
+function TB:ReadInbox()
+	-- Refresh WHATEVER happens below, including every early return. This is the
+	-- handler for MAIL_INBOX_UPDATE, and that event also fires when the box is
+	-- emptied - so a client missing these calls, or a character with no saved
+	-- table, must still end up with the right envelope on the rail rather than
+	-- one still glowing after the mail has been read.
+	local function done() TB:RefreshMail() end
+
+	if not GetInboxNumItems or not GetInboxHeaderInfo then return done() end
+	local c = Char()
+	if not c then return done() end
+
+	local okN, n = pcall(GetInboxNumItems)
+	if not okN or not n then return done() end
+
+	local seen, senders, unread = {}, {}, 0
+	for i = 1, n do
+		-- Nine returns deep for wasRead, and it is the one that matters: an
+		-- inbox is not a list of unread mail, it is a list of mail.
+		local ok, _, _, sender, _, _, _, _, _, wasRead = pcall(GetInboxHeaderInfo, i)
+		if ok and not wasRead then
+			unread = unread + 1
+			local who = (type(sender) == "string" and sender ~= "") and sender
+				or (_G.UNKNOWN or "Unknown")
+			if not seen[who] then
+				seen[who] = true
+				senders[#senders + 1] = who
+			end
+		end
+	end
+
+	if unread == 0 then
+		-- Standing at an empty box is knowledge too, and the most reliable kind:
+		-- it clears a cache that would otherwise outlive the mail it describes.
+		c.mail = nil
+	else
+		c.mail = { senders = senders, unread = unread,
+		           at = (_G.time and _G.time()) or 0 }
+	end
+	done()
+end
+
+--- What this character last saw in its mailbox, or nil.
+--
+--  Its own accessor because it is saved-variable state: the thing that reads it
+--  and the thing that clears it should not each know the shape independently.
+function TB:MailRecord()
+	local c = Char()
+	return c and c.mail or nil
+end
+
+--- `has`, the senders, a true unread count if we have one, and whether that
+--  came from memory rather than from the client.
+--
+--  Read at call time, never cached in the module: the live senders change under
+--  us on UPDATE_PENDING_MAIL and a stale list is worse than no list. The
+--  per-character record is a different thing - it is deliberately old, and it
+--  says so.
 function TB:MailState()
 	local has = HasNewMail and HasNewMail() and true or false
+	if not has then return false, {}, nil, false end
+
 	local senders = {}
-	if has and GetLatestThreeSenders then
+	if GetLatestThreeSenders then
 		-- pcall because this is one of the few calls that can be answered by a
 		-- client that has not finished logging in yet.
 		local ok, a, b, c = pcall(GetLatestThreeSenders)
@@ -939,13 +1018,27 @@ function TB:MailState()
 			end
 		end
 	end
-	return has, senders
+	-- The client's own answer wins when it has one: it is about now, and the
+	-- record is about the last time anybody looked.
+	if #senders > 0 then return true, senders, nil, false end
+
+	local c = Char()
+	local rec = c and c.mail
+	if rec and rec.senders and #rec.senders > 0 then
+		local out = {}
+		for i, who in ipairs(rec.senders) do out[i] = who end
+		return true, out, rec.unread, true
+	end
+
+	return true, {}, nil, false
 end
 
 --- The count for the chip, or nil when there is nothing honest to show.
 function TB:MailCount()
-	local has, senders = self:MailState()
-	if not has or #senders == 0 then return nil end
+	local has, senders, unread = self:MailState()
+	if not has then return nil end
+	if unread then return unread, false end
+	if #senders == 0 then return nil end
 	return #senders, #senders >= self.MAIL_ROWS
 end
 
@@ -1407,8 +1500,17 @@ end
 --  on principle even where it is currently allowed.
 function TB:RefreshMailRows()
 	if not self.content or not self.content.mail then return end
-	local has, senders = self:MailState()
+	local has, senders, unread, stale = self:MailState()
 	self._mailSenders = senders
+	self._mailStale = stale
+
+	-- "You have mail and we cannot say who from" is a real state, and it was
+	-- reading as a bug because the section said so and stopped. It is worth ONE
+	-- row saying why, since the answer is a thing the player can do: the client
+	-- only names senders for mail that arrived while you were logged in, and
+	-- the rest of it is behind a mailbox.
+	local explain = has and #senders == 0
+	if explain then senders = { _G.MAIL_LABEL or "Mail" } end
 
 	for i = 1, self.MAIL_ROWS do
 		local row = self.content.mail[i]
@@ -1439,7 +1541,22 @@ function TB:RefreshMailRows()
 		row.name:SetText(who or "")
 		row:SetShown(who ~= nil)
 
-		if who then
+		if who and explain then
+			-- The one row that is not a sender. A question mark rather than an
+			-- initial, and the quiet fill rather than the accent: this is the
+			-- section admitting what it does not know, not an entry in a list.
+			row.chip.label:SetText("?")
+			local c = Palette.c
+			local q = c.cardBg
+			row.chip.disc:SetVertexColor(q[1], q[2], q[3], q[4] or 1)
+			row.chip.ring:Show()
+			local e = c.glassEdge
+			row.chip.ring:SetVertexColor(e[1], e[2], e[3], 0.9)
+			W.Color(row.chip.label, c.textDim)
+			row.name:SetText("Senders show after a mailbox visit")
+			W.Color(row.name, c.textDim)
+		elseif who then
+			W.Color(row.name, Palette.c.text)
 			-- The first LETTER, not the first byte. A name can begin with a
 			-- multi-byte character on any client, and half of one draws as a
 			-- box. Lua has no unicode, so the continuation bytes are counted
@@ -1465,14 +1582,30 @@ function TB:RefreshMailRows()
 	-- "You have mail but we cannot say from whom" is a real state - auction
 	-- house and NPC mail arrives with no name on it - so the section still
 	-- appears, carrying the client's own wording instead of a list.
+	-- The hint says WHICH claim the section is making, because there are three
+	-- and they are not the same:
+	--
+	--   a true unread count, from the last time you stood at a mailbox
+	--   a number of senders the client named, capped at three by the client
+	--   nothing at all, which is what "you have mail" on its own means
 	if self.content.mailHint then
+		local c = Palette.c
 		if not has then
 			self.content.mailHint:SetText("")
-		elseif #senders == 0 then
+		elseif explain then
 			self.content.mailHint:SetText(_G.HAVE_MAIL or "New mail")
+			W.Color(self.content.mailHint, c.textDim)
+		elseif unread then
+			-- A REAL count. Marked as remembered rather than current, because
+			-- it is: mail read on another character, or sent since, is not in
+			-- it. An unqualified number here would be the one lie this section
+			-- has been careful not to tell.
+			self.content.mailHint:SetText(unread .. " unread 9483 last visit")
+			W.Color(self.content.mailHint, c.textDim)
 		else
 			self.content.mailHint:SetText(#senders
-				.. (#senders >= self.MAIL_ROWS and "+" or ""))
+				.. (#senders >= self.MAIL_ROWS and "+" or "") .. " new")
+			W.Color(self.content.mailHint, c.accent or c.text)
 		end
 	end
 end

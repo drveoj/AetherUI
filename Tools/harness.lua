@@ -1450,6 +1450,27 @@ end
 --  one has to do the thing the hook is compensating for - in particular
 --  SharedTooltip_SetBackdropStyle really does put the border back, which is the
 --  whole reason StripArt is called from four places.
+--- The inbox, which the client will ONLY answer at a mailbox.
+--
+--  GetLatestThreeSenders knows about mail that arrived while you were logged
+--  in and nothing else, so mail waiting from before login has no names on it
+--  at all. This is where the names and the true unread count live, and it is
+--  behind a mailbox - which is why the Toolbox reads it when it can and
+--  remembers what it said.
+_G.__inbox = nil            -- nil models "not at a mailbox / nothing loaded"
+function GetInboxNumItems()
+	return _G.__inbox and #_G.__inbox or 0
+end
+
+--- packageIcon, stationeryIcon, sender, subject, money, COD, daysLeft,
+--  itemCount, wasRead, ... - wasRead is the NINTH, and it is the one that
+--  matters: an inbox is a list of mail, not a list of unread mail.
+function GetInboxHeaderInfo(i)
+	local m = _G.__inbox and _G.__inbox[i]
+	if not m then return nil end
+	return nil, nil, m.sender, m.subject or "", 0, 0, 30, 0, m.read or false
+end
+
 --- Blizzard's FCF dock keeps its OWN record of where a chat frame goes, per
 --  character, and re-applies it on events an addon does not all hear. Moving
 --  the frame without telling it leaves two records disagreeing.
@@ -7721,14 +7742,14 @@ do
 	check(TBm.content.mail[2].name:GetText() == "Sylvanas", "in order")
 	check(not TBm.content.mail[3]:IsShown(),
 		"and no row for a sender that does not exist")
-	check(TBm.content.mailHint:GetText() == "2",
+	check(TBm.content.mailHint:GetText() == "2 new",
 		"the count is EXACT below the client's cap (got "
 		.. tostring(TBm.content.mailHint:GetText()) .. ")")
 
 	-- At the cap the number stops being a total.
 	_G.__mailFrom = { "Thrall", "Sylvanas", "Jaina" }
 	fire("UPDATE_PENDING_MAIL")
-	check(TBm.content.mailHint:GetText() == "3+",
+	check(TBm.content.mailHint:GetText() == "3+ new",
 		"at three it reads 3+, because three is the CLIENT's cap and not"
 		.. " necessarily the total - GetLatestThreeSenders is named for what it"
 		.. " does, and there is no call that counts (got "
@@ -7742,7 +7763,13 @@ do
 	check(TBm.content.mailHead:IsShown(),
 		"mail with no sender still shows the section - HasNewMail is true and"
 		.. " saying nothing would be a lie")
-	check(not TBm.content.mail[1]:IsShown(), "with no rows in it")
+	-- ONE row, and it is not a sender. This state was reading as a bug because
+	-- the section said "you have mail" and stopped; the answer is something the
+	-- player can actually do, so it says that instead.
+	check(TBm.content.mail[1]:IsShown()
+		and TBm.content.mail[1].chip.label:GetText() == "?",
+		"one row saying it does not know, rather than a heading over nothing")
+	check(not TBm.content.mail[2]:IsShown(), "and only the one")
 	check(TBm.content.mailHint:GetText() == HAVE_MAIL,
 		"and the client's own wording instead of a number (got "
 		.. tostring(TBm.content.mailHint:GetText()) .. ")")
@@ -7816,6 +7843,76 @@ do
 
 		UIParent:SetSize(oldW, oldH)
 		TBm:SetDock("LEFT")
+	end
+
+	-- WHAT THE MAILBOX KNOWS, which is everything the notification does not.
+	do
+		_G.__mail, _G.__mailFrom = true, nil
+		fire("UPDATE_PENDING_MAIL")
+		check(TBm.content.mail[1].chip.label:GetText() == "?",
+			"before a mailbox visit the section admits it does not know")
+
+		-- Standing at a mailbox: the inbox arrives and MAIL_INBOX_UPDATE fires.
+		_G.__inbox = {
+			{ sender = "Thrall",   subject = "Warchief business", read = false },
+			{ sender = "Thrall",   subject = "Again",             read = false },
+			{ sender = "Vol'jin",  subject = "Darkspear",         read = false },
+			{ sender = "Cairne",   subject = "Read already",      read = true  },
+			{ sender = "Sylvanas", subject = "Forsaken",          read = false },
+		}
+		fire("MAIL_INBOX_UPDATE")
+
+		local _, senders, unread, stale = TBm:MailState()
+		check(unread == 4,
+			"a TRUE unread count, which exists at a mailbox and nowhere else -"
+			.. " the read one is not in it (got " .. tostring(unread) .. ")")
+		check(#senders == 3,
+			"senders deduplicated - two from Thrall is one name in a list of"
+			.. " who has written to you (got " .. #senders .. ")")
+		check(senders[1] == "Thrall" and senders[2] == "Vol'jin",
+			"in the order the box holds them")
+		check(stale == true,
+			"and flagged as REMEMBERED rather than current - mail read on"
+			.. " another character is not in this and the section has to say so")
+
+		check(TBm.content.mailHint:GetText() == "4 unread 9483 last visit",
+			"the hint says which claim it is making (got "
+			.. tostring(TBm.content.mailHint:GetText()) .. ")")
+		check(TBm.content.mail[1].chip.label:GetText() == "T",
+			"and the rows are senders again rather than a question mark")
+
+		-- Walk away, come back later. The record outlives the mailbox, which is
+		-- the entire point of writing it down.
+		_G.__inbox = nil
+		fire("UPDATE_PENDING_MAIL")
+		check(select(3, TBm:MailState()) == 4,
+			"and it survives leaving the mailbox (got "
+			.. tostring(select(3, TBm:MailState())) .. ")")
+
+		-- The client's own answer WINS when it has one: it is about now, and
+		-- the record is about the last time anybody looked.
+		_G.__mailFrom = { "Jaina" }
+		fire("UPDATE_PENDING_MAIL")
+		local _, live, count, wasStale = TBm:MailState()
+		check(live[1] == "Jaina" and #live == 1 and not wasStale and not count,
+			"mail that arrives NOW is named by the client and takes precedence"
+			.. " over the record")
+
+		-- Reading it all clears the record rather than leaving a number that
+		-- describes mail that is no longer there.
+		_G.__mailFrom = nil
+		_G.__inbox = { { sender = "Thrall", read = true } }
+		fire("MAIL_INBOX_UPDATE")
+		check(select(3, TBm:MailState()) == nil,
+			"an empty box clears the record - a remembered count that outlives"
+			.. " its mail is worse than no count")
+
+		-- ...and the record is REMOVED, not left holding zeroes. MailState
+		-- reads the same either way, so this is the only place the difference
+		-- shows: an empty table in saved variables is a thing that gets read
+		-- back next session and reasoned about by somebody who did not write it.
+		check(TBm:MailRecord() == nil,
+			"and nothing is left behind in saved variables")
 	end
 
 	-- ...and on a screen where it does NOT all fit, which is the only place the
