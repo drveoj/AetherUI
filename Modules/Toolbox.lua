@@ -125,16 +125,23 @@ end
 function TB:Build()
 	if self.panel then return end
 
-	-- The scrim first, so it is underneath everything the drawer draws. A plain
-	-- solid with a gradient rather than a new .tga: a texture file needs a
-	-- client restart to appear, a SetGradient needs a /reload.
-	local scrim = CreateFrame("Frame", ADDON .. "ToolboxScrim", UIParent)
+	-- The scrim, underneath everything the drawer draws.
+	--
+	-- SHAPED LIKE THE PANEL, not a rectangle. It was a plain SetColorTexture
+	-- sized to the panel's bounds, which is square - so at each of the four
+	-- corners, where the panel curves away, the scrim's own corner carried on
+	-- and showed as a hard black notch outside the rounding. Four of them, one
+	-- per corner, which is exactly what got reported.
+	--
+	-- A Glass panel at the same radius is the same rounded shape by
+	-- construction, and it costs nothing extra: the 9-slice is already loaded.
+	-- Tinted black, with its rim taken off - a scrim with an edge is a second
+	-- outline a finger-width outside the first.
+	local scrim = Glass.CreatePanel(UIParent, { corner = PANEL_CORNER })
 	scrim:SetFrameStrata("FULLSCREEN_DIALOG")
 	scrim:SetFrameLevel(1)
-	local tex = scrim:CreateTexture(nil, "BACKGROUND")
-	tex:SetAllPoints(scrim)
-	tex:SetColorTexture(1, 1, 1, 1)
-	scrim.tex = tex
+	scrim:SetFillColor({ 0, 0, 0, 1 })
+	scrim:SetEdgeColor({ 0, 0, 0, 0 })
 	scrim:Hide()
 	self.scrim = scrim
 
@@ -218,10 +225,11 @@ function TB:ApplySkin()
 		self.rail.chev.glyph:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.75)
 	end
 	if self.scrim then
-		-- Dark, and it fades AWAY from the drawer: the strip nearest the panel is
-		-- the most covered, and a scrim of one flat alpha reads as a grey slab
-		-- with an edge of its own rather than as the drawer casting over the HUD.
-		self.scrim.tex:SetColorTexture(0, 0, 0, 1)
+		-- Re-asserted on a skin change, because ApplySkin is what a restyle calls
+		-- and it would otherwise put the glass tint back on a frame that is
+		-- meant to be black.
+		self.scrim:SetFillColor({ 0, 0, 0, 1 })
+		self.scrim:SetEdgeColor({ 0, 0, 0, 0 })
 	end
 end
 
@@ -356,6 +364,7 @@ function TB:Layout()
 	-- it rather than sitting still and being revealed.
 	self.scrim:SetSize(w, h)
 	self.scrim:SetPoint("CENTER", self.panel, "CENTER", 0, 0)
+	Glass.SetPanelCorner(self.scrim, PANEL_CORNER)
 	self.scrim:SetAlpha((tonumber(A.Config:Module('toolbox').scrim) or 0.28) * t)
 	self.scrim:SetShown(t > 0.001)
 

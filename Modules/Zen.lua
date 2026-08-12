@@ -401,10 +401,18 @@ local SIDE_SIGN = { CENTRE = 0, LEFT = -1, RIGHT = 1 }
 -- construction
 -- ---------------------------------------------------------------------------
 
+--- A small filled circle.
+--
+--  Chip-Disc rather than a flat texture masked by Circle-Mask. Both draw a
+--  disc; the difference is where the anti-aliasing comes from. A MASK's edge is
+--  the client's to resolve and it does that poorly - the note in
+--  generate_textures.py's minimap_border() says so, and W.CreateBadge says it
+--  again - and Circle-Mask is 256 because the minimap MAGNIFIES it, so at the
+--  sixteen pixels this glyph is drawn at it was being minified sixteen times.
+--  Chip-Disc is 64 with its own ramp baked in.
 local function Disc(parent, layer)
 	local t = parent:CreateTexture(nil, layer or "ARTWORK")
-	t:SetTexture(Media.texture.flat)
-	W.AddMask(t, parent, Media.texture.circleMask)
+	t:SetTexture(Media.texture.chipDisc)
 	return t
 end
 
@@ -453,7 +461,7 @@ local function Build()
 	W.AddMask(cp.map, cp, Media.texture.circleMask)
 	cp.map:Hide()
 	cp.rim = cp:CreateTexture(nil, "OVERLAY")
-	cp.rim:SetTexture(Media.texture.ring)
+	cp.rim:SetTexture(Media.texture.chipRim)
 	cp.blip = cp:CreateTexture(nil, "OVERLAY")
 	cp.blip:SetTexture(Media.texture.glow)
 	cp.zone = W.Text(cp, "tiny", "LEFT")

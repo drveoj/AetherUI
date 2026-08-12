@@ -379,6 +379,12 @@ function MM:Scan()
 			if Launchers:Claim(entry, self) and self:Collect(entry.button, entry.ldbiName) then
 				found = found + 1
 			end
+		elseif entry.button and not Launchers:OwnerOf(entry) then
+			-- Already collected here, and currently owned by nobody: the Toolbox
+			-- had it pinned to the rail and has let go. Take it back, or it stays
+			-- parked for ever - the drawer lays out only what it owns, so an
+			-- unowned button belongs to neither surface.
+			Launchers:Claim(entry, self)
 		end
 	end
 

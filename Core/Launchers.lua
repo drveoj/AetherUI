@@ -571,13 +571,56 @@ function L:Claim(entry, owner, force)
 	end
 	self.owners[entry] = owner
 	self:Prepare(entry)
+	self:Unpark(entry)
 	return true
 end
 
+--- Undo Park. The new owner sets the position; this only restores what parking
+--  took away, and only if parking took it.
+function L:Unpark(entry)
+	if not entry or not entry._parked then return end
+	entry._parked = nil
+	local b = entry.button
+	if not b then return end
+	if b.SetAlpha then pcall(b.SetAlpha, b, 1) end
+	if b.EnableMouse then pcall(b.EnableMouse, b, true) end
+end
+
+--- Take a borrowed frame out of play without hiding it.
+--
+--  Never Hide: a collected button belongs to another addon and may carry a
+--  secure template, and hiding a frame with a protected descendant is refused
+--  in combat. Alpha, mouse and position only - the same parking the aura trays
+--  and the minimap drawer already use.
+--
+--  Ten thousand units off to the left, which is where the aura tiles go. Far
+--  enough that no resolution reaches it and no anchor chain drags it back.
+function L:Park(entry)
+	local b = entry and entry.button
+	if not b then return end
+	if b.SetAlpha then pcall(b.SetAlpha, b, 0) end
+	if b.EnableMouse then pcall(b.EnableMouse, b, false) end
+	pcall(RawClearAllPoints, b)
+	pcall(RawSetPoint, b, "TOPLEFT", UIParent, "TOPLEFT", -10000, 0)
+	entry._parked = true
+end
+
+--- Releasing does NOT just forget the owner.
+--
+--  It used to, and the frame stayed exactly where its last owner left it:
+--  unpinning an addon took it off the rail's layout and left the button sitting
+--  on the rail, on top of the settings gear. Nobody moved it because nobody
+--  owned it - the drawer filters on ownership too, so an unowned button is laid
+--  out by neither surface and simply persists wherever it was.
+--
+--  So an entry that ends up unowned is parked, and the change is announced so a
+--  surface that wants it can claim it back on the spot.
 function L:Release(entry, owner)
 	if not entry then return end
 	if owner and self.owners[entry] ~= owner then return end
 	self.owners[entry] = nil
+	self:Park(entry)
+	self:Changed()
 end
 
 function L:ReleaseAll(owner)

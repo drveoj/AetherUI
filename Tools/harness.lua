@@ -7629,8 +7629,17 @@ do
 	check(not LN:Claim(both, other),
 		"a second surface cannot claim an entry the first one holds")
 	check(LN:OwnerOf(both) == MMm, "the first owner keeps it")
+	-- Releasing hands it straight BACK to the drawer now, rather than leaving
+	-- it ownerless. That is the fix for an unpinned button sitting on the rail
+	-- on top of the gear: unowned meant neither surface laid it out, so it
+	-- persisted wherever its last owner left it.
 	LN:Release(both, MMm)
-	check(LN:Claim(both, other), "and it can be handed over once released")
+	check(LN:OwnerOf(both) == MMm,
+		"releasing an entry the drawer had collected gives it back to the"
+		.. " drawer rather than leaving it owned by nobody, parked and stuck"
+		.. " wherever it was last put")
+	check(LN:Claim(both, other, true),
+		"and a FORCED claim still takes it, which is what a pin is")
 	LN:Release(both, other)
 	LN:Claim(both, MMm)
 end
@@ -7710,6 +7719,23 @@ do
 	-- The scrim travels with the panel and fades with it.
 	check(not TBm.scrim:IsShown(), "shut, there is no scrim")
 	TBm:SetOpen(true, true)
+	-- The scrim is SHAPED like the panel. A rectangle sized to the panel's
+	-- bounds leaves a hard black notch at each of the four corners, where the
+	-- panel curves away and the scrim's own square corner carries on.
+	TBm.scrim._corner = 0                       -- as a square would leave it
+	TBm:Layout()
+	check(TBm.scrim._kind == "panel" and TBm.scrim._corner == TBm.panel._corner,
+		"the scrim is a rounded panel at the drawer's own radius rather than a"
+		.. " rectangle, or it shows as four black corners outside the rounding"
+		.. " (kind " .. tostring(TBm.scrim._kind) .. ", corner "
+		.. tostring(TBm.scrim._corner) .. " vs " .. tostring(TBm.panel._corner) .. ")")
+	do
+		local e = TBm.scrim._edgeColor
+		check(e and (e[4] or 1) == 0,
+			"and carries no rim - a scrim with an edge is a second outline a"
+			.. " finger-width outside the first")
+	end
+
 	check(TBm.scrim:IsShown() and math.abs(TBm.scrim:GetAlpha() - 0.28) < 0.01,
 		"open, the covered strip is dimmed rather than left at full brightness"
 		.. " under a translucent panel")
@@ -8098,6 +8124,24 @@ do
 		check(entry.button:GetParent() == TBm.rail,
 			"the button moves onto the rail, where it is reachable with the"
 			.. " drawer shut")
+
+		-- ...and UNPINNING has to take it off again. It used to only stop being
+		-- laid out: the drawer filters on ownership too, so an unowned button
+		-- was laid out by neither surface and simply stayed on the rail, sitting
+		-- on top of the settings gear.
+		do
+			local railX = select(4, entry.button:GetPoint(1))
+			TBm:TogglePin("Questie")
+			local ownerNow = LN:OwnerOf(entry)
+			check(ownerNow ~= TBm,
+				"unpinning releases it")
+			local _, rel, _, x = entry.button:GetPoint(1)
+			check(rel ~= TBm.rail or x ~= railX,
+				"and it LEAVES the rail rather than staying where the rail put"
+				.. " it - which is what left an unpinned icon sitting on top of"
+				.. " the gear")
+			TBm:TogglePin("Questie")
+		end
 
 		-- ...and the drawer must stop laying it out the same moment, or both
 		-- surfaces anchor one frame and the answer is whichever ran last.
@@ -8576,6 +8620,29 @@ do
 	LN.entries, LN.byKey, LN.seen, LN.owners = keptEntries, keptByKey, keptSeen, keptOwners
 	TBm:SetPinned("SlowAddon", false)
 	TBm:SetOpen(false, true)
+end
+
+print("== zen: the corner glyph is small-circle art ==")
+do
+	local Z = A:GetModule("zen")
+	local cp = Z.frame and Z.frame.corner
+	check(cp ~= nil, "the corner block exists")
+	if cp then
+		-- Drawn at about sixteen pixels. Circle-Mask and Ring are 256 because
+		-- the minimap MAGNIFIES them; here they were being minified sixteen
+		-- times, and the client does not mipmap UI textures - which is the
+		-- fringe around the glyph that got reported, the same one the settings
+		-- chips had.
+		check(cp.disc:GetTexture() == A.Media.texture.chipDisc,
+			"the disc is the 64px chip art rather than a flat texture masked by"
+			.. " the 256px Circle-Mask - a mask's edge is the client's to"
+			.. " anti-alias and it does that poorly")
+		check(cp.rim:GetTexture() == A.Media.texture.chipRim,
+			"and so is the rim")
+		check(cp.rim:GetWidth() > cp.disc:GetWidth(),
+			"which still laps proud of the disc it edges (" ..
+			string.format("%.1f vs %.1f", cp.rim:GetWidth(), cp.disc:GetWidth()) .. ")")
+	end
 end
 
 print("== toolbox: the icon sheet ==")
