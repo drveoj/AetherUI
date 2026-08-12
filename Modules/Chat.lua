@@ -1903,6 +1903,32 @@ local function InstallHooks()
 
 	local function live() return Chat.enabled end
 
+	-- WHENEVER Blizzard restores its own idea of where the chat window goes,
+	-- ours goes back on top of it.
+	--
+	-- Telling the FCF dock where we put the frame was necessary and turned out
+	-- not to be sufficient - the window still walked home on a new character.
+	-- The reason a fix aimed at one event was never going to hold is that this
+	-- is not one event: FCF_RestorePositionAndDimensions is called from the
+	-- dock, from UPDATE_FLOATING_CHAT_WINDOWS, from window open and close, and
+	-- from Blizzard's own settings panel. Listening for the triggers means
+	-- finding all of them and staying found.
+	--
+	-- So the hook is on the ACT rather than on its causes. hooksecurefunc runs
+	-- after the original, so whatever position Blizzard just applied, ours is
+	-- the one left on the frame - and there is no trigger to have missed.
+	--
+	-- Chat:Reskin still restores too. That covers the reskin path, which has
+	-- other reasons to run; this covers everything else.
+	if _G.FCF_RestorePositionAndDimensions then
+		hooksecurefunc("FCF_RestorePositionAndDimensions", function(f)
+			if not live() then return end
+			if f ~= _G.ChatFrame1 then return end
+			if not (A.Movers and A.Movers.registry.chat) then return end
+			A.Movers:Restore("chat")
+		end)
+	end
+
 	if _G.FCFTab_UpdateColors then
 		hooksecurefunc("FCFTab_UpdateColors", function(tab, selected)
 			if live() then

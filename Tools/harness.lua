@@ -5263,6 +5263,43 @@ do
 		.. tostring(before) .. ", got " .. tostring(select(5, cf:GetPoint(1)))
 		.. ")")
 
+	-- ...and it holds even when Blizzard's own record says something else.
+	--
+	-- Telling the dock where we put the window was necessary and not
+	-- sufficient: the window still walked home. A fix aimed at one event was
+	-- never going to hold, because this is not one event - the dock restores
+	-- from UPDATE_FLOATING_CHAT_WINDOWS, from window open and close, from its
+	-- own settings panel. So the hook is on the ACT, not on its causes.
+	_G.__fcfSaved[cf:GetID()] = { point = "BOTTOMLEFT", x = 999, y = 999 }
+	FCF_RestorePositionAndDimensions(cf)
+	check(select(5, cf:GetPoint(1)) == before,
+		"a dock record that disagrees with ours still loses - hooksecurefunc"
+		.. " runs AFTER the original, so whatever Blizzard just applied, ours"
+		.. " is what is left on the frame (want " .. tostring(before)
+		.. ", got " .. tostring(select(5, cf:GetPoint(1))) .. ")")
+
+	-- And with no record at all, which is the new character in the report.
+	_G.__fcfSaved = {}
+	FCF_RestorePositionAndDimensions(cf)
+	check(select(5, cf:GetPoint(1)) == before,
+		"and so does no record at all, which is what a new character has (want "
+		.. tostring(before) .. ", got " .. tostring(select(5, cf:GetPoint(1)))
+		.. ")")
+
+	-- Only for the window we actually manage. Restoring a DIFFERENT chat window
+	-- is Blizzard's business and none of ours, and reaching in to re-anchor
+	-- ChatFrame1 every time any window is restored is work we were not asked to
+	-- do - the kind that is invisible until the day it is not.
+	if _G.ChatFrame2 then
+		cf:ClearAllPoints()
+		cf:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 77, 77)
+		FCF_RestorePositionAndDimensions(_G.ChatFrame2)
+		check(select(5, cf:GetPoint(1)) == 77,
+			"restoring another chat window leaves ours alone (got "
+			.. tostring(select(5, cf:GetPoint(1))) .. ")")
+		A.Movers:Restore("chat")
+	end
+
 	A.Movers:Lock()
 end
 
