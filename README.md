@@ -146,6 +146,28 @@ Every texture is **neutral greyscale**. Colour is applied at runtime with
 - users can recolour anything without touching a file
 - fill and rim are separate textures, so a purple rim on dark glass is one line
 
+### The generator is deterministic; your font rasteriser is not
+
+`Chat-Badges.tga` will come out **different from the committed file** on a
+machine with a different Pillow, and the diff is invisible: 8975 of its 65536
+pixels change, 8590 of them by exactly **1/255**, and the rest are single edge
+texels inside glyph strokes. Nothing else in the asset set does this, because
+nothing else in it goes through `ImageFont.truetype` — the badges are the only
+art with real type in it, and FreeType rounds antialiasing slightly differently
+between versions.
+
+So a full regenerate leaves `Chat-Badges.tga` dirty in `git status` and there is
+**nothing wrong**. Revert it rather than committing the noise:
+
+```bash
+git checkout Media/Textures/Chat-Badges.tga
+```
+
+The known-good file is also kept outside the repo at
+`E:\AetherUI-art-backup\`, with the commit it came from, because the only way
+to check art is to look at it and a blob in git history is not something you can
+look at.
+
 `Tools/generate_textures.py` regenerates the lot. Rules it enforces:
 
 - power-of-two on both axes
