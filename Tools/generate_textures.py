@@ -452,6 +452,79 @@ def noise_tile():
     return rgba_lum(field, np.full((n, n), 1.0, dtype=np.float32))
 
 
+def frost_tile():
+    """Seamless scatter field for Zen mode's full-screen pane.
+
+    Not a finer version of Noise. Three things are deliberately different, and
+    each one is a mistake the first pass made:
+
+    ALPHA, NOT RGB. `noise_tile` carries its field in RGB, which is fine for a
+    LibSharedMedia background but useless here: the pane is tinted at runtime,
+    and on a dark skin the tint multiplies RGB variation away to nothing. Same
+    rule as `grain()` further up - variation that has to survive tinting lives
+    in alpha.
+
+    BIG. Noise is per-texel grain; tiled across a 4K screen it is finer than the
+    eye can resolve and reads as nothing at all. Frosted glass scatters light in
+    patches you can see - centimetres, not pixels - so this is authored to be
+    tiled about three times across a screen, not twenty.
+
+    MULTI-OCTAVE. One blurred random field is mush. Summing a few at halving
+    scales gives large soft patches with smaller structure inside them, which is
+    what actually reads as a surface rather than as a gradient.
+
+    Wrap-safe throughout: every octave is blurred as a 3x3 tiling and cropped
+    back to the centre, so the seams cannot show no matter how far it is tiled.
+    """
+    n = 512
+    r = rng(0x5C0F)
+    field = np.zeros((n, n), dtype=np.float32)
+
+    def octave(grid):
+        """One layer of value noise: a small random grid, interpolated up.
+
+        NOT a blurred full-resolution field, which is what this was first and
+        why it had to be thrown away. `blur()` goes through PIL's GaussianBlur,
+        and PIL implements that as three successive BOX blurs - an approximation
+        that is invisible at the two-texel radii the rest of this file uses and
+        blatant at forty-eight, where it stamped hard-edged rectangles and
+        vertical streaks across the whole tile.
+
+        Interpolating a small grid has no such artefact, is what value noise
+        actually is, and is faster. Wrap-safety comes from tiling the grid 3x3
+        before the interpolation and cropping back to the centre, so the
+        interpolant is periodic rather than merely looking like it.
+        """
+        g = r.random((grid, grid)).astype(np.float32)
+        big = np.tile(g, (3, 3))
+        up = Image.fromarray(big, mode="F").resize((3 * n, 3 * n), Image.BICUBIC)
+        return np.asarray(up, dtype=np.float32)[n:2 * n, n:2 * n]
+
+    # (grid size, weight). Grid 4 across a 512 tile is a patch ~128 texels wide;
+    # tiled three times across a screen that lands near a tenth of the screen,
+    # which is the scale frosted glass actually scatters at. Weights fall with
+    # the feature size so the sum is not dominated by the noisiest octave.
+    for grid, weight in ((4, 1.00), (8, 0.55), (16, 0.30), (32, 0.16)):
+        o = octave(grid)
+        o = o - o.mean()
+        peak = max(1e-6, float(np.abs(o).max()))
+        field += (o / peak) * weight
+
+    field = (field - field.min()) / max(1e-6, (field.max() - field.min()))
+
+    # A soft S-curve. Straight normalised noise has almost no area at either
+    # end, so the pane comes out an even grey with no visible patches; this
+    # pushes the field toward its extremes without hard-clipping either.
+    field = field * field * (3.0 - 2.0 * field)
+
+    # Biased low so the DEFAULT state of the pane is mostly clear glass with
+    # scatter through it, rather than mostly scatter. The Lua side multiplies
+    # this by the user's own strength on top.
+    field = np.clip(field * 0.85 + 0.05, 0.0, 1.0)
+
+    return rgba_lum(1.0, field)
+
+
 def slot_mask():
     """Alpha mask for icon corners. Rounded square, 64px, radius 18."""
     return rgba_lum(1.0, rrect_mask((64, 64), 18))
@@ -798,6 +871,7 @@ ASSETS = {
     "Glass-Shadow": glass_shadow,
     "Glass-Pill-Shadow": glass_pill_shadow,
     "Noise": noise_tile,
+    "Frost": frost_tile,
     "Slot-Mask": slot_mask,
     "Slot-Shade": slot_shade,
     "Slot-Gloss": slot_gloss,
@@ -819,7 +893,7 @@ ASSETS = {
     "Chat-Badges": chat_badges,
 }
 
-NO_BLEED = {"Noise", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette",
+NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette",
             "Glass-Shadow", "Glass-Pill-Shadow", "Minimap-Border",
             # Its rows are neighbours. Bleeding would pull each word's ink into
             # the pill above and below it; it fills RGB itself instead.

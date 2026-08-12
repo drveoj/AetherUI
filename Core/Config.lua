@@ -562,6 +562,85 @@ Config.defaults = {
 				showDots    = true,
 				showPill    = true,
 				keyboardWake = true,
+
+				-- The frosted pane
+				-- ---------------
+				-- Nothing here blurs anything. It cannot: the client gives addons
+				-- no render-to-texture, no shader hook and no post-process stage,
+				-- so the 3D scene behind the HUD is the one surface this addon can
+				-- never touch the pixels of. What it *can* do is put a pane in
+				-- front of it, which is what frosted glass is anyway - the world
+				-- stays sharp underneath, and every cue that says "frosted" (a
+				-- tint, a grain, a darkening at the edges) is on the pane.
+				--
+				-- Four layers, because one is not convincing. See the note in
+				-- Modules\Zen.lua for what each one is for.
+				frost         = true,
+				-- 0.70/0.75 was the first pass at "brighter", and it overshot -
+				-- on screen it read as fog rather than as glass. These are the
+				-- numbers after seeing it: still unmistakably a lit, scattering
+				-- surface, but you can make out the room through it.
+				frostOpacity  = 0.58,
+				-- How far the skin's glass colour is lifted toward white. This
+				-- is the setting that was wrong in the first pass, which capped
+				-- the tint's brightness instead of raising it and so dragged a
+				-- near-black sheet across the screen on Midnight.
+				--
+				-- Frosted glass scatters light: it is BRIGHTER than what is
+				-- behind it, and what it takes away is contrast, not brightness.
+				-- A dark pane leaves every edge in the scene perfectly crisp and
+				-- just turns the lights off.
+				frostBrightness = 0.62,
+				-- Strength of both Frost.tga layers - the visible patches and
+				-- the additive light that flattens the world's contrast.
+				frostScatter  = 0.35,
+				-- Low. At 0.45 this was doing most of the darkening the pane as
+				-- a whole was being blamed for.
+				frostVignette = 0.15,
+				-- Screens per second the two scatter layers slide, in opposite
+				-- directions. Far too slow to read as movement; it is there for
+				-- the parallax against a world that is not moving, which is what
+				-- makes the pane feel like a surface rather than a decal. 0 stops
+				-- it dead.
+				frostDrift    = 0.01,
+
+				-- Nameplates AND the floating unit names, which are two entirely
+				-- separate CVar families and the one distraction UIParent's
+				-- alpha does not reach - both are rendered against the world
+				-- rather than composited into the interface. One switch, because
+				-- taking away the bars and leaving the names looks like a fault
+				-- rather than a choice.
+				--
+				-- Named for the plates alone because that is what it was called
+				-- when it only did half the job, and renaming a profile key
+				-- silently resets it for everybody who already has one.
+				--
+				-- Tooltips need nothing: they are children of UIParent and they
+				-- go with it.
+				hideNameplates = true,
+
+				-- The audio profile
+				-- -----------------
+				-- Zen borrows the sound channels for as long as it is on screen
+				-- and gives them back. Master is never touched - if somebody has
+				-- turned the game down, they have turned the game down.
+				--
+				-- The duck ratios are FRACTIONS OF WHAT THE PLAYER ALREADY HAD,
+				-- not absolute volumes, so this never needs to know what anyone's
+				-- normal settings are and never flattens a careful mix into one
+				-- of ours. 0.05 of an SFX channel at 80% is 4%; at 20% it is 1%.
+				audio        = true,
+				-- A key from Zen.TRACKS, or "random" to pick one per session.
+				track        = "random",
+				duckSFX      = 0.05,
+				duckAmbience = 0.15,
+				duckDialog   = 0.10,
+				-- Music is the one channel that is raised rather than lowered,
+				-- and only ever to a floor: playing a meditation track through a
+				-- music channel somebody left at zero is a feature that silently
+				-- does nothing. Above the floor already, this does nothing. Set
+				-- it to 0 to leave the music channel completely alone.
+				musicFloor   = 0.40,
 			},
 		},
 	},
@@ -618,6 +697,12 @@ local function Migrate(db)
 		-- the same number meaning something else, and it would put the readout
 		-- somewhere nobody asked for. Dropped rather than converted.
 		if zen.yOffset and zen.yOffset > 200 then zen.yOffset = nil end
+		-- The frosted pane's grain became its scatter: a different texture at a
+		-- different scale doing a different job, on a slider whose useful range
+		-- is three times as wide. An old `frostGrain = 0.07` carried forward as
+		-- a scatter value would be a pane with nothing visible on it, which is
+		-- the exact complaint the rework was for. Dropped rather than converted.
+		zen.frostGrain = nil
 	end
 
 	local ab = m.actionbars

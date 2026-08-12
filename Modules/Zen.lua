@@ -67,6 +67,118 @@
 	It is only enabled while zen is actually on screen. A permanently
 	keyboard-enabled frame is a permanent way to lock someone out of their
 	keyboard if any of this is ever wrong.
+
+	The frosted pane, and why it is not a blur
+	------------------------------------------
+	It is not a blur because there is no way to write one. The client exposes no
+	render-to-texture, no shader stage and no post-process hook to an addon; the
+	3D scene is the one surface in the game whose pixels this addon can never
+	read, let alone convolve. Every "blur" addon that has ever existed either
+	fakes it or is not doing what it says.
+
+	So this fakes it, in the honest direction: rather than blurring the world, it
+	puts a pane in front of the world. That is what frosted glass physically is -
+	the scene behind stays perfectly sharp, and every cue that reads as "frosted"
+	lives on the pane.
+
+	**It gets brighter, not darker.** This is the correction that mattered and it
+	is worth stating plainly, because the first version got it backwards on a
+	reasonable-sounding theory. The theory was that zen means the world steps
+	back, so the pane should be dark. What that produces on a dark skin is a
+	near-black sheet, and a near-black sheet does not read as glass: every edge
+	in the scene stays perfectly crisp behind it and it looks like somebody
+	turned the lights off. Frosted glass SCATTERS light. It is brighter than what
+	is behind it, and what it destroys is contrast, not brightness.
+
+	Four layers:
+
+	  tint      the skin's glass colour lifted toward white, flat, full screen.
+	            The body of the glass.
+	  scatter   Frost.tga, ordinary blend, tiled a few times across the screen.
+	            The structure - the patches you can actually see, which is what
+	            makes the eye read a *surface* rather than a filter.
+	  bloom     Frost.tga again, ADDITIVE, at a different scale. This is the one
+	            that does the work a blur would: additive light lifts the darks
+	            without touching the brights, which compresses the contrast of
+	            everything behind the pane. Contrast is most of what a blur takes
+	            away, so this is what reads as "blurred".
+	  vignette  a little darker at the edges, so the surface has a shape. Kept
+	            low - at 0.45 it was doing most of the darkening the pane was
+	            being blamed for.
+
+	The two Frost layers are tiled at deliberately mismatched scales and drift
+	slowly in opposite directions. The mismatch is not decoration: two copies of
+	one texture at the same scale sliding past each other beat into a moire far
+	more visible than either layer. The drift is what gives the pane parallax
+	against a static world, and the eye is much better at detecting parallax than
+	texture - it is the cheapest cue available for "there is a surface between
+	you and this".
+
+	Parentless and anchored to `WorldFrame` rather than to `UIParent`, for two
+	separate reasons. It has to survive UIParent's alpha like the readout does;
+	and WorldFrame is the physical screen at scale 1, always, which means the
+	scatter can be tiled against real pixels without any scale arithmetic and
+	without moving when the UI scale changes.
+
+	Strata BACKGROUND: above WorldFrame, below everything the interface puts up.
+	If `dimUI` is off - so the HUD is still on screen during zen - the HUD is
+	still drawn over the pane, which is the right way round.
+
+	Nameplates, and names
+	---------------------
+	The one distraction UIParent's alpha genuinely does not reach. Both of these
+	are rendered against the world rather than composited into the interface, so
+	fading the interface leaves them hanging over an empty hillside.
+
+	**They are two separate systems.** The bars are `nameplateShow*`; the
+	floating text is `UnitName*`; turning off one does nothing whatever to the
+	other. The first version took only the bars, and the result was a quiet
+	screen with every name, guild tag and pet label still floating over it -
+	which looks broken rather than deliberate, and is arguably worse than leaving
+	both alone. One switch drives both, because nobody wants half of it.
+
+	At the bottom of the fade rather than throughout, for the same reason the
+	minimap is hidden there: the CVars have no half measure, and a plate cannot
+	be dimmed on the way down.
+
+	Dimming them by hand *was* tried - walk `C_NamePlate.GetNamePlates()` each
+	tick and drive alpha - and was thrown away. The client pools plate frames and
+	hands the same frame back for a different unit later, so a plate we left at
+	alpha 0 comes back as an invisible nameplate on somebody else, in combat,
+	with no way to notice. Popping out at the end of a fade is a cosmetic
+	complaint. An invisible nameplate in a raid is not.
+
+	Tooltips need nothing at all. GameTooltip is a child of UIParent and goes
+	with it.
+
+	The audio profile
+	-----------------
+	Zen borrows the sound channels for as long as it is on screen and gives them
+	back. Three rules, and they are all about giving them back:
+
+	**Ratios, not volumes.** The duck settings are fractions of what the player
+	already had. This never needs to know what anybody's normal mix is and can
+	never flatten a careful one into ours.
+
+	**Master is never touched.** Somebody who has turned the game down has turned
+	the game down.
+
+	**What we wrote is what we take back.** Every channel records the value we
+	last pushed into it; on the way out, a channel that no longer holds that
+	value was changed by the player (or by another addon) while zen was running,
+	and is left exactly where they put it. Restoring it would be overwriting a
+	deliberate change with a stale one.
+
+	`PlayMusic` is used rather than `PlaySoundFile` because it loops the file it
+	is given, on the Music channel, for free - which is the whole requirement.
+
+	The one channel that goes UP is Music, and only ever to a floor. A meditation
+	track played through a music channel somebody left at zero is a feature that
+	silently does nothing, and "it's broken" is the report you get. Above the
+	floor already, nothing happens.
+
+	Nothing here starts at all if `Sound_EnableAllSound` is off. That is not a
+	setting to work around; it is somebody saying they want silence.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -98,6 +210,91 @@ local CAP_GAP    = 18     -- between the caption and the bar capsule
 --  enough that the row reads as drifting rather than blinking.
 local BREATH  = 5.0
 local CAPTION = "Zen mode. Move or press a key to cancel"
+
+--- Noise.tga's own size. The grain is tiled at 1:1 against physical pixels, so
+--  it is the same grain on a 1080p laptop and a 4K monitor rather than a
+--  four-times-coarser one.
+--- How wide one tile of Frost.tga is drawn, in PHYSICAL pixels. 900 puts a
+--  little under three tiles across a 2560 screen, so a patch of scatter is
+--  roughly a tenth of the screen: big enough to see, small enough that the
+--  repeat does not announce itself.
+--
+--  It is not the file's own 512. Tiling a texture 1:1 against physical pixels
+--  is what the first version did with Noise.tga, and at twenty tiles across a
+--  screen the result is finer than the eye resolves and contributes nothing at
+--  all - the pane read as a flat filter because, in effect, it was one.
+local FROST_SCALE = 900
+
+--- The second scatter layer is drawn this much larger than the first. Anything
+--  near 1 and the two copies beat into a moire as they drift past each other;
+--  1.6 is far enough off that they read as two separate depths in the glass.
+local FROST_SCALE2 = 1.6
+
+local AUDIO = [[Interface\AddOns\]] .. ADDON .. [[\Media\Audio\]]
+
+--- The bundled tracks. `key` is what goes in the profile, so renaming a file
+--  here breaks nothing that is already saved as long as the key survives; a key
+--  that no longer resolves falls back to the first track rather than to silence.
+Zen.TRACKS = {
+	{ key = "garden",    name = "Garden",    file = AUDIO .. "zen-garden.ogg"    },
+	{ key = "ocean",     name = "Ocean",     file = AUDIO .. "zen-ocean.ogg"     },
+	{ key = "serenity",  name = "Serenity",  file = AUDIO .. "zen-serenity.ogg"  },
+	{ key = "stillness", name = "Stillness", file = AUDIO .. "zen-stillness.ogg" },
+	{ key = "water",     name = "Water",     file = AUDIO .. "zen-water.ogg"     },
+}
+
+--- The channels zen ducks, and the profile key holding each one's ratio.
+--  Master is deliberately absent. Music is handled separately - it is the one
+--  channel that goes up rather than down.
+local DUCKED = {
+	{ cvar = "Sound_SFXVolume",      key = "duckSFX",      default = 0.05 },
+	{ cvar = "Sound_AmbienceVolume", key = "duckAmbience", default = 0.15 },
+	{ cvar = "Sound_DialogVolume",   key = "duckDialog",   default = 0.10 },
+}
+
+--- Everything the engine draws into the world that is made of words.
+--
+--  TWO INDEPENDENT SYSTEMS, which is the thing worth knowing here. Nameplates
+--  (the bars) and unit names (the floating text) are separate features with
+--  separate CVars, and turning off one leaves the other exactly where it was.
+--  The first version took only the plates, and the result was a quiet screen
+--  with every name, guild tag and pet label still hanging in the air over it -
+--  which is arguably worse than leaving both, because it looks broken rather
+--  than deliberate.
+--
+--  Note `UnitNameHostleNPC`. That is Blizzard's spelling, in their own source,
+--  and it has been wrong for twenty years. Correcting it here would simply mean
+--  the CVar is never found.
+--
+--  Probed rather than assumed: `nameplateShowFriendlyPlayers` is what 1.15
+--  calls the friendly toggle, but it was `nameplateShowFriends` for years and
+--  other flavours still use that name. Setting a CVar that does not exist
+--  throws, so the list is filtered at runtime against GetCVar rather than being
+--  a version table somebody has to maintain.
+local WORLD_TEXT_CVARS = {
+	-- the bars
+	"nameplateShowAll",
+	"nameplateShowEnemies",
+	"nameplateShowEnemyMinions",
+	"nameplateShowEnemyMinus",
+	"nameplateShowFriendlyPlayers",
+	"nameplateShowFriends",
+	"nameplateShowFriendlyPlayerMinions",
+	"nameplateShowFriendlyNpcs",
+
+	-- the words. A player's guild tag and a pet's <Owner's Pet> label are part
+	-- of their name block rather than settings of their own, so they go with it.
+	"UnitNameOwn",
+	"UnitNameNPC",
+	"UnitNameFriendlySpecialNPCName",
+	"UnitNameHostleNPC",
+	"UnitNameInteractiveNPC",
+	"UnitNameNonCombatCreatureName",
+	"UnitNameFriendlyPlayerName",
+	"UnitNameFriendlyMinionName",
+	"UnitNameEnemyPlayerName",
+	"UnitNameEnemyMinionName",
+}
 
 -- ---------------------------------------------------------------------------
 -- construction
@@ -162,6 +359,194 @@ local function Build()
 	cp.clock = W.Text(cp, "tiny", "LEFT")
 
 	return f
+end
+
+-- ---------------------------------------------------------------------------
+-- the frosted pane
+--
+-- See the note at the top: this is a pane in front of the world, not a blur of
+-- it, because a blur is not a thing an addon can write.
+-- ---------------------------------------------------------------------------
+
+local function BuildFrost()
+	-- Parentless for the same reason the readout is, and anchored to WorldFrame
+	-- rather than UIParent because WorldFrame is the physical screen at scale 1
+	-- and never moves, never rescales and is never hidden.
+	local f = CreateFrame("Frame", ADDON .. "ZenFrost")
+	f:SetFrameStrata("BACKGROUND")
+	f:SetFrameLevel(0)
+	f:SetScale(1)
+	f:SetAllPoints(WorldFrame)
+	f:EnableMouse(false)
+	f:SetAlpha(0)
+	f:Hide()
+
+	-- 1. the wash. A flat sheet of the skin's glass, lifted toward white.
+	f.tint = f:CreateTexture(nil, "BACKGROUND")
+	f.tint:SetTexture(Media.texture.flat)
+	f.tint:SetAllPoints(f)
+
+	-- 2 and 3. the scatter, twice.
+	--
+	-- "REPEAT" on both axes turns the texcoords into a tile count rather than a
+	-- crop; Frost.tga is authored seamless for exactly this.
+	--
+	-- The two are not a mistake and not a doubling for strength. They do
+	-- different jobs. `scatter` is an ordinary blend and gives the pane its
+	-- structure - the patches you can see. `bloom` is ADDITIVE, and additive
+	-- light over a scene is the one tool here that behaves anything like a blur:
+	-- it lifts the darks without touching the brights, which compresses the
+	-- contrast of everything behind the pane. Contrast is most of what a blur
+	-- takes away, so this is the layer that reads as "blurred" rather than as
+	-- "dimmed", and it is why the pane gets BRIGHTER rather than darker.
+	--
+	-- They are tiled at deliberately mismatched scales. At the same scale two
+	-- copies of one texture drifting past each other beat into a moire that is
+	-- far more visible than either layer.
+	f.scatter = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+	f.scatter:SetTexture(Media.texture.frost, "REPEAT", "REPEAT")
+	f.scatter:SetAllPoints(f)
+
+	f.bloom = f:CreateTexture(nil, "ARTWORK", nil, 0)
+	f.bloom:SetTexture(Media.texture.frost, "REPEAT", "REPEAT")
+	f.bloom:SetAllPoints(f)
+
+	-- 4. the edge.
+	f.vignette = f:CreateTexture(nil, "ARTWORK", nil, 1)
+	f.vignette:SetTexture(Media.texture.vignette)
+	f.vignette:SetAllPoints(f)
+
+	return f
+end
+
+--- Work out how many times each scatter layer repeats across the screen, and
+--  remember it so the drift can offset from it without recomputing.
+--
+--  Measured against PHYSICAL pixels, so the pane looks the same on a laptop and
+--  on a 4K monitor rather than being four times coarser on one of them.
+local function LayoutFrost()
+	local f = Zen.frost
+	if not f then return end
+
+	local w, h
+	if GetPhysicalScreenSize then w, h = GetPhysicalScreenSize() end
+	-- WorldFrame's own size is in virtual units, so it is only the right answer
+	-- when the physical size is not available: the scatter comes out coarser or
+	-- finer than intended but still seamless, which is a far smaller wrong than
+	-- dividing by zero.
+	if not w or w <= 0 then w = (WorldFrame and WorldFrame:GetWidth()) or 1920 end
+	if not h or h <= 0 then h = (WorldFrame and WorldFrame:GetHeight()) or 1080 end
+
+	-- Both axes divide by the SAME number, so the tile stays square and the
+	-- patches are not stretched into ovals on a wide screen.
+	f.tilesX  = w / FROST_SCALE
+	f.tilesY  = h / FROST_SCALE
+	f.tiles2X = w / (FROST_SCALE * FROST_SCALE2)
+	f.tiles2Y = h / (FROST_SCALE * FROST_SCALE2)
+
+	Zen:DriftFrost(0)
+end
+
+--- Slide the two scatter layers past each other. `dt` is the tick's own delta.
+--
+--  Slow enough that it is not motion - at the default it takes most of a minute
+--  to cross a patch - but it is what makes the pane read as a SURFACE between
+--  you and a static world rather than as a decal stuck to the monitor. The eye
+--  is far better at detecting parallax than it is at detecting texture.
+--
+--  Opposite directions, and on different axes, so neither layer can look like
+--  the other one lagging.
+--
+--  ACCUMULATED from dt rather than computed from GetTime(). Two reasons, and
+--  the first one is visible: with `offset = now * speed`, dragging the speed
+--  slider to zero does not stop the pane, it teleports it back to the origin,
+--  because the offset is a function of a clock that never stops. Accumulating
+--  means zero simply means "stop", which is what the slider says it does.
+--
+--  The second is that GetTime() counts up from login, so a long session would
+--  push the texture coordinates into the thousands and start losing precision
+--  in the fraction that actually matters.
+function Zen:DriftFrost(dt)
+	local f = self.frost
+	if not f or not f.tilesX then return end
+	local cfg = A.Config:Module("zen")
+
+	local u = (self._drift or 0) + (dt or 0) * (tonumber(cfg.frostDrift) or 0)
+	-- Wrapped at one tile. The texture repeats, so an offset of 1 and an offset
+	-- of 0 are the same picture; letting it run means the number climbs for ever
+	-- for no benefit at all.
+	self._drift = u % 1
+	u = self._drift
+
+	f.scatter:SetTexCoord(u, u + f.tilesX, u * 0.6, u * 0.6 + f.tilesY)
+	f.bloom:SetTexCoord(-u * 0.75, -u * 0.75 + f.tiles2X,
+		u * 0.45, u * 0.45 + f.tiles2Y)
+end
+
+--- Colours only. The pane's overall *opacity* is the zen fade, set in SetFrost.
+local function RestyleFrost()
+	local f = Zen.frost
+	if not f then return end
+	local cfg = A.Config:Module("zen")
+	local c = Palette.c
+
+	-- The skin's glass HUE, lifted toward white by the brightness setting, at
+	-- the user's own opacity rather than at the token's - a full-screen pane is
+	-- not a small panel, and the token's alpha was chosen for something you look
+	-- through at a health bar.
+	--
+	-- The lift is the whole correction. The first version did the opposite: it
+	-- CAPPED the tint's brightness on the theory that the world should step
+	-- back, which on Midnight means dragging a near-black sheet across the
+	-- screen. That is not what frosted glass does. Frosted glass SCATTERS light,
+	-- so it is brighter than what is behind it and it destroys contrast; a dark
+	-- sheet keeps every edge in the scene perfectly crisp and merely turns the
+	-- lights off. On screen it read as a fault rather than as glass.
+	local lift = math.max(0, math.min(1, tonumber(cfg.frostBrightness) or 0.75))
+	local r = c.glass[1] + (1 - c.glass[1]) * lift
+	local g = c.glass[2] + (1 - c.glass[2]) * lift
+	local b = c.glass[3] + (1 - c.glass[3]) * lift
+
+	f.tint:SetVertexColor(r, g, b,
+		math.max(0, math.min(1, tonumber(cfg.frostOpacity) or 0.70)))
+
+	local scatter = math.max(0, math.min(1, tonumber(cfg.frostScatter) or 0.35))
+
+	-- Structure, in the same colour as the wash so the patches read as thicker
+	-- and thinner glass rather than as dirt on it.
+	f.scatter:SetBlendMode("BLEND")
+	f.scatter:SetVertexColor(r, g, b, scatter * 0.55)
+
+	-- Light. Tinted toward the skin's type colour rather than the glass colour,
+	-- because this one is not the surface - it is what the surface is scattering.
+	f.bloom:SetBlendMode("ADD")
+	f.bloom:SetVertexColor(c.text[1], c.text[2], c.text[3], scatter * 0.45)
+
+	-- Untinted black. The vignette is a shape, not a colour: tinting it with the
+	-- skin would make Daylight's edges *lighter* than its middle, which is the
+	-- opposite of what a vignette is for. Low by default now - it was doing most
+	-- of the darkening the pane was being blamed for.
+	f.vignette:SetVertexColor(0, 0, 0,
+		math.max(0, math.min(1, tonumber(cfg.frostVignette) or 0.15)))
+end
+
+--- `a` is the readout's alpha, so the pane arrives exactly as the HUD leaves.
+function Zen:SetFrost(a)
+	local f = self.frost
+	if not f then return end
+	local cfg = A.Config:Module("zen")
+
+	if cfg.frost == false or a <= 0.001 then
+		-- Hide rather than alpha 0, so a pane that is not wanted costs nothing to
+		-- draw. Safe from anywhere: this frame is parentless and has never had
+		-- anything protected on it.
+		f:SetAlpha(0)
+		if f:IsShown() then f:Hide() end
+		return
+	end
+
+	if not f:IsShown() then f:Show() end
+	f:SetAlpha(a)
 end
 
 -- ---------------------------------------------------------------------------
@@ -285,6 +670,11 @@ local function Layout()
 	-- Alpha rather than Hide, all the way down. Layout runs from OnConfigChanged,
 	-- which a UI scale change can fire at any moment including mid-fight.
 	cp:SetAlpha(cfg.showPill ~= false and 1 or 0)
+
+	-- Not part of the readout's geometry, but it is the other thing on screen
+	-- whose size is a function of the display rather than of the config, and a
+	-- UI scale change is exactly when its grain needs retiling.
+	LayoutFrost()
 
 	Zen:UpdateText()
 	Zen:Restyle()
@@ -476,6 +866,8 @@ function Zen:Restyle()
 	for _, d in ipairs(f.dots) do
 		d:SetVertexColor(c.text[1], c.text[2], c.text[3], 1)
 	end
+
+	RestyleFrost()
 end
 
 --- The breath. Each dot lags the one before it, so the row reads as one wave
@@ -631,6 +1023,279 @@ function Zen:RestoreUI()
 end
 
 -- ---------------------------------------------------------------------------
+-- CVars, borrowed and given back
+--
+-- Everything below writes into settings the player owns, which makes the
+-- give-back the interesting half. Two rules, shared by the nameplate CVars and
+-- the sound ones:
+--
+--   * A CVar that does not exist on this client is never written. Setting an
+--     unknown CVar throws, and the names move between flavours.
+--   * A CVar that no longer holds the value WE last wrote was changed by the
+--     player, or by another addon, while zen was running. It is left alone.
+--     Restoring it would be overwriting a deliberate change with a stale one -
+--     which is the bug the whole "save the old value" pattern is famous for.
+-- ---------------------------------------------------------------------------
+
+local function CVarExists(name)
+	if not GetCVar then return false end
+	local ok, v = pcall(GetCVar, name)
+	return ok and v ~= nil
+end
+
+local function CVarNumber(name)
+	local ok, v = pcall(GetCVar, name)
+	if not ok then return nil end
+	return tonumber(v)
+end
+
+--- Numbers, because GetCVar hands back strings and the client is free to
+--  normalise "0.05" into "0.050000". Comparing those as strings is a restore
+--  that silently never fires.
+local function SameValue(a, b)
+	local na, nb = tonumber(a), tonumber(b)
+	if na and nb then return math.abs(na - nb) < 0.0005 end
+	return tostring(a) == tostring(b)
+end
+
+--- Ramped volumes are written in half-percent steps. Without this the ramp
+--  writes a new value to four CVars ten times a second for the whole of a 2.5s
+--  fade, all of them differing in the fourth decimal place, which nobody can
+--  hear and the client has to write to disk on logout.
+local function Step(v)
+	return math.floor(v * 200 + 0.5) / 200
+end
+
+--- Record what we wrote alongside where it came from. `store[name].was` is the
+--  player's value; `store[name].set` is ours, and is what the give-back checks.
+local function Borrow(store, name, value)
+	if not CVarExists(name) then return false end
+	local entry = store[name]
+
+	-- Handed back for good. The sound channels are re-borrowed on every tick of
+	-- the ramp, so without this the check below would notice the player's change,
+	-- overwrite it a tenth of a second later, and then "restore" our own stale
+	-- value on the way out - which is the exact bug the check exists to prevent,
+	-- reintroduced by the fact that it runs ten times a second.
+	if entry and entry.released then return false end
+
+	if not entry then
+		local ok, was = pcall(GetCVar, name)
+		if not ok then return false end
+		entry = { was = was }
+		store[name] = entry
+	end
+
+	if entry.set ~= nil then
+		local ok, now = pcall(GetCVar, name)
+		if ok and not SameValue(now, entry.set) then
+			entry.released = true
+			return false
+		end
+		if SameValue(entry.set, value) then return true end
+	end
+
+	if not pcall(SetCVar, name, value) then
+		-- A refused write is not a borrow. Dropping the record means the give-back
+		-- will not try to "restore" a value we never actually changed.
+		if entry.set == nil then store[name] = nil end
+		return false
+	end
+	entry.set = value
+	return true
+end
+
+local function GiveBack(store)
+	if not store then return end
+	for name, entry in pairs(store) do
+		local ok, now = pcall(GetCVar, name)
+		if ok and not entry.released and entry.set ~= nil and SameValue(now, entry.set) then
+			pcall(SetCVar, name, entry.was)
+		end
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- nameplates
+-- ---------------------------------------------------------------------------
+
+--- Called with the readout's alpha, the same as DimUI. The plates go at the
+--  BOTTOM of the fade, not throughout - see the note at the top for why they
+--  are not dimmed on the way down.
+function Zen:SetWorldText(a)
+	local cfg = A.Config:Module("zen")
+	if cfg.hideNameplates == false then
+		self:RestoreWorldText()
+		return
+	end
+
+	-- Combat is what makes the give-back urgent rather than tidy. Zen cannot
+	-- start in combat, but it is very often *running* when combat starts, and the
+	-- fader's wake drops this alpha on the very next tick - so plates are back
+	-- within a tenth of a second of the first hit, before anything has had time
+	-- to matter.
+	--
+	-- SetCVar itself is not a protected call and these names are read by the
+	-- engine rather than by secure Lua, so writing them mid-lockdown is allowed;
+	-- it is wrapped anyway, because "allowed" is a claim about this patch.
+	if a <= 0.98 then
+		if self._worldText then self:RestoreWorldText() end
+		return
+	end
+	if self._worldText then return end
+
+	local store = {}
+	for _, name in ipairs(WORLD_TEXT_CVARS) do
+		Borrow(store, name, "0")
+	end
+	-- Only remembered if something was actually borrowed, so a client with none
+	-- of these names does not leave an empty table standing in for "we did this".
+	if next(store) then self._worldText = store end
+end
+
+function Zen:RestoreWorldText()
+	if not self._worldText then return end
+	local store = self._worldText
+	self._worldText = nil
+	GiveBack(store)
+end
+
+-- ---------------------------------------------------------------------------
+-- the audio profile
+-- ---------------------------------------------------------------------------
+
+--- The track the profile asks for. "random" resolves once per zen, not once per
+--  tick, which is why the answer is cached on the module until the music stops.
+function Zen:PickTrack()
+	local cfg = A.Config:Module("zen")
+	local want = cfg.track
+
+	if want == "random" or want == nil then
+		return Zen.TRACKS[math.random(#Zen.TRACKS)]
+	end
+	for _, t in ipairs(Zen.TRACKS) do
+		if t.key == want then return t end
+	end
+	-- A key from a profile written against a track that no longer ships. The
+	-- first track beats silence, and silence is what "return nil" would mean.
+	return Zen.TRACKS[1]
+end
+
+--- True if the game is audible at all. Not a thing to work around: somebody who
+--  has turned every sound off has said what they want.
+local function SoundIsOn()
+	if not GetCVar then return false end
+	if CVarExists("Sound_EnableAllSound") and CVarNumber("Sound_EnableAllSound") == 0 then
+		return false
+	end
+	local master = CVarNumber("Sound_MasterVolume")
+	if master and master <= 0.001 then return false end
+	return true
+end
+
+--- `a` is the readout's alpha again, so the room quietens at exactly the pace
+--  the HUD leaves and comes back at the pace it returns.
+function Zen:SetAudio(a)
+	local cfg = A.Config:Module("zen")
+
+	if cfg.audio == false or a <= 0.001 then
+		self:RestoreAudio()
+		return
+	end
+
+	if not self._audio then
+		if not SoundIsOn() then return end
+		self._audio = {}
+
+		-- The music channel has to be switched on before PlayMusic will make a
+		-- sound. Borrowed like everything else, so somebody who plays with music
+		-- off gets it back the moment zen ends.
+		Borrow(self._audio, "Sound_EnableMusic", "1")
+
+		local track = self:PickTrack()
+		self._track = track
+		-- PlayMusic replaces whatever is on the channel, so an options-panel
+		-- preview left running is already gone; the flag has to go with it or the
+		-- next click on the preview button reads as "stop".
+		self._preview = nil
+		if track and PlayMusic then pcall(PlayMusic, track.file) end
+	end
+
+	local store = self._audio
+
+	for _, ch in ipairs(DUCKED) do
+		local was = store[ch.cvar] and tonumber(store[ch.cvar].was) or CVarNumber(ch.cvar)
+		if was then
+			local ratio = tonumber(cfg[ch.key]) or ch.default
+			ratio = math.max(0, math.min(1, ratio))
+			-- Interpolated by `a` rather than snapped to the ratio, so at the top
+			-- of the fade the channel is exactly where the player left it and at
+			-- the bottom it is exactly `was * ratio`.
+			Borrow(store, ch.cvar, Step(was * (1 - a * (1 - ratio))))
+		end
+	end
+
+	-- Music goes the other way: up to the floor, and only if it is under it.
+	-- Ramped from where the player had it so the track arrives rather than
+	-- starting at full.
+	local floor = tonumber(cfg.musicFloor) or 0
+	if floor > 0 then
+		local was = store.Sound_MusicVolume and tonumber(store.Sound_MusicVolume.was)
+			or CVarNumber("Sound_MusicVolume")
+		if was and was < floor then
+			Borrow(store, "Sound_MusicVolume", Step(was + (floor - was) * a))
+		end
+	end
+end
+
+function Zen:RestoreAudio()
+	if not self._audio then return end
+	local store = self._audio
+	self._audio = nil
+	self._track = nil
+
+	if StopMusic then pcall(StopMusic) end
+	GiveBack(store)
+end
+
+--- Hand back everything zen borrowed, whatever state it is in.
+--
+--  Deliberately not "and also park the readout": this is called from the logout
+--  event, where there is no next frame to draw anything in and the only thing
+--  that matters is that the client's own settings are the player's again.
+function Zen:ReleaseAll()
+	pcall(self.RestoreWorldText, self)
+	pcall(self.RestoreAudio, self)
+end
+
+--- Play a track from the options panel, so somebody choosing one can hear it
+--  without sitting out the zen timer. A second call stops it.
+--
+--  Deliberately does NOT duck anything or touch the music volume. A preview is a
+--  question about which track, not a request to enter zen, and a preview that
+--  quietly rearranged the sound options would be a trap.
+function Zen:PreviewTrack(key)
+	if self._preview then
+		self._preview = nil
+		if StopMusic then pcall(StopMusic) end
+		return false
+	end
+
+	if not PlayMusic then return false end
+	local track
+	for _, t in ipairs(Zen.TRACKS) do
+		if t.key == key then track = t break end
+	end
+	track = track or self:PickTrack()
+	if not track then return false end
+
+	self._preview = track.key
+	local ok = pcall(PlayMusic, track.file)
+	if not ok then self._preview = nil end
+	return ok and track.name or false
+end
+
+-- ---------------------------------------------------------------------------
 -- the key watcher
 -- ---------------------------------------------------------------------------
 
@@ -692,6 +1357,9 @@ local function TickBody(self, dt)
 	if not UIParent:IsShown() then
 		f:SetAlpha(0)
 		self:RestoreUI()
+		self:SetFrost(0)
+		self:RestoreWorldText()
+		self:RestoreAudio()
 		return
 	end
 
@@ -702,9 +1370,14 @@ local function TickBody(self, dt)
 	if math.abs(diff) < 0.005 then
 		f:SetAlpha(want)
 		if want <= 0 then
-			-- Parked. Put the interface back first, then stop costing anything
-			-- until the fader asks for us again.
+			-- Parked. Put everything back first, then stop costing anything until
+			-- the fader asks for us again. The music and the plates are released
+			-- here rather than the moment the fader says "wake", so the track fades
+			-- down with the readout instead of being cut off mid-breath.
 			self:RestoreUI()
+			self:SetFrost(0)
+			self:RestoreWorldText()
+			self:RestoreAudio()
 			A:UnregisterTicker(self)
 			self:SetKeysEnabled(false)
 			return
@@ -717,6 +1390,10 @@ local function TickBody(self, dt)
 	end
 
 	self:DimUI(f:GetAlpha())
+	self:SetFrost(f:GetAlpha())
+	self:DriftFrost(dt)
+	self:SetWorldText(f:GetAlpha())
+	self:SetAudio(f:GetAlpha())
 	self:UpdateBars()
 	if cfg.showDots ~= false then Breathe(f, GetTime()) end
 
@@ -734,7 +1411,16 @@ local function Tick(self, dt)
 	-- Never leave somebody's entire interface at zero alpha because of a bug in
 	-- here. This is the one failure in this module that cannot be shrugged off:
 	-- the HUD not fading is a cosmetic complaint, an invisible UI is a reload.
-	self:RestoreUI()
+	--
+	-- The same argument now covers three more things that outlive an error: a
+	-- full-screen pane nothing else will take down, a player with no nameplates
+	-- for the rest of the session, and a meditation track looping over their
+	-- raid. Each restore is its own pcall, so one of them failing cannot stop the
+	-- others - which is the whole reason they are not a single call.
+	pcall(self.RestoreUI, self)
+	pcall(self.SetFrost, self, 0)
+	pcall(self.RestoreWorldText, self)
+	pcall(self.RestoreAudio, self)
 	self.want = 0
 	if self.frame then self.frame:SetAlpha(0) end
 	self:SetKeysEnabled(false)
@@ -768,14 +1454,26 @@ end
 
 function Zen:OnEnable()
 	if not self.frame then self.frame = Build() end
+	if not self.frost then self.frost = BuildFrost() end
 	self.frame:Show()
 	self.want = 0
 	self.frame:SetAlpha(0)
 	self:RestoreUI()
+	self:SetFrost(0)
 
 	A:RegisterEvent(self, "ZONE_CHANGED", "UpdateText")
 	A:RegisterEvent(self, "ZONE_CHANGED_INDOORS", "UpdateText")
 	A:RegisterEvent(self, "ZONE_CHANGED_NEW_AREA", "UpdateText")
+
+	-- The one that matters most, and the one nothing else here would catch.
+	--
+	-- CVars are the client's, not ours: it writes every one of them to Config.wtf
+	-- when the session ends. Logging out from inside zen without this makes the
+	-- ducked volumes and the missing nameplates *permanent* - they are the values
+	-- the game starts with next time, on every character, with no sign that this
+	-- addon did it. Every other restore path in this module is about the next few
+	-- seconds. This one is about the rest of somebody's account.
+	A:RegisterEvent(self, "PLAYER_LOGOUT", "ReleaseAll")
 
 	self:OnConfigChanged()
 	if A.Fader then A.Fader:Refresh() end
@@ -786,6 +1484,12 @@ function Zen:OnDisable()
 	self.want = 0
 	if self.frame then self.frame:SetAlpha(0) end
 	self:RestoreUI()
+	-- Switching the module off mid-zen has to hand back everything it borrowed,
+	-- and this is the only place that runs. The ticker is unregistered two lines
+	-- down, so there is no later pass to do it.
+	self:SetFrost(0)
+	self:RestoreWorldText()
+	self:RestoreAudio()
 	A:UnregisterTicker(self)
 	-- The fader gates zen on this module being enabled, so it has to be told the
 	-- ground moved - otherwise the HUD stays at zen's alpha with nothing to show

@@ -21,6 +21,8 @@ local function usage()
 		"|cff9d7bff/aether scale|r <0.6-1.6>  ·  0.71 = the concept deck's proportions",
 		"|cff9d7bff/aether fade|r <on|off|delay N|idle 0-1>  ·  stage one, the dim",
 		"|cff9d7bff/aether zen|r <on|off|delay N|afk on/off|test>  ·  stage two",
+		"|cff9d7bff/aether zen|r <frost|plates|audio> on/off  ·  what zen takes away",
+		"|cff9d7bff/aether zen|r <track NAME|preview>  ·  the music",
 		"|cff9d7bff/aether shadow|r <0-1>  ·  ambient shadow opacity",
 		"|cff9d7bff/aether health|r <class|deck>  ·  bar colour for players",
 		"|cff9d7bff/aether bar|r <list · N on/off · N buttons/rows/page/scale V · size/spacing/font N>",
@@ -295,6 +297,44 @@ handlers.zen = function(arg, rest)
 	elseif arg == "afk" then
 		cfg.onAFK = (rest ~= "off")
 		A:Print("zen on going away -> " .. (cfg.onAFK and "on" or "off"))
+	elseif arg == "frost" then
+		cfg.frost = (rest ~= "off")
+		A:Print("the frosted pane -> " .. (cfg.frost and "on" or "off")
+			.. " |cff9d7bff(a pane in front of the world, not a blur of it -"
+			.. " nothing can blur the world)|r")
+	elseif arg == "plates" then
+		cfg.hideNameplates = (rest ~= "off")
+		local Z = A:GetModule("zen")
+		-- Turning it off mid-zen has to hand them straight back; the module only
+		-- re-reads this on its next tick, and the next tick may be a fade away.
+		if not cfg.hideNameplates and Z and Z.RestoreWorldText then Z:RestoreWorldText() end
+		A:Print("nameplates |cff9d7bffand names|r go with zen -> "
+			.. (cfg.hideNameplates and "on" or "off")
+			.. " |cff9d7bff(two separate CVar families; one switch drives both)|r")
+	elseif arg == "audio" then
+		cfg.audio = (rest ~= "off")
+		local Z = A:GetModule("zen")
+		if not cfg.audio and Z and Z.RestoreAudio then Z:RestoreAudio() end
+		A:Print("zen audio -> " .. (cfg.audio and "on" or "off"))
+	elseif arg == "track" then
+		local Z = A:GetModule("zen")
+		local names = { "random" }
+		for _, t in ipairs((Z and Z.TRACKS) or {}) do names[#names + 1] = t.key end
+		local want = rest and rest:lower() or ""
+		local found = false
+		for _, k in ipairs(names) do if k == want then found = true break end end
+		if not found then
+			A:Print("zen track takes one of: |cffece6ff" .. table.concat(names, ", ") .. "|r")
+			return
+		end
+		cfg.track = want
+		A:Print("zen track -> " .. want)
+	elseif arg == "preview" then
+		local Z = A:GetModule("zen")
+		if not Z or not Z.PreviewTrack then A:Print("zen module is not enabled.") return end
+		local name = Z:PreviewTrack(rest and rest:lower() or cfg.track)
+		A:Print(name and ("playing |cffece6ff" .. name .. "|r · run it again to stop")
+			or "stopped.")
 	elseif arg == "test" then
 		local Z = A:GetModule("zen")
 		if not Z or not Z.enabled then A:Print("zen module is not enabled.") return end

@@ -680,7 +680,10 @@ _G = _G or getfenv(0)
 UIParent = CreateFrame("Frame", "UIParent")
 UIParent:SetSize(1024, 768)
 
+-- Sized, because zen's frosted pane anchors to it rather than to UIParent: it is
+-- the physical screen at scale 1, which is the whole reason the pane uses it.
 WorldFrame = CreateFrame("Frame", "WorldFrame")
+WorldFrame:SetSize(1024, 768)
 
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) print("    | " .. tostring(msg)) end }
 
@@ -837,6 +840,91 @@ function IsModifiedClick(what)
 	return _G.__clickAnswer == what
 end
 function GetCVarBool() return false end
+
+-- ---------------------------------------------------------------------------
+-- CVars
+--
+-- A real store rather than a stub, because zen now BORROWS several of these and
+-- the interesting question is whether it gives them back. The client keeps them
+-- as strings and normalises numbers on the way in, which is modelled here on
+-- purpose: an addon that compares GetCVar's answer to the number it wrote is a
+-- restore that silently never fires, and a mock returning the number back would
+-- hide exactly that.
+--
+-- An unknown name throws, as it does in the client. That is what makes probing
+-- with GetCVar the only safe way to write one.
+-- ---------------------------------------------------------------------------
+
+_G.__cvars = {
+	Sound_EnableAllSound  = "1",
+	Sound_MasterVolume    = "1",
+	Sound_MusicVolume     = "0.2",
+	Sound_SFXVolume       = "0.8",
+	Sound_AmbienceVolume  = "0.6",
+	Sound_DialogVolume    = "0.7",
+	Sound_EnableMusic     = "1",
+	Sound_EnableSFX       = "1",
+	Sound_EnableAmbience  = "1",
+	Sound_EnableDialog    = "1",
+
+	nameplateShowAll                   = "0",
+	nameplateShowEnemies               = "1",
+	nameplateShowEnemyMinions          = "1",
+	nameplateShowEnemyMinus            = "1",
+	nameplateShowFriendlyPlayers       = "1",
+	nameplateShowFriendlyPlayerMinions = "1",
+	nameplateShowFriendlyNpcs          = "1",
+
+	-- The floating text, which is a SEPARATE system from the bars above and has
+	-- to be modelled separately or the test cannot tell them apart. Note
+	-- UnitNameHostleNPC: that is Blizzard's spelling, in their own source, and
+	-- has been for twenty years.
+	UnitNameOwn                    = "1",
+	UnitNameNPC                    = "1",
+	UnitNameFriendlySpecialNPCName = "1",
+	UnitNameHostleNPC              = "1",
+	UnitNameInteractiveNPC         = "1",
+	UnitNameNonCombatCreatureName  = "1",
+	UnitNameFriendlyPlayerName     = "1",
+	UnitNameFriendlyMinionName     = "1",
+	UnitNameEnemyPlayerName        = "1",
+	UnitNameEnemyMinionName        = "1",
+
+	-- Deliberately ABSENT: nameplateShowFriends. It is the name older clients
+	-- use and the module lists it, so its absence here is the test that the
+	-- module probes before it writes rather than assuming.
+}
+
+function GetCVar(name)
+	if type(name) ~= "string" then fail("GetCVar got " .. tostring(name)) end
+	return _G.__cvars[name]
+end
+
+-- Counted, not just thrown. An addon that wraps every SetCVar in a pcall looks
+-- identical from the outside whether it probes first or fires blind, and the
+-- client logs the blind one. This is what makes "it probed" testable.
+_G.__badCVarWrites = 0
+
+function SetCVar(name, value)
+	if _G.__cvars[name] == nil then
+		_G.__badCVarWrites = _G.__badCVarWrites + 1
+		error("SetCVar: unknown console variable '" .. tostring(name) .. "'", 2)
+	end
+	-- Six decimal places, the way the client writes a float back.
+	if type(value) == "number" then
+		_G.__cvars[name] = string.format("%.6f", value)
+	else
+		_G.__cvars[name] = tostring(value)
+	end
+	return true
+end
+
+_G.__music = nil
+function PlayMusic(file)
+	if type(file) ~= "string" then fail("PlayMusic got " .. tostring(file)) end
+	_G.__music = file
+end
+function StopMusic() _G.__music = nil end
 
 local bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "SHIFT-BUTTON4", ACTIONBUTTON3 = "NUMPAD7" }
 _G.__bindingSet = bindings
@@ -3441,6 +3529,404 @@ do
 	fire("PLAYER_TARGET_CHANGED")
 	A.Fader:Touch()
 	for i = 1, 30 do tick(0.1) end
+end
+
+
+-- ---------------------------------------------------------------------------
+-- Everything below drives zen in and out repeatedly, so the two moves are
+-- written once here rather than eight times.
+-- ---------------------------------------------------------------------------
+
+local function enterZen()
+	local zcfg = A.db.profile.modules.zen
+	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 0.1, 0.1
+	A.db.profile.fader.delay = 1
+	A.Fader:ForceZen()
+	for i = 1, 40 do tick(0.1) end
+end
+
+--- The timers go back to their shipped values BEFORE the clock is run forward,
+--  or two seconds of ticking walks straight back into zen on the three-second
+--  delay enterZen just set and every check after this one is testing the wrong
+--  state. Which is exactly what it did the first time.
+local function leaveZen()
+	local zcfg = A.db.profile.modules.zen
+	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 60, 2.5, 0.30
+	A.db.profile.fader.delay = 6
+	A.Fader:Touch()
+	A.Fader:Update()
+	for i = 1, 20 do tick(0.1) end
+end
+
+
+print("== zen: the frosted pane, which is not a blur ==")
+do
+	local Z = A:GetModule("zen")
+	local zcfg = A.db.profile.modules.zen
+
+	check(Z.frost ~= nil, "the pane is built")
+	check(Z.frost.__parent == nil,
+		"and lives outside UIParent, like the readout - it has to survive the"
+		.. " very fade it is standing in for")
+	check(Z.frost:GetFrameStrata() == "BACKGROUND",
+		"at BACKGROUND: above the world, below everything the interface puts up,"
+		.. " so the HUD still draws over it when dimUI is off")
+	check(Z.frost.__scale == 1,
+		"at scale 1, because it is anchored to WorldFrame rather than to UIParent"
+		.. " and WorldFrame is the physical screen")
+	local pt, rel = Z.frost:GetPoint(1)
+	check(pt == "ALL" and rel == WorldFrame,
+		"filling WorldFrame, which is never hidden and never rescaled")
+	check(not Z.frost:IsShown(),
+		"and hidden while zen is not on - a pane nobody asked for should cost"
+		.. " nothing to draw")
+
+	-- Frost.tga is drawn at FROST_SCALE (900) physical pixels a tile, so on the
+	-- mock's 2560x1440 screen that is a shade under three across. Both axes
+	-- divide by the same number, so a patch stays square rather than being
+	-- stretched into an oval on a wide monitor.
+	--
+	-- The old grain divided by the texture's own 128 - twenty tiles across a
+	-- screen - which is finer than the eye resolves and is why the pane read as
+	-- a flat filter. The number that matters is a fraction of the SCREEN, not a
+	-- count of texels.
+	local l, r, t, b = Z.frost.scatter:GetTexCoord()
+	check(math.abs((r - l) - 2560 / 900) < 0.001 and math.abs((b - t) - 1440 / 900) < 0.001,
+		"the scatter is tiled at a scale you can see - under three across the"
+		.. " screen, not twenty (" .. string.format("%.2f x %.2f", r - l, b - t) .. ")")
+	local l2, r2 = Z.frost.bloom:GetTexCoord()
+	check(math.abs((r2 - l2) - (r - l)) > 0.5,
+		"and the second layer is at a DIFFERENT scale - at the same one, two"
+		.. " copies of one texture drifting past each other beat into a moire"
+		.. " more visible than either of them (" .. string.format("%.2f", r2 - l2) .. ")")
+
+	enterZen()
+	check(Z.frost:IsShown() and Z.frost:GetAlpha() > 0.9,
+		"in zen the pane is up, at the readout's own alpha (" ..
+		string.format("%.2f", Z.frost:GetAlpha()) .. ")")
+
+	local _, _, _, tintA = Z.frost.tint:GetVertexColor()
+	check(math.abs(tintA - zcfg.frostOpacity) < 0.001,
+		"the tint carries the user's opacity, NOT the glass token's own - a"
+		.. " full-screen pane is not a small panel and the token's alpha was"
+		.. " chosen for something you look through at a health bar")
+
+	-- The correction that mattered. Midnight's glass is C(12, 10, 28) - very
+	-- nearly black - and the first version dragged exactly that across the whole
+	-- screen on the theory that zen means the world steps back. It does not read
+	-- as glass: every edge in the scene stays crisp behind it and it looks like
+	-- the lights went out. Frosted glass SCATTERS light. It is brighter than
+	-- what is behind it, and what it destroys is contrast.
+	local tr, tg, tb = Z.frost.tint:GetVertexColor()
+	local lum = 0.2126 * tr + 0.7152 * tg + 0.0722 * tb
+	check(lum > 0.6,
+		"and the pane is LIGHT even on the dark skin, where the glass token is"
+		.. " nearly black (lum " .. string.format("%.2f", lum) .. ")")
+
+	-- Per channel, not just by luminance. Luminance weights green at 0.72 and
+	-- blue at 0.07, so a lift that had been dropped from one of the other two
+	-- would pass a brightness check while quietly shifting the pane's hue -
+	-- which is precisely what the first mutation run slipped through.
+	local gl, lift = A.Palette.c.glass, zcfg.frostBrightness
+	local function lifted(v) return v + (1 - v) * lift end
+	check(math.abs(tr - lifted(gl[1])) < 0.001
+		and math.abs(tg - lifted(gl[2])) < 0.001
+		and math.abs(tb - lifted(gl[3])) < 0.001,
+		"every channel by the same fraction of its own headroom, so the skin's"
+		.. " hue survives the lift instead of drifting toward whichever channel"
+		.. " was left behind")
+
+	check(Z.frost.scatter.__blend == "BLEND" and Z.frost.bloom.__blend == "ADD",
+		"structure is blended and light is added - the additive layer is the one"
+		.. " doing a blur's job, lifting the darks without touching the brights"
+		.. " so the contrast behind the pane collapses")
+
+	local vr, vg, vb = Z.frost.vignette:GetVertexColor()
+	check(vr == 0 and vg == 0 and vb == 0,
+		"and the vignette is untinted black - skinning it would make Daylight's"
+		.. " edges LIGHTER than its middle, which is not a vignette")
+
+	local opacityWas, brightWas = zcfg.frostOpacity, zcfg.frostBrightness
+
+	zcfg.frostOpacity = 0.8
+	A:Restyle()
+	local _, _, _, a2 = Z.frost.tint:GetVertexColor()
+	check(math.abs(a2 - 0.8) < 0.001, "and the slider reaches it live")
+	zcfg.frostOpacity = opacityWas
+
+	zcfg.frostBrightness = 0
+	A:Restyle()
+	local br, bg, bb = Z.frost.tint:GetVertexColor()
+	check(math.abs(br - A.Palette.c.glass[1]) < 0.001
+		and math.abs(bg - A.Palette.c.glass[2]) < 0.001
+		and math.abs(bb - A.Palette.c.glass[3]) < 0.001,
+		"brightness at zero is the skin's own glass colour untouched, so the"
+		.. " lift is a choice rather than something baked in")
+	zcfg.frostBrightness = brightWas
+	A:Restyle()
+
+	-- Parallax. The eye is far better at spotting a surface that moves against a
+	-- static background than one that merely has a texture on it.
+	local before = select(1, Z.frost.scatter:GetTexCoord())
+	local bloomBefore = select(1, Z.frost.bloom:GetTexCoord())
+	for i = 1, 30 do tick(0.1) end
+	local after = select(1, Z.frost.scatter:GetTexCoord())
+	local bloomAfter = select(1, Z.frost.bloom:GetTexCoord())
+	check(math.abs(after - before) > 0.001, "the scatter drifts")
+	check((after - before) * (bloomAfter - bloomBefore) < 0,
+		"and the two layers drift in OPPOSITE directions, so neither can look"
+		.. " like the other one lagging")
+
+	zcfg.frostDrift = 0
+	local still = select(1, Z.frost.scatter:GetTexCoord())
+	for i = 1, 10 do tick(0.1) end
+	check(select(1, Z.frost.scatter:GetTexCoord()) == still,
+		"and zero stops it dead, for anyone who does not want it")
+	zcfg.frostDrift = 0.01
+
+	zcfg.frost = false
+	tick(0.1)
+	check(not Z.frost:IsShown(), "turned off, it goes even mid-zen")
+	zcfg.frost = true
+	tick(0.1)
+	check(Z.frost:IsShown(), "and comes back")
+
+	leaveZen()
+	check(not Z.frost:IsShown(), "and it is gone again once zen ends")
+end
+
+
+print("== zen: the nameplates, borrowed and given back ==")
+do
+	local Z = A:GetModule("zen")
+	local zcfg = A.db.profile.modules.zen
+	local cv = _G.__cvars
+
+	check(cv.nameplateShowEnemies == "1" and cv.UnitNameFriendlyPlayerName == "1",
+		"the player has both enemy plates and friendly names on")
+
+	_G.__badCVarWrites = 0
+	enterZen()
+	check(cv.nameplateShowEnemies == "0" and cv.nameplateShowFriendlyPlayers == "0"
+		and cv.nameplateShowFriendlyNpcs == "0",
+		"in zen the plates are off - this is the one distraction UIParent's alpha"
+		.. " does not reach, because they are drawn against the world")
+
+	-- The half-a-job bug, which shipped once and was extremely obvious on screen:
+	-- the bars and the floating text are unrelated CVar families, so taking the
+	-- bars away leaves every name, guild tag and pet label hanging in the air.
+	-- That looks broken rather than deliberate.
+	check(cv.UnitNameFriendlyPlayerName == "0" and cv.UnitNameEnemyPlayerName == "0"
+		and cv.UnitNameNPC == "0" and cv.UnitNameOwn == "0"
+		and cv.UnitNameFriendlyMinionName == "0",
+		"and so are the NAMES, which are a completely separate family - the first"
+		.. " version took only the bars and left the words floating over an empty"
+		.. " hillside")
+	check(cv.UnitNameHostleNPC == "0",
+		"including the one Blizzard spelled wrong. Correcting it here would mean"
+		.. " the CVar is simply never found")
+	check(cv.nameplateShowFriends == nil and _G.__badCVarWrites == 0,
+		"and a name this client does not have was never even attempted: setting"
+		.. " an unknown CVar throws, so the list is probed with GetCVar rather"
+		.. " than fired blind into a pcall (" .. _G.__badCVarWrites .. " blind"
+		.. " writes)")
+
+	-- Back on the FIRST tick of the wake, not when the fade finishes parking.
+	-- The invariant is "any time zen is not fully in, the plates are on", which
+	-- is a stronger and much more useful claim than "they come back eventually":
+	-- the thing that wakes zen is very often combat starting, and every tenth of
+	-- a second without nameplates in a fight is a tenth of a second the player
+	-- paid for a screensaver.
+	zcfg.fadeIn = 2.0
+	A.Fader:Touch()
+	A.Fader:Update()
+	tick(0.1)
+	check(A.Fader.state ~= "zen" and Z.frame:GetAlpha() > 0.2,
+		"one tick into the wake, still most of the way through the fade ("
+		.. string.format("%.2f", Z.frame:GetAlpha()) .. ")")
+	check(cv.nameplateShowEnemies == "1",
+		"and the plates are already back - they do not wait for the readout to"
+		.. " finish parking")
+
+	leaveZen()
+	check(cv.nameplateShowEnemies == "1" and cv.nameplateShowFriendlyPlayers == "1"
+		and cv.nameplateShowAll == "0",
+		"coming out puts every one of them back where it was, including the one"
+		.. " that was already off")
+	check(cv.UnitNameFriendlyPlayerName == "1" and cv.UnitNameOwn == "1"
+		and cv.UnitNameHostleNPC == "1",
+		"and the names with them")
+
+	-- ...unless the player moved it themselves while zen was running.
+	enterZen()
+	check(cv.nameplateShowEnemies == "0", "off again")
+	SetCVar("nameplateShowEnemies", "1")
+	leaveZen()
+	check(cv.nameplateShowEnemies == "1",
+		"a CVar the player changed during zen is left where THEY put it. Handing"
+		.. " back a stale value is the classic bug in this pattern")
+
+	zcfg.hideNameplates = false
+	enterZen()
+	check(cv.nameplateShowEnemies == "1", "and switched off, zen leaves them alone")
+	leaveZen()
+	zcfg.hideNameplates = true
+end
+
+
+print("== zen: the audio profile ==")
+do
+	local Z = A:GetModule("zen")
+	local zcfg = A.db.profile.modules.zen
+	local cv = _G.__cvars
+
+	local function num(k) return tonumber(cv[k]) end
+
+	enterZen()
+	check(_G.__music == [[Interface\AddOns\AetherUI\Media\Audio\zen-]]
+		.. (Z._track and Z._track.key or "?") .. ".ogg",
+		"a track is looping on the music channel (" .. tostring(_G.__music) .. ")")
+
+	-- The ratios are fractions of what the player already had: SFX 0.8 * 0.05.
+	check(math.abs(num("Sound_SFXVolume") - 0.8 * zcfg.duckSFX) < 0.01,
+		"effects are ducked to a fraction of the player's own setting, not to an"
+		.. " absolute volume (" .. cv.Sound_SFXVolume .. ")")
+	check(math.abs(num("Sound_AmbienceVolume") - 0.6 * zcfg.duckAmbience) < 0.01,
+		"ambience the same, and kept higher on purpose - a little wind under the"
+		.. " music is the difference between a quiet world and a dead one")
+	check(math.abs(num("Sound_DialogVolume") - 0.7 * zcfg.duckDialog) < 0.01,
+		"and dialogue")
+	check(cv.Sound_MasterVolume == "1",
+		"master is never touched. Somebody who turned the game down turned the"
+		.. " game down")
+	check(math.abs(num("Sound_MusicVolume") - zcfg.musicFloor) < 0.01,
+		"music is the one channel that goes UP, and only to the floor: a"
+		.. " meditation track through a channel left at 0.2 is a feature that"
+		.. " silently does nothing (" .. cv.Sound_MusicVolume .. ")")
+
+	leaveZen()
+	check(_G.__music == nil, "leaving stops the music")
+	check(num("Sound_SFXVolume") == 0.8 and num("Sound_AmbienceVolume") == 0.6
+		and num("Sound_DialogVolume") == 0.7 and num("Sound_MusicVolume") == 0.2,
+		"and hands every channel back exactly as it was")
+
+	-- A channel the player moves during zen is theirs, and stays theirs.
+	--
+	-- Caught DURING the fade rather than after it, and that is not a detail: the
+	-- ramp only writes when its own target has moved, so a player who nudges a
+	-- slider while zen is sitting still at the bottom of the fade is not stomped
+	-- by anything. It is while the ramp is *travelling* that every tick has a new
+	-- value to push, and that is the only window where this can go wrong. A test
+	-- that opened the drawer at the bottom would pass against a module with no
+	-- protection in it at all - which is exactly what the first version did.
+	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 2.0, 0.1
+	A.db.profile.fader.delay = 1
+	A.Fader:ForceZen()
+	for i = 1, 4 do tick(0.1) end
+	check(Z._audio ~= nil and num("Sound_SFXVolume") < 0.8,
+		"the ramp is part-way down (" .. cv.Sound_SFXVolume .. ")")
+
+	SetCVar("Sound_SFXVolume", 0.5)
+	for i = 1, 12 do tick(0.1) end
+	check(math.abs(num("Sound_SFXVolume") - 0.5) < 0.001,
+		"a channel the player moves while the ramp is travelling is not stomped"
+		.. " by the next tick of it (" .. cv.Sound_SFXVolume .. ")")
+
+	leaveZen()
+	check(math.abs(num("Sound_SFXVolume") - 0.5) < 0.001,
+		"and keeps their value rather than being handed our stale one back on the"
+		.. " way out")
+	SetCVar("Sound_SFXVolume", 0.8)
+
+	-- Music already above the floor is not touched at all.
+	SetCVar("Sound_MusicVolume", 0.9)
+	enterZen()
+	check(math.abs(num("Sound_MusicVolume") - 0.9) < 0.001,
+		"music already above the floor is left exactly alone - the floor only"
+		.. " ever raises")
+	leaveZen()
+	SetCVar("Sound_MusicVolume", 0.2)
+
+	-- Silence is a request, not an obstacle.
+	SetCVar("Sound_EnableAllSound", "0")
+	enterZen()
+	check(_G.__music == nil and num("Sound_SFXVolume") == 0.8,
+		"with the game's sound switched off entirely, zen does nothing at all."
+		.. " That is not a setting to work around")
+	leaveZen()
+	SetCVar("Sound_EnableAllSound", "1")
+
+	-- The music channel is switched on if it was off, and switched back after.
+	SetCVar("Sound_EnableMusic", "0")
+	enterZen()
+	check(cv.Sound_EnableMusic == "1", "a disabled music channel is switched on,"
+		.. " or PlayMusic makes no sound")
+	leaveZen()
+	check(cv.Sound_EnableMusic == "0", "and switched off again on the way out")
+	SetCVar("Sound_EnableMusic", "1")
+
+	-- Named tracks, and a key that no longer ships.
+	zcfg.track = "ocean"
+	enterZen()
+	check(_G.__music:find("zen%-ocean"), "a named track is the one that plays")
+	leaveZen()
+
+	zcfg.track = "a-track-that-was-deleted"
+	enterZen()
+	check(_G.__music ~= nil,
+		"a key from a profile written against a track that no longer ships falls"
+		.. " back to a real one rather than to silence")
+	leaveZen()
+	zcfg.track = "random"
+
+	-- Turning it off mid-zen hands everything back immediately.
+	enterZen()
+	SlashCmdList["AETHERUI"]("zen audio off")
+	tick(0.1)
+	check(_G.__music == nil and num("Sound_SFXVolume") == 0.8,
+		"switching the audio off mid-zen gives the channels straight back")
+	leaveZen()
+	zcfg.audio = true
+
+	-- The preview changes nothing but what is playing.
+	local name = Z:PreviewTrack("water")
+	check(name == "Water" and _G.__music:find("zen%-water"),
+		"the options-panel preview plays the track it was asked for")
+	check(num("Sound_SFXVolume") == 0.8 and num("Sound_MusicVolume") == 0.2,
+		"and touches no volumes - a preview is a question about which track, not"
+		.. " a request to enter zen")
+	check(Z:PreviewTrack("water") == false and _G.__music == nil,
+		"and a second press stops it")
+end
+
+
+print("== zen: logging out from inside it ==")
+do
+	local Z = A:GetModule("zen")
+	local cv = _G.__cvars
+	local function num(k) return tonumber(cv[k]) end
+
+	enterZen()
+	check(num("Sound_SFXVolume") < 0.8 and cv.nameplateShowEnemies == "0",
+		"in zen, with the channels ducked and the plates off")
+
+	-- The client writes every CVar to Config.wtf when the session ends. Without a
+	-- logout hook these values become the ones the game STARTS with next time, on
+	-- every character, with nothing to say this addon did it. Every other restore
+	-- path in the module is about the next few seconds; this one is about the
+	-- rest of somebody's account.
+	fire("PLAYER_LOGOUT")
+	check(num("Sound_SFXVolume") == 0.8 and num("Sound_AmbienceVolume") == 0.6
+		and num("Sound_MusicVolume") == 0.2,
+		"logging out from inside zen hands the sound channels back before the"
+		.. " client writes them to disk")
+	check(cv.nameplateShowEnemies == "1" and cv.nameplateShowFriendlyPlayers == "1"
+		and cv.UnitNameFriendlyPlayerName == "1" and cv.UnitNameOwn == "1",
+		"and the plates and names, which would otherwise be off for good - on"
+		.. " every character, with nothing to say this addon did it")
+	check(_G.__music == nil, "and stops the music")
+
+	leaveZen()
 end
 
 

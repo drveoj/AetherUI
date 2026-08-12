@@ -171,6 +171,17 @@ local function SkinValues()
 	return out
 end
 
+--- Built from the module's own track list rather than written out again here,
+--  so dropping a file into Media\Audio and adding one line to Modules\Zen.lua is
+--  the whole job. Resolved at open time: the module may not exist yet when the
+--  tree is built.
+local function TrackValues()
+	local out = { random = "Random" }
+	local Z = A:GetModule("zen")
+	for _, t in ipairs((Z and Z.TRACKS) or {}) do out[t.key] = t.name end
+	return out
+end
+
 local function GeneralGroup()
 	return group("General", {
 		skin = choice("Skin", "Midnight is the concept deck's own palette.",
@@ -323,6 +334,114 @@ local function FaderGroup()
 			{ "modules", "zen", "showDots" }, { defaultTrue = true }),
 		zenPill = toggle("Show the zone and time", nil, { "modules", "zen", "showPill" },
 			{ defaultTrue = true }),
+
+		zenFrostHeader = header("The frosted pane"),
+		zenFrostNote = note("A pane of frosted glass drawn in front of the world"
+			.. " while zen is on."
+			.. "\n\n|cff9d7bffIt is not a blur, and it cannot be|r. The client gives"
+			.. " addons no way to read or filter the 3D scene - no render-to-texture,"
+			.. " no shader, no post-process hook - so the world behind stays sharp."
+			.. " What frosted glass actually is, though, is a surface in front of a"
+			.. " sharp scene."
+			.. "\n\nIt gets |cff9d7bffbrighter|r, not darker. Frosted glass scatters"
+			.. " light, so it is brighter than what is behind it and what it destroys"
+			.. " is contrast. A dark pane leaves every edge in the scene perfectly"
+			.. " crisp and simply turns the lights off."),
+		zenFrost = toggle("Enabled", nil, { "modules", "zen", "frost" },
+			{ after = "none", defaultTrue = true }),
+		zenFrostOpacity = range("Pane opacity",
+			"How much of the world the glass keeps. Past about 85% it stops being"
+			.. " a window and becomes a wall.",
+			{ "modules", "zen", "frostOpacity" }, 0, 0.95, 0.05,
+			{ after = "restyle", percent = true }),
+		zenFrostBrightness = range("Pane brightness",
+			"How far the skin's glass colour is lifted toward white. Low values"
+			.. " give you the skin's own hue at full strength, which on a dark skin"
+			.. " means a dark pane - legible, but it reads as the lights going out"
+			.. " rather than as glass.",
+			{ "modules", "zen", "frostBrightness" }, 0, 1, 0.05,
+			{ after = "restyle", percent = true }),
+		zenFrostScatter = range("Scatter",
+			"The layer doing the actual work, in two parts: visible patches of"
+			.. " thicker and thinner glass, and an additive light over them that"
+			.. " lifts the darks without touching the brights. That second part is"
+			.. " what flattens the contrast of the world behind the pane, and"
+			.. " contrast is most of what a real blur takes away.",
+			{ "modules", "zen", "frostScatter" }, 0, 1, 0.05,
+			{ after = "restyle", percent = true }),
+		zenFrostVignette = range("Vignette",
+			"Darker toward the edges, so the pane has a shape rather than being an"
+			.. " even wash. Kept low - this was doing most of the darkening the pane"
+			.. " used to be blamed for.",
+			{ "modules", "zen", "frostVignette" }, 0, 1, 0.05,
+			{ after = "restyle", percent = true }),
+		zenFrostDrift = range("Drift",
+			"Screens per second the two scatter layers slide past each other, in"
+			.. " opposite directions. Far too slow to read as movement - it is there"
+			.. " for the parallax against a world that is not moving, which is the"
+			.. " cheapest cue there is for 'something is between you and this'."
+			.. " Set it to 0 to stop it dead.",
+			{ "modules", "zen", "frostDrift" }, 0, 0.1, 0.005,
+			{ after = "none" }),
+
+		zenQuietHeader = header("Distractions"),
+		zenNameplates = toggle("Take the nameplates and names away",
+			"The one thing fading the interface does not reach: nameplates and the"
+			.. " floating unit names are drawn against the world rather than"
+			.. " composited into the interface, so they are left hanging over an"
+			.. " empty hillside otherwise."
+			.. "\n\nThese are |cff9d7bfftwo separate systems|r in the client - the"
+			.. " bars and the text have unrelated settings - so this drives both."
+			.. " Taking the bars away and leaving every name, guild tag and pet"
+			.. " label floating looks like a fault rather than a choice. Everything"
+			.. " is turned off at the bottom of the fade and turned back on the"
+			.. " moment you come out, including on the way to a logout."
+			.. "\n\nTooltips need nothing: they belong to the interface and go with"
+			.. " it.",
+			{ "modules", "zen", "hideNameplates" },
+			{ after = "none", defaultTrue = true }),
+
+		zenAudioHeader = header("The audio profile"),
+		zenAudioNote = note("Zen borrows the sound channels while it is on screen"
+			.. " and gives them back when it ends."
+			.. "\n\nThe three sliders below are |cff9d7bfffractions of your own"
+			.. " settings|r, not volumes. 5% of an effects channel you keep at 80%"
+			.. " is 4%; at 20% it is 1%. Your master volume is never touched, and a"
+			.. " channel you change by hand during zen is left where you put it"
+			.. " rather than being handed a stale value back."),
+		zenAudio = toggle("Enabled", "Nothing happens at all if you have the"
+			.. " game's sound switched off entirely.",
+			{ "modules", "zen", "audio" }, { after = "none", defaultTrue = true }),
+		zenTrack = choice("Track", "Looped on the music channel for as long as zen"
+			.. " lasts. Random picks once each time zen begins, not once per session.",
+			{ "modules", "zen", "track" }, TrackValues, { after = "none" }),
+		zenPreview = action("Preview the track",
+			"Plays it now so you can choose without waiting out the timer. Press"
+			.. " again to stop. A preview changes no volumes.",
+			function()
+				local Z = A:GetModule("zen")
+				if not Z then return end
+				local name = Z:PreviewTrack(A.db.profile.modules.zen.track)
+				if name then A:Print("playing |cffece6ff" .. name .. "|r") end
+			end),
+		zenMusicFloor = range("Lift the music channel to at least",
+			"The one channel zen raises rather than lowers, and only if it is under"
+			.. " this already. A meditation track played through a music channel"
+			.. " somebody left at zero is a feature that silently does nothing."
+			.. " Set it to 0 to leave the music channel completely alone.",
+			{ "modules", "zen", "musicFloor" }, 0, 1, 0.05,
+			{ after = "none", percent = true }),
+		zenDuckSFX = range("Effects, as a fraction of yours",
+			nil, { "modules", "zen", "duckSFX" }, 0, 1, 0.01,
+			{ after = "none", percent = true }),
+		zenDuckAmbience = range("Ambience, as a fraction of yours",
+			"Kept higher than the others on purpose: a little wind and water under"
+			.. " the music is the difference between a quiet world and a dead one.",
+			{ "modules", "zen", "duckAmbience" }, 0, 1, 0.01,
+			{ after = "none", percent = true }),
+		zenDuckDialog = range("Dialogue, as a fraction of yours",
+			nil, { "modules", "zen", "duckDialog" }, 0, 1, 0.01,
+			{ after = "none", percent = true }),
 	})
 end
 

@@ -30,6 +30,11 @@ Media.texture = {
 	shadow      = TEX .. "Glass-Shadow",      -- 256x256, 9-slice, corner 96 (0.375)
 	pillShadow  = TEX .. "Glass-Pill-Shadow", -- 512x256, 3-slice, spread = h/4
 	noise       = TEX .. "Noise",             -- 128x128, seamless, tileable
+	-- 512x512, seamless, tileable. Zen's full-screen pane. Unlike Noise this
+	-- carries its pattern in ALPHA rather than RGB, so it survives being tinted,
+	-- and it is authored at a scale you can see - tiled ~3x across a screen, not
+	-- ~20x. See frost_tile() in Tools/generate_textures.py.
+	frost       = TEX .. "Frost",
 
 	-- ability / aura slots
 	slotMask    = TEX .. "Slot-Mask",
