@@ -360,6 +360,7 @@ function TB:SetDock(edge)
 	local c = Char()
 	if c then c.docked = edge end
 	self:Layout()
+	self:LayoutRail()
 	return true
 end
 
@@ -427,6 +428,19 @@ function TB:OnEnable()
 
 	self:SetOpen(self:IsOpen(), true)
 	self:SetPolling(self:IsOpen())
+
+	-- Pins are claimed on the way in, or a rail restored from saved variables
+	-- would draw nothing until somebody toggled a pin.
+	for _, key in ipairs(self:Pinned()) do
+		local e = A.Launchers and A.Launchers.byKey[key]
+		if e then A.Launchers:Claim(e, self, true) end
+	end
+	self:LayoutRail()
+
+	A.Launchers:OnChanged("toolbox", function()
+		TB:RefreshAddons()
+		TB:LayoutRail()
+	end)
 end
 
 function TB:OnDisable()
@@ -779,6 +793,7 @@ function TB:BuildContent()
 	content.cards = {}
 	self:RefreshWidgets()
 	self:BuildTiles()
+	self:BuildAddons()
 end
 
 --- One card per chosen data source. Frames are POOLED by index, because WoW has
@@ -1126,5 +1141,342 @@ function TB:LayoutTiles()
 			tile:SetPoint("TOPLEFT", content.tilesHead, "BOTTOMLEFT",
 				c * (tw + TILE_GAP), -(10 + r * (TILE_H + TILE_GAP)))
 		end
+	end
+
+	self:LayoutAddons()
+end
+
+-- ---------------------------------------------------------------------------
+-- the addon list
+--
+-- Every loaded addon, which is a SUPERSET of the ones you can do anything with.
+-- Core/Launchers.lua finds the actionable half - an LDB launcher, a LibDBIcon
+-- button, or a hand-rolled one - and plenty of addons offer none of those.
+--
+-- A row with nothing behind it is still worth listing: you want to know what is
+-- loaded. But it must LOOK inert rather than silently doing nothing when
+-- clicked, which is the most common case and therefore the one designed first.
+-- ---------------------------------------------------------------------------
+
+local ROW_H, ROW_GAP = 26, 4
+
+--- Loaded addons, by title, with their launcher entry where there is one.
+--
+--  Titles carry colour escapes surprisingly often - addons put their own name in
+--  their TOC with |cff codes - so the title is used as given and the NAME is
+--  what the launcher is matched on.
+function TB:AddonRows()
+	local rows, seen = {}, {}
+	local L = A.Launchers
+
+	local api = C_AddOns or _G
+	local count = (api.GetNumAddOns and api.GetNumAddOns()) or 0
+	for i = 1, count do
+		local name, title = api.GetAddOnInfo and api.GetAddOnInfo(i)
+		local loaded = true
+		if api.IsAddOnLoaded then loaded = api.IsAddOnLoaded(i) and true or false end
+		if name and loaded then
+			-- The launcher whose key matches the addon, if there is one. LDB
+			-- names are the addon's choice and usually the addon's name, so this
+			-- matches on both and settles for neither.
+			local entry = L and (L.byKey[name] or L.byKey[title or ""])
+			rows[#rows + 1] = {
+				name  = name,
+				label = (title and title ~= "" and title) or name,
+				entry = entry,
+			}
+			seen[name] = true
+			if entry then seen[entry.key] = true end
+		end
+	end
+
+	-- Launchers whose addon we could not match by name still belong in the list;
+	-- they are the actionable ones, which is more than most rows manage.
+	if L then
+		for entry in L:Iterate() do
+			if not seen[entry.key] then
+				rows[#rows + 1] = { name = entry.key, label = entry.label or entry.key, entry = entry }
+			end
+		end
+	end
+
+	table.sort(rows, function(x, y)
+		-- Actionable first, then alphabetical. A list where half the rows do
+		-- nothing reads better with the useful half at the top.
+		local xa, ya = x.entry ~= nil, y.entry ~= nil
+		if xa ~= ya then return xa end
+		return tostring(x.label):lower() < tostring(y.label):lower()
+	end)
+
+	return rows
+end
+
+-- ---------------------------------------------------------------------------
+-- pinning
+-- ---------------------------------------------------------------------------
+
+function TB:Pinned()
+	local c = Char()
+	if not c then return {} end
+	c.pinned = c.pinned or {}
+	return c.pinned
+end
+
+function TB:IsPinned(key)
+	for _, k in ipairs(self:Pinned()) do
+		if k == key then return true end
+	end
+	return false
+end
+
+--- Pinning is an explicit instruction to put this addon on the rail, so it
+--  CLAIMS the entry even if the minimap drawer already had it. Unpinning
+--  releases, and the drawer takes it back on its next layout.
+function TB:SetPinned(key, on)
+	local pinned = self:Pinned()
+	local L = A.Launchers
+	local entry = L and L.byKey[key]
+	if not entry then return false end
+
+	if on and not self:IsPinned(key) then
+		pinned[#pinned + 1] = key
+		L:Claim(entry, self, true)
+	elseif not on then
+		for i = #pinned, 1, -1 do
+			if pinned[i] == key then table.remove(pinned, i) end
+		end
+		L:Release(entry, self)
+	end
+
+	self:LayoutRail()
+	self:RefreshAddons()
+	return true
+end
+
+function TB:TogglePin(key)
+	return self:SetPinned(key, not self:IsPinned(key))
+end
+
+-- ---------------------------------------------------------------------------
+-- the rail
+-- ---------------------------------------------------------------------------
+
+--- Pinned buttons live ON the rail, so they are there when the drawer is shut -
+--  which is the whole reason the rail is a separate surface.
+--
+--  Never Hide()n. A collected button belongs to another addon and may carry a
+--  secure template; hiding a frame with a protected descendant is refused in
+--  combat, and opening a drawer mid-fight is exactly the sort of thing people
+--  do. Alpha and EnableMouse, the same rule the minimap drawer follows.
+function TB:LayoutRail()
+	if not self.rail then return end
+	local L = A.Launchers
+	if not L then return end
+
+	local edge = self:Dock()
+	local vertical = IsVertical(edge)
+	local n = 0
+
+	for _, key in ipairs(self:Pinned()) do
+		local entry = L.byKey[key]
+		local b = entry and entry.button
+		if b and L:OwnerOf(entry) == self then
+			n = n + 1
+			pcall(L.RawSetParent, b, self.rail)
+			pcall(L.RawClearAllPoints, b)
+			local off = RAIL_PAD + RAIL_CHEV + RAIL_PAD + (n - 1) * (RAIL_ICON + RAIL_PAD)
+			if vertical then
+				pcall(L.RawSetPoint, b, "TOP", self.rail, "TOP", 0, -off)
+			else
+				pcall(L.RawSetPoint, b, "LEFT", self.rail, "LEFT", off, 0)
+			end
+			pcall(L.RawSetSize, b, RAIL_ICON, RAIL_ICON)
+			if b.SetFrameStrata then pcall(b.SetFrameStrata, b, self.rail:GetFrameStrata()) end
+			if b.SetFrameLevel then pcall(b.SetFrameLevel, b, self.rail:GetFrameLevel() + 5) end
+			if b.SetAlpha then pcall(b.SetAlpha, b, 1) end
+			if b.EnableMouse then pcall(b.EnableMouse, b, true) end
+		end
+	end
+
+	self._railCount = n
+
+	-- The rail grows to fit what is on it: the chevron, then one slot per pin.
+	local len = RAIL_PAD + RAIL_CHEV + RAIL_PAD + n * (RAIL_ICON + RAIL_PAD)
+	if vertical then
+		self.rail:SetSize(RAIL_W, math.max(len, RAIL_CHEV + RAIL_PAD * 2))
+	else
+		self.rail:SetSize(math.max(len, RAIL_CHEV + RAIL_PAD * 2), RAIL_W)
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- rows
+-- ---------------------------------------------------------------------------
+
+function TB:BuildAddons()
+	if not self.content or self.content.addons then return end
+	local head = W.Text(self.content, "tbSection", "LEFT")
+	head:SetText(Spaced("ADDONS"))
+	self.content.addonsHead = head
+
+	local hint = W.Text(self.content, "tbLabel", "RIGHT")
+	self.content.addonsHint = hint
+
+	self.content.addons = {}
+	self:RefreshAddons()
+end
+
+function TB:RefreshAddons()
+	if not self.content or not self.content.addons then return end
+	local rows = self:AddonRows()
+	self._addonRows = rows
+
+	local actionable = 0
+	for _, r in ipairs(rows) do if r.entry then actionable = actionable + 1 end end
+	self.content.addonsHint:SetText(#rows .. " installed \194\183 " .. actionable .. " with a launcher")
+
+	for i, r in ipairs(rows) do
+		local row = self.content.addons[i]
+		if not row then
+			row = CreateFrame("Button", nil, self.content)
+			row:SetHeight(ROW_H)
+
+			row.tile = Glass.CreatePanel(row, { corner = 8 })
+			row.tile:SetSize(25, 25)
+			row.tile:SetPoint("LEFT", row, "LEFT", 0, 0)
+			row.icon = row.tile:CreateTexture(nil, "ARTWORK")
+			row.icon:SetPoint("CENTER", row.tile, "CENTER", 0, 0)
+			row.icon:SetSize(17, 17)
+			-- The letter, for the many addons with no icon to offer.
+			row.initial = W.Text(row.tile, "tbLabel", "CENTER")
+			row.initial:SetPoint("CENTER", row.tile, "CENTER", 0, 0)
+
+			row.name = W.Text(row, "tbCardBody", "LEFT")
+			row.name:SetPoint("LEFT", row.tile, "RIGHT", 8, 0)
+
+			row.pin = CreateFrame("Button", nil, row)
+			row.pin:SetSize(13, 13)
+			row.pin:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+			row.pin.glyph = row.pin:CreateTexture(nil, "ARTWORK")
+			row.pin.glyph:SetAllPoints(row.pin)
+			row.pin.glyph:SetTexture(Media.texture.circleMask or Media.texture.ring)
+			row.pin:SetScript("OnClick", function(self2)
+				local rr = self2:GetParent().__row
+				if rr and rr.entry then TB:TogglePin(rr.entry.key) end
+			end)
+
+			row:SetScript("OnClick", function(self2)
+				local rr = self2.__row
+				if rr and rr.entry then A.Launchers:Click(rr.entry, "LeftButton") end
+			end)
+
+			self.content.addons[i] = row
+		end
+
+		row.__row = r
+		row.name:SetText(r.label)
+
+		-- The icon, or the initial. Only about half the addons on a machine
+		-- declare one, so the letter tile is the BASE CASE rather than a
+		-- placeholder - a grid where half the tiles are a question mark looks
+		-- broken, and the handoff's "use real addon icons" cannot be followed
+		-- for the other half.
+		local icon = r.entry and r.entry.obj and r.entry.obj.icon
+		if not icon and C_AddOns and C_AddOns.GetAddOnMetadata then
+			local ok, v = pcall(C_AddOns.GetAddOnMetadata, r.name, "IconTexture")
+			if ok then icon = v end
+		end
+		if icon then
+			row.icon:SetTexture(icon)
+			row.icon:Show()
+			row.initial:SetText("")
+		else
+			row.icon:Hide()
+			row.initial:SetText((r.label or "?"):sub(1, 1):upper())
+		end
+
+		-- A row with nothing behind it is listed and INERT, and looks it. The
+		-- alternative - a row that accepts a click and does nothing - is the
+		-- one thing worse than not listing it.
+		if r.entry then
+			row:EnableMouse(true)
+			row.pin:Show()
+			W.Color(row.name, Palette.c.text)
+			local pinned = self:IsPinned(r.entry.key)
+			row.pin.glyph:SetVertexColor(
+				pinned and Palette.c.accent[1] or Palette.c.textDim[1],
+				pinned and Palette.c.accent[2] or Palette.c.textDim[2],
+				pinned and Palette.c.accent[3] or Palette.c.textDim[3],
+				pinned and 1 or 0.45)
+		else
+			row:EnableMouse(false)
+			row.pin:Hide()
+			W.Color(row.name, Palette.c.textDim)
+		end
+
+		row:Show()
+	end
+
+	for i = #rows + 1, #self.content.addons do
+		self.content.addons[i]:Hide()
+	end
+
+	self:LayoutAddons()
+end
+
+--- Two columns, as the deck draws it. The list is CUT to what fits rather than
+--  resizing the panel, and what did not fit is reported - a list that silently
+--  drops the addon you were looking for is worse than one that admits it ran
+--  out of room, which is the rule the quest tracker already follows.
+function TB:LayoutAddons()
+	if not self.content or not self.content.addons then return end
+	local content = self.content
+	local w = self.panel:GetWidth()
+
+	local anchor
+	for _, t in ipairs(content.tiles or {}) do
+		if t:IsShown() then anchor = t end
+	end
+	anchor = anchor or content.widgetsHead
+
+	content.addonsHead:ClearAllPoints()
+	content.addonsHead:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
+	content.addonsHead:SetPoint("TOP", anchor, "BOTTOM", 0, -18)
+	content.addonsHint:ClearAllPoints()
+	content.addonsHint:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+	content.addonsHint:SetPoint("TOP", content.addonsHead, "TOP", 0, 0)
+
+	local cols = 2
+	local avail = w - PAD * 2
+	local rw = (avail - ROW_GAP * (cols - 1)) / cols
+
+	-- How many rows there is actually room for, measured against the panel
+	-- rather than guessed at.
+	local top = content.addonsHead:GetBottom() or 0
+	local floorY = content:GetBottom() or 0
+	local room = math.max(0, top - floorY - 12)
+	local maxRows = math.max(1, math.floor(room / (ROW_H + ROW_GAP)))
+	local maxShown = maxRows * cols
+
+	local shown = 0
+	for i, row in ipairs(content.addons) do
+		if row.__row and i <= maxShown and (self._addonRows and i <= #self._addonRows) then
+			local r, c = math.floor((i - 1) / cols), (i - 1) % cols
+			row:SetWidth(rw)
+			row:ClearAllPoints()
+			row:SetPoint("TOPLEFT", content.addonsHead, "BOTTOMLEFT",
+				c * (rw + ROW_GAP), -(10 + r * (ROW_H + ROW_GAP)))
+			row:Show()
+			shown = shown + 1
+		else
+			row:Hide()
+		end
+	end
+
+	local total = #(self._addonRows or {})
+	self._addonsCut = math.max(0, total - shown)
+	if self._addonsCut > 0 then
+		content.addonsHint:SetText(total .. " installed \194\183 +"
+			.. self._addonsCut .. " more")
 	end
 end

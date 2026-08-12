@@ -398,10 +398,19 @@ end
 -- the drawer
 -- ---------------------------------------------------------------------------
 
+--- Shown, and still OURS.
+--
+--  A button pinned to the Toolbox rail is claimed away from here, and the drawer
+--  has to stop laying it out the moment that happens or both surfaces anchor the
+--  same frame and the answer is whichever ran last. Filtered at layout rather
+--  than removed from buttonOrder, so unpinning gives it straight back without a
+--  rescan.
 local function VisibleButtons(self)
 	local out = {}
 	for _, b in ipairs(self.buttonOrder) do
-		if b:IsShown() then out[#out + 1] = b end
+		local e = Launchers.seen[b]
+		local mine = (not e) or Launchers:OwnerOf(e) == self
+		if mine and b:IsShown() then out[#out + 1] = b end
 	end
 	table.sort(out, function(x, y)
 		return (x:GetName() or "") < (y:GetName() or "")

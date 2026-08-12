@@ -551,7 +551,12 @@ function CreateFrame(kind, name, parent, template)
 	function f:SetNormalTexture() end
 	function f:SetButtonState() end
 
-	function f:EnableMouse() end
+	-- Recorded rather than swallowed. "Is this row inert?" is a real question
+	-- with a real answer, and a no-op EnableMouse makes it unaskable - a control
+	-- that takes no mouse and one that takes a click and does nothing look
+	-- identical from a test that cannot read the flag back.
+	function f:EnableMouse(v) self.__mouse = (v ~= false) end
+	function f:IsMouseEnabled() return self.__mouse ~= false end
 	function f:EnableMouseWheel() end
 	function f:EnableKeyboard(v) self.__keyboard = v and true or false end
 	function f:IsKeyboardEnabled() return self.__keyboard or false end
@@ -2379,7 +2384,35 @@ function UnitChannelInfo(u)
 	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
 end
 
-C_AddOns = { GetAddOnMetadata = function() return "0.1.0" end }
+-- The addon list is a SUPERSET of the actionable one: most addons offer neither
+-- an LDB launcher nor a minimap button. Only about half declare ## IconTexture
+-- either - 13 of the 24 installed on the machine this was written against - so
+-- the mock deliberately gives some an icon and some none.
+_G.__addons = {
+	{ name = "Questie",     title = "Questie",        icon = "Interface\Icons\INV_Misc_Map01" },
+	{ name = "TomTom",      title = "TomTom" },
+	{ name = "PlainAddon",  title = "Plain Addon" },
+	{ name = "OtherPlain",  title = "Other Plain" },
+}
+
+C_AddOns = {
+	GetAddOnMetadata = function(which, field)
+		if field == "IconTexture" then
+			for _, a in ipairs(_G.__addons) do
+				if a.name == which then return a.icon end
+			end
+			return nil
+		end
+		return "0.1.0"
+	end,
+	GetNumAddOns  = function() return #_G.__addons end,
+	GetAddOnInfo  = function(i)
+		local a = _G.__addons[i]
+		if not a then return nil end
+		return a.name, a.title
+	end,
+	IsAddOnLoaded = function(i) return _G.__addons[i] ~= nil end,
+}
 
 -- ---------------------------------------------------------------------------
 -- loading
@@ -7925,6 +7958,135 @@ do
 
 		c.tiles = nil
 		TBm:RefreshTiles()
+	end
+
+	TBm:SetOpen(false, true)
+end
+
+print("== toolbox: the addon list is a superset of the useful one ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local MMx = A:GetModule("minimap")
+	local LN  = A.Launchers
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+
+	-- A launcher for one of the mocked addons, and one addon with nothing.
+	local ran = false
+	_G.__makeLDB("Questie", "launcher", {
+		label = "Questie",
+		icon = "Interface\\Icons\\INV_Misc_Map01",
+		OnClick = function() ran = true end,
+	})
+	MMx:Scan()
+	TBm:RefreshAddons()
+
+	local rows = TBm:AddonRows()
+	local byName = {}
+	for _, r in ipairs(rows) do byName[r.name] = r end
+
+	check(byName["PlainAddon"] ~= nil,
+		"an addon with no launcher and no minimap button is STILL LISTED - you"
+		.. " want to know what is loaded, and that is most of them")
+	check(byName["PlainAddon"].entry == nil,
+		"with nothing behind it")
+	check(byName["Questie"] and byName["Questie"].entry ~= nil,
+		"and one with a launcher carries its entry")
+
+	-- Actionable first. A list where half the rows do nothing reads better with
+	-- the useful half at the top.
+	check(rows[1].entry ~= nil,
+		"actionable rows sort first (" .. tostring(rows[1].label) .. ")")
+
+	-- The inert row must LOOK inert. A row that accepts a click and does
+	-- nothing is the one thing worse than not listing it.
+	do
+		local inert, live
+		for i, r in ipairs(rows) do
+			local f = TBm.content.addons[i]
+			if f then
+				if r.entry then live = live or f else inert = inert or f end
+			end
+		end
+		check(inert and not inert:IsMouseEnabled(),
+			"a row with nothing behind it takes no mouse at all, rather than"
+			.. " accepting a click and quietly doing nothing")
+		check(inert and not inert.pin:IsShown(),
+			"and offers no pin, because there is nothing to pin")
+		check(live and live:IsMouseEnabled() and live.pin:IsShown(),
+			"while a row with a launcher takes both")
+	end
+
+	-- Icons: about half the addons on a machine declare one. The letter tile is
+	-- the base case, not a placeholder.
+	do
+		local qi, pi
+		for i, r in ipairs(rows) do
+			if r.name == "Questie" then qi = TBm.content.addons[i] end
+			if r.name == "PlainAddon" then pi = TBm.content.addons[i] end
+		end
+		check(qi and qi.icon:IsShown(), "an addon that declares an icon gets it")
+		check(pi and not pi.icon:IsShown() and pi.initial:GetText() == "P",
+			"and one that does not gets its initial - the handoff says to use"
+			.. " real addon icons, which cannot be followed for the half that"
+			.. " declare none, and a grid of question marks looks broken")
+	end
+
+	-- Pinning. This is the ownership handover the plan called out: pinning is an
+	-- explicit instruction to put the addon on the RAIL, so it takes the entry
+	-- even though the minimap drawer already had it.
+	do
+		local entry = LN.byKey["Questie"]
+		check(entry ~= nil, "the Questie launcher exists")
+		local firstOwner = LN:OwnerOf(entry)
+		check(firstOwner == MMx,
+			"the minimap drawer has it to begin with (" .. tostring(firstOwner) .. ")")
+
+		TBm:TogglePin("Questie")
+		check(TBm:IsPinned("Questie"), "pinning records it")
+		check(LN:OwnerOf(entry) == TBm,
+			"and TAKES the entry from the drawer - a pin is an instruction to"
+			.. " put it on the rail, so it overrides rather than being refused")
+		check(entry.button:GetParent() == TBm.rail,
+			"the button moves onto the rail, where it is reachable with the"
+			.. " drawer shut")
+
+		-- ...and the drawer must stop laying it out the same moment, or both
+		-- surfaces anchor one frame and the answer is whichever ran last.
+		-- Checking the PARENT proves nothing: LayoutDrawer only sets points, it
+		-- never reparents, so a drawer that ignored ownership entirely would
+		-- still leave the parent alone. What it would do is re-ANCHOR the
+		-- button to its own tray, which is the thing that actually fights.
+		MMx:LayoutDrawer()
+		local _, anchoredTo = entry.button:GetPoint(1)
+		check(anchoredTo == TBm.rail,
+			"and the drawer does not re-anchor it - it lays out only what it"
+			.. " still owns, or both surfaces SetPoint the same borrowed frame"
+			.. " and the answer is whichever ran last (anchored to "
+			.. tostring(anchoredTo == TBm.rail and "the rail"
+				or anchoredTo == MMx.drawer.tray and "the drawer tray"
+				or tostring(anchoredTo)) .. ")")
+
+		TBm:TogglePin("Questie")
+		check(not TBm:IsPinned("Questie"), "unpinning removes it")
+		check(LN:OwnerOf(entry) ~= TBm, "and releases the entry")
+	end
+
+	-- Never Hide a collected button, even to close the rail. It may carry a
+	-- secure template, and hiding a frame with a protected descendant is refused
+	-- in combat - which is exactly when somebody opens a drawer.
+	do
+		TBm:TogglePin("Questie")
+		local entry = LN.byKey["Questie"]
+		_G.__inCombat = true
+		TBm:SetOpen(false, true)
+		TBm:SetOpen(true, true)
+		check(entry.button:IsShown(),
+			"opening and closing in combat never hides a pinned button - alpha"
+			.. " and mouse only, the same rule the aura trays and the minimap"
+			.. " drawer follow")
+		_G.__inCombat = false
+		TBm:TogglePin("Questie")
 	end
 
 	TBm:SetOpen(false, true)

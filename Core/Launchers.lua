@@ -549,10 +549,26 @@ end
 -- has both switched on.
 -- ---------------------------------------------------------------------------
 
-function L:Claim(entry, owner)
+--- `force` is how a pin wins.
+--
+--  Ordinarily a claim on something somebody else holds is refused, which is the
+--  whole point: two surfaces positioning one borrowed frame is a bug that only
+--  appears for whoever has both switched on. But pinning an addon to the rail is
+--  an explicit instruction to move it THERE, so the Toolbox takes it and the
+--  previous owner is told the list changed and drops it on its next pass.
+--
+--  Deliberately not a priority number. A number invites a third surface to pick
+--  a bigger one; a flag makes the caller say out loud that it is overriding.
+function L:Claim(entry, owner, force)
 	if not entry or not owner then return false end
 	local held = self.owners[entry]
-	if held and held ~= owner then return false end
+	if held and held ~= owner then
+		if not force then return false end
+		self.owners[entry] = owner
+		self:Prepare(entry)
+		self:Changed()
+		return true
+	end
 	self.owners[entry] = owner
 	self:Prepare(entry)
 	return true
