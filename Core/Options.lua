@@ -666,12 +666,10 @@ local function MinimapGroup()
 			.. "  |cff888888Map pins are left alone - they are not buttons, and there"
 			.. " can be thousands of them.|r"),
 		drawer = toggle("Collect addon buttons", nil, at("drawer"), { defaultTrue = true }),
-		drawerColumns = range("Buttons per row", nil, at("drawerColumns"), 1, 12, 1),
 		skinButtons = toggle("Skin them",
 			"Mask each icon to a circle, ring it like the rest of the UI, and"
 			.. " switch off whatever bevel it arrived with.",
 			at("skinButtons"), { defaultTrue = true }),
-		buttonSize = range("Button size", nil, at("buttonSize"), 16, 40, 1),
 		buttonSpacing = range("Spacing", nil, at("buttonSpacing"), 0, 16, 1),
 	})
 end

@@ -124,25 +124,9 @@ local function diag()
 	end
 
 	local MMd = A:GetModule("minimap")
-	if MMd and MMd.buttons then
-		local n = 0
-		for _ in pairs(MMd.buttons) do n = n + 1 end
-		for _, b in ipairs(MMd.buttonOrder or {}) do
-			local pt, _, _, x, y = b:GetPoint(1)
-			local strataOK = b.GetFrameStrata
-				and b:GetFrameStrata() == MMd.drawer:GetFrameStrata()
-			say("      %-28s %s  %s %s,%s  %s lvl %s  %sx%s  hid %s  %s",
-				tostring(b:GetName()), b:IsShown() and "shown" or "|cff888888hidden|r",
-				tostring(pt), tostring(x and math.floor(x)), tostring(y and math.floor(y)),
-				(strataOK and "" or "|cffff8a8a") .. tostring(b.GetFrameStrata and b:GetFrameStrata())
-					.. (strataOK and "" or "|r"),
-				tostring(b.GetFrameLevel and b:GetFrameLevel()),
-				tostring(b.GetWidth and math.floor(b:GetWidth() or 0)),
-				tostring(b.GetHeight and math.floor(b:GetHeight() or 0)),
-				tostring(b.__aetherHidden), tostring(b.__aetherIcon and "icon ok" or "|cffff8a8ano icon found|r"))
-		end
-		say("   minimap drawer: %d buttons collected%s", n,
-			MMd.scanError and (" |cffff8a8a(scan failed: " .. tostring(MMd.scanError) .. ")|r") or "")
+	if MMd then
+		-- The collected-button dump moved to `/aether toolbox`, which is where
+		-- the launchers live now. This module only clears Blizzard's furniture.
 		if MMd.hideReport then
 			local names = {}
 			for k in pairs(MMd.hideReport) do names[#names + 1] = k end

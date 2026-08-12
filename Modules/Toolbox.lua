@@ -542,6 +542,12 @@ function TB:OnEnable()
 	self:SetOpen(self:IsOpen(), true)
 	self:SetPolling(self:IsOpen())
 
+	-- Discovery starts HERE now. It used to be kicked off by the minimap module
+	-- on PLAYER_LOGIN, and when the drawer went so did the only caller - so the
+	-- registry callbacks were never subscribed and the fifteen-second retry
+	-- never ran. Every launcher that finished loading after us was invisible.
+	A.Launchers:StartScanning({ [self.panel] = true, [self.rail] = true })
+
 	self:ClaimPins()
 	self:LayoutRail()
 
@@ -1274,6 +1280,25 @@ local ROW_H, ROW_GAP = 26, 4
 --  Titles carry colour escapes surprisingly often - addons put their own name in
 --  their TOC with |cff codes - so the title is used as given and the NAME is
 --  what the launcher is matched on.
+--- A registry key, made readable.
+--
+--  An LDB name is whatever the addon picked and a LibDBIcon one is often worse:
+--  "LeaPlusCustomIcon_SmartBuffMiniMapButton" is a real entry on this machine.
+--  The addon's own title is preferred wherever one matches; this is the
+--  fallback, and it only trims the furniture rather than trying to be clever -
+--  a name we cannot improve is left exactly as the addon wrote it, because a
+--  half-mangled name is worse than a long one.
+local function PrettyName(key)
+	local s = tostring(key or "?")
+	s = s:gsub("^LibDBIcon10_", "")
+	s = s:gsub("MiniMapButton$", ""):gsub("MinimapButton$", "")
+	s = s:gsub("MiniMapIcon$", ""):gsub("MinimapIcon$", "")
+	s = s:gsub("CustomIcon_", "")
+	s = s:gsub("^%s*(.-)%s*$", "%1")
+	if s == "" then return tostring(key) end
+	return s
+end
+
 function TB:AddonRows()
 	local rows = {}
 	local L = A.Launchers
@@ -1299,10 +1324,12 @@ function TB:AddonRows()
 	for entry in L:Iterate() do
 		rows[#rows + 1] = {
 			name  = entry.key,
+			-- see PrettyName below
 			-- The addon's own title where the launcher's name matches one, since
 			-- an LDB object is often named for the addon but not always titled
 			-- like it.
-			label = entry.label or titles[tostring(entry.key):lower()] or entry.key,
+			label = entry.label or titles[tostring(entry.key):lower()]
+				or PrettyName(entry.key),
 			entry = entry,
 		}
 	end
@@ -1365,6 +1392,9 @@ function TB:ClaimPins()
 	local L = A.Launchers
 	if not L then return 0 end
 	local n = 0
+
+	-- Pins first, and forced: a pin is an explicit instruction to put this
+	-- addon on the rail, so it overrides whoever holds it.
 	for _, key in ipairs(self:Pinned()) do
 		local e = L.byKey[key]
 		if e and L:OwnerOf(e) ~= self then
@@ -1372,6 +1402,26 @@ function TB:ClaimPins()
 			n = n + 1
 		end
 	end
+
+	-- ...and with the drawer retired, EVERYTHING ELSE too.
+	--
+	-- Not greed: an unclaimed launcher button is one nobody positions, and a
+	-- LibDBIcon button that nobody positions is one still sitting on the minimap
+	-- ring. Clearing the ring is what the drawer was for, so somebody has to
+	-- keep doing it - and the entries that are not pinned get parked by
+	-- LayoutRail rather than drawn anywhere.
+	--
+	-- Unconditionally. This was gated on the minimap drawer being switched off,
+	-- back when the drawer was still a setting; the key is gone now and the gate
+	-- read nil rather than false, so it never fired and every launcher went
+	-- unowned. There is one surface, so there is nothing to defer to.
+	for e in L:Iterate() do
+		if not L:OwnerOf(e) then
+			L:Claim(e, self)
+			n = n + 1
+		end
+	end
+
 	return n
 end
 
@@ -1418,6 +1468,15 @@ function TB:LayoutRail()
 			if b.SetFrameLevel then pcall(b.SetFrameLevel, b, self.rail:GetFrameLevel() + 5) end
 			if b.SetAlpha then pcall(b.SetAlpha, b, 1) end
 			if b.EnableMouse then pcall(b.EnableMouse, b, true) end
+		end
+	end
+
+	-- Everything we own that is NOT pinned goes off screen. Parked, never
+	-- hidden: these belong to other addons and may carry secure templates, and
+	-- hiding a frame with a protected descendant is refused in combat.
+	for e in L:Iterate() do
+		if L:OwnerOf(e) == self and not self:IsPinned(e.key) then
+			L:Park(e)
 		end
 	end
 
@@ -1475,8 +1534,14 @@ function TB:RefreshAddons()
 			row.initial = W.Text(row.tile, "tbLabel", "CENTER")
 			row.initial:SetPoint("CENTER", row.tile, "CENTER", 0, 0)
 
+			-- Truncated, not wrapped. LibDBIcon registry names are whatever the
+			-- addon chose - "LeaPlusCustomIcon_SmartBuffMiniMapButton" is a real
+			-- one - and at two columns a name that long ran straight across the
+			-- row beside it and the two overprinted.
 			row.name = W.Text(row, "tbCardBody", "LEFT")
 			row.name:SetPoint("LEFT", row.tile, "RIGHT", 8, 0)
+			row.name:SetPoint("RIGHT", row.pinAnchor or row, "RIGHT", -18, 0)
+			row.name:SetWordWrap(false)
 
 			row.pin = CreateFrame("Button", nil, row)
 			row.pin:SetSize(13, 13)

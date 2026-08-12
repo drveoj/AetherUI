@@ -120,6 +120,11 @@ local CHIP_H   = 16      -- the ELITE pill
 
 local BAR_H    = 7       -- health hairline
 local BAR_GAP  = 5       -- tooltip bottom to bar top
+-- Clear space between "Health" and the numbers. Not BAR_GAP, which is the
+-- VERTICAL one - they are five apart in the source and reading the wrong one
+-- would have let the two strings touch at exactly the width this is here to
+-- prevent.
+local BAR_LABEL_GAP = 24
 local BAR_TEXT = 4       -- bar bottom to its labels
 
 -- How much room under the tooltip the whole health block occupies, so the card
@@ -447,6 +452,9 @@ local function ResetCard(tip)
 	if tip.aetherBadge then tip.aetherBadge:Hide() end
 	if tip.aetherChip then tip.aetherChip:Hide() end
 	if tip.aetherMinWidth and tip.SetMinimumWidth then
+		-- The running maximum goes with it. Without this the widest unit you
+		-- ever moused over sets the floor for every tooltip after it.
+		tip.aetherWantW = nil
 		pcall(tip.SetMinimumWidth, tip, 0)
 		tip.aetherMinWidth = nil
 	end
@@ -626,6 +634,30 @@ function TT:UpdateStatusBar(bar)
 		return
 	end
 	bar.aetherValue:SetText(Commas(cur) .. "  /  " .. Commas(max))
+
+	-- ...and make the TOOLTIP wide enough for this row.
+	--
+	-- A tooltip sizes itself to its text LINES, and these two are not lines -
+	-- they are our own FontStrings anchored under the bar, invisible to the
+	-- client's own width maths. So "Health" and "1,003 / 1,003" would collide in
+	-- the middle of a narrow tooltip while every real line fitted, which is
+	-- exactly what a Stable Master looked like.
+	--
+	-- Requested as a MINIMUM rather than by resizing the tooltip: the client
+	-- owns its own width and recomputes it constantly, and anything that sets
+	-- the width directly is overwritten on the next SetUnit.
+	local tip = bar:GetParent()
+	if tip and tip.SetMinimumWidth and bar.aetherLabel.GetStringWidth then
+		local need = (bar.aetherLabel:GetStringWidth() or 0)
+			+ (bar.aetherValue:GetStringWidth() or 0)
+			+ BAR_LABEL_GAP + PAD_X * 2 + (tip.aetherGutter or 0)
+		-- Only ever raise it. The elite chip asks for room too, and whichever
+		-- wants more should win rather than whichever ran last.
+		local want = math.max(need, tip.aetherWantW or 0)
+		tip.aetherWantW = want
+		pcall(tip.SetMinimumWidth, tip, math.min(want, 420))
+		tip.aetherMinWidth = true
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -839,6 +871,10 @@ function TT:OnUnit(tip)
 		if tip.SetMinimumWidth and left1 and left1.GetStringWidth then
 			local want = left1:GetStringWidth() + chip:GetWidth() + PAD_X * 2 + 20
 				+ (tip.aetherGutter or 0)
+			-- Through the same running maximum as the health row, so the two
+			-- requirements do not overwrite each other turn about.
+			want = math.max(want, tip.aetherWantW or 0)
+			tip.aetherWantW = want
 			pcall(tip.SetMinimumWidth, tip, math.min(want, 420))
 			tip.aetherMinWidth = true
 		end

@@ -69,6 +69,12 @@ local ADDON, A = ...
 local L = {}
 A.Launchers = L
 
+-- Skinning a borrowed button needs these, and they were locals in Minimap.lua
+-- before the code moved. A pcall around the skin swallowed the nil and the
+-- button simply kept its own bevel - which looked like the skin not applying
+-- rather than like an error.
+local W, Media, Palette = A.Widgets, A.Media, A.Palette
+
 L.entries = {}     -- ordered, deterministic
 L.byKey   = {}     -- key -> entry
 L.owners  = {}     -- entry -> owner token
@@ -192,6 +198,118 @@ local function Unpin(f)
 	if f.SetFixedFrameLevel then pcall(f.SetFixedFrameLevel, f, false) end
 end
 
+-- What a third-party button hangs off itself, none of which is ours to keep:
+-- a bevelled ring, a tracking-border, a plate behind the icon. LibDBIcon names
+-- its three parts, so those are exact; anything else is matched on the texture
+-- path, because a *name* is what the addon chose to call it and a path is what
+-- it actually drew.
+local FURNITURE = {
+	"MiniMap%-TrackingBorder", "MinimapButtonBorder", "MiniMapButtonBorder",
+	"UI%-Minimap%-Border", "MinimapBorder", "Button%-Border",
+}
+
+--- Make somebody else's button look like it belongs here: the icon masked to a
+--  circle with our ring around it, and everything else it arrived with off.
+--
+--  The first version matched the bevel by texture path against a list of the
+--  usual suspects. That was too clever by half: an addon's border is whatever
+--  file that addon happened to ship, and there is no list that covers "whatever
+--  file that addon happened to ship". So the rule is inverted - **find the icon
+--  and hide every other texture** - which needs no list and cannot go stale.
+--
+--  Finding the icon, in order of how much the answer can be trusted:
+--    1. `b.icon`, which LibDBIcon sets by name and most hand-rolled buttons copy
+--    2. a region named <button>Icon, the old FrameXML convention
+--    3. the largest ARTWORK texture, which is what an icon almost always is
+--
+--  Light touch throughout, because these frames belong to other addons: regions
+--  are hidden and their texture cleared, never removed, and nothing is renamed
+--  or reparented beyond the one move into the drawer.
+local function FindIcon(b, regions)
+	if type(b.icon) == "table" and b.icon.SetTexCoord then return b.icon end
+
+	local ok, name = pcall(RawGetName, b)
+	if ok and name and _G[name .. "Icon"] then
+		local r = _G[name .. "Icon"]
+		if type(r) == "table" and r.SetTexCoord then return r end
+	end
+
+	local best, bestArea
+	for _, r in ipairs(regions) do
+		if r.GetObjectType and r:GetObjectType() == "Texture" then
+			local okt, tex = pcall(r.GetTexture, r)
+			local area = (r.GetWidth and (r:GetWidth() or 0) * (r:GetHeight() or 0)) or 0
+			-- A texture with nothing in it is not the icon.
+			if okt and tex and (not bestArea or area > bestArea) then
+				best, bestArea = r, area
+			end
+		end
+	end
+	return best
+end
+
+--- Make somebody else's button look like it belongs here.
+--
+--  The flag is set at the END, not the start. It used to be set before the ring
+--  was built, and when Palette turned out not to be in scope after this code
+--  moved here the pcall around it swallowed the error - leaving a button marked
+--  skinned, with its icon masked and no rim, and nothing anywhere saying so.
+--  A "done" flag written before the work is a lie the next call believes.
+function L.SkinButton(b)
+	if b.__aetherSkinned then return end
+
+	local got = { pcall(b.GetRegions, b) }
+	if not got[1] then return end
+	local regions = {}
+	for i = 2, #got do regions[#regions + 1] = got[i] end
+
+	local icon = FindIcon(b, regions)
+	b.__aetherHidden = 0
+
+	for _, r in ipairs(regions) do
+		if r ~= icon and r.GetObjectType and r:GetObjectType() == "Texture" then
+			pcall(r.SetTexture, r, nil)
+			pcall(r.SetAlpha, r, 0)
+			pcall(r.Hide, r)
+			b.__aetherHidden = b.__aetherHidden + 1
+		end
+	end
+
+	if icon then
+		-- Trim the icon's own baked border before masking, the way every icon in
+		-- this UI is trimmed, or the circle cuts through somebody's frame art.
+		pcall(icon.SetTexCoord, icon, 0.08, 0.92, 0.08, 0.92)
+		pcall(icon.ClearAllPoints, icon)
+		pcall(icon.SetPoint, icon, "TOPLEFT", b, "TOPLEFT", 2, -2)
+		pcall(icon.SetPoint, icon, "BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
+		pcall(icon.SetDrawLayer, icon, "ARTWORK")
+		pcall(W.AddMask, icon, b, Media.texture.chipDisc, b)
+		b.__aetherIcon = icon
+	end
+
+	if not b.__aetherRing then
+		local ok, ring = pcall(b.CreateTexture, b, nil, "OVERLAY")
+		if ok and ring then
+			-- Chip-Rim, and lapped one PHYSICAL pixel proud of the icon rather
+			-- than flush on it. Ring is 256 because the minimap magnifies it;
+			-- these buttons are twenty-six across, so it was minified ten times
+			-- and the rim fell under a pixel - the crunchy bezel that got
+			-- reported. And flush over a masked icon leaves the mask's own
+			-- stair-stepping showing outside the rim, which is the same note
+			-- W.CreateBadge and minimap_border() both carry.
+			ring:SetTexture(Media.texture.chipRim)
+			local proud = A:PxIn(b)
+			ring:SetPoint("TOPLEFT", b, "TOPLEFT", -proud, proud)
+			ring:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", proud, -proud)
+			local c = Palette.c.glassEdge
+			ring:SetVertexColor(c[1], c[2], c[3], 0.9)
+			b.__aetherRing = ring
+		end
+	end
+
+	b.__aetherSkinned = true
+end
+
 --- Everything a consumer has to do to a borrowed frame before placing it.
 --  Idempotent, because a re-claim after a module toggle is ordinary.
 function L:Prepare(entry)
@@ -200,6 +318,14 @@ function L:Prepare(entry)
 	entry._prepared = true
 	Pacify(entry.button, entry.ldbiName)
 	Unpin(entry.button)
+
+	-- Skinned HERE rather than by whichever surface claimed it. It used to
+	-- happen inside the minimap drawer's Collect, which meant retiring the
+	-- drawer would have left every button on the rail wearing whatever bevel
+	-- its own addon shipped.
+	if L.skinButtons ~= false then
+		pcall(L.SkinButton, entry.button)
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -624,9 +750,17 @@ function L:Release(entry, owner)
 end
 
 function L:ReleaseAll(owner)
+	local any = false
 	for entry, held in pairs(self.owners) do
-		if held == owner then self.owners[entry] = nil end
+		if held == owner then
+			self.owners[entry] = nil
+			self:Park(entry)
+			any = true
+		end
 	end
+	-- Announced once at the end rather than per entry: a listener that rescans
+	-- would otherwise do it once for every button on the machine.
+	if any then self:Changed() end
 end
 
 function L:OwnerOf(entry)
@@ -637,6 +771,7 @@ end
 -- consumers
 -- ---------------------------------------------------------------------------
 
+L.skinButtons = true
 L.listeners = {}
 
 function L:OnChanged(key, fn)

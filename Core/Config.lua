@@ -378,11 +378,6 @@ Config.defaults = {
 				-- number.
 				border       = 1.0,
 				hideBlizzard = true,
-				-- Addon buttons are collected into a drawer that slides out of the
-				-- zone pill on hover and is otherwise not on screen at all.
-				drawer        = true,
-				drawerColumns = 6,
-				buttonSize    = 24,
 				buttonSpacing = 6,
 			},
 

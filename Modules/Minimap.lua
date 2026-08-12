@@ -18,29 +18,12 @@
 	it, masks it round, and draws its own rim around it. Everything else here is
 	ours and ordinary.
 
-	The button drawer
-	-----------------
-	Third-party addons park buttons on the minimap ring, and enough of them turn
-	the map into a dartboard. They are collected into a drawer that slides out of
-	the zone pill on hover and is otherwise not on screen at all.
+	Addon launcher buttons
+	----------------------
+	They are NOT here. Core/Launchers.lua finds every addon's minimap button and
+	Modules/Toolbox.lua puts them on the Toolbox rail; this module only clears
+	Blizzard's own furniture off the map.
 
-	Finding them is three passes, in this order, because they overlap:
-
-	  1. LibDBIcon-1.0's own registry, if any addon on the machine has loaded a
-	     copy. This is the reliable one - the library knows exactly what it made.
-	  2. `Minimap:GetChildren()`, filtered. That catches the addons that roll
-	     their own button.
-	  3. Both again, a few times over the first fifteen seconds, because there is
-	     no event for "a child was added to the minimap" and addons create their
-	     buttons whenever they happen to finish loading.
-
-	The filter leans on `issecurevariable`: Blizzard's own globals are secure and
-	an addon's are not, which sorts the furniture from the arrivals without a
-	hardcoded list to keep up to date. Map *pins* are the other thing living on
-	the minimap - Questie and friends can put thousands there - so names ending
-	in a digit are rejected, and the usual pin-heavy addons are excluded by
-	prefix. `Minimap:GetChildren()` itself is wrapped in a pcall for the same
-	reason: with a pin addon running, that vararg is enormous.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -209,356 +192,19 @@ function MM:HideBlizzard()
 end
 
 -- ---------------------------------------------------------------------------
--- collected buttons
+-- addon launcher buttons: not here any more
+--
+-- This module used to collect every addon's minimap button into a drawer that
+-- slid out of the zone pill. That is the Toolbox's job now - Core/Launchers.lua
+-- finds them and Modules/Toolbox.lua puts them on the rail - and the drawer is
+-- gone rather than kept as a setting.
+--
+-- It had to go rather than merely default off. The drawer showed its contents
+-- ON HOVER, so any button the rail had not claimed sat in a frame at alpha 0
+-- and simply vanished until somebody happened to hover the pill; and with two
+-- surfaces collecting the same frames, which one owned a given button depended
+-- on load order. Both symptoms were reported. One owner, one surface.
 -- ---------------------------------------------------------------------------
-
--- Names that are map *pins*, not buttons. A pin addon can put thousands of
--- children on the minimap; letting one into the drawer is the least of it.
--- Discovery - which children of the minimap are somebody's addon button, and
--- the pin-addon hazards that go with the question - now lives in
--- Core/Launchers.lua, because the Toolbox rail asks it too.
-
--- Pacifying a LibDBIcon button and letting go of its pinned strata are the
--- service's job as well: they are facts about that library, not about a drawer.
--- `Launchers:Claim` does both.
-
--- What a third-party button hangs off itself, none of which is ours to keep:
--- a bevelled ring, a tracking-border, a plate behind the icon. LibDBIcon names
--- its three parts, so those are exact; anything else is matched on the texture
--- path, because a *name* is what the addon chose to call it and a path is what
--- it actually drew.
-local FURNITURE = {
-	"MiniMap%-TrackingBorder", "MinimapButtonBorder", "MiniMapButtonBorder",
-	"UI%-Minimap%-Border", "MinimapBorder", "Button%-Border",
-}
-
---- Make somebody else's button look like it belongs here: the icon masked to a
---  circle with our ring around it, and everything else it arrived with off.
---
---  The first version matched the bevel by texture path against a list of the
---  usual suspects. That was too clever by half: an addon's border is whatever
---  file that addon happened to ship, and there is no list that covers "whatever
---  file that addon happened to ship". So the rule is inverted - **find the icon
---  and hide every other texture** - which needs no list and cannot go stale.
---
---  Finding the icon, in order of how much the answer can be trusted:
---    1. `b.icon`, which LibDBIcon sets by name and most hand-rolled buttons copy
---    2. a region named <button>Icon, the old FrameXML convention
---    3. the largest ARTWORK texture, which is what an icon almost always is
---
---  Light touch throughout, because these frames belong to other addons: regions
---  are hidden and their texture cleared, never removed, and nothing is renamed
---  or reparented beyond the one move into the drawer.
-local function FindIcon(b, regions)
-	if type(b.icon) == "table" and b.icon.SetTexCoord then return b.icon end
-
-	local ok, name = pcall(RawGetName, b)
-	if ok and name and _G[name .. "Icon"] then
-		local r = _G[name .. "Icon"]
-		if type(r) == "table" and r.SetTexCoord then return r end
-	end
-
-	local best, bestArea
-	for _, r in ipairs(regions) do
-		if r.GetObjectType and r:GetObjectType() == "Texture" then
-			local okt, tex = pcall(r.GetTexture, r)
-			local area = (r.GetWidth and (r:GetWidth() or 0) * (r:GetHeight() or 0)) or 0
-			-- A texture with nothing in it is not the icon.
-			if okt and tex and (not bestArea or area > bestArea) then
-				best, bestArea = r, area
-			end
-		end
-	end
-	return best
-end
-
-local function SkinButton(b)
-	if b.__aetherSkinned then return end
-
-	local got = { pcall(b.GetRegions, b) }
-	if not got[1] then return end
-	local regions = {}
-	for i = 2, #got do regions[#regions + 1] = got[i] end
-
-	local icon = FindIcon(b, regions)
-	b.__aetherSkinned = true
-	b.__aetherHidden = 0
-
-	for _, r in ipairs(regions) do
-		if r ~= icon and r.GetObjectType and r:GetObjectType() == "Texture" then
-			pcall(r.SetTexture, r, nil)
-			pcall(r.SetAlpha, r, 0)
-			pcall(r.Hide, r)
-			b.__aetherHidden = b.__aetherHidden + 1
-		end
-	end
-
-	if icon then
-		-- Trim the icon's own baked border before masking, the way every icon in
-		-- this UI is trimmed, or the circle cuts through somebody's frame art.
-		pcall(icon.SetTexCoord, icon, 0.08, 0.92, 0.08, 0.92)
-		pcall(icon.ClearAllPoints, icon)
-		pcall(icon.SetPoint, icon, "TOPLEFT", b, "TOPLEFT", 2, -2)
-		pcall(icon.SetPoint, icon, "BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
-		pcall(icon.SetDrawLayer, icon, "ARTWORK")
-		pcall(W.AddMask, icon, b, Media.texture.circleMask, b)
-		b.__aetherIcon = icon
-	end
-
-	if not b.__aetherRing then
-		local ok, ring = pcall(b.CreateTexture, b, nil, "OVERLAY")
-		if ok and ring then
-			ring:SetTexture(Media.texture.ring)
-			ring:SetAllPoints(b)
-			local c = Palette.c.glassEdge
-			ring:SetVertexColor(c[1], c[2], c[3], 0.9)
-			b.__aetherRing = ring
-		end
-	end
-end
-
-function MM:Collect(button, ldbiName)
-	if not button or self.buttons[button] then return end
-	if InCombatLockdown() then
-		self._collectPending = true
-		return
-	end
-
-	local ok, name = pcall(RawGetName, button)
-	if not ok then return end
-
-	self.buttons[button] = name or true
-	self.buttonOrder[#self.buttonOrder + 1] = button
-
-	if A.Config:Module("minimap").skinButtons ~= false then
-		pcall(SkinButton, button)
-	end
-
-	pcall(RawSetParent, button, self.drawer.tray)
-	if button.SetFrameStrata then pcall(button.SetFrameStrata, button, "DIALOG") end
-	if button.SetIgnoreParentScale then
-		pcall(button.SetIgnoreParentScale, button, false)
-	end
-
-	-- Its own Show/Hide, hooked rather than scripted: an OnShow script also
-	-- fires when the *parent's* visibility changes, which would relayout the
-	-- drawer every time it opened.
-	if not button.__aetherHooked and hooksecurefunc then
-		button.__aetherHooked = true
-		pcall(hooksecurefunc, button, "Show", function() MM:LayoutDrawer() end)
-		pcall(hooksecurefunc, button, "Hide", function() MM:LayoutDrawer() end)
-	end
-
-	self:LayoutDrawer()
-	return true
-end
-
---- Ask the service what exists, then take the ones we can place.
---
---  Discovery moved to Core/Launchers.lua when the Toolbox rail turned out to
---  want the same set. What is left here is the half that was always this
---  module's: claiming an entry so nothing else moves it, and putting the frame
---  in the drawer.
---
---  An entry whose frame is a PROXY - an LDB launcher whose addon never made a
---  minimap button - is taken too. Those are new: the old collector could only
---  ever see what was already parented onto the map, so an addon that offers a
---  launcher and no button was invisible to it.
-function MM:Scan()
-	if not self.drawer then return 0 end
-	local cfg = A.Config:Module("minimap")
-	if cfg.drawer == false then return 0 end
-
-	local own = { [self.frame] = true, [self.pill] = true, [self.drawer] = true }
-	Launchers:Scan(own)
-	self.scanError = Launchers.scanError
-
-	local found = 0
-	for entry in Launchers:Iterate() do
-		if entry.button and not self.buttons[entry.button] then
-			if Launchers:Claim(entry, self) and self:Collect(entry.button, entry.ldbiName) then
-				found = found + 1
-			end
-		elseif entry.button and not Launchers:OwnerOf(entry) then
-			-- Already collected here, and currently owned by nobody: the Toolbox
-			-- had it pinned to the rail and has let go. Take it back, or it stays
-			-- parked for ever - the drawer lays out only what it owns, so an
-			-- unowned button belongs to neither surface.
-			Launchers:Claim(entry, self)
-		end
-	end
-
-	return found
-end
-
---- The retry loop and the creation callbacks belong to the service now; this
---  just asks it to start and takes whatever each sweep turns up.
-function MM:StartScanning()
-	local own = { [self.frame] = true, [self.pill] = true, [self.drawer] = true }
-	Launchers:OnChanged("minimap", function() MM:Scan() end)
-	Launchers:StartScanning(own)
-	self:Scan()
-end
-
--- ---------------------------------------------------------------------------
--- the drawer
--- ---------------------------------------------------------------------------
-
---- Shown, and still OURS.
---
---  A button pinned to the Toolbox rail is claimed away from here, and the drawer
---  has to stop laying it out the moment that happens or both surfaces anchor the
---  same frame and the answer is whichever ran last. Filtered at layout rather
---  than removed from buttonOrder, so unpinning gives it straight back without a
---  rescan.
-local function VisibleButtons(self)
-	local out = {}
-	for _, b in ipairs(self.buttonOrder) do
-		local e = Launchers.seen[b]
-		local mine = (not e) or Launchers:OwnerOf(e) == self
-		if mine and b:IsShown() then out[#out + 1] = b end
-	end
-	table.sort(out, function(x, y)
-		return (x:GetName() or "") < (y:GetName() or "")
-	end)
-	return out
-end
-
-function MM:LayoutDrawer()
-	if not self.drawer then return end
-	local cfg = A.Config:Module("minimap")
-	local size = cfg.buttonSize or 24
-	local gap  = cfg.buttonSpacing or 6
-	local pad  = 8
-
-	local list = VisibleButtons(self)
-	self.drawer.count = #list
-
-	if #list == 0 then
-		self.drawer:SetSize(1, 1)
-		self:SetDrawerOpen(false, true)
-		self:UpdateHint()
-		return
-	end
-
-	local cols = math.max(1, math.min(cfg.drawerColumns or 6, #list))
-	local rows = math.ceil(#list / cols)
-
-	-- Above the drawer's *own* panel art, not merely above the tray. These
-	-- arrive owning a frame level - LibDBIcon pins every button it makes at 8 -
-	-- and one sitting under the panel is drawn over and cannot be clicked.
-	local level = math.max(self.drawer:GetFrameLevel() or 0,
-		self.drawer.tray:GetFrameLevel() or 0) + 5
-	for i, b in ipairs(list) do
-		local r, c = math.ceil(i / cols), (i - 1) % cols
-
-		-- Re-applied on every layout, not just on collection: a button whose
-		-- addon puts its strata back is a button that stops working, and this is
-		-- the cheapest place to notice. `Unpin` is inside Prepare, which is
-		-- idempotent for exactly this reason.
-		local e = Launchers.seen[b]
-		if e then e._prepared = nil; Launchers:Prepare(e) end
-		pcall(b.SetFrameStrata, b, self.drawer:GetFrameStrata())
-
-		-- Level as well as strata. These arrive owning their own frame level -
-		-- LibDBIcon pins every button it makes at 8 - and a button sitting below
-		-- the drawer's own panel art is drawn over and cannot be clicked, which
-		-- looks from the outside like the buttons piling up on each other.
-		pcall(b.SetFrameLevel, b, level)
-		pcall(b.SetScale, b, 1)
-
-		-- Clear first and *check it took*. A button whose ClearAllPoints was
-		-- refused keeps its old anchor, and adding a second one on top of it is
-		-- what actually stacks them - so skip it rather than pile it up.
-		local cleared = pcall(RawClearAllPoints, b)
-		if cleared then
-			pcall(RawSetSize, b, size, size)
-			pcall(RawSetPoint, b, "TOPLEFT", self.drawer.tray, "TOPLEFT",
-				c * (size + gap), -(r - 1) * (size + gap))
-		end
-	end
-
-	self.drawer:SetSize(
-		pad * 2 + cols * size + (cols - 1) * gap,
-		pad * 2 + rows * size + (rows - 1) * gap)
-	self.drawer.tray:SetSize(
-		cols * size + (cols - 1) * gap,
-		rows * size + (rows - 1) * gap)
-	self:UpdateHint()
-end
-
---- Open or close the drawer.
---
---  By alpha and mouse, never Show/Hide. A collected button belongs to somebody
---  else and may well carry a secure template; hiding a frame with a protected
---  descendant is refused in combat, and hovering a pill is exactly the sort of
---  thing you do mid-fight. Alpha and EnableMouse are not protected.
---- Show the chevron only when there is something behind it, and turn it over
---  while that thing is open.
-function MM:UpdateHint()
-	local h = self.pill and self.pill.hint
-	if not h then return end
-	local n = (self.drawer and self.drawer.count) or 0
-	if n == 0 then h:Hide() return end
-	h:Show()
-	if self.drawer.open then
-		h:SetTexCoord(0, 1, 1, 0)     -- pointing up: you are looking at it
-		h:SetAlpha(0.7)
-	else
-		h:SetTexCoord(0, 1, 0, 1)
-		h:SetAlpha(0.35)
-	end
-end
-
-function MM:SetDrawerOpen(open, instant)
-	local d = self.drawer
-	if not d then return end
-	if open and (d.count or 0) == 0 then open = false end
-
-	d.open = open and true or false
-	d:EnableMouse(d.open)
-	self:UpdateHint()
-	if instant then
-		d:SetAlpha(d.open and 1 or 0)
-		d._alpha = nil
-		return
-	end
-	d._alpha = d.open and 1 or 0
-end
-
-local function DrawerFade(d, elapsed)
-	if not d._alpha then return end
-	local a = d:GetAlpha()
-	local step = elapsed / 0.15
-	if a < d._alpha then
-		a = math.min(d._alpha, a + step)
-	else
-		a = math.max(d._alpha, a - step)
-	end
-	d:SetAlpha(a)
-	if math.abs(a - d._alpha) < 0.01 then d._alpha = nil end
-end
-
---- Hover tracking across two frames that are not touching.
---
---  The drawer slides out of the pill, so the cursor has to travel from one to
---  the other and there is a gap between them. Closing on the pill's OnLeave
---  alone would shut it before you arrived; a short grace period, re-checked
---  against both frames, is what makes it reachable.
-function MM:TouchDrawer()
-	self._hoverUntil = GetTime() + 0.4
-	self:SetDrawerOpen(true)
-end
-
-function MM:CheckHover()
-	if not self.drawer or not self.drawer.open then return end
-	if (self.pill and self.pill:IsMouseOver())
-		or (self.drawer and self.drawer:IsMouseOver()) then
-		self._hoverUntil = GetTime() + 0.4
-		return
-	end
-	if GetTime() > (self._hoverUntil or 0) then self:SetDrawerOpen(false) end
-end
 
 -- ---------------------------------------------------------------------------
 -- readouts
@@ -725,7 +371,7 @@ function MM:UpdateMail()
 	if not self.mail then return end
 	local cfg = A.Config:Module("minimap")
 	local has = cfg.showMail ~= false and HasNewMail and HasNewMail()
-	-- Alpha rather than Show, for the same reason the drawer uses it: this can
+	-- Alpha rather than Show, for the reason the aura trays use it: this can
 	-- flip mid-fight and it costs nothing to stay out of that argument.
 	self.mail:SetAlpha(has and 1 or 0)
 	self.mail:EnableMouse(has and true or false)
@@ -851,41 +497,7 @@ local function BuildPill(parent)
 	p.coordW = FieldWidth(coords, COORD_SAMPLE)
 	p.clockW = FieldWidth(clock, CLOCK_SAMPLE)
 
-	-- "There is something folded away under here."
-	--
-	-- A drawer with no handle is a drawer nobody opens: the buttons are off
-	-- screen by design, so without this there is nothing to say the hover is
-	-- worth trying. Deliberately faint - it is an affordance, not a control, and
-	-- it costs its own visibility if it competes with the zone name.
-	--
-	-- It flips to point up while the drawer is open, which is the cheapest way to
-	-- say "this is the thing you just opened" without adding a second element.
-	local hint = p:CreateTexture(nil, "OVERLAY")
-	hint:SetTexture(Media.texture.chevron)
-	hint:SetSize(14, 7)
-	-- Down on the rim rather than floating above it: at +3 it sat in the text's
-	-- lap and read as part of the line rather than as a handle on the edge.
-	hint:SetPoint("BOTTOM", p, "BOTTOM", 0, 1)
-	hint:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.35)
-	hint:Hide()
-	p.hint = hint
-
 	return p
-end
-
-local function BuildDrawer(parent)
-	local d = Glass.CreatePanel(UIParent, { corner = 10, shadow = A.db.profile.glass.shadow })
-	d:SetSize(1, 1)
-	d:SetFrameStrata("DIALOG")
-	d:SetAlpha(0)
-	d:EnableMouse(false)
-
-	local tray = CreateFrame("Frame", nil, d)
-	tray:SetPoint("TOPLEFT", d, "TOPLEFT", 8, -8)
-	d.tray = tray
-
-	d:SetScript("OnUpdate", DrawerFade)
-	return d
 end
 
 -- ---------------------------------------------------------------------------
@@ -922,9 +534,6 @@ function MM:AnchorAll()
 	self.mail:SetScale(A.db.profile.scale)
 	self:AnchorMail()
 
-	self.drawer:SetScale(A.db.profile.scale)
-	self.drawer:ClearAllPoints()
-	self.drawer:SetPoint("TOP", self.pill, "BOTTOM", 0, -6)
 
 	f.north:SetShown(cfg.showNorth ~= false)
 	f.border:SetShown(cfg.ring ~= false)
@@ -933,13 +542,10 @@ end
 function MM:OnEnable()
 	local cfg = A.Config:Module("minimap")
 
-	self.buttons     = self.buttons or {}
-	self.buttonOrder = self.buttonOrder or {}
 
 	if not self.frame then
 		self.frame  = BuildFrame()
 		self.pill   = BuildPill(self.frame)
-		self.drawer = BuildDrawer(self.frame)
 
 		-- mail, its own small pill beside the block
 		local m = Glass.CreatePill(UIParent, { shadow = A.db.profile.glass.shadow })
@@ -958,11 +564,6 @@ function MM:OnEnable()
 		end)
 		m:SetScript("OnLeave", function() GameTooltip:Hide() end)
 		self.mail = m
-
-		-- hover: the pill opens the drawer, and both of them keep it open
-		self.pill:SetScript("OnEnter", function() MM:TouchDrawer() end)
-		self.pill:SetScript("OnLeave", function() MM._hoverUntil = GetTime() + 0.4 end)
-		self.drawer:HookScript("OnEnter", function() MM:TouchDrawer() end)
 
 		-- the map's own mouse: wheel zooms, right-click tracks
 		if _G.Minimap then
@@ -1016,12 +617,7 @@ function MM:OnEnable()
 	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function() MM:UpdateZone() end)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
 		MM:UpdateZone()
-		if MM._collectPending then
-			MM._collectPending = nil
-			MM:Scan()
-		end
 	end)
-	A:RegisterEvent(self, "PLAYER_LOGIN", function() MM:StartScanning() end)
 
 	-- Blizzard registers the zone events on MinimapCluster itself and its
 	-- handler writes MinimapZoneText. Ours is a different frame, so leave that
@@ -1029,16 +625,15 @@ function MM:OnEnable()
 	-- LibDBIcon's own creation callback used to land here, calling Collect
 	-- directly. It belongs to Core/Launchers.lua now, and deliberately so: two
 	-- entry points into Collect meant one of them skipped Claim, so a button
-	-- could sit in the drawer with no owner recorded and the next surface to ask
-	-- would be told it was free. Everything arrives through Scan.
 
-	-- One ticker drives the clock, the coordinates and the hover grace period.
+	-- One ticker drives the clock and the coordinates. It used to drive the
+	-- drawer's hover grace period too; that went with the drawer.
+	--
 	-- Coordinates are the only expensive part and they are the part that can
 	-- answer nothing, so a run of nils backs it off rather than asking ten times
 	-- a second for the length of an instance.
 	self._coordFails = 0
 	A:RegisterTicker(self, function()
-		MM:CheckHover()
 		MM._tick = (MM._tick or 0) + 1
 		if MM._tick % (MM._coordFails > 3 and 50 or 5) ~= 0 then return end
 		MM:UpdateZone()
@@ -1046,7 +641,6 @@ function MM:OnEnable()
 
 	self:UpdateZone()
 	self:UpdateMail()
-	self:StartScanning()
 end
 
 function MM:OnDisable()
@@ -1056,7 +650,6 @@ function MM:OnDisable()
 	if self.frame then
 		A.Fader:Unregister(self.frame)
 		A.Fader:Unregister(self.pill)
-		self:SetDrawerOpen(false, true)
 	end
 end
 
@@ -1069,9 +662,7 @@ function MM:OnSkinChanged()
 	self.pill:ApplySkin()
 	self.pill:SetShadow(A.db.profile.glass.shadow)
 	self.mail:ApplySkin()
-	self.drawer:ApplySkin()
 	self.pill.dot:SetVertexColor(c.danger[1], c.danger[2], c.danger[3], 1)
-	self.pill.hint:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.35)
 	W.Color(self.pill.coords, c.textDim)
 	W.Color(self.pill.clock, c.textDim)
 	-- The font may have changed with the skin, so re-measure.
@@ -1084,7 +675,6 @@ function MM:OnConfigChanged()
 	if not self.frame then return end
 	self:HideBlizzard()
 	self:AnchorAll()
-	self:LayoutDrawer()
 	self:UpdateZone()
 	self:UpdateMail()
 	A.Fader:Refresh()

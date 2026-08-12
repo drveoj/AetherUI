@@ -7237,7 +7237,12 @@ print("== minimap ==")
 local MMm = A:GetModule("minimap")
 check(MMm and MMm.enabled, "minimap module enabled"
 	.. (MMm and MMm.lastError and ("  -- " .. MMm.lastError) or ""))
-check(MMm.frame and MMm.pill and MMm.drawer, "map holder, zone pill and drawer built")
+check(MMm.frame and MMm.pill, "map holder and zone pill built")
+check(MMm.drawer == nil,
+	"and NO drawer - addon launchers live on the Toolbox rail now. Defaulting"
+	.. " it off was not enough: the drawer showed its contents ON HOVER, so"
+	.. " any button the rail had not claimed sat in a frame at alpha 0 and"
+	.. " simply vanished until somebody hovered the zone pill")
 
 do  -- Blizzard's Minimap is reshaped, not replaced: it cannot be recreated
 	local cfg = A.db.profile.modules.minimap
@@ -7427,128 +7432,79 @@ do
 	_G.__inCombat = false
 end
 
-print("== the button drawer ==")
+print("== launchers: what counts as somebody's button ==")
 do
-	local cfg = A.db.profile.modules.minimap
+	local LN = A.Launchers
 
-	-- three arrivals: one through LibDBIcon's registry, one addon rolling its
-	-- own button, and one map pin that must be left where it is
+	-- These assertions used to live in "the button drawer". The drawer is gone -
+	-- the Toolbox rail is the only surface now - but what it knew about OTHER
+	-- ADDONS' buttons is the hardest-won thing in this codebase and none of it
+	-- was about minimaps. It moved with the code.
+
 	local dbi = _G.__makeDBIcon("BigWigs")
 	local own = CreateFrame("Button", "SomeAddonMinimapButton", Minimap)
-	local pin = CreateFrame("Button", "QuestieMinimapPin42", Minimap)
-	MMm:Scan()
+	own:SetScript("OnDragStart", function() end)
+	local pin = CreateFrame("Frame", "QuestieFramePin42", Minimap)
+	local bliz = CreateFrame("Button", "MiniMapTracking", Minimap)
+	_G.__secureNames["MiniMapTracking"] = true
 
-	check(MMm.buttons[dbi], "a LibDBIcon button is collected")
-	check(MMm.buttons[own], "and so is an addon that rolled its own")
-	check(not MMm.buttons[pin],
-		"but a map pin is not - it is not a button, and there can be thousands")
-	check(not MMm.buttons[_G.MinimapZoomIn],
+	LN:Scan()
+
+	check(LN.seen[dbi] ~= nil, "a LibDBIcon button is found")
+	check(LN.seen[own] ~= nil, "and so is an addon that rolled its own")
+	check(LN.seen[pin] == nil,
+		"but a map pin is not - Questie and HandyNotes put THOUSANDS of children"
+		.. " on the minimap and none of them is a button")
+	check(LN.seen[bliz] == nil,
 		"and neither is Blizzard's own furniture, which issecurevariable sorts"
-		.. " out without a list to keep up to date")
+		.. " from the arrivals with no name list to keep up to date")
 
-	check(dbi.__locked, "LibDBIcon buttons are Locked through the library, which"
-		.. " is what stops its drag handler yanking them back onto the ring")
+	-- Pacified, so the library stops yanking them back onto the ring.
+	local e = LN.seen[dbi]
+	LN:Claim(e, {})
+	check(dbi.__locked,
+		"a LibDBIcon button is Locked THROUGH the library, which is the"
+		.. " supported way and survives a Refresh - its drag handler recomputes"
+		.. " an angle from the cursor and re-anchors every frame otherwise")
+	local eo = LN.seen[own]
+	LN:Claim(eo, {})
 	check(own:GetScript("OnDragStart") == nil,
-		"and a hand-rolled one has its drag handlers taken off")
-	check(dbi:GetParent() == MMm.drawer.tray, "collected buttons live in the drawer")
-	MMm:LayoutDrawer()
-	check(dbi:GetFrameStrata() == MMm.drawer:GetFrameStrata(),
-		"and are brought up to the drawer's strata - LibDBIcon pins its buttons"
-		.. " with SetFixedFrameStrata, so ours was refused and the drawer's own"
-		.. " panel art was painted over the top of them (" .. dbi:GetFrameStrata() .. ")")
-	check(dbi.__aetherRing ~= nil and dbi.__aetherSkinned,
-		"and are skinned to match the rest of the UI - icon masked to a circle,"
-		.. " our ring around it")
+		"and a hand-rolled one has its drag scripts taken off instead")
+
+	-- Skinned by the SERVICE, so every surface gets the same treatment. It used
+	-- to happen inside the drawer's Collect, which would have left the rail
+	-- showing whatever bevel each addon shipped.
+	check(dbi.__aetherSkinned and dbi.__aetherRing ~= nil,
+		"skinning happens in Core/Launchers.lua rather than in whichever module"
+		.. " claimed the button - it is a fact about somebody else's frame, not"
+		.. " about a minimap")
 	check(dbi.border == nil or not dbi.border:IsShown(),
-		"with whatever bevel they arrived with switched off")
+		"with whatever bevel it arrived with switched off")
+
 	do
 		-- The rule is "keep the icon, hide every other texture", not "match the
 		-- bevel against a list of known files" - an addon's border is whatever
-		-- file that addon shipped, and no list covers that.
+		-- that addon shipped, and there is no list that covers that.
 		local kept, hidden = 0, 0
-		for _, r in ipairs(dbi.__regions or {}) do
-			if r == dbi.__aetherIcon then kept = kept + 1
-			elseif r ~= dbi.__aetherRing and not r:IsShown() then hidden = hidden + 1 end
-		end
-		check(kept == 1 and hidden >= 2,
-			("the icon is kept and everything else is hidden (%d kept, %d hidden)")
-				:format(kept, hidden))
-	end
-	MMm:LayoutDrawer()
-	do
-		-- Each button gets its own column. They arrive owning a frame level -
-		-- LibDBIcon pins its own at 8 - and one sitting below the drawer's panel
-		-- art is drawn over and cannot be clicked.
-		local seen, clash = {}, nil
-		for _, b in ipairs(MMm.buttonOrder) do
-			if b:IsShown() then
-				local _, _, _, x = b:GetPoint(1)
-				if seen[x] then clash = x end
-				seen[x] = true
-				if b:GetFrameLevel() <= MMm.drawer.tray:GetFrameLevel() then clash = -1 end
+		for _, r in ipairs({ dbi.icon, dbi.border, dbi.background }) do
+			if r and r.IsShown then
+				if r:IsShown() then kept = kept + 1 else hidden = hidden + 1 end
 			end
 		end
-		check(clash == nil,
-			"every collected button gets its own column and a frame level above"
-			.. " the drawer's own art (clash at " .. tostring(clash) .. ")")
+		check(kept == 1 and hidden == 2,
+			"the icon is kept and everything else is hidden (" .. kept
+			.. " kept, " .. hidden .. " hidden)")
 	end
 
-	-- a button created later still gets picked up
+	-- Arrivals after the sweep. There is no event for "a child was added to the
+	-- minimap", so the registry callback is the only thing that catches an addon
+	-- finishing its load late.
 	local late = _G.__makeDBIcon("Later")
-	check(MMm.buttons[late],
-		"a button created after the sweep arrives through LibDBIcon's callback -"
-		.. " there is no event for 'a child was added to the minimap'")
+	check(LN.seen[late] ~= nil,
+		"a button created after the sweep arrives through LibDBIcon's own"
+		.. " creation callback")
 
-	-- the drawer itself
-	-- A drawer with no handle is a drawer nobody opens.
-	check(MMm.pill.hint:IsShown(),
-		"the zone pill shows a chevron once there is something in the drawer")
-	check(MMm.drawer:GetAlpha() == 0, "the drawer is closed to start with")
-	MMm.pill:GetScript("OnEnter")(MMm.pill)
-	check(MMm.drawer.open, "hovering the zone pill opens it")
-	check(select(3, MMm.pill.hint:GetTexCoord()) == 1,
-		"and the chevron turns over while it is open")
-	MMm:SetDrawerOpen(true, true)
-	check(MMm.drawer:GetAlpha() == 1, "and it fades up")
-	check(MMm.drawer:GetWidth() > cfg.buttonSize, "sized to what is in it")
-
-	-- travelling from the pill to the drawer must not close it on the way
-	MMm.pill:GetScript("OnLeave")(MMm.pill)
-	MMm:CheckHover()
-	check(MMm.drawer.open,
-		"leaving the pill does not shut it immediately - there is a gap to cross")
-	MMm._hoverUntil = 0
-	MMm:CheckHover()
-	check(not MMm.drawer.open, "but it does close once the cursor is gone")
-
-	-- Alpha and mouse, never Show/Hide: a collected button belongs to another
-	-- addon and may carry a secure template, and hovering a pill is exactly the
-	-- sort of thing you do mid-fight.
-	_G.__inCombat = true
-	MMm:TouchDrawer()
-	MMm:SetDrawerOpen(true, true)
-	MMm:SetDrawerOpen(false, true)
-	check(MMm.drawer:GetAlpha() == 0 and MMm.drawer:IsShown(),
-		"opening and closing in combat never hides a frame - alpha and mouse only")
-	_G.__inCombat = false
-
-	-- a button that hides itself drops out of the layout
-	local before = MMm.drawer:GetWidth()
-	own:Hide()
-	MMm:LayoutDrawer()
-	check(MMm.drawer:GetWidth() <= before, "a hidden button leaves the layout")
-	do
-		local saved = MMm.buttonOrder
-		MMm.buttonOrder = {}
-		MMm:LayoutDrawer()
-		check(not MMm.pill.hint:IsShown(),
-			"and with nothing left in it the chevron goes too - it is a promise"
-			.. " that there is something behind it")
-		MMm.buttonOrder = saved
-		MMm:LayoutDrawer()
-	end
-	own:Show()
-	MMm:LayoutDrawer()
+	LN:Release(LN.seen[dbi]); LN:Release(LN.seen[own])
 end
 
 print("== launchers: the two mechanisms, merged ==")
@@ -7579,7 +7535,8 @@ do
 		label = "Launcher Only",
 		OnClick = function(_, btn) clicked = btn or true end,
 	})
-	MMm:Scan()
+	LN:Scan()
+	A:GetModule("toolbox"):ClaimPins()
 
 	local e = LN.byKey["LauncherOnly"]
 	check(e ~= nil, "an LDB launcher with no minimap button is found at all -"
@@ -7587,8 +7544,9 @@ do
 	check(e and e.button and e.owned,
 		"and is given a proxy frame of OUR making, so every consumer has exactly"
 		.. " one job: place entry.button")
-	check(e and MMm.buttons[e.button] ~= nil,
-		"and it lands in the drawer alongside the real buttons")
+	A:GetModule("toolbox"):ClaimPins()
+	check(e and A.Launchers:OwnerOf(e) ~= nil,
+		"and the rail adopts it alongside the real buttons")
 
 	-- Read at call time, never captured. An addon is entitled to swap its own
 	-- handler after login.
@@ -7606,7 +7564,8 @@ do
 	local before = LN:Count()
 	_G.__makeLDB("BothWays", "launcher", { label = "Both Ways" })
 	local btn = _G.__makeDBIcon("BothWays")
-	MMm:Scan()
+	LN:Scan()
+	A:GetModule("toolbox"):ClaimPins()
 	check(LN:Count() == before + 1,
 		"an addon offering a launcher AND a LibDBIcon button is ONE entry, not"
 		.. " two - they share a name, which is what LibDBIcon keys on ("
@@ -7618,30 +7577,31 @@ do
 
 	-- A data source is a readout, not something to click.
 	_G.__makeLDB("SomeReadout", "data source", { text = "1234" })
-	MMm:Scan()
+	LN:Scan()
+	A:GetModule("toolbox"):ClaimPins()
 	check(LN.byKey["SomeReadout"] == nil,
 		"a `data source` is NOT an addon entry - it is a number to display, and"
 		.. " the Toolbox puts those to a different use entirely")
 
 	-- One owner. Two surfaces positioning the same borrowed frame is a bug that
 	-- only appears for whoever has both switched on.
+	-- One owner. The Toolbox rail holds every entry now, so the case worth
+	-- pinning down is a second surface trying to take one from it.
+	local holder = LN:OwnerOf(both)
 	local other = {}
+	check(holder ~= nil, "something owns it")
 	check(not LN:Claim(both, other),
 		"a second surface cannot claim an entry the first one holds")
-	check(LN:OwnerOf(both) == MMm, "the first owner keeps it")
-	-- Releasing hands it straight BACK to the drawer now, rather than leaving
-	-- it ownerless. That is the fix for an unpinned button sitting on the rail
-	-- on top of the gear: unowned meant neither surface laid it out, so it
-	-- persisted wherever its last owner left it.
-	LN:Release(both, MMm)
-	check(LN:OwnerOf(both) == MMm,
-		"releasing an entry the drawer had collected gives it back to the"
-		.. " drawer rather than leaving it owned by nobody, parked and stuck"
-		.. " wherever it was last put")
+	check(LN:OwnerOf(both) == holder, "the first owner keeps it")
 	check(LN:Claim(both, other, true),
-		"and a FORCED claim still takes it, which is what a pin is")
+		"and a FORCED claim takes it, which is what a pin is")
+
+	-- Releasing PARKS it rather than leaving it stranded wherever its last owner
+	-- put it. That is the fix for an unpinned icon sitting on top of the gear:
+	-- unowned used to mean laid out by nobody, so it persisted where it was.
 	LN:Release(both, other)
-	LN:Claim(both, MMm)
+	check(both._parked, "and releasing parks it")
+	A:GetModule("toolbox"):ClaimPins()
 end
 
 print("== xp hairline ==")
@@ -8012,7 +7972,8 @@ do
 			label = "Tile Launcher",
 			OnClick = function() clicked = true end,
 		})
-		A:GetModule("minimap"):Scan()
+		A.Launchers:Scan()
+		A:GetModule("toolbox"):ClaimPins()
 
 		local c = A.db.char.toolbox
 		c.tiles = { "TileLauncher" }
@@ -8055,7 +8016,8 @@ do
 		icon = "Interface\\Icons\\INV_Misc_Map01",
 		OnClick = function() ran = true end,
 	})
-	MMx:Scan()
+	LN:Scan()
+	TBm:ClaimPins()
 	TBm:RefreshAddons()
 
 	local rows = TBm:AddonRows()
@@ -8090,7 +8052,8 @@ do
 		-- ## IconTexture either - so the letter tile is the base case rather
 		-- than a placeholder.
 		_G.__makeLDB("Naked", "launcher", { label = "Naked Addon", icon = false })
-		A:GetModule("minimap"):Scan()
+		A.Launchers:Scan()
+		TBm:ClaimPins()
 		TBm:RefreshAddons()
 		local rows2 = TBm:AddonRows()
 
@@ -8113,8 +8076,11 @@ do
 		local entry = LN.byKey["Questie"]
 		check(entry ~= nil, "the Questie launcher exists")
 		local firstOwner = LN:OwnerOf(entry)
-		check(firstOwner == MMx,
-			"the minimap drawer has it to begin with (" .. tostring(firstOwner) .. ")")
+		check(firstOwner == TBm,
+			"the rail has it to begin with - it adopts every launcher now that"
+			.. " the drawer is gone, because an unclaimed button is one nobody"
+			.. " positions and a LibDBIcon button nobody positions is still"
+			.. " sitting on the minimap ring (" .. tostring(firstOwner) .. ")")
 
 		TBm:TogglePin("Questie")
 		check(TBm:IsPinned("Questie"), "pinning records it")
@@ -8132,14 +8098,16 @@ do
 		do
 			local railX = select(4, entry.button:GetPoint(1))
 			TBm:TogglePin("Questie")
-			local ownerNow = LN:OwnerOf(entry)
-			check(ownerNow ~= TBm,
-				"unpinning releases it")
+			check(not TBm:IsPinned("Questie"), "unpinning drops the pin")
 			local _, rel, _, x = entry.button:GetPoint(1)
 			check(rel ~= TBm.rail or x ~= railX,
-				"and it LEAVES the rail rather than staying where the rail put"
-				.. " it - which is what left an unpinned icon sitting on top of"
-				.. " the gear")
+				"and the button LEAVES the rail rather than staying where the"
+				.. " rail put it - which is what left an unpinned icon sitting"
+				.. " on top of the settings gear")
+			check(entry._parked and entry.button:GetAlpha() == 0,
+				"parked rather than hidden - it may carry a secure template, and"
+				.. " hiding a frame with a protected descendant is refused in"
+				.. " combat")
 			TBm:TogglePin("Questie")
 		end
 
@@ -8149,7 +8117,6 @@ do
 		-- never reparents, so a drawer that ignored ownership entirely would
 		-- still leave the parent alone. What it would do is re-ANCHOR the
 		-- button to its own tray, which is the thing that actually fights.
-		MMx:LayoutDrawer()
 		local _, anchoredTo = entry.button:GetPoint(1)
 		check(anchoredTo == TBm.rail,
 			"and the drawer does not re-anchor it - it lays out only what it"
@@ -8161,7 +8128,6 @@ do
 
 		TBm:TogglePin("Questie")
 		check(not TBm:IsPinned("Questie"), "unpinning removes it")
-		check(LN:OwnerOf(entry) ~= TBm, "and releases the entry")
 	end
 
 	-- Never Hide a collected button, even to close the rail. It may carry a
@@ -8331,7 +8297,8 @@ do
 
 	do
 		_G.__makeLDB("CmdLauncher", "launcher", { label = "Cmd Launcher" })
-		A:GetModule("minimap"):Scan()
+		A.Launchers:Scan()
+		A:GetModule("toolbox"):ClaimPins()
 		run("toolbox pin CmdLauncher")
 		check(TBm:IsPinned("CmdLauncher"), "/aether toolbox pin pins")
 		run("toolbox pin CmdLauncher")
@@ -8566,6 +8533,65 @@ do
 	TBm:SetOpen(false, true)
 end
 
+print("== toolbox: the rail owns the launchers now ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local LN  = A.Launchers
+	local mcfg = A.db.profile.modules.minimap
+	local was = mcfg.drawer
+	mcfg.drawer = false
+
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	-- The drawer has to be told, or it keeps what it already collected.
+	A.Launchers:Scan()
+	TBm:ClaimPins()
+	TBm:LayoutRail()
+
+	-- With the drawer retired, an unclaimed launcher is one NOBODY positions -
+	-- and a LibDBIcon button nobody positions is still sitting on the minimap
+	-- ring, which is the thing the drawer existed to clear. So the rail adopts
+	-- the lot.
+	local orphan
+	for e in LN:Iterate() do
+		if not LN:OwnerOf(e) then orphan = e.key break end
+	end
+	check(orphan == nil,
+		"every launcher has an owner (" .. tostring(orphan) .. ")")
+
+	-- ...and the ones that are not pinned are PARKED rather than drawn. Never
+	-- hidden: they belong to other addons and may carry secure templates.
+	do
+		local unpinned
+		for e in LN:Iterate() do
+			if LN:OwnerOf(e) == TBm and not TBm:IsPinned(e.key) and not e.owned then
+				unpinned = e break
+			end
+		end
+		if unpinned then
+			check(unpinned._parked and unpinned.button:IsShown(),
+				"an unpinned launcher is parked off screen rather than hidden -"
+				.. " hiding a frame with a protected descendant is refused in"
+				.. " combat, which is exactly when a drawer gets opened")
+			check(unpinned.button:GetAlpha() == 0,
+				"and it really is invisible rather than merely moved")
+		end
+	end
+
+	-- The drawer is off by default, and that is the fix for the vanishing
+	-- buttons: it shows its contents ON HOVER, so anything the rail had not
+	-- claimed sat in a frame at alpha 0 until somebody hovered the zone pill.
+	check(A.Config.defaults.profile.modules.minimap.drawer == nil
+		and A:GetModule("minimap").drawer == nil,
+		"there is no minimap drawer at all - not a setting, not a hidden frame."
+		.. " Defaulting it off was not enough: two surfaces collecting the same"
+		.. " buttons meant which one owned a given button depended on load"
+		.. " order, and the drawer showed its contents ON HOVER, so anything the"
+		.. " rail had not claimed vanished until somebody hovered the pill")
+
+	mcfg.drawer = was
+end
+
 print("== toolbox: pins survive a reload ==")
 do
 	local TBm = A:GetModule("toolbox")
@@ -8583,7 +8609,7 @@ do
 	-- reached the rail - which from the outside is indistinguishable from the
 	-- pin not having been saved at all, and was reported as exactly that.
 	_G.__makeLDB("SlowAddon", "launcher", { label = "Slow Addon" })
-	A:GetModule("minimap"):Scan()
+	A.Launchers:Scan()
 	TBm:TogglePin("SlowAddon")
 	check(TBm:IsPinned("SlowAddon"), "pinned")
 
@@ -8642,6 +8668,38 @@ do
 		check(cp.rim:GetWidth() > cp.disc:GetWidth(),
 			"which still laps proud of the disc it edges (" ..
 			string.format("%.1f vs %.1f", cp.rim:GetWidth(), cp.disc:GetWidth()) .. ")")
+	end
+end
+
+print("== tooltips: wide enough for the widest ROW ==")
+do
+	local TTm = A:GetModule("tooltips")
+	local tip = GameTooltip
+	local bar = tip.aetherBar or _G.GameTooltipStatusBar
+
+	if bar and bar.aetherValue then
+		tip.aetherWantW = nil
+		bar:SetMinMaxValues(0, 1003)
+		bar:SetValue(1003)
+		TTm:UpdateStatusBar(bar)
+
+		local need = (bar.aetherLabel:GetStringWidth() or 0)
+			+ (bar.aetherValue:GetStringWidth() or 0)
+		check((tip.aetherWantW or 0) > need,
+			"the health row asks the tooltip for room. A tooltip sizes itself to"
+			.. " its text LINES, and these two are our own FontStrings anchored"
+			.. " under the bar - invisible to that maths - so 'Health' and"
+			.. " '1,003 / 1,003' collided in the middle of a narrow tooltip"
+			.. " while every real line fitted (" .. string.format("%.0f", tip.aetherWantW or 0)
+			.. " for " .. string.format("%.0f", need) .. " of text)")
+
+		-- Whichever wants MORE wins, rather than whichever ran last.
+		tip.aetherWantW = 999
+		TTm:UpdateStatusBar(bar)
+		check(tip.aetherWantW == 999,
+			"and it never lowers a requirement somebody else already made - the"
+			.. " elite chip asks for room through the same running maximum")
+		tip.aetherWantW = nil
 	end
 end
 
