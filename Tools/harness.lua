@@ -7503,6 +7503,75 @@ do
 	check(MMm.pill.zone:GetText() == "The Barrens", "and comes back afterwards")
 end
 
+print("== toolbox: nothing on the rail sits on anything else ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local LN = A.Launchers
+	TBm:SetDock("LEFT")
+
+	-- The envelope anchors above the gear, and the gear anchors to the FAR END
+	-- of the rail. So anything anchored from that end which is missing from the
+	-- rail's length does not get clipped - it walks backwards into the list and
+	-- lands on the last pin, where it reads as simply not being drawn. That is
+	-- what happened the day the envelope was added.
+	--
+	-- Measured off the frames rather than by restating the formula: a test that
+	-- recomputes the same sum agrees with the bug.
+	for i = 1, 3 do
+		_G.__makeLDB("RailFit" .. i, "launcher")
+		local b = _G.__makeDBIcon("RailFit" .. i)
+	end
+	LN:Scan()
+	TBm:ClaimPins()
+	for i = 1, 3 do TBm:SetPinned("RailFit" .. i, true) end
+	TBm:LayoutRail()
+
+	local rail = TBm.rail
+	local railLen = rail:GetHeight()
+
+	-- Distance from the rail's TOP down to the top edge of each fixed control.
+	-- The gear is anchored BOTTOM-to-BOTTOM with a pad; the envelope sits a pad
+	-- above it.
+	local gearTop = railLen - select(5, rail.gear:GetPoint(1)) - rail.gear:GetHeight()
+	local mailTop = gearTop - select(5, rail.mail:GetPoint(1)) - rail.mail:GetHeight()
+
+	check(rail.mail:GetHeight() > 0 and rail.gear:GetHeight() > 0,
+		"the envelope and the gear are both real sizes")
+
+	-- The lowest pinned button, from its own anchor.
+	local lowest = 0
+	for _, key in ipairs(TBm:Pinned()) do
+		local e = LN.byKey[key]
+		local b = e and e.button
+		if b and LN:OwnerOf(e) == TBm then
+			local bottom = -select(5, b:GetPoint(1)) + b:GetHeight()
+			if bottom > lowest then lowest = bottom end
+		end
+	end
+	check(lowest > 0, "and there are pins on the rail to collide with ("
+		.. tostring(lowest) .. ")")
+
+	check(lowest <= mailTop,
+		"the last pin ends ABOVE the envelope rather than underneath it - a"
+		.. " rail one icon too short does not clip what is anchored from its far"
+		.. " end, it stacks it on the list (pin ends " .. tostring(lowest)
+		.. ", envelope starts " .. tostring(mailTop) .. ")")
+	check(mailTop + rail.mail:GetHeight() <= gearTop,
+		"and the envelope ends above the gear (" .. tostring(mailTop) .. " + "
+		.. tostring(rail.mail:GetHeight()) .. " vs " .. tostring(gearTop) .. ")")
+
+	-- Adding a pin must lengthen the rail, or the next one collides instead.
+	local before = rail:GetHeight()
+	_G.__makeLDB("RailFit4", "launcher"); _G.__makeDBIcon("RailFit4")
+	LN:Scan(); TBm:ClaimPins(); TBm:SetPinned("RailFit4", true); TBm:LayoutRail()
+	check(rail:GetHeight() > before,
+		"and one more pin makes the rail longer rather than tighter ("
+		.. tostring(before) .. " -> " .. tostring(rail:GetHeight()) .. ")")
+
+	for i = 1, 4 do TBm:SetPinned("RailFit" .. i, false) end
+	TBm:LayoutRail()
+end
+
 print("== toolbox: mail, and what the client will not tell us ==")
 do
 	local TBm = A:GetModule("toolbox")

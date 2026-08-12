@@ -1805,9 +1805,17 @@ function TB:LayoutRail()
 
 	self._railCount = n
 
-	-- The rail grows to fit what is on it: the chevron, then one slot per pin.
+	-- The rail grows to fit EVERYTHING on it: the chevron, one slot per pin,
+	-- then the envelope and the gear at the far end.
+	--
+	-- The envelope was missing from this sum when it was added. It anchors above
+	-- the gear and the gear anchors to the rail's far end, so a rail one icon
+	-- too short does not clip it - it puts it exactly on top of the LAST PIN,
+	-- where it reads as simply not being there. Anything anchored from the far
+	-- end has to be counted here or it walks backwards into the list.
 	local len = RAIL_PAD + RAIL_CHEV + RAIL_PAD + n * (RAIL_ICON + RAIL_PAD)
-		+ RAIL_ICON + RAIL_PAD
+		+ (RAIL_ICON + RAIL_PAD)      -- mail
+		+ RAIL_ICON + RAIL_PAD        -- gear
 	if vertical then
 		self.rail:SetSize(RAIL_W, math.max(len, RAIL_CHEV + RAIL_PAD * 2))
 	else
