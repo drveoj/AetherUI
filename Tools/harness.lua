@@ -8009,51 +8009,48 @@ do
 	local byName = {}
 	for _, r in ipairs(rows) do byName[r.name] = r end
 
-	check(byName["PlainAddon"] ~= nil,
-		"an addon with no launcher and no minimap button is STILL LISTED - you"
-		.. " want to know what is loaded, and that is most of them")
-	check(byName["PlainAddon"].entry == nil,
-		"with nothing behind it")
+	check(byName["PlainAddon"] == nil,
+		"an addon with NO launcher is not listed at all. Listing everything put"
+		.. " twenty-five rows on screen of which fifteen did nothing, and that"
+		.. " buried the ten that worked - what you want from this panel is what"
+		.. " you can REACH, and the Blizzard addon list is where the rest lives")
 	check(byName["Questie"] and byName["Questie"].entry ~= nil,
-		"and one with a launcher carries its entry")
+		"and one with a launcher is, carrying its entry")
 
-	-- Actionable first. A list where half the rows do nothing reads better with
-	-- the useful half at the top.
-	check(rows[1].entry ~= nil,
-		"actionable rows sort first (" .. tostring(rows[1].label) .. ")")
-
-	-- The inert row must LOOK inert. A row that accepts a click and does
-	-- nothing is the one thing worse than not listing it.
 	do
-		local inert, live
-		for i, r in ipairs(rows) do
-			local f = TBm.content.addons[i]
-			if f then
-				if r.entry then live = live or f else inert = inert or f end
-			end
-		end
-		check(inert and not inert:IsMouseEnabled(),
-			"a row with nothing behind it takes no mouse at all, rather than"
-			.. " accepting a click and quietly doing nothing")
-		check(inert and not inert.pin:IsShown(),
-			"and offers no pin, because there is nothing to pin")
-		check(live and live:IsMouseEnabled() and live.pin:IsShown(),
-			"while a row with a launcher takes both")
+		local bad = 0
+		for _, r in ipairs(rows) do if not r.entry then bad = bad + 1 end end
+		check(bad == 0,
+			"every row has something behind it, so there is no inert case left"
+			.. " to design around (" .. bad .. " without)")
+		check(TBm._addonsLoaded == #_G.__addons,
+			"and the module still counts how many addons are LOADED - the number"
+			.. " worth one line in the header rather than twenty-five rows (got "
+			.. tostring(TBm._addonsLoaded) .. " of " .. #_G.__addons .. ")")
 	end
 
 	-- Icons: about half the addons on a machine declare one. The letter tile is
 	-- the base case, not a placeholder.
 	do
-		local qi, pi
-		for i, r in ipairs(rows) do
+		-- A launcher with no icon at all. LDB requires one of LibDBIcon but not
+		-- of a launcher, and only about half the addons on a machine declare
+		-- ## IconTexture either - so the letter tile is the base case rather
+		-- than a placeholder.
+		_G.__makeLDB("Naked", "launcher", { label = "Naked Addon", icon = false })
+		A:GetModule("minimap"):Scan()
+		TBm:RefreshAddons()
+		local rows2 = TBm:AddonRows()
+
+		local qi, ni
+		for i, r in ipairs(rows2) do
 			if r.name == "Questie" then qi = TBm.content.addons[i] end
-			if r.name == "PlainAddon" then pi = TBm.content.addons[i] end
+			if r.name == "Naked" then ni = TBm.content.addons[i] end
 		end
 		check(qi and qi.icon:IsShown(), "an addon that declares an icon gets it")
-		check(pi and not pi.icon:IsShown() and pi.initial:GetText() == "P",
-			"and one that does not gets its initial - the handoff says to use"
-			.. " real addon icons, which cannot be followed for the half that"
-			.. " declare none, and a grid of question marks looks broken")
+		check(ni and not ni.icon:IsShown() and ni.initial:GetText() == "N",
+			"and one that declares none gets its initial - a grid where half the"
+			.. " tiles are a question mark looks broken, and the handoff's 'use"
+			.. " real addon icons' cannot be followed for the half without one")
 	end
 
 	-- Pinning. This is the ownership handover the plan called out: pinning is an
@@ -8284,6 +8281,134 @@ do
 	check(pcall(run, "toolbox"),
 		"and /aether toolbox reports without erroring - a diagnostic that throws"
 		.. " is the one thing worse than no diagnostic")
+end
+
+print("== toolbox: the sections do not overlap ==")
+do
+	local TBm = A:GetModule("toolbox")
+	-- The REAL geometry: a 16:9 virtual screen at the design scale. The mock's
+	-- default 1000x600 clamps the panel to about 500 tall, which is an extreme
+	-- worth handling but not the case anybody sees.
+	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+	local oldScale = A.db.profile.scale
+	UIParent:SetSize(1365, 768)
+	A.db.profile.scale = 0.71
+
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
+
+	-- This is the check the first version of the layout did not have, and the
+	-- reason it shipped drawing every section on top of every other. Anchoring
+	-- each block to the one above it and measuring the room left with
+	-- GetBottom() looked right in source and produced a pile on screen; nothing
+	-- in the suite could tell, because every individual frame was where its own
+	-- SetPoint said.
+	--
+	-- Offsets are read back from the anchors rather than from GetTop/GetBottom,
+	-- which is the same trap: those answer in screen coordinates and only after
+	-- a frame has been positioned AND shown.
+	local function topOf(region)
+		local _, _, _, _, yOff = region:GetPoint(1)
+		return -(yOff or 0)
+	end
+
+	local order = {
+		{ "header",   TBm.content.title,       0 },
+		{ "whatsnew", TBm.content.news,        84 },
+		{ "menu",     TBm.content.microHead,   0 },
+		{ "widgets",  TBm.content.widgetsHead, 0 },
+		{ "addons",   TBm.content.addonsHead,  0 },
+		{ "settings", TBm.content.tilesHead,   0 },
+	}
+
+	local prev, prevName, ok = nil, nil, true
+	for _, sec in ipairs(order) do
+		local name, region = sec[1], sec[2]
+		-- Hidden sections are skipped: one cut to nothing keeps whatever anchor
+		-- it had last, and comparing against a stale offset reports an overlap
+		-- that is not on screen.
+		if region and region:IsShown() then
+			local top = topOf(region)
+			if prev and top <= prev then
+				ok = false
+				check(false, "section '" .. name .. "' starts at " .. string.format("%.0f", top)
+					.. " which is not below '" .. prevName .. "' at "
+					.. string.format("%.0f", prev))
+			end
+			prev, prevName = top, name
+		end
+	end
+	check(ok, "every section starts below the one before it, top to bottom")
+
+	-- ...and the whole thing has to fit the panel it is in, or the bottom
+	-- section is drawn off the end of the drawer where nobody can reach it.
+	check(TBm._contentHeight and TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
+		"and the whole column fits inside the panel ("
+		.. string.format("%.0f", TBm._contentHeight or -1) .. " of "
+		.. string.format("%.0f", TBm.panel:GetHeight()) .. ") - the addon list"
+		.. " gives way rather than the drawer growing")
+
+	-- The addon list is the section that yields, and it says what it dropped.
+	do
+		local rows = TBm:AddonRows()
+		if (TBm._addonsCut or 0) > 0 then
+			check(TBm.content.addonsHint:GetText():find("more"),
+				"a list cut for room says so rather than silently dropping the"
+				.. " row you were looking for")
+		else
+			check(#rows >= 0, "nothing needed cutting at this size")
+		end
+	end
+
+	-- The rail: a hint, not the biggest thing on it, and it bites into the panel
+	-- rather than floating beside it as a second capsule.
+	do
+		local _, rel, _, x = TBm.rail:GetPoint(1)
+		check(rel == TBm.panel, "the rail hangs off the panel")
+		check(x < 0,
+			"and BITES into it, so the curve on that side is hidden behind the"
+			.. " drawer and the two read as one shape rather than two with a"
+			.. " gap of shadow between them (" .. string.format("%.0f", x) .. ")")
+		check(TBm.rail.chev:GetWidth() < TBm.rail.gear:GetWidth(),
+			"the chevron is smaller than a rail icon - it is a hint, not the"
+			.. " largest thing on the rail (" .. TBm.rail.chev:GetWidth()
+			.. " vs " .. TBm.rail.gear:GetWidth() .. ")")
+		check(TBm.rail.gear ~= nil, "and there is a gear")
+
+		local opened = false
+		local wasOpen = A.Options.Open
+		A.Options.Open = function() opened = true return true end
+		TBm.rail.gear:GetScript("OnClick")(TBm.rail.gear)
+		A.Options.Open = wasOpen
+		check(opened, "which opens the AetherUI config")
+	end
+
+	-- MENU buttons carry a readable name, not only a letter on a tooltip.
+	do
+		local first = TBm.content.micro[1]
+		check(first and first.name and first.name:GetText() ~= "",
+			"each MENU button shows its name under the glyph - a label you can"
+			.. " read beats a letter you have to decode (" ..
+			tostring(first and first.name and first.name:GetText()) .. ")")
+	end
+
+	-- ...and the extreme still has to be safe rather than pretty: a drawer
+	-- clamped small enough that the fixed sections alone fill it must CUT
+	-- rather than draw past the bottom edge.
+	UIParent:SetSize(1000, 600)
+	A.db.profile.scale = 1.0
+	TBm:Layout(); TBm:RefreshTiles(); TBm:RefreshAddons()
+	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
+		"even squeezed to a " .. string.format("%.0f", TBm.panel:GetHeight())
+		.. "px panel the column still fits ("
+		.. string.format("%.0f", TBm._contentHeight) .. ") - both lists give"
+		.. " way, the addons first and the settings tiles after, rather than the"
+		.. " overflow being drawn off the end where nobody can reach it")
+
+	UIParent:SetSize(oldW, oldH)
+	A.db.profile.scale = oldScale
+	TBm:SetOpen(false, true)
 end
 
 print("== combat gating ==")

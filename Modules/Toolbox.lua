@@ -63,11 +63,22 @@ local PANEL_H_W, PANEL_H_H = 1280, 240
 
 -- The rail. Width comes from the icon it has to hold, not from the 52 the deck
 -- happens to measure.
-local RAIL_ICON  = 34
-local RAIL_PAD   = 9
+local RAIL_ICON  = 26
+local RAIL_PAD   = 7
 local RAIL_W     = RAIL_ICON + RAIL_PAD * 2
-local RAIL_CHEV  = 26
-local RAIL_CORNER = 22
+-- The chevron is a HINT, not a button you hunt for: it was 26 against a 34 icon
+-- and read as the largest thing on the rail. Half that, and the rail reads as a
+-- seam with a handle rather than a column of controls.
+local RAIL_CHEV  = 14
+local RAIL_CORNER = 16
+
+-- How far the rail sits INTO the panel. Without this it is a separate capsule
+-- floating beside the drawer with its own rounded inner edge - two shapes with
+-- a gap of shadow between them. Overlapped by its corner radius, the inner
+-- curve is hidden behind the panel and the rail reads as a tab growing out of
+-- the drawer's edge. When the drawer is shut the same overlap puts that curve
+-- off the screen edge, so it hugs there too.
+local RAIL_BITE  = RAIL_CORNER
 
 local PANEL_CORNER = 28
 
@@ -149,6 +160,27 @@ function TB:Build()
 	chev.glyph = glyph
 	chev:SetScript("OnClick", function() TB:Toggle() end)
 	rail.chev = chev
+
+	-- The gear, at the far end of the rail. The drawer carries the settings the
+	-- deck asks for; this is the way to the rest of them, and it belongs on the
+	-- rail because it has to be reachable with the drawer shut.
+	local gear = CreateFrame("Button", nil, rail)
+	gear:SetSize(RAIL_ICON, RAIL_ICON)
+	local gg = W.Text(gear, "tbLabel", "CENTER")
+	gg:SetPoint("CENTER", gear, "CENTER", 0, 0)
+	gg:SetText("lk")          -- gear glyph, until there is art
+	gear.glyph = gg
+	gear:SetScript("OnClick", function()
+		if A.Options and A.Options.Open then A.Options:Open() end
+	end)
+	gear:SetScript("OnEnter", function(self2)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+		GameTooltip:SetText("AetherUI settings")
+		GameTooltip:Show()
+	end)
+	gear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	rail.gear = gear
 
 	self._travel = self:IsOpen() and 1 or 0
 	self._want   = self._travel
@@ -238,11 +270,13 @@ function TB:Layout()
 	-- The rail runs the panel's full extent on the cross axis in the deck, but
 	-- only as far as its contents need; layer 1 has one chevron in it, so it is
 	-- sized to that plus padding and grows later.
-	local railLen = RAIL_CHEV + RAIL_PAD * 2
+	-- Sized in LayoutRail, which knows how many pins there are. This is the
+	-- floor: the chevron and the gear, which are always both there.
+	local railLen = RAIL_PAD + RAIL_CHEV + RAIL_PAD + RAIL_ICON + RAIL_PAD
 	if IsVertical(edge) then
-		self.rail:SetSize(RAIL_W, railLen)
+		self.rail:SetSize(RAIL_W, math.max(self.rail:GetHeight() or 0, railLen))
 	else
-		self.rail:SetSize(railLen, RAIL_W)
+		self.rail:SetSize(math.max(self.rail:GetWidth() or 0, railLen), RAIL_W)
 	end
 
 	local ox, oy = ClosedOffset(edge, w, h)
@@ -254,22 +288,34 @@ function TB:Layout()
 	self.rail:ClearAllPoints()
 	self.scrim:ClearAllPoints()
 
+	-- The rail bites INTO the panel by its own corner radius, so the curve on
+	-- that side disappears behind the drawer and the two read as one shape.
 	if edge == "LEFT" then
 		self.panel:SetPoint("LEFT", UIParent, "LEFT", dx, 0)
-		self.rail:SetPoint("LEFT", self.panel, "RIGHT", 0, 0)
-		self.rail.chev:SetPoint("CENTER", self.rail, "CENTER", 0, 0)
+		self.rail:SetPoint("LEFT", self.panel, "RIGHT", -RAIL_BITE, 0)
 	elseif edge == "RIGHT" then
 		self.panel:SetPoint("RIGHT", UIParent, "RIGHT", dx, 0)
-		self.rail:SetPoint("RIGHT", self.panel, "LEFT", 0, 0)
-		self.rail.chev:SetPoint("CENTER", self.rail, "CENTER", 0, 0)
+		self.rail:SetPoint("RIGHT", self.panel, "LEFT", RAIL_BITE, 0)
 	elseif edge == "TOP" then
 		self.panel:SetPoint("TOP", UIParent, "TOP", 0, dy)
-		self.rail:SetPoint("TOP", self.panel, "BOTTOM", 0, 0)
-		self.rail.chev:SetPoint("CENTER", self.rail, "CENTER", 0, 0)
+		self.rail:SetPoint("TOP", self.panel, "BOTTOM", 0, RAIL_BITE)
 	else
 		self.panel:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, dy)
-		self.rail:SetPoint("BOTTOM", self.panel, "TOP", 0, 0)
-		self.rail.chev:SetPoint("CENTER", self.rail, "CENTER", 0, 0)
+		self.rail:SetPoint("BOTTOM", self.panel, "TOP", 0, -RAIL_BITE)
+	end
+
+	-- Chevron at the inboard end, gear at the far one, pins between. The rail
+	-- is read from the drawer outwards, so the control that closes it comes
+	-- first.
+	local vertical = IsVertical(edge)
+	self.rail.chev:ClearAllPoints()
+	self.rail.gear:ClearAllPoints()
+	if vertical then
+		self.rail.chev:SetPoint("TOP", self.rail, "TOP", 0, -RAIL_PAD)
+		self.rail.gear:SetPoint("BOTTOM", self.rail, "BOTTOM", 0, RAIL_PAD)
+	else
+		self.rail.chev:SetPoint("LEFT", self.rail, "LEFT", RAIL_PAD, 0)
+		self.rail.gear:SetPoint("RIGHT", self.rail, "RIGHT", -RAIL_PAD, 0)
 	end
 
 	-- The scrim covers exactly the strip the panel is over, so it travels with
@@ -842,54 +888,6 @@ function TB:RefreshWidgets()
 	self:LayoutContent()
 end
 
---- Three columns, as the deck draws it in the vertical dock. The horizontal one
---  gets the same three: the cards are the same size either way, and six in a
---  row reads as a status bar rather than as a grid.
-function TB:LayoutContent()
-	if not self.content or not self.panel then return end
-	local content = self.content
-	local w = self.panel:GetWidth()
-
-	content:ClearAllPoints()
-	content:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 0, 0)
-	content:SetPoint("BOTTOMRIGHT", self.panel, "BOTTOMRIGHT", 0, 0)
-
-	content.title:ClearAllPoints()
-	content.title:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -PAD)
-	content.chip:ClearAllPoints()
-	content.chip:SetPoint("LEFT", content.title, "RIGHT", 10, 0)
-	content.close:ClearAllPoints()
-	content.close:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -PAD)
-	-- The deck only draws the close X on the vertical layout; the horizontal one
-	-- has the chevron right beside it on the rail.
-	content.close:SetShown(IsVertical(self:Dock()))
-
-	content.news:ClearAllPoints()
-	-- Below the micro row, which sits between the header and the card.
-	content.news:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -(PAD + 30 + 26 + 14))
-	content.news:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-	content.news.dot:SetShown(self:NewsUnread())
-
-	content.widgetsHead:ClearAllPoints()
-	content.widgetsHead:SetPoint("TOPLEFT", content.news, "BOTTOMLEFT", 0, -16)
-
-	self:LayoutMicro()
-
-	local cols = math.max(1, tonumber(A.Config:Module('toolbox').widgetColumns) or 3)
-	local avail = w - PAD * 2
-	local cw = (avail - CARD_GAP * (cols - 1)) / cols
-	for i, card in ipairs(content.cards) do
-		if card:IsShown() then
-			local r, c = math.floor((i - 1) / cols), (i - 1) % cols
-			card:SetWidth(cw)
-			card:ClearAllPoints()
-			card:SetPoint("TOPLEFT", content.widgetsHead, "BOTTOMLEFT",
-				c * (cw + CARD_GAP), -(10 + r * (CARD_H + CARD_GAP)))
-		end
-	end
-
-	self:LayoutTiles()
-end
 
 -- ---------------------------------------------------------------------------
 -- UI settings - a list of tiles, not a layout of six
@@ -1052,6 +1050,7 @@ end
 function TB:RefreshTiles()
 	if not self.content or not self.content.tiles then return end
 	local list = self:TileList()
+	self._tileList = list
 
 	for i, t in ipairs(list) do
 		local tile = self.content.tiles[i]
@@ -1121,42 +1120,6 @@ function TB:RefreshTiles()
 	self:LayoutTiles()
 end
 
-function TB:LayoutTiles()
-	if not self.content or not self.content.tiles or not self.content.tilesHead then return end
-	local content = self.content
-	local w = self.panel:GetWidth()
-
-	-- Under the widget grid, which is where the deck puts it. The anchor is the
-	-- LAST VISIBLE widget card rather than a computed row count, so the two
-	-- sections cannot drift apart when the widget list changes length.
-	local last
-	for _, c in ipairs(content.cards) do
-		if c:IsShown() then last = c end
-	end
-
-	content.tilesHead:ClearAllPoints()
-	if last then
-		content.tilesHead:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
-		content.tilesHead:SetPoint("TOP", last, "BOTTOM", 0, -18)
-	else
-		content.tilesHead:SetPoint("TOPLEFT", content.widgetsHead, "BOTTOMLEFT", 0, -18)
-	end
-
-	local cols = math.max(1, tonumber(A.Config:Module('toolbox').tileColumns) or 2)
-	local avail = w - PAD * 2
-	local tw = (avail - TILE_GAP * (cols - 1)) / cols
-	for i, tile in ipairs(content.tiles) do
-		if tile:IsShown() then
-			local r, c = math.floor((i - 1) / cols), (i - 1) % cols
-			tile:SetWidth(tw)
-			tile:ClearAllPoints()
-			tile:SetPoint("TOPLEFT", content.tilesHead, "BOTTOMLEFT",
-				c * (tw + TILE_GAP), -(10 + r * (TILE_H + TILE_GAP)))
-		end
-	end
-
-	self:LayoutAddons()
-end
 
 -- ---------------------------------------------------------------------------
 -- the addon list
@@ -1178,45 +1141,39 @@ local ROW_H, ROW_GAP = 26, 4
 --  their TOC with |cff codes - so the title is used as given and the NAME is
 --  what the launcher is matched on.
 function TB:AddonRows()
-	local rows, seen = {}, {}
+	local rows = {}
 	local L = A.Launchers
+	if not L then return rows end
 
+	-- ONLY addons with a launcher. The first version listed every loaded addon
+	-- on the theory that you want to know what is installed - and on screen that
+	-- was twenty-five rows of which fifteen did nothing, which buried the ten
+	-- that worked. What you want to know is what you can REACH from here; the
+	-- rest is what the Blizzard addon list is for.
+	--
+	-- The count of the rest is still worth one line, so the header says how many
+	-- of the loaded addons have a launcher at all.
+	local titles = {}
 	local api = C_AddOns or _G
 	local count = (api.GetNumAddOns and api.GetNumAddOns()) or 0
 	for i = 1, count do
 		local name, title = api.GetAddOnInfo and api.GetAddOnInfo(i)
-		local loaded = true
-		if api.IsAddOnLoaded then loaded = api.IsAddOnLoaded(i) and true or false end
-		if name and loaded then
-			-- The launcher whose key matches the addon, if there is one. LDB
-			-- names are the addon's choice and usually the addon's name, so this
-			-- matches on both and settles for neither.
-			local entry = L and (L.byKey[name] or L.byKey[title or ""])
-			rows[#rows + 1] = {
-				name  = name,
-				label = (title and title ~= "" and title) or name,
-				entry = entry,
-			}
-			seen[name] = true
-			if entry then seen[entry.key] = true end
-		end
+		if name then titles[name:lower()] = (title ~= "" and title) or name end
 	end
+	self._addonsLoaded = count
 
-	-- Launchers whose addon we could not match by name still belong in the list;
-	-- they are the actionable ones, which is more than most rows manage.
-	if L then
-		for entry in L:Iterate() do
-			if not seen[entry.key] then
-				rows[#rows + 1] = { name = entry.key, label = entry.label or entry.key, entry = entry }
-			end
-		end
+	for entry in L:Iterate() do
+		rows[#rows + 1] = {
+			name  = entry.key,
+			-- The addon's own title where the launcher's name matches one, since
+			-- an LDB object is often named for the addon but not always titled
+			-- like it.
+			label = entry.label or titles[tostring(entry.key):lower()] or entry.key,
+			entry = entry,
+		}
 	end
 
 	table.sort(rows, function(x, y)
-		-- Actionable first, then alphabetical. A list where half the rows do
-		-- nothing reads better with the useful half at the top.
-		local xa, ya = x.entry ~= nil, y.entry ~= nil
-		if xa ~= ya then return xa end
 		return tostring(x.label):lower() < tostring(y.label):lower()
 	end)
 
@@ -1297,6 +1254,7 @@ function TB:LayoutRail()
 			pcall(L.RawSetParent, b, self.rail)
 			pcall(L.RawClearAllPoints, b)
 			local off = RAIL_PAD + RAIL_CHEV + RAIL_PAD + (n - 1) * (RAIL_ICON + RAIL_PAD)
+			-- chevron, then pins, then the gear at the far end
 			if vertical then
 				pcall(L.RawSetPoint, b, "TOP", self.rail, "TOP", 0, -off)
 			else
@@ -1314,6 +1272,7 @@ function TB:LayoutRail()
 
 	-- The rail grows to fit what is on it: the chevron, then one slot per pin.
 	local len = RAIL_PAD + RAIL_CHEV + RAIL_PAD + n * (RAIL_ICON + RAIL_PAD)
+		+ RAIL_ICON + RAIL_PAD
 	if vertical then
 		self.rail:SetSize(RAIL_W, math.max(len, RAIL_CHEV + RAIL_PAD * 2))
 	else
@@ -1436,62 +1395,6 @@ function TB:RefreshAddons()
 	self:LayoutAddons()
 end
 
---- Two columns, as the deck draws it. The list is CUT to what fits rather than
---  resizing the panel, and what did not fit is reported - a list that silently
---  drops the addon you were looking for is worse than one that admits it ran
---  out of room, which is the rule the quest tracker already follows.
-function TB:LayoutAddons()
-	if not self.content or not self.content.addons then return end
-	local content = self.content
-	local w = self.panel:GetWidth()
-
-	local anchor
-	for _, t in ipairs(content.tiles or {}) do
-		if t:IsShown() then anchor = t end
-	end
-	anchor = anchor or content.widgetsHead
-
-	content.addonsHead:ClearAllPoints()
-	content.addonsHead:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
-	content.addonsHead:SetPoint("TOP", anchor, "BOTTOM", 0, -18)
-	content.addonsHint:ClearAllPoints()
-	content.addonsHint:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-	content.addonsHint:SetPoint("TOP", content.addonsHead, "TOP", 0, 0)
-
-	local cols = math.max(1, tonumber(A.Config:Module('toolbox').addonColumns) or 2)
-	local avail = w - PAD * 2
-	local rw = (avail - ROW_GAP * (cols - 1)) / cols
-
-	-- How many rows there is actually room for, measured against the panel
-	-- rather than guessed at.
-	local top = content.addonsHead:GetBottom() or 0
-	local floorY = content:GetBottom() or 0
-	local room = math.max(0, top - floorY - 12)
-	local maxRows = math.max(1, math.floor(room / (ROW_H + ROW_GAP)))
-	local maxShown = maxRows * cols
-
-	local shown = 0
-	for i, row in ipairs(content.addons) do
-		if row.__row and i <= maxShown and (self._addonRows and i <= #self._addonRows) then
-			local r, c = math.floor((i - 1) / cols), (i - 1) % cols
-			row:SetWidth(rw)
-			row:ClearAllPoints()
-			row:SetPoint("TOPLEFT", content.addonsHead, "BOTTOMLEFT",
-				c * (rw + ROW_GAP), -(10 + r * (ROW_H + ROW_GAP)))
-			row:Show()
-			shown = shown + 1
-		else
-			row:Hide()
-		end
-	end
-
-	local total = #(self._addonRows or {})
-	self._addonsCut = math.max(0, total - shown)
-	if self._addonsCut > 0 then
-		content.addonsHint:SetText(total .. " installed \194\183 +"
-			.. self._addonsCut .. " more")
-	end
-end
 
 -- ---------------------------------------------------------------------------
 -- the micro menu
@@ -1595,6 +1498,9 @@ end
 
 function TB:BuildMicro()
 	if not self.content or self.content.micro then return end
+	local head = W.Text(self.content, "tbSection", "LEFT")
+	head:SetText(Spaced("MENU"))
+	self.content.microHead = head
 	self.content.micro = {}
 	self:RefreshMicro()
 end
@@ -1610,17 +1516,24 @@ function TB:RefreshMicro()
 			b = CreateFrame("Button", nil, self.content)
 			b:SetSize(MICRO_SIZE, MICRO_SIZE)
 
-			b.chip = Glass.CreatePill(b, {})
-			b.chip:SetAllPoints(b)
+			-- Glyph above, name below, the way the deck draws the MENU row.
+			-- A chip behind every one made eight filled circles in a block that
+			-- read as heavier than the widget cards under it; the glyph carries
+			-- itself and the row stays quiet.
+			--
+			-- No glyph ART yet. The concept's icon language is lucide-style
+			-- strokes, there is no such .tga in Media/Textures, and a new
+			-- texture file needs a client RESTART rather than a reload - so it
+			-- is a generator pass of its own. The initial stands in, with the
+			-- name UNDER it rather than only on a tooltip: a label you can read
+			-- is worth more than a letter you have to decode.
+			b.glyph = W.Text(b, "tbCardTitle", "CENTER")
+			b.glyph:SetPoint("TOP", b, "TOP", 0, -4)
 
-			-- No glyph art yet. The concept's icon language is lucide-style
-			-- strokes and there is no such .tga in Media/Textures - and a new
-			-- texture file needs a client RESTART rather than a reload, so it is
-			-- a generator pass of its own. The initial is the honest stand-in
-			-- and the tooltip carries the name, which is the half that matters
-			-- for a control you use by memory.
-			b.glyph = W.Text(b, "tbLabel", "CENTER")
-			b.glyph:SetPoint("CENTER", b, "CENTER", 0, 0)
+			b.name = W.Text(b, "tbLabel", "CENTER")
+			b.name:SetPoint("TOP", b.glyph, "BOTTOM", 0, -4)
+			b.name:SetPoint("LEFT", b, "LEFT", 2, 0)
+			b.name:SetPoint("RIGHT", b, "RIGHT", -2, 0)
 
 			b:SetScript("OnClick", function(self2)
 				local mm = self2.__micro
@@ -1641,7 +1554,8 @@ function TB:RefreshMicro()
 
 		b.__micro = m
 		b.glyph:SetText((m.label or "?"):sub(1, 1):upper())
-		b.chip:ApplySkin("cardBg", "cardEdge")
+		b.name:SetText(m.label or "")
+		W.Color(b.name, Palette.c.textDim)
 		b:Show()
 	end
 
@@ -1652,17 +1566,228 @@ function TB:RefreshMicro()
 	self:LayoutMicro()
 end
 
---- A row under the header and above What's-new. It is chrome rather than
---  content, and putting it at the bottom means scrolling past the addon list to
---  reach the character sheet.
-function TB:LayoutMicro()
-	if not self.content or not self.content.micro then return end
-	local content = self.content
-	for i, b in ipairs(content.micro) do
-		if b:IsShown() then
-			b:ClearAllPoints()
-			b:SetPoint("TOPLEFT", content, "TOPLEFT",
-				PAD + (i - 1) * (MICRO_SIZE + MICRO_GAP), -(PAD + 30))
-		end
-	end
+-- ---------------------------------------------------------------------------
+-- layout: ONE top-down pass, in Lua arithmetic
+--
+-- The first version anchored each section to the one above it - the tiles to
+-- the last widget card, the addon list to the last tile - and measured the room
+-- left with GetBottom(). Both were wrong, and together they drew every section
+-- on top of every other:
+--
+--   * A region given SetPoint("TOPLEFT", content, ...) AND
+--     SetPoint("TOP", other, "BOTTOM", ...) has two anchors on the same axis.
+--     The second does not replace the first; the frame is stretched between
+--     them, and where it lands is not what either line says.
+--   * GetBottom() answers in screen coordinates and only once a frame has been
+--     positioned AND shown. Called during the very pass that positions things,
+--     it returns whatever was true last frame - or nil on the first one, which
+--     the `or 0` then quietly turned into "the bottom of the screen".
+--
+-- So there is no chaining and no measuring. A running `y` accumulates down the
+-- panel and every region is anchored TOPLEFT to the content frame at an offset
+-- this function computed. It is arithmetic; it cannot disagree with itself, and
+-- it produces the same answer on the first pass as on the hundredth.
+-- ---------------------------------------------------------------------------
+
+local HEADER_H   = 30
+local NEWS_H     = 84
+local SECTION_H  = 20      -- a section label and the gap under it
+local SECTION_GAP = 14     -- between one section's last row and the next label
+local MICRO_CELL_H = 46
+local MICRO_PER_ROW = 4
+
+local function Cols(key, fallback)
+	return math.max(1, tonumber(A.Config:Module("toolbox")[key]) or fallback)
 end
+
+--- Rows of `n` items at `per` per row.
+local function RowsFor(n, per)
+	return math.ceil(math.max(0, n) / math.max(1, per))
+end
+
+function TB:LayoutContent()
+	if not self.content or not self.panel then return end
+	local content = self.content
+	local w, h    = self.panel:GetWidth(), self.panel:GetHeight()
+	local avail   = w - PAD * 2
+
+	content:ClearAllPoints()
+	content:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 0, 0)
+	content:SetPoint("BOTTOMRIGHT", self.panel, "BOTTOMRIGHT", 0, 0)
+
+	-- Every section is optional at this point. LayoutContent runs from
+	-- RefreshWidgets, which BuildContent calls before BuildTiles, BuildAddons
+	-- and BuildMicro exist - so the first pass of the very first layout has
+	-- three of the six sections still unbuilt. Guarded here rather than at each
+	-- use, because "the table is not there yet" is one fact about when this runs
+	-- and not six separate special cases.
+	local micros = content.micro  or {}
+	local cards  = content.cards  or {}
+	local addons = content.addons or {}
+	local tilesF = content.tiles  or {}
+
+	local function place(region, x, y, width)
+		region:ClearAllPoints()
+		region:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
+		if width then region:SetWidth(width) end
+	end
+
+	local y = PAD
+
+	-- header ----------------------------------------------------------------
+	place(content.title, PAD, y)
+	content.chip:ClearAllPoints()
+	content.chip:SetPoint("LEFT", content.title, "RIGHT", 10, 0)
+	content.close:ClearAllPoints()
+	content.close:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
+	content.close:SetShown(IsVertical(self:Dock()))
+	y = y + HEADER_H
+
+	-- what's new ------------------------------------------------------------
+	place(content.news, PAD, y, avail)
+	content.news:SetHeight(NEWS_H)
+	content.news.dot:SetShown(self:NewsUnread())
+	y = y + NEWS_H + SECTION_GAP
+
+	-- MENU (the micro row) ---------------------------------------------------
+	local micro = self._microList or {}
+	if #micro > 0 and content.microHead then
+		place(content.microHead, PAD, y)
+		y = y + SECTION_H
+		local cellW = avail / MICRO_PER_ROW
+		for i, b in ipairs(micros) do
+			if i <= #micro then
+				local r, c = math.floor((i - 1) / MICRO_PER_ROW), (i - 1) % MICRO_PER_ROW
+				b:ClearAllPoints()
+				b:SetSize(cellW, MICRO_CELL_H)
+				b:SetPoint("TOPLEFT", content, "TOPLEFT",
+					PAD + c * cellW, -(y + r * MICRO_CELL_H))
+				b:Show()
+			else
+				b:Hide()
+			end
+		end
+		y = y + RowsFor(#micro, MICRO_PER_ROW) * MICRO_CELL_H + SECTION_GAP
+	end
+
+	-- WIDGETS ----------------------------------------------------------------
+	local shownCards = 0
+	for _, c in ipairs(cards) do if c:IsShown() then shownCards = shownCards + 1 end end
+	if shownCards > 0 and content.widgetsHead then
+		place(content.widgetsHead, PAD, y)
+		y = y + SECTION_H
+		local cols = Cols("widgetColumns", 3)
+		local cw = (avail - CARD_GAP * (cols - 1)) / cols
+		for i, card in ipairs(cards) do
+			if i <= shownCards then
+				local r, c = math.floor((i - 1) / cols), (i - 1) % cols
+				card:ClearAllPoints()
+				card:SetWidth(cw)
+				card:SetPoint("TOPLEFT", content, "TOPLEFT",
+					PAD + c * (cw + CARD_GAP), -(y + r * (CARD_H + CARD_GAP)))
+			end
+		end
+		y = y + RowsFor(shownCards, cols) * (CARD_H + CARD_GAP) - CARD_GAP + SECTION_GAP
+	end
+
+	-- UI SETTINGS is laid out BEFORE the addon list even though it is drawn
+	-- below it, because the addon list is the one section that gives way. Its
+	-- height has to be known first or there is nothing to subtract.
+	local tiles = self._tileList or {}
+	local tileCols = Cols("tileColumns", 2)
+	local tileRows = RowsFor(#tiles, tileCols)
+
+	-- Both lists give way, and in this order: the addon list first, the settings
+	-- tiles second. A drawer clamped small enough - a low screen at scale 1.0 -
+	-- cannot fit the fixed sections plus every tile, and the first version drew
+	-- the overflow off the bottom of the panel where nobody could reach it.
+	--
+	-- Cutting the addon list to nothing and stopping there was not enough: with
+	-- zero addon rows the column still wanted 614 of a 506 panel. So the tiles
+	-- are cut too, and both say what they dropped.
+	local roomLeft = h - y - PAD
+	local maxTileRows = math.max(0, math.floor((roomLeft - SECTION_H) / (TILE_H + TILE_GAP)))
+	if tileRows > maxTileRows then tileRows = maxTileRows end
+	local shownTiles = math.min(#tiles, tileRows * tileCols)
+	self._tilesCut = #tiles - shownTiles
+
+	local tileBlock = (shownTiles > 0)
+		and (SECTION_H + tileRows * (TILE_H + TILE_GAP) - TILE_GAP) or 0
+
+	-- ADDONS -----------------------------------------------------------------
+	local rows = self._addonRows or {}
+	local addonCols = Cols("addonColumns", 2)
+	local shown = 0
+	if #rows > 0 and content.addonsHead then
+		place(content.addonsHead, PAD, y)
+		content.addonsHint:ClearAllPoints()
+		content.addonsHint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
+		y = y + SECTION_H
+
+		-- What is left after the settings block and the bottom padding. The list
+		-- is CUT to fit rather than the panel being grown, and what did not fit
+		-- is reported - the quest tracker's rule, for the same reason: a list
+		-- that silently drops the row you were looking for is worse than one
+		-- that admits it ran out of room.
+		local room = h - y - PAD - tileBlock - SECTION_GAP
+		local maxRows = math.max(0, math.floor(room / (ROW_H + ROW_GAP)))
+		local maxShown = maxRows * addonCols
+
+		local rw = (avail - ROW_GAP * (addonCols - 1)) / addonCols
+		for i, row in ipairs(addons) do
+			if i <= #rows and i <= maxShown then
+				local r, c = math.floor((i - 1) / addonCols), (i - 1) % addonCols
+				row:ClearAllPoints()
+				row:SetWidth(rw)
+				row:SetPoint("TOPLEFT", content, "TOPLEFT",
+					PAD + c * (rw + ROW_GAP), -(y + r * (ROW_H + ROW_GAP)))
+				row:Show()
+				shown = shown + 1
+			else
+				row:Hide()
+			end
+		end
+
+		self._addonsCut = math.max(0, #rows - shown)
+		content.addonsHint:SetText(self._addonsCut > 0
+			and (#rows .. " \194\183 +" .. self._addonsCut .. " more")
+			or (#rows .. " with a launcher"))
+
+		y = y + RowsFor(shown, addonCols) * (ROW_H + ROW_GAP) - ROW_GAP + SECTION_GAP
+	end
+
+	-- UI SETTINGS ------------------------------------------------------------
+	if shownTiles > 0 then
+		if not content.tilesHead then return end
+		place(content.tilesHead, PAD, y)
+		content.tilesHead:SetText(Spaced("UI SETTINGS")
+			.. (self._tilesCut > 0 and ("   +" .. self._tilesCut) or ""))
+		y = y + SECTION_H
+		local tw = (avail - TILE_GAP * (tileCols - 1)) / tileCols
+		for i, tile in ipairs(tilesF) do
+			if i <= shownTiles then
+				local r, c = math.floor((i - 1) / tileCols), (i - 1) % tileCols
+				tile:ClearAllPoints()
+				tile:SetWidth(tw)
+				tile:SetPoint("TOPLEFT", content, "TOPLEFT",
+					PAD + c * (tw + TILE_GAP), -(y + r * (TILE_H + TILE_GAP)))
+				tile:Show()
+			else
+				tile:Hide()
+			end
+		end
+		y = y + tileRows * (TILE_H + TILE_GAP) - TILE_GAP
+	else
+		for _, tile in ipairs(tilesF) do tile:Hide() end
+	end
+	if content.tilesHead then content.tilesHead:SetShown(shownTiles > 0) end
+
+	self._contentHeight = y + PAD
+end
+
+-- The four old per-section layout passes are gone. They are kept as no-ops
+-- because Refresh* calls them, and because a reader looking for LayoutTiles
+-- should find out where it went rather than find nothing.
+function TB:LayoutTiles()  self:LayoutContent() end
+function TB:LayoutAddons() self:LayoutContent() end
+function TB:LayoutMicro()  self:LayoutContent() end
