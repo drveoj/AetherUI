@@ -348,7 +348,47 @@ end
 -- helpers
 -- ---------------------------------------------------------------------------
 
---- Apply a named style from Media.style to a FontString.
+-- Whether a face is really loadable, asked ONCE per path through a scratch
+-- FontString.
+--
+-- This used to be `if not fontString:SetFont(...) then fall back`, reading the
+-- return of the very call being made. That is right for a FontString, whose
+-- SetFont answers isValid - and wrong for a font OBJECT, whose SetFont answers
+-- nothing at all. `not nil` is true, so every font object we styled fell
+-- straight through to FRIZQT__.TTF: the three tooltip objects
+-- (GameTooltipHeaderText / GameTooltipText / GameTooltipTextSmall) came out in
+-- the client's own face at OUR sizes, which reads as "huge Friz Quadrata"
+-- rather than as a font that failed. Every FontString in the addon was fine,
+-- which is exactly why it took so long to see: the only things wrong on screen
+-- were the three objects, and they are the three we never draw ourselves.
+--
+-- The harness had the same hole in reverse - its font-object mock returned
+-- true, so the fallback was never once exercised in a test.
+--
+-- Probing separately also means the fallback answers the question it was
+-- written for ("is this install missing its TTFs?") rather than the question
+-- the call site happened to answer.
+local probe, verified = nil, {}
+local function Usable(path)
+	if verified[path] ~= nil then return verified[path] end
+
+	if probe == nil then
+		local ok, fs = pcall(function()
+			return UIParent and UIParent:CreateFontString(nil, "BACKGROUND")
+		end)
+		probe = (ok and fs) or false
+	end
+	-- No probe, no verdict: assume the face is good rather than condemning
+	-- every string in the addon to the game font on the strength of not being
+	-- able to ask.
+	if not probe then verified[path] = true return true end
+
+	local ok, valid = pcall(probe.SetFont, probe, path, 12, "")
+	verified[path] = (ok and valid) and true or false
+	return verified[path]
+end
+
+--- Apply a named style from Media.style to a FontString OR a font object.
 --  Falls back to the game font if the TTF fails to load, so a bad install
 --  degrades to "ugly" instead of "invisible text".
 function Media:SetFont(fontString, styleName, sizeOverride)
@@ -364,9 +404,10 @@ function Media:SetFont(fontString, styleName, sizeOverride)
 	size = math.floor((tonumber(size) or 12) + 0.5)
 	local flags = style[3]
 
-	if not fontString:SetFont(path, size, flags) then
-		fontString:SetFont(STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]], size, flags)
+	if not Usable(path) then
+		path = STANDARD_TEXT_FONT or [[Fonts\FRIZQT__.TTF]]
 	end
+	fontString:SetFont(path, size, flags)
 	return fontString
 end
 

@@ -313,6 +313,11 @@ local function newFontString(owner, layer)
 	function f:SetFont(path, size, flags)
 		if type(path) ~= "string" then fail("SetFont path " .. tostring(path)) return false end
 		if type(size) ~= "number" then fail("SetFont size " .. tostring(size)) return false end
+		-- A FontString answers isValid, and answers FALSE for a face the client
+		-- cannot load. That return is the only honest signal either the addon or
+		-- this harness has about a missing TTF, which is why Media probes with a
+		-- scratch FontString rather than reading it off a font object.
+		if _G.__badFonts and _G.__badFonts[path] then return false end
 		self.__font = { path, size, flags }
 		return true
 	end
@@ -1405,10 +1410,14 @@ for _, n in ipairs({ "GameTooltipHeaderText", "GameTooltipText", "GameTooltipTex
 		-- these three. A mock that started blank would let a module capture nil as
 		-- "the original" and call putting nothing back a successful restore.
 		__font = { [[Fonts\FRIZQT__.TTF]], n:find("Small") and 10 or 12, "" },
+		-- RETURNS NOTHING, because the client's does not. A FontString answers
+		-- isValid; a font object answers nothing at all, and a mock that is
+		-- kinder than the client hides exactly the bug that made every tooltip
+		-- in the game come out in Friz Quadrata - the fallback in
+		-- Media:SetFont read this return and fell through on every call.
 		SetFont = function(self, path, size, flags)
-			if type(path) ~= "string" then fail(n .. ":SetFont path " .. tostring(path)) return false end
+			if type(path) ~= "string" then fail(n .. ":SetFont path " .. tostring(path)) return end
 			self.__font = { path, size, flags }
-			return true
 		end,
 		GetFont = function(self)
 			local c = self.__font
@@ -11840,6 +11849,73 @@ do
 		"EmbeddedItemTooltip", "WorldMapTooltip" }) do
 		check(_G[n] and T.skinned[_G[n]], n .. " adopted too")
 	end
+end
+
+print("== tooltips: the typeface actually reaches the client's font objects ==")
+do
+	local T = A:GetModule("tooltips")
+
+	-- The three font objects are the highest-leverage thing the module touches:
+	-- every line in every tooltip inherits one of them, including lines other
+	-- addons add later. They are also the ONLY things the addon styles that are
+	-- not FontStrings, and that difference is what broke them.
+	--
+	-- FontString:SetFont answers isValid. Font:SetFont answers NOTHING. Media
+	-- used to read the return of the call it had just made and fall back to the
+	-- game font when it was falsy, so every font object landed on
+	-- FRIZQT__.TTF - at our sizes, which is why it read as "huge Friz" rather
+	-- than as a font that had failed to load. Every FontString was fine
+	-- throughout, so nothing else on screen looked wrong.
+	for _, n in ipairs({ "GameTooltipHeaderText", "GameTooltipText",
+		"GameTooltipTextSmall" }) do
+		local obj = _G[n]
+		check(obj:SetFont([[Interface\X.ttf]], 12, "") == nil,
+			n .. " answers nothing from SetFont, as the client's does - a mock"
+			.. " kinder than the client tests the wrong code")
+	end
+
+	T:ApplyFonts()
+
+	local wanted = {
+		GameTooltipHeaderText = A.Media.style.ttName,
+		GameTooltipText       = A.Media.style.ttBody,
+		GameTooltipTextSmall  = A.Media.style.ttSmall,
+	}
+	for n, style in pairs(wanted) do
+		local path, size = _G[n]:GetFont()
+		check(path == A.Media.font[style[1]],
+			n .. " is left on Outfit " .. style[1] .. " rather than on the"
+			.. " client's own face (got " .. tostring(path) .. ")")
+		check(size == style[2],
+			"at the role's size, " .. style[2] .. " (got " .. tostring(size) .. ")")
+	end
+
+	-- ...and the fallback still exists for the thing it was written for: an
+	-- install with its Media folder missing.
+	do
+		local saved = A.Media.font.light
+		A.Media.font.light = [[Interface\AddOns\AetherUI\Media\Fonts\Nope.ttf]]
+		_G.__badFonts = { [A.Media.font.light] = true }
+		T:ApplyFonts()
+		local path = GameTooltipText:GetFont()
+		check(path ~= A.Media.font.light,
+			"a face the client cannot load falls back rather than leaving the"
+			.. " tooltip blank (got " .. tostring(path) .. ")")
+		_G.__badFonts = nil
+		A.Media.font.light = saved
+		T:ApplyFonts()
+	end
+
+	-- Turning the option off puts the CLIENT's face back, not our idea of it.
+	local before = select(1, GameTooltipHeaderText:GetFont())
+	A.Config:Module("tooltips").restyleFonts = false
+	T:ApplyFonts()
+	check(GameTooltipHeaderText:GetFont() == [[Fonts\FRIZQT__.TTF]],
+		"unticking the option restores the face captured BEFORE we overwrote it"
+		.. " (got " .. tostring(GameTooltipHeaderText:GetFont()) .. ")")
+	A.Config:Module("tooltips").restyleFonts = true
+	T:ApplyFonts()
+	check(GameTooltipHeaderText:GetFont() == before, "and ticking it goes back")
 end
 
 print("== tooltips: the card follows lines added AFTER the tooltip is up ==")
