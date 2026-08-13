@@ -3491,6 +3491,144 @@ local function fire(event, ...)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- nameplates
+-- ---------------------------------------------------------------------------
+--
+-- Modelled off Blizzard_NamePlateBase.lua, and deliberately unkind in the three
+-- places nameplate addons actually break:
+--
+--   * Base frames are RECYCLED. The plate that was on a kodo is handed back out
+--     for the next mob that walks up, with whatever the last module left on it
+--     still attached. A mock that minted a fresh frame per unit would let a
+--     module get away with never clearing anything.
+--
+--   * The Blizzard plate on top is pooled SEPARATELY, and re-acquired on every
+--     UNIT_ADDED. ReleaseUnitFrame nils it, so the next unit does not
+--     necessarily get the same object back, and it comes back SHOWN. Hide it
+--     once when the plate is created and it is visible again on the next mob -
+--     which is the single most common way a nameplate skin ships with
+--     Blizzard's own plate flickering underneath it.
+--
+--   * FORBIDDEN plates exist, on their own event pair, and the C_NamePlate
+--     getters do not return them to insecure callers - which is what the
+--     issecure() argument in Blizzard's own GetNamePlateForUnit is for. Touching
+--     one taints. Here they are simply invisible to the getters, so a module
+--     that handles the forbidden events gets nil and has to cope.
+--
+-- Not modelled: whether C_NamePlate.SetNamePlateSize is refused in combat. The
+-- retail SetNamePlateEnemySize is, but nothing on this machine calls the Classic
+-- one and Blizzard calling it from secure code proves nothing about us. It is a
+-- recorded no-op here, and the module does not call it - our plate is
+-- decoration anchored to the base, and the base stays the click target at
+-- whatever size the client chose.
+local plateSeq = 0
+local platePool, unitFramePool = {}, {}
+local activePlates, activeOrder = {}, {}
+
+_G.C_NamePlate = {}
+_G.__plateSize = nil
+
+function C_NamePlate.GetNamePlateForUnit(token)
+	return activePlates[token]
+end
+
+function C_NamePlate.GetNamePlates()
+	local out = {}
+	for i = 1, #activeOrder do out[i] = activeOrder[i] end
+	return out
+end
+
+function C_NamePlate.SetNamePlateSize(w, h)
+	_G.__plateSize = { w, h }
+end
+
+local function acquireUnitFrame(base)
+	-- Pooled, and it comes back SHOWN. This is the trap.
+	local uf = table.remove(unitFramePool)
+	if not uf then uf = CreateFrame("Frame", nil, base) end
+	uf:SetParent(base)
+	uf:SetAllPoints(base)
+	uf:Show()
+	base.UnitFrame = uf
+	return uf
+end
+
+local function releaseUnitFrame(base)
+	local uf = base.UnitFrame
+	if uf then
+		uf:Hide()
+		unitFramePool[#unitFramePool + 1] = uf
+	end
+	base.UnitFrame = nil
+end
+
+--- Bring a nameplate up, exactly as the client does: create (once per frame),
+--- then add the unit.
+function _G.__spawnPlate(token, data)
+	units[token] = data
+
+	local base, fresh = table.remove(platePool), false
+	if not base then
+		plateSeq = plateSeq + 1
+		base = CreateFrame("Frame", "NamePlate" .. plateSeq, UIParent)
+		-- C++ builds these and they are the click target, so they are protected:
+		-- Hide() or a re-anchor on the BASE is refused in combat. Our own child
+		-- of it is not, which is the whole reason the plate is decoration hung on
+		-- the base rather than a replacement for it.
+		base.__protected = true
+		base:SetSize(110, 45)
+		fresh = true
+	end
+
+	base.unitToken = token
+	activePlates[token] = base
+	activeOrder[#activeOrder + 1] = base
+	base:Show()
+
+	if fresh then fire("NAME_PLATE_CREATED", base) end
+	acquireUnitFrame(base)
+	fire("NAME_PLATE_UNIT_ADDED", token)
+	return base
+end
+
+--- And take it away. The token stops being a unit at all - a module holding on
+--- to "nameplate3" after this gets nothing back, which is the client's answer.
+function _G.__despawnPlate(token)
+	local base = activePlates[token]
+	if not base then return end
+
+	fire("NAME_PLATE_UNIT_REMOVED", token)
+	releaseUnitFrame(base)
+	base.unitToken = nil
+	activePlates[token] = nil
+	for i = #activeOrder, 1, -1 do
+		if activeOrder[i] == base then table.remove(activeOrder, i) end
+	end
+	base:Hide()
+	platePool[#platePool + 1] = base
+	units[token] = nil
+end
+
+--- A forbidden plate: its own event pair, and invisible to the getters.
+function _G.__spawnForbiddenPlate(token)
+	fire("FORBIDDEN_NAME_PLATE_UNIT_ADDED", token)
+end
+
+function _G.__plateCount()
+	return #activeOrder
+end
+
+function UnitIsUnit(a, b)
+	if not a or not b then return false end
+	if a == b then return true end
+	local ua, ub = units[a], units[b]
+	return ua ~= nil and ua == ub
+end
+
+function UnitAffectingCombat(u) return units[u] and units[u].inCombat or false end
+function GetGuildInfo(u) local d = units[u]; return d and d.guild end
+
 -- Expanding or collapsing a header fires QUEST_LOG_UPDATE on the live client.
 -- Modelling that matters more than it looks: it is what makes a collapse visible
 -- to every other module's rebuild, and a mock that stays silent here hides the
@@ -14239,6 +14377,59 @@ end
 -- checks exist because the failure mode is not an error: it is a colour that is
 -- technically applied and visually absent.
 -- ---------------------------------------------------------------------------
+
+print("== nameplates: the mock is as unkind as the client ==")
+do
+	local seen = { created = 0, added = 0, removed = 0 }
+	local spy = {}
+	A:RegisterEvent(spy, "NAME_PLATE_CREATED", function() seen.created = seen.created + 1 end)
+	A:RegisterEvent(spy, "NAME_PLATE_UNIT_ADDED", function() seen.added = seen.added + 1 end)
+	A:RegisterEvent(spy, "NAME_PLATE_UNIT_REMOVED", function() seen.removed = seen.removed + 1 end)
+
+	local base = __spawnPlate("nameplate1", {
+		exists = true, name = "Kolkar Marauder", level = 18, reaction = 2,
+		hp = 900, hpMax = 1000,
+	})
+	check(C_NamePlate.GetNamePlateForUnit("nameplate1") == base,
+		"a plate that is up is findable by its token")
+	check(seen.created == 1 and seen.added == 1, "created once, added once")
+
+	base.__leftBehind = "kodo"
+	__despawnPlate("nameplate1")
+	check(seen.removed == 1 and C_NamePlate.GetNamePlateForUnit("nameplate1") == nil,
+		"and unfindable once it is taken away")
+	check(UnitExists("nameplate1") == false,
+		"with the token no longer a unit at all - a module still holding it gets"
+		.. " nothing back, which is exactly what the client says")
+
+	local again = __spawnPlate("nameplate1", {
+		exists = true, name = "Wandering Kodo", level = 15, reaction = 4,
+	})
+	check(again == base,
+		"the next mob is handed the SAME frame - plates are recycled, not minted,"
+		.. " so anything left on one turns up on somebody else")
+	check(again.__leftBehind == "kodo", "with the last tenant's things still on it")
+	check(seen.created == 1, "and no second CREATED for a frame that already exists")
+
+	again.UnitFrame:Hide()
+	__despawnPlate("nameplate1")
+	local third = __spawnPlate("nameplate1", {
+		exists = true, name = "Gazrog", level = 20, reaction = 2,
+	})
+	check(third.UnitFrame:IsShown(),
+		"Blizzard's own plate is pooled separately and comes back SHOWN on the"
+		.. " next unit - hiding it once when the plate is created is not enough,"
+		.. " and is why skinned nameplates ship with theirs flickering underneath")
+
+	__spawnForbiddenPlate("nameplate99")
+	check(C_NamePlate.GetNamePlateForUnit("nameplate99") == nil,
+		"a forbidden plate is invisible to the getters, the way it is to any"
+		.. " insecure caller - handling that event pair earns you a nil and a taint")
+
+	__despawnPlate("nameplate1")
+	A:UnregisterAllEvents(spy)
+	check(__plateCount() == 0, "and nothing is left standing behind us")
+end
 
 print("== palette: difficulty has one owner ==")
 do
