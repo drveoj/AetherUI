@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.26",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: NPCs you have no reputation with were drawn as mobs. Whether something is a mob is now decided by whether you can attack it, not by how it feels about you - so a flight master is a name and a wandering kodo is still a capsule.",
+		},
+	},
+	{
 		version = "0.3.25",
 		date    = "2026-08-13",
 		lines   = {

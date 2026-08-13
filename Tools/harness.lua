@@ -3653,6 +3653,20 @@ end
 
 function UnitAffectingCombat(u) return units[u] and units[u].inCombat or false end
 function UnitInParty(u) return units[u] and units[u].inParty or false end
+
+-- Whether you can hit it, which is how the client separates somebody who lives
+-- here from something you fight. A flight master and a wandering kodo can both
+-- be non-hostile; only one of them is a mob.
+--
+-- Declared per unit, with a MOB as the default: reaction alone cannot answer
+-- this, so a fixture that means "NPC" has to say so. Defaulting the other way
+-- would let a module that never asks the question look correct.
+function UnitCanAttack(a, b)
+	local d = units[b]
+	if not d then return false end
+	if d.canAttack ~= nil then return d.canAttack end
+	return (d.reaction or 4) <= 4
+end
 function GetGuildInfo(u) local d = units[u]; return d and d.guild end
 
 print("== loading addon files ==")
@@ -15087,6 +15101,44 @@ do
 	check(np ~= nil and np.type == "group", "nameplates has a page of its own")
 	check(np and np.args.enabled and np.args.friendlyNames and np.args.scale,
 		"carrying the switches that were only reachable by editing a table")
+end
+
+print("== nameplates: an NPC is not a mob ==")
+do
+	-- Joe: "Kodo is a mob. Flight Master Devrak is an NPC." Reaction cannot tell
+	-- them apart - a wandering kodo is neutral and so is an NPC of a faction you
+	-- have not earned yet. What separates them is whether you can hit it.
+	local kodo = { exists = true, name = "Wandering Kodo", level = 15,
+		reaction = 4, hp = 500, hpMax = 500 }
+	local devrak = { exists = true, name = "Devrak", level = 30,
+		reaction = 4, hp = 900, hpMax = 900, canAttack = false }
+
+	local baseK = __spawnPlate("nameplate1", kodo)
+	local baseD = __spawnPlate("nameplate2", devrak)
+	local k, d = NPm.plateFor(baseK), NPm.plateFor(baseD)
+
+	check(k._nameForm == false and k._fillColor[4] > 0,
+		"a neutral MOB keeps the capsule - it is a thing you might have to"
+		.. " fight, and the level and the health are what you want off it")
+	check(d._nameForm == true and d._fillColor[4] == 0,
+		"while an NPC at the same reaction is a name - not enough reputation is"
+		.. " a fact about your standing, not about whether he is a mob")
+	check(d.name:GetText() == "Devrak" and not d.badge:IsShown(),
+		"the name and nothing else: no capsule, no level, no bar")
+	check(not d.bar:IsShown(), "and no health bar while he is unhurt")
+
+	_G.__units.nameplate2.hp = 100
+	fire("UNIT_HEALTH", "nameplate2")
+	check(d.bar:IsShown(), "which appears if somebody is beating on him")
+
+	-- And a hostile one is a capsule whatever else is true of it.
+	__despawnPlate("nameplate2")
+	__spawnPlate("nameplate2", { exists = true, name = "Kolkar Marauder",
+		level = 18, reaction = 2, hp = 900, hpMax = 1000 })
+	check(d._nameForm == false, "anything you can attack is a capsule")
+
+	__despawnPlate("nameplate1")
+	__despawnPlate("nameplate2")
 end
 
 print("== palette: difficulty has one owner ==")

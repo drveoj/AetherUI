@@ -78,14 +78,24 @@ local function Classification(unit)
 	return nil
 end
 
---- Friendly enough to be a name rather than a plate.
+--- Somebody who lives here, rather than something you fight.
 --
---  Reaction 5 and up. Neutral keeps the capsule: a yellow mob is something you
---  might yet have to fight, and the level and the health matter for that.
-local function IsFriendly(unit)
+--  ATTACKABILITY, not reaction. Reaction cannot answer this: a wandering kodo
+--  and a flight master are both non-hostile, and only one of them is a mob. Nor
+--  can reputation - an NPC of a faction you have not earned yet reads neutral
+--  while still being a person standing behind a counter.
+--
+--  What separates them is whether you can hit it. A flight master, an innkeeper
+--  and a friendly player cannot be attacked and get a name; a kodo, a centaur
+--  and anything hostile can, and get the capsule with the level and the health
+--  on it, which is what you want to know about a thing you might have to fight.
+local function IsNameForm(unit)
 	if not unit or cfg().friendlyNames == false then return false end
-	local r = UnitReaction and UnitReaction(unit, "player")
-	return r ~= nil and r >= 5
+	if not UnitCanAttack then
+		local r = UnitReaction and UnitReaction(unit, "player")
+		return r ~= nil and r >= 5
+	end
+	return not UnitCanAttack("player", unit)
 end
 
 --- Does this plate carry a health bar at all?
@@ -94,6 +104,14 @@ end
 --  "not my problem yet", and a health bar on one is a row of numbers that
 --  answers a question nobody asked.
 local function WantsBar(unit)
+	-- A name shows a bar only when it is hurt. A street of full green bars over
+	-- a city is noise with nothing in it, and the one missing a third of itself
+	-- is the only one you wanted to see.
+	if IsNameForm(unit) then
+		local max = UnitHealthMax(unit) or 0
+		return max > 0 and (UnitHealth(unit) or 0) < max
+	end
+
 	local reaction = UnitReaction and UnitReaction(unit, "player")
 	if not reaction then return true end
 	if reaction <= 3 then return true end
@@ -101,14 +119,6 @@ local function WantsBar(unit)
 	if reaction == 4 then
 		if cfg().neutralBarInCombat == false then return true end
 		return UnitAffectingCombat and UnitAffectingCombat(unit) or false
-	end
-
-	-- Friendly: only when hurt. A street of full green bars over a city is
-	-- noise with nothing in it, and the one that is missing a third of itself
-	-- is the only one you wanted to see.
-	if IsFriendly(unit) then
-		local max = UnitHealthMax(unit) or 0
-		return max > 0 and (UnitHealth(unit) or 0) < max
 	end
 	return true
 end
@@ -501,7 +511,7 @@ local function LayoutPlateForm(f)
 end
 
 local function UpdateAll(f)
-	local friendly = IsFriendly(f.unit)
+	local friendly = IsNameForm(f.unit)
 	if friendly ~= f._nameForm then
 		ApplyForm(f, friendly)
 		if not friendly then LayoutPlateForm(f) end
