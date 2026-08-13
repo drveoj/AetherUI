@@ -2352,6 +2352,19 @@ do
 		-- the flash on a timed button. Hidden when a skin first looks at it.
 		p.__later = p:CreateTexture(nil, "OVERLAY")
 		p.__later:Hide()
+
+		-- THE OPAQUE BACKGROUND. A dialog's backdrop does not live in its own
+		-- regions - it hangs off it as a child FRAME, and GetRegions() never
+		-- returns one. So a skin can strip every texture the dialog owns, look
+		-- entirely correct from a test, and still be solid black on screen.
+		local nine = CreateFrame("Frame", (i == 2) and ("StaticPopup" .. i .. "Border") or nil, p)
+		nine.__fill = nine:CreateTexture(nil, "BACKGROUND")
+		nine.__fill:SetTexture("dialog-background")
+		nine.__fill:Show()
+		-- Half of them found by field, half by global name, like everything else
+		-- about these dialogs.
+		if i ~= 2 then p.NineSlice = nine end
+		p.__nine = nine
 		local alert = p:CreateTexture(nil, "ARTWORK")
 
 		local text = p:CreateFontString(nil, "OVERLAY")
@@ -15520,6 +15533,10 @@ do
 			"dialog " .. i .. " has a glass panel behind it")
 		check(p.__border:IsShown() == false and p.__bg:IsShown() == false,
 			"and the stone frame it came with is hidden, not covered over")
+		check(p.__nine.__fill:GetTexture() == 0,
+			"including the background hanging off it in a CHILD FRAME - that is"
+			.. " not one of the dialog's own regions, so a strip that only walks"
+			.. " GetRegions leaves the thing you actually see through")
 
 		local alert = PPm.Element(p, "AlertIcon")
 		check(alert and not alert:IsShown(),
@@ -15582,6 +15599,9 @@ do
 	check(restored and restored:GetTexture() == "dialog-button-up",
 		"switching off gives the button its own art back, by name - clearing a"
 		.. " texture is not undone by hiding a region")
+	check(_G.StaticPopup1.__nine.__fill:GetTexture() == "dialog-background",
+		"and the dialog's own background comes back with it, out of the child"
+		.. " frame it lives in")
 	A:SetModuleEnabled("popups", true)
 end
 

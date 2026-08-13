@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.8",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: the dialog's own opaque background showed through the glass, so nothing looked translucent. It lives in a child frame rather than on the dialog itself, and was never being stripped.",
+		},
+	},
+	{
 		version = "0.4.7",
 		date    = "2026-08-13",
 		lines   = {

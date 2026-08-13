@@ -73,6 +73,19 @@ PP.Element = Element
 --  Remembered per frame rather than re-derived, because the answer has to
 --  survive until somebody switches the module off - and by then the frame may
 --  have grown regions we never hid and must not show.
+-- The art a Blizzard frame keeps in CHILD FRAMES rather than in its own
+-- regions. GetRegions() never returns any of these, which is why a dialog can
+-- lose every texture it owns and still be opaque: its background is a NineSlice
+-- or a Border frame hanging off it.
+--
+-- ElvUI's list, because it is the one that has been maintained against every
+-- flavour of this client for a decade.
+local ART_CHILDREN = {
+	"Inset", "inset", "InsetFrame", "LeftInset", "RightInset",
+	"NineSlice", "BG", "Bg", "border", "Border", "Background", "BorderFrame",
+	"BorderBox", "bottomInset", "BottomInset", "bgLeft", "bgRight",
+}
+
 local function StripArt(frame, store)
 	if not frame or not frame.GetRegions then return end
 
@@ -84,26 +97,52 @@ local function StripArt(frame, store)
 		-- showing left it in place - and Blizzard's button flashed back the
 		-- instant you clicked, then stayed for every dialog after.
 		--
-		-- Whether each was shown is remembered, so putting them back does not
-		-- reveal art the client had hidden for its own reasons.
+		-- What each one WAS is remembered, so putting them back does not reveal
+		-- art the client had hidden for its own reasons.
 		for _, region in ipairs({ frame:GetRegions() }) do
 			if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-				known[#known + 1] = { region, region.IsShown and region:IsShown() }
+				known[#known + 1] = {
+					region,
+					region.IsShown and region:IsShown(),
+					region.GetTexture and region:GetTexture() or nil,
+				}
 			end
 		end
 		store[frame] = known
 	end
 
-	-- Hidden on every pass, not only the first.
+	-- CLEARED, not just hidden. A hidden texture is one the client can show
+	-- again - and does. A texture with nothing in it draws nothing whoever
+	-- shows it, which is how ElvUI has always done this.
 	for _, entry in ipairs(known) do
+		if entry[1].SetTexture then entry[1]:SetTexture(0) end
+		if entry[1].SetAtlas then pcall(entry[1].SetAtlas, entry[1], "") end
 		if entry[1].Hide then entry[1]:Hide() end
+	end
+
+	-- And the art hanging off it in child frames.
+	local name = frame.GetName and frame:GetName()
+	for _, key in ipairs(ART_CHILDREN) do
+		local child = frame[key] or (name and _G[name .. key])
+		if child and child ~= frame and child.GetRegions then
+			StripArt(child, store)
+		end
+	end
+
+	-- Some frames carry a backdrop rather than textures. Zeroing it is not
+	-- reversible from here, so it is only touched when there is one.
+	if frame.SetBackdropColor then pcall(frame.SetBackdropColor, frame, 0, 0, 0, 0) end
+	if frame.SetBackdropBorderColor then
+		pcall(frame.SetBackdropBorderColor, frame, 0, 0, 0, 0)
 	end
 end
 
 local function RestoreArt(store)
 	for _, known in pairs(store) do
 		for _, entry in ipairs(known) do
-			if entry[2] and entry[1].Show then entry[1]:Show() end
+			local region, wasShown, path = entry[1], entry[2], entry[3]
+			if path and region.SetTexture then region:SetTexture(path) end
+			if wasShown and region.Show then region:Show() end
 		end
 	end
 	wipe(store)
