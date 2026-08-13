@@ -487,6 +487,15 @@ Config.defaults = {
 				-- is a switch because a plate we failed to draw is worse than
 				-- theirs and this is the way back.
 				hideBlizzard = true,
+				-- Friendlies get plain text rather than a capsule, and a health
+				-- bar only when they are hurt. A street of full green bars over
+				-- a city is noise with nothing in it.
+				friendlyNames = true,
+				-- Off by default: a friendly player's name is blue because that
+				-- is what "friendly player" looks like everywhere else in this
+				-- UI, and a street of nine class colours says something you did
+				-- not ask. On, it applies to your PARTY only.
+				partyClassColors = false,
 			},
 
 			-- Tooltips (concept 6a / 6b).

@@ -669,8 +669,16 @@ end
 function Palette:DifficultyColors(level)
 	local band = Palette.c.questDiff[Palette:DifficultyBand(level)]
 		or Palette.c.questDiff.difficult
-	local t = band.text
-	return { t[1], t[2], t[3], 0.15 }, { t[1], t[2], t[3], 0.40 }, t
+	return Palette:ChipColors(band.text)
+end
+
+--- One colour, three jobs: disc, rim, ink.
+--
+--  The recipe every badge in this UI wears, named once so the difficulty badge
+--  and the class-coloured pip on a friendly nameplate cannot drift apart.
+function Palette:ChipColors(c)
+	if not c then c = Palette.c.text end
+	return { c[1], c[2], c[3], 0.15 }, { c[1], c[2], c[3], 0.40 }, c
 end
 
 --- Rim colour that follows the target's reaction, used on the target capsule.

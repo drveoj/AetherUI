@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.22",
+		date    = "2026-08-13",
+		lines   = {
+			"New: friendly players and NPCs are plain shadowed text now instead of a capsule - a class-coloured level pip, the name, and the guild in angle brackets underneath.",
+			"A friendly's health bar only appears when they are actually hurt.",
+			"Fixed: a friendly player whose level the client would not report showed a skull. That badge means 'too far above you to judge as a threat', which is nonsense about somebody who is not one.",
+			"Party members can be class-coloured instead of blue, if you turn it on.",
+		},
+	},
+	{
 		version = "0.3.21",
 		date    = "2026-08-13",
 		lines   = {

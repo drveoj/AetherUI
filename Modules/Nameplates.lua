@@ -40,6 +40,9 @@ local PAD_L, PAD_R, PAD_Y = 8, 18, 7
 local GAP_BADGE, GAP_ROW  = 10, 5
 local GAP_CHIP            = 6
 
+-- The friendly form: a 17px class pip and a 6px gap, and no glass at all.
+local PIP, GAP_PIP, GAP_GUILD = 17, 6, 1
+
 -- The client draws this for a unit too far above you to read a level from.
 local SKULL = "|T" .. [[Interface\TargetingFrame\UI-TargetingFrame-Skull]] .. ":12:12:0:0|t"
 
@@ -75,6 +78,16 @@ local function Classification(unit)
 	return nil
 end
 
+--- Friendly enough to be a name rather than a plate.
+--
+--  Reaction 5 and up. Neutral keeps the capsule: a yellow mob is something you
+--  might yet have to fight, and the level and the health matter for that.
+local function IsFriendly(unit)
+	if not unit or cfg().friendlyNames == false then return false end
+	local r = UnitReaction and UnitReaction(unit, "player")
+	return r ~= nil and r >= 5
+end
+
 --- Does this plate carry a health bar at all?
 --
 --  Hostiles always. Neutral only once it is in a fight: a yellow plate means
@@ -84,9 +97,18 @@ local function WantsBar(unit)
 	local reaction = UnitReaction and UnitReaction(unit, "player")
 	if not reaction then return true end
 	if reaction <= 3 then return true end
+
 	if reaction == 4 then
 		if cfg().neutralBarInCombat == false then return true end
 		return UnitAffectingCombat and UnitAffectingCombat(unit) or false
+	end
+
+	-- Friendly: only when hurt. A street of full green bars over a city is
+	-- noise with nothing in it, and the one that is missing a third of itself
+	-- is the only one you wanted to see.
+	if IsFriendly(unit) then
+		local max = UnitHealthMax(unit) or 0
+		return max > 0 and (UnitHealth(unit) or 0) < max
 	end
 	return true
 end
@@ -111,6 +133,11 @@ local function Build(base)
 	name:SetWordWrap(false)
 	f.name = name
 
+	local guild = W.Text(f, "npGuild", "CENTER")
+	guild:SetWordWrap(false)
+	guild:Hide()
+	f.guild = guild
+
 	local chip = W.Pill(f, "npChip", { height = 13, padX = 5 })
 	chip:Hide()
 	f.chip = chip
@@ -128,6 +155,86 @@ local function Build(base)
 		c.badgeSize + PAD_Y * 2)
 
 	return f
+end
+
+-- ---------------------------------------------------------------------------
+-- the two forms
+-- ---------------------------------------------------------------------------
+--
+-- A friendly is a NAME, not a plate: no glass, no rim, plain shadowed text.
+-- Same frame either way, because a unit's reaction can change under a plate
+-- that is already up and rebuilding one mid-fight is how you drop a frame.
+
+local function ApplyForm(f, friendly)
+	f._nameForm = friendly
+	if friendly then
+		-- The glass goes entirely, rather than being dimmed. A faint capsule
+		-- behind a friendly name is the thing the deck is most explicit about
+		-- NOT wanting: the whole point is that a street of people costs you no
+		-- furniture at all.
+		f:SetFillColor({ 0, 0, 0, 0 })
+		f:SetEdgeShown(false)
+		f:SetRimGlow(nil)
+	else
+		f:ApplySkin("glass", "glassEdge")
+		f:SetEdgeShown(true)
+	end
+end
+
+--- The name form: pip, name, guild, sized to what is actually on it.
+local function LayoutNameForm(f)
+	local unit = f.unit
+	local isPlayer = UnitIsPlayer and UnitIsPlayer(unit)
+	local level = UnitLevel and UnitLevel(unit) or 0
+
+	-- A pip only for players, and only when the client will tell us a level.
+	-- Never a skull: "too far above you to read" is a threat judgement, and a
+	-- friendly is not a threat. A friendly whose level is unknown simply has no
+	-- pip rather than a skull saying something untrue about them.
+	local pip = isPlayer and level > 0
+
+	f.badge:ClearAllPoints()
+	f.name:ClearAllPoints()
+	f.name:SetWidth(0)          -- sized by its text, not pinned to the bar
+
+	if pip then
+		f.badge:Resize(PIP)
+		f.badge:SetLabel(tostring(level))
+		-- OrbBaseColor, not ClassColor: the deck calls this "a mini version of
+		-- the level badge", and the big one on the HUD is drawn from the orb
+		-- palette - the hand-authored one where a Shaman is era pink rather
+		-- than the client's blue. Two sizes of the same disc should not be two
+		-- different colours.
+		f.badge:SetColors(Palette:ChipColors(Palette:OrbBaseColor(unit)))
+		f.badge:Show()
+		f.badge:SetPoint("LEFT", f, "LEFT", 0, 0)
+		f.name:SetPoint("LEFT", f.badge, "RIGHT", GAP_PIP, 0)
+	else
+		f.badge:Hide()
+		f.name:SetPoint("LEFT", f, "LEFT", 0, 0)
+	end
+
+	local guild = isPlayer and GetGuildInfo and GetGuildInfo(unit) or nil
+	if guild then
+		f.guild:SetText("<" .. guild .. ">")
+		f.guild:ClearAllPoints()
+		f.guild:SetPoint("TOP", f.name, "BOTTOM", 0, -GAP_GUILD)
+		W.Color(f.guild, Palette.c.ttGuild)
+		f.guild:Show()
+	else
+		f.guild:Hide()
+	end
+
+	-- The frame is the text's own size, so anything hung under it - a cast
+	-- capsule, a row of chips - centres on the NAME rather than on a box that
+	-- is mostly empty.
+	local nameW = math.ceil(f.name:GetStringWidth() or 0)
+	local w = nameW + (pip and (PIP + GAP_PIP) or 0)
+	local h = math.ceil(f.name:GetStringHeight() or 12)
+	if guild then h = h + GAP_GUILD + math.ceil(f.guild:GetStringHeight() or 10) end
+	f:SetSize(math.max(w, PIP), math.max(h, PIP))
+
+	f.chip:Hide()
 end
 
 --- Where the name sits depends on whether anything is under it.
@@ -205,13 +312,34 @@ local function UpdateHealth(f)
 	f.bar:SetColors(Palette:HealthColor(unit))
 end
 
+--- What a friendly player's name is coloured with.
+--
+--  Blue, because that is what "a friendly player" looks like everywhere else in
+--  this UI. Class colours are an opt-in and apply to your PARTY only: a street
+--  of nine class colours in a capital says something you did not ask about
+--  everybody who happens to be standing there.
+local function FriendlyNameColor(unit)
+	if cfg().partyClassColors and UnitInParty and UnitInParty(unit) then
+		-- The orb palette again, not ClassColor: that reads the CLIENT's table,
+		-- where a Shaman is blue, and this UI has settled on era pink. One
+		-- class palette, or the same person is two colours on two surfaces.
+		if UnitIsPlayer and UnitIsPlayer(unit) then
+			return Palette:OrbBaseColor(unit)
+		end
+	end
+	return Palette:NameReaction(unit)
+end
+
 local function UpdateName(f)
 	local unit = f.unit
 	if not unit then return end
 	local c = cfg()
 
 	f.name:SetText(UnitName(unit) or "")
-	W.Color(f.name, Palette:NameReaction(unit))
+	W.Color(f.name, f._nameForm and FriendlyNameColor(unit)
+		or Palette:NameReaction(unit))
+
+	if f._nameForm then return LayoutNameForm(f) end
 
 	local label, tint = Classification(unit)
 	if label then
@@ -230,6 +358,9 @@ local function UpdateName(f)
 	end
 end
 
+--- The plate form's level badge. Not guarded against the name form: that draws
+--  its own pip in LayoutNameForm, which runs after this and owns the badge
+--  outright, so a guard here would be a line nothing could ever observe.
 local function UpdateBadge(f)
 	local unit = f.unit
 	if not unit then return end
@@ -248,6 +379,15 @@ end
 local function UpdateBar(f)
 	if not f.unit then return end
 	local wants = WantsBar(f.unit)
+	if f._nameForm then
+		-- Under the name (or the guild line), not inside a capsule there is not.
+		f.bar:ClearAllPoints()
+		f.bar:SetPoint("TOP", f.guild:IsShown() and f.guild or f.name,
+			"BOTTOM", 0, -GAP_ROW)
+		f.bar:SetWidth(math.max(40, f:GetWidth() or 40))
+		if wants then f.bar:Show() UpdateHealth(f) else f.bar:Hide() end
+		return
+	end
 	LayoutRow(f, wants)
 	if wants then
 		f.bar:Show()
@@ -286,7 +426,7 @@ local function ApplyEmphasis(f)
 	f:SetScale(PlateScale() * (OFF_SCALE + (1 - OFF_SCALE) * t))
 	f:SetAlpha(OFF_ALPHA + (1 - OFF_ALPHA) * t)
 
-	if not f.unit then return end
+	if not f.unit or f._nameForm then return end
 	local c = Palette:NameReaction(f.unit)
 	f:SetEdgeColor({ c[1], c[2], c[3], EDGE_OFF + (EDGE_ON - EDGE_OFF) * t })
 
@@ -340,7 +480,32 @@ local function UpdateEdge(f)
 	ApplyEmphasis(f)
 end
 
+--- Restore the capsule's own geometry, which the name form takes apart.
+local function LayoutPlateForm(f)
+	local c = cfg()
+	f.badge:ClearAllPoints()
+	f.badge:Resize(c.badgeSize)
+	f.badge:SetPoint("LEFT", f, "LEFT", PAD_L, 0)
+	f.badge:Show()
+	f.guild:Hide()
+	f.name:SetWidth(c.barWidth)
+	-- The name form re-anchors the bar under the guild line, so put it back
+	-- rather than leaving it where a friendly left it. This frame is about to
+	-- be a capsule for somebody else.
+	f.bar:ClearAllPoints()
+	f.bar:SetPoint("TOPLEFT", f.name, "BOTTOMLEFT", 0, -GAP_ROW)
+	f.bar:SetWidth(c.barWidth)
+	f:SetSize(PAD_L + c.badgeSize + GAP_BADGE + c.barWidth + PAD_R,
+		c.badgeSize + PAD_Y * 2)
+end
+
 local function UpdateAll(f)
+	local friendly = IsFriendly(f.unit)
+	if friendly ~= f._nameForm then
+		ApplyForm(f, friendly)
+		if not friendly then LayoutPlateForm(f) end
+	end
+
 	UpdateBadge(f)
 	UpdateName(f)
 	UpdateBar(f)

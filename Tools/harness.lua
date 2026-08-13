@@ -3629,6 +3629,7 @@ function UnitIsUnit(a, b)
 end
 
 function UnitAffectingCombat(u) return units[u] and units[u].inCombat or false end
+function UnitInParty(u) return units[u] and units[u].inParty or false end
 function GetGuildInfo(u) local d = units[u]; return d and d.guild end
 
 print("== loading addon files ==")
@@ -14776,6 +14777,86 @@ do
 	_G.__ccCasts.nameplate1 = nil
 	_G.__auras.target = savedAuras
 	_G.__units.target = nil
+end
+
+print("== nameplates: a friendly is a name, not a plate ==")
+do
+	local mate = { exists = true, name = "Kindarhazan", level = 19, reaction = 5,
+		isPlayer = true, class = "Shaman", classToken = "SHAMAN",
+		guild = "Samophlange", hp = 800, hpMax = 800 }
+	local base = __spawnPlate("nameplate1", mate)
+	local f = NPm.plateFor(base)
+
+	check(f._nameForm == true, "a friendly player is drawn as a name")
+	check(f._fillColor[4] == 0,
+		"with the glass gone entirely rather than dimmed - a faint capsule behind"
+		.. " a friendly name is the thing the deck is most explicit about not wanting")
+	check(f.name:GetText() == "Kindarhazan", "the name is there")
+	check(f.guild:IsShown() and f.guild:GetText() == "<Samophlange>",
+		"and the guild under it, in angle brackets")
+
+	check(f.badge:IsShown() and f.badge.label:GetText() == "19",
+		"a player gets a level pip")
+	local cc = A.Palette:OrbBaseColor("nameplate1")
+	check(cc ~= nil and math.abs(f.badge.disc.__color[1] - cc[1]) < 0.001,
+		"tinted by CLASS, from the orb palette the HUD's own level disc uses -"
+		.. " two sizes of one disc should not be two different colours")
+	check(not f.bar:IsShown(),
+		"and no health bar at all while they are unhurt - a street of full green"
+		.. " bars is noise with nothing in it")
+
+	_G.__units.nameplate1.hp = 300
+	fire("UNIT_HEALTH", "nameplate1")
+	check(f.bar:IsShown(), "a bar appears when they are hurt, and only then")
+
+	-- The skull rule. Joe, in game at 0.3.19: a friendly player showed one.
+	_G.__units.nameplate1.level = -1
+	NPm.UpdateAll(f)
+	check(not f.badge:IsShown(),
+		"a friendly whose level the client will not report has NO pip - never a"
+		.. " skull, which says 'too far above you to judge as a threat' and is"
+		.. " meaningless about somebody who is not one")
+
+	-- A friendly NPC is a name and nothing else.
+	__despawnPlate("nameplate1")
+	local npc = { exists = true, name = "Innkeeper Boorand Plainswind", level = 30,
+		reaction = 5, isPlayer = false, hp = 500, hpMax = 500 }
+	__spawnPlate("nameplate1", npc)
+	check(not f.badge:IsShown() and not f.guild:IsShown(),
+		"a friendly NPC carries a name alone - no pip, no guild")
+	check(f.name:GetText() == "Innkeeper Boorand Plainswind", "just the name")
+
+	-- Party class colours are an opt-in.
+	__despawnPlate("nameplate1")
+	__spawnPlate("nameplate1", mate)
+	check(f.name.__color[1] == A.Palette.c.ttFriendly[1],
+		"a friendly player's name is blue by default, whoever they are")
+	A.Config:Module("nameplates").partyClassColors = true
+	_G.__units.nameplate1.inParty = true
+	NPm.UpdateAll(f)
+	check(math.abs(f.name.__color[1] - cc[1]) < 0.001,
+		"class-coloured once you ask for it, from the same palette as the pip")
+	_G.__units.nameplate1.inParty = false
+	NPm.UpdateAll(f)
+	check(f.name.__color[1] == A.Palette.c.ttFriendly[1],
+		"and only for your PARTY, not for everybody in the city")
+	A.Config:Module("nameplates").partyClassColors = false
+
+	-- And the form has to be able to change back, because the frame is recycled.
+	__despawnPlate("nameplate1")
+	local mob = { exists = true, name = "Kolkar Marauder", level = 18, reaction = 2,
+		hp = 900, hpMax = 1000 }
+	__spawnPlate("nameplate1", mob)
+	check(f._nameForm == false and f._fillColor[4] > 0,
+		"the same frame becomes a capsule again for the next mob that walks up")
+	check(f.badge:IsShown() and f.badge.label:GetText() == "18"
+		and not f.guild:IsShown(),
+		"with the badge back at plate size and the guild line gone")
+	check(select(2, f.bar:GetPoint()) == f.name,
+		"and the bar re-anchored inside the capsule rather than left under a"
+		.. " guild line belonging to somebody who has walked off")
+
+	__despawnPlate("nameplate1")
 end
 
 print("== palette: difficulty has one owner ==")
