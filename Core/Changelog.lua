@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.5",
+		date    = "2026-08-13",
+		lines   = {
+			"Zen no longer tilts the camera at all - the shot is zoom and CVars, like DialogueUI's.",
+		},
+	},
+	{
 		version = "0.3.4",
 		date    = "2026-08-13",
 		lines   = {

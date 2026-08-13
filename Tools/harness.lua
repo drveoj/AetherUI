@@ -1064,6 +1064,15 @@ _G.__cvars = {
 	Sound_EnableAmbience  = "1",
 	Sound_EnableDialog    = "1",
 
+	-- How fast MoveViewUpStart/MoveViewDownStart actually turn the camera, in
+	-- degrees a second. NOT a constant on a real client: Blizzard's own Mouse
+	-- Look Speed slider writes cameraYawMoveSpeed and then this at half of it,
+	-- over a 90-to-270 range - so it is 45 to 135 depending on a setting in the
+	-- player's own options, and a zen tilt expressed as a DURATION was a
+	-- different angle for every player. 90 is the client's own default.
+	cameraPitchMoveSpeed               = "90",
+	cameraYawMoveSpeed                 = "180",
+
 	nameplateShowAll                   = "0",
 	nameplateShowEnemies               = "1",
 	nameplateShowEnemyMinions          = "1",
@@ -1927,9 +1936,18 @@ end
 --  pacing here and the test would prove the opposite of what it claims.
 _G.__pending = {}
 _G.__pendingDelay = {}
+_G.__pendingDue = {}
 function C_Timer.After(delay, fn)
 	_G.__pending[#_G.__pending + 1] = fn
 	_G.__pendingDelay[#_G.__pendingDelay + 1] = tonumber(delay) or 0
+	-- WHEN it is due, as well as how long it asked for. The client fires a
+	-- callback on the first frame after its delay has passed, and nothing here
+	-- modelled that: a timer sat in the queue until a test happened to drain it,
+	-- so anything whose correctness is "this stops after N seconds" was measured
+	-- as "this stops when somebody remembers". Zen's camera tilt is 0.22s at the
+	-- client's default rate against a 0.1s tick, and the difference between the
+	-- two models is a third of the shot.
+	_G.__pendingDue[#_G.__pendingDue + 1] = time + (tonumber(delay) or 0)
 	-- Zen's camera schedules the END of its pitch reversal here, and the SCHEDULED
 	-- delay is the only honest measure of it. Elapsed harness time is not: this
 	-- clock is driven by tick() and runs on long after a callback is queued, so
@@ -1954,9 +1972,36 @@ function _G.__drainTimers(rounds)
 	for _ = 1, rounds or 1 do
 		local queue = _G.__pending
 		if #queue == 0 then return end
-		_G.__pending, _G.__pendingDelay = {}, {}
+		_G.__pending, _G.__pendingDelay, _G.__pendingDue = {}, {}, {}
 		for _, fn in ipairs(queue) do fn() end
 	end
+end
+
+--- Fire whatever is DUE, and leave the rest queued.
+--
+--  What the client does on every frame, and what tick() now calls. Everything
+--  that paces itself with C_Timer keeps its old behaviour - a callback queued
+--  during this pass is due later and stays queued - while anything whose
+--  correctness is a DURATION is finally measured against the clock rather than
+--  against whichever test remembered to drain the queue.
+function _G.__runDueTimers()
+	local queue, delays, dues = _G.__pending, _G.__pendingDelay, _G.__pendingDue
+	if #queue == 0 then return end
+
+	local keepFn, keepDelay, keepDue, run = {}, {}, {}, {}
+	for i = 1, #queue do
+		if (dues[i] or 0) <= time then
+			run[#run + 1] = queue[i]
+		else
+			keepFn[#keepFn + 1]       = queue[i]
+			keepDelay[#keepDelay + 1] = delays[i]
+			keepDue[#keepDue + 1]     = dues[i]
+		end
+	end
+	if #run == 0 then return end
+
+	_G.__pending, _G.__pendingDelay, _G.__pendingDue = keepFn, keepDelay, keepDue
+	for _, fn in ipairs(run) do fn() end
 end
 
 --- The same, but the clock moves forward by each callback's own delay first.
@@ -1974,7 +2019,7 @@ function _G.__drainTimersTimed(rounds)
 	for _ = 1, rounds or 1 do
 		local queue, delays = _G.__pending, _G.__pendingDelay
 		if #queue == 0 then return end
-		_G.__pending, _G.__pendingDelay = {}, {}
+		_G.__pending, _G.__pendingDelay, _G.__pendingDue = {}, {}, {}
 		for i, fn in ipairs(queue) do
 			time = time + (delays[i] or 0)
 			fn()
@@ -3426,6 +3471,11 @@ local function tick(dt)
 		local ok, err = pcall(fn, pump, dt)
 		if not ok then fail("OnUpdate: " .. tostring(err)) end
 	end
+	-- ...and anything C_Timer has due, which is what the client does on the same
+	-- frame. Without it a timer sat in the queue until a test remembered to
+	-- drain it, and anything whose correctness is "this stops after N seconds"
+	-- was measured as "this stops whenever somebody looked".
+	_G.__runDueTimers()
 end
 
 print("== boot ==")
@@ -4671,15 +4721,23 @@ do
 	check(math.abs(cam.zoom - zcfg.cameraZoom) < 0.001,
 		"zen pulls the camera back to the configured distance ("
 		.. string.format("%.1f", cam.zoom) .. ")")
-	check(cam.pitchMoving == nil and cam.pitchDown > 0,
-		"drops it DOWN by a measured amount and STOPS - a pitch movement left"
-		.. " running rotates the camera through the floor until the player"
-		.. " reloads, which is the one failure here that is not cosmetic ("
-		.. string.format("%.2fs", cam.pitchDown) .. ")")
-	check(cam.pitchUp == 0,
-		"and not up, which points the camera at the top of the character's head"
-		.. " and frames the floor around them - the shot is the player looking OUT"
-		.. " at the world from about where they are sitting")
+	-- AND DOES NOT TOUCH THE PITCH. At all, in either direction.
+	--
+	-- It used to, and every version of it was wrong differently. The rate is
+	-- `cameraPitchMoveSpeed`, which the player's own Mouse Look Speed slider
+	-- writes anywhere between 45 and 135 degrees a second, so a movement
+	-- expressed as a DURATION was a different angle on every machine: the number
+	-- that framed the shot here put the camera through the floor there. There is
+	-- no setter to use instead, and no getter to check against.
+	--
+	-- DialogueUI gets a consistent cinematic camera on this same client and
+	-- calls MoveView exactly zero times. It sets CVars, every one of them
+	-- absolute, readable and restorable. So does this now.
+	check(cam.pitchDown == 0 and cam.pitchUp == 0 and cam.pitchMoving == nil,
+		"and never moves the view by hand - the shot is zoom and CVars, all of"
+		.. " which can be read back and put back exactly (down "
+		.. string.format("%.2f", cam.pitchDown) .. ", up "
+		.. string.format("%.2f", cam.pitchUp) .. ")")
 	-- Centred by DEFAULT, and centred by writing a real 0 rather than by leaving
 	-- the CVar alone. Anyone running an over-the-shoulder camera of their own
 	-- would otherwise sit off to one side for the whole of zen, which is the one
@@ -4697,22 +4755,10 @@ do
 		.. " re-centres the character every frame and damps movement the player"
 		.. " did not ask for")
 
-	local dropRan = cam.pitchDown
-	cam.backDelay = nil
 	leaveZen()
-	check(math.abs(cam.zoom - 12) < 0.001,
-		"leaving puts the player's own distance back EXACTLY, because"
-		.. " GetCameraZoom will tell us what it was rather than us guessing ("
-		.. string.format("%.2f", cam.zoom) .. ")")
-	check(cam.backDelay and math.abs(cam.backDelay - dropRan) < 0.001,
-		"and raises it back for the same duration it dropped - pitch has no"
-		.. " getter in this client, so an equal-and-opposite nudge is the only"
-		.. " way back there is (down " .. string.format("%.2f", dropRan)
-		.. ", back " .. tostring(cam.backDelay) .. ")")
-	check(cam.pitchMoving == nil,
-		"with nothing left moving. The stop for the way back is on C_Timer, not"
-		.. " on the tick: the paths that start it unregister the ticker a few"
-		.. " lines later, so a tick-driven stop would never fire at all")
+	check(cam.pitchMoving == nil and cam.pitchUp == 0,
+		"with nothing moving on the way out either - there is no reversal to run"
+		.. " because there was no nudge to reverse")
 	check(tonumber(cv.test_cameraOverShoulder) == 0,
 		"and the shoulder offset goes back like every other borrowed CVar")
 	check(tonumber(cv.CameraKeepCharacterCentered) == 1
@@ -4720,133 +4766,24 @@ do
 		"and so do the two centring ones - a player left permanently off-centre"
 		.. " by an addon has no way to guess what did it")
 
-	-- Cut short PART-WAY through the tilt, which is the case that matters and
-	-- the one the first version got wrong. Zen can end at any moment - combat, a
-	-- keypress, the module switched off - and reversing by the duration that was
-	-- ASKED for rather than the duration that RAN points the camera further down
-	-- than it started. A small error, a permanent one, and completely silent.
-	cam.zoom = 12
+	-- Nothing is left rotating, whatever path zen took out. This is now a
+	-- property of never having started a movement rather than of having stopped
+	-- one, which is the version that cannot be got wrong.
 	cam.pitchUp, cam.pitchDown = 0, 0
-	cam.backDelay = nil
 	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 0.1, 0.1
 	A.db.profile.fader.delay = 1
 	A.Fader:ForceZen()
 	tick(0.1)
-	check(cam.pitchMoving == "Down", "the drop is still running one tick in")
-
 	A.Fader:Touch()
 	A.Fader:Update()
-	for i = 1, 20 do tick(0.1) end
-	local dropRan = cam.pitchDown
-	check(cam.backDelay and math.abs(cam.backDelay - dropRan) < 0.001,
-		"cut short, it reverses by what actually RAN and not by what was asked"
-		.. " for (down " .. string.format("%.2f", dropRan) .. ", back "
-		.. tostring(cam.backDelay) .. ")")
-	check(dropRan > 0 and dropRan < zcfg.cameraPitch,
-		"and that really is less than the full nudge, or this proves nothing ("
-		.. string.format("%.2f of %.2f", dropRan, zcfg.cameraPitch) .. ")")
+	for _ = 1, 20 do tick(0.1) end
 	settle()
-	check(cam.pitchMoving == nil, "and nothing is left rotating afterwards")
+	check(cam.pitchMoving == nil and cam.pitchDown == 0 and cam.pitchUp == 0,
+		"a zen cut short part way in leaves the camera alone too - there is no"
+		.. " half-finished nudge to reverse, which was the one failure in this"
+		.. " module that was not cosmetic")
 	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 60, 2.5, 0.30
 	A.db.profile.fader.delay = 6
-
-	-- ZEN AGAIN BEFORE THE REVERSAL HAS FINISHED, which is what the idle path
-	-- does all day: a twitch of the mouse wakes it, a few seconds of quiet
-	-- starts it over, and the way back up takes as long as the way down did.
-	--
-	-- The old code kept the tilt on the per-zen table, so the second entry
-	-- started a fresh DOWNWARD movement on a camera that was part way back up
-	-- and recorded the whole drop as owed. Every cycle left a little more, and
-	-- after a few the shot was framing the floor. Manual zen through /afk never
-	-- showed it because nobody triggers that twice in ten seconds.
-	--
-	-- Measured as a BALANCE: the camera is only where the player left it if the
-	-- two directions have run for the same total.
-	do
-		local Z = A:GetModule("zen")
-		local full = zcfg.cameraPitch
-		zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 0.1, 0.1
-		A.db.profile.fader.delay = 1
-
-		-- One clean zen, so the camera starts from neutral.
-		A.Fader:ForceZen()
-		for _ = 1, 12 do tick(0.1) end
-		check(math.abs((Z._pitchAt or 0) - full) < 0.15,
-			"the camera is a full nudge down after a settled zen ("
-			.. string.format("%.2f of %.2f", Z._pitchAt or -1, full) .. ")")
-
-		-- Wake it, and let the reversal get PART of the way back.
-		A.Fader:Touch()
-		A.Fader:Update()
-		for _ = 1, 3 do tick(0.1) end
-		local midway = Z._pitchAt or 0
-		check(Z._pitchMove ~= nil and Z._pitchMove.dir == -1,
-			"waking starts the camera back up")
-
-		-- ...and zen again before it arrives. THIS is the case: the old code
-		-- kept the tilt on the per-zen table, so a second entry started a fresh
-		-- full-length DOWNWARD movement on a camera that was part way back up
-		-- and then recorded the whole drop as owed. Every cycle left a little
-		-- more, and after a few the shot was framing the floor. Manual zen
-		-- through /afk never showed it, because nobody triggers that twice in
-		-- ten seconds.
-		A.Fader:ForceZen()
-		tick(0.1)
-		local m = Z._pitchMove
-		check(m ~= nil and m.dir == 1, "re-entering starts the drop again")
-		if m then
-			local asked = (m.until_ or 0) - (m.from or 0)
-			check(asked > 0 and asked < full - 0.05,
-				"and it asks for the distance that is actually LEFT, not the"
-				.. " whole nudge over again - the camera was already "
-				.. string.format("%.2f", midway) .. " down of "
-				.. string.format("%.2f", full) .. ", so this is "
-				.. string.format("%.2f", asked) .. " rather than "
-				.. string.format("%.2f", full))
-		end
-
-		-- The reversal's own stop timer is still queued at this point, scheduled
-		-- before the new drop began. Firing it must not cut the drop short: it
-		-- is bound to the movement it was made for, and that movement is over.
-		--
-		-- __drainTimers, not settle(): settle advances the clock by each
-		-- callback's delay, and the drop running underneath is measured against
-		-- that same clock - so it would be credited with time nothing spent
-		-- moving and the check below would report a drift this did not cause.
-		_G.__drainTimers(1)
-		check(Z._pitchMove ~= nil and Z._pitchMove.dir == 1,
-			"and the abandoned reversal's timer, arriving late, leaves the new"
-			.. " drop alone - it is bound to the movement it was scheduled for,"
-			.. " not to whatever happens to be running when it lands")
-
-		-- Settled, it is at the same place a single clean zen leaves it, not
-		-- deeper. That is the whole of the bug in one number.
-		for _ = 1, 12 do tick(0.1) end
-		check(math.abs((Z._pitchAt or 0) - full) < 0.15,
-			"and settles at the same offset one clean zen produces rather than"
-			.. " deeper (" .. string.format("%.2f of %.2f", Z._pitchAt or -1, full)
-			.. ") - the drift was cumulative, so a second entry landing here is"
-			.. " what says it is gone")
-
-		-- Asking for where it already is does nothing at all. A twentieth of a
-		-- second of camera movement is invisible, and asking for it costs a
-		-- start and a stop that can each go wrong - which on this camera means
-		-- a movement that might not get stopped.
-		cam.pitchMoving = nil
-		check(Z:PitchTo(Z._pitchAt) == false,
-			"asking the camera to go where it already is is refused rather than"
-			.. " started and immediately stopped")
-		check(cam.pitchMoving == nil and Z._pitchMove == nil,
-			"with nothing started to have to stop")
-
-		zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 60, 2.5, 0.30
-		A.db.profile.fader.delay = 6
-		A.Fader:Touch()
-		A.Fader:Update()
-		for _ = 1, 40 do tick(0.1) end
-		settle()
-		check(cam.pitchMoving == nil, "and nothing is left rotating at the end")
-	end
 
 	-- A client without the CVar must still get the rest of the shot.
 	local had = cv.test_cameraOverShoulder
@@ -4903,16 +4840,14 @@ do
 		zcfg.cameraShoulderSide = "CENTRE"
 	end
 
-	-- Tuning the shot live. None of these three can be reasoned about from a
-	-- number - the pitch especially, which is seconds of movement at a rate the
-	-- client documents nowhere - so the only way to land on a value is to try one
-	-- and look at it, and a reload between each try is what makes that unbearable.
+	-- Tuning the shot live. Neither can be reasoned about from a number - the
+	-- zoom is metres and the shoulder is a multiplier on a curve - so the only
+	-- way to land on a value is to try one and look at it, and a reload between
+	-- each try is what makes that unbearable.
 	do
 		local run = SlashCmdList["AETHERUI"]
 		run("zen zoom 5")
 		check(math.abs(zcfg.cameraZoom - 5) < 0.001, "/aether zen zoom sets the distance")
-		run("zen pitch 1.2")
-		check(math.abs(zcfg.cameraPitch - 1.2) < 0.001, "/aether zen pitch sets the drop")
 		run("zen shoulder 2")
 		check(math.abs(zcfg.cameraShoulder - 2) < 0.001, "/aether zen shoulder sets the offset")
 
@@ -4934,14 +4869,14 @@ do
 		run("zen zoom 99")
 		check(zcfg.cameraZoom == 15, "and each one clamps rather than taking whatever"
 			.. " was typed - 99 metres of zoom is a camera in orbit")
-		run("zen pitch -5")
-		check(zcfg.cameraPitch == 0, "including at the bottom of the range")
+		run("zen shoulder 99")
+		check(zcfg.cameraShoulder == 3, "including at the top of the other one")
 
 		-- Re-staged on the spot when the shot is already up, and the restore has
 		-- to happen FIRST: the camera is set once on the way in and `_cam` is what
 		-- records that, so without putting the player's own distance back the next
 		-- restore would return them to a distance this preview had moved them to.
-		zcfg.cameraZoom, zcfg.cameraPitch, zcfg.cameraShoulder = 3, 0.8, 1
+		zcfg.cameraZoom, zcfg.cameraShoulder = 3, 1
 		cam.zoom = 12
 		enterZen()
 		run("zen zoom 8")
@@ -4954,7 +4889,7 @@ do
 			.. " preview moved them to - the restore runs before the re-stage, or"
 			.. " every tweak quietly becomes the new home ("
 			.. string.format("%.1f", cam.zoom) .. ")")
-		zcfg.cameraZoom, zcfg.cameraPitch, zcfg.cameraShoulder = 3, 0.8, 1
+		zcfg.cameraZoom, zcfg.cameraShoulder = 3, 1
 	end
 end
 

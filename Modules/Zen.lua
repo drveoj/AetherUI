@@ -175,26 +175,24 @@
 	         call each way: each CameraZoom call starts the client's own glide,
 	         and issuing a new one every tick restarts that glide every tick,
 	         which is a camera that never arrives.
-	  pitch  write-only. There is no getter and no setter - only
-	         MoveViewUpStart/Stop, which is movement over time. An amount can be
-	         asked for and never measured, so the only way back is the same
-	         movement reversed for the same duration.
+	  pitch  NOT TOUCHED. There is no getter and no setter - only
+	         MoveViewUpStart/Stop, which is movement over time - so an amount
+	         can be asked for and never measured. Worse, the RATE is
+	         `cameraPitchMoveSpeed`, which the player's own Mouse Look Speed
+	         slider writes anywhere between 45 and 135 degrees a second: the
+	         same duration is a different angle on every machine, and the number
+	         that framed the shot here put the camera through the floor there.
 
-	`SaveView(5)`/`SetView(5)` would restore both exactly. It costs the player a
-	saved-view slot for ever and DialogueUI's own camera module carries a note
-	that it breaks the camera-following style, which is too high a price for a
-	nudge. In practice the window where the reversal is wrong is small: moving
-	the camera means moving the mouse, and the mouse is the fader's most reliable
-	wake signal, so a player who grabs the camera has already ended zen.
+	         DialogueUI gets a consistent cinematic camera on this same client
+	         and calls MoveView exactly zero times - it sets CVars, every one of
+	         them absolute, readable and restorable. So does this. The shot is
+	         zoom plus the shoulder offset plus the two centring CVars, and the
+	         tilt that kept breaking is simply gone.
 
-	The one thing here that must never be got wrong is stopping a pitch movement.
-	Everything else this module borrows fails visibly and harmlessly; a nudge
-	that is started and not stopped leaves the camera rotating through the floor
-	until the player reloads. The tilt up is stopped from the tick, which is
-	running by definition while zen is on screen. The tilt back down is stopped
-	from C_Timer, because the paths that start it unregister the ticker a few
-	lines later and a tick-driven stop would never fire at all.
-
+	`SaveView(5)`/`SetView(5)` would restore a pitch exactly if one were ever
+	wanted. It costs the player a saved-view slot for ever and DialogueUI's own
+	camera module carries a note that it breaks the camera-following style, which
+	is why it is not used here either.
 	The audio profile
 	-----------------
 	Zen borrows the sound channels for as long as it is on screen and gives them
@@ -1457,26 +1455,29 @@ end
 -- a second restarts that glide ten times a second, which is a camera that never
 -- arrives.
 --
--- Pitch is NOT. There is no getter for it and no setter either: the only control
--- is MoveViewUpStart/Stop, which is movement over time. So "a little above" can
--- be asked for but never measured, and the only way back is to run the same
--- movement in reverse for the same duration. That is exact if nothing else moved
--- the camera in between, and wrong if something did.
+-- Pitch is NOT TOUCHED AT ALL, and that is the answer rather than a limitation.
 --
--- The alternative was SaveView(5)/SetView(5), which restores pitch and zoom
--- together and exactly. It costs the player a saved-view slot for ever, and
--- DialogueUI's own camera module carries a note that it breaks the camera
--- following style. A slot the player owns is too high a price for a nudge.
+-- There is no getter for camera pitch on this client and no setter: the only
+-- control is MoveViewUpStart/Stop, which is movement over TIME. This module
+-- used that, and every version of it was wrong in a different way - the shot
+-- landed somewhere different depending on where the player's camera already
+-- was, the reversal was exact only while nothing clamped, and the rate turned
+-- out to be `cameraPitchMoveSpeed`, a CVar the player's own Mouse Look Speed
+-- slider writes anywhere between 45 and 135 degrees a second. A fixed duration
+-- is a different angle for every player, so the same number that framed the
+-- shot on one machine put the camera through the floor on another.
 --
--- In practice the window for getting it wrong is small: moving the camera means
--- moving the mouse, and moving the mouse is the fader's most reliable wake
--- signal, so a player who grabs the camera during zen has already ended zen.
+-- DialogueUI gets a consistent cinematic camera on this same client and calls
+-- MoveView exactly zero times. It sets CVars: the shoulder offset, the two
+-- centring ones, the field of view. Every one of those is absolute, readable,
+-- and restorable exactly - which is the whole property the timed nudge could
+-- never have.
+--
+-- So zen's camera is zoom plus CVars, and there is no pitch setting. The shot
+-- the deck describes - pulled back, character centred, looking out at the world
+-- - is what that produces on its own. What the tilt was adding was the part
+-- that kept breaking.
 -- ---------------------------------------------------------------------------
-
---- Radians per second-ish; the client's own units, not documented anywhere.
---  The pitch setting is a DURATION at this speed, which is the only handle
---  there is on an amount you cannot read back.
-local PITCH_SPEED = 1.0
 
 function Zen:SetCamera(a)
 	local cfg = A.Config:Module("zen")
@@ -1534,150 +1535,25 @@ function Zen:SetCamera(a)
 	end
 	Borrow(cam.store, SHOULDER_CVAR, ShoulderForZoom(goal) * mult)
 
-	-- DOWN, not up. MoveViewUp raises the camera and points it at the top of the
-	-- character's head, which is a shot looking at the floor around them; the
-	-- first pass did exactly that and the result was a table top seen from above.
-	-- The shot wants the opposite - the camera dropped to about where the player
-	-- is sitting, looking out at the world with the character in the frame rather
-	-- than down at them. So `cameraPitch` is seconds of DOWNWARD movement and the
-	-- reversal on the way out is the upward one.
-	--
-	-- Two things this mechanism cannot do, both worth knowing before reaching for
-	-- a bigger number:
-	--
-	--   * It is RELATIVE. Without a getter there is no absolute pitch to aim at,
-	--     so the same duration lands somewhere different depending on where the
-	--     player's camera already was. The shot is therefore approximately right
-	--     rather than framed, and that is why the value is tunable live.
-	--   * The equal-and-opposite reversal is exact ONLY while nothing clamps. The
-	--     client stops the camera at its pitch limit, so a duration long enough to
-	--     hit the bottom moves less than it asked for and the reversal - which
-	--     goes by the clock, not by the angle - then overshoots upward by the
-	--     difference. Keeping the drop well short of the limit is what keeps the
-	--     restore honest, and is the real argument against a large default.
-	local pitch = math.max(0, math.min(3, tonumber(cfg.cameraPitch) or 0.8))
-	cam.pitch = pitch
-	self:PitchTo(pitch)
-
 	self._cam = cam
 end
 
---- How far the camera actually got, in seconds of movement.
+--- Put the camera back exactly as it was.
 --
---  Not the same as what was ASKED for, and that is the point. Zen can end at any
---  moment - combat, a keypress, the module being switched off - including
---  part-way through the tilt. Reversing by the requested duration in that case
---  points the camera further down than it started, every time, by however much
---  of the nudge had not run yet. It is a small error and a permanent one: the
---  player's pitch is quietly wrong from then on, with nothing to say why.
---  NOT capped at the duration that was asked for, which is the sort of clamp
---  that looks defensive and is actively wrong. The tick runs at 0.1s, so a nudge
---  asked to last 0.35s is stopped at 0.4s and the camera really did move for
---  0.4s. Reversing by the 0.35 we intended undershoots by the overshoot, every
---  time, in the same direction - and the player's pitch drifts a little further
---  down with every zen. What the camera did is what has to be undone.
---- How far the camera is pitched DOWN from where the player had it, in seconds
---  of movement at PITCH_SPEED, and the one running movement if there is one.
+--  Every value zen touches is absolute and readable, so "exactly" is literal
+--  here rather than a best effort: the zoom is measured with GetCameraZoom on
+--  the way in and restored by the difference, and the CVars come back through
+--  the same Borrow/GiveBack every other borrowed setting uses.
 --
---  ON THE MODULE, not on `self._cam`, and that is the fix rather than a detail.
---  Zen ends and begins again constantly on the idle path - a twitch of the
---  mouse wakes it and thirty seconds of quiet starts it over - and the reversal
---  is a movement that takes as long as the drop did. Enter again while it is
---  still running and the old code started a second DOWNWARD movement on a
---  camera that was part way back up, recorded the full drop as owed, and
---  reversed by more than it had moved. Every cycle added a little, and after
---  a few the shot was framing the floor.
---
---  A single accumulated offset cannot drift like that: the target is absolute,
---  the movement is always the difference, and an interrupted movement banks
---  exactly what it ran. Manual zen through /afk never showed it because nobody
---  triggers it twice in ten seconds.
-Zen._pitchAt   = 0      -- where the camera is now
-Zen._pitchMove = nil    -- { dir = 1 down / -1 up, from, until_ }
-
---- Stop whatever is moving and bank what it actually ran.
-function Zen:PitchStop()
-	local m = self._pitchMove
-	if not m then return 0 end
-	self._pitchMove = nil
-
-	-- What it RAN, and NOT capped at what it was asked for. The tick is 0.1s, so
-	-- a movement due to stop at 0.35 is stopped at 0.4 and the camera really did
-	-- move for 0.4; banking the 0.35 that was intended leaves the difference on
-	-- the camera for ever, in the same direction, once per zen. What the camera
-	-- did is what has to be recorded.
-	local ran = math.max(0, GetTime() - (m.from or GetTime()))
-
-	-- Clamped at zero on the way back up, because zero is where the player had
-	-- it and there is nothing above that to record. A reversal that arrives late
-	-- - a stalled frame, a client busy loading - would otherwise bank more
-	-- upward movement than there was downward and leave this believing the
-	-- camera is ABOVE neutral, so the next zen would tilt further down than it
-	-- should to compensate for a position the camera is not in.
-	self._pitchAt = math.max(0, (self._pitchAt or 0) + m.dir * ran)
-	if m.dir > 0 then
-		if MoveViewDownStop then pcall(MoveViewDownStop) end
-	elseif MoveViewUpStop then
-		pcall(MoveViewUpStop)
-	end
-	return ran
-end
-
---- Move the camera to `target` seconds below where the player had it.
---
---  Absolute, not relative, which is what makes re-entering safe: whatever is
---  running is stopped and banked first, so the distance left to travel is
---  computed from where the camera actually is rather than from where an earlier
---  call assumed it would end up.
-function Zen:PitchTo(target)
-	self:PitchStop()
-	target = math.max(0, tonumber(target) or 0)
-	local delta = target - (self._pitchAt or 0)
-	-- A twentieth of a second of camera movement is not visible, and asking for
-	-- it costs a start and a stop that can each go wrong.
-	if math.abs(delta) < 0.05 then return false end
-
-	local down    = delta > 0
-	local starter = down and MoveViewDownStart or MoveViewUpStart
-	if not starter then return false end
-
-	pcall(starter, PITCH_SPEED)
-	local now = GetTime()
-	self._pitchMove = {
-		dir = down and 1 or -1, from = now, until_ = now + math.abs(delta),
-	}
-	return true
-end
-
---- Stop the movement once it has run long enough.
---
---  Driven from the tick while zen is on screen, and from a C_Timer bound to
---  THIS movement when zen is ending - see RestoreCamera. The timer checks the
---  identity of the move it was scheduled for, so one that arrives after a new
---  zen has started cannot cut the new movement short.
-function Zen:PitchTick()
-	local m = self._pitchMove
-	if not m or not m.until_ then return end
-	if GetTime() < m.until_ then return end
-	self:PitchStop()
-end
-
---- Kept under the old name because the tick calls it and a reader looking for
---  the camera's per-frame work should find it where it was.
-function Zen:TickCamera()
-	self:PitchTick()
-end
-
+--  That is the whole argument for having no pitch. A timed nudge could only be
+--  undone by running the same movement backwards for the same duration, which
+--  is exact if nothing else moved the camera in between and wrong if anything
+--  did - and moving the camera means moving the mouse, which is the fader's
+--  most reliable wake signal.
 function Zen:RestoreCamera()
 	local cam = self._cam
 	if not cam then return end
 	self._cam = nil
-
-	-- First, and unconditionally. Whatever else fails below, the camera must not
-	-- be left turning - and stopping through PitchStop rather than by calling
-	-- the client's own stop means what it ran is banked, so the reversal below
-	-- knows how far there is left to go.
-	self:PitchStop()
 
 	if cam.store then GiveBack(cam.store) end
 
@@ -1688,38 +1564,6 @@ function Zen:RestoreCamera()
 			if math.abs(diff) > 0.05 then
 				if diff > 0 then pcall(CameraZoomIn, diff) else pcall(CameraZoomOut, -diff) end
 			end
-		end
-	end
-
-	-- The same nudge, upward - the reverse of the drop that took the camera down
-	-- to the character's own level on the way in.
-	--
-	-- On C_Timer rather than on the tick, which is the opposite of the drop
-	-- itself, and the difference is the whole reason this is worth reading twice.
-	-- The drop runs while zen is on screen, so the tick is guaranteed to be
-	-- running and can be trusted to stop it. This runs while zen is ENDING - and
-	-- the paths that call it (parking, OnDisable) unregister the ticker within a
-	-- few lines. A stop that depended on the tick would therefore never fire, and
-	-- the failure mode is not a cosmetic one: the camera rotates upward for ever,
-	-- over the top and through the floor, until the player reloads.
-	--
-	-- The usual objection to a pending callback - that it arrives after teardown
-	-- and touches something that has gone - does not apply. MoveViewUpStop takes
-	-- no state of ours and is safe to call when nothing is moving.
-	if self:PitchTo(0) then
-		local m = self._pitchMove
-		local left = m and math.max(0, (m.until_ or 0) - (m.from or 0)) or 0
-		-- Bound to THIS movement. A timer that only called PitchStop would cut
-		-- short whatever happened to be running when it arrived - and on the
-		-- idle path a new zen can easily have started by then, which is the
-		-- shape of the bug this whole section exists to fix.
-		local stop = function()
-			if self._pitchMove == m then self:PitchStop() end
-		end
-		if C_Timer and C_Timer.After and left > 0 then
-			C_Timer.After(left, stop)
-		else
-			stop()
 		end
 	end
 end
@@ -1872,7 +1716,6 @@ local function TickBody(self, dt)
 	self:SetAudio(f:GetAlpha())
 	self:SetSitting(f:GetAlpha())
 	self:SetCamera(f:GetAlpha())
-	self:TickCamera()
 	self:UpdateBars()
 	if cfg.showDots ~= false then Breathe(f, GetTime()) end
 

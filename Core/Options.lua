@@ -502,15 +502,6 @@ local function FaderGroup()
 			.. " rather than ours - asking it to move ten times a second is a"
 			.. " camera that never arrives anywhere.",
 			{ "modules", "zen", "cameraZoom" }, 0, 15, 0.5, { after = "none" }),
-		zenCameraPitch = range("Drop toward the horizon",
-			"How far the camera comes |cff9d7bffdown|r, so you are looking out at"
-			.. " the world from about where the character is sitting rather than"
-			.. " down at the top of their head."
-			.. "\n\nSeconds of movement, not an angle - the client will not tell"
-			.. " anybody what the camera's pitch actually is, so there is no angle"
-			.. " to ask for and this is relative to wherever your camera already"
-			.. " was. 0 keeps your current height.",
-			{ "modules", "zen", "cameraPitch" }, 0, 3, 0.05, { after = "none" }),
 		zenCameraSide = choice("Camera sits",
 			"Centred by default. An offset camera is a cinematography habit, and"
 			.. " with nothing else on screen it reads as the shot being slightly"

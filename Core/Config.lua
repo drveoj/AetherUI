@@ -681,12 +681,7 @@ Config.defaults = {
 				-- rather than by reloading - the client's rate for this is not
 				-- documented anywhere and 1.0 is a guess at its units.
 				--
-				-- 0.4 rather than 0.8: at 0.8 the camera swings PAST level, ends
-				-- up below the character and looks at the sky. Level is roughly
-				-- half of it. Somewhere near here is also the ceiling on what
-				-- this mechanism can promise - see the clamp note in Zen.lua.
-				cameraPitch   = 0.4,
-				-- Which side the camera sits on: CENTRE, LEFT or RIGHT.
+			-- Which side the camera sits on: CENTRE, LEFT or RIGHT.
 				--
 				-- CENTRE by default. "Over the shoulder" is the phrase the shot
 				-- was described with, but the picture it was describing has the

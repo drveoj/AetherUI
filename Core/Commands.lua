@@ -22,7 +22,7 @@ local function usage()
 		"|cff9d7bff/aether fade|r <on|off|delay N|idle 0-1>  ·  stage one, the dim",
 		"|cff9d7bff/aether zen|r <on|off|delay N|afk on/off|test>  ·  stage two",
 		"|cff9d7bff/aether zen|r <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
-		"|cff9d7bff/aether zen|r <zoom|pitch> N  ·  the shot, live",
+		"|cff9d7bff/aether zen zoom|r N  ·  the shot, live",
 		"|cff9d7bff/aether zen shoulder|r <left|centre|right|N>  ·  which side, how far",
 		"|cff9d7bff/aether zen|r <track NAME|preview>  ·  the music",
 		"|cff9d7bff/aether shadow|r <0-1>  ·  ambient shadow opacity",
@@ -311,16 +311,18 @@ handlers.zen = function(arg, rest)
 		-- be a setting that does the opposite of what it says.
 		if not cfg.camera and Z and Z.RestoreCamera then Z:RestoreCamera() end
 		A:Print("move the camera in zen -> " .. (cfg.camera and "on" or "off"))
-	elseif arg == "zoom" or arg == "pitch" or arg == "shoulder" then
-		-- Live, because none of these three can be reasoned about from a number.
-		-- The zoom is metres, the shoulder is a multiplier on a curve, and the
-		-- pitch is SECONDS of movement at a rate the client documents nowhere -
-		-- so the only way to find a value anybody likes is to try one, watch it,
-		-- and try another. Reloading between each is what makes that unbearable.
+	elseif arg == "zoom" or arg == "shoulder" then
+		-- Live, because neither can be reasoned about from a number: the zoom
+		-- is metres and the shoulder is a multiplier on a curve, so the only way
+		-- to find a value anybody likes is to try one, watch it, and try
+		-- another. Reloading between each is what makes that unbearable.
+		--
+		-- `pitch` used to be here too. It is gone: there is no way to set the
+		-- camera's pitch on this client, only to move it for a length of time at
+		-- a rate the player's own Mouse Look Speed decides, so the same number
+		-- was a different shot on every machine. See Modules/Zen.lua.
 		local KEYS = {
 			zoom     = { key = "cameraZoom",     lo = 0, hi = 15, what = "metres behind you" },
-			pitch    = { key = "cameraPitch",    lo = 0, hi = 3,
-				what = "seconds of DOWNWARD movement - higher looks further out at the world" },
 			shoulder = { key = "cameraShoulder", lo = 0, hi = 3,
 				what = "how far to the side; takes left/centre/right too" },
 		}
