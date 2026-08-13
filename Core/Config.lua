@@ -51,6 +51,23 @@ Config.defaults = {
 		-- it lives at profile level because nameplates will want the same answer.
 		classColorHealth = true,
 
+		-- The two ends of a class-coloured health bar, as fractions.
+		--
+		-- `healthLift` is how far the left-hand stop is pulled toward white;
+		-- `healthDepth` is what the right-hand stop is multiplied by. Both were
+		-- baked in at 0.18 and 0.70, and 0.70 is the whole of a bug worth
+		-- writing down: multiplying a colour darkens it without moving its hue,
+		-- which is fine for a blue and ruinous for a YELLOW. Rogue at 70% is
+		-- (0.70, 0.67, 0.29), and that is olive - so the bar read as green on
+		-- the one class whose colour is wheat.
+		--
+		-- Exposed rather than re-baked because this is a judgement about how a
+		-- screen looks, and the only way to settle one of those is to try a
+		-- number, look at it, and try another - see the zen camera, which cost
+		-- three attempts for want of exactly this.
+		healthLift  = 0.06,
+		healthDepth = 0.88,
+
 		-- shared surface treatment
 		glass = {
 			-- Opacity 0..1, not a distance: the shadow's geometry is derived from

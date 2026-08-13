@@ -5857,6 +5857,106 @@ do
 	check(classPair ~= deckPair, "class mode returns a different pair")
 	SlashCmdList["AETHERUI"]("health class")
 	check(A.db.profile.classColorHealth == true, "switched back to class colours")
+
+	-- THE ONE THAT WAS REPORTED: a yellow class must still look yellow.
+	--
+	-- The tail was the class colour times 0.70. Multiplying darkens without
+	-- moving hue, which is unobjectionable for a blue and ruinous for a yellow:
+	-- Rogue at 70% is (0.70, 0.67, 0.29), and that is olive. So the one class
+	-- whose colour is wheat had a green bar, and every other bar spent its
+	-- right-hand half darker than the panel it sits on.
+	--
+	-- Checked as a RATIO rather than against a fixed triple, because the point
+	-- is the relationship between the channels: yellow is "blue much lower than
+	-- red and green", and it stops reading as yellow when the gap closes on one
+	-- side and the whole thing goes dim.
+	do
+		local was = _G.__units.player.classToken
+		_G.__units.player.classToken = "ROGUE"
+		RAID_CLASS_COLORS.ROGUE = { r = 1.00, g = 0.96, b = 0.41 }
+
+		local pair = A.Palette:HealthColor("player")
+		local head, tail = pair[1], pair[2]
+
+		-- The head is measured against the CLASS COLOUR rather than against a
+		-- number. A lift is meant to catch the light, not to move the hue, and
+		-- the earlier 0.18 pulled Rogue's blue from 0.41 to 0.52 - a tenth of
+		-- the way to white on the channel that decides whether yellow is yellow.
+		check(head[1] > 0.9 and head[2] > 0.9
+			and (head[3] - 0.41) < 0.08,
+			"a Rogue bar's bright end is still wheat rather than cream - the"
+			.. " lift moves it a little toward the light without moving it"
+			.. " toward white (" .. string.format("%.2f %.2f %.2f",
+				head[1], head[2], head[3]) .. " against a class blue of 0.41)")
+		-- The darkest channel of the tail is what decides whether it has gone
+		-- olive. At 0.70 the tail's red was 0.70; anything near the class's own
+		-- value keeps it gold.
+		check(tail[1] >= 0.80,
+			"and its dark end is a deeper GOLD rather than olive - the tail used"
+			.. " to be the class colour times 0.70, and 0.70 of a yellow is olive"
+			.. " (" .. string.format("%.2f %.2f %.2f", tail[1], tail[2], tail[3])
+			.. ")")
+		check(tail[1] > tail[3] * 2,
+			"with the blue channel still far below the other two, which is what"
+			.. " makes a yellow read as yellow at all")
+
+		-- The bar is not a flat block either - there is still a gradient, it is
+		-- just a shallow one.
+		check(head[1] > tail[1] and (head[1] - tail[1]) < 0.35,
+			"and there IS still a gradient, shallow rather than absent ("
+			.. string.format("%.2f -> %.2f", head[1], tail[1]) .. ")")
+
+		-- Tunable in the game, because a colour judgement is settled by looking
+		-- at it and a reload between tries is what makes that unbearable.
+		SlashCmdList["AETHERUI"]("health depth 0.6")
+		check(math.abs(A.db.profile.healthDepth - 0.6) < 0.001,
+			"/aether health depth sets the dark end")
+		-- On the BAR, not on the palette. HealthColor is a pure function and
+		-- would answer correctly whether or not anything had been redrawn; what
+		-- the command has to do is make the frame on screen catch up.
+		check(UFm.player.health._colors
+			and math.abs(UFm.player.health._colors[2][1] - 0.6) < 0.01,
+			"and the bar on screen follows it immediately rather than at the"
+			.. " next reskin (" .. string.format("%.2f",
+				UFm.player.health._colors and UFm.player.health._colors[2][1] or -1)
+			.. ")")
+
+		-- A saved variable is a file somebody can edit, and a depth above 1
+		-- brightens the tail past the class colour - the gradient then runs
+		-- backwards, light on the right and dark on the left.
+		A.db.profile.healthDepth = 4
+		check(A.Palette:HealthColor("player")[2][1] <= 1.001,
+			"a depth edited past 1 by hand is clamped where it is READ as well"
+			.. " as where it is written, or the gradient runs backwards (got "
+			.. string.format("%.2f", A.Palette:HealthColor("player")[2][1]) .. ")")
+		A.db.profile.healthDepth = 0.88
+
+		-- The same on the other end. A lift of 1 is pure white, and pure white
+		-- is one bar for every class.
+		A.db.profile.healthLift = 3
+		do
+			local h = A.Palette:HealthColor("player")[1]
+			check(h[3] < 0.75,
+				"and a hand-edited lift is clamped on the way out too, short of"
+				.. " the point where every class is the same white ("
+				.. string.format("%.2f %.2f %.2f", h[1], h[2], h[3]) .. ")")
+		end
+		SlashCmdList["AETHERUI"]("health depth 9")
+		check(A.db.profile.healthDepth == 1,
+			"clamped at the top - a depth above 1 would BRIGHTEN the tail past"
+			.. " the class colour and the gradient would run backwards")
+		SlashCmdList["AETHERUI"]("health depth 0")
+		check(A.db.profile.healthDepth == 0.5,
+			"and at the bottom, short of the point where every class is a"
+			.. " silhouette")
+		SlashCmdList["AETHERUI"]("health lift 0.9")
+		check(A.db.profile.healthLift == 0.4,
+			"the highlight clamps too - all the way to white is one colour for"
+			.. " every class")
+
+		A.db.profile.healthLift, A.db.profile.healthDepth = 0.06, 0.88
+		_G.__units.player.classToken = was
+	end
 end
 
 print("== skins ==")

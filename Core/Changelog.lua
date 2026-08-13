@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.8",
+		date    = "2026-08-13",
+		lines   = {
+			"Class-coloured health bars are brighter, and a Rogue's no longer reads as olive.",
+		},
+	},
+	{
 		version = "0.3.7",
 		date    = "2026-08-13",
 		lines   = {

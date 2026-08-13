@@ -522,15 +522,28 @@ function Palette:HealthColor(unit)
 		local _, class = UnitClass(unit)
 		local cc = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
 		if cc then
-			-- Two stops either side of the class colour: a modestly lifted head and
-			-- a darkened tail. The first pass lifted the head by 1.25x + 0.10,
-			-- which drove the pale classes (Hunter, Mage, Rogue, Priest) to within
-			-- a hair of white and made the bar read as cream rather than as the
-			-- class. Keep the lift small enough that the hue survives.
+			-- Two stops either side of the class colour: a lifted head and a
+			-- darkened tail, both SHALLOW.
 			--
+			-- The first pass lifted the head by 1.25x + 0.10, which drove the
+			-- pale classes to within a hair of white and made the bar read as
+			-- cream rather than as the class. The second went to 0.18 and 0.70,
+			-- and 0.70 is the interesting mistake: multiplying a colour darkens
+			-- it without moving its hue, which is unobjectionable for a blue and
+			-- ruinous for a yellow. Rogue at 70% is (0.70, 0.67, 0.29) - olive -
+			-- so the one class whose colour is wheat had a green bar, and every
+			-- other bar spent its right-hand half darker than the panel it sits
+			-- on.
+			--
+			-- Read from the profile so the numbers can be tried in the game
+			-- rather than reasoned about here. Neither is allowed past the point
+			-- where the class stops being recognisable.
+			local p = A.db and A.db.profile
+			local lift  = math.max(0, math.min(0.4, tonumber(p and p.healthLift) or 0.06))
+			local depth = math.max(0.5, math.min(1, tonumber(p and p.healthDepth) or 0.88))
 			return {
-				{ Mix(cc.r, 1, 0.18), Mix(cc.g, 1, 0.18), Mix(cc.b, 1, 0.18) },
-				{ cc.r * 0.70, cc.g * 0.70, cc.b * 0.70 },
+				{ Mix(cc.r, 1, lift), Mix(cc.g, 1, lift), Mix(cc.b, 1, lift) },
+				{ cc.r * depth, cc.g * depth, cc.b * depth },
 			}
 		end
 	end
