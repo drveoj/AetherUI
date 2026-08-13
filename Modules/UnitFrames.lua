@@ -137,6 +137,11 @@ local function BuildCapsule(unit, mirror)
 
 	local name = W.Text(block, "unitName", justify)
 	name:SetPoint(anchor, block, anchor, 0, 0)
+	-- Never wraps, on any path. The health bar is anchored to this line's
+	-- bottom edge, so a name that took two lines would push the bars down out of
+	-- the capsule - and the whole point of the collapse chain is that the frame
+	-- does not change shape for a long name.
+	name:SetWordWrap(false)
 	f.name = name
 
 	local sub = W.Text(block, "unitSub", justify)
@@ -292,26 +297,128 @@ end
 -- updates
 -- ---------------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------------
+-- fitting the name row
+--
+-- The name and the subtitle share one line exactly as wide as the bars under
+-- it, and neither had a width - so "Innkeeper Boorand Plainswind" simply drew
+-- past the end of the capsule and out over the world. The frame cannot be
+-- allowed to grow: it is one of a mirrored pair, and a target frame that got
+-- wider every time you clicked a long-named NPC is a HUD that moves while you
+-- read it.
+--
+-- So the row COLLAPSES, in a fixed order, and the order is about what each
+-- piece is for:
+--
+--   1. the level, out of the subtitle    the badge on the orb already says it
+--   2. the race                          "Undead Mage" -> "Mage"
+--   3. an NPC's leading title            "Innkeeper Boorand Plainswind" ->
+--                                        "Boorand Plainswind"; the person's own
+--                                        name stays whole
+--   4. the creature type                 kept as long as anything can be, and
+--                                        given up last, because it is the one
+--                                        thing here that changes what you DO -
+--                                        polymorph works on a humanoid and not
+--                                        on a beast
+--   5. truncate the name                 which should be unreachable
+--
+-- Every step is measured rather than guessed: the row is rebuilt at each and
+-- the first one that fits wins.
+-- ---------------------------------------------------------------------------
+
+local NAME_GAP = 8      -- between the name and the subtitle
+
+--- The subtitle's forms, richest first, always ending in nothing at all.
+local function SubForms(unit, levelText)
+	if UnitIsPlayer(unit) then
+		local race, class = UnitRace(unit), UnitClass(unit)
+		if race and class then return { race .. " " .. class, class, "" } end
+		return { class or race or "", "" }
+	end
+	local t = UnitCreatureType(unit)
+	if t then return { t .. " \194\183 Lv " .. levelText, t, "" } end
+	return { "Lv " .. levelText, "" }
+end
+
+--- The name's forms. One, for now, and the reason is worth having written down.
+--
+--  The design asks for an NPC's leading TITLE to be dropped here - "Innkeeper
+--  Boorand Plainswind" to "Boorand Plainswind" - which is right, and cannot be
+--  done by looking at the words. The first version tried: drop the leading word
+--  when at least two remain. That turns "Savannah Highmane Prowler" into
+--  "Highmane Prowler", and Adjective-Noun is the shape of most Classic mob
+--  names, so the guess is wrong far more often than it is right.
+--
+--  The title is real and it is knowable - it is the `<Innkeeper>` line in the
+--  unit's tooltip - but reading it means a hidden scanning tooltip, which is a
+--  piece of machinery rather than a line of code. Until that exists the name is
+--  left alone, because a name shortened wrongly is worse than one shortened by
+--  the truncation at the end of the chain.
+local function NameForms(unit)
+	return { UnitName(unit) or "" }
+end
+
+--- Name form i with subtitle form j, clamped to what exists.
+local function Pair(names, subs, i, j)
+	return names[math.min(i, #names)], subs[math.min(j, #subs)]
+end
+
+--- Does this pair fit the bar's width?
+--
+--  Measured with the name's own width CLEARED first. A FontString that has been
+--  given a width reports the truncated string's extent, so leaving last update's
+--  clamp on would have every step "fit" and the row would never uncollapse.
+local function Fits(f, name, sub, room)
+	f.name:SetWidth(0)
+	f.name:SetText(name)
+	f.sub:SetText(sub)
+	local w = f.name:GetStringWidth() or 0
+	if sub ~= "" then w = w + NAME_GAP + (f.sub:GetStringWidth() or 0) end
+	return w <= room, w
+end
+
 local function UpdateName(f)
 	local unit = f.unit
 	if not UnitExists(unit) then return end
-
-	f.name:SetText(UnitName(unit) or "")
 
 	local level = UnitLevel(unit)
 	local levelText = (level and level > 0) and tostring(level) or "??"
 	f.orb:SetLabel(levelText)
 
-	local sub
-	if UnitIsPlayer(unit) then
-		local race = UnitRace(unit)
-		local class = UnitClass(unit)
-		sub = (race and class) and (race .. " " .. class) or (class or race)
-	else
-		local t = UnitCreatureType(unit)
-		sub = t and (t .. " · Lv " .. levelText) or ("Lv " .. levelText)
+	local names = NameForms(unit)
+	local subs  = SubForms(unit, levelText)
+	local room  = f.block and f.block:GetWidth() or 0
+	if room <= 0 then room = A.Config:Module("unitframes").barWidth or 200 end
+
+	-- The order from the note above, expressed as which form of each to try.
+	-- Step 3 is a no-op on a player (one name form) and step 2 is a no-op on an
+	-- NPC with no creature type, so the same sequence serves both without
+	-- either having to know which it is.
+	local order = { { 1, 1 }, { 1, 2 }, { 2, 2 }, { 2, 3 } }
+
+	local lastName, lastSub, lastW
+	for _, step in ipairs(order) do
+		local name, sub = Pair(names, subs, step[1], step[2])
+		local ok, w = Fits(f, name, sub, room)
+		lastName, lastSub, lastW = name, sub, w
+		if ok then
+			f._nameStep = _
+			f._nameTruncated = false
+			return
+		end
 	end
-	f.sub:SetText(sub or "")
+
+	-- Nothing fit. The name is given the room that is left and the client
+	-- truncates it, which is the last resort and should be unreachable: by here
+	-- the subtitle is gone and the name alone is wider than the bars.
+	f._nameStep = #order
+	f._nameTruncated = true
+	local spare = room
+	if lastSub ~= "" then spare = spare - NAME_GAP - (f.sub:GetStringWidth() or 0) end
+	-- Wrapping is off from construction, so there is nothing to switch off here:
+	-- the name must never take two lines on any path, because the health bar
+	-- hangs off this line's bottom edge.
+	f.name:SetWidth(math.max(20, spare))
 end
 
 --- Dead is dead, whatever the last health event said.

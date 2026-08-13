@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.7",
+		date    = "2026-08-13",
+		lines   = {
+			"Long unit names collapse the detail line instead of running out of the frame.",
+		},
+	},
+	{
 		version = "0.3.6",
 		date    = "2026-08-13",
 		lines   = {

@@ -471,7 +471,19 @@ local function newFontString(owner, layer)
 	function f:GetStringWidth()
 		local size = (self.__font and self.__font[2]) or 11
 		local text, textures = MEASURE(self.__text or "")
-		return textures + #text * size * 0.52
+		local full = textures + #text * size * 0.52
+		-- CLAMPED by a width that was set, when wrapping is off.
+		--
+		-- A FontString given a width and told not to wrap draws a truncated
+		-- string, and what it then reports is at most that width. Reporting the
+		-- untruncated extent regardless is the kinder answer and it hides a real
+		-- bug: code that measures a label to decide whether a shorter form is
+		-- needed, having clamped that same label last time round, gets the full
+		-- width back, decides everything fits, and never uncollapses.
+		if self.__wordWrap == false and (self.__w or 0) > 0 then
+			return math.min(full, self.__w)
+		end
+		return full
 	end
 	--- Wrapped height, not just the font size.
 	--
@@ -3615,6 +3627,29 @@ section("the harness itself: a size worked out from anchors", function()
 	check(fs:GetStringHeight() > 12 * 1.2 * 2,
 		"a long line in a 200px box is several lines tall rather than one ("
 		.. string.format("%.0f", fs:GetStringHeight()) .. ")")
+
+	-- A clamped, non-wrapping string reports AT MOST its clamp.
+	--
+	-- Reporting the untruncated extent is the kinder answer and it hides a real
+	-- bug: code that measures a label to decide whether a shorter form is needed
+	-- - having clamped that same label last time round - gets the full width
+	-- back, decides everything fits, and never uncollapses. Which is exactly
+	-- what the unit frames' name row does.
+	local clamped = parent:CreateFontString(nil, "OVERLAY")
+	clamped:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+	clamped:SetText(("wide "):rep(30))
+	local full = clamped:GetStringWidth()
+	check(full > 300, "an unclamped string reports its full extent ("
+		.. string.format("%.0f", full) .. ")")
+	clamped:SetWordWrap(false)
+	clamped:SetWidth(80)
+	check(clamped:GetStringWidth() == 80,
+		"and a clamped one reports the clamp, not the string it would have"
+		.. " drawn (" .. string.format("%.0f", clamped:GetStringWidth()) .. ")")
+	clamped:SetWordWrap(true)
+	check(clamped:GetStringWidth() == full,
+		"while one allowed to WRAP reports its extent again - it is not"
+		.. " truncated, it is folded")
 end)
 
 local UF = A:GetModule("unitframes")
@@ -3672,7 +3707,15 @@ end
 check(UF.player.name:GetText() == "Palabras", "player name populated")
 check(UF.target.name:GetText() == "Savannah Prowler", "target name populated")
 check(UF.player.orb.label:GetText() == "15", "player level in the orb")
-check(UF.target.sub:GetText() == "Beast · Lv 16", "target subtitle from creature type")
+-- The subtitle is the creature type, and the level after it WHEN IT FITS. At
+-- these metrics "Savannah Prowler" plus the full form is a couple of pixels over
+-- the bar, so the row gives up the level - which the orb is already showing.
+-- Asserted as "one of the forms" rather than as a string, because which one you
+-- get is a measurement and the mock's character width is an approximation of the
+-- client's.
+check(UF.target.sub:GetText() == "Beast · Lv 16" or UF.target.sub:GetText() == "Beast",
+	"target subtitle from creature type (got " .. tostring(UF.target.sub:GetText())
+	.. ")")
 check(UF.player.hpText:GetText() == "208", "player health readout")
 check(UF.target.hpText:GetText() == "64%", "target health shown as a percentage")
 do
@@ -3685,6 +3728,128 @@ do
 	local thp, threl = UF.target.hpText:GetPoint(1)
 	check(thp == "RIGHT" and threl == UF.target.health, "target readout mirrors")
 end
+
+section("unitframes: the name row collapses rather than the frame growing", function()
+	local mo = _G.__units.target
+	local was = { mo.name, mo.isPlayer, mo.race, mo.class, mo.classToken,
+		mo.creature, mo.level }
+	local block = UF.target.block
+	local room  = block:GetWidth()
+	local function refresh() fire("PLAYER_TARGET_CHANGED") end
+	local function row()
+		return UF.target.name:GetText() or "", UF.target.sub:GetText() or ""
+	end
+	--- What the row actually measures, the way the module measures it.
+	local function used()
+		local n = UF.target.name
+		local w = n:GetStringWidth() or 0
+		local s = UF.target.sub:GetText() or ""
+		if s ~= "" then w = w + 8 + (UF.target.sub:GetStringWidth() or 0) end
+		return w
+	end
+
+	check(room > 0, "the name row has the bars' own width to work in ("
+		.. string.format("%.0f", room) .. ")")
+
+	-- 1. A short NPC name keeps everything.
+	mo.isPlayer, mo.name, mo.creature, mo.level = false, "Rat", "Beast", 3
+	refresh()
+	local n, s = row()
+	check(n == "Rat" and s == "Beast · Lv 3",
+		"a short name keeps the creature type AND the level (" .. n .. " / " .. s .. ")")
+
+	-- 2. Longer: the LEVEL goes first. The orb is already showing it.
+	-- Long enough that the row cannot hold "Beast · Lv 3", short enough that it
+	-- can still hold "Beast". That band is what proves the ORDER rather than
+	-- just proving something got dropped.
+	mo.name = "Savannah Highmane"
+	refresh()
+	n, s = row()
+	check(n == "Savannah Highmane" and s == "Beast",
+		"a longer one gives up the level first - the badge on the orb has been"
+		.. " saying it all along (" .. n .. " / " .. s .. ")")
+	check(used() <= room + 0.5, "and the row fits (" ..
+		string.format("%.0f of %.0f", used(), room) .. ")")
+
+	-- 3. The NAME is never shortened by guessing at a title. The first version
+	--    of this dropped the leading word when two remained, which turns
+	--    "Savannah Highmane Prowler" into "Highmane Prowler" - and
+	--    Adjective-Noun is the shape of most Classic mob names, so the guess is
+	--    wrong far more often than right. The real title is the `<Innkeeper>`
+	--    line in the unit's tooltip and needs a scanning tooltip to read.
+	mo.name = "Innkeeper Boorand Plainswind of the Crossroads"
+	refresh()
+	n, s = row()
+	check(n == "Innkeeper Boorand Plainswind of the Crossroads",
+		"a long NPC name is left exactly as the client gave it rather than"
+		.. " having its first word guessed off (" .. n .. ")")
+
+	-- 4. The creature type is the LAST thing to go, after everything else has
+	--    been tried.
+	mo.name = ("Verylongwordindeed"):rep(4)
+	refresh()
+	n, s = row()
+	check(s == "", "and only then is the creature type given up, because it is"
+		.. " the one thing here that changes what you DO - polymorph works on a"
+		.. " humanoid and not on a beast")
+	check(UF.target._nameTruncated == true,
+		"with the name truncated as the last resort, which everything above"
+		.. " exists to avoid reaching")
+	do
+		local w = UF.target.name:GetWidth() or 0
+		check(w > 0 and w <= room + 0.5,
+			"and clamped to the bars' width, so the frame does not grow ("
+			.. string.format("%.0f of %.0f", w, room) .. ") - a width of ZERO is"
+			.. " not a clamp, it is the absence of one, and that is what a"
+			.. " deleted SetWidth looks like from here")
+		check(UF.target.name.__wordWrap == false,
+			"and never wrapping - the health bar hangs off this line's bottom"
+			.. " edge, so a name that took two of them would push the bars out"
+			.. " through the floor of the capsule")
+	end
+
+	-- 5. ...and it UNCOLLAPSES. The clamp from the step above has to be cleared
+	--    before the next measurement or every form "fits" and the row never
+	--    comes back.
+	mo.name, mo.level = "Rat", 3
+	refresh()
+	n, s = row()
+	check(n == "Rat" and s == "Beast · Lv 3",
+		"and a short name afterwards gets everything back - the width clamp is"
+		.. " cleared before measuring, or a FontString reports the truncated"
+		.. " string's extent and every form fits for ever (" .. n .. " / " .. s .. ")")
+	check(UF.target._nameTruncated == false, "and is not truncated any more")
+
+	-- A PLAYER gives up the race, not a title: their name is their name.
+	mo.isPlayer, mo.name = true, "Padreamuerto"
+	mo.race, mo.class, mo.classToken = "Undead", "Mage", "MAGE"
+	refresh()
+	n, s = row()
+	check(n == "Padreamuerto" and s == "Undead Mage",
+		"a player shows race and class when there is room (" .. s .. ")")
+
+	mo.name = "Padreamuertoelmagonegro"
+	refresh()
+	n, s = row()
+	check(n == "Padreamuertoelmagonegro" and s == "Mage",
+		"and gives up the RACE when there is not, keeping the class - which is"
+		.. " the half that tells you what they can do to you (" .. n .. " / "
+		.. s .. ")")
+	check(used() <= room + 0.5, "with the row still inside the bars ("
+		.. string.format("%.0f of %.0f", used(), room) .. ")")
+	check(UF.target.name:GetText() == "Padreamuertoelmagonegro",
+		"and the player's name never shortened - there is no title to drop off"
+		.. " the front of one")
+
+	-- Both frames use the same routine, so the pair stays mirrored.
+	check(UF.player.block:GetWidth() == UF.target.block:GetWidth(),
+		"and the two frames' rows are the same width, which is what keeps the"
+		.. " pair mirrored whatever either of them is showing")
+
+	mo.name, mo.isPlayer, mo.race, mo.class, mo.classToken, mo.creature, mo.level =
+		was[1], was[2], was[3], was[4], was[5], was[6], was[7]
+	refresh()
+end)
 
 print("== health / power churn ==")
 _G.__units.player.hp = 120
