@@ -1556,12 +1556,8 @@ function Zen:SetCamera(a)
 	--     difference. Keeping the drop well short of the limit is what keeps the
 	--     restore honest, and is the real argument against a large default.
 	local pitch = math.max(0, math.min(3, tonumber(cfg.cameraPitch) or 0.8))
-	if pitch > 0 and MoveViewDownStart then
-		pcall(MoveViewDownStart, PITCH_SPEED)
-		cam.pitch     = pitch
-		cam.pitchFrom = GetTime()
-		cam.pitchStop = GetTime() + pitch
-	end
+	cam.pitch = pitch
+	self:PitchTo(pitch)
 
 	self._cam = cam
 end
@@ -1580,25 +1576,96 @@ end
 --  0.4s. Reversing by the 0.35 we intended undershoots by the overshoot, every
 --  time, in the same direction - and the player's pitch drifts a little further
 --  down with every zen. What the camera did is what has to be undone.
-local function PitchDone(cam)
-	if not cam.pitch or cam.pitch <= 0 then return 0 end
-	if cam.pitchDone then return cam.pitchDone end
-	if not cam.pitchFrom then return cam.pitch end
-	return math.max(0, GetTime() - cam.pitchFrom)
+--- How far the camera is pitched DOWN from where the player had it, in seconds
+--  of movement at PITCH_SPEED, and the one running movement if there is one.
+--
+--  ON THE MODULE, not on `self._cam`, and that is the fix rather than a detail.
+--  Zen ends and begins again constantly on the idle path - a twitch of the
+--  mouse wakes it and thirty seconds of quiet starts it over - and the reversal
+--  is a movement that takes as long as the drop did. Enter again while it is
+--  still running and the old code started a second DOWNWARD movement on a
+--  camera that was part way back up, recorded the full drop as owed, and
+--  reversed by more than it had moved. Every cycle added a little, and after
+--  a few the shot was framing the floor.
+--
+--  A single accumulated offset cannot drift like that: the target is absolute,
+--  the movement is always the difference, and an interrupted movement banks
+--  exactly what it ran. Manual zen through /afk never showed it because nobody
+--  triggers it twice in ten seconds.
+Zen._pitchAt   = 0      -- where the camera is now
+Zen._pitchMove = nil    -- { dir = 1 down / -1 up, from, until_ }
+
+--- Stop whatever is moving and bank what it actually ran.
+function Zen:PitchStop()
+	local m = self._pitchMove
+	if not m then return 0 end
+	self._pitchMove = nil
+
+	-- What it RAN, and NOT capped at what it was asked for. The tick is 0.1s, so
+	-- a movement due to stop at 0.35 is stopped at 0.4 and the camera really did
+	-- move for 0.4; banking the 0.35 that was intended leaves the difference on
+	-- the camera for ever, in the same direction, once per zen. What the camera
+	-- did is what has to be recorded.
+	local ran = math.max(0, GetTime() - (m.from or GetTime()))
+
+	-- Clamped at zero on the way back up, because zero is where the player had
+	-- it and there is nothing above that to record. A reversal that arrives late
+	-- - a stalled frame, a client busy loading - would otherwise bank more
+	-- upward movement than there was downward and leave this believing the
+	-- camera is ABOVE neutral, so the next zen would tilt further down than it
+	-- should to compensate for a position the camera is not in.
+	self._pitchAt = math.max(0, (self._pitchAt or 0) + m.dir * ran)
+	if m.dir > 0 then
+		if MoveViewDownStop then pcall(MoveViewDownStop) end
+	elseif MoveViewUpStop then
+		pcall(MoveViewUpStop)
+	end
+	return ran
 end
 
---- Stop a pitch movement once it has run long enough. Driven from the tick
---  rather than from C_Timer, so a zen that ends mid-nudge cannot leave the
---  camera rotating: there is no pending callback to arrive after the teardown.
+--- Move the camera to `target` seconds below where the player had it.
+--
+--  Absolute, not relative, which is what makes re-entering safe: whatever is
+--  running is stopped and banked first, so the distance left to travel is
+--  computed from where the camera actually is rather than from where an earlier
+--  call assumed it would end up.
+function Zen:PitchTo(target)
+	self:PitchStop()
+	target = math.max(0, tonumber(target) or 0)
+	local delta = target - (self._pitchAt or 0)
+	-- A twentieth of a second of camera movement is not visible, and asking for
+	-- it costs a start and a stop that can each go wrong.
+	if math.abs(delta) < 0.05 then return false end
+
+	local down    = delta > 0
+	local starter = down and MoveViewDownStart or MoveViewUpStart
+	if not starter then return false end
+
+	pcall(starter, PITCH_SPEED)
+	local now = GetTime()
+	self._pitchMove = {
+		dir = down and 1 or -1, from = now, until_ = now + math.abs(delta),
+	}
+	return true
+end
+
+--- Stop the movement once it has run long enough.
+--
+--  Driven from the tick while zen is on screen, and from a C_Timer bound to
+--  THIS movement when zen is ending - see RestoreCamera. The timer checks the
+--  identity of the move it was scheduled for, so one that arrives after a new
+--  zen has started cannot cut the new movement short.
+function Zen:PitchTick()
+	local m = self._pitchMove
+	if not m or not m.until_ then return end
+	if GetTime() < m.until_ then return end
+	self:PitchStop()
+end
+
+--- Kept under the old name because the tick calls it and a reader looking for
+--  the camera's per-frame work should find it where it was.
 function Zen:TickCamera()
-	local cam = self._cam
-	if not cam or not cam.pitchStop then return end
-	if GetTime() < cam.pitchStop then return end
-	cam.pitchStop = nil
-	-- Banked before the stop, so the reversal has an exact figure rather than
-	-- one derived from a clock that has moved on since.
-	cam.pitchDone = math.max(0, GetTime() - (cam.pitchFrom or GetTime()))
-	if MoveViewDownStop then pcall(MoveViewDownStop) end
+	self:PitchTick()
 end
 
 function Zen:RestoreCamera()
@@ -1606,15 +1673,11 @@ function Zen:RestoreCamera()
 	if not cam then return end
 	self._cam = nil
 
-	-- Measured BEFORE the stop, because the moment the movement ends there is no
-	-- longer anything to measure - and a nudge that is still running is exactly
-	-- the case this has to get right.
-	local done = PitchDone(cam)
-
 	-- First, and unconditionally. Whatever else fails below, the camera must not
-	-- be left turning.
-	if MoveViewUpStop then pcall(MoveViewUpStop) end
-	if MoveViewDownStop then pcall(MoveViewDownStop) end
+	-- be left turning - and stopping through PitchStop rather than by calling
+	-- the client's own stop means what it ran is banked, so the reversal below
+	-- knows how far there is left to go.
+	self:PitchStop()
 
 	if cam.store then GiveBack(cam.store) end
 
@@ -1643,11 +1706,18 @@ function Zen:RestoreCamera()
 	-- The usual objection to a pending callback - that it arrives after teardown
 	-- and touches something that has gone - does not apply. MoveViewUpStop takes
 	-- no state of ours and is safe to call when nothing is moving.
-	if done > 0 and MoveViewUpStart then
-		pcall(MoveViewUpStart, PITCH_SPEED)
-		local stop = function() if MoveViewUpStop then pcall(MoveViewUpStop) end end
-		if C_Timer and C_Timer.After then
-			C_Timer.After(done, stop)
+	if self:PitchTo(0) then
+		local m = self._pitchMove
+		local left = m and math.max(0, (m.until_ or 0) - (m.from or 0)) or 0
+		-- Bound to THIS movement. A timer that only called PitchStop would cut
+		-- short whatever happened to be running when it arrived - and on the
+		-- idle path a new zen can easily have started by then, which is the
+		-- shape of the bug this whole section exists to fix.
+		local stop = function()
+			if self._pitchMove == m then self:PitchStop() end
+		end
+		if C_Timer and C_Timer.After and left > 0 then
+			C_Timer.After(left, stop)
 		else
 			stop()
 		end

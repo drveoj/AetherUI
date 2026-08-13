@@ -4138,9 +4138,42 @@ do
 	check(zcfg.delay ~= 900, "a delay past that is refused - it could never fire")
 	SlashCmdList["AETHERUI"]("zen delay 45")
 	check(zcfg.delay == 45, "and a reachable one is taken")
+
+	-- The SLIDER is in minutes; the stored value, the slash command and the
+	-- state machine are all in seconds.
+	--
+	-- Ten to three hundred seconds spent nine tenths of its travel on values
+	-- shorter than the idle fade, which waits up to a minute - so zen arrived
+	-- first and the fade it is the second stage of never happened. One minute
+	-- is the floor for that reason, and the scale is what keeps the stored unit
+	-- from having to change with it.
 	local slider = A.Options:Build().args.fader.args.zenDelay
-	check(slider.max == A.Fader.AFK_TIMEOUT,
-		"the slider stops in the same place the state machine does")
+	check(slider.arg.scale == 60,
+		"the zen delay slider is scaled - it reads minutes over a value kept in"
+		.. " seconds")
+	check(slider.max * slider.arg.scale == A.Fader.AFK_TIMEOUT,
+		"and stops in the same place the state machine does, once converted ("
+		.. tostring(slider.max) .. " minutes of "
+		.. tostring(A.Fader.AFK_TIMEOUT) .. "s)")
+	check(slider.min * slider.arg.scale >= 60,
+		"with a floor of a minute, so zen can never come before the fade it is"
+		.. " the second stage of (" .. tostring(slider.min) .. " minutes)")
+
+	-- The conversion runs both ways, which is the half a scale factor gets
+	-- wrong: read in one unit and written in another leaves a control that
+	-- multiplies its own value every time the panel is opened.
+	do
+		local info = { type = "range", arg = slider.arg }
+		zcfg.delay = 120
+		check(slider.get(info) == 2, "two minutes reads as 2 (got "
+			.. tostring(slider.get(info)) .. ")")
+		slider.set(info, 3)
+		check(zcfg.delay == 180, "and writing 3 stores 180 seconds (got "
+			.. tostring(zcfg.delay) .. ")")
+		check(slider.get(info) == 3, "which reads back as 3, not as 3 times 60"
+			.. " again (got " .. tostring(slider.get(info)) .. ")")
+		zcfg.delay = 45
+	end
 
 	-- and with the module off there is no stage two at all
 	SlashCmdList["AETHERUI"]("zen off")
@@ -4716,6 +4749,104 @@ do
 	check(cam.pitchMoving == nil, "and nothing is left rotating afterwards")
 	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 60, 2.5, 0.30
 	A.db.profile.fader.delay = 6
+
+	-- ZEN AGAIN BEFORE THE REVERSAL HAS FINISHED, which is what the idle path
+	-- does all day: a twitch of the mouse wakes it, a few seconds of quiet
+	-- starts it over, and the way back up takes as long as the way down did.
+	--
+	-- The old code kept the tilt on the per-zen table, so the second entry
+	-- started a fresh DOWNWARD movement on a camera that was part way back up
+	-- and recorded the whole drop as owed. Every cycle left a little more, and
+	-- after a few the shot was framing the floor. Manual zen through /afk never
+	-- showed it because nobody triggers that twice in ten seconds.
+	--
+	-- Measured as a BALANCE: the camera is only where the player left it if the
+	-- two directions have run for the same total.
+	do
+		local Z = A:GetModule("zen")
+		local full = zcfg.cameraPitch
+		zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 0.1, 0.1
+		A.db.profile.fader.delay = 1
+
+		-- One clean zen, so the camera starts from neutral.
+		A.Fader:ForceZen()
+		for _ = 1, 12 do tick(0.1) end
+		check(math.abs((Z._pitchAt or 0) - full) < 0.15,
+			"the camera is a full nudge down after a settled zen ("
+			.. string.format("%.2f of %.2f", Z._pitchAt or -1, full) .. ")")
+
+		-- Wake it, and let the reversal get PART of the way back.
+		A.Fader:Touch()
+		A.Fader:Update()
+		for _ = 1, 3 do tick(0.1) end
+		local midway = Z._pitchAt or 0
+		check(Z._pitchMove ~= nil and Z._pitchMove.dir == -1,
+			"waking starts the camera back up")
+
+		-- ...and zen again before it arrives. THIS is the case: the old code
+		-- kept the tilt on the per-zen table, so a second entry started a fresh
+		-- full-length DOWNWARD movement on a camera that was part way back up
+		-- and then recorded the whole drop as owed. Every cycle left a little
+		-- more, and after a few the shot was framing the floor. Manual zen
+		-- through /afk never showed it, because nobody triggers that twice in
+		-- ten seconds.
+		A.Fader:ForceZen()
+		tick(0.1)
+		local m = Z._pitchMove
+		check(m ~= nil and m.dir == 1, "re-entering starts the drop again")
+		if m then
+			local asked = (m.until_ or 0) - (m.from or 0)
+			check(asked > 0 and asked < full - 0.05,
+				"and it asks for the distance that is actually LEFT, not the"
+				.. " whole nudge over again - the camera was already "
+				.. string.format("%.2f", midway) .. " down of "
+				.. string.format("%.2f", full) .. ", so this is "
+				.. string.format("%.2f", asked) .. " rather than "
+				.. string.format("%.2f", full))
+		end
+
+		-- The reversal's own stop timer is still queued at this point, scheduled
+		-- before the new drop began. Firing it must not cut the drop short: it
+		-- is bound to the movement it was made for, and that movement is over.
+		--
+		-- __drainTimers, not settle(): settle advances the clock by each
+		-- callback's delay, and the drop running underneath is measured against
+		-- that same clock - so it would be credited with time nothing spent
+		-- moving and the check below would report a drift this did not cause.
+		_G.__drainTimers(1)
+		check(Z._pitchMove ~= nil and Z._pitchMove.dir == 1,
+			"and the abandoned reversal's timer, arriving late, leaves the new"
+			.. " drop alone - it is bound to the movement it was scheduled for,"
+			.. " not to whatever happens to be running when it lands")
+
+		-- Settled, it is at the same place a single clean zen leaves it, not
+		-- deeper. That is the whole of the bug in one number.
+		for _ = 1, 12 do tick(0.1) end
+		check(math.abs((Z._pitchAt or 0) - full) < 0.15,
+			"and settles at the same offset one clean zen produces rather than"
+			.. " deeper (" .. string.format("%.2f of %.2f", Z._pitchAt or -1, full)
+			.. ") - the drift was cumulative, so a second entry landing here is"
+			.. " what says it is gone")
+
+		-- Asking for where it already is does nothing at all. A twentieth of a
+		-- second of camera movement is invisible, and asking for it costs a
+		-- start and a stop that can each go wrong - which on this camera means
+		-- a movement that might not get stopped.
+		cam.pitchMoving = nil
+		check(Z:PitchTo(Z._pitchAt) == false,
+			"asking the camera to go where it already is is refused rather than"
+			.. " started and immediately stopped")
+		check(cam.pitchMoving == nil and Z._pitchMove == nil,
+			"with nothing started to have to stop")
+
+		zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 60, 2.5, 0.30
+		A.db.profile.fader.delay = 6
+		A.Fader:Touch()
+		A.Fader:Update()
+		for _ = 1, 40 do tick(0.1) end
+		settle()
+		check(cam.pitchMoving == nil, "and nothing is left rotating at the end")
+	end
 
 	-- A client without the CVar must still get the rest of the shot.
 	local had = cv.test_cameraOverShoulder

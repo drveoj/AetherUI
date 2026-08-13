@@ -69,12 +69,21 @@ local function Get(info)
 	-- AceConfig wants a real boolean from a toggle, and a few of ours default to
 	-- nil-means-true.
 	if info.type == "toggle" and info.arg.defaultTrue then return v ~= false end
+	-- A slider whose UNITS are not the stored value's. Seconds are the right
+	-- thing to keep and the wrong thing to show when the useful range is
+	-- minutes: a 10-to-300 slider spends nine tenths of its travel on values
+	-- shorter than the idle fade, which is a control that mostly cannot be used.
+	local s = info.arg and info.arg.scale
+	if s and type(v) == "number" then return v / s end
 	return v
 end
 
 local function Set(info, value)
 	local t, k = Resolve(info.arg and info.arg.path)
 	if not t then return end
+	-- Back into the units the rest of the addon reads. See the note in Get.
+	local s = info.arg and info.arg.scale
+	if s and type(value) == "number" then value = value * s end
 	t[k] = value
 
 	-- `modules.<name>.enabled` is not just a flag: a module being switched off
@@ -126,7 +135,7 @@ local function range(name, desc, path, min, max, step, opts)
 		type = "range", name = name, desc = desc, order = next_(),
 		min = min, max = max, step = step, isPercent = opts.percent,
 		width = opts.width, get = Get, set = Set,
-		arg = { path = path, after = opts.after },
+		arg = { path = path, after = opts.after, scale = opts.scale },
 	}
 end
 
@@ -351,9 +360,13 @@ local function FaderGroup()
 			.. " so this fires even if the timer below is longer than that.",
 			{ "modules", "zen", "onAFK" }, { after = "none", defaultTrue = true }),
 		zenDelay = range("Quiet before zen",
-			"Seconds. Capped at five minutes, because that is when the client"
-			.. " flags you away and zen would happen anyway.",
-			{ "modules", "zen", "delay" }, 10, ZEN_MAX, 5, { after = "none" }),
+			"Minutes. At least one, so zen always comes after the HUD has faded"
+			.. " - the fade waits up to a minute, and a zen that started at ten"
+			.. " seconds arrived first and skipped it. Capped at five, because"
+			.. " that is when the client flags you away and zen would happen"
+			.. " anyway.",
+			{ "modules", "zen", "delay" }, 1, ZEN_MAX / 60, 0.5,
+			{ after = "none", scale = 60 }),
 		zenFadeOut = range("Time to sink into it", nil, { "modules", "zen", "fadeOut" },
 			0.2, 6, 0.1, { after = "none" }),
 		zenFadeIn = range("Time to come back", nil, { "modules", "zen", "fadeIn" },
