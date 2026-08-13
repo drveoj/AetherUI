@@ -888,6 +888,14 @@ function WireBagTile(tile)
 	tile:RegisterForDrag("LeftButton")
 	tile:RegisterForClicks("AnyUp")
 
+	-- Every handler asks the TILE what it currently is, rather than the layout
+	-- pass swapping scripts around underneath it.
+	--
+	-- It used to swap them: a purchasable slot had its drag, drop and tooltip
+	-- handlers torn off and a "buy" click put in their place. Tiles are recycled
+	-- by index, and nothing put the handlers back when a slot was bought - so a
+	-- freshly bought bank slot would not accept a bag and offered to sell you
+	-- the NEXT one instead, which is exactly what it did to Joe for 10g.
 	tile:SetScript("OnDragStart", function(self)
 		if self.invSlot and _G.PickupBagFromSlot then
 			pcall(_G.PickupBagFromSlot, self.invSlot)
@@ -907,6 +915,10 @@ function WireBagTile(tile)
 
 	tile:SetScript("OnReceiveDrag", receive)
 	tile:SetScript("OnClick", function(self, button)
+		-- Only the NEXT slot is buyable. Blizzard sells them in order and
+		-- PurchaseSlot takes no argument, so a click on the one after would buy
+		-- a different slot from the one whose price it is showing.
+		if self.buyable then return Bags:AskBuyBankSlot() end
 		if button == "LeftButton" then receive(self) end
 	end)
 
@@ -923,6 +935,10 @@ end
 --- Point an already-wired tile at a bag.
 local function BindBagTile(tile, bag, invSlot)
 	tile.bag, tile.invSlot = bag, invSlot
+	-- A tile pointed at a bag is not a shop. THIS is the fix: the tile is
+	-- recycled, so the bank footer's "buy" state has to be cleared by whatever
+	-- gives it a bag, rather than by whatever set it.
+	tile.buyable = nil
 end
 
 local function BuildFlyout(frame)
@@ -1344,24 +1360,22 @@ function Bags:RefreshFooter(frame)
 					(e[4] or 1) * (later and 0.55 or 1) })
 				tile:SetAlpha(later and 0.6 or 1)
 
-				tile:RegisterForClicks("AnyUp")
-				tile:SetScript("OnDragStart", nil)
-				tile:SetScript("OnReceiveDrag", nil)
-				tile:SetScript("OnEnter", nil)
-				tile:SetScript("OnLeave", nil)
-				-- Only the NEXT one is buyable. Blizzard sells them in order and
-				-- PurchaseSlot takes no argument, so a click on the one after
-				-- would buy a different slot from the one it is showing a price
-				-- for.
-					-- Written out rather than as `later and nil or fn`, which is
-				-- `(later and nil) or fn` and therefore fn in BOTH cases -- the
-				-- dimmed tile would have been live and would have bought the
+				-- Not yours yet: no dragging, no dropping, no tooltip. Said as
+				-- state rather than by removing the handlers, because the tile
+				-- is recycled and whatever is removed here has to be put back
+				-- the moment the slot is bought - which is precisely what did
+				-- not happen.
+				--
+				-- Only the next one is buyable. The one after is drawn and inert:
+				-- PurchaseSlot takes no argument, so clicking it would buy the
 				-- slot before the one whose price it is showing.
-				if later then
-					tile:SetScript("OnClick", nil)
-				else
-					tile:SetScript("OnClick", function() Bags:AskBuyBankSlot() end)
-				end
+				-- No bag behind it, so nothing to drag out or drop into: the
+				-- handlers all read invSlot and there is none. Only the next one
+				-- is buyable; the one after is drawn and inert, because
+				-- PurchaseSlot takes no argument and would buy the slot before
+				-- the one whose price it is showing.
+				tile.bag, tile.invSlot = nil, nil
+				tile.buyable = (not later) or nil
 			end
 
 			tile:Show()

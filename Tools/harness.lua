@@ -2668,7 +2668,8 @@ function GetInventoryItemLink(_, slot) return "|Hitem:1|h[Traveler's Pack]|h" en
 function GetInventoryItemID() return 1 end
 function IsInventoryItemLocked() return false end
 function PickupBagFromSlot() end
-function PutItemInBag() end
+_G.__putInBag = 0
+function PutItemInBag() _G.__putInBag = _G.__putInBag + 1 end
 function PutItemInBackpack() end
 function PutKeyInKeyRing() end
 function CursorHasItem() return _G.__cursor ~= nil end
@@ -14116,16 +14117,51 @@ do
 	local tiles = Bg.frames.bank.foot.tiles
 
 	check(tiles[1]:IsShown(), "the one you own is drawn")
-	check(tiles[2]:IsShown() and tiles[2]:GetScript("OnClick") ~= nil,
-		"the next one is drawn with a price and is clickable")
+	check(tiles[2]:IsShown(), "the next one is drawn with a price")
 	check(tiles[3]:IsShown(),
 		"the one after it is drawn too, dimmer - 'and then this'")
-	check(tiles[3]:GetScript("OnClick") == nil,
-		"but it is INERT. PurchaseSlot takes no argument and Blizzard sells them"
-		.. " in order, so a click on it would buy the slot before it while"
-		.. " showing the price of the slot after")
+
+	-- Behaviour, not which scripts happen to be attached. The tiles are wired
+	-- once and answer according to what they currently ARE, so "is there an
+	-- OnClick" stopped being the question.
+	tiles[2]:GetScript("OnClick")(tiles[2], "LeftButton")
+	check(Bg.confirm:IsShown(), "and clicking it asks whether you want to buy")
+	Bg:CloseConfirm()
+
+	tiles[3]:GetScript("OnClick")(tiles[3], "LeftButton")
+	check(not Bg.confirm:IsShown(),
+		"while the one after is INERT. PurchaseSlot takes no argument and"
+		.. " Blizzard sells them in order, so a click on it would buy the slot"
+		.. " before it while showing the price of the slot after")
 	check(not tiles[4]:IsShown(), "and nothing further ahead is shown at all")
 
+	-- THE BUG. Buy the slot and the tile that was a price becomes a bag slot.
+	-- Tiles are recycled by index, and the purchasable state used to be drawn by
+	-- tearing the drag, drop and tooltip handlers off and putting a "buy" click
+	-- in their place - with nothing to put them back.
+	_G.__bankSlotsBought = 2
+	fire("PLAYERBANKBAGSLOTS_CHANGED")
+	Bg:Rebuild(Bg.frames.bank)
+
+	_G.__cursor = { link = "|Hitem:5|h[Small Brown Pouch]|h" }
+	Bg.confirm:Hide()
+	tiles[2]:GetScript("OnClick")(tiles[2], "LeftButton")
+	check(not Bg.confirm:IsShown(),
+		"a slot you have just BOUGHT does not offer to sell you the next one")
+	_G.__putInBag = 0
+	tiles[2]:GetScript("OnReceiveDrag")(tiles[2])
+	check(_G.__putInBag == 1,
+		"and it takes a bag again - the handlers were never removed, so there is"
+		.. " nothing to restore and nothing to forget to restore")
+
+	_G.__putInBag = 0
+	tiles[3]:GetScript("OnReceiveDrag")(tiles[3])
+	check(_G.__putInBag == 0,
+		"while a slot you have NOT bought still refuses one - there is no bag"
+		.. " behind it to put anything in")
+	_G.__cursor = nil
+
+	_G.__bankSlotsBought = 1
 	Bg:Hide()
 	_G.__atBank = false
 end

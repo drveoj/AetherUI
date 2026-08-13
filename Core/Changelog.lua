@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.2",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: a bank bag slot you had just bought would not take a bag, and offered to sell you the next one instead.",
+		},
+	},
+	{
 		version = "0.4.1",
 		date    = "2026-08-13",
 		lines   = {
