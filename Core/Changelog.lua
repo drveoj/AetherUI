@@ -38,6 +38,19 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.0",
+		date    = "2026-08-13",
+		lines   = {
+			"Nameplates. Everything around you now wears one capsule: the level on a difficulty-coloured disc, the name in its reaction colour, and the health bar inside the pill.",
+			"Your target comes up to full size with a rim glow in its reaction, and every other plate shrinks and dims out of its way.",
+			"Your own debuffs ride under your target as timed chips - up to four, then a chip saying how many more. Only yours, and only on your target.",
+			"A cast capsule slides in under anything that starts casting, with the spell name and a progress bar. Channels empty rather than fill.",
+			"People are drawn as people: friendly players and NPCs get plain shadowed text with a class-coloured level pip and their guild underneath, no glass and no bar unless they are hurt. Whether something is a mob is decided by whether you can attack it, so a flight master is a name and a kodo is a capsule.",
+			"Elite and rare mobs get a chip beside the name, and a neutral shows a name only until it is in a fight.",
+			"All of it has its own options page, and Blizzard's plates go back the moment you turn it off.",
+		},
+	},
+	{
 		version = "0.3.26",
 		date    = "2026-08-13",
 		lines   = {
