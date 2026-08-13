@@ -382,6 +382,55 @@ the roles stay the single source of truth. Worth remembering that the dock is
 drawn at `profile.scale`, so +2 points there lands at about +1.4 on screen at the
 default 0.71.
 
+## Versions, and the notes that go with them
+
+`## Version` in `AetherUI.toc` is the single source of truth. It is what the
+client's own addon list shows, what CurseForge reads, and what `A.version`
+carries. Numbering is **major.minor.build**:
+
+| part | for |
+|---|---|
+| major | a release with new features in it |
+| minor | accumulated fixes and small enhancements |
+| build | hotfixes between the two |
+
+`Core/Changelog.lua` holds the notes, newest first, each entry naming the
+version it belongs to. The Toolbox's What's new card shows the first couple of
+lines of the current entry; **Notes** on the card opens the full history in the
+options panel. The unread dot is remembered against the version, so a release
+lights it again rather than it being a one-time dismissal.
+
+Bump both together:
+
+```sh
+python Tools/bump.py --minor "Drag the rail to re-dock the Toolbox."
+python Tools/bump.py --build "Fix the chat grip on a docked window." --dry-run
+```
+
+Notes are written for the **player** — present tense, about what they can now do
+or now see. "Refactored LayoutContent" is what the commit message is for.
+
+These were two hand-edits in two files and nothing checked that either had
+happened, so the drawer would confidently show the previous release's news with
+no dot on it. The harness now reads the real `.toc` off disk and fails if the
+newest changelog entry does not match it, so forgetting is a red suite rather
+than a shipped bug.
+
+### Telling a user their copy is stale
+
+Not built, and worth knowing why before it is. Addons do this with **addon
+messages**, not a hidden chat channel: `C_ChatInfo.SendAddonMessage(prefix, msg,
+"GUILD"/"PARTY"/"RAID")`, received as `CHAT_MSG_ADDON`, with
+`C_ChatInfo.RegisterAddonMessagePrefix(prefix)` required to hear them at all.
+They ride existing channels as a side-band and never appear in chat.
+`BugTabs/VersionSync.lua` is a complete reference implementation, and
+`A:VersionNewer` here is already the comparison half of it.
+
+The reason it is not built: **reach is guild, party and raid only** — plus
+`YELL`, which is shouting range. There is no global broadcast, so a player
+questing alone never hears about an update. It is worth roughly eighty lines the
+day there is a second user.
+
 ## Testing without the game
 
 `Tools/harness.lua` mocks enough of the WoW API to load the addon end to end and

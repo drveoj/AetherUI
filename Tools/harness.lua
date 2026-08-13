@@ -2572,6 +2572,26 @@ _G.__addons = {
 	{ name = "OtherPlain",  title = "Other Plain" },
 }
 
+--- The version, read from the REAL AetherUI.toc.
+--
+--  This was the literal "0.1.0", and it was a mock telling a different story
+--  from the client: A.version is what GetAddOnMetadata hands back, everything
+--  downstream of it - the What's new card, the version chip, which changelog
+--  entry is current, what the unread dot is remembered against - is keyed on
+--  that, and every one of those was being checked against a number the harness
+--  had chosen for itself. Bump the .toc and the suite would have carried on
+--  agreeing with itself about a version nobody was running.
+local TOC_VERSION = (function()
+	local f = io.open("AetherUI.toc", "r")
+	if not f then return "0.0.0" end
+	for line in f:lines() do
+		local v = line:match("^##%s*Version:%s*(%S+)")
+		if v then f:close() return v end
+	end
+	f:close()
+	return "0.0.0"
+end)()
+
 C_AddOns = {
 	GetAddOnMetadata = function(which, field)
 		if field == "IconTexture" then
@@ -2580,7 +2600,7 @@ C_AddOns = {
 			end
 			return nil
 		end
-		return "0.1.0"
+		return TOC_VERSION
 	end,
 	GetNumAddOns  = function() return #_G.__addons end,
 	GetAddOnInfo  = function(i)
@@ -3269,7 +3289,8 @@ end
 
 print("== loading addon files ==")
 for _, f in ipairs({
-	"Core/Core.lua", "Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
+	"Core/Core.lua", "Core/Changelog.lua",
+	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
@@ -8973,9 +8994,79 @@ do
 	check(TBm:NewsUnread(), "the what's-new dot is lit before the notes are read")
 	TBm:MarkNewsRead()
 	check(not TBm:NewsUnread(), "and goes out once they have been")
-	check(A.db.char.toolbox.newsSeen == TBm.NEWS_VERSION,
+	check(A.db.char.toolbox.newsSeen == TBm:NewsVersion(),
 		"remembering WHICH version was read, so the next release lights it"
 		.. " again rather than it being a one-time dismissal")
+	check(TBm:NewsVersion() == A.version,
+		"and the version it remembers is the RUNNING one, taken from the .toc"
+		.. " through the changelog rather than from a literal in the module -"
+		.. " the pair had to be edited together every release and nothing"
+		.. " checked that either had been (" .. tostring(TBm:NewsVersion())
+		.. " vs " .. tostring(A.version) .. ")")
+
+	-- The card's text comes from the changelog too, and this is the check that
+	-- it is not a second copy: the first line of the current entry has to appear
+	-- in the body verbatim.
+	do
+		local entry = A:Notes()
+		local body = TBm.content.news.body:GetText() or ""
+		check(entry and entry.lines[1] and body:find(entry.lines[1], 1, true) ~= nil,
+			"the card's body is the current entry's own lines rather than a"
+			.. " paragraph kept beside them")
+		check(TBm.content.chip.text:GetText():find(A.version, 1, true) ~= nil,
+			"and the chip carries the running version ("
+			.. tostring(TBm.content.chip.text:GetText()) .. ")")
+
+		-- ...and it is RE-READ, not just correct because it was built correct.
+		-- The chip is written once at build time from the same expression, so a
+		-- refresh that never touches it looks right until the version moves.
+		local realVersion, wasW = A.version, TBm.content.chip:GetWidth()
+		A.version = "9.9.9"
+		TBm:RefreshNews()
+		check(TBm.content.chip.text:GetText():find("9.9.9", 1, true) ~= nil,
+			"and re-reads it rather than keeping what it was built with ("
+			.. tostring(TBm.content.chip.text:GetText()) .. ")")
+		check(math.abs(TBm.content.chip:GetWidth()
+				- (TBm.content.chip.text:GetStringWidth() + 14)) < 0.5,
+			"re-measuring the pill around it as it goes - a chip sized once is a"
+			.. " chip with its own text hanging out of it the day a number goes"
+			.. " double-digit (" .. string.format("%.0f", TBm.content.chip:GetWidth())
+			.. " for a string of " .. string.format("%.0f",
+				TBm.content.chip.text:GetStringWidth()) .. ", was "
+			.. string.format("%.0f", wasW) .. ")")
+		A.version = realVersion
+		TBm:RefreshNews()
+	end
+
+	-- Notes, for what the card has not got room for.
+	do
+		local notes = TBm.content.news.notes
+		check(notes ~= nil and notes:IsShown(),
+			"the card offers a Notes link, because there is more than two lines"
+			.. " of it and more than one release behind it")
+		A.db.char.toolbox.newsSeen = nil
+		notes:GetScript("OnClick")(notes)
+		check(not TBm:NewsUnread(),
+			"and following it counts as reading them - a link that leaves the"
+			.. " dot lit means the dot is about the card rather than the news")
+	end
+
+	-- One entry, fully shown, with nothing behind it: no link. The link is an
+	-- offer of MORE, and offering more when there is none is a dead end.
+	do
+		local realLog = A.CHANGELOG
+		A.CHANGELOG = { { version = A.version, date = "2026-01-01",
+			lines = { "One line." } } }
+		check(not TBm:NewsHasMore(),
+			"a release with one line and no history behind it has nothing more"
+			.. " to show")
+		A.CHANGELOG = { { version = A.version, date = "2026-01-01",
+			lines = { "One.", "Two.", "Three." } } }
+		check(TBm:NewsHasMore(),
+			"but a third line it has no room for counts as more, even with no"
+			.. " history")
+		A.CHANGELOG = realLog
+	end
 
 	TBm:SetOpen(false, true)
 end
@@ -9737,6 +9828,112 @@ do
 	UIParent:SetSize(oldW, oldH)
 	A.db.profile.scale = oldScale
 	TBm:SetOpen(false, true)
+end
+
+print("== the changelog, and the version it belongs to ==")
+do
+	-- The .toc is read from DISK here, not from the mock. A.version comes from
+	-- GetAddOnMetadata, which the harness mocks - so every check in this file
+	-- that touches a version is checking a value the harness itself chose. This
+	-- is the one place the real file is opened, and it is what makes "you cannot
+	-- ship a version with no notes" a fact rather than a hope.
+	local tocVersion
+	do
+		local f = io.open("AetherUI.toc", "r")
+		if f then
+			for line in f:lines() do
+				local v = line:match("^##%s*Version:%s*(%S+)")
+				if v then tocVersion = v break end
+			end
+			f:close()
+		end
+	end
+	check(tocVersion ~= nil, "AetherUI.toc declares a version (" ..
+		tostring(tocVersion) .. ")")
+
+	local log = A.CHANGELOG
+	check(type(log) == "table" and #log > 0, "and Core/Changelog.lua has entries")
+
+	-- The RUNNING version is the one in that file. Everything downstream -
+	-- which changelog entry is current, what the card says, what the unread dot
+	-- is remembered against, what the chip reads - hangs off A.version, and the
+	-- mock used to answer a literal of its own. Every one of those checks then
+	-- agreed with the harness about a version nobody was running.
+	check(A.version == tocVersion,
+		"and A.version is that same version rather than something the harness"
+		.. " made up (" .. tostring(A.version) .. " vs .toc "
+		.. tostring(tocVersion) .. ")")
+
+	if tocVersion and log and #log > 0 then
+		check(log[1].version == tocVersion,
+			"the newest changelog entry is the version being shipped - bump the"
+			.. " .toc without writing the notes and the drawer confidently shows"
+			.. " the PREVIOUS release's news with no dot on it, which is the"
+			.. " failure this file exists to make impossible (changelog "
+			.. tostring(log[1].version) .. " vs .toc " .. tocVersion .. ")")
+	end
+
+	-- Newest first, and strictly. Two entries claiming one version, or an older
+	-- one above a newer, both produce a card showing the wrong release.
+	do
+		local ordered, why = true, nil
+		for i = 2, #log do
+			if not A:VersionNewer(log[i - 1].version, log[i].version) then
+				ordered = false
+				why = log[i - 1].version .. " is not newer than " .. log[i].version
+				break
+			end
+		end
+		check(ordered, "every entry is strictly newer than the one below it"
+			.. (why and (" (" .. why .. ")") or ""))
+	end
+
+	do
+		local complete = true
+		for _, e in ipairs(log) do
+			if type(e.version) ~= "string" or type(e.date) ~= "string"
+				or type(e.lines) ~= "table" or #e.lines == 0 then
+				complete = false
+			end
+		end
+		check(complete, "and every entry carries a version, a date and at least"
+			.. " one line - an entry with no lines is a release that says nothing")
+	end
+
+	-- Component-wise, not string compare. "0.10.0" < "0.9.9" alphabetically, and
+	-- that is the classic way a version check ships backwards.
+	check(A:VersionNewer("0.10.0", "0.9.9"),
+		"0.10.0 is newer than 0.9.9 - compared component by component, where a"
+		.. " string compare gets it exactly backwards")
+	check(A:VersionNewer("1.0.0", "0.99.99"), "and a major beats everything under it")
+	check(not A:VersionNewer("0.2.0", "0.2.0"), "the same version is not newer than itself")
+	check(not A:VersionNewer("0.2.0", "0.2.1"), "and a build number counts")
+	do
+		local a, b, c = A:ParseVersion("nonsense")
+		check(a == 0 and b == 0 and c == 0,
+			"something unparseable is zero rather than an error - it then sorts"
+			.. " below every real version, which is the safe direction")
+		-- And a NON-string, which is the case the guard is actually for: a
+		-- string that does not match simply fails the pattern, where nil or a
+		-- number reaches string.match and throws. Testing only "nonsense" never
+		-- runs the guard at all.
+		local ok, n1 = pcall(A.ParseVersion, A, nil)
+		check(ok and n1 == 0, "and so is nothing at all, rather than an error"
+			.. " out of string.match")
+		check(select(2, pcall(A.ParseVersion, A, 3)) == 0,
+			"or a number, which is what a .toc read by something else hands back")
+	end
+
+	-- A build whose version has no entry shows the notes for what is RUNNING.
+	do
+		local entry = A:Notes("0.1.0")
+		check(entry and entry.version == "0.1.0",
+			"asking for a specific version gets that version's notes")
+		local missing = A:Notes("9.9.9")
+		check(missing == A.CHANGELOG[1],
+			"and a version with no entry falls back to the newest rather than to"
+			.. " an empty card")
+	end
 end
 
 print("== toolbox: docked flat, the sections are columns ==")

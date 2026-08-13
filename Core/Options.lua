@@ -1057,8 +1057,41 @@ local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
 	xpbar = 12,
+	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
+
+--- What's new, built from Core/Changelog.lua rather than written out again
+--  here. This is where the Notes link on the Toolbox card lands.
+--
+--  Every release, not only the current one: the card shows the first couple of
+--  lines of the newest entry, and this is the rest of it plus everything
+--  before. A history nobody can reach is a history nobody keeps.
+local function ChangelogGroup()
+	local args = {
+		running = note("Running |cff9d7bffAether UI " .. (A.version or "?")
+			.. "|r.\n\nNumbering is |cffece6ffmajor.minor.build|r - a major for a"
+			.. " release with new features in it, a minor for accumulated fixes"
+			.. " and small enhancements, and a build for hotfixes between the"
+			.. " two."),
+	}
+
+	local history = A.NotesHistory and A:NotesHistory() or {}
+	for i, entry in ipairs(history) do
+		local body = {}
+		for j, line in ipairs(entry.lines or {}) do
+			body[j] = "\194\183 " .. line
+		end
+		-- Keyed by index rather than by version: a version string carries dots,
+		-- and AceConfig treats the key as a path segment.
+		args["rel" .. i] = group(
+			(entry.version or "?") .. (entry.date and ("   |cff888888" .. entry.date .. "|r") or ""),
+			{ body = note(#body > 0 and table.concat(body, "\n") or "No notes.") },
+			{ inline = true })
+	end
+
+	return group("What's new", args)
+end
 
 --- Build the whole tree. Pure: no libraries, no frames, no side effects.
 function Options:Build()
@@ -1079,6 +1112,7 @@ function Options:Build()
 			toolbox = ToolboxGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
+			changelog = ChangelogGroup(),
 		},
 	}
 	for key, n in pairs(PAGE_ORDER) do

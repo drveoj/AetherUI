@@ -998,6 +998,7 @@ function TB:OnConfigChanged()
 	self:RefreshTiles()
 	self:RefreshAddons()
 	self:RefreshMicro()
+	self:RefreshNews()
 	self:LayoutRail()
 end
 
@@ -1443,20 +1444,78 @@ function TB:MailTooltip(owner)
 	GameTooltip:Show()
 end
 
-TB.NEWS_VERSION = "0.1.0"
-TB.NEWS = "The Toolbox has arrived: a drawer that docks to any screen edge, with"
-	.. " your addon launchers on the rail beside it."
+-- What's new: read from Core/Changelog.lua rather than written here.
+--
+-- These were two literals in this file, and the pair had to be edited together
+-- every release: the paragraph, and the version it was marked read against.
+-- Nothing checked that either one had been touched, so the failure mode was a
+-- drawer confidently showing the previous release's news with no dot on it.
+--
+-- The changelog is the one place now, the .toc is the version, and the harness
+-- refuses a build where the two disagree.
+
+--- How many lines of the entry fit on the card. The card is a fixed 84px with a
+--  title on it, so this is the honest number rather than however many the
+--  release happened to have - the rest are behind Notes.
+TB.NEWS_LINES = 2
+
+--- The version the card is currently reporting on.
+function TB:NewsVersion()
+	local entry = A.Notes and A:Notes()
+	return (entry and entry.version) or A.version or "0.0.0"
+end
+
+--- The card's body: the first couple of lines of the current entry, joined.
+function TB:NewsText()
+	local entry = A.Notes and A:Notes()
+	if not entry or not entry.lines or #entry.lines == 0 then
+		return "No notes for this build."
+	end
+	local out = {}
+	for i = 1, math.min(#entry.lines, self.NEWS_LINES) do out[i] = entry.lines[i] end
+	return table.concat(out, " ")
+end
+
+--- Whether there is more than the card is showing, which is what decides
+--  whether the Notes link is worth offering.
+function TB:NewsHasMore()
+	local entry = A.Notes and A:Notes()
+	if not entry or not entry.lines then return false end
+	if #entry.lines > self.NEWS_LINES then return true end
+	return #(A.CHANGELOG or {}) > 1
+end
 
 function TB:NewsUnread()
 	local c = Char()
-	return not (c and c.newsSeen == self.NEWS_VERSION)
+	return not (c and c.newsSeen == self:NewsVersion())
 end
 
 function TB:MarkNewsRead()
 	local c = Char()
-	if c then c.newsSeen = self.NEWS_VERSION end
+	if c then c.newsSeen = self:NewsVersion() end
 	if self.content and self.content.news then
 		self.content.news.dot:SetShown(self:NewsUnread())
+	end
+end
+
+--- Refresh the card from the changelog. Called on build and on config change,
+--  so a reload after a bump redraws rather than keeping the text it was built
+--  with.
+function TB:RefreshNews()
+	local card = self.content and self.content.news
+	if not card then return end
+	card.body:SetText(self:NewsText())
+	card.dot:SetShown(self:NewsUnread())
+	if card.notes then card.notes:SetShown(self:NewsHasMore()) end
+
+	-- The chip carries the running version, and it is re-measured rather than
+	-- left at whatever width it was built with: 0.2.0 is wider than 0.1.0 the
+	-- moment a number goes double-digit, and a pill sized once is a pill with
+	-- its own text hanging out of it.
+	local chip = self.content.chip
+	if chip and chip.text then
+		chip.text:SetText("Aether UI " .. (A.version or "?"))
+		chip:SetWidth((chip.text:GetStringWidth() or 40) + 14)
 	end
 end
 
@@ -1487,7 +1546,7 @@ function TB:BuildContent()
 	chip:ApplySkin("btnFill", "btnFill")
 	local chipText = W.Text(chip, "tbChip", "CENTER", nil, 10)
 	chipText:SetPoint("CENTER", chip, "CENTER", 0, 0)
-	chipText:SetText("v" .. (A.version or "0.1.0"))
+	chipText:SetText("Aether UI " .. (A.version or "0.1.0"))
 	W.Color(chipText, Palette.c.btnFillText)
 	chipText:SetShadowColor(0, 0, 0, 0)
 	chip:SetWidth((chipText:GetStringWidth() or 40) + 14)
@@ -1537,8 +1596,41 @@ function TB:BuildContent()
 	body:SetPoint("TOPLEFT", ct, "BOTTOMLEFT", 0, -6)
 	body:SetPoint("RIGHT", card, "RIGHT", -14, 0)
 	body:SetJustifyV("TOP")
-	body:SetText(self.NEWS or "")
 	card.body = body
+
+	-- Notes: the way to the rest of it. The card is a fixed 84px and shows the
+	-- first couple of lines of the current entry; everything else, and every
+	-- release before this one, is behind here.
+	--
+	-- A button rather than a hyperlink in the body text. SetHyperlinksEnabled on
+	-- a plain FontString needs a link type the client knows, and inventing one
+	-- means hooking the global hyperlink handler to catch it - a lot of surface
+	-- for a word that opens a panel we already have.
+	local notes = CreateFrame("Button", nil, card)
+	notes:SetSize(46, 16)
+	notes:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 66, 12)
+	local nt = W.Text(notes, "tbLabel", "LEFT")
+	nt:SetPoint("LEFT", notes, "LEFT", 0, 0)
+	nt:SetText("Notes")
+	W.Color(nt, Palette.c.accent)
+	notes.text = nt
+	-- An underline, because "Notes" in the accent beside body text at the same
+	-- size reads as an emphasised word rather than as somewhere to click.
+	local rule = notes:CreateTexture(nil, "OVERLAY")
+	rule:SetTexture(Media.texture.flat)
+	rule:SetHeight(1)
+	rule:SetPoint("TOPLEFT", nt, "BOTTOMLEFT", 0, -1)
+	rule:SetPoint("TOPRIGHT", nt, "BOTTOMRIGHT", 0, -1)
+	do
+		local c = Palette.c.accent
+		rule:SetVertexColor(c[1], c[2], c[3], 0.55)
+	end
+	notes.rule = rule
+	notes:SetScript("OnClick", function()
+		TB:MarkNewsRead()
+		if A.Options and A.Options.Open then A.Options:Open("changelog") end
+	end)
+	card.notes = notes
 
 	card:EnableMouse(true)
 	card:SetScript("OnMouseUp", function() TB:MarkNewsRead() end)
@@ -1554,6 +1646,9 @@ function TB:BuildContent()
 	self:BuildTiles()
 	self:BuildAddons()
 	self:BuildMicro()
+	-- Last, because it writes into the card AND re-measures the version chip,
+	-- and both want the whole header to exist first.
+	self:RefreshNews()
 end
 
 --- One card per chosen data source. Frames are POOLED by index, because WoW has
