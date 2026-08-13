@@ -2316,6 +2316,51 @@ function SelectQuestLogEntry(index) _G.__questSelected = index end
 function QuestLogPushQuest() _G.__questShared = _G.__questSelected end
 function SetAbandonQuest() _G.__abandonLatch = _G.__questSelected end
 function StaticPopup_Show(which) _G.__abandonPopup = which end
+
+-- The client's four dialogs.
+--
+-- TWO NAMING CONVENTIONS, on purpose. The reworked dialog carries its parts as
+-- fields and the older one names them globally, and BOTH are live on this
+-- client depending which dialog you get - so half of these are built one way
+-- and half the other. Anything that knows only one convention skins half the
+-- dialogs in the game and looks perfectly correct on the ones it tested.
+do
+	for i = 1, 4 do
+		local p = CreateFrame("Frame", "StaticPopup" .. i, UIParent)
+		p:SetSize(320, 90)
+		p:Hide()
+
+		-- The stone frame, and the warning triangle.
+		p.__border = p:CreateTexture(nil, "BORDER")
+		p.__bg = p:CreateTexture(nil, "BACKGROUND")
+		local alert = p:CreateTexture(nil, "ARTWORK")
+
+		local text = p:CreateFontString(nil, "OVERLAY")
+		text:SetText("Do you want to destroy Sunscale Feather?")
+
+		local b1 = CreateFrame("Button", "StaticPopup" .. i .. "Button1", p)
+		local b2 = CreateFrame("Button", "StaticPopup" .. i .. "Button2", p)
+		for _, b in ipairs({ b1, b2 }) do
+			b:SetSize(100, 22)
+			local art = b:CreateTexture(nil, "BACKGROUND")
+			art:Show()
+			local fs = b:CreateFontString(nil, "OVERLAY")
+			fs:SetText("Yes")
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+		end
+
+		if i % 2 == 1 then
+			-- Fields, the reworked way.
+			p.text, p.AlertIcon = text, alert
+			p.Button1, p.Button2 = b1, b2
+		else
+			-- Globals only, the older way.
+			_G["StaticPopup" .. i .. "Text"] = text
+			_G["StaticPopup" .. i .. "AlertIcon"] = alert
+		end
+	end
+end
 function ShowUIPanel() end
 
 -- rewards, all selection-scoped: none of these takes an index, which is the
@@ -3790,6 +3835,7 @@ for _, f in ipairs({
 	"Modules/Chat.lua",
 	"Modules/Tooltips.lua",
 	"Modules/Nameplates.lua",
+	"Modules/Popups.lua",
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
 }) do
@@ -15433,6 +15479,52 @@ do
 	check(math.abs(RAID_CLASS_COLORS.SHAMAN.r - 0.96) < 0.004
 		and math.abs(RAID_CLASS_COLORS.SHAMAN.b - 0.73) < 0.004,
 		"and a Shaman is pink, because this is Vanilla - blue is TBC's answer")
+end
+
+print("== popups: the client's dialogs in our glass ==")
+do
+	local PPm = A:GetModule("popups")
+
+	-- BOTH conventions. Half the mock's dialogs carry their parts as fields and
+	-- half name them globally, because both are live on this client - and a
+	-- module that knows one convention skins half the dialogs in the game while
+	-- looking perfectly correct on whichever half it was written against.
+	for i = 1, 4 do
+		local p = _G["StaticPopup" .. i]
+		check(p.__aetherPanel ~= nil,
+			"dialog " .. i .. " has a glass panel behind it")
+		check(p.__border:IsShown() == false and p.__bg:IsShown() == false,
+			"and the stone frame it came with is hidden, not covered over")
+
+		local alert = PPm.Element(p, "AlertIcon")
+		check(alert and not alert:IsShown(),
+			"the warning triangle goes with the stone it was drawn for - what the"
+			.. " dialog asks is in the words")
+
+		local text = PPm.Element(p, "Text")
+		check(text and text._aetherStyle == "qlObjName",
+			"the question is re-roled into our type")
+
+		local b1 = PPm.Element(p, "Button1")
+		check(b1 and b1.__aetherPill ~= nil, "and each button gets a pill behind it")
+		check(b1:GetFontString()._aetherStyle == "tbCardTitle", "with our lettering on it")
+	end
+
+	-- The buttons are DRESSED, not rebuilt: what you click is still the
+	-- client's, because several of these dialogs run protected actions.
+	local p1 = _G.StaticPopup1
+	local b1 = PPm.Element(p1, "Button1")
+	check(b1:GetParent() == p1 and b1.__aetherPill:GetParent() == b1,
+		"the button is still the client's own, in the client's own place - the"
+		.. " pill hangs off it rather than the other way round")
+
+	-- Off gives Blizzard's back, whole. Every module here is a reskin.
+	A:SetModuleEnabled("popups", false)
+	check(p1.__aetherPanel == nil and p1.__border:IsShown()
+		and b1.__aetherPill == nil,
+		"switching it off returns the dialog the client drew, art and all")
+	A:SetModuleEnabled("popups", true)
+	check(_G.StaticPopup1.__aetherPanel ~= nil, "and on again re-dresses it")
 end
 
 print("== palette: difficulty has one owner ==")

@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.6",
+		date    = "2026-08-13",
+		lines   = {
+			"New: the game's own confirmation dialogs - 'do you want to destroy this?' and the like - wear the same glass as everything else.",
+		},
+	},
+	{
 		version = "0.4.5",
 		date    = "2026-08-13",
 		lines   = {

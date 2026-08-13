@@ -976,6 +976,17 @@ local function ChatGroup()
 	})
 end
 
+--- The client's own dialogs. One switch, because the module is a reskin and
+--  turning it off has to hand Blizzard's back whole.
+local function PopupsGroup()
+	return group("Dialogs", {
+		enabled = toggle("Enabled", "Skins the game's own confirmation dialogs -"
+			.. " 'do you want to destroy this?' and the like - to match the rest"
+			.. " of the interface. Off gives you Blizzard's back, art and all.",
+			{ "modules", "popups", "enabled" }),
+	})
+end
+
 local function XPGroup()
 	local function at(k) return { "modules", "xpbar", k } end
 	return group("XP hairline", {
@@ -1110,7 +1121,7 @@ end
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
-	xpbar = 12, nameplates = 13,
+	xpbar = 12, nameplates = 13, popups = 14,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1167,6 +1178,7 @@ function Options:Build()
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
 			nameplates = NameplatesGroup(),
+			popups = PopupsGroup(),
 			changelog = ChangelogGroup(),
 		},
 	}
