@@ -987,6 +987,18 @@ local function PopupsGroup()
 	})
 end
 
+--- The client's own windows.
+local function PanelsGroup()
+	return group("Windows", {
+		enabled = toggle("Enabled", "Skins the game's own windows - character,"
+			.. " spellbook, talents, guild, map, menu and help - to match the"
+			.. " rest of the interface. Off gives you Blizzard's back, art and"
+			.. " all. What is inside them is left alone: item slots, spell"
+			.. " buttons and map pins are still the game's own.",
+			{ "modules", "panels", "enabled" }),
+	})
+end
+
 local function XPGroup()
 	local function at(k) return { "modules", "xpbar", k } end
 	return group("XP hairline", {
@@ -1121,7 +1133,7 @@ end
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
-	xpbar = 12, nameplates = 13, popups = 14,
+	xpbar = 12, nameplates = 13, popups = 14, panels = 15,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1179,6 +1191,7 @@ function Options:Build()
 			xpbar = XPGroup(),
 			nameplates = NameplatesGroup(),
 			popups = PopupsGroup(),
+			panels = PanelsGroup(),
 			changelog = ChangelogGroup(),
 		},
 	}

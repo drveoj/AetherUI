@@ -2332,6 +2332,43 @@ function QuestLogPushQuest() _G.__questShared = _G.__questSelected end
 function SetAbandonQuest() _G.__abandonLatch = _G.__questSelected end
 function StaticPopup_Show(which) _G.__abandonPopup = which end
 
+-- The client's own windows. Only the ones that exist at login are built here;
+-- the rest arrive with their addon, which is what __loadPanelAddon models.
+do
+	local function buildPanel(name)
+		local f = CreateFrame("Frame", name, UIParent)
+		f:SetSize(384, 512)
+		f:Hide()
+		f.__stone = f:CreateTexture(nil, "BORDER")
+		f.__stone:SetTexture("stone-border")
+		-- Its background hangs off it in a child frame, as they all do.
+		f.Bg = CreateFrame("Frame", nil, f)
+		f.Bg.__fill = f.Bg:CreateTexture(nil, "BACKGROUND")
+		f.Bg.__fill:SetTexture("panel-background")
+
+		local title = f:CreateFontString(nil, "OVERLAY")
+        title:SetText(name)
+		_G[name .. "TitleText"] = title
+
+		local close = CreateFrame("Button", name .. "CloseButton", f)
+		close:SetNormalTexture("close-up")
+		close:SetPushedTexture("close-down")
+		return f
+	end
+
+	for _, n in ipairs({ "CharacterFrame", "SpellBookFrame", "FriendsFrame",
+		"GameMenuFrame" }) do
+		buildPanel(n)
+	end
+
+	-- Load on demand: absent until something asks for it.
+	-- Builds it only. Firing ADDON_LOADED is the caller's, because `fire` is
+	-- declared further down this file than this block runs.
+	function _G.__loadPanelAddon(name)
+		buildPanel(name)
+	end
+end
+
 -- The client's four dialogs.
 --
 -- TWO NAMING CONVENTIONS, on purpose. The reworked dialog carries its parts as
@@ -3874,6 +3911,7 @@ for _, f in ipairs({
 	"Modules/Tooltips.lua",
 	"Modules/Nameplates.lua",
 	"Modules/Popups.lua",
+	"Modules/Panels.lua",
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
 }) do
@@ -15672,6 +15710,64 @@ do
 	check(btn:GetNormalTexture():GetTexture() == "up"
 		and btn:GetPushedTexture():GetTexture() == "down",
 		"and restored by name, because clearing is not undone by showing")
+
+	-- ORDER-INDEPENDENT. A caller may strip a button's regions before clearing
+	-- its state textures - both orders are reasonable and each has been written
+	-- once already. Clearing second must not record the emptied value as though
+	-- it were the client's, or the restore puts "cleared" back.
+	local either = CreateFrame("Button", nil, UIParent)
+	either:SetNormalTexture("up")
+	local st = {}
+	R.Strip(either, st)
+	R.ClearButton(either)
+	R.Restore(st)
+	R.RestoreButton(either)
+	check(either:GetNormalTexture():GetTexture() == "up",
+		"whichever order the caller strips and clears in, the button gets its"
+		.. " own art back")
+end
+
+print("== panels: the client's windows in our glass ==")
+do
+	local PNm = A:GetModule("panels")
+
+	local cf = _G.CharacterFrame
+	check(cf.__aetherPanel ~= nil, "the character sheet has a glass panel behind it")
+	check(cf.__stone:GetTexture() == 0, "and its stone frame is cleared")
+	check(cf.Bg.__fill:GetTexture() == 0,
+		"including the background in its child frame, which is where these keep"
+		.. " the thing you can actually see")
+	check(_G.CharacterFrameTitleText._aetherStyle == "tbTitle",
+		"the title is re-roled into our type")
+
+	local close = _G.CharacterFrameCloseButton
+	check(close.__aetherX and (close.__aetherX:GetText() or "") ~= "",
+		"and the way out is our own mark - with the stone X cleared there would"
+		.. " otherwise be nothing left to click")
+	check(close:GetNormalTexture():GetTexture() == 0, "its art gone with the rest")
+	check(close:GetParent() == cf,
+		"on the client's own button, which is still the thing that closes the"
+		.. " window - nothing here is rebuilt or reparented")
+
+	-- LOAD ON DEMAND. Half of these do not exist at login; they arrive with
+	-- their own addon the first time you open them, and a list walked once at
+	-- startup would never see them.
+	check(_G.WorldMapFrame == nil, "the map is not loaded yet")
+	_G.__loadPanelAddon("WorldMapFrame")
+	fire("ADDON_LOADED", "Blizzard_WorldMap")
+	check(_G.WorldMapFrame.__aetherPanel ~= nil,
+		"and is skinned when its addon turns up, rather than only at login")
+
+	-- Off hands the client its windows back.
+	A:SetModuleEnabled("panels", false)
+	check(cf.__aetherPanel == nil and cf.__stone:GetTexture() == "stone-border"
+		and cf.Bg.__fill:GetTexture() == "panel-background",
+		"switching it off returns the window the client drew, background and all")
+	check(close:GetNormalTexture():GetTexture() == "close-up"
+		and close.__aetherX == nil,
+		"and its own close button with it")
+	A:SetModuleEnabled("panels", true)
+	check(cf.__aetherPanel ~= nil, "and on again re-dresses it")
 end
 
 print("== palette: difficulty has one owner ==")

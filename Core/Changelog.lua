@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.10",
+		date    = "2026-08-13",
+		lines   = {
+			"New: the game's own windows - character, spellbook, talents, guild, map, menu and help - wear the same glass as everything else.",
+			"What is inside them is untouched: item slots, spell buttons and map pins are still the game's own.",
+		},
+	},
+	{
 		version = "0.4.9",
 		date    = "2026-08-13",
 		lines   = {

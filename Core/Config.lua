@@ -472,6 +472,13 @@ Config.defaults = {
 				enabled = true,
 			},
 
+			-- The client's own windows - character, spellbook, talents, guild,
+			-- map, menu, help - reskinned in place. Same switch, same promise:
+			-- off hands Blizzard's back.
+			panels = {
+				enabled = true,
+			},
+
 			xpbar = {
 				enabled  = true,
 				height   = 4,

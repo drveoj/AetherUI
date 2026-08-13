@@ -157,6 +157,12 @@ function Reskin.ClearButton(btn)
 			if btn.__aetherState[kind] == nil then
 				local tex = get(btn)
 				local path = tex and tex.GetTexture and tex:GetTexture()
+				-- 0 means somebody has already emptied it - Strip, most likely,
+				-- if the caller happened to run that first. Recording THAT
+				-- would make the restore put "cleared" back, which is not a
+				-- restore. Order-independent on purpose: both orders are
+				-- reasonable and each has already been written once.
+				if path == 0 then path = nil end
 				btn.__aetherState[kind] = path or false
 			end
 			set(btn, 0)
