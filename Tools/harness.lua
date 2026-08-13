@@ -1116,6 +1116,7 @@ _G.__cvars = {
 	cameraPitchMoveSpeed               = "90",
 	cameraYawMoveSpeed                 = "180",
 
+	nameplateMaxDistance               = "20",
 	nameplateShowAll                   = "0",
 	nameplateShowEnemies               = "1",
 	nameplateShowEnemyMinions          = "1",
@@ -1171,7 +1172,13 @@ end
 -- client logs the blind one. This is what makes "it probed" testable.
 _G.__badCVarWrites = 0
 
+-- Every write, not just the bad ones. An idempotent writer and a spendthrift
+-- one are indistinguishable through __badCVarWrites, which only counts writes
+-- to names the client does not have.
+_G.__cvarWrites = 0
+
 function SetCVar(name, value)
+	_G.__cvarWrites = _G.__cvarWrites + 1
 	if _G.__cvars[name] == nil then
 		_G.__badCVarWrites = _G.__badCVarWrites + 1
 		error("SetCVar: unknown console variable '" .. tostring(name) .. "'", 2)
@@ -1516,7 +1523,12 @@ local function tooltipLines(tip)
 		if not d then return end
 
 		self:AddLine(d.name or "Unknown")
-		if d.guild then self:AddLine("<" .. d.guild .. ">") end
+		-- Line two is a player's guild or an NPC's title, in angle brackets
+		-- either way. It is the only place the client writes "<Innkeeper>" -
+		-- nothing on a nameplate carries it - which is why reading it needs a
+		-- tooltip at all.
+		if d.guild then self:AddLine("<" .. d.guild .. ">")
+		elseif d.title then self:AddLine("<" .. d.title .. ">") end
 
 		local lvl = (d.level == -1) and "??" or tostring(d.level or 1)
 		local words = {}
@@ -1588,6 +1600,30 @@ end
 --  the module has to be right under either.
 function _G.__makeTooltip(name)
 	return tooltipLines(CreateFrame("Frame", name, UIParent))
+end
+
+-- An addon that needs to READ a tooltip makes its own rather than borrowing
+-- GameTooltip, which belongs to whatever the cursor is over. CreateFrame with
+-- the GameTooltip type (or template) has to hand back something that behaves
+-- like one, or a scanning tooltip is untestable and every test of it is really
+-- a test of a bare frame.
+do
+	local plain = CreateFrame
+	function CreateFrame(kind, name, parent, template)
+		local f = plain(kind, name, parent, template)
+		if kind == "GameTooltip"
+			or (type(template) == "string" and template:find("GameTooltip")) then
+			tooltipLines(f)
+			-- SetOwner CLEARS, exactly as it does on GameTooltip. A scanner that
+			-- forgets to call it reads the LAST unit it looked at, which is a
+			-- bug that only shows up on the second thing you point at.
+			function f:SetOwner(owner, anchor)
+				self.__owner, self.__anchor = owner, anchor
+				self:ClearLines()
+			end
+		end
+		return f
+	end
 end
 
 for _, n in ipairs({ "ItemRefTooltip", "ShoppingTooltip1", "ShoppingTooltip2",
@@ -2707,12 +2743,26 @@ function UnitRace2() end
 function GetCurrentRegion() return 3 end
 function UnitSex() return 2 end
 
+-- Verbatim from Blizzard_SharedXML/Vanilla/ClassColors.lua, which is the table
+-- THIS flavour loads. Three classes used to be enough and were not: anything
+-- reading a class colour for a Shaman got nil here and a real colour in game,
+-- so a mismatch between our own palette and the client's could not be seen.
+--
+-- Shaman is PINK on Vanilla and blue from TBC on - the two files sit side by
+-- side in the source tree - which is the whole reason this is copied rather
+-- than invented.
 RAID_CLASS_COLORS = {
-	MAGE  = { r = 0.41, g = 0.80, b = 0.94 },
-	ROGUE = { r = 1.00, g = 0.96, b = 0.41 },
+	WARRIOR = { r = 0.78, g = 0.61, b = 0.43 },
+	PALADIN = { r = 0.96, g = 0.55, b = 0.73 },
+	HUNTER  = { r = 0.67, g = 0.83, b = 0.45 },
+	ROGUE   = { r = 1.00, g = 0.96, b = 0.41 },
 	-- The whitest class in the game, and therefore the one that decides whether
 	-- a light skin works. A class-colour mock without it cannot see the bug.
-	PRIEST = { r = 1.00, g = 1.00, b = 1.00 },
+	PRIEST  = { r = 1.00, g = 1.00, b = 1.00 },
+	SHAMAN  = { r = 0.96, g = 0.55, b = 0.73 },
+	MAGE    = { r = 0.25, g = 0.78, b = 0.92 },
+	WARLOCK = { r = 0.53, g = 0.53, b = 0.93 },
+	DRUID   = { r = 1.00, g = 0.49, b = 0.04 },
 }
 
 -- unit state -----------------------------------------------------------------
@@ -3411,9 +3461,10 @@ ChatTypeInfo = setmetatable({
 	return nil
 end })
 
--- Added to, not replaced: the unit frame tests upstream already lean on what is
--- in there.
-RAID_CLASS_COLORS.WARLOCK = { r = 0.58, g = 0.51, b = 0.79 }
+-- WARLOCK used to be added here, because the table above only had three classes
+-- in it. It carried RETAIL's purple rather than Vanilla's periwinkle, which is
+-- the sort of thing that goes unnoticed until something compares our palette to
+-- the client's. The table above is Blizzard's own Vanilla file now, in full.
 RAID_CLASS_COLORS.WARRIOR = { r = 0.78, g = 0.61, b = 0.43 }
 
 local GUID_CLASS = {
@@ -14996,6 +15047,17 @@ do
 		.. " without them a hunter's pet keeps the client's own floating name"
 		.. " while the hunter standing next to it wears ours")
 
+	check(cv.nameplateMaxDistance == "41",
+		"and the client is asked to make plates as far out as it will - past that"
+		.. " there is no plate and the engine draws its own floating name, which"
+		.. " is why the lettering changed at a fixed distance")
+
+	A.Config:Module("nameplates").maxDistance = 900
+	NPm.applyCVars()
+	check(cv.nameplateMaxDistance == "41",
+		"clamped to what the client's own slider offers rather than written raw")
+	A.Config:Module("nameplates").maxDistance = 41
+
 	check(cv.nameplateShowFriendlyPlayers == "1" and cv.nameplateShowFriendlyNpcs == "1",
 		"friendly players AND friendly NPCs are asked for - without this the"
 		.. " engine draws them as floating name text and never makes a plate, so"
@@ -15029,6 +15091,21 @@ do
 	check(cv.nameplateShowFriendlyNpcs == "1",
 		"and zen gives back the value it borrowed, which was ours - so there is"
 		.. " nothing left to redo when it ends")
+
+	-- Somebody else moving them puts ours back. A console variable has no owner,
+	-- and an addon that backs these up before we set them restores the old
+	-- values over the top when its cutscene ends.
+	cv.nameplateShowFriendlyNpcs = "0"
+	cv.nameplateMaxDistance = "20"
+	fire("CVAR_UPDATE", "nameplateShowFriendlyNpcs", "0")
+	check(cv.nameplateShowFriendlyNpcs == "1" and cv.nameplateMaxDistance == "41",
+		"a console variable moved out from under us is put back, whoever moved it")
+
+	_G.__cvarWrites = 0
+	fire("CVAR_UPDATE", "nameplateShowFriendlyNpcs", "1")
+	check(_G.__cvarWrites == 0,
+		"and re-running it when nothing is wrong writes nothing at all - which is"
+		.. " what stops us and the next addon setting each other off forever")
 
 	-- Never turned off: that state is the player's own console setting.
 	A.Config:Module("nameplates").friendlyNames = false
@@ -15111,7 +15188,8 @@ do
 	local kodo = { exists = true, name = "Wandering Kodo", level = 15,
 		reaction = 4, hp = 500, hpMax = 500 }
 	local devrak = { exists = true, name = "Devrak", level = 30,
-		reaction = 4, hp = 900, hpMax = 900, canAttack = false }
+		reaction = 4, hp = 900, hpMax = 900, canAttack = false,
+		title = "Flight Master" }
 
 	local baseK = __spawnPlate("nameplate1", kodo)
 	local baseD = __spawnPlate("nameplate2", devrak)
@@ -15124,8 +15202,17 @@ do
 		"while an NPC at the same reaction is a name - not enough reputation is"
 		.. " a fact about your standing, not about whether he is a mob")
 	check(d.name:GetText() == "Devrak" and not d.badge:IsShown(),
-		"the name and nothing else: no capsule, no level, no bar")
+		"the name, with no capsule and no level on it")
 	check(not d.bar:IsShown(), "and no health bar while he is unhurt")
+
+	check(d.guild:IsShown() and d.guild:GetText() == "<Flight Master>",
+		"and his TITLE under it - which is what tells you he is the one to talk"
+		.. " to. A nameplate carries no title, so it is read off the second line"
+		.. " of his tooltip, where the client keeps it")
+	check(GameTooltip.__unit ~= "nameplate2",
+		"through a tooltip of our own, never GameTooltip - that one belongs to"
+		.. " whatever the cursor is over, and driving it here would flicker"
+		.. " somebody else's tooltip every time a vendor walked past")
 
 	_G.__units.nameplate2.hp = 100
 	fire("UNIT_HEALTH", "nameplate2")
@@ -15137,8 +15224,54 @@ do
 		level = 18, reaction = 2, hp = 900, hpMax = 1000 })
 	check(d._nameForm == false, "anything you can attack is a capsule")
 
+	-- A creature with no title is remembered as having none, or every plain mob
+	-- is re-scanned on every plate it ever appears on.
+	local vendor = { exists = true, name = "Larhka", level = 30, reaction = 5,
+		hp = 500, hpMax = 500, canAttack = false, title = "Beverage Merchant" }
+	__despawnPlate("nameplate1")
+	__spawnPlate("nameplate1", vendor)
+	check(k.guild:GetText() == "<Beverage Merchant>", "a vendor keeps her trade")
+
 	__despawnPlate("nameplate1")
 	__despawnPlate("nameplate2")
+end
+
+print("== palette: the orb's class colours are the CLIENT's ==")
+do
+	-- The orb names its nine colours rather than reading RAID_CLASS_COLORS, so a
+	-- colour-blind addon can recolour every name in the game without the level
+	-- disc moving under it. That is worth keeping and it is also how a copy goes
+	-- stale, so the copy is checked.
+	--
+	-- Shaman is the one that matters: PINK on Vanilla, blue from TBC on. The two
+	-- files sit side by side in Blizzard_SharedXML and this client loads the
+	-- Vanilla one, so pink is not a preference here, it is the version.
+	local wrong = {}
+	for class, cc in pairs(RAID_CLASS_COLORS) do
+		local units = _G.__units
+		units.__cc = { exists = true, isPlayer = true, class = class,
+			classToken = class, reaction = 5 }
+		local ours = A.Palette:OrbBaseColor("__cc")
+		if math.abs(ours[1] - cc.r) > 0.004 or math.abs(ours[2] - cc.g) > 0.004
+			or math.abs(ours[3] - cc.b) > 0.004 then
+			wrong[#wrong + 1] = class
+		end
+		units.__cc = nil
+	end
+	check(#wrong == 0,
+		"every class the client names, the orb names the same (" ..
+		table.concat(wrong, ", ") .. ")")
+
+	-- And the shipped default is a default, not somebody's setting.
+	check(A.Config.defaults.profile.scale == 1.0,
+		"the default scale is 1, which is what a 1920x1080 screen wants. It was"
+		.. " 0.71 under a comment deriving it from the DECK's proportions, which"
+		.. " is sound arithmetic about the deck and was never a claim about what"
+		.. " a player should get")
+
+	check(math.abs(RAID_CLASS_COLORS.SHAMAN.r - 0.96) < 0.004
+		and math.abs(RAID_CLASS_COLORS.SHAMAN.b - 0.73) < 0.004,
+		"and a Shaman is pink, because this is Vanilla - blue is TBC's answer")
 end
 
 print("== palette: difficulty has one owner ==")

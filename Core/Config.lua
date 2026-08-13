@@ -38,11 +38,17 @@ Config.defaults = {
 
 	profile = {
 		skin        = "midnight",
-		-- Module geometry is written in the concept deck's own pixel values. The
-		-- deck is 1920 wide; WoW's virtual space is 768 tall, so 1365 wide at
-		-- 16:9. 1365/1920 = 0.711 maps one onto the other, which is why this is
-		-- not 1.0. Raise it if you want everything larger than the deck.
-		scale       = 0.71,
+		-- 1.0, which is what a 1920x1080 screen wants.
+		--
+		-- This was 0.71, under a comment deriving it from the deck: the deck is
+		-- 1920 wide, WoW's virtual space is 1365 at 16:9, and 1365/1920 = 0.711
+		-- maps one onto the other. That arithmetic is sound ABOUT THE DECK and
+		-- was never a claim about what a player should get - but it read like
+		-- one, and shipped as the default on the strength of it. 0.71 is a
+		-- taste, and a taste for one particular monitor at that.
+		--
+		-- Anyone who wants it smaller has a slider and /aether scale.
+		scale       = 1.0,
 		debug       = false,
 
 		-- The concept deck draws player health green and reserves colour for
@@ -485,6 +491,13 @@ Config.defaults = {
 				-- fight. A yellow plate is "not my problem yet", and a health bar
 				-- on it is a row of numbers that means nothing.
 				neutralBarInCombat = true,
+				-- How far out the client bothers to make a plate at all. Past it
+				-- there is no plate and the engine falls back to its own floating
+				-- name text, which is the other system and wears the client's
+				-- font - so the boundary is visible as a change of typeface at a
+				-- fixed distance. 41 is the ceiling Blizzard's own slider stops
+				-- at on this flavour; 20 is where it starts.
+				maxDistance = 41,
 				-- Blizzard's own plate underneath. Off is the whole point, but it
 				-- is a switch because a plate we failed to draw is worse than
 				-- theirs and this is the way back.

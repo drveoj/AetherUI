@@ -78,6 +78,48 @@ local function Classification(unit)
 	return nil
 end
 
+--- An NPC's title - <Innkeeper>, <Flight Master>, <Beverage Merchant>.
+--
+--  A nameplate carries no title. The client keeps it on the SECOND LINE of the
+--  unit's tooltip, in the same slot a player's guild goes, so the only way to
+--  have it is to read it from there.
+--
+--  Through a tooltip of our own, never GameTooltip: that one belongs to
+--  whatever the cursor is over, and driving it here would flicker somebody
+--  else's tooltip every time a vendor walked past.
+--
+--  Cached by NAME, because a title belongs to the creature rather than to the
+--  plate. Every Beverage Merchant in the world is one, and this runs on every
+--  plate that comes up.
+local scanner, titleCache = nil, {}
+
+local function NpcTitle(unit)
+	if not unit then return nil end
+	if UnitIsPlayer and UnitIsPlayer(unit) then return nil end
+
+	local name = UnitName(unit)
+	if not name then return nil end
+
+	local seen = titleCache[name]
+	if seen ~= nil then return seen or nil end
+
+	if not scanner then
+		scanner = CreateFrame("GameTooltip", ADDON .. "PlateScanner", UIParent,
+			"GameTooltipTemplate")
+	end
+	scanner:SetOwner(UIParent, "ANCHOR_NONE")
+	scanner:SetUnit(unit)
+
+	local line = _G[(scanner:GetName() or "") .. "TextLeft2"]
+	local text = line and line:GetText()
+	local title = text and text:match("^<(.+)>$") or nil
+
+	-- false, not nil: "asked and there is none" has to be tellable from "not
+	-- asked yet", or every plain mob is re-scanned on every plate it appears on.
+	titleCache[name] = title or false
+	return title
+end
+
 --- Somebody who lives here, rather than something you fight.
 --
 --  ATTACKABILITY, not reaction. Reaction cannot answer this: a wandering kodo
@@ -225,12 +267,23 @@ local function LayoutNameForm(f)
 		f.name:SetPoint("LEFT", f, "LEFT", 0, 0)
 	end
 
-	local guild = isPlayer and GetGuildInfo and GetGuildInfo(unit) or nil
-	if guild then
-		f.guild:SetText("<" .. guild .. ">")
+	-- The line under the name is a player's guild or an NPC's title. Both are
+	-- angle-bracketed and both answer "who is this", which is why they share a
+	-- row rather than each having one.
+	local sub = isPlayer and (GetGuildInfo and GetGuildInfo(unit)) or NpcTitle(unit)
+	if sub then
+		f.guild:SetText("<" .. sub .. ">")
 		f.guild:ClearAllPoints()
 		f.guild:SetPoint("TOP", f.name, "BOTTOM", 0, -GAP_GUILD)
-		W.Color(f.guild, Palette.c.ttGuild)
+		-- A guild is somebody else's affiliation and takes the accent. A title
+		-- is part of the same label as the name - "Boorand Plainswind, who is
+		-- the innkeeper" - so it takes the name's own colour, stepped back.
+		if isPlayer then
+			W.Color(f.guild, Palette.c.ttGuild)
+		else
+			local c = Palette:NameReaction(unit)
+			W.Color(f.guild, { c[1], c[2], c[3], 0.75 })
+		end
 		f.guild:Show()
 	else
 		f.guild:Hide()
@@ -800,9 +853,24 @@ local function ApplyCVars()
 
 	NP._cvarsPending = nil
 
+	-- Written only when it is not already right, which makes this idempotent -
+	-- and that is what lets CVAR_UPDATE re-run it without the two of us setting
+	-- each other off forever.
 	for _, name in ipairs(FRIENDLY_CVARS) do
-		if GetCVar and GetCVar(name) ~= nil then
+		if GetCVar and GetCVar(name) ~= nil and GetCVar(name) ~= "1" then
 			pcall(SetCVar, name, "1")
+		end
+	end
+
+	-- How far out the client makes a plate. Past it there is none, and the
+	-- engine draws its own floating name instead - so the boundary shows up as
+	-- the typeface changing at a fixed distance, which is what it looked like.
+	-- Clamped to the range Blizzard's own slider offers on this flavour.
+	local far = tonumber(cfg().maxDistance)
+	if far and GetCVar and GetCVar("nameplateMaxDistance") ~= nil then
+		far = math.max(20, math.min(41, far))
+		if GetCVar("nameplateMaxDistance") ~= tostring(far) then
+			pcall(SetCVar, "nameplateMaxDistance", tostring(far))
 		end
 	end
 end
@@ -906,6 +974,20 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
 		if NP._cvarsPending then ApplyCVars() end
 	end)
+
+	-- Somebody else moved a console variable. Ours get put back.
+	--
+	-- Addons that hide the world's text around a cutscene or a dialogue - and
+	-- DialogueUI is one - back these up, zero them, and restore the backup
+	-- afterwards. Take that backup before we have set ours and the restore
+	-- writes the OLD values over the top, which is a nameplate module that
+	-- silently stops working and never hears about it.
+	--
+	-- Generic on purpose: it is not about that addon, it is about the fact that
+	-- a console variable has no owner. Safe to run on its own event because
+	-- ApplyCVars only writes what is actually wrong, and defers to Zen, which
+	-- moves the same ones on purpose.
+	A:RegisterEvent(self, "CVAR_UPDATE", function() ApplyCVars() end)
 	A:RegisterEvent(self, "UNIT_AURA", OnAuraChanged)
 
 	-- Casts. The native events never fire for a nameplate unit on this client -

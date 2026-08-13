@@ -998,6 +998,12 @@ local function NameplatesGroup()
 			.. " yards and the HUD at arm's length, so the size that suits one need"
 			.. " not suit the other.", at("scale"), 0.6, 1.6, 0.05,
 			{ after = "reconfigure" }),
+		maxDistance = range("Range", "How far out the client bothers to make a"
+			.. " nameplate. Past this there is no plate at all and the game draws"
+			.. " its own floating name instead, so the boundary shows up as the"
+			.. " lettering changing at a fixed distance. Twenty to forty-one is"
+			.. " all the client offers.",
+			at("maxDistance"), 20, 41, 1, { after = "reconfigure" }),
 		hideBlizzard = toggle("Hide Blizzard's plate", "The one underneath ours."
 			.. " Off is the way back if a plate ever fails to draw.",
 			at("hideBlizzard"), { after = "reconfigure" }),

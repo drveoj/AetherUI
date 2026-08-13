@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.1",
+		date    = "2026-08-13",
+		lines   = {
+			"The default UI scale is 1.0. If you like it smaller, set it before you next log in - /aether scale 0.71 - or it will come up at full size.",
+			"New: vendors, innkeepers and flight masters get their title under their name again, read from the tooltip since a nameplate does not carry one.",
+			"New: nameplates are asked to draw as far out as the client allows, which is what the change of lettering at a fixed distance was.",
+			"Fixed: another addon hiding the world's text around a cutscene could leave our nameplate settings turned off afterwards. They get put back now, whoever moved them.",
+		},
+	},
+	{
 		version = "0.4.0",
 		date    = "2026-08-13",
 		lines   = {
