@@ -5886,6 +5886,25 @@ do
 			"and the fine ring is always on - it completes the disc rather than"
 			.. " carrying information, which the face colour already does")
 
+		-- The face reaches the rim, and the ring sits flush.
+		--
+		-- The face used to stop about two pixels short, leaving a ring of the
+		-- DISC showing between the middle and the edge in the rim's colour - a
+		-- visible seam. And the fine ring was drawn proud of the frame, adding
+		-- its whole width to the rim the texture already carries, so the two
+		-- together read as one thick band.
+		orb:Resize(46)
+		do
+			local _, _, _, x = orb.face:GetPoint(1)
+			check(x and x > 0 and x <= 46 * 0.045,
+				"the face is inset far enough to clear the rim and no further ("
+				.. string.format("%.2f of 46", x or -1) .. ")")
+			local p1, r1 = orb.ring:GetPoint(1)
+			check(p1 == "ALL" and r1 == orb,
+				"and the ring is flush with the orb rather than lapping outside"
+				.. " it")
+		end
+
 		-- WHITE type on every class. That is what the face's scaling buys.
 		for _, class in ipairs({ "PRIEST", "WARLOCK", "ROGUE", "DRUID", "MAGE" }) do
 			_G.__units.player.classToken = class

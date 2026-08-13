@@ -635,8 +635,9 @@ def orb_face():
     t = 1.0 - (xx + yy) / (2.0 * (n - 1))
 
     inside = ellipse_mask((n, n))
-    # ~5.5 texels of 128 is about two real pixels on a 46px orb.
-    rim = rim_from_sdf(ellipse_sdf((n, n), MARGIN), 5.5, peak=1.4)
+    # ~3.5 texels of 128 is a bit over one real pixel on a 46px orb. It was 5.5,
+    # and with the fine ring drawn over it the two read as one thick band.
+    rim = rim_from_sdf(ellipse_sdf((n, n), MARGIN), 3.5, peak=1.0)
 
     face = (0.55 + 0.30 * t) * inside
     return rgba_lum(np.maximum(face, rim), np.maximum(inside, rim))

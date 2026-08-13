@@ -282,6 +282,13 @@ end
 -- orb (portrait / level badge)
 -- ---------------------------------------------------------------------------
 
+-- Where the level orb's rim band begins, as a fraction of the orb's width.
+--
+-- Orb-Face.tga draws it from r 21.4 of 23, so 1.6px of a 46px orb - and this is
+-- a hair under that, so the face reaches the rim without covering it. The face
+-- sits above the disc, so overlapping would hide the very thing it is meeting.
+local ORB_RIM_FRAC = 0.038
+
 local Orb = {}
 
 --- Give the level disc independent face, rim, and ink colours. The face has a
@@ -307,17 +314,22 @@ end
 function Orb:Resize(size)
 	self:SetSize(size, size)
 	Media:SetFont(self.label, "level", math.max(9, math.floor(size * 0.26 + 0.5)))
-	local inset = math.max(A.PxIn and A:PxIn(self) * 2 or 2, size * 0.085)
+	-- The face runs UP TO the rim.
+	--
+	-- At 0.085 it stopped about two pixels short, and the disc's own face showed
+	-- through the gap in the rim's colour - a ring between the middle and the
+	-- edge, which is the seam that got reported. ORB_RIM_FRAC is where the
+	-- texture's rim band starts, so insetting by less than that leaves nothing
+	-- of the disc visible between them.
+	local inset = math.max(A.PxIn and A:PxIn(self) or 1, size * ORB_RIM_FRAC)
 	self.face:ClearAllPoints()
 	self.face:SetPoint("TOPLEFT", self, "TOPLEFT", inset, -inset)
 	self.face:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -inset, inset)
 
-	-- Lapping the fine edge over the source art hides the half-lit outer texel
-	-- that otherwise makes a round shape look rough at arbitrary UI scales.
-	local proud = A.PxIn and A:PxIn(self) or 1
+	-- Flush, not proud. Lapping it outward added its whole width to the rim the
+	-- texture already draws, so the two together read as one thick ring.
 	self.ring:ClearAllPoints()
-	self.ring:SetPoint("TOPLEFT", self, "TOPLEFT", -proud, proud)
-	self.ring:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", proud, -proud)
+	self.ring:SetAllPoints(self)
 	if self.glow then self.glow:SetSize(size * 2, size * 2) end
 end
 
