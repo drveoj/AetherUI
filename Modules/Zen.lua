@@ -957,8 +957,9 @@ function Zen:Restyle()
 	f.pw:SetColors(pw)
 	f.hp:SetBackdropColor({ c.text[1], c.text[2], c.text[3], 0.10 })
 	f.pw:SetBackdropColor({ c.text[1], c.text[2], c.text[3], 0.10 })
-	f.hpBlip:SetVertexColor(hp[1][1], hp[1][2], hp[1][3], 1)
-	f.pwBlip:SetVertexColor(pw[1][1], pw[1][2], pw[1][3], 1)
+	local hp1, pw1 = Palette:Stop(hp), Palette:Stop(pw)
+	f.hpBlip:SetVertexColor(hp1[1], hp1[2], hp1[3], 1)
+	f.pwBlip:SetVertexColor(pw1[1], pw1[2], pw1[3], 1)
 
 	-- The concept's caption is plain text on open ground with no plate behind it,
 	-- which only works if it is bright enough to survive whatever is back there.

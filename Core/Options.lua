@@ -207,18 +207,6 @@ local function GeneralGroup()
 		classColorHealth = toggle("Class-coloured health",
 			"Off uses the concept's green and reserves colour for reaction.",
 			{ "classColorHealth" }, { after = "restyle" }),
-		healthLift = range("Bar highlight",
-			"How far the LEFT end of a class-coloured bar is pulled toward white."
-			.. " Too much and every pale class reads as cream rather than as the"
-			.. " class.",
-			{ "healthLift" }, 0, 0.4, 0.01, { after = "restyle" }),
-		healthDepth = range("Bar depth",
-			"What the RIGHT end is multiplied by. 1 is a flat bar."
-			.. "\n\nLow numbers are the trap: multiplying darkens a colour without"
-			.. " moving its hue, which is fine for a blue and ruinous for a"
-			.. " |cfffff569yellow|r - Rogue at 0.70 is olive, so the one class"
-			.. " whose colour is wheat gets a green bar.",
-			{ "healthDepth" }, 0.5, 1, 0.01, { after = "restyle" }),
 
 		glassHeader = header("Glass"),
 		shadow = range("Shadow opacity", "An opacity, not a distance - the shadow's"
@@ -614,6 +602,12 @@ local function UnitFramesGroup()
 			.. " the concept's blue, which is what makes the two stacked cast bars"
 			.. " tellable apart mid-fight.",
 			at("reactionTint"), { defaultTrue = true, after = "restyle" }),
+		classTint = range("Colour depth",
+			"How dark a unit's colour is drawn. The health bar and the level orb"
+			.. " share it, so they always match."
+			.. "\n\n1 is the raw class colour. Lower is darker, and the orb is"
+			.. " what sets the floor - it carries a white number.",
+			at("classTint"), 0.4, 1, 0.01, { after = "restyle" }),
 	})
 end
 

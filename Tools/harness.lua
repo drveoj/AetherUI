@@ -445,6 +445,10 @@ local function newFontString(owner, layer)
 		return c[1], c[2], c[3], c[4]
 	end
 	function f:SetShadowOffset(x, y) self.__shadowOffset = { x, y } end
+	function f:GetShadowOffset()
+		local o = self.__shadowOffset or { 0, 0 }
+		return o[1], o[2]
+	end
 	function f:SetTextColor(r, g, b, a)
 		if type(r) ~= "number" then fail("SetTextColor got " .. tostring(r)) end
 		self.__color = { r, g, b, a }
@@ -5853,108 +5857,84 @@ do
 	SlashCmdList["AETHERUI"]("health deck")
 	local deckPair = A.Palette:HealthColor("player")
 	check(A.db.profile.classColorHealth == false, "deck mode recorded")
-	check(deckPair == A.Palette.c.health, "deck mode falls back to the concept's green")
+	check(deckPair[1] == A.Palette.c.health[1][1],
+		"deck mode falls back to the concept's green")
 	check(classPair ~= deckPair, "class mode returns a different pair")
 	SlashCmdList["AETHERUI"]("health class")
 	check(A.db.profile.classColorHealth == true, "switched back to class colours")
 
-	-- THE ONE THAT WAS REPORTED: a yellow class must still look yellow.
+	-- ONE COLOUR, FLAT, shared by the bar and the orb.
 	--
-	-- The tail was the class colour times 0.70. Multiplying darkens without
-	-- moving hue, which is unobjectionable for a blue and ruinous for a yellow:
-	-- Rogue at 70% is (0.70, 0.67, 0.29), and that is olive. So the one class
-	-- whose colour is wheat had a green bar, and every other bar spent its
-	-- right-hand half darker than the panel it sits on.
-	--
-	-- Checked as a RATIO rather than against a fixed triple, because the point
-	-- is the relationship between the channels: yellow is "blue much lower than
-	-- red and green", and it stops reading as yellow when the gap closes on one
-	-- side and the whole thing goes dim.
+	-- The bar used to be a two-stop gradient and the orb its own vertical one,
+	-- which read as a shiny ball rather than a disc. They are the same flat
+	-- colour now, darkened from the class colour by `classTint` - the orb sets
+	-- the floor, because it carries a white number.
 	do
 		local was = _G.__units.player.classToken
 		_G.__units.player.classToken = "ROGUE"
 		RAID_CLASS_COLORS.ROGUE = { r = 1.00, g = 0.96, b = 0.41 }
+		local ucfg = A.db.profile.modules.unitframes
+		ucfg.classTint = 0.8
 
-		local pair = A.Palette:HealthColor("player")
-		local head, tail = pair[1], pair[2]
+		local bar = A.Palette:HealthColor("player")
+		check(type(bar[1]) == "number",
+			"a class-coloured bar is ONE colour rather than a from/to pair -"
+			.. " two stops on a bar read as a gradient wash")
 
-		-- The head is measured against the CLASS COLOUR rather than against a
-		-- number. A lift is meant to catch the light, not to move the hue, and
-		-- the earlier 0.18 pulled Rogue's blue from 0.41 to 0.52 - a tenth of
-		-- the way to white on the channel that decides whether yellow is yellow.
-		check(head[1] > 0.9 and head[2] > 0.9
-			and (head[3] - 0.41) < 0.08,
-			"a Rogue bar's bright end is still wheat rather than cream - the"
-			.. " lift moves it a little toward the light without moving it"
-			.. " toward white (" .. string.format("%.2f %.2f %.2f",
-				head[1], head[2], head[3]) .. " against a class blue of 0.41)")
-		-- The darkest channel of the tail is what decides whether it has gone
-		-- olive. At 0.70 the tail's red was 0.70; anything near the class's own
-		-- value keeps it gold.
-		check(tail[1] >= 0.80,
-			"and its dark end is a deeper GOLD rather than olive - the tail used"
-			.. " to be the class colour times 0.70, and 0.70 of a yellow is olive"
-			.. " (" .. string.format("%.2f %.2f %.2f", tail[1], tail[2], tail[3])
-			.. ")")
-		check(tail[1] > tail[3] * 2,
-			"with the blue channel still far below the other two, which is what"
-			.. " makes a yellow read as yellow at all")
+		local orb = A.Palette:OrbColor("player")
+		check(orb[1][1] == orb[2][1] and orb[1][2] == orb[2][2],
+			"and the orb's two stops are identical, so the disc is flat rather"
+			.. " than lit")
+		check(math.abs(orb[1][1] - bar[1]) < 0.001
+			and math.abs(orb[1][2] - bar[2]) < 0.001,
+			"and it is the SAME colour as the bar (" .. string.format(
+				"%.2f %.2f %.2f", bar[1], bar[2], bar[3]) .. ")")
 
-		-- The bar is not a flat block either - there is still a gradient, it is
-		-- just a shallow one.
-		check(head[1] > tail[1] and (head[1] - tail[1]) < 0.35,
-			"and there IS still a gradient, shallow rather than absent ("
-			.. string.format("%.2f -> %.2f", head[1], tail[1]) .. ")")
+		-- Still recognisably the class. Darkening multiplies, which keeps hue,
+		-- so a Rogue stays wheat rather than going olive.
+		check(bar[1] > bar[3] * 2,
+			"a Rogue's colour keeps its blue channel far below the other two,"
+			.. " which is what makes yellow read as yellow (" .. string.format(
+				"%.2f %.2f %.2f", bar[1], bar[2], bar[3]) .. ")")
 
-		-- Tunable in the game, because a colour judgement is settled by looking
-		-- at it and a reload between tries is what makes that unbearable.
-		SlashCmdList["AETHERUI"]("health depth 0.6")
-		check(math.abs(A.db.profile.healthDepth - 0.6) < 0.001,
-			"/aether health depth sets the dark end")
-		-- On the BAR, not on the palette. HealthColor is a pure function and
-		-- would answer correctly whether or not anything had been redrawn; what
-		-- the command has to do is make the frame on screen catch up.
-		check(UFm.player.health._colors
-			and math.abs(UFm.player.health._colors[2][1] - 0.6) < 0.01,
-			"and the bar on screen follows it immediately rather than at the"
-			.. " next reskin (" .. string.format("%.2f",
-				UFm.player.health._colors and UFm.player.health._colors[2][1] or -1)
-			.. ")")
-
-		-- A saved variable is a file somebody can edit, and a depth above 1
-		-- brightens the tail past the class colour - the gradient then runs
-		-- backwards, light on the right and dark on the left.
-		A.db.profile.healthDepth = 4
-		check(A.Palette:HealthColor("player")[2][1] <= 1.001,
-			"a depth edited past 1 by hand is clamped where it is READ as well"
-			.. " as where it is written, or the gradient runs backwards (got "
-			.. string.format("%.2f", A.Palette:HealthColor("player")[2][1]) .. ")")
-		A.db.profile.healthDepth = 0.88
-
-		-- The same on the other end. A lift of 1 is pure white, and pure white
-		-- is one bar for every class.
-		A.db.profile.healthLift = 3
+		-- The rim is the same colour lifted, so the disc has a defined edge. It
+		-- used to be the glass edge, which is nearly the panel's own colour.
+		local ring = A.Palette:OrbRing("player")
+		check(ring[1] > bar[1] and ring[3] > bar[3],
+			"the orb's rim is the same colour lifted toward white, so the disc"
+			.. " has an edge (" .. string.format("%.2f %.2f %.2f",
+				ring[1], ring[2], ring[3]) .. ")")
+		-- On the ORB, not just in the palette. The rim used to be painted with
+		-- the glass edge, which is nearly the panel's own colour - so a correct
+		-- function nothing calls looks exactly like a fixed one.
+		A:Restyle()
 		do
-			local h = A.Palette:HealthColor("player")[1]
-			check(h[3] < 0.75,
-				"and a hand-edited lift is clamped on the way out too, short of"
-				.. " the point where every class is the same white ("
-				.. string.format("%.2f %.2f %.2f", h[1], h[2], h[3]) .. ")")
+			local r, g, b = UFm.player.orb.ring:GetVertexColor()
+			check(math.abs(r - ring[1]) < 0.01 and math.abs(g - ring[2]) < 0.01
+				and math.abs(b - ring[3]) < 0.01,
+				"and the orb on screen is painted with it (" .. string.format(
+					"%.2f %.2f %.2f", r, g, b) .. ")")
 		end
-		SlashCmdList["AETHERUI"]("health depth 9")
-		check(A.db.profile.healthDepth == 1,
-			"clamped at the top - a depth above 1 would BRIGHTEN the tail past"
-			.. " the class colour and the gradient would run backwards")
-		SlashCmdList["AETHERUI"]("health depth 0")
-		check(A.db.profile.healthDepth == 0.5,
-			"and at the bottom, short of the point where every class is a"
-			.. " silhouette")
-		SlashCmdList["AETHERUI"]("health lift 0.9")
-		check(A.db.profile.healthLift == 0.4,
-			"the highlight clamps too - all the way to white is one colour for"
-			.. " every class")
 
-		A.db.profile.healthLift, A.db.profile.healthDepth = 0.06, 0.88
+		-- One knob, and it moves both.
+		ucfg.classTint = 0.5
+		local dim = A.Palette:HealthColor("player")
+		check(dim[1] < bar[1] and math.abs(dim[1] - A.Palette:OrbColor("player")[1][1]) < 0.001,
+			"classTint darkens the bar and the orb together, or the two stop"
+			.. " matching the moment it is touched")
+		ucfg.classTint = 4
+		check(A.Palette:HealthColor("player")[1] <= 1.001,
+			"and is clamped where it is read - past 1 it would brighten past the"
+			.. " class colour")
+		ucfg.classTint = 0.8
+
+		-- The level number keeps its shadow, which is what carries it on a
+		-- coloured disc.
+		local lbl = UFm.player.orb.label
+		check((select(4, lbl:GetShadowColor()) or 0) > 0.5
+			and select(2, lbl:GetShadowOffset()) < 0,
+			"and the level number keeps a shadow under it")
+
 		_G.__units.player.classToken = was
 	end
 end

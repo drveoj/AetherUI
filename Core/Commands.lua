@@ -514,31 +514,6 @@ handlers.chat = function(arg, rest)
 end
 
 handlers.health = function(arg, rest)
-	-- The two ends of the gradient, live. A colour judgement is settled by
-	-- looking at it, and a reload between each try is what makes that
-	-- unbearable - the same argument as the zen camera's zoom.
-	local KEYS = {
-		lift  = { key = "healthLift",  lo = 0, hi = 0.4,
-			what = "how far the LEFT end is pulled toward white" },
-		depth = { key = "healthDepth", lo = 0.5, hi = 1,
-			what = "what the RIGHT end is multiplied by; low numbers turn a"
-				.. " yellow class olive" },
-	}
-	local k = KEYS[arg]
-	if k then
-		local n = tonumber(rest)
-		if not n then
-			A:Print("health " .. arg .. " is |cffece6ff"
-				.. tostring(A.db.profile[k.key]) .. "|r  ·  " .. k.what)
-			return
-		end
-		A.db.profile[k.key] = math.max(k.lo, math.min(k.hi, n))
-		A:Restyle()
-		A:Print("health " .. arg .. " -> |cffece6ff"
-			.. tostring(A.db.profile[k.key]) .. "|r  ·  " .. k.what)
-		return
-	end
-
 	if arg ~= "class" and arg ~= "deck" then
 		A:Print("health bar colour is |cffece6ff"
 			.. (A.db.profile.classColorHealth and "class" or "deck")

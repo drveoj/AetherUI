@@ -500,7 +500,7 @@ local function UpdateOrb(f)
 	if not UnitExists(unit) then return end
 	local c = Palette:OrbColor(unit)
 	f.orb:SetColor(c[1], c[2])
-	f.orb:SetRingColor(Palette:ReactionEdge(unit))
+	f.orb:SetRingColor(Palette:OrbRing(unit))
 	if f.orb.portrait then
 		SetPortraitTexture(f.orb.portrait, unit)
 	end

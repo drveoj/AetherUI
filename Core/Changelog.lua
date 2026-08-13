@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.9",
+		date    = "2026-08-13",
+		lines   = {
+			"The level orb is a flat disc in the class colour, with a lifted rim, and the health bar matches it.",
+		},
+	},
+	{
 		version = "0.3.8",
 		date    = "2026-08-13",
 		lines   = {

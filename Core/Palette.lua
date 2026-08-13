@@ -447,16 +447,47 @@ local function Mix(a, b, t)
 	return a + (b - a) * t
 end
 
---- Colour for the portrait orb, which is a different problem from a bar.
+--- The one colour a unit is drawn in: its health bar and its level orb.
 --
---  A bar is read by *length*, so it can be as bright as it likes. The orb has a
---  white level number sitting on top of it, so it has to stay dark enough to
---  carry that text. Feeding it the health colour meant Mage, Hunter, Rogue and
---  Priest orbs came out near-white with an invisible number on them.
+--  Flat, and the same for both. The orb used to be its own vertical gradient,
+--  which read as a shiny ball rather than a disc.
 --
---  The concept's orb is a muted mid-to-dark disc (#7fb3e8 -> #4a5fa8), so that
---  is what this reproduces: pull the hue down toward a dark, slightly blue-
---  shifted base rather than up toward white.
+--  Darkened from the class colour because the orb carries a white number.
+--  `classTint` is how far; it has to serve the orb, and the bar takes the same
+--  value so the two match.
+function Palette:UnitColor(unit)
+	local base = Palette:ClassColor(unit)
+	if not base then
+		local c = Palette.c
+		local r = unit and UnitExists(unit) and UnitReaction(unit, "player")
+		if r and r <= 3 then base = c.hostileBar[1]
+		elseif r == 4 then base = c.neutral
+		else base = c.accent end
+	end
+
+	local cfg = A.Config and A.Config:Module("unitframes")
+	local t = math.max(0.4, math.min(1, tonumber(cfg and cfg.classTint) or 0.8))
+	return { base[1] * t, base[2] * t, base[3] * t }
+end
+
+--- The first stop of a bar colour, whichever shape it is.
+--
+--  Bar colours are either {r,g,b} or a {from,to} pair, and callers that want one
+--  triple - a blip, a text colour - should not have to know which.
+function Palette:Stop(colors)
+	if type(colors) ~= "table" then return { 1, 1, 1 } end
+	return type(colors[1]) == "table" and colors[1] or colors
+end
+
+--- The orb's rim: the same colour lifted toward white.
+--
+--  It used to be the glass edge, which is nearly the panel's own colour, so the
+--  disc had no defined edge. A lifted rim is what makes it read as a disc
+--  rather than as a coloured blob.
+function Palette:OrbRing(unit)
+	local c = Palette:UnitColor(unit)
+	return { Mix(c[1], 1, 0.35), Mix(c[2], 1, 0.35), Mix(c[3], 1, 0.35), 1 }
+end
 --- A player's class colour, or nil.
 --
 --  CUSTOM_CLASS_COLORS FIRST, which is what a colour-blind or ClassColors addon
@@ -475,28 +506,8 @@ function Palette:ClassColor(unit)
 end
 
 function Palette:OrbColor(unit)
-	local base
-	do
-		local cc = Palette:ClassColor(unit)
-		if cc then base = { cc[1], cc[2], cc[3] } end
-	end
-
-	if not base then
-		local c = Palette.c
-		local reaction = unit and UnitExists(unit) and UnitReaction(unit, "player")
-		if reaction and reaction <= 3 then
-			base = { c.neutral[1], c.neutral[2], c.neutral[3] }
-		elseif reaction and reaction == 4 then
-			base = { c.neutral[1], c.neutral[2], c.neutral[3] }
-		else
-			base = { c.accent[1], c.accent[2], c.accent[3] }
-		end
-	end
-
-	return {
-		{ base[1] * 0.62 + 0.05, base[2] * 0.62 + 0.05, base[3] * 0.62 + 0.07 },
-		{ base[1] * 0.30 + 0.02, base[2] * 0.30 + 0.02, base[3] * 0.30 + 0.06 },
-	}
+	local c = Palette:UnitColor(unit)
+	return { c, c }
 end
 
 --- Power bar colour for a unit, as a {from, to} gradient pair.
@@ -519,45 +530,19 @@ function Palette:HealthColor(unit)
 
 	local classColor = not A.db or A.db.profile.classColorHealth ~= false
 	if classColor and UnitIsPlayer(unit) then
-		local _, class = UnitClass(unit)
-		local cc = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
-		if cc then
-			-- Two stops either side of the class colour: a lifted head and a
-			-- darkened tail, both SHALLOW.
-			--
-			-- The first pass lifted the head by 1.25x + 0.10, which drove the
-			-- pale classes to within a hair of white and made the bar read as
-			-- cream rather than as the class. The second went to 0.18 and 0.70,
-			-- and 0.70 is the interesting mistake: multiplying a colour darkens
-			-- it without moving its hue, which is unobjectionable for a blue and
-			-- ruinous for a yellow. Rogue at 70% is (0.70, 0.67, 0.29) - olive -
-			-- so the one class whose colour is wheat had a green bar, and every
-			-- other bar spent its right-hand half darker than the panel it sits
-			-- on.
-			--
-			-- Read from the profile so the numbers can be tried in the game
-			-- rather than reasoned about here. Neither is allowed past the point
-			-- where the class stops being recognisable.
-			local p = A.db and A.db.profile
-			local lift  = math.max(0, math.min(0.4, tonumber(p and p.healthLift) or 0.06))
-			local depth = math.max(0.5, math.min(1, tonumber(p and p.healthDepth) or 0.88))
-			return {
-				{ Mix(cc.r, 1, lift), Mix(cc.g, 1, lift), Mix(cc.b, 1, lift) },
-				{ cc.r * depth, cc.g * depth, cc.b * depth },
-			}
-		end
+		-- The same colour the orb gets, flat. Two stops on a bar read as a
+		-- gradient wash; a class colour is one colour.
+		if Palette:ClassColor(unit) then return Palette:UnitColor(unit) end
 	end
 
-	if UnitIsDeadOrGhost(unit) then
-		return { { 0.35, 0.35, 0.40 }, { 0.22, 0.22, 0.26 } }
-	end
+	if UnitIsDeadOrGhost(unit) then return { 0.30, 0.30, 0.35 } end
 
 	local reaction = UnitReaction(unit, "player")
 	if reaction then
-		if reaction <= 3 then return c.hostileBar end
-		if reaction == 4 then return { c.neutral, c.neutral } end
+		if reaction <= 3 then return c.hostileBar[1] end
+		if reaction == 4 then return c.neutral end
 	end
-	return c.health
+	return c.health[1]
 end
 
 --- Rim colour that follows the target's reaction, used on the target capsule.
