@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.4",
+		date    = "2026-08-13",
+		lines   = {
+			"Vendors, flight masters and anyone else with a job are drawn as names now whatever their reaction - the neutral goblin selling ammo reads the same as the innkeeper. Mobs standing next to them still get the capsule.",
+		},
+	},
+	{
 		version = "0.4.3",
 		date    = "2026-08-13",
 		lines   = {

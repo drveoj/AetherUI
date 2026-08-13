@@ -15282,6 +15282,30 @@ do
 		level = 18, reaction = 2, hp = 900, hpMax = 1000 })
 	check(d._nameForm == false, "anything you can attack is a capsule")
 
+	-- Joe: vendors and flight masters are names whatever their reaction. Kaja
+	-- the ammo merchant is NEUTRAL, and therefore attackable, and therefore
+	-- indistinguishable from the kodo by reaction or by attackability. The
+	-- client gives her a title and gives the kodo none.
+	__despawnPlate("nameplate2")
+	__spawnPlate("nameplate2", { exists = true, name = "Kaja", level = 30,
+		reaction = 4, hp = 1003, hpMax = 1003, title = "Guns and Ammo Merchant" })
+	check(d._nameForm == true,
+		"a NEUTRAL vendor is a name - she has a job, and the title is the only"
+		.. " thing in Lua that says so")
+	check(d.guild:GetText() == "<Guns and Ammo Merchant>", "with her trade under it")
+	check(k._nameForm == false,
+		"while the kodo standing beside her, equally neutral and equally"
+		.. " attackable, is still a capsule")
+
+	-- ...but a named hostile carries a title too, and that one you want to see
+	-- the health of.
+	__despawnPlate("nameplate2")
+	__spawnPlate("nameplate2", { exists = true, name = "Edwin VanCleef", level = 22,
+		reaction = 2, hp = 4000, hpMax = 4000, title = "Defias Kingpin" })
+	check(d._nameForm == false,
+		"a hostile with a title is still a capsule - a named boss has one, and"
+		.. " its name without its health is the worst of both")
+
 	-- A creature with no title is remembered as having none, or every plain mob
 	-- is re-scanned on every plate it ever appears on.
 	local vendor = { exists = true, name = "Larhka", level = 30, reaction = 5,

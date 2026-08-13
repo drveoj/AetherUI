@@ -133,11 +133,25 @@ end
 --  on it, which is what you want to know about a thing you might have to fight.
 local function IsNameForm(unit)
 	if not unit or cfg().friendlyNames == false then return false end
-	if not UnitCanAttack then
-		local r = UnitReaction and UnitReaction(unit, "player")
-		return r ~= nil and r >= 5
-	end
-	return not UnitCanAttack("player", unit)
+
+	local r = UnitReaction and UnitReaction(unit, "player")
+	if not UnitCanAttack then return r ~= nil and r >= 5 end
+
+	-- Cannot be attacked at all: a friendly player, an innkeeper, a city guard.
+	if not UnitCanAttack("player", unit) then return true end
+
+	-- Attackable, but a person doing a job - the neutral goblin selling ammo,
+	-- the flight master of a faction you have not earned yet. Reaction cannot
+	-- separate those from a wandering kodo, because both are simply neutral, and
+	-- neither can attackability. What does is that the client gives a person
+	-- with a job a TITLE and gives a kodo none.
+	--
+	-- Hostiles are excluded whatever they carry. A named boss has a title too,
+	-- and the last thing you want from one of those is its name without its
+	-- health.
+	if r and r >= 4 and NpcTitle(unit) then return true end
+
+	return false
 end
 
 --- Does this plate carry a health bar at all?
