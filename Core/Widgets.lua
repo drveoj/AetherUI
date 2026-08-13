@@ -387,7 +387,10 @@ function W.CreateOrb(parent, opts)
 	-- always on: a target's relationship is already encoded in the face colour,
 	-- so this completes the physical disc instead of competing with it.
 	local ring = f:CreateTexture(nil, "OVERLAY")
-	ring:SetTexture(Media.texture.ring)
+	-- Orb-Ring, not Ring: the latter is authored at 256 for the minimap and
+	-- the portrait, and at 46px its anti-aliasing compresses to half a pixel
+	-- and the edge goes jagged. See orb_ring() in the generator.
+	ring:SetTexture(Media.texture.orbRing)
 	f.ring = ring
 
 	local label = W.Text(f, "level", "CENTER")

@@ -5903,6 +5903,15 @@ do
 			check(p1 == "ALL" and r1 == orb,
 				"and the ring is flush with the orb rather than lapping outside"
 				.. " it")
+			-- Orb-Ring, not Ring. Ring is authored at 256 for the minimap and
+			-- the portrait; at 46px that is a 5.6x minification, and the client
+			-- does not mipmap UI textures - so its anti-aliasing ramp lands on
+			-- about half a pixel and the edge comes back jagged. Orb-Ring is 128
+			-- for a 2.8x minification, which is the same ballpark as the tooltip
+			-- badge's Chip-Rim at 64 drawn near 26.
+			check(orb.ring:GetTexture() == A.Media.texture.orbRing,
+				"and uses the ring authored for THIS size rather than the"
+				.. " minimap's, which is why its edge feathers")
 		end
 
 		-- WHITE type on every class. That is what the face's scaling buys.

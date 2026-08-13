@@ -635,12 +635,28 @@ def orb_face():
     t = 1.0 - (xx + yy) / (2.0 * (n - 1))
 
     inside = ellipse_mask((n, n))
-    # ~3.5 texels of 128 is a bit over one real pixel on a 46px orb. It was 5.5,
-    # and with the fine ring drawn over it the two read as one thick band.
-    rim = rim_from_sdf(ellipse_sdf((n, n), MARGIN), 3.5, peak=1.0)
+    # 5.0 texels of 128 is about 1.8 real pixels on a 46px orb. 3.5 was too
+    # skinny once the ring stopped lapping proud of it.
+    rim = rim_from_sdf(ellipse_sdf((n, n), MARGIN), 5.0, peak=1.2)
 
     face = (0.55 + 0.30 * t) * inside
     return rgba_lum(np.maximum(face, rim), np.maximum(inside, rim))
+
+
+def orb_ring():
+    """The level orb's fine outer highlight, authored for a 46px draw.
+
+    128, not 256. Ring() is authored for the minimap and the portrait, and at
+    46px it is minified 5.6 times - its AA ramp compresses to about half a real
+    pixel and the edge comes back jagged. That is the whole of "the orb's edge
+    looks rougher than the tooltip badge's": Chip-Rim is 64 drawn at 26, a 2.5x
+    minification, so its ramp arrives as a clean pixel and a bit.
+
+    At 128 drawn at 46 this is 2.8x, which puts the ramp at about 1.1px - the
+    same ballpark as the badge.
+    """
+    n = 128
+    return rgba_lum(1.0, rim_from_sdf(ellipse_sdf((n, n), MARGIN), 2.5, peak=1.0))
 
 
 def minimap_border():
@@ -1250,6 +1266,7 @@ ASSETS = {
     "Chip-Rim": chip_rim,
     "Ring": ring,
     "Orb-Face": orb_face,
+    "Orb-Ring": orb_ring,
     "Ring-Glow": ring_glow,
     "Minimap-Border": minimap_border,
     "Bar-Smooth": bar_smooth,

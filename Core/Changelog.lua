@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.15",
+		date    = "2026-08-13",
+		lines   = {
+			"The level disc's outer ring is thicker again, and its edge feathers properly.",
+		},
+	},
+	{
 		version = "0.3.14",
 		date    = "2026-08-13",
 		lines   = {
