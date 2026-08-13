@@ -637,6 +637,10 @@ local function CastInfo(unit, channel)
 	end
 end
 
+-- Shared with the nameplate cast capsule, which needs exactly this fallback and
+-- should not grow a second copy of it.
+UF.CastInfo = CastInfo
+
 local function CastStop(f)
 	if not f then return end
 	f.state.active = false

@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.21",
+		date    = "2026-08-13",
+		lines   = {
+			"New: a cast capsule slides in under a nameplate when something starts casting - icon, spell name and a progress bar. Channels empty rather than fill.",
+			"Debuff chips move down out of its way while it is open.",
+		},
+	},
+	{
 		version = "0.3.20",
 		date    = "2026-08-13",
 		lines   = {

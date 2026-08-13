@@ -14712,6 +14712,72 @@ do
 	__despawnPlate("nameplate2")
 end
 
+print("== nameplates: the cast capsule ==")
+do
+	local mob = { exists = true, name = "Kolkar Wrangler", level = 17, reaction = 2,
+		hp = 900, hpMax = 1000 }
+	local base = __spawnPlate("nameplate1", mob)
+	local f = NPm.plateFor(base)
+
+	check(f.cast == nil or not f.cast:IsShown(), "nothing casting, no capsule")
+
+	-- Through the LIBRARY's registry, which is the only route that exists for a
+	-- nameplate unit: the native UNIT_SPELLCAST_* events fire for the player
+	-- alone on this client.
+	_G.__ccCasts.nameplate1 = { name = "Lightning Bolt", icon = 136048,
+		channel = false, start = time * 1000, finish = (time + 3) * 1000 }
+	_G.__ccFire("UNIT_SPELLCAST_START", "nameplate1")
+
+	check(f.cast and f.cast:IsShown(), "the library's callback opens the capsule")
+	check(f.cast.text:GetText() == "Lightning Bolt", "with the spell named")
+	check(f.cast.bar:GetValue() < 0.1, "and the bar at the start of it")
+
+	time = time + 1.5
+	f.cast:GetScript("OnUpdate")(f.cast, 1.5)
+	check(f.cast.bar:GetValue() > 0.4 and f.cast.bar:GetValue() < 0.6,
+		"half way through a three second cast, the bar is half way along")
+
+	-- Chips share the space under the plate, so they move down out of its way.
+	local savedAuras = _G.__auras.target
+	_G.__auras.target = { HARMFUL = {
+		{ "Chilled", 135834, 0, "Magic", 8, nil, "player", true },
+	} }
+	_G.__units.target = mob
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 1)
+	check(f._chipCount == 1, "the target has a chip")
+	check(select(2, f.chips[1]:GetPoint()) == f.cast,
+		"and it hangs off the CAST capsule while one is open, rather than being"
+		.. " drawn through the middle of it")
+
+	_G.__ccCasts.nameplate1 = nil
+	_G.__ccFire("UNIT_SPELLCAST_STOP", "nameplate1")
+	check(not f.cast:IsShown(), "the capsule closes when the cast stops")
+	check(select(2, f.chips[1]:GetPoint()) == f,
+		"and the chips move back up under the plate")
+
+	-- A channel runs the other way.
+	_G.__ccCasts.nameplate1 = { name = "Drain Life", icon = 136163, channel = true,
+		start = time * 1000, finish = (time + 4) * 1000 }
+	_G.__ccFire("UNIT_SPELLCAST_CHANNEL_START", "nameplate1")
+	local atStart = f.cast.bar:GetValue()
+	time = time + 2
+	f.cast:GetScript("OnUpdate")(f.cast, 2)
+	check(atStart > f.cast.bar:GetValue(),
+		"a channel EMPTIES rather than fills - it is time you have left, not time"
+		.. " you have spent")
+
+	-- And a plate handed on mid-cast does not carry it to the next mob.
+	__despawnPlate("nameplate1")
+	check(not f.cast:IsShown() and f.cast.state == nil,
+		"a plate released mid-cast stops casting, rather than showing the last"
+		.. " tenant's spell over whoever gets it next")
+
+	_G.__ccCasts.nameplate1 = nil
+	_G.__auras.target = savedAuras
+	_G.__units.target = nil
+end
+
 print("== palette: difficulty has one owner ==")
 do
 	local P = A.Palette

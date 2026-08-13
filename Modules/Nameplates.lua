@@ -351,6 +351,104 @@ end
 NP.UpdateAll = UpdateAll
 
 -- ---------------------------------------------------------------------------
+-- the cast capsule
+-- ---------------------------------------------------------------------------
+--
+-- Slides in under the plate: icon, spell name, and a short bar. On every plate
+-- rather than the target's alone - something winding up a Fireball at you
+-- matters whether or not you happen to be looking at it.
+--
+-- Classic Era does not report other units' casts natively. LibClassicCasterino
+-- infers them from the combat log and DOES broadcast for nameplate tokens - it
+-- keeps a GUID-to-plate map off the same NAME_PLATE_UNIT_ADDED/REMOVED pair we
+-- use - so the callbacks are registered per event and routed by token here.
+--
+-- KNOWN GAP: the deck greys the capsule's border for an uninterruptible cast.
+-- Nothing on this client can tell us that - the library reconstructs a cast
+-- from combat log lines and there is no notInterruptible in them - so the state
+-- is deliberately NOT built rather than built and left permanently false.
+
+local CAST_H, CAST_ICON, CAST_BAR_W, CAST_BAR_H = 20, 16, 64, 4
+local CAST_PAD, CAST_GAP = 5, 4
+
+local function BuildCast(f)
+	local cap = Glass.CreatePill(f, { fill = "glassStrong", edge = "castEdge" })
+	cap:SetHeight(CAST_H)
+	cap:SetPoint("TOP", f, "BOTTOM", 0, -CAST_GAP)
+	cap:Hide()
+
+	local icon = cap:CreateTexture(nil, "ARTWORK")
+	icon:SetSize(CAST_ICON, CAST_ICON)
+	icon:SetPoint("LEFT", cap, "LEFT", CAST_PAD, 0)
+	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	cap.icon = icon
+
+	cap.text = W.Text(cap, "npAura", "LEFT")
+	cap.text:SetPoint("LEFT", icon, "RIGHT", CAST_GAP, 0)
+
+	local bar = W.CreateBar(cap, { height = CAST_BAR_H, smooth = false })
+	bar:SetWidth(CAST_BAR_W)
+	bar:SetPoint("RIGHT", cap, "RIGHT", -CAST_PAD, 0)
+	bar:SetMinMaxValues(0, 1)
+	cap.bar = bar
+
+	f.cast = cap
+	return cap
+end
+
+local function CastStop(f)
+	local cap = f.cast
+	if not cap then return end
+	cap.state = nil
+	cap:Hide()
+	cap:SetScript("OnUpdate", nil)
+	UpdateChips(f)
+end
+
+--- Per frame, not on the shared 0.1s ticker. A cast bar is a continuously
+--  moving object and at 10Hz a 2.5s cast advances in 25 visible steps, which
+--  reads as stutter next to Blizzard's. Same reasoning as the HUD's own.
+local function CastTick(cap, _)
+	local st = cap.state
+	if not st then return end
+
+	local now = GetTime() * 1000
+	local span = (st.finish or 0) - (st.start or 0)
+	if span <= 0 or now >= st.finish then return CastStop(cap:GetParent()) end
+
+	local pct = (now - st.start) / span
+	cap.bar:SetValue(st.channel and (1 - pct) or pct)
+end
+
+local function CastStart(f, channel)
+	if not f.unit then return end
+
+	local UF = A:GetModule("unitframes")
+	local info = UF and UF.CastInfo
+	if not info then return end
+
+	local name, _, icon, startMs, finishMs = info(f.unit, channel)
+	if not name or not startMs or not finishMs then return CastStop(f) end
+
+	local cap = f.cast or BuildCast(f)
+	cap.state = { channel = channel, start = startMs, finish = finishMs }
+	cap.icon:SetTexture(icon)
+	cap.text:SetText(name)
+	W.Color(cap.text, Palette.c.npChipInk)
+	cap.bar:SetColors(Palette.c.cast)
+
+	-- Sized to the name, so a long one is not cropped and a short one does not
+	-- leave the capsule rattling.
+	cap:SetWidth(CAST_PAD * 2 + CAST_ICON + CAST_GAP
+		+ math.ceil(cap.text:GetStringWidth() or 0) + CAST_GAP + CAST_BAR_W)
+
+	CastTick(cap, 0)
+	cap:Show()
+	cap:SetScript("OnUpdate", CastTick)
+	UpdateChips(f)
+end
+
+-- ---------------------------------------------------------------------------
 -- your debuffs, under the target
 -- ---------------------------------------------------------------------------
 --
@@ -452,11 +550,15 @@ function UpdateChips(f)
 	for i = 1, shown do total = total + (f.chips[i]:GetWidth() or 0) end
 	total = total + CHIP_GAP * math.max(0, shown - 1)
 
+	-- Under the cast capsule when there is one. Both want the space beneath the
+	-- plate, and a row of chips through the middle of a cast bar is neither.
+	local below = (f.cast and f.cast:IsShown()) and f.cast or f
+
 	local x = -total / 2
 	for i = 1, shown do
 		local chip = f.chips[i]
 		chip:ClearAllPoints()
-		chip:SetPoint("TOPLEFT", f, "BOTTOM", x, -CHIP_GAP)
+		chip:SetPoint("TOPLEFT", below, "BOTTOM", x, -CHIP_GAP)
 		x = x + (chip:GetWidth() or 0) + CHIP_GAP
 	end
 end
@@ -504,6 +606,11 @@ local function OnUnitRemoved(_, _, token)
 	f:SetRimGlow(nil)
 	for i = 1, #(f.chips or {}) do f.chips[i]:Hide() end
 	f._chipCount = 0
+	if f.cast then
+		f.cast.state = nil
+		f.cast:Hide()
+		f.cast:SetScript("OnUpdate", nil)
+	end
 	moving[f] = nil
 	byUnit[token] = nil
 end
@@ -549,6 +656,49 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "UNIT_FACTION", OnFactionChanged)
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
 	A:RegisterEvent(self, "UNIT_AURA", OnAuraChanged)
+
+	-- Casts. The native events never fire for a nameplate unit on this client -
+	-- they are registered anyway, so that if Blizzard ever does expose them the
+	-- library quietly stops being the only source - and LibClassicCasterino
+	-- re-broadcasts the same names through its own registry for everyone else.
+	local function onStart(_, _, token)   local f = token and byUnit[token]; if f then CastStart(f, false) end end
+	local function onChannel(_, _, token) local f = token and byUnit[token]; if f then CastStart(f, true) end end
+	local function onStop(_, _, token)    local f = token and byUnit[token]; if f then CastStop(f) end end
+	local function onDelayed(_, _, token)
+		local f = token and byUnit[token]
+		if f and f.cast and f.cast.state then CastStart(f, f.cast.state.channel) end
+	end
+
+	local CAST_EVENTS = {
+		UNIT_SPELLCAST_START           = onStart,
+		UNIT_SPELLCAST_CHANNEL_START   = onChannel,
+		UNIT_SPELLCAST_DELAYED         = onDelayed,
+		UNIT_SPELLCAST_CHANNEL_UPDATE  = onDelayed,
+		UNIT_SPELLCAST_STOP            = onStop,
+		UNIT_SPELLCAST_FAILED          = onStop,
+		UNIT_SPELLCAST_INTERRUPTED     = onStop,
+		UNIT_SPELLCAST_CHANNEL_STOP    = onStop,
+	}
+	for event, fn in pairs(CAST_EVENTS) do
+		A:RegisterEvent(self, event, fn)
+	end
+
+	local LibCC = LibStub and LibStub("LibClassicCasterino", true)
+	if LibCC and not self._ccHooked then
+		self._ccHooked = true
+		local function relay(event, token)
+			local fn = CAST_EVENTS[event]
+			-- The library's handler signature is (event, unit); ours is
+			-- (owner, event, unit). Line them up rather than writing a second
+			-- set of handlers that can drift from the first.
+			if fn then fn(nil, event, token) end
+		end
+		for event in pairs(CAST_EVENTS) do
+			-- CallbackHandler embeds RegisterCallback with the TARGET first:
+			-- lib.RegisterCallback(target, event, handler).
+			pcall(LibCC.RegisterCallback, self, event, relay)
+		end
+	end
 	A:RegisterTicker(self, TickChips)
 	A:RegisterEvent(self, "UNIT_FLAGS", OnUnitEvent)
 
@@ -600,3 +750,4 @@ NP.plates = plates
 NP.step = Step
 NP.moving = moving
 NP.updateChips = UpdateChips
+NP.castStart = CastStart
