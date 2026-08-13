@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.2",
+		date    = "2026-08-13",
+		lines   = {
+			"The addon count sits on its own heading line instead of on the first row.",
+			"Settings tile labels stay inside their tiles.",
+			"Unlock frames reflects the real lock state, however it was changed.",
+			"Tooltip level badges take the player's class colour.",
+		},
+	},
+	{
 		version = "0.3.1",
 		date    = "2026-08-13",
 		lines   = {

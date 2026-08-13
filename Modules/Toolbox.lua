@@ -950,6 +950,16 @@ function TB:OnEnable()
 	if A.Movers then
 		A.Movers:OnLockChanged("toolbox", function(unlocked)
 			TB:ShowDockHandle(unlocked)
+			-- ...and the SETTINGS TILE that reports the same fact.
+			--
+			-- "Unlock frames" is a mode tile: it has no stored value and reads
+			-- A.Movers.unlocked live, which is right - but only when something
+			-- asks. Nothing did. The tile was drawn when the drawer was built
+			-- and then only when a widget changed, so unlocking from the
+			-- options panel or `/aether lock`, or unlocking and locking again
+			-- with the drawer shut, left it reporting whatever it had said
+			-- last. Every other way of changing this already went through here.
+			TB:RefreshTiles()
 		end)
 	end
 
@@ -2234,6 +2244,13 @@ function TB:RefreshTiles()
 
 			tile.name = W.Text(tile, "tbCardBody", "LEFT")
 			tile.name:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 12, 10)
+			-- A right edge, and no wrapping past it. Without one the label had
+			-- no width at all and simply kept drawing: "Combat collapse" ran out
+			-- of its own tile and into the column beside it. Truncated rather
+			-- than wrapped, because the tile is 62 tall with a 30px chip in the
+			-- top of it and a second line lands on the chip.
+			tile.name:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -12, 10)
+			tile.name:SetWordWrap(false)
 
 			tile:EnableMouse(true)
 			tile:SetScript("OnMouseUp", function(self2)
@@ -3014,7 +3031,16 @@ end
 --  next thing to drift apart.
 --
 --  Returns the number of rows placed.
-function TB:PlaceAddonRows(x, y, width, cols, maxShown, hintRight)
+--- `headY` is the HEADING's line, not the rows'.
+--
+--  Passed separately rather than derived, because the hint and the arrow belong
+--  on the heading and everything else here belongs below it. Deriving it from
+--  `y - SECTION_H` would work today and be wrong the moment a layout puts a gap
+--  between the two. It was neither for a while: the hint went out at the rows'
+--  y and was drawn straight through the first row of the list, which is the
+--  version of this you can see in a screenshot.
+function TB:PlaceAddonRows(x, y, width, cols, maxShown, hintRight, headY)
+	headY = headY or y
 	local content = self.content
 	local frames  = content.addons or {}
 	local rows    = self._addonRows or {}
@@ -3067,10 +3093,10 @@ function TB:PlaceAddonRows(x, y, width, cols, maxShown, hintRight)
 			end
 			local c = Palette.c
 			arrow:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.55)
-			arrow:SetPoint("TOPRIGHT", content, "TOPLEFT", hintRight, -(y + 5))
+			arrow:SetPoint("TOPRIGHT", content, "TOPLEFT", hintRight, -(headY + 5))
 		end
 		hint:SetPoint("TOPRIGHT", content, "TOPLEFT",
-			hintRight - (scrollable and 14 or 0), -y)
+			hintRight - (scrollable and 14 or 0), -headY)
 		hint:SetText(scrollable
 			and (total .. " \194\183 scroll")
 			or (total .. " with a launcher"))
@@ -3116,7 +3142,7 @@ end
 -- "Auc-Util-AutoMagic" is a real registry name - and at 22 it was truncating
 -- every second one to "Auc-Util-A...". Mail holds one line of a sender's name
 -- and the settings tiles are fixed-size chips, so both give some back.
-local H_WEIGHTS = { identity = 21, widgets = 21, addons = 27, mail = 14, settings = 17 }
+local H_WEIGHTS = { identity = 20, widgets = 19, addons = 27, mail = 14, settings = 20 }
 local H_COL_GAP = 18
 
 --- The shortest the flat panel can usefully be, in panel units.
@@ -3301,13 +3327,14 @@ function TB:LayoutHorizontal()
 		local shown = 0
 
 		if #rows > 0 and content.addonsHead then
+			local headY = y
 			place(content.addonsHead, x, y)
 			y = y + SECTION_H
 
 			-- Cut to the column's own floor, and scrollable for the rest, which
 			-- is the vertical panel's rule and the quest tracker's before it.
 			local maxRows  = math.max(0, math.floor((bottom - y + ROW_GAP) / (ROW_H + ROW_GAP)))
-			shown = self:PlaceAddonRows(x, y, cw, cols, maxRows * cols, x + cw)
+			shown = self:PlaceAddonRows(x, y, cw, cols, maxRows * cols, x + cw, headY)
 			y = y + RowsFor(shown, cols) * (ROW_H + ROW_GAP) - ROW_GAP
 		end
 		used(y)
@@ -3576,6 +3603,7 @@ function TB:LayoutVertical()
 	local addonCols = Cols("addonColumns", 2)
 	local shown = 0
 	if #rows > 0 and content.addonsHead then
+		local headY = y
 		place(content.addonsHead, PAD, y)
 		y = y + SECTION_H
 
@@ -3587,7 +3615,7 @@ function TB:LayoutVertical()
 		local room = h - y - PAD - tileBlock - mailBlock - SECTION_GAP
 		local maxRows = math.max(0, math.floor(room / (ROW_H + ROW_GAP)))
 		shown = self:PlaceAddonRows(PAD, y, avail, addonCols,
-			maxRows * addonCols, w - PAD)
+			maxRows * addonCols, w - PAD, headY)
 
 		y = y + RowsFor(shown, addonCols) * (ROW_H + ROW_GAP) - ROW_GAP + SECTION_GAP
 	end

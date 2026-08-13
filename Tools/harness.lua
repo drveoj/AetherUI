@@ -9328,6 +9328,34 @@ do
 		"and /aether lock, which never touches the Toolbox, is seen by the tile"
 		.. " on the next read")
 
+	-- ...and the tile is REDRAWN, not merely readable.
+	--
+	-- TileState reading through to A.Movers is the right design and was never
+	-- the bug: the tile is only painted when something calls RefreshTiles, and
+	-- unlocking from the options panel or with a slash command called nothing.
+	-- So the drawer sat there saying "On" with the frames locked - a live value
+	-- nobody had asked for. Every route through Movers announces itself now, so
+	-- this is the check that the announcement is wired to the paint.
+	do
+		local idx
+		for i, t in ipairs(TBm._tileList or {}) do
+			if t.key == "lock" then idx = i end
+		end
+		check(idx ~= nil, "the lock tile is on the grid")
+		if idx and TBm.content.tiles[idx] then
+			local frame = TBm.content.tiles[idx]
+			A.Movers:Unlock()
+			check(frame.state:GetText() == "On",
+				"unlocking repaints the tile without anybody asking (got "
+				.. tostring(frame.state:GetText()) .. ")")
+			A.Movers:Lock()
+			check(frame.state:GetText() == "Off",
+				"and locking again repaints it back - the tile was reading live"
+				.. " and being painted never (got "
+				.. tostring(frame.state:GetText()) .. ")")
+		end
+	end
+
 	-- Switching a mode ON gets the drawer out of the way. You cannot drag a
 	-- frame that is underneath the panel you used to unlock it.
 	TBm:SetOpen(true, true)
@@ -10176,6 +10204,28 @@ do
 	check((TBm._addonsCut or 0) > 0,
 		"with " .. #(TBm._addonRows or {}) .. " addons the list is cut ("
 		.. tostring(TBm._addonsCut) .. " off the end)")
+
+	-- The hint sits on the HEADING's line, not on the first row's.
+	--
+	-- It went out at the rows' y for a while and was drawn straight through the
+	-- first row of the list - which is what a screenshot shows and what nothing
+	-- here noticed, every check having been about which rows were visible rather
+	-- than about where the label saying so had landed.
+	do
+		local function topOf(r)
+			local _, _, _, _, yOff = r:GetPoint(1)
+			return -(yOff or 0)
+		end
+		check(math.abs(topOf(c.addonsHint) - topOf(c.addonsHead)) < 0.5,
+			"the count sits on the ADDONS heading's own line rather than on the"
+			.. " first row of the list (" .. string.format("%.0f vs %.0f",
+				topOf(c.addonsHint), topOf(c.addonsHead)) .. ")")
+		check(topOf(c.addons[1]) > topOf(c.addonsHead),
+			"and the rows start below both")
+		check(math.abs(topOf(c.addonsArrow) - topOf(c.addonsHead)) < 8,
+			"with the arrow beside it on the same line ("
+			.. string.format("%.0f", topOf(c.addonsArrow)) .. ")")
+	end
 	check(firstShown() == 1, "and starts at the top")
 	local window = shownCount()
 	check(window > 0, "showing " .. window .. " of them")
@@ -10633,6 +10683,39 @@ do
 	check(c.micro[1].name ~= nil and not c.micro[1].name:IsShown(),
 		"the micro buttons drop their labels flat - the name is on the tooltip,"
 		.. " which is where a name that does not fit belongs")
+
+	-- A settings tile's label stays INSIDE its tile.
+	--
+	-- It was anchored bottom-left and nowhere else, so it had no width at all
+	-- and simply kept drawing: "Combat collapse" ran out of its own tile and
+	-- into the column beside it. A right edge gives it one, and word wrap is
+	-- off - the tile is 62 tall with a 30px chip in the top of it, so a second
+	-- line lands on the chip.
+	do
+		local widest, longest = 0, nil
+		for _, t in ipairs(TBm._tileList or {}) do
+			local n = #(t.label or t.key or "")
+			if n > widest then widest, longest = n, t.label end
+		end
+		local tile = c.tiles[1]
+		local p1, r1, _, x1 = tile.name:GetPoint(1)
+		local p2, r2, _, x2 = tile.name:GetPoint(2)
+		check(p2 ~= nil and r2 == tile and p2:find("RIGHT"),
+			"the tile label has a right edge as well as a left one, anchored to"
+			.. " the tile - without one it has no width at all and simply keeps"
+			.. " drawing (longest label here is " .. tostring(longest) .. ")")
+		if p2 then
+			-- Implied width, computed from the anchors rather than read off the
+			-- region: the mock does not derive a width from a left-and-right
+			-- pair, which is exactly the gap that let the What's new card ship
+			-- overflowing too.
+			local implied = tile:GetWidth() + (x2 or 0) - (x1 or 0)
+			check(implied > 0 and implied < tile:GetWidth(),
+				"and the width that implies is inside the tile, with padding"
+				.. " either side (" .. string.format("%.0f of %.0f", implied,
+					tile:GetWidth()) .. ")")
+		end
+	end
 
 	-- The addon column is the widest, because it holds the longest strings on
 	-- the panel. "Auc-Util-AutoMagic" is a real registry name.
@@ -14603,26 +14686,50 @@ section("tooltips: the level badge is a circle, not a rumour of one", function()
 		"measured in the badge's OWN units, which at 0.71 are not UIParent's"
 		.. " (" .. string.format("%.4f vs %.4f", step, A.pixel) .. ")")
 
-	-- 4. An NPC's badge takes the reaction; a PLAYER's does not.
-	--    Screen 6a tints only the three NPC variants and leaves the anchored
-	--    player card's badge in the skin's own purple. A player's reaction is
-	--    friendly nearly every time you see it, so tinting by it says nothing and
-	--    spends the card's accent saying it.
+	-- 4. The badge is the NAME'S colour, whoever the name belongs to.
+	--
+	--    Screen 6a tints the three NPC variants by reaction and leaves the
+	--    anchored player card's badge in the skin's purple, and the reason is
+	--    sound about REACTION: a player is friendly nearly every time you see
+	--    one, so tinting by that says nothing the name did not and comes out a
+	--    washed grey-blue. It is not sound about a CLASS colour, which is the
+	--    one thing on the card you cannot read off the name's wording.
 	local hostile = A.Palette.c.ttHostile
 	local dr, dg, db, da = badge.disc:GetVertexColor()
 	check(math.abs(dr - hostile[1]) < 0.001 and math.abs(da - 0.15) < 0.001,
 		"a hostile NPC's badge is its reaction colour at .15")
 
+	-- A class TOKEN, not just a display name. UnitClass returns the token
+	-- second, and Palette:ClassColor keys on it - a mock player carrying only
+	-- "Shaman" has no class colour at all, so the branch under test is never
+	-- reached and the badge falls back to the purple the check was expecting.
+	-- Which is how this passed before the behaviour changed.
 	_G.__units.mouseover.isPlayer = true
-	_G.__units.mouseover.class = "Shaman"
+	_G.__units.mouseover.class, _G.__units.mouseover.classToken = "Mage", "MAGE"
+	GameTooltip:SetUnit("mouseover")
+	local mage = RAID_CLASS_COLORS.MAGE
+	local pr, pg, pb, pa = badge.disc:GetVertexColor()
+	check(math.abs(pr - mage.r) < 0.001 and math.abs(pg - mage.g) < 0.001
+		and math.abs(pa - 0.15) < 0.001,
+		"and a player's badge is their CLASS colour at the same .15, so the rule"
+		.. " is one rule (got " .. string.format("%.2f %.2f %.2f @%.2f",
+			pr, pg, pb, pa) .. ")")
+	local ir = { badge.label:GetTextColor() }
+	check(math.abs(ir[1] - mage.r) < 0.001 and math.abs(ir[2] - mage.g) < 0.001,
+		"with the same colour on it, not the skin's #cdbcff")
+
+	-- Switch class colours off and the ink is a reaction again - and so is the
+	-- reason, so the badge goes back to the skin's purple.
+	local wasCC = A.db.profile.modules.tooltips.classColorNames
+	A.db.profile.modules.tooltips.classColorNames = false
 	GameTooltip:SetUnit("mouseover")
 	local want = A.Palette.c.ttBadgeBg
-	local pr, pg, pb, pa = badge.disc:GetVertexColor()
+	pr, pg, pb, pa = badge.disc:GetVertexColor()
 	check(math.abs(pr - want[1]) < 0.001 and math.abs(pa - want[4]) < 0.001,
-		"but a player's is the skin's own purple, as screen 6a draws it")
-	local ir = { badge.label:GetTextColor() }
-	local ink = A.Palette.c.ttBadgeInk
-	check(math.abs(ir[1] - ink[1]) < 0.001, "with #cdbcff on it, not the name's blue")
+		"with class colours off it is the skin's own purple again, as screen 6a"
+		.. " draws it - a friendly player's REACTION still says nothing worth"
+		.. " spending the card's accent on")
+	A.db.profile.modules.tooltips.classColorNames = wasCC
 
 	_G.__units.mouseover.isPlayer = false
 	GameTooltip:SetScale(wasScale)

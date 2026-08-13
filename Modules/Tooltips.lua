@@ -723,11 +723,27 @@ end
 local function BadgeColors(unit, ink)
 	local c = Palette.c
 	if UnitIsPlayer(unit) then
-		return c.ttBadgeBg, c.ttBadgeEdge, c.ttBadgeInk
+		-- The badge follows the name here too, but ONLY when the name is a
+		-- class colour.
+		--
+		-- The note above is about REACTION, and it is still right about
+		-- reaction: a player is friendly almost every time you see one, so a
+		-- badge tinted by that says nothing the name did not and comes out the
+		-- washed grey-blue the first pass shipped. A CLASS colour is different
+		-- information - it is the one thing on the card you cannot get from the
+		-- name's wording - and tinting by it makes the rule uniform: the badge
+		-- is the name's colour, whoever the name belongs to.
+		--
+		-- With class colours switched off the ink goes back to being a reaction,
+		-- and so does the reason, so the badge goes back to the skin's purple.
+		local cc = (cfg().classColorNames ~= false) and Palette:ClassColor(unit)
+		if not cc then
+			return c.ttBadgeBg, c.ttBadgeEdge, c.ttBadgeInk
+		end
+		ink = cc
 	end
-	-- The deck's recipe for an NPC: the reaction colour at .15 for the disc and
-	-- .40 for the rim, so the badge is the name's colour rather than a second,
-	-- competing one.
+	-- The deck's recipe: the name's colour at .15 for the disc and .40 for the
+	-- rim, so the badge is that colour rather than a second, competing one.
 	return { ink[1], ink[2], ink[3], 0.15 },
 	       { ink[1], ink[2], ink[3], 0.40 },
 	       ink
