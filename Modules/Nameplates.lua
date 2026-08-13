@@ -830,7 +830,10 @@ local FRIENDLY_CVARS = {
 	"nameplateShowEnemyMinus",
 }
 
-local function ApplyCVars()
+--- `initial` means "we are setting up, or the player just changed a setting",
+--  as opposed to "something moved a console variable and we are putting ours
+--  back". The difference matters for exactly one of these - see below.
+local function ApplyCVars(initial)
 	if cfg().friendlyNames == false then return end
 
 	-- Refused in combat. Queued rather than dropped, or a fight starting while
@@ -866,6 +869,22 @@ local function ApplyCVars()
 	-- engine draws its own floating name instead - so the boundary shows up as
 	-- the typeface changing at a fixed distance, which is what it looked like.
 	-- Clamped to the range Blizzard's own slider offers on this flavour.
+	-- Without this the client only makes a plate for your target and whatever is
+	-- fighting you. Everything else - the vendor, the flight master, the kodo
+	-- standing in a field - keeps the engine's floating name, which is why they
+	-- were in the client's font with none of our treatment on them at all.
+	--
+	-- SET, then left alone. This one is bound to a key: V toggles it, and people
+	-- toggle it constantly. Putting it back every time it moves - which is what
+	-- the others get - would mean pressing V did nothing, and the player would
+	-- be fighting an addon over their own keybind. Zen borrows it too, and is
+	-- entitled to give it back off if that is how it found it.
+	if initial and cfg().alwaysShow ~= false and GetCVar
+		and GetCVar("nameplateShowAll") ~= nil
+		and GetCVar("nameplateShowAll") ~= "1" then
+		pcall(SetCVar, "nameplateShowAll", "1")
+	end
+
 	local far = tonumber(cfg().maxDistance)
 	if far and GetCVar and GetCVar("nameplateMaxDistance") ~= nil then
 		far = math.max(20, math.min(41, far))
@@ -972,7 +991,7 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "UNIT_FACTION", OnFactionChanged)
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
-		if NP._cvarsPending then ApplyCVars() end
+		if NP._cvarsPending then ApplyCVars(true) end
 	end)
 
 	-- Somebody else moved a console variable. Ours get put back.
@@ -987,7 +1006,7 @@ function NP:OnEnable()
 	-- a console variable has no owner. Safe to run on its own event because
 	-- ApplyCVars only writes what is actually wrong, and defers to Zen, which
 	-- moves the same ones on purpose.
-	A:RegisterEvent(self, "CVAR_UPDATE", function() ApplyCVars() end)
+	A:RegisterEvent(self, "CVAR_UPDATE", function() ApplyCVars(false) end)
 	A:RegisterEvent(self, "UNIT_AURA", OnAuraChanged)
 
 	-- Casts. The native events never fire for a nameplate unit on this client -
@@ -1035,7 +1054,7 @@ function NP:OnEnable()
 	A:RegisterTicker(self, TickChips)
 	A:RegisterEvent(self, "UNIT_FLAGS", OnUnitEvent)
 
-	ApplyCVars()
+	ApplyCVars(true)
 
 	-- Plates already up when we are switched on mid-session.
 	if C_NamePlate and C_NamePlate.GetNamePlates then
@@ -1064,7 +1083,7 @@ end
 
 function NP:OnConfigChanged()
 	local c = cfg()
-	ApplyCVars()
+	ApplyCVars(true)
 	for base, f in pairs(plates) do
 		f.bar:SetWidth(c.barWidth)
 		f.bar:SetHeight(c.barHeight)

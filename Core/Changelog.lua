@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.3",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: vendors, flight masters and anything else not fighting you had no nameplate at all, so none of our treatment reached them. The game only draws plates for your target and whatever is attacking you unless it is asked otherwise, and now it is asked.",
+			"The V key still works: that toggle is set once and then left alone, rather than being forced back every time you press it.",
+		},
+	},
+	{
 		version = "0.4.2",
 		date    = "2026-08-13",
 		lines   = {

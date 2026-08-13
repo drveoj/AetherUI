@@ -998,6 +998,11 @@ local function NameplatesGroup()
 			.. " yards and the HUD at arm's length, so the size that suits one need"
 			.. " not suit the other.", at("scale"), 0.6, 1.6, 0.05,
 			{ after = "reconfigure" }),
+		alwaysShow = toggle("Always show them", "Off, the game only draws a"
+			.. " nameplate for your target and for whatever is fighting you -"
+			.. " everything else keeps its own floating name in the game's font."
+			.. " This is what the V key toggles.",
+			at("alwaysShow"), { after = "reconfigure" }),
 		maxDistance = range("Range", "How far out the client bothers to make a"
 			.. " nameplate. Past this there is no plate at all and the game draws"
 			.. " its own floating name instead, so the boundary shows up as the"

@@ -498,6 +498,13 @@ Config.defaults = {
 				-- fixed distance. 41 is the ceiling Blizzard's own slider stops
 				-- at on this flavour; 20 is where it starts.
 				maxDistance = 41,
+				-- The client's "always show nameplates" - what the V key toggles.
+				-- OFF, it only makes a plate for something in combat with you or
+				-- for your target, and everything else in the world keeps the
+				-- engine's own floating name in the engine's own font. A vendor
+				-- standing at her counter is the obvious case: no plate, so
+				-- nothing of ours ever runs on her.
+				alwaysShow  = true,
 				-- Blizzard's own plate underneath. Off is the whole point, but it
 				-- is a switch because a plate we failed to draw is worse than
 				-- theirs and this is the way back.

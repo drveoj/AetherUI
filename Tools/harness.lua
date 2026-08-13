@@ -4918,6 +4918,12 @@ do
 	check(cv.nameplateShowEnemies == "1" and cv.UnitNameFriendlyPlayerName == "1",
 		"the player has both enemy plates and friendly names on")
 
+	-- Explicitly OFF, because the point of the give-back check below is that zen
+	-- returns what it FOUND rather than a value it thinks is sensible - and the
+	-- nameplate module now asks for this one at startup, so leaving it to the
+	-- default would have quietly stopped testing that.
+	cv.nameplateShowAll = "0"
+
 	_G.__badCVarWrites = 0
 	enterZen()
 	check(cv.nameplateShowEnemies == "0" and cv.nameplateShowFriendlyPlayers == "0"
@@ -15082,6 +15088,22 @@ do
 		"pets, imps and everything else somebody summoned are asked for too -"
 		.. " without them a hunter's pet keeps the client's own floating name"
 		.. " while the hunter standing next to it wears ours")
+
+	check(cv.nameplateShowAll == "1",
+		"the client is asked to draw plates for EVERYTHING, not only for your"
+		.. " target and whatever is hitting you - without it a vendor at her"
+		.. " counter never gets a plate at all, so nothing of ours runs on her"
+		.. " and she keeps the engine's own floating name")
+
+	-- ...but only when we are setting up. V toggles this one, and putting it
+	-- back every time it moved would mean pressing V did nothing.
+	cv.nameplateShowAll = "0"
+	fire("CVAR_UPDATE", "nameplateShowAll", "0")
+	check(cv.nameplateShowAll == "0",
+		"and NOT forced back when the player turns it off themselves - it is on"
+		.. " a keybind, and an addon that fights V is an addon that broke V")
+	NPm.applyCVars(true)
+	check(cv.nameplateShowAll == "1", "though changing a setting re-applies it")
 
 	check(cv.nameplateMaxDistance == "41",
 		"and the client is asked to make plates as far out as it will - past that"
