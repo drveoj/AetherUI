@@ -25,6 +25,13 @@ Config.defaults = {
 		-- habit somebody forms on one character, the way tracked quests are.
 		toolbox   = { docked = "LEFT", open = false },
 
+		-- The chat window's size, in ITS own units. Per character for the same
+		-- reason Blizzard keeps its own copy per character, and ours exists
+		-- because Blizzard's does not survive: the dock re-flows ChatFrame1 to
+		-- its own idea of the size on every restore, so a window you resized
+		-- comes back the shape it was. See Modules/Chat.lua.
+		chat      = { w = nil, h = nil },
+
 		tracked   = {},   -- whitelist, used when autoTrack is off
 		untracked = {},   -- blacklist, used when autoTrack is on
 	},

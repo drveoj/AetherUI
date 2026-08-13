@@ -632,6 +632,58 @@ local function SaveToBlizzard(f)
 	pcall(_G.FCF_SavePositionAndDimensions, f)
 end
 
+-- ---------------------------------------------------------------------------
+-- the size, which is ours to remember
+-- ---------------------------------------------------------------------------
+
+local MIN_W, MIN_H = 200, 90
+
+local function ChatChar()
+	if not A.db or not A.db.char then return nil end
+	A.db.char.chat = A.db.char.chat or {}
+	return A.db.char.chat
+end
+
+--- Write down what the window is now, in its own units.
+function Chat:SaveSize(f)
+	f = f or _G.ChatFrame1
+	local c = ChatChar()
+	if not c or not f or not f.GetWidth then return false end
+	local w, h = f:GetWidth(), f:GetHeight()
+	if not w or not h or w < MIN_W or h < MIN_H then return false end
+	c.w, c.h = math.floor(w + 0.5), math.floor(h + 0.5)
+	return true
+end
+
+--- ...and put it back.
+--
+--  Called after the client has finished restoring, not instead of it. Blizzard
+--  applies its own saved dimensions and then the dock re-flows the window, so
+--  anything we do first is overwritten by the thing we were trying to correct.
+--
+--  Bounded by the same minimum the grip enforces, because a saved variable is a
+--  file somebody can edit and a 12px chat window is unrecoverable from inside
+--  the game.
+function Chat:RestoreSize(f)
+	f = f or _G.ChatFrame1
+	local c = ChatChar()
+	if not c or not f or not f.SetSize then return false end
+	local w, h = tonumber(c.w), tonumber(c.h)
+	if not w or not h then return false end
+	w = math.max(MIN_W, w)
+	h = math.max(MIN_H, h)
+	if math.abs((f:GetWidth() or 0) - w) < 0.5
+		and math.abs((f:GetHeight() or 0) - h) < 0.5 then
+		return false                       -- already right; do not churn the dock
+	end
+	pcall(f.SetSize, f, w, h)
+	-- The dock has to be told, or it puts its own answer back at the next thing
+	-- that makes it think - which is the same reason the drag itself calls this.
+	if _G.FCF_DockUpdate then pcall(_G.FCF_DockUpdate) end
+	self:AnchorPanel()
+	return true
+end
+
 --- A grip of OUR OWN, for a client that has not got one to borrow.
 --
 --  The first version of this leaned entirely on Blizzard's button and said so:
@@ -681,7 +733,11 @@ function Chat:BuildGrip(f)
 	-- Setting the size directly and then telling the dock about it is the way
 	-- round that: the dock is the thing that decides, so it has to be the thing
 	-- that is told.
-	local MIN_W, MIN_H = 200, 90
+	--
+	-- The minimum is the file-local above, not a second copy here. The drag
+	-- clamps to it and RestoreSize clamps to it, and two numbers that have to
+	-- agree are two numbers that can stop agreeing - the failure being a saved
+	-- size the grip would refuse to produce.
 
 	local function Drag(self2)
 		local cf = g._frame
@@ -731,6 +787,19 @@ function Chat:BuildGrip(f)
 			pcall(_G.SetChatWindowSavedDimensions, cf:GetID(),
 				cf:GetWidth(), cf:GetHeight())
 		end
+
+		-- ...and OUR own copy, which is the one that survives.
+		--
+		-- Blizzard's record is written above and does not come back: the dock
+		-- owns the layout of every window docked into it, and on login it
+		-- re-flows ChatFrame1 to the dock's own idea of the size after the
+		-- saved dimensions have been applied. So a window you resized was the
+		-- right shape until you reloaded and the wrong shape afterwards, which
+		-- is exactly what the position did before it was hooked.
+		--
+		-- Same answer as the position, then: keep our own number and put it
+		-- back after the client has finished restoring.
+		Chat:SaveSize(cf)
 		Chat:Reskin()
 	end
 
@@ -2124,6 +2193,12 @@ local function InstallHooks()
 		hooksecurefunc("FCF_RestorePositionAndDimensions", function(f)
 			if not live() then return end
 			if f ~= _G.ChatFrame1 then return end
+			-- The SIZE as well as the position, and for the same reason. The
+			-- client applies its own saved dimensions in the call we are hooked
+			-- to and the dock then re-flows the window to its own idea of them,
+			-- so ours has to go back afterwards or a resized window comes home
+			-- the shape it started.
+			Chat:RestoreSize(f)
 			if not (A.Movers and A.Movers.registry.chat) then return end
 			A.Movers:Restore("chat")
 		end)
@@ -2441,10 +2516,20 @@ function Chat:OnEnable()
 		  preview = function(show) Chat:ShowGrip(show) end })
 
 	self:Reskin()
+	self:RestoreSize()
 
 	for _, e in ipairs({ "UPDATE_CHAT_WINDOWS", "UPDATE_FLOATING_CHAT_WINDOWS",
 		"PLAYER_ENTERING_WORLD" }) do
-		A:RegisterEvent(self, e, function() Chat:Reskin() end)
+		A:RegisterEvent(self, e, function()
+			Chat:Reskin()
+			-- Every one of these is a moment the client has just decided what
+			-- the chat windows look like, which is every moment ours can be
+			-- overwritten. FCF_RestorePositionAndDimensions is not called on
+			-- all of them - UPDATE_CHAT_WINDOWS fires on its own at login on
+			-- some clients - and RestoreSize is a no-op when the size is
+			-- already right, so asking on each costs nothing.
+			Chat:RestoreSize()
+		end)
 	end
 	for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
 		"ZONE_CHANGED_NEW_AREA" }) do

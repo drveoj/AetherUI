@@ -5176,12 +5176,22 @@ do
 				.. "x" .. tostring(cf:GetHeight()) .. ")")
 
 			_G.__savedDims = nil
+			A.db.char.chat = {}
 			g:GetScript("OnMouseUp")(g)
 			check(g._sizing == nil, "letting go ends the drag")
 			check(_G.__savedDims ~= nil,
 				"and the new size is handed to the client's own record -"
 				.. " DIMENSIONS, not position: a docked window has none of the"
 				.. " latter, which is the call that was erroring")
+			-- ...and to OURS, from the drag itself rather than only when a test
+			-- asks. This is the write that survives the reload; Blizzard's does
+			-- not, because the dock re-flows the window afterwards.
+			check(A.db.char.chat.w == math.floor(cf:GetWidth() + 0.5)
+				and A.db.char.chat.h == math.floor(cf:GetHeight() + 0.5),
+				"and to ours, written by the drop itself ("
+				.. tostring(A.db.char.chat.w) .. "x" .. tostring(A.db.char.chat.h)
+				.. " against a " .. string.format("%.0fx%.0f", cf:GetWidth(),
+					cf:GetHeight()) .. " window)")
 
 			g:GetScript("OnMouseDown")(g)
 			g:GetScript("OnHide")(g)
@@ -5189,6 +5199,97 @@ do
 				"hiding mid-drag ends it too - the mouse-up never arrives if"
 				.. " the frame goes away under the cursor")
 			A.Movers:Lock()
+
+			-- ...AND IT SURVIVES A RELOAD.
+			--
+			-- Blizzard's own record is written above and does not come back:
+			-- the dock owns the layout of every window docked into it, and on
+			-- login it re-flows ChatFrame1 to the dock's own idea of the size
+			-- after the saved dimensions have been applied. So the window was
+			-- the right shape until you reloaded and the wrong shape after,
+			-- which is exactly what the POSITION did before it was hooked.
+			cf:SetSize(640, 320)
+			Cm:SaveSize(cf)
+			check(A.db.char.chat.w == 640 and A.db.char.chat.h == 320,
+				"the size is written down per character, in the window's own"
+				.. " units (" .. tostring(A.db.char.chat.w) .. "x"
+				.. tostring(A.db.char.chat.h) .. ")")
+
+			-- The dock helps itself to the frame, which is the whole bug.
+			cf:SetSize(430, 120)
+			_G.__dockUpdated = 0
+			check(Cm:RestoreSize(cf), "restoring reports that it did something")
+			check(cf:GetWidth() == 640 and cf:GetHeight() == 320,
+				"and puts the player's size back over whatever the dock decided"
+				.. " (" .. tostring(cf:GetWidth()) .. "x"
+				.. tostring(cf:GetHeight()) .. ")")
+			-- Telling the dock is not optional. It owns the layout of every
+			-- window docked into it, so a size set behind its back lasts until
+			-- the next thing that makes it think - which is the same reason the
+			-- drag itself calls this.
+			check((_G.__dockUpdated or 0) > 0,
+				"and tells the dock, which is the thing that decides")
+
+			-- Through the hook the client actually calls, which is the path a
+			-- reload takes rather than one the test invents.
+			cf:SetSize(430, 120)
+			if _G.FCF_RestorePositionAndDimensions then
+				_G.FCF_RestorePositionAndDimensions(cf)
+			end
+			check(cf:GetWidth() == 640 and cf:GetHeight() == 320,
+				"including when the CLIENT restores the window, which is the"
+				.. " moment it is overwritten (" .. tostring(cf:GetWidth())
+				.. "x" .. tostring(cf:GetHeight()) .. ")")
+
+			-- The client does not always go through that hook. On some clients
+			-- UPDATE_CHAT_WINDOWS arrives at login on its own, and the module
+			-- may be enabled - from the options panel - long after any of it.
+			-- Both of the other ways in are asked as well.
+			cf:SetSize(430, 120)
+			fire("UPDATE_CHAT_WINDOWS")
+			check(cf:GetWidth() == 640 and cf:GetHeight() == 320,
+				"a chat event the client fires on its own puts it back too ("
+				.. tostring(cf:GetWidth()) .. "x" .. tostring(cf:GetHeight()) .. ")")
+
+			cf:SetSize(430, 120)
+			Cm:OnEnable()
+			check(cf:GetWidth() == 640 and cf:GetHeight() == 320,
+				"and so does enabling the module, which is the case at a fresh"
+				.. " login where the client restored the window before this"
+				.. " addon had loaded a hook to hear it (" .. tostring(cf:GetWidth())
+				.. "x" .. tostring(cf:GetHeight()) .. ")")
+
+			-- Already right: no churn. Every restore calls FCF_DockUpdate, and
+			-- doing that on every chat event for a window that has not moved is
+			-- the dock relaying itself for nothing several times a second.
+			check(not Cm:RestoreSize(cf),
+				"a window already the right size is left entirely alone")
+
+			-- A saved variable is a file somebody can edit, and a 12px chat
+			-- window cannot be fixed from inside the game.
+			A.db.char.chat.w, A.db.char.chat.h = 5, 5
+			cf:SetSize(430, 120)
+			Cm:RestoreSize(cf)
+			check(cf:GetWidth() >= 200 and cf:GetHeight() >= 90,
+				"and a nonsense size in the saved variables is clamped to the"
+				.. " same floor the grip enforces (" .. tostring(cf:GetWidth())
+				.. "x" .. tostring(cf:GetHeight()) .. ")")
+
+			-- Nothing saved: the client's own answer stands.
+			A.db.char.chat.w, A.db.char.chat.h = nil, nil
+			cf:SetSize(430, 120)
+			check(not Cm:RestoreSize(cf),
+				"with nothing written down it does not interfere")
+			check(cf:GetWidth() == 430,
+				"leaving the window exactly as the client left it")
+
+			-- And a size the grip would refuse to produce is never written.
+			cf:SetSize(50, 40)
+			check(not Cm:SaveSize(cf),
+				"a window smaller than the grip's own floor is not recorded -"
+				.. " the two clamps are one number, so a saved size is always"
+				.. " one the drag could have made")
+			cf:SetSize(400, 200)
 		end
 	end
 

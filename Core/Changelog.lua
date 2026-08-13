@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.3",
+		date    = "2026-08-13",
+		lines   = {
+			"The chat window keeps the size you dragged it to through a reload.",
+		},
+	},
+	{
 		version = "0.3.2",
 		date    = "2026-08-13",
 		lines   = {
