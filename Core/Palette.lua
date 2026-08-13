@@ -474,17 +474,25 @@ function Palette:Stop(colors)
 	return type(colors[1]) == "table" and colors[1] or colors
 end
 
--- The tooltip's level badge, which is the look being copied: a translucent tint
--- of the colour, a stronger rim of it, and the number in it. Same two numbers as
--- BadgeColors in Modules/Tooltips.lua.
-local ORB_FILL, ORB_EDGE = 0.15, 0.40
+-- The face texture's mid luminance. The sheen runs 0.55 to 0.85 across the disc
+-- and the rim is 1.0, so this is roughly what the number sits on.
+local ORB_FACE_LUM = 0.70
 
---- Fill, rim and ink for a unit's level orb.
+--- Fill and ink for a unit's level orb.
+--
+--  The disc is the unit's colour at full strength; the sheen and the rim are
+--  baked into the texture as lighter values of the same greyscale, so one tint
+--  drives all three.
+--
+--  The number picks itself. A solid disc in a class colour is dark for a
+--  Warlock and near-white for a Priest, and one fixed ink cannot serve both -
+--  so it is chosen by the luminance of what it is actually sitting on, the same
+--  way a pill picks its own text colour.
 function Palette:OrbColors(unit)
 	local c = Palette:UnitColor(unit)
-	return { c[1], c[2], c[3], ORB_FILL },
-	       { c[1], c[2], c[3], ORB_EDGE },
-	       { c[1], c[2], c[3], 1 }
+	local lum = (0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3]) * ORB_FACE_LUM
+	local ink = lum > 0.45 and Palette.c.btnFillText or Palette.c.text
+	return { c[1], c[2], c[3], 1 }, nil, ink
 end
 --- A player's class colour, or nil.
 --

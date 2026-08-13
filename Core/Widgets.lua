@@ -284,16 +284,10 @@ end
 
 local Orb = {}
 
---- Fill, rim and number, the way the tooltip's level badge is coloured.
---
---  A translucent tint of one colour, a stronger rim of it, and the number in it
---  at full strength. The orb used to be a solid disc with white text on it,
---  which forced the colour dark enough to carry the text and read as a shiny
---  ball. This has no such constraint - the disc stays dark because it is mostly
---  the panel showing through.
-function Orb:SetColors(fill, edge, ink)
+--- One colour for the whole orb. The sheen and the rim are baked into the
+--  texture as lighter values, so tinting it tints all three together.
+function Orb:SetColors(fill, _, ink)
 	if fill then self.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1) end
-	if edge then self.ring:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1) end
 	if ink then W.Color(self.label, ink) end
 end
 
@@ -341,10 +335,12 @@ function W.CreateOrb(parent, opts)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetSize(size, size)
 
+	-- ONE texture: the disc, its diagonal sheen and its rim, all baked. The rim
+	-- is a brighter value of the same greyscale, so a single vertex colour still
+	-- expresses both. No mask - the shape is already circular.
 	local disc = f:CreateTexture(nil, "ARTWORK")
-	disc:SetTexture(Media.texture.flat)
+	disc:SetTexture(Media.texture.orbFace)
 	disc:SetAllPoints(f)
-	AddMask(disc, f, Media.texture.circleMask, f)
 	f.disc = disc
 
 	if opts.portrait then
@@ -354,16 +350,19 @@ function W.CreateOrb(parent, opts)
 		f.portrait = p
 	end
 
+	-- Kept for the reaction rim on a target, and off by default: the face
+	-- texture carries its own.
 	local ring = f:CreateTexture(nil, "OVERLAY")
 	ring:SetTexture(Media.texture.ring)
 	ring:SetAllPoints(f)
+	ring:Hide()
 	f.ring = ring
 
 	local label = W.Text(f, "level", "CENTER")
 	label:SetPoint("CENTER", f, "CENTER", 0, 0)
-	-- Sits on a coloured disc, so it gets a harder shadow than body text.
-	label:SetShadowColor(0, 0, 0, 0.85)
-	label:SetShadowOffset(0, -1)
+	-- No shadow. The number sits on a mid-tone disc and the concept draws it
+	-- clean; a shadow at this size reads as the type being badly rendered.
+	label:SetShadowColor(0, 0, 0, 0)
 	f.label = label
 
 	for k, v in pairs(Orb) do f[k] = v end

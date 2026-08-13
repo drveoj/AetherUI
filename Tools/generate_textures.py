@@ -614,6 +614,34 @@ def ring():
     return rgba_lum(1.0, rim_from_sdf(ellipse_sdf(size, MARGIN), 5.0, peak=1.4))
 
 
+def orb_face():
+    """The level orb: a filled disc with a diagonal sheen and its own rim.
+
+    One texture rather than a disc plus a separate ring, and the rim is a
+    brighter VALUE of the same greyscale - so a single vertex colour still
+    expresses both. That is the thing minimap_border() could not do, because its
+    two tones were different hues rather than two points on one ramp.
+
+    The sheen runs dark at the bottom-right to light at the top-left, which is
+    where the concept puts it.
+
+    128, not 256. The orb is 46px, so 256 would be minified five times and the
+    client does not mipmap UI textures - the same argument chip_disc() makes.
+    """
+    n = 128
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+
+    # 1 at the top-left corner, 0 at the bottom-right. Row 0 is the top.
+    t = 1.0 - (xx + yy) / (2.0 * (n - 1))
+
+    inside = ellipse_mask((n, n))
+    # ~5.5 texels of 128 is about two real pixels on a 46px orb.
+    rim = rim_from_sdf(ellipse_sdf((n, n), MARGIN), 5.5, peak=1.4)
+
+    face = (0.55 + 0.30 * t) * inside
+    return rgba_lum(np.maximum(face, rim), np.maximum(inside, rim))
+
+
 def minimap_border():
     """The map's whole edge treatment in one texture: a dark band around the
     inside, and a light hairline sitting on the very edge.
@@ -1220,6 +1248,7 @@ ASSETS = {
     "Chip-Disc": chip_disc,
     "Chip-Rim": chip_rim,
     "Ring": ring,
+    "Orb-Face": orb_face,
     "Ring-Glow": ring_glow,
     "Minimap-Border": minimap_border,
     "Bar-Smooth": bar_smooth,

@@ -51,6 +51,7 @@ Media.texture = {
 	chipDisc    = TEX .. "Chip-Disc",
 	chipRim     = TEX .. "Chip-Rim",
 	ring        = TEX .. "Ring",
+	orbFace     = TEX .. "Orb-Face",
 	ringGlow    = TEX .. "Ring-Glow",         -- drawn at 2x, centred
 	-- The map's whole edge in one texture: dark band inside, hairline on the
 	-- edge. Two tones, so its colours are baked in and it is drawn untinted.

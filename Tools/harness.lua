@@ -5863,58 +5863,86 @@ do
 	SlashCmdList["AETHERUI"]("health class")
 	check(A.db.profile.classColorHealth == true, "switched back to class colours")
 
-	-- The orb is coloured like the TOOLTIP'S level badge.
+	-- The orb is a SOLID disc: one texture carrying the face, a diagonal sheen
+	-- and a two-pixel rim, all as values of one greyscale so a single tint
+	-- drives them together.
 	--
-	-- It used to be a solid disc with white text on it, which forced the colour
-	-- dark enough to carry the text and read as a shiny ball. The badge's recipe
-	-- has no such constraint: a translucent tint of the colour, a stronger rim
-	-- of it, and the number in it at full strength. The disc stays dark because
-	-- it is mostly the panel showing through.
+	-- It has been three other things. A vertical gradient, which read as a shiny
+	-- ball; a darkened flat disc, which was dull; and the tooltip badge's
+	-- translucent tint, which lost the disc altogether.
 	do
 		local was = _G.__units.player.classToken
+		local orb = UFm.player.orb
+
+		check(orb.disc:GetTexture() == A.Media.texture.orbFace,
+			"the orb draws the face texture rather than a flat fill under a mask"
+			.. " - the sheen and the rim are baked, because neither a diagonal"
+			.. " gradient nor a two-pixel rim can be done at runtime")
+		check(not orb.ring:IsShown(),
+			"and the separate ring is off, since the face carries its own")
+		check((select(4, orb.label:GetShadowColor()) or 0) == 0,
+			"with no shadow under the number - it sits on a mid-tone disc and"
+			.. " the concept draws it clean")
+
+		-- A DARK class: the number goes light.
+		_G.__units.player.classToken = "WARLOCK"
+		RAID_CLASS_COLORS.WARLOCK = { r = 0.58, g = 0.51, b = 0.79 }
+		local fill, _, ink = A.Palette:OrbColors("player")
+		check(fill[4] == 1, "the disc is solid rather than a tint ("
+			.. string.format("%.2f", fill[4]) .. ")")
+		check(math.abs(fill[1] - 0.58) < 0.001,
+			"and is the class colour at full strength")
+		check(ink[1] > 0.8, "with a LIGHT number on a dark class ("
+			.. string.format("%.2f", ink[1]) .. ")")
+
+		-- A PALE class: the number goes dark, or it disappears.
 		_G.__units.player.classToken = "ROGUE"
 		RAID_CLASS_COLORS.ROGUE = { r = 1.00, g = 0.96, b = 0.41 }
+		local _, _, ink2 = A.Palette:OrbColors("player")
+		check(ink2[1] < 0.3,
+			"and a DARK one on a pale class - a fixed white number is invisible"
+			.. " on Rogue yellow, so the ink is chosen by the luminance of what"
+			.. " it is sitting on (" .. string.format("%.2f", ink2[1]) .. ")")
 
-		local bar = A.Palette:HealthColor("player")
-		check(type(bar[1]) == "number",
-			"a class-coloured bar is ONE colour rather than a from/to pair")
-		check(math.abs(bar[1] - 1.00) < 0.001 and math.abs(bar[3] - 0.41) < 0.001,
-			"and it is the class colour at FULL strength - nothing darkens it"
-			.. " any more, because the orb no longer puts white text on it ("
-			.. string.format("%.2f %.2f %.2f", bar[1], bar[2], bar[3]) .. ")")
+		-- Luminance, not brightness of the red channel. Green is what the eye
+		-- weights most, and no Classic class colour is green enough to tell the
+		-- two apart - so this uses one that is.
+		RAID_CLASS_COLORS.ROGUE = { r = 0.20, g = 1.00, b = 0.20 }
+		local _, _, ink3 = A.Palette:OrbColors("player")
+		check(ink3[1] < 0.3,
+			"a bright GREEN disc gets a dark number too, which a red-only test"
+			.. " of brightness would get backwards (" .. string.format("%.2f",
+				ink3[1]) .. ")")
+		RAID_CLASS_COLORS.ROGUE = { r = 1.00, g = 0.96, b = 0.41 }
 
-		local fill, edge, ink = A.Palette:OrbColors("player")
-		check(fill[4] < 0.3 and edge[4] > fill[4] and (ink[4] or 1) == 1,
-			"the orb is a translucent fill, a stronger rim and a solid number -"
-			.. " the tooltip badge's recipe (" .. string.format(
-				"%.2f / %.2f / %.2f", fill[4], edge[4], ink[4] or 1) .. ")")
-		check(fill[1] == bar[1] and edge[1] == bar[1] and ink[1] == bar[1],
-			"all three the same hue as the bar, so the pair reads as one unit")
-
-		-- The number is the CLASS colour, not white. That is the whole reason
-		-- the disc no longer has to be dark.
+		-- It reaches the frame, both of them, and a TARGET is coloured by its
+		-- reaction rather than left at the player's class.
 		A:Restyle()
 		do
-			local r, g, b = UFm.player.orb.label:GetTextColor()
-			check(math.abs(r - ink[1]) < 0.01 and math.abs(b - ink[3]) < 0.01,
-				"and the level number on screen is that colour rather than white"
-				.. " (" .. string.format("%.2f %.2f %.2f", r, g, b) .. ")")
-			local dr, dg, db, da = UFm.player.orb.disc:GetVertexColor()
-			check(da and da < 0.3,
-				"with the disc mostly transparent (" .. string.format("%.2f", da or -1)
-				.. ") rather than a solid coloured ball")
-			local _, _, _, ea = UFm.player.orb.ring:GetVertexColor()
-			check(ea and ea > da,
-				"and the rim stronger than the fill, which is what gives it an edge")
+			local r = UFm.player.orb.disc:GetVertexColor()
+			check(math.abs(r - 1.00) < 0.01,
+				"the player's orb on screen is painted with it")
+		end
+		_G.__units.target.isPlayer = false
+		_G.__units.target.reaction = 2
+		fire("PLAYER_TARGET_CHANGED")
+		do
+			local tr, tg, tb = UFm.target.orb.disc:GetVertexColor()
+			-- Against the token, not against UnitColor("target"): by this point
+			-- the mock's target no longer "exists", so asking again answers with
+			-- the fallback rather than with what the orb was painted.
+			local want = A.Palette.c.hostileBar[1]
+			check(math.abs(tr - want[1]) < 0.01 and math.abs(tg - want[2]) < 0.01,
+				"and a hostile target's orb takes its reaction rather than the"
+				.. " player's class (" .. string.format("%.2f %.2f %.2f",
+					tr, tg, tb) .. ")")
+			check(tg < 0.7, "which is the warm hostile colour, not a class blue")
 		end
 
-		-- The shadow under the number stays: it is what carries it on a tint.
-		local lbl = UFm.player.orb.label
-		check((select(4, lbl:GetShadowColor()) or 0) > 0.5
-			and select(2, lbl:GetShadowOffset()) < 0,
-			"and the number keeps a shadow under it")
-
 		_G.__units.player.classToken = was
+		_G.__units.target.isPlayer = true
+		_G.__units.target.reaction = 5
+		fire("PLAYER_TARGET_CHANGED")
 	end
 end
 
