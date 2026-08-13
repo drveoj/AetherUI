@@ -82,13 +82,100 @@ local function widgetBase(kind)
 		local pt = self.__points[1]
 		return pt and pt[1] == "ALL" and pt[2] or nil
 	end
+
+	-- A size the frame was never GIVEN, worked out from its anchors.
+	--
+	-- A region pinned by two opposing edges - TOPLEFT and BOTTOMRIGHT to a
+	-- parent, BOTTOMLEFT and BOTTOMRIGHT to a tile - has a real width in the
+	-- client and had none in here: GetWidth returned the zero it was born with.
+	-- So "does this text fit its box" was a question the harness could not ask,
+	-- and two overflow bugs shipped past checks that read that zero and passed -
+	-- the What's new card drawing through its own Notes link, and a settings
+	-- tile's label running out of the tile and into the column beside it. Both
+	-- had to be re-checked by recomputing the width from the anchors in the test,
+	-- which is the mock's job and not the test's.
+	--
+	-- The SAME-FRAME case only: both anchors relative to one other frame, which
+	-- is what a SetPoint pair almost always is. A region pinned between two
+	-- DIFFERENT frames needs their absolute positions, and that is a layout
+	-- engine rather than a mock - it stays at zero, deliberately, rather than
+	-- being guessed at.
+	--
+	-- An explicit size always wins. Only frames that never got one change
+	-- behaviour, which keeps this from quietly rewriting the geometry every
+	-- other test in the file is built on.
+	local AXES = {
+		x = { lo = "LEFT",   hi = "RIGHT", off = 4, get = "GetWidth"  },
+		y = { lo = "BOTTOM", hi = "TOP",   off = 5, get = "GetHeight" },
+	}
+
+	--- Where an anchor point sits on one axis of a frame `size` across, measured
+	--  from its low edge - so LEFT and BOTTOM are 0, RIGHT and TOP are the full
+	--  size, and anything else (CENTER, or the other axis's word) is the middle.
+	local function edgeOf(point, axis, size)
+		if point:find(axis.lo, 1, true) then return 0 end
+		if point:find(axis.hi, 1, true) then return size end
+		return size / 2
+	end
+
+	local function fromAnchors(self, which)
+		local axis = AXES[which]
+		local lo, hi
+		for _, pt in ipairs(self.__points) do
+			local p = pt[1]
+			if type(p) == "string" then
+				if p:find(axis.lo, 1, true) then
+					lo = lo or pt
+				elseif p:find(axis.hi, 1, true) then
+					hi = hi or pt
+				end
+			end
+		end
+		if not (lo and hi) then return nil end
+
+		local rel = lo[2]
+		if rel == nil or rel ~= hi[2] or type(rel[axis.get]) ~= "function" then
+			return nil
+		end
+		local size = rel[axis.get](rel)
+		if not size or size <= 0 then return nil end
+
+		local a = edgeOf(lo[3] or lo[1], axis, size) + (lo[axis.off] or 0)
+		local b = edgeOf(hi[3] or hi[1], axis, size) + (hi[axis.off] or 0)
+		local span = b - a
+		return span > 0 and span or nil
+	end
+
+	--- Re-entrancy guard rather than a depth count: a frame anchored to
+	--  something that is anchored back to it would otherwise recurse until the
+	--  stack ran out, and a stack overflow inside a getter is a miserable thing
+	--  to diagnose. Second time round it reports nothing, which fails the
+	--  `size > 0` test above and gives up cleanly.
+	--
+	--  NOT wrapped in a pcall. It was, and the pcall did the guard's job badly:
+	--  a cycle still recursed all the way down, the overflow was caught, and the
+	--  answer came back zero - so the guard could be deleted with every check
+	--  still green. The guard is the mechanism; making it the only one is what
+	--  lets a test prove it is there.
+	local function derived(self, which, flag)
+		if self[flag] then return nil end
+		self[flag] = true
+		local v = fromAnchors(self, which)
+		self[flag] = nil
+		return v
+	end
+
 	function o:GetWidth()
 		local t = allTarget(self)
-		return t and t:GetWidth() or self.__w
+		if t then return t:GetWidth() end
+		if self.__w and self.__w > 0 then return self.__w end
+		return derived(self, "x", "__inWidth") or self.__w
 	end
 	function o:GetHeight()
 		local t = allTarget(self)
-		return t and t:GetHeight() or self.__h
+		if t then return t:GetHeight() end
+		if self.__h and self.__h > 0 then return self.__h end
+		return derived(self, "y", "__inHeight") or self.__h
 	end
 	function o:GetSize() return self:GetWidth(), self:GetHeight() end
 	-- Geometry getters report in the FRAME's own coordinate space, which is the
@@ -392,7 +479,11 @@ local function newFontString(owner, layer)
 	function f:GetStringHeight()
 		local size = (self.__font and self.__font[2]) or 11
 		local text = self.__text or ""
-		local width = self.__w
+		-- GetWidth, not __w: a FontString stretched between a left and a right
+		-- anchor has a width in the client and wraps against it, and reading the
+		-- raw field said "never set, so one line" - which is how the What's new
+		-- card's overflow check came to pass against a card it did not fit.
+		local width = self:GetWidth()
 		-- The client returns 0 for empty text, not a line's worth of height.
 		if text == "" then return 0 end
 		if not width or width <= 0 then return size end
@@ -3374,6 +3465,102 @@ local function section(name, fn)
 		fail(name .. " -- the block itself errored: " .. tostring(err))
 	end
 end
+
+section("the harness itself: a size worked out from anchors", function()
+	-- The mock reports a width for a region pinned by two opposing edges, the
+	-- way the client does. It used to report the zero it was born with, and that
+	-- is not a detail: "does this text fit its box" is the question this UI asks
+	-- most often, and two overflow bugs shipped past checks that read that zero
+	-- and passed. Both had to be re-checked by recomputing the width from the
+	-- anchors inside the test, which is the mock's job.
+	--
+	-- Tested directly, because a derivation that never fires looks exactly like
+	-- one that works: every check in the file went green either way.
+	local parent = CreateFrame("Frame")
+	parent:SetSize(200, 100)
+
+	local box = CreateFrame("Frame", nil, parent)
+	box:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -8)
+	box:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, 6)
+	check(math.abs(box:GetWidth() - 178) < 0.001,
+		"pinned by opposite corners, the width is the parent's less both insets"
+		.. " (got " .. tostring(box:GetWidth()) .. " of 200 - 10 - 12)")
+	check(math.abs(box:GetHeight() - 86) < 0.001,
+		"and the height likewise, with y counted upward (got "
+		.. tostring(box:GetHeight()) .. " of 100 - 8 - 6)")
+
+	-- One axis only. A label pinned along the bottom of a tile has a width and
+	-- no height, and inventing one would be worse than reporting none.
+	local strip = CreateFrame("Frame", nil, parent)
+	strip:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 12, 10)
+	strip:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, 10)
+	check(math.abs(strip:GetWidth() - 176) < 0.001,
+		"two anchors on one edge still give a width (" .. tostring(strip:GetWidth()) .. ")")
+	check(strip:GetHeight() == 0,
+		"and no height, because two BOTTOMs do not describe one")
+
+	-- An explicit size wins, or this would quietly rewrite the geometry every
+	-- other check in the file is built on. Set on the frame that CAN derive one,
+	-- and to a different number: on a frame with no derivable span the fallback
+	-- returns the explicit value either way and the check proves nothing.
+	box:SetWidth(50)
+	check(box:GetWidth() == 50,
+		"a width that was SET beats the one the anchors imply (50, not 178)")
+	box:SetWidth(0)
+	check(math.abs(box:GetWidth() - 178) < 0.001, "and clearing it goes back")
+	box:SetHeight(40)
+	check(box:GetHeight() == 40,
+		"and the same on the other axis (40, not 86) - both branches, because"
+		.. " they are two lines of code and only one of them was tested")
+	box:SetHeight(0)
+	check(math.abs(box:GetHeight() - 86) < 0.001, "and back again")
+
+	-- A single anchor describes no span at all.
+	local loose = CreateFrame("Frame", nil, parent)
+	loose:SetPoint("LEFT", parent, "LEFT", 5, 0)
+	check(loose:GetWidth() == 0, "one anchor gives nothing")
+
+	-- Anchored to two DIFFERENT frames: not guessed at. Resolving it needs their
+	-- absolute positions, which is a layout engine rather than a mock.
+	--
+	-- Shaped so that ignoring the same-frame rule gives a plausible POSITIVE
+	-- number rather than a negative one. The first version of this check pinned
+	-- LEFT to the other frame's RIGHT, which works out negative and is rejected
+	-- by the span > 0 test anyway - so dropping the rule changed nothing and the
+	-- check passed against a mock that was guessing.
+	local other = CreateFrame("Frame", nil, parent)
+	other:SetSize(30, 30)
+	local spanning = CreateFrame("Frame", nil, parent)
+	spanning:SetPoint("LEFT", other, "LEFT", 0, 0)
+	spanning:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+	check(spanning:GetWidth() == 0,
+		"and a region pinned between two different frames is left at zero rather"
+		.. " than answered wrongly (got " .. tostring(spanning:GetWidth())
+		.. "; taking the first frame for both would say 30)")
+
+	-- A cycle terminates instead of running the stack out.
+	local a = CreateFrame("Frame", nil, parent)
+	local b = CreateFrame("Frame", nil, parent)
+	a:SetPoint("LEFT", b, "LEFT", 0, 0)
+	a:SetPoint("RIGHT", b, "RIGHT", 0, 0)
+	b:SetPoint("LEFT", a, "LEFT", 0, 0)
+	b:SetPoint("RIGHT", a, "RIGHT", 0, 0)
+	local ok, w = pcall(a.GetWidth, a)
+	check(ok and w == 0,
+		"two frames anchored to each other report zero rather than overflowing"
+		.. " the stack")
+
+	-- And the payoff: a FontString stretched between two anchors WRAPS, which is
+	-- the measurement the overflow checks actually need.
+	local fs = parent:CreateFontString(nil, "OVERLAY")
+	fs:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+	fs:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+	fs:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+	fs:SetText(("word "):rep(40))
+	check(fs:GetStringHeight() > 12 * 1.2 * 2,
+		"a long line in a 200px box is several lines tall rather than one ("
+		.. string.format("%.0f", fs:GetStringHeight()) .. ")")
+end)
 
 local UF = A:GetModule("unitframes")
 check(UF and UF.enabled, "unitframes module enabled")
@@ -10698,23 +10885,13 @@ do
 			if n > widest then widest, longest = n, t.label end
 		end
 		local tile = c.tiles[1]
-		local p1, r1, _, x1 = tile.name:GetPoint(1)
-		local p2, r2, _, x2 = tile.name:GetPoint(2)
-		check(p2 ~= nil and r2 == tile and p2:find("RIGHT"),
-			"the tile label has a right edge as well as a left one, anchored to"
-			.. " the tile - without one it has no width at all and simply keeps"
-			.. " drawing (longest label here is " .. tostring(longest) .. ")")
-		if p2 then
-			-- Implied width, computed from the anchors rather than read off the
-			-- region: the mock does not derive a width from a left-and-right
-			-- pair, which is exactly the gap that let the What's new card ship
-			-- overflowing too.
-			local implied = tile:GetWidth() + (x2 or 0) - (x1 or 0)
-			check(implied > 0 and implied < tile:GetWidth(),
-				"and the width that implies is inside the tile, with padding"
-				.. " either side (" .. string.format("%.0f of %.0f", implied,
-					tile:GetWidth()) .. ")")
-		end
+		local w = tile.name:GetWidth() or 0
+		check(w > 0 and w < tile:GetWidth(),
+			"a settings tile's label has a width, and it is inside the tile with"
+			.. " padding either side - without a right anchor it has no width at"
+			.. " all and simply keeps drawing (" .. string.format("%.0f of %.0f",
+				w, tile:GetWidth()) .. ", longest label here is "
+			.. tostring(longest) .. ")")
 	end
 
 	-- The addon column is the widest, because it holds the longest strings on
