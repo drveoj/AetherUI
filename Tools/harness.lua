@@ -2566,7 +2566,7 @@ end
 -- either - 13 of the 24 installed on the machine this was written against - so
 -- the mock deliberately gives some an icon and some none.
 _G.__addons = {
-	{ name = "Questie",     title = "Questie",        icon = "Interface\Icons\INV_Misc_Map01" },
+	{ name = "Questie",     title = "Questie",        icon = "Interface\\Icons\\INV_Misc_Map01" },
 	{ name = "TomTom",      title = "TomTom" },
 	{ name = "PlainAddon",  title = "Plain Addon" },
 	{ name = "OtherPlain",  title = "Other Plain" },
@@ -2663,7 +2663,7 @@ do
 	--  the load above.
 	function _G.__makeLDB(name, kind, fields)
 		local ldb = LibStub("LibDataBroker-1.1")
-		local t = { type = kind or "launcher", icon = "Interface\Icons\INV_Misc_Gear_01" }
+		local t = { type = kind or "launcher", icon = [[Interface\Icons\INV_Misc_Gear_01]] }
 		for k, v in pairs(fields or {}) do t[k] = v end
 		return ldb:NewDataObject(name, t)
 	end
@@ -8680,6 +8680,182 @@ do
 
 	UIParent:SetSize(oldW, oldH)
 	A.db.profile.scale = oldScale
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(false, true)
+end
+
+print("== toolbox: dragging the rail to another edge ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+	local oldX, oldY = cursorX, cursorY
+
+	A.Movers:Lock()
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(false, true)
+
+	-- Which edge a point belongs to, and the reason it is a FRACTION of each
+	-- axis rather than a distance in pixels.
+	--
+	-- 2560x1440 with the cursor at (1000, 720): the left edge is 1000 away and
+	-- top and bottom are 720 each, so plain pixel distance hands the entire
+	-- middle band of a wide screen to top or bottom and the side docks become
+	-- unreachable from anywhere near the centre. In fractions the left edge is
+	-- 0.39 of the way across against 0.5 either way vertically, so it wins - and
+	-- each edge ends up owning a wedge, which is what the gesture looks like it
+	-- ought to do.
+	check(TBm:NearestEdge(1000, 720, 2560, 1440) == "LEFT",
+		"the middle-left of a wide screen belongs to LEFT, though it is nearer"
+		.. " the top and bottom edges in raw pixels (1000 across vs 720 up) -"
+		.. " each edge owns a fraction of the screen, not a band of pixels (got "
+		.. tostring(TBm:NearestEdge(1000, 720, 2560, 1440)) .. ")")
+	check(TBm:NearestEdge(100,  720,  2560, 1440) == "LEFT",   "hard left is LEFT")
+	check(TBm:NearestEdge(2500, 720,  2560, 1440) == "RIGHT",  "hard right is RIGHT")
+	check(TBm:NearestEdge(1280, 60,   2560, 1440) == "BOTTOM", "the floor is BOTTOM")
+	check(TBm:NearestEdge(1280, 1400, 2560, 1440) == "TOP",    "the ceiling is TOP")
+	check(TBm:NearestEdge(500, 500, 0, 0) == TBm:Dock(),
+		"and a screen with no size leaves the dock alone rather than dividing by"
+		.. " it")
+
+	-- The handle arrives with everybody else's.
+	check(TBm._dockHandle == nil or not TBm._dockHandle:IsShown(),
+		"locked, the drawer carries no handle")
+	A.Movers:Unlock()
+	local h = TBm._dockHandle
+	check(h ~= nil and h:IsShown(),
+		"unlocking gives the drawer a handle of its own - it is NOT in the mover"
+		.. " registry, because it has four legal answers rather than a position,"
+		.. " but 'unlock frames' still has to be the moment it can be placed")
+	check(A.Movers.watchers.toolbox ~= nil,
+		"and it is keyed by module name, so enabling twice replaces the watcher"
+		.. " rather than stacking a second one")
+
+	if h then
+		-- The lesson the chat resize grip taught, applied before it could be
+		-- learned twice: DIALOG is BELOW FULLSCREEN_DIALOG in the strata order,
+		-- so a handle put there is painted under the very frame it is a handle
+		-- for and never sees a click.
+		check(h:GetFrameStrata() == "FULLSCREEN_DIALOG"
+			and h:GetFrameLevel() > TBm.rail:GetFrameLevel(),
+			"the handle sits above the rail rather than at DIALOG, which is"
+			.. " BELOW FULLSCREEN_DIALOG and would put it under the thing it"
+			.. " moves (" .. tostring(h:GetFrameStrata()) .. " "
+			.. tostring(h:GetFrameLevel()) .. " vs rail "
+			.. tostring(TBm.rail:GetFrameLevel()) .. ")")
+
+		UIParent:SetSize(1365, 768)
+		UIParent.__scale = 1
+
+		h:GetScript("OnDragStart")(h)
+		local g = TBm._ghosts
+		check(g ~= nil and g.LEFT:IsShown() and g.RIGHT:IsShown()
+			and g.TOP:IsShown() and g.BOTTOM:IsShown(),
+			"grabbing it puts all four targets up at once - the point of the"
+			.. " gesture is that there are exactly four places it can go")
+		check(TBm._litGhost == "LEFT",
+			"with the edge it is already on lit, so the starting state is a"
+			.. " target rather than nothing")
+
+		-- Each target is the drawer's OWN footprint on that edge. A uniform
+		-- strip down each side is cheaper and lies about two of the four: top
+		-- and bottom are a different layout, not the same panel turned.
+		if g then
+			check(g.LEFT:GetWidth() < g.TOP:GetWidth()
+				and g.LEFT:GetHeight() > g.TOP:GetHeight(),
+				"the side targets are the narrow layout and the top and bottom"
+				.. " ones the wide layout, so each shows the shape you would"
+				.. " actually get (" .. string.format("%.0fx%.0f",
+					g.LEFT:GetWidth(), g.LEFT:GetHeight()) .. " vs "
+				.. string.format("%.0fx%.0f", g.TOP:GetWidth(), g.TOP:GetHeight())
+				.. ")")
+			check(select(1, g.LEFT:GetPoint(1)) == "LEFT"
+				and select(1, g.BOTTOM:GetPoint(1)) == "BOTTOM",
+				"and each is anchored to the edge it stands for")
+		end
+
+		cursorX, cursorY = 680, 30           -- along the bottom
+		h:GetScript("OnUpdate")(h)
+		check(TBm._litGhost == "BOTTOM" and TBm._dockTarget == "BOTTOM",
+			"moving toward the floor lights the floor - the lit one is the one"
+			.. " you will get (" .. tostring(TBm._litGhost) .. ")")
+
+		h:GetScript("OnDragStop")(h)
+		check(TBm:Dock() == "BOTTOM", "and letting go docks it there")
+		check(A.db.char.toolbox.docked == "BOTTOM",
+			"written down per character, the same as picking the edge from the"
+			.. " slash command")
+		check(TBm._ghosts.LEFT:IsShown() == false,
+			"the targets go when the gesture does")
+		check(h:GetScript("OnUpdate") == nil, "and the tracker stops")
+
+		-- The label reads OUT into the screen, never off the edge of it.
+		TBm:SetDock("LEFT")
+		local lp, _, lrel = h.label:GetPoint(1)
+		check(lp == "LEFT" and lrel == "RIGHT",
+			"docked left the handle's label hangs off the rail's inboard side")
+		TBm:SetDock("RIGHT")
+		lp, _, lrel = h.label:GetPoint(1)
+		check(lp == "RIGHT" and lrel == "LEFT",
+			"and docked right it swaps sides - the rail is hard against the"
+			.. " screen edge, so a label on the outboard side is a word nobody"
+			.. " can read")
+		TBm:SetDock("LEFT")
+
+		-- Combat. Re-docking moves the rail, and the rail is the PARENT of other
+		-- addons' launcher buttons, some of which carry secure templates.
+		_G.__inCombat = true
+		h:GetScript("OnDragStart")(h)
+		check(h:GetScript("OnUpdate") == nil and TBm._ghosts.LEFT:IsShown() == false,
+			"in combat the gesture is refused outright rather than started and"
+			.. " then failed at the drop")
+		_G.__inCombat = false
+
+		-- Locked with the button still down. Nothing has been committed, so the
+		-- move is abandoned rather than applied to whatever was last lit.
+		h:GetScript("OnDragStart")(h)
+		cursorX, cursorY = 680, 30
+		h:GetScript("OnUpdate")(h)
+		check(TBm._dockTarget == "BOTTOM", "mid-drag, the bottom is armed")
+		A.Movers:Lock()
+		check(TBm:Dock() == "LEFT",
+			"locking mid-drag abandons the move rather than committing whatever"
+			.. " happened to be lit (" .. TBm:Dock() .. ")")
+		check(not h:IsShown(), "the handle goes")
+		check(TBm._ghosts.LEFT:IsShown() == false, "the targets go")
+		check(h:GetScript("OnUpdate") == nil,
+			"and so does the tracker - a hidden frame gets no OnUpdate, so one"
+			.. " left attached fires the moment the handle is shown again")
+
+		-- Combat that starts mid-drag is the same abandonment by another route,
+		-- and it is the one the player does not choose.
+		--
+		-- ARMED FIRST, with a clean update, and only then does the fight start.
+		-- Turning combat on before the cursor has moved makes this pass on a
+		-- version that drops straight into the drop path and commits - the armed
+		-- target is still the edge it started on, so committing it changes
+		-- nothing and looks like a refusal. It is the drop path doing a
+		-- protected re-anchor of the rail in combat, and the rail is the parent
+		-- of other addons' secure buttons.
+		A.Movers:Unlock()
+		h:GetScript("OnDragStart")(h)
+		cursorX, cursorY = 680, 30
+		h:GetScript("OnUpdate")(h)
+		check(TBm._dockTarget == "BOTTOM", "armed on the bottom, out of combat")
+		_G.__inCombat = true
+		h:GetScript("OnUpdate")(h)
+		_G.__inCombat = false
+		check(TBm:Dock() == "LEFT" and h:GetScript("OnUpdate") == nil,
+			"and a fight starting mid-drag drops the move rather than committing"
+			.. " the armed edge - the drop re-anchors the rail, which is a"
+			.. " protected action while other addons' secure buttons are its"
+			.. " children (" .. TBm:Dock() .. ")")
+
+		A.Movers:Lock()
+		check(not h:IsShown(), "locking takes the handle away again")
+	end
+
+	UIParent:SetSize(oldW, oldH)
+	cursorX, cursorY = oldX, oldY
 	TBm:SetDock("LEFT")
 	TBm:SetOpen(false, true)
 end

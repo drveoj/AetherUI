@@ -44,8 +44,14 @@
 	the reason is worth stating so nobody wires it in later: a mover means
 	"anywhere, remembered against the nearest corner", and this drawer has
 	exactly four legal positions, each of which changes the panel's LAYOUT rather
-	than its offset. Dragging the rail to re-dock is its own gesture, and it
-	lands in a later layer.
+	than its offset.
+
+	So dragging the rail to re-dock is its OWN gesture, further down this file.
+	It borrows one thing from Movers and nothing else: the moment placement mode
+	turns on, via Movers:OnLockChanged. That matters because the drawer was the
+	only thing on screen you could not place after `/aether unlock` - every other
+	frame grew a handle and this one silently did not, which reads as the drawer
+	being fixed rather than as it having a different gesture.
 
 	`docked` and `open` live in db.char. A drawer edge is a per-character habit
 	the way tracked quests are.
@@ -103,6 +109,11 @@ local PANEL_CORNER = 28
 local SLIDE_RATE = 1 / 0.34
 
 local EDGES = { LEFT = true, RIGHT = true, TOP = true, BOTTOM = true }
+
+-- The same four, in an order. `pairs` over EDGES is fine for asking "is this an
+-- edge" and useless for building four ghosts, which have to come out the same
+-- way every time or the harness is testing a coin toss.
+local EDGE_ORDER = { "LEFT", "RIGHT", "TOP", "BOTTOM" }
 
 local function IsVertical(edge)
 	return edge == "LEFT" or edge == "RIGHT"
@@ -267,6 +278,19 @@ function TB:ApplySkin()
 		-- meant to be black.
 		self.scrim:SetFillColor({ 0, 0, 0, 1 })
 		self.scrim:SetEdgeColor({ 0, 0, 0, 0 })
+	end
+	-- The placement furniture is accent-coloured, and a restyle changes what the
+	-- accent IS. Only worth doing if it has been built - which it has not, for
+	-- anyone who has never unlocked their frames.
+	if self._dockHandle then
+		self._dockHandle:ApplySkin()
+		self._dockHandle:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], 0.22 })
+		self._dockHandle:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.85 })
+		W.Color(self._dockHandle.label, c.text)
+	end
+	if self._ghosts then
+		for _, e in ipairs(EDGE_ORDER) do self._ghosts[e]:ApplySkin() end
+		self:HighlightGhost(self._litGhost)
 	end
 end
 
@@ -525,7 +549,258 @@ function TB:SetDock(edge)
 	if c then c.docked = edge end
 	self:Layout()
 	self:LayoutRail()
+	self:AnchorDockHandle()
 	return true
+end
+
+-- ---------------------------------------------------------------------------
+-- drag to re-dock
+--
+-- Four targets, not a position. Grab the rail while frames are unlocked, four
+-- ghosts appear where the drawer could go, the one nearest the cursor lights
+-- up, and letting go docks it there. That is the Windows-snap idiom rather than
+-- the Movers one, and it is the honest shape for something with four legal
+-- answers: dragging the drawer itself would imply it could be left in the
+-- middle, which it cannot.
+-- ---------------------------------------------------------------------------
+
+--- Which edge a screen point is nearest, as a FRACTION of each axis rather than
+--  in pixels.
+--
+--  Pixels are the obvious version and the wrong one: on a 2560x1440 screen the
+--  centre is 1280 from either side and 720 from top or bottom, so a plain
+--  distance says "top" for the entire middle third of the screen and the two
+--  side docks are unreachable from anywhere near the middle. Fractions make
+--  each edge own its own quarter, wedge-shaped, which is what the gesture looks
+--  like it should do.
+--
+--  Ties resolve to whichever comes first in EDGE_ORDER, because a comparison
+--  that has to be strict somewhere is better than one that is arbitrary.
+function TB:NearestEdge(x, y, w, h)
+	w = w or UIParent:GetWidth() or 1
+	h = h or UIParent:GetHeight() or 1
+	if w <= 0 or h <= 0 then return self:Dock() end
+
+	local fx, fy = x / w, y / h
+	local best, dist = "LEFT", fx
+	if (1 - fx) < dist then best, dist = "RIGHT", 1 - fx end
+	if fy < dist then best, dist = "BOTTOM", fy end
+	if (1 - fy) < dist then best, dist = "TOP", 1 - fy end
+	return best
+end
+
+function TB:BuildGhosts()
+	if self._ghosts then return self._ghosts end
+	local ghosts = {}
+	for _, edge in ipairs(EDGE_ORDER) do
+		local g = Glass.CreatePanel(UIParent, { corner = PANEL_CORNER })
+		g:SetFrameStrata("FULLSCREEN_DIALOG")
+		-- Above the panel (10) and the rail (20) so a ghost on the edge the
+		-- drawer is ALREADY on is still visible, and below the handle (70) so it
+		-- never eats the drag.
+		g:SetFrameLevel(30)
+		g.tag = W.Text(g, "tbSection", "CENTER")
+		g.tag:SetPoint("CENTER", g, "CENTER", 0, 0)
+		g.tag:SetText(edge)
+		g:Hide()
+		ghosts[edge] = g
+	end
+	self._ghosts = ghosts
+	return ghosts
+end
+
+--- Each ghost is the drawer's own footprint on that edge - the size the panel
+--  WOULD be there, at the panel's scale. A uniform strip on each side would be
+--  cheaper and would lie about the top and bottom docks, which are a different
+--  shape entirely.
+function TB:LayoutGhosts()
+	local ghosts = self:BuildGhosts()
+	local scale = A.db.profile.scale
+	for _, edge in ipairs(EDGE_ORDER) do
+		local g = ghosts[edge]
+		local w, h = self:PanelSize(edge)
+		g:SetScale(scale)
+		g:SetSize(w, h)
+		g:ClearAllPoints()
+		g:SetPoint(edge, UIParent, edge, 0, 0)
+		Glass.SetPanelCorner(g, PANEL_CORNER)
+	end
+end
+
+--- The lit one is the one you would get. Everything else is a hint that it is
+--  also available, which is the difference between four targets and one.
+function TB:HighlightGhost(edge)
+	local ghosts = self._ghosts
+	if not ghosts then return end
+	local c = Palette.c
+	for _, e in ipairs(EDGE_ORDER) do
+		local g = ghosts[e]
+		local on = (e == edge)
+		g:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], on and 0.30 or 0.07 })
+		g:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], on and 0.95 or 0.28 })
+		if g.tag then W.Color(g.tag, on and c.text or c.textFaint) end
+	end
+	self._litGhost = edge
+end
+
+function TB:ShowGhosts(show)
+	if not show then
+		if self._ghosts then
+			for _, e in ipairs(EDGE_ORDER) do self._ghosts[e]:Hide() end
+		end
+		self._litGhost = nil
+		return
+	end
+	local ghosts = self:BuildGhosts()
+	self:LayoutGhosts()
+	self:HighlightGhost(self:Dock())
+	for _, e in ipairs(EDGE_ORDER) do ghosts[e]:Show() end
+end
+
+--- The handle sits ON the rail, because the rail is the part of the drawer that
+--  is always on screen - there is no grabbing a panel that is currently a
+--  screen's width off to the left.
+--
+--  FULLSCREEN_DIALOG at a level above the rail's, not DIALOG. DIALOG is BELOW
+--  FULLSCREEN_DIALOG in the strata order, so a handle there would be painted
+--  under the very frame it is meant to be a handle for and would never see a
+--  click. That is the same mistake the chat resize grip made.
+function TB:BuildDockHandle()
+	if self._dockHandle or not self.rail then return self._dockHandle end
+
+	local h = Glass.CreatePanel(UIParent, { corner = RAIL_CORNER, shadow = 8 })
+	h:SetFrameStrata("FULLSCREEN_DIALOG")
+	h:SetFrameLevel((self.rail:GetFrameLevel() or 20) + 50)
+	h:SetAllPoints(self.rail)
+	h:EnableMouse(true)
+	h:RegisterForDrag("LeftButton")
+	h:Hide()
+
+	local c = Palette.c
+	h:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], 0.22 })
+	h:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.85 })
+
+	-- Beside the rail, never on it. The rail is RAIL_W wide - forty-odd pixels -
+	-- and a label centred on it is a word laid across a strip narrower than
+	-- itself. AnchorDockHandle puts it on whichever side has screen to spare.
+	--
+	-- A child of the handle even though it is anchored OUTSIDE it: a region may
+	-- be positioned beyond its parent's bounds and still draws, and being a
+	-- child is what makes it inherit the handle's strata - which is the only
+	-- level above the drawer - and vanish with it.
+	local label = W.Text(h, "tbSection", "CENTER")
+	W.Color(label, c.text)
+	label:SetText("TOOLBOX")
+	h.label = label
+
+	local function Stop(self2)
+		self2:SetScript("OnUpdate", nil)
+		self._dragging = nil
+		self:ShowGhosts(false)
+
+		local edge = self._dockTarget
+		self._dockTarget = nil
+		if edge and EDGES[edge] and edge ~= self:Dock() then
+			self:SetDock(edge)
+			A:Print("toolbox docked -> |cffece6ff" .. edge:lower() .. "|r")
+		end
+		self:AnchorDockHandle()
+	end
+
+	local function Drag(self2)
+		-- The fight can start, or the frames can be locked from the options
+		-- panel, while the button is still down. Re-docking moves the rail, and
+		-- the rail is the parent of other addons' launcher buttons - some of
+		-- which carry secure templates - so finishing the gesture mid-combat is
+		-- a protected action. Drop the drag rather than find out.
+		--
+		-- DISARMED first. Stop is the drop path and commits whatever is armed,
+		-- so falling into it with a target still set does in combat exactly the
+		-- thing this guard exists to prevent - and it would have looked fine in
+		-- a test that turned combat on before the cursor had armed anything.
+		if InCombatLockdown() or not (A.Movers and A.Movers.unlocked) then
+			self._dockTarget = nil
+			return Stop(self2)
+		end
+
+		local us = UIParent:GetEffectiveScale() or 1
+		if us <= 0 then return end
+		local mx, my = GetCursorPosition()
+		local edge = self:NearestEdge(mx / us, my / us)
+		if edge ~= self._litGhost then self:HighlightGhost(edge) end
+		self._dockTarget = edge
+	end
+
+	h:SetScript("OnDragStart", function(self2)
+		if InCombatLockdown() then
+			A:Print("|cffff8a8acan't re-dock the toolbox in combat.|r")
+			return
+		end
+		self._dragging = true
+		self._dockTarget = self:Dock()
+		self:ShowGhosts(true)
+		self2:SetScript("OnUpdate", Drag)
+	end)
+
+	h:SetScript("OnDragStop", Stop)
+
+	-- The label says WHAT, the tooltip says HOW. Every other handle on screen
+	-- means "drag me anywhere"; this one means "drag me to one of four", and
+	-- there is nothing about a purple slab that distinguishes the two.
+	h:SetScript("OnEnter", function(self2)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Toolbox")
+		GameTooltip:AddLine("Drag to any screen edge. The drawer docks to one of"
+			.. " four, and each edge has its own layout.", 0.8, 0.8, 0.85, true)
+		GameTooltip:Show()
+	end)
+	h:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+	self._dockHandle = h
+	self:AnchorDockHandle()
+	return h
+end
+
+--- Which side of the rail the label goes on, and it is always the side the
+--  SCREEN is on. Docked left the rail is hard against the left edge, so a label
+--  to its left is a label off the screen.
+function TB:AnchorDockHandle()
+	local h = self._dockHandle
+	if not h or not h.label then return end
+	local edge = self:Dock()
+	h.label:ClearAllPoints()
+	if edge == "LEFT" then
+		h.label:SetPoint("LEFT", h, "RIGHT", 10, 0)
+	elseif edge == "RIGHT" then
+		h.label:SetPoint("RIGHT", h, "LEFT", -10, 0)
+	elseif edge == "TOP" then
+		h.label:SetPoint("TOP", h, "BOTTOM", 0, -10)
+	else
+		h.label:SetPoint("BOTTOM", h, "TOP", 0, 10)
+	end
+end
+
+--- Driven from Movers, so the drawer's gesture appears and goes away with
+--  everything else's rather than needing its own command to find.
+function TB:ShowDockHandle(show)
+	if show then
+		self:BuildDockHandle()
+	elseif self._dragging then
+		-- Locked mid-drag. Nothing has been committed, so the ghosts go and the
+		-- dock stays where it was.
+		--
+		-- The tracker has to go with it. A hidden frame gets no OnUpdate, so one
+		-- left attached is not harmless - it is a script that fires the instant
+		-- the handle is shown again, with a stale target still armed.
+		self._dragging, self._dockTarget = nil, nil
+		if self._dockHandle then self._dockHandle:SetScript("OnUpdate", nil) end
+		self:ShowGhosts(false)
+	end
+	local h = self._dockHandle
+	if not h then return end
+	h:SetShown(show and true or false)
+	if show then self:AnchorDockHandle() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -640,6 +915,15 @@ function TB:OnEnable()
 	A.Fader:Register(self.rail, {})
 	A.Fader:Register(self.panel, {})
 
+	-- The drawer's own placement gesture, on the same switch as everyone else's.
+	-- Keyed by module name so a disable/enable cycle replaces the watcher rather
+	-- than stacking a second one.
+	if A.Movers then
+		A.Movers:OnLockChanged("toolbox", function(unlocked)
+			TB:ShowDockHandle(unlocked)
+		end)
+	end
+
 	A.Launchers:OnChanged("toolbox", function()
 		-- Re-claim on every change, not only at enable. A pin restored from
 		-- saved variables names an addon whose button may not exist yet: the
@@ -664,6 +948,14 @@ function TB:OnDisable()
 		if self.panel then A.Fader:Unregister(self.panel) end
 	end
 	self:SetPolling(false)
+
+	-- The handle and the ghosts belong to the drawer, so a disabled drawer must
+	-- not leave a purple slab and four targets on screen for a frame that is no
+	-- longer there. The watcher goes too, or locking later puts them back.
+	if A.Movers and A.Movers.watchers then A.Movers.watchers.toolbox = nil end
+	self:ShowDockHandle(false)
+	self:ShowGhosts(false)
+
 	if self.panel then
 		self._want, self._travel = 0, 0
 		self:Layout()

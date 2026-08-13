@@ -18,6 +18,14 @@ A.Movers = Movers
 Movers.registry = {}
 Movers.unlocked = false
 
+-- Modules that place themselves, but still want to know when placement MODE is
+-- on. The Toolbox is the case: it has four legal docks rather than a position,
+-- so it is deliberately not in the registry (see the note at the top of
+-- Modules/Toolbox.lua) - but "unlock frames" has to be the moment its own
+-- gesture becomes available, or the drawer is the one thing on screen that
+-- cannot be placed while everything else can.
+Movers.watchers = {}
+
 local VALID_POINTS = {
 	TOPLEFT = true, TOP = true, TOPRIGHT = true,
 	LEFT = true, CENTER = true, RIGHT = true,
@@ -523,6 +531,24 @@ A:RegisterEvent(Movers, "PLAYER_REGEN_ENABLED", function()
 	Movers._pending = nil
 end)
 
+--- Tell `fn` whenever placement mode turns on or off, keyed so a module that
+--  re-enables does not stack a second copy of itself.
+--
+--  Called ONCE immediately with the current state, because the alternative is a
+--  module that enables while frames are already unlocked and shows no handle
+--  until you lock and unlock again.
+function Movers:OnLockChanged(key, fn)
+	if type(fn) ~= "function" then return end
+	Movers.watchers[key] = fn
+	pcall(fn, Movers.unlocked)
+end
+
+--- pcall per watcher: one module throwing must not leave the REST of the UI
+--  half-unlocked, which is a worse state than either.
+local function Announce()
+	for _, fn in pairs(Movers.watchers) do pcall(fn, Movers.unlocked) end
+end
+
 function Movers:Unlock()
 	Movers.unlocked = true
 	ShowGrid(true)
@@ -533,6 +559,7 @@ function Movers:Unlock()
 		if not entry.handle then CreateHandle(entry) end
 		entry.handle:Show()
 	end
+	Announce()
 	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). |cff9d7bff/aether lock|r when done.")
 	A:Print("|cff888888Edges snap to the grid and to other frames; hold alt while dragging"
 		.. " to place freely. Frames that only appear when the game says so - the pet"
@@ -547,6 +574,7 @@ function Movers:Lock()
 		if entry.handle then entry.handle:Hide() end
 		if entry.preview then pcall(entry.preview, false) end
 	end
+	Announce()
 	A:Print("frames locked.")
 end
 

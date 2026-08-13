@@ -266,6 +266,10 @@ local function ToolboxGroup()
 	return group("Toolbox", {
 		desc = note("A drawer that docks to the centre of any screen edge, with a"
 			.. " rail that stays on screen when the drawer is shut."
+			.. "\n\nTo move it, |cff9d7bffunlock frames|r and drag the rail: four"
+			.. " targets appear, one per edge, and the one nearest the cursor is"
+			.. " the one you get. It has four legal places rather than a"
+			.. " position, because each edge is a different layout."
 			.. "\n\nThe edge it is docked to and whether it is open are remembered"
 			.. " per |cff9d7bffcharacter|r rather than per profile - a drawer edge"
 			.. " is a habit somebody forms on one character."),
