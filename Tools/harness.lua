@@ -1116,6 +1116,7 @@ _G.__cvars = {
 	cameraPitchMoveSpeed               = "90",
 	cameraYawMoveSpeed                 = "180",
 
+	colorblindMode                     = "0",
 	nameplateMaxDistance               = "20",
 	nameplateShowAll                   = "0",
 	nameplateShowEnemies               = "1",
@@ -1515,9 +1516,34 @@ local function tooltipLines(tip)
 	function tip:GetItem() return self.__itemName, self.__item end
 	function tip:GetSpell() return self.__spellName, self.__spellID end
 
+	--- Driven by GUID rather than by token. This is how a SCANNING tooltip is
+	--  filled - SetUnit on one that is not the cursor's does not reliably lay
+	--  its lines out, which is why every addon that reads a title uses this.
+	function tip:SetHyperlink(link)
+		local guid = type(link) == "string" and link:match("^unit:(.+)$")
+		if not guid then return end
+		local d = _G.__unitForGUID(guid)
+		if not d then return end
+		-- The route that actually fills a scanner, so it goes round the guard.
+		local was = self.__addonMade
+		self.__addonMade = nil
+		for token, other in pairs(_G.__units) do
+			if other == d then self:SetUnit(token) break end
+		end
+		self.__addonMade = was
+	end
+
 	--- The client's own SetUnit, in the order the client does it.
+	--
+	--  On a tooltip an ADDON made, this fills nothing. That is not a guess: the
+	--  first nameplate title reader used SetUnit, passed every check here, and
+	--  returned an empty line for every NPC in the game - and Plater, which has
+	--  read titles on this flavour for years, drives its scanner with
+	--  SetHyperlink("unit:"..guid) instead. A mock that filled the lines anyway
+	--  is what let that ship.
 	function tip:SetUnit(unit)
 		self:ClearLines()
+		if self.__addonMade then return end
 		self.__unit = unit
 		local d = _G.__units[unit]
 		if not d then return end
@@ -1527,8 +1553,18 @@ local function tooltipLines(tip)
 		-- either way. It is the only place the client writes "<Innkeeper>" -
 		-- nothing on a nameplate carries it - which is why reading it needs a
 		-- tooltip at all.
-		if d.guild then self:AddLine("<" .. d.guild .. ">")
-		elseif d.title then self:AddLine("<" .. d.title .. ">") end
+		-- A player's guild is bracketed; an NPC's title is NOT. Plater puts its
+		-- own angle brackets on a title before drawing it, which is how we know
+		-- - and this mock used to bracket both, so a parser that only accepted
+		-- bracketed lines passed here and read nothing whatever in game.
+		--
+		-- Colourblind mode inserts a line before it, so the title is not always
+		-- on line two.
+		if d.guild then self:AddLine("<" .. d.guild .. ">") end
+		if (_G.__cvars.colorblindMode or "0") ~= "0" then
+			self:AddLine(d.isPlayer and (d.class or "Warrior") or "Humanoid")
+		end
+		if d.title then self:AddLine(d.title) end
 
 		local lvl = (d.level == -1) and "??" or tostring(d.level or 1)
 		local words = {}
@@ -1614,6 +1650,8 @@ do
 		if kind == "GameTooltip"
 			or (type(template) == "string" and template:find("GameTooltip")) then
 			tooltipLines(f)
+			-- Made by an ADDON, and that matters: see SetUnit below.
+			f.__addonMade = true
 			-- SetOwner CLEARS, exactly as it does on GameTooltip. A scanner that
 			-- forgets to call it reads the LAST unit it looked at, which is a
 			-- bug that only shows up on the second thing you point at.
@@ -1728,6 +1766,9 @@ end
 function GameTooltip_ShowStatusBar() end
 function GameTooltip_ClearStatusBars() end
 
+-- %s rather than the client's %d, so a "??" level can go through the same
+-- format call. Anything matching ON this template has to cope with both, which
+-- is a real divergence and is called out where it matters.
 UNIT_LEVEL_TEMPLATE = "Level %s"
 LEVEL = "Level"
 ELITE = "Elite"
@@ -3705,6 +3746,22 @@ end
 
 function UnitAffectingCombat(u) return units[u] and units[u].inCombat or false end
 function UnitInParty(u) return units[u] and units[u].inParty or false end
+
+-- A GUID per unit, and a way back. Anything that reads a tooltip by hyperlink
+-- goes through one of these rather than through the token.
+function UnitGUID(u)
+	local d = units[u]
+	if not d then return nil end
+	d.__guid = d.__guid or ("Creature-0-0-0-0-" .. tostring(d.name or "?"))
+	return d.__guid
+end
+
+local function UnitForGUID(guid)
+	for _, d in pairs(units) do
+		if d.__guid == guid then return d end
+	end
+end
+_G.__unitForGUID = UnitForGUID
 
 -- Whether you can hit it, which is how the client separates somebody who lives
 -- here from something you fight. A flight master and a wandering kodo can both
@@ -15297,6 +15354,21 @@ do
 		"while the kodo standing beside her, equally neutral and equally"
 		.. " attackable, is still a capsule")
 
+	-- A mob's second line is its LEVEL, and taking that for a title puts
+	-- "Level 15 Beast" under a kodo's name - which is worse than no title.
+	check(k.guild:IsShown() == false, "a mob's level line is not read as a title")
+
+	-- COLOURBLIND MODE INSERTS A LINE. With it on the title is on line three,
+	-- and reading line two regardless gets you the wrong string for every NPC
+	-- in the game - for the players who need that setting, and nobody else.
+	_G.__cvars.colorblindMode = "1"
+	__despawnPlate("nameplate2")
+	__spawnPlate("nameplate2", { exists = true, name = "Zargh", level = 30,
+		reaction = 4, hp = 900, hpMax = 900, title = "Butcher" })
+	check(d._nameForm == true and d.guild:GetText() == "<Butcher>",
+		"the title line moves with colourblind mode, which adds one above it")
+	_G.__cvars.colorblindMode = "0"
+
 	-- ...but a named hostile carries a title too, and that one you want to see
 	-- the health of.
 	__despawnPlate("nameplate2")
@@ -15345,6 +15417,13 @@ do
 		table.concat(wrong, ", ") .. ")")
 
 	-- And the shipped default is a default, not somebody's setting.
+	-- Reachable, or A:Debug is a diagnostic nobody can read.
+	A.db.profile.debug = false
+	SlashCmdList["AETHERUI"]("debug on")
+	check(A.db.profile.debug == true, "debug can be switched on from a slash command")
+	SlashCmdList["AETHERUI"]("debug off")
+	check(A.db.profile.debug == false, "and off again")
+
 	check(A.Config.defaults.profile.scale == 1.0,
 		"the default scale is 1, which is what a 1920x1080 screen wants. It was"
 		.. " 0.71 under a comment deriving it from the DECK's proportions, which"

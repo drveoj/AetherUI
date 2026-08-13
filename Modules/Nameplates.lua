@@ -93,6 +93,21 @@ end
 --  plate that comes up.
 local scanner, titleCache = nil, {}
 
+--- Is this line the unit's LEVEL rather than a title?
+--
+--  Built from the client's own UNIT_LEVEL_TEMPLATE so it survives a locale. A
+--  unit with no title has its level on the second line, and taking that for one
+--  puts "Level 15 Beast" under a kodo's name.
+local function IsLevelLine(text)
+	local template = _G.UNIT_LEVEL_TEMPLATE or "Level %d"
+	-- Both %d and %s. Plater's version only replaces %d, which is what the live
+	-- client's template carries; anything that formats a "??" level uses %s
+	-- instead, and a pattern that missed it would read "Level ?? Elite" as a
+	-- perfectly good job title.
+	local pattern = template:lower():gsub("%%[ds]", "(%%.*)")
+	return text:lower():match(pattern) ~= nil
+end
+
 local function NpcTitle(unit)
 	if not unit then return nil end
 	if UnitIsPlayer and UnitIsPlayer(unit) then return nil end
@@ -103,16 +118,39 @@ local function NpcTitle(unit)
 	local seen = titleCache[name]
 	if seen ~= nil then return seen or nil end
 
+	local guid = UnitGUID and UnitGUID(unit)
+	if not guid then return nil end
+
 	if not scanner then
-		scanner = CreateFrame("GameTooltip", ADDON .. "PlateScanner", UIParent,
+		scanner = CreateFrame("GameTooltip", ADDON .. "PlateScanner", nil,
 			"GameTooltipTemplate")
 	end
-	scanner:SetOwner(UIParent, "ANCHOR_NONE")
-	scanner:SetUnit(unit)
 
-	local line = _G[(scanner:GetName() or "") .. "TextLeft2"]
+	-- SetHyperlink on the unit's GUID, not SetUnit. Plater reads titles this way
+	-- on this flavour and it is the reason it works: a scanning tooltip driven
+	-- by SetUnit does not reliably fill its lines, and the first version of this
+	-- read nothing at all in game while reading fine in the harness.
+	--
+	-- Owner is WorldFrame, parented to nothing, exactly as Plater has it.
+	scanner:SetOwner(_G.WorldFrame or UIParent, "ANCHOR_NONE")
+	scanner:SetHyperlink("unit:" .. guid)
+
+	-- COLOURBLIND MODE ADDS A LINE. With it on, the title is on line three and
+	-- line two is something else entirely - so the index moves with the CVar.
+	local shift = tonumber(GetCVar and GetCVar("colorblindMode") or 0) or 0
+	local line = _G[(scanner:GetName() or "") .. "TextLeft" .. (2 + shift)]
 	local text = line and line:GetText()
-	local title = text and text:match("^<(.+)>$") or nil
+
+	-- Unbracketed, which is how the client writes it - Plater puts its own
+	-- angle brackets on for display and so do we. The first version here only
+	-- accepted a bracketed line and therefore accepted nothing.
+	local title = nil
+	if text and text ~= "" and not IsLevelLine(text) then
+		title = text:match("^<(.+)>$") or text
+	end
+
+	A:Debug("plate title:", name, "line", 2 + shift, "->", tostring(text),
+		"=>", tostring(title))
 
 	-- false, not nil: "asked and there is none" has to be tellable from "not
 	-- asked yet", or every plain mob is re-scanned on every plate it appears on.

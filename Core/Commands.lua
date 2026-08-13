@@ -220,13 +220,25 @@ handlers.scale = function(arg)
 	local v = tonumber(arg)
 	if not v or v < 0.6 or v > 1.6 then
 		A:Print("scale takes 0.6 - 1.6 (currently " .. string.format("%.2f", A.db.profile.scale)
-			.. "). Module geometry is written in the concept deck's 1920px pixels; 0.71 maps"
-			.. " those onto WoW's virtual space one-for-one.")
+			.. "). 1.0 is the default; 0.71 is what maps the concept deck's own"
+			.. " 1920px measurements onto WoW's virtual space one-for-one, if you"
+			.. " want everything at exactly the size it was drawn.")
 		return
 	end
 	A.db.profile.scale = v
 	A:Reconfigure()
 	A:Print("scale -> " .. string.format("%.2f", v))
+end
+
+--- Turn the running commentary on. There was no way to reach this at all, which
+--  made A:Debug a diagnostic nobody could read.
+handlers.debug = function(arg)
+	local want
+	if arg == "on" then want = true
+	elseif arg == "off" then want = false
+	else want = not A.db.profile.debug end
+	A.db.profile.debug = want
+	A:Print("debug -> " .. (want and "on" or "off"))
 end
 
 handlers.shadow = function(arg)

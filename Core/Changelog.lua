@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.5",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: NPC titles never appeared. A scanning tooltip has to be driven by the unit's GUID, not by its token, or it reads nothing back.",
+			"The title is also read a line lower when colourblind mode is on, which would have broken it a second way.",
+			"New: /aether debug turns the running commentary on and off - there was previously no way to reach it.",
+		},
+	},
+	{
 		version = "0.4.4",
 		date    = "2026-08-13",
 		lines   = {
