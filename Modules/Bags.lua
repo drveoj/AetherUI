@@ -1050,19 +1050,33 @@ local function BuildFrame(kind)
 	-- Propagation is restored for every key we do not act on. Setting it false
 	-- once and leaving it there is a total input lockout -- no movement, no
 	-- keybinds, no chat -- for as long as the window is open.
+	--
+	-- Through A:SetPropagate, never the widget method: it is protected in combat,
+	-- and this handler runs on every keypress the window is open for. See the
+	-- note there.
 	frame:EnableKeyboard(true)
-	if frame.SetPropagateKeyboardInput then frame:SetPropagateKeyboardInput(true) end
+	A:SetPropagate(frame, true)
 	frame:SetScript("OnKeyDown", function(self, key)
 		if key ~= "ESCAPE" then
-			if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(true) end
+			A:SetPropagate(self, true)
 			return
 		end
-		if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
+		A:SetPropagate(self, false)
 		if self.search and self.search.box:HasFocus() then
 			self.search.box:SetText("")
 			self.search.box:ClearFocus()
 		else
 			Bags:CloseFrom(self)
+		end
+		-- And straight back on, rather than waiting for the next key to restore
+		-- it. Clearing the search box leaves the window OPEN with propagation
+		-- held: if a fight started before the player touched another key, the
+		-- restore would be a protected call we are no longer allowed to make and
+		-- the window would eat everything until they closed it.
+		if _G.C_Timer and _G.C_Timer.After then
+			_G.C_Timer.After(0.1, function() A:SetPropagate(self, true) end)
+		else
+			A:SetPropagate(self, true)
 		end
 	end)
 

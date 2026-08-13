@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.16",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: pressing a key in combat with the bag window open put \"attempted to call a protected function\" in your error log, once per keypress.",
+			"The same call sat on Zen's keyboard-wake path and could do it too.",
+		},
+	},
+	{
 		version = "0.3.15",
 		date    = "2026-08-13",
 		lines   = {

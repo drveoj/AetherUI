@@ -270,11 +270,27 @@ local function widgetBase(kind)
 
 	function o:SetID(id) self.__id = id end
 	function o:GetID() return self.__id or 0 end
-	-- The client resets this for every keyboard event, which is exactly what the
-	-- first version of bind mode got wrong. Modelled: the test drives OnKeyDown
-	-- directly and asserts the handler set it, not some earlier OnEnter.
+	-- PROTECTED IN COMBAT, on every frame - not just secure ones. This is not the
+	-- Hide/Show restriction, which only bites a frame with a protected descendant;
+	-- the client refuses this one outright and writes "attempted to call a
+	-- protected function during combat lockdown" into the player's error log,
+	-- naming our frame. The bag window shipped calling it from OnKeyDown and spat
+	-- that line at nine consecutive keypresses in a fight, because this mock used
+	-- to be a plain setter that never refused anything.
+	--
+	-- The value PERSISTS between events - it is not reset per keystroke - which is
+	-- what makes the combat case survivable: a resting true carries every key we
+	-- do not act on, so a handler has nothing to say in a fight.
 	o.__propagate = true
-	function o:SetPropagateKeyboardInput(v) self.__propagate = v and true or false end
+	function o:SetPropagateKeyboardInput(v)
+		_G.__propagateCalls = (_G.__propagateCalls or 0) + 1
+		if _G.__inCombat then
+			fail(("ADDON BLOCKED: SetPropagateKeyboardInput() on %s - protected in"
+				.. " combat, on any frame"):format(tostring(self.__name or self.__kind)))
+			return
+		end
+		self.__propagate = v and true or false
+	end
 	-- Buttons are Frames, which is the check every button collector leans on.
 	function o:GetObjectType() return self.__kind end
 	function o:IsObjectType(t)
@@ -13586,7 +13602,52 @@ do
 	check(not f:IsShown(), "and closes the window")
 	f:GetScript("OnKeyDown")(f, "SPACE")
 	check(f.__propagate == true, "and propagation is restored on the next key -"
-		.. " the client resets the flag per event, so it has to be re-asserted")
+		.. " held false with the window still open, the next thing the player"
+		.. " pressed would vanish")
+end
+
+print("== bags: a keypress in a fight is not an error message ==")
+do
+	local f = Bg.frames.bags
+	Bg:Toggle("bags")
+	if not f:IsShown() then Bg:Toggle("bags") end
+
+	-- The shipped bug: OnKeyDown called SetPropagateKeyboardInput on EVERY key,
+	-- including ones it does nothing with. The call is protected on any frame, so
+	-- nine presses in one fight put nine "attempted to call a protected function"
+	-- lines in front of the player. The mock refuses it in combat now, so this
+	-- would go red on its own - the counter says WHY, rather than leaving the next
+	-- reader to guess which of the two problems fired.
+	_G.__inCombat = true
+	_G.__propagateCalls = 0
+	f:GetScript("OnKeyDown")(f, "2")
+	check(_G.__propagateCalls == 0,
+		"a key we do not act on never reaches the protected call at all - it wants"
+		.. " propagation ON, which is what it already is")
+	check(f.__propagate == true, "and the keypress still reaches the game")
+
+	-- A change we genuinely want mid-fight is remembered, not dropped.
+	f:GetScript("OnKeyDown")(f, "ESCAPE")
+	check(f.__propagate == true,
+		"escape cannot hold the key in combat - the client would refuse it")
+	check(not f:IsShown(), "but the window still closes, which is the part that matters")
+	check(f.__pendingPropagate == false, "and the change we could not make is queued")
+
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(f.__propagate == false and f.__pendingPropagate == nil,
+		"then replayed when the fight ends - a queue that dropped a pending"
+		.. " 'back to true' is exactly how a window ends up eating every key")
+	check(next(A.__propagateQueue) == nil,
+		"and the queue empties, rather than holding a reference to every frame"
+		.. " that ever pressed a key in a fight")
+
+	A:SetPropagate(f, true)
+	_G.__propagateCalls = 0
+	A:SetPropagate(f, true)
+	check(_G.__propagateCalls == 0,
+		"and setting it to what it already holds is a no-op, which is what makes"
+		.. " the hot path free")
 end
 
 print("== bags: the bank only exists while you are at it ==")

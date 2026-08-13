@@ -109,6 +109,65 @@ function A:SnapIn(frame, v)
 end
 
 -- ---------------------------------------------------------------------------
+-- keyboard propagation
+-- ---------------------------------------------------------------------------
+
+--- Let a key through, or hold on to it, without shouting in the error log.
+--
+--  SetPropagateKeyboardInput is PROTECTED, on every frame - not only secure
+--  ones. Called during combat lockdown it is refused and the client writes
+--  "attempted to call a protected function" into the player's log, naming our
+--  frame. The bag window shipped calling it from OnKeyDown for keys it does not
+--  even act on, and put that line in front of a player nine times in one fight.
+--
+--  Two things make it safe, both learned from CinematicTaxi, which hit exactly
+--  this and wrote down why:
+--
+--    * The value PERSISTS between keyboard events. So remember it, and setting
+--      it to what it already holds becomes a no-op that never reaches the
+--      protected call at all. Since propagation rests at true and every key we
+--      do not act on wants true, that alone is most of the fix.
+--    * When we genuinely do need to change it mid-fight, queue it and replay on
+--      PLAYER_REGEN_ENABLED. Dropping a pending "back to true" is how a window
+--      ends up eating every key the player presses until they close it.
+--
+--  Zen's OnKeyDown carried a comment saying the client clears the flag after
+--  every event, so setting it once buys nothing. That was wrong, and it is the
+--  reason this call was on a hot path in the first place.
+local propagateQueue
+function A:SetPropagate(frame, value)
+	if not frame or not frame.SetPropagateKeyboardInput then return end
+	value = value and true or false
+
+	-- Frames are created propagating, so an unknown state is true.
+	if frame.__propagating == nil then frame.__propagating = true end
+	if frame.__propagating == value then return end
+
+	if InCombatLockdown and InCombatLockdown() then
+		frame.__pendingPropagate = value
+		if not propagateQueue then
+			propagateQueue = {}
+			A.__propagateQueue = propagateQueue
+			A:RegisterEvent(A, "PLAYER_REGEN_ENABLED", function()
+				for f in pairs(propagateQueue) do
+					local want = f.__pendingPropagate
+					if want ~= nil then
+						f:SetPropagateKeyboardInput(want)
+						f.__propagating, f.__pendingPropagate = want, nil
+					end
+					propagateQueue[f] = nil
+				end
+			end)
+		end
+		propagateQueue[frame] = true
+		return
+	end
+
+	frame:SetPropagateKeyboardInput(value)
+	frame.__propagating, frame.__pendingPropagate = value, nil
+end
+
+-- ---------------------------------------------------------------------------
 -- module registry
 -- ---------------------------------------------------------------------------
 

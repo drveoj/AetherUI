@@ -1625,18 +1625,23 @@ local function BuildKeys()
 	k:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
 	k:SetFrameStrata("TOOLTIP")
 	k:EnableKeyboard(false)
-	k:SetPropagateKeyboardInput(true)
+	A:SetPropagate(k, true)
 
 	k:SetScript("OnKeyDown", function(self)
-		-- First line, every time. The client clears the propagation flag after
-		-- every keyboard event, so setting it once at construction buys nothing
-		-- and setting it after the wake would leave a window where an error in
-		-- Wake() eats somebody's keypress.
-		self:SetPropagateKeyboardInput(true)
+		-- First line, every time, and never the widget method directly.
+		--
+		-- This used to say the client clears the propagation flag after every
+		-- event, so setting it once at construction bought nothing. That is not
+		-- true - the value persists - and believing it put a call that is
+		-- PROTECTED IN COMBAT on the path of every key the player presses while
+		-- zen is armed. A:SetPropagate keeps the same guarantee (propagation is
+		-- on before Wake can raise anything) at the cost of nothing at all,
+		-- because setting true when it is already true does not call through.
+		A:SetPropagate(self, true)
 		Wake()
 	end)
 	k:SetScript("OnKeyUp", function(self)
-		self:SetPropagateKeyboardInput(true)
+		A:SetPropagate(self, true)
 	end)
 
 	return k
@@ -1651,7 +1656,7 @@ function Zen:SetKeysEnabled(on)
 	if self._keysOn == on then return end
 	self._keysOn = on
 	self.keys:EnableKeyboard(on and true or false)
-	self.keys:SetPropagateKeyboardInput(true)
+	A:SetPropagate(self.keys, true)
 end
 
 -- ---------------------------------------------------------------------------
