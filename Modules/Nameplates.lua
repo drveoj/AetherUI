@@ -41,7 +41,7 @@ local GAP_BADGE, GAP_ROW  = 10, 5
 local GAP_CHIP            = 6
 
 -- The friendly form: a 17px class pip and a 6px gap, and no glass at all.
-local PIP, GAP_PIP, GAP_GUILD = 17, 6, 1
+local PIP, GAP_PIP, GAP_GUILD = 20, 6, 1
 
 -- The client draws this for a unit too far above you to read a level from.
 local SKULL = "|T" .. [[Interface\TargetingFrame\UI-TargetingFrame-Skull]] .. ":12:12:0:0|t"
@@ -167,6 +167,7 @@ end
 
 local function ApplyForm(f, friendly)
 	f._nameForm = friendly
+	W.Restyle(f.name, friendly and "npFriendly" or "npName")
 	if friendly then
 		-- The glass goes entirely, rather than being dimmed. A faint capsule
 		-- behind a friendly name is the thing the deck is most explicit about
@@ -737,6 +738,47 @@ local function TickChips()
 end
 
 -- ---------------------------------------------------------------------------
+-- asking the client for friendly plates
+-- ---------------------------------------------------------------------------
+--
+-- Without this there is nothing to draw on. The engine only makes a nameplate
+-- for a friendly unit when it is asked to; left alone it renders them as
+-- floating name text instead - the client's yellow name with its <Innkeeper>
+-- line - which is a different system entirely and never reaches this module.
+-- The friendly form was complete and invisible for exactly that reason.
+--
+-- Only ever turned ON. The off state is the player's own client setting and not
+-- ours to clear: switching friendlyNames off makes friendlies wear the capsule,
+-- it does not go and edit their console variables.
+--
+-- Probed rather than assumed - SetCVar on a name this client does not have
+-- raises, and the set has moved between flavours, which is why the legacy
+-- nameplateShowFriends is in the list and why nothing here writes blind.
+local FRIENDLY_CVARS = {
+	"nameplateShowFriendlyPlayers",
+	"nameplateShowFriends",           -- what older clients called it
+	"nameplateShowFriendlyNpcs",
+}
+
+local function ApplyCVars()
+	if cfg().friendlyNames == false then return end
+
+	-- Refused in combat. Queued rather than dropped, or a fight starting while
+	-- the UI loads costs you friendly plates until the next reload.
+	if InCombatLockdown and InCombatLockdown() then
+		NP._cvarsPending = true
+		return
+	end
+	NP._cvarsPending = nil
+
+	for _, name in ipairs(FRIENDLY_CVARS) do
+		if GetCVar and GetCVar(name) ~= nil then
+			pcall(SetCVar, name, "1")
+		end
+	end
+end
+
+-- ---------------------------------------------------------------------------
 -- the driver
 -- ---------------------------------------------------------------------------
 
@@ -820,6 +862,9 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "UNIT_MAXHEALTH", OnUnitEvent)
 	A:RegisterEvent(self, "UNIT_FACTION", OnFactionChanged)
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
+	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
+		if NP._cvarsPending then ApplyCVars() end
+	end)
 	A:RegisterEvent(self, "UNIT_AURA", OnAuraChanged)
 
 	-- Casts. The native events never fire for a nameplate unit on this client -
@@ -867,6 +912,8 @@ function NP:OnEnable()
 	A:RegisterTicker(self, TickChips)
 	A:RegisterEvent(self, "UNIT_FLAGS", OnUnitEvent)
 
+	ApplyCVars()
+
 	-- Plates already up when we are switched on mid-session.
 	if C_NamePlate and C_NamePlate.GetNamePlates then
 		for _, base in ipairs(C_NamePlate.GetNamePlates()) do
@@ -894,6 +941,7 @@ end
 
 function NP:OnConfigChanged()
 	local c = cfg()
+	ApplyCVars()
 	for base, f in pairs(plates) do
 		f.bar:SetWidth(c.barWidth)
 		f.bar:SetHeight(c.barHeight)
@@ -916,3 +964,4 @@ NP.step = Step
 NP.moving = moving
 NP.updateChips = UpdateChips
 NP.castStart = CastStart
+NP.applyCVars = ApplyCVars

@@ -118,8 +118,15 @@ end
 -- An explicit size override (W.Pill's `size`) outlives a restyle. It was set
 -- because the role's own number was wrong for where the string sits, and that is
 -- still true after a skin change.
+-- Naming a style RE-ROLES the string, rather than applying that font once. The
+-- skin pass calls this with no style at all and means "the role you already
+-- have"; a caller that names one is changing what the string IS - a nameplate's
+-- name swaps between the capsule's role and the friendly one as the plate's form
+-- changes. Left unrecorded, the next skin change quietly put the original role
+-- back and the string shrank for no visible reason.
 function W.Restyle(fs, style)
 	if not fs then return end
+	if style then fs._aetherStyle = style end
 	Media:SetFont(fs, style or fs._aetherStyle, fs._aetherSize)
 end
 

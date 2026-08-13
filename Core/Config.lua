@@ -476,7 +476,10 @@ Config.defaults = {
 				-- HUD is read at arm's length, so the size that suits one is not
 				-- automatically the size that suits the other.
 				scale      = 1,
-				badgeSize  = 26,
+				-- The deck's 26. Three more, because at 26 a two-digit level sits
+				-- hard against the rim and the disc reads as a ring with a number
+				-- jammed in it rather than a number on a disc.
+				badgeSize  = 29,
 				barWidth   = 160,
 				barHeight  = 5,
 				-- Neutral units carry a name and nothing else until they are in a

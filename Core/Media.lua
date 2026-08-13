@@ -333,7 +333,11 @@ Media.style = {
 	npBadge      = { "bold",     10, "" },   -- the number in the level badge
 	npChip       = { "bold",      9, "" },   -- ELITE / RARE
 	npAura       = { "medium",   11, "" },   -- "Chilled - 4s" under a target
-	npGuild      = { "regular",  11, "" },   -- <Samophlange>, under a friendly
+	npGuild      = { "regular",  12, "" },   -- <Samophlange>, under a friendly
+	-- A point up on npName. The capsule forms have glass behind them and
+	-- read fine at 14; a friendly name is shadowed type straight onto the
+	-- world, and the same size there is a size smaller.
+	npFriendly   = { "semibold", 15, "" },
 }
 
 -- ---------------------------------------------------------------------------

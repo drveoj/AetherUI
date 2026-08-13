@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.23",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: friendly NPCs kept the client's yellow floating name instead of ours. The engine only makes a nameplate for a friendly unit when asked, so now we ask.",
+			"Friendly names and guild lines come up a point - they sit on the world with no glass behind them, and read a size smaller than the same text inside a capsule.",
+			"Level discs on nameplates are a little larger, so a two-digit level is not jammed against the rim.",
+		},
+	},
+	{
 		version = "0.3.22",
 		date    = "2026-08-13",
 		lines   = {

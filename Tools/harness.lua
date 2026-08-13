@@ -14788,6 +14788,15 @@ do
 	local f = NPm.plateFor(base)
 
 	check(f._nameForm == true, "a friendly player is drawn as a name")
+	check(f.name._aetherStyle == "npFriendly",
+		"in its own type role, a point up on the capsule's - a friendly name is"
+		.. " shadowed type straight onto the world with no glass under it, and"
+		.. " the same size there is a size smaller")
+	A:Restyle()
+	check(f.name._aetherStyle == "npFriendly",
+		"and it SURVIVES a skin change - W.Restyle used to apply a named role"
+		.. " without recording it, so the next skin pass put the original back"
+		.. " and the name shrank with nothing on screen to explain why")
 	check(f._fillColor[4] == 0,
 		"with the glass gone entirely rather than dimmed - a faint capsule behind"
 		.. " a friendly name is the thing the deck is most explicit about not wanting")
@@ -14849,6 +14858,9 @@ do
 	__spawnPlate("nameplate1", mob)
 	check(f._nameForm == false and f._fillColor[4] > 0,
 		"the same frame becomes a capsule again for the next mob that walks up")
+	check(f.name._aetherStyle == "npName",
+		"with the capsule's own type role back, rather than the friendly one it"
+		.. " was wearing a moment ago")
 	check(f.badge:IsShown() and f.badge.label:GetText() == "18"
 		and not f.guild:IsShown(),
 		"with the badge back at plate size and the guild line gone")
@@ -14857,6 +14869,43 @@ do
 		.. " guild line belonging to somebody who has walked off")
 
 	__despawnPlate("nameplate1")
+end
+
+print("== nameplates: asking the client for friendly plates ==")
+do
+	local cv = _G.__cvars
+	cv.nameplateShowFriendlyPlayers = "0"
+	cv.nameplateShowFriendlyNpcs    = "0"
+	_G.__badCVarWrites = 0
+
+	NPm.applyCVars()
+	check(cv.nameplateShowFriendlyPlayers == "1" and cv.nameplateShowFriendlyNpcs == "1",
+		"friendly players AND friendly NPCs are asked for - without this the"
+		.. " engine draws them as floating name text and never makes a plate, so"
+		.. " the friendly form has nothing at all to draw on")
+	check(_G.__badCVarWrites == 0,
+		"and nameplateShowFriends, which this flavour does not have, is probed"
+		.. " rather than fired blind - the client logs the blind one")
+
+	-- Refused in combat, so queued rather than dropped.
+	cv.nameplateShowFriendlyNpcs = "0"
+	_G.__inCombat = true
+	NPm.applyCVars()
+	check(cv.nameplateShowFriendlyNpcs == "0" and NPm._cvarsPending == true,
+		"a fight starting mid-load defers the write rather than losing it")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(cv.nameplateShowFriendlyNpcs == "1" and NPm._cvarsPending == nil,
+		"and it lands when the fight ends")
+
+	-- Never turned off: that state is the player's own console setting.
+	A.Config:Module("nameplates").friendlyNames = false
+	cv.nameplateShowFriendlyNpcs = "0"
+	NPm.applyCVars()
+	check(cv.nameplateShowFriendlyNpcs == "0",
+		"switching friendly names off makes friendlies wear the capsule - it does"
+		.. " not go and clear their console variables")
+	A.Config:Module("nameplates").friendlyNames = true
 end
 
 print("== palette: difficulty has one owner ==")
