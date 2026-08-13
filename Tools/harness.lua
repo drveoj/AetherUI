@@ -14502,12 +14502,15 @@ do
 		exists = true, name = "Gazrog", level = 20, reaction = 2, hp = 10, hpMax = 10,
 	})
 	local of = NPm.plateFor(other)
-	check(math.abs(of:GetScale() - 0.9 * A.Config:Module("nameplates").scale) < 0.001,
-		"a plate is BUILT at profile.scale, times the module's own multiplier")
+	local mult = A.Config:Module("nameplates").scale
+	check(math.abs(of:GetScale() - 0.9 * mult * 0.8) < 0.001,
+		"a plate is BUILT at profile.scale, times the module's own multiplier,"
+		.. " times the .8 an off-target plate wears")
 
 	A.db.profile.scale = 0.71
 	NPm:OnConfigChanged()
-	check(math.abs(of:GetScale() - 0.71) < 0.001, "and follows it when it moves")
+	check(math.abs(of:GetScale() - 0.71 * mult * 0.8) < 0.001,
+		"and follows profile.scale when it moves, without losing the .8")
 	__despawnPlate("nameplate2")
 
 	-- A token with nothing behind it. The client does this when a unit arrives
@@ -14525,6 +14528,79 @@ do
 		"a token with no plate behind it builds nothing and raises nothing")
 
 	__despawnPlate("nameplate1")
+end
+
+print("== nameplates: the target is the one you can read ==")
+do
+	local mob = { exists = true, name = "Kolkar Marauder", level = 18, reaction = 2,
+		hp = 900, hpMax = 1000 }
+	local other = { exists = true, name = "Kolkar Wrangler", level = 17, reaction = 2,
+		hp = 400, hpMax = 1000 }
+
+	local baseA = __spawnPlate("nameplate1", mob)
+	local baseB = __spawnPlate("nameplate2", other)
+	local a, b = NPm.plateFor(baseA), NPm.plateFor(baseB)
+	local full = A.db.profile.scale * A.Config:Module("nameplates").scale
+
+	check(math.abs(a:GetScale() - full * 0.8) < 0.001
+		and math.abs(a:GetAlpha() - 0.62) < 0.001,
+		"with nothing targeted every plate is off-target: .8 and .62")
+
+	-- UnitIsUnit answers on identity, so this is the same mob, not a copy.
+	_G.__units.target = mob
+	fire("PLAYER_TARGET_CHANGED")
+
+	check(NPm.step(nil, 1) == false, "the fade finishes")
+	check(math.abs(a:GetScale() - full) < 0.001 and math.abs(a:GetAlpha() - 1) < 0.001,
+		"the target comes up to full size and full strength")
+	check(a._rimColor ~= nil, "and takes a rim glow in its reaction")
+	check(math.abs(a._rimColor[4] - 0.28) < 0.001, "at the deck's .28")
+	check(a._edgeColor[4] > b._edgeColor[4],
+		"with a stronger rim than the plates around it")
+
+	check(math.abs(b:GetScale() - full * 0.8) < 0.001 and b._rimColor == nil,
+		"while everything else stays small and unglowed")
+
+	-- The transition, rather than a snap.
+	_G.__units.target = other
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 0.05)
+	local mid = a:GetScale()
+	check(mid < full and mid > full * 0.8,
+		"a target change is a 150ms move, not a jump - part way through, the plate"
+		.. " losing focus is between the two sizes")
+	check(NPm.step(nil, 1) == false and math.abs(a:GetScale() - full * 0.8) < 0.001,
+		"and it arrives")
+	check(b._rimColor ~= nil and a._rimColor == nil,
+		"with the glow having moved across, not been left on both")
+
+	-- Losing the target entirely.
+	_G.__units.target = nil
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 1)
+	check(b._rimColor == nil, "dropping the target takes the glow with it")
+
+	-- A plate that arrives already targeted does not swell into place.
+	_G.__units.target = mob
+	__despawnPlate("nameplate1")
+	local again = __spawnPlate("nameplate1", mob)
+	local a2 = NPm.plateFor(again)
+	check(math.abs(a2:GetScale() - full) < 0.001,
+		"and a plate that walks up ALREADY targeted arrives at full size rather"
+		.. " than growing into it - it was correct before you could see it")
+
+	-- Released part way through a fade, which is the ordinary case: you switch
+	-- target and the mob you left dies before the transition finishes.
+	_G.__units.target = nil
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 0.05)
+	__despawnPlate("nameplate1")
+	__despawnPlate("nameplate2")
+	check(next(NPm.moving) == nil,
+		"a plate released mid-fade is taken out of the moving set, not left"
+		.. " animating a frame nobody can see")
+	check(a._rimColor == nil and b._rimColor == nil,
+		"and keeps no glow for whoever gets it next")
 end
 
 print("== palette: difficulty has one owner ==")

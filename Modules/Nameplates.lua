@@ -97,7 +97,6 @@ local function Build(base)
 
 	local f = Glass.CreatePill(base, { fill = "glass", edge = "glassEdge" })
 	f:SetFrameStrata(base:GetFrameStrata())
-	f:SetScale(PlateScale())
 	f:SetPoint("CENTER", base, "CENTER", 0, 0)
 	f:Hide()
 
@@ -255,10 +254,87 @@ local function UpdateBar(f)
 	end
 end
 
-local function UpdateEdge(f)
+-- ---------------------------------------------------------------------------
+-- target emphasis
+-- ---------------------------------------------------------------------------
+--
+-- The deck's rule: the target is full size and full strength with a rim glow in
+-- its reaction, and everything else shrinks to .8 and dims to .62. Reading a
+-- fight is mostly the question "which of these is mine", and a screen of
+-- identical plates does not answer it.
+--
+-- Driven by its own OnUpdate rather than A:RegisterTicker, which runs at 0.1s -
+-- three frames of a 150ms fade is a stutter, not a transition. The frame is
+-- shown only while something is actually moving, so it costs nothing at rest.
+
+local OFF_SCALE, OFF_ALPHA = 0.80, 0.62
+local EDGE_OFF, EDGE_ON    = 0.30, 0.55
+local GLOW_ALPHA           = 0.28
+local FADE                 = 0.15
+
+local moving = {}
+local anim = CreateFrame("Frame")
+anim:Hide()
+
+--- Paint a plate at wherever its transition has got to.
+local function ApplyEmphasis(f)
+	local t = f._at or 0
+
+	f:SetScale(PlateScale() * (OFF_SCALE + (1 - OFF_SCALE) * t))
+	f:SetAlpha(OFF_ALPHA + (1 - OFF_ALPHA) * t)
+
 	if not f.unit then return end
 	local c = Palette:NameReaction(f.unit)
-	f:SetEdgeColor({ c[1], c[2], c[3], 0.30 })
+	f:SetEdgeColor({ c[1], c[2], c[3], EDGE_OFF + (EDGE_ON - EDGE_OFF) * t })
+
+	-- The glow is the target's alone. Carried at a fraction of its strength on
+	-- the way in and out, so it arrives with the scale rather than snapping on
+	-- at the end of it.
+	if t > 0.01 then
+		f:SetRimGlow({ c[1], c[2], c[3], GLOW_ALPHA * t })
+	else
+		f:SetRimGlow(nil)
+	end
+end
+
+local function Step(_, dt)
+	local busy = false
+	for f in pairs(moving) do
+		local want, at = f._want or 0, f._at or 0
+		local d = dt / FADE
+		if at < want then at = math.min(want, at + d) else at = math.max(want, at - d) end
+		f._at = at
+		ApplyEmphasis(f)
+		if at == want then moving[f] = nil else busy = true end
+	end
+	if not busy then anim:Hide() end
+	return busy
+end
+
+anim:SetScript("OnUpdate", Step)
+
+--- Aim a plate at target or off-target. `instant` skips the fade, which is what
+--  a plate arriving already-targeted wants: it should come up correct, not
+--  swell into place.
+local function Emphasise(f, on, instant)
+	f._want = on and 1 or 0
+	if instant or f._at == nil then
+		f._at = f._want
+		moving[f] = nil
+		ApplyEmphasis(f)
+	elseif f._at ~= f._want then
+		moving[f] = true
+		anim:Show()
+	end
+end
+
+local function IsTarget(unit)
+	return (unit and UnitIsUnit and UnitIsUnit(unit, "target")) and true or false
+end
+
+local function UpdateEdge(f)
+	if not f.unit then return end
+	ApplyEmphasis(f)
 end
 
 local function UpdateAll(f)
@@ -285,6 +361,8 @@ local function OnUnitAdded(_, _, token)
 	local f = PlateFor(base)
 	f.unit = token
 	byUnit[token] = f
+	-- Arrives correct rather than swelling into place.
+	Emphasise(f, IsTarget(token), true)
 	UpdateAll(f)
 	f:Show()
 end
@@ -300,12 +378,22 @@ local function OnUnitRemoved(_, _, token)
 	f.name:SetText("")
 	f.badge:SetLabel("")
 	f.chip:Hide()
+	f:SetRimGlow(nil)
+	moving[f] = nil
 	byUnit[token] = nil
 end
 
 local function OnUnitEvent(_, _, token)
 	local f = token and byUnit[token]
 	if f then UpdateBar(f) end
+end
+
+--- Both plates move on a target change - the one that gained it and the one
+--  that lost it - so this asks every plate up rather than tracking the last.
+local function OnTargetChanged()
+	for _, f in pairs(byUnit) do
+		Emphasise(f, IsTarget(f.unit))
+	end
 end
 
 --- Reaction can move under a plate that is already up - a neutral mob you pull,
@@ -325,6 +413,7 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "UNIT_HEALTH", OnUnitEvent)
 	A:RegisterEvent(self, "UNIT_MAXHEALTH", OnUnitEvent)
 	A:RegisterEvent(self, "UNIT_FACTION", OnFactionChanged)
+	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
 	A:RegisterEvent(self, "UNIT_FLAGS", OnUnitEvent)
 
 	-- Plates already up when we are switched on mid-session.
@@ -354,13 +443,16 @@ end
 function NP:OnConfigChanged()
 	local c = cfg()
 	for base, f in pairs(plates) do
-		f:SetScale(PlateScale())
 		f.bar:SetWidth(c.barWidth)
 		f.bar:SetHeight(c.barHeight)
 		f.badge:Resize(c.badgeSize)
 		f:SetSize(PAD_L + c.badgeSize + GAP_BADGE + c.barWidth + PAD_R,
 			c.badgeSize + PAD_Y * 2)
 		if c.hideBlizzard == false then ShowBlizzard(base) else HideBlizzard(base) end
+		-- Emphasis owns the scale, because it multiplies profile.scale by the
+		-- off-target .8. Setting the raw scale here would flip every unfocused
+		-- plate to full size until the next target change.
+		ApplyEmphasis(f)
 		if f.unit then UpdateAll(f) end
 	end
 end
@@ -368,3 +460,5 @@ end
 -- Exposed for the suite: which plate belongs to a base, and all of them.
 NP.plateFor = PlateFor
 NP.plates = plates
+NP.step = Step
+NP.moving = moving

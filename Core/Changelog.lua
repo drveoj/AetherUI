@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.19",
+		date    = "2026-08-13",
+		lines   = {
+			"New: your target's nameplate comes up to full size with a rim glow in its reaction colour, and every other plate shrinks and dims out of the way.",
+			"Target changes fade over about a sixth of a second rather than snapping.",
+		},
+	},
+	{
 		version = "0.3.18",
 		date    = "2026-08-13",
 		lines   = {
