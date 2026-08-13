@@ -2822,14 +2822,31 @@ C_AddOns = {
 local ADDON = "AetherUI"
 local A = {}
 
+--- FATAL, not counted.
+--
+--  A file that does not parse means the addon does not load AT ALL in game -
+--  the client stops at the .toc line and nothing after it exists. Recording that
+--  as one failure among many and carrying on is worse than useless: the rest of
+--  the suite then interrogates a half-built addon and dies somewhere unrelated
+--  on a nil index, which is the thing you end up debugging instead of the typo.
+--
+--  Both halves are fatal. A file that parses but raises while loading leaves the
+--  same hole.
 local function load(path)
-	local chunk, err = loadfile(path)
-	if not chunk then
-		fail("load " .. path .. ": " .. tostring(err))
-		return
+	local function dead(what, err)
+		print("")
+		print("!! " .. path .. " " .. what)
+		print("   " .. tostring(err))
+		print("")
+		print("   The addon would not load in game. Nothing after this point is")
+		print("   meaningful, so the run stops here.")
+		os.exit(1)
 	end
+
+	local chunk, err = loadfile(path)
+	if not chunk then dead("DOES NOT PARSE", err) end
 	local ok, e = pcall(chunk, ADDON, A)
-	if not ok then fail("run " .. path .. ": " .. tostring(e)) end
+	if not ok then dead("RAISED WHILE LOADING", e) end
 end
 
 -- real libs, so the AceDB defaults merge is exercised for real
@@ -14898,6 +14915,21 @@ do
 	check(cv.nameplateShowFriendlyNpcs == "1" and NPm._cvarsPending == nil,
 		"and it lands when the fight ends")
 
+	-- Zen borrows these. Two modules writing the same console variable is how
+	-- one of them silently undoes the other.
+	local Zn = A:GetModule("zen")
+	-- On before zen, because that is what we asked the client for.
+	cv.nameplateShowFriendlyNpcs = "1"
+	Zn:SetWorldText(1)
+	NPm.applyCVars()
+	check(cv.nameplateShowFriendlyNpcs == "0" and NPm._cvarsPending == true,
+		"a nameplate setting changed DURING a zen does not put every friendly"
+		.. " plate back on screen in the middle of it")
+	Zn:RestoreWorldText()
+	check(cv.nameplateShowFriendlyNpcs == "1",
+		"and zen gives back the value it borrowed, which was ours - so there is"
+		.. " nothing left to redo when it ends")
+
 	-- Never turned off: that state is the player's own console setting.
 	A.Config:Module("nameplates").friendlyNames = false
 	cv.nameplateShowFriendlyNpcs = "0"
@@ -14906,6 +14938,59 @@ do
 		"switching friendly names off makes friendlies wear the capsule - it does"
 		.. " not go and clear their console variables")
 	A.Config:Module("nameplates").friendlyNames = true
+end
+
+print("== options: every control is wired to something that exists ==")
+do
+	-- A control bound to a key that is not in the defaults does NOTHING, and
+	-- says nothing about it: the slider moves, the value is written into a
+	-- table nobody reads, and the setting silently has no effect. The panel is
+	-- the only way most of this is reachable, so a typo here is a feature that
+	-- quietly is not there.
+	local missing, count = {}, 0
+
+	local function walk(node, where)
+		for key, opt in pairs(node.args or {}) do
+			local at = (where or "") .. "/" .. tostring(key)
+			if opt.type == "group" then
+				walk(opt, at)
+			elseif opt.arg and opt.arg.path then
+				count = count + 1
+				-- Against the DEFAULTS, not the live profile. The profile is
+				-- whatever this suite has written into it by now, and Set writes
+				-- a key whether or not it was ever declared - so resolving there
+				-- means a control with a typo in its path CREATES the key it was
+				-- looking for and then reports itself as fine.
+				-- `defaultTrue` toggles are absent from the defaults ON PURPOSE:
+				-- Get reads nil as true for them, so declaring one would say the
+				-- same thing twice and the two could disagree.
+				local t = (not opt.arg.defaultTrue) and A.Config.defaults.profile or nil
+				local path = opt.arg.path
+				if t == nil then path = nil end
+				if path then
+					for i = 1, #path - 1 do
+						t = type(t) == "table" and t[path[i]] or nil
+					end
+					if type(t) ~= "table" or t[path[#path]] == nil then
+						missing[#missing + 1] = at .. " -> "
+							.. table.concat(path, ".")
+					end
+				end
+			end
+		end
+	end
+	walk(A.Options:Build())
+
+	check(count > 40, "the panel binds a fair number of controls (" .. count .. ")")
+	check(#missing == 0,
+		"and every one resolves to a key that exists in the defaults ("
+		.. table.concat(missing, ", ") .. ")")
+
+	-- And the nameplate page in particular, since it is the newest.
+	local np = A.Options:Build().args.nameplates
+	check(np ~= nil and np.type == "group", "nameplates has a page of its own")
+	check(np and np.args.enabled and np.args.friendlyNames and np.args.scale,
+		"carrying the switches that were only reachable by editing a table")
 end
 
 print("== palette: difficulty has one owner ==")

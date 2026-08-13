@@ -991,6 +991,51 @@ local function XPGroup()
 	})
 end
 
+--- Nameplates. Grouped by what you are looking at rather than by data type: the
+--  capsule that hostiles wear, the plain text a friendly gets instead, and the
+--  two things that hang under whichever of them is your target.
+local function NameplatesGroup()
+	local function at(k) return { "modules", "nameplates", k } end
+	return group("Nameplates", {
+		enabled = toggle("Enabled", "Turn this off and Blizzard's own plates come"
+			.. " back - the module reskins them, it does not replace them.",
+			at("enabled")),
+		scale = range("Size", "On top of the global scale. A plate is read at thirty"
+			.. " yards and the HUD at arm's length, so the size that suits one need"
+			.. " not suit the other.", at("scale"), 0.6, 1.6, 0.05,
+			{ after = "reconfigure" }),
+		hideBlizzard = toggle("Hide Blizzard's plate", "The one underneath ours."
+			.. " Off is the way back if a plate ever fails to draw.",
+			at("hideBlizzard"), { after = "reconfigure" }),
+
+		capsule = header("The capsule"),
+		badgeSize = range("Level disc", nil, at("badgeSize"), 18, 40, 1,
+			{ after = "reconfigure" }),
+		barWidth = range("Health bar width", nil, at("barWidth"), 80, 260, 5,
+			{ after = "reconfigure" }),
+		barHeight = range("Health bar height", nil, at("barHeight"), 2, 12, 1,
+			{ after = "reconfigure" }),
+		neutralBarInCombat = toggle("Neutral bars only in combat",
+			"A yellow plate means 'not my problem yet'. Off shows their health"
+			.. " all the time.", at("neutralBarInCombat"), { after = "reconfigure" }),
+
+		friendly = header("Friendlies"),
+		friendlyNames = toggle("Draw friendlies as names",
+			"Plain shadowed text rather than a capsule: a class-coloured level pip"
+			.. " and the name for a player, the name alone for an NPC. Off gives"
+			.. " them the same capsule everything else wears. Either way the client"
+			.. " is asked to show friendly nameplates at all, which it does not do"
+			.. " by default.",
+			at("friendlyNames"), { after = "reconfigure" }),
+		partyClassColors = toggle("Class-colour party names",
+			"Off, a friendly player's name is blue - which is what 'friendly"
+			.. " player' looks like everywhere else in this UI. On, your party"
+			.. " take their class colours. Your party only: a street of nine"
+			.. " class colours says something you did not ask.",
+			at("partyClassColors"), { after = "reconfigure" }),
+	})
+end
+
 --- Top-level page order, set explicitly rather than left to the running counter.
 --
 --  The counter is fine inside a page - it just needs to increase in declaration
@@ -1060,7 +1105,7 @@ end
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
-	xpbar = 12,
+	xpbar = 12, nameplates = 13,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1116,6 +1161,7 @@ function Options:Build()
 			toolbox = ToolboxGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
+			nameplates = NameplatesGroup(),
 			changelog = ChangelogGroup(),
 		},
 	}

@@ -769,6 +769,18 @@ local function ApplyCVars()
 		NP._cvarsPending = true
 		return
 	end
+
+	-- Zen has these on loan while it is running and gives them back when it
+	-- ends. Writing over the top puts every friendly plate back on screen in
+	-- the middle of a zen - which is the one thing zen is for - and leaves Zen
+	-- restoring a value it never took. It borrowed OUR value, so there is
+	-- nothing to redo afterwards.
+	local Zen = A:GetModule("zen")
+	if Zen and Zen._worldText then
+		NP._cvarsPending = true
+		return
+	end
+
 	NP._cvarsPending = nil
 
 	for _, name in ipairs(FRIENDLY_CVARS) do

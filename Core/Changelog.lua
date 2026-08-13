@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.24",
+		date    = "2026-08-13",
+		lines   = {
+			"New: nameplates have their own options page - size, the level disc, bar dimensions, whether friendlies are drawn as names, and party class colours.",
+			"Nameplate settings no longer fight Zen: changing one mid-zen leaves the plates where zen put them.",
+		},
+	},
+	{
 		version = "0.3.23",
 		date    = "2026-08-13",
 		lines   = {
