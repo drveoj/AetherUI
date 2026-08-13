@@ -8052,6 +8052,16 @@ end
 print("== toolbox: mail, and what the client will not tell us ==")
 do
 	local TBm = A:GetModule("toolbox")
+	-- The REAL geometry, not the mock's 1024x768 default. That default clamps
+	-- the drawer to about 506 tall, which is short enough that the panel is
+	-- already cutting both lists to nothing - and an EMPTY mail section is the
+	-- one thing that gives way at that extreme. Testing the section's ordinary
+	-- behaviour on a panel that is busy dropping it reads as the section being
+	-- broken.
+	local mailOldW, mailOldH = UIParent:GetWidth(), UIParent:GetHeight()
+	local mailOldScale = A.db.profile.scale
+	UIParent:SetSize(1365, 768)
+	A.db.profile.scale = 0.71
 	TBm:SetDock("LEFT")
 	TBm:SetOpen(true, true)
 
@@ -8076,9 +8086,23 @@ do
 	check(empty ~= full, "empty and full are different cells of the sheet")
 	check(select(1, mailBtn.glyph:GetTexCoord()) == empty,
 		"no mail draws the outline envelope")
-	check(TBm.content.mailHead == nil or not TBm.content.mailHead:IsShown(),
-		"and the drawer shows no MAIL section at all - an empty section every"
-		.. " time you open it is furniture reporting nothing")
+	-- The section is there with an EMPTY box too. It used to vanish, on the
+	-- reasoning that a section reporting nothing is furniture; what that missed
+	-- is that a section which comes and goes is one you go looking for and
+	-- cannot find, and that the panel below it shifting every time the postman
+	-- calls is worse than one quiet line.
+	check(TBm.content.mailHead ~= nil and TBm.content.mailHead:IsShown(),
+		"the drawer still shows a MAIL section with an empty box")
+	check(TBm.content.mail[1]:IsShown()
+		and TBm.content.mail[1].name:GetText() == "No unread mail",
+		"carrying one quiet line saying so (got "
+		.. tostring(TBm.content.mail[1] and TBm.content.mail[1].name:GetText())
+		.. ")")
+	check(not TBm.content.mail[2]:IsShown(),
+		"and only the one - an empty box is not three empty rows")
+	check(TBm.content.mailHint:GetText() == "",
+		"with nothing in the hint, or the section says the same thing twice at"
+		.. " both ends of one line")
 
 	-- Mail arrives.
 	_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas" }
@@ -8130,6 +8154,54 @@ do
 		"and the client's own wording instead of a number (got "
 		.. tostring(TBm.content.mailHint:GetText()) .. ")")
 
+	-- An empty section is the ONE thing that gives way, and only at an extreme
+	-- nobody sees. "Mail is never cut" is right about mail you HAVE - a list
+	-- that drops the sender you were looking for to make room for a toggle has
+	-- its priorities backwards - and wrong about a line reading "No unread
+	-- mail", which is the least informative thing on the panel.
+	--
+	-- Swept rather than asserted at one size, because a rule that quietly fired
+	-- on an ordinary screen would look exactly like the section not having been
+	-- made permanent at all.
+	do
+		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
+		local wasScale = A.db.profile.scale
+		_G.__mail, _G.__mailFrom = false, nil
+
+		local kept = {}
+		for _, case in ipairs({ { 1365, 768, 0.71 }, { 1365, 768, 1.0 },
+			{ 1024, 768, 0.71 }, { 2560, 1440, 0.71 }, { 1365, 768, 0.85 } }) do
+			UIParent:SetSize(case[1], case[2])
+			A.db.profile.scale = case[3]
+			TBm:SetDock("LEFT")
+			fire("UPDATE_PENDING_MAIL")
+			if not TBm.content.mailHead:IsShown() then
+				kept[#kept + 1] = string.format("%dx%d@%.2f", case[1], case[2], case[3])
+			end
+		end
+		check(#kept == 0, "an empty MAIL section survives every ordinary screen"
+			.. (#kept > 0 and (" - dropped at " .. table.concat(kept, ", ")) or ""))
+
+		-- ...and it really can give way, or the rule is dead code and the panel
+		-- overflows on the one screen that needed it.
+		UIParent:SetSize(1000, 600)
+		A.db.profile.scale = 1.0
+		TBm:SetDock("LEFT")
+		fire("UPDATE_PENDING_MAIL")
+		check(not TBm.content.mailHead:IsShown(),
+			"and gives way on a 506px panel, where keeping it would not leave"
+			.. " room for a single row of settings tiles")
+		check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
+			"which is what keeps that panel fitting ("
+			.. string.format("%.0f of %.0f", TBm._contentHeight,
+				TBm.panel:GetHeight()) .. ")")
+
+		UIParent:SetSize(wasW, wasH)
+		A.db.profile.scale = wasScale
+		TBm:SetDock("LEFT")
+		fire("UPDATE_PENDING_MAIL")
+	end
+
 	-- The section takes part in the ONE top-down accumulator rather than being
 	-- drawn over whatever was already there.
 	--
@@ -8151,14 +8223,29 @@ do
 			.. " on top of what was already laid out (" .. tostring(dry)
 			.. " -> " .. tostring(wet) .. ")")
 
-		-- Mail with nobody's name on it still has to take up room. It is a
-		-- section with a header and no rows, and a version that skipped the
-		-- accumulator entirely would leave the header on top of the tiles.
+		-- Mail with nobody's name on it costs ONE row, the same as an empty box:
+		-- both are a line that is not a sender, and the section reserves height
+		-- for rows it draws rather than for senders it has.
+		--
+		-- This used to compare against the section being ABSENT, which is no
+		-- longer a state - it is always there now. What is left to check is that
+		-- the two one-row cases really are one row, and that three senders costs
+		-- more than one line rather than the header simply being drawn over
+		-- whatever was under it.
 		_G.__mail, _G.__mailFrom = true, nil
 		fire("UPDATE_PENDING_MAIL")
-		check(TBm._contentHeight > dry,
-			"a nameless mail section still advances the accumulator ("
-			.. tostring(dry) .. " -> " .. tostring(TBm._contentHeight) .. ")")
+		local nameless = TBm._contentHeight
+		check(TBm._mailRowCount == 1,
+			"a nameless mail section is one row - the 'we cannot say who from'"
+			.. " line (got " .. tostring(TBm._mailRowCount) .. ")")
+		check(nameless == dry,
+			"and costs exactly what the empty box did, because both are one line"
+			.. " (" .. tostring(dry) .. " vs " .. tostring(nameless) .. ")")
+		check(wet > nameless,
+			"while three named senders costs two rows more, so the accumulator"
+			.. " really is being advanced by what is drawn rather than the"
+			.. " header being laid over what was under it (" .. tostring(nameless)
+			.. " -> " .. tostring(wet) .. ")")
 
 		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
 		fire("UPDATE_PENDING_MAIL")
@@ -8274,14 +8361,20 @@ do
 	-- ...and on a screen where it does NOT all fit, which is the only place the
 	-- arithmetic that hands out the room can be observed at all.
 	--
-	-- 1365x780 was found by sweeping: below it everything is cut anyway and
-	-- above it everything fits, so both are blind to whether the mail block was
-	-- subtracted from what is left. Here the section costs exactly two rows of
-	-- settings tiles, and a version that forgot to subtract it lays them out
-	-- past the bottom of the panel where nobody can reach them.
+	-- 1365x620 was found by sweeping 560 to 800 in tens: below 590 the tiles are
+	-- cut whatever the mail is doing and above 640 they fit either way, so both
+	-- ends are blind to whether the mail block was subtracted from what is left.
+	-- In the band between, three named senders cost exactly two settings tiles
+	-- against an empty box, and a version that forgot to subtract them lays
+	-- those tiles out past the bottom of the panel where nobody can reach them.
+	--
+	-- It was 780 when the section came and went with the mail and the whole
+	-- block was the difference. Now the section is always there, so the
+	-- difference is only the two extra ROWS - a smaller step, which moves the
+	-- band.
 	do
 		local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-		UIParent:SetSize(1365, 780)
+		UIParent:SetSize(1365, 620)
 
 		-- A long addon list too, so the OTHER list that gives way is not empty.
 		for i = 1, 10 do _G.__makeLDB("RoomTest" .. i, "launcher") end
@@ -8342,6 +8435,9 @@ do
 		.. " still glowing after you have read your mail is the version of this"
 		.. " anybody would notice")
 
+	UIParent:SetSize(mailOldW, mailOldH)
+	A.db.profile.scale = mailOldScale
+	TBm:SetDock("LEFT")
 	TBm:SetOpen(false, true)
 end
 
@@ -9684,13 +9780,16 @@ do
 		.. string.format("%.0f", TBm.panel:GetHeight()) .. ") - the addon list"
 		.. " gives way rather than the drawer growing")
 
-	-- The addon list is the section that yields, and it says what it dropped.
+	-- The addon list is the section that yields, and it says so - and now says
+	-- that the rest is reachable rather than merely counting what went.
 	do
 		local rows = TBm:AddonRows()
 		if (TBm._addonsCut or 0) > 0 then
-			check(TBm.content.addonsHint:GetText():find("more"),
-				"a list cut for room says so rather than silently dropping the"
-				.. " row you were looking for")
+			check(TBm.content.addonsHint:GetText():find("scroll", 1, true)
+				and TBm.content.addonsArrow:IsShown(),
+				"a list cut for room says it scrolls, with an arrow beside it -"
+				.. " '+5 more' named a number nobody could reach (got "
+				.. tostring(TBm.content.addonsHint:GetText()) .. ")")
 		else
 			check(#rows >= 0, "nothing needed cutting at this size")
 		end
@@ -9936,6 +10035,177 @@ do
 	end
 end
 
+print("== toolbox: the addon list scrolls to what it cut ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+	local oldScale = A.db.profile.scale
+	UIParent:SetSize(1365, 768)
+	A.db.profile.scale = 0.71
+
+	-- Enough launchers that the list cannot fit whatever the panel does.
+	for i = 1, 30 do _G.__makeLDB("ScrollTest" .. i, "launcher") end
+	A.Launchers:Scan()
+
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	TBm._addonOffset = 0
+	TBm:RefreshAddons()
+
+	local c = TBm.content
+	local function firstShown()
+		for i, row in ipairs(c.addons) do if row:IsShown() then return i end end
+	end
+	local function shownCount()
+		local n = 0
+		for _, row in ipairs(c.addons) do if row:IsShown() then n = n + 1 end end
+		return n
+	end
+
+	check((TBm._addonsCut or 0) > 0,
+		"with " .. #(TBm._addonRows or {}) .. " addons the list is cut ("
+		.. tostring(TBm._addonsCut) .. " off the end)")
+	check(firstShown() == 1, "and starts at the top")
+	local window = shownCount()
+	check(window > 0, "showing " .. window .. " of them")
+
+	-- The hint says it MOVES rather than counting what went. "+5 more" named a
+	-- number nobody could do anything about.
+	check(c.addonsHint:GetText():find("scroll", 1, true) ~= nil,
+		"the heading says the list scrolls (" .. tostring(c.addonsHint:GetText())
+		.. ")")
+	check(c.addonsArrow:IsShown(), "with an arrow beside it")
+	check(math.abs((TBm.content.addonsArrow.__rotation or 0) - 0) < 0.01,
+		"pointing DOWN at the top of the list, which is where the rest of it is"
+		.. " - Chevron.tga is a V, so down is rotation zero and up is pi")
+
+	-- Wheel down.
+	local catch = c.addonsCatch
+	check(catch ~= nil and catch:IsShown(),
+		"there is a frame over the block to catch the wheel, so it works"
+		.. " anywhere over the list rather than only over a row")
+	catch:GetScript("OnMouseWheel")(catch, -1)
+	local cols = 2
+	check(firstShown() == 1 + cols,
+		"one notch down moves the list by a whole ROW - stepping by one entry"
+		.. " would swap which column every name is in and the list would appear"
+		.. " to shuffle rather than scroll (first shown "
+		.. tostring(firstShown()) .. ")")
+	check(shownCount() == window,
+		"the window is the same size, so a row came off the top as one arrived"
+		.. " at the bottom (" .. shownCount() .. " vs " .. window .. ")")
+
+	catch:GetScript("OnMouseWheel")(catch, 1)
+	check(firstShown() == 1, "and one notch up puts it back")
+
+	-- A row takes the wheel too, because that is where the cursor usually is.
+	c.addons[1]:GetScript("OnMouseWheel")(c.addons[1], -1)
+	check(firstShown() == 1 + cols, "the rows take the wheel as well")
+
+	-- The ends. Scrolling past either is clamped rather than running off into a
+	-- list showing nothing.
+	for _ = 1, 50 do catch:GetScript("OnMouseWheel")(catch, -1) end
+	check(shownCount() == window,
+		"wound hard against the bottom the window is still full rather than"
+		.. " parked past the last row showing nothing (" .. shownCount() .. ")")
+	check(TBm._addonsMore == 0, "with nothing left below")
+	check(math.abs((c.addonsArrow.__rotation or 0) - math.pi) < 0.01,
+		"and the arrow has turned UP, because that is the only way left to go")
+	check(TBm._addonOffset % cols == 0,
+		"the offset is still on a row boundary after the clamp, or the two"
+		.. " columns swap over (" .. tostring(TBm._addonOffset) .. ")")
+
+	for _ = 1, 50 do catch:GetScript("OnMouseWheel")(catch, 1) end
+	check(TBm._addonOffset == 0 and firstShown() == 1,
+		"and hard against the top it stops at the first row")
+	check(math.abs((c.addonsArrow.__rotation or 0) - 0) < 0.01,
+		"with the arrow pointing down again")
+
+	-- Scrolled down, then given room: the list must not stay parked below its
+	-- own last row, showing nothing.
+	--
+	-- Driven by shrinking the LIST rather than growing the panel, because the
+	-- panel cannot grow enough - the drawer is capped at the deck's 910 and
+	-- there are far more launchers loaded by this point than that will hold.
+	for _ = 1, 50 do catch:GetScript("OnMouseWheel")(catch, -1) end
+	check(TBm._addonOffset > 0, "scrolled to the end ("
+		.. TBm._addonOffset .. ")")
+	do
+		local realRows = TBm._addonRows
+		TBm._addonRows = { realRows[1], realRows[2] }
+		TBm:LayoutContent()
+		check(TBm._addonOffset == 0 and firstShown() == 1,
+			"a list that shrinks until it fits pulls the offset back to the top"
+			.. " rather than leaving it scrolled past rows it is now showing")
+		check(not c.addonsArrow:IsShown(),
+			"and the arrow goes, because there is nowhere to scroll to")
+		check(c.addonsHint:GetText():find("scroll", 1, true) == nil,
+			"as does the word (" .. tostring(c.addonsHint:GetText()) .. ")")
+		TBm._addonRows = realRows
+		TBm:LayoutContent()
+	end
+
+	-- An offset written from nowhere near the list is clamped by the layout too,
+	-- which is where it belongs: only the layout knows how many rows fit, and
+	-- that is a function of the panel, the dock and everything drawn above.
+	TBm._addonOffset = 9999
+	TBm:LayoutContent()
+	check(shownCount() == window and TBm._addonsMore == 0,
+		"and an offset past the end of the list is clamped by the layout rather"
+		.. " than believed (" .. tostring(TBm._addonOffset) .. ", showing "
+		.. shownCount() .. ")")
+
+	-- An ODD number of addons, which is the only way the clamp itself can land
+	-- off a row boundary.
+	--
+	-- The wheel steps by whole rows from zero, so every offset it produces is a
+	-- multiple of the column count; the clamp is the one place a stray value can
+	-- come from, and only when the list length and the window size differ by an
+	-- odd number. With an even list the boundary correction is unreachable and
+	-- deleting it changes nothing - which is exactly what a mutation showed.
+	do
+		local realRows = TBm._addonRows
+		local odd = {}
+		for i = 1, 15 do odd[i] = realRows[i] end
+		TBm._addonRows = odd
+		TBm._addonOffset = 9999
+		TBm:LayoutContent()
+		check(TBm._addonOffset % 2 == 0,
+			"clamping an odd-length list still lands on a row boundary (offset "
+			.. tostring(TBm._addonOffset) .. " of " .. #odd .. " addons)")
+		local first = firstShown()
+		local firstX = select(4, c.addons[first]:GetPoint(1))
+		local nextX  = select(4, c.addons[first + 1]:GetPoint(1))
+		check(first and nextX > firstX,
+			"so the first row on screen is in the LEFT column and the second is"
+			.. " beside it - an offset one out puts every name in the other"
+			.. " column and the list reads as shuffled (x " .. tostring(firstX)
+			.. " then " .. tostring(nextX) .. ")")
+		TBm._addonRows = realRows
+		TBm._addonOffset = 0
+		TBm:LayoutContent()
+	end
+
+	-- The flat dock scrolls too, through the same code.
+	UIParent:SetSize(1365, 768)
+	TBm:SetDock("BOTTOM")
+	TBm:RefreshAddons()
+	check((TBm._addonsCut or 0) > 0 and c.addonsArrow:IsShown(),
+		"docked flat the column cuts and scrolls the same way - one placement"
+		.. " routine serves both, because which slice of the list is showing is"
+		.. " not something the two layouts should have separate opinions about")
+	local flatFirst = firstShown()
+	c.addonsCatch:GetScript("OnMouseWheel")(c.addonsCatch, -1)
+	check(firstShown() > flatFirst, "and the wheel moves it")
+
+	TBm._addonOffset = 0
+	UIParent:SetSize(oldW, oldH)
+	A.db.profile.scale = oldScale
+	TBm:SetDock("LEFT")
+	TBm:RefreshAddons()
+	TBm:SetOpen(false, true)
+end
+
 print("== toolbox: docked flat, the sections are columns ==")
 do
 	local TBm = A:GetModule("toolbox")
@@ -10042,8 +10312,17 @@ do
 
 	do
 		local order = TBm:HorizontalColumns()
-		check(#order == 4 and order[4] == "settings",
-			"with no mail there are four columns and settings is the last")
+		check(#order == 5 and order[4] == "mail" and order[5] == "settings",
+			"there are five columns with an EMPTY box too - a mail column that"
+			.. " came and went would change every other column's width the"
+			.. " moment anything arrived, reflowing the whole drawer to report"
+			.. " one more thing")
+		check(c.mailHead:IsShown() and topOf(c.mailHead) == topRow,
+			"and its heading is on the top row like the rest")
+		check(c.mail[1]:IsShown()
+			and c.mail[1].name:GetText() == "No unread mail",
+			"carrying the same quiet line the tall panel shows, so the two"
+			.. " layouts agree")
 	end
 
 	-- Every column has to FIT its share, not merely start inside the panel: one

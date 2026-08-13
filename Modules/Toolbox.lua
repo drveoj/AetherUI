@@ -1959,7 +1959,31 @@ function TB:RefreshMailRows()
 	-- only names senders for mail that arrived while you were logged in, and
 	-- the rest of it is behind a mailbox.
 	local explain = has and #senders == 0
-	if explain then senders = { _G.MAIL_LABEL or "Mail" } end
+
+	-- And an EMPTY box gets a row of its own too, rather than the section
+	-- disappearing.
+	--
+	-- It used to vanish, on the reasoning that a section reporting nothing is
+	-- furniture. What that missed is that a section which is sometimes absent is
+	-- a section you go looking for and cannot find - which is exactly what
+	-- happened - and that the drawer's shape changing under you every time the
+	-- postman calls is worse than one quiet line. The rail's envelope is still
+	-- the thing you read at a glance; this is the drawer agreeing with it.
+	local empty = not has
+
+	local rows = senders
+	if explain then
+		rows = { _G.MAIL_LABEL or "Mail" }
+	elseif empty then
+		rows = { "none" }
+	end
+	senders = rows
+
+	-- How many rows are DRAWN, which is not how many senders there are: both the
+	-- explain row and the empty row are one row carrying no sender at all. The
+	-- layout reserves height from this, and reserving from the sender count is
+	-- what would draw a row it had not made room for.
+	self._mailRowCount = #rows
 
 	for i = 1, self.MAIL_ROWS do
 		local row = self.content.mail[i]
@@ -1990,7 +2014,21 @@ function TB:RefreshMailRows()
 		row.name:SetText(who or "")
 		row:SetShown(who ~= nil)
 
-		if who and explain then
+		if who and empty then
+			-- An empty box. The quiet chip the explain row uses, and a zero
+			-- rather than a question mark: this section knows the answer, and
+			-- the answer is none.
+			row.chip.label:SetText("0")
+			local c = Palette.c
+			local q = c.cardBg
+			row.chip.disc:SetVertexColor(q[1], q[2], q[3], q[4] or 1)
+			row.chip.ring:Show()
+			local e = c.glassEdge
+			row.chip.ring:SetVertexColor(e[1], e[2], e[3], 0.9)
+			W.Color(row.chip.label, c.textDim)
+			row.name:SetText("No unread mail")
+			W.Color(row.name, c.textDim)
+		elseif who and explain then
 			-- The one row that is not a sender. A question mark rather than an
 			-- initial, and the quiet fill rather than the accent: this is the
 			-- section admitting what it does not know, not an entry in a list.
@@ -2040,6 +2078,9 @@ function TB:RefreshMailRows()
 	if self.content.mailHint then
 		local c = Palette.c
 		if not has then
+			-- Nothing. The row already says "No unread mail" and a hint saying
+			-- the same thing at the other end of the line is the section saying
+			-- it twice.
 			self.content.mailHint:SetText("")
 		elseif explain then
 			self.content.mailHint:SetText(_G.HAVE_MAIL or "New mail")
@@ -2463,6 +2504,30 @@ function TB:BuildAddons()
 	local hint = W.Text(self.content, "tbLabel", "RIGHT")
 	self.content.addonsHint = hint
 
+	-- The arrow that says the list moves.
+	--
+	-- A CHEVRON TEXTURE, not an arrow character. Outfit is a text face with no
+	-- geometric shapes in it - the gear had to become a drawn ring for exactly
+	-- this reason, having rendered as the three bytes of its own UTF-8 - and
+	-- U+2193 is no safer a bet than U+2699 was. The chevron is already loaded,
+	-- already the drawer's own vocabulary, and rotates.
+	local arrow = self.content:CreateTexture(nil, "OVERLAY")
+	arrow:SetSize(9, 9)
+	arrow:SetTexture(Media.texture.chevron)
+	arrow:Hide()
+	self.content.addonsArrow = arrow
+
+	-- What the wheel lands on. A frame BEHIND the rows rather than the rows
+	-- themselves: the wheel goes to the topmost frame under the cursor that has
+	-- EnableMouseWheel set, and the rows do not, so they are transparent to it
+	-- and this catches everything over the block. The rows get it too, further
+	-- down, for the client that disagrees.
+	local catch = CreateFrame("Frame", nil, self.content)
+	catch:EnableMouseWheel(true)
+	catch:SetScript("OnMouseWheel", function(_, delta) TB:ScrollAddons(delta) end)
+	catch:Hide()
+	self.content.addonsCatch = catch
+
 	self.content.addons = {}
 	self:RefreshAddons()
 end
@@ -2481,6 +2546,15 @@ function TB:RefreshAddons()
 		if not row then
 			row = CreateFrame("Button", nil, self.content)
 			row:SetHeight(ROW_H)
+
+			-- The rows take the wheel too, not only the frame behind them. The
+			-- client sends it to the topmost frame under the cursor with the
+			-- wheel enabled and a Button does not have it - so in theory the
+			-- catcher behind is enough. In practice the cursor is over a row
+			-- most of the time somebody wants to scroll, and this is one line
+			-- against finding out that theory was wrong on somebody's client.
+			row:EnableMouseWheel(true)
+			row:SetScript("OnMouseWheel", function(_, delta) TB:ScrollAddons(delta) end)
 
 			row.tile = Glass.CreatePanel(row, { corner = 8 })
 			row.tile:SetSize(25, 25)
@@ -2817,6 +2891,108 @@ local function GridPlace(content, frame, i, x, y, cols, cellW, cellH, gapX, gapY
 		x + c * (cellW + (gapX or 0)), -(y + r * (cellH + (gapY or 0))))
 end
 
+--- Move the addon list by whole ROWS.
+--
+--  Rows, not entries: the list is two columns wide, so stepping by one would
+--  swap which column every name is in and the list would appear to shuffle
+--  rather than scroll.
+--
+--  The offset is clamped by the LAYOUT rather than here, because only the layout
+--  knows how many rows fit - that is a function of the panel, the dock, and
+--  everything above the list. This just moves the number and asks for a redraw.
+function TB:ScrollAddons(delta)
+	if not delta or delta == 0 then return end
+	local cols = Cols("addonColumns", 2)
+	self._addonOffset = math.max(0, (self._addonOffset or 0) - delta * cols)
+	self:LayoutContent()
+end
+
+--- Place the rows for one addon list, cutting to `maxShown` and honouring the
+--  scroll offset, and write the hint that says what is off the end.
+--
+--  Shared by both layouts. The two differ in where the block goes and how much
+--  room it has; what they do with it - which slice of the list, in which slots,
+--  with which arrow on the heading - is the same in both, and was the obvious
+--  next thing to drift apart.
+--
+--  Returns the number of rows placed.
+function TB:PlaceAddonRows(x, y, width, cols, maxShown, hintRight)
+	local content = self.content
+	local frames  = content.addons or {}
+	local rows    = self._addonRows or {}
+	local total   = #rows
+
+	-- Clamped HERE, where maxShown is known. Scrolling past the end and then
+	-- widening the drawer would otherwise leave the list parked below its own
+	-- last row, showing nothing.
+	local maxOffset = math.max(0, total - maxShown)
+	local offset = math.min(math.max(0, self._addonOffset or 0), maxOffset)
+	-- Kept on a row boundary after the clamp, or a list scrolled to the end
+	-- lands mid-row and the two columns swap.
+	offset = offset - (offset % cols)
+	self._addonOffset = offset
+
+	local rw = (width - ROW_GAP * (cols - 1)) / cols
+	local shown = 0
+	for i, row in ipairs(frames) do
+		local slot = i - offset
+		if i <= total and slot >= 1 and slot <= maxShown then
+			row:SetWidth(rw)
+			GridPlace(content, row, slot, x, y, cols, rw, ROW_H, ROW_GAP, ROW_GAP)
+			row:Show()
+			shown = shown + 1
+		else
+			row:Hide()
+		end
+	end
+
+	self._addonsCut = math.max(0, total - shown)
+	self._addonsMore = math.max(0, total - offset - shown)   -- below the fold
+
+	-- The hint, and the arrow beside it.
+	--
+	-- One arrow, not two: it points the way there is MORE, which is down until
+	-- you reach the end and up once you have. Two would need two textures and a
+	-- rule for what to do when only one direction is live, and the answer to
+	-- "can I go back" is obvious once you have been somewhere.
+	local hint, arrow = content.addonsHint, content.addonsArrow
+	if hint then
+		hint:ClearAllPoints()
+		local scrollable = self._addonsCut > 0 or offset > 0
+		if arrow then
+			arrow:ClearAllPoints()
+			arrow:SetShown(scrollable)
+			-- Chevron.tga is a V - it points DOWN at rotation 0, which is what
+			-- the rail's chevron had to learn the hard way. Up is pi.
+			if arrow.SetRotation then
+				pcall(arrow.SetRotation, arrow, self._addonsMore > 0 and 0 or math.pi)
+			end
+			local c = Palette.c
+			arrow:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.55)
+			arrow:SetPoint("TOPRIGHT", content, "TOPLEFT", hintRight, -(y + 5))
+		end
+		hint:SetPoint("TOPRIGHT", content, "TOPLEFT",
+			hintRight - (scrollable and 14 or 0), -y)
+		hint:SetText(scrollable
+			and (total .. " \194\183 scroll")
+			or (total .. " with a launcher"))
+	end
+
+	-- The wheel catcher covers the block, so the wheel works anywhere over the
+	-- list rather than only over a row.
+	local catch = content.addonsCatch
+	if catch then
+		local rowsShown = RowsFor(shown, cols)
+		catch:ClearAllPoints()
+		catch:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
+		catch:SetSize(math.max(1, width),
+			math.max(1, rowsShown * (ROW_H + ROW_GAP)))
+		catch:SetShown(shown > 0)
+	end
+
+	return shown
+end
+
 -- ---------------------------------------------------------------------------
 -- the horizontal drawer
 --
@@ -2834,20 +3010,12 @@ end
 -- ---------------------------------------------------------------------------
 
 -- The deck's own proportions rather than equal shares. Identity and widgets take
--- about a quarter each, the addon list a little less, and the settings tiles
--- least: they are fixed-size chips where everything else is text that wants
--- room.
-local H_WEIGHTS      = { identity = 26, widgets = 27, addons = 25, settings = 22 }
-local H_WEIGHTS_MAIL = { identity = 23, widgets = 24, addons = 22, mail = 13, settings = 18 }
-local H_COL_GAP      = 18
+-- about a quarter each, the addon list a little less, mail least of all - three
+-- short names is the most it ever holds - and the settings tiles are fixed-size
+-- chips where everything else is text that wants room.
+local H_WEIGHTS = { identity = 23, widgets = 24, addons = 22, mail = 13, settings = 18 }
+local H_COL_GAP = 18
 
---- Which columns there are, left to right.
---
---  Mail gets a COLUMN of its own when there is mail, rather than stacking under
---  the addon list the way it does in the vertical panel. Stacked here it would
---  cost the addon list half its rows every time the postman calls, and the addon
---  list is already the one section that gives way. A drawer this wide has room
---  for another column; it has no room for that trade.
 --- The shortest the flat panel can usefully be, in panel units.
 --
 --  The identity column is the one that cannot give way: a title, the What's new
@@ -2860,11 +3028,21 @@ function TB:HorizontalFloor()
 	return PAD * 2 + HEADER_H + NEWS_H + SECTION_GAP + MICRO_CELL_H
 end
 
+--- Which columns there are, left to right.
+--
+--  Mail has a COLUMN of its own rather than stacking under the addon list the
+--  way an earlier version did. Stacked it costs the list half its rows every
+--  time the postman calls, and the addon list is already the one section that
+--  gives way. A drawer this wide has room for another column; it has no room for
+--  that trade.
+--
+--  ALWAYS five, including when the box is empty. The column used to come and go
+--  with the mail, which meant every other column changed width the moment
+--  anything arrived - the whole drawer reflowing under you to report one more
+--  thing. And a section that is sometimes absent is one you go looking for and
+--  cannot find, which is how the vertical panel's version of this got noticed.
 function TB:HorizontalColumns()
-	if self:MailState() then
-		return { "identity", "widgets", "addons", "mail", "settings" }, H_WEIGHTS_MAIL
-	end
-	return { "identity", "widgets", "addons", "settings" }, H_WEIGHTS
+	return { "identity", "widgets", "addons", "mail", "settings" }, H_WEIGHTS
 end
 
 function TB:LayoutContent()
@@ -3015,42 +3193,24 @@ function TB:LayoutHorizontal()
 
 		if #rows > 0 and content.addonsHead then
 			place(content.addonsHead, x, y)
-			content.addonsHint:ClearAllPoints()
-			content.addonsHint:SetPoint("TOPRIGHT", content, "TOPLEFT", x + cw, -y)
 			y = y + SECTION_H
 
-			-- Cut to the column's own floor and say what was dropped, which is
-			-- the vertical panel's rule and the quest tracker's before it.
+			-- Cut to the column's own floor, and scrollable for the rest, which
+			-- is the vertical panel's rule and the quest tracker's before it.
 			local maxRows  = math.max(0, math.floor((bottom - y + ROW_GAP) / (ROW_H + ROW_GAP)))
-			local maxShown = maxRows * cols
-			local rw = (cw - ROW_GAP * (cols - 1)) / cols
-
-			for i, row in ipairs(addons) do
-				if i <= #rows and i <= maxShown then
-					row:SetWidth(rw)
-					GridPlace(content, row, i, x, y, cols, rw, ROW_H, ROW_GAP, ROW_GAP)
-					row:Show()
-					shown = shown + 1
-				else
-					row:Hide()
-				end
-			end
+			shown = self:PlaceAddonRows(x, y, cw, cols, maxRows * cols, x + cw)
 			y = y + RowsFor(shown, cols) * (ROW_H + ROW_GAP) - ROW_GAP
-		end
-
-		self._addonsCut = math.max(0, #rows - shown)
-		if content.addonsHint then
-			content.addonsHint:SetText(self._addonsCut > 0
-				and (#rows .. " \194\183 +" .. self._addonsCut .. " more")
-				or (#rows .. " with a launcher"))
 		end
 		used(y)
 	end
 
 	-- MAIL -------------------------------------------------------------------
-	local hasMail = self:MailState()
+	--
+	-- Always, empty or not. The rows themselves carry the empty case - one quiet
+	-- line reading "No unread mail" - so there is nothing to decide here beyond
+	-- whether the section has been built yet.
 	do
-		local showMail = hasMail and content.mailHead ~= nil and colX.mail ~= nil
+		local showMail = content.mailHead ~= nil and colX.mail ~= nil
 		if showMail then
 			local x, cw = colX.mail, colW.mail
 			local y = top
@@ -3058,11 +3218,23 @@ function TB:LayoutHorizontal()
 			content.mailHint:ClearAllPoints()
 			content.mailHint:SetPoint("TOPRIGHT", content, "TOPLEFT", x + cw, -y)
 			y = y + SECTION_H
+			-- The count of rows DRAWN, not of senders: the empty line and the
+			-- "we cannot say who from" line are each one row carrying no sender.
+			local n = self._mailRowCount or 0
 			for i, row in ipairs(mails) do
-				row:SetWidth(cw)
-				GridPlace(content, row, i, x, y, 1, cw, MAIL_ROW_H, 0, MAIL_ROW_GAP)
+				if i <= n then
+					row:SetWidth(cw)
+					GridPlace(content, row, i, x, y, 1, cw, MAIL_ROW_H, 0, MAIL_ROW_GAP)
+					-- SHOWN here, not left to RefreshMailRows. Positioning a
+					-- region says nothing about whether it is visible, and the
+					-- other layout hides these when it drops the section - so a
+					-- drawer dragged to an edge after that came home with a mail
+					-- heading over nothing. The same bug the MENU heading had.
+					row:Show()
+				else
+					row:Hide()
+				end
 			end
-			local n = #(self._mailSenders or {})
 			if n > 0 then y = y + n * (MAIL_ROW_H + MAIL_ROW_GAP) - MAIL_ROW_GAP end
 			used(y)
 		end
@@ -3223,24 +3395,32 @@ function TB:LayoutVertical()
 	-- subtraction: it is drawn under the addon list, so the list can only be
 	-- told how much room it has once this block's height is known.
 	--
-	-- It is NOT cut to fit. Three rows of 24 is the smallest fixed section on
+	-- It is NOT cut to fit. Three rows of 30 is the smallest fixed section on
 	-- the panel, and a mail list that drops the sender you were looking for to
 	-- make room for a settings tile has its priorities backwards.
-	local has = self:MailState()
-	local mailRows = has and #(self._mailSenders or {}) or 0
+	--
+	-- And it is ALWAYS THERE, empty or not. It used to vanish when the box was
+	-- empty, on the reasoning that a section reporting nothing is furniture.
+	-- What that missed is that a section which comes and goes is one you go
+	-- looking for and cannot find - which is exactly what happened - and that
+	-- the whole panel below it shifting every time the postman calls is worse
+	-- than one quiet line saying "No unread mail". The flat layout keeps its
+	-- mail column on the same reasoning, so the two now agree.
+	--
+	-- The count is of rows DRAWN rather than of senders: an empty box and a
+	-- "we cannot say who from" box are each one row carrying no sender at all,
+	-- and reserving from the sender count draws a row nothing made room for.
+	local mailEmpty = not self:MailState()
+	local mailRows = self._mailRowCount or 0
 
 	-- Measured ONCE and reused below, rather than written out twice. The
 	-- reserved height and the height the rows are actually placed into have to
 	-- agree, and two copies of an expression are two things that can drift -
 	-- the failure being a section that reserves a row it never draws, or draws
 	-- one it never reserved.
-	--
-	-- Zero rows costs nothing beyond the heading, because the "you have mail
-	-- but we cannot say from whom" wording is the HINT, which sits on the
-	-- heading's own line at its right-hand end.
 	local mailRowsH = (mailRows > 0)
 		and (mailRows * (MAIL_ROW_H + MAIL_ROW_GAP) - MAIL_ROW_GAP) or 0
-	local mailBlock = has and (SECTION_H + mailRowsH + SECTION_GAP) or 0
+	local mailBlock = SECTION_H + mailRowsH + SECTION_GAP
 
 	-- The addon section's own HEADER is fixed cost too, and it was missing from
 	-- this sum. Its ROWS give way to nothing, which is what "the addon list
@@ -3252,6 +3432,23 @@ function TB:LayoutVertical()
 		and (SECTION_H + SECTION_GAP) or 0
 
 	local roomLeft = h - y - PAD - mailBlock - addonFixed
+
+	-- The ONE case where the mail section gives way: the box is empty and the
+	-- panel is too short to fit it and a single row of settings tiles.
+	--
+	-- "Mail is never cut" is right about mail you HAVE - a list that drops the
+	-- sender you were looking for to make room for a toggle has its priorities
+	-- backwards. It is not right about a line reading "No unread mail", which is
+	-- the least informative thing on the panel and the obvious first thing to go
+	-- when there is genuinely no room. Only bites on a very short screen at
+	-- scale 1.0; every real drawer keeps it.
+	local dropMail = false
+	if mailEmpty and roomLeft < SECTION_H + TILE_H then
+		dropMail = true
+		mailBlock = 0
+		roomLeft = h - y - PAD - addonFixed
+	end
+
 	local maxTileRows = math.max(0, math.floor((roomLeft - SECTION_H) / (TILE_H + TILE_GAP)))
 	if tileRows > maxTileRows then tileRows = maxTileRows end
 	local shownTiles = math.min(#tiles, tileRows * tileCols)
@@ -3266,53 +3463,44 @@ function TB:LayoutVertical()
 	local shown = 0
 	if #rows > 0 and content.addonsHead then
 		place(content.addonsHead, PAD, y)
-		content.addonsHint:ClearAllPoints()
-		content.addonsHint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
 		y = y + SECTION_H
 
 		-- What is left after the settings block and the bottom padding. The list
 		-- is CUT to fit rather than the panel being grown, and what did not fit
-		-- is reported - the quest tracker's rule, for the same reason: a list
-		-- that silently drops the row you were looking for is worse than one
-		-- that admits it ran out of room.
+		-- is reachable by the wheel and said so - the quest tracker's rule, for
+		-- the same reason: a list that silently drops the row you were looking
+		-- for is worse than one that admits it ran out of room.
 		local room = h - y - PAD - tileBlock - mailBlock - SECTION_GAP
 		local maxRows = math.max(0, math.floor(room / (ROW_H + ROW_GAP)))
-		local maxShown = maxRows * addonCols
-
-		local rw = (avail - ROW_GAP * (addonCols - 1)) / addonCols
-		for i, row in ipairs(addons) do
-			if i <= #rows and i <= maxShown then
-				row:SetWidth(rw)
-				GridPlace(content, row, i, PAD, y, addonCols, rw, ROW_H, ROW_GAP, ROW_GAP)
-				row:Show()
-				shown = shown + 1
-			else
-				row:Hide()
-			end
-		end
-
-		self._addonsCut = math.max(0, #rows - shown)
-		content.addonsHint:SetText(self._addonsCut > 0
-			and (#rows .. " \194\183 +" .. self._addonsCut .. " more")
-			or (#rows .. " with a launcher"))
+		shown = self:PlaceAddonRows(PAD, y, avail, addonCols,
+			maxRows * addonCols, w - PAD)
 
 		y = y + RowsFor(shown, addonCols) * (ROW_H + ROW_GAP) - ROW_GAP + SECTION_GAP
 	end
 
 	-- MAIL -------------------------------------------------------------------
 	--
-	-- Only when there IS mail. An empty section every time you open the drawer
-	-- is a row of furniture reporting nothing; the rail's envelope is the thing
-	-- that is always there, and it says "empty" by being empty.
-	local showMail = has and content.mailHead ~= nil
+	-- Always, empty or not - see the note by mailBlock above. The rows carry the
+	-- empty case themselves, so the only questions left here are whether the
+	-- section has been built yet and whether an empty one had to be dropped for
+	-- room on a very short panel.
+	local showMail = content.mailHead ~= nil and not dropMail
 	if showMail then
 		place(content.mailHead, PAD, y)
 		content.mailHint:ClearAllPoints()
 		content.mailHint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
 		y = y + SECTION_H
 		for i, row in ipairs(mails) do
-			row:SetWidth(avail)
-			GridPlace(content, row, i, PAD, y, 1, avail, MAIL_ROW_H, 0, MAIL_ROW_GAP)
+			if i <= mailRows then
+				row:SetWidth(avail)
+				GridPlace(content, row, i, PAD, y, 1, avail, MAIL_ROW_H, 0, MAIL_ROW_GAP)
+				-- Shown here rather than left to RefreshMailRows, for the same
+				-- reason the flat layout does it: this pass hides them when it
+				-- drops the section, so whoever draws next has to put them back.
+				row:Show()
+			else
+				row:Hide()
+			end
 		end
 		y = y + mailRowsH + SECTION_GAP
 	end

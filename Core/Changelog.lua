@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.0",
+		date    = "2026-08-13",
+		lines   = {
+			"The MAIL section is always there, saying 'No unread mail' when the box is empty.",
+			"The addon list scrolls with the mouse wheel instead of just counting what it cut.",
+		},
+	},
+	{
 		version = "0.2.0",
 		date    = "2026-08-13",
 		lines   = {
