@@ -11,6 +11,13 @@ show the previous release's news with no unread dot on it. The harness now
 refuses a build whose newest changelog entry does not match ``## Version`` in
 the .toc, which makes forgetting a failed test rather than a shipped bug.
 
+THE SUITE MUST BE GREEN. This runs it first and writes nothing if it is not. A
+version is a claim that the build works, and 0.4.10 was cut while a core file
+had a syntax error that would have stopped the addon loading at all - the
+harness caught it a second later, by which time the version was already
+written. --force exists for exactly one case: the harness refuses a build whose
+.toc and changelog disagree, and this is the tool that repairs that.
+
 major   a release with new features in it
 minor   accumulated fixes and small enhancements
 build   hotfixes between the two
@@ -26,6 +33,8 @@ import argparse
 import datetime
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -35,6 +44,35 @@ LOG = ROOT / "Core" / "Changelog.lua"
 VERSION_RE = re.compile(rb"^(##\s*Version:\s*)(\S+)\s*$", re.MULTILINE)
 ANCHOR = b"A.CHANGELOG = {\r\n"
 ANCHOR_LF = b"A.CHANGELOG = {\n"
+
+
+def suite_is_green() -> tuple[bool, str]:
+    """Run the harness and say whether it passed.
+
+    A version is a claim that this build works. Cutting one over a red suite
+    puts that claim in the .toc, in the changelog, and in front of the player -
+    and it has happened: 0.4.10 was written while Core/Options.lua had a syntax
+    error in it, which meant the addon would not have loaded at all. The
+    harness caught it a second later. The version had already been bumped.
+    """
+    lua = shutil.which("luajit") or shutil.which("lua")
+    if not lua:
+        return False, ("no luajit on PATH, so the suite cannot be run - and a"
+                       " version nobody checked is exactly what this guards")
+
+    try:
+        done = subprocess.run([lua, "Tools/harness.lua"], cwd=ROOT,
+                              capture_output=True, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return False, "the suite did not finish"
+
+    out = (done.stdout or "") + (done.stderr or "")
+    if done.returncode == 0 and "ALL CHECKS PASSED" in out:
+        return True, ""
+
+    # The last few lines are the failures, or the parse error that stopped it.
+    tail = [ln for ln in out.splitlines() if ln.strip()][-12:]
+    return False, chr(10).join("    " + ln for ln in tail)
 
 
 def read_version() -> tuple[int, int, int]:
@@ -97,7 +135,32 @@ def main() -> None:
     ap.add_argument("notes", nargs="+", help="one or more note lines, player-facing")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="bump over a RED suite. For the one case that would"
+                         " otherwise deadlock: the harness refuses a build whose"
+                         " .toc and changelog disagree, and this is the tool"
+                         " that repairs that. Nothing else.")
     args = ap.parse_args()
+
+    # GREEN FIRST, before a byte is written. A version is a claim that the
+    # build works, and this tool has already put one in front of a player over
+    # a core file that did not parse.
+    if not args.dry_run:
+        ok, why = suite_is_green()
+        if not ok and not args.force:
+            print("bump: REFUSED - the suite is not green.", file=sys.stderr)
+            print("", file=sys.stderr)
+            print(why, file=sys.stderr)
+            print("", file=sys.stderr)
+            print("  Fix it, or pass --force if the failure IS the version"
+                  " being out of step -", file=sys.stderr)
+            print("  which is the one thing this tool is needed to repair.",
+                  file=sys.stderr)
+            sys.exit(1)
+        if not ok:
+            print("  !! FORCED over a red suite. These notes are a claim that"
+                  " nothing has checked.")
+            print("")
 
     cur = read_version()
     new = next_version(cur, args.part)
@@ -118,8 +181,10 @@ def main() -> None:
 
     write_toc(new)
     write_changelog(new, date, args.notes)
-    print("\nNow run the suite - it checks the two agree:\n"
-          "  luajit Tools/harness.lua")
+    print("")
+    print("The suite was green before this. Run it once more before you push -")
+    print("it also checks that these two files agree:")
+    print("  luajit Tools/harness.lua")
 
 
 if __name__ == "__main__":

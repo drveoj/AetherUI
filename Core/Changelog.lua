@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.11",
+		date    = "2026-08-13",
+		lines   = {
+			"Tooling: cutting a version now runs the test suite first and refuses if anything is failing. A version number is a claim that the build works.",
+		},
+	},
+	{
 		version = "0.4.10",
 		date    = "2026-08-13",
 		lines   = {
