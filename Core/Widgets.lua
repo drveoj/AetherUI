@@ -284,8 +284,17 @@ end
 
 local Orb = {}
 
-function Orb:SetColor(c1, c2)
-	SetGradient(self.disc, "VERTICAL", c1, c2 or c1)
+--- Fill, rim and number, the way the tooltip's level badge is coloured.
+--
+--  A translucent tint of one colour, a stronger rim of it, and the number in it
+--  at full strength. The orb used to be a solid disc with white text on it,
+--  which forced the colour dark enough to carry the text and read as a shiny
+--  ball. This has no such constraint - the disc stays dark because it is mostly
+--  the panel showing through.
+function Orb:SetColors(fill, edge, ink)
+	if fill then self.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1) end
+	if edge then self.ring:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1) end
+	if ink then W.Color(self.label, ink) end
 end
 
 function Orb:SetRingColor(c)

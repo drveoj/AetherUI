@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.10",
+		date    = "2026-08-13",
+		lines   = {
+			"The level orb is coloured like the tooltip's level badge - a tinted disc with the number in the class colour.",
+		},
+	},
+	{
 		version = "0.3.9",
 		date    = "2026-08-13",
 		lines   = {

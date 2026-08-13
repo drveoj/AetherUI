@@ -452,22 +452,17 @@ end
 --  Flat, and the same for both. The orb used to be its own vertical gradient,
 --  which read as a shiny ball rather than a disc.
 --
---  Darkened from the class colour because the orb carries a white number.
---  `classTint` is how far; it has to serve the orb, and the bar takes the same
---  value so the two match.
+--  Full strength. Nothing darkens it - the orb no longer puts white text on it,
+--  so there is nothing to keep legible.
 function Palette:UnitColor(unit)
 	local base = Palette:ClassColor(unit)
-	if not base then
-		local c = Palette.c
-		local r = unit and UnitExists(unit) and UnitReaction(unit, "player")
-		if r and r <= 3 then base = c.hostileBar[1]
-		elseif r == 4 then base = c.neutral
-		else base = c.accent end
-	end
+	if base then return { base[1], base[2], base[3] } end
 
-	local cfg = A.Config and A.Config:Module("unitframes")
-	local t = math.max(0.4, math.min(1, tonumber(cfg and cfg.classTint) or 0.8))
-	return { base[1] * t, base[2] * t, base[3] * t }
+	local c = Palette.c
+	local r = unit and UnitExists(unit) and UnitReaction(unit, "player")
+	if r and r <= 3 then return c.hostileBar[1] end
+	if r == 4 then return c.neutral end
+	return c.accent
 end
 
 --- The first stop of a bar colour, whichever shape it is.
@@ -479,14 +474,17 @@ function Palette:Stop(colors)
 	return type(colors[1]) == "table" and colors[1] or colors
 end
 
---- The orb's rim: the same colour lifted toward white.
---
---  It used to be the glass edge, which is nearly the panel's own colour, so the
---  disc had no defined edge. A lifted rim is what makes it read as a disc
---  rather than as a coloured blob.
-function Palette:OrbRing(unit)
+-- The tooltip's level badge, which is the look being copied: a translucent tint
+-- of the colour, a stronger rim of it, and the number in it. Same two numbers as
+-- BadgeColors in Modules/Tooltips.lua.
+local ORB_FILL, ORB_EDGE = 0.15, 0.40
+
+--- Fill, rim and ink for a unit's level orb.
+function Palette:OrbColors(unit)
 	local c = Palette:UnitColor(unit)
-	return { Mix(c[1], 1, 0.35), Mix(c[2], 1, 0.35), Mix(c[3], 1, 0.35), 1 }
+	return { c[1], c[2], c[3], ORB_FILL },
+	       { c[1], c[2], c[3], ORB_EDGE },
+	       { c[1], c[2], c[3], 1 }
 end
 --- A player's class colour, or nil.
 --
@@ -503,11 +501,6 @@ function Palette:ClassColor(unit)
 	local cc = colors and colors[class]
 	if not cc or not cc.r then return nil end
 	return { cc.r, cc.g, cc.b, 1 }
-end
-
-function Palette:OrbColor(unit)
-	local c = Palette:UnitColor(unit)
-	return { c, c }
 end
 
 --- Power bar colour for a unit, as a {from, to} gradient pair.

@@ -5863,77 +5863,56 @@ do
 	SlashCmdList["AETHERUI"]("health class")
 	check(A.db.profile.classColorHealth == true, "switched back to class colours")
 
-	-- ONE COLOUR, FLAT, shared by the bar and the orb.
+	-- The orb is coloured like the TOOLTIP'S level badge.
 	--
-	-- The bar used to be a two-stop gradient and the orb its own vertical one,
-	-- which read as a shiny ball rather than a disc. They are the same flat
-	-- colour now, darkened from the class colour by `classTint` - the orb sets
-	-- the floor, because it carries a white number.
+	-- It used to be a solid disc with white text on it, which forced the colour
+	-- dark enough to carry the text and read as a shiny ball. The badge's recipe
+	-- has no such constraint: a translucent tint of the colour, a stronger rim
+	-- of it, and the number in it at full strength. The disc stays dark because
+	-- it is mostly the panel showing through.
 	do
 		local was = _G.__units.player.classToken
 		_G.__units.player.classToken = "ROGUE"
 		RAID_CLASS_COLORS.ROGUE = { r = 1.00, g = 0.96, b = 0.41 }
-		local ucfg = A.db.profile.modules.unitframes
-		ucfg.classTint = 0.8
 
 		local bar = A.Palette:HealthColor("player")
 		check(type(bar[1]) == "number",
-			"a class-coloured bar is ONE colour rather than a from/to pair -"
-			.. " two stops on a bar read as a gradient wash")
+			"a class-coloured bar is ONE colour rather than a from/to pair")
+		check(math.abs(bar[1] - 1.00) < 0.001 and math.abs(bar[3] - 0.41) < 0.001,
+			"and it is the class colour at FULL strength - nothing darkens it"
+			.. " any more, because the orb no longer puts white text on it ("
+			.. string.format("%.2f %.2f %.2f", bar[1], bar[2], bar[3]) .. ")")
 
-		local orb = A.Palette:OrbColor("player")
-		check(orb[1][1] == orb[2][1] and orb[1][2] == orb[2][2],
-			"and the orb's two stops are identical, so the disc is flat rather"
-			.. " than lit")
-		check(math.abs(orb[1][1] - bar[1]) < 0.001
-			and math.abs(orb[1][2] - bar[2]) < 0.001,
-			"and it is the SAME colour as the bar (" .. string.format(
-				"%.2f %.2f %.2f", bar[1], bar[2], bar[3]) .. ")")
+		local fill, edge, ink = A.Palette:OrbColors("player")
+		check(fill[4] < 0.3 and edge[4] > fill[4] and (ink[4] or 1) == 1,
+			"the orb is a translucent fill, a stronger rim and a solid number -"
+			.. " the tooltip badge's recipe (" .. string.format(
+				"%.2f / %.2f / %.2f", fill[4], edge[4], ink[4] or 1) .. ")")
+		check(fill[1] == bar[1] and edge[1] == bar[1] and ink[1] == bar[1],
+			"all three the same hue as the bar, so the pair reads as one unit")
 
-		-- Still recognisably the class. Darkening multiplies, which keeps hue,
-		-- so a Rogue stays wheat rather than going olive.
-		check(bar[1] > bar[3] * 2,
-			"a Rogue's colour keeps its blue channel far below the other two,"
-			.. " which is what makes yellow read as yellow (" .. string.format(
-				"%.2f %.2f %.2f", bar[1], bar[2], bar[3]) .. ")")
-
-		-- The rim is the same colour lifted, so the disc has a defined edge. It
-		-- used to be the glass edge, which is nearly the panel's own colour.
-		local ring = A.Palette:OrbRing("player")
-		check(ring[1] > bar[1] and ring[3] > bar[3],
-			"the orb's rim is the same colour lifted toward white, so the disc"
-			.. " has an edge (" .. string.format("%.2f %.2f %.2f",
-				ring[1], ring[2], ring[3]) .. ")")
-		-- On the ORB, not just in the palette. The rim used to be painted with
-		-- the glass edge, which is nearly the panel's own colour - so a correct
-		-- function nothing calls looks exactly like a fixed one.
+		-- The number is the CLASS colour, not white. That is the whole reason
+		-- the disc no longer has to be dark.
 		A:Restyle()
 		do
-			local r, g, b = UFm.player.orb.ring:GetVertexColor()
-			check(math.abs(r - ring[1]) < 0.01 and math.abs(g - ring[2]) < 0.01
-				and math.abs(b - ring[3]) < 0.01,
-				"and the orb on screen is painted with it (" .. string.format(
-					"%.2f %.2f %.2f", r, g, b) .. ")")
+			local r, g, b = UFm.player.orb.label:GetTextColor()
+			check(math.abs(r - ink[1]) < 0.01 and math.abs(b - ink[3]) < 0.01,
+				"and the level number on screen is that colour rather than white"
+				.. " (" .. string.format("%.2f %.2f %.2f", r, g, b) .. ")")
+			local dr, dg, db, da = UFm.player.orb.disc:GetVertexColor()
+			check(da and da < 0.3,
+				"with the disc mostly transparent (" .. string.format("%.2f", da or -1)
+				.. ") rather than a solid coloured ball")
+			local _, _, _, ea = UFm.player.orb.ring:GetVertexColor()
+			check(ea and ea > da,
+				"and the rim stronger than the fill, which is what gives it an edge")
 		end
 
-		-- One knob, and it moves both.
-		ucfg.classTint = 0.5
-		local dim = A.Palette:HealthColor("player")
-		check(dim[1] < bar[1] and math.abs(dim[1] - A.Palette:OrbColor("player")[1][1]) < 0.001,
-			"classTint darkens the bar and the orb together, or the two stop"
-			.. " matching the moment it is touched")
-		ucfg.classTint = 4
-		check(A.Palette:HealthColor("player")[1] <= 1.001,
-			"and is clamped where it is read - past 1 it would brighten past the"
-			.. " class colour")
-		ucfg.classTint = 0.8
-
-		-- The level number keeps its shadow, which is what carries it on a
-		-- coloured disc.
+		-- The shadow under the number stays: it is what carries it on a tint.
 		local lbl = UFm.player.orb.label
 		check((select(4, lbl:GetShadowColor()) or 0) > 0.5
 			and select(2, lbl:GetShadowOffset()) < 0,
-			"and the level number keeps a shadow under it")
+			"and the number keeps a shadow under it")
 
 		_G.__units.player.classToken = was
 	end

@@ -602,12 +602,6 @@ local function UnitFramesGroup()
 			.. " the concept's blue, which is what makes the two stacked cast bars"
 			.. " tellable apart mid-fight.",
 			at("reactionTint"), { defaultTrue = true, after = "restyle" }),
-		classTint = range("Colour depth",
-			"How dark a unit's colour is drawn. The health bar and the level orb"
-			.. " share it, so they always match."
-			.. "\n\n1 is the raw class colour. Lower is darker, and the orb is"
-			.. " what sets the floor - it carries a white number.",
-			at("classTint"), 0.4, 1, 0.01, { after = "restyle" }),
 	})
 end
 

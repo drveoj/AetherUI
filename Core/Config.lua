@@ -126,10 +126,6 @@ Config.defaults = {
 				-- reaction. Two identically blue cast bars stacked one above the
 				-- other are unreadable in a fight.
 				reactionTint  = true,
-				-- How dark a unit's colour is drawn. One number for the health
-				-- bar and the level orb, which share it. The orb decides the
-				-- floor: it carries a white number.
-				classTint     = 0.8,
 			},
 
 			actionbars = {
