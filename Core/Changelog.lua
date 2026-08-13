@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.18",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: nameplates ignored the UI scale and were drawn at full size. They follow profile scale now, with their own multiplier on top.",
+			"Fixed: on a plate with no health bar the name hung high in the capsule. It centres, and moves up when the bar arrives.",
+		},
+	},
+	{
 		version = "0.3.17",
 		date    = "2026-08-13",
 		lines   = {

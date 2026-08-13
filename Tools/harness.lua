@@ -14481,9 +14481,34 @@ do
 	check(not f.bar:IsShown(),
 		"a neutral out of combat carries a name and nothing else - a yellow plate"
 		.. " is 'not my problem yet' and a health bar on one says nothing")
+	check(select(1, f.name:GetPoint()) == "LEFT",
+		"and with nothing under it the name CENTRES rather than staying anchored"
+		.. " for a bar that is not there, hanging high over a band of empty glass")
+
 	_G.__units.nameplate1.inCombat = true
 	fire("UNIT_FLAGS", "nameplate1")
 	check(f.bar:IsShown(), "until it is in a fight, and then it does")
+	check(select(1, f.name:GetPoint()) == "BOTTOMLEFT",
+		"and the name moves up to make room for it")
+
+	-- Drawn at profile.scale like every other module. Left at 1 the capsule is
+	-- enormous against a HUD at 0.71, which is what the first pass shipped as.
+	--
+	-- On a plate BUILT after the change, not one that has since been through
+	-- OnConfigChanged: those are two different code paths and only one of them
+	-- runs when a mob walks up.
+	A.db.profile.scale = 0.9
+	local other = __spawnPlate("nameplate2", {
+		exists = true, name = "Gazrog", level = 20, reaction = 2, hp = 10, hpMax = 10,
+	})
+	local of = NPm.plateFor(other)
+	check(math.abs(of:GetScale() - 0.9 * A.Config:Module("nameplates").scale) < 0.001,
+		"a plate is BUILT at profile.scale, times the module's own multiplier")
+
+	A.db.profile.scale = 0.71
+	NPm:OnConfigChanged()
+	check(math.abs(of:GetScale() - 0.71) < 0.001, "and follows it when it moves")
+	__despawnPlate("nameplate2")
 
 	-- A token with nothing behind it. The client does this when a unit arrives
 	-- and is gone inside the same frame, and it is what a forbidden plate would

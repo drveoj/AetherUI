@@ -48,6 +48,14 @@ local byUnit = {}    -- unit token  -> our plate
 
 local function cfg() return A.Config:Module("nameplates") end
 
+--- Every other module is drawn at profile.scale and a plate is no different.
+--  Left at 1 the capsule is enormous against a HUD at 0.71, which is what the
+--  first pass shipped looking like.
+local function PlateScale()
+	local profile = A.db and A.db.profile
+	return (profile and profile.scale or 1) * (cfg().scale or 1)
+end
+
 -- ---------------------------------------------------------------------------
 -- what a unit is
 -- ---------------------------------------------------------------------------
@@ -89,6 +97,7 @@ local function Build(base)
 
 	local f = Glass.CreatePill(base, { fill = "glass", edge = "glassEdge" })
 	f:SetFrameStrata(base:GetFrameStrata())
+	f:SetScale(PlateScale())
 	f:SetPoint("CENTER", base, "CENTER", 0, 0)
 	f:Hide()
 
@@ -108,16 +117,31 @@ local function Build(base)
 	bar:SetWidth(c.barWidth)
 	f.bar = bar
 
-	-- The right column is name over bar, both left-aligned off the badge. The
-	-- name sits on the bar's own left edge so a long one truncates against the
-	-- same rule the bar ends on.
-	name:SetPoint("BOTTOMLEFT", badge, "RIGHT", GAP_BADGE, GAP_ROW * 0.5)
+	-- The right column is name over bar, both left-aligned off the badge, so a
+	-- long name truncates against the same rule the bar ends on. Where the name
+	-- sits vertically is not fixed - see LayoutRow.
 	bar:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -GAP_ROW)
 
 	f:SetSize(PAD_L + c.badgeSize + GAP_BADGE + c.barWidth + PAD_R,
 		c.badgeSize + PAD_Y * 2)
 
 	return f
+end
+
+--- Where the name sits depends on whether anything is under it.
+--
+--  With a bar the two share the height and the name rides above centre. Without
+--  one, a name still anchored for a bar it does not have hangs visibly high in
+--  the capsule with a band of empty glass beneath it - which is what every
+--  neutral plate looked like. So it centres, and moves up when the bar arrives.
+local function LayoutRow(f, hasBar)
+	f.name:ClearAllPoints()
+	if hasBar then
+		f.name:SetPoint("BOTTOMLEFT", f.badge, "RIGHT", GAP_BADGE, GAP_ROW * 0.5)
+	else
+		f.name:SetPoint("LEFT", f.badge, "RIGHT", GAP_BADGE, 0)
+	end
+	f._hasBar = hasBar
 end
 
 --- Our plate for a base, built once and kept.
@@ -221,7 +245,9 @@ end
 
 local function UpdateBar(f)
 	if not f.unit then return end
-	if WantsBar(f.unit) then
+	local wants = WantsBar(f.unit)
+	LayoutRow(f, wants)
+	if wants then
 		f.bar:Show()
 		UpdateHealth(f)
 	else
@@ -328,6 +354,7 @@ end
 function NP:OnConfigChanged()
 	local c = cfg()
 	for base, f in pairs(plates) do
+		f:SetScale(PlateScale())
 		f.bar:SetWidth(c.barWidth)
 		f.bar:SetHeight(c.barHeight)
 		f.badge:Resize(c.badgeSize)

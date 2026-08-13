@@ -471,6 +471,11 @@ Config.defaults = {
 			-- 160x5 bar under the name.
 			nameplates = {
 				enabled    = true,
+				-- On top of profile.scale, not instead of it, the way the tooltip's
+				-- own multiplier works. A plate is read at thirty yards and the
+				-- HUD is read at arm's length, so the size that suits one is not
+				-- automatically the size that suits the other.
+				scale      = 1,
 				badgeSize  = 26,
 				barWidth   = 160,
 				barHeight  = 5,
