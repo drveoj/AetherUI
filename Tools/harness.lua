@@ -14335,6 +14335,39 @@ do
 		"and the module resolves it to an id (got " ..
 		tostring(C3.SelectedChatID()) .. ")")
 
+	-- THE UNREAD DOT. Blizzard's tab flash runs with flashDuration -1, so once
+	-- it starts it stays SHOWN until something stops it - and selecting the tab
+	-- is not reliably that something. So the dot appeared on the very window
+	-- whose contents were in front of you, which is what got reported.
+	do
+		local flash1 = _G.ChatFrame1TabFlash
+		local flash2 = _G.ChatFrame2TabFlash
+		check(flash1 and flash2, "the tabs have Blizzard's flash textures")
+
+		-- Tab 2 is unselected and flashing: that is a real unread.
+		flash2:Show()
+		flash1:Show()
+		C3:UpdateFlashes()
+		check(tab2._dot:GetAlpha() == 1,
+			"an unselected tab with a live flash gets the unread dot")
+		check(tab1._dot:GetAlpha() == 0,
+			"and the SELECTED tab does not, however long its flash has been"
+			.. " shown - an unread marker on the window you are reading is"
+			.. " noise, and it is the one that was reported")
+
+		-- Select the other one and the dots swap.
+		_G.GeneralDockManager.selected = _G.ChatFrame2
+		C3:UpdateFlashes()
+		check(tab2._dot:GetAlpha() == 0 and tab1._dot:GetAlpha() == 1,
+			"selecting a tab clears its dot and the other one keeps its own")
+		_G.GeneralDockManager.selected = _G.ChatFrame1
+
+		flash1:Hide(); flash2:Hide()
+		C3:UpdateFlashes()
+		check(tab1._dot:GetAlpha() == 0 and tab2._dot:GetAlpha() == 0,
+			"and with nothing flashing there are no dots at all")
+	end
+
 	C3:StyleTab(tab1)
 	C3:StyleTab(tab2)
 	check(tab1._pill and tab1._pill:GetAlpha() == 1,

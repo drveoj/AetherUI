@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.13",
+		date    = "2026-08-13",
+		lines   = {
+			"The chat tab unread dot no longer appears on the tab you are already reading.",
+		},
+	},
+	{
 		version = "0.3.12",
 		date    = "2026-08-13",
 		lines   = {

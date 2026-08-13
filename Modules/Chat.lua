@@ -471,7 +471,15 @@ function Chat:UpdateFlashes()
 		local tab = _G[(f:GetName() or "") .. "Tab"]
 		if tab and tab._dot then
 			local flash = Region(tab, "Flash", nil)
-			tab._dot:SetAlpha((flash and flash.IsShown and flash:IsShown()) and 1 or 0)
+			local lit = flash and flash.IsShown and flash:IsShown()
+
+			-- Never on the tab you are reading. Blizzard's flash runs with
+			-- flashDuration -1, so it stays shown until something stops it, and
+			-- selecting a tab is not always that something - which put an unread
+			-- marker on the window whose contents were in front of you.
+			if TabIsSelected(tab) then lit = false end
+
+			tab._dot:SetAlpha(lit and 1 or 0)
 		end
 	end)
 end
