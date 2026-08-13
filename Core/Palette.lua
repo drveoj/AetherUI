@@ -612,6 +612,63 @@ function Palette:HealthColor(unit)
 	return c.health[1]
 end
 
+--- Which of the five difficulty bands a level falls in.
+--
+--  Lives here rather than in the quest log because three surfaces now ask the
+--  question - the log, the tracker, and a nameplate's level badge - and a
+--  threshold that drifted between them would show the same mob as yellow in one
+--  place and orange in another.
+--
+--  Thresholds are Blizzard's own from GetRelativeDifficultyColor. The green
+--  range comes from GetQuestGreenRange rather than the `floor(P/10)+5` formula,
+--  because the formula is only the client's default and the call is what it
+--  actually uses.
+function Palette:DifficultyBand(level)
+	if not level or level <= 0 then return "difficult" end
+	local player = (UnitLevel and UnitLevel("player")) or level
+	local diff = level - player
+
+	if diff >= 5 then return "impossible" end
+	if diff >= 3 then return "verydifficult" end
+	if diff >= -2 then return "difficult" end
+
+	local green = 5
+	if GetQuestGreenRange then
+		local ok, g = pcall(GetQuestGreenRange)
+		if ok and type(g) == "number" then green = g end
+	end
+	if -diff <= green then return "standard" end
+	return "trivial"
+end
+
+--- Is this level far enough above you to be a skull rather than a number?
+--
+--  Two ways to be one: the client hands back -1 for a unit whose level it will
+--  not tell you, and ten levels up is the concept's own threshold.
+function Palette:SkullLevel(level)
+	if not level or level < 0 then return true end
+	local player = (UnitLevel and UnitLevel("player")) or level
+	return level - player >= 10
+end
+
+--- Disc, rim and ink for a level badge, from the difficulty of that level.
+--
+--  The tooltip badge's recipe - the colour at .15 for the disc, .40 for the rim,
+--  full strength for the number - over the quest log's difficulty colour. One
+--  colour doing three jobs, which is what keeps a 26px disc from turning into
+--  two competing rings, and the same red on a nameplate that means "come back
+--  later" in the log.
+--
+--  Deliberately not the concept's filled gradient with dark type on it. Every
+--  other badge in this UI is a tinted disc with the colour as the number, and a
+--  nameplate is the last place to introduce a second kind.
+function Palette:DifficultyColors(level)
+	local band = Palette.c.questDiff[Palette:DifficultyBand(level)]
+		or Palette.c.questDiff.difficult
+	local t = band.text
+	return { t[1], t[2], t[3], 0.15 }, { t[1], t[2], t[3], 0.40 }, t
+end
+
 --- Rim colour that follows the target's reaction, used on the target capsule.
 function Palette:ReactionEdge(unit)
 	local c = Palette.c
@@ -631,6 +688,32 @@ function Palette:ReactionEdge(unit)
 	end
 	if reaction == 4 then return { c.neutral[1], c.neutral[2], c.neutral[3], 0.45 } end
 	return { c.friendly[1], c.friendly[2], c.friendly[3], 0.40 }
+end
+
+--- The four-way reaction colour: hostile, neutral, friendly NPC, friendly player.
+--
+--  ReactionEdge answers a coarser question and collapses the two friendlies into
+--  one green, which is right for a capsule rim - the thing you want to know mid
+--  -fight is whether the rim is red. A name is not that: a green name and a blue
+--  one are how you tell an innkeeper from a person, and on a nameplate that is
+--  most of the information on screen.
+--
+--  These are the tooltip's tokens rather than new ones, because they already are
+--  the concept's four nameplate hexes to the digit and a name should not change
+--  colour depending on which surface you read it from.
+function Palette:NameReaction(unit)
+	local c = Palette.c
+	if not unit or not UnitExists(unit) then return c.ttFriendlyNPC end
+	if UnitIsPlayer(unit) then
+		local reaction = UnitReaction(unit, "player")
+		if reaction and reaction <= 3 then return c.ttHostile end
+		if reaction == 4 then return c.ttNeutral end
+		return c.ttFriendly
+	end
+	local reaction = UnitReaction(unit, "player")
+	if reaction and reaction <= 3 then return c.ttHostile end
+	if reaction == 4 then return c.ttNeutral end
+	return c.ttFriendlyNPC
 end
 
 --- What a cast bar should be coloured for whoever is casting.

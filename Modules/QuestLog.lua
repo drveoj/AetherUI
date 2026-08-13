@@ -123,28 +123,12 @@ end
 
 --- Which of Blizzard's five difficulty bands a quest level falls in.
 --
---  Reimplemented rather than taken from GetQuestDifficultyColor because the
---  concept specifies its own chip colours per band - a text colour and a tinted
---  background, which that call cannot give us. The thresholds are Blizzard's own
---  from GetRelativeDifficultyColor, and the green range comes from the game
---  rather than from the deck's `floor(P/10)+5` note: the formula is only the
---  default, and GetQuestGreenRange is what the client actually uses.
+--  The bands live in Palette now that the nameplate badge asks the same question
+--  - see Palette:DifficultyBand for the thresholds and why they are not
+--  GetQuestDifficultyColor's. Kept as a local and as QL.DifficultyBand because
+--  the tracker resolves through the latter and the log calls it per row.
 local function DifficultyBand(level)
-	if not level or level <= 0 then return "difficult" end
-	local player = (UnitLevel and UnitLevel("player")) or level
-	local diff = level - player
-
-	if diff >= 5 then return "impossible" end
-	if diff >= 3 then return "verydifficult" end
-	if diff >= -2 then return "difficult" end
-
-	local green = 5
-	if GetQuestGreenRange then
-		local ok, g = pcall(GetQuestGreenRange)
-		if ok and type(g) == "number" then green = g end
-	end
-	if -diff <= green then return "standard" end
-	return "trivial"
+	return A.Palette:DifficultyBand(level)
 end
 
 QL.DifficultyBand = DifficultyBand

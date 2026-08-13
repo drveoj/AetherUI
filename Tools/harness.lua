@@ -14179,6 +14179,61 @@ end
 -- technically applied and visually absent.
 -- ---------------------------------------------------------------------------
 
+print("== palette: difficulty has one owner ==")
+do
+	local P = A.Palette
+	local QLm = A:GetModule("questlog")
+
+	_G.__units.player.level = 16
+	check(P:DifficultyBand(21) == "impossible" and P:DifficultyBand(19) == "verydifficult"
+		and P:DifficultyBand(16) == "difficult" and P:DifficultyBand(10) == "standard"
+		and P:DifficultyBand(1) == "trivial",
+		"all five bands answer off the player's level")
+	check(QLm.DifficultyBand(21) == P:DifficultyBand(21),
+		"and the quest log still answers under its own name - the tracker resolves"
+		.. " QL.DifficultyBand per call and would have dropped silently to its"
+		.. " neutral fallback if the move had taken that away")
+
+	check(P:SkullLevel(26) == true, "ten levels up is a skull")
+	check(P:SkullLevel(25) == false, "nine is still a number")
+	check(P:SkullLevel(-1) == true,
+		"and so is a unit the client will not name a level for - it hands back -1"
+		.. " there, which as a number is far BELOW you, not above")
+
+	local fill, edge, ink = P:DifficultyColors(21)
+	local band = P.c.questDiff.impossible.text
+	check(ink == band, "the badge's number is the quest log's own band colour")
+	check(fill[1] == band[1] and fill[4] == 0.15 and edge[4] == 0.40,
+		"with the disc at .15 of it and the rim at .40 - the tooltip badge's recipe")
+	local triv = P:DifficultyColors(1)
+	check(triv[1] ~= fill[1] or triv[2] ~= fill[2],
+		"and a trivial level is not tinted like a deadly one")
+end
+
+print("== palette: a name tells friendly PLAYER from friendly NPC ==")
+do
+	local P, units = A.Palette, _G.__units
+	units.__np = { exists = true, name = "Kolkar Marauder", level = 18, reaction = 2 }
+
+	check(P:NameReaction("__np") == P.c.ttHostile, "a hostile mob takes the red")
+	units.__np.reaction = 4
+	check(P:NameReaction("__np") == P.c.ttNeutral, "neutral takes the gold")
+	units.__np.reaction = 5
+	check(P:NameReaction("__np") == P.c.ttFriendlyNPC, "a friendly NPC is green")
+	units.__np.isPlayer = true
+	check(P:NameReaction("__np") == P.c.ttFriendly, "and a friendly PLAYER is blue")
+
+	-- Why the name does not simply go through ReactionEdge.
+	local playerEdge = P:ReactionEdge("__np")
+	units.__np.isPlayer = false
+	local npcEdge = P:ReactionEdge("__np")
+	check(npcEdge[1] == playerEdge[1] and npcEdge[2] == playerEdge[2],
+		"ReactionEdge collapses both friendlies into one green - correct for a rim,"
+		.. " useless for the one line of text on a friendly nameplate")
+
+	units.__np = nil
+end
+
 print("== skins: both define the same vocabulary ==")
 do
 	local mid, day = A.Palette.skins.midnight, A.Palette.skins.daylight
