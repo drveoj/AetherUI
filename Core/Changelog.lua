@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.17",
+		date    = "2026-08-13",
+		lines   = {
+			"New: nameplates. One capsule carries the level badge, the name and a health bar, tinted by the unit's reaction, with Blizzard's own plate put away underneath.",
+			"Elite and rare mobs get a chip next to the name; a neutral shows a name only until it is in a fight.",
+			"Still to come: friendly names, the target's emphasis and debuff chips, and cast bars.",
+		},
+	},
+	{
 		version = "0.3.16",
 		date    = "2026-08-13",
 		lines   = {

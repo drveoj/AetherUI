@@ -3460,36 +3460,7 @@ end
 -- next keystroke, which is what put the grey text back on screen.
 
 
-print("== loading addon files ==")
-for _, f in ipairs({
-	"Core/Core.lua", "Core/Changelog.lua",
-	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
-	"Core/Widgets.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
-	"Core/Nav.lua", "Core/Launchers.lua", "Core/Commands.lua", "Core/Options.lua",
-	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
-	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
-	"Modules/Minimap.lua", "Modules/XPBar.lua",
-	"Modules/Chat.lua",
-	"Modules/Tooltips.lua",
-	"Modules/Zen.lua",
-	"Modules/Toolbox.lua",
-}) do
-	load(f)
-end
-
--- ---------------------------------------------------------------------------
--- drive a session
--- ---------------------------------------------------------------------------
-
-local pump = A.pump
-
-local function fire(event, ...)
-	local fn = pump:GetScript("OnEvent")
-	if fn then
-		local ok, err = pcall(fn, pump, event, ...)
-		if not ok then fail("event " .. event .. ": " .. tostring(err)) end
-	end
-end
+local fire   -- assigned once A.pump exists, below
 
 -- ---------------------------------------------------------------------------
 -- nameplates
@@ -3628,6 +3599,38 @@ end
 
 function UnitAffectingCombat(u) return units[u] and units[u].inCombat or false end
 function GetGuildInfo(u) local d = units[u]; return d and d.guild end
+
+print("== loading addon files ==")
+for _, f in ipairs({
+	"Core/Core.lua", "Core/Changelog.lua",
+	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
+	"Core/Widgets.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
+	"Core/Nav.lua", "Core/Launchers.lua", "Core/Commands.lua", "Core/Options.lua",
+	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
+	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
+	"Modules/Minimap.lua", "Modules/XPBar.lua",
+	"Modules/Chat.lua",
+	"Modules/Tooltips.lua",
+	"Modules/Nameplates.lua",
+	"Modules/Zen.lua",
+	"Modules/Toolbox.lua",
+}) do
+	load(f)
+end
+
+-- ---------------------------------------------------------------------------
+-- drive a session
+-- ---------------------------------------------------------------------------
+
+local pump = A.pump
+
+fire = function(event, ...)
+	local fn = pump:GetScript("OnEvent")
+	if fn then
+		local ok, err = pcall(fn, pump, event, ...)
+		if not ok then fail("event " .. event .. ": " .. tostring(err)) end
+	end
+end
 
 -- Expanding or collapsing a header fires QUEST_LOG_UPDATE on the live client.
 -- Modelling that matters more than it looks: it is what makes a collapse visible
@@ -14380,6 +14383,10 @@ end
 
 print("== nameplates: the mock is as unkind as the client ==")
 do
+	-- The module out of the way: this block is about what the CLIENT does, and
+	-- the module's whole job is to countermand some of it.
+	A:SetModuleEnabled("nameplates", false)
+
 	local seen = { created = 0, added = 0, removed = 0 }
 	local spy = {}
 	A:RegisterEvent(spy, "NAME_PLATE_CREATED", function() seen.created = seen.created + 1 end)
@@ -14429,6 +14436,70 @@ do
 	__despawnPlate("nameplate1")
 	A:UnregisterAllEvents(spy)
 	check(__plateCount() == 0, "and nothing is left standing behind us")
+
+	A:SetModuleEnabled("nameplates", true)
+end
+
+local NPm = A:GetModule("nameplates")
+
+print("== nameplates: one capsule, and Blizzard's put away ==")
+do
+	local base = __spawnPlate("nameplate1", {
+		exists = true, name = "Kolkar Marauder", level = 18, reaction = 2,
+		hp = 700, hpMax = 1000, classification = "normal",
+	})
+	local f = NPm.plateFor(base)
+	check(f ~= nil and f:IsShown(), "a hostile gets a plate")
+	check(f:GetParent() == base,
+		"parented to the client's base rather than replacing it - the base is the"
+		.. " click target and it is protected, so it is left entirely alone")
+	check(not base.UnitFrame:IsShown(), "and Blizzard's own is put away")
+
+	check(f.name:GetText() == "Kolkar Marauder", "the name is on it")
+	check(f.badge.label:GetText() == "18", "with the level in the badge")
+	local fill = select(1, A.Palette:DifficultyColors(18))
+	check(f.badge.disc.__color and f.badge.disc.__color[1] == fill[1],
+		"tinted by difficulty, off the same band the quest log uses")
+	check(f.bar:IsShown() and f.bar:GetValue() == 700, "and the health bar reads")
+
+	-- The recycling trap, end to end.
+	__despawnPlate("nameplate1")
+	check(f.name:GetText() == "", "a plate that goes away is CLEARED, not just hidden")
+
+	local again = __spawnPlate("nameplate1", {
+		exists = true, name = "Wandering Kodo", level = 15, reaction = 4,
+		hp = 500, hpMax = 500,
+	})
+	check(again == base and NPm.plateFor(again) == f,
+		"the recycled base keeps the same plate rather than growing a second one")
+	check(f.name:GetText() == "Wandering Kodo", "rebound to whoever turned up on it")
+	check(not base.UnitFrame:IsShown(),
+		"and Blizzard's plate is hidden AGAIN - it is pooled per unit and arrives"
+		.. " shown, so hiding it once when the base was created would have left it"
+		.. " flickering under every mob after the first")
+
+	check(not f.bar:IsShown(),
+		"a neutral out of combat carries a name and nothing else - a yellow plate"
+		.. " is 'not my problem yet' and a health bar on one says nothing")
+	_G.__units.nameplate1.inCombat = true
+	fire("UNIT_FLAGS", "nameplate1")
+	check(f.bar:IsShown(), "until it is in a fight, and then it does")
+
+	-- A token with nothing behind it. The client does this when a unit arrives
+	-- and is gone inside the same frame, and it is what a forbidden plate would
+	-- look like if one ever reached this handler. It has to be a no-op, not a
+	-- capsule hung on a frame we invented to have something to hang it on.
+	local function built()
+		local n = 0
+		for _ in pairs(NPm.plates) do n = n + 1 end
+		return n
+	end
+	local before = built()
+	fire("NAME_PLATE_UNIT_ADDED", "nameplate77")
+	check(built() == before,
+		"a token with no plate behind it builds nothing and raises nothing")
+
+	__despawnPlate("nameplate1")
 end
 
 print("== palette: difficulty has one owner ==")

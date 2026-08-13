@@ -466,6 +466,24 @@ Config.defaults = {
 				showText = true,
 			},
 
+			-- Nameplates (concept 7a / 7b). The deck's own measurements: an 8/7
+			-- /18/7 padding box, a 26 badge, a 10 gap to the right column, and a
+			-- 160x5 bar under the name.
+			nameplates = {
+				enabled    = true,
+				badgeSize  = 26,
+				barWidth   = 160,
+				barHeight  = 5,
+				-- Neutral units carry a name and nothing else until they are in a
+				-- fight. A yellow plate is "not my problem yet", and a health bar
+				-- on it is a row of numbers that means nothing.
+				neutralBarInCombat = true,
+				-- Blizzard's own plate underneath. Off is the whole point, but it
+				-- is a switch because a plate we failed to draw is worse than
+				-- theirs and this is the way back.
+				hideBlizzard = true,
+			},
+
 			-- Tooltips (concept 6a / 6b).
 			--
 			-- Every one of these is a switch on a RESKIN. The module never

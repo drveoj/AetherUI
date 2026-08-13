@@ -323,6 +323,15 @@ Media.style = {
 	tbLabel      = { "medium",   11, "" },
 	ttChip       = { "bold",     10, "" },   -- ELITE
 	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
+
+	-- Nameplates (concept 7a / 7b). Their own roles rather than the tooltip's,
+	-- close as the numbers are: a tooltip is read under the cursor with the
+	-- world stopped, and a plate is read at thirty yards over moving ground
+	-- while something is hitting you. When one of these two has to grow to stay
+	-- legible it should be able to without dragging the other with it.
+	npName       = { "semibold", 14, "" },
+	npBadge      = { "bold",     10, "" },   -- the number in the level badge
+	npChip       = { "bold",      9, "" },   -- ELITE / RARE
 }
 
 -- ---------------------------------------------------------------------------

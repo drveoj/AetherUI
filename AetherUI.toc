@@ -2,7 +2,7 @@
 ## Title: Aether|cff9d7bffUI|r
 ## Notes: A frosted-glass HUD for Classic Era. Core skin engine + modules.
 ## Author: Joe Vaughan
-## Version: 0.3.16
+## Version: 0.3.17
 ## SavedVariables: AetherUIDB
 ## X-Category: Interface Enhancements
 
@@ -32,5 +32,6 @@ Modules\Minimap.lua
 Modules\XPBar.lua
 Modules\Chat.lua
 Modules\Tooltips.lua
+Modules\Nameplates.lua
 Modules\Zen.lua
 Modules\Toolbox.lua
