@@ -453,7 +453,12 @@ local function newFontString(owner, layer)
 		local c = self.__color or { 1, 1, 1, 1 }
 		return c[1], c[2], c[3], c[4]
 	end
-	function f:SetWordWrap() end
+	--- RECORDED, not swallowed. Whether a label wraps or is cut at its right
+	--  edge is a layout decision with two different right answers in this UI -
+	--  a tile laid out as a row wants two lines, the same tile stacked under its
+	--  own icon must not have them - and a no-op mock cannot tell them apart.
+	function f:SetWordWrap(v) self.__wordWrap = v and true or false end
+	function f:GetWordWrap() return self.__wordWrap ~= false end
 	function f:SetVertexColor() end
 	-- crude but proportional: enough for layout maths to be exercised.
 	--
@@ -9640,6 +9645,58 @@ do
 
 	check(TBm.content.tiles and #TBm.content.tiles >= 4, "the tile grid is built")
 
+	-- A tile is a ROW when there is room for one: icon, then the label, then the
+	-- state at the far end. It was always stacked - label directly under the
+	-- icon, with the whole middle-right of the tile empty - and that empty band
+	-- is the first thing anybody notices about it.
+	do
+		local tile = TBm.content.tiles[1]
+		check(tile._row == true,
+			"a tile in the tall panel is laid out as a row - there is room"
+			.. " beside the icon and the label goes in it (tile is "
+			.. string.format("%.0f", tile:GetWidth()) .. " wide)")
+
+		local function topOf(r)
+			local _, _, _, _, y = r:GetPoint(1)
+			return -(y or 0)
+		end
+		local function leftOf(r)
+			local _, _, _, x = r:GetPoint(1)
+			return x or 0
+		end
+		check(select(2, tile.name:GetPoint(1)) == tile.chip,
+			"with the label hung off the icon rather than off the tile's bottom")
+		check(select(2, tile.name:GetPoint(2)) == tile.state,
+			"and stopped at the state, so a long one cannot run through the"
+			.. " On/Off at the far end")
+		-- Read off the module's own record, not off the region: the label's two
+		-- anchors are to two DIFFERENT frames here, which is the one case the
+		-- mock deliberately will not resolve a width for - doing so needs their
+		-- absolute positions, and that is a layout engine rather than a mock.
+		check((tile._nameRoom or 0) > 40,
+			"leaving it a real amount of room ("
+			.. string.format("%.0f", tile._nameRoom or -1) .. " of "
+			.. string.format("%.0f", tile:GetWidth()) .. ")")
+
+		-- ...and it WRAPS into that room rather than being cut. Stacked there is
+		-- a chip directly above the label and a second line lands on it; in a row
+		-- the whole height of the tile is the label's.
+		check(tile.name.__wordWrap ~= false,
+			"and wraps rather than truncating - a two-word setting reads as two"
+			.. " lines, which is what the space beside the icon is for")
+
+		-- Narrow enough and it goes back to the stack, because a row needs more
+		-- than an icon's width of label to be worth having.
+		TBm:ArrangeTile(tile, 90)
+		check(tile._row == false,
+			"a tile too narrow for that stacks instead, rather than squeezing"
+			.. " the label into nothing")
+		check(tile.name.__wordWrap == false,
+			"and stops wrapping, because stacked the line above it is the chip")
+		TBm:ArrangeTile(tile, tile:GetWidth())
+		check(tile._row == true, "and back again when the room returns")
+	end
+
 	-- A config path, written the way the options panel writes it.
 	local zen = TBm.TILES[1]
 	check(zen.kind == "setting" and zen.path[2] == "zen", "the first tile is Zen")
@@ -11059,6 +11116,14 @@ do
 			.. " all and simply keeps drawing (" .. string.format("%.0f of %.0f",
 				w, tile:GetWidth()) .. ", longest label here is "
 			.. tostring(longest) .. ")")
+
+		-- Flat, the settings column is narrow enough that the label goes UNDER
+		-- the icon: there is no room for two words beside a 30px chip and an
+		-- On/Off.
+		check(tile._row == false,
+			"and in the flat drawer's narrow column it stacks under the icon"
+			.. " rather than being squeezed beside it (tile is "
+			.. string.format("%.0f", tile:GetWidth()) .. " wide)")
 	end
 
 	-- The addon column is the widest, because it holds the longest strings on

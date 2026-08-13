@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.6",
+		date    = "2026-08-13",
+		lines   = {
+			"Settings tiles put their label beside the icon and wrap it, instead of leaving the middle empty.",
+		},
+	},
+	{
 		version = "0.3.5",
 		date    = "2026-08-13",
 		lines   = {

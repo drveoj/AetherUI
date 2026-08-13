@@ -2017,6 +2017,28 @@ end
 
 local TILE_H, TILE_GAP = 62, 8
 
+-- A settings tile has two arrangements, and the width decides which.
+--
+--   ROW      [icon]  Combat collapse            On
+--   STACKED  [icon]                             On
+--            Combat collapse
+--
+-- The row is the one to want. Stacked, the label sits directly under the icon
+-- with the whole middle-right of the tile empty, which is what got reported -
+-- and it is the arrangement a 62px tile forces when there is no room beside the
+-- icon for two words.
+--
+-- The numbers below are what a row costs: padding, the chip, the gap after it,
+-- the gap before the state, the state itself, and padding again. Anything left
+-- over is the label's, and below about sixty pixels of that a two-word setting
+-- cannot wrap into it - so the flat drawer's narrow settings column keeps the
+-- stack and the tall panel gets the row.
+local TILE_PAD    = 12
+local TILE_CHIP   = 30
+local TILE_GAP_X  = 10     -- chip to label
+local TILE_STATE  = 30     -- room reserved for "On" / "Off"
+local TILE_NAME_MIN = 60   -- below this a row is not worth having
+
 -- ---------------------------------------------------------------------------
 -- the MAIL section
 -- ---------------------------------------------------------------------------
@@ -2195,6 +2217,53 @@ function TB:RefreshMailRows()
 	end
 end
 
+--- Lay a tile's three pieces out for the width it has been given.
+--
+--  Called from the layout rather than from the constructor, because the width
+--  is the input and only the layout knows it. Both arrangements are set fully -
+--  every anchor cleared and re-made - so a tile that changes width when the
+--  drawer is re-docked cannot keep half of the other one.
+function TB:ArrangeTile(tile, width)
+	if not tile or not tile.chip then return end
+	local room = (width or 0) - TILE_PAD * 2 - TILE_CHIP - TILE_GAP_X - TILE_STATE
+	local row  = room >= TILE_NAME_MIN
+
+	tile.chip:ClearAllPoints()
+	tile.state:ClearAllPoints()
+	tile.name:ClearAllPoints()
+
+	if row then
+		-- Everything on one line, vertically centred. The label takes the space
+		-- between the icon and the state, and WRAPS into it rather than being
+		-- cut: there are two lines' worth of height going spare in a 62px tile
+		-- once nothing is stacked under the icon.
+		tile.chip:SetPoint("LEFT", tile, "LEFT", TILE_PAD, 0)
+		tile.state:SetPoint("RIGHT", tile, "RIGHT", -TILE_PAD, 0)
+		tile.name:SetPoint("LEFT", tile.chip, "RIGHT", TILE_GAP_X, 0)
+		tile.name:SetPoint("RIGHT", tile.state, "LEFT", -8, 0)
+		tile.name:SetWordWrap(true)
+		tile.name:SetJustifyV("MIDDLE")
+	else
+		-- Not enough width beside the icon, so the label goes under it. No
+		-- wrapping here: the chip is in the top of a 62px tile and a second line
+		-- lands on it.
+		tile.chip:SetPoint("TOPLEFT", tile, "TOPLEFT", TILE_PAD, -10)
+		tile.state:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -TILE_PAD, -16)
+		tile.name:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", TILE_PAD, 10)
+		tile.name:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -TILE_PAD, 10)
+		tile.name:SetWordWrap(false)
+		tile.name:SetJustifyV("BOTTOM")
+	end
+	-- Written down rather than recomputed by anyone who wants it. The label's
+	-- two anchors are to two DIFFERENT frames in the row form, so its width
+	-- cannot be read back off the region - not by the harness, and not by a
+	-- diagnostic either. This is the number that decided the arrangement, so it
+	-- is the honest one to keep.
+	tile._nameRoom = row and room or nil
+	tile._row = row
+	return row
+end
+
 function TB:BuildTiles()
 	if not self.content or self.content.tiles then return end
 	local head = W.Text(self.content, "tbSection", "LEFT")
@@ -2230,7 +2299,6 @@ function TB:RefreshTiles()
 			-- own units so the ring does not sit across a pixel boundary all
 			-- the way round.
 			local chip = W.CreateBadge(tile, { size = 30 })
-			chip:SetPoint("TOPLEFT", tile, "TOPLEFT", 12, -10)
 			chip.label:Hide()
 			tile.chip = chip
 
@@ -2240,17 +2308,10 @@ function TB:RefreshTiles()
 			tile.icon = icon
 
 			tile.state = W.Text(tile, "tbLabel", "RIGHT")
-			tile.state:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -12, -16)
-
-			tile.name = W.Text(tile, "tbCardBody", "LEFT")
-			tile.name:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 12, 10)
-			-- A right edge, and no wrapping past it. Without one the label had
-			-- no width at all and simply kept drawing: "Combat collapse" ran out
-			-- of its own tile and into the column beside it. Truncated rather
-			-- than wrapped, because the tile is 62 tall with a 30px chip in the
-			-- top of it and a second line lands on the chip.
-			tile.name:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -12, 10)
-			tile.name:SetWordWrap(false)
+			tile.name  = W.Text(tile, "tbCardBody", "LEFT")
+			-- Anchored by ArrangeTile, which needs the tile's WIDTH and
+			-- therefore cannot run until the layout has set one.
+			self:ArrangeTile(tile, 0)
 
 			tile:EnableMouse(true)
 			tile:SetScript("OnMouseUp", function(self2)
@@ -3398,6 +3459,7 @@ function TB:LayoutHorizontal()
 			for i, tile in ipairs(tilesF) do
 				if i <= shownTiles then
 					tile:SetWidth(tw)
+					self:ArrangeTile(tile, tw)
 					GridPlace(content, tile, i, x, y, cols, tw, TILE_H, TILE_GAP, TILE_GAP)
 					tile:Show()
 				else
@@ -3664,6 +3726,7 @@ function TB:LayoutVertical()
 		for i, tile in ipairs(tilesF) do
 			if i <= shownTiles then
 				tile:SetWidth(tw)
+				self:ArrangeTile(tile, tw)
 				GridPlace(content, tile, i, PAD, y, tileCols, tw, TILE_H, TILE_GAP, TILE_GAP)
 				tile:Show()
 			else
