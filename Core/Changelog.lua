@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.1",
+		date    = "2026-08-13",
+		lines   = {
+			"The What's new card fits its own Notes link instead of drawing through it.",
+			"Re-docking the drawer re-lays what is inside it.",
+		},
+	},
+	{
 		version = "0.3.0",
 		date    = "2026-08-13",
 		lines   = {

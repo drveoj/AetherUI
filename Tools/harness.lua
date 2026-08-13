@@ -9105,10 +9105,18 @@ do
 	-- in the body verbatim.
 	do
 		local entry = A:Notes()
-		local body = TBm.content.news.body:GetText() or ""
-		check(entry and entry.lines[1] and body:find(entry.lines[1], 1, true) ~= nil,
-			"the card's body is the current entry's own lines rather than a"
-			.. " paragraph kept beside them")
+		local body  = TBm.content.news.body:GetText() or ""
+		local full  = TBm:NewsText()
+		-- A PREFIX, not the whole line: the body is trimmed to whatever the
+		-- card is at the moment, so on a narrow card it ends in "...".
+		local shown = body:gsub("%.%.%.$", "")
+		check(entry and entry.lines[1] and #shown > 0
+			and full:sub(1, #shown) == shown,
+			"the card's body is the start of the current entry's own line rather"
+			.. " than a paragraph kept beside it (" .. body .. ")")
+		check(full:find(entry.lines[1], 1, true) ~= nil,
+			"and the untrimmed text really is that line, so the trimming is the"
+			.. " only thing between the changelog and the card")
 		check(TBm.content.chip.text:GetText():find(A.version, 1, true) ~= nil,
 			"and the chip carries the running version ("
 			.. tostring(TBm.content.chip.text:GetText()) .. ")")
@@ -9132,6 +9140,109 @@ do
 			.. string.format("%.0f", wasW) .. ")")
 		A.version = realVersion
 		TBm:RefreshNews()
+	end
+
+	-- Everything on the card fits INSIDE the card.
+	--
+	-- The Notes link is anchored to the card's bottom-left and the body grows
+	-- down from the title, so the two meet in the middle if the body is allowed
+	-- to run long. It was: two changelog lines joined into a paragraph wrapped
+	-- to three rendered lines, filled the card to its bottom edge, and drew
+	-- straight through the link. Measured rather than eyeballed, because the
+	-- collision is between two frames that are each exactly where their own
+	-- SetPoint says.
+	do
+		local card = TBm.content.news
+		-- GetStringHeight, not GetHeight. GetHeight is whatever the frame was
+		-- sized to; the WRAPPED height is the number that decides whether the
+		-- body runs into the link, and it needs a width that was set rather
+		-- than one the client worked out from two anchors - which is why the
+		-- body carries an explicit one now.
+		check((card.body:GetWidth() or 0) > 20,
+			"the card's body has a real width to wrap against ("
+			.. string.format("%.0f", card.body:GetWidth() or 0) .. ")")
+		local need = 14                                   -- top padding
+			+ (card.titleText:GetStringHeight() or 0)
+			+ 6                                           -- title to body
+			+ (card.body:GetStringHeight() or 0)
+			+ 4                                           -- body to link
+			+ (card.notes:GetHeight() or 0)
+			+ 12                                          -- bottom padding
+		check(need <= card:GetHeight() + 0.5,
+			"the title, the body and the Notes link all fit inside the What's"
+			.. " new card rather than the last two overlapping ("
+			.. string.format("%.0f needed of %.0f", need, card:GetHeight())
+			.. ")")
+		check(TBm.NEWS_LINES == 1,
+			"which the card gets by showing ONE changelog line - it is a"
+			.. " headline, not a release summary, and the rest is what Notes is"
+			.. " for")
+
+		-- ...and it fits because the body is TRIMMED, not because the line
+		-- happened to be short. A changelog line is prose somebody writes months
+		-- from now, and the card is about 170px wide in the flat layout's
+		-- identity column against about 300 in the tall panel - the same
+		-- sentence at four lines and at two.
+		local realLog = A.CHANGELOG
+		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
+		local wasScale = A.db.profile.scale
+		UIParent:SetSize(1365, 768)
+		A.db.profile.scale = 0.71
+		TBm:SetDock("LEFT")
+		TBm:SetOpen(true, true)
+
+		local function noteIs(line)
+			A.CHANGELOG = { { version = A.version, date = "2026-01-01",
+				lines = { line } } }
+			TBm:LayoutContent()
+			return card.body:GetText() or ""
+		end
+		local function fits()
+			return 14 + (card.titleText:GetStringHeight() or 0) + 6
+				+ (card.body:GetStringHeight() or 0) + 4
+				+ (card.notes:GetHeight() or 0) + 12 <= card:GetHeight() + 0.5
+		end
+
+		-- An ORDINARY release note, the length people actually write, has to
+		-- survive untouched on the tall panel. This is what says the card is big
+		-- enough rather than merely self-consistent: everything below fits by
+		-- construction once the trimming works, so a card shrunk back to its old
+		-- height would pass every other check here by cutting more.
+		local ordinary = "Drag the Toolbox rail to any screen edge to re-dock it."
+		local shown = noteIs(ordinary)
+		check(shown == ordinary,
+			"an ordinary release note is shown in full on the tall panel - the"
+			.. " card is sized for one, not merely consistent with whatever it"
+			.. " has to cut (got " .. shown .. ")")
+		check(fits(), "and fits")
+
+		-- A long one is cut, and says so.
+		local long = "A quite unreasonably long release note that goes on and on"
+			.. " about something nobody needed this much detail on, and then"
+			.. " keeps going for a while after that as well."
+		shown = noteIs(long)
+		check(fits(),
+			"a note twice that length is cut to the card rather than drawn"
+			.. " through the link under it")
+		check(shown:sub(-3) == "..." and #shown < #long,
+			"and says it was cut (" .. shown:sub(-30) .. ")")
+		check(long:sub(1, #shown - 3) == shown:sub(1, -4),
+			"keeping the start of it rather than some other part")
+
+		-- The same note on the FLAT panel, where the column is narrower, has to
+		-- be cut harder rather than overflowing.
+		TBm:SetDock("BOTTOM")
+		local flatShown = card.body:GetText() or ""
+		check(fits(), "and on the flat panel's narrower column it still fits")
+		check(#flatShown <= #shown,
+			"cut at least as hard there, the column being narrower (" .. #flatShown
+			.. " vs " .. #shown .. " characters)")
+		TBm:SetDock("LEFT")
+
+		A.CHANGELOG = realLog
+		UIParent:SetSize(wasW, wasH)
+		A.db.profile.scale = wasScale
+		TBm:LayoutContent()
 	end
 
 	-- Notes, for what the card has not got room for.
@@ -10484,6 +10595,59 @@ do
 			.. string.format("%.0f", topOfTitle) .. ")")
 	end
 
+	-- SetDock ALONE re-lays the content, with no Refresh* behind it.
+	--
+	-- This is the path the player uses - drag the rail, let go, look - and it
+	-- was the one path nothing tested. Layout moves and resizes the panel and
+	-- LayoutRail moves the rail; neither touches what is drawn inside it. So
+	-- re-docking from a side to the top put a 1280x240 panel at the top of the
+	-- screen with the tall panel's column of sections still running down the
+	-- left of it, most of them below the panel's own bottom edge. Every flat
+	-- test called Refresh* afterwards, and those call LayoutContent, so the
+	-- suite agreed the layout was fine.
+	UIParent:SetSize(1365, 768)
+	A.db.profile.scale = 0.71
+	TBm:SetDock("LEFT")
+	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
+	check(topOf(c.widgetsHead) > topOf(c.title), "stacked on a side dock")
+
+	TBm:SetDock("BOTTOM")                       -- and nothing else
+	check(math.abs(topOf(c.widgetsHead) - topOf(c.title)) < 0.5,
+		"re-docking flat re-lays the content on its own, with no Refresh call"
+		.. " behind it - dragging the rail is exactly this and nothing more")
+	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
+		"and what it lays out fits the panel it just resized ("
+		.. string.format("%.0f of %.0f", TBm._contentHeight,
+			TBm.panel:GetHeight()) .. ")")
+
+	TBm:SetDock("LEFT")                         -- and back, still on its own
+	check(topOf(c.widgetsHead) > topOf(c.title),
+		"and back again, the same way")
+
+	TBm:SetDock("BOTTOM")
+	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
+
+	-- The micro row is GLYPHS here. Eight labelled cells across a column a
+	-- fifth of the panel wide is about thirty pixels each, and "Character" came
+	-- out as "Ch...".
+	check(c.micro[1].name ~= nil and not c.micro[1].name:IsShown(),
+		"the micro buttons drop their labels flat - the name is on the tooltip,"
+		.. " which is where a name that does not fit belongs")
+
+	-- The addon column is the widest, because it holds the longest strings on
+	-- the panel. "Auc-Util-AutoMagic" is a real registry name.
+	do
+		local order, weights = TBm:HorizontalColumns()
+		local widest, widestKey = 0, nil
+		for _, k in ipairs(order) do
+			if weights[k] > widest then widest, widestKey = weights[k], k end
+		end
+		check(widestKey == "addons",
+			"and the addon list gets the widest column, having the longest"
+			.. " strings on the panel to put in it (got " .. tostring(widestKey)
+			.. ")")
+	end
+
 	-- And going back is really going back. A layout that leaves regions where
 	-- the other one put them is a drawer that looks broken on the dock you
 	-- return to, which is the failure nobody thinks to test for.
@@ -10495,6 +10659,9 @@ do
 	check(c.microHead:IsShown() and c.close:IsShown(),
 		"docking back to a side brings the MENU heading and the close button"
 		.. " back rather than leaving the flat layout's choices behind")
+	check(c.micro[1].name:IsShown(),
+		"and the micro labels with them - whatever one layout hides, the other"
+		.. " has to put back, which this file has now got wrong three times")
 	check(topOf(c.widgetsHead) > topOf(c.title)
 		and math.abs(leftOf(c.widgetsHead) - leftOf(c.title)) < 0.5,
 		"and the sections stack again, in one column at one x")

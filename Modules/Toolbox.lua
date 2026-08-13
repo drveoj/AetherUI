@@ -563,6 +563,20 @@ function TB:SetDock(edge)
 	local c = Char()
 	if c then c.docked = edge end
 	self:Layout()
+
+	-- ...and the CONTENT, which is the whole of what changes.
+	--
+	-- This was missing, and it is the bug you see rather than the one you
+	-- reason about: Layout moves and resizes the panel, LayoutRail moves the
+	-- rail, and neither of them touches what is drawn inside. Re-docking from a
+	-- side to the top therefore put a 1280x240 panel at the top of the screen
+	-- with the tall panel's column of sections still laid out down the left of
+	-- it, most of them below the panel's own bottom edge.
+	--
+	-- Nothing caught it because every test that looks at the flat layout calls
+	-- Refresh* afterwards, and those call LayoutContent. The one path nobody
+	-- had was the one the player uses: drag, let go, look.
+	self:LayoutContent()
 	self:LayoutRail()
 	self:AnchorDockHandle()
 	return true
@@ -1454,10 +1468,72 @@ end
 -- The changelog is the one place now, the .toc is the version, and the harness
 -- refuses a build where the two disagree.
 
---- How many lines of the entry fit on the card. The card is a fixed 84px with a
---  title on it, so this is the honest number rather than however many the
---  release happened to have - the rest are behind Notes.
-TB.NEWS_LINES = 2
+--- How many lines of the entry fit on the card.
+--
+--  ONE. It was two, and two changelog lines joined into a paragraph wrapped to
+--  three rendered lines, which filled the card to its bottom edge and drew
+--  straight through the Notes link sitting there. A card is a headline, not a
+--  release summary; the rest is what Notes is for.
+TB.NEWS_LINES = 1
+
+-- Where the type on the card starts, and where it stops. The tile is 38 wide at
+-- 14 in from the edge with 12 of gap after it; everything else on the card -
+-- the title, the body, the Notes link - lines up past that.
+local NEWS_TEXT_X   = 14 + 38 + 12
+local NEWS_TEXT_PAD = 14        -- and the gap at the right-hand end
+
+--- Fit the body to the card: give it a width, then trim it to the height.
+--
+--  Called from both layouts once the card has been sized, because the card is
+--  what changes between them - the tall panel gives the body about 300px to
+--  wrap in and the flat one's identity column about 170, which is the same
+--  sentence at two and at four lines.
+--
+--  Trimmed rather than trusted to be short. A changelog line is prose somebody
+--  writes months from now, and the failure when it is too long is not a clipped
+--  word: the body grows downward, the Notes link is anchored to the card's
+--  bottom, and they are drawn through each other. Trimming is the only version
+--  of this that cannot go wrong later.
+--
+--  Word at a time from the end, with "..." to say so. Not the unicode ellipsis:
+--  Outfit is a text face and probably has one, but "probably" is how the gear
+--  ended up rendering as three bytes of its own UTF-8, and three dots cost
+--  nothing.
+function TB:SizeNewsBody()
+	local card = self.content and self.content.news
+	if not card or not card.body then return end
+
+	card.body:SetWidth(math.max(20,
+		(card:GetWidth() or 0) - NEWS_TEXT_X - NEWS_TEXT_PAD))
+
+	local avail = (card:GetHeight() or NEWS_H)
+		- 14                                                -- top padding
+		- (card.titleText:GetStringHeight() or 0)
+		- 6                                                 -- title to body
+		- 4                                                 -- body to link
+		- ((card.notes and card.notes:GetHeight()) or 0)
+		- 12                                                -- bottom padding
+	if avail <= 0 then card.body:SetText("") return end
+
+	local full = self:NewsText()
+	card.body:SetText(full)
+	if (card.body:GetStringHeight() or 0) <= avail then return end
+
+	-- Guarded by a counter as well as by the text running out. This loop shrinks
+	-- a string every pass so it does terminate, but a mock or a client that
+	-- reports a constant height would spin it forever, and a frozen client is a
+	-- worse bug than a long line.
+	local text = full
+	for _ = 1, 64 do
+		local shorter = text:gsub("%s*%S+$", "")
+		if shorter == "" or shorter == text then break end
+		text = shorter
+		card.body:SetText(text .. "...")
+		if (card.body:GetStringHeight() or 0) <= avail then return end
+	end
+	-- Nothing fit. One line beats an overlap.
+	card.body:SetText("...")
+end
 
 --- The version the card is currently reporting on.
 function TB:NewsVersion()
@@ -1504,7 +1580,10 @@ end
 function TB:RefreshNews()
 	local card = self.content and self.content.news
 	if not card then return end
-	card.body:SetText(self:NewsText())
+	-- The body's TEXT is set by SizeNewsBody, not here: it has to be trimmed to
+	-- whatever the card is at the moment, and only the layout knows that. Two
+	-- writers on one string means the untrimmed one wins whenever it runs last.
+	self:SizeNewsBody()
 	card.dot:SetShown(self:NewsUnread())
 	if card.notes then card.notes:SetShown(self:NewsHasMore()) end
 
@@ -1594,7 +1673,11 @@ function TB:BuildContent()
 
 	local body = W.Text(card, "tbCardBody", "LEFT")
 	body:SetPoint("TOPLEFT", ct, "BOTTOMLEFT", 0, -6)
-	body:SetPoint("RIGHT", card, "RIGHT", -14, 0)
+	-- One anchor and an explicit WIDTH, rather than being stretched between a
+	-- left and a right anchor. A stretched FontString has a width the client
+	-- knows and nothing else does - GetStringHeight, which is the only way to
+	-- ask how many lines this is going to be, needs a width that was SET. The
+	-- card cannot be checked for overflow without that number.
 	body:SetJustifyV("TOP")
 	card.body = body
 
@@ -1608,7 +1691,9 @@ function TB:BuildContent()
 	-- for a word that opens a panel we already have.
 	local notes = CreateFrame("Button", nil, card)
 	notes:SetSize(46, 16)
-	notes:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 66, 12)
+	-- Lined up with the title and the body, all three of which start just past
+	-- the tile: 14 of padding, a 38 tile, 12 of gap.
+	notes:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", NEWS_TEXT_X, 12)
 	local nt = W.Text(notes, "tbLabel", "LEFT")
 	nt:SetPoint("LEFT", notes, "LEFT", 0, 0)
 	nt:SetText("Notes")
@@ -2861,11 +2946,24 @@ end
 -- ---------------------------------------------------------------------------
 
 local HEADER_H   = 30
-local NEWS_H     = 84
+-- The What's new card. 84 was the height of a card with a title and a body on
+-- it, before the Notes link was added underneath - so the body ran to the
+-- bottom edge and Notes was drawn through the last line of it. This is the
+-- title, two rendered lines of body (one changelog line usually wraps to two at
+-- the vertical panel's width), the link, and the padding round the lot.
+local NEWS_H     = 100
 local SECTION_H  = 20      -- a section label and the gap under it
 local SECTION_GAP = 14     -- between one section's last row and the next label
 local MICRO_CELL_H = 46
 local MICRO_PER_ROW = 4
+
+-- Flat, the row is glyphs ONLY and the cell shrinks to fit them.
+--
+-- Eight cells across a column a fifth of the panel's width is about thirty
+-- pixels each, and "Character" does not go in thirty pixels - it came out as
+-- "Ch...". The concept draws this row as bare glyphs for exactly that reason,
+-- and the names are on the tooltips where a name that does not fit belongs.
+local MICRO_CELL_H_FLAT = 30
 
 local function Cols(key, fallback)
 	return math.max(1, tonumber(A.Config:Module("toolbox")[key]) or fallback)
@@ -3013,7 +3111,12 @@ end
 -- about a quarter each, the addon list a little less, mail least of all - three
 -- short names is the most it ever holds - and the settings tiles are fixed-size
 -- chips where everything else is text that wants room.
-local H_WEIGHTS = { identity = 23, widgets = 24, addons = 22, mail = 13, settings = 18 }
+-- Rebalanced against a real screenshot rather than against the concept's
+-- proportions. The addon list is the column with the longest strings in it -
+-- "Auc-Util-AutoMagic" is a real registry name - and at 22 it was truncating
+-- every second one to "Auc-Util-A...". Mail holds one line of a sender's name
+-- and the settings tiles are fixed-size chips, so both give some back.
+local H_WEIGHTS = { identity = 21, widgets = 21, addons = 27, mail = 14, settings = 17 }
 local H_COL_GAP = 18
 
 --- The shortest the flat panel can usefully be, in panel units.
@@ -3025,7 +3128,7 @@ local H_COL_GAP = 18
 --  lines from PanelSize, which is exactly the distance over which a literal 218
 --  goes stale without anybody noticing.
 function TB:HorizontalFloor()
-	return PAD * 2 + HEADER_H + NEWS_H + SECTION_GAP + MICRO_CELL_H
+	return PAD * 2 + HEADER_H + NEWS_H + SECTION_GAP + MICRO_CELL_H_FLAT
 end
 
 --- Which columns there are, left to right.
@@ -3111,6 +3214,7 @@ function TB:LayoutHorizontal()
 
 		place(content.news, x, y, cw)
 		content.news:SetHeight(NEWS_H)
+		self:SizeNewsBody()
 		content.news.dot:SetShown(self:NewsUnread())
 		y = y + NEWS_H + SECTION_GAP
 
@@ -3130,14 +3234,19 @@ function TB:LayoutHorizontal()
 			local cellW = cw / per
 			for i, b in ipairs(micros) do
 				if i <= per then
-					b:SetSize(cellW, MICRO_CELL_H)
-					GridPlace(content, b, i, x, y, per, cellW, MICRO_CELL_H, 0, 0)
+					b:SetSize(cellW, MICRO_CELL_H_FLAT)
+					GridPlace(content, b, i, x, y, per, cellW, MICRO_CELL_H_FLAT, 0, 0)
+					-- Glyph only. The name goes with the label's own row: eight
+					-- of them across this column is about thirty pixels each,
+					-- and "Character" came out as "Ch...". It is still on the
+					-- tooltip, which is where a name that does not fit belongs.
+					if b.name then b.name:Hide() end
 					b:Show()
 				else
 					b:Hide()
 				end
 			end
-			y = y + MICRO_CELL_H
+			y = y + MICRO_CELL_H_FLAT
 		end
 		used(y)
 	end
@@ -3327,6 +3436,7 @@ function TB:LayoutVertical()
 	-- what's new ------------------------------------------------------------
 	place(content.news, PAD, y, avail)
 	content.news:SetHeight(NEWS_H)
+	self:SizeNewsBody()
 	content.news.dot:SetShown(self:NewsUnread())
 	y = y + NEWS_H + SECTION_GAP
 
@@ -3345,6 +3455,10 @@ function TB:LayoutVertical()
 			if i <= #micro then
 				b:SetSize(cellW, MICRO_CELL_H)
 				GridPlace(content, b, i, PAD, y, MICRO_PER_ROW, cellW, MICRO_CELL_H, 0, 0)
+				-- Shown again, because the flat layout hides these. Same rule as
+				-- the MENU heading and the mail rows: whatever one layout hides,
+				-- the other has to put back.
+				if b.name then b.name:Show() end
 				b:Show()
 			else
 				b:Hide()
