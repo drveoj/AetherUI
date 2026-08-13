@@ -281,7 +281,13 @@ local function widgetBase(kind)
 	-- The value PERSISTS between events - it is not reset per keystroke - which is
 	-- what makes the combat case survivable: a resting true carries every key we
 	-- do not act on, so a handler has nothing to say in a fight.
-	o.__propagate = true
+	-- FALSE, because that is the client's default: a frame with
+	-- EnableKeyboard(true) captures every key until it is explicitly told to
+	-- pass them on. This mock said `true`, which agreed with a wrong assumption
+	-- in A:SetPropagate and let the bag window ship swallowing every keypress -
+	-- the suite asserted propagation was on and the mock had simply been born
+	-- that way.
+	o.__propagate = false
 	function o:SetPropagateKeyboardInput(v)
 		_G.__propagateCalls = (_G.__propagateCalls or 0) + 1
 		if _G.__inCombat then
@@ -4513,8 +4519,9 @@ do
 	local k = Z.keys
 	k:GetScript("OnKeyDown")(k, "W")
 	check(k.__propagate == true,
-		"and swallows nothing - propagation is set inside the handler, because the"
-		.. " client clears it for every keyboard event")
+		"and swallows nothing. A keyboard-enabled frame CAPTURES until it is told"
+		.. " otherwise, so the wake watcher has to say so explicitly - it does not"
+		.. " start out passing keys through, whatever this check used to claim")
 	tick(0.1)
 	check(A.Fader.state == "awake", "a keypress brings the HUD back")
 	-- Comfortably longer than the 0.1s fade set above and comfortably shorter
@@ -13838,6 +13845,49 @@ do
 	check(_G.__propagateCalls == 0,
 		"and setting it to what it already holds is a no-op, which is what makes"
 		.. " the hot path free")
+
+	-- The first call on a frame ALWAYS goes through. A keyboard-enabled frame
+	-- captures until told otherwise, so skipping that one as redundant is how
+	-- the bag window shipped eating every key except the escape we handle
+	-- ourselves.
+	local fresh = CreateFrame("Frame", nil, UIParent)
+	_G.__propagateCalls = 0
+	check(A:SetPropagate(fresh, true) == true and _G.__propagateCalls == 1,
+		"the first call on a frame is never assumed away - nothing knows which"
+		.. " way a frame starts, and the client's answer is 'capturing'")
+	check(fresh.__propagate == true, "so it actually passes keys on")
+
+	-- And a caller about to capture the keyboard is told when it could not be
+	-- established, because capturing without propagating is the lockout.
+	local inFight = CreateFrame("Frame", nil, UIParent)
+	_G.__inCombat = true
+	check(A:SetPropagate(inFight, true) == false,
+		"a write deferred by combat answers false, so a window first opened"
+		.. " mid-fight does not arm keyboard capture it cannot pass on")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(inFight.__propagate == true, "and it lands when the fight ends")
+
+	-- The same rule on the window itself. A bag opened for the first time in a
+	-- fight is the case that survives all of the above and still locks you out:
+	-- the frame is built, capture is armed, and the one call that would let keys
+	-- through is refused.
+	local bag = Bg.frames.bags
+	bag:Hide()
+	bag.__propagating, bag.__pendingPropagate, bag.__propagate = nil, nil, false
+	_G.__inCombat = true
+	bag:Show()
+	check(not bag:IsKeyboardEnabled(),
+		"a window first opened MID-FIGHT does not capture a keyboard it cannot"
+		.. " pass keys on from - no capture is a lost escape, capture without"
+		.. " propagation is every key you press")
+	bag:Hide()
+
+	_G.__inCombat = false
+	bag:Show()
+	check(bag:IsKeyboardEnabled() and bag.__propagate == true,
+		"and picks capture up the next time it opens, once the call is allowed")
+	bag:Hide()
 end
 
 print("== bags: the bank only exists while you are at it ==")
@@ -14638,6 +14688,31 @@ do
 		"and a plate that walks up ALREADY targeted arrives at full size rather"
 		.. " than growing into it - it was correct before you could see it")
 
+	-- The client will not always answer UnitIsUnit about a plate the instant it
+	-- arrives, and a whole batch of them comes back at once when zen gives the
+	-- nameplate CVars back. Answer "not the target" then and nothing asks again
+	-- until the player clicks something.
+	do
+		local late = { exists = true, name = "Late Kodo", level = 15, reaction = 2,
+			hp = 5, hpMax = 5 }
+		_G.__units.target = late
+		local baseL = __spawnPlate("nameplate3", late)
+		local lf = NPm.plateFor(baseL)
+
+		-- ...as if the token had not resolved yet when the plate came up.
+		lf._want, lf._at = 0, 0
+		NPm.applyEmphasis(lf)
+		check(math.abs(lf:GetScale() - full * 0.8) < 0.001, "dim to begin with")
+
+		tick(0)
+		check(math.abs(lf:GetScale() - full) < 0.001,
+			"asked again on the next frame, so your own target does not sit at"
+			.. " off-target dim until you click something")
+
+		_G.__units.target = nil
+		__despawnPlate("nameplate3")
+	end
+
 	-- Released part way through a fade, which is the ordinary case: you switch
 	-- target and the mob you left dies before the transition finishes.
 	_G.__units.target = nil
@@ -14896,6 +14971,17 @@ do
 	_G.__badCVarWrites = 0
 
 	NPm.applyCVars()
+	cv.nameplateShowFriendlyPlayerMinions = "0"
+	cv.nameplateShowEnemyMinions = "0"
+	check(cv.nameplateShowFriendlyPlayerMinions == "0", "(minions start off)")
+
+	NPm.applyCVars()
+	check(cv.nameplateShowFriendlyPlayerMinions == "1"
+		and cv.nameplateShowEnemyMinions == "1",
+		"pets, imps and everything else somebody summoned are asked for too -"
+		.. " without them a hunter's pet keeps the client's own floating name"
+		.. " while the hunter standing next to it wears ours")
+
 	check(cv.nameplateShowFriendlyPlayers == "1" and cv.nameplateShowFriendlyNpcs == "1",
 		"friendly players AND friendly NPCs are asked for - without this the"
 		.. " engine draws them as floating name text and never makes a plate, so"
@@ -14982,6 +15068,16 @@ do
 	walk(A.Options:Build())
 
 	check(count > 40, "the panel binds a fair number of controls (" .. count .. ")")
+
+	-- And nothing bound to a key no code reads. That is not statically knowable
+	-- in general, so this is the two that were: the minimap drawer's switches
+	-- outlived the drawer itself, wrote modules.minimap.drawer and .skinButtons,
+	-- and nothing had consulted either since the buttons moved to the rail.
+	local tree = A.Options:Build()
+	check(tree.args.minimap and tree.args.minimap.args.drawer == nil
+		and tree.args.minimap.args.skinButtons == nil
+		and tree.args.minimap.args.buttonSpacing == nil,
+		"and the minimap's dead drawer controls are gone with the drawer")
 	check(#missing == 0,
 		"and every one resolves to a key that exists in the defaults ("
 		.. table.concat(missing, ", ") .. ")")

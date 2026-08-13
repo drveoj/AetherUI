@@ -1054,8 +1054,12 @@ local function BuildFrame(kind)
 	-- Through A:SetPropagate, never the widget method: it is protected in combat,
 	-- and this handler runs on every keypress the window is open for. See the
 	-- note there.
-	frame:EnableKeyboard(true)
-	A:SetPropagate(frame, true)
+	-- Keyboard capture is armed in OnShow, not here, and only once propagation
+	-- is actually established - see A:SetPropagate. A frame that captures but
+	-- cannot pass keys on eats every one of them, and the call that would fix
+	-- that is refused in combat. Arming it per-open rather than once at build
+	-- means a window first opened mid-fight comes up without capture and picks
+	-- it up the next time, instead of being stuck for the session.
 	frame:SetScript("OnKeyDown", function(self, key)
 		if key ~= "ESCAPE" then
 			A:SetPropagate(self, true)
@@ -1081,6 +1085,7 @@ local function BuildFrame(kind)
 	end)
 
 	frame:SetScript("OnShow", function(self)
+		self:EnableKeyboard(A:SetPropagate(self, true))
 		if self.dirty or not self.drawn then Bags:Rebuild(self) end
 	end)
 	frame:SetScript("OnHide", function(self)

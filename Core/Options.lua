@@ -687,17 +687,11 @@ local function MinimapGroup()
 			.. " to right-clicking the map, so nothing is actually lost.",
 			at("hideBlizzard"), { defaultTrue = true }),
 
-		drawerHeader = header("Button drawer"),
-		drawerNote = note("Buttons other addons park on the minimap are collected"
-			.. " into a drawer that slides out of the zone pill when you hover it."
-			.. "  |cff888888Map pins are left alone - they are not buttons, and there"
-			.. " can be thousands of them.|r"),
-		drawer = toggle("Collect addon buttons", nil, at("drawer"), { defaultTrue = true }),
-		skinButtons = toggle("Skin them",
-			"Mask each icon to a circle, ring it like the rest of the UI, and"
-			.. " switch off whatever bevel it arrived with.",
-			at("skinButtons"), { defaultTrue = true }),
-		buttonSpacing = range("Spacing", nil, at("buttonSpacing"), 0, 16, 1),
+		-- The button drawer's three controls used to live here. The drawer went
+		-- when addon buttons moved to the Toolbox rail - see the note at the top
+		-- of Modules/Minimap.lua - and the switches outlived it: two of them
+		-- wrote keys nothing has read since, and the third sized a gap in a thing
+		-- that is not drawn.
 	})
 end
 

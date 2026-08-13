@@ -134,14 +134,30 @@ end
 --  Zen's OnKeyDown carried a comment saying the client clears the flag after
 --  every event, so setting it once buys nothing. That was wrong, and it is the
 --  reason this call was on a hot path in the first place.
+--  Returns whether the frame is KNOWN to be in the state you asked for. False
+--  means the write was deferred to the end of combat, which matters to a caller
+--  about to enable the keyboard: a frame that captures but cannot propagate eats
+--  every key the player presses.
 local propagateQueue
 function A:SetPropagate(frame, value)
-	if not frame or not frame.SetPropagateKeyboardInput then return end
+	if not frame or not frame.SetPropagateKeyboardInput then return false end
 	value = value and true or false
 
-	-- Frames are created propagating, so an unknown state is true.
-	if frame.__propagating == nil then frame.__propagating = true end
-	if frame.__propagating == value then return end
+	-- NO assumption about the starting state, and the first call on a frame
+	-- always goes through.
+	--
+	-- This said "frames are created propagating, so an unknown state is true",
+	-- which is exactly backwards: a frame with EnableKeyboard(true) CAPTURES
+	-- until it is told otherwise. So the one call that mattered - the explicit
+	-- "propagate" at construction - was skipped as redundant, and the bag window
+	-- swallowed every key the moment it opened. Escape still worked, because
+	-- that one we handle ourselves, which is what made it look like a bag bug
+	-- rather than an input one.
+	--
+	-- CinematicTaxi seeds its cache the same way and does NOT have this problem,
+	-- because it calls SetPropagateKeyboardInput explicitly first and sets the
+	-- cache after. Copying the cache without the call was the mistake.
+	if frame.__propagating ~= nil and frame.__propagating == value then return true end
 
 	if InCombatLockdown and InCombatLockdown() then
 		frame.__pendingPropagate = value
@@ -160,11 +176,12 @@ function A:SetPropagate(frame, value)
 			end)
 		end
 		propagateQueue[frame] = true
-		return
+		return false
 	end
 
 	frame:SetPropagateKeyboardInput(value)
 	frame.__propagating, frame.__pendingPropagate = value, nil
+	return true
 end
 
 -- ---------------------------------------------------------------------------

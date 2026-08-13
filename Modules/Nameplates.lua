@@ -758,6 +758,13 @@ local FRIENDLY_CVARS = {
 	"nameplateShowFriendlyPlayers",
 	"nameplateShowFriends",           -- what older clients called it
 	"nameplateShowFriendlyNpcs",
+	-- Pets, imps, water elementals, everything somebody summoned. Without these
+	-- they keep the client's own floating name while their owner standing next
+	-- to them wears ours, which reads as the addon having missed something -
+	-- and it had.
+	"nameplateShowFriendlyPlayerMinions",
+	"nameplateShowEnemyMinions",
+	"nameplateShowEnemyMinus",
 }
 
 local function ApplyCVars()
@@ -809,6 +816,18 @@ local function OnUnitAdded(_, _, token)
 	Emphasise(f, IsTarget(token), true)
 	UpdateAll(f)
 	f:Show()
+
+	-- And asked again on the next frame. A plate can arrive before the client
+	-- will answer UnitIsUnit about it - notably when a batch of them comes back
+	-- at once, which is what happens the moment zen gives the nameplate CVars
+	-- back. Answer "not the target" then and nothing asks again until you click
+	-- something, so your own target sits at off-target dim while everything
+	-- else on screen has already brightened.
+	if _G.C_Timer and _G.C_Timer.After then
+		_G.C_Timer.After(0, function()
+			if f.unit then Emphasise(f, IsTarget(f.unit), true) end
+		end)
+	end
 end
 
 local function OnUnitRemoved(_, _, token)
@@ -977,3 +996,4 @@ NP.moving = moving
 NP.updateChips = UpdateChips
 NP.castStart = CastStart
 NP.applyCVars = ApplyCVars
+NP.applyEmphasis = ApplyEmphasis

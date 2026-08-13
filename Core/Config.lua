@@ -384,7 +384,6 @@ Config.defaults = {
 				-- number.
 				border       = 1.0,
 				hideBlizzard = true,
-				buttonSpacing = 6,
 			},
 
 			chat = {

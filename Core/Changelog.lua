@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.25",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: with a bag window open, no key worked except Escape. A frame that captures the keyboard has to be told to pass everything else through, and the call that does it was being skipped as redundant.",
+			"Fixed: your target's nameplate could stay dimmed until you clicked something, when a batch of plates came back at once.",
+			"New: pets, imps and everything else somebody summoned get nameplates too, so they are not the only thing left in the client's own font.",
+			"Removed: the minimap's button-drawer settings, which outlived the drawer itself and had not been read by anything since.",
+		},
+	},
+	{
 		version = "0.3.24",
 		date    = "2026-08-13",
 		lines   = {
