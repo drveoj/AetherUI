@@ -9739,6 +9739,298 @@ do
 	TBm:SetOpen(false, true)
 end
 
+print("== toolbox: docked flat, the sections are columns ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
+	local oldScale = A.db.profile.scale
+	local oldMail, oldFrom = _G.__mail, _G.__mailFrom
+	UIParent:SetSize(1365, 768)
+	A.db.profile.scale = 0.71
+
+	-- Offsets are read back off the anchors, never from GetLeft/GetTop: those
+	-- answer in screen coordinates and only once a frame has been positioned AND
+	-- shown, which is the trap that let the first vertical layout draw every
+	-- section on top of every other and pass anyway.
+	local function topOf(r)
+		local _, _, _, _, yOff = r:GetPoint(1)
+		return -(yOff or 0)
+	end
+	local function leftOf(r)
+		local _, _, _, xOff = r:GetPoint(1)
+		return xOff or 0
+	end
+
+	_G.__mail, _G.__mailFrom = false, nil
+	fire("UPDATE_PENDING_MAIL")
+	TBm:SetDock("BOTTOM")
+	TBm:SetOpen(true, true)
+	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
+
+	local c = TBm.content
+	local panelW, panelH = TBm.panel:GetWidth(), TBm.panel:GetHeight()
+
+	-- THE check this layout exists to pass. Vertically the sections run down the
+	-- page and each starts below the last; here they run ACROSS it, so every
+	-- heading shares a top and the x offsets increase left to right. Reusing the
+	-- vertical pass on a 1280x240 panel drew a column down the left fifth of it
+	-- with the last three sections off the bottom.
+	local heads = {
+		{ "identity", c.title },
+		{ "widgets",  c.widgetsHead },
+		{ "addons",   c.addonsHead },
+		{ "settings", c.tilesHead },
+	}
+	local sameTop, increasing, prevX, prevName = true, true, nil, nil
+	local topRow = topOf(c.title)
+	for _, sec in ipairs(heads) do
+		local name, region = sec[1], sec[2]
+		if region and region:IsShown() then
+			if math.abs(topOf(region) - topRow) > 0.5 then
+				sameTop = false
+				check(false, "section '" .. name .. "' starts at y "
+					.. string.format("%.0f", topOf(region)) .. " rather than on the"
+					.. " top row at " .. string.format("%.0f", topRow))
+			end
+			local x = leftOf(region)
+			if prevX and x <= prevX then
+				increasing = false
+				check(false, "section '" .. name .. "' starts at x "
+					.. string.format("%.0f", x) .. " which is not right of '"
+					.. prevName .. "' at " .. string.format("%.0f", prevX) .. "")
+			end
+			prevX, prevName = x, name
+		end
+	end
+	check(sameTop, "every section heading shares the top row - flat, the drawer"
+		.. " is four columns rather than a stack of six")
+	check(increasing, "and they run left to right in order")
+
+	-- How far down the panel anything is actually drawn. Measured from the
+	-- regions rather than trusted to the module's own running total, because the
+	-- running total is the thing being checked.
+	local function deepest()
+		local low = 0
+		local function scan(list, n)
+			for i = 1, (n or #list) do
+				local f = list[i]
+				if f and f.IsShown and f:IsShown() then
+					local b = topOf(f) + (f:GetHeight() or 0)
+					if b > low then low = b end
+				end
+			end
+		end
+		scan(c.micro, #(TBm._microList or {}))
+		scan(c.cards); scan(c.addons); scan(c.mail); scan(c.tiles)
+		return low
+	end
+
+	check(TBm._contentHeight and TBm._contentHeight <= panelH + 0.5,
+		"the tallest column fits inside the panel ("
+		.. string.format("%.0f", TBm._contentHeight or -1) .. " of "
+		.. string.format("%.0f", panelH) .. ")")
+	-- ...and it fits because it is SHORT, not because the measurement stopped
+	-- happening. `_contentHeight` is what every "does it fit" check in this file
+	-- reads, so a version that never measured any column would report 22 and
+	-- satisfy all of them.
+	check(deepest() > 0 and TBm._contentHeight >= deepest() + 22 - 0.5,
+		"and the number really is the deepest column plus the bottom padding"
+		.. " rather than a figure nothing was measured into ("
+		.. string.format("%.0f", TBm._contentHeight or -1) .. " against a"
+		.. " deepest region ending at " .. string.format("%.0f", deepest()) .. ")")
+	check(prevX and prevX < panelW,
+		"and the last column starts inside it rather than off the right-hand"
+		.. " edge (" .. string.format("%.0f", prevX or -1) .. " of "
+		.. string.format("%.0f", panelW) .. ")")
+
+	do
+		local order = TBm:HorizontalColumns()
+		check(#order == 4 and order[4] == "settings",
+			"with no mail there are four columns and settings is the last")
+	end
+
+	-- Every column has to FIT its share, not merely start inside the panel: one
+	-- that begins at x 1000 and is 400 wide passes the check above and still
+	-- hangs off the end.
+	--
+	-- Measured off a region that has been given a real width, never recomputed
+	-- from the module's own weights - a test that redoes the arithmetic under
+	-- test agrees with it by construction, including when both are wrong. Drop
+	-- the gaps out of the width available and this is what notices.
+	do
+		local far, farName = 0, nil
+		local function edge(list, name)
+			for _, f in ipairs(list) do
+				if f:IsShown() then
+					local r = leftOf(f) + (f:GetWidth() or 0)
+					if r > far then far, farName = r, name end
+				end
+			end
+		end
+		edge(c.tiles, "a settings tile")
+		edge(c.addons, "an addon row")
+		edge(c.cards, "a widget card")
+		check(far > 0 and far <= panelW - 22 + 0.5,
+			"and the right-hand edge of the last thing drawn stays inside the"
+			.. " panel's padding - " .. tostring(farName) .. " ends at "
+			.. string.format("%.0f", far) .. " of "
+			.. string.format("%.0f", panelW - 22))
+	end
+
+	check(not c.close:IsShown(),
+		"no close button - the vertical drawer has one because it covers a"
+		.. " screen edge end to end; this one is a strip with the chevron an inch"
+		.. " away on the rail")
+	check(not c.microHead:IsShown(),
+		"and no MENU heading over the micro row - the 20px it costs is the 20px"
+		.. " that decides whether the row clears the panel's floor")
+
+	-- The micro row is ONE row here. Four per row is right for a narrow panel
+	-- and puts a second row through the floor of a 240px one.
+	do
+		local micro = TBm._microList or {}
+		local oneRow, shownMicro, seen = true, 0, {}
+		for i = 1, #micro do
+			local b = c.micro[i]
+			if b and b:IsShown() then
+				shownMicro = shownMicro + 1
+				if math.abs(topOf(b) - topOf(c.micro[1])) > 0.5 then oneRow = false end
+				seen[leftOf(b)] = (seen[leftOf(b)] or 0) + 1
+			end
+		end
+		local stacked = false
+		for _, n in pairs(seen) do if n > 1 then stacked = true end end
+		-- The COUNT is half the check. Wrapping at four the way the tall panel
+		-- does hides entries five to eight rather than stacking them, so a test
+		-- that only looks at what is on screen finds one tidy row of four and
+		-- passes.
+		check(#micro > 0 and shownMicro == #micro,
+			"every entry the client offers is on screen (" .. shownMicro .. " of "
+			.. #micro .. ")")
+		check(oneRow and not stacked,
+			"and all of them on a single row at its own x - at most eight are"
+			.. " ever present, because social and guild are mutually exclusive")
+	end
+
+	-- Two widget columns, not the three the setting says. That number is a count
+	-- of columns in a panel a third of this one's width.
+	do
+		local rowTops = {}
+		for i, card in ipairs(c.cards) do
+			if card:IsShown() and i <= 6 then rowTops[topOf(card)] = (rowTops[topOf(card)] or 0) + 1 end
+		end
+		local widest = 0
+		for _, n in pairs(rowTops) do if n > widest then widest = n end end
+		check(widest == 2, "the widget grid is two cards wide here rather than"
+			.. " the three the vertical panel defaults to - the same setting in a"
+			.. " column a third the width gives six cards too narrow to read"
+			.. " (got " .. widest .. ")")
+	end
+
+	-- Mail takes a column of its own rather than eating the addon list.
+	local addonsWithoutMail = 0
+	for _, row in ipairs(c.addons) do if row:IsShown() then addonsWithoutMail = addonsWithoutMail + 1 end end
+	check(addonsWithoutMail > 0, "the addon list has rows to lose")
+
+	_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
+	fire("UPDATE_PENDING_MAIL")
+	TBm:LayoutContent()
+
+	do
+		local order = TBm:HorizontalColumns()
+		check(#order == 5 and order[4] == "mail",
+			"mail arriving adds a fifth column between the addons and the"
+			.. " settings")
+	end
+	check(c.mailHead:IsShown() and topOf(c.mailHead) == topRow,
+		"the MAIL heading joins the top row like every other section")
+	check(leftOf(c.mailHead) > leftOf(c.addonsHead)
+		and leftOf(c.tilesHead) > leftOf(c.mailHead),
+		"sitting between the addon list and the settings tiles")
+
+	local addonsWithMail = 0
+	for _, row in ipairs(c.addons) do if row:IsShown() then addonsWithMail = addonsWithMail + 1 end end
+	check(addonsWithMail == addonsWithoutMail,
+		"and the addon list keeps every row it had - stacked under the addons"
+		.. " the way the vertical panel does it, mail costs the list half its"
+		.. " rows every time the postman calls, and the addon list is already the"
+		.. " section that gives way (" .. addonsWithMail .. " vs "
+		.. addonsWithoutMail .. ")")
+	check(TBm._contentHeight <= panelH + 0.5,
+		"and the taller drawer still fits ("
+		.. string.format("%.0f", TBm._contentHeight) .. " of "
+		.. string.format("%.0f", panelH) .. ")")
+
+	-- Squeezed. The columns cut on their own account rather than in one order.
+	UIParent:SetSize(1000, 600)
+	A.db.profile.scale = 1.0
+	TBm:Layout(); TBm:RefreshTiles(); TBm:RefreshAddons()
+	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
+		"squeezed to a " .. string.format("%.0f", TBm.panel:GetHeight())
+		.. "px panel every column still fits ("
+		.. string.format("%.0f", TBm._contentHeight) .. ")")
+
+	-- ...and it fits because the PANEL has a floor, not because the columns
+	-- gave way. The vertical panel is clamped to the deck's proportion of the
+	-- screen, which is right when height is the long axis and rows come off a
+	-- list. Flat, height is the short axis and the identity column is a title, a
+	-- card and a row of glyphs - all fixed - so the proportion asked for 133
+	-- against something that cannot be built in less than 218.
+	do
+		local floorH = TBm:HorizontalFloor()
+		check(math.abs(TBm.panel:GetHeight() - floorH) < 0.5,
+			"the flat panel stops at its floor rather than at the deck's"
+			.. " proportion of a short screen (" .. string.format("%.0f",
+				TBm.panel:GetHeight()) .. " vs a proportion of "
+			.. string.format("%.0f", 600 * (240 / 1080)) .. ")")
+		check(TBm.panel:GetHeight() <= 600 + 0.5,
+			"and the floor is still capped by the screen - it is a fifth of the"
+			.. " deck's canvas, so this only bites on something extraordinary")
+
+		-- The floor is COMPUTED from the constants it is made of, and this is
+		-- the check that keeps it that way: a literal 218 two hundred lines from
+		-- the numbers it is a sum of goes stale the first time the news card
+		-- changes height, and the symptom is a column drawn through the floor
+		-- on one screen size that nobody has.
+		local topOfTitle = topOf(c.title)
+		local lowest = 0
+		for i = 1, #(TBm._microList or {}) do
+			local b = c.micro[i]
+			if b and b:IsShown() then
+				local bot = topOf(b) + b:GetHeight()
+				if bot > lowest then lowest = bot end
+			end
+		end
+		check(lowest > 0 and lowest + 22 <= floorH + 0.5,
+			"and the identity column really does fit inside it, glyph row and"
+			.. " bottom padding included (" .. string.format("%.0f", lowest + 22)
+			.. " of " .. string.format("%.0f", floorH) .. ", from a top row at "
+			.. string.format("%.0f", topOfTitle) .. ")")
+	end
+
+	-- And going back is really going back. A layout that leaves regions where
+	-- the other one put them is a drawer that looks broken on the dock you
+	-- return to, which is the failure nobody thinks to test for.
+	UIParent:SetSize(1365, 768)
+	A.db.profile.scale = 0.71
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
+	check(c.microHead:IsShown() and c.close:IsShown(),
+		"docking back to a side brings the MENU heading and the close button"
+		.. " back rather than leaving the flat layout's choices behind")
+	check(topOf(c.widgetsHead) > topOf(c.title)
+		and math.abs(leftOf(c.widgetsHead) - leftOf(c.title)) < 0.5,
+		"and the sections stack again, in one column at one x")
+
+	_G.__mail, _G.__mailFrom = oldMail, oldFrom
+	fire("UPDATE_PENDING_MAIL")
+	UIParent:SetSize(oldW, oldH)
+	A.db.profile.scale = oldScale
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(false, true)
+end
+
 print("== toolbox: the rail owns the launchers now ==")
 do
 	local TBm = A:GetModule("toolbox")

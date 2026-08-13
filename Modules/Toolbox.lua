@@ -329,8 +329,23 @@ function TB:PanelSize(edge)
 		return math.min(PANEL_V_W, sw * (PANEL_V_W / DECK_W)),
 		       math.min(PANEL_V_H, sh * (PANEL_V_H / DECK_H))
 	end
+
+	-- The flat panel has a FLOOR as well as a cap, and the vertical one does not.
+	--
+	-- The proportional clamp is the right rule for a panel whose height is the
+	-- long axis: shrink it and you lose rows off a list, which is what the addon
+	-- list gives way for. On the flat panel height is the SHORT axis and nothing
+	-- on it is a list - the identity column is a title, a card and a row of
+	-- glyphs, all fixed - so shrinking it does not drop rows, it draws them
+	-- through the floor. On a 600-unit screen at scale 1.0 the proportion asks
+	-- for 133 against a column that cannot be built in less than 218.
+	--
+	-- So: no smaller than the tallest fixed column, and still never taller than
+	-- the screen. The floor is a fifth of a 1080 canvas, so the second clamp only
+	-- bites on something extraordinary.
+	local floorH = math.min(self:HorizontalFloor(), sh)
 	return math.min(PANEL_H_W, sw * (PANEL_H_W / DECK_W)),
-	       math.min(PANEL_H_H, sh * (PANEL_H_H / DECK_H))
+	       math.min(PANEL_H_H, math.max(floorH, sh * (PANEL_H_H / DECK_H)))
 end
 
 --- How far off screen the panel sits when closed: its own depth on the docking
@@ -2692,7 +2707,318 @@ local function RowsFor(n, per)
 	return math.ceil(math.max(0, n) / math.max(1, per))
 end
 
+--- Place the i-th frame of a grid whose top-left corner is (x, y) in content
+--  space, y measured DOWN.
+--
+--  Three lines, and it is a function because it was four copies of three lines:
+--  the vertical panel does this for the micro row, the widget cards, the addon
+--  rows and the settings tiles, and the horizontal panel would have made it
+--  eight. The arithmetic is the thing most worth having exactly one of - an
+--  off-by-one in the row index is a section drawn on top of the one above it.
+local function GridPlace(content, frame, i, x, y, cols, cellW, cellH, gapX, gapY)
+	local r, c = math.floor((i - 1) / cols), (i - 1) % cols
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", content, "TOPLEFT",
+		x + c * (cellW + (gapX or 0)), -(y + r * (cellH + (gapY or 0))))
+end
+
+-- ---------------------------------------------------------------------------
+-- the horizontal drawer
+--
+-- Top and bottom dock to a panel 1280x240 in deck units - more than five times
+-- wider than it is tall. The vertical layout's single running `y` draws a column
+-- of sections down the left fifth of that, with the last three off the bottom
+-- and most of the panel empty. It was written for the tall narrow panel and says
+-- so; this is the other one.
+--
+-- So the sections become COLUMNS. Each lays out exactly as it does in the
+-- vertical panel - a heading, then a grid - from its own origin, and each cuts
+-- to the panel's height on its own account rather than the whole drawer giving
+-- way in one fixed order. There is no order to give way in when the sections are
+-- side by side.
+-- ---------------------------------------------------------------------------
+
+-- The deck's own proportions rather than equal shares. Identity and widgets take
+-- about a quarter each, the addon list a little less, and the settings tiles
+-- least: they are fixed-size chips where everything else is text that wants
+-- room.
+local H_WEIGHTS      = { identity = 26, widgets = 27, addons = 25, settings = 22 }
+local H_WEIGHTS_MAIL = { identity = 23, widgets = 24, addons = 22, mail = 13, settings = 18 }
+local H_COL_GAP      = 18
+
+--- Which columns there are, left to right.
+--
+--  Mail gets a COLUMN of its own when there is mail, rather than stacking under
+--  the addon list the way it does in the vertical panel. Stacked here it would
+--  cost the addon list half its rows every time the postman calls, and the addon
+--  list is already the one section that gives way. A drawer this wide has room
+--  for another column; it has no room for that trade.
+--- The shortest the flat panel can usefully be, in panel units.
+--
+--  The identity column is the one that cannot give way: a title, the What's new
+--  card and one row of glyphs, every one of them a fixed height. Everything else
+--  here is a grid that cuts to fit and says what it dropped. So this is the
+--  number, computed rather than written down - the constants are two hundred
+--  lines from PanelSize, which is exactly the distance over which a literal 218
+--  goes stale without anybody noticing.
+function TB:HorizontalFloor()
+	return PAD * 2 + HEADER_H + NEWS_H + SECTION_GAP + MICRO_CELL_H
+end
+
+function TB:HorizontalColumns()
+	if self:MailState() then
+		return { "identity", "widgets", "addons", "mail", "settings" }, H_WEIGHTS_MAIL
+	end
+	return { "identity", "widgets", "addons", "settings" }, H_WEIGHTS
+end
+
 function TB:LayoutContent()
+	if IsVertical(self:Dock()) then return self:LayoutVertical() end
+	return self:LayoutHorizontal()
+end
+
+function TB:LayoutHorizontal()
+	if not self.content or not self.panel then return end
+	local content = self.content
+	local w, h    = self.panel:GetWidth(), self.panel:GetHeight()
+
+	content:ClearAllPoints()
+	content:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 0, 0)
+	content:SetPoint("BOTTOMRIGHT", self.panel, "BOTTOMRIGHT", 0, 0)
+
+	-- Same guard as the vertical pass, for the same reason: the first layout of
+	-- the first login runs before three of the six sections have been built.
+	local micros = content.micro  or {}
+	local cards  = content.cards  or {}
+	local addons = content.addons or {}
+	local tilesF = content.tiles  or {}
+	local mails  = content.mail   or {}
+
+	local order, weights = self:HorizontalColumns()
+	local total = 0
+	for _, k in ipairs(order) do total = total + weights[k] end
+
+	local avail = w - PAD * 2 - H_COL_GAP * (#order - 1)
+	local colX, colW = {}, {}
+	do
+		local x = PAD
+		for _, k in ipairs(order) do
+			colW[k] = avail * (weights[k] / total)
+			colX[k] = x
+			x = x + colW[k] + H_COL_GAP
+		end
+	end
+
+	-- Every column starts here and every one has the same floor, so "what fits"
+	-- is one number rather than five.
+	local top     = PAD
+	local bottom  = h - PAD
+	local tallest = 0
+	local function used(y) if y > tallest then tallest = y end end
+
+	local function place(region, x, y, width)
+		region:ClearAllPoints()
+		region:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
+		if width then region:SetWidth(width) end
+	end
+
+	-- identity ---------------------------------------------------------------
+	do
+		local x, cw = colX.identity, colW.identity
+		local y = top
+
+		place(content.title, x, y)
+		content.chip:ClearAllPoints()
+		content.chip:SetPoint("LEFT", content.title, "RIGHT", 10, 0)
+		-- No close button. The vertical drawer has one because it covers a
+		-- quarter of the screen edge-to-edge; this one is a strip along the
+		-- bottom with the chevron on the rail an inch away.
+		content.close:SetShown(false)
+		y = y + HEADER_H
+
+		place(content.news, x, y, cw)
+		content.news:SetHeight(NEWS_H)
+		content.news.dot:SetShown(self:NewsUnread())
+		y = y + NEWS_H + SECTION_GAP
+
+		-- The micro row, and NO heading over it. The concept draws these as a
+		-- single strip under the card, and the 20px a "MENU" label costs is the
+		-- 20px that decides whether the strip fits above the panel's floor.
+		--
+		-- One row of however many the client offers, rather than a fixed four per
+		-- row: at most eight are ever present (social and guild are mutually
+		-- exclusive), and wrapping to a second row in a 240px panel would put it
+		-- through the floor. A tenth entry added later makes the cells narrower,
+		-- which is visible, rather than hiding one, which is not.
+		local micro = self._microList or {}
+		if content.microHead then content.microHead:Hide() end
+		if #micro > 0 then
+			local per   = #micro
+			local cellW = cw / per
+			for i, b in ipairs(micros) do
+				if i <= per then
+					b:SetSize(cellW, MICRO_CELL_H)
+					GridPlace(content, b, i, x, y, per, cellW, MICRO_CELL_H, 0, 0)
+					b:Show()
+				else
+					b:Hide()
+				end
+			end
+			y = y + MICRO_CELL_H
+		end
+		used(y)
+	end
+
+	-- WIDGETS ----------------------------------------------------------------
+	do
+		local x, cw = colX.widgets, colW.widgets
+		local y = top
+		local shownCards = 0
+		for _, c in ipairs(cards) do if c:IsShown() then shownCards = shownCards + 1 end end
+
+		if shownCards > 0 and content.widgetsHead then
+			place(content.widgetsHead, x, y)
+			y = y + SECTION_H
+			-- TWO columns here, not the three the vertical panel defaults to.
+			-- The setting is a count of columns in a panel a third of this one's
+			-- width, and carrying it across gives six cards 100px wide with
+			-- "14g 32s" wrapped in them.
+			local cols = math.min(Cols("widgetColumns", 3), 2)
+			local cardW = (cw - CARD_GAP * (cols - 1)) / cols
+
+			-- Cut to the column's floor like every other grid here. The panel's
+			-- own minimum height is built to fit all six, so this never bites
+			-- today - but "never bites today" is how the vertical layout came to
+			-- draw a section off the bottom of the drawer, and a grid that
+			-- silently overflows is the one failure mode this file keeps having.
+			local maxRows = math.max(0, math.floor((bottom - y + CARD_GAP) / (CARD_H + CARD_GAP)))
+			local fit = math.min(shownCards, maxRows * cols)
+			for i, card in ipairs(cards) do
+				if i <= fit then
+					card:SetWidth(cardW)
+					GridPlace(content, card, i, x, y, cols, cardW, CARD_H, CARD_GAP, CARD_GAP)
+					card:Show()
+				elseif i <= shownCards then
+					card:Hide()
+				end
+			end
+			self._widgetsCut = shownCards - fit
+			content.widgetsHead:SetText(Spaced("WIDGETS")
+				.. (self._widgetsCut > 0 and ("   +" .. self._widgetsCut) or ""))
+			if fit > 0 then y = y + RowsFor(fit, cols) * (CARD_H + CARD_GAP) - CARD_GAP end
+		end
+		used(y)
+	end
+
+	-- ADDONS -----------------------------------------------------------------
+	do
+		local x, cw = colX.addons, colW.addons
+		local y = top
+		local rows = self._addonRows or {}
+		local cols = Cols("addonColumns", 2)
+		local shown = 0
+
+		if #rows > 0 and content.addonsHead then
+			place(content.addonsHead, x, y)
+			content.addonsHint:ClearAllPoints()
+			content.addonsHint:SetPoint("TOPRIGHT", content, "TOPLEFT", x + cw, -y)
+			y = y + SECTION_H
+
+			-- Cut to the column's own floor and say what was dropped, which is
+			-- the vertical panel's rule and the quest tracker's before it.
+			local maxRows  = math.max(0, math.floor((bottom - y + ROW_GAP) / (ROW_H + ROW_GAP)))
+			local maxShown = maxRows * cols
+			local rw = (cw - ROW_GAP * (cols - 1)) / cols
+
+			for i, row in ipairs(addons) do
+				if i <= #rows and i <= maxShown then
+					row:SetWidth(rw)
+					GridPlace(content, row, i, x, y, cols, rw, ROW_H, ROW_GAP, ROW_GAP)
+					row:Show()
+					shown = shown + 1
+				else
+					row:Hide()
+				end
+			end
+			y = y + RowsFor(shown, cols) * (ROW_H + ROW_GAP) - ROW_GAP
+		end
+
+		self._addonsCut = math.max(0, #rows - shown)
+		if content.addonsHint then
+			content.addonsHint:SetText(self._addonsCut > 0
+				and (#rows .. " \194\183 +" .. self._addonsCut .. " more")
+				or (#rows .. " with a launcher"))
+		end
+		used(y)
+	end
+
+	-- MAIL -------------------------------------------------------------------
+	local hasMail = self:MailState()
+	do
+		local showMail = hasMail and content.mailHead ~= nil and colX.mail ~= nil
+		if showMail then
+			local x, cw = colX.mail, colW.mail
+			local y = top
+			place(content.mailHead, x, y)
+			content.mailHint:ClearAllPoints()
+			content.mailHint:SetPoint("TOPRIGHT", content, "TOPLEFT", x + cw, -y)
+			y = y + SECTION_H
+			for i, row in ipairs(mails) do
+				row:SetWidth(cw)
+				GridPlace(content, row, i, x, y, 1, cw, MAIL_ROW_H, 0, MAIL_ROW_GAP)
+			end
+			local n = #(self._mailSenders or {})
+			if n > 0 then y = y + n * (MAIL_ROW_H + MAIL_ROW_GAP) - MAIL_ROW_GAP end
+			used(y)
+		end
+		if content.mailHead then content.mailHead:SetShown(showMail) end
+		if content.mailHint then content.mailHint:SetShown(showMail) end
+		if not showMail then for _, row in ipairs(mails) do row:Hide() end end
+	end
+
+	-- UI SETTINGS ------------------------------------------------------------
+	do
+		local x, cw = colX.settings, colW.settings
+		local y = top
+		local tiles = self._tileList or {}
+		local cols  = Cols("tileColumns", 2)
+		local shownTiles = 0
+
+		if #tiles > 0 and content.tilesHead then
+			place(content.tilesHead, x, y)
+			y = y + SECTION_H
+			local maxRows = math.max(0, math.floor((bottom - y + TILE_GAP) / (TILE_H + TILE_GAP)))
+			local rowsFit = math.min(RowsFor(#tiles, cols), maxRows)
+			shownTiles = math.min(#tiles, rowsFit * cols)
+
+			local tw = (cw - TILE_GAP * (cols - 1)) / cols
+			for i, tile in ipairs(tilesF) do
+				if i <= shownTiles then
+					tile:SetWidth(tw)
+					GridPlace(content, tile, i, x, y, cols, tw, TILE_H, TILE_GAP, TILE_GAP)
+					tile:Show()
+				else
+					tile:Hide()
+				end
+			end
+			if rowsFit > 0 then y = y + rowsFit * (TILE_H + TILE_GAP) - TILE_GAP end
+		else
+			for _, tile in ipairs(tilesF) do tile:Hide() end
+		end
+
+		self._tilesCut = #tiles - shownTiles
+		if content.tilesHead then
+			content.tilesHead:SetText(Spaced("UI SETTINGS")
+				.. (self._tilesCut > 0 and ("   +" .. self._tilesCut) or ""))
+			content.tilesHead:SetShown(shownTiles > 0)
+		end
+		used(y)
+	end
+
+	self._contentHeight = tallest + PAD
+end
+
+function TB:LayoutVertical()
 	if not self.content or not self.panel then return end
 	local content = self.content
 	local w, h    = self.panel:GetWidth(), self.panel:GetHeight()
@@ -2741,15 +3067,17 @@ function TB:LayoutContent()
 	local micro = self._microList or {}
 	if #micro > 0 and content.microHead then
 		place(content.microHead, PAD, y)
+		-- Shown explicitly, because the FLAT layout hides it - the heading is
+		-- 20px it has not got. Placing a region says nothing about whether it is
+		-- visible, so a drawer dragged from the bottom back to a side came home
+		-- with a nameless row of glyphs under the card.
+		content.microHead:Show()
 		y = y + SECTION_H
 		local cellW = avail / MICRO_PER_ROW
 		for i, b in ipairs(micros) do
 			if i <= #micro then
-				local r, c = math.floor((i - 1) / MICRO_PER_ROW), (i - 1) % MICRO_PER_ROW
-				b:ClearAllPoints()
 				b:SetSize(cellW, MICRO_CELL_H)
-				b:SetPoint("TOPLEFT", content, "TOPLEFT",
-					PAD + c * cellW, -(y + r * MICRO_CELL_H))
+				GridPlace(content, b, i, PAD, y, MICRO_PER_ROW, cellW, MICRO_CELL_H, 0, 0)
 				b:Show()
 			else
 				b:Hide()
@@ -2763,16 +3091,19 @@ function TB:LayoutContent()
 	for _, c in ipairs(cards) do if c:IsShown() then shownCards = shownCards + 1 end end
 	if shownCards > 0 and content.widgetsHead then
 		place(content.widgetsHead, PAD, y)
+		-- Re-asserted, not left alone. The flat layout appends "+N" to this when
+		-- it has to cut cards, and a heading is a piece of state like any other:
+		-- docking back to a side with the count still on it reports a cut that
+		-- the tall panel did not make.
+		self._widgetsCut = 0
+		content.widgetsHead:SetText(Spaced("WIDGETS"))
 		y = y + SECTION_H
 		local cols = Cols("widgetColumns", 3)
 		local cw = (avail - CARD_GAP * (cols - 1)) / cols
 		for i, card in ipairs(cards) do
 			if i <= shownCards then
-				local r, c = math.floor((i - 1) / cols), (i - 1) % cols
-				card:ClearAllPoints()
 				card:SetWidth(cw)
-				card:SetPoint("TOPLEFT", content, "TOPLEFT",
-					PAD + c * (cw + CARD_GAP), -(y + r * (CARD_H + CARD_GAP)))
+				GridPlace(content, card, i, PAD, y, cols, cw, CARD_H, CARD_GAP, CARD_GAP)
 			end
 		end
 		y = y + RowsFor(shownCards, cols) * (CARD_H + CARD_GAP) - CARD_GAP + SECTION_GAP
@@ -2856,11 +3187,8 @@ function TB:LayoutContent()
 		local rw = (avail - ROW_GAP * (addonCols - 1)) / addonCols
 		for i, row in ipairs(addons) do
 			if i <= #rows and i <= maxShown then
-				local r, c = math.floor((i - 1) / addonCols), (i - 1) % addonCols
-				row:ClearAllPoints()
 				row:SetWidth(rw)
-				row:SetPoint("TOPLEFT", content, "TOPLEFT",
-					PAD + c * (rw + ROW_GAP), -(y + r * (ROW_H + ROW_GAP)))
+				GridPlace(content, row, i, PAD, y, addonCols, rw, ROW_H, ROW_GAP, ROW_GAP)
 				row:Show()
 				shown = shown + 1
 			else
@@ -2888,10 +3216,8 @@ function TB:LayoutContent()
 		content.mailHint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
 		y = y + SECTION_H
 		for i, row in ipairs(mails) do
-			row:ClearAllPoints()
 			row:SetWidth(avail)
-			row:SetPoint("TOPLEFT", content, "TOPLEFT",
-				PAD, -(y + (i - 1) * (MAIL_ROW_H + MAIL_ROW_GAP)))
+			GridPlace(content, row, i, PAD, y, 1, avail, MAIL_ROW_H, 0, MAIL_ROW_GAP)
 		end
 		y = y + mailRowsH + SECTION_GAP
 	end
@@ -2912,11 +3238,8 @@ function TB:LayoutContent()
 		local tw = (avail - TILE_GAP * (tileCols - 1)) / tileCols
 		for i, tile in ipairs(tilesF) do
 			if i <= shownTiles then
-				local r, c = math.floor((i - 1) / tileCols), (i - 1) % tileCols
-				tile:ClearAllPoints()
 				tile:SetWidth(tw)
-				tile:SetPoint("TOPLEFT", content, "TOPLEFT",
-					PAD + c * (tw + TILE_GAP), -(y + r * (TILE_H + TILE_GAP)))
+				GridPlace(content, tile, i, PAD, y, tileCols, tw, TILE_H, TILE_GAP, TILE_GAP)
 				tile:Show()
 			else
 				tile:Hide()
