@@ -92,6 +92,10 @@ local function GetAura(unit, index, filter)
 	return nil
 end
 
+-- Shared, so the nameplate chips read auras through the same two-API fallback
+-- rather than growing a second copy of it that drifts.
+Aur.GetAura = GetAura
+
 -- Debuff schools, so "Chilled" reads as frost rather than as generic red. With
 -- the name gone this is doing more work than it used to: the ring is the only
 -- thing left that says what kind of thing is on you.

@@ -332,6 +332,7 @@ Media.style = {
 	npName       = { "semibold", 14, "" },
 	npBadge      = { "bold",     10, "" },   -- the number in the level badge
 	npChip       = { "bold",      9, "" },   -- ELITE / RARE
+	npAura       = { "medium",   11, "" },   -- "Chilled - 4s" under a target
 }
 
 -- ---------------------------------------------------------------------------

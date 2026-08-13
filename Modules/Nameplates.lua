@@ -46,6 +46,9 @@ local SKULL = "|T" .. [[Interface\TargetingFrame\UI-TargetingFrame-Skull]] .. ":
 local plates = {}    -- base frame  -> our plate
 local byUnit = {}    -- unit token  -> our plate
 
+-- Defined with the chips, well below, but UpdateAll calls it.
+local UpdateChips
+
 local function cfg() return A.Config:Module("nameplates") end
 
 --- Every other module is drawn at profile.scale and a plate is no different.
@@ -342,9 +345,129 @@ local function UpdateAll(f)
 	UpdateName(f)
 	UpdateBar(f)
 	UpdateEdge(f)
+	UpdateChips(f)
 end
 
 NP.UpdateAll = UpdateAll
+
+-- ---------------------------------------------------------------------------
+-- your debuffs, under the target
+-- ---------------------------------------------------------------------------
+--
+-- Yours only, and on the target only. Every debuff on every plate is a wall of
+-- icons that says nothing; the four things YOU put on the thing you are hitting
+-- is the question a fight actually asks.
+--
+-- Read through Auras.lua's GetAura rather than a second copy of the
+-- C_UnitAuras/UnitAura fallback, and asked for with PLAYER in the filter - the
+-- suite's target carries a Bleeding somebody else cast, precisely so forgetting
+-- that shows up.
+
+local CHIP_MAX, CHIP_H, CHIP_ICON, CHIP_GAP, CHIP_PAD = 4, 17, 13, 4, 5
+
+local function BuildChip(f)
+	local chip = Glass.CreatePill(f, { fill = "glass", edge = "castEdge" })
+	chip:SetHeight(CHIP_H)
+
+	local icon = chip:CreateTexture(nil, "ARTWORK")
+	icon:SetSize(CHIP_ICON, CHIP_ICON)
+	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	chip.icon = icon
+
+	chip.text = W.Text(chip, "npAura", "LEFT")
+	return chip
+end
+
+--- One chip: an icon, a name, and what is left of it. The "+2" chip has no
+--  icon, so the text takes the whole pill.
+local function SetChip(chip, texture, label)
+	chip.text:ClearAllPoints()
+	if texture then
+		chip.icon:SetTexture(texture)
+		chip.icon:ClearAllPoints()
+		chip.icon:SetPoint("LEFT", chip, "LEFT", CHIP_PAD, 0)
+		chip.icon:Show()
+		chip.text:SetPoint("LEFT", chip.icon, "RIGHT", CHIP_GAP, 0)
+	else
+		chip.icon:Hide()
+		chip.text:SetPoint("LEFT", chip, "LEFT", CHIP_PAD, 0)
+	end
+
+	chip.text:SetText(label or "")
+	W.Color(chip.text, Palette.c.npChipInk)
+
+	local w = (texture and (CHIP_ICON + CHIP_GAP) or 0)
+		+ math.ceil(chip.text:GetStringWidth() or 0)
+	chip:SetWidth(w + CHIP_PAD * 2)
+	chip:Show()
+end
+
+--- Mine, in the order the client hands them over.
+local function MyDebuffs(unit)
+	local out = {}
+	local Aur = A:GetModule("auras")
+	local get = Aur and Aur.GetAura
+	if not get then return out end
+
+	for i = 1, 40 do
+		local name, tex, _, _, duration, expiration, mine = get(unit, i, "HARMFUL|PLAYER")
+		if not name then break end
+		-- Belt and braces: the filter should have done this, but sourceUnit is
+		-- nil for a fair few auras and GetAura is the thing that knows.
+		if mine ~= false then
+			out[#out + 1] = { name = name, tex = tex,
+				duration = duration, expiration = expiration }
+		end
+	end
+	return out
+end
+
+function UpdateChips(f)
+	f.chips = f.chips or {}
+
+	-- Off-target plates carry none at all, which is most of what makes the
+	-- target's readable.
+	local mine = (f.unit and (f._want or 0) == 1) and MyDebuffs(f.unit) or {}
+
+	local shown = math.min(#mine, CHIP_MAX)
+	for i = 1, shown do
+		f.chips[i] = f.chips[i] or BuildChip(f)
+		local a = mine[i]
+		local left = W.AuraTime(a.expiration, a.duration)
+		SetChip(f.chips[i], a.tex, left ~= "" and (a.name .. " · " .. left) or a.name)
+	end
+
+	local over = #mine - shown
+	if over > 0 then
+		shown = shown + 1
+		f.chips[shown] = f.chips[shown] or BuildChip(f)
+		SetChip(f.chips[shown], nil, "+" .. over)
+	end
+
+	for i = shown + 1, #f.chips do f.chips[i]:Hide() end
+	f._chipCount = shown
+
+	-- Centred as a row under the capsule.
+	local total = 0
+	for i = 1, shown do total = total + (f.chips[i]:GetWidth() or 0) end
+	total = total + CHIP_GAP * math.max(0, shown - 1)
+
+	local x = -total / 2
+	for i = 1, shown do
+		local chip = f.chips[i]
+		chip:ClearAllPoints()
+		chip:SetPoint("TOPLEFT", f, "BOTTOM", x, -CHIP_GAP)
+		x = x + (chip:GetWidth() or 0) + CHIP_GAP
+	end
+end
+
+--- The countdown has to move on its own - nothing fires an event for a second
+--  passing. Only plates that actually have chips, which is at most one.
+local function TickChips()
+	for _, f in pairs(byUnit) do
+		if (f._chipCount or 0) > 0 then UpdateChips(f) end
+	end
+end
 
 -- ---------------------------------------------------------------------------
 -- the driver
@@ -379,6 +502,8 @@ local function OnUnitRemoved(_, _, token)
 	f.badge:SetLabel("")
 	f.chip:Hide()
 	f:SetRimGlow(nil)
+	for i = 1, #(f.chips or {}) do f.chips[i]:Hide() end
+	f._chipCount = 0
 	moving[f] = nil
 	byUnit[token] = nil
 end
@@ -393,7 +518,16 @@ end
 local function OnTargetChanged()
 	for _, f in pairs(byUnit) do
 		Emphasise(f, IsTarget(f.unit))
+		-- Chips follow focus rather than fading with it: they are information,
+		-- not decoration, and a row of them dimming to .62 under a plate you
+		-- have stopped caring about is just clutter with a countdown on it.
+		UpdateChips(f)
 	end
+end
+
+local function OnAuraChanged(_, _, token)
+	local f = token and byUnit[token]
+	if f then UpdateChips(f) end
 end
 
 --- Reaction can move under a plate that is already up - a neutral mob you pull,
@@ -414,6 +548,8 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "UNIT_MAXHEALTH", OnUnitEvent)
 	A:RegisterEvent(self, "UNIT_FACTION", OnFactionChanged)
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
+	A:RegisterEvent(self, "UNIT_AURA", OnAuraChanged)
+	A:RegisterTicker(self, TickChips)
 	A:RegisterEvent(self, "UNIT_FLAGS", OnUnitEvent)
 
 	-- Plates already up when we are switched on mid-session.
@@ -426,6 +562,7 @@ end
 
 function NP:OnDisable()
 	A:UnregisterAllEvents(self)
+	A:UnregisterTicker(self)
 	for base, f in pairs(plates) do
 		f:Hide()
 		f.unit = nil
@@ -462,3 +599,4 @@ NP.plateFor = PlateFor
 NP.plates = plates
 NP.step = Step
 NP.moving = moving
+NP.updateChips = UpdateChips

@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.20",
+		date    = "2026-08-13",
+		lines   = {
+			"New: your own debuffs appear as timed chips under your target's nameplate - up to four, then a chip saying how many more.",
+			"Only yours, and only on your target: somebody else's debuff on the same mob is not your business, and a row of them under every plate is clutter with a countdown on it.",
+		},
+	},
+	{
 		version = "0.3.19",
 		date    = "2026-08-13",
 		lines   = {

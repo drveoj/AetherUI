@@ -1818,10 +1818,41 @@ function CancelUnitBuff(unit, index, filter)
 end
 function CancelSpellByName(name) _G.__cancelled = { name = name } end
 
+-- The client FILTERS. This was a lookup on the exact filter string, so a module
+-- that asked for "HARMFUL" when it meant "HARMFUL|PLAYER" got whatever the test
+-- had put in the list and looked correct. PLAYER is applied here instead, over
+-- a fixture that deliberately holds one debuff somebody else cast: forget the
+-- flag and you show a stranger's Bleeding on your target's plate.
 function UnitAura(unit, index, filter)
     local byUnit = _G.__auras[unit]
-    local list = byUnit and byUnit[filter or "HELPFUL"]
-    if not list then return nil end
+    if not byUnit then
+        -- Auras belong to the UNIT, not to the token you happened to ask
+        -- through. "nameplate1" and "target" on the same mob must answer the
+        -- same list, or anything reading a nameplate token sees an empty one
+        -- and looks like it is filtering correctly while showing nothing.
+        local want = _G.__units[unit]
+        if want then
+            for token, data in pairs(_G.__units) do
+                if data == want and _G.__auras[token] then
+                    byUnit = _G.__auras[token]
+                    break
+                end
+            end
+        end
+    end
+    if not byUnit then return nil end
+    filter = filter or "HELPFUL"
+    local all = byUnit[filter:find("HARMFUL") and "HARMFUL" or "HELPFUL"]
+    if not all then return nil end
+
+    local list = all
+    if filter:find("PLAYER") then
+        list = {}
+        for i = 1, #all do
+            if all[i][8] then list[#list + 1] = all[i] end
+        end
+    end
+
     local a = list[index]
     if not a then return nil end
     -- a[9], when present, is an explicit expirationTime. The client hands out
@@ -14601,6 +14632,84 @@ do
 		.. " animating a frame nobody can see")
 	check(a._rimColor == nil and b._rimColor == nil,
 		"and keeps no glow for whoever gets it next")
+end
+
+print("== nameplates: your debuffs, under your target, and nobody else's ==")
+do
+	-- Four debuffs, one of them cast by somebody else. Hung on `target` and the
+	-- nameplate token pointed at the same unit, because that is the shape in
+	-- game: the plate and the target frame are two tokens for one mob and both
+	-- have to read the same list.
+	local savedAuras = _G.__auras.target
+	_G.__auras.target = { HARMFUL = {
+		{ "Chilled",   135834, 0, "Magic", 8,  nil, "player", true },
+		{ "Bleeding",  132090, 2, nil,     12, nil, "boss1",  false },
+		{ "Frostbite", 135842, 0, "Magic", 5,  nil, "player", true },
+		{ "Rend",      132155, 0, nil,     10, nil, "player", true },
+	} }
+
+	local mob = { exists = true, name = "Kolkar Marauder", level = 18,
+		reaction = 2, hp = 900, hpMax = 1000 }
+	_G.__units.target = mob
+
+	local baseA = __spawnPlate("nameplate1", mob)
+	-- B carries debuffs of mine TOO. Without that, "off-target shows none" is
+	-- true whether the module checks focus or simply has nothing to draw.
+	local savedFocus = _G.__auras.focus
+	_G.__auras.focus = { HARMFUL = {
+		{ "Serpent Sting", 132204, 0, nil, 15, nil, "player", true },
+	} }
+	local mate = { exists = true, name = "Kolkar Wrangler", level = 17,
+		reaction = 2, hp = 400, hpMax = 1000 }
+	_G.__units.focus = mate
+	local baseB = __spawnPlate("nameplate2", mate)
+	local a, b = NPm.plateFor(baseA), NPm.plateFor(baseB)
+
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 1)
+
+	check(a._chipCount == 3,
+		"the target shows the three debuffs that are MINE - the fourth on it was"
+		.. " cast by somebody else and is not my business")
+	check((b._chipCount or 0) == 0,
+		"and an off-target plate carries none at all even though I have a debuff"
+		.. " on that one too - which is most of what makes the target's readable")
+
+	local first = a.chips[1].text:GetText()
+	check(first:find("Chilled") ~= nil and first:find("s") ~= nil,
+		"a chip is the name and what is left of it (" .. tostring(first) .. ")")
+	check(a.chips[1].icon:IsShown(), "with its icon")
+
+	-- Overflow.
+	local saved = _G.__auras.target.HARMFUL
+	local many = {}
+	for i = 1, 7 do
+		many[i] = { "Debuff " .. i, 135834, 0, "Magic", 10, nil, "player", true }
+	end
+	_G.__auras.target.HARMFUL = many
+	fire("UNIT_AURA", "nameplate1")
+	check(a._chipCount == 5,
+		"seven of mine is four chips and a fifth carrying the remainder")
+	check(a.chips[5].text:GetText() == "+3", "which says how many are not shown")
+	check(not a.chips[5].icon:IsShown(), "and has no icon of its own")
+
+	_G.__auras.target.HARMFUL = saved
+	fire("UNIT_AURA", "nameplate1")
+	check(a._chipCount == 3, "and it comes back down again")
+	check(not a.chips[4]:IsShown() and not a.chips[5]:IsShown(),
+		"with the chips it no longer needs HIDDEN rather than left on screen"
+		.. " showing a debuff that has expired")
+
+	-- Focus moving takes them with it.
+	_G.__units.target = nil
+	fire("PLAYER_TARGET_CHANGED")
+	check((a._chipCount or 0) == 0, "dropping the target takes its chips away")
+
+	_G.__auras.target = savedAuras
+	_G.__auras.focus = savedFocus
+	_G.__units.focus = nil
+	__despawnPlate("nameplate1")
+	__despawnPlate("nameplate2")
 end
 
 print("== palette: difficulty has one owner ==")
