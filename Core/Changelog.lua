@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.7",
+		date    = "2026-08-13",
+		lines   = {
+			"Fixed: clicking Yes or No on a skinned dialog flashed Blizzard's red button back, and it stayed for every dialog after.",
+			"Fixed: the buttons kept their old art showing through the glass - the module could not find them on the newer dialogs at all.",
+		},
+	},
+	{
 		version = "0.4.6",
 		date    = "2026-08-13",
 		lines   = {

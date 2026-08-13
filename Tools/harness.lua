@@ -726,10 +726,25 @@ function CreateFrame(kind, name, parent, template)
 	function f:IsEnabled() return self.__enabled end
 	function f:SetEnabled(v) self.__enabled = v and true or false end
 
-	function f:SetHighlightTexture() end
-	function f:SetPushedTexture() end
-	function f:SetCheckedTexture() end
-	function f:SetNormalTexture() end
+	-- A button's four state textures are REAL REGIONS, and three of them are
+	-- hidden at rest. That matters: a skin that hides "every texture currently
+	-- shown" leaves the pushed art untouched, and Blizzard's button flashes
+	-- back the moment the player presses it. These were no-ops, so none of that
+	-- was visible from here.
+	f.__btnTex = {}
+	for _, kind in ipairs({ "Normal", "Pushed", "Highlight", "Disabled", "Checked" }) do
+		f["Set" .. kind .. "Texture"] = function(self, tex)
+			local t = self.__btnTex[kind]
+			if not t then
+				t = self:CreateTexture(nil, "ARTWORK")
+				self.__btnTex[kind] = t
+			end
+			t:SetTexture(tex)
+			-- Only the normal state is up when nothing is happening.
+			if kind == "Normal" then t:Show() else t:Hide() end
+		end
+		f["Get" .. kind .. "Texture"] = function(self) return self.__btnTex[kind] end
+	end
 	function f:SetButtonState() end
 
 	-- Recorded rather than swallowed. "Is this row inert?" is a real question
@@ -2333,6 +2348,10 @@ do
 		-- The stone frame, and the warning triangle.
 		p.__border = p:CreateTexture(nil, "BORDER")
 		p.__bg = p:CreateTexture(nil, "BACKGROUND")
+		-- Art the client keeps hidden and reveals later - a highlight, a glow,
+		-- the flash on a timed button. Hidden when a skin first looks at it.
+		p.__later = p:CreateTexture(nil, "OVERLAY")
+		p.__later:Hide()
 		local alert = p:CreateTexture(nil, "ARTWORK")
 
 		local text = p:CreateFontString(nil, "OVERLAY")
@@ -2342,8 +2361,11 @@ do
 		local b2 = CreateFrame("Button", "StaticPopup" .. i .. "Button2", p)
 		for _, b in ipairs({ b1, b2 }) do
 			b:SetSize(100, 22)
-			local art = b:CreateTexture(nil, "BACKGROUND")
-			art:Show()
+			-- Through the setters, as the client does: normal art up, pushed and
+			-- highlight art present but hidden until you touch it.
+			b:SetNormalTexture("dialog-button-up")
+			b:SetPushedTexture("dialog-button-down")
+			b:SetHighlightTexture("dialog-button-highlight")
 			local fs = b:CreateFontString(nil, "OVERLAY")
 			fs:SetText("Yes")
 			b.__fs = fs
@@ -2351,9 +2373,12 @@ do
 		end
 
 		if i % 2 == 1 then
-			-- Fields, the reworked way.
-			p.text, p.AlertIcon = text, alert
-			p.Button1, p.Button2 = b1, b2
+			-- Fields, the reworked way - and reached through a METATABLE, because
+			-- the reworked dialog is a mixin object. Anything using rawget to
+			-- find its parts answers nil for every one of them and skins a
+			-- dialog with none of its buttons, which is exactly what shipped.
+			local parts = { text = text, AlertIcon = alert, Button1 = b1, Button2 = b2 }
+			setmetatable(p, { __index = function(_, k) return parts[k] end })
 		else
 			-- Globals only, the older way.
 			_G["StaticPopup" .. i .. "Text"] = text
@@ -15507,7 +15532,32 @@ do
 
 		local b1 = PPm.Element(p, "Button1")
 		check(b1 and b1.__aetherPill ~= nil, "and each button gets a pill behind it")
-		check(b1:GetFontString()._aetherStyle == "tbCardTitle", "with our lettering on it")
+				check(b1:GetFontString()._aetherStyle == "tbCardTitle", "with our lettering on it")
+
+		-- THE ONE THAT SHIPPED WRONG. A button's pushed art is hidden until you
+		-- press it, so hiding "everything currently shown" left it in place and
+		-- Blizzard's button flashed back the instant you clicked.
+		local pushed = b1:GetPushedTexture()
+		check(pushed and pushed:GetTexture() == 0,
+			"the PUSHED art is cleared through the setter, not merely hidden -"
+			.. " the client shows it on mousedown and there is no moment of ours"
+			.. " in between")
+		local normal = b1:GetNormalTexture()
+		check(normal and normal:GetTexture() == 0, "and so is the normal art")
+		local hi = b1:GetHighlightTexture()
+		check(hi and hi:GetTexture() == 0, "and the highlight")
+	end
+
+	-- The client can put art BACK. A button's pushed texture is hidden until it
+	-- is pressed, and once shown it stayed shown for every dialog after.
+	do
+		local p2 = _G.StaticPopup2
+		p2.__later:Show()
+		p2:GetScript("OnShow")(p2)
+		check(not p2.__later:IsShown(),
+			"art the client reveals later is taken down on the next show, rather"
+			.. " than being left because it was not up when we first looked -"
+			.. " which is how a texture appears once and then stays for good")
 	end
 
 	-- The buttons are DRESSED, not rebuilt: what you click is still the
@@ -15525,6 +15575,14 @@ do
 		"switching it off returns the dialog the client drew, art and all")
 	A:SetModuleEnabled("popups", true)
 	check(_G.StaticPopup1.__aetherPanel ~= nil, "and on again re-dresses it")
+
+	-- ...and off puts the button's own art back, not just our pill.
+	A:SetModuleEnabled("popups", false)
+	local restored = PPm.Element(_G.StaticPopup1, "Button1"):GetNormalTexture()
+	check(restored and restored:GetTexture() == "dialog-button-up",
+		"switching off gives the button its own art back, by name - clearing a"
+		.. " texture is not undone by hiding a region")
+	A:SetModuleEnabled("popups", true)
 end
 
 print("== palette: difficulty has one owner ==")

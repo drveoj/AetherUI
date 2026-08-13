@@ -51,8 +51,11 @@ local function cfg() return A.Config:Module("popups") end
 local function Element(popup, key)
 	if type(popup) ~= "table" then return nil end
 
+	-- Plain indexing, NOT rawget. The reworked dialog is a mixin object and
+	-- resolves its parts through __index, so rawget answers nil for every one
+	-- of them - which is a skin that finds the dialog and none of its buttons.
 	local lower = key:gsub("^%w", string.lower)
-	local el = rawget(popup, lower) or rawget(popup, key)
+	local el = popup[lower] or popup[key]
 	if el ~= nil then return el end
 
 	local name = popup.GetName and popup:GetName()
@@ -72,23 +75,35 @@ PP.Element = Element
 --  have grown regions we never hid and must not show.
 local function StripArt(frame, store)
 	if not frame or not frame.GetRegions then return end
-	if store[frame] then return end
 
-	local hidden = {}
-	for _, region in ipairs({ frame:GetRegions() }) do
-		if region and region.GetObjectType and region:GetObjectType() == "Texture"
-			and region.IsShown and region:IsShown() then
-			hidden[#hidden + 1] = region
-			region:Hide()
+	local known = store[frame]
+	if not known then
+		known = {}
+		-- EVERY texture, not only the ones up at the time. A button's pushed art
+		-- is hidden until you press it, so a strip that only took what was
+		-- showing left it in place - and Blizzard's button flashed back the
+		-- instant you clicked, then stayed for every dialog after.
+		--
+		-- Whether each was shown is remembered, so putting them back does not
+		-- reveal art the client had hidden for its own reasons.
+		for _, region in ipairs({ frame:GetRegions() }) do
+			if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+				known[#known + 1] = { region, region.IsShown and region:IsShown() }
+			end
 		end
+		store[frame] = known
 	end
-	store[frame] = hidden
+
+	-- Hidden on every pass, not only the first.
+	for _, entry in ipairs(known) do
+		if entry[1].Hide then entry[1]:Hide() end
+	end
 end
 
 local function RestoreArt(store)
-	for _, hidden in pairs(store) do
-		for _, region in ipairs(hidden) do
-			if region.Show then region:Show() end
+	for _, known in pairs(store) do
+		for _, entry in ipairs(known) do
+			if entry[2] and entry[1].Show then entry[1]:Show() end
 		end
 	end
 	wipe(store)
@@ -103,9 +118,43 @@ end
 --  Behind, and sized to it - the button itself is not moved, resized or
 --  reparented. Its own art is hidden and its label re-roled, so what you click
 --  and what happens when you do are entirely the client's.
+--- The four state textures a Button draws itself, cleared through the setters.
+--
+--  Hiding the regions is not enough: the client SHOWS the pushed one on
+--  mousedown, over the top of anything we hid, and there is no moment of ours
+--  in between. ElvUI clears these by passing 0 to the setters and that is what
+--  works - the texture object stays, with nothing in it.
+local BTN_STATES = { "Normal", "Pushed", "Highlight", "Disabled" }
+
+local function ClearButtonArt(btn)
+	btn.__aetherState = btn.__aetherState or {}
+	for _, kind in ipairs(BTN_STATES) do
+		local get, set = btn["Get" .. kind .. "Texture"], btn["Set" .. kind .. "Texture"]
+		if get and set then
+			if btn.__aetherState[kind] == nil then
+				local tex = get(btn)
+				local path = tex and tex.GetTexture and tex:GetTexture()
+				btn.__aetherState[kind] = path or false
+			end
+			set(btn, 0)
+		end
+	end
+end
+
+local function RestoreButtonArt(btn)
+	local saved = btn.__aetherState
+	if not saved then return end
+	for kind, path in pairs(saved) do
+		local set = btn["Set" .. kind .. "Texture"]
+		if set and path then set(btn, path) end
+	end
+	btn.__aetherState = nil
+end
+
 local function DressButton(btn, art)
 	if not btn or btn.__aetherPill then return end
 
+	ClearButtonArt(btn)
 	StripArt(btn, art)
 
 	local pill = Glass.CreatePill(btn, { fill = "glass", edge = "glassEdgeHi" })
@@ -196,7 +245,16 @@ function PP:Skin()
 				popup:HookScript("OnShow", function(self)
 					if not PP.enabled then return end
 					Dress(self)
-					StripArt(self, self.__aetherArt or {})
+					local art = self.__aetherArt or {}
+					StripArt(self, art)
+					local n = 1
+					while true do
+						local btn = Element(self, "Button" .. n)
+						if not btn then break end
+						ClearButtonArt(btn)
+						StripArt(btn, art)
+						n = n + 1
+					end
 					if self.__aetherAlert then self.__aetherAlert:Hide() end
 				end)
 			end
@@ -234,6 +292,7 @@ function PP:OnDisable()
 					btn.__aetherPill:Hide()
 					btn.__aetherPill = nil
 				end
+				RestoreButtonArt(btn)
 				i2 = i2 + 1
 			end
 		end
