@@ -284,10 +284,12 @@ end
 
 local Orb = {}
 
---- One colour for the whole orb. The sheen and the rim are baked into the
---  texture as lighter values, so tinting it tints all three together.
-function Orb:SetColors(fill, _, ink)
-	if fill then self.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1) end
+--- Give the level disc independent face, rim, and ink colours. The face has a
+--  restrained vertical lift while the source art contributes only a raised rim.
+function Orb:SetColors(face, rim, ink, faceHi, rimHi)
+	if face then W.SetGradient(self.face, "VERTICAL", faceHi or face, face) end
+	if rim then self.disc:SetVertexColor(rim[1], rim[2], rim[3], rim[4] or 1) end
+	if rimHi then self.ring:SetVertexColor(rimHi[1], rimHi[2], rimHi[3], rimHi[4] or 1) end
 	if ink then W.Color(self.label, ink) end
 end
 
@@ -305,6 +307,17 @@ end
 function Orb:Resize(size)
 	self:SetSize(size, size)
 	Media:SetFont(self.label, "level", math.max(9, math.floor(size * 0.26 + 0.5)))
+	local inset = math.max(A.PxIn and A:PxIn(self) * 2 or 2, size * 0.085)
+	self.face:ClearAllPoints()
+	self.face:SetPoint("TOPLEFT", self, "TOPLEFT", inset, -inset)
+	self.face:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -inset, inset)
+
+	-- Lapping the fine edge over the source art hides the half-lit outer texel
+	-- that otherwise makes a round shape look rough at arbitrary UI scales.
+	local proud = A.PxIn and A:PxIn(self) or 1
+	self.ring:ClearAllPoints()
+	self.ring:SetPoint("TOPLEFT", self, "TOPLEFT", -proud, proud)
+	self.ring:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", proud, -proud)
 	if self.glow then self.glow:SetSize(size * 2, size * 2) end
 end
 
@@ -335,13 +348,21 @@ function W.CreateOrb(parent, opts)
 	local f = CreateFrame("Frame", nil, parent)
 	f:SetSize(size, size)
 
-	-- ONE texture: the disc, its diagonal sheen and its rim, all baked. The rim
-	-- is a brighter value of the same greyscale, so a single vertex colour still
-	-- expresses both. No mask - the shape is already circular.
+	-- The source's outer anti-aliasing and fine reflection make a clean raised
+	-- rim. Its centre is deliberately covered by `face` below, so it no longer
+	-- decides the colour, contrast, and finish of the whole level disc at once.
 	local disc = f:CreateTexture(nil, "ARTWORK")
 	disc:SetTexture(Media.texture.orbFace)
 	disc:SetAllPoints(f)
 	f.disc = disc
+
+	-- A white source plus a round mask gives us a face whose two gradient stops
+	-- can be tinted independently from the rim. The mask follows THIS inset
+	-- texture, not the parent, otherwise a square centre would peek through.
+	local face = f:CreateTexture(nil, "ARTWORK", nil, 1)
+	face:SetTexture(Media.texture.flat)
+	W.AddMask(face, f, Media.texture.circleMask, face)
+	f.face = face
 
 	if opts.portrait then
 		local p = f:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -350,19 +371,20 @@ function W.CreateOrb(parent, opts)
 		f.portrait = p
 	end
 
-	-- Kept for the reaction rim on a target, and off by default: the face
-	-- texture carries its own.
+	-- The fine top ring catches the light above the broader coloured rim. It is
+	-- always on: a target's relationship is already encoded in the face colour,
+	-- so this completes the physical disc instead of competing with it.
 	local ring = f:CreateTexture(nil, "OVERLAY")
 	ring:SetTexture(Media.texture.ring)
-	ring:SetAllPoints(f)
-	ring:Hide()
 	f.ring = ring
 
 	local label = W.Text(f, "level", "CENTER")
 	label:SetPoint("CENTER", f, "CENTER", 0, 0)
-	-- No shadow. The number sits on a mid-tone disc and the concept draws it
-	-- clean; a shadow at this size reads as the type being badly rendered.
-	label:SetShadowColor(0, 0, 0, 0)
+	-- The face is intentionally dark enough for white type on every class, but
+	-- the one physical-pixel shadow keeps it intact over the top highlight too.
+	-- This reads as depth, not the heavy outline that a multi-pixel stroke would.
+	label:SetShadowColor(2 / 255, 2 / 255, 8 / 255, 0.92)
+	label:SetShadowOffset(0, -(A.PxIn and A:PxIn(f) or 1))
 	f.label = label
 
 	for k, v in pairs(Orb) do f[k] = v end

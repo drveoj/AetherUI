@@ -447,13 +447,14 @@ local function Mix(a, b, t)
 	return a + (b - a) * t
 end
 
---- The one colour a unit is drawn in: its health bar and its level orb.
+--- The one colour a unit's class-coloured health bar is drawn in.
 --
 --  Flat, and the same for both. The orb used to be its own vertical gradient,
 --  which read as a shiny ball rather than a disc.
 --
---  Full strength. Nothing darkens it - the orb no longer puts white text on it,
---  so there is nothing to keep legible.
+--- Full strength. A health bar is only a few pixels tall, so darkening its
+--- class tint would make it read as an inactive track. The level disc has its
+--- own face/rim recipe below because it also has to carry white type.
 function Palette:UnitColor(unit)
 	local base = Palette:ClassColor(unit)
 	if base then return { base[1], base[2], base[3] } end
@@ -474,25 +475,90 @@ function Palette:Stop(colors)
 	return type(colors[1]) == "table" and colors[1] or colors
 end
 
--- The face texture's mid luminance. The sheen runs 0.55 to 0.85 across the disc
--- and the rim is 1.0, so this is roughly what the number sits on.
-local ORB_FACE_LUM = 0.70
+-- The level disc is a compact piece of UI rather than a health bar: it needs a
+-- deliberately stable palette. In particular, it must not turn into the
+-- current skin's accent for a friendly NPC, or inherit a ClassColors addon's
+-- custom palette. These are the Classic Era values the disc is specified to
+-- communicate, in the 0-255 values used by Blizzard's class-colour table.
+--
+-- Shaman is intentionally the Vanilla pink supplied for this design. It is
+-- kept here, rather than changing RAID_CLASS_COLORS, because the rest of the
+-- UI should still respect the player's chosen class-colour addon.
+local ORB_CLASS_COLOR = {
+	WARRIOR = C(199, 156, 110),
+	PALADIN = C(245, 140, 186),
+	HUNTER  = C(171, 212, 115),
+	ROGUE   = C(255, 245, 105),
+	PRIEST  = C(255, 255, 255),
+	SHAMAN  = C(245, 140, 186),
+	MAGE    = C( 64, 199, 235),
+	WARLOCK = C(135, 135, 237),
+	DRUID   = C(255, 125,  10),
+}
 
---- Fill and ink for a unit's level orb.
---
---  The disc is the unit's colour at full strength; the sheen and the rim are
---  baked into the texture as lighter values of the same greyscale, so one tint
---  drives all three.
---
---  The number picks itself. A solid disc in a class colour is dark for a
---  Warlock and near-white for a Priest, and one fixed ink cannot serve both -
---  so it is chosen by the luminance of what it is actually sitting on, the same
---  way a pill picks its own text colour.
+local ORB_HOSTILE  = C(255, 154, 118)
+local ORB_NEUTRAL  = C(240, 180, 106)
+local ORB_FRIENDLY = C(185, 154, 245)
+
+local function OrbLuminance(c)
+	return 0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3]
+end
+
+local function OrbScale(c, factor)
+	return { c[1] * factor, c[2] * factor, c[3] * factor, 1 }
+end
+
+local function OrbMix(c, r, g, b, t, a)
+	return {
+		Mix(c[1], r, t),
+		Mix(c[2], g, t),
+		Mix(c[3], b, t),
+		a or 1,
+	}
+end
+
+--- The specific colour a level disc represents.
+---
+--- Players carry their class colour. Everything else carries only the
+--- information Blizzard exposes for an NPC: hostile, neutral, or friendly/no
+--- reaction. This gives pets, guardians, unclassified creatures, and units
+--- without a reaction a coherent treatment instead of falling back to whichever
+--- skin happens to be selected.
+function Palette:OrbBaseColor(unit)
+	if unit and UnitExists(unit) and UnitIsPlayer(unit) then
+		local _, class = UnitClass(unit)
+		local color = class and ORB_CLASS_COLOR[class]
+		if color then return { color[1], color[2], color[3], 1 } end
+
+		-- A future class should not make the disc disappear. It keeps the
+		-- client-provided class colour until this explicit table gains a value.
+		local fallback = Palette:ClassColor(unit)
+		if fallback then return fallback end
+	end
+
+	local reaction = unit and UnitExists(unit) and UnitReaction(unit, "player")
+	if reaction and reaction <= 3 then return { ORB_HOSTILE[1], ORB_HOSTILE[2], ORB_HOSTILE[3], 1 } end
+	if reaction == 4 then return { ORB_NEUTRAL[1], ORB_NEUTRAL[2], ORB_NEUTRAL[3], 1 } end
+	return { ORB_FRIENDLY[1], ORB_FRIENDLY[2], ORB_FRIENDLY[3], 1 }
+end
+
+--- Face, rim, ink, face highlight, and rim highlight for a unit's level disc.
+---
+--- The old disc applied the exact same vertex colour to its face, reflection,
+--- and rim. At 46px that reads as a flat coloured button. The concept needs a
+--- dark enough centre to carry white type, a light raised rim, and just one
+--- restrained top-to-bottom lift across the face. Keeping its *perceived*
+--- luminance near 0.38 makes a white Priest and a dark Warlock equally legible.
 function Palette:OrbColors(unit)
-	local c = Palette:UnitColor(unit)
-	local lum = (0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3]) * ORB_FACE_LUM
-	local ink = lum > 0.45 and Palette.c.btnFillText or Palette.c.text
-	return { c[1], c[2], c[3], 1 }, nil, ink
+	local base = Palette:OrbBaseColor(unit)
+	local lum = math.max(OrbLuminance(base), 0.01)
+	local faceScale = math.min(0.72, math.max(0.43, 0.38 / lum))
+	local face = OrbScale(base, faceScale)
+	local faceHi = OrbMix(face, base[1], base[2], base[3], 0.18)
+	local rim = OrbMix(base, 1, 1, 1, 0.46)
+	local rimHi = OrbMix(base, 1, 1, 1, 0.70, 0.92)
+
+	return face, rim, { 1, 1, 1, 1 }, faceHi, rimHi
 end
 --- A player's class colour, or nil.
 --

@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.3.12",
+		date    = "2026-08-13",
+		lines   = {
+			"Level discs now have a raised pale rim, a shaded class or reaction-tinted face, and crisp white level type.",
+		},
+	},
+	{
 		version = "0.3.11",
 		date    = "2026-08-13",
 		lines   = {

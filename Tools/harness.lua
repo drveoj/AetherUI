@@ -5863,81 +5863,86 @@ do
 	SlashCmdList["AETHERUI"]("health class")
 	check(A.db.profile.classColorHealth == true, "switched back to class colours")
 
-	-- The orb is a SOLID disc: one texture carrying the face, a diagonal sheen
-	-- and a two-pixel rim, all as values of one greyscale so a single tint
-	-- drives them together.
+	-- The level disc: a face, a rim and the type, each coloured separately.
 	--
-	-- It has been three other things. A vertical gradient, which read as a shiny
-	-- ball; a darkened flat disc, which was dull; and the tooltip badge's
-	-- translucent tint, which lost the disc altogether.
+	-- It has been four other things - a vertical gradient that read as a shiny
+	-- ball, a darkened flat disc, the tooltip badge's translucent tint, and one
+	-- baked texture tinted by a single colour. The last of those could not work:
+	-- one vertex colour cannot make a rim lighter than the face AND keep white
+	-- type legible on every class.
+	--
+	-- So the face is its own inset texture with its own gradient, the source art
+	-- carries the raised rim, and the fine ring sits on top of both.
 	do
 		local was = _G.__units.player.classToken
 		local orb = UFm.player.orb
 
-		check(orb.disc:GetTexture() == A.Media.texture.orbFace,
-			"the orb draws the face texture rather than a flat fill under a mask"
-			.. " - the sheen and the rim are baked, because neither a diagonal"
-			.. " gradient nor a two-pixel rim can be done at runtime")
-		check(not orb.ring:IsShown(),
-			"and the separate ring is off, since the face carries its own")
-		check((select(4, orb.label:GetShadowColor()) or 0) == 0,
-			"with no shadow under the number - it sits on a mid-tone disc and"
-			.. " the concept draws it clean")
+		check(orb.face ~= nil and orb.face ~= orb.disc,
+			"the disc has a separate FACE texture, so the rim can be lighter"
+			.. " than the middle")
+		check(orb.face:GetNumMaskTextures() > 0,
+			"masked to a circle, or a square centre shows through the round rim")
+		check(orb.ring:IsShown(),
+			"and the fine ring is always on - it completes the disc rather than"
+			.. " carrying information, which the face colour already does")
 
-		-- A DARK class: the number goes light.
-		_G.__units.player.classToken = "WARLOCK"
-		RAID_CLASS_COLORS.WARLOCK = { r = 0.58, g = 0.51, b = 0.79 }
-		local fill, _, ink = A.Palette:OrbColors("player")
-		check(fill[4] == 1, "the disc is solid rather than a tint ("
-			.. string.format("%.2f", fill[4]) .. ")")
-		check(math.abs(fill[1] - 0.58) < 0.001,
-			"and is the class colour at full strength")
-		check(ink[1] > 0.8, "with a LIGHT number on a dark class ("
-			.. string.format("%.2f", ink[1]) .. ")")
+		-- WHITE type on every class. That is what the face's scaling buys.
+		for _, class in ipairs({ "PRIEST", "WARLOCK", "ROGUE", "DRUID", "MAGE" }) do
+			_G.__units.player.classToken = class
+			local face, rim, ink = A.Palette:OrbColors("player")
+			check(ink[1] == 1 and ink[2] == 1 and ink[3] == 1,
+				class .. ": the number is white")
 
-		-- A PALE class: the number goes dark, or it disappears.
-		_G.__units.player.classToken = "ROGUE"
-		RAID_CLASS_COLORS.ROGUE = { r = 1.00, g = 0.96, b = 0.41 }
-		local _, _, ink2 = A.Palette:OrbColors("player")
-		check(ink2[1] < 0.3,
-			"and a DARK one on a pale class - a fixed white number is invisible"
-			.. " on Rogue yellow, so the ink is chosen by the luminance of what"
-			.. " it is sitting on (" .. string.format("%.2f", ink2[1]) .. ")")
+			-- The face is held near one perceived luminance whatever the class
+			-- is, which is the whole reason a white Priest and a dark Warlock
+			-- are equally readable.
+			local lum = 0.2126 * face[1] + 0.7152 * face[2] + 0.0722 * face[3]
+			check(lum > 0.22 and lum < 0.52,
+				class .. ": the face sits in the band white type survives on ("
+				.. string.format("%.2f", lum) .. ")")
 
-		-- Luminance, not brightness of the red channel. Green is what the eye
-		-- weights most, and no Classic class colour is green enough to tell the
-		-- two apart - so this uses one that is.
-		RAID_CLASS_COLORS.ROGUE = { r = 0.20, g = 1.00, b = 0.20 }
-		local _, _, ink3 = A.Palette:OrbColors("player")
-		check(ink3[1] < 0.3,
-			"a bright GREEN disc gets a dark number too, which a red-only test"
-			.. " of brightness would get backwards (" .. string.format("%.2f",
-				ink3[1]) .. ")")
-		RAID_CLASS_COLORS.ROGUE = { r = 1.00, g = 0.96, b = 0.41 }
-
-		-- It reaches the frame, both of them, and a TARGET is coloured by its
-		-- reaction rather than left at the player's class.
-		A:Restyle()
-		do
-			local r = UFm.player.orb.disc:GetVertexColor()
-			check(math.abs(r - 1.00) < 0.01,
-				"the player's orb on screen is painted with it")
+			-- And the rim is lighter than the face, or there is no rim.
+			-- A MEANINGFUL gap, not merely lighter. The face is scaled down for
+			-- legibility, so an untouched rim is automatically brighter than it
+			-- without the rim having been lifted at all.
+			local rlum = 0.2126 * rim[1] + 0.7152 * rim[2] + 0.0722 * rim[3]
+			check(rlum - lum > 0.25,
+				class .. ": the rim is clearly lighter than the face ("
+				.. string.format("%.2f vs %.2f", rlum, lum) .. ")")
 		end
+
+		-- The disc's palette is its OWN, not RAID_CLASS_COLORS. A colour-blind
+		-- addon should be free to recolour names everywhere else without moving
+		-- this.
+		_G.__units.player.classToken = "MAGE"
+		local before = A.Palette:OrbBaseColor("player")
+		local wasCustom = _G.CUSTOM_CLASS_COLORS
+		_G.CUSTOM_CLASS_COLORS = { MAGE = { r = 1, g = 0, b = 0 } }
+		local after = A.Palette:OrbBaseColor("player")
+		check(math.abs(after[1] - before[1]) < 0.001,
+			"and a ClassColors addon does not move it - the disc names its own"
+			.. " nine colours")
+		_G.CUSTOM_CLASS_COLORS = wasCustom
+
+		-- A target is coloured by its reaction, not by the player's class.
+		A:Restyle()
+		-- `exists` explicitly: an earlier block clears the target, and a unit
+		-- that does not exist falls through to the friendly colour - which looks
+		-- exactly like the reaction being ignored.
+		_G.__units.target.exists = true
 		_G.__units.target.isPlayer = false
 		_G.__units.target.reaction = 2
 		fire("PLAYER_TARGET_CHANGED")
 		do
-			local tr, tg, tb = UFm.target.orb.disc:GetVertexColor()
-			-- Against the token, not against UnitColor("target"): by this point
-			-- the mock's target no longer "exists", so asking again answers with
-			-- the fallback rather than with what the orb was painted.
-			local want = A.Palette.c.hostileBar[1]
-			check(math.abs(tr - want[1]) < 0.01 and math.abs(tg - want[2]) < 0.01,
-				"and a hostile target's orb takes its reaction rather than the"
-				.. " player's class (" .. string.format("%.2f %.2f %.2f",
-					tr, tg, tb) .. ")")
-			check(tg < 0.7, "which is the warm hostile colour, not a class blue")
+			local base = A.Palette:OrbBaseColor("target")
+			check(base[1] > 0.9 and base[2] < 0.75,
+				"a hostile target's disc is the warm hostile colour rather than"
+				.. " a class hue (" .. string.format("%.2f %.2f %.2f",
+					base[1], base[2], base[3]) .. ")")
 		end
+		_G.__units.target.reaction = 4
+		check(A.Palette:OrbBaseColor("target")[3] < 0.6,
+			"and a neutral one the amber")
 
 		_G.__units.player.classToken = was
 		_G.__units.target.isPlayer = true
