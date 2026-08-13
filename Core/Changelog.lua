@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.4.9",
+		date    = "2026-08-13",
+		lines   = {
+			"Groundwork: the machinery that reskins the game's own dialogs now lives in one place, ready for the character sheet, spellbook and talents to use.",
+		},
+	},
+	{
 		version = "0.4.8",
 		date    = "2026-08-13",
 		lines   = {

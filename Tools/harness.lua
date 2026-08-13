@@ -3865,7 +3865,7 @@ print("== loading addon files ==")
 for _, f in ipairs({
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
-	"Core/Widgets.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
+	"Core/Widgets.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
@@ -15603,6 +15603,75 @@ do
 		"and the dialog's own background comes back with it, out of the child"
 		.. " frame it lives in")
 	A:SetModuleEnabled("popups", true)
+end
+
+print("== reskin: taking a client frame apart, reversibly ==")
+do
+	local R = A.Reskin
+
+	-- Element, under both conventions. The reworked frames are MIXIN objects
+	-- and resolve their parts through __index, so rawget finds a frame and none
+	-- of its pieces - which shipped once as a dialog with untouched buttons.
+	local mixin = CreateFrame("Frame", "AetherTestMixinFrame", UIParent)
+	local part = CreateFrame("Button", nil, mixin)
+	setmetatable(mixin, { __index = function(_, k) return k == "Button1" and part or nil end })
+	check(R.Element(mixin, "Button1") == part,
+		"a part reached through __index is found - rawget would answer nil for"
+		.. " every one of them")
+
+	local named = CreateFrame("Frame", "AetherTestNamedFrame", UIParent)
+	local far = CreateFrame("Button", "AetherTestNamedFrameButton1", named)
+	check(R.Element(named, "Button1") == far,
+		"and a part that only exists as a global name is found too")
+	check(R.Element(named, "Nothing") == nil, "with nothing invented for a part that is absent")
+
+	-- Strip: regions, and the art hiding in child frames.
+	local host = CreateFrame("Frame", nil, UIParent)
+	local own = host:CreateTexture(nil, "BACKGROUND")
+	own:SetTexture("stone")
+	local hiddenArt = host:CreateTexture(nil, "OVERLAY")
+	hiddenArt:SetTexture("glow")
+	hiddenArt:Hide()
+
+	host.NineSlice = CreateFrame("Frame", nil, host)
+	local backdrop = host.NineSlice:CreateTexture(nil, "BACKGROUND")
+	backdrop:SetTexture("dialog-background")
+
+	local store = {}
+	R.Strip(host, store)
+	check(own:GetTexture() == 0 and not own:IsShown(),
+		"a texture is CLEARED, not merely hidden - a hidden one is one the"
+		.. " client can show again, and does")
+	check(backdrop:GetTexture() == 0,
+		"and the backdrop in a child frame goes with it, which GetRegions never"
+		.. " returns and is the whole reason a stripped dialog stayed opaque")
+
+	hiddenArt:Show()
+	R.Strip(host, store)
+	check(not hiddenArt:IsShown(),
+		"art revealed later is taken down on the next pass, rather than being"
+		.. " left because it was down when we first looked")
+
+	R.Restore(store)
+	check(own:GetTexture() == "stone" and own:IsShown(), "and it all goes back")
+	check(backdrop:GetTexture() == "dialog-background", "including the child frame's")
+	check(not hiddenArt:IsShown(),
+		"except what the client had hidden itself, which stays hidden - putting"
+		.. " everything back means as it WAS, not as much of it as possible")
+
+	-- Buttons: the four state textures, through the setters.
+	local btn = CreateFrame("Button", nil, UIParent)
+	btn:SetNormalTexture("up")
+	btn:SetPushedTexture("down")
+	R.ClearButton(btn)
+	check(btn:GetNormalTexture():GetTexture() == 0
+		and btn:GetPushedTexture():GetTexture() == 0,
+		"cleared through the setters - the client shows the pushed one on"
+		.. " mousedown and there is no moment of ours in between")
+	R.RestoreButton(btn)
+	check(btn:GetNormalTexture():GetTexture() == "up"
+		and btn:GetPushedTexture():GetTexture() == "down",
+		"and restored by name, because clearing is not undone by showing")
 end
 
 print("== palette: difficulty has one owner ==")
