@@ -37,6 +37,7 @@ local function usage()
 		"|cff9d7bff/aether bags|r <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		"|cff9d7bff/aether toolbox|r <dock left/right/top/bottom · open · close · pin NAME>",
+		"|cff9d7bff/aether errors|r <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
 end
@@ -274,6 +275,52 @@ handlers.fade = function(arg, rest)
 		A:Print(string.format("idle fade %s · delay %.1fs · idle alpha %.2f",
 			cfg.enabled and "on" or "off", cfg.delay, cfg.idleAlpha))
 	end
+end
+
+--- The last Lua errors, selectable.
+--
+--  The chat frame cannot be selected, so an error you can read is still one you
+--  cannot send anybody. `clear` empties the list; anything else opens the box.
+handlers.errors = function(arg)
+	if not A.Errors then
+		A:Print("errors: the catcher is not loaded")
+		return
+	end
+
+	-- /aether diag answers into the chat frame, which is the one place its
+	-- answer cannot be selected. Same information, somewhere you can copy it.
+	if arg == "diag" then
+		local body = A.Errors:Capture(function()
+			if handlers.diag then handlers.diag() end
+		end)
+		A.Errors:ShowText(A.Errors:Header() .. body)
+		return
+	end
+
+	if arg == "clear" then
+		for i = #A.Errors.log, 1, -1 do A.Errors.log[i] = nil end
+		A:Print("errors: cleared")
+		return
+	end
+
+	local n = #A.Errors.log
+	A.Errors:Show()
+	A:Print("errors: " .. n .. (n == 1 and " caught" or " caught")
+		.. " - Ctrl+A then Ctrl+C to copy")
+end
+
+handlers.error = handlers.errors
+
+--- The login line, on or off.
+handlers.greet = function(arg)
+	if arg == "on" or arg == "off" then
+		A.db.profile.greet = (arg == "on")
+	elseif arg == "test" then
+		A.__greeted = nil
+		A:Greet()
+		return
+	end
+	A:Print("greeting at login -> " .. (A.db.profile.greet and "on" or "off"))
 end
 
 handlers.zen = function(arg, rest)

@@ -51,6 +51,12 @@ Config.defaults = {
 		scale       = 1.0,
 		debug       = false,
 
+		-- One line at login saying which build this is. On by default: the
+		-- point of it is that a player reporting a bug can say what they are
+		-- running without being asked, and a greeting nobody sees does not do
+		-- that. /aether greet off for anyone who keeps a quiet chat frame.
+		greet       = true,
+
 		-- The concept deck draws player health green and reserves colour for
 		-- reaction. Class colouring is the common preference and reads faster in
 		-- a group, so it wins by default - but it is one switch either way, and

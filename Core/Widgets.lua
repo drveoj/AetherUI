@@ -126,12 +126,28 @@ end
 -- back and the string shrank for no visible reason.
 function W.Restyle(fs, style)
 	if not fs then return end
+
+	-- A client "label" is often a BUTTON with a string on it, not the string:
+	-- the skill tree's collapse headers are buttons, and they answer SetText
+	-- like a FontString while having no SetFont at all. Reach through to the
+	-- string rather than handing a button to the font setter.
+	if not fs.SetFont and fs.GetFontString then
+		fs = fs:GetFontString() or fs
+	end
+	if not fs.SetFont then return end
+
 	if style then fs._aetherStyle = style end
 	Media:SetFont(fs, style or fs._aetherStyle, fs._aetherSize)
 end
 
 function W.Color(fs, c)
 	if not fs or not c then return end
+	-- Same reach-through as Restyle: a button carrying a label has no
+	-- SetTextColor of its own.
+	if not fs.SetTextColor and fs.GetFontString then
+		fs = fs:GetFontString()
+	end
+	if not fs or not fs.SetTextColor then return end
 	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
 end
 
@@ -538,7 +554,12 @@ end
 function W.DecorateSlot(f, size, opts)
 	opts = opts or {}
 
-	local icon = f:CreateTexture(nil, "ARTWORK")
+	-- When the caller hands us the client's own icon we dress that one. Making
+	-- a second would leave Blizzard's underneath ours, still drawing.
+	local icon = opts.icon
+	if not icon then
+		icon = f:CreateTexture(nil, "ARTWORK")
+	end
 	icon:SetAllPoints(f)
 	-- Trim the 1px transparent gutter Blizzard bakes into every icon file.
 	icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
@@ -571,9 +592,13 @@ function W.DecorateSlot(f, size, opts)
 	glow:Hide()
 	f.glow = glow
 
-	local count = W.Text(f, "stack", "RIGHT")
-	count:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
-	f.count = count
+	-- A client button already has a count of its own, kept and re-roled by the
+	-- caller. Ours would sit on top of it, both showing the same number.
+	if opts.count ~= false then
+		local count = W.Text(f, "stack", "RIGHT")
+		count:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+		f.count = count
+	end
 
 	for k, v in pairs(Slot) do f[k] = v end
 	return f

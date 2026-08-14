@@ -806,6 +806,33 @@ function CreateFrame(kind, name, parent, template)
 		function f:SetReverse() end
 	end
 
+	-- A slider owns a thumb, and the client always gives it one. Leaving this
+	-- out let a skin "handle" a scroll bar by quietly doing nothing to the only
+	-- part of it anybody sees - green suite, stone thumb in the game.
+	if kind == "Slider" then
+		f.__thumb = newTexture(f, "ARTWORK")
+		function f:GetThumbTexture() return self.__thumb end
+		function f:SetThumbTexture(t)
+			if type(t) == "string" then self.__thumb.__tex = t else self.__thumb = t end
+		end
+		function f:SetOrientation() end
+		function f:SetValueStep() end
+	end
+
+	-- Same for a check button's tick. It exists whether or not the box is
+	-- checked, so a handler that only tints it when checked is a handler that
+	-- has never been run.
+	if kind == "CheckButton" then
+		f.__checked = newTexture(f, "OVERLAY")
+		f.__isChecked = false
+		function f:GetCheckedTexture() return self.__checked end
+		function f:SetCheckedTexture(t)
+			if type(t) == "string" then self.__checked.__tex = t else self.__checked = t end
+		end
+		function f:SetChecked(v) self.__isChecked = v and true or false end
+		function f:GetChecked() return self.__isChecked end
+	end
+
 	if kind == "StatusBar" then
 		f.__min, f.__max, f.__value = 0, 1, 1
 		f.__barTex = newTexture(f, "ARTWORK")
@@ -854,8 +881,15 @@ function CreateFrame(kind, name, parent, template)
 		function f:HasFocus() return self.__focus or false end
 		function f:SetTextInsets() end
 		function f:SetMaxLetters() end
-		function f:HighlightText() end
+		function f:HighlightText() self.__highlighted = true end
 		function f:SetCursorPosition() end
+		-- The client has these and a copy box needs every one of them: a box
+		-- that cannot go multi-line holds a stack trace on one line.
+		function f:SetMultiLine(v) self.__multiline = v and true or false end
+		function f:IsMultiLine() return self.__multiline or false end
+		function f:SetFontObject(o) self.__fontObject = o end
+		function f:GetFontObject() return self.__fontObject end
+		function f:Insert(s) self:SetText((self.__text or "") .. tostring(s or "")) end
 	end
 
 	if kind == "ScrollFrame" then
@@ -2361,6 +2395,164 @@ do
 		buildPanel(n)
 	end
 
+	-- The character sheet's insides.
+	--
+	-- Without these every loop in the interior skin iterates an empty list and
+	-- the suite reports success over code that has never run once. The shapes
+	-- are Blizzard's: a slot carries its item icon as a REGION of the button,
+	-- which is why stripping a slot would blank the item and leave the border
+	-- correctly gone.
+	do
+		local cf = _G.CharacterFrame
+
+		_G.NUM_FACTIONS_DISPLAYED = 3
+		_G.SKILLS_TO_DISPLAY = 3
+		_G.ITEM_QUALITY_COLORS = {
+			[0] = { r = 0.62, g = 0.62, b = 0.62 },
+			[1] = { r = 1.00, g = 1.00, b = 1.00 },
+			[2] = { r = 0.12, g = 1.00, b = 0.00 },
+			[3] = { r = 0.00, g = 0.44, b = 0.87 },
+			[4] = { r = 0.64, g = 0.21, b = 0.93 },
+		}
+
+		-- One epic, one uncommon, two empty. A single quality would exercise one
+		-- branch of the rim and look like coverage.
+		local QUALITY = { CharacterHeadSlot = 4, CharacterChestSlot = 2 }
+		local qualityByID = {}
+
+		local items = CreateFrame("Frame", "PaperDollItemsFrame", cf)
+		for id, slotName in ipairs({ "CharacterHeadSlot", "CharacterNeckSlot",
+			"CharacterChestSlot", "CharacterMainHandSlot" }) do
+			local b = CreateFrame("Button", slotName, items)
+			b.__id = id
+			function b:GetID() return self.__id end
+
+			local icon = b:CreateTexture(nil, "BACKGROUND")
+			icon:SetTexture("item-icon-" .. slotName)
+			_G[slotName .. "IconTexture"] = icon
+
+			b.Count = b:CreateFontString(nil, "OVERLAY")
+			_G[slotName .. "Count"] = b.Count
+
+			b:SetNormalTexture("slot-border")
+			qualityByID[id] = QUALITY[slotName]
+		end
+
+		function _G.GetInventoryItemQuality(unit, slotID)
+			if unit ~= "player" then return nil end
+			return qualityByID[slotID]
+		end
+
+		-- Exists so the skin has something to hook. The client calls it whenever
+		-- a slot's item changes, which is when our rim has to answer.
+		function _G.PaperDollItemSlotButton_Update(btn) end
+
+		-- Equip and unequip, so the hook can be shown to do something. A rim
+		-- that is only ever set once at dress time passes every static check.
+		function _G.__setSlotQuality(id, q) qualityByID[id] = q end
+
+		-- The client's own labels, because their LENGTH is the thing under test:
+		-- four tabs each measured generously to a word like "Reputation" is what
+		-- ran the row out past the right edge. "Tab1".."Tab4" always fits and
+		-- would have proved nothing.
+		for i, label in ipairs({ "Character", "Reputation", "Skills", "Honor" }) do
+			local t = CreateFrame("Button", "CharacterFrameTab" .. i, cf)
+			t:SetNormalTexture("tab-up")
+			t:SetDisabledTexture("tab-disabled")
+
+			-- Blizzard anchors its tabs; ours keeps the height and takes the
+			-- left. A mock tab with no point at all cannot show that.
+			t:SetPoint("TOPLEFT", cf, "BOTTOMLEFT", 11 + (i - 1) * 60, 76)
+
+			local fs = t:CreateFontString(nil, "OVERLAY")
+			fs:SetText(label)
+			_G["CharacterFrameTab" .. i .. "Text"] = fs
+		end
+
+		local model = CreateFrame("Frame", "CharacterModelFrame", cf)
+		model:CreateTexture(nil, "BORDER"):SetTexture("model-stone")
+		for _, key in ipairs({ "RotateLeftButton", "RotateRightButton" }) do
+			CreateFrame("Button", "CharacterModelFrame" .. key, model)
+				:SetNormalTexture("rotate-art")
+		end
+
+		for _, n in ipairs({ "PaperDollFrame", "PetPaperDollFrame",
+			"ReputationFrame", "SkillFrame", "HonorFrame",
+			"CharacterAttributesFrame", "PetAttributesFrame" }) do
+			CreateFrame("Frame", n, cf):CreateTexture(nil, "BORDER")
+				:SetTexture("pane-stone")
+		end
+
+		for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
+			for i = 1, 5 do
+				CreateFrame("Frame", prefix .. i, cf):CreateTexture(nil, "BORDER")
+					:SetTexture("res-stone")
+			end
+		end
+
+		for i = 1, _G.NUM_FACTIONS_DISPLAYED do
+			local bar = CreateFrame("StatusBar", "ReputationBar" .. i, cf)
+			CreateFrame("CheckButton", "ReputationBar" .. i .. "AtWarCheck", bar)
+				:SetNormalTexture("checkbox-up")
+		end
+
+		for i = 1, _G.SKILLS_TO_DISPLAY do
+			local bar = CreateFrame("StatusBar", "SkillRankFrame" .. i, cf)
+			_G["SkillRankFrame" .. i .. "Border"] = bar:CreateTexture(nil, "OVERLAY")
+			_G["SkillRankFrame" .. i .. "Border"]:SetTexture("skill-border")
+			_G["SkillRankFrame" .. i .. "Background"] = bar:CreateTexture(nil, "BACKGROUND")
+			_G["SkillRankFrame" .. i .. "Background"]:SetTexture("skill-backing")
+
+			-- The collapse header is a BUTTON carrying a string, not a string.
+			-- It answers SetText like a FontString and has no SetFont at all,
+			-- which is exactly how a "label" reached the font setter and took
+			-- the whole module down with it.
+			local label = CreateFrame("Button", "SkillTypeLabel" .. i, cf)
+			local fs = label:CreateFontString(nil, "OVERLAY")
+			fs:SetText("Class Skills")
+			label.__fs = fs
+			function label:GetFontString() return self.__fs end
+			function label:SetText(t) self.__fs:SetText(t) end
+		end
+
+		for _, n in ipairs({ "ReputationListScrollFrame", "SkillListScrollFrame",
+			"SkillDetailScrollFrame" }) do
+			local sf = CreateFrame("Frame", n, cf)
+			sf:CreateTexture(nil, "BORDER"):SetTexture("scroll-stone")
+
+			local sb = CreateFrame("Slider", n .. "ScrollBar", sf)
+			CreateFrame("Button", n .. "ScrollBarScrollUpButton", sb)
+				:SetNormalTexture("arrow-up")
+			CreateFrame("Button", n .. "ScrollBarScrollDownButton", sb)
+				:SetNormalTexture("arrow-down")
+		end
+
+		for _, n in ipairs({ "ReputationDetailAtWarCheckbox",
+			"ReputationDetailInactiveCheckbox",
+			"ReputationDetailMainScreenCheckbox" }) do
+			CreateFrame("CheckButton", n, cf):SetNormalTexture("checkbox-up")
+		end
+
+		for _, n in ipairs({ "SkillDetailStatusBar", "HonorFrameProgressBar",
+			"PetPaperDollFrameExpBar" }) do
+			CreateFrame("StatusBar", n, cf)
+		end
+
+		-- A second Close, in the middle of the skills list, doing what the one
+		-- in the corner already does.
+		local spare = CreateFrame("Button", "SkillFrameCancelButton", cf)
+		spare:SetNormalTexture("cancel-up")
+		spare:Show()
+
+		local who = cf:CreateFontString(nil, "OVERLAY")
+		who:SetText("Palabras")
+		_G.CharacterNameText = who
+
+		local rank = cf:CreateFontString(nil, "OVERLAY")
+		rank:SetText("Level 18 Undead Mage")
+		_G.CharacterLevelText = rank
+	end
+
 	-- Load on demand: absent until something asks for it.
 	-- Builds it only. Firing ADDON_LOADED is the caller's, because `fire` is
 	-- declared further down this file than this block runs.
@@ -2891,7 +3083,16 @@ strmatch, strfind, strsub, strlower, strupper, strrep, strjoin, strsplit =
 format, gsub, strtrim = string.format, string.gsub, function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 tinsert, tremove, tsort = table.insert, table.remove, table.sort
 max, min, abs, floor, ceil = math.max, math.min, math.abs, math.floor, math.ceil
-function geterrorhandler() return function(e) fail("errorhandler: " .. tostring(e)) end end
+-- A REAL pair, not a getter returning a fresh stub. The client keeps one
+-- handler and hands you the incumbent, which is the only way an addon can chain
+-- to whatever was there first - and a getter that invents a new function every
+-- call makes "did we chain or replace it?" an untestable question.
+local errorHandler = function(e) fail("errorhandler: " .. tostring(e)) end
+function geterrorhandler() return errorHandler end
+function seterrorhandler(fn)
+	if type(fn) ~= "function" then fail("seterrorhandler got " .. type(fn)) return end
+	errorHandler = fn
+end
 -- CallbackHandler dispatches through this; the real client provides it.
 function securecallfunction(fn, ...) return fn(...) end
 function securecall(fn, ...) return fn(...) end
@@ -3902,7 +4103,7 @@ print("== loading addon files ==")
 for _, f in ipairs({
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
-	"Core/Widgets.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
+	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
@@ -15749,6 +15950,128 @@ do
 		"on the client's own button, which is still the thing that closes the"
 		.. " window - nothing here is rebuilt or reparented")
 
+	-- THE INSIDES. A window is mostly not a window: the character sheet is item
+	-- slots, tabs, bars, lists and check boxes, and a shell in our glass with
+	-- Blizzard's stone furniture inside it is the worse of the two looks.
+	local head, neck = _G.CharacterHeadSlot, _G.CharacterNeckSlot
+
+	check(head.__aetherSlot == true, "an equipment slot wears our cell")
+	check(head:GetNormalTexture():GetTexture() == 0, "its stone border cleared")
+	check(_G.CharacterHeadSlotIconTexture:GetTexture() == "item-icon-CharacterHeadSlot",
+		"and THE ITEM IS STILL IN IT - the icon is a region of the button, so"
+		.. " stripping the slot would blank the item and leave the border"
+		.. " correctly gone, which is why Reskin.Slot must not strip")
+
+	local hr, hg, hb = head.edge:GetVertexColor()
+	local q = _G.ITEM_QUALITY_COLORS[4]
+	check(hr == q.r and hg == q.g and hb == q.b,
+		"an epic sits in a rim of its own quality")
+	local nr, ng, nb = neck.edge:GetVertexColor()
+	local e = A.Palette.c.glassEdge
+	check(nr == e[1] and ng == e[2] and nb == e[3],
+		"and an empty slot keeps the ordinary rim - colouring every slot would"
+		.. " make the colour mean nothing")
+
+	-- The rim has to answer the client, not just the dressing. Unequip it.
+	_G.__setSlotQuality(1, nil)
+	_G.PaperDollItemSlotButton_Update(head)
+	hr, hg, hb = head.edge:GetVertexColor()
+	check(hr == e[1] and hg == e[2] and hb == e[3],
+		"take the item off and the rim follows, because the client repaints a"
+		.. " slot whenever its item changes and a rim set once at dress time"
+		.. " would keep an epic border around an empty slot")
+	_G.__setSlotQuality(1, 4)
+
+	check(_G.CharacterFrameTab1.__aetherTab ~= nil, "a tab gets our pill")
+	check(_G.CharacterFrameTab1:GetNormalTexture():GetTexture() == 0
+		and _G.CharacterFrameTab1:GetDisabledTexture():GetTexture() == 0,
+		"with BOTH its art sets cleared - Blizzard draws a tab in three pieces"
+		.. " and keeps a whole second set for the disabled state")
+	check(_G.CharacterFrameTab1Text._aetherStyle ~= nil, "and its label in our type")
+
+	check(_G.PaperDollFrame:GetRegions():GetTexture() == 0,
+		"the panes inside lose their stone as well")
+
+	check(_G.ReputationBar1.__aetherFill ~= nil, "a reputation bar takes our fill")
+	check(_G.ReputationBar1:GetStatusBarTexture():GetTexture() == A.Media.texture.bar,
+		"set AFTER the strip, which empties the fill along with everything else")
+
+	local thumb = _G.ReputationListScrollFrameScrollBar:GetThumbTexture()
+	check(thumb:GetTexture() == A.Media.texture.flat,
+		"a scroll bar's thumb is ours - the one part of a scroll bar anybody"
+		.. " actually looks at")
+
+	check(_G.ReputationDetailAtWarCheckbox.__aetherCheck ~= nil,
+		"and a check box gets a pill")
+	check(_G.CharacterNameText._aetherStyle == "tbTitle",
+		"the character's name is re-roled")
+
+	check(_G.SkillTypeLabel1:GetFontString()._aetherStyle ~= nil,
+		"a skill tree's collapse header is re-roled THROUGH the button - it is a"
+		.. " Button carrying a string, answers SetText like a FontString, and"
+		.. " has no SetFont, so handing it straight to the font setter took the"
+		.. " whole module down with a nil call")
+
+	check(not _G.SkillFrameCancelButton:IsShown(),
+		"the spare Close in the middle of the skills list is gone - the corner"
+		.. " already has one and two of them is one too many")
+
+	-- INSETS. A client frame is bigger than the window you can see: its art
+	-- carries wide transparent margins and it reserves room below for the tabs.
+	local px, _, _, ox, oy = cf.__aetherPanel:GetPoint(1)
+	check(px == "TOPLEFT" and ox ~= 0 and oy ~= 0,
+		"the glass is inset to the visible window rather than the frame's full"
+		.. " extent, which is what left a slab of padding down the right")
+
+	-- TABS. Blizzard's overlap on purpose and the art hides the join; with the
+	-- art gone the overlap is the only thing you can see.
+	local t1, t2 = _G.CharacterFrameTab1, _G.CharacterFrameTab2
+	local tp, trel = t2:GetPoint(1)
+	check(tp == "LEFT" and trel == t1,
+		"each tab is chained off the one before it with a gap of ours")
+	check(t2:GetWidth() > 0, "and measured to its own label (" .. t2:GetWidth() .. ")")
+
+	-- IT HAS TO FIT. Four tabs each sized generously to their own label ran
+	-- straight out past the right edge of the window.
+	local total, count = 0, 0
+	local tn = 1
+	while _G["CharacterFrameTab" .. tn] do
+		total = total + _G["CharacterFrameTab" .. tn]:GetWidth()
+		count = count + 1
+		tn = tn + 1
+	end
+	total = total + 6 * (count - 1)                 -- the gaps between them
+	local room = cf:GetWidth() - 30 - 10 - 16       -- insets, less a margin each side
+	check(total <= room + 0.5,
+		"and the whole row fits inside the window (" .. string.format("%.1f", total)
+		.. " of " .. string.format("%.1f", room) .. ") - measuring each tab to"
+		.. " its label is only right while the row still fits")
+
+	local _, trel1, trelP1, tx1 = t1:GetPoint(1)
+	check(tx1 == 18,
+		"and the row starts where the glass does rather than where Blizzard's"
+		.. " own tab widths put it (x=" .. tostring(tx1) .. ")")
+
+	-- The client marks the OPEN tab by disabling it, which reads backwards
+	-- until you know it.
+	t1:Disable()
+	fire("PLAYER_ENTERING_WORLD")
+	check(t1.__aetherTab:GetAlpha() > t2.__aetherTab:GetAlpha(),
+		"the open tab reads brighter than the rest (" .. t1.__aetherTab:GetAlpha()
+		.. " vs " .. t2.__aetherTab:GetAlpha() .. ") - without this every tab"
+		.. " looks equally selected and the sheet never says which one you are on")
+	t1:Enable()
+
+	-- SCALE. Every other frame of ours is drawn at profile.scale.
+	local wasScale = A.db.profile.scale
+	A.db.profile.scale = 0.8
+	fire("PLAYER_ENTERING_WORLD")
+	check(cf:GetScale() == 0.8,
+		"the window honours profile.scale, rather than being the one thing on"
+		.. " screen still at the client's size")
+	A.db.profile.scale = wasScale
+	fire("PLAYER_ENTERING_WORLD")
+
 	-- LOAD ON DEMAND. Half of these do not exist at login; they arrive with
 	-- their own addon the first time you open them, and a list walked once at
 	-- startup would never see them.
@@ -17290,6 +17613,132 @@ do
 	local back = _G.GameTooltipText:GetFont()
 	check(back and back:find("Outfit"), "and Outfit back")
 	check(_G.GameTooltipStatusBar:GetHeight() == 7, "and the hairline back")
+end
+
+print("== greeting: which build is this, without being asked ==")
+do
+	local said = A.Errors:Capture(function()
+		A.__greeted = nil
+		A:Greet()
+	end)
+	check(said:find(A.version, 1, true) ~= nil,
+		"login says which build this is (" .. A.version .. ") - the point is a"
+		.. " player can report it without being asked first")
+	check(said:find("/aether help", 1, true) ~= nil,
+		"and points at /aether HELP for the command list - bare /aether opens"
+		.. " the settings panel, so sending people there 'for commands' sends"
+		.. " them somewhere that lists none")
+	-- And it is a real command. A greeting that names one which does nothing is
+	-- worse than no greeting: it is the first thing a new player types.
+	local helped = A.Errors:Capture(function()
+		SlashCmdList["AETHERUI"]("help")
+	end)
+	check(helped:find("/aether", 1, true) ~= nil,
+		"and /aether help actually lists the commands")
+
+	local lines = 0
+	for _ in said:gmatch("[^\n]+") do lines = lines + 1 end
+	check(lines <= 2,
+		"in two lines, not a banner (" .. lines .. ") - a greeting long enough"
+		.. " to scroll the chat frame is one people turn off")
+
+	-- Said once. Boot runs on ADDON_LOADED and again on PLAYER_LOGIN.
+	local again = A.Errors:Capture(function() A:Greet() end)
+	check(again == "", "and only once, however many times boot runs")
+
+	local was = A.db.profile.greet
+	A.db.profile.greet = false
+	local quiet = A.Errors:Capture(function()
+		A.__greeted = nil
+		A:Greet()
+	end)
+	check(quiet == "", "off means silent")
+	A.db.profile.greet = was
+end
+
+print("== errors: an error you cannot copy is an error you cannot send anybody ==")
+do
+	local Errors = A.Errors
+	check(Errors ~= nil, "the catcher is loaded")
+
+	-- Stand a handler of our own in first, the way BugSack or the client's own
+	-- would be, and check we end up BEHIND it rather than on top of it.
+	local seen = {}
+	seterrorhandler(function(e) seen[#seen + 1] = tostring(e) end)
+
+	Errors.installed = false
+	for i = #Errors.log, 1, -1 do Errors.log[i] = nil end
+	check(Errors:Install() == true, "it installs")
+
+	local handler = geterrorhandler()
+	handler("Interface/AddOns/Thing/Thing.lua:12: attempt to index a nil value")
+	check(#Errors.log == 1, "an error is caught")
+	check(#seen == 1,
+		"AND PASSED ON to the handler that was already there - swallowing it"
+		.. " would blind every other tool on the machine, which is worse than"
+		.. " the problem this solves")
+
+	-- A tick loop throws the same line every frame. Twelve copies of it is a
+	-- box with one error in it and no room for the one before.
+	handler("Interface/AddOns/Thing/Thing.lua:12: attempt to index a nil value")
+	check(#Errors.log == 1 and Errors.log[1].count == 2,
+		"the same error twice running is counted, not repeated (x"
+		.. Errors.log[1].count .. ")")
+
+	for i = 1, 40 do handler("distinct error " .. i) end
+	check(#Errors.log <= 12, "and the list is capped (" .. #Errors.log .. ")")
+	check(Errors.log[1].text == "distinct error 40",
+		"newest first - the last thing that broke is the thing you came to read")
+
+	-- The handler runs INSIDE the client's error path. Anything it raises comes
+	-- straight back to it, and the client does not break that loop for you.
+	local realInsert = table.insert
+	table.insert = function() error("deliberate") end
+	local ok = pcall(handler, "an error while we are already handling one")
+	table.insert = realInsert
+	check(ok,
+		"and the catcher never raises out of the error path itself - it runs"
+		.. " INSIDE the client's error handling, so anything it throws arrives"
+		.. " back at the thing that threw it and the client does not break that"
+		.. " loop for you")
+
+	local text = Errors:Text()
+	check(text:find("distinct error 40", 1, true) ~= nil,
+		"the box carries the actual message, ready to select")
+
+	-- A bug report without a version is a report about some build or other.
+	check(text:find(A.version, 1, true) ~= nil,
+		"and the version is at the top of it (" .. A.version .. ") - the first"
+		.. " question about any report is which build it came from")
+
+	-- /aether diag answers into the chat frame, the one place its answer cannot
+	-- be selected.
+	local grabbed = Errors:Capture(function()
+		A:Print("|cff9d7bffcoloured|r line one")
+		if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("line two") end
+	end)
+	check(grabbed:find("line one", 1, true) and grabbed:find("line two", 1, true),
+		"chat output can be captured into the box - BOTH ways this addon writes"
+		.. " a line, because diag uses one and everything else uses the other")
+	check(grabbed:find("|cff", 1, true) == nil,
+		"with the colour codes stripped: they are for a chat frame, not for a"
+		.. " paste into a bug report")
+
+	-- Whatever happens in there, chat has to work afterwards.
+	local before = A.Print
+	pcall(function() Errors:Capture(function() error("deliberate") end) end)
+	check(A.Print == before,
+		"and a capture that blows up still puts Print back - losing it would"
+		.. " silence every message the addon makes for the rest of the session")
+
+	Errors:ShowText("copy me")
+	check(Errors.frame:IsShown() and Errors.frame.box:GetText() == "copy me",
+		"and any text at all can be put in it")
+	Errors.frame:Hide()
+
+	-- Put the strict one back for whatever runs after this.
+	seterrorhandler(function(e) fail("errorhandler: " .. tostring(e)) end)
+	Errors.installed = false
 end
 
 print("")

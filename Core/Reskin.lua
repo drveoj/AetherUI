@@ -42,9 +42,9 @@ local ADDON, A = ...
 local Reskin = {}
 A.Reskin = Reskin
 
--- Art a frame keeps in child frames rather than in its own regions. ElvUI's
--- list, because it is the one maintained against every flavour of this client
--- for a decade.
+-- Art a frame keeps in child frames rather than in its own regions. These are
+-- Blizzard's own field names - what the client calls the parts of its frames -
+-- collected by looking at what actually turns up on them.
 local ART_CHILDREN = {
 	"Inset", "inset", "InsetFrame", "LeftInset", "RightInset",
 	"NineSlice", "BG", "Bg", "border", "Border", "Background", "BorderFrame",
@@ -200,7 +200,18 @@ function Reskin.Panel(frame, opts)
 		fill = opts.fill or "dialogFill",
 		edge = opts.edge or "glassEdgeHi",
 	})
-	panel:SetAllPoints(frame)
+	-- A client frame is bigger than the window you can see. Blizzard's art has
+	-- wide transparent margins baked into it - and room below for the tab strip
+	-- - so glass at the frame's full extent reads as a slab of padding on the
+	-- right and underneath. `insets` is { left, top, right, bottom } as SetPoint
+	-- offsets, per frame, because every one of them is padded differently.
+	local i = opts.insets
+	if i then
+		panel:SetPoint("TOPLEFT", frame, "TOPLEFT", i[1] or 0, i[2] or 0)
+		panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", i[3] or 0, i[4] or 0)
+	else
+		panel:SetAllPoints(frame)
+	end
 	panel:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
 
 	frame.__aetherPanel = panel
@@ -234,6 +245,141 @@ function Reskin.ReleaseButton(btn)
 		btn.__aetherPill = nil
 	end
 	Reskin.RestoreButton(btn)
+end
+
+-- ---------------------------------------------------------------------------
+-- elements
+-- ---------------------------------------------------------------------------
+--
+-- The panels are mostly not panels. A character sheet is item slots, tabs,
+-- reputation bars, a scroll bar and a dozen check boxes, and each kind wants
+-- the same treatment wherever it turns up. These are that treatment; a module
+-- says which widgets, not how.
+
+--- One of the client's item slots, wearing the cell our bags already use.
+--
+--  NOT stripped. Strip zeroes every texture region it finds, and on a slot one
+--  of those regions is the ITEM'S OWN ICON - it would come back empty with the
+--  border still gone. A slot's art is its border, which is the normal texture,
+--  which is ClearButton's job.
+function Reskin.Slot(btn, opts)
+	if not btn or btn.__aetherSlot then return end
+	opts = opts or {}
+
+	Reskin.ClearButton(btn)
+
+	local icon = Reskin.Element(btn, "IconTexture") or btn.icon
+	local size = opts.size or (btn.GetWidth and btn:GetWidth()) or 36
+	A.Widgets.DecorateSlot(btn, size, { icon = icon, count = false })
+
+	-- The client's own count, re-roled rather than replaced.
+	local count = Reskin.Element(btn, "Count")
+	if count and count.SetText then
+		A.Widgets.Restyle(count, "stack")
+		A.Widgets.Color(count, A.Palette.c.text)
+	end
+
+	btn.__aetherSlot = true
+end
+
+--- A tab along the bottom of a client panel.
+--
+--  Blizzard draws these in three pieces - left cap, stretched middle, right cap
+--  - plus a disabled set of all three, so there is no single texture to swap.
+--  All six come off and a pill goes behind.
+function Reskin.Tab(tab, store)
+	if not tab or tab.__aetherTab then return end
+
+	Reskin.ClearButton(tab)
+	if store then Reskin.Strip(tab, store) end
+
+	local pill = A.Glass.CreatePill(tab, { fill = "glass", edge = "glassEdgeHi" })
+	pill:SetPoint("TOPLEFT", tab, "TOPLEFT", 2, -2)
+	pill:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -2, 2)
+	pill:SetFrameLevel(math.max(0, tab:GetFrameLevel() - 1))
+	tab.__aetherTab = pill
+
+	local text = Reskin.Element(tab, "Text")
+		or (tab.GetFontString and tab:GetFontString())
+	if text and text.SetText then
+		A.Widgets.Restyle(text, "tbCardTitle")
+		A.Widgets.Color(text, A.Palette.c.text)
+	end
+	return pill
+end
+
+--- One of the client's status bars in our fill.
+function Reskin.StatusBar(bar, store, opts)
+	if not bar or bar.__aetherFill then return end
+	opts = opts or {}
+
+	if store then Reskin.Strip(bar, store) end
+
+	-- After the strip: the strip empties the fill texture along with the rest.
+	if bar.SetStatusBarTexture then bar:SetStatusBarTexture(A.Media.texture.bar) end
+
+	local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+	if fill and opts.color and fill.SetVertexColor then
+		local c = opts.color
+		fill:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+	end
+
+	local bg = bar:CreateTexture(nil, "BACKGROUND")
+	bg:SetTexture(A.Media.texture.flat)
+	bg:SetAllPoints(bar)
+	bg:SetVertexColor(1, 1, 1, opts.bgAlpha or 0.14)
+
+	bar.__aetherFill = bg
+	return bg
+end
+
+--- A scroll bar: rail and arrows stripped, thumb down to a hairline.
+function Reskin.ScrollBar(bar, store)
+	if not bar or bar.__aetherScroll then return end
+
+	if store then Reskin.Strip(bar, store) end
+
+	for _, key in ipairs({ "ScrollUpButton", "ScrollDownButton" }) do
+		local btn = Reskin.Element(bar, key)
+		if btn then
+			Reskin.ClearButton(btn)
+			if store then Reskin.Strip(btn, store) end
+		end
+	end
+
+	local thumb = bar.GetThumbTexture and bar:GetThumbTexture()
+	if thumb then
+		thumb:SetTexture(A.Media.texture.flat)
+		local c = A.Palette.c.textFaint
+		thumb:SetVertexColor(c[1], c[2], c[3], 0.55)
+		if thumb.SetWidth then thumb:SetWidth(A:Px(4)) end
+	end
+
+	bar.__aetherScroll = true
+end
+
+--- A check box: box art off, the tick kept and re-tinted.
+--
+--  The tick is the one part worth keeping - it reads as a tick at any size and
+--  nothing of ours would read better. Only the box around it goes.
+function Reskin.CheckBox(box, store)
+	if not box or box.__aetherCheck then return end
+
+	Reskin.ClearButton(box)
+	if store then Reskin.Strip(box, store) end
+
+	local pill = A.Glass.CreatePill(box, { fill = "glass", edge = "glassEdgeHi" })
+	pill:SetAllPoints(box)
+	pill:SetFrameLevel(math.max(0, box:GetFrameLevel() - 1))
+
+	local checked = box.GetCheckedTexture and box:GetCheckedTexture()
+	if checked and checked.SetVertexColor then
+		local c = A.Palette.c.text
+		checked:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+	end
+
+	box.__aetherCheck = pill
+	return pill
 end
 
 --- Hand the client its frame back: our surface away, its art returned.

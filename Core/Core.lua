@@ -405,6 +405,24 @@ local function Boot()
 	if A.Options then pcall(A.Options.Register, A.Options) end
 end
 
+--- One line at login: which build this is, and where to go next.
+--
+--  So a player reporting a bug can say what they are running without being
+--  asked first, which is the whole point of it. Two lines, not a banner - a
+--  greeting long enough to scroll the chat frame is one people turn off.
+function A:Greet()
+	if A.db and A.db.profile and A.db.profile.greet == false then return end
+	if A.__greeted then return end
+	A.__greeted = true
+
+	A:Print("v" .. (A.version or "?") .. " loaded  ·  skin |cffece6ff"
+		.. ((A.Palette and A.Palette.current) or "?") .. "|r")
+	-- Bare /aether opens the settings panel, so pointing at it "for commands"
+	-- sends people somewhere that does not list any.
+	A:Print("|cff9d7bff/aether|r settings  ·  |cff9d7bff/aether help|r commands"
+		.. "  ·  |cff9d7bff/aether errors|r bug report")
+end
+
 A:RegisterEvent(A, "ADDON_LOADED", function(_, _, addon)
 	if addon == ADDON then Boot() end
 end)
@@ -413,6 +431,13 @@ A:RegisterEvent(A, "PLAYER_LOGIN", function()
 	Boot()
 	A:UpdatePixelScale()
 	A:Reconfigure()
+
+	-- Catch errors from here on. At login rather than at load, so anything else
+	-- that wants the handler has had its chance to take it and we chain to it
+	-- rather than over it.
+	if A.Errors then A.Errors:Install() end
+
+	A:Greet()
 end)
 
 A:RegisterEvent(A, "UI_SCALE_CHANGED", function()

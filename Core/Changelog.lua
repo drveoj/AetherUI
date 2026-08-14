@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.5.0",
+		date    = "2026-08-14",
+		lines   = {
+			"The character sheet is in glass: equipment slots wear the same cells as your bags, with a rim in the item's quality colour.",
+			"Its tabs fit the window now, and the one you are on reads brighter than the rest.",
+			"/aether errors opens the last Lua errors in a box you can select and copy, with the build already at the top of it.",
+			"/aether errors diag puts the same report in that box, ready to paste.",
+			"AetherUI says which build it is at login. /aether greet off if you would rather it did not.",
+		},
+	},
+	{
 		version = "0.4.11",
 		date    = "2026-08-13",
 		lines   = {
