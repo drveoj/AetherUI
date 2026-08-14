@@ -147,11 +147,18 @@ end
 -- the box
 -- ---------------------------------------------------------------------------
 
+local DIALOG_W, DIALOG_H = 720, 420
+-- The scroll child's width: the dialog, less the left inset, less the right one
+-- and the rail's channel.
+local BOX_W    = DIALOG_W - 18 - 26 - 8
+local RAIL_MIN = 24        -- a thumb shorter than this is not a grip
+local RAIL_STEP = 44       -- one wheel notch
+
 local function Build()
 	if Errors.frame then return Errors.frame end
 
 	local f = CreateFrame("Frame", ADDON .. "ErrorFrame", UIParent)
-	f:SetSize(720, 420)
+	f:SetSize(DIALOG_W, DIALOG_H)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("DIALOG")
 	f:Hide()
@@ -177,22 +184,97 @@ local function Build()
 	hint:SetText("Ctrl+A then Ctrl+C. Escape closes.")
 	W.Color(hint, Palette.c.textDim)
 
+	-- A SCROLL FRAME AROUND IT, because a diag runs to eighty lines.
+	--
+	-- The box used to be anchored straight to the dialog, so everything past
+	-- the fortieth line was drawn outside it: selected by Ctrl+A and copied
+	-- correctly, and invisible. Which is the worst way for this to fail - the
+	-- report you paste is complete and the one you can read is not.
+	local scroll = CreateFrame("ScrollFrame", ADDON .. "ErrorScroll", f)
+	scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -56)
+	scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 18)
+	f.scroll = scroll
+
 	-- An EditBox, because it is the only thing in this client whose text can be
 	-- selected. Not editable in any useful sense - it is a clipboard with a
 	-- window.
-	local box = CreateFrame("EditBox", ADDON .. "ErrorBox", f)
-	box:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -56)
-	box:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 18)
+	local box = CreateFrame("EditBox", ADDON .. "ErrorBox", scroll)
 	box:SetMultiLine(true)
 	box:SetAutoFocus(false)
 	box:SetMaxLetters(0)
 	box:SetTextInsets(4, 4, 4, 4)
+	-- A SCROLL CHILD HAS TO BE TOLD ITS WIDTH. It is not anchored to anything,
+	-- so it has none of its own, and a multiline box with no width puts the
+	-- whole report on one line.
+	box:SetWidth(BOX_W)
 	if box.SetFontObject then box:SetFontObject("ChatFontNormal") end
 	box:SetScript("OnEscapePressed", function(self)
 		self:ClearFocus()
 		f:Hide()
 	end)
+	scroll:SetScrollChild(box)
 	f.box = box
+
+	-- The rail. Drawn rather than borrowed: this is a dialog of ours and there
+	-- is no client scroll bar in it to reskin. Same reasoning as the skill
+	-- list's - a surface you can scroll with no sign of it reads as one that
+	-- ends where the text stops, and here that is the difference between "the
+	-- diag says this" and "the diag says this, and more".
+	local track = f:CreateTexture(nil, "ARTWORK")
+	track:SetTexture(A.Media.texture.flat)
+	track:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -56)
+	track:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 18)
+	track:SetWidth(A:Px(4))
+	local tf = Palette.c.textFaint
+	track:SetVertexColor(tf[1], tf[2], tf[3], 0.22)
+	f.track = track
+
+	local thumb = f:CreateTexture(nil, "OVERLAY")
+	thumb:SetTexture(A.Media.texture.flat)
+	thumb:SetWidth(A:Px(4))
+	local tc = Palette.c.text
+	thumb:SetVertexColor(tc[1], tc[2], tc[3], 0.45)
+	f.thumb = thumb
+
+	--- Where the rail's thumb goes, and whether there is a rail at all.
+	local function UpdateRail()
+		local view = scroll:GetHeight() or 0
+		local full = box:GetHeight() or 0
+		local range = full - view
+
+		-- Nothing to scroll to is nothing to draw. A rail on a five-line report
+		-- is a control that does not do anything.
+		if range <= 1 or view <= 0 then
+			track:Hide()
+			thumb:Hide()
+			return
+		end
+		track:Show()
+		thumb:Show()
+
+		local h = math.max(RAIL_MIN, view * (view / full))
+		thumb:SetHeight(h)
+
+		local at = math.min(1, math.max(0, (scroll:GetVerticalScroll() or 0) / range))
+		thumb:ClearAllPoints()
+		thumb:SetPoint("TOP", track, "TOP", 0, -(view - h) * at)
+	end
+	f.UpdateRail = UpdateRail
+
+	scroll:EnableMouseWheel(true)
+	scroll:SetScript("OnMouseWheel", function(self, delta)
+		local max = math.max(0, (box:GetHeight() or 0) - (self:GetHeight() or 0))
+		local v = (self:GetVerticalScroll() or 0) - delta * RAIL_STEP
+		if v < 0 then v = 0 elseif v > max then v = max end
+		self:SetVerticalScroll(v)
+		UpdateRail()
+	end)
+
+	-- OnScrollRangeChanged rather than a call after SetText: a multiline box's
+	-- height is worked out by the client when it lays the text out, which is not
+	-- the moment we hand it the string. This is the event that says it has.
+	scroll:SetScript("OnScrollRangeChanged", UpdateRail)
+	scroll:SetScript("OnVerticalScroll", UpdateRail)
 
 	local close = W.Text(f, "tbCardTitle", "CENTER")
 	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -14)
@@ -213,8 +295,12 @@ function Errors:ShowText(text)
 	local f = Build()
 	f.box:SetText(text or "")
 	f.box:HighlightText()
+	-- Back to the top. A second report opened where the last one was left
+	-- scrolled to, which reads as a box that has lost its first ten lines.
+	f.scroll:SetVerticalScroll(0)
 	f:Show()
 	f.box:SetFocus()
+	if f.UpdateRail then f.UpdateRail() end
 	return f
 end
 

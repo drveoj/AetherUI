@@ -638,8 +638,18 @@ function CreateFrame(kind, name, parent, template)
 		end
 	end
 
+	-- HONOURS THE NAME, like CreateFontString beside it. A named texture is a
+	-- global on the real client, and Blizzard's own code reaches for its art
+	-- that way constantly - PlayerTalentFrameBackgroundTopLeft, a talent's Slot,
+	-- a skill row's Border. Throwing the name away here meant a mock frame whose
+	-- art could only be found by walking its regions, which is not how the code
+	-- under test finds it.
 	function f:CreateTexture(n, layer, tmpl, sub)
 		local t = newTexture(self, layer, sub)
+		if n then
+			t.__name = n
+			_G[n] = t
+		end
 		self.__regions[#self.__regions + 1] = t
 		return t
 	end
@@ -899,6 +909,32 @@ function CreateFrame(kind, name, parent, template)
 		-- that cannot go multi-line holds a stack trace on one line.
 		function f:SetMultiLine(v) self.__multiline = v and true or false end
 		function f:IsMultiLine() return self.__multiline or false end
+
+		-- A MULTILINE BOX GROWS WITH ITS TEXT, which is the whole reason one
+		-- goes in a scroll frame. A mock whose height never changed made a
+		-- report of five lines and a report of eighty the same size, so nothing
+		-- could tell whether the box needed scrolling - and eighty lines were
+		-- being drawn outside the dialog, copied correctly and invisible.
+		local plainSetText, plainGetHeight = f.SetText, f.GetHeight
+		function f:SetText(s)
+			plainSetText(self, s)
+			if not self.__multiline then return end
+			local lines = 1
+			for _ in tostring(s or ""):gmatch("\n") do lines = lines + 1 end
+			self.__textH = lines * 14
+			-- The client works the height out while laying the text out and
+			-- tells the scroll frame afterwards, which is why nothing can just
+			-- measure it straight after SetText.
+			local p = self:GetParent()
+			if p and p.__scrollChild == self then
+				local fn = p.__scripts and p.__scripts.OnScrollRangeChanged
+				if fn then fn(p) end
+			end
+		end
+		function f:GetHeight()
+			if self.__multiline and self.__textH then return self.__textH end
+			return plainGetHeight(self)
+		end
 		function f:SetFontObject(o) self.__fontObject = o end
 		function f:GetFontObject() return self.__fontObject end
 		function f:Insert(s) self:SetText((self.__text or "") .. tostring(s or "")) end
@@ -906,9 +942,17 @@ function CreateFrame(kind, name, parent, template)
 
 	if kind == "ScrollFrame" then
 		f.__vscroll = 0
-		function f:SetScrollChild(c) self.__scrollChild = c end
+		function f:SetScrollChild(c)
+			self.__scrollChild = c
+			local fn = self.__scripts and self.__scripts.OnScrollRangeChanged
+			if fn then fn(self) end
+		end
 		function f:GetScrollChild() return self.__scrollChild end
-		function f:SetVerticalScroll(v) self.__vscroll = v end
+		function f:SetVerticalScroll(v)
+			self.__vscroll = v
+			local fn = self.__scripts and self.__scripts.OnVerticalScroll
+			if fn then fn(self, v) end
+		end
 		function f:GetVerticalScroll() return self.__vscroll end
 		function f:SetHorizontalScroll(v) self.__hscroll = v end
 		function f:GetHorizontalScroll() return self.__hscroll or 0 end
@@ -2131,6 +2175,18 @@ end
 -- knows a frame called EnxMiniMapIcon belongs to Enchantrix - nothing about the
 -- two names says so. A mock that answered only "secure or not" made that
 -- unaskable, and the drawer listed the same addon twice under two names.
+--- The call stack, as the client hands it back.
+--
+--  Canned rather than real, because what is under test is not Lua's stack - it
+--  is that the first line which is NOT ours is the one written down. Our own
+--  frames always sit between a SetPoint and whoever asked for it, so a log that
+--  reported the top of the stack would name this addon every time and answer
+--  nothing.
+_G.__stack = ""
+function debugstack(start, count, extra)
+	return _G.__stack or ""
+end
+
 _G.__taintedBy = {}
 function issecurevariable(a, b)
 	local name = b or a
@@ -2896,11 +2952,159 @@ do
 		end
 	end
 
+	-- The talent tree's insides, built when its addon turns up.
+	--
+	-- THE BRANCHES AND ARROWS ARE THE POINT. They are regions of the scroll
+	-- child and of the arrow frame, and they are the only thing saying which
+	-- talent depends on which - so a strip of either frame leaves forty
+	-- unconnected icons and a suite that never noticed.
+	--
+	-- The Slot texture is the other one to get right: the client uses it to say
+	-- what state a talent is in, in colour - green for a point you can spend,
+	-- gold for finished, grey for neither - and it re-says it on every update.
+	function _G.__buildTalentInsides()
+		local tf = _G.PlayerTalentFrame
+		if not tf or tf.__insides then return end
+		tf.__insides = true
+		tf:SetSize(384, 512)
+
+		local scroll = CreateFrame("ScrollFrame", "PlayerTalentFrameScrollFrame", tf)
+		for _, part in ipairs({ "TopLeft", "TopRight", "BottomLeft", "BottomRight" }) do
+			local t = scroll:CreateTexture("PlayerTalentFrameBackground" .. part, "BORDER")
+			t:SetTexture("Interface\\TalentFrame\\HunterBeastMastery-" .. part)
+		end
+
+		local sb = CreateFrame("Slider", "PlayerTalentFrameScrollFrameScrollBar", scroll)
+		CreateFrame("Button", "PlayerTalentFrameScrollFrameScrollBarScrollUpButton", sb)
+			:SetNormalTexture("arrow-up")
+		CreateFrame("Button", "PlayerTalentFrameScrollFrameScrollBarScrollDownButton", sb)
+			:SetNormalTexture("arrow-down")
+
+		local child = CreateFrame("Frame", "PlayerTalentFrameScrollChildFrame", scroll)
+		for i = 1, 30 do
+			local t = child:CreateTexture("PlayerTalentFrameBranch" .. i, "BACKGROUND")
+			t:SetTexture("Interface\\TalentFrame\\UI-TalentBranches")
+		end
+
+		local arrows = CreateFrame("Frame", "PlayerTalentFrameArrowFrame", child)
+		for i = 1, 30 do
+			local t = arrows:CreateTexture("PlayerTalentFrameArrow" .. i, "OVERLAY")
+			t:SetTexture("Interface\\TalentFrame\\UI-TalentArrows")
+		end
+
+		-- Three talents, one per state, because a tree in one state proves one
+		-- branch of the rim and looks like coverage.
+		local STATE = {
+			[1] = { 0.1, 1.0, 0.1 },       -- a point can go here
+			[2] = { 1.0, 0.82, 0.0 },      -- finished
+			[3] = { 0.5, 0.5, 0.5 },       -- not yet
+		}
+		for i = 1, 40 do
+			local b = CreateFrame("Button", "PlayerTalentFrameTalent" .. i, child)
+			b:SetSize(32, 32)
+
+			local icon = b:CreateTexture(nil, "BORDER")
+			icon:SetTexture("talent-icon-" .. i)
+			_G["PlayerTalentFrameTalent" .. i .. "IconTexture"] = icon
+
+			-- The stone ring behind the icon, and the state the client says in
+			-- its vertex colour.
+			local slot = b:CreateTexture("PlayerTalentFrameTalent" .. i .. "Slot", "BACKGROUND")
+			slot:SetTexture("Interface\\Buttons\\UI-EmptySlot-White")
+			local s = STATE[i] or STATE[3]
+			slot:SetVertexColor(s[1], s[2], s[3])
+
+			local border = b:CreateTexture("PlayerTalentFrameTalent" .. i .. "RankBorder", "OVERLAY")
+			border:SetTexture("Interface\\TalentFrame\\TalentFrame-RankBorder")
+			if i == 3 then border:Hide() end
+
+			local rank = b:CreateFontString("PlayerTalentFrameTalent" .. i .. "Rank", "OVERLAY")
+			rank:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			rank:SetText(tostring((i == 2) and 5 or 2))
+
+			b:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
+		end
+
+		for _, n in ipairs({ "PlayerTalentFrameStatusFrame", "PlayerTalentFramePointsBar",
+			"PlayerTalentFramePreviewBar", "PlayerTalentFramePreviewBarFiller" }) do
+			CreateFrame("Frame", n, tf):CreateTexture(nil, "BORDER")
+				:SetTexture("Interface\\Buttons\\UI-Button-Borders2")
+		end
+
+		local spent = _G.PlayerTalentFrameStatusFrame:CreateFontString(
+			"PlayerTalentFrameSpentPointsText", "OVERLAY")
+		spent:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		spent:SetText("5 points spent in Beast Mastery")
+
+		local points = _G.PlayerTalentFramePointsBar:CreateFontString(
+			"PlayerTalentFrameTalentPointsText", "OVERLAY")
+		points:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		points:SetText("3")
+
+		for _, n in ipairs({ "PlayerTalentFrameActivateButton", "PlayerTalentFrameResetButton",
+			"PlayerTalentFrameLearnButton" }) do
+			local b = CreateFrame("Button", n, tf)
+			b:SetNormalTexture("panel-button-up")
+			local fs = b:CreateFontString(nil, "OVERLAY")
+			fs:SetText(n)
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+		end
+
+		-- A second Close, down in the corner of the tree, doing what the one in
+		-- the window's corner already does.
+		local spare = CreateFrame("Button", "PlayerTalentFrameCancelButton", tf)
+		spare:SetNormalTexture("cancel-up")
+		spare:Show()
+
+		-- Its close button sits 44 in and 25 down, in the middle of a stone rim.
+		_G.PlayerTalentFrameCloseButton:SetPoint("CENTER", tf, "TOPRIGHT", -44, -25)
+
+		for i, label in ipairs({ "Beast Mastery", "Marksmanship", "Survival", "Glyphs" }) do
+			local t = CreateFrame("Button", "PlayerTalentFrameTab" .. i, tf)
+			t:SetPoint("BOTTOMLEFT", tf, "BOTTOMLEFT", 15 + (i - 1) * 90, 46)
+			t:SetNormalTexture("tab-up")
+			local fs = t:CreateFontString(nil, "OVERLAY")
+			fs:SetText(label)
+			t.__fs = fs
+			function t:GetFontString() return self.__fs end
+			_G["PlayerTalentFrameTab" .. i .. "Text"] = fs
+			if i == 4 then t:Hide() end          -- no glyphs on this flavour
+		end
+
+		for i = 1, 3 do
+			local t = CreateFrame("CheckButton", "PlayerSpecTab" .. i, tf)
+			t:SetSize(32, 32)
+			t.__plate = t:CreateTexture(nil, "BACKGROUND")
+			t.__plate:SetTexture("Interface\\SpellBook\\SpellBook-SkillLineTab")
+			t:SetNormalTexture("")
+			t:Hide()                              -- no dual spec on this flavour
+		end
+
+		-- The client's own repaint. It re-sets the four background pieces from
+		-- the spec's art and re-colours every Slot, so anything we did once at
+		-- dress time is undone on the first tab click.
+		function _G.TalentFrame_Update()
+			for _, part in ipairs({ "TopLeft", "TopRight", "BottomLeft", "BottomRight" }) do
+				_G["PlayerTalentFrameBackground" .. part]
+					:SetTexture("Interface\\TalentFrame\\HunterSurvival-" .. part)
+			end
+			for i = 1, 40 do
+				local b = _G["PlayerTalentFrameTalent" .. i]
+				b:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
+				local s = STATE[i] or STATE[3]
+				_G["PlayerTalentFrameTalent" .. i .. "Slot"]
+					:SetVertexColor(s[1], s[2], s[3])
+			end
+		end
+	end
+
 	-- Load on demand: absent until something asks for it.
 	-- Builds it only. Firing ADDON_LOADED is the caller's, because `fire` is
 	-- declared further down this file than this block runs.
 	function _G.__loadPanelAddon(name)
 		buildPanel(name)
+		if name == "PlayerTalentFrame" then _G.__buildTalentInsides() end
 	end
 end
 
@@ -3938,6 +4142,44 @@ MakeChatFrame(1)
 MakeChatFrame(2)
 
 GeneralDockManager.selected = _G.ChatFrame1
+
+-- CHATFRAME1 IS AN EDIT MODE SYSTEM, and Edit Mode is what has been moving it.
+--
+-- Four fixes went at the FCF dock before a stack trace named the real owner:
+-- EditModeSystemTemplates.lua:375, ApplySystemAnchor. Edit Mode registers the
+-- chat window as Enum.EditModeSystem.ChatFrame, swaps its SetPoint for
+-- SetPointOverride, and re-applies its own saved anchor at login - first
+-- resetting every system to TOPLEFT 0,0, then placing this one at its preset
+-- BOTTOMLEFT 35,110. Both of those numbers came back in the report.
+--
+-- The override matters as much as the anchor: anything else calling SetPoint on
+-- a managed frame tells the manager its layout has unsaved changes. Restoring
+-- our own position through it marks somebody else's saved layout dirty every
+-- time. SetPointBase is the widget's own method, which Edit Mode keeps for
+-- exactly this reason.
+do
+	local cf = _G.ChatFrame1
+	cf.SetPointBase = cf.SetPoint
+	cf.ClearAllPointsBase = cf.ClearAllPoints
+
+	_G.__editModeDirty = 0
+	function cf:SetPoint(...)
+		_G.__editModeDirty = _G.__editModeDirty + 1
+		return self.SetPointBase(self, ...)
+	end
+	function cf:ClearAllPoints(...)
+		_G.__editModeDirty = _G.__editModeDirty + 1
+		return self.ClearAllPointsBase(self, ...)
+	end
+
+	--- What Edit Mode does at login, in the order the report caught it doing it.
+	function _G.__editModeApplyLayout()
+		cf:ClearAllPoints()
+		cf:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+		cf:ClearAllPoints()
+		cf:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 35, 110)
+	end
+end
 
 --- id, name, instanceID. ChannelLabel takes the second return.
 function GetChannelName(target)
@@ -7172,7 +7414,149 @@ do
 		A.Movers:Restore("chat")
 	end
 
+	-- THE CHARACTER WHO NEVER DRAGGED ANYTHING.
+	--
+	-- Every check above opens with a nudge, and a nudge writes BOTH records -
+	-- which is exactly why this survived three attempts at it. The handshake
+	-- lived only on the save path, so a character who has never moved the chat
+	-- window has never triggered it: we place the frame from our own default and
+	-- Blizzard is holding its own answer, untouched. Then the first restore path
+	-- we are not hooked to - and there are more of them than anyone can name -
+	-- puts the window back in its corner, a few seconds after login.
+	do
+		local wasOurs = A.db.profile.anchors.chat
+		A.db.profile.anchors.chat = nil
+		_G.__fcfSaved = {}
+
+		A.Movers:Restore("chat")
+
+		local d = A.Movers.registry.chat.default
+		local point, _, _, x, y = cf:GetPoint(1)
+		check(point == d.point and x == d.x and y == d.y,
+			"with nothing saved on either side the window goes to OUR default ("
+			.. tostring(point) .. " " .. tostring(x) .. "," .. tostring(y) .. ")")
+
+		local rec = _G.__fcfSaved[cf:GetID()]
+		check(rec ~= nil and rec.point == d.point and rec.x == d.x and rec.y == d.y,
+			"and the dock is told about it on THAT path too - told only when the"
+			.. " player dragged, a character who never touched the chat window"
+			.. " left Blizzard holding its own default, and every restore path we"
+			.. " had not hooked was right to put the frame back in the corner")
+
+		A.db.profile.anchors.chat = wasOurs
+		A.Movers:Restore("chat")
+	end
+
 	A.Movers:Lock()
+end
+
+print("== chat: whatever moves the window, we find out who ==")
+do
+	-- FOUR FIXES AND COUNTING. Tell the dock; hook the restore; tell the dock on
+	-- the restore path as well as the drag path. Each was necessary, none was
+	-- sufficient, and every one of them named a function - which only works if
+	-- you can name them all.
+	--
+	-- So this asks the frame instead. Every way of moving a frame ends at its
+	-- own SetPoint, and the thing that has been missing from four reports is the
+	-- NAME of whatever does it.
+	local Cm = A:GetModule("chat")
+	local cf = _G.ChatFrame1
+
+	A.Movers:Lock()
+	A.Movers:Restore("chat")
+	Cm.moves = {}
+
+	local want = A.db.profile.anchors.chat or A.Movers.registry.chat.default
+
+	-- The shape a real stack has from inside a hook on a widget method: ours,
+	-- then the C function we hooked, then the Lua that called it. The FIRST
+	-- report back said "by [C]: in function 'SetPoint'" for every move, which is
+	-- true and useless - it names the method we are standing in rather than
+	-- whoever called it.
+	_G.__stack =
+		"Interface/AddOns/AetherUI/Modules/Chat.lua:2210: in function <AetherUI/Chat.lua>\n"
+		.. "[C]: in function 'SetPoint'\n"
+		.. "Interface/FrameXML/FloatingChatFrame.lua:1502: in function `FCF_UpdateDockPosition'\n"
+		.. "Interface/FrameXML/UIParent.lua:3300: in function `UIParent_ManageFramePositions'"
+
+	cf:ClearAllPoints()
+	cf:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 32, 32)
+
+	local point, _, _, x, y = cf:GetPoint(1)
+	check(point == want.point and x == want.x and y == want.y,
+		"a SetPoint from anywhere at all is answered (" .. tostring(point) .. " "
+		.. tostring(x) .. "," .. tostring(y) .. ")")
+
+	check(#Cm.moves == 1, "and written down (" .. #Cm.moves .. ")")
+	check(Cm.moves[1] and Cm.moves[1].by
+		and Cm.moves[1].by:find("FloatingChatFrame", 1, true) ~= nil,
+		"BY NAME - the first line of the stack that is neither ours nor the C"
+		.. " function we hooked. Ours sits between the SetPoint and whoever asked"
+		.. " for it, and `[C]: in function 'SetPoint'` is the method we are"
+		.. " standing in, so both are true answers that name nobody (got "
+		.. tostring(Cm.moves[1] and Cm.moves[1].by) .. ")")
+	check(Cm.moves[1] and Cm.moves[1].x == 32,
+		"with where it was trying to put it (" .. tostring(Cm.moves[1].x) .. ")")
+
+	-- NOT WHILE THE PLAYER IS ARRANGING THINGS. Our own drag is a SetPoint on
+	-- every frame of it, so a watcher that answers back is a window that cannot
+	-- be moved at all.
+	A.Movers:Unlock()
+	Cm.moves = {}
+	cf:ClearAllPoints()
+	cf:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 300, 300)
+	check(select(5, cf:GetPoint(1)) == 300 and #Cm.moves == 0,
+		"but with frames unlocked it says nothing and moves nothing (y="
+		.. tostring(select(5, cf:GetPoint(1))) .. ", " .. #Cm.moves .. " logged)")
+
+	A.Movers:Lock()
+	A.Movers:Restore("chat")
+
+	-- And the readout, which is what gets pasted into the next report.
+	local okWhere = pcall(A.ChatWhere, A)
+	check(okWhere,
+		"and `/aether chat where` reads it back without throwing - a diagnostic"
+		.. " that errors is the one thing worse than no diagnostic")
+
+	-- AND THE THING THAT WAS ACTUALLY DOING IT.
+	--
+	-- The stack finally named it: Blizzard_EditMode, ApplySystemAnchor. The chat
+	-- window is a registered Edit Mode system, and Edit Mode re-applies its own
+	-- saved layout at login - every system reset to TOPLEFT 0,0 first, then this
+	-- one placed at its preset BOTTOMLEFT 35,110. Four fixes were aimed at the
+	-- FCF dock, which was never the owner.
+	do
+		Cm.moves = {}
+		_G.__stack = ""
+
+		_G.__editModeApplyLayout()
+
+		local point, _, _, x, y = cf:GetPoint(1)
+		check(point == want.point and x == want.x and y == want.y,
+			"Edit Mode applying its own layout does not take the window with it ("
+			.. tostring(point) .. " " .. tostring(x) .. "," .. tostring(y) .. ")")
+		check(#Cm.moves == 2,
+			"and both of its steps are caught - the reset to 0,0 and the preset"
+			.. " it lands on (" .. #Cm.moves .. ")")
+	end
+
+	-- AND WE DO NOT DIRTY ITS LAYOUT PUTTING OURS BACK. A managed frame's
+	-- SetPoint is SetPointOverride, which anchors the frame and then tells the
+	-- manager the layout has unsaved changes. SetPointBase is the widget's own,
+	-- which Edit Mode keeps for exactly this.
+	do
+		local before = _G.__editModeDirty
+		A.Movers:Restore("chat")
+		check(_G.__editModeDirty == before,
+			"restoring our position goes through the widget's own SetPoint rather"
+			.. " than Edit Mode's override (" .. (_G.__editModeDirty - before)
+			.. " tolds) - otherwise every restore marks somebody else's saved"
+			.. " layout dirty and the player gets asked about it")
+	end
+
+	_G.__stack = ""
+	Cm.moves = {}
 end
 
 print("== movers ==")
@@ -17008,6 +17392,122 @@ do
 		"with the spell and the tick still where they were")
 end
 
+print("== panels: the talent tree, without cutting its branches ==")
+do
+	_G.__loadPanelAddon("PlayerTalentFrame")
+	fire("ADDON_LOADED", "Blizzard_TalentUI")
+
+	local tf = _G.PlayerTalentFrame
+	check(tf.__aetherPanel ~= nil,
+		"the talent frame is in glass when its addon turns up")
+	check(_G.PlayerTalentFrameBackgroundTopLeft:GetTexture() == 0,
+		"and the tree's parchment comes off it")
+
+	-- THE BRANCHES AND ARROWS STAY. They are regions of the scroll child and of
+	-- the arrow frame, and they are the only thing on screen saying which talent
+	-- depends on which. Strip either frame and the tree becomes forty
+	-- unconnected icons - which looks tidy enough to pass a screenshot.
+	check(_G.PlayerTalentFrameBranch1:GetTexture() == "Interface\\TalentFrame\\UI-TalentBranches"
+		and _G.PlayerTalentFrameArrow1:GetTexture() == "Interface\\TalentFrame\\UI-TalentArrows",
+		"but the branches and arrows are left alone - they ARE the tree, and a"
+		.. " sweep of the frame they hang off takes them with the parchment")
+
+	local t1, t2, t3 = _G.PlayerTalentFrameTalent1, _G.PlayerTalentFrameTalent2,
+		_G.PlayerTalentFrameTalent3
+	check(t1.__aetherSlot == true, "a talent wears the same cell as a spell")
+	check(_G.PlayerTalentFrameTalent1IconTexture:GetTexture() == "talent-icon-1",
+		"with the talent still in it")
+	check(_G.PlayerTalentFrameTalent1Slot:GetTexture() == 0
+		and t1:GetNormalTexture():GetTexture() == 0,
+		"and both the stone ring and the empty slot behind it cleared")
+
+	-- THE STATE, IN THE RIM. The client weighs the rank against the maximum,
+	-- the tier against the points spent, the prerequisites and whether there is
+	-- a point spare - and then says the answer in the Slot's vertex colour.
+	-- Reading that is one source of truth; working it out again from
+	-- GetTalentInfo would be a second set of rules to keep in step.
+	local function rim(b)
+		local r, g = b.edge:GetVertexColor()
+		return r, g
+	end
+	local open, full, plain =
+		A.Palette.c.talentOpen, A.Palette.c.talentFull, A.Palette.c.glassEdge
+
+	local r1, g1 = rim(t1)
+	check(r1 == open[1] and g1 == open[2],
+		"one you can put a point in takes the open rim")
+	local r2, g2 = rim(t2)
+	check(r2 == full[1] and g2 == full[2],
+		"a finished one takes the full rim")
+	local r3, g3 = rim(t3)
+	check(r3 == plain[1] and g3 == plain[2],
+		"and one you cannot reach yet keeps the ordinary one - three states, so"
+		.. " a rim set for one of them cannot pass by looking right once")
+
+	check(t1.__aetherRank and t1.__aetherRank.disc:GetTexture() == A.Media.texture.chipDisc,
+		"the rank sits on a chip of ours rather than Blizzard's stone plate")
+	check(_G.PlayerTalentFrameTalent1Rank._aetherStyle ~= nil,
+		"with the client's own count on top of it, re-roled - it is what does"
+		.. " the counting, and ours would be a second number to keep in step")
+	check(not t3.__aetherRank:IsShown(),
+		"and no chip at all where the client shows no rank")
+
+	-- THE REPAINT. TalentFrame_Update runs on open, on every tab click and on
+	-- every point spent, and it re-sets all four background pieces from the
+	-- spec's own art. Art taken off once at dress time is art you see again on
+	-- the first click.
+	_G.TalentFrame_Update()
+	check(_G.PlayerTalentFrameBackgroundTopLeft:GetTexture() == 0
+		and t1:GetNormalTexture():GetTexture() == 0,
+		"the parchment and the rings stay off after the client repaints the tree")
+	local r1b = rim(t1)
+	check(r1b == open[1], "and the rims still say what state each talent is in")
+
+	local tb1, tb2 = _G.PlayerTalentFrameTab1, _G.PlayerTalentFrameTab2
+	check(tb1.__aetherTab ~= nil and math.abs(tb1:GetWidth() - tb2:GetWidth()) < 0.01,
+		"its tabs are one even row (" .. string.format("%.1f", tb1:GetWidth()) .. ")")
+	check(_G.PlayerTalentFrameTab4.__aetherTab == nil,
+		"and the glyph tab, which this flavour never shows, is left out of it")
+
+	check(not _G.PlayerTalentFrameCancelButton:IsShown(),
+		"the spare Close in the corner of the tree is gone, like the skills"
+		.. " list's - the window already has one")
+
+	local cPt, cRel, cRelPt = _G.PlayerTalentFrameCloseButton:GetPoint(1)
+	check(cPt == "TOPRIGHT" and cRel == tf and cRelPt == "TOPRIGHT",
+		"and the real one is in the corner rather than 44 in and 25 down, where"
+		.. " the stone rim used to be")
+
+	check(_G.PlayerTalentFrameLearnButton.__aetherPill ~= nil
+		and _G.PlayerTalentFrameLearnButton:GetNormalTexture():GetTexture() == 0,
+		"its buttons are ours")
+	check(_G.PlayerTalentFrameTalentPointsText._aetherStyle ~= nil
+		and _G.PlayerTalentFrameSpentPointsText._aetherStyle ~= nil,
+		"and both point readings are in our lettering")
+
+	-- THE OTHER SKIN. A window's shell is a surface and answers ApplySkin; a
+	-- talent's rim is a colour read out of the palette once, at dress time, and
+	-- nothing re-reads it. So the tree kept Midnight's greens on a Daylight
+	-- panel until the next time the frame happened to be redrawn.
+	do
+		local was = A.db.profile.skin
+		A.db.profile.skin = "daylight"
+		A:Restyle()
+
+		local dayOpen = A.Palette.c.talentOpen
+		local dr = rim(t1)
+		check(dr == dayOpen[1],
+			"switching skin takes the talent rims with it (" ..
+			string.format("%.2f", dr) .. " vs " .. string.format("%.2f", dayOpen[1]) .. ")")
+		check(dayOpen[1] ~= open[1],
+			"and the two skins really do want different ones - a light green rim"
+			.. " on a near-white panel is not a rim")
+
+		A.db.profile.skin = was
+		A:Restyle()
+	end
+end
+
 print("== palette: difficulty has one owner ==")
 do
 	local P = A.Palette
@@ -18649,6 +19149,48 @@ do
 	Errors:ShowText("copy me")
 	check(Errors.frame:IsShown() and Errors.frame.box:GetText() == "copy me",
 		"and any text at all can be put in it")
+
+	-- IT SCROLLS, and it says so.
+	--
+	-- The box was anchored straight to the dialog, so a diag of eighty lines
+	-- drew forty of them and the rest went outside it - selected by Ctrl+A and
+	-- copied correctly, and invisible. Which is the worst way for this to fail:
+	-- the report you paste is complete and the one you can read is not.
+	do
+		local f = Errors.frame
+		check(f.box:GetParent() == f.scroll and f.scroll:GetScrollChild() == f.box,
+			"the box is the scroll frame's child rather than anchored to the"
+			.. " dialog, which is what puts the overflow inside something")
+		check((f.box:GetWidth() or 0) > 0,
+			"and has a width of its own - a scroll child is anchored to nothing,"
+			.. " so a multiline box without one puts the report on a single line")
+
+		check(not f.thumb:IsShown(),
+			"a report that fits draws no rail - a control that cannot do"
+			.. " anything is worse than no control")
+
+		local long = {}
+		for i = 1, 80 do long[i] = "line " .. i end
+		Errors:ShowText(table.concat(long, "\n"))
+
+		check(f.thumb:IsShown() and f.track:IsShown(),
+			"one that does not gets one (" .. tostring(f.box:GetHeight())
+			.. " of text in " .. tostring(f.scroll:GetHeight()) .. ")")
+		check((f.thumb:GetHeight() or 0) < (f.scroll:GetHeight() or 0),
+			"with a thumb shorter than the rail, which is what says how much"
+			.. " more there is")
+		check(f.scroll:GetVerticalScroll() == 0,
+			"and it opens at the top rather than where the last report was left"
+			.. " scrolled to")
+
+		local topY = select(5, f.thumb:GetPoint(1))
+		f.scroll:GetScript("OnMouseWheel")(f.scroll, -1)
+		check((f.scroll:GetVerticalScroll() or 0) > 0, "the wheel moves it")
+		check(select(5, f.thumb:GetPoint(1)) < topY,
+			"and the thumb follows (" .. string.format("%.1f", topY) .. " -> "
+			.. string.format("%.1f", select(5, f.thumb:GetPoint(1))) .. ")")
+	end
+
 	Errors.frame:Hide()
 
 	-- Put the strict one back for whatever runs after this.

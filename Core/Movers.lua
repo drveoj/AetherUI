@@ -78,8 +78,45 @@ local function RestorePosition(entry)
 		return
 	end
 
-	entry.frame:ClearAllPoints()
-	entry.frame:SetPoint(point, UIParent, relPoint, x, y)
+	-- THROUGH THE WIDGET'S OWN METHODS where something has replaced them.
+	--
+	-- Edit Mode is the case, and it turned out to be what had been moving the
+	-- chat window all along. A frame it manages has SetPoint swapped for
+	-- SetPointOverride, which anchors the frame and then tells the manager its
+	-- layout has unsaved changes. Putting our own position back through that
+	-- marks somebody else's saved layout dirty every time we do it, which is a
+	-- side effect nobody asked for and one the player would eventually be
+	-- prompted about.
+	--
+	-- SetPointBase and ClearAllPointsBase are the widget's own, which Edit Mode
+	-- keeps precisely so that it can place a frame without telling itself the
+	-- layout changed. A frame with no override has neither and gets the ordinary
+	-- pair, which is every other frame in this registry.
+	local f = entry.frame
+	local clear = f.ClearAllPointsBase or f.ClearAllPoints
+	local place = f.SetPointBase or f.SetPoint
+	clear(f)
+	place(f, point, UIParent, relPoint, x, y)
+
+	-- AND THE OWNER IS TOLD ON THIS PATH TOO, not only when the player drags.
+	--
+	-- SavePosition has said this since the first attempt at the chat window
+	-- walking home, and it was only ever half wired up: the handshake ran when
+	-- you MOVED the frame and never when we merely put it back. Which is why the
+	-- symptom was "only on a new character" and looked like a different bug
+	-- every time.
+	--
+	-- On an established character you have dragged the chat window at some
+	-- point, so Blizzard's record was written once and roughly agrees with ours
+	-- forever after; every restore path it owns puts the frame somewhere close
+	-- and nobody notices. On a NEW one nothing was ever dragged - we place the
+	-- frame from our own default and Blizzard has never been told - so the first
+	-- restore path we are not hooked to puts it back in its corner.
+	--
+	-- Hooking those paths one at a time was three fixes and counting. Telling
+	-- the owner what we did means its answer is already ours, and the paths we
+	-- never find give the right result anyway.
+	if entry.onPlaced then pcall(entry.onPlaced, entry.frame) end
 end
 
 -- ---------------------------------------------------------------------------

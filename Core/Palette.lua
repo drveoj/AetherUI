@@ -113,6 +113,17 @@ Palette.skins = {
 		bankBg      = C(140, 200, 255, 0.16),
 		bankEdge    = C(140, 200, 255, 0.34),
 
+		-- Talents. Two states are worth a colour on a tree: one you can still
+		-- spend a point in, and one that is finished. Blizzard says those in
+		-- 0.1/1/0.1 green and 1/0.82/0 gold, which are its palette and not ours.
+		--
+		-- Their OWN tokens rather than borrowed ones, for the reason bankAccent
+		-- is its own: `friendly` means a unit's reaction to you and
+		-- questDiff.difficult means a level you can take, and either would drag
+		-- the talent tree along the next time it was retuned.
+		talentOpen  = C(159, 232, 180, 1.00),
+		talentFull  = C(255, 226, 150, 1.00),
+
 		-- Poor-quality items are dimmed rather than hidden: still there, still
 		-- clickable, visibly not worth the space. junkTint is a VERTEX colour on
 		-- the icon (there is no grayscale filter in this UI, so desaturation plus
@@ -304,6 +315,11 @@ Palette.skins = {
 		bankAccent  = C( 18,  56,  78, 1.00),
 		bankBg      = C(190, 228, 255, 0.85),
 		bankEdge    = C(255, 255, 255, 0.45),
+
+		-- Deepened against a pale fill for the same reason the quality rims are:
+		-- a light green rim on a near-white panel is not a rim.
+		talentOpen  = C( 46, 150,  92, 1.00),
+		talentFull  = C(176, 132,  30, 1.00),
 
 		junkTint    = C(120, 116, 112, 0.45),
 		junkText    = C(255, 255, 255, 0.42),

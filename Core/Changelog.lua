@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.5.4",
+		date    = "2026-08-14",
+		lines   = {
+			"The talent tree is in glass: your talents wear the same cells as your spells, the branches between them are untouched, and a rim says whether you can spend a point there or have finished it.",
+			"The chat window stays where you put it. Blizzard's Edit Mode was re-applying its own layout at login, which is why it only ever walked home on a new character.",
+			"The error box scrolls, with a rail when there is more to read - a long report used to draw its last forty lines outside the window.",
+			"/aether chat where says where the chat window is, where it should be, and what has moved it.",
+		},
+	},
+	{
 		version = "0.5.3",
 		date    = "2026-08-14",
 		lines   = {

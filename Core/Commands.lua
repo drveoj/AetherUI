@@ -33,7 +33,7 @@ local function usage()
 		"|cff9d7bff/aether status|r",
 		"|cff9d7bff/aether diag|r  ·  why is a Blizzard frame still on screen",
 		"|cff9d7bff/aether auras|r <refresh>  ·  what the aura API is actually saying",
-		"|cff9d7bff/aether chat|r <reskin · lines/badges on|off · whispers on|off>",
+		"|cff9d7bff/aether chat|r <reskin · where · lines/badges on|off · whispers on|off>",
 		"|cff9d7bff/aether bags|r <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		"|cff9d7bff/aether toolbox|r <dock left/right/top/bottom · open · close · pin NAME>",
@@ -72,6 +72,42 @@ local function ancestry(name)
 		depth = depth + 1
 	end
 	return table.concat(parts, " < ")
+end
+
+--- Where the chat window is, where it should be, and who last argued about it.
+--
+--  Its own function because it is wanted in two places: on its own from
+--  `/aether chat where`, and inside the diag that goes in a box you can copy
+--  out of - which is the one that gets pasted into a bug report.
+function A:ChatWhere()
+	local C = A:GetModule("chat")
+	local cf = _G.ChatFrame1
+	if not C or not cf then A:Print("no chat window to report on.") return end
+
+	local entry = A.Movers and A.Movers.registry and A.Movers.registry.chat
+	local saved = A.db.profile.anchors and A.db.profile.anchors.chat
+	local want = (saved and saved.point and saved) or (entry and entry.default)
+
+	local point, _, relPoint, x, y = cf:GetPoint(1)
+	say("   chat is at %s %s %.0f,%.0f", tostring(point), tostring(relPoint),
+		x or 0, y or 0)
+	if want then
+		say("   we want   %s %s %.0f,%.0f  (%s)", tostring(want.point),
+			tostring(want.relPoint or want.point), want.x or 0, want.y or 0,
+			saved and "saved" or "default")
+	end
+
+	local moves = C.moves or {}
+	if #moves == 0 then
+		say("   nothing has moved it since login")
+		return
+	end
+
+	say("   %d move%s caught, newest first:", #moves, #moves == 1 and "" or "s")
+	for i, m in ipairs(moves) do
+		say("      %d. to %s %.0f,%.0f  by %s", i, tostring(m.point),
+			m.x or 0, m.y or 0, tostring(m.by))
+	end
 end
 
 local function diag()
@@ -123,6 +159,13 @@ local function diag()
 		end
 
 	end
+
+	-- The chat window's position, and anything that has argued about it. Here
+	-- rather than only behind `/aether chat where` because this is the report
+	-- that gets pasted into a bug report, and "it jumps back" has now cost four
+	-- fixes for want of the name of whatever does it.
+	local Cw = A:GetModule("chat")
+	if Cw and Cw.enabled then A:ChatWhere() end
 
 	local MMd = A:GetModule("minimap")
 	if MMd then
@@ -533,6 +576,8 @@ handlers.chat = function(arg, rest)
 	local cfg = A.Config:Module("chat")
 
 	if what == "reskin" then C:Reskin(); A:Print("chat re-skinned.") return end
+
+	if what == "where" then A:ChatWhere() return end
 
 	--- The three line settings that are worth reaching for mid-session. The
 	--  rest live in the options panel, where a setting with a paragraph of

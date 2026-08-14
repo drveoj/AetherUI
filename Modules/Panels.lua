@@ -56,13 +56,22 @@ local PANELS = {
 	-- special cases in Dress, and the next window with its own spelling only
 	-- needs a line.
 	{
-		frame  = "SpellBookFrame",
-		insets = { 4, -4, -4, 24 },
-		title  = "SpellBookTitleText",
-		close  = "SpellBookCloseButton",
-		tabs   = "SpellBookFrameTabButton",
+		frame       = "SpellBookFrame",
+		insets      = { 4, -4, -4, 24 },
+		title       = "SpellBookTitleText",
+		close       = "SpellBookCloseButton",
+		closeCorner = true,
+		tabs        = "SpellBookFrameTabButton",
 	},
-	{ frame = "PlayerTalentFrame", addon = "Blizzard_TalentUI" },
+	-- The talent frame names its parts the usual way, but it puts its close
+	-- button 44 in and 25 down like the spellbook does - in the middle of a
+	-- stone rim that comes off with the rest of the art.
+	{
+		frame       = "PlayerTalentFrame",
+		addon       = "Blizzard_TalentUI",
+		insets      = { 4, -4, -4, 24 },
+		closeCorner = true,
+	},
 	{ frame = "TalentFrame",       addon = "Blizzard_TalentUI" },
 	{ frame = "FriendsFrame" },
 	{ frame = "GuildFrame",        addon = "Blizzard_GuildUI" },
@@ -135,13 +144,13 @@ local function DressClose(frame, store)
 	local close = CloseButton(frame)
 	if not close then return end
 
-	-- Into the corner of the glass. A window that names its own close button
-	-- also placed it for its own art: the spellbook's sits 44 in from the right
-	-- and 25 down, which is the middle of a stone rim that is no longer there,
-	-- and reads as a stray cross floating in the page.
+	-- Into the corner of the glass, where the window put its own well inside the
+	-- art. The spellbook's and the talent frame's both sit 44 in from the right
+	-- and 25 down - the middle of a stone rim that is no longer there - and read
+	-- as a stray cross floating in the page.
 	local name = frame.GetName and frame:GetName()
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
-	if entry and entry.close and close.ClearAllPoints then
+	if entry and entry.closeCorner and close.ClearAllPoints then
 		local ins = entry.insets or {}
 		close:ClearAllPoints()
 		close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", (ins[3] or 0) - 2, (ins[2] or 0) - 2)
@@ -1005,14 +1014,19 @@ local function DressSpellButtons(store)
 	end
 end
 
-local function DressSideTabs(frame, store)
+--- A column of icon tabs down the right-hand edge of a window.
+--
+--  The spellbook's schools and the talent frame's specs are the same widget
+--  under two names - both are PlayerSpecTab-shaped 32px check buttons carrying
+--  64px of stone, and both keep their picture as the normal texture.
+local function DressSideTabs(frame, store, prefix, count)
 	local name = frame.GetName and frame:GetName()
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
 	local ins = entry and entry.insets or {}
 
 	local last
-	for i = 1, SPELL_TABS do
-		local tab = _G["SpellBookSkillLineTab" .. i]
+	for i = 1, count do
+		local tab = _G[prefix .. i]
 		if not tab then break end
 
 		-- No icon named: the school's picture IS this button's normal texture,
@@ -1067,7 +1081,7 @@ local function DressSpellBook(frame, store)
 	end
 
 	DressSpellButtons(store)
-	DressSideTabs(frame, store)
+	DressSideTabs(frame, store, "SpellBookSkillLineTab", SPELL_TABS)
 
 	-- No hook of its own on the client's rebuild. Its update hides all three
 	-- tabs and shows the ones that apply, so the OnShow every hidden tab already
@@ -1077,11 +1091,204 @@ local function DressSpellBook(frame, store)
 	InstallTabHooks()
 end
 
+-- ---------------------------------------------------------------------------
+-- the talent tree
+-- ---------------------------------------------------------------------------
+--
+-- Forty talent buttons on a scrolling parchment, with the tree's own branches
+-- and arrows drawn over it, three tabs along the bottom and a points bar under
+-- them. It shares the spellbook's side-tab column and the character sheet's
+-- tab strip, so most of this is naming parts rather than new behaviour.
+--
+-- THE BRANCHES AND ARROWS STAY. PlayerTalentFrameBranch1..30 and Arrow1..30 are
+-- regions of the scroll child and of the arrow frame, and they are the tree -
+-- which way a talent depends on another is the only thing the layout says. A
+-- strip of either frame would take them and leave forty unconnected icons.
+
+local TALENT_BUTTONS = 40        -- MAX_NUM_TALENTS
+local TALENT_SPECS   = 3         -- PlayerSpecTab1..3, all hidden on this flavour
+
+-- Panes whose art comes off. The scroll frame carries the tree's parchment in
+-- four pieces AND the stone trough its scroll bar runs in; the other three are
+-- input borders and button borders around the points readings.
+--
+-- NOT PlayerTalentFrameScrollChildFrame and NOT PlayerTalentFrameArrowFrame.
+-- The branches and arrows are regions of those two, and they are the tree.
+local TALENT_PANES = {
+	"PlayerTalentFrameScrollFrame", "PlayerTalentFrameStatusFrame",
+	"PlayerTalentFramePointsBar", "PlayerTalentFramePreviewBar",
+	"PlayerTalentFramePreviewBarFiller",
+}
+
+-- The rank chip in the corner of a talent. Blizzard draws a small stone plate
+-- there with the number on it; ours is the same badge the tooltip's level chip
+-- uses, with the client's own string still doing the counting on top of it.
+local RANK_CHIP = 18
+
+--- Which of the three states the client has just put a talent in.
+--
+--  Read off the SLOT's vertex colour rather than worked out again from
+--  GetTalentInfo. The client has already decided this - it weighs the rank
+--  against the maximum, whether the tier is unlocked, whether the prerequisites
+--  are met and whether there is a point spare - and then says the answer in a
+--  colour: green for "you can put a point here", gold for "this one is
+--  finished", grey for neither. Re-deriving it would be a second set of rules
+--  to keep in step with the client's, and they would disagree at the edges.
+--
+--  Classified by hue rather than matched exactly, because the exact triples are
+--  Blizzard's to change and "greener than it is red" is the part that means
+--  something.
+local function TalentState(btn)
+	local name = btn.GetName and btn:GetName()
+	local slot = name and _G[name .. "Slot"]
+	if not slot or not slot.GetVertexColor then return nil end
+
+	local r, g, b = slot:GetVertexColor()
+	if type(r) ~= "number" then return nil end
+
+	local hi = math.max(r, g, b)
+	local lo = math.min(r, g, b)
+	if hi - lo < 0.1 then return nil end          -- grey: nothing to say
+	if g > r then return "open" end
+	return "full"
+end
+
+local function StyleTalent(btn)
+	local state = TalentState(btn)
+
+	if btn.SetEdgeColor then
+		btn:SetEdgeColor(
+			(state == "open" and Palette.c.talentOpen)
+			or (state == "full" and Palette.c.talentFull)
+			or Palette.c.glassEdge)
+	end
+
+	-- The client's own rank string, kept and re-roled. It counts; the chip
+	-- behind it only has to be somewhere for it to sit.
+	local rank = Reskin.Element(btn, "Rank")
+	if rank and rank.SetText then
+		Reskin.Font(rank, "pnBody")
+		W.Color(rank, state == "full" and Palette.c.talentFull or Palette.c.text)
+	end
+
+	local chip = btn.__aetherRank
+	if chip then
+		chip:SetColors(Palette.c.glassStrong,
+			(state == "full" and Palette.c.talentFull) or Palette.c.glassEdgeHi)
+		-- Shown exactly when the client shows its own plate, which is its way of
+		-- saying this talent has a rank worth reading.
+		local border = Reskin.Element(btn, "RankBorder")
+		chip:SetShown((not border) or border:IsShown())
+	end
+end
+
+local function DressTalentButtons(store)
+	for i = 1, TALENT_BUTTONS do
+		local btn = _G["PlayerTalentFrameTalent" .. i]
+		if btn then
+			-- Same shape as a spell button: the icon is a region, the ring is
+			-- the normal texture, and there is a third texture behind both - the
+			-- Slot, which the client also uses to say what state the talent is
+			-- in. Cleared like the rest; its colour is still readable.
+			Reskin.IconButton(btn, store, { icon = Reskin.Element(btn, "IconTexture") })
+
+			if not btn.__aetherRank then
+				local chip = W.CreateBadge(btn, { size = RANK_CHIP })
+				chip:SetPoint("CENTER", btn, "BOTTOMRIGHT", 0, 0)
+				chip:SetFrameLevel(math.max(0, btn:GetFrameLevel() - 1))
+				chip.label:Hide()          -- the client's own string sits on top
+				btn.__aetherRank = chip
+			end
+
+			StyleTalent(btn)
+		end
+	end
+end
+
+--- Answer the client when it repaints the tree.
+--
+--  TalentFrame_Update runs on open, on every tab click and on every point
+--  spent, and it re-sets the four background pieces from the spec's own art -
+--  so the parchment we just took off comes straight back. It also re-colours
+--  every Slot, which is where the states come from.
+local function InstallTalentHooks(frame)
+	if PN.__talentHooks or not hooksecurefunc or not _G.TalentFrame_Update then return end
+	PN.__talentHooks = true
+
+	hooksecurefunc("TalentFrame_Update", function()
+		if not PN.enabled then return end
+		local f = _G.PlayerTalentFrame
+		local store = f and f.__aetherArt
+		if not store then return end
+
+		for _, name in ipairs(TALENT_PANES) do
+			local pane = _G[name]
+			if pane then Reskin.Strip(pane, store) end
+		end
+		for i = 1, TALENT_BUTTONS do
+			local btn = _G["PlayerTalentFrameTalent" .. i]
+			if btn then
+				Reskin.ClearButton(btn)
+				StyleTalent(btn)
+			end
+		end
+	end)
+end
+
+local function DressTalents(frame, store)
+	for _, name in ipairs(TALENT_PANES) do
+		local pane = _G[name]
+		if pane then Reskin.Strip(pane, store) end
+	end
+
+	-- The points bar's own reading, and the "N points spent in Beast Mastery"
+	-- line above the tree.
+	for _, name in ipairs({ "PlayerTalentFrameTalentPointsText",
+	                        "PlayerTalentFrameSpentPointsText",
+	                        "PlayerTalentFrameStatusText" }) do
+		local fs = _G[name]
+		if fs then
+			Roled(fs, "pnSub")
+			W.Color(fs, Palette.c.textDim)
+		end
+	end
+
+	for _, name in ipairs({ "PlayerTalentFrameActivateButton",
+	                        "PlayerTalentFrameResetButton",
+	                        "PlayerTalentFrameLearnButton" }) do
+		local btn = _G[name]
+		if btn then
+			Reskin.Button(btn, "pnBody")
+			Reskin.Strip(btn, store)
+		end
+	end
+
+	-- A second Close down in the corner of the tree, doing what the one in the
+	-- window's corner already does. Hidden rather than cleared, exactly as the
+	-- skills list's spare one is.
+	local spare = _G.PlayerTalentFrameCancelButton
+	if spare and spare.Hide and not spare.__aetherHidden then
+		spare.__aetherHidden = spare:IsShown() and true or false
+		spare:Hide()
+	end
+
+	local bar = _G.PlayerTalentFrameScrollFrameScrollBar
+	if bar then Reskin.ScrollBar(bar, store) end
+
+	DressTalentButtons(store)
+	DressSideTabs(frame, store, "PlayerSpecTab", TALENT_SPECS)
+
+	LayoutTabs(frame, store)
+	InstallTabHooks()
+	InstallTalentHooks(frame)
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
-	CharacterFrame = DressCharacter,
-	GameMenuFrame  = DressGameMenu,
-	SpellBookFrame = DressSpellBook,
+	CharacterFrame    = DressCharacter,
+	GameMenuFrame     = DressGameMenu,
+	SpellBookFrame    = DressSpellBook,
+	PlayerTalentFrame = DressTalents,
 }
 
 PN.INTERIORS = INTERIORS
@@ -1177,6 +1384,12 @@ function PN:OnSkinChanged()
 			if frame.__aetherTitle then W.Color(frame.__aetherTitle, Palette.c.text) end
 		end
 	end
+
+	-- And everything INSIDE them. The shell is a surface and answers ApplySkin;
+	-- a talent's rim, a rank chip and a check box are colours read off the
+	-- palette at dress time, and nothing re-reads them on their own. Skin is
+	-- safe to run again - it is what /aether config already does on any change.
+	self:Skin()
 end
 
 function PN:OnConfigChanged() self:Skin() end

@@ -641,6 +641,93 @@ local function SaveToBlizzard(f)
 end
 
 -- ---------------------------------------------------------------------------
+-- who keeps moving the chat window
+--
+-- Four fixes have been aimed at this and it still walks home on a new
+-- character. Every one of them named a function - tell the dock, hook the
+-- restore, tell the dock on the restore path too - and naming functions only
+-- works if you can name them all. This one asks the frame instead, and writes
+-- down the answer so the next report can name the culprit rather than the
+-- symptom.
+-- ---------------------------------------------------------------------------
+
+--- What moved it, most recent first. Read out by `/aether chat where`.
+Chat.moves = {}
+
+local MAX_MOVES = 8
+local reanchoring = false
+
+--- The anchor we believe in: what the player saved, or our own default.
+local function WantedAnchor()
+	local entry = A.Movers and A.Movers.registry and A.Movers.registry.chat
+	if not entry then return nil end
+	local saved = A.db and A.db.profile.anchors and A.db.profile.anchors.chat
+	if saved and saved.point then return saved end
+	return entry.default
+end
+
+--- The first line of the call stack that names somebody we can go and look at.
+--
+--  Two kinds of frame get skipped, and the second one cost a round trip.
+--
+--  Ours, because every frame between the SetPoint and whoever asked for it is
+--  this file, so reporting the top of the stack names this addon every time.
+--
+--  And `[C]:` frames, because the widget method itself is one: the stack from
+--  inside this hook reads OUR hook, then `[C]: in function 'SetPoint'`, and only
+--  THEN the Lua that called it. The first report back said "by [C]: in function
+--  'SetPoint'" three times, which is the truth and tells nobody anything - it is
+--  the function we hooked, not the one that called it.
+local function Culprit()
+	if type(_G.debugstack) ~= "function" then return "?" end
+	local ok, s = pcall(_G.debugstack, 2, 10, 0)
+	if not ok or type(s) ~= "string" then return "?" end
+
+	for line in s:gmatch("[^\r\n]+") do
+		local trimmed = line:gsub("^%s+", "")
+		if not trimmed:find("AetherUI", 1, true)
+			and not trimmed:find("^%[C%]:") then
+			return trimmed:sub(1, 110)
+		end
+	end
+	return (s:gsub("[\r\n]+", " "):sub(1, 110))
+end
+
+--- Is the window where we put it? If not, put it back and say who moved it.
+function Chat:WatchPosition(f)
+	if reanchoring or not f or f ~= _G.ChatFrame1 then return end
+
+	-- Not while the player is arranging things. Our own drag IS a SetPoint on
+	-- every frame of it, so a watcher that answers back is a window that cannot
+	-- be moved at all.
+	if A.Movers and A.Movers.unlocked then return end
+
+	local want = WantedAnchor()
+	if not want then return end
+
+	local point, rel, relPoint, x, y = f:GetPoint(1)
+	if point == want.point
+		and relPoint == (want.relPoint or want.point)
+		and rel == _G.UIParent
+		and math.abs((x or 0) - (want.x or 0)) < 0.5
+		and math.abs((y or 0) - (want.y or 0)) < 0.5 then
+		return
+	end
+
+	table.insert(self.moves, 1, {
+		by    = Culprit(),
+		point = point or "?",
+		x     = x or 0,
+		y     = y or 0,
+	})
+	for i = #self.moves, MAX_MOVES + 1, -1 do table.remove(self.moves, i) end
+
+	reanchoring = true
+	if A.Movers and A.Movers.registry.chat then A.Movers:Restore("chat") end
+	reanchoring = false
+end
+
+-- ---------------------------------------------------------------------------
 -- the size, which is ours to remember
 -- ---------------------------------------------------------------------------
 
@@ -2209,6 +2296,29 @@ local function InstallHooks()
 			Chat:RestoreSize(f)
 			if not (A.Movers and A.Movers.registry.chat) then return end
 			A.Movers:Restore("chat")
+		end)
+	end
+
+	-- ...AND WHATEVER ELSE IT IS, because that has now been four fixes.
+	--
+	-- Telling the dock, hooking the restore, telling the dock on the restore
+	-- path as well as the drag path: each was necessary, none was sufficient,
+	-- and the window still walks home on a new character. Every one of those
+	-- aimed at a function BY NAME, which only works if you can name them all.
+	--
+	-- So this asks the frame instead. Every way of moving a frame - the dock,
+	-- the panel manager, a reset, an addon, Blizzard's own settings - ends at
+	-- the frame's own SetPoint, so that is where the question goes: is the chat
+	-- window where we put it, and if not, WHO just moved it. Ours goes back, and
+	-- the caller is written down, because the next report should be able to name
+	-- the thing rather than describe it. `/aether chat where` reads it out, and
+	-- so does `/aether errors diag`.
+	--
+	-- Off while frames are unlocked: dragging IS a SetPoint every frame, and a
+	-- watcher that fights it is a window you cannot move.
+	if _G.ChatFrame1 and _G.ChatFrame1.SetPoint then
+		hooksecurefunc(_G.ChatFrame1, "SetPoint", function(f)
+			if live() then Chat:WatchPosition(f) end
 		end)
 	end
 
