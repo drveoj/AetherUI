@@ -324,6 +324,18 @@ Media.style = {
 	ttChip       = { "bold",     10, "" },   -- ELITE
 	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
 
+	-- The client's own windows (Panels.lua). OUTLINED, unlike our own panels'
+	-- type: these labels sit over whatever the window is showing - a paper
+	-- doll, a talent tree's artwork, a map - rather than over our own even
+	-- fill, and an unoutlined word on that reads as smudged.
+	pnTab        = { "semibold", 14, "OUTLINE" },
+	pnTitle      = { "semibold", 18, "OUTLINE" },
+	pnSub        = { "medium",   13, "OUTLINE" },
+	-- Everything else inside one: stat rows, resistances, faction names. Drawn
+	-- at whatever size the client already gave the string, so its own layout
+	-- still measures out - only the family and the outline are ours.
+	pnBody       = { "medium",   12, "OUTLINE" },
+
 	-- Nameplates (concept 7a / 7b). Their own roles rather than the tooltip's,
 	-- close as the numbers are: a tooltip is read under the cursor with the
 	-- world stopped, and a plate is read at thirty yards over moving ground

@@ -483,6 +483,13 @@ Config.defaults = {
 			-- off hands Blizzard's back.
 			panels = {
 				enabled = true,
+
+				-- On top of profile.scale, because these windows are not ours.
+				-- Everything inside them is the client's own furniture at a
+				-- fixed pixel size - item icons, the paper doll, its stat rows
+				-- - so a profile scale that suits our frames shrinks a Blizzard
+				-- window past the point where you can read it.
+				scale   = 1.0,
 			},
 
 			xpbar = {

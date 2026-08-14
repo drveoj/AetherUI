@@ -77,6 +77,13 @@ local function Dress(popup)
 
 	Reskin.Panel(popup)
 
+	-- At the profile's scale, like every other frame of ours. A dialog left at
+	-- the client's size is enormous beside the interface that raised it - and
+	-- it is the one window that appears without being asked for.
+	if popup.SetScale and A.db and A.db.profile then
+		popup:SetScale(A.db.profile.scale or 1)
+	end
+
 	local text = Reskin.Element(popup, "Text")
 	if text and text.SetText then
 		W.Restyle(text, "qlObjName")
@@ -144,6 +151,8 @@ function PP:OnDisable()
 
 			if popup.__aetherAlert then popup.__aetherAlert:Show() end
 			popup.__aetherAlert = nil
+
+			if popup.SetScale then popup:SetScale(1) end
 		end
 	end
 end

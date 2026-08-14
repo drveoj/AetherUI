@@ -287,7 +287,7 @@ end
 --  Blizzard draws these in three pieces - left cap, stretched middle, right cap
 --  - plus a disabled set of all three, so there is no single texture to swap.
 --  All six come off and a pill goes behind.
-function Reskin.Tab(tab, store)
+function Reskin.Tab(tab, store, style)
 	if not tab or tab.__aetherTab then return end
 
 	Reskin.ClearButton(tab)
@@ -302,7 +302,10 @@ function Reskin.Tab(tab, store)
 	local text = Reskin.Element(tab, "Text")
 		or (tab.GetFontString and tab:GetFontString())
 	if text and text.SetText then
-		A.Widgets.Restyle(text, "tbCardTitle")
+		-- The caller's role where it has one: a tab in a client window wants
+		-- outlined type, because its label sits over whatever that window is
+		-- showing rather than over an even fill of ours.
+		A.Widgets.Restyle(text, style or "tbCardTitle")
 		A.Widgets.Color(text, A.Palette.c.text)
 	end
 	return pill
@@ -347,12 +350,26 @@ function Reskin.ScrollBar(bar, store)
 		end
 	end
 
+	-- A TRACK, always drawn. The thumb alone tells you a list scrolls only
+	-- while you can see the thumb; a list you can scroll with no visible sign
+	-- of it reads as a list that ends where the rows stop. The rail is the sign.
+	if not bar.__aetherTrack then
+		local track = bar:CreateTexture(nil, "BACKGROUND")
+		track:SetTexture(A.Media.texture.flat)
+		track:SetPoint("TOP", bar, "TOP", 0, -2)
+		track:SetPoint("BOTTOM", bar, "BOTTOM", 0, 2)
+		track:SetWidth(A:Px(4))
+		local f = A.Palette.c.textFaint
+		track:SetVertexColor(f[1], f[2], f[3], 0.22)
+		bar.__aetherTrack = track
+	end
+
 	local thumb = bar.GetThumbTexture and bar:GetThumbTexture()
 	if thumb then
 		thumb:SetTexture(A.Media.texture.flat)
-		local c = A.Palette.c.textFaint
-		thumb:SetVertexColor(c[1], c[2], c[3], 0.55)
-		if thumb.SetWidth then thumb:SetWidth(A:Px(4)) end
+		local c = A.Palette.c.text
+		thumb:SetVertexColor(c[1], c[2], c[3], 0.45)
+		if thumb.SetWidth then thumb:SetWidth(A:Px(6)) end
 	end
 
 	bar.__aetherScroll = true
@@ -380,6 +397,98 @@ function Reskin.CheckBox(box, store)
 
 	box.__aetherCheck = pill
 	return pill
+end
+
+-- A tree's disclosure marks, in type rather than in Blizzard's stone buttons.
+-- U+2212, the real minus: a hyphen next to a full-height plus reads as a dash
+-- that has lost something.
+local GLYPH_PLUS, GLYPH_MINUS = "+", "\226\136\146"
+
+--- One collapse control: its stone plus or minus off, ours on.
+--
+--  Safe to call repeatedly, and it HAS to be: the client re-sets the button's
+--  normal texture every time it refreshes the list, so a mark applied once at
+--  dress time is a mark you see until the first click.
+function Reskin.Collapse(btn, style)
+	if not btn or not btn.SetNormalTexture then return end
+
+	Reskin.ClearButton(btn)
+
+	local glyph = btn.__aetherGlyph
+	if not glyph then
+		glyph = A.Widgets.Text(btn, style or "pnBody", "CENTER")
+
+		-- ON THE TEXTURE WE JUST EMPTIED, not in the middle of the button. A
+		-- skill header's button is the whole 285px row with its mark at the far
+		-- left and the group's name beside it, so a glyph centred on the button
+		-- lands in the middle of the words. Clearing a texture does not move
+		-- it: the region keeps the client's own anchors, which are exactly
+		-- where the mark belongs.
+		local slot = btn.GetNormalTexture and btn:GetNormalTexture()
+		if slot and slot.GetObjectType then
+			glyph:SetPoint("CENTER", slot, "CENTER", 0, 0)
+		else
+			glyph:SetPoint("CENTER", btn, "CENTER", 0, 0)
+		end
+
+		btn.__aetherGlyph = glyph
+	end
+
+	glyph:SetText(btn.isExpanded and GLYPH_MINUS or GLYPH_PLUS)
+	A.Widgets.Color(glyph, A.Palette.c.textDim)
+	return glyph
+end
+
+function Reskin.ReleaseCollapse(btn)
+	if not btn then return end
+	if btn.__aetherGlyph then
+		btn.__aetherGlyph:Hide()
+		btn.__aetherGlyph = nil
+	end
+	Reskin.RestoreButton(btn)
+end
+
+--- Our lettering on a client string, AT THE SIZE THE CLIENT CHOSE.
+--
+--  The size is kept deliberately. These strings sit in the client's own layout,
+--  in rows and columns it measured for them, and handing them a size of ours
+--  reflows somebody else's window - labels collide, numbers wrap, a stat row
+--  goes to two lines. The family and the outline are ours; the metrics stay
+--  theirs.
+function Reskin.Font(fs, style)
+	if not fs or not fs.GetFont or not fs.SetFont then return end
+
+	local _, size = fs:GetFont()
+	if type(size) == "number" and size > 0 then
+		fs._aetherSize = math.floor(size + 0.5)
+	end
+	A.Widgets.Restyle(fs, style or "pnBody")
+end
+
+--- Every string inside a frame, ours. Colour is left alone.
+--
+--  The client colours these itself and means it: a stat that changed is green,
+--  a label is gold, a resistance is its school's colour. Re-roling the type
+--  without touching the colour keeps all of that and still gets rid of the
+--  lettering from another interface.
+function Reskin.Fonts(frame, style, depth)
+	if not frame or type(frame) ~= "table" then return end
+	depth = depth or 0
+	if depth > 4 then return end            -- deep enough for any of these
+
+	if frame.GetRegions then
+		for _, region in ipairs({ frame:GetRegions() }) do
+			if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+				Reskin.Font(region, style)
+			end
+		end
+	end
+
+	if frame.GetChildren then
+		for _, child in ipairs({ frame:GetChildren() }) do
+			Reskin.Fonts(child, style, depth + 1)
+		end
+	end
 end
 
 --- Hand the client its frame back: our surface away, its art returned.

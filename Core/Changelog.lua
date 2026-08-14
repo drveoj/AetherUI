@@ -38,6 +38,18 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.5.1",
+		date    = "2026-08-14",
+		lines   = {
+			"The skill list fills the window - as many rows as there is room for, instead of the twelve the client draws.",
+			"The character sheet is in our lettering throughout, at the sizes the client laid its rows out for.",
+			"Its tabs sit as one even row in the middle of the window, and the one you are on reads brighter. No word gets shortened to fit.",
+			"The trees' plus and minus marks are ours, and All sits at the head of the groups it governs.",
+			"The skill list shows a rail when there is more to scroll to.",
+			"Dialogs and the main menu are drawn at your scale, and the menu's buttons are ours.",
+		},
+	},
+	{
 		version = "0.5.0",
 		date    = "2026-08-14",
 		lines   = {

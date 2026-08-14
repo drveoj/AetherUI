@@ -2395,6 +2395,22 @@ do
 		buildPanel(n)
 	end
 
+	-- The main menu is a stack of buttons and nothing else, and the client's set
+	-- of them changes with the build - which is why the skin asks the frame what
+	-- it has rather than naming them.
+	do
+		local gm = _G.GameMenuFrame
+		for _, n in ipairs({ "Options", "AddOns", "Macros", "Logout", "Quit", "Continue" }) do
+			local b = CreateFrame("Button", "GameMenuButton" .. n, gm)
+			b:SetNormalTexture("menu-button-up")
+			b:SetPushedTexture("menu-button-down")
+			local fs = b:CreateFontString(nil, "OVERLAY")
+			fs:SetText(n)
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+		end
+	end
+
 	-- The character sheet's insides.
 	--
 	-- Without these every loop in the interior skin iterates an empty list and
@@ -2406,7 +2422,11 @@ do
 		local cf = _G.CharacterFrame
 
 		_G.NUM_FACTIONS_DISPLAYED = 3
-		_G.SKILLS_TO_DISPLAY = 3
+		-- Twelve, as the client ships: SkillFrame.xml builds twelve rows and
+		-- reuses them as you scroll, which is why the list ends halfway down a
+		-- window of ours with empty glass underneath it.
+		_G.SKILLS_TO_DISPLAY = 12
+		_G.SKILLFRAME_SKILL_HEIGHT = 15
 		_G.ITEM_QUALITY_COLORS = {
 			[0] = { r = 0.62, g = 0.62, b = 0.62 },
 			[1] = { r = 1.00, g = 1.00, b = 1.00 },
@@ -2455,18 +2475,35 @@ do
 		-- four tabs each measured generously to a word like "Reputation" is what
 		-- ran the row out past the right edge. "Tab1".."Tab4" always fits and
 		-- would have proved nothing.
-		for i, label in ipairs({ "Character", "Reputation", "Skills", "Honor" }) do
+		-- THE PET TAB IS HIDDEN on a character without a pet, and it sits
+		-- SECOND - between Character and Reputation. A layout that walks every
+		-- tab the client defined gives it a slot of its own, and the row ends up
+		-- with a hole in it exactly one tab wide. Four visible tabs in a row
+		-- cannot show that; this can.
+		for i, label in ipairs({ "Character", "Pet", "Reputation", "Skills", "Honor" }) do
 			local t = CreateFrame("Button", "CharacterFrameTab" .. i, cf)
 			t:SetNormalTexture("tab-up")
 			t:SetDisabledTexture("tab-disabled")
 
-			-- Blizzard anchors its tabs; ours keeps the height and takes the
-			-- left. A mock tab with no point at all cannot show that.
-			t:SetPoint("TOPLEFT", cf, "BOTTOMLEFT", 11 + (i - 1) * 60, 76)
+			-- Anchored by its CENTRE, not its corner. Blizzard's anchor shape is
+			-- not ours to assume, and a skin that keeps the client's point but
+			-- overwrites its x reads "18" as "put the middle here" and hangs
+			-- half the tab off the side of the screen. A mock that only ever
+			-- uses TOPLEFT cannot show that.
+			t:SetPoint("CENTER", cf, "BOTTOMLEFT", 60 + (i - 1) * 60, 90)
 
 			local fs = t:CreateFontString(nil, "OVERLAY")
 			fs:SetText(label)
 			_G["CharacterFrameTab" .. i .. "Text"] = fs
+
+			-- Reachable as the button's own font string, which is how
+			-- PanelTemplates_TabResize finds it. Without this the client's own
+			-- resize returns early and the mock quietly agrees that a width set
+			-- once at dress time is a width that lasts.
+			t.__fs = fs
+			function t:GetFontString() return self.__fs end
+
+			if label == "Pet" then t:Hide() end
 		end
 
 		local model = CreateFrame("Frame", "CharacterModelFrame", cf)
@@ -2481,6 +2518,24 @@ do
 			"CharacterAttributesFrame", "PetAttributesFrame" }) do
 			CreateFrame("Frame", n, cf):CreateTexture(nil, "BORDER")
 				:SetTexture("pane-stone")
+		end
+
+		-- The stat rows, in the client's own lettering at the client's own
+		-- sizes. A pane with no strings in it lets a skin claim to have re-roled
+		-- an interior it never touched - and the SIZE matters as much as the
+		-- family: these sit in rows the client measured, so handing them a size
+		-- of ours reflows somebody else's window.
+		do
+			local attrs = _G.CharacterAttributesFrame
+			local label = attrs:CreateFontString("CharacterStatFrame1Label", "OVERLAY")
+			label:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			label:SetText("Strength:")
+
+			-- One level down, because the client nests these.
+			local row = CreateFrame("Frame", "CharacterStatFrame1", attrs)
+			local value = row:CreateFontString("CharacterStatFrame1StatText", "OVERLAY")
+			value:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			value:SetText("21")
 		end
 
 		for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
@@ -2513,6 +2568,31 @@ do
 			label.__fs = fs
 			function label:GetFontString() return self.__fs end
 			function label:SetText(t) self.__fs:SetText(t) end
+
+			-- The disclosure mark is the button's NORMAL TEXTURE, sitting at
+			-- the far left of a 285px row with the group's name beside it. A
+			-- glyph centred on the button lands in the middle of the words.
+			label:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+			label.isExpanded = (i == 1) or nil
+		end
+
+		for i = 1, _G.NUM_FACTIONS_DISPLAYED do
+			CreateFrame("Button", "ReputationHeader" .. i, cf)
+				:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+		end
+
+		-- The client repaints every mark whenever the list changes - which is
+		-- every expand, every collapse and every scroll. A skin that clears
+		-- them once at dress time is a skin you see until the first click.
+		function _G.SkillFrame_UpdateSkills()
+			for i = 1, (_G.SKILLS_TO_DISPLAY or 0) do
+				local l = _G["SkillTypeLabel" .. i]
+				if l and l.SetNormalTexture then
+					l:SetNormalTexture(l.isExpanded
+						and "Interface\\Buttons\\UI-MinusButton-Up"
+						or "Interface\\Buttons\\UI-PlusButton-Up")
+				end
+			end
 		end
 
 		for _, n in ipairs({ "ReputationListScrollFrame", "SkillListScrollFrame",
@@ -2536,6 +2616,38 @@ do
 		for _, n in ipairs({ "SkillDetailStatusBar", "HonorFrameProgressBar",
 			"PetPaperDollFrameExpBar" }) do
 			CreateFrame("StatusBar", n, cf)
+		end
+
+		function _G.PanelTemplates_UpdateTabs(frame) end
+
+		-- SELECTING A TAB MOVES ITS TEXT. The client nudges the label up into
+		-- the raised part of its own stone art - right for that art, wrong for
+		-- a flat pill - and it does it on every selection, not once at setup.
+		function _G.PanelTemplates_SelectTab(tab)
+			local fs = tab:GetFontString()
+			if fs then
+				fs:ClearAllPoints()
+				fs:SetPoint("CENTER", tab, "CENTER", 0, 3)
+			end
+			tab:Disable()
+		end
+
+		-- "All" collapses and expands the whole tree, and the client hangs it
+		-- off a little stone tab out to the RIGHT of the groups it governs.
+		do
+			local all = CreateFrame("Button", "SkillFrameCollapseAllButton", cf)
+			local fs = all:CreateFontString(nil, "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText("All")
+			all.__fs = fs
+			function all:GetFontString() return self.__fs end
+			all:SetPoint("BOTTOMLEFT", cf, "TOPLEFT", 120, -40)
+
+			for _, part in ipairs({ "Left", "Middle", "Right" }) do
+				local t = cf:CreateTexture(nil, "ARTWORK")
+				t:SetTexture("expand-tab-" .. part)
+				_G["SkillFrameExpandTab" .. part] = t
+			end
 		end
 
 		-- A second Close, in the middle of the skills list, doing what the one
@@ -15762,6 +15874,17 @@ print("== popups: the client's dialogs in our glass ==")
 do
 	local PPm = A:GetModule("popups")
 
+	-- SCALE. A dialog left at the client's size is enormous beside the
+	-- interface that raised it, and it is the one window that turns up without
+	-- being asked for.
+	local popScale = A.db.profile.scale
+	A.db.profile.scale = 0.8
+	PPm:Skin()
+	check(_G.StaticPopup1:GetScale() == 0.8,
+		"a dialog is drawn at the profile's scale like everything else of ours")
+	A.db.profile.scale = popScale
+	PPm:Skin()
+
 	-- BOTH conventions. Half the mock's dialogs carry their parts as fields and
 	-- half name them globally, because both are live on this client - and a
 	-- module that knows one convention skins half the dialogs in the game while
@@ -15938,8 +16061,17 @@ do
 	check(cf.Bg.__fill:GetTexture() == 0,
 		"including the background in its child frame, which is where these keep"
 		.. " the thing you can actually see")
-	check(_G.CharacterFrameTitleText._aetherStyle == "tbTitle",
+	check(_G.CharacterFrameTitleText._aetherStyle == "pnTitle",
 		"the title is re-roled into our type")
+
+	-- OUTLINED, unlike our own panels' type. These labels sit over whatever the
+	-- window is showing - a paper doll, a talent tree's artwork, a map - rather
+	-- than over an even fill of ours, and an unoutlined word on that reads as
+	-- smudged.
+	local _, _, titleFlags = _G.CharacterFrameTitleText:GetFont()
+	check(titleFlags == "OUTLINE",
+		"and outlined, because it sits over the window's own contents rather"
+		.. " than over a fill of ours (" .. tostring(titleFlags) .. ")")
 
 	local close = _G.CharacterFrameCloseButton
 	check(close.__aetherX and (close.__aetherX:GetText() or "") ~= "",
@@ -16003,8 +16135,111 @@ do
 
 	check(_G.ReputationDetailAtWarCheckbox.__aetherCheck ~= nil,
 		"and a check box gets a pill")
-	check(_G.CharacterNameText._aetherStyle == "tbTitle",
+
+	-- MORE ROWS, NOT JUST MORE ROOM. Blizzard builds twelve and reuses them as
+	-- you scroll, so a taller window buys nothing: the list still ends twelve
+	-- rows down with empty glass under it. The rows come from the client's own
+	-- templates and its own update function fills them - we only add to the
+	-- pool and say how many there are.
+	check(_G.SKILLS_TO_DISPLAY > 12,
+		"the skill list grows to fit the window (" .. _G.SKILLS_TO_DISPLAY
+		.. " rows, from the client's twelve)")
+	check(_G.SkillRankFrame13 ~= nil and _G.SkillTypeLabel13 ~= nil,
+		"with real rows behind the number - a count raised over rows that do not"
+		.. " exist is an error in the client's own update loop, not a longer list")
+
+	local newPt, newRel, newRelPt, _, newY = _G.SkillRankFrame13:GetPoint(1)
+	check(newPt == "TOPLEFT" and newRel == _G.SkillRankFrame12
+		and newRelPt == "BOTTOMLEFT",
+		"each new row hangs off the one above it, as the client's own do")
+	check(_G.SkillRankFrame13.__aetherFill ~= nil,
+		"and the rows we added are skinned like the rest")
+
+	-- And it stops at the window. A count larger than the space is the same
+	-- bug in the other direction.
+	local tallEnough = _G.SKILLS_TO_DISPLAY * 18 + 79 + 78
+	check(tallEnough <= cf:GetHeight() + 18,
+		"and no more of them than the window can hold ("
+		.. _G.SKILLS_TO_DISPLAY .. " x 18 inside " .. cf:GetHeight() .. ")")
+
+	-- THE DISCLOSURE MARKS. Blizzard's stone plus and minus are the last thing
+	-- in either tree still drawn by the other interface.
+	local header = _G.SkillTypeLabel1
+	check(header:GetNormalTexture():GetTexture() == 0,
+		"a group header's stone mark is cleared")
+	check(header.__aetherGlyph ~= nil, "and ours is drawn instead")
+	check(header.__aetherGlyph:GetText() == "\226\136\146",
+		"an expanded group shows a minus - the real one, U+2212, because a"
+		.. " hyphen beside a full-height plus reads as a dash that lost something")
+	check(_G.SkillTypeLabel2.__aetherGlyph:GetText() == "+",
+		"and a collapsed one shows a plus")
+
+	-- Where the client's own mark was, not in the middle of the row.
+	local gp, grel = header.__aetherGlyph:GetPoint(1)
+	check(gp == "CENTER" and grel == header:GetNormalTexture(),
+		"drawn on the texture we emptied, which still holds the client's own"
+		.. " anchors - a header button is the whole 285px row, so a glyph"
+		.. " centred on it lands in the middle of the group's name")
+
+	-- And it survives the client repainting them, which it does on every
+	-- expand, every collapse and every scroll.
+	_G.SkillFrame_UpdateSkills()
+	check(header:GetNormalTexture():GetTexture() == 0
+		and header.__aetherGlyph:GetText() == "\226\136\146",
+		"and the mark stays ours after the client repaints the list")
+
+	check(_G.ReputationHeader1.__aetherGlyph ~= nil,
+		"the reputation tree's headers get the same treatment")
+
+	-- A SCROLL BAR HAS TO SAY IT SCROLLS. A list you can scroll with no visible
+	-- sign of it reads as a list that ends where its rows stop.
+	local sb = _G.SkillListScrollFrameScrollBar
+	check(sb.__aetherTrack ~= nil,
+		"a scroll bar keeps a visible rail, not just a thumb")
+	local _, _, _, thumbAlpha = sb:GetThumbTexture():GetVertexColor()
+	check(thumbAlpha and thumbAlpha > 0.3,
+		"with a thumb you can actually see against the glass (" .. tostring(thumbAlpha) .. ")")
+
+	-- "ALL" governs every group in the tree, so it belongs at the head of them,
+	-- on the left. The client hangs it off a stone tab out to the right, which
+	-- reads as a sibling of the groups rather than their parent.
+	local allBtn = _G.SkillFrameCollapseAllButton
+	local allPt, allRel, allRelPt, _, allY = allBtn:GetPoint(1)
+	check(allPt == "BOTTOMLEFT" and allRel == _G.SkillTypeLabel1 and allRelPt == "TOPLEFT",
+		"the All control sits above the first group and shares its left edge,"
+		.. " which is what makes it read as their parent")
+	check(_G.SkillFrameExpandTabLeft:GetTexture() == 0,
+		"and the stone tab it used to hang off is cleared")
+	check(_G.CharacterNameText._aetherStyle == "pnTitle",
 		"the character's name is re-roled")
+
+	-- THE INSIDE LETTERING. A window in our glass with the client's own font in
+	-- every row of it is half a skin.
+	local statLabel = _G.CharacterStatFrame1Label
+	local labelFont, labelSize, labelFlags = statLabel:GetFont()
+	check(labelFont and labelFont:find("Outfit", 1, true) ~= nil,
+		"a stat row is in our lettering (" .. tostring(labelFont) .. ")")
+	check(labelSize == 10,
+		"AT THE CLIENT'S OWN SIZE (" .. tostring(labelSize) .. ") - these sit in"
+		.. " rows it measured, so a size of ours reflows somebody else's window")
+	check(labelFlags == "OUTLINE", "and outlined like the rest of the window")
+
+	-- Nested one deeper, because the client nests these.
+	local nestedFont, nestedSize = _G.CharacterStatFrame1StatText:GetFont()
+	check(nestedFont and nestedFont:find("Outfit", 1, true) and nestedSize == 12,
+		"including the ones a level down inside it (" .. tostring(nestedSize) .. ")")
+
+	-- THE MAIN MENU. Its shell was in glass while every button inside it stayed
+	-- a red Blizzard plate, which is the worst of both.
+	local opt = _G.GameMenuButtonOptions
+	check(opt.__aetherPill ~= nil, "the main menu's buttons are ours as well")
+	check(opt:GetNormalTexture():GetTexture() == 0, "with their own plate cleared")
+	check(opt:GetFontString()._aetherStyle ~= nil, "and their lettering re-roled")
+
+	-- Named nowhere: the client's set of these changes between builds, so the
+	-- frame is asked what it has.
+	check(_G.GameMenuButtonQuit.__aetherPill ~= nil,
+		"every one of them, however many the build happens to have")
 
 	check(_G.SkillTypeLabel1:GetFontString()._aetherStyle ~= nil,
 		"a skill tree's collapse header is re-roled THROUGH the button - it is a"
@@ -16025,36 +16260,173 @@ do
 
 	-- TABS. Blizzard's overlap on purpose and the art hides the join; with the
 	-- art gone the overlap is the only thing you can see.
-	local t1, t2 = _G.CharacterFrameTab1, _G.CharacterFrameTab2
-	local tp, trel = t2:GetPoint(1)
-	check(tp == "LEFT" and trel == t1,
-		"each tab is chained off the one before it with a gap of ours")
-	check(t2:GetWidth() > 0, "and measured to its own label (" .. t2:GetWidth() .. ")")
-
-	-- IT HAS TO FIT. Four tabs each sized generously to their own label ran
-	-- straight out past the right edge of the window.
-	local total, count = 0, 0
-	local tn = 1
-	while _G["CharacterFrameTab" .. tn] do
-		total = total + _G["CharacterFrameTab" .. tn]:GetWidth()
-		count = count + 1
-		tn = tn + 1
+	local function ShownTabs()
+		local out, k = {}, 1
+		while _G["CharacterFrameTab" .. k] do
+			local tb = _G["CharacterFrameTab" .. k]
+			if tb:IsShown() then out[#out + 1] = tb end
+			k = k + 1
+		end
+		return out
 	end
-	total = total + 6 * (count - 1)                 -- the gaps between them
-	local room = cf:GetWidth() - 30 - 10 - 16       -- insets, less a margin each side
-	check(total <= room + 0.5,
-		"and the whole row fits inside the window (" .. string.format("%.1f", total)
-		.. " of " .. string.format("%.1f", room) .. ") - measuring each tab to"
-		.. " its label is only right while the row still fits")
 
-	local _, trel1, trelP1, tx1 = t1:GetPoint(1)
-	check(tx1 == 18,
-		"and the row starts where the glass does rather than where Blizzard's"
-		.. " own tab widths put it (x=" .. tostring(tx1) .. ")")
+	local function RowSpill(tabs)
+		for _, tb in ipairs(tabs) do
+			local lb = tb:GetFontString()
+			if lb and lb:GetStringWidth() > tb:GetWidth() - 6 then
+				return lb:GetText() .. " (" .. string.format("%.1f", lb:GetStringWidth())
+					.. " in " .. string.format("%.1f", tb:GetWidth()) .. ")"
+			end
+		end
+	end
+
+	-- ONLY THE ONES YOU CAN SEE. The pet tab sits SECOND, between Character and
+	-- Reputation, and is hidden on a character without a pet. Laying out every
+	-- tab the client defined gave it a slot of its own, and the row had a hole
+	-- in it exactly one tab wide with nothing in it.
+	local shown = ShownTabs()
+	check(#shown == 4 and not _G.CharacterFrameTab2:IsShown(),
+		"the hidden pet tab is left out of the row (" .. #shown .. " of 5 placed)")
+
+	local t1, t2 = shown[1], shown[2]
+	local tp, trel, _, chosenGap = t2:GetPoint(1)
+	check(tp == "LEFT" and trel == t1,
+		"and each tab chains off the one before it IN THE ROW rather than in the"
+		.. " client's numbering, which is where that hole came from")
+
+	-- ONE WIDTH FOR ALL OF THEM. Sizing each to its own word leaves the strip
+	-- sprung: "Character" is half again the width of "Skills", so the space
+	-- between the pills lands differently at every join.
+	local w1, uneven = t1:GetWidth(), nil
+	for i, tb in ipairs(shown) do
+		if math.abs(tb:GetWidth() - w1) > 0.01 then
+			uneven = "#" .. i .. " " .. string.format("%.1f", tb:GetWidth())
+		end
+	end
+	check(uneven == nil,
+		"every tab is the same width (" .. string.format("%.1f", w1) .. ")"
+		.. (uneven and (" - " .. uneven) or ""))
+
+	local _, tabSize, tabFlags = t1:GetFontString():GetFont()
+	check(tabFlags == "OUTLINE",
+		"a tab's label is our own type, outlined (" .. tostring(tabFlags) .. " at "
+		.. tostring(tabSize) .. ") - it sits over whatever the window is showing")
+
+	local spilled = RowSpill(shown)
+	check(spilled == nil,
+		"no label is wider than the tab it sits in" .. (spilled and (": " .. spilled) or ""))
+
+	-- CENTRED AS A GROUP, with the same air either side of it.
+	local total = w1 * #shown + chosenGap * (#shown - 1)
+	local insL, insR = 10, -30
+	local visible = cf:GetWidth() + insR - insL
+	local _, _, _, startX = t1:GetPoint(1)
+	local leftAir = startX - insL
+	local rightAir = visible - leftAir - total
+	check(math.abs(leftAir - rightAir) < 1,
+		"and the row sits in the middle of the window ("
+		.. string.format("%.1f", leftAir) .. " either side of "
+		.. string.format("%.1f", total) .. ")")
+	check(total <= visible + 0.5,
+		"inside it (" .. string.format("%.1f", total) .. " of "
+		.. string.format("%.1f", visible) .. ")")
+
+	-- A window too narrow for the words at any padding we can give up. The row
+	-- has to stay inside it and the labels inside their pills, which is the
+	-- path the clamp exists for - at full width the padding alone absorbs it
+	-- and the clamp never runs.
+	local fullWidth = cf:GetWidth()
+	cf:SetWidth(350)                                -- a few pixels short, as it goes
+	fire("PLAYER_ENTERING_WORLD")
+
+	local tightTabs = ShownTabs()
+	local tightSpill = RowSpill(tightTabs)
+	local _, _, _, tightGap = tightTabs[2]:GetPoint(1)
+
+	local tight = 0
+	for _, tb in ipairs(tightTabs) do tight = tight + tb:GetWidth() end
+	tight = tight + tightGap * (#tightTabs - 1)
+
+	check(tightGap == 2,
+		"squeezed into a narrow window the gap gives way first (" .. tightGap .. ")")
+
+	-- And when there is nothing of ours left to give, the WINDOW gives: a few
+	-- pixels of glass either side costs nothing and beats a row hanging over
+	-- the edge of it.
+	local grownRight
+	for pi = 1, 4 do
+		local pt, _, _, px = cf.__aetherPanel:GetPoint(pi)
+		if pt == "BOTTOMRIGHT" then grownRight = px end
+	end
+	check(grownRight and grownRight > -30,
+		"and after that the window widens to hold the row (right edge "
+		.. string.format("%.1f", grownRight or -30) .. " from -30)")
+	check(tight + 32 <= 350 + (grownRight or -30) - 10 + 0.5,
+		"which is then wide enough for it (" .. string.format("%.1f", tight) .. ")")
+
+	-- Then, and only then, a point or two of the lettering.
+	local baseSize = (A.Media.style["tbCardTitle"] or {})[2]
+	local lettering = _G.CharacterFrameTab1Text._aetherSize
+	check(lettering ~= nil and baseSize and lettering < baseSize,
+		"and after that the lettering gives a point (" .. tostring(lettering)
+		.. " from " .. tostring(baseSize) .. ") - a shade smaller reads fine,"
+		.. " three dots in place of three letters does not")
+
+	-- The words survive. Shortening "Character" to "Charac..." trades three
+	-- letters for three dots and tells the player less than the word did.
+	local shortened
+	for _, tb in ipairs(tightTabs) do
+		local lb = tb:GetFontString()
+		if lb and lb.GetWidth and (lb:GetWidth() or 0) > 0 then
+			shortened = lb:GetText()
+		end
+	end
+	check(shortened == nil,
+		"and no word is truncated to make it fit" ..
+		(shortened and (": " .. shortened) or "") .. " - the padding gives way,"
+		.. " then the gap, and after that the row is simply wider than the"
+		.. " window and says so")
+	check(tightSpill == nil, "with every label still inside its own pill")
+
+	cf:SetWidth(fullWidth)
+	fire("PLAYER_ENTERING_WORLD")
+
+	-- AND IT HAS TO STAY FITTED. The client re-sizes its own tabs on show and
+	-- on every click, straight over anything we set. A row that is only correct
+	-- until the player touches it is not correct.
+	local fitted = t2:GetWidth()
+	_G.PanelTemplates_TabResize(t2, 24)
+	check(t2:GetWidth() == fitted,
+		"the client re-sizing a tab does not undo the fit (" .. t2:GetWidth()
+		.. ") - it does this on show and on every tab click, so a width set"
+		.. " once at dress time lasts until the player touches the window")
+
+	local tpt1, trel1, trelP1, tx1 = t1:GetPoint(1)
+	check(tpt1 == "BOTTOMLEFT" and trelP1 == "BOTTOMLEFT" and trel1 == cf,
+		"the row is anchored by its own bottom-left corner to the frame's ("
+		.. tostring(tpt1) .. " -> " .. tostring(trelP1) .. " x=" .. tostring(tx1)
+		.. ") - the client anchors this tab by its CENTRE, so keeping its point"
+		.. " and overwriting only the x reads 18 as 'put the middle here' and"
+		.. " hangs half the tab off the side of the screen")
+
+	-- The client's own placement is still remembered, because off has to put
+	-- the tab back where it found it.
+	check(t1.__aetherAnchor and t1.__aetherAnchor[1] == "CENTER",
+		"while the client's own anchor is still recorded for the way back")
 
 	-- The client marks the OPEN tab by disabling it, which reads backwards
 	-- until you know it.
-	t1:Disable()
+	-- Selecting through the CLIENT'S OWN function, which moves the label up
+	-- into the raised part of its stone art on the way.
+	_G.PanelTemplates_SelectTab(t1)
+	_G.PanelTemplates_UpdateTabs(cf)
+
+	local lp, lrel, lrelP, lx, ly = t1:GetFontString():GetPoint(1)
+	check(lp == "CENTER" and lrelP == "CENTER" and lx == 0 and ly == 0,
+		"the selected tab's label stays in the middle of its pill (y="
+		.. tostring(ly) .. ") - the client nudges it up on every selection,"
+		.. " which is right for raised stone and wrong for a flat pill")
+
 	fire("PLAYER_ENTERING_WORLD")
 	check(t1.__aetherTab:GetAlpha() > t2.__aetherTab:GetAlpha(),
 		"the open tab reads brighter than the rest (" .. t1.__aetherTab:GetAlpha()
@@ -16064,11 +16436,23 @@ do
 
 	-- SCALE. Every other frame of ours is drawn at profile.scale.
 	local wasScale = A.db.profile.scale
-	A.db.profile.scale = 0.8
+	A.db.profile.scale = 1.2
 	fire("PLAYER_ENTERING_WORLD")
-	check(cf:GetScale() == 0.8,
+	check(cf:GetScale() == 1.2,
 		"the window honours profile.scale, rather than being the one thing on"
 		.. " screen still at the client's size")
+
+	-- But not below a floor. Everything inside these windows is the client's
+	-- own art at a fixed pixel size - the paper doll, the item icons, its stat
+	-- rows - and below about this it stops being readable rather than merely
+	-- small. A profile scale that suits our HUD is not automatically one that
+	-- suits a Blizzard window.
+	A.db.profile.scale = 0.5
+	fire("PLAYER_ENTERING_WORLD")
+	check(cf:GetScale() == 0.85,
+		"and never shrinks past the floor (" .. cf:GetScale() .. " at a profile"
+		.. " scale of 0.5)")
+
 	A.db.profile.scale = wasScale
 	fire("PLAYER_ENTERING_WORLD")
 

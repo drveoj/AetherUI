@@ -67,6 +67,38 @@ for _, entry in ipairs(PANELS) do PN.ENTRY[entry.frame] = entry end
 
 local function cfg() return A.Config:Module("panels") end
 
+--- A floor under how small these windows may be drawn.
+--
+--  Ours are drawn at profile.scale and look right there, because everything in
+--  them is ours and sized for it. These are not ours: the paper doll, the item
+--  icons and the client's own stat rows are fixed pixel art, and below about
+--  this they stop being readable rather than merely small. A profile scale that
+--  suits our HUD is not automatically one that suits a Blizzard window.
+local PANEL_MIN_SCALE = 0.85
+
+--- A point on top of our usual sizes, for the same reason.
+--
+--  These windows are wide and their text sits in the client's own layout, with
+--  its spacing, at its line heights - and our type at HUD sizes reads small in
+--  that company.
+local FONT_BUMP = 1
+
+local function PanelScale()
+	local profile = A.db and A.db.profile
+	local s = (profile and profile.scale or 1) * (cfg().scale or 1)
+	return math.max(s, PANEL_MIN_SCALE)
+end
+
+PN.Scale = PanelScale
+
+--- Restyle a client string in one of ours, a point up.
+local function Roled(fs, style)
+	if not fs then return end
+	local base = (A.Media.style[style] or {})[2]
+	if base then fs._aetherSize = base + FONT_BUMP end
+	W.Restyle(fs, style)
+end
+
 -- ---------------------------------------------------------------------------
 -- dressing
 -- ---------------------------------------------------------------------------
@@ -110,16 +142,15 @@ local function Dress(frame)
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
 	Reskin.Panel(frame, { corner = 16, insets = entry and entry.insets })
 
-	-- Drawn at the profile's scale, like everything else of ours. A window that
-	-- ignores it is the one window on screen at the client's size.
-	if frame.SetScale and A.db and A.db.profile then
-		frame:SetScale(A.db.profile.scale or 1)
-	end
+	-- Drawn at the profile's scale, like everything else of ours - but never
+	-- below the floor, because what is inside these is the client's own art at
+	-- a fixed size and it stops being readable before it stops being small.
+	if frame.SetScale then frame:SetScale(PanelScale()) end
 
 	-- The window's own title, where it has one under a name we can find.
 	local title = Reskin.Element(frame, "TitleText") or Reskin.Element(frame, "Title")
 	if title and title.SetText then
-		W.Restyle(title, "tbTitle")
+		Roled(title, "pnTitle")
 		W.Color(title, Palette.c.text)
 		frame.__aetherTitle = title
 	end
@@ -151,7 +182,26 @@ PN.Dress = Dress
 -- margins and are meant to overlap - the art hides the join. Strip the art and
 -- the overlap is all you can see, so they are measured to their own label and
 -- chained with a gap of ours.
-local TAB_PAD, TAB_GAP, TAB_H, TAB_EDGE = 26, 6, 26, 8
+local TAB_PAD, TAB_GAP, TAB_H, TAB_EDGE = 26, 6, 26, 16
+
+-- What to give up, in order, when the row is too wide for the window. Padding
+-- first and the gap second, because both are ours to spend; the label's own
+-- width is not, and a tab squeezed narrower than the word inside it just spills
+-- the word out over both ends of the pill.
+local TAB_PADS = { 26, 22, 18, 14 }
+local TAB_GAPS = { 6, 4, 2 }
+
+-- And after both of those, a point or two off the lettering. Still not the
+-- word: a shade smaller reads fine, three dots in place of three letters does
+-- not.
+local TAB_STYLE = "pnTab"
+-- Three, because the row starts a point up: this spends the bump and one more
+-- besides before it gives up and lets the row overhang.
+local TAB_FONT_STEPS = 3
+
+-- The most glass we will add either side to stop a row overhanging. A few
+-- pixels is the point; a window stretched around whatever it is given is not.
+local TAB_GROW_MAX = 48
 
 local function TabLabel(tab)
 	return Reskin.Element(tab, "Text") or (tab.GetFontString and tab:GetFontString())
@@ -168,7 +218,19 @@ local function StyleTabState(tab)
 	if tab.__aetherTab then tab.__aetherTab:SetAlpha(selected and 1 or 0.4) end
 
 	local text = TabLabel(tab)
-	if text then W.Color(text, selected and Palette.c.text or Palette.c.textDim) end
+	if not text then return end
+
+	W.Color(text, selected and Palette.c.text or Palette.c.textDim)
+
+	-- AND PUT THE LABEL BACK IN THE MIDDLE. Selecting a tab moves its text: the
+	-- client nudges it up into the raised part of its own stone art, which is
+	-- right for that art and wrong for a flat pill. It does this on every
+	-- selection, so it has to be answered on every selection.
+	if text.ClearAllPoints then
+		text:ClearAllPoints()
+		text:SetPoint("CENTER", tab, "CENTER", 0, 0)
+	end
+	if text.SetJustifyH then text:SetJustifyH("CENTER") end
 end
 
 --- How much room the tab row actually has: the visible window, less a margin.
@@ -180,45 +242,177 @@ local function StripWidth(frame, name)
 	return w - TAB_EDGE * 2
 end
 
+--- Measure every tab's label, at a given font size.
+--
+--  Always from a reset: a label told not to wrap reports its TRUNCATED width,
+--  so measuring one still clamped from an earlier pass measures our own squeeze
+--  and the row creeps narrower every time it is laid out.
+local function MeasureTabs(tabs, size)
+	local widths, textSum = {}, 0
+
+	for i, tab in ipairs(tabs) do
+		local text = TabLabel(tab)
+		if text then
+			if text.SetWordWrap then text:SetWordWrap(true) end
+			if text.SetWidth then text:SetWidth(0) end
+			text._aetherSize = size
+			W.Restyle(text, TAB_STYLE)
+		end
+
+		local w = (text and text.GetStringWidth and text:GetStringWidth()) or 60
+		widths[i] = w
+		textSum = textSum + w
+	end
+
+	return widths, textSum
+end
+
 local function LayoutTabs(frame, store)
 	local name = frame.GetName and frame:GetName()
 	if not name then return end
 
-	-- Measure the whole row before placing any of it. Sizing each tab to its
-	-- own label is only right while the row still fits the window - four tabs
-	-- measured generously ran straight out past the right edge.
-	local tabs, widths, natural = {}, {}, 0
+	-- ONLY THE ONES YOU CAN SEE.
+	--
+	-- The character sheet's second tab is the pet, and a character without a
+	-- pet has it hidden. Laying out every tab the client defined gave that
+	-- hidden one a slot of its own - so the row had a hole in it between
+	-- Character and Reputation, exactly the width of a tab, with nothing in it.
+	local tabs, hidden = {}, {}
 	local n = 1
 	while _G[name .. "Tab" .. n] do
 		local tab = _G[name .. "Tab" .. n]
-		tabs[n] = tab
-
-		local text = TabLabel(tab)
-		widths[n] = ((text and text.GetStringWidth and text:GetStringWidth()) or 60) + TAB_PAD
-		natural = natural + widths[n]
+		if not tab.IsShown or tab:IsShown() then
+			tabs[#tabs + 1] = tab
+		else
+			hidden[#hidden + 1] = tab
+		end
 		n = n + 1
 	end
 	if #tabs == 0 then return end
 
-	natural = natural + TAB_GAP * (#tabs - 1)
-
 	local room = StripWidth(frame, name)
-	if room > 0 and natural > room then
-		-- Equal shares. A row that overruns the window is worse than a row
-		-- whose tabs are not each measured to their own label.
-		local each = (room - TAB_GAP * (#tabs - 1)) / #tabs
-		for i = 1, #tabs do widths[i] = each end
+	local base = (A.Media.style[TAB_STYLE] or {})[2]
+	base = base and (base + FONT_BUMP)
+
+	local gap = TAB_GAP
+	local widths = MeasureTabs(tabs, base)
+
+	local function widest(ws)
+		local m = 0
+		for _, w in ipairs(ws) do if w > m then m = w end end
+		return m
 	end
+
+	-- EVERY TAB THE SAME WIDTH, sharing the row out evenly.
+	--
+	-- Sizing each one to its own word instead leaves the strip looking sprung:
+	-- "Character" is half again the width of "Skills", so the space between the
+	-- pills lands differently at every join and the row reads as a mistake. One
+	-- width for all of them is what makes it a row.
+	--
+	-- It only works while the widest word still fits its share. When it does
+	-- not, a point or two off the lettering buys the room - and if even that is
+	-- not enough, each tab takes its own width back, because a word that will
+	-- not fit its pill is worse than an uneven row.
+	-- The width every tab gets is the WIDEST word plus padding: that is the
+	-- narrowest one width that fits all of them. If the row of those is too
+	-- wide for the window, the padding gives, then the gap, then a point or two
+	-- of the lettering - and a smaller font makes the widest word narrower,
+	-- which is what buys the room back.
+	local even
+	for stepIndex = 0, TAB_FONT_STEPS do
+		if stepIndex > 0 then
+			if not base then break end
+			widths = MeasureTabs(tabs, base - stepIndex)
+		end
+
+		local word = widest(widths)
+		for _, g in ipairs(TAB_GAPS) do
+			for _, p in ipairs(TAB_PADS) do
+				if room <= 0 or (word + p) * #tabs + g * (#tabs - 1) <= room then
+					even, gap = word + p, g
+					break
+				end
+			end
+			if even then break end
+		end
+
+		if even then break end
+	end
+
+	-- Nothing fitted: tightest of everything and the row is wider than the
+	-- window. Still one width, because an even row that overhangs reads as a
+	-- row; an uneven one reads as a mistake.
+	if not even then
+		even, gap = widest(widths) + TAB_PADS[#TAB_PADS], TAB_GAPS[#TAB_GAPS]
+	end
+
+	-- The group, and where it goes: measured end to end, then centred in the
+	-- window. If it is wider than the window even at the tightest of
+	-- everything, the WINDOW gives - a few pixels of glass either side costs
+	-- nothing and is better than a row that hangs over the edge.
+	local total = even * #tabs + gap * (#tabs - 1)
+	local entry = PN.ENTRY and PN.ENTRY[name]
+	local ins = entry and entry.insets or {}
+	local left, right = ins[1] or 0, ins[3] or 0
+
+	local visible = (frame.GetWidth and frame:GetWidth() or 0) + right - left
+	if total + TAB_EDGE * 2 > visible then
+		-- Capped, because this is meant to be the few pixels that stop a row
+		-- from overhanging - not a way to stretch a window around anything you
+		-- put in it. Past the cap the row overhangs and that is the honest
+		-- answer.
+		local grow = math.min(total + TAB_EDGE * 2 - visible, TAB_GROW_MAX)
+		right = right + grow
+		visible = visible + grow
+
+		-- Both corners, from clear: setting one anchor again leaves the old one
+		-- in place on some paths, and then the panel has two right edges.
+		local panel = frame.__aetherPanel
+		if panel and panel.ClearAllPoints then
+			panel:ClearAllPoints()
+			panel:SetPoint("TOPLEFT", frame, "TOPLEFT", left, ins[2] or 0)
+			panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right, ins[4] or 0)
+		end
+	end
+
+	local startX = left + (visible - total) / 2
 
 	local last
 
-	local i = 1
-	while _G[name .. "Tab" .. i] do
-		local tab = _G[name .. "Tab" .. i]
-		Reskin.Tab(tab, store)
+	for i, tab in ipairs(tabs) do
+		Reskin.Tab(tab, store, TAB_STYLE)
 
-		local w = widths[i]
+		-- One width, the same for every tab in the row.
+		local w = even
 		if tab.SetSize then tab:SetSize(w, TAB_H) end
+
+		-- Keep the label inside its pill. Measured from zero every time: a
+		-- width set on a previous pass would otherwise be what we measure, and
+		-- the label would ratchet narrower on every re-layout.
+		local label = TabLabel(tab)
+		if label then
+			-- NEVER TRUNCATED. Shortening "Character" to "Charac..." trades
+			-- three letters for three dots and tells the player less than the
+			-- word did. If a row is tight the padding gives way, not the word.
+			if label.SetWordWrap then label:SetWordWrap(true) end
+			if label.SetWidth then label:SetWidth(0) end
+
+			-- Centred in the tab, not where Blizzard's art wanted it: its own
+			-- offsets were written for a raised stone tab whose face sat above
+			-- the middle, and with the stone gone the word reads high.
+			if label.ClearAllPoints then
+				label:ClearAllPoints()
+				label:SetPoint("CENTER", tab, "CENTER", 0, 0)
+			end
+
+			-- Centred by JUSTIFICATION as well as by anchor. The client sets
+			-- these labels to justify left for its own tab art, and a string
+			-- that ever picks up a width - the client's own resize hands it one
+			-- - then draws hard against the left of that width whatever its
+			-- anchor says. Both, or it only looks centred until it does not.
+			if label.SetJustifyH then label:SetJustifyH("CENTER") end
+		end
 
 		-- Where the client had it, before we move it. Off has to put it back.
 		if tab.__aetherAnchor == nil and tab.GetPoint then
@@ -227,34 +421,17 @@ local function LayoutTabs(frame, store)
 			if tab.GetWidth then tab.__aetherSize = { tab:GetWidth(), tab:GetHeight() } end
 		end
 
-		-- Only the SPACING is ours. The first tab stays exactly where the client
-		-- put it and the rest chain off it, so the row keeps the height the
-		-- frame was built around - re-anchoring it to our glass moved the whole
-		-- strip up into the weapon slots.
+		-- ONE ANCHOR, OURS, in a shape we control. The client's anchor is not
+		-- used at all: a tab anchored by its CENTRE takes an x meaning "where
+		-- the middle goes", so an offset written for a left edge hangs half the
+		-- tab off the side of the screen. It is still RECORDED, because
+		-- switching the module off has to put it back where the client had it.
 		if last then
 			tab:ClearAllPoints()
-			tab:SetPoint("LEFT", last, "RIGHT", TAB_GAP, 0)
-		elseif tab.__aetherAnchor then
-			-- Keep the client's HEIGHT, take our own LEFT. Blizzard's x suits
-			-- its own tab widths; ours start where the glass does.
-			local a = tab.__aetherAnchor
-			local relPoint = a[3]
-			local x = a[4]
-			if type(relPoint) == "string" and relPoint:find("LEFT") then
-				local entry = PN.ENTRY and PN.ENTRY[name]
-				local ins = entry and entry.insets
-				x = (ins and ins[1] or 0) + TAB_EDGE
-			end
-			tab:ClearAllPoints()
-			tab:SetPoint(a[1], a[2], relPoint, x, a[5])
+			tab:SetPoint("LEFT", last, "RIGHT", gap, 0)
 		else
-			-- No anchor of its own to keep. Better a row in the right place
-			-- than a row nowhere: without this the whole strip is unanchored.
-			local entry = PN.ENTRY and PN.ENTRY[name]
-			local ins = entry and entry.insets
 			tab:ClearAllPoints()
-			tab:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT",
-				(ins and ins[1] or 0) + TAB_EDGE, (ins and ins[4] or 0) + TAB_GAP)
+			tab:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", startX, (ins[4] or 0) + TAB_EDGE)
 		end
 		last = tab
 
@@ -273,8 +450,163 @@ local function LayoutTabs(frame, store)
 				end
 			end)
 		end
+	end
 
-		i = i + 1
+	-- A tab that is hidden now may be shown later - the pet tab arrives with a
+	-- pet - and it has to come back into the row rather than reappearing where
+	-- the client last left it.
+	for _, tab in ipairs(hidden) do
+		if tab.HookScript and not tab.__aetherShowHook then
+			tab.__aetherShowHook = true
+			tab:HookScript("OnShow", function()
+				if PN.enabled and frame.__aetherArt then
+					LayoutTabs(frame, frame.__aetherArt)
+				end
+			end)
+		end
+	end
+end
+
+--- Answer the client when it re-sizes or re-selects its own tabs.
+--
+--  PanelTemplates_TabResize sets a tab's width from its label and its side
+--  caps, and the client calls it on show and on every tab click. A width we set
+--  once at dress time survives until the player touches the window - which is
+--  to say, it does not survive at all. Same for the selected state, which the
+--  client rewrites through PanelTemplates_UpdateTabs.
+local function InstallTabHooks()
+	if PN.__tabHooks or not hooksecurefunc then return end
+	PN.__tabHooks = true
+
+	local function OwnedBy(frame)
+		local name = frame and frame.GetName and frame:GetName()
+		if not name or not PN.ENTRY[name] then return nil end
+		return name
+	end
+
+	if _G.PanelTemplates_TabResize then
+		hooksecurefunc("PanelTemplates_TabResize", function(tab)
+			if not PN.enabled or PN.__relaying or not tab or not tab.GetParent then return end
+
+			local parent = tab:GetParent()
+			if not OwnedBy(parent) or not parent.__aetherArt then return end
+
+			-- Re-entry guard, not an optimisation: laying the row out touches
+			-- every tab in it, and the client may be part way through its own
+			-- loop over the same tabs.
+			PN.__relaying = true
+			LayoutTabs(parent, parent.__aetherArt)
+			PN.__relaying = false
+		end)
+	end
+
+	if _G.PanelTemplates_UpdateTabs then
+		hooksecurefunc("PanelTemplates_UpdateTabs", function(frame)
+			if not PN.enabled then return end
+			local name = OwnedBy(frame)
+			if not name then return end
+
+			local n = 1
+			while _G[name .. "Tab" .. n] do
+				StyleTabState(_G[name .. "Tab" .. n])
+				n = n + 1
+			end
+		end)
+	end
+end
+
+-- The skill list's rows. Blizzard builds twelve of them in XML and reuses them
+-- as you scroll, so the list is twelve rows tall whatever the window is - and
+-- in a window of ours it ends halfway down with empty glass underneath and no
+-- sign that there is more.
+--
+-- The rows come from two templates, the pitch between them is 18, and
+-- SkillFrame_UpdateSkills fills however many SKILLS_TO_DISPLAY says there are.
+-- So we add rows to its pool from its own templates and tell it the new count:
+-- the client still owns what goes in them.
+local SKILL_ROW_PITCH   = 18
+local SKILL_FIRST_ROW_Y = 79     -- where the client puts row one, from the top
+local SKILL_BOTTOM_KEEP = 78     -- the tab strip, and air above it
+local SKILL_ROWS_MAX    = 40
+
+local function GrowSkillRows()
+	local frame, first = _G.SkillFrame, _G.SkillRankFrame1
+	if not frame or not first or not CreateFrame then return end
+
+	local host = _G.CharacterFrame or frame
+	local height = host.GetHeight and host:GetHeight() or 0
+	if height <= 0 then return end
+
+	local have = _G.SKILLS_TO_DISPLAY or 12
+	local room = height - SKILL_FIRST_ROW_Y - SKILL_BOTTOM_KEEP
+	local want = math.floor(room / SKILL_ROW_PITCH)
+
+	if want > SKILL_ROWS_MAX then want = SKILL_ROWS_MAX end
+	if want <= have then return end
+
+	for n = have + 1, want do
+		if not _G["SkillRankFrame" .. n] then
+			local prevBar = _G["SkillRankFrame" .. (n - 1)]
+			local prevLabel = _G["SkillTypeLabel" .. (n - 1)]
+			if not prevBar or not prevLabel then break end
+
+			-- The client's own templates, so these are the same objects its
+			-- update function expects to find - not lookalikes of ours.
+			local bar = CreateFrame("StatusBar", "SkillRankFrame" .. n, frame,
+				"SkillStatusBarTemplate")
+			if bar.SetID then bar:SetID(n) end
+			bar:SetPoint("TOPLEFT", prevBar, "BOTTOMLEFT", 0, -3)
+
+			local label = CreateFrame("Button", "SkillTypeLabel" .. n, frame,
+				"SkillLabelTemplate")
+			label:SetPoint("LEFT", prevLabel, "LEFT", 0, -SKILL_ROW_PITCH)
+		end
+	end
+
+	_G.SKILLS_TO_DISPLAY = want
+
+	-- The viewport grows with them, or the wheel still scrolls twelve rows'
+	-- worth over a list that is now twenty tall.
+	local list = _G.SkillListScrollFrame
+	if list and list.SetHeight then list:SetHeight(want * SKILL_ROW_PITCH) end
+
+	if _G.SkillFrame_UpdateSkills then _G.SkillFrame_UpdateSkills() end
+end
+
+--- Every collapse control in the character sheet, in our marks.
+--
+--  Both trees use them: the skill list's group headers and the reputation
+--  list's, plus the "All" control that governs the whole skill tree.
+local function DressCollapses()
+	for n = 1, (_G.SKILLS_TO_DISPLAY or 0) do
+		Reskin.Collapse(_G["SkillTypeLabel" .. n])
+	end
+	for n = 1, (_G.NUM_FACTIONS_DISPLAYED or 0) do
+		Reskin.Collapse(_G["ReputationHeader" .. n])
+	end
+	Reskin.Collapse(_G.SkillFrameCollapseAllButton)
+end
+
+--- Answer the client when it repaints those marks.
+--
+--  SkillFrame_UpdateSkills sets every header's normal texture back to a stone
+--  plus or minus each time the list changes - which is every expand, every
+--  collapse and every scroll. Ours has to go back on after it, not instead of
+--  it.
+local function InstallSkillHook()
+	if PN.__skillHook or not hooksecurefunc then return end
+
+	if _G.SkillFrame_UpdateSkills then
+		PN.__skillHook = true
+		hooksecurefunc("SkillFrame_UpdateSkills", function()
+			if PN.enabled then DressCollapses() end
+		end)
+	end
+
+	if _G.ReputationFrame_Update then
+		hooksecurefunc("ReputationFrame_Update", function()
+			if PN.enabled then DressCollapses() end
+		end)
 	end
 end
 
@@ -316,18 +648,25 @@ end
 local function DressCharacter(frame, store)
 	for _, name in ipairs(CHAR_PANES) do
 		local pane = _G[name]
-		if pane then Reskin.Strip(pane, store) end
+		if pane then
+			Reskin.Strip(pane, store)
+
+			-- And every string in it into our lettering. The client's own
+			-- sizes are kept: these sit in rows and columns it measured, and a
+			-- size of ours reflows somebody else's window.
+			Reskin.Fonts(pane, "pnBody")
+		end
 	end
 
 	-- Who you are, above the sheet.
 	local who = _G.CharacterNameText
 	if who and who.SetText then
-		W.Restyle(who, "tbTitle")
+		Roled(who, "pnTitle")
 		W.Color(who, Palette.c.text)
 	end
 	local rank = _G.CharacterLevelText
 	if rank and rank.SetText then
-		W.Restyle(rank, "tbCardSub")
+		Roled(rank, "pnSub")
 		W.Color(rank, Palette.c.textDim)
 	end
 
@@ -337,6 +676,7 @@ local function DressCharacter(frame, store)
 	end)
 
 	LayoutTabs(frame, store)
+	InstallTabHooks()
 
 	local model = _G.CharacterModelFrame
 	if model then
@@ -364,6 +704,10 @@ local function DressCharacter(frame, store)
 		if war then Reskin.CheckBox(war, store) end
 	end
 
+	-- More rows first, so the loop below skins the ones we just added too.
+	GrowSkillRows()
+	InstallSkillHook()
+
 	-- Skills: same shape, different list, plus a border and a backing plate on
 	-- every row that are separate objects from the bar itself.
 	for n = 1, (_G.SKILLS_TO_DISPLAY or 0) do
@@ -383,7 +727,7 @@ local function DressCharacter(frame, store)
 
 		local label = _G["SkillTypeLabel" .. n]
 		if label and label.SetText then
-			W.Restyle(label, "tbCardTitle")
+			Roled(label.GetFontString and label:GetFontString() or label, "pnBody")
 			W.Color(label, Palette.c.text)
 		end
 	end
@@ -396,6 +740,39 @@ local function DressCharacter(frame, store)
 		spare.__aetherHidden = spare:IsShown() and true or false
 		spare:Hide()
 	end
+
+	-- "ALL", which expands and collapses the whole tree - so it belongs at the
+	-- head of it, on the left, above the groups it governs. The client hangs it
+	-- off a little stone tab out to the right, which reads as a sibling of the
+	-- groups rather than their parent. The tab's art comes off and the control
+	-- moves to the left margin.
+	local all = _G.SkillFrameCollapseAllButton
+	if all then
+		for _, part in ipairs({ "SkillFrameExpandTabLeft", "SkillFrameExpandTabMiddle",
+			"SkillFrameExpandTabRight" }) do
+			local art = _G[part]
+			if art then
+				if art.GetObjectType and art:GetObjectType() == "Texture" then
+					art:SetTexture(0)
+				elseif art.GetRegions then
+					Reskin.Strip(art, store)
+				end
+			end
+		end
+
+		-- Above the first group and hard against the same left edge, which is
+		-- what makes it read as the parent of them.
+		local firstGroup = _G.SkillTypeLabel1
+		if firstGroup and all.ClearAllPoints then
+			all:ClearAllPoints()
+			all:SetPoint("BOTTOMLEFT", firstGroup, "TOPLEFT", 0, 4)
+		end
+
+		local allText = all.GetFontString and all:GetFontString()
+		if allText then Roled(allText, "pnBody") end
+	end
+
+	DressCollapses()
 
 	for _, name in ipairs({
 		"ReputationListScrollFrameScrollBar", "SkillListScrollFrameScrollBar",
@@ -429,9 +806,29 @@ local function DressCharacter(frame, store)
 	end
 end
 
+--- The main menu: a stack of buttons and nothing else.
+--
+--  Its shell was already in glass while every button inside it stayed a red
+--  Blizzard plate, which is the worst of both. The buttons are not listed by
+--  name because the client's set changes with the build - Edit Mode and Support
+--  are there on one flavour and not another - so the frame is asked what it
+--  has.
+local function DressGameMenu(frame, store)
+	if not frame.GetChildren then return end
+
+	for _, child in ipairs({ frame:GetChildren() }) do
+		-- A button, by what it can do rather than what it is called.
+		if child and child.SetNormalTexture and child.GetFontString then
+			Reskin.Button(child)
+			Reskin.Strip(child, store)
+		end
+	end
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame = DressCharacter,
+	GameMenuFrame  = DressGameMenu,
 }
 
 PN.INTERIORS = INTERIORS
