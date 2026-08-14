@@ -17,8 +17,8 @@ frames that belong to somebody else.
 
 ## 1. What the client actually gives us
 
-Verified against `E:\wow-ui-source-classic_era` (Interface 11509) and against the
-addons actually installed in `_classic_era_\Interface\AddOns`.
+Verified against `E:\AetherUI Design\BlizzardAddOns` (Interface 11509) and against
+the addons actually installed in `_classic_era_\Interface\AddOns`.
 
 ### 1.1 The micro menu is nine buttons, and they are not secure
 

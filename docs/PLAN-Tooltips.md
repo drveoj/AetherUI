@@ -17,7 +17,7 @@ the architecture before any of the visual decisions do.
 
 ## 1. What the client actually gives us
 
-Verified against `E:\wow-ui-source-classic_era` (Interface 11509). Three findings
+Verified against `E:\AetherUI Design\BlizzardAddOns` (Interface 11509). Three findings
 changed the plan:
 
 **`TooltipDataProcessor` does not exist here.** `Blizzard_SharedXMLGame.toc:9` marks
