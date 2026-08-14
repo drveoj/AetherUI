@@ -147,8 +147,26 @@ local function Dress(frame)
 	-- a fixed size and it stops being readable before it stops being small.
 	if frame.SetScale then frame:SetScale(PanelScale()) end
 
-	-- The window's own title, where it has one under a name we can find.
+	-- The window's own title, where it has one under a name we can find. Three
+	-- places, because the client uses three: an older frame names it globally,
+	-- a reworked one carries it as a field, and anything built on the shared
+	-- dialog template keeps it inside a Header child alongside the stone plate.
+	local header = Reskin.Element(frame, "Header")
+	local fromHeader = nil
 	local title = Reskin.Element(frame, "TitleText") or Reskin.Element(frame, "Title")
+	if not title and header then
+		title = header.Text or Reskin.Element(header, "Text")
+		fromHeader = title and true or nil
+	end
+
+	-- A header from that template STRADDLES the top edge on purpose: the stone
+	-- plate is meant to overhang the frame, so its words sit half outside. Take
+	-- the plate away and they hang over the rim, so they come inside.
+	if fromHeader and title.ClearAllPoints then
+		local ins = entry and entry.insets
+		title:ClearAllPoints()
+		title:SetPoint("TOP", frame, "TOP", 0, (ins and ins[2] or 0) - 14)
+	end
 	if title and title.SetText then
 		Roled(title, "pnTitle")
 		W.Color(title, Palette.c.text)

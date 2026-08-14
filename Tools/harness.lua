@@ -2400,6 +2400,19 @@ do
 	-- it has rather than naming them.
 	do
 		local gm = _G.GameMenuFrame
+
+		-- ITS TITLE LIVES SOMEWHERE ELSE. Anything built on the shared dialog
+		-- template keeps the title inside a Header child, with the ornate stone
+		-- plate as that header's BG - not in a global $parentTitleText the way
+		-- the older frames do. A mock that gives every window the older shape
+		-- lets a skin claim a title it never found and leave the bar standing.
+		_G.GameMenuFrameTitleText = nil
+		gm.Header = CreateFrame("Frame", nil, gm)
+		gm.Header.BG = gm.Header:CreateTexture(nil, "BACKGROUND")
+		gm.Header.BG:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+		gm.Header.Text = gm.Header:CreateFontString(nil, "ARTWORK")
+		gm.Header.Text:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+		gm.Header.Text:SetText("Main Menu")
 		for _, n in ipairs({ "Options", "AddOns", "Macros", "Logout", "Quit", "Continue" }) do
 			local b = CreateFrame("Button", "GameMenuButton" .. n, gm)
 			b:SetNormalTexture("menu-button-up")
@@ -16240,6 +16253,24 @@ do
 	-- frame is asked what it has.
 	check(_G.GameMenuButtonQuit.__aetherPill ~= nil,
 		"every one of them, however many the build happens to have")
+
+	-- ITS TITLE IS SOMEWHERE ELSE. Anything on the shared dialog template keeps
+	-- the title inside a Header child, with the ornate stone plate as that
+	-- header's BG - not in a global $parentTitleText like the older frames.
+	local gmHeader = _G.GameMenuFrame.Header
+	check(gmHeader.BG:GetTexture() == 0,
+		"the menu's stone title bar is cleared - it hangs off a Header child, so"
+		.. " a strip that only knows Border and Bg leaves it standing")
+	check(gmHeader.Text._aetherStyle == "pnTitle",
+		"and its title is found there and re-roled, rather than missed for want"
+		.. " of a $parentTitleText")
+
+	-- That header straddles the frame's top edge ON PURPOSE, so the stone plate
+	-- can overhang it. Take the plate away and the words hang over the rim.
+	local htPt, htRel, htRelPt, _, htY = gmHeader.Text:GetPoint(1)
+	check(htPt == "TOP" and htRel == _G.GameMenuFrame and htRelPt == "TOP" and htY < 0,
+		"and it is brought inside the window (y=" .. tostring(htY) .. ") rather"
+		.. " than left hanging over the top edge where the plate used to be")
 
 	check(_G.SkillTypeLabel1:GetFontString()._aetherStyle ~= nil,
 		"a skill tree's collapse header is re-roled THROUGH the button - it is a"

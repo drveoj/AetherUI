@@ -49,6 +49,10 @@ local ART_CHILDREN = {
 	"Inset", "inset", "InsetFrame", "LeftInset", "RightInset",
 	"NineSlice", "BG", "Bg", "border", "Border", "Background", "BorderFrame",
 	"BorderBox", "bottomInset", "BottomInset", "bgLeft", "bgRight",
+	-- The shared dialog template keeps its title bar in one of these: a Header
+	-- child carrying the stone plate as its BG and the title as its Text. The
+	-- game menu uses it, and without this its ornate bar outlives the strip.
+	"Header", "header",
 }
 
 -- The four a Button draws itself.

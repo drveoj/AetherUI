@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.5.2",
+		date    = "2026-08-14",
+		lines   = {
+			"The main menu's title sits inside the window in our lettering, with the client's stone bar gone.",
+		},
+	},
+	{
 		version = "0.5.1",
 		date    = "2026-08-14",
 		lines   = {
