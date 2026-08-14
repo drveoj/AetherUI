@@ -83,20 +83,20 @@ end
 -- stripping
 -- ---------------------------------------------------------------------------
 
---- Take the client's art off `frame`, recording enough to put it back.
+--- Every texture region on a frame, emptied and recorded - bar the ones named.
 --
---  `store` is the caller's table, one per skinned frame, and holds everything
---  taken from that frame AND from the child frames its art hides in. Pass the
---  same store every time: this runs again on every show, because art the client
---  reveals later has to be taken down too.
-function Reskin.Strip(frame, store)
-	if not frame or not frame.GetRegions or type(store) ~= "table" then return end
-
+--  `keep` is a set of regions to leave alone. It exists for buttons whose art
+--  and whose PICTURE are both regions of the same button: a spell icon and a
+--  spellbook school tab both carry the image the player is looking for as a
+--  region, so a sweep that takes every texture takes the picture with the
+--  plate. Strip passes nothing and clears the lot.
+local function ClearRegions(frame, store, keep)
 	local known = store[frame]
 	if not known then
 		known = {}
 		for _, region in ipairs({ frame:GetRegions() }) do
-			if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+			if region and region.GetObjectType and region:GetObjectType() == "Texture"
+				and not (keep and keep[region]) then
 				known[#known + 1] = {
 					region,
 					region.IsShown and region:IsShown(),
@@ -113,6 +113,18 @@ function Reskin.Strip(frame, store)
 		if region.SetAtlas then pcall(region.SetAtlas, region, "") end
 		if region.Hide then region:Hide() end
 	end
+end
+
+--- Take the client's art off `frame`, recording enough to put it back.
+--
+--  `store` is the caller's table, one per skinned frame, and holds everything
+--  taken from that frame AND from the child frames its art hides in. Pass the
+--  same store every time: this runs again on every show, because art the client
+--  reveals later has to be taken down too.
+function Reskin.Strip(frame, store)
+	if not frame or not frame.GetRegions or type(store) ~= "table" then return end
+
+	ClearRegions(frame, store, nil)
 
 	local name = frame.GetName and frame:GetName()
 	for _, key in ipairs(ART_CHILDREN) do
@@ -267,10 +279,15 @@ end
 --  border still gone. A slot's art is its border, which is the normal texture,
 --  which is ClearButton's job.
 function Reskin.Slot(btn, opts)
-	if not btn or btn.__aetherSlot then return end
+	if not btn then return end
 	opts = opts or {}
 
+	-- BEFORE the "already done" test, not after it. Switching the module off
+	-- hands the client every texture back, and switching it on again runs this
+	-- a second time - so a dresser that returns early on its own marker returns
+	-- before it has taken the art it just gave back.
 	Reskin.ClearButton(btn)
+	if btn.__aetherSlot then return end
 
 	local icon = Reskin.Element(btn, "IconTexture") or btn.icon
 	local size = opts.size or (btn.GetWidth and btn:GetWidth()) or 36
@@ -284,6 +301,66 @@ function Reskin.Slot(btn, opts)
 	end
 
 	btn.__aetherSlot = true
+end
+
+--- A button whose picture is one of its own regions, in the same cell.
+--
+--  Slot cannot be used and neither can Strip. A spell button keeps its icon in
+--  a region beside the ring, and a spellbook school tab keeps its icon AS the
+--  normal texture - the client calls SetNormalTexture with the school's image
+--  every time it refreshes them. So one sweep would blank the picture and the
+--  other would blank it through the setter. This clears everything except the
+--  picture and the checked mark, and dresses what is left as a cell.
+--
+--  `opts.icon` names the picture; without one the normal texture is taken to be
+--  it, which is the school tab's case.
+function Reskin.IconButton(btn, store, opts)
+	if not btn then return end
+	opts = opts or {}
+
+	local icon = opts.icon or (btn.GetNormalTexture and btn:GetNormalTexture())
+	local checked = btn.GetCheckedTexture and btn:GetCheckedTexture()
+
+	local keep = {}
+	if icon then keep[icon] = true end
+	if checked then keep[checked] = true end
+
+	if type(store) == "table" then ClearRegions(btn, store, keep) end
+
+	-- The state textures through the setters as well, for the reason
+	-- ClearButton exists: hiding the region loses to the client, which shows the
+	-- pushed one on mousedown with nothing of ours in between. The one that is
+	-- the picture is skipped, and the checked mark is kept and re-tinted - it is
+	-- how an open profession says it is open.
+	btn.__aetherState = btn.__aetherState or {}
+	for _, kind in ipairs(BUTTON_STATES) do
+		local get, set = btn["Get" .. kind .. "Texture"], btn["Set" .. kind .. "Texture"]
+		local tex = get and get(btn)
+		if set and (icon == nil or tex ~= icon) then
+			if btn.__aetherState[kind] == nil then
+				local path = tex and tex.GetTexture and tex:GetTexture()
+				if path == 0 then path = nil end
+				btn.__aetherState[kind] = path or false
+			end
+			set(btn, 0)
+		end
+	end
+
+	-- The cell itself only once - the clearing above happens every time, because
+	-- switching the module off gives the client its art back and switching it on
+	-- again has to take it away a second time.
+	if not btn.__aetherSlot then
+		local size = opts.size or (btn.GetWidth and btn:GetWidth()) or 32
+		A.Widgets.DecorateSlot(btn, size, { icon = icon, count = false })
+		btn.__aetherSlot = true
+	end
+
+	if checked and checked.SetVertexColor then
+		local c = A.Palette.c.accent
+		checked:SetVertexColor(c[1], c[2], c[3], 0.55)
+	end
+
+	return btn
 end
 
 --- A tab along the bottom of a client panel.
@@ -379,28 +456,69 @@ function Reskin.ScrollBar(bar, store)
 	bar.__aetherScroll = true
 end
 
+-- Air between a check box and the words beside it.
+local CHECK_LABEL_GAP = 6
+
 --- A check box: box art off, the tick kept and re-tinted.
 --
 --  The tick is the one part worth keeping - it reads as a tick at any size and
 --  nothing of ours would read better. Only the box around it goes.
 function Reskin.CheckBox(box, store)
-	if not box or box.__aetherCheck then return end
+	if not box then return end
 
 	Reskin.ClearButton(box)
-	if store then Reskin.Strip(box, store) end
 
-	local pill = A.Glass.CreatePill(box, { fill = "glass", edge = "glassEdgeHi" })
-	pill:SetAllPoints(box)
-	pill:SetFrameLevel(math.max(0, box:GetFrameLevel() - 1))
-
+	-- EVERYTHING BUT THE TICK. The tick is a region of the button like the box
+	-- around it, so a plain strip takes both - and a check box with no tick in
+	-- it is a check box that never looks checked, whatever the client thinks its
+	-- state is.
 	local checked = box.GetCheckedTexture and box:GetCheckedTexture()
+	if type(store) == "table" then
+		ClearRegions(box, store, checked and { [checked] = true } or nil)
+	end
+
 	if checked and checked.SetVertexColor then
 		local c = A.Palette.c.text
 		checked:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
 	end
 
-	box.__aetherCheck = pill
-	return pill
+	-- AND ITS LABEL OFF THE EDGE OF IT. Blizzard's check box art is a small
+	-- square inside a larger transparent button, so a label anchored flush to
+	-- that button still cleared the box by several pixels. Ours fills the
+	-- button, and the words ended up touching it.
+	local label = Reskin.Element(box, "Text")
+	if label and label.SetPoint and not box.__aetherBoxLabel then
+		box.__aetherBoxLabel = true
+		label:ClearAllPoints()
+		label:SetPoint("LEFT", box, "RIGHT", CHECK_LABEL_GAP, 0)
+	end
+
+	-- The chip once; the clearing above on every pass, for the same reason
+	-- Slot re-clears - off gives the client its art back.
+	if box.__aetherCheck then
+		box.__aetherCheck:SetColors(A.Palette.c.glass, A.Palette.c.glassEdgeHi)
+		return box.__aetherCheck
+	end
+
+	-- A BADGE, NOT A PILL. A pill whose width equals its height is a circle made
+	-- of two cap slices meeting in the middle with a zero-width centre between
+	-- them - the seam Core\Glass.lua's header warns about, and the one place
+	-- snapping cannot save it. That came back as the jagged ring reported around
+	-- this box, and W.CreateBadge exists because the tooltip's level chip and
+	-- Zen's corner glyph both learned it first: chip art authored at 64 for a
+	-- disc drawn near 26, rather than a shape stretched into a circle.
+	local size = (box.GetWidth and box:GetWidth()) or 26
+	local chip = A.Widgets.CreateBadge(box, { size = size })
+	chip:SetPoint("CENTER", box, "CENTER", 0, 0)
+	chip:SetFrameLevel(math.max(0, box:GetFrameLevel() - 1))
+	chip:SetColors(A.Palette.c.glass, A.Palette.c.glassEdgeHi)
+
+	-- A badge carries a number. This one carries the client's own tick, which is
+	-- a region of the button above it.
+	chip.label:Hide()
+
+	box.__aetherCheck = chip
+	return chip
 end
 
 -- A tree's disclosure marks, in type rather than in Blizzard's stone buttons.

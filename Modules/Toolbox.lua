@@ -3110,10 +3110,21 @@ function TB:PlaceAddonRows(x, y, width, cols, maxShown, hintRight, headY)
 	-- Clamped HERE, where maxShown is known. Scrolling past the end and then
 	-- widening the drawer would otherwise leave the list parked below its own
 	-- last row, showing nothing.
+	--
+	-- ROUNDED UP TO A ROW BOUNDARY, not down. The offset moves a row at a time -
+	-- it has to, or the two columns swap over as you scroll - so the last page
+	-- has to start on a boundary at or PAST the point where the window's last
+	-- slot reaches the final entry. Taking the boundary below it instead leaves
+	-- that entry one slot under the fold with nowhere left to scroll, and it
+	-- only shows up on an ODD number of launchers: an even one lands on the
+	-- boundary exactly and loses nothing, which is why 56 of them were fine and
+	-- the fifty-seventh could not be reached.
 	local maxOffset = math.max(0, total - maxShown)
+	if maxOffset % cols ~= 0 then
+		maxOffset = maxOffset + cols - (maxOffset % cols)
+	end
+
 	local offset = math.min(math.max(0, self._addonOffset or 0), maxOffset)
-	-- Kept on a row boundary after the clamp, or a list scrolled to the end
-	-- lands mid-row and the two columns swap.
 	offset = offset - (offset % cols)
 	self._addonOffset = offset
 

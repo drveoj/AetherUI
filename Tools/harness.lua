@@ -786,7 +786,15 @@ function CreateFrame(kind, name, parent, template)
 	function f:SetFixedFrameLevel(v) self.__fixedLevel = v and true or false end
 	function f:GetFrameLevel() return self.__level or 1 end
 	function f:IsMouseOver() return self.__mouseOver or false end
-	function f:SetHitRectInsets() end
+	-- RECORDED, not swallowed. A hit rect is the only part of a button that can
+	-- be wrong while everything you can see is right: the spellbook's tabs are
+	-- 128x64 of art with the clicks kept 13 in from the top and 15 up from the
+	-- bottom, and resizing one to 26 high makes the two insets meet. The tab
+	-- draws, highlights, reads correctly - and cannot be clicked. A no-op here
+	-- agrees with any amount of that.
+	f.__hit = { 0, 0, 0, 0 }
+	function f:SetHitRectInsets(l, r, t, b) self.__hit = { l or 0, r or 0, t or 0, b or 0 } end
+	function f:GetHitRectInsets() return unpack(self.__hit) end
 	function f:IsForbidden() return self.__forbidden or false end
 	-- __kids is a curated list a test has pinned on (the UIParent dump); every
 	-- other frame reports its real children, which is what the minimap's button
@@ -823,7 +831,11 @@ function CreateFrame(kind, name, parent, template)
 	-- checked, so a handler that only tints it when checked is a handler that
 	-- has never been run.
 	if kind == "CheckButton" then
-		f.__checked = newTexture(f, "OVERLAY")
+		-- A REGION of the button, the way the client builds it. Held off to one
+		-- side it can never be caught by a sweep over the button's regions - so
+		-- a skin that blanks every texture it finds would take the tick with the
+		-- stone and still look correct from here.
+		f.__checked = f:CreateTexture(nil, "OVERLAY")
 		f.__isChecked = false
 		function f:GetCheckedTexture() return self.__checked end
 		function f:SetCheckedTexture(t)
@@ -2115,9 +2127,15 @@ for _, n in ipairs({
 }) do
 	_G.__secureNames[n] = true
 end
+-- WHO TAINTED IT is the second return, and the only thing in the game that
+-- knows a frame called EnxMiniMapIcon belongs to Enchantrix - nothing about the
+-- two names says so. A mock that answered only "secure or not" made that
+-- unaskable, and the drawer listed the same addon twice under two names.
+_G.__taintedBy = {}
 function issecurevariable(a, b)
 	local name = b or a
-	return _G.__secureNames[name] or false
+	if _G.__secureNames[name] then return true, nil end
+	return false, _G.__taintedBy[name]
 end
 
 C_Timer = C_Timer or {}
@@ -2678,6 +2696,206 @@ do
 		_G.CharacterLevelText = rank
 	end
 
+	-- The spellbook's insides.
+	--
+	-- IT SPELLS NOTHING THE WAY THE OTHERS DO. Its title is SpellBookTitleText
+	-- and not $parentTitleText, its close button is SpellBookCloseButton and not
+	-- $parentCloseButton, its tabs are SpellBookFrameTabButton1..3 and not
+	-- $parentTab1..3 - so a skin that only knows the usual names finds a title
+	-- it never re-roled, a close button it never marked and a tab strip it never
+	-- laid out, and reports success on all three.
+	--
+	-- And two of its parts keep their PICTURE in a region: a spell button holds
+	-- its icon beside the ring, a school tab holds its icon AS the normal
+	-- texture. Either sweep that works elsewhere blanks the thing the player is
+	-- looking for.
+	do
+		local sb = _G.SpellBookFrame
+		sb:SetSize(384, 512)
+
+		-- buildPanel gave every window the usual shape. Take back the two this
+		-- one does not have, or the skin passes by finding them.
+		_G.SpellBookFrameTitleText = nil
+		_G.SpellBookFrameCloseButton = nil
+
+		local title = sb:CreateFontString("SpellBookTitleText", "ARTWORK")
+		title:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+		title:SetText("Spellbook")
+		-- Placed for the art, not for the frame: six pixels right of centre,
+		-- because the page it was printed on is not centred in the frame either.
+		title:SetPoint("CENTER", sb, "CENTER", 6, 230)
+
+		local close = CreateFrame("Button", "SpellBookCloseButton", sb)
+		close:SetNormalTexture("close-up")
+		-- Well inside the frame, in the middle of a stone rim that is about to
+		-- stop existing.
+		close:SetPoint("CENTER", sb, "TOPRIGHT", -44, -25)
+
+		-- Three tabs, and the client HIDES ALL THREE and then shows the ones
+		-- that apply from its own update - so the first dress sees an empty row.
+		-- A skin that gives up on an empty row without asking to be told when a
+		-- tab appears never lays the strip out at all.
+		for i, label in ipairs({ "Spellbook", "Pet", "Companions" }) do
+			local t = CreateFrame("Button", "SpellBookFrameTabButton" .. i, sb)
+			t:SetSize(128, 64)
+			t:SetNormalTexture("Interface\\SpellBook\\UI-SpellBook-Tab-Unselected")
+			t:SetHighlightTexture("tab-highlight")
+
+			-- THE CLICKS ARE KEPT OFF THE TRANSPARENT MARGIN. 13 down from the
+			-- top and 15 up from the bottom of a 64px tab. Re-size that tab to 26
+			-- and the two insets meet in the middle: it draws, it highlights, and
+			-- it cannot be clicked.
+			t:SetHitRectInsets(15, 14, 13, 15)
+
+			local fs = t:CreateFontString(nil, "OVERLAY")
+			fs:SetText(label)
+			fs:SetPoint("CENTER", t, "CENTER", 0, 3)
+			t.Text = fs
+			t.__fs = fs
+			function t:GetFontString() return self.__fs end
+
+			-- ENABLING A TAB MOVES ITS LABEL. The template does it from OnEnable
+			-- and OnDisable - up into the raised part of its stone art, which is
+			-- right for that art and wrong for a flat pill - and the client
+			-- enables and disables these from its own update, with no click
+			-- involved. A mock whose Enable only sets a flag cannot show that.
+			local baseEnable, baseDisable = t.Enable, t.Disable
+			function t:Enable()
+				baseEnable(self)
+				self.__fs:ClearAllPoints()
+				self.__fs:SetPoint("CENTER", self, "CENTER", 0, 3)
+			end
+			function t:Disable()
+				baseDisable(self)
+				self.__fs:ClearAllPoints()
+				self.__fs:SetPoint("CENTER", self, "CENTER", 0, 5)
+			end
+
+			t:Hide()
+		end
+
+		-- Twelve spell buttons in two columns. The icon is a REGION and the ring
+		-- is the normal texture, with the parchment disc a third region behind
+		-- both - so Strip takes the icon, ClearButton leaves the disc, and only
+		-- knowing which is which gets it right.
+		local icons = CreateFrame("Frame", "SpellBookSpellIconsFrame", sb)
+		for i = 1, 12 do
+			local b = CreateFrame("CheckButton", "SpellButton" .. i, icons)
+			b:SetSize(37, 37)
+
+			b.EmptySlot = b:CreateTexture(nil, "BACKGROUND")
+			b.EmptySlot:SetTexture("Interface\\Spellbook\\UI-Spellbook-SpellBackground")
+
+			local icon = b:CreateTexture(nil, "BORDER")
+			icon:SetTexture("spell-icon-" .. i)
+			_G["SpellButton" .. i .. "IconTexture"] = icon
+
+			b.SpellName = b:CreateFontString("SpellButton" .. i .. "SpellName", "BORDER")
+			b.SpellName:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			b.SpellName:SetText("Frostbolt")
+
+			b.SpellSubName = b:CreateFontString("SpellButton" .. i .. "SubSpellName", "BORDER")
+			b.SpellSubName:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			b.SpellSubName:SetText("Rank 3")
+
+			b:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
+			b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square")
+
+			-- Every refresh sets the name's colour and puts the client's own
+			-- white highlight square back. Our type survives that; our colours
+			-- and our cell do not, which is why there is something to hook.
+			b.isPassive = (i == 5) or nil
+			function b:UpdateButton()
+				self.SpellName:SetTextColor(1, 0.82, 0)
+				self:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square")
+			end
+		end
+
+		-- The school tabs down the right. Eight defined, the ones past the
+		-- player's spell tabs hidden, and the icon set through SetNormalTexture
+		-- on every refresh - so the icon is the one texture that must survive.
+		local side = CreateFrame("Frame", "SpellBookSideTabsFrame", sb)
+		for i = 1, 8 do
+			local t = CreateFrame("CheckButton", "SpellBookSkillLineTab" .. i, side)
+			t:SetSize(32, 32)
+
+			-- The stone plate: 64px of art behind a 32px button, which is why
+			-- the client has to space these 17 apart.
+			t.__plate = t:CreateTexture(nil, "BACKGROUND")
+			t.__plate:SetTexture("Interface\\SpellBook\\SpellBook-SkillLineTab")
+
+			t:SetNormalTexture("")     -- empty until the client fills it in
+			-- Which school you are looking at. It has to outlive the dressing for
+			-- the same reason the icon does.
+			t:SetCheckedTexture("Interface\\Buttons\\CheckButtonHilight")
+			t:SetPoint("TOPLEFT", side, "TOPRIGHT", -32, -65 - (i - 1) * 49)
+			if i > 3 then t:Hide() end
+
+			CreateFrame("Frame", "SpellBookSkillLineTab" .. i .. "Flash", side)
+		end
+
+		local nav = CreateFrame("Frame", "SpellBookPageNavigationFrame", sb)
+		local pageText = nav:CreateFontString("SpellBookPageText", "OVERLAY")
+		pageText:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+		pageText:SetText("Page 1")
+		-- PRINTED IN NEAR-BLACK, because the client is printing it on parchment.
+		-- On glass that is a page number nobody can read, and a mock that leaves
+		-- every string white cannot show it.
+		pageText:SetTextColor(0.25, 0.12, 0)
+		pageText:SetPoint("BOTTOMRIGHT", sb, "BOTTOMRIGHT", -110, 38)
+
+		for _, n in ipairs({ "SpellBookPrevPageButton", "SpellBookNextPageButton" }) do
+			local b = CreateFrame("Button", n, nav)
+			b:SetSize(32, 32)
+			-- The arrow is engraved in the art. Take the art off without putting
+			-- something there and the page turner is two invisible squares.
+			b:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+			b:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
+		end
+
+		local ranks = CreateFrame("CheckButton", "ShowAllSpellRanksCheckbox", sb)
+		ranks:SetSize(26, 26)
+		ranks:SetNormalTexture("checkbox-up")
+		ranks:SetCheckedTexture("checkbox-tick")
+		local ranksText = ranks:CreateFontString("ShowAllSpellRanksCheckboxText", "OVERLAY")
+		ranksText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		ranksText:SetText("Show All Spell Ranks")
+		-- FLUSH TO THE BUTTON'S EDGE, as the client anchors it. That reads fine
+		-- against Blizzard's art, which is a small square inside a larger
+		-- transparent button - the words clear the box by several pixels of
+		-- nothing. Ours fills the button, so flush means touching.
+		ranks.Text = ranksText
+		ranksText:SetPoint("LEFT", ranks, "RIGHT", 0, 1)
+
+		-- The client's own rebuild, as a mixin method copied onto the frame -
+		-- which is why it has to be hooked on the frame and not by name. It
+		-- shows the tabs that apply and re-anchors the school column, both of
+		-- which undo a layout done once at dress time.
+		function sb:Update()
+			-- All three down, then the ones that apply back up, which is what
+			-- makes the first dress see an empty row.
+			for i = 1, 3 do _G["SpellBookFrameTabButton" .. i]:Hide() end
+
+			_G.SpellBookFrameTabButton1:Show()
+			_G.SpellBookFrameTabButton1:Disable()      -- selected IS disabled
+			_G.SpellBookFrameTabButton2:Show()
+			_G.SpellBookFrameTabButton2:Enable()
+			self:UpdateSkillLineTabs()
+		end
+
+		-- Sets the school's icon through SetNormalTexture on every refresh, and
+		-- marks the one you are on. It does NOT re-anchor: the client's only
+		-- SetPoint in here is behind an off-spec test that no character on this
+		-- flavour ever passes.
+		function sb:UpdateSkillLineTabs()
+			for i = 1, 3 do
+				local t = _G["SpellBookSkillLineTab" .. i]
+				t:SetNormalTexture("Interface\\Icons\\Spell_Frost_FrostBolt02")
+				t:SetChecked(i == 1)
+			end
+		end
+	end
+
 	-- Load on demand: absent until something asks for it.
 	-- Builds it only. Firing ADDON_LOADED is the caller's, because `fire` is
 	-- declared further down this file than this block runs.
@@ -2962,6 +3180,10 @@ _G.__items = {
 	-- deciding where something is shown -- and it must never be sold, because
 	-- quality must NOT win when deciding what to spend.
 	[9901]  = { "Cracked Talisman",   12, 0, 0, 1,   5,    "talis.tga"  },
+	-- What a quiver is for. It is here so a specialist bag can hold something:
+	-- a bag whose every slot is empty cannot show that a USED specialist slot
+	-- still counts toward the window's capacity like any other.
+	[2512]  = { "Rough Arrow",         6, 2, 1, 200, 1,    "arrow.tga"  },
 }
 
 -- { itemID, count } per slot; a nil entry is an empty slot.
@@ -2976,7 +3198,12 @@ _G.__bags = {
 	} },
 	[2]  = { size = 4, slots = { [1] = { 2381, 1 }, [2] = { 5758, 1 },
 		[4] = { 9901, 1 } } },
-	[3]  = { size = 0, slots = {} },
+	-- A QUIVER. Four slots that take arrows and nothing else, one of them used.
+	-- Without a specialist bag in here the window counted every empty slot as
+	-- somewhere you could put anything, and said so in the footer: a hunter with
+	-- a full backpack and five free quiver slots was told eleven were free and
+	-- could put six things away.
+	[3]  = { size = 4, family = 0x1, slots = { [1] = { 2512, 200 } } },
 	[4]  = { size = 0, slots = {} },
 	[-2] = { size = 2, slots = { [1] = { 1424, 1 } } },
 	[-1] = { size = 6, slots = {
@@ -9939,6 +10166,51 @@ do
 			.. " kept, " .. hidden .. " hidden)")
 	end
 
+	-- SOMEBODY ELSE'S SPELLING OF "MINIMAP". There is no agreed one - Blizzard's
+	-- own interface says MiniMapTracking and MinimapBorder in the same breath,
+	-- and addons follow whichever they read first. SmartBuff's button is
+	-- SmartBuff_MiniMapButton, which every pattern here was written past, so it
+	-- stayed on the ring beside the map while the same addon's broker launcher
+	-- sat in the drawer and the player had the button twice.
+	do
+		_G.__makeLDB("SmartBuff", "launcher")
+		local loose = CreateFrame("Button", "SmartBuff_MiniMapButton", Minimap)
+		LN:Scan()
+
+		local entry = LN.seen[loose]
+		check(entry ~= nil,
+			"a button that spells it MiniMapButton is collected too - the word"
+			.. " has two spellings and both are somebody's button")
+		check(entry == LN.byKey["SmartBuff"],
+			"and joins the launcher its own addon registered rather than arriving"
+			.. " as a second entry: Broker_SmartBuff registers SmartBuff and"
+			.. " SmartBuff builds SmartBuff_MiniMapButton, and the same addon"
+			.. " twice in the drawer is the bug the player was reporting")
+		check(entry.button == loose and not entry.owned,
+			"with the addon's real button in place of our proxy, because that is"
+			.. " the one carrying its own click behaviour")
+	end
+
+	-- AND WHEN THE NAME DOES NOT SAY. Enchantrix registers a launcher called
+	-- "Enchantrix" and builds a button called EnxMiniMapIcon, and no amount of
+	-- stripping "minimap icon" off one end of that gets to the other. The client
+	-- knows, though: issecurevariable's second return is the addon that tainted
+	-- the global, which is the only thing in the game that can say so.
+	do
+		_G.__makeLDB("Enchantrix", "launcher")
+		local enx = CreateFrame("Button", "EnxMiniMapIcon", Minimap)
+		_G.__taintedBy["EnxMiniMapIcon"] = "Enchantrix"
+		LN:Scan()
+
+		local entry = LN.seen[enx]
+		check(entry == LN.byKey["Enchantrix"],
+			"a button whose name shares nothing with its addon still joins that"
+			.. " addon's launcher, because the client is asked who made it rather"
+			.. " than the name being read for clues")
+		check(LN.byKey["EnxMiniMapIcon"] == nil,
+			"and no second entry is left under the button's own name")
+	end
+
 	-- Arrivals after the sweep. There is no event for "a child was added to the
 	-- minimap", so the registry callback is the only thing that catches an addon
 	-- finishing its load late.
@@ -11752,9 +12024,19 @@ do
 	-- The ends. Scrolling past either is clamped rather than running off into a
 	-- list showing nothing.
 	for _ = 1, 50 do catch:GetScript("OnMouseWheel")(catch, -1) end
-	check(shownCount() == window,
-		"wound hard against the bottom the window is still full rather than"
-		.. " parked past the last row showing nothing (" .. shownCount() .. ")")
+	local listTotal = #(TBm._addonRows or {})
+	check(shownCount() > 0 and shownCount() <= window,
+		"wound hard against the bottom the window is not parked past the last"
+		.. " row showing nothing (" .. shownCount() .. " of " .. window .. ")")
+
+	-- AND THE LAST ONE IS ON IT. The offset moves a whole row at a time, so the
+	-- final page has to start on a row boundary at or PAST the point where the
+	-- window reaches the end of the list. Taking the boundary below it instead
+	-- leaves the last launcher one slot under the fold with nowhere left to
+	-- scroll - and that only shows on an ODD number of them, because an even
+	-- one lands on the boundary exactly and loses nothing.
+	check(c.addons[listTotal] and c.addons[listTotal]:IsShown(),
+		"and the last of the " .. listTotal .. " is on screen")
 	check(TBm._addonsMore == 0, "with nothing left below")
 	check(math.abs((c.addonsArrow.__rotation or 0) - math.pi) < 0.01,
 		"and the arrow has turned UP, because that is the only way left to go")
@@ -11797,7 +12079,7 @@ do
 	-- that is a function of the panel, the dock and everything drawn above.
 	TBm._addonOffset = 9999
 	TBm:LayoutContent()
-	check(shownCount() == window and TBm._addonsMore == 0,
+	check(shownCount() > 0 and TBm._addonsMore == 0,
 		"and an offset past the end of the list is clamped by the layout rather"
 		.. " than believed (" .. tostring(TBm._addonOffset) .. ", showing "
 		.. shownCount() .. ")")
@@ -14115,9 +14397,36 @@ do
 	check(f:IsShown(), "the window opens")
 	check(f.drawn, "and draws on OnShow")
 
-	-- 8 + 6 + 4 slots across bags 0..2, nothing in 3 and 4.
-	check(f.total == 18, "it counts every slot in every bag as one pool (" .. tostring(f.total) .. ")")
-	check(f.used == 14, "and every occupied one (" .. tostring(f.used) .. ")")
+	-- 8 + 6 + 4 slots across bags 0..2, a four-slot quiver in bag 3, nothing in 4.
+	check(f.total == 22, "it counts every slot in every bag as one pool (" .. tostring(f.total) .. ")")
+	check(f.used == 15, "and every occupied one (" .. tostring(f.used) .. ")")
+
+	-- SPECIALIST SLOTS ARE NOT FREE SLOTS. A quiver takes arrows and nothing
+	-- else, so counting its empties beside the backpack's promises room that
+	-- does not exist - which is what told a hunter eleven slots were free when
+	-- six of them were.
+	check(f.freeOpen == 4,
+		"the free count is the slots that will take ANYTHING ("
+		.. tostring(f.freeOpen) .. " of the " .. (f.total - f.used) .. " empty)")
+	check(f.freeSpecial and #f.freeSpecial == 1
+		and f.freeSpecial[1][1] == "quiver" and f.freeSpecial[1][2] == 3,
+		"with the quiver's three counted under its own name rather than added in")
+	check(f.foot.free:GetText() == "4 slots free \194\183 3 quiver",
+		"and the footer says both (" .. tostring(f.foot.free:GetText()) .. ")")
+
+	-- And the GRID says it too. In one undivided FREE block the quiver's empty
+	-- cells look exactly like the ones you can drop a sword into.
+	do
+		local sections = {}
+		for _, lab in ipairs(f.labels) do
+			if lab:IsShown() then sections[lab.text:GetText()] = lab.count:GetText() end
+		end
+		check(sections[A.Media:Track("FREE", 1)] == "4",
+			"the FREE block holds only the slots that take anything ("
+			.. tostring(sections[A.Media:Track("FREE", 1)]) .. ")")
+		check(sections[A.Media:Track("QUIVER", 1)] == "3",
+			"and the quiver's empties get a section under their own name")
+	end
 
 	-- Which physical bag holds an item must be invisible. Wool Cloth lives in
 	-- bag 1 and Linen in bag 0; both are trade goods and must sit together.
@@ -16062,6 +16371,24 @@ do
 	check(either:GetNormalTexture():GetTexture() == "up",
 		"whichever order the caller strips and clears in, the button gets its"
 		.. " own art back")
+
+	-- DRESSED, HANDED BACK, DRESSED AGAIN. Switching a module off restores every
+	-- state texture it took, and switching it on runs the dressing a second time
+	-- over a widget that still carries our marker - so a dresser that tests the
+	-- marker before it clears returns before it has taken back what it gave up,
+	-- and the client's border is on our cell until the next reload.
+	local twice = CreateFrame("Button", nil, UIParent)
+	twice:SetNormalTexture("slot-border")
+	twice.IconTexture = twice:CreateTexture(nil, "BACKGROUND")
+	twice.IconTexture:SetTexture("an-item")
+	R.Slot(twice)
+	R.RestoreButton(twice)
+	R.Slot(twice)
+	check(twice:GetNormalTexture():GetTexture() == 0,
+		"and a slot dressed, handed back and dressed again is bare the second"
+		.. " time too")
+	check(twice.IconTexture:GetTexture() == "an-item",
+		"with the item still in it")
 end
 
 print("== panels: the client's windows in our glass ==")
@@ -16506,6 +16833,179 @@ do
 		"and its own close button with it")
 	A:SetModuleEnabled("panels", true)
 	check(cf.__aetherPanel ~= nil, "and on again re-dresses it")
+end
+
+print("== panels: the spellbook, which spells nothing the way the others do ==")
+do
+	local sb = _G.SpellBookFrame
+	fire("PLAYER_ENTERING_WORLD")
+
+	-- ITS TITLE IS NOT $parentTitleText. Nothing errors when a skin looks for
+	-- one and does not find it; the window simply keeps the client's lettering
+	-- and the skin reports success.
+	check(_G.SpellBookTitleText._aetherStyle == "pnTitle",
+		"the title is found under the client's own name for it and re-roled")
+
+	local tPt, tRel, tRelPt, _, tY = _G.SpellBookTitleText:GetPoint(1)
+	check(tPt == "TOP" and tRel == sb and tRelPt == "TOP" and tY < 0,
+		"and brought to the top of the glass (y=" .. tostring(tY) .. ") - the"
+		.. " client put it six pixels right of centre because the page it was"
+		.. " printed on is not centred in the frame either")
+
+	local close = _G.SpellBookCloseButton
+	check(close.__aetherX and close:GetNormalTexture():GetTexture() == 0,
+		"its close button is found under ITS own name and gets our mark, rather"
+		.. " than being missed for want of a $parentCloseButton")
+	local cPt, cRel, cRelPt = close:GetPoint(1)
+	check(cPt == "TOPRIGHT" and cRel == sb and cRelPt == "TOPRIGHT",
+		"and moves to the corner (" .. tostring(cPt) .. ") - the client sat it 44"
+		.. " in and 25 down, in the middle of a stone rim that is now gone")
+
+	-- THE SPELLS. Icon in a region, ring as the normal texture, parchment disc
+	-- behind both: one sweep would blank the icon and the other would leave the
+	-- disc, and only knowing which is which gets it right.
+	local b1 = _G.SpellButton1
+	check(b1.__aetherSlot == true, "a spell sits in one of our cells")
+	check(_G.SpellButton1IconTexture:GetTexture() == "spell-icon-1",
+		"AND THE SPELL IS STILL IN IT - the icon is a region of the button, so a"
+		.. " strip takes the picture and leaves the cell correctly empty")
+	check(b1.EmptySlot:GetTexture() == 0,
+		"with the parchment disc behind it cleared - that one is not a state"
+		.. " texture, so clearing the button's four would leave it drawing")
+	check(b1:GetNormalTexture():GetTexture() == 0, "and the ring around it gone")
+	check(b1.SpellName._aetherStyle ~= nil and b1.SpellSubName._aetherStyle ~= nil,
+		"the spell's name and rank are in our lettering")
+
+	-- The client repaints these on every refresh - on open, on a tab click, on
+	-- learning a spell - and puts its own white highlight square back with them.
+	b1:UpdateButton()
+	check(b1:GetHighlightTexture():GetTexture() == 0,
+		"and the client's own highlight square does not come back on the next"
+		.. " refresh, which is every time the book is opened or turned")
+	local nr, ng, nb = b1.SpellName:GetTextColor()
+	local ink = A.Palette.c.text
+	check(nr == ink[1] and ng == ink[2] and nb == ink[3],
+		"nor its own gold on the name (" .. string.format("%.2f", nr) .. ")")
+
+	-- THE SCHOOL TABS. Here the icon IS the normal texture: the client calls
+	-- SetNormalTexture with the school's image every time it refreshes them.
+	local st1, st2 = _G.SpellBookSkillLineTab1, _G.SpellBookSkillLineTab2
+	check(st1.__aetherSlot == true, "a school tab wears the same cell")
+	check(st1.__plate:GetTexture() == 0,
+		"with the 64px stone plate behind a 32px button cleared")
+
+	sb:UpdateSkillLineTabs()
+	check(st1:GetNormalTexture():GetTexture() == "Interface\\Icons\\Spell_Frost_FrostBolt02",
+		"AND THE SCHOOL'S ICON SURVIVES - it is the normal texture, so the sweep"
+		.. " that clears a button's art blanks the picture the player is looking"
+		.. " for and leaves a column of empty cells")
+	check(st1:GetCheckedTexture():GetTexture() == "Interface\\Buttons\\CheckButtonHilight",
+		"and so does the mark saying which school you are on")
+
+	local sPt, sRel, sRelPt = st1:GetPoint(1)
+	check(sPt == "TOPRIGHT" and sRel == sb and sRelPt == "TOPRIGHT",
+		"the column hangs off the glass's own right edge (" .. tostring(sPt) .. ")")
+	local s2Rel, s2Y = select(2, st2:GetPoint(1)), select(5, st2:GetPoint(1))
+	check(s2Rel == st1 and s2Y == -6,
+		"and closes up under it (" .. tostring(s2Y) .. ") - Blizzard's 17 is the"
+		.. " clearance its stone needed, and without the stone it reads as a"
+		.. " column of unrelated icons")
+
+	-- THE PAGE TURNER. Both arrows are engraved in the art; take the art off
+	-- without putting something there and it is two invisible squares.
+	local prev = _G.SpellBookPrevPageButton
+	check(prev:GetNormalTexture():GetTexture() == 0 and prev.__aetherMark
+		and (prev.__aetherMark:GetText() or "") ~= "",
+		"the page turner keeps a mark of ours where its engraved arrow was")
+
+	local pr, pg, pb = _G.SpellBookPageText:GetTextColor()
+	check(_G.SpellBookPageText._aetherStyle ~= nil and (pr + pg + pb) > 1,
+		"and the page number is readable (" .. string.format("%.2f", pr) .. ","
+		.. string.format("%.2f", pg) .. ") - the client prints it in near-black"
+		.. " because it is printing it on parchment")
+
+	local ranks = _G.ShowAllSpellRanksCheckbox
+	check(ranks.__aetherCheck ~= nil, "the spell-ranks box is ours")
+
+	-- A BADGE, NOT A PILL. A pill whose width equals its height is a circle made
+	-- of two cap slices meeting in the middle with nothing between them - the
+	-- seam Glass's own header warns about - and it came back on screen as a
+	-- jagged ring. The tooltip's level chip and Zen's corner glyph both learned
+	-- this before it; the shape has art authored at 64 for exactly this size.
+	local chip = ranks.__aetherCheck
+	check(chip.disc and chip.disc:GetTexture() == A.Media.texture.chipDisc
+		and chip.ring and chip.ring:GetTexture() == A.Media.texture.chipRim,
+		"and drawn as a badge - the 64px chip disc and rim - rather than a pill"
+		.. " squeezed square, whose two caps meet in the middle with a"
+		.. " zero-width centre between them")
+
+	local lPt, lRel, lRelPt, lx = _G.ShowAllSpellRanksCheckboxText:GetPoint(1)
+	check(lPt == "LEFT" and lRel == ranks and lRelPt == "RIGHT" and lx >= 4,
+		"with its label off the edge of it (x=" .. tostring(lx) .. ") - the"
+		.. " client anchors that flush, which clears its own small square inside"
+		.. " a larger transparent button but touches a box of ours that fills it")
+
+	check(ranks:GetCheckedTexture():GetTexture() == "checkbox-tick",
+		"AND ITS TICK SURVIVES - the tick is a region of the button like the box"
+		.. " around it, so a plain strip takes both and leaves a check box that"
+		.. " never looks checked whatever the client thinks its state is")
+
+	-- THE BOOK'S OWN TABS. All three start hidden and the client shows the ones
+	-- that apply from its own update, so the first dress sees an empty row. A
+	-- layout that gives up on an empty row without asking to be told when a tab
+	-- appears never runs at all.
+	local bt1, bt2 = _G.SpellBookFrameTabButton1, _G.SpellBookFrameTabButton2
+	check(bt1.__aetherTab == nil, "the book's tabs start hidden, so none is placed")
+
+	sb:Update()
+	check(bt1.__aetherTab ~= nil and bt2.__aetherTab ~= nil,
+		"and are laid out when the client shows them - from the client's own"
+		.. " update, not from a re-dress nobody would have run")
+	check(math.abs(bt1:GetWidth() - bt2:GetWidth()) < 0.01,
+		"in one even row (" .. string.format("%.1f", bt1:GetWidth()) .. ")")
+
+	local hl, hr, ht, hb = bt1:GetHitRectInsets()
+	check(hl == 0 and hr == 0 and ht == 0 and hb == 0,
+		"AND STILL CLICKABLE. The client keeps the clicks 13 in from the top of"
+		.. " a 64px tab and 15 up from the bottom; re-size that tab to 26 and the"
+		.. " two insets meet, so it draws, highlights, reads correctly and does"
+		.. " nothing at all when you click it")
+
+	check(bt1.__aetherTab:GetAlpha() > bt2.__aetherTab:GetAlpha(),
+		"and the book you are in reads brighter than the one you are not")
+
+	local bPt, bRel, bRelPt = bt1:GetPoint(1)
+	check(bPt == "BOTTOMLEFT" and bRel == sb and bRelPt == "BOTTOMLEFT",
+		"anchored by its own corner (" .. tostring(bPt) .. ")")
+
+	-- AND WITH NO CLICK INVOLVED. Enabling a tab moves its label up into the
+	-- raised part of art that is no longer there, and the client enables and
+	-- disables these from its own update - which runs when a spell is learned
+	-- while the book is open, with nothing of ours prompted to answer it.
+	sb:Update()
+	local lPt, _, lRelPt, lx, ly = bt1:GetFontString():GetPoint(1)
+	check(lPt == "CENTER" and lRelPt == "CENTER" and lx == 0 and ly == 0,
+		"the selected tab's label is put back in the middle of its pill (y="
+		.. tostring(ly) .. ") after the client's own rebuild")
+
+	-- OFF AND ON AGAIN. Switching the module off hands the client every texture
+	-- back, which is the point of it - and switching it on runs the dressing a
+	-- second time over a frame that already carries our markers. Every one of
+	-- these returned early on its own marker, so the second pass stopped before
+	-- it had taken back the art the first pass had just given up.
+	A:SetModuleEnabled("panels", false)
+	check(b1.EmptySlot:GetTexture() ~= 0 and st1.__plate:GetTexture() ~= 0,
+		"off gives the spellbook its parchment and its stone back")
+
+	A:SetModuleEnabled("panels", true)
+	fire("PLAYER_ENTERING_WORLD")
+	check(b1.EmptySlot:GetTexture() == 0 and st1.__plate:GetTexture() == 0
+		and b1:GetNormalTexture():GetTexture() == 0,
+		"and on again takes all of it off a second time, rather than stopping at"
+		.. " a marker left over from the first")
+	check(_G.SpellButton1IconTexture:GetTexture() == "spell-icon-1"
+		and _G.ShowAllSpellRanksCheckbox:GetCheckedTexture():GetTexture() == "checkbox-tick",
+		"with the spell and the tick still where they were")
 end
 
 print("== palette: difficulty has one owner ==")

@@ -168,6 +168,50 @@ local function SlotsIn(bag)
 	return (ok and tonumber(n)) or 0
 end
 
+-- ---------------------------------------------------------------------------
+-- specialist bags
+--
+-- A quiver takes arrows and nothing else. So do herb bags, soul pouches and the
+-- rest, and a window that counts their empty slots alongside the backpack's
+-- promises room it has not got: a hunter with a full backpack and five empty
+-- quiver slots was told "11 slots free" and could put six things away.
+-- ---------------------------------------------------------------------------
+
+-- The bitmask meanings are the ones two shipping addons on this client agree
+-- on; anything unrecognised is reported as "restricted" rather than guessed at.
+-- An ARRAY rather than a keyed table, and walked in order, because a bag
+-- carrying two family bits must not describe itself differently between
+-- sessions -- which is what pairs() over a keyed table would give.
+local BAG_FAMILIES = {
+	{ 0x00001, "quiver"         }, { 0x00002, "ammo"       },
+	{ 0x00004, "soul shards"    }, { 0x00008, "leatherworking" },
+	{ 0x00010, "inscription"    }, { 0x00020, "herbs"      },
+	{ 0x00040, "enchanting"     }, { 0x00080, "engineering" },
+	{ 0x00100, "keys"           }, { 0x00200, "gems"       },
+	{ 0x00400, "mining"         }, { 0x08000, "fishing"    },
+	{ 0x10000, "cooking"        },
+}
+
+--- What a family bitmask is called, in one word. nil for a general bag.
+local function FamilyWord(family)
+	local bit = _G.bit
+	if not bit or type(family) ~= "number" or family == 0 then return nil end
+	for _, entry in ipairs(BAG_FAMILIES) do
+		if bit.band(family, entry[1]) > 0 then return entry[2] end
+	end
+	return "restricted"
+end
+
+--- What a bag will take. 0 means anything.
+--
+--  The family bitmask is the SECOND return of GetContainerNumFreeSlots, which
+--  is the canonical way to ask it - there is no GetContainerFamily.
+local function BagFamily(bag)
+	if not GetNumFreeSlots then return 0 end
+	local ok, _, family = pcall(GetNumFreeSlots, bag)
+	return (ok and tonumber(family)) or 0
+end
+
 --- The one call that answers everything about a slot.
 --
 --  On this client it returns a TABLE, not the legacy tuple -- verified in
@@ -1152,9 +1196,15 @@ function Bags:Rebuild(frame)
 	local buckets, empties = {}, {}
 	local used, total = 0, 0
 
+	-- Empty slots in a specialist bag, kept apart from the rest. Keyed by the
+	-- word the family is called, with `order` remembering which turned up first
+	-- so the sections do not shuffle between redraws the way pairs() would.
+	local special, order = {}, {}
+
 	for _, bag in ipairs(BagListFor(frame.kind)) do
 		local n = SlotsIn(bag)
 		total = total + n
+		local word = FamilyWord(BagFamily(bag))
 		for slot = 1, n do
 			local b = ItemPool(frame, bag, slot, size)
 			local info = UpdateItemButton(b, cfg)
@@ -1174,6 +1224,13 @@ function Bags:Rebuild(frame)
 					local hit = name and string.find(string.lower(name), filter, 1, true)
 					if not hit then b:SetAlpha(0.25) end
 				end
+			elseif word then
+				if not special[word] then
+					special[word] = {}
+					order[#order + 1] = word
+				end
+				special[word][#special[word] + 1] = b
+				b:Hide()
 			else
 				empties[#empties + 1] = b
 				b:Hide()
@@ -1225,7 +1282,13 @@ function Bags:Rebuild(frame)
 		if cat.key == "junk" and cfg.junkAutoSell then note = "auto-sell" end
 		Section(cat.label, buckets[cat.key], note)
 	end
-	if cfg.showEmpty then Section("FREE", empties) end
+	-- FREE is the slots you can put ANYTHING in. A quiver's empty slots are not
+	-- those, and shown in the same block they read as room the player has not
+	-- got - so each specialist bag's empties get a section under their own name.
+	if cfg.showEmpty then
+		Section("FREE", empties)
+		for _, word in ipairs(order) do Section(word:upper(), special[word]) end
+	end
 
 	for i = labelN + 1, #frame.labels do frame.labels[i]:Hide() end
 
@@ -1245,6 +1308,16 @@ function Bags:Rebuild(frame)
 	frame:SetSize(gridW + GRID_PAD_X * 2, HEAD_H + searchH + contentH + FOOT_H)
 
 	frame.used, frame.total = used, total
+
+	-- What the footer can honestly promise. The general count is the one that
+	-- matters - it is the number of things you can put away - and the rest is
+	-- named rather than added to it.
+	frame.freeOpen = #empties
+	frame.freeSpecial = {}
+	for _, word in ipairs(order) do
+		frame.freeSpecial[#frame.freeSpecial + 1] = { word, #special[word] }
+	end
+
 	self:RefreshHeader(frame)
 	self:RefreshFooter(frame)
 	if frame.kind == "bags" then
@@ -1278,8 +1351,20 @@ function Bags:RefreshFooter(frame)
 
 	if frame.kind ~= "bank" then
 		foot.money:SetText(MoneyText(_G.GetMoney and _G.GetMoney() or 0))
-		local free = math.max(0, (frame.total or 0) - (frame.used or 0))
-		foot.free:SetText(free == 1 and "1 slot free" or (free .. " slots free"))
+		-- THE SLOTS YOU CAN ACTUALLY USE, and then the ones you cannot. Counting
+		-- every empty slot the same way told a hunter with a full backpack and
+		-- five empty quiver slots that eleven were free, six of which existed.
+		--
+		-- Falls back to the plain subtraction only before the first redraw, when
+		-- nothing has looked at which bag each slot is in yet.
+		local free = frame.freeOpen
+			or math.max(0, (frame.total or 0) - (frame.used or 0))
+
+		local text = free == 1 and "1 slot free" or (free .. " slots free")
+		for _, entry in ipairs(frame.freeSpecial or {}) do
+			text = text .. " \194\183 " .. entry[2] .. " " .. entry[1]
+		end
+		foot.free:SetText(text)
 		W.Color(foot.free, c.textDim)
 		ColorHairline(foot.rule)
 		return
@@ -1456,12 +1541,8 @@ function Bags:RefreshFlyout(frame)
 		-- to ask; 0 means it takes anything.
 		local slots = SlotsIn(bag)
 		local sub = slots .. " slots"
-		if GetNumFreeSlots then
-			local ok, _, family = pcall(GetNumFreeSlots, bag)
-			if ok and family and family ~= 0 then
-				sub = slots .. " \194\183 " .. (self:FamilyName(family) or "restricted")
-			end
-		end
+		local named = self:FamilyName(BagFamily(bag))
+		if named then sub = slots .. " \194\183 " .. named end
 		row.sub:SetText(sub)
 		W.Color(row.sub, c.textDim)
 		row.bg:SetFillColor(c.rowHover)
@@ -1541,30 +1622,13 @@ function Bags:RefreshFlyout(frame)
 	fly:SetFillColor(Palette.c.glass)
 end
 
---- A specialty bag's family, in words.
---
---  The bitmask meanings are the ones two shipping addons on this client agree
---  on; anything unrecognised is reported as "restricted" rather than guessed
---  at. An ARRAY rather than a keyed table, and walked in order, because a bag
---  carrying two family bits must not describe itself differently between
---  sessions -- which is what pairs() over a keyed table would give.
-local BAG_FAMILIES = {
-	{ 0x00001, "quiver"         }, { 0x00002, "ammo"       },
-	{ 0x00004, "soul shards"    }, { 0x00008, "leatherworking" },
-	{ 0x00010, "inscription"    }, { 0x00020, "herbs"      },
-	{ 0x00040, "enchanting"     }, { 0x00080, "engineering" },
-	{ 0x00100, "keys"           }, { 0x00200, "gems"       },
-	{ 0x00400, "mining"         }, { 0x08000, "fishing"    },
-	{ 0x10000, "cooking"        },
-}
-
+--- A specialty bag's family, as the flyout says it: "quiver only".
 function Bags:FamilyName(family)
-	local bit = _G.bit
-	if not bit or type(family) ~= "number" then return nil end
-	for _, entry in ipairs(BAG_FAMILIES) do
-		if bit.band(family, entry[1]) > 0 then return entry[2] .. " only" end
-	end
-	return nil
+	local word = FamilyWord(family)
+	-- "restricted only" is not a sentence. An unrecognised family says what it
+	-- can honestly say, which is that the bag will not take everything.
+	if not word then return nil end
+	return word == "restricted" and "restricted" or (word .. " only")
 end
 
 -- ---------------------------------------------------------------------------

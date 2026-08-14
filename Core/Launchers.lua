@@ -126,9 +126,16 @@ local PIN_PREFIX = {
 
 -- What an addon button tends to be called. Anything matching none of these is
 -- assumed not to be one, which errs toward leaving things where they are.
+--
+-- MATCHED WITHOUT CASE, and written in lower case for it. There is no agreed
+-- spelling of the word: Blizzard's own frames say MiniMapTracking and
+-- MinimapBorder in the same interface, and addons follow whichever they read
+-- first - SmartBuff's is SmartBuff_MiniMapButton, which every one of these
+-- patterns missed. So it stayed on the ring beside the minimap while its own
+-- broker launcher sat in the drawer, and the player had the same button twice.
 local BUTTON_PATTERN = {
-	"^LibDBIcon10_", "MinimapButton", "MinimapFrame", "MinimapIcon",
-	"[%-_]Minimap[%-_]", "Minimap$", "^BT4",
+	"^libdbicon10_", "minimapbutton", "minimapframe", "minimapicon",
+	"[%-_]minimap[%-_]", "minimap$", "^bt4",
 }
 
 local function Matches(name, list)
@@ -160,7 +167,7 @@ local function IsAddonButton(frame, own)
 	-- Pins are numbered; buttons are not. A name ending in a digit is almost
 	-- always the ninetieth copy of something.
 	if name:find("%d$") and not name:find("^LibDBIcon10_") then return false end
-	if not Matches(name, BUTTON_PATTERN) then return false end
+	if not Matches(name:lower(), BUTTON_PATTERN) then return false end
 
 	return true
 end
@@ -606,6 +613,61 @@ function L:ScanDBIcon()
 	return found
 end
 
+-- What an addon calls its own button: its name, then some spelling of "minimap
+-- button". Strip that and what is left is the addon - which is the name its LDB
+-- launcher is registered under, if it shipped one.
+local OWNER_SUFFIX = {
+	"[%-_]?minimapbutton$", "[%-_]?minimapicon$", "[%-_]?minimapframe$",
+	"[%-_]?minimap$",
+}
+
+--- Which addon made this global, if the client will say.
+--
+--  issecurevariable's SECOND return is the addon that tainted the name. It is
+--  the only thing in the game that knows a button called EnxMiniMapIcon belongs
+--  to Enchantrix - nothing about the two names says so, and no amount of
+--  stripping "minimap icon" off one end gets from "Enx" to "Enchantrix".
+local function TaintedBy(name)
+	if not issecurevariable or not name then return nil end
+	local ok, secure, addon = pcall(issecurevariable, name)
+	if not ok or secure then return nil end
+	return type(addon) == "string" and addon ~= "" and addon or nil
+end
+
+local function EntryNamed(want)
+	if not want or want == "" then return nil end
+	want = want:lower()
+	for k, entry in pairs(L.byKey) do
+		if k:lower() == want then return entry end
+	end
+end
+
+--- The entry a hand-rolled button already belongs to, if any.
+--
+--  Two addons showed this up. SmartBuff registers a launcher called "SmartBuff"
+--  and builds SmartBuff_MiniMapButton, where the name alone is enough.
+--  Enchantrix registers "Enchantrix" and builds EnxMiniMapIcon, where it is
+--  not. Either way, collecting the button as an entry of its own puts the same
+--  addon in the drawer twice - which reads as our bug just as much as leaving
+--  it loose on the ring did.
+local function OwnerEntry(key)
+	-- Ask the client first. It knows; the name only sometimes does.
+	local entry = EntryNamed(TaintedBy(key))
+	if entry then return entry end
+
+	local lower = key:lower()
+	local base
+	for _, pat in ipairs(OWNER_SUFFIX) do
+		local stem = lower:gsub(pat, "")
+		if stem ~= lower and stem ~= "" then
+			base = stem
+			break
+		end
+	end
+
+	return EntryNamed(base)
+end
+
 --- Hand-rolled buttons parented onto the minimap.
 function L:ScanMinimap(own)
 	if not _G.Minimap or not _G.Minimap.GetChildren then return 0 end
@@ -626,13 +688,23 @@ function L:ScanMinimap(own)
 			local okName, name = pcall(RawGetName, child)
 			local key = (okName and name) or tostring(child)
 			if not self.byKey[key] then
-				Add({
-					key    = key,
-					label  = (okName and name) or "?",
-					source = "minimap",
-					button = child,
-					owned  = false,
-				})
+				-- Onto the addon's own launcher where it has one, the same way a
+				-- LibDBIcon button joins the entry it was registered under.
+				local owner = OwnerEntry(key)
+				if owner then AdoptButton(owner, child) end
+
+				-- And on its own if that did not take - an entry already holding
+				-- a real button keeps it. Twice in the drawer is still better
+				-- than loose on the ring.
+				if not self.seen[child] then
+					Add({
+						key    = key,
+						label  = (okName and name) or "?",
+						source = "minimap",
+						button = child,
+						owned  = false,
+					})
+				end
 				found = found + 1
 			end
 		end

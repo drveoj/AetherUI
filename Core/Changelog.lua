@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.5.3",
+		date    = "2026-08-14",
+		lines   = {
+			"The spellbook is in glass: your spells sit in the same cells as your bags, the schools run down the side, and its title, tabs and close button are ours.",
+			"The bags count the slots you can actually use - a quiver's empty slots are named beside the free count rather than added to it, and get their own section in the grid.",
+			"Addon buttons left loose beside the minimap are collected into the Toolbox, and one belonging to an addon already listed joins it rather than turning up twice.",
+			"The last launcher in the Toolbox can be reached - with an odd number of them it sat one row below the fold with nowhere left to scroll.",
+			"Check boxes in the client's windows are drawn as proper circles, with room between them and their labels.",
+		},
+	},
+	{
 		version = "0.5.2",
 		date    = "2026-08-14",
 		lines   = {

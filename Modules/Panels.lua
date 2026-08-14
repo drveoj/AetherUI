@@ -49,7 +49,19 @@ local W, Palette, Reskin = A.Widgets, A.Palette, A.Reskin
 --  as SetPoint offsets, and expected to want a nudge by eye.
 local PANELS = {
 	{ frame = "CharacterFrame", insets = { 10, -10, -30, 26 } },
-	{ frame = "SpellBookFrame" },
+	-- The spellbook names none of its parts the way the others do: its title is
+	-- a global of its own rather than $parentTitleText, its close button is
+	-- SpellBookCloseButton rather than $parentCloseButton, and its tabs are
+	-- SpellBookFrameTabButton1..3. Naming them here is cheaper than three
+	-- special cases in Dress, and the next window with its own spelling only
+	-- needs a line.
+	{
+		frame  = "SpellBookFrame",
+		insets = { 4, -4, -4, 24 },
+		title  = "SpellBookTitleText",
+		close  = "SpellBookCloseButton",
+		tabs   = "SpellBookFrameTabButton",
+	},
 	{ frame = "PlayerTalentFrame", addon = "Blizzard_TalentUI" },
 	{ frame = "TalentFrame",       addon = "Blizzard_TalentUI" },
 	{ frame = "FriendsFrame" },
@@ -109,9 +121,33 @@ end
 --  its art stripped there is nothing left to click that looks like anything. So
 --  it gets the same multiplication sign every window of ours already uses -
 --  drawn on the client's own button, which keeps doing the closing.
+--- A window's close button, under either spelling.
+local function CloseButton(frame)
+	local name = frame.GetName and frame:GetName()
+	local entry = name and PN.ENTRY and PN.ENTRY[name]
+	return (entry and entry.close and _G[entry.close])
+		or Reskin.Element(frame, "CloseButton")
+end
+
+PN.CloseButton = CloseButton
+
 local function DressClose(frame, store)
-	local close = Reskin.Element(frame, "CloseButton")
-	if not close or close.__aetherX then return end
+	local close = CloseButton(frame)
+	if not close then return end
+
+	-- Into the corner of the glass. A window that names its own close button
+	-- also placed it for its own art: the spellbook's sits 44 in from the right
+	-- and 25 down, which is the middle of a stone rim that is no longer there,
+	-- and reads as a stray cross floating in the page.
+	local name = frame.GetName and frame:GetName()
+	local entry = name and PN.ENTRY and PN.ENTRY[name]
+	if entry and entry.close and close.ClearAllPoints then
+		local ins = entry.insets or {}
+		close:ClearAllPoints()
+		close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", (ins[3] or 0) - 2, (ins[2] or 0) - 2)
+	end
+
+	if close.__aetherX then return end
 
 	-- State textures first, then the regions: ClearButton wants to see the
 	-- client's own paths, and Strip empties them. Reskin.ClearButton copes with
@@ -152,17 +188,24 @@ local function Dress(frame)
 	-- a reworked one carries it as a field, and anything built on the shared
 	-- dialog template keeps it inside a Header child alongside the stone plate.
 	local header = Reskin.Element(frame, "Header")
-	local fromHeader = nil
-	local title = Reskin.Element(frame, "TitleText") or Reskin.Element(frame, "Title")
+	local moved = nil
+	local title = (entry and entry.title and _G[entry.title]) or nil
+	if title then
+		-- Named here because the client did not name it after its frame, and
+		-- placed by the client for art we have just taken off - so it moves.
+		moved = true
+	else
+		title = Reskin.Element(frame, "TitleText") or Reskin.Element(frame, "Title")
+	end
 	if not title and header then
 		title = header.Text or Reskin.Element(header, "Text")
-		fromHeader = title and true or nil
+		moved = title and true or nil
 	end
 
 	-- A header from that template STRADDLES the top edge on purpose: the stone
 	-- plate is meant to overhang the frame, so its words sit half outside. Take
 	-- the plate away and they hang over the rim, so they come inside.
-	if fromHeader and title.ClearAllPoints then
+	if moved and title.ClearAllPoints then
 		local ins = entry and entry.insets
 		title:ClearAllPoints()
 		title:SetPoint("TOP", frame, "TOP", 0, (ins and ins[2] or 0) - 14)
@@ -223,6 +266,16 @@ local TAB_GROW_MAX = 48
 
 local function TabLabel(tab)
 	return Reskin.Element(tab, "Text") or (tab.GetFontString and tab:GetFontString())
+end
+
+--- The nth tab of a window, under whatever name that window gives its tabs.
+--
+--  Most of them are $parentTab1..n. The spellbook is not, and asking for
+--  SpellBookFrameTab1 finds nothing at all - which is a tab strip that quietly
+--  never gets laid out rather than an error anybody would notice.
+local function TabAt(name, i)
+	local entry = PN.ENTRY and PN.ENTRY[name]
+	return _G[(entry and entry.tabs or (name .. "Tab")) .. i]
 end
 
 --- Selected or not, in our own weight.
@@ -297,8 +350,8 @@ local function LayoutTabs(frame, store)
 	-- Character and Reputation, exactly the width of a tab, with nothing in it.
 	local tabs, hidden = {}, {}
 	local n = 1
-	while _G[name .. "Tab" .. n] do
-		local tab = _G[name .. "Tab" .. n]
+	while TabAt(name, n) do
+		local tab = TabAt(name, n)
 		if not tab.IsShown or tab:IsShown() then
 			tabs[#tabs + 1] = tab
 		else
@@ -306,6 +359,22 @@ local function LayoutTabs(frame, store)
 		end
 		n = n + 1
 	end
+
+	-- BEFORE the early return, not after it. The spellbook opens with all three
+	-- of its tabs hidden and shows the ones that apply from its own update, so
+	-- the first dress sees an empty row - and a row that gives up before it has
+	-- asked to be told when a tab appears never lays itself out at all.
+	for _, tab in ipairs(hidden) do
+		if tab.HookScript and not tab.__aetherShowHook then
+			tab.__aetherShowHook = true
+			tab:HookScript("OnShow", function()
+				if PN.enabled and frame.__aetherArt then
+					LayoutTabs(frame, frame.__aetherArt)
+				end
+			end)
+		end
+	end
+
 	if #tabs == 0 then return end
 
 	local room = StripWidth(frame, name)
@@ -405,6 +474,19 @@ local function LayoutTabs(frame, store)
 		local w = even
 		if tab.SetSize then tab:SetSize(w, TAB_H) end
 
+		-- AND ITS CLICKABLE AREA BACK. The spellbook's tabs are 128x64 in the
+		-- client's art with a hit rect inset 13 from the top and 15 from the
+		-- bottom, to keep the clicks off the transparent margin. Resize that tab
+		-- to 26 high and the two insets meet in the middle: the tab is drawn,
+		-- reads correctly, highlights on hover - and cannot be clicked. The
+		-- client's own values are recorded so switching off puts them back.
+		if tab.SetHitRectInsets then
+			if tab.__aetherHit == nil and tab.GetHitRectInsets then
+				tab.__aetherHit = { tab:GetHitRectInsets() }
+			end
+			tab:SetHitRectInsets(0, 0, 0, 0)
+		end
+
 		-- Keep the label inside its pill. Measured from zero every time: a
 		-- width set on a previous pass would otherwise be what we measure, and
 		-- the label would ratchet narrower on every re-layout.
@@ -461,28 +543,15 @@ local function LayoutTabs(frame, store)
 			tab.__aetherTabHook = true
 			tab:HookScript("OnClick", function()
 				if not PN.enabled then return end
-				local n = 1
-				while _G[name .. "Tab" .. n] do
-					StyleTabState(_G[name .. "Tab" .. n])
-					n = n + 1
+				local k = 1
+				while TabAt(name, k) do
+					StyleTabState(TabAt(name, k))
+					k = k + 1
 				end
 			end)
 		end
 	end
 
-	-- A tab that is hidden now may be shown later - the pet tab arrives with a
-	-- pet - and it has to come back into the row rather than reappearing where
-	-- the client last left it.
-	for _, tab in ipairs(hidden) do
-		if tab.HookScript and not tab.__aetherShowHook then
-			tab.__aetherShowHook = true
-			tab:HookScript("OnShow", function()
-				if PN.enabled and frame.__aetherArt then
-					LayoutTabs(frame, frame.__aetherArt)
-				end
-			end)
-		end
-	end
 end
 
 --- Answer the client when it re-sizes or re-selects its own tabs.
@@ -525,8 +594,8 @@ local function InstallTabHooks()
 			if not name then return end
 
 			local n = 1
-			while _G[name .. "Tab" .. n] do
-				StyleTabState(_G[name .. "Tab" .. n])
+			while TabAt(name, n) do
+				StyleTabState(TabAt(name, n))
 				n = n + 1
 			end
 		end)
@@ -843,10 +912,176 @@ local function DressGameMenu(frame, store)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- the spellbook
+-- ---------------------------------------------------------------------------
+--
+-- Twelve spell buttons in two columns, a column of school tabs down the right,
+-- a page turner along the bottom and the book's own tabs under that. Shapes and
+-- names read off the client's SpellBookFrame.xml and SpellBookFrame.lua for
+-- this flavour rather than guessed at, because two of its parts keep their
+-- picture in a region the usual sweeps would take: a spell keeps its icon
+-- beside the ring, and a school tab keeps its icon AS the normal texture.
+
+local SPELL_BUTTONS = 12         -- SPELLS_PER_PAGE
+local SPELL_TABS    = 8          -- MAX_SKILLLINE_TABS
+
+-- The school tabs down the right. Blizzard spaces them 17 apart because each
+-- 32px button carries 64px of stone behind it and the stone has to clear its
+-- neighbour; with the stone gone that gap reads as a column of unrelated icons.
+local SIDE_TAB_GAP  = 6
+local SIDE_TAB_EDGE = 6          -- in from the glass
+local SIDE_TAB_TOP  = 62         -- below the title and the ranks check box
+
+-- The page turner. Angle marks rather than Blizzard's engraved arrows: with
+-- the art off there is nothing left on the button to click at all.
+local GLYPH_PREV, GLYPH_NEXT = "\226\128\185", "\226\128\186"
+local PAGE_TURNER_Y = 105        -- where the client puts both arrows
+
+--- One of the client's buttons carrying a single character of ours.
+local function MarkButton(btn, store, glyph)
+	if not btn then return end
+
+	Reskin.ClearButton(btn)
+	if store then Reskin.Strip(btn, store) end
+
+	local mark = btn.__aetherMark
+	if not mark then
+		mark = W.Text(btn, "pnTitle", "CENTER")
+		mark:SetPoint("CENTER", btn, "CENTER", 0, 0)
+		btn.__aetherMark = mark
+	end
+	mark:SetText(glyph)
+	W.Color(mark, Palette.c.textDim)
+	return mark
+end
+
+--- A spell's name and rank, and whether it is the one you have open.
+--
+--  Re-run rather than done once: SpellButtonMixin:UpdateButton sets the name's
+--  colour on every refresh - gold for a spell you can cast, grey for a passive
+--  - and puts its own white highlight square back on the button while it is at
+--  it. Our type survives that; our colours do not.
+local function StyleSpell(btn)
+	local title = Reskin.Element(btn, "SpellName")
+	if title then
+		Reskin.Font(title, "pnBody")
+		W.Color(title, btn.isPassive and Palette.c.textDim or Palette.c.text)
+	end
+
+	local sub = Reskin.Element(btn, "SpellSubName")
+	if sub then
+		Reskin.Font(sub, "pnBody")
+		W.Color(sub, Palette.c.textFaint)
+	end
+
+	-- An open profession marks itself by checking the button. The client's mark
+	-- for that is a white square over the icon; ours is the cell's own rim.
+	if btn.SetEdgeColor then
+		local on = btn.GetChecked and btn:GetChecked()
+		btn:SetEdgeColor(on and Palette.c.accent or Palette.c.glassEdge)
+	end
+end
+
+local function DressSpellButtons(store)
+	for i = 1, SPELL_BUTTONS do
+		local btn = _G["SpellButton" .. i]
+		if btn then
+			-- The icon is a region of the button and the ring is the normal
+			-- texture. Strip would take both; ClearButton alone would leave the
+			-- parchment disc behind the icon standing.
+			Reskin.IconButton(btn, store, { icon = Reskin.Element(btn, "IconTexture") })
+			StyleSpell(btn)
+
+			if hooksecurefunc and btn.UpdateButton and not btn.__aetherSpellHook then
+				btn.__aetherSpellHook = true
+				hooksecurefunc(btn, "UpdateButton", function(self)
+					if not PN.enabled then return end
+					Reskin.ClearButton(self)
+					StyleSpell(self)
+				end)
+			end
+		end
+	end
+end
+
+local function DressSideTabs(frame, store)
+	local name = frame.GetName and frame:GetName()
+	local entry = name and PN.ENTRY and PN.ENTRY[name]
+	local ins = entry and entry.insets or {}
+
+	local last
+	for i = 1, SPELL_TABS do
+		local tab = _G["SpellBookSkillLineTab" .. i]
+		if not tab then break end
+
+		-- No icon named: the school's picture IS this button's normal texture,
+		-- which is what IconButton assumes when it is not told otherwise.
+		Reskin.IconButton(tab, store)
+
+		if tab.ClearAllPoints then
+			tab:ClearAllPoints()
+			if last then
+				tab:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -SIDE_TAB_GAP)
+			else
+				tab:SetPoint("TOPRIGHT", frame, "TOPRIGHT",
+					(ins[3] or 0) - SIDE_TAB_EDGE, (ins[2] or 0) - SIDE_TAB_TOP)
+			end
+		end
+
+		-- Every one of them, shown or not. A hidden tab still holds its place in
+		-- the chain, so anchoring only the visible ones leaves a gap the moment
+		-- the player learns a profession and the ninth tab arrives.
+		last = tab
+	end
+end
+
+local function DressSpellBook(frame, store)
+	-- The page number, which the client draws in near-black because it is
+	-- printing it on parchment. On glass that is a page number you cannot read.
+	local page = _G.SpellBookPageText
+	if page then
+		Roled(page, "pnSub")
+		W.Color(page, Palette.c.textDim)
+
+		-- And between the two arrows rather than off in the bottom corner: the
+		-- corner it was in is where the book's tabs sit now.
+		if page.ClearAllPoints then
+			page:ClearAllPoints()
+			page:SetPoint("CENTER", frame, "BOTTOM", 0, PAGE_TURNER_Y)
+		end
+		if page.SetJustifyH then page:SetJustifyH("CENTER") end
+	end
+
+	MarkButton(_G.SpellBookPrevPageButton, store, GLYPH_PREV)
+	MarkButton(_G.SpellBookNextPageButton, store, GLYPH_NEXT)
+
+	local ranks = _G.ShowAllSpellRanksCheckbox
+	if ranks then
+		Reskin.CheckBox(ranks, store)
+		local label = _G.ShowAllSpellRanksCheckboxText
+		if label then
+			Roled(label, "pnBody")
+			W.Color(label, Palette.c.textDim)
+		end
+	end
+
+	DressSpellButtons(store)
+	DressSideTabs(frame, store)
+
+	-- No hook of its own on the client's rebuild. Its update hides all three
+	-- tabs and shows the ones that apply, so the OnShow every hidden tab already
+	-- carries answers it - and that is also what puts the label back in the
+	-- middle of its pill, because enabling a tab is what moved it up.
+	LayoutTabs(frame, store)
+	InstallTabHooks()
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame = DressCharacter,
 	GameMenuFrame  = DressGameMenu,
+	SpellBookFrame = DressSpellBook,
 }
 
 PN.INTERIORS = INTERIORS
@@ -892,7 +1127,7 @@ function PN:OnDisable()
 	for _, entry in ipairs(PANELS) do
 		local frame = _G[entry.frame]
 		if frame and frame.__aetherPanel then
-			local close = Reskin.Element(frame, "CloseButton")
+			local close = CloseButton(frame)
 			if close and close.__aetherX then
 				close.__aetherX:Hide()
 				close.__aetherX = nil
@@ -910,8 +1145,8 @@ function PN:OnDisable()
 
 			local name = frame.GetName and frame:GetName()
 			local n = 1
-			while name and _G[name .. "Tab" .. n] do
-				local tab = _G[name .. "Tab" .. n]
+			while name and TabAt(name, n) do
+				local tab = TabAt(name, n)
 				if tab.__aetherAnchor then
 					tab:ClearAllPoints()
 					tab:SetPoint(unpack(tab.__aetherAnchor))
@@ -919,7 +1154,10 @@ function PN:OnDisable()
 				if tab.__aetherSize and tab.SetSize then
 					tab:SetSize(tab.__aetherSize[1], tab.__aetherSize[2])
 				end
-				tab.__aetherAnchor, tab.__aetherSize = nil, nil
+				if tab.__aetherHit and tab.SetHitRectInsets then
+					tab:SetHitRectInsets(unpack(tab.__aetherHit))
+				end
+				tab.__aetherAnchor, tab.__aetherSize, tab.__aetherHit = nil, nil, nil
 				if tab.__aetherTab then
 					tab.__aetherTab:Hide()
 					tab.__aetherTab = nil
