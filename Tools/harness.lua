@@ -5446,6 +5446,57 @@ print("== loading addon files ==")
 -- drifting: a module added to the .toc and not to this list ships to players
 -- while being invisible to every check in this file, which is the most
 -- flattering kind of untested there is.
+-- ---------------------------------------------------------------------------
+-- the taxi
+-- ---------------------------------------------------------------------------
+--
+-- Nodes are the flight map's slots while it is open. `routes` maps a
+-- destination slot to the destination slot of each of its legs, which is what
+-- TaxiGetNodeSlot answers - a two-leg trip has two entries.
+--
+-- Whether the player is ON one stays `_G.__onTaxi`, which already existed for
+-- Zen and the fader. Being on a taxi is one fact and wants one flag - a second
+-- one here would let the two halves of the suite disagree about it.
+--
+-- It is a flag the test sets, NOT something the mock infers from TakeTaxiNode:
+-- the client does not put you on the griffin the instant you click, and code
+-- that assumed it would never meet the delay that makes PLAYER_CONTROL_LOST
+-- unreliable.
+_G.__taxi = {
+	nodes  = {},
+	routes = {},
+	earlyLandings = 0,
+}
+
+function NumTaxiNodes() return #_G.__taxi.nodes end
+
+function TaxiNodeGetType(i)
+	local n = _G.__taxi.nodes[i]
+	return n and n.kind or "NONE"
+end
+
+function TaxiNodeName(i)
+	local n = _G.__taxi.nodes[i]
+	return n and n.name or nil
+end
+
+function GetNumRoutes(i)
+	local r = _G.__taxi.routes[i]
+	return r and #r or 1
+end
+
+function TaxiGetNodeSlot(i, leg, isSource)
+	local r = _G.__taxi.routes[i]
+	if not r then return isSource and 1 or i end
+	if isSource then return leg == 1 and 1 or r[leg - 1] end
+	return r[leg]
+end
+
+function TakeTaxiNode(i) end            -- hooked, does nothing itself
+function TaxiRequestEarlyLanding()
+	_G.__taxi.earlyLandings = _G.__taxi.earlyLandings + 1
+end
+
 local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
@@ -5462,6 +5513,8 @@ local FILES = {
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
+	"Modules/InFlight/Routes.lua", "Modules/InFlight/Route.lua",
+	"Modules/InFlight/Taxi.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -20663,6 +20716,210 @@ do
 	seterrorhandler(function(e) fail("errorhandler: " .. tostring(e)) end)
 	Errors.installed = false
 end
+
+section("ifec: the route table, against flights that were actually flown", function()
+	local Route = A.IFEC and A.IFEC.Route
+	check(Route ~= nil, "the route lookup loaded")
+	check(A.IFEC_ROUTE_BUILD == "1.15.9.69109",
+		"the table was generated from the client's own build (" ..
+		tostring(A.IFEC_ROUTE_BUILD) .. ")")
+
+	local legs = 0
+	for _, row in pairs(A.IFEC_LEGS or {}) do
+		for _ in pairs(row) do legs = legs + 1 end
+	end
+	check(legs > 250, "and carries the game's legs (" .. legs .. ")")
+
+	-- NINE REAL FLIGHTS. Measured on this account and recorded to the second.
+	-- These are the whole justification for the generated table: they are what
+	-- the taxi speed was fitted against, and a change to the generator that
+	-- moves any of them is a change that needs looking at.
+	local FLOWN = {
+		{ "Camp Taurajo, The Barrens",    "Crossroads, The Barrens",           79 },
+		{ "Crossroads, The Barrens",      "Orgrimmar, Durotar",               141 },
+		{ "Crossroads, The Barrens",      "Ratchet, The Barrens",              51 },
+		{ "Crossroads, The Barrens",      "Splintertree Post, Ashenvale",     162 },
+		{ "Orgrimmar, Durotar",           "Crossroads, The Barrens",          109 },
+		{ "Ratchet, The Barrens",         "Crossroads, The Barrens",           68 },
+		{ "Splintertree Post, Ashenvale", "Orgrimmar, Durotar",                95 },
+		{ "Thunder Bluff, Mulgore",       "Crossroads, The Barrens",          158 },
+		{ "Undercity, Tirisfal",          "The Sepulcher, Silverpine Forest", 106 },
+	}
+
+	local worst, worstLeg = 0, nil
+	for _, f in ipairs(FLOWN) do
+		local secs = Route:Leg(f[1], f[2])
+		if not secs then
+			fail("no leg for " .. f[1] .. " -> " .. f[2])
+		else
+			local err = math.abs(secs - f[3])
+			if err > worst then worst, worstLeg = err, f[1] .. " -> " .. f[2] end
+		end
+	end
+	check(worst < 1.5, "every flown leg is within a second and a half of what it took"
+		.. " (worst " .. string.format("%.1f", worst) .. "s on " .. tostring(worstLeg) .. ")")
+
+	-- DIRECTIONAL. The same two nodes take different times each way, so a table
+	-- that stored one figure per pair would be half a minute out on one of them.
+	local there = Route:Leg("Orgrimmar, Durotar", "Crossroads, The Barrens")
+	local back  = Route:Leg("Crossroads, The Barrens", "Orgrimmar, Durotar")
+	check(there and back and math.abs(there - back) > 25,
+		"a leg is not the same in both directions (" .. string.format("%.0f", there)
+		.. "s out, " .. string.format("%.0f", back) .. "s back)")
+
+	-- A JOURNEY IS THE SUM OF ITS LEGS. The client loses and regains control
+	-- once for a whole multi-hop trip, so this is the only way to know a
+	-- two-legged flight - and the measured 209s says it is the right way.
+	local total, breakdown, complete = Route:Journey({
+		"Ratchet, The Barrens", "Crossroads, The Barrens", "Orgrimmar, Durotar" })
+	check(complete and total and math.abs(total - 209) < 2,
+		"Ratchet to Orgrimmar via Crossroads comes to what it took ("
+		.. string.format("%.0f", total or 0) .. "s vs 209s measured)")
+	check(#breakdown == 2, "reported as two legs")
+	check(breakdown[1].at and math.abs(breakdown[1].at - 68) < 2,
+		"with the boundary tick where the first leg ends ("
+		.. string.format("%.0f", breakdown[1].at or 0) .. "s vs 68s measured)")
+
+	-- An unknown leg does not sink the journey: the console still opens and
+	-- still counts, it just cannot say when you land.
+	local t2, b2, ok2 = Route:Journey({ "Orgrimmar, Durotar", "Nowhere At All" })
+	check(t2 == nil and ok2 == false, "an unknown leg leaves the total unknown")
+	check(b2 and #b2 == 1 and b2[1].seconds == nil, "and is reported rather than dropped")
+
+	-- THE EIGHT TWO-PATH LEGS. Both factions reach these hubs by different
+	-- routes and nothing in the data says which is ours, so the shipped figure
+	-- is a mean and is marked as one.
+	check(Route:IsFuzzy("Gadgetzan, Tanaris", "Cenarion Hold, Silithus"),
+		"a leg with one path per faction is flagged")
+	check(not Route:IsFuzzy("Ratchet, The Barrens", "Crossroads, The Barrens"),
+		"and an ordinary one is not")
+
+	-- Learning beats the table, which is what makes a fuzzy leg fixable.
+	local before = Route:Leg("Gadgetzan, Tanaris", "Cenarion Hold, Silithus")
+	check(Route:Learn({ "Gadgetzan, Tanaris", "Cenarion Hold, Silithus" }, 196),
+		"a flight we timed is recorded")
+	local after, source = Route:Leg("Gadgetzan, Tanaris", "Cenarion Hold, Silithus")
+	check(after == 196 and source == "learned", "and beats the shipped figure ("
+		.. string.format("%.0f", before) .. "s -> 196s)")
+
+	-- A MULTI-HOP FLIGHT TEACHES NOTHING ABOUT ITS LEGS, because the boundaries
+	-- are not observable - control is lost and regained once for the whole trip.
+	check(not Route:Learn({ "A", "B", "C" }, 300),
+		"a multi-hop flight is not learned from, having no visible boundaries")
+	check(not Route:Learn({ "A", "B" }, 3),
+		"and neither is a blip too short to have been a flight")
+
+	local div = Route:Divergence()
+	check(#div >= 1 and div[1].from == "Gadgetzan, Tanaris",
+		"divergence reports what we measured against what shipped")
+end)
+
+section("ifec: boarding, flying and landing", function()
+	local Taxi  = A.IFEC and A.IFEC.Taxi
+	local Route = A.IFEC and A.IFEC.Route
+	check(Taxi ~= nil, "flight detection loaded")
+
+	local seen = {}
+	Taxi:AddListener(function(event, flight) seen[#seen + 1] = { event, flight } end)
+	Taxi:Start()
+
+	local function flightMap(nodes, routes)
+		_G.__taxi.nodes, _G.__taxi.routes = nodes, routes or {}
+	end
+	local function board(index)
+		TakeTaxiNode(index)
+		_G.__onTaxi = true
+		fire("PLAYER_CONTROL_LOST")
+		tick(0.4)                      -- the settle delay before UnitOnTaxi is trusted
+	end
+	local function land(after)
+		tick(after or 1)               -- time in the air, so there is a duration to learn
+		_G.__onTaxi = false
+		fire("PLAYER_CONTROL_GAINED")
+	end
+
+	-- Ratchet to Crossroads: a real single-hop leg, 68s in the table and 68s on
+	-- the stopwatch when it was flown.
+	flightMap({
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+	})
+
+	-- A STUN IS NOT A FLIGHT. PLAYER_CONTROL_LOST fires for stuns, fear and
+	-- mind control too, which is why Blizzard's own UIParent.lua asks
+	-- UnitOnTaxi before believing it.
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+	check(not Taxi:IsFlying(), "being stunned does not open the console")
+	check(#seen == 0, "and nobody is told a flight began")
+
+	-- THE JOURNEY IS READ AT BOOKING. GetNumRoutes and TaxiGetNodeSlot only
+	-- answer while the flight map is open, and it is shut by takeoff.
+	board(2)
+	check(Taxi:IsFlying(), "boarding opens it")
+	check(seen[1] and seen[1][1] == "board", "and the console is told")
+	local f = seen[1][2]
+	check(f.from == "Ratchet, The Barrens" and f.to == "Crossroads, The Barrens",
+		"with the route read off the map before it closed")
+	check(f.expected and math.abs(f.expected - 68) < 2,
+		"and the duration from the table (" .. string.format("%.0f", f.expected or 0) .. "s)")
+
+	-- UnitOnTaxi is not settled in the frame the event fires, so the check is
+	-- retried. A mock that flipped the flag instantly would never show this.
+	local elapsed, remaining, fraction = Taxi:Progress()
+	check(elapsed and elapsed >= 0 and fraction and fraction >= 0,
+		"progress is readable in the air")
+
+	land(67)
+	check(not Taxi:IsFlying(), "landing closes it")
+	check(seen[2] and seen[2][1] == "land", "and the console is told that too")
+	check(seen[2][2].learned == true, "a clean single-hop flight is learned from")
+	check(math.abs(Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens") - 67.4) < 1,
+		"and the measured time replaces the table's")
+
+	-- AN EARLY LANDING DID NOT GO WHERE IT WAS BOOKED. Recording it against the
+	-- booked destination would teach the table a duration for a trip nobody
+	-- took. Prior art misses this.
+	local before = Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens")
+	board(2)
+	TaxiRequestEarlyLanding()
+	land(40)
+	check(Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens") == before,
+		"a flight cut short teaches the table nothing")
+
+	-- A MULTI-HOP JOURNEY reads every node off the map, and is not learned from
+	-- because control is lost and regained once for the whole trip.
+	flightMap({
+		{ name = "Ratchet, The Barrens",   kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = "Orgrimmar, Durotar",     kind = "REACHABLE" },
+	}, { [3] = { 2, 3 } })
+
+	board(3)
+	local m = seen[#seen][2]
+	check(m.nodes and #m.nodes == 3, "a two-leg journey names all three nodes")
+	check(m.expected and math.abs(m.expected - 209) < 2,
+		"and totals what the flight really takes ("
+		.. string.format("%.0f", m.expected or 0) .. "s vs 209s measured)")
+	check(m.legs and #m.legs == 2 and m.legs[1].at and math.abs(m.legs[1].at - 68) < 2,
+		"with a boundary tick at the stopover")
+	land()
+
+	-- A FLIGHT NOBODY SAW BOOKED is still a flight - a disconnect mid-air puts
+	-- you back on the griffin with no booking to recover.
+	_G.__onTaxi = true
+	fire("PLAYER_ENTERING_WORLD")
+	check(Taxi:IsFlying(), "logging in airborne opens the console")
+	local d = seen[#seen][2]
+	check(d.expected == nil and d.from == nil,
+		"with no route and no estimate, rather than a wrong one")
+	local e2 = Taxi:Progress()
+	check(e2 ~= nil, "and the elapsed time still counts")
+	land()
+
+	Taxi:Stop()
+	_G.__onTaxi = false
+end)
 
 print("")
 if #FAIL == 0 then

@@ -505,6 +505,15 @@ Config.defaults = {
 				showText = true,
 			},
 
+			-- The in-flight console. `learned` is durations we timed ourselves,
+			-- keyed [from][to] like the shipped table and beating it - the
+			-- shipped figures for the neutral hubs both factions share are a
+			-- mean of two paths, so a measured one is worth more there.
+			inflight = {
+				enabled = true,
+				learned = {},
+			},
+
 			-- Nameplates (concept 7a / 7b). The deck's own measurements: an 8/7
 			-- /18/7 padding box, a 26 badge, a 10 gap to the right column, and a
 			-- 160x5 bar under the name.
