@@ -116,10 +116,16 @@ local function playSegment(index)
 	local willPlay, handle = PlaySoundFile(seg.file, "Music")
 
 	if not willPlay then
+		-- The client says nil for a muted channel AND for a file it could not
+		-- play, and does not distinguish them. Recorded either way, because a
+		-- segment that quietly fails is a programme that stops for no stated
+		-- reason - which is exactly what it looked like.
 		Playback.state = "muted"
+		Playback.lastFail = seg.file
 		announce("muted", item)
 		return false
 	end
+	Playback.lastFail = nil
 
 	Playback.handle   = handle
 	Playback.index    = index
@@ -180,6 +186,10 @@ advance = function()
 		if playSegment((Playback.index or 1) + 1) then
 			scheduleNext()
 			announce("segment", item, Playback.index)
+		else
+			-- Said out loud. A segment that fails part way through an item used
+			-- to end the programme in silence with nothing anywhere saying so.
+			announce("stalled", item, Playback.index)
 		end
 		return
 	end

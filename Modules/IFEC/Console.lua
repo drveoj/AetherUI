@@ -335,16 +335,6 @@ function IF:OnFlight(event, flight)
 	if not self.enabled then return end
 
 	if event == "board" then
-		if not self.frame then
-			self.frame = Build()
-			-- Well clear of the bottom. The design's 104 is measured on an
-			-- unscaled 1080 screen; here the HUD is already down there, and the
-			-- player region grows this frame upward from its own bottom edge,
-			-- so it needs the room above rather than below.
-			A.Movers:Register("ifec", self.frame,
-				{ point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 260 }, "In-flight console")
-			self:Restyle()
-		end
 		-- A new flight is a new chance to get off it.
 		self._jumpAsked = nil
 		self:Refresh()
@@ -581,6 +571,18 @@ function IF:OnInitialize()
 end
 
 function IF:OnEnable()
+	-- BUILT NOW, not on the first boarding. Anything that attaches a region
+	-- needs the frame to exist when the flight begins, and listener order is
+	-- not something a caller should have to reason about: the player region
+	-- registered its listener at file load, ran first, found no frame and
+	-- silently did nothing while the audio started without it.
+	if not self.frame then
+		self.frame = Build()
+		A.Movers:Register("ifec", self.frame,
+			{ point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 260 }, "In-flight console")
+		self:Restyle()
+	end
+
 	if Taxi then Taxi:Start() end
 	-- Boarding while the module was off is a real case: pick the flight up.
 	if Taxi and Taxi:IsFlying() then self:OnFlight("board", Taxi.flight) end

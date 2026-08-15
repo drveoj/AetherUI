@@ -37,6 +37,7 @@ local function usage()
 		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		"|cff9d7bff/aether toolbox|r <dock left/right/top/bottom · open · close · pin NAME>",
 		"|cff9d7bff/aether panels dump|r <FrameName>  ·  what a window is made of",
+		"|cff9d7bff/aether ifec|r  ·  content packs, what is in season, what is playing",
 		"|cff9d7bff/aether errors|r <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
@@ -500,6 +501,59 @@ end
 --
 --  The chat frame cannot be selected, so an error you can read is still one you
 --  cannot send anybody. `clear` empties the list; anything else opens the box.
+--- What the in-flight console can see: packs, seasons, the queue, the audio.
+--
+--  This is the settings readout the brief asks for, in the one place it can be
+--  read while a flight is happening. Every state it prints is one somebody has
+--  actually had to diagnose from a screenshot.
+handlers.ifec = function()
+	local IFEC = A.IFEC
+	if not IFEC or not IFEC.Registry then
+		A:Print("ifec: not loaded")
+		return
+	end
+
+	local R, C, P = IFEC.Registry, IFEC.Content, IFEC.Playback
+	local packs = R:Sorted()
+
+	A:Print("ifec  ·  content API " .. tostring(R.API_MIN) .. "-" .. tostring(R.API_MAX))
+
+	if #packs == 0 then
+		A:Print("  no packs registered")
+	end
+	for _, id in ipairs(packs) do
+		local pack = R.packs[id]
+		A:Print(("  |cffece6ff%s|r  season %d  ·  %d items")
+			:format(id, pack.seasonIndex or 0, #pack.items))
+	end
+
+	for _, fail in ipairs(R:Failures()) do
+		A:Print("  |cffff8a8arefused|r " .. fail.packId .. "  ·  " .. fail.reason)
+	end
+
+	if C then
+		local avail = C:Available()
+		A:Print(("  in season today: |cffece6ff%d|r of %d  ·  %s")
+			:format(#avail, #R:Catalogue(),
+				C:IsDormant() and "|cffff8a8adormant|r" or "active"))
+	end
+
+	if P then
+		A:Print("  playback: |cffece6ff" .. tostring(P.state) .. "|r"
+			.. (P.item and ("  ·  " .. tostring(P.item.title)
+				.. " seg " .. tostring(P.index)) or ""))
+		if P.lastFail then
+			A:Print("  |cffff8a8alast file that would not play|r: " .. tostring(P.lastFail))
+		end
+	end
+
+	local PL = IFEC.Player
+	if PL then
+		A:Print("  queue: " .. tostring(#(PL.queue or {})) .. " item(s)"
+			.. "  ·  region " .. (A:GetModule("ifec"):HasRegion() and "attached" or "absent"))
+	end
+end
+
 handlers.errors = function(arg)
 	if not A.Errors then
 		A:Print("errors: the catcher is not loaded")
