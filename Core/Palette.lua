@@ -52,6 +52,14 @@ Palette.skins = {
 		accent      = C(185, 154, 245, 1.00),
 		accentDeep  = C(138, 106, 224, 1.00),
 
+		-- The flight dial. Its own tokens rather than accent's: the design's
+		-- ring is a lighter lilac than the interface accent, and the brass is
+		-- the one warm thing on the console.
+		ifecDial    = C(205, 188, 255, 1.00),
+		ifecTrack   = C(255, 255, 255, 0.13),
+		ifecBrass   = C(200, 168, 106, 0.55),
+		ifecDisc    = C(21, 17, 41, 1.00),
+
 		health      = { C(159, 232, 180), C(95, 198, 134) },
 		power       = { C(138, 180, 255), C(106, 144, 232) },
 		rage        = { C(255, 154, 118), C(240, 110, 90)  },
@@ -260,6 +268,14 @@ Palette.skins = {
 
 		accent      = C(255, 235, 190, 0.95),
 		accentDeep  = C(232, 200, 150, 1.00),
+
+		-- Written now because it costs nothing now and is expensive to
+		-- retrofit. Not tuned: Daylight is deferred until the reworked
+		-- features all work.
+		ifecDial    = C(140, 108, 220, 1.00),
+		ifecTrack   = C(60, 44, 96, 0.16),
+		ifecBrass   = C(168, 132, 72, 0.65),
+		ifecDisc    = C(252, 248, 255, 1.00),
 
 		health      = { C(159, 232, 180), C(111, 214, 150) },
 		power       = { C(168, 204, 245), C(127, 176, 236) },

@@ -1019,6 +1019,17 @@ local function XPGroup()
 	})
 end
 
+--- The in-flight console. One switch for now: the settings page the design
+--  describes is the dormancy readout, and there is nothing dormant yet.
+local function InFlightGroup()
+	local function at(k) return { "modules", "inflight", k } end
+	return group("In-flight console", {
+		enabled = toggle("Enabled", "A flight timer on every taxi, and the"
+			.. " console for content when a season is installed.", at("enabled")),
+		note = note("Move it with |cff9d7bff/aether unlock|r."),
+	})
+end
+
 --- Nameplates. Grouped by what you are looking at rather than by data type: the
 --  capsule that hostiles wear, the plain text a friendly gets instead, and the
 --  two things that hang under whichever of them is your target.
@@ -1145,6 +1156,7 @@ local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
 	xpbar = 12, nameplates = 13, popups = 14, panels = 15, timers = 16,
+	inflight = 17,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1200,6 +1212,7 @@ function Options:Build()
 			toolbox = ToolboxGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
+			inflight = InFlightGroup(),
 			nameplates = NameplatesGroup(),
 			popups = PopupsGroup(),
 			panels = PanelsGroup(),

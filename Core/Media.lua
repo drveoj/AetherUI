@@ -398,6 +398,12 @@ Media.style = {
 	-- read fine at 14; a friendly name is shadowed type straight onto the
 	-- world, and the same size there is a size smaller.
 	npFriendly   = { "semibold", 15, "" },
+
+	-- The in-flight console. The design's 14.5/11.5/10.5 rounded: a font size
+	-- is a request for a pixel grid and half points are not one.
+	ifecRoute    = { "semibold", 15, "" },   -- Booty Bay -> Ironforge
+	ifecSub      = { "light",    12, "" },   -- elapsed 2:01 - lands 4:12 - 2 legs
+	ifecDial     = { "semibold", 11, "" },   -- the numeral inside the ring
 }
 
 -- ---------------------------------------------------------------------------

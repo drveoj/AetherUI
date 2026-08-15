@@ -5514,7 +5514,7 @@ local FILES = {
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
 	"Modules/InFlight/Routes.lua", "Modules/InFlight/Route.lua",
-	"Modules/InFlight/Taxi.lua",
+	"Modules/InFlight/Taxi.lua", "Modules/InFlight/Console.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -20919,6 +20919,91 @@ section("ifec: boarding, flying and landing", function()
 
 	Taxi:Stop()
 	_G.__onTaxi = false
+end)
+
+section("ifec: the console, which is a flight timer when it is nothing else", function()
+	local IF   = A:GetModule("inflight")
+	local Taxi = A.IFEC and A.IFEC.Taxi
+	check(IF ~= nil and IF.enabled, "the console module is on")
+
+	Taxi:Start()
+	_G.__taxi.nodes = {
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+	}
+	_G.__taxi.routes = {}
+
+	-- The leg has been flown earlier in this file, so its duration is the
+	-- learned one rather than the shipped one. Read it rather than assume.
+	local LEG = A.IFEC.Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens")
+	local function mmss(s)
+		if s < 0 then s = 0 end
+		return string.format("%d:%02d", math.floor(s / 60), math.floor(s % 60))
+	end
+
+	TakeTaxiNode(2)
+	_G.__onTaxi = true
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+
+	local f = IF.frame
+	check(f ~= nil and f:IsShown(), "boarding opens it")
+	check(f.route:GetText() == "Ratchet, The Barrens  \226\134\146  Crossroads, The Barrens",
+		"showing where you are going")
+
+	-- THE NUMERAL IS TIME REMAINING, not elapsed - it is what the design puts
+	-- inside the ring, and it is the number a passenger actually wants.
+	check(f.dial.value:GetText() == mmss(LEG),
+		"with the time left in the dial (" .. tostring(f.dial.value:GetText()) .. ")")
+	check(f.sub:GetText():find("elapsed 0:00", 1, true) ~= nil
+		and f.sub:GetText():find("lands " .. mmss(LEG), 1, true) ~= nil,
+		"and the line under it reading " .. tostring(f.sub:GetText()))
+
+	-- The arc is a sheet of baked steps, so "how full is the ring" is which
+	-- cell is showing. There is no empty frame - a flight that has not started
+	-- hides the texture instead, and any progress at all shows the first step
+	-- rather than leaving the ring dead for the first second.
+	check(A.Media:DialArc(0) == nil and A.Media:DialArc(nil) == nil,
+		"nothing at all before the flight starts")
+	check(select(2, A.Media:DialArc(0.0001)) == 0,
+		"and the first step the moment it does")
+
+	tick(LEG / 2)
+	IF:Refresh()
+	check(f.dial.arc:IsShown(), "the ring fills as the flight goes on")
+	local half = table.concat({ f.dial.arc:GetTexCoord() }, ",")
+	check(f.dial.value:GetText() == mmss(LEG / 2),
+		"and the numeral counts down (" .. tostring(f.dial.value:GetText()) .. ")")
+
+	tick(LEG / 4)
+	IF:Refresh()
+	check(table.concat({ f.dial.arc:GetTexCoord() }, ",") ~= half,
+		"moving to a later frame of the sheet as it goes")
+
+	-- A FLIGHT THAT RUNS LONG counts to zero and stays there. Minus figures in
+	-- the dial would read as a fault rather than as an estimate being out.
+	tick(60)
+	IF:Refresh()
+	check(f.dial.value:GetText() == "0:00", "an overrunning flight sits at zero")
+
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	check(not f:IsShown(), "landing closes it")
+
+	-- WITH NO ROUTE THERE IS STILL A CONSOLE. The timer half must work with
+	-- everything else absent, which includes not knowing where you are going.
+	_G.__onTaxi = true
+	fire("PLAYER_ENTERING_WORLD")
+	IF:Refresh()
+	check(f:IsShown(), "a flight nobody saw booked still opens it")
+	check(f.sub:GetText():find("lands", 1, true) == nil,
+		"with the landing clause dropped rather than shown as unknown")
+	check(f.sub:GetText():find("elapsed", 1, true) ~= nil, "and the elapsed time still counting")
+	check(not f.dial.arc:IsShown(), "and no ring, there being nothing to be a fraction of")
+
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	Taxi:Stop()
 end)
 
 print("")

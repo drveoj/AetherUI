@@ -46,3 +46,4 @@ Modules\Toolbox.lua
 Modules\InFlight\Routes.lua
 Modules\InFlight\Route.lua
 Modules\InFlight\Taxi.lua
+Modules\InFlight\Console.lua
