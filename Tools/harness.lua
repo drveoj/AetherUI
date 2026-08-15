@@ -1336,6 +1336,42 @@ function PlayMusic(file)
 end
 function StopMusic() _G.__music = nil end
 
+-- PlaySoundFile, which is what a PROGRAMME uses. PlayMusic loops, which is
+-- right for zen and wrong for an episode.
+--
+-- IT ANSWERS nil WHEN THE CHANNEL IS MUTED, and that is the whole reason this
+-- is modelled rather than stubbed to true: the brief calls the muted case out
+-- specifically, and a mock that always plays would let a console that shows
+-- silence and looks broken pass every check.
+_G.__musicMuted = false
+_G.__sounds     = {}          -- handle -> file, everything ever started
+_G.__playing    = {}          -- handle -> file, still going
+local nextHandle = 0
+
+function PlaySoundFile(file, channel)
+	if type(file) ~= "string" then fail("PlaySoundFile got " .. tostring(file)) end
+	if channel == "Music" and _G.__musicMuted then return nil end
+
+	nextHandle = nextHandle + 1
+	_G.__sounds[nextHandle]  = file
+	_G.__playing[nextHandle] = file
+	_G.__lastSound = file
+	return true, nextHandle
+end
+
+function StopSound(handle)
+	if handle == nil then return end
+	_G.__playing[handle] = nil
+end
+
+--- How many are still going. More than one means a segment was started over
+--  the top of another, which on a real client is two tracks at once.
+function _G.__soundsPlaying()
+	local n = 0
+	for _ in pairs(_G.__playing) do n = n + 1 end
+	return n
+end
+
 -- ---------------------------------------------------------------------------
 -- the body and the camera
 --
@@ -2249,6 +2285,17 @@ function C_Timer.NewTicker(interval, fn, iterations)
 	_G.__tickers[#_G.__tickers + 1] = t
 	return t
 end
+--- A timer you can cancel, which is what chained playback needs: a segment cut
+--  short must not have its "the next one starts now" fire anyway.
+function C_Timer.NewTimer(delay, fn)
+	local t = { cancelled = false }
+	function t:Cancel() self.cancelled = true end
+	C_Timer.After(delay, function()
+		if not t.cancelled then fn() end
+	end)
+	return t
+end
+
 --- Deferred, not inline.
 --
 --  C_Timer.After running its callback immediately is a fixture that LIES: in
@@ -5551,6 +5598,7 @@ local FILES = {
 	"Modules/IFEC/Routes.lua", "Modules/IFEC/Route.lua",
 	"Modules/IFEC/Taxi.lua", "Modules/IFEC/Console.lua",
 	"Modules/IFEC/Registry.lua", "Modules/IFEC/Content.lua",
+	"Modules/IFEC/Playback.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -21478,6 +21526,133 @@ section("ifec: what is in season, and what fills a flight", function()
 	R:Reset()
 	cfg.progress = {}
 	_G.__today = "20260815"
+end)
+
+section("ifec: playing a programme across a flight", function()
+	local R, C, P = A.IFEC.Registry, A.IFEC.Content, A.IFEC.Playback
+	check(P ~= nil, "playback loaded")
+
+	local cfg = A.Config:Module("ifec")
+	cfg.progress = {}
+	R:Reset()
+	_G.__musicMuted = false
+
+	-- Sixty-second segments, which is what makes the chaining testable: the
+	-- boundaries are what drift, so an item has to have several.
+	local function ep(id, title, n)
+		local segs = {}
+		for i = 1, n do
+			segs[#segs + 1] = { file = id .. "_" .. i .. ".ogg", duration = 60 }
+		end
+		return { id = id, type = "podcast", title = title,
+		         totalDuration = 60 * n, segments = segs }
+	end
+	R:Register({ packId = "S00", apiVersion = 1, seasonIndex = 0, items = {
+		ep("e01", "Episode One", 3),
+		ep("e02", "Episode Two", 2),
+		{ id = "amb", type = "music", title = "Ambient", totalDuration = 60,
+		  segments = { { file = "amb.ogg", duration = 60 } } },
+	} })
+
+	local cat = R:Catalogue()
+	local queue = { cat[1], cat[2], cat[3] }
+
+	local heard = {}
+	P:AddListener(function(event, item) heard[#heard + 1] = event end)
+
+	check(P:Start(queue), "a programme starts")
+	check(P.state == "playing", "and is playing")
+	check(_G.__lastSound == "e01_1.ogg", "the first segment of the first item")
+	check(_G.__soundsPlaying() == 1, "one thing at a time")
+
+	-- CHAINED WITHOUT A CALLBACK. This client gives no playback-finished event
+	-- for a file path, so the end of a segment is predicted from the duration
+	-- the manifest baked in - which is why tooling probes them.
+	tick(60)
+	check(_G.__lastSound == "e01_2.ogg", "the next segment follows on its own ("
+		.. tostring(_G.__lastSound) .. ")")
+	check(_G.__soundsPlaying() == 1, "with the last one stopped, not left running")
+
+	-- POSITION SAVED AT EVERY BOUNDARY, not at landing. A disconnect mid-flight
+	-- is exactly when somebody wants their place kept and is the one moment no
+	-- landing handler ever runs.
+	local p = C:Progress("S00:e01")
+	check(p and p.segment == 1, "the boundary is written down as it passes")
+	check(not p.complete, "and not marked finished part way through")
+
+	-- AUTOPLAY-NEXT. The brief calls this a functional requirement rather than
+	-- polish: a flight outlasts an episode, and silence over the Barrens is the
+	-- failure this exists to prevent.
+	tick(60) tick(60)
+	check(_G.__lastSound == "e02_1.ogg",
+		"the programme moves to the next item by itself (" .. tostring(_G.__lastSound) .. ")")
+	check(C:Progress("S00:e01").complete, "with the one it finished marked finished")
+
+	-- RESUME WHERE IT WAS LEFT. The stored index is the last segment COMPLETED,
+	-- so the next one is where to start.
+	P:Stop()
+	check(_G.__soundsPlaying() == 0, "stopping stops the sound")
+	C:Remember("S00:e02", 1, false)
+	P:Start({ cat[2] })
+	check(_G.__lastSound == "e02_2.ogg",
+		"a part-heard item resumes at the segment after the last one finished ("
+		.. tostring(_G.__lastSound) .. ")")
+
+	-- PAUSE keeps the place. There is no seek on this client, so resuming
+	-- restarts the segment rather than dropping into the middle of it.
+	check(P:Pause(), "it pauses")
+	check(_G.__soundsPlaying() == 0, "with nothing left playing")
+	check(P.state == "paused", "and says so")
+	check(P:Resume() and P.state == "playing", "and picks up again")
+
+	-- A TIMER THAT WAS CANCELLED MUST NOT FIRE. Skipping forward while a
+	-- segment is playing leaves its "next one starts now" scheduled, and
+	-- without cancelling it the skipped-to item is talked over a moment later.
+	P:Stop()
+	P:Start(queue)
+	P:Next()
+	local afterSkip = _G.__lastSound
+	tick(60)
+	check(_G.__soundsPlaying() == 1,
+		"skipping does not leave the old segment's timer to start a second track")
+
+	-- MUTED IS NOT SILENCE. willPlay comes back nil when the channel is off,
+	-- and the difference between saying so and playing nothing is the
+	-- difference between a console that explains itself and one that looks
+	-- broken.
+	P:Stop()
+	_G.__musicMuted = true
+	check(not P:Start(queue), "with the music channel muted, nothing starts")
+	check(P.state == "muted", "and the state says why rather than 'playing'")
+	_G.__musicMuted = false
+
+	-- GOSSIP IS READ, NOT PLAYED. It occupies no time on the channel, so the
+	-- programme steps past it rather than sitting in silence for its duration.
+	R:Reset()
+	R:Register({ packId = "S01", apiVersion = 1, seasonIndex = 1, items = {
+		{ id = "news", type = "gossip", masthead = "ogler", title = "Spotted",
+		  body = "Something happened." },
+		ep("e09", "After The News", 1),
+	} })
+	local c2 = R:Catalogue()
+	P:Stop()
+	P:Start({ c2[1], c2[2] })
+	check(_G.__lastSound == "e09_1.ogg",
+		"a gossip item does not hold the channel (" .. tostring(_G.__lastSound) .. ")")
+
+	-- THE END OF THE PROGRAMME with flight remaining is the state the whole of
+	-- v2 is designed around, so it is announced rather than simply stopping.
+	P:Stop()
+	heard = {}
+	P:Start({ c2[2] })
+	tick(60)
+	local sawExhausted = false
+	for _, e in ipairs(heard) do if e == "exhausted" then sawExhausted = true end end
+	check(sawExhausted, "running out of programme is announced, not just silence")
+
+	P:Stop()
+	cfg.progress = {}
+	R:Reset()
 end)
 
 section("ifec: the console takes a region, and gives it back", function()
