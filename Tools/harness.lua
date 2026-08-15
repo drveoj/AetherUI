@@ -21065,8 +21065,8 @@ section("ifec: landing, at the scale of everything else, out of the way", functi
 	-- THE INTERFACE GOES AWAY. One UIParent alpha, which is how Zen does it and
 	-- covers addons we have never heard of.
 	check(UIParent:GetAlpha() == 0, "the interface is hidden in flight")
-	check(f:GetParent() == nil,
-		"and the console survives it, having no parent to fade with")
+	check(f:GetParent() == IF:Top() and IF:Top():GetParent() == nil,
+		"and the console survives it, living under a holder outside UIParent")
 
 	-- LANDING. UnitOnTaxi is still true in the frame control comes back - the
 	-- same lag as on the way out - so requiring it false and giving up left the
@@ -21189,8 +21189,7 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- underneath it - clicking it did nothing at all in game.
 	check(IF.jump:GetFrameStrata() == "FULLSCREEN_DIALOG",
 		"and above the interface we just hid, or the click never reaches it")
-	check(IF.frame:GetFrameStrata() == "FULLSCREEN_DIALOG",
-		"as is the console, whose chevron has the same problem")
+	check(IF.frame:GetParent() == IF:Top(), "as is the console, for the same reason")
 
 	check(IF.jump.label:GetText() == "Jump Off", "reading Jump Off")
 
@@ -21220,7 +21219,12 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- THE MAP STAYS. Alpha multiplies down the parent chain, so a child of a
 	-- frame at zero cannot be given an alpha - it has to leave the chain.
 	check(UIParent:GetAlpha() == 0, "the interface is hidden")
-	check(MM.frame:GetParent() == nil, "but the map has left UIParent, so it is still drawn")
+	-- INTO A HOLDER, NOT INTO NIL. SetParent(nil) on a live frame left the
+	-- subtree half-alive: the map drew, its clock stopped, and nothing under it
+	-- took the mouse - no clicks and no tooltips on the button below it.
+	check(MM.frame:GetParent() == IF:Top(),
+		"but the map has moved into our own holder, out of UIParent's alpha")
+	check(IF:Top():GetParent() == nil, "which is itself parentless, being created that way")
 
 	-- And the pill says so, the way it says "In combat".
 	MM:UpdateZone()

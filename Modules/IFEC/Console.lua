@@ -61,10 +61,9 @@ local function clock(secs)
 end
 
 local function Build()
-	-- NO PARENT, the same as Zen's console and for the same reason: hiding the
-	-- interface in flight is one UIParent:SetAlpha, and a child of UIParent
-	-- would fade with everything else.
-	local f = CreateFrame("Frame", "AetherUIIFEC")
+	-- UNDER OUR OWN HOLDER, not UIParent: hiding the interface in flight is one
+	-- UIParent:SetAlpha, and a child of it would fade with everything else.
+	local f = CreateFrame("Frame", "AetherUIIFEC", IF:Top())
 	f:SetSize(WIDTH_MIN, HEIGHT)
 	-- Above the interface the console hides, for the same reason the jump-off
 	-- button is: a frame at zero alpha still takes the mouse, so anything of
@@ -389,7 +388,25 @@ function IF:HideInterface(hide)
 	-- minimap module and skipped if there isn't one - a console that needed the
 	-- map to exist would be a console with a new way to break.
 	local MM = A:GetModule("minimap")
-	if MM and MM.SetDetached and MM.enabled then MM:SetDetached(hide) end
+	if MM and MM.SetDetached and MM.enabled then
+		MM:SetDetached(hide, self:Top())
+	end
+end
+
+--- A parentless holder for anything that has to outlive UIParent's alpha.
+--
+--  CREATED parentless and kept, rather than reparenting things to nil when the
+--  moment comes. The two are not the same: a frame moved to nil kept drawing
+--  but stopped updating and stopped taking the mouse, which is a minimap with a
+--  frozen clock and a button that ignores you.
+function IF:Top()
+	if not self.top then
+		local t = CreateFrame("Frame", "AetherUIIFECTop")
+		t:SetAllPoints(UIParent)
+		t:SetFrameStrata("FULLSCREEN_DIALOG")
+		self.top = t
+	end
+	return self.top
 end
 
 --- Get off at the next stop.

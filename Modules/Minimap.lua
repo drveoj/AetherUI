@@ -484,25 +484,30 @@ end
 -- module
 -- ---------------------------------------------------------------------------
 
---- Lift the map out of UIParent, or put it back.
+--- Move the map out of UIParent's alpha, or put it back.
 --
 --  The console hides the interface in flight with one UIParent alpha, and the
 --  map is the one thing you still want: it is drawing the ground going past.
 --  Alpha multiplies down the parent chain, so there is no alpha to give a child
 --  of a frame at zero - it has to leave the chain.
 --
+--  INTO A HOLDER, NOT INTO NIL. SetParent(nil) on a live frame leaves the
+--  subtree half-alive: the map drew, but its clock stopped updating and nothing
+--  under it took the mouse - no clicks and no tooltips on the jump-off button.
+--  A frame CREATED parentless is fine, which is why Zen's works; reparenting an
+--  existing one to nothing is not the same thing.
+--
 --  Never in combat, where SetParent is refused; you cannot be attacked on a
 --  griffin, so this only has to be true, not clever.
-function MM:SetDetached(on)
+function MM:SetDetached(on, holder)
 	local f = self.frame
 	if not f or InCombatLockdown() then return false end
 	if (self._detached and true) == (on and true) then return false end
+	if on and not holder then return false end
 
 	self._detached = on and true or nil
-	-- Spelt out rather than `on and nil or UIParent`, which cannot ever yield
-	-- nil - the map stayed parented and stayed invisible.
 	if on then
-		pcall(f.SetParent, f, nil)
+		pcall(f.SetParent, f, holder)
 	else
 		pcall(f.SetParent, f, UIParent)
 	end
