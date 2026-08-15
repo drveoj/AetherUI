@@ -1210,6 +1210,21 @@ local function Borrow(store, name, value)
 		if SameValue(entry.set, value) then return true end
 	end
 
+	-- ALREADY WHAT WE WANT, so touch nothing.
+	--
+	-- The client treats some CVars as experimental and asks the player to
+	-- confirm every write to one - test_cameraOverShoulder fires
+	-- EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED and Blizzard's own UIParent throws
+	-- up a modal (Vanilla/UIParent.lua:932). Zen writes a real 0 there for
+	-- CENTRE rather than skipping it, deliberately, so anyone running their own
+	-- over-the-shoulder camera is centred - but for everyone whose shoulder is
+	-- already 0 that is a dialog on the way in and another on the way out, for
+	-- a write that changed nothing.
+	--
+	-- Recorded without `set`, so the give-back leaves it alone too.
+	local same, current = pcall(GetCVar, name)
+	if same and SameValue(current, value) then return true end
+
 	if not pcall(SetCVar, name, value) then
 		-- A refused write is not a borrow. Dropping the record means the give-back
 		-- will not try to "restore" a value we never actually changed.

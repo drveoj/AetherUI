@@ -7048,6 +7048,28 @@ do
 		"and so do the two centring ones - a player left permanently off-centre"
 		.. " by an addon has no way to guess what did it")
 
+	-- A WRITE THAT CHANGES NOTHING STILL COSTS A MODAL. The client calls some
+	-- CVars experimental and asks the player to confirm every write to one:
+	-- test_cameraOverShoulder fires EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED and
+	-- Blizzard's own UIParent throws up a dialog. Writing a real 0 for CENTRE
+	-- is right for anyone with their own offset and was a dialog on the way in
+	-- and another on the way out for everyone else, in exchange for nothing.
+	do
+		local wrote = {}
+		local realSet = SetCVar
+		SetCVar = function(n, v) wrote[n] = (wrote[n] or 0) + 1 return realSet(n, v) end
+
+		enterZen()
+		leaveZen()
+		SetCVar = realSet
+
+		check(not wrote.test_cameraOverShoulder,
+			"a borrowed CVar already at the wanted value is not written at all,"
+			.. " so the experimental-camera dialog never fires")
+		check((wrote.CameraKeepCharacterCentered or 0) > 0,
+			"while one that does need changing still is")
+	end
+
 	-- Nothing is left rotating, whatever path zen took out. This is now a
 	-- property of never having started a movement rather than of having stopped
 	-- one, which is the version that cannot be got wrong.
