@@ -143,6 +143,48 @@ function Media:SetIcon(tex, name)
 	return true
 end
 
+-- THE FLIGHT DIAL, as a sheet of baked steps.
+--
+-- Classic cannot fill a ring by angle - there is no conic gradient and no arc
+-- primitive - so the sweep is 64 frames and the module picks one. A step every
+-- 1/64 of a flight is about three seconds on a long haul, which is under
+-- noticing for something moving this slowly, and it costs one SetTexCoord
+-- rather than a mask stack rebuilt every frame.
+--
+-- Frame i is (i+1)/64 of a turn, so there is no empty frame: nothing showing is
+-- the texture hidden. Keep `steps`, `cols` and `ring` in step with
+-- generate_textures.py, which is the other half of this contract.
+Media.dial = {
+	track = TEX .. "IFEC-Dial-Track",
+	arc   = TEX .. "IFEC-Dial-Arc",
+	cell  = 64,
+	cols  = 8,
+	rows  = 8,
+	steps = 64,
+	-- The ring is inset inside its cell so a bilinear sample at the edge cannot
+	-- read the frame next door. A frame drawn at size S shows a ring of S*ring,
+	-- so the caller divides by this to land on the design's 44.
+	ring  = 0.875,
+}
+
+--- Texel coordinates for the frame nearest `fraction` of a turn.
+--
+--  Returns nil below the first step rather than a blank frame - there isn't
+--  one, and a caller that hides the texture reads better than one that draws
+--  nothing very carefully.
+function Media:DialArc(fraction)
+	local d = Media.dial
+	if type(fraction) ~= "number" or fraction <= 0 then return nil end
+	if fraction > 1 then fraction = 1 end
+
+	local i = math.ceil(fraction * d.steps) - 1
+	if i < 0 then i = 0 end
+	if i >= d.steps then i = d.steps - 1 end
+
+	local c, r = i % d.cols, math.floor(i / d.cols)
+	return d.arc, c / d.cols, (c + 1) / d.cols, r / d.rows, (r + 1) / d.rows
+end
+
 Media.badges = {
 	file   = TEX .. "Chat-Badges",
 	-- The file's own dimensions, which a `|T` escape needs to make sense of the

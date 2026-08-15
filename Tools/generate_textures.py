@@ -1247,7 +1247,96 @@ def toolbox_icons():
     return out
 
 
+# The flight dial. 44px outer, 35px inner disc, so the ring it draws is a
+# 4.5px band - see the design's header capsule.
+DIAL_CELL = 64          # authored size; 1.5x minification at 44px, like Chip-Disc
+DIAL_STEPS = 64         # frames in the arc sheet
+DIAL_COLS = 8           # laid out 8x8, so the sheet is a power of two
+
+# Clear texels around the ring, on top of MARGIN. The cells of a sheet touch, so
+# a ring drawn to the edge of its cell is one bilinear sample away from being
+# read as part of the frame next door.
+DIAL_PAD = 2.0
+
+# The ring occupies this much of its cell, which is what the module scales by to
+# land the drawn ring on the design's 44px.
+DIAL_RING = (DIAL_CELL - 2.0 * (MARGIN + DIAL_PAD)) / DIAL_CELL
+
+# 4.5px of band on a 44px ring.
+DIAL_BAND = 4.5 * (DIAL_CELL * DIAL_RING) / 44.0
+
+
+def _annulus(n, scale, band, pad):
+    """A ring: the disc, less the smaller disc inside it.
+
+    `band` and `pad` are in FINAL texels and scaled up here - drawing at SS and
+    passing MARGIN straight through would leave a half-texel margin rather than
+    two, which put the ring hard against the edge of its cell.
+
+    Hard-edged, like _sweep: the downsample is what anti-aliases it.
+    """
+    inset = (MARGIN + pad) * scale
+    outer = (ellipse_sdf((n, n), inset) < 0.0).astype(np.float32)
+    inner = (ellipse_sdf((n, n), inset + band * scale) < 0.0).astype(np.float32)
+    return np.clip(outer - inner, 0.0, 1.0)
+
+
+def _sweep(n, turns):
+    """1 where the angle from twelve o'clock, going clockwise, is within `turns`.
+
+    Hard-edged on purpose. It is drawn at SS and taken down with LANCZOS, which
+    is what puts the anti-aliasing on the two radial edges - an analytic ramp
+    would have to be in angle, and an angular ramp is a different width in
+    texels at the inside of the band than at the outside.
+    """
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+    px = xx + 0.5 - n / 2.0
+    py = yy + 0.5 - n / 2.0
+    ang = np.arctan2(px, -py)                    # 0 straight up, growing clockwise
+    ang = np.mod(ang, 2.0 * np.pi) / (2.0 * np.pi)
+    return (ang <= turns).astype(np.float32)
+
+
+def _shrink(mask, n):
+    img = Image.fromarray(np.clip(mask * 255.0, 0, 255).astype(np.uint8), mode="L")
+    return np.asarray(img.resize((n, n), Image.LANCZOS), dtype=np.float32) / 255.0
+
+
+def ifec_dial_track():
+    """The dial's unfilled ring, under the arc. Same geometry as one arc cell."""
+    big = _annulus(DIAL_CELL * SS, SS, DIAL_BAND, DIAL_PAD)
+    return rgba_lum(1.0, _shrink(big, DIAL_CELL))
+
+
+def ifec_dial_arc():
+    """The filled part of the dial, as a sheet of 64 steps.
+
+    Classic has no conic gradient and no way to fill a ring by angle, so the
+    steps are baked and the module picks a cell. 64 of them on a three-minute
+    flight is a step every three seconds, which is under the eye's threshold for
+    something moving this slowly - and it costs one SetTexCoord rather than a
+    mask stack that would have to be rebuilt every frame.
+
+    Frame i is (i+1)/64 of a turn, so the last frame is the full ring and the
+    empty state is the texture hidden rather than a wasted cell.
+    """
+    cols = DIAL_COLS
+    rows = DIAL_STEPS // cols
+    n = DIAL_CELL
+    sheet = np.zeros((rows * n, cols * n), dtype=np.float32)
+
+    band = _annulus(n * SS, SS, DIAL_BAND, DIAL_PAD)
+    for i in range(DIAL_STEPS):
+        cell = _shrink(band * _sweep(n * SS, (i + 1) / float(DIAL_STEPS)), n)
+        r, c = divmod(i, cols)
+        sheet[r * n:(r + 1) * n, c * n:(c + 1) * n] = cell
+
+    return rgba_lum(1.0, sheet)
+
+
 ASSETS = {
+    "IFEC-Dial-Track": ifec_dial_track,
+    "IFEC-Dial-Arc": ifec_dial_arc,
     "Glass-Panel": glass_panel,
     "Glass-Panel-Edge": glass_panel_edge,
     "Glass-Pill": glass_pill,
@@ -1286,7 +1375,10 @@ NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette",
             "Glass-Shadow", "Glass-Pill-Shadow", "Minimap-Border",
             # Its rows are neighbours. Bleeding would pull each word's ink into
             # the pill above and below it; it fills RGB itself instead.
-            "Chat-Badges"}
+            "Chat-Badges",
+            # A sheet whose cells touch: the ring reaches the edge of its cell,
+            # so a bleed would run one frame's arc into the next.
+            "IFEC-Dial-Arc"}
 
 
 def main():
