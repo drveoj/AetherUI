@@ -462,7 +462,13 @@ local function BuildFrame()
 	return f
 end
 
-local function BuildPill(parent)
+--- The zone pill, which is the map's SIBLING and not its child.
+--
+--  Both it and the map set profile.scale themselves, so making it a child would
+--  apply that scale twice. That is why it hangs off UIParent and is anchored to
+--  the map rather than parented to it - and why anything moving the map has to
+--  move this too. See MM:Detachable.
+local function BuildPill()
 	local cfg = A.Config:Module("minimap")
 	local c = Palette.c
 
@@ -525,17 +531,30 @@ end
 --
 --  Never in combat, where SetParent is refused; you cannot be attacked on a
 --  griffin, so this only has to be true, not clever.
+--- Everything of the map's that hangs off UIParent in its own right.
+--
+--  The pill is the map's sibling rather than its child, for the scale reason in
+--  BuildPill, so it does not follow the map anywhere. Listed once here: moving
+--  the map and forgetting the pill left the pill behind in UIParent, where it
+--  faded to nothing a moment after appearing.
+function MM:Detachable()
+	return { self.frame, self.pill }
+end
+
 function MM:SetDetached(on, holder)
-	local f = self.frame
-	if not f or InCombatLockdown() then return false end
+	if not self.frame or InCombatLockdown() then return false end
 	if (self._detached and true) == (on and true) then return false end
 	if on and not holder then return false end
 
 	self._detached = on and true or nil
-	if on then
-		pcall(f.SetParent, f, holder)
-	else
-		pcall(f.SetParent, f, UIParent)
+	for _, f in ipairs(self:Detachable()) do
+		if f then
+			if on then
+				pcall(f.SetParent, f, holder)
+			else
+				pcall(f.SetParent, f, UIParent)
+			end
+		end
 	end
 	return true
 end
@@ -579,7 +598,7 @@ function MM:OnEnable()
 
 	if not self.frame then
 		self.frame  = BuildFrame()
-		self.pill   = BuildPill(self.frame)
+		self.pill   = BuildPill()
 
 		-- the map's own mouse: wheel zooms, right-click tracks
 		if _G.Minimap then

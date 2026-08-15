@@ -21224,6 +21224,13 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- took the mouse - no clicks and no tooltips on the button below it.
 	check(MM.frame:GetParent() == IF:Top(),
 		"but the map has moved into our own holder, out of UIParent's alpha")
+
+	-- AND THE PILL WITH IT. The pill is the map's sibling, not its child - both
+	-- set profile.scale themselves, so a child would take it twice - so moving
+	-- the map left the pill behind in UIParent, where it faded to nothing a
+	-- moment after appearing.
+	check(MM.pill:GetParent() == IF:Top(),
+		"and the pill with it, being its sibling rather than its child")
 	check(IF:Top():GetParent() == nil, "which is itself parentless, being created that way")
 
 	-- And the pill says so, the way it says "In combat".
@@ -21256,6 +21263,7 @@ section("ifec: cut to its contents, and the map you still want", function()
 
 	land()
 	check(MM.frame:GetParent() == UIParent, "and the map goes back afterwards")
+	check(MM.pill:GetParent() == UIParent, "and so does the pill")
 	check(IF.jump == nil or not IF.jump:IsShown(), "with the jump-off control put away")
 	MM:UpdateZone()
 	check(MM.pill.zone:GetText() ~= "In flight", "and the pill back to the zone")
