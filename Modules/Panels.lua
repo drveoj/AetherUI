@@ -74,7 +74,12 @@ local PANELS = {
 	},
 	{ frame = "TalentFrame",       addon = "Blizzard_TalentUI" },
 	{ frame = "FriendsFrame" },
-	{ frame = "GuildFrame",        addon = "Blizzard_GuildUI" },
+	-- NOT GuildFrame. The old FriendsFrame XML still defines a GuildFrame pane,
+	-- setAllPoints inside the social window, and this list used to name it as a
+	-- window of its own - so it got glass of its own behind a pane that already
+	-- had some, and a scale of its own inside a frame already scaled. Nobody
+	-- sees it either way: the guild button on this client opens Communities.
+	{ frame = "CommunitiesFrame",  addon = "Blizzard_Communities" },
 	{ frame = "WorldMapFrame",     addon = "Blizzard_WorldMap" },
 	{ frame = "GameMenuFrame" },
 	{ frame = "HelpFrame",         addon = "Blizzard_HelpFrame" },
@@ -1283,12 +1288,246 @@ local function DressTalents(frame, store)
 	InstallTalentHooks(frame)
 end
 
+-- ---------------------------------------------------------------------------
+-- guild and communities
+-- ---------------------------------------------------------------------------
+--
+-- The one window here NOT built from Blizzard's source, because
+-- Blizzard_Communities is not in the reference tree. It was read off the live
+-- client instead, with `/aether panels dump CommunitiesFrame`, which is what
+-- that command exists for.
+--
+-- So every name below is a parentKey observed on this build rather than one
+-- read out of an XML file, and each is reached through Element - which answers
+-- nil for a part this client does not have, so a build that renames something
+-- loses that part's dressing and nothing else.
+--
+-- It is also a MODERN window, which makes it a different shape from the rest:
+-- almost nothing has a global name, its panes are hidden until their tab is
+-- picked, and its buttons are three-slice Left/Right/Middle rather than a
+-- single normal texture.
+
+-- The side tabs. Each keeps its picture in an Icon REGION - not as the normal
+-- texture the spellbook's school tabs use - with a stone ring behind it.
+local COMM_TABS = {
+	"ChatTab", "RosterTab", "GuildBenefitsTab", "GuildInfoTab",
+}
+
+-- Panes and the furniture in them. Stripped outright: none of these carries
+-- anything but frame art, and what they hold is drawn by their own children.
+local COMM_PANES = {
+	"CommunitiesList", "MemberList", "ApplicantList", "Chat",
+	"GuildBenefitsFrame", "GuildDetailsFrame", "CommunitiesControlFrame",
+	"InvitationFrame", "TicketFrame", "GuildMemberDetailFrame",
+}
+
+-- Push buttons, dropdowns and the odd control, by the key their parent holds
+-- them under. `where` is the pane to look inside, or nil for the window itself.
+local COMM_BUTTONS = {
+	{ nil, "InviteButton" }, { nil, "GuildLogButton" },
+	{ nil, "AddToChatButton" },
+	{ "CommunitiesControlFrame", "CommunitiesSettingsButton" },
+	{ "CommunitiesControlFrame", "GuildControlButton" },
+	{ "CommunitiesControlFrame", "GuildRecruitmentButton" },
+	{ "GuildMemberDetailFrame", "RemoveButton" },
+	{ "GuildMemberDetailFrame", "GroupInviteButton" },
+	{ "InvitationFrame", "AcceptButton" }, { "InvitationFrame", "DeclineButton" },
+	{ "TicketFrame", "AcceptButton" }, { "TicketFrame", "DeclineButton" },
+}
+
+local COMM_DROPDOWNS = {
+	{ nil, "StreamDropdown" }, { nil, "GuildMemberListDropdown" },
+	{ nil, "CommunityMemberListDropdown" }, { nil, "CommunitiesListDropdown" },
+	{ "GuildMemberDetailFrame", "RankDropdown" },
+}
+
+-- The guild crest, drawn inside the window rather than hung off the corner.
+local COMM_CREST, COMM_CREST_IN = 44, 8
+
+--- Art off a whole subtree, for furniture with no picture anywhere in it.
+--
+--  A modern scroll bar is not a Slider with regions on it - it is a frame of
+--  frames, with its track, its thumb and its two arrows each a child - so a
+--  strip of the bar itself finds nothing and clears nothing. Nothing in one is
+--  a picture, which is what makes sweeping the lot safe here and nowhere else.
+local function StripTree(frame, store, depth)
+	if not frame or depth < 0 then return end
+
+	Reskin.Strip(frame, store)
+	if frame.SetNormalTexture then Reskin.ClearButton(frame) end
+
+	if not frame.GetChildren then return end
+	for _, kid in ipairs({ frame:GetChildren() }) do
+		StripTree(kid, store, depth - 1)
+	end
+end
+
+--- A three-slice client button in one of our pills.
+--
+--  Left, Right and Middle rather than a normal texture, so ClearButton has
+--  nothing to clear and the plate survives it. They are regions, so the strip
+--  is what takes them.
+local function DressWideButton(btn, store)
+	if not btn then return end
+	Reskin.ClearButton(btn)
+	Reskin.Strip(btn, store)
+	Reskin.Button(btn, "pnBody")
+end
+
+--- A dropdown: its stone holder off, its arrow kept, its text re-roled.
+--
+--  The arrow is the one part worth keeping - it says "this opens" and nothing
+--  of ours would say it better at this size.
+local function DressDropdown(btn, store)
+	if not btn then return end
+	Reskin.ClearButton(btn)
+	Reskin.StripExcept(btn, store, { "Arrow" })
+	Reskin.Button(btn, "pnBody")
+
+	local text = Reskin.Element(btn, "Text")
+	if text then
+		Reskin.Font(text, "pnBody")
+		W.Color(text, Palette.c.text)
+	end
+	local label = Reskin.Element(btn, "Label")
+	if label then
+		Reskin.Font(label, "pnBody")
+		W.Color(label, Palette.c.textDim)
+	end
+end
+
+local function DressCommunities(frame, store)
+	for _, key in ipairs(COMM_TABS) do
+		local tab = Reskin.Element(frame, key)
+		if tab then
+			-- The picture is a region called Icon, so it is named rather than
+			-- assumed: IconButton takes the normal texture when it is not told,
+			-- and on these that is empty.
+			Reskin.IconButton(tab, store, { icon = Reskin.Element(tab, "Icon") })
+		end
+	end
+
+	for _, key in ipairs(COMM_PANES) do
+		local pane = Reskin.Element(frame, key)
+		if pane then
+			Reskin.Strip(pane, store)
+			Reskin.Fonts(pane, "pnBody")
+
+			-- The scroll bar goes SUBTREE. It is a frame of frames on this
+			-- window - track, thumb and two arrows, each a child - so stripping
+			-- the bar itself finds no regions and clears nothing, which is the
+			-- stone bar still down the side of the list.
+			StripTree(Reskin.Element(pane, "ScrollBar"), store, 3)
+
+			local columns = Reskin.Element(pane, "ColumnDisplay")
+			if columns then Reskin.Strip(columns, store) end
+
+			local inset = Reskin.Element(pane, "InsetFrame")
+			if inset then Reskin.Strip(inset, store) end
+		end
+	end
+
+	-- THE CREST, INSIDE THE WINDOW. The portrait template hangs it off the
+	-- top-left corner deliberately, to overlap a stone ring that framed it -
+	-- the same trick the main menu's title plate plays. With the ring gone it is
+	-- a disc floating outside the glass, so it comes in and is drawn smaller.
+	--
+	-- Its mask and the guild's tabard follow it. A mask left where the portrait
+	-- used to be crops a circle out of empty air, and the crest is three
+	-- textures stacked, not one.
+	local overlay = Reskin.Element(frame, "PortraitOverlay")
+	local crest = overlay and Reskin.Element(overlay, "Portrait")
+	if crest and crest.ClearAllPoints then
+		crest:ClearAllPoints()
+		crest:SetSize(COMM_CREST, COMM_CREST)
+		crest:SetPoint("TOPLEFT", frame, "TOPLEFT", COMM_CREST_IN, -COMM_CREST_IN)
+
+		for _, key in ipairs({ "CircleMask", "TabardBackground", "TabardEmblem",
+			"TabardBorder" }) do
+			local part = Reskin.Element(overlay, key)
+			if part and part.SetAllPoints then part:SetAllPoints(crest) end
+		end
+	end
+
+	-- The big pane on the right, which is what you get when you are in no guild
+	-- at all: a dark plate with the client's own art on it, under two named
+	-- globals depending on which finder the build shows.
+	for _, name in ipairs({ "ClubFinderGuildFinderFrame",
+	                        "ClubFinderCommunityAndGuildFinderFrame" }) do
+		local finder = _G[name]
+		if finder then
+			Reskin.Strip(finder, store)
+			Reskin.Fonts(finder, "pnBody")
+
+			for _, key in ipairs({ "DisabledFrame", "InsetFrame", "OptionsList" }) do
+				local part = Reskin.Element(finder, key)
+				if part then Reskin.Strip(part, store) end
+			end
+		end
+	end
+
+	-- The ornate frame around the community list, which is its own thing again:
+	-- four corners and four bars in a separate overlay child.
+	local list = Reskin.Element(frame, "CommunitiesList")
+	if list then
+		local filigree = Reskin.Element(list, "FilligreeOverlay")
+		if filigree then Reskin.Strip(filigree, store) end
+	end
+
+	for _, entry in ipairs(COMM_BUTTONS) do
+		local host = entry[1] and Reskin.Element(frame, entry[1]) or frame
+		DressWideButton(host and Reskin.Element(host, entry[2]), store)
+	end
+
+	for _, entry in ipairs(COMM_DROPDOWNS) do
+		local host = entry[1] and Reskin.Element(frame, entry[1]) or frame
+		DressDropdown(host and Reskin.Element(host, entry[2]), store)
+	end
+
+	-- The roster's "show offline" box, and the corner control that shrinks the
+	-- window to its chat pane.
+	local roster = Reskin.Element(frame, "MemberList")
+	if roster then
+		local offline = Reskin.Element(roster, "ShowOfflineButton")
+		if offline then Reskin.CheckBox(offline, store) end
+	end
+
+	local size = Reskin.Element(frame, "MaximizeMinimizeFrame")
+	if size then
+		for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
+			local btn = Reskin.Element(size, key)
+			if btn then Reskin.ClearButton(btn) end
+		end
+	end
+
+	-- The chat pane's composer: three slices of stone around an edit box.
+	local box = Reskin.Element(frame, "ChatEditBox")
+	if box then Reskin.Strip(box, store) end
+
+	-- A PANE ARRIVES WHEN ITS TAB IS PICKED, hidden until then and undressed
+	-- with it. The four tabs are the only thing that changes which is showing,
+	-- so that is where the answer goes - there is no global update function on
+	-- this window to hook, and none we could name without its source.
+	for _, key in ipairs(COMM_TABS) do
+		local tab = Reskin.Element(frame, key)
+		if tab and tab.HookScript and not tab.__aetherCommHook then
+			tab.__aetherCommHook = true
+			tab:HookScript("OnClick", function()
+				if PN.enabled and frame.__aetherArt then
+					DressCommunities(frame, frame.__aetherArt)
+				end
+			end)
+		end
+	end
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
 	GameMenuFrame     = DressGameMenu,
 	SpellBookFrame    = DressSpellBook,
 	PlayerTalentFrame = DressTalents,
+	CommunitiesFrame  = DressCommunities,
 }
 
 PN.INTERIORS = INTERIORS

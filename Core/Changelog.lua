@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.5.5",
+		date    = "2026-08-15",
+		lines   = {
+			"The guild and communities window is in glass, with its side tabs in our cells, its crest inside the frame and its lists in our lettering.",
+			"Breath, fatigue and feign death are drawn as a cast bar without the icon, and which timer it is still reads in the colour.",
+			"A specialist bag is a section of its own: the arrows in your quiver sit under QUIVER with the room it has left, rather than being filed as trade goods.",
+			"The help window loses the stone band behind its title.",
+			"/aether panels dump <FrameName> reads a window's parts into a box you can copy, for reporting one that still looks wrong.",
+		},
+	},
+	{
 		version = "0.5.4",
 		date    = "2026-08-14",
 		lines   = {

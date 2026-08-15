@@ -37,6 +37,7 @@ local function usage()
 		"|cff9d7bff/aether bags|r <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		"|cff9d7bff/aether toolbox|r <dock left/right/top/bottom · open · close · pin NAME>",
+		"|cff9d7bff/aether panels dump|r <FrameName>  ·  what a window is made of",
 		"|cff9d7bff/aether errors|r <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
@@ -108,6 +109,182 @@ function A:ChatWhere()
 		say("      %d. to %s %.0f,%.0f  by %s", i, tostring(m.point),
 			m.x or 0, m.y or 0, tostring(m.by))
 	end
+end
+
+-- ---------------------------------------------------------------------------
+-- what is this window made of
+--
+-- Every panel so far was built by reading Blizzard's own source for this
+-- flavour, which is the only way to know what a frame's parts are called and
+-- which of them carry the picture rather than the chrome.
+--
+-- That runs out when the source is not to hand: Blizzard_Communities is not in
+-- the reference tree, and the guild window on this client is Communities and not
+-- the FriendsFrame pane the old XML still defines. Guessing frame names is
+-- exactly what this addon does not do, so it asks the client instead.
+-- ---------------------------------------------------------------------------
+
+local DUMP_DEPTH = 2
+
+--- What its parent calls this part, if it calls it anything.
+--
+--  ALMOST NOTHING in a modern Blizzard window has a global name. A dump of
+--  CommunitiesFrame came back with eight named things in six hundred lines and
+--  <anonymous> for the rest, which is a report nobody can act on - you cannot
+--  reach a frame you cannot name.
+--
+--  What they have instead is a parentKey, which the client assigns as a plain
+--  field on the parent, so the field is what has to be reported. That is also
+--  the key Reskin.Element takes, which makes the answer directly usable.
+local function KeyOf(parent, part)
+	if type(parent) ~= "table" then return nil end
+	local ok, key = pcall(function()
+		for k, v in pairs(parent) do
+			if v == part and type(k) == "string" then return k end
+		end
+	end)
+	return ok and key or nil
+end
+
+--- How to refer to something: its global name, or its parentKey, or neither.
+local function Handle(parent, part, name)
+	if name and name ~= "" then return name end
+	local key = KeyOf(parent, part)
+	return key and ("." .. key) or "<anonymous>"
+end
+
+--- One line about a region: what it is, which layer, and what it is drawing.
+local function DumpRegions(frame, pad)
+	if not frame.GetRegions then return end
+	local got = { pcall(frame.GetRegions, frame) }
+	if not got[1] then return end
+
+	for i = 2, #got do
+		local r = got[i]
+		local kind = r.GetObjectType and r:GetObjectType() or "?"
+		local who = Handle(frame, r, r.GetName and r:GetName())
+
+		if kind == "Texture" or kind == "MaskTexture" then
+			-- The ATLAS as well as the file. Modern art is nearly all atlases,
+			-- and an atlas has a name a person can read where a file is a
+			-- numeric id that tells you nothing at all.
+			local okA, atlas = pcall(function() return r.GetAtlas and r:GetAtlas() end)
+			local tex = r.GetTexture and r:GetTexture()
+			say("%s. %s %s %s  %s%s", pad, kind,
+				tostring((r.GetDrawLayer and r:GetDrawLayer()) or "?"), who,
+				tostring((okA and atlas) or tex or "-"),
+				(r.IsShown and not r:IsShown()) and "  (hidden)" or "")
+		else
+			say("%s. %s %s  %q", pad, kind, who,
+				tostring((r.GetText and r:GetText()) or ""):sub(1, 40))
+		end
+	end
+end
+
+--- The frame, its regions and its children, as far down as DUMP_DEPTH.
+local function DumpFrame(frame, pad, depth, parent)
+	local name = frame.GetName and frame:GetName()
+	local w = frame.GetWidth and frame:GetWidth() or 0
+	local h = frame.GetHeight and frame:GetHeight() or 0
+
+	say("%s%s  [%s]  %.0fx%.0f%s", pad, Handle(parent, frame, name),
+		tostring(frame.GetObjectType and frame:GetObjectType() or "?"), w, h,
+		(frame.IsShown and not frame:IsShown()) and "  (hidden)" or "")
+
+	DumpRegions(frame, pad)
+
+	if depth <= 0 or not frame.GetChildren then return end
+	local kids = { pcall(frame.GetChildren, frame) }
+	if not kids[1] then return end
+
+	for i = 2, #kids do
+		DumpFrame(kids[i], pad .. "   ", depth - 1, frame)
+	end
+end
+
+--- Is this global a frame we can safely ask about?
+--
+--  pcall throughout: a forbidden frame errors on being asked anything at all,
+--  and a sweep of _G meets several.
+local function AsFrame(v)
+	if type(v) ~= "table" then return nil end
+	local ok, kind = pcall(function() return v.GetObjectType and v:GetObjectType() end)
+	if not ok or not kind then return nil end
+	local okf, forbidden = pcall(function() return v.IsForbidden and v:IsForbidden() end)
+	if not okf or forbidden then return nil end
+	return v
+end
+
+--- Find a frame by name, WITHOUT CARING ABOUT CASE, and offer near misses.
+--
+--  The dispatcher lower-cases every argument - every other command compares
+--  words, so that is right for them and wrong here, because a frame name is a
+--  case-sensitive global. `communitiesframe` found nothing and said so, which
+--  read as "that window does not exist" rather than "you typed it in lower
+--  case, as this addon required you to".
+--
+--  So the name is matched case-insensitively, and a fragment lists what it
+--  could have meant - which is the more useful command anyway when the whole
+--  question is what a window you cannot read the source of is called.
+local function FindFrame(want)
+	local exact = _G[want]
+	if AsFrame(exact) then return exact, want end
+
+	local lower = want:lower()
+	local near = {}
+
+	for key, value in pairs(_G) do
+		if type(key) == "string" then
+			local k = key:lower()
+			if k == lower and AsFrame(value) then return value, key end
+			if k:find(lower, 1, true) and AsFrame(value) then
+				near[#near + 1] = key
+			end
+		end
+	end
+
+	table.sort(near)
+	return nil, nil, near
+end
+
+--- `/aether panels dump <FrameName>`, into the box you can copy out of.
+function A:DumpPanel(name)
+	name = (name or ""):gsub("%s", "")
+	if name == "" then
+		A:Print("|cff9d7bff/aether panels dump <FrameName>|r  ·  part of a name"
+			.. " will do, and it will list what it could have meant.")
+		return
+	end
+
+	local frame, found, near = FindFrame(name)
+
+	if not frame then
+		A:Print("no frame called |cffece6ff" .. name .. "|r. Open the window"
+			.. " first - half of these arrive with their own addon the first"
+			.. " time you use them.")
+		for i = 1, math.min(#(near or {}), 15) do
+			say("   |cffece6ff%s|r", near[i])
+		end
+		if near and #near > 15 then
+			say("   ...and %d more", #near - 15)
+		end
+		return
+	end
+
+	name = found
+
+	local text = A.Errors:Capture(function()
+		-- THE BUILD THAT PRODUCED IT, first line, like the error box's header.
+		-- A dump ran against the copy still in memory once and the missing
+		-- parentKeys read as "the client does not have them" rather than "you
+		-- have not reloaded". Lua loads at reload; a file on disk is not a build
+		-- that is running.
+		say("%s  ·  AetherUI %s  ·  %s", name, tostring(A.version or "?"),
+			date and date("%Y-%m-%d %H:%M") or "")
+		say("a leading dot is a parentKey, which is what Reskin.Element takes")
+		DumpFrame(frame, "", DUMP_DEPTH, frame.GetParent and frame:GetParent())
+	end)
+	A.Errors:ShowText(text)
 end
 
 local function diag()
@@ -868,6 +1045,15 @@ handlers.toolbox = function(arg, rest)
 	say("   micro: %d of %d  ·  %s", #micro, #TB.MICRO, table.concat(names, " "))
 	say("      |cff888888Social and Guild are exclusive on useClassicGuildUI (%s)|r",
 		tostring(GetCVarBool and GetCVarBool("useClassicGuildUI")))
+end
+
+handlers.panels = function(arg, rest)
+	if arg == "dump" then A:DumpPanel(rest) return end
+
+	local P = A:GetModule("panels")
+	A:Print("panels is |cffece6ff" .. ((P and P.enabled) and "on" or "off")
+		.. "|r.  |cff9d7bff/aether panels dump <FrameName>|r reads a window's"
+		.. " parts into a box you can copy out of.")
 end
 
 handlers.tooltips = function(arg)

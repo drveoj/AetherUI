@@ -987,6 +987,17 @@ local function PopupsGroup()
 	})
 end
 
+--- The client's mirror timers.
+local function TimersGroup()
+	return group("Timers", {
+		enabled = toggle("Enabled", "Skins the game's breath, fatigue and feign"
+			.. " death bars. Which timer it is stays in the colour - blue for"
+			.. " breath, yellow for fatigue, orange for death - in this"
+			.. " interface's own hues. Off gives you Blizzard's back.",
+			{ "modules", "timers", "enabled" }),
+	})
+end
+
 --- The client's own windows.
 local function PanelsGroup()
 	return group("Windows", {
@@ -1133,7 +1144,7 @@ end
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
-	xpbar = 12, nameplates = 13, popups = 14, panels = 15,
+	xpbar = 12, nameplates = 13, popups = 14, panels = 15, timers = 16,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1192,6 +1203,7 @@ function Options:Build()
 			nameplates = NameplatesGroup(),
 			popups = PopupsGroup(),
 			panels = PanelsGroup(),
+			timers = TimersGroup(),
 			changelog = ChangelogGroup(),
 		},
 	}

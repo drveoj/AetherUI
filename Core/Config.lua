@@ -492,6 +492,13 @@ Config.defaults = {
 				scale   = 1.0,
 			},
 
+			-- The client's mirror timers: breath underwater, fatigue at sea,
+			-- the seconds left feigning death. Reskinned in place like the rest,
+			-- and switchable for the same reason.
+			timers = {
+				enabled = true,
+			},
+
 			xpbar = {
 				enabled  = true,
 				height   = 4,

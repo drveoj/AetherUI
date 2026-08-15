@@ -1196,10 +1196,25 @@ function Bags:Rebuild(frame)
 	local buckets, empties = {}, {}
 	local used, total = 0, 0
 
-	-- Empty slots in a specialist bag, kept apart from the rest. Keyed by the
-	-- word the family is called, with `order` remembering which turned up first
-	-- so the sections do not shuffle between redraws the way pairs() would.
+	-- A SPECIALIST BAG IS ITS OWN SECTION, holding what is in it and the room
+	-- it has left. Keyed by the word the family is called, with `order`
+	-- remembering which turned up first so the sections do not shuffle between
+	-- redraws the way pairs() would.
+	--
+	-- Its contents are NOT re-filed by what they are made of. Arrows are trade
+	-- goods and were landing under TRADE GOODS next to the linen, which is true
+	-- and useless: what matters about the four stacks in your quiver is that
+	-- they are in the quiver. A bag that only takes one thing is a category the
+	-- game has already made.
 	local special, order = {}, {}
+
+	local function Special(word)
+		if not special[word] then
+			special[word] = { items = {}, empties = {} }
+			order[#order + 1] = word
+		end
+		return special[word]
+	end
 
 	for _, bag in ipairs(BagListFor(frame.kind)) do
 		local n = SlotsIn(bag)
@@ -1210,9 +1225,15 @@ function Bags:Rebuild(frame)
 			local info = UpdateItemButton(b, cfg)
 			if info then
 				used = used + 1
-				local key = CategoryOf(info, bag, slot)
-				buckets[key] = buckets[key] or {}
-				buckets[key][#buckets[key] + 1] = b
+
+				if word then
+					local s = Special(word)
+					s.items[#s.items + 1] = b
+				else
+					local key = CategoryOf(info, bag, slot)
+					buckets[key] = buckets[key] or {}
+					buckets[key][#buckets[key] + 1] = b
+				end
 
 				-- Filtering DIMS rather than removes. A grid whose cells move
 				-- under the cursor while you are typing is disorienting, and the
@@ -1225,11 +1246,8 @@ function Bags:Rebuild(frame)
 					if not hit then b:SetAlpha(0.25) end
 				end
 			elseif word then
-				if not special[word] then
-					special[word] = {}
-					order[#order + 1] = word
-				end
-				special[word][#special[word] + 1] = b
+				local s = Special(word)
+				s.empties[#s.empties + 1] = b
 				b:Hide()
 			else
 				empties[#empties + 1] = b
@@ -1282,13 +1300,27 @@ function Bags:Rebuild(frame)
 		if cat.key == "junk" and cfg.junkAutoSell then note = "auto-sell" end
 		Section(cat.label, buckets[cat.key], note)
 	end
+	-- The specialist bags, each under its own name, BEFORE the free block - they
+	-- hold real items, so they belong with the other item sections rather than
+	-- down among the empty cells.
+	--
+	-- The count says the bag's size and the note says what is left in it, which
+	-- is the question a quiver actually raises.
+	for _, word in ipairs(order) do
+		local s = special[word]
+		local list = {}
+		for _, b in ipairs(s.items) do list[#list + 1] = b end
+		if cfg.showEmpty then
+			for _, b in ipairs(s.empties) do list[#list + 1] = b end
+		end
+		Section(word:upper(), list,
+			#s.empties > 0 and (#s.empties .. " free") or nil)
+	end
+
 	-- FREE is the slots you can put ANYTHING in. A quiver's empty slots are not
 	-- those, and shown in the same block they read as room the player has not
-	-- got - so each specialist bag's empties get a section under their own name.
-	if cfg.showEmpty then
-		Section("FREE", empties)
-		for _, word in ipairs(order) do Section(word:upper(), special[word]) end
-	end
+	-- got - which is why they went up there with the bag they belong to.
+	if cfg.showEmpty then Section("FREE", empties) end
 
 	for i = labelN + 1, #frame.labels do frame.labels[i]:Hide() end
 
@@ -1315,7 +1347,10 @@ function Bags:Rebuild(frame)
 	frame.freeOpen = #empties
 	frame.freeSpecial = {}
 	for _, word in ipairs(order) do
-		frame.freeSpecial[#frame.freeSpecial + 1] = { word, #special[word] }
+		local left = #special[word].empties
+		if left > 0 then
+			frame.freeSpecial[#frame.freeSpecial + 1] = { word, left }
+		end
 	end
 
 	self:RefreshHeader(frame)

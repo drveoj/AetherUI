@@ -53,6 +53,11 @@ local ART_CHILDREN = {
 	-- child carrying the stone plate as its BG and the title as its Text. The
 	-- game menu uses it, and without this its ornate bar outlives the strip.
 	"Header", "header",
+	-- And the portrait template keeps ITS title bar in a TitleContainer, which
+	-- is the same idea under a second name. The help window's stone band was
+	-- the last thing left drawing on it, and every other part of that frame had
+	-- come off - which is how a bar with nothing above or below it survives.
+	"TitleContainer",
 }
 
 -- The four a Button draws itself.
@@ -140,6 +145,28 @@ function Reskin.Strip(frame, store)
 	if frame.SetBackdropBorderColor then
 		pcall(frame.SetBackdropBorderColor, frame, 0, 0, 0, 0)
 	end
+end
+
+--- Take a frame's art off, KEEPING the parts named.
+--
+--  The third shape of this problem, so it is a primitive now rather than a
+--  special case each time. A frame's art and the thing the player is looking at
+--  are both regions of it: a spell keeps its icon beside the ring, a check box
+--  keeps its tick beside the box, a friends row keeps the little online lamp and
+--  the game badge beside its backing. Strip takes the lot.
+--
+--  `names` are keys Element understands - a parentKey or a $parent global - so
+--  the caller names the parts to keep the way the client names them.
+function Reskin.StripExcept(frame, store, names)
+	if not frame or not frame.GetRegions or type(store) ~= "table" then return end
+
+	local keep = {}
+	for _, key in ipairs(names or {}) do
+		local region = Reskin.Element(frame, key)
+		if type(region) == "table" then keep[region] = true end
+	end
+
+	ClearRegions(frame, store, keep)
 end
 
 --- Everything in a store, back the way it was found.

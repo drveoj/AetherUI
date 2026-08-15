@@ -2454,6 +2454,15 @@ do
 		f.Bg.__fill = f.Bg:CreateTexture(nil, "BACKGROUND")
 		f.Bg.__fill:SetTexture("panel-background")
 
+		-- AND ITS TITLE BAR HANGS OFF IT IN ANOTHER ONE. The portrait template
+		-- keeps the stone band behind the title in a TitleContainer, which is
+		-- the game menu's Header under a second name. On the help window that
+		-- band was the last thing left drawing: every other part of the frame
+		-- had come off, so it sat there with nothing above or below it.
+		f.TitleContainer = CreateFrame("Frame", nil, f)
+		f.TitleContainer.__bar = f.TitleContainer:CreateTexture(nil, "BACKGROUND")
+		f.TitleContainer.__bar:SetTexture("Interface\\FrameGeneral\\UI-Frame-TitleTileBG")
+
 		local title = f:CreateFontString(nil, "OVERLAY")
         title:SetText(name)
 		_G[name .. "TitleText"] = title
@@ -3099,12 +3108,166 @@ do
 		end
 	end
 
+	-- The guild window, which on this client is Communities.
+	--
+	-- READ OFF THE LIVE CLIENT, not out of Blizzard's source: the reference tree
+	-- has no Blizzard_Communities, which is what `/aether panels dump` exists
+	-- for. So this is shaped by what that command reported, and the two things
+	-- it settled are the two a guess would have got wrong.
+	--
+	-- A side tab keeps its picture in an ICON REGION - not as the normal
+	-- texture, the way the spellbook's school tabs do - with a stone ring behind
+	-- it. And every push button is three slices, Left/Right/Middle, so there is
+	-- no normal texture for ClearButton to clear and the plate outlives it.
+	function _G.__buildCommunities()
+		local cf = _G.CommunitiesFrame
+		if not cf or cf.__insides then return end
+		cf.__insides = true
+		cf:SetSize(814, 426)
+
+		local function WideButton(parent, key, label)
+			local b = CreateFrame("Button", nil, parent)
+			b:SetSize(130, 20)
+			for _, part in ipairs({ "Left", "Right", "Middle" }) do
+				b[part] = b:CreateTexture(nil, "BACKGROUND")
+				b[part]:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+			end
+			local fs = b:CreateFontString(nil, "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText(label)
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+			parent[key] = b
+			return b
+		end
+
+		local function Dropdown(parent, key)
+			local d = CreateFrame("Button", nil, parent)
+			d:SetSize(160, 24)
+			d.Background = d:CreateTexture(nil, "BACKGROUND")
+			d.Background:SetTexture("common-dropdown-classic-textholder")
+			-- KEPT. The arrow is what says the control opens, and nothing of
+			-- ours would say it better at this size.
+			d.Arrow = d:CreateTexture(nil, "OVERLAY")
+			d.Arrow:SetTexture("common-dropdown-classic-a-buttonDown")
+			d.Text = d:CreateFontString(nil, "OVERLAY")
+			d.Text:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			d.Text:SetText("Guild Chat")
+			parent[key] = d
+			return d
+		end
+
+		for _, key in ipairs({ "ChatTab", "RosterTab", "GuildBenefitsTab",
+			"GuildInfoTab" }) do
+			local t = CreateFrame("CheckButton", nil, cf)
+			t:SetSize(32, 32)
+			-- The stone ring, and the picture beside it.
+			t.__ring = t:CreateTexture(nil, "BORDER")
+			t.__ring:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+			t.Icon = t:CreateTexture(nil, "ARTWORK")
+			t.Icon:SetTexture("communities-icon-" .. key)
+			cf[key] = t
+		end
+
+		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat",
+			"GuildBenefitsFrame", "GuildDetailsFrame", "GuildMemberDetailFrame" }) do
+			local pane = CreateFrame("Frame", nil, cf)
+			pane:CreateTexture(nil, "ARTWORK"):SetTexture("communities-pane-art")
+
+			-- A FRAME OF FRAMES, which is what a modern scroll bar is: a track,
+			-- a thumb and two arrows, each a child. A mock that put regions on
+			-- the bar itself would let a strip of the bar look like it worked,
+			-- and the stone would still be down the side of the list.
+			pane.ScrollBar = CreateFrame("Frame", nil, pane)
+			pane.ScrollBar.Track = CreateFrame("Frame", nil, pane.ScrollBar)
+			pane.ScrollBar.Track:CreateTexture(nil, "BACKGROUND"):SetTexture("scroll-track-stone")
+			pane.ScrollBar.Back = CreateFrame("Button", nil, pane.ScrollBar)
+			pane.ScrollBar.Back:SetNormalTexture("scroll-arrow-up")
+			pane.ScrollBar.Forward = CreateFrame("Button", nil, pane.ScrollBar)
+			pane.ScrollBar.Forward:SetNormalTexture("scroll-arrow-down")
+			pane.ColumnDisplay = CreateFrame("Frame", nil, pane)
+			pane.ColumnDisplay:CreateTexture(nil, "BACKGROUND"):SetTexture("column-stone")
+			pane.InsetFrame = CreateFrame("Frame", nil, pane)
+			pane.InsetFrame:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
+
+			local fs = pane:CreateFontString(nil, "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+			fs:SetText("0/0 Online")
+
+			cf[key] = pane
+			pane:Hide()          -- panes arrive when their tab is picked
+		end
+
+		-- The ornate frame around the community list: corners and bars in an
+		-- overlay child of its own.
+		cf.CommunitiesList.FilligreeOverlay = CreateFrame("Frame", nil, cf.CommunitiesList)
+		cf.CommunitiesList.FilligreeOverlay:CreateTexture(nil, "OVERLAY")
+			:SetTexture("communities-filigree")
+
+		cf.MemberList.ShowOfflineButton = CreateFrame("CheckButton", nil, cf.MemberList)
+		cf.MemberList.ShowOfflineButton:SetNormalTexture("checkbox-up")
+		cf.MemberList.ShowOfflineButton:SetCheckedTexture("checkbox-tick")
+
+		cf.CommunitiesControlFrame = CreateFrame("Frame", nil, cf)
+		WideButton(cf.CommunitiesControlFrame, "GuildControlButton", "Guild Settings")
+		WideButton(cf, "InviteButton", "Invite Member")
+		WideButton(cf, "GuildLogButton", "View Log")
+		WideButton(cf.GuildMemberDetailFrame, "RemoveButton", "Remove")
+
+		Dropdown(cf, "StreamDropdown")
+		Dropdown(cf.GuildMemberDetailFrame, "RankDropdown")
+
+		cf.MaximizeMinimizeFrame = CreateFrame("Frame", nil, cf)
+		for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
+			local b = CreateFrame("Button", nil, cf.MaximizeMinimizeFrame)
+			b:SetNormalTexture("maximize-art")
+			cf.MaximizeMinimizeFrame[key] = b
+		end
+
+		cf.ChatEditBox = CreateFrame("EditBox", nil, cf)
+		for _, part in ipairs({ "Left", "Right", "Mid" }) do
+			cf.ChatEditBox[part] = cf.ChatEditBox:CreateTexture(nil, "BACKGROUND")
+			cf.ChatEditBox[part]:SetTexture("editbox-stone")
+		end
+
+		-- THE CREST HANGS OFF THE CORNER, which is what the portrait template
+		-- does on purpose: it overlaps a stone ring that framed it, the same
+		-- trick the main menu's title plate plays. Take the ring away and it is
+		-- a disc floating outside the window.
+		cf.PortraitOverlay = CreateFrame("Frame", nil, cf)
+		cf.PortraitOverlay.Portrait = cf.PortraitOverlay:CreateTexture(nil, "BACKGROUND")
+		cf.PortraitOverlay.Portrait:SetTexture("guild-tabard")
+		cf.PortraitOverlay.Portrait:SetSize(61, 61)
+		cf.PortraitOverlay.Portrait:SetPoint("TOPLEFT", cf, "TOPLEFT", -6, 8)
+		-- Three textures stacked, not one, and a mask that has to follow them.
+		for _, key in ipairs({ "CircleMask", "TabardBackground", "TabardEmblem",
+			"TabardBorder" }) do
+			cf.PortraitOverlay[key] = cf.PortraitOverlay:CreateTexture(nil, "BACKGROUND")
+		end
+
+		-- What you get when you are in no guild at all: a dark plate with the
+		-- client's own art on it and two paragraphs telling you what a guild is.
+		local finder = CreateFrame("Frame", "ClubFinderGuildFinderFrame", cf)
+		finder:CreateTexture(nil, "BACKGROUND"):SetTexture("communities-widebackground")
+		finder.DisabledFrame = CreateFrame("Frame", nil, finder)
+		finder.DisabledFrame:CreateTexture(nil, "BACKGROUND"):SetTexture("clubfinder-bg")
+		finder.DisabledFrame.Title = finder.DisabledFrame:CreateFontString(nil, "OVERLAY")
+		finder.DisabledFrame.Title:SetFont("Fonts\\FRIZQT__.TTF", 24, "")
+		finder.DisabledFrame.Title:SetText("Guild")
+		finder.DisabledFrame.Description = finder.DisabledFrame:CreateFontString(nil, "OVERLAY")
+		finder.DisabledFrame.Description:SetFont("Fonts\\FRIZQT__.TTF", 13, "")
+		finder.DisabledFrame.Description:SetText("A guild is a tight-knit group of players")
+		finder.InsetFrame = CreateFrame("Frame", nil, finder)
+		finder.InsetFrame:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
+	end
+
 	-- Load on demand: absent until something asks for it.
 	-- Builds it only. Firing ADDON_LOADED is the caller's, because `fire` is
 	-- declared further down this file than this block runs.
 	function _G.__loadPanelAddon(name)
 		buildPanel(name)
 		if name == "PlayerTalentFrame" then _G.__buildTalentInsides() end
+		if name == "CommunitiesFrame" then _G.__buildCommunities() end
 	end
 end
 
@@ -4138,6 +4301,78 @@ local function MakeChatFrame(id)
 	return f
 end
 
+-- The mirror timers: breath underwater, fatigue at sea, feigning death.
+--
+-- Three frames the client reuses, and it picks whichever is FREE when a timer
+-- starts - so the one that appears is not necessarily the one that appeared
+-- last time, and all three have to be dressed.
+--
+-- MirrorTimer_Show re-colours the bar from MirrorTimerColors on every single
+-- start, which is what makes a colour set once at login a colour you see until
+-- the first time you go underwater.
+_G.MIRRORTIMER_NUMTIMERS = 3
+MirrorTimerColors = {
+	EXHAUSTION = { r = 1.00, g = 0.90, b = 0.00 },
+	BREATH     = { r = 0.00, g = 0.50, b = 1.00 },
+	DEATH      = { r = 1.00, g = 0.70, b = 0.00 },
+	FEIGNDEATH = { r = 1.00, g = 0.70, b = 0.00 },
+}
+
+for i = 1, 3 do
+	local f = CreateFrame("Frame", "MirrorTimer" .. i, UIParent)
+	f:SetSize(206, 26)
+	f:Hide()
+
+	-- A flat black plate behind the fill, and the casting bar's border laid
+	-- over the top. Both are regions of the frame itself.
+	f.__plate = f:CreateTexture(nil, "BACKGROUND")
+	f.__plate:SetTexture("mirror-plate")
+	f.__border = f:CreateTexture("MirrorTimer" .. i .. "Border", "OVERLAY")
+	f.__border:SetTexture("Interface\\CastingBar\\UI-CastingBar-Border")
+
+	local text = f:CreateFontString("MirrorTimer" .. i .. "Text", "OVERLAY")
+	text:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+	text:SetText("Breath")
+	-- ANCHORED TO THE TOP OF THE FRAME, which puts it half above the fill: it
+	-- sat on a stone border that framed the words, and once that has gone the
+	-- top half of them is over open water.
+	text:SetPoint("TOP", f, "TOP", 0, 0)
+
+	local bar = CreateFrame("StatusBar", "MirrorTimer" .. i .. "StatusBar", f)
+	bar:SetSize(195, 13)
+	bar:SetPoint("TOP", f, "TOP", 0, -2)
+	bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+	-- LowerFrameLevel(self), which the template really does call in this bar's
+	-- OnLoad. It is why glass put behind the frame is drawn over the top of the
+	-- fill, and a mock that left every frame on the same level could not show
+	-- it - the bar would come out above the capsule by accident.
+	bar:SetFrameLevel(0)
+end
+
+--- The client starting a timer: pick a free frame, colour it, show it.
+function MirrorTimer_Show(timer, value, maxvalue, scale, paused, label)
+	local dialog
+	for i = 1, _G.MIRRORTIMER_NUMTIMERS do
+		local f = _G["MirrorTimer" .. i]
+		if not f:IsShown() then dialog = f break end
+	end
+	if not dialog then return nil end
+
+	dialog.timer = timer
+	_G[dialog:GetName() .. "Text"]:SetText(label)
+
+	local bar = _G[dialog:GetName() .. "StatusBar"]
+	bar:SetMinMaxValues(0, (maxvalue or 1000) / 1000)
+	bar:SetValue((value or 0) / 1000)
+
+	-- THE COLOUR, BLIZZARD'S, every time. This is the line that undoes us.
+	local c = MirrorTimerColors[timer]
+	if c then bar:SetStatusBarColor(c.r, c.g, c.b) end
+
+	dialog:Show()
+	return dialog
+end
+
 MakeChatFrame(1)
 MakeChatFrame(2)
 
@@ -4694,7 +4929,15 @@ end
 function GetGuildInfo(u) local d = units[u]; return d and d.guild end
 
 print("== loading addon files ==")
-for _, f in ipairs({
+
+-- THE SAME LIST THE CLIENT LOADS, and checked against the .toc further down.
+--
+-- It is written out again here rather than parsed, because the order matters
+-- and a parser is one more thing to be wrong. What must not happen is the two
+-- drifting: a module added to the .toc and not to this list ships to players
+-- while being invisible to every check in this file, which is the most
+-- flattering kind of untested there is.
+local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
@@ -4707,9 +4950,11 @@ for _, f in ipairs({
 	"Modules/Nameplates.lua",
 	"Modules/Popups.lua",
 	"Modules/Panels.lua",
+	"Modules/Timers.lua",
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
-}) do
+}
+for _, f in ipairs(FILES) do
 	load(f)
 end
 
@@ -7572,6 +7817,66 @@ SlashCmdList["AETHERUI"]("lock")
 check(not A.Movers.unlocked, "movers locked")
 SlashCmdList["AETHERUI"]("reset")
 check(next(A.db.profile.anchors) == nil, "reset cleared saved anchors")
+
+print("== commands: reading a window there is no source for ==")
+do
+	-- Every panel so far was built by reading Blizzard's own source for this
+	-- flavour, which is what says which of a frame's regions carry the picture
+	-- and which carry the chrome. Blizzard_Communities is not in the reference
+	-- tree and the guild window on this client is Communities, so the addon asks
+	-- the client instead of guessing.
+	local shown = nil
+	local realShow = A.Errors.ShowText
+	A.Errors.ShowText = function(_, text) shown = text return end
+
+	-- LOWER CASE, as the dispatcher hands it over. It lower-cases every argument,
+	-- which is right for the words the other commands compare and wrong for a
+	-- frame name - those are case-sensitive globals. The first attempt reported
+	-- "no frame called communitiesframe", which reads as "that window does not
+	-- exist" rather than "you typed it the way this addon made you type it".
+	A:DumpPanel("characterframe")
+	check(shown ~= nil and shown:find("CharacterFrame", 1, true) ~= nil,
+		"a frame is found whatever case it was asked for in")
+
+	-- WHICH BUILD PRODUCED IT, on the first line. A dump was once read against
+	-- the copy still in memory, and the parts it was missing read as "the client
+	-- does not have them" rather than "you have not reloaded yet". Lua loads at
+	-- reload; a file on disk is not a build that is running.
+	check(shown ~= nil and shown:find(tostring(A.version), 1, true) ~= nil,
+		"and the report says which build it came from")
+	check(shown ~= nil and shown:find("CharacterFrameTab1", 1, true) ~= nil,
+		"and its children come with it, which is the whole point of asking")
+
+	-- BY PARENTKEY where they have no global name. A dump of the guild window
+	-- came back with eight named things in six hundred lines and <anonymous>
+	-- for everything else, which is a report nobody can act on: you cannot
+	-- reach a frame you cannot name. Modern windows hang their parts off the
+	-- parent as plain fields, and that field is also the key Element takes.
+	check(shown ~= nil and shown:find(".Bg", 1, true) ~= nil,
+		"and anything without one is named by the key its parent holds it under")
+
+	-- A FRAGMENT LISTS WHAT IT COULD HAVE MEANT, which is the more useful
+	-- command when the question is what an unreadable window is even called.
+	shown = nil
+	local said = {}
+	local realPrint = A.Print
+	local chat = _G.DEFAULT_CHAT_FRAME
+	local realAdd = chat.AddMessage
+	A.Print = function(_, m) said[#said + 1] = tostring(m or "") end
+	chat.AddMessage = function(_, m) said[#said + 1] = tostring(m or "") end
+
+	A:DumpPanel("characterfra")
+	A.Print, chat.AddMessage = realPrint, realAdd
+
+	check(shown == nil, "a name that matches nothing opens no box")
+	local suggested = false
+	for _, line in ipairs(said) do
+		if line:find("CharacterFrame", 1, true) then suggested = true end
+	end
+	check(suggested, "and says what it could have meant instead")
+
+	A.Errors.ShowText = realShow
+end
 
 print("== other commands ==")
 for _, cmd in ipairs({ "", "status", "diag", "hide", "scale 1.2", "shadow 14", "noise 0.5",
@@ -12231,6 +12536,39 @@ do
 	check(tocVersion ~= nil, "AetherUI.toc declares a version (" ..
 		tostring(tocVersion) .. ")")
 
+	-- AND THE SAME FILES THE CLIENT LOADS. This file keeps its own list, in its
+	-- own order, and the two drifted the moment a module was added: Timers.lua
+	-- went into the .toc and shipped, while every check in here ran against an
+	-- addon that did not contain it. A module nobody tests looks perfect.
+	do
+		local inToc, missing = {}, {}
+		local f = io.open("AetherUI.toc", "r")
+		if f then
+			for line in f:lines() do
+				local path = line:match("^(%S+%.lua)%s*$")
+				if path then inToc[#inToc + 1] = path:gsub("\\", "/") end
+			end
+			f:close()
+		end
+
+		local loaded = {}
+		for _, name in ipairs(FILES) do loaded[name] = true end
+
+		for _, path in ipairs(inToc) do
+			-- Libs are somebody else's and are stubbed rather than loaded.
+			if not path:find("^Libs/") and not loaded[path] then
+				missing[#missing + 1] = path
+			end
+		end
+
+		check(#inToc > 0, "the .toc lists files to load (" .. #inToc .. ")")
+		check(#missing == 0,
+			"and every one of them is loaded by this suite too - a file in the"
+			.. " .toc and not in here ships to players while being invisible to"
+			.. " every check in this file"
+			.. (#missing > 0 and (": " .. table.concat(missing, ", ")) or ""))
+	end
+
 	local log = A.CHANGELOG
 	check(type(log) == "table" and #log > 0, "and Core/Changelog.lua has entries")
 
@@ -14808,8 +15146,41 @@ do
 		check(sections[A.Media:Track("FREE", 1)] == "4",
 			"the FREE block holds only the slots that take anything ("
 			.. tostring(sections[A.Media:Track("FREE", 1)]) .. ")")
-		check(sections[A.Media:Track("QUIVER", 1)] == "3",
-			"and the quiver's empties get a section under their own name")
+
+		-- THE BAG IS THE SECTION, holding what is in it and the room it has
+		-- left: four slots, one of them an arrow stack, three free.
+		check(sections[A.Media:Track("QUIVER", 1)] == "4  \194\183  3 free",
+			"and the quiver is a section of its own, saying how much of it is"
+			.. " left (" .. tostring(sections[A.Media:Track("QUIVER", 1)]) .. ")")
+	end
+
+	-- AND ITS CONTENTS ARE NOT RE-FILED BY WHAT THEY ARE MADE OF. Arrows are
+	-- trade goods, and they were landing under TRADE GOODS next to the linen -
+	-- true, and useless. What matters about the stack in your quiver is that it
+	-- is in the quiver, and a bag that takes one thing is a category the game
+	-- has already made.
+	do
+		local arrow, arrowSection
+		for _, row in pairs(f.buttons) do
+			for _, b in pairs(row) do
+				if b.info and b.info.itemID == 2512 then arrow = b end
+			end
+		end
+		check(arrow ~= nil and arrow:IsShown(), "the arrows are on screen")
+
+		-- Which section they landed in, by which label they sit under.
+		local function TopOf(o)
+			local _, _, _, _, y = o:GetPoint(1)
+			return -(y or 0)
+		end
+		for _, lab in ipairs(f.labels) do
+			if lab:IsShown() and TopOf(lab) < TopOf(arrow) then
+				arrowSection = lab.text:GetText()
+			end
+		end
+		check(arrowSection == A.Media:Track("QUIVER", 1),
+			"and they are filed under the bag they are in rather than under"
+			.. " TRADE GOODS (" .. tostring(arrowSection) .. ")")
 	end
 
 	-- Which physical bag holds an item must be invisible. Wool Cloth lives in
@@ -16785,6 +17156,10 @@ do
 	check(cf.Bg.__fill:GetTexture() == 0,
 		"including the background in its child frame, which is where these keep"
 		.. " the thing you can actually see")
+	check(cf.TitleContainer.__bar:GetTexture() == 0,
+		"and the stone band behind the title, which hangs off a TitleContainer -"
+		.. " the game menu's Header under a second name. On the help window that"
+		.. " band was the last thing left drawing on the whole frame")
 	check(_G.CharacterFrameTitleText._aetherStyle == "pnTitle",
 		"the title is re-roled into our type")
 
@@ -17198,6 +17573,19 @@ do
 	A.db.profile.scale = wasScale
 	fire("PLAYER_ENTERING_WORLD")
 
+	-- NOT A WINDOW. The old FriendsFrame XML still defines a GuildFrame pane -
+	-- setAllPoints, inside the social window - and the panel list named it as a
+	-- window of its own, so it got glass behind a pane that already had some and
+	-- a scale of its own inside a frame already scaled. The guild button on this
+	-- client opens Communities; nothing opens that pane at all.
+	do
+		local pane = CreateFrame("Frame", "GuildFrame", _G.FriendsFrame)
+		pane:SetAllPoints(_G.FriendsFrame)
+		fire("PLAYER_ENTERING_WORLD")
+		check(pane.__aetherPanel == nil,
+			"a pane that happens to carry a window's name is not dressed as one")
+	end
+
 	-- LOAD ON DEMAND. Half of these do not exist at login; they arrive with
 	-- their own addon the first time you open them, and a list walked once at
 	-- startup would never see them.
@@ -17390,6 +17778,178 @@ do
 	check(_G.SpellButton1IconTexture:GetTexture() == "spell-icon-1"
 		and _G.ShowAllSpellRanksCheckbox:GetCheckedTexture():GetTexture() == "checkbox-tick",
 		"with the spell and the tick still where they were")
+end
+
+print("== timers: breath, fatigue, and the colour that says which ==")
+do
+	local TMm = A:GetModule("timers")
+	check(TMm ~= nil and TMm.enabled, "the timers module is on")
+
+	local f = _G.MirrorTimer1
+	check(f.__border:GetTexture() == 0 and f.__plate:GetTexture() == 0,
+		"a timer's stone border and its black plate come off")
+	check(f.__aetherPill ~= nil, "and glass goes behind it")
+
+	-- THE CAPSULE IS THE FRAME. Behind the bar alone it is a sliver two pixels
+	-- taller than the fill, which is a rim rather than a capsule.
+	local bar = _G.MirrorTimer1StatusBar
+	check(f.__aetherPill:GetParent() == f
+		and f.__aetherPill:GetWidth() == f:GetWidth(),
+		"the capsule covers the frame, the way the cast bar's does ("
+		.. tostring(f.__aetherPill:GetWidth()) .. " of " .. tostring(f:GetWidth())
+		.. ") - behind the fill alone it is a rim two pixels taller than the bar")
+
+	-- ABOVE THE GLASS. The template lowers this bar's frame level in its own
+	-- OnLoad, so a capsule put behind the frame draws over the fill - which is
+	-- the bar coming back as a pale block with no capsule anywhere.
+	check(bar:GetFrameLevel() > f.__aetherPill:GetFrameLevel(),
+		"and the fill sits above it (" .. bar:GetFrameLevel() .. " vs "
+		.. f.__aetherPill:GetFrameLevel() .. ") - the template LOWERS this bar,"
+		.. " so left alone the glass is drawn over the top of it")
+
+	-- The cast bar's layout: the word on the left, the fill beside it.
+	local tPt, tRel, tRelPt = _G.MirrorTimer1Text:GetPoint(1)
+	check(tPt == "LEFT" and tRel == f and tRelPt == "LEFT",
+		"the word sits at the left of the capsule (" .. tostring(tPt) .. ")")
+	check(_G.MirrorTimer1Text._aetherStyle == "castName",
+		"in the cast bar's own lettering, because this is the same object")
+
+	local bPt, bRel = bar:GetPoint(1)
+	check(bPt == "LEFT" and bRel == _G.MirrorTimer1Text,
+		"and the fill starts where the word ends rather than at a fixed offset -"
+		.. " 'Feign Death' is half again the width of 'Breath', so the bar gives"
+		.. " way rather than the word being clipped")
+	check(bar:GetHeight() == 7,
+		"at the cast bar's own height (" .. bar:GetHeight() .. ")")
+
+	-- WHICH TIMER IT IS, IN THE COLOUR - and re-applied, because the client
+	-- sets its own from MirrorTimerColors every time a timer starts. A colour
+	-- set once at login is a colour you see until the first time you dive.
+	MirrorTimer_Show("BREATH", 30000, 60000, 1, 0, "Breath")
+	local br, bg, bb = bar:GetStatusBarTexture():GetVertexColor()
+	-- POWER rather than CAST. Both are blue and the cast blue is the paler, so
+	-- over bright water it came back reading as a white bar with a grey end.
+	local breath = A.Palette.c.power[1]
+	check(br == breath[1] and bg == breath[2] and bb == breath[3],
+		"breath is our blue rather than Blizzard's (" ..
+		string.format("%.2f,%.2f,%.2f", br, bg, bb) .. ")")
+
+	-- A DIFFERENT TIMER TAKES A DIFFERENT FRAME. The client picks whichever of
+	-- the three is free, so all three have to have been dressed - and the
+	-- colour has to follow the KIND, not the frame.
+	MirrorTimer_Show("EXHAUSTION", 30000, 60000, 1, 0, "Fatigue")
+	local bar2 = _G.MirrorTimer2StatusBar
+	local er, eg = bar2:GetStatusBarTexture():GetVertexColor()
+	local tired = A.Palette.c.energy[1]
+	check(er == tired[1] and eg == tired[2],
+		"and fatigue is our yellow, on whichever of the three frames was free")
+
+	-- Off hands the client its own back.
+	A:SetModuleEnabled("timers", false)
+	check(f.__border:GetTexture() == "Interface\\CastingBar\\UI-CastingBar-Border"
+		and f.__aetherPill == nil,
+		"switching it off returns the border the client drew")
+	A:SetModuleEnabled("timers", true)
+	check(_G.MirrorTimer1.__aetherPill ~= nil, "and on again re-dresses it")
+
+	for i = 1, 3 do _G["MirrorTimer" .. i]:Hide() end
+end
+
+print("== panels: guild and communities, read off the live client ==")
+do
+	_G.__loadPanelAddon("CommunitiesFrame")
+	fire("ADDON_LOADED", "Blizzard_Communities")
+
+	local cf = _G.CommunitiesFrame
+	check(cf.__aetherPanel ~= nil, "the guild window is in glass")
+
+	-- THE SIDE TABS keep their picture in an Icon REGION rather than as the
+	-- normal texture the spellbook's school tabs use. Assuming the spellbook's
+	-- shape here would dress four empty cells and throw the icons away, and it
+	-- is the kind of wrong that looks deliberate.
+	local roster = cf.RosterTab
+	check(roster.__aetherSlot == true, "a side tab wears one of our cells")
+	check(roster.Icon:GetTexture() == "communities-icon-RosterTab",
+		"WITH ITS PICTURE STILL IN IT - the icon is a region called Icon, not"
+		.. " this button's normal texture, so the shape that works on the"
+		.. " spellbook would blank it here")
+	check(roster.__ring:GetTexture() == 0, "and the stone ring behind it gone")
+
+	-- THREE-SLICE BUTTONS. Left, Right and Middle rather than a normal texture,
+	-- so ClearButton finds nothing to clear and the plate outlives it.
+	local invite = cf.InviteButton
+	check(invite.__aetherPill ~= nil, "a push button is in one of our pills")
+	check(invite.Left:GetTexture() == 0 and invite.Middle:GetTexture() == 0,
+		"with all three of its slices cleared, which a normal texture is not")
+
+	-- A DROPDOWN KEEPS ITS ARROW. It is what says the control opens, and
+	-- nothing of ours would say it better at that size.
+	local dd = cf.StreamDropdown
+	check(dd.__aetherPill ~= nil and dd.Background:GetTexture() == 0,
+		"a dropdown's stone holder comes off")
+	check(dd.Arrow:GetTexture() == "common-dropdown-classic-a-buttonDown",
+		"and its arrow does not")
+	check(dd.Text._aetherStyle ~= nil, "with its text re-roled")
+
+	check(cf.CommunitiesList.FilligreeOverlay ~= nil
+		and select(1, cf.CommunitiesList.FilligreeOverlay:GetRegions()):GetTexture() == 0,
+		"the ornate frame around the community list is cleared - it hangs off a"
+		.. " child of its own, so a strip of the list alone leaves it drawing")
+
+	check(cf.MemberList.ShowOfflineButton.__aetherCheck ~= nil,
+		"and the roster's own check box is ours")
+
+	-- THE SCROLL BAR IS A FRAME OF FRAMES on this window - a track, a thumb and
+	-- two arrows, each a child - so a strip of the bar itself finds no regions,
+	-- clears nothing, and leaves the stone down the side of the list.
+	local bar = cf.CommunitiesList.ScrollBar
+	check(select(1, bar.Track:GetRegions()):GetTexture() == 0
+		and bar.Back:GetNormalTexture():GetTexture() == 0,
+		"a scroll bar is taken apart rather than swept, because nothing in one"
+		.. " is a picture and every part of it is a child")
+
+	-- THE CREST comes inside. The portrait template hangs it off the corner to
+	-- overlap a stone ring that framed it - the main menu's title plate again -
+	-- so with the ring gone it floats outside the window.
+	local crest = cf.PortraitOverlay.Portrait
+	local cPt, cRel, cRelPt, cx, cy = crest:GetPoint(1)
+	check(cPt == "TOPLEFT" and cRel == cf and cx > 0 and cy < 0,
+		"the guild crest is brought inside the glass (" .. tostring(cx) .. ","
+		.. tostring(cy) .. ") rather than hung off the corner")
+	check(crest:GetWidth() < 61,
+		"and drawn smaller than the template's own size ("
+		.. tostring(crest:GetWidth()) .. " from 61)")
+	check(cf.PortraitOverlay.CircleMask:GetWidth() == crest:GetWidth(),
+		"with its mask following it - one left where the portrait used to be"
+		.. " crops a circle out of empty air")
+
+	-- The big pane you get when you are in no guild: the client's own dark
+	-- plate, and two paragraphs in the client's own lettering.
+	local finder = _G.ClubFinderGuildFinderFrame
+	check(select(1, finder:GetRegions()):GetTexture() == 0
+		and select(1, finder.DisabledFrame:GetRegions()):GetTexture() == 0,
+		"the pane on the right loses its plate")
+	check(finder.DisabledFrame.Title._aetherStyle ~= nil
+		and finder.DisabledFrame.Description._aetherStyle ~= nil,
+		"and its heading and its paragraph are in our lettering")
+
+	-- A PANE ARRIVES WHEN ITS TAB IS PICKED. Everything but the one you are
+	-- looking at is hidden, and a window dressed once at open leaves the other
+	-- three in Blizzard's stone the moment you click.
+	local benefits = cf.GuildBenefitsFrame
+	local art = select(1, benefits:GetRegions())
+	art:SetTexture("communities-pane-art")           -- as the client repaints it
+
+	local click = roster:GetScript("OnClick")
+	check(click ~= nil,
+		"a side tab is hooked - there is no update function on this window to"
+		.. " wrap, and none we could name without its source, so the click is"
+		.. " the only thing that says which pane is showing now")
+	if click then click(roster) end
+
+	check(art:GetTexture() == 0,
+		"and a pane that comes back is taken back off, because a window dressed"
+		.. " once at open leaves the other three in stone the moment you click")
 end
 
 print("== panels: the talent tree, without cutting its branches ==")
