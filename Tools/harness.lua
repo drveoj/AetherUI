@@ -2125,7 +2125,16 @@ MiniMapTrackingDropDown = CreateFrame("Frame", "MiniMapTrackingDropDown")
 function ToggleDropDownMenu() _G.__trackingMenu = true end
 
 -- The client's `date` is Lua's, and the sandbox this runs in has os stripped.
-date = date or function(fmt) return "18:41" end
+--
+-- IT HONOURS THE FORMAT IT IS GIVEN. Answering "18:41" to everything meant a
+-- caller asking for a calendar date got a clock, and content season windows -
+-- which are entirely a question of what today's date is - would all have read
+-- as closed with the suite green. `__today` is what tests move to cross one.
+_G.__today = "20260815"
+date = date or function(fmt)
+	if fmt == "%Y%m%d" then return _G.__today end
+	return "18:41"
+end
 function GetMinimapZoneText() return _G.__zoneText or "The Barrens" end
 function GetZoneText() return "The Barrens" end
 function GetSubZoneText() return _G.__zoneText or "" end
@@ -5515,7 +5524,7 @@ local FILES = {
 	"Modules/Toolbox.lua",
 	"Modules/InFlight/Routes.lua", "Modules/InFlight/Route.lua",
 	"Modules/InFlight/Taxi.lua", "Modules/InFlight/Console.lua",
-	"Modules/InFlight/Registry.lua",
+	"Modules/InFlight/Registry.lua", "Modules/InFlight/Content.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -21104,6 +21113,159 @@ section("ifec: registering content packs, several at once", function()
 	check(cat[1].title == "Rainfall", "and the earlier season keeps it")
 
 	R:Reset()
+end)
+
+section("ifec: what is in season, and what fills a flight", function()
+	local R, C = A.IFEC.Registry, A.IFEC.Content
+	check(C ~= nil, "content selection loaded")
+
+	local function item(id, kind, mins, from, until_)
+		return { id = id, type = kind, title = id, totalDuration = mins * 60,
+		         activeFrom = from, activeUntil = until_,
+		         segments = { { file = id .. ".ogg", duration = mins * 60 } } }
+	end
+	local function pack(id, season, items)
+		return { packId = id, seasonIndex = season, apiVersion = 1, items = items }
+	end
+
+	local cfg = A.Config:Module("inflight")
+	cfg.progress = {}
+	R:Reset()
+
+	-- NO PACKS IS DORMANT, and so is every other way of getting there. The
+	-- console asks one question and gets one answer.
+	check(C:IsDormant(), "with nothing installed the console is dormant")
+
+	R:Register(pack("Expired", 1, { item("old", "podcast", 10, "2026-01-01", "2026-02-01") }))
+	check(C:IsDormant(), "and with only an expired season, still dormant")
+	check(#R:Failures() == 0, "though nothing failed to register - it is in date, not in error")
+
+	-- THE WINDOW IS READ ON EVERY ASKING, never cached. A player logged in
+	-- across a season boundary gets the new content on their next flight
+	-- rather than having to relog for it.
+	R:Register(pack("S02", 2, { item("e1", "podcast", 10, "2026-09-01", "2026-10-01") }))
+	check(C:IsDormant(), "a season that has not opened yet is not in season")
+	_G.__today = "20260915"
+	check(not C:IsDormant(), "and the same question the next day says it is")
+	check(#C:Available() == 1, "with exactly the item whose window is open")
+	_G.__today = "20261015"
+	check(C:IsDormant(), "and dormant again once it closes")
+
+	-- No bounds at all is evergreen, which is a real state the settings page
+	-- has a word for.
+	R:Register(pack("Evergreen", 3, { item("amb", "music", 1) }))
+	check(not C:IsDormant(), "an item with no dates is evergreen")
+
+	-- THE PROGRAMME. Resume first, then unplayed newest-season-first, then
+	-- music as filler - and it crosses packs, because music is a different
+	-- pack from a podcast and a queue that could not cross would fall silent
+	-- with flight remaining.
+	_G.__today = "20260915"
+	R:Reset()
+	cfg.progress = {}
+	R:Register(pack("Music", 1, { item("rain", "music", 1), item("wind", "music", 1) }))
+	R:Register(pack("S01", 2, { item("old1", "podcast", 2) }))
+	R:Register(pack("S03", 3, { item("new1", "podcast", 2), item("new2", "podcast", 2) }))
+
+	local queue = C:Programme(600)
+	check(#queue > 0, "a programme is built for a ten-minute flight")
+	check(queue[1].packId == "S03", "the newest season goes first ("
+		.. tostring(queue[1].packId) .. ":" .. tostring(queue[1].id) .. ")")
+
+	local kinds = {}
+	for _, q in ipairs(queue) do kinds[#kinds + 1] = q.type end
+	check(kinds[#kinds] == "music", "and music fills the end of it ("
+		.. table.concat(kinds, ",") .. ")")
+
+	-- A PART-PLAYED EPISODE GREETS YOU. Half-finished beats brand new.
+	C:Remember("S01:old1", 3, false)
+	queue = C:Programme(600)
+	check(queue[1].key == "S01:old1", "something part-played comes first next time ("
+		.. tostring(queue[1].key) .. ")")
+
+	-- A finished one is not offered again as though it were new.
+	C:Remember("S03:new1", 9, true)
+	queue = C:Programme(600)
+	local sawFinished = false
+	for _, q in ipairs(queue) do if q.key == "S03:new1" then sawFinished = true end end
+	check(not sawFinished, "and a finished one is not queued as unplayed")
+
+	-- THE PLAYER'S OWN PICKS ARE NEVER OVERRIDDEN and never dropped, even if
+	-- they overrun - a queue that quietly removes what somebody asked for is
+	-- worse than one that runs long.
+	queue = C:Programme(60, { "S03:new2" })
+	check(queue[1].key == "S03:new2", "a picked item leads the programme")
+	local _, filled = C:Programme(30, { "S03:new2" })
+	check(filled > 30, "and is kept even when it overruns the flight ("
+		.. string.format("%.0f", filled) .. "s of 30s)")
+
+	-- PROGRESS IS PACK-SCOPED, so uninstalling one season leaves another's
+	-- alone, and state for a pack we no longer know is ignored rather than
+	-- deleted - a season that expires and returns picks up where it was.
+	C:Remember("Gone:whatever", 4, false)
+	R:Reset()
+	R:Register(pack("Music", 1, { item("rain", "music", 1) }))
+	check(C:Programme(120) ~= nil, "a programme still builds with a stale id in the store")
+	check(C:Progress("Gone:whatever") ~= nil, "and the stale progress is kept, not purged")
+	check(C:Progress("S01:old1") ~= nil, "as is progress for a season not currently installed")
+
+	R:Reset()
+	cfg.progress = {}
+	_G.__today = "20260815"
+end)
+
+section("ifec: the console takes a region, and gives it back", function()
+	local IF   = A:GetModule("inflight")
+	local Taxi = A.IFEC.Taxi
+
+	Taxi:Start()
+	_G.__taxi.nodes = {
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+	}
+	TakeTaxiNode(2)
+	_G.__onTaxi = true
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+
+	local f = IF.frame
+	local bare = f:GetHeight()
+	check(f.capsule:IsShown() and not f.panel:IsShown(),
+		"with nothing to play it is a capsule")
+	check(not f.hairline:IsShown(), "and there is no rule under the header")
+	check(not IF:HasRegion(), "and it knows it carries nothing")
+
+	-- THE ONLY GEOMETRY THAT CHANGES IS THE CORNER. Same width, same header,
+	-- same dial - the design is explicit that these are two forms of one thing
+	-- rather than two things.
+	local region = CreateFrame("Frame", nil, UIParent)
+	region:SetSize(560, 120)
+	check(IF:AttachRegion(region, 120), "something can be hung under the header")
+	check(f.panel:IsShown() and not f.capsule:IsShown(), "which makes it a panel")
+	check(f.hairline:IsShown(), "with the rule showing")
+	check(f:GetHeight() == bare + 120, "and the frame grown by exactly the region ("
+		.. f:GetHeight() .. " from " .. bare .. ")")
+	check(f.route:GetText():find("Ratchet", 1, true) ~= nil,
+		"the header is untouched by the change")
+
+	check(IF:DetachRegion(), "and it goes back")
+	check(f.capsule:IsShown() and not f.panel:IsShown(), "to a capsule")
+	check(f:GetHeight() == bare, "at its old height")
+	check(not region:IsShown(), "with the region put away rather than left behind")
+
+	-- No /reload between the two: the player region can appear between one
+	-- flight and the next, and a form change that needed a reload would mean
+	-- installing a season did nothing until you relogged.
+	IF:AttachRegion(region, 80)
+	IF:DetachRegion()
+	IF:AttachRegion(region, 80)
+	check(f:GetHeight() == bare + 80 and f.panel:IsShown(),
+		"and back and forth as often as you like")
+	IF:DetachRegion()
+
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	Taxi:Stop()
 end)
 
 print("")

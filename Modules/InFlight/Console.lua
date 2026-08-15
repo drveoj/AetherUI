@@ -54,9 +54,23 @@ local function Build()
 	f:SetFrameStrata("MEDIUM")
 	f:Hide()
 
-	-- A PILL, not a panel. Radius 99 in the design, which is "as round as it
-	-- goes" - the capsule art is exactly that.
-	f.surface = Glass.CreatePill(f, { fill = "glassStrong", edge = "glassEdge" })
+	-- TWO SURFACES, ONE SHOWING. The dormant form is a capsule and the active
+	-- one is a panel, and the only difference between them is the corner: 99
+	-- against 24. Built together and swapped rather than rebuilt, because the
+	-- change happens between flights and a rebuild would drop the dial's state
+	-- and the mover's anchor with it.
+	f.capsule = Glass.CreatePill(f, { fill = "glassStrong", edge = "glassEdge" })
+	f.panel   = Glass.CreatePanel(f, { corner = 24, fill = "glassStrong", edge = "glassEdge" })
+	f.panel:SetAllPoints(f)
+	f.panel:Hide()
+
+	-- The rule the player region hangs under. Inset 16 either side, per the
+	-- design; it only exists when something is attached.
+	f.hairline = f:CreateTexture(nil, "ARTWORK")
+	f.hairline:SetHeight(1)
+	f.hairline:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -HEIGHT)
+	f.hairline:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -HEIGHT)
+	f.hairline:Hide()
 
 	-- THE DIAL. Three pieces: the track ring, the arc over it, and the disc in
 	-- the middle carrying the numeral. The brass rim is a fourth, outside.
@@ -153,6 +167,51 @@ function IF:Refresh()
 	f.sub:SetText(table.concat(bits, "  \194\183  "))
 end
 
+--- Hang something under the header, which is what makes this a panel.
+--
+--  The content half calls this; nothing here reaches the other way. That is the
+--  boundary the brief asks for - the timer must work with the content modules
+--  absent or broken, so the dependency only ever points at us.
+--
+--  Region changes belong BETWEEN flights, not during one. Nothing enforces that
+--  here because nothing here can know; it is the caller's rule.
+function IF:AttachRegion(region, height)
+	local f = self.frame
+	if not f or not region then return false end
+
+	f.region, f.regionHeight = region, height or 0
+	region:SetParent(f)
+	region:ClearAllPoints()
+	region:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -HEIGHT)
+	region:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -HEIGHT)
+	region:Show()
+
+	f:SetHeight(HEIGHT + f.regionHeight)
+	f.capsule:Hide()
+	f.panel:Show()
+	f.hairline:Show()
+	return true
+end
+
+--- Back to the capsule. Complete in itself, not a panel with a hole in it.
+function IF:DetachRegion()
+	local f = self.frame
+	if not f then return false end
+
+	if f.region then f.region:Hide() end
+	f.region, f.regionHeight = nil, 0
+
+	f:SetHeight(HEIGHT)
+	f.panel:Hide()
+	f.hairline:Hide()
+	f.capsule:Show()
+	return true
+end
+
+function IF:HasRegion()
+	return self.frame ~= nil and self.frame.region ~= nil
+end
+
 function IF:Restyle()
 	local f = self.frame
 	if not f then return end
@@ -167,6 +226,7 @@ function IF:Restyle()
 	f.dial.rim:SetVertexColor(c.ifecBrass[1], c.ifecBrass[2], c.ifecBrass[3], c.ifecBrass[4])
 	f.dial.disc:SetVertexColor(c.ifecDisc[1], c.ifecDisc[2], c.ifecDisc[3])
 	f.chevron.glyph:SetVertexColor(c.textDim[1], c.textDim[2], c.textDim[3], 0.7)
+	f.hairline:SetColorTexture(c.glassEdge[1], c.glassEdge[2], c.glassEdge[3], 0.18)
 end
 
 --- The console opens on boarding and closes on landing, both from the flight
