@@ -21881,8 +21881,12 @@ section("ifec: the player region, on the flight's own axis", function()
 		  segments = { { file = "e1a.ogg", duration = 15 }, { file = "e1b.ogg", duration = 15 } } },
 		{ id = "e2", type = "podcast", title = "Episode Two", totalDuration = 20,
 		  segments = { { file = "e2.ogg", duration = 20 } } },
-		{ id = "amb", type = "music", title = "Ambient", totalDuration = 20,
-		  segments = { { file = "amb.ogg", duration = 20 } } },
+		-- LONGER THAN WHAT IS LEFT OF THE FLIGHT, deliberately. A programme is
+		-- filled until it COVERS the flight, so the last item almost always
+		-- overshoots - and that overshoot is what used to draw out of the side
+		-- of the window. The ordinary case is the awkward one.
+		{ id = "amb", type = "music", title = "Ambient", totalDuration = 120,
+		  segments = { { file = "amb.ogg", duration = 120 } } },
 	} })
 
 	fly()
@@ -21932,9 +21936,71 @@ section("ifec: the player region, on the flight's own axis", function()
 	local _, _, _, lx = f.landing:GetPoint()
 	check(lx ~= nil, "the landing line is placed along the axis")
 
+	-- AND ABOVE THEM. A bar is a child frame and each piece is a child of that,
+	-- so a mark drawn on the region itself sorts underneath all of it however
+	-- high its draw layer. The landing line only ever showed because it fell
+	-- exactly where the flight bar's one piece ended.
+	check(f.marks:GetFrameLevel() > f.programme:GetFrameLevel(),
+		"the landing line is drawn over the bars, not under them")
+
+	-- ONE AXIS, LONG ENOUGH FOR BOTH. A programme is filled until it COVERS the
+	-- flight, so it overshoots by up to one item. Against an axis of the
+	-- flight's own length that overshoot ran out of the side of the window -
+	-- and landing was always the far right edge, which is a border, not a mark.
+	local queued = 0
+	for _, item in ipairs(PL.queue or {}) do queued = queued + (item.duration or 0) end
+	check(queued > (Taxi.flight.expected or 0),
+		"this programme runs longer than its flight (" .. queued .. "s of "
+		.. tostring(Taxi.flight.expected) .. "s), which is the case that overflowed")
+	-- MEASURED ON THE PIECES, not with XFor. XFor clamps to the bar, so it can
+	-- never report an overrun; the pieces are what actually drew past the edge.
+	local far = 0
+	for _, part in ipairs(f.programme.parts) do
+		if part:IsShown() then
+			local _, _, _, x = part:GetPoint()
+			far = math.max(far, (x or 0) + (part:GetWidth() or 0))
+		end
+	end
+	check(far > 0 and far <= f.programme:GetWidth() + 0.01,
+		"and the whole of it still lands inside the bar (" .. far .. " of "
+		.. f.programme:GetWidth() .. ")")
+	check(f.flight:XFor(Taxi.flight.expected) < f.flight:GetWidth() - 1,
+		"with landing marked short of the end, where it can be seen")
+
 	check(f.fills:GetText():find("programme fills", 1, true) ~= nil,
 		"and the headline says how much of the flight is filled ("
 		.. tostring(f.fills:GetText()) .. ")")
+
+	check(#(f.legs or {}) == 0 or not f.legs[1]:IsShown(),
+		"a single-hop flight has no stopover to mark")
+	land()
+
+	-- THE BRASS TICKS. A leg boundary is an INSTANT, so it is drawn over the
+	-- flight bar rather than being a piece of it - and over, not under: the bar
+	-- is a child frame and each piece is a child of that.
+	_G.__taxi.nodes = {
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = "Orgrimmar, Durotar",      kind = "REACHABLE" },
+	}
+	_G.__taxi.routes = { [3] = { 2, 3 } }
+	TakeTaxiNode(3)
+	_G.__onTaxi = true
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+
+	check(f.legs and f.legs[1] and f.legs[1]:IsShown(),
+		"a two-leg journey marks the stopover on the flight bar")
+	check(not (f.legs[2] and f.legs[2]:IsShown()),
+		"and only the stopover - the last boundary is landing, which is drawn"
+		.. " already and would be saying it twice")
+
+	-- THE TICK IS WHERE THE LEG ENDS, which is only worth drawing because the
+	-- route table stores single hops and a journey is the sum of them.
+	local _, _, _, tx = f.legs[1]:GetPoint()
+	local want = f.flight:XFor(Taxi.flight.legs[1].at)
+	check(math.abs((tx or 0) - want) < 0.01,
+		"at the second the first leg ends (" .. tostring(tx) .. " vs " .. want .. ")")
 
 	-- THE REGION GOES WITH THE FLIGHT. Landing takes it away and stops the
 	-- audio; nothing is left playing over somebody who has control back.

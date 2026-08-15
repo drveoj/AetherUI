@@ -33,6 +33,11 @@ local BAR_GAP   = 6           -- between the flight bar and the programme bar
 local UPNEXT_H  = 26
 local UPNEXT_MAX = 4          -- rows before the list stops growing the console
 
+-- Where the bars start, measured from the top of the region. Said once: Build
+-- anchors to it and Height adds it up, and the two disagreeing is a panel with
+-- a gap in it.
+local BAR_TOP   = PAD_T + ROW_H + 12
+
 --- Channel colours, from the design's tints. Their own tokens rather than
 --  borrowed ones: these say WHICH KIND of thing is playing, which is a
 --  different job from any colour already in the palette.
@@ -149,22 +154,38 @@ function Player:Build()
 	f.transport:SetPoint("TOP", f.now, "TOP", 0, 0)
 
 	-- THE TWO BARS, ONE AXIS. Same width, same total, stacked.
+	--
+	-- BOTH EDGES ON THE REGION, not one on the row above. It came out the same
+	-- width either way - the now-playing row starts at the same inset - but a
+	-- frame spanned between two DIFFERENT frames has a width only a layout
+	-- engine can work out, and there are places that have to ask for it before
+	-- the client has drawn a frame. BAR_TOP is the same stack Height() adds up.
 	f.flight = W.CreateSegmentedBar(f, { height = BAR_H })
-	f.flight:SetPoint("TOPLEFT", f.now, "BOTTOMLEFT", -0, -12)
-	f.flight:SetPoint("RIGHT", f, "RIGHT", -PAD_X, 0)
+	f.flight:SetPoint("TOPLEFT",  f, "TOPLEFT",   PAD_X, -BAR_TOP)
+	f.flight:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD_X, -BAR_TOP)
 
 	f.programme = W.CreateSegmentedBar(f, { height = BAR_H })
 	f.programme:SetPoint("TOPLEFT", f.flight, "BOTTOMLEFT", 0, -BAR_GAP)
 	f.programme:SetPoint("RIGHT", f.flight, "RIGHT", 0, 0)
 
+	-- THE MARKS GO ABOVE THE BARS, in a frame of their own. A bar is a child
+	-- frame and each of its pieces is a child of that, so anything drawn on the
+	-- region itself sorts underneath all of it however high its draw layer -
+	-- frames sort by level. The landing line only ever showed because it fell
+	-- exactly where the flight bar's one piece ended.
+	local marks = CreateFrame("Frame", nil, f)
+	marks:SetAllPoints(f)
+	marks:SetFrameLevel((f.programme:GetFrameLevel() or 0) + 5)
+	f.marks = marks
+
 	-- The landing line crosses both, which is the whole reason they share an
 	-- axis: it is one instant, said once.
-	f.landing = f:CreateTexture(nil, "OVERLAY")
+	f.landing = marks:CreateTexture(nil, "OVERLAY")
 	f.landing:SetWidth(2)
 	f.landing:SetPoint("TOP", f.flight, "TOP", 0, 6)
 	f.landing:SetPoint("BOTTOM", f.programme, "BOTTOM", 0, -2)
 
-	f.landingLabel = W.Text(f, "ifecCaption", "RIGHT", "OVERLAY")
+	f.landingLabel = W.Text(marks, "ifecCaption", "RIGHT", "OVERLAY")
 	f.landingLabel:SetPoint("BOTTOMRIGHT", f.landing, "TOPRIGHT", -3, 1)
 
 	f.fills = W.Text(f, "ifecCaption", "LEFT", "OVERLAY")
@@ -240,7 +261,7 @@ function Player:Height()
 	end
 	local rows = math.min(#(self.queue or {}) - (self.at or 1), UPNEXT_MAX)
 	if rows < 0 then rows = 0 end
-	return PAD_T + ROW_H + 12 + BAR_H + BAR_GAP + BAR_H + 16 + 1
+	return BAR_TOP + BAR_H + BAR_GAP + BAR_H + 16 + 1
 		+ 20 + rows * UPNEXT_H + PAD_B
 end
 
@@ -252,13 +273,8 @@ function Player:Paint()
 	local total  = flight and flight.expected or 0
 	local elapsed = flight and select(1, Taxi:Progress()) or 0
 
-	-- THE FLIGHT BAR: one piece, filled as far as we have flown. Its legs are
-	-- drawn as ticks over the top rather than as pieces, because a leg boundary
-	-- is an instant and a piece is a duration.
-	f.flight:SetPieces({ { seconds = total, colour = Palette.c.ifecDial, filled = true } }, total)
-
-	-- THE PROGRAMME BAR: one piece per queued item, on the same axis. Played
-	-- and playing are solid; queued is outlined.
+	-- THE PROGRAMME BAR: one piece per queued item. Played and playing are
+	-- solid; queued is outlined.
 	local pieces, filled = {}, 0
 	for i, item in ipairs(self.queue or {}) do
 		local secs = item.duration or 0
@@ -269,7 +285,23 @@ function Player:Paint()
 		}
 		filled = filled + secs
 	end
-	f.programme:SetPieces(pieces, total > 0 and total or filled)
+
+	-- ONE AXIS, LONG ENOUGH FOR BOTH. A programme is filled until it COVERS the
+	-- flight, so it overshoots by up to one item - and drawn against an axis of
+	-- the flight's own length that overshoot ran straight out of the side of
+	-- the window. It is also the only thing that lets the landing line say
+	-- anything: on an axis of exactly the flight, landing is always the far
+	-- right edge, and a line at the edge of a picture is a border.
+	--
+	-- "The programme bar carries fit" is the design's phrase for what these two
+	-- bars are for, and fit is precisely the difference between these numbers.
+	local axis = math.max(total, filled)
+
+	-- THE FLIGHT BAR: one piece spanning the journey. Not a progress bar - the
+	-- dial is the progress - what it draws is how much of the picture is
+	-- flight, which is the half of "fit" the programme bar cannot show.
+	f.flight:SetPieces({ { seconds = total, colour = Palette.c.ifecDial, filled = true } }, axis)
+	f.programme:SetPieces(pieces, axis)
 
 	-- The landing line sits at the end of the flight, on both bars.
 	f.landing:ClearAllPoints()
@@ -277,11 +309,52 @@ function Player:Paint()
 	f.landing:SetPoint("BOTTOM", f.programme, "BOTTOMLEFT", f.flight:XFor(total), -2)
 	f.landingLabel:SetText("LANDING " .. clock(total - elapsed))
 
+	self:PaintLegs(flight)
+
 	f.fills:SetText("programme fills " .. clock(filled) .. " of " .. clock(total))
 	f.legend:SetText("outlined = queued")
 
 	self:PaintNowPlaying()
 	self:PaintUpNext()
+end
+
+--- The brass ticks: where one leg ends and the next begins.
+--
+--  AN INSTANT, NOT A DURATION, which is why they are drawn over the flight bar
+--  rather than being pieces of it. The last leg's boundary is landing and the
+--  landing line already says that, so it is skipped rather than drawn twice.
+--
+--  A leg whose length we do not know has no `at`, and neither has anything
+--  after it - so those simply do not appear. A tick in the wrong place is worse
+--  than no tick: it would be a claim about the journey we cannot make.
+function Player:PaintLegs(flight)
+	local f = self.frame
+	f.legs = f.legs or {}
+
+	local legs = flight and flight.legs or {}
+	local n = 0
+
+	for i = 1, #legs - 1 do
+		local at = legs[i].at
+		if at then
+			n = n + 1
+			local tick = f.legs[n]
+			if not tick then
+				-- On the marks frame with the landing line, for the same reason.
+				tick = f.marks:CreateTexture(nil, "OVERLAY")
+				tick:SetWidth(1)
+				f.legs[n] = tick
+			end
+			tick:SetColorTexture(Palette.c.ifecBrass[1], Palette.c.ifecBrass[2],
+				Palette.c.ifecBrass[3], 0.8)
+			tick:ClearAllPoints()
+			tick:SetPoint("TOP", f.flight, "TOPLEFT", f.flight:XFor(at), 0)
+			tick:SetPoint("BOTTOM", f.flight, "BOTTOMLEFT", f.flight:XFor(at), 0)
+			tick:Show()
+		end
+	end
+
+	for i = n + 1, #f.legs do f.legs[i]:Hide() end
 end
 
 function Player:PaintNowPlaying()
