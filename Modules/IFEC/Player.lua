@@ -61,11 +61,18 @@ local function BuildRow(parent)
 	row.glyph:SetSize(16, 16)
 	row.glyph:SetPoint("LEFT", row, "LEFT", (GLYPH - 16) / 2, 0)
 
+	-- BOTH SIDES ANCHORED, so the strings have a width to be cut to. A title is
+	-- as long as its author made it and "then <the next one>" is two titles at
+	-- once; with one anchor each they simply drew on over the transport.
 	row.title = W.Text(row, "ifecTitle", "LEFT", "OVERLAY")
 	row.title:SetPoint("TOPLEFT", row, "TOPLEFT", GLYPH + 12, -1)
+	row.title:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, -1)
+	row.title:SetWordWrap(false)
 
 	row.meta = W.Text(row, "ifecMeta", "LEFT", "OVERLAY")
 	row.meta:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
+	row.meta:SetPoint("TOPRIGHT", row.title, "BOTTOMRIGHT", 0, -2)
+	row.meta:SetWordWrap(false)
 
 	return row
 end
@@ -115,11 +122,14 @@ local function BuildUpNextRow(parent)
 	row.glyph:SetSize(13, 13)
 	row.glyph:SetPoint("LEFT", row.grip, "RIGHT", 8, 0)
 
-	row.title = W.Text(row, "ifecUpNext", "LEFT", "OVERLAY")
-	row.title:SetPoint("LEFT", row.glyph, "RIGHT", 9, 0)
-
 	row.meta = W.Text(row, "ifecMeta", "RIGHT", "OVERLAY")
 	row.meta:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+
+	-- Stops where the duration starts, rather than running underneath it.
+	row.title = W.Text(row, "ifecUpNext", "LEFT", "OVERLAY")
+	row.title:SetPoint("LEFT", row.glyph, "RIGHT", 9, 0)
+	row.title:SetPoint("RIGHT", row.meta, "LEFT", -8, 0)
+	row.title:SetWordWrap(false)
 
 	return row
 end
@@ -384,9 +394,23 @@ function Player:OnBoard(flight)
 
 	self:Refresh()
 	if Playback then Playback:Start(queue) end
+
+	-- ON ITS OWN TICK. Everything painted here counts down - "1:00 left",
+	-- "LANDING 2:14", the flight bar - and the only thing that was repainting
+	-- it was a playback event, which happens once a minute at best. So the
+	-- region sat frozen on whatever the last boundary said, and a segment that
+	-- had in fact moved on looked like one that had stopped.
+	--
+	-- Our own owner, not the console's: the dependency here points one way and
+	-- the console is not going to start driving the content half.
+	A:RegisterTicker(self, function()
+		if Playback then Playback:Poll() end
+		Player:Paint()
+	end)
 end
 
 function Player:OnLand()
+	A:UnregisterTicker(self)
 	if Playback then Playback:Stop() end
 	self.queue, self.at, self.complete = nil, nil, nil
 	local IF = A:GetModule("ifec")

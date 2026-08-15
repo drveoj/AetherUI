@@ -37,7 +37,7 @@ local function usage()
 		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		"|cff9d7bff/aether toolbox|r <dock left/right/top/bottom · open · close · pin NAME>",
 		"|cff9d7bff/aether panels dump|r <FrameName>  ·  what a window is made of",
-		"|cff9d7bff/aether ifec|r  ·  content packs, what is in season, what is playing",
+		"|cff9d7bff/aether ifec|r [reset]  ·  content packs, what is playing, forget history",
 		"|cff9d7bff/aether errors|r <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
@@ -506,7 +506,7 @@ end
 --  This is the settings readout the brief asks for, in the one place it can be
 --  read while a flight is happening. Every state it prints is one somebody has
 --  actually had to diagnose from a screenshot.
-handlers.ifec = function()
+handlers.ifec = function(arg)
 	local IFEC = A.IFEC
 	if not IFEC or not IFEC.Registry then
 		A:Print("ifec: not loaded")
@@ -514,6 +514,17 @@ handlers.ifec = function()
 	end
 
 	local R, C, P = IFEC.Registry, IFEC.Content, IFEC.Playback
+
+	-- Everything already heard is skipped, which is right and makes the second
+	-- test flight of an evening nothing but filler. This forgets it.
+	if arg == "reset" then
+		local cfg = A.Config:Module("ifec")
+		local n = 0
+		for _ in pairs(cfg.progress or {}) do n = n + 1 end
+		cfg.progress = {}
+		A:Print("ifec: forgot " .. n .. " item(s) of listening history")
+		return
+	end
 	local packs = R:Sorted()
 
 	A:Print("ifec  ·  content API " .. tostring(R.API_MIN) .. "-" .. tostring(R.API_MAX))
@@ -541,7 +552,21 @@ handlers.ifec = function()
 	if P then
 		A:Print("  playback: |cffece6ff" .. tostring(P.state) .. "|r"
 			.. (P.item and ("  ·  " .. tostring(P.item.title)
-				.. " seg " .. tostring(P.index)) or ""))
+				.. " seg " .. tostring(P.index)
+				.. " of " .. tostring(#(P.item.segments or {}))) or ""))
+
+		-- THE BOUNDARY, IN SECONDS. There is no playback-finished event on this
+		-- client, so "the next segment did not start" and "the next segment
+		-- started and nothing repainted" look identical from the outside. This
+		-- is the only place the difference is visible.
+		local seg = P.item and P.item.segments and P.item.segments[P.index or 1]
+		if seg and P.segStart and GetTime then
+			A:Print(("    next boundary in %.1fs  ·  timer %s  ·  %s")
+				:format((P.segStart + (seg.duration or 0)) - GetTime(),
+					P.timer and "armed" or "|cffff8a8anone|r",
+					tostring(seg.file)))
+		end
+
 		if P.lastFail then
 			A:Print("  |cffff8a8alast file that would not play|r: " .. tostring(P.lastFail))
 		end
@@ -550,7 +575,13 @@ handlers.ifec = function()
 	local PL = IFEC.Player
 	if PL then
 		A:Print("  queue: " .. tostring(#(PL.queue or {})) .. " item(s)"
+			.. "  ·  at " .. tostring(PL.at)
 			.. "  ·  region " .. (A:GetModule("ifec"):HasRegion() and "attached" or "absent"))
+		for i, item in ipairs(PL.queue or {}) do
+			A:Print(("    %d. %s  ·  %s  ·  %ds")
+				:format(i, tostring(item.title), tostring(item.type),
+					item.duration or 0))
+		end
 	end
 end
 

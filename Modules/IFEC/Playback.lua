@@ -247,6 +247,37 @@ advance = function()
 	Playback:Next()
 end
 
+--- Is the boundary overdue with nothing having happened?
+--
+--  ONE TIMER IS THE WHOLE CHAIN. There is no playback-finished event on this
+--  client, so if that timer is ever lost - an error thrown at a boundary
+--  before it reschedules, a C_Timer that does not fire across a loading screen
+--  - the programme stops dead and goes on saying "playing" while it does it.
+--  Taxi keeps a ticker behind its events for exactly this reason.
+--
+--  TWO SECONDS OF GRACE, so ordinary timer slop is never mistaken for a
+--  failure. Called from the player region's tick; costs a subtraction.
+function Playback:Poll()
+	if self.state ~= "playing" then return false end
+
+	local seg = self.item and self.item.segments and self.item.segments[self.index or 1]
+	if not seg then return false end
+	if now() - (self.segStart or now()) < (seg.duration or 0) + 2 then return false end
+
+	-- NOT AGAIN FOR THE SAME SEGMENT. If advance is what is throwing, retrying
+	-- it every frame turns one broken boundary into a wall of errors.
+	if self._polled == self.segStart then return false end
+	self._polled = self.segStart
+
+	cancelTimer()
+	local ok, err = pcall(advance)
+	if not ok then
+		Playback.state = "stopped"
+		A:Print("|cffff8a8aifec: the programme stopped at a boundary|r: " .. tostring(err))
+	end
+	return true
+end
+
 -- ---------------------------------------------------------------------------
 -- the programme
 -- ---------------------------------------------------------------------------

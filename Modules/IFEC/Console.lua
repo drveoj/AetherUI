@@ -31,6 +31,12 @@ local Route, Taxi = A.IFEC.Route, A.IFEC.Taxi
 -- contents, which is what the concept actually looks like.
 local WIDTH_MAX = 560
 local WIDTH_MIN = 240
+-- A PANEL HAS A WIDER FLOOR THAN A CAPSULE. The player region's now-playing
+-- row carries a title, a channel mark and the transport all on one line, and
+-- below the capsule's floor those overlap each other rather than the row
+-- getting narrower. Cutting to contents is right; cutting past what the
+-- contents need is what a short route did to it.
+local WIDTH_PANEL_MIN = 400
 local PAD_L, PAD_R, PAD_T, PAD_B = 10, 14, 8, 8
 local GAP     = 12
 
@@ -44,6 +50,11 @@ local DISC    = 35
 local RIM     = 2
 
 local HEIGHT  = PAD_T + DIAL + PAD_B
+
+-- Everything either side of the two strings, so the cap on them and the cap on
+-- the window are the same number said once.
+local CHROME    = PAD_L + DIAL_FRAME + GAP + GAP + CHEV + PAD_R
+local TEXT_MAX  = WIDTH_MAX - CHROME
 
 -- NOT AN ARROW. The design draws one, and Outfit has no U+2192 - it renders the
 -- missing-glyph box, which is exactly what shipped and what it looked like.
@@ -91,11 +102,29 @@ local function Build()
 	f.hairline:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -HEIGHT)
 	f.hairline:Hide()
 
+	-- THE HEADER, IN A STRIP OF ITS OWN. Everything in here is anchored to the
+	-- vertical centre of what it hangs on, which is right while that is the
+	-- capsule - the frame IS the header then - and wrong the moment a player
+	-- region makes the frame four times taller: the dial, the route and the
+	-- chevron all slid down to the middle of the panel and landed across the
+	-- bars. The strip is a fixed HEIGHT pinned to the top, so the two forms lay
+	-- the header out identically and only the frame below it changes.
+	local head = CreateFrame("Frame", nil, f)
+	head:SetHeight(HEIGHT)
+	head:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+	-- Above the glass, for the reason the region is: the surfaces are sibling
+	-- frames and frames sort by level, not by draw layer.
+	if f.panel and f.panel.GetFrameLevel then
+		head:SetFrameLevel((f.panel:GetFrameLevel() or 0) + 5)
+	end
+	f.head = head
+
 	-- THE DIAL. Three pieces: the track ring, the arc over it, and the disc in
 	-- the middle carrying the numeral. The brass rim is a fourth, outside.
-	local dial = CreateFrame("Frame", nil, f)
+	local dial = CreateFrame("Frame", nil, head)
 	dial:SetSize(DIAL_FRAME, DIAL_FRAME)
-	dial:SetPoint("LEFT", f, "LEFT", PAD_L, 0)
+	dial:SetPoint("LEFT", head, "LEFT", PAD_L, 0)
 	f.dial = dial
 
 	-- Orb-Ring, not Ring: Ring is authored at 256 for the minimap and would be
@@ -124,11 +153,22 @@ local function Build()
 	dial.value:SetPoint("CENTER", dial, "CENTER", 0, 0)
 
 	-- The route and the line under it, stacked against the dial.
-	f.route = W.Text(f, "ifecRoute", "LEFT", "OVERLAY")
+	--
+	-- CAPPED, and not wrapped. A route name is as long as the two zones make it
+	-- and a font string with one anchor takes whatever width it likes, so
+	-- "Thunder Bluff, Mulgore >> Camp Taurajo, The Barrens" drew clean off the
+	-- side of the window. The cap is the widest the capsule is allowed to be,
+	-- which is also what Fit measures against - so a string that reaches it
+	-- ellipsises at exactly the point the window stops growing.
+	f.route = W.Text(head, "ifecRoute", "LEFT", "OVERLAY")
 	f.route:SetPoint("BOTTOMLEFT", dial, "RIGHT", GAP, 1)
+	f.route:SetWidth(TEXT_MAX)
+	f.route:SetWordWrap(false)
 
-	f.sub = W.Text(f, "ifecSub", "LEFT", "OVERLAY")
+	f.sub = W.Text(head, "ifecSub", "LEFT", "OVERLAY")
 	f.sub:SetPoint("TOPLEFT", f.route, "BOTTOMLEFT", 0, -2)
+	f.sub:SetWidth(TEXT_MAX)
+	f.sub:SetWordWrap(false)
 
 	-- The minimise chevron, which folds the ACTIVE panel back to this capsule.
 	-- There is no third, smaller state - v2 dropped v1's bare dial and calls
@@ -138,9 +178,9 @@ local function Build()
 	-- player region, so a chevron would be a control that does nothing - and it
 	-- would say the console had a hidden half, which is the opposite of "nothing
 	-- reads as missing".
-	local chev = CreateFrame("Button", nil, f)
+	local chev = CreateFrame("Button", nil, head)
 	chev:SetSize(CHEV, CHEV)
-	chev:SetPoint("RIGHT", f, "RIGHT", -PAD_R, 0)
+	chev:SetPoint("RIGHT", head, "RIGHT", -PAD_R, 0)
 	chev:EnableMouse(true)
 	chev.glyph = chev:CreateTexture(nil, "ARTWORK")
 	chev.glyph:SetTexture(Media.texture.chevron)
@@ -210,7 +250,7 @@ end
 --  the screen.
 function IF:Fit()
 	local f = self.frame
-	if not f or f.region then return end          -- a panel keeps its width
+	if not f then return end
 
 	local text = 0
 	for _, fs in ipairs({ f.route, f.sub }) do
@@ -218,8 +258,15 @@ function IF:Fit()
 		if w > text then text = w end
 	end
 
-	local want = PAD_L + DIAL_FRAME + GAP + text + GAP + CHEV + PAD_R
-	if want < WIDTH_MIN then want = WIDTH_MIN end
+	-- THE PANEL IS MEASURED TOO. This used to bail out the moment a region was
+	-- attached, on the reasoning that a panel keeps its width - but the header
+	-- is in both forms, so what it actually kept was whatever the capsule
+	-- happened to be when the region arrived. The player region attaches before
+	-- the route is painted, so the first flight of a session got the bare
+	-- minimum and every flight after it got the previous flight's route.
+	local want = CHROME + text
+	local floor = f.region and WIDTH_PANEL_MIN or WIDTH_MIN
+	if want < floor then want = floor end
 	if want > WIDTH_MAX then want = WIDTH_MAX end
 
 	-- Only when it actually moves. SetWidth on a frame the mover is holding is
@@ -312,7 +359,7 @@ function IF:Lay()
 		f.chevron.glyph:SetRotation(self.collapsed and math.pi or 0)
 	end
 
-	if not open then self:Fit() end
+	self:Fit()
 end
 
 function IF:Restyle()

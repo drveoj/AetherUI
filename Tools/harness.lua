@@ -427,6 +427,11 @@ end
 local function newFontString(owner, layer)
 	local f = widgetBase("FontString")
 	f.__layer = layer
+	-- THE OWNER IS THE PARENT. A real FontString answers GetParent with the
+	-- frame that created it, and the mock was answering nil - so an assertion
+	-- that a string had been reparented could only ever be false, which reads
+	-- as the code being wrong rather than the mock being silent.
+	f.__parent = owner
 	-- Real FontStrings and Textures both carry this. Anything drawn on top of
 	-- another region in the same layer needs it, and a mock without it turns a
 	-- legitimate call into a nil-index at draw time.
@@ -21475,6 +21480,20 @@ section("ifec: registering content packs, several at once", function()
 	check(#cat == 2, "a track in two packs is carried once (" .. #cat .. " entries)")
 	check(cat[1].title == "Rainfall", "and the earlier season keeps it")
 
+	-- BUT NEVER WITHIN ONE PACK. An author who opens two of their own items on
+	-- the same file has done so deliberately - an episode whose first chapter
+	-- is the same ambient bed the pack also offers on its own is a real shape,
+	-- and it is what the dev pack is. Dropping the second was a pack quietly
+	-- serving fewer items than it declared, with nothing anywhere saying so.
+	R:Reset()
+	R:Register(pack("Own", 1, 1, {
+		ep("show", "The Show", "bed.ogg"),
+		ep("bed",  "The Bed",  "bed.ogg"),
+	}))
+	cat = R:Catalogue()
+	check(#cat == 2, "a pack reusing its own audio keeps both items ("
+		.. #cat .. " of 2)")
+
 	R:Reset()
 end)
 
@@ -21672,6 +21691,23 @@ section("ifec: playing a programme across a flight", function()
 	check(_G.__soundsPlaying() == 1,
 		"skipping does not leave the old segment's timer to start a second track")
 
+	-- ONE TIMER IS THE WHOLE CHAIN, so there is a backstop behind it. Without a
+	-- playback-finished event a lost timer means the programme stops dead and
+	-- goes on saying "playing" - which is indistinguishable, from the outside,
+	-- from a segment that simply did not start.
+	P:Stop()
+	P:Start(queue)
+	check(_G.__lastSound == "e01_1.ogg", "a programme starts again")
+	P.timer:Cancel()                           -- the timer, lost
+	P.timer = nil
+	tick(60)
+	check(_G.__lastSound == "e01_1.ogg", "with its timer gone nothing follows on")
+	tick(3)
+	check(P:Poll(), "but the boundary is seen to be overdue")
+	check(_G.__lastSound == "e01_2.ogg",
+		"and the programme carries on (" .. tostring(_G.__lastSound) .. ")")
+	check(not P:Poll(), "and it does not fire twice for the same boundary")
+
 	-- MUTED IS NOT SILENCE. willPlay comes back nil when the channel is off,
 	-- and the difference between saying so and playing nothing is the
 	-- difference between a console that explains itself and one that looks
@@ -21791,6 +21827,20 @@ section("ifec: the player region, on the flight's own axis", function()
 	check(f.rows[1]:IsShown() and f.rows[1].title:GetText() == "Episode Two",
 		"up next starts after the current item (" .. tostring(f.rows[1].title:GetText()) .. ")")
 
+	-- IT COUNTS DOWN ON ITS OWN. Everything painted here is a countdown, and
+	-- the only thing repainting it was a playback event - which happens once a
+	-- minute at best. So the region sat frozen on whatever the last boundary
+	-- said, and a segment that had in fact moved on looked like one that had
+	-- stopped.
+	local wasLanding, wasLeft = f.landingLabel:GetText(), f.now.meta:GetText()
+	tick(3)
+	check(f.landingLabel:GetText() ~= wasLanding,
+		"the landing countdown moves between playback events ("
+		.. tostring(wasLanding) .. " -> " .. tostring(f.landingLabel:GetText()) .. ")")
+	check(f.now.meta:GetText() ~= wasLeft,
+		"and so does the time left on what is playing ("
+		.. tostring(f.now.meta:GetText()) .. ")")
+
 	-- The transport says what pressing it will DO, not what is happening.
 	check(f.transport.toggle.glyph:GetTexture() == A.Media.icons.file,
 		"the transport is drawn from the shared sheet")
@@ -21858,6 +21908,29 @@ section("ifec: the console takes a region, and gives it back", function()
 		.. f:GetHeight() .. " from " .. bare .. ")")
 	check(f.route:GetText():find("Ratchet", 1, true) ~= nil,
 		"the header is untouched by the change")
+
+	-- THE HEADER STAYS AT THE TOP. Everything in it hangs off the vertical
+	-- centre of what it is parented to, which is right while that is the
+	-- capsule and catastrophic the moment a region makes the frame four times
+	-- taller: the dial, the route and the fold control all slid down to the
+	-- middle of the panel and drew across the player region.
+	check(f.head ~= nil and f.head:GetHeight() == bare,
+		"the header is a strip of its own, the capsule's height")
+	check(f.dial:GetParent() == f.head and f.route:GetParent() == f.head
+		and f.chevron:GetParent() == f.head,
+		"and the dial, the route and the fold control hang off it, not the frame")
+	local hp = f.head.__points[1]
+	check(hp[1] == "TOPLEFT" and hp[2] == f and hp[3] == "TOPLEFT" and hp[5] == 0,
+		"pinned to the top, so both forms lay the header out identically")
+
+	-- A PANEL HAS A WIDER FLOOR THAN A CAPSULE. Fit used to bail out the moment
+	-- a region was attached, so a panel kept whatever the capsule happened to be
+	-- when the region arrived - and the region attaches BEFORE the route is
+	-- painted, so the first flight of a session got the bare minimum and the
+	-- now-playing row drew over its own transport.
+	check(f:GetWidth() >= 400,
+		"and a panel is at least as wide as the player region needs ("
+		.. f:GetWidth() .. ")")
 
 	-- FOLDING IS NOT THE SAME AS HAVING NOTHING. Both look like the capsule, but
 	-- one is "there is nothing to play" and the other is "you put it away" - and

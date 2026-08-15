@@ -198,21 +198,29 @@ end
 --  in two packs - an ambient set reissued, a best-of - and showing it twice
 --  under two season headings reads as a bug. The first pack in sort order keeps
 --  it, so which copy wins does not change between sessions.
+--
+--  ACROSS PACKS, NEVER WITHIN ONE. A pack that opens two of its own items on
+--  the same file has done so deliberately - an episode whose first chapter is
+--  the same ambient bed the pack also offers on its own is a real shape, and it
+--  is what the dev pack is - and dropping the second was a pack quietly serving
+--  fewer items than it declared, with nothing anywhere saying so. Files are
+--  marked once the pack they came from is finished with.
 function Registry:Catalogue()
-    local out, seenFile = {}, {}
+	local out, seenFile = {}, {}
 
 	for _, packId in ipairs(self:Sorted()) do
-		local pack = self.packs[packId]
+		local pack, mine = self.packs[packId], {}
 		for _, item in ipairs(pack.items) do
 			local first = item.segments and item.segments[1]
 			local file = first and first.file
 			if file and seenFile[file] then
 				-- already carried by an earlier pack
 			else
-				if file then seenFile[file] = true end
+				if file then mine[#mine + 1] = file end
 				out[#out + 1] = item
 			end
 		end
+		for _, file in ipairs(mine) do seenFile[file] = true end
 	end
 
 	return out
