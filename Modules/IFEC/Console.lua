@@ -38,6 +38,7 @@ local GAP     = 12
 -- cannot bleed into each other, so the frame is a little larger than the ring.
 local DIAL    = 44
 local DIAL_FRAME = DIAL / (Media.dial and Media.dial.ring or 1)
+local CHEV    = 18                     -- the fold control's box
 local DISC    = 35
 local RIM     = 2
 
@@ -65,7 +66,10 @@ local function Build()
 	-- would fade with everything else.
 	local f = CreateFrame("Frame", "AetherUIIFEC")
 	f:SetSize(WIDTH_MIN, HEIGHT)
-	f:SetFrameStrata("MEDIUM")
+	-- Above the interface the console hides, for the same reason the jump-off
+	-- button is: a frame at zero alpha still takes the mouse, so anything of
+	-- ours that expects a click has to sit over the top of all of it.
+	f:SetFrameStrata("FULLSCREEN_DIALOG")
 	f:Hide()
 
 	-- TWO SURFACES, ONE SHOWING. The dormant form is a capsule and the active
@@ -126,15 +130,23 @@ local function Build()
 	f.sub = W.Text(f, "ifecSub", "LEFT", "OVERLAY")
 	f.sub:SetPoint("TOPLEFT", f.route, "BOTTOMLEFT", 0, -2)
 
-	-- The minimise chevron. It folds the ACTIVE panel back to this capsule;
-	-- there is no third, smaller state - v2 dropped v1's bare dial and calls
+	-- The minimise chevron, which folds the ACTIVE panel back to this capsule.
+	-- There is no third, smaller state - v2 dropped v1's bare dial and calls
 	-- this form complete in itself.
+	--
+	-- HIDDEN UNTIL THERE IS SOMETHING TO FOLD. With no content there is no
+	-- player region, so a chevron would be a control that does nothing - and it
+	-- would say the console had a hidden half, which is the opposite of "nothing
+	-- reads as missing".
 	local chev = CreateFrame("Button", nil, f)
-	chev:SetSize(18, 18)
+	chev:SetSize(CHEV, CHEV)
 	chev:SetPoint("RIGHT", f, "RIGHT", -PAD_R, 0)
+	chev:EnableMouse(true)
 	chev.glyph = chev:CreateTexture(nil, "ARTWORK")
 	chev.glyph:SetTexture(Media.texture.chevron)
 	chev.glyph:SetAllPoints(chev)
+	chev:SetScript("OnClick", function() IF:SetCollapsed(not IF.collapsed) end)
+	chev:Hide()
 	f.chevron = chev
 
 	return f
@@ -190,9 +202,6 @@ function IF:Refresh()
 	self:UpdateJumpOff(flight)
 end
 
--- The chevron's box, which the width has to leave room for.
-local CHEV = 18
-
 --- Cut the capsule to what is in it.
 --
 --  Called after the strings are set, because it measures them. A route with two
@@ -237,12 +246,9 @@ function IF:AttachRegion(region, height)
 	region:ClearAllPoints()
 	region:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -HEIGHT)
 	region:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -HEIGHT)
-	region:Show()
 
-	f:SetHeight(HEIGHT + f.regionHeight)
-	f.capsule:Hide()
-	f.panel:Show()
-	f.hairline:Show()
+	self.collapsed = nil
+	self:Lay()
 	return true
 end
 
@@ -253,16 +259,50 @@ function IF:DetachRegion()
 
 	if f.region then f.region:Hide() end
 	f.region, f.regionHeight = nil, 0
-
-	f:SetHeight(HEIGHT)
-	f.panel:Hide()
-	f.hairline:Hide()
-	f.capsule:Show()
+	self.collapsed = nil
+	self:Lay()
 	return true
 end
 
 function IF:HasRegion()
 	return self.frame ~= nil and self.frame.region ~= nil
+end
+
+--- Fold the player region away, or bring it back.
+--
+--  DISTINCT FROM HAVING NO REGION. Both end up looking like the capsule, but
+--  one is "there is nothing to play" and the other is "you put it away" - and
+--  the difference is whether there is a control to bring it back.
+function IF:SetCollapsed(on)
+	if not self:HasRegion() then return false end
+	self.collapsed = on and true or nil
+	self:Lay()
+	return true
+end
+
+--- Whichever of the two forms the current state calls for.
+function IF:Lay()
+	local f = self.frame
+	if not f then return end
+
+	-- Plain booleans, not `open and X or Y`: that idiom cannot yield false, and
+	-- it has now cost two bugs in one afternoon.
+	local open = (self:HasRegion() and not self.collapsed) and true or false
+
+	if f.region then f.region:SetShown(open) end
+	f:SetHeight(HEIGHT + (open and f.regionHeight or 0))
+	f.panel:SetShown(open)
+	f.capsule:SetShown(not open)
+	f.hairline:SetShown(open)
+
+	-- The control only exists while there is something to fold. Pointing up
+	-- once folded, because that is the way it will move.
+	f.chevron:SetShown(self:HasRegion() and true or false)
+	if f.chevron.glyph.SetRotation then
+		f.chevron.glyph:SetRotation(self.collapsed and math.pi or 0)
+	end
+
+	if not open then self:Fit() end
 end
 
 function IF:Restyle()
@@ -384,6 +424,14 @@ function IF:UpdateJumpOff(flight)
 		b:SetPoint("TOP", host, "BOTTOM", 0, -10)
 		b:EnableMouse(true)
 		if b.RegisterForClicks then b:RegisterForClicks("AnyUp") end
+
+		-- ABOVE THE INTERFACE WE JUST HID. Alpha does not stop a frame taking
+		-- the mouse: everything under UIParent is still sitting there at zero
+		-- alpha, catching clicks, and this button was underneath it. Hiding the
+		-- interface is what put it there, so raising this is the other half of
+		-- the same decision.
+		b:SetFrameStrata("FULLSCREEN_DIALOG")
+		b:SetToplevel(true)
 
 		-- ITS OWN GLYPH, not the chevron. The chevron means "this opens"
 		-- everywhere else in the interface - the toolbox rail, every dropdown -

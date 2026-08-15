@@ -632,6 +632,16 @@ function CreateFrame(kind, name, parent, template)
 		baseShow(self)
 	end
 
+	--- Both real methods the mock did not have. SetShown is the one most code
+	--  reaches for when a thing has two states, and its absence read as "the
+	--  panel never showed" rather than as "the mock is missing a method".
+	--  SetToplevel is recorded rather than modelled: nothing here draws.
+	function f:SetShown(on)
+		if on then self:Show() else self:Hide() end
+	end
+	function f:SetToplevel(on) self.__toplevel = on and true or nil end
+	function f:IsToplevel() return self.__toplevel == true end
+
 	-- Geometry is refused in combat for the same reason Hide is, and on the same
 	-- frames: the restriction reaches every *ancestor* of a protected frame, not
 	-- just the frame itself. This harness modelled Hide and Show and not these,
@@ -21174,6 +21184,14 @@ section("ifec: cut to its contents, and the map you still want", function()
 	check(IF.jump ~= nil and IF.jump:IsShown(), "a two-leg journey offers one")
 	check(IF.jump:GetParent() == MM.frame, "hung off the minimap, where the concept puts it")
 
+	-- ALPHA DOES NOT STOP A FRAME TAKING THE MOUSE. The whole interface is
+	-- sitting there at zero alpha still catching clicks, and this button was
+	-- underneath it - clicking it did nothing at all in game.
+	check(IF.jump:GetFrameStrata() == "FULLSCREEN_DIALOG",
+		"and above the interface we just hid, or the click never reaches it")
+	check(IF.frame:GetFrameStrata() == "FULLSCREEN_DIALOG",
+		"as is the console, whose chevron has the same problem")
+
 	check(IF.jump.label:GetText() == "Jump Off", "reading Jump Off")
 
 	-- ITS OWN GLYPH. The chevron means "this opens" everywhere else in the
@@ -21433,9 +21451,15 @@ section("ifec: the console takes a region, and gives it back", function()
 	-- THE ONLY GEOMETRY THAT CHANGES IS THE CORNER. Same width, same header,
 	-- same dial - the design is explicit that these are two forms of one thing
 	-- rather than two things.
+	-- NO CHEVRON WITH NOTHING TO FOLD. A control that does nothing is bad
+	-- enough; this one would also say the console had a hidden half, which is
+	-- the opposite of "nothing reads as missing".
+	check(not f.chevron:IsShown(), "and no fold control, there being nothing to fold")
+
 	local region = CreateFrame("Frame", nil, UIParent)
 	region:SetSize(560, 120)
 	check(IF:AttachRegion(region, 120), "something can be hung under the header")
+	check(f.chevron:IsShown(), "which brings the fold control with it")
 	check(f.panel:IsShown() and not f.capsule:IsShown(), "which makes it a panel")
 	check(f.hairline:IsShown(), "with the rule showing")
 	check(f:GetHeight() == bare + 120, "and the frame grown by exactly the region ("
@@ -21443,10 +21467,23 @@ section("ifec: the console takes a region, and gives it back", function()
 	check(f.route:GetText():find("Ratchet", 1, true) ~= nil,
 		"the header is untouched by the change")
 
+	-- FOLDING IS NOT THE SAME AS HAVING NOTHING. Both look like the capsule, but
+	-- one is "there is nothing to play" and the other is "you put it away" - and
+	-- the difference is whether there is a control to bring it back.
+	check(IF:SetCollapsed(true), "the fold control folds it")
+	check(f.capsule:IsShown() and not f.panel:IsShown(), "back to a capsule")
+	check(f:GetHeight() == bare, "at the capsule's height")
+	check(f.chevron:IsShown(), "with the control still there to unfold it")
+	check(IF:HasRegion(), "and the region still attached, just put away")
+	check(IF:SetCollapsed(false), "and it unfolds again")
+	check(f.panel:IsShown() and f:GetHeight() == bare + 120, "to the panel it was")
+
 	check(IF:DetachRegion(), "and it goes back")
 	check(f.capsule:IsShown() and not f.panel:IsShown(), "to a capsule")
 	check(f:GetHeight() == bare, "at its old height")
 	check(not region:IsShown(), "with the region put away rather than left behind")
+	check(not f.chevron:IsShown(), "and the fold control gone with the thing it folded")
+	check(not IF:SetCollapsed(true), "which cannot be folded when there is nothing to fold")
 
 	-- No /reload between the two: the player region can appear between one
 	-- flight and the next, and a form change that needed a reload would mean
