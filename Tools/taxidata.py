@@ -2,7 +2,7 @@
 """Generate the flight-leg duration table from the client's own DB2 export.
 
 Reads TaxiNodes / TaxiPath / TaxiPathNode as CSV and writes
-Modules/InFlight/Routes.lua.
+Modules/IFEC/Routes.lua.
 
 A leg's duration is the length of its waypoint polyline divided by the taxi
 speed, plus any waypoint delays. TaxiPathNode carries 11-50 waypoints per path,
@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
 DEFAULT_CSV = r"E:\AetherUI Design\IFEC-Taxidata"
-OUT = os.path.join(REPO, "Modules", "InFlight", "Routes.lua")
+OUT = os.path.join(REPO, "Modules", "IFEC", "Routes.lua")
 
 # Yards per second. Fitted against nine measured flights spanning six zones;
 # they imply 30.00-30.31 and the fit lands at 30.122 with a worst error of

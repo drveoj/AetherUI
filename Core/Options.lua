@@ -1021,11 +1021,13 @@ end
 
 --- The in-flight console. One switch for now: the settings page the design
 --  describes is the dormancy readout, and there is nothing dormant yet.
-local function InFlightGroup()
-	local function at(k) return { "modules", "inflight", k } end
+local function IFECGroup()
+	local function at(k) return { "modules", "ifec", k } end
 	return group("In-flight console", {
 		enabled = toggle("Enabled", "A flight timer on every taxi, and the"
 			.. " console for content when a season is installed.", at("enabled")),
+		hideUI = toggle("Hide the interface in flight",
+			"You are a passenger. The console stays.", at("hideUI")),
 		note = note("Move it with |cff9d7bff/aether unlock|r."),
 	})
 end
@@ -1156,7 +1158,7 @@ local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
 	xpbar = 12, nameplates = 13, popups = 14, panels = 15, timers = 16,
-	inflight = 17,
+	ifec = 17,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1212,7 +1214,7 @@ function Options:Build()
 			toolbox = ToolboxGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
-			inflight = InFlightGroup(),
+			ifec = IFECGroup(),
 			nameplates = NameplatesGroup(),
 			popups = PopupsGroup(),
 			panels = PanelsGroup(),

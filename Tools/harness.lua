@@ -5522,9 +5522,9 @@ local FILES = {
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
-	"Modules/InFlight/Routes.lua", "Modules/InFlight/Route.lua",
-	"Modules/InFlight/Taxi.lua", "Modules/InFlight/Console.lua",
-	"Modules/InFlight/Registry.lua", "Modules/InFlight/Content.lua",
+	"Modules/IFEC/Routes.lua", "Modules/IFEC/Route.lua",
+	"Modules/IFEC/Taxi.lua", "Modules/IFEC/Console.lua",
+	"Modules/IFEC/Registry.lua", "Modules/IFEC/Content.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -20932,7 +20932,7 @@ section("ifec: boarding, flying and landing", function()
 end)
 
 section("ifec: the console, which is a flight timer when it is nothing else", function()
-	local IF   = A:GetModule("inflight")
+	local IF   = A:GetModule("ifec")
 	local Taxi = A.IFEC and A.IFEC.Taxi
 	check(IF ~= nil and IF.enabled, "the console module is on")
 
@@ -20958,8 +20958,12 @@ section("ifec: the console, which is a flight timer when it is nothing else", fu
 
 	local f = IF.frame
 	check(f ~= nil and f:IsShown(), "boarding opens it")
-	check(f.route:GetText() == "Ratchet, The Barrens  \226\134\146  Crossroads, The Barrens",
+	-- NOT AN ARROW. Outfit has no U+2192 and renders the missing-glyph box for
+	-- it, which is what shipped and what it looked like on screen.
+	check(f.route:GetText() == "Ratchet, The Barrens  \194\187  Crossroads, The Barrens",
 		"showing where you are going")
+	check(f.route:GetText():find("\226\134\146", 1, true) == nil,
+		"with a separator the font actually has")
 
 	-- THE NUMERAL IS TIME REMAINING, not elapsed - it is what the design puts
 	-- inside the ring, and it is the number a passenger actually wants.
@@ -21014,6 +21018,97 @@ section("ifec: the console, which is a flight timer when it is nothing else", fu
 	_G.__onTaxi = false
 	fire("PLAYER_CONTROL_GAINED")
 	Taxi:Stop()
+end)
+
+section("ifec: landing, at the scale of everything else, out of the way", function()
+	local IF   = A:GetModule("ifec")
+	local Taxi = A.IFEC.Taxi
+
+	-- ZEN DRIVES THE SAME UIParent ALPHA and re-asserts it on its own ticker, so
+	-- it is stood down for this block. Two writers is a real interaction - the
+	-- console re-asserts in flight so it wins - but a test that raced it would
+	-- be measuring which ticker ran last.
+	local zenWas = A:GetModule("zen").enabled
+	A:SetModuleEnabled("zen", false)
+	UIParent:SetAlpha(1)
+
+	Taxi:Start()
+	_G.__taxi.nodes = {
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+	}
+	local function board()
+		TakeTaxiNode(2)
+		_G.__onTaxi = true
+		fire("PLAYER_CONTROL_LOST")
+		tick(0.4)
+	end
+
+	board()
+	local f = IF.frame
+
+	-- IT IS DRAWN AT THE PROFILE'S SCALE. Without this the console is the one
+	-- thing on screen at 1.0 and reads enormous beside a HUD at 0.71.
+	check(f:GetScale() == A.db.profile.scale,
+		"the console is at the profile's scale (" .. tostring(f:GetScale()) .. ")")
+
+	-- THE INTERFACE GOES AWAY. One UIParent alpha, which is how Zen does it and
+	-- covers addons we have never heard of.
+	check(UIParent:GetAlpha() == 0, "the interface is hidden in flight")
+	check(f:GetParent() == nil,
+		"and the console survives it, having no parent to fade with")
+
+	-- LANDING. UnitOnTaxi is still true in the frame control comes back - the
+	-- same lag as on the way out - so requiring it false and giving up left the
+	-- console up for the rest of the session. This is that bug.
+	fire("PLAYER_CONTROL_GAINED")
+	check(Taxi:IsFlying(), "control returning while still aboard is not a landing yet")
+	_G.__onTaxi = false
+	tick(0.4)
+	check(not Taxi:IsFlying(), "but it lands the moment the client agrees")
+	check(not f:IsShown(), "and the console closes")
+	check(UIParent:GetAlpha() == 1, "and the interface comes back")
+
+	-- IF THE FLAG NEVER CLEARS, land anyway. Control coming back is the
+	-- authority; UnitOnTaxi only says how soon to believe it. A console that
+	-- waits forever for a flag is worse than one that closes a moment early.
+	board()
+	fire("PLAYER_CONTROL_GAINED")
+	tick(0.4) tick(0.4) tick(0.4) tick(0.4) tick(0.4)
+	check(not Taxi:IsFlying(), "a flag that never clears still lands")
+	check(UIParent:GetAlpha() == 1, "with the interface restored")
+	_G.__onTaxi = false
+
+	-- THE BACKSTOP. If control coming back is missed altogether - a disconnect,
+	-- a loading screen eating the event - anything saying we are off the taxi
+	-- ends the flight rather than stranding the console for the session.
+	board()
+	check(Taxi:IsFlying(), "boarding again")
+	_G.__onTaxi = false
+	tick(0.2)
+	check(not Taxi:IsFlying(), "losing the landing event entirely still lands")
+	check(UIParent:GetAlpha() == 1, "and still gives the interface back")
+
+	-- A HIDDEN INTERFACE THAT STAYS HIDDEN is the worst thing this could do, so
+	-- the recovery is driven directly rather than through the event: what
+	-- matters is that holding the interface down while not flying is always
+	-- recoverable. It is wired to PLAYER_ENTERING_WORLD as well as to landing.
+	IF._hidUI = true
+	IF._uiAlpha = 1
+	UIParent:SetAlpha(0)
+	check(IF:Recover(), "a restore that never happened is recoverable")
+	check(UIParent:GetAlpha() == 1, "and the interface comes back")
+
+	-- But not mid-flight: that would undo the hiding on every loading screen.
+	board()
+	check(not IF:Recover(), "while actually flying it leaves the interface alone")
+	check(UIParent:GetAlpha() == 0, "which stays hidden")
+	_G.__onTaxi = false
+	tick(0.4)
+
+	Taxi:Stop()
+	IF:HideInterface(false)
+	A:SetModuleEnabled("zen", zenWas)
 end)
 
 section("ifec: registering content packs, several at once", function()
@@ -21128,7 +21223,7 @@ section("ifec: what is in season, and what fills a flight", function()
 		return { packId = id, seasonIndex = season, apiVersion = 1, items = items }
 	end
 
-	local cfg = A.Config:Module("inflight")
+	local cfg = A.Config:Module("ifec")
 	cfg.progress = {}
 	R:Reset()
 
@@ -21215,7 +21310,7 @@ section("ifec: what is in season, and what fills a flight", function()
 end)
 
 section("ifec: the console takes a region, and gives it back", function()
-	local IF   = A:GetModule("inflight")
+	local IF   = A:GetModule("ifec")
 	local Taxi = A.IFEC.Taxi
 
 	Taxi:Start()

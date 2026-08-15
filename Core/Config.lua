@@ -509,8 +509,9 @@ Config.defaults = {
 			-- keyed [from][to] like the shipped table and beating it - the
 			-- shipped figures for the neutral hubs both factions share are a
 			-- mean of two paths, so a measured one is worth more there.
-			inflight = {
+			ifec = {
 				enabled = true,
+				hideUI  = true,
 				learned = {},
 			},
 
@@ -838,6 +839,21 @@ Config.defaults = {
 local function Migrate(db)
 	local m = db.profile.modules
 	if not m then return end
+
+	-- The in-flight console was called `inflight` for an afternoon. Renamed to
+	-- avoid colliding with an existing addon of that name; the learned flight
+	-- durations under it are real measurements and worth carrying across.
+	if m.inflight then
+		m.ifec = m.ifec or {}
+		for k, v in pairs(m.inflight) do
+			if m.ifec[k] == nil then m.ifec[k] = v end
+		end
+		m.inflight = nil
+	end
+	if db.profile.anchors and db.profile.anchors.inflight then
+		db.profile.anchors.ifec = db.profile.anchors.ifec or db.profile.anchors.inflight
+		db.profile.anchors.inflight = nil
+	end
 
 	-- Auras came out of the capsules. Everything the old in-capsule tray needed
 	-- to describe itself is now either derived from the frame's width or shared

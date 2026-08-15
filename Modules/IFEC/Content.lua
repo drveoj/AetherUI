@@ -57,7 +57,7 @@ function Content:InSeason(item, when)
 end
 
 local function progressStore()
-	local cfg = A.Config and A.Config:Module("inflight")
+	local cfg = A.Config and A.Config:Module("ifec")
 	if not cfg then return nil end
 	cfg.progress = cfg.progress or {}
 	return cfg.progress

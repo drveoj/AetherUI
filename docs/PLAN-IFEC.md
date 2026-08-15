@@ -27,7 +27,7 @@ This answers the brief's §4 open question.
   on one shared pump (`Core/Core.lua:241`). AceDB is used for saved variables
   and AceConfig for the options tree; there is no AceAddon and no AceEvent.
 - SavedVariables is `AetherUIDB` via AceDB (`Core/Config.lua:901`). Per-module
-  settings live at `A.Config:Module("inflight")` (`Core/Config.lua:912`), which
+  settings live at `A.Config:Module("ifec")` (`Core/Config.lua:912`), which
   lazily creates the table. Per-character data goes under `char`, shared under
   `profile`. Migration is a hand-written `Migrate(db)` keyed on which fields are
   present rather than on a schema version (`Core/Config.lua:829`).
@@ -142,15 +142,18 @@ content path disabled, erroring or absent, and must hold no references into it.
 One 4,000-line module file cannot express that, so this is the first module in
 AetherUI to get a folder.
 
-    Modules/InFlight/Route.lua       leg store, learning, lookup      ─┐
-    Modules/InFlight/Taxi.lua        detection, flight state machine   │  always
-    Modules/InFlight/Console.lua     the frame, dormant + active shell ─┘
+Named IFEC rather than InFlight: an addon of that name already exists and its
+author should not have to wonder.
 
-    Modules/InFlight/Registry.lua    pack registration, the merge     ─┐
-    Modules/InFlight/Content.lua     filtering, queue building         │  hidden
-    Modules/InFlight/Playback.lua    sequencing, handles, resume       │  when no
-    Modules/InFlight/Player.lua      player region, transport, up-next │  content
-    Modules/InFlight/Reader.lua      the two publications             ─┘
+    Modules/IFEC/Route.lua       leg store, learning, lookup      ─┐
+    Modules/IFEC/Taxi.lua        detection, flight state machine   │  always
+    Modules/IFEC/Console.lua     the frame, dormant + active shell ─┘
+
+    Modules/IFEC/Registry.lua    pack registration, the merge     ─┐
+    Modules/IFEC/Content.lua     filtering, queue building         │  hidden
+    Modules/IFEC/Playback.lua    sequencing, handles, resume       │  when no
+    Modules/IFEC/Player.lua      player region, transport, up-next │  content
+    Modules/IFEC/Reader.lua      the two publications             ─┘
 
 `Route`, `Taxi` and `Console` may not require any file in the second group.
 Enforced by a harness check that loads the first group alone and drives a full

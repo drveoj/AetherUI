@@ -29,7 +29,7 @@ A.IFEC.Route = Route
 local FROM_NONE, FROM_TABLE, FROM_LEARNED = nil, "table", "learned"
 
 local function learnedStore()
-	local cfg = A.Config and A.Config:Module("inflight")
+	local cfg = A.Config and A.Config:Module("ifec")
 	if not cfg then return nil end
 	cfg.learned = cfg.learned or {}
 	return cfg.learned

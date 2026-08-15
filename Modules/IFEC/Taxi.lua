@@ -151,12 +151,25 @@ function Taxi:ControlLost()
 	settle(RETRIES)
 end
 
-function Taxi:ControlGained()
+--- Land, once the client agrees we are off the griffin.
+--
+--  UnitOnTaxi IS STILL TRUE IN THE FRAME CONTROL COMES BACK, the same lag as on
+--  the way out. Requiring it false here and giving up meant the console stayed
+--  up for the rest of the session: the one event that says the flight ended had
+--  already been and gone. So it is re-checked rather than trusted once, and if
+--  it never clears the flight is ended anyway - control coming back is the
+--  authority, UnitOnTaxi only says how soon to believe it.
+function Taxi:ControlGained(tries)
 	local flight = self.flight
 	if not flight then return end
-	-- Only when the client agrees we are off it. Control can come back for
-	-- other reasons mid-flight.
-	if UnitOnTaxi and UnitOnTaxi("player") then return end
+
+	tries = tries or RETRIES
+	if UnitOnTaxi and UnitOnTaxi("player") and tries > 0 then
+		if C_Timer and C_Timer.After then
+			C_Timer.After(SETTLE, function() Taxi:ControlGained(tries - 1) end)
+			return
+		end
+	end
 
 	self.flight = nil
 	flight.endedAt = GetTime and GetTime() or 0
@@ -214,6 +227,16 @@ function Taxi:Start()
 	A:RegisterEvent(self, "PLAYER_CONTROL_LOST",   function() Taxi:ControlLost() end)
 	A:RegisterEvent(self, "PLAYER_CONTROL_GAINED", function() Taxi:ControlGained() end)
 
+	-- A BACKSTOP. Control coming back is the signal, but if it is ever missed -
+	-- a disconnect, a loading screen swallowing the event - the console would
+	-- sit there for the session. Anything that says we are no longer on a taxi
+	-- ends the flight.
+	A:RegisterTicker(self, function()
+		if Taxi.flight and UnitOnTaxi and not UnitOnTaxi("player") then
+			Taxi:ControlGained(0)
+		end
+	end)
+
 	-- Logging in already airborne is a real state: a disconnect mid-flight puts
 	-- you back on the griffin. No booking to recover, so no estimate.
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
@@ -223,6 +246,7 @@ end
 
 function Taxi:Stop()
 	A:UnregisterAllEvents(self)
+	A:UnregisterTicker(self)
 	if self.flight then
 		local flight = self.flight
 		self.flight = nil
