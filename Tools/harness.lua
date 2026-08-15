@@ -453,6 +453,17 @@ local function newFontString(owner, layer)
 		if not c then return nil end
 		return c[1], c[2], c[3]
 	end
+	--- A font OBJECT carries the face, and the string reads back through it -
+	--  which is the whole point where SetFont is forbidden. It was on the edit
+	--  box only, so a locked string looked like it had no way to be styled at
+	--  all and the menu quietly kept Friz.
+	function f:SetFontObject(o)
+		self.__fontObject = o
+		if type(o) == "table" and o.__font then
+			self.__font = { o.__font[1], o.__font[2], o.__font[3] }
+		end
+	end
+	function f:GetFontObject() return self.__fontObject end
 	function f:SetText(s) self.__text = s end
 	function f:GetText() return self.__text end
 	function f:GetName() return self.__name end
@@ -565,6 +576,16 @@ local function HasProtectedDescendant(f)
 		if hit then return hit end
 	end
 	return nil
+end
+
+--- A font OBJECT, which is not a font string: it carries a font and nothing
+--  else, and is the only way to re-role a string the menu system has locked.
+function CreateFont(name)
+	local obj = newFontString(nil, nil)
+	obj.__name = name
+	obj.__isFontObject = true
+	if name then _G[name] = obj end
+	return obj
 end
 
 function CreateFrame(kind, name, parent, template)
@@ -2479,8 +2500,34 @@ do
 	end
 
 	for _, n in ipairs({ "CharacterFrame", "SpellBookFrame", "FriendsFrame",
-		"GameMenuFrame", "MerchantFrame", "QuestFrame", "GossipFrame" }) do
+		"GameMenuFrame", "MerchantFrame", "QuestFrame", "GossipFrame",
+		"TaxiFrame" }) do
 		buildPanel(n)
+	end
+
+	-- THE FLIGHT MAP IS A REGION OF THE FRAME, which makes this window the one
+	-- where a full sweep takes the thing the player came to look at. It went
+	-- black in game with the suite green, because the mock had no map to lose.
+	do
+		local tx = _G.TaxiFrame
+
+		-- Its close button is TaxiCloseButton, not TaxiFrameCloseButton.
+		-- buildPanel's generous spelling is why the red X survived.
+		_G.TaxiFrameCloseButton = nil
+		local close = CreateFrame("Button", "TaxiCloseButton", tx)
+		close:SetNormalTexture("close-up")
+
+		local map = tx:CreateTexture("TaxiMap", "OVERLAY")
+		map:SetTexture("Interface\\TaxiFrame\\TAXIMAP_EASTERNKINGDOMS")
+		map:SetSize(316, 352)
+
+		local portrait = tx:CreateTexture("TaxiPortrait", "BACKGROUND")
+		portrait:SetTexture("flight-master-face")
+
+		local who = tx:CreateFontString("TaxiMerchant", "ARTWORK")
+		who:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+		who:SetText("Thor Stormcrown")
+		who:SetTextColor(0.10, 0.10, 0.10)
 	end
 
 	-- The main menu is a stack of buttons and nothing else, and the client's set
@@ -3452,6 +3499,27 @@ do
 			function row:GetFontString() return self.__fs end
 			box.__rows[i] = row
 		end
+		-- A QUEST ROW IS NOT AN OPTION ROW. It keeps its title in a region of
+		-- its own and answers GetFontString with nothing, so a sweep that named
+		-- the string on each shape found no string here at all - which is the
+		-- quest title that stayed in parchment ink on a gossip window.
+		do
+			local quest = CreateFrame("Button", nil, box)
+			quest.Icon = quest:CreateTexture(nil, "BACKGROUND")
+			quest.Icon:SetTexture("Interface\\GossipFrame\\AvailableQuestIcon")
+			-- ITS INK IS INSIDE THE STRING. UpdateTitleForQuest formats the
+			-- title through NORMAL_QUEST_DISPLAY, which is |cff000000%s|r - so
+			-- the font string reports the font object's colour, not the black
+			-- you can see, and SetTextColor cannot reach it.
+			local qf = quest:CreateFontString(nil, "OVERLAY")
+			qf:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			qf:SetText("|cff000000Verog the Dervish|r")
+			qf:SetTextColor(1, 1, 1)
+			quest.__fs = qf
+			box.__rows[#box.__rows + 1] = quest
+			box.__quest = quest
+		end
+
 		function box:GetFrames() return self.__rows end
 		gossip.GreetingPanel.ScrollBox = box
 
@@ -3461,6 +3529,10 @@ do
 			for _, row in ipairs(box.__rows) do
 				row.__fs:SetTextColor(0.10, 0.10, 0.10)
 			end
+			-- The quest row is refilled through the display format, which puts
+			-- the black back inside the text every time.
+			box.__quest.__fs:SetText("|cff000000Verog the Dervish|r")
+			box.__quest.__fs:SetTextColor(1, 1, 1)
 		end
 
 		local bye = CreateFrame("Button", nil, gossip.GreetingPanel)
@@ -3493,15 +3565,22 @@ do
 	-- a moment ago is a spell after the next refresh, and which it is has to be
 	-- read every time rather than remembered - a mock with eleven fixed
 	-- headings would let "decide it once" look correct.
+	local TRAINER_MOCK_ROWS = 26
+
 	function _G.__buildTrainer()
 		local tf = _G.ClassTrainerFrame
 		if not tf or tf.__insides then return end
 		tf.__insides = true
 		tf:SetSize(384, 512)
 
-		for i = 1, 11 do
+		-- MORE THAN THE ELEVEN Blizzard's own source declares. This build draws
+		-- as many rows as fit, and a sweep that stopped at eleven left every
+		-- row below it in Friz - which is what the trainer looked like in game
+		-- while this mock was green.
+		for i = 1, TRAINER_MOCK_ROWS do
 			local b = CreateFrame("Button", "ClassTrainerSkill" .. i, tf)
 			b:SetSize(293, 16)
+			b:SetID(i)
 
 			local fs = b:CreateFontString("ClassTrainerSkill" .. i .. "Text", "OVERLAY")
 			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
@@ -3514,13 +3593,102 @@ do
 			sub:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
 			sub:SetText("(Rank 2)")
 
+			-- THE CLIENT ANSWERS GetTexture WITH A FILE ID, not the path it was
+			-- handed. Reading the mark off the path passed here and did nothing
+			-- in the game, so the mock has to be as unhelpful as the client is.
+			local realGet = b.GetNormalTexture
+			function b:GetNormalTexture()
+				local tex = realGet(self)
+				if tex and not tex.__fileID then
+					tex.__fileID = true
+					local raw = tex.GetTexture
+					function tex:GetTexture()
+						local v = raw(self)
+						if type(v) == "string" then return 137057 end
+						return v
+					end
+				end
+				return tex
+			end
+
 			-- Odd rows are headings this time round, even ones are spells.
 			if i % 2 == 1 then
 				b:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
 			end
 		end
 
+		--- What the client says a row is, which is the only reliable answer.
+		function _G.GetTrainerServiceInfo(id)
+			if type(id) ~= "number" or id < 1 or id > TRAINER_MOCK_ROWS then return nil end
+			if id % 2 == 1 then
+				return "Frost", nil, "header", not tf.__collapsedRound
+			end
+			return "Frostbolt", "Rank 2", "available", nil
+		end
+
+		-- THE FILTER, which is the modern dropdown: a stone holder, an arrow and
+		-- a label, all regions of the button rather than a normal texture. The
+		-- client hangs it 44 in from the frame's right edge, which is inside its
+		-- parchment margin and outside our glass.
+		local filter = CreateFrame("Button", nil, tf)
+		filter:SetSize(130, 24)
+		filter:SetPoint("TOPRIGHT", tf, "TOPRIGHT", -44, -67)
+		filter.Background = filter:CreateTexture(nil, "BACKGROUND")
+		filter.Background:SetTexture("common-dropdown-classic-textholder")
+		filter.Arrow = filter:CreateTexture(nil, "OVERLAY")
+		filter.Arrow:SetTexture("common-dropdown-classic-a-buttonDown")
+		filter.Text = filter:CreateFontString(nil, "OVERLAY")
+		filter.Text:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		filter.Text:SetText("Filter")
+		tf.FilterDropdown = filter
+
+		-- THE MENU IS NOT A CHILD OF THE DROPDOWN and does not exist until the
+		-- first click. MenuStyle1Mixin:Generate attaches its art to the frame -
+		-- an ornate atlas and a black fill beneath it - and the manager pools
+		-- the frame, so it comes back later under some other dropdown.
+		-- THE CLIENT REDRAWS THE ARROW AND THE TEXT COLOUR on every hover, press
+		-- and enable. Dressing them once looked right until the control was
+		-- touched, and then the stone arrow was back.
+		function filter:OnButtonStateChanged()
+			self.Arrow:SetTexture("common-dropdown-classic-a-buttonDown-pressed")
+			self.Arrow:SetSize(24, 24)
+			self.Text:SetTextColor(1, 1, 1)
+		end
+
+		function filter:OpenMenu()
+			if not self.menu then
+				local menu = CreateFrame("Frame", nil, UIParent)
+				menu:SetSize(180, 90)
+				menu.__bg = menu:CreateTexture(nil, "BACKGROUND")
+				menu.__bg:SetTexture("common-dropdown-classic-bg")
+				menu.__fill = menu:CreateTexture(nil, "BACKGROUND")
+				menu.__fill:SetTexture("menu-black-fill")
+
+				for _, row in ipairs({ "Available", "Unavailable", "Already Known" }) do
+					local fs = menu:CreateFontString(nil, "OVERLAY")
+					fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+					fs:SetText(row)
+
+					-- SetFont IS DISALLOWED ON THESE. The menu wraps its own
+					-- font strings, and its metatable trips an assert on the
+					-- key being READ, never mind called - so a mock that
+					-- quietly accepts SetFont here is the one that let twelve
+					-- errors a click reach the game.
+					fs.SetFont = function()
+						error("SetFont is disallowed on a menu font string")
+					end
+				end
+				menu.__firstRow = ({ menu:GetRegions() })[3]
+				self.menu = menu
+			end
+			self.menu:Show()
+		end
+
+		-- "All" keeps a flag of its own rather than a service index: 1 when
+		-- collapsed, nil when not. Reading its texture instead gave every
+		-- trainer a plus on All whatever the tree was doing.
 		local all = CreateFrame("Button", "ClassTrainerCollapseAllButton", tf)
+		all.collapsed = nil
 		all:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
 		local allText = all:CreateFontString(nil, "OVERLAY")
 		allText:SetText("All")
@@ -3562,20 +3730,38 @@ do
 			fs:SetTextColor(0.10, 0.10, 0.10)     -- printed for parchment
 		end
 
-		for _, n in ipairs({ "ClassTrainerTrainButton", "ClassTrainerCancelButton" }) do
+		-- THREE SLICES, NOT A NORMAL TEXTURE. Left, Middle and Right regions, so
+		-- ClearButton has nothing to clear and the plate survives it.
+		local function pushButton(n)
 			local b = CreateFrame("Button", n, tf)
-			b:SetNormalTexture("panel-button-up")
+			for _, slice in ipairs({ "Left", "Middle", "Right" }) do
+				b[slice] = b:CreateTexture(nil, "BACKGROUND")
+				b[slice]:SetTexture("panel-button-" .. slice:lower())
+			end
 			local fs = b:CreateFontString(nil, "OVERLAY")
-			fs:SetText(n)
+			fs:SetText(n or "Train All")
 			b.__fs = fs
 			function b:GetFontString() return self.__fs end
+			return b
 		end
+
+		pushButton("ClassTrainerTrainButton")
+		pushButton("ClassTrainerCancelButton")
+
+		-- TRAIN ALL HAS NO NAME. An anonymous child of the window whose label is
+		-- ClassTrainerFrameText, so a list of button names never reaches it and
+		-- it stayed the client's grey stone on a skinned window.
+		local trainAll = pushButton(nil)
+		trainAll.__fs.__name = "ClassTrainerFrameText"
+		_G.ClassTrainerFrameText = trainAll.__fs
+		tf.__trainAll = trainAll
 
 		--- The client refilling the list, which it does on every expand, every
 		--  selection and every skill learned - putting its own marks back, and
 		--  handing rows from one kind to the other.
 		function _G.ClassTrainerFrame_Update()
-			for i = 1, 11 do
+			tf.__collapsedRound = true
+			for i = 1, TRAINER_MOCK_ROWS do
 				local b = _G["ClassTrainerSkill" .. i]
 				if i % 2 == 1 then
 					b:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
@@ -18311,6 +18497,25 @@ do
 	check(row.Icon:GetTexture() == "Interface\\QuestFrame\\UI-Quest-BulletPoint",
 		"with its bullet still on it")
 
+	-- AND SO IS A QUEST TITLE, which keeps its string in a region of its own
+	-- rather than answering GetFontString. Naming the string per shape found
+	-- nothing on this row, so it kept our lettering from the first pass and got
+	-- the client's ink back on every rebuild.
+	local quest = panel.ScrollBox.__quest
+	check(quest.__fs._aetherStyle ~= nil, "a quest title is in our lettering")
+
+	-- AND ITS INK IS INSIDE THE STRING. The title comes through
+	-- NORMAL_QUEST_DISPLAY as |cff000000<name>|r, so the font string reports
+	-- white while drawing black. Lifting the font string's colour changed
+	-- nothing you could see.
+	local qtext = quest.__fs:GetText()
+	check(not qtext:find("|cff000000", 1, true),
+		"with the black baked into it rewritten (" .. tostring(qtext) .. ")")
+	check(qtext:find("Verog the Dervish", 1, true) ~= nil,
+		"and the title itself still in there")
+	check(quest.Icon:GetTexture() == "Interface\\GossipFrame\\AvailableQuestIcon",
+		"with the quest mark still on it")
+
 	-- A TITLE IN A BAND KEEPS THE CLIENT'S SIZE. The modern template gives it a
 	-- TitleContainer twenty pixels tall, and our own title role at nineteen
 	-- fills it corner to corner and overhangs the ends.
@@ -18352,6 +18557,65 @@ do
 		"the spell you are being sold sits in a cell - this one IS square,"
 		.. " unlike the quest giver's wide rows")
 	check(_G.ClassTrainerTrainButton.__aetherSkin ~= nil, "and Train is ours")
+
+	-- TRAIN ALL IS ANONYMOUS. It carries no name at all - only its label is
+	-- named, as ClassTrainerFrameText - so the three push buttons are found by
+	-- their three-slice shape rather than by a list of names that cannot
+	-- include this one.
+	check(tf.__trainAll.__aetherSkin ~= nil,
+		"and so is Train All, which has no name to be listed under")
+	check(tf.__trainAll.Left:GetTexture() == 0,
+		"with its three slices of client stone taken off")
+	check(tf.__trainAll.__fs._aetherStyle ~= nil, "and its label in our lettering")
+
+	-- THE FILTER. Its holder comes off, its arrow stays because nothing of ours
+	-- says "this opens" better at 24 pixels - but tinted, since the client's is
+	-- gold stone and gold on our glass reads as a colour that means something.
+	local filter = tf.FilterDropdown
+	check(filter.__aetherSkin ~= nil, "the filter is in one of our pills")
+	check(filter.Background:GetTexture() == 0, "with its stone holder taken off")
+	local ar = filter.Arrow:GetVertexColor()
+	check(ar == A.Palette.c.textDim[1],
+		"and its arrow inked like the rest of our marks ("
+		.. string.format("%.2f", ar) .. ")")
+
+	-- AND PULLED INSIDE THE GLASS. 44 in from the frame's right edge sat inside
+	-- the parchment's margin and outside ours, which stops 28 short.
+	local point, _, _, x = filter:GetPoint()
+	check(point == "TOPRIGHT" and x > -44,
+		"and moved in off the frame's edge, where the glass stops (" .. tostring(x) .. ")")
+
+	-- THE ARROW IS REPLACED, NOT TINTED. The client's is a blue-grey stone
+	-- BUTTON, and a vertex colour multiplies that rather than replacing it - so
+	-- tinting it left a blue stone button sitting in one of our pills.
+	check(filter.Arrow:GetTexture() == A.Media.texture.chevron,
+		"its arrow is our own chevron, which points down unrotated")
+	check(filter.Arrow:GetWidth() == 10,
+		"at a mark's size rather than the client's 24px control")
+
+	-- AND THE LIST IT OPENS IS A WINDOW OF ITS OWN. Not a child of the dropdown
+	-- and not built until the first click, so nothing on the trainer's pass can
+	-- reach it - which is why it stayed black stone inside a skinned window.
+	filter:OpenMenu()
+	local menu = filter.menu
+	check(menu ~= nil and menu.__aetherPanel ~= nil, "the menu it opens is in glass")
+	check(menu.__bg:GetTexture() == 0 and menu.__fill:GetTexture() == 0,
+		"with the ornate plate and the black fill under it both taken off")
+	-- THROUGH A FONT OBJECT, because the menu forbids SetFont on its own
+	-- strings - the mock raises if it is called, so reaching this at all means
+	-- the locked path was taken.
+	check(menu.__firstRow.__fontObject ~= nil,
+		"and its rows re-roled through a font object, which the menu does allow")
+	check(menu.__firstRow._aetherStyle ~= nil, "so they are in our lettering")
+
+	-- AND THE ARROW SURVIVES BEING CLICKED. The client re-atlases it and
+	-- re-colours the text on every state change.
+	filter:OnButtonStateChanged()
+	check(filter.Arrow:GetTexture() == A.Media.texture.chevron
+		and filter.Arrow:GetWidth() == 10,
+		"the chevron goes back after the client redraws the control")
+	check(filter.Text:GetTextColor() == A.Palette.c.text[1],
+		"and so does our ink on its label")
 	check(_G.ClassTrainerExpandTabLeft:GetTexture() == 0,
 		"the little stone tab the All control hangs off is cleared")
 
@@ -18363,6 +18627,60 @@ do
 		"a heading that collapsed shows a plus rather than the minus it had")
 	check(spell.__aetherGlyph == nil or not spell.__aetherGlyph:IsShown(),
 		"and the spell row still carries no mark after the refresh")
+
+	-- EVERY ROW, NOT THE FIRST ELEVEN. CLASS_TRAINER_SKILLS_DISPLAYED is 11 in
+	-- Blizzard's source and this client draws more, so a loop bounded by the
+	-- number in the source left the rest of a mage's spell list in Friz.
+	local last = _G["ClassTrainerSkill26"]
+	check(last ~= nil and last:GetFontString()._aetherStyle ~= nil,
+		"a row past the eleventh is in our lettering too")
+	check(last:GetFontString():GetTextColor() == A.Palette.c.text[1],
+		"and lifted off the parchment with the rest")
+
+	-- The mark is read from the client's own service data. Its texture answers
+	-- with a file ID here, as the client's does, so anything reading the path
+	-- gets a number and decides every row is a spell.
+	check(_G.ClassTrainerSkill25.__aetherGlyph ~= nil
+		and _G.ClassTrainerSkill25.__aetherGlyph:IsShown(),
+		"a heading below the eleventh gets its mark from the service, not the art")
+
+	-- "All" carries a flag rather than a service index, and reading its texture
+	-- instead left a plus on it with the whole tree expanded.
+	local all = _G.ClassTrainerCollapseAllButton
+	all.collapsed = nil
+	A:GetModule("panels").Dress(tf)
+	check(all.__aetherGlyph:GetText() == "\226\136\146",
+		"All shows a minus while the tree is expanded ("
+		.. tostring(all.__aetherGlyph:GetText()) .. ")")
+	all.collapsed = 1
+	A:GetModule("panels").Dress(tf)
+	check(all.__aetherGlyph:GetText() == "+", "and a plus once it is collapsed")
+end
+
+print("== panels: the flight master, whose map is a region of the frame ==")
+do
+	local tx = _G.TaxiFrame
+	tx:Show()
+
+	check(tx.__aetherPanel ~= nil, "the flight map is in glass")
+
+	-- THE MAP IS THE WINDOW. It is a texture region of the frame, exactly like
+	-- the parchment around it, so the sweep that took the art took the map and
+	-- left the flight points floating in the dark.
+	check(_G.TaxiMap:GetTexture() ~= 0 and _G.TaxiMap:IsShown(),
+		"the map itself survives the strip ("
+		.. tostring(_G.TaxiMap:GetTexture()) .. ")")
+	check(tx.__stone:GetTexture() == 0, "while the frame's own art still comes off")
+	check(_G.TaxiPortrait:GetTexture() == 0,
+		"and the portrait goes, having lost the ring it sat in")
+
+	-- Named TaxiCloseButton, not TaxiFrameCloseButton, which is why this one
+	-- window kept the client's red X.
+	check(_G.TaxiCloseButton.__aetherX ~= nil, "its close button is ours")
+
+	local who = _G.TaxiMerchant
+	check(who._aetherStyle ~= nil and who:GetTextColor() == A.Palette.c.text[1],
+		"and the flight master's name is lifted into our lettering")
 end
 
 print("== timers: breath, fatigue, and the colour that says which ==")
@@ -18467,13 +18785,16 @@ do
 	check(invite.Left:GetTexture() == 0 and invite.Middle:GetTexture() == 0,
 		"with all three of its slices cleared, which a normal texture is not")
 
-	-- A DROPDOWN KEEPS ITS ARROW. It is what says the control opens, and
-	-- nothing of ours would say it better at that size.
+	-- A DROPDOWN'S ARROW IS REPLACED. It was kept once, on the grounds that it
+	-- says "this opens" better than anything of ours would at that size. It
+	-- does not: the atlas is a blue-grey stone BUTTON, a picture of a control
+	-- rather than a mark on one, and a tint multiplies it rather than
+	-- replacing it. Every dropdown gets our chevron now, this one included.
 	local dd = cf.StreamDropdown
 	check(dd.__aetherSkin ~= nil and dd.Background:GetTexture() == 0,
 		"a dropdown's stone holder comes off")
-	check(dd.Arrow:GetTexture() == "common-dropdown-classic-a-buttonDown",
-		"and its arrow does not")
+	check(dd.Arrow:GetTexture() == A.Media.texture.chevron,
+		"and its arrow is our chevron")
 	check(dd.Text._aetherStyle ~= nil, "with its text re-roled")
 
 	check(cf.CommunitiesList.FilligreeOverlay ~= nil

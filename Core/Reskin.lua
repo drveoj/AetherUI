@@ -120,16 +120,49 @@ local function ClearRegions(frame, store, keep)
 	end
 end
 
+--- Regions to spare, from keys or from the regions themselves.
+--
+--  A base-UI region often carries a global name of its own rather than a
+--  $parent one - TaxiFrame's map is `TaxiMap` - so a bare global is accepted
+--  as a last resort, and only when it really is a part of this frame.
+local function KeepSet(frame, names)
+	if not names then return nil end
+
+	local keep = {}
+	for _, key in ipairs(names) do
+		local region = key
+		if type(key) == "string" then
+			region = Reskin.Element(frame, key)
+
+			-- Matched against the frame's own regions rather than trusted from
+			-- _G, so a global of that name belonging to something else cannot
+			-- spare a piece of art here.
+			local global = not region and _G[key]
+			if type(global) == "table" and frame.GetRegions then
+				for _, r in ipairs({ frame:GetRegions() }) do
+					if r == global then region = global break end
+				end
+			end
+		end
+		if type(region) == "table" then keep[region] = true end
+	end
+	return keep
+end
+
 --- Take the client's art off `frame`, recording enough to put it back.
 --
 --  `store` is the caller's table, one per skinned frame, and holds everything
 --  taken from that frame AND from the child frames its art hides in. Pass the
 --  same store every time: this runs again on every show, because art the client
 --  reveals later has to be taken down too.
-function Reskin.Strip(frame, store)
+--
+--  `keep` names regions to leave alone, for a window whose picture is one of
+--  its own regions. It applies to this frame only - the art children below are
+--  swept whole, which is what they are in the list for.
+function Reskin.Strip(frame, store, keep)
 	if not frame or not frame.GetRegions or type(store) ~= "table" then return end
 
-	ClearRegions(frame, store, nil)
+	ClearRegions(frame, store, KeepSet(frame, keep))
 
 	local name = frame.GetName and frame:GetName()
 	for _, key in ipairs(ART_CHILDREN) do
@@ -160,13 +193,7 @@ end
 function Reskin.StripExcept(frame, store, names)
 	if not frame or not frame.GetRegions or type(store) ~= "table" then return end
 
-	local keep = {}
-	for _, key in ipairs(names or {}) do
-		local region = Reskin.Element(frame, key)
-		if type(region) == "table" then keep[region] = true end
-	end
-
-	ClearRegions(frame, store, keep)
+	ClearRegions(frame, store, KeepSet(frame, names))
 end
 
 --- Everything in a store, back the way it was found.
@@ -613,6 +640,34 @@ end
 -- Below this, ink was chosen to be read on parchment. See Reskin.Font.
 local DARK_INK = 0.35
 
+--- Ink baked INTO the string rather than set on the font string.
+--
+--  A gossip quest title is `|cff000000<name>|r`: the black is an escape inside
+--  the text, so GetTextColor answers the font object's colour and never sees
+--  it, and SetTextColor cannot reach it either. Same test as below - an escape
+--  dark enough to have been meant for parchment is rewritten, and a gold one is
+--  left saying what it was put there to say.
+function Reskin.Ink(fs, colour)
+	if not fs or not fs.GetText or not fs.SetText or type(colour) ~= "table" then
+		return
+	end
+
+	local text = fs:GetText()
+	if type(text) ~= "string" or not text:find("|c", 1, true) then return end
+
+	local hex = string.format("%02x%02x%02x",
+		math.floor((colour[1] or 0) * 255 + 0.5),
+		math.floor((colour[2] or 0) * 255 + 0.5),
+		math.floor((colour[3] or 0) * 255 + 0.5))
+
+	local inked = text:gsub("|c(%x%x)(%x%x)(%x%x)(%x%x)", function(a, r, g, b)
+		local mean = (tonumber(r, 16) + tonumber(g, 16) + tonumber(b, 16)) / (3 * 255)
+		if mean < DARK_INK then return "|c" .. a .. hex end
+	end)
+
+	if inked ~= text then fs:SetText(inked) end
+end
+
 function Reskin.Font(fs, style, lighten)
 	if not fs or not fs.GetFont or not fs.SetFont then return end
 
@@ -639,7 +694,64 @@ function Reskin.Font(fs, style, lighten)
 		if type(r) == "number" and (r + g + b) / 3 < DARK_INK then
 			fs:SetTextColor(lighten[1], lighten[2], lighten[3], lighten[4] or 1)
 		end
+
+		-- The other half of the same rule: some of this text carries its colour
+		-- inside itself, where neither the test above nor SetTextColor reaches.
+		Reskin.Ink(fs, lighten)
 	end
+end
+
+-- Font objects for strings we are not allowed to set a font on.
+--
+-- The menu system wraps its own font strings and forbids SetFont - READING the
+-- key is enough to trip its assert, so nothing on that path may go near it -
+-- but SetFontObject is permitted, and Media:SetFont takes an object as happily
+-- as it takes a string. One object per role and size, because a font object
+-- carries the size with it.
+local lockedFonts, lockedCount = {}, 0
+
+local function LockedFont(style, size)
+	local key = tostring(style) .. ":" .. tostring(size)
+	local obj = lockedFonts[key]
+	if not obj and CreateFont then
+		lockedCount = lockedCount + 1
+		obj = CreateFont("AetherUILockedFont" .. lockedCount)
+		A.Media:SetFont(obj, style, size)
+		lockedFonts[key] = obj
+	end
+	return obj
+end
+
+--- Our lettering on a string that may only be styled through a font object.
+--
+--  The colour is read off first and put back after: a font object carries one
+--  of its own, and these strings are green, red and grey for a reason.
+function Reskin.FontObject(fs, style, lighten)
+	if not fs or not fs.SetFontObject then return end
+
+	local size
+	if fs.GetFont then
+		local _, got = fs:GetFont()
+		if type(got) == "number" and got > 0 then size = math.floor(got + 0.5) end
+	end
+
+	local obj = LockedFont(style or "pnBody", size)
+	if not obj then return end
+
+	local r, g, b, a
+	if fs.GetTextColor then r, g, b, a = fs:GetTextColor() end
+
+	fs:SetFontObject(obj)
+	fs._aetherStyle = style or "pnBody"
+	fs._aetherSize = size
+
+	if type(r) == "number" and fs.SetTextColor then
+		fs:SetTextColor(r, g, b, a)
+		if lighten and (r + g + b) / 3 < DARK_INK then
+			fs:SetTextColor(lighten[1], lighten[2], lighten[3], lighten[4] or 1)
+		end
+	end
+	if lighten then Reskin.Ink(fs, lighten) end
 end
 
 --- Every string inside a frame, ours. Colour is left alone.
@@ -650,7 +762,8 @@ end
 --  lettering from another interface.
 --  `lighten` is passed straight down to Reskin.Font: give it a colour and any
 --  string dark enough to have been meant for parchment is lifted to it.
-function Reskin.Fonts(frame, style, depth, lighten)
+--  `locked` says the strings belong to something that forbids SetFont.
+function Reskin.Fonts(frame, style, depth, lighten, locked)
 	if not frame or type(frame) ~= "table" then return end
 	depth = depth or 0
 	if depth > 4 then return end            -- deep enough for any of these
@@ -658,14 +771,18 @@ function Reskin.Fonts(frame, style, depth, lighten)
 	if frame.GetRegions then
 		for _, region in ipairs({ frame:GetRegions() }) do
 			if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-				Reskin.Font(region, style, lighten)
+				if locked then
+					Reskin.FontObject(region, style, lighten)
+				else
+					Reskin.Font(region, style, lighten)
+				end
 			end
 		end
 	end
 
 	if frame.GetChildren then
 		for _, child in ipairs({ frame:GetChildren() }) do
-			Reskin.Fonts(child, style, depth + 1, lighten)
+			Reskin.Fonts(child, style, depth + 1, lighten, locked)
 		end
 	end
 end

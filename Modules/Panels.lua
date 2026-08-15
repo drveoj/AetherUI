@@ -33,7 +33,7 @@ local ADDON, A = ...
 
 local PN = A:NewModule("panels")
 
-local W, Palette, Reskin = A.Widgets, A.Palette, A.Reskin
+local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 
 --- The windows, and the addon each arrives with when it is not there at login.
 --
@@ -105,7 +105,13 @@ local PANELS = {
 	{ frame = "QuestFrame",        insets = { 8, -8, -28, 62 } },
 	{ frame = "ClassTrainerFrame", addon = "Blizzard_TrainerUI",
 	                               insets = { 8, -8, -28, 22 } },
-	{ frame = "TaxiFrame",         insets = { 8, -8, -28, 22 } },
+	-- The flight map IS a region of the frame, so the sweep that takes the
+	-- parchment takes the map with it and leaves the nodes floating in the
+	-- dark. Its close button is TaxiCloseButton, not TaxiFrameCloseButton,
+	-- which is why it kept the client's red X.
+	{ frame = "TaxiFrame",         insets = { 8, -8, -28, 22 },
+	                               close = "TaxiCloseButton",
+	                               keep  = { "TaxiMap" } },
 
 	-- NOT GuildFrame. The old FriendsFrame XML still defines a GuildFrame pane,
 	-- setAllPoints inside the social window, and this list used to name it as a
@@ -219,10 +225,14 @@ local function Dress(frame)
 		frame.__aetherArt = store
 	end
 
-	Reskin.Strip(frame, store)
-
 	local name = frame.GetName and frame:GetName()
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
+
+	-- `keep` before the strip, not after: the sweep records what it found the
+	-- first time and clears that same list on every show afterwards, so a
+	-- region spared later has already gone.
+	Reskin.Strip(frame, store, entry and entry.keep)
+
 	Reskin.Panel(frame, { corner = 16, insets = entry and entry.insets })
 
 	-- Drawn at the profile's scale, like everything else of ours - but never
@@ -1438,25 +1448,102 @@ local function DressWideButton(btn, store)
 	Reskin.Button(btn, "pnBody")
 end
 
---- A dropdown: its stone holder off, its arrow kept, its text re-roled.
+--- The list a dropdown opens, which is a window of its own.
 --
---  The arrow is the one part worth keeping - it says "this opens" and nothing
---  of ours would say it better at this size.
+--  Not a child of the dropdown and not built until the first click - the menu
+--  manager pools these, so the same frame comes back later under a different
+--  dropdown. Its art is two textures attached to the frame, an ornate atlas and
+--  a black fill under it (MenuStyle1Mixin:Generate), so a strip takes both.
+--
+--  Its own store, because it belongs to no window: the frame outlives the
+--  trainer that opened it.
+local function DressMenu(menu)
+	if not menu or not menu.GetRegions then return end
+
+	local store = menu.__aetherArt
+	if not store then
+		store = {}
+		menu.__aetherArt = store
+	end
+
+	Reskin.Strip(menu, store)
+	Reskin.Panel(menu, { corner = 12 })
+
+	-- LOCKED STRINGS. The menu wraps its own font strings and forbids SetFont -
+	-- reading the key is enough to trip its assert - so these are re-roled
+	-- through a font object instead. Colour is left alone either way: green, red
+	-- and grey are the client saying whether you can learn the thing, which is
+	-- what the filter is for.
+	Reskin.Fonts(menu, "pnBody", 0, nil, true)
+end
+
+-- The chevron on a dropdown. Ten against a control 24 tall, and eight in from
+-- the right, because the client's is a 24px stone BUTTON drawn hard against the
+-- edge - a picture of a control rather than a mark on one.
+local DROP_CHEV, DROP_CHEV_IN = 10, 8
+
+--- The two parts of a dropdown the client redraws for itself.
+--
+--  WowStyle1DropdownMixin:OnButtonStateChanged re-atlases the arrow and
+--  re-colours the text on every hover, press and enable. Both have to be put
+--  back after it, so they live here rather than inline in the dress.
+local function DropdownMarks(btn)
+	local arrow = Reskin.Element(btn, "Arrow")
+	if arrow and arrow.SetTexture and Media and Media.texture then
+		arrow:SetTexture(Media.texture.chevron)
+		arrow:SetSize(DROP_CHEV, DROP_CHEV)
+		if arrow.ClearAllPoints then
+			arrow:ClearAllPoints()
+			arrow:SetPoint("RIGHT", btn, "RIGHT", -DROP_CHEV_IN, 0)
+		end
+		local c = Palette.c.textDim
+		if arrow.SetVertexColor then arrow:SetVertexColor(c[1], c[2], c[3]) end
+		arrow:Show()
+	end
+
+	local text = Reskin.Element(btn, "Text")
+	if text then W.Color(text, Palette.c.text) end
+end
+
+--- A dropdown: its stone holder off, our chevron for its arrow, text re-roled.
+--
+--  The arrow was kept and tinted once. That does not work: the atlas is a
+--  blue-grey stone button, and a tint multiplies it rather than replacing it.
+--  Chevron.tga points DOWN unrotated, which is the way a dropdown's arrow
+--  points, so it goes on the client's own region and keeps the client's anchor.
 local function DressDropdown(btn, store)
 	if not btn then return end
 	Reskin.ClearButton(btn)
-	Reskin.StripExcept(btn, store, { "Arrow" })
+	Reskin.Strip(btn, store)
 	Reskin.Button(btn, "pnBody")
 
+	DropdownMarks(btn)
+
 	local text = Reskin.Element(btn, "Text")
-	if text then
-		Reskin.Font(text, "pnBody")
-		W.Color(text, Palette.c.text)
+	if text then Reskin.Font(text, "pnBody") end
+
+	-- THE CLIENT REDRAWS BOTH ON EVERY STATE CHANGE, so ours go back after it
+	-- rather than once here. Clicking the control was enough to get the stone
+	-- arrow again.
+	if hooksecurefunc and btn.OnButtonStateChanged and not btn.__aetherStateHook then
+		btn.__aetherStateHook = true
+		hooksecurefunc(btn, "OnButtonStateChanged", function(self)
+			if PN.enabled then DropdownMarks(self) end
+		end)
 	end
 	local label = Reskin.Element(btn, "Label")
 	if label then
 		Reskin.Font(label, "pnBody")
 		W.Color(label, Palette.c.textDim)
+	end
+
+	-- The menu does not exist until this is clicked, so the answer goes on the
+	-- opening. OpenMenu leaves the frame on the button as `menu`.
+	if hooksecurefunc and btn.OpenMenu and not btn.__aetherMenuHook then
+		btn.__aetherMenuHook = true
+		hooksecurefunc(btn, "OpenMenu", function(self)
+			if PN.enabled then DressMenu(self.menu) end
+		end)
 	end
 end
 
@@ -1779,8 +1866,10 @@ end
 --  option you pick. A row dressed once is a row that is right until you click
 --  something, and the rows you have not scrolled to have never existed.
 --
---  Both shapes are here: an option or a quest is a Button with its bullet in an
---  Icon region, and the NPC's own words are a frame carrying a GreetingText.
+--  Swept whole rather than by shape. A row is an option, a quest or the NPC's
+--  own words, and naming the string on each meant a quest title - which is not
+--  reachable through GetFontString - kept our lettering from the first pass and
+--  got its parchment ink back on every refresh.
 local function DressGossipRows(frame)
 	local panel = Reskin.Element(frame, "GreetingPanel")
 	local box = panel and Reskin.Element(panel, "ScrollBox")
@@ -1794,12 +1883,7 @@ local function DressGossipRows(frame)
 	if not rows then return end
 
 	for _, row in ipairs(rows) do
-		local greeting = Reskin.Element(row, "GreetingText")
-		if greeting then
-			Reskin.Font(greeting, "pnBody", Palette.c.text)
-		elseif row.GetFontString then
-			Reskin.Font(row:GetFontString(), "pnBody", Palette.c.text)
-		end
+		Reskin.Fonts(row, "pnBody", 0, Palette.c.text)
 	end
 end
 
@@ -1852,7 +1936,10 @@ end
 -- gets ClearNormalTexture and an indented name. So which a row is has to be
 -- read on every refresh rather than decided once.
 
-local TRAINER_ROWS = 11        -- what the client builds
+-- A stop, not a count. CLASS_TRAINER_SKILLS_DISPLAYED is 11 in Blizzard's own
+-- source and this build draws more than that, so the number is asked of the
+-- client by walking the buttons until they run out.
+local TRAINER_ROW_CAP = 200
 
 local TRAINER_PANES = {
 	"ClassTrainerListScrollFrame", "ClassTrainerDetailScrollFrame",
@@ -1869,10 +1956,10 @@ local TRAINER_TEXT = {
 
 --- A row is a header if the client left a plus or a minus on it.
 --
---  Read from the texture's PATH rather than remembered, because the client
---  reuses these eleven buttons for both kinds and a row that was a heading a
---  moment ago is a spell now. And read BEFORE the mark is cleared - once ours
---  is on it there is nothing left to read.
+--  The fallback only. This client resolves a texture path to a file ID, so
+--  GetTexture answers a number and there is nothing to match - which is why
+--  every row kept Blizzard's mark. Kept for a client that still answers with
+--  the path, and for the harness.
 local function TrainerRowMark(btn)
 	local tex = btn.GetNormalTexture and btn:GetNormalTexture()
 	local path = tex and tex.GetTexture and tex:GetTexture()
@@ -1882,35 +1969,56 @@ local function TrainerRowMark(btn)
 	return nil
 end
 
+--- What the client says a row is, which beats guessing from its art.
+--
+--  The button carries the service index as its ID, so the same call the client
+--  fills the row from answers both questions. Reused every refresh because
+--  these buttons are both kinds: a row that was a heading a moment ago is a
+--  spell now.
+local function TrainerRowService(btn)
+	local id = btn.GetID and btn:GetID()
+	if not id or id <= 0 or not GetTrainerServiceInfo then return nil end
+	local _, _, serviceType, isExpanded = GetTrainerServiceInfo(id)
+	if not serviceType then return nil end
+	return serviceType, isExpanded
+end
+
 local function DressTrainerRows()
-	for i = 1, TRAINER_ROWS do
+	for i = 1, TRAINER_ROW_CAP do
 		local btn = _G["ClassTrainerSkill" .. i]
-		if btn then
+		if not btn then break end
+
+		local serviceType, isExpanded = TrainerRowService(btn)
+		local header
+		if serviceType then
+			header = (serviceType == "header")
+		else
 			local mark = TrainerRowMark(btn)
-
-			if mark then
-				btn.isExpanded = (mark == "expanded") or nil
-				Reskin.Collapse(btn)
-				if btn.__aetherGlyph then btn.__aetherGlyph:Show() end
-			elseif btn.__aetherGlyph then
-				-- It is a spell this time round, not a heading. The client
-				-- clears its own mark here; ours has to go with it.
-				btn.__aetherGlyph:Hide()
-			end
-
-			local label = btn.GetFontString and btn:GetFontString()
-			if label then Reskin.Font(label, "pnBody", Palette.c.text) end
-
-			local sub = _G["ClassTrainerSkill" .. i .. "SubText"]
-			if sub then Reskin.Font(sub, "pnBody") end
+			header, isExpanded = mark ~= nil, mark == "expanded"
 		end
+
+		if header then
+			btn.isExpanded = isExpanded or nil
+			Reskin.Collapse(btn)
+			if btn.__aetherGlyph then btn.__aetherGlyph:Show() end
+		elseif btn.__aetherGlyph then
+			-- It is a spell this time round, not a heading. The client
+			-- clears its own mark here; ours has to go with it.
+			btn.__aetherGlyph:Hide()
+		end
+
+		local label = btn.GetFontString and btn:GetFontString()
+		if label then Reskin.Font(label, "pnBody", Palette.c.text) end
+
+		local sub = _G["ClassTrainerSkill" .. i .. "SubText"]
+		if sub then Reskin.Font(sub, "pnBody") end
 	end
 
-	-- "All", which expands and collapses the lot, and carries the same mark.
+	-- "All", which expands and collapses the lot. It keeps its own flag rather
+	-- than a service index: 1 when collapsed, nil when not.
 	local all = _G.ClassTrainerCollapseAllButton
 	if all then
-		local mark = TrainerRowMark(all)
-		if mark then all.isExpanded = (mark == "expanded") or nil end
+		all.isExpanded = (not all.collapsed) or nil
 		Reskin.Collapse(all)
 		local label = all.GetFontString and all:GetFontString()
 		if label then Reskin.Font(label, "pnBody", Palette.c.text) end
@@ -1952,11 +2060,19 @@ local function DressTrainer(frame, store)
 	local icon = _G.ClassTrainerSkillIcon
 	if icon then Reskin.Slot(icon) end
 
-	for _, name in ipairs({ "ClassTrainerTrainButton", "ClassTrainerCancelButton" }) do
-		local btn = _G[name]
-		if btn then
-			Reskin.Button(btn, "pnBody")
-			Reskin.Strip(btn, store)
+	-- Train, Close and TRAIN ALL. The third has no name of its own - it is an
+	-- anonymous child whose label is ClassTrainerFrameText - so all three are
+	-- found by shape instead. They are the client's three-slice push button and
+	-- nothing else on this window carries Left, Middle and Right.
+	for _, kid in ipairs({ frame:GetChildren() }) do
+		if kid.GetObjectType and kid:GetObjectType() == "Button"
+			and Reskin.Element(kid, "Left")
+			and Reskin.Element(kid, "Middle")
+			and Reskin.Element(kid, "Right") then
+			DressWideButton(kid, store)
+			-- Train All carries its label twice, so the label is re-roled by
+			-- sweeping the button rather than by asking for GetFontString.
+			Reskin.Fonts(kid, "pnBody")
 		end
 	end
 
@@ -1964,6 +2080,21 @@ local function DressTrainer(frame, store)
 	                        "ClassTrainerDetailScrollFrameScrollBar" }) do
 		local bar = _G[name]
 		if bar then Reskin.ScrollBar(bar, store) end
+	end
+
+	-- The filter, which is the same modern dropdown Communities uses: a stone
+	-- holder, an arrow and a label, all regions of the button.
+	local filter = Reskin.Element(frame, "FilterDropdown")
+	DressDropdown(filter, store)
+
+	-- AND PULLED INSIDE THE GLASS. The client hangs it 44 in from the frame's
+	-- right edge, which is inside the parchment's margin and outside ours - the
+	-- window is 714 wide and our panel stops 28 short of that. Only the across
+	-- is changed; the client's height is where it belongs, level with the purse.
+	if filter and filter.ClearAllPoints then
+		local ins = (PN.ENTRY and PN.ENTRY.ClassTrainerFrame or {}).insets or {}
+		filter:ClearAllPoints()
+		filter:SetPoint("TOPRIGHT", frame, "TOPRIGHT", (ins[3] or 0) - 6, -67)
 	end
 
 	DressTrainerRows()
@@ -1978,6 +2109,27 @@ local function DressTrainer(frame, store)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- the flight master
+-- ---------------------------------------------------------------------------
+--
+-- Almost nothing to do, because the map is the window - the entry's `keep`
+-- spares it and the nodes are child buttons the sweep never reaches. What is
+-- left is the portrait ring's picture and the flight master's name.
+
+local function DressTaxi(frame, store)
+	-- The portrait sat in a stone ring in the corner. The ring went with the
+	-- parchment; the face has nothing to sit in.
+	local portrait = _G.TaxiPortrait
+	if portrait and portrait.SetTexture then portrait:SetTexture(0) end
+
+	local who = _G.TaxiMerchant
+	if who then
+		Roled(who, "pnSub")
+		W.Color(who, Palette.c.text)
+	end
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
@@ -1989,6 +2141,7 @@ local INTERIORS = {
 	QuestFrame        = DressQuest,
 	GossipFrame       = DressGossip,
 	ClassTrainerFrame = DressTrainer,
+	TaxiFrame         = DressTaxi,
 }
 
 PN.INTERIORS = INTERIORS

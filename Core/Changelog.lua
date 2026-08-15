@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.7.0",
+		date    = "2026-08-15",
+		lines   = {
+			"A trainer's headings fold with our own marks, and every spell in a long list is in our lettering rather than just the first eleven.",
+			"The trainer's Filter sits inside the window, and Train All is in one of our buttons.",
+			"Every dropdown wears our chevron, and the list it opens is in glass instead of black stone.",
+			"The flight master keeps his map: the parchment comes off, the map and the flight points on it stay.",
+			"A quest an NPC offers is readable - its title was printed black for paper.",
+		},
+	},
+	{
 		version = "0.6.0",
 		date    = "2026-08-15",
 		lines   = {
