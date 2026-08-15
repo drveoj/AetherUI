@@ -287,6 +287,9 @@ function MM:UpdateZone()
 		self.pill.zone:SetPoint("LEFT", self.pill.dot, "RIGHT", 6, 0)
 		self.pill.zone:SetText("In combat")
 		W.Color(self.pill.zone, c.danger)
+		-- Said here rather than only at build: the dot is a state light now, not
+		-- a fixed red one, and something else may have coloured it last.
+		self.pill.dot:SetVertexColor(c.danger[1], c.danger[2], c.danger[3], 1)
 		self.pill.coords:SetText("")
 	elseif UnitOnTaxi and UnitOnTaxi("player") then
 		-- Same shape as "In combat", and asked of the client directly rather
@@ -297,6 +300,9 @@ function MM:UpdateZone()
 		self.pill.zone:SetPoint("LEFT", self.pill.dot, "RIGHT", 6, 0)
 		self.pill.zone:SetText("In flight")
 		W.Color(self.pill.zone, c.accent)
+		-- Accent, not danger: a red light says you are being attacked. And not
+		-- white either, so it does not compete with the clock beside it.
+		self.pill.dot:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 		self.pill.coords:SetText("")
 	else
 		self.pill.dot:Hide()

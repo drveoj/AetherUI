@@ -477,17 +477,21 @@ function IF:PaintJumpOff()
 	local b = self.jump
 	if not b then return end
 
+	-- ACCENT, NOT WHITE. It sits a few pixels under the pill's clock, and two
+	-- white readouts stacked read as one block of text - the colour is what
+	-- says these are different things.
+	local c = Palette.c
+
 	if self._jumpAsked then
 		b.label:SetText("Exit requested")
-		W.Color(b.label, Palette.c.textDim)
-		b.glyph:SetVertexColor(1, 1, 1, 0.45)
-		b:EnableMouse(true)          -- still hoverable, for the tooltip
+		W.Color(b.label, c.textDim)
+		b.glyph:SetVertexColor(c.textDim[1], c.textDim[2], c.textDim[3], 0.55)
 	else
 		b.label:SetText("Jump Off")
-		W.Color(b.label, Palette.c.text)
-		b.glyph:SetVertexColor(1, 1, 1, 1)
-		b:EnableMouse(true)
+		W.Color(b.label, c.accent)
+		b.glyph:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 	end
+	b:EnableMouse(true)              -- hoverable either way, for the tooltip
 end
 
 --- Ask to be put down at the next stop.

@@ -21194,6 +21194,12 @@ section("ifec: cut to its contents, and the map you still want", function()
 
 	check(IF.jump.label:GetText() == "Jump Off", "reading Jump Off")
 
+	-- NOT WHITE. It sits just under the pill's clock, and two white readouts
+	-- stacked read as one block of text - the colour is what says they are
+	-- different things.
+	check(IF.jump.label:GetTextColor() == A.Palette.c.accent[1],
+		"in accent rather than white, so it does not compete with the clock")
+
 	-- ITS OWN GLYPH. The chevron means "this opens" everywhere else in the
 	-- interface, so borrowing it here would promise a window.
 	check(IF.jump.glyph:GetTexture() == A.Media.icons.file,
@@ -21206,6 +21212,8 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- ASKING CANNOT BE TAKEN BACK - the client has no "actually, carry on" - so
 	-- the control becomes a readout rather than staying a button that lies.
 	check(IF.jump.label:GetText() == "Exit requested", "after which it says so")
+	check(IF.jump.label:GetTextColor() == A.Palette.c.textDim[1],
+		"and dims, being a readout rather than a control")
 	IF.jump:GetScript("OnClick")(IF.jump)
 	check(_G.__taxi.earlyLandings == before + 1, "and asking twice asks once")
 
@@ -21217,6 +21225,18 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- And the pill says so, the way it says "In combat".
 	MM:UpdateZone()
 	check(MM.pill.zone:GetText() == "In flight", "with the pill reading In flight")
+
+	-- THE CLOCK STAYS, exactly as it does in combat. It is set outside the
+	-- branches for that reason, and a state that cleared it would be the odd
+	-- one out.
+	check(MM.pill.clock:GetText() ~= nil and MM.pill.clock:GetText() ~= "",
+		"and the clock still in it (" .. tostring(MM.pill.clock:GetText()) .. ")")
+
+	-- The dot is a state light, not a fixed red one: red says you are being
+	-- attacked, which a griffin is not.
+	local dr = MM.pill.dot:GetVertexColor()
+	check(dr == A.Palette.c.accent[1], "its light in accent rather than combat red")
+
 
 	land()
 	check(MM.frame:GetParent() == UIParent, "and the map goes back afterwards")
