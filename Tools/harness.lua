@@ -21174,9 +21174,22 @@ section("ifec: cut to its contents, and the map you still want", function()
 	check(IF.jump ~= nil and IF.jump:IsShown(), "a two-leg journey offers one")
 	check(IF.jump:GetParent() == MM.frame, "hung off the minimap, where the concept puts it")
 
+	check(IF.jump.label:GetText() == "Jump Off", "reading Jump Off")
+
+	-- ITS OWN GLYPH. The chevron means "this opens" everywhere else in the
+	-- interface, so borrowing it here would promise a window.
+	check(IF.jump.glyph:GetTexture() == A.Media.icons.file,
+		"with a mark of its own rather than the chevron")
+
 	local before = _G.__taxi.earlyLandings
 	IF.jump:GetScript("OnClick")(IF.jump)
 	check(_G.__taxi.earlyLandings == before + 1, "and clicking it asks to land early")
+
+	-- ASKING CANNOT BE TAKEN BACK - the client has no "actually, carry on" - so
+	-- the control becomes a readout rather than staying a button that lies.
+	check(IF.jump.label:GetText() == "Exit requested", "after which it says so")
+	IF.jump:GetScript("OnClick")(IF.jump)
+	check(_G.__taxi.earlyLandings == before + 1, "and asking twice asks once")
 
 	-- THE MAP STAYS. Alpha multiplies down the parent chain, so a child of a
 	-- frame at zero cannot be given an alpha - it has to leave the chain.

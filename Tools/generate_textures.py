@@ -979,6 +979,8 @@ ICON_ORDER = [
     "mail", "mailfull",
     # the frame lock
     "lock",
+    # getting off a taxi at the next stop
+    "exit",
 ]
 
 
@@ -1157,6 +1159,18 @@ def _glyph(name, cell):
         clapper = arc(64, 92, 8, 200, 340)
         crown = seg(64, 30, 64, 36)
         return U(dome, sides, lip, clapper, crown)
+
+    if name == "exit":
+        # Getting off at the next stop: an arrow coming DOWN onto a ground line.
+        #
+        # NOT a chevron. The chevron already means "this opens" everywhere else
+        # in the interface - the toolbox rail, every dropdown - and borrowing it
+        # here would tell a player the button opens something. The stem and the
+        # bar under it are what make this a different silhouette at 11px, so the
+        # bar is deliberately wider than the head.
+        return U(seg(64, 26, 64, 78),
+                 seg(46, 60, 64, 78), seg(82, 60, 64, 78),
+                 seg(30, 98, 98, 98))
 
     if name == "lock":
         # A padlock: a body and a shackle. ONE glyph for both states, because

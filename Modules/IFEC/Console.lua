@@ -303,6 +303,8 @@ function IF:OnFlight(event, flight)
 				{ point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 260 }, "In-flight console")
 			self:Restyle()
 		end
+		-- A new flight is a new chance to get off it.
+		self._jumpAsked = nil
 		self:Refresh()
 		self.frame:Show()
 		self:HideInterface(true)
@@ -378,29 +380,35 @@ function IF:UpdateJumpOff(flight)
 		if not host then return end
 
 		local b = W.CreateButton(host, { corner = 12 })
-		b:SetSize(112, 26)
+		b:SetSize(118, 26)
 		b:SetPoint("TOP", host, "BOTTOM", 0, -10)
+		b:EnableMouse(true)
+		if b.RegisterForClicks then b:RegisterForClicks("AnyUp") end
 
-		-- Chevron rather than U+2193, for the same reason the route separator is
-		-- not U+2192: Outfit has no arrows. This one points down already.
+		-- ITS OWN GLYPH, not the chevron. The chevron means "this opens"
+		-- everywhere else in the interface - the toolbox rail, every dropdown -
+		-- and borrowing it here would promise a window. This is an arrow onto a
+		-- ground line: alight here.
 		b.glyph = b:CreateTexture(nil, "ARTWORK")
-		b.glyph:SetTexture(Media.texture.chevron)
-		b.glyph:SetSize(11, 11)
-		b.glyph:SetPoint("LEFT", b, "LEFT", 14, 0)
+		b.glyph:SetSize(12, 12)
+		b.glyph:SetPoint("LEFT", b, "LEFT", 13, 0)
+		Media:SetIcon(b.glyph, "exit")
 
 		b.label = W.Text(b, "pnBody", "LEFT", "OVERLAY")
 		b.label:SetPoint("LEFT", b.glyph, "RIGHT", 7, 0)
-		b.label:SetText("Jump Off")
 
-		b:SetScript("OnClick", function()
-			if TaxiRequestEarlyLanding then pcall(TaxiRequestEarlyLanding) end
-		end)
+		b:SetScript("OnClick", function() IF:RequestJumpOff() end)
 		b:SetScript("OnEnter", function(self)
 			if not GameTooltip then return end
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetText(TAXI_CANCEL or "Jump Off")
-			if TAXI_CANCEL_DESCRIPTION then
-				GameTooltip:AddLine(TAXI_CANCEL_DESCRIPTION, 1, 1, 1, true)
+			if IF._jumpAsked then
+				GameTooltip:SetText("Exit requested")
+				GameTooltip:AddLine("Exiting early at the next available flight master.",
+					1, 1, 1, true)
+			else
+				GameTooltip:SetText("Jump Off")
+				GameTooltip:AddLine("Request exit at the next flight master.",
+					1, 1, 1, true)
 			end
 			GameTooltip:Show()
 		end)
@@ -409,7 +417,46 @@ function IF:UpdateJumpOff(flight)
 		self.jump = b
 	end
 
+	self:PaintJumpOff()
 	self.jump:Show()
+end
+
+--- The button in whichever of its two states it is in.
+--
+--  Asking cannot be taken back - the client has no "actually, carry on" - so
+--  once asked it stops being a control and becomes a readout.
+function IF:PaintJumpOff()
+	local b = self.jump
+	if not b then return end
+
+	if self._jumpAsked then
+		b.label:SetText("Exit requested")
+		W.Color(b.label, Palette.c.textDim)
+		b.glyph:SetVertexColor(1, 1, 1, 0.45)
+		b:EnableMouse(true)          -- still hoverable, for the tooltip
+	else
+		b.label:SetText("Jump Off")
+		W.Color(b.label, Palette.c.text)
+		b.glyph:SetVertexColor(1, 1, 1, 1)
+		b:EnableMouse(true)
+	end
+end
+
+--- Ask to be put down at the next stop.
+function IF:RequestJumpOff()
+	if self._jumpAsked then return false end
+	if not TaxiRequestEarlyLanding then return false end
+
+	local ok = pcall(TaxiRequestEarlyLanding)
+	if not ok then return false end
+
+	self._jumpAsked = true
+	self:PaintJumpOff()
+	if GameTooltip and self.jump and GameTooltip:IsShown() then
+		local enter = self.jump:GetScript("OnEnter")
+		if enter then enter(self.jump) end
+	end
+	return true
 end
 
 --- Put the interface back if we are holding it hidden and are not flying.

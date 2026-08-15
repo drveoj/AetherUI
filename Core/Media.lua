@@ -113,6 +113,7 @@ Media.icons = {
 		"whatsnew",
 		"mail", "mailfull",
 		"lock",
+		"exit",
 	},
 }
 
