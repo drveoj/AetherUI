@@ -114,6 +114,9 @@ Media.icons = {
 		"mail", "mailfull",
 		"lock",
 		"exit",
+		"music", "podcast", "gossip",
+		"play", "pause", "prev", "next",
+		"grip", "tick",
 	},
 }
 

@@ -981,6 +981,10 @@ ICON_ORDER = [
     "lock",
     # getting off a taxi at the next stop
     "exit",
+    # the in-flight console: three channels, a transport, a drag handle
+    "music", "podcast", "gossip",
+    "play", "pause", "prev", "next",
+    "grip", "tick",
 ]
 
 
@@ -1159,6 +1163,62 @@ def _glyph(name, cell):
         clapper = arc(64, 92, 8, 200, 340)
         crown = seg(64, 30, 64, 36)
         return U(dome, sides, lip, clapper, crown)
+
+    # ---- the in-flight console -------------------------------------------
+    #
+    # Three channels and a transport. The channel marks go INSIDE the shapes
+    # the design gives each one - circle for music, square for gossip, diamond
+    # for podcast - so the shape carries the identity and the glyph only has to
+    # be recognisable at 16px inside it.
+
+    if name == "music":
+        # A waveform: five bars, tallest in the middle. Not a note - a quaver at
+        # this size is a blob with a stick, and every music player on earth
+        # draws bars.
+        return U(seg(34, 74, 34, 54), seg(49, 84, 49, 44), seg(64, 92, 64, 36),
+                 seg(79, 84, 79, 44), seg(94, 74, 94, 54))
+
+    if name == "podcast":
+        # A microphone: capsule, cradle, stem, foot.
+        return U(rect(52, 24, 76, 68),
+                 arc(64, 62, 26, 200, 340),
+                 seg(64, 88, 64, 102),
+                 seg(46, 102, 82, 102))
+
+    if name == "gossip":
+        # A folded paper: masthead rule and two lines of type. The rule is what
+        # says newspaper rather than document.
+        return U(rect(22, 30, 106, 98),
+                 seg(22, 52, 106, 52),
+                 seg(38, 68, 90, 68),
+                 seg(38, 82, 74, 82))
+
+    if name == "play":
+        return U(seg(48, 32, 48, 96), seg(48, 32, 98, 64), seg(48, 96, 98, 64))
+
+    if name == "pause":
+        return U(seg(50, 34, 50, 94), seg(78, 34, 78, 94))
+
+    if name == "prev":
+        # Bar on the leading edge, triangle pointing into it.
+        return U(seg(34, 36, 34, 92),
+                 seg(94, 36, 52, 64), seg(94, 92, 52, 64), seg(94, 36, 94, 92))
+
+    if name == "next":
+        return U(seg(94, 36, 94, 92),
+                 seg(34, 36, 76, 64), seg(34, 92, 76, 64), seg(34, 36, 34, 92))
+
+    if name == "grip":
+        # Two columns of three. The universal "drag me", and the only glyph here
+        # that is dots rather than strokes.
+        return U(disc(50, 40, 2.0), disc(78, 40, 2.0),
+                 disc(50, 64, 2.0), disc(78, 64, 2.0),
+                 disc(50, 88, 2.0), disc(78, 88, 2.0))
+
+    if name == "tick":
+        # Finished. Shorter leading stroke than a drawn tick would have, because
+        # at 11px the long diagonal is what reads and the short one is noise.
+        return U(seg(32, 66, 54, 88), seg(54, 88, 98, 36))
 
     if name == "exit":
         # Getting off at the next stop: an arrow coming DOWN onto a ground line.
