@@ -614,11 +614,25 @@ function MM:OnEnable()
 			end)
 			-- Tracking has no button any more, so it lives here. This is the one
 			-- piece of hidden furniture that was doing real work.
+			--
+			-- THROUGH THE CLIENT'S OWN MENU, not a dropdown frame. There is no
+			-- MiniMapTrackingDropDown on 1.15.9 and there is no
+			-- ToggleDropDownMenu worth the name: tracking is a DropdownButton
+			-- that builds its list in a generator, and what we were reaching
+			-- for had not existed for years. Right-clicking the map did nothing
+			-- at all, silently, exactly like the unit frames' menu.
+			--
+			-- The generator is borrowed rather than copied, so the list stays
+			-- whatever Blizzard says it is - and opened as a CONTEXT menu, which
+			-- puts it at the cursor. Its own OpenMenu would anchor to the button,
+			-- and the button is hidden furniture parked off in a corner.
 			_G.Minimap:SetScript("OnMouseUp", function(self_, button)
 				if button == "RightButton" then
-					local dd = _G.MiniMapTrackingDropDown
-					if dd and ToggleDropDownMenu then
-						pcall(ToggleDropDownMenu, 1, nil, dd, "cursor")
+					local b = _G.MiniMapTrackingButton
+					if b and b.menuGenerator and MenuUtil and MenuUtil.CreateContextMenu then
+						pcall(MenuUtil.CreateContextMenu, _G.Minimap, b.menuGenerator)
+					elseif b and b.OpenMenu then
+						pcall(b.OpenMenu, b)
 					end
 					return
 				end

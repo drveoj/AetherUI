@@ -204,22 +204,23 @@ local function BuildCapsule(unit, mirror)
 		click:SetAllPoints(f)
 		click:SetAttribute("unit", unit)
 		click:SetAttribute("*type1", "target")
-		click:SetAttribute("*type2", "menu")
+		-- TOGGLEMENU, NOT MENU. "menu" calls the button's own menu-function
+		-- attribute, which Blizzard's frames set and we never did - so
+		-- right-click did nothing at all, silently, and with it went Leave
+		-- Party, Set Focus and the raid target icons. Before that we were
+		-- reaching for a PlayerFrameDropDown global that has not existed on
+		-- this client for years.
+		--
+		-- "togglemenu" is the client's own generic opener: it works out which
+		-- menu the unit wants - self, pet, vehicle, in raid, in party,
+		-- cooperable, hostile - and opens it. Nine branches we do not keep a
+		-- copy of, and no closure of ours in the path. It is also what oUF,
+		-- ShadowedUnitFrames and PitBull4 all use, which is the reason the
+		-- action is still there: Blizzard's own note calls it unused by their
+		-- code and retained for addons.
+		click:SetAttribute("*type2", "togglemenu")
 		click:RegisterForClicks("AnyUp")
 		click:EnableMouse(true)
-
-		-- The "menu" action type calls frame.menu(frame). Blizzard's per-unit
-		-- dropdowns still exist as globals even though we banished the frames
-		-- that owned them; if that ever stops being true this degrades to
-		-- "right-click does nothing" rather than an error.
-		click.menu = function(self)
-			local u = self:GetAttribute("unit")
-			if not u then return end
-			local dropdown = _G[u:sub(1, 1):upper() .. u:sub(2) .. "FrameDropDown"]
-			if dropdown and ToggleDropDownMenu then
-				pcall(ToggleDropDownMenu, 1, nil, dropdown, "cursor")
-			end
-		end
 
 		f.click = click
 		f.secure = true

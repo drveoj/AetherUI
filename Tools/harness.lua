@@ -2011,9 +2011,55 @@ function ContainerFrameItemButton_OnEnter(self)
 end
 function ContainerFrameItemButton_OnLeave() GameTooltip_Hide() ResetCursor() end
 
-function ToggleDropDownMenu() end
-PlayerFrameDropDown = CreateFrame("Frame", "PlayerFrameDropDown")
-TargetFrameDropDown = CreateFrame("Frame", "TargetFrameDropDown")
+-- THE UNIT MENUS, AS 1.15.9 ACTUALLY HAS THEM.
+--
+-- This mock used to define PlayerFrameDropDown and TargetFrameDropDown, which
+-- do not exist on this client and have not for years. It invented them because
+-- our code went looking for them - so the suite proved that code found what it
+-- was after, and right-clicking a unit frame did nothing in the game. That is
+-- the seventh shipped bug traceable to the mock being kinder than the client.
+--
+-- What the client really has: two secure actions. "menu" calls the button's own
+-- menu-function attribute, which is how Blizzard's frames do it; "togglemenu"
+-- works the unit out itself, which is how every addon does it. Both end at
+-- UnitPopup_OpenMenu.
+_G.__unitMenu = nil
+function UnitPopup_OpenMenu(which, contextData)
+	_G.__unitMenu = { which = which, unit = contextData and contextData.unit }
+end
+
+--- The two secure actions, transcribed from SecureTemplates.lua rather than
+--  remembered. A mock that answers a right-click more readily than the client
+--  is how the bug above survived the suite.
+local SECURE_ACTIONS = {}
+
+SECURE_ACTIONS.menu = function(self, unit)
+	local fn = self:GetAttribute("menu-function")
+	if type(fn) == "function" then fn(self, unit, "RightButton", false) end
+end
+
+SECURE_ACTIONS.togglemenu = function(self, unit)
+	if not unit then return end
+	local which
+	if UnitIsUnit(unit, "player") then which = "SELF"
+	elseif UnitIsUnit(unit, "pet") then which = "PET"
+	elseif UnitIsPlayer(unit) then
+		if UnitInRaid(unit) then which = "RAID_PLAYER"
+		elseif UnitInParty(unit) then which = "PARTY"
+		else which = "PLAYER" end
+	elseif UnitIsUnit(unit, "target") then which = "TARGET" end
+	if which then UnitPopup_OpenMenu(which, { unit = unit }) end
+end
+
+--- Right-click, the way the secure handler does it: through the attributes,
+--  never through a reference the caller happened to keep. A reference is
+--  exactly what the broken version also had.
+function _G.__rightClick(button)
+	local action = SECURE_ACTIONS[button:GetAttribute("*type2") or ""]
+	if not action then return false end
+	action(button, button:GetAttribute("unit"))
+	return true
+end
 
 MICRO_BUTTONS = { "CharacterMicroButton", "SpellbookMicroButton" }
 
@@ -2194,8 +2240,18 @@ end
 _G.__clusterArt = MinimapCluster:CreateTexture(nil, "OVERLAY")
 CreateFrame("Frame", "SomeAddonOnTheCluster", MinimapCluster)
 
-MiniMapTrackingDropDown = CreateFrame("Frame", "MiniMapTrackingDropDown")
-function ToggleDropDownMenu() _G.__trackingMenu = true end
+-- TRACKING IS A DropdownButton ON THIS CLIENT, not a dropdown frame. Same
+-- fabrication as the unit menus: the mock invented MiniMapTrackingDropDown
+-- because we asked for it, and right-clicking the map did nothing in the game.
+MiniMapTrackingButton = CreateFrame("Button", "MiniMapTrackingButton")
+MiniMapTrackingButton.menuGenerator = function() end
+function MiniMapTrackingButton:OpenMenu() _G.__trackingMenu = "button" end
+
+MenuUtil = MenuUtil or {}
+function MenuUtil.CreateContextMenu(owner, generator)
+	_G.__trackingMenu = owner
+	return generator
+end
 
 -- The client's `date` is Lua's, and the sandbox this runs in has os stripped.
 --
@@ -6082,8 +6138,26 @@ check(UF.target.unitWatched and _G.__unitWatched[UF.target.click],
 	"the secure click button is what the unit watch drives, not the capsule")
 check(UF.target.click:GetAttribute("unit") == "target"
 	and UF.target.click:GetAttribute("*type1") == "target"
-	and UF.target.click:GetAttribute("*type2") == "menu",
+	and UF.target.click:GetAttribute("*type2") == "togglemenu",
 	"target capsule carries the secure click attributes")
+
+-- AND THE MENU ACTUALLY OPENS. The attributes were all plausible and
+-- right-click did nothing for months: "menu" calls the button's own
+-- menu-function attribute, and that was the one attribute never set. Nothing
+-- errored and nothing was missing - it simply did nothing, and it took being
+-- in a party and wanting to leave it to notice.
+--
+-- Driven through the attributes rather than a kept reference, because a
+-- reference is precisely what the broken version also had.
+_G.__unitMenu = nil
+check(_G.__rightClick(UF.target.click), "right-click has an action to run")
+check(_G.__unitMenu ~= nil and _G.__unitMenu.unit == "target",
+	"and it opens the target's menu")
+
+_G.__unitMenu = nil
+check(_G.__rightClick(UF.player.click) and _G.__unitMenu ~= nil
+	and _G.__unitMenu.which == "SELF",
+	"and the player's own is SELF, which is the menu with Leave Party on it")
 _G.__units.target.exists = false
 fire("PLAYER_TARGET_CHANGED")
 check(not UF.target.glass:IsShown(),
@@ -10827,9 +10901,15 @@ do  -- the furniture
 	check(Minimap:GetZoom() == 1, "the wheel zooms in")
 	Minimap:GetScript("OnMouseWheel")(Minimap, -1)
 	check(Minimap:GetZoom() == 0, "and out")
+	-- THROUGH THE CLIENT'S OWN MENU. The dropdown frame this used to reach for
+	-- has not existed for years; the mock invented it because we asked, so the
+	-- suite was green while right-clicking the map did nothing at all. Opened
+	-- as a CONTEXT menu, which puts it at the cursor: the button's own OpenMenu
+	-- anchors to the button, and the button is hidden furniture in a corner.
 	Minimap:GetScript("OnMouseUp")(Minimap, "RightButton")
-	check(_G.__trackingMenu, "right-click opens the tracking menu the hidden"
-		.. " button used to own")
+	check(_G.__trackingMenu == Minimap,
+		"right-click opens the tracking menu at the map, not at the hidden"
+		.. " button that used to own it")
 	Minimap:GetScript("OnMouseUp")(Minimap, "LeftButton")
 	check(_G.__minimapPinged, "and left-click still pings")
 end
