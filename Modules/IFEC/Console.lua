@@ -24,10 +24,15 @@ local Glass = A.Glass
 A.IFEC = A.IFEC or {}
 local Route, Taxi = A.IFEC.Route, A.IFEC.Taxi
 
--- The design's header: 560 wide, 10/20/10/12 padding, 14 between things.
-local WIDTH   = 560
-local PAD_L, PAD_R, PAD_T, PAD_B = 12, 20, 10, 10
-local GAP     = 14
+-- The design fixes the header at 560. That is a 1920-wide screen's 560 and it
+-- does not travel: at the minimum scale on a 1080p monitor it is still most of
+-- a third of the screen, and on a route with two short names it is mostly empty
+-- capsule. So 560 is the CEILING and the capsule is otherwise cut to its
+-- contents, which is what the concept actually looks like.
+local WIDTH_MAX = 560
+local WIDTH_MIN = 240
+local PAD_L, PAD_R, PAD_T, PAD_B = 10, 14, 8, 8
+local GAP     = 12
 
 -- 44 across the ring. The sheet insets the ring inside its cell so the frames
 -- cannot bleed into each other, so the frame is a little larger than the ring.
@@ -59,7 +64,7 @@ local function Build()
 	-- interface in flight is one UIParent:SetAlpha, and a child of UIParent
 	-- would fade with everything else.
 	local f = CreateFrame("Frame", "AetherUIIFEC")
-	f:SetSize(WIDTH, HEIGHT)
+	f:SetSize(WIDTH_MIN, HEIGHT)
 	f:SetFrameStrata("MEDIUM")
 	f:Hide()
 
@@ -180,6 +185,39 @@ function IF:Refresh()
 		bits[#bits + 1] = legs .. " legs"
 	end
 	f.sub:SetText(table.concat(bits, "  \194\183  "))
+
+	self:Fit()
+	self:UpdateJumpOff(flight)
+end
+
+-- The chevron's box, which the width has to leave room for.
+local CHEV = 18
+
+--- Cut the capsule to what is in it.
+--
+--  Called after the strings are set, because it measures them. A route with two
+--  short names gets a short capsule; a long one grows to the design's 560 and
+--  stops, after which the strings truncate rather than the window running off
+--  the screen.
+function IF:Fit()
+	local f = self.frame
+	if not f or f.region then return end          -- a panel keeps its width
+
+	local text = 0
+	for _, fs in ipairs({ f.route, f.sub }) do
+		local w = fs.GetStringWidth and fs:GetStringWidth() or 0
+		if w > text then text = w end
+	end
+
+	local want = PAD_L + DIAL_FRAME + GAP + text + GAP + CHEV + PAD_R
+	if want < WIDTH_MIN then want = WIDTH_MIN end
+	if want > WIDTH_MAX then want = WIDTH_MAX end
+
+	-- Only when it actually moves. SetWidth on a frame the mover is holding is
+	-- cheap but not free, and this runs on every tick of every flight.
+	if math.abs((f:GetWidth() or 0) - want) > 0.5 then
+		f:SetWidth(want)
+	end
 end
 
 --- Hang something under the header, which is what makes this a panel.
@@ -272,6 +310,9 @@ function IF:OnFlight(event, flight)
 	else
 		A:UnregisterTicker(self)
 		self:HideInterface(false)
+		-- Refresh is what normally hides this, and Refresh returns early with no
+		-- flight - so landing left the button on screen over the minimap.
+		if self.jump then self.jump:Hide() end
 		if self.frame then self.frame:Hide() end
 	end
 end
@@ -300,6 +341,75 @@ function IF:HideInterface(hide)
 		UIParent:SetAlpha(self._uiAlpha or 1)
 		self._uiAlpha = nil
 	end
+
+	-- THE MAP STAYS. It is drawing the ground going past, which is the one part
+	-- of the interface worth having while you are a passenger. Asked of the
+	-- minimap module and skipped if there isn't one - a console that needed the
+	-- map to exist would be a console with a new way to break.
+	local MM = A:GetModule("minimap")
+	if MM and MM.SetDetached and MM.enabled then MM:SetDetached(hide) end
+end
+
+--- Get off at the next stop.
+--
+--  TaxiRequestEarlyLanding is live on this build - Blizzard's own vehicle-leave
+--  button calls it, gated on UnitOnTaxi, with TAXI_CANCEL for its tooltip.
+--
+--  ONLY ON A MULTI-LEG JOURNEY. It puts you down at the NEXT flight master, so
+--  on a single-hop flight that is the place you were going anyway and the
+--  button is at best pointless. On a two-leg trip it is the whole point.
+--
+--  It hangs off the minimap rather than the console, where the concept puts it
+--  and where the map is telling you what you would be getting off into. The
+--  minimap module is asked for its frame and the button simply does not appear
+--  if there is no minimap to hang it on.
+function IF:UpdateJumpOff(flight)
+	local legs = flight and flight.legs and #flight.legs or 0
+	local wanted = legs > 1 and TaxiRequestEarlyLanding ~= nil
+
+	if not wanted then
+		if self.jump then self.jump:Hide() end
+		return
+	end
+
+	if not self.jump then
+		local MM = A:GetModule("minimap")
+		local host = MM and MM.frame
+		if not host then return end
+
+		local b = W.CreateButton(host, { corner = 12 })
+		b:SetSize(112, 26)
+		b:SetPoint("TOP", host, "BOTTOM", 0, -10)
+
+		-- Chevron rather than U+2193, for the same reason the route separator is
+		-- not U+2192: Outfit has no arrows. This one points down already.
+		b.glyph = b:CreateTexture(nil, "ARTWORK")
+		b.glyph:SetTexture(Media.texture.chevron)
+		b.glyph:SetSize(11, 11)
+		b.glyph:SetPoint("LEFT", b, "LEFT", 14, 0)
+
+		b.label = W.Text(b, "pnBody", "LEFT", "OVERLAY")
+		b.label:SetPoint("LEFT", b.glyph, "RIGHT", 7, 0)
+		b.label:SetText("Jump Off")
+
+		b:SetScript("OnClick", function()
+			if TaxiRequestEarlyLanding then pcall(TaxiRequestEarlyLanding) end
+		end)
+		b:SetScript("OnEnter", function(self)
+			if not GameTooltip then return end
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetText(TAXI_CANCEL or "Jump Off")
+			if TAXI_CANCEL_DESCRIPTION then
+				GameTooltip:AddLine(TAXI_CANCEL_DESCRIPTION, 1, 1, 1, true)
+			end
+			GameTooltip:Show()
+		end)
+		b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+		self.jump = b
+	end
+
+	self.jump:Show()
 end
 
 --- Put the interface back if we are holding it hidden and are not flying.

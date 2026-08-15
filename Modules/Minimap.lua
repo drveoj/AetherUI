@@ -288,6 +288,16 @@ function MM:UpdateZone()
 		self.pill.zone:SetText("In combat")
 		W.Color(self.pill.zone, c.danger)
 		self.pill.coords:SetText("")
+	elseif UnitOnTaxi and UnitOnTaxi("player") then
+		-- Same shape as "In combat", and asked of the client directly rather
+		-- than of the console: whether you are on a griffin is one function
+		-- call, and the minimap should not need the flight module to exist.
+		self.pill.dot:Show()
+		self.pill.zone:ClearAllPoints()
+		self.pill.zone:SetPoint("LEFT", self.pill.dot, "RIGHT", 6, 0)
+		self.pill.zone:SetText("In flight")
+		W.Color(self.pill.zone, c.accent)
+		self.pill.coords:SetText("")
 	else
 		self.pill.dot:Hide()
 		self.pill.zone:ClearAllPoints()
@@ -467,6 +477,31 @@ end
 -- ---------------------------------------------------------------------------
 -- module
 -- ---------------------------------------------------------------------------
+
+--- Lift the map out of UIParent, or put it back.
+--
+--  The console hides the interface in flight with one UIParent alpha, and the
+--  map is the one thing you still want: it is drawing the ground going past.
+--  Alpha multiplies down the parent chain, so there is no alpha to give a child
+--  of a frame at zero - it has to leave the chain.
+--
+--  Never in combat, where SetParent is refused; you cannot be attacked on a
+--  griffin, so this only has to be true, not clever.
+function MM:SetDetached(on)
+	local f = self.frame
+	if not f or InCombatLockdown() then return false end
+	if (self._detached and true) == (on and true) then return false end
+
+	self._detached = on and true or nil
+	-- Spelt out rather than `on and nil or UIParent`, which cannot ever yield
+	-- nil - the map stayed parented and stayed invisible.
+	if on then
+		pcall(f.SetParent, f, nil)
+	else
+		pcall(f.SetParent, f, UIParent)
+	end
+	return true
+end
 
 function MM:AnchorAll()
 	local cfg = A.Config:Module("minimap")

@@ -21111,6 +21111,93 @@ section("ifec: landing, at the scale of everything else, out of the way", functi
 	A:SetModuleEnabled("zen", zenWas)
 end)
 
+section("ifec: cut to its contents, and the map you still want", function()
+	local IF   = A:GetModule("ifec")
+	local Taxi = A.IFEC.Taxi
+	local MM   = A:GetModule("minimap")
+
+	local zenWas = A:GetModule("zen").enabled
+	A:SetModuleEnabled("zen", false)
+	UIParent:SetAlpha(1)
+	Taxi:Start()
+
+	local function fly(nodes, routes)
+		_G.__taxi.nodes, _G.__taxi.routes = nodes, routes or {}
+		TakeTaxiNode(#nodes)
+		_G.__onTaxi = true
+		fire("PLAYER_CONTROL_LOST")
+		tick(0.4)
+	end
+	local function land()
+		_G.__onTaxi = false
+		fire("PLAYER_CONTROL_GAINED")
+		tick(0.4)
+	end
+
+	-- THE DESIGN'S 560 IS A CEILING, not a width. It is a 1920-wide screen's
+	-- 560, and on a smaller one at minimum scale it is most of a third of the
+	-- screen - for a route whose names are short and mostly empty capsule.
+	fly({
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+	})
+	local f = IF.frame
+	local short = f:GetWidth()
+	check(short <= 560, "the capsule never exceeds the design's width (" .. short .. ")")
+	check(short >= 240, "nor shrinks below something readable")
+	land()
+
+	fly({
+		{ name = "Marshal's Refuge, Un'Goro Crater", kind = "CURRENT" },
+		{ name = "Thunder Bluff, Mulgore",           kind = "REACHABLE" },
+	})
+	check(f:GetWidth() > short,
+		"a longer route gets a longer capsule (" .. f:GetWidth() .. " vs " .. short .. ")")
+	land()
+
+	-- JUMP OFF IS FOR MULTI-LEG JOURNEYS ONLY. Early landing puts you down at
+	-- the NEXT flight master, which on a single-hop flight is where you were
+	-- going anyway.
+	fly({
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+	})
+	check(IF.jump == nil or not IF.jump:IsShown(),
+		"a single-hop flight offers no way to jump off")
+	land()
+
+	fly({
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = "Orgrimmar, Durotar",      kind = "REACHABLE" },
+	}, { [3] = { 2, 3 } })
+	check(IF.jump ~= nil and IF.jump:IsShown(), "a two-leg journey offers one")
+	check(IF.jump:GetParent() == MM.frame, "hung off the minimap, where the concept puts it")
+
+	local before = _G.__taxi.earlyLandings
+	IF.jump:GetScript("OnClick")(IF.jump)
+	check(_G.__taxi.earlyLandings == before + 1, "and clicking it asks to land early")
+
+	-- THE MAP STAYS. Alpha multiplies down the parent chain, so a child of a
+	-- frame at zero cannot be given an alpha - it has to leave the chain.
+	check(UIParent:GetAlpha() == 0, "the interface is hidden")
+	check(MM.frame:GetParent() == nil, "but the map has left UIParent, so it is still drawn")
+
+	-- And the pill says so, the way it says "In combat".
+	MM:UpdateZone()
+	check(MM.pill.zone:GetText() == "In flight", "with the pill reading In flight")
+
+	land()
+	check(MM.frame:GetParent() == UIParent, "and the map goes back afterwards")
+	check(IF.jump == nil or not IF.jump:IsShown(), "with the jump-off control put away")
+	MM:UpdateZone()
+	check(MM.pill.zone:GetText() ~= "In flight", "and the pill back to the zone")
+
+	Taxi:Stop()
+	IF:HideInterface(false)
+	A:SetModuleEnabled("zen", zenWas)
+end)
+
 section("ifec: registering content packs, several at once", function()
 	local R = A.IFEC and A.IFEC.Registry
 	check(R ~= nil, "the registry loaded")
