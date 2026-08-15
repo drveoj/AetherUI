@@ -2670,6 +2670,15 @@ do
 			fs:SetText(label)
 			_G["CharacterFrameTab" .. i .. "Text"] = fs
 
+			-- A PLAIN STRING UNDER THE SAME NAME. Some of Blizzard's templates
+			-- keep the label as a value beside the region that draws it - a
+			-- FriendsFrame tab has `text = "FRIENDS"` next to its Text
+			-- fontstring - and anything looking up "Text" by field name finds
+			-- whichever it happens to check first. Handing that back is a
+			-- caller setting a field on a string, which is the social window
+			-- refusing to open.
+			t.text = label
+
 			-- Reachable as the button's own font string, which is how
 			-- PanelTemplates_TabResize finds it. Without this the client's own
 			-- resize returns early and the mock quietly agrees that a width set

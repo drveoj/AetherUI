@@ -77,11 +77,20 @@ function Reskin.Element(frame, key)
 	if type(frame) ~= "table" or type(key) ~= "string" then return nil end
 
 	local lower = key:gsub("^%w", string.lower)
-	local el = frame[lower] or frame[key]
-	if el ~= nil then return el end
+
+	-- A PART, NEVER A VALUE. Some templates keep a plain string under the same
+	-- name as the region we want - a FriendsFrame tab has `text = "FRIENDS"`
+	-- sitting beside its Text fontstring - and handing that back means the
+	-- caller sets a field on a string and the window fails to open. Each
+	-- candidate is skipped rather than returned, so the next one still gets a
+	-- look in.
+	local el = frame[lower]
+	if type(el) ~= "table" then el = frame[key] end
+	if type(el) == "table" then return el end
 
 	local name = frame.GetName and frame:GetName()
-	return name and _G[name .. key] or nil
+	el = name and _G[name .. key]
+	return type(el) == "table" and el or nil
 end
 
 -- ---------------------------------------------------------------------------
