@@ -171,7 +171,11 @@ local PILL_H = 19
 
 function W.Pill(parent, style, opts)
 	opts = opts or {}
-	local pill = A.Glass.CreatePill(parent, { fill = "glass", edge = "glassEdge" })
+	-- `frameType` so a pill can be a Button. Everything else about a pill that
+	-- happens to be clickable is identical, and the alternative is a second
+	-- capsule that only looks like this one.
+	local pill = A.Glass.CreatePill(parent, {
+		fill = "glass", edge = "glassEdge", frameType = opts.frameType })
 	pill:SetHeight(opts.height or PILL_H)
 	if not opts.edge then pill:SetEdgeShown(false) end
 

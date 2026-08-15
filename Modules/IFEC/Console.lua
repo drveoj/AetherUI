@@ -39,6 +39,7 @@ local GAP     = 12
 local DIAL    = 44
 local DIAL_FRAME = DIAL / (Media.dial and Media.dial.ring or 1)
 local CHEV    = 18                     -- the fold control's box
+local GLYPH_ROOM = 17                  -- the exit mark plus its gap, inside a pill
 local DISC    = 35
 local RIM     = 2
 
@@ -436,9 +437,14 @@ function IF:UpdateJumpOff(flight)
 		local host = MM and MM.frame
 		if not host then return end
 
-		local b = W.CreateButton(host, { corner = 12 })
-		b:SetSize(118, 26)
-		b:SetPoint("TOP", host, "BOTTOM", 0, -10)
+		-- THE SAME PILL THE MAP ALREADY USES, as a Button. A second capsule of
+		-- our own would only ever be a near-copy of this one, and it was landing
+		-- on top of it.
+		local b = W.Pill(host, "pnBody", { height = 24, padX = 12,
+			frameType = "Button" })
+		-- UNDER THE ZONE PILL, not under the map: the pill is anchored there
+		-- already, so anchoring to the map put the two in the same place.
+		b:SetPoint("TOP", MM.pill or host, "BOTTOM", 0, -6)
 		b:EnableMouse(true)
 		if b.RegisterForClicks then b:RegisterForClicks("AnyUp") end
 
@@ -455,12 +461,18 @@ function IF:UpdateJumpOff(flight)
 		-- and borrowing it here would promise a window. This is an arrow onto a
 		-- ground line: alight here.
 		b.glyph = b:CreateTexture(nil, "ARTWORK")
-		b.glyph:SetSize(12, 12)
-		b.glyph:SetPoint("LEFT", b, "LEFT", 13, 0)
+		b.glyph:SetSize(11, 11)
+		b.glyph:SetPoint("RIGHT", b.text, "LEFT", -6, 0)
 		Media:SetIcon(b.glyph, "exit")
 
-		b.label = W.Text(b, "pnBody", "LEFT", "OVERLAY")
-		b.label:SetPoint("LEFT", b.glyph, "RIGHT", 7, 0)
+		-- The pill sizes itself to its text, so the glyph has to be paid for.
+		b.label = b.text
+		b.SetPillLabel = function(self, text)
+			self:SetLabel(text)
+			self:SetWidth((self:GetWidth() or 0) + GLYPH_ROOM)
+			self.text:ClearAllPoints()
+			self.text:SetPoint("CENTER", self, "CENTER", GLYPH_ROOM / 2, 0)
+		end
 
 		b:SetScript("OnClick", function() IF:RequestJumpOff() end)
 		b:SetScript("OnEnter", function(self)
@@ -500,11 +512,11 @@ function IF:PaintJumpOff()
 	local c = Palette.c
 
 	if self._jumpAsked then
-		b.label:SetText("Exit requested")
+		b:SetPillLabel("Exit requested")
 		W.Color(b.label, c.textDim)
 		b.glyph:SetVertexColor(c.textDim[1], c.textDim[2], c.textDim[3], 0.55)
 	else
-		b.label:SetText("Jump Off")
+		b:SetPillLabel("Jump Off")
 		W.Color(b.label, c.accent)
 		b.glyph:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 	end

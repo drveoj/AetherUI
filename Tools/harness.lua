@@ -21184,6 +21184,13 @@ section("ifec: cut to its contents, and the map you still want", function()
 	check(IF.jump ~= nil and IF.jump:IsShown(), "a two-leg journey offers one")
 	check(IF.jump:GetParent() == MM.frame, "hung off the minimap, where the concept puts it")
 
+	-- UNDER THE ZONE PILL, NOT ON IT. The pill is already anchored to the map's
+	-- bottom edge, so anchoring to the map put the two in the same place and
+	-- the button landed on top of "In flight".
+	local point, rel = IF.jump:GetPoint()
+	check(point == "TOP" and rel == MM.pill,
+		"below the zone pill rather than on top of it")
+
 	-- ALPHA DOES NOT STOP A FRAME TAKING THE MOUSE. The whole interface is
 	-- sitting there at zero alpha still catching clicks, and this button was
 	-- underneath it - clicking it did nothing at all in game.
