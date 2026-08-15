@@ -273,41 +273,67 @@ local function ClockText()
 	return date("%H:%M")
 end
 
+--- What the pill is saying instead of the zone, if anything.
+--
+--  One list rather than a branch per state, so adding one is a line here and
+--  nothing else. Order is priority: you cannot be in combat on a taxi, but if
+--  the client ever disagrees, combat is the one you need to know about.
+--
+--  Each is asked of the client directly. The minimap should not need the
+--  flight module to exist to know you are on a griffin.
+function MM:PillState()
+	local c = Palette.c
+	if InCombatLockdown() then
+		return { text = "In combat", colour = c.danger }
+	end
+	if UnitOnTaxi and UnitOnTaxi("player") then
+		-- Accent, not danger: a red light says you are being attacked.
+		return { text = "In flight", colour = c.accent }
+	end
+	return nil
+end
+
+--- Put the pill into a state, or back to showing the zone.
+--
+--  The dot is a state LIGHT - it takes the state's colour rather than being a
+--  fixed red one - and the label steps aside for it: both were anchored 14 in
+--  from the left edge once, so the dot sat on the first word and "In combat"
+--  rendered as a blob and the word "combat".
+function MM:SetPillState(text, colour)
+	if not self.pill then return end
+
+	if not text then
+		self.pill.dot:Hide()
+		self.pill.zone:ClearAllPoints()
+		self.pill.zone:SetPoint("LEFT", self.pill, "LEFT", 14, 0)
+		return
+	end
+
+	self.pill.dot:Show()
+	self.pill.dot:SetVertexColor(colour[1], colour[2], colour[3], 1)
+	self.pill.zone:ClearAllPoints()
+	self.pill.zone:SetPoint("LEFT", self.pill.dot, "RIGHT", 6, 0)
+	self.pill.zone:SetText(text)
+	W.Color(self.pill.zone, colour)
+	-- Coordinates are for finding your way; a state is what is happening to you.
+	self.pill.coords:SetText("")
+end
+
 function MM:UpdateZone()
 	if not self.pill then return end
 	local cfg = A.Config:Module("minimap")
 	local c = Palette.c
 
-	if InCombatLockdown() then
-		self.pill.dot:Show()
-		-- The dot and the label were both anchored 14 in from the left edge, so
-		-- the dot sat on top of the first word - "In combat" rendered as a red
-		-- blob and the word "combat". Move the label out of its way.
-		self.pill.zone:ClearAllPoints()
-		self.pill.zone:SetPoint("LEFT", self.pill.dot, "RIGHT", 6, 0)
-		self.pill.zone:SetText("In combat")
-		W.Color(self.pill.zone, c.danger)
-		-- Said here rather than only at build: the dot is a state light now, not
-		-- a fixed red one, and something else may have coloured it last.
-		self.pill.dot:SetVertexColor(c.danger[1], c.danger[2], c.danger[3], 1)
-		self.pill.coords:SetText("")
-	elseif UnitOnTaxi and UnitOnTaxi("player") then
-		-- Same shape as "In combat", and asked of the client directly rather
-		-- than of the console: whether you are on a griffin is one function
-		-- call, and the minimap should not need the flight module to exist.
-		self.pill.dot:Show()
-		self.pill.zone:ClearAllPoints()
-		self.pill.zone:SetPoint("LEFT", self.pill.dot, "RIGHT", 6, 0)
-		self.pill.zone:SetText("In flight")
-		W.Color(self.pill.zone, c.accent)
-		-- Accent, not danger: a red light says you are being attacked. And not
-		-- white either, so it does not compete with the clock beside it.
-		self.pill.dot:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
-		self.pill.coords:SetText("")
+	-- A STATE, or the zone. Which state is the only thing that differs between
+	-- them, so it is the only thing written out - the three near-identical
+	-- blocks this replaced were how the dot came to be red in flight.
+	local state = self:PillState()
+
+	if state then
+		self:SetPillState(state.text, state.colour)
 	else
-		self.pill.dot:Hide()
-		self.pill.zone:ClearAllPoints()
-		self.pill.zone:SetPoint("LEFT", self.pill, "LEFT", 14, 0)
+		self:SetPillState(nil)
+
 		local zone = (GetMinimapZoneText and GetMinimapZoneText()) or ""
 		self.pill.zone:SetText(cfg.showZone == false and "" or zone)
 		W.Color(self.pill.zone, ZonePVPColor() or c.text)

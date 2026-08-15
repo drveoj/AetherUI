@@ -155,6 +155,14 @@ Fader.PlayerIsAFK = PlayerIsAFK
 local function HardAwake(cfg)
 	if InCombatLockdown() then return true end
 	if casting then return true end
+
+	-- ON A TAXI. A flight is the most idle you ever are - no combat, no target,
+	-- no cursor, nothing to cast - so every other test here says "gone" and the
+	-- HUD faded out from under the one thing you were watching. The map is
+	-- drawing the ground going past and the pill is counting the flight down;
+	-- both are the reason to be looking at the screen at all.
+	if UnitOnTaxi and UnitOnTaxi("player") then return true end
+
 	-- Dragging frames around is the one time a disappearing HUD is actively
 	-- hostile, and the cursor poll alone will not save you while you sit still
 	-- deciding where something should go.

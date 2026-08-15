@@ -21241,6 +21241,18 @@ section("ifec: cut to its contents, and the map you still want", function()
 	local dr = MM.pill.dot:GetVertexColor()
 	check(dr == A.Palette.c.accent[1], "its light in accent rather than combat red")
 
+	-- THE FADER MUST NOT TAKE IT AWAY. A flight is the most idle you ever are -
+	-- no combat, no target, no cursor, nothing to cast - so every test the
+	-- fader makes said "gone" and it faded the map out from under the one thing
+	-- worth watching. The pill showed for a second and vanished.
+	local hadDelay = A.db.profile.fader.delay
+	A.db.profile.fader.delay = 1
+	for i = 1, 40 do tick(0.1) end
+	check(A.Fader.state == "awake",
+		"a flight keeps the HUD awake, being idle by every other measure ("
+		.. tostring(A.Fader.state) .. ")")
+	A.db.profile.fader.delay = hadDelay
+
 
 	land()
 	check(MM.frame:GetParent() == UIParent, "and the map goes back afterwards")
