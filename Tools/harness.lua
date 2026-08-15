@@ -1640,6 +1640,13 @@ local function tooltipLines(tip)
 		if self.__lines and #self.__lines > 0 then return #self.__lines end
 		return self.__shows and 1 or 0
 	end
+	--- The first line, which is what a real tooltip's GetText answers. A real
+	--  method the mock did not have, so a caller asking what a tooltip says got
+	--  a nil-index rather than an answer.
+	function tip:GetText()
+		local first = self.__lines and self.__lines[1]
+		return first and lineFor(self, 1, "Left"):GetText() or nil
+	end
 	function tip:GetLeftLine(i) return lineFor(self, i, "Left") end
 
 	function tip:SetPadding(w, h) self.__padding = { w, h } end
@@ -21177,6 +21184,11 @@ section("ifec: cut to its contents, and the map you still want", function()
 	check(IF.jump.glyph:GetTexture() == A.Media.icons.file,
 		"with a mark of its own rather than the chevron")
 
+	-- The tooltip says what the thing DOES, not what it is called again.
+	IF.jump:GetScript("OnEnter")(IF.jump)
+	check(GameTooltip:GetText() == "Jump Off", "with a tooltip before it is used")
+	IF.jump:GetScript("OnLeave")(IF.jump)
+
 	local before = _G.__taxi.earlyLandings
 	IF.jump:GetScript("OnClick")(IF.jump)
 	check(_G.__taxi.earlyLandings == before + 1, "and clicking it asks to land early")
@@ -21204,6 +21216,21 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- moment after appearing.
 	check(MM.pill:GetParent() == IF:Top(),
 		"and the pill with it, being its sibling rather than its child")
+
+	-- AND THE TOOLTIP. It is a child of UIParent like everything else, so with
+	-- the interface at zero it was being shown perfectly and drawn at nothing:
+	-- the button took the hover and produced no tooltip at all.
+	check(GameTooltip:GetParent() == IF:Top(),
+		"and the tooltip, or hovering anything of ours produces nothing visible")
+
+	-- The button has already been clicked by this point in the block, so the
+	-- tooltip should be saying what it says AFTER asking.
+	IF.jump:GetScript("OnEnter")(IF.jump)
+	check(GameTooltip:IsShown(), "so the jump-off button raises one")
+	check((GameTooltip:GetText() or "") == "Exit requested",
+		"which follows the button's state rather than naming it once ("
+		.. tostring(GameTooltip:GetText()) .. ")")
+	IF.jump:GetScript("OnLeave")(IF.jump)
 	check(IF:Top():GetParent() == nil, "which is itself parentless, being created that way")
 
 	-- And the pill says so, the way it says "In combat".

@@ -394,6 +394,20 @@ function IF:HideInterface(hide)
 	if MM and MM.SetDetached and MM.enabled then
 		MM:SetDetached(hide, self:Top())
 	end
+
+	-- THE TOOLTIP TOO. It is a child of UIParent like everything else, so with
+	-- the interface at zero it was being shown perfectly and drawn at nothing -
+	-- the jump-off button took the hover and produced no tooltip. Nothing else
+	-- can raise one while the interface is hidden, so it is ours for the flight.
+	if GameTooltip and not InCombatLockdown() then
+		if hide then
+			self._tipParent = GameTooltip:GetParent()
+			pcall(GameTooltip.SetParent, GameTooltip, self:Top())
+		elseif self._tipParent then
+			pcall(GameTooltip.SetParent, GameTooltip, self._tipParent)
+			self._tipParent = nil
+		end
+	end
 end
 
 --- A parentless holder for anything that has to outlive UIParent's alpha.
