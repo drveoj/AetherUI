@@ -14,7 +14,9 @@
 	inaudible once and obvious after fifteen minutes of episode.
 
 	PlayMusic is not used anywhere here: it loops, which is right for Zen and
-	wrong for a programme. PlaySoundFile on the Music channel plus StopSound is.
+	wrong for a programme. PlaySoundFile plus StopSound is - but NOT on the
+	Music channel, which plays over the game's own zone music rather than
+	replacing it. See the note above CHANNEL.
 
 	Not on the timer path. The flight timer must work with every line of this
 	absent.
@@ -53,14 +55,39 @@ end
 -- the channel
 -- ---------------------------------------------------------------------------
 
---- Take the Music channel, remembering who had it.
+-- NOT THE MUSIC CHANNEL. The brief says to play on "Music" so the programme
+-- follows the music slider, and on this client that plays OVER the game's own
+-- zone music rather than replacing it - two things at once, which is what it
+-- sounded like. The game's music is Sound_EnableMusic, and switching that off
+-- would take our audio with it if we shared the channel.
 --
---  Zen loops an ambient track on the same channel and PlayMusic replaces
---  whatever is playing, so the two would fight for a whole flight. The console
---  wins while you are a passenger - the flight is the foreground activity and
---  its content is the point - and Zen is told to give it up rather than being
---  talked over, so its own state stays true.
+-- So the game's music is silenced for the flight and the programme plays
+-- somewhere else. The cost is that it follows the Ambience slider rather than
+-- the Music one; the alternative was PlayMusic, which does replace the game's
+-- music but loops, and a looping segment restarts audibly if the boundary
+-- timer is a few frames late.
+local CHANNEL = "Ambience"
+
+--- Take the channel, remembering what it was.
 local function takeChannel()
+	if Playback._took then return end
+	Playback._took = true
+
+	if GetCVar and SetCVar then
+		local ok, was = pcall(GetCVar, "Sound_EnableMusic")
+		if ok and was ~= nil then
+			Playback._musicWas = was
+			if was ~= "0" then pcall(SetCVar, "Sound_EnableMusic", 0) end
+		end
+	end
+	-- And stop what it is playing this second: the CVar governs what starts
+	-- next, not what is already sounding.
+	if StopMusic then pcall(StopMusic) end
+
+	-- Zen loops an ambient track and PlayMusic replaces whatever is on the
+	-- channel, so the two would fight for a whole flight. The console wins
+	-- while you are a passenger, and Zen is told to give the channel up rather
+	-- than being talked over, so its own state stays true.
 	local Z = A:GetModule("zen")
 	if Z and Z.enabled and Z.RestoreAudio and not Playback._hadZen then
 		Playback._hadZen = true
@@ -69,14 +96,36 @@ local function takeChannel()
 end
 
 local function giveChannelBack()
-	if not Playback._hadZen then return end
-	Playback._hadZen = nil
-	local Z = A:GetModule("zen")
-	-- Only if zen is still up. Handing the channel back to something that has
-	-- since ended would start a track nobody asked for.
-	if Z and Z.enabled and Z._zen and Z.SetAudio then
-		pcall(Z.SetAudio, Z, 1)
+	if not Playback._took then return end
+	Playback._took = nil
+
+	if Playback._musicWas ~= nil and SetCVar then
+		pcall(SetCVar, "Sound_EnableMusic", Playback._musicWas)
 	end
+	Playback._musicWas = nil
+
+	if Playback._hadZen then
+		Playback._hadZen = nil
+		local Z = A:GetModule("zen")
+		-- Only if zen is still up. Handing the channel back to something that
+		-- has since ended would start a track nobody asked for.
+		if Z and Z.enabled and Z._zen and Z.SetAudio then
+			pcall(Z.SetAudio, Z, 1)
+		end
+	end
+end
+
+--- Put the player's music setting back if we are still holding it and there is
+--  no programme.
+--
+--  A SILENCED GAME is the worst thing this could leave behind - worse than the
+--  hidden interface, because nothing on screen would say why. Hooked to world
+--  load as well as to landing.
+function Playback:Recover()
+	if not self._took then return false end
+	if self.state == "playing" then return false end
+	giveChannelBack()
+	return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -113,7 +162,7 @@ local function playSegment(index)
 	takeChannel()
 
 	if not PlaySoundFile then return false end
-	local willPlay, handle = PlaySoundFile(seg.file, "Music")
+	local willPlay, handle = PlaySoundFile(seg.file, CHANNEL)
 
 	if not willPlay then
 		-- The client says nil for a muted channel AND for a file it could not
@@ -305,3 +354,7 @@ end
 function Playback:IsPlaying()
 	return self.state == "playing"
 end
+
+-- Self-starting, like the registry: a world load puts the player's music
+-- setting back if a flight ended in a way nothing else saw.
+A:RegisterEvent(Playback, "PLAYER_ENTERING_WORLD", function() Playback:Recover() end)

@@ -1324,9 +1324,14 @@ function SetCVar(name, value)
 		_G.__badCVarWrites = _G.__badCVarWrites + 1
 		error("SetCVar: unknown console variable '" .. tostring(name) .. "'", 2)
 	end
-	-- Six decimal places, the way the client writes a float back.
+	-- Six decimal places for a FLOAT, the way the client writes one back - but
+	-- an integer comes back as an integer. Formatting everything to 6dp meant
+	-- SetCVar("Sound_EnableMusic", 0) read back as "0.000000", which is not
+	-- what the client stores and not what anything comparing it expects.
 	if type(value) == "number" then
-		_G.__cvars[name] = string.format("%.6f", value)
+		_G.__cvars[name] = (value % 1 == 0)
+			and string.format("%d", value)
+			or string.format("%.6f", value)
 	else
 		_G.__cvars[name] = tostring(value)
 	end
@@ -1354,7 +1359,13 @@ local nextHandle = 0
 
 function PlaySoundFile(file, channel)
 	if type(file) ~= "string" then fail("PlaySoundFile got " .. tostring(file)) end
-	if channel == "Music" and _G.__musicMuted then return nil end
+	-- The console plays on Ambience, not Music: it silences the game's own
+	-- music for the flight, and sharing that channel would silence itself too.
+	-- "the music is off" therefore means whichever channel it is using.
+	if _G.__musicMuted and (channel == "Music" or channel == "Ambience") then
+		return nil
+	end
+	if channel and _G.__cvars["Sound_Enable" .. channel] == "0" then return nil end
 
 	nextHandle = nextHandle + 1
 	_G.__sounds[nextHandle]  = file
@@ -21598,8 +21609,15 @@ section("ifec: playing a programme across a flight", function()
 	local heard = {}
 	P:AddListener(function(event, item) heard[#heard + 1] = event end)
 
+	-- THE GAME'S OWN MUSIC IS SILENCED for the flight. Playing on the Music
+	-- channel puts the programme OVER the zone music rather than in place of
+	-- it, and switching that channel off would take our audio with it - so the
+	-- game's music goes off and the programme plays somewhere else.
+	_G.__cvars.Sound_EnableMusic = "1"
 	check(P:Start(queue), "a programme starts")
 	check(P.state == "playing", "and is playing")
+	check(_G.__cvars.Sound_EnableMusic == "0",
+		"with the game's own music switched off rather than played over")
 	check(_G.__lastSound == "e01_1.ogg", "the first segment of the first item")
 	check(_G.__soundsPlaying() == 1, "one thing at a time")
 
@@ -21687,6 +21705,17 @@ section("ifec: playing a programme across a flight", function()
 	local sawExhausted = false
 	for _, e in ipairs(heard) do if e == "exhausted" then sawExhausted = true end end
 	check(sawExhausted, "running out of programme is announced, not just silence")
+
+	-- AND THE GAME GETS ITS MUSIC BACK. A silenced game is the worst thing this
+	-- could leave behind: nothing on screen would say why. Put back on landing,
+	-- and again on any world load that finds us holding it with nothing playing.
+	P:Stop()
+	check(_G.__cvars.Sound_EnableMusic == "1", "and the game's music comes back")
+
+	P:Start({ c2[2] })
+	P.state = "stopped"                        -- a flight that ended unseen
+	check(P:Recover(), "a setting still held with nothing playing is recoverable")
+	check(_G.__cvars.Sound_EnableMusic == "1", "and recovering hands it back")
 
 	P:Stop()
 	cfg.progress = {}
