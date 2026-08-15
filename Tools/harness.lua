@@ -5515,6 +5515,7 @@ local FILES = {
 	"Modules/Toolbox.lua",
 	"Modules/InFlight/Routes.lua", "Modules/InFlight/Route.lua",
 	"Modules/InFlight/Taxi.lua", "Modules/InFlight/Console.lua",
+	"Modules/InFlight/Registry.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -21004,6 +21005,105 @@ section("ifec: the console, which is a flight timer when it is nothing else", fu
 	_G.__onTaxi = false
 	fire("PLAYER_CONTROL_GAINED")
 	Taxi:Stop()
+end)
+
+section("ifec: registering content packs, several at once", function()
+	local R = A.IFEC and A.IFEC.Registry
+	check(R ~= nil, "the registry loaded")
+
+	local function pack(id, season, api, items)
+		return { packId = id, seasonIndex = season, apiVersion = api or 1,
+		         displayName = id, items = items }
+	end
+	local function ep(id, title, file)
+		return { id = id, type = "podcast", title = title, totalDuration = 60,
+		         segments = { { file = file or ("audio\\" .. id .. ".ogg"), duration = 60 } } }
+	end
+
+	R:Reset()
+
+	-- THE HANDSHAKE WORKS BOTH WAYS ROUND. Load order is not guaranteed, so a
+	-- pack that loaded first leaves its manifest in a global for us to collect
+	-- and one that loads later calls straight in. A pack that only worked one
+	-- way round would vanish depending on how the client felt that session.
+	check(type(_G.AetherUI_IFEC) == "table" and type(_G.AetherUI_IFEC.Register) == "function",
+		"the register function is published for packs that load after us")
+
+	_G.AetherUI_IFEC_Pending = { pack("EarlyBird", 1, 1, { ep("e1", "Early One") }) }
+	check(R:Drain() == 1, "and a pack that loaded before us is collected from the pending table")
+	check(_G.AetherUI_IFEC_Pending == nil, "which is cleared once drained")
+	check(R:Drain() == 0, "so draining again finds nothing rather than doubling up")
+
+	check(_G.AetherUI_IFEC.Register(pack("LateBird", 2, 1, { ep("l1", "Late One") })),
+		"a pack registering through the published function is taken")
+
+	-- A CLASH IS REPORTED, NEVER SILENTLY OVERWRITTEN. packId is the addon
+	-- folder name, so two of them means two copies installed or somebody has
+	-- borrowed a name; either way the player wants telling.
+	local ok = R:Register(pack("EarlyBird", 9, 1, { ep("x", "Impostor") }))
+	check(ok == false, "a second pack under a registered name is refused")
+	check(R.packs["EarlyBird"].items[1].title == "Early One", "the first one is untouched")
+
+	-- MIXED API VERSIONS ARE NORMAL and refusal is per-pack, never
+	-- all-or-nothing: one season built against a version we cannot serve must
+	-- not take the others down with it.
+	check(R:Register(pack("FromTheFuture", 3, 99, { ep("f", "Too New") })) == false,
+		"a pack built for a newer console is refused")
+	check(R:Register(pack("Ancient", 4, 0, { ep("a", "Too Old") })) == false,
+		"and one built for an older one")
+	check(R:Register(pack("StillFine", 5, 1, { ep("s", "Fine") })), "while the rest still register")
+
+	-- A BROKEN PACK IS SOMEBODY ELSE'S DATA. It must be refused rather than
+	-- half-carried: a browse list with a nameless row in it reads as our bug.
+	check(R:Register({ packId = "Malformed", apiVersion = 1, items = "not a table" }) == false,
+		"a manifest whose items are not a list is refused")
+	check(R:Register(pack("Empty", 6, 1, {})) == false, "and one with no items")
+	check(R:Register(pack("Nameless", 7, 1, { { id = "x", type = "podcast" } })) == false,
+		"and one whose only item has no title or segments")
+	check(R:Register(nil) == false and R:Register("nonsense") == false,
+		"and something that is not a manifest at all")
+
+	local failures = R:Failures()
+	check(#failures == 8, "every refusal is recorded for the settings readout (" .. #failures .. ")")
+	check(failures[1].packId == "EarlyBird"
+		and failures[1].reason:find("already registered", 1, true) ~= nil,
+		"in words a settings page can print: " .. failures[1].reason)
+
+	-- ORDERING MUST NOT DEPEND ON REGISTRATION ORDER, or the browse list
+	-- reshuffles between sessions for no visible reason. seasonIndex decides.
+	local order = R:Sorted()
+	check(table.concat(order, ",") == "EarlyBird,LateBird,StillFine",
+		"packs sort by season, not by arrival (" .. table.concat(order, ",") .. ")")
+
+	R:Reset()
+	R:Register(pack("Zed", 2, 1, { ep("z", "Zed One") }))
+	R:Register(pack("Alpha", 1, 1, { ep("a", "Alpha One") }))
+	check(table.concat(R:Sorted(), ",") == "Alpha,Zed",
+		"and registering them backwards gives the same order")
+
+	-- COMPOSITE KEYS. Two packs built independently will eventually ship the
+	-- same item id, and only packId:itemId is unique.
+	R:Reset()
+	R:Register(pack("S01", 1, 1, { ep("e01", "Season One, One", "s1e1.ogg") }))
+	R:Register(pack("S02", 2, 1, { ep("e01", "Season Two, One", "s2e1.ogg") }))
+	local cat = R:Catalogue()
+	check(#cat == 2, "two packs using the same item id both survive")
+	check(cat[1].key == "S01:e01" and cat[2].key == "S02:e01",
+		"keyed by pack and item together")
+
+	-- DEDUPLICATION on the resolved file: the same track legitimately appears
+	-- in two packs, and showing it twice under two headings reads as a bug.
+	R:Reset()
+	R:Register(pack("Ambient", 1, 1, { ep("t1", "Rainfall", "shared\\rain.ogg") }))
+	R:Register(pack("BestOf", 2, 1, {
+		ep("t9", "Rainfall (again)", "shared\\rain.ogg"),
+		ep("t8", "Something Else", "other.ogg"),
+	}))
+	cat = R:Catalogue()
+	check(#cat == 2, "a track in two packs is carried once (" .. #cat .. " entries)")
+	check(cat[1].title == "Rainfall", "and the earlier season keeps it")
+
+	R:Reset()
 end)
 
 print("")
