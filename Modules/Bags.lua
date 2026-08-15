@@ -74,6 +74,7 @@ local SEC_LABEL_H   = 15
 local SEC_LABEL_GAP = 7    -- label baseline to the top of its grid
 local GRID_TOP      = 12
 local GRID_BOTTOM   = 16
+local SCROLL_STEP   = 44   -- pixels per wheel click
 
 local FOOT_H        = 44
 local FOOT_PAD_X    = 24
@@ -633,38 +634,47 @@ end
 -- ---------------------------------------------------------------------------
 -- pools
 --
--- Two pools, one per kind, exactly as the quest log's rows are pooled: a single
--- pool indexed by display position cannot work when the kind of thing at a
--- position changes, and WoW never frees a frame or a texture.
---
--- The item pool goes further and is keyed by (bag, slot) rather than by
--- position. A slot's identity is fixed for the life of the session, so a button
--- is built once and only ever re-anchored -- which means no button is ever
--- pointing at an item other than the one it was built for, and the whole class
--- of stale-index bugs simply cannot occur.
+-- W.Pool, the same as the quest log's rows. Labels are keyed by position, but
+-- the items are keyed by (bag, slot): a slot's identity is fixed for the life
+-- of the session, so a button is built once and only ever re-anchored -- which
+-- means no button is ever pointing at an item other than the one it was built
+-- for, and the whole class of stale-index bugs simply cannot occur.
 -- ---------------------------------------------------------------------------
 
-local function EnsureProxy(frame, bag)
-	local p = frame.proxies[bag]
-	if not p then
-		p = CreateFrame("Frame", nil, frame.scroll.child)
+--- A window's three pools. The scroll child is read lazily, so this can run
+--  before it exists.
+local function BuildPools(frame)
+	-- One proxy per bag, because the item template reads the bag off its
+	-- parent's GetID() -- see the header.
+	frame.proxies = W.Pool(function(bag)
+		local p = CreateFrame("Frame", nil, frame.scroll.child)
 		p:SetAllPoints(frame.scroll.child)
 		p:SetID(bag)
 		p.id = bag
-		frame.proxies[bag] = p
-		frame.buttons[bag] = {}
-	end
-	return p
+		return p
+	end)
+
+	frame.buttons = W.Pool(function(bag, slot, size)
+		return BuildItemButton(frame.proxies:Get(bag), bag, slot, size)
+	end, 2)
+
+	frame.labels = W.Pool(function()
+		local row = CreateFrame("Frame", nil, frame.scroll.child)
+		row:SetHeight(SEC_LABEL_H)
+
+		row.text = W.Text(row, "bagLabel", "LEFT")
+		row.text:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+
+		row.count = W.Text(row, "bagCount", "LEFT")
+		row.count:SetPoint("LEFT", row.text, "RIGHT", 8, 0)
+
+		return row
+	end)
 end
 
 local function ItemPool(frame, bag, slot, size)
-	local proxy = EnsureProxy(frame, bag)
-	local row = frame.buttons[bag]
-	local b = row[slot]
-	if not b then
-		b = BuildItemButton(proxy, bag, slot, size)
-		row[slot] = b
-	elseif b:GetWidth() ~= size then
+	local b = frame.buttons:Get(bag, slot, size)
+	if b:GetWidth() ~= size then
 		b:SetSize(size, size)
 		-- DecorateSlot draws the glow at twice the slot and centres it, so it
 		-- has to be resized with the button or a rare item's bloom drifts out
@@ -674,53 +684,9 @@ local function ItemPool(frame, bag, slot, size)
 	return b
 end
 
-local function LabelPool(frame, n)
-	local row = frame.labels[n]
-	if not row then
-		row = CreateFrame("Frame", nil, frame.scroll.child)
-		row:SetHeight(SEC_LABEL_H)
-
-		row.text = W.Text(row, "bagLabel", "LEFT")
-		row.text:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-
-		row.count = W.Text(row, "bagCount", "LEFT")
-		row.count:SetPoint("LEFT", row.text, "RIGHT", 8, 0)
-
-		frame.labels[n] = row
-	end
-	return row
-end
-
 -- ---------------------------------------------------------------------------
 -- window chrome
 -- ---------------------------------------------------------------------------
-
---- A scroll frame with no visible bar, because the concept has none. The wheel
---  is the only way to move it, which is what the design implies.
-local function BuildScroller(parent)
-	local scroll = CreateFrame("ScrollFrame", nil, parent)
-	local child = CreateFrame("Frame", nil, scroll)
-	child:SetSize(1, 1)
-	scroll:SetScrollChild(child)
-	scroll.child = child
-
-	scroll:EnableMouseWheel(true)
-	scroll:SetScript("OnMouseWheel", function(self, delta)
-		local max = math.max(0, (self.child:GetHeight() or 0) - (self:GetHeight() or 0))
-		local v = (self:GetVerticalScroll() or 0) - delta * 44
-		if v < 0 then v = 0 elseif v > max then v = max end
-		self:SetVerticalScroll(v)
-	end)
-
-	--- Re-clamp after a rebuild, or a shorter grid leaves the view scrolled past
-	--  its own end and the panel reads as empty.
-	function scroll:Clamp()
-		local max = math.max(0, (self.child:GetHeight() or 0) - (self:GetHeight() or 0))
-		if (self:GetVerticalScroll() or 0) > max then self:SetVerticalScroll(max) end
-	end
-
-	return scroll
-end
 
 --- An icon drawn out of the atlas we have rather than one we do not.
 --
@@ -1088,14 +1054,14 @@ local function BuildFrame(kind)
 	frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 	frame:Hide()
 
-	frame.proxies, frame.buttons, frame.labels = {}, {}, {}
+	BuildPools(frame)
 	frame.filter = ""
 
 	BuildHeader(frame)
 	BuildSearch(frame)
 	BuildFooter(frame)
 
-	local scroll = BuildScroller(frame)
+	local scroll = W.Scroller(frame, SCROLL_STEP)
 	frame.scroll = scroll
 
 	if kind == "bags" then BuildFlyout(frame) end
@@ -1271,7 +1237,7 @@ function Bags:Rebuild(frame)
 	local function Section(label, list, note)
 		if not list or #list == 0 then return end
 		labelN = labelN + 1
-		local lab = LabelPool(frame, labelN)
+		local lab = frame.labels:Get(labelN)
 		if labelN > 1 then y = y + SEC_GAP end
 		lab:ClearAllPoints()
 		lab:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -y)
@@ -1322,7 +1288,7 @@ function Bags:Rebuild(frame)
 	-- got - which is why they went up there with the bag they belong to.
 	if cfg.showEmpty then Section("FREE", empties) end
 
-	for i = labelN + 1, #frame.labels do frame.labels[i]:Hide() end
+	frame.labels:HideFrom(labelN + 1)
 
 	y = y + GRID_BOTTOM
 	child:SetSize(gridW, math.max(1, y))

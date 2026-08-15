@@ -752,6 +752,87 @@ function W.CreateSlot(parent, opts)
 end
 
 -- ---------------------------------------------------------------------------
+-- scrolling lists
+-- ---------------------------------------------------------------------------
+
+--- A scroll frame with no visible bar, because the concept has none. The wheel
+--  is the only way to move it, which is what the design implies. `step` is how
+--  far one wheel click moves it.
+function W.Scroller(parent, step)
+	local scroll = CreateFrame("ScrollFrame", nil, parent)
+	local child = CreateFrame("Frame", nil, scroll)
+	child:SetSize(1, 1)
+	scroll:SetScrollChild(child)
+	scroll.child = child
+
+	scroll:EnableMouseWheel(true)
+	scroll:SetScript("OnMouseWheel", function(self, delta)
+		local max = math.max(0, (self.child:GetHeight() or 0) - (self:GetHeight() or 0))
+		local v = (self:GetVerticalScroll() or 0) - delta * step
+		if v < 0 then v = 0 elseif v > max then v = max end
+		self:SetVerticalScroll(v)
+	end)
+
+	--- Re-clamp after a rebuild, or a shorter list leaves the view scrolled past
+	--  its own end and the pane reads as empty.
+	function scroll:Clamp()
+		local max = math.max(0, (self.child:GetHeight() or 0) - (self:GetHeight() or 0))
+		if (self:GetVerticalScroll() or 0) > max then self:SetVerticalScroll(max) end
+	end
+
+	return scroll
+end
+
+-- ---------------------------------------------------------------------------
+-- frame pools
+--
+-- WoW never frees a frame or a texture, so the key decides whether a list is
+-- cheap or leaks by the hundred. Anything that changes under the caller's feet
+-- retires a built frame and constructs another on every refresh -- a quest row
+-- is three frames and thirty-three regions, and a zone heading comes and goes
+-- with every keystroke in the search box. So the key is whatever is actually
+-- stable: display position with one pool per row kind, or an identity like
+-- (bag, slot), which additionally means no frame can ever point at the wrong
+-- thing.
+-- ---------------------------------------------------------------------------
+
+local Pool = {}
+
+--- The frame for `key`, built the first time it is asked for. A two-deep pool
+--  takes both parts of the key and nests: pool[a][b].
+function Pool:Get(...)
+	local meta = getmetatable(self)
+	local store, key = self, ...
+	if meta.depth == 2 then
+		store = rawget(self, key)
+		if not store then store = {} rawset(self, key, store) end
+		key = select(2, ...)
+	end
+
+	local f = rawget(store, key)
+	if not f then
+		f = meta.build(...)
+		store[key] = f
+	end
+	return f
+end
+
+--- Hide everything from `n` on, for the pools keyed by position.
+function Pool:HideFrom(n)
+	for i = n, #self do self[i]:Hide() end
+end
+
+--- A pool of frames built on demand by `build(key...)`, `depth` key parts deep.
+--
+--  The pool IS its store -- pool[key] is the frame -- so `#pool` and `pairs`
+--  read as they did when these were bare tables. Its own state lives on the
+--  metatable for that reason: a builder sat in the table would turn up in
+--  pairs() as a frame.
+function W.Pool(build, depth)
+	return setmetatable({}, { __index = Pool, build = build, depth = depth or 1 })
+end
+
+-- ---------------------------------------------------------------------------
 -- misc
 -- ---------------------------------------------------------------------------
 

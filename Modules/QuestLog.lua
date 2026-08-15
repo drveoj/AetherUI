@@ -89,6 +89,7 @@ local CARD_PAD_X, CARD_PAD_Y = 18, 14
 local BAR_H            = 4
 
 local SEARCH_W, SEARCH_H = 220, 30
+local SCROLL_STEP      = 42          -- pixels per wheel click
 
 local CONFIRM_W, CONFIRM_MIN_H, CONFIRM_PAD = 420, 170, 24
 local CARD_H, CARD_ICON = 50, 34
@@ -629,33 +630,6 @@ local function ColorHairline(t)
 	t:SetVertexColor(c[1], c[2], c[3], (c[4] or 1) * t._alpha)
 end
 
---- A scroll frame with no visible bar, because the concept has none. The wheel
---  is the only way to move it, which is what the design implies.
-local function BuildScroller(parent)
-	local scroll = CreateFrame("ScrollFrame", nil, parent)
-	local child = CreateFrame("Frame", nil, scroll)
-	child:SetSize(1, 1)
-	scroll:SetScrollChild(child)
-	scroll.child = child
-
-	scroll:EnableMouseWheel(true)
-	scroll:SetScript("OnMouseWheel", function(self, delta)
-		local max = math.max(0, (self.child:GetHeight() or 0) - (self:GetHeight() or 0))
-		local v = (self:GetVerticalScroll() or 0) - delta * 42
-		if v < 0 then v = 0 elseif v > max then v = max end
-		self:SetVerticalScroll(v)
-	end)
-
-	--- Re-clamp after a rebuild, or a shorter list leaves the view scrolled past
-	--  its own end and the pane reads as empty.
-	function scroll:Clamp()
-		local max = math.max(0, (self.child:GetHeight() or 0) - (self:GetHeight() or 0))
-		if (self:GetVerticalScroll() or 0) > max then self:SetVerticalScroll(max) end
-	end
-
-	return scroll
-end
-
 -- ---------------------------------------------------------------------------
 -- window construction
 -- ---------------------------------------------------------------------------
@@ -892,6 +866,10 @@ local function BuildButton(parent, style, label)
 	return b
 end
 
+-- Defined further down with the rest of the list rows; the pane owning their
+-- pools is built up here.
+local BuildZoneRow, BuildQuestRow
+
 local function BuildPanes(win)
 	local list = CreateFrame("Frame", nil, win)
 	list:SetPoint("TOPLEFT", win.head, "BOTTOMLEFT", 0, 0)
@@ -905,19 +883,26 @@ local function BuildPanes(win)
 	list.rule:SetWidth(A:Px(1))
 	list.rule:SetHeight(0)
 
-	local scroll = BuildScroller(list)
+	local scroll = W.Scroller(list, SCROLL_STEP)
 	scroll:SetPoint("TOPLEFT", list, "TOPLEFT", LIST_PAD_L, -LIST_PAD_Y)
 	scroll:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -LIST_PAD_R, LIST_PAD_Y)
 	scroll.child:SetWidth(LIST_W - LIST_PAD_L - LIST_PAD_R)
 	list.scroll = scroll
-	list.zoneRows, list.questRows = {}, {}
+
+	-- Two pools, one per row type, each keyed by its own display position.
+	--
+	-- A single pool indexed by display position cannot work: a slot's *kind*
+	-- alternates as zone headings come and go under a filter, so every keystroke
+	-- in the search box would retire a built row and construct another.
+	list.zoneRows  = W.Pool(function() return BuildZoneRow(scroll.child) end)
+	list.questRows = W.Pool(function() return BuildQuestRow(scroll.child) end)
 
 	local detail = CreateFrame("Frame", nil, win)
 	detail:SetPoint("TOPLEFT", list, "TOPRIGHT", 0, 0)
 	detail:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", 0, 0)
 	win.detail = detail
 
-	local dscroll = BuildScroller(detail)
+	local dscroll = W.Scroller(detail, SCROLL_STEP)
 	dscroll:SetPoint("TOPLEFT", detail, "TOPLEFT", DET_PAD_X, -DET_PAD_Y)
 	-- The scroll region stops above the footer. The footer is pinned rather than
 	-- scrolled with the content: it is the same three actions wherever you are in
@@ -1091,7 +1076,7 @@ end
 -- over one vertex colour.
 local CLEAR = { 0, 0, 0, 0 }
 
-local function BuildZoneRow(parent)
+function BuildZoneRow(parent)
 	local row = CreateFrame("Frame", nil, parent)
 	row:SetHeight(ZONE_H)
 
@@ -1110,7 +1095,7 @@ local function QuestRowClicked(row)
 	if row.selKey then QL:Select(row.selKey) end
 end
 
-local function BuildQuestRow(parent)
+function BuildQuestRow(parent)
 	local row = Glass.CreatePanel(parent, { corner = ROW_CORNER, fill = "glass" })
 	row:SetHeight(ROW_H)
 	row:SetEdgeShown(false)
@@ -1138,24 +1123,6 @@ local function BuildQuestRow(parent)
 	end)
 
 	row.kind = "quest"
-	return row
-end
-
---- Two pools, one per row type, indexed independently.
---
---  A single pool indexed by display position cannot work: a slot's *kind*
---  alternates as zone headings come and go under a filter, so every keystroke in
---  the search box would retire a built row and construct another. WoW never
---  frees a frame or a texture, and a quest row is three frames and thirty-three
---  regions, so that leaks by the hundred from nothing more than typing.
-local function RowPool(list, kind, n)
-	local pool = (kind == "zone") and list.zoneRows or list.questRows
-	local row = pool[n]
-	if not row then
-		row = (kind == "zone") and BuildZoneRow(list.scroll.child)
-		                       or BuildQuestRow(list.scroll.child)
-		pool[n] = row
-	end
 	return row
 end
 
@@ -1428,10 +1395,10 @@ function QL:RefreshList()
 		local row
 		if e.kind == "zone" then
 			zoneN = zoneN + 1
-			row = RowPool(list, "zone", zoneN)
+			row = list.zoneRows:Get(zoneN)
 		else
 			questN = questN + 1
-			row = RowPool(list, "quest", questN)
+			row = list.questRows:Get(questN)
 		end
 		-- Draw-scoped only. Rows are pooled and `entries` is rebuilt wholesale on
 		-- every draw, so a handle held across a refresh points at a row that now
@@ -1496,8 +1463,8 @@ function QL:RefreshList()
 		row:Show()
 	end
 
-	for i = zoneN + 1, #list.zoneRows do list.zoneRows[i]:Hide() end
-	for i = questN + 1, #list.questRows do list.questRows[i]:Hide() end
+	list.zoneRows:HideFrom(zoneN + 1)
+	list.questRows:HideFrom(questN + 1)
 
 	child:SetSize(width, math.max(1, y))
 	list.scroll:Clamp()
