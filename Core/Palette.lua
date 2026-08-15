@@ -56,6 +56,12 @@ Palette.skins = {
 		-- ring is a lighter lilac than the interface accent, and the brass is
 		-- the one warm thing on the console.
 		ifecDial    = C(205, 188, 255, 1.00),
+		-- The three channels, from the design's tints. Their own tokens because
+		-- they say WHICH KIND of thing is playing, which no existing colour does.
+		ifecMusic   = C(159, 212, 200, 1.00),
+		ifecGossip  = C(232, 200, 106, 1.00),
+		ifecPodcast = C(240, 160, 106, 1.00),
+		ifecLanding = C(240, 217, 168, 1.00),
 		ifecTrack   = C(255, 255, 255, 0.13),
 		ifecBrass   = C(200, 168, 106, 0.55),
 		ifecDisc    = C(21, 17, 41, 1.00),
@@ -273,6 +279,10 @@ Palette.skins = {
 		-- retrofit. Not tuned: Daylight is deferred until the reworked
 		-- features all work.
 		ifecDial    = C(140, 108, 220, 1.00),
+		ifecMusic   = C( 78, 158, 142, 1.00),
+		ifecGossip  = C(176, 138,  40, 1.00),
+		ifecPodcast = C(196, 108,  48, 1.00),
+		ifecLanding = C(176, 140,  76, 1.00),
 		ifecTrack   = C(60, 44, 96, 0.16),
 		ifecBrass   = C(168, 132, 72, 0.65),
 		ifecDisc    = C(252, 248, 255, 1.00),

@@ -161,12 +161,25 @@ function Content:Programme(seconds, picked, when)
 		add(item)
 	end
 
-	-- Then unplayed. Catalogue order already has the current season last, so it
-	-- is walked backwards: newest season first, older ones behind it.
-	for i = #available, 1, -1 do
-		local item = available[i]
+	-- Then unplayed: NEWEST SEASON FIRST, but in the season's own order within
+	-- it. Walking the catalogue backwards got the seasons right and reversed
+	-- the episodes inside them, which is episode two before episode one.
+	local unplayed = {}
+	for _, item in ipairs(available) do
+		if item.type ~= "music" and not self:Progress(item.key) then
+			unplayed[#unplayed + 1] = item
+		end
+	end
+	table.sort(unplayed, function(a, b)
+		if (a.season or 0) ~= (b.season or 0) then
+			return (a.season or 0) > (b.season or 0)
+		end
+		if a.packId ~= b.packId then return a.packId < b.packId end
+		return (a.index or 0) < (b.index or 0)
+	end)
+	for _, item in ipairs(unplayed) do
 		if filled >= seconds then break end
-		if item.type ~= "music" and not self:Progress(item.key) then add(item) end
+		add(item)
 	end
 
 	-- Music fills whatever is left, and keeps filling after everything else has

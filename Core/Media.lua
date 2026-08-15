@@ -408,6 +408,12 @@ Media.style = {
 	ifecRoute    = { "semibold", 15, "" },   -- Booty Bay -> Ironforge
 	ifecSub      = { "light",    12, "" },   -- elapsed 2:01 - lands 4:12 - 2 legs
 	ifecDial     = { "semibold", 11, "" },   -- the numeral inside the ring
+	ifecTitle    = { "semibold", 14, "" },   -- The Gadgeteer - S0 E01
+	ifecMeta     = { "light",    11, "" },   -- 4:12 left - then Winds of Feralas
+	ifecUpNext   = { "regular",  13, "" },
+	ifecCaption  = { "light",    11, "" },   -- programme fills 5:52 of 6:04
+	ifecSection  = { "semibold", 11, "" },   -- UP NEXT
+	ifecChip     = { "medium",   12, "" },
 }
 
 -- ---------------------------------------------------------------------------

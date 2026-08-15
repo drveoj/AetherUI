@@ -50,3 +50,4 @@ Modules\IFEC\Console.lua
 Modules\IFEC\Registry.lua
 Modules\IFEC\Content.lua
 Modules\IFEC\Playback.lua
+Modules\IFEC\Player.lua

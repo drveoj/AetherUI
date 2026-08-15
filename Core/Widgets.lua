@@ -306,6 +306,103 @@ function W.CreateBar(parent, opts)
 end
 
 -- ---------------------------------------------------------------------------
+-- segmented bar
+-- ---------------------------------------------------------------------------
+--
+-- A track cut into pieces along a shared time axis: one piece per item on the
+-- programme, each as wide as it is long. Not a StatusBar - a StatusBar has one
+-- fill and one value, and this has N of each.
+--
+-- WIDTH IS TIME. Every piece is placed by (seconds so far / total seconds), so
+-- two bars given the same total share an axis exactly, which is what lets the
+-- landing line drawn across both mean the same instant on each.
+
+local SEG_GAP = 2                  -- the design's gap between pieces
+
+local Segmented = {}
+
+--- Lay pieces out across `total` seconds.
+--
+--  `pieces` is { { seconds, colour, filled }, ... } in order. A piece that is
+--  not `filled` is drawn as an outline over the track tint: queued rather than
+--  played. Anything past `total` is simply off the end - the caller decides
+--  what to say about an overrun.
+function Segmented:SetPieces(pieces, total)
+	self._pieces, self._total = pieces or {}, total or 0
+
+	local width = self:GetWidth() or 0
+	if width <= 0 or self._total <= 0 then
+		for _, p in ipairs(self.parts) do p:Hide() end
+		return
+	end
+
+	local at, n = 0, 0
+	for i, piece in ipairs(self._pieces) do
+		local secs = piece.seconds or 0
+		local w = (secs / self._total) * width - SEG_GAP
+		if w > 1 then
+			n = n + 1
+			local part = self.parts[n]
+			if not part then
+				part = CreateFrame("Frame", nil, self)
+				part.fill = part:CreateTexture(nil, "ARTWORK")
+				part.fill:SetTexture(Media.texture.flat)
+				part.fill:SetAllPoints(part)
+				part.edge = A.Glass.CreatePill(part, { fill = "glass", edge = "glassEdge" })
+				part.edge:SetAllPoints(part)
+				self.parts[n] = part
+			end
+
+			part:ClearAllPoints()
+			part:SetPoint("LEFT", self, "LEFT", (at / self._total) * width, 0)
+			part:SetHeight(self:GetHeight())
+			part:SetWidth(w)
+
+			local c = piece.colour or { 1, 1, 1 }
+			-- Filled is played or playing; outlined is queued. The design draws
+			-- the queued state as a dashed border, and Classic has no dashed
+			-- stroke - a tiling dash would have to rescale per segment. Hollow
+			-- against solid says the same thing and survives any width.
+			part.fill:SetVertexColor(c[1], c[2], c[3], piece.filled and 0.95 or 0.16)
+			part.edge:SetShown(not piece.filled)
+			if not piece.filled then
+				part.edge:SetEdgeColor({ c[1], c[2], c[3], 0.55 })
+			end
+			part:Show()
+		end
+		at = at + secs
+	end
+
+	for i = n + 1, #self.parts do self.parts[i]:Hide() end
+end
+
+--- How far along `seconds` sits, in this bar's own pixels. What the landing
+--  line and the leg ticks are placed with.
+function Segmented:XFor(seconds)
+	local width = self:GetWidth() or 0
+	if width <= 0 or (self._total or 0) <= 0 then return 0 end
+	local x = (seconds / self._total) * width
+	if x < 0 then x = 0 end
+	if x > width then x = width end
+	return x
+end
+
+function W.CreateSegmentedBar(parent, opts)
+	opts = opts or {}
+	local bar = CreateFrame("Frame", nil, parent)
+	bar:SetHeight(opts.height or 7)
+
+	bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+	bar.bg:SetTexture(Media.texture.flat)
+	bar.bg:SetAllPoints(bar)
+	bar.bg:SetVertexColor(1, 1, 1, opts.bgAlpha or 0.14)
+
+	bar.parts = {}
+	for k, v in pairs(Segmented) do bar[k] = v end
+	return bar
+end
+
+-- ---------------------------------------------------------------------------
 -- orb (portrait / level badge)
 -- ---------------------------------------------------------------------------
 

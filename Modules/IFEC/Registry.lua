@@ -106,6 +106,9 @@ function Registry:Register(manifest)
 			items[#items + 1] = {
 				key      = packId .. ":" .. item.id,
 				packId   = packId,
+				-- Carried onto the item so the queue can order by season
+				-- without asking the registry about every entry.
+				season   = tonumber(manifest.seasonIndex) or 0,
 				id       = item.id,
 				type     = item.type,
 				title    = item.title,

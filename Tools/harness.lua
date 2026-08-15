@@ -5598,7 +5598,7 @@ local FILES = {
 	"Modules/IFEC/Routes.lua", "Modules/IFEC/Route.lua",
 	"Modules/IFEC/Taxi.lua", "Modules/IFEC/Console.lua",
 	"Modules/IFEC/Registry.lua", "Modules/IFEC/Content.lua",
-	"Modules/IFEC/Playback.lua",
+	"Modules/IFEC/Playback.lua", "Modules/IFEC/Player.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -21653,6 +21653,103 @@ section("ifec: playing a programme across a flight", function()
 	P:Stop()
 	cfg.progress = {}
 	R:Reset()
+end)
+
+section("ifec: the player region, on the flight's own axis", function()
+	local R, C, P = A.IFEC.Registry, A.IFEC.Content, A.IFEC.Playback
+	local PL, Taxi, IF = A.IFEC.Player, A.IFEC.Taxi, A:GetModule("ifec")
+	check(PL ~= nil, "the player region loaded")
+
+	local zenWas = A:GetModule("zen").enabled
+	A:SetModuleEnabled("zen", false)
+	UIParent:SetAlpha(1)
+
+	local cfg = A.Config:Module("ifec")
+	cfg.progress = {}
+	R:Reset()
+	_G.__musicMuted = false
+	Taxi:Start()
+
+	local function fly()
+		_G.__taxi.nodes = {
+			{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+			{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		}
+		_G.__taxi.routes = {}
+		TakeTaxiNode(2)
+		_G.__onTaxi = true
+		fire("PLAYER_CONTROL_LOST")
+		tick(0.4)
+	end
+	local function land()
+		_G.__onTaxi = false
+		fire("PLAYER_CONTROL_GAINED")
+		tick(0.4)
+	end
+
+	-- DORMANT IS ABSENT, not empty. With nothing installed the console lays out
+	-- as though the player region had never existed.
+	fly()
+	check(not IF:HasRegion(), "with no content the console carries no player region")
+	land()
+
+	R:Register({ packId = "S00", apiVersion = 1, seasonIndex = 0, items = {
+		{ id = "e1", type = "podcast", title = "Episode One", totalDuration = 30,
+		  segments = { { file = "e1a.ogg", duration = 15 }, { file = "e1b.ogg", duration = 15 } } },
+		{ id = "e2", type = "podcast", title = "Episode Two", totalDuration = 20,
+		  segments = { { file = "e2.ogg", duration = 20 } } },
+		{ id = "amb", type = "music", title = "Ambient", totalDuration = 20,
+		  segments = { { file = "amb.ogg", duration = 20 } } },
+	} })
+
+	fly()
+	check(IF:HasRegion(), "with content it appears, between flights and with no reload")
+	local f = PL.frame
+	check(f ~= nil and f:IsShown(), "and is shown")
+
+	-- THE TWO BARS SHARE AN AXIS. That is the whole reason they are stacked: a
+	-- landing line across both means the same instant on each.
+	check(f.flight:GetWidth() == f.programme:GetWidth(),
+		"the flight bar and the programme bar are the same width")
+	check(math.abs(f.flight:XFor(34) - f.programme:XFor(34)) < 0.01,
+		"so the same second is the same pixel on both")
+
+	check(f.now.title:GetText() == "Episode One",
+		"the now-playing row names what is playing (" .. tostring(f.now.title:GetText()) .. ")")
+	check(f.now.meta:GetText():find("then Episode Two", 1, true) ~= nil,
+		"and what follows it (" .. tostring(f.now.meta:GetText()) .. ")")
+
+	-- UP NEXT is what is COMING, so it starts after the thing playing rather
+	-- than including it.
+	check(f.rows[1]:IsShown() and f.rows[1].title:GetText() == "Episode Two",
+		"up next starts after the current item (" .. tostring(f.rows[1].title:GetText()) .. ")")
+
+	-- The transport says what pressing it will DO, not what is happening.
+	check(f.transport.toggle.glyph:GetTexture() == A.Media.icons.file,
+		"the transport is drawn from the shared sheet")
+	P:Pause()
+	PL:Paint()
+	check(P.state == "paused", "pausing pauses")
+
+	-- LANDING IS AN INSTANT ON BOTH BARS, drawn once.
+	local _, _, _, lx = f.landing:GetPoint()
+	check(lx ~= nil, "the landing line is placed along the axis")
+
+	check(f.fills:GetText():find("programme fills", 1, true) ~= nil,
+		"and the headline says how much of the flight is filled ("
+		.. tostring(f.fills:GetText()) .. ")")
+
+	-- THE REGION GOES WITH THE FLIGHT. Landing takes it away and stops the
+	-- audio; nothing is left playing over somebody who has control back.
+	land()
+	check(not IF:HasRegion(), "landing takes the region away")
+	check(_G.__soundsPlaying() == 0, "and stops the audio")
+
+	Taxi:Stop()
+	IF:HideInterface(false)
+	R:Reset()
+	cfg.progress = {}
+	A:SetModuleEnabled("zen", zenWas)
 end)
 
 section("ifec: the console takes a region, and gives it back", function()
