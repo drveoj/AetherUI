@@ -246,6 +246,16 @@ function IF:AttachRegion(region, height)
 	region:ClearAllPoints()
 	region:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -HEIGHT)
 	region:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -HEIGHT)
+	-- ITS OWN HEIGHT. Two anchors give a frame a width and nothing else, and a
+	-- region of no height is a panel with a hole where the player should be.
+	region:SetHeight(f.regionHeight)
+
+	-- ABOVE THE GLASS. The panel behind this is a sibling frame, and frames sort
+	-- by level rather than by draw layer - so everything in here was being drawn
+	-- underneath the surface it is supposed to sit on.
+	if f.panel and f.panel.GetFrameLevel then
+		region:SetFrameLevel((f.panel:GetFrameLevel() or 0) + 5)
+	end
 
 	self.collapsed = nil
 	self:Lay()

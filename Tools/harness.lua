@@ -355,6 +355,10 @@ local function newTexture(owner, layer, sub)
 	function t:GetDrawLayer() return self.__layer, self.__sub end
 	function t:SetTexture(path) self.__tex = path end
 	function t:GetTexture() return self.__tex end
+	--- Real, and missing until now - so every SetDesaturated in this addon was
+	--  a pcall onto nothing and the junk drain had never once been checked.
+	function t:SetDesaturated(on) self.__desaturated = on and true or false end
+	function t:IsDesaturated() return self.__desaturated == true end
 	-- A solid of a given colour. Real on this client - Blizzard's own colour
 	-- picker and EditMode both call it - and it is how a plain scrim or divider
 	-- is drawn without shipping a one-pixel .tga to do it.
@@ -15893,6 +15897,40 @@ do
 	check(dimmed == junk,
 		"and every one of them is dimmed rather than removed - it stays"
 		.. " clickable and stays where it is, so selling it is still one gesture")
+
+	-- A LOCKED SLOT IS SOMEWHERE ELSE. An item attached to an unsent mail, or
+	-- sitting on the cursor, is locked: the client refuses to move it, and at
+	-- full strength the bag reads as though it were still there - which is what
+	-- a bag looks like behind an open Send Mail with eleven things attached.
+	local found, before
+	for _, row in pairs(f.buttons) do
+		for _, b in pairs(row) do
+			if not found and b:IsShown() and b.info and b.info.quality ~= 0 then
+				found, before = b, b:GetAlpha()
+			end
+		end
+	end
+	check(found ~= nil, "there is an ordinary item to lock")
+
+	local holder = _G.__bags[found.bag]
+	local e = holder and holder.slots and holder.slots[found.slot]
+	check(e ~= nil, "and it is a slot the fixture knows about")
+	if e then
+		e.locked = true
+		fire("ITEM_LOCK_CHANGED")
+		tick(0.2)
+		check(found:GetAlpha() < before,
+			"locking one steps it back (" .. string.format("%.2f", found:GetAlpha())
+			.. " from " .. string.format("%.2f", before) .. ")")
+		-- Alpha only. The drain is SetDesaturated, applied on exactly the same
+		-- line the junk path uses, and neither shows up here - so the check
+		-- claims what it can see rather than what it hopes.
+
+		e.locked = nil
+		fire("ITEM_LOCK_CHANGED")
+		tick(0.2)
+		check(found:GetAlpha() == before, "and sending or cancelling puts it back")
+	end
 end
 
 print("== bags: the equipped-bags rail is part of the window ==")

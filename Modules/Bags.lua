@@ -590,8 +590,21 @@ local function UpdateItemButton(b, cfg)
 	-- Junk: dimmed and drained, not hidden. It stays clickable and stays where
 	-- it is, so "sell this" remains one gesture and nobody has to hunt for the
 	-- thing the panel has decided not to show them.
+	-- LOCKED BEATS JUNK. A locked slot is an item that is currently somewhere
+	-- else - on the cursor, or attached to a mail that has not been sent - and
+	-- the client refuses to move it. Left at full strength it reads as still
+	-- being in the bag, which is exactly what a bag full of things already
+	-- attached to an open Send Mail looks like.
+	--
+	-- Drained rather than tinted: junk is a judgement about the item and dims to
+	-- the junk colour, but this is a statement about where the item IS, so it
+	-- keeps its own colours and simply steps back.
 	local isJunk = cfg.dimJunk and info.quality == 0
-	if isJunk then
+	if info.isLocked then
+		b.icon:SetVertexColor(1, 1, 1, 1)
+		b:SetAlpha(0.35)
+		if b.icon.SetDesaturated then pcall(b.icon.SetDesaturated, b.icon, true) end
+	elseif isJunk then
 		local j = c.junkTint
 		b.icon:SetVertexColor(j[1], j[2], j[3], 1)
 		b:SetAlpha(j[4] or 0.42)
