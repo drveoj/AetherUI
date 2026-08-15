@@ -515,6 +515,145 @@ function W.CreateBadge(parent, opts)
 end
 
 -- ---------------------------------------------------------------------------
+-- the button
+--
+-- ONE of them, for every button this interface puts its hands on.
+--
+-- There were three before this: a pill behind a client button, a pill behind a
+-- client tab, and a pill built as a button in the quest log. All three drew a
+-- CAPSULE - ends rounded to half the height - because CreatePill was the
+-- nearest thing to hand. That is the wrong shape and it was wrong in three
+-- places at once: a capsule reads as a chip or a token, and every surface in
+-- this interface that is meant to be pressed - the tooltip's card, the
+-- toolbox's tiles, the nameplate's chips - is a rounded RECTANGLE at the
+-- deck's own radius.
+--
+-- So the shape lives here now, once, and the selected state with it. Getting
+-- the curve right is then a one-line change rather than a hunt.
+-- ---------------------------------------------------------------------------
+
+-- The deck's button radius. Smaller than a panel's twelve, because a button is
+-- a small object and a corner that reads as generous at 300px reads as a
+-- lozenge at 80.
+local BUTTON_CORNER = 8
+
+--- What a button looks like when it is the one you are on.
+--
+--  Taken from the chat tab, which had the only correct version of this: a
+--  FILLED surface with dark type on it, exactly inverted from everything else
+--  in the interface. That inversion is the whole signal, and doing it any other
+--  way - a brighter rim, a lighter fill - reads as "hovered" rather than "here".
+--
+--  No rim when filled. A filled shape already has an edge, its own boundary,
+--  and drawing a second one in the same colour on top doubles the value there
+--  and comes back as a bright outline rather than a solid.
+function W.SetButtonState(btn, selected, hovered)
+	local skin = btn and btn.__aetherSkin
+	if not skin then return end
+
+	local c = A.Palette.c
+	skin:SetEdgeShown(not selected)
+
+	if selected then
+		skin:SetFillColor(c.accent)
+		skin:SetAlpha(1)
+	elseif hovered then
+		skin:SetFillColor(c.glassSoft)
+		skin:SetAlpha(1)
+	elseif btn.__aetherQuiet then
+		-- NOTHING AT ALL when it is not the one you are on. The chat tabs are
+		-- built this way on purpose: they sit over the world rather than in a
+		-- window, and a row of glass chips along the top of the log is four
+		-- objects competing with the thing you are reading. The selected fill
+		-- is the only mark that row needs.
+		skin:SetAlpha(0)
+	else
+		skin:SetFillColor(c.glass)
+		skin:SetAlpha(1)
+	end
+
+	local label = btn.__aetherLabel
+		or (btn.GetFontString and btn:GetFontString())
+	if not label or not label.SetTextColor then return end
+
+	if selected then
+		-- At FULL alpha. `glass` is the panel fill and carries alpha .55;
+		-- passing it straight through draws the label at 55% over the accent
+		-- while its shadow stays opaque, so the smudge is darker than the
+		-- letters casting it.
+		W.Color(label, { c.glass[1], c.glass[2], c.glass[3], 1 })
+		if label.SetShadowColor then label:SetShadowColor(0, 0, 0, 0) end
+	else
+		W.Color(label, hovered and c.text or c.textDim)
+		if label.SetShadowColor then label:SetShadowColor(0, 0, 0, 0.6) end
+	end
+end
+
+--- One of OURS, built as a button rather than put behind one.
+--
+--  The other half of the same shape. The quest log and the bags each built
+--  their buttons out of CreatePill, which is a horizontal capsule: its two caps
+--  come out of a 256-texel texture, so at a 22px button they are minified more
+--  than ten times and the client does not mipmap. That is the same crunch the
+--  tooltip badge and the check box both had, and the same fix - art drawn at
+--  the size it is used, which for a rounded rectangle is the panel's corner.
+function W.CreateButton(parent, opts)
+	opts = opts or {}
+	local b = A.Glass.CreatePanel(parent, {
+		frameType = "Button",
+		template  = opts.template,
+		corner    = opts.corner or BUTTON_CORNER,
+		fill      = opts.fill or "glass",
+		edge      = opts.edge or "glassEdgeHi",
+		shadow    = opts.shadow,
+	})
+	b.__aetherSkin = b            -- it IS its own surface, so state works on it
+	return b
+end
+
+--- Put our surface behind a button, whoever made the button.
+--
+--  The button itself is untouched beyond this: not resized, not reparented, not
+--  rescripted. What it does when pressed stays entirely its own business, which
+--  is what lets this be used on the client's buttons as well as ours.
+function W.SkinButton(btn, opts)
+	if not btn then return nil end
+	if btn.__aetherSkin then return btn.__aetherSkin end
+	opts = opts or {}
+
+	local skin = A.Glass.CreatePanel(btn, {
+		corner = opts.corner or BUTTON_CORNER,
+		fill   = opts.fill or "glass",
+		edge   = opts.edge or "glassEdgeHi",
+	})
+	-- Filling the button is the usual case and not the only one: a chat tab's
+	-- surface is measured from its LABEL rather than from the tab, because the
+	-- client rewrites that tab's width twice per click and a surface measured
+	-- from it drifts away from the word it is wrapping. `anchor = false` hands
+	-- the caller that job and keeps everything else shared.
+	if opts.anchor ~= false then skin:SetAllPoints(btn) end
+	skin:SetFrameLevel(math.max(0, btn:GetFrameLevel() - 1))
+	if skin.EnableMouse then skin:EnableMouse(false) end
+	btn.__aetherSkin = skin
+	btn.__aetherLabel = opts.label
+	btn.__aetherQuiet = opts.quiet
+
+	-- Hover, where the button will tell us. A client button that takes no mouse
+	-- scripts simply never lights up, which is correct rather than broken.
+	if btn.HookScript and not opts.static then
+		btn:HookScript("OnEnter", function(self)
+			W.SetButtonState(self, self.__aetherSelected, true)
+		end)
+		btn:HookScript("OnLeave", function(self)
+			W.SetButtonState(self, self.__aetherSelected, false)
+		end)
+	end
+
+	W.SetButtonState(btn, false, false)
+	return skin
+end
+
+-- ---------------------------------------------------------------------------
 -- icon slot (aura icons now, action buttons later)
 -- ---------------------------------------------------------------------------
 

@@ -828,7 +828,12 @@ end
 --- A footer button. `style` is "filled", "outline" or "danger"; the three the
 --  concept draws, and the only three.
 local function BuildButton(parent, style, label)
-	local b = Glass.CreatePill(parent, { frameType = "Button" })
+	-- W.CreateButton, not CreatePill. A capsule's two caps come out of a
+	-- 256-texel texture, so at this height they are minified more than ten
+	-- times and the client does not mipmap - the same crunch the tooltip badge
+	-- and the check box both had. And it is the shape every other pressable
+	-- thing in this interface uses, which is the point of it living in one place.
+	local b = W.CreateButton(parent, {})
 	b:SetHeight(BTN_H)
 	b._style = style
 

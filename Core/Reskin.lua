@@ -261,28 +261,32 @@ function Reskin.Panel(frame, opts)
 	return panel
 end
 
---- A pill behind one of the client's buttons, and its label in our type.
+--- Our surface behind one of the client's buttons, and its label in our type.
+--
+--  THE SHAPE IS NOT DECIDED HERE. W.SkinButton owns it, and so does the tab
+--  below, and so does anything else that puts a pressable surface on screen -
+--  see the note above it for what three separate versions of this cost.
 function Reskin.Button(btn, style)
-	if not btn or btn.__aetherPill then return end
+	if not btn then return end
 
 	Reskin.ClearButton(btn)
 
-	local pill = A.Glass.CreatePill(btn, { fill = "glass", edge = "glassEdgeHi" })
-	pill:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
-	pill:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-	pill:SetFrameLevel(math.max(0, btn:GetFrameLevel() - 1))
-	btn.__aetherPill = pill
-
 	local label = btn.GetFontString and btn:GetFontString()
+	local skin = A.Widgets.SkinButton(btn, { label = label })
+
 	if label then
 		A.Widgets.Restyle(label, style or "tbCardTitle")
 		A.Widgets.Color(label, A.Palette.c.text)
 	end
-	return pill
+	return skin
 end
 
 function Reskin.ReleaseButton(btn)
 	if not btn then return end
+	if btn.__aetherSkin then
+		btn.__aetherSkin:Hide()
+		btn.__aetherSkin = nil
+	end
 	if btn.__aetherPill then
 		btn.__aetherPill:Hide()
 		btn.__aetherPill = nil
@@ -401,14 +405,16 @@ function Reskin.Tab(tab, store, style)
 	Reskin.ClearButton(tab)
 	if store then Reskin.Strip(tab, store) end
 
-	local pill = A.Glass.CreatePill(tab, { fill = "glass", edge = "glassEdgeHi" })
-	pill:SetPoint("TOPLEFT", tab, "TOPLEFT", 2, -2)
-	pill:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -2, 2)
-	pill:SetFrameLevel(math.max(0, tab:GetFrameLevel() - 1))
-	tab.__aetherTab = pill
-
 	local text = Reskin.Element(tab, "Text")
 		or (tab.GetFontString and tab:GetFontString())
+
+	-- The same surface every other button in this interface gets. A tab is a
+	-- button you can be standing on, which is the only thing that makes it
+	-- different - and that is a STATE on the shared surface rather than a
+	-- second kind of surface.
+	local skin = A.Widgets.SkinButton(tab, { label = text })
+	tab.__aetherTab = skin
+
 	if text and text.SetText then
 		-- The caller's role where it has one: a tab in a client window wants
 		-- outlined type, because its label sits over whatever that window is
@@ -416,7 +422,7 @@ function Reskin.Tab(tab, store, style)
 		A.Widgets.Restyle(text, style or "tbCardTitle")
 		A.Widgets.Color(text, A.Palette.c.text)
 	end
-	return pill
+	return skin
 end
 
 --- One of the client's status bars in our fill.
@@ -604,7 +610,10 @@ end
 --  reflows somebody else's window - labels collide, numbers wrap, a stat row
 --  goes to two lines. The family and the outline are ours; the metrics stay
 --  theirs.
-function Reskin.Font(fs, style)
+-- Below this, ink was chosen to be read on parchment. See Reskin.Font.
+local DARK_INK = 0.35
+
+function Reskin.Font(fs, style, lighten)
 	if not fs or not fs.GetFont or not fs.SetFont then return end
 
 	local _, size = fs:GetFont()
@@ -612,6 +621,25 @@ function Reskin.Font(fs, style)
 		fs._aetherSize = math.floor(size + 0.5)
 	end
 	A.Widgets.Restyle(fs, style or "pnBody")
+
+	-- INK CHOSEN FOR PARCHMENT, and only that.
+	--
+	-- The rule everywhere else is that the client's colours are meant and are
+	-- left alone: a stat that went up is green, a label is gold, a resistance is
+	-- its school's colour. That rule is right for a window whose background we
+	-- did not change, and wrong for the ones an NPC opens - a quest's text and a
+	-- gossip option are near-black because they were printed on paper, and on
+	-- glass they are a dark smudge.
+	--
+	-- So the test is the colour itself rather than the window: anything DARK was
+	-- chosen for paper and is lifted; anything else was chosen to mean something
+	-- and is not. Gold headings and item-quality names come through untouched.
+	if lighten and fs.GetTextColor then
+		local r, g, b = fs:GetTextColor()
+		if type(r) == "number" and (r + g + b) / 3 < DARK_INK then
+			fs:SetTextColor(lighten[1], lighten[2], lighten[3], lighten[4] or 1)
+		end
+	end
 end
 
 --- Every string inside a frame, ours. Colour is left alone.
@@ -620,7 +648,9 @@ end
 --  a label is gold, a resistance is its school's colour. Re-roling the type
 --  without touching the colour keeps all of that and still gets rid of the
 --  lettering from another interface.
-function Reskin.Fonts(frame, style, depth)
+--  `lighten` is passed straight down to Reskin.Font: give it a colour and any
+--  string dark enough to have been meant for parchment is lifted to it.
+function Reskin.Fonts(frame, style, depth, lighten)
 	if not frame or type(frame) ~= "table" then return end
 	depth = depth or 0
 	if depth > 4 then return end            -- deep enough for any of these
@@ -628,14 +658,14 @@ function Reskin.Fonts(frame, style, depth)
 	if frame.GetRegions then
 		for _, region in ipairs({ frame:GetRegions() }) do
 			if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-				Reskin.Font(region, style)
+				Reskin.Font(region, style, lighten)
 			end
 		end
 	end
 
 	if frame.GetChildren then
 		for _, child in ipairs({ frame:GetChildren() }) do
-			Reskin.Fonts(child, style, depth + 1)
+			Reskin.Fonts(child, style, depth + 1, lighten)
 		end
 	end
 end

@@ -208,12 +208,19 @@ function Chat:SkinTab(tab)
 	if not tab._aether then
 		tab._aether = true
 
-		local pill = Glass.CreatePill(tab, {})
-		pill:SetFrameLevel(math.max(0, tab:GetFrameLevel() - 1))
-		pill:EnableMouse(false)
-		-- Anchored in StyleTab, not here: it has to be re-asserted on every pass
-		-- anyway, and one place that decides the geometry is worth more than an
-		-- initial guess plus a repair.
+		-- THE SHARED BUTTON SURFACE, like every other pressable thing in this
+		-- interface. It was a CreatePill, and a capsule's two caps come out of
+		-- a 256-texel texture - at this height they are minified more than ten
+		-- times and the client does not mipmap.
+		--
+		-- `anchor = false` because this one is measured from the LABEL, for the
+		-- reason StyleTab records; `quiet` because an unselected chat tab shows
+		-- nothing at all, which is this row's own rule and not a general one.
+		local pill = W.SkinButton(tab, {
+			anchor = false,
+			quiet  = true,
+			label  = TabText(tab),
+		})
 		pill:SetHeight(PILL_H)
 		tab._pill = pill
 
@@ -383,32 +390,14 @@ function Chat:StyleTab(tab)
 
 		local w = (fs:GetStringWidth() or 30) + TAB_PAD * 2
 		tab:SetWidth(w)
-		-- Selected is a filled pill with dark type on it, exactly inverted from
-		-- everything else in the UI. That inversion is the whole signal.
-		--
-		-- At FULL alpha. `c.glass` is the panel fill and carries alpha 0.55 -
-		-- passing it straight through drew the label at 55% over the accent
-		-- while the shadow behind it stayed fully opaque, so the smudge was
-		-- darker than the letters casting it.
-		if selected then
-			W.Color(fs, { c.glass[1], c.glass[2], c.glass[3], 1 })
-		else
-			W.Color(fs, hovered and c.text or c.textDim)
-		end
 
-		-- GameFontNormalSmall inherits SystemFont_Shadow_Small, which bakes in
-		-- an opaque black shadow at (1,-1). That is right for pale type on the
-		-- dark panel and wrong for dark type on a pale pill, where it is just
-		-- mud around every glyph - and SetFont does not clear it, so it has to
-		-- be turned off by hand and turned back on again.
-		if fs.SetShadowColor then
-			if selected then
-				fs:SetShadowColor(0, 0, 0, 0)
-			else
-				fs:SetShadowColor(0, 0, 0, 0.6)
-				if fs.SetShadowOffset then fs:SetShadowOffset(1, -1) end
-			end
-		end
+		-- The label's colour and its shadow are the shared button's business
+		-- now - both of the rules that used to live here, the inverted ink on a
+		-- filled tab and the shadow that has to come off with it, moved into
+		-- W.SetButtonState when every other tab in the interface started
+		-- needing them too. Only the offset is re-asserted here, because
+		-- GameFontNormalSmall bakes one in that SetFont does not clear.
+		if fs.SetShadowOffset and not selected then fs:SetShadowOffset(1, -1) end
 	end
 
 	local pill = tab._pill
@@ -440,20 +429,17 @@ function Chat:StyleTab(tab)
 		-- the fill eventually draws over the label it is meant to sit behind.
 		pill:SetHeight(PILL_H)
 		pill:SetFrameLevel(math.max(0, tab:GetFrameLevel() - 1))
-		-- No rim on a tab, selected or not. A filled pill already has an edge -
-		-- the fill's own boundary - and drawing a second one in the same colour
-		-- on top of it doubles the value at the boundary and reads as a bright
-		-- outline rather than as a solid shape.
-		pill:SetEdgeShown(false)
-		if selected then
-			pill:SetFillColor(c.accent)
-			pill:SetAlpha(1)
-		elseif hovered then
-			pill:SetFillColor(c.glassSoft)
-			pill:SetAlpha(1)
-		else
-			pill:SetAlpha(0)
-		end
+		-- The state itself is the shared one now. Selected is a filled surface
+		-- with dark type on it, hovered is a soft fill, and an unselected chat
+		-- tab is nothing at all - `quiet`, set when the surface was made.
+		tab.__aetherSelected = selected
+		tab.__aetherLabel = fs
+		W.SetButtonState(tab, selected, hovered)
+
+		-- Re-snapped after the height and the level: a corner is snapped to
+		-- whole physical pixels and the answer depends on the effective scale,
+		-- which the client can change out from under this tab by reparenting it.
+		if pill._Relayout then pill:_Relayout() end
 	end
 
 	if tab._dot and fs then

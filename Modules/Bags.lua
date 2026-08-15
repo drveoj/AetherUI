@@ -2257,7 +2257,10 @@ end
 -- ---------------------------------------------------------------------------
 
 local function BuildButton(parent, style, label)
-	local b = Glass.CreatePill(parent, { frameType = "Button" })
+	-- The shared button shape, for the reason the quest log's says: a capsule's
+	-- caps are drawn from a 256-texel texture and come back crunchy at button
+	-- height, and one shape in one place beats three that drifted apart.
+	local b = W.CreateButton(parent, {})
 	b:SetHeight(BTN_H)
 	b._style = style
 

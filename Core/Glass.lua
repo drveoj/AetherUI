@@ -367,11 +367,37 @@ function Glass.CreatePanel(parent, opts)
 
 	f._fill = Build9(f, Media.texture.panel, "BACKGROUND", 0)
 	ApplyTexCoords(f._fill, Media.slice.panel, Media.textureSize.panel)
-	Layout9(f._fill, f, f._corner, 0)
 
 	f._edge = Build9(f, Media.texture.panelEdge, "BORDER", 0)
 	ApplyTexCoords(f._edge, Media.slice.panel, Media.textureSize.panel)
-	Layout9(f._edge, f, f._corner, 0)
+
+	--- THE CORNER, SNAPPED TO WHOLE PHYSICAL PIXELS.
+	--
+	--  The pill has always done this to its caps and the panel never did to its
+	--  corners, which is the difference between a curve that reads as a curve
+	--  and one that reads as a staircase.
+	--
+	--  A panel drawn at a scale - 0.71 for the HUD, 0.85 for a client window -
+	--  has a 12-unit corner land on 8.5 physical pixels. The arc's outer edge
+	--  then falls across a pixel boundary the whole way round and the client
+	--  resolves that as a ring of half-lit greys. It is the same fault
+	--  W.CreateBadge records for its rim, and it is worst on small shapes,
+	--  which is why a button showed it first: the smaller the radius, the larger
+	--  the fraction of it that half-pixel is.
+	--
+	--  Re-run on size AND scale changes, because the snap depends on both.
+	local function layout(self)
+		local c = SnapIn(self, self._corner or 12)
+		if c <= 0 then return end
+		Layout9(self._fill, self, c, 0)
+		Layout9(self._edge, self, c, 0)
+		self:_LayoutPanelShadow()
+		self:_LayoutRimGlow()
+	end
+	f._Relayout = layout
+	f:HookScript("OnSizeChanged", layout)
+
+	layout(f)
 
 	f:ApplySkin(opts.fill, opts.edge)
 	if opts.shadow then f:SetShadow(opts.shadow) end
@@ -381,11 +407,7 @@ end
 
 function Glass.SetPanelCorner(f, corner)
 	f._corner = corner
-	Layout9(f._fill, f, corner, 0)
-	Layout9(f._edge, f, corner, 0)
-	-- the shadow's geometry is derived from the corner, so it has to follow
-	f:_LayoutPanelShadow()
-	f:_LayoutRimGlow()
+	if f._Relayout then f:_Relayout() end
 end
 
 --- Capsule (unit frames, buffs, cast bar, nameplates).

@@ -2464,7 +2464,12 @@ do
 		f.TitleContainer.__bar:SetTexture("Interface\\FrameGeneral\\UI-Frame-TitleTileBG")
 
 		local title = f:CreateFontString(nil, "OVERLAY")
-        title:SetText(name)
+		-- AT THE CLIENT'S OWN SIZE. The modern template measures a band twenty
+		-- pixels tall for this and sets the font to fit it; a mock that left
+		-- the title with no font at all made every window's title the same
+		-- size whatever we did, so "too big for its band" could not be seen.
+		title:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+		title:SetText(name)
 		_G[name .. "TitleText"] = title
 
 		local close = CreateFrame("Button", name .. "CloseButton", f)
@@ -2474,7 +2479,7 @@ do
 	end
 
 	for _, n in ipairs({ "CharacterFrame", "SpellBookFrame", "FriendsFrame",
-		"GameMenuFrame" }) do
+		"GameMenuFrame", "MerchantFrame", "QuestFrame", "GossipFrame" }) do
 		buildPanel(n)
 	end
 
@@ -3261,13 +3266,331 @@ do
 		finder.InsetFrame:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
 	end
 
+	-- The windows an NPC opens, at the shapes their own templates give them.
+	--
+	-- The rows are the part worth modelling. A merchant row keeps the item's
+	-- picture on a BUTTON INSIDE IT while its own regions are the empty-slot
+	-- disc and the stone label plate - which is what makes stripping the row
+	-- safe and stripping the button fatal. Getting that backwards blanks the
+	-- shop and leaves the furniture.
+	do
+		local merchant = _G.MerchantFrame
+		merchant:SetSize(336, 442)
+
+		for i = 1, 12 do
+			local row = CreateFrame("Frame", "MerchantItem" .. i, merchant)
+			row:SetSize(153, 44)
+			row.__slot = row:CreateTexture(nil, "BACKGROUND")
+			row.__slot:SetTexture("Interface\\Buttons\\UI-EmptySlot")
+			row.__plate = row:CreateTexture(nil, "BACKGROUND")
+			row.__plate:SetTexture("Interface\\MerchantFrame\\UI-Merchant-LabelSlots")
+
+			row.Name = row:CreateFontString("MerchantItem" .. i .. "Name", "BACKGROUND")
+			row.Name:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			row.Name:SetText("Crusty Loaf")
+
+			-- The item, on a button of its own. Its icon is a region of THAT.
+			local b = CreateFrame("Button", "MerchantItem" .. i .. "ItemButton", row)
+			b:SetSize(37, 37)
+			local icon = b:CreateTexture(nil, "BACKGROUND")
+			icon:SetTexture("merchant-icon-" .. i)
+			_G["MerchantItem" .. i .. "ItemButtonIconTexture"] = icon
+			b:SetNormalTexture("slot-border")
+			row.ItemButton = b
+
+			row.MoneyFrame = CreateFrame("Frame", "MerchantItem" .. i .. "MoneyFrame", row)
+			local coin = row.MoneyFrame:CreateFontString(nil, "OVERLAY")
+			coin:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			coin:SetText("5s 12c")
+		end
+
+		for _, n in ipairs({ "MerchantMoneyInset", "MerchantMoneyBg",
+			"MerchantMoneyFrame" }) do
+			CreateFrame("Frame", n, merchant):CreateTexture(nil, "BACKGROUND")
+				:SetTexture("merchant-money-stone")
+		end
+
+		-- THE ANVIL IS A REGION, not the normal texture - and it is named after
+		-- the button's stem rather than after the button, and it is cropped out
+		-- of a shared sheet by texcoords. A mock that hung it off the normal
+		-- texture would let a cell look like the right treatment; it clears the
+		-- anvil and leaves an empty square.
+		for _, n in ipairs({ "MerchantRepairAllButton", "MerchantRepairItemButton",
+			"MerchantGuildBankRepairButton" }) do
+			local b = CreateFrame("Button", n, merchant)
+			local icon = b:CreateTexture(
+				n == "MerchantRepairAllButton" and "MerchantRepairAllIcon" or nil, "BORDER")
+			icon:SetTexture("Interface\\MerchantFrame\\UI-Merchant-RepairIcons")
+			icon:SetTexCoord(0.28125, 0.5625, 0, 0.5625)
+		end
+
+		local repairText = merchant:CreateFontString("MerchantRepairText", "BACKGROUND")
+		repairText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		repairText:SetText("Repair Items")
+
+		-- It says "Prev" and "Next" in words of its own, so it wants a pill
+		-- rather than one of our marks - a glyph as well is a chevron sitting
+		-- beside a word that already says the same thing.
+		for i, n in ipairs({ "MerchantPrevPageButton", "MerchantNextPageButton" }) do
+			local b = CreateFrame("Button", n, merchant)
+			b:SetNormalTexture("merchant-arrow")
+			local fs = b:CreateFontString(n .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			fs:SetText(i == 1 and "Prev" or "Next")
+			fs:SetTextColor(1, 0.82, 0)
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+		end
+
+		local page = merchant:CreateFontString("MerchantPageText", "OVERLAY")
+		page:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		page:SetText("Page 1")
+
+		for i, label in ipairs({ "Merchant", "Buyback" }) do
+			local t = CreateFrame("Button", "MerchantFrameTab" .. i, merchant)
+			t:SetNormalTexture("tab-up")
+			local fs = t:CreateFontString(nil, "OVERLAY")
+			fs:SetText(label)
+			t.__fs = fs
+			function t:GetFontString() return self.__fs end
+			_G["MerchantFrameTab" .. i .. "Text"] = fs
+			t:SetPoint("BOTTOMLEFT", merchant, "BOTTOMLEFT", 10 + (i - 1) * 90, 40)
+		end
+	end
+
+	-- The quest giver: four panels of one window, one shown at a time.
+	do
+		local quest = _G.QuestFrame
+		quest:SetSize(384, 512)
+
+		for _, n in ipairs({ "QuestFrameDetailPanel", "QuestFrameProgressPanel",
+			"QuestFrameRewardPanel", "QuestFrameGreetingPanel",
+			"QuestDetailScrollFrame", "QuestProgressScrollFrame",
+			"QuestRewardScrollFrame", "QuestGreetingScrollFrame" }) do
+			local p = CreateFrame("Frame", n, quest)
+			p:CreateTexture(nil, "BACKGROUND"):SetTexture("quest-parchment")
+
+			-- PRINTED ON PAPER. The client's quest text is near black because
+			-- that is what reads on parchment, and on glass it is a dark
+			-- smudge. A mock that left every string white could not show it,
+			-- and the whole window came back looking correct.
+			local fs = p:CreateFontString(n .. "Ink", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText("Kill six boars.")
+			fs:SetTextColor(0.10, 0.10, 0.10)
+
+			-- And one that is NOT dark, because it was chosen to mean
+			-- something. Gold headings and reward names have to come through.
+			local gold = p:CreateFontString(n .. "Gold", "OVERLAY")
+			gold:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			gold:SetText("Rewards")
+			gold:SetTextColor(1, 0.82, 0)
+		end
+
+		local who = CreateFrame("Frame", "QuestNpcNameFrame", quest)
+		who:CreateTexture(nil, "BACKGROUND"):SetTexture("quest-name-stone")
+		who.Text = who:CreateFontString("QuestNpcNameFrameText", "OVERLAY")
+		who.Text:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+		who.Text:SetText("Gornek")
+
+		for _, n in ipairs({ "QuestFrameAcceptButton", "QuestFrameDeclineButton",
+			"QuestFrameCompleteButton", "QuestFrameGoodbyeButton" }) do
+			local b = CreateFrame("Button", n, quest)
+			b:SetNormalTexture("panel-button-up")
+			local fs = b:CreateFontString(nil, "OVERLAY")
+			fs:SetText(n)
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+		end
+
+		-- What the quest wants from you: item buttons carrying an icon.
+		for i = 1, 6 do
+			local b = CreateFrame("Button", "QuestProgressItem" .. i, quest)
+			local icon = b:CreateTexture(nil, "BACKGROUND")
+			icon:SetTexture("quest-item-" .. i)
+			_G["QuestProgressItem" .. i .. "IconTexture"] = icon
+			b:SetNormalTexture("slot-border")
+		end
+
+		for _, n in ipairs({ "QuestDetailScrollFrameScrollBar",
+			"QuestProgressScrollFrameScrollBar" }) do
+			local sb = CreateFrame("Slider", n, quest)
+			CreateFrame("Button", n .. "ScrollUpButton", sb):SetNormalTexture("arrow-up")
+			CreateFrame("Button", n .. "ScrollDownButton", sb):SetNormalTexture("arrow-down")
+		end
+	end
+
+	-- Gossip, on the modern portrait template - so its shell is already the
+	-- shared one, and what is left is the parchment and the list.
+	do
+		local gossip = _G.GossipFrame
+
+		gossip.GreetingPanel = CreateFrame("Frame", nil, gossip)
+		gossip.GreetingPanel:CreateTexture(nil, "BACKGROUND")
+			:SetTexture("Interface\\QuestFrame\\QuestBG")
+		local fs = gossip.GreetingPanel:CreateFontString(nil, "OVERLAY")
+		fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+		fs:SetText("What can I do for you?")
+		fs:SetTextColor(0.10, 0.10, 0.10)          -- printed on the same paper
+
+		-- THE LIST IS A SCROLL BOX, and its rows are POOLED: acquired when the
+		-- data provider changes, which is on open AND on every option you pick.
+		-- A mock that hung the rows off the panel as ordinary children would let
+		-- a skin that dresses them once look permanent.
+		local box = CreateFrame("Frame", nil, gossip.GreetingPanel)
+		box.__rows = {}
+		for i = 1, 4 do
+			-- An option is a Button with its bullet in an Icon region.
+			local row = CreateFrame("Button", nil, box)
+			row.Icon = row:CreateTexture(nil, "BACKGROUND")
+			row.Icon:SetTexture("Interface\\QuestFrame\\UI-Quest-BulletPoint")
+			local rf = row:CreateFontString(nil, "OVERLAY")
+			rf:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			rf:SetText("The bank")
+			rf:SetTextColor(0.10, 0.10, 0.10)
+			row.__fs = rf
+			function row:GetFontString() return self.__fs end
+			box.__rows[i] = row
+		end
+		function box:GetFrames() return self.__rows end
+		gossip.GreetingPanel.ScrollBox = box
+
+		--- Rebuilding the list, which is what happens on every option you pick.
+		--  The rows come back with the client's own ink on them.
+		function gossip:Update()
+			for _, row in ipairs(box.__rows) do
+				row.__fs:SetTextColor(0.10, 0.10, 0.10)
+			end
+		end
+
+		local bye = CreateFrame("Button", nil, gossip.GreetingPanel)
+		bye:SetNormalTexture("panel-button-up")
+		local byeText = bye:CreateFontString(nil, "OVERLAY")
+		byeText:SetText("Goodbye")
+		bye.__fs = byeText
+		function bye:GetFontString() return self.__fs end
+		gossip.GreetingPanel.GoodbyeButton = bye
+
+		-- A frame of frames, like the community list's.
+		local sb = CreateFrame("Frame", nil, gossip.GreetingPanel)
+		sb.Track = CreateFrame("Frame", nil, sb)
+		sb.Track:CreateTexture(nil, "BACKGROUND"):SetTexture("scroll-track-stone")
+		sb.Back = CreateFrame("Button", nil, sb)
+		sb.Back:SetNormalTexture("scroll-arrow-up")
+		gossip.GreetingPanel.ScrollBar = sb
+
+		gossip.FriendshipStatusBar = CreateFrame("StatusBar", nil, gossip)
+	end
+
 	-- Load on demand: absent until something asks for it.
 	-- Builds it only. Firing ADDON_LOADED is the caller's, because `fire` is
 	-- declared further down this file than this block runs.
+	-- The trainer's insides.
+	--
+	-- THE SAME ELEVEN BUTTONS ARE BOTH KINDS. The client fills them from one
+	-- list: a heading gets a plus or a minus as its NORMAL TEXTURE, a spell
+	-- gets ClearNormalTexture and an indented name. So a row that was a heading
+	-- a moment ago is a spell after the next refresh, and which it is has to be
+	-- read every time rather than remembered - a mock with eleven fixed
+	-- headings would let "decide it once" look correct.
+	function _G.__buildTrainer()
+		local tf = _G.ClassTrainerFrame
+		if not tf or tf.__insides then return end
+		tf.__insides = true
+		tf:SetSize(384, 512)
+
+		for i = 1, 11 do
+			local b = CreateFrame("Button", "ClassTrainerSkill" .. i, tf)
+			b:SetSize(293, 16)
+
+			local fs = b:CreateFontString("ClassTrainerSkill" .. i .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText("Frostbolt")
+			fs:SetTextColor(0.10, 0.10, 0.10)
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+
+			local sub = b:CreateFontString("ClassTrainerSkill" .. i .. "SubText", "BACKGROUND")
+			sub:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			sub:SetText("(Rank 2)")
+
+			-- Odd rows are headings this time round, even ones are spells.
+			if i % 2 == 1 then
+				b:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
+			end
+		end
+
+		local all = CreateFrame("Button", "ClassTrainerCollapseAllButton", tf)
+		all:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
+		local allText = all:CreateFontString(nil, "OVERLAY")
+		allText:SetText("All")
+		all.__fs = allText
+		function all:GetFontString() return self.__fs end
+
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			local t = tf:CreateTexture("ClassTrainerExpandTab" .. part, "ARTWORK")
+			t:SetTexture("expand-tab-" .. part)
+		end
+
+		for _, n in ipairs({ "ClassTrainerListScrollFrame", "ClassTrainerDetailScrollFrame",
+			"ClassTrainerMoneyFrame", "ClassTrainerDetailMoneyFrame" }) do
+			local p = CreateFrame("Frame", n, tf)
+			p:CreateTexture(nil, "BACKGROUND"):SetTexture("trainer-stone")
+		end
+
+		for _, n in ipairs({ "ClassTrainerListScrollFrameScrollBar",
+			"ClassTrainerDetailScrollFrameScrollBar" }) do
+			local sb = CreateFrame("Slider", n, tf)
+			CreateFrame("Button", n .. "ScrollUpButton", sb):SetNormalTexture("arrow-up")
+			CreateFrame("Button", n .. "ScrollDownButton", sb):SetNormalTexture("arrow-down")
+		end
+
+		-- Square, 37 by 37, unlike the quest giver's wide rows - so this one
+		-- really does want a cell.
+		local icon = CreateFrame("Button", "ClassTrainerSkillIcon", tf)
+		icon:SetSize(37, 37)
+		local iconTex = icon:CreateTexture(nil, "BACKGROUND")
+		iconTex:SetTexture("trainer-spell-icon")
+		_G.ClassTrainerSkillIconIconTexture = iconTex
+		icon:SetNormalTexture("slot-border")
+
+		for _, n in ipairs({ "ClassTrainerNameText", "ClassTrainerGreetingText",
+			"ClassTrainerSkillName", "ClassTrainerSkillDescription" }) do
+			local fs = tf:CreateFontString(n, "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText(n)
+			fs:SetTextColor(0.10, 0.10, 0.10)     -- printed for parchment
+		end
+
+		for _, n in ipairs({ "ClassTrainerTrainButton", "ClassTrainerCancelButton" }) do
+			local b = CreateFrame("Button", n, tf)
+			b:SetNormalTexture("panel-button-up")
+			local fs = b:CreateFontString(nil, "OVERLAY")
+			fs:SetText(n)
+			b.__fs = fs
+			function b:GetFontString() return self.__fs end
+		end
+
+		--- The client refilling the list, which it does on every expand, every
+		--  selection and every skill learned - putting its own marks back, and
+		--  handing rows from one kind to the other.
+		function _G.ClassTrainerFrame_Update()
+			for i = 1, 11 do
+				local b = _G["ClassTrainerSkill" .. i]
+				if i % 2 == 1 then
+					b:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+				else
+					b:SetNormalTexture(0)
+				end
+			end
+		end
+	end
+
 	function _G.__loadPanelAddon(name)
 		buildPanel(name)
 		if name == "PlayerTalentFrame" then _G.__buildTalentInsides() end
 		if name == "CommunitiesFrame" then _G.__buildCommunities() end
+		if name == "ClassTrainerFrame" then _G.__buildTrainer() end
 	end
 end
 
@@ -5175,6 +5498,28 @@ do
 		"and land on a whole number of physical pixels")
 end
 do
+	-- AND SO DOES A PANEL'S CORNER, which it never used to.
+	--
+	-- The pill has snapped its caps from the beginning and CreatePanel laid its
+	-- corner out raw. A 12-unit corner at a scale of 0.71 is 8.5 physical
+	-- pixels: the arc's outer edge falls across a pixel boundary the whole way
+	-- round and the client resolves that as a ring of half-lit greys, which is
+	-- exactly what "the curves are not smooth" looks like on screen. Worst on
+	-- small shapes, which is why a button showed it first and a tooltip did not.
+	local p = A.Glass.CreatePanel(UIParent, { corner = 12 })
+	p:SetSize(200, 60)
+	p:SetScale(0.71)
+	p:_Relayout()
+
+	local c = p._fill[1]:GetWidth()
+	local step = (A.pixel or 1) * (UIParent:GetEffectiveScale() or 1)
+		/ (p:GetEffectiveScale() or 1)
+	check(math.abs(c / step - math.floor(c / step + 0.5)) < 1e-6,
+		"a panel's corner lands on whole physical pixels too (" .. tostring(c)
+		.. " at scale " .. tostring(p:GetScale()) .. ")")
+	p:Hide()
+end
+do
 	-- Pixel snapping stays ON. Turning it off was tried and made it worse; see
 	-- the note at the top of Core/Glass.lua.
 	local bad
@@ -6637,7 +6982,20 @@ do
 		.. (#tabArt > 0 and ("  -- " .. table.concat(tabArt, ", ")) or ""))
 
 	local tab1, tab2 = _G.ChatFrame1Tab, _G.ChatFrame2Tab
-	check(tab1._pill and tab2._pill, "each tab gets a pill of its own")
+	check(tab1._pill and tab2._pill, "each tab gets a surface of its own")
+
+	-- THE SHARED BUTTON SURFACE, like every other pressable thing here. It was
+	-- a CreatePill, and a capsule's two caps come out of a 256-texel texture -
+	-- at tab height they are minified more than ten times and the client does
+	-- not mipmap, which is the crunch that started this.
+	check(tab1._pill._kind == "panel" and tab1.__aetherSkin == tab1._pill,
+		"and it is the shared button surface rather than a capsule of its own"
+		.. " (" .. tostring(tab1._pill._kind) .. ")")
+	check(tab2.__aetherQuiet == true,
+		"kept QUIET: an unselected chat tab shows nothing at all, which is this"
+		.. " row's own rule - it sits over the world rather than in a window,"
+		.. " and four glass chips along the top of the log compete with the"
+		.. " thing you are reading")
 	check(tab1._pill:GetAlpha() > 0.9 and tab2._pill:GetAlpha() == 0,
 		"and only the selected one is filled in - that inversion is the signal")
 	check(not tab1._pill._edge[1]:IsShown(),
@@ -8910,11 +9268,48 @@ do
 	check(QT.panel.more:IsShown() and QT.panel.more:GetText() == "+" .. QT.hidden .. " more",
 		"and the panel says so rather than silently truncating (got "
 		.. tostring(QT.panel.more:GetText()) .. ")")
+
+	-- AND IT OPENS THE LOG. That line was the one thing in this panel naming
+	-- something you could not get to: it says the tracker ran out of room, and
+	-- the place the rest of them live is one click away.
+	check(QT.panel.moreHit and QT.panel.moreHit:IsShown(),
+		"the line is clickable")
+	check(QT.panel.moreQuest ~= nil,
+		"and knows which quest it is standing in for")
+
+	do
+		-- AT THE FIRST OF THE HIDDEN ONES, which is what somebody reading that
+		-- line is asking about - not at whatever the log picks for itself.
+		local want = QT.panel.moreQuest
+
+		-- THE FIRST HIDDEN ONE, not the first tracked one. Those are the same
+		-- quest whenever nothing is hidden, so the difference only shows on a
+		-- panel that has actually run out of room - which is this one.
+		local firstShown = QT.panel.rows[1] and QT.panel.rows[1].questID
+		check(firstShown ~= nil and want.questID ~= firstShown,
+			"and it is one of the HIDDEN quests rather than the first row that"
+			.. " is already on screen (" .. tostring(want.questID) .. " vs "
+			.. tostring(firstShown) .. ")")
+
+		local QLg = A:GetModule("questlog")
+		QLg:Hide()
+		QT.panel.moreHit:GetScript("OnClick")(QT.panel.moreHit)
+		check(QLg.win and QLg.win:IsShown(), "clicking it opens our log")
+		check(QLg.selectedID == (want.questID or ("i" .. tostring(want.index))),
+			"at the first quest it was standing in for (got "
+			.. tostring(QLg.selectedID) .. ", want "
+			.. tostring(want.questID or ("i" .. tostring(want.index))) .. ")")
+		QLg:Hide()
+	end
+
 	local tight = QT.panel:GetHeight()
 	cfg.maxHeight = saved
 	QT:Refresh()
 	check(not QT.panel.more:IsShown() and QT.panel:GetHeight() > tight,
 		"restoring the budget brings them back")
+	check(not QT.panel.moreHit:IsShown(),
+		"and the click target goes with the line rather than being left over"
+		.. " the rows that replaced it")
 end
 
 print("== quest tracker: clicks ==")
@@ -16987,7 +17382,7 @@ do
 			"the question is re-roled into our type")
 
 		local b1 = PPm.Element(p, "Button1")
-		check(b1 and b1.__aetherPill ~= nil, "and each button gets a pill behind it")
+		check(b1 and b1.__aetherSkin ~= nil, "and each button gets a pill behind it")
 				check(b1:GetFontString()._aetherStyle == "tbCardTitle", "with our lettering on it")
 
 		-- THE ONE THAT SHIPPED WRONG. A button's pushed art is hidden until you
@@ -17020,14 +17415,14 @@ do
 	-- client's, because several of these dialogs run protected actions.
 	local p1 = _G.StaticPopup1
 	local b1 = PPm.Element(p1, "Button1")
-	check(b1:GetParent() == p1 and b1.__aetherPill:GetParent() == b1,
+	check(b1:GetParent() == p1 and b1.__aetherSkin:GetParent() == b1,
 		"the button is still the client's own, in the client's own place - the"
 		.. " pill hangs off it rather than the other way round")
 
 	-- Off gives Blizzard's back, whole. Every module here is a reskin.
 	A:SetModuleEnabled("popups", false)
 	check(p1.__aetherPanel == nil and p1.__border:IsShown()
-		and b1.__aetherPill == nil,
+		and b1.__aetherSkin == nil,
 		"switching it off returns the dialog the client drew, art and all")
 	A:SetModuleEnabled("popups", true)
 	check(_G.StaticPopup1.__aetherPanel ~= nil, "and on again re-dresses it")
@@ -17167,10 +17562,16 @@ do
 	-- window is showing - a paper doll, a talent tree's artwork, a map - rather
 	-- than over an even fill of ours, and an unoutlined word on that reads as
 	-- smudged.
+	-- NOT OUTLINED, and it used to be. The argument was that these labels sit
+	-- over the window's own contents rather than over a fill of ours - true of
+	-- the stone windows, and untrue the moment the art came off. What they sit
+	-- over now is our glass, like every other string in this interface, and
+	-- nothing else here is outlined.
 	local _, _, titleFlags = _G.CharacterFrameTitleText:GetFont()
-	check(titleFlags == "OUTLINE",
-		"and outlined, because it sits over the window's own contents rather"
-		.. " than over a fill of ours (" .. tostring(titleFlags) .. ")")
+	check(titleFlags == "",
+		"and NOT outlined - it sits on our own glass now, and a stroke round it"
+		.. " is a thing this interface does nowhere else ("
+		.. tostring(titleFlags) .. ")")
 
 	local close = _G.CharacterFrameCloseButton
 	check(close.__aetherX and (close.__aetherX:GetText() or "") ~= "",
@@ -17321,7 +17722,7 @@ do
 	check(labelSize == 10,
 		"AT THE CLIENT'S OWN SIZE (" .. tostring(labelSize) .. ") - these sit in"
 		.. " rows it measured, so a size of ours reflows somebody else's window")
-	check(labelFlags == "OUTLINE", "and outlined like the rest of the window")
+	check(labelFlags == "", "and unoutlined like the rest of the window")
 
 	-- Nested one deeper, because the client nests these.
 	local nestedFont, nestedSize = _G.CharacterStatFrame1StatText:GetFont()
@@ -17331,13 +17732,13 @@ do
 	-- THE MAIN MENU. Its shell was in glass while every button inside it stayed
 	-- a red Blizzard plate, which is the worst of both.
 	local opt = _G.GameMenuButtonOptions
-	check(opt.__aetherPill ~= nil, "the main menu's buttons are ours as well")
+	check(opt.__aetherSkin ~= nil, "the main menu's buttons are ours as well")
 	check(opt:GetNormalTexture():GetTexture() == 0, "with their own plate cleared")
 	check(opt:GetFontString()._aetherStyle ~= nil, "and their lettering re-roled")
 
 	-- Named nowhere: the client's set of these changes between builds, so the
 	-- frame is asked what it has.
-	check(_G.GameMenuButtonQuit.__aetherPill ~= nil,
+	check(_G.GameMenuButtonQuit.__aetherSkin ~= nil,
 		"every one of them, however many the build happens to have")
 
 	-- ITS TITLE IS SOMEWHERE ELSE. Anything on the shared dialog template keeps
@@ -17425,25 +17826,30 @@ do
 		.. (uneven and (" - " .. uneven) or ""))
 
 	local _, tabSize, tabFlags = t1:GetFontString():GetFont()
-	check(tabFlags == "OUTLINE",
-		"a tab's label is our own type, outlined (" .. tostring(tabFlags) .. " at "
-		.. tostring(tabSize) .. ") - it sits over whatever the window is showing")
+	check(tabFlags == "",
+		"a tab's label is our own type and unoutlined (" .. tostring(tabFlags)
+		.. " at " .. tostring(tabSize) .. ") - on a FILLED tab a black stroke"
+		.. " around dark type on a light fill reads as a sticker")
 
 	local spilled = RowSpill(shown)
 	check(spilled == nil,
 		"no label is wider than the tab it sits in" .. (spilled and (": " .. spilled) or ""))
 
-	-- CENTRED AS A GROUP, with the same air either side of it.
+	-- LEFT-ALIGNED, and it used to be centred.
+	--
+	-- A row of tabs is a list of places you can go, and a list starts at the
+	-- left edge of the thing it belongs to - the same edge everything else in
+	-- the window starts at. Centred, the row moved every time a tab appeared or
+	-- went away: a hunter's pet tab arriving slid Character, Skills and
+	-- Reputation sideways under the cursor.
 	local total = w1 * #shown + chosenGap * (#shown - 1)
 	local insL, insR = 10, -30
 	local visible = cf:GetWidth() + insR - insL
 	local _, _, _, startX = t1:GetPoint(1)
 	local leftAir = startX - insL
-	local rightAir = visible - leftAir - total
-	check(math.abs(leftAir - rightAir) < 1,
-		"and the row sits in the middle of the window ("
-		.. string.format("%.1f", leftAir) .. " either side of "
-		.. string.format("%.1f", total) .. ")")
+	check(math.abs(leftAir - 16) < 0.5,
+		"and the row starts at the left edge rather than floating in the middle"
+		.. " (" .. string.format("%.1f", leftAir) .. " in)")
 	check(total <= visible + 0.5,
 		"inside it (" .. string.format("%.1f", total) .. " of "
 		.. string.format("%.1f", visible) .. ")")
@@ -17545,10 +17951,13 @@ do
 		.. " which is right for raised stone and wrong for a flat pill")
 
 	fire("PLAYER_ENTERING_WORLD")
-	check(t1.__aetherTab:GetAlpha() > t2.__aetherTab:GetAlpha(),
-		"the open tab reads brighter than the rest (" .. t1.__aetherTab:GetAlpha()
-		.. " vs " .. t2.__aetherTab:GetAlpha() .. ") - without this every tab"
-		.. " looks equally selected and the sheet never says which one you are on")
+	-- FILLED, the way the chat's selected tab is: dark type on the accent,
+	-- inverted from everything else on screen. A tab that was merely brighter
+	-- than its neighbours read as hovered rather than as the one you are on.
+	check(t1.__aetherTab._fillColor == A.Palette.c.accent
+		and t2.__aetherTab._fillColor ~= A.Palette.c.accent,
+		"the open tab is FILLED and the rest are not - brighter alone reads as"
+		.. " hovered, and the inversion is the whole signal")
 	t1:Enable()
 
 	-- SCALE. Every other frame of ours is drawn at profile.scale.
@@ -17743,8 +18152,9 @@ do
 		.. " two insets meet, so it draws, highlights, reads correctly and does"
 		.. " nothing at all when you click it")
 
-	check(bt1.__aetherTab:GetAlpha() > bt2.__aetherTab:GetAlpha(),
-		"and the book you are in reads brighter than the one you are not")
+	check(bt1.__aetherTab._fillColor == A.Palette.c.accent
+		and bt2.__aetherTab._fillColor ~= A.Palette.c.accent,
+		"and the book you are in is the filled one")
 
 	local bPt, bRel, bRelPt = bt1:GetPoint(1)
 	check(bPt == "BOTTOMLEFT" and bRel == sb and bRelPt == "BOTTOMLEFT",
@@ -17778,6 +18188,181 @@ do
 	check(_G.SpellButton1IconTexture:GetTexture() == "spell-icon-1"
 		and _G.ShowAllSpellRanksCheckbox:GetCheckedTexture():GetTexture() == "checkbox-tick",
 		"with the spell and the tick still where they were")
+end
+
+print("== panels: the windows an NPC opens ==")
+do
+	fire("PLAYER_ENTERING_WORLD")
+
+	-- THE VENDOR. A row's own regions are the empty-slot disc and the stone
+	-- label plate; the item's picture is on a BUTTON INSIDE IT. Get that
+	-- backwards and you blank the shop and keep the furniture.
+	local row = _G.MerchantItem1
+	check(_G.MerchantFrame.__aetherPanel ~= nil, "the vendor window is in glass")
+	check(row.__slot:GetTexture() == 0 and row.__plate:GetTexture() == 0,
+		"a row's empty-slot disc and label plate come off")
+	check(row.ItemButton.__aetherSlot == true,
+		"the item sits in one of our cells")
+	check(_G.MerchantItem1ItemButtonIconTexture:GetTexture() == "merchant-icon-1",
+		"WITH THE GOODS STILL IN IT - the picture is on the button inside the"
+		.. " row, not on the row, which is what makes stripping the row safe")
+	check(row.Name._aetherStyle ~= nil, "the item's name is in our lettering")
+
+	-- The anvil IS the normal texture on these, so they go the way a school tab
+	-- does rather than the way a button does.
+	-- REPAIR KEEPS EVERY REGION IT HAS. Its anvil is a BORDER-layer region, not
+	-- the normal texture, it is named after the button's stem rather than the
+	-- button, and it is cropped out of a shared sheet by texcoords. Dressing
+	-- these as icon buttons cleared the anvils and left two empty squares.
+	check(_G.MerchantRepairAllButton.__aetherSkin ~= nil,
+		"repair gets our surface behind it")
+	check(_G.MerchantRepairAllIcon:GetTexture()
+			== "Interface\\MerchantFrame\\UI-Merchant-RepairIcons",
+		"and keeps its anvil, which is a region of its own and not this"
+		.. " button's normal texture")
+
+	check(_G.MerchantPrevPageButtonText._aetherStyle ~= nil,
+		"the page turner keeps its own words, re-roled - it already says Prev"
+		.. " and Next, and a chevron of ours beside them said it twice")
+	check(_G.MerchantFrameTab1.__aetherTab ~= nil,
+		"and its two tabs are laid out like every other window's")
+
+	-- THE QUEST GIVER: four panels of one window, one shown at a time.
+	local detail = _G.QuestFrameDetailPanel
+	check(_G.QuestFrame.__aetherPanel ~= nil, "the quest window is in glass")
+	check(select(1, detail:GetRegions()):GetTexture() == 0,
+		"and every one of its four panels loses its parchment")
+	check(_G.QuestNpcNameFrameText._aetherStyle == "pnTitle",
+		"who you are talking to is in our lettering")
+	check(_G.QuestFrameAcceptButton.__aetherSkin ~= nil, "its buttons are ours")
+
+	-- ONE BUTTON SHAPE, AND IT IS A ROUNDED RECTANGLE.
+	--
+	-- There were three versions of this: a pill behind a client button, a pill
+	-- behind a client tab, and a pill built as a button in the quest log. All
+	-- three drew a CAPSULE, because CreatePill was the nearest thing to hand -
+	-- and a capsule's two caps come out of a 256-texel texture, so at button
+	-- height they are minified more than ten times and the client does not
+	-- mipmap. Same crunch as the tooltip badge and the check box.
+	check(_G.QuestFrameAcceptButton.__aetherSkin._kind == "panel",
+		"and drawn as a rounded rectangle at the deck's own radius rather than"
+		.. " a capsule (" .. tostring(_G.QuestFrameAcceptButton.__aetherSkin._kind)
+		.. ")")
+	check(_G.MerchantFrameTab1.__aetherTab._kind == "panel",
+		"a tab is the same surface in a different state, not a second kind")
+
+	-- LEFT-ALIGNED, and this is the window that can tell. The character sheet's
+	-- four tabs happen to total exactly the width that centring would give
+	-- them, so it agreed with both rules; two tabs in a 336-wide window do not.
+	local _, _, _, mtx = _G.MerchantFrameTab1:GetPoint(1)
+	check(mtx and math.abs(mtx - 16) < 0.5,
+		"the vendor's tab row starts at the left edge (" .. tostring(mtx)
+		.. ") - centred, a row slides sideways every time a tab comes or goes")
+	-- NOT A CELL. These are wide rows - an icon at one end, the item's name
+	-- beside it - and a cell sizes its picture to the whole button, so the icon
+	-- came out stretched the width of the row.
+	check(_G.QuestProgressItem1.__aetherSlot == nil,
+		"what the quest wants from you is NOT dressed as a cell - the row is"
+		.. " wide and a cell would stretch the icon across all of it")
+	check(_G.QuestProgressItem1IconTexture:GetTexture() == "quest-item-1"
+		and _G.QuestProgressItem1:GetNormalTexture():GetTexture() == 0,
+		"its border comes off and the icon is left where the client drew it")
+
+	-- GOSSIP, on the modern template - so the shell is the shared one and what
+	-- is left is the parchment behind the words.
+	local panel = _G.GossipFrame.GreetingPanel
+	check(select(1, panel:GetRegions()):GetTexture() == 0,
+		"the gossip window's parchment comes off")
+	check(panel.GoodbyeButton.__aetherSkin ~= nil, "its goodbye is one of ours")
+	check(select(1, panel.ScrollBar.Track:GetRegions()):GetTexture() == 0
+		and panel.ScrollBar.Back:GetNormalTexture():GetTexture() == 0,
+		"and its scroll bar is taken apart, being a frame of frames like the"
+		.. " community list's rather than a slider with regions on it")
+
+	-- INK CHOSEN FOR PARCHMENT. A quest's text and a gossip option are near
+	-- black because that is what reads on paper; on glass they are a smudge.
+	-- The rule everywhere else - the client's colours are meant, leave them -
+	-- is right for a window whose background we did not change and wrong here.
+	local ink = A.Palette.c.text
+	local qr, qg, qb = _G.QuestFrameDetailPanelInk:GetTextColor()
+	check(qr == ink[1] and qg == ink[2] and qb == ink[3],
+		"the quest's text is lifted off the paper it was printed for ("
+		.. string.format("%.2f", qr) .. ")")
+
+	-- AND ONLY THE DARK. The test is the colour rather than the window, so a
+	-- heading that was gold because gold means something stays gold.
+	local gr, gg = _G.QuestFrameDetailPanelGold:GetTextColor()
+	check(gr == 1 and gg == 0.82,
+		"while a gold heading is left exactly as the client set it ("
+		.. string.format("%.2f,%.2f", gr, gg) .. ")")
+
+	-- THE GOSSIP ROWS ARE POOLED, and re-acquired every time the list is
+	-- rebuilt - which is on open and on every option you pick. Dressed once,
+	-- they are right until you click something.
+	local row = panel.ScrollBox:GetFrames()[1]
+	local rr = row:GetFontString():GetTextColor()
+	check(rr == ink[1], "a gossip option is lifted too")
+
+	_G.GossipFrame:Update()
+	rr = row:GetFontString():GetTextColor()
+	check(rr == ink[1],
+		"and stays lifted after the list is rebuilt, which is what picking an"
+		.. " option does (" .. string.format("%.2f", rr) .. ")")
+	check(row.Icon:GetTexture() == "Interface\\QuestFrame\\UI-Quest-BulletPoint",
+		"with its bullet still on it")
+
+	-- A TITLE IN A BAND KEEPS THE CLIENT'S SIZE. The modern template gives it a
+	-- TitleContainer twenty pixels tall, and our own title role at nineteen
+	-- fills it corner to corner and overhangs the ends.
+	local _, gossipSize = _G.GossipFrameTitleText:GetFont()
+	local _, charSize = _G.CharacterFrameTitleText:GetFont()
+	check(gossipSize < charSize,
+		"the gossip window's title keeps the size the client measured its band"
+		.. " for (" .. tostring(gossipSize) .. " vs the old windows' "
+		.. tostring(charSize) .. ")")
+end
+
+print("== panels: the trainer, whose rows are two things at once ==")
+do
+	_G.__loadPanelAddon("ClassTrainerFrame")
+	fire("ADDON_LOADED", "Blizzard_TrainerUI")
+
+	local tf = _G.ClassTrainerFrame
+	check(tf.__aetherPanel ~= nil, "the trainer is in glass")
+
+	-- THE SAME ELEVEN BUTTONS ARE BOTH KINDS. The client fills them from one
+	-- list: a heading gets a plus or a minus as its normal texture, a spell
+	-- gets ClearNormalTexture. So which a row is has to be read on every
+	-- refresh, from the mark itself, BEFORE ours replaces it.
+	local head, spell = _G.ClassTrainerSkill1, _G.ClassTrainerSkill2
+	check(head.__aetherGlyph ~= nil and head.__aetherGlyph:IsShown(),
+		"a heading gets our own disclosure mark")
+	check(head:GetNormalTexture():GetTexture() == 0,
+		"with the client's stone plus or minus cleared")
+	check(spell.__aetherGlyph == nil or not spell.__aetherGlyph:IsShown(),
+		"and a SPELL gets none - it is the same button, and a mark on it would"
+		.. " say the row folds when it does not")
+
+	check(head:GetFontString()._aetherStyle ~= nil, "the row is in our lettering")
+	local hr = head:GetFontString():GetTextColor()
+	check(hr == A.Palette.c.text[1],
+		"lifted off the parchment it was printed for")
+
+	check(_G.ClassTrainerSkillIcon.__aetherSlot == true,
+		"the spell you are being sold sits in a cell - this one IS square,"
+		.. " unlike the quest giver's wide rows")
+	check(_G.ClassTrainerTrainButton.__aetherSkin ~= nil, "and Train is ours")
+	check(_G.ClassTrainerExpandTabLeft:GetTexture() == 0,
+		"the little stone tab the All control hangs off is cleared")
+
+	-- AND THE ROWS SWAP KINDS. Expand a heading and the client refills all
+	-- eleven from a longer list, so row one may be a spell next time and row
+	-- two a heading. A mark decided once is a mark on the wrong row.
+	_G.ClassTrainerFrame_Update()
+	check(head.__aetherGlyph:IsShown() and head.__aetherGlyph:GetText() == "+",
+		"a heading that collapsed shows a plus rather than the minus it had")
+	check(spell.__aetherGlyph == nil or not spell.__aetherGlyph:IsShown(),
+		"and the spell row still carries no mark after the refresh")
 end
 
 print("== timers: breath, fatigue, and the colour that says which ==")
@@ -17878,14 +18463,14 @@ do
 	-- THREE-SLICE BUTTONS. Left, Right and Middle rather than a normal texture,
 	-- so ClearButton finds nothing to clear and the plate outlives it.
 	local invite = cf.InviteButton
-	check(invite.__aetherPill ~= nil, "a push button is in one of our pills")
+	check(invite.__aetherSkin ~= nil, "a push button is in one of our pills")
 	check(invite.Left:GetTexture() == 0 and invite.Middle:GetTexture() == 0,
 		"with all three of its slices cleared, which a normal texture is not")
 
 	-- A DROPDOWN KEEPS ITS ARROW. It is what says the control opens, and
 	-- nothing of ours would say it better at that size.
 	local dd = cf.StreamDropdown
-	check(dd.__aetherPill ~= nil and dd.Background:GetTexture() == 0,
+	check(dd.__aetherSkin ~= nil and dd.Background:GetTexture() == 0,
 		"a dropdown's stone holder comes off")
 	check(dd.Arrow:GetTexture() == "common-dropdown-classic-a-buttonDown",
 		"and its arrow does not")
@@ -18038,7 +18623,7 @@ do
 		"and the real one is in the corner rather than 44 in and 25 down, where"
 		.. " the stone rim used to be")
 
-	check(_G.PlayerTalentFrameLearnButton.__aetherPill ~= nil
+	check(_G.PlayerTalentFrameLearnButton.__aetherSkin ~= nil
 		and _G.PlayerTalentFrameLearnButton:GetNormalTexture():GetTexture() == 0,
 		"its buttons are ours")
 	check(_G.PlayerTalentFrameTalentPointsText._aetherStyle ~= nil

@@ -324,17 +324,23 @@ Media.style = {
 	ttChip       = { "bold",     10, "" },   -- ELITE
 	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
 
-	-- The client's own windows (Panels.lua). OUTLINED, unlike our own panels'
-	-- type: these labels sit over whatever the window is showing - a paper
-	-- doll, a talent tree's artwork, a map - rather than over our own even
-	-- fill, and an unoutlined word on that reads as smudged.
-	pnTab        = { "semibold", 14, "OUTLINE" },
-	pnTitle      = { "semibold", 18, "OUTLINE" },
-	pnSub        = { "medium",   13, "OUTLINE" },
+	-- The client's own windows (Panels.lua).
+	--
+	-- NOT OUTLINED, and they used to be. The argument was that these labels sit
+	-- over whatever the window is showing - a paper doll, a talent tree's
+	-- artwork - rather than over an even fill of ours, so an unoutlined word
+	-- would read as smudged. That was true of the stone windows and stopped
+	-- being true the moment the art came off: what they sit over now is our own
+	-- glass, the same as every other string in this interface, and nothing else
+	-- here is outlined. On a filled tab it was worse than useless - a black
+	-- stroke around dark type on a light fill, which reads as a sticker.
+	pnTab        = { "semibold", 14, "" },
+	pnTitle      = { "semibold", 18, "" },
+	pnSub        = { "medium",   13, "" },
 	-- Everything else inside one: stat rows, resistances, faction names. Drawn
 	-- at whatever size the client already gave the string, so its own layout
 	-- still measures out - only the family and the outline are ours.
-	pnBody       = { "medium",   12, "OUTLINE" },
+	pnBody       = { "medium",   12, "" },
 
 	-- Nameplates (concept 7a / 7b). Their own roles rather than the tooltip's,
 	-- close as the numbers are: a tooltip is read under the cursor with the

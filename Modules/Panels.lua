@@ -74,6 +74,39 @@ local PANELS = {
 	},
 	{ frame = "TalentFrame",       addon = "Blizzard_TalentUI" },
 	{ frame = "FriendsFrame" },
+
+	-- The windows an NPC opens, and WHICH TEMPLATE EACH IS BUILT ON, because
+	-- that is what decides whether it wants trimming at all.
+	--
+	-- Gossip, the vendor and the trade window are ButtonFrameTemplate: modern,
+	-- tight, no transparent margin to take back. Insetting one of those cuts
+	-- into the window - the vendor's buyback row and your purse ended up
+	-- outside the glass, which is what "sizing and alignment issues" looked
+	-- like. The quest giver, the trainer and the flight master are the old
+	-- parchment shape and do want it.
+	--
+	-- `tight` says which: no margin to trim, and a title band twenty pixels
+	-- tall that our own title role overhangs. Set per window from its own XML
+	-- rather than sniffed at runtime, because "does this frame have a
+	-- TitleContainer" is true of windows on both templates and answers a
+	-- different question.
+	{ frame = "GossipFrame",   tight = true },
+	-- The vendor's glass reaches BELOW the frame, which is the one place an
+	-- inset goes negative. Blizzard hangs this window's tabs off the bottom
+	-- edge, outside its own art - so trimmed to the frame the tab row landed on
+	-- top of the buyback row, the repair buttons and your purse all at once.
+	-- Thirty-four is the tab strip plus air.
+	{ frame = "MerchantFrame", tight = true, insets = { 0, 0, 0, -34 } },
+	{ frame = "TradeFrame",    tight = true },
+	-- 62 at the foot, because that is where this window's buttons are: Accept,
+	-- Complete Quest and Cancel all sit 72 up from the bottom edge, and the art
+	-- below them is margin. Trimmed to 22 the glass ran a hand's width past the
+	-- last thing in the window.
+	{ frame = "QuestFrame",        insets = { 8, -8, -28, 62 } },
+	{ frame = "ClassTrainerFrame", addon = "Blizzard_TrainerUI",
+	                               insets = { 8, -8, -28, 22 } },
+	{ frame = "TaxiFrame",         insets = { 8, -8, -28, 22 } },
+
 	-- NOT GuildFrame. The old FriendsFrame XML still defines a GuildFrame pane,
 	-- setAllPoints inside the social window, and this list used to name it as a
 	-- window of its own - so it got glass of its own behind a pane that already
@@ -197,6 +230,15 @@ local function Dress(frame)
 	-- a fixed size and it stops being readable before it stops being small.
 	if frame.SetScale then frame:SetScale(PanelScale()) end
 
+	-- AND THE GLASS RE-SNAPPED AFTER IT. A corner is snapped to whole physical
+	-- pixels, which depends on the frame's effective scale - and SetScale fires
+	-- no size change, so nothing else would ever ask the surface to look again.
+	-- Change the scale and every curve in the window goes soft until something
+	-- happens to resize it.
+	if frame.__aetherPanel and frame.__aetherPanel._Relayout then
+		frame.__aetherPanel:_Relayout()
+	end
+
 	-- The window's own title, where it has one under a name we can find. Three
 	-- places, because the client uses three: an older frame names it globally,
 	-- a reworked one carries it as a field, and anything built on the shared
@@ -225,7 +267,19 @@ local function Dress(frame)
 		title:SetPoint("TOP", frame, "TOP", 0, (ins and ins[2] or 0) - 14)
 	end
 	if title and title.SetText then
-		Roled(title, "pnTitle")
+		-- A TITLE IN A BAND KEEPS THE CLIENT'S SIZE. The modern template hands
+		-- its title a band twenty pixels tall, and our pnTitle at nineteen
+		-- fills it corner to corner and overhangs the ends - which is the
+		-- gossip window's name reading as though it had been shouted.
+		--
+		-- The old windows have the whole width to themselves and no such band,
+		-- so those keep the bigger role. Same reasoning as Reskin.Font's: where
+		-- the client measured a space for the words, the metrics stay theirs.
+		if entry and entry.tight then
+			Reskin.Font(title, "pnTitle")
+		else
+			Roled(title, "pnTitle")
+		end
 		W.Color(title, Palette.c.text)
 		frame.__aetherTitle = title
 	end
@@ -300,12 +354,16 @@ local function StyleTabState(tab)
 	local enabled = (tab.IsEnabled == nil) or tab:IsEnabled()
 	local selected = not enabled
 
-	if tab.__aetherTab then tab.__aetherTab:SetAlpha(selected and 1 or 0.4) end
+	-- FILLED, the way the chat's selected tab is - dark type on the accent,
+	-- inverted from everything else on screen. That inversion is the whole
+	-- signal, and a tab that was merely BRIGHTER than its neighbours read as
+	-- hovered rather than as the one you are standing on. One rule for every
+	-- tab in the interface now, and it lives on the shared button surface.
+	tab.__aetherSelected = selected
+	W.SetButtonState(tab, selected, tab.IsMouseOver and tab:IsMouseOver())
 
 	local text = TabLabel(tab)
 	if not text then return end
-
-	W.Color(text, selected and Palette.c.text or Palette.c.textDim)
 
 	-- AND PUT THE LABEL BACK IN THE MIDDLE. Selecting a tab moves its text: the
 	-- client nudges it up into the raised part of its own stone art, which is
@@ -477,7 +535,13 @@ local function LayoutTabs(frame, store)
 		end
 	end
 
-	local startX = left + (visible - total) / 2
+	-- LEFT, not centred. A row of tabs is a list of places you can go, and a
+	-- list starts at the left edge of the thing it belongs to - the same edge
+	-- everything else in the window starts at. Centred, the row moved every
+	-- time a tab appeared or went away: a hunter's pet tab arriving slid
+	-- Character, Skills and Reputation sideways under the cursor, which is a
+	-- window that will not sit still.
+	local startX = left + TAB_EDGE
 
 	local last
 
@@ -1521,6 +1585,399 @@ local function DressCommunities(frame, store)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- the windows an NPC opens
+-- ---------------------------------------------------------------------------
+--
+-- A vendor, a quest giver and anyone you can talk to. Three windows built on
+-- two different templates, and what they have in common is rows: a list of
+-- things, each with an icon, a name and sometimes a price.
+--
+-- The icons are the thing to be careful with, as ever. A merchant row keeps
+-- the item's picture on a button inside it, and a gossip row keeps a bullet -
+-- or a quest mark - as a region of the row itself. Both are what the player is
+-- reading; neither is chrome.
+
+local MERCHANT_ROWS = 12        -- MERCHANT_ITEMS_PER_PAGE
+local QUEST_ITEMS   = 6         -- MAX_REQUIRED_ITEMS
+
+--- One of a vendor's rows: the empty-slot art and the label plate off, the
+--  item's own button dressed as a cell, and the name and price re-roled.
+local function DressMerchantRow(row, store)
+	if not row then return end
+
+	-- The row's own art: a 64px empty-slot disc behind the icon and the stone
+	-- label plate beside it. Both are regions OF THE ROW, and the item's
+	-- picture is not - it lives on the button inside, which is what makes
+	-- stripping the row safe here.
+	Reskin.Strip(row, store)
+
+	local button = Reskin.Element(row, "ItemButton")
+	if button then Reskin.Slot(button) end
+
+	local name = Reskin.Element(row, "Name")
+	if name then
+		Reskin.Font(name, "pnBody")
+		W.Color(name, Palette.c.text)
+	end
+
+	-- The price, which is its own frame of coin icons and numbers.
+	local money = Reskin.Element(row, "MoneyFrame")
+	if money then Reskin.Fonts(money, "pnBody", 2) end
+end
+
+local function DressMerchant(frame, store)
+	for i = 1, MERCHANT_ROWS do
+		DressMerchantRow(_G["MerchantItem" .. i], store)
+	end
+	DressMerchantRow(_G.MerchantBuyBackItem, store)
+
+	-- Your purse, along the bottom, in three pieces of stone.
+	for _, name in ipairs({ "MerchantMoneyInset", "MerchantMoneyBg",
+	                        "MerchantMoneyFrame", "MerchantExtraCurrencyInset",
+	                        "MerchantExtraCurrencyBg" }) do
+		local part = _G[name]
+		if part then
+			Reskin.Strip(part, store)
+			Reskin.Fonts(part, "pnBody", 2)
+		end
+	end
+
+	-- REPAIR KEEPS EVERY REGION IT HAS. Its anvil is not the normal texture and
+	-- it is not called anything we could ask for - MerchantRepairAllIcon on one
+	-- button and nameless on the other - and it is cropped out of a shared sheet
+	-- by texcoords, so a cell would re-crop it to the wrong part of that sheet.
+	-- Dressing these as icon buttons cleared the anvils and left two empty
+	-- squares. So: our surface behind them, and nothing else touched.
+	for _, name in ipairs({ "MerchantRepairAllButton", "MerchantRepairItemButton",
+	                        "MerchantGuildBankRepairButton" }) do
+		local btn = _G[name]
+		if btn then W.SkinButton(btn, {}) end
+	end
+
+	local repairLabel = _G.MerchantRepairText
+	if repairLabel then
+		Reskin.Font(repairLabel, "pnBody", Palette.c.text)
+		W.Color(repairLabel, Palette.c.textDim)
+	end
+
+	-- The page turner says "Prev" and "Next" in words of its own, so it wants a
+	-- pill rather than one of our marks - a glyph as well was a chevron sitting
+	-- beside a word that already said the same thing.
+	for _, name in ipairs({ "MerchantPrevPageButton", "MerchantNextPageButton" }) do
+		local btn = _G[name]
+		if btn then
+			Reskin.ClearButton(btn)
+			Reskin.Strip(btn, store)
+			-- BY WALKING THE BUTTON, not by asking for $parentText. The client's
+			-- label on these is a plain FontString region with no name and no
+			-- ButtonText, so both of the usual ways to reach it answer nil and
+			-- the restyle quietly did nothing at all - which is a page turner
+			-- still in the client's gold.
+			Reskin.Fonts(btn, "pnBody", 0, Palette.c.text)
+			for _, region in ipairs({ btn:GetRegions() }) do
+				if region.GetObjectType and region:GetObjectType() == "FontString" then
+					W.Color(region, Palette.c.text)
+				end
+			end
+		end
+	end
+
+	local page = _G.MerchantPageText
+	if page then
+		Roled(page, "pnSub")
+		W.Color(page, Palette.c.textDim)
+	end
+
+	-- Who you are buying from.
+	local who = _G.MerchantNameText
+	if who then
+		Roled(who, "pnSub")
+		W.Color(who, Palette.c.text)
+	end
+
+	LayoutTabs(frame, store)
+	InstallTabHooks()
+end
+
+--- The quest giver: four panels of the same window, one shown at a time.
+local QUEST_PANES = {
+	"QuestFrameDetailPanel", "QuestFrameProgressPanel", "QuestFrameRewardPanel",
+	"QuestFrameGreetingPanel", "QuestNpcNameFrame",
+	"QuestDetailScrollFrame", "QuestProgressScrollFrame",
+	"QuestRewardScrollFrame", "QuestGreetingScrollFrame",
+	"QuestProgressRequiredMoneyFrame",
+}
+
+local QUEST_BUTTONS = {
+	"QuestFrameAcceptButton", "QuestFrameDeclineButton",
+	"QuestFrameCompleteButton", "QuestFrameCompleteQuestButton",
+	"QuestFrameGoodbyeButton", "QuestFrameCancelButton",
+	"QuestFrameGreetingGoodbyeButton",
+}
+
+local function DressQuest(frame, store)
+	for _, name in ipairs(QUEST_PANES) do
+		local pane = _G[name]
+		if pane then
+			Reskin.Strip(pane, store)
+			-- LIFTED, because a quest is printed on paper. Its text is near
+			-- black by design and on glass it is a dark smudge. Only the dark
+			-- is lifted - the gold headings and the reward names mean what they
+			-- say and come through untouched.
+			Reskin.Fonts(pane, "pnBody", 2, Palette.c.text)
+		end
+	end
+
+	-- Who you are talking to, above the parchment.
+	local who = _G.QuestNpcNameFrame
+	local whoText = who and Reskin.Element(who, "Text")
+	if whoText then
+		Roled(whoText, "pnTitle")
+		W.Color(whoText, Palette.c.text)
+	end
+
+	for _, name in ipairs(QUEST_BUTTONS) do
+		local btn = _G[name]
+		if btn then
+			Reskin.Button(btn, "pnBody")
+			Reskin.Strip(btn, store)
+		end
+	end
+
+	-- What the quest wants from you. NOT a cell: these are wide ROWS - an icon
+	-- at one end and the item's name beside it - and a cell sizes its picture
+	-- to the whole button, so the icon came out stretched the width of the row.
+	--
+	-- So the row's own art comes off and the icon is left exactly where the
+	-- client put it, at the size the client drew it.
+	for i = 1, QUEST_ITEMS do
+		local item = _G["QuestProgressItem" .. i]
+		if item then
+			Reskin.ClearButton(item)
+			Reskin.StripExcept(item, store, { "IconTexture" })
+			Reskin.Fonts(item, "pnBody", 1, Palette.c.text)
+		end
+	end
+
+	for _, name in ipairs({ "QuestDetailScrollFrameScrollBar",
+	                        "QuestProgressScrollFrameScrollBar",
+	                        "QuestRewardScrollFrameScrollBar",
+	                        "QuestGreetingScrollFrameScrollBar" }) do
+		local bar = _G[name]
+		if bar then Reskin.ScrollBar(bar, store) end
+	end
+end
+
+--- Anyone you can talk to. Built on the portrait template, so the shell is
+--  already handled; what is left is the parchment behind the words and the
+--  list of things to say.
+--- Every row the gossip list is showing right now.
+--
+--  POOLED AND REBUILT. The list is a scroll box: its rows are acquired from a
+--  pool when the data provider changes, which happens on open AND on every
+--  option you pick. A row dressed once is a row that is right until you click
+--  something, and the rows you have not scrolled to have never existed.
+--
+--  Both shapes are here: an option or a quest is a Button with its bullet in an
+--  Icon region, and the NPC's own words are a frame carrying a GreetingText.
+local function DressGossipRows(frame)
+	local panel = Reskin.Element(frame, "GreetingPanel")
+	local box = panel and Reskin.Element(panel, "ScrollBox")
+	if not box then return end
+
+	local rows
+	if box.GetFrames then
+		local ok, got = pcall(box.GetFrames, box)
+		rows = ok and got or nil
+	end
+	if not rows then return end
+
+	for _, row in ipairs(rows) do
+		local greeting = Reskin.Element(row, "GreetingText")
+		if greeting then
+			Reskin.Font(greeting, "pnBody", Palette.c.text)
+		elseif row.GetFontString then
+			Reskin.Font(row:GetFontString(), "pnBody", Palette.c.text)
+		end
+	end
+end
+
+local function DressGossip(frame, store)
+	local panel = Reskin.Element(frame, "GreetingPanel")
+	if panel then
+		Reskin.Strip(panel, store)
+		-- Lifted, for the reason the quest giver's text is: this is printed on
+		-- the same paper and is the same near-black.
+		Reskin.Fonts(panel, "pnBody", 0, Palette.c.text)
+
+		local goodbye = Reskin.Element(panel, "GoodbyeButton")
+		if goodbye then
+			Reskin.Button(goodbye, "pnBody")
+			Reskin.Strip(goodbye, store)
+		end
+
+		-- A modern scroll bar again: a frame of frames, so the bar itself has
+		-- no regions to take.
+		StripTree(Reskin.Element(panel, "ScrollBar"), store, 3)
+	end
+
+	local rep = Reskin.Element(frame, "FriendshipStatusBar")
+	if rep then Reskin.StatusBar(rep, store) end
+
+	DressGossipRows(frame)
+
+	-- The list is rebuilt on open and on every option you pick, and Update is
+	-- where that happens. A mixin method copied onto the frame, so it is hooked
+	-- on the frame rather than by name.
+	if hooksecurefunc and frame.Update and not PN.__gossipHook then
+		PN.__gossipHook = true
+		hooksecurefunc(frame, "Update", function(self)
+			if PN.enabled then DressGossipRows(self) end
+		end)
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- the trainer
+-- ---------------------------------------------------------------------------
+--
+-- A list of what you can learn, a pane describing the one you picked, and a
+-- price. Its rows are the character sheet's skill headers again - a button
+-- whose NORMAL TEXTURE is the plus or minus - which is why the treatment for
+-- those is a shared one and not something the character sheet owns.
+--
+-- What is different here is that the same eleven buttons are BOTH kinds. The
+-- client fills them from one list: a header gets a plus or a minus, a skill
+-- gets ClearNormalTexture and an indented name. So which a row is has to be
+-- read on every refresh rather than decided once.
+
+local TRAINER_ROWS = 11        -- what the client builds
+
+local TRAINER_PANES = {
+	"ClassTrainerListScrollFrame", "ClassTrainerDetailScrollFrame",
+	"ClassTrainerDetailScrollChildFrame", "ClassTrainerMoneyFrame",
+	"ClassTrainerDetailMoneyFrame", "ClassTrainerExpandButtonFrame",
+	"ClassTrainerSkillHighlightFrame",
+}
+
+local TRAINER_TEXT = {
+	"ClassTrainerNameText", "ClassTrainerGreetingText", "ClassTrainerSkillName",
+	"ClassTrainerSubSkillName", "ClassTrainerSkillRequirements",
+	"ClassTrainerCostLabel", "ClassTrainerSkillDescription",
+}
+
+--- A row is a header if the client left a plus or a minus on it.
+--
+--  Read from the texture's PATH rather than remembered, because the client
+--  reuses these eleven buttons for both kinds and a row that was a heading a
+--  moment ago is a spell now. And read BEFORE the mark is cleared - once ours
+--  is on it there is nothing left to read.
+local function TrainerRowMark(btn)
+	local tex = btn.GetNormalTexture and btn:GetNormalTexture()
+	local path = tex and tex.GetTexture and tex:GetTexture()
+	if type(path) ~= "string" then return nil end
+	if path:find("MinusButton", 1, true) then return "expanded" end
+	if path:find("PlusButton", 1, true) then return "collapsed" end
+	return nil
+end
+
+local function DressTrainerRows()
+	for i = 1, TRAINER_ROWS do
+		local btn = _G["ClassTrainerSkill" .. i]
+		if btn then
+			local mark = TrainerRowMark(btn)
+
+			if mark then
+				btn.isExpanded = (mark == "expanded") or nil
+				Reskin.Collapse(btn)
+				if btn.__aetherGlyph then btn.__aetherGlyph:Show() end
+			elseif btn.__aetherGlyph then
+				-- It is a spell this time round, not a heading. The client
+				-- clears its own mark here; ours has to go with it.
+				btn.__aetherGlyph:Hide()
+			end
+
+			local label = btn.GetFontString and btn:GetFontString()
+			if label then Reskin.Font(label, "pnBody", Palette.c.text) end
+
+			local sub = _G["ClassTrainerSkill" .. i .. "SubText"]
+			if sub then Reskin.Font(sub, "pnBody") end
+		end
+	end
+
+	-- "All", which expands and collapses the lot, and carries the same mark.
+	local all = _G.ClassTrainerCollapseAllButton
+	if all then
+		local mark = TrainerRowMark(all)
+		if mark then all.isExpanded = (mark == "expanded") or nil end
+		Reskin.Collapse(all)
+		local label = all.GetFontString and all:GetFontString()
+		if label then Reskin.Font(label, "pnBody", Palette.c.text) end
+	end
+end
+
+local function DressTrainer(frame, store)
+	for _, name in ipairs(TRAINER_PANES) do
+		local pane = _G[name]
+		if pane then
+			Reskin.Strip(pane, store)
+			Reskin.Fonts(pane, "pnBody", 2, Palette.c.text)
+		end
+	end
+
+	-- The little stone tab the All control hangs off, the same one the
+	-- character sheet's skill list has.
+	for _, name in ipairs({ "ClassTrainerExpandTabLeft", "ClassTrainerExpandTabMiddle",
+	                        "ClassTrainerExpandTabRight" }) do
+		local art = _G[name]
+		if art and art.SetTexture then art:SetTexture(0) end
+	end
+
+	-- Who you are learning from, what they say, and the description of the
+	-- thing you picked. All printed for parchment, so all lifted.
+	for _, name in ipairs(TRAINER_TEXT) do
+		local fs = _G[name]
+		if fs then Reskin.Font(fs, "pnBody", Palette.c.text) end
+	end
+
+	local who = _G.ClassTrainerNameText
+	if who then
+		Roled(who, "pnSub")
+		W.Color(who, Palette.c.text)
+	end
+
+	-- The spell you are being sold, in a cell. This one IS square - 37 by 37 -
+	-- unlike the quest giver's rows.
+	local icon = _G.ClassTrainerSkillIcon
+	if icon then Reskin.Slot(icon) end
+
+	for _, name in ipairs({ "ClassTrainerTrainButton", "ClassTrainerCancelButton" }) do
+		local btn = _G[name]
+		if btn then
+			Reskin.Button(btn, "pnBody")
+			Reskin.Strip(btn, store)
+		end
+	end
+
+	for _, name in ipairs({ "ClassTrainerListScrollFrameScrollBar",
+	                        "ClassTrainerDetailScrollFrameScrollBar" }) do
+		local bar = _G[name]
+		if bar then Reskin.ScrollBar(bar, store) end
+	end
+
+	DressTrainerRows()
+
+	-- The list is refilled every time you expand a heading, pick a skill or
+	-- learn one - and every refresh puts the client's own plus and minus back.
+	if hooksecurefunc and _G.ClassTrainerFrame_Update and not PN.__trainerHook then
+		PN.__trainerHook = true
+		hooksecurefunc("ClassTrainerFrame_Update", function()
+			if PN.enabled then DressTrainerRows() end
+		end)
+	end
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
@@ -1528,6 +1985,10 @@ local INTERIORS = {
 	SpellBookFrame    = DressSpellBook,
 	PlayerTalentFrame = DressTalents,
 	CommunitiesFrame  = DressCommunities,
+	MerchantFrame     = DressMerchant,
+	QuestFrame        = DressQuest,
+	GossipFrame       = DressGossip,
+	ClassTrainerFrame = DressTrainer,
 }
 
 PN.INTERIORS = INTERIORS

@@ -650,6 +650,30 @@ local function Build()
 	panel.more:SetPoint("LEFT", body, "LEFT", 0, 0)
 	panel.more:Hide()
 
+	-- AND IT OPENS THE LOG. "+3 more" was the one line in this panel that named
+	-- something you could not get to: it says the tracker ran out of room, and
+	-- the place the rest of them live is one click away, so it may as well be
+	-- that click. It opens at the FIRST of the ones it is standing in for,
+	-- which is what somebody reading that line is asking about.
+	--
+	-- The button is sized to the WORDS rather than to the panel: a full-width
+	-- invisible button under a short line is a click target nobody can see the
+	-- edges of, and this panel sits over the world where a stray click costs
+	-- you the thing you were aiming at.
+	local hit = CreateFrame("Button", nil, body)
+	hit:Hide()
+	hit:SetScript("OnEnter", function(self)
+		W.Color(panel.more, Palette.c.text)
+	end)
+	hit:SetScript("OnLeave", function(self)
+		W.Color(panel.more, Palette.c.textFaint)
+	end)
+	hit:SetScript("OnClick", function(self)
+		local q = panel.moreQuest
+		if q then OpenLog(q.index, q.questID) end
+	end)
+	panel.moreHit = hit
+
 	panel.rows = {}
 	return panel
 end
@@ -798,8 +822,23 @@ function QT:Refresh()
 		panel.more:SetPoint("TOPLEFT", panel.body, "TOPLEFT", 0, -(bodyH + 4))
 		panel.more:Show()
 		bodyH = bodyH + 4 + LINE_H
+
+		-- The first of the ones it is standing in for, which is what somebody
+		-- reading that line is asking about. Held rather than recomputed on the
+		-- click: log indices renumber as quests are accepted and abandoned, and
+		-- the question "which quest is this line about" was answered here.
+		panel.moreQuest = quests[shown + 1]
+
+		-- Over the WORDS, not the panel. Anchored every pass because the line
+		-- moves down as rows are added and its width changes with the count.
+		panel.moreHit:ClearAllPoints()
+		panel.moreHit:SetPoint("TOPLEFT", panel.more, "TOPLEFT", 0, 0)
+		panel.moreHit:SetPoint("BOTTOMRIGHT", panel.more, "BOTTOMRIGHT", 0, 0)
+		panel.moreHit:Show()
 	else
 		panel.more:Hide()
+		panel.moreHit:Hide()
+		panel.moreQuest = nil
 	end
 
 	if collapsed or bodyH <= 0 then

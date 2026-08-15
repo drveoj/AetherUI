@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.6.0",
+		date    = "2026-08-15",
+		lines   = {
+			"The windows an NPC opens are in glass: the vendor, the quest giver, anyone you can talk to, and the trainer.",
+			"Text printed for parchment is lifted so you can read it - and only that, so gold headings and reward names still mean what they meant.",
+			"Buttons and tabs share one shape across the whole interface, with the tab you are on filled in like the chat's.",
+			"Curved corners are drawn on whole pixels now, everywhere - they were landing half across one, which is what made them look rough.",
+			"The +N more line on the quest tracker opens the quest log at the first quest it is standing in for.",
+		},
+	},
+	{
 		version = "0.5.5",
 		date    = "2026-08-15",
 		lines   = {
