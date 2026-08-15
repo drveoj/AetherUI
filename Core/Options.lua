@@ -502,23 +502,7 @@ local function FaderGroup()
 			.. " rather than ours - asking it to move ten times a second is a"
 			.. " camera that never arrives anywhere.",
 			{ "modules", "zen", "cameraZoom" }, 0, 15, 0.5, { after = "none" }),
-		zenCameraSide = choice("Camera sits",
-			"Centred by default. An offset camera is a cinematography habit, and"
-			.. " with nothing else on screen it reads as the shot being slightly"
-			.. " wrong rather than as a composition."
-			.. "\n\nOver the |cff9d7bffright|r shoulder puts the character on the"
-			.. " left of the frame, and the other way round - the camera is what"
-			.. " moves, not the character.",
-			{ "modules", "zen", "cameraShoulderSide" },
-			{ CENTRE = "Centred", LEFT = "Over the left shoulder",
-			  RIGHT = "Over the right shoulder" },
-			{ after = "none" }),
-		zenCameraShoulder = range("How far to that side",
-			"A |cff9d7bffmultiplier|r rather than a distance: the offset is scaled"
-			.. " to how far back the camera is going, because one fixed number is"
-			.. " only ever right at one distance. 1 is the calibrated shot."
-			.. "\n\nIgnored while the camera is centred.",
-			{ "modules", "zen", "cameraShoulder" }, 0, 3, 0.1, { after = "none" }),
+
 
 		zenAudioHeader = header("The audio profile"),
 		zenAudioNote = note("Zen borrows the sound channels while it is on screen"
@@ -1028,6 +1012,8 @@ local function IFECGroup()
 			.. " console for content when a season is installed.", at("enabled")),
 		hideUI = toggle("Hide the interface in flight",
 			"You are a passenger. The console stays.", at("hideUI")),
+		scale = range("Size", "On top of the interface scale, like the action bars"
+			.. " have their own.", at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
 		note = note("Move it with |cff9d7bff/aether unlock|r."),
 	})
 end

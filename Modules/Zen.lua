@@ -154,7 +154,7 @@
 	The shot
 	--------
 	Zen sets up a camera rather than only clearing a screen: the character sits,
-	and the view pulls back over their shoulder.
+	and the view pulls back.
 
 	Sitting goes through `C_ChatInfo.PerformEmote`, not `SitStandOrDescendStart`
 	- the latter is what the keybind runs and it is a TOGGLE, so on a player who
@@ -186,7 +186,7 @@
 	         DialogueUI gets a consistent cinematic camera on this same client
 	         and calls MoveView exactly zero times - it sets CVars, every one of
 	         them absolute, readable and restorable. So does this. The shot is
-	         zoom plus the shoulder offset plus the two centring CVars, and the
+	         the zoom and the nameplate CVars, and the
 	         tilt that kept breaking is simply gone.
 
 	`SaveView(5)`/`SetView(5)` would restore a pitch exactly if one were ever
@@ -345,55 +345,6 @@ local WORLD_TEXT_CVARS = {
 	"UnitNameEnemyPetName",
 	"UnitNameEnemyGuardianName",
 }
-
---- The over-the-shoulder offset.
---
---  It appears nowhere in the Classic Era interface source, which is why the
---  first pass here assumed it might not exist and treated a missing one as the
---  normal case. It does exist: DialogueUI writes it on this client, on this
---  branch, and reads it back with GetCVar. Blizzard's own UI simply never
---  touches it. Still probed, because a CVar not in the source is a CVar with
---  nothing promising it will stay.
-local SHOULDER_CVAR = "test_cameraOverShoulder"
-
---- The two that decide whether the offset does anything at all.
---
---  Writing test_cameraOverShoulder on its own is what shipped, and it moved
---  nothing. CameraKeepCharacterCentered re-centres the character every frame,
---  which is the offset undone as fast as it is applied, and
---  CameraReduceUnexpectedMovement damps exactly the kind of camera change that
---  does not come from the player's own hand. DialogueUI sets both to 0
---  alongside every shoulder write and marks them "11.0.2 Fix"; without them the
---  CVar reads back as the value we wrote while the camera sits where it was,
---  which is the most confusing shape a bug can have.
-local CENTRE_CVARS = {
-	CameraKeepCharacterCentered   = 0,
-	CameraReduceUnexpectedMovement = 0,
-}
-
---- How much lateral offset a given zoom wants.
---
---  The offset is a distance at the camera, so the angle it subtends falls away
---  as you pull back: a value that frames the character over one shoulder at
---  three metres is barely a nudge at ten. A flat number is therefore only ever
---  right at one distance, and cameraZoom is a setting.
---
---  The curve is DialogueUI's own (Code/Camera.lua, GetShoulderOffsetByZoom),
---  calibrated against this client rather than derived here - 3m wants ~1.4,
---  10m wants ~4.4. `cameraShoulder` multiplies it, so 1 is that calibration and
---  0 is centred.
-local function ShoulderForZoom(zoom)
-	return (tonumber(zoom) or 0) * 0.4314 + 0.1057
-end
-
---- Which way each side pushes the offset.
---
---  Positive puts the CAMERA over the right shoulder, which places the character
---  on the LEFT of the frame - the two read as opposites and it is worth being
---  explicit about which one the name refers to. Not read off any documentation:
---  the first build of this shipped a positive offset and the character came out
---  left of centre on screen, which settles it.
-local SIDE_SIGN = { CENTRE = 0, LEFT = -1, RIGHT = 1 }
 
 -- ---------------------------------------------------------------------------
 -- construction
@@ -1462,7 +1413,7 @@ end
 -- ---------------------------------------------------------------------------
 -- the camera
 --
--- Over the shoulder, three metres back, tilted a little above the head.
+-- Three metres back, tilted a little above the head.
 --
 -- Zoom is exact and reversible: GetCameraZoom() reads the current distance, so
 -- the target is set by asking for the difference and the player's own distance
@@ -1484,10 +1435,9 @@ end
 -- shot on one machine put the camera through the floor on another.
 --
 -- DialogueUI gets a consistent cinematic camera on this same client and calls
--- MoveView exactly zero times. It sets CVars: the shoulder offset, the two
--- centring ones, the field of view. Every one of those is absolute, readable,
--- and restorable exactly - which is the whole property the timed nudge could
--- never have.
+-- MoveView exactly zero times. It sets the zoom, which is absolute, readable
+-- and restorable exactly - the whole property the timed nudge could never
+-- have.
 --
 -- So zen's camera is zoom plus CVars, and there is no pitch setting. The shot
 -- the deck describes - pulled back, character centred, looking out at the world
@@ -1524,32 +1474,10 @@ function Zen:SetCamera(a)
 		if diff > 0 then pcall(CameraZoomIn, diff) else pcall(CameraZoomOut, -diff) end
 	end
 
-	-- The lateral offset, through the same borrow/give-back as every other CVar
-	-- so it is handed back by the paths that already exist - including the
-	-- PLAYER_LOGOUT one, which matters more for these three than for the audio:
-	-- a player left permanently off-centre has no way to guess what did it.
-	--
-	-- The two centring CVars go first and unconditionally. They are what makes
-	-- the offset visible at all, and borrowing them separately means a client
-	-- missing one still gets whatever the others can do.
-	--
-	-- Derived from `goal` rather than from `current`: the offset has to suit the
-	-- distance the camera is travelling TO, and the zoom above is a glide, so
-	-- GetCameraZoom for the next second or so answers with where it used to be.
-	--
-	-- CENTRE writes a real 0 rather than skipping the CVar, and the difference
-	-- matters for anyone who runs an over-the-shoulder camera of their own: left
-	-- alone they would sit off to one side through the whole of zen, which is the
-	-- one thing "centre" is meant to rule out. It is borrowed like any other
-	-- value, so their own comes straight back at the end.
-	local side = SIDE_SIGN[tostring(cfg.cameraShoulderSide or "CENTRE"):upper()] or 0
-	local mult = (tonumber(cfg.cameraShoulder) or 0) * side
-
+	-- Every camera value zen touches goes through the same borrow/give-back, so
+	-- it is handed back by the paths that already exist - including the
+	-- PLAYER_LOGOUT one.
 	cam.store = {}
-	for name, value in pairs(CENTRE_CVARS) do
-		Borrow(cam.store, name, value)
-	end
-	Borrow(cam.store, SHOULDER_CVAR, ShoulderForZoom(goal) * mult)
 
 	self._cam = cam
 end
@@ -1592,8 +1520,7 @@ end
 function Zen:ReleaseAll()
 	pcall(self.RestoreWorldText, self)
 	pcall(self.RestoreAudio, self)
-	-- The camera's shoulder offset is a CVar like any other, so it is written to
-	-- Config.wtf on the way out with everything else.
+	-- The zoom is read back and put back exactly.
 	pcall(self.RestoreCamera, self)
 end
 

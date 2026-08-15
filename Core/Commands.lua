@@ -23,7 +23,6 @@ local function usage()
 		"|cff9d7bff/aether zen|r <on|off|delay N|afk on/off|test>  ·  stage two",
 		"|cff9d7bff/aether zen|r <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
 		"|cff9d7bff/aether zen zoom|r N  ·  the shot, live",
-		"|cff9d7bff/aether zen shoulder|r <left|centre|right|N>  ·  which side, how far",
 		"|cff9d7bff/aether zen|r <track NAME|preview>  ·  the music",
 		"|cff9d7bff/aether shadow|r <0-1>  ·  ambient shadow opacity",
 		"|cff9d7bff/aether health|r <class|deck>  ·  bar colour for players",
@@ -586,14 +585,13 @@ handlers.zen = function(arg, rest)
 		cfg.camera = (rest ~= "off")
 		local Z = A:GetModule("zen")
 		-- Straight back if it is being switched off mid-shot. Leaving somebody
-		-- zoomed in over their own shoulder because they flipped a switch would
-		-- be a setting that does the opposite of what it says.
+		-- zoomed in because they flipped a switch would be a setting that does
+		-- the opposite of what it says.
 		if not cfg.camera and Z and Z.RestoreCamera then Z:RestoreCamera() end
 		A:Print("move the camera in zen -> " .. (cfg.camera and "on" or "off"))
-	elseif arg == "zoom" or arg == "shoulder" then
-		-- Live, because neither can be reasoned about from a number: the zoom
-		-- is metres and the shoulder is a multiplier on a curve, so the only way
-		-- to find a value anybody likes is to try one, watch it, and try
+	elseif arg == "zoom" then
+		-- Live, because it cannot be reasoned about from a number: the only way
+		-- to find a distance anybody likes is to try one, watch it, and try
 		-- another. Reloading between each is what makes that unbearable.
 		--
 		-- `pitch` used to be here too. It is gone: there is no way to set the
@@ -601,31 +599,9 @@ handlers.zen = function(arg, rest)
 		-- a rate the player's own Mouse Look Speed decides, so the same number
 		-- was a different shot on every machine. See Modules/Zen.lua.
 		local KEYS = {
-			zoom     = { key = "cameraZoom",     lo = 0, hi = 15, what = "metres behind you" },
-			shoulder = { key = "cameraShoulder", lo = 0, hi = 3,
-				what = "how far to the side; takes left/centre/right too" },
+			zoom = { key = "cameraZoom", lo = 0, hi = 15, what = "metres behind you" },
 		}
 		local k = KEYS[arg]
-
-		-- `shoulder` takes a side as well as a number, because which side the
-		-- camera sits on is a choice and not a magnitude - asking somebody to
-		-- remember that -1 is left is the sort of interface that gets used once.
-		if arg == "shoulder" then
-			local SIDES = { left = "LEFT", centre = "CENTRE", center = "CENTRE", right = "RIGHT" }
-			local side = SIDES[(rest or ""):lower()]
-			if side then
-				cfg.cameraShoulderSide = side
-				A:Print("zen shoulder -> |cffece6ff" .. side:lower() .. "|r  ·  "
-					.. (side == "CENTRE" and "the character sits in the middle of the frame"
-						or "the camera sits over that shoulder, so the character is on the other side"))
-				local Z = A:GetModule("zen")
-				if Z and Z._cam and Z.RestoreCamera and Z.SetCamera then
-					Z:RestoreCamera()
-					Z:SetCamera(1)
-				end
-				return
-			end
-		end
 
 		local v = tonumber(rest)
 		if not v then

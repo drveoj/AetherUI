@@ -310,10 +310,12 @@ function IF:Restyle()
 	if not f then return end
 	local c = Palette.c
 
-	-- Drawn at the profile's scale like everything else of ours. Without this
-	-- the console is the one thing on screen at 1.0 and reads enormous next to
-	-- a HUD at 0.71.
-	f:SetScale(A.db.profile.scale or 1)
+	-- Drawn at the profile's scale like everything else of ours, times its own
+	-- multiplier. The console is read once a minute from across the screen
+	-- rather than glanced at constantly, so it wants to be smaller than the HUD
+	-- - the same argument the dock and the nameplates make for having one.
+	local cfg = A.Config:Module("ifec")
+	f:SetScale((A.db.profile.scale or 1) * (tonumber(cfg.scale) or 1))
 
 	W.Color(f.route, c.text)
 	W.Color(f.sub, c.textDim)

@@ -512,6 +512,11 @@ Config.defaults = {
 			ifec = {
 				enabled = true,
 				hideUI  = true,
+				-- On top of profile.scale, not instead of it, the way the dock
+				-- and the nameplates have their own. The console is read once a
+				-- minute from across the screen rather than glanced at
+				-- constantly, so it wants to sit smaller than the HUD does.
+				scale   = 0.8,
 				learned = {},
 			},
 
@@ -779,31 +784,13 @@ Config.defaults = {
 				-- rather than by reloading - the client's rate for this is not
 				-- documented anywhere and 1.0 is a guess at its units.
 				--
-			-- Which side the camera sits on: CENTRE, LEFT or RIGHT.
-				--
-				-- CENTRE by default. "Over the shoulder" is the phrase the shot
-				-- was described with, but the picture it was describing has the
-				-- character in the MIDDLE of the frame - the offset is a
-				-- cinematography habit rather than something this mode wanted,
-				-- and off-centre reads as the camera being slightly wrong rather
-				-- than as a composition when there is nothing else on screen.
-				--
-				-- The two sides are still worth having, so it is a choice rather
-				-- than a number somebody has to work out the sign of.
-				cameraShoulderSide = "CENTRE",
-
-				-- How FAR to that side, as a MULTIPLIER on a curve derived from
-				-- the zoom rather than as a distance. The offset is measured at
-				-- the camera, so the angle it subtends falls away as you pull
-				-- back and a fixed number is only ever right at one cameraZoom.
-				-- 1 is DialogueUI's calibration for this client. Ignored while
-				-- the side is CENTRE.
-				--
-				-- Writing test_cameraOverShoulder alone moves nothing: the
-				-- client re-centres the character every frame unless
-				-- CameraKeepCharacterCentered is 0, so the module borrows that
-				-- and CameraReduceUnexpectedMovement alongside it.
-				cameraShoulder = 1.0,
+				-- The over-the-shoulder offset is GONE. It needed
+				-- test_cameraOverShoulder, which the client treats as
+				-- experimental and puts a confirmation dialog in front of on
+				-- every write - so the feature cost a modal each way for a
+				-- composition the mode never wanted. Removed rather than
+				-- defaulted off: an option nobody can use without being
+				-- interrogated is not an option.
 
 				-- The audio profile
 				-- -----------------
@@ -839,6 +826,16 @@ Config.defaults = {
 local function Migrate(db)
 	local m = db.profile.modules
 	if not m then return end
+
+	-- The over-the-shoulder camera is gone: it needed test_cameraOverShoulder,
+	-- which the client calls experimental and puts a confirmation dialog in
+	-- front of on every write. Removed rather than defaulted off - an option
+	-- nobody can use without being interrogated is not an option. Its two keys
+	-- go with it so they cannot be read back by anything.
+	if m.zen then
+		m.zen.cameraShoulder = nil
+		m.zen.cameraShoulderSide = nil
+	end
 
 	-- The in-flight console was called `inflight` for an afternoon. Renamed to
 	-- avoid colliding with an existing addon of that name; the learned flight

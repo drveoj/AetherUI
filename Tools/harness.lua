@@ -7020,33 +7020,19 @@ do
 		.. " which can be read back and put back exactly (down "
 		.. string.format("%.2f", cam.pitchDown) .. ", up "
 		.. string.format("%.2f", cam.pitchUp) .. ")")
-	-- Centred by DEFAULT, and centred by writing a real 0 rather than by leaving
-	-- the CVar alone. Anyone running an over-the-shoulder camera of their own
-	-- would otherwise sit off to one side for the whole of zen, which is the one
-	-- thing "centred" is meant to rule out.
-	check(tonumber(cv.test_cameraOverShoulder) == 0,
-		"and leaves the character in the MIDDLE of the frame by default - the shot"
-		.. " was described as over-the-shoulder, but the picture it described has"
-		.. " them centred, and off-centre with nothing else on screen reads as the"
-		.. " camera being slightly wrong rather than as a composition")
-	check(tonumber(cv.CameraKeepCharacterCentered) == 0
-		and tonumber(cv.CameraReduceUnexpectedMovement) == 0,
-		"with the two CVars that decide whether an offset is visible AT ALL."
-		.. " Writing the offset alone is what shipped: the CVar read back as the"
-		.. " value we wrote and the camera never moved, because the client"
-		.. " re-centres the character every frame and damps movement the player"
-		.. " did not ask for")
-
 	leaveZen()
 	check(cam.pitchMoving == nil and cam.pitchUp == 0,
 		"with nothing moving on the way out either - there is no reversal to run"
 		.. " because there was no nudge to reverse")
-	check(tonumber(cv.test_cameraOverShoulder) == 0,
-		"and the shoulder offset goes back like every other borrowed CVar")
-	check(tonumber(cv.CameraKeepCharacterCentered) == 1
+	-- THE OFFSET IS GONE. It needed test_cameraOverShoulder, which the client
+	-- calls experimental and puts a confirmation dialog in front of on every
+	-- write - a modal each way in exchange for a composition this mode never
+	-- wanted. The two centring CVars went with it: they existed only to make
+	-- that offset visible.
+	check(tonumber(cv.test_cameraOverShoulder) == 0
+		and tonumber(cv.CameraKeepCharacterCentered) == 1
 		and tonumber(cv.CameraReduceUnexpectedMovement) == 1,
-		"and so do the two centring ones - a player left permanently off-centre"
-		.. " by an addon has no way to guess what did it")
+		"and the camera CVars the offset needed are left entirely alone")
 
 	-- A WRITE THAT CHANGES NOTHING STILL COSTS A MODAL. The client calls some
 	-- CVars experimental and asks the player to confirm every write to one:
@@ -7066,8 +7052,8 @@ do
 		check(not wrote.test_cameraOverShoulder,
 			"a borrowed CVar already at the wanted value is not written at all,"
 			.. " so the experimental-camera dialog never fires")
-		check((wrote.CameraKeepCharacterCentered or 0) > 0,
-			"while one that does need changing still is")
+		check(next(wrote) ~= nil,
+			"while the ones that do need changing still are")
 	end
 
 	-- Nothing is left rotating, whatever path zen took out. This is now a
@@ -7117,70 +7103,22 @@ do
 	leaveZen()
 	zcfg.camera = true
 
-	-- The two sides, and which way each one goes. Positive puts the CAMERA over
-	-- the right shoulder, which places the CHARACTER on the left - they read as
-	-- opposites, and the sign was settled by a screenshot rather than by any
-	-- documentation.
-	do
-		local curve = zcfg.cameraZoom * 0.4314 + 0.1057
-		for _, case in ipairs({ { side = "RIGHT", sign = 1 }, { side = "LEFT", sign = -1 } }) do
-			zcfg.cameraShoulderSide = case.side
-            cam.zoom = 12
-			enterZen()
-			local got  = tonumber(cv.test_cameraOverShoulder)
-			local want = curve * zcfg.cameraShoulder * case.sign
-			check(math.abs(got - want) < 0.001,
-				case.side .. " offsets the camera that way, scaled to the distance it"
-				.. " is going TO rather than flat - one fixed number is only ever"
-				.. " right at one zoom (got " .. string.format("%.3f", got)
-				.. ", want " .. string.format("%.3f", want) .. ")")
-			check(math.abs(got - zcfg.cameraShoulder * case.sign) > 0.001,
-				"and that really is not the setting written straight through, or the"
-				.. " check above proves nothing")
-			leaveZen()
-			check(tonumber(cv.test_cameraOverShoulder) == 0,
-				"and it goes back afterwards")
-		end
-		zcfg.cameraShoulderSide = "CENTRE"
-	end
-
-	-- Tuning the shot live. Neither can be reasoned about from a number - the
-	-- zoom is metres and the shoulder is a multiplier on a curve - so the only
-	-- way to land on a value is to try one and look at it, and a reload between
-	-- each try is what makes that unbearable.
+	-- Tuning the shot live. The distance cannot be reasoned about from a number,
+	-- so the only way to land on one is to try it and look at it, and a reload
+	-- between each try is what makes that unbearable.
 	do
 		local run = SlashCmdList["AETHERUI"]
 		run("zen zoom 5")
 		check(math.abs(zcfg.cameraZoom - 5) < 0.001, "/aether zen zoom sets the distance")
-		run("zen shoulder 2")
-		check(math.abs(zcfg.cameraShoulder - 2) < 0.001, "/aether zen shoulder sets the offset")
-
-		-- The same word takes a SIDE as well as a number, because which side the
-		-- camera sits on is a choice and not a magnitude.
-		run("zen shoulder left")
-		check(zcfg.cameraShoulderSide == "LEFT", "/aether zen shoulder left picks a side")
-		run("zen shoulder center")
-		check(zcfg.cameraShoulderSide == "CENTRE",
-			"and takes the American spelling, because somebody will type it")
-		run("zen shoulder right")
-		check(zcfg.cameraShoulderSide == "RIGHT", "and the other side")
-		check(math.abs(zcfg.cameraShoulder - 2) < 0.001,
-			"without disturbing how FAR - the side and the distance are two"
-			.. " settings sharing one word, and one must not eat the other")
-		run("zen shoulder centre")
-		zcfg.cameraShoulder = 1
 
 		run("zen zoom 99")
 		check(zcfg.cameraZoom == 15, "and each one clamps rather than taking whatever"
 			.. " was typed - 99 metres of zoom is a camera in orbit")
-		run("zen shoulder 99")
-		check(zcfg.cameraShoulder == 3, "including at the top of the other one")
-
 		-- Re-staged on the spot when the shot is already up, and the restore has
 		-- to happen FIRST: the camera is set once on the way in and `_cam` is what
 		-- records that, so without putting the player's own distance back the next
 		-- restore would return them to a distance this preview had moved them to.
-		zcfg.cameraZoom, zcfg.cameraShoulder = 3, 1
+		zcfg.cameraZoom = 3
 		cam.zoom = 12
 		enterZen()
 		run("zen zoom 8")
@@ -7193,7 +7131,7 @@ do
 			.. " preview moved them to - the restore runs before the re-stage, or"
 			.. " every tweak quietly becomes the new home ("
 			.. string.format("%.1f", cam.zoom) .. ")")
-		zcfg.cameraZoom, zcfg.cameraShoulder = 3, 1
+		zcfg.cameraZoom = 3
 	end
 end
 
@@ -21081,8 +21019,14 @@ section("ifec: landing, at the scale of everything else, out of the way", functi
 
 	-- IT IS DRAWN AT THE PROFILE'S SCALE. Without this the console is the one
 	-- thing on screen at 1.0 and reads enormous beside a HUD at 0.71.
-	check(f:GetScale() == A.db.profile.scale,
-		"the console is at the profile's scale (" .. tostring(f:GetScale()) .. ")")
+	-- The profile's scale TIMES its own, the way the dock and the nameplates
+	-- have theirs. The console is read once a minute from across the screen
+	-- rather than glanced at constantly, so it sits smaller than the HUD.
+	local cfg = A.Config:Module("ifec")
+	check(math.abs(f:GetScale() - A.db.profile.scale * cfg.scale) < 0.0001,
+		"the console is at the profile's scale times its own ("
+		.. tostring(f:GetScale()) .. ")")
+	check(cfg.scale < 1, "which is smaller (" .. tostring(cfg.scale) .. ")")
 
 	-- THE INTERFACE GOES AWAY. One UIParent alpha, which is how Zen does it and
 	-- covers addons we have never heard of.
