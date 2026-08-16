@@ -36,6 +36,19 @@ local Content = A.IFEC.Content
 -- lets the frame be square and the zoom be a single number.
 local PAGE = 1024
 
+-- How much of that to draw by default.
+--
+-- BUILT AROUND THE PAGE, not around the screen. The first version asked how
+-- much room there was and took all of it, which on a 1600-tall monitor is a
+-- magazine filling the monitor - a thing you project rather than a thing you
+-- hold. The page is authored at a known size, so that is the number to start
+-- from and this is the fraction of it.
+--
+-- 0.7 by the rule of thumb that the whole window - page, margin and the strip
+-- under it - fits vertically on a 1080 screen with the interface still around
+-- it. The screen is a CLAMP now rather than the source of the number.
+local PAGE_DRAW = 0.7
+
 local PAD    = 12          -- around the page inside the panel
 local BAR_H  = 30          -- the strip under it: title, pager, controls
 local MARGIN = 48          -- the least the panel leaves of the screen
@@ -206,11 +219,19 @@ function Reader:Size()
 	local chromeW = PAD * 2
 	local chromeH = PAD * 2 + BAR_H
 
-	-- NEVER LARGER THAN THE ART. A 1024 page blown up to fill a tall screen is
-	-- a blurry 1024 page; past native there is nothing more to show.
-	local side = math.min(PAGE,
-		(screenH - MARGIN) / mine - chromeH,
-		(screenW - MARGIN) / mine - chromeW)
+	-- THE PAGE DECIDES, and the screen only says no. A fraction of the art's own
+	-- size, tunable because how big a magazine wants to be is a matter of taste
+	-- and eyesight rather than something this file can work out.
+	local cfg = A.Config and A.Config:Module("ifec")
+	local draw = (cfg and tonumber(cfg.readerScale)) or PAGE_DRAW
+	if draw <= 0 then draw = PAGE_DRAW end
+
+	local side = PAGE * draw
+
+	-- Clamped to what there is, which on any ordinary screen does not bite.
+	local room = math.min((screenH - MARGIN) / mine - chromeH,
+	                      (screenW - MARGIN) / mine - chromeW)
+	if side > room then side = room end
 	if side < 200 then side = 200 end
 
 	f:SetSize(side + chromeW, side + chromeH)

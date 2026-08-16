@@ -528,6 +528,12 @@ Config.defaults = {
 				-- back is the worst failure this feature has, and it should be
 				-- something asked for rather than something that happens.
 				playOn  = false,
+				-- How much of a magazine page to draw, as a fraction of the
+				-- 1024 it is authored at. Its own setting rather than the
+				-- console's scale: the console is a strip read once a minute
+				-- from across the screen and a magazine is a page you read, and
+				-- the size that suits one is not the size that suits the other.
+				readerScale = 0.7,
 				hideUI  = true,
 				-- On top of profile.scale, not instead of it, the way the dock
 				-- and the nameplates have their own. The console is read once a

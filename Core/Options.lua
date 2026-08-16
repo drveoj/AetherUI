@@ -1020,6 +1020,10 @@ local function IFECGroup()
 		playOn = toggle("Keep playing after landing",
 			"The programme carries on into the Toolbox's mini-player instead of"
 			.. " stopping with the flight.", at("playOn")),
+		readerScale = range("Magazine size", "How much of a page to draw, against"
+			.. " the 1024 it is drawn at. The magnifier still goes to actual"
+			.. " size whatever this says.", at("readerScale"), 0.4, 1, 0.05,
+			{ after = "both" }),
 		hideUI = toggle("Hide the interface in flight",
 			"You are a passenger. The console stays.", at("hideUI")),
 		scale = range("Size", "On top of the interface scale, like the action bars"

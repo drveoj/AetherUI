@@ -22985,13 +22985,42 @@ section("nifec: the mini-player, on the ground", function()
 		RD:SetZoomed(false)
 		A.db.profile.scale = profWas
 
-		-- AND NEVER LARGER THAN THE ART. Past native there is nothing more to
-		-- show, and a 1024 page blown up is a blurry 1024 page.
-		UIParent:SetScale(1.875)
+		-- BUILT AROUND THE PAGE, not around the screen. The first version asked
+		-- how much room there was and took all of it, which on a tall monitor is
+		-- a magazine filling the monitor. The page is authored at a known size,
+		-- so that is the number to start from and the screen only says no.
+		--
+		-- The rule of thumb: the whole window - page, margin and the strip under
+		-- it - fits vertically on a 1080 screen with the interface still around
+		-- it. Checked at the top of the scale range as well as the default,
+		-- because a setting that can be turned up past the screen is one that
+		-- puts the pager off the bottom of it.
+		UIParent:SetSize(1920, 1080)
+		UIParent:SetScale(1)
+		A.db.profile.scale = 1
+		for _, rs in ipairs({ 0.7, 1 }) do
+			cfg.readerScale = rs
+			RD:Size()
+			local _, hh = px(RD.frame)
+			check(hh <= 1080,
+				("at magazine size %s the window fits a 1080 screen (%.0f tall)")
+				:format(rs, hh))
+		end
+
+		-- CHECKED AWAY FROM THE DEFAULT. At 0.7 the setting and the built-in
+		-- fraction are the same number, so a reader that ignored the setting
+		-- entirely would draw exactly the right size and prove nothing.
+		for _, rs in ipairs({ 0.5, 0.7, 0.85 }) do
+			cfg.readerScale = rs
+			RD:Size()
+			check(math.abs((RD.frame.sheet:GetWidth() or 0) - 1024 * rs) < 1,
+				("the page is drawn at the fraction asked for, not at whatever"
+				.. " fits (%s -> %.0f, wanted %.0f)"):format(
+					rs, RD.frame.sheet:GetWidth() or 0, 1024 * rs))
+		end
+		cfg.readerScale = 0.7
 		RD:Size()
-		check((RD.frame.sheet:GetWidth() or 0) <= 1024.5,
-			"and never drawn past the page's own size on a tall screen ("
-			.. string.format("%.0f", RD.frame.sheet:GetWidth() or 0) .. ")")
+		UIParent:SetSize(1365, 768)
 		UIParent:SetScale(uiWas)
 		A.db.profile.scale = profWas
 		RD:Size()
