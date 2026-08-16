@@ -22,7 +22,12 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
-DEFAULT_CSV = r"E:\AetherUI Design\IFEC-Taxidata"
+# IN THE REPOSITORY, not in a design folder beside it. Routes.lua is generated
+# from these three files, and while they lived outside version control the
+# generated file could not be reproduced by anyone who had only the repository -
+# including this machine after a tidy-up.
+DEFAULT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "data", "taxi")
 OUT = os.path.join(REPO, "Modules", "IFEC", "Routes.lua")
 
 # Yards per second. Fitted against nine measured flights spanning six zones;

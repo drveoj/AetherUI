@@ -581,6 +581,17 @@ def main(argv):
     if not pack.get("packId"):
         raise SystemExit("pack.json declares no packId")
 
+    # RELATIVE TO THE PACK, so a clone can rebuild. These used to be absolute
+    # paths into a design folder and a generator's output directory, neither of
+    # which was in version control - so the repository held a pack nobody could
+    # make another one of, and the masters it came from could be lost without
+    # anything noticing.
+    for key in ("music", "magazines"):
+        section = pack.get(key) or {}
+        source = section.get("source")
+        if source and not os.path.isabs(source):
+            section["source"] = os.path.normpath(os.path.join(pack_dir, source))
+
     seen_ids = set()
     tracks = collect_music(pack.get("music", {}), seen_ids)
     mags   = collect_magazines(pack.get("magazines", {}), seen_ids)
