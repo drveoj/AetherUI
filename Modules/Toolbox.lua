@@ -2324,7 +2324,7 @@ function TB:RefreshMailRows()
 			-- it is: mail read on another character, or sent since, is not in
 			-- it. An unqualified number here would be the one lie this section
 			-- has been careful not to tell.
-			self.content.mailHint:SetText(unread .. " unread 9483 last visit")
+			self.content.mailHint:SetText(unread .. " unread \194\183 last visit")
 			W.Color(self.content.mailHint, c.textDim)
 		else
 			self.content.mailHint:SetText(#senders
