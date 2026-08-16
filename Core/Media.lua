@@ -381,7 +381,7 @@ Media.style = {
 	-- glass, the same as every other string in this interface, and nothing else
 	-- here is outlined. On a filled tab it was worse than useless - a black
 	-- stroke around dark type on a light fill, which reads as a sticker.
-	pnTab        = { "semibold", 14, "" },
+	pnTab        = { "semibold", 12, "" },
 	pnTitle      = { "semibold", 18, "" },
 	pnSub        = { "medium",   13, "" },
 	-- Everything else inside one: stat rows, resistances, faction names. Drawn

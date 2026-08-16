@@ -5801,6 +5801,46 @@ local function section(name, fn)
 	end
 end
 
+section("the source itself: nothing under space that should not be", function()
+	-- NO STRAY CONTROL BYTES IN OUR OWN SOURCE.
+	--
+	-- The middle dot this interface separates clauses with is written as a decimal
+	-- escape, in a dozen files. Written by a tool that ate that escape it becomes
+	-- byte 0x01 followed by the digits - which is still valid Lua, still loads, and
+	-- draws on screen as a missing-glyph box followed by "94". It shipped in the
+	-- Toolbox's mail hint and in the library's heard-line, and the check on the
+	-- first of those carried the SAME broken bytes, so the two agreed with each
+	-- other and the suite stayed green about it.
+	--
+	-- COMPARED AS NUMBERS, deliberately. Written as a Lua character class this
+	-- check would need the very escapes it exists to police, and the first attempt
+	-- at it had its own pattern eaten in exactly the same way.
+	--
+	-- Tab, newline and carriage return are the only bytes under space that a source
+	-- file of ours has any business carrying.
+	do
+		local bad = 0
+		for _, f in ipairs(FILES) do
+			local fh = io.open(f, "rb")
+			if fh then
+				local data = fh:read("*a")
+				fh:close()
+				local line = 1
+				for i = 1, #data do
+					local b = data:byte(i)
+					if b == 10 then line = line + 1 end
+					if b < 32 and b ~= 9 and b ~= 10 and b ~= 13 then
+						print(("  |cffff8a8a!!|r %s:%d carries byte 0x%02X")
+							:format(f, line, b))
+						bad = bad + 1
+					end
+				end
+			end
+		end
+		check(bad == 0, "no stray control bytes in our own Lua (" .. bad .. " found)")
+	end
+end)
+
 section("the harness itself: a size worked out from anchors", function()
 	-- The mock reports a width for a region pinned by two opposing edges, the
 	-- way the client does. It used to report the zero it was born with, and that
@@ -11511,7 +11551,7 @@ do
 			"and flagged as REMEMBERED rather than current - mail read on"
 			.. " another character is not in this and the section has to say so")
 
-		check(TBm.content.mailHint:GetText() == "4 unread 9483 last visit",
+		check(TBm.content.mailHint:GetText() == "4 unread \194\183 last visit",
 			"the hint says which claim it is making (got "
 			.. tostring(TBm.content.mailHint:GetText()) .. ")")
 		check(TBm.content.mail[1].chip.label:GetText() == "T",
@@ -18346,12 +18386,55 @@ do
 		"inside it (" .. string.format("%.1f", total) .. " of "
 		.. string.format("%.1f", visible) .. ")")
 
+	-- AND WITH A PET, WHICH IS FIVE. Every check above this ran on the four a
+	-- character without one has, so the row that actually overhung in game -
+	-- Character, Pet, Reputation, Skills, Honor - was the one arrangement
+	-- nothing here had ever laid out.
+	do
+		_G.CharacterFrameTab2:Show()
+		fire("PLAYER_ENTERING_WORLD")
+
+		local five = ShownTabs()
+		check(#five == 5, "a hunter's sheet has five tabs (" .. #five .. ")")
+
+		local _, _, _, gap5 = five[2]:GetPoint(1)
+		local total5 = five[1]:GetWidth() * #five + gap5 * (#five - 1)
+		local _, _, _, start5 = five[1]:GetPoint(1)
+
+		-- HOW FAR OVER, against how far the window may give. That is the whole
+		-- decision: the layout spends padding, then the gap, then a point or two
+		-- of lettering, and whatever is still over is taken out of the glass -
+		-- up to a cap, past which the row overhangs and that is the honest
+		-- answer. Five tabs went past that cap, which is what was on screen.
+		--
+		-- The cap is named here rather than read, deliberately: a test that asks
+		-- the module what its own limit is cannot notice the limit being wrong.
+		local TAB_GROW_MAX, TAB_EDGE = 48, 16
+		local visible5 = cf:GetWidth() + insR - insL
+		local over = total5 + TAB_EDGE * 2 - visible5
+
+		check(RowSpill(five) == nil,
+			"no label is wider than its tab with five of them"
+			.. (RowSpill(five) and (": " .. RowSpill(five)) or ""))
+		check(over <= TAB_GROW_MAX + 0.5,
+			"and the row of five is within what the window may give up ("
+			.. string.format("%.1f", over) .. " over, cap " .. TAB_GROW_MAX .. ")")
+
+		_G.CharacterFrameTab2:Hide()
+		fire("PLAYER_ENTERING_WORLD")
+	end
+
 	-- A window too narrow for the words at any padding we can give up. The row
 	-- has to stay inside it and the labels inside their pills, which is the
 	-- path the clamp exists for - at full width the padding alone absorbs it
 	-- and the clamp never runs.
+	--
+	-- The number is chosen to force the LAST rung of the gap, and it had to come
+	-- down when the tab font did: a smaller word needs a narrower window before
+	-- the gap is what is left to give, and 350 was no longer tight enough to
+	-- prove anything.
 	local fullWidth = cf:GetWidth()
-	cf:SetWidth(350)                                -- a few pixels short, as it goes
+	cf:SetWidth(320)                                -- a few pixels short, as it goes
 	fire("PLAYER_ENTERING_WORLD")
 
 	local tightTabs = ShownTabs()
