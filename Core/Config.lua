@@ -510,6 +510,10 @@ Config.defaults = {
 				enabled  = true,
 				height   = 4,
 				showText = true,
+				-- Which corner the readout sits in. RIGHT by default, which is
+				-- where the concept draws it - but the bottom corners are where
+				-- everybody's other addons put things, so it is a setting.
+				textSide = "RIGHT",
 			},
 
 			-- The in-flight console. `learned` is durations we timed ourselves,

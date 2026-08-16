@@ -1007,6 +1007,9 @@ local function XPGroup()
 		enabled = toggle("Enabled", nil, at("enabled")),
 		height = range("Height", nil, at("height"), 1, 12, 1),
 		showText = toggle("Show the readout", nil, at("showText")),
+		textSide = choice("Readout corner",
+			"Which end of the hairline the readout sits above.", at("textSide"),
+			{ LEFT = "Left", RIGHT = "Right" }),
 	})
 end
 

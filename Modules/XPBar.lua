@@ -2,7 +2,7 @@
 	AetherUI :: XPBar
 
 	The hairline along the very bottom of the screen from concepts 1a and 2a -
-	a 4px sliver of accent colour, with "86% · Level 15" tucked into the corner.
+	a 4px sliver of accent colour, with "14% to Level 16" tucked into a corner.
 
 	Small module, but it is the reason the concepts can delete Blizzard's whole
 	bottom bar without losing anything: the one piece of information that bar
@@ -27,6 +27,24 @@ local function MaxLevel()
 		if ok and v then return v end
 	end
 	return _G.MAX_PLAYER_LEVEL or 60
+end
+
+--- Which corner the readout sits in.
+--
+--  RE-ANCHORED RATHER THAN REBUILT, because the setting can change at any time
+--  and a FontString keeps whatever anchors it was last given: setting the new
+--  corner without clearing the old one leaves it spanned between the two and
+--  justified to neither.
+local function PlaceText(f, cfg)
+	local left = (cfg.textSide == "LEFT")
+
+	f.text:ClearAllPoints()
+	if left then
+		f.text:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 14, 4)
+	else
+		f.text:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", -14, 4)
+	end
+	if f.text.SetJustifyH then f.text:SetJustifyH(left and "LEFT" or "RIGHT") end
 end
 
 local function Build()
@@ -59,8 +77,8 @@ local function Build()
 	f.glow = glow
 
 	local text = W.Text(f, "xpText", "RIGHT")
-	text:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", -14, 4)
 	f.text = text
+	PlaceText(f, cfg)
 
 	return f
 end
@@ -103,7 +121,20 @@ local function Update()
 	f.bg:SetVertexColor(1, 1, 1, 0.10)
 
 	if cfg.showText then
-		f.text:SetText(string.format("%d%%  ·  Level %d", math.floor(cur / max * 100), level))
+		-- WHAT IS LEFT, not what is done. "10% Level 11" is two facts about
+		-- where you have been; "90% to Level 12" is one fact about where you are
+		-- going, and it counts down, which is what anybody watching this line is
+		-- actually watching.
+		--
+		-- Rounded UP, so it never reads 0% while there is still experience to
+		-- earn - the one number a countdown must not show early.
+		-- MULTIPLIED BEFORE DIVIDING, and nudged before rounding. 1400/10000*100
+		-- is 14.000000000000002 in doubles, and a ceiling on that reads 15% -
+		-- so the line said fifteen at exactly fourteen. Doing the multiply first
+		-- keeps the whole numbers whole; the epsilon covers everything else.
+		local left = math.ceil((max - cur) * 100 / max - 1e-9)
+		if left < 0 then left = 0 elseif left > 100 then left = 100 end
+		f.text:SetText(string.format("%d%% to Level %d", left, level + 1))
 		W.Color(f.text, c.textDim)
 		f.text:Show()
 	else
@@ -135,6 +166,7 @@ function XP:OnConfigChanged()
 	local cfg = A.Config:Module("xpbar")
 	if self.frame then
 		self.frame:SetHeight(cfg.height)
+		PlaceText(self.frame, cfg)
 	end
 	Update()
 end
