@@ -51,3 +51,6 @@ Modules\IFEC\Registry.lua
 Modules\IFEC\Content.lua
 Modules\IFEC\Playback.lua
 Modules\IFEC\Player.lua
+Modules\IFEC\Library.lua
+Modules\IFEC\Mini.lua
+Modules\IFEC\Reader.lua
