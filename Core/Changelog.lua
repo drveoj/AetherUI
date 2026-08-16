@@ -38,6 +38,18 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.9.0",
+		date    = "2026-08-16",
+		lines   = {
+			"Your pet gets a frame of its own - portrait, name, health and power - and you can put it wherever you like. A hunter's pet wears its mood on the orb's rim: green happy, gold content, red unhappy.",
+			"Pet bar tooltips are back. Every button on it had a working tooltip handler that quietly did nothing, because the name it needed was never reaching it.",
+			"A hunter's character sheet has five tabs and the last one hung over the edge of the window. The tab lettering comes down two points and the row fits.",
+			"The magazine reader is a sensible size. It was taking as much of the screen as it could get; it now draws the page at a fraction of its own size, with a setting to tune it, and the magnifier still goes to true actual size.",
+			"The reader says what it is at the top - I.F.E.C. in the air, N.I.F.E.C. on the ground - instead of repeating the magazine's own title, which every page already carries.",
+			"A middle dot in the Toolbox's mail hint and in the library's listing was drawing as a missing-glyph box and two digits. Both fixed.",
+		},
+	},
+	{
 		version = "0.8.0",
 		date    = "2026-08-16",
 		lines   = {
