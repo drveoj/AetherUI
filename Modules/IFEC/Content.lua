@@ -56,8 +56,12 @@ function Content:InSeason(item, when)
 	return true
 end
 
+local function moduleCfg()
+	return A.Config and A.Config:Module("ifec")
+end
+
 local function progressStore()
-	local cfg = A.Config and A.Config:Module("ifec")
+	local cfg = moduleCfg()
 	if not cfg then return nil end
 	cfg.progress = cfg.progress or {}
 	return cfg.progress
@@ -73,6 +77,17 @@ function Content:Progress(key)
 	return store and store[key] or nil
 end
 
+--- A COUNTER, NOT JUST A DATE. `at` is a calendar day, so everything heard on
+--  one afternoon ties - and the music rotation is decided by which was heard
+--  longest ago. Without this it fell back to catalogue order every session and
+--  a season of eleven tracks opened with the same one on every flight.
+local function nextPlay()
+	local cfg = moduleCfg()
+	if not cfg then return 0 end
+	cfg.playCount = (cfg.playCount or 0) + 1
+	return cfg.playCount
+end
+
 function Content:Remember(key, segment, complete)
 	local store = progressStore()
 	if not store or type(key) ~= "string" then return false end
@@ -80,6 +95,7 @@ function Content:Remember(key, segment, complete)
 		segment  = segment or 0,
 		complete = complete and true or nil,
 		at       = today(),
+		seq      = nextPlay(),
 	}
 	return true
 end
@@ -112,6 +128,21 @@ local function lengthOf(item)
 	return total
 end
 
+--- Catalogue order: NEWEST SEASON FIRST, but in the season's own order within
+--  it. Walking the catalogue backwards got the seasons right and reversed the
+--  episodes inside them, which is episode two before episode one.
+--
+--  Shared, because it is the tail of both the unplayed sort and the music one -
+--  and a copy of it that drifts is two lists claiming different things about
+--  which season is current.
+local function byCatalogue(a, b)
+	if (a.season or 0) ~= (b.season or 0) then
+		return (a.season or 0) > (b.season or 0)
+	end
+	if a.packId ~= b.packId then return a.packId < b.packId end
+	return (a.index or 0) < (b.index or 0)
+end
+
 --- Build a programme to fill `seconds` of flight.
 --
 --  The design's order: resume first, then unplayed with the current season
@@ -137,17 +168,26 @@ function Content:Programme(seconds, picked, when)
 		filled = filled + lengthOf(item)
 	end
 
-	-- The player's picks, in the order they picked them.
+	-- The player's picks, in the order they picked them. Gossip cannot be one:
+	-- there is nothing to pick it with, and a stale key from an older build
+	-- would otherwise still put a bulletin in the queue.
 	for _, key in ipairs(picked or {}) do
-		add(byKey[key])
+		local item = byKey[key]
+		if item and item.type ~= "gossip" then add(item) end
 	end
 
 	-- Anything part-played, oldest listening first so a half-finished episode
 	-- is what greets you rather than something new.
+	--
+	-- NOT MUSIC. A song is not a thing you are part way through - you start it
+	-- again - and the distinction only became visible once a track was CHUNKED
+	-- to buy a pause: sixty segments means a stop halfway writes segment 30, and
+	-- the track would then have been dragged to the front of every programme
+	-- until somebody sat through the end of it.
 	local resume = {}
 	for _, item in ipairs(available) do
 		local p = self:Progress(item.key)
-		if p and not p.complete and (p.segment or 0) > 0 then
+		if item.type ~= "music" and p and not p.complete and (p.segment or 0) > 0 then
 			resume[#resume + 1] = item
 		end
 	end
@@ -161,22 +201,18 @@ function Content:Programme(seconds, picked, when)
 		add(item)
 	end
 
-	-- Then unplayed: NEWEST SEASON FIRST, but in the season's own order within
-	-- it. Walking the catalogue backwards got the seasons right and reversed
-	-- the episodes inside them, which is episode two before episode one.
+	-- Then unplayed, in catalogue order.
+	-- GOSSIP IS READ, NOT PLAYED, so it is not in a running order at all. It
+	-- used to be queued and stepped straight past - occupying no time, which is
+	-- true, but showing up in UP NEXT as something about to happen, which is
+	-- not. The library opens it instead.
 	local unplayed = {}
 	for _, item in ipairs(available) do
-		if item.type ~= "music" and not self:Progress(item.key) then
+		if item.type == "podcast" and not self:Progress(item.key) then
 			unplayed[#unplayed + 1] = item
 		end
 	end
-	table.sort(unplayed, function(a, b)
-		if (a.season or 0) ~= (b.season or 0) then
-			return (a.season or 0) > (b.season or 0)
-		end
-		if a.packId ~= b.packId then return a.packId < b.packId end
-		return (a.index or 0) < (b.index or 0)
-	end)
+	table.sort(unplayed, byCatalogue)
 	for _, item in ipairs(unplayed) do
 		if filled >= seconds then break end
 		add(item)
@@ -184,10 +220,25 @@ function Content:Programme(seconds, picked, when)
 
 	-- Music fills whatever is left, and keeps filling after everything else has
 	-- run out. Silence over the Barrens is the failure this exists to prevent.
+	--
+	-- LONGEST AGO FIRST, so a season is heard through before anything repeats.
+	-- Never-played sorts as seq 0 and comes first, in the pack's own order; the
+	-- rest follow in the order they were last heard. Taken in catalogue order it
+	-- was the same opening track on every single flight, which is a season of
+	-- eleven behaving like a season of three.
 	local music = {}
 	for _, item in ipairs(available) do
 		if item.type == "music" and not taken[item.key] then music[#music + 1] = item end
 	end
+	-- Two never-heard tracks fall through to catalogue order, which is also how
+	-- a test pack stays out of the way: put one at season zero and its filler is
+	-- what you get only once the real seasons have been heard.
+	table.sort(music, function(a, b)
+		local pa, pb = self:Progress(a.key), self:Progress(b.key)
+		local sa, sb = pa and pa.seq or 0, pb and pb.seq or 0
+		if sa ~= sb then return sa < sb end
+		return byCatalogue(a, b)
+	end)
 	local m = 1
 	while filled < seconds and #music > 0 do
 		local item = music[m]
@@ -198,4 +249,43 @@ function Content:Programme(seconds, picked, when)
 	end
 
 	return queue, filled
+end
+
+--- The whole catalogue in programme order: what would play if a flight never
+--  ended.
+--
+--  Asked for as a programme long enough to hold everything rather than built
+--  from a second copy of the ordering rules, which would drift from the first.
+function Content:Everything(when)
+	local seconds = 0
+	for _, item in ipairs(self:Available(when)) do
+		seconds = seconds + lengthOf(item)
+	end
+	return (self:Programme(seconds, nil, when))
+end
+
+--- The next thing to play after everything in `queue`, or nothing.
+--
+--  A programme is built to COVER the flight, so on a short hop it is a single
+--  track - and then the skip button had nowhere to go and ended the programme,
+--  which is a console falling silent with flight remaining. That is the one
+--  failure the filler exists to prevent, arrived at by a different road.
+function Content:NextAfter(queue, when)
+	local queued = {}
+	for _, item in ipairs(queue or {}) do queued[item.key] = true end
+
+	for _, item in ipairs(self:Everything(when)) do
+		if not queued[item.key] then return item end
+	end
+	return nil
+end
+
+--- Music only, in the order the filler would reach for it. The ambient shuffle
+--  the complete state offers as its default action.
+function Content:MusicQueue(when)
+	local out = {}
+	for _, item in ipairs(self:Everything(when)) do
+		if item.type == "music" then out[#out + 1] = item end
+	end
+	return out
 end

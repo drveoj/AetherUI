@@ -59,8 +59,28 @@ local function itemOk(item)
 	local kind = item.type
 	if kind ~= "podcast" and kind ~= "music" and kind ~= "gossip" then return false end
 
-	-- Gossip is text and carries no segments; the other two are audio and are
-	-- useless without them.
+	-- Optional, but not optional in its type. A number here would reach the
+	-- console as "3" beside a song name and look like our bug rather than the
+	-- pack's, so it is refused at the door with everything else.
+	if item.artist ~= nil and type(item.artist) ~= "string" then return false end
+
+	-- An overlap that is not a number would be compared against zero on every
+	-- boundary of every piece, which is an error a second and a half.
+	if item.overlap ~= nil and type(item.overlap) ~= "number" then return false end
+
+	-- GOSSIP IS PAGES. A magazine is laid out - masthead, columns, pull-quotes,
+	-- art - and rebuilding that from a string in a Lua frame would be writing a
+	-- typesetter, so an issue is one 1024 texture a page and the reader's whole
+	-- job is turning them. Refused without any, because a bulletin you cannot
+	-- open is a row in the library that does nothing.
+	if kind == "gossip" then
+		if type(item.pages) ~= "table" or #item.pages == 0 then return false end
+		for _, page in ipairs(item.pages) do
+			if type(page) ~= "string" or page == "" then return false end
+		end
+	end
+
+	-- The other two are audio and are useless without segments.
 	if kind ~= "gossip" then
 		if type(item.segments) ~= "table" or #item.segments == 0 then return false end
 		for _, seg in ipairs(item.segments) do
@@ -112,9 +132,16 @@ function Registry:Register(manifest)
 				id       = item.id,
 				type     = item.type,
 				title    = item.title,
+				artist   = item.artist,
 				masthead = item.masthead,
-				body     = item.body,
+				pages    = item.pages,
 				segments = item.segments,
+				-- How much of the NEXT segment is also in this one, for audio
+				-- cut into crossfaded pieces. Absent - which is every ordinary
+				-- item - the pieces are butted together and the outgoing one is
+				-- stopped, which is right for a chaptered episode and a click at
+				-- every boundary for anything cut every three seconds.
+				overlap  = item.overlap,
 				duration = item.totalDuration,
 				activeFrom  = item.activeFrom,
 				activeUntil = item.activeUntil,
@@ -201,10 +228,10 @@ end
 --
 --  ACROSS PACKS, NEVER WITHIN ONE. A pack that opens two of its own items on
 --  the same file has done so deliberately - an episode whose first chapter is
---  the same ambient bed the pack also offers on its own is a real shape, and it
---  is what the dev pack is - and dropping the second was a pack quietly serving
---  fewer items than it declared, with nothing anywhere saying so. Files are
---  marked once the pack they came from is finished with.
+--  the same ambient bed the pack also offers on its own is a real shape - and
+--  dropping the second was a pack quietly serving fewer items than it declared,
+--  with nothing anywhere saying so. Files are marked once the pack they came
+--  from is finished with.
 function Registry:Catalogue()
 	local out, seenFile = {}, {}
 
