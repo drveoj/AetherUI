@@ -253,6 +253,24 @@ function TB:Build()
 	mail:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	rail.mail = mail
 
+	-- The mini-player's transport. On the rail for the same reason the envelope
+	-- is: "stop this" is the one thing about the player you need with the drawer
+	-- SHUT, and everything else about it can wait for the drawer to open. It is
+	-- also the only thing on screen saying something is playing at all.
+	--
+	-- Dressed by the IFEC's own mini-player rather than scripted here, so the
+	-- Toolbox owns where it sits and how big it is and knows nothing else about
+	-- it. With that half of the addon absent the chip simply never appears.
+	local play = CreateFrame("Button", nil, rail)
+	play:SetSize(RAIL_ICON, RAIL_ICON)
+	local pg = play:CreateTexture(nil, "ARTWORK")
+	pg:SetPoint("CENTER", play, "CENTER", 0, 0)
+	pg:SetSize(RAIL_GLYPH - 8, RAIL_GLYPH - 8)
+	Media:SetIcon(pg, "play")
+	play.glyph = pg
+	play:Hide()
+	rail.play = play
+
 	self._travel = self:IsOpen() and 1 or 0
 	self._want   = self._travel
 
@@ -429,14 +447,27 @@ function TB:Layout()
 	self.rail.chev:ClearAllPoints()
 	self.rail.gear:ClearAllPoints()
 	self.rail.mail:ClearAllPoints()
+	self.rail.play:ClearAllPoints()
+	-- Whether there is a transport at all is decided by RefreshPlayer, and the
+	-- chain has to be built from what is SHOWING: anchored to a hidden frame the
+	-- envelope keeps the geometry that frame would have had, so a season nobody
+	-- has installed leaves an icon's worth of hole in the middle of the rail.
+	self:RefreshPlayer()
+	local hasPlay = self.rail.play:IsShown()
+	local afterGear = hasPlay and self.rail.play or self.rail.gear
+
 	if vertical then
 		self.rail.chev:SetPoint("TOP", self.rail, "TOP", 0, -RAIL_PAD)
 		self.rail.gear:SetPoint("BOTTOM", self.rail, "BOTTOM", 0, RAIL_PAD)
-		self.rail.mail:SetPoint("BOTTOM", self.rail.gear, "TOP", 0, RAIL_PAD)
+		-- IMMEDIATELY ABOVE THE GEAR. The two settled controls sit at the far
+		-- end together: the way to the options and the way to stop the music.
+		self.rail.play:SetPoint("BOTTOM", self.rail.gear, "TOP", 0, RAIL_PAD)
+		self.rail.mail:SetPoint("BOTTOM", afterGear, "TOP", 0, RAIL_PAD)
 	else
 		self.rail.chev:SetPoint("LEFT", self.rail, "LEFT", RAIL_PAD, 0)
 		self.rail.gear:SetPoint("RIGHT", self.rail, "RIGHT", -RAIL_PAD, 0)
-		self.rail.mail:SetPoint("RIGHT", self.rail.gear, "LEFT", -RAIL_PAD, 0)
+		self.rail.play:SetPoint("RIGHT", self.rail.gear, "LEFT", -RAIL_PAD, 0)
+		self.rail.mail:SetPoint("RIGHT", afterGear, "LEFT", -RAIL_PAD, 0)
 	end
 
 	-- The scrim covers exactly the strip the panel is over, so it travels with
@@ -526,6 +557,18 @@ function TB:SetOpen(open, instant)
 	self._want = open and 1 or 0
 	self:PointChevron()
 	self:SetPolling(open and true or false)
+
+	-- THE LIBRARY GOES WITH THE DRAWER. It hangs off the mini-player at the foot
+	-- of the panel and slides away with it - but it hangs off the RIGHT of that,
+	-- so a panel a full width off screen leaves the drawer it opened sitting
+	-- just inside the edge with nothing behind it. Shut, rather than left
+	-- floating over the world attached to something that is not there.
+	--
+	-- CloseFor, so the console's drawer at ten thousand feet is not shut by
+	-- somebody closing the Toolbox on the ground.
+	if not open and self.content and A.IFEC and A.IFEC.Library then
+		A.IFEC.Library:CloseFor(self.content.now)
+	end
 	if open then
 		-- Re-read EVERYTHING first, then draw. Opening the drawer is the moment
 		-- somebody looks at these, and it costs six function calls.
@@ -1736,6 +1779,7 @@ function TB:BuildContent()
 	content.widgetsHead = head
 
 	content.cards = {}
+	self:BuildNowPlaying()
 	self:RefreshWidgets()
 	self:BuildMail()
 	self:BuildTiles()
@@ -1744,6 +1788,73 @@ function TB:BuildContent()
 	-- Last, because it writes into the card AND re-measures the version chip,
 	-- and both want the whole header to exist first.
 	self:RefreshNews()
+end
+
+--- Is there a mini-player to draw?
+--
+--  Content decides, which is the same question the in-flight console asks: with
+--  nothing installed the section is ABSENT rather than empty, and the drawer
+--  lays out as though it were never there.
+--
+--  Nothing here needs the IFEC to exist. That half of the addon can be missing,
+--  broken or switched off and the Toolbox lays out exactly as it did before it
+--  was written.
+function TB:HasPlayer()
+	local M = A.IFEC and A.IFEC.Mini
+	return (M ~= nil and M:HasContent()) and true or false
+end
+
+--- How tall the mini-player wants to be. ASKED FOR rather than repeated here:
+--  the two numbers disagreeing is a section with a gap under it, or one drawn
+--  through the panel's floor.
+local function NowHeight()
+	local M = A.IFEC and A.IFEC.Mini
+	return M and M.HEIGHT or 0
+end
+
+--- NOW PLAYING: the mini-player, at the foot of the drawer.
+--
+--  The region belongs to the IFEC and this only finds it a home - the same
+--  boundary the in-flight console draws around its own content half, pointing
+--  the same way: the Toolbox calls the player, and the player has never heard
+--  of the Toolbox.
+function TB:BuildNowPlaying()
+	if not self.content or self.content.now then return end
+	local M = A.IFEC and A.IFEC.Mini
+	if not M then return end
+
+	local head = W.Text(self.content, "tbSection", "LEFT")
+	head:SetText(Spaced("NOW PLAYING"))
+	self.content.nowHead = head
+	self.content.now = M:Build(self.content)
+end
+
+--- The rail's transport chip, in whichever state it is in.
+function TB:RefreshPlayer()
+	local play = self.rail and self.rail.play
+	if not play then return end
+
+	local M = A.IFEC and A.IFEC.Mini
+	play:SetShown(self:HasPlayer())
+	if not M or not play:IsShown() then return end
+
+	-- WHERE THE MENU OPENS is ours, because only we know which edge the rail is
+	-- docked to. It goes AWAY from that edge: hung downwards on a rail docked at
+	-- the bottom it ran off the screen, and the chip sits at the far end of the
+	-- rail where there is least room in that direction.
+	local edge = self:Dock()
+	if edge == "LEFT" then
+		M.railMenuOpts = { point = "BOTTOMLEFT", relPoint = "BOTTOMRIGHT", x = 6, y = 0 }
+	elseif edge == "RIGHT" then
+		M.railMenuOpts = { point = "BOTTOMRIGHT", relPoint = "BOTTOMLEFT", x = -6, y = 0 }
+	elseif edge == "TOP" then
+		M.railMenuOpts = { point = "TOPRIGHT", relPoint = "BOTTOMRIGHT", x = 0, y = -4 }
+	else
+		M.railMenuOpts = { point = "BOTTOMRIGHT", relPoint = "TOPRIGHT", x = 0, y = 4 }
+	end
+
+	M:AdoptRailChip(play)
+	M:PaintRailChip(play)
 end
 
 --- One card per chosen data source. Frames are POOLED by index, because WoW has
@@ -1845,10 +1956,16 @@ TB.TILES = {
 	     .. " straight back the moment anything happens. Your character sits"
 	     .. " down and the camera pulls back for the view." },
 
-	{ kind = "setting", key = "combat", label = "Combat collapse",
-	  path = { "modules", "questtracker", "combatCollapse" },
-	  tip = "Collapses the quest tracker to its title while you are fighting,"
-	     .. " and opens it again when you are not." },
+	-- The in-flight player, NOT the flight timer. Combat collapse had this slot
+	-- and has gone to the options panel, where it already lived: four tiles is
+	-- what the deck draws and the one thing that had no home anywhere else was
+	-- this. A player who never wants a programme on a griffin still wants to
+	-- know when the griffin lands.
+	{ kind = "setting", key = "ifec", label = "I.F.E.C.",
+	  path = { "modules", "ifec", "player" },
+	  tip = "Plays the season's music and stories while you are a passenger."
+	     .. " The flight timer, the route and the countdown are not this and"
+	     .. " stay either way." },
 
 	-- Both of the below are MODES. They are read from the module that owns the
 	-- state rather than from the profile, because that is where the truth is:
@@ -2647,6 +2764,13 @@ function TB:LayoutRail()
 	local len = RAIL_PAD + RAIL_CHEV + RAIL_PAD + n * (RAIL_ICON + RAIL_PAD)
 		+ (RAIL_ICON + RAIL_PAD)      -- mail
 		+ RAIL_ICON + RAIL_PAD        -- gear
+	-- The transport chip anchors off the envelope, which anchors off the gear,
+	-- which anchors off the far end - so it has to be counted here for the same
+	-- reason the envelope does, and with the same failure if it is not: it lands
+	-- exactly on top of the last pin and reads as simply not being there.
+	if self.rail.play and self.rail.play:IsShown() then
+		len = len + RAIL_ICON + RAIL_PAD
+	end
 	if vertical then
 		self.rail:SetSize(RAIL_W, math.max(len, RAIL_CHEV + RAIL_PAD * 2))
 	else
@@ -3214,7 +3338,8 @@ end
 -- "Auc-Util-AutoMagic" is a real registry name - and at 22 it was truncating
 -- every second one to "Auc-Util-A...". Mail holds one line of a sender's name
 -- and the settings tiles are fixed-size chips, so both give some back.
-local H_WEIGHTS = { identity = 20, widgets = 19, addons = 27, mail = 14, settings = 20 }
+local H_WEIGHTS = { identity = 20, widgets = 19, addons = 27, mail = 14, settings = 20,
+	nowplaying = 17 }
 local H_COL_GAP = 18
 
 --- The shortest the flat panel can usefully be, in panel units.
@@ -3243,7 +3368,14 @@ end
 --  thing. And a section that is sometimes absent is one you go looking for and
 --  cannot find, which is how the vertical panel's version of this got noticed.
 function TB:HorizontalColumns()
-	return { "identity", "widgets", "addons", "mail", "settings" }, H_WEIGHTS
+	local order = { "identity", "widgets", "addons", "mail", "settings" }
+	-- NOW PLAYING is the one column that can be absent, and it is absent on the
+	-- same question the console asks: no content installed, no player. That is a
+	-- reload-scale fact rather than something that changes while you are looking
+	-- at the drawer, so the column cannot appear under you and reflow the rest -
+	-- which is the whole reason mail's column is permanent.
+	if self:HasPlayer() then order[#order + 1] = "nowplaying" end
+	return order, H_WEIGHTS
 end
 
 function TB:LayoutContent()
@@ -3491,6 +3623,30 @@ function TB:LayoutHorizontal()
 		used(y)
 	end
 
+	-- NOW PLAYING ------------------------------------------------------------
+	--
+	-- The last column, which is the right-hand end of a flat drawer - the same
+	-- place the foot of the vertical one is. It is the only column that can be
+	-- absent, and HorizontalColumns is where that is decided.
+	do
+		local showNow = colX.nowplaying ~= nil and content.now ~= nil
+		if showNow then
+			local x, cw = colX.nowplaying, colW.nowplaying
+			local y = top
+			place(content.nowHead, x, y)
+			content.nowHead:Show()
+			y = y + SECTION_H
+			place(content.now, x, y, cw)
+			content.now:SetHeight(NowHeight())
+			content.now:Show()
+			y = y + NowHeight()
+			used(y)
+		else
+			if content.nowHead then content.nowHead:Hide() end
+			if content.now then content.now:Hide() end
+		end
+	end
+
 	self._contentHeight = tallest + PAD
 end
 
@@ -3550,21 +3706,23 @@ function TB:LayoutVertical()
 		-- with a nameless row of glyphs under the card.
 		content.microHead:Show()
 		y = y + SECTION_H
+		-- GLYPH ONLY, the way the flat layout already draws them. The names were
+		-- costing sixteen pixels a row for words the tooltip says better, and the
+		-- drawer needed them for the mini-player at its foot. Nothing was lost
+		-- that the flat panel had not already decided it could do without.
 		local cellW = avail / MICRO_PER_ROW
 		for i, b in ipairs(micros) do
 			if i <= #micro then
-				b:SetSize(cellW, MICRO_CELL_H)
-				GridPlace(content, b, i, PAD, y, MICRO_PER_ROW, cellW, MICRO_CELL_H, 0, 0)
-				-- Shown again, because the flat layout hides these. Same rule as
-				-- the MENU heading and the mail rows: whatever one layout hides,
-				-- the other has to put back.
-				if b.name then b.name:Show() end
+				b:SetSize(cellW, MICRO_CELL_H_FLAT)
+				GridPlace(content, b, i, PAD, y, MICRO_PER_ROW, cellW,
+					MICRO_CELL_H_FLAT, 0, 0)
+				if b.name then b.name:Hide() end
 				b:Show()
 			else
 				b:Hide()
 			end
 		end
-		y = y + RowsFor(#micro, MICRO_PER_ROW) * MICRO_CELL_H + SECTION_GAP
+		y = y + RowsFor(#micro, MICRO_PER_ROW) * MICRO_CELL_H_FLAT + SECTION_GAP
 	end
 
 	-- WIDGETS ----------------------------------------------------------------
@@ -3636,6 +3794,13 @@ function TB:LayoutVertical()
 		and (mailRows * (MAIL_ROW_H + MAIL_ROW_GAP) - MAIL_ROW_GAP) or 0
 	local mailBlock = SECTION_H + mailRowsH + SECTION_GAP
 
+	-- NOW PLAYING is fixed cost like mail, and is drawn BELOW everything - so
+	-- like mail it has to be measured before the two lists that give way are
+	-- told how much room they have. Reserved after the fact, it would be drawn
+	-- through the floor of the panel by exactly its own height.
+	local showNow = self:HasPlayer() and content.now ~= nil
+	local nowBlock = showNow and (SECTION_H + NowHeight() + SECTION_GAP) or 0
+
 	-- The addon section's own HEADER is fixed cost too, and it was missing from
 	-- this sum. Its ROWS give way to nothing, which is what "the addon list
 	-- gives way" means - but the heading and the gap under it are drawn whether
@@ -3645,7 +3810,7 @@ function TB:LayoutVertical()
 	local addonFixed = (#(self._addonRows or {}) > 0 and content.addonsHead)
 		and (SECTION_H + SECTION_GAP) or 0
 
-	local roomLeft = h - y - PAD - mailBlock - addonFixed
+	local roomLeft = h - y - PAD - mailBlock - addonFixed - nowBlock
 
 	-- The ONE case where the mail section gives way: the box is empty and the
 	-- panel is too short to fit it and a single row of settings tiles.
@@ -3660,7 +3825,7 @@ function TB:LayoutVertical()
 	if mailEmpty and roomLeft < SECTION_H + TILE_H then
 		dropMail = true
 		mailBlock = 0
-		roomLeft = h - y - PAD - addonFixed
+		roomLeft = h - y - PAD - addonFixed - nowBlock
 	end
 
 	local maxTileRows = math.max(0, math.floor((roomLeft - SECTION_H) / (TILE_H + TILE_GAP)))
@@ -3685,7 +3850,7 @@ function TB:LayoutVertical()
 		-- is reachable by the wheel and said so - the quest tracker's rule, for
 		-- the same reason: a list that silently drops the row you were looking
 		-- for is worse than one that admits it ran out of room.
-		local room = h - y - PAD - tileBlock - mailBlock - SECTION_GAP
+		local room = h - y - PAD - tileBlock - mailBlock - nowBlock - SECTION_GAP
 		local maxRows = math.max(0, math.floor(room / (ROW_H + ROW_GAP)))
 		shown = self:PlaceAddonRows(PAD, y, avail, addonCols,
 			maxRows * addonCols, w - PAD, headY)
@@ -3749,6 +3914,21 @@ function TB:LayoutVertical()
 		for _, tile in ipairs(tilesF) do tile:Hide() end
 	end
 	if content.tilesHead then content.tilesHead:SetShown(shownTiles > 0) end
+
+	-- NOW PLAYING ------------------------------------------------------------
+	if showNow then
+		y = y + SECTION_GAP
+		place(content.nowHead, PAD, y)
+		content.nowHead:Show()
+		y = y + SECTION_H
+		place(content.now, PAD, y, avail)
+		content.now:SetHeight(NowHeight())
+		content.now:Show()
+		y = y + NowHeight()
+	else
+		if content.nowHead then content.nowHead:Hide() end
+		if content.now then content.now:Hide() end
+	end
 
 	self._contentHeight = y + PAD
 end

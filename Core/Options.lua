@@ -1003,13 +1003,23 @@ local function XPGroup()
 	})
 end
 
---- The in-flight console. One switch for now: the settings page the design
---  describes is the dormancy readout, and there is nothing dormant yet.
+--- The in-flight console. The dormancy readout the design describes is still to
+--  come; these are the switches that exist because somebody asked for them.
+--
+--  `player` is also the Toolbox's I.F.E.C. tile - one flag, two places to press
+--  it, which is the rule every mode in this addon follows.
 local function IFECGroup()
 	local function at(k) return { "modules", "ifec", k } end
 	return group("In-flight console", {
 		enabled = toggle("Enabled", "A flight timer on every taxi, and the"
 			.. " console for content when a season is installed.", at("enabled")),
+		player = toggle("Play a programme in flight",
+			"The music and stories while you are a passenger. The flight timer,"
+			.. " the route and the countdown are not this and stay either way.",
+			at("player")),
+		playOn = toggle("Keep playing after landing",
+			"The programme carries on into the Toolbox's mini-player instead of"
+			.. " stopping with the flight.", at("playOn")),
 		hideUI = toggle("Hide the interface in flight",
 			"You are a passenger. The console stays.", at("hideUI")),
 		scale = range("Size", "On top of the interface scale, like the action bars"

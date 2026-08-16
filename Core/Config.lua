@@ -511,6 +511,23 @@ Config.defaults = {
 			-- mean of two paths, so a measured one is worth more there.
 			ifec = {
 				enabled = true,
+				-- THE PLAYER HALF, separately from the console. Flight tracking
+				-- - the dial, the route, the countdown - is the permanent part
+				-- and is not what this switches: off, a flight still opens the
+				-- capsule and still counts you down, it just does not hang a
+				-- programme under it. The mini-player on the Toolbox is
+				-- unaffected, because it is not in flight.
+				player  = true,
+				-- KEEP PLAYING AFTER LANDING. Off, the programme stops with the
+				-- flight, which is right for somebody who wants the console to
+				-- be a thing that happens on a griffin. On, the queue simply
+				-- carries on into the mini-player - it is the same queue and the
+				-- same audio, and landing stops being an interruption.
+				--
+				-- Default off: audio still going after the player has control
+				-- back is the worst failure this feature has, and it should be
+				-- something asked for rather than something that happens.
+				playOn  = false,
 				hideUI  = true,
 				-- On top of profile.scale, not instead of it, the way the dock
 				-- and the nameplates have their own. The console is read once a

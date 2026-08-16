@@ -521,7 +521,11 @@ handlers.ifec = function(arg)
 		local cfg = A.Config:Module("ifec")
 		local n = 0
 		for _ in pairs(cfg.progress or {}) do n = n + 1 end
-		cfg.progress = {}
+		-- The play counter goes with it. Only relative order is ever read off it,
+		-- so leaving it would still work - but it counts the entries in a store
+		-- that is now empty, and the two drifting apart is how a diagnostic
+		-- readout starts lying.
+		cfg.progress, cfg.playCount = {}, nil
 		A:Print("ifec: forgot " .. n .. " item(s) of listening history")
 		return
 	end
