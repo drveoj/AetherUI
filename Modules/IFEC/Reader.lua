@@ -11,15 +11,19 @@
 	art - and reproducing that from strings would be writing a typesetter. So
 	this file has no opinion whatever about what is ON a page. It turns them.
 
-	NOT ANCHORED TO WHATEVER OPENED IT, unlike the library. A page wants to be
-	as big as the screen will allow, which at 1024 is most of it - hung off the
-	side of the Toolbox it would be mostly off the edge. It is centred, movable
-	and parented outside UIParent, so it works on the ground and at altitude
-	with the interface hidden.
+	NOT ANCHORED TO WHATEVER OPENED IT, unlike the library. A page is 1024 square
+	and hung off the side of the Toolbox it would be mostly off the edge. It is
+	centred, movable and parented outside UIParent, so it works on the ground
+	and at altitude with the interface hidden.
 
-	FIT, AND 1:1. A page drawn at 700 is two thirds of native and the body copy
-	falls under legibility, so there is a zoom: fit-to-height to read the
-	headlines, actual size with a drag to pan for the small print.
+	BUILT AROUND THE PAGE, not around the screen. It asked how much room there
+	was and took all of it, which on a tall monitor is a magazine filling the
+	monitor. The size is a fraction of the art's own, the screen only says no,
+	and the fraction is a setting.
+
+	FIT, AND 1:1. At that fraction the body copy falls under legibility, so
+	there is a zoom: fitted to read the headlines, actual size with a drag to
+	pan for the small print - and actual size means it, whatever the scale.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -50,8 +54,15 @@ local PAGE = 1024
 local PAGE_DRAW = 0.7
 
 local PAD    = 12          -- around the page inside the panel
-local BAR_H  = 30          -- the strip under it: title, pager, controls
+local TOP_H  = 26          -- the strip over it: what this is, and the way out
+local BAR_H  = 30          -- the strip under it: the pager and the zoom
 local MARGIN = 48          -- the least the panel leaves of the screen
+
+-- WHAT THIS IS, not what is in it. The window used to caption itself with the
+-- issue's own title, which every page already carries in letters an inch high.
+-- A masthead is the first thing a magazine says about itself, and repeating it
+-- in our chrome is the console talking over the thing it is showing.
+local TITLE = "I.F.E.C. MEDIA READER"
 
 -- ---------------------------------------------------------------------------
 
@@ -90,13 +101,27 @@ function Reader:Build()
 	end)
 	f:Hide()
 
+	-- THE CHROME AT THE TOP: what the window is, and the way out of it. The page
+	-- controls stay at the foot, where turning a page belongs.
+	f.title = W.Text(f, "ifecSection", "LEFT", "OVERLAY")
+	f.title:SetPoint("TOPLEFT", f, "TOPLEFT", PAD + 4, -PAD - 5)
+	f.title:SetText(TITLE)
+
+	-- A CROSS FROM THE SHEET, not the multiplication sign the older windows here
+	-- type. Whether a font has U+00D7 is the font's business - Outfit does not
+	-- carry it in every weight, and the one it landed in drew the notdef box
+	-- followed by the digits of the escape.
+	f.close = glyphButton(f, "close", 11)
+	f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD - 2, -PAD)
+	f.close:SetScript("OnClick", function() Reader:Close() end)
+
 	-- THE PAGE, INSIDE A SCROLLFRAME. There is no reliable way to clip a plain
 	-- frame's children on this client, and at actual size the page is bigger
 	-- than the window it is in - so the one widget that does clip is the one
 	-- that carries it, and panning is a scroll offset rather than a moved
 	-- texture.
 	local view = CreateFrame("ScrollFrame", nil, f)
-	view:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, -PAD)
+	view:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, -(PAD + TOP_H))
 	view:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PAD, PAD + BAR_H)
 	f.view = view
 
@@ -132,21 +157,9 @@ function Reader:Build()
 		Reader:ScrollTo(d.h - (x - d.x) / s, d.v + (y - d.y) / s)
 	end)
 
-	-- The strip along the bottom: which paper, which page, and the controls.
-	f.masthead = W.Text(f, "ifecSection", "LEFT", "OVERLAY")
-	f.masthead:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", PAD + 4, PAD + 8)
-
-	-- A CROSS FROM THE SHEET, not the multiplication sign the older windows here
-	-- type. Whether a font has U+00D7 is the font's business - Outfit does not
-	-- carry it in every weight, and the one this landed in drew the notdef box
-	-- followed by the digits of the escape. It is also the only control in this
-	-- strip that was not line art, which was the tell.
-	f.close = glyphButton(f, "close", 11)
-	f.close:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PAD - 2, PAD + 2)
-	f.close:SetScript("OnClick", function() Reader:Close() end)
-
+	-- The strip along the bottom: which page, and the way through them.
 	f.zoom = glyphButton(f, "zoom", 12)
-	f.zoom:SetPoint("RIGHT", f.close, "LEFT", -4, 0)
+	f.zoom:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PAD - 2, PAD + 2)
 	f.zoom:SetScript("OnClick", function() Reader:SetZoomed(not Reader.zoomed) end)
 
 	f.next = glyphButton(f, "next", 13)
@@ -217,7 +230,7 @@ function Reader:Size()
 	local screenH = (UIParent:GetHeight() or 768)  * theirs
 
 	local chromeW = PAD * 2
-	local chromeH = PAD * 2 + BAR_H
+	local chromeH = PAD * 2 + TOP_H + BAR_H
 
 	-- THE PAGE DECIDES, and the screen only says no. A fraction of the art's own
 	-- size, tunable because how big a magazine wants to be is a matter of taste
@@ -334,7 +347,6 @@ function Reader:Paint()
 	f.sheet.page:SetTexture(pages[n])
 	f.pager:SetText(n .. " / " .. #pages)
 
-	f.masthead:SetText(item.title or "")
 	f.prev:SetAlpha(n > 1 and 1 or 0.3)
 	f.next:SetAlpha(n < #pages and 1 or 0.3)
 
@@ -353,7 +365,7 @@ function Reader:Restyle()
 	-- margin around it and the strip under it are not, and a border you can see
 	-- the world through is a page that looks like it is floating.
 	f:SetFillColor(Palette:ReadingFill())
-	W.Color(f.masthead, c.ifecGossip)
+	W.Color(f.title, c.textDim)
 	W.Color(f.pager, c.textDim)
 	for _, b in ipairs({ f.prev, f.next, f.close }) do
 		b.glyph:SetVertexColor(c.textDim[1], c.textDim[2], c.textDim[3], 0.85)

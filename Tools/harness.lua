@@ -23034,8 +23034,13 @@ section("nifec: the mini-player, on the ground", function()
 			check(b.glyph ~= nil and b.glyph:GetTexture() == A.Media.icons.file,
 				"the reader's controls all come off the shared sheet")
 		end
-		check(RD.frame.masthead:GetText() == gossip.item.title,
-			"carrying its title (" .. tostring(RD.frame.masthead:GetText()) .. ")")
+		-- WHAT THE WINDOW IS, not what is in it. It used to caption itself with
+		-- the issue's own title, which every page already carries in letters an
+		-- inch high - our chrome talking over the thing it is showing.
+		check(RD.frame.title:GetText() == "I.F.E.C. MEDIA READER",
+			"the window says what it is (" .. tostring(RD.frame.title:GetText()) .. ")")
+		check(RD.frame.title:GetText() ~= gossip.item.title,
+			"and not what is in it - the page has its own masthead")
 
 		-- A PAGE IS AN IMAGE. The reader has no opinion about what is on one.
 		check(RD.frame.sheet.page:GetTexture() == gossip.item.pages[1],
