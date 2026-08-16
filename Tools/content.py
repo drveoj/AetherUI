@@ -451,7 +451,7 @@ def write_toc(pack_dir, pack):
         "## Interface: %s" % pack.get("interface", "11509"),
         "## Title: Aether|cff9d7bffUI|r IFEC: %s" % pack.get("displayName", packId),
         "## Notes: %s" % pack.get("notes", "Content for the in-flight console."),
-        "## Author: %s" % pack.get("author", "Joe Vaughan"),
+        "## Author: %s" % pack.get("author", "DrVeoj"),
         "## Version: %s" % pack.get("version", "1.0.0"),
         "## X-Category: Interface Enhancements",
         "",
