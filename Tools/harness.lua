@@ -651,6 +651,14 @@ function CreateFrame(kind, name, parent, template)
 	function f:SetToplevel(on) self.__toplevel = on and true or nil end
 	function f:IsToplevel() return self.__toplevel == true end
 
+	-- Raise and Lower shuffle a frame within its own strata on the client.
+	-- Recorded rather than modelled, for the reason SetToplevel is: nothing here
+	-- draws, so the only thing a caller can get wrong is not calling them - and
+	-- their ABSENCE was the failure, a real method missing from the mock reading
+	-- as our bug rather than as the mock being short of one.
+	function f:Raise() self.__raised = (self.__raised or 0) + 1 end
+	function f:Lower() self.__raised = (self.__raised or 0) - 1 end
+
 	-- Geometry is refused in combat for the same reason Hide is, and on the same
 	-- frames: the restriction reaches every *ancestor* of a protected frame, not
 	-- just the frame itself. This harness modelled Hide and Show and not these,
@@ -1251,6 +1259,13 @@ _G.__cvars = {
 	Sound_EnableSFX       = "1",
 	Sound_EnableAmbience  = "1",
 	Sound_EnableDialog    = "1",
+	-- Off, because that is the interesting case: with this off the client kills
+	-- every sounding handle when the window loses focus and starts none of them
+	-- again, which is a programme that goes quiet on an alt-tab and never comes
+	-- back. Checked against Blizzard's own Audio.lua for the spelling - the
+	-- unknown-name error above is what makes getting it wrong a failed test
+	-- rather than a setting nobody ever wrote.
+	Sound_EnableSoundWhenGameIsInBG = "0",
 
 	-- How fast MoveViewUpStart/MoveViewDownStart actually turn the camera, in
 	-- degrees a second. NOT a constant on a real client: Blizzard's own Mouse
@@ -1340,6 +1355,22 @@ function SetCVar(name, value)
 	else
 		_G.__cvars[name] = tostring(value)
 	end
+
+	-- SWITCHING A CHANNEL OFF STOPS WHAT IS ON IT. That is what the sound
+	-- options do and it is the only lever an addon has over a sound whose handle
+	-- it has lost - a reload throws the handle away and leaves the audio
+	-- running. Modelled here because a mock that only consulted the CVar when a
+	-- sound STARTED made "switch it off and on to clear the ghost" a line that
+	-- could not be tested and could not fail.
+	local channel = name:match("^Sound_Enable(%a+)$")
+	if channel and _G.__cvars[name] == "0" then
+		for handle, ch in pairs(_G.__channel) do
+			if ch == channel then
+				_G.__playing[handle] = nil
+				_G.__channel[handle] = nil
+			end
+		end
+	end
 	return true
 end
 
@@ -1360,6 +1391,7 @@ function StopMusic() _G.__music = nil end
 _G.__musicMuted = false
 _G.__sounds     = {}          -- handle -> file, everything ever started
 _G.__playing    = {}          -- handle -> file, still going
+_G.__channel    = {}          -- handle -> which channel it went out on
 local nextHandle = 0
 
 function PlaySoundFile(file, channel)
@@ -1375,6 +1407,7 @@ function PlaySoundFile(file, channel)
 	nextHandle = nextHandle + 1
 	_G.__sounds[nextHandle]  = file
 	_G.__playing[nextHandle] = file
+	_G.__channel[nextHandle] = channel
 	_G.__lastSound = file
 	return true, nextHandle
 end
@@ -1382,6 +1415,7 @@ end
 function StopSound(handle)
 	if handle == nil then return end
 	_G.__playing[handle] = nil
+	_G.__channel[handle] = nil
 end
 
 --- How many are still going. More than one means a segment was started over
@@ -5675,6 +5709,8 @@ local FILES = {
 	"Modules/IFEC/Taxi.lua", "Modules/IFEC/Console.lua",
 	"Modules/IFEC/Registry.lua", "Modules/IFEC/Content.lua",
 	"Modules/IFEC/Playback.lua", "Modules/IFEC/Player.lua",
+	"Modules/IFEC/Library.lua", "Modules/IFEC/Mini.lua",
+	"Modules/IFEC/Reader.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -9721,9 +9757,9 @@ do
 	-- right-click menu
 	local r = QT.panel.rows[1]
 	r:GetScript("OnMouseUp")(r, "RightButton")
-	check(QT.menu and QT.menu:IsShown(), "right-click opens the menu")
-	check(#QT.menu.items >= 4, "menu has open / untrack / share / abandon")
-	check(QT.menu.items[1].text:GetText() == "Open quest log", "first item opens the log")
+	check(A.Widgets.MenuFrame() and A.Widgets.MenuFrame():IsShown(), "right-click opens the menu")
+	check(#A.Widgets.MenuFrame().items >= 4, "menu has open / untrack / share / abandon")
+	check(A.Widgets.MenuFrame().items[1].text:GetText() == "Open quest log", "first item opens the log")
 
 	-- ...and it had better be OURS. Every route this used to take reached for
 	-- Blizzard's QuestLogFrame - the frame Modules/QuestLog.lua exists to replace
@@ -9778,12 +9814,12 @@ do
 	-- The menu opens ON TOP of the tracker's own panel, so it is a surface you
 	-- read through two layers of glass unless it stops being glass. It takes the
 	-- modal fill for exactly the reason the palette gives that token.
-	check(QT.menu._fillColor == A.Palette.c.dialogFill,
+	check(A.Widgets.MenuFrame()._fillColor == A.Palette.c.dialogFill,
 		"the menu is not glass - it takes the same fill as the abandon dialog")
-	check((QT.menu._fillColor[4] or 1) > (A.Palette.c.glassStrong[4] or 1),
-		"which is more opaque than the panel underneath it (" .. (QT.menu._fillColor[4] or 1)
+	check((A.Widgets.MenuFrame()._fillColor[4] or 1) > (A.Palette.c.glassStrong[4] or 1),
+		"which is more opaque than the panel underneath it (" .. (A.Widgets.MenuFrame()._fillColor[4] or 1)
 		.. " vs " .. (A.Palette.c.glassStrong[4] or 1) .. ")")
-	check(QT.menu._edgeColor == A.Palette.c.glassEdgeHi,
+	check(A.Widgets.MenuFrame()._edgeColor == A.Palette.c.glassEdgeHi,
 		"with the brighter rim, or an opaque fill in a dim rim reads as a hole")
 
 	-- And it follows a skin change, which goes through ApplySkin rather than
@@ -9791,20 +9827,20 @@ do
 	local wasSkin = A.db.profile.skin
 	A.db.profile.skin = "daylight"
 	A:Restyle()
-	check(QT.menu._fillColor == A.Palette.c.dialogFill
-		and QT.menu._edgeColor == A.Palette.c.glassEdgeHi,
+	check(A.Widgets.MenuFrame()._fillColor == A.Palette.c.dialogFill
+		and A.Widgets.MenuFrame()._edgeColor == A.Palette.c.glassEdgeHi,
 		"and it is still the dialog surface after a skin change, not glass again")
 	A.db.profile.skin = wasSkin
 	A:Restyle()
 
 	_G.__questShared = nil
-	QT.menu.items[3]:GetScript("OnClick")(QT.menu.items[3])
+	A.Widgets.MenuFrame().items[3]:GetScript("OnClick")(A.Widgets.MenuFrame().items[3])
 	check(_G.__questShared == r.index, "share quest routes through SelectQuestLogEntry")
-	check(not QT.menu:IsShown(), "and the menu closes behind it")
+	check(not A.Widgets.MenuFrame():IsShown(), "and the menu closes behind it")
 
 	_G.__abandonPopup = nil
 	r:GetScript("OnMouseUp")(r, "RightButton")
-	QT.menu.items[4]:GetScript("OnClick")(QT.menu.items[4])
+	A.Widgets.MenuFrame().items[4]:GetScript("OnClick")(A.Widgets.MenuFrame().items[4])
 	check(_G.__abandonPopup == "ABANDON_QUEST",
 		"abandon goes through Blizzard's confirmation, never straight to AbandonQuest")
 end
@@ -10028,13 +10064,13 @@ do
 	local r = QT.panel.rows[1]
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	local texts = {}
-	for _, item in ipairs(QT.menu.items) do
+	for _, item in ipairs(A.Widgets.MenuFrame().items) do
 		if item:IsShown() then texts[#texts + 1] = item.text:GetText() end
 	end
 	check(#texts == 4 and texts[4] == "Abandon quest",
 		"and the menu carries no Navigate item at all - a line that exists to"
 		.. " advertise an addon you do not have is not a feature (" .. #texts .. ")")
-	QT.menu:Hide()
+	A.Widgets.MenuFrame():Hide()
 end
 
 print("== nav: questie to tomtom ==")
@@ -10242,7 +10278,7 @@ do
 
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	local texts, navItem = {}, nil
-	for _, item in ipairs(QT.menu.items) do
+	for _, item in ipairs(A.Widgets.MenuFrame().items) do
 		if item:IsShown() then
 			texts[#texts + 1] = item.text:GetText()
 			if item.text:GetText() == "Navigate with TomTom" then navItem = item end
@@ -10257,7 +10293,7 @@ do
 	local before = #tt.added
 	navItem:GetScript("OnClick")(navItem)
 	check(#tt.added == before + 1, "clicking it sets the waypoint")
-	check(not QT.menu:IsShown(), "and the menu closes behind it")
+	check(not A.Widgets.MenuFrame():IsShown(), "and the menu closes behind it")
 
 	-- Now a quest with no location at all: no objectives Questie populated, no
 	-- database objectives, and a turn-in NPC it has no spawn for either. All
@@ -10265,7 +10301,7 @@ do
 	questieQuests[r.questID] = questieQuest(r.questID, { finisher = { NPC = { 4321 } } })
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	local dead
-	for _, item in ipairs(QT.menu.items) do
+	for _, item in ipairs(A.Widgets.MenuFrame().items) do
 		if item:IsShown() and item.text:GetText() == "No location known" then dead = item end
 	end
 	check(dead, "a quest Questie cannot place says so in the menu")
@@ -10275,7 +10311,7 @@ do
 	local stillAdded = #tomtom.added
 	dead:GetScript("OnClick")(dead)
 	check(#tomtom.added == stillAdded, "clicking it does nothing at all")
-	QT.menu:Hide()
+	A.Widgets.MenuFrame():Hide()
 end
 
 print("== nav: when questie moves under us ==")
@@ -10314,9 +10350,9 @@ do
 	local r = QT.panel.rows[1]
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	local n = 0
-	for _, item in ipairs(QT.menu.items) do if item:IsShown() then n = n + 1 end end
+	for _, item in ipairs(A.Widgets.MenuFrame().items) do if item:IsShown() then n = n + 1 end end
 	check(n == 4, "the menu goes back to four items rather than raising on click")
-	QT.menu:Hide()
+	A.Widgets.MenuFrame():Hide()
 	dist.GetNearestSpawnForQuest = was
 
 	-- Questie loaded but its database not built yet. Calling in here would raise
@@ -12625,10 +12661,15 @@ do
 	end
 
 	-- The four the deck asks for, and nothing else.
+	--
+	-- `combat` was the second and has gone to the options panel, where it was
+	-- already configurable - the deck draws four tiles and the one thing with no
+	-- home anywhere else was the in-flight player, which needs a switch of its
+	-- own precisely because the flight TIMER is not what it switches.
 	do
 		local keys = {}
 		for _, t in ipairs(TBm.TILES) do keys[#keys + 1] = t.key end
-		check(table.concat(keys, ",") == "zen,combat,lock,keybinds",
+		check(table.concat(keys, ",") == "zen,ifec,lock,keybinds",
 			"the four settings tiles, in order (got " .. table.concat(keys, ",")
 			.. ")")
 		for _, t in ipairs(TBm.TILES) do
@@ -14008,9 +14049,14 @@ do
 	check(c.microHead:IsShown() and c.close:IsShown(),
 		"docking back to a side brings the MENU heading and the close button"
 		.. " back rather than leaving the flat layout's choices behind")
-	check(c.micro[1].name:IsShown(),
-		"and the micro labels with them - whatever one layout hides, the other"
-		.. " has to put back, which this file has now got wrong three times")
+	-- THE MICRO LABELS ARE GONE FROM BOTH LAYOUTS. They used to be a vertical-
+	-- only thing and this check was the guard on putting them back; the drawer
+	-- now spends that sixteen pixels a row on the mini-player at its foot, and
+	-- the name a glyph loses is on its tooltip, where a name that does not fit
+	-- belongs. The guard still matters in the other direction: whatever one
+	-- layout hides, the other has to agree about.
+	check(not c.micro[1].name:IsShown(),
+		"and the micro row is glyphs on every dock, not names on one of them")
 	check(topOf(c.widgetsHead) > topOf(c.title)
 		and math.abs(leftOf(c.widgetsHead) - leftOf(c.title)) < 0.5,
 		"and the sections stack again, in one column at one x")
@@ -21232,6 +21278,30 @@ section("ifec: landing, at the scale of everything else, out of the way", functi
 	check(f:GetParent() == IF:Top() and IF:Top():GetParent() == nil,
 		"and the console survives it, living under a holder outside UIParent")
 
+	-- AND NOTHING UNDER IT MAY SPEAK. Alpha does not stop a frame taking the
+	-- mouse: every buff, bag and action button is still sitting there at zero
+	-- catching hovers, and the tooltip is deliberately moved OUT of UIParent so
+	-- the console can be read - so the two together drew "Arcane Intellect, 24
+	-- minutes remaining" over an empty sky, from a frame that was not on screen.
+	local stranger = CreateFrame("Frame", nil, UIParent)
+	-- From hidden, because a tooltip APPEARING is the event: Show() on one that
+	-- is already up is not a transition and dispatches nothing, on the client or
+	-- here. A check that skipped this would pass without the guard existing.
+	GameTooltip:Hide()
+	GameTooltip:SetOwner(stranger, "ANCHOR_RIGHT")
+	GameTooltip:SetText("Arcane Intellect")
+	GameTooltip:Show()
+	check(not GameTooltip:IsShown(),
+		"a frame hidden with the interface cannot raise a tooltip over it")
+
+	-- OURS STILL CAN, which is the whole reason the tooltip was moved.
+	GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
+	GameTooltip:SetText("Jump Off")
+	GameTooltip:Show()
+	check(GameTooltip:IsShown(),
+		"while the console's own frames are still read normally")
+	GameTooltip:Hide()
+
 	-- LANDING. UnitOnTaxi is still true in the frame control comes back - the
 	-- same lag as on the way out - so requiring it false and giving up left the
 	-- console up for the rest of the session. This is that bug.
@@ -21520,8 +21590,28 @@ section("ifec: registering content packs, several at once", function()
 	check(R:Register(nil) == false and R:Register("nonsense") == false,
 		"and something that is not a manifest at all")
 
+	-- A BULLETIN IS PAGES. It carries no audio and no segments, so the only
+	-- thing that makes one openable is having something to open - and a row in
+	-- the library that does nothing when clicked is our bug, not the pack's.
+	check(R:Register(pack("Pageless", 8, 1, {
+		{ id = "g", type = "gossip", masthead = "ogler", title = "Spotted" },
+	})) == false, "a bulletin with no pages is refused")
+	check(R:Register(pack("Numbered", 9, 1, {
+		{ id = "g", type = "gossip", masthead = "ogler", title = "Spotted",
+		  pages = { 3 } },
+	})) == false, "and one whose pages are not paths")
+
+	-- An overlap that is not a number is compared against zero on every boundary
+	-- of every piece, which for three-second chunks is an error a second and a
+	-- half for as long as the track runs.
+	check(R:Register(pack("Overlapped", 10, 1, {
+		{ id = "x", type = "music", title = "Wrong", totalDuration = 6,
+		  overlap = "lots",
+		  segments = { { file = "a.ogg", duration = 3 } } },
+	})) == false, "and an item whose overlap is not a number")
+
 	local failures = R:Failures()
-	check(#failures == 8, "every refusal is recorded for the settings readout (" .. #failures .. ")")
+	check(#failures == 11, "every refusal is recorded for the settings readout (" .. #failures .. ")")
 	check(failures[1].packId == "EarlyBird"
 		and failures[1].reason:find("already registered", 1, true) ~= nil,
 		"in words a settings page can print: " .. failures[1].reason)
@@ -21573,6 +21663,24 @@ section("ifec: registering content packs, several at once", function()
 	cat = R:Catalogue()
 	check(#cat == 2, "a pack reusing its own audio keeps both items ("
 		.. #cat .. " of 2)")
+
+	-- AN ARTIST IS OPTIONAL BUT NOT UNTYPED. A song is named by two things and
+	-- the title alone is half of it, so it is carried - but a number here would
+	-- reach the console as "3" beside a song name and read as our bug rather
+	-- than the pack's, so it is refused at the door with everything else.
+	R:Reset()
+	R:Register(pack("Tunes", 1, 1, {
+		{ id = "t1", type = "music", title = "Big Drum Deep Water",
+		  artist = "The Mudfoot Kings", totalDuration = 60,
+		  segments = { { file = "big.ogg", duration = 60 } } },
+		{ id = "t2", type = "music", title = "Untyped", artist = 3,
+		  totalDuration = 60, segments = { { file = "num.ogg", duration = 60 } } },
+	}))
+	cat = R:Catalogue()
+	check(#cat == 1, "an item whose artist is not a string is refused ("
+		.. #cat .. " of 1 kept)")
+	check(cat[1].artist == "The Mudfoot Kings",
+		"and a real one is carried onto the item (" .. tostring(cat[1].artist) .. ")")
 
 	R:Reset()
 end)
@@ -21671,8 +21779,64 @@ section("ifec: what is in season, and what fills a flight", function()
 	check(C:Progress("Gone:whatever") ~= nil, "and the stale progress is kept, not purged")
 	check(C:Progress("S01:old1") ~= nil, "as is progress for a season not currently installed")
 
+	-- MUSIC ROTATES, LONGEST AGO FIRST. Taken in catalogue order it was the same
+	-- opening track on every single flight, which is a season of eleven
+	-- behaving like a season of three.
 	R:Reset()
-	cfg.progress = {}
+	cfg.progress, cfg.playCount = {}, nil
+	R:Register(pack("Tunes", 1, {
+		item("one", "music", 3), item("two", "music", 3), item("three", "music", 3),
+	}))
+
+	queue = C:Programme(360)
+	check(queue[1].id == "one" and queue[2].id == "two",
+		"with nothing heard yet the pack's own order stands")
+
+	C:Remember("Tunes:one", 1, true)
+	C:Remember("Tunes:two", 1, true)
+	queue = C:Programme(360)
+	check(queue[1].id == "three", "the one never heard leads the next flight ("
+		.. tostring(queue[1].id) .. ")")
+	check(queue[2].id == "one", "then the one heard longest ago ("
+		.. tostring(queue[2].id) .. ")")
+
+	-- A COUNTER, NOT JUST A DATE. Everything heard on one afternoon carries the
+	-- same date, and that is exactly the tie the rotation has to break.
+	check((C:Progress("Tunes:two").seq or 0) > (C:Progress("Tunes:one").seq or 0),
+		"and the order within a single day is still known")
+
+	-- THE DEV PACK SITS AT SEASON ZERO, and between two never-heard tracks it is
+	-- the newest season first - so once there is real content the filler is real
+	-- content, and the test season is what you get after it has run out.
+	R:Reset()
+	cfg.progress, cfg.playCount = {}, nil
+	R:Register(pack("Dev", 0, { item("test_bed", "music", 3) }))
+	R:Register(pack("Season", 1, { item("real_song", "music", 3) }))
+	queue = C:Programme(360)
+	check(queue[1].id == "real_song", "a real season is reached for before the dev pack ("
+		.. tostring(queue[1].id) .. ")")
+	check(queue[2].id == "test_bed", "which still fills when the real one has run out")
+
+	-- AMBIENT SHUFFLE IS MUSIC, not everything over again. It is the complete
+	-- state's one-press default, and its job is to fill the rest of the flight
+	-- rather than to start an episode nobody asked for.
+	R:Reset()
+	cfg.progress, cfg.playCount = {}, nil
+	R:Register(pack("Mixed", 1, {
+		item("talk", "podcast", 3), item("tune", "music", 3),
+	}))
+	local shuffle = C:MusicQueue()
+	check(#shuffle == 1 and shuffle[1].id == "tune",
+		"the ambient shuffle is music only (" .. #shuffle .. " item(s))")
+	check(#C:Everything() == 2,
+		"though the whole catalogue is still reachable (" .. #C:Everything() .. ")")
+
+	-- ONE MORE, OR NOTHING. What the transport asks for when the queue runs out.
+	check((C:NextAfter({}) or {}).id ~= nil, "with nothing queued there is a next thing")
+	check(C:NextAfter(C:Everything()) == nil, "and with all of it queued there is not")
+
+	R:Reset()
+	cfg.progress, cfg.playCount = {}, nil
 	_G.__today = "20260815"
 end)
 
@@ -21783,10 +21947,120 @@ section("ifec: playing a programme across a flight", function()
 	tick(60)
 	check(_G.__lastSound == "e01_1.ogg", "with its timer gone nothing follows on")
 	tick(3)
-	check(P:Poll(), "but the boundary is seen to be overdue")
+	-- RECOVERED BY WHOEVER OWNS THE POLL, which is the fact worth checking now
+	-- that there are two surfaces: on the ground it is the mini-player's own
+	-- tick, in flight it is the console's region, and Poll refuses to fire twice
+	-- for one segment precisely so the two cannot both take it. Asserting Poll
+	-- answers true HERE meant asserting nobody else had already done the job.
 	check(_G.__lastSound == "e01_2.ogg",
-		"and the programme carries on (" .. tostring(_G.__lastSound) .. ")")
+		"but the lost boundary is picked up anyway ("
+		.. tostring(_G.__lastSound) .. ")")
 	check(not P:Poll(), "and it does not fire twice for the same boundary")
+
+	-- A CHUNKED TRACK, which is the only way to get a pause out of this client.
+	-- A handle supports exactly one verb - stop - and stopping is destructive,
+	-- so pause is synthesised from the chaining the console already does for
+	-- chaptered episodes: cut the audio into three-second pieces and stop-and-
+	-- remember costs at most one piece.
+	R:Reset()
+	cfg.progress = {}
+	local chunks = {}
+	for i = 1, 8 do
+		chunks[i] = { file = "chunk_" .. i .. ".ogg", duration = 3 }
+	end
+	R:Register({ packId = "S02", apiVersion = 1, seasonIndex = 2, items = {
+		{ id = "cut", type = "music", title = "Chunked", totalDuration = 24,
+		  overlap = 0.25, segments = chunks },
+	} })
+	local cut = R:Catalogue()[1]
+
+	P:Stop()
+	P:Start({ cut })
+	tick(3) tick(3)
+	check(_G.__lastSound == "chunk_3.ogg",
+		"the pieces chain like any other segments (" .. tostring(_G.__lastSound) .. ")")
+	check(math.abs(P:Elapsed() - 6) < 0.2,
+		"and the clock reads the whole track, not the piece ("
+		.. string.format("%.1f", P:Elapsed()) .. ")")
+
+	-- THE OUTGOING PIECE IS LEFT TO RUN OUT. Stopping it to start the next one
+	-- is a hard cut mid-sample, which is the loudest kind of step there is and
+	-- was half the click. Its tail carries a fade of its own and the incoming
+	-- piece fades up through it, so for a quarter of a second there are two.
+	check(_G.__soundsPlaying() == 2,
+		"a crossfaded boundary leaves the outgoing piece playing under the"
+		.. " incoming one (" .. _G.__soundsPlaying() .. ")")
+
+	-- BOUNDED AT TWO. An hour of three-second pieces must not accumulate twelve
+	-- hundred handles nobody ever silenced.
+	tick(3) tick(3) tick(3)
+	check(_G.__soundsPlaying() == 2,
+		"and never more than two, however many boundaries go by ("
+		.. _G.__soundsPlaying() .. ")")
+
+	-- AND EVERYTHING THAT MEANS SILENCE REACHES BOTH. A single handle field
+	-- would have leaked the one it had just overwritten.
+	check(P:Pause(), "pausing")
+	check(_G.__soundsPlaying() == 0,
+		"silences both of them (" .. _G.__soundsPlaying() .. ")")
+	check(P:Resume(), "and it resumes")
+	check(_G.__soundsPlaying() == 1, "on one piece again")
+
+	-- PAUSE COSTS AT MOST ONE PIECE. Resume restarts the piece it stopped in,
+	-- because there is no seek - which is exactly why the pieces are short.
+	local was = _G.__lastSound
+	tick(1)
+	check(P:Pause(), "it pauses")
+	check(_G.__soundsPlaying() == 0, "with the channel silent")
+	check(P:Resume(), "and resumes")
+	check(_G.__lastSound == was,
+		"from the piece it stopped in, losing a second of it at worst ("
+		.. tostring(_G.__lastSound) .. ")")
+
+	-- AND A SONG STILL STARTS FROM THE TOP. Sixty pieces instead of one means a
+	-- stop halfway writes a real position, and without this a track would pick
+	-- up two minutes in because that is where you landed last week - and would
+	-- be dragged to the front of every programme until somebody finished it.
+	P:Stop()
+	check((C:Progress("S02:cut") or {}).segment > 0, "stopping writes where it got to")
+	P:Start({ cut })
+	check(_G.__lastSound == "chunk_1.ogg",
+		"but a song starts again from the beginning ("
+		.. tostring(_G.__lastSound) .. ")")
+
+	-- AND IT IS NOT DRAGGED TO THE FRONT of the next programme either. The
+	-- resume list exists so a half-finished EPISODE greets you; a song stopped
+	-- at the two-minute mark qualifying for it means that song leads every
+	-- flight until somebody sits through the end of it.
+	R:Register({ packId = "S03", apiVersion = 1, seasonIndex = 3, items = {
+		ep("fresh", "Something Unplayed", 2),
+	} })
+	-- Stopped part way IN, so there is a real position written down. Stopping on
+	-- the first piece records nothing to be dragged forward by.
+	tick(3) tick(3)
+	P:Stop()
+	local queue2 = C:Programme(600)
+	check(queue2[1] and queue2[1].key == "S03:fresh",
+		"an unplayed episode still leads (" .. tostring(queue2[1] and queue2[1].key) .. ")")
+	check(C:Progress("S02:cut") ~= nil and (C:Progress("S02:cut").segment or 0) > 0,
+		"with the part-played song still recorded as part-played")
+	for i, q in ipairs(queue2) do
+		if q.key == "S02:cut" then
+			check(i > 1, "and sitting where the filler goes, not at the front (" .. i .. ")")
+		end
+	end
+
+	P:Stop()
+	R:Reset()
+	cfg.progress = {}
+	R:Register({ packId = "S00", apiVersion = 1, seasonIndex = 0, items = {
+		ep("e01", "Episode One", 3),
+		ep("e02", "Episode Two", 2),
+		{ id = "amb", type = "music", title = "Ambient", totalDuration = 60,
+		  segments = { { file = "amb.ogg", duration = 60 } } },
+	} })
+	cat = R:Catalogue()
+	queue = { cat[1], cat[2], cat[3] }
 
 	-- MUTED IS NOT SILENCE. willPlay comes back nil when the channel is off,
 	-- and the difference between saying so and playing nothing is the
@@ -21803,7 +22077,7 @@ section("ifec: playing a programme across a flight", function()
 	R:Reset()
 	R:Register({ packId = "S01", apiVersion = 1, seasonIndex = 1, items = {
 		{ id = "news", type = "gossip", masthead = "ogler", title = "Spotted",
-		  body = "Something happened." },
+		  pages = { "mag\\page-01", "mag\\page-02" } },
 		ep("e09", "After The News", 1),
 	} })
 	local c2 = R:Catalogue()
@@ -21822,19 +22096,115 @@ section("ifec: playing a programme across a flight", function()
 	for _, e in ipairs(heard) do if e == "exhausted" then sawExhausted = true end end
 	check(sawExhausted, "running out of programme is announced, not just silence")
 
-	-- AND THE GAME GETS ITS MUSIC BACK. A silenced game is the worst thing this
-	-- could leave behind: nothing on screen would say why. Put back on landing,
-	-- and again on any world load that finds us holding it with nothing playing.
+	-- AND THE CHANNEL GOES QUIET WITH IT. Running off the end left the last
+	-- track sounding while the state said exhausted, the clock read zero and the
+	-- button showed play - a console insisting nothing was playing over the
+	-- sound of something playing. Skipping past the last item was the fast way
+	-- to see it and is how it was found.
+	P:Stop()
+	P:Start({ c2[2] })
+	check(_G.__soundsPlaying() == 1, "an item is playing")
+	P:Next()
+	check(P.state == "exhausted", "skipping past the last item ends the programme")
+	check(_G.__soundsPlaying() == 0,
+		"and silences the channel rather than leaving it running ("
+		.. _G.__soundsPlaying() .. " still going)")
+	check(P.item == nil, "with nothing left to call the current item")
+
+	-- A PROGRAMME COVERS THE FLIGHT, it is not everything there is: a short hop
+	-- is filled by ONE track, so "next" had nowhere to go on most flights and
+	-- ended the programme instead. Whoever built the queue is asked for more.
+	P:Stop()
+	local asked = 0
+	P.refill = function()
+		asked = asked + 1
+		return asked == 1 and c2[2] or nil
+	end
+	P:Start({ c2[2] })
+	P:Next()
+	check(asked == 1, "the end of the queue asks for one more")
+	check(P.state == "playing", "and plays it rather than ending (" .. P.state .. ")")
+	P:Next()
+	check(P.state == "exhausted", "and ends once there is genuinely nothing left")
+	P.refill = nil
+
+	-- EVERY OTHER STATE STILL HAS A PLAY BUTTON. Toggle handled two of the five
+	-- and did nothing at all in the rest, so the transport went dead the moment
+	-- anything went wrong - a file that would not play, a skip off the end, the
+	-- client killing the sound while the window was in the background.
+	check(P:Toggle(), "play restarts a programme that has run out")
+	check(P.state == "playing", "which is playing again (" .. P.state .. ")")
+	check(P:Toggle() and P.state == "paused", "and pauses from there as usual")
+	check(P:Toggle() and P.state == "playing", "and back")
+
+	-- AND THE GAME GETS ITS SOUND SETTINGS BACK. A silenced game is the worst
+	-- thing this could leave behind: nothing on screen would say why. Put back
+	-- on landing, and again on any world load that finds us holding them.
 	P:Stop()
 	check(_G.__cvars.Sound_EnableMusic == "1", "and the game's music comes back")
+
+	-- THE BACKGROUND SETTING IS HELD TOO. Without it the client kills every
+	-- sounding handle when the window loses focus and starts none of them again,
+	-- and there is no focus event to recover from - so an alt-tab mid-flight
+	-- came back to a programme that was silent with the clock still counting.
+	_G.__cvars.Sound_EnableSoundWhenGameIsInBG = "0"
+	P:Start({ c2[2] })
+	check(_G.__cvars.Sound_EnableSoundWhenGameIsInBG == "1",
+		"sound in the background is held on for the flight")
+	P:Stop()
+	check(_G.__cvars.Sound_EnableSoundWhenGameIsInBG == "0",
+		"and handed back exactly as it was, not left on")
+	check(_G.__badCVarWrites == 0,
+		"and every name written is one the client has (" .. _G.__badCVarWrites .. " bad)")
 
 	P:Start({ c2[2] })
 	P.state = "stopped"                        -- a flight that ended unseen
 	check(P:Recover(), "a setting still held with nothing playing is recoverable")
 	check(_G.__cvars.Sound_EnableMusic == "1", "and recovering hands it back")
 
+	-- A RELOAD IS NOT A STOP. Reloading throws away every Lua table in the addon
+	-- - the sound handle with them - and does NOT touch the client's sound
+	-- engine, so the track carried straight on with nothing left alive that knew
+	-- how to stop it, and the next thing played played OVER it.
+	P:Stop()
+	_G.__cvars.Sound_EnableMusic = "1"
+	P:Start({ c2[2] })
+	check(_G.__soundsPlaying() == 1, "something is playing when the reload comes")
+	fire("PLAYER_LOGOUT")
+	check(_G.__soundsPlaying() == 0,
+		"logging out or reloading silences it (" .. _G.__soundsPlaying() .. " left)")
+	check(_G.__cvars.Sound_EnableMusic == "1",
+		"and hands the sound settings back on the way past")
+	check(cfg.held == nil or cfg.held.Sound_EnableMusic == nil,
+		"with nothing left written down, so the next login has nothing to undo")
+
+	-- A CLIENT THAT DIED ON THE GRIFFIN. What is held is written to the save
+	-- file, so the next login can undo it - `_took` was a field on a live table,
+	-- which made the one case this most needed to cover the one case it did
+	-- nothing for: the game stayed silent, permanently, with nothing saying why.
+	P:Stop()
+	P:Start({ c2[2] })
+	check(cfg.held and cfg.held.Sound_EnableMusic == "1",
+		"what was taken is written down, not only remembered")
+	P.state, P._took = "stopped", nil          -- the session that never came back
+	_G.__cvars.Sound_EnableMusic = "0"
+	check(_G.__soundsPlaying() == 1, "with its audio still going and nothing"
+		.. " left alive that knows the handle")
+	check(P:Recover(), "a fresh session still finds the settings it is holding")
+	check(_G.__cvars.Sound_EnableMusic == "1", "and puts them back")
+
+	-- AND CLEARS THE GHOST. The handle died with the session, so the channel
+	-- enable is the only lever left: off stops what is on it, and it goes
+	-- straight back on. Best effort, and only on the path that already knows
+	-- something was left behind.
+	check(_G.__soundsPlaying() == 0, "and silences what the last session left"
+		.. " playing (" .. _G.__soundsPlaying() .. " left)")
+	check(_G.__cvars.Sound_EnableAmbience == "1",
+		"with the channel handed straight back on")
+
 	P:Stop()
 	cfg.progress = {}
+	cfg.held = nil
 	R:Reset()
 end)
 
@@ -21903,8 +22273,11 @@ section("ifec: the player region, on the flight's own axis", function()
 
 	check(f.now.title:GetText() == "Episode One",
 		"the now-playing row names what is playing (" .. tostring(f.now.title:GetText()) .. ")")
-	check(f.now.meta:GetText():find("then Episode Two", 1, true) ~= nil,
-		"and what follows it (" .. tostring(f.now.meta:GetText()) .. ")")
+	-- AND NOT WHAT FOLLOWS IT. That is UP NEXT's job, four rows down, with a
+	-- duration and a channel mark this line has no room for - and saying it here
+	-- as well ran the row under the landing label on any real route.
+	check(f.now.meta:GetText():find("then", 1, true) == nil,
+		"and does not also name what follows (" .. tostring(f.now.meta:GetText()) .. ")")
 
 	-- UP NEXT is what is COMING, so it starts after the thing playing rather
 	-- than including it.
@@ -22008,11 +22381,845 @@ section("ifec: the player region, on the flight's own axis", function()
 	check(not IF:HasRegion(), "landing takes the region away")
 	check(_G.__soundsPlaying() == 0, "and stops the audio")
 
+	-- SKIPPING HAS SOMEWHERE TO GO. A programme is filled until it COVERS the
+	-- flight, which on a short hop is a single item - so "next" ran off the end
+	-- of a one-item queue and ended the programme, which is a skip button that
+	-- stops the music. It asks for more instead.
+	R:Reset()
+	cfg.progress = {}
+	R:Register({ packId = "S00", apiVersion = 1, seasonIndex = 0, items = {
+		{ id = "long", type = "music", title = "The Long One", totalDuration = 600,
+		  segments = { { file = "long.ogg", duration = 600 } } },
+		{ id = "other", type = "music", title = "The Other One", totalDuration = 600,
+		  segments = { { file = "other.ogg", duration = 600 } } },
+	} })
+
+	fly()
+	check(#(PL.queue or {}) == 1, "one long track covers this flight on its own ("
+		.. #(PL.queue or {}) .. " queued)")
+
+	-- WHAT AN ITEM ACTUALLY GOT. Skip twenty seconds in and the track occupied
+	-- twenty seconds, not the ten minutes it was going to - and this bar is a
+	-- timeline, so drawn at full length everything after it sat in the wrong
+	-- place and the headline announced a queue filling 6:30 of a 4:09 flight.
+	tick(20)
+	local before = f.fills:GetText()
+	f.transport.next:GetScript("OnClick")(f.transport.next)
+	check(P:Spent(1, PL.queue[1]) < 60, "a skipped item is measured by what it played ("
+		.. string.format("%.0f", P:Spent(1, PL.queue[1])) .. "s of 600s)")
+	check(f.fills:GetText() ~= before, "so the headline moves when you skip ("
+		.. tostring(before) .. " -> " .. tostring(f.fills:GetText()) .. ")")
+
+	check(#(PL.queue or {}) == 2, "skipping past it pulls another out of the season")
+
+	-- MEASURED ON THE PIECES, which is what actually drew wrong. Both items are
+	-- ten minutes long, so at full length they are the same width; the one that
+	-- got twenty seconds has to be a sliver beside the one that is playing.
+	local w1 = f.programme.parts[1]:GetWidth() or 0
+	local w2 = f.programme.parts[2]:GetWidth() or 0
+	check(w1 < w2 / 4, "and the skipped item is drawn at what it played, not what"
+		.. " it was going to (" .. string.format("%.0f", w1) .. " vs "
+		.. string.format("%.0f", w2) .. ")")
+	check(P.state == "playing" and _G.__lastSound == "other.ogg",
+		"and plays it (" .. P.state .. ", " .. tostring(_G.__lastSound) .. ")")
+	check(not PL.complete, "so the programme has not ended")
+
+	-- AND WHEN THERE GENUINELY IS NOTHING LEFT, the complete state - which was
+	-- built, and then never shown by anything. A programme that ran out left the
+	-- last item's row on screen still counting down a track that had stopped.
+	local tall = f:GetHeight()
+	f.transport.next:GetScript("OnClick")(f.transport.next)
+	check(PL.complete, "running out for real ends the programme")
+	check(f.done:IsShown(), "the complete line is shown")
+	check(f.chips[1]:IsShown() and f.chips[1].label:GetText() == "Ambient shuffle",
+		"with the default action first ("
+		.. tostring(f.chips[1].label:GetText()) .. ")")
+	check(f.chips[1].__aetherSelected and not f.chips[3].__aetherSelected,
+		"drawn filled, the way a selected tab is, and only that one")
+	check(f.chips[2].label:GetText():find("Replay", 1, true) ~= nil,
+		"replay names what it would replay (" .. tostring(f.chips[2].label:GetText()) .. ")")
+	check(not f.now:IsShown() and not f.transport:IsShown(),
+		"and everything belonging to a running programme is put away")
+	check(not f.rows[1]:IsShown(), "up next included")
+
+	-- A DIFFERENT HEIGHT, so the console has to be told rather than only
+	-- repainted: one line and three chips floating in a panel four times too
+	-- tall is what painting alone gave.
+	check(f:GetHeight() < tall, "the region shrinks to fit it ("
+		.. f:GetHeight() .. " from " .. tall .. ")")
+
+	-- THE DEFAULT ACTION, ONE PRESS. Never dump the player into dead silence
+	-- over the Barrens is the design's phrase for the whole state.
+	f.chips[1]:GetScript("OnClick")(f.chips[1])
+	check(not PL.complete, "the ambient shuffle starts the music again")
+	check(P.state == "playing", "and it is playing (" .. P.state .. ")")
+	check(f.now:IsShown() and f.done:IsShown() == false,
+		"with the running programme back and the complete line gone")
+	check(f:GetHeight() > tall - 1, "and the region grown back to fit it")
+
+	land()
+
+	-- A SKIP SHORTENS THE PROGRAMME as well as advancing it: the track that was
+	-- going to fill the journey filled twenty seconds, and what covered the
+	-- flight now stops short of it. Left alone, one skip emptied UP NEXT and the
+	-- console showed a heading with nothing under it while a track was playing.
+	R:Reset()
+	cfg.progress = {}
+	local many = {}
+	for i = 1, 5 do
+		many[i] = { id = "t" .. i, type = "music", title = "Track " .. i,
+			totalDuration = 60, segments = { { file = "t" .. i .. ".ogg", duration = 60 } } }
+	end
+	R:Register({ packId = "S00", apiVersion = 1, seasonIndex = 0, items = many })
+
+	fly()
+	-- A LONG FLIGHT, STATED rather than inferred. The estimate comes from route
+	-- data and from what earlier flights actually took, so a check that depends
+	-- on it silently changes meaning when either of those does.
+	Taxi.flight.expected = 200
+	PL:TopUp()
+	PL:Paint()
+
+	local covered = #(PL.queue or {})
+	check(covered >= 3, "a programme of short tracks is filled to cover the flight ("
+		.. covered .. " queued)")
+	check(f.upNextLabel:IsShown() and f.rows[1]:IsShown(), "so there is an up next")
+
+	tick(5)
+	f.transport.next:GetScript("OnClick")(f.transport.next)
+	check(#(PL.queue or {}) > covered,
+		"skipping tops the queue back up to covering the flight ("
+		.. #(PL.queue or {}) .. " from " .. covered .. ")")
+	check(f.rows[1]:IsShown(), "so up next still has something in it")
+	check(f.rows[1].title:GetText() ~= (Playback and Playback.item or {}).title,
+		"and it is not the thing that is playing")
+
+	-- A HEADING WITH NOTHING UNDER IT reads as a list that failed to load.
+	local was = PL.queue
+	PL.queue = { was[PL.at] }
+	PL.at = 1
+	PL:Paint()
+	check(not f.upNextLabel:IsShown(),
+		"with genuinely nothing next, the heading goes too")
+	PL.queue = was
+
+	land()
+
+	-- THE LIBRARY. A slide-out on the side of the console, because there are
+	-- three kinds of content and the transport can only say "not this one".
+	R:Reset()
+	cfg.progress = {}
+	R:Register({ packId = "S01", apiVersion = 1, seasonIndex = 1, displayName = "Season One",
+		items = {
+			{ id = "m1", type = "music", title = "Big Drum Deep Water",
+			  artist = "The Mudfoot Kings", totalDuration = 60,
+			  segments = { { file = "m1.ogg", duration = 60 } } },
+			{ id = "m2", type = "music", title = "Blood and Thunder",
+			  totalDuration = 60, segments = { { file = "m2.ogg", duration = 60 } } },
+			{ id = "p1", type = "podcast", title = "The Gadgeteer",
+			  totalDuration = 60, segments = { { file = "p1.ogg", duration = 60 } } },
+		} })
+
+	fly()
+	local LB = A.IFEC.Library
+	check(LB ~= nil, "the library loaded")
+	check(IF.frame.library:IsShown(), "and the console carries the control that opens it")
+	check(not LB:IsOpen(), "shut to begin with")
+
+	IF.frame.library:GetScript("OnClick")(IF.frame.library)
+	check(LB:IsOpen(), "the control opens it")
+	local lib = LB.frame
+
+	-- A CHILD OF THE CONSOLE, not a window of its own. The interface is at zero
+	-- alpha for the whole flight, so anything under UIParent is drawn at
+	-- nothing - and anything merely anchored to the console would have to be
+	-- moved, scaled and hidden alongside it forever.
+	check(lib:GetParent() == IF.frame, "as a child of the console, not a window")
+
+	-- EVERYTHING IN SEASON, under its season.
+	local listed, heads = 0, 0
+	for _, row in ipairs(lib.rows) do if row:IsShown() then listed = listed + 1 end end
+	for _, h in ipairs(lib.headings) do if h:IsShown() then heads = heads + 1 end end
+	check(listed == 3, "every item in season is listed (" .. listed .. " of 3)")
+	check(heads == 1, "under one heading for the pack it came from (" .. heads .. ")")
+	check(lib.headings[1].text:GetText() == "SEASON ONE",
+		"named after the pack (" .. tostring(lib.headings[1].text:GetText()) .. ")")
+
+	-- The artist belongs to the title here: there is no second line, and the
+	-- title alone is half a name.
+	local sawArtist = false
+	for _, row in ipairs(lib.rows) do
+		if row:IsShown() and row.title:GetText():find("Mudfoot", 1, true) then
+			sawArtist = true
+		end
+	end
+	check(sawArtist, "with the artist beside the title")
+
+	-- CLICKING QUEUES IT, and says so.
+	local target
+	for _, row in ipairs(lib.rows) do
+		if row:IsShown() and not row.__aetherSelected then target = row break end
+	end
+	check(target ~= nil, "something in the list is not already queued")
+	local wasLen = #PL.queue
+	target:GetScript("OnClick")(target)
+	check(#PL.queue == wasLen + 1, "clicking it adds it to the programme ("
+		.. #PL.queue .. " from " .. wasLen .. ")")
+	check(target.__aetherSelected, "and the row is drawn as the selected thing it now is")
+	check(target.meta:GetText() == "queued", "saying so in words ("
+		.. tostring(target.meta:GetText()) .. ")")
+	check(P.picked[target.item.key], "recorded as the player's own pick")
+	-- KEYED ON OUR OWN SET, never written onto the item: the registry hands the
+	-- same table to everybody, so a flag set here outlives the flight.
+	check(target.item.picked == nil, "and nothing is written onto the registry's item")
+
+	-- AND CLICKING AGAIN TAKES IT BACK OUT.
+	target:GetScript("OnClick")(target)
+	check(#PL.queue == wasLen, "clicking again removes it (" .. #PL.queue .. ")")
+	check(not P.picked[target.item.key], "and it is no longer a pick")
+
+	-- NO ROW IS EVER DEAD. A click means "take it out" on something still to
+	-- come and "again" on everything else - what is playing, and what has been
+	-- played or skipped past. The queue keeps its history so the programme bar
+	-- can draw a timeline, which is what left a skipped track drawn filled and
+	-- refusing to be clicked: a toggle stuck on with no way to clear it.
+	local playing
+	for _, row in ipairs(lib.rows) do
+		if row:IsShown() and row.meta:GetText() == "playing" then playing = row end
+	end
+	check(playing ~= nil, "the row that is playing says so")
+	local held = #P.queue
+	playing:GetScript("OnClick")(playing)
+	check(#P.queue == held + 1, "and clicking it queues it again rather than"
+		.. " doing nothing (" .. #P.queue .. " from " .. held .. ")")
+	check(P.queue[#P.queue].key == playing.item.key, "at the end, not over the top"
+		.. " of what is sounding")
+	playing:GetScript("OnClick")(playing)
+	check(#P.queue == held, "and clicking once more takes that repeat back out")
+
+	-- A SKIPPED TRACK IS CLICKABLE AGAIN, which is the bug this rule exists for.
+	local first = P.queue[1]
+	P:Next()
+	LB:Paint()
+	local skipped
+	for _, row in ipairs(lib.rows) do
+		if row:IsShown() and row.item.key == first.key then skipped = row end
+	end
+	check(skipped ~= nil, "the skipped track is still in the list")
+	check(not skipped.__aetherSelected,
+		"no longer drawn as something coming up, because it is not")
+	local before = #P.queue
+	skipped:GetScript("OnClick")(skipped)
+	check(#P.queue == before + 1, "and clicking it queues it again ("
+		.. #P.queue .. " from " .. before .. ")")
+	skipped:GetScript("OnClick")(skipped)
+	check(#P.queue == before, "and again to take it back out")
+
+	-- THE FILTERS say only what is true: three channels are declared and two are
+	-- installed, so gossip has no tab.
+	check(lib.tabs[1]:IsShown() and lib.tabs[2]:IsShown() and lib.tabs[3]:IsShown(),
+		"a season of two channels gets All and one tab each")
+	check(not lib.tabs[4]:IsShown(), "and no tab for the channel nobody shipped")
+
+	lib.tabs[3]:GetScript("OnClick")(lib.tabs[3])       -- music
+	local musicOnly = 0
+	for _, row in ipairs(lib.rows) do
+		if row:IsShown() then musicOnly = musicOnly + 1 end
+	end
+	check(musicOnly == 2, "filtering to one channel shows only that one ("
+		.. musicOnly .. " of 2)")
+	check(lib.tabs[3].__aetherSelected, "with its tab filled, the way a selected tab is")
+	lib.tabs[1]:GetScript("OnClick")(lib.tabs[1])       -- back to all
+
+	-- IT GOES WITH THE FLIGHT. A drawer left open over the world after landing
+	-- is a window nothing on screen explains.
+	land()
+	check(not LB:IsOpen(), "landing shuts the drawer")
+
 	Taxi:Stop()
 	IF:HideInterface(false)
 	R:Reset()
 	cfg.progress = {}
 	A:SetModuleEnabled("zen", zenWas)
+end)
+
+section("nifec: the mini-player, on the ground", function()
+	local R, C, P = A.IFEC.Registry, A.IFEC.Content, A.IFEC.Playback
+	local M, LB   = A.IFEC.Mini, A.IFEC.Library
+	local TBm     = A:GetModule("toolbox")
+	local IF      = A:GetModule("ifec")
+	check(M ~= nil, "the mini-player loaded")
+
+	local cfg = A.Config:Module("ifec")
+	cfg.progress = {}
+	R:Reset()
+	P:Stop()
+	_G.__musicMuted = false
+
+	UIParent:SetSize(1365, 768)
+	A.db.profile.scale = 0.71
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+
+	-- DORMANT IS ABSENT, not empty - the same answer the console gives, because
+	-- it is the same question. A NOW PLAYING heading over a player with nothing
+	-- to play is a section you go looking for and find broken.
+	TBm:LayoutContent()
+	check(not TBm:HasPlayer(), "with no content installed there is no player")
+	check(not TBm.rail.play:IsShown(), "and no transport on the rail")
+	check(not (TBm.content.now and TBm.content.now:IsShown()),
+		"and no section at the foot of the drawer")
+
+	local season = { packId = "S01", apiVersion = 1, seasonIndex = 1,
+		displayName = "Season One", items = {
+			{ id = "m1", type = "music", title = "Big Drum Deep Water",
+			  artist = "The Mudfoot Kings", totalDuration = 60,
+			  segments = { { file = "m1.ogg", duration = 60 } } },
+			{ id = "m2", type = "music", title = "Blood and Thunder",
+			  totalDuration = 60, segments = { { file = "m2.ogg", duration = 60 } } },
+			{ id = "p1", type = "podcast", title = "The Gadgeteer",
+			  totalDuration = 60, segments = { { file = "p1.ogg", duration = 60 } } },
+			{ id = "g1", type = "gossip", masthead = "ogler",
+			  title = "The Orgrimmar Ogler - Issue 37",
+			  pages = { "ogler_037\\page-01", "ogler_037\\page-02",
+			            "ogler_037\\page-03" } },
+		} }
+	R:Register(season)
+
+	TBm:Layout()
+	TBm:LayoutContent()
+	check(TBm:HasPlayer(), "installing a season gives the Toolbox a player")
+	check(TBm.rail.play:IsShown(), "with a transport on the rail, reachable"
+		.. " with the drawer shut")
+	local mini = TBm.content.now
+	check(mini ~= nil and mini:IsShown(), "and a section at the foot of the drawer")
+
+	-- IT FITS. The drawer cuts its lists to fit rather than growing, and a new
+	-- fixed-cost section at the bottom is exactly the thing that pushes them
+	-- through the floor - which is the one failure this file keeps having.
+	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
+		"and the whole drawer still fits inside the panel ("
+		.. string.format("%.0f", TBm._contentHeight) .. " of "
+		.. string.format("%.0f", TBm.panel:GetHeight()) .. ")")
+
+	-- AND IT FITS AT EVERY SCALE AND EVERY DOCK. The vertical panel clamps to a
+	-- proportion of the screen, so at scale 1.0 it is a third shorter than at
+	-- the design's 0.71 - and a fixed-cost section added at the bottom is
+	-- exactly what pushes the lists that give way through the floor. The flat
+	-- panel is the other shape: a sixth column, on a drawer whose short axis is
+	-- the one the section has to fit in.
+	for _, sc in ipairs({ 0.71, 1 }) do
+		for _, edge in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
+			A.db.profile.scale = sc
+			TBm:SetDock(edge)
+			TBm:SetOpen(true, true)
+			TBm:RefreshWidgets(); TBm:RefreshTiles()
+			TBm:RefreshAddons(); TBm:RefreshMicro()
+			check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
+				("at scale %s docked %s the drawer with a player still fits (%.0f of %.0f)")
+				:format(sc, edge, TBm._contentHeight, TBm.panel:GetHeight()))
+		end
+	end
+	A.db.profile.scale = 0.71
+	TBm:SetDock("LEFT")
+	TBm:SetOpen(true, true)
+	TBm:LayoutContent()
+	mini = TBm.content.now
+
+	-- SILENCE HAS SOMETHING TO SAY. A blank line where a title goes reads as a
+	-- player that failed rather than one that is waiting to be told.
+	M:Paint()
+	check(mini.title:GetText() == "Nothing playing",
+		"with nothing playing it says so (" .. tostring(mini.title:GetText()) .. ")")
+	check(mini.meta:GetText():find("play", 1, true) ~= nil,
+		"and what pressing play will do (" .. tostring(mini.meta:GetText()) .. ")")
+
+	-- PLAY MEANS PLAY FROM A STANDING START. On the ground there is no
+	-- programme yet, and a play button that does nothing on the first press is
+	-- a broken one.
+	mini.toggle:GetScript("OnClick")(mini.toggle)
+	check(P:IsPlaying(), "pressing play with nothing queued starts the music")
+	check(#(P.queue or {}) > 0 and P.item ~= nil, "off a queue it built itself")
+
+	-- THE AMBIENT SHUFFLE IS MUSIC. Pressing play should not start an episode
+	-- nobody asked for.
+	local anyTalk = false
+	for _, q in ipairs(P.queue) do if q.type ~= "music" then anyTalk = true end end
+	check(not anyTalk, "and it is music, not whatever came first in the season")
+
+	M:Paint()
+	check(mini.title:GetText() == P.item.title,
+		"the region names what is playing (" .. tostring(mini.title:GetText()) .. ")")
+	if P.item.artist then
+		check(mini.meta:GetText():find(P.item.artist, 1, true) ~= nil,
+			"with the artist on it (" .. tostring(mini.meta:GetText()) .. ")")
+	end
+
+	-- THE RAIL CHIP IS THE SAME TRANSPORT, and the only thing on screen saying
+	-- anything is playing at all with the drawer shut.
+	TBm.rail.play:GetScript("OnClick")(TBm.rail.play)
+	check(P.state == "paused", "the rail chip pauses it (" .. P.state .. ")")
+	TBm.rail.play:GetScript("OnClick")(TBm.rail.play)
+	check(P.state == "playing", "and starts it again")
+
+	-- THE RAIL, IN ORDER. The two settled controls sit at the far end together:
+	-- the way to the options, and the way to stop the music.
+	do
+		-- CHECKED ON THE ANCHORS, which is what the layout actually decides. The
+		-- chain has to be built from what is SHOWING: anchored to a hidden frame
+		-- the envelope keeps the geometry that frame would have had, so a season
+		-- nobody installed leaves an icon's worth of hole in the rail.
+		local _, playRel = TBm.rail.play:GetPoint()
+		local _, mailRel = TBm.rail.mail:GetPoint()
+		check(playRel == TBm.rail.gear,
+			"the transport sits immediately above the gear")
+		check(mailRel == TBm.rail.play, "with the envelope above it")
+
+		R:Reset()
+		TBm:Layout()
+		local _, bare = TBm.rail.mail:GetPoint()
+		check(not TBm.rail.play:IsShown() and bare == TBm.rail.gear,
+			"and with no content the envelope closes the gap rather than"
+			.. " anchoring to a chip that is not there")
+		R:Register(season)
+		TBm:Layout()
+		TBm:LayoutContent()
+	end
+
+	-- GOSSIP IS READ, NOT PLAYED. It has no audio and no duration, so it has no
+	-- place in a running order - it used to be queued and stepped straight past,
+	-- which put a bulletin in UP NEXT as something about to happen.
+	do
+		local full = C:Everything()
+		local sawGossip = false
+		for _, q in ipairs(full) do if q.type == "gossip" then sawGossip = true end end
+		check(not sawGossip, "no programme ever contains a bulletin")
+		check(P:Pick({ key = "S01:g1", type = "gossip" }) == nil,
+			"and it cannot be picked into one")
+	end
+
+	-- ONE LIBRARY, TWO HOSTS. It hangs off whatever opened it, or it is drawn at
+	-- zero alpha in flight and off the bottom of the screen on the ground.
+	mini.library:GetScript("OnClick")(mini.library)
+	check(LB:IsOpen(), "the mini-player opens the library")
+	check(LB.frame:GetParent() == mini,
+		"hung off the mini-player, not off the console")
+
+	-- Clicking a row queues into the SAME programme the console would use.
+	local row
+	for _, r in ipairs(LB.frame.rows) do
+		if r:IsShown() and not r.__aetherSelected then row = r break end
+	end
+	check(row ~= nil, "the list has something not already queued")
+	local was = #P.queue
+	row:GetScript("OnClick")(row)
+	check(#P.queue == was + 1, "and clicking it queues into the running programme")
+
+	-- AND THE TOOLTIP COMES UP IN FRONT. It is a shared object anything can
+	-- reparent and this addon does exactly that - the console moves it out of
+	-- UIParent for a flight so it can be read over a hidden interface. Left
+	-- somewhere else it draws under the chat log, which is where it was found.
+	do
+		local chip = TBm.rail.play
+		GameTooltip:Hide()
+		GameTooltip:SetFrameStrata("BACKGROUND")     -- as something else left it
+		chip:GetScript("OnEnter")(chip)
+		check(GameTooltip:IsShown(), "hovering the chip raises a tooltip")
+		check(GameTooltip:GetFrameStrata() == "TOOLTIP",
+			"in front of everything, whatever it was left at ("
+			.. tostring(GameTooltip:GetFrameStrata()) .. ")")
+		chip:GetScript("OnLeave")(chip)
+		check(not GameTooltip:IsShown(), "and goes again")
+	end
+
+	-- THE REST OF THE TRANSPORT, ON A RIGHT-CLICK. The chip is one icon wide and
+	-- the whole point of it is not opening the drawer, so the three controls
+	-- that do not fit go on a menu rather than nowhere.
+	do
+		local chip = TBm.rail.play
+		A.Widgets.CloseMenu()
+		chip:GetScript("OnClick")(chip, "RightButton")
+		local menu = A.Widgets.MenuFrame()
+		check(menu and menu:IsShown(), "right-clicking the chip opens a menu")
+		local words = {}
+		for i = 1, 3 do words[i] = menu.items[i].text:GetText() end
+		check(table.concat(words, ",") == "Stop,Previous,Next",
+			"with stop, previous and next on it (" .. table.concat(words, ",") .. ")")
+
+		-- AND LEFT-CLICK STILL PLAYS. A button that grew a menu and lost its
+		-- press is a worse button.
+		A.Widgets.CloseMenu()
+		local was = P.state
+		chip:GetScript("OnClick")(chip, "LeftButton")
+		check(P.state ~= was, "and left-clicking still works the transport ("
+			.. was .. " -> " .. P.state .. ")")
+		if not P:IsPlaying() then chip:GetScript("OnClick")(chip, "LeftButton") end
+
+		-- STOP STOPS.
+		chip:GetScript("OnClick")(chip, "RightButton")
+		menu = A.Widgets.MenuFrame()
+		menu.items[1]:GetScript("OnClick")(menu.items[1])
+		check(P.state == "stopped", "stop stops it (" .. P.state .. ")")
+		check(_G.__soundsPlaying() == 0, "and silences the channel")
+
+		-- DISABLED RATHER THAN ABSENT with nothing to do: a menu that changes
+		-- shape between openings is one you cannot learn.
+		chip:GetScript("OnClick")(chip, "RightButton")
+		menu = A.Widgets.MenuFrame()
+		check(menu.items[1].action == nil, "with nothing playing, stop is dead")
+		check(menu.items[1]:IsShown(), "and still on the menu, not missing from it")
+		A.Widgets.CloseMenu()
+
+		mini.toggle:GetScript("OnClick")(mini.toggle)
+	end
+
+	-- THE LIBRARY GOES WITH THE DRAWER. It hangs off the mini-player at the foot
+	-- of the panel and slides away with it - but off the RIGHT of that, so a
+	-- panel a full width off screen left the list sitting just inside the edge
+	-- with nothing behind it.
+	do
+		check(LB:IsOpen(), "the library is open")
+		TBm:SetOpen(false, true)
+		check(not LB:IsOpen(), "closing the drawer shuts the list with it")
+		TBm:SetOpen(true, true)
+		LB:SetOpen(true, mini)
+	end
+
+	-- A READING FILL, not the control-surface one: a column of titles read over
+	-- whatever the world is doing behind it, which is the argument the quest log
+	-- and the chat log already make.
+	do
+		local want = A.Palette:ReadingFill()[4] or 1
+		local plain = (A.Palette.c.glassStrong or A.Palette.c.glass)[4] or 1
+		local got = (LB.frame._fillColor or {})[4] or 0
+		check(math.abs(got - want) < 0.001,
+			("the list is at the readable opacity (%.2f of %.2f)"):format(got, want))
+		-- The two have to DIFFER, or this passes on a profile where the boost is
+		-- zero and proves only that a number equals itself.
+		check(math.abs(want - plain) > 0.001,
+			("and that is deeper than a control surface (%.2f against %.2f)")
+			:format(want, plain))
+
+		-- AND SO IS THE PAPER. The page is opaque, but the margin around it and
+		-- the strip under it are not, and a border you can see the world through
+		-- is a page that looks like it is floating.
+		local RDb = A.IFEC.Reader
+		RDb:Build()
+		local paper = (RDb.frame._fillColor or {})[4] or 0
+		check(math.abs(paper - want) < 0.001,
+			("the paper is too (%.2f of %.2f)"):format(paper, want))
+	end
+
+	-- THE MAGAZINE OPENS, it does not queue. You read the paper while the music
+	-- carries on, which is the whole point of it having no duration.
+	do
+		local RD = A.IFEC.Reader
+		check(RD ~= nil, "the reader loaded")
+
+		local gossip
+		for _, r in ipairs(LB.frame.rows) do
+			if r:IsShown() and r.item.type == "gossip" then gossip = r end
+		end
+		check(gossip ~= nil, "the bulletin is in the list with everything else")
+		check(gossip.meta:GetText() == "3 pages", "unread, saying how long it is ("
+			.. tostring(gossip.meta:GetText()) .. ")")
+		check(not gossip.__aetherSelected,
+			"and never drawn as something cued, because it cannot be")
+
+		local held = #P.queue
+		local wasPlaying = P.item and P.item.key
+		gossip:GetScript("OnClick")(gossip)
+		check(RD:IsOpen(), "clicking it opens the paper")
+		check(#P.queue == held, "and queues nothing (" .. #P.queue .. ")")
+		check(P.item and P.item.key == wasPlaying,
+			"with the music carrying on underneath it")
+		-- NOT HUNG OFF THE LIST, unlike the drawer itself. A page is authored at
+		-- 1024 and wants the screen; beside the Toolbox it would be mostly off
+		-- the edge of it. Outside UIParent too, so it survives the interface
+		-- being hidden at altitude.
+		check(RD.frame:GetParent() == IF:Top(),
+			"the paper is its own window, outside the interface it has to survive")
+		-- MEASURED IN PHYSICAL PIXELS, at both ends. The window is under a
+		-- parentless holder so that it survives the interface being hidden,
+		-- which means it does NOT share UIParent's scale - so asking UIParent
+		-- how big the screen is and then drawing that many units HERE is asking
+		-- one ruler and cutting with another. It hung off the top of the screen.
+		--
+		-- Swept rather than checked once, because the two directions fail at
+		-- different scales and a single scale is a coin toss between them.
+		local function px(frame)
+			local sc = frame:GetEffectiveScale() or 1
+			return (frame:GetWidth() or 0) * sc, (frame:GetHeight() or 0) * sc
+		end
+		local uiWas = UIParent:GetScale() or 1
+		local profWas = A.db.profile.scale
+		for _, uiScale in ipairs({ 0.53, 0.64, 1, 1.875 }) do
+			for _, prof in ipairs({ 0.71, 1 }) do
+				UIParent:SetScale(uiScale)
+				A.db.profile.scale = prof
+				RD:Size()
+				local w, h = px(RD.frame)
+				local sw, sh = px(UIParent)
+				check(w <= sw and h <= sh,
+					("at UI scale %s and profile %s the page fits (%.0fx%.0f of %.0fx%.0f)")
+					:format(uiScale, prof, w, h, sw, sh))
+			end
+		end
+
+		-- IT FOLLOWS THE GLOBAL SCALE, like every window of ours.
+		UIParent:SetScale(1)
+		A.db.profile.scale = 0.71
+		RD:Size()
+		check(math.abs((RD.frame:GetScale() or 1) - 0.71) < 0.001,
+			"the paper is at the profile's scale like everything else ("
+			.. tostring(RD.frame:GetScale()) .. ")")
+
+		-- AND ACTUAL SIZE STILL MEANS ACTUAL SIZE. The window shrinks with the
+		-- profile, so a page of 1024 units is 727 pixels at 0.71 - a "1:1" that
+		-- is nothing of the kind. Zoomed, the art lands one texel to one pixel.
+		RD:SetZoomed(true)
+		local pw = px(RD.frame.sheet)
+		check(math.abs(pw - 1024) < 1.5,
+			"and zoomed, one texel is one pixel whatever the scale ("
+			.. string.format("%.0f", pw) .. " of 1024)")
+		RD:SetZoomed(false)
+		A.db.profile.scale = profWas
+
+		-- AND NEVER LARGER THAN THE ART. Past native there is nothing more to
+		-- show, and a 1024 page blown up is a blurry 1024 page.
+		UIParent:SetScale(1.875)
+		RD:Size()
+		check((RD.frame.sheet:GetWidth() or 0) <= 1024.5,
+			"and never drawn past the page's own size on a tall screen ("
+			.. string.format("%.0f", RD.frame.sheet:GetWidth() or 0) .. ")")
+		UIParent:SetScale(uiWas)
+		A.db.profile.scale = profWas
+		RD:Size()
+
+		-- EVERY CONTROL IN THE STRIP IS LINE ART. The close was a typed
+		-- multiplication sign, and whether a font has U+00D7 is the font's
+		-- business - the weight it landed in drew the notdef box and then the
+		-- digits of the escape, on screen, next to the magnifier.
+		for _, b in ipairs({ RD.frame.prev, RD.frame.next,
+		                     RD.frame.zoom, RD.frame.close }) do
+			check(b.glyph ~= nil and b.glyph:GetTexture() == A.Media.icons.file,
+				"the reader's controls all come off the shared sheet")
+		end
+		check(RD.frame.masthead:GetText() == gossip.item.title,
+			"carrying its title (" .. tostring(RD.frame.masthead:GetText()) .. ")")
+
+		-- A PAGE IS AN IMAGE. The reader has no opinion about what is on one.
+		check(RD.frame.sheet.page:GetTexture() == gossip.item.pages[1],
+			"open at the first page (" .. tostring(RD.frame.sheet.page:GetTexture()) .. ")")
+		check(RD.frame.pager:GetText() == "1 / 3", "and says which one ("
+			.. tostring(RD.frame.pager:GetText()) .. ")")
+
+		RD:Turn(1)
+		check(RD.frame.sheet.page:GetTexture() == gossip.item.pages[2],
+			"turning goes to the next page")
+		-- A MAGAZINE IS NOT A LOOP. Turning past the back cover onto the front
+		-- again is a thing no paper does, and it is how you lose your place.
+		RD:Turn(-1) RD:Turn(-1) RD:Turn(-1)
+		check(RD.frame.pager:GetText() == "1 / 3", "and stops at the front cover")
+		RD:Turn(9)
+		check(RD.frame.pager:GetText() == "3 / 3", "and at the back one")
+
+		-- WHERE YOU GOT TO, in the same field an episode keeps its segment in.
+		LB:Paint()
+		for _, r in ipairs(LB.frame.rows) do
+			if r:IsShown() and r.item.type == "gossip" then gossip = r end
+		end
+		check(gossip.meta:GetText() == "read",
+			"reaching the back page marks it read ("
+			.. tostring(gossip.meta:GetText()) .. ")")
+
+		-- A FINISHED MAGAZINE STARTS AGAIN, or it is one you cannot re-read.
+		RD:Close()
+		RD:Open(gossip.item)
+		check(RD.frame.pager:GetText() == "1 / 3",
+			"and reopening a finished one starts at the front")
+
+		-- Part way through, it picks up where it was left - the same rule the
+		-- programme follows for a half-heard episode.
+		RD:Turn(1)
+		RD:Close()
+		RD:Open(gossip.item)
+		check(RD.frame.pager:GetText() == "2 / 3",
+			"while a half-read one opens where it was left ("
+			.. tostring(RD.frame.pager:GetText()) .. ")")
+
+		LB:Paint()
+		for _, r in ipairs(LB.frame.rows) do
+			if r:IsShown() and r.item.type == "gossip" then gossip = r end
+		end
+		check(gossip.meta:GetText() == "page 2 of 3",
+			"and the list says how far in you are ("
+			.. tostring(gossip.meta:GetText()) .. ")")
+
+		-- THE PAPER STAYS when the list goes. It came out of that list but it is
+		-- a window of its own, and reading a magazine with the Toolbox shut and
+		-- the music carrying on is the whole reason it takes no time.
+		LB:Close()
+		check(RD:IsOpen(), "shutting the list leaves the paper open")
+		RD:Close()
+		LB:SetOpen(true, mini)
+	end
+
+	-- BOARDING TAKES OVER. There is only ever one thing playing: the console
+	-- builds a programme shaped like the journey and the mini-player becomes a
+	-- view onto it rather than a second player.
+	--
+	-- AND IT DOES NOT START AGAIN. Boarding used to build a programme and Start
+	-- it, which cut off whatever was already sounding to play something else - a
+	-- track stopped mid-bar to be replaced by a track. The flight is a length to
+	-- fill, not a reason to begin again.
+	LB:Close()
+	local boardingWith = P.item and P.item.key
+	-- COUNTED FROM EVER-STARTED, not from the last file name. Restarting a track
+	-- plays the SAME file, so a check on the name passes whether the console
+	-- adopted what was sounding or stopped it and began it again from the top.
+	local startsBefore = 0
+	for _ in pairs(_G.__sounds) do startsBefore = startsBefore + 1 end
+	check(boardingWith ~= nil, "something is playing as the griffin arrives")
+	A.IFEC.Taxi:Start()
+	_G.__taxi.nodes = {
+		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
+		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+	}
+	_G.__taxi.routes = {}
+	TakeTaxiNode(2)
+	_G.__onTaxi = true
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+
+	check(IF:HasRegion(), "boarding hangs the console's own region")
+	check(_G.__soundsPlaying() <= 1,
+		"and there is still only one thing playing ("
+		.. _G.__soundsPlaying() .. ")")
+	check(A.IFEC.Player.queue ~= nil and P.queue == A.IFEC.Player.queue,
+		"off one queue, which the console now owns")
+	check(P.item and P.item.key == boardingWith,
+		"and the track that was already playing is still the one playing ("
+		.. tostring(P.item and P.item.title) .. ")")
+	check(P.queue[1] and P.queue[1].key == boardingWith,
+		"leading the programme rather than queued behind it")
+	local startsAfter = 0
+	for _ in pairs(_G.__sounds) do startsAfter = startsAfter + 1 end
+	check(startsAfter == startsBefore,
+		"with nothing restarted - the track carries on rather than being cut off"
+		.. " mid-bar and begun again (" .. startsAfter .. " vs " .. startsBefore .. ")")
+
+	-- AND THE PROGRAMME IS BUILT AROUND IT. What is left of the running track
+	-- counts towards the journey, so only the remainder has to be covered -
+	-- ignoring it queues a flight's worth of music on top of a track that is
+	-- already playing most of the first minute of it.
+	do
+		local want = A.IFEC.Taxi.flight.expected or 0
+		local total = 0
+		for _, item in ipairs(P.queue) do total = total + (item.duration or 0) end
+		local withoutLast = total - (P.queue[#P.queue].duration or 0)
+		check(total >= want, ("the programme still covers the flight (%ds of %ds)")
+			:format(total, want))
+		check(withoutLast < want,
+			("and is no longer than it has to be - one item less falls short"
+			.. " (%ds of %ds)"):format(withoutLast, want))
+	end
+
+	-- LANDING IS NOT ALWAYS A STOP. Off, the programme goes with the flight;
+	-- on, the same queue simply carries on into the mini-player, which is
+	-- already a view onto it.
+	cfg.playOn = true
+	check(P:IsPlaying(), "a programme is running as the flight ends")
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	tick(0.4)
+	check(P:IsPlaying(), "with 'keep playing' on, landing does not stop it")
+	check(not IF:HasRegion(), "though the console's own region goes with the flight")
+	check(_G.__soundsPlaying() == 1, "and the audio carries on (" ..
+		_G.__soundsPlaying() .. ")")
+	M:Paint()
+	check(mini.title:GetText() == (P.item and P.item.title),
+		"with the mini-player describing it now (" .. tostring(mini.title:GetText()) .. ")")
+
+	-- AND OFF IS THE DEFAULT, because audio still going after the player has
+	-- control back is the worst failure this feature has.
+	cfg.playOn = false
+	TakeTaxiNode(2)
+	_G.__onTaxi = true
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+	check(P:IsPlaying(), "boarding again")
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	tick(0.4)
+	check(not P:IsPlaying(), "with it off, landing stops the programme")
+	check(_G.__soundsPlaying() == 0, "and silences the channel")
+
+	-- THE TILE SWITCHES THE PLAYER, NOT THE TIMER. A player who never wants a
+	-- programme on a griffin still wants to know when the griffin lands.
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	tick(0.4)
+
+	cfg.player = false
+	-- COUNTED FROM EVER-STARTED, not from still-playing. A programme that begins
+	-- and is stopped a second later by the tick that notices is silence by the
+	-- time anybody asks, and an audible blip on every takeoff.
+	local startedBefore = 0
+	for _ in pairs(_G.__sounds) do startedBefore = startedBefore + 1 end
+
+	TakeTaxiNode(2)
+	_G.__onTaxi = true
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+	check(A.IFEC.Taxi:IsFlying(), "with the player switched off the flight is still tracked")
+	check(IF.frame:IsShown(), "and the console still opens")
+	check(not IF:HasRegion(), "but hangs no programme under it")
+
+	local startedAfter = 0
+	for _ in pairs(_G.__sounds) do startedAfter = startedAfter + 1 end
+	check(startedAfter == startedBefore,
+		"and nothing was ever started, not started and hushed ("
+		.. startedAfter .. " vs " .. startedBefore .. ")")
+
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	tick(0.4)
+	cfg.player = true
+
+	-- AND THE TILE CAN BE PRESSED MID-FLIGHT. It is a tile on a drawer that
+	-- opens over a griffin, so "takes effect next flight" is not good enough for
+	-- switching it OFF - the programme it would leave running is the thing you
+	-- just said you did not want.
+	TakeTaxiNode(2)
+	_G.__onTaxi = true
+	fire("PLAYER_CONTROL_LOST")
+	tick(0.4)
+	check(IF:HasRegion() and _G.__soundsPlaying() == 1, "a programme is running")
+
+	cfg.player = false
+	tick(1)
+	check(not IF:HasRegion(), "switching it off mid-flight takes the region away")
+	check(_G.__soundsPlaying() == 0, "and stops the audio with it")
+	check(A.IFEC.Taxi:IsFlying(), "while the flight carries on being tracked")
+
+	_G.__onTaxi = false
+	fire("PLAYER_CONTROL_GAINED")
+	tick(0.4)
+	cfg.player = true
+
+	-- AND THE MINI-PLAYER IS NOT IN FLIGHT, so the setting is none of its
+	-- business: it is the one surface that has nothing to do with a griffin.
+	cfg.player = false
+	TBm:LayoutContent()
+	check(TBm:HasPlayer(), "the mini-player is unaffected - it is not in flight")
+	cfg.player = true
+
+	A.IFEC.Taxi:Stop()
+	P:Stop()
+	TBm:SetOpen(false, true)
+	R:Reset()
+	cfg.progress = {}
 end)
 
 section("ifec: the console takes a region, and gives it back", function()
