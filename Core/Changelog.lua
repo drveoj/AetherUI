@@ -38,6 +38,21 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.8.0",
+		date    = "2026-08-16",
+		lines   = {
+			"The Toolbox has a player in it. Season One's music plays on the ground, not just on a griffin - there is a transport on the rail with the drawer shut, and right-clicking it gives you stop, previous and next.",
+			"A library, from the console in flight or from the Toolbox on the ground. Everything in season, grouped by season; click a row to add it to the programme or to take it back out.",
+			"Magazines open and turn. A page at a time, at the size your screen allows, or at actual size with a drag to read the small print - and it remembers the page you were on.",
+			"Skip actually skips. The transport used to stop the music and go dead at the end of a short flight; it now pulls the next thing out of the season and keeps the queue a step ahead of you.",
+			"Pause and resume, at last. There is no pause in this game's sound engine, so Season One's tracks are cut into three-second pieces and crossfaded - you lose at most three seconds, and you should not be able to hear the joins.",
+			"A programme that runs out says so, and offers you the music again, the last track again, or the view.",
+			"The console can carry on after you land, if you ask it to. There is a switch for it, and one for the in-flight player itself - the flight timer, the route and the countdown stay either way.",
+			"Reloading no longer leaves a track playing underneath everything, and the game's sound settings come back even if the client dies on a griffin.",
+			"No more tooltips floating over an empty sky in flight, from buttons that are not on screen.",
+		},
+	},
+	{
 		version = "0.7.0",
 		date    = "2026-08-15",
 		lines   = {
