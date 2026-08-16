@@ -985,6 +985,14 @@ ICON_ORDER = [
     "music", "podcast", "gossip",
     "play", "pause", "prev", "next",
     "grip", "tick",
+    # ...and the drawer you pick from
+    "library",
+    # the entertainment console, as a settings tile
+    "ifec",
+    # actual size, for a magazine page bigger than the window it is in
+    "zoom",
+    # shutting a window, as art rather than as a character
+    "close",
 ]
 
 
@@ -1214,6 +1222,42 @@ def _glyph(name, cell):
         return U(disc(50, 40, 2.0), disc(78, 40, 2.0),
                  disc(50, 64, 2.0), disc(78, 64, 2.0),
                  disc(50, 88, 2.0), disc(78, 88, 2.0))
+
+    if name == "library":
+        # Adding to the programme: a short list with a plus beside it.
+        #
+        # NOT a book. Three leaning spines are a lovely shape at 64 texels and
+        # mush at the twelve pixels this is drawn at, which is the lesson the
+        # rim notes in this file already record. And not the chevron, which
+        # means "this opens" everywhere else in the interface.
+        #
+        # The last rule stops short so the plus has clear air around it: at this
+        # size a stroke and a glyph that touch read as one blob.
+        return U(seg(24, 36, 92, 36),
+                 seg(24, 60, 92, 60),
+                 seg(24, 84, 58, 84),
+                 seg(84, 68, 84, 100), seg(68, 84, 100, 84))
+
+    if name == "ifec":
+        # Headphones: a band over two cups. The console's own mark is the dial,
+        # and a dial at twelve pixels is a circle - of which this sheet has
+        # several. What this tile switches is the thing you LISTEN to.
+        return U(arc(64, 70, 34, 20, 160),
+                 seg(32, 70, 32, 92), seg(96, 70, 96, 92))
+
+    if name == "zoom":
+        # A magnifier. NOT a plus or a pair of arrows: this toggles between
+        # fitting the page and showing it at actual size, and both of those
+        # read as "make the window bigger" on any other glyph.
+        return U(circ(56, 54, 26), seg(75, 74, 100, 100))
+
+    if name == "close":
+        # A cross, DRAWN rather than typed. The multiplication sign is what the
+        # older windows here use for this, and it is a font's business whether
+        # it has one - Outfit does not carry it in every weight, and the weight
+        # this landed in rendered the notdef box and then the digits of the
+        # escape. Line art has no such opinion.
+        return U(seg(36, 36, 92, 92), seg(92, 36, 36, 92))
 
     if name == "tick":
         # Finished. Shorter leading stroke than a drawn tick would have, because

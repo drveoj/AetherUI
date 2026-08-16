@@ -117,6 +117,7 @@ Media.icons = {
 		"music", "podcast", "gossip",
 		"play", "pause", "prev", "next",
 		"grip", "tick",
+		"library", "ifec", "zoom", "close",
 	},
 }
 
