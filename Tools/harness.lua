@@ -8662,6 +8662,234 @@ do
 	Cm.moves = {}
 end
 
+-- ---------------------------------------------------------------------------
+-- MIDNIGHT, FROZEN
+--
+-- Every colour Midnight resolved to before the palette was restructured. A skin
+-- is meant to be one remap of a handful of chrome tokens with everything else
+-- shared or derived, and getting there means moving eighty-six hand-written
+-- values into rules - which is exactly the kind of change that recolours
+-- something nobody looks at until a fortnight later.
+--
+-- So the restructure has to prove it changed nothing. Regenerate this ONLY when
+-- a Midnight value is deliberately changed, and say which and why in the commit.
+-- ---------------------------------------------------------------------------
+
+local MIDNIGHT_FROZEN = {
+	accent = { 0.72549, 0.603922, 0.960784, 1 },
+	accentDeep = { 0.541176, 0.415686, 0.878431, 1 },
+	bankAccent = { 0.556863, 0.784314, 1, 1 },
+	bankBg = { 0.54902, 0.784314, 1, 0.16 },
+	bankEdge = { 0.54902, 0.784314, 1, 0.34 },
+	btnEdge = { 0.588235, 0.509804, 0.921569, 0.32 },
+	btnFill = { 0.803922, 0.737255, 1, 1 },
+	btnFillHi = { 0.870588, 0.831373, 1, 1 },
+	btnFillText = { 0.078431, 0.062745, 0.121569, 1 },
+	btnHover = { 0.588235, 0.509804, 0.921569, 0.14 },
+	cardBg = { 1, 1, 1, 0.06 },
+	cardEdge = { 0.588235, 0.509804, 0.921569, 0.3 },
+	cardEdgeHi = { 0.803922, 0.737255, 1, 0.7 },
+	cast = {
+		{ 0.556863, 0.784314, 1, 1 },
+		{ 0.831373, 0.92549, 1, 1 },
+	},
+	castEdge = { 0.588235, 0.784314, 1, 0.45 },
+	castGlow = { 0.54902, 0.784314, 1, 0.55 },
+	danger = { 1, 0.541176, 0.541176, 1 },
+	dangerEdge = { 1, 0.541176, 0.470588, 0.3 },
+	dangerHover = { 1, 0.541176, 0.470588, 0.12 },
+	dangerText = { 1, 0.588235, 0.54902, 0.8 },
+	dialogFill = { 0.054902, 0.043137, 0.12549, 0.97 },
+	energy = {
+		{ 1, 0.878431, 0.509804, 1 },
+		{ 0.909804, 0.745098, 0.313725, 1 },
+	},
+	focus = {
+		{ 1, 0.705882, 0.509804, 1 },
+		{ 0.909804, 0.54902, 0.352941, 1 },
+	},
+	friendly = { 0.623529, 0.909804, 0.705882, 1 },
+	glass = { 0.047059, 0.039216, 0.109804, 0.55 },
+	glassEdge = { 0.588235, 0.509804, 0.921569, 0.32 },
+	glassEdgeHi = { 0.72549, 0.643137, 0.960784, 0.55 },
+	glassSoft = { 0.047059, 0.039216, 0.109804, 0.4 },
+	glassStrong = { 0.047059, 0.039216, 0.109804, 0.68 },
+	health = {
+		{ 0.623529, 0.909804, 0.705882, 1 },
+		{ 0.372549, 0.776471, 0.52549, 1 },
+	},
+	hostile = { 1, 0.541176, 0.541176, 1 },
+	hostileBar = {
+		{ 1, 0.603922, 0.462745, 1 },
+		{ 0.941176, 0.431373, 0.352941, 1 },
+	},
+	ifecBrass = { 0.784314, 0.658824, 0.415686, 0.55 },
+	ifecDial = { 0.803922, 0.737255, 1, 1 },
+	ifecDisc = { 0.082353, 0.066667, 0.160784, 1 },
+	ifecGossip = { 0.909804, 0.784314, 0.415686, 1 },
+	ifecLanding = { 0.941176, 0.85098, 0.658824, 1 },
+	ifecMusic = { 0.623529, 0.831373, 0.784314, 1 },
+	ifecPodcast = { 0.941176, 0.627451, 0.415686, 1 },
+	ifecTrack = { 1, 1, 1, 0.13 },
+	info = { 0.643137, 0.847059, 0.960784, 1 },
+	infoBg = { 0.54902, 0.784314, 1, 0.13 },
+	infoEdge = { 0.54902, 0.784314, 1, 0.3 },
+	itemQuality = {
+		[0] = {
+			edge = { 0.615686, 0.615686, 0.615686, 0.55 },
+		},
+		[1] = {
+			edge = { 1, 1, 1, 0.3 },
+		},
+		[2] = {
+			edge = { 0.435294, 0.862745, 0.498039, 0.85 },
+		},
+		[3] = {
+			edge = { 0.435294, 0.658824, 1, 0.9 },
+			glow = { 0.435294, 0.658824, 1, 0.35 },
+		},
+		[4] = {
+			edge = { 0.705882, 0.498039, 1, 0.9 },
+			glow = { 0.705882, 0.498039, 1, 0.45 },
+		},
+		[5] = {
+			edge = { 1, 0.658824, 0.360784, 0.9 },
+			glow = { 1, 0.658824, 0.360784, 0.45 },
+		},
+	},
+	junkText = { 0.862745, 0.823529, 1, 0.38 },
+	junkTint = { 0.588235, 0.588235, 0.588235, 0.42 },
+	label = "Midnight",
+	neutral = { 0.941176, 0.705882, 0.415686, 1 },
+	npChipInk = { 0.74902, 0.890196, 1, 1 },
+	npRare = { 0.803922, 0.847059, 0.909804, 1 },
+	petContent = { 0.909804, 0.784314, 0.415686, 1 },
+	petHappy = { 0.556863, 0.839216, 0.619608, 1 },
+	petUnhappy = { 0.909804, 0.478431, 0.478431, 1 },
+	power = {
+		{ 0.541176, 0.705882, 1, 1 },
+		{ 0.415686, 0.564706, 0.909804, 1 },
+	},
+	questDiff = {
+		difficult = {
+			bg = { 1, 0.862745, 0.470588, 0.14 },
+			text = { 1, 0.909804, 0.603922, 1 },
+		},
+		impossible = {
+			bg = { 1, 0.470588, 0.411765, 0.16 },
+			text = { 1, 0.603922, 0.541176, 1 },
+		},
+		standard = {
+			bg = { 0.470588, 0.901961, 0.627451, 0.14 },
+			text = { 0.623529, 0.909804, 0.705882, 1 },
+		},
+		trivial = {
+			bg = { 0.705882, 0.690196, 0.784314, 0.12 },
+			text = { 0.658824, 0.643137, 0.721569, 1 },
+		},
+		verydifficult = {
+			bg = { 1, 0.627451, 0.313725, 0.15 },
+			text = { 1, 0.705882, 0.415686, 1 },
+		},
+	},
+	rage = {
+		{ 1, 0.603922, 0.462745, 1 },
+		{ 0.941176, 0.431373, 0.352941, 1 },
+	},
+	rowHover = { 0.588235, 0.509804, 0.921569, 0.14 },
+	rowSel = { 0.803922, 0.737255, 1, 0.2 },
+	scrim = { 0, 0, 0, 0.45 },
+	shadow = { 0, 0, 0, 0.5 },
+	talentFull = { 1, 0.886275, 0.588235, 1 },
+	talentOpen = { 0.623529, 0.909804, 0.705882, 1 },
+	targetEdge = { 1, 0.541176, 0.541176, 0.35 },
+	targetGlass = { 0.094118, 0.039216, 0.078431, 0.55 },
+	targetText = { 1, 0.85098, 0.768627, 1 },
+	text = { 0.92549, 0.901961, 1, 1 },
+	textDim = { 0.862745, 0.823529, 1, 0.55 },
+	textFaint = { 0.862745, 0.823529, 1, 0.38 },
+	ttBadgeBg = { 0.588235, 0.509804, 0.921569, 0.18 },
+	ttBadgeEdge = { 0.588235, 0.509804, 0.921569, 0.35 },
+	ttBadgeInk = { 0.803922, 0.737255, 1, 1 },
+	ttDivider = { 0.588235, 0.509804, 0.921569, 0.18 },
+	ttElite = { 0.909804, 0.784314, 0.415686, 1 },
+	ttEliteInk = { 0.078431, 0.062745, 0.121569, 1 },
+	ttFriendly = { 0.556863, 0.784314, 1, 1 },
+	ttFriendlyNPC = { 0.623529, 0.878431, 0.658824, 1 },
+	ttGuild = { 0.803922, 0.737255, 1, 0.8 },
+	ttHealth = {
+		{ 0.498039, 0.839216, 0.541176, 1 },
+		{ 0.290196, 0.658824, 0.345098, 1 },
+	},
+	ttHealthBg = { 1, 1, 1, 0.08 },
+	ttHostile = { 0.941176, 0.541176, 0.478431, 1 },
+	ttLore = { 0.909804, 0.831373, 0.603922, 1 },
+	ttNeutral = { 0.909804, 0.784314, 0.415686, 1 },
+	ttQuality = {
+		[0] = { 0.615686, 0.615686, 0.615686, 1 },
+		[1] = { 1, 1, 1, 0.9 },
+		[2] = { 0.435294, 0.862745, 0.498039, 1 },
+		[3] = { 0.435294, 0.658824, 1, 1 },
+		[4] = { 0.705882, 0.498039, 1, 1 },
+		[5] = { 1, 0.658824, 0.360784, 1 },
+	},
+	ttTitle = { 0.941176, 0.92549, 1, 1 },
+	xp = {
+		{ 0.541176, 0.415686, 0.878431, 1 },
+		{ 0.72549, 0.603922, 0.960784, 1 },
+	},
+}
+
+section("palette: Midnight is exactly what it was", function()
+	local skin = A.Palette.skins.midnight
+	check(skin ~= nil, "Midnight is still a skin")
+
+	local function same(a, b)
+		if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+		if #a ~= #b then return false end
+		for i = 1, #a do
+			if math.abs((a[i] or 0) - (b[i] or 0)) > 0.0005 then return false end
+		end
+		return true
+	end
+
+	local missing, changed, extra = {}, {}, {}
+	local function walk(want, got, path)
+		for k, v in pairs(want) do
+			local g = got and got[k]
+			local at = path .. tostring(k)
+			if g == nil then
+				missing[#missing + 1] = at
+			elseif type(v) == "table" and not (#v >= 3 and type(v[1]) == "number") then
+				walk(v, g, at .. ".")
+			elseif not same(v, g) then
+				changed[#changed + 1] = at
+			end
+		end
+	end
+	walk(MIDNIGHT_FROZEN, skin, "")
+
+	for k in pairs(skin) do
+		if MIDNIGHT_FROZEN[k] == nil and type(skin[k]) ~= "string" then
+			extra[#extra + 1] = tostring(k)
+		end
+	end
+
+	check(#missing == 0, "every colour Midnight had, it still has ("
+		.. #missing .. " gone" .. (missing[1] and (": " .. table.concat(missing, ", ", 1,
+			math.min(4, #missing))) or "") .. ")")
+	check(#changed == 0, "and every one of them is the same colour ("
+		.. #changed .. " moved" .. (changed[1] and (": " .. table.concat(changed, ", ", 1,
+			math.min(4, #changed))) or "") .. ")")
+
+	-- New tokens are fine and expected - the addon grows. This only reports
+	-- them, so that a token added to one skin and not the others is visible.
+	if #extra > 0 then
+		print("     |cff888888" .. #extra .. " token(s) added since the freeze: "
+			.. table.concat(extra, ", ", 1, math.min(6, #extra)) .. "|r")
+	end
+end)
+
 print("== movers ==")
 SlashCmdList["AETHERUI"]("unlock")
 check(A.Movers.unlocked, "movers unlocked")
