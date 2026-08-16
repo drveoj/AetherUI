@@ -586,9 +586,103 @@ local function Announce()
 	for _, fn in pairs(Movers.watchers) do pcall(fn, Movers.unlocked) end
 end
 
+-- ---------------------------------------------------------------------------
+-- the way out
+--
+-- Unlocking hides nothing, but it puts a handle over everything - including the
+-- Toolbox, whose rail and drawer are exactly what you would reach for to lock
+-- again. So the way back is `/aether lock` or four steps into the options
+-- panel, and a mode you can only leave by typing is a mode people get stuck in.
+--
+-- ITS OWN FRAME, and draggable, because it is one more thing over a screen you
+-- are trying to arrange - and the one place it must never be is on top of the
+-- frame you are dragging. Not a mover entry: a mover entry is moved by its
+-- handle, and a handle over the button that hides the handles is a circle.
+-- ---------------------------------------------------------------------------
+
+local LOCK_W, LOCK_H = 132, 34
+
+local function LockSpot()
+	A.db.profile.anchors = A.db.profile.anchors or {}
+	return A.db.profile.anchors.__lockButton
+end
+
+local function BuildLockButton()
+	local b = A.Widgets.CreateButton(UIParent, { corner = 10 })
+	b:SetSize(LOCK_W, LOCK_H)
+	b:SetFrameStrata("FULLSCREEN_DIALOG")
+	b:SetToplevel(true)
+	b:EnableMouse(true)
+	b:SetMovable(true)
+	b:SetClampedToScreen(true)
+	b:RegisterForDrag("LeftButton")
+	b:Hide()
+
+	local c = A.Palette.c
+	b.label = A.Widgets.Text(b, "label", "CENTER")
+	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
+	b.label:SetText("Lock frames")
+	A.Widgets.Color(b.label, c.text)
+	b.__aetherLabel = b.label
+
+	b.glyph = b:CreateTexture(nil, "OVERLAY")
+	b.glyph:SetSize(12, 12)
+	b.glyph:SetPoint("LEFT", b, "LEFT", 12, 0)
+	A.Media:SetIcon(b.glyph, "lock")
+
+	-- DRAG AND CLICK ON ONE BUTTON. RegisterForDrag takes the button that
+	-- starts a drag out of the click path only once the drag actually starts,
+	-- so a press that does not move still fires OnClick - which is what makes
+	-- this both a button and a thing you can push out of the way.
+	b:SetScript("OnDragStart", function(self) self:StartMoving() end)
+	b:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		local point, _, relPoint, x, y = self:GetPoint(1)
+		if point then
+			A.db.profile.anchors.__lockButton = {
+				point = point, relPoint = relPoint,
+				x = math.floor(x + 0.5), y = math.floor(y + 0.5),
+			}
+		end
+	end)
+	b:SetScript("OnClick", function() Movers:Lock() end)
+
+	return b
+end
+
+--- Show it, where it was last put.
+local function ShowLockButton(show)
+	if not show then
+		if Movers.lockButton then Movers.lockButton:Hide() end
+		return
+	end
+
+	Movers.lockButton = Movers.lockButton or BuildLockButton()
+	local b = Movers.lockButton
+
+	-- PLACED EVERY TIME, from clear. Anchors set again without clearing leave a
+	-- frame spanned between where it was and where it is being put.
+	local spot = LockSpot()
+	b:ClearAllPoints()
+	if spot then
+		b:SetPoint(spot.point, UIParent, spot.relPoint, spot.x, spot.y)
+	else
+		-- Above the middle rather than in it: the middle of the screen is where
+		-- the frames you have come to move mostly are.
+		b:SetPoint("CENTER", UIParent, "CENTER", 0, 170)
+	end
+	b:SetScale(A.db.profile.scale or 1)
+	A.Widgets.SetButtonState(b, true, false)
+	b:Show()
+	b:Raise()
+end
+
+Movers.ShowLockButton = ShowLockButton
+
 function Movers:Unlock()
 	Movers.unlocked = true
 	ShowGrid(true)
+	ShowLockButton(true)
 	for _, entry in pairs(Movers.registry) do
 		-- Preview first: the handle takes its size from the frame, so a frame
 		-- that is still collapsed gets a handle nobody can grab.
@@ -597,7 +691,7 @@ function Movers:Unlock()
 		entry.handle:Show()
 	end
 	Announce()
-	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). |cff9d7bff/aether lock|r when done.")
+	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). Press |cff9d7bffLock frames|r, or |cff9d7bff/aether lock|r, when done.")
 	A:Print("|cff888888Edges snap to the grid and to other frames; hold alt while dragging"
 		.. " to place freely. Frames that only appear when the game says so - the pet"
 		.. " bar, the taxi button - are held up so you can place them.|r")
@@ -607,6 +701,7 @@ function Movers:Lock()
 	Movers.unlocked = false
 	ShowGrid(false)
 	ClearGuides()
+	ShowLockButton(false)
 	for _, entry in pairs(Movers.registry) do
 		if entry.handle then entry.handle:Hide() end
 		if entry.preview then pcall(entry.preview, false) end

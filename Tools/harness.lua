@@ -8671,6 +8671,38 @@ local h = entry.handle
 h:GetScript("OnDragStart")(h)
 h:GetScript("OnDragStop")(h)
 check(A.db.profile.anchors.player ~= nil, "drag persisted a position")
+
+-- THE WAY OUT OF UNLOCK MODE. Unlocking puts a handle over everything -
+-- including the Toolbox, which is exactly what you would reach for to lock
+-- again - so without this the only ways back are a slash command and four steps
+-- into the options panel. A mode you can leave only by typing is one people get
+-- stuck in.
+do
+	local lock = A.Movers.lockButton
+	check(lock ~= nil and lock:IsShown(), "unlocking puts a lock button on screen")
+
+	-- MOVABLE, because it is one more thing over a screen you are arranging and
+	-- the one place it must never be is on top of the frame you are dragging.
+	-- Not a mover entry of its own: those are moved by a handle, and a handle
+	-- over the button that hides the handles is a circle.
+	check(A.Movers.registry.__lockButton == nil,
+		"and it is not itself a mover entry, which would need a handle of its own")
+	lock:GetScript("OnDragStart")(lock)
+	lock:GetScript("OnDragStop")(lock)
+	check(A.db.profile.anchors.__lockButton ~= nil,
+		"dragging it is remembered, so it stays out of the way next time")
+
+	-- AND IT LOCKS. That is the whole job.
+	lock:GetScript("OnClick")(lock)
+	check(not A.Movers.unlocked, "pressing it locks the frames")
+	check(not lock:IsShown(), "and takes itself away with them")
+
+	SlashCmdList["AETHERUI"]("unlock")
+	check(A.Movers.lockButton:IsShown(), "unlocking again brings it back")
+	check(A.Movers.lockButton:GetNumPoints() == 1,
+		"anchored once, not spanned between where it was and where it is now")
+end
+
 SlashCmdList["AETHERUI"]("lock")
 check(not A.Movers.unlocked, "movers locked")
 SlashCmdList["AETHERUI"]("reset")
