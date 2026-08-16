@@ -412,7 +412,7 @@ local function CreateHandle(entry)
 		-- The dock's children are secure; moving their ancestor mid-combat is a
 		-- protected action. Refuse rather than let the client throw.
 		if InCombatLockdown() then
-			A:Print("|cffff8a8acan't move frames in combat.|r")
+			A:Print(A.Bad("can't move frames in combat."))
 			return
 		end
 		local f = entry.frame
@@ -691,10 +691,10 @@ function Movers:Unlock()
 		entry.handle:Show()
 	end
 	Announce()
-	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). Press |cff9d7bffLock frames|r, or |cff9d7bff/aether lock|r, when done.")
-	A:Print("|cff888888Edges snap to the grid and to other frames; hold alt while dragging"
+	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). Press " .. A.Hi("Lock frames") .. ", or " .. A.Hi("/aether lock") .. ", when done.")
+	A:Print(A.Dim("Edges snap to the grid and to other frames; hold alt while dragging"
 		.. " to place freely. Frames that only appear when the game says so - the pet"
-		.. " bar, the taxi button - are held up so you can place them.|r")
+		.. " bar, the taxi button - are held up so you can place them."))
 end
 
 function Movers:Lock()

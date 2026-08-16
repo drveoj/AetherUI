@@ -366,12 +366,14 @@ local function MoneyText(copper)
 	local bright = Palette:Hex(Palette.c.text)
 	local faint  = Palette:Hex(Palette.c.textDim)
 
+	local function hi(fmt, ...) return Palette:InkHex(bright, fmt:format(...)) end
+	local function lo(fmt, ...) return Palette:InkHex(faint, fmt:format(...)) end
 	if g > 0 then
-		return string.format("|cff%s%dg|r |cff%s%ds %dc|r", bright, g, faint, s, c)
+		return hi("%dg", g) .. " " .. lo("%ds %dc", s, c)
 	elseif s > 0 then
-		return string.format("|cff%s%ds|r |cff%s%dc|r", bright, s, faint, c)
+		return hi("%ds", s) .. " " .. lo("%dc", c)
 	end
-	return string.format("|cff%s%dc|r", bright, c)
+	return hi("%dc", c)
 end
 
 --- The letter on a bag tile. There is no art for bag icons in this atlas and
@@ -2219,7 +2221,7 @@ function Bags:FinishSelling()
 	-- which is a question worth being able to ask about something that spends
 	-- the player's items while they are looking somewhere else.
 	self.lastSale = { sold = s.sold, earned = s.earned, listed = s.worth }
-	A:Print(string.format("sold |cffece6ff%d|r junk item%s for |cffece6ff%s|r.",
+	A:Print(string.format("sold " .. A.Val("%d") .. " junk item%s for " .. A.Val("%s") .. ".",
 		s.sold, s.sold == 1 and "" or "s",
 		(_G.GetCoinTextureString and _G.GetCoinTextureString(s.earned))
 			or (s.earned .. "c")))
@@ -2356,8 +2358,8 @@ function Bags:AskBuyBankSlot()
 	local price = (_G.GetCoinTextureString and _G.GetCoinTextureString(cost)) or MoneyText(cost)
 	local body = "Buy another bank bag slot for " .. price .. "?"
 	if money < cost then
-		body = body .. "\n\n|cff" .. Palette:Hex(c.dangerText)
-			.. "You cannot afford this.|r"
+		body = body .. "\n\n"
+			.. Palette:Ink("dangerText", "You cannot afford this.")
 	end
 	box.text:SetText(body)
 	-- Primary ink, not dim. It is a question that has to be read and answered.
@@ -2488,13 +2490,13 @@ end
 
 function Bags:Diagnose()
 	A:Print("bags:")
-	A:Print(("  api  |cffece6ff%s|r container, |cffece6ff%s|r item")
+	A:Print(("  api  " .. A.Val("%s") .. " container, " .. A.Val("%s") .. " item")
 		:format(GetItemInfoAt and "yes" or "MISSING", ItemInfoInstant and "yes" or "MISSING"))
 
 	local shape = "unknown"
 	local probe = SlotInfo(BACKPACK, 1)
 	if probe ~= nil then shape = type(probe) end
-	A:Print(("  slot info returns |cffece6ff%s|r (a table is correct on 1.15)")
+	A:Print(("  slot info returns " .. A.Val("%s") .. " (a table is correct on 1.15)")
 		:format(shape))
 
 	local total, used = 0, 0
@@ -2502,19 +2504,19 @@ function Bags:Diagnose()
 		local n = SlotsIn(bag)
 		total = total + n
 		for slot = 1, n do if SlotInfo(bag, slot) then used = used + 1 end end
-		A:Print(("  bag |cffece6ff%d|r  %d slots"):format(bag, n))
+		A:Print(("  bag " .. A.Val("%d") .. "  %d slots"):format(bag, n))
 	end
 	if HasKeyring() then
-		A:Print(("  keyring  |cffece6ff%d|r slots"):format(KeyringSize()))
+		A:Print(("  keyring  " .. A.Val("%d") .. " slots"):format(KeyringSize()))
 	end
-	A:Print(("  |cffece6ff%d|r / |cffece6ff%d|r used"):format(used, total))
-	A:Print(("  at bank: |cffece6ff%s|r  bank slots bought: |cffece6ff%d|r")
+	A:Print(("  " .. A.Val("%d") .. " / " .. A.Val("%d") .. " used"):format(used, total))
+	A:Print(("  at bank: " .. A.Val("%s") .. "  bank slots bought: " .. A.Val("%d"))
 		:format(self.atBank and "yes" or "no",
 			(_G.GetNumBankSlots and _G.GetNumBankSlots()) or 0))
 
 	for name, state in pairs(self.hideReport or {}) do
-		local col = (state == "STILL SHOWN") and "|cffff8a8a" or "|cff888888"
-		A:Print(("  %s  %s%s|r"):format(name, col, state))
+		local ink = (state == "STILL SHOWN") and A.Bad or A.Dim
+		A:Print(("  %s  %s"):format(name, ink(state)))
 	end
 end
 

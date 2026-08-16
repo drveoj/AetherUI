@@ -77,7 +77,7 @@ local BINDING_FOR_KIND = {
 }
 
 -- Labels for Blizzard's key binding panel. Harmless if it never opens.
-_G.BINDING_HEADER_AETHERUI = "Aether|cff9d7bffUI|r"
+_G.BINDING_HEADER_AETHERUI = "Aether" .. A.Hi("UI")
 for i = 1, NUM_ACTIONS_PER_PAGE do
 	_G["BINDING_NAME_AETHERUI_BAR2BUTTON" .. i] = "Bar 2 Button " .. i
 end
@@ -934,7 +934,7 @@ end
 
 local function SetBindingTo(overlay, keyString)
 	if InCombatLockdown() then
-		A:Print("|cffff8a8acan't change bindings in combat.|r")
+		A:Print(A.Bad("can't change bindings in combat."))
 		return
 	end
 	local name = overlay.bindingName
@@ -944,14 +944,14 @@ local function SetBindingTo(overlay, keyString)
 	-- one the client picks is not the one you meant.
 	local previous = GetBindingAction and GetBindingAction(keyString)
 	if previous and previous ~= "" and previous ~= name then
-		A:Print(("|cff888888%s taken from %s|r"):format(ShortKey(keyString), previous))
+		A:Print((A.Dim("%s taken from %s")):format(ShortKey(keyString), previous))
 	end
 
 	if not SetBinding(keyString, name) then
-		A:Print("|cffff8a8athat key can't be bound.|r")
+		A:Print(A.Bad("that key can't be bound."))
 		return
 	end
-	A:Print(("|cff9fe8b4%s|r -> %s"):format(ShortKey(keyString), name))
+	A:Print((A.Good("%s") .. " -> %s"):format(ShortKey(keyString), name))
 	if SaveBindings and GetCurrentBindingSet then
 		pcall(SaveBindings, GetCurrentBindingSet())
 	end
@@ -962,7 +962,7 @@ end
 
 local function ClearBindingOn(overlay)
 	if InCombatLockdown() then
-		A:Print("|cffff8a8acan't change bindings in combat.|r")
+		A:Print(A.Bad("can't change bindings in combat."))
 		return
 	end
 	local name = overlay.bindingName
@@ -1067,7 +1067,7 @@ end
 --  hover and type at.
 function AB:SetBindMode(on)
 	if on and InCombatLockdown() then
-		A:Print("|cffff8a8acan't rebind in combat.|r")
+		A:Print(A.Bad("can't rebind in combat."))
 		return
 	end
 
@@ -1121,8 +1121,8 @@ function AB:SetBindMode(on)
 		end
 	end
 
-	A:Print("keybind mode |cff9fe8b4on|r - hover a button and press a key."
-		.. "  |cff888888Escape clears, right-click or /aether bind again to finish.|r")
+	A:Print("keybind mode " .. A.Good("on") .. " - hover a button and press a key."
+		.. "  " .. A.Dim("Escape clears, right-click or /aether bind again to finish."))
 end
 
 function AB:ToggleBindMode()

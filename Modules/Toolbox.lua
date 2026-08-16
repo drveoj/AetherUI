@@ -782,7 +782,7 @@ function TB:BuildDockHandle()
 		self._dockTarget = nil
 		if edge and EDGES[edge] and edge ~= self:Dock() then
 			self:SetDock(edge)
-			A:Print("toolbox docked -> |cffece6ff" .. edge:lower() .. "|r")
+			A:Print("toolbox docked -> " .. A.Val(edge:lower()))
 		end
 		self:AnchorDockHandle()
 	end
@@ -813,7 +813,7 @@ function TB:BuildDockHandle()
 
 	h:SetScript("OnDragStart", function(self2)
 		if InCombatLockdown() then
-			A:Print("|cffff8a8acan't re-dock the toolbox in combat.|r")
+			A:Print(A.Bad("can't re-dock the toolbox in combat."))
 			return
 		end
 		self._dragging = true

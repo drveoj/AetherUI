@@ -9,48 +9,48 @@
 local ADDON, A = ...
 
 local function usage()
-	A:Print("|cff9d7bff/aether|r on its own opens the options panel. Everything below"
+	A:Print(A.Hi("/aether") .. " on its own opens the options panel. Everything below"
 		.. " still works and is quicker for one number.")
 	local lines = {
-		"|cff9d7bff/aether config|r  ·  the options panel (or just |cff9d7bff/aether|r)",
-		"|cff9d7bff/aether bind|r  ·  hover a button, press a key",
-		"|cff9d7bff/aether unlock|r  ·  drag frames into place",
-		"|cff9d7bff/aether lock|r",
-		"|cff9d7bff/aether reset|r  ·  forget all frame positions",
-		"|cff9d7bff/aether skin|r <midnight|dawn|noon|dusk>",
-		"|cff9d7bff/aether scale|r <0.6-1.6>  ·  0.71 = the concept deck's proportions",
-		"|cff9d7bff/aether fade|r <on|off|delay N|idle 0-1>  ·  stage one, the dim",
-		"|cff9d7bff/aether zen|r <on|off|delay N|afk on/off|test>  ·  stage two",
-		"|cff9d7bff/aether zen|r <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
-		"|cff9d7bff/aether zen zoom|r N  ·  the shot, live",
-		"|cff9d7bff/aether zen|r <track NAME|preview>  ·  the music",
-		"|cff9d7bff/aether shadow|r <0-1>  ·  ambient shadow opacity",
-		"|cff9d7bff/aether health|r <class|deck>  ·  bar colour for players",
-		"|cff9d7bff/aether bar|r <list · N on/off · N buttons/rows/page/scale V · size/spacing/font N>",
-		"|cff9d7bff/aether quests|r <fold|auto|objectives|clear>  ·  the quest tracker",
-		"|cff9d7bff/aether module|r <name> <on|off>",
-		"|cff9d7bff/aether status|r",
-		"|cff9d7bff/aether diag|r  ·  why is a Blizzard frame still on screen",
-		"|cff9d7bff/aether auras|r <refresh>  ·  what the aura API is actually saying",
-		"|cff9d7bff/aether chat|r <reskin · where · lines/badges on|off · whispers on|off>",
-		"|cff9d7bff/aether bags|r <open · sort · sell · junk on|off>  ·  what the container API is saying",
-		"|cff9d7bff/aether tooltips|r <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
-		"|cff9d7bff/aether toolbox|r <dock left/right/top/bottom · open · close · pin NAME>",
-		"|cff9d7bff/aether panels dump|r <FrameName>  ·  what a window is made of",
-		"|cff9d7bff/aether ifec|r [reset]  ·  content packs, what is playing, forget history",
-		"|cff9d7bff/aether errors|r <diag|clear>  ·  errors, or diag, in a box you can copy out of",
+		A.Hi("/aether config") .. "  ·  the options panel (or just " .. A.Hi("/aether") .. ")",
+		A.Hi("/aether bind") .. "  ·  hover a button, press a key",
+		A.Hi("/aether unlock") .. "  ·  drag frames into place",
+		A.Hi("/aether lock"),
+		A.Hi("/aether reset") .. "  ·  forget all frame positions",
+		A.Hi("/aether skin") .. " <midnight|dawn|noon|dusk>",
+		A.Hi("/aether scale") .. " <0.6-1.6>  ·  0.71 = the concept deck's proportions",
+		A.Hi("/aether fade") .. " <on|off|delay N|idle 0-1>  ·  stage one, the dim",
+		A.Hi("/aether zen") .. " <on|off|delay N|afk on/off|test>  ·  stage two",
+		A.Hi("/aether zen") .. " <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
+		A.Hi("/aether zen zoom") .. " N  ·  the shot, live",
+		A.Hi("/aether zen") .. " <track NAME|preview>  ·  the music",
+		A.Hi("/aether shadow") .. " <0-1>  ·  ambient shadow opacity",
+		A.Hi("/aether health") .. " <class|deck>  ·  bar colour for players",
+		A.Hi("/aether bar") .. " <list · N on/off · N buttons/rows/page/scale V · size/spacing/font N>",
+		A.Hi("/aether quests") .. " <fold|auto|objectives|clear>  ·  the quest tracker",
+		A.Hi("/aether module") .. " <name> <on|off>",
+		A.Hi("/aether status"),
+		A.Hi("/aether diag") .. "  ·  why is a Blizzard frame still on screen",
+		A.Hi("/aether auras") .. " <refresh>  ·  what the aura API is actually saying",
+		A.Hi("/aether chat") .. " <reskin · where · lines/badges on|off · whispers on|off>",
+		A.Hi("/aether bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
+		A.Hi("/aether tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
+		A.Hi("/aether toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
+		A.Hi("/aether panels dump") .. " <FrameName>  ·  what a window is made of",
+		A.Hi("/aether ifec") .. " [reset]  ·  content packs, what is playing, forget history",
+		A.Hi("/aether errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
 end
 
 local function status()
-	A:Print("v" .. A.version .. "  ·  skin |cffece6ff" .. A.Palette.current .. "|r  ·  scale "
+	A:Print("v" .. A.version .. "  ·  skin " .. A.Val(A.Palette.current) .. "  ·  scale "
 		.. string.format("%.2f", A.db.profile.scale)
 		.. "  ·  pixel " .. string.format("%.3f", A.pixel))
 	for name, m in A:IterateModules() do
 		DEFAULT_CHAT_FRAME:AddMessage(string.format("   %s  %s%s",
-			m.enabled and "|cff9fe8b4on |r" or "|cffff8a8aoff|r", name,
-			m.lastError and ("  |cffff8a8a" .. m.lastError .. "|r") or ""))
+			m.enabled and A.Good("on ") or A.Bad("off"), name,
+			m.lastError and ("  " .. A.Bad(m.lastError)) or ""))
 	end
 end
 
@@ -63,12 +63,12 @@ end
 --  container names, ask a button what it is actually parented to.
 local function ancestry(name)
 	local f = _G[name]
-	if not f then return "|cff888888absent|r" end
+	if not f then return A.Dim("absent") end
 	local parts, cur, depth = {}, f, 0
 	while cur and depth < 8 do
 		local n = (cur.GetName and cur:GetName()) or "<anon>"
 		local shown = cur.IsShown and cur:IsShown()
-		parts[#parts + 1] = (shown and "|cffff8a8a" or "|cff9fe8b4") .. n .. "|r"
+		parts[#parts + 1] = (shown and A.Bad or A.Good)(n)
 		cur = cur.GetParent and cur:GetParent()
 		depth = depth + 1
 	end
@@ -251,7 +251,7 @@ end
 function A:DumpPanel(name)
 	name = (name or ""):gsub("%s", "")
 	if name == "" then
-		A:Print("|cff9d7bff/aether panels dump <FrameName>|r  ·  part of a name"
+		A:Print(A.Hi("/aether panels dump <FrameName>") .. "  ·  part of a name"
 			.. " will do, and it will list what it could have meant.")
 		return
 	end
@@ -259,11 +259,11 @@ function A:DumpPanel(name)
 	local frame, found, near = FindFrame(name)
 
 	if not frame then
-		A:Print("no frame called |cffece6ff" .. name .. "|r. Open the window"
+		A:Print("no frame called " .. A.Val(name) .. ". Open the window"
 			.. " first - half of these arrive with their own addon the first"
 			.. " time you use them.")
 		for i = 1, math.min(#(near or {}), 15) do
-			say("   |cffece6ff%s|r", near[i])
+			say("   " .. A.Val("%s"), near[i])
 		end
 		if near and #near > 15 then
 			say("   ...and %d more", #near - 15)
@@ -288,11 +288,11 @@ function A:DumpPanel(name)
 end
 
 local function diag()
-	A:Print("diagnostics  (|cffff8a8ared = shown|r, |cff9fe8b4green = hidden|r)")
+	A:Print("diagnostics  (" .. A.Bad("red = shown") .. ", " .. A.Good("green = hidden") .. ")")
 
 	for name, m in A:IterateModules() do
-		say("   %s %s%s", m.enabled and "|cff9fe8b4on |r" or "|cffff8a8aoff|r", name,
-			m.lastError and ("  |cffff8a8a" .. m.lastError .. "|r") or "")
+		say("   %s %s%s", m.enabled and A.Good("on ") or A.Bad("off"), name,
+			m.lastError and ("  " .. A.Bad(m.lastError)) or "")
 	end
 
 	local AB = A:GetModule("actionbars")
@@ -304,9 +304,9 @@ local function diag()
 		-- Nothing follows GetActionBarPage() any more, so there is no page state
 		-- to report and no page drift to explain. Each bar names its own source.
 		for _, bar in ipairs(AB.bars or {}) do
-			say("      %s%-7s|r %-6s %s%d button%s · %d row%s",
-				bar.dock:IsShown() and "|cff9fe8b4" or "|cff888888",
-				bar.id, bar.kind,
+			say("      %s %-6s %s%d button%s · %d row%s",
+				(bar.dock:IsShown() and A.Good or A.Dim)(
+					string.format("%-7s", bar.id)), bar.kind,
 				bar.kind == "action" and ("actions " .. ((bar.page - 1) * 12 + 1)
 					.. "-" .. (bar.page * 12) .. " · ") or "",
 				#bar.buttons, #bar.buttons == 1 and "" or "s",
@@ -331,7 +331,7 @@ local function diag()
 			end
 			say("   keys: %d of %d point at our buttons", mine, #(bar1.buttons or {}))
 			for _, line in ipairs(stolen) do
-				say("      |cffff8a8a%s|r", line)
+				say("      " .. A.Bad("%s"), line)
 			end
 		end
 
@@ -354,7 +354,7 @@ local function diag()
 			table.sort(names)
 			for _, k in ipairs(names) do
 				if MMd.hideReport[k] == "STILL SHOWN" then
-					say("      |cffff8a8a%s still shown|r", k)
+					say("      " .. A.Bad("%s still shown"), k)
 				end
 			end
 		end
@@ -365,7 +365,7 @@ local function diag()
 		for _, t in ipairs(AU.trays) do
 			local d = t.display
 			say("   %s: %s, %d shown, %d per row, cap %d",
-				t.key, t.enabled and "on" or "|cff888888off|r",
+				t.key, t.enabled and "on" or A.Dim("off"),
 				d.active, d.opts.perRow or 0, d.opts.max or 0)
 		end
 	end
@@ -393,11 +393,11 @@ local function diag()
 		table.sort(names)
 		for _, n in ipairs(names) do
 			local r = AB.hideReport[n]
-			local colour = (r == "hidden") and "|cff9fe8b4" or (r == "absent" and "|cff888888" or "|cffff8a8a")
-			say("      %-34s %s%s|r", n, colour, r)
+			local ink = (r == "hidden") and A.Good or (r == "absent" and A.Dim or A.Bad)
+			say("      %-34s %s", n, ink(r))
 		end
 	else
-		say("   |cffff8a8ano banish report - HideBlizzard never ran|r")
+		say("   " .. A.Bad("no banish report - HideBlizzard never ran"))
 	end
 end
 
@@ -434,7 +434,7 @@ handlers.skin = function(arg)
 	end
 	A.db.profile.skin = arg
 	A:Restyle()
-	A:Print("skin -> |cffece6ff" .. arg .. "|r")
+	A:Print("skin -> " .. A.Val(arg))
 end
 
 handlers.scale = function(arg)
@@ -538,23 +538,23 @@ handlers.ifec = function(arg)
 	end
 	for _, id in ipairs(packs) do
 		local pack = R.packs[id]
-		A:Print(("  |cffece6ff%s|r  season %d  ·  %d items")
+		A:Print(("  " .. A.Val("%s") .. "  season %d  ·  %d items")
 			:format(id, pack.seasonIndex or 0, #pack.items))
 	end
 
 	for _, fail in ipairs(R:Failures()) do
-		A:Print("  |cffff8a8arefused|r " .. fail.packId .. "  ·  " .. fail.reason)
+		A:Print("  " .. A.Bad("refused") .. " " .. fail.packId .. "  ·  " .. fail.reason)
 	end
 
 	if C then
 		local avail = C:Available()
-		A:Print(("  in season today: |cffece6ff%d|r of %d  ·  %s")
+		A:Print(("  in season today: " .. A.Val("%d") .. " of %d  ·  %s")
 			:format(#avail, #R:Catalogue(),
-				C:IsDormant() and "|cffff8a8adormant|r" or "active"))
+				C:IsDormant() and A.Bad("dormant") or "active"))
 	end
 
 	if P then
-		A:Print("  playback: |cffece6ff" .. tostring(P.state) .. "|r"
+		A:Print("  playback: " .. A.Val(tostring(P.state))
 			.. (P.item and ("  ·  " .. tostring(P.item.title)
 				.. " seg " .. tostring(P.index)
 				.. " of " .. tostring(#(P.item.segments or {}))) or ""))
@@ -567,12 +567,12 @@ handlers.ifec = function(arg)
 		if seg and P.segStart and GetTime then
 			A:Print(("    next boundary in %.1fs  ·  timer %s  ·  %s")
 				:format((P.segStart + (seg.duration or 0)) - GetTime(),
-					P.timer and "armed" or "|cffff8a8anone|r",
+					P.timer and "armed" or A.Bad("none"),
 					tostring(seg.file)))
 		end
 
 		if P.lastFail then
-			A:Print("  |cffff8a8alast file that would not play|r: " .. tostring(P.lastFail))
+			A:Print("  " .. A.Bad("last file that would not play") .. ": " .. tostring(P.lastFail))
 		end
 	end
 
@@ -654,17 +654,17 @@ handlers.zen = function(arg, rest)
 	elseif arg == "frost" then
 		cfg.frost = (rest ~= "off")
 		A:Print("the frosted pane -> " .. (cfg.frost and "on" or "off")
-			.. " |cff9d7bff(a pane in front of the world, not a blur of it -"
-			.. " nothing can blur the world)|r")
+			.. " " .. A.Hi("(a pane in front of the world, not a blur of it -"
+				.. " nothing can blur the world)"))
 	elseif arg == "plates" then
 		cfg.hideNameplates = (rest ~= "off")
 		local Z = A:GetModule("zen")
 		-- Turning it off mid-zen has to hand them straight back; the module only
 		-- re-reads this on its next tick, and the next tick may be a fade away.
 		if not cfg.hideNameplates and Z and Z.RestoreWorldText then Z:RestoreWorldText() end
-		A:Print("nameplates |cff9d7bffand names|r go with zen -> "
+		A:Print("nameplates " .. A.Hi("and names") .. " go with zen -> "
 			.. (cfg.hideNameplates and "on" or "off")
-			.. " |cff9d7bff(two separate CVar families; one switch drives both)|r")
+			.. " " .. A.Hi("(two separate CVar families; one switch drives both)"))
 	elseif arg == "sit" then
 		cfg.sit = (rest ~= "off")
 		local Z = A:GetModule("zen")
@@ -694,13 +694,13 @@ handlers.zen = function(arg, rest)
 
 		local v = tonumber(rest)
 		if not v then
-			A:Print("zen " .. arg .. " -> |cffece6ff" .. tostring(cfg[k.key]) .. "|r  ·  "
+			A:Print("zen " .. arg .. " -> " .. A.Val(tostring(cfg[k.key])) .. "  ·  "
 				.. k.what)
-			A:Print("|cff9d7bffzen " .. arg .. " " .. k.lo .. "-" .. k.hi .. "|r to change it")
+			A:Print(A.Hi("zen " .. arg .. " " .. k.lo .. "-" .. k.hi) .. " to change it")
 			return
 		end
 		cfg[k.key] = math.max(k.lo, math.min(k.hi, v))
-		A:Print("zen " .. arg .. " -> |cffece6ff" .. cfg[k.key] .. "|r  ·  " .. k.what)
+		A:Print("zen " .. arg .. " -> " .. A.Val(cfg[k.key]) .. "  ·  " .. k.what)
 
 		-- Re-stage it on the spot if the shot is up, so the new value is visible
 		-- now rather than at the next zen. Restore first: the camera is set ONCE
@@ -725,7 +725,7 @@ handlers.zen = function(arg, rest)
 		local found = false
 		for _, k in ipairs(names) do if k == want then found = true break end end
 		if not found then
-			A:Print("zen track takes one of: |cffece6ff" .. table.concat(names, ", ") .. "|r")
+			A:Print("zen track takes one of: " .. A.Val(table.concat(names, ", ")))
 			return
 		end
 		cfg.track = want
@@ -734,20 +734,20 @@ handlers.zen = function(arg, rest)
 		local Z = A:GetModule("zen")
 		if not Z or not Z.PreviewTrack then A:Print("zen module is not enabled.") return end
 		local name = Z:PreviewTrack(rest and rest:lower() or cfg.track)
-		A:Print(name and ("playing |cffece6ff" .. name .. "|r · run it again to stop")
+		A:Print(name and ("playing " .. A.Val(name) .. " · run it again to stop")
 			or "stopped.")
 	elseif arg == "test" then
 		local Z = A:GetModule("zen")
 		if not Z or not Z.enabled then A:Print("zen module is not enabled.") return end
 		if not A.db.profile.fader.enabled then
 			A:Print("idle fade is off, so there is no stage two to preview."
-				.. " |cff9d7bff/aether fade on|r first.")
+				.. " " .. A.Hi("/aether fade on") .. " first.")
 			return
 		end
 		A.Fader:ForceZen()
 		A:Print("zen preview · move the mouse or press a key")
 	else
-		A:Print(string.format("zen %s · after %ds of quiet%s · state |cffece6ff%s|r",
+		A:Print(string.format("zen %s · after %ds of quiet%s · state " .. A.Val("%s"),
 			(A:GetModule("zen") or {}).enabled and "on" or "off",
 			cfg.delay, cfg.onAFK ~= false and " or on going away" or "",
 			A.Fader.state))
@@ -781,7 +781,7 @@ handlers.bags = function(arg, rest)
 		local list, value = B:JunkList()
 		if #list == 0 then A:Print("no junk to sell.") return end
 		if not _G.MerchantFrame or not _G.MerchantFrame:IsShown() then
-			A:Print(("|cffece6ff%d|r junk item%s worth |cffece6ff%s|r - open a merchant first.")
+			A:Print((A.Val("%d") .. " junk item%s worth " .. A.Val("%s") .. " - open a merchant first.")
 				:format(#list, #list == 1 and "" or "s",
 					(_G.GetCoinTextureString and _G.GetCoinTextureString(value)) or (value .. "c")))
 			return
@@ -798,8 +798,8 @@ handlers.bags = function(arg, rest)
 		elseif rest == "off" then cfg.junkAutoSell = false
 		else cfg.junkAutoSell = not cfg.junkAutoSell end
 		A:Print("junk auto-sell " .. (cfg.junkAutoSell
-			and "|cff9fe8b4on|r - poor-quality items go the moment a merchant opens."
-			or "|cff888888off|r."))
+			and A.Good("on") .. " - poor-quality items go the moment a merchant opens."
+			or A.Dim("off") .. "."))
 		B:Invalidate()
 		return
 	end
@@ -831,20 +831,18 @@ handlers.chat = function(arg, rest)
 	local sw = switches[what]
 	if sw then
 		if value ~= "on" and value ~= "off" then
-			A:Print(sw.label .. " is |cffece6ff"
-				.. (cfg[sw.key] ~= false and "on" or "off") .. "|r.")
+			A:Print(sw.label .. " is " .. A.Val((cfg[sw.key] ~= false and "on" or "off")) .. ".")
 			return
 		end
 		cfg[sw.key] = (value == "on")
 		A:Reconfigure()
-		A:Print(sw.label .. " -> |cffece6ff" .. value .. "|r")
+		A:Print(sw.label .. " -> " .. A.Val(value))
 		return
 	end
 
 	if what == "whispers" then
 		if value ~= "on" and value ~= "off" then
-			A:Print("whispers tab is |cffece6ff"
-				.. (cfg.whisperTab == true and "on" or "off") .. "|r. It opens a"
+			A:Print("whispers tab is " .. A.Val((cfg.whisperTab == true and "on" or "off")) .. ". It opens a"
 				.. " real chat window and moves the whisper message groups onto"
 				.. " it - which Blizzard saves, and keeps saved with this addon"
 				.. " off.")
@@ -861,17 +859,15 @@ end
 
 handlers.health = function(arg, rest)
 	if arg ~= "class" and arg ~= "deck" then
-		A:Print("health bar colour is |cffece6ff"
-			.. (A.db.profile.classColorHealth and "class" or "deck")
-			.. "|r. 'class' colours players by class; 'deck' uses the concept's"
+		A:Print("health bar colour is " .. A.Val((A.db.profile.classColorHealth and "class" or "deck")) .. ". 'class' colours players by class; 'deck' uses the concept's"
 			.. " green and reserves colour for reaction.")
-		A:Print("|cff888888/aether health lift N|r and |cff888888depth N|r tune the"
+		A:Print(A.Dim("/aether health lift N") .. " and " .. A.Dim("depth N") .. " tune the"
 			.. " two ends of a class-coloured bar.")
 		return
 	end
 	A.db.profile.classColorHealth = (arg == "class")
 	A:Restyle()
-	A:Print("health bar colour -> |cffece6ff" .. arg .. "|r")
+	A:Print("health bar colour -> " .. A.Val(arg))
 end
 
 --- Bars are independent, so the command surface is `/aether bar <id> <what> <n>`
@@ -892,8 +888,8 @@ local function BarList()
 		for _, built in ipairs(AB and AB.bars or {}) do
 			if built.id == tostring(b.id) then live = built end
 		end
-		say("   %s%-7s|r %-8s %s%s%s",
-			b.enabled and "|cff9fe8b4" or "|cffff8a8a", tostring(b.id),
+		say("   %s %-8s %s%s%s",
+			(b.enabled and A.Good or A.Bad)(string.format("%-7s", tostring(b.id))),
 			b.kind or "action",
 			(b.kind or "action") == "action"
 				and string.format("page %d · %d buttons", b.page or 1, b.buttons or 12)
@@ -901,7 +897,7 @@ local function BarList()
 			string.format(" · %d row%s", b.rows or 1, (b.rows or 1) == 1 and "" or "s"),
 			string.format(" · scale %.2f", b.scale or 1))
 	end
-	say("   |cff888888/aether bar <id> on|off|buttons N|rows N|page N|scale N|backdrop|r")
+	say("   " .. A.Dim("/aether bar <id> on/off/buttons N/rows N/page N/scale N/backdrop"))
 end
 
 handlers.bar = function(arg, rest)
@@ -920,7 +916,7 @@ handlers.bar = function(arg, rest)
 		}
 		local lo, hi, note = limits[arg][1], limits[arg][2], limits[arg][3]
 		if not v or v < lo or v > hi then
-			A:Print(("bar %s takes %s - %s. |cff888888%s|r"):format(arg, lo, hi, note))
+			A:Print(("bar %s takes %s - %s. " .. A.Dim("%s")):format(arg, lo, hi, note))
 			return
 		end
 		if arg == "font" then cfg.fontDelta = v else cfg[arg] = v end
@@ -932,7 +928,7 @@ handlers.bar = function(arg, rest)
 	-- per-bar ---------------------------------------------------------------
 	local barCfg = AB and AB.BarConfig and AB:BarConfig(arg)
 	if not barCfg then
-		A:Print("no bar |cffece6ff" .. tostring(arg) .. "|r.")
+		A:Print("no bar " .. A.Val(tostring(arg)) .. ".")
 		BarList()
 		return
 	end
@@ -1008,11 +1004,11 @@ handlers.toolbox = function(arg, rest)
 
 	if arg == "dock" then
 		if not TB:SetDock(rest or "") then
-			A:Print("dock takes |cffece6ffleft|r, |cffece6ffright|r, "
-				.. "|cffece6fftop|r or |cffece6ffbottom|r.")
+			A:Print("dock takes " .. A.Val("left") .. ", " .. A.Val("right") .. ", "
+				.. A.Val("top") .. " or " .. A.Val("bottom") .. ".")
 			return
 		end
-		A:Print("toolbox docked -> |cffece6ff" .. TB:Dock():lower() .. "|r")
+		A:Print("toolbox docked -> " .. A.Val(TB:Dock():lower()))
 		return
 	elseif arg == "open" then
 		TB:SetOpen(true)
@@ -1026,7 +1022,7 @@ handlers.toolbox = function(arg, rest)
 	elseif arg == "pin" then
 		if not rest or rest == "" then
 			local p = TB:Pinned()
-			A:Print("pinned: " .. (#p > 0 and table.concat(p, ", ") or "|cff888888nothing|r"))
+			A:Print("pinned: " .. (#p > 0 and table.concat(p, ", ") or A.Dim("nothing")))
 			return
 		end
 		-- The dispatcher lowercases `rest`, and LDB object names are
@@ -1042,8 +1038,8 @@ handlers.toolbox = function(arg, rest)
 			end
 		end
 		if not key or not TB:TogglePin(key) then
-			A:Print("nothing called |cffece6ff" .. rest .. "|r offers a launcher."
-				.. " |cff9d7bff/aether toolbox|r lists what does.")
+			A:Print("nothing called " .. A.Val(rest) .. " offers a launcher."
+				.. " " .. A.Hi("/aether toolbox") .. " lists what does.")
 			return
 		end
 		A:Print("pin " .. key .. " -> " .. (TB:IsPinned(key) and "on" or "off"))
@@ -1051,7 +1047,7 @@ handlers.toolbox = function(arg, rest)
 	end
 
 	-- the diagnostic
-	A:Print("toolbox  ·  docked |cffece6ff" .. TB:Dock():lower() .. "|r  ·  "
+	A:Print("toolbox  ·  docked " .. A.Val(TB:Dock():lower()) .. "  ·  "
 		.. (TB:IsOpen() and "open" or "shut")
 		.. "  ·  scrim " .. string.format("%.2f", tonumber(cfg.scrim) or 0.28))
 
@@ -1065,7 +1061,7 @@ handlers.toolbox = function(arg, rest)
 	-- what the GRID is showing rather than what the module happens to compute.
 	local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
 	local list = TB:WidgetList()
-	say("   widgets: %d shown%s", #list, ldb and "" or " |cffff8a8a(no LibDataBroker!)|r")
+	say("   widgets: %d shown%s", #list, ldb and "" or " " .. A.Bad("(no LibDataBroker!)"))
 	for _, name in ipairs(list) do
 		local obj = ldb and ldb:GetDataObjectByName(name)
 		local big, small = TB:CardText(name, obj)
@@ -1085,14 +1081,14 @@ handlers.toolbox = function(arg, rest)
 		say("   launchers: %d total  ·  %d from LDB  ·  %d LibDBIcon  ·  %d hand-rolled",
 			L:Count(), ldbN, iconN, mapN)
 		if L.scanError then
-			say("      |cffff8a8aminimap scan failed: %s|r", tostring(L.scanError))
+			say("      " .. A.Bad("minimap scan failed: %s"), tostring(L.scanError))
 		end
 		for e in L:Iterate() do
 			local owner = L:OwnerOf(e)
 			say("      %-26s %-8s %s%s", tostring(e.key), tostring(e.source),
-				owner == TB and "|cff9fe8b4rail|r"
-					or owner and "|cff888888drawer|r" or "|cff888888unclaimed|r",
-				TB:IsPinned(e.key) and "  |cff9d7bffpinned|r" or "")
+				owner == TB and A.Good("rail")
+					or owner and A.Dim("drawer") or A.Dim("unclaimed"),
+				TB:IsPinned(e.key) and "  " .. A.Hi("pinned") or "")
 		end
 	end
 
@@ -1108,7 +1104,7 @@ handlers.toolbox = function(arg, rest)
 	local names = {}
 	for _, m in ipairs(micro) do names[#names + 1] = m.key end
 	say("   micro: %d of %d  ·  %s", #micro, #TB.MICRO, table.concat(names, " "))
-	say("      |cff888888Social and Guild are exclusive on useClassicGuildUI (%s)|r",
+	say("      " .. A.Dim("Social and Guild are exclusive on useClassicGuildUI (%s)"),
 		tostring(GetCVarBool and GetCVarBool("useClassicGuildUI")))
 end
 
@@ -1116,8 +1112,7 @@ handlers.panels = function(arg, rest)
 	if arg == "dump" then A:DumpPanel(rest) return end
 
 	local P = A:GetModule("panels")
-	A:Print("panels is |cffece6ff" .. ((P and P.enabled) and "on" or "off")
-		.. "|r.  |cff9d7bff/aether panels dump <FrameName>|r reads a window's"
+	A:Print("panels is " .. A.Val(((P and P.enabled) and "on" or "off")) .. ".  " .. A.Hi("/aether panels dump <FrameName>") .. " reads a window's"
 		.. " parts into a box you can copy out of.")
 end
 
@@ -1129,8 +1124,8 @@ handlers.tooltips = function(arg)
 	if arg == "cursor" then
 		cfg.cursorItems = not cfg.cursorItems
 		A:Print("item and spell tooltips " .. (cfg.cursorItems
-			and "|cff9fe8b4follow the cursor|r."
-			or "|cff888888stay where whatever opened them put them|r."))
+			and A.Good("follow the cursor") .. "."
+			or A.Dim("stay where whatever opened them put them") .. "."))
 	elseif arg == "anchor" then
 		cfg.unitAnchor = not cfg.unitAnchor
 		A:Print("unit tooltips " .. (cfg.unitAnchor
@@ -1142,7 +1137,7 @@ handlers.tooltips = function(arg)
 			.. " - this is the one setting that rewrites tooltip text.")
 	elseif arg == "sweep" then
 		local n = T:Sweep()
-		A:Print(("swept: |cffece6ff%d|r new tooltip frame%s adopted.")
+		A:Print(("swept: " .. A.Val("%d") .. " new tooltip frame%s adopted.")
 			:format(n, n == 1 and "" or "s"))
 	else
 		T:Diagnose()

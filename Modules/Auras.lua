@@ -908,7 +908,7 @@ function Aur:Diagnose()
 	for _, tray in ipairs(self.trays or {}) do
 		local d = tray.display
 		DEFAULT_CHAT_FRAME:AddMessage(string.format(
-			"   |cff9d7bff%s|r  enabled=%s active=%s showTime=%s",
+			"   " .. A.Hi("%s") .. "  enabled=%s active=%s showTime=%s",
 			tray.key, tostring(tray.enabled), tostring(d and d.active),
 			tostring(self.spec and self.spec.showTime)))
 		if not d then break end

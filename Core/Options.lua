@@ -275,19 +275,20 @@ local function ToolboxGroup()
 	return group("Toolbox", {
 		desc = note("A drawer that docks to the centre of any screen edge, with a"
 			.. " rail that stays on screen when the drawer is shut."
-			.. "\n\nTo move it, |cff9d7bffunlock frames|r and drag the rail: four"
+			.. "\n\nTo move it, " .. A.Hi("unlock frames") .. " and drag the rail: four"
 			.. " targets appear, one per edge, and the one nearest the cursor is"
 			.. " the one you get. It has four legal places rather than a"
 			.. " position, because each edge is a different layout."
 			.. "\n\nThe edge it is docked to and whether it is open are remembered"
-			.. " per |cff9d7bffcharacter|r rather than per profile - a drawer edge"
+			.. " per " .. A.Hi("character") .. " rather than per profile - a drawer edge"
 			.. " is a habit somebody forms on one character."),
 		enabled = toggle("Enabled", nil, { "modules", "toolbox", "enabled" },
 			{ defaultTrue = true }),
 
 		widgetsHeader = header("Widgets"),
-		widgetsNote = note("The six widgets are published as |cff9d7bffLibDataBroker"
-			.. " data sources|r rather than drawn straight onto the panel. Two"
+		widgetsNote = note("The six widgets are published as "
+			.. A.Hi("LibDataBroker data sources")
+			.. " rather than drawn straight onto the panel. Two"
 			.. " consequences: anything that displays LDB - Titan, Bazooka,"
 			.. " ChocolateBar - shows AetherUI's numbers without being told, and"
 			.. " anyone can write a seventh widget in about ten lines."
@@ -303,7 +304,7 @@ local function ToolboxGroup()
 			{ "modules", "toolbox", "addonColumns" }, 1, 4, 1, { after = "reconfigure" }),
 
 		lookHeader = header("The overlay"),
-		lookNote = note("The drawer slides out |cff9d7bffover|r the HUD. Nothing"
+		lookNote = note("The drawer slides out " .. A.Hi("over") .. " the HUD. Nothing"
 			.. " underneath moves or resizes; the covered strip is dimmed instead,"
 			.. " so it reads as being behind rather than merely dark."),
 		scrim = range("Dim the covered strip", nil,
@@ -349,7 +350,7 @@ local function FaderGroup()
 			.. " breath - with the zone and the time in the corner. Anything you do"
 			.. " brings it back, including a keypress, which is the one thing stage"
 			.. " one cannot see."
-			.. "\n\n|cff9d7bffOnly the hard signals hold this off|r: combat, casting,"
+			.. "\n\n" .. A.Hi("Only the hard signals hold this off") .. ": combat, casting,"
 			.. " and the cursor sitting on the HUD. Having a target or being below"
 			.. " full health keeps stage one awake but not this one, because"
 			.. " neither is evidence that you are still in the chair."),
@@ -417,12 +418,12 @@ local function FaderGroup()
 		zenFrostHeader = header("The frosted pane"),
 		zenFrostNote = note("A pane of frosted glass drawn in front of the world"
 			.. " while zen is on."
-			.. "\n\n|cff9d7bffIt is not a blur, and it cannot be|r. The client gives"
+			.. "\n\n" .. A.Hi("It is not a blur, and it cannot be") .. ". The client gives"
 			.. " addons no way to read or filter the 3D scene - no render-to-texture,"
 			.. " no shader, no post-process hook - so the world behind stays sharp."
 			.. " What frosted glass actually is, though, is a surface in front of a"
 			.. " sharp scene."
-			.. "\n\nIt gets |cff9d7bffbrighter|r, not darker. Frosted glass scatters"
+			.. "\n\nIt gets " .. A.Hi("brighter") .. ", not darker. Frosted glass scatters"
 			.. " light, so it is brighter than what is behind it and what it destroys"
 			.. " is contrast. A dark pane leaves every edge in the scene perfectly"
 			.. " crisp and simply turns the lights off."),
@@ -469,7 +470,7 @@ local function FaderGroup()
 			.. " floating unit names are drawn against the world rather than"
 			.. " composited into the interface, so they are left hanging over an"
 			.. " empty hillside otherwise."
-			.. "\n\nThese are |cff9d7bfftwo separate systems|r in the client - the"
+			.. "\n\nThese are " .. A.Hi("two separate systems") .. " in the client - the"
 			.. " bars and the text have unrelated settings - so this drives both."
 			.. " Taking the bars away and leaving every name, guild tag and pet"
 			.. " label floating looks like a fault rather than a choice. Everything"
@@ -486,7 +487,7 @@ local function FaderGroup()
 			.. " shoulder."
 			.. "\n\nThe zoom is exact and exactly reversible - the game will tell us"
 			.. " the current distance, so yours is put back rather than guessed at."
-			.. " |cff9d7bffThe tilt is not|r: the client offers no way to read the"
+			.. " " .. A.Hi("The tilt is not") .. ": the client offers no way to read the"
 			.. " camera's pitch, only to move it, so the way back is the same"
 			.. " movement reversed for the same time."),
 		zenSit = toggle("Sit down",
@@ -507,8 +508,9 @@ local function FaderGroup()
 		zenAudioHeader = header("The audio profile"),
 		zenAudioNote = note("Zen borrows the sound channels while it is on screen"
 			.. " and gives them back when it ends."
-			.. "\n\nThe three sliders below are |cff9d7bfffractions of your own"
-			.. " settings|r, not volumes. 5% of an effects channel you keep at 80%"
+			.. "\n\nThe three sliders below are " .. A.Hi("fractions of your"
+				.. " own settings")
+			.. ", not volumes. 5% of an effects channel you keep at 80%"
 			.. " is 4%; at 20% it is 1%. Your master volume is never touched, and a"
 			.. " channel you change by hand during zen is left where you put it"
 			.. " rather than being handed a stale value back."),
@@ -525,7 +527,7 @@ local function FaderGroup()
 				local Z = A:GetModule("zen")
 				if not Z then return end
 				local name = Z:PreviewTrack(A.db.profile.modules.zen.track)
-				if name then A:Print("playing |cffece6ff" .. name .. "|r") end
+				if name then A:Print("playing " .. A.Val(name)) end
 			end),
 		zenMusicFloor = range("Lift the music channel to at least",
 			"The one channel zen raises rather than lowers, and only if it is under"
@@ -583,7 +585,7 @@ local function UnitFramesGroup()
 			at("showTargetCastBar")),
 		castNote = note("Both cast bars float free on their own movers, well above"
 			.. " the cluster: every edge of a capsule now belongs to an aura tray."
-			.. "  |cff9d7bff/aether unlock|r to place them - they are held up while"
+			.. "  " .. A.Hi("/aether unlock") .. " to place them - they are held up while"
 			.. " you do, since a bar you only ever see mid-cast is a bar you could"
 			.. " never aim at."),
 		castWidth = range("Cast bar width", nil, at("castWidth"), 160, 520, 1),
@@ -655,7 +657,7 @@ local function MinimapGroup()
 		enabled = toggle("Enabled", nil, at("enabled")),
 		desc = note("A round map with a frosted rim, and a glass pill under it"
 			.. " carrying the zone, your coordinates and the time - which swaps for"
-			.. " a red dot and |cffff8a8aIn combat|r in a fight."),
+			.. " a red dot and " .. A.Bad("In combat") .. " in a fight."),
 		size = range("Size", nil, at("size"), 120, 320, 1),
 		ring = toggle("Border", nil, at("ring"), { defaultTrue = true }),
 		showNorth = toggle("North marker", nil, at("showNorth"), { defaultTrue = true }),
@@ -751,7 +753,7 @@ local function ActionBarsGroup()
 
 	local args = {
 		shared = group("Shared", shared, { inline = true }),
-		pagingNote = note("|cff9d7bffThere is no paging.|r Every bar names its own"
+		pagingNote = note(A.Hi("There is no paging.") .. " Every bar names its own"
 			.. " source once and never changes it. The page Blizzard tracks is a"
 			.. " number this addon does not own and could not keep still, and"
 			.. " following it is what made the dock empty itself."),
@@ -888,7 +890,7 @@ local function ChatGroup()
 		linesHeader = header("Message lines"),
 		linesNote = note("The name is class-coloured and its realm dimmed, the"
 			.. " \"says:\" becomes an em dash, and the channel gets a badge."
-			.. "\n\n|cff9d7bffNone of this rewrites the author.|r Blizzard hands"
+			.. "\n\n" .. A.Hi("None of this rewrites the author.") .. " Blizzard hands"
 			.. " out the decorated name and builds the player link around what"
 			.. " comes back, so whispers, ignore and the right-click menu are out"
 			.. " of reach rather than carefully avoided."),
@@ -941,7 +943,7 @@ local function ChatGroup()
 
 		whisperHeader = header("Whispers"),
 		whisperTab = toggle("Whispers get their own tab",
-			"|cffff8a8aThis one outlives the addon.|r It opens a real Blizzard"
+			A.Bad("This one outlives the addon.") .. " It opens a real Blizzard"
 			.. " chat window and moves the whisper message groups onto it, and"
 			.. " Blizzard saves all of that - including with AetherUI turned off."
 			.. "\n\nIt is also the only answer to the concept's \"whispers stay"
@@ -1038,7 +1040,7 @@ local function IFECGroup()
 			"You are a passenger. The console stays.", at("hideUI")),
 		scale = range("Size", "On top of the interface scale, like the action bars"
 			.. " have their own.", at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
-		note = note("Move it with |cff9d7bff/aether unlock|r."),
+		note = note("Move it with " .. A.Hi("/aether unlock") .. "."),
 	})
 end
 
@@ -1132,7 +1134,7 @@ local function TooltipsGroup()
 			-- Named, not positional. An AceConfig args table is keyed by STRING;
 			-- a bare note() lands in the array part and the registry rejects the
 			-- whole tree, taking every page down with it.
-			caution = note("|cffcdbcffThese four change the tooltip's text|r, not just its"
+			caution = note(A.Hi("These four change the tooltip's text") .. ", not just its"
 				.. " colour. Everything else on this page is styling. If a tooltip"
 				.. " ever reads oddly alongside MobInfo2 or another mob addon,"
 				.. " this is the group to turn off first."),
@@ -1181,8 +1183,8 @@ local PAGE_ORDER = {
 --  before. A history nobody can reach is a history nobody keeps.
 local function ChangelogGroup()
 	local args = {
-		running = note("Running |cff9d7bffAether UI " .. (A.version or "?")
-			.. "|r.\n\nNumbering is |cffece6ffmajor.minor.build|r - a major for a"
+		running = note("Running " .. A.Hi("Aether UI " .. (A.version or "?"))
+			.. ".\n\nNumbering is " .. A.Val("major.minor.build") .. " - a major for a"
 			.. " release with new features in it, a minor for accumulated fixes"
 			.. " and small enhancements, and a build for hotfixes between the"
 			.. " two."),
@@ -1197,7 +1199,7 @@ local function ChangelogGroup()
 		-- Keyed by index rather than by version: a version string carries dots,
 		-- and AceConfig treats the key as a path segment.
 		args["rel" .. i] = group(
-			(entry.version or "?") .. (entry.date and ("   |cff888888" .. entry.date .. "|r") or ""),
+			(entry.version or "?") .. (entry.date and ("   " .. A.Dim(entry.date)) or ""),
 			{ body = note(#body > 0 and table.concat(body, "\n") or "No notes.") },
 			{ inline = true })
 	end
@@ -1210,7 +1212,7 @@ function Options:Build()
 	order = 0
 	local tree = {
 		type = "group",
-		name = "Aether|cff9d7bffUI|r",
+		name = "Aether" .. A.Hi("UI"),
 		args = {
 			general = GeneralGroup(),
 			unitframes = UnitFramesGroup(),
@@ -1294,7 +1296,7 @@ end
 function Options:Open(section)
 	if not self:Register() then
 		A:Print("the options panel needs the Ace3 libraries, which are missing from"
-			.. " this install. |cff888888/aether help|r still lists everything.")
+			.. " this install. " .. A.Dim("/aether help") .. " still lists everything.")
 		return false
 	end
 	if section then

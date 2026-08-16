@@ -28,18 +28,25 @@ A.moduleOrder = {}
 -- chat output
 -- ---------------------------------------------------------------------------
 
-local PREFIX = "|cff9d7bffAether|r|cffece6ffUI|r: "
+--- The name, built EVERY TIME rather than once into an upvalue.
+--
+--  Twice wrong as a constant: this file loads before the palette does, so the
+--  helpers are not there yet, and a prefix frozen at load carries the skin you
+--  started on for the rest of the session.
+local function prefix()
+	return A.Hi("Aether") .. A.Val("UI") .. ": "
+end
 
 function A:Print(...)
 	local n = select("#", ...)
 	local parts = {}
 	for i = 1, n do parts[i] = tostring((select(i, ...))) end
-	DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. table.concat(parts, " "))
+	DEFAULT_CHAT_FRAME:AddMessage(prefix() .. table.concat(parts, " "))
 end
 
 function A:Debug(...)
 	if not A.db or not A.db.profile or not A.db.profile.debug then return end
-	A:Print("|cff8ab4ff[dbg]|r", ...)
+	A:Print(A.Palette:Ink("info", "[dbg]"), ...)
 end
 
 -- ---------------------------------------------------------------------------
@@ -323,8 +330,8 @@ local function EnableModule(name, module)
 		if not ok then
 			module.enabled = false
 			module.lastError = tostring(err)
-			A:Print("|cffff8a8amodule '" .. name .. "' failed to enable:|r " .. tostring(err))
-			A:Print("|cffff8a8arun|r /aether diag |cffff8a8afor the full picture.|r")
+			A:Print(A.Bad("module '" .. name .. "' failed to enable:") .. " " .. tostring(err))
+			A:Print(A.Bad("run") .. " /aether diag " .. A.Bad("for the full picture."))
 		end
 	end
 end
@@ -364,7 +371,7 @@ local function RunAll(hook, label)
 			if not ok then
 				m.lastError = tostring(err)
 				A.lastFailure = label .. " '" .. name .. "': " .. tostring(err)
-				A:Print("|cffff8a8a" .. label .. " '" .. name .. "':|r " .. tostring(err))
+				A:Print(A.Bad(label .. " '" .. name .. "':") .. " " .. tostring(err))
 			end
 		end
 	end
@@ -398,7 +405,7 @@ local function Boot()
 	for name, m in A:IterateModules() do
 		if m.OnInitialize then
 			local ok, err = pcall(m.OnInitialize, m)
-			if not ok then A:Print("|cffff8a8ainit '" .. name .. "':|r " .. tostring(err)) end
+			if not ok then A:Print(A.Bad("init '" .. name .. "':") .. " " .. tostring(err)) end
 		end
 	end
 	for name, m in A:IterateModules() do
@@ -420,12 +427,12 @@ function A:Greet()
 	if A.__greeted then return end
 	A.__greeted = true
 
-	A:Print("v" .. (A.version or "?") .. " loaded  ·  skin |cffece6ff"
-		.. ((A.Palette and A.Palette.current) or "?") .. "|r")
+	A:Print("v" .. (A.version or "?") .. " loaded  ·  skin "
+		.. A.Val((A.Palette and A.Palette.current) or "?"))
 	-- Bare /aether opens the settings panel, so pointing at it "for commands"
 	-- sends people somewhere that does not list any.
-	A:Print("|cff9d7bff/aether|r settings  ·  |cff9d7bff/aether help|r commands"
-		.. "  ·  |cff9d7bff/aether errors|r bug report")
+	A:Print(A.Hi("/aether") .. " settings  ·  " .. A.Hi("/aether help") .. " commands"
+		.. "  ·  " .. A.Hi("/aether errors") .. " bug report")
 end
 
 A:RegisterEvent(A, "ADDON_LOADED", function(_, _, addon)

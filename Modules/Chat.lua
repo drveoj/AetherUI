@@ -1848,7 +1848,7 @@ function Chat:LineTag(event, channelName, channelBaseName, channelIndex)
 		if key then return self:Badge(key, hex) end
 		local label = (channelBaseName or channelName or ""):gsub("%s+", " ")
 		if label == "" then return nil end
-		return "|cff" .. hex .. label:upper() .. "|r "
+		return Palette:InkHex(hex, label:upper()) .. " "
 	end
 
 	local key = TYPE_BADGE[kind]
@@ -1905,7 +1905,7 @@ local function SenderNameFilter(event, name, ...)
 	local hex = (cfg.classColorNames ~= false) and ClassHex(senderGUID) or nil
 	local out
 	if hex then
-		out = "|cff" .. hex .. base .. "|r"
+		out = Palette:InkHex(hex, base)
 	elseif prefix then
 		out = prefix .. base .. "|r"
 	else
@@ -1913,7 +1913,7 @@ local function SenderNameFilter(event, name, ...)
 	end
 
 	if realm and realm ~= "" and cfg.hideRealm ~= true then
-		out = out .. "|cff" .. Palette:Hex(Palette.c.textFaint) .. "-" .. realm .. "|r"
+		out = out .. Palette:Ink("textFaint", "-" .. realm)
 	end
 
 	-- The badge goes on the *name*, which puts it inside the player link and
@@ -2071,7 +2071,7 @@ function Chat:RewriteLine(text, id)
 
 	if cfg.dimSystem ~= false and id and self:DimIDs()[id]
 		and text:sub(1, 2) ~= "|c" then
-		text = "|cff" .. Palette:Hex(Palette.c.textDim) .. text .. "|r"
+		text = Palette:Ink("textDim", text)
 	end
 
 	return text
@@ -2196,7 +2196,7 @@ function Chat:SetWhisperTab(on)
 	if on then
 		if not frame then
 			if type(_G.FCF_OpenNewWindow) ~= "function" then
-				A:Print("this client has no |cffece6ffFCF_OpenNewWindow|r - no whispers tab.")
+				A:Print("this client has no " .. A.Val("FCF_OpenNewWindow") .. " - no whispers tab.")
 				return false
 			end
 			-- noDefaultChannels. Without it the new window subscribes to SAY,
@@ -2222,7 +2222,7 @@ function Chat:SetWhisperTab(on)
 			A:Print("the whispers tab exists but no message group would move to it.")
 			return false
 		end
-		A:Print("whispers now go to |cffece6ff" .. name .. "|r.")
+		A:Print("whispers now go to " .. A.Val(name) .. ".")
 		return true
 	end
 
@@ -2466,10 +2466,10 @@ function Chat:Diagnose()
 						-- made the last dump impossible to read.
 						local visible = r.IsVisible and r:IsVisible()
 						DEFAULT_CHAT_FRAME:AddMessage(string.format(
-							"   %s%s  |cffece6ff'%s'|r  alpha=%.2f %s",
+							"   %s%s  " .. A.Val("'%s'") .. "  alpha=%.2f %s",
 							string.rep("  ", depth), path,
 							tostring(txt), r:GetAlpha() or 1,
-							visible and "|cffff8a8aON SCREEN|r" or "|cff9fe8b4not drawn|r"))
+							visible and A.Bad("ON SCREEN") or A.Good("not drawn")))
 					end
 				end
 			end
@@ -2494,23 +2494,23 @@ function Chat:Diagnose()
 	A:Print("anchors:")
 	local function report(label, frame)
 		if not frame then
-			DEFAULT_CHAT_FRAME:AddMessage("   " .. label .. "  |cffff8a8aabsent|r")
+			DEFAULT_CHAT_FRAME:AddMessage("   " .. label .. "  " .. A.Bad("absent"))
 			return
 		end
 		local n = (frame.GetNumPoints and frame:GetNumPoints()) or 0
 		if n == 0 then
 			DEFAULT_CHAT_FRAME:AddMessage("   " .. label
-				.. "  |cffff8a8ano points at all|r")
+				.. "  " .. A.Bad("no points at all"))
 			return
 		end
 		for i = 1, n do
 			local point, rel, relPoint, x, y = frame:GetPoint(i)
 			local relName = rel and (rel.GetName and rel:GetName()) or tostring(rel)
 			DEFAULT_CHAT_FRAME:AddMessage(string.format(
-				"   %-14s %s -> %s of |cffece6ff%s|r  (%.0f, %.0f)%s",
+				"   %-14s %s -> %s of " .. A.Val("%s") .. "  (%.0f, %.0f)%s",
 				i == 1 and label or "", tostring(point), tostring(relPoint),
 				tostring(relName), x or 0, y or 0,
-				frame.IsShown and not frame:IsShown() and "  |cff888888hidden|r" or ""))
+				frame.IsShown and not frame:IsShown() and "  " .. A.Dim("hidden") or ""))
 		end
 	end
 	report("chat frame", _G.ChatFrame1)
@@ -2525,7 +2525,7 @@ function Chat:Diagnose()
 			shown[#shown + 1] = f:GetName() or "?"
 		end
 	end)
-	A:Print("composers on screen: |cffece6ff" .. #shown .. "|r "
+	A:Print("composers on screen: " .. A.Val(#shown) .. " "
 		.. (#shown > 0 and ("(" .. table.concat(shown, ", ") .. ")") or ""))
 
 	self:DiagnoseLines()
@@ -2543,8 +2543,8 @@ function Chat:DiagnoseLines()
 	local function say(label, ok, detail)
 		DEFAULT_CHAT_FRAME:AddMessage(string.format("   %-22s %s%s",
 			label,
-			ok and "|cff9fe8b4yes|r" or "|cffff8a8ano|r",
-			detail and ("  |cff888888" .. detail .. "|r") or ""))
+			ok and A.Good("yes") or A.Bad("no"),
+			detail and ("  " .. A.Dim(detail)) or ""))
 	end
 
 	A:Print("message lines:")
@@ -2579,8 +2579,8 @@ function Chat:DiagnoseLines()
 	end
 	say("formats reshaped", #reshaped > 0, table.concat(reshaped, " "))
 	if #kept > 0 then
-		DEFAULT_CHAT_FRAME:AddMessage("   |cff888888left as Blizzard's: "
-			.. table.concat(kept, " ") .. "|r")
+		DEFAULT_CHAT_FRAME:AddMessage("   "
+			.. A.Dim("left as Blizzard's: " .. table.concat(kept, " ")))
 	end
 
 	local wrapped = 0
@@ -2700,7 +2700,7 @@ function Chat:OnDisable()
 	-- Blizzard's own look does not come back without a reload, and saying so is
 	-- better than pretending: every region we hid is hidden, and the functions
 	-- that would re-show them are the ones we are hooked onto.
-	A:Print("chat skin off. |cff9d7bff/reload|r to get Blizzard's frames back.")
+	A:Print("chat skin off. " .. A.Hi("/reload") .. " to get Blizzard's frames back.")
 end
 
 function Chat:OnSkinChanged()

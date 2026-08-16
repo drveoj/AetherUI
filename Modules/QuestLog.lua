@@ -1302,10 +1302,10 @@ function QL:AskAbandon()
 
 	self.confirm = self.confirm or BuildConfirm()
 	local c = Palette.c
-	local body = "Abandon |cff" .. Palette:Hex(c.text) .. name .. "|r?"
+	local body = "Abandon " .. Palette:Ink("text", name) .. "?"
 	if items then
-		body = body .. "\n\nYou will lose: |cff" .. Palette:Hex(c.dangerText)
-			.. tostring(items) .. "|r"
+		body = body .. "\n\nYou will lose: "
+			.. Palette:Ink("dangerText", items)
 	end
 	local box = self.confirm.box
 	box.text:SetText(body)

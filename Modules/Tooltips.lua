@@ -1414,7 +1414,7 @@ end
 --  pass/fail, so a tooltip we never found shows up as absent rather than as
 --  silence - the lesson from /aether chat.
 function TT:Diagnose()
-	A:Print(("skinned |cffece6ff%d|r tooltip frame%s.")
+	A:Print(("skinned " .. A.Val("%d") .. " tooltip frame%s.")
 		:format(#self.order, #self.order == 1 and "" or "s"))
 
 	local missing = {}
@@ -1424,17 +1424,17 @@ function TT:Diagnose()
 
 	for _, tip in ipairs(self.order) do
 		local name = tip.GetName and tip:GetName() or "?"
-		A:Print(("  |cff9fe8b4%s|r  card=%s bar=%s")
+		A:Print(("  " .. A.Good("%s") .. "  card=%s bar=%s")
 			:format(name,
 				tip.aetherCard and "yes" or "no",
 				tip.aetherBar and "yes" or "no"))
 	end
 
 	if #missing > 0 then
-		A:Print("absent on this client: |cff888888" .. table.concat(missing, ", ") .. "|r")
+		A:Print("absent on this client: " .. A.Dim(table.concat(missing, ", ")))
 	end
 
-	A:Print(("anchor |cffece6ff%s|r  ·  cursor-follow |cffece6ff%s|r  ·  fonts |cffece6ff%s|r")
+	A:Print(("anchor " .. A.Val("%s") .. "  ·  cursor-follow " .. A.Val("%s") .. "  ·  fonts " .. A.Val("%s"))
 		:format(AnchorPoint(),
 			cfg().cursorItems and "on" or "off",
 			cfg().restyleFonts and "on" or "off"))
@@ -1443,12 +1443,11 @@ function TT:Diagnose()
 	-- thing this whole diagnostic exists to prevent.
 	local reader = LevelReader()
 	if cfg().levelBadge and reader and cfg().deferToLevelReaders ~= false then
-		A:Print(("level badge |cff888888stood down|r - |cffece6ff%s|r reads the level"
+		A:Print(("level badge " .. A.Dim("stood down") .. " - " .. A.Val("%s") .. " reads the level"
 			.. " out of that line, and moving it into the badge would blind it."
-			.. " |cff9d7bff/aether config|r → Tooltips to override."):format(reader))
+			.. " " .. A.Hi("/aether config") .. " → Tooltips to override."):format(reader))
 	elseif cfg().levelBadge then
-		A:Print("level badge |cff9fe8b4on|r" .. (reader and " (override: |cffece6ff"
-			.. reader .. "|r is running and reads that line)" or ""))
+		A:Print("level badge " .. A.Good("on") .. (reader and " (override: " .. A.Val(reader) .. " is running and reads that line)" or ""))
 	end
 end
 

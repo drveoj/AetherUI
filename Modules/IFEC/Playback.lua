@@ -384,7 +384,7 @@ function Playback:Poll()
 	local ok, err = pcall(advance)
 	if not ok then
 		Playback.state = "stopped"
-		A:Print("|cffff8a8aifec: the programme stopped at a boundary|r: " .. tostring(err))
+		A:Print(A.Bad("ifec: the programme stopped at a boundary") .. ": " .. tostring(err))
 	end
 	return true
 end

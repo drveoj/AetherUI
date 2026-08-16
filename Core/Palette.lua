@@ -166,6 +166,11 @@ local SEMANTIC = {
 	bankBg     = C(140, 200, 255, 0.16),
 	bankEdge   = C(140, 200, 255, 0.34),
 
+	-- The grey a chat line is dimmed to. Its own token rather than a tinted white
+	-- at low alpha, because a chat escape cannot carry alpha - Hex drops it - so
+	-- textFaint would come back out at full strength and not be faint at all.
+	dim = C(136, 136, 136),
+
 	talentOpen = C(159, 232, 180),
 	talentFull = C(255, 226, 150),
 	junkTint   = C(150, 150, 150, 0.42),
@@ -374,6 +379,44 @@ function Palette:Hex(color)
 	local function b(v) return math.floor(math.min(math.max(v or 0, 0), 1) * 255 + 0.5) end
 	return string.format("%02x%02x%02x", b(color[1]), b(color[2]), b(color[3]))
 end
+
+--- The same thing, wrapped round a run of text, by ROLE rather than by hex.
+--
+--  There were 203 hand-written |cff escapes in this addon and five distinct
+--  colours between them, two of which - the accent and the type - are chrome
+--  and had been wrong since the day a second skin existed: every /aether line
+--  printed the same violet whatever skin you were on, because the hex was
+--  baked into the string.
+--
+--  Roles, not colours, is the whole point. "accent" stays right when the accent
+--  moves; "9d7bff" was only ever right once.
+function Palette:Ink(token, text)
+	local c = Palette.c[token]
+	if type(c) ~= "table" or type(c[1]) ~= "number" then c = Palette.c.text end
+	return Palette:InkHex(Palette:Hex(c), text)
+end
+
+--- The same, for a hex this palette did not choose.
+--
+--  Class colours come out of RAID_CLASS_COLORS and channel colours out of
+--  ChatTypeInfo, and neither is ours to remap - but the ESCAPE around them is,
+--  and it is the only thing in the addon allowed to write one. Everything else
+--  goes through here or through Ink, so there is exactly one place that knows
+--  what the sequence looks like.
+function Palette:InkHex(hex, text)
+	return "|cff" .. tostring(hex) .. tostring(text) .. "|r"
+end
+
+--- The five roles chat text actually comes in, named short because they are
+--  written INSIDE other strings and a long call swamps the line it decorates.
+--
+--  Five, and no more without a reason. A sixth grey that is not quite `dim` is
+--  how the 203 escapes happened in the first place.
+function A.Hi(text)   return Palette:Ink("accent", text) end     -- a command, a name
+function A.Val(text)  return Palette:Ink("text", text) end       -- a value being reported
+function A.Good(text) return Palette:Ink("friendly", text) end   -- on, ok, done
+function A.Bad(text)  return Palette:Ink("danger", text) end     -- off, failed, missing
+function A.Dim(text)  return Palette:Ink("dim", text) end        -- an aside
 
 -- ---------------------------------------------------------------------------
 -- dynamic colours

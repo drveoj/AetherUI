@@ -5876,7 +5876,10 @@ section("the source itself: nothing under space that should not be", function()
 				for i = 1, #data do
 					local b = data:byte(i)
 					if b == 10 then line = line + 1 end
-					if b < 32 and b ~= 9 and b ~= 10 and b ~= 13 then
+					-- Byte 13 too. This repo is LF, and one of our own files sat in it
+			-- as CRLF for months - invisible in every editor, and it makes a
+			-- one-line diff read as a whole-file rewrite.
+			if b < 32 and b ~= 9 and b ~= 10 then
 						print(("  |cffff8a8a!!|r %s:%d carries byte 0x%02X")
 							:format(f, line, b))
 						bad = bad + 1
@@ -5885,6 +5888,55 @@ section("the source itself: nothing under space that should not be", function()
 			end
 		end
 		check(bad == 0, "no stray control bytes in our own Lua (" .. bad .. " found)")
+	end
+
+	-- AND NO HAND-WRITTEN COLOUR ESCAPES.
+	--
+	-- There were 203 of them and five distinct colours between them, two of
+	-- which - the accent and the type - are chrome. Every /aether line printed
+	-- the same violet whichever skin you were on, because the hex was baked
+	-- into the string at the moment it was built. They read from the palette
+	-- now, through A.Hi / A.Val / A.Good / A.Bad / A.Dim.
+	--
+	-- The three that remain are inside COMMENTS, describing escapes the CLIENT
+	-- writes - a gossip title, a chat-format key, a nameplate count - which is
+	-- why this counts code lines only rather than banning the sequence.
+	do
+		local baked, tag = {}, string.char(124) .. "cff"
+		for _, f in ipairs(FILES) do
+			-- Except the palette, which is where the sequence is DEFINED. One
+			-- function writes it and everything else calls that.
+			local fh = f ~= "Core/Palette.lua" and io.open(f, "r")
+			if fh then
+				local line = 0
+				for text in fh:lines() do
+					line = line + 1
+					local code = text:match("^%s*%-%-") and "" or text
+					if code:find(tag, 1, true) then
+						baked[#baked + 1] = f .. ":" .. line
+					end
+				end
+				fh:close()
+			end
+		end
+		check(#baked == 0,
+			"no colour escape is written by hand - a hex in a string is a colour that"
+			.. " cannot follow the skin (" .. table.concat(baked, ", ") .. ")")
+
+		-- The exemption above is only safe while the palette writes it ONCE.
+		local owner = 0
+		local fh = io.open("Core/Palette.lua", "r")
+		if fh then
+			for text in fh:lines() do
+				if not text:match("^%s*%-%-") and text:find(tag, 1, true) then
+					owner = owner + 1
+				end
+			end
+			fh:close()
+		end
+		check(owner == 1,
+			"and the palette writes it exactly once - the exemption is a single"
+			.. " owner, not a file nobody checks (" .. owner .. " lines)")
 	end
 end)
 
@@ -19944,6 +19996,47 @@ do
 		"every token exists in every skin - a token added to one only is a nil"
 		.. " index in the middle of a redraw (missing: "
 		.. table.concat(missing, ", ") .. ")")
+end
+
+print("== skins: chat ink follows the skin, because it is not baked in ==")
+do
+	local P = A.Palette
+
+	-- A chat line cannot be re-coloured once it is in the log, so the colour
+	-- has to be right at the moment the string is built. The 203 escapes this
+	-- replaced were right on exactly one skin.
+	P:Apply("midnight")
+	local mid = A.Hi("x")
+	P:Apply(OTHER)
+	local other = A.Hi("x")
+	check(mid ~= other,
+		"the same call gives a different colour on a different skin")
+	check(other:find(P:Hex(P.skins[OTHER].accent), 1, true) ~= nil,
+		"and it is the LIVE skin's accent, not a remembered one (" .. other
+		.. ")")
+
+	-- Each helper on its own token. Two of them pointing at the same one is
+	-- the kind of thing every other check here would sail past.
+	local roles = {
+		{ A.Hi, "accent" }, { A.Val, "text" }, { A.Good, "friendly" },
+		{ A.Bad, "danger" }, { A.Dim, "dim" },
+	}
+	local seen = {}
+	for _, r in ipairs(roles) do
+		local fn, token = r[1], r[2]
+		local hex = P:Hex(P.c[token])
+		check(fn("x") == P:InkHex(hex, "x"),
+			token .. " is what its helper writes (" .. fn("x") .. ")")
+		check(not seen[hex], token .. " has a colour of its own")
+		seen[hex] = true
+	end
+
+	-- A token that does not exist falls back to type rather than to nil, which
+	-- in a chat line is the string |cffnil<text>.
+	check(P:Ink("noSuchToken", "x") == P:InkHex(P:Hex(P.c.text), "x"),
+		"an unknown token draws as ordinary type rather than as the word nil")
+
+	P:Apply("midnight")
 end
 
 print("== skins: the family is offered in the order it is named for ==")
