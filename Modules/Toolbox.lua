@@ -175,6 +175,10 @@ function TB:Build()
 	})
 	panel:SetFrameStrata("FULLSCREEN_DIALOG")
 	panel:SetFrameLevel(10)
+	-- A READING FILL, like the quest log and the chat. This is a drawer that
+	-- slides out OVER whatever is behind it - a quest window, the world, another
+	-- addon's panel - carrying five columns of small text. At the opacity a
+	-- button uses, all of that shows through every line of it.
 	self.panel = panel
 
 	-- The rail is a surface of its own rather than a region of the panel: it
@@ -281,6 +285,10 @@ end
 function TB:ApplySkin()
 	if not self.panel then return end
 	self.panel:ApplySkin()
+	-- Re-asserted after ApplySkin, which puts the token fill back. Here and
+	-- nowhere else: Build calls this, so setting it at construction as well
+	-- would be a second owner for one fact.
+	self.panel:SetFillColor(Palette:ReadingFill())
 	self.rail:ApplySkin()
 	local c = Palette.c
 	if self.rail.chev and c.text then
@@ -1851,6 +1859,17 @@ function TB:RefreshPlayer()
 		M.railMenuOpts = { point = "TOPRIGHT", relPoint = "BOTTOMRIGHT", x = 0, y = -4 }
 	else
 		M.railMenuOpts = { point = "BOTTOMRIGHT", relPoint = "TOPRIGHT", x = 0, y = 4 }
+	end
+
+	-- AND WHICH WAY THE LIBRARY OPENS, for the same reason: only we know which
+	-- edge we are docked to. Away from the drawer's own body - out to the side
+	-- of a column, and DOWN from a strip across the top, where beside it is the
+	-- middle of the strip and the list opened over the settings tiles.
+	if M.frame then
+		local away = {
+			LEFT = "RIGHT", RIGHT = "LEFT", TOP = "BELOW", BOTTOM = "ABOVE",
+		}
+		M.frame.__aetherLibraryFrom = away[edge]
 	end
 
 	M:AdoptRailChip(play)

@@ -25,6 +25,11 @@ Media.texture = {
 	-- frosted surfaces
 	panel       = TEX .. "Glass-Panel",       -- 256x256, 9-slice, corner 64 (0.25)
 	panelEdge   = TEX .. "Glass-Panel-Edge",
+	-- The same rounded shape with FLAT alpha. Glass-Panel's alpha carries the
+	-- top-light falloff as well as the shape, so a tint on it tops out at 89%
+	-- and a reading surface asked for solid could not get there. This goes
+	-- behind one when it is asked for more than the art can carry.
+	panelSolid  = TEX .. "Glass-Panel-Solid",
 	pill        = TEX .. "Glass-Pill",        -- 512x256, 3-slice, cap 128 (0.25)
 	pillEdge    = TEX .. "Glass-Pill-Edge",
 	shadow      = TEX .. "Glass-Shadow",      -- 256x256, 9-slice, corner 96 (0.375)

@@ -46,8 +46,15 @@ local function widgetBase(kind)
 		if not pt then return nil end
 		return pt[1], pt[2], pt[3], pt[4], pt[5]
 	end
+	-- HOW MANY, which is how you tell a region that was re-anchored from one
+	-- that was anchored AGAIN. A FontString keeps whatever anchors it was last
+	-- given, so a corner set without clearing the old one leaves the region
+	-- spanned between two corners - and every getter still answers about the
+	-- first of them, which looks exactly like it worked.
+	function o:GetNumPoints() return #self.__points end
 	function o:ClearAllPoints() self.__points = {} end
 	function o:SetAllPoints(other) self.__points = { { "ALL", other } } end
+
 
 	-- Resizing FIRES OnSizeChanged, as the client does. Without this a pill
 	-- never lays out in a test: Glass.CreatePill hangs its cap arithmetic off
@@ -476,8 +483,14 @@ local function newFontString(owner, layer)
 	function f:SetText(s) self.__text = s end
 	function f:GetText() return self.__text end
 	function f:GetName() return self.__name end
-	function f:SetJustifyH() end
-	function f:SetJustifyV() end
+	-- RECORDED, not swallowed. These were no-ops, so any code that set a
+	-- justification could be checked only by reading the anchor beside it and
+	-- hoping the two agreed - and the one place they have to agree is a readout
+	-- that moves from one corner of the screen to the other.
+	function f:SetJustifyH(j) self.__justifyH = j end
+	function f:GetJustifyH() return self.__justifyH end
+	function f:SetJustifyV(j) self.__justifyV = j end
+	function f:GetJustifyV() return self.__justifyV end
 	-- Recorded, not swallowed: the shadow under type is skin-dependent (a dark
 	-- shadow under dark ink on a white panel is a smudge), and a mock that
 	-- forgets it cannot see that.
@@ -12027,11 +12040,101 @@ do
 	A:GetModule("toolbox"):ClaimPins()
 end
 
+print("== reading surfaces reach solid ==")
+do
+	local cfg = A.db.profile.glass
+	local was = cfg.readOpacity
+
+	-- 100% MUST MEAN 100%. The fill art's own alpha carries the top-light
+	-- falloff as well as the shape - 0.89 in the middle, less at the foot - and
+	-- a vertex tint MULTIPLIES that, so no colour however solid could push a
+	-- reading surface past 89%. The setting said 100 and the panel did not.
+	cfg.readOpacity = 1
+	check(math.abs((A.Palette:ReadingFill()[4] or 0) - 1) < 0.001,
+		"at 100% the reading colour is solid ("
+		.. string.format("%.2f", A.Palette:ReadingFill()[4] or 0) .. ")")
+
+	local QLm = A:GetModule("questlog")
+	QLm.win:SetFillColor(A.Palette:ReadingFill())
+	check(QLm.win._backing ~= nil, "and the panel gets a plate behind it")
+	local plate = QLm.win._backing[1] and { QLm.win._backing[1]:GetVertexColor() }
+	check(plate and math.abs(plate[4] - 1) < 0.001,
+		"opaque, because at a request of 1 nothing else can close the gap ("
+		.. string.format("%.2f", plate and plate[4] or 0) .. ")")
+
+	-- BUILT ON DEMAND, and only when it is needed. The HUD's surfaces are meant
+	-- to be seen through, so nine textures a panel for a case that never arises
+	-- is nine textures a panel wasted.
+	cfg.readOpacity = 0
+	QLm.win:SetFillColor(A.Palette:ReadingFill())
+	check(QLm.win._backing[1]:IsShown() == false,
+		"and it goes away again when the surface is meant to be seen through")
+
+	local plain = A.Glass.CreatePanel(UIParent, { corner = 12 })
+	plain:SetFillColor(A.Palette.c.glass)
+	check(plain._backing == nil, "a surface nobody asked to be solid never grows one")
+
+	-- THE TOOLBOX IS A READING SURFACE TOO. It slides out OVER whatever is
+	-- behind it carrying five columns of small text.
+	cfg.readOpacity = 0.6
+	A:Restyle()
+	local want = A.Palette:ReadingFill()[4]
+	check(math.abs((A:GetModule("toolbox").panel._fillColor[4] or 0) - want) < 0.001,
+		"the Toolbox drawer is at the readable opacity too")
+
+	cfg.readOpacity = was
+	A:Restyle()
+end
+
 print("== xp hairline ==")
 local XPm = A:GetModule("xpbar")
 check(XPm and XPm.enabled and XPm.frame, "xpbar module built")
 check(XPm.frame:IsShown(), "xp bar visible below max level")
-check(XPm.frame.text:GetText() == "86%  ·  Level 15", "xp readout matches the concept's wording")
+-- WHAT IS LEFT, not what is done. "86% Level 15" is two facts about where you
+-- have been; the line counts DOWN to the level you are working towards, which is
+-- what anybody watching it is actually watching.
+check(XPm.frame.text:GetText() == "14% to Level 16",
+	"the readout counts down to the next level ("
+	.. tostring(XPm.frame.text:GetText()) .. ")")
+
+-- ROUNDED UP, so it never reads 0% while there is still experience to earn -
+-- the one number a countdown must not show early.
+do
+	local wasXP = _G.__xp
+	_G.__xp = _G.__xpMax - 1
+	XPm.Update()
+	check(XPm.frame.text:GetText():find("^1%% to"),
+		"one point short of a level still reads 1%, never 0 ("
+		.. tostring(XPm.frame.text:GetText()) .. ")")
+	_G.__xp = 0
+	XPm.Update()
+	check(XPm.frame.text:GetText():find("^100%% to"),
+		"and a fresh level reads 100% (" .. tostring(XPm.frame.text:GetText()) .. ")")
+	_G.__xp = wasXP
+	XPm.Update()
+end
+
+-- WHICH CORNER, because the bottom corners are where everybody's other addons
+-- put things. Re-anchored rather than rebuilt, and CLEARED first: a FontString
+-- keeps whatever anchors it was last given, so setting the new corner without
+-- clearing the old leaves it spanned between the two.
+do
+	local cfg = A.Config:Module("xpbar")
+	local function corner()
+		local p, _, rel = XPm.frame.text:GetPoint(1)
+		return p .. "/" .. tostring(rel) .. "/" .. XPm.frame.text:GetNumPoints()
+	end
+	cfg.textSide = "LEFT"
+	XPm:OnConfigChanged()
+	check(corner() == "BOTTOMLEFT/TOPLEFT/1", "the readout moves to the left corner ("
+		.. corner() .. ")")
+	check(XPm.frame.text:GetJustifyH() == "LEFT", "and justifies with it")
+	cfg.textSide = "RIGHT"
+	XPm:OnConfigChanged()
+	check(corner() == "BOTTOMRIGHT/TOPRIGHT/1", "and back to the right ("
+		.. corner() .. ")")
+	check(XPm.frame.text:GetJustifyH() == "RIGHT", "justifying with it again")
+end
 check(XPm.frame.rested:IsShown(), "rested overlay shown when rest is banked")
 _G.__units.player.level = 60
 fire("PLAYER_LEVEL_UP")
@@ -23076,6 +23179,38 @@ section("nifec: the mini-player, on the ground", function()
 		A.Widgets.CloseMenu()
 
 		mini.toggle:GetScript("OnClick")(mini.toggle)
+	end
+
+	-- AND IT OPENS AWAY FROM THE DRAWER'S OWN BODY. "Beside the host" is only
+	-- right while the host sits at a screen edge with open screen next to it.
+	-- Docked ACROSS THE TOP the mini-player is one column of a wide strip, and
+	-- beside it is the middle of that strip - the list opened over the settings
+	-- tiles it had just come out from under.
+	do
+		local want = { LEFT = "BOTTOMLEFT", RIGHT = "BOTTOMRIGHT",
+		               TOP = "TOPRIGHT", BOTTOM = "BOTTOMRIGHT" }
+		local rel  = { LEFT = "BOTTOMRIGHT", RIGHT = "BOTTOMLEFT",
+		               TOP = "BOTTOMRIGHT", BOTTOM = "TOPRIGHT" }
+		for _, edge in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
+			TBm:SetDock(edge)
+			TBm:SetOpen(true, true)
+			TBm:LayoutContent()
+			LB:SetOpen(true, TBm.content.now)
+
+			local p1, relTo, p2 = LB.frame:GetPoint(1)
+			check(p1 == want[edge] and p2 == rel[edge] and relTo == TBm.content.now,
+				("docked %s the list opens %s of the player (%s to %s)")
+				:format(edge, edge == "TOP" and "below" or
+					(edge == "BOTTOM" and "above" or "beside"), p1, p2))
+			check(LB.frame:GetNumPoints() == 1,
+				"anchored once, not left spanned between the last corner and this one")
+		end
+
+		TBm:SetDock("LEFT")
+		TBm:SetOpen(true, true)
+		TBm:LayoutContent()
+		mini = TBm.content.now
+		LB:SetOpen(true, mini)
 	end
 
 	-- THE LIBRARY GOES WITH THE DRAWER. It hangs off the mini-player at the foot

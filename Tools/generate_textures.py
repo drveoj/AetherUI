@@ -337,6 +337,23 @@ def _rim(size, radius, width=2.6, feather=None):
     return rim_from_sdf(rrect_sdf(size, radius, MARGIN), width)
 
 
+def glass_panel_solid():
+    """The same rounded shape, flat. 9-slice, corner 64, exactly like the fill.
+
+    WHY THIS EXISTS: glass_panel's ALPHA carries the top-light falloff as well as
+    the shape - it is 0.89 in the middle and 0.80 at the foot - so a vertex tint
+    can never make that surface opaque however hard it is asked. "Reading panel
+    opacity 100%" landed at 89% and there was nothing the colour could do.
+
+    Flattening the fill would fix it and cost every glass surface in the addon
+    its gradient, so the gradient stays and the surfaces that need to reach solid
+    get a plate behind them. Alpha is the shape and nothing else; RGB is white so
+    it takes whatever tint it is given.
+    """
+    size = (256, 256)
+    return rgba_lum(1.0, rrect_mask(size, 64))
+
+
 def glass_panel_edge():
     """Rim for the panel, tinted independently of the fill."""
     size = (256, 256)
@@ -1456,6 +1473,7 @@ ASSETS = {
     "IFEC-Dial-Track": ifec_dial_track,
     "IFEC-Dial-Arc": ifec_dial_arc,
     "Glass-Panel": glass_panel,
+    "Glass-Panel-Solid": glass_panel_solid,
     "Glass-Panel-Edge": glass_panel_edge,
     "Glass-Pill": glass_pill,
     "Glass-Pill-Edge": glass_pill_edge,

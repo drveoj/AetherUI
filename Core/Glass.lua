@@ -223,9 +223,46 @@ end
 
 local Surface = {}
 
+-- What the fill ART can carry on its own. Glass-Panel's alpha holds the
+-- top-light falloff as well as the shape, so it is this in the middle and less
+-- at the foot - and a vertex tint MULTIPLIES that, so no colour however solid
+-- can push the surface past it. "Reading panel opacity 100%" landed here.
+local ART_ALPHA = 227 / 255
+
+--- A flat plate of the same shape, behind the fill, for a surface asked to be
+--  more opaque than its own art can be.
+--
+--  BUILT ON DEMAND. Almost nothing asks - the HUD's surfaces are meant to be
+--  seen through - so nine textures per panel for a case that does not arise
+--  would be nine textures per panel wasted.
+local function EnsureBacking(self)
+	if self._backing or self._kind ~= "panel" then return self._backing end
+
+	self._backing = Build9(self, Media.texture.panelSolid, "BACKGROUND", -1)
+	ApplyTexCoords(self._backing, Media.slice.panel, Media.textureSize.panel)
+	if self._Relayout then self:_Relayout() end
+	return self._backing
+end
+
 function Surface:SetFillColor(c)
 	self._fillColor = c
 	Tint(self._fill, c)
+
+	-- HOW MUCH IS MISSING, and put a plate behind for exactly that. Composited,
+	-- plate + art gives back what was asked for; at a request of 1 the plate is
+	-- opaque on its own and the answer is exact.
+	local want = c[4] or 1
+	if want > ART_ALPHA + 0.001 then
+		local have = ART_ALPHA * want
+		local need = (want - have) / (1 - have)
+		local b = EnsureBacking(self)
+		if b then
+			Tint(b, { c[1], c[2], c[3], math.min(1, math.max(0, need)) })
+			ShowAll(b, true)
+		end
+	elseif self._backing then
+		ShowAll(self._backing, false)
+	end
 end
 
 function Surface:SetEdgeColor(c)
@@ -391,6 +428,7 @@ function Glass.CreatePanel(parent, opts)
 		if c <= 0 then return end
 		Layout9(self._fill, self, c, 0)
 		Layout9(self._edge, self, c, 0)
+		if self._backing then Layout9(self._backing, self, c, 0) end
 		self:_LayoutPanelShadow()
 		self:_LayoutRimGlow()
 	end

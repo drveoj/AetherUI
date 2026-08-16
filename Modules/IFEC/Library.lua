@@ -493,6 +493,33 @@ function Library:Place(host)
 		f:SetFrameLevel((host:GetFrameLevel() or 0) + 10)
 	end
 
+	f:ClearAllPoints()
+
+	-- WHICH WAY IS THE HOST'S TO SAY, when it knows. "Beside the host" is only
+	-- right while the host sits at a screen edge with open screen next to it -
+	-- which is true of the console, and of the Toolbox docked as a column. With
+	-- the Toolbox docked ACROSS THE TOP the mini-player is one column of a wide
+	-- strip, and beside it is the middle of that strip: the list opened over the
+	-- settings tiles it had come out from under.
+	--
+	-- The Toolbox knows which edge it is on and nothing here can work it out, so
+	-- it says. Anything that does not say gets the old rule, which is right for
+	-- everything that is not in a strip.
+	local from = host.__aetherLibraryFrom
+	if from == "BELOW" then
+		f:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, -GAP)
+		return
+	elseif from == "ABOVE" then
+		f:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, GAP)
+		return
+	elseif from == "LEFT" then
+		f:SetPoint("BOTTOMRIGHT", host, "BOTTOMLEFT", -GAP, 0)
+		return
+	elseif from == "RIGHT" then
+		f:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", GAP, 0)
+		return
+	end
+
 	local mid  = (host:GetLeft() or 0) + (host:GetWidth() or 0) / 2
 	local room = (UIParent:GetWidth() or 0) / 2
 
@@ -502,13 +529,11 @@ function Library:Place(host)
 	-- screen.
 	local tall = (host:GetHeight() or 0) >= HEIGHT
 	local mine = tall and "TOP" or "BOTTOM"
-	local theirs = mine
 
-	f:ClearAllPoints()
 	if mid > room then
-		f:SetPoint(mine .. "RIGHT", host, theirs .. "LEFT", -GAP, 0)
+		f:SetPoint(mine .. "RIGHT", host, mine .. "LEFT", -GAP, 0)
 	else
-		f:SetPoint(mine .. "LEFT", host, theirs .. "RIGHT", GAP, 0)
+		f:SetPoint(mine .. "LEFT", host, mine .. "RIGHT", GAP, 0)
 	end
 end
 
