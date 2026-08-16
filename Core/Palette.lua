@@ -29,6 +29,16 @@ local function C(r, g, b, a)
 	return { r / 255, g / 255, b / 255, a or 1 }
 end
 
+--- The same, for a colour the CLIENT states in 0..1 already.
+--
+--  Debuff schools and zone types are Blizzard's numbers, and they have to
+--  match the ones the rest of the game draws to the digit. Rounding them
+--  through a byte to fit the constructor above would move every one of them
+--  by a fraction, for tidiness and nothing else.
+local function F(r, g, b, a)
+	return { r, g, b, a or 1 }
+end
+
 -- ---------------------------------------------------------------------------
 -- skins
 --
@@ -171,6 +181,39 @@ local SEMANTIC = {
 	-- textFaint would come back out at full strength and not be faint at all.
 	dim = C(136, 136, 136),
 
+	-- Debuff schools, so "Chilled" reads as frost rather than as generic
+	-- red. The client's own numbers: an aura ring that disagreed with the
+	-- rest of the game about what a curse looks like would be worse than no
+	-- ring at all.
+	debuffSchool = {
+		Magic   = F(0.55, 0.78, 1.00),
+		Curse   = F(0.70, 0.50, 1.00),
+		Disease = F(0.70, 0.60, 0.35),
+		Poison  = F(0.55, 0.85, 0.45),
+	},
+
+	-- And zone type, likewise - a contested zone reads the same amber here
+	-- as it does on the world map.
+	zonePvP = {
+		sanctuary = F(0.41, 0.80, 0.94),
+		arena     = F(1.00, 0.10, 0.10),
+		friendly  = F(0.10, 1.00, 0.10),
+		hostile   = F(1.00, 0.10, 0.10),
+		contested = F(1.00, 0.70, 0.00),
+		combat    = F(1.00, 0.10, 0.10),
+	},
+
+	-- What a button says about itself when it cannot be pressed. Near enough
+	-- Blizzard's own two - it desaturates and dims the same way - so a bar
+	-- of ours next to one of theirs does not argue about what unusable
+	-- looks like.
+	iconNoMana   = F(0.45, 0.55, 1.00),
+	iconUnusable = F(0.40, 0.40, 0.40),
+
+	-- Money is gold, and it is gold in every skin. A purse that went rose on
+	-- Dawn would be reading as a warning.
+	money = F(0.90, 0.76, 0.42),
+
 	talentOpen = C(159, 232, 180),
 	talentFull = C(255, 226, 150),
 	junkTint   = C(150, 150, 150, 0.42),
@@ -278,6 +321,11 @@ local function Compose(name, k)
 		ifecDial  = A_(k.accent, 1),
 		ifecDisc  = A_(k.disc, 1),
 		ifecTrack = A_(k.track, 0.13),
+
+		-- The wash behind a bar, and the plate a stack count sits on. The
+		-- track white is one of the brief's six, so both follow the skin.
+		barTrack   = A_(k.track, 0.14),
+		countPill  = A_(k.disc, 0.85),
 
 		-- tooltips take the skin only where they are furniture
 		ttGuild      = A_(k.accent, 0.80),
@@ -394,6 +442,15 @@ function Palette:Ink(token, text)
 	local c = Palette.c[token]
 	if type(c) ~= "table" or type(c[1]) ~= "number" then c = Palette.c.text end
 	return Palette:InkHex(Palette:Hex(c), text)
+end
+
+--- The skin's track white at whatever alpha the caller wants.
+--
+--  A bar's wash, a card, a rail - all the same white at a different weight,
+--  and all of them were the literal 1, 1, 1 before the family existed.
+function Palette:Track(alpha)
+	local c = Palette.c.barTrack
+	return { c[1], c[2], c[3], alpha or c[4] or 1 }
 end
 
 --- The same, for a hex this palette did not choose.

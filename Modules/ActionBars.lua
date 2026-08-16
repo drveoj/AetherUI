@@ -173,11 +173,11 @@ local function UpdateUsable(b)
 		b.icon:SetDesaturated(false)
 		b.edge:SetVertexColor(c.danger[1], c.danger[2], c.danger[3], 0.9)
 	elseif noMana then
-		b.icon:SetVertexColor(0.45, 0.55, 1)
+		b.icon:SetVertexColor(c.iconNoMana[1], c.iconNoMana[2], c.iconNoMana[3])
 		b.icon:SetDesaturated(false)
 		b.edge:SetVertexColor(c.power[1][1], c.power[1][2], c.power[1][3], 0.7)
 	elseif not usable then
-		b.icon:SetVertexColor(0.4, 0.4, 0.4)
+		b.icon:SetVertexColor(c.iconUnusable[1], c.iconUnusable[2], c.iconUnusable[3])
 		b.icon:SetDesaturated(true)
 		b.edge:SetVertexColor(c.glassEdge[1], c.glassEdge[2], c.glassEdge[3], (c.glassEdge[4] or 1) * 0.5)
 	else

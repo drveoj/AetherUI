@@ -483,7 +483,8 @@ local function BuildItemButton(proxy, bag, slot, size)
 	-- in UpdateItemButton, so an empty count draws nothing at all.
 	local pill = b:CreateTexture(nil, "OVERLAY")
 	pill:SetTexture(Media.texture.flat)
-	pill:SetVertexColor(0.04, 0.03, 0.08, 0.85)
+	local plate = Palette.c.countPill
+	pill:SetVertexColor(plate[1], plate[2], plate[3], plate[4])
 	pill:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
 	pill:Hide()
 	b.countPill = pill
@@ -803,7 +804,7 @@ local function BuildSearch(frame)
 	box:SetHeight(SEARCH_H)
 	box:SetAutoFocus(false)
 	Media:SetFont(box, "bagSearch")
-	box:SetTextColor(1, 1, 1, 1)
+	W.Color(box, Palette.c.text)
 	-- Escape clears the search rather than closing the window, while the cursor
 	-- is in it. Closing a window because somebody wanted to undo a filter is the
 	-- kind of thing that gets an addon uninstalled.
@@ -851,7 +852,8 @@ local function BuildFooter(frame)
 	coin:SetTexture(Media.texture.flat)
 	coin:SetSize(COIN_SIZE, COIN_SIZE)
 	coin:SetPoint("LEFT", foot, "LEFT", FOOT_PAD_X, 0)
-	coin:SetVertexColor(0.90, 0.76, 0.42, 1)
+	local gold = Palette.c.money
+	coin:SetVertexColor(gold[1], gold[2], gold[3], 1)
 	W.AddMask(coin, foot, Media.texture.circleMask, coin)
 	foot.coin = coin
 

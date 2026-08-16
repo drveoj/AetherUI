@@ -214,23 +214,15 @@ end
 -- readouts
 -- ---------------------------------------------------------------------------
 
--- Blizzard's own colours for zone type, so a contested zone reads the same
--- amber here as it does everywhere else in the game.
-local PVP_COLOR = {
-	sanctuary = { 0.41, 0.80, 0.94 },
-	arena     = { 1.00, 0.10, 0.10 },
-	friendly  = { 0.10, 1.00, 0.10 },
-	hostile   = { 1.00, 0.10, 0.10 },
-	contested = { 1.00, 0.70, 0.00 },
-	combat    = { 1.00, 0.10, 0.10 },
-}
+-- Zone-type colours live in the palette, with the rest of the ones Blizzard
+-- states rather than we choose.
 
 local function ZonePVPColor()
 	local fn = (C_PvP and C_PvP.GetZonePVPInfo) or _G.GetZonePVPInfo
 	if not fn then return nil end
 	local ok, pvpType = pcall(fn)
 	if not ok then return nil end
-	return PVP_COLOR[pvpType or ""]
+	return A.Palette.c.zonePvP[pvpType or ""]
 end
 
 --- Player position as two whole numbers, or nil.

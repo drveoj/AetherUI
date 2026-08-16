@@ -96,15 +96,9 @@ end
 -- rather than growing a second copy of it that drifts.
 Aur.GetAura = GetAura
 
--- Debuff schools, so "Chilled" reads as frost rather than as generic red. With
--- the name gone this is doing more work than it used to: the ring is the only
--- thing left that says what kind of thing is on you.
-local SCHOOL = {
-	Magic   = { 0.55, 0.78, 1.00 },
-	Curse   = { 0.70, 0.50, 1.00 },
-	Disease = { 0.70, 0.60, 0.35 },
-	Poison  = { 0.55, 0.85, 0.45 },
-}
+-- Debuff schools live in the palette - the ring is the only thing left that
+-- says what kind of thing is on you, and the nameplate chips read the same
+-- table. Resolved per call rather than cached, so a skin change reaches it.
 
 -- Seconds left at which the timer turns red. Long enough to react to, short
 -- enough that it is not on most of the time.
@@ -562,7 +556,7 @@ end
 --  to notice, so they take the school colour at full strength.
 local function TintTile(t, debuff, auraType)
 	local c = Palette.c
-	local tint = auraType and SCHOOL[auraType]
+	local tint = auraType and c.debuffSchool[auraType]
 	if debuff then
 		tint = tint or { c.danger[1], c.danger[2], c.danger[3] }
 		t:SetFillColor({ tint[1] * 0.35, tint[2] * 0.35, tint[3] * 0.35, 0.5 })

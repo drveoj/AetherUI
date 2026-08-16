@@ -480,7 +480,8 @@ function Reskin.StatusBar(bar, store, opts)
 	local bg = bar:CreateTexture(nil, "BACKGROUND")
 	bg:SetTexture(A.Media.texture.flat)
 	bg:SetAllPoints(bar)
-	bg:SetVertexColor(1, 1, 1, opts.bgAlpha or 0.14)
+	local wash = A.Palette:Track(opts.bgAlpha)
+	bg:SetVertexColor(wash[1], wash[2], wash[3], wash[4])
 
 	bar.__aetherFill = bg
 	return bg

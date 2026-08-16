@@ -409,7 +409,11 @@ local function newTexture(owner, layer, sub)
 		return c[1], c[2], c[3], c[4]
 	end
 	function t:SetBlendMode(m) self.__blend = m end
-	function t:SetDesaturated() end
+	-- RECORDED, like the other texture mock. A no-op here meant an action
+	-- button could say "grey this out" and be answered by nothing at all,
+	-- and no check could tell the difference.
+	function t:SetDesaturated(on) self.__desaturated = on and true or false end
+	function t:IsDesaturated() return self.__desaturated == true end
 	function t:SetGradient(orient, c1, c2)
 		if type(orient) ~= "string" then fail("SetGradient orientation " .. tostring(orient)) end
 		if type(c1) ~= "table" then fail("SetGradient c1 not a colour object") end
@@ -1118,6 +1122,7 @@ end
 actions[3].cd = { start = 990, duration = 30 }     -- a real cooldown
 actions[5].cd = { start = 999, duration = 1.5 }    -- a global; must NOT get text
 actions[2].usable, actions[2].noMana = false, true
+actions[9].usable = false                           -- unusable, but affordable
 actions[4].inRange = false
 actions[6].current = true
 actions[7].equipped = true
@@ -9190,6 +9195,58 @@ check(bar.buttons[1]:GetAttribute("action") == 1
 	and bar.buttons[12]:GetAttribute("action") == 12,
 	"page 1 maps button i to action i")
 
+-- WHAT A BUTTON SAYS ABOUT ITSELF.
+--
+-- Three states and three tints, and until the literals moved into the palette
+-- nothing checked any of them: 0.45/0.55/1 and 0.4/0.4/0.4 sat in the module
+-- and could have been swapped for each other without a single check moving.
+do
+	local c = A.Palette.c
+	local function tint(i)
+		local r, g, b = bar.buttons[i].icon:GetVertexColor()
+		return r, g, b
+	end
+
+	-- slot 2 is out of mana, slot 1 is ordinary. The fixture sets both.
+	local nr, ng, nb = tint(2)
+	check(math.abs(nr - c.iconNoMana[1]) < 0.001
+		and math.abs(ng - c.iconNoMana[2]) < 0.001
+		and math.abs(nb - c.iconNoMana[3]) < 0.001,
+		"a spell you cannot afford takes the no-mana blue (" ..
+		string.format("%.2f %.2f %.2f", nr, ng, nb) .. ")")
+
+	local ur, ug, ub = tint(1)
+	check(math.abs(ur - 1) < 0.001 and math.abs(ug - 1) < 0.001
+		and math.abs(ub - 1) < 0.001,
+		"while an ordinary one is UNTINTED - the icon is the artist's, and a"
+		.. " tint that never comes off is a permanently wrong icon (" ..
+		string.format("%.2f %.2f %.2f", ur, ug, ub) .. ")")
+
+	-- Slot 9 is unusable but affordable, which is the ONLY way to tell the two
+	-- branches apart: while every unusable action in the fixture was also a
+	-- no-mana one, the second branch was never reached and the two tints could
+	-- have been swapped for each other silently.
+	local gr, gg, gb = tint(9)
+	check(math.abs(gr - c.iconUnusable[1]) < 0.001
+		and math.abs(gg - c.iconUnusable[2]) < 0.001
+		and math.abs(gb - c.iconUnusable[3]) < 0.001,
+		"a spell you simply cannot cast greys out (" ..
+		string.format("%.2f %.2f %.2f", gr, gg, gb) .. ")")
+	check(bar.buttons[9].icon:IsDesaturated(),
+		"and desaturates with it - the dim alone reads as a cooldown")
+	check(not bar.buttons[2].icon:IsDesaturated(),
+		"while the unaffordable one keeps its colour, because THAT one comes"
+		.. " back the moment you drink")
+
+	check(c.iconNoMana[1] ~= c.iconUnusable[1]
+		or c.iconNoMana[3] ~= c.iconUnusable[3],
+		"and the two tints are different colours to begin with")
+	check(c.iconUnusable[1] == c.iconUnusable[2]
+		and c.iconUnusable[2] == c.iconUnusable[3],
+		"unusable being GREY rather than a hue, which is what pairs with the"
+		.. " desaturate the same branch sets")
+end
+
 -- The paging snippets are restricted Lua we cannot execute here, but a typo in
 -- one is silent and only shows up as "my druid's bar stopped working". Parsing
 -- them is cheap insurance.
@@ -9577,6 +9634,48 @@ check(PD.active == 2, "two player debuffs (got " .. PD.active .. ")")
 check(TB.active == 2, "target buffs are shown at all now (got " .. TB.active .. ")")
 check(TD.active == 3,
 	"and only the player's own target debuffs (got " .. TD.active .. ")")
+
+do  -- the ring says WHAT KIND of thing is on you
+	-- The name is gone from a tile, so the school colour is the only thing
+	-- left carrying it - and it has to be the client's own, or a curse reads
+	-- as one thing here and another on Blizzard's own frames. Nothing checked
+	-- this at all until the table moved into the palette.
+	local school = A.Palette.c.debuffSchool
+	local missing = {}
+	for _, kind in ipairs({ "Magic", "Curse", "Disease", "Poison" }) do
+		local c = school[kind]
+		if type(c) ~= "table" or type(c[3]) ~= "number" then
+			missing[#missing + 1] = kind
+		end
+	end
+	check(#missing == 0,
+		"all four schools are named (" .. table.concat(missing, ", ") .. ")")
+
+	-- The player's second debuff is a Curse, the target's first is Magic.
+	local curse = PD.tiles[2]
+	local cr, cg, cb = curse.art.ring:GetVertexColor()
+	check(math.abs(cr - school.Curse[1]) < 0.001
+		and math.abs(cg - school.Curse[2]) < 0.001
+		and math.abs(cb - school.Curse[3]) < 0.001,
+		"a curse wears the curse purple (" ..
+		string.format("%.2f %.2f %.2f", cr, cg, cb) .. ")")
+
+	local magic = TD.tiles[1]
+	local mr, mg, mb = magic.art.ring:GetVertexColor()
+	check(math.abs(mr - school.Magic[1]) < 0.001
+		and math.abs(mg - school.Magic[2]) < 0.001
+		and math.abs(mb - school.Magic[3]) < 0.001,
+		"and a magic debuff the magic blue, which is a DIFFERENT colour - one"
+		.. " lookup returning the same tint for both would pass either alone")
+
+	-- An untyped debuff has no school to show, and falls back to danger
+	-- rather than to the last colour the ring happened to be wearing.
+	local plain = PD.tiles[1]
+	local pr = plain.art.ring:GetVertexColor()
+	check(math.abs(pr - A.Palette.c.danger[1]) < 0.001,
+		"an untyped debuff falls back to danger (" ..
+		string.format("%.2f", pr) .. ")")
+end
 
 do  -- a tile is an icon and a timer, and nothing else
 	local t = PB.tiles[1]
@@ -17577,6 +17676,89 @@ do
 	check(_G.ContainerFrame1.__aetherSuppress == true, "re-arming the suppressor")
 end
 
+print("== bags: the purse and the stack plate read from the palette ==")
+do
+	Bg:Show()
+	local f = Bg.frames.bags
+	local c = A.Palette.c
+
+	-- Gold, and gold in every skin. A purse that went rose on Dawn would be
+	-- reading as a warning about something.
+	local r, g, b = f.foot.coin:GetVertexColor()
+	check(math.abs(r - c.money[1]) < 0.001 and math.abs(g - c.money[2]) < 0.001
+		and math.abs(b - c.money[3]) < 0.001,
+		"the coin is the money gold (" ..
+		string.format("%.2f %.2f %.2f", r, g, b) .. ")")
+	local drift = {}
+	for _, name in ipairs(SKINS) do
+		if A.Palette.skins[name].money ~= A.Palette.skins.midnight.money then
+			drift[#drift + 1] = name
+		end
+	end
+	check(#drift == 0, "and the same gold on every skin (" ..
+		table.concat(drift, ", ") .. ")")
+
+	-- The plate under a stack count is CHROME - a near-black in the skin's own
+	-- hue - and it was the literal 0.04, 0.03, 0.08 until the family existed.
+	local pill
+	for _, row in pairs(f.buttons or {}) do
+		if type(row) == "table" then
+			for _, btn in pairs(row) do
+				if type(btn) == "table" and btn.countPill then
+					pill = pill or btn.countPill
+				end
+			end
+		end
+	end
+	check(pill ~= nil, "a slot has a count plate at all")
+	if pill then
+		local pr, pg, pb, pa = pill:GetVertexColor()
+		local want = c.countPill
+		check(math.abs(pr - want[1]) < 0.001 and math.abs(pg - want[2]) < 0.001
+			and math.abs(pb - want[3]) < 0.001 and math.abs(pa - want[4]) < 0.001,
+			"and it is the skin's near-black at the plate alpha (" ..
+			string.format("%.2f %.2f %.2f %.2f", pr, pg, pb, pa) .. ")")
+		check(0.299 * pr + 0.587 * pg + 0.114 * pb < 0.2,
+			"dark enough for light digits to sit on, which is the whole job")
+	end
+
+	-- The wash behind a bar is the skin's track white, not the literal one, and
+	-- the caller still chooses its weight.
+	local P = A.Palette
+	local track = P:Track(0.14)
+	check(math.abs(track[4] - 0.14) < 0.001,
+		"Track honours the alpha it is handed")
+	check(math.abs((P:Track()[4] or 1) - 0.14) < 0.001,
+		"and handed none, falls back to the token's own 0.14 - WRITTEN OUT,"
+		.. " because a wash compared against the token it came from cannot see"
+		.. " that weight change (" .. string.format("%.2f", P:Track()[4] or 1)
+		.. ")")
+	local xp = A:GetModule("xpbar")
+	if xp and xp.frame and xp.frame.bg then
+		local _, _, _, xa = xp.frame.bg:GetVertexColor()
+		check(math.abs(xa - 0.10) < 0.001,
+			"and the XP bar asks for a quieter 0.10 than the default, which is"
+			.. " the only thing proving the override is read at all (" ..
+			string.format("%.2f", xa) .. ")")
+	end
+	check(track[1] == P.c.barTrack[1] and track[2] == P.c.barTrack[2],
+		"with the SKIN's white rather than 1, 1, 1 - which is the same thing on"
+		.. " Midnight and is not on the other three")
+	local same = 0
+	for _, name in ipairs(SKINS) do
+		if A.Palette.skins[name].barTrack[1] == P.c.barTrack[1]
+			and A.Palette.skins[name].barTrack[2] == P.c.barTrack[2]
+			and A.Palette.skins[name].barTrack[3] == P.c.barTrack[3] then
+			same = same + 1
+		end
+	end
+	check(same < #SKINS,
+		"and it really does differ between skins - four identical washes would"
+		.. " pass the line above without the token doing anything")
+
+	Bg:Hide()
+end
+
 print("== bags: restyle ==")
 do
 	Bg:Show()
@@ -19996,6 +20178,79 @@ do
 		"every token exists in every skin - a token added to one only is a nil"
 		.. " index in the middle of a redraw (missing: "
 		.. table.concat(missing, ", ") .. ")")
+end
+
+print("== palette: the colours that are written out, so drift fails ==")
+do
+	-- WRITTEN OUT, deliberately. Everywhere else in this file a colour is
+	-- compared against the palette, which proves the lookup works and says
+	-- nothing about the value - move the token and the check moves with it.
+	--
+	-- These are the client's own numbers and the whole point of them is that
+	-- they MATCH THE GAME: a curse that is one purple on an aura ring and
+	-- another on Blizzard's own frames is worse than no colour at all. So the
+	-- expected values live here, spelled out, and drift fails.
+	local WANT = {
+		{ "debuffSchool", "Magic",     0.55, 0.78, 1.00 },
+		{ "debuffSchool", "Curse",     0.70, 0.50, 1.00 },
+		{ "debuffSchool", "Disease",   0.70, 0.60, 0.35 },
+		{ "debuffSchool", "Poison",    0.55, 0.85, 0.45 },
+		{ "zonePvP",      "sanctuary", 0.41, 0.80, 0.94 },
+		{ "zonePvP",      "arena",     1.00, 0.10, 0.10 },
+		{ "zonePvP",      "friendly",  0.10, 1.00, 0.10 },
+		{ "zonePvP",      "hostile",   1.00, 0.10, 0.10 },
+		{ "zonePvP",      "contested", 1.00, 0.70, 0.00 },
+		{ "zonePvP",      "combat",    1.00, 0.10, 0.10 },
+	}
+	-- Flat colours rather than tables, so they are listed apart. The gold is
+	-- ours rather than the client's, but it is here for the same reason: a
+	-- colour compared only against its own token can move without a check
+	-- noticing, and the coin moving is a thing somebody would see.
+	local FLAT = {
+		{ "iconNoMana",   0.45, 0.55, 1.00 },
+		{ "iconUnusable", 0.40, 0.40, 0.40 },
+		{ "money",        0.90, 0.76, 0.42 },
+	}
+	local moved = {}
+	for _, w in ipairs(WANT) do
+		local group, key = w[1], w[2]
+		local c = (A.Palette.c[group] or {})[key]
+		if type(c) ~= "table" then
+			moved[#moved + 1] = group .. "." .. key .. " missing"
+		else
+			for i = 1, 3 do
+				if math.abs(c[i] - w[i + 2]) > 0.0001 then
+					moved[#moved + 1] = string.format("%s.%s[%d] %.3f want %.3f",
+						group, key, i, c[i], w[i + 2])
+				end
+			end
+		end
+	end
+	for _, w in ipairs(FLAT) do
+		local c = A.Palette.c[w[1]]
+		for i = 1, 3 do
+			if type(c) ~= "table" or math.abs(c[i] - w[i + 1]) > 0.0001 then
+				moved[#moved + 1] = w[1] .. "[" .. i .. "]"
+			end
+		end
+	end
+	check(#moved == 0,
+		"the schools, the zone types, the button states and the money gold are"
+		.. " exactly the values they shipped as ("
+		.. table.concat(moved, ", ") .. ")")
+
+	-- And they are the same on every skin, because they are not ours to remap.
+	local drifted = {}
+	for _, group in ipairs({ "debuffSchool", "zonePvP" }) do
+		for _, name in ipairs(SKINS) do
+			if A.Palette.skins[name][group] ~= A.Palette.skins.midnight[group] then
+				drifted[#drifted + 1] = name .. "." .. group
+			end
+		end
+	end
+	check(#drifted == 0,
+		"and one table shared by all four skins, not four copies to keep in"
+		.. " step (" .. table.concat(drifted, ", ") .. ")")
 end
 
 print("== skins: chat ink follows the skin, because it is not baked in ==")

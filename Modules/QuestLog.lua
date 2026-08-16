@@ -683,7 +683,7 @@ local function BuildHeader(win)
 	box:SetHeight(SEARCH_H)
 	box:SetAutoFocus(false)
 	Media:SetFont(box, "qlSearch")
-	box:SetTextColor(1, 1, 1, 1)
+	W.Color(box, Palette.c.text)
 	-- Escape must close the search, not the window, while the cursor is in it.
 	box:SetScript("OnEscapePressed", function(self) self:SetText("") self:ClearFocus() end)
 	box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)

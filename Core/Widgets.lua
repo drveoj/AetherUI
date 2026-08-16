@@ -285,7 +285,8 @@ function W.CreateBar(parent, opts)
 	local bg = bar:CreateTexture(nil, "BACKGROUND")
 	bg:SetTexture(Media.texture.flat)
 	bg:SetAllPoints(bar)
-	bg:SetVertexColor(1, 1, 1, opts.bgAlpha or 0.14)
+	local wash = A.Palette:Track(opts.bgAlpha)
+	bg:SetVertexColor(wash[1], wash[2], wash[3], wash[4])
 	bar.bg = bg
 
 	for k, v in pairs(Bar) do bar[k] = v end
@@ -395,7 +396,8 @@ function W.CreateSegmentedBar(parent, opts)
 	bar.bg = bar:CreateTexture(nil, "BACKGROUND")
 	bar.bg:SetTexture(Media.texture.flat)
 	bar.bg:SetAllPoints(bar)
-	bar.bg:SetVertexColor(1, 1, 1, opts.bgAlpha or 0.14)
+	local wash = A.Palette:Track(opts.bgAlpha)
+	bar.bg:SetVertexColor(wash[1], wash[2], wash[3], wash[4])
 
 	bar.parts = {}
 	for k, v in pairs(Segmented) do bar[k] = v end
