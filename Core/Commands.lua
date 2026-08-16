@@ -17,7 +17,7 @@ local function usage()
 		"|cff9d7bff/aether unlock|r  ·  drag frames into place",
 		"|cff9d7bff/aether lock|r",
 		"|cff9d7bff/aether reset|r  ·  forget all frame positions",
-		"|cff9d7bff/aether skin|r <midnight|daylight>",
+		"|cff9d7bff/aether skin|r <midnight|dawn|noon|dusk>",
 		"|cff9d7bff/aether scale|r <0.6-1.6>  ·  0.71 = the concept deck's proportions",
 		"|cff9d7bff/aether fade|r <on|off|delay N|idle 0-1>  ·  stage one, the dim",
 		"|cff9d7bff/aether zen|r <on|off|delay N|afk on/off|test>  ·  stage two",

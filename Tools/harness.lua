@@ -5831,6 +5831,15 @@ end
 --
 --  `do ... end` blocks elsewhere in this file predate it and are fine to convert
 --  as they are next touched; nothing needs doing to them at once.
+--- The whole family, in one place. Every "on both skins" check in this file
+--  became an "on all four" one when Daylight was replaced, and a check that
+--  walks a hand-written pair is a check that will quietly stop covering the
+--  skin somebody adds next.
+local SKINS = { "midnight", "dawn", "noon", "dusk" }
+
+--- A skin that is NOT the default, for the checks that only need one of those.
+local OTHER = "dusk"
+
 local function section(name, fn)
 	print("== " .. name .. " ==")
 	local ok, err = pcall(fn)
@@ -6562,9 +6571,10 @@ do
 	-- And it is a glass disc, not a hole. Midnight's glass token is
 	-- C(12, 10, 28) -- very nearly black -- so painting it at a high opacity
 	-- draws a solid dark dot, which on screen reads as a rendering fault rather
-	-- than as a glyph. Checked on both skins, because the trap is the SKIN's
-	-- colour being dark, not a number in this module.
-	for _, skin in ipairs({ "midnight", "daylight" }) do
+	-- than as a glyph. Checked on every skin, because the trap is the SKIN's
+	-- colour being dark, not a number in this module - and all four of them are
+	-- dark, which is the family's founding rule rather than a coincidence.
+	for _, skin in ipairs(SKINS) do
 		A.Palette:Apply(skin)
 		Z:Restyle()
 		local dr, dg, db, da = Z.frame.corner.disc:GetVertexColor()
@@ -6578,8 +6588,8 @@ do
 			.. " hole, not a disc (luminance " .. string.format("%.2f", lum)
 			.. ", alpha " .. string.format("%.2f", da) .. ")")
 
-		-- The rim is what carries the shape, exactly as it does for a pale
-		-- panel on Daylight.
+		-- The rim is what carries the shape - the fill is nearly black in every
+		-- skin, so the rim is all there is.
 		-- Brightness ON the screen, which is luminance times alpha. Comparing
 		-- the alphas alone says the two are equal on Midnight and misses that
 		-- one of them is nearly white and the other is nearly black.
@@ -8343,8 +8353,8 @@ end
 
 print("== skins ==")
 A.lastFailure = nil
-SlashCmdList["AETHERUI"]("skin daylight")
-check(A.Palette.current == "daylight", "skin switched to daylight")
+SlashCmdList["AETHERUI"]("skin " .. OTHER)
+check(A.Palette.current == OTHER, "skin switched to " .. OTHER)
 SlashCmdList["AETHERUI"]("skin midnight")
 check(A.Palette.current == "midnight", "skin switched back")
 check(A.lastFailure == nil,
@@ -8676,22 +8686,22 @@ end
 -- ---------------------------------------------------------------------------
 
 local MIDNIGHT_FROZEN = {
-	accent = { 0.72549, 0.603922, 0.960784, 1 },
-	accentDeep = { 0.541176, 0.415686, 0.878431, 1 },
+	accent = { 0.803922, 0.737255, 1, 1 },
+	accentDeep = { 0.72549, 0.643137, 0.960784, 1 },
 	bankAccent = { 0.556863, 0.784314, 1, 1 },
 	bankBg = { 0.54902, 0.784314, 1, 0.16 },
 	bankEdge = { 0.54902, 0.784314, 1, 0.34 },
 	btnEdge = { 0.588235, 0.509804, 0.921569, 0.32 },
 	btnFill = { 0.803922, 0.737255, 1, 1 },
-	btnFillHi = { 0.870588, 0.831373, 1, 1 },
-	btnFillText = { 0.078431, 0.062745, 0.121569, 1 },
+	btnFillHi = { 0.941176, 0.92549, 1, 1 },
+	btnFillText = { 0.082353, 0.066667, 0.160784, 1 },
 	btnHover = { 0.588235, 0.509804, 0.921569, 0.14 },
 	cardBg = { 1, 1, 1, 0.06 },
 	cardEdge = { 0.588235, 0.509804, 0.921569, 0.3 },
 	cardEdgeHi = { 0.803922, 0.737255, 1, 0.7 },
 	cast = {
-		{ 0.556863, 0.784314, 1, 1 },
-		{ 0.831373, 0.92549, 1, 1 },
+		[1] = { 0.556863, 0.784314, 1, 1 },
+		[2] = { 0.831373, 0.92549, 1, 1 },
 	},
 	castEdge = { 0.588235, 0.784314, 1, 0.45 },
 	castGlow = { 0.54902, 0.784314, 1, 0.55 },
@@ -8701,27 +8711,27 @@ local MIDNIGHT_FROZEN = {
 	dangerText = { 1, 0.588235, 0.54902, 0.8 },
 	dialogFill = { 0.054902, 0.043137, 0.12549, 0.97 },
 	energy = {
-		{ 1, 0.878431, 0.509804, 1 },
-		{ 0.909804, 0.745098, 0.313725, 1 },
+		[1] = { 1, 0.878431, 0.509804, 1 },
+		[2] = { 0.909804, 0.745098, 0.313725, 1 },
 	},
 	focus = {
-		{ 1, 0.705882, 0.509804, 1 },
-		{ 0.909804, 0.54902, 0.352941, 1 },
+		[1] = { 1, 0.705882, 0.509804, 1 },
+		[2] = { 0.909804, 0.54902, 0.352941, 1 },
 	},
 	friendly = { 0.623529, 0.909804, 0.705882, 1 },
-	glass = { 0.047059, 0.039216, 0.109804, 0.55 },
+	glass = { 0.054902, 0.043137, 0.12549, 0.55 },
 	glassEdge = { 0.588235, 0.509804, 0.921569, 0.32 },
 	glassEdgeHi = { 0.72549, 0.643137, 0.960784, 0.55 },
-	glassSoft = { 0.047059, 0.039216, 0.109804, 0.4 },
-	glassStrong = { 0.047059, 0.039216, 0.109804, 0.68 },
+	glassSoft = { 0.054902, 0.043137, 0.12549, 0.4 },
+	glassStrong = { 0.054902, 0.043137, 0.12549, 0.68 },
 	health = {
-		{ 0.623529, 0.909804, 0.705882, 1 },
-		{ 0.372549, 0.776471, 0.52549, 1 },
+		[1] = { 0.623529, 0.909804, 0.705882, 1 },
+		[2] = { 0.372549, 0.776471, 0.52549, 1 },
 	},
 	hostile = { 1, 0.541176, 0.541176, 1 },
 	hostileBar = {
-		{ 1, 0.603922, 0.462745, 1 },
-		{ 0.941176, 0.431373, 0.352941, 1 },
+		[1] = { 1, 0.603922, 0.462745, 1 },
+		[2] = { 0.941176, 0.431373, 0.352941, 1 },
 	},
 	ifecBrass = { 0.784314, 0.658824, 0.415686, 0.55 },
 	ifecDial = { 0.803922, 0.737255, 1, 1 },
@@ -8759,7 +8769,6 @@ local MIDNIGHT_FROZEN = {
 	},
 	junkText = { 0.862745, 0.823529, 1, 0.38 },
 	junkTint = { 0.588235, 0.588235, 0.588235, 0.42 },
-	label = "Midnight",
 	neutral = { 0.941176, 0.705882, 0.415686, 1 },
 	npChipInk = { 0.74902, 0.890196, 1, 1 },
 	npRare = { 0.803922, 0.847059, 0.909804, 1 },
@@ -8767,8 +8776,8 @@ local MIDNIGHT_FROZEN = {
 	petHappy = { 0.556863, 0.839216, 0.619608, 1 },
 	petUnhappy = { 0.909804, 0.478431, 0.478431, 1 },
 	power = {
-		{ 0.541176, 0.705882, 1, 1 },
-		{ 0.415686, 0.564706, 0.909804, 1 },
+		[1] = { 0.541176, 0.705882, 1, 1 },
+		[2] = { 0.415686, 0.564706, 0.909804, 1 },
 	},
 	questDiff = {
 		difficult = {
@@ -8793,8 +8802,8 @@ local MIDNIGHT_FROZEN = {
 		},
 	},
 	rage = {
-		{ 1, 0.603922, 0.462745, 1 },
-		{ 0.941176, 0.431373, 0.352941, 1 },
+		[1] = { 1, 0.603922, 0.462745, 1 },
+		[2] = { 0.941176, 0.431373, 0.352941, 1 },
 	},
 	rowHover = { 0.588235, 0.509804, 0.921569, 0.14 },
 	rowSel = { 0.803922, 0.737255, 1, 0.2 },
@@ -8805,7 +8814,7 @@ local MIDNIGHT_FROZEN = {
 	targetEdge = { 1, 0.541176, 0.541176, 0.35 },
 	targetGlass = { 0.094118, 0.039216, 0.078431, 0.55 },
 	targetText = { 1, 0.85098, 0.768627, 1 },
-	text = { 0.92549, 0.901961, 1, 1 },
+	text = { 0.941176, 0.92549, 1, 1 },
 	textDim = { 0.862745, 0.823529, 1, 0.55 },
 	textFaint = { 0.862745, 0.823529, 1, 0.38 },
 	ttBadgeBg = { 0.588235, 0.509804, 0.921569, 0.18 },
@@ -8813,13 +8822,13 @@ local MIDNIGHT_FROZEN = {
 	ttBadgeInk = { 0.803922, 0.737255, 1, 1 },
 	ttDivider = { 0.588235, 0.509804, 0.921569, 0.18 },
 	ttElite = { 0.909804, 0.784314, 0.415686, 1 },
-	ttEliteInk = { 0.078431, 0.062745, 0.121569, 1 },
+	ttEliteInk = { 0.082353, 0.066667, 0.160784, 1 },
 	ttFriendly = { 0.556863, 0.784314, 1, 1 },
 	ttFriendlyNPC = { 0.623529, 0.878431, 0.658824, 1 },
 	ttGuild = { 0.803922, 0.737255, 1, 0.8 },
 	ttHealth = {
-		{ 0.498039, 0.839216, 0.541176, 1 },
-		{ 0.290196, 0.658824, 0.345098, 1 },
+		[1] = { 0.498039, 0.839216, 0.541176, 1 },
+		[2] = { 0.290196, 0.658824, 0.345098, 1 },
 	},
 	ttHealthBg = { 1, 1, 1, 0.08 },
 	ttHostile = { 0.941176, 0.541176, 0.478431, 1 },
@@ -8835,8 +8844,8 @@ local MIDNIGHT_FROZEN = {
 	},
 	ttTitle = { 0.941176, 0.92549, 1, 1 },
 	xp = {
-		{ 0.541176, 0.415686, 0.878431, 1 },
-		{ 0.72549, 0.603922, 0.960784, 1 },
+		[1] = { 0.541176, 0.415686, 0.878431, 1 },
+		[2] = { 0.72549, 0.603922, 0.960784, 1 },
 	},
 }
 
@@ -8878,9 +8887,23 @@ section("palette: Midnight is exactly what it was", function()
 	check(#missing == 0, "every colour Midnight had, it still has ("
 		.. #missing .. " gone" .. (missing[1] and (": " .. table.concat(missing, ", ", 1,
 			math.min(4, #missing))) or "") .. ")")
+	if #changed > 0 then
+		print("     |cffff8a8amoved:|r")
+		for _, at in ipairs(changed) do
+			local w, g = MIDNIGHT_FROZEN, A.Palette.skins.midnight
+			for part in at:gmatch("[^.]+") do
+				w, g = w and w[part] or w[tonumber(part)], g and g[part] or g[tonumber(part)]
+			end
+			local function hex(t)
+				if type(t) ~= "table" then return "?" end
+				return ("#%02x%02x%02x a=%.2f"):format(
+					(t[1] or 0) * 255, (t[2] or 0) * 255, (t[3] or 0) * 255, t[4] or 1)
+			end
+			print(("       %-14s %s -> %s"):format(at, hex(w), hex(g)))
+		end
+	end
 	check(#changed == 0, "and every one of them is the same colour ("
-		.. #changed .. " moved" .. (changed[1] and (": " .. table.concat(changed, ", ", 1,
-			math.min(4, #changed))) or "") .. ")")
+		.. #changed .. " moved)")
 
 	-- New tokens are fine and expected - the addon grows. This only reports
 	-- them, so that a token added to one skin and not the others is visible.
@@ -10260,7 +10283,7 @@ do
 	-- And it follows a skin change, which goes through ApplySkin rather than
 	-- through the constructor - the one place the two can disagree.
 	local wasSkin = A.db.profile.skin
-	A.db.profile.skin = "daylight"
+	A.db.profile.skin = OTHER
 	A:Restyle()
 	check(A.Widgets.MenuFrame()._fillColor == A.Palette.c.dialogFill
 		and A.Widgets.MenuFrame()._edgeColor == A.Palette.c.glassEdgeHi,
@@ -11149,9 +11172,19 @@ do
 	s:SetColors(nil, A.Palette.skins.midnight.questDiff.trivial.text)
 	check((s.text.__shadow or {})[4] == 0.55,
 		"midnight's dimmest band is still light type, and keeps its shadow")
-	s:SetColors(nil, A.Palette.skins.daylight.questDiff.trivial.text)
-	check((s.text.__shadow or {})[4] == 0,
-		"while daylight's palest band ink is still dark type, and does not")
+	-- And it is the same threshold on every skin, because the band inks are
+	-- SEMANTIC - a skin cannot reach them. Daylight could, and its palest band
+	-- came back dark ink, which is the one case this branch exists for; the
+	-- family that replaced it has no light chrome at all, so the claim to hold
+	-- is the opposite one, on all four.
+	local dark = {}
+	for _, name in ipairs(SKINS) do
+		s:SetColors(nil, A.Palette.skins[name].questDiff.trivial.text)
+		if (s.text.__shadow or {})[4] ~= 0.55 then dark[#dark + 1] = name end
+	end
+	check(#dark == 0,
+		"and so is every other skin's - brightness lives in the hue, so no skin"
+		.. " ever hands a band dark ink (" .. table.concat(dark, ", ") .. ")")
 end
 
 print("== options tree ==")
@@ -13204,18 +13237,19 @@ do
 		end
 	end
 
-	-- Daylight is deferred, so the tile is NOT BUILT rather than built and
-	-- hidden. A hidden control is still a control somebody has to maintain.
+	-- The skin picker is four swatch chips, not a toggle tile, and it is not
+	-- built yet. NOT BUILT rather than built and hidden: a hidden control is
+	-- still a control somebody has to maintain. Delete this check when the
+	-- swatches land, rather than leaving it to fail as the reminder.
 	do
 		local found
 		for _, t in ipairs(TBm.TILES) do
 			if t.path and t.path[#t.path] == "skin" then found = true end
-			if (t.label or ""):lower():find("daylight") then found = true end
 		end
 		check(not found,
-			"there is no Daylight tile at all - the skin pass is deferred, and"
-			.. " a tile built and hidden is a control somebody still has to keep"
-			.. " working")
+			"there is no skin tile - the family is picked from four swatches in"
+			.. " the settings, and a tile built and hidden is a control somebody"
+			.. " still has to keep working")
 	end
 
 	-- The chip carries state, and it has to carry it VISIBLY. ApplySkin falls
@@ -15596,7 +15630,7 @@ do
 	local realList = QLog.RefreshList
 	QLog.RefreshList = function(self) drawn = drawn + 1 return realList(self) end
 
-	A.db.profile.skin = "daylight" A:Restyle()
+	A.db.profile.skin = OTHER A:Restyle()
 	A.db.profile.skin = "midnight" A:Restyle()
 	A:Reconfigure()
 
@@ -16343,17 +16377,17 @@ end
 
 print("== quest log: restyle ==")
 do
-	A.db.profile.skin = "daylight"
+	A.db.profile.skin = OTHER
 	A:Restyle()
 	QLog:Show()
-	check(A.lastFailure == nil, "daylight restyle raises nothing")
+	check(A.lastFailure == nil, OTHER .. " restyle raises nothing")
 	local row
 	for i, e in ipairs(QLog.entries) do
 		if e.kind == "quest" then row = e.row break end
 	end
 	check(row and row.chip._fillColor == A.Palette.c.questDiff[QLog.entries[2].band].bg,
-		"and the level chips pick up the daylight difficulty table, which exists"
-		.. " even though only midnight was built to")
+		"and the level chips pick up the difficulty table off the live skin,"
+		.. " rather than the one they were built under")
 
 	-- On a row whose band is NOT the neutral one. Every other chip assertion in
 	-- this file rides on a quest within two levels of the player, which lands on
@@ -16374,21 +16408,23 @@ do
 	_G.__units.player.level = wasLevel
 	QLog:Refresh()
 
-	-- The tracker wears the same chip, and on daylight it is the one dark-ink
-	-- element in a module that is otherwise light type throughout - so it is the
-	-- one that has to give up the shadow keeping everything else legible.
+	-- The tracker wears the same chip, and the point of checking it here is that
+	-- it is a SECOND module reading the same table - the chip that follows the
+	-- skin in the log and stays midnight in the tracker is the bug, and it is
+	-- invisible unless both are asked at once.
 	local QTd = A:GetModule("questtracker")
 	local trow = QTd.panel.rows[1]
 	local tband = QTd.quests[1] and A.Palette.c.questDiff[QTd.quests[1].band]
 	check(trow and tband and trow.chip._fillColor == tband.bg,
 		"the tracker's chip follows the skin too, rather than staying midnight")
-	check((trow.chip.text.__shadow or {})[4] == 0,
-		"and its dark digits cast no shadow, which on a pale chip is only mud")
+	check((trow.chip.text.__shadow or {})[4] == 0.55,
+		"and its digits keep their shadow - the band ink is semantic, so it is"
+		.. " light type on every skin and needs the shadow on all of them")
 
 	A.db.profile.skin = "midnight"
 	A:Restyle()
 	check((trow.chip.text.__shadow or {})[4] == 0.55,
-		"back on midnight the light digits get the shadow back")
+		"and midnight is no different, which is the whole claim")
 	QLog:Hide()
 end
 
@@ -17493,11 +17529,11 @@ print("== bags: restyle ==")
 do
 	Bg:Show()
 	local f = Bg.frames.bags
-	A.Palette:Apply("daylight")
+	A.Palette:Apply(OTHER)
 	Bg:OnSkinChanged()
 	check(math.abs((f._fillColor[4] or 1) - A.Palette:ReadingFill()[4]) < 0.001,
-		"the window takes the READING fill on Daylight too - it carries stack"
-		.. " counts and a money string over moving scenery")
+		"the window takes the READING fill on " .. OTHER .. " too - it carries"
+		.. " stack counts and a money string over moving scenery")
 	A.Palette:Apply("midnight")
 	Bg:OnSkinChanged()
 	check(math.abs((f._fillColor[4] or 1) - A.Palette:ReadingFill()[4]) < 0.001,
@@ -17517,16 +17553,15 @@ do
 	-- The vocabulary check below only compares TOP-LEVEL keys, so a nested band
 	-- missing from one skin is a nil index in the middle of a redraw and would
 	-- sail straight past it.
-	local mid = A.Palette.skins.midnight.itemQuality
-	local day = A.Palette.skins.daylight.itemQuality
 	local missing = {}
-	for q = 0, 5 do
-		if not mid[q] then missing[#missing + 1] = "midnight " .. q end
-		if not day[q] then missing[#missing + 1] = "daylight " .. q end
-		if mid[q] and not mid[q].edge then missing[#missing + 1] = "midnight " .. q .. ".edge" end
-		if day[q] and not day[q].edge then missing[#missing + 1] = "daylight " .. q .. ".edge" end
+	for _, name in ipairs(SKINS) do
+		local q6 = A.Palette.skins[name].itemQuality
+		for q = 0, 5 do
+			if not q6[q] then missing[#missing + 1] = name .. " " .. q
+			elseif not q6[q].edge then missing[#missing + 1] = name .. " " .. q .. ".edge" end
+		end
 	end
-	check(#missing == 0, "all six bands, both skins, each with a rim ("
+	check(#missing == 0, "all six bands, all four skins, each with a rim ("
 		.. table.concat(missing, ", ") .. ")")
 end
 
@@ -19798,21 +19833,34 @@ do
 
 	-- THE OTHER SKIN. A window's shell is a surface and answers ApplySkin; a
 	-- talent's rim is a colour read out of the palette once, at dress time, and
-	-- nothing re-reads it. So the tree kept Midnight's greens on a Daylight
-	-- panel until the next time the frame happened to be redrawn.
+	-- nothing re-reads it. So the tree kept the skin it was dressed under until
+	-- the next time the frame happened to be redrawn.
+	--
+	-- Which rim to watch matters. The learned/available greens are SEMANTIC and
+	-- deliberately identical in every skin, so a tree that never re-read them at
+	-- all would still look right - they cannot prove anything. The unreachable
+	-- talent wears glassEdge, which is chrome and moves, and it is the only one
+	-- of the three that can tell a re-read from a stale colour.
 	do
 		local was = A.db.profile.skin
-		A.db.profile.skin = "daylight"
-		A:Restyle()
+		local midEdge = A.Palette.skins.midnight.glassEdge
+		local otherEdge = A.Palette.skins[OTHER].glassEdge
+		check(midEdge[1] ~= otherEdge[1] or midEdge[2] ~= otherEdge[2],
+			"the ordinary rim is chrome, and really is a different colour on "
+			.. OTHER .. " - the greens are semantic and would prove nothing")
 
-		local dayOpen = A.Palette.c.talentOpen
-		local dr = rim(t1)
-		check(dr == dayOpen[1],
+		A.db.profile.skin = OTHER
+		A:Restyle()
+		local dr, dg = rim(t3)
+		check(math.abs(dr - otherEdge[1]) < 0.001 and math.abs(dg - otherEdge[2]) < 0.001,
 			"switching skin takes the talent rims with it (" ..
-			string.format("%.2f", dr) .. " vs " .. string.format("%.2f", dayOpen[1]) .. ")")
-		check(dayOpen[1] ~= open[1],
-			"and the two skins really do want different ones - a light green rim"
-			.. " on a near-white panel is not a rim")
+			string.format("%.2f", dr) .. " vs " .. string.format("%.2f", otherEdge[1]) .. ")")
+
+		-- And the semantic half of the same tree did NOT move, which is the rule
+		-- the family is built on rather than an accident of this module.
+		check(rim(t1) == open[1],
+			"while the learned green is exactly what it was - a skin remaps"
+			.. " chrome, never what a colour MEANS")
 
 		A.db.profile.skin = was
 		A:Restyle()
@@ -19874,40 +19922,130 @@ do
 	units.__np = nil
 end
 
-print("== skins: both define the same vocabulary ==")
+print("== skins: all four define the same vocabulary ==")
 do
-	local mid, day = A.Palette.skins.midnight, A.Palette.skins.daylight
+	-- Composed from one function now, so this ought to be unfalsifiable - and it
+	-- is kept precisely because it USED to fail. Two hand-written tables drifted
+	-- to 81 differences in 86 tokens. The day somebody adds a per-skin special
+	-- case to Compose, this is what notices.
+	local mid = A.Palette.skins.midnight
 	local missing = {}
-	for token in pairs(mid) do
-		if day[token] == nil then missing[#missing + 1] = token end
-	end
-	for token in pairs(day) do
-		if mid[token] == nil then missing[#missing + 1] = token .. " (daylight only)" end
+	for _, name in ipairs(SKINS) do
+		local skin = A.Palette.skins[name]
+		check(skin ~= nil, name .. " exists at all")
+		for token in pairs(mid) do
+			if skin[token] == nil then missing[#missing + 1] = name .. " lacks " .. token end
+		end
+		for token in pairs(skin) do
+			if mid[token] == nil then missing[#missing + 1] = name .. " only: " .. token end
+		end
 	end
 	check(#missing == 0,
-		"every token exists in both skins - a token added to one only is a nil"
+		"every token exists in every skin - a token added to one only is a nil"
 		.. " index in the middle of a redraw (missing: "
 		.. table.concat(missing, ", ") .. ")")
 end
 
-print("== skins: both skins draw LIGHT type ==")
+print("== skins: the family is offered in the order it is named for ==")
+do
+	local P = A.Palette
+	local list = P:List()
+	check(#list == #SKINS, "four skins are offered (" .. #list .. ")")
+
+	-- The order is the day, not the alphabet - which sorts to dawn, dusk,
+	-- midnight, noon and reads as four unrelated words.
+	local keys, labels = {}, {}
+	for i, e in ipairs(list) do
+		keys[i] = e.key
+		labels[i] = e.label
+		check(e.label and e.label ~= "" and e.label ~= e.key,
+			e.key .. " is offered under a written name rather than its key ("
+			.. tostring(e.label) .. ")")
+	end
+	check(table.concat(keys, ",") == table.concat(SKINS, ","),
+		"and in the day's order, not the alphabet's (" ..
+		table.concat(keys, ", ") .. ")")
+
+	-- And the order is what BUILDS them, so a skin left out of it does not exist
+	-- rather than existing unreachably.
+	local n = 0
+	for _ in pairs(P.skins) do n = n + 1 end
+	check(n == #SKINS,
+		"there are no skins outside the order - one built and not offered is a"
+		.. " skin nobody can pick and everybody has to maintain (" .. n .. ")")
+end
+
+print("== skins: a skin is a HUE remap, never a value one ==")
+do
+	-- THE BRIEF'S BINDING RULE, and the reason Daylight was dropped: components
+	-- never change geometry, size, opacity, blur or shadow between skins.
+	-- Brightness lives in the hue. So every alpha in the family has to be
+	-- identical across all four, and only the RGB may move.
+	--
+	-- Written as a sweep rather than a list because the failure it catches is a
+	-- token somebody tuned on one skin and nowhere else, which is exactly the
+	-- token nobody would think to enumerate here.
+	local function alphas(t, prefix, out)
+		for k, v in pairs(t) do
+			if type(v) == "table" then
+				if type(v[1]) == "number" and #v >= 3 then
+					out[prefix .. tostring(k)] = v[4] or 1
+				else
+					alphas(v, prefix .. tostring(k) .. ".", out)
+				end
+			end
+		end
+		return out
+	end
+	local base = alphas(A.Palette.skins.midnight, "", {})
+	local moved, hues = {}, 0
+	for _, name in ipairs(SKINS) do
+		if name ~= "midnight" then
+			local other = alphas(A.Palette.skins[name], "", {})
+			for token, a in pairs(base) do
+				if math.abs((other[token] or -1) - a) > 0.0001 then
+					moved[#moved + 1] = name .. "." .. token
+				end
+			end
+		end
+	end
+	check(#moved == 0,
+		"not one alpha moves between skins (" .. table.concat(moved, ", ") .. ")")
+
+	-- And the other half of the same claim: the hue DID move. Without this the
+	-- check above passes on four identical skins.
+	for _, name in ipairs(SKINS) do
+		if name ~= "midnight" then
+			local a, b = A.Palette.skins.midnight.accent, A.Palette.skins[name].accent
+			if a[1] ~= b[1] or a[2] ~= b[2] or a[3] ~= b[3] then hues = hues + 1 end
+		end
+	end
+	check(hues == #SKINS - 1,
+		"while every other skin's accent is a different colour from midnight's ("
+		.. hues .. " of " .. (#SKINS - 1) .. ")")
+end
+
+print("== skins: every skin draws LIGHT type on DARK glass ==")
 do
 	-- Not a stylistic note, a constraint. Daylight was tried as a light theme
 	-- with dark ink and it failed on something that cannot be configured: WoW's
 	-- OUTLINE flag is always BLACK, so every role carrying it - the level orb,
 	-- stack counts, keybinds - drew dark text inside a black rim on white.
 	--
-	-- So both skins keep light text, and every colour the game hands us
-	-- (RAID_CLASS_COLORS, GetQuestDifficultyColor, ChatTypeInfo) works unchanged
-	-- on both. A future skin wanting dark ink has to drop those outlines first.
+	-- So the whole family keeps light text on dark glass, and every colour the
+	-- game hands us (RAID_CLASS_COLORS, GetQuestDifficultyColor, ChatTypeInfo)
+	-- works unchanged on all of them. A future skin wanting dark ink has to drop
+	-- those outlines first.
 	local function lum(c) return 0.299*c[1] + 0.587*c[2] + 0.114*c[3] end
-	for _, name in ipairs({ "midnight", "daylight" }) do
+	for _, name in ipairs(SKINS) do
 		local skin = A.Palette.skins[name]
 		check(lum(skin.text) > 0.7,
 			name .. "'s primary text is light (" ..
 			string.format("%.2f", lum(skin.text)) .. ")")
-		check(lum(skin.glass) < lum(skin.text),
-			"and its panel fill is darker than the type on it")
+		check(lum(skin.glass) < 0.2,
+			name .. "'s panel fill is dark (" ..
+			string.format("%.2f", lum(skin.glass)) .. ") - the glass stays dark"
+			.. " in all four, which is what the family is FOR")
 	end
 
 	local outlined = 0
@@ -19916,24 +20054,28 @@ do
 	end
 	check(outlined > 0,
 		"there are still " .. outlined .. " roles with a hardcoded black OUTLINE,"
-		.. " which is what pins both skins to light type")
+		.. " which is what pins the whole family to light type")
 end
 
-print("== skins: a pale panel gets its definition from the rim ==")
+print("== skins: the rim is what makes a panel a panel ==")
 do
-	-- Daylight's first pass was the deck's own 0.17 fill, which relies on a 38px
-	-- backdrop blur we do not have; over real terrain it had no presence at all.
-	-- The fix was the EDGE, not the fill - a panel reads as a panel because it
-	-- has a boundary - so the rim and shadow carry it and the fill stays light.
-	local day, mid = A.Palette.skins.daylight, A.Palette.skins.midnight
-	check((day.glassEdge[4] or 1) > (mid.glassEdge[4] or 1) * 2,
-		"daylight's rim is far stronger than midnight's (" ..
-		string.format("%.2f vs %.2f", day.glassEdge[4], mid.glassEdge[4]) .. ")")
-	check((day.shadow[4] or 1) > (mid.shadow[4] or 1),
-		"and so is its drop shadow, which is what lifts a pale panel off pale ground")
-	check((day.glass[4] or 1) < 0.45,
-		"while the fill stays light rather than becoming a slab (" ..
-		string.format("%.2f", day.glass[4]) .. ")")
+	-- A dark panel over dark terrain is a smudge without a boundary, and this is
+	-- the pairing that gives it one. Daylight needed a rim twice midnight's to
+	-- survive on pale ground; the family that replaced it is dark throughout, so
+	-- the rim can be the same weight on all four - but it still has to be THERE,
+	-- and it still has to out-read the fill it surrounds.
+	local function lum(c) return 0.299*c[1] + 0.587*c[2] + 0.114*c[3] end
+	for _, name in ipairs(SKINS) do
+		local skin = A.Palette.skins[name]
+		check(lum(skin.glassEdge) * (skin.glassEdge[4] or 1)
+			> lum(skin.glass) * (skin.glass[4] or 1),
+			name .. ": the rim reads stronger than the fill it encloses")
+		check((skin.glass[4] or 1) < 0.8,
+			name .. ": and the fill is still glass rather than a slab (" ..
+			string.format("%.2f", skin.glass[4]) .. ")")
+		check((skin.shadow[4] or 1) > 0,
+			name .. ": with a drop shadow lifting it off the ground")
+	end
 end
 
 print("== skins: reading surfaces sit deeper than control surfaces ==")
@@ -19946,7 +20088,7 @@ do
 	-- moving scenery, and at the control-surface opacity the clutter behind
 	-- competes with every glyph. Chat has always sat deeper - the quest log was
 	-- shipped at the control opacity and was hard to read for exactly that reason.
-	for _, name in ipairs({ "midnight", "daylight" }) do
+	for _, name in ipairs(SKINS) do
 		P:Apply(name)
 		local control = P.c.glassStrong[4] or 1
 		local reading = P:ReadingFill()[4] or 1
@@ -19974,10 +20116,13 @@ do
 		local base = P.c.glassStrong[4] or 1
 		return ((P:ReadingFill()[4] or 1) - base) / (1 - base)
 	end
-	local a, b = closed("midnight"), closed("daylight")
-	check(math.abs(a - b) < 0.001,
-		"and closes the same fraction of the gap to opaque on both skins (" ..
-		string.format("%.2f vs %.2f", a, b) .. ")")
+	local a, spread = closed("midnight"), 0
+	for _, name in ipairs(SKINS) do
+		spread = math.max(spread, math.abs(closed(name) - a))
+	end
+	check(spread < 0.001,
+		"and closes the same fraction of the gap to opaque on every skin (worst"
+		.. " gap " .. string.format("%.3f", spread) .. ")")
 	P:Apply("midnight")
 	C2:OnSkinChanged()
 	QLg:OnSkinChanged()
@@ -20898,27 +21043,32 @@ do
 		or not GameTooltip.aetherCard._rim[1]:IsShown(),
 		"a common item gets no bloom - that is what makes a purple readable")
 
-	-- The title's INK is not the same value as the rim, and Midnight cannot show
-	-- you that: there the two share an RGB to the digit, so a test on this skin
-	-- passes either way. Daylight is where it matters - its itemQuality rims are
-	-- deliberately DARK, because a rim on a pale panel has to be, and reusing one
-	-- as text put a near-black item name on a pale wash while every other string
-	-- in the tooltip stayed white.
-	local was = A.db.profile.skin
-	A.db.profile.skin = "daylight"
-	A:Restyle()
-	GameTooltip:SetItemByID(99, "Linen Cloth", 1)
-	local r, g, b = _G.GameTooltipTextLeft1:GetTextColor()
-	local lum = 0.299 * r + 0.587 * g + 0.114 * b
+	-- The title's INK is a DIFFERENT token from the rim, and the two share an RGB
+	-- to the digit - so nothing about the colour can tell them apart and a check
+	-- on r,g,b passes whichever one was used. They part on ALPHA: a rim on common
+	-- is a hint at 0.30, the title is type at 0.90. Reusing the rim as ink put a
+	-- barely-there item name at the top of the card, and it was the alpha that
+	-- did it, not the hue.
+	--
+	-- This was Daylight's check, where the rims were dark and the title read
+	-- near-black on a pale wash. The family that replaced it has no pale skin, so
+	-- the rims are semantic and identical throughout, and alpha is now the only
+	-- thing left that can catch the same mistake.
+	local ink1 = { _G.GameTooltipTextLeft1:GetTextColor() }
 	local rim = A.Palette.c.itemQuality[1].edge
-	local rimLum = 0.299 * rim[1] + 0.587 * rim[2] + 0.114 * rim[3]
-	check(rimLum < 0.5, "on Daylight the common-quality RIM is dark, by design ("
-		.. string.format("%.2f", rimLum) .. ")")
-	check(lum > 0.7, "but the title stays light type, like every other string on"
-		.. " the card (" .. string.format("%.2f", lum) .. ")")
-
-	A.db.profile.skin = was
-	A:Restyle()
+	local titleInk = A.Palette.c.ttQuality[1]
+	check(math.abs(rim[1] - titleInk[1]) < 0.001,
+		"the common rim and the common title ink share an RGB, so hue can prove"
+		.. " nothing here")
+	check(math.abs((rim[4] or 1) - (titleInk[4] or 1)) > 0.2,
+		"and part on alpha - a rim is a hint, a title is type ("
+		.. string.format("%.2f vs %.2f", rim[4] or 1, titleInk[4] or 1) .. ")")
+	check(math.abs((ink1[4] or 1) - (titleInk[4] or 1)) < 0.001,
+		"so the title is drawn at the TITLE's alpha, not the rim's (" ..
+		string.format("%.2f", ink1[4] or 1) .. ")")
+	local lum = 0.299 * ink1[1] + 0.587 * ink1[2] + 0.114 * ink1[3]
+	check(lum > 0.7, "and it stays light type, like every other string on the"
+		.. " card (" .. string.format("%.2f", lum) .. ")")
 end
 
 print("== tooltips: lore gold does not paint over another addon's line ==")
