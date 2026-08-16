@@ -1167,14 +1167,23 @@ function GetShapeshiftFormCooldown() return 0, 0, 0 end
 _G.__petActions = {
 	{ name = "Attack",  texture = "Icons\\PetAttack", token = false, active = true },
 	{ name = "Follow",  texture = "Icons\\PetFollow", token = false, active = false },
-	{ name = "Growl",   texture = "PET_TOKEN_GROWL",   token = true,  active = false,
-	  autoAllowed = true, autoEnabled = true },
+	-- A TOKEN ACTION REPORTS THE NAME OF A GLOBAL for its name as well as for its
+	-- texture, which is the trap in this API: read the name straight through and
+	-- the tooltip on a hunter's Growl says "PET_TOKEN_GROWL_NAME".
+	{ name = "PET_TOKEN_GROWL_NAME", texture = "PET_TOKEN_GROWL", token = true,
+	  active = false, autoAllowed = true, autoEnabled = true, spellID = 2649 },
 }
-_G.PET_TOKEN_GROWL = "Icons\\PetGrowl"
+_G.PET_TOKEN_GROWL      = "Icons\\PetGrowl"
+_G.PET_TOKEN_GROWL_NAME = "Growl"
+
+-- SEVEN RETURNS, not six. The seventh is the spellID, and it is what the
+-- tooltip's second line is looked up from - a mock one short made that path
+-- unreachable, so a console that never asked for it could not be caught.
 function GetPetActionInfo(i)
 	local a = _G.__petActions[i]
 	if not a then return nil end
-	return a.name, a.texture, a.token, a.active, a.autoAllowed, a.autoEnabled
+	return a.name, a.texture, a.token, a.active, a.autoAllowed, a.autoEnabled,
+		a.spellID
 end
 function GetPetActionsUsable() return true end
 function GetPetActionCooldown() return 0, 0, 0 end
@@ -8887,6 +8896,26 @@ do
 		"a token action resolves through the global it names, rather than being"
 		.. " used as a texture path")
 	check(pet.buttons[5]:GetAlpha() < 1, "an empty pet slot dims")
+
+	-- THE TOOLTIP IS OURS TO SET. These come from PetActionButtonTemplate so
+	-- they already carry the client's own OnEnter - but it reads
+	-- `self.tooltipName` and RETURNS if it is not there, and the only thing that
+	-- sets it is PetActionBarMixin:Update walking Blizzard's own buttons, which
+	-- ours replaced. So every pet button had a working tooltip handler quietly
+	-- doing nothing, which is exactly what it looked like in game.
+	check(pet.buttons[1].tooltipName == "Attack",
+		"a pet button carries the name its tooltip is drawn from ("
+		.. tostring(pet.buttons[1].tooltipName) .. ")")
+
+	-- AND A TOKEN ACTION'S NAME IS THE NAME OF A GLOBAL, exactly as its texture
+	-- is. Read straight through, a hunter's Growl is captioned with the token.
+	check(pet.buttons[3].tooltipName == "Growl",
+		"a token action is resolved through the global, not printed raw ("
+		.. tostring(pet.buttons[3].tooltipName) .. ")")
+
+	-- An empty slot names nothing, or the tooltip is last pet's answer.
+	check(pet.buttons[5].tooltipName == nil,
+		"and an empty slot names nothing (" .. tostring(pet.buttons[5].tooltipName) .. ")")
 
 	-- the pet bar's visibility is secure, because a pet can be dismissed in combat
 	check(_G.__stateDrivers.visibility and _G.__stateDrivers.visibility:find("%[pet%]"),
@@ -23037,8 +23066,12 @@ section("nifec: the mini-player, on the ground", function()
 		-- WHAT THE WINDOW IS, not what is in it. It used to caption itself with
 		-- the issue's own title, which every page already carries in letters an
 		-- inch high - our chrome talking over the thing it is showing.
-		check(RD.frame.title:GetText() == "I.F.E.C. MEDIA READER",
-			"the window says what it is (" .. tostring(RD.frame.title:GetText()) .. ")")
+		--
+		-- AND IT FOLLOWS THE MODE, because the rest of the console does. This is
+		-- the ground, so it is the Not-In-Flight one.
+		check(RD.frame.title:GetText() == "N.I.F.E.C. MEDIA READER",
+			"on the ground the window is the N.I.F.E.C. reader ("
+			.. tostring(RD.frame.title:GetText()) .. ")")
 		check(RD.frame.title:GetText() ~= gossip.item.title,
 			"and not what is in it - the page has its own masthead")
 
@@ -23127,6 +23160,22 @@ section("nifec: the mini-player, on the ground", function()
 	tick(0.4)
 
 	check(IF:HasRegion(), "boarding hangs the console's own region")
+
+	-- AND THE READER FOLLOWS THE MODE. Aboard a griffin the same window is the
+	-- IN-flight console's, which is the one place the joke would not have run.
+	do
+		local RD = A.IFEC.Reader
+		local bulletin
+		for _, item in ipairs(C:Available()) do
+			if item.type == "gossip" then bulletin = item end
+		end
+		check(bulletin ~= nil, "there is a bulletin to open in the air")
+		RD:Open(bulletin)
+		check(RD.frame.title:GetText() == "I.F.E.C. MEDIA READER",
+			"in the air the same window is the I.F.E.C. reader ("
+			.. tostring(RD.frame.title:GetText()) .. ")")
+		RD:Close()
+	end
 	check(_G.__soundsPlaying() <= 1,
 		"and there is still only one thing playing ("
 		.. _G.__soundsPlaying() .. ")")

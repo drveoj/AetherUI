@@ -516,12 +516,41 @@ local function UpdatePetButton(b)
 	local id = b.aether.index
 	if not GetPetActionInfo then return end
 
-	local _, texture, isToken, isActive, autoCastAllowed, autoCastEnabled =
+	local name, texture, isToken, isActive, autoCastAllowed, autoCastEnabled, spellID =
 		GetPetActionInfo(id)
 
 	-- A "token" action reports the *name of a global* rather than a texture path.
 	local icon = texture
 	if isToken and type(texture) == "string" then icon = _G[texture] or texture end
+
+	-- THE TOOLTIP IS OURS TO SET, and the name was being thrown away.
+	--
+	-- The button comes from PetActionButtonTemplate, so it already carries the
+	-- client's own OnEnter - but that reads `self.tooltipName` and RETURNS if it
+	-- is not there. The only thing that sets it is PetActionBarMixin:Update,
+	-- walking Blizzard's own buttons, and ours replaced those. So every pet
+	-- button had a working tooltip handler that quietly did nothing.
+	--
+	-- The name is a global's NAME for a token action, exactly as the icon is;
+	-- Blizzard's own Update makes the same substitution two lines apart.
+	if isToken and type(name) == "string" then
+		b.tooltipName = _G[name] or name
+	else
+		b.tooltipName = name
+	end
+
+	-- The subtext - "Basic Attack", the rank of a trained ability - arrives with
+	-- the spell rather than with the action, so it is asked for asynchronously
+	-- the way the client asks. Absent, the tooltip is simply a line shorter.
+	b.tooltipSubtext = nil
+	if spellID and Spell and Spell.CreateFromSpellID then
+		local ok, spell = pcall(Spell.CreateFromSpellID, Spell, spellID)
+		if ok and spell and spell.ContinueWithCancelOnSpellLoad then
+			pcall(spell.ContinueWithCancelOnSpellLoad, spell, function()
+				b.tooltipSubtext = spell:GetSpellSubtext()
+			end)
+		end
+	end
 
 	local cfg = A.Config:Module("actionbars")
 	if not icon then
