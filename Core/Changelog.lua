@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.10.0",
+		date    = "2026-08-16",
+		lines   = {
+			"Reading panel opacity now reaches solid. At 100% it was stopping at 89%, because the glass artwork's own transparency was the ceiling rather than the setting - there is a plate behind it now when you ask for more than the glass can carry.",
+			"The Toolbox is a reading surface too. It slides out over quest windows, the world and other addons' panels carrying five columns of small text, so it sits as deep as the quest log does.",
+			"The XP line counts down: \"90% to Level 12\" rather than \"10% Level 11\", and you can put the readout in either bottom corner.",
+			"With the Toolbox docked across the top, the library was opening over the settings tiles it had just come out from under. It opens away from the drawer now, whichever edge you have it on.",
+			"Unlocked frames have a Lock frames button on screen. Unlocking covers the Toolbox with a handle, so locking again used to mean a slash command or four steps into the options - and you can drag the button out of your way.",
+		},
+	},
+	{
 		version = "0.9.0",
 		date    = "2026-08-16",
 		lines   = {
