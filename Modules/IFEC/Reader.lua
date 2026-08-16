@@ -62,7 +62,23 @@ local MARGIN = 48          -- the least the panel leaves of the screen
 -- issue's own title, which every page already carries in letters an inch high.
 -- A masthead is the first thing a magazine says about itself, and repeating it
 -- in our chrome is the console talking over the thing it is showing.
-local TITLE = "I.F.E.C. MEDIA READER"
+--
+-- AND IT FOLLOWS THE MODE, because the rest of the console does. Aboard a
+-- griffin this is the in-flight console; on the ground it is the Not-In-Flight
+-- one, and a reader that called itself I.F.E.C. while you were stood in
+-- Orgrimmar would be the one place the joke did not run.
+local TITLE_AIR    = "I.F.E.C. MEDIA READER"
+local TITLE_GROUND = "N.I.F.E.C. MEDIA READER"
+
+--- Which of the two, asked at the moment it is drawn.
+--
+--  Off the TAXI rather than off the console's frame: the console can be folded
+--  away or switched off entirely and you would still be in the air.
+local function readerTitle()
+	local Taxi = A.IFEC.Taxi
+	local flying = Taxi and Taxi.IsFlying and Taxi:IsFlying()
+	return flying and TITLE_AIR or TITLE_GROUND
+end
 
 -- ---------------------------------------------------------------------------
 
@@ -105,7 +121,6 @@ function Reader:Build()
 	-- controls stay at the foot, where turning a page belongs.
 	f.title = W.Text(f, "ifecSection", "LEFT", "OVERLAY")
 	f.title:SetPoint("TOPLEFT", f, "TOPLEFT", PAD + 4, -PAD - 5)
-	f.title:SetText(TITLE)
 
 	-- A CROSS FROM THE SHEET, not the multiplication sign the older windows here
 	-- type. Whether a font has U+00D7 is the font's business - Outfit does not
@@ -346,6 +361,7 @@ function Reader:Paint()
 
 	f.sheet.page:SetTexture(pages[n])
 	f.pager:SetText(n .. " / " .. #pages)
+	f.title:SetText(readerTitle())
 
 	f.prev:SetAlpha(n > 1 and 1 or 0.3)
 	f.next:SetAlpha(n < #pages and 1 or 0.3)
