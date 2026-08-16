@@ -934,6 +934,185 @@ function W.Pool(build, depth)
 end
 
 -- ---------------------------------------------------------------------------
+-- context menu
+--
+-- Hand-rolled rather than UIDropDownMenu. Partly because a glass menu is the
+-- house style and Blizzard's is not, but mostly because the dropdown-era
+-- globals are GONE on this client - reaching for them fails silently, so
+-- right-click does nothing and nothing errors. A menu we own outright cannot
+-- disappear under us.
+--
+-- Here rather than in the module that first needed one: the quest tracker built
+-- this, and the second thing that wanted a menu would otherwise have built a
+-- near-copy with its own opinions about anchoring and its own bugs.
+-- ---------------------------------------------------------------------------
+
+local MENU_W, MENU_ROW = 150, 22
+
+local Menu = {}
+
+local function BuildMenu()
+	local closer = CreateFrame("Frame", nil, UIParent)
+	closer:SetAllPoints(UIParent)
+	closer:SetFrameStrata("FULLSCREEN_DIALOG")
+	closer:EnableMouse(true)
+	closer:Hide()
+
+	-- `dialogFill`, not glass, for the reason the palette gives that token: a
+	-- surface you have to READ must not be frosted-on-frosted. A menu opens on
+	-- top of a panel, so at the control-surface opacity it is two translucent
+	-- layers over a lit world and the item text competes with whatever is
+	-- showing through it.
+	--
+	-- `glassEdgeHi` with it: the brighter rim is what separates a pop-over from
+	-- the panel underneath, and an opaque fill inside a dim rim reads as a hole.
+	local menu = A.Glass.CreatePanel(UIParent, {
+		corner = 8, shadow = A.db.profile.glass.shadow,
+		fill = "dialogFill", edge = "glassEdgeHi",
+	})
+	menu:SetFrameStrata("FULLSCREEN_DIALOG")
+	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
+	menu:SetWidth(MENU_W)
+	menu:Hide()
+
+	closer:SetScript("OnMouseDown", function()
+		menu:Hide()
+		closer:Hide()
+	end)
+	menu:SetScript("OnHide", function() closer:Hide() end)
+
+	menu.closer = closer
+	menu.items = {}
+	return menu
+end
+
+local function MenuItem(menu, i)
+	local item = menu.items[i]
+	if item then return item end
+
+	item = CreateFrame("Button", nil, menu)
+	item:SetHeight(MENU_ROW)
+
+	local hl = item:CreateTexture(nil, "BACKGROUND")
+	hl:SetTexture(A.Media.texture.flat)
+	hl:SetAllPoints(item)
+	hl:Hide()
+	item.hl = hl
+
+	item.text = W.Text(item, "questLine", "LEFT")
+	item.text:SetPoint("LEFT", item, "LEFT", 8, 0)
+
+	item:SetScript("OnEnter", function(self) self.hl:Show() end)
+	item:SetScript("OnLeave", function(self) self.hl:Hide() end)
+	item:SetScript("OnClick", function(self)
+		menu:Hide()
+		if self.action then self.action() end
+	end)
+
+	menu.items[i] = item
+	return item
+end
+
+--- Open a menu on `anchor`.
+--
+--  entries: { { text = "...", action = fn, danger = bool, disabled = bool } }
+--  opts:    { point, relPoint, x, y } - where the menu's corner meets the
+--           anchor's. Defaults to hanging under its left edge.
+--
+--  A disabled entry is SHOWN and does nothing. Dropping the row instead makes
+--  the menu change shape from one opening to the next, so the third item is
+--  sometimes the fourth - and a menu you cannot learn the shape of is worse
+--  than one carrying a greyed line that says why.
+--
+--  ONE MENU FOR THE WHOLE INTERFACE. Two open at once is two closers covering
+--  the screen, and whichever was raised last eats the click meant for the other.
+function W.Menu(anchor, entries, opts)
+	opts = opts or {}
+	Menu.frame = Menu.frame or BuildMenu()
+	local menu = Menu.frame
+	local c = A.Palette.c
+
+	local shown = 0
+	for _, e in ipairs(entries or {}) do
+		shown = shown + 1
+		local item = MenuItem(menu, shown)
+		item.text:SetText(e.text)
+		if e.disabled then
+			W.Color(item.text, c.textFaint)
+		else
+			W.Color(item.text, e.danger and c.danger or c.text)
+		end
+		-- No hover glow on a dead row either, or it still reads as clickable.
+		item.hl:SetVertexColor(c.accent[1], c.accent[2], c.accent[3],
+			e.disabled and 0 or 0.18)
+		item.action = (not e.disabled) and e.action or nil
+		item:ClearAllPoints()
+		item:SetPoint("LEFT", menu, "LEFT", 6, 0)
+		item:SetPoint("RIGHT", menu, "RIGHT", -6, 0)
+		item:SetPoint("TOP", menu, "TOP", 0, -(6 + (shown - 1) * MENU_ROW))
+		item:Show()
+	end
+	for i = shown + 1, #menu.items do menu.items[i]:Hide() end
+
+	menu:SetHeight(12 + shown * MENU_ROW)
+	menu:SetScale(A.db.profile.scale)
+	menu:ClearAllPoints()
+	menu:SetPoint(opts.point or "TOPLEFT", anchor,
+		opts.relPoint or "BOTTOMLEFT", opts.x or 6, opts.y or -2)
+	menu.closer:Show()
+	menu:Show()
+	return menu
+end
+
+--- Raise the game tooltip on `owner`, and make sure it is on top.
+--
+--  THE STRATA IS ASSERTED, not assumed. The tooltip is a shared object anything
+--  can reparent, and this addon does exactly that: the console moves it out of
+--  UIParent for a flight so it can be read over a hidden interface, and hands
+--  it back on landing. Anything that leaves it somewhere else - a landing
+--  missed in combat, another addon with the same idea - leaves it drawing under
+--  the chat log, which is where it was found.
+--
+--  Cheap, and idempotent: TOOLTIP is where the client puts it anyway, so
+--  saying so again can never be wrong.
+function W.Tooltip(owner, anchor, title, body)
+	if not GameTooltip or not owner then return false end
+
+	GameTooltip:SetOwner(owner, anchor or "ANCHOR_RIGHT")
+	if GameTooltip.SetFrameStrata then GameTooltip:SetFrameStrata("TOOLTIP") end
+	if GameTooltip.SetToplevel then GameTooltip:SetToplevel(true) end
+
+	GameTooltip:SetText(title or "")
+	if body then GameTooltip:AddLine(body, 1, 1, 1, true) end
+	GameTooltip:Show()
+	return true
+end
+
+function W.HideTooltip()
+	if GameTooltip then GameTooltip:Hide() end
+end
+
+function W.CloseMenu()
+	if Menu.frame then Menu.frame:Hide() end
+end
+
+--- The one menu, or nothing if nobody has opened one yet. For anything that
+--  needs to ask about it rather than drive it.
+function W.MenuFrame()
+	return Menu.frame
+end
+
+--- Re-skin it after the palette has changed under it.
+--
+--  ITS OWN JOB, not the caller's. While this lived in the quest tracker, the
+--  tracker's OnSkinChanged re-applied it - and the second module to open a menu
+--  would have inherited a surface that only follows the skin if the FIRST
+--  module happens to be enabled.
+function W.RestyleMenu()
+	if Menu.frame then Menu.frame:ApplySkin("dialogFill", "glassEdgeHi") end
+end
+
+-- ---------------------------------------------------------------------------
 -- misc
 -- ---------------------------------------------------------------------------
 

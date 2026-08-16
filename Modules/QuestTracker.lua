@@ -297,125 +297,6 @@ function QT:HideBlizzard()
 end
 
 -- ---------------------------------------------------------------------------
--- context menu
---
--- Hand-rolled rather than UIDropDownMenu. Partly because a glass menu is the
--- house style and Blizzard's is not, but mostly because EasyMenu has been
--- removed on some flavours and a menu that silently does not open is a worse
--- failure than one we own outright.
--- ---------------------------------------------------------------------------
-
-local MENU_W, MENU_ROW = 150, 22
-
-local function BuildMenu()
-	local closer = CreateFrame("Frame", nil, UIParent)
-	closer:SetAllPoints(UIParent)
-	closer:SetFrameStrata("FULLSCREEN_DIALOG")
-	closer:EnableMouse(true)
-	closer:Hide()
-
-	-- `dialogFill`, not glass, for the reason the palette gives that token: a
-	-- surface you have to READ must not be frosted-on-frosted. This one opens
-	-- directly on top of the tracker's own panel, so at the control-surface
-	-- opacity it was two translucent layers over a lit world and the item text
-	-- had to compete with the quest titles showing through it. The abandon
-	-- confirmation and the log's search box already sit on this same surface, so
-	-- the menu now matches them rather than being a third treatment.
-	--
-	-- `glassEdgeHi` with it: the brighter rim is what separates a pop-over from
-	-- the panel underneath, and an opaque fill inside a dim rim reads as a hole.
-	local menu = Glass.CreatePanel(UIParent, {
-		corner = 8, shadow = A.db.profile.glass.shadow,
-		fill = "dialogFill", edge = "glassEdgeHi",
-	})
-	menu:SetFrameStrata("FULLSCREEN_DIALOG")
-	menu:SetFrameLevel(closer:GetFrameLevel() + 10)
-	menu:SetWidth(MENU_W)
-	menu:Hide()
-
-	closer:SetScript("OnMouseDown", function()
-		menu:Hide()
-		closer:Hide()
-	end)
-	menu:SetScript("OnHide", function() closer:Hide() end)
-
-	menu.closer = closer
-	menu.items = {}
-	return menu
-end
-
-local function MenuItem(menu, i)
-	local item = menu.items[i]
-	if item then return item end
-
-	item = CreateFrame("Button", nil, menu)
-	item:SetHeight(MENU_ROW)
-	item:SetPoint("LEFT", menu, "LEFT", 6, 0)
-	item:SetPoint("RIGHT", menu, "RIGHT", -6, 0)
-
-	local hl = item:CreateTexture(nil, "BACKGROUND")
-	hl:SetTexture(Media.texture.flat)
-	hl:SetAllPoints(item)
-	hl:Hide()
-	item.hl = hl
-
-	item.text = W.Text(item, "questLine", "LEFT")
-	item.text:SetPoint("LEFT", item, "LEFT", 8, 0)
-
-	item:SetScript("OnEnter", function(self) self.hl:Show() end)
-	item:SetScript("OnLeave", function(self) self.hl:Hide() end)
-	item:SetScript("OnClick", function(self)
-		menu:Hide()
-		if self.action then self.action() end
-	end)
-
-	menu.items[i] = item
-	return item
-end
-
---- entries: { { text = "...", action = fn, danger = bool, disabled = bool }, ... }
---
---  A disabled entry is shown and does nothing. It exists for one case: the
---  quest Questie has no location for. Dropping the row instead would make the
---  menu change shape from quest to quest, so "Navigate" would sometimes be the
---  third item and sometimes the fourth, and a menu you cannot learn the shape
---  of is worse than one carrying a greyed line that says why.
-local function ShowMenu(anchor, entries)
-	QT.menu = QT.menu or BuildMenu()
-	local menu = QT.menu
-	local c = Palette.c
-
-	local shown = 0
-	for _, e in ipairs(entries) do
-		shown = shown + 1
-		local item = MenuItem(menu, shown)
-		item.text:SetText(e.text)
-		if e.disabled then
-			W.Color(item.text, c.textFaint)
-		else
-			W.Color(item.text, e.danger and c.danger or c.text)
-		end
-		-- No hover glow on a dead row either, or it still reads as clickable.
-		local hi = e.disabled and 0 or 0.18
-		item.hl:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], hi)
-		item.action = (not e.disabled) and e.action or nil
-		item:ClearAllPoints()
-		item:SetPoint("LEFT", menu, "LEFT", 6, 0)
-		item:SetPoint("RIGHT", menu, "RIGHT", -6, 0)
-		item:SetPoint("TOP", menu, "TOP", 0, -(6 + (shown - 1) * MENU_ROW))
-		item:Show()
-	end
-	for i = shown + 1, #menu.items do menu.items[i]:Hide() end
-
-	menu:SetHeight(12 + shown * MENU_ROW)
-	menu:SetScale(A.db.profile.scale)
-	menu:ClearAllPoints()
-	menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 6, -2)
-	menu.closer:Show()
-	menu:Show()
-end
-
--- ---------------------------------------------------------------------------
 -- row actions
 -- ---------------------------------------------------------------------------
 
@@ -536,7 +417,7 @@ local function RowClicked(row, button)
 		entries[#entries + 1] = { text = "Abandon quest", danger = true,
 			action = function() AbandonQuestAt(row.index, row.questTitle) end }
 
-		ShowMenu(row, entries)
+		W.Menu(row, entries)
 		return
 	end
 
@@ -928,14 +809,13 @@ function QT:OnDisable()
 		self.panel:Hide()
 		A.Fader:Unregister(self.panel)
 	end
-	if self.menu then self.menu:Hide() end
+	W.CloseMenu()
 	A.Movers:Unregister("quests")
 end
 
 function QT:OnSkinChanged()
 	if not self.panel then return end
 	self.panel:ApplySkin()
-	if self.menu then self.menu:ApplySkin("dialogFill", "glassEdgeHi") end
 	self:Refresh()
 end
 

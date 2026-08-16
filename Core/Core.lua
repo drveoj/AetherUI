@@ -373,6 +373,11 @@ end
 function A:Restyle()
 	A:UpdatePixelScale()
 	A.Palette:Apply(A.db.profile.skin)
+	-- The shared surfaces first. The context menu belongs to no module - any of
+	-- them can open it - so nobody's OnSkinChanged is the right place for it,
+	-- and the one that used to do it left the menu following the skin only
+	-- while that module happened to be enabled.
+	if A.Widgets and A.Widgets.RestyleMenu then A.Widgets.RestyleMenu() end
 	RunAll("OnSkinChanged", "restyle")
 end
 
