@@ -53,7 +53,11 @@ local HEIGHT  = PAD_T + DIAL + PAD_B
 
 -- Everything either side of the two strings, so the cap on them and the cap on
 -- the window are the same number said once.
-local CHROME    = PAD_L + DIAL_FRAME + GAP + GAP + CHEV + PAD_R
+-- The library control sits beside the chevron and is paid for here whether it
+-- is showing or not, the way the chevron already was: the two forms are meant
+-- to lay out identically, and a header that got narrower when the drawer
+-- control went away would move the route every time content came and went.
+local CHROME    = PAD_L + DIAL_FRAME + GAP + GAP + CHEV + 8 + CHEV + PAD_R
 local TEXT_MAX  = WIDTH_MAX - CHROME
 
 -- NOT AN ARROW. The design draws one, and Outfit has no U+2192 - it renders the
@@ -189,7 +193,47 @@ local function Build()
 	chev:Hide()
 	f.chevron = chev
 
+	-- THE LIBRARY CONTROL, under the same rule as the chevron: it exists only
+	-- while there is something to pick from, or it would be a button onto an
+	-- empty list saying the console had a hidden half.
+	--
+	-- Its own glyph rather than the chevron. The chevron means "this opens"
+	-- everywhere in the interface and the one next door already uses it for
+	-- folding, so two of them in one header at two rotations would be a puzzle.
+	local lib = CreateFrame("Button", nil, head)
+	lib:SetSize(CHEV, CHEV)
+	lib:SetPoint("RIGHT", chev, "LEFT", -8, 0)
+	lib:EnableMouse(true)
+	lib.glyph = lib:CreateTexture(nil, "ARTWORK")
+	lib.glyph:SetSize(13, 13)
+	lib.glyph:SetPoint("CENTER")
+	Media:SetIcon(lib.glyph, "library")
+	lib:SetScript("OnClick", function()
+		if A.IFEC.Library then A.IFEC.Library:ToggleOpen(IF.frame) end
+		IF:PaintLibraryButton()
+	end)
+	lib:SetScript("OnEnter", function(self)
+		W.Tooltip(self, "ANCHOR_LEFT", "Library",
+			"Everything in season. Click a row to add it to the programme, or to"
+			.. " take it back out.")
+	end)
+	lib:SetScript("OnLeave", W.HideTooltip)
+	lib:Hide()
+	f.library = lib
+
 	return f
+end
+
+--- The library control lit while the drawer is open, dim while it is shut.
+function IF:PaintLibraryButton()
+	local f = self.frame
+	if not f or not f.library then return end
+
+	local c = Palette.c
+	local LB = A.IFEC.Library
+	local open = LB and LB:IsOpen() and LB.host == f
+	local tint = open and c.accent or c.textDim
+	f.library.glyph:SetVertexColor(tint[1], tint[2], tint[3], open and 1 or 0.7)
 end
 
 --- Paint whatever the flight currently says. Safe to call with no flight.
@@ -359,6 +403,14 @@ function IF:Lay()
 		f.chevron.glyph:SetRotation(self.collapsed and math.pi or 0)
 	end
 
+	-- SAME RULE, DIFFERENT REASON. There is a region exactly when there is
+	-- content, so this is also the test for "is there anything to pick from".
+	f.library:SetShown(self:HasRegion() and true or false)
+	if not self:HasRegion() and A.IFEC.Library then
+		A.IFEC.Library:CloseFor(f)
+	end
+	self:PaintLibraryButton()
+
 	self:Fit()
 end
 
@@ -444,17 +496,56 @@ function IF:HideInterface(hide)
 
 	-- THE TOOLTIP TOO. It is a child of UIParent like everything else, so with
 	-- the interface at zero it was being shown perfectly and drawn at nothing -
-	-- the jump-off button took the hover and produced no tooltip. Nothing else
-	-- can raise one while the interface is hidden, so it is ours for the flight.
+	-- the jump-off button took the hover and produced no tooltip.
 	if GameTooltip and not InCombatLockdown() then
 		if hide then
 			self._tipParent = GameTooltip:GetParent()
 			pcall(GameTooltip.SetParent, GameTooltip, self:Top())
+			self:GuardTooltip()
 		elseif self._tipParent then
 			pcall(GameTooltip.SetParent, GameTooltip, self._tipParent)
 			self._tipParent = nil
 		end
 	end
+end
+
+--- Is this frame one of ours - something that survives the interface being
+--  hidden and is therefore allowed to speak?
+local function ours(frame)
+	local top = IF.top
+	if not top or not frame then return false end
+	-- Bounded. A parent chain is a chain and a cycle in one would hang the
+	-- client, which is not a thing to find out about during a flight.
+	for _ = 1, 12 do
+		if frame == top then return true end
+		if not frame.GetParent then return false end
+		frame = frame:GetParent()
+		if not frame then return false end
+	end
+	return false
+end
+
+--- Only our own frames may raise a tooltip while the interface is hidden.
+--
+--  ALPHA DOES NOT STOP A FRAME TAKING THE MOUSE. Everything under UIParent is
+--  still sitting there at zero catching hovers, and the tooltip was moved out
+--  of UIParent so the jump-off button could be read - so the two together
+--  produced "Arcane Intellect, 24 minutes remaining" floating over an empty
+--  sky, from a buff frame that was not on screen.
+--
+--  Judged on the OWNER rather than by disabling anything: the interface has to
+--  come back exactly as it was, and a sweep that turned the mouse off frame by
+--  frame would be a sweep that had to turn it back on again correctly.
+function IF:GuardTooltip()
+	if self._tipGuard or not GameTooltip or not GameTooltip.HookScript then return end
+	self._tipGuard = true
+
+	GameTooltip:HookScript("OnShow", function(tip)
+		if not IF._hidUI then return end
+		local owner = tip.GetOwner and tip:GetOwner()
+		if ours(owner) then return end
+		tip:Hide()
+	end)
 end
 
 --- A parentless holder for anything that has to outlive UIParent's alpha.
@@ -539,20 +630,15 @@ function IF:UpdateJumpOff(flight)
 
 		b:SetScript("OnClick", function() IF:RequestJumpOff() end)
 		b:SetScript("OnEnter", function(self)
-			if not GameTooltip then return end
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			if IF._jumpAsked then
-				GameTooltip:SetText("Exit requested")
-				GameTooltip:AddLine("Exiting early at the next available flight master.",
-					1, 1, 1, true)
+				W.Tooltip(self, "ANCHOR_RIGHT", "Exit requested",
+					"Exiting early at the next available flight master.")
 			else
-				GameTooltip:SetText("Jump Off")
-				GameTooltip:AddLine("Request exit at the next flight master.",
-					1, 1, 1, true)
+				W.Tooltip(self, "ANCHOR_RIGHT", "Jump Off",
+					"Request exit at the next flight master.")
 			end
-			GameTooltip:Show()
 		end)
-		b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+		b:SetScript("OnLeave", W.HideTooltip)
 
 		self.jump = b
 	end

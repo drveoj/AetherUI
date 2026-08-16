@@ -23,6 +23,7 @@ A.IFEC.Player = Player
 local W, Media, Palette = A.Widgets, A.Media, A.Palette
 local Content, Playback, Taxi = A.IFEC.Content, A.IFEC.Playback, A.IFEC.Taxi
 
+
 -- The design's player region. Sides match the header's, so the two read as one
 -- window rather than as a panel with a panel in it.
 local PAD_X, PAD_T, PAD_B = 16, 11, 14
@@ -139,6 +140,40 @@ local function BuildUpNextRow(parent)
 	return row
 end
 
+local CHIP_H, CHIP_PAD = 24, 13
+
+--- One of the three choices on the complete state.
+--
+--  The shared button and the shared selected-fill, not a shape of its own: the
+--  default action is "filled, with dark type on it", which is the same signal a
+--  selected chat tab makes and is already written down once in SetButtonState.
+local function BuildChip(parent)
+	local b = W.CreateButton(parent, {})
+	b:SetHeight(CHIP_H)
+	b:EnableMouse(true)
+
+	b.label = W.Text(b, "ifecChip", "CENTER", "OVERLAY")
+	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
+	b.__aetherLabel = b.label
+
+	b:HookScript("OnEnter", function(self)
+		W.SetButtonState(self, self.__aetherSelected, true)
+	end)
+	b:HookScript("OnLeave", function(self)
+		W.SetButtonState(self, self.__aetherSelected, false)
+	end)
+
+	--- `primary` is the design's one-press default action, drawn filled.
+	function b:SetChip(text, primary)
+		self.label:SetText(text or "")
+		self:SetWidth(math.ceil(self.label:GetStringWidth() or 0) + CHIP_PAD * 2)
+		self.__aetherSelected = primary and true or nil
+		W.SetButtonState(self, self.__aetherSelected, false)
+	end
+
+	return b
+end
+
 function Player:Build()
 	if self.frame then return self.frame end
 
@@ -225,9 +260,7 @@ function Player:Build()
 
 	f.chips = {}
 	for i = 1, 3 do
-		local chip = W.Pill(f, "ifecChip", { height = 24, padX = 13,
-			frameType = "Button" })
-		chip:EnableMouse(true)
+		local chip = BuildChip(f)
 		if i == 1 then
 			chip:SetPoint("TOPLEFT", f.done, "BOTTOMLEFT", 0, -10)
 		else
@@ -236,6 +269,12 @@ function Player:Build()
 		chip:Hide()
 		f.chips[i] = chip
 	end
+
+	-- Everything that belongs to a RUNNING programme, so the complete state can
+	-- put the lot away in one line rather than naming ten frames in two places
+	-- and eventually naming nine in one of them.
+	f.running = { f.now, f.transport, f.flight, f.programme, f.marks,
+		f.fills, f.legend, f.rule, f.upNextLabel }
 
 	self.frame = f
 	self:Wire()
@@ -248,6 +287,72 @@ function Player:Wire()
 	f.transport.prev:SetScript("OnClick", function() Playback:Previous() end)
 	f.transport.next:SetScript("OnClick", function() Playback:Next() end)
 	f.transport.toggle:SetScript("OnClick", function() Playback:Toggle() end)
+
+	-- AMBIENT SHUFFLE, REPLAY, JUST SCENERY. The design's three, in its order,
+	-- with the first as the one-press default.
+	f.chips[1]:SetScript("OnClick", function() Player:Shuffle() end)
+	f.chips[2]:SetScript("OnClick", function() Player:Replay() end)
+	f.chips[3]:SetScript("OnClick", function()
+		local IFmod = A:GetModule("ifec")
+		if IFmod then IFmod:SetCollapsed(true) end
+	end)
+end
+
+--- Keep the programme covering the flight.
+--
+--  A skip does not only move the queue on, it SHORTENS it: the track that was
+--  going to fill three and a half minutes filled twenty seconds, and what was a
+--  programme covering the journey now stops short of it. Left alone, one skip
+--  emptied UP NEXT and the console went from "then Blood and Thunder" to a
+--  heading with nothing under it while a track was still playing.
+--
+--  Called on every item change and costs a sum over the queue when it is
+--  already covered, which is almost always.
+function Player:TopUp()
+	if not Content or not self.queue then return false end
+
+	local flight = Taxi and Taxi.flight
+	local want = flight and flight.expected or 0
+	if want <= 0 then return false end
+
+	local added = 0
+	-- BOUNDED. NextAfter returning something already queued would spin here
+	-- forever, and a flight is not the place to find out.
+	while added < 20 do
+		local filled = 0
+		for i, item in ipairs(self.queue) do
+			filled = filled + (Playback and Playback:Spent(i, item) or (item.duration or 0))
+		end
+		if filled >= want then break end
+
+		local extra = Content:NextAfter(self.queue)
+		if not extra then break end
+		self.queue[#self.queue + 1] = extra
+		added = added + 1
+	end
+
+	return added > 0
+end
+
+--- Start again on music alone. The shuffle itself belongs to playback, which is
+--  where the mini-player reaches for it too; this is the region catching up.
+function Player:Shuffle()
+	if not Playback or not Content then return false end
+	local queue = Content:MusicQueue()
+	if #queue == 0 then return false end
+
+	self.queue, self.at, self.complete = queue, 1, nil
+	self:Refresh()
+	return Playback:Shuffle()
+end
+
+--- Play the last thing again.
+function Player:Replay()
+	if not Playback or not self.queue then return false end
+	self.complete = nil
+	self:Refresh()
+	Playback.stopped = nil
+	return Playback:PlayAt(math.min(Playback.at or 1, #self.queue))
 end
 
 -- ---------------------------------------------------------------------------
@@ -265,9 +370,49 @@ function Player:Height()
 		+ 20 + rows * UPNEXT_H + PAD_B
 end
 
+--- The complete state: one line and three quiet choices, in place of the lot.
+--
+--  "Never dump the player into dead silence over the Barrens" is the design's
+--  phrase for why this exists. It was built, and then nothing ever showed it -
+--  so a programme that ran out left the last item's row on screen saying "4:25
+--  left" for the rest of the flight, which is the console insisting something
+--  is playing when it has stopped.
+function Player:PaintComplete()
+	local f = self.frame
+
+	for _, part in ipairs(f.running) do part:Hide() end
+	for _, row in ipairs(f.rows) do row:Hide() end
+
+	f.done:Show()
+
+	local last = (self.queue or {})[math.min(self.at or 1, #(self.queue or {}))]
+	local title = last and last.title or ""
+	if #title > 20 then title = title:sub(1, 19) .. "..." end
+
+	f.chips[1]:SetChip("Ambient shuffle", true)
+	f.chips[2]:SetChip(title ~= "" and ("Replay " .. title) or "Replay")
+	f.chips[3]:SetChip("Just scenery")
+
+	-- Nothing to replay is a chip that does nothing, so it simply is not there.
+	f.chips[2]:SetShown(last ~= nil)
+	f.chips[1]:Show()
+	f.chips[3]:Show()
+
+	-- The third follows whichever of the first two is showing, so a missing
+	-- replay closes the gap rather than leaving a hole in the row.
+	f.chips[3]:ClearAllPoints()
+	f.chips[3]:SetPoint("LEFT", last and f.chips[2] or f.chips[1], "RIGHT", 8, 0)
+end
+
 function Player:Paint()
 	local f = self.frame
 	if not f then return end
+
+	if self.complete then return self:PaintComplete() end
+
+	for _, part in ipairs(f.running) do part:Show() end
+	f.done:Hide()
+	for _, chip in ipairs(f.chips) do chip:Hide() end
 
 	local flight = Taxi and Taxi.flight
 	local total  = flight and flight.expected or 0
@@ -275,9 +420,15 @@ function Player:Paint()
 
 	-- THE PROGRAMME BAR: one piece per queued item. Played and playing are
 	-- solid; queued is outlined.
+	--
+	-- MEASURED IN WHAT EACH ITEM ACTUALLY GOT. A skipped track occupied the
+	-- twenty seconds it played rather than the three and a half minutes it was
+	-- going to, and this bar is a timeline - drawn at full length, everything
+	-- after a skip sat in the wrong place and the headline underneath announced
+	-- that the queue filled 6:30 of a 4:09 flight.
 	local pieces, filled = {}, 0
 	for i, item in ipairs(self.queue or {}) do
-		local secs = item.duration or 0
+		local secs = Playback and Playback:Spent(i, item) or (item.duration or 0)
 		pieces[#pieces + 1] = {
 			seconds = secs,
 			colour  = tintFor(item.type),
@@ -372,10 +523,19 @@ function Player:PaintNowPlaying()
 	f.now.glyph:SetVertexColor(tint[1], tint[2], tint[3])
 	f.now.title:SetText(item.title or "")
 
+	-- WHO IT IS BY GOES FIRST, before the clock. A song is named by two things
+	-- and the title alone is half of it; the countdown is the same shape on
+	-- every item and reads fine after the name.
+	--
+	-- AND NOT WHAT FOLLOWS. This line used to end "then <the next one>", which
+	-- is a title said twice on one panel: UP NEXT is four rows below it saying
+	-- the same thing, with a duration and a channel mark this row has no space
+	-- for - and on any real route the extra clause ran under the landing label.
 	local left = (item.duration or 0) - (Playback:Elapsed() or 0)
-	local nextItem = (self.queue or {})[(self.at or 1) + 1]
 	local meta = clock(left) .. " left"
-	if nextItem then meta = meta .. "  \194\183  then " .. (nextItem.title or "") end
+	if item.artist and item.artist ~= "" then
+		meta = item.artist .. "  \194\183  " .. meta
+	end
 	f.now.meta:SetText(meta)
 	W.Color(f.now.meta, tint)
 
@@ -386,6 +546,11 @@ end
 function Player:PaintUpNext()
 	local f = self.frame
 	local queue, at = self.queue or {}, self.at or 1
+
+	-- A HEADING WITH NOTHING UNDER IT reads as a list that failed to load. When
+	-- there is genuinely nothing next - the last item of the season, playing -
+	-- the label goes too.
+	f.upNextLabel:SetShown(queue[at + 1] ~= nil)
 
 	for i, row in ipairs(f.rows) do
 		local item = queue[at + i]
@@ -399,7 +564,11 @@ function Player:PaintUpNext()
 
 			-- "queued by you" is not a duration, and saying so is the whole
 			-- point: a player pick is never overridden by auto-fill.
-			if item.picked then
+			--
+			-- KEYED ON A SET PLAYBACK OWNS, not written onto the item and not
+			-- kept here: the mini-player queues things too, and two surfaces
+			-- with their own idea of what the player chose is one of them wrong.
+			if Playback and Playback.picked[item.key] then
 				row.meta:SetText("queued by you")
 				W.Color(row.meta, Palette.c.textDim)
 			else
@@ -457,16 +626,86 @@ function Player:Refresh()
 	IF:AttachRegion(f, self:Height())
 end
 
+--- Is the in-flight player wanted at all?
+--
+--  SWITCHED OFF IS THE SAME ANSWER AS DORMANT: the region is absent and the
+--  console lays out as though it were never there. Which is the whole point of
+--  the setting - the flight timer is the permanent half and counts you down
+--  either way - and it is why this is not `modules.ifec.enabled`.
+function Player:Wanted()
+	local cfg = A.Config and A.Config:Module("ifec")
+	return not cfg or cfg.player ~= false
+end
+
 --- Build a programme for this flight and start it.
 function Player:OnBoard(flight)
 	if not Content or Content:IsDormant() then return end
 
+	-- Read at BOARDING, not cached at login, which is the rule the season window
+	-- already follows: switching it off between flights takes effect on the next
+	-- one with no reload of ours.
+	if not self:Wanted() then return end
+
 	local seconds = flight and flight.expected or 0
+
+	-- ALREADY PLAYING? THEN CARRY ON. Boarding used to build a programme and
+	-- start it, which cut off whatever the mini-player was in the middle of and
+	-- began something else - a track stopped mid-bar to be replaced by a track.
+	-- There is one queue and one thing playing; the flight is a length to fill,
+	-- not a reason to start over.
+	--
+	-- The programme is built around what is running: the rest of THIS track
+	-- counts towards the flight, so only the remainder has to be covered.
+	local running = Playback and Playback.item
+		and (Playback.state == "playing" or Playback.state == "paused")
+		and Playback.item or nil
+
+	if running then
+		local left = (running.duration or 0) - (Playback:Elapsed() or 0)
+		if left < 0 then left = 0 end
+		seconds = math.max(0, seconds - left)
+	end
+
 	local queue = Content:Programme(seconds, self.picks)
-	self.queue, self.at, self.complete = queue, 1, nil
+	if Playback then
+		Playback.picked = {}
+		for _, key in ipairs(self.picks or {}) do Playback.picked[key] = true end
+	end
+
+	if running then
+		-- What is playing leads the programme, and anything the new one wanted
+		-- that is already sounding is not queued behind itself.
+		local ahead = { running }
+		for _, item in ipairs(queue) do
+			if item.key ~= running.key then ahead[#ahead + 1] = item end
+		end
+		queue = ahead
+	end
+
+	self.queue, self.at, self.complete = queue, running and 1 or 1, nil
+
+	-- ONE MORE WHEN THE QUEUE RUNS OUT. The programme covers the flight, which
+	-- on a short hop is a single track - so playback is given somewhere to go
+	-- rather than ending. Set here because the queue is ours; playback still
+	-- knows nothing about seasons and ends the programme if this is absent.
+	if Playback then
+		Playback.refill = function()
+			return Content and Content:NextAfter(Player.queue)
+		end
+	end
 
 	self:Refresh()
-	if Playback then Playback:Start(queue) end
+	if Playback then
+		if running then
+			-- ADOPTED, NOT RESTARTED. Start would stop the handle and play the
+			-- first segment again from the top; the track is already sounding
+			-- and its clock is already running, so the console takes the queue
+			-- over and leaves the audio alone.
+			Playback:Adopt(queue)
+		else
+			Playback:Start(queue)
+		end
+	end
 
 	-- ON ITS OWN TICK. Everything painted here counts down - "1:00 left",
 	-- "LANDING 2:14", the flight bar - and the only thing that was repainting
@@ -477,15 +716,49 @@ function Player:OnBoard(flight)
 	-- Our own owner, not the console's: the dependency here points one way and
 	-- the console is not going to start driving the content half.
 	A:RegisterTicker(self, function()
+		-- THE TILE CAN BE PRESSED MID-FLIGHT. Noticed here rather than pushed
+		-- from the console, because the console is not allowed to know this half
+		-- exists - the dependency points one way and this is the only place on
+		-- our side that runs every second anyway.
+		--
+		-- Off stops the programme now; on waits for the next boarding, because
+		-- the programme is built to fit a flight and half a flight is not one.
+		if not Player:Wanted() then
+			Player:OnLand()
+			return
+		end
 		if Playback then Playback:Poll() end
 		Player:Paint()
 	end)
 end
 
+--- Does the programme survive the landing?
+function Player:PlaysOn()
+	local cfg = A.Config and A.Config:Module("ifec")
+	return cfg ~= nil and cfg.playOn == true
+end
+
 function Player:OnLand()
 	A:UnregisterTicker(self)
-	if Playback then Playback:Stop() end
+
+	-- LANDING IS NOT ALWAYS A STOP. The queue and the audio belong to playback
+	-- rather than to this region, so carrying on is a matter of not stopping
+	-- them - the mini-player is already a view onto the same thing and simply
+	-- starts describing it.
+	--
+	-- The refill goes either way: it is the flight's own rule for topping the
+	-- queue up, and on the ground the mini-player asks for what it wants.
+	if Playback then
+		Playback.refill = nil
+		if not self:PlaysOn() or not Playback:IsPlaying() then
+			Playback:Stop()
+		end
+	end
 	self.queue, self.at, self.complete = nil, nil, nil
+	-- The drawer is shut by the console when the region goes, which is one line
+	-- below. Closing it here as well was a second owner for the same fact, and
+	-- the sort that hides a hole rather than filling one: either half could be
+	-- deleted and nothing would notice.
 	local IF = A:GetModule("ifec")
 	if IF and IF.HasRegion and IF:HasRegion() then IF:DetachRegion() end
 end
@@ -508,13 +781,33 @@ end
 
 if Playback then
 	Playback:AddListener(function(event, item, index)
+		-- ONLY WHEN THE PROGRAMME IS OURS. Playback is startable from elsewhere
+		-- - the diagnostics do it - and Refresh attaches a region whenever there
+		-- is content to play, so an announcement made on the ground would hang a
+		-- player region off a console with no flight under it.
+		local mine = Player.queue ~= nil
+
 		-- Whatever moved, the region says the same things about it.
 		if event == "playing" or event == "segment" then
+			-- Coming BACK from complete is a height change too, in the other
+			-- direction: the region has to grow again before it is painted.
+			if Player.complete and mine then
+				Player.complete = nil
+				Player:Refresh()
+			end
 			for i, q in ipairs(Player.queue or {}) do
 				if item and q.key == item.key then Player.at = i end
 			end
-		elseif event == "exhausted" then
+			-- A skip shortens the programme as well as advancing it, so this is
+			-- where the queue is put back to covering the flight.
+			if mine then Player:TopUp() end
+		elseif event == "exhausted" and mine then
+			-- REFRESH, NOT PAINT. The complete state is a different height, and
+			-- the console is holding the old one - so painting alone left one
+			-- line and three chips floating in a panel four times too tall.
 			Player.complete = true
+			Player:Refresh()
+			return
 		end
 		Player:Paint()
 	end)
