@@ -569,6 +569,13 @@ local function UnitFramesGroup()
 			at("showPortrait")),
 
 		castHeader = header("Cast bars"),
+		showPet = toggle("Pet frame",
+			"A capsule for your pet, with its own place on screen. A hunter's"
+			.. " pet also wears its mood on the orb's rim.", at("showPet")),
+		petScale = range("Pet frame size", "On top of the interface scale, the way"
+			.. " the console and the nameplates have their own.",
+			at("petScale"), 0.6, 1.2, 0.05, { after = "both" }),
+
 		showCastBar = toggle("Player cast bar", nil, at("showCastBar")),
 		showTargetCastBar = toggle("Target cast bar",
 			"Classic Era does not report other units' casts natively; this reads"

@@ -4581,8 +4581,33 @@ local units = {
 		power = 0, powerMax = 0, powerType = 0, powerToken = "MANA", reaction = 2,
 		classification = "elite",
 	},
+	-- A PET THAT EXISTS. Modelled with a power bar and a mood, because both are
+	-- things the capsule draws and neither is true of every pet: a warlock's
+	-- imp has no happiness at all, and the code has to tell "unhappy" from
+	-- "this pet does not have moods".
+	pet = {
+		exists = true, name = "Raptor", level = 10, isPlayer = false,
+		creature = "Beast", hp = 300, hpMax = 420,
+		power = 40, powerMax = 100, powerType = 2, powerToken = "FOCUS",
+		reaction = 5,
+	},
 }
 _G.__units = units
+
+-- The pet's mood, and whether it is the kind of pet that has one. Blizzard's own
+-- frame gates on the SECOND return of HasPetUI and hides the face without it -
+-- a warlock's imp reports no happiness, and a rim tinted from a nil is a rim
+-- tinted from whatever the last hunter left behind.
+_G.__petHappiness = 3
+_G.__isHunterPet  = true
+
+-- ANSWERS WHATEVER IT LAST HAD, because that is the case the guard is for.
+-- Blizzard's own frame tests `not happiness or not isHunterPet` - two tests, and
+-- a mock that made the first imply the second would make the second unreachable.
+-- GetPetHappiness is about the PLAYER's pet, not about which pet it is; whether
+-- this one HAS moods is what HasPetUI's second return says.
+function GetPetHappiness() return _G.__petHappiness, 100, 0 end
+function HasPetUI() return true, _G.__isHunterPet end
 
 function UnitExists(u) return units[u] and units[u].exists or false end
 function UnitName(u) return units[u] and units[u].name end
@@ -8709,8 +8734,76 @@ for _, cmd in ipairs({ "", "status", "diag", "hide", "scale 1.2", "shadow 14", "
 	if not ok then fail("/aether " .. cmd .. ": " .. tostring(err)) end
 end
 check(A:GetModule("unitframes").enabled, "module toggled back on cleanly")
-check(UF.player == A:GetModule("unitframes").player and #UF.frames == 2,
-	"toggling the module reuses its frames instead of leaking a second set")
+-- THREE NOW: player, target and pet. The count is the point of the check - a
+-- rebuild would leak a second set, because WoW has no way to destroy a frame.
+check(UF.player == A:GetModule("unitframes").player and #UF.frames == 3,
+	"toggling the module reuses its frames instead of leaking a second set ("
+	.. #UF.frames .. ")")
+check(UF.pet ~= nil and UF.pet.unit == "pet", "and the pet capsule is one of them")
+
+do
+	local pet = UF.pet
+	UF.UpdateAll(pet)
+
+	-- THE SAME SHAPE, at a size of its own. A pet is glanced at rather than
+	-- read, and everything the capsule builder makes comes from one config - so
+	-- a smaller frame is a scale, not a second set of measurements to keep in
+	-- step with the first.
+	check(pet.glass:IsShown(), "with a pet out, the capsule is up")
+	check(pet.name:GetText() == "Raptor",
+		"named after the pet (" .. tostring(pet.name:GetText()) .. ")")
+	check(pet.orb ~= nil and pet.health ~= nil and pet.power:IsShown(),
+		"carrying an orb, a health bar and the pet's power")
+	-- ON TOP OF THE PROFILE'S, not instead of it, which is the arrangement the
+	-- console and the nameplates already have.
+	check(math.abs(pet:GetScale() - A.db.profile.scale * 0.85) < 0.001,
+		"at its own scale on top of the profile's (" .. tostring(pet:GetScale())
+		.. " of " .. tostring(A.db.profile.scale) .. ")")
+	check(pet:GetScale() < UF.player:GetScale(), "and smaller than the player's")
+
+	-- ITS OWN MOVER, not hung off the player's. A pet frame you cannot put
+	-- where you want it is one you end up turning off.
+	local entry = A.Movers.registry and A.Movers.registry["pet"]
+	check(entry ~= nil and entry.frame == pet,
+		"and its own entry in the mover, like the other two")
+
+	-- A MOOD ON THE RIM, and only for the kind of pet that has one.
+	local c = A.Palette.c
+	local function rim() return pet.orb.disc.__vertex end
+
+	_G.__petHappiness = 3
+	UF.UpdateAll(pet)
+	local happy = { pet.orb.disc:GetVertexColor() }
+	_G.__petHappiness = 1
+	UF.UpdateAll(pet)
+	local sad = { pet.orb.disc:GetVertexColor() }
+	check(math.abs(happy[1] - sad[1]) > 0.01 or math.abs(happy[2] - sad[2]) > 0.01,
+		"a happy pet and an unhappy one wear different rims")
+	check(math.abs(sad[1] - c.petUnhappy[1]) < 0.01
+		and math.abs(sad[2] - c.petUnhappy[2]) < 0.01,
+		"and the unhappy one is the colour the palette calls that")
+
+	-- A WARLOCK'S IMP HAS NO MOOD. GetPetHappiness answers nil and Blizzard's
+	-- own frame hides the face; a rim tinted from that nil is a rim tinted from
+	-- whatever the last hunter left behind.
+	_G.__isHunterPet = false
+	UF.UpdateAll(pet)
+	local imp = { pet.orb.disc:GetVertexColor() }
+	check(math.abs(imp[1] - sad[1]) > 0.01 or math.abs(imp[2] - sad[2]) > 0.01,
+		"a pet with no mood does not wear the last one's rim")
+	_G.__isHunterPet = true
+	_G.__petHappiness = 3
+
+	-- AND IT GOES WITH THE PET. Neither getting one nor dismissing one is a unit
+	-- event on the pet - UNIT_PET fires on the OWNER - so without that the
+	-- capsule sat on the last pet's name and health.
+	_G.__units.pet.exists = false
+	fire("UNIT_PET", "player")
+	check(not pet.glass:IsShown(), "dismissing the pet takes the capsule away")
+	_G.__units.pet.exists = true
+	fire("UNIT_PET", "player")
+	check(pet.glass:IsShown(), "and calling one back brings it up")
+end
 check(UF.player:IsShown() and UF.player.name:GetText() == "Palabras",
 	"reused frames repopulate after a toggle")
 

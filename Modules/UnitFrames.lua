@@ -61,6 +61,7 @@ function UF:HideBlizzard()
 	Banish(_G.TargetFrame)
 	Banish(_G.TargetFrameToT)
 	Banish(_G.ComboFrame)
+	if cfg.showPet ~= false then Banish(_G.PetFrame) end
 
 	if cfg.showCastBar then
 		Banish(_G.CastingBarFrame)
@@ -496,10 +497,41 @@ local function UpdatePower(f)
 	end
 end
 
+--- A hunter's pet has a mood, and it changes its damage.
+--
+--  ON THE RIM, not as a fourth icon. The capsule is small and already carries a
+--  portrait, a name, two bars and two numbers; a face beside all that is one
+--  more thing to look past. The rim is a mark this interface already makes -
+--  the console says auto-cast the same way - and it is only ever coloured for
+--  the one kind of pet that has a mood.
+--
+--  GATED ON isHunterPet, which is the client's own test. A warlock's imp
+--  reports no happiness at all, and a rim tinted from a nil is a rim tinted
+--  from whatever the last hunter left behind.
+local function HappinessColor()
+	if not GetPetHappiness or not HasPetUI then return nil end
+	local _, isHunterPet = HasPetUI()
+	if not isHunterPet then return nil end
+
+	local happiness = GetPetHappiness()
+	local c = Palette.c
+	if happiness == 3 then return c.petHappy end
+	if happiness == 2 then return c.petContent end
+	if happiness == 1 then return c.petUnhappy end
+	return nil
+end
+
 local function UpdateOrb(f)
 	local unit = f.unit
 	if not UnitExists(unit) then return end
-	f.orb:SetColors(Palette:OrbColors(unit))
+
+	local face, rim, ink, faceHi, rimHi = Palette:OrbColors(unit)
+	if unit == "pet" then
+		local mood = HappinessColor()
+		if mood then rim, rimHi = mood, mood end
+	end
+	f.orb:SetColors(face, rim, ink, faceHi, rimHi)
+
 	if f.orb.portrait then
 		SetPortraitTexture(f.orb.portrait, unit)
 	end
@@ -787,6 +819,20 @@ function UF:RegisterEvents()
 	A:RegisterEvent(self, "UNIT_LEVEL",        unitEvent(UpdateName))
 	A:RegisterEvent(self, "UNIT_FACTION",      unitEvent(UpdateOrb))
 
+	-- A PET COMES AND GOES, and neither arrival nor dismissal is a unit event on
+	-- the pet itself - UNIT_PET fires on the OWNER. Without this the capsule sat
+	-- on the last pet's name and health until something else happened to
+	-- refresh it.
+	A:RegisterEvent(self, "UNIT_PET", function()
+		if UF.pet then UpdateAll(UF.pet) end
+	end)
+	A:RegisterEvent(self, "UNIT_HAPPINESS", function()
+		if UF.pet and UnitExists("pet") then UpdateOrb(UF.pet) end
+	end)
+	A:RegisterEvent(self, "PET_UI_UPDATE", function()
+		if UF.pet then UpdateAll(UF.pet) end
+	end)
+
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
 		UpdateAll(UF.target)
 		if UF.targetCast then
@@ -884,6 +930,13 @@ function UF:RegisterMovers()
 		{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 190 }, "Player")
 	A.Movers:Register("target", self.target,
 		{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 190 }, "Target")
+	if self.pet then
+		-- Under the player by default, which is where one is looked for - but
+		-- its OWN entry, so it can be put anywhere. A pet frame you cannot move
+		-- is one you end up turning off.
+		A.Movers:Register("pet", self.pet,
+			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, "Pet")
+	end
 	self:AnchorCastBar()
 end
 
@@ -904,17 +957,31 @@ function UF:OnEnable()
 		self:RegisterMovers()
 		A.Fader:Register(self.player, {})
 		A.Fader:Register(self.target, {})
+		if self.pet then A.Fader:Register(self.pet, {}) end
 		A.Fader:Refresh()
 		self:RegisterEvents()
 		A:RegisterTicker(self, Reconcile)
 		UpdateAll(self.player)
 		UpdateAll(self.target)
+		if self.pet then UpdateAll(self.pet) end
 		return
 	end
 
 	self.player = BuildCapsule("player", false)
 	self.target = BuildCapsule("target", true)
 	self.frames = { self.player, self.target }
+
+	-- THE PET, at a size of its own. Everything the capsule builder makes is
+	-- driven from one config, so a smaller pet frame is a scale rather than a
+	-- second set of measurements to keep in step - the same argument the
+	-- console and the nameplates make for having their own multiplier.
+	--
+	-- In `frames` like the other two, which is what gives it health, power and
+	-- name updates: the unit events walk that list and match on f.unit.
+	if cfg.showPet ~= false then
+		self.pet = BuildCapsule("pet", false)
+		self.frames[#self.frames + 1] = self.pet
+	end
 
 	if cfg.showCastBar then
 		self.cast = BuildCastBar("player")
@@ -931,6 +998,7 @@ function UF:OnEnable()
 	-- fader -----------------------------------------------------------------
 	A.Fader:Register(self.player, {})
 	A.Fader:Register(self.target, {})
+	if self.pet then A.Fader:Register(self.pet, {}) end
 	A.Fader:Refresh()
 
 	self:RegisterEvents()
@@ -939,6 +1007,7 @@ function UF:OnEnable()
 	self:HideBlizzard()
 	UpdateAll(self.player)
 	UpdateAll(self.target)
+	if self.pet then UpdateAll(self.pet) end
 end
 
 function UF:OnDisable()
@@ -978,7 +1047,11 @@ function UF:OnConfigChanged()
 	local width = math.max(cfg.width, MinWidth(cfg))
 
 	for _, f in ipairs(self.frames or {}) do
-		f:SetScale(scale)
+		-- ON TOP OF THE PROFILE'S, not instead of it - the same arrangement the
+		-- console and the nameplates have. Set here rather than only at build,
+		-- because this loop runs on every config change and would otherwise put
+		-- the pet back to the size of the other two.
+		f:SetScale(scale * ((f == self.pet and (cfg.petScale or 0.85)) or 1))
 		f:SetSize(width, cfg.height)
 		-- The glass fills the core, so resizing the core has already resized it;
 		-- _Resize just rebuilds the caps and the shadow on this frame rather than

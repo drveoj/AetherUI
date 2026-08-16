@@ -114,6 +114,13 @@ Config.defaults = {
 
 		modules = {
 			unitframes = {
+				-- The pet capsule: the same shape as the other two at a size of
+				-- its own, because a pet is a thing you glance at rather than
+				-- read. Its own frame with its own mover, not hung off the
+				-- player's - a pet frame you cannot put where you want it is
+				-- one you end up turning off.
+				showPet  = true,
+				petScale = 0.85,
 				enabled  = true,
 				-- 10 pad + 46 orb + 13 + 200 bars + 12 + 40 readout + 24 pad
 				width    = 345,

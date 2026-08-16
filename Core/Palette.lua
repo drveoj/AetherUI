@@ -66,6 +66,14 @@ Palette.skins = {
 		ifecBrass   = C(200, 168, 106, 0.55),
 		ifecDisc    = C(21, 17, 41, 1.00),
 
+		-- A hunter's pet has a mood, and it changes its damage. Shown on the
+		-- orb's rim rather than as a fourth icon on a small frame - the rim is
+		-- already how the console says auto-cast, so it is a mark this
+		-- interface makes rather than a new one.
+		petHappy    = C(142, 214, 158, 1.00),
+		petContent  = C(232, 200, 106, 1.00),
+		petUnhappy  = C(232, 122, 122, 1.00),
+
 		health      = { C(159, 232, 180), C(95, 198, 134) },
 		power       = { C(138, 180, 255), C(106, 144, 232) },
 		rage        = { C(255, 154, 118), C(240, 110, 90)  },
@@ -286,6 +294,10 @@ Palette.skins = {
 		ifecTrack   = C(60, 44, 96, 0.16),
 		ifecBrass   = C(168, 132, 72, 0.65),
 		ifecDisc    = C(252, 248, 255, 1.00),
+
+		petHappy    = C( 58, 150,  84, 1.00),
+		petContent  = C(176, 138,  40, 1.00),
+		petUnhappy  = C(184,  62,  62, 1.00),
 
 		health      = { C(159, 232, 180), C(111, 214, 150) },
 		power       = { C(168, 204, 245), C(127, 176, 236) },
