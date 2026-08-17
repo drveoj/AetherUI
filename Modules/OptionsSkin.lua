@@ -85,13 +85,10 @@ local function DressContainer(widget, opts)
 	local frame = VisibleBox(widget)
 	if not frame then return end
 
-	-- BEHIND, always, for these. An Ace container keeps its contents in a
-	-- child frame rather than in regions of its own, so glass placed INSIDE
-	-- is a sibling of everything in the group and the draw order then rests
-	-- on level, strata and creation order together. Behind the frame it
-	-- cannot be over the contents however those land.
+	-- INSIDE THE BOX, which is safe now that we dress the right one: `content`
+	-- is a child of the visible box, so glass placed inside at a lower level
+	-- sits under the contents and hides when the box hides, for nothing.
 	opts = opts or {}
-	opts.behind = true
 
 	-- STRIPPED ON EVERY PASS, recorded on the first.
 	--
@@ -371,6 +368,56 @@ local function DressDropdown(widget)
 	end
 end
 
+
+--- One row of the category list.
+--
+--  A row is an OptionsListButtonTemplate and the selection is Blizzard's blue
+--  gradient, drawn by LockHighlight on the button's own highlight texture. So
+--  the art comes off and we draw the selection ourselves - which also means
+--  reading `selected` rather than relying on a texture we just took away.
+local function DressTreeRow(b)
+	if not b then return end
+
+	if not b.__aetherRow then
+		b.__aetherRow = true
+		Reskin.ClearButton(b)
+
+		-- The selection, ours. BACKGROUND so the label and the expand toggle
+		-- stay over it; a highlight on top of its own row is a row you cannot
+		-- read while it is the one you have chosen.
+		local sel = b:CreateTexture(nil, "BACKGROUND")
+		sel:SetTexture(A.Media.texture.flat)
+		sel:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -1)
+		sel:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 1)
+		b.__aetherSel = sel
+	end
+
+	-- Re-tinted every pass: the row is reused for whatever line the tree is
+	-- showing at that position, and the skin may have changed under it.
+	W.Tint(b.__aetherSel, Palette.c.rowSel)
+	b.__aetherSel:SetShown(b.selected and true or false)
+
+	if b.text then
+		Reskin.Font(b.text, "qlRow")
+		W.Color(b.text, b.selected and Palette.c.text or Palette.c.textDim)
+	end
+
+	-- The expand toggle is a plus/minus plate. Cleared and given the chevron,
+	-- which is the same glyph the menus and the dropdowns use.
+	local toggle = b.toggle
+	if toggle then
+		Reskin.ClearButton(toggle)
+		if not toggle.__aetherGlyph then
+			local g = toggle:CreateTexture(nil, "OVERLAY")
+			g:SetTexture(A.Media.texture.chevron)
+			g:SetSize(8, 8)
+			g:SetPoint("CENTER", toggle, "CENTER", 0, 0)
+			toggle.__aetherGlyph = g
+		end
+		W.Tint(toggle.__aetherGlyph, Palette.c.textDim)
+	end
+end
+
 --- The category list down the left.
 local function DressTree(widget)
 	if widget.border then
@@ -391,6 +438,21 @@ local function DressTree(widget)
 		widget.scrollbar.__aetherStore = widget.scrollbar.__aetherStore or {}
 		Reskin.ScrollBar(widget.scrollbar, widget.scrollbar.__aetherStore)
 	end
+
+	-- THE ROWS ARE MADE LATER, and remade as the tree is filtered or a
+	-- branch opens - so dressing whatever exists now would cover the first
+	-- page and nothing after it. RefreshTree is what builds and repaints
+	-- them, so it is wrapped once and the rows are dressed on the way out.
+	if not widget.__aetherRefresh and widget.RefreshTree then
+		widget.__aetherRefresh = widget.RefreshTree
+		widget.RefreshTree = function(self, ...)
+			self.__aetherRefresh(self, ...)
+			for _, row in ipairs(self.buttons or {}) do
+				pcall(DressTreeRow, row)
+			end
+		end
+	end
+	for _, row in ipairs(widget.buttons or {}) do DressTreeRow(row) end
 end
 
 --- A heading is a rule with a word on it.

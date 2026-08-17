@@ -274,18 +274,7 @@ function Reskin.Panel(frame, opts)
 
 	local profile = A.db and A.db.profile
 
-	-- BEHIND THE FRAME, OR INSIDE IT.
-	--
-	-- Inside is right for a client window whose contents are REGIONS of it:
-	-- the panel takes a level below the frame and the regions draw over it.
-	--
-	-- It is wrong wherever the contents are CHILD FRAMES, because then the
-	-- glass and the contents are siblings and the ordering depends on level,
-	-- strata and creation order all at once - three things to keep right
-	-- instead of none. A sibling of the frame itself, one level below, cannot
-	-- be over anything the frame contains however those three land.
-	local host = opts.behind and frame:GetParent() or frame
-	local panel = A.Glass.CreatePanel(host, {
+	local panel = A.Glass.CreatePanel(frame, {
 		corner = opts.corner or 16,
 		shadow = opts.shadow or (profile and profile.glass.shadow) or 1,
 		fill = opts.fill or "dialogFill",
@@ -304,36 +293,20 @@ function Reskin.Panel(frame, opts)
 		panel:SetAllPoints(frame)
 	end
 	panel:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
-	-- A sibling has to be told the strata as well: level only orders frames
-	-- within one, and the two are no longer parent and child.
-	if opts.behind and frame.GetFrameStrata and panel.SetFrameStrata then
-		panel:SetFrameStrata(frame:GetFrameStrata())
-	end
 
 	frame.__aetherPanel = panel
 
-	-- A SIBLING DOES NOT HIDE WITH THE FRAME, and a child does.
+	--- A CHILD HIDES WITH ITS PARENT, and that is the whole reason the panel
+	--  is one. A `behind` option was tried - glass as a SIBLING of the frame,
+	--  to sidestep a draw-order problem that turned out to be us dressing the
+	--  wrong frame - and it put two sheets across the screen at login twice.
+	--  AceGUI parents its widget frames to UIParent, so behind meant parented
+	--  to UIParent, and glass whose visibility is tracked by hand outlives the
+	--  frame it was drawn for the moment anything hides that frame by a path
+	--  that does not fire OnHide.
 	--
-	-- That is the whole cost of putting the glass behind rather than inside,
-	-- and it is not a detail: AceGUI hides a widget by hiding its frame and
-	-- keeps it in a pool, so glass that did not go with it stayed on screen
-	-- for the rest of the session - anchored to a hidden frame, which keeps
-	-- its last size, so two of them covered the entire view.
-	--
-	-- Hooked once. OnHide fires when the frame is hidden OR an ancestor is,
-	-- which is the case that matters: a group inside a window that closes.
-	if opts.behind then
-		panel:SetShown(frame.IsShown and frame:IsShown() or false)
-		if not frame.__aetherPanelFollows and frame.HookScript then
-			frame.__aetherPanelFollows = true
-			frame:HookScript("OnShow", function(self)
-				if self.__aetherPanel then self.__aetherPanel:Show() end
-			end)
-			frame:HookScript("OnHide", function(self)
-				if self.__aetherPanel then self.__aetherPanel:Hide() end
-			end)
-		end
-	end
+	--  Removed rather than left switched off: an option nobody uses is one
+	--  somebody will.
 
 	return panel
 end

@@ -12240,38 +12240,24 @@ section("options: our own settings, in our own interface", function()
 	-- level, strata and creation order together, which is three things to keep
 	-- right instead of none.
 	local panel = box.__aetherPanel
-	check(panel:GetParent() == box:GetParent(),
-		"the glass is a sibling of the box, not a child of it")
+
+	-- A CHILD OF THE BOX, and that is the whole safeguard.
+	--
+	-- Glass as a SIBLING was tried, to sidestep a draw-order problem that turned
+	-- out to be us dressing the wrong frame - and it put two sheets across the
+	-- screen at login, twice. AceGUI parents its widget frames to UIParent, so a
+	-- sibling is parented to UIParent, and glass whose visibility is tracked by
+	-- hand outlives the frame it was drawn for the moment anything hides that
+	-- frame by a path that does not fire OnHide. A child cannot: it is not drawn
+	-- when its parent is not.
+	check(panel:GetParent() == box,
+		"the glass is a CHILD of the box, so it cannot outlive it")
 	check(panel:GetFrameLevel() < box:GetFrameLevel(),
-		"one level below it, so nothing the box holds can end up underneath ("
-		.. panel:GetFrameLevel() .. " vs " .. box:GetFrameLevel() .. ")")
-	check(panel:GetFrameStrata() == box:GetFrameStrata(),
-		"and in the same strata, because level only orders frames within one")
-
-	-- AND IT GOES WHEN THE FRAME GOES. This is what a child gave for free and a
-	-- sibling does not, and it is not a detail: AceGUI hides a widget by hiding
-	-- its frame and keeps it in a pool, so glass that did not follow stayed on
-	-- screen for the rest of the session - anchored to a hidden frame, which
-	-- keeps its last size, so two of them covered the entire view.
-	box:Show()
-	check(panel:IsShown(), "the glass is up while the box is")
-	box:Hide()
-	check(not panel:IsShown(),
-		"and goes with it - a sibling has to be told, where a child never did")
-	box:Show()
-	check(panel:IsShown(), "and comes back with it")
-
-	-- AND IT STARTS AS THE FRAME IS. AceGUI builds its widgets HIDDEN and shows
-	-- them when a page wants one, so glass that came up shown regardless would
-	-- be on screen from the moment the panel was first opened, whether or not
-	-- anything was using it.
-	local hidden = gui:Create("InlineGroup")
-	local hbox = hidden.content:GetParent()
-	hbox:Hide()
-	hbox.__aetherPanel = nil                -- dress it again from scratch
-	M.Dress(hidden)
-	check(not hbox.__aetherPanel:IsShown(),
-		"a group dressed while hidden gets glass that is hidden too")
+		"and a level below it (" .. panel:GetFrameLevel() .. " vs "
+		.. box:GetFrameLevel() .. ")")
+	check(grp.content:GetFrameLevel() > panel:GetFrameLevel(),
+		"with the contents above, which is what the box's own children give for"
+		.. " free (" .. grp.content:GetFrameLevel() .. ")")
 
 	-- A BUTTON'S ART IS NOT ALWAYS A STATE TEXTURE. UIPanelButtonTemplate draws
 	-- itself with three BACKGROUND regions - Left, Middle, Right - and clearing
