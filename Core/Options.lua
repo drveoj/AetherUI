@@ -985,66 +985,54 @@ local function ChatGroup()
 	})
 end
 
---- The client's own dialogs. One switch, because the module is a reskin and
---  turning it off has to hand Blizzard's back whole.
-local function PopupsGroup()
-	return group("Dialogs", {
-		enabled = toggle("Enabled", "Skins the game's own confirmation dialogs -"
-			.. " 'do you want to destroy this?' and the like - to match the rest"
-			.. " of the interface. Off gives you Blizzard's back, art and all.",
-			{ "modules", "popups", "enabled" }),
-	})
-end
+--- WHAT THE GAME DRAWS, redressed.
+--
+--  Five switches that were five pages, each holding one checkbox and nothing
+--  else. A page per module is the right shape while a module has settings; for
+--  the ones that only answer yes or no it puts five clicks between the player
+--  and five related decisions, and pads the list they scan to find anything
+--  else.
+--
+--  They belong together anyway: every one is the same promise in a different
+--  place - the game's own thing, in this interface's clothes, and switching it
+--  off gives Blizzard's back whole.
+local function GameOwnGroup()
+	local function at(m) return { "modules", m, "enabled" } end
+	return group("The game's own", {
+		note = note("Everything here is the GAME'S, redressed rather than replaced."
+			.. " Each switch is the same promise: off gives you Blizzard's back"
+			.. " whole, art and all."),
 
---- The game's own lettering.
-local function FontsGroup()
-	return group("Lettering", {
-		enabled = toggle("Enabled", "Puts the GAME'S own type into this"
-			.. " interface's lettering - every panel, every tooltip, every menu,"
-			.. " and \"You can't do that yet\"."
-			.. "\n\nA change of FACE only. Sizes stay exactly as the game had them,"
-			.. " so nothing moves or reflows; outlines stay, because text drawn over"
-			.. " the world needs them; colours stay, because a colour is the game"
-			.. " telling you something."
+		lettering = toggle("Lettering", "The game's own type in this interface's letters"
+			.. " - every panel, every tooltip, every menu, and \"You can't do that yet\"."
+			.. "\n\nA change of FACE only: sizes stay as the game had them, so nothing"
+			.. " moves; outlines stay, because text drawn over the world needs them;"
+			.. " and colours stay, because a colour is the game telling you something."
 			.. "\n\nOTHER ADDONS COME WITH IT. Anything drawn with the game's own type"
 			.. " reads as part of the same interface without its author doing anything."
-			.. " One that chose its own lettering explicitly keeps it.",
-			{ "modules", "fonts", "enabled" }),
-	})
-end
+			.. " One that chose its own lettering keeps it.",
+			at("fonts")),
 
---- The client's own right-click menus.
-local function MenusGroup()
-	return group("Menus", {
-		enabled = toggle("Enabled", "Puts the glass behind the game's own right-click"
-			.. " menus - the one on your portrait, your pet's, a chat tab's."
-			.. "\n\nOne hook rather than a list of frames, so it covers every menu the"
-			.. " game opens. Off gives you Blizzard's panel back; the LETTERING is a"
-			.. " different switch, above.",
-			{ "modules", "menus", "enabled" }),
-	})
-end
+		windows = toggle("Windows", "The game's own windows - character, spellbook,"
+			.. " talents, guild, map, menu and help. What is INSIDE them is left alone:"
+			.. " item slots, spell buttons and map pins are still the game's own.",
+			at("panels")),
 
---- The client's mirror timers.
-local function TimersGroup()
-	return group("Timers", {
-		enabled = toggle("Enabled", "Skins the game's breath, fatigue and feign"
-			.. " death bars. Which timer it is stays in the colour - blue for"
-			.. " breath, yellow for fatigue, orange for death - in this"
-			.. " interface's own hues. Off gives you Blizzard's back.",
-			{ "modules", "timers", "enabled" }),
-	})
-end
+		dialogs = toggle("Dialogs", "The confirmation boxes - \"do you want to destroy"
+			.. " this?\" and the like.", at("popups")),
 
---- The client's own windows.
-local function PanelsGroup()
-	return group("Windows", {
-		enabled = toggle("Enabled", "Skins the game's own windows - character,"
-			.. " spellbook, talents, guild, map, menu and help - to match the"
-			.. " rest of the interface. Off gives you Blizzard's back, art and"
-			.. " all. What is inside them is left alone: item slots, spell"
-			.. " buttons and map pins are still the game's own.",
-			{ "modules", "panels", "enabled" }),
+		menus = toggle("Menus", "The right-click menus - the one on your portrait,"
+			.. " your pet's, a chat tab's. One hook rather than a list of frames, so"
+			.. " it covers every menu the game opens.", at("menus")),
+
+		timers = toggle("Timers", "The breath, fatigue and feign-death bars."
+			.. " Which timer it is stays in the colour - blue for breath, yellow for"
+			.. " fatigue, orange for death - in this interface's own hues.",
+			at("timers")),
+
+		settings = toggle("This panel", "These settings, in the same glass as the"
+			.. " rest of it. Off leaves the options panel looking like Blizzard's,"
+			.. " which is where it started.", at("optionsskin")),
 	})
 end
 
@@ -1214,8 +1202,7 @@ end
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
-	xpbar = 12, nameplates = 13, popups = 14, panels = 15, timers = 16,
-	ifec = 17, fonts = 18, menus = 19,
+	xpbar = 12, nameplates = 13, ifec = 14, gameown = 15,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1273,11 +1260,7 @@ function Options:Build()
 			xpbar = XPGroup(),
 			ifec = IFECGroup(),
 			nameplates = NameplatesGroup(),
-			popups = PopupsGroup(),
-			fonts = FontsGroup(),
-			menus = MenusGroup(),
-			panels = PanelsGroup(),
-			timers = TimersGroup(),
+			gameown = GameOwnGroup(),
 			changelog = ChangelogGroup(),
 		},
 	}

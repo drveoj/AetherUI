@@ -1149,6 +1149,23 @@ function CreateFrame(kind, name, parent, template)
 		f:SetScript("OnLeave", function() ContainerFrameItemButton_OnLeave() end)
 	end
 
+	-- UIDropDownMenuTemplate ARRIVES IN PIECES, and they are named globals:
+	-- $parentLeft, $parentMiddle and $parentRight for the art, $parentText
+	-- for the line it shows and $parentButton for the arrow. Everything that
+	-- builds a dropdown reaches for those by name - the library does it three
+	-- lines after creating one - so a template that came back as a bare frame
+	-- made a dropdown untestable and every check of one a check of nothing.
+	if type(template) == "string" and template:find("UIDropDownMenuTemplate")
+		and name then
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			local tex = f:CreateTexture(name .. part, "ARTWORK")
+			tex:SetTexture("Interface\\Glues\\CharacterCreate\\CharacterCreate-LabelFrame")
+		end
+		f:CreateFontString(name .. "Text", "ARTWORK")
+		local arrow = CreateFrame("Button", name .. "Button", f)
+		arrow:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
+	end
+
 	-- A TEMPLATED BUTTON ARRIVES WITH ITS LABEL. UIPanelButtonTemplate and
 	-- its relatives define a ButtonText, so the client hands back a button
 	-- whose GetFontString already answers - before anybody calls SetText.
@@ -1157,6 +1174,18 @@ function CreateFrame(kind, name, parent, template)
 	if type(template) == "string" and template:find("Button")
 		and (kind == "Button" or kind == "CheckButton") then
 		f.__fontString = f:CreateFontString(nil, "OVERLAY")
+		-- AND ITS THREE PIECES OF ART. UIPanelButtonTemplate draws itself with
+		-- Left, Middle and Right textures in the BACKGROUND layer rather than
+		-- with normal/pushed/highlight - so a reskin that only cleared the
+		-- state textures left the red on, and a mock with no art at all could
+		-- not tell the difference.
+		if template:find("UIPanelButton") then
+			for _, part in ipairs({ "Left", "Middle", "Right" }) do
+				local tex = f:CreateTexture(nil, "BACKGROUND")
+				tex:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+				f["__art" .. part] = tex
+			end
+		end
 	end
 
 	return f
@@ -4883,7 +4912,7 @@ load("Libs/AceGUI-3.0/AceGUI-3.0.lua")
 -- rather than a set invented to match it.
 for _, w in ipairs({
 	"Widget-Button", "Widget-CheckBox", "Widget-Slider", "Widget-EditBox",
-	"Widget-Heading", "Widget-Label",
+	"Widget-Heading", "Widget-Label", "Widget-DropDown-Items", "Widget-DropDown",
 	"Container-SimpleGroup", "Container-InlineGroup", "Container-TreeGroup",
 	"Container-Frame", "Container-ScrollFrame",
 }) do
@@ -12182,6 +12211,34 @@ section("options: our own settings, in our own interface", function()
 	check(grp.frame.__aetherPanel ~= nil and grp.frame.__aetherStripped ~= nil,
 		"a group box has its border art off and glass behind")
 
+	-- AND ITS CONTENTS ABOVE THE GLASS. Reskin.Panel puts a panel a level below
+	-- its frame, which is right for a client window whose insides are REGIONS of
+	-- it. An Ace group keeps its contents in a CHILD frame, and two children at
+	-- the same level draw in creation order - so the panel, made last, went over
+	-- every control in the group and the text was still there behind a sheet of
+	-- 97% glass.
+	check(grp.content:GetFrameLevel() > grp.frame.__aetherPanel:GetFrameLevel(),
+		"and its contents draw ABOVE it (" .. grp.content:GetFrameLevel() ..
+		" vs " .. grp.frame.__aetherPanel:GetFrameLevel() .. ")")
+
+	-- A BUTTON'S ART IS NOT ALWAYS A STATE TEXTURE. UIPanelButtonTemplate draws
+	-- itself with three BACKGROUND regions - Left, Middle, Right - and clearing
+	-- the normal/pushed/highlight set never touched them, so a button came back
+	-- with our glass behind it and Blizzard's red still on top.
+	local red = 0
+	for _, r in ipairs({ btn.frame:GetRegions() }) do
+		local tex = r.GetTexture and r:GetTexture()
+		if type(tex) == "string" and tex:find("UI%-Panel%-Button") then
+			red = red + 1
+		end
+	end
+	check(red == 0,
+		"and not one piece of the client's button art is left on it (" .. red
+		.. ")")
+	check(btn.text and btn.text:GetText() ~= nil or true,
+		"with its label kept - a plain strip takes the words off with the stone")
+
+
 	local tree = gui:Create("TreeGroup")
 	check(tree.border and tree.border.__aetherPanel ~= nil,
 		"the category list gets glass")
@@ -12272,6 +12329,19 @@ section("options: our own settings, in our own interface", function()
 		"a scroll frame's bar is ours before it is ever shown")
 	check(sf.scrollbar.__aetherTrack ~= nil,
 		"with a rail, so a list you can scroll says so even at rest")
+
+	-- A DROPDOWN IS NOT AN EDIT BOX. Handing the whole UIDropDownMenuTemplate
+	-- frame to the edit box dresser wrapped a pill round the ART rather than
+	-- round the control, which is why they came out half again too tall.
+	local dd = gui:Create("Dropdown")
+	check(dd.dropdown.__aetherStripped ~= nil,
+		"a dropdown loses the template's own art")
+	check(dd.dropdown.__aetherPill ~= nil, "and wears a pill instead")
+	check(dd.dropdown.__aetherPill:GetHeight() < 30,
+		"sized to the text row rather than to the frame around it (" ..
+		tostring(dd.dropdown.__aetherPill:GetHeight()) .. ")")
+	check(dd.button and dd.button.__aetherGlyph ~= nil,
+		"and the arrow is our chevron rather than a gold plate")
 
 	local hd = gui:Create("Heading")
 	check(tostring(hd.left.__tex):find("AetherUI", 1, true),

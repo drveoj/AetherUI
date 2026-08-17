@@ -308,6 +308,22 @@ function Reskin.Button(btn, style)
 	Reskin.ClearButton(btn)
 
 	local label = btn.GetFontString and btn:GetFontString()
+
+	-- THE ART IS NOT ALWAYS A STATE TEXTURE. UIPanelButtonTemplate - which is
+	-- what the client and every options library build ordinary buttons from -
+	-- draws itself with THREE BACKGROUND REGIONS called Left, Middle and
+	-- Right, and ClearButton above only empties the normal/pushed/highlight
+	-- set. So a button came back with our glass behind it and Blizzard's red
+	-- still painted on top.
+	--
+	-- Keeping the LABEL, which is a region of the button like the art around
+	-- it: a plain strip takes the words off with the stone.
+	btn.__aetherArt = btn.__aetherArt or {}
+	if not btn.__aetherStripped then
+		btn.__aetherStripped = true
+		local keep = label and { [label] = true } or nil
+		ClearRegions(btn, btn.__aetherArt, keep)
+	end
 	local skin = A.Widgets.SkinButton(btn, { label = label })
 
 	if label then
@@ -319,6 +335,13 @@ end
 
 function Reskin.ReleaseButton(btn)
 	if not btn then return end
+
+	-- The three background regions first, and only once: Restore empties the
+	-- store, so a second pass would put nothing back over the top of nothing.
+	if btn.__aetherArt then
+		Reskin.Restore(btn.__aetherArt)
+		btn.__aetherArt, btn.__aetherStripped = nil, nil
+	end
 	if btn.__aetherSkin then
 		btn.__aetherSkin:Hide()
 		btn.__aetherSkin = nil

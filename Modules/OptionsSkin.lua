@@ -69,7 +69,19 @@ local function DressContainer(widget, opts)
 		frame.__aetherStripped = {}
 		Reskin.Strip(frame, frame.__aetherStripped)
 	end
-	Reskin.Panel(frame, opts)
+	local panel = Reskin.Panel(frame, opts)
+
+	-- THE CONTENT GOES ABOVE THE GLASS, and it has to be said explicitly.
+	--
+	-- Reskin.Panel puts the panel a level below its frame, which is right for a
+	-- client window whose insides are regions of it. An Ace group keeps its
+	-- contents in a CHILD frame, and two children of the same frame at the same
+	-- level draw in creation order - so the panel, made last, went over the top
+	-- of every control in the group. The text was still there, behind a sheet of
+	-- 97% glass.
+	if panel and widget.content and widget.content.SetFrameLevel then
+		widget.content:SetFrameLevel((panel:GetFrameLevel() or 0) + 2)
+	end
 
 	if widget.titletext then
 		Reskin.Font(widget.titletext, "qlZone")
@@ -249,8 +261,11 @@ DressEditBoxFrame = function(box)
 		box.__aetherStripped = {}
 		Reskin.Strip(box, box.__aetherStripped)
 		local pill = Glass.CreatePill(box, { fill = "glassSoft", edge = "glassEdge" })
-		pill:SetPoint("TOPLEFT", box, "TOPLEFT", -4, 2)
-		pill:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", 4, -2)
+		-- HUGGING THE BOX, not standing off it. An edit box is about 19 tall
+		-- and a pill four pixels proud of it on every side reads as a
+		-- control half again the size of the one you are typing in.
+		pill:SetPoint("TOPLEFT", box, "TOPLEFT", -2, 0)
+		pill:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", 2, 0)
 		pill:SetFrameLevel(math.max(0, (box:GetFrameLevel() or 1) - 1))
 		box.__aetherPill = pill
 	end
@@ -266,6 +281,60 @@ local function DressEditBox(widget)
 		W.Color(widget.label, Palette.c.text)
 	end
 	if widget.button then DressButton({ frame = widget.button }) end
+end
+
+
+--- A dropdown is a template frame, an arrow button and a line of text, and
+--  the template is drawn with a great deal of padding around all three.
+--
+--  Its own dresser rather than the edit box's: handing the whole
+--  UIDropDownMenuTemplate frame to that one wrapped a pill round the ART, not
+--  round the control, which is why they came out half again too tall.
+local DROP_H = 22
+
+local function DressDropdown(widget)
+	local dd = widget.dropdown
+	if not dd then return end
+
+	if not dd.__aetherStripped then
+		dd.__aetherStripped = {}
+		Reskin.Strip(dd, dd.__aetherStripped)
+	end
+
+	-- Sized to the TEXT ROW rather than to the frame. The template pads about
+	-- sixteen pixels each side for its own corner art, and all of that is gone.
+	if not dd.__aetherPill then
+		dd.__aetherPill = Glass.CreatePill(dd, { fill = "glassSoft", edge = "glassEdge" })
+		dd.__aetherPill:SetHeight(DROP_H)
+		dd.__aetherPill:SetPoint("LEFT", dd, "LEFT", 16, 0)
+		dd.__aetherPill:SetPoint("RIGHT", dd, "RIGHT", -16, 0)
+		dd.__aetherPill:SetFrameLevel(math.max(0, (dd:GetFrameLevel() or 1) - 1))
+	end
+	dd.__aetherPill:ApplySkin("glassSoft", "glassEdge")
+
+	-- THE ARROW. Blizzard's is a gold plate with a down-chevron baked into it;
+	-- ours is the chevron on its own, which is all it ever said.
+	local btn = widget.button or (dd.GetName and dd:GetName() and _G[dd:GetName() .. "Button"])
+	if btn then
+		Reskin.ClearButton(btn)
+		if not btn.__aetherGlyph then
+			local glyph = btn:CreateTexture(nil, "OVERLAY")
+			glyph:SetTexture(A.Media.texture.chevron)
+			glyph:SetSize(10, 10)
+			glyph:SetPoint("CENTER", btn, "CENTER", 0, 0)
+			btn.__aetherGlyph = glyph
+		end
+		W.Tint(btn.__aetherGlyph, Palette.c.accent)
+	end
+
+	for _, key in ipairs({ "text", "label" }) do
+		local fs = widget[key] or (dd.GetName and dd:GetName()
+			and _G[dd:GetName() .. (key == "text" and "Text" or "")])
+		if fs and fs.SetText then
+			Reskin.Font(fs, key == "label" and "qlLabel" or "qlRow")
+			W.Color(fs, key == "label" and Palette.c.text or Palette.c.text)
+		end
+	end
 end
 
 --- The category list down the left.
@@ -339,10 +408,8 @@ local BY_TYPE = {
 	Heading        = DressHeading,
 	Label          = DressLabel,
 	InteractiveLabel = DressLabel,
-	Dropdown       = function(w)
-		if w.dropdown then DressEditBoxFrame(w.dropdown) end
-		if w.label then W.Color(w.label, Palette.c.text) end
-	end,
+	Dropdown       = DressDropdown,
+	LSM30_Font     = DressDropdown,
 }
 
 local function Dress(widget)
