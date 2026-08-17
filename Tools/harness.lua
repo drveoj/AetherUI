@@ -11977,6 +11977,18 @@ section("skins: the picker is four chips, not four words", function()
 
 	check(#w.chips == 4, "four chips (" .. #w.chips .. ")")
 
+	-- ON A ROW OF ITS OWN. AceConfigDialog's Common Init hands a control one
+	-- column's width unless it is already "fill", and the flow layout then puts
+	-- the next control beside it - which put the scale slider across the last
+	-- chip. Asserted on the widget rather than on the option: four chips side by
+	-- side never fit in a column, whatever they are being used to choose.
+	check(w.width == "fill",
+		"and they take a row of their own, so nothing is laid over the last one"
+		.. " (" .. tostring(w.width) .. ")")
+	check(w.frame:GetHeight() > 60,
+		"with height enough for a chip and its caption, or the row below rides"
+		.. " up over them instead (" .. tostring(w.frame:GetHeight()) .. ")")
+
 	-- IN THE DAY'S ORDER, which belongs to the palette. Alphabetical gives dawn,
 	-- dusk, midnight, noon and reads as four unrelated words.
 	local got = {}

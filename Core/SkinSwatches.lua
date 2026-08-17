@@ -133,7 +133,19 @@ local methods = {
 		self.value = nil
 		self.list = nil
 		self:SetHeight(LABEL_H + CHIP + LABEL_H + PAD_B)
-		self:SetWidth(4 * CHIP + 3 * GAP)
+
+		-- A ROW OF ITS OWN, always.
+		--
+		-- AceConfigDialog's Common Init gives a control one column's width
+		-- unless the option asks for "full" - and then the flow layout puts the
+		-- next control beside it, which here means the scale slider laid across
+		-- the last chip. A control that is already "fill" skips that block
+		-- entirely.
+		--
+		-- Set HERE rather than on the option, because it is not a preference
+		-- about this one setting: four chips side by side never fit in a column,
+		-- and anything else using this widget would have to remember.
+		self:SetFullWidth(true)
 	end,
 
 	OnRelease = function(self)
