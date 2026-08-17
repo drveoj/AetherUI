@@ -38,6 +38,19 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.11.0",
+		date    = "2026-08-17",
+		lines   = {
+			"Three new skins: Dawn, Noon and Dusk join Midnight. Pick one with /aether skin, or from the profile you are on - the choice follows whichever profile scope you use.",
+			"Skins change live. No reload, and no half-changed interface: every panel, every string and every rim follows at once.",
+			"Daylight is gone. It was a light theme, and flipping the value of the whole interface is jarring in a game you spend your time looking past it to play. The three that replace it keep the dark glass and move the hue instead.",
+			"What a colour MEANS no longer changes with the skin. Health green, power blue, the quest difficulty scale, item quality, debuff schools and the console's channel tints are the same on all four - only the chrome moves.",
+			"Every colour in the interface now comes from one table. Chat lines, /aether output and the options panel used to carry a violet written into the text itself, which was the wrong colour on any skin but the first.",
+			"Fixed: an empty action bar slot, and the stance bar, kept the old skin's rim after a change.",
+			"Fixed: switching profile could leave an action bar anchored to nothing, which put it in the top-left corner with no way to drag it back.",
+		},
+	},
+	{
 		version = "0.10.0",
 		date    = "2026-08-16",
 		lines   = {
