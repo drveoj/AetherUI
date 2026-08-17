@@ -38,6 +38,18 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.12.0",
+		date    = "2026-08-17",
+		lines   = {
+			"The game's own lettering is now the interface's. Every panel, every tooltip, every menu, and \"You can't do that yet\" - all of it, in one pass.",
+			"Other addons come with it. Anything drawn with the game's own type reads as part of the same interface without its author doing anything; one that chose its own lettering keeps it. Sizes, outlines and colours are untouched, so nothing moves and nothing changes meaning.",
+			"Right-click menus wear the glass - the one on your portrait, your pet's, a chat tab's. Both kinds: the context menus and the dropdowns in panels.",
+			"Fixed: switching profile lost your per-bar settings, and could leave a bar anchored to nothing in the top-left corner with no way to drag it back.",
+			"Fixed: switching profile during a fight was refused by the game. The change now waits for the fight to end rather than half-applying.",
+			"Fixed: pet and stance bar tooltips went to your tooltip anchor while the action bar's appeared beside the button. Both bars now show them beside the button.",
+		},
+	},
+	{
 		version = "0.11.0",
 		date    = "2026-08-17",
 		lines   = {
