@@ -58,20 +58,14 @@ local Glass, Palette = A.Glass, A.Palette
 
 local function cfg() return A.Config:Module("menus") end
 
---- The glass behind each pooled menu frame, kept by us.
+--- Every menu frame we have dressed, so a skin change can reach them.
 --
---  Not weak. There are a handful of these for the life of the session - the
---  pool is small and never grows without bound - and a weak table here would
---  let a panel be collected while its frame is still in the pool, which reads
---  as the skin randomly failing to apply.
-local panels = {}
+--  A plain list. The pool is small and a frame is never destroyed, so nothing
+--  in here can become garbage.
+local menus = {}
 
 -- What we replaced, per style, so switching the module off puts it back.
 local originals = {}
-
--- ---------------------------------------------------------------------------
--- the panel
--- ---------------------------------------------------------------------------
 
 --- Every style whose panel is ours.
 --
@@ -80,38 +74,33 @@ local originals = {}
 --  and one of them being Blizzard's reads as a bug rather than as a choice.
 local STYLES = { "MenuStyle1Mixin", "MenuStyle2Mixin" }
 
---- The glass for one menu frame, built once and reused with it.
-local function PanelFor(menu)
-	local panel = panels[menu]
-	if panel then return panel end
+-- ---------------------------------------------------------------------------
+-- the panel
+-- ---------------------------------------------------------------------------
 
-	panel = Glass.CreatePanel(menu, {
+--- Our Generate: the menu frame IS the glass, and none of Blizzard's art.
+--
+--  THE MENU BECOMES THE PANEL rather than getting one inside it. A panel added
+--  as a child is a sibling of the menu's own entries, and then which draws on
+--  top rests on level, strata and creation order all at once - which came out
+--  as an empty sheet of glass with every line hidden behind it.
+--
+--  A frame's own textures are always under its children, so there is nothing
+--  left to get wrong. It is also what Blizzard's Generate does, and the reason
+--  Glass asks a frame how to make a texture: this one forbids CreateTexture
+--  and offers AttachTexture, because the compositor has to know about every
+--  region it will later recycle.
+--
+--  Blizzard's own Generate is not called at all - it would attach an atlas and
+--  a black fill over the top of what we have just drawn, and two backgrounds
+--  is not a skin.
+local function Generate(self)
+	A.Glass.MakePanel(self, {
 		corner = A.db.profile.glass.corner,
 		shadow = A.db.profile.glass.shadow,
 	})
-	-- BELOW THE ENTRIES. A child frame draws above its parent's own regions,
-	-- and the menu's buttons are children too - so this has to sit at the
-	-- menu's own level to end up behind them rather than over the text.
-	if panel.SetFrameLevel and menu.GetFrameLevel then
-		panel:SetFrameLevel(math.max(0, (menu:GetFrameLevel() or 1) - 1))
-	end
-	panel:SetPoint("TOPLEFT", menu, "TOPLEFT", 0, 0)
-	panel:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", 0, 0)
-
-	panels[menu] = panel
-	return panel
-end
-
---- Our Generate: the glass, and none of Blizzard's art.
---
---  Blizzard's own is not called at all. It attaches an atlas and a black fill
---  to the frame, and both would sit on top of - or behind, depending on the
---  draw layer it happened to pick - a panel that is already saying the same
---  thing. Two backgrounds is not a skin.
-local function Generate(self)
-	local panel = PanelFor(self)
-	panel:ApplySkin("dialogFill", "glassEdgeHi")
-	panel:Show()
+	self:ApplySkin("dialogFill", "glassEdgeHi")
+	menus[self] = true
 end
 
 -- ---------------------------------------------------------------------------
@@ -155,10 +144,9 @@ function MN:OnDisable()
 		if type(mixin) == "table" then mixin.Generate = was end
 	end
 
-	-- The panels go with it. Hidden rather than destroyed - this API cannot
-	-- destroy a frame - and left in the table, so switching back on reuses them
-	-- instead of building a second set behind the first.
-	for _, panel in pairs(panels) do panel:Hide() end
+	-- The glass stays on the frames already dressed: it IS those frames now,
+	-- and a menu is only ever drawn while it is open. The next one the client
+	-- opens gets Blizzard's own Generate again, which is what "off" means here.
 end
 
 --- The glass follows the skin like every other surface.
@@ -167,15 +155,17 @@ end
 --  are ordinary panels of ours and there is nothing special about them.
 function MN:OnSkinChanged()
 	if not self.enabled or self.absent then return end
-	for _, panel in pairs(panels) do
-		panel:ApplySkin("dialogFill", "glassEdgeHi")
+	for menu in pairs(menus) do
+		if menu.ApplySkin then menu:ApplySkin("dialogFill", "glassEdgeHi") end
 	end
 end
 
 function MN:OnConfigChanged()
 	if not self.enabled or self.absent then return end
-	for _, panel in pairs(panels) do
-		Glass.SetPanelCorner(panel, A.db.profile.glass.corner)
-		panel:SetShadow(A.db.profile.glass.shadow)
+	for menu in pairs(menus) do
+		if menu._kind then
+			Glass.SetPanelCorner(menu, A.db.profile.glass.corner)
+			menu:SetShadow(A.db.profile.glass.shadow)
+		end
 	end
 end

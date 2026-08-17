@@ -75,10 +75,26 @@ local TL, T, TR, L, C, R, BL, B, BR = 1, 2, 3, 4, 5, 6, 7, 8, 9
 -- low level: build and lay out a nine-piece texture set
 -- ---------------------------------------------------------------------------
 
+--- A texture on a frame, ASKING THE FRAME HOW.
+--
+--  Most frames answer CreateTexture. A frame owned by a pool - the menu
+--  system's compositor is the one here - forbids it and offers AttachTexture
+--  instead, because it has to know about every region it will later have to
+--  recycle. Going behind that with CreateTexture leaves regions it cannot
+--  clean up and, worse, gets refused outright.
+local function NewTexture(frame, layer, sub)
+	if frame.AttachTexture then
+		local tex = frame:AttachTexture()
+		if tex.SetDrawLayer then tex:SetDrawLayer(layer, sub) end
+		return tex
+	end
+	return frame:CreateTexture(nil, layer, nil, sub)
+end
+
 local function Build9(frame, texPath, layer, sub)
 	local t = {}
 	for i = 1, 9 do
-		local tex = frame:CreateTexture(nil, layer, nil, sub)
+		local tex = NewTexture(frame, layer, sub)
 		tex:SetTexture(texPath)
 		t[i] = tex
 	end
@@ -187,7 +203,7 @@ local PL, PC, PR = 1, 2, 3
 local function Build3(frame, texPath, layer, sub, frac, size)
 	local t = {}
 	for i = 1, 3 do
-		local tex = frame:CreateTexture(nil, layer, nil, sub)
+		local tex = NewTexture(frame, layer, sub)
 		tex:SetTexture(texPath)
 		t[i] = tex
 	end
@@ -448,11 +464,20 @@ local function NewSurfaceFrame(parent, opts)
 	return CreateFrame(opts.frameType or "Frame", opts.name, parent or UIParent, opts.template)
 end
 
---- Rounded rectangle panel (quest tracker, dock, tooltips).
---  opts: { corner, shadow, fill, edge, frameType, template, name }
-function Glass.CreatePanel(parent, opts)
+--- MAKE AN EXISTING FRAME THE PANEL, rather than putting one inside it.
+--
+--  For anything whose contents are CHILD FRAMES this is the only safe
+--  shape. A panel added as a child is a sibling of those contents, and
+--  then which draws on top rests on level, strata and creation order all
+--  at once - the client's right-click menus came up as an empty sheet of
+--  glass with every line hidden behind it.
+--
+--  Regions of the frame itself cannot do that: a frame's own textures are
+--  always under its children. It is what Blizzard's own menu code does,
+--  and the reason NewTexture above asks the frame how to make one.
+function Glass.MakePanel(f, opts)
 	opts = opts or {}
-	local f = NewSurfaceFrame(parent, opts)
+	if f._kind then return f end
 	Adopt(f)
 
 	f._kind   = "panel"
@@ -497,6 +522,13 @@ function Glass.CreatePanel(parent, opts)
 	if opts.shadow then f:SetShadow(opts.shadow) end
 
 	return f
+end
+
+--- Rounded rectangle panel, on a frame of its own.
+--  opts: { corner, shadow, fill, edge, frameType, template, name }
+function Glass.CreatePanel(parent, opts)
+	opts = opts or {}
+	return Glass.MakePanel(NewSurfaceFrame(parent, opts), opts)
 end
 
 function Glass.SetPanelCorner(f, corner)

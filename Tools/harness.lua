@@ -12108,44 +12108,49 @@ section("menus: the client's own right-click menus, in our glass", function()
 	check(menu.__blizzArt == nil,
 		"the client's own panel art is not attached at all")
 
-	-- THE GLASS IS A CHILD FRAME. CreateTexture and CreateFontString are
-	-- disallowed on a pooled menu frame - the compositor has to know about every
-	-- region it will later recycle - so anything a skin adds has to be its own
-	-- frame. The mock refuses those calls, so this passing at all is the proof.
-	local kids = 0
-	local panel
-	for _, c in ipairs(menu.__children or {}) do
-		kids = kids + 1
-		panel = panel or c
-	end
-	check(kids == 1 and panel ~= nil,
-		"the glass is one child frame of the menu (" .. kids .. ")")
-	check(panel and panel._fillToken == "dialogFill",
+	-- THE MENU FRAME *IS* THE GLASS, rather than carrying a panel inside it.
+	--
+	-- A panel added as a child is a SIBLING of the menu's own entries, and then
+	-- which draws on top rests on level, strata and creation order all at once.
+	-- It came out as an empty sheet of glass with every line hidden behind it.
+	-- A frame's own textures are always under its children, so there is nothing
+	-- left to get wrong.
+	check(menu._kind == "panel", "the menu frame is itself the panel")
+	check(menu._fillToken == "dialogFill",
 		"dressed as a dialog surface, by token - so the skin sweep finds it like"
-		.. " any other panel of ours")
+		.. " any other surface of ours")
 
-	-- BEHIND THE ENTRIES. A child frame draws above its parent's regions, and
-	-- the menu's buttons are children too - at the same level the glass would
-	-- be over the text.
-	check(panel:GetFrameLevel() < menu:GetFrameLevel(),
-		"and below the menu's own level, or it covers the very list it is behind ("
-		.. panel:GetFrameLevel() .. " vs " .. menu:GetFrameLevel() .. ")")
+	-- ATTACHED, NOT CREATED. CreateTexture is disallowed on a pooled menu frame
+	-- - the compositor has to know about every region it will later recycle -
+	-- and the mock refuses it, so this passing at all is the proof that Glass
+	-- asked the frame how to make a texture rather than assuming.
+	check(#(menu.__attached or {}) > 0,
+		"and its glass is attached through the compositor (" ..
+		#(menu.__attached or {}) .. " regions)")
+	local kids = 0
+	for _ in ipairs(menu.__children or {}) do kids = kids + 1 end
+	check(kids == 0,
+		"with no child frame of ours to sit over the entries (" .. kids .. ")")
 
-	-- ONE PANEL PER POOLED FRAME, not one per open. The compositor discards
-	-- value changes on a frame when it reclaims it, so a note left ON the menu
-	-- saying "already done" would be gone by the next open and we would stack a
-	-- fresh panel behind the last one every single time.
+	-- AND THE LINE IS STILL THERE. The whole failure was a menu that opened as
+	-- an empty sheet of glass, so the check that matters is not where the glass
+	-- sits but whether anything can still be read on it.
+	check(menu.__line and menu.__line:GetText() ~= nil,
+		"and the menu's own line survives being dressed (" ..
+		tostring(menu.__line and menu.__line:GetText()) .. ")")
+
+	-- DRESSED ONCE PER POOLED FRAME, not once per open. The same frame comes
+	-- back for the next menu the client shows, and building the glass again
+	-- would stack a second set of regions on it every single time.
+	local before = #(menu.__attached or {})
 	for _ = 1, 5 do _G.__OpenMenu(1) end
-	local after = 0
-	for _ in ipairs(menu.__children or {}) do after = after + 1 end
-	check(after == 1,
-		"still one panel after six opens of the same frame (" .. after .. ")")
+	check(#(menu.__attached or {}) == before,
+		"still one set of regions after six opens (" ..
+		#(menu.__attached or {}) .. " from " .. before .. ")")
 
 	-- A SECOND POOLED FRAME gets its own, though - they are different menus.
 	local other = _G.__OpenMenu(2)
-	local otherKids = 0
-	for _ in ipairs(other.__children or {}) do otherKids = otherKids + 1 end
-	check(otherKids == 1, "and a second menu frame gets one of its own")
+	check(other._kind == "panel", "and a second menu frame is dressed too")
 end)
 
 section("menus: and gives them back when you switch it off", function()
@@ -12162,21 +12167,10 @@ section("menus: and gives them back when you switch it off", function()
 		.. " different question (" ..
 		tostring(select(1, menu.__line:GetFont())) .. ")")
 
-	local first = _G.__OpenMenu(1)
-	local shown = 0
-	for _, c in ipairs(first.__children or {}) do
-		if c:IsShown() then shown = shown + 1 end
-	end
-	check(shown == 0, "with the glass hidden behind the menus it had dressed")
-
 	A:SetModuleEnabled("menus", true)
-	_G.__OpenMenu(1)
-	local reshown = 0
-	for _, c in ipairs(first.__children or {}) do
-		if c:IsShown() then reshown = reshown + 1 end
-	end
-	check(reshown == 1,
-		"reusing the panel it already had rather than building a second one")
+	local back = _G.__OpenMenu(4)
+	check(back._kind == "panel" and back.__blizzArt == nil,
+		"and ours again on the way back")
 end)
 
 section("menus: a client without them costs a skin, not the interface", function()
