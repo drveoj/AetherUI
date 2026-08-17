@@ -1120,6 +1120,23 @@ local function AnchorPoint()
 end
 
 function TT:ApplyDefaultAnchor(tip)
+	-- A BUTTON THAT WANTS ITS TOOLTIP BESIDE IT says so, and gets it.
+	--
+	-- Pet and stance buttons carry the client's own OnEnter, which anchors
+	-- by default; ours set an owner and do not. The result was one bar
+	-- answering a different question from the rest of them.
+	--
+	-- SetOwner rather than a SetPoint of our own, deliberately: it is the
+	-- same call an ordinary action button makes, so the two land in exactly
+	-- the same place instead of in two places that look similar. Safe here
+	-- because this hook runs BEFORE the caller sets any content - it fires
+	-- from GameTooltip_SetDefaultAnchor, and SetPetAction comes after.
+	local owner = tip.GetOwner and tip:GetOwner()
+	if owner and owner.__aetherTipBesideOwner then
+		tip:SetOwner(owner, "ANCHOR_RIGHT")
+		return
+	end
+
 	if not cfg().unitAnchor or not self.anchor then return end
 	local p = AnchorPoint()
 	tip:ClearAllPoints()

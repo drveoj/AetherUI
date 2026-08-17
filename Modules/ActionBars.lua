@@ -489,6 +489,19 @@ local function BuildSpecialButton(bar, index, template)
 	ApplyButtonFonts(b, cfg.size)
 
 	b.aether = { kind = bar.kind, index = index }
+
+	-- TOOLTIP BESIDE THE BUTTON, like every other button on a bar.
+	--
+	-- An ordinary action button sets its own owner and gets a tooltip next
+	-- to itself. A pet or stance button carries the client's OnEnter, which
+	-- calls GameTooltip_SetDefaultAnchor - so its tooltip went wherever the
+	-- player had put the anchor, and the pet bar was the one bar in the
+	-- interface that answered a different question from the rest.
+	--
+	-- Flagged rather than re-implemented: the client's handler does the
+	-- flyout, the quick-keybind and the tooltip content, and none of that is
+	-- ours to own. Tooltips reads the flag when the anchor is applied.
+	b.__aetherTipBesideOwner = true
 	return b
 end
 

@@ -1660,8 +1660,14 @@ function UnregisterUnitWatch(f) _G.__unitWatched[f] = nil; f.__unitWatch = nil e
 GameTooltip = CreateFrame("Frame", "GameTooltip")
 GameTooltip:Hide()
 
-function GameTooltip:SetOwner(o)
-	self.__owner = o
+--- The ANCHOR KIND is recorded, not dropped.
+--
+--  It was thrown away here while the addon-made tooltip mock beside this one
+--  kept it - so "where does this tooltip go" was a question the harness could
+--  ask of a scanning tooltip and not of the one every button in the game uses.
+--  A bar whose tooltips went to the wrong side of the screen was invisible.
+function GameTooltip:SetOwner(o, anchor)
+	self.__owner, self.__anchor = o, anchor
 	self.__shows = nil          -- SetOwner clears. This is the whole point.
 end
 function GameTooltip:GetOwner() return self.__owner end
@@ -11732,6 +11738,59 @@ section("fonts: a face the client cannot load is put back, not left half on", fu
 	A:SetModuleEnabled("fonts", true)
 	check(tostring(select(1, _G.ZoneTextFont:GetFont())):find("AetherUI", 1, true),
 		"and it takes on a client that can load it")
+end)
+
+section("tooltips: a bar button says where its tooltip goes", function()
+	local TTm = A:GetModule("tooltips")
+	local AB3 = A:GetModule("actionbars")
+	check(TTm and TTm.enabled, "tooltips module enabled")
+
+	-- ONE BAR ANSWERED A DIFFERENT QUESTION FROM THE REST.
+	--
+	-- An ordinary action button sets its own owner, so its tooltip appears
+	-- beside it. A pet or stance button carries the CLIENT'S OnEnter, which
+	-- calls GameTooltip_SetDefaultAnchor - so with an anchor configured, the pet
+	-- bar sent its tooltips across the screen while the bar above it did not.
+	local pet
+	for _, bar in ipairs(AB3.bars) do
+		if bar.kind == "pet" then pet = bar end
+	end
+	check(pet and pet.buttons[1], "there is a pet bar to look at")
+
+	local b = pet.buttons[1]
+	check(b.__aetherTipBesideOwner == true,
+		"a pet button asks for its tooltip beside it")
+
+	-- Through the client's own call, which is the only path that matters: this
+	-- is what PetActionButtonMixin_OnEnter does before it sets any content.
+	GameTooltip_SetDefaultAnchor(GameTooltip, b)
+	check(GameTooltip:GetOwner() == b,
+		"and the tooltip belongs to the button after the client anchors it")
+	check(GameTooltip.__anchor == "ANCHOR_RIGHT",
+		"beside it, by the SAME call an ordinary action button makes - not by a"
+		.. " SetPoint of ours that lands somewhere similar (" ..
+		tostring(GameTooltip.__anchor) .. ")")
+
+	-- A stance button too. It is the same template family and the same client
+	-- handler, and checking one of the two proves nothing about the other.
+	local stance
+	for _, bar in ipairs(AB3.bars) do
+		if bar.kind == "stance" then stance = bar end
+	end
+	if stance and stance.buttons[1] then
+		check(stance.buttons[1].__aetherTipBesideOwner == true,
+			"and so does a stance button")
+	end
+
+	-- AND EVERYTHING ELSE STILL HONOURS THE ANCHOR. The point is not that the
+	-- setting is ignored, it is that action bars are a deliberate exception -
+	-- so a tooltip from anything else must still go where it was told.
+	local plain = CreateFrame("Frame", nil, UIParent)
+	GameTooltip_SetDefaultAnchor(GameTooltip, plain)
+	check(GameTooltip.__anchor == "ANCHOR_NONE",
+		"a frame that did not ask keeps the anchorless owner the client gave it,"
+		.. " and the configured position with it (" ..
+		tostring(GameTooltip.__anchor) .. ")")
 end)
 
 section("menus: the client's own right-click menus, in our glass", function()
