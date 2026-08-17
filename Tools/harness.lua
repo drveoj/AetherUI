@@ -2887,6 +2887,34 @@ do
 		return f
 	end
 
+
+	-- THE OPTIONS WINDOW, and every part of it is a parentKey rather than a
+	-- named global - which is the difference between a window this addon can
+	-- reach by name and one it has to be handed. Our own settings page lives
+	-- inside it, so it is the one window where a player sees ours and
+	-- Blizzard's at the same time.
+	do
+		local sp = buildPanel("SettingsPanel")
+		for _, key in ipairs({ "GameTab", "AddOnsTab" }) do
+			local tab = CreateFrame("Button", nil, sp)
+			tab:SetNormalTexture("tab-up")
+			tab:CreateFontString(nil, "OVERLAY")
+			sp[key] = tab
+		end
+		for _, key in ipairs({ "CloseButton", "ApplyButton" }) do
+			local b = CreateFrame("Button", nil, sp, "UIPanelButtonTemplate")
+			b:SetText(key)
+			sp[key] = b
+		end
+		sp.CategoryList = CreateFrame("Frame", nil, sp)
+		sp.CategoryList:CreateTexture(nil, "BACKGROUND"):SetTexture("list-bg")
+		sp.CategoryList.ScrollBar = CreateFrame("Slider", nil, sp.CategoryList)
+		sp.Container = CreateFrame("Frame", nil, sp)
+		sp.Container:CreateTexture(nil, "BACKGROUND"):SetTexture("container-bg")
+		sp.SearchBox = CreateFrame("EditBox", nil, sp)
+		sp.SearchBox:CreateTexture(nil, "BACKGROUND"):SetTexture("search-bg")
+	end
+
 	for _, n in ipairs({ "CharacterFrame", "SpellBookFrame", "FriendsFrame",
 		"GameMenuFrame", "MerchantFrame", "QuestFrame", "GossipFrame",
 		"TaxiFrame" }) do
@@ -12247,6 +12275,56 @@ section("skins: the picker is four chips, not four words", function()
 
 	w:SetList(values)
 	A.db.profile.skin = "midnight" A:Restyle()
+end)
+
+section("panels: the Options window our settings live inside", function()
+	local PNm = A:GetModule("panels")
+	local sp = _G.SettingsPanel
+	check(sp ~= nil, "the client has an Options window")
+
+	-- SKINNED LIKE ANY OTHER CLIENT WINDOW. It is the one place a player sees
+	-- ours and Blizzard's at the same time - our page inside their frame - so a
+	-- stone shell around glass contents makes OURS look like the thing that does
+	-- not belong.
+	check(sp.__aetherPanel ~= nil, "and it wears our glass")
+	check(sp.__aetherArt ~= nil, "with its own art recorded and taken off")
+
+	-- EVERY PART IS A parentKey, not a named global. That is what makes this a
+	-- list rather than a hunt, and it is why the pieces below have to be named:
+	-- nothing in the shell strip reaches a child frame with art of its own.
+	for _, key in ipairs({ "GameTab", "AddOnsTab" }) do
+		local tab = sp[key]
+		check(tab and tab.__aetherSkin ~= nil,
+			key .. " is ours rather than the client's plate")
+	end
+
+	for _, key in ipairs({ "CloseButton", "ApplyButton" }) do
+		local btn = sp[key]
+		check(btn and btn.__aetherSkin ~= nil, key .. " likewise")
+	end
+
+	-- The category list, the container and the search box are each a frame with
+	-- their own background, so each needs saying.
+	local function bare(frame)
+		for _, r in ipairs({ frame:GetRegions() }) do
+			if r.GetTexture and r:GetTexture() ~= 0 and r:GetTexture() ~= nil then
+				return false
+			end
+		end
+		return true
+	end
+	check(bare(sp.CategoryList), "the category list has lost its own background")
+	check(bare(sp.Container), "and the pane that holds the open page")
+	check(sp.SearchBox.__aetherPill ~= nil,
+		"and the search box wears a pill rather than its own art")
+
+	-- And switching the module off gives the whole window back, which is the
+	-- promise every reskin here makes.
+	A:SetModuleEnabled("panels", false)
+	check(sp.__aetherArt == nil,
+		"switching Windows off hands the Options frame back whole")
+	A:SetModuleEnabled("panels", true)
+	check(sp.__aetherArt ~= nil, "and takes it again on the way back")
 end)
 
 section("options: our own settings, in our own interface", function()

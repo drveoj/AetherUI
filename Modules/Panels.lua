@@ -122,6 +122,10 @@ local PANELS = {
 	{ frame = "WorldMapFrame",     addon = "Blizzard_WorldMap" },
 	{ frame = "GameMenuFrame" },
 	{ frame = "HelpFrame",         addon = "Blizzard_HelpFrame" },
+	-- The Options window itself. Our own settings page lives inside it, and
+	-- skinning the page while leaving the frame around it in stone is the
+	-- one place a player sees both at once.
+	{ frame = "SettingsPanel" },
 }
 
 PN.PANELS = PANELS
@@ -2130,6 +2134,66 @@ local function DressTaxi(frame, store)
 	end
 end
 
+
+--- The game's own Options window: the shell our settings page lives inside.
+--
+--  Skinning the page and leaving the window around it in stone is the one
+--  place a player sees both at once, side by side, and it made ours look like
+--  the thing that did not belong.
+--
+--  Every part is a parentKey off the panel, which is what makes this a list
+--  rather than a hunt: GameTab and AddOnsTab, CloseButton and ApplyButton,
+--  CategoryList, and the SearchBox.
+local function DressSettings(frame, store)
+	-- The two tabs. MinimalTabTemplate, so the same treatment the chat tabs
+	-- get - our own surface, and the client's plate off it.
+	for _, key in ipairs({ "GameTab", "AddOnsTab" }) do
+		local tab = frame[key]
+		if tab then
+			Reskin.Tab(tab, store, "pnBody")
+		end
+	end
+
+	-- The buttons along the bottom.
+	for _, key in ipairs({ "CloseButton", "ApplyButton" }) do
+		local btn = frame[key]
+		if btn then Reskin.Button(btn, "pnBody") end
+	end
+
+	-- The category list down the left, and the search box above it. Both are
+	-- frames of their own with their own art, so the shell strip never
+	-- reached either.
+	local list = frame.CategoryList
+	if list then
+		Reskin.Strip(list, store)
+		if list.ScrollBox then Reskin.Strip(list.ScrollBox, store) end
+		local bar = list.ScrollBar or (list.ScrollBox and list.ScrollBox.ScrollBar)
+		if bar then
+			bar.__aetherStore = bar.__aetherStore or {}
+			Reskin.ScrollBar(bar, bar.__aetherStore)
+		end
+	end
+
+	local search = frame.SearchBox
+	if search then
+		Reskin.Strip(search, store)
+		Reskin.Font(search, "pnBody")
+		if not search.__aetherPill then
+			search.__aetherPill = A.Glass.CreatePill(search,
+				{ fill = "glassSoft", edge = "glassEdge" })
+			search.__aetherPill:SetPoint("TOPLEFT", search, "TOPLEFT", 0, 0)
+			search.__aetherPill:SetPoint("BOTTOMRIGHT", search, "BOTTOMRIGHT", 0, 0)
+			search.__aetherPill:SetFrameLevel(
+				math.max(0, (search:GetFrameLevel() or 1) - 1))
+		end
+		search.__aetherPill:ApplySkin("glassSoft", "glassEdge")
+	end
+
+	-- The panel that holds whichever page is open. Its own frame, its own art.
+	local container = frame.Container
+	if container then Reskin.Strip(container, store) end
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
@@ -2142,6 +2206,7 @@ local INTERIORS = {
 	GossipFrame       = DressGossip,
 	ClassTrainerFrame = DressTrainer,
 	TaxiFrame         = DressTaxi,
+	SettingsPanel     = DressSettings,
 }
 
 PN.INTERIORS = INTERIORS
