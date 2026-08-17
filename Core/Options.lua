@@ -985,6 +985,30 @@ local function ChatGroup()
 	})
 end
 
+--- Two small things the game makes you wait for.
+local function ConveniencesGroup()
+	local function at(k) return { "modules", "conveniences", k } end
+	return group("Conveniences", {
+		enabled = toggle("Enabled", nil, at("enabled")),
+
+		instantQuestText = toggle("Instant quest text",
+			"Quest text appears at once instead of being typed out."
+			.. "\n\nThis is the game's OWN setting - Interface, Controls, Instant"
+			.. " Quest Text - set for you. Off puts it back the way you had it,"
+			.. " which is why it is off here to begin with: you may have chosen the"
+			.. " typing on purpose.",
+			at("instantQuestText"), { after = "reconfigure" }),
+
+		autoRepair = toggle("Repair at a vendor automatically",
+			"Repairs everything the moment you open a merchant who can."
+			.. "\n\nOFF by default, because it SPENDS YOUR MONEY. It will not"
+			.. " repair when you cannot afford it - it tells you instead, rather"
+			.. " than half-repairing - and every repair prints what it cost, so"
+			.. " nothing leaves your purse quietly.",
+			at("autoRepair")),
+	})
+end
+
 --- WHAT THE GAME DRAWS, redressed.
 --
 --  Five switches that were five pages, each holding one checkbox and nothing
@@ -1202,7 +1226,8 @@ end
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
-	xpbar = 12, nameplates = 13, ifec = 14, gameown = 15,
+	xpbar = 12, nameplates = 13, ifec = 14, conveniences = 15,
+	gameown = 16,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1260,6 +1285,7 @@ function Options:Build()
 			xpbar = XPGroup(),
 			ifec = IFECGroup(),
 			nameplates = NameplatesGroup(),
+			conveniences = ConveniencesGroup(),
 			gameown = GameOwnGroup(),
 			changelog = ChangelogGroup(),
 		},

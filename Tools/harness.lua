@@ -1448,6 +1448,11 @@ end
 -- ---------------------------------------------------------------------------
 
 _G.__cvars = {
+	-- The client reads this itself every time it opens a quest page: "1"
+	-- shows the text at once, "0" types it out. Present here because a
+	-- SetCVar to a name the client does not have is an error, which is how
+	-- this mock catches an addon writing a setting that does not exist.
+	instantQuestText = "0",
 	Sound_EnableAllSound  = "1",
 	Sound_MasterVolume    = "1",
 	Sound_MusicVolume     = "0.2",
@@ -4366,7 +4371,55 @@ function ToggleHelpFrame() _G.__toggled.help = true end
 BOOKTYPE_SPELL = "spell"
 
 function GetMoney() return _G.__money end
-function GetCoinTextureString(c) return tostring(c) .. "c" end
+
+-- ---------------------------------------------------------------------------
+-- repairing
+--
+-- The pair the client's own repair button uses. GetRepairAllCost answers TWO
+-- values - the cost and whether anything needs doing - and an addon that read
+-- only the first would repair for nothing every time a merchant opened.
+--
+-- RepairAllItems SPENDS, and does nothing at all when the money is short: the
+-- client neither errors nor part-repairs. That silence is the whole reason the
+-- module checks the purse first, and a mock that deducted regardless could not
+-- tell the two apart.
+-- ---------------------------------------------------------------------------
+
+_G.__repair = { canMerchant = true, cost = 0, repairs = 0, refused = 0 }
+
+function CanMerchantRepair() return _G.__repair.canMerchant end
+
+function GetRepairAllCost()
+	local r = _G.__repair
+	return r.cost, (r.cost or 0) > 0
+end
+
+function RepairAllItems()
+	local r = _G.__repair
+	if (_G.__money or 0) < (r.cost or 0) then
+		-- The client's own behaviour: nothing happens, and nothing is said.
+		r.refused = r.refused + 1
+		return
+	end
+	_G.__money = (_G.__money or 0) - (r.cost or 0)
+	r.repairs = r.repairs + 1
+	r.cost = 0
+end
+
+--- MONEY IN THREE DENOMINATIONS, the way the client writes it.
+--
+--  This returned the raw copper with a "c" on the end, which made 5000 read as
+--  "5000c" rather than "50s". Nothing had cared until an addon printed a repair
+--  bill - and a bill nobody can read is the same as not printing one.
+function GetCoinTextureString(amount)
+	amount = tonumber(amount) or 0
+	local g = math.floor(amount / 10000)
+	local s = math.floor((amount % 10000) / 100)
+	local c = amount % 100
+	if g > 0 then return string.format("%dg %ds %dc", g, s, c) end
+	if s > 0 then return string.format("%ds %dc", s, c) end
+	return string.format("%dc", c)
+end
 function GetQuestLogIndexByID(id)
 	for i, q in ipairs(_G.__visibleLog()) do
 		if q.id == id then return i end
@@ -6220,6 +6273,7 @@ local FILES = {
 	"Modules/Popups.lua",
 	"Modules/Fonts.lua",
 	"Modules/Menus.lua", "Modules/OptionsSkin.lua",
+	"Modules/Conveniences.lua",
 	"Modules/Panels.lua",
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
@@ -12625,6 +12679,118 @@ section("options: and hands Blizzard's panel back", function()
 		"and ours again on the way back")
 end)
 
+section("conveniences: instant quest text is the client's own setting", function()
+	local CVm = A:GetModule("conveniences")
+	local c = A.Config:Module("conveniences")
+	check(CVm and CVm.enabled, "conveniences module enabled")
+
+	-- OFF TO BEGIN WITH, and that is a decision rather than an oversight: this
+	-- overrides a setting the client already has, under Interface, which the
+	-- player may have chosen on purpose.
+	check(c.instantQuestText == false,
+		"off by default - it overrides a setting the player may have chosen")
+	check(GetCVar("instantQuestText") == "0",
+		"and the game is left as it was until asked")
+
+	-- NOTHING IS HOOKED. QuestFrame reads this CVar itself every time it opens a
+	-- page, so writing it IS the feature - hooking the fade or forcing an alpha
+	-- would be a second owner for something the client already decides.
+	c.instantQuestText = true
+	CVm:ApplyQuestText()
+	check(GetCVar("instantQuestText") == "1",
+		"turning it on sets the client's own variable (" ..
+		tostring(GetCVar("instantQuestText")) .. ")")
+
+	-- AND IT IS IDEMPOTENT. Every write to a CVar is a write the client logs,
+	-- and a config change runs this again.
+	local writes = _G.__cvarWrites
+	CVm:ApplyQuestText()
+	CVm:ApplyQuestText()
+	check(_G.__cvarWrites == writes,
+		"and setting it again writes nothing - it is already what we want")
+
+	-- BACK THE WAY IT WAS. Not to "0" - to whatever it was before we touched
+	-- it, which is the difference between restoring and guessing.
+	c.instantQuestText = false
+	CVm:ApplyQuestText()
+	check(GetCVar("instantQuestText") == "0",
+		"turning it off puts the player's own setting back")
+
+	do
+		-- A player who had it on ALREADY gets it back on, which is the case a
+		-- restore-to-zero would quietly break.
+		SetCVar("instantQuestText", "1")
+		c.instantQuestText = true
+		CVm:ApplyQuestText()
+		c.instantQuestText = false
+		CVm:ApplyQuestText()
+		check(GetCVar("instantQuestText") == "1",
+			"and somebody who already had it on keeps it on afterwards")
+		SetCVar("instantQuestText", "0")
+	end
+end)
+
+section("conveniences: repairing spends money, so it says so", function()
+	local CVm = A:GetModule("conveniences")
+	local c = A.Config:Module("conveniences")
+	local R = _G.__repair
+
+	check(c.autoRepair == false,
+		"off by default, because it spends your money")
+
+	-- NOTHING TO DO IS NOT AN ERROR. GetRepairAllCost answers TWO values - the
+	-- cost and whether anything needs doing - and reading only the first is how
+	-- an addon repairs for nothing every time a merchant opens.
+	c.autoRepair = true
+	R.cost, R.repairs, R.refused = 0, 0, 0
+	_G.__money = 100000
+	check(CVm:Repair() == nil, "a merchant with nothing to repair costs nothing")
+	check(R.repairs == 0, "and no repair is attempted")
+
+	-- The ordinary case.
+	R.cost = 5000
+	local before = _G.__money
+	check(CVm:Repair() == "repaired", "an armour bill is paid")
+	check(_G.__money == before - 5000,
+		"and the money goes (" .. tostring(before - _G.__money) .. ")")
+
+	-- CANNOT AFFORD IT. RepairAllItems on too little money does NOTHING in the
+	-- client - no error, no partial repair - so an addon that fired blind would
+	-- look like it had repaired and leave you in a fight with a broken weapon.
+	R.cost, R.repairs, R.refused = 9999999, 0, 0
+	_G.__money = 10
+	check(CVm:Repair() == "broke", "too little money is reported, not ignored")
+	check(R.repairs == 0 and R.refused == 0,
+		"and the client is never asked - it would have said nothing either way")
+	check(_G.__money == 10, "with the money untouched")
+
+	-- A MERCHANT WHO CANNOT REPAIR is left alone.
+	R.canMerchant, R.cost, R.repairs = false, 5000, 0
+	_G.__money = 100000
+	check(CVm:Repair() == nil, "a merchant who cannot repair is not asked to")
+	check(R.repairs == 0, "and nothing is spent at one")
+	R.canMerchant = true
+
+	-- AND THE SWITCH IS THE SWITCH.
+	c.autoRepair = false
+	R.cost, R.repairs = 5000, 0
+	check(CVm:Repair() == nil and R.repairs == 0,
+		"switched off, a merchant opening costs nothing")
+
+	-- Through the EVENT, which is what actually drives it: MERCHANT_SHOW rather
+	-- than a frame appearing, because the event is the game saying a merchant is
+	-- open whether or not anything has drawn a window yet.
+	c.autoRepair = true
+	R.cost, R.repairs = 3000, 0
+	_G.__money = 100000
+	fire("MERCHANT_SHOW")
+	check(R.repairs == 1,
+		"and opening a merchant repairs, from the event rather than a frame")
+
+	c.autoRepair = false
+	R.cost = 0
+end)
+
 print("== options tree ==")
 do
 	local tree = A.Options:Build()
@@ -17274,7 +17440,11 @@ do
 		"the reward heading clears the last line of the description (gap " ..
 		string.format("%.0f", gap or -1) .. ", DET_GAP is 18)")
 
-	check(d.money:IsShown() and d.money:GetText() == "Reward: 1200c", "reward money")
+	-- 12s 0c, not 1200c: the mock formats money in denominations now, the way
+	-- the client does, and a bill nobody can read is the same as not printing
+	-- one.
+	check(d.money:IsShown() and d.money:GetText() == "Reward: 12s 0c",
+		"reward money (" .. tostring(d.money:GetText()) .. ")")
 	check(not d.required:IsShown(), "and no required-money line when none is owed")
 
 	-- Blizzard tints an unusable reward red rather than hiding it: "you cannot
@@ -17294,8 +17464,8 @@ do
 	check(sawSpell, "including the spell reward, which comes from C_QuestInfoSystem"
 		.. " and takes a questID rather than a reward index")
 
-	check(d.required:IsShown() and d.required:GetText() == "Required: 3000c",
-		"required money is shown")
+	check(d.required:IsShown() and d.required:GetText() == "Required: 30s 0c",
+		"required money is shown (" .. tostring(d.required:GetText()) .. ")")
 	local col = d.required.__color
 	check(col and col[1] < 0.9,
 		"and is drawn normally when you can afford it")

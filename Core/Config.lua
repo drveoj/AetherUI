@@ -485,6 +485,15 @@ Config.defaults = {
 				enabled = true,
 			},
 
+			-- Two small things the game makes you wait for. BOTH OFF by
+			-- default: one overrides a setting the client already has, and the
+			-- other spends your money.
+			conveniences = {
+				enabled = true,
+				instantQuestText = false,
+				autoRepair = false,
+			},
+
 			-- The game's own lettering, by remapping its font objects. The one
 			-- global lever this API has, and it carries other addons with it -
 			-- anything drawn with GameFontNormal reads as part of the same
