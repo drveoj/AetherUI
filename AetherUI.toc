@@ -36,7 +36,8 @@ Modules\Chat.lua
 Modules\Tooltips.lua
 Modules\Nameplates.lua
 Modules\Popups.lua
-Modules\Messages.lua
+Modules\Fonts.lua
+Modules\Menus.lua
 Modules\Panels.lua
 Modules\Timers.lua
 Modules\Zen.lua

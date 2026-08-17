@@ -485,10 +485,18 @@ Config.defaults = {
 				enabled = true,
 			},
 
-			-- The game's own transient messages - errors, zone banners, raid
-			-- warnings - in our lettering. A face change only: sizes, outlines,
-			-- colours and positions stay the client's.
-			messages = {
+			-- The game's own lettering, by remapping its font objects. The one
+			-- global lever this API has, and it carries other addons with it -
+			-- anything drawn with GameFontNormal reads as part of the same
+			-- interface without its author doing anything.
+			fonts = {
+				enabled = true,
+			},
+
+			-- The client's own right-click menus. One hook into Blizzard_Menu
+			-- rather than a list of frames, so it covers every menu the game
+			-- opens - including ones added by a later patch.
+			menus = {
 				enabled = true,
 			},
 

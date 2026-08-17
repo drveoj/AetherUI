@@ -980,18 +980,32 @@ local function PopupsGroup()
 	})
 end
 
---- The game's own transient messages.
-local function MessagesGroup()
-	return group("Messages", {
-		enabled = toggle("Enabled", "Puts the game's own on-screen messages -"
-			.. " \"You can't do that yet\", the zone name as you cross a border,"
-			.. " raid warnings and boss emotes - into this interface's lettering."
-			.. "\n\nA change of FACE only. The size is whatever the game was"
-			.. " already using, the outlines are kept because these are drawn over"
-			.. " the world with nothing behind them, and the colours stay the"
-			.. " game's: red means an error and yellow means information, and that"
-			.. " is the game telling you which just happened.",
-			{ "modules", "messages", "enabled" }),
+--- The game's own lettering.
+local function FontsGroup()
+	return group("Lettering", {
+		enabled = toggle("Enabled", "Puts the GAME'S own type into this"
+			.. " interface's lettering - every panel, every tooltip, every menu,"
+			.. " and \"You can't do that yet\"."
+			.. "\n\nA change of FACE only. Sizes stay exactly as the game had them,"
+			.. " so nothing moves or reflows; outlines stay, because text drawn over"
+			.. " the world needs them; colours stay, because a colour is the game"
+			.. " telling you something."
+			.. "\n\nOTHER ADDONS COME WITH IT. Anything drawn with the game's own type"
+			.. " reads as part of the same interface without its author doing anything."
+			.. " One that chose its own lettering explicitly keeps it.",
+			{ "modules", "fonts", "enabled" }),
+	})
+end
+
+--- The client's own right-click menus.
+local function MenusGroup()
+	return group("Menus", {
+		enabled = toggle("Enabled", "Puts the glass behind the game's own right-click"
+			.. " menus - the one on your portrait, your pet's, a chat tab's."
+			.. "\n\nOne hook rather than a list of frames, so it covers every menu the"
+			.. " game opens. Off gives you Blizzard's panel back; the LETTERING is a"
+			.. " different switch, above.",
+			{ "modules", "menus", "enabled" }),
 	})
 end
 
@@ -1185,7 +1199,7 @@ local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
 	xpbar = 12, nameplates = 13, popups = 14, panels = 15, timers = 16,
-	ifec = 17, messages = 18,
+	ifec = 17, fonts = 18, menus = 19,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1244,7 +1258,8 @@ function Options:Build()
 			ifec = IFECGroup(),
 			nameplates = NameplatesGroup(),
 			popups = PopupsGroup(),
-			messages = MessagesGroup(),
+			fonts = FontsGroup(),
+			menus = MenusGroup(),
 			panels = PanelsGroup(),
 			timers = TimersGroup(),
 			changelog = ChangelogGroup(),

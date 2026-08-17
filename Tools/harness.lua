@@ -463,13 +463,29 @@ local function newFontString(owner, layer)
 		if type(path) ~= "string" then fail("SetFont path " .. tostring(path)) return end
 		if type(size) ~= "number" then fail("SetFont size " .. tostring(size)) return end
 		if _G.__badFonts and _G.__badFonts[path] then return end
+		-- An explicit font OVERRIDES the object, and keeps overriding it. This
+		-- is the half of inheritance that stops a global remap reaching a
+		-- string somebody has already styled by hand.
 		self.__font = { path, size, flags }
 	end
 	-- Real FontStrings read back what they were set to. A mock that only
 	-- records the write can't answer "and what size did this actually end up?",
 	-- which is the only way to catch a role that silently doesn't apply.
+	--- READ THROUGH TO THE OBJECT, which is what makes a font object worth
+	--  having: change GameFontNormal and every string inheriting it follows,
+	--  including ones created afterwards.
+	--
+	--  The mock used to COPY the object's font at assignment, so a later
+	--  change to the object propagated to nothing - and a module that
+	--  re-lettered the interface by remapping the client's font objects, the
+	--  only way to reach a pooled string the client resets on every use,
+	--  would have looked like it did nothing at all.
 	function f:GetFont()
 		local c = self.__font
+		if not c then
+			local o = self.__fontObject
+			if type(o) == "table" and o.__font then c = o.__font end
+		end
 		if not c then return nil end
 		return c[1], c[2], c[3]
 	end
@@ -478,10 +494,16 @@ local function newFontString(owner, layer)
 	--  box only, so a locked string looked like it had no way to be styled at
 	--  all and the menu quietly kept Friz.
 	function f:SetFontObject(o)
+		-- BY NAME TOO. The real API takes a font object OR the name of one,
+		-- and the string then reports that object's face and size through
+		-- GetFont. The mock took only the object, so a string left the
+		-- font unset - and anything reading the size back to preserve it
+		-- saw nil and looked correct while having nothing to preserve.
+		if type(o) == "string" then o = _G[o] or o end
 		self.__fontObject = o
-		if type(o) == "table" and o.__font then
-			self.__font = { o.__font[1], o.__font[2], o.__font[3] }
-		end
+		-- And it CLEARS an explicit font, because assigning an object is how
+		-- you give a string back to inheritance.
+		self.__font = nil
 	end
 	function f:GetFontObject() return self.__fontObject end
 	function f:SetText(s) self.__text = s end
@@ -583,6 +605,21 @@ local function newFontString(owner, layer)
 	function f:SetSpacing(v) self.__spacing = v end
 	function f:GetSpacing() return self.__spacing or 0 end
 	return f
+end
+
+
+--- A font string owned by the menu compositor.
+--
+--  Identical to any other except that SetFont is refused, which is what the
+--  real one does - the compositor lists it as disallowed so that a skin cannot
+--  change a face the pool is about to reset anyway. SetFontObject is allowed,
+--  and is the only way in.
+local function newFontStringForMenu(owner)
+	local fs = newFontString(owner, "ARTWORK")
+	fs.SetFont = function()
+		fail("SetFont is disallowed on a menu font string - use SetFontObject")
+	end
+	return fs
 end
 
 local frames = {}
@@ -5742,6 +5779,39 @@ function TaxiRequestEarlyLanding()
 end
 
 
+local FRIZ = "Fonts\\FRIZQT__.TTF"
+
+--- The client's own font objects, as far as anything here needs them.
+--
+--  Real ones, with a real face and size on them: a menu line is given
+--  GameFontHighlight by the compositor on every acquire, and a module that
+--  re-roles the face has to read the size back off it.
+local function BlizzFontObject(name, size, flags)
+	local o = { __font = { FRIZ, size, flags } }
+	function o:GetFont() local c = self.__font return c[1], c[2], c[3] end
+	-- REFUSES A FACE IT CANNOT LOAD, like the real one and like the
+	-- FontString mock above: the font is left UNCHANGED and nothing is
+	-- said about it. An object that accepted anything would make the
+	-- read-back in a remap unfalsifiable.
+	function o:SetFont(p, s, fl)
+		if _G.__badFonts and _G.__badFonts[p] then return end
+		self.__font = { p, s, fl }
+	end
+	_G[name] = o
+	return o
+end
+
+BlizzFontObject("GameFontHighlight", 12)
+BlizzFontObject("GameFontNormal", 12)
+
+-- The message frames' own, at the sizes and outlines the client has them:
+-- ErrorFont comes from GameFontNormalLarge at 16, the zone banner is 32
+-- thick-outlined, the subzone 26, a raid warning 20.
+BlizzFontObject("ErrorFont", 16)
+BlizzFontObject("ZoneTextFont", 32, "THICKOUTLINE")
+BlizzFontObject("SubZoneTextFont", 26, "THICKOUTLINE")
+BlizzFontObject("GameFontNormalHuge", 20)
+
 -- ---------------------------------------------------------------------------
 -- the game's own transient messages
 --
@@ -5757,13 +5827,19 @@ end
 --   module that never read the size look identical to one that did.
 -- ---------------------------------------------------------------------------
 
-local FRIZ = "Fonts\\FRIZQT__.TTF"
 
 _G.UIErrorsFrame = CreateFrame("Frame", "UIErrorsFrame", UIParent)
+-- ON THE FRAME, not inherited. A MessageFrame carries its own font
+-- instance; whether it follows ErrorFont after a remap is not something
+-- this harness can answer, so it is modelled as the pessimistic case.
 _G.UIErrorsFrame.__font = { FRIZ, 16, nil }
 function _G.UIErrorsFrame:SetFont(path, size, flags)
 	if type(path) ~= "string" then fail("UIErrorsFrame:SetFont path " .. tostring(path)) return end
 	if type(size) ~= "number" then fail("UIErrorsFrame:SetFont size " .. tostring(size)) return end
+	-- A FACE IT CANNOT LOAD IS REFUSED, silently, like every other font
+	-- instance. This mock accepted anything, so a frame was the one thing
+	-- in the interface where a missing face could not be caught.
+	if _G.__badFonts and _G.__badFonts[path] then return end
 	self.__font = { path, size, flags }
 end
 function _G.UIErrorsFrame:GetFont()
@@ -5777,29 +5853,117 @@ function _G.UIErrorsFrame:AddMessage(text, r, g, b)
 		font = { self:GetFont() } }
 end
 
-local function BlizzMessageString(parent, name, size, flags)
+--- INHERITED, not set. The client's XML gives each of these a font
+--  OBJECT - ZoneTextFont, SubZoneTextFont, GameFontNormalHuge - and the
+--  string follows that object for as long as it lives. A mock that wrote
+--  the face straight onto the string would make a global remap of the
+--  objects look like it reached nothing.
+local function BlizzMessageString(parent, name, fontObjectName)
 	local fs = parent:CreateFontString(name)
-	fs.__font = { FRIZ, size, flags }
+	fs:SetFontObject(fontObjectName)
 	return fs
 end
 
 _G.ZoneTextFrame = CreateFrame("Frame", "ZoneTextFrame", UIParent)
-BlizzMessageString(_G.ZoneTextFrame, "ZoneTextString", 32, "THICKOUTLINE")
-BlizzMessageString(_G.ZoneTextFrame, "PVPInfoTextString", 26, "THICKOUTLINE")
+BlizzMessageString(_G.ZoneTextFrame, "ZoneTextString", "ZoneTextFont")
+BlizzMessageString(_G.ZoneTextFrame, "PVPInfoTextString", "SubZoneTextFont")
 
 _G.SubZoneTextFrame = CreateFrame("Frame", "SubZoneTextFrame", UIParent)
-BlizzMessageString(_G.SubZoneTextFrame, "SubZoneTextString", 26, "THICKOUTLINE")
-BlizzMessageString(_G.SubZoneTextFrame, "PVPArenaTextString", 26, "THICKOUTLINE")
+BlizzMessageString(_G.SubZoneTextFrame, "SubZoneTextString", "SubZoneTextFont")
+BlizzMessageString(_G.SubZoneTextFrame, "PVPArenaTextString", "SubZoneTextFont")
 
 _G.RaidWarningFrame = CreateFrame("Frame", "RaidWarningFrame", UIParent)
-BlizzMessageString(_G.RaidWarningFrame, "RaidWarningFrameSlot1", 20, nil)
-BlizzMessageString(_G.RaidWarningFrame, "RaidWarningFrameSlot2", 20, nil)
+BlizzMessageString(_G.RaidWarningFrame, "RaidWarningFrameSlot1", "GameFontNormalHuge")
+BlizzMessageString(_G.RaidWarningFrame, "RaidWarningFrameSlot2", "GameFontNormalHuge")
 
 -- Present on this client, absent on some others - which is why the module
 -- looks each name up rather than assuming the set.
 _G.RaidBossEmoteFrame = CreateFrame("Frame", "RaidBossEmoteFrame", UIParent)
-BlizzMessageString(_G.RaidBossEmoteFrame, "RaidBossEmoteFrameSlot1", 20, nil)
-BlizzMessageString(_G.RaidBossEmoteFrame, "RaidBossEmoteFrameSlot2", 20, nil)
+BlizzMessageString(_G.RaidBossEmoteFrame, "RaidBossEmoteFrameSlot1", "GameFontNormalHuge")
+BlizzMessageString(_G.RaidBossEmoteFrame, "RaidBossEmoteFrameSlot2", "GameFontNormalHuge")
+
+
+
+-- ---------------------------------------------------------------------------
+-- Blizzard_Menu
+--
+-- The client's own right-click menus, and the parts of them a skin can reach.
+-- Modelled on the real thing rather than on what is convenient, because the
+-- restrictions ARE the interesting part:
+--
+--   * the menu frames are POOLED, and the style mixin is copied in on every
+--     acquire rather than once at creation. That is what makes replacing one
+--     function reach every menu opened afterwards, and a mock that mixed in
+--     once would let a module that hooked too late still pass.
+--   * SetFont is DISALLOWED on a menu's font strings - the compositor owns
+--     them. A mock that allowed it would let this module be written with
+--     Reskin.Font, which would silently do nothing in game.
+--   * CreateTexture and CreateFontString are disallowed on the menu FRAME,
+--     for the same reason. Anything a skin adds has to be a child frame.
+--   * every acquire re-applies GameFontHighlight, so a face applied once and
+--     not re-applied per open is gone by the second menu.
+-- ---------------------------------------------------------------------------
+
+local menuPool = {}
+_G.__menuOpens = 0
+
+local function AcquireMenuFontString(owner)
+	local fs = owner.__aetherMenuStrings and owner.__aetherMenuStrings[1]
+	if not fs then
+		fs = newFontStringForMenu(owner)
+		owner.__aetherMenuStrings = { fs }
+	end
+	-- The pool's reset, every time.
+	fs:SetFontObject("GameFontHighlight")
+	fs:SetTextColor(1, 1, 1, 1)
+	return fs
+end
+
+MenuVariants = {}
+function MenuVariants.CreateFontString(frame)
+	return AcquireMenuFontString(frame)
+end
+
+MenuStyleMixin = {}
+MenuStyle1Mixin = {}
+function MenuStyle1Mixin:Generate()
+	local t = self:AttachTexture()
+	t:SetTexture("common-dropdown-classic-bg")
+	self.__blizzArt = t
+end
+
+--- Open a menu the way the client does: acquire a pooled frame, mix the style
+--  in FRESH, generate, then build one line through MenuVariants.
+function _G.__OpenMenu(index)
+	index = index or 1
+	local menu = menuPool[index]
+	if not menu then
+		menu = CreateFrame("Frame", nil, UIParent)
+		menu.__isMenuFrame = true
+		function menu:AttachTexture()
+			self.__attached = self.__attached or {}
+			local t = newTexture(self, "ARTWORK")
+			self.__attached[#self.__attached + 1] = t
+			return t
+		end
+		-- Disallowed by the compositor, and it says so rather than obliging.
+		function menu:CreateTexture()
+			fail("CreateTexture is disallowed on a pooled menu frame")
+		end
+		function menu:CreateFontString()
+			fail("CreateFontString is disallowed on a pooled menu frame")
+		end
+		menuPool[index] = menu
+	end
+
+	-- Mixin, EVERY TIME. This is the line that makes a late hook work.
+	for k, v in pairs(MenuStyle1Mixin) do menu[k] = v end
+	menu:Generate()
+	menu.__line = MenuVariants.CreateFontString(menu)
+	menu.__line:SetText("Raid Target Icon")
+	_G.__menuOpens = _G.__menuOpens + 1
+	return menu
+end
 
 FRIZ = FRIZ    -- the client face, shared with the checks below
 
@@ -5815,7 +5979,8 @@ local FILES = {
 	"Modules/Tooltips.lua",
 	"Modules/Nameplates.lua",
 	"Modules/Popups.lua",
-	"Modules/Messages.lua",
+	"Modules/Fonts.lua",
+	"Modules/Menus.lua",
 	"Modules/Panels.lua",
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
@@ -11401,154 +11566,279 @@ do
 		.. " ever hands a band dark ink (" .. table.concat(dark, ", ") .. ")")
 end
 
-section("messages: the game shouts in our lettering now", function()
-	local M = A:GetModule("messages")
-	check(M and M.enabled, "messages module enabled"
-		.. (M and M.lastError and ("  -- " .. M.lastError) or ""))
+section("fonts: the game's own lettering, in one pass", function()
+	local FTm = A:GetModule("fonts")
+	check(FTm and FTm.enabled, "fonts module enabled"
+		.. (FTm and FTm.lastError and ("  -- " .. FTm.lastError) or ""))
 
-	-- ALL OF THEM. Nine strings across five frames, and the list is the policy -
-	-- a zone banner in our lettering with the raid warning left in Friz is worse
-	-- than leaving both alone, because now it looks like a bug rather than like
-	-- the game.
-	local NAMES = {
-		"UIErrorsFrame", "ZoneTextString", "PVPInfoTextString",
-		"SubZoneTextString", "PVPArenaTextString",
-		"RaidWarningFrameSlot1", "RaidWarningFrameSlot2",
-		"RaidBossEmoteFrameSlot1", "RaidBossEmoteFrameSlot2",
+	-- THE ONE GLOBAL LEVER THIS API HAS. Every string that INHERITS a font
+	-- object follows it, for as long as it lives - including strings made long
+	-- afterwards, and including ones a pool hands back out and resets. There is
+	-- no equivalent for art, which is why borders are per-frame work and this is
+	-- not.
+	local WANT = {
+		{ "GameFontHighlight", "Outfit-Regular", 12 },
+		{ "GameFontNormal",    "Outfit-Regular", 12 },
+		{ "ZoneTextFont",      "Outfit-SemiBold", 32 },
+		{ "SubZoneTextFont",   "Outfit-SemiBold", 26 },
+		{ "ErrorFont",         "Outfit-SemiBold", 16 },
+		{ "GameFontNormalHuge","Outfit-SemiBold", 20 },
 	}
-	local friz = {}
-	for _, n in ipairs(NAMES) do
-		local o = _G[n]
-		local path = o and o.GetFont and select(1, o:GetFont())
-		if not path or not tostring(path):find("AetherUI", 1, true) then
-			friz[#friz + 1] = n .. "=" .. tostring(path)
+	local wrong = {}
+	for _, w in ipairs(WANT) do
+		local path, size = _G[w[1]]:GetFont()
+		if not tostring(path):find(w[2], 1, true) then
+			wrong[#wrong + 1] = w[1] .. "=" .. tostring(path)
+		elseif size ~= w[3] then
+			wrong[#wrong + 1] = w[1] .. " size " .. tostring(size)
 		end
 	end
-	check(#friz == 0,
-		#NAMES .. " message strings, none of them still in the client's face ("
-		.. table.concat(friz, ", ") .. ")")
-	check(M.dressed == #NAMES,
-		"and the module counted the same number, rather than silently skipping"
-		.. " one it could not find (" .. tostring(M.dressed) .. ")")
+	check(#wrong == 0,
+		"every font object we name is ours, at ITS OWN size - the weight is a"
+		.. " choice, the size is the client's and nothing on screen reflows ("
+		.. table.concat(wrong, ", ") .. ")")
 
-	-- THE SIZE IS THE CLIENT'S, not the style's.
-	--
-	-- Comparing against 32 proves nothing on its own: the style's fallback IS
-	-- 32, deliberately, so a module that ignored the client entirely would
-	-- land on the same number. The only way to tell them apart is to give the
-	-- client a size it does not normally have - which is not a contrivance,
-	-- another addon resizing these is the ordinary case.
-	local _, zoneSize, zoneFlags = _G.ZoneTextString:GetFont()
-	check(zoneSize == 32,
-		"the zone banner is the size the client had it (" .. tostring(zoneSize)
-		.. " of 32)")
-	local _, errSize = _G.UIErrorsFrame:GetFont()
-	check(errSize == 16, "and the error line likewise (" .. tostring(errSize)
-		.. " of 16)")
+	-- AND THE OUTLINE. Load-bearing on anything drawn over the world.
+	check(select(3, _G.ZoneTextFont:GetFont()) == "THICKOUTLINE",
+		"with the outline it had (" ..
+		tostring(select(3, _G.ZoneTextFont:GetFont())) .. ")")
 
-	do
-		A:SetModuleEnabled("messages", false)
-		_G.ZoneTextString.__font = { FRIZ, 44, "THICKOUTLINE" }
-		A:SetModuleEnabled("messages", true)
-		local _, odd = _G.ZoneTextString:GetFont()
-		check(odd == 44,
-			"and a client that had it at some other size is followed there too -"
-			.. " this is a change of FACE, and the style's own number is only a"
-			.. " fallback for a string that has none (" .. tostring(odd) .. ")")
+	-- THE STRINGS FOLLOW, which is the whole mechanism. Checked on one made
+	-- BEFORE the sweep and one made after, because those are different claims:
+	-- the first is inheritance working, the second is why a pooled string the
+	-- client resets on every use is covered at all.
+	check(tostring(select(1, _G.ZoneTextString:GetFont())):find("AetherUI", 1, true),
+		"a string that already existed follows its object (" ..
+		tostring(select(1, _G.ZoneTextString:GetFont())) .. ")")
+	local fresh = UIParent:CreateFontString(nil, "ARTWORK")
+	fresh:SetFontObject("GameFontNormal")
+	check(tostring(select(1, fresh:GetFont())):find("AetherUI", 1, true),
+		"and so does one created afterwards, which no per-string pass could have"
+		.. " reached")
 
-		A:SetModuleEnabled("messages", false)
-		_G.ZoneTextString.__font = { FRIZ, 32, "THICKOUTLINE" }
-		A:SetModuleEnabled("messages", true)
-	end
+	-- A STRING THAT NAMES ITS OWN FACE IS LEFT ALONE. An addon that called
+	-- SetFont said what it wanted; this is meant to carry the ones that did not.
+	local theirs = UIParent:CreateFontString(nil, "ARTWORK")
+	theirs:SetFont("Interface\\SomeAddon\\Their.ttf", 14, "")
+	check(select(1, theirs:GetFont()) == "Interface\\SomeAddon\\Their.ttf",
+		"an explicit face is untouched - that is the promise to other addons, and"
+		.. " the reason this is safe to do at all")
 
-	-- AND THE OUTLINE SURVIVES. These are drawn over the world with nothing
-	-- behind them; a zone name in our lettering with the thick outline dropped
-	-- is unreadable over snow, and it is the one thing here that would look fine
-	-- in a screenshot taken indoors.
-	check(zoneFlags == "THICKOUTLINE",
-		"with its thick outline kept (" .. tostring(zoneFlags) .. ")")
-	local _, _, subFlags = _G.SubZoneTextString:GetFont()
-	check(subFlags == "THICKOUTLINE", "and the subzone's")
+	-- THE FRAME CASE. UIErrorsFrame is a MessageFrame: its font is on the FRAME
+	-- and it builds a string per message from that, so remapping ErrorFont does
+	-- not reach it. "You can't do that yet" was the one thing on screen that
+	-- made the old lettering obvious, and it is why the frame list exists.
+	local path, size = _G.UIErrorsFrame:GetFont()
+	check(tostring(path):find("AetherUI", 1, true),
+		"the error frame is ours too, from the frame list rather than from"
+		.. " inheritance (" .. tostring(path) .. ")")
+	check(size == 16, "at its own size (" .. tostring(size) .. ")")
 
-	-- THE COLOUR IS NOT OURS. UIErrorsMixin passes RED_FONT_COLOR for an error
-	-- and YELLOW_FONT_COLOR for information, per message - that is the game
-	-- telling you which of the two just happened, and restating it in the
-	-- interface's own palette would throw the distinction away.
-	check(_G.UIErrorsFrame.__color == nil,
-		"and nothing here has touched the colour - red still means an error and"
-		.. " yellow still means information")
-
-	-- THE FONT IS ON THE FRAME. UIErrorsFrame is a MessageFrame: it builds a
-	-- FontString per message from its own font, so a module that had styled a
-	-- child string would pass every check above and change nothing in game.
 	_G.UIErrorsFrame.__messages = {}
 	_G.UIErrorsFrame:AddMessage("You can't do that yet.", 1, 0.1, 0.1)
 	local msg = _G.UIErrorsFrame.__messages[1]
 	check(msg and msg.font and tostring(msg.font[1]):find("AetherUI", 1, true),
-		"a message added afterwards carries our face, which is the only thing"
-		.. " that proves the font went on the frame rather than beside it")
-
-	-- AND A SKIN CHANGE LEAVES THEM ALONE. This module has no OnSkinChanged on
-	-- purpose - it sets a face, and a face is not a colour - so the thing worth
-	-- checking is that nothing else puts the client's font back over the top.
-	local before = { _G.ZoneTextString:GetFont() }
-	A.db.profile.skin = OTHER A:Restyle()
-	local after = { _G.ZoneTextString:GetFont() }
-	check(after[1] == before[1] and after[2] == before[2] and after[3] == before[3],
-		"and a skin change does not disturb any of it - there is nothing here"
-		.. " for a skin to say (" .. tostring(after[1]) .. ")")
-	A.db.profile.skin = "midnight" A:Restyle()
+		"and a message added afterwards carries it, which is the only thing that"
+		.. " proves the font went on the frame rather than beside it")
 end)
 
-section("messages: and gives it back when you switch it off", function()
-	local M = A:GetModule("messages")
+section("fonts: and gives the game back when you switch it off", function()
+	local FTm = A:GetModule("fonts")
 
-	-- The promise every reskin in this addon makes. It is worth more here than
-	-- most: this is the client's own text, and somebody turning the module off
-	-- has decided they want the game to look like the game.
-	A:SetModuleEnabled("messages", false)
-	local path, size, flags = _G.ZoneTextString:GetFont()
+	A:SetModuleEnabled("fonts", false)
+	local path, size, flags = _G.ZoneTextFont:GetFont()
 	check(path == "Fonts\\FRIZQT__.TTF",
 		"the client's own face is back (" .. tostring(path) .. ")")
 	check(size == 32 and flags == "THICKOUTLINE",
 		"at its own size and outline, not ours (" .. tostring(size) .. " " ..
 		tostring(flags) .. ")")
-	local ePath = select(1, _G.UIErrorsFrame:GetFont())
-	check(ePath == "Fonts\\FRIZQT__.TTF", "and the error frame too")
+	check(select(1, _G.UIErrorsFrame:GetFont()) == "Fonts\\FRIZQT__.TTF",
+		"and the error frame with it")
+	check(tostring(select(1, _G.ZoneTextString:GetFont())) == "Fonts\\FRIZQT__.TTF",
+		"and every string that was following - one object put back, not one"
+		.. " string at a time")
 
-	-- BACK ON, AND OFF AGAIN. The original is recorded once, the first time -
-	-- a recording made on the second pass would record OUR font as the client's,
-	-- and off would then be a no-op that looked like it worked.
-	A:SetModuleEnabled("messages", true)
-	M:Dress()
-	A:SetModuleEnabled("messages", false)
-	check(select(1, _G.ZoneTextString:GetFont()) == "Fonts\\FRIZQT__.TTF",
-		"and still the client's after off, on, dress, off - which is where a"
-		.. " remembered-every-time original would have stuck")
+	-- ON, OFF, ON, OFF. The original is recorded ONCE. A recording made on the
+	-- second pass would record OUR font as the client's, and off would then be a
+	-- no-op that looked like it worked.
+	A:SetModuleEnabled("fonts", true)
+	FTm:Dress()
+	A:SetModuleEnabled("fonts", false)
+	check(select(1, _G.ZoneTextFont:GetFont()) == "Fonts\\FRIZQT__.TTF",
+		"and still the client's after off, on, dress, off")
 
-	A:SetModuleEnabled("messages", true)
-	check(tostring(select(1, _G.ZoneTextString:GetFont())):find("AetherUI", 1, true),
+	A:SetModuleEnabled("fonts", true)
+	check(tostring(select(1, _G.ZoneTextFont:GetFont())):find("AetherUI", 1, true),
 		"and ours again on the way back")
 end)
 
-section("messages: a name the client does not have is skipped, not guessed", function()
-	local M = A:GetModule("messages")
+section("fonts: a face the client cannot load is put back, not left half on", function()
+	-- SetFont on a face the client cannot load leaves the font UNCHANGED and
+	-- says nothing about it. So a remap that assumed it worked would record the
+	-- original, appear to succeed, and leave the object in Friz - and then
+	-- switching the module off would "restore" a font that never moved.
+	local FTm = A:GetModule("fonts")
+	A:SetModuleEnabled("fonts", false)
 
-	-- RaidBossEmoteFrame is absent on some builds, and its slots are nil with
-	-- it. Reaching for a nil global here is a load-time error in a module whose
-	-- whole job is cosmetic - the interface would come up without it over a
-	-- font.
-	local keep1, keep2 = _G.RaidBossEmoteFrameSlot1, _G.RaidBossEmoteFrameSlot2
-	_G.RaidBossEmoteFrameSlot1, _G.RaidBossEmoteFrameSlot2 = nil, nil
+	A:SetModuleEnabled("fonts", true)
+	local dressedOk = FTm.dressed
+	A:SetModuleEnabled("fonts", false)
+
+	_G.__badFonts = { [A.Media.font.semibold] = true }
+	A:SetModuleEnabled("fonts", true)
+	check(select(1, _G.ZoneTextFont:GetFont()) == "Fonts\\FRIZQT__.TTF",
+		"an object whose new face would not load keeps the one it had")
+
+	-- COUNTED HONESTLY, and that is the only observable difference here.
+	-- Comparing the tally against the run where every face loaded is what
+	-- makes it a check at all: "missed is more than zero" is true anyway on
+	-- a client that does not define every object in the list.
+	check(FTm.dressed == dressedOk - 5,
+		"and is counted as missed rather than dressed - five semibold entries"
+		.. " short of the run where the face loaded (" .. tostring(FTm.dressed)
+		.. " of " .. tostring(dressedOk) .. ")")
+
+	-- And the ones that CAN load still did.
+	check(tostring(select(1, _G.GameFontNormal:GetFont())):find("AetherUI", 1, true),
+		"while the rest of the pass carries on - one missing face is not a"
+		.. " reason to leave the interface in two fonts")
+
+	_G.__badFonts = nil
+	A:SetModuleEnabled("fonts", false)
+	A:SetModuleEnabled("fonts", true)
+	check(tostring(select(1, _G.ZoneTextFont:GetFont())):find("AetherUI", 1, true),
+		"and it takes on a client that can load it")
+end)
+
+section("menus: the client's own right-click menus, in our glass", function()
+	local M = A:GetModule("menus")
+	check(M and M.enabled, "menus module enabled"
+		.. (M and M.lastError and ("  -- " .. M.lastError) or ""))
+	check(not M.absent, "and it found a menu system it knows how to dress")
+
+	-- TWO HOOKS, NOT A LIST OF FRAMES. Everything the game opens with a right-
+	-- click goes through these, so a menu added by a later patch is covered
+	-- without anybody touching this module.
+	local menu = _G.__OpenMenu(1)
+
+	-- THE TEXT IS NOT THIS MODULE'S DOING, and checking it here is the point:
+	-- a menu line is handed GameFontHighlight by the compositor on every
+	-- acquire, and Modules/Fonts.lua remapped that object before any menu
+	-- existed. Nothing in Modules/Menus.lua knows the text is there.
+	local path, size = menu.__line:GetFont()
+	check(tostring(path):find("AetherUI", 1, true),
+		"a menu line is in our lettering, from the font object rather than from"
+		.. " anything here (" .. tostring(path) .. ")")
+	check(size == 12,
+		"at the size the client's own object was using, which the remap read"
+		.. " back off it rather than inventing (" .. tostring(size) .. ")")
+
+	-- AND AGAIN ON THE NEXT OPEN. The menu frames are pooled and the pool
+	-- re-applies GameFontHighlight on every acquire, so a face set once and not
+	-- re-applied is gone by the second menu - which is exactly the bug you would
+	-- never see while testing, because you always look at the first one.
+	local again = _G.__OpenMenu(1)
+	check(tostring(select(1, again.__line:GetFont())):find("AetherUI", 1, true),
+		"and still ours the second time the same pooled frame is handed out")
+
+	-- ONE BACKGROUND, NOT TWO. Blizzard's Generate attaches an atlas and a
+	-- black fill; ours replaces it rather than drawing over it, or the glass
+	-- would be sitting on top of - or behind - a panel already saying the same
+	-- thing.
+	check(menu.__blizzArt == nil,
+		"the client's own panel art is not attached at all")
+
+	-- THE GLASS IS A CHILD FRAME. CreateTexture and CreateFontString are
+	-- disallowed on a pooled menu frame - the compositor has to know about every
+	-- region it will later recycle - so anything a skin adds has to be its own
+	-- frame. The mock refuses those calls, so this passing at all is the proof.
+	local kids = 0
+	local panel
+	for _, c in ipairs(menu.__children or {}) do
+		kids = kids + 1
+		panel = panel or c
+	end
+	check(kids == 1 and panel ~= nil,
+		"the glass is one child frame of the menu (" .. kids .. ")")
+	check(panel and panel._fillToken == "dialogFill",
+		"dressed as a dialog surface, by token - so the skin sweep finds it like"
+		.. " any other panel of ours")
+
+	-- BEHIND THE ENTRIES. A child frame draws above its parent's regions, and
+	-- the menu's buttons are children too - at the same level the glass would
+	-- be over the text.
+	check(panel:GetFrameLevel() < menu:GetFrameLevel(),
+		"and below the menu's own level, or it covers the very list it is behind ("
+		.. panel:GetFrameLevel() .. " vs " .. menu:GetFrameLevel() .. ")")
+
+	-- ONE PANEL PER POOLED FRAME, not one per open. The compositor discards
+	-- value changes on a frame when it reclaims it, so a note left ON the menu
+	-- saying "already done" would be gone by the next open and we would stack a
+	-- fresh panel behind the last one every single time.
+	for _ = 1, 5 do _G.__OpenMenu(1) end
+	local after = 0
+	for _ in ipairs(menu.__children or {}) do after = after + 1 end
+	check(after == 1,
+		"still one panel after six opens of the same frame (" .. after .. ")")
+
+	-- A SECOND POOLED FRAME gets its own, though - they are different menus.
+	local other = _G.__OpenMenu(2)
+	local otherKids = 0
+	for _ in ipairs(other.__children or {}) do otherKids = otherKids + 1 end
+	check(otherKids == 1, "and a second menu frame gets one of its own")
+end)
+
+section("menus: and gives them back when you switch it off", function()
+	local M = A:GetModule("menus")
+
+	A:SetModuleEnabled("menus", false)
+	local menu = _G.__OpenMenu(3)
+	check(menu.__blizzArt ~= nil,
+		"the client draws its own panel again")
+	-- The LETTERING stays ours, and should: it belongs to the fonts module, and
+	-- somebody switching the menu glass off has said nothing about type.
+	check(tostring(select(1, menu.__line:GetFont())):find("AetherUI", 1, true),
+		"while the lettering stays ours - that is a different module, and a"
+		.. " different question (" ..
+		tostring(select(1, menu.__line:GetFont())) .. ")")
+
+	local first = _G.__OpenMenu(1)
+	local shown = 0
+	for _, c in ipairs(first.__children or {}) do
+		if c:IsShown() then shown = shown + 1 end
+	end
+	check(shown == 0, "with the glass hidden behind the menus it had dressed")
+
+	A:SetModuleEnabled("menus", true)
+	_G.__OpenMenu(1)
+	local reshown = 0
+	for _, c in ipairs(first.__children or {}) do
+		if c:IsShown() then reshown = reshown + 1 end
+	end
+	check(reshown == 1,
+		"reusing the panel it already had rather than building a second one")
+end)
+
+section("menus: a client without them costs a skin, not the interface", function()
+	-- Blizzard_Menu is present on 1.15.9 and this is written against it. A
+	-- module whose absence should cost a context menu its glass must not cost
+	-- the player their whole interface on a build that does not have it.
+	local M = A:GetModule("menus")
+	A:SetModuleEnabled("menus", false)
+
+	local keepStyle, keepVariants = _G.MenuStyle1Mixin, _G.MenuVariants
+	_G.MenuStyle1Mixin, _G.MenuVariants = nil, nil
 	A.lastFailure = nil
-	local ok = pcall(M.Dress, M)
-	check(ok, "dressing raises nothing with two of the names gone")
-	check(M.dressed == 7,
-		"and it dresses the seven that are there (" .. tostring(M.dressed) .. ")")
+	A:SetModuleEnabled("menus", true)
+	check(A.lastFailure == nil,
+		"enabling against a client with no menu system raises nothing (" ..
+		tostring(A.lastFailure) .. ")")
+	check(M.absent == true, "and it says so rather than pretending it worked")
 
-	_G.RaidBossEmoteFrameSlot1, _G.RaidBossEmoteFrameSlot2 = keep1, keep2
-	M:Dress()
-	check(M.dressed == 9, "with all nine back when the client has them")
+	_G.MenuStyle1Mixin, _G.MenuVariants = keepStyle, keepVariants
+	A:SetModuleEnabled("menus", false)
+	A:SetModuleEnabled("menus", true)
+	check(M.absent == nil, "and picks them up again when they are there")
 end)
 
 print("== options tree ==")
