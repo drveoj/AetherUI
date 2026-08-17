@@ -5924,7 +5924,15 @@ function MenuVariants.CreateFontString(frame)
 	return AcquireMenuFontString(frame)
 end
 
+-- TWO STYLES, and which one a menu uses is the whole point.
+--
+-- MenuStyle1Mixin is what a dropdown BUTTON opens - a setting in a panel.
+-- MenuStyle2Mixin is what a RIGHT-CLICK context menu opens, and on this
+-- game type MenuVariants.GetDefaultContextMenuMixin returns that one. The
+-- mock had only Style1, so a module that hooked Style1 and nothing else
+-- passed every check here while changing nothing anybody would ever see.
 MenuStyleMixin = {}
+
 MenuStyle1Mixin = {}
 function MenuStyle1Mixin:Generate()
 	local t = self:AttachTexture()
@@ -5932,10 +5940,26 @@ function MenuStyle1Mixin:Generate()
 	self.__blizzArt = t
 end
 
+MenuStyle2Mixin = {}
+function MenuStyle2Mixin:Generate()
+	local t = self:AttachTexture()
+	t:SetTexture("common-dropdown-classic-b-bg")
+	self.__blizzArt = t
+end
+
+function MenuVariants.GetDefaultContextMenuMixin()
+	return MenuStyle2Mixin
+end
+
 --- Open a menu the way the client does: acquire a pooled frame, mix the style
 --  in FRESH, generate, then build one line through MenuVariants.
-function _G.__OpenMenu(index)
+--
+--  `style` names which mixin, and defaults to the CONTEXT one - because a
+--  right-click menu is what a player means by a menu, and defaulting to the
+--  other is how this went unnoticed the first time.
+function _G.__OpenMenu(index, style)
 	index = index or 1
+	style = style or MenuVariants.GetDefaultContextMenuMixin()
 	local menu = menuPool[index]
 	if not menu then
 		menu = CreateFrame("Frame", nil, UIParent)
@@ -5957,7 +5981,7 @@ function _G.__OpenMenu(index)
 	end
 
 	-- Mixin, EVERY TIME. This is the line that makes a late hook work.
-	for k, v in pairs(MenuStyle1Mixin) do menu[k] = v end
+	for k, v in pairs(style) do menu[k] = v end
 	menu:Generate()
 	menu.__line = MenuVariants.CreateFontString(menu)
 	menu.__line:SetText("Raid Target Icon")
@@ -11716,10 +11740,24 @@ section("menus: the client's own right-click menus, in our glass", function()
 		.. (M and M.lastError and ("  -- " .. M.lastError) or ""))
 	check(not M.absent, "and it found a menu system it knows how to dress")
 
-	-- TWO HOOKS, NOT A LIST OF FRAMES. Everything the game opens with a right-
-	-- click goes through these, so a menu added by a later patch is covered
-	-- without anybody touching this module.
-	local menu = _G.__OpenMenu(1)
+	-- BOTH STYLES, and this is the check that was missing.
+	--
+	-- MenuStyle1Mixin is what a dropdown BUTTON opens - a setting in a panel.
+	-- MenuStyle2Mixin is what a RIGHT-CLICK opens, which is the one on your
+	-- portrait and your pet's and the only one anybody notices. Hooking the
+	-- first alone changed nothing visible, and the suite was green about it
+	-- because the mock had only the mixin that had been hooked.
+	check(MenuVariants.GetDefaultContextMenuMixin() == MenuStyle2Mixin,
+		"a right-click menu is the STYLE 2 one on this game type - which is what"
+		.. " makes hooking style 1 alone invisible")
+
+	local menu = _G.__OpenMenu(1)                      -- the context one
+	local dropdown = _G.__OpenMenu(7, MenuStyle1Mixin) -- the dropdown one
+	check(menu.__blizzArt == nil and dropdown.__blizzArt == nil,
+		"neither style draws the client's own panel any more - a dropdown in the"
+		.. " options and a right-click on a unit frame are the same control to"
+		.. " look at, and one of them being Blizzard's reads as a bug")
+
 
 	-- THE TEXT IS NOT THIS MODULE'S DOING, and checking it here is the point:
 	-- a menu line is handed GameFontHighlight by the compositor on every
@@ -11826,8 +11864,8 @@ section("menus: a client without them costs a skin, not the interface", function
 	local M = A:GetModule("menus")
 	A:SetModuleEnabled("menus", false)
 
-	local keepStyle, keepVariants = _G.MenuStyle1Mixin, _G.MenuVariants
-	_G.MenuStyle1Mixin, _G.MenuVariants = nil, nil
+	local keep1, keep2 = _G.MenuStyle1Mixin, _G.MenuStyle2Mixin
+	_G.MenuStyle1Mixin, _G.MenuStyle2Mixin = nil, nil
 	A.lastFailure = nil
 	A:SetModuleEnabled("menus", true)
 	check(A.lastFailure == nil,
@@ -11835,7 +11873,7 @@ section("menus: a client without them costs a skin, not the interface", function
 		tostring(A.lastFailure) .. ")")
 	check(M.absent == true, "and it says so rather than pretending it worked")
 
-	_G.MenuStyle1Mixin, _G.MenuVariants = keepStyle, keepVariants
+	_G.MenuStyle1Mixin, _G.MenuStyle2Mixin = keep1, keep2
 	A:SetModuleEnabled("menus", false)
 	A:SetModuleEnabled("menus", true)
 	check(M.absent == nil, "and picks them up again when they are there")
