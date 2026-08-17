@@ -71,6 +71,23 @@ local function RestorePosition(entry)
 		point, relPoint, x, y = d.point, d.relPoint or d.point, d.x, d.y
 	end
 
+	-- A DEFAULT WITH NO POINT IN IT still has to put the frame somewhere.
+	--
+	-- This is reachable: switching profile hands the action bars a config table
+	-- that is EMPTY rather than the shipped defaults, so every disabled bar
+	-- arrived here with a nil point and anchored to nothing. The frame then has
+	-- no position at all, which in this API means the top-left corner of the
+	-- screen and no way to find it again.
+	--
+	-- Centred rather than skipped, deliberately: a frame you can see in the
+	-- wrong place is one you can drag, and a frame that never got a point is one
+	-- you cannot.
+	if not VALID_POINTS[point] then
+		point, relPoint = "CENTER", "CENTER"
+		x, y = x or 0, y or 0
+	end
+	if not VALID_POINTS[relPoint] then relPoint = point end
+
 	if InCombatLockdown() then
 		-- Re-anchoring a frame with secure descendants is protected. Defer.
 		Movers._pending = Movers._pending or {}
@@ -156,10 +173,10 @@ local function GridLine(g, i)
 end
 
 --- The lines are a real texture rather than a solid colour block, so tinting is
---  SetVertexColor. Kept in one place because it is called from four.
-local function Tint(t, c, alpha)
-	t:SetVertexColor(c[1], c[2], c[3], alpha)
-end
+--  SetVertexColor. This was a private copy of W.Tint with the same signature,
+--  written before there was a shared one; it is the shared one now, which is
+--  also what puts the grid and the guides on the skin-change sweep.
+local Tint = A.Widgets.Tint
 
 --- Lay the grid out at the current resolution. Every fourth line is brighter,
 --  which is what makes a grid readable rather than a grey haze.

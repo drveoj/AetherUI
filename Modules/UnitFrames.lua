@@ -550,8 +550,12 @@ local function UpdateSkin(f)
 		W.Color(f.name, c.text)
 	end
 	W.Color(f.sub, c.textDim)
-	f.health:SetBackdropColor({ 1, 1, 1, 0.14 })
-	f.power:SetBackdropColor({ 1, 1, 1, 0.14 })
+	-- The skin's track white, not the literal one. These two were the last pair
+	-- of hardcoded colours on the HUD proper, and being a raw table they also
+	-- sat outside the skin-change sweep - so a capsule kept the wash it was
+	-- built with for as long as the frame lived.
+	f.health:SetBackdropColor(Palette:Track())
+	f.power:SetBackdropColor(Palette:Track())
 end
 
 --- Show or hide a capsule - by way of its *glass*, never the core.

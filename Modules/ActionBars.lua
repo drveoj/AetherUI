@@ -157,9 +157,23 @@ local function UpdateIcon(b)
 	end
 end
 
+--- The rim an EMPTY slot wears.
+--
+--  Every state painter below returns early on a slot with nothing in it,
+--  which left the rim at whatever colour it was built with - and an empty
+--  slot is still on screen, at a quarter alpha. On a skin change the whole
+--  stance bar and every gap in the action bars kept the old skin's rim.
+--
+--  Dressed on the way out rather than skipped, so there is no path through
+--  these three functions that leaves a rim unsaid.
+local function PlainRim(b)
+	local c = Palette.c.glassEdge
+	if b.edge then b.edge:SetVertexColor(c[1], c[2], c[3], c[4] or 1) end
+end
+
 local function UpdateUsable(b)
 	local action = ButtonAction(b)
-	if not HasAction(action) then return end
+	if not HasAction(action) then PlainRim(b) return end
 
 	local usable, noMana = IsUsableAction(action)
 	local inRange = IsActionInRange(action)
@@ -484,12 +498,17 @@ end
 
 local function UpdateStanceButton(b)
 	local id = b.aether.index
+	-- Before the guard, not after: on a client with no stance API at all the
+	-- button is still built, still on screen, and still needs a rim of the
+	-- skin somebody is actually running.
+	PlainRim(b)
 	if not GetShapeshiftFormInfo then return end
 
 	local texture, isActive, isCastable = GetShapeshiftFormInfo(id)
 	if not texture then
 		b.icon:Hide()
 		b:SetAlpha(A.Config:Module("actionbars").emptyAlpha or 0.25)
+		PlainRim(b)
 		return
 	end
 
@@ -557,6 +576,7 @@ local function UpdatePetButton(b)
 		b.icon:Hide()
 		b:SetActive(false)
 		b:SetAlpha(cfg.emptyAlpha or 0.25)
+		PlainRim(b)
 		return
 	end
 
@@ -1747,6 +1767,12 @@ local function SyncBars()
 					built[id] = bar
 				end
 			end
+			-- RE-BOUND, every time. A bar holds its own config table by reference
+			-- and nothing used to put it back after a profile change - so every
+			-- bar carried the OLD profile's enabled, scale, buttons and anchor
+			-- into the new one, and a profile whose entry was shaped differently
+			-- anchored a frame to a nil point.
+			if bar then bar.cfg = barCfg end
 			-- An extra bar decides its own visibility; everything else is simply on.
 			if bar and bar.kind ~= "extra" then bar.dock:Show() end
 		elseif bar then

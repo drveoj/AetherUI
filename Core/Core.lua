@@ -377,15 +377,49 @@ local function RunAll(hook, label)
 	end
 end
 
+--- Anyone who is not a module, told when the skin changes.
+--
+--  The eighteen modules get OnSkinChanged and always have. This is for the
+--  rest: the movers' lock button, the library slide-out, a widget somebody
+--  built outside a module. Before it existed those had no way to hear about
+--  a skin change at all, and the brief asks for a live switch with no
+--  reload - which means everything on screen, not everything owned by a
+--  module.
+--
+--  A listener is a plain function. It cannot unregister, deliberately: WoW
+--  never destroys a frame, so nothing here can go stale, and an unregister
+--  nobody calls is a second way to get it wrong.
+local skinListeners = {}
+
+function A:OnSkinChanged(fn)
+	if type(fn) ~= "function" then return end
+	skinListeners[#skinListeners + 1] = fn
+end
+
+--- Fired at the END of a restyle, after the sweeps and after the modules -
+--  so a listener sees the interface already in its new skin rather than
+--  halfway through changing.
+local function FireSkinChanged()
+	for i = 1, #skinListeners do
+		local ok, err = pcall(skinListeners[i])
+		if not ok then
+			A.lastFailure = tostring(err)
+			A:Print(A.Bad("a skin listener failed:") .. " " .. tostring(err))
+		end
+	end
+end
+
 function A:Restyle()
 	A:UpdatePixelScale()
 	A.Palette:Apply(A.db.profile.skin)
-	-- The shared surfaces first. The context menu belongs to no module - any of
-	-- them can open it - so nobody's OnSkinChanged is the right place for it,
-	-- and the one that used to do it left the menu following the skin only
-	-- while that module happened to be enabled.
-	if A.Widgets and A.Widgets.RestyleMenu then A.Widgets.RestyleMenu() end
+	-- Every glass surface still dressed by token, in one sweep, BEFORE the
+	-- modules get their say. A surface knows which palette entries it was built
+	-- from; its owner should not have to remember on its behalf, and eighteen
+	-- modules each walking their own widgets is eighteen chances to miss one.
+	if A.Glass and A.Glass.RestyleAll then A.Glass.RestyleAll() end
+	if A.Widgets and A.Widgets.RestyleInk then A.Widgets.RestyleInk() end
 	RunAll("OnSkinChanged", "restyle")
+	FireSkinChanged()
 end
 
 function A:Reconfigure()

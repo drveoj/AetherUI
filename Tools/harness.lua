@@ -20253,6 +20253,277 @@ do
 		.. " step (" .. table.concat(drifted, ", ") .. ")")
 end
 
+section("skins: a live switch, with no reload", function()
+	local P, W2 = A.Palette, A.Widgets
+
+	-- THE POINT OF THE WHOLE FAMILY. The brief asks for a live switch and a
+	-- character keeping its choice; a skin you have to /reload into is a skin
+	-- nobody tries on.
+	--
+	-- Before the two registries below, a switch left around five hundred
+	-- surfaces wearing the skin they were BUILT under - every module walked its
+	-- own widgets on OnSkinChanged and most of them missed some. A surface knows
+	-- which tokens it was dressed from; its owner should not have to remember on
+	-- its behalf.
+	local function key(c)
+		return string.format("%.4f/%.4f/%.4f/%.4f", c[1], c[2], c[3], c[4] or 1)
+	end
+
+	A.db.profile.skin = "midnight" A:Restyle()
+	local wasGlass = P.c.glass
+	A.db.profile.skin = OTHER A:Restyle()
+	check(P.current == OTHER, "the switch lands on " .. OTHER)
+	check(key(P.c.glass) ~= key(wasGlass),
+		"and the glass really is a different colour, or nothing below means"
+		.. " anything")
+
+	-- Every registered surface, every registered string, every registered
+	-- texture. Swept as a set rather than named one at a time: a check that
+	-- lists frames only covers the frames somebody thought to list.
+	local stale = {}
+	for _, sf in ipairs(A.Glass.surfaces) do
+		if sf._fillToken and sf._fillColor
+			and key(sf._fillColor) ~= key(P.c[sf._fillToken]) then
+			stale[#stale + 1] = "fill:" .. sf._fillToken
+		end
+		if sf._edgeToken and sf._edgeColor
+			and key(sf._edgeColor) ~= key(P.c[sf._edgeToken]) then
+			stale[#stale + 1] = "edge:" .. sf._edgeToken
+		end
+	end
+	check(#stale == 0,
+		#A.Glass.surfaces .. " glass surfaces, and not one still wearing the old"
+		.. " skin (" .. table.concat(stale, ", ", 1, math.min(#stale, 6)) .. ")")
+
+	local inkStale = 0
+	for _, fs in ipairs(W2.inked) do
+		local want = fs._aetherInk and P.c[fs._aetherInk]
+		if want and fs.GetTextColor and key({ fs:GetTextColor() }) ~= key(want) then
+			inkStale = inkStale + 1
+		end
+	end
+	check(inkStale == 0,
+		#W2.inked .. " strings, likewise (" .. inkStale .. " stale)")
+
+	local tintStale = 0
+	for _, tex in ipairs(W2.tinted) do
+		local want = tex._aetherTint and P.c[tex._aetherTint]
+		if want then
+			local a = tex._aetherTintAlpha or want[4] or 1
+			local r, g, b, ta = tex:GetVertexColor()
+			if math.abs(r - want[1]) > 0.001 or math.abs(g - want[2]) > 0.001
+				or math.abs(b - want[3]) > 0.001 or math.abs((ta or 1) - a) > 0.001 then
+				tintStale = tintStale + 1
+			end
+		end
+	end
+	check(tintStale == 0,
+		#W2.tinted .. " textures, likewise, AT THE WEIGHT THE CALLER ASKED FOR -"
+		.. " the XP wash is quieter than a status bar and has to stay that way"
+		.. " across a restyle (" .. tintStale .. " stale)")
+
+	-- And the sweeps are not no-ops. Zero surfaces swept passes every line
+	-- above, and is exactly what a registry that never registers looks like.
+	check(#A.Glass.surfaces > 100 and #W2.inked > 100,
+		"with real numbers in both registries, not an empty sweep (" ..
+		#A.Glass.surfaces .. " surfaces, " .. #W2.inked .. " strings, " ..
+		#W2.tinted .. " textures)")
+
+	A.db.profile.skin = "midnight" A:Restyle()
+end)
+
+section("skins: the choice belongs to the profile, and travels with it", function()
+	local P = A.Palette
+	local was = A.db:GetCurrentProfile()
+
+	-- WHERE THE CHOICE LIVES. The brief says persist it per character; this
+	-- addon has Ace profiles, so the honest answer is profile scope and the
+	-- player picks what that scope IS - default, character, class, realm. Storing
+	-- it per character behind the profile system would give somebody two places
+	-- to set one thing and no way to tell which had won.
+	A.db.profile.skin = "midnight" A:Restyle()
+	check(P.current == "midnight", "midnight on this profile")
+
+	A.db:SetProfile("__skintest")
+	A.db.profile.skin = OTHER A:Restyle()
+	check(P.current == OTHER, "and " .. OTHER .. " on another")
+
+	-- The switch back is the whole point, and it must NOT need a reload: AceDB
+	-- fires OnProfileChanged, Core answers it with a restyle, and the interface
+	-- is in the other skin before the profile dropdown has closed.
+	A.db:SetProfile(was)
+	check(P.current == "midnight",
+		"and changing profile carries the skin with it, live - no reload, no"
+		.. " second call (" .. tostring(P.current) .. ")")
+	check(P.c.glass == P.skins.midnight.glass,
+		"with the palette actually swapped, not merely the name")
+
+	-- A profile naming a skin that no longer exists degrades to midnight rather
+	-- than to a nil palette - which is every colour in the addon at once.
+	A.db.profile.skin = "daylight" A:Restyle()
+	check(P.current == "midnight",
+		"a profile still asking for a skin that was removed falls back to midnight"
+		.. " rather than to a nil table (" .. tostring(P.current) .. ")")
+	A.db.profile.skin = "midnight" A:Restyle()
+end)
+section("skins: what a live switch actually looks like on the HUD", function()
+	local P = A.Palette
+	local function rgb(...) local r, g, b = ... return r, g, b end
+
+	-- The two registries cover everything dressed BY TOKEN. These are the ones
+	-- they deliberately do not reach - colours a module sets from state - and so
+	-- the ones that need naming one at a time. Both were wrong: an empty action
+	-- slot kept its old rim because every state painter returned early on a slot
+	-- with nothing in it, and a buff tile was dressed with a colour rather than
+	-- a token so the sweep passed it by.
+	A.db.profile.skin = "midnight" A:Restyle()
+	A.db.profile.skin = OTHER A:Restyle()
+
+	local want = P.c.glassEdge
+	local AB2 = A:GetModule("actionbars")
+	local empty
+	for _, bar in ipairs(AB2.bars) do
+		for i, b in ipairs(bar.buttons) do
+			if bar.kind == "action" and not b.__aetherAdopted
+				and not HasAction(b:GetAttribute("action")) then
+				empty = empty or b
+			end
+		end
+	end
+	check(empty ~= nil, "the fixture has an empty action slot to look at")
+	if empty then
+		local r, g, b = rgb(empty.edge:GetVertexColor())
+		check(math.abs(r - want[1]) < 0.001 and math.abs(g - want[2]) < 0.001
+			and math.abs(b - want[3]) < 0.001,
+			"an EMPTY slot wears the new skin's rim - it is still on screen at a"
+			.. " quarter alpha, and it was the last thing on the bar still wearing"
+			.. " the old one (" .. string.format("%.2f %.2f %.2f", r, g, b) .. ")")
+	end
+
+	-- A stance button on a client with no stance API at all: built, on screen,
+	-- and returning before any rim was ever set.
+	for _, bar in ipairs(AB2.bars) do
+		if bar.kind == "stance" and bar.buttons[1] then
+			local r, g, b = rgb(bar.buttons[1].edge:GetVertexColor())
+			check(math.abs(r - want[1]) < 0.001 and math.abs(g - want[2]) < 0.001
+				and math.abs(b - want[3]) < 0.001,
+				"and so does a stance slot (" ..
+				string.format("%.2f %.2f %.2f", r, g, b) .. ")")
+		end
+	end
+
+	-- And on a client with NO stance API at all. The rim is dressed before that
+	-- guard rather than after it, and with the API present both orders look the
+	-- same - so the only way to see the difference is to take it away.
+	do
+		local real = _G.GetShapeshiftFormInfo
+		_G.GetShapeshiftFormInfo = nil
+		for _, bar in ipairs(AB2.bars) do
+			if bar.kind == "stance" and bar.buttons[1] then
+				bar.buttons[1].edge:SetVertexColor(1, 0, 1, 1)   -- something wrong
+				AB2.Repaint(bar.buttons[1])
+				local r, g, b = rgb(bar.buttons[1].edge:GetVertexColor())
+				check(math.abs(r - want[1]) < 0.001 and math.abs(g - want[2]) < 0.001
+					and math.abs(b - want[3]) < 0.001,
+					"a stance button on a client that has no stance API is still"
+					.. " built, still on screen, and still gets a rim (" ..
+					string.format("%.2f %.2f %.2f", r, g, b) .. ")")
+			end
+		end
+		_G.GetShapeshiftFormInfo = real
+		AB2:RefreshAll()
+	end
+
+	-- A buff tile, which is plain glass and had to say so BY TOKEN to be swept.
+	local AU2 = A:GetModule("auras")
+	local tile = AU2.playerBuffs and AU2.playerBuffs.tiles[1]
+	check(tile ~= nil, "and a buff tile to look at")
+	if tile then
+		check(tile._fillToken == "glass",
+			"a buff tile is dressed from the glass token rather than handed the"
+			.. " colour, which is what puts it on the sweep at all")
+		check(tile._fillColor == P.c.glass,
+			"so it is wearing the live skin's glass after the switch")
+	end
+
+	-- A debuff tile is the other way round on purpose: its colour is its school,
+	-- which is semantic, so it must NOT move when the skin does.
+	local dtile = AU2.playerDebuffs and AU2.playerDebuffs.tiles[2]
+	if dtile then
+		local r, g, b = rgb(dtile.art.ring:GetVertexColor())
+		local curse = P.c.debuffSchool.Curse
+		check(math.abs(r - curse[1]) < 0.001 and math.abs(g - curse[2]) < 0.001
+			and math.abs(b - curse[3]) < 0.001,
+			"while a debuff tile keeps its school colour, which is semantic and the"
+			.. " same in all four (" ..
+			string.format("%.2f %.2f %.2f", r, g, b) .. ")")
+	end
+
+	A.db.profile.skin = "midnight" A:Restyle()
+end)
+section("skins: a colour set by hand is NOT swept away", function()
+	local P = A.Palette
+	A.db.profile.skin = "midnight" A:Restyle()
+
+	-- The other half of the same rule, and the one that would break the HUD if
+	-- it were wrong: a target capsule takes its reaction tint, a slot its
+	-- quality rim, an aura tile its debuff school. Whoever set that owns it, and
+	-- the sweep walking in afterwards and painting the skin default back over
+	-- the top would turn every stateful colour on screen into plain glass.
+	local s = A.Glass.CreatePanel(UIParent, { corner = 8 })
+	s:ApplySkin("glass", "glassEdge")
+	check(s._fillToken == "glass", "a surface dressed from a token remembers it")
+
+	local mine = { 0.9, 0.1, 0.2, 1 }
+	s:SetFillColor(mine)
+	check(s._fillToken == nil,
+		"and setting a colour by hand hands ownership back - the token is gone,"
+		.. " not merely overwritten")
+
+	A.db.profile.skin = OTHER A:Restyle()
+	check(s._fillColor == mine,
+		"so a restyle leaves it exactly where its owner put it")
+
+	-- Same for a string. W.Color is handed a palette table or a computed one,
+	-- and only the first kind is the palette's to keep changing.
+	local fs = A.Widgets.Text(UIParent, "label", "LEFT")
+	A.Widgets.Color(fs, P.c.accent)
+	check(fs._aetherInk == "accent", "a string coloured from a token remembers it")
+	A.Widgets.Color(fs, { 0.1, 0.9, 0.3, 1 })
+	check(fs._aetherInk == nil, "and a computed colour clears it")
+	A:Restyle()
+	local r, g = fs:GetTextColor()
+	check(math.abs(r - 0.1) < 0.001 and math.abs(g - 0.9) < 0.001,
+		"so the sweep leaves that one alone too")
+
+	A.db.profile.skin = "midnight" A:Restyle()
+end)
+
+section("skins: things that are not modules get told too", function()
+	-- Eighteen modules get OnSkinChanged and always have. The context menu is
+	-- not a module - any of them can open it - and Core used to name it by hand
+	-- in Restyle, which is a list that only holds what somebody remembered to
+	-- put in it.
+	local fired = 0
+	A:OnSkinChanged(function() fired = fired + 1 end)
+	A:Restyle()
+	check(fired == 1, "a listener is called once per restyle (" .. fired .. ")")
+	A:Restyle()
+	check(fired == 2, "and again on the next one")
+
+	-- A bad listener must not take the restyle down with it. Half a skin change
+	-- is worse than none: the interface is left in two skins at once.
+	A:OnSkinChanged(function() error("deliberate") end)
+	local after = 0
+	A:OnSkinChanged(function() after = after + 1 end)
+	A.lastFailure = nil
+	A:Restyle()
+	check(after == 1,
+		"a listener that errors does not stop the ones behind it")
+	check(A.lastFailure ~= nil, "and the failure is recorded rather than swallowed")
+	A.lastFailure = nil
+end)
+
 print("== skins: chat ink follows the skin, because it is not baked in ==")
 do
 	local P = A.Palette

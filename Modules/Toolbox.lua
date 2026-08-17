@@ -1712,8 +1712,7 @@ function TB:BuildContent()
 	spark:SetPoint("CENTER", tile, "CENTER", 0, 0)
 	spark:SetSize(20, 20)
 	if Media:SetIcon(spark, "whatsnew") then
-		local c = Palette.c.btnFillText
-		spark:SetVertexColor(c[1], c[2], c[3], 1)
+		W.Tint(spark, Palette.c.btnFillText)
 	end
 	tile.spark = spark
 	card.tile = tile

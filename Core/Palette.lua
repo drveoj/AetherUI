@@ -354,10 +354,31 @@ end
 Palette.c = Palette.skins.midnight
 Palette.current = "midnight"
 
+--- Which token a colour table IS, by identity.
+--
+--  Rebuilt on every Apply, and it is what lets a FontString be re-coloured
+--  on a skin change without its owner recording anything: W.Color is handed
+--  Palette.c.text - the very table, not a copy - so the token can be read
+--  back off the reference.
+--
+--  TOP LEVEL ONLY. The nested ones - a difficulty band, a quality rim - are
+--  semantic and identical in all four skins, so re-applying them would be
+--  work with no effect.
+local function IndexTokens(skin)
+	local by = {}
+	for token, v in pairs(skin) do
+		if type(v) == "table" and type(v[1]) == "number" and #v >= 3 then
+			by[v] = token
+		end
+	end
+	return by
+end
+
 function Palette:Apply(name)
 	local skin = Palette.skins[name] or Palette.skins.midnight
 	Palette.c = skin
 	Palette.current = Palette.skins[name] and name or "midnight"
+	Palette.tokenOf = IndexTokens(skin)
 	return skin
 end
 
@@ -450,7 +471,10 @@ end
 --  and all of them were the literal 1, 1, 1 before the family existed.
 function Palette:Track(alpha)
 	local c = Palette.c.barTrack
-	return { c[1], c[2], c[3], alpha or c[4] or 1 }
+	-- NAMED, because this is a fresh table every call and so cannot be found
+	-- in tokenOf by identity. The name is what lets a wash be re-applied on a
+	-- skin change; the alpha rides along so the caller's weight survives it.
+	return { c[1], c[2], c[3], alpha or c[4] or 1, token = "barTrack" }
 end
 
 --- The same, for a hex this palette did not choose.

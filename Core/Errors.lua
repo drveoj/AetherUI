@@ -225,15 +225,13 @@ local function Build()
 	track:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -56)
 	track:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 18)
 	track:SetWidth(A:Px(4))
-	local tf = Palette.c.textFaint
-	track:SetVertexColor(tf[1], tf[2], tf[3], 0.22)
+	A.Widgets.Tint(track, Palette.c.textFaint, 0.22)
 	f.track = track
 
 	local thumb = f:CreateTexture(nil, "OVERLAY")
 	thumb:SetTexture(A.Media.texture.flat)
 	thumb:SetWidth(A:Px(4))
-	local tc = Palette.c.text
-	thumb:SetVertexColor(tc[1], tc[2], tc[3], 0.45)
+	A.Widgets.Tint(thumb, Palette.c.text, 0.45)
 	f.thumb = thumb
 
 	--- Where the rail's thumb goes, and whether there is a rail at all.

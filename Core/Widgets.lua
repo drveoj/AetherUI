@@ -103,8 +103,10 @@ function W.Text(parent, style, justify, layer, size)
 	-- the same correction the tooltip badge needed for its rim.
 	fs:SetShadowColor(0, 0, 0, 0.55)
 	fs:SetShadowOffset(0, -(A.PxIn and A:PxIn(parent) or 1))
-	local c = A.Palette.c.text
-	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+	-- Through W.Color rather than straight at the FontString, so the string is
+	-- registered as ink and a skin change reaches it. Eighty strings sat outside
+	-- the sweep because this line did the work itself.
+	W.Color(fs, A.Palette.c.text)
 	fs._aetherStyle = style
 	return fs
 end
@@ -140,6 +142,11 @@ function W.Restyle(fs, style)
 	Media:SetFont(fs, style or fs._aetherStyle, fs._aetherSize)
 end
 
+--- Every string this has coloured FROM A TOKEN, so a skin change can reach
+--  them. Same reasoning as the glass registry: frames are never destroyed,
+--  and a string coloured with a computed value is not in here at all.
+W.inked = {}
+
 function W.Color(fs, c)
 	if not fs or not c then return end
 	-- Same reach-through as Restyle: a button carrying a label has no
@@ -149,6 +156,67 @@ function W.Color(fs, c)
 	end
 	if not fs or not fs.SetTextColor then return end
 	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+
+	-- WHICH token, if it was one. A caller handing over a mixed or dimmed
+	-- colour owns it and re-applies it itself, exactly as a glass surface
+	-- coloured by hand does - so the token is cleared rather than kept.
+	local token = A.Palette.tokenOf and A.Palette.tokenOf[c]
+	if token and not fs._aetherInk then
+		W.inked[#W.inked + 1] = fs
+	end
+	fs._aetherInk = token
+end
+
+--- The texture half of the same idea.
+--
+--  A wash behind a bar, an icon tinted to a token: not text, not a glass
+--  surface, and so in neither of the other two registries. Same rule - hand
+--  it a palette table and it follows the skin, hand it a computed colour and
+--  you own it.
+W.tinted = {}
+
+--- `alpha` overrides the colour's own, and is what gets remembered: a rail at
+--  0.22 of the faint type and a thumb at 0.45 of the bright are the same two
+--  tokens at two weights, and passing the palette's own table through keeps the
+--  identity that makes the token findable.
+function W.Tint(tex, c, alpha)
+	if not tex or not c or not tex.SetVertexColor then return end
+	alpha = alpha or c[4] or 1
+	tex:SetVertexColor(c[1], c[2], c[3], alpha)
+	-- By identity for a palette table, by name for a derived one - a wash
+	-- from Palette:Track is built fresh each call and says so itself.
+	local token = c.token or (A.Palette.tokenOf and A.Palette.tokenOf[c])
+	if token and not tex._aetherTint then
+		W.tinted[#W.tinted + 1] = tex
+	end
+	tex._aetherTint = token
+	-- The weight the CALLER asked for, not the token's own: the XP bar wants
+	-- a quieter wash than a status bar and must keep it across a restyle.
+	tex._aetherTintAlpha = token and alpha or nil
+end
+
+--- Re-read the palette for every string or texture still coloured by token.
+--  Returns how many it touched.
+function W.RestyleInk()
+	local n = 0
+	for i = 1, #W.inked do
+		local fs = W.inked[i]
+		local c = fs._aetherInk and A.Palette.c[fs._aetherInk]
+		if c then
+			fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+			n = n + 1
+		end
+	end
+	for i = 1, #W.tinted do
+		local tex = W.tinted[i]
+		local c = tex._aetherTint and A.Palette.c[tex._aetherTint]
+		if c then
+			tex:SetVertexColor(c[1], c[2], c[3],
+				tex._aetherTintAlpha or c[4] or 1)
+			n = n + 1
+		end
+	end
+	return n
 end
 
 -- ---------------------------------------------------------------------------
@@ -240,8 +308,11 @@ function Bar:SetColors(colors)
 	self._colors = colors
 end
 
-function Bar:SetBackdropColor(c)
-	if self.bg then self.bg:SetVertexColor(c[1], c[2], c[3], c[4] or 1) end
+--- Through W.Tint, so a backdrop set from a token follows the skin and one set
+--  from a computed colour does not - the same rule every other surface follows,
+--  rather than a second way of colouring the same texture.
+function Bar:SetBackdropColor(c, alpha)
+	W.Tint(self.bg, c, alpha)
 end
 
 --- Smooth value changes so a health tick does not snap. Cheap lerp on the
@@ -285,8 +356,7 @@ function W.CreateBar(parent, opts)
 	local bg = bar:CreateTexture(nil, "BACKGROUND")
 	bg:SetTexture(Media.texture.flat)
 	bg:SetAllPoints(bar)
-	local wash = A.Palette:Track(opts.bgAlpha)
-	bg:SetVertexColor(wash[1], wash[2], wash[3], wash[4])
+	W.Tint(bg, A.Palette:Track(opts.bgAlpha))
 	bar.bg = bg
 
 	for k, v in pairs(Bar) do bar[k] = v end
@@ -396,8 +466,7 @@ function W.CreateSegmentedBar(parent, opts)
 	bar.bg = bar:CreateTexture(nil, "BACKGROUND")
 	bar.bg:SetTexture(Media.texture.flat)
 	bar.bg:SetAllPoints(bar)
-	local wash = A.Palette:Track(opts.bgAlpha)
-	bar.bg:SetVertexColor(wash[1], wash[2], wash[3], wash[4])
+	W.Tint(bar.bg, A.Palette:Track(opts.bgAlpha))
 
 	bar.parts = {}
 	for k, v in pairs(Segmented) do bar[k] = v end
@@ -1110,9 +1179,15 @@ end
 --  tracker's OnSkinChanged re-applied it - and the second module to open a menu
 --  would have inherited a surface that only follows the skin if the FIRST
 --  module happens to be enabled.
+--- The context menu belongs to no module - any of them can open it - so
+--  nobody's OnSkinChanged is the right place for it, and the one that used to
+--  do it left the menu following the skin only while that module happened to be
+--  enabled. Core used to name it by hand instead; it subscribes now, which is
+--  what the listener registry is for.
 function W.RestyleMenu()
 	if Menu.frame then Menu.frame:ApplySkin("dialogFill", "glassEdgeHi") end
 end
+A:OnSkinChanged(W.RestyleMenu)
 
 -- ---------------------------------------------------------------------------
 -- misc

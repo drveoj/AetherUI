@@ -480,8 +480,7 @@ function Reskin.StatusBar(bar, store, opts)
 	local bg = bar:CreateTexture(nil, "BACKGROUND")
 	bg:SetTexture(A.Media.texture.flat)
 	bg:SetAllPoints(bar)
-	local wash = A.Palette:Track(opts.bgAlpha)
-	bg:SetVertexColor(wash[1], wash[2], wash[3], wash[4])
+	A.Widgets.Tint(bg, A.Palette:Track(opts.bgAlpha))
 
 	bar.__aetherFill = bg
 	return bg
@@ -510,16 +509,14 @@ function Reskin.ScrollBar(bar, store)
 		track:SetPoint("TOP", bar, "TOP", 0, -2)
 		track:SetPoint("BOTTOM", bar, "BOTTOM", 0, 2)
 		track:SetWidth(A:Px(4))
-		local f = A.Palette.c.textFaint
-		track:SetVertexColor(f[1], f[2], f[3], 0.22)
+		A.Widgets.Tint(track, A.Palette.c.textFaint, 0.22)
 		bar.__aetherTrack = track
 	end
 
 	local thumb = bar.GetThumbTexture and bar:GetThumbTexture()
 	if thumb then
 		thumb:SetTexture(A.Media.texture.flat)
-		local c = A.Palette.c.text
-		thumb:SetVertexColor(c[1], c[2], c[3], 0.45)
+		A.Widgets.Tint(thumb, A.Palette.c.text, 0.45)
 		if thumb.SetWidth then thumb:SetWidth(A:Px(6)) end
 	end
 

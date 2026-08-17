@@ -561,12 +561,15 @@ local function TintTile(t, debuff, auraType)
 		tint = tint or { c.danger[1], c.danger[2], c.danger[3] }
 		t:SetFillColor({ tint[1] * 0.35, tint[2] * 0.35, tint[3] * 0.35, 0.5 })
 		t:SetEdgeColor({ tint[1], tint[2], tint[3], 0.45 })
-		t.art.ring:SetVertexColor(tint[1], tint[2], tint[3], 0.95)
+		W.Tint(t.art.ring, tint, 0.95)
 	else
-		t:SetFillColor(c.glass)
-		t:SetEdgeColor(c.glassEdge)
+		-- BY TOKEN, not by colour. A buff tile is plain glass, and saying so in
+		-- the palette's own words is what puts it on the skin-change sweep -
+		-- including the tiles currently out of play, which are parked off screen
+		-- rather than hidden and come back the moment an aura lands.
+		t:ApplySkin("glass", "glassEdge")
 		tint = tint or c.accent
-		t.art.ring:SetVertexColor(tint[1], tint[2], tint[3], 0.55)
+		W.Tint(t.art.ring, tint, 0.55)
 	end
 end
 
@@ -1037,6 +1040,10 @@ end
 
 function Aur:OnSkinChanged()
 	for _, t in ipairs(self.trays or {}) do t.display:ApplySkin() end
+	-- The tiles need nothing here. A buff tile is dressed by token and a debuff
+	-- tile by its school, which is semantic and the same in all four skins - so
+	-- between the central sweep and the palette there is nothing left for this
+	-- to do, and an UpdateAll here would be a second owner for the same fact.
 end
 
 function Aur:OnConfigChanged()

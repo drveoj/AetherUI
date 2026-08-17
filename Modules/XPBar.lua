@@ -118,8 +118,7 @@ local function Update()
 		f.rested:Hide()
 	end
 
-	local wash = A.Palette:Track(0.10)
-	f.bg:SetVertexColor(wash[1], wash[2], wash[3], wash[4])
+	A.Widgets.Tint(f.bg, A.Palette:Track(0.10))
 
 	if cfg.showText then
 		-- WHAT IS LEFT, not what is done. "10% Level 11" is two facts about

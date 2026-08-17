@@ -246,6 +246,11 @@ end
 
 function Surface:SetFillColor(c)
 	self._fillColor = c
+	-- A COLOUR SET BY HAND CANCELS THE TOKEN. A target capsule takes its
+	-- reaction tint, a slot takes its quality rim; whoever set that owns it
+	-- and re-applies it on their own update. The sweep below must not walk
+	-- in afterwards and paint the skin's default back over the top.
+	self._fillToken = nil
 	Tint(self._fill, c)
 
 	-- HOW MUCH IS MISSING, and put a plate behind for exactly that. Composited,
@@ -267,6 +272,7 @@ end
 
 function Surface:SetEdgeColor(c)
 	self._edgeColor = c
+	self._edgeToken = nil
 	Tint(self._edge, c)
 end
 
@@ -369,10 +375,22 @@ function Surface:_LayoutRimGlow()
 	Layout9(self._rim, self, c * 2, c / 2)
 end
 
+--- Dress a surface FROM THE PALETTE, by token name.
+--
+--  The tokens are remembered, which is what makes a live skin change
+--  possible: RestyleAll below re-applies them without the surface's owner
+--  having to know it exists. Before this, every module had to walk its own
+--  widgets on OnSkinChanged and most of them missed some - the sweep that
+--  found it counted around five hundred surfaces still wearing the skin
+--  they were built under.
 function Surface:ApplySkin(fillToken, edgeToken)
 	local c = A.Palette.c
-	self:SetFillColor(c[fillToken or "glass"] or c.glass)
-	self:SetEdgeColor(c[edgeToken or "glassEdge"] or c.glassEdge)
+	fillToken = fillToken or "glass"
+	edgeToken = edgeToken or "glassEdge"
+	self:SetFillColor(c[fillToken] or c.glass)
+	self:SetEdgeColor(c[edgeToken] or c.glassEdge)
+	-- after the setters, which clear them
+	self._fillToken, self._edgeToken = fillToken, edgeToken
 	if self._shadowOpacity then self:SetShadow(self._shadowOpacity) end
 end
 
@@ -380,9 +398,47 @@ end
 -- constructors
 -- ---------------------------------------------------------------------------
 
+--- Every surface ever built.
+--
+--  A plain list is right here: WoW cannot destroy a frame, so nothing in
+--  this table can ever become garbage, and the widget pools reuse frames
+--  rather than making more. It is the same reason the module list is a
+--  plain list.
+Glass.surfaces = {}
+
 local function Adopt(frame)
 	for k, v in pairs(Surface) do frame[k] = v end
+	Glass.surfaces[#Glass.surfaces + 1] = frame
 	return frame
+end
+
+--- Re-read the palette for every surface still dressed by token.
+--
+--  Runs BEFORE the modules' own OnSkinChanged, so a module that wants to
+--  say something different about one of its surfaces still gets the last
+--  word. Returns how many it touched, which is what the harness counts.
+function Glass.RestyleAll()
+	-- THE TWO ARE INDEPENDENT. A caller that sets a fill by hand and leaves the
+	-- rim on its token keeps one of each, and re-applying through ApplySkin
+	-- would default the missing half back to plain glass - painting over the
+	-- colour whose whole point was that somebody chose it.
+	local c, n = A.Palette.c, 0
+	for i = 1, #Glass.surfaces do
+		local s = Glass.surfaces[i]
+		local fill, edge = s._fillToken, s._edgeToken
+		if fill then
+			s:SetFillColor(c[fill] or c.glass)
+			s._fillToken = fill
+			n = n + 1
+		end
+		if edge then
+			s:SetEdgeColor(c[edge] or c.glassEdge)
+			s._edgeToken = edge
+			n = n + 1
+		end
+		if (fill or edge) and s._shadowOpacity then s:SetShadow(s._shadowOpacity) end
+	end
+	return n
 end
 
 --- Surfaces are usually plain Frames, but a unit capsule or a dock has to be a
