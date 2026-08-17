@@ -144,6 +144,10 @@ local function choice(name, desc, path, values, opts)
 	return {
 		type = "select", name = name, desc = desc, order = next_(),
 		values = values, width = opts.width, get = Get, set = Set,
+		-- AceConfigDialog builds a Dropdown for a select unless it is told
+		-- otherwise. Naming a control here is the whole of drawing one
+		-- differently; everything else about the option stays put.
+		dialogControl = opts.control,
 		arg = { path = path, after = opts.after },
 	}
 end
@@ -180,9 +184,15 @@ end
 -- the tree
 -- ---------------------------------------------------------------------------
 
+--- key -> WRITTEN NAME.
+--
+--  `s.name` was nil - Palette:List answers `label` - so every skin fell
+--  through to its key and the picker read midnight/dawn/noon/dusk in
+--  lower case. Harmless-looking, and it is the difference between a
+--  written name and a table index.
 local function SkinValues()
 	local out = {}
-	for _, s in ipairs(A.Palette:List()) do out[s.key] = s.name or s.key end
+	for _, s in ipairs(A.Palette:List()) do out[s.key] = s.label or s.key end
 	return out
 end
 
@@ -199,8 +209,14 @@ end
 
 local function GeneralGroup()
 	return group("General", {
-		skin = choice("Skin", "Midnight is the concept deck's own palette.",
-			{ "skin" }, SkinValues, { after = "restyle" }),
+		-- FOUR CHIPS, NOT A DROPDOWN. Each shows its own accent on its own
+		-- glass, which is the only thing that tells you what picking it
+		-- would do - a list of four words does not. The option is unchanged
+		-- underneath: same profile key, same setter, same restyle after.
+		skin = choice("Skin", "Each one is its own accent on its own glass."
+			.. " The change is live - no reload.",
+			{ "skin" }, SkinValues,
+			{ after = "restyle", control = "AetherUISkinSwatches" }),
 		scale = range("Scale", "Everything at once. 0.71 maps the deck's 1920px"
 			.. " geometry onto WoW's virtual space one-for-one, which is why it is"
 			.. " not 1.0.", { "scale" }, 0.6, 1.6, 0.01),

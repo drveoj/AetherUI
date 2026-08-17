@@ -21,6 +21,7 @@ Core\Movers.lua
 Core\Fader.lua
 Core\Nav.lua
 Core\Launchers.lua
+Core\SkinSwatches.lua
 Core\Commands.lua
 Core\Options.lua
 

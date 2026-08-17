@@ -4795,6 +4795,12 @@ load("Libs/AceDB-3.0/AceDB-3.0.lua")
 -- then never be caught here. Ninety lines; loading it costs nothing.
 load("Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua")
 
+-- The REAL AceGUI core, for the same reason: the skin picker is registered as
+-- an AceGUI widget, and a stand-in would let it meet an interface we invented
+-- rather than the one AceConfigDialog actually calls. Only the core file - the
+-- shipped widgets are AceConfigDialog's business, not ours.
+load("Libs/AceGUI-3.0/AceGUI-3.0.lua")
+
 -- LibClassicCasterino bails on any non-Classic client, and the mock is not one,
 -- so stand in for it. The point under test is our wiring, not the library.
 WOW_PROJECT_ID, WOW_PROJECT_CLASSIC = 2, 2
@@ -6001,7 +6007,8 @@ local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
-	"Core/Nav.lua", "Core/Launchers.lua", "Core/Commands.lua", "Core/Options.lua",
+	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
+	"Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
@@ -11936,6 +11943,124 @@ section("menus: a client without them costs a skin, not the interface", function
 	A:SetModuleEnabled("menus", false)
 	A:SetModuleEnabled("menus", true)
 	check(M.absent == nil, "and picks them up again when they are there")
+end)
+
+section("skins: the picker is four chips, not four words", function()
+	local gui = LibStub("AceGUI-3.0", true)
+	local P2 = A.Palette
+	check(gui and gui:GetWidgetVersion("AetherUISkinSwatches") == 1,
+		"the swatch widget is registered with AceGUI")
+
+	-- AND THE OPTION ASKS FOR IT. Registering a control nothing names is a
+	-- control nobody sees, and the picker would quietly still be a dropdown.
+	local tree = A.Options:Build()
+	local skinOpt = tree.args.general and tree.args.general.args.skin
+	check(skinOpt and skinOpt.dialogControl == "AetherUISkinSwatches",
+		"and the skin option names it (" ..
+		tostring(skinOpt and skinOpt.dialogControl) .. ")")
+	check(skinOpt.type == "select",
+		"while staying an ordinary select underneath - same profile key, same"
+		.. " setter, same restyle after")
+
+	-- The values are WRITTEN NAMES. This read midnight/dawn/noon/dusk in lower
+	-- case, because the builder asked List() for `name` and it answers `label`.
+	local values = skinOpt.values
+	if type(values) == "function" then values = values() end
+	check(values.midnight == "Midnight" and values.dusk == "Dusk",
+		"offered under written names rather than table keys (" ..
+		tostring(values.midnight) .. ")")
+
+	local w = gui:Create("AetherUISkinSwatches")
+	w:SetLabel("Skin")
+	w:SetList(values)
+	w:SetValue("midnight")
+
+	check(#w.chips == 4, "four chips (" .. #w.chips .. ")")
+
+	-- IN THE DAY'S ORDER, which belongs to the palette. Alphabetical gives dawn,
+	-- dusk, midnight, noon and reads as four unrelated words.
+	local got = {}
+	for i, c in ipairs(w.chips) do got[i] = c.__skinKey end
+	check(table.concat(got, ",") == table.concat(P2.order, ","),
+		"in the palette's order, not the alphabet's (" ..
+		table.concat(got, ", ") .. ")")
+
+	-- EACH CHIP WEARS ITS OWN SKIN. The whole point is to show what choosing it
+	-- would do, so the colours come from Palette.skins[key] - not from
+	-- Palette.c, which is whatever you are running right now. Checked with
+	-- Midnight live, so a chip reading the live palette would make all four the
+	-- same and pass nothing.
+	A.db.profile.skin = "midnight" A:Restyle()
+	w:Refresh()
+	local wrong = {}
+	for _, c in ipairs(w.chips) do
+		local skin = P2.skins[c.__skinKey]
+		if c._fillColor ~= skin.glass then wrong[#wrong + 1] = c.__skinKey end
+		local r = select(1, c.dot:GetVertexColor())
+		if math.abs(r - skin.accent[1]) > 0.001 then
+			wrong[#wrong + 1] = c.__skinKey .. ".accent"
+		end
+	end
+	check(#wrong == 0,
+		"every chip is its OWN accent on its OWN glass, with Midnight live ("
+		.. table.concat(wrong, ", ") .. ")")
+
+	-- And they really do differ, or the line above passes on four identical ones.
+	local a, b = w.chips[1], w.chips[4]
+	check(select(1, a.dot:GetVertexColor()) ~= select(1, b.dot:GetVertexColor()),
+		"and the first and last are different colours")
+
+	-- THE MARK FOLLOWS THE VALUE.
+	check(w.chips[1].tick:IsShown() and not w.chips[4].tick:IsShown(),
+		"the live skin is the marked one")
+	w:SetValue("dusk")
+	check(w.chips[4].tick:IsShown() and not w.chips[1].tick:IsShown(),
+		"and the mark moves with it rather than accumulating")
+
+	-- CLICKING SAYS SO. AceConfigDialog listens on OnValueChanged and does the
+	-- rest; a chip that changed the skin itself would be a second owner for a
+	-- fact the option already owns.
+	local fired
+	w:SetCallback("OnValueChanged", function(_, _, key) fired = key end)
+	w.chips[2]:GetScript("OnClick")(w.chips[2])
+	check(fired == "dawn",
+		"clicking a chip fires the option's own callback with that skin (" ..
+		tostring(fired) .. ")")
+
+	-- DISABLED SAYS NOTHING.
+	fired = nil
+	w:SetDisabled(true)
+	w.chips[3]:GetScript("OnClick")(w.chips[3])
+	check(fired == nil, "a disabled picker does not answer a click")
+	w:SetDisabled(false)
+
+	-- CHIPS ARE BUILT ONCE. AceGUI pools its widgets, so a panel opened twenty
+	-- times hands this same widget back - anything built per refresh would
+	-- accumulate for the life of the session.
+	local function kids()
+		local n = 0
+		for _ in ipairs(w.frame.__children or {}) do n = n + 1 end
+		return n
+	end
+	local before = kids()
+	for _ = 1, 10 do w:Refresh() end
+	check(kids() == before,
+		"and are reused rather than rebuilt on every refresh - counted on the"
+		.. " FRAME, because a chip replaced in the list is still parented and"
+		.. " still on screen, stacked under the one that replaced it (" ..
+		kids() .. " after ten, from " .. before .. ")")
+
+	-- A SKIN THE ORDER DOES NOT NAME still appears, appended, rather than
+	-- vanishing from the picker with no way to choose it.
+	local extra = {}
+	for k, v in pairs(values) do extra[k] = v end
+	extra.twilight = "Twilight"
+	w:SetList(extra)
+	check(#w.chips == 5 and w.chips[5].__skinKey == "twilight",
+		"one the order does not name is offered last rather than not at all")
+
+	w:SetList(values)
+	A.db.profile.skin = "midnight" A:Restyle()
 end)
 
 print("== options tree ==")
