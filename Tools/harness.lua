@@ -5741,6 +5741,68 @@ function TaxiRequestEarlyLanding()
 	_G.__taxi.earlyLandings = _G.__taxi.earlyLandings + 1
 end
 
+
+-- ---------------------------------------------------------------------------
+-- the game's own transient messages
+--
+-- Real shapes, taken from the client's own XML rather than invented:
+--
+--   UIErrorsFrame is a MessageFrame. Its font lives on the FRAME - it builds
+--   a FontString per message from that - so a mock that gave it a child
+--   string to style would let a module pass here and change nothing in game.
+--
+--   Every one of them starts in Friz Quadrata at the size its font object
+--   actually uses (ErrorFont 16, ZoneTextFont 32 thick, SubZoneTextFont 26
+--   thick, GameFontNormalHuge 20). A mock starting at nil would make a
+--   module that never read the size look identical to one that did.
+-- ---------------------------------------------------------------------------
+
+local FRIZ = "Fonts\\FRIZQT__.TTF"
+
+_G.UIErrorsFrame = CreateFrame("Frame", "UIErrorsFrame", UIParent)
+_G.UIErrorsFrame.__font = { FRIZ, 16, nil }
+function _G.UIErrorsFrame:SetFont(path, size, flags)
+	if type(path) ~= "string" then fail("UIErrorsFrame:SetFont path " .. tostring(path)) return end
+	if type(size) ~= "number" then fail("UIErrorsFrame:SetFont size " .. tostring(size)) return end
+	self.__font = { path, size, flags }
+end
+function _G.UIErrorsFrame:GetFont()
+	local c = self.__font
+	if not c then return nil end
+	return c[1], c[2], c[3]
+end
+_G.UIErrorsFrame.__messages = {}
+function _G.UIErrorsFrame:AddMessage(text, r, g, b)
+	self.__messages[#self.__messages + 1] = { text = text, r = r, g = g, b = b,
+		font = { self:GetFont() } }
+end
+
+local function BlizzMessageString(parent, name, size, flags)
+	local fs = parent:CreateFontString(name)
+	fs.__font = { FRIZ, size, flags }
+	return fs
+end
+
+_G.ZoneTextFrame = CreateFrame("Frame", "ZoneTextFrame", UIParent)
+BlizzMessageString(_G.ZoneTextFrame, "ZoneTextString", 32, "THICKOUTLINE")
+BlizzMessageString(_G.ZoneTextFrame, "PVPInfoTextString", 26, "THICKOUTLINE")
+
+_G.SubZoneTextFrame = CreateFrame("Frame", "SubZoneTextFrame", UIParent)
+BlizzMessageString(_G.SubZoneTextFrame, "SubZoneTextString", 26, "THICKOUTLINE")
+BlizzMessageString(_G.SubZoneTextFrame, "PVPArenaTextString", 26, "THICKOUTLINE")
+
+_G.RaidWarningFrame = CreateFrame("Frame", "RaidWarningFrame", UIParent)
+BlizzMessageString(_G.RaidWarningFrame, "RaidWarningFrameSlot1", 20, nil)
+BlizzMessageString(_G.RaidWarningFrame, "RaidWarningFrameSlot2", 20, nil)
+
+-- Present on this client, absent on some others - which is why the module
+-- looks each name up rather than assuming the set.
+_G.RaidBossEmoteFrame = CreateFrame("Frame", "RaidBossEmoteFrame", UIParent)
+BlizzMessageString(_G.RaidBossEmoteFrame, "RaidBossEmoteFrameSlot1", 20, nil)
+BlizzMessageString(_G.RaidBossEmoteFrame, "RaidBossEmoteFrameSlot2", 20, nil)
+
+FRIZ = FRIZ    -- the client face, shared with the checks below
+
 local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
@@ -5753,6 +5815,7 @@ local FILES = {
 	"Modules/Tooltips.lua",
 	"Modules/Nameplates.lua",
 	"Modules/Popups.lua",
+	"Modules/Messages.lua",
 	"Modules/Panels.lua",
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
@@ -11337,6 +11400,156 @@ do
 		"and so is every other skin's - brightness lives in the hue, so no skin"
 		.. " ever hands a band dark ink (" .. table.concat(dark, ", ") .. ")")
 end
+
+section("messages: the game shouts in our lettering now", function()
+	local M = A:GetModule("messages")
+	check(M and M.enabled, "messages module enabled"
+		.. (M and M.lastError and ("  -- " .. M.lastError) or ""))
+
+	-- ALL OF THEM. Nine strings across five frames, and the list is the policy -
+	-- a zone banner in our lettering with the raid warning left in Friz is worse
+	-- than leaving both alone, because now it looks like a bug rather than like
+	-- the game.
+	local NAMES = {
+		"UIErrorsFrame", "ZoneTextString", "PVPInfoTextString",
+		"SubZoneTextString", "PVPArenaTextString",
+		"RaidWarningFrameSlot1", "RaidWarningFrameSlot2",
+		"RaidBossEmoteFrameSlot1", "RaidBossEmoteFrameSlot2",
+	}
+	local friz = {}
+	for _, n in ipairs(NAMES) do
+		local o = _G[n]
+		local path = o and o.GetFont and select(1, o:GetFont())
+		if not path or not tostring(path):find("AetherUI", 1, true) then
+			friz[#friz + 1] = n .. "=" .. tostring(path)
+		end
+	end
+	check(#friz == 0,
+		#NAMES .. " message strings, none of them still in the client's face ("
+		.. table.concat(friz, ", ") .. ")")
+	check(M.dressed == #NAMES,
+		"and the module counted the same number, rather than silently skipping"
+		.. " one it could not find (" .. tostring(M.dressed) .. ")")
+
+	-- THE SIZE IS THE CLIENT'S, not the style's.
+	--
+	-- Comparing against 32 proves nothing on its own: the style's fallback IS
+	-- 32, deliberately, so a module that ignored the client entirely would
+	-- land on the same number. The only way to tell them apart is to give the
+	-- client a size it does not normally have - which is not a contrivance,
+	-- another addon resizing these is the ordinary case.
+	local _, zoneSize, zoneFlags = _G.ZoneTextString:GetFont()
+	check(zoneSize == 32,
+		"the zone banner is the size the client had it (" .. tostring(zoneSize)
+		.. " of 32)")
+	local _, errSize = _G.UIErrorsFrame:GetFont()
+	check(errSize == 16, "and the error line likewise (" .. tostring(errSize)
+		.. " of 16)")
+
+	do
+		A:SetModuleEnabled("messages", false)
+		_G.ZoneTextString.__font = { FRIZ, 44, "THICKOUTLINE" }
+		A:SetModuleEnabled("messages", true)
+		local _, odd = _G.ZoneTextString:GetFont()
+		check(odd == 44,
+			"and a client that had it at some other size is followed there too -"
+			.. " this is a change of FACE, and the style's own number is only a"
+			.. " fallback for a string that has none (" .. tostring(odd) .. ")")
+
+		A:SetModuleEnabled("messages", false)
+		_G.ZoneTextString.__font = { FRIZ, 32, "THICKOUTLINE" }
+		A:SetModuleEnabled("messages", true)
+	end
+
+	-- AND THE OUTLINE SURVIVES. These are drawn over the world with nothing
+	-- behind them; a zone name in our lettering with the thick outline dropped
+	-- is unreadable over snow, and it is the one thing here that would look fine
+	-- in a screenshot taken indoors.
+	check(zoneFlags == "THICKOUTLINE",
+		"with its thick outline kept (" .. tostring(zoneFlags) .. ")")
+	local _, _, subFlags = _G.SubZoneTextString:GetFont()
+	check(subFlags == "THICKOUTLINE", "and the subzone's")
+
+	-- THE COLOUR IS NOT OURS. UIErrorsMixin passes RED_FONT_COLOR for an error
+	-- and YELLOW_FONT_COLOR for information, per message - that is the game
+	-- telling you which of the two just happened, and restating it in the
+	-- interface's own palette would throw the distinction away.
+	check(_G.UIErrorsFrame.__color == nil,
+		"and nothing here has touched the colour - red still means an error and"
+		.. " yellow still means information")
+
+	-- THE FONT IS ON THE FRAME. UIErrorsFrame is a MessageFrame: it builds a
+	-- FontString per message from its own font, so a module that had styled a
+	-- child string would pass every check above and change nothing in game.
+	_G.UIErrorsFrame.__messages = {}
+	_G.UIErrorsFrame:AddMessage("You can't do that yet.", 1, 0.1, 0.1)
+	local msg = _G.UIErrorsFrame.__messages[1]
+	check(msg and msg.font and tostring(msg.font[1]):find("AetherUI", 1, true),
+		"a message added afterwards carries our face, which is the only thing"
+		.. " that proves the font went on the frame rather than beside it")
+
+	-- AND A SKIN CHANGE LEAVES THEM ALONE. This module has no OnSkinChanged on
+	-- purpose - it sets a face, and a face is not a colour - so the thing worth
+	-- checking is that nothing else puts the client's font back over the top.
+	local before = { _G.ZoneTextString:GetFont() }
+	A.db.profile.skin = OTHER A:Restyle()
+	local after = { _G.ZoneTextString:GetFont() }
+	check(after[1] == before[1] and after[2] == before[2] and after[3] == before[3],
+		"and a skin change does not disturb any of it - there is nothing here"
+		.. " for a skin to say (" .. tostring(after[1]) .. ")")
+	A.db.profile.skin = "midnight" A:Restyle()
+end)
+
+section("messages: and gives it back when you switch it off", function()
+	local M = A:GetModule("messages")
+
+	-- The promise every reskin in this addon makes. It is worth more here than
+	-- most: this is the client's own text, and somebody turning the module off
+	-- has decided they want the game to look like the game.
+	A:SetModuleEnabled("messages", false)
+	local path, size, flags = _G.ZoneTextString:GetFont()
+	check(path == "Fonts\\FRIZQT__.TTF",
+		"the client's own face is back (" .. tostring(path) .. ")")
+	check(size == 32 and flags == "THICKOUTLINE",
+		"at its own size and outline, not ours (" .. tostring(size) .. " " ..
+		tostring(flags) .. ")")
+	local ePath = select(1, _G.UIErrorsFrame:GetFont())
+	check(ePath == "Fonts\\FRIZQT__.TTF", "and the error frame too")
+
+	-- BACK ON, AND OFF AGAIN. The original is recorded once, the first time -
+	-- a recording made on the second pass would record OUR font as the client's,
+	-- and off would then be a no-op that looked like it worked.
+	A:SetModuleEnabled("messages", true)
+	M:Dress()
+	A:SetModuleEnabled("messages", false)
+	check(select(1, _G.ZoneTextString:GetFont()) == "Fonts\\FRIZQT__.TTF",
+		"and still the client's after off, on, dress, off - which is where a"
+		.. " remembered-every-time original would have stuck")
+
+	A:SetModuleEnabled("messages", true)
+	check(tostring(select(1, _G.ZoneTextString:GetFont())):find("AetherUI", 1, true),
+		"and ours again on the way back")
+end)
+
+section("messages: a name the client does not have is skipped, not guessed", function()
+	local M = A:GetModule("messages")
+
+	-- RaidBossEmoteFrame is absent on some builds, and its slots are nil with
+	-- it. Reaching for a nil global here is a load-time error in a module whose
+	-- whole job is cosmetic - the interface would come up without it over a
+	-- font.
+	local keep1, keep2 = _G.RaidBossEmoteFrameSlot1, _G.RaidBossEmoteFrameSlot2
+	_G.RaidBossEmoteFrameSlot1, _G.RaidBossEmoteFrameSlot2 = nil, nil
+	A.lastFailure = nil
+	local ok = pcall(M.Dress, M)
+	check(ok, "dressing raises nothing with two of the names gone")
+	check(M.dressed == 7,
+		"and it dresses the seven that are there (" .. tostring(M.dressed) .. ")")
+
+	_G.RaidBossEmoteFrameSlot1, _G.RaidBossEmoteFrameSlot2 = keep1, keep2
+	M:Dress()
+	check(M.dressed == 9, "with all nine back when the client has them")
+end)
 
 print("== options tree ==")
 do

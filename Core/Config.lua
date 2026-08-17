@@ -485,6 +485,13 @@ Config.defaults = {
 				enabled = true,
 			},
 
+			-- The game's own transient messages - errors, zone banners, raid
+			-- warnings - in our lettering. A face change only: sizes, outlines,
+			-- colours and positions stay the client's.
+			messages = {
+				enabled = true,
+			},
+
 			-- The client's own windows - character, spellbook, talents, guild,
 			-- map, menu, help - reskinned in place. Same switch, same promise:
 			-- off hands Blizzard's back.

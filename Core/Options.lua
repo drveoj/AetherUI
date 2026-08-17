@@ -980,6 +980,21 @@ local function PopupsGroup()
 	})
 end
 
+--- The game's own transient messages.
+local function MessagesGroup()
+	return group("Messages", {
+		enabled = toggle("Enabled", "Puts the game's own on-screen messages -"
+			.. " \"You can't do that yet\", the zone name as you cross a border,"
+			.. " raid warnings and boss emotes - into this interface's lettering."
+			.. "\n\nA change of FACE only. The size is whatever the game was"
+			.. " already using, the outlines are kept because these are drawn over"
+			.. " the world with nothing behind them, and the colours stay the"
+			.. " game's: red means an error and yellow means information, and that"
+			.. " is the game telling you which just happened.",
+			{ "modules", "messages", "enabled" }),
+	})
+end
+
 --- The client's mirror timers.
 local function TimersGroup()
 	return group("Timers", {
@@ -1170,7 +1185,7 @@ local PAGE_ORDER = {
 	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
 	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
 	xpbar = 12, nameplates = 13, popups = 14, panels = 15, timers = 16,
-	ifec = 17,
+	ifec = 17, messages = 18,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1229,6 +1244,7 @@ function Options:Build()
 			ifec = IFECGroup(),
 			nameplates = NameplatesGroup(),
 			popups = PopupsGroup(),
+			messages = MessagesGroup(),
 			panels = PanelsGroup(),
 			timers = TimersGroup(),
 			changelog = ChangelogGroup(),

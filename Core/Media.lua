@@ -291,6 +291,20 @@ Media.style = {
 	-- is re-sized from Chat:FontSize so the code reads at the size you type at.
 	chatTab      = { "semibold", 10, "" },
 	chatBadge    = { "bold",      8, "" },   -- the channel tag, uppercase
+	-- The messages the game throws at the middle of the screen: an error, a
+	-- zone banner, a raid warning. All of them are drawn over the WORLD with
+	-- nothing behind them, so the outlines the client uses are load-bearing
+	-- and are kept exactly as it has them - a zone name in our lettering with
+	-- the thick outline dropped is unreadable over snow.
+	--
+	-- The sizes here are only fallbacks: Reskin.Font keeps whatever size the
+	-- client's own font object was using, so this is a change of FACE and
+	-- nothing else. Nothing on screen moves or reflows.
+	errMessage   = { "semibold", 16, "" },            -- "You can't do that yet"
+	zoneName     = { "semibold", 32, "THICKOUTLINE" },
+	zoneSub      = { "medium",   26, "THICKOUTLINE" },
+	raidNotice   = { "bold",     20, "" },
+
 	questTitle   = { "medium",   12, "" },
 	questLine    = { "light",    11, "" },   -- objective lines under a quest
 
