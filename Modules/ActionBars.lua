@@ -1748,8 +1748,35 @@ end
 --  only one of them used to build it. Ticking "Enabled" in the panel set the
 --  flag, ran a reconfigure, and reconfigure only ever looked at bars that
 --  already existed. The bar was on and nowhere.
+--- Point every built bar at the LIVE config entry for its id.
+--
+--  A bar holds its own config table by reference, and AceDB empties the
+--  old profile's tables when the player switches away - so the reference
+--  is not stale, it is hollow. Re-resolved by id rather than by position:
+--  a profile with a different set of bars in it would otherwise hand bar 3
+--  the settings for bar 4.
+--
+--  Returns how many it could not find, which is the interesting number:
+--  a bar built under a profile that names it and switched to one that does
+--  not is a bar with nothing to read.
+local function BindConfigs()
+	local cfg = A.Config:Module("actionbars")
+	local byId, orphans = {}, 0
+	for _, barCfg in ipairs(cfg.bars or {}) do byId[tostring(barCfg.id)] = barCfg end
+	for _, bar in ipairs(AB.bars) do
+		local live = byId[tostring(bar.id)]
+		if live then bar.cfg = live else orphans = orphans + 1 end
+	end
+	return orphans
+end
+AB.BindConfigs = BindConfigs
+
 local function SyncBars()
 	local cfg = A.Config:Module("actionbars")
+	-- Before anything reads a bar's settings, including the enabled flag
+	-- three lines down. Both branches below need it, so it is done once
+	-- here rather than in the one of them that happened to be noticed.
+	BindConfigs()
 	local built = {}
 	for _, bar in ipairs(AB.bars) do built[bar.id] = bar end
 
@@ -1767,12 +1794,6 @@ local function SyncBars()
 					built[id] = bar
 				end
 			end
-			-- RE-BOUND, every time. A bar holds its own config table by reference
-			-- and nothing used to put it back after a profile change - so every
-			-- bar carried the OLD profile's enabled, scale, buttons and anchor
-			-- into the new one, and a profile whose entry was shaped differently
-			-- anchored a frame to a nil point.
-			if bar then bar.cfg = barCfg end
 			-- An extra bar decides its own visibility; everything else is simply on.
 			if bar and bar.kind ~= "extra" then bar.dock:Show() end
 		elseif bar then
@@ -1783,6 +1804,18 @@ local function SyncBars()
 end
 
 AB.SyncBars = SyncBars
+
+--- A different profile is in force. Re-resolve before anything reads a bar.
+--
+--  This runs BEFORE the restyle and the reconfigure - see A:ProfileChanged.
+--  The restyle reads bar.cfg for the dock skin and the per-bar scale, so
+--  re-binding inside OnConfigChanged alone was already too late.
+function AB:OnProfileChanged()
+	local orphans = BindConfigs()
+	if orphans > 0 then
+		A:Debug("actionbars: " .. orphans .. " bar(s) the new profile does not name")
+	end
+end
 
 function AB:OnConfigChanged()
 	if InCombatLockdown() then

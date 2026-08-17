@@ -966,9 +966,12 @@ function Config:Initialize()
 	A.db = AceDB:New("AetherUIDB", Config.defaults, true)
 	Migrate(A.db)
 
-	A.db.RegisterCallback(A, "OnProfileChanged", function() A:Restyle(); A:Reconfigure() end)
-	A.db.RegisterCallback(A, "OnProfileCopied",  function() A:Restyle(); A:Reconfigure() end)
-	A.db.RegisterCallback(A, "OnProfileReset",   function() A:Restyle(); A:Reconfigure() end)
+	-- All three through the one path. A copy and a reset rewrite the tables
+	-- under a module exactly as a switch does, so a module holding a
+	-- reference is just as wrong after either of them.
+	A.db.RegisterCallback(A, "OnProfileChanged", function() A:ProfileChanged() end)
+	A.db.RegisterCallback(A, "OnProfileCopied",  function() A:ProfileChanged() end)
+	A.db.RegisterCallback(A, "OnProfileReset",   function() A:ProfileChanged() end)
 end
 
 --- Convenience accessor: A.Config:Module("unitframes")

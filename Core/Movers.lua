@@ -73,11 +73,12 @@ local function RestorePosition(entry)
 
 	-- A DEFAULT WITH NO POINT IN IT still has to put the frame somewhere.
 	--
-	-- This is reachable: switching profile hands the action bars a config table
-	-- that is EMPTY rather than the shipped defaults, so every disabled bar
-	-- arrived here with a nil point and anchored to nothing. The frame then has
-	-- no position at all, which in this API means the top-left corner of the
-	-- screen and no way to find it again.
+	-- A BACKSTOP, not the fix. What made this reachable was the action bars
+	-- holding config tables that AceDB had hollowed out on a profile change,
+	-- and that is fixed where it happened - see AB:OnProfileChanged. It stays
+	-- because the consequence is out of all proportion to the cause: a frame
+	-- with no point has no position at all, which in this API means the
+	-- top-left corner of the screen and no way to find it again.
 	--
 	-- Centred rather than skipped, deliberately: a frame you can see in the
 	-- wrong place is one you can drag, and a frame that never got a point is one

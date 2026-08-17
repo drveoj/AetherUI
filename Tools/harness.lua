@@ -20545,6 +20545,123 @@ section("skins: a live switch, with no reload", function()
 	A.db.profile.skin = "midnight" A:Restyle()
 end)
 
+section("profiles: nothing keeps a reference to a config table", function()
+	local AB2 = A:GetModule("actionbars")
+	local was = A.db:GetCurrentProfile()
+
+	-- WHAT ACEDB DOES ON THE WAY OUT, and it is not a bug: switching away from
+	-- a profile strips every value equal to a default OUT OF THAT PROFILE'S
+	-- TABLES, in place, so only the differences are saved. Anything holding one
+	-- of those tables is left with an EMPTY one - not stale, empty.
+	--
+	-- Proved here directly rather than inferred, because every file involved
+	-- reads perfectly correctly and only a real SetProfile shows it.
+	local held = A.db.profile.modules.actionbars.bars[2]
+	check(held.point ~= nil, "a config entry has a point in it to begin with")
+	A.db:SetProfile("__profiletest")
+	check(held.point == nil,
+		"and the table we held is emptied by the switch - THIS is the hazard, and"
+		.. " a module that cached one has been reading nothing ever since")
+
+	-- So every bar must be pointing at the LIVE entry, not the one it was built
+	-- with. Checked by identity: equal contents would also pass if the module
+	-- had copied the values across, and a copy goes stale on the next write.
+	local live = A.db.profile.modules.actionbars.bars
+	local byId = {}
+	for _, c in ipairs(live) do byId[tostring(c.id)] = c end
+	local wrong, hollow = {}, {}
+	for _, bar in ipairs(AB2.bars) do
+		if byId[tostring(bar.id)] and bar.cfg ~= byId[tostring(bar.id)] then
+			wrong[#wrong + 1] = bar.id
+		end
+		if bar.kind == "action" and bar.cfg.point == nil then
+			hollow[#hollow + 1] = bar.id
+		end
+	end
+	check(#wrong == 0,
+		"every bar reads the new profile's own table (" ..
+		table.concat(wrong, ", ") .. ")")
+	check(#hollow == 0,
+		"and every one of them has an anchor point - a bar with none is anchored"
+		.. " to nothing, which is the top-left corner and no way to drag it back ("
+		.. table.concat(hollow, ", ") .. ")")
+
+	-- AND IT HAPPENS BEFORE ANYTHING READS IT. The restyle reads bar.cfg for the
+	-- dock skin and the per-bar scale, and it runs first - so re-binding inside
+	-- OnConfigChanged alone was already too late, and the bug survived a fix
+	-- that looked complete.
+	check(A.lastFailure == nil,
+		"and the whole switch raised nothing (" .. tostring(A.lastFailure) .. ")")
+
+	-- A DISABLED bar too. Every bar that was wrong was a disabled one: the
+	-- re-bind lived in the branch that runs for enabled bars only, so the check
+	-- has to name a bar that is off.
+	local off
+	for _, bar in ipairs(AB2.bars) do
+		if bar.cfg.enabled == false then off = off or bar end
+	end
+	check(off ~= nil, "there is a disabled bar to look at")
+	if off then
+		check(off.cfg == byId[tostring(off.id)],
+			"a bar that is switched OFF is re-bound as well - those were the only"
+			.. " ones that were wrong, and they are the ones nobody looks at")
+	end
+
+
+	-- IN COMBAT, which is what makes the re-binding its own step rather than a
+	-- line inside SyncBars.
+	--
+	-- AB:OnConfigChanged returns immediately in combat - laying bars out means
+	-- moving frames with secure children, and the client refuses - so SyncBars,
+	-- and the re-bind with it, does not run at all. The restyle does. Without a
+	-- step of its own, every bar would read a hollow table for as long as the
+	-- fight lasted, and nothing would look wrong until something asked one of
+	-- them where it lived.
+	A.db:SetProfile(was)
+	_G.__inCombat = true
+	A.lastFailure = nil
+	A.db:SetProfile("__profiletest")
+
+	local liveNow = {}
+	for _, c in ipairs(A.db.profile.modules.actionbars.bars) do
+		liveNow[tostring(c.id)] = c
+	end
+	local stale = {}
+	for _, bar in ipairs(AB2.bars) do
+		if liveNow[tostring(bar.id)] and bar.cfg ~= liveNow[tostring(bar.id)] then
+			stale[#stale + 1] = bar.id
+		end
+	end
+	check(#stale == 0,
+		"a profile change IN COMBAT still re-binds every bar, even though the"
+		.. " layout pass it used to ride on is skipped entirely (" ..
+		table.concat(stale, ", ") .. ")")
+	check(A._profilePending == true,
+		"while the REDRESSING is deferred whole - rescaling a unit capsule means"
+		.. " touching a frame with a secure button in it, which the client"
+		.. " refuses, and the player gets an interface-blocked dialog mid-fight"
+		.. " for something they did before it started")
+	check(A.lastFailure == nil,
+		"and nothing was blocked on the way (" .. tostring(A.lastFailure) .. ")")
+
+	-- And it catches up when the fight ends, from a registration made at load
+	-- rather than one made inside the deferral.
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(A._profilePending == nil,
+		"and the deferred half runs when the fight ends, once")
+
+	A.db:SetProfile(was)
+	for _, bar in ipairs(AB2.bars) do
+		if bar.kind == "action" then
+			check(bar.cfg.point ~= nil,
+				"and switching back is the same story in the other direction (bar "
+				.. bar.id .. ")")
+			break
+		end
+	end
+end)
+
 section("skins: the choice belongs to the profile, and travels with it", function()
 	local P = A.Palette
 	local was = A.db:GetCurrentProfile()

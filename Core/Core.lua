@@ -422,6 +422,65 @@ function A:Restyle()
 	FireSkinChanged()
 end
 
+--- A DIFFERENT PROFILE IS NOW IN FORCE.
+--
+--  Its own hook, running BEFORE the restyle and the reconfigure, because
+--  of what AceDB does on the way out: switching away from a profile strips
+--  every value equal to a default OUT OF THE OLD PROFILE'S TABLES, in
+--  place, so that only the differences are saved. That is correct and
+--  documented, and it means ANY REFERENCE A MODULE KEPT TO A CONFIG
+--  SUBTABLE IS HOLLOWED OUT the moment the player changes profile - not
+--  stale, EMPTY.
+--
+--  The action bars kept one per bar. Every disabled bar came back with no
+--  anchor point at all and was anchored to nothing, which in this API means
+--  the top-left corner of the screen and no way to drag it back.
+--
+--  So this runs first and does one thing: gives a module the chance to
+--  re-resolve what it is holding, before anything reads it.
+function A:ProfileChanged()
+	-- ALWAYS, and first. Re-pointing a reference at a table is not a
+	-- protected action, and a module reading a hollow table in combat is
+	-- exactly when it matters least that we tidy up later.
+	RunAll("OnProfileChanged", "profile")
+
+	-- THE REDRESSING IS NOT SAFE IN COMBAT, and this is the one entry point
+	-- that had no guard. A profile change rescales the unit capsules, and a
+	-- capsule carries a secure button - so the client refuses, and the
+	-- player gets an interface-blocked dialog in the middle of a fight for
+	-- something they did before it started.
+	--
+	-- Deferred whole rather than in pieces: half a profile is worse than a
+	-- late one.
+	if InCombatLockdown and InCombatLockdown() then
+		A._profilePending = true
+		return
+	end
+
+	A._profilePending = nil
+	A:Restyle()
+	A:Reconfigure()
+end
+
+--- The deferred half, when the fight ends.
+--
+--  Registered once, at load, rather than when a profile change happens to land
+--  in combat: a registration made inside the deferral is one that has to be
+--  made correctly under the conditions that already went wrong.
+--
+--  ITS OWN OWNER, and that matters. RegisterEvent keys the handler by OWNER, so
+--  one owner gets one handler per event - registering this against `A`, which
+--  already takes PLAYER_REGEN_ENABLED for the propagate queue, silently
+--  replaced that one and left keyboard input stuck wherever combat found it.
+local profileWatcher = {}
+
+A:RegisterEvent(profileWatcher, "PLAYER_REGEN_ENABLED", function()
+	if not A._profilePending then return end
+	A._profilePending = nil
+	A:Restyle()
+	A:Reconfigure()
+end)
+
 function A:Reconfigure()
 	A:UpdatePixelScale()
 	RunAll("OnConfigChanged", "reconfigure")
