@@ -273,7 +273,19 @@ function Reskin.Panel(frame, opts)
 	opts = opts or {}
 
 	local profile = A.db and A.db.profile
-	local panel = A.Glass.CreatePanel(frame, {
+
+	-- BEHIND THE FRAME, OR INSIDE IT.
+	--
+	-- Inside is right for a client window whose contents are REGIONS of it:
+	-- the panel takes a level below the frame and the regions draw over it.
+	--
+	-- It is wrong wherever the contents are CHILD FRAMES, because then the
+	-- glass and the contents are siblings and the ordering depends on level,
+	-- strata and creation order all at once - three things to keep right
+	-- instead of none. A sibling of the frame itself, one level below, cannot
+	-- be over anything the frame contains however those three land.
+	local host = opts.behind and frame:GetParent() or frame
+	local panel = A.Glass.CreatePanel(host, {
 		corner = opts.corner or 16,
 		shadow = opts.shadow or (profile and profile.glass.shadow) or 1,
 		fill = opts.fill or "dialogFill",
@@ -292,6 +304,11 @@ function Reskin.Panel(frame, opts)
 		panel:SetAllPoints(frame)
 	end
 	panel:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
+	-- A sibling has to be told the strata as well: level only orders frames
+	-- within one, and the two are no longer parent and child.
+	if opts.behind and frame.GetFrameStrata and panel.SetFrameStrata then
+		panel:SetFrameStrata(frame:GetFrameStrata())
+	end
 
 	frame.__aetherPanel = panel
 	return panel

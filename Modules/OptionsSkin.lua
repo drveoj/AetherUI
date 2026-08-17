@@ -65,6 +65,14 @@ local function DressContainer(widget, opts)
 	local frame = widget.frame
 	if not frame then return end
 
+	-- BEHIND, always, for these. An Ace container keeps its contents in a
+	-- child frame rather than in regions of its own, so glass placed INSIDE
+	-- is a sibling of everything in the group and the draw order then rests
+	-- on level, strata and creation order together. Behind the frame it
+	-- cannot be over the contents however those land.
+	opts = opts or {}
+	opts.behind = true
+
 	if not frame.__aetherStripped then
 		frame.__aetherStripped = {}
 		Reskin.Strip(frame, frame.__aetherStripped)

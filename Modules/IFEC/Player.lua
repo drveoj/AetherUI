@@ -210,7 +210,6 @@ function Player:Build()
 	-- exactly where the flight bar's one piece ended.
 	local marks = CreateFrame("Frame", nil, f)
 	marks:SetAllPoints(f)
-	marks:SetFrameLevel((f.programme:GetFrameLevel() or 0) + 5)
 	f.marks = marks
 
 	-- The landing line crosses both, which is the whole reason they share an
@@ -411,6 +410,14 @@ function Player:Paint()
 	if self.complete then return self:PaintComplete() end
 
 	for _, part in ipairs(f.running) do part:Show() end
+
+	-- THE MARKS LEVEL IS SET HERE, not once at build. A level fixed at creation
+	-- is an absolute number, while a bar that was never given one FOLLOWS ITS
+	-- PARENT - so the moment the region is re-parented or re-levelled, which is
+	-- exactly what happens when the console becomes a panel, the bars float up
+	-- past the marks and the landing line disappears under them.
+	f.marks:SetFrameLevel((f:GetFrameLevel() or 0) + 5)
+
 	f.done:Hide()
 	for _, chip in ipairs(f.chips) do chip:Hide() end
 

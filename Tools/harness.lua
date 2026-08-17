@@ -944,7 +944,16 @@ function CreateFrame(kind, name, parent, template)
 		self.__level = v
 	end
 	function f:SetFixedFrameLevel(v) self.__fixedLevel = v and true or false end
-	function f:GetFrameLevel() return self.__level or 1 end
+	--- A CHILD SITS ONE LEVEL ABOVE ITS PARENT, which is how the client
+	--  decides what draws over what. A flat default made every frame level 1,
+	--  so "is this glass behind the controls or over them" was a question the
+	--  harness answered yes to either way.
+	function f:GetFrameLevel()
+		if self.__level then return self.__level end
+		local p = self.__parent
+		if p and p.GetFrameLevel then return (p:GetFrameLevel() or 0) + 1 end
+		return 1
+	end
 	function f:IsMouseOver() return self.__mouseOver or false end
 	-- RECORDED, not swallowed. A hit rect is the only part of a button that can
 	-- be wrong while everything you can see is right: the spellbook's tabs are
@@ -12217,9 +12226,19 @@ section("options: our own settings, in our own interface", function()
 	-- the same level draw in creation order - so the panel, made last, went over
 	-- every control in the group and the text was still there behind a sheet of
 	-- 97% glass.
-	check(grp.content:GetFrameLevel() > grp.frame.__aetherPanel:GetFrameLevel(),
-		"and its contents draw ABOVE it (" .. grp.content:GetFrameLevel() ..
-		" vs " .. grp.frame.__aetherPanel:GetFrameLevel() .. ")")
+	-- BEHIND THE FRAME, not inside it. An Ace container keeps its contents in a
+	-- child frame rather than in regions of its own, so glass placed inside is a
+	-- SIBLING of everything in the group - and the draw order then rests on
+	-- level, strata and creation order together, which is three things to keep
+	-- right instead of none.
+	local panel = grp.frame.__aetherPanel
+	check(panel:GetParent() == grp.frame:GetParent(),
+		"the glass is a sibling of the group, not a child of it")
+	check(panel:GetFrameLevel() < grp.frame:GetFrameLevel(),
+		"one level below it, so nothing the group holds can end up underneath ("
+		.. panel:GetFrameLevel() .. " vs " .. grp.frame:GetFrameLevel() .. ")")
+	check(panel:GetFrameStrata() == grp.frame:GetFrameStrata(),
+		"and in the same strata, because level only orders frames within one")
 
 	-- A BUTTON'S ART IS NOT ALWAYS A STATE TEXTURE. UIPanelButtonTemplate draws
 	-- itself with three BACKGROUND regions - Left, Middle, Right - and clearing
