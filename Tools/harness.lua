@@ -808,13 +808,21 @@ function CreateFrame(kind, name, parent, template)
 		return c[1], c[2], c[3], c[4]
 	end
 
-	--- A BUTTON'S OWN LABEL. SetText on a Button makes one and GetFontString
-	--  hands it back - the client does this for every button with text on it,
-	--  and the mock only bolted it onto the handful of Blizzard buttons that
-	--  were being skinned by name. Anything building its own buttons, which is
-	--  every options library there is, fell straight through it.
-	function f:GetFontString() return self.__fontString end
-	function f:SetFontString(fs) self.__fontString = fs end
+	--- LOCKED HIGHLIGHT. How the client says "this row is the chosen one" - the
+	--  highlight texture is drawn permanently rather than on hover. Recorded,
+	--  because a list whose selection cannot be read is a list where a check for
+	--  it can only ever be a check of something else.
+	--- A BUTTON'S FONT OBJECTS. Real: a list row uses them to say which line is
+	--  the chosen one, swapping normal for highlight rather than recolouring.
+	function f:SetNormalFontObject(o) self.__normalFont = o end
+	function f:GetNormalFontObject() return self.__normalFont end
+	function f:SetHighlightFontObject(o) self.__highlightFont = o end
+	function f:GetHighlightFontObject() return self.__highlightFont end
+	function f:SetDisabledFontObject(o) self.__disabledFont = o end
+
+	function f:LockHighlight() self.__highlightLocked = true end
+	function f:UnlockHighlight() self.__highlightLocked = false end
+	function f:IsHighlightLocked() return self.__highlightLocked == true end
 
 	--- A BUTTON'S OWN LABEL. The client makes one for any button given text,
 	--  and hands it back through GetFontString. The mock bolted that onto the
@@ -1156,6 +1164,17 @@ function CreateFrame(kind, name, parent, template)
 		f.UpdateTooltip = function(self) ContainerFrameItemButton_OnEnter(self) end
 		f:SetScript("OnEnter", function(self) ContainerFrameItemButton_OnEnter(self) end)
 		f:SetScript("OnLeave", function() ContainerFrameItemButton_OnLeave() end)
+	end
+
+	-- OptionsListButtonTemplate arrives with a TOGGLE and a TEXT hung on it by
+	-- parentKey. It is what every category list in the game is built from, and
+	-- what AceGUI's tree group uses - which reaches for both the line after it
+	-- creates one, so a bare frame here made the whole widget unreachable.
+	if type(template) == "string" and template:find("OptionsListButton") then
+		f.toggle = CreateFrame("Button", nil, f)
+		f.toggle:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-UP")
+		f.text = f:CreateFontString(nil, "ARTWORK")
+		f:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 	end
 
 	-- UIDropDownMenuTemplate ARRIVES IN PIECES, and they are named globals:
@@ -4684,8 +4703,36 @@ function GetMaxPlayerLevel() return 60 end
 MAX_PLAYER_LEVEL = 60
 
 -- WoW exposes the string/table library as bare globals; libs rely on them.
+--- strsplit and string.split, which are the CLIENT'S, not Lua's.
+--
+--  Left as nil for a long time because nothing of ours used them. The Ace
+--  libraries do - the tree group splits a path on \001 the moment you give
+--  it a tree - so a whole widget was untestable in here and the checks over
+--  it were really checks of an empty list.
+--
+--  Returns the pieces as multiple values, and keeps EMPTY ones: the client
+--  does, and a path like "a\001\001b" is three levels with a blank in the
+--  middle rather than two.
+local function Split(delim, text)
+	local out, from = {}, 1
+	if delim == nil or delim == "" then return text end
+	while true do
+		local at = string.find(text, delim, from, true)
+		if not at then break end
+		out[#out + 1] = string.sub(text, from, at - 1)
+		from = at + #delim
+	end
+	out[#out + 1] = string.sub(text, from)
+	return unpack(out)
+end
+
 strmatch, strfind, strsub, strlower, strupper, strrep, strjoin, strsplit =
-	string.match, string.find, string.sub, string.lower, string.upper, string.rep, nil, nil
+	string.match, string.find, string.sub, string.lower, string.upper, string.rep, nil, Split
+
+--- The method form. The client puts split ON the string metatable, so
+--  `path:split("\001")` works and the library uses it that way - with the
+--  arguments the other way round from strsplit's.
+function string.split(text, delim) return Split(delim, text) end
 format, gsub, strtrim = string.format, string.gsub, function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 tinsert, tremove, tsort = table.insert, table.remove, table.sort
 max, min, abs, floor, ceil = math.max, math.min, math.abs, math.floor, math.ceil
@@ -12277,7 +12324,67 @@ section("options: our own settings, in our own interface", function()
 		"with its label kept - a plain strip takes the words off with the stone")
 
 
+	-- THE ROWS ARE MADE LATER, and remade whenever the tree is filtered or a
+	-- branch opens - so dressing whatever exists at Create time would cover the
+	-- first page and nothing after it. RefreshTree is what builds and repaints
+	-- them, and it is wrapped.
+	--
+	-- Driven the way the client does: the tree bails out and defers to an
+	-- OnUpdate while its frame is parented to UIParent, so the fixture gives it
+	-- a real parent and a real height first.
 	local tree = gui:Create("TreeGroup")
+	tree.frame:SetParent(CreateFrame("Frame", nil, UIParent))
+	tree.frame:SetSize(400, 300)
+	tree.treeframe:SetSize(160, 300)
+	tree:SetTree({ { value = "a", text = "Alpha" }, { value = "b", text = "Beta" } })
+	tree:SelectByValue("a")
+
+	check(#tree.buttons > 0, "the tree builds rows (" .. #tree.buttons .. ")")
+
+	local chosen, other
+	for _, row in ipairs(tree.buttons) do
+		if row.selected then chosen = chosen or row else other = other or row end
+	end
+	check(chosen ~= nil, "and one of them is the selected one")
+
+	-- A row is an OptionsListButtonTemplate and the selection is Blizzard's blue
+	-- gradient, drawn by LockHighlight on the button's own highlight texture. So
+	-- the art comes off and the selection is drawn by us - which means reading
+	-- `selected` rather than a texture we have just taken away.
+	if chosen then
+		-- The client's own selection is a blue gradient on the row's HIGHLIGHT
+		-- texture, drawn permanently by LockHighlight. It has to come off, or
+		-- ours is simply painted underneath it.
+		local hl = chosen.GetHighlightTexture and chosen:GetHighlightTexture()
+		check(hl == nil or hl:GetTexture() == 0,
+			"the client's blue gradient is off the row (" ..
+			tostring(hl and hl:GetTexture()) .. ")")
+
+		check(chosen.__aetherSel ~= nil and chosen.__aetherSel:IsShown(),
+			"the chosen row wears our selection")
+		local r = select(1, chosen.__aetherSel:GetVertexColor())
+		check(math.abs(r - A.Palette.c.rowSel[1]) < 0.001,
+			"in the palette's row colour rather than the client's blue (" ..
+			string.format("%.2f", r) .. ")")
+	end
+	if other then
+		check(other.__aetherSel ~= nil and not other.__aetherSel:IsShown(),
+			"and an unchosen row wears none - one drawn on every row is a list with"
+			.. " nothing chosen at all")
+	end
+
+	-- AND THE ROWS BUILT ON THE NEXT REFRESH TOO. This is the whole reason the
+	-- method is wrapped rather than the rows dressed once.
+	tree:SetTree({ { value = "a", text = "Alpha" }, { value = "b", text = "Beta" },
+		{ value = "c", text = "Gamma" } })
+	local undressed = 0
+	for _, row in ipairs(tree.buttons) do
+		if not row.__aetherSel then undressed = undressed + 1 end
+	end
+	check(undressed == 0,
+		"a row built by a later refresh is dressed with the rest (" .. undressed
+		.. " bare of " .. #tree.buttons .. ")")
+
 	check(tree.border and tree.border.__aetherPanel ~= nil,
 		"the category list gets glass")
 	check(tree.treeframe and tree.treeframe.__aetherPanel ~= nil,
