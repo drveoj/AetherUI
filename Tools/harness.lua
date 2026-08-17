@@ -12207,6 +12207,72 @@ section("options: our own settings, in our own interface", function()
 		"a check box keeps its tick, in the accent (" ..
 		string.format("%.2f", r) .. ")")
 
+	-- THE STANDALONE WINDOW has three parts a plain container does not, and all
+	-- three are anchored to art we have just taken off.
+	local win = gui:Create("Frame")
+	A.lastFailure = nil
+	M.Dress(win)
+	check(A.lastFailure == nil,
+		"dressing the window raises nothing (" .. tostring(A.lastFailure) .. ")")
+	check(win.frame.__aetherPanel ~= nil,
+		"and it gets its glass - the LAST thing the dresser does, so this is"
+		.. " what says the whole of it ran rather than the first half")
+
+	-- The title hung off a header texture anchored ABOVE the frame, so with the
+	-- art gone the words landed on the top border with nothing over them. The
+	-- HEADER is re-anchored rather than the words, because the invisible frame
+	-- you drag the window by is SetAllPoints on it and is not exposed at all.
+	local p, rel, relP, _, y = win.titlebg:GetPoint(1)
+	check(rel == win.frame,
+		"the title bar hangs off the window itself (" .. tostring(rel and "frame")
+		.. ")")
+	check(p == "TOP" and relP == "TOP" and y < 0,
+		"and sits INSIDE its top edge rather than over it (" .. tostring(p) ..
+		" " .. tostring(y) .. ")")
+	check(select(2, win.titletext:GetPoint(1)) == win.titlebg,
+		"with the words on the bar, so the two cannot drift apart")
+
+	-- The status line is a Button with its own backdrop, so stripping the
+	-- window's regions never reached it - it is the wide dark box along the
+	-- bottom.
+	-- Reached through the status TEXT, because AceGUI keeps the bar itself as a
+	-- local and never puts it on the widget. The first pass read widget.statusbg,
+	-- found nil, and did nothing at all - silently, since skipping a part that
+	-- is not there raises nothing.
+	local statusbg = win.statustext:GetParent()
+	check(statusbg:GetBackdrop() == nil,
+		"the status line has lost its backdrop")
+	check(statusbg.__aetherPill ~= nil, "and wears glass instead")
+
+	-- The Close button is the other thing AceGUI keeps to itself, and it was
+	-- the last red thing on the window.
+	local closed
+	for _, child in ipairs({ win.frame:GetChildren() }) do
+		if child ~= statusbg and child.__aetherSkin then closed = child end
+	end
+	check(closed ~= nil, "and the Close button is ours rather than Blizzard's red")
+
+	-- The size grip is three textures out of the tooltip border atlas, children
+	-- of the sizer rather than regions of the window, so they survive the strip
+	-- and read as a scrap of somebody else's art in the corner.
+	local tinted, total = 0, 0
+	for _, r in ipairs({ win.sizer_se:GetRegions() }) do
+		total = total + 1
+		if r._aetherTint then tinted = tinted + 1 end
+	end
+	check(total > 0 and tinted == total,
+		"and every piece of the size grip is re-tinted (" .. tinted .. " of "
+		.. total .. ")")
+
+	-- AND THE SCROLL BAR, which only appears once the window is dragged small
+	-- enough to need one - which is exactly when nobody is looking for it, and
+	-- is where Blizzard's arrows came back.
+	local sf = gui:Create("ScrollFrame")
+	check(sf.scrollbar and sf.scrollbar.__aetherScroll,
+		"a scroll frame's bar is ours before it is ever shown")
+	check(sf.scrollbar.__aetherTrack ~= nil,
+		"with a rail, so a list you can scroll says so even at rest")
+
 	local hd = gui:Create("Heading")
 	check(tostring(hd.left.__tex):find("AetherUI", 1, true),
 		"a heading rule is ours (" .. tostring(hd.left.__tex) .. ")")

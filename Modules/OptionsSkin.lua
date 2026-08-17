@@ -41,11 +41,20 @@ local function cfg() return A.Config:Module("optionsskin") end
 -- registry in Core\Glass.lua.
 local dressed = {}
 
+-- The strip across the top of the standalone window you grab it by.
+local TITLE_H = 26
+
 local original            -- AceGUI.Create, before us
 
--- Forward-declared: a slider owns a number box, so the two dressers refer to
--- each other and one of them has to be named before it is written.
+-- Forward-declared. A slider owns a number box and the window owns a Close
+-- button, so the dressers refer to each other and cannot all be written first.
+--
+-- Worth the two lines: a `local function` used before its declaration resolves
+-- to a GLOBAL instead, which is nil, and the call dies inside the pcall that
+-- guards these - so the window came out with its title moved, its status line
+-- dressed, and no glass on it at all, in silence.
 local DressEditBoxFrame
+local DressButton
 
 -- ---------------------------------------------------------------------------
 -- the pieces
@@ -68,8 +77,101 @@ local function DressContainer(widget, opts)
 	end
 end
 
+
+--- The standalone window: a title bar, a status line and a size grip, none of
+--  which a plain container has.
+--
+--  Its own dresser rather than a line in DressContainer, because every part of
+--  it is anchored to art we have just taken off - the title hangs from a header
+--  texture that sits ABOVE the frame, so with the texture gone the words end up
+--  against the top edge with nothing above them.
+local function DressWindow(widget)
+	local frame = widget.frame
+	if not frame then return end
+
+	-- THE TITLE, RE-ANCHORED TO THE FRAME. Blizzard's header art is anchored
+	-- TOP +12, hanging over the edge, and the words hang another 14 below that
+	-- - so they land exactly on the border once the art is gone.
+	-- THE DRAG HANDLE MOVES WITH IT, and that is why the header art is
+	-- re-anchored rather than the words. The invisible frame you grab the
+	-- window by is SetAllPoints on `titlebg` and is not exposed on the widget
+	-- at all - so moving the text alone would leave the grab area hanging in
+	-- the empty screen above the window.
+	--
+	-- One point, not two: SetTitle sizes titlebg to the text on every call, and
+	-- a frame pinned by both edges has no width left to set.
+	if widget.titlebg then
+		widget.titlebg:ClearAllPoints()
+		widget.titlebg:SetPoint("TOP", frame, "TOP", 0, -4)
+		widget.titlebg:SetHeight(TITLE_H)
+	end
+	if widget.titletext then
+		widget.titletext:ClearAllPoints()
+		widget.titletext:SetPoint("CENTER", widget.titlebg or frame, "CENTER", 0, 0)
+		Reskin.Font(widget.titletext, "qlHeading")
+		W.Color(widget.titletext, Palette.c.text)
+	end
+
+	-- THE STATUS LINE AND THE CLOSE BUTTON are both children of the window
+	-- and NEITHER IS ON THE WIDGET - AceGUI keeps them as locals and only
+	-- hangs `obj` back-references on them. So they are reached the one way
+	-- that is left: the status text IS a child of the status bar, and the
+	-- close button is the other templated Button under the frame.
+	--
+	-- Worth saying plainly because the first pass read widget.statusbg, found
+	-- nil, and did nothing at all - silently, since there is no error in
+	-- skipping a part that is not there.
+	local statusbg = widget.statustext and widget.statustext:GetParent()
+	if statusbg then
+		local sb = statusbg
+		if sb.SetBackdrop then pcall(sb.SetBackdrop, sb, nil) end
+		if not sb.__aetherPill then
+			sb.__aetherPill = Glass.CreatePill(sb, { fill = "glassSoft", edge = "glassEdge" })
+			sb.__aetherPill:SetPoint("TOPLEFT", sb, "TOPLEFT", 0, 0)
+			sb.__aetherPill:SetPoint("BOTTOMRIGHT", sb, "BOTTOMRIGHT", 0, 0)
+			sb.__aetherPill:SetFrameLevel(math.max(0, (sb:GetFrameLevel() or 1) - 1))
+		end
+		sb.__aetherPill:ApplySkin("glassSoft", "glassEdge")
+	end
+	if widget.statustext then
+		Reskin.Font(widget.statustext, "tiny")
+		W.Color(widget.statustext, Palette.c.textDim)
+	end
+
+	-- THE SIZE GRIP. Three little textures out of the tooltip border atlas,
+	-- children of the sizer frame rather than regions of the window - so they
+	-- survive the strip and read as a scrap of somebody else's art in the
+	-- corner. Re-tinted rather than removed: it is the only thing telling you
+	-- the window resizes at all.
+	for _, key in ipairs({ "sizer_se", "sizer_s", "sizer_e" }) do
+		local sizer = widget[key]
+		if sizer and sizer.GetRegions then
+			for _, region in ipairs({ sizer:GetRegions() }) do
+				if region.SetVertexColor then
+					W.Tint(region, Palette.c.textFaint, 0.55)
+				end
+			end
+		end
+	end
+
+	-- The Close button, which is an ordinary templated button and the last
+	-- red thing on the window. Found by elimination rather than by name:
+	-- the status bar is a Button too, and the sizers are not.
+	if frame.GetChildren then
+		for _, child in ipairs({ frame:GetChildren() }) do
+			if child ~= statusbg and child.GetObjectType
+				and child:GetObjectType() == "Button" and child.GetFontString
+				and child:GetFontString() then
+				DressButton({ frame = child })
+			end
+		end
+	end
+
+	DressContainer(widget, { corner = 16 })
+end
+
 --- A button, a check box, a slider: the three the panel is mostly made of.
-local function DressButton(widget)
+DressButton = function(widget)
 	local frame = widget.frame
 	if not frame or frame.__aetherSkin then return end
 	Reskin.Button(frame, "qlBtnAlt")
@@ -214,11 +316,19 @@ end
 
 --- What each widget type gets. The list IS the policy.
 local BY_TYPE = {
-	Frame          = function(w) DressContainer(w, { corner = 16 }) end,
-	Window         = function(w) DressContainer(w, { corner = 16 }) end,
+	Frame          = DressWindow,
+	Window         = DressWindow,
 	InlineGroup    = function(w) DressContainer(w, { corner = 10 }) end,
 	SimpleGroup    = function() end,   -- no art of its own
-	ScrollFrame    = function() end,
+	-- ITS SCROLL BAR, which is a UIPanelScrollBarTemplate and arrives with
+	-- Blizzard's arrows on it. Only visible once the window is resized small
+	-- enough to need one, which is exactly when nobody is looking for it.
+	ScrollFrame    = function(w)
+		if w.scrollbar then
+			w.scrollbar.__aetherStore = w.scrollbar.__aetherStore or {}
+			Reskin.ScrollBar(w.scrollbar, w.scrollbar.__aetherStore)
+		end
+	end,
 	TabGroup       = function(w) DressContainer(w, { corner = 10 }) end,
 	TreeGroup      = DressTree,
 	Button         = DressButton,
