@@ -506,6 +506,7 @@ local function newFontString(owner, layer)
 		self.__font = nil
 	end
 	function f:GetFontObject() return self.__fontObject end
+
 	function f:SetText(s) self.__text = s end
 	function f:GetText() return self.__text end
 	function f:GetName() return self.__name end
@@ -785,6 +786,53 @@ function CreateFrame(kind, name, parent, template)
 	function f:UnregisterAllEvents() self.__events = {} end
 	function f:IsEventRegistered(e) return self.__events[e] end
 
+	--- BACKDROPS. Real on every frame that inherits BackdropTemplate, which is
+	--  most of what the Ace libraries build - a settings panel is backdrops all
+	--  the way down. Recorded rather than swallowed: "did the stone border come
+	--  off" is the whole question a reskin has to answer, and a no-op cannot be
+	--  asked it.
+	function f:SetBackdrop(bd) self.__backdrop = bd end
+	function f:GetBackdrop() return self.__backdrop end
+	function f:SetBackdropColor(r, g, b, a) self.__backdropColor = { r, g, b, a } end
+	function f:GetBackdropColor()
+		local c = self.__backdropColor
+		if not c then return nil end
+		return c[1], c[2], c[3], c[4]
+	end
+	function f:SetBackdropBorderColor(r, g, b, a)
+		self.__backdropBorder = { r, g, b, a }
+	end
+	function f:GetBackdropBorderColor()
+		local c = self.__backdropBorder
+		if not c then return nil end
+		return c[1], c[2], c[3], c[4]
+	end
+
+	--- A BUTTON'S OWN LABEL. SetText on a Button makes one and GetFontString
+	--  hands it back - the client does this for every button with text on it,
+	--  and the mock only bolted it onto the handful of Blizzard buttons that
+	--  were being skinned by name. Anything building its own buttons, which is
+	--  every options library there is, fell straight through it.
+	function f:GetFontString() return self.__fontString end
+	function f:SetFontString(fs) self.__fontString = fs end
+
+	--- A BUTTON'S OWN LABEL. The client makes one for any button given text,
+	--  and hands it back through GetFontString. The mock bolted that onto the
+	--  handful of Blizzard buttons being skinned by name, so anything building
+	--  its own - which is every options library there is - fell through it.
+	function f:GetFontString() return self.__fontString end
+	function f:SetFontString(fs) self.__fontString = fs end
+	local plainSetTextFrame = f.SetText
+	function f:SetText(s)
+		if plainSetTextFrame then plainSetTextFrame(self, s) else self.__text = s end
+		if self.__kind == "Button" or self.__kind == "CheckButton" then
+			if not self.__fontString and self.CreateFontString then
+				self.__fontString = self:CreateFontString(nil, "OVERLAY")
+			end
+			if self.__fontString then self.__fontString:SetText(s) end
+		end
+	end
+
 	function f:SetScript(s, fn) self.__scripts[s] = fn end
 	function f:GetScript(s) return self.__scripts[s] end
 
@@ -936,7 +984,20 @@ function CreateFrame(kind, name, parent, template)
 			if type(t) == "string" then self.__thumb.__tex = t else self.__thumb = t end
 		end
 		function f:SetOrientation() end
-		function f:SetValueStep() end
+		function f:SetValueStep(v) self.__step = v end
+		-- A SLIDER HAS A VALUE, and a range. Obvious, and missing: the
+		-- only sliders here were scroll bars, which are driven through
+		-- their parent scroll frame - so nothing had ever asked one what
+		-- it was set to, and a settings panel is mostly sliders.
+		function f:SetMinMaxValues(a, b) self.__min, self.__max = a, b end
+		function f:GetMinMaxValues() return self.__min, self.__max end
+		function f:SetValue(v)
+			self.__value = v
+			local fn = self.__scripts and self.__scripts.OnValueChanged
+			if fn then fn(self, v) end
+		end
+		function f:GetValue() return self.__value or 0 end
+		function f:SetObeyStepOnDrag(v) self.__obeyStep = v end
 	end
 
 	-- Same for a check button's tick. It exists whether or not the box is
@@ -990,6 +1051,13 @@ function CreateFrame(kind, name, parent, template)
 	-- broken filter pass.
 	if kind == "EditBox" then
 		f.__text = ""
+		-- An edit box is a FontInstance: it justifies its own text, and the
+		-- client gives it these. Missing here because nothing had ever styled
+		-- one that was not ours - a settings panel is full of them.
+		function f:SetJustifyH(j) self.__justifyH = j end
+		function f:GetJustifyH() return self.__justifyH end
+		function f:SetJustifyV(j) self.__justifyV = j end
+		function f:GetJustifyV() return self.__justifyV end
 		function f:SetText(s)
 			self.__text = s or ""
 			local fn = self.__scripts.OnTextChanged
@@ -1079,6 +1147,16 @@ function CreateFrame(kind, name, parent, template)
 		f.UpdateTooltip = function(self) ContainerFrameItemButton_OnEnter(self) end
 		f:SetScript("OnEnter", function(self) ContainerFrameItemButton_OnEnter(self) end)
 		f:SetScript("OnLeave", function() ContainerFrameItemButton_OnLeave() end)
+	end
+
+	-- A TEMPLATED BUTTON ARRIVES WITH ITS LABEL. UIPanelButtonTemplate and
+	-- its relatives define a ButtonText, so the client hands back a button
+	-- whose GetFontString already answers - before anybody calls SetText.
+	-- Every options library builds buttons that way and reaches straight
+	-- for the string, which the mock answered with nil.
+	if type(template) == "string" and template:find("Button")
+		and (kind == "Button" or kind == "CheckButton") then
+		f.__fontString = f:CreateFontString(nil, "OVERLAY")
 	end
 
 	return f
@@ -4800,6 +4878,17 @@ load("Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua")
 -- rather than the one AceConfigDialog actually calls. Only the core file - the
 -- shipped widgets are AceConfigDialog's business, not ours.
 load("Libs/AceGUI-3.0/AceGUI-3.0.lua")
+-- And the widgets our options panel is actually built from. Real ones, so the
+-- skinning module meets the frames and field names the library really makes
+-- rather than a set invented to match it.
+for _, w in ipairs({
+	"Widget-Button", "Widget-CheckBox", "Widget-Slider", "Widget-EditBox",
+	"Widget-Heading", "Widget-Label",
+	"Container-SimpleGroup", "Container-InlineGroup", "Container-TreeGroup",
+	"Container-Frame", "Container-ScrollFrame",
+}) do
+	load("Libs/AceGUI-3.0/widgets/AceGUI" .. w .. ".lua")
+end
 
 -- LibClassicCasterino bails on any non-Classic client, and the mock is not one,
 -- so stand in for it. The point under test is our wiring, not the library.
@@ -6017,7 +6106,7 @@ local FILES = {
 	"Modules/Nameplates.lua",
 	"Modules/Popups.lua",
 	"Modules/Fonts.lua",
-	"Modules/Menus.lua",
+	"Modules/Menus.lua", "Modules/OptionsSkin.lua",
 	"Modules/Panels.lua",
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
@@ -12073,6 +12162,105 @@ section("skins: the picker is four chips, not four words", function()
 
 	w:SetList(values)
 	A.db.profile.skin = "midnight" A:Restyle()
+end)
+
+section("options: our own settings, in our own interface", function()
+	local M = A:GetModule("optionsskin")
+	local gui = LibStub("AceGUI-3.0", true)
+	check(M and M.enabled, "options skin enabled"
+		.. (M and M.lastError and ("  -- " .. M.lastError) or ""))
+	check(not M.absent, "and it found the library it dresses")
+
+	-- ONE HOOK, DISPATCHED BY TYPE. Every control in the panel comes out of
+	-- AceGUI:Create, so a widget made right now - after the module enabled -
+	-- arrives dressed without anything naming it.
+	local btn = gui:Create("Button")
+	check(btn.frame.__aetherSkin ~= nil,
+		"a button comes back wearing our glass rather than Blizzard's red")
+
+	local grp = gui:Create("InlineGroup")
+	check(grp.frame.__aetherPanel ~= nil and grp.frame.__aetherStripped ~= nil,
+		"a group box has its border art off and glass behind")
+
+	local tree = gui:Create("TreeGroup")
+	check(tree.border and tree.border.__aetherPanel ~= nil,
+		"the category list gets glass")
+	check(tree.treeframe and tree.treeframe.__aetherPanel ~= nil,
+		"and so does the list beside it - two frames, and dressing one of them"
+		.. " leaves a stone edge down the middle")
+
+	-- A SLIDER IS THREE PIECES OF ART. The groove, the thumb and the number box
+	-- under it, and leaving any one alone is what makes a control look half done.
+	local sl = gui:Create("Slider")
+	check(sl.slider.__aetherTrack ~= nil, "a slider gets a hairline groove")
+	local thumb = sl.slider:GetThumbTexture()
+	check(tostring(thumb.__tex):find("AetherUI", 1, true),
+		"and our thumb on it (" .. tostring(thumb.__tex) .. ")")
+	check(sl.editbox.__aetherPill ~= nil,
+		"with the number box under it in glass too")
+
+	-- The check box keeps its TICK and loses its box. A tick taken off with the
+	-- rest never looks checked, whatever the state says.
+	local cb = gui:Create("CheckBox")
+	local r = select(1, cb.check:GetVertexColor())
+	check(math.abs(r - A.Palette.c.accent[1]) < 0.001,
+		"a check box keeps its tick, in the accent (" ..
+		string.format("%.2f", r) .. ")")
+
+	local hd = gui:Create("Heading")
+	check(tostring(hd.left.__tex):find("AetherUI", 1, true),
+		"a heading rule is ours (" .. tostring(hd.left.__tex) .. ")")
+
+	-- STRIPPED ONCE. AceGUI pools its widgets, so this same frame comes back for
+	-- the next panel that needs one - and stripping again would record our own
+	-- emptied regions as the originals, which makes switching the module off a
+	-- no-op that looks like it worked.
+	local store = grp.frame.__aetherStripped
+	local n = 0
+	for _ in pairs(store) do n = n + 1 end
+	M.Dress(grp)
+	M.Dress(grp)
+	local after = 0
+	for _ in pairs(grp.frame.__aetherStripped) do after = after + 1 end
+	check(grp.frame.__aetherStripped == store and after == n,
+		"dressing again keeps the first recording rather than re-taking it (" ..
+		after .. " of " .. n .. ")")
+
+	-- A TYPE WE DO NOT DRESS IS LEFT ALONE, not guessed at.
+	A.lastFailure = nil
+	local ok = pcall(M.Dress, { type = "SomethingElse", frame = CreateFrame("Frame") })
+	check(ok and A.lastFailure == nil,
+		"a widget type this does not know is passed over in silence")
+
+	-- AND A DRESSER THAT ERRORS DOES NOT TAKE THE PANEL WITH IT. These are
+	-- somebody else's frames, built by a library that changes shape between
+	-- versions, and a settings panel that errors is worse than one that looks
+	-- like Blizzard's.
+	A.lastFailure = nil
+	ok = pcall(M.Dress, { type = "Slider" })   -- no slider, no editbox, no frame
+	check(ok, "a dresser handed a widget with nothing on it raises nothing")
+end)
+
+section("options: and hands Blizzard's panel back", function()
+	local M = A:GetModule("optionsskin")
+	local gui = LibStub("AceGUI-3.0", true)
+
+	local grp = gui:Create("InlineGroup")
+	check(grp.frame.__aetherStripped ~= nil, "dressed to begin with")
+
+	A:SetModuleEnabled("optionsskin", false)
+	check(grp.frame.__aetherStripped == nil,
+		"switching off puts the client's own regions back")
+
+	-- And the hook comes off with it: a widget built while the module is off is
+	-- Blizzard's, or "off" only means "off for the ones already made".
+	local after = gui:Create("InlineGroup")
+	check(after.frame.__aetherStripped == nil and after.frame.__aetherPanel == nil,
+		"and one built afterwards is untouched")
+
+	A:SetModuleEnabled("optionsskin", true)
+	local back = gui:Create("InlineGroup")
+	check(back.frame.__aetherPanel ~= nil, "and ours again on the way back")
 end)
 
 print("== options tree ==")

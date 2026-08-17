@@ -39,6 +39,7 @@ Modules\Nameplates.lua
 Modules\Popups.lua
 Modules\Fonts.lua
 Modules\Menus.lua
+Modules\OptionsSkin.lua
 Modules\Panels.lua
 Modules\Timers.lua
 Modules\Zen.lua

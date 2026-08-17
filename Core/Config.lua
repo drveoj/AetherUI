@@ -496,6 +496,13 @@ Config.defaults = {
 			-- The client's own right-click menus. One hook into Blizzard_Menu
 			-- rather than a list of frames, so it covers every menu the game
 			-- opens - including ones added by a later patch.
+			-- Our own settings panel, in our own interface. One hook into
+			-- AceGUI:Create rather than a list of frames, so it covers every
+			-- control the panel is built from.
+			optionsskin = {
+				enabled = true,
+			},
+
 			menus = {
 				enabled = true,
 			},
