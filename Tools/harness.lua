@@ -12240,6 +12240,30 @@ section("options: our own settings, in our own interface", function()
 	check(panel:GetFrameStrata() == grp.frame:GetFrameStrata(),
 		"and in the same strata, because level only orders frames within one")
 
+	-- AND IT GOES WHEN THE FRAME GOES. This is what a child gave for free and a
+	-- sibling does not, and it is not a detail: AceGUI hides a widget by hiding
+	-- its frame and keeps it in a pool, so glass that did not follow stayed on
+	-- screen for the rest of the session - anchored to a hidden frame, which
+	-- keeps its last size, so two of them covered the entire view.
+	grp.frame:Show()
+	check(panel:IsShown(), "the glass is up while the group is")
+	grp.frame:Hide()
+	check(not panel:IsShown(),
+		"and goes with it - a sibling has to be told, where a child never did")
+	grp.frame:Show()
+	check(panel:IsShown(), "and comes back with it")
+
+	-- AND IT STARTS AS THE FRAME IS. AceGUI builds its widgets HIDDEN and shows
+	-- them when a page wants one, so glass that came up shown regardless would
+	-- be on screen from the moment the panel was first opened, whether or not
+	-- anything was using it.
+	local hidden = gui:Create("InlineGroup")
+	hidden.frame:Hide()
+	hidden.frame.__aetherPanel = nil        -- dress it again from scratch
+	M.Dress(hidden)
+	check(not hidden.frame.__aetherPanel:IsShown(),
+		"a group dressed while hidden gets glass that is hidden too")
+
 	-- A BUTTON'S ART IS NOT ALWAYS A STATE TEXTURE. UIPanelButtonTemplate draws
 	-- itself with three BACKGROUND regions - Left, Middle, Right - and clearing
 	-- the normal/pushed/highlight set never touched them, so a button came back

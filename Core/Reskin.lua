@@ -311,6 +311,30 @@ function Reskin.Panel(frame, opts)
 	end
 
 	frame.__aetherPanel = panel
+
+	-- A SIBLING DOES NOT HIDE WITH THE FRAME, and a child does.
+	--
+	-- That is the whole cost of putting the glass behind rather than inside,
+	-- and it is not a detail: AceGUI hides a widget by hiding its frame and
+	-- keeps it in a pool, so glass that did not go with it stayed on screen
+	-- for the rest of the session - anchored to a hidden frame, which keeps
+	-- its last size, so two of them covered the entire view.
+	--
+	-- Hooked once. OnHide fires when the frame is hidden OR an ancestor is,
+	-- which is the case that matters: a group inside a window that closes.
+	if opts.behind then
+		panel:SetShown(frame.IsShown and frame:IsShown() or false)
+		if not frame.__aetherPanelFollows and frame.HookScript then
+			frame.__aetherPanelFollows = true
+			frame:HookScript("OnShow", function(self)
+				if self.__aetherPanel then self.__aetherPanel:Show() end
+			end)
+			frame:HookScript("OnHide", function(self)
+				if self.__aetherPanel then self.__aetherPanel:Hide() end
+			end)
+		end
+	end
+
 	return panel
 end
 
