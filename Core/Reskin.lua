@@ -359,12 +359,12 @@ function Reskin.Button(btn, style)
 	--
 	-- Keeping the LABEL, which is a region of the button like the art around
 	-- it: a plain strip takes the words off with the stone.
+	-- Cleared every pass, recorded on the first: ClearRegions keeps its own
+	-- record per frame, and a button handed back out of a pool has had its
+	-- art put back on it.
 	btn.__aetherArt = btn.__aetherArt or {}
-	if not btn.__aetherStripped then
-		btn.__aetherStripped = true
-		local keep = label and { [label] = true } or nil
-		ClearRegions(btn, btn.__aetherArt, keep)
-	end
+	btn.__aetherStripped = true
+	ClearRegions(btn, btn.__aetherArt, label and { [label] = true } or nil)
 	local skin = A.Widgets.SkinButton(btn, { label = label })
 
 	if label then

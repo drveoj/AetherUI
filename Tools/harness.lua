@@ -12217,8 +12217,16 @@ section("options: our own settings, in our own interface", function()
 		"a button comes back wearing our glass rather than Blizzard's red")
 
 	local grp = gui:Create("InlineGroup")
-	check(grp.frame.__aetherPanel ~= nil and grp.frame.__aetherStripped ~= nil,
-		"a group box has its border art off and glass behind")
+
+	-- THE BOX YOU CAN SEE IS NOT THE WIDGET'S FRAME. An InlineGroup's `frame` is
+	-- invisible chrome; what is drawn is a CHILD carrying a BackdropTemplate,
+	-- and the group's contents are children of THAT. AceGUI keeps it as a local,
+	-- so the one way to it is the content's parent - and dressing `frame`
+	-- instead stripped nothing anybody could see.
+	local box = grp.content:GetParent()
+	check(box ~= grp.frame, "the drawn box is not the widget's own frame")
+	check(box.__aetherPanel ~= nil and box.__aetherStripped ~= nil,
+		"and it is the one that gets stripped and glassed")
 
 	-- AND ITS CONTENTS ABOVE THE GLASS. Reskin.Panel puts a panel a level below
 	-- its frame, which is right for a client window whose insides are REGIONS of
@@ -12231,13 +12239,13 @@ section("options: our own settings, in our own interface", function()
 	-- SIBLING of everything in the group - and the draw order then rests on
 	-- level, strata and creation order together, which is three things to keep
 	-- right instead of none.
-	local panel = grp.frame.__aetherPanel
-	check(panel:GetParent() == grp.frame:GetParent(),
-		"the glass is a sibling of the group, not a child of it")
-	check(panel:GetFrameLevel() < grp.frame:GetFrameLevel(),
-		"one level below it, so nothing the group holds can end up underneath ("
-		.. panel:GetFrameLevel() .. " vs " .. grp.frame:GetFrameLevel() .. ")")
-	check(panel:GetFrameStrata() == grp.frame:GetFrameStrata(),
+	local panel = box.__aetherPanel
+	check(panel:GetParent() == box:GetParent(),
+		"the glass is a sibling of the box, not a child of it")
+	check(panel:GetFrameLevel() < box:GetFrameLevel(),
+		"one level below it, so nothing the box holds can end up underneath ("
+		.. panel:GetFrameLevel() .. " vs " .. box:GetFrameLevel() .. ")")
+	check(panel:GetFrameStrata() == box:GetFrameStrata(),
 		"and in the same strata, because level only orders frames within one")
 
 	-- AND IT GOES WHEN THE FRAME GOES. This is what a child gave for free and a
@@ -12245,12 +12253,12 @@ section("options: our own settings, in our own interface", function()
 	-- its frame and keeps it in a pool, so glass that did not follow stayed on
 	-- screen for the rest of the session - anchored to a hidden frame, which
 	-- keeps its last size, so two of them covered the entire view.
-	grp.frame:Show()
-	check(panel:IsShown(), "the glass is up while the group is")
-	grp.frame:Hide()
+	box:Show()
+	check(panel:IsShown(), "the glass is up while the box is")
+	box:Hide()
 	check(not panel:IsShown(),
 		"and goes with it - a sibling has to be told, where a child never did")
-	grp.frame:Show()
+	box:Show()
 	check(panel:IsShown(), "and comes back with it")
 
 	-- AND IT STARTS AS THE FRAME IS. AceGUI builds its widgets HIDDEN and shows
@@ -12258,10 +12266,11 @@ section("options: our own settings, in our own interface", function()
 	-- be on screen from the moment the panel was first opened, whether or not
 	-- anything was using it.
 	local hidden = gui:Create("InlineGroup")
-	hidden.frame:Hide()
-	hidden.frame.__aetherPanel = nil        -- dress it again from scratch
+	local hbox = hidden.content:GetParent()
+	hbox:Hide()
+	hbox.__aetherPanel = nil                -- dress it again from scratch
 	M.Dress(hidden)
-	check(not hidden.frame.__aetherPanel:IsShown(),
+	check(not hbox.__aetherPanel:IsShown(),
 		"a group dressed while hidden gets glass that is hidden too")
 
 	-- A BUTTON'S ART IS NOT ALWAYS A STATE TEXTURE. UIPanelButtonTemplate draws
@@ -12394,14 +12403,14 @@ section("options: our own settings, in our own interface", function()
 	-- the next panel that needs one - and stripping again would record our own
 	-- emptied regions as the originals, which makes switching the module off a
 	-- no-op that looks like it worked.
-	local store = grp.frame.__aetherStripped
+	local store = box.__aetherStripped
 	local n = 0
 	for _ in pairs(store) do n = n + 1 end
 	M.Dress(grp)
 	M.Dress(grp)
 	local after = 0
-	for _ in pairs(grp.frame.__aetherStripped) do after = after + 1 end
-	check(grp.frame.__aetherStripped == store and after == n,
+	for _ in pairs(box.__aetherStripped) do after = after + 1 end
+	check(box.__aetherStripped == store and after == n,
 		"dressing again keeps the first recording rather than re-taking it (" ..
 		after .. " of " .. n .. ")")
 
@@ -12425,21 +12434,24 @@ section("options: and hands Blizzard's panel back", function()
 	local gui = LibStub("AceGUI-3.0", true)
 
 	local grp = gui:Create("InlineGroup")
-	check(grp.frame.__aetherStripped ~= nil, "dressed to begin with")
+	local box = grp.content:GetParent()
+	check(box.__aetherStripped ~= nil, "dressed to begin with")
 
 	A:SetModuleEnabled("optionsskin", false)
-	check(grp.frame.__aetherStripped == nil,
+	check(box.__aetherStripped == nil,
 		"switching off puts the client's own regions back")
 
 	-- And the hook comes off with it: a widget built while the module is off is
 	-- Blizzard's, or "off" only means "off for the ones already made".
 	local after = gui:Create("InlineGroup")
-	check(after.frame.__aetherStripped == nil and after.frame.__aetherPanel == nil,
+	local abox = after.content:GetParent()
+	check(abox.__aetherStripped == nil and abox.__aetherPanel == nil,
 		"and one built afterwards is untouched")
 
 	A:SetModuleEnabled("optionsskin", true)
 	local back = gui:Create("InlineGroup")
-	check(back.frame.__aetherPanel ~= nil, "and ours again on the way back")
+	check(back.content:GetParent().__aetherPanel ~= nil,
+		"and ours again on the way back")
 end)
 
 print("== options tree ==")

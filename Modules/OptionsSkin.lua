@@ -61,8 +61,28 @@ local DressButton
 -- ---------------------------------------------------------------------------
 
 --- Glass behind a container, in place of its own border art.
-local function DressContainer(widget, opts)
+--- THE BOX YOU CAN SEE IS NOT ALWAYS THE WIDGET'S FRAME.
+--
+--  An InlineGroup's `frame` is invisible chrome. What is drawn - the dark
+--  fill and the thin stone border - is a CHILD frame carrying a
+--  BackdropTemplate, and the group's contents are children of THAT. AceGUI
+--  keeps it as a local and never puts it on the widget, so there is one way
+--  to reach it: it is the content's parent.
+--
+--  Dressing `frame` instead stripped nothing anybody could see and put glass
+--  behind a box that was still drawing its own.
+local function VisibleBox(widget)
 	local frame = widget.frame
+	local content = widget.content
+	if content and content.GetParent then
+		local host = content:GetParent()
+		if host and host ~= frame then return host end
+	end
+	return frame
+end
+
+local function DressContainer(widget, opts)
+	local frame = VisibleBox(widget)
 	if not frame then return end
 
 	-- BEHIND, always, for these. An Ace container keeps its contents in a
@@ -73,10 +93,16 @@ local function DressContainer(widget, opts)
 	opts = opts or {}
 	opts.behind = true
 
-	if not frame.__aetherStripped then
-		frame.__aetherStripped = {}
-		Reskin.Strip(frame, frame.__aetherStripped)
-	end
+	-- STRIPPED ON EVERY PASS, recorded on the first.
+	--
+	-- ClearRegions keeps its record per frame and only takes it once, so
+	-- calling this again is cheap and correct - and it has to be called
+	-- again, because a pooled widget goes back through OnAcquire and Ace
+	-- puts its backdrop colours back. Guarding the CLEAR as well as the
+	-- recording is what let the stone box return the second time a page was
+	-- opened.
+	frame.__aetherStripped = frame.__aetherStripped or {}
+	Reskin.Strip(frame, frame.__aetherStripped)
 	local panel = Reskin.Panel(frame, opts)
 
 	-- THE CONTENT GOES ABOVE THE GLASS, and it has to be said explicitly.
@@ -470,8 +496,13 @@ function OS:OnDisable()
 	-- The art back. Only what we recorded, and only once - Restore empties the
 	-- store, so a second pass would put nothing back over the top of nothing.
 	for widget in pairs(dressed) do
-		for _, part in ipairs({ widget.frame, widget.border, widget.treeframe,
-			widget.editbox }) do
+		-- The DRAWN box among them, which for a group is not the widget's frame.
+		-- Undressing the frame and leaving the box glassed is how "off" leaves
+		-- half the panel ours.
+		local box = widget.content and widget.content.GetParent
+			and widget.content:GetParent()
+		for _, part in ipairs({ widget.frame, box, widget.border,
+			widget.treeframe, widget.editbox }) do
 			if part and part.__aetherStripped then
 				Reskin.Restore(part.__aetherStripped)
 				part.__aetherStripped = nil
