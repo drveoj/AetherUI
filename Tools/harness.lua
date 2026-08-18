@@ -2009,9 +2009,14 @@ local function tooltipLines(tip)
 	--- Driven by GUID rather than by token. This is how a SCANNING tooltip is
 	--  filled - SetUnit on one that is not the cursor's does not reliably lay
 	--  its lines out, which is why every addon that reads a title uses this.
-	function tip:SetHyperlink(link)
+		function tip:SetHyperlink(link)
 		local guid = type(link) == "string" and link:match("^unit:(.+)$")
 		if not guid then return end
+		-- COUNTED. The title cache exists so that every Beverage Merchant
+		-- in the world is scanned once rather than once per plate, and a
+		-- cache that never hits looks identical on screen to one that
+		-- does. This is the only way to tell them apart.
+		_G.__titleScans = (_G.__titleScans or 0) + 1
 		local d = _G.__unitForGUID(guid)
 		if not d then return end
 		-- The route that actually fills a scanner, so it goes round the guard.
@@ -6209,10 +6214,39 @@ function UnitInParty(u) return units[u] and units[u].inParty or false end
 
 -- A GUID per unit, and a way back. Anything that reads a tooltip by hyperlink
 -- goes through one of these rather than through the token.
+--- A GUID IN THE CLIENT'S OWN SHAPE.
+--
+--  Creature-0-serverID-instanceID-zoneUID-ID-spawnUID. Two things matter
+--  in it and this mock used to carry neither: a TYPE, which is Pet for a
+--  hunter's companion and Creature for everything else, and an ID which is
+--  per CREATURE KIND and shared by every one of them.
+--
+--  It was Creature-0-0-0-0-<name>. With no type and no id, code that keyed
+--  a cache off the NAME looked exactly as correct as code that keyed off
+--  the creature - and a tamed Dire Mottled Boar put its owner's name under
+--  every wild one in the zone.
+local guidSeq = 0
+local npcIDs, nextNpcID = {}, 400
+
+local function NpcIdFor(name)
+	name = tostring(name or "?")
+	if not npcIDs[name] then
+		nextNpcID = nextNpcID + 1
+		npcIDs[name] = nextNpcID
+	end
+	return npcIDs[name]
+end
+
 function UnitGUID(u)
 	local d = units[u]
 	if not d then return nil end
-	d.__guid = d.__guid or ("Creature-0-0-0-0-" .. tostring(d.name or "?"))
+	if not d.__guid then
+		guidSeq = guidSeq + 1
+		-- A tamed boar and a wild one share the ID and differ in type,
+		-- which is the whole of the case that broke.
+		d.__guid = string.format("%s-0-970-0-11-%d-%08X",
+			d.guidType or "Creature", d.npcID or NpcIdFor(d.name), guidSeq)
+	end
 	return d.__guid
 end
 
@@ -27763,6 +27797,85 @@ section("party: a diagnostic that answers the question", function()
 	fire("RAID_TARGET_UPDATE")
 end)
 
+section("nameplates: a pet's title is not every boar's title", function()
+	local NP = A:GetModule("nameplates")
+
+	-- THE BUG, EXACTLY. Dismiss a hunter's Dire Mottled Boar, target a wild
+	-- Dire Mottled Boar, and the plate reads "<Ifindu's Pet>" - because the
+	-- scanned title was filed under the creature's NAME, and those two share a
+	-- name to the letter.
+	--
+	-- The GUID is what tells them apart: a pet is type Pet, a mob is type
+	-- Creature, and both carry an id that is per creature KIND - so the cache
+	-- still answers once for every Beverage Merchant in the world.
+	__spawnPlate("nameplate7", {
+		exists = true, name = "Dire Mottled Boar", level = 10, reaction = 4,
+		hp = 300, hpMax = 420, creature = "Beast",
+		guidType = "Pet", title = "Ifindu's Pet",
+	})
+	local pet = NP.byUnit.nameplate7
+	check(pet ~= nil, "the pet's plate is up")
+	check(pet and pet.guild and pet.guild:GetText() and
+		pet.guild:GetText():find("Ifindu", 1, true) ~= nil,
+		"and it says whose pet it is (" ..
+		tostring(pet and pet.guild and pet.guild:GetText()) .. ")")
+	__despawnPlate("nameplate7")
+
+	-- Now the wild one. Same name, same species, no owner.
+	-- NEUTRAL, like the one in the report. A hostile mob is drawn as a plate
+	-- and has no subtitle line at all, so it could not show the bug however
+	-- badly the cache behaved - which is exactly what the first version of
+	-- this check did, and it passed against every mutation.
+	--
+	-- Reaction 4 and a title is what puts a unit in the NAME form, which is
+	-- the form that has somewhere to print one.
+	__spawnPlate("nameplate8", {
+		exists = true, name = "Dire Mottled Boar", level = 10, reaction = 4,
+		hp = 300, hpMax = 420, creature = "Beast",
+	})
+	local wild = NP.byUnit.nameplate8
+	check(wild ~= nil, "the wild one's plate is up")
+	local sub = wild and wild.guild and wild.guild:IsShown()
+		and wild.guild:GetText() or nil
+	check(sub == nil or sub:find("Ifindu", 1, true) == nil,
+		"and it does NOT inherit the pet's owner (" .. tostring(sub) .. ")")
+	__despawnPlate("nameplate8")
+
+	-- AND TWO HUNTERS WITH THE SAME SPECIES. A pet's title is its OWNER'S
+	-- name, so the creature id is the wrong key for one even against another
+	-- pet - both boars are the same creature and the answers differ. Per
+	-- spawn is the only key that is true for a pet.
+	__spawnPlate("nameplate7", {
+		exists = true, name = "Dire Mottled Boar", level = 10, reaction = 4,
+		hp = 300, hpMax = 420, creature = "Beast",
+		guidType = "Pet", title = "Grimtusk's Pet",
+	})
+	local other = NP.byUnit.nameplate7
+	local osub = other and other.guild and other.guild:GetText() or nil
+	check(osub and osub:find("Grimtusk", 1, true) ~= nil,
+		"another hunter's boar says ITS owner, not the first one's (" ..
+		tostring(osub) .. ")")
+	__despawnPlate("nameplate7")
+
+	-- AND THE CACHE STILL DOES ITS JOB. Two of the same creature, different
+	-- spawns: scanned once between them. Keying by spawn would be correct
+	-- and useless - every mob in the zone rescanned on every plate, which
+	-- looks identical on screen and is the reason this cache exists.
+	_G.__titleScans = 0
+	__spawnPlate("nameplate6", {
+		exists = true, name = "Beverage Merchant", level = 30, reaction = 4,
+		hp = 800, hpMax = 800, creature = "Humanoid", title = "Drink Vendor",
+	})
+	__despawnPlate("nameplate6")
+	__spawnPlate("nameplate6", {
+		exists = true, name = "Beverage Merchant", level = 30, reaction = 4,
+		hp = 800, hpMax = 800, creature = "Humanoid", title = "Drink Vendor",
+	})
+	check(_G.__titleScans == 1,
+		"two of the same merchant are scanned once between them (" ..
+		tostring(_G.__titleScans) .. " scans)")
+	__despawnPlate("nameplate6")
+end)
 section("decorators: a mark on a mob is a mark on its nameplate", function()
 	local NP = A:GetModule("nameplates")
 

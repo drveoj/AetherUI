@@ -112,6 +112,30 @@ local function IsLevelLine(text)
 	return text:lower():match(pattern) ~= nil
 end
 
+--- What to file a scanned title under.
+--
+--  NOT THE NAME. A hunter's boar and a wild boar of the same species share
+--  a name exactly, and a pet's title is "<Somebody's Pet>" - so the first
+--  tamed one scanned put its owner's name under every wild animal of that
+--  species for the rest of the session. Which is what happened.
+--
+--  The GUID carries what was actually wanted. Creature-0-server-instance-
+--  zone-ID-spawn: the TYPE tells a pet from a mob, and the ID is per
+--  creature kind, so every Beverage Merchant in the world still shares one
+--  answer and is scanned once.
+--
+--  A PET IS KEYED BY ITS WHOLE GUID, because its title is its OWNER'S name:
+--  two hunters with the same species of boar share the type and the id and
+--  have different titles. Per spawn is the only key that is true for those.
+local function TitleKey(guid)
+	if not guid then return nil end
+	local kind, _, _, _, _, id = strsplit("-", guid)
+	if not kind then return guid end
+	if kind == "Pet" then return guid end
+	if not id then return guid end
+	return kind .. ":" .. id
+end
+
 local function NpcTitle(unit)
 	if not unit then return nil end
 	if UnitIsPlayer and UnitIsPlayer(unit) then return nil end
@@ -119,11 +143,13 @@ local function NpcTitle(unit)
 	local name = UnitName(unit)
 	if not name then return nil end
 
-	local seen = titleCache[name]
-	if seen ~= nil then return seen or nil end
-
+	-- THE GUID FIRST, because the cache is keyed off it.
 	local guid = UnitGUID and UnitGUID(unit)
 	if not guid then return nil end
+	local key = TitleKey(guid)
+
+	local seen = titleCache[key]
+	if seen ~= nil then return seen or nil end
 
 	if not scanner then
 		scanner = CreateFrame("GameTooltip", ADDON .. "PlateScanner", nil,
@@ -153,12 +179,12 @@ local function NpcTitle(unit)
 		title = text:match("^<(.+)>$") or text
 	end
 
-	A:Debug("plate title:", name, "line", 2 + shift, "->", tostring(text),
+	A:Debug("plate title:", name, key, "line", 2 + shift, "->", tostring(text),
 		"=>", tostring(title))
 
 	-- false, not nil: "asked and there is none" has to be tellable from "not
 	-- asked yet", or every plain mob is re-scanned on every plate it appears on.
-	titleCache[name] = title or false
+	titleCache[key] = title or false
 	return title
 end
 
