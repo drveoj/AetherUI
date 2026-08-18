@@ -489,6 +489,22 @@ function Player:PaintLegs(flight)
 	local f = self.frame
 	f.legs = f.legs or {}
 
+	-- THE TICKS ARE PLACED IN PIXELS, so they have to be placed again when
+	-- the bar changes width - and it does, by about forty, as the console
+	-- settles after it opens. Without this the boundary between two legs
+	-- sits wherever the bar used to end, which on a two-leg flight is a
+	-- mark claiming the stopover is somewhere it is not.
+	--
+	-- The flight is remembered rather than asked for: this fires from a
+	-- size change, which knows nothing about journeys.
+	f._legFlight = flight
+	if not f._legResize then
+		f._legResize = true
+		f.flight:HookScript("OnSizeChanged", function()
+			if f._legFlight then Player:PaintLegs(f._legFlight) end
+		end)
+	end
+
 	local legs = flight and flight.legs or {}
 	local n = 0
 

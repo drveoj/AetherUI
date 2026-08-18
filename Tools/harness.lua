@@ -10467,16 +10467,18 @@ end)
 section("panels: the Options window, part by part", function()
 	local PN = A:GetModule("panels")
 	local sp = _G.SettingsPanel
-	-- Shown, which is what dresses it: PN:Skin hooked its OnShow at enable.
+	-- SHOWN AND THEN RE-SKINNED, which is what happens in game: Skin runs
+	-- again on ADDON_LOADED and on PLAYER_ENTERING_WORLD, and a player can
+	-- have this window open across either.
 	--
-	-- NOT Show() FOLLOWED BY PN:Skin(). That pair - which happens in game,
-	-- because Skin runs again on ADDON_LOADED and PLAYER_ENTERING_WORLD -
-	-- moves the in-flight console's leg ticks by about 8%. Either call twice
-	-- is fine and the pair is not, and it is not any of the dressing added
-	-- with this window: every line of it was probed one at a time and the
-	-- failure survived all of them. Left alone rather than papered over -
-	-- see the commit that added this section.
+	-- That pair used to move the in-flight console's leg ticks by 8%, and the
+	-- cause turned out to be nothing to do with this window at all: the ticks
+	-- are placed in pixels off the flight bar's width, the bar settles about
+	-- forty units narrower after it opens, and nothing repainted them. Fixed
+	-- in Modules/IFEC/Player.lua. Kept here because this is the sequence that
+	-- found it.
 	sp:Show()
+	PN:Skin()
 
 	-- THE X IS ClosePanelButton. Every other window in the game names its X
 	-- CloseButton; this one uses that name for the ordinary button along the
@@ -26450,6 +26452,21 @@ section("ifec: the player region, on the flight's own axis", function()
 	local want = f.flight:XFor(Taxi.flight.legs[1].at)
 	check(math.abs((tx or 0) - want) < 0.01,
 		"at the second the first leg ends (" .. tostring(tx) .. " vs " .. want .. ")")
+
+	-- AND IT FOLLOWS THE BAR. The tick is placed in PIXELS off the bar's
+	-- width, and the bar does change width - it settles about forty units
+	-- narrower as the console opens, which was measured rather than guessed.
+	-- Nothing repainted the ticks when it did, so the boundary between two
+	-- legs sat wherever the bar used to end: a mark claiming the stopover is
+	-- somewhere it is not.
+	local wide = f.flight:GetWidth()
+	f.flight:SetWidth(wide * 0.75)
+	local _, _, _, moved = f.legs[1]:GetPoint()
+	local wantNarrow = f.flight:XFor(Taxi.flight.legs[1].at)
+	check(math.abs((moved or 0) - wantNarrow) < 0.01,
+		"and moves with the bar when it is resized under it (" ..
+		tostring(moved) .. " vs " .. wantNarrow .. ")")
+	f.flight:SetWidth(wide)
 
 	-- THE REGION GOES WITH THE FLIGHT. Landing takes it away and stops the
 	-- audio; nothing is left playing over somebody who has control back.
