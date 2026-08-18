@@ -1369,6 +1369,44 @@ function W.PointChevron(tex, edge, open)
 	if tex and tex.SetRotation then pcall(tex.SetRotation, tex, turns) end
 	return turns
 end
+--- Which screen edge a point belongs to.
+--
+--  BY FRACTION OF THE SCREEN, not by distance in pixels. On a wide monitor
+--  the middle of the left-hand side is nearer the top and bottom edges in raw
+--  pixels than it is to the left one - a thousand across versus seven hundred
+--  up - and answering TOP for a point hard against the left side is nonsense
+--  a player would report as the drag being broken.
+--
+--  Shared by the Toolbox rail and the party dock handle. Two copies of a rule
+--  this easy to get subtly wrong is one copy too many.
+function W.NearestEdge(x, y, w, h)
+	w = w or (UIParent:GetWidth() or 0)
+	h = h or (UIParent:GetHeight() or 0)
+	if w <= 0 or h <= 0 then return nil end
+
+	local fx, fy = x / w, y / h
+	local best, dist = "LEFT", fx
+	if (1 - fx) < dist then best, dist = "RIGHT", 1 - fx end
+	if fy < dist then best, dist = "BOTTOM", fy end
+	if (1 - fy) < dist then best, dist = "TOP", 1 - fy end
+	return best
+end
+
+--- Which HALF of that edge, as a slot number.
+--
+--  Two anchor points per edge - a quarter along and three quarters - so two
+--  things can share one side without either hunting for space. Slot 1 is the
+--  upper half of a side edge and the left half of a top or bottom one, which
+--  is the reading order in both directions.
+function W.EdgeSlot(edge, x, y, w, h)
+	w = w or (UIParent:GetWidth() or 0)
+	h = h or (UIParent:GetHeight() or 0)
+	if w <= 0 or h <= 0 then return 1 end
+	if edge == "LEFT" or edge == "RIGHT" then
+		return (y > h / 2) and 1 or 2
+	end
+	return (x < w / 2) and 1 or 2
+end
 --- Faint hairline used between stacked rows.
 function W.Divider(parent)
 	local t = parent:CreateTexture(nil, "ARTWORK")

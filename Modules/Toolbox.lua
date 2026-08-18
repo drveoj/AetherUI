@@ -646,17 +646,11 @@ end
 --
 --  Ties resolve to whichever comes first in EDGE_ORDER, because a comparison
 --  that has to be strict somewhere is better than one that is arbitrary.
+-- W.NearestEdge, which the party dock handle uses too. It answers nil on a
+-- screen with no size rather than guessing; this dock falls back to the one
+-- it is already on, which is the answer that changes nothing.
 function TB:NearestEdge(x, y, w, h)
-	w = w or UIParent:GetWidth() or 1
-	h = h or UIParent:GetHeight() or 1
-	if w <= 0 or h <= 0 then return self:Dock() end
-
-	local fx, fy = x / w, y / h
-	local best, dist = "LEFT", fx
-	if (1 - fx) < dist then best, dist = "RIGHT", 1 - fx end
-	if fy < dist then best, dist = "BOTTOM", fy end
-	if (1 - fy) < dist then best, dist = "TOP", 1 - fy end
-	return best
+	return W.NearestEdge(x, y, w, h) or self:Dock()
 end
 
 function TB:BuildGhosts()

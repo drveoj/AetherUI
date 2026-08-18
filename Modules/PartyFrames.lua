@@ -831,12 +831,66 @@ function PF:BuildHandle()
 	W.Tint(chev, A.Palette.c.text, 0.75)
 	h.chev = chev
 
+	-- DRAGGABLE WHILE THE FRAMES ARE UNLOCKED, which is how the Toolbox rail
+	-- re-docks and how everything else in this interface is moved. No second
+	-- gesture to learn: /aether unlock, drag it, lock again.
+	--
+	-- The preview is the handle ITSELF, moving to whichever of the eight
+	-- points the cursor is nearest as you drag. The Toolbox draws ghost
+	-- rectangles because its drawer is a quarter of the screen and you cannot
+	-- see where it would land; this is a tab the size of a postage stamp, and
+	-- watching it go there is a clearer answer than a rectangle saying it
+	-- will.
+	h:EnableMouse(true)
+	h:RegisterForDrag("LeftButton")
+
+	local function Stop()
+		h:SetScript("OnUpdate", nil)
+		PF._dragging = nil
+		if GameTooltip then GameTooltip:Hide() end
+	end
+
+	h:SetScript("OnDragStart", function()
+		-- Locked frames are locked. The same gate the rail uses, and the same
+		-- one that stops a stray click on a crowded screen re-docking it.
+		if not (A.Movers and A.Movers.unlocked) then return end
+		if InCombatLockdown and InCombatLockdown() then return end
+		PF._dragging = true
+		h:SetScript("OnUpdate", function()
+			-- The fight can start with the button still down, and re-docking
+			-- moves the party stack, which carries secure children. Drop the
+			-- drag rather than find out.
+			if InCombatLockdown and InCombatLockdown() then return Stop() end
+			local us = UIParent:GetEffectiveScale() or 1
+			if us <= 0 then return end
+			local mx, my = GetCursorPosition()
+			local x, y = mx / us, my / us
+			local edge = W.NearestEdge(x, y)
+			if not edge then return end
+			local slot = W.EdgeSlot(edge, x, y)
+			if edge ~= PF:PanelEdge() then PF:SetPanelEdge(edge) end
+			if slot ~= PF:PanelSlot() then PF:SetPanelSlot(slot) end
+		end)
+	end)
+	h:SetScript("OnDragStop", function()
+		if not PF._dragging then return end
+		Stop()
+		A:Print("party dock -> " .. A.Val(PF:PanelEdge():lower()) ..
+			"  " .. A.Dim("slot " .. PF:PanelSlot()))
+	end)
 	h:SetScript("OnClick", function() PF:TogglePanel() end)
 	h:SetScript("OnEnter", function(self2)
 		W.SetButtonState(self2, false, true)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
 		GameTooltip:SetText(_G.PARTY or "Party")
+		-- Only while it CAN be dragged. A line telling you to do something
+		-- the interface will refuse is worse than no line.
+		if A.Movers and A.Movers.unlocked then
+			local c = A.Palette.c
+			GameTooltip:AddLine("Drag to another screen edge.",
+				c.textDim[1], c.textDim[2], c.textDim[3])
+		end
 		GameTooltip:Show()
 	end)
 	h:SetScript("OnLeave", function(self2)

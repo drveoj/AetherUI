@@ -27310,6 +27310,94 @@ section("party controls: the marks go on your target", function()
 		atOne, atHalf, want) .. ")")
 	A.db.profile.scale = wasScale
 	PF:LayoutHandle()
+	-- DRAG IT TO ANOTHER EDGE, the way the Toolbox rail re-docks. Same gate -
+	-- the frames have to be unlocked - so there is no second gesture to learn.
+	--
+	-- Eight targets: four edges with two slots each. The preview is the handle
+	-- itself moving, which for a tab this size is a clearer answer than a ghost
+	-- rectangle saying where it would go.
+	local h = PF.handle
+	local function dragTo(x, y)
+		-- __setCursor, not a global of my own: the mock keeps the cursor in a
+		-- file-local, so setting __cursorX moved nothing and the drag read 500,400
+		-- every time - which is the middle of the screen and therefore LEFT.
+		__setCursor(x * (UIParent:GetEffectiveScale() or 1),
+			y * (UIParent:GetEffectiveScale() or 1))
+		h:GetScript("OnDragStart")(h)
+		local up = h:GetScript("OnUpdate")
+		if up then up(h, 0) end
+		h:GetScript("OnDragStop")(h)
+	end
+
+	local W0, H0 = UIParent:GetWidth(), UIParent:GetHeight()
+	A.Movers.unlocked = true
+
+	-- Hard right, low down: the RIGHT edge, second slot.
+	dragTo(W0 - 10, H0 * 0.2)
+	check(PF:PanelEdge() == "RIGHT" and PF:PanelSlot() == 2,
+		"dragged to the bottom of the right-hand side it docks there (" ..
+		PF:PanelEdge() .. " " .. PF:PanelSlot() .. ")")
+
+	-- BY FRACTION OF THE SCREEN, not by pixels. The middle of the left side of
+	-- a wide monitor is nearer the top and bottom edges in raw pixels than it
+	-- is to the left one, and answering TOP there is nonsense a player would
+	-- report as the drag being broken.
+	dragTo(10, H0 * 0.5)
+	check(PF:PanelEdge() == "LEFT",
+		"and hard against the left side it is LEFT, whatever the pixel counts"
+		.. " say (" .. PF:PanelEdge() .. ")")
+
+	dragTo(W0 * 0.5, H0 - 10)
+	check(PF:PanelEdge() == "TOP" and PF:PanelSlot() == 2,
+		"the top edge has two slots of its own (" .. PF:PanelEdge() .. " " ..
+		PF:PanelSlot() .. ")")
+	dragTo(W0 * 0.2, H0 - 10)
+	check(PF:PanelSlot() == 1,
+		"and the left half of it is the first")
+
+	-- LOCKED FRAMES ARE LOCKED. The same gate the rail uses, and the one that
+	-- stops a stray click on a crowded screen re-docking it.
+	PF:SetPanelEdge("LEFT")
+	PF:SetPanelSlot(1)
+	A.Movers.unlocked = false
+	dragTo(W0 - 10, H0 * 0.2)
+	check(PF:PanelEdge() == "LEFT",
+		"locked, dragging it does nothing at all (" .. PF:PanelEdge() .. ")")
+
+	-- AND NOT IN A FIGHT. Re-docking moves the party stack, which carries
+	-- secure children - the drag is dropped rather than finished.
+	A.Movers.unlocked = true
+	_G.__inCombat = true
+	local blocked = _G.__blocked
+	dragTo(W0 - 10, H0 * 0.2)
+	check(PF:PanelEdge() == "LEFT" and _G.__blocked == blocked,
+		"and mid-fight it is refused rather than half-finished (" ..
+		PF:PanelEdge() .. ", " .. (_G.__blocked - blocked) .. " refused)")
+	_G.__inCombat = false
+
+	-- AND A FIGHT STARTING MID-DRAG, which is the case the guard in the update
+	-- loop exists for - the one above never reaches it, because the drag is
+	-- refused at the start. The button can still be down when the pull
+	-- happens, and finishing then would move the stack, which carries secure
+	-- children.
+	PF:SetPanelEdge("LEFT")
+	PF:SetPanelSlot(1)
+	h:GetScript("OnDragStart")(h)
+	_G.__inCombat = true
+	local mid = _G.__blocked
+	__setCursor((W0 - 10) * (UIParent:GetEffectiveScale() or 1),
+		(H0 * 0.2) * (UIParent:GetEffectiveScale() or 1))
+	local up = h:GetScript("OnUpdate")
+	if up then up(h, 0) end
+	h:GetScript("OnDragStop")(h)
+	check(PF:PanelEdge() == "LEFT" and _G.__blocked == mid,
+		"a fight starting mid-drag drops it rather than finishing it (" ..
+		PF:PanelEdge() .. ", " .. (_G.__blocked - mid) .. " refused)")
+	_G.__inCombat = false
+
+	A.Movers.unlocked = false
+	PF:SetPanelEdge("LEFT")
+	PF:SetPanelSlot(1)
 	-- THE ARROW TURNS ROUND. Open, the click retreats the drawer to its own
 	-- edge; shut, it emerges away from it - the same rule the Toolbox rail
 	-- follows, from the same function.
