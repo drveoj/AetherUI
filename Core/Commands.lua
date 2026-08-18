@@ -1256,6 +1256,14 @@ handlers.party = function(arg)
 	-- Bare /aether party opens the controls, because that is the thing a
 	-- player wants; the report is scaffolding and takes the sub-command.
 	-- Until the dock handle exists this is the only way in.
+	if arg == "reset" then
+		if not PF then return end
+		PF:ResetStack()
+		A:Print("party frames back on the dock. Drag them again to place them"
+			.. " where you want.")
+		return
+	end
+
 	if arg ~= "diag" then
 		if not PF or not PF.enabled then
 			A:Print("party frames are switched off.")

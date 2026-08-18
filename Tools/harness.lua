@@ -27144,13 +27144,26 @@ section("party controls: the marks go on your target", function()
 
 	_G.__units.target.exists = true
 	PF:RefreshPanel()
-	p.wells[3]:GetScript("OnClick")(p.wells[3])
-	check(GetRaidTargetIndex("target") == 3,
-		"with a target, a mark lands on it (" ..
+
+	-- HIGHEST INDEX FIRST - skull, cross, square, moon, triangle, diamond,
+	-- circle, star. Blizzard's own grid has read that way since the marks
+	-- existed and everybody reaches for the skull in the top-left without
+	-- looking; laying them out 1 to 8 puts the star there and every mark you
+	-- set is the wrong one until you slow down and read the grid.
+	check(p.wells[1].index == 8,
+		"the skull is the first well, as it is in the client's own grid (" ..
+		tostring(p.wells[1].index) .. ")")
+	check(p.wells[8].index == 1, "and the star is the last")
+
+	p.wells[1]:GetScript("OnClick")(p.wells[1])
+	check(GetRaidTargetIndex("target") == 8,
+		"pressing a well sets the mark it SHOWS (" ..
 		tostring(GetRaidTargetIndex("target")) .. ")")
-	check(p.wells[3].__on == true,
-		"and the ring shows which one it is wearing")
-	check(p.wells[1].__on == false, "and only that one")
+	check(p.wells[1].__on == true,
+		"and the ring lands on that same well - the grid is laid out"
+		.. " backwards to the indices, so comparing the slot rings the"
+		.. " wrong one")
+	check(p.wells[8].__on == false, "and only that one")
 
 	-- CLEAR IS INDEX 0, not a missing argument. SetRaidTarget with nothing
 	-- passed leaves the mark exactly where it was.
@@ -27159,6 +27172,69 @@ section("party controls: the marks go on your target", function()
 		"Clear takes it off (" .. tostring(GetRaidTargetIndex("target")) .. ")")
 end)
 
+section("party: the stack rides the dock until you move it", function()
+	local PF = A:GetModule("partyframes")
+	PF:BuildPanel()
+
+	-- WHERE A PLAYER EXPECTS TO FIND IT. The client's own party frames come off
+	-- the left edge with the controls, and somebody installing this should find
+	-- their party where they left it rather than somewhere new they now have to
+	-- tidy up.
+	A.db.profile.anchors.party = nil
+	PF:AnchorStack()
+	local _, rel = PF.stack:GetPoint()
+	check(rel == PF.panel,
+		"unplaced, the stack hangs off the controls panel")
+	check(not PF:StackIsPlaced(), "and counts as unplaced")
+
+	-- AND A RESTORE LEAVES IT THERE. Movers positions every frame it knows
+	-- about from the saved anchor or the default, and unlocking the frames
+	-- runs the lot - so without the onPlaced hook handing the stack back, one
+	-- /aether unlock would snap it off the dock and it would never return.
+	A.Movers:Restore("party")
+	local _, relAfter = PF.stack:GetPoint()
+	check(relAfter == PF.panel,
+		"and a Movers restore hands it straight back to the dock")
+
+	-- ANCHORED TO THE PANEL EVEN WHILE IT IS SHUT. A hidden frame still has a
+	-- position, so the stack stays exactly where it is whether the controls are
+	-- open or not - tying it to the panel being SHOWN is how a party frame moves
+	-- every time you glance at the controls.
+	PF.panel:Hide()
+	PF:AnchorStack()
+	local _, relShut = PF.stack:GetPoint()
+	check(relShut == PF.panel,
+		"and still does with the panel shut")
+
+	-- IT RIDES THE DOCK TO ANOTHER EDGE, which is what makes it attached rather
+	-- than merely placed near it.
+	PF:SetPanelEdge("RIGHT")
+	local at = PF.stack:GetPoint()
+	check(at == "TOPRIGHT",
+		"docking the panel right takes the stack with it (" .. tostring(at) .. ")")
+	PF:SetPanelEdge("LEFT")
+
+	-- DRAG IT ONCE AND IT IS YOURS. Movers writes an anchor and that is the
+	-- answer from then on - including when the panel moves.
+	A.db.profile.anchors.party = { point = "CENTER", relPoint = "CENTER", x = 0, y = 0 }
+	check(PF:StackIsPlaced(), "a dragged stack counts as placed")
+	check(PF:AnchorStack() == false,
+		"and the dock stops moving it")
+	-- AND MOVERS PUTS IT WHERE YOU LEFT IT, not where the dock is. onPlaced
+	-- runs after every restore and hands the stack back to the dock only when
+	-- nobody has placed it - without that, unlocking the frames would snap a
+	-- stack you had positioned straight back onto the panel.
+	A.Movers:Restore("party")
+	local _, relPlaced = PF.stack:GetPoint()
+	check(relPlaced ~= PF.panel,
+		"and a restore leaves it where you put it, not back on the dock")
+
+	-- AND YOU CAN HAND IT BACK.
+	PF:ResetStack()
+	check(not PF:StackIsPlaced(), "/aether party reset drops the anchor")
+	local _, relReset = PF.stack:GetPoint()
+	check(relReset == PF.panel, "and puts it back on the dock")
+end)
 section("party controls: what a member may press", function()
 	local PF = A:GetModule("partyframes")
 	local p = PF.panel

@@ -491,12 +491,61 @@ function PF:SetPanelEdge(edge)
 	return true
 end
 
+--- Where the stack sits, when you have not said.
+--
+--  ATTACHED TO THE DOCK UNTIL YOU MOVE IT. The client's own party frames
+--  come off the left edge with the controls, and somebody installing this
+--  should find their party where they left it rather than somewhere new
+--  they now have to tidy up. Drag the stack once and it is yours - Movers
+--  has written an anchor and that is the answer from then on.
+--
+--  /aether party reset drops the anchor and hands it back to the dock.
+--
+--  ANCHORED TO THE PANEL EVEN WHILE IT IS SHUT, which is the point rather
+--  than an oversight: a hidden frame still has a position, so the stack
+--  stays exactly where it is whether the controls are open or not. Tying it
+--  to whether the panel is showing is how a party frame moves every time
+--  you glance at the controls.
+local DOCK_GAP = 8
+
+local ATTACH = {
+	LEFT   = { "TOPLEFT",     "TOPRIGHT",     DOCK_GAP,  0 },
+	RIGHT  = { "TOPRIGHT",    "TOPLEFT",     -DOCK_GAP,  0 },
+	TOP    = { "TOP",         "BOTTOM",       0, -DOCK_GAP },
+	BOTTOM = { "BOTTOM",      "TOP",          0,  DOCK_GAP },
+}
+
+function PF:StackIsPlaced()
+	local a = A.db and A.db.profile and A.db.profile.anchors
+	return (a and a.party) ~= nil
+end
+
+function PF:AnchorStack()
+	if not self.stack or not self.panel then return false end
+	if self:StackIsPlaced() then return false end
+	local a = ATTACH[self:PanelEdge()] or ATTACH.LEFT
+	self.stack:ClearAllPoints()
+	self.stack:SetPoint(a[1], self.panel, a[2], a[3], a[4])
+	return true
+end
+
+--- Hand the stack back to the dock.
+function PF:ResetStack()
+	if A.db and A.db.profile and A.db.profile.anchors then
+		A.db.profile.anchors.party = nil
+	end
+	self:BuildPanel()
+	return self:AnchorStack()
+end
+
 function PF:AnchorPanel()
 	local p = self.panel
 	if not p then return end
 	local edge = self:PanelEdge()
 	p:ClearAllPoints()
 	p:SetPoint(edge, UIParent, edge, 0, 0)
+	-- The stack rides with it, unless it has been placed by hand.
+	self:AnchorStack()
 end
 
 local function MaxCountdown()
@@ -680,14 +729,21 @@ function PF:BuildPanel()
 
 	-- FIVE ACROSS, TWO DOWN: eight marks and a Clear spanning the last two
 	-- cells, which is the brief's grid and also the one that fits 320 wide.
+	-- HIGHEST INDEX FIRST: skull, cross, square, moon, triangle, diamond,
+	-- circle, star. That is not an arrangement, it is THE arrangement -
+	-- Blizzard's own grid has read that way since the marks existed, and
+	-- everybody reaches for the skull in the top-left without looking.
+	-- Laying them out 1 to 8 puts the star there instead and every mark you
+	-- set is the wrong one until you slow down and read the grid.
 	p.wells = {}
 	local x0, y0 = 16, -70
-	for i = 1, MARKERS do
-		local b = BuildWell(p, i)
-		local col, row = (i - 1) % 5, math.floor((i - 1) / 5)
+	for slot = 1, MARKERS do
+		local index = MARKERS + 1 - slot
+		local b = BuildWell(p, index)
+		local col, row = (slot - 1) % 5, math.floor((slot - 1) / 5)
 		b:SetPoint("TOPLEFT", p, "TOPLEFT",
 			x0 + col * (WELL + WELL_GAP), y0 - row * (WELL + WELL_GAP))
-		p.wells[i] = b
+		p.wells[slot] = b
 	end
 
 	local clear = BuildWell(p, nil)
@@ -742,8 +798,10 @@ function PF:RefreshPanel()
 	-- W.SetButtonState writes its alpha too - setting the dim first and the
 	-- state second put every well straight back to full, and the grid looked
 	-- ready when there was nothing to mark.
-	for i, b in ipairs(p.wells) do
-		b.__on = (on == i)
+	-- b.index, not the slot: the grid is laid out highest-first, so the two
+	-- are opposites and comparing the wrong one rings the wrong well.
+	for _, b in ipairs(p.wells) do
+		b.__on = (on == b.index)
 		W.SetButtonState(b, b.__on, false)
 		b:EnableMouse(hasTarget and true or false)
 		b:SetAlpha(hasTarget and 1 or 0.4)
@@ -837,8 +895,13 @@ function PF:RegisterEvents()
 end
 
 function PF:RegisterMovers()
+	-- onPlaced is what keeps this to ONE owner. Movers positions the stack
+	-- from the saved anchor or from the default, and then hands it back -
+	-- at which point the dock takes it if nobody has placed it. Without the
+	-- hook, unlocking the frames would snap it away from the dock.
 	A.Movers:Register("party", self.stack,
-		{ point = "LEFT", relPoint = "LEFT", x = 140, y = 120 }, "Party")
+		{ point = "LEFT", relPoint = "LEFT", x = 140, y = 120 }, "Party",
+		{ onPlaced = function() PF:AnchorStack() end })
 end
 
 function PF:OnEnable()
