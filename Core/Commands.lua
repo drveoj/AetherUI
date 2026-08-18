@@ -401,6 +401,77 @@ local function diag()
 	end
 end
 
+--- What the client says about your party, and what we drew from it.
+--
+--  Written because three rounds went by guessing why a raid mark was not on
+--  screen. The answers are all one-liners from the client and none of them can
+--  be read from outside the game, so a report that puts them next to what we
+--  actually drew turns a guessing game into one command.
+local function partyDiag(say)
+	local PF = A:GetModule("partyframes")
+	if not PF then
+		say("   " .. A.Bad("no party module"))
+		return
+	end
+
+	say("   enabled: %s   stack: %s   members: %s",
+		PF.enabled and A.Good("yes") or A.Bad("no"),
+		PF.stack and A.Good("built") or A.Bad("none"),
+		A.Val(tostring(GetNumGroupMembers and GetNumGroupMembers() or 0)))
+
+	if PF.hideReport then
+		say("   Blizzard's frames:")
+		local names = {}
+		for n in pairs(PF.hideReport) do names[#names + 1] = n end
+		table.sort(names)
+		for _, n in ipairs(names) do
+			local r = PF.hideReport[n]
+			local ink = (r == "hidden") and A.Good or (r == "absent" and A.Bad or A.Bad)
+			say("      %-20s %s", n, ink(r))
+		end
+	else
+		say("   " .. A.Bad("no banish report - HideBlizzard never ran"))
+	end
+
+	-- Per member: what the client answers, and whether the mark is up. The two
+	-- columns disagreeing is the whole diagnosis.
+	say("   %-12s %-4s %-8s %-8s %-6s %s", "unit", "lead", "mark", "role", "pvp", "drawn")
+	for _, f in ipairs(PF.frames or {}) do
+		local u = f.unit
+		if UnitExists(u) then
+			local drawn = {}
+			if f.crown and f.crown:IsShown()  then drawn[#drawn + 1] = "crown" end
+			if f.marker and f.marker:IsShown() then drawn[#drawn + 1] = "mark" end
+			if f.role and f.role:IsShown()    then drawn[#drawn + 1] = "role" end
+			if f.pvp and f.pvp:IsShown()      then drawn[#drawn + 1] = "pvp" end
+			say("   %-12s %-4s %-8s %-8s %-6s %s",
+				u,
+				tostring(UnitIsGroupLeader and UnitIsGroupLeader(u) or false),
+				tostring(GetRaidTargetIndex and GetRaidTargetIndex(u)),
+				tostring(UnitGroupRolesAssigned and UnitGroupRolesAssigned(u)),
+				tostring(UnitIsPVP and UnitIsPVP(u)),
+				#drawn > 0 and A.Good(table.concat(drawn, ",")) or A.Dim("nothing"))
+		end
+	end
+
+	-- And your own, which is a different frame and a different module.
+	local UFm = A:GetModule("unitframes")
+	local me = UFm and UFm.player
+	if me then
+		local drawn = {}
+		if me.crown and me.crown:IsShown()  then drawn[#drawn + 1] = "crown" end
+		if me.marker and me.marker:IsShown() then drawn[#drawn + 1] = "mark" end
+		if me.pvp and me.pvp:IsShown()      then drawn[#drawn + 1] = "pvp" end
+		say("   %-12s %-4s %-8s %-8s %-6s %s", "player",
+			tostring(UnitIsGroupLeader and UnitIsGroupLeader("player") or false),
+			tostring(GetRaidTargetIndex and GetRaidTargetIndex("player")),
+			tostring(UnitGroupRolesAssigned and UnitGroupRolesAssigned("player")),
+			tostring(UnitIsPVP and UnitIsPVP("player")),
+			#drawn > 0 and A.Good(table.concat(drawn, ",")) or A.Dim("nothing"))
+	end
+end
+
+A.PartyDiag = partyDiag
 local handlers = {}
 
 handlers.diag = diag
@@ -1177,6 +1248,13 @@ handlers.quests = function(arg)
 			(cfg.autoTrack ~= false) and "auto" or "manual", n, n == 1 and "" or "s",
 			(QT.hidden or 0) > 0 and (" · " .. QT.hidden .. " did not fit") or ""))
 	end
+end
+
+handlers.party = function()
+	A:Print("party")
+	A.PartyDiag(function(fmt, ...)
+		A:Print(string.format(fmt, ...))
+	end)
 end
 
 handlers.module = function(arg, rest)

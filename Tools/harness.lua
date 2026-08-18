@@ -367,6 +367,13 @@ end
 local function newTexture(owner, layer, sub)
 	local t = widgetBase("Texture")
 	t.__layer, t.__sub = layer, sub
+	-- A REAL TEXTURE KNOWS WHOSE IT IS, and that matters more than it
+	-- sounds: a child FRAME draws over every one of its parent's regions
+	-- whatever draw layer they claim, so "is this mark above the disc it
+	-- rides" is a question about the texture's owner. Without GetParent
+	-- here the answer was nil and the check could not be written.
+	t.__owner = owner
+	function t:GetParent() return self.__owner end
 	function t:SetDrawLayer(l, s2) self.__layer, self.__sub = l, s2 end
 	function t:GetDrawLayer() return self.__layer, self.__sub end
 	function t:SetTexture(path) self.__tex = path end
@@ -9965,6 +9972,19 @@ section("decorators: four corners of the level disc, everywhere there is one", f
 			key .. " has a corner to itself (" .. tostring(at) .. " also held by " ..
 			tostring(corners[at]) .. ")")
 		corners[at] = key
+
+		-- ABOVE THE DISC, WHICH IS THE WHOLE POINT. The pip is a CHILD
+		-- FRAME of the glass, and a child frame draws over every one of
+		-- its parent's regions whatever layer they claim. A decorator
+		-- drawn as a region of the glass therefore had its lower half
+		-- behind the pip - the crown survived only because it hangs
+		-- outside the pip's bounds, which is exactly why one of them
+		-- looked right and the raid mark was invisible.
+		local host = tex:GetParent()
+		check(host ~= nil and host:GetFrameLevel() > f1.pip:GetFrameLevel(),
+			key .. " is drawn ABOVE the pip, not behind it (" ..
+			tostring(host and host:GetFrameLevel()) .. " vs " ..
+			tostring(f1.pip:GetFrameLevel()) .. ")")
 	end
 
 	-- THE SAME ARRANGEMENT ON YOUR OWN CAPSULE. The orb is the player frame's
@@ -27001,6 +27021,37 @@ end)
 -- of the mock's pool, and the recycling checks above are about a plate
 -- being handed out FRESH the first time - so a section that spawns one
 -- earlier quietly spends the case they exist to make.
+section("party: a diagnostic that answers the question", function()
+	local PF = A:GetModule("partyframes")
+	A:SetModuleEnabled("partyframes", true)
+	_G.__raidTargets.party1 = 3
+	fire("RAID_TARGET_UPDATE")
+
+	-- THREE ROUNDS WENT BY GUESSING why a raid mark was not on screen. Every
+	-- answer is a one-liner from the client and none of them can be read from
+	-- outside the game, so the report puts what the client SAYS next to what we
+	-- actually drew - and the two disagreeing is the whole diagnosis.
+	local lines = {}
+	local ok, err = pcall(A.PartyDiag, function(fmt, ...)
+		lines[#lines + 1] = string.format(fmt, ...)
+	end)
+	check(ok, "/aether party reports without erroring (" .. tostring(err) .. ")")
+
+	local all = table.concat(lines, "\n")
+	check(all:find("party1", 1, true) ~= nil, "with a row per member")
+	check(all:find("PartyFrame", 1, true) ~= nil,
+		"and what became of the client's own frames")
+	check(all:find("mark", 1, true) ~= nil,
+		"and says which decorators are actually drawn")
+
+	-- The player is a different frame in a different module, and leaving it out
+	-- is how you spend a round asking about the wrong one.
+	check(all:find("player", 1, true) ~= nil, "your own capsule included")
+
+	_G.__raidTargets.party1 = nil
+	fire("RAID_TARGET_UPDATE")
+end)
+
 section("decorators: a mark on a mob is a mark on its nameplate", function()
 	local NP = A:GetModule("nameplates")
 

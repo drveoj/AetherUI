@@ -244,7 +244,8 @@ local function Build(base)
 	--
 	-- Parented to the plate rather than the badge, because the friendly form
 	-- hides the badge and the mark still has to be somewhere.
-	f.mark = W.CreateDecorator(f, badge, "TOP", { size = 15 })
+	f.markLayer = W.DecoratorLayer(f, badge)
+	f.mark = W.CreateDecorator(f.markLayer, badge, "TOP", { size = 15 })
 
 	local name = W.Text(f, "npName", "LEFT")
 	name:SetWordWrap(false)

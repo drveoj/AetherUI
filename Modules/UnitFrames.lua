@@ -112,10 +112,11 @@ local function BuildCapsule(unit, mirror)
 	-- are flagged all answer the same question - who is this - and the disc
 	-- with their level in it is where that is already answered. They cost
 	-- the capsule no width, which is why they are not in the layout.
-	f.crown  = W.CreateDecorator(glass, orb, "TOPLEFT",
+	local deco = W.DecoratorLayer(glass, orb)
+	f.crown  = W.CreateDecorator(deco, orb, "TOPLEFT",
 		{ glyph = "crown", token = "semanticGold" })
-	f.marker = W.CreateDecorator(glass, orb, "TOP", { size = 16 })
-	f.pvp    = W.CreateDecorator(glass, orb, "BOTTOMLEFT", { size = 17 })
+	f.marker = W.CreateDecorator(deco, orb, "TOP", { size = 16 })
+	f.pvp    = W.CreateDecorator(deco, orb, "BOTTOMLEFT", { size = 17 })
 
 	-- text + bars block -----------------------------------------------------
 	local block = CreateFrame("Frame", nil, glass)

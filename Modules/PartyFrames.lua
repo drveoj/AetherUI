@@ -187,13 +187,13 @@ local function BuildCapsule(unit)
 	-- Riding the pip rather than the capsule: both of these say something
 	-- about the person, and the person is the disc with their level in it.
 	--
-	-- FOUR CORNERS, ONE DISC. W.CreateDecorator is the same widget the
-	-- player's own capsule and the nameplates use, so there is one answer
-	-- to where each of these sits and what colour it is.
-	f.crown  = W.CreateDecorator(glass, pip, "TOPLEFT",
+	-- FOUR CORNERS, ONE DISC, on a layer ABOVE the disc - the pip is a child
+	-- frame of the glass and would otherwise draw over every one of them.
+	local layer = W.DecoratorLayer(glass, pip)
+	f.crown  = W.CreateDecorator(layer, pip, "TOPLEFT",
 		{ glyph = "crown", token = "semanticGold", size = CROWN })
-	f.marker = W.CreateDecorator(glass, pip, "TOP", { size = MARKER })
-	f.pvp    = W.CreateDecorator(glass, pip, "BOTTOMLEFT", { size = PVP })
+	f.marker = W.CreateDecorator(layer, pip, "TOP", { size = MARKER })
+	f.pvp    = W.CreateDecorator(layer, pip, "BOTTOMLEFT", { size = PVP })
 
 	-- name and class --------------------------------------------------------
 	local block = CreateFrame("Frame", nil, glass)
@@ -247,7 +247,7 @@ local function BuildCapsule(unit)
 	-- the fourth corner ----------------------------------------------------
 	-- Hidden unless the member is a tank or a healer. Nothing reflows when
 	-- it is absent, because a decorator is not part of the layout.
-	f.role = W.CreateDecorator(glass, pip, "BOTTOMRIGHT", { size = ROLE })
+	f.role = W.CreateDecorator(layer, pip, "BOTTOMRIGHT", { size = ROLE })
 
 	-- interaction -----------------------------------------------------------
 	if c.clickTarget then

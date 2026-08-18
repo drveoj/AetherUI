@@ -243,9 +243,32 @@ function W.SetPvPMark(tex, unit)
 	tex:Hide()
 	return false
 end
-function W.CreateDecorator(parent, anchorTo, corner, opts)
+--- The layer decorators are drawn on: ABOVE THE DISC, whatever level it is.
+--
+--  This is the whole reason a decorator is not just a texture on the
+--  capsule. The disc - a level pip, an orb, a nameplate badge - is a CHILD
+--  FRAME of the capsule, and a child frame draws over every one of its
+--  parent's regions whatever draw layer they are on. So a mark centred on
+--  the disc's top edge had its lower half behind the disc and read as
+--  nothing at all; the crown survived only because it hangs outside the
+--  disc's bounds, which is why one of them looked fine and one did not.
+--
+--  A frame of our own, two levels above the disc, and they all sit on it.
+--  Same fix as the aura marks in Modules/IFEC/Player.lua, and the same
+--  rule as everywhere else in this interface: our surface has to BE the
+--  thing it is decorating or sit over it, never beside it.
+function W.DecoratorLayer(parent, disc)
+	local layer = CreateFrame("Frame", nil, parent)
+	layer:SetAllPoints(parent)
+	local base = (disc and disc.GetFrameLevel and disc:GetFrameLevel())
+		or (parent.GetFrameLevel and parent:GetFrameLevel()) or 0
+	layer:SetFrameLevel(base + 2)
+	return layer
+end
+
+function W.CreateDecorator(layer, anchorTo, corner, opts)
 	opts = opts or {}
-	local t = parent:CreateTexture(nil, "OVERLAY")
+	local t = layer:CreateTexture(nil, "OVERLAY", nil, 7)
 	local size = opts.size or 13
 	t:SetSize(size, size)
 	local nudge = DECORATOR_NUDGE[corner] or DECORATOR_NUDGE.TOPLEFT
