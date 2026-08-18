@@ -3301,7 +3301,17 @@ do
 				if i % 2 == 1 then b:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up") end
 			end
 
-			local all = CreateFrame("Button", prefix .. "CollapseAllButton", f)
+			-- THE LITTLE STONE TAB the All control hangs off, on a frame of its
+			-- own that nothing else walks - which is how it survived a window
+			-- otherwise entirely ours and sat there behind the word All.
+			local tab = CreateFrame("Frame", prefix .. "ExpandButtonFrame", f)
+			for _, part in ipairs({ "Left", "Middle", "Right" }) do
+				local tex = tab:CreateTexture(prefix .. "ExpandTab" .. part, "BACKGROUND")
+				tex:SetTexture("Interface\\QuestFrame\\UI-QuestLogSortTab-Middle")
+				_G[prefix .. "ExpandTab" .. part] = tex
+			end
+
+			local all = CreateFrame("Button", prefix .. "CollapseAllButton", tab)
 			all:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
 			all:SetID(0)
 
@@ -11202,6 +11212,17 @@ section("panels: the postbox, the book and the trade skills", function()
 		left .. ")")
 	check(missing == 0, "and every row turned heading has one (" ..
 		missing .. " of 4 without)")
+
+	-- THE LITTLE STONE TAB the All control hangs off. Its own frame, and
+	-- not one the shell walks, so it sat behind All on our glass.
+	local tabArt = 0
+	for _, prefix in ipairs({ "TradeSkill", "Craft" }) do
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			local tex = _G[prefix .. "ExpandTab" .. part]
+			if tex and tex:IsShown() then tabArt = tabArt + 1 end
+		end
+	end
+	check(tabArt == 0, "the tab behind All is gone (" .. tabArt .. " of 6)")
 
 	-- THE TWO FILTERS. Neither carries a label of its own, so the sweep
 	-- that finds a button by the words on it goes straight past both - and

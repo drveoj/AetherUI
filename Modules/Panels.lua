@@ -2693,6 +2693,11 @@ local function DressSkillWindow(prefix)
 			Reskin.ScrollFrame(_G[prefix .. suffix], store)
 		end
 
+		-- THE LITTLE STONE TAB the All control hangs off - a trainer's left cap
+		-- with a quest log's sort tab stretched across it. Its own frame, and
+		-- not one the shell walks, so it sat behind All on our glass.
+		Reskin.Strip(_G[prefix .. "ExpandButtonFrame"], store)
+
 		-- THE FILTERS, which are the modern dropdown Communities uses: a stone
 		-- holder, an arrow and a label, all regions of the button. None of them
 		-- has a label of its own, so the sweep below - which finds a button by
