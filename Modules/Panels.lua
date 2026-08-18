@@ -1983,14 +1983,38 @@ local function DressGossip(frame, store)
 
 	DressGossipRows(frame)
 
-	-- The list is rebuilt on open and on every option you pick, and Update is
-	-- where that happens. A mixin method copied onto the frame, so it is hooked
-	-- on the frame rather than by name.
-	if hooksecurefunc and frame.Update and not PN.__gossipHook then
-		PN.__gossipHook = true
-		hooksecurefunc(frame, "Update", function(self)
-			if PN.enabled then DressGossipRows(self) end
-		end)
+	-- The list is rebuilt on open and on every option you pick. Two entry
+	-- points, and BOTH of them, because they are not the same thing:
+	-- Update rebuilds the data and UpdateScrollBox rebuilds the box.
+	--
+	-- AND AGAIN ON THE NEXT FRAME, which is the part that matters. The
+	-- greeting and every option are POOLED ELEMENTS of a scroll box, and a
+	-- scroll box acquires its frames during LAYOUT - after Update has
+	-- returned. Asking GetFrames from inside the hook answers the set that
+	-- was there before, so the new rows are never lifted and the window
+	-- comes up in the near-black the client prints gossip in.
+	--
+	-- Which is also why it looked intermittent: whether a row had been
+	-- lifted depended on whether the pool happened to hand back one that
+	-- had.
+	if hooksecurefunc and not PN.__gossipHook then
+		local function relift(self)
+			if not PN.enabled then return end
+			DressGossipRows(self)
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0, function()
+					if PN.enabled then DressGossipRows(self) end
+				end)
+			end
+		end
+		local hooked = false
+		for _, name in ipairs({ "Update", "UpdateScrollBox" }) do
+			if frame[name] then
+				hooksecurefunc(frame, name, relift)
+				hooked = true
+			end
+		end
+		PN.__gossipHook = hooked
 	end
 end
 

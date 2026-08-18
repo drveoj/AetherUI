@@ -4193,9 +4193,44 @@ do
 
 		--- Rebuilding the list, which is what happens on every option you pick.
 		--  The rows come back with the client's own ink on them.
+		--- A ROW MINTED DURING LAYOUT, which is after Update has returned.
+		--
+		--  This is the whole shape of the bug. The greeting and every option
+		--  are POOLED ELEMENTS of a scroll box, and a scroll box acquires its
+		--  frames during layout - so anything that asks GetFrames from inside
+		--  an Update hook is answered with the set that was there BEFORE.
+		--
+		--  The mock used to rebuild the same rows in place, which every
+		--  version of the lift survives. It mints one late now.
+		function box:MintLate()
+			local row = CreateFrame("Button", nil, box)
+			row.__fs = row:CreateFontString(nil, "OVERLAY")
+			row.__fs:SetTextColor(0.10, 0.10, 0.10)
+			function row:GetFontString() return self.__fs end
+			box.__rows[#box.__rows + 1] = row
+			box.__late = row
+		end
+
+		--- The box's own rebuild, which is a DIFFERENT entry point from Update:
+		--- Update rebuilds the data, this rebuilds the box. The client calls
+		--- both, and not always in that order.
+		function gossip:UpdateScrollBox()
+			for _, row in ipairs(box.__rows) do
+				row.__fs:SetTextColor(0.10, 0.10, 0.10)
+			end
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0, function() box:MintLate() end)
+			end
+		end
+
 		function gossip:Update()
 			for _, row in ipairs(box.__rows) do
 				row.__fs:SetTextColor(0.10, 0.10, 0.10)
+			end
+			-- The box lays out on the next frame, and that is when it takes
+			-- the frames it needs out of the pool.
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0, function() box:MintLate() end)
 			end
 			-- The quest row is refilled through the display format, which puts
 			-- the black back inside the text every time.
@@ -22415,6 +22450,37 @@ do
 		.. " option does (" .. string.format("%.2f", rr) .. ")")
 	check(row.Icon:GetTexture() == "Interface\\QuestFrame\\UI-Quest-BulletPoint",
 		"with its bullet still on it")
+
+	-- AND A ROW THE BOX MINTS DURING LAYOUT, which is after Update has
+	-- returned. That is the case that broke the gossip window: a scroll box
+	-- acquires its frames while it lays out, so asking GetFrames from inside
+	-- an Update hook is answered with the set that was there BEFORE - and
+	-- the greeting and every option came up in the near-black the client
+	-- prints gossip in.
+	--
+	-- It also explains why it looked intermittent rather than broken:
+	-- whether a row had been lifted depended on whether the pool happened
+	-- to hand back one that had.
+	tick(0)
+	local late = panel.ScrollBox.__late
+	check(late ~= nil, "the box mints a row while it lays out")
+	local lr = late and late:GetFontString():GetTextColor()
+	check(lr == ink[1],
+		"and a row minted then is lifted too (" ..
+		string.format("%.2f", lr or 0) .. ")")
+
+	-- THROUGH THE BOX'S OWN REBUILD TOO, which is a different entry point:
+	-- Update rebuilds the data and UpdateScrollBox rebuilds the box, and
+	-- the client calls both. Hooking only the one leaves the other's rows
+	-- in the client's ink.
+	panel.ScrollBox.__late = nil
+	_G.GossipFrame:UpdateScrollBox()
+	tick(0)
+	local boxLate = panel.ScrollBox.__late
+	local br = boxLate and boxLate:GetFontString():GetTextColor()
+	check(br == ink[1],
+		"and so is one minted by the box's own rebuild (" ..
+		string.format("%.2f", br or 0) .. ")")
 
 	-- AND SO IS A QUEST TITLE, which keeps its string in a region of its own
 	-- rather than answering GetFontString. Naming the string per shape found
