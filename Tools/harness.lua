@@ -3052,6 +3052,72 @@ do
 		buildPanel(n)
 	end
 
+	-- THE POSTBOX, THE BOOK READER AND THE TRADE SKILLS. Three windows a
+	-- player opens constantly and none of them was in this mock, so none of
+	-- them could be checked - which is how all three shipped in stone.
+	do
+		local mail = buildPanel("MailFrame")
+		for _, n in ipairs({ "InboxFrame", "SendMailFrame", "OpenMailFrame" }) do
+			local pane = CreateFrame("Frame", n, mail)
+			-- Near-black, because it is printed on paper.
+			local fs = pane:CreateFontString(nil, "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetTextColor(0.1, 0.1, 0.1, 1)
+			pane:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\Stationery\\Stationery")
+			local b = CreateFrame("Button", nil, pane, "UIPanelButtonTemplate")
+			b:SetText("Send")
+		end
+		for i = 1, 2 do
+			local tab = CreateFrame("Button", "MailFrameTab" .. i, mail)
+			tab:SetNormalTexture("Interface\\ChatFrame\\UI-ChatFrame-Tab-Up")
+			tab:CreateFontString(nil, "OVERLAY")
+		end
+		local sf = CreateFrame("ScrollFrame", "SendMailScrollFrame", _G.SendMailFrame)
+		sf.ScrollBar = CreateFrame("Slider", nil, sf)
+		sf.ScrollBar:CreateTexture(nil, "ARTWORK"):SetTexture("scrollbar-art")
+		
+		local it = buildPanel("ItemTextFrame")
+		-- ITS PAGE IS FOUR NAMED TEXTURES, not one and not regions of anything
+		-- the sweep walks - miss them and the parchment stays with glass behind.
+		for _, n in ipairs({ "ItemTextMaterialTopLeft", "ItemTextMaterialTopRight",
+			"ItemTextMaterialBotLeft", "ItemTextMaterialBotRight" }) do
+			local tex = it:CreateTexture(nil, "BACKGROUND")
+			tex:SetTexture("Interface\\ItemTextFrame\\Parchment")
+			_G[n] = tex
+		end
+		_G.ItemTextPageText = it:CreateFontString(nil, "ARTWORK")
+		_G.ItemTextPageText:SetFont("Fonts\\MORPHEUS.TTF", 14, "")
+		_G.ItemTextPageText:SetTextColor(0.13, 0.09, 0.05, 1)
+		_G.ItemTextTitleText = it:CreateFontString(nil, "OVERLAY")
+		_G.ItemTextCurrentPage = it:CreateFontString(nil, "OVERLAY")
+		_G.ItemTextScrollFrame = CreateFrame("ScrollFrame", "ItemTextScrollFrame", it)
+		_G.ItemTextScrollFrame.ScrollBar = CreateFrame("Slider", nil, _G.ItemTextScrollFrame)
+		for _, n in ipairs({ "ItemTextPrevPageButton", "ItemTextNextPageButton" }) do
+			_G[n] = CreateFrame("Button", n, it)
+			_G[n]:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+		end
+		
+		-- Two of them: TradeSkillFrame is First Aid and cooking, CraftFrame is
+		-- enchanting and a hunter's beast training.
+		for _, prefix in ipairs({ "TradeSkill", "Craft" }) do
+			local f = buildPanel(prefix .. "Frame")
+			for _, suffix in ipairs({ "ListScrollFrame", "DetailScrollFrame" }) do
+				local sc = CreateFrame("ScrollFrame", prefix .. suffix, f)
+				sc:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\Craft\\Parchment")
+				sc.ScrollBar = CreateFrame("Slider", nil, sc)
+				sc.ScrollBar:CreateTexture(nil, "ARTWORK"):SetTexture("scrollbar-art")
+			end
+			local d = CreateFrame("Frame", prefix .. "DetailScrollChildFrame", f)
+			local dfs = d:CreateFontString(nil, "ARTWORK")
+			dfs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			dfs:SetTextColor(0.1, 0.08, 0.05, 1)
+			for _, label in ipairs({ "Create All", "Create", "Close" }) do
+				local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+				b:SetText(label)
+			end
+		end
+	end
+
 	-- THE MAIN MENU IS A VerticalLayoutFrame, and that is the whole of why its
 	-- buttons came out as one solid column of glass with lines of text in it.
 	--
@@ -10464,6 +10530,75 @@ section("panels: the main menu is a column of buttons, not a column of glass", f
 	gm:Hide()
 end)
 
+section("panels: the postbox, the book and the trade skills", function()
+	local PN = A:GetModule("panels")
+	for _, n in ipairs({ "MailFrame", "ItemTextFrame", "TradeSkillFrame",
+		"CraftFrame" }) do
+		_G[n]:Show()
+	end
+	PN:Skin()
+
+	-- ALL FOUR GET THE GLASS. Three windows a player opens constantly - the
+	-- postbox, a letter out of the bags, and every trade skill - and none of
+	-- them was in this mock, so none of them could be checked and all of them
+	-- shipped in stone.
+	for _, n in ipairs({ "MailFrame", "ItemTextFrame", "TradeSkillFrame",
+		"CraftFrame" }) do
+		check(_G[n].__aetherPanel ~= nil,
+			n .. " has glass behind it")
+	end
+
+	-- THE BOOK'S PAGE IS FOUR NAMED TEXTURES, not one, and not regions of
+	-- anything the shell sweep walks. Miss them and the parchment stays exactly
+	-- where it was with our glass behind it.
+	local left = 0
+	for _, n in ipairs({ "ItemTextMaterialTopLeft", "ItemTextMaterialTopRight",
+		"ItemTextMaterialBotLeft", "ItemTextMaterialBotRight" }) do
+		if _G[n]:IsShown() then left = left + 1 end
+	end
+	check(left == 0, "the letter's parchment is gone (" .. left .. " left)")
+
+	-- AND ITS WORDS ARE LIFTED. Printed near-black because they were printed
+	-- on paper; on glass that is a dark smudge.
+	local r = select(1, _G.ItemTextPageText:GetTextColor())
+	check(r and r > 0.5,
+		"and its words are lifted off the near-black they were printed in (" ..
+		string.format("%.2f", r or 0) .. ")")
+
+	-- The letter you are writing is on the same paper.
+	local pane = _G.SendMailFrame
+	local dark = 0
+	for _, reg in ipairs({ pane:GetRegions() }) do
+		if reg.GetObjectType and reg:GetObjectType() == "FontString" then
+			local rr = select(1, reg:GetTextColor())
+			if rr and rr < 0.5 then dark = dark + 1 end
+		end
+	end
+	check(dark == 0, "the letter you are writing is lifted too (" .. dark .. ")")
+
+	-- THE BUTTONS on all three. Send, Create, Create All, Close - a dozen of
+	-- them across the windows, and every one a red UIPanelButtonTemplate plate.
+	local plain = 0
+	for _, root in ipairs({ _G.SendMailFrame, _G.TradeSkillFrame, _G.CraftFrame }) do
+		for _, child in ipairs({ root:GetChildren() }) do
+			if child.GetObjectType and child:GetObjectType() == "Button"
+				and child.GetFontString and child:GetFontString()
+				and not child.__aetherSkin then plain = plain + 1 end
+		end
+	end
+	check(plain == 0, "every button on them is ours (" .. plain .. " left)")
+
+	-- And the scroll bars, which are the old template on these windows.
+	check(_G.ItemTextScrollFrame.ScrollBar.__aetherScroll == true,
+		"the book's scroll bar is ours")
+	check(_G.TradeSkillDetailScrollFrame.ScrollBar.__aetherScroll == true,
+		"and the trade skill's")
+
+	for _, n in ipairs({ "MailFrame", "ItemTextFrame", "TradeSkillFrame",
+		"CraftFrame" }) do
+		_G[n]:Hide()
+	end
+end)
 section("panels: the Options window, part by part", function()
 	local PN = A:GetModule("panels")
 	local sp = _G.SettingsPanel

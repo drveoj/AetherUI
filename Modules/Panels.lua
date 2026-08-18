@@ -126,6 +126,27 @@ local PANELS = {
 	-- skinning the page while leaving the frame around it in stone is the
 	-- one place a player sees both at once.
 	{ frame = "SettingsPanel", close = "ClosePanelButton" },
+
+	-- THE POSTBOX. ButtonFrameTemplate, so tight - but its tabs hang off the
+	-- bottom edge outside its own art the way the vendor's do, and trimmed to
+	-- the frame the Inbox and Send Mail tabs land outside the glass.
+	{ frame = "MailFrame", tight = true, insets = { 0, 0, 0, -30 },
+		tabs = "MailFrameTab" },
+
+	-- A LETTER OR A BOOK out of your bags. Also ButtonFrameTemplate, and
+	-- what is inside it is printed on paper - so its text is lifted the way
+	-- the quest giver's is.
+	{ frame = "ItemTextFrame", tight = true },
+
+	-- THE TRADE SKILLS. Two windows, not one: TradeSkillFrame is First Aid,
+	-- cooking, blacksmithing and the rest, and CraftFrame is enchanting and
+	-- a hunter's beast training. Neither inherits a template - they are the
+	-- old hand-built shape with their own art and a wide margin, so they
+	-- want trimming like the trainer rather than tight like the modern ones.
+	{ frame = "TradeSkillFrame", addon = "Blizzard_TradeSkillUI",
+		insets = { 8, -8, -28, 22 } },
+	{ frame = "CraftFrame", addon = "Blizzard_CraftUI",
+		insets = { 8, -8, -28, 22 } },
 }
 
 PN.PANELS = PANELS
@@ -2364,9 +2385,133 @@ local function DressSettings(frame, store)
 		DressPanelButtons(container, 0)
 	end
 end
+--- The postbox: two panes behind two tabs, and the letter you are writing is
+--- on paper like everything else an NPC hands you.
+local function DressMail(frame, store)
+	for _, name in ipairs({ "InboxFrame", "SendMailFrame", "OpenMailFrame" }) do
+		local pane = _G[name]
+		if pane then
+			pane.__aetherStore = pane.__aetherStore or {}
+			Reskin.Strip(pane, pane.__aetherStore)
+			-- Lifted for the same reason the quest giver's is: this is printed
+			-- on the same paper and is the same near-black.
+			Reskin.Fonts(pane, "pnBody", 2, Palette.c.text)
+		end
+	end
+
+	-- The scroll frames behind the letter itself, both of which carry their
+	-- own parchment and their own bar.
+	for _, name in ipairs({ "SendMailScrollFrame", "OpenMailScrollFrame",
+		"InboxFrame" }) do
+		local sf = _G[name]
+		local bar = sf and (Reskin.Element(sf, "ScrollBar")
+			or _G[name .. "ScrollBar"])
+		if bar then
+			bar.__aetherStore = bar.__aetherStore or {}
+			Reskin.ScrollBar(bar, bar.__aetherStore)
+		end
+	end
+
+	-- Send, Cancel, Reply, Delete and the rest. Named, but there are a dozen
+	-- of them across two panes, so they are found the way the Options pages'
+	-- are: a button with a label on it.
+	for _, name in ipairs({ "SendMailFrame", "OpenMailFrame", "InboxFrame" }) do
+		local pane = _G[name]
+		if pane and pane.GetChildren then
+			for _, child in ipairs({ pane:GetChildren() }) do
+				if child.GetObjectType and child:GetObjectType() == "Button"
+					and child.GetFontString and child:GetFontString()
+					and not child.__aetherSkin then
+					Reskin.Button(child, "pnBody")
+				end
+			end
+		end
+	end
+end
+
+--- A letter or a book out of your bags.
+--
+--  ITS PAGE IS FOUR TEXTURES, and they are regions of the frame itself - the
+--  ARTWORK layer of ItemTextFrame - so the shell strip already takes them and
+--  the module switching off puts them back. Hiding them again here would work
+--  and would not be reversible, which is the worse of the two.
+--
+--  What is left is the words: near-black because they were printed on paper,
+--  and a dark smudge on glass.
+local function DressItemText(frame, store)
+	local page = _G.ItemTextPageText
+	if page then Reskin.Font(page, "pnBody", Palette.c.text) end
+
+	local title = _G.ItemTextTitleText
+	if title then W.Color(title, Palette.c.text) end
+	local pageNo = _G.ItemTextCurrentPage
+	if pageNo then W.Color(pageNo, Palette.c.textDim) end
+
+	local sf = _G.ItemTextScrollFrame
+	local bar = sf and (Reskin.Element(sf, "ScrollBar")
+		or _G.ItemTextScrollFrameScrollBar)
+	if bar then
+		bar.__aetherStore = bar.__aetherStore or {}
+		Reskin.ScrollBar(bar, bar.__aetherStore)
+	end
+
+	-- The page turners, which are art rather than words.
+	for _, name in ipairs({ "ItemTextPrevPageButton", "ItemTextNextPageButton" }) do
+		local btn = _G[name]
+		if btn then
+			Reskin.ClearButton(btn)
+			Reskin.Strip(btn, store)
+		end
+	end
+end
+
+--- The trade skill and craft windows - First Aid, cooking, enchanting, and a
+--- hunter's beast training.
+--
+--  Two panes of the old hand-built shape: a list on the left with its own
+--  black slab, a detail pane on the right with its own parchment, and a row of
+--  red buttons along the bottom.
+local function DressSkillWindow(prefix)
+	return function(frame, store)
+		for _, suffix in ipairs({ "ListScrollFrame", "DetailScrollFrame" }) do
+			local sf = _G[prefix .. suffix]
+			if sf then
+				sf.__aetherStore = sf.__aetherStore or {}
+				Reskin.Strip(sf, sf.__aetherStore)
+				local bar = Reskin.Element(sf, "ScrollBar")
+					or _G[prefix .. suffix .. "ScrollBar"]
+				if bar then
+					bar.__aetherStore = bar.__aetherStore or {}
+					Reskin.ScrollBar(bar, bar.__aetherStore)
+				end
+			end
+		end
+
+		-- Every button on it, by what it is: Create, Create All, Close, the
+		-- filter dropdowns' arrows and the count spinner. They are named, and
+		-- there are ten of them across two game versions of this window.
+		if frame.GetChildren then
+			for _, child in ipairs({ frame:GetChildren() }) do
+				if child.GetObjectType and child:GetObjectType() == "Button"
+					and child.GetFontString and child:GetFontString()
+					and not child.__aetherSkin then
+					Reskin.Button(child, "pnBody")
+				end
+			end
+		end
+
+		-- The detail pane is printed on paper like a quest.
+		local detail = _G[prefix .. "DetailScrollChildFrame"]
+		if detail then Reskin.Fonts(detail, "pnBody", 2, Palette.c.text) end
+	end
+end
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
+	MailFrame         = DressMail,
+	ItemTextFrame     = DressItemText,
+	TradeSkillFrame   = DressSkillWindow("TradeSkill"),
+	CraftFrame        = DressSkillWindow("Craft"),
 	GameMenuFrame     = DressGameMenu,
 	SpellBookFrame    = DressSpellBook,
 	PlayerTalentFrame = DressTalents,
