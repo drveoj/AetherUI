@@ -515,19 +515,9 @@ function TB:PointChevron()
 
 	-- Open, the click RETREATS the drawer to its own edge; shut, it emerges
 	-- away from it.
-	local turns
-	if edge == "LEFT" then
-		turns = open and CHEV_LEFT or CHEV_RIGHT
-	elseif edge == "RIGHT" then
-		turns = open and CHEV_RIGHT or CHEV_LEFT
-	elseif edge == "TOP" then
-		turns = open and CHEV_UP or CHEV_DOWN
-	else
-		turns = open and CHEV_DOWN or CHEV_UP
-	end
-
-	self._chevronFacing = turns
-	if g.SetRotation then pcall(g.SetRotation, g, turns) end
+	-- W.PointChevron, which the party dock handle uses too. Eight cases and
+	-- one of them backwards is an arrow pointing at nothing.
+	self._chevronFacing = W.PointChevron(g, edge, open)
 end
 
 -- ---------------------------------------------------------------------------

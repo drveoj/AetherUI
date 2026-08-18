@@ -1315,6 +1315,36 @@ A:OnSkinChanged(W.RestyleMenu)
 -- misc
 -- ---------------------------------------------------------------------------
 
+--- Point a chevron on a docked thing that opens and shuts.
+--
+--  ONE RULE, TWO USERS: the Toolbox rail and the party dock handle. Both are
+--  a tab flush to a screen edge with a drawer behind them, and both have the
+--  same answer - OPEN, the click retreats the drawer to its own edge; SHUT,
+--  it emerges away from it. A second copy of that would be a second chance to
+--  get one of the eight cases backwards.
+--
+--  Left and right docks get < and >, top and bottom get ^ and v. The drawer
+--  moves along the axis it is docked on, so an arrow across that axis points
+--  at nothing.
+--
+--  Rotation is counter-clockwise, and the art points DOWN at rest - so a
+--  right-pointing arrow is +pi/2.
+local CHEV_DOWN, CHEV_UP    = 0, math.pi
+local CHEV_RIGHT, CHEV_LEFT = math.pi / 2, -math.pi / 2
+
+local CHEV_FACING = {
+	LEFT   = { open = CHEV_LEFT,  shut = CHEV_RIGHT },
+	RIGHT  = { open = CHEV_RIGHT, shut = CHEV_LEFT  },
+	TOP    = { open = CHEV_UP,    shut = CHEV_DOWN  },
+	BOTTOM = { open = CHEV_DOWN,  shut = CHEV_UP    },
+}
+
+function W.PointChevron(tex, edge, open)
+	local f = CHEV_FACING[edge] or CHEV_FACING.LEFT
+	local turns = open and f.open or f.shut
+	if tex and tex.SetRotation then pcall(tex.SetRotation, tex, turns) end
+	return turns
+end
 --- Faint hairline used between stacked rows.
 function W.Divider(parent)
 	local t = parent:CreateTexture(nil, "ARTWORK")

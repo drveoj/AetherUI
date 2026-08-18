@@ -478,6 +478,23 @@ local COUNTDOWNS = { 5, 10, 15, 30 }
 --  character's is not another's.
 local EDGES = { LEFT = true, RIGHT = true, TOP = true, BOTTOM = true }
 
+--- Which way a dock runs. Up here with the edges rather than down with the
+--- handle that reads it: AnchorPanel is written above the handle and needs
+--- it, and a `local function` used before its declaration resolves to a
+--- GLOBAL - which is nil, and errors on every event that touches the panel.
+local function IsVertical(edge)
+	return edge == "LEFT" or edge == "RIGHT"
+end
+-- The handle's measurements, up here for the same reason: AnchorPanel bites
+-- the panel into the handle by HANDLE_BITE, and it is written above the code
+-- that draws one.
+local HANDLE_THICK  = 34
+local HANDLE_LONG   = 68
+local HANDLE_CORNER = 8
+local HANDLE_BITE   = HANDLE_CORNER
+local HANDLE_GLYPH  = 18
+local HANDLE_CHEV   = 11
+
 function PF:PanelEdge()
 	local c = A.db and A.db.char
 	local e = c and c.partyDock
@@ -523,6 +540,15 @@ end
 function PF:AnchorStack()
 	if not self.stack or not self.panel then return false end
 	if self:StackIsPlaced() then return false end
+	
+	-- NOT IN A FIGHT. The stack carries secure children, so re-anchoring it
+	-- is a protected call - and this runs from the roster sweep, which is
+	-- exactly what fires when somebody in your party dies mid-pull. The
+	-- suite caught this the moment the handle started calling it: eleven
+	-- refused calls on one event.
+	--
+	-- Nothing is lost by waiting: PLAYER_REGEN_ENABLED sweeps again.
+	if InCombatLockdown and InCombatLockdown() then return false end
 	local a = ATTACH[self:PanelEdge()] or ATTACH.LEFT
 	self.stack:ClearAllPoints()
 	self.stack:SetPoint(a[1], self.panel, a[2], a[3], a[4])
@@ -543,7 +569,27 @@ function PF:AnchorPanel()
 	if not p then return end
 	local edge = self:PanelEdge()
 	p:ClearAllPoints()
-	p:SetPoint(edge, UIParent, edge, 0, 0)
+	-- OUT OF THE HANDLE, not off the bare edge - and biting into it by its
+	-- own corner radius, so the two read as one shape rather than as a tab
+	-- floating beside a panel with a gap of shadow between them.
+	local h = self.handle
+	if h then
+		self:LayoutHandle()
+		if IsVertical(edge) then
+			local anchor = (edge == "LEFT") and "LEFT" or "RIGHT"
+			local opposite = (edge == "LEFT") and "RIGHT" or "LEFT"
+			local dx = (edge == "LEFT") and -HANDLE_BITE or HANDLE_BITE
+			p:SetPoint(anchor, h, opposite, dx, 0)
+		else
+			local anchor = (edge == "TOP") and "TOP" or "BOTTOM"
+			local opposite = (edge == "TOP") and "BOTTOM" or "TOP"
+			local dy = (edge == "TOP") and HANDLE_BITE or -HANDLE_BITE
+			p:SetPoint(anchor, h, opposite, 0, dy)
+		end
+	else
+		p:SetPoint(edge, UIParent, edge, 0, 0)
+	end
+
 	-- The stack rides with it, unless it has been placed by hand.
 	self:AnchorStack()
 end
@@ -707,8 +753,116 @@ local function BuildRow(panel, spec)
 	return b
 end
 
+-- ---------------------------------------------------------------------------
+-- the dock handle
+--
+-- A slim glass tab flush to a screen edge: the party glyph, how many of you
+-- there are, and an arrow. Click it and the controls come out.
+--
+-- SAME SHAPE AS THE TOOLBOX RAIL, and by the same trick rather than by the
+-- same code. A tab beside a panel is two capsules with a gap of shadow
+-- between them; overlapped INTO the panel by its own corner radius, the inner
+-- curve is hidden behind the panel and it reads as a tab growing out of the
+-- drawer's edge. Shut, the same overlap puts that curve off the screen edge,
+-- so it hugs there too.
+-- ---------------------------------------------------------------------------
+
+function PF:BuildHandle()
+	if self.handle then return self.handle end
+
+	local h = Glass.CreatePanel(UIParent, {
+		frameType = "Button",
+		corner = HANDLE_CORNER,
+		shadow = A.db.profile.glass.shadow,
+	})
+	-- Above the panel it opens, and above the party capsules, because it is
+	-- the thing you press to reach both.
+	h:SetFrameStrata("HIGH")
+	self.handle = h
+
+	local glyph = h:CreateTexture(nil, "OVERLAY")
+	glyph:SetSize(HANDLE_GLYPH, HANDLE_GLYPH)
+	-- "party" is an alias of the social glyph in Core/Media.lua - the same
+	-- pair of figures, not a second drawing of them.
+	A.Media:SetIcon(glyph, "party")
+	W.Tint(glyph, A.Palette.c.text)
+	h.glyph = glyph
+
+	local count = W.Text(h, "tiny", "CENTER")
+	h.count = count
+
+	-- THE ARROW IS THE RESERVED GOLD, which is the brief's one conditional
+	-- colour - so it reads through W.Tint and follows a skin change on its
+	-- own, and on Dusk it is the deeper gold rather than the chrome.
+	local chev = h:CreateTexture(nil, "OVERLAY")
+	chev:SetSize(HANDLE_CHEV, HANDLE_CHEV)
+	chev:SetTexture(A.Media.texture.chevron)
+	W.Tint(chev, A.Palette.c.semanticGold)
+	h.chev = chev
+
+	h:SetScript("OnClick", function() PF:TogglePanel() end)
+	h:SetScript("OnEnter", function(self2)
+		W.SetButtonState(self2, false, true)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+		GameTooltip:SetText(_G.PARTY or "Party")
+		GameTooltip:Show()
+	end)
+	h:SetScript("OnLeave", function(self2)
+		W.SetButtonState(self2, false, false)
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+
+	self:LayoutHandle()
+	return h
+end
+
+--- Where the handle sits, which way its arrow points, and what it says.
+function PF:LayoutHandle()
+	local h = self.handle
+	if not h then return end
+	local edge = self:PanelEdge()
+	local vertical = IsVertical(edge)
+
+	h:SetScale(A.db.profile.scale or 1)
+	h:ClearAllPoints()
+	h:SetPoint(edge, UIParent, edge, 0, 0)
+	if vertical then
+		h:SetSize(HANDLE_THICK, HANDLE_LONG)
+	else
+		h:SetSize(HANDLE_LONG, HANDLE_THICK)
+	end
+
+	-- Laid out ALONG the edge it is docked on, so the three things read in a
+	-- line rather than stacked into a tab that is the wrong way round.
+	h.glyph:ClearAllPoints()
+	h.count:ClearAllPoints()
+	h.chev:ClearAllPoints()
+	if vertical then
+		h.glyph:SetPoint("TOP", h, "TOP", 0, -7)
+		h.count:SetPoint("TOP", h.glyph, "BOTTOM", 0, -3)
+		h.chev:SetPoint("BOTTOM", h, "BOTTOM", 0, 6)
+	else
+		h.glyph:SetPoint("LEFT", h, "LEFT", 7, 0)
+		h.count:SetPoint("LEFT", h.glyph, "RIGHT", 4, 0)
+		h.chev:SetPoint("RIGHT", h, "RIGHT", -6, 0)
+	end
+
+	W.PointChevron(h.chev, edge, self.panel and self.panel:IsShown())
+
+	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
+	h.count:SetText(n > 0 and (n .. "/" .. n) or "")
+	W.Color(h.count, A.Palette.c.textDim)
+
+	-- NOT IN A GROUP, NOT ON SCREEN. A dock to party controls with nobody in
+	-- the party is a tab that does nothing, permanently, on the edge of every
+	-- screen - and this addon already has one thing living there.
+	h:SetShown(n > 0)
+end
 function PF:BuildPanel()
 	if self.panel then return self.panel end
+	-- Before the panel, because the panel hangs off it.
+	self:BuildHandle()
 
 	local p = Glass.CreatePanel(UIParent, {
 		corner = 20, fill = "dialogFill", edge = "glassEdgeHi",
@@ -849,6 +1003,9 @@ function PF:TogglePanel()
 		self:RefreshPanel()
 		p:Show()
 	end
+	-- The arrow turns round: open, the click retreats the drawer to its own
+	-- edge; shut, it emerges away from it.
+	self:LayoutHandle()
 	return p:IsShown()
 end
 -- ---------------------------------------------------------------------------
@@ -877,6 +1034,7 @@ function PF:RegisterEvents()
 	-- through the same sweep rather than through four handlers that would
 	-- drift apart.
 	local function sweep()
+		PF:LayoutHandle()
 		PF:RefreshPanel()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end
@@ -947,6 +1105,7 @@ function PF:OnEnable()
 	self:RegisterMovers()
 	self:RegisterEvents()
 	self:HideBlizzard()
+	self:BuildPanel()
 	A:RegisterTicker(self, function()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end)
@@ -967,10 +1126,17 @@ function PF:OnDisable()
 		end
 	end
 	self.stack:Hide()
+	if self.handle then self.handle:Hide() end
+	if self.panel then self.panel:Hide() end
 end
 
 function PF:OnSkinChanged()
 	if not self.stack then return end
+	if self.handle then self.handle:ApplySkin() end
+	if self.panel then
+		self.panel:ApplySkin("dialogFill", "glassEdgeHi")
+		self:RefreshPanel()
+	end
 	for _, f in ipairs(self.frames) do UpdateAll(f) end
 end
 

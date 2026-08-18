@@ -27127,15 +27127,53 @@ section("party controls: the marks go on your target", function()
 	PF:RefreshPanel()
 
 	check(PF:PanelEdge() == "LEFT", "docked left by default")
-	local _, rel, at = p:GetPoint()
-	check(rel == UIParent and at == "LEFT",
-		"and anchored to that screen edge (" .. tostring(at) .. ")")
+
+	-- THE HANDLE IS THE THING AT THE EDGE, and the panel comes out of the
+	-- handle. That chain is the shape the brief describes - a tab flush to the
+	-- screen with a drawer behind it - and it is also what makes the panel
+	-- move when the handle is re-docked without either of them knowing about
+	-- the other.
+	check(PF.handle ~= nil, "there is a dock handle")
+	local _, hrel, hat = PF.handle:GetPoint()
+	check(hrel == UIParent and hat == "LEFT",
+		"the handle is flush to the screen edge (" .. tostring(hat) .. ")")
+	local _, prel = p:GetPoint()
+	check(prel == PF.handle,
+		"and the panel comes out of the handle, not off the bare edge")
+
 	check(PF:SetPanelEdge("RIGHT"), "it can be moved to another edge")
-	local _, _, at2 = p:GetPoint()
-	check(at2 == "RIGHT", "and goes there (" .. tostring(at2) .. ")")
+	local _, _, hat2 = PF.handle:GetPoint()
+	check(hat2 == "RIGHT", "and the handle goes there (" .. tostring(hat2) .. ")")
 	check(not PF:SetPanelEdge("MIDDLE"),
 		"and a corner that is not an edge is refused rather than obeyed")
 	PF:SetPanelEdge("LEFT")
+
+	-- THE ARROW TURNS ROUND. Open, the click retreats the drawer to its own
+	-- edge; shut, it emerges away from it - the same rule the Toolbox rail
+	-- follows, from the same function.
+	p:Hide()
+	PF:LayoutHandle()
+	local shut = PF.handle.chev.__rotation
+	PF:TogglePanel()
+	local open = PF.handle.chev.__rotation
+	check(shut ~= nil and open ~= nil and shut ~= open,
+		"the handle's arrow faces the other way with the drawer open (" ..
+		tostring(shut) .. " -> " .. tostring(open) .. ")")
+	PF:TogglePanel()
+
+	-- NOT IN A GROUP, NOT ON SCREEN. A dock to party controls with nobody in
+	-- the party is a tab that does nothing, permanently, on the edge of every
+	-- screen - and this addon already has one thing living there.
+	local keep = {}
+	for _, u in ipairs({ "party1", "party2", "party3", "party4" }) do
+		keep[u] = _G.__units[u].exists
+		_G.__units[u].exists = false
+	end
+	PF:LayoutHandle()
+	check(not PF.handle:IsShown(), "alone, there is no handle at all")
+	for u, was in pairs(keep) do _G.__units[u].exists = was end
+	PF:LayoutHandle()
+	check(PF.handle:IsShown(), "and it is back the moment you group up")
 
 	-- THE MARK GOES ON YOUR TARGET, which the brief never says and which
 	-- decides how the whole grid behaves: SetRaidTarget takes a unit and the
