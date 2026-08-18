@@ -38,6 +38,21 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.15.0",
+		date    = "2026-08-18",
+		lines   = {
+			"The postbox is ours. The To and Subject fields, the money boxes, the attachment slots and the letter you write in it - and its tabs no longer sit on top of the row above them.",
+			"First Aid, cooking, enchanting and beast training wear the skin. The marks that fold a category away, the two filters at the top and the count spinner beside Create, all in this interface's own lettering.",
+			"A letter or a quest item out of your bags opens on glass instead of parchment, in type you can read.",
+			"The game's own Options window is ours throughout now - its tabs, its section headings, its scroll bars, its buttons and the marks that expand its tree.",
+			"The page turners in the postbox and the book reader have their arrows back. They had been drawing nothing at all.",
+			"The main menu has room between its buttons again, and under its title.",
+			"Fixed: a wild beast with the same name as your pet was labelled as somebody's pet on its nameplate.",
+			"Fixed: what an NPC says to you had gone near-black on the glass.",
+			"Fixed: the flight console's leg marks sat where the bar used to end rather than where it ends now.",
+		},
+	},
+	{
 		version = "0.14.1",
 		date    = "2026-08-18",
 		lines   = {
