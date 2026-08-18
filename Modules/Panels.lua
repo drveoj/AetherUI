@@ -2461,15 +2461,61 @@ local function DressMail(frame, store)
 		end
 	end
 
-	-- The scroll frames behind the letter itself, both of which carry their
-	-- own parchment and their own bar.
+	-- THE PANE'S OWN TITLE, which is not the window's. Inbox and Send Mail
+	-- each carry one, in the client's gold, and the window has a title of its
+	-- own above them - so this is the second word on screen saying the same
+	-- thing in a different colour.
+	for _, name in ipairs({ "InboxTitleText", "SendMailTitleText",
+		"OpenMailTitleText" }) do
+		local fs = _G[name]
+		if fs then
+			Reskin.Font(fs, "pnTitle")
+			W.Color(fs, Palette.c.text)
+		end
+	end
+	local page = _G.InboxCurrentPage
+	if page then W.Color(page, Palette.c.textDim) end
+
+	-- THE LETTER YOU ARE WRITING. A ScrollingEditBox with its parchment in
+	-- its OWN background layer and its bar as a frame beside it - neither is a
+	-- region of the pane, so the sweep above reaches neither.
+	local editor = _G.MailEditBox
+	if editor then
+		editor.__aetherStore = editor.__aetherStore or {}
+		Reskin.Strip(editor, editor.__aetherStore)
+		local eb = editor.GetEditBox and editor:GetEditBox()
+		if eb then
+			Reskin.Font(eb, "pnBody")
+			W.Color(eb, Palette.c.text)
+		end
+	end
+	local ebar = _G.MailEditBoxScrollBar
+	if ebar then
+		ebar.__aetherStore = ebar.__aetherStore or {}
+		Reskin.ScrollBar(ebar, ebar.__aetherStore)
+	end
+
+	-- The scroll frames on the older panes, whose troughs are drawn on the
+	-- FRAME rather than on the bar.
 	for _, name in ipairs({ "SendMailScrollFrame", "OpenMailScrollFrame" }) do
 		Reskin.ScrollFrame(_G[name], store)
 	end
 
-	-- Send, Cancel, Reply, Delete and the rest. Named, but there are a dozen
-	-- of them across two panes, so they are found the way the Options pages'
-	-- are: a button with a label on it.
+	-- THE PAGE TURNERS. Art buttons rather than words, so the plate comes off
+	-- and the arrow on it stays - it is the only thing saying which way.
+	for _, name in ipairs({ "InboxPrevPageButton", "InboxNextPageButton" }) do
+		local btn = _G[name]
+		if btn then
+			Reskin.ClearButton(btn)
+			btn.__aetherStore = btn.__aetherStore or {}
+			Reskin.Strip(btn, btn.__aetherStore)
+			Reskin.Fonts(btn, "pnBody", 0, Palette.c.text)
+		end
+	end
+
+	-- Send, Cancel, Reply, Delete, Open All and the rest. A dozen of them
+	-- across three panes, so they are found the way the Options pages' are: a
+	-- button with a label on it.
 	for _, name in ipairs({ "SendMailFrame", "OpenMailFrame", "InboxFrame" }) do
 		local pane = _G[name]
 		if pane and pane.GetChildren then

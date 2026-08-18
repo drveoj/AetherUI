@@ -1100,6 +1100,14 @@ function CreateFrame(kind, name, parent, template)
 		function f:SetFont(p, s, fl) self.__font = { p, s, fl } return true end
 		function f:GetFont() return unpack(self.__font or {}) end
 		function f:SetTextColor(r, g, b, a) self.__color = { r, g, b, a } end
+		-- AND IT CAN BE ASKED. The setter was here and the getter was not, so
+		-- anything that coloured an edit box could be checked only by whether it
+		-- errored - and the letter you write in the postbox is one.
+		function f:GetTextColor()
+			local c = self.__color
+			if not c then return 1, 1, 1, 1 end
+			return c[1], c[2], c[3], c[4] or 1
+		end
 		function f:SetAutoFocus(v) self.__autoFocus = v and true or false end
 		function f:SetFocus() self.__focus = true end
 		function f:ClearFocus() self.__focus = false end
@@ -3073,8 +3081,42 @@ do
 			tab:CreateFontString(nil, "OVERLAY")
 		end
 		local sf = CreateFrame("ScrollFrame", "SendMailScrollFrame", _G.SendMailFrame)
+		for _ = 1, 3 do
+			sf:CreateTexture(nil, "ARTWORK"):SetTexture("UI-Character-ScrollBar")
+		end
 		sf.ScrollBar = CreateFrame("Slider", nil, sf)
-		sf.ScrollBar:CreateTexture(nil, "ARTWORK"):SetTexture("scrollbar-art")
+
+		-- THE LETTER YOU ARE WRITING is a ScrollingEditBox with its parchment in
+		-- its OWN background layer and its bar as a frame beside it. Neither is a
+		-- region of SendMailFrame, so a sweep of the pane reaches neither - which
+		-- is why the page stayed gold behind our glass.
+		_G.MailEditBox = CreateFrame("Frame", "MailEditBox", _G.SendMailFrame)
+		local paper = _G.MailEditBox:CreateTexture(nil, "BACKGROUND")
+		paper:SetTexture("Interface\\Stationery\\Stationery")
+		local inner = CreateFrame("EditBox", nil, _G.MailEditBox)
+		inner:SetTextColor(0.20, 0.14, 0.08, 1)
+		function _G.MailEditBox:GetEditBox() return inner end
+		_G.MailEditBoxScrollBar = CreateFrame("Slider", "MailEditBoxScrollBar",
+			_G.SendMailFrame)
+		_G.MailEditBoxScrollBar.Track = CreateFrame("Frame", nil, _G.MailEditBoxScrollBar)
+		_G.MailEditBoxScrollBar.Track:CreateTexture(nil, "ARTWORK"):SetTexture("minimal-scrollbar-track-top")
+
+		-- The pane's own title, in the client's gold, under the window's.
+		for _, n in ipairs({ "InboxTitleText", "SendMailTitleText" }) do
+			local fs = _G.MailFrame:CreateFontString(n, "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+			fs:SetTextColor(1, 0.82, 0, 1)
+			_G[n] = fs
+		end
+
+		-- The page turners: art buttons rather than words.
+		for _, n in ipairs({ "InboxPrevPageButton", "InboxNextPageButton" }) do
+			local b = CreateFrame("Button", n, _G.InboxFrame)
+			b:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+			local fs = b:CreateFontString(nil, "OVERLAY")
+			fs:SetTextColor(1, 0.82, 0, 1)
+			_G[n] = b
+		end
 		
 		local it = buildPanel("ItemTextFrame")
 		-- ITS PAGE IS FOUR NAMED TEXTURES, not one and not regions of anything
@@ -10713,6 +10755,48 @@ section("panels: the postbox, the book and the trade skills", function()
 		end
 	end
 	check(dark == 0, "the letter you are writing is lifted too (" .. dark .. ")")
+
+	-- THE PAGE ITSELF is a ScrollingEditBox with its parchment in its OWN
+	-- background layer and its bar as a frame beside it - neither is a region
+	-- of the pane, so a sweep of SendMailFrame reaches neither and the letter
+	-- stays gold behind our glass.
+	local paper = 0
+	for _, r in ipairs({ _G.MailEditBox:GetRegions() }) do
+		if r.__tex and tostring(r.__tex):find("Stationery", 1, true)
+			and r:IsShown() then paper = paper + 1 end
+	end
+	check(paper == 0, "the letter's own parchment comes off (" .. paper .. ")")
+	check(_G.MailEditBoxScrollBar.__aetherScroll == true,
+		"and the bar beside it is ours")
+	local er = select(1, _G.MailEditBox:GetEditBox():GetTextColor())
+	check(er and er > 0.5,
+		"and what you type is lifted off the paper it was written for (" ..
+		string.format("%.2f", er or 0) .. ")")
+
+	-- THE PANE'S OWN TITLE is not the window's. Inbox and Send Mail each
+	-- carry one in the client's gold, under a window title that already
+	-- names the thing - two words on screen saying it in two colours.
+	local goldTitles = {}
+	for _, n in ipairs({ "InboxTitleText", "SendMailTitleText" }) do
+		local tr, tg = _G[n]:GetTextColor()
+		if tr == 1 and tg and tg < 0.9 then
+			goldTitles[#goldTitles + 1] = n
+		end
+	end
+	check(#goldTitles == 0,
+		"the pane titles are in our own ink (" ..
+		(#goldTitles > 0 and table.concat(goldTitles, ",") or "both") .. ")")
+
+	-- The page turners, which are art rather than words.
+	local stone = 0
+	for _, n in ipairs({ "InboxPrevPageButton", "InboxNextPageButton" }) do
+		local tex = _G[n].GetNormalTexture and _G[n]:GetNormalTexture()
+		if tex and tostring(tex:GetTexture() or ""):find("Interface", 1, true) then
+			stone = stone + 1
+		end
+	end
+	check(stone == 0, "and the page turners have lost their plates (" ..
+		stone .. ")")
 
 	-- THE BUTTONS on all three. Send, Create, Create All, Close - a dozen of
 	-- them across the windows, and every one a red UIPanelButtonTemplate plate.
