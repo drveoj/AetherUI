@@ -5072,12 +5072,21 @@ function C_PartyInfo.DoCountdown(n)
 	_G.__partyCalls.countdown = _G.__partyCalls.countdown + 1
 	_G.__partyCalls.seconds = n
 end
-function C_PartyInfo.ConvertToRaid() _G.__partyCalls.raid = _G.__partyCalls.raid + 1 end
---- The CONFIRMING one, which is a different call and the one to use: turning a
---- party into a raid cannot be undone.
+--- CONVERTING TO A RAID IS A BARE GLOBAL ON THIS CLIENT.
+--
+--  Blizzard_UnitPopup_Vanilla.toc loads Classic/UnitPopupButtons_Shared.lua,
+--  whose Convert to Raid menu item calls ConvertToRaid(). C_PartyInfo
+--  .ConvertToRaid is the Mainline spelling and is NOT provided here, because
+--  a mock that answered both would call either one correct - and the whole
+--  point of this file is to be no kinder than the client.
+function ConvertToRaid() _G.__partyCalls.raid = _G.__partyCalls.raid + 1 end
+
+--- ConfirmConvertToRaid is NOT an ask-first version of that call, whatever
+--- its name suggests: the group finder uses it inside a popup's OnAccept,
+--- after the player has already answered. Called cold it does nothing - so
+--- the mock does nothing, and a button wired to it stays dead in here too.
 function C_PartyInfo.ConfirmConvertToRaid()
-	_G.__partyCalls.raid = _G.__partyCalls.raid + 1
-	_G.__partyCalls.confirmed = true
+	_G.__partyCalls.confirmedCold = (_G.__partyCalls.confirmedCold or 0) + 1
 end
 function InitiateRolePoll() _G.__partyCalls.roles = _G.__partyCalls.roles + 1 end
 
@@ -27277,8 +27286,10 @@ section("party controls: what a member may press", function()
 	-- somebody has changed for everybody by mis-clicking a row.
 	p.rows[4]:GetScript("OnClick")(p.rows[4])
 	check(calls.raid == 1, "Convert to Raid reaches the client")
-	check(calls.confirmed == true,
-		"through the call that ASKS first - it cannot be undone")
+	check((calls.confirmedCold or 0) == 0,
+		"through the call this client actually has - ConfirmConvertToRaid"
+		.. " reads like an ask-first version and is not one; called cold it"
+		.. " does nothing at all, which is what the button did")
 
 	-- The countdown carries its own number, and the client's cap rather than
 	-- one of ours: DoCountdown refuses anything longer and says nothing.

@@ -591,14 +591,24 @@ local ACTIONS = {
 		end,
 	},
 	{
-		-- THE GOLD ONE, and the only one here that cannot be undone: a raid
-		-- cannot be turned back into a party. Semantic gold says so, and the
-		-- client's own confirm dialog is used rather than a second one of ours.
-		key = "raid", label = "Convert to Raid", glyph = "gear",
-		token = "semanticGold", leader = true,
+		-- THE GOLD ONE, because it changes the shape of the group rather than
+		-- asking it a question.
+		--
+		-- THE BARE GLOBAL, not C_PartyInfo. This client's own right-click menu
+		-- calls ConvertToRaid() - Blizzard_UnitPopup_Vanilla.toc loads
+		-- Classic/UnitPopupButtons_Shared.lua, and that is what it uses. The
+		-- namespaced C_PartyInfo.ConvertToRaid is the Mainline form.
+		--
+		-- And NOT ConfirmConvertToRaid, which was the first thing tried here
+		-- on the strength of its name. It is not an ask-first version of this
+		-- call: the group finder uses it inside a popup's OnAccept, after the
+		-- player has already answered. Called cold it does nothing at all,
+		-- silently, which is exactly what the button did.
+		key = "raid", label = _G.CONVERT_TO_RAID or "Convert to Raid",
+		glyph = "gear", token = "semanticGold", leader = true,
 		run = function()
-			if C_PartyInfo and C_PartyInfo.ConfirmConvertToRaid then
-				C_PartyInfo.ConfirmConvertToRaid()
+			if ConvertToRaid then
+				ConvertToRaid()
 			elseif C_PartyInfo and C_PartyInfo.ConvertToRaid then
 				C_PartyInfo.ConvertToRaid()
 			end
