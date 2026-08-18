@@ -125,7 +125,7 @@ local PANELS = {
 	-- The Options window itself. Our own settings page lives inside it, and
 	-- skinning the page while leaving the frame around it in stone is the
 	-- one place a player sees both at once.
-	{ frame = "SettingsPanel" },
+	{ frame = "SettingsPanel", close = "ClosePanelButton" },
 }
 
 PN.PANELS = PANELS
@@ -182,7 +182,13 @@ end
 local function CloseButton(frame)
 	local name = frame.GetName and frame:GetName()
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
-	return (entry and entry.close and _G[entry.close])
+	-- BY PARENT KEY OR BY GLOBAL. Most windows name their X as a global;
+	-- the Options window keeps it as frame.ClosePanelButton and uses the
+	-- name CloseButton for the ordinary button along the bottom - so the
+	-- generic answer put our X on the wrong one, behind the word Close, and
+	-- left the client's red one where it was.
+	return (entry and entry.close
+		and ((frame[entry.close]) or _G[entry.close]))
 		or Reskin.Element(frame, "CloseButton")
 end
 
@@ -2166,17 +2172,128 @@ end
 --  Every part is a parentKey off the panel, which is what makes this a list
 --  rather than a hunt: GameTab and AddOnsTab, CloseButton and ApplyButton,
 --  CategoryList, and the SearchBox.
+--- Every element a WowScrollBox has handed out, whatever it is holding.
+--
+--  POOLED AND REBUILT. A scroll box acquires its rows as you scroll and hands
+--  them back when they leave, so anything dressed once is dressed for whatever
+--  happened to be on screen at the time. Asked again on every pass, and the
+--  dressers guard themselves.
+-- The Options window's two tabs. MinimalTabTemplate sizes itself to its own
+-- plate, and the plate is the first thing off - so both numbers are ours now
+-- or one tab is the width of the word Game and the other of the word AddOns.
+local SETTINGS_TAB_H   = 30
+local SETTINGS_TAB_W   = 104
+local SETTINGS_TAB_PAD = 16
+
+local function ScrollBoxFrames(box)
+	if not box then return {} end
+	if box.GetFrames then
+		local ok, frames = pcall(box.GetFrames, box)
+		if ok and type(frames) == "table" then return frames end
+	end
+	if box.GetChildren then return { box:GetChildren() } end
+	return {}
+end
+
+--- One heading in the category list - Gameplay, Accessibility, System.
+--
+--  Its own template with its own Background texture and GameFontHighlightMedium
+--  on the label, so nothing the shell does reaches either: the sweep walks the
+--  window's regions and these are regions of a pooled child three frames down.
+local function DressCategoryHeader(el)
+	if not el or el.__aetherHeader then return end
+	el.__aetherHeader = true
+
+	if el.Background then
+		-- Not hidden. It is the only thing separating one group of rows from
+		-- the next, so it becomes our own rule instead of somebody else's
+		-- gold-edged plate.
+		el.Background:SetTexture(A.Media.texture.flat)
+		W.Tint(el.Background, A.Palette.c.glassEdge, 0.35)
+	end
+	if el.Label then
+		Reskin.Font(el.Label, "qlZone")
+		W.Color(el.Label, A.Palette.c.accent)
+	end
+end
+
+--- One row in the category list.
+local function DressCategoryRow(el)
+	if not el then return end
+
+	if not el.__aetherRow then
+		el.__aetherRow = true
+		Reskin.ClearButton(el)
+	end
+
+	-- THE SELECTION, ours. Blizzard's is a gold-bordered plate on the row's
+	-- own Texture; ours is the interface's selection colour behind the words.
+	if el.Texture then
+		el.Texture:SetTexture(A.Media.texture.flat)
+		W.Tint(el.Texture, A.Palette.c.rowSel)
+	end
+	if el.Label then
+		Reskin.Font(el.Label, "qlRow")
+		W.Color(el.Label, A.Palette.c.text)
+	end
+
+	-- THE EXPAND TOGGLE. Blizzard draws a plus and a minus out of
+	-- Interface/Buttons - two plates with a gold rim on them - and this
+	-- interface has one glyph for open-and-shut already: the chevron the
+	-- Toolbox rail, the dropdowns and the quest log all use.
+	local toggle = el.Toggle
+	if toggle then
+		Reskin.ClearButton(toggle)
+		if not toggle.__aetherGlyph then
+			local g = toggle:CreateTexture(nil, "OVERLAY")
+			g:SetTexture(A.Media.texture.chevron)
+			g:SetSize(9, 9)
+			g:SetPoint("CENTER", toggle, "CENTER", 0, 0)
+			toggle.__aetherGlyph = g
+		end
+		W.Tint(toggle.__aetherGlyph, A.Palette.c.textDim)
+	end
+end
+
+--- Every ordinary button inside the settings pages - Defaults, and whatever
+--  else a page puts on itself.
+--
+--  BY WHAT IT IS, not by name. The pages are built from data and their buttons
+--  are named nothing at all, so the only question that can be asked is whether
+--  a child is a button with a label on it.
+local function DressPanelButtons(root, depth)
+	if not root or not root.GetChildren or (depth or 0) > 4 then return end
+	for _, child in ipairs({ root:GetChildren() }) do
+		if child.GetObjectType and child:GetObjectType() == "Button"
+			and child.GetFontString and child:GetFontString()
+			and not child.__aetherSkin then
+			-- UIPanelButtonTemplate draws with Left, Middle and Right
+			-- BACKGROUND regions rather than state textures, which is why a
+			-- plain ClearButton leaves the red plate exactly where it was.
+			-- Reskin.Button knows that.
+			Reskin.Button(child, "pnBody")
+		end
+		DressPanelButtons(child, (depth or 0) + 1)
+	end
+end
+
 local function DressSettings(frame, store)
-	-- The two tabs. MinimalTabTemplate, so the same treatment the chat tabs
-	-- get - our own surface, and the client's plate off it.
+	-- The two tabs. MinimalTabTemplate, which sizes itself to its label - so
+	-- the plate comes off and the SIZE has to be put back by hand, or one tab
+	-- is the width of the word Game and the other of the word AddOns.
 	for _, key in ipairs({ "GameTab", "AddOnsTab" }) do
 		local tab = frame[key]
 		if tab then
 			Reskin.Tab(tab, store, "pnBody")
+			tab:SetHeight(SETTINGS_TAB_H)
+			local label = tab.Text or (tab.GetFontString and tab:GetFontString())
+			local wide = label and label.GetStringWidth and label:GetStringWidth() or 0
+			tab:SetWidth(math.max(SETTINGS_TAB_W, wide + SETTINGS_TAB_PAD * 2))
 		end
 	end
 
-	-- The buttons along the bottom.
+	-- The buttons along the bottom. CloseButton here is the one that says
+	-- Close, not the X - that is ClosePanelButton, and the entry says so.
 	for _, key in ipairs({ "CloseButton", "ApplyButton" }) do
 		local btn = frame[key]
 		if btn then Reskin.Button(btn, "pnBody") end
@@ -2193,6 +2310,16 @@ local function DressSettings(frame, store)
 		if bar then
 			bar.__aetherStore = bar.__aetherStore or {}
 			Reskin.ScrollBar(bar, bar.__aetherStore)
+		end
+
+		-- THE ROWS AND THE HEADINGS, which are pooled elements inside the
+		-- scroll box rather than children of anything the sweep walks.
+		for _, el in ipairs(ScrollBoxFrames(list.ScrollBox)) do
+			if el.Toggle ~= nil or el.Label and el.Texture then
+				DressCategoryRow(el)
+			elseif el.Background and el.Label then
+				DressCategoryHeader(el)
+			end
 		end
 	end
 
@@ -2211,11 +2338,32 @@ local function DressSettings(frame, store)
 		search.__aetherPill:ApplySkin("glassSoft", "glassEdge")
 	end
 
-	-- The panel that holds whichever page is open. Its own frame, its own art.
+	-- The panel that holds whichever page is open. Its own frame, its own art,
+	-- its own scroll bar, and every button a page puts on itself.
 	local container = frame.Container
-	if container then Reskin.Strip(container, store) end
+	if container then
+		Reskin.Strip(container, store)
+		local sl = container.SettingsList
+		if sl then
+			sl.__aetherStore = sl.__aetherStore or {}
+			Reskin.Strip(sl, sl.__aetherStore)
+			if sl.Header then
+				sl.Header.__aetherStore = sl.Header.__aetherStore or {}
+				Reskin.Strip(sl.Header, sl.Header.__aetherStore)
+				if sl.Header.Title then
+					Reskin.Font(sl.Header.Title, "qlHeading")
+					W.Color(sl.Header.Title, A.Palette.c.text)
+				end
+			end
+			local sbar = sl.ScrollBar or (sl.ScrollBox and sl.ScrollBox.ScrollBar)
+			if sbar then
+				sbar.__aetherStore = sbar.__aetherStore or {}
+				Reskin.ScrollBar(sbar, sbar.__aetherStore)
+			end
+		end
+		DressPanelButtons(container, 0)
+	end
 end
-
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,

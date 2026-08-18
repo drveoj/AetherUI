@@ -529,12 +529,25 @@ function Reskin.ScrollBar(bar, store)
 
 	if store then Reskin.Strip(bar, store) end
 
-	for _, key in ipairs({ "ScrollUpButton", "ScrollDownButton" }) do
+	-- TWO GENERATIONS OF SCROLL BAR, one function. The old one names its
+	-- arrows ScrollUpButton and ScrollDownButton; MinimalScrollBar - which
+	-- is what the Options window and everything else modern uses - calls
+	-- them Back and Forward and puts its rail in a CHILD FRAME called Track.
+	-- A sweep that only walks the bar's own regions leaves that rail drawing,
+	-- which is three atlas slices of somebody else's grey down the side of
+	-- our list.
+	for _, key in ipairs({ "ScrollUpButton", "ScrollDownButton",
+		"Back", "Forward" }) do
 		local btn = Reskin.Element(bar, key)
 		if btn then
 			Reskin.ClearButton(btn)
 			if store then Reskin.Strip(btn, store) end
 		end
+	end
+
+	if bar.Track then
+		bar.Track.__aetherStore = bar.Track.__aetherStore or {}
+		Reskin.Strip(bar.Track, bar.Track.__aetherStore)
 	end
 
 	-- A TRACK, always drawn. The thumb alone tells you a list scrolls only
@@ -550,11 +563,26 @@ function Reskin.ScrollBar(bar, store)
 		bar.__aetherTrack = track
 	end
 
+	-- THE THUMB IS A TEXTURE on the old bar and a FRAME on the new one, and
+	-- the frame's art is its own regions. Both, so one function covers both.
 	local thumb = bar.GetThumbTexture and bar:GetThumbTexture()
 	if thumb then
 		thumb:SetTexture(A.Media.texture.flat)
 		A.Widgets.Tint(thumb, A.Palette.c.text, 0.45)
 		if thumb.SetWidth then thumb:SetWidth(A:Px(6)) end
+	end
+
+	if bar.Thumb then
+		bar.Thumb.__aetherStore = bar.Thumb.__aetherStore or {}
+		Reskin.Strip(bar.Thumb, bar.Thumb.__aetherStore)
+		if not bar.Thumb.__aetherFill then
+			local fill = bar.Thumb:CreateTexture(nil, "ARTWORK")
+			fill:SetTexture(A.Media.texture.flat)
+			fill:SetPoint("TOPLEFT", bar.Thumb, "TOPLEFT", 1, -1)
+			fill:SetPoint("BOTTOMRIGHT", bar.Thumb, "BOTTOMRIGHT", -1, 1)
+			bar.Thumb.__aetherFill = fill
+		end
+		A.Widgets.Tint(bar.Thumb.__aetherFill, A.Palette.c.text, 0.45)
 	end
 
 	bar.__aetherScroll = true

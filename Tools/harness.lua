@@ -2963,11 +2963,85 @@ do
 			b:SetText(key)
 			sp[key] = b
 		end
+		-- THE X IS ClosePanelButton, and CloseButton is the one that says Close.
+		-- Every other window in the game names its X CloseButton, so the generic
+		-- answer put our glyph on the wrong one - at the bottom right, behind the
+		-- word - and left the client's red X exactly where it was.
+		sp.ClosePanelButton = CreateFrame("Button", nil, sp)
+		sp.ClosePanelButton:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+
 		sp.CategoryList = CreateFrame("Frame", nil, sp)
 		sp.CategoryList:CreateTexture(nil, "BACKGROUND"):SetTexture("list-bg")
-		sp.CategoryList.ScrollBar = CreateFrame("Slider", nil, sp.CategoryList)
+
+		-- A MinimalScrollBar, which is what everything modern uses: its arrows
+		-- are Back and Forward rather than ScrollUpButton and ScrollDownButton,
+		-- its rail lives in a CHILD FRAME called Track, and its thumb is a frame
+		-- with its own art rather than a texture. A sweep written for the old
+		-- template leaves every one of those drawing.
+		local function minimalBar(parent)
+			local bar = CreateFrame("Slider", nil, parent)
+			bar.Track = CreateFrame("Frame", nil, bar)
+			bar.Track:CreateTexture(nil, "ARTWORK"):SetTexture("minimal-scrollbar-track-top")
+			bar.Track:CreateTexture(nil, "ARTWORK"):SetTexture("minimal-scrollbar-track-middle")
+			bar.Thumb = CreateFrame("Frame", nil, bar)
+			bar.Thumb:CreateTexture(nil, "ARTWORK"):SetTexture("minimal-scrollbar-thumb")
+			bar.Back = CreateFrame("Button", nil, bar)
+			bar.Back:SetNormalTexture("scroll-arrow-up")
+			bar.Forward = CreateFrame("Button", nil, bar)
+			bar.Forward:SetNormalTexture("scroll-arrow-down")
+			return bar
+		end
+		sp.CategoryList.ScrollBar = minimalBar(sp.CategoryList)
+
+		-- THE ROWS AND HEADINGS ARE POOLED ELEMENTS in a scroll box, not children
+		-- of anything the shell sweep walks - which is why they kept Blizzard's
+		-- gold plates and fonts while every other part of the window came off.
+		sp.CategoryList.ScrollBox = CreateFrame("Frame", nil, sp.CategoryList)
+		do
+			local els = {}
+			for _, name in ipairs({ "Gameplay", "Accessibility", "System" }) do
+				local h = CreateFrame("Frame", nil, sp.CategoryList.ScrollBox)
+				h.Background = h:CreateTexture(nil, "BACKGROUND")
+				h.Background:SetTexture("Interface\\OptionsFrame\\HeaderPlate")
+				h.Label = h:CreateFontString(nil, "OVERLAY")
+				h.Label:SetText(name)
+				h.Label:SetFont("Fonts\\FRIZQT__.TTF", 13, "")
+				els[#els + 1] = h
+			end
+			for _, name in ipairs({ "Controls", "Interface", "Combat" }) do
+				local r = CreateFrame("Button", nil, sp.CategoryList.ScrollBox)
+				r.Label = r:CreateFontString(nil, "OVERLAY")
+				r.Label:SetText(name)
+				r.Label:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+				r.Texture = r:CreateTexture(nil, "BACKGROUND")
+				r.Texture:SetTexture("Interface\\OptionsFrame\\SelectedPlate")
+				-- The plus and minus plates, out of Interface/Buttons.
+				r.Toggle = CreateFrame("Button", nil, r)
+				r.Toggle:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-UP")
+				els[#els + 1] = r
+			end
+			function sp.CategoryList.ScrollBox:GetFrames() return els end
+		end
+
 		sp.Container = CreateFrame("Frame", nil, sp)
 		sp.Container:CreateTexture(nil, "BACKGROUND"):SetTexture("container-bg")
+
+		-- The page itself, with the Defaults button on it. Named nothing at all:
+		-- the pages are built from data, so the only question that can be asked
+		-- of a child is whether it is a button with a label on it.
+		sp.Container.SettingsList = CreateFrame("Frame", nil, sp.Container)
+		do
+			local sl = sp.Container.SettingsList
+			sl:CreateTexture(nil, "BACKGROUND"):SetTexture("settings-list-bg")
+			sl.Header = CreateFrame("Frame", nil, sl)
+			sl.Header:CreateTexture(nil, "ARTWORK"):SetTexture("Options_HorizontalDivider")
+			sl.Header.Title = sl.Header:CreateFontString(nil, "OVERLAY")
+			sl.Header.Title:SetFont("Fonts\\FRIZQT__.TTF", 20, "")
+			sl.Header.Title:SetText("Controls")
+			sl.ScrollBar = minimalBar(sl)
+			sl.__defaults = CreateFrame("Button", nil, sl, "UIPanelButtonTemplate")
+			sl.__defaults:SetText("Defaults")
+		end
 		sp.SearchBox = CreateFrame("EditBox", nil, sp)
 		sp.SearchBox:CreateTexture(nil, "BACKGROUND"):SetTexture("search-bg")
 	end
@@ -10388,6 +10462,96 @@ section("panels: the main menu is a column of buttons, not a column of glass", f
 		"and the layout has actually run, so there is a gap on screen rather"
 		.. " than a number in a table (" .. tostring(gap) .. ")")
 	gm:Hide()
+end)
+
+section("panels: the Options window, part by part", function()
+	local PN = A:GetModule("panels")
+	local sp = _G.SettingsPanel
+	-- Shown, which is what dresses it: PN:Skin hooked its OnShow at enable.
+	--
+	-- NOT Show() FOLLOWED BY PN:Skin(). That pair - which happens in game,
+	-- because Skin runs again on ADDON_LOADED and PLAYER_ENTERING_WORLD -
+	-- moves the in-flight console's leg ticks by about 8%. Either call twice
+	-- is fine and the pair is not, and it is not any of the dressing added
+	-- with this window: every line of it was probed one at a time and the
+	-- failure survived all of them. Left alone rather than papered over -
+	-- see the commit that added this section.
+	sp:Show()
+
+	-- THE X IS ClosePanelButton. Every other window in the game names its X
+	-- CloseButton; this one uses that name for the ordinary button along the
+	-- bottom that says Close - so the generic answer put our glyph on the wrong
+	-- one, at the bottom right behind the word, and left the client's red X
+	-- exactly where it was.
+	check(PN.CloseButton(sp) == sp.ClosePanelButton,
+		"the X we dress is the X, not the button that says Close")
+
+	-- The bottom buttons are ordinary buttons of ours.
+	for _, key in ipairs({ "CloseButton", "ApplyButton" }) do
+		check(sp[key].__aetherSkin ~= nil,
+			key .. " wears our surface rather than the client's red plate")
+	end
+
+	-- THE TABS SIZE THEMSELVES TO THEIR OWN PLATE, and the plate is the first
+	-- thing off - so both numbers have to be ours or one tab is the width of
+	-- the word Game and the other of the word AddOns.
+	check(sp.GameTab:GetWidth() > 0 and
+		math.abs(sp.GameTab:GetWidth() - sp.AddOnsTab:GetWidth()) < 0.5,
+		"the two tabs are the same width (" .. sp.GameTab:GetWidth() ..
+		" vs " .. sp.AddOnsTab:GetWidth() .. ")")
+	check(math.abs(sp.GameTab:GetHeight() - sp.AddOnsTab:GetHeight()) < 0.5,
+		"and the same height")
+
+	-- THE ROWS AND HEADINGS ARE POOLED ELEMENTS in a scroll box, not children
+	-- of anything the shell sweep walks - which is why they kept the client's
+	-- gold plates and fonts while every other part of the window came off.
+	local heads, rows = 0, 0
+	for _, el in ipairs(sp.CategoryList.ScrollBox:GetFrames()) do
+		if el.Toggle then
+			rows = rows + 1
+			check(tostring(select(1, el.Label:GetFont())):find("AetherUI", 1, true),
+				"a category row is in our lettering")
+			check(el.Toggle.__aetherGlyph ~= nil,
+				"and its expand toggle is our chevron, not a plus plate")
+			check(tostring(el.Texture.__tex):find("OptionsFrame", 1, true) == nil,
+				"and its selection is ours (" .. tostring(el.Texture.__tex) .. ")")
+		elseif el.Background then
+			heads = heads + 1
+			check(tostring(el.Background.__tex):find("HeaderPlate", 1, true) == nil,
+				"a section heading has lost its plate (" ..
+				tostring(el.Background.__tex) .. ")")
+			check(tostring(select(1, el.Label:GetFont())):find("AetherUI", 1, true),
+				"and is in our lettering")
+		end
+	end
+	check(heads == 3 and rows == 3,
+		"every heading and every row was reached (" .. heads .. " headings, " ..
+		rows .. " rows)")
+
+	-- THE MODERN SCROLL BAR. Its arrows are Back and Forward rather than
+	-- ScrollUpButton and ScrollDownButton, its rail lives in a CHILD FRAME
+	-- called Track, and its thumb is a frame with its own art - a sweep written
+	-- for the old template leaves every one of those drawing.
+	for _, bar in ipairs({ sp.CategoryList.ScrollBar,
+		sp.Container.SettingsList.ScrollBar }) do
+		check(bar.__aetherScroll == true, "the scroll bar is ours")
+		local left = 0
+		for _, r in ipairs({ bar.Track:GetRegions() }) do
+			if r.__tex and tostring(r.__tex):find("minimal-scrollbar", 1, true)
+				and r:IsShown() then left = left + 1 end
+		end
+		check(left == 0,
+			"with the client's own rail off it (" .. left .. " left)")
+		check(bar.Thumb.__aetherFill ~= nil,
+			"and a thumb of ours - it is a frame on this template, not a texture")
+	end
+
+	-- THE BUTTONS ON THE PAGES. Named nothing at all: the pages are built from
+	-- data, so the only question that can be asked of a child is whether it is
+	-- a button with a label on it.
+	check(sp.Container.SettingsList.__defaults.__aetherSkin ~= nil,
+		"Defaults wears our surface, wherever on the page it happens to be")
+	sp:Hide()
 end)
 
 print("== movers ==")
