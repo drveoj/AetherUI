@@ -3,10 +3,9 @@
 Design source: `E:\AetherUI Design\design_handoff_party\` (README.md, `Party Frames.dc.html`,
 screens 12a/12b/12c), with the skin rules in `E:\AetherUI Design\design_handoff_skins\README.md`.
 
-Nothing of the party frames is built yet. What **is** built, and is in this plan because
-the design cannot be implemented correctly without it, is the semantic gold token — the
-handoff names it as binding, and our palette got it wrong in a way that made one skin
-strictly worse than the others.
+**Built.** This started as a review and became the record of what was built and where the
+brief and the client disagreed. §1 is the palette work the design could not be
+implemented correctly without; §7 lists every departure.
 
 ---
 
@@ -84,16 +83,26 @@ Verified against `D:\Blizzard\World of Warcraft\_classic_era_\BlizzardInterfaceC
 | Ready Check | `C_PartyInfo.DoReadyCheck()` | leader or assistant — the client's own slash command checks |
 | Countdown | `C_PartyInfo.DoCountdown(n)` | **not** gated client-side; `n <= Constants.PartyCountdownConstants.MaxCountdownSeconds` |
 | Role Check | `InitiateRolePoll()` | bare global; used by `Blizzard_GroupFinder_VanillaStyle` |
-| Convert to Raid | `C_PartyInfo.ConvertToRaid()` | also `C_PartyInfo.ConfirmConvertToRaid()` |
+| Convert to Raid | **`ConvertToRaid()`** — the bare global | not gated; see below |
 
 The design hides Ready Check, Role Check and Convert for non-leaders and keeps Countdown
 visible for everyone. That matches the client exactly — worth recording, because it looks
 like an oversight and is not one.
 
-**Roles exist but are opt-in.** `Classic/RolePoll.lua` ships and `UnitGroupRolesAssigned`
-is live, but a role is only set by answering a role poll or listing in the group finder.
-For most Classic Era party members it returns `"NONE"`. The 22px role glyph is therefore
-usually empty and the design specifies no empty state.
+**Convert to Raid took two wrong calls to get right, and both were assumptions.**
+`C_PartyInfo.ConvertToRaid` is the Mainline spelling; `Blizzard_UnitPopup_Vanilla.toc`
+loads `Classic/UnitPopupButtons_Shared.lua`, whose menu item calls the bare global.
+And `ConfirmConvertToRaid` is **not** an ask-first version of it, whatever the name
+suggests — the group finder calls it inside a popup's `OnAccept`, *after* the player has
+answered. Called cold it does nothing, silently. There is no ask-first API here and the
+client's own menu does not confirm, so neither do we. A raid can also be turned back
+into a party (`ConvertToParty()`), so "it cannot be undone" was wrong as well.
+
+**Roles exist but nobody sets them — and the API does not say so.** `Classic/RolePoll.lua`
+ships and `UnitGroupRolesAssigned` is live, but a role is only set by answering a role
+poll or listing in the group finder. It does **not** answer `"NONE"` for somebody who
+never did: they come back as `DAMAGER`. So the dps arrow marked everybody and meant
+nothing, and the empty-glyph branch was unreachable. Tank and healer only.
 
 **Markers are target-relative.** `SetRaidTarget("target", i)`. The grid's wells are inert
 with no target, and the "active assignment" focus ring has to track
@@ -122,12 +131,9 @@ Reuse rather than rebuild:
   token.
 - Type styles go through `Reskin.Font`, not per-string sizes.
 
-Needs building:
-
-- Five glyphs. `Core/Media.lua` has `chipDisc` and `chevron` and nothing else the design
-  asks for: crown, shield/lock (tank), life (healer), up-arrow (dps), resurrect.
-- Dead / ghost / offline states. The brief has one dead state; `UnitIsDeadOrGhost` covers
-  both and they should read the same. Offline is `UnitIsConnected`.
+Built: four new glyphs (crown, healer, dps, resurrect — the tank shield is an alias of
+`guild` and the handle's figures of `social`, not second drawings), and dead / ghost /
+offline states. `UnitIsDeadOrGhost` covers dead and ghost and they read the same.
 
 Corrections to the brief:
 
@@ -146,32 +152,46 @@ Corrections to the brief:
 what we have — `Glass.CreatePanel`, `Reskin.Button`, the Toolbox row styling — with three
 gaps:
 
-- The no-target state for the marker grid (§2).
-- No confirm on Convert to Raid. It cannot be undone and it changes loot rules;
-  `C_PartyInfo.ConfirmConvertToRaid()` exists for exactly this.
-- No Leave Party or Disband, in a panel that replaces the Party Members flyout. Probably
-  intentional, worth confirming.
+- The no-target state for the marker grid (§2) — built: the wells are inert and dimmed
+  with nothing targeted.
+- The marks are laid out **highest index first** — skull, cross, square, moon, triangle,
+  diamond, circle, star. That is the order the client's own grid has always used and the
+  one everybody reaches into without looking. 1-to-8 puts the star top-left.
+- No Leave Party or Disband, in a panel that replaces the Party Members flyout. Still
+  worth confirming.
 
-The Convert-to-Raid glyph is a pencil in the render. A pencil reads as rename or edit.
+The Convert-to-Raid glyph is a pencil in the render. A pencil reads as rename or edit, so
+it is the gear.
 
 ---
 
 ## 5. Dock handle and placement (#12c)
 
-The handle is the Toolbox handle — `Modules/Toolbox.lua` already has `_dockHandle`, the
-edge constants and `db.char.docked`. Shared component, not a copy.
+Built. A slim glass tab flush to a screen edge - party glyph, count, gold arrow -
+dockable to any of the four, at a quarter or three quarters along it rather than the
+middle, because the Toolbox rail owns the middle and both default to LEFT. The chain
+is handle to panel to stack, so re-docking moves all three.
 
-The stack is a different question. The brief says "position saved per character", but
-`Core/Movers.lua` stores every anchor in `db.profile.anchors`. Toolbox's `db.char` is
-precedent for the other choice, but the stack is a positioned HUD frame like every other
-positioned HUD frame, and splitting placement across two scopes is how a profile switch
-starts moving some things and not others. **Use Movers.**
+Same shape as the Toolbox rail by the same *trick* rather than the same code: the tab
+bites into the panel by its own corner radius so the inner curve hides behind it. What
+is genuinely shared is `W.PointChevron` - eight cases of which way the arrow faces,
+owned once for the rail and the handle both.
 
-The 8px grid snap does not exist in Movers. Either it goes in there for everything, or it
-goes away — a snap that applies to one frame is a bug report waiting to happen.
+**Movement is Movers, and only Movers.** The brief's unlock mode - a dashed accent
+outline round the stack and an 8px grid snap - is not built and will not be. Nothing
+else in this interface moves that way: every positioned frame is dragged by the same
+handle, with the same guides and the same snapping, and a stack that had its own
+gesture would be one frame behaving unlike the other thirty. It reads well in the
+design and does not fit the thing it is being added to.
+
+The brief also says "position saved per character". It is in `db.profile.anchors` with
+every other anchor - splitting placement across two scopes is how a profile switch
+starts moving some things and not others.
+
+Where the stack STARTS is the part worth keeping: attached to the dock until you drag
+it once, `/aether party reset` to hand it back.
 
 ---
-
 ## 6. Decisions needed
 
 1. **The rest of the gold family in Dusk** (§1). `ifecGossip`, `ttElite`, `ttNeutral`,
@@ -196,19 +216,28 @@ Two more were settled the same way while building §3, and both departed from th
 
 ## 7. Build order
 
-1. ~~Semantic gold, one conditional in one place~~ — done.
-2. ~~crown, healer, dps, resurrect glyphs~~ — done. The tank shield and the handle's pair
-   of figures are aliases of `guild` and `social`, not new drawings.
-3. ~~The capsule, four fixed secure slots, one mover, its own options page~~ — done,
-   `Modules/PartyFrames.lua`, with the client's own four banished. On by default,
-   like everything else here.
-4. The controls panel (§4) — marker grid, the four actions, the no-target state.
-5. The dock handle (§5), shared with Toolbox.
-6. Answer §6.1, which is the only thing left that a party capsule draws and cannot
-   decide for itself.
+1. ~~Semantic gold, one conditional in one place~~
+2. ~~crown, healer, dps, resurrect glyphs~~ (tank and party are aliases, not drawings)
+3. ~~The capsule, four fixed secure slots, one mover, its own options page, and the
+   client's own four banished~~
+4. ~~The controls panel~~ - marks on your target, the four actions, leader rows hidden
+5. ~~The dock handle~~ - and `CompactRaidFrameManager`, the flyout it replaces, banished
+   with the rest
+6. ~~Decorators~~ - crown, mark, role and PvP flag, one to a corner of the level disc,
+   on the party capsules, the player and target capsules and the nameplates
 
-### What is not built yet, and is visible
+The design is built. What remains is §6.1, which is a palette question rather than a
+party one.
 
-The capsule draws the person and their bars. It does not yet draw the aura row the
-player capsule has, and there is no way to reach the controls panel because there is no
-controls panel — the party dock handle is step 5.
+### Departures from the brief, all deliberate
+
+- No dps role glyph. This client answers `DAMAGER` for somebody who never set a role,
+  so it marked everybody and meant nothing.
+- The hurt health number is not gold. Semantic gold by hue alone on a number is the one
+  thing the brief's own companion rule forbids.
+- The crown and the raid mark get a corner each rather than sharing one.
+- Fixed slots, not a growing stack: re-anchoring a frame with secure children is
+  refused in combat, which is exactly when a member leaves.
+- No unlock mode of its own (§5).
+- The role glyph rides the disc rather than a well of its own at the far right, which
+  reserved width on every capsule for a mark most members do not have.
