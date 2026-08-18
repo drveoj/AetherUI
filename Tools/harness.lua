@@ -27310,6 +27310,41 @@ section("party controls: the marks go on your target", function()
 		atOne, atHalf, want) .. ")")
 	A.db.profile.scale = wasScale
 	PF:LayoutHandle()
+	-- IT LOOKS MOVABLE WHEN IT IS. Every other frame wears an accent wash in
+	-- placement mode; this one is not a Movers frame - it docks to an edge
+	-- rather than sitting at a point - so it gets no handle of its own, and
+	-- without this it was the one thing on an unlocked screen giving no sign
+	-- it could be moved at all.
+	local hh = PF.handle
+	A.Movers:Lock()
+	check(not hh.tag:IsShown(), "locked, the dock wears no placement label")
+	check(hh._fillToken ~= nil,
+		"and is coloured by token, so a restyle reaches it (" ..
+		tostring(hh._fillToken) .. ")")
+
+	A.Movers:Unlock()
+	check(hh.tag:IsShown(),
+		"unlocked, it says what it is - beside the tab, because a word laid"
+		.. " over a 34-unit strip is a word laid across something narrower"
+		.. " than itself")
+	local fill = hh._fillColor
+	local acc = A.Palette.c.accent
+	check(fill and math.abs(fill[1] - acc[1]) < 0.01
+		and math.abs(fill[2] - acc[2]) < 0.01
+		and math.abs(fill[3] - acc[3]) < 0.01,
+		"and wears the same accent wash as everything else you can move")
+
+	-- AND A RESTYLE MID-PLACEMENT does not wash it back to ordinary glass.
+	-- ApplySkin is the obvious thing to call on a skin change and it is the
+	-- wrong one here: it would put the ordinary rim back while the frames are
+	-- still unlocked, leaving the dock the only fixed-looking thing on screen
+	-- again the moment somebody changed skin mid-placement.
+	PF:OnSkinChanged()
+	local after = hh._fillColor
+	check(after and math.abs(after[1] - A.Palette.c.accent[1]) < 0.01,
+		"and keeps it through a restyle, rather than reverting to plain glass")
+	A.Movers:Lock()
+	check(hh._fillToken ~= nil, "and takes the skin back when you lock again")
 	-- DRAG IT TO ANOTHER EDGE, the way the Toolbox rail re-docks. Same gate -
 	-- the frames have to be unlocked - so there is no second gesture to learn.
 	--

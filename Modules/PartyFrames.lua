@@ -831,6 +831,18 @@ function PF:BuildHandle()
 	W.Tint(chev, A.Palette.c.text, 0.75)
 	h.chev = chev
 
+	-- WHAT IT IS, while you are placing things. Beside the handle rather
+	-- than on it: this tab is 34 units across and a word laid over it is a
+	-- word laid across a strip narrower than itself. The Toolbox rail's
+	-- placement label does the same.
+	--
+	-- A child even though it is anchored outside the frame: a region may be
+	-- positioned beyond its parent's bounds and still draws, and being a
+	-- child is what makes it vanish with the handle.
+	local tag = W.Text(h, "tbSection", "CENTER")
+	tag:Hide()
+	h.tag = tag
+
 	-- DRAGGABLE WHILE THE FRAMES ARE UNLOCKED, which is how the Toolbox rail
 	-- re-docks and how everything else in this interface is moved. No second
 	-- gesture to learn: /aether unlock, drag it, lock again.
@@ -898,11 +910,44 @@ function PF:BuildHandle()
 		if GameTooltip then GameTooltip:Hide() end
 	end)
 
+	-- Called once immediately with the current state, so enabling the module
+	-- while the frames are already unlocked does not leave this the one
+	-- thing on screen that looks fixed.
+	A.Movers:OnLockChanged("partydock", function(unlocked)
+		PF:SetHandleMovable(unlocked)
+	end)
+
 	self:LayoutHandle()
 	return h
 end
 
 --- Where the handle sits, which way its arrow points, and what it says.
+--- What the handle looks like while the frames are unlocked.
+--
+--  THE SAME ACCENT WASH every other movable thing wears. This one is not a
+--  Movers frame - it docks to an edge rather than sitting at a point - so
+--  it gets no handle of its own, and without this it was the one thing on an
+--  unlocked screen that gave no sign it could be moved.
+function PF:SetHandleMovable(on)
+	local h = self.handle
+	if not h then return end
+	local c = A.Palette.c
+	if on then
+		h:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], 0.22 })
+		h:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.85 })
+	else
+		-- Back to the skin's own, by token, so a restyle while locked still
+		-- reaches it.
+		h:ApplySkin()
+	end
+	if h.tag then
+		h.tag:SetText(_G.PARTY and _G.PARTY:upper() or "PARTY")
+		W.Color(h.tag, c.text)
+		h.tag:SetShown(on and true or false)
+	end
+	self._movable = on and true or false
+end
+
 function PF:LayoutHandle()
 	local h = self.handle
 	if not h then return end
@@ -948,6 +993,21 @@ function PF:LayoutHandle()
 		h.glyph:SetPoint("LEFT", h, "LEFT", 7, 0)
 		h.count:SetPoint("LEFT", h.glyph, "RIGHT", 4, 0)
 		h.chev:SetPoint("RIGHT", h, "RIGHT", -6, 0)
+	end
+
+	-- The label goes INBOARD, on the side with screen to spare - a word
+	-- outboard of a handle hard against the edge is off the screen.
+	if h.tag then
+		h.tag:ClearAllPoints()
+		if edge == "LEFT" then
+			h.tag:SetPoint("LEFT", h, "RIGHT", 10, 0)
+		elseif edge == "RIGHT" then
+			h.tag:SetPoint("RIGHT", h, "LEFT", -10, 0)
+		elseif edge == "TOP" then
+			h.tag:SetPoint("TOP", h, "BOTTOM", 0, -8)
+		else
+			h.tag:SetPoint("BOTTOM", h, "TOP", 0, 8)
+		end
 	end
 
 	W.PointChevron(h.chev, edge, self.panel and self.panel:IsShown())
@@ -1235,7 +1295,7 @@ end
 
 function PF:OnSkinChanged()
 	if not self.stack then return end
-	if self.handle then self.handle:ApplySkin() end
+	if self.handle then self:SetHandleMovable(self._movable) end
 	if self.panel then
 		self.panel:ApplySkin("dialogFill", "glassEdgeHi")
 		self:RefreshPanel()
