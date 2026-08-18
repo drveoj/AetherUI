@@ -466,6 +466,39 @@ local MARKERS   = 8
 --  C_PartyInfo.DoCountdown refuses anything longer and says nothing about it.
 local COUNTDOWNS = { 5, 10, 15, 30 }
 
+--- Which screen edge the panel comes off.
+--
+--  A PANEL FLOATING IN THE MIDDLE IS NOT A DOCK. The brief has this sliding
+--  out of a handle flush to a screen edge, and half of that shape is the
+--  panel being AT the edge - it reads as drawn out of the side of the
+--  screen rather than dropped on top of the game.
+--
+--  In db.char, like the Toolbox drawer's edge and for the same reason: a
+--  drawer edge is a per-character habit rather than a look, and one
+--  character's is not another's.
+local EDGES = { LEFT = true, RIGHT = true, TOP = true, BOTTOM = true }
+
+function PF:PanelEdge()
+	local c = A.db and A.db.char
+	local e = c and c.partyDock
+	return (e and EDGES[e]) and e or "LEFT"
+end
+
+function PF:SetPanelEdge(edge)
+	if not EDGES[edge] then return false end
+	A.db.char.partyDock = edge
+	self:AnchorPanel()
+	return true
+end
+
+function PF:AnchorPanel()
+	local p = self.panel
+	if not p then return end
+	local edge = self:PanelEdge()
+	p:ClearAllPoints()
+	p:SetPoint(edge, UIParent, edge, 0, 0)
+end
+
 local function MaxCountdown()
 	local k = _G.Constants and _G.Constants.PartyCountdownConstants
 	return (k and k.MaxCountdownSeconds) or 60
@@ -540,7 +573,7 @@ local function BuildWell(panel, index)
 		local icon = b:CreateTexture(nil, "OVERLAY")
 		icon:SetSize(WELL - 12, WELL - 12)
 		icon:SetPoint("CENTER", b, "CENTER", 0, 0)
-		if SetRaidTargetIconTexture then SetRaidTargetIconTexture(icon, index) end
+		W.SetMarkIcon(icon, index)
 		b.icon = icon
 	else
 		-- Clear. Its own label rather than a ninth icon, because there is no
@@ -623,7 +656,6 @@ function PF:BuildPanel()
 		shadow = A.db.profile.glass.shadow,
 	})
 	p:SetWidth(PANEL_W)
-	p:SetPoint("LEFT", UIParent, "LEFT", 40, 0)
 	p:Hide()
 	self.panel = p
 
@@ -690,6 +722,12 @@ function PF:RefreshPanel()
 	local p = self.panel
 	if not p then return end
 	local c = A.Palette.c
+
+	-- At the profile's scale, like every frame this addon draws. Here
+	-- rather than at build, because a scale change has to reach a panel
+	-- that was built before it.
+	p:SetScale(A.db.profile.scale or 1)
+	self:AnchorPanel()
 
 	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
 	p.count:SetText(n > 0 and (n .. "/" .. n) or "")

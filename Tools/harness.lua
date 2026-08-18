@@ -27083,6 +27083,51 @@ section("party controls: the marks go on your target", function()
 	check(#p.wells == 8, "eight marks (" .. #p.wells .. ")")
 	check(p.clear ~= nil, "and a Clear that is not a ninth mark")
 
+	-- EVERY WELL WEARS ITS MARK. The wells came up empty on screen while every
+	-- other check about them passed, because nothing here had ever asked what
+	-- was actually in one - the grid was checked for what it DID, never for
+	-- what it showed.
+	local blank = 0
+	for i, b in ipairs(p.wells) do
+		if not b.icon or not tostring(b.icon.__tex):find("RaidTargetingIcons", 1, true) then
+			blank = blank + 1
+		end
+	end
+	check(blank == 0, "each well shows its mark (" .. blank .. " blank)")
+
+	-- AND ITS OWN CELL out of the sheet. A texture given the file and no
+	-- texcoord draws all eight marks at once.
+	local seen, clash = {}, nil
+	for i, b in ipairs(p.wells) do
+		local l, r, t2, b2 = b.icon:GetTexCoord()
+		local key = string.format("%.3f,%.3f,%.3f,%.3f", l, r, t2, b2)
+		if seen[key] then clash = i .. " and " .. seen[key] end
+		seen[key] = i
+	end
+	check(not clash, "and its own cell out of the sheet (" .. tostring(clash) .. ")")
+
+	-- AT THE PROFILE'S SCALE, and AT A SCREEN EDGE. A panel floating in the
+	-- middle is not a dock: half the shape the brief describes is the thing
+	-- being drawn out of the side of the screen rather than dropped on it.
+	local wasScale = A.db.profile.scale
+	A.db.profile.scale = 0.6
+	PF:RefreshPanel()
+	check(math.abs(p:GetScale() - 0.6) < 0.001,
+		"the panel is drawn at the profile's scale (" .. p:GetScale() .. ")")
+	A.db.profile.scale = wasScale
+	PF:RefreshPanel()
+
+	check(PF:PanelEdge() == "LEFT", "docked left by default")
+	local _, rel, at = p:GetPoint()
+	check(rel == UIParent and at == "LEFT",
+		"and anchored to that screen edge (" .. tostring(at) .. ")")
+	check(PF:SetPanelEdge("RIGHT"), "it can be moved to another edge")
+	local _, _, at2 = p:GetPoint()
+	check(at2 == "RIGHT", "and goes there (" .. tostring(at2) .. ")")
+	check(not PF:SetPanelEdge("MIDDLE"),
+		"and a corner that is not an edge is refused rather than obeyed")
+	PF:SetPanelEdge("LEFT")
+
 	-- THE MARK GOES ON YOUR TARGET, which the brief never says and which
 	-- decides how the whole grid behaves: SetRaidTarget takes a unit and the
 	-- unit is always "target". So with nothing targeted every well is inert,

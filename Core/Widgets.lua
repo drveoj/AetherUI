@@ -207,6 +207,27 @@ local DECORATOR_NUDGE = {
 	BOTTOMLEFT  = {  3,  3 },
 }
 
+--- One raid target mark out of the client's sheet.
+--
+--  THE SHEET AND THE CELL, both. A texture given the file and no texcoord
+--  draws all eight marks at once, which is unmistakable and has happened to
+--  everybody once.
+--
+--  Written out rather than left to SetRaidTargetIconTexture. That call does
+--  exactly this and is the obvious thing to use - but it is a global that
+--  may or may not be there, and when it is not there it fails by drawing
+--  nothing at all. One function that always works, and one place that knows
+--  where the marks live.
+local MARK_SHEET = [[Interface\TargetingFrame\UI-RaidTargetingIcons]]
+
+function W.SetMarkIcon(tex, index)
+	if not tex or not index or index < 1 or index > 8 then return false end
+	tex:SetTexture(MARK_SHEET)
+	local col, row = (index - 1) % 4, math.floor((index - 1) / 4)
+	tex:SetTexCoord(col * 0.25, (col + 1) * 0.25, row * 0.25, (row + 1) * 0.25)
+	return true
+end
+
 --- The raid target mark on a decorator, in the client's own art.
 --
 --  A skull is a skull on every skin. SetRaidTargetIconTexture picks the cell
@@ -216,8 +237,7 @@ local DECORATOR_NUDGE = {
 function W.SetRaidMark(tex, unit)
 	if not tex then return false end
 	local i = unit and GetRaidTargetIndex and GetRaidTargetIndex(unit)
-	if i and SetRaidTargetIconTexture then
-		SetRaidTargetIconTexture(tex, i)
+	if i and W.SetMarkIcon(tex, i) then
 		tex:Show()
 		return true
 	end
