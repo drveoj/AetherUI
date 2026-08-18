@@ -129,7 +129,13 @@ local ROLE_GLYPH = { TANK = "tank", HEALER = "healer" }
 --  CompactPartyFrame is the raid-style version of the same four people,
 --  drawn instead when the player has that setting on. Only the party one -
 --  a raid's frames are somebody else's window and we do not draw those.
-local BLIZZARD = { "PartyFrame", "CompactPartyFrame" }
+--
+--  CompactRaidFrameManager is the tab down the left-hand side and the
+--  Party Members flyout behind it - the marker grid, Ready Check, Countdown,
+--  Convert to Raid. It was left alone deliberately while our controls panel
+--  did not exist yet, because taking it away would have left no way to set
+--  a mark at all. The panel exists now, so it goes.
+local BLIZZARD = { "PartyFrame", "CompactPartyFrame", "CompactRaidFrameManager" }
 
 --- Hide them, and SAY WHAT HAPPENED TO EACH.
 --
@@ -488,6 +494,18 @@ end
 -- The handle's measurements, up here for the same reason: AnchorPanel bites
 -- the panel into the handle by HANDLE_BITE, and it is written above the code
 -- that draws one.
+--- Where along its edge the handle sits.
+--
+--  NOT THE MIDDLE. The Toolbox rail lives at the middle of its edge, and
+--  both default to LEFT, so a handle centred on that edge lands on top of
+--  it. The client puts its own party dock about a quarter of the way down,
+--  which is where a player already looks for it and is clear of the rail by
+--  construction rather than by collision-detection.
+--
+--  Two slots per edge - a quarter along and three quarters - so a second
+--  thing can share an edge without either of them hunting for space.
+local SLOT_FRACTION = { [1] = 0.25, [2] = 0.75 }
+
 local HANDLE_THICK  = 34
 local HANDLE_LONG   = 68
 local HANDLE_CORNER = 8
@@ -499,6 +517,20 @@ function PF:PanelEdge()
 	local c = A.db and A.db.char
 	local e = c and c.partyDock
 	return (e and EDGES[e]) and e or "LEFT"
+end
+
+function PF:PanelSlot()
+	local c = A.db and A.db.char
+	local n = c and c.partyDockSlot
+	return SLOT_FRACTION[n] and n or 1
+end
+
+function PF:SetPanelSlot(n)
+	if not SLOT_FRACTION[n] then return false end
+	A.db.char.partyDockSlot = n
+	self:LayoutHandle()
+	self:AnchorPanel()
+	return true
 end
 
 function PF:SetPanelEdge(edge)
@@ -825,8 +857,25 @@ function PF:LayoutHandle()
 	local vertical = IsVertical(edge)
 
 	h:SetScale(A.db.profile.scale or 1)
+	-- ALONG the edge, at its slot. The offsets are in the HANDLE's own units
+	-- rather than UIParent's: SetPoint measures in the anchored frame's
+	-- coordinate space, and this frame runs at the profile scale - so a
+	-- quarter of the screen expressed in UIParent pixels would land at a
+	-- third of it at 0.71 and off the bottom edge on a small one.
+	local hs = h:GetEffectiveScale() or 1
+	local us = UIParent:GetEffectiveScale() or 1
+	local k = (hs > 0 and us > 0) and (us / hs) or 1
+	local frac = SLOT_FRACTION[self:PanelSlot()] or 0.25
+
 	h:ClearAllPoints()
-	h:SetPoint(edge, UIParent, edge, 0, 0)
+	if vertical then
+		-- 0.25 is a quarter down from the TOP, so the offset is positive.
+		local dy = (0.5 - frac) * (UIParent:GetHeight() or 768) * k
+		h:SetPoint(edge, UIParent, edge, 0, dy)
+	else
+		local dx = (frac - 0.5) * (UIParent:GetWidth() or 1024) * k
+		h:SetPoint(edge, UIParent, edge, dx, 0)
+	end
 	if vertical then
 		h:SetSize(HANDLE_THICK, HANDLE_LONG)
 	else

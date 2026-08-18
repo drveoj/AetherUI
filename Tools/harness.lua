@@ -1818,6 +1818,12 @@ end
 CompactPartyFrame = CreateFrame("Frame", "CompactPartyFrame", UIParent)
 CompactPartyFrame.__protected = true
 
+-- The tab down the left-hand side and the Party Members flyout behind it -
+-- the marker grid, Ready Check, Countdown, Convert to Raid. Our controls
+-- panel is what replaces it.
+CompactRaidFrameManager = CreateFrame("Frame", "CompactRaidFrameManager", UIParent)
+CompactRaidFrameManager.__protected = true
+
 _G.__unitWatched = {}
 function RegisterUnitWatch(f)
 	_G.__unitWatched[f] = true
@@ -9866,7 +9872,8 @@ section("party: four capsules in fixed slots", function()
 	-- exactly how the first version of this shipped - it went looking for
 	-- PartyMemberFrame1..4, which are pooled and nameless here, found nothing
 	-- four times and reported success.
-	for _, name in ipairs({ "PartyFrame", "CompactPartyFrame" }) do
+	for _, name in ipairs({ "PartyFrame", "CompactPartyFrame",
+		"CompactRaidFrameManager" }) do
 		check(PF.hideReport[name] == "hidden",
 			name .. " is hidden (" .. tostring(PF.hideReport[name]) .. ")")
 		check(_G[name]:GetParent() ~= UIParent,
@@ -27148,6 +27155,55 @@ section("party controls: the marks go on your target", function()
 		"and a corner that is not an edge is refused rather than obeyed")
 	PF:SetPanelEdge("LEFT")
 
+	-- A QUARTER ALONG, NOT THE MIDDLE. The Toolbox rail lives at the middle of
+	-- its edge and both default to LEFT, so a handle centred there lands on top
+	-- of it - which is exactly what it did. The client puts its own party dock
+	-- about a quarter down, which is where a player already looks and is clear
+	-- of the rail by construction rather than by collision-detection.
+	check(PF:PanelSlot() == 1, "the handle takes the first slot by default")
+	local _, _, _, _, dy = PF.handle:GetPoint()
+	check(dy and dy > 0,
+		"which is up from the middle of a side edge, not on it (" ..
+		tostring(dy) .. ")")
+	local TB = A:GetModule("toolbox")
+	if TB and TB.rail and TB.rail:IsShown() then
+		local _, _, _, _, ry = TB.rail:GetPoint()
+		check(math.abs(dy - (ry or 0)) > 40,
+			"and clear of the Toolbox rail on the same edge (" ..
+			tostring(dy) .. " vs " .. tostring(ry) .. ")")
+	end
+
+	check(PF:SetPanelSlot(2), "there is a second slot per edge")
+	local _, _, _, _, dy2 = PF.handle:GetPoint()
+	check(dy2 and dy2 < 0,
+		"three quarters along, on the other side of the middle (" ..
+		tostring(dy2) .. ")")
+	check(not PF:SetPanelSlot(3),
+		"and a third slot is refused rather than invented")
+	PF:SetPanelSlot(1)
+
+	-- MEASURED IN THE HANDLE'S OWN UNITS. SetPoint offsets are in the
+	-- anchored frame's coordinate space, and this frame runs at the profile
+	-- scale - so a quarter of the screen expressed in UIParent pixels lands
+	-- at a third of the way down at 0.71, and off a small screen entirely.
+	--
+	-- The scale has to MOVE for this to say anything: at 1 the conversion is
+	-- the identity and a check that never leaves the default passes with the
+	-- bug in it. That is how this one got through the first time.
+	local wasScale = A.db.profile.scale
+	local _, _, _, _, atOne = PF.handle:GetPoint()
+	A.db.profile.scale = 0.5
+	PF:LayoutHandle()
+	local _, _, _, _, atHalf = PF.handle:GetPoint()
+	-- The offset scales by exactly the ratio of the two scales: the same
+	-- quarter of the screen, counted in smaller units.
+	local want = atOne * ((wasScale or 1) / 0.5)
+	check(atHalf and atOne and math.abs(atHalf - want) < 1,
+		"the offset is in the handle's own units, so it grows as the frame"
+		.. " shrinks (" .. string.format("%.0f -> %.0f, wanted %.0f",
+		atOne, atHalf, want) .. ")")
+	A.db.profile.scale = wasScale
+	PF:LayoutHandle()
 	-- THE ARROW TURNS ROUND. Open, the click retreats the drawer to its own
 	-- edge; shut, it emerges away from it - the same rule the Toolbox rail
 	-- follows, from the same function.
