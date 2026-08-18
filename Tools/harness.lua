@@ -2973,6 +2973,48 @@ do
 		buildPanel(n)
 	end
 
+	-- THE MAIN MENU IS A VerticalLayoutFrame, and that is the whole of why its
+	-- buttons came out as one solid column of glass with lines of text in it.
+	--
+	-- MainMenuFrameTemplate sets `spacing` to ZERO and gets away with it,
+	-- because Blizzard's button art carries a transparent margin - the rows
+	-- look separated while the frames touch. Ours is a drawn rectangle with no
+	-- margin, so at zero they meet. A mock with no layout at all cannot see
+	-- that, and did not.
+	--
+	-- The frame reads spacing and topPadding off ITSELF on every layout, and
+	-- Reset clears neither, which is what makes setting them once enough.
+	do
+		local gm = _G.GameMenuFrame
+		gm.spacing = 0
+		gm.topPadding = 32
+		gm.__menuButtons = {}
+		gm.__layoutRuns = 0
+
+		for i, label in ipairs({ "Options", "AddOns", "Macros", "Logout" }) do
+			local b = CreateFrame("Button", nil, gm)
+			b:SetSize(180, 26)
+			b.layoutIndex = i
+			b:SetText(label)
+			gm.__menuButtons[i] = b
+		end
+
+		function gm:MarkDirty() self.__dirty = true end
+		function gm:Layout()
+			self.__dirty = nil
+			self.__layoutRuns = self.__layoutRuns + 1
+			local y = -(self.topPadding or 0)
+			for _, b in ipairs(self.__menuButtons) do
+				b:ClearAllPoints()
+				b:SetPoint("TOP", self, "TOP", 0, y)
+				b.__layoutY = y
+				y = y - (b:GetHeight() or 26) - (self.spacing or 0)
+			end
+		end
+		gm:Layout()
+	end
+
+
 	-- THE FLIGHT MAP IS A REGION OF THE FRAME, which makes this window the one
 	-- where a full sweep takes the thing the player came to look at. It went
 	-- black in game with the suite green, because the mock had no map to lose.
@@ -10279,6 +10321,39 @@ section("party: a slot that empties does not move the others", function()
 		"with the unit watch OFF, not just the button hidden - the state"
 		.. " driver owns that visibility and would put it straight back,"
 		.. " and a button you cannot see still steals your target")
+end)
+
+section("panels: the main menu is a column of buttons, not a column of glass", function()
+	local PN = A:GetModule("panels")
+	local gm = _G.GameMenuFrame
+	gm:Show()
+
+	-- BLIZZARD SETS SPACING TO ZERO and it looks right, because its button art
+	-- carries a transparent margin - the rows read as separated while the frames
+	-- touch. Ours is a drawn rectangle with no margin at all, so at zero the
+	-- buttons meet edge to edge and the menu is one slab of glass with lines of
+	-- text in it.
+	check(gm.spacing and gm.spacing > 0,
+		"the menu is given room between its buttons (" ..
+		tostring(gm.spacing) .. ")")
+
+	-- AND ROOM UNDER THE TITLE. The template leaves 32, which the header sits
+	-- in, so the first button lands against the words.
+	check(gm.topPadding and gm.topPadding > 32,
+		"and room under its title (" .. tostring(gm.topPadding) .. ")")
+
+	-- LAID OUT AGAIN, or the numbers above are ones nobody has read. This is a
+	-- VerticalLayoutFrame: it reads them off itself when it lays out, and it
+	-- only lays out when something says it is dirty.
+	local gap = nil
+	local a, b = gm.__menuButtons[1], gm.__menuButtons[2]
+	if a and b and a.__layoutY and b.__layoutY then
+		gap = (a.__layoutY - b.__layoutY) - (a:GetHeight() or 0)
+	end
+	check(gap and gap > 0,
+		"and the layout has actually run, so there is a gap on screen rather"
+		.. " than a number in a table (" .. tostring(gap) .. ")")
+	gm:Hide()
 end)
 
 print("== movers ==")

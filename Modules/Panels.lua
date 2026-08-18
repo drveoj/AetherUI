@@ -992,8 +992,25 @@ end
 --  name because the client's set changes with the build - Edit Mode and Support
 --  are there on one flavour and not another - so the frame is asked what it
 --  has.
+-- The gap between one button and the next, and between the title and the
+-- first of them.
+--
+-- BLIZZARD SETS SPACING TO ZERO and gets away with it because its button art
+-- carries a transparent margin - the rows look separated while the frames
+-- touch. Ours is a drawn rectangle with no margin at all, so at zero the
+-- buttons come out as one column of glass with lines of text in it.
+--
+-- The frame is a VerticalLayoutFrame: it reads `spacing` and `topPadding`
+-- off itself every time it lays out, and Reset clears neither - so setting
+-- them once holds for every open after.
+local MENU_SPACING = 6
+local MENU_TOP_PAD = 44   -- 32 in the template, and the title sits in it
+
 local function DressGameMenu(frame, store)
 	if not frame.GetChildren then return end
+
+	frame.spacing = MENU_SPACING
+	frame.topPadding = MENU_TOP_PAD
 
 	for _, child in ipairs({ frame:GetChildren() }) do
 		-- A button, by what it can do rather than what it is called.
@@ -1002,6 +1019,11 @@ local function DressGameMenu(frame, store)
 			Reskin.Strip(child, store)
 		end
 	end
+
+	-- LAID OUT AGAIN, or the new spacing is a number nobody has read. The
+	-- client lays out when it is dirty; MarkDirty is how you say so.
+	if frame.MarkDirty then frame:MarkDirty() end
+	if frame.Layout then pcall(frame.Layout, frame) end
 end
 
 -- ---------------------------------------------------------------------------
