@@ -107,6 +107,12 @@ local function BuildCapsule(unit, mirror)
 	end
 	f.orb = orb
 
+	-- THE LEADER'S CROWN, on your own capsule as well as on theirs. If you
+	-- are running the group, the frame you look at most is the one that
+	-- should say so - and it is the same widget the party capsules use, so
+	-- there is one answer to where a crown sits and what colour it is.
+	f.crown = W.CreateCrown(glass, orb)
+
 	-- text + bars block -----------------------------------------------------
 	local block = CreateFrame("Frame", nil, glass)
 	block:SetWidth(cfg.barWidth)
@@ -368,6 +374,10 @@ end
 local function UpdateName(f)
 	local unit = f.unit
 	if not UnitExists(unit) then return end
+
+	if f.crown then
+		f.crown:SetShown(UnitIsGroupLeader and UnitIsGroupLeader(unit) or false)
+	end
 
 	local level = UnitLevel(unit)
 	local levelText = (level and level > 0) and tostring(level) or "??"
@@ -834,6 +844,14 @@ function UF:RegisterEvents()
 			end
 		end
 	end)
+	-- WHO LEADS is not a unit event. Both of these change it, and neither
+	-- fires on the unit whose crown moves.
+	local function leaders()
+		for _, f in ipairs(UF.frames) do UpdateName(f) end
+	end
+	A:RegisterEvent(self, "PARTY_LEADER_CHANGED", leaders)
+	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",  leaders)
+
 	A:RegisterEvent(self, "PLAYER_LEVEL_UP", function()
 		UpdateName(UF.player)
 	end)

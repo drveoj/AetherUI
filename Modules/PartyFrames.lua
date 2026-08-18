@@ -74,7 +74,18 @@ local CAN_RES = {
 	PRIEST = true, PALADIN = true, SHAMAN = true, DRUID = true, WARLOCK = true,
 }
 
-local ROLE_GLYPH = { TANK = "tank", HEALER = "healer", DAMAGER = "dps" }
+--- Which roles are worth a glyph.
+--
+--  NOT DAMAGER, and that is a departure from the brief. It draws an arrow
+--  for dps, and in a five-man that is an arrow on four capsules out of four
+--  - a mark every member wears tells you nothing about any of them. Tank
+--  and healer are the two that answer a question you actually ask.
+--
+--  It also turned out that this client does not answer "NONE" the way the
+--  role poll suggests it would: somebody who has never set a role still
+--  comes back as a damager, so the empty state was unreachable and every
+--  capsule wore the arrow.
+local ROLE_GLYPH = { TANK = "tank", HEALER = "healer" }
 
 -- ---------------------------------------------------------------------------
 -- Blizzard's own, out of the way
@@ -150,14 +161,12 @@ local function BuildCapsule(unit)
 	pip:SetPoint("LEFT", f, "LEFT", PAD_L, 0)
 	f.pip = pip
 
-	-- Riding the pip rather than the capsule: both of these say something about
-	-- the person, and the person is the disc with their level in it.
-	local crown = glass:CreateTexture(nil, "OVERLAY")
-	crown:SetSize(CROWN, CROWN)
-	crown:SetPoint("CENTER", pip, "TOPLEFT", 3, -2)
-	A.Media:SetIcon(crown, "crown")
-	crown:Hide()
-	f.crown = crown
+	-- Riding the pip rather than the capsule: both of these say something
+	-- about the person, and the person is the disc with their level in it.
+	--
+	-- W.CreateCrown, which the player's own capsule uses too. Two drawings
+	-- of a crown in two files is two places to disagree about where it sits.
+	f.crown = W.CreateCrown(glass, pip, CROWN)
 
 	-- The game's own icon sheet, untouched. SetRaidTargetIconTexture picks the
 	-- cell; a skin has no business recolouring a skull.
@@ -343,10 +352,6 @@ local function UpdateStatus(f)
 	-- The crown. UnitIsGroupLeader rather than a roster walk: the client
 	-- answers this per unit and the answer changes on its own event.
 	f.crown:SetShown(UnitIsGroupLeader and UnitIsGroupLeader(unit) or false)
-	if f.crown:IsShown() then
-		local g = c.semanticGold
-		f.crown:SetVertexColor(g[1], g[2], g[3], 1)
-	end
 
 	-- The marker, in the game's own art. A skull is a skull on every skin.
 	local mark = GetRaidTargetIndex and GetRaidTargetIndex(unit)

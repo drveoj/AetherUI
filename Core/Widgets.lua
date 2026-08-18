@@ -179,6 +179,28 @@ W.tinted = {}
 --  0.22 of the faint type and a thumb at 0.45 of the bright are the same two
 --  tokens at two weights, and passing the palette's own table through keeps the
 --  identity that makes the token findable.
+--- The party leader's crown, riding the top-left of a round thing.
+--
+--  ONE OF THESE, used by the player's capsule and by every party capsule.
+--  Two drawings of a crown in two files is two places to disagree about
+--  where it sits and what colour it is, and the second one is always the
+--  one that gets forgotten when the first moves.
+--
+--  Tinted through W.Tint rather than SetVertexColor so it follows a skin
+--  change on its own: this is the reserved semantic gold, and Dusk is the
+--  one skin that moves it.
+function W.CreateCrown(parent, anchorTo, size)
+	local t = parent:CreateTexture(nil, "OVERLAY")
+	size = size or 13
+	t:SetSize(size, size)
+	-- The top-LEFT corner, because the raid target marker rides the top and a
+	-- marked leader is ordinary.
+	t:SetPoint("CENTER", anchorTo, "TOPLEFT", 3, -2)
+	A.Media:SetIcon(t, "crown")
+	W.Tint(t, A.Palette.c.semanticGold)
+	t:Hide()
+	return t
+end
 function W.Tint(tex, c, alpha)
 	if not tex or not c or not tex.SetVertexColor then return end
 	alpha = alpha or c[4] or 1

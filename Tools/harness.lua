@@ -5016,11 +5016,22 @@ end
 
 function UnitIsGroupLeader(u) return units[u] and units[u].leader or false end
 
-_G.__roles = { party2 = "TANK" }
+_G.__roles = { party2 = "TANK", party3 = "HEALER" }
+--- What the client answers for somebody who never set a role.
+--
+-- NOT "NONE". The role poll makes it look as though an unset role comes
+-- back as "NONE", and this mock said so - but on the live client a party
+-- member who has never answered a poll still reads as a DAMAGER. The
+-- evidence was a screenshot: every capsule wearing the dps arrow, in a
+-- party where nobody had set anything.
+--
+-- So the "no role" branch was unreachable, and the mock was the reason the
+-- suite was happy about it.
+local DEFAULT_ROLE = "DAMAGER"
 function UnitGroupRolesAssigned(u)
-	-- "NONE", not nil. Blizzard answers a string always, and a mock that
-	-- answered nil would let `role or "NONE"` paper over a real nil case.
-	return _G.__roles[u] or "NONE"
+	-- A string always, never nil - a mock that answered nil would let
+	-- `role or "NONE"` paper over a real nil case.
+	return _G.__roles[u] or DEFAULT_ROLE
 end
 
 _G.__raidTargets = {}
@@ -9811,11 +9822,17 @@ section("party: what a capsule says about the person", function()
 	fire("RAID_TARGET_UPDATE")
 	check(not f1.marker:IsShown(), "and it goes when the mark is cleared")
 
-	-- A ROLE IS OPT-IN ON THIS GAME VERSION, so the empty glyph is the common
-	-- case and the one worth checking. party2 has set TANK; party1 has not.
-	check(f2.role:IsShown(), "a member who set a role wears it")
+	-- ONLY TANK AND HEALER WEAR A GLYPH. The brief draws an arrow for dps
+	-- too, and in a five-man that is an arrow on four capsules out of four
+	-- - a mark every member wears tells you nothing about any of them. It
+	-- is also unavoidable here: this client answers DAMAGER for somebody
+	-- who has never set a role at all, so the arrow was not reporting a
+	-- choice, it was reporting the absence of one.
+	check(f2.role:IsShown(), "a tank wears a glyph")
+	check(f3.role:IsShown(), "and so does a healer")
 	check(not f1.role:IsShown(),
-		"and one who has not wears nothing - which is most of them")
+		"but a damager wears nothing, which is what everybody else is (" ..
+		tostring(UnitGroupRolesAssigned("party1")) .. ")")
 
 	-- DEAD. The word goes in the health track, where the bar that emptied is,
 	-- and the name stays legible - which is what you are reading the frame for.
@@ -9827,12 +9844,22 @@ section("party: what a capsule says about the person", function()
 	-- AND A HEALER SEES SOMETHING TO DO ABOUT IT - keyed off CLASS, not off
 	-- role. The brief shows this glyph to healers, but a role here is opt-in,
 	-- so keying off one would hide it from almost every priest in the game.
-	check(not f3.role:IsShown(),
-		"a mage sees no resurrect glyph over a corpse")
+	-- WHICH GLYPH, not whether one is there. The dead member is a healer, so
+	-- the slot is occupied either way and a check on IsShown would pass with
+	-- the wrong drawing in it.
+	local function isGlyph(tex, name)
+		local _, l, r, t2, b = A.Media:Icon(name)
+		local L, R, T2, B = tex:GetTexCoord()
+		return math.abs(L - l) < 0.001 and math.abs(R - r) < 0.001
+			and math.abs(T2 - t2) < 0.001 and math.abs(B - b) < 0.001
+	end
+	check(isGlyph(f3.role, "healer"),
+		"a mage sees the dead healer's own glyph, and nothing to do")
 	_G.__units.player.classToken = "PRIEST"
 	fire("GROUP_ROSTER_UPDATE")
-	check(f3.role:IsShown(),
-		"and a priest does, on class rather than on a role nobody sets")
+	check(isGlyph(f3.role, "resurrect"),
+		"and a priest sees a resurrect glyph in its place - on class rather"
+		.. " than on a role nobody sets")
 	_G.__units.player.classToken = "MAGE"
 	fire("GROUP_ROSTER_UPDATE")
 
@@ -9842,6 +9869,38 @@ section("party: what a capsule says about the person", function()
 		tostring(f4:GetAlpha()) .. ")")
 	check(f4.class:GetText() ~= "Mage",
 		"and the line under the name says so (" .. tostring(f4.class:GetText()) .. ")")
+end)
+
+section("party: the crown is on your own capsule too", function()
+	local UFm = A:GetModule("unitframes")
+	local PF = A:GetModule("partyframes")
+	local me = UFm.player
+
+	-- IF YOU LEAD THE GROUP, the frame you look at most is the one that should
+	-- say so. It did not, and every party capsule could.
+	check(me.crown ~= nil, "the player capsule has a crown")
+	_G.__units.player.leader = false
+	fire("PARTY_LEADER_CHANGED")
+	check(not me.crown:IsShown(), "hidden when somebody else is running it")
+	_G.__units.player.leader = true
+	fire("PARTY_LEADER_CHANGED")
+	check(me.crown:IsShown(), "and there the moment you are")
+
+	-- ONE CROWN, TWO USERS. W.CreateCrown draws it for the player's capsule and
+	-- for every party capsule, so there is one answer to where it sits and what
+	-- colour it is - and the second copy is always the one that gets forgotten
+	-- when the first moves.
+	local _, _, mineAt = me.crown:GetPoint()
+	local _, _, theirsAt = PF.frames[1].crown:GetPoint()
+	check(mineAt == theirsAt,
+		"and it rides the same corner on both (" .. tostring(mineAt) .. ")")
+
+	-- TINTED BY TOKEN, not by hand. This is the reserved semantic gold and Dusk
+	-- is the one skin that moves it - so a crown coloured with a copied table
+	-- would still be Midnight's gold after a skin change.
+	check(A.Widgets.tinted[me.crown] ~= nil or me.crown._aetherTint ~= nil,
+		"the crown follows the skin, rather than keeping the colour it was"
+		.. " built with")
 end)
 
 section("party: the numbers, and the colour they are not", function()
