@@ -286,23 +286,11 @@ local function DressSlider(widget)
 end
 
 --- The number box under a slider, and the standalone one.
+--
+--  The same field the client's own windows are full of, and the recipe is
+--  Reskin's rather than this module's for exactly that reason.
 DressEditBoxFrame = function(box)
-	if not box then return end
-	if not box.__aetherStripped then
-		box.__aetherStripped = {}
-		Reskin.Strip(box, box.__aetherStripped)
-		local pill = Glass.CreatePill(box, { fill = "glassSoft", edge = "glassEdge" })
-		-- HUGGING THE BOX, not standing off it. An edit box is about 19 tall
-		-- and a pill four pixels proud of it on every side reads as a
-		-- control half again the size of the one you are typing in.
-		pill:SetPoint("TOPLEFT", box, "TOPLEFT", -2, 0)
-		pill:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", 2, 0)
-		pill:SetFrameLevel(math.max(0, (box:GetFrameLevel() or 1) - 1))
-		box.__aetherPill = pill
-	end
-	if box.__aetherPill then box.__aetherPill:ApplySkin("glassSoft", "glassEdge") end
-	Reskin.Font(box, "qlRow")
-	W.Color(box, Palette.c.text)
+	Reskin.EditBox(box)
 end
 
 local function DressEditBox(widget)

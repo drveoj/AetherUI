@@ -2416,15 +2416,7 @@ local function DressSettings(frame, store)
 	if search then
 		Reskin.Strip(search, store)
 		Reskin.Font(search, "pnBody")
-		if not search.__aetherPill then
-			search.__aetherPill = A.Glass.CreatePill(search,
-				{ fill = "glassSoft", edge = "glassEdge" })
-			search.__aetherPill:SetPoint("TOPLEFT", search, "TOPLEFT", 0, 0)
-			search.__aetherPill:SetPoint("BOTTOMRIGHT", search, "BOTTOMRIGHT", 0, 0)
-			search.__aetherPill:SetFrameLevel(
-				math.max(0, (search:GetFrameLevel() or 1) - 1))
-		end
-		search.__aetherPill:ApplySkin("glassSoft", "glassEdge")
+		Reskin.Well(search, { inset = { 0, 0, 0, 0 } })
 	end
 
 	-- The panel that holds whichever page is open. Its own frame, its own art,
@@ -2514,6 +2506,53 @@ local function DressMail(frame, store)
 		Reskin.ScrollBar(ebar, ebar.__aetherStore)
 	end
 
+	-- THE FIELDS. Three slices of `Common-Input-Border` each, drawn as
+	-- background regions of the box itself - so there is nothing to swap, only
+	-- a sweep and one of our wells behind.
+	for _, name in ipairs({ "SendMailNameEditBox", "SendMailSubjectEditBox" }) do
+		Reskin.EditBox(_G[name])
+	end
+
+	-- The three money boxes, which keep their coin: it is a background region
+	-- like the border is, and a sweep that takes both leaves the player typing
+	-- gold, silver and copper into three identical nameless boxes.
+	for _, name in ipairs({ "SendMailMoneyGold", "SendMailMoneySilver",
+		"SendMailMoneyCopper" }) do
+		Reskin.EditBox(_G[name], { keep = { "texture" } })
+	end
+
+	-- THE TOTAL, which the client wraps TWICE - a black inset and a thin gold
+	-- edge, two surrounds for one number. Both come off and one well goes back
+	-- on the inner of them, which is the one sized to the figure.
+	for _, name in ipairs({ "SendMailMoneyInset", "SendMailMoneyBg" }) do
+		local f = _G[name]
+		if f then
+			f.__aetherStore = f.__aetherStore or {}
+			Reskin.Strip(f, f.__aetherStore)
+		end
+	end
+	if _G.SendMailMoneyBg then
+		Reskin.Well(_G.SendMailMoneyBg, { inset = { 0, 0, 0, 0 } })
+	end
+
+	-- THE LETTER ITSELF, which never had a border - the stationery behind it
+	-- was the frame, and with that gone the words sit on bare glass with
+	-- nothing saying where you may type. Its bar goes inside the well rather
+	-- than beside it, so the field reads as one thing.
+	if _G.MailEditBox then
+		Reskin.Well(_G.MailEditBox, {
+			corner = 6, inset = { 8, 16, 6, 8 }, to = _G.MailEditBoxScrollBar,
+		})
+	end
+
+	-- THE ATTACHMENT SLOTS. Sixteen on each of two panes, and the plate is a
+	-- background region rather than the normal texture, so the cell dresser
+	-- has to be told to sweep as well as clear.
+	for i = 1, 16 do
+		Reskin.Slot(_G["SendMailAttachment" .. i], { store = store })
+		Reskin.Slot(_G["OpenMailAttachmentButton" .. i], { store = store })
+	end
+	Reskin.Slot(_G.OpenMailLetterButton, { store = store })
 	-- The scroll frames on the older panes, whose troughs are drawn on the
 	-- FRAME rather than on the bar.
 	for _, name in ipairs({ "SendMailScrollFrame", "OpenMailScrollFrame" }) do

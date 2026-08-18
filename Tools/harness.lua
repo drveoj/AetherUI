@@ -3101,6 +3101,58 @@ do
 		_G.MailEditBoxScrollBar.Track = CreateFrame("Frame", nil, _G.MailEditBoxScrollBar)
 		_G.MailEditBoxScrollBar.Track:CreateTexture(nil, "ARTWORK"):SetTexture("minimal-scrollbar-track-top")
 
+		-- EVERY TEXT FIELD IN THE GAME is the same three slices of
+		-- Common-Input-Border, drawn as BACKGROUND regions of the box itself.
+		-- Nothing to swap and nothing a sweep of the pane reaches, which is why
+		-- five of them kept their stone with our glass behind.
+		local function inputBox(name, parent, coin)
+			local box = CreateFrame("EditBox", name, parent)
+			for _, part in ipairs({ "Left", "Middle", "Right" }) do
+				local tex = box:CreateTexture(name .. part, "BACKGROUND")
+				tex:SetTexture("Interface\\Common\\Common-Input-Border")
+				_G[name .. part] = tex
+			end
+			if coin then
+				-- IN THE SAME LAYER as the border, so a plain sweep takes it and the
+				-- player is typing gold into a nameless box.
+				box.texture = box:CreateTexture(nil, "BACKGROUND")
+				box.texture:SetTexture("Interface\\MoneyFrame\\UI-MoneyIcons")
+			end
+			_G[name] = box
+			return box
+		end
+		inputBox("SendMailNameEditBox", _G.SendMailFrame)
+		inputBox("SendMailSubjectEditBox", _G.SendMailFrame)
+		for _, coinBox in ipairs({ "Gold", "Silver", "Copper" }) do
+			inputBox("SendMailMoney" .. coinBox, _G.SendMailFrame, true)
+		end
+
+		-- The total, wrapped twice: a black inset and a thin gold edge.
+		for _, n in ipairs({ "SendMailMoneyInset", "SendMailMoneyBg" }) do
+			local f = CreateFrame("Frame", n, _G.SendMailFrame)
+			f:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\Common\\Common-Input-Border")
+			f:CreateTexture(nil, "BORDER"):SetTexture("Interface\\Common\\ThinGoldEdge")
+			_G[n] = f
+		end
+
+		-- THE ATTACHMENT SLOTS, whose plate is a BACKGROUND region rather than
+		-- the normal texture - so ClearButton alone leaves every one of them
+		-- stone, and a plain sweep would take the item's picture with it.
+		local function slot(name, parent)
+			local b = CreateFrame("Button", name, parent)
+			b:SetWidth(37) b:SetHeight(37)
+			b:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\Buttons\\UI-Slot-Background")
+			b.Icon = b:CreateTexture(nil, "BACKGROUND")
+			b.Icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
+			_G[name] = b
+			return b
+		end
+		for i = 1, 16 do
+			slot("SendMailAttachment" .. i, _G.SendMailFrame)
+			slot("OpenMailAttachmentButton" .. i, _G.OpenMailFrame)
+		end
+		slot("OpenMailLetterButton", _G.OpenMailFrame)
+
 		-- The pane's own title, in the client's gold, under the window's.
 		for _, n in ipairs({ "InboxTitleText", "SendMailTitleText" }) do
 			local fs = _G.MailFrame:CreateFontString(n, "OVERLAY")
@@ -10815,6 +10867,95 @@ section("panels: the postbox, the book and the trade skills", function()
 		"and the glass reaches past them (" .. tostring(entry.insets[4]) ..
 		" vs " .. tostring(ty) .. ")")
 
+	-- THE FIELDS. Every text box in the game is the same three slices of
+	-- Common-Input-Border drawn as BACKGROUND regions of the box itself -
+	-- nothing to swap, and nothing a sweep of the pane ever reaches.
+	local stoneFields, wellless = {}, {}
+	for _, n in ipairs({ "SendMailNameEditBox", "SendMailSubjectEditBox", "SendMailMoneyGold",
+		"SendMailMoneySilver", "SendMailMoneyCopper" }) do
+		local box = _G[n]
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			local tex = _G[n .. part]
+			if tex and tex:IsShown() then stoneFields[#stoneFields + 1] = n .. part end
+		end
+		if not box.__aetherPill then wellless[#wellless + 1] = n end
+	end
+	check(#stoneFields == 0, "the fields have lost their borders (" ..
+		(#stoneFields > 0 and table.concat(stoneFields, ",") or "all five") .. ")")
+	check(#wellless == 0, "and every one has a well of ours instead (" ..
+		(#wellless > 0 and table.concat(wellless, ",") or "all five") .. ")")
+
+	-- AND THE COIN SURVIVES IT. It is in the same layer as the border, so
+	-- the obvious sweep takes it too and the player is entering gold, silver
+	-- and copper into three identical nameless boxes.
+	local coins = 0
+	for _, n in ipairs({ "SendMailMoneyGold", "SendMailMoneySilver",
+		"SendMailMoneyCopper" }) do
+		local coin = _G[n].texture
+		if coin and coin:IsShown() and tostring(coin:GetTexture() or ""):find("MoneyIcons", 1, true) then
+			coins = coins + 1
+		end
+	end
+	check(coins == 3, "and each keeps its coin (" .. coins .. " of 3)")
+
+	-- THE TOTAL, which the client wraps TWICE - a black inset and a thin
+	-- gold edge round one number.
+	local wraps = 0
+	for _, n in ipairs({ "SendMailMoneyInset", "SendMailMoneyBg" }) do
+		for _, r in ipairs({ _G[n]:GetRegions() }) do
+			if r:IsShown() then wraps = wraps + 1 end
+		end
+	end
+	check(wraps == 0, "the total loses both its surrounds (" .. wraps .. ")")
+	check(_G.SendMailMoneyBg.__aetherPill ~= nil,
+		"and gets one of ours back")
+
+	-- THE LETTER never had a border of its own: the stationery behind it WAS
+	-- the frame, so taking that off leaves the words on bare glass with
+	-- nothing saying where you may type.
+	check(_G.MailEditBox.__aetherPill ~= nil, "the letter gets a well")
+	local _, wellTo = _G.MailEditBox.__aetherPill:GetPoint(2)
+	check(wellTo == _G.MailEditBoxScrollBar,
+		"with its bar inside it rather than beside it")
+
+	-- ONE WELL PER FIELD, HOWEVER OFTEN WE COME PAST. Skin() runs again on
+	-- every show and on every skin change, and a well built fresh each time
+	-- would stack a second surface behind the first - every alpha in the
+	-- window then wrong by exactly the amount nobody could name. Same trap
+	-- the right-click menus had, and the answer is the same: reuse the one
+	-- that is there.
+	local firstWell = _G.MailEditBox.__aetherPill
+	local kids = #({ _G.SendMailNameEditBox:GetChildren() })
+	for _ = 1, 3 do PN:Skin() end
+	check(_G.MailEditBox.__aetherPill == firstWell,
+		"a field keeps the one well it has however often we dress it")
+	check(#({ _G.SendMailNameEditBox:GetChildren() }) == kids,
+		"and gains no second surface behind it (" ..
+		#({ _G.SendMailNameEditBox:GetChildren() }) .. " from " .. kids .. ")")
+
+	-- THE ATTACHMENT SLOTS keep their plate in a BACKGROUND region rather
+	-- than in the normal texture, so clearing the button's own four states
+	-- leaves all sixteen of them stone - and a plain sweep would take the
+	-- item's picture along with the plate.
+	local slotStone, undressed, lostIcons = 0, 0, 0
+	for i = 1, 16 do
+		for _, n in ipairs({ "SendMailAttachment" .. i,
+			"OpenMailAttachmentButton" .. i }) do
+			local b = _G[n]
+			for _, r in ipairs({ b:GetRegions() }) do
+				if r ~= b.Icon and r:IsShown() and tostring(r:GetTexture() or ""):find("Slot-Background", 1, true) then
+					slotStone = slotStone + 1
+				end
+			end
+			if not b.__aetherSlot then undressed = undressed + 1 end
+			if not (b.Icon:IsShown() and tostring(b.Icon:GetTexture() or ""):find("Icons", 1, true)) then
+				lostIcons = lostIcons + 1
+			end
+		end
+	end
+	check(slotStone == 0, "the slots have lost their plates (" .. slotStone .. ")")
+	check(undressed == 0, "and wear our cell instead (" .. undressed .. " bare)")
+	check(lostIcons == 0, "with the item still on them (" .. lostIcons .. " blanked)")
 	-- THE BUTTONS on all three. Send, Create, Create All, Close - a dozen of
 	-- them across the windows, and every one a red UIPanelButtonTemplate plate.
 	local plain = 0

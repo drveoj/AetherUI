@@ -386,14 +386,30 @@ function Reskin.Slot(btn, opts)
 	if not btn then return end
 	opts = opts or {}
 
+	-- THE ITEM'S OWN PICTURE, under any of the names the client gives it:
+	-- `$parentIconTexture` on the old item button, `Icon` on the newer ones,
+	-- `icon` once we have been past. Resolved FIRST, because the sweep and
+	-- the cell both have to be talking about the same region - miss it and
+	-- the sweep blanks the item and the cell draws an empty texture over
+	-- the hole.
+	local icon = opts.icon or Reskin.Element(btn, "IconTexture")
+		or Reskin.Element(btn, "Icon")
+
 	-- BEFORE the "already done" test, not after it. Switching the module off
 	-- hands the client every texture back, and switching it on again runs this
 	-- a second time - so a dresser that returns early on its own marker returns
 	-- before it has taken the art it just gave back.
 	Reskin.ClearButton(btn)
+
+	-- SOME SLOTS KEEP THEIR PLATE IN A BACKGROUND REGION rather than in the
+	-- normal texture - a mail attachment is one - and ClearButton cannot
+	-- reach that. Given a store the regions come off too, sparing the
+	-- picture, which is in the same layer.
+	if type(opts.store) == "table" then
+		Reskin.StripExcept(btn, opts.store, icon and { icon } or nil)
+	end
 	if btn.__aetherSlot then return end
 
-	local icon = Reskin.Element(btn, "IconTexture") or btn.icon
 	local size = opts.size or (btn.GetWidth and btn:GetWidth()) or 36
 	A.Widgets.DecorateSlot(btn, size, { icon = icon, count = false })
 
@@ -407,6 +423,65 @@ function Reskin.Slot(btn, opts)
 	btn.__aetherSlot = true
 end
 
+--- A glass surround for something the client drew a border round - or should
+--- have and did not.
+--
+--  Every text field in the game is the same three slices of
+--  `Common-Input-Border`, drawn as background regions of the box itself; and
+--  the letter you write in the postbox has no border at all, because the
+--  stationery behind it WAS the frame. Both want the same answer - one of our
+--  surfaces sitting behind the thing - so it is one function.
+--
+--  The surface is remembered on the frame under the name every other well in
+--  this interface uses, so a skin change re-dresses the one already there.
+--  `opts.inset` is how far it stands PROUD on each side, left, top, right,
+--  bottom; the default hugs, because a field is 20 tall and a border four
+--  pixels out on every side reads as a control half again the size of the one
+--  being typed in. `opts.to` names a frame the far corner hangs off instead,
+--  for a field whose scroll bar belongs inside the same well. `opts.corner`
+--  asks for a rounded panel rather than a capsule, which is what anything
+--  taller than a single line wants.
+function Reskin.Well(frame, opts)
+	if not frame or not frame.GetFrameLevel then return nil end
+	opts = opts or {}
+
+	local fill, edge = opts.fill or "glassSoft", opts.edge or "glassEdge"
+	if not frame.__aetherPill then
+		local pad = opts.inset or { 2, 0, 2, 0 }
+		local far = opts.to or frame
+		local well = opts.corner
+			and A.Glass.CreatePanel(frame, { corner = opts.corner, fill = fill, edge = edge })
+			or A.Glass.CreatePill(frame, { fill = fill, edge = edge })
+		well:SetPoint("TOPLEFT", frame, "TOPLEFT", -(pad[1] or 0), pad[2] or 0)
+		well:SetPoint("BOTTOMRIGHT", far, "BOTTOMRIGHT", pad[3] or 0, -(pad[4] or 0))
+
+		-- BELOW what it surrounds. It is a child of the thing, so without this
+		-- it draws over the words in the box.
+		well:SetFrameLevel(math.max(0, (frame:GetFrameLevel() or 1) - 1))
+		frame.__aetherPill = well
+	end
+
+	frame.__aetherPill:ApplySkin(fill, edge)
+	return frame.__aetherPill
+end
+
+--- One of the client's text fields, in glass.
+--
+--  `opts.keep` names regions the sweep must spare: a money box carries its
+--  coin in the same background layer its border is drawn in, so a plain sweep
+--  takes the coin as well and the player is typing gold into a nameless box.
+function Reskin.EditBox(box, opts)
+	if not box then return nil end
+	opts = opts or {}
+
+	box.__aetherStripped = box.__aetherStripped or {}
+	Reskin.StripExcept(box, box.__aetherStripped, opts.keep)
+
+	local well = Reskin.Well(box, opts)
+	Reskin.Font(box, opts.style or "qlRow")
+	A.Widgets.Color(box, A.Palette.c.text)
+	return well
+end
 --- A button whose picture is one of its own regions, in the same cell.
 --
 --  Slot cannot be used and neither can Strip. A spell button keeps its icon in
