@@ -1033,11 +1033,30 @@ end
 local MENU_SPACING = 6
 local MENU_TOP_PAD = 44   -- 32 in the template, and the title sits in it
 
-local function DressGameMenu(frame, store)
+-- Forward-declared: it hooks InitButtons with a closure that calls itself,
+-- and a `local function` cannot refer to its own name from inside.
+local DressGameMenu
+DressGameMenu = function(frame, store)
 	if not frame.GetChildren then return end
 
 	frame.spacing = MENU_SPACING
 	frame.topPadding = MENU_TOP_PAD
+
+	-- ITS BUTTONS COME OUT OF A POOL, and the pool is refilled by
+	-- InitButtons - which the client calls on OnShow and again on its own
+	-- events, AFTER the OnShow hook that brought us here. A button the pool
+	-- mints on one of those later passes has never been dressed, and the
+	-- window comes back red with no error anywhere.
+	--
+	-- So the dressing is hung off InitButtons itself rather than done once
+	-- on the way past. Hooked on the FRAME rather than on the mixin: the
+	-- mixin is shared with every other window built on this template.
+	if not frame.__aetherInit and hooksecurefunc and frame.InitButtons then
+		frame.__aetherInit = true
+		hooksecurefunc(frame, "InitButtons", function(self)
+			if PN.enabled then DressGameMenu(self, store) end
+		end)
+	end
 
 	for _, child in ipairs({ frame:GetChildren() }) do
 		-- A button, by what it can do rather than what it is called.

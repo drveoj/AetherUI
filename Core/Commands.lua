@@ -472,6 +472,45 @@ local function partyDiag(say)
 end
 
 A.PartyDiag = partyDiag
+--- Every window this addon claims to skin, and what became of it.
+--
+--  Written for the same reason /aether party was: a window that comes up in
+--  the client's own stone tells you nothing about WHY. It may not exist yet, it
+--  may exist under another name on this game version, it may have been dressed
+--  and had its art put back. Those are three different bugs and they look
+--  identical on screen.
+local function panelsDiag(say)
+	local PN = A:GetModule("panels")
+	if not PN then
+		say("   " .. A.Bad("no panels module"))
+		return
+	end
+	say("   enabled: %s", PN.enabled and A.Good("yes") or A.Bad("no"))
+	say("   %-22s %-8s %-8s %s", "window", "present", "glass", "interior")
+
+	for _, entry in ipairs(PN.PANELS or {}) do
+		local f = _G[entry.frame]
+		local present = f and A.Good("yes") or A.Dim("no")
+		local glass = f and (f.__aetherPanel and A.Good("yes") or A.Bad("NO"))
+			or A.Dim("-")
+		local interior = (PN.INTERIORS and PN.INTERIORS[entry.frame])
+			and "yes" or "-"
+		-- The addon it arrives with, when it is one of the on-demand ones -
+		-- because "not present" and "present and not dressed" are answers to
+		-- completely different questions.
+		local note = ""
+		if entry.addon then
+			local loaded = C_AddOns and C_AddOns.IsAddOnLoaded
+				and C_AddOns.IsAddOnLoaded(entry.addon)
+				or (IsAddOnLoaded and IsAddOnLoaded(entry.addon))
+			note = "  " .. (loaded and A.Dim(entry.addon)
+				or A.Bad(entry.addon .. " not loaded"))
+		end
+		say("   %-22s %-8s %-8s %s%s", entry.frame, present, glass, interior, note)
+	end
+end
+
+A.PanelsDiag = panelsDiag
 local handlers = {}
 
 handlers.diag = diag
@@ -1248,6 +1287,13 @@ handlers.quests = function(arg)
 			(cfg.autoTrack ~= false) and "auto" or "manual", n, n == 1 and "" or "s",
 			(QT.hidden or 0) > 0 and (" · " .. QT.hidden .. " did not fit") or ""))
 	end
+end
+
+handlers.panels = function()
+	A:Print("panels")
+	A.PanelsDiag(function(fmt, ...)
+		A:Print(string.format(fmt, ...))
+	end)
 end
 
 handlers.party = function(arg)

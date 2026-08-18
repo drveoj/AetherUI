@@ -3145,6 +3145,10 @@ do
 		end
 
 		function gm:MarkDirty() self.__dirty = true end
+		-- ITS BUTTONS COME OUT OF A POOL and InitButtons is what fills it -
+		-- called on OnShow and again on the client's own events, after
+		-- anything hooked to OnShow has already run.
+		function gm:InitButtons() self:Layout() end
 		function gm:Layout()
 			self.__dirty = nil
 			self.__layoutRuns = self.__layoutRuns + 1
@@ -10527,6 +10531,36 @@ section("panels: the main menu is a column of buttons, not a column of glass", f
 	check(gap and gap > 0,
 		"and the layout has actually run, so there is a gap on screen rather"
 		.. " than a number in a table (" .. tostring(gap) .. ")")
+
+	-- AND THE BUTTONS ARE OURS. The spacing and the skin are two different
+	-- jobs on the same pass, and a menu that is correctly spaced and still
+	-- red is what you get when only one of them ran.
+	local red = 0
+	for _, b in ipairs(gm.__menuButtons) do
+		if not b.__aetherSkin then red = red + 1 end
+	end
+	check(red == 0, "every button on it wears our surface (" .. red ..
+		" still the client's)")
+
+	-- AND A BUTTON THE POOL MINTS LATER IS DRESSED TOO. InitButtons is
+	-- called on OnShow and again on the client's own events, AFTER the hook
+	-- that dressed the window - so a button acquired on one of those later
+	-- passes has never been dressed, and the menu comes back red with no
+	-- error anywhere.
+	gm.__menuButtons[#gm.__menuButtons + 1] = (function()
+		local b = CreateFrame("Button", nil, gm)
+		b:SetSize(180, 26)
+		b:SetText("Support")
+		return b
+	end)()
+	gm:InitButtons()
+	local late = 0
+	for _, b in ipairs(gm.__menuButtons) do
+		if not b.__aetherSkin then late = late + 1 end
+	end
+	check(late == 0,
+		"a button the pool mints after the window opened is dressed too (" ..
+		late .. " missed)")
 	gm:Hide()
 end)
 
@@ -10598,6 +10632,39 @@ section("panels: the postbox, the book and the trade skills", function()
 		"CraftFrame" }) do
 		_G[n]:Hide()
 	end
+end)
+section("panels: a report that says which window and why", function()
+	local PN = A:GetModule("panels")
+
+	-- A window that comes up in the client's own stone tells you nothing about
+	-- WHY. It may not exist yet, it may exist under another name on this game
+	-- version, it may have been dressed and had its art put back. Three
+	-- different bugs, identical on screen - and this session has spent whole
+	-- rounds guessing between them.
+	local lines = {}
+	local ok, err = pcall(A.PanelsDiag, function(fmt, ...)
+		lines[#lines + 1] = string.format(fmt, ...)
+	end)
+	check(ok, "/aether panels reports without erroring (" .. tostring(err) .. ")")
+
+	local all = table.concat(lines, "\n")
+	check(all:find("MailFrame", 1, true) ~= nil, "with a row per window")
+
+	-- AND IT TELLS THE TWO APART. A window with our glass and one without have
+	-- to read differently, or the report is a list of names.
+	_G.MailFrame:Show()
+	PN:Skin()
+	lines = {}
+	A.PanelsDiag(function(fmt, ...) lines[#lines + 1] = string.format(fmt, ...) end)
+	local dressed, bare
+	for _, l in ipairs(lines) do
+		if l:find("MailFrame", 1, true) then dressed = l end
+		if l:find("WorldMapFrame", 1, true) then bare = l end
+	end
+	check(dressed ~= nil, "the postbox is in the report")
+	check(dressed and dressed:find("NO", 1, true) == nil,
+		"and reads as dressed, because it is")
+	_G.MailFrame:Hide()
 end)
 section("panels: the Options window, part by part", function()
 	local PN = A:GetModule("panels")
