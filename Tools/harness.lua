@@ -1786,13 +1786,30 @@ _G.__stateDrivers = {}
 function RegisterStateDriver(frame, state, values) _G.__stateDrivers[state] = values end
 function UnregisterStateDriver(frame, state) _G.__stateDrivers[state] = nil end
 
--- THE CLIENT'S OWN PARTY FRAMES. Secure buttons, which is why they cannot be
--- sent away in a fight, and toplevel - so an addon that only calls Hide() on
--- them watches Blizzard's own roster code put them straight back.
+-- THE CLIENT'S OWN PARTY FRAMES, in the shape this client actually has.
+--
+-- There are NO PartyMemberFrame1..4 globals. PartyFrame.lua builds the member
+-- buttons from a frame pool - CreateFramePool("BUTTON", self,
+-- "PartyMemberFrameTemplate", ...) - and a pooled frame gets no name. The
+-- container is the only thing with one.
+--
+-- The first version of this mock invented the four globals, so the suite was
+-- green about hiding frames that do not exist while the real ones sat on
+-- screen next to ours. A mock must never be kinder than the client, and
+-- inventing a global it does not have is the kindest thing a mock can do.
+PartyFrame = CreateFrame("Frame", "PartyFrame", UIParent)
+PartyFrame.__protected = true
 for i = 1, 4 do
-	_G["PartyMemberFrame" .. i] = CreateFrame("Button", "PartyMemberFrame" .. i, UIParent)
-	_G["PartyMemberFrame" .. i].__protected = true
+	-- Nameless, and children of the container, which is why banishing the
+	-- container is enough.
+	local b = CreateFrame("Button", nil, PartyFrame)
+	b.__protected = true
 end
+
+-- The raid-style version of the same four people, drawn instead when the
+-- player has that setting on.
+CompactPartyFrame = CreateFrame("Frame", "CompactPartyFrame", UIParent)
+CompactPartyFrame.__protected = true
 
 _G.__unitWatched = {}
 function RegisterUnitWatch(f)
@@ -9712,34 +9729,55 @@ section("party: four capsules in fixed slots", function()
 	check(f1.unitWatched == true,
 		"and its visibility is the client's, through RegisterUnitWatch")
 
+	-- AT THE PROFILE'S SCALE, on the container - one call for all four, and on
+	-- the frame the mover positions. Every other frame in this interface is
+	-- drawn at profile.scale and this one was not, which read on screen as a
+	-- party capsule half again too big beside the player's own.
+	-- MOVED FIRST, because this profile is at 1 and so is a frame nobody has
+	-- scaled - so asking at the default proves nothing at all.
+	local wasScale = A.db.profile.scale
+	A.db.profile.scale = 0.6
+	PF:OnConfigChanged()
+	check(math.abs(PF.stack:GetScale() - 0.6) < 0.001,
+		"the stack is drawn at the profile's scale (" ..
+		tostring(PF.stack:GetScale()) .. ")")
+	A.db.profile.scale = wasScale
+	PF:OnConfigChanged()
+	check(math.abs(PF.stack:GetScale() - (wasScale or 1)) < 0.001,
+		"and follows it back")
+
 	-- AND BLIZZARD'S OWN ARE GONE. Two of ours on top of four of theirs is not
 	-- a skin, it is a mess - and this is the part that was missing when the
 	-- module first went in: the capsules were built and the client's frames
 	-- were left exactly where they were.
-	for i = 1, 4 do
-		local b = _G["PartyMemberFrame" .. i]
-		check(not b:IsShown() and b:GetParent() ~= UIParent,
-			"PartyMemberFrame" .. i .. " is hidden AND reparented - Hide() alone is undone by the client's own roster code")
+	-- AND THE REPORT SAYS SO PER FRAME. "absent" is the answer that matters:
+	-- a name this client does not have hides nothing, silently, and that is
+	-- exactly how the first version of this shipped - it went looking for
+	-- PartyMemberFrame1..4, which are pooled and nameless here, found nothing
+	-- four times and reported success.
+	for _, name in ipairs({ "PartyFrame", "CompactPartyFrame" }) do
+		check(PF.hideReport[name] == "hidden",
+			name .. " is hidden (" .. tostring(PF.hideReport[name]) .. ")")
+		check(_G[name]:GetParent() ~= UIParent,
+			"and reparented, not just hidden - Hide() alone is undone by the"
+			.. " client's own roster code")
 	end
 
 	-- REFUSED IN A FIGHT, and asked again after it. These carry a secure
 	-- template, so a party joined mid-combat is a party whose frames arrive in
 	-- the one window where nothing can be done about them.
-	for i = 1, 4 do
-		local b = _G["PartyMemberFrame" .. i]
-		b:SetParent(UIParent)
-		b:Show()
-	end
+	PartyFrame:SetParent(UIParent)
+	PartyFrame:Show()
 	_G.__inCombat = true
 	local blocked = _G.__blocked
 	PF:HideBlizzard()
 	check(_G.__blocked == blocked,
 		"asking mid-fight refuses quietly rather than erroring")
-	check(_G["PartyMemberFrame1"]:IsShown(),
+	check(PartyFrame:IsShown(),
 		"and the frame is still there, because the client would not have it")
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
-	check(not _G["PartyMemberFrame1"]:IsShown(),
+	check(not PartyFrame:IsShown(),
 		"the moment the fight ends, it goes")
 end)
 

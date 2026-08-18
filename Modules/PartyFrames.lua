@@ -80,17 +80,45 @@ local ROLE_GLYPH = { TANK = "tank", HEALER = "healer", DAMAGER = "dps" }
 -- Blizzard's own, out of the way
 -- ---------------------------------------------------------------------------
 
---- The four the client draws, and the pets hanging off them.
+--- The client's own party frames.
 --
---  ASKED FOR REPEATEDLY, not once at login. PartyMemberFrame carries a
---  secure template, so banishing it is refused while you are in a fight -
---  and a party you join mid-fight is a party whose frames arrive during the
---  one window where nothing can be done about them. So this runs again on
---  every roster change and again when the fight ends.
+--  THERE ARE NO PartyMemberFrame1..4 GLOBALS on this client, which is how
+--  the first version of this hid nothing at all. PartyFrame.lua builds the
+--  member buttons out of a FRAME POOL:
+--
+--    self.PartyMemberFramePool = CreateFramePool("BUTTON", self,
+--        "PartyMemberFrameTemplate", PartyMemberFrameReset)
+--
+--  and a pooled frame gets no name. The container is what has one, and
+--  banishing it takes its pool with it because they are its children.
+--
+--  CompactPartyFrame is the raid-style version of the same four people,
+--  drawn instead when the player has that setting on. Only the party one -
+--  a raid's frames are somebody else's window and we do not draw those.
+local BLIZZARD = { "PartyFrame", "CompactPartyFrame" }
+
+--- Hide them, and SAY WHAT HAPPENED TO EACH.
+--
+--  The report is the point. A name this client does not have is a silent
+--  no-op - no error, nothing in the log, and a party frame still on screen
+--  next to ours - which is exactly the bug this replaced. The suite reads it
+--  back and fails on "absent".
+--
+--  ASKED FOR REPEATEDLY, not once at login. These carry secure templates,
+--  so banishing is refused while you are in a fight - and a party you join
+--  mid-fight is one whose frames arrive in the one window where nothing can
+--  be done about them.
 function PF:HideBlizzard()
 	if not cfg().hideBlizzard then return end
-	for i = 1, 4 do
-		A:Banish(_G["PartyMemberFrame" .. i])
+	self.hideReport = self.hideReport or {}
+	for _, name in ipairs(BLIZZARD) do
+		local f = _G[name]
+		if not f then
+			self.hideReport[name] = "absent"
+		else
+			A:Banish(f)
+			self.hideReport[name] = f:IsShown() and "STILL SHOWN" or "hidden"
+		end
 	end
 end
 
@@ -375,6 +403,12 @@ function PF:Layout()
 	local c = cfg()
 	local step = c.height + c.gap
 
+	-- THE PROFILE'S SCALE, on the container - so one call sizes all four
+	-- and the mover positions the thing the player actually sees. Every
+	-- other frame in this interface is drawn at profile.scale and this one
+	-- was not, which read as party frames half again too big beside the
+	-- player's own.
+	self.stack:SetScale(A.db.profile.scale or 1)
 	self.stack:SetSize(c.width, c.height * #UNITS + c.gap * (#UNITS - 1))
 
 	for i, f in ipairs(self.frames) do
