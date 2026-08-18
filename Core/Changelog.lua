@@ -38,6 +38,20 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.13.0",
+		date    = "2026-08-18",
+		lines   = {
+			"Your settings are in this interface's own window now. The category list, the buttons, the sliders, the dropdowns and the boxes you type in - glass and our own lettering, in place of stone and a red button.",
+			"Pick a skin by looking at it. The skin page shows four swatches, each painted in the skin it names, rather than four words.",
+			"The game's own Options window wears the glass too - its tabs, its category list, its search box, and the Close and Apply buttons.",
+			"There are fewer settings pages. Five that each held a single switch are now one page, The game's own, with all of them on it.",
+			"New: quest text can appear at once instead of typing itself out. Off by default - the game has this setting too, and you may have chosen it already.",
+			"New: repair at any vendor who offers it, without the trip to the anvil. Off by default, and it says what it spent. If you cannot afford the bill it tells you, rather than quietly doing nothing, which is what the game does on its own.",
+			"Fixed: a right-click menu could open as an empty sheet of glass with every line hidden behind it.",
+			"Fixed: changing skin got slower the longer you played. Every right-click menu you had opened was being repainted again.",
+		},
+	},
+	{
 		version = "0.12.0",
 		date    = "2026-08-17",
 		lines   = {
