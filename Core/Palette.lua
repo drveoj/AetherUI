@@ -87,8 +87,6 @@ local CHROME = {
 		track  = C(255, 255, 255),
 		disc   = C( 21,  17,  41),   -- #151129
 		soft   = C(220, 210, 255),
-	gold   = C(240, 217, 168),   -- #f0d9a8, the reserved gold
-	goldDim= C(232, 200, 106),   -- #e8c86a, its companion tint
 	},
 
 	dawn = {
@@ -101,8 +99,6 @@ local CHROME = {
 		track  = C(255, 235, 224),
 		disc   = C( 36,  17,  16),   -- #241110
 		soft   = C(255, 224, 208),
-	gold   = C(240, 217, 168),
-	goldDim= C(232, 200, 106),
 	},
 
 	noon = {
@@ -115,8 +111,6 @@ local CHROME = {
 		track  = C(225, 242, 252),
 		disc   = C( 13,  22,  32),   -- #0d1620
 		soft   = C(214, 236, 250),
-	gold   = C(240, 217, 168),
-	goldDim= C(232, 200, 106),
 	},
 
 	dusk = {
@@ -129,8 +123,6 @@ local CHROME = {
 		track  = C(255, 244, 220),
 		disc   = C( 33,  24,   9),   -- #211809
 		soft   = C(250, 232, 200),
-	gold   = C(255, 207, 102),   -- #ffcf66, THE ONE REMAP
-	goldDim= C(255, 207, 102),
 	},
 }
 
@@ -226,9 +218,8 @@ local SEMANTIC = {
 	talentFull = C(255, 226, 150),
 	junkTint   = C(150, 150, 150, 0.42),
 
-	-- the in-flight console: three channels and a brass rim. The LANDING
-	-- gold is not here - it is the reserved semantic gold, and that one is
-	-- the single colour a skin may reach. See semanticGold in Compose.
+	-- the in-flight console: three channels and a brass rim. Its landing
+	-- warning is the reserved gold, which is chosen above.
 	ifecMusic   = C(159, 212, 200),
 	ifecGossip  = C(232, 200, 106),
 	ifecPodcast = C(240, 160, 106),
@@ -287,7 +278,28 @@ local SEMANTIC = {
 --  alpha, and that is the whole reason four skins cost four rows rather than
 --  four files: there is nothing in this function that can be got wrong for one
 --  skin and right for the others.
+--- The reserved gold, and THE ONE PLACE A SKIN NAME IS TESTED.
+--
+--  It carries meaning rather than chrome - the leader crown, the dock arrow,
+--  Convert to Raid, the console's landing warning - so it belongs with the
+--  other meanings and not with the six a skin remaps. Dusk is the exception,
+--  and only Dusk: its own accent is #f0d9a8, which is this colour exactly, so
+--  on that skin alone the warning was the frame's own rim. One shade deeper
+--  and the two are told apart again.
+--
+--  Every read goes through Palette.c.semanticGold. Spell the hex at a call
+--  site and this test is somewhere else as well, which is the whole thing it
+--  exists to prevent.
+local GOLD      = C(240, 217, 168)   -- #f0d9a8
+local GOLD_DIM  = C(232, 200, 106)   -- #e8c86a, its companion tint
+local DUSK_GOLD = C(255, 207, 102)   -- #ffcf66
+
+local function Gold(skin)
+	if skin == "dusk" then return DUSK_GOLD, DUSK_GOLD end
+	return GOLD, GOLD_DIM
+end
 local function Compose(name, k)
+	local gold, goldDim = Gold(name)
 	local c = {
 		label = k.label,
 
@@ -326,25 +338,9 @@ local function Compose(name, k)
 		btnEdge     = A_(k.border, 0.32),
 		btnHover    = A_(k.border, 0.14),
 
-		--- SEMANTIC GOLD: the one meaning a skin is allowed to move.
-		--
-		--  Everything else in SEMANTIC answers a question about the GAME and is
-		--  one shared copy no skin can reach. This one answers a question about
-		--  the game too - warning, leader, this changes your group - but it has
-		--  to be legible ON the chrome, and in Dusk the chrome is gold. Dusk's
-		--  accent is #f0d9a8; the reserved gold was #f0d9a8. The same colour,
-		--  exactly, so the warning ring on the console was the frame's own rim.
-		--
-		--  IT LIVES IN CHROME, which is what keeps the conditional out of the
-		--  code. The brief writes it as `(skin == "Dusk") and A or B` at the
-		--  call site, which is the very thing the same paragraph forbids two
-		--  lines later. A per-skin value belongs in the per-skin table and then
-		--  there is no branch anywhere, and the live sweep carries it for free.
-		--
-		--  The dim companion is a HUE step, not an alpha: gold at 55% is still
-		--  gold, and the point of the pair is two separable weights of it.
-		semanticGold    = A_(k.gold, 1),
-		semanticGoldDim = A_(k.goldDim, 1),
+		-- the reserved gold, which Dusk and only Dusk moves
+		semanticGold    = A_(gold, 1),
+		semanticGoldDim = A_(goldDim, 1),
 
 
 		-- the console's dial: the accent on a near-black disc, over a white track

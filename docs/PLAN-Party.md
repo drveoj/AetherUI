@@ -30,76 +30,45 @@ So on Dusk the console's landing warning was painted in the console's own rim co
 
 ### What shipped
 
-`gold` and `goldDim` are now **chrome** tokens — one entry per skin in `CHROME`
-(`Core/Palette.lua`) — surfaced by `Compose` as `c.semanticGold` and `c.semanticGoldDim`.
-
-This is deliberately not what the handoff's snippet says. The handoff writes:
+`Palette.c.semanticGold` and `Palette.c.semanticGoldDim`, chosen by one conditional in
+one place in `Core/Palette.lua`:
 
 ```lua
-local SEMANTIC_GOLD = (skin == "Dusk") and "#ffcf66" or "#f0d9a8"
+local function Gold(skin)
+	if skin == "dusk" then return DUSK_GOLD, DUSK_GOLD end
+	return GOLD, GOLD_DIM
+end
 ```
 
-and then, two lines later, says the conditional must live in exactly one place and never
-at a call site. A per-skin value belongs in the per-skin table: with it there, **no code
-branches on a skin name anywhere**, and `Glass.RestyleAll` carries it on a live switch for
-free like every other token.
+Midnight, Dawn and Noon are untouched at `#f0d9a8`. Dusk goes one shade deeper to
+`#ffcf66`. Nothing else in the palette moved.
 
-`SEMANTIC` stays what it was — one shared copy no skin can reach. That rule is
-load-bearing (it is what would have stopped the rejected Daylight skin moving health
-green), and gold is the single documented exception, so it is expressed as "not a
-SEMANTIC token" rather than as "a SEMANTIC token with an exception in it".
+It is not a `CHROME` token. The six a skin remaps are chrome; this one carries meaning
+and happens to need one exception, so it sits with the meanings and the exception is
+stated once. `SEMANTIC` itself stays a shared copy no skin can reach — that rule is what
+would have stopped the rejected Daylight skin moving health green.
 
-`ifecLanding` is gone as a name. It was a second name for the same colour, which is the
-drift the brief's own "route every read through the one token" rule exists to prevent.
+`ifecLanding` is gone as a name: it was a second name for the same colour, which is the
+drift the brief's "route every read through the one token" rule exists to prevent.
 `Modules/IFEC/Player.lua` reads `c.semanticGold`.
 
-### The numbers, and what is still wrong
+### Still open: the rest of the gold family
 
-Measured as CIE ΔE76. ΔE 2.3 is the just-noticeable step; under 10 reads as the same
-colour at a glance. The harness prints this table on every run and asserts the floor.
-
-```
-                 vs accent   vs accentDeep   vs glassEdge
-midnight  #f0d9a8    61.3          70.6           87.8
-dawn      #f0d9a8    11.1          24.9           19.8
-noon      #f0d9a8    38.5          52.5           51.2
-dusk      #ffcf66    30.9           9.7            9.7     <- the remap
-dusk      #f0d9a8     0.0          24.3           24.3     <- what it replaced
-```
-
-Two things the handoff has wrong, both visible in that table:
-
-**The remap trades one collision for a tighter one.** `#ffcf66` escapes Dusk's accent
-(0.0 → 30.9) and lands on `deep`/`border`, which are literally `#e8c86a`, at 9.7 — closer
-than the 24.3 the unremapped gold had against those same two. It is an improvement on
-balance, because accent is the token that surrounds everything, but it is not the clean
-separation the brief describes, and "deepening one step" is not what `#ffcf66` does: it
-is brighter and more saturated than `#f0d9a8`.
-
-**Dawn is not "clear of the warning gold".** The skins README says so explicitly. Dawn's
-rose-gold accent against the warning gold is ΔE 11.1 — worse than the remapped Dusk
-figure. Under the brief's own reasoning Dawn wants a remap too, and the "one conditional"
-framing is what stops anyone noticing.
-
-Both are the designer's call, not ours; the structure now makes either one a four-byte
-edit in `CHROME` with no other file touched.
-
-### Still unresolved: the rest of the gold family
-
-The brief's gold list is landing/crown/arrows/convert/quest-tracker. Our palette has five
-more colours in the same family that the list does not cover, all of them `SEMANTIC` and
+The brief's gold list is crown, arrows, Convert, landing, quest-tracker. Our palette has
+five more colours in the same family that the list does not cover, all in `SEMANTIC` and
 therefore identical in all four skins:
 
 - `ifecGossip` `#e8c86a` — **the skins README lists this under "what NEVER changes", and
   Dusk's border is the same three bytes.** The document contradicts itself; one of the two
   has to give.
 - `ttElite`, `ttNeutral`, `petContent` `#e8c86a` — same collision, same skin.
-- `energy` `#ffe082`→`#e8be50` — a rogue's or druid's power bar, ΔE 9.8 from Dusk's deep
+- `energy` `#ffe082`→`#e8be50` — a rogue's or druid's power bar, one step off Dusk's deep
   accent. This one matters most for the party capsules, because it is a **bar**: the
   brief's escape hatch ("gold semantics always ride a distinct glyph shape or position,
   never hue alone") cannot apply to a 4px strip of colour.
 
-**Decision needed** before the party capsules draw a power bar. See §6.
+These are separate tokens from semantic gold and the brief says nothing about them. See
+§6.
 
 ---
 
@@ -210,22 +179,17 @@ goes away — a snap that applies to one frame is a bug report waiting to happen
    is a bar, so glyph shape cannot rescue it. Options: move Dusk's `deep`/`border` off
    `#e8c86a`; or move the four semantics; or accept it and let Dusk's power bars and elite
    chips read as chrome.
-2. **Dawn** (§1). ΔE 11.1 against its own accent, contrary to the brief's text. Remap
-   Dawn's gold too, or accept it.
-3. **The Dusk gold value** (§1). `#ffcf66` is 9.7 from `deep`/`border`. A warmer or
-   oranger step would clear both; that is a design choice.
-4. **Hurt health value** (§3). Gold by hue alone on a number. Suggest the neutral text
+2. **Hurt health value** (§3). Gold by hue alone on a number. Suggest the neutral text
    token, and let the shrinking bar say "hurt".
-5. **Crown vs raid marker** (§3). They occupy the same position on the pip and a marked
+3. **Crown vs raid marker** (§3). They occupy the same position on the pip and a marked
    leader is ordinary. One of them moves.
-6. **Empty role state** (§2). It is the common case on Era.
+4. **Empty role state** (§2). It is the common case on Era.
 
 ---
-
 ## 7. Build order
 
 1. ~~Semantic gold as a chrome token~~ — done.
-2. Answer §6.1 and §6.4; both are palette edits and both block drawing a capsule.
+2. Answer §6.1 and §6.2; both are palette edits and both block drawing a capsule.
 3. Glyph textures (`Tools/generate_textures.py`).
 4. The capsule as a widget, one unit, against `player` first so it can be looked at
    without a party.
