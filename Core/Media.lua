@@ -123,6 +123,18 @@ Media.icons = {
 		"play", "pause", "prev", "next",
 		"grip", "tick",
 		"library", "ifec", "zoom", "close",
+		"crown", "healer", "dps", "resurrect",
+	},
+
+	--- One drawing, more than one name for it.
+	--
+	--  A tank's shield is the shield already on the sheet and the party
+	--  handle's pair of figures is the one already on the sheet. Drawing
+	--  either a second time would be two cells that have to agree about
+	--  what a shield looks like, and one day would not.
+	alias = {
+		tank  = "guild",
+		party = "social",
 	},
 }
 
@@ -135,7 +147,7 @@ end
 --- Texel coordinates for one icon, ready for SetTexCoord.
 function Media:Icon(name)
 	local a = Media.icons
-	local i = a.index[name]
+	local i = a.index[name] or a.index[a.alias[name] or false]
 	if not i then return nil end
 	local c, r = i % a.cols, math.floor(i / a.cols)
 	return a.file, c / a.cols, (c + 1) / a.cols, r / a.rows, (r + 1) / a.rows

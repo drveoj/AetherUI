@@ -1010,6 +1010,11 @@ ICON_ORDER = [
     "zoom",
     # shutting a window, as art rather than as a character
     "close",
+    # the party: who leads it, what each of them does, and getting one of
+    # them back up. The tank's shield is `guild` and the handle's pair of
+    # figures is `social` - the same drawing means the same thing, so they
+    # are aliased in Core/Media.lua rather than drawn twice.
+    "crown", "healer", "dps", "resurrect",
 ]
 
 
@@ -1292,6 +1297,31 @@ def _glyph(name, cell):
         return U(seg(64, 26, 64, 78),
                  seg(46, 60, 64, 78), seg(82, 60, 64, 78),
                  seg(30, 98, 98, 98))
+
+    if name == "crown":
+        # Who leads. Three peaks and a band, drawn as one closed outline so
+        # the shape survives at the 14px it rides the level pip at - a
+        # filled crown at that size is a gold smudge.
+        return U(seg(30, 88, 30, 40), seg(30, 40, 48, 64), seg(48, 64, 64, 34),
+                  seg(64, 34, 80, 64), seg(80, 64, 98, 40), seg(98, 40, 98, 88),
+                  seg(98, 88, 30, 88))
+
+    if name == "healer":
+        # A cross. Not a heart and not a chalice: at 22px the only mark that
+        # reads as healing without being read as something else.
+        return U(seg(64, 32, 64, 96), seg(32, 64, 96, 64))
+
+    if name == "dps":
+        # An arrow, up. Bare - no ground line - which is what separates it
+        # from `resurrect` below at a glance.
+        return U(seg(64, 100, 64, 30), seg(64, 30, 44, 52), seg(64, 30, 84, 52))
+
+    if name == "resurrect":
+        # Getting somebody back up: the same arrow RISING OFF a ground line.
+        # It is `exit` inverted - that one comes down onto the line - and the
+        # pair reading as opposites is the point, not a coincidence.
+        return U(seg(64, 96, 64, 36), seg(64, 36, 46, 56), seg(64, 36, 82, 56),
+                  seg(32, 106, 96, 106))
 
     if name == "lock":
         # A padlock: a body and a shackle. ONE glyph for both states, because

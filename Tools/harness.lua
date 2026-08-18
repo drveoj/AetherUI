@@ -16560,6 +16560,21 @@ do
 			if not file then clash = clash or (name .. " has no file") end
 		end
 		check(not clash, "each icon has its own cell (" .. tostring(clash) .. ")")
+
+		-- AN ALIAS RESOLVES, and resolves to the SAME cell. A tank's shield is
+		-- the shield already on the sheet and the party handle's figures are the
+		-- pair already on it; drawing either again would be two cells that have
+		-- to agree about what a shield looks like. Checked because an alias
+		-- pointing at a name the sheet does not have fails the way the keybinds
+		-- tile did - SetIcon returns false, the glyph hides, and nothing says so.
+		for alias, real in pairs(A.Media.icons.alias) do
+			local f1, l1, r1, t1, b1 = A.Media:Icon(alias)
+			local f2, l2, r2, t2, b2 = A.Media:Icon(real)
+			check(f2 ~= nil,
+				alias .. " points at a name the sheet has (" .. real .. ")")
+			check(f1 == f2 and l1 == l2 and r1 == r2 and t1 == t2 and b1 == b2,
+				"and lands on the very same cell, not a copy of it")
+		end
 		-- EVERY key the module asks for must exist in the sheet. The settings
 		-- tile keyed "keybinds" asked for an icon the atlas called "keybind",
 		-- SetIcon returned false, the glyph was hidden, and the tile shipped as
