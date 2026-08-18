@@ -200,7 +200,8 @@ Two more were settled the same way while building §3, and both departed from th
 2. ~~crown, healer, dps, resurrect glyphs~~ — done. The tank shield and the handle's pair
    of figures are aliases of `guild` and `social`, not new drawings.
 3. ~~The capsule, four fixed secure slots, one mover, its own options page~~ — done,
-   `Modules/PartyFrames.lua`. Off by default.
+   `Modules/PartyFrames.lua`, with the client's own four banished. On by default,
+   like everything else here.
 4. The controls panel (§4) — marker grid, the four actions, the no-target state.
 5. The dock handle (§5), shared with Toolbox.
 6. Answer §6.1, which is the only thing left that a party capsule draws and cannot

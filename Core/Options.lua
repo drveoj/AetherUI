@@ -1233,9 +1233,8 @@ local function PartyFramesGroup()
 	local function at(k) return { "modules", "partyframes", k } end
 	return group("Party frames", {
 		enabled = toggle("Enabled",
-			"Four capsules for your party, in the same glass as your own frame."
-			.. " Off by default: it replaces frames you have already arranged"
-			.. " around.", at("enabled")),
+			"Four capsules for your party, in the same glass as your own"
+			.. " frame.", at("enabled"), { defaultTrue = true }),
 		hideBlizzard = toggle("Hide Blizzard's party frames", nil,
 			at("hideBlizzard")),
 		clickTarget = toggle("Click to target",

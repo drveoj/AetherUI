@@ -114,12 +114,8 @@ Config.defaults = {
 
 		modules = {
 			-- The party: four capsules in fixed slots, dragged as one.
-			--
-			-- OFF by default. It replaces frames the player already has and
-			-- has arranged around, and turning somebody's party frames off
-			-- without being asked is not a default, it is a surprise.
 			partyframes = {
-				enabled     = false,
+				enabled     = true,
 				hideBlizzard = true,
 				-- 8 pad + 38 pip + 10 + 170 bars + 12 + 40 readout + 10 + 22
 				-- role + 18 pad

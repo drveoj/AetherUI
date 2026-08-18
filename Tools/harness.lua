@@ -9675,9 +9675,11 @@ section("party: four capsules in fixed slots", function()
 	local PF = A:GetModule("partyframes")
 	local c = A.Config:Module("partyframes")
 
-	-- OFF BY DEFAULT, and that is a decision. It replaces frames the player
-	-- already has and has arranged around.
-	check(c.enabled == false, "off until asked for")
+	-- ON by default, like every other feature here. Somebody who installs
+	-- this wants what it does; a feature switched off is a feature nobody
+	-- knows is there. Checked because the default IS the product for
+	-- almost everybody, and it is one word to get wrong.
+	check(c.enabled == true, "on out of the box")
 
 	_G.__units.party1.leader = true
 	A:SetModuleEnabled("partyframes", true)

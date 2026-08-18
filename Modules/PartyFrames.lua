@@ -3,7 +3,7 @@
 
 	Four capsules, one per party member, in the same glass and lettering as the
 	player's own - compacted, because a party member is somebody you glance at
-	rather than read.
+	rather than read. Blizzard's four go away with them.
 
 	FIXED SLOTS, NOT A GROWING STACK. The design asks for a stack that grows
 	from its anchored top edge as members join and leave. It cannot be built
