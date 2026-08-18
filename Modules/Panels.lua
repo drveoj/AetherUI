@@ -47,6 +47,12 @@ local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 --
 --  Measured off the frame, not taken from anywhere: { left, top, right, bottom }
 --  as SetPoint offsets, and expected to want a nudge by eye.
+-- How far the postbox's tabs hang below its bottom edge. Blizzard's own is
+-- 30, which puts their top edge inside the money row - hidden in the
+-- client by the stone border drawn over the join, and not hidden once that
+-- border is off. The glass follows it down, or the tabs sit outside.
+local MAIL_TAB_DROP = 40
+
 local PANELS = {
 	{ frame = "CharacterFrame", insets = { 10, -10, -30, 26 } },
 	-- The spellbook names none of its parts the way the others do: its title is
@@ -130,7 +136,7 @@ local PANELS = {
 	-- THE POSTBOX. ButtonFrameTemplate, so tight - but its tabs hang off the
 	-- bottom edge outside its own art the way the vendor's do, and trimmed to
 	-- the frame the Inbox and Send Mail tabs land outside the glass.
-	{ frame = "MailFrame", tight = true, insets = { 0, 0, 0, -30 },
+	{ frame = "MailFrame", tight = true, insets = { 0, 0, 0, -MAIL_TAB_DROP - 8 },
 		tabs = "MailFrameTab" },
 
 	-- A LETTER OR A BOOK out of your bags. Also ButtonFrameTemplate, and
@@ -2450,6 +2456,19 @@ end
 --- The postbox: two panes behind two tabs, and the letter you are writing is
 --- on paper like everything else an NPC hands you.
 local function DressMail(frame, store)
+	-- THE TABS HANG BELOW THE FRAME and the money row runs right down to its
+	-- bottom edge, so the two overlap by a few pixels. They do in the client
+	-- too - its own bottom border is drawn over the join and hides it - and
+	-- taking that border off is what makes it visible.
+	--
+	-- Tab1 only: Tab2 is anchored to it, so moving the first moves both.
+	local tab = _G.MailFrameTab1
+	if tab and not tab.__aetherDropped then
+		tab.__aetherDropped = true
+		tab:ClearAllPoints()
+		tab:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 14, -MAIL_TAB_DROP)
+	end
+
 	for _, name in ipairs({ "InboxFrame", "SendMailFrame", "OpenMailFrame" }) do
 		local pane = _G[name]
 		if pane then

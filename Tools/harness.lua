@@ -10798,6 +10798,23 @@ section("panels: the postbox, the book and the trade skills", function()
 	check(stone == 0, "and the page turners have lost their plates (" ..
 		stone .. ")")
 
+	-- THE TABS HANG BELOW THE FRAME, and the money row runs right down to
+	-- its bottom edge - so at the client's own 30 the two overlap. They do
+	-- in the client too; its bottom border is drawn over the join and hides
+	-- it, and taking that border off is what makes it visible.
+	local _, rel, at, _, ty = _G.MailFrameTab1:GetPoint()
+	check(rel == _G.MailFrame and at == "BOTTOMLEFT",
+		"the tabs hang off the window's bottom edge")
+	check(ty and ty <= -38,
+		"far enough below it to clear the money row (" .. tostring(ty) ..
+		", the client's own is -30)")
+
+	-- AND THE GLASS FOLLOWS THEM DOWN, or they sit outside it.
+	local entry = PN.ENTRY.MailFrame
+	check(entry.insets and entry.insets[4] <= ty,
+		"and the glass reaches past them (" .. tostring(entry.insets[4]) ..
+		" vs " .. tostring(ty) .. ")")
+
 	-- THE BUTTONS on all three. Send, Create, Create All, Close - a dozen of
 	-- them across the windows, and every one a red UIPanelButtonTemplate plate.
 	local plain = 0
