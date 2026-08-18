@@ -117,9 +117,9 @@ Config.defaults = {
 			partyframes = {
 				enabled     = true,
 				hideBlizzard = true,
-				-- 8 pad + 38 pip + 10 + 170 bars + 12 + 40 readout + 10 + 22
-				-- role + 18 pad
-				width       = 328,
+				-- 8 pad + 38 pip + 10 + 170 bars + 12 + 40 readout + 18 pad.
+				-- The role glyph rides the pip, so it costs nothing here.
+				width       = 296,
 				height      = 52,
 				gap         = 12,
 				barWidth    = 170,

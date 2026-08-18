@@ -48,6 +48,10 @@ local SKULL = "|T" .. [[Interface\TargetingFrame\UI-TargetingFrame-Skull]] .. ":
 
 local plates = {}    -- base frame  -> our plate
 local byUnit = {}    -- unit token  -> our plate
+-- Readable from outside, the way the other modules expose their frame
+-- lists. A plate is otherwise reachable only as an unnamed child of a
+-- client frame, which is not a thing to go hunting for.
+NP.byUnit = byUnit
 
 -- Defined with the chips, well below, but UpdateAll calls it.
 local UpdateChips
@@ -232,6 +236,15 @@ local function Build(base)
 	local badge = W.CreateBadge(f, { size = c.badgeSize, style = "npBadge" })
 	badge:SetPoint("LEFT", f, "LEFT", PAD_L, 0)
 	f.badge = badge
+
+	-- THE RAID MARK, riding the badge the way it rides a party member's level
+	-- pip and the player capsule's orb. There was none at all before: mark a
+	-- mob with a skull and the plate over its head said nothing about it,
+	-- which is the one moment a marked mob is worth marking.
+	--
+	-- Parented to the plate rather than the badge, because the friendly form
+	-- hides the badge and the mark still has to be somewhere.
+	f.mark = W.CreateDecorator(f, badge, "TOP", { size = 15 })
 
 	local name = W.Text(f, "npName", "LEFT")
 	name:SetWordWrap(false)
@@ -615,6 +628,25 @@ local function LayoutPlateForm(f)
 		c.badgeSize + PAD_Y * 2)
 end
 
+--- The raid mark, on whichever disc this form of the plate has.
+--
+--  BOTH FORMS, which is why it is here and not in either layout function.
+--  A hostile plate has a level badge and a friendly drawn as a name has
+--  none, so the mark rides the badge when there is one and takes the place
+--  the badge would have had when there is not. Written into the friendly
+--  layout first, where it meant that marking a mob - the only case anybody
+--  cares about - drew nothing at all.
+local function UpdateMark(f)
+	if not f.mark then return end
+	f.mark:ClearAllPoints()
+	if f.badge and f.badge:IsShown() then
+		f.mark:SetPoint("CENTER", f.badge, "TOP", 0, 1)
+	else
+		f.mark:SetPoint("CENTER", f.name, "LEFT", -10, 0)
+	end
+	W.SetRaidMark(f.mark, f.unit)
+end
+
 local function UpdateAll(f)
 	local friendly = IsNameForm(f.unit)
 	if friendly ~= f._nameForm then
@@ -627,6 +659,7 @@ local function UpdateAll(f)
 	UpdateBar(f)
 	UpdateEdge(f)
 	UpdateChips(f)
+	UpdateMark(f)
 end
 
 NP.UpdateAll = UpdateAll
@@ -1041,6 +1074,13 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "UNIT_HEALTH", OnUnitEvent)
 	A:RegisterEvent(self, "UNIT_MAXHEALTH", OnUnitEvent)
 	A:RegisterEvent(self, "UNIT_FACTION", OnFactionChanged)
+	-- RAID_TARGET_UPDATE CARRIES NO UNIT. It is one event for the whole
+	-- group's marks at once, so every plate on screen has to be asked - the
+	-- alternative is a plate still wearing a skull that has moved to somebody
+	-- else.
+	A:RegisterEvent(self, "RAID_TARGET_UPDATE", function()
+		for _, f in pairs(byUnit) do UpdateAll(f) end
+	end)
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
 		if NP._cvarsPending then ApplyCVars(true) end

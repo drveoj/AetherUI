@@ -179,25 +179,82 @@ W.tinted = {}
 --  0.22 of the faint type and a thumb at 0.45 of the bright are the same two
 --  tokens at two weights, and passing the palette's own table through keeps the
 --  identity that makes the token findable.
---- The party leader's crown, riding the top-left of a round thing.
+--- The small marks that ride the level disc.
+--
+--  A DECORATOR IS NOT PART OF THE LAYOUT. Who leads, what somebody has been
+--  marked with, what they do and whether they are flagged all answer the same
+--  question - who is this - and the disc with their level in it is where that
+--  question is already answered. So they sit ON it, one to a corner, and cost
+--  the capsule no width at all.
+--
+--  That is not a detail. The role glyph used to have a well of its own at the
+--  far right, and the width was reserved for it on every member whether or
+--  not they had one - which was a strip of empty glass on most capsules. A
+--  capsule that instead grew and shrank with its decorators would give a
+--  ragged stack, which is worse than either.
 --
 --  ONE OF THESE, used by the player's capsule and by every party capsule.
---  Two drawings of a crown in two files is two places to disagree about
---  where it sits and what colour it is, and the second one is always the
---  one that gets forgotten when the first moves.
+--  Two drawings of a crown in two files is two places to disagree about where
+--  it sits, and the second is always the one forgotten when the first moves.
 --
---  Tinted through W.Tint rather than SetVertexColor so it follows a skin
---  change on its own: this is the reserved semantic gold, and Dusk is the
---  one skin that moves it.
-function W.CreateCrown(parent, anchorTo, size)
+--  opts: { glyph = <icon sheet name>, token = <palette token>, size = 13 }
+--  No glyph is fine: the raid marker's art comes from the client's own sheet
+--  and the PvP badge from the client's own file, and neither is ours to draw.
+local DECORATOR_NUDGE = {
+	TOPLEFT     = {  3, -2 },
+	TOP         = {  0,  1 },
+	BOTTOMRIGHT = { -3,  3 },
+	BOTTOMLEFT  = {  3,  3 },
+}
+
+--- The raid target mark on a decorator, in the client's own art.
+--
+--  A skull is a skull on every skin. SetRaidTargetIconTexture picks the cell
+--  out of the sheet AND sets the texcoord; a texture given the file and no
+--  coords draws all eight marks at once, which is unmistakable and has
+--  happened to everybody once.
+function W.SetRaidMark(tex, unit)
+	if not tex then return false end
+	local i = unit and GetRaidTargetIndex and GetRaidTargetIndex(unit)
+	if i and SetRaidTargetIconTexture then
+		SetRaidTargetIconTexture(tex, i)
+		tex:Show()
+		return true
+	end
+	tex:Hide()
+	return false
+end
+
+--- The PvP flag, in the client's own faction art.
+--
+--  Faction identity is the game's, like a class colour and like the raid
+--  marks - so this is Blizzard's own file, untinted. Neutral units have no
+--  badge at all, which is why the faction is asked for rather than assumed
+--  from a boolean.
+function W.SetPvPMark(tex, unit)
+	if not tex then return false end
+	local flagged = UnitIsPVP and UnitIsPVP(unit)
+	local faction = flagged and UnitFactionGroup and UnitFactionGroup(unit)
+	if flagged and faction and faction ~= "Neutral" then
+		tex:SetTexture("Interface\\TargetingFrame\\UI-PVP-" .. faction)
+		tex:Show()
+		return true
+	end
+	tex:Hide()
+	return false
+end
+function W.CreateDecorator(parent, anchorTo, corner, opts)
+	opts = opts or {}
 	local t = parent:CreateTexture(nil, "OVERLAY")
-	size = size or 13
+	local size = opts.size or 13
 	t:SetSize(size, size)
-	-- The top-LEFT corner, because the raid target marker rides the top and a
-	-- marked leader is ordinary.
-	t:SetPoint("CENTER", anchorTo, "TOPLEFT", 3, -2)
-	A.Media:SetIcon(t, "crown")
-	W.Tint(t, A.Palette.c.semanticGold)
+	local nudge = DECORATOR_NUDGE[corner] or DECORATOR_NUDGE.TOPLEFT
+	t:SetPoint("CENTER", anchorTo, corner, nudge[1], nudge[2])
+	if opts.glyph then A.Media:SetIcon(t, opts.glyph) end
+	-- Through W.Tint rather than SetVertexColor, so it follows a skin change
+	-- on its own. The crown is the reserved semantic gold and Dusk is the one
+	-- skin that moves it.
+	if opts.token then W.Tint(t, A.Palette.c[opts.token]) end
 	t:Hide()
 	return t
 end

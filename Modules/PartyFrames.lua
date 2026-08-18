@@ -54,15 +54,38 @@ local PIP      = 38
 local GAP_PIP  = 10
 local GAP_VAL  = 12
 local VAL_W    = 40
-local ROLE     = 22
-local GAP_ROLE = 10
+local ROLE     = 14
 
--- The crown and the marker BOTH ride the pip, and the brief puts them in the
--- same place. A party leader who has also been marked is ordinary, so they get
--- a corner each: the marker keeps the top, which is where the game's own frames
--- put it and where the eye goes for it, and the crown takes the top-left.
+--- Narrowest capsule that still fits pip, bars and readout without them
+--  touching - and, read the other way, the width at which there is no dead
+--  pill hanging off the right-hand end.
+--
+--  MIRRORS THE ANCHOR CHAIN in BuildCapsule; keep the two in step. The
+--  suite asserts the default width IS this number, so a measurement changed
+--  in one place and not the other is a failure rather than a look.
+function PF.MinWidth(c)
+	return PAD_L + PIP + GAP_PIP + c.barWidth + GAP_VAL + VAL_W + PAD_R
+end
+
+-- ALL THREE MARKS RIDE THE PIP.
+--
+-- The brief puts the ROLE glyph at the far right of the capsule, in a well of
+-- its own, and reserves the width for it on every member. Most members wear no
+-- glyph at all now, so that reservation was thirty-two units of empty pill on
+-- most capsules - and a capsule whose width changed with the glyph would give
+-- a ragged stack, which is worse. On the pip it costs no layout at all.
+--
+-- It also groups them: the pip is where everything about the PERSON is said,
+-- so who leads, what they are marked with and what they do are three corners
+-- of one disc rather than three places to look.
+--
+-- The crown and the marker would collide - the brief puts BOTH on the top
+-- edge - and a marked leader is ordinary, so they get a corner each: the
+-- marker keeps the top, where the game's own frames put it and where the eye
+-- goes for it, and the crown takes the top-left.
 local CROWN  = 13
 local MARKER = 14
+local PVP    = 15
 
 --- Which classes can put somebody back on their feet.
 --
@@ -164,17 +187,13 @@ local function BuildCapsule(unit)
 	-- Riding the pip rather than the capsule: both of these say something
 	-- about the person, and the person is the disc with their level in it.
 	--
-	-- W.CreateCrown, which the player's own capsule uses too. Two drawings
-	-- of a crown in two files is two places to disagree about where it sits.
-	f.crown = W.CreateCrown(glass, pip, CROWN)
-
-	-- The game's own icon sheet, untouched. SetRaidTargetIconTexture picks the
-	-- cell; a skin has no business recolouring a skull.
-	local marker = glass:CreateTexture(nil, "OVERLAY")
-	marker:SetSize(MARKER, MARKER)
-	marker:SetPoint("CENTER", pip, "TOP", 0, 1)
-	marker:Hide()
-	f.marker = marker
+	-- FOUR CORNERS, ONE DISC. W.CreateDecorator is the same widget the
+	-- player's own capsule and the nameplates use, so there is one answer
+	-- to where each of these sits and what colour it is.
+	f.crown  = W.CreateDecorator(glass, pip, "TOPLEFT",
+		{ glyph = "crown", token = "semanticGold", size = CROWN })
+	f.marker = W.CreateDecorator(glass, pip, "TOP", { size = MARKER })
+	f.pvp    = W.CreateDecorator(glass, pip, "BOTTOMLEFT", { size = PVP })
 
 	-- name and class --------------------------------------------------------
 	local block = CreateFrame("Frame", nil, glass)
@@ -225,15 +244,10 @@ local function BuildCapsule(unit)
 	mpText:SetPoint("LEFT", power, "RIGHT", GAP_VAL, 0)
 	f.mpText = mpText
 
-	-- the role glyph --------------------------------------------------------
-	-- Hidden unless the member has actually set a role, which on this game
-	-- version is the uncommon case. Nothing reflows when it is absent: the slot
-	-- is a fixed layout, so an empty corner is an empty corner.
-	local role = glass:CreateTexture(nil, "OVERLAY")
-	role:SetSize(ROLE - 8, ROLE - 8)
-	role:SetPoint("RIGHT", f, "RIGHT", -PAD_R + (ROLE - 8) / 2, 0)
-	role:Hide()
-	f.role = role
+	-- the fourth corner ----------------------------------------------------
+	-- Hidden unless the member is a tank or a healer. Nothing reflows when
+	-- it is absent, because a decorator is not part of the layout.
+	f.role = W.CreateDecorator(glass, pip, "BOTTOMRIGHT", { size = ROLE })
 
 	-- interaction -----------------------------------------------------------
 	if c.clickTarget then
@@ -353,14 +367,9 @@ local function UpdateStatus(f)
 	-- answers this per unit and the answer changes on its own event.
 	f.crown:SetShown(UnitIsGroupLeader and UnitIsGroupLeader(unit) or false)
 
-	-- The marker, in the game's own art. A skull is a skull on every skin.
-	local mark = GetRaidTargetIndex and GetRaidTargetIndex(unit)
-	if mark and SetRaidTargetIconTexture then
-		SetRaidTargetIconTexture(f.marker, mark)
-		f.marker:Show()
-	else
-		f.marker:Hide()
-	end
+	-- The mark and the flag, both in the client's own art.
+	W.SetRaidMark(f.marker, unit)
+	W.SetPvPMark(f.pvp, unit)
 
 	-- The role, or the resurrect glyph in its place when somebody is down and
 	-- you are the one who can do something about it.
@@ -414,10 +423,15 @@ function PF:Layout()
 	-- was not, which read as party frames half again too big beside the
 	-- player's own.
 	self.stack:SetScale(A.db.profile.scale or 1)
-	self.stack:SetSize(c.width, c.height * #UNITS + c.gap * (#UNITS - 1))
+
+	-- Never narrower than its contents. The width slider goes down to 240
+	-- and the bars alone can be 300, so this is the difference between a
+	-- narrow capsule and a readout hanging out of one.
+	local width = math.max(c.width, PF.MinWidth(c))
+	self.stack:SetSize(width, c.height * #UNITS + c.gap * (#UNITS - 1))
 
 	for i, f in ipairs(self.frames) do
-		f:SetSize(c.width, c.height)
+		f:SetSize(width, c.height)
 		f:ClearAllPoints()
 		f:SetPoint("TOP", self.stack, "TOP", 0, -(i - 1) * step)
 		f.block:SetWidth(c.barWidth)

@@ -107,11 +107,15 @@ local function BuildCapsule(unit, mirror)
 	end
 	f.orb = orb
 
-	-- THE LEADER'S CROWN, on your own capsule as well as on theirs. If you
-	-- are running the group, the frame you look at most is the one that
-	-- should say so - and it is the same widget the party capsules use, so
-	-- there is one answer to where a crown sits and what colour it is.
-	f.crown = W.CreateCrown(glass, orb)
+	-- THE DECORATORS, riding the orb the way they ride a party member's
+	-- level pip. Who leads, what this unit is marked with and whether they
+	-- are flagged all answer the same question - who is this - and the disc
+	-- with their level in it is where that is already answered. They cost
+	-- the capsule no width, which is why they are not in the layout.
+	f.crown  = W.CreateDecorator(glass, orb, "TOPLEFT",
+		{ glyph = "crown", token = "semanticGold" })
+	f.marker = W.CreateDecorator(glass, orb, "TOP", { size = 16 })
+	f.pvp    = W.CreateDecorator(glass, orb, "BOTTOMLEFT", { size = 17 })
 
 	-- text + bars block -----------------------------------------------------
 	local block = CreateFrame("Frame", nil, glass)
@@ -377,6 +381,10 @@ local function UpdateName(f)
 
 	if f.crown then
 		f.crown:SetShown(UnitIsGroupLeader and UnitIsGroupLeader(unit) or false)
+		-- Both in the client's own art: a skull is a skull and a faction
+		-- crest is a faction crest, on every skin.
+		W.SetRaidMark(f.marker, unit)
+		W.SetPvPMark(f.pvp, unit)
 	end
 
 	local level = UnitLevel(unit)
@@ -850,6 +858,8 @@ function UF:RegisterEvents()
 		for _, f in ipairs(UF.frames) do UpdateName(f) end
 	end
 	A:RegisterEvent(self, "PARTY_LEADER_CHANGED", leaders)
+	A:RegisterEvent(self, "RAID_TARGET_UPDATE",   leaders)
+	A:RegisterEvent(self, "UNIT_FACTION",         leaders)
 	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",  leaders)
 
 	A:RegisterEvent(self, "PLAYER_LEVEL_UP", function()

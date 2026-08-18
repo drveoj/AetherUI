@@ -4902,6 +4902,9 @@ local units = {
 	player = {
 		exists = true, name = "Palabras", level = 15, isPlayer = true,
 		race = "Undead", class = "Mage", classToken = "MAGE",
+		-- AceDB builds its faction profile key from UnitFactionGroup, so a
+		-- player without one does not get as far as loading.
+		faction = "Horde",
 		hp = 208, hpMax = 371, power = 480, powerMax = 1000,
 		powerType = 0, powerToken = "MANA", reaction = 5,
 	},
@@ -4942,24 +4945,30 @@ local units = {
 	party1 = {
 		exists = true, name = "Kindarhazan", level = 19, isPlayer = true,
 		class = "Shaman", classToken = "SHAMAN", reaction = 5,
+		faction = "Horde",
 		hp = 791, hpMax = 900, power = 433, powerMax = 800,
 		powerType = 0, powerToken = "MANA",
 	},
 	party2 = {
 		exists = true, name = "Brumgarr", level = 21, isPlayer = true,
 		class = "Druid", classToken = "DRUID", reaction = 5,
+		-- Flagged, because a decorator nobody ever draws is a decorator
+		-- nobody ever checks.
+		faction = "Horde", pvp = true,
 		hp = 386, hpMax = 1000, power = 78, powerMax = 100,
 		powerType = 1, powerToken = "RAGE",
 	},
 	party3 = {
 		exists = true, name = "Melissane", level = 18, isPlayer = true,
 		class = "Priest", classToken = "PRIEST", reaction = 5, dead = true,
+		faction = "Horde",
 		hp = 0, hpMax = 700, power = 300, powerMax = 600,
 		powerType = 0, powerToken = "MANA",
 	},
 	party4 = {
 		exists = true, name = "Tinkwizzle", level = 17, isPlayer = true,
 		class = "Mage", classToken = "MAGE", reaction = 5, offline = true,
+		faction = "Horde",
 		hp = 0, hpMax = 600, power = 0, powerMax = 700,
 		powerType = 0, powerToken = "MANA",
 	},
@@ -5015,6 +5024,13 @@ function UnitIsConnected(u)
 end
 
 function UnitIsGroupLeader(u) return units[u] and units[u].leader or false end
+
+--- The PvP flag, and WHOSE side. Two calls, not one: a Neutral unit can be
+--- flagged and has no faction crest to draw, so an addon that read only the
+--- boolean would ask for Interface\\TargetingFrame\\UI-PVP-Neutral and get
+--- a texture the client does not have - which draws as nothing, silently.
+function UnitIsPVP(u) return units[u] and units[u].pvp or false end
+function UnitFactionGroup(u) return units[u] and units[u].faction end
 
 _G.__roles = { party2 = "TANK", party3 = "HEALER" }
 --- What the client answers for somebody who never set a role.
@@ -9756,6 +9772,27 @@ section("party: four capsules in fixed slots", function()
 	PF:OnConfigChanged()
 	check(math.abs(PF.stack:GetScale() - (wasScale or 1)) < 0.001,
 		"and follows it back")
+	-- NO DEAD PILL ON THE END. The capsule reserved width for a role glyph
+	-- that most members do not have, so two thirds of a party wore thirty-two
+	-- units of empty glass past the last number. The glyph rides the pip now
+	-- and the default width is exactly what the contents come to.
+	--
+	-- Read the other way it is the more serious check: the width slider goes
+	-- down to 240 and the bars alone can be 300, so this is also the
+	-- difference between a narrow capsule and a readout hanging out of one.
+	check(c.width == PF.MinWidth(c),
+		"the capsule is exactly as wide as what is in it (" .. c.width ..
+		" vs " .. PF.MinWidth(c) .. ")")
+
+	local narrow = A.Config:Module("partyframes")
+	local keep = narrow.width
+	narrow.width = 240
+	PF:OnConfigChanged()
+	check(PF.frames[1]:GetWidth() >= PF.MinWidth(narrow),
+		"and a width dragged below that is clamped rather than obeyed (" ..
+		tostring(PF.frames[1]:GetWidth()) .. ")")
+	narrow.width = keep
+	PF:OnConfigChanged()
 
 	-- AND BLIZZARD'S OWN ARE GONE. Two of ours on top of four of theirs is not
 	-- a skin, it is a mess - and this is the part that was missing when the
@@ -9901,6 +9938,66 @@ section("party: the crown is on your own capsule too", function()
 	check(A.Widgets.tinted[me.crown] ~= nil or me.crown._aetherTint ~= nil,
 		"the crown follows the skin, rather than keeping the colour it was"
 		.. " built with")
+end)
+
+section("decorators: four corners of the level disc, everywhere there is one", function()
+	local PF = A:GetModule("partyframes")
+	local UFm = A:GetModule("unitframes")
+	local f1 = PF.frames[1]
+
+	-- A DECORATOR IS NOT PART OF THE LAYOUT. Who leads, what somebody is
+	-- marked with, what they do and whether they are flagged all answer the
+	-- same question - who is this - and the disc with their level in it is
+	-- where that is already answered. So they ride the disc, one to a corner,
+	-- and cost the capsule no width.
+	--
+	-- The role glyph used to have a well of its own at the far right with the
+	-- width reserved for it on every member, which was a strip of empty glass
+	-- on most capsules.
+	local corners = {}
+	for _, key in ipairs({ "crown", "marker", "role", "pvp" }) do
+		local tex = f1[key]
+		check(tex ~= nil, "the party capsule has a " .. key .. " decorator")
+		local _, rel, at = tex:GetPoint()
+		check(rel == f1.pip,
+			key .. " rides the level pip, not the capsule (" .. tostring(at) .. ")")
+		check(corners[at] == nil,
+			key .. " has a corner to itself (" .. tostring(at) .. " also held by " ..
+			tostring(corners[at]) .. ")")
+		corners[at] = key
+	end
+
+	-- THE SAME ARRANGEMENT ON YOUR OWN CAPSULE. The orb is the player frame's
+	-- level disc, and a mark that means one thing on a party member must not
+	-- mean it somewhere else on you.
+	for _, key in ipairs({ "crown", "marker", "pvp" }) do
+		local mine = UFm.player[key]
+		check(mine ~= nil, "the player capsule has a " .. key .. " too")
+		local _, _, mineAt = mine:GetPoint()
+		local _, _, theirsAt = f1[key]:GetPoint()
+		check(mineAt == theirsAt,
+			key .. " on the same corner as theirs (" .. tostring(mineAt) .. ")")
+	end
+
+	-- THE FLAG IS THE CLIENT'S OWN FACTION ART, untinted - faction identity is
+	-- the game's, like a class colour and like the raid marks.
+	local f2 = PF.frames[2]
+	check(f2.pvp:IsShown(), "a flagged member wears the crest")
+	check(tostring(f2.pvp.__tex):find("UI%-PVP%-Horde") ~= nil,
+		"in their own faction's art (" .. tostring(f2.pvp.__tex) .. ")")
+	check(not f1.pvp:IsShown(), "and an unflagged one wears nothing")
+
+	-- TWO CALLS, NOT ONE. A Neutral unit can be flagged and has no crest to
+	-- draw, and asking for UI-PVP-Neutral gets a file the client has not got -
+	-- which draws as nothing at all, silently.
+	_G.__units.party1.pvp = true
+	_G.__units.party1.faction = "Neutral"
+	fire("GROUP_ROSTER_UPDATE")
+	check(not f1.pvp:IsShown(),
+		"a flagged Neutral asks for no texture rather than a missing one")
+	_G.__units.party1.faction = "Horde"
+	_G.__units.party1.pvp = false
+	fire("GROUP_ROSTER_UPDATE")
 end)
 
 section("party: the numbers, and the colour they are not", function()
@@ -26899,6 +26996,48 @@ section("ifec: the console takes a region, and gives it back", function()
 	fire("PLAYER_CONTROL_GAINED")
 	Taxi:Stop()
 end)
+
+-- LAST IN THE FILE, and it has to be. Spawning a plate takes a frame out
+-- of the mock's pool, and the recycling checks above are about a plate
+-- being handed out FRESH the first time - so a section that spawns one
+-- earlier quietly spends the case they exist to make.
+section("decorators: a mark on a mob is a mark on its nameplate", function()
+	local NP = A:GetModule("nameplates")
+
+	-- THERE WAS NO MARK AT ALL. Put a skull on something and the plate over its
+	-- head said nothing about it, which is the one moment a marked mob is worth
+	-- marking.
+	-- Its own token. Spawning nameplate1 here would hand the plate-recycling
+	-- checks below a frame that already exists, and spend the one case they
+	-- are about.
+	__spawnPlate("nameplate9", {
+		exists = true, name = "Kolkar Marauder", level = 18, reaction = 2,
+		hp = 900, hpMax = 1000,
+	})
+	local f = NP.byUnit.nameplate9
+	check(f ~= nil, "a plate is up")
+	check(f and f.mark ~= nil, "and it has a raid mark")
+	check(f and not f.mark:IsShown(),
+		"hidden on something nobody has marked")
+
+	-- RAID_TARGET_UPDATE CARRIES NO UNIT. One event for every mark in the group
+	-- at once, so a handler waiting to be told which plate would never run - and
+	-- a plate would keep wearing a skull that had moved to somebody else.
+	_G.__raidTargets.nameplate9 = 8
+	fire("RAID_TARGET_UPDATE")
+	check(f and f.mark:IsShown(), "and there the moment somebody does")
+	check(f and tostring(f.mark.__tex):find("RaidTargetingIcons", 1, true) ~= nil,
+		"in the client's own art (" .. tostring(f and f.mark.__tex) .. ")")
+	local l, r = f.mark:GetTexCoord()
+	check(not (l == 0 and r == 1),
+		"with one cell picked out of it, not all eight marks at once")
+
+	_G.__raidTargets.nameplate9 = nil
+	fire("RAID_TARGET_UPDATE")
+	check(f and not f.mark:IsShown(), "and gone when the mark is cleared")
+	__despawnPlate("nameplate9")
+end)
+
 
 print("")
 if #FAIL == 0 then
