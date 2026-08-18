@@ -24582,6 +24582,27 @@ do
 		"in two lines, not a banner (" .. lines .. ") - a greeting long enough"
 		.. " to scroll the chat frame is one people turn off")
 
+	-- AND IT SAYS WHERE TO ASK. Somebody who has just installed this has no
+	-- idea where to go when something looks wrong, and the greeting is the
+	-- one moment they are certainly reading. On the commands line rather
+	-- than a third of its own, because two lines is the whole budget - and
+	-- the check above is what says so.
+	check(said:find("discord.gg/drveoj", 1, true) ~= nil,
+		"the greeting says where to get support")
+	-- RAW, not through Errors:Capture. That one strips colour codes on the way
+	-- out - they are for a chat frame, not for a paste into a bug report - so
+	-- asking IT whether something is highlighted always answers no.
+	local raw = {}
+	local realPrint = A.Print
+	A.Print = function(_, msg) raw[#raw + 1] = tostring(msg) end
+	A.__greeted = nil
+	A:Greet()
+	A.Print = realPrint
+	local rawText = table.concat(raw, " ")
+	check(rawText:find("|cff%x%x%x%x%x%xdiscord%.gg/drveoj|r") ~= nil,
+		"with the address highlighted - it is the part somebody has to copy,"
+		.. " and a plain-text address in a wall of chat is one nobody sees")
+
 	-- Said once. Boot runs on ADDON_LOADED and again on PLAYER_LOGIN.
 	local again = A.Errors:Capture(function() A:Greet() end)
 	check(again == "", "and only once, however many times boot runs")
