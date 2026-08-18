@@ -9355,7 +9355,6 @@ local MIDNIGHT_FROZEN = {
 	ifecDial = { 0.803922, 0.737255, 1, 1 },
 	ifecDisc = { 0.082353, 0.066667, 0.160784, 1 },
 	ifecGossip = { 0.909804, 0.784314, 0.415686, 1 },
-	ifecLanding = { 0.941176, 0.85098, 0.658824, 1 },
 	ifecMusic = { 0.623529, 0.831373, 0.784314, 1 },
 	ifecPodcast = { 0.941176, 0.627451, 0.415686, 1 },
 	ifecTrack = { 1, 1, 1, 0.13 },
@@ -9425,6 +9424,9 @@ local MIDNIGHT_FROZEN = {
 	},
 	rowHover = { 0.588235, 0.509804, 0.921569, 0.14 },
 	rowSel = { 0.803922, 0.737255, 1, 0.2 },
+	-- Was ifecLanding until the gold became one token. Same colour, and in
+	-- Midnight it always will be - Dusk is the only skin that moves it.
+	semanticGold = { 0.941176, 0.85098, 0.658824, 1 },
 	scrim = { 0, 0, 0, 0.45 },
 	shadow = { 0, 0, 0, 0.5 },
 	talentFull = { 1, 0.886275, 0.588235, 1 },
@@ -9529,6 +9531,96 @@ section("palette: Midnight is exactly what it was", function()
 		print("     |cff888888" .. #extra .. " token(s) added since the freeze: "
 			.. table.concat(extra, ", ", 1, math.min(6, #extra)) .. "|r")
 	end
+end)
+
+section("palette: semantic gold, the one meaning a skin may move", function()
+	local P = A.Palette
+
+	-- WHY IT IS NOT IN SEMANTIC. Every other meaning-colour is one shared copy
+	-- no skin can reach, and that rule is load-bearing - the rejected skin moved
+	-- health green and nothing anywhere said no. This one has to stay legible ON
+	-- the chrome, and in Dusk the chrome IS gold, so it is a per-skin value and
+	-- lives where per-skin values live. Which also means no code branches on a
+	-- skin name, which the brief asks for in the paragraph after the one that
+	-- writes the branch.
+	for _, name in ipairs(P.order) do
+		local s = P.skins[name]
+		check(s.semanticGold ~= nil and s.semanticGoldDim ~= nil,
+			name .. " carries the gold and its companion tint")
+	end
+
+	local function near(a, b)
+		return math.abs(a[1] - b[1]) < 0.002 and math.abs(a[2] - b[2]) < 0.002
+			and math.abs(a[3] - b[3]) < 0.002
+	end
+	local mid = P.skins.midnight.semanticGold
+	check(near(P.skins.dawn.semanticGold, mid)
+		and near(P.skins.noon.semanticGold, mid),
+		"Dawn and Noon carry Midnight's gold - the brief remaps exactly one skin")
+	check(not near(P.skins.dusk.semanticGold, mid),
+		"and Dusk is the one that moves")
+
+	-- THE INVARIANT, NOT THE VALUE. What the remap is FOR is that a warning is
+	-- not the same colour as the frame it is drawn on. Measured in CIE Lab,
+	-- because RGB distance says nothing about whether an eye can tell two
+	-- colours apart: dE 2.3 is the just-noticeable step and under 10 reads as
+	-- the same colour at a glance. Dusk's gold was its accent EXACTLY - dE 0.0
+	-- - so the console's landing warning was the console's own rim.
+	local function lab(c)
+		local function inv(u)
+			if u <= 0.04045 then return u / 12.92 end
+			return ((u + 0.055) / 1.055) ^ 2.4
+		end
+		local r, g, b = inv(c[1]), inv(c[2]), inv(c[3])
+		local X = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047
+		local Y = (r * 0.2126 + g * 0.7152 + b * 0.0722)
+		local Z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883
+		local function f(t)
+			if t > 0.008856 then return t ^ (1 / 3) end
+			return 7.787 * t + 16 / 116
+		end
+		local fx, fy, fz = f(X), f(Y), f(Z)
+		return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+	end
+	local function dE(a, b)
+		local l1, a1, b1 = lab(a)
+		local l2, a2, b2 = lab(b)
+		return math.sqrt((l1 - l2) ^ 2 + (a1 - a2) ^ 2 + (b1 - b2) ^ 2)
+	end
+
+	-- Reported every run, not just on failure. The numbers are the argument:
+	-- Dawn sits at 11 against its own accent while the brief calls it "clear of
+	-- the warning gold", and the remapped Dusk gold sits at 10 against a border
+	-- it used to be 24 from. Both are above the floor and neither is roomy.
+	local worst, worstAt = 999, "?"
+	for _, name in ipairs(P.order) do
+		local s = P.skins[name]
+		local d = {}
+		for _, tok in ipairs({ "accent", "accentDeep", "glassEdge" }) do
+			local n = dE(s.semanticGold, s[tok])
+			d[#d + 1] = ("%s %.1f"):format(tok, n)
+			if n < worst then worst, worstAt = n, name .. "." .. tok end
+		end
+		print(("     |cff888888%-9s %s|r"):format(name, table.concat(d, "  ")))
+	end
+	check(worst >= 5,
+		"the gold is a different colour from every chrome token, in every skin"
+		.. (" (closest: %s at dE %.1f)"):format(worstAt, worst))
+
+	-- ONE NAME FOR IT. The brief's own rule is that every semantic-gold read
+	-- goes through the one token; ifecLanding was a second name for the same
+	-- colour, which is the drift that rule exists to stop.
+	check(P.skins.midnight.ifecLanding == nil,
+		"and it has one name - the console's landing gold IS this token")
+
+	-- AND IT SWITCHES LIKE ANYTHING ELSE, through the palette rather than
+	-- through a module that remembered to ask.
+	P:Apply("dusk")
+	check(near(A.Palette.c.semanticGold, P.skins.dusk.semanticGold),
+		"switching to Dusk carries the gold with it")
+	P:Apply("midnight")
+	check(near(A.Palette.c.semanticGold, mid),
+		"and switching back brings the other one home")
 end)
 
 print("== movers ==")

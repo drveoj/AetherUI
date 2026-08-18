@@ -598,8 +598,13 @@ function Player:Restyle()
 	W.Color(f.upNextLabel, c.textDim)
 	W.Color(f.done, c.text)
 
-	f.landing:SetColorTexture(c.ifecLanding[1], c.ifecLanding[2], c.ifecLanding[3], 1)
-	W.Color(f.landingLabel, c.ifecLanding)
+	-- The reserved gold, read through the one token that carries it. It is the
+	-- same colour as the leader crown and the dock arrows, and in Dusk it is
+	-- the only colour in the system that moves - which is exactly why it is
+	-- not spelt out here.
+	local g = c.semanticGold
+	f.landing:SetColorTexture(g[1], g[2], g[3], 1)
+	W.Color(f.landingLabel, g)
 	f.rule:SetColorTexture(c.glassEdge[1], c.glassEdge[2], c.glassEdge[3], 0.15)
 
 	for _, row in ipairs(f.rows) do W.Color(row.title, c.text) end
