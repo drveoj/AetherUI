@@ -116,9 +116,21 @@ local CHROME = {
 	dusk = {
 		label  = "Dusk",
 		accent = C(240, 217, 168),   -- #f0d9a8
-		deep   = C(232, 200, 106),   -- #e8c86a
+		-- #cf9a3a, and DEEPER THAN THE BRIEF ASKS FOR on purpose.
+		--
+		-- It was #e8c86a, which is the same three bytes as four SEMANTIC
+		-- colours: the console's gossip channel, a pet's content mood, an
+		-- elite's chip and a neutral's reaction tint. One chrome value
+		-- sitting on four meanings, and a step off the energy bar too.
+		--
+		-- The fix belongs HERE rather than on those four. They answer
+		-- questions about the game - what mood, what reaction, what kind
+		-- of thing - and a skin may not reach them; that is the rule that
+		-- would have stopped the rejected skin moving health green. Brass
+		-- also suits Dusk, which the brief calls its most mechanical skin.
+		deep   = C(207, 154,  58),   -- #cf9a3a
 		bg     = C( 30,  22,  12),
-		border = C(232, 200, 106),
+		border = C(207, 154,  58),
 		bright = C(255, 248, 236),   -- #fff8ec
 		track  = C(255, 244, 220),
 		disc   = C( 33,  24,   9),   -- #211809

@@ -9770,6 +9770,63 @@ section("palette: semantic gold, one shade deeper in Dusk", function()
 		"so it is no longer Dusk's own accent, which it used to be exactly (" ..
 		hex(P.skins.dusk.accent) .. ")")
 
+	-- AND NO CHROME TOKEN IS A MEANING. Dusk's deep and border were #e8c86a,
+	-- which is the same three bytes as FOUR semantics: the console's gossip
+	-- channel, a pet's content mood, an elite's chip and a neutral's reaction
+	-- tint. One chrome value sitting on four meanings.
+	--
+	-- The fix went here rather than on those four, and this is the check that
+	-- keeps it here. They answer questions about the GAME - what mood, what
+	-- reaction, what kind of thing - and a skin may not reach them; routing
+	-- them through a skin-conditional token is the mistake SEMANTIC exists to
+	-- prevent. It would also have collapsed gossip and the landing warning
+	-- into one colour on Dusk, since goldDim and gold are the same there.
+	--
+	-- Measured in CIE Lab: under about 5 is the same colour at a glance.
+	local function lab(c)
+		local function inv(u)
+			if u <= 0.04045 then return u / 12.92 end
+			return ((u + 0.055) / 1.055) ^ 2.4
+		end
+		local r, g, b = inv(c[1]), inv(c[2]), inv(c[3])
+		local X = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047
+		local Y = (r * 0.2126 + g * 0.7152 + b * 0.0722)
+		local Z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883
+		local function fn(t)
+			if t > 0.008856 then return t ^ (1 / 3) end
+			return 7.787 * t + 16 / 116
+		end
+		local fx, fy, fz = fn(X), fn(Y), fn(Z)
+		return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+	end
+	local function dE(a, b)
+		local l1, a1, b1 = lab(a)
+		local l2, a2, b2 = lab(b)
+		return math.sqrt((l1 - l2) ^ 2 + (a1 - a2) ^ 2 + (b1 - b2) ^ 2)
+	end
+
+	local MEANINGS = {
+		"ifecGossip", "petContent", "ttElite", "ttNeutral", "talentFull",
+		"ttLore", "money",
+	}
+	local CHROME_TOKENS = { "accent", "accentDeep", "glassEdge" }
+	local worst, worstAt = 999, "?"
+	for _, skin in ipairs(P.order) do
+		local sk = P.skins[skin]
+		for _, m in ipairs(MEANINGS) do
+			if sk[m] then
+				for _, ch in ipairs(CHROME_TOKENS) do
+					local d = dE(sk[m], sk[ch])
+					if d < worst then
+						worst, worstAt = d, skin .. "." .. ch .. " vs " .. m
+					end
+				end
+			end
+		end
+	end
+	check(worst >= 5,
+		"no chrome token is a meaning, in any skin (closest: " .. worstAt ..
+		(" at dE %.1f"):format(worst) .. ")")
 	-- ONE NAME FOR IT. ifecLanding was a second name for the same colour, and a
 	-- second name is a second place to forget.
 	check(P.skins.midnight.ifecLanding == nil,
@@ -10053,7 +10110,7 @@ section("decorators: four corners of the level disc, everywhere there is one", f
 	-- THE SAME ARRANGEMENT ON YOUR OWN CAPSULE. The orb is the player frame's
 	-- level disc, and a mark that means one thing on a party member must not
 	-- mean it somewhere else on you.
-	for _, key in ipairs({ "crown", "marker", "pvp" }) do
+	for _, key in ipairs({ "crown", "marker", "pvp", "role" }) do
 		local mine = UFm.player[key]
 		check(mine ~= nil, "the player capsule has a " .. key .. " too")
 		local _, _, mineAt = mine:GetPoint()
@@ -10062,6 +10119,55 @@ section("decorators: four corners of the level disc, everywhere there is one", f
 			key .. " on the same corner as theirs (" .. tostring(mineAt) .. ")")
 	end
 
+	-- A ROLE CHECK ANSWERS ON YOUR OWN FRAME TOO. It did not: every party
+	-- capsule wore the answer to a poll and the player's said nothing, because
+	-- the decorator was never built there - and because nothing in either
+	-- module listened to PLAYER_ROLES_ASSIGNED, so the answer landed and no
+	-- frame moved until something unrelated happened to refresh it.
+	_G.__roles.player = "HEALER"
+	fire("PLAYER_ROLES_ASSIGNED")
+	check(UFm.player.role:IsShown(),
+		"a role check reaches your own capsule")
+	local function isGlyph2(tex, name)
+		local _, l, r, t2, b = A.Media:Icon(name)
+		local L, R, T2, B = tex:GetTexCoord()
+		return math.abs(L - l) < 0.001 and math.abs(R - r) < 0.001
+			and math.abs(T2 - t2) < 0.001 and math.abs(B - b) < 0.001
+	end
+	check(isGlyph2(UFm.player.role, "healer"),
+		"and wears the one it was given")
+	_G.__roles.player = "TANK"
+	fire("PLAYER_ROLES_ASSIGNED")
+	check(isGlyph2(UFm.player.role, "tank"),
+		"and changes when the answer does")
+	_G.__roles.player = nil
+	fire("PLAYER_ROLES_ASSIGNED")
+	check(not UFm.player.role:IsShown(),
+		"and goes when there is no role worth showing - which on this client"
+		.. " is what a DAMAGER is")
+
+	-- THE DOCK ARROW IS THE INTERFACE'S OWN COLOUR, not the brief's gold. The
+	-- Toolbox rail's chevron is the same control on the same screen edge doing
+	-- the same job, and it is plain text - two docks whose arrows disagree is a
+	-- detail nobody can name and everybody sees.
+	local PFm = A:GetModule("partyframes")
+	PFm:BuildHandle()
+	-- W.tinted is a LIST of textures, not a map keyed by one - the token a
+	-- texture was coloured with lives on the texture. Asking the list for a
+	-- key it does not have answers nil, and nil is not "semanticGold", so the
+	-- first version of this check passed with the gold still on it.
+	local tint = PFm.handle.chev._aetherTint
+	check(tint == "text",
+		"the dock handle's arrow is the interface's own type colour, not the"
+		.. " reserved gold (" .. tostring(tint) .. ")")
+	local TBm = A:GetModule("toolbox")
+	if TBm and TBm.rail and TBm.rail.chev then
+		local r1 = { PFm.handle.chev:GetVertexColor() }
+		local r2 = { TBm.rail.chev.glyph:GetVertexColor() }
+		check(math.abs(r1[1] - r2[1]) < 0.01 and math.abs(r1[2] - r2[2]) < 0.01
+			and math.abs(r1[3] - r2[3]) < 0.01,
+			"and is the same colour as the Toolbox rail's")
+	end
 	-- THE FLAG IS THE CLIENT'S OWN FACTION ART, untinted - faction identity is
 	-- the game's, like a class colour and like the raid marks.
 	local f2 = PF.frames[2]
@@ -27284,10 +27390,11 @@ section("party: the stack rides the dock until you move it", function()
 	-- their party where they left it rather than somewhere new they now have to
 	-- tidy up.
 	A.db.profile.anchors.party = nil
+	PF.panel:Hide()
 	PF:AnchorStack()
 	local _, rel = PF.stack:GetPoint()
-	check(rel == PF.panel,
-		"unplaced, the stack hangs off the controls panel")
+	check(rel == PF.handle,
+		"unplaced and shut, the stack hangs off the dock handle")
 	check(not PF:StackIsPlaced(), "and counts as unplaced")
 
 	-- AND A RESTORE LEAVES IT THERE. Movers positions every frame it knows
@@ -27296,18 +27403,22 @@ section("party: the stack rides the dock until you move it", function()
 	-- /aether unlock would snap it off the dock and it would never return.
 	A.Movers:Restore("party")
 	local _, relAfter = PF.stack:GetPoint()
-	check(relAfter == PF.panel,
+	check(relAfter == PF.handle,
 		"and a Movers restore hands it straight back to the dock")
 
-	-- ANCHORED TO THE PANEL EVEN WHILE IT IS SHUT. A hidden frame still has a
-	-- position, so the stack stays exactly where it is whether the controls are
-	-- open or not - tying it to the panel being SHOWN is how a party frame moves
-	-- every time you glance at the controls.
-	PF.panel:Hide()
-	PF:AnchorStack()
+	-- AND IT SHIFTS WHEN THE DRAWER OPENS, the way the client's own party
+	-- frames do: off the handle while the controls are shut, off the panel
+	-- while they are open, so opening them pushes the party out of the way
+	-- rather than drawing over it.
+	PF:TogglePanel()
+	check(PF.panel:IsShown(), "the controls open")
+	local _, relOpen = PF.stack:GetPoint()
+	check(relOpen == PF.panel,
+		"and the stack shifts out to hang off the panel instead")
+	PF:TogglePanel()
 	local _, relShut = PF.stack:GetPoint()
-	check(relShut == PF.panel,
-		"and still does with the panel shut")
+	check(relShut == PF.handle,
+		"and comes back to the handle when they shut")
 
 	-- IT RIDES THE DOCK TO ANOTHER EDGE, which is what makes it attached rather
 	-- than merely placed near it.
@@ -27336,7 +27447,8 @@ section("party: the stack rides the dock until you move it", function()
 	PF:ResetStack()
 	check(not PF:StackIsPlaced(), "/aether party reset drops the anchor")
 	local _, relReset = PF.stack:GetPoint()
-	check(relReset == PF.panel, "and puts it back on the dock")
+	check(relReset == PF.handle or relReset == PF.panel,
+		"and puts it back on the dock")
 end)
 section("party controls: what a member may press", function()
 	local PF = A:GetModule("partyframes")

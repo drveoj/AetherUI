@@ -117,6 +117,9 @@ local function BuildCapsule(unit, mirror)
 		{ glyph = "crown", token = "semanticGold" })
 	f.marker = W.CreateDecorator(deco, orb, "TOP", { size = 16 })
 	f.pvp    = W.CreateDecorator(deco, orb, "BOTTOMLEFT", { size = 17 })
+	-- The fourth corner, and it was missing: run a role check and every
+	-- party capsule wore its answer while your own frame said nothing.
+	f.role   = W.CreateDecorator(deco, orb, "BOTTOMRIGHT", { size = 15 })
 
 	-- text + bars block -----------------------------------------------------
 	local block = CreateFrame("Frame", nil, glass)
@@ -386,6 +389,7 @@ local function UpdateName(f)
 		-- crest is a faction crest, on every skin.
 		W.SetRaidMark(f.marker, unit)
 		W.SetPvPMark(f.pvp, unit)
+		W.SetRoleGlyph(f.role, unit)
 	end
 
 	local level = UnitLevel(unit)
@@ -861,6 +865,10 @@ function UF:RegisterEvents()
 	A:RegisterEvent(self, "PARTY_LEADER_CHANGED", leaders)
 	A:RegisterEvent(self, "RAID_TARGET_UPDATE",   leaders)
 	A:RegisterEvent(self, "UNIT_FACTION",         leaders)
+	-- A ROLE CHECK HAS ITS OWN EVENT. Nothing was listening, so the answer
+	-- to a poll landed and no frame moved until something unrelated
+	-- happened to refresh it.
+	A:RegisterEvent(self, "PLAYER_ROLES_ASSIGNED", leaders)
 	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",  leaders)
 
 	A:RegisterEvent(self, "PLAYER_LEVEL_UP", function()

@@ -228,6 +228,30 @@ function W.SetMarkIcon(tex, index)
 	return true
 end
 
+--- The role a unit has said they play, when it is one worth showing.
+--
+--  NOT DAMAGER. This client answers DAMAGER for somebody who has never set a
+--  role at all, so an arrow for it marks everybody and says nothing about any
+--  of them. Tank and healer are the two that answer a question you ask.
+--
+--  ONE OF THESE for the party capsules and the player's and target's, so a
+--  shield means the same thing wherever it turns up.
+local ROLE_GLYPH = { TANK = "tank", HEALER = "healer" }
+
+function W.SetRoleGlyph(tex, unit)
+	if not tex then return false end
+	local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
+	local glyph = ROLE_GLYPH[role or "NONE"]
+	if glyph and A.Media:SetIcon(tex, glyph) then
+		local c = A.Palette.c
+		-- Through W.Tint, so it follows a skin change on its own.
+		W.Tint(tex, (role == "TANK") and c.accent or c.friendly, 0.9)
+		tex:Show()
+		return true
+	end
+	tex:Hide()
+	return false
+end
 --- The raid target mark on a decorator, in the client's own art.
 --
 --  A skull is a skull on every skin. SetRaidTargetIconTexture picks the cell

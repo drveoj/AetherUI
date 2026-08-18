@@ -97,18 +97,6 @@ local CAN_RES = {
 	PRIEST = true, PALADIN = true, SHAMAN = true, DRUID = true, WARLOCK = true,
 }
 
---- Which roles are worth a glyph.
---
---  NOT DAMAGER, and that is a departure from the brief. It draws an arrow
---  for dps, and in a five-man that is an arrow on four capsules out of four
---  - a mark every member wears tells you nothing about any of them. Tank
---  and healer are the two that answer a question you actually ask.
---
---  It also turned out that this client does not answer "NONE" the way the
---  role poll suggests it would: somebody who has never set a role still
---  comes back as a damager, so the empty state was unreachable and every
---  capsule wore the arrow.
-local ROLE_GLYPH = { TANK = "tank", HEALER = "healer" }
 
 -- ---------------------------------------------------------------------------
 -- Blizzard's own, out of the way
@@ -379,21 +367,18 @@ local function UpdateStatus(f)
 
 	-- The role, or the resurrect glyph in its place when somebody is down and
 	-- you are the one who can do something about it.
-	local glyph, tint
+	-- Somebody to pick up, in place of what they do - and keyed off CLASS,
+	-- because a role here is opt-in and most priests have never set one.
 	local _, myClass = UnitClass("player")
 	if dead and myClass and CAN_RES[myClass] then
-		glyph, tint = "resurrect", c.friendly
+		if A.Media:SetIcon(f.role, "resurrect") then
+			W.Tint(f.role, c.friendly, 0.9)
+			f.role:Show()
+		else
+			f.role:Hide()
+		end
 	else
-		local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
-		glyph = ROLE_GLYPH[role or "NONE"]
-		tint = (role == "TANK") and c.accent or c.friendly
-	end
-
-	if glyph and A.Media:SetIcon(f.role, glyph) then
-		f.role:SetVertexColor(tint[1], tint[2], tint[3], 0.9)
-		f.role:Show()
-	else
-		f.role:Hide()
+		W.SetRoleGlyph(f.role, unit)
 	end
 end
 
@@ -581,9 +566,19 @@ function PF:AnchorStack()
 	--
 	-- Nothing is lost by waiting: PLAYER_REGEN_ENABLED sweeps again.
 	if InCombatLockdown and InCombatLockdown() then return false end
+	-- IT SHIFTS WITH THE DRAWER, the way the client's own party frames do:
+	-- off the panel while the controls are open, off the handle while they
+	-- are shut. Opening the controls pushes the party out of the way rather
+	-- than drawing over it.
+	--
+	-- An earlier version anchored to the panel either way, on the argument
+	-- that a frame should not move when you glance at something. That is a
+	-- fine argument and it is not what the default UI does, which is what
+	-- somebody installing this has in their hands already.
+	local host = (self.panel:IsShown() and self.panel) or self.handle or self.panel
 	local a = ATTACH[self:PanelEdge()] or ATTACH.LEFT
 	self.stack:ClearAllPoints()
-	self.stack:SetPoint(a[1], self.panel, a[2], a[3], a[4])
+	self.stack:SetPoint(a[1], host, a[2], a[3], a[4])
 	return true
 end
 
@@ -829,7 +824,11 @@ function PF:BuildHandle()
 	local chev = h:CreateTexture(nil, "OVERLAY")
 	chev:SetSize(HANDLE_CHEV, HANDLE_CHEV)
 	chev:SetTexture(A.Media.texture.chevron)
-	W.Tint(chev, A.Palette.c.semanticGold)
+	-- WHITE, NOT GOLD. The brief tints this arrow with the reserved gold and
+	-- the Toolbox rail's chevron - the same control on the same screen edge
+	-- doing the same job - is plain text at 75%. Two docks whose arrows
+	-- disagree is a detail nobody can name and everybody sees.
+	W.Tint(chev, A.Palette.c.text, 0.75)
 	h.chev = chev
 
 	h:SetScript("OnClick", function() PF:TogglePanel() end)
@@ -1052,9 +1051,8 @@ function PF:TogglePanel()
 		self:RefreshPanel()
 		p:Show()
 	end
-	-- The arrow turns round: open, the click retreats the drawer to its own
-	-- edge; shut, it emerges away from it.
-	self:LayoutHandle()
+	-- The arrow turns round, and the stack shifts with the drawer.
+	self:AnchorPanel()
 	return p:IsShown()
 end
 -- ---------------------------------------------------------------------------
@@ -1096,6 +1094,8 @@ function PF:RegisterEvents()
 	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",   sweepAndHide)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED",  sweepAndHide)
 	A:RegisterEvent(self, "PARTY_LEADER_CHANGED",  sweep)
+	-- A role check answers on its own event, and nothing was listening.
+	A:RegisterEvent(self, "PLAYER_ROLES_ASSIGNED", sweep)
 	A:RegisterEvent(self, "RAID_TARGET_UPDATE",    sweep)
 	
 	-- The panel's marker grid follows your TARGET, so it moves on an event
