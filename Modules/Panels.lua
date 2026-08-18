@@ -2463,15 +2463,8 @@ local function DressMail(frame, store)
 
 	-- The scroll frames behind the letter itself, both of which carry their
 	-- own parchment and their own bar.
-	for _, name in ipairs({ "SendMailScrollFrame", "OpenMailScrollFrame",
-		"InboxFrame" }) do
-		local sf = _G[name]
-		local bar = sf and (Reskin.Element(sf, "ScrollBar")
-			or _G[name .. "ScrollBar"])
-		if bar then
-			bar.__aetherStore = bar.__aetherStore or {}
-			Reskin.ScrollBar(bar, bar.__aetherStore)
-		end
+	for _, name in ipairs({ "SendMailScrollFrame", "OpenMailScrollFrame" }) do
+		Reskin.ScrollFrame(_G[name], store)
 	end
 
 	-- Send, Cancel, Reply, Delete and the rest. Named, but there are a dozen
@@ -2509,13 +2502,7 @@ local function DressItemText(frame, store)
 	local pageNo = _G.ItemTextCurrentPage
 	if pageNo then W.Color(pageNo, Palette.c.textDim) end
 
-	local sf = _G.ItemTextScrollFrame
-	local bar = sf and (Reskin.Element(sf, "ScrollBar")
-		or _G.ItemTextScrollFrameScrollBar)
-	if bar then
-		bar.__aetherStore = bar.__aetherStore or {}
-		Reskin.ScrollBar(bar, bar.__aetherStore)
-	end
+	Reskin.ScrollFrame(_G.ItemTextScrollFrame, store)
 
 	-- The page turners, which are art rather than words.
 	for _, name in ipairs({ "ItemTextPrevPageButton", "ItemTextNextPageButton" }) do
@@ -2536,17 +2523,7 @@ end
 local function DressSkillWindow(prefix)
 	return function(frame, store)
 		for _, suffix in ipairs({ "ListScrollFrame", "DetailScrollFrame" }) do
-			local sf = _G[prefix .. suffix]
-			if sf then
-				sf.__aetherStore = sf.__aetherStore or {}
-				Reskin.Strip(sf, sf.__aetherStore)
-				local bar = Reskin.Element(sf, "ScrollBar")
-					or _G[prefix .. suffix .. "ScrollBar"]
-				if bar then
-					bar.__aetherStore = bar.__aetherStore or {}
-					Reskin.ScrollBar(bar, bar.__aetherStore)
-				end
-			end
+			Reskin.ScrollFrame(_G[prefix .. suffix], store)
 		end
 
 		-- Every button on it, by what it is: Create, Create All, Close, the

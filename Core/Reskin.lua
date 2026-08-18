@@ -524,6 +524,30 @@ function Reskin.StatusBar(bar, store, opts)
 end
 
 --- A scroll bar: rail and arrows stripped, thumb down to a hairline.
+--- An old scroll frame, whose TROUGH IS DRAWN ON THE FRAME.
+--
+--  UIPanelScrollBarTemplate carries only its two arrows and a thumb. The
+--  rail behind them is $parentTop, $parentBottom and $parentMiddle, and
+--  those are declared in the SCROLL FRAME's own layers - so reskinning the
+--  bar leaves a black trough with stone caps exactly where it was, which is
+--  most of what a scroll bar looks like.
+--
+--  Only the frame's REGIONS go. Its content is a child frame, not a region,
+--  so there is nothing here that can take the thing you came to read.
+function Reskin.ScrollFrame(sf, store)
+	if not sf then return nil end
+
+	sf.__aetherStore = sf.__aetherStore or {}
+	Reskin.Strip(sf, sf.__aetherStore)
+
+	local bar = Reskin.Element(sf, "ScrollBar")
+	if bar then
+		bar.__aetherStore = bar.__aetherStore or {}
+		Reskin.ScrollBar(bar, bar.__aetherStore)
+	end
+	return bar
+end
+
 function Reskin.ScrollBar(bar, store)
 	if not bar or bar.__aetherScroll then return end
 

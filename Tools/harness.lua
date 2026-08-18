@@ -3131,8 +3131,22 @@ do
 		end
 		_G.ItemTextTitleText = it:CreateFontString(nil, "OVERLAY")
 		_G.ItemTextCurrentPage = it:CreateFontString(nil, "OVERLAY")
+		-- THE TROUGH IS DRAWN ON THE SCROLL FRAME, not on the bar.
+		-- UIPanelScrollBarTemplate carries only two arrows and a thumb; $parentTop,
+		-- $parentBottom and $parentMiddle are declared in the SCROLL FRAME's own
+		-- layers - so a sweep that reskins the bar leaves a black rail with stone
+		-- caps, which is most of what a scroll bar looks like.
 		_G.ItemTextScrollFrame = CreateFrame("ScrollFrame", "ItemTextScrollFrame", it)
-		_G.ItemTextScrollFrame.ScrollBar = CreateFrame("Slider", nil, _G.ItemTextScrollFrame)
+		do
+			local sf = _G.ItemTextScrollFrame
+			for _, part in ipairs({ "Top", "Bottom", "Middle" }) do
+				local tex = sf:CreateTexture(nil, "ARTWORK")
+				tex:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar")
+			end
+			sf.ScrollBar = CreateFrame("Slider", nil, sf)
+			sf.ScrollBar.ScrollUpButton = CreateFrame("Button", nil, sf.ScrollBar)
+			sf.ScrollBar.ScrollUpButton:SetNormalTexture("scroll-up")
+		end
 		for _, n in ipairs({ "ItemTextPrevPageButton", "ItemTextNextPageButton" }) do
 			_G[n] = CreateFrame("Button", n, it)
 			_G[n]:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
@@ -10715,6 +10729,19 @@ section("panels: the postbox, the book and the trade skills", function()
 	-- And the scroll bars, which are the old template on these windows.
 	check(_G.ItemTextScrollFrame.ScrollBar.__aetherScroll == true,
 		"the book's scroll bar is ours")
+
+	-- AND ITS TROUGH IS OFF THE FRAME. The rail is not on the bar at all -
+	-- it is three textures in the SCROLL FRAME's own layers - so reskinning
+	-- the bar and stopping there leaves a black rail with stone caps down
+	-- the side of a page that is otherwise ours.
+	local rail = 0
+	for _, r in ipairs({ _G.ItemTextScrollFrame:GetRegions() }) do
+		if r.__tex and tostring(r.__tex):find("UI-Character-ScrollBar", 1, true)
+			and r:IsShown() then rail = rail + 1 end
+	end
+	check(rail == 0,
+		"and the trough on the frame behind it goes too (" .. rail ..
+		" still drawing)")
 	check(_G.TradeSkillDetailScrollFrame.ScrollBar.__aetherScroll == true,
 		"and the trade skill's")
 
