@@ -10668,6 +10668,46 @@ section("panels: the postbox, the book and the trade skills", function()
 		_G[n]:Hide()
 	end
 end)
+section("panels: one broken dresser does not take the window with it", function()
+	local PN = A:GetModule("panels")
+
+	-- THE SHELL RUNS FIRST - strip, glass, scale, close button - and the
+	-- INSIDES run after it. So a dresser that throws leaves a window in our
+	-- glass with every one of its insides untouched, which on screen is
+	-- indistinguishable from a dresser nobody has written yet.
+	--
+	-- Three separate reports this session looked like a fix not being deployed.
+	local was = PN.INTERIORS.MerchantFrame
+	PN.INTERIORS.MerchantFrame = function()
+		error("deliberate: a name this game version does not have")
+	end
+
+	_G.MerchantFrame:Show()
+	local ok = pcall(PN.Dress, _G.MerchantFrame)
+	check(ok, "a dresser that throws does not take Dress down with it")
+	check(_G.MerchantFrame.__aetherPanel ~= nil,
+		"and the window still has its glass")
+
+	-- AND IT SAYS SO. Silence here is how the last three rounds went.
+	local why = PN.failures and PN.failures.MerchantFrame
+	check(why ~= nil and why:find("deliberate", 1, true) ~= nil,
+		"and the failure is kept, with the reason (" .. tostring(why) .. ")")
+
+	local lines = {}
+	A.PanelsDiag(function(fmt, ...) lines[#lines + 1] = string.format(fmt, ...) end)
+	local all = table.concat(lines, "\n")
+	check(all:find("deliberate", 1, true) ~= nil,
+		"and /aether panels names it rather than listing the window as fine")
+
+	-- AND A DRESSER THAT STOPS THROWING CLEARS ITS OWN FAILURE. Not cleared
+	-- by hand here: the point is that Dress does it, or the report grows a
+	-- list of things that were wrong once and stays wrong forever.
+	PN.INTERIORS.MerchantFrame = was
+	PN.Dress(_G.MerchantFrame)
+	check(PN.failures.MerchantFrame == nil,
+		"and a dresser that stops throwing clears its own failure")
+	_G.MerchantFrame:Hide()
+end)
 section("panels: a report that says which window and why", function()
 	local PN = A:GetModule("panels")
 

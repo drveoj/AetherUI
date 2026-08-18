@@ -507,6 +507,10 @@ local function panelsDiag(say)
 				or A.Bad(entry.addon .. " not loaded"))
 		end
 		say("   %-22s %-8s %-8s %s%s", entry.frame, present, glass, interior, note)
+		-- WHY, when a dresser threw. A window in our glass with untouched
+		-- insides looks exactly like one nobody has written a dresser for.
+		local why = PN.failures and PN.failures[entry.frame]
+		if why then say("      " .. A.Bad(why)) end
 	end
 end
 

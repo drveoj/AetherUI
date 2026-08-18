@@ -331,7 +331,26 @@ local function Dress(frame)
 	-- rather than an upvalue: the interiors are defined below this, and a local
 	-- declared later is not in scope here.
 	local interior = name and PN.INTERIORS and PN.INTERIORS[name]
-	if interior then interior(frame, store) end
+	if interior then
+		-- PCALLED, AND THE FAILURE KEPT. These reach into somebody else's
+		-- frames by name, and the names change between game versions - so a
+		-- dresser CAN throw, and until now a throw took the rest of the
+		-- window with it: the shell had already run, so the window came up
+		-- in our glass with every one of its insides untouched.
+		--
+		-- Which is indistinguishable, on screen, from a dresser that never
+		-- ran at all or was never written. Three separate reports this
+		-- session looked like the fix not being deployed.
+		PN.failures = PN.failures or {}
+		local ok, err = pcall(interior, frame, store)
+		if ok then
+			PN.failures[name] = nil
+		else
+			PN.failures[name] = tostring(err)
+			A.lastFailure = "panels " .. name .. ": " .. tostring(err)
+			A:Debug("panel interior failed:", name, err)
+		end
+	end
 
 	return true
 end
