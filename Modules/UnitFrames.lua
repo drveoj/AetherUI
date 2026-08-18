@@ -34,24 +34,10 @@ UF.frames = {}
 -- Blizzard frame removal
 -- ---------------------------------------------------------------------------
 
-local hider
-local function GetHider()
-	if not hider then
-		hider = CreateFrame("Frame", ADDON .. "Hider", UIParent)
-		hider:Hide()
-	end
-	return hider
-end
-
-local function Banish(frame)
-	if not frame then return end
-	if InCombatLockdown() then return end
-	pcall(function()
-		frame:UnregisterAllEvents()
-		frame:Hide()
-		frame:SetParent(GetHider())
-	end)
-end
+-- A:Banish lives in Core/Core.lua: the party frames need the same three
+-- steps in the same order, and two copies of it would be two answers to
+-- "how do you get a Blizzard frame out of the way".
+local function Banish(frame) return A:Banish(frame) end
 
 function UF:HideBlizzard()
 	local cfg = A.Config:Module("unitframes")

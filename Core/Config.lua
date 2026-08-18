@@ -120,6 +120,7 @@ Config.defaults = {
 			-- without being asked is not a default, it is a surprise.
 			partyframes = {
 				enabled     = false,
+				hideBlizzard = true,
 				-- 8 pad + 38 pip + 10 + 170 bars + 12 + 40 readout + 10 + 22
 				-- role + 18 pad
 				width       = 328,

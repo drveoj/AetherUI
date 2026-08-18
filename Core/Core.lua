@@ -88,6 +88,42 @@ function A:Snap(v)
 end
 
 --- Convert a count of real screen pixels into virtual units.
+-- ---------------------------------------------------------------------------
+-- getting one of the client's frames out of the way
+--
+-- Two modules replace a Blizzard frame with one of ours, and both need the
+-- same three steps in the same order. It was written out once in UnitFrames
+-- and the party frames wanted it too, which is the moment a private helper
+-- becomes a shared one rather than a second copy that drifts.
+-- ---------------------------------------------------------------------------
+
+local hider
+
+--- A frame the client can show all it likes, off screen and off events.
+--
+--  NOT :Hide() ALONE. Blizzard's own code calls Show() on these from a
+--  dozen places - a roster change, a vehicle swap, a ready check - and every
+--  one of them would put it back. Reparenting to a frame that is itself
+--  hidden means Show() is honoured and still invisible, which is the only
+--  version of this that survives contact with the client.
+--
+--  REFUSED IN COMBAT, and silently: most of these carry a secure template,
+--  so Hide and SetParent on them are protected calls. Nothing here is urgent
+--  enough to be worth an error in a fight.
+function A:Banish(frame)
+	if not frame then return false end
+	if InCombatLockdown and InCombatLockdown() then return false end
+	if not hider then
+		hider = CreateFrame("Frame", ADDON .. "Hider", UIParent)
+		hider:Hide()
+	end
+	local ok = pcall(function()
+		frame:UnregisterAllEvents()
+		frame:Hide()
+		frame:SetParent(hider)
+	end)
+	return ok
+end
 function A:Px(n)
 	return (n or 1) * A.pixel
 end

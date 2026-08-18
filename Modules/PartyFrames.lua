@@ -77,6 +77,24 @@ local CAN_RES = {
 local ROLE_GLYPH = { TANK = "tank", HEALER = "healer", DAMAGER = "dps" }
 
 -- ---------------------------------------------------------------------------
+-- Blizzard's own, out of the way
+-- ---------------------------------------------------------------------------
+
+--- The four the client draws, and the pets hanging off them.
+--
+--  ASKED FOR REPEATEDLY, not once at login. PartyMemberFrame carries a
+--  secure template, so banishing it is refused while you are in a fight -
+--  and a party you join mid-fight is a party whose frames arrive during the
+--  one window where nothing can be done about them. So this runs again on
+--  every roster change and again when the fight ends.
+function PF:HideBlizzard()
+	if not cfg().hideBlizzard then return end
+	for i = 1, 4 do
+		A:Banish(_G["PartyMemberFrame" .. i])
+	end
+end
+
+-- ---------------------------------------------------------------------------
 -- the capsule
 -- ---------------------------------------------------------------------------
 
@@ -399,10 +417,17 @@ function PF:RegisterEvents()
 	local function sweep()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end
-	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",   sweep)
+	-- Blizzard's frames come back with the roster and cannot be sent away
+	-- mid-fight, so both of those moments ask again.
+	local function sweepAndHide()
+		PF:HideBlizzard()
+		sweep()
+	end
+	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",   sweepAndHide)
+	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED",  sweepAndHide)
 	A:RegisterEvent(self, "PARTY_LEADER_CHANGED",  sweep)
 	A:RegisterEvent(self, "RAID_TARGET_UPDATE",    sweep)
-	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", sweep)
+	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", sweepAndHide)
 
 	-- A member coming back online does not announce itself as a unit event on
 	-- that unit, the way a pet arriving does not. These two are how the client
@@ -421,6 +446,7 @@ function PF:OnEnable()
 
 	if self.stack then
 		self.stack:Show()
+		self:HideBlizzard()
 		self:Layout()
 		self:RegisterMovers()
 		self:RegisterEvents()
@@ -447,6 +473,7 @@ function PF:OnEnable()
 	self:Layout()
 	self:RegisterMovers()
 	self:RegisterEvents()
+	self:HideBlizzard()
 	A:RegisterTicker(self, function()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end)

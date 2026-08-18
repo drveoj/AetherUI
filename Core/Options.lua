@@ -1236,6 +1236,8 @@ local function PartyFramesGroup()
 			"Four capsules for your party, in the same glass as your own frame."
 			.. " Off by default: it replaces frames you have already arranged"
 			.. " around.", at("enabled")),
+		hideBlizzard = toggle("Hide Blizzard's party frames", nil,
+			at("hideBlizzard")),
 		clickTarget = toggle("Click to target",
 			"Left-click targets, right-click opens the unit menu.", at("clickTarget")),
 

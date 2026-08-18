@@ -1786,6 +1786,14 @@ _G.__stateDrivers = {}
 function RegisterStateDriver(frame, state, values) _G.__stateDrivers[state] = values end
 function UnregisterStateDriver(frame, state) _G.__stateDrivers[state] = nil end
 
+-- THE CLIENT'S OWN PARTY FRAMES. Secure buttons, which is why they cannot be
+-- sent away in a fight, and toplevel - so an addon that only calls Hide() on
+-- them watches Blizzard's own roster code put them straight back.
+for i = 1, 4 do
+	_G["PartyMemberFrame" .. i] = CreateFrame("Button", "PartyMemberFrame" .. i, UIParent)
+	_G["PartyMemberFrame" .. i].__protected = true
+end
+
 _G.__unitWatched = {}
 function RegisterUnitWatch(f)
 	_G.__unitWatched[f] = true
@@ -9701,6 +9709,36 @@ section("party: four capsules in fixed slots", function()
 		"opened with togglemenu, which works out which menu the unit wants")
 	check(f1.unitWatched == true,
 		"and its visibility is the client's, through RegisterUnitWatch")
+
+	-- AND BLIZZARD'S OWN ARE GONE. Two of ours on top of four of theirs is not
+	-- a skin, it is a mess - and this is the part that was missing when the
+	-- module first went in: the capsules were built and the client's frames
+	-- were left exactly where they were.
+	for i = 1, 4 do
+		local b = _G["PartyMemberFrame" .. i]
+		check(not b:IsShown() and b:GetParent() ~= UIParent,
+			"PartyMemberFrame" .. i .. " is hidden AND reparented - Hide() alone is undone by the client's own roster code")
+	end
+
+	-- REFUSED IN A FIGHT, and asked again after it. These carry a secure
+	-- template, so a party joined mid-combat is a party whose frames arrive in
+	-- the one window where nothing can be done about them.
+	for i = 1, 4 do
+		local b = _G["PartyMemberFrame" .. i]
+		b:SetParent(UIParent)
+		b:Show()
+	end
+	_G.__inCombat = true
+	local blocked = _G.__blocked
+	PF:HideBlizzard()
+	check(_G.__blocked == blocked,
+		"asking mid-fight refuses quietly rather than erroring")
+	check(_G["PartyMemberFrame1"]:IsShown(),
+		"and the frame is still there, because the client would not have it")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(not _G["PartyMemberFrame1"]:IsShown(),
+		"the moment the fight ends, it goes")
 end)
 
 section("party: what a capsule says about the person", function()
