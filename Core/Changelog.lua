@@ -38,6 +38,21 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.14.0",
+		date    = "2026-08-18",
+		lines   = {
+			"Party frames. Four capsules in the same glass as your own, with a class-coloured level disc, health and power, and the game's own party frames put away.",
+			"Party controls, in a dock you can put on any screen edge. Target markers, ready check, countdown, role check and convert to raid - the flyout the game hangs off the side of the screen, in this interface's glass. Unlock your frames and drag the tab to move it.",
+			"Your party sits beside the dock to begin with and follows it about, until you drag it somewhere yourself - after which it stays where you put it. /aether party reset hands it back.",
+			"Who leads, what somebody is marked with, what they play and whether they are flagged for PvP all ride the level disc now - a corner each, on your party, on your own frame and on your target's.",
+			"Raid markers show on nameplates. Put a skull on something and the plate over its head says so, which it never did.",
+			"Dusk is brass. Its rim was the same colour the game already uses for a neutral's name, an elite's chip, a pet's mood and the console's gossip channel - four meanings under one piece of chrome.",
+			"The reserved gold goes a shade deeper on Dusk, so a warning is still a warning against a gold interface.",
+			"Fixed: our quest log could not be switched off. It had no setting anywhere; it is on the Quest page now.",
+			"Fixed: two settings pages shared a position in the list and could swap places between sessions.",
+		},
+	},
+	{
 		version = "0.13.0",
 		date    = "2026-08-18",
 		lines   = {
