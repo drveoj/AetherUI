@@ -6224,6 +6224,39 @@ end
 --  `style` names which mixin, and defaults to the CONTEXT one - because a
 --  right-click menu is what a player means by a menu, and defaulting to the
 --  other is how this went unnoticed the first time.
+
+--- What the compositor keeps for a frame while its menu is open.
+--
+--  Off the frame, because the client's is too: every write to a menu frame
+--  goes into a table on its metatable, not onto the frame.
+local menuSnapshot = {}
+
+--- Close a menu the way the client does.
+--
+--  MenuMixin:Close calls compositor:Detach(), which restores the frame's
+--  ORIGINAL metatable - and with it goes the table every write since the menu
+--  opened was collected in. So every key an addon set on the frame is gone,
+--  and every region it attached goes back to a pool shared with every other
+--  menu in the game.
+--
+--  Modelled because the mock without it was kinder than the client in the one
+--  way that mattered here: a mark left on the frame looked permanent, so
+--  dressing a menu "once" looked like once.
+function _G.__CloseMenu(index)
+	index = index or 1
+	local menu, snap = menuPool[index], menuSnapshot[index]
+	if not menu or not snap then return end
+	-- Keys written since the open, gone.
+	for k in pairs(menu) do
+		if snap[k] == nil then menu[k] = nil end
+	end
+	-- Keys the open CHANGED, back as they were. Shallow, like the client's:
+	-- it shadows the frame's own values rather than copying what is inside
+	-- them, and the frame's C-side state is not touched by a detach at all.
+	for k, v in pairs(snap) do menu[k] = v end
+	menuSnapshot[index] = nil
+end
+
 function _G.__OpenMenu(index, style)
 	index = index or 1
 	style = style or MenuVariants.GetDefaultContextMenuMixin()
@@ -6246,6 +6279,13 @@ function _G.__OpenMenu(index, style)
 		end
 		menuPool[index] = menu
 	end
+
+	-- A POOLED FRAME IS ONLY HANDED OUT AGAIN AFTER ITS MENU CLOSED, and
+	-- closing is what takes our dressing back off it.
+	_G.__CloseMenu(index)
+	local snap = {}
+	for k, v in pairs(menu) do snap[k] = v end
+	menuSnapshot[index] = snap
 
 	-- Mixin, EVERY TIME. This is the line that makes a late hook work.
 	for k, v in pairs(style) do menu[k] = v end
@@ -12139,14 +12179,39 @@ section("menus: the client's own right-click menus, in our glass", function()
 		"and the menu's own line survives being dressed (" ..
 		tostring(menu.__line and menu.__line:GetText()) .. ")")
 
-	-- DRESSED ONCE PER POOLED FRAME, not once per open. The same frame comes
-	-- back for the next menu the client shows, and building the glass again
-	-- would stack a second set of regions on it every single time.
+	-- ONE SET OF REGIONS PER OPEN. A menu that came back with two would be
+	-- drawing its glass over its own glass, and every alpha in the skin would
+	-- be wrong by exactly the amount nobody could name.
 	local before = #(menu.__attached or {})
 	for _ = 1, 5 do _G.__OpenMenu(1) end
 	check(#(menu.__attached or {}) == before,
-		"still one set of regions after six opens (" ..
+		"one set of regions however many times it opens (" ..
 		#(menu.__attached or {}) .. " from " .. before .. ")")
+
+	-- CLOSING TAKES OUR DRESSING OFF, and everything below rests on that.
+	--
+	-- MenuMixin:Close calls compositor:Detach(), which puts the frame's own
+	-- metatable back and drops the table every write since the open went
+	-- into. Not some of them: _kind, the tokens, and every method Adopt
+	-- copied on. The frame is undressed again, and there is nothing we can
+	-- leave on it to say otherwise.
+	_G.__CloseMenu(1)
+	check(menu._kind == nil and menu.ApplySkin == nil,
+		"a closed menu keeps nothing of ours - not a mark, not a method")
+	_G.__OpenMenu(1)
+	check(menu._kind == "panel", "and the next open dresses it from scratch")
+
+	-- SO THE SURFACE LIST MUST NOT GROW WITH THEM. Dressing again is right;
+	-- joining the list again is not, and the mark that stops it cannot live
+	-- on the frame for the reason just checked. It lives in Glass, which is
+	-- the one place a detach cannot reach. Without it the list gained an
+	-- entry per right-click for the whole session, and every skin change
+	-- walked the lot.
+	local surfaces = #A.Glass.surfaces
+	for _ = 1, 10 do _G.__OpenMenu(1) end
+	check(#A.Glass.surfaces == surfaces,
+		"and the surface list does not gain one per open (" ..
+		#A.Glass.surfaces .. " from " .. surfaces .. ")")
 
 	-- A SECOND POOLED FRAME gets its own, though - they are different menus.
 	local other = _G.__OpenMenu(2)

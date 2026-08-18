@@ -32,18 +32,22 @@
 	our functions running inside the menu's own generation path.
 
 	WHAT WE MAY AND MAY NOT DO TO A MENU FRAME. The menus are pooled and handed
-	round by a compositor that forbids some calls on the frames it owns:
+	round by a compositor that owns those frames completely:
 
-	  * `CreateTexture` and `CreateFontString` are disallowed on the menu frame
-	    itself - the compositor has to know about every region it will later
-	    have to recycle. So the glass is a CHILD FRAME of the menu rather than
-	    textures on it: our own frame, built by our own constructor, and the
-	    compositor neither sees it nor has to.
+	  * `CreateTexture` and `CreateFontString` are disallowed - it has to know
+	    about every region it will later have to recycle - and `AttachTexture`
+	    is offered instead. Glass asks a frame which of the two it has rather
+	    than assuming, which is what lets the menu frame BE one of our panels.
 
-	The panel is remembered in a table of ours rather than on the frame, because
-	the compositor discards value changes on a frame when it reclaims it - a
-	note left there would be gone by the next open and we would build a second
-	panel every time.
+	  * closing a menu DETACHES the compositor, which puts the frame's own
+	    metatable back and drops the table every write since the open went
+	    into. Every key we set is gone and every region we attached returns
+	    to a pool shared with every other menu in the game.
+
+	So a menu is dressed again on every open, and nothing left on the frame can
+	be trusted to say it has been already. Which is fine - Generate is called on
+	every open anyway - but it does mean the "one of these already" mark has to
+	live somewhere the detach cannot reach, and Core\Glass.lua keeps it.
 
 	COLOURS ARE STILL THE CLIENT'S. A player's name is their class colour, a
 	heading is gold, a disabled line is grey; the menu code sets those per line

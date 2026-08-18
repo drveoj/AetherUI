@@ -422,9 +422,27 @@ end
 --  plain list.
 Glass.surfaces = {}
 
+--- Which frames are in that list already.
+--
+--  KEPT HERE RATHER THAN ON THE FRAME, and that is the whole point of it.
+--  A menu frame belongs to the client's compositor, which puts the frame's
+--  original metatable back when the menu closes and drops the table every
+--  write since it opened went into - so a mark of ours left on the frame is
+--  gone by the next open, along with _kind and every method Adopt copied on.
+--
+--  Which is right: the frame is undressed again and has to be dressed again.
+--  What it must not do is join the list a second time, and a mark on the
+--  frame is exactly the thing that cannot stop it - the list grew by one
+--  entry per right-click for the whole session and RestyleAll walked every
+--  one of them.
+local registered = {}
+
 local function Adopt(frame)
 	for k, v in pairs(Surface) do frame[k] = v end
-	Glass.surfaces[#Glass.surfaces + 1] = frame
+	if not registered[frame] then
+		registered[frame] = true
+		Glass.surfaces[#Glass.surfaces + 1] = frame
+	end
 	return frame
 end
 
