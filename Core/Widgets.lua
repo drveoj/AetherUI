@@ -1356,18 +1356,32 @@ A:OnSkinChanged(W.RestyleMenu)
 local CHEV_DOWN, CHEV_UP    = 0, math.pi
 local CHEV_RIGHT, CHEV_LEFT = math.pi / 2, -math.pi / 2
 
-local CHEV_FACING = {
-	LEFT   = { open = CHEV_LEFT,  shut = CHEV_RIGHT },
-	RIGHT  = { open = CHEV_RIGHT, shut = CHEV_LEFT  },
-	TOP    = { open = CHEV_UP,    shut = CHEV_DOWN  },
-	BOTTOM = { open = CHEV_DOWN,  shut = CHEV_UP    },
+local CHEV_TURN = {
+	DOWN = CHEV_DOWN, UP = CHEV_UP, RIGHT = CHEV_RIGHT, LEFT = CHEV_LEFT,
 }
+
+local CHEV_FACING = {
+	LEFT   = { open = "LEFT",  shut = "RIGHT" },
+	RIGHT  = { open = "RIGHT", shut = "LEFT"  },
+	TOP    = { open = "UP",    shut = "DOWN"  },
+	BOTTOM = { open = "DOWN",  shut = "UP"    },
+}
+
+--- Point a chevron a plain compass direction.
+--
+--  The turning lives here and nowhere else. A page turner and a count
+--  spinner want an arrow pointing a way, with no drawer and nothing to be
+--  open or shut about - and a second table of radians is a second chance to
+--  get one of them backwards.
+function W.FaceChevron(tex, facing)
+	local turns = CHEV_TURN[facing] or CHEV_DOWN
+	if tex and tex.SetRotation then pcall(tex.SetRotation, tex, turns) end
+	return turns
+end
 
 function W.PointChevron(tex, edge, open)
 	local f = CHEV_FACING[edge] or CHEV_FACING.LEFT
-	local turns = open and f.open or f.shut
-	if tex and tex.SetRotation then pcall(tex.SetRotation, tex, turns) end
-	return turns
+	return W.FaceChevron(tex, open and f.open or f.shut)
 end
 --- Which screen edge a point belongs to.
 --

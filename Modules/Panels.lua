@@ -2559,17 +2559,11 @@ local function DressMail(frame, store)
 		Reskin.ScrollFrame(_G[name], store)
 	end
 
-	-- THE PAGE TURNERS. Art buttons rather than words, so the plate comes off
-	-- and the arrow on it stays - it is the only thing saying which way.
-	for _, name in ipairs({ "InboxPrevPageButton", "InboxNextPageButton" }) do
-		local btn = _G[name]
-		if btn then
-			Reskin.ClearButton(btn)
-			btn.__aetherStore = btn.__aetherStore or {}
-			Reskin.Strip(btn, btn.__aetherStore)
-			Reskin.Fonts(btn, "pnBody", 0, Palette.c.text)
-		end
-	end
+	-- THE PAGE TURNERS. The client draws these as a picture of a button -
+	-- arrow and plate in one texture - so clearing the plate took the arrow
+	-- with it and left two live controls with nothing drawn on them at all.
+	Reskin.ArrowButton(_G.InboxPrevPageButton, "LEFT", store)
+	Reskin.ArrowButton(_G.InboxNextPageButton, "RIGHT", store)
 
 	-- Send, Cancel, Reply, Delete, Open All and the rest. A dozen of them
 	-- across three panes, so they are found the way the Options pages' are: a
@@ -2608,14 +2602,10 @@ local function DressItemText(frame, store)
 
 	Reskin.ScrollFrame(_G.ItemTextScrollFrame, store)
 
-	-- The page turners, which are art rather than words.
-	for _, name in ipairs({ "ItemTextPrevPageButton", "ItemTextNextPageButton" }) do
-		local btn = _G[name]
-		if btn then
-			Reskin.ClearButton(btn)
-			Reskin.Strip(btn, store)
-		end
-	end
+	-- The page turners, art rather than words, and the same treatment the
+	-- postbox's get.
+	Reskin.ArrowButton(_G.ItemTextPrevPageButton, "LEFT", store)
+	Reskin.ArrowButton(_G.ItemTextNextPageButton, "RIGHT", store)
 end
 
 --- The trade skill and craft windows - First Aid, cooking, enchanting, and a
@@ -2624,10 +2614,101 @@ end
 --  Two panes of the old hand-built shape: a list on the left with its own
 --  black slab, a detail pane on the right with its own parchment, and a row of
 --  red buttons along the bottom.
+-- The two crafting windows are the same list twice: eight row buttons reused
+-- down the page, a heading among them wearing the client's plus or minus as
+-- its NORMAL texture, and an All control above them. What they do not share
+-- is any of the names.
+local SKILL_ROW_CAP = 30
+
+local SKILL_WINDOWS = {
+	TradeSkill = {
+		row = "TradeSkillSkill", all = "TradeSkillCollapseAllButton",
+		update = "TradeSkillFrame_Update", spinner = true,
+		input = "TradeSkillInputBox",
+		info = function(id)
+			local name, kind, _, expanded = GetTradeSkillInfo(id)
+			return name, kind, expanded
+		end,
+	},
+	Craft = {
+		row = "Craft", all = "CraftCollapseAllButton",
+		update = "CraftFrame_Update",
+		info = function(id)
+			local name, _, kind, _, expanded = GetCraftInfo(id)
+			return name, kind, expanded
+		end,
+	},
+}
+
+--- What the client says a row is, which beats reading it off the art.
+--
+--  The row carries its list index as its ID, so the same call the client
+--  fills it from answers both questions. Asked rather than read, because this
+--  client resolves a texture path to a file ID and leaves nothing to match on
+--  - the trap that left every trainer row wearing Blizzard's mark.
+local function SkillRowState(spec, btn)
+	local id = btn.GetID and btn:GetID()
+	if not id or id <= 0 then return nil end
+	local ok, name, kind, expanded = pcall(spec.info, id)
+	if not ok or not name then return nil end
+	return kind == "header", expanded
+end
+
+--- The list, dressed again after every refill.
+--
+--  Refilled on every expand, every pick and every craft, and each refill puts
+--  the client's own plus or minus straight back on.
+local function DressSkillRows(prefix)
+	local spec = SKILL_WINDOWS[prefix]
+	if not spec then return end
+
+	for i = 1, SKILL_ROW_CAP do
+		local btn = _G[spec.row .. i]
+		if not btn then break end
+
+		local header, expanded = SkillRowState(spec, btn)
+		if header then
+			btn.isExpanded = expanded or nil
+			Reskin.Collapse(btn)
+			if btn.__aetherGlyph then btn.__aetherGlyph:Show() end
+		elseif btn.__aetherGlyph then
+			-- A row that was a heading a moment ago is a recipe now. The
+			-- client clears its own mark here; ours has to go with it.
+			btn.__aetherGlyph:Hide()
+		end
+	end
+
+	-- All, which expands and collapses the lot. It keeps its own flag rather
+	-- than a list index: 1 when collapsed, nil when not.
+	local all = _G[spec.all]
+	if all then
+		all.isExpanded = (not all.collapsed) or nil
+		Reskin.Collapse(all)
+	end
+end
+
 local function DressSkillWindow(prefix)
 	return function(frame, store)
 		for _, suffix in ipairs({ "ListScrollFrame", "DetailScrollFrame" }) do
 			Reskin.ScrollFrame(_G[prefix .. suffix], store)
+		end
+
+		-- THE FILTERS, which are the modern dropdown Communities uses: a stone
+		-- holder, an arrow and a label, all regions of the button. None of them
+		-- has a label of its own, so the sweep below - which finds a button by
+		-- the words on it - goes straight past. Trade skills carry two, crafting
+		-- one and Era's crafting none, so they are asked for by key.
+		for _, key in ipairs({ "SubClassDropdown", "InvSlotDropdown", "Dropdown" }) do
+			DressDropdown(Reskin.Element(frame, key), store)
+		end
+
+		-- THE COUNT SPINNER, and the box between the two of them. Both buttons
+		-- are art with no words, so the sweep misses those as well.
+		local spec = SKILL_WINDOWS[prefix]
+		if spec and spec.spinner then
+			Reskin.ArrowButton(_G[prefix .. "DecrementButton"], "LEFT", store)
+			Reskin.ArrowButton(_G[prefix .. "IncrementButton"], "RIGHT", store)
+			Reskin.EditBox(_G[spec.input])
 		end
 
 		-- Every button on it, by what it is: Create, Create All, Close, the
@@ -2646,6 +2727,20 @@ local function DressSkillWindow(prefix)
 		-- The detail pane is printed on paper like a quest.
 		local detail = _G[prefix .. "DetailScrollChildFrame"]
 		if detail then Reskin.Fonts(detail, "pnBody", 2, Palette.c.text) end
+
+		DressSkillRows(prefix)
+
+		-- AND AGAIN AFTER EVERY REFILL. Expanding a heading, picking a recipe
+		-- or making one all rebuild the list, and each rebuild puts the
+		-- client's own mark back on every heading it draws.
+		PN.__listHooks = PN.__listHooks or {}
+		if hooksecurefunc and spec and _G[spec.update]
+			and not PN.__listHooks[prefix] then
+			PN.__listHooks[prefix] = true
+			hooksecurefunc(spec.update, function()
+				if PN.enabled then DressSkillRows(prefix) end
+			end)
+		end
 	end
 end
 --- Interiors, by frame. A window with no entry gets the shell treatment only.

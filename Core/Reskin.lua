@@ -542,6 +542,44 @@ function Reskin.IconButton(btn, store, opts)
 	return btn
 end
 
+-- How big our chevron sits on a button whose whole job is the arrow. The
+-- client's own art is around 20 across on a 23px button, and a mark that
+-- size reads as a picture rather than as a direction.
+local ARROW_GLYPH = 10
+
+--- A button that is nothing but an arrow: a page turner, a count spinner.
+--
+--  The client draws these as a PICTURE OF A BUTTON - the arrow and the plate
+--  it stands on are one texture - so taking the plate off takes the arrow
+--  with it and leaves a live control with nothing at all drawn on it. Which
+--  is what the postbox's page turners have been since they were skinned.
+--
+--  So both go, and one of our surfaces goes back with our own chevron on it.
+--  `facing` is a plain compass direction, turned by the one piece of code
+--  that owns which way a chevron points.
+function Reskin.ArrowButton(btn, facing, store)
+	if not btn then return nil end
+
+	Reskin.ClearButton(btn)
+	if type(store) == "table" then Reskin.Strip(btn, store) end
+
+	if not btn.__aetherArrow then
+		A.Widgets.SkinButton(btn, {})
+		local arrow = btn:CreateTexture(nil, "OVERLAY")
+		arrow:SetTexture(A.Media.texture.chevron)
+		arrow:SetSize(ARROW_GLYPH, ARROW_GLYPH)
+		arrow:SetPoint("CENTER", btn, "CENTER", 0, 0)
+		btn.__aetherArrow = arrow
+	end
+
+	A.Widgets.FaceChevron(btn.__aetherArrow, facing)
+	local c = A.Palette.c.text
+	if btn.__aetherArrow.SetVertexColor then
+		btn.__aetherArrow:SetVertexColor(c[1], c[2], c[3])
+	end
+	return btn.__aetherArrow
+end
+
 --- A tab along the bottom of a client panel.
 --
 --  Blizzard draws these in three pieces - left cap, stretched middle, right cap

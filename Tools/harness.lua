@@ -3264,6 +3264,133 @@ do
 				local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
 				b:SetText(label)
 			end
+
+			-- THE LIST. Eight row buttons reused down the page, a heading among
+			-- them wearing the client's plus or minus as its NORMAL texture, and
+			-- an All control above them. Two windows, and not one name shared.
+			local rowName = (prefix == "TradeSkill") and "TradeSkillSkill" or "Craft"
+			for i = 1, 8 do
+				local b = CreateFrame("Button", rowName .. i, f)
+				b:SetSize(293, 16)
+				b:SetID(i)
+				local fs = b:CreateFontString(rowName .. i .. "Text", "OVERLAY")
+				fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+				fs:SetText("Linen Bandage")
+				b.__fs = fs
+				function b:GetFontString() return self.__fs end
+
+				-- THE CLIENT ANSWERS GetTexture WITH A FILE ID rather than the
+				-- path it was handed, so the mark cannot be read off the art. The
+				-- mock has to be as unhelpful about it as the client is.
+				local realGet = b.GetNormalTexture
+				function b:GetNormalTexture()
+					local tex = realGet(self)
+					if tex and not tex.__fileID then
+						tex.__fileID = true
+						local raw = tex.GetTexture
+						function tex:GetTexture()
+							local v = raw(self)
+							if type(v) == "string" then return 137057 end
+							return v
+						end
+					end
+					return tex
+				end
+
+				-- Odd rows are headings this round, even ones are recipes.
+				if i % 2 == 1 then b:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up") end
+			end
+
+			local all = CreateFrame("Button", prefix .. "CollapseAllButton", f)
+			all:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
+			all:SetID(0)
+
+			-- THE FILTERS: the modern dropdown, a stone holder and an arrow and a
+			-- label, all regions of the button. Trade skills carry two of these;
+			-- Era's crafting carries none, which is why they are asked for by key
+			-- rather than counted.
+			if prefix == "TradeSkill" then
+				for _, key in ipairs({ "SubClassDropdown", "InvSlotDropdown" }) do
+					local dd = CreateFrame("Button", prefix .. key, f)
+					dd:SetSize(120, 24)
+					dd.Background = dd:CreateTexture(nil, "BACKGROUND")
+					dd.Background:SetTexture("common-dropdown-classic-textholder")
+					dd.Arrow = dd:CreateTexture(nil, "OVERLAY")
+					dd.Arrow:SetTexture("common-dropdown-classic-a-buttonDown")
+					dd.Text = dd:CreateFontString(nil, "OVERLAY")
+					dd.Text:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+					dd.Text:SetText("All Slots")
+					function dd:OnButtonStateChanged()
+						self.Arrow:SetTexture("common-dropdown-classic-a-buttonDown-pressed")
+						self.Arrow:SetSize(24, 24)
+					end
+					f[key] = dd
+				end
+
+				-- THE COUNT SPINNER, and the box between the two. Neither button
+				-- carries a word, so a sweep that finds buttons by their label goes
+				-- past all three of them.
+				for _, way in ipairs({ "Decrement", "Increment" }) do
+					local b = CreateFrame("Button", prefix .. way .. "Button", f)
+					b:SetSize(23, 22)
+					b:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+				end
+				local box = CreateFrame("EditBox", prefix .. "InputBox", f)
+				for _, part in ipairs({ "Left", "Middle", "Right" }) do
+					local tex = box:CreateTexture(prefix .. "InputBox" .. part, "BACKGROUND")
+					tex:SetTexture("Interface\\Common\\Common-Input-Border")
+					_G[prefix .. "InputBox" .. part] = tex
+				end
+			end
+
+			-- THE CLIENT REFILLING THE LIST, which it does on every expand, every
+			-- pick and every craft - putting its own marks back and handing rows
+			-- from one kind to the other.
+			-- THE EIGHT BUTTONS ARE REUSED down the page, so a row that is a
+			-- heading now is a recipe after the next scroll or collapse. A mock
+			-- where the odd rows are headings for ever cannot see a mark left
+			-- behind on a recipe, which is the whole reason ours is hidden.
+			local updater = prefix .. "Frame_Update"
+			f.__collapsedRound = false
+			f.__rowShift = 0
+			_G[updater] = function()
+				f.__collapsedRound = true
+				for i = 1, 8 do
+					local b = _G[rowName .. i]
+					if (i + f.__rowShift) % 2 == 1 then
+						b:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+					else
+						b:SetNormalTexture(0)
+					end
+				end
+			end
+
+			--- The list scrolled, which hands every row to the other kind.
+			if prefix == "TradeSkill" then
+				function _G.__shiftSkillRows()
+					f.__rowShift = 1 - f.__rowShift
+					_G[updater]()
+				end
+			end
+		end
+
+		--- What the client says a row is, which is the only reliable answer.
+		function _G.GetTradeSkillInfo(id)
+			if type(id) ~= "number" or id < 1 or id > 8 then return nil end
+			if (id + _G.TradeSkillFrame.__rowShift) % 2 == 1 then
+				return "Consumable", "header", 0,
+					not _G.TradeSkillFrame.__collapsedRound
+			end
+			return "Linen Bandage", "trivial", 1, nil
+		end
+
+		function _G.GetCraftInfo(id)
+			if type(id) ~= "number" or id < 1 or id > 8 then return nil end
+			if id % 2 == 1 then
+				return "Enchant Bracer", nil, "header", 0,
+					not _G.CraftFrame.__collapsedRound
+			end
+			return "Runed Copper Rod", nil, "trivial", 1, nil
 		end
 	end
 
@@ -10968,6 +11095,21 @@ section("panels: the postbox, the book and the trade skills", function()
 	end
 	check(plain == 0, "every button on them is ours (" .. plain .. " left)")
 
+	-- AND NOT ONE OF THEM THREW ON THE WAY. The interiors are pcall'd, so a
+	-- dresser that dies leaves the window in our glass with everything
+	-- inside it untouched and says nothing - indistinguishable on screen
+	-- from a fix that never deployed, and it cost three rounds of guessing
+	-- once already.
+	local broke = {}
+	for _, n in ipairs({ "MailFrame", "ItemTextFrame", "TradeSkillFrame",
+		"CraftFrame" }) do
+		if PN.failures and PN.failures[n] then
+			broke[#broke + 1] = n .. ": " .. tostring(PN.failures[n])
+		end
+	end
+	check(#broke == 0, "and no dresser threw on the way (" ..
+		(#broke > 0 and table.concat(broke, " | ") or "all four clean") .. ")")
+
 	-- And the scroll bars, which are the old template on these windows.
 	check(_G.ItemTextScrollFrame.ScrollBar.__aetherScroll == true,
 		"the book's scroll bar is ours")
@@ -10986,6 +11128,142 @@ section("panels: the postbox, the book and the trade skills", function()
 		" still drawing)")
 	check(_G.TradeSkillDetailScrollFrame.ScrollBar.__aetherScroll == true,
 		"and the trade skill's")
+
+	-- THE LIST'S HEADINGS. The client draws its plus and minus as the row
+	-- button's NORMAL texture, and it puts them back on every refill - so
+	-- dressing them once and stopping there is dressing them until the
+	-- player expands anything.
+	local marked, wrongWay = 0, {}
+	for _, spec in ipairs({ { "TradeSkillSkill", "TradeSkill" },
+		{ "Craft", "Craft" } }) do
+		for i = 1, 8, 2 do
+		local btn = _G[spec[1] .. i]
+		if btn.__aetherGlyph and btn.__aetherGlyph:IsShown() then
+			marked = marked + 1
+		end
+		end
+	end
+	check(marked == 8, "every heading in both lists wears our mark (" ..
+		marked .. " of 8)")
+
+	-- AND THE RECIPES BETWEEN THEM DO NOT. A row that was a heading a
+	-- moment ago is a recipe now - the buttons are reused down the page -
+	-- and the client clears its own mark where ours would be left behind.
+	local strays = 0
+	for _, row in ipairs({ "TradeSkillSkill", "Craft" }) do
+		for i = 2, 8, 2 do
+			local g = _G[row .. i].__aetherGlyph
+			if g and g:IsShown() then strays = strays + 1 end
+		end
+	end
+	check(strays == 0, "and no recipe carries one (" .. strays .. ")")
+
+	-- WHICH WAY THE MARK POINTS follows the client, not our own memory of
+	-- it: an expanded heading is a minus and a collapsed one a plus.
+	local function mark()
+		local g = _G.TradeSkillSkill1.__aetherGlyph
+		return g and g:GetText()
+	end
+	local open = mark()
+	_G.TradeSkillFrame_Update()
+	local shut = mark()
+	check(open ~= shut,
+		"the mark turns over when the heading collapses (" ..
+		tostring(open) .. " to " .. tostring(shut) .. ")")
+
+	-- AND THE REFILL DID NOT PUT THE CLIENT'S BACK. The check above only
+	-- proves ours followed; this one proves theirs did not come with it.
+	local restone = 0
+	for i = 1, 8 do
+		local tex = _G["TradeSkillSkill" .. i]:GetNormalTexture()
+		local art = tex and tex.GetTexture and tex:GetTexture()
+		if art and art ~= 0 then restone = restone + 1 end
+	end
+	check(restone == 0,
+		"and the client's own is off again after the refill (" ..
+		restone .. ")")
+
+	-- AND THE MARK MOVES WHEN THE ROWS DO. The eight buttons are reused
+	-- down the page: a row that is a heading now is a recipe after the
+	-- next scroll, and the client clears its own mark where ours would
+	-- otherwise be left sitting in the middle of a recipe's name.
+	_G.__shiftSkillRows()
+	local left, missing = 0, 0
+	for i = 1, 8 do
+		local g = _G["TradeSkillSkill" .. i].__aetherGlyph
+		local shown = g and g:IsShown()
+		if i % 2 == 1 then
+			if shown then left = left + 1 end
+		elseif not shown then
+			missing = missing + 1
+		end
+	end
+	check(left == 0, "no mark is left behind on a row turned recipe (" ..
+		left .. ")")
+	check(missing == 0, "and every row turned heading has one (" ..
+		missing .. " of 4 without)")
+
+	-- THE TWO FILTERS. Neither carries a label of its own, so the sweep
+	-- that finds a button by the words on it goes straight past both - and
+	-- both stayed a stone holder with a stone arrow on a window of ours.
+	local rawFilters = {}
+	for _, key in ipairs({ "SubClassDropdown", "InvSlotDropdown" }) do
+		local dd = _G.TradeSkillFrame[key]
+		if not (dd and dd.__aetherSkin) then
+			rawFilters[#rawFilters + 1] = key
+		elseif tostring(dd.Arrow:GetTexture() or ""):find("dropdown", 1, true) then
+			rawFilters[#rawFilters + 1] = key .. ":arrow"
+		end
+	end
+	check(#rawFilters == 0, "both filters are ours (" ..
+		(#rawFilters > 0 and table.concat(rawFilters, ",") or "holder and arrow")
+		.. ")")
+
+	-- THE COUNT SPINNER. The client draws these as a PICTURE OF A BUTTON -
+	-- the arrow and the plate it stands on are one texture - so taking the
+	-- plate off takes the arrow with it and leaves a live control with
+	-- nothing drawn on it at all. Which is what the postbox's page turners
+	-- had been since the day they were skinned.
+	local arrows = {
+		{ _G.TradeSkillDecrementButton, "LEFT" },
+		{ _G.TradeSkillIncrementButton, "RIGHT" },
+		{ _G.InboxPrevPageButton, "LEFT" },
+		{ _G.InboxNextPageButton, "RIGHT" },
+		{ _G.ItemTextPrevPageButton, "LEFT" },
+		{ _G.ItemTextNextPageButton, "RIGHT" },
+	}
+	local blank, turns = 0, {}
+	for _, pair in ipairs(arrows) do
+		local mark = pair[1].__aetherArrow
+		if not mark then blank = blank + 1
+		else turns[#turns + 1] = mark:GetRotation() end
+	end
+	check(blank == 0,
+		"every arrow button still has an arrow on it (" .. blank ..
+		" bare of 6)")
+
+	-- POINTING OPPOSITE WAYS, which is the whole of what they say. One
+	-- table of radians shared with the dock handles, so there is one place
+	-- to get a direction backwards rather than three.
+	local backwards = 0
+	for i = 1, #turns, 2 do
+		if not (turns[i] and turns[i + 1] and turns[i] == -turns[i + 1]
+			and turns[i] < 0) then backwards = backwards + 1 end
+	end
+	check(backwards == 0,
+		"and back points back while forward points forward (" ..
+		backwards .. " pairs wrong)")
+
+	-- The box between the spinner's two halves, which is the same field the
+	-- postbox is full of.
+	local boxStone = 0
+	for _, part in ipairs({ "Left", "Middle", "Right" }) do
+		local tex = _G["TradeSkillInputBox" .. part]
+		if tex and tex:IsShown() then boxStone = boxStone + 1 end
+	end
+	check(boxStone == 0 and _G.TradeSkillInputBox.__aetherPill ~= nil,
+		"and the count between them is one of our fields (" .. boxStone ..
+		" slices left)")
 
 	for _, n in ipairs({ "MailFrame", "ItemTextFrame", "TradeSkillFrame",
 		"CraftFrame" }) do
