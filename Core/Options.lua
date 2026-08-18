@@ -787,6 +787,12 @@ local function QuestGroup()
 	return group("Quest tracker", {
 		enabled = toggle("Enabled", nil, at("enabled")),
 		hideBlizzard = toggle("Hide Blizzard's tracker", nil, at("hideBlizzard")),
+		-- The LOG, which is a different module and a different window, but
+		-- the same subject - and it had no control anywhere at all, which
+		-- made it a feature nobody could switch off.
+		questlog = toggle("Our quest log",
+			"Replaces the game's own quest log window. Off gives you Blizzard's back.",
+			{ "modules", "questlog", "enabled" }),
 		autoTrack = toggle("Track everything automatically",
 			"On, the tracker shows every quest in your log and you dismiss the ones"
 			.. " you do not want. Off, it shows nothing until you shift-click a"
@@ -1223,11 +1229,31 @@ local function TooltipsGroup()
 	})
 end
 
+local function PartyFramesGroup()
+	local function at(k) return { "modules", "partyframes", k } end
+	return group("Party frames", {
+		enabled = toggle("Enabled",
+			"Four capsules for your party, in the same glass as your own frame."
+			.. " Off by default: it replaces frames you have already arranged"
+			.. " around.", at("enabled")),
+		clickTarget = toggle("Click to target",
+			"Left-click targets, right-click opens the unit menu.", at("clickTarget")),
+
+		sizeHeader = header("Capsule"),
+		width = range("Width", nil, at("width"), 240, 460, 1),
+		height = range("Height", nil, at("height"), 40, 80, 1),
+		gap = range("Gap between members", nil, at("gap"), 0, 40, 1),
+		barWidth = range("Bar width", nil, at("barWidth"), 100, 300, 1),
+		showPower = toggle("Show power bar", nil, at("showPower")),
+
+		placement = note("The four slots are fixed and the group moves as one: unlock with " .. A.Hi("/aether unlock") .. " and drag any part of the stack.\n\nA slot whose member has gone leaves a gap rather than closing up. Re-anchoring a frame you can click to target is refused by the game in combat, which is exactly when somebody drops group - so the slots stay where you put them."),
+	})
+end
 local PAGE_ORDER = {
-	general = 1, unitframes = 2, auras = 3, actionbars = 4, minimap = 5,
-	quests = 6, bags = 7, chat = 8, tooltips = 9, toolbox = 10, fader = 11,
-	xpbar = 12, nameplates = 13, ifec = 14, conveniences = 15,
-	gameown = 16,
+	general = 1, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
+	minimap = 6, quests = 7, bags = 8, chat = 9, tooltips = 10,
+	toolbox = 11, fader = 12, xpbar = 13, nameplates = 14, ifec = 15,
+	conveniences = 16, gameown = 17,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1273,6 +1299,7 @@ function Options:Build()
 		args = {
 			general = GeneralGroup(),
 			unitframes = UnitFramesGroup(),
+			partyframes = PartyFramesGroup(),
 			auras = AurasGroup(),
 			minimap = MinimapGroup(),
 			actionbars = ActionBarsGroup(),

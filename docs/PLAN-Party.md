@@ -179,20 +179,35 @@ goes away — a snap that applies to one frame is a bug report waiting to happen
    is a bar, so glyph shape cannot rescue it. Options: move Dusk's `deep`/`border` off
    `#e8c86a`; or move the four semantics; or accept it and let Dusk's power bars and elite
    chips read as chrome.
-2. **Hurt health value** (§3). Gold by hue alone on a number. Suggest the neutral text
-   token, and let the shrinking bar say "hurt".
-3. **Crown vs raid marker** (§3). They occupy the same position on the pip and a marked
-   leader is ordinary. One of them moves.
-4. **Empty role state** (§2). It is the common case on Era.
+2. **Empty role state** (§2) — settled by implementation, overrule if wrong: no role, no
+   glyph, nothing reflows. It is the common case on Era.
+
+Two more were settled the same way while building §3, and both departed from the brief:
+
+- **Hurt health value.** The brief turns it gold, which is semantic gold carried by hue
+  alone on a number — the one thing its own companion rule forbids — and on Dusk that
+  gold is a step from the chrome. It is ordinary text now, and red under 20%. The bar
+  beside it is already shrinking and already going green to red.
+- **Crown vs raid marker.** The brief puts both on the same spot on the pip and a marked
+  leader is ordinary. The marker keeps the top, where the game's own frames put it; the
+  crown takes the top-left.
 
 ---
+
 ## 7. Build order
 
-1. ~~Semantic gold as a chrome token~~ — done.
-2. Answer §6.1 and §6.2; both are palette edits and both block drawing a capsule.
-3. Glyph textures (`Tools/generate_textures.py`).
-4. The capsule as a widget, one unit, against `player` first so it can be looked at
-   without a party.
-5. Four fixed slots, secure children, unit watch, Movers anchor.
-6. The controls panel.
-7. The dock handle, shared with Toolbox.
+1. ~~Semantic gold, one conditional in one place~~ — done.
+2. ~~crown, healer, dps, resurrect glyphs~~ — done. The tank shield and the handle's pair
+   of figures are aliases of `guild` and `social`, not new drawings.
+3. ~~The capsule, four fixed secure slots, one mover, its own options page~~ — done,
+   `Modules/PartyFrames.lua`. Off by default.
+4. The controls panel (§4) — marker grid, the four actions, the no-target state.
+5. The dock handle (§5), shared with Toolbox.
+6. Answer §6.1, which is the only thing left that a party capsule draws and cannot
+   decide for itself.
+
+### What is not built yet, and is visible
+
+The capsule draws the person and their bars. It does not yet draw the aura row the
+player capsule has, and there is no way to reach the controls panel because there is no
+controls panel — the party dock handle is step 5.

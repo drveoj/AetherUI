@@ -12,8 +12,17 @@
 
 local FAIL = {}
 
+-- Refusals counted separately as well as failed. A blocked call already
+-- fails the suite, but a check that wants to say "this path blocks
+-- NOTHING" needs a number it can read before and after rather than a
+-- line in the log it cannot see.
+_G.__blocked = 0
+
 local function fail(msg)
 	FAIL[#FAIL + 1] = msg
+	if tostring(msg):find("ADDON BLOCKED", 1, true) then
+		_G.__blocked = _G.__blocked + 1
+	end
 	print("  !! " .. msg)
 end
 
@@ -4896,6 +4905,39 @@ local units = {
 		power = 40, powerMax = 100, powerType = 2, powerToken = "FOCUS",
 		reaction = 5,
 	},
+	-- A PARTY OF FOUR, and deliberately not four of the same thing: the
+	-- capsule has to draw somebody leading, somebody marked, somebody dead
+	-- and somebody who has gone offline, and three of those four are states
+	-- a mock made of healthy party members can never reach.
+	--
+	-- Roles are mostly NONE on purpose. A role on this game version is
+	-- opt-in - set by answering a role poll or listing in the group finder -
+	-- so a mock where everybody has one would make the empty role glyph, the
+	-- common case, the one case never checked.
+	party1 = {
+		exists = true, name = "Kindarhazan", level = 19, isPlayer = true,
+		class = "Shaman", classToken = "SHAMAN", reaction = 5,
+		hp = 791, hpMax = 900, power = 433, powerMax = 800,
+		powerType = 0, powerToken = "MANA",
+	},
+	party2 = {
+		exists = true, name = "Brumgarr", level = 21, isPlayer = true,
+		class = "Druid", classToken = "DRUID", reaction = 5,
+		hp = 386, hpMax = 1000, power = 78, powerMax = 100,
+		powerType = 1, powerToken = "RAGE",
+	},
+	party3 = {
+		exists = true, name = "Melissane", level = 18, isPlayer = true,
+		class = "Priest", classToken = "PRIEST", reaction = 5, dead = true,
+		hp = 0, hpMax = 700, power = 300, powerMax = 600,
+		powerType = 0, powerToken = "MANA",
+	},
+	party4 = {
+		exists = true, name = "Tinkwizzle", level = 17, isPlayer = true,
+		class = "Mage", classToken = "MAGE", reaction = 5, offline = true,
+		hp = 0, hpMax = 600, power = 0, powerMax = 700,
+		powerType = 0, powerToken = "MANA",
+	},
 }
 _G.__units = units
 
@@ -4931,6 +4973,54 @@ function UnitReaction(u) return units[u] and units[u].reaction end
 -- PLAYER_FLAGS_CHANGED carries the unit whose flags moved, and the client
 -- sets this by itself after five minutes without input.
 function UnitIsAFK(u) return units[u] and units[u].afk or false end
+
+-- ---------------------------------------------------------------------------
+-- the group
+--
+-- UnitIsConnected answers TRUE for a unit that does not exist, which is the
+-- client's own behaviour and the reason a party frame must ask whether the
+-- unit is there before asking whether it is online - the other order draws a
+-- present, connected, empty capsule in slot four.
+-- ---------------------------------------------------------------------------
+
+function UnitIsConnected(u)
+	local d = units[u]
+	if not d then return true end
+	return not d.offline
+end
+
+function UnitIsGroupLeader(u) return units[u] and units[u].leader or false end
+
+_G.__roles = { party2 = "TANK" }
+function UnitGroupRolesAssigned(u)
+	-- "NONE", not nil. Blizzard answers a string always, and a mock that
+	-- answered nil would let `role or "NONE"` paper over a real nil case.
+	return _G.__roles[u] or "NONE"
+end
+
+_G.__raidTargets = {}
+function GetRaidTargetIndex(u) return _G.__raidTargets[u] end
+
+--- The game's own icon sheet. Sets a texture AND a texcoord, both of which
+--  an addon that drew its own marker would get wrong - so the mock records
+--  them and the checks can say the skull is still Blizzard's skull.
+function SetRaidTargetIconTexture(tex, index)
+	if not tex or not index then return end
+	tex:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+	local c, r = (index - 1) % 4, math.floor((index - 1) / 4)
+	tex:SetTexCoord(c * 0.25, (c + 1) * 0.25, r * 0.25, (r + 1) * 0.25)
+end
+
+function GetNumGroupMembers()
+	local n = 0
+	for _, u in ipairs({ "party1", "party2", "party3", "party4" }) do
+		if units[u] and units[u].exists then n = n + 1 end
+	end
+	return n > 0 and n + 1 or 0
+end
+function GetNumSubgroupMembers() return math.max(0, GetNumGroupMembers() - 1) end
+function UnitInParty(u) return units[u] ~= nil and units[u].exists or false end
+
 function UnitIsDND(u) return units[u] and units[u].dnd or false end
 
 local castState
@@ -6304,7 +6394,8 @@ local FILES = {
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
-	"Modules/UnitFrames.lua", "Modules/ActionBars.lua", "Modules/Auras.lua",
+	"Modules/UnitFrames.lua", "Modules/PartyFrames.lua",
+	"Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
 	"Modules/Chat.lua",
@@ -9570,6 +9661,201 @@ section("palette: semantic gold, one shade deeper in Dusk", function()
 	P:Apply("midnight")
 	check(hex(A.Palette.c.semanticGold) == "#f0d9a8",
 		"and switching back brings the other one home")
+end)
+
+section("party: four capsules in fixed slots", function()
+	local PF = A:GetModule("partyframes")
+	local c = A.Config:Module("partyframes")
+
+	-- OFF BY DEFAULT, and that is a decision. It replaces frames the player
+	-- already has and has arranged around.
+	check(c.enabled == false, "off until asked for")
+
+	_G.__units.party1.leader = true
+	A:SetModuleEnabled("partyframes", true)
+	check(PF.stack ~= nil, "the stack is built")
+	check(#PF.frames == 4,
+		"four capsules, one per party slot (" .. #PF.frames .. ")")
+
+	-- THE PLAYER IS NOT IN IT. This interface already draws a player capsule,
+	-- and a fifth here would be a second answer to the same question.
+	local units = {}
+	for _, f in ipairs(PF.frames) do units[#units + 1] = f.unit end
+	check(table.concat(units, ",") == "party1,party2,party3,party4",
+		"party1 to party4, and not the player (" .. table.concat(units, ",") .. ")")
+
+	-- ONE GRIP FOR THE GROUP. The capsules are children of the container and
+	-- the container is what Movers knows about - four separate movers would
+	-- be four ways to end up with a stack that is not a stack.
+	local mover = A.Movers.registry["party"]
+	check(mover ~= nil and mover.frame == PF.stack,
+		"the stack drags as one thing, not as four")
+
+	-- SECURE, so a click targets and a right-click opens the unit menu even
+	-- mid-fight. Without RegisterUnitWatch the client cannot show or hide these
+	-- in combat and we would have to, which is the call it refuses.
+	local f1 = PF.frames[1]
+	check(f1.click ~= nil and f1.click:GetAttribute("unit") == "party1",
+		"each capsule carries a secure unit button")
+	check(f1.click:GetAttribute("*type2") == "togglemenu",
+		"opened with togglemenu, which works out which menu the unit wants")
+	check(f1.unitWatched == true,
+		"and its visibility is the client's, through RegisterUnitWatch")
+end)
+
+section("party: what a capsule says about the person", function()
+	local PF = A:GetModule("partyframes")
+	local f1, f2, f3, f4 = PF.frames[1], PF.frames[2], PF.frames[3], PF.frames[4]
+
+	-- THE CROWN AND THE MARKER BOTH RIDE THE PIP, and the brief puts them in
+	-- the same place on it. A leader who has also been marked is ordinary, so
+	-- they get a corner each - and this is the check that says so, because the
+	-- failure is not an error, it is one of them hidden under the other.
+	_G.__raidTargets.party1 = 6
+	fire("RAID_TARGET_UPDATE")
+	check(f1.crown:IsShown() and f1.marker:IsShown(),
+		"a marked leader shows both the crown and the mark")
+	local _, _, crownAt = f1.crown:GetPoint()
+	local _, _, markAt = f1.marker:GetPoint()
+	check(crownAt ~= nil and markAt ~= nil and crownAt ~= markAt,
+		"and they sit on different corners of the pip (" ..
+		tostring(crownAt) .. " vs " .. tostring(markAt) .. ")")
+
+	-- THE MARK IS THE GAME'S OWN ART. A skull is a skull on every skin, and
+	-- the texcoord is half of what makes it the right one - a marker with the
+	-- texture and no coords draws the whole sheet of eight.
+	check(tostring(f1.marker.__tex):find("RaidTargetingIcons", 1, true) ~= nil,
+		"from the client's own icon sheet (" .. tostring(f1.marker.__tex) .. ")")
+	local l, r, t2, b = f1.marker:GetTexCoord()
+	check(not (l == 0 and r == 1 and t2 == 0 and b == 1),
+		"with a cell picked out of it, not the whole sheet")
+	_G.__raidTargets.party1 = nil
+	fire("RAID_TARGET_UPDATE")
+	check(not f1.marker:IsShown(), "and it goes when the mark is cleared")
+
+	-- A ROLE IS OPT-IN ON THIS GAME VERSION, so the empty glyph is the common
+	-- case and the one worth checking. party2 has set TANK; party1 has not.
+	check(f2.role:IsShown(), "a member who set a role wears it")
+	check(not f1.role:IsShown(),
+		"and one who has not wears nothing - which is most of them")
+
+	-- DEAD. The word goes in the health track, where the bar that emptied is,
+	-- and the name stays legible - which is what you are reading the frame for.
+	check(f3.deadText:IsShown(), "a dead member says so in the health track")
+	check(f3.hpText:GetText() == "0", "with the number at zero")
+	check(math.abs(f3:GetAlpha() - 0.6) < 0.01,
+		"and the capsule quietened (" .. tostring(f3:GetAlpha()) .. ")")
+
+	-- AND A HEALER SEES SOMETHING TO DO ABOUT IT - keyed off CLASS, not off
+	-- role. The brief shows this glyph to healers, but a role here is opt-in,
+	-- so keying off one would hide it from almost every priest in the game.
+	check(not f3.role:IsShown(),
+		"a mage sees no resurrect glyph over a corpse")
+	_G.__units.player.classToken = "PRIEST"
+	fire("GROUP_ROSTER_UPDATE")
+	check(f3.role:IsShown(),
+		"and a priest does, on class rather than on a role nobody sets")
+	_G.__units.player.classToken = "MAGE"
+	fire("GROUP_ROSTER_UPDATE")
+
+	-- OFFLINE is quieter still, and says what it is where the class was.
+	check(math.abs(f4:GetAlpha() - 0.5) < 0.01,
+		"somebody offline is quieter than somebody dead (" ..
+		tostring(f4:GetAlpha()) .. ")")
+	check(f4.class:GetText() ~= "Mage",
+		"and the line under the name says so (" .. tostring(f4.class:GetText()) .. ")")
+end)
+
+section("party: the numbers, and the colour they are not", function()
+	local PF = A:GetModule("partyframes")
+	local f2 = PF.frames[2]
+	local c = A.Palette.c
+
+	-- THE HURT NUMBER IS NOT THE WARNING GOLD. The brief turns it gold as a
+	-- member gets hurt, which is the reserved semantic gold carried by hue
+	-- alone on a number - the one thing its own companion rule forbids - and on
+	-- Dusk that gold is a step from the chrome. The bar beside it is already
+	-- shrinking and already going green to red.
+	local function same(a, b)
+		return math.abs(a[1] - b[1]) < 0.002 and math.abs(a[2] - b[2]) < 0.002
+			and math.abs(a[3] - b[3]) < 0.002
+	end
+	local ink = f2.hpText._aetherInk
+	check(ink ~= nil, "the health number is coloured by token")
+	check(not same(c[ink] or c.text, c.semanticGold),
+		"a member on 39% is not written in the warning gold (" ..
+		tostring(ink) .. ")")
+
+	-- IT DOES GO RED, though, when it is nearly over - which is the part of the
+	-- brief that was carrying real information.
+	_G.__units.party2.hp = 100
+	fire("UNIT_HEALTH", "party2")
+	check(f2.hpText._aetherInk == "danger",
+		"and it does go red at a tenth (" ..
+		tostring(f2.hpText._aetherInk) .. ")")
+	_G.__units.party2.hp = 386
+	fire("UNIT_HEALTH", "party2")
+end)
+
+section("party: a slot that empties does not move the others", function()
+	local PF = A:GetModule("partyframes")
+	local f2, f3 = PF.frames[2], PF.frames[3]
+
+	-- FIXED SLOTS, and this is the reason for them. Re-anchoring a frame with a
+	-- secure child is refused in combat, and somebody dropping group mid-pull
+	-- is exactly when a growing stack would want to re-anchor. So a slot that
+	-- empties leaves a gap, and every other capsule stays where it was put.
+	local _, _, _, _, beforeY = f3:GetPoint()
+	_G.__units.party2.exists = false
+	fire("GROUP_ROSTER_UPDATE")
+	check(not f2.glass:IsShown(), "an empty slot draws nothing")
+	local _, _, _, _, afterY = f3:GetPoint()
+	check(afterY == beforeY,
+		"and the capsule below it has not moved (" ..
+		tostring(beforeY) .. " -> " .. tostring(afterY) .. ")")
+	_G.__units.party2.exists = true
+	fire("GROUP_ROSTER_UPDATE")
+	check(f2.glass:IsShown(), "and it comes back into its own slot")
+
+	-- NOT IN A FIGHT. SetSize on a frame carrying a secure button is refused
+	-- while the lockdown is on, so a config change waits - it is worth nothing
+	-- to anybody mid-pull anyway.
+	-- A ROSTER CHANGE MID-FIGHT. Somebody dying, releasing or dropping
+	-- group is exactly when a stack that re-flowed would want to
+	-- re-anchor, and exactly when the client refuses. Fixed slots mean
+	-- there is nothing to re-anchor, so this is a no-op rather than four
+	-- blocked calls and a frame left where it fell.
+	_G.__inCombat = true
+	local blocked = _G.__blocked
+	_G.__units.party3.exists = false
+	fire("GROUP_ROSTER_UPDATE")
+	check(_G.__blocked == blocked,
+		"a member leaving mid-fight blocks nothing (" ..
+		(_G.__blocked - blocked) .. " refused calls)")
+	_G.__units.party3.exists = true
+	fire("GROUP_ROSTER_UPDATE")
+
+	local w = A.Config:Module("partyframes").width
+	A.Config:Module("partyframes").width = 400
+	PF:OnConfigChanged()
+	check(math.abs(PF.frames[1]:GetWidth() - w) < 0.5,
+		"a width change in combat is not applied, rather than erroring (" ..
+		tostring(PF.frames[1]:GetWidth()) .. ")")
+	_G.__inCombat = false
+	PF:OnConfigChanged()
+	check(math.abs(PF.frames[1]:GetWidth() - 400) < 0.5,
+		"and lands the moment the fight is over")
+	A.Config:Module("partyframes").width = w
+	PF:OnConfigChanged()
+
+	A:SetModuleEnabled("partyframes", false)
+	check(not PF.stack:IsShown(), "switching it off takes the stack away")
+	check(not PF.frames[1].click:IsShown(),
+		"and the click buttons with it")
+	check(_G.__unitWatched[PF.frames[1].click] == nil,
+		"with the unit watch OFF, not just the button hidden - the state"
+		.. " driver owns that visibility and would put it straight back,"
+		.. " and a button you cannot see still steals your target")
 end)
 
 print("== movers ==")
@@ -12889,6 +13175,53 @@ section("conveniences: repairing spends money, so it says so", function()
 
 	c.autoRepair = false
 	R.cost = 0
+end)
+
+section("options: every page has a place of its own", function()
+	-- TWO PAGES ON THE SAME NUMBER is not an error and does not look like one:
+	-- AceConfig sorts by order and breaks the tie however it likes, so a page
+	-- inserted in the middle silently swaps places with its neighbour on some
+	-- runs and not others. Which is precisely what inserting one just did.
+	local tree = A.Options:Build()
+	local seen, clash = {}, nil
+	for key, node in pairs(tree.args or {}) do
+		local o = node and node.order
+		if type(o) == "number" then
+			if seen[o] then clash = clash or (key .. " and " .. seen[o] .. " are both " .. o) end
+			seen[o] = key
+		end
+	end
+	check(not clash, "no two pages share an order (" .. tostring(clash) .. ")")
+
+	-- AND EVERY MODULE IS REACHABLE FROM SOMEWHERE IN IT. A module with a
+	-- config table and no control anywhere is one a player cannot switch on,
+	-- and it ships looking exactly like a module that does not work. This one
+	-- nearly went out that way.
+	--
+	-- Reachability, not a page each: five modules share the "The game's own"
+	-- page and are perfectly reachable there. So the tree is walked for the
+	-- config paths its controls actually write to, which is the same question
+	-- asked without assuming the shape of the answer.
+	local reached = {}
+	local function walk(node)
+		if type(node) ~= "table" then return end
+		local path = node.arg and node.arg.path
+		if type(path) == "table" and path[1] == "modules" and path[2] then
+			reached[path[2]] = true
+		end
+		for _, child in pairs(node.args or {}) do walk(child) end
+	end
+	walk(tree)
+
+	local unreachable = {}
+	for name in pairs(A.Config.defaults.profile.modules or {}) do
+		if not reached[name] then unreachable[#unreachable + 1] = name end
+	end
+	table.sort(unreachable)
+	check(#unreachable == 0,
+		"every module with settings can be reached from the panel (" ..
+		(#unreachable > 0 and table.concat(unreachable, ", ") or "all of them")
+		.. ")")
 end)
 
 print("== options tree ==")

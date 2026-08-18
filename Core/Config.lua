@@ -113,6 +113,23 @@ Config.defaults = {
 		},
 
 		modules = {
+			-- The party: four capsules in fixed slots, dragged as one.
+			--
+			-- OFF by default. It replaces frames the player already has and
+			-- has arranged around, and turning somebody's party frames off
+			-- without being asked is not a default, it is a surprise.
+			partyframes = {
+				enabled     = false,
+				-- 8 pad + 38 pip + 10 + 170 bars + 12 + 40 readout + 10 + 22
+				-- role + 18 pad
+				width       = 328,
+				height      = 52,
+				gap         = 12,
+				barWidth    = 170,
+				showPower   = true,
+				clickTarget = true,
+			},
+
 			unitframes = {
 				-- The pet capsule: the same shape as the other two at a size of
 				-- its own, because a pet is a thing you glance at rather than
