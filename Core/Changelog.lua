@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.14.1",
+		date    = "2026-08-18",
+		lines   = {
+			"The login message says where to get help: discord.gg/drveoj.",
+		},
+	},
+	{
 		version = "0.14.0",
 		date    = "2026-08-18",
 		lines   = {
