@@ -3085,9 +3085,50 @@ do
 			tex:SetTexture("Interface\\ItemTextFrame\\Parchment")
 			_G[n] = tex
 		end
-		_G.ItemTextPageText = it:CreateFontString(nil, "ARTWORK")
-		_G.ItemTextPageText:SetFont("Fonts\\MORPHEUS.TTF", 14, "")
-		_G.ItemTextPageText:SetTextColor(0.13, 0.09, 0.05, 1)
+		-- THE PAGE IS A SimpleHTML, NOT A FontString, and that distinction is
+		-- the whole of why the book reader's dresser threw. It holds a font PER
+		-- TEXT TYPE - P, H1, H2, H3 - so GetFont, SetFont and SetTextColor all
+		-- take the type as their first argument, and calling them the
+		-- FontString way is an outright error rather than a no-op.
+		--
+		-- The mock had it as a FontString, so every version of the dresser
+		-- looked correct in here while throwing in the game.
+		do
+			local html = it:CreateFontString(nil, "ARTWORK")
+			html.__objectType = "SimpleHTML"
+			function html:GetObjectType() return "SimpleHTML" end
+			html.__fonts, html.__colors = {}, {}
+			function html:GetFont(kind)
+				if type(kind) ~= "string" then
+					fail("bad argument #1 to GetFont on a SimpleHTML - it takes a"
+						.. " text type")
+					return nil
+				end
+				local f = self.__fonts[kind]
+				if not f then return "Fonts\\MORPHEUS.TTF", 14, "" end
+				return f[1], f[2], f[3]
+			end
+			function html:SetFont(kind, file, size, flags)
+				if type(kind) ~= "string" then
+					fail("bad argument #1 to SetFont on a SimpleHTML")
+					return
+				end
+				self.__fonts[kind] = { file, size, flags }
+			end
+			function html:SetTextColor(kind, r, g, b, a)
+				if type(kind) ~= "string" then
+					fail("bad argument #1 to SetTextColor on a SimpleHTML")
+					return
+				end
+				self.__colors[kind] = { r, g, b, a }
+			end
+			function html:GetTextColor(kind)
+				local c = self.__colors[kind or "P"]
+				if not c then return 0.13, 0.09, 0.05, 1 end
+				return c[1], c[2], c[3], c[4]
+			end
+			_G.ItemTextPageText = html
+		end
 		_G.ItemTextTitleText = it:CreateFontString(nil, "OVERLAY")
 		_G.ItemTextCurrentPage = it:CreateFontString(nil, "OVERLAY")
 		_G.ItemTextScrollFrame = CreateFrame("ScrollFrame", "ItemTextScrollFrame", it)
@@ -10633,6 +10674,20 @@ section("panels: the postbox, the book and the trade skills", function()
 	check(r and r > 0.5,
 		"and its words are lifted off the near-black they were printed in (" ..
 		string.format("%.2f", r or 0) .. ")")
+
+	-- EVERY TEXT TYPE IT HAS, not just the body. A letter's headings are a
+	-- SimpleHTML's H1 to H3 and they are printed in the same near-black -
+	-- "Horde Conscription Registration" at the top of a recruitment letter
+	-- is one, and it stayed dark while the paragraphs came right.
+	local darkTypes = {}
+	for _, kind in ipairs({ "P", "H1", "H2", "H3" }) do
+		local hr = select(1, _G.ItemTextPageText:GetTextColor(kind))
+		if not hr or hr < 0.5 then darkTypes[#darkTypes + 1] = kind end
+	end
+	check(#darkTypes == 0,
+		"and so are its headings (" ..
+		(#darkTypes > 0 and table.concat(darkTypes, ",") or "all lifted")
+		.. ")")
 
 	-- The letter you are writing is on the same paper.
 	local pane = _G.SendMailFrame

@@ -740,8 +740,47 @@ function Reskin.Ink(fs, colour)
 	if inked ~= text then fs:SetText(inked) end
 end
 
+--- A SimpleHTML is not a FontString, whatever it looks like.
+--
+--  It holds a font PER TEXT TYPE - P, H1, H2, H3 - so GetFont and SetFont
+--  and SetTextColor all take the type as their first argument, and calling
+--  them the FontString way is an outright error rather than a no-op:
+--  "bad argument #1 to GetFont". That threw inside the book reader's
+--  dresser and took the rest of the window with it.
+--
+--  The page of a quest item is one of these, which is why it is worth
+--  knowing about at all.
+local HTML_TYPES = { "P", "H1", "H2", "H3" }
+
+local function IsSimpleHTML(fs)
+	return fs.GetObjectType and fs:GetObjectType() == "SimpleHTML"
+end
+
+--- Our face and our ink on every text type it has.
+function Reskin.SimpleHTML(fs, style, lighten)
+	if not fs or not IsSimpleHTML(fs) then return false end
+
+	for _, kind in ipairs(HTML_TYPES) do
+		local ok, file, size, flags = pcall(fs.GetFont, fs, kind)
+		if ok and type(size) == "number" and size > 0 then
+			local want = A.Media and A.Media.FontFor and A.Media:FontFor(style)
+			if want then pcall(fs.SetFont, fs, kind, want, size, flags) end
+		end
+		if lighten then
+			-- No reading first. GetTextColor on one of these answers for a
+			-- type too, and a page printed on paper is dark in every type it
+			-- has - there is nothing here that was coloured to mean
+			-- something, the way a gold quest heading is.
+			pcall(fs.SetTextColor, fs, kind, lighten[1], lighten[2], lighten[3],
+				lighten[4] or 1)
+		end
+	end
+	return true
+end
+
 function Reskin.Font(fs, style, lighten)
 	if not fs or not fs.GetFont or not fs.SetFont then return end
+	if Reskin.SimpleHTML(fs, style, lighten) then return end
 
 	local _, size = fs:GetFont()
 	if type(size) == "number" and size > 0 then

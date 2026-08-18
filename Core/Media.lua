@@ -509,6 +509,17 @@ local FALLBACK = [[Fonts\FRIZQT__.TTF]]
 --- Apply a named style from Media.style to a FontString OR a font object.
 --  Falls back to the game font if the TTF fails to load, so a bad install
 --  degrades to "ugly" instead of "invisible text".
+--- The FILE a style is drawn in, without touching anything.
+--
+--  SetFont below is written for a FontString. A SimpleHTML holds a font
+--  per text type and takes the type as its first argument, so it needs the
+--  path and the size rather than a widget to set them on.
+function Media:FontFor(styleName)
+	local style = Media.style[styleName] or Media.style.unitSub
+	return Media.font[style[1]] or Media.font.regular,
+		math.floor((tonumber(style[2]) or 12) + 0.5), style[3]
+end
+
 function Media:SetFont(fontString, styleName, sizeOverride)
 	local style = Media.style[styleName] or Media.style.unitSub
 	local path  = Media.font[style[1]] or Media.font.regular
