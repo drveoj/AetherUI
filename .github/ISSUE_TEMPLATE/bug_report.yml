@@ -1,0 +1,157 @@
+name: Bug report
+description: Something in AetherUI does the wrong thing.
+title: "[bug] "
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One report, one problem. A report with three bugs in it gets one of them
+        fixed and then closed.
+
+        Before you start: `/reload` with **only AetherUI enabled** and see if it
+        still happens. That single answer decides whether this is our bug or an
+        interaction, and it is the first thing we would have to ask you.
+
+  - type: input
+    id: summary
+    attributes:
+      label: What happens
+      description: One line. What you saw, not what you think caused it.
+      placeholder: Opening the tracker's row menu prints a red [ERROR] line to chat.
+    validations:
+      required: true
+
+  - type: input
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: >
+        One line. Obvious to you, not to us - "the menu opens silently" and
+        "the menu shows the quest greyed out" are different bugs.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where
+      description: Best guess is fine. "Don't know" is a real answer.
+      options:
+        - Don't know
+        - Unit frames
+        - Action bars
+        - Auras / buffs
+        - Quest tracker
+        - Quest log
+        - Bags
+        - Minimap
+        - XP bar
+        - Chat
+        - Tooltips
+        - Nameplates
+        - Popups / static dialogs
+        - Party frames
+        - Fonts
+        - Menus
+        - Options panel
+        - Conveniences
+        - Panels (skinned Blizzard windows)
+        - Timers
+        - Zen
+        - Toolbox
+        - In-flight console (IFEC)
+        - Movers / positioning
+        - Skin, colours, glass
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >
+        Numbered, starting from a fresh `/reload`, ending at the wrong result.
+        If you cannot get it to happen again on purpose, say so - that is
+        useful information and not a reason to skip filing.
+      value: |
+        1. `/reload`
+        2.
+        3.
+        4. Wrong result:
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often
+      description: >
+        This matters more than it looks. "Every time" and "once per session"
+        point at completely different causes.
+      options:
+        - Every time, reliably
+        - Most times
+        - Once per session, then not again
+        - Rarely / can't predict it
+        - Happened once, never since
+    validations:
+      required: true
+
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnostics
+      description: >
+        Run `/aether errors diag`, then Ctrl+A, Ctrl+C in the box that opens,
+        and paste it here. That box is selectable; the chat frame is not. It
+        carries the addon version, skin, scale, client build and which modules
+        are on - all of the environment questions, answered at once.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error text
+      description: >
+        If a Lua error appeared, paste it verbatim from the same box, stack and
+        all. Not a paraphrase, and not a screenshot of text - we need to search
+        it. Leave blank if there was no error.
+      render: text
+    validations:
+      required: false
+
+  - type: dropdown
+    id: isolated
+    attributes:
+      label: With only AetherUI enabled
+      options:
+        - Still happens
+        - Goes away (other addons are involved)
+        - Haven't tried
+    validations:
+      required: true
+
+  - type: input
+    id: others
+    attributes:
+      label: Other addons involved
+      description: >
+        Only if it goes away when they are off. Names **and versions** - a bug
+        that reproduces against Questie 11.33.2 may not against 11.34.
+      placeholder: Questie 11.33.2, TomTom v4.3.8-release
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        Screenshots are welcome for anything visual - layout, colour, a frame
+        in the wrong place. For text, use the box above instead.
+    validations:
+      required: false

@@ -443,6 +443,309 @@ function PF:Layout()
 end
 
 -- ---------------------------------------------------------------------------
+-- the controls panel
+--
+-- What the client's own Party Members flyout does - assign a target mark, call
+-- a ready check, start a countdown, poll for roles, turn the party into a raid
+-- - in this interface's glass.
+--
+-- NOT SECURE, and it does not need to be: none of these four is a protected
+-- call on this game version. That is worth saying because every other frame
+-- near a unit in this addon is secure and the habit is catching.
+-- ---------------------------------------------------------------------------
+
+local PANEL_W   = 320
+local WELL      = 34
+local WELL_GAP  = 6
+local ROW_H     = 30
+local MARKERS   = 8
+
+--- How long a countdown runs, and the choices offered.
+--
+--  Capped by the client's own constant rather than by a number of ours:
+--  C_PartyInfo.DoCountdown refuses anything longer and says nothing about it.
+local COUNTDOWNS = { 5, 10, 15, 30 }
+
+local function MaxCountdown()
+	local k = _G.Constants and _G.Constants.PartyCountdownConstants
+	return (k and k.MaxCountdownSeconds) or 60
+end
+
+--- Who may press what.
+--
+--  READY CHECK, ROLE CHECK and CONVERT are the leader's. The client gates the
+--  first itself; the other two it simply ignores, which is worse - a button
+--  that does nothing and does not say so. So they are HIDDEN for a member
+--  rather than dimmed, and the panel is shorter. A greyed row is a row you
+--  keep trying.
+--
+--  COUNTDOWN IS NOT ON THE LIST, and that is the client's decision rather than
+--  ours: its own slash command gates ready-check on being leader and does not
+--  gate countdown at all.
+local function IsLeader()
+	return UnitIsGroupLeader and UnitIsGroupLeader("player") or false
+end
+
+local ACTIONS = {
+	{
+		key = "ready", label = READY_CHECK or "Ready Check",
+		glyph = "tick", token = "friendly", primary = true, leader = true,
+		run = function()
+			if C_PartyInfo and C_PartyInfo.DoReadyCheck then C_PartyInfo.DoReadyCheck() end
+		end,
+	},
+	{
+		key = "countdown", label = "Countdown", glyph = "zen", token = "text",
+		run = function(self)
+			local n = math.min(self.seconds or 10, MaxCountdown())
+			if C_PartyInfo and C_PartyInfo.DoCountdown then C_PartyInfo.DoCountdown(n) end
+		end,
+	},
+	{
+		key = "roles", label = "Role Check", glyph = "dps", token = "text",
+		leader = true,
+		run = function()
+			if InitiateRolePoll then InitiateRolePoll() end
+		end,
+	},
+	{
+		-- THE GOLD ONE, and the only one here that cannot be undone: a raid
+		-- cannot be turned back into a party. Semantic gold says so, and the
+		-- client's own confirm dialog is used rather than a second one of ours.
+		key = "raid", label = "Convert to Raid", glyph = "gear",
+		token = "semanticGold", leader = true,
+		run = function()
+			if C_PartyInfo and C_PartyInfo.ConfirmConvertToRaid then
+				C_PartyInfo.ConfirmConvertToRaid()
+			elseif C_PartyInfo and C_PartyInfo.ConvertToRaid then
+				C_PartyInfo.ConvertToRaid()
+			end
+		end,
+	},
+}
+
+--- One target mark well.
+--
+--  THE MARK GOES ON YOUR TARGET, which is the fact the brief never says and
+--  the one that decides how this behaves. SetRaidTarget takes a unit, and the
+--  unit is always "target" - so with nothing targeted every well here is inert,
+--  and the ring showing which mark is 'active' is really showing what your
+--  current target is wearing. Both follow the target rather than the party.
+local function BuildWell(panel, index)
+	local b = W.CreateButton(panel, { corner = 10, fill = "cardBg", edge = "cardEdge" })
+	b:SetSize(WELL, WELL)
+	b.index = index
+
+	if index then
+		local icon = b:CreateTexture(nil, "OVERLAY")
+		icon:SetSize(WELL - 12, WELL - 12)
+		icon:SetPoint("CENTER", b, "CENTER", 0, 0)
+		if SetRaidTargetIconTexture then SetRaidTargetIconTexture(icon, index) end
+		b.icon = icon
+	else
+		-- Clear. Its own label rather than a ninth icon, because there is no
+		-- ninth mark and a crossed-out one would read as a mark you can set.
+		local label = W.Text(b, "tiny", "CENTER")
+		label:SetPoint("CENTER", b, "CENTER", 0, 0)
+		label:SetText(_G.NONE or "Clear")
+		b.label = label
+	end
+
+	b:SetScript("OnClick", function(self)
+		if not UnitExists("target") or not SetRaidTarget then return end
+		SetRaidTarget("target", self.index or 0)
+		PF:RefreshPanel()
+	end)
+	b:SetScript("OnEnter", function(self) W.SetButtonState(self, self.__on, true) end)
+	b:SetScript("OnLeave", function(self) W.SetButtonState(self, self.__on, false) end)
+	return b
+end
+
+--- One action row.
+local function BuildRow(panel, spec)
+	local b = W.CreateButton(panel, { corner = 12,
+		fill = spec.primary and "rowSel" or "glassSoft", edge = "cardEdge" })
+	b:SetHeight(ROW_H)
+	b.spec = spec
+
+	local glyph = b:CreateTexture(nil, "OVERLAY")
+	glyph:SetSize(14, 14)
+	glyph:SetPoint("LEFT", b, "LEFT", 10, 0)
+	A.Media:SetIcon(glyph, spec.glyph)
+	W.Tint(glyph, A.Palette.c[spec.token] or A.Palette.c.text)
+	b.glyph = glyph
+
+	local label = W.Text(b, "qlRow", "LEFT")
+	label:SetPoint("LEFT", glyph, "RIGHT", 10, 0)
+	label:SetText(spec.label)
+	b.label = label
+
+	-- The inline duration picker, on the countdown row only. A picker rather
+	-- than four rows: the number is a preference you set once.
+	--
+	-- ITS OWN BUTTON, because a FontString cannot be clicked - and it has to
+	-- swallow the click, or picking 30s would also start a 10s countdown on
+	-- the way past.
+	if spec.key == "countdown" then
+		b.seconds = 10
+		local pick = W.CreateButton(b, { corner = 6, fill = "glassSoft",
+			edge = "cardEdge" })
+		pick:SetSize(46, 18)
+		pick:SetPoint("RIGHT", b, "RIGHT", -10, 0)
+		pick.text = W.Text(pick, "tiny", "CENTER")
+		pick.text:SetPoint("CENTER", pick, "CENTER", 0, 0)
+		pick:SetScript("OnClick", function()
+			local entries = {}
+			for _, n in ipairs(COUNTDOWNS) do
+				if n <= MaxCountdown() then
+					entries[#entries + 1] = {
+						text = n .. "s",
+						func = function() b.seconds = n; PF:RefreshPanel() end,
+					}
+				end
+			end
+			W.Menu(pick, entries)
+		end)
+		b.pick = pick
+	end
+
+	b:SetScript("OnClick", function(self) spec.run(self) end)
+	b:SetScript("OnEnter", function(self) W.SetButtonState(self, false, true) end)
+	b:SetScript("OnLeave", function(self) W.SetButtonState(self, false, false) end)
+	return b
+end
+
+function PF:BuildPanel()
+	if self.panel then return self.panel end
+
+	local p = Glass.CreatePanel(UIParent, {
+		corner = 20, fill = "dialogFill", edge = "glassEdgeHi",
+		shadow = A.db.profile.glass.shadow,
+	})
+	p:SetWidth(PANEL_W)
+	p:SetPoint("LEFT", UIParent, "LEFT", 40, 0)
+	p:Hide()
+	self.panel = p
+
+	-- header
+	local title = W.Text(p, "qlHeading", "LEFT")
+	title:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -14)
+	title:SetText(_G.PARTY or "Party")
+	p.title = title
+
+	local count = W.Text(p, "tiny", "LEFT")
+	count:SetPoint("LEFT", title, "RIGHT", 8, 0)
+	p.count = count
+
+	local rule = W.Divider(p)
+	rule:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -40)
+	rule:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, -40)
+
+	local label = W.Text(p, "tiny", "LEFT")
+	label:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -50)
+	label:SetText((_G.RAID_TARGET_ICON or "Target markers"):upper())
+	W.Color(label, A.Palette.c.textDim)
+
+	-- FIVE ACROSS, TWO DOWN: eight marks and a Clear spanning the last two
+	-- cells, which is the brief's grid and also the one that fits 320 wide.
+	p.wells = {}
+	local x0, y0 = 16, -70
+	for i = 1, MARKERS do
+		local b = BuildWell(p, i)
+		local col, row = (i - 1) % 5, math.floor((i - 1) / 5)
+		b:SetPoint("TOPLEFT", p, "TOPLEFT",
+			x0 + col * (WELL + WELL_GAP), y0 - row * (WELL + WELL_GAP))
+		p.wells[i] = b
+	end
+
+	local clear = BuildWell(p, nil)
+	clear:SetWidth(WELL * 2 + WELL_GAP)
+	clear:SetPoint("TOPLEFT", p, "TOPLEFT",
+		x0 + 3 * (WELL + WELL_GAP), y0 - (WELL + WELL_GAP))
+	p.clear = clear
+
+	local rule2 = W.Divider(p)
+	rule2:SetPoint("TOPLEFT", p, "TOPLEFT", 14, y0 - 2 * (WELL + WELL_GAP) - 8)
+	rule2:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, y0 - 2 * (WELL + WELL_GAP) - 8)
+	p.rule2 = rule2
+
+	p.rows = {}
+	for i, spec in ipairs(ACTIONS) do
+		local b = BuildRow(p, spec)
+		b:SetPoint("LEFT", p, "LEFT", 14, 0)
+		b:SetPoint("RIGHT", p, "RIGHT", -14, 0)
+		p.rows[i] = b
+	end
+
+	self:RefreshPanel()
+	return p
+end
+
+--- Everything about the panel that can change while it is open.
+--
+--  ONE FUNCTION, called on every event that touches it. The rows that hide for
+--  a member change the panel's height, so laying them out and sizing the panel
+--  cannot be two places that both think they own the number.
+function PF:RefreshPanel()
+	local p = self.panel
+	if not p then return end
+	local c = A.Palette.c
+
+	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
+	p.count:SetText(n > 0 and (n .. "/" .. n) or "")
+	W.Color(p.count, c.textDim)
+
+	-- THE WELLS FOLLOW YOUR TARGET, not the party. Inert with nothing
+	-- targeted, because SetRaidTarget has no unit to act on - and a well that
+	-- looks pressable and does nothing is the worse of the two.
+	local hasTarget = UnitExists and UnitExists("target")
+	local on = hasTarget and GetRaidTargetIndex and GetRaidTargetIndex("target")
+	-- THE DIM GOES ON LAST. A well IS its own glass surface, so
+	-- W.SetButtonState writes its alpha too - setting the dim first and the
+	-- state second put every well straight back to full, and the grid looked
+	-- ready when there was nothing to mark.
+	for i, b in ipairs(p.wells) do
+		b.__on = (on == i)
+		W.SetButtonState(b, b.__on, false)
+		b:EnableMouse(hasTarget and true or false)
+		b:SetAlpha(hasTarget and 1 or 0.4)
+	end
+	p.clear:SetAlpha(hasTarget and 1 or 0.4)
+	p.clear:EnableMouse(hasTarget and true or false)
+
+	-- HIDDEN, NOT DIMMED, and then the panel shortens. A greyed row is a row
+	-- you keep trying; a row that is not there is a question you do not ask.
+	local leader = IsLeader()
+	local y = -160
+	local shown = 0
+	for _, b in ipairs(p.rows) do
+		if b.spec.leader and not leader then
+			b:Hide()
+		else
+			b:Show()
+			b:SetPoint("TOP", p, "TOP", 0, y)
+			y = y - (ROW_H + 6)
+			shown = shown + 1
+			if b.pick then
+				b.pick.text:SetText((b.seconds or 10) .. "s")
+				W.Color(b.pick.text, c.textDim)
+			end
+		end
+	end
+	p:SetHeight(160 + shown * (ROW_H + 6) + 10)
+end
+
+function PF:TogglePanel()
+	local p = self:BuildPanel()
+	if p:IsShown() then
+		p:Hide()
+	else
+		self:RefreshPanel()
+		p:Show()
+	end
+	return p:IsShown()
+end
+-- ---------------------------------------------------------------------------
 -- lifecycle
 -- ---------------------------------------------------------------------------
 
@@ -468,6 +771,7 @@ function PF:RegisterEvents()
 	-- through the same sweep rather than through four handlers that would
 	-- drift apart.
 	local function sweep()
+		PF:RefreshPanel()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end
 	-- Blizzard's frames come back with the roster and cannot be sent away
@@ -480,6 +784,11 @@ function PF:RegisterEvents()
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED",  sweepAndHide)
 	A:RegisterEvent(self, "PARTY_LEADER_CHANGED",  sweep)
 	A:RegisterEvent(self, "RAID_TARGET_UPDATE",    sweep)
+	
+	-- The panel's marker grid follows your TARGET, so it moves on an event
+	-- none of the capsules care about.
+	local function panel() PF:RefreshPanel() end
+	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", panel)
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", sweepAndHide)
 
 	-- A member coming back online does not announce itself as a unit event on

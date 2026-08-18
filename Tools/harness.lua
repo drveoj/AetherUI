@@ -5057,8 +5057,55 @@ function UnitGroupRolesAssigned(u)
 	return _G.__roles[u] or DEFAULT_ROLE
 end
 
+-- The party controls the client offers, and WHO IT LETS PRESS THEM.
+--
+-- DoReadyCheck is gated by the client's own slash command on being leader or
+-- assistant; DoCountdown is not gated at all. InitiateRolePoll and
+-- ConvertToRaid are simply ignored for a member - no error, nothing said,
+-- which is worse than a refusal and is why those rows are hidden rather than
+-- greyed.
+_G.__partyCalls = { ready = 0, countdown = 0, roles = 0, raid = 0, marks = 0 }
+
+C_PartyInfo = C_PartyInfo or {}
+function C_PartyInfo.DoReadyCheck() _G.__partyCalls.ready = _G.__partyCalls.ready + 1 end
+function C_PartyInfo.DoCountdown(n)
+	_G.__partyCalls.countdown = _G.__partyCalls.countdown + 1
+	_G.__partyCalls.seconds = n
+end
+function C_PartyInfo.ConvertToRaid() _G.__partyCalls.raid = _G.__partyCalls.raid + 1 end
+--- The CONFIRMING one, which is a different call and the one to use: turning a
+--- party into a raid cannot be undone.
+function C_PartyInfo.ConfirmConvertToRaid()
+	_G.__partyCalls.raid = _G.__partyCalls.raid + 1
+	_G.__partyCalls.confirmed = true
+end
+function InitiateRolePoll() _G.__partyCalls.roles = _G.__partyCalls.roles + 1 end
+
+--- The cap the client enforces on a countdown, and says nothing about.
+Constants = Constants or {}
+Constants.PartyCountdownConstants = { MaxCountdownSeconds = 60 }
+
 _G.__raidTargets = {}
 function GetRaidTargetIndex(u) return _G.__raidTargets[u] end
+
+--- Marking acts on a UNIT, and ZERO is how a mark is taken off.
+--
+--  The index is REQUIRED. The client's own usage is SetRaidTarget(unit,
+--  index) and leaving it out is an error, not a clear - so a Clear button
+--  that passed nothing would raise rather than quietly leaving the mark, and
+--  a mock that folded nil into 0 would call that correct.
+function SetRaidTarget(u, index)
+	_G.__partyCalls.marks = _G.__partyCalls.marks + 1
+	if type(index) ~= "number" then
+		fail("SetRaidTarget(unit, index) needs an index - got " .. tostring(index))
+		return
+	end
+	if index == 0 then
+		_G.__raidTargets[u] = nil
+	else
+		_G.__raidTargets[u] = index
+	end
+end
 
 --- The game's own icon sheet. Sets a texture AND a texcoord, both of which
 --  an addon that drew its own marker would get wrong - so the mock records
@@ -27021,6 +27068,113 @@ end)
 -- of the mock's pool, and the recycling checks above are about a plate
 -- being handed out FRESH the first time - so a section that spawns one
 -- earlier quietly spends the case they exist to make.
+section("party controls: the marks go on your target", function()
+	local PF = A:GetModule("partyframes")
+	A:SetModuleEnabled("partyframes", true)
+	-- An earlier section takes the target away entirely, and a party control
+	-- that acts on your target has nothing to act on without one.
+	_G.__units.target = _G.__units.target or {
+		exists = true, name = "Savannah Prowler", level = 16,
+		creature = "Beast", hp = 640, hpMax = 1000, reaction = 2,
+		power = 0, powerMax = 0, powerType = 0, powerToken = "MANA",
+	}
+	local p = PF:BuildPanel()
+	check(p ~= nil, "the controls panel builds")
+	check(#p.wells == 8, "eight marks (" .. #p.wells .. ")")
+	check(p.clear ~= nil, "and a Clear that is not a ninth mark")
+
+	-- THE MARK GOES ON YOUR TARGET, which the brief never says and which
+	-- decides how the whole grid behaves: SetRaidTarget takes a unit and the
+	-- unit is always "target". So with nothing targeted every well is inert,
+	-- and a well that looks pressable and does nothing is the worse of the two.
+	_G.__units.target.exists = false
+	PF:RefreshPanel()
+	local before = _G.__partyCalls.marks
+	p.wells[1]:GetScript("OnClick")(p.wells[1])
+	check(_G.__partyCalls.marks == before,
+		"with no target, pressing a mark asks the client for nothing")
+	check(p.wells[1]:GetAlpha() < 1,
+		"and the grid says so rather than looking ready (" ..
+		tostring(p.wells[1]:GetAlpha()) .. ")")
+
+	_G.__units.target.exists = true
+	PF:RefreshPanel()
+	p.wells[3]:GetScript("OnClick")(p.wells[3])
+	check(GetRaidTargetIndex("target") == 3,
+		"with a target, a mark lands on it (" ..
+		tostring(GetRaidTargetIndex("target")) .. ")")
+	check(p.wells[3].__on == true,
+		"and the ring shows which one it is wearing")
+	check(p.wells[1].__on == false, "and only that one")
+
+	-- CLEAR IS INDEX 0, not a missing argument. SetRaidTarget with nothing
+	-- passed leaves the mark exactly where it was.
+	p.clear:GetScript("OnClick")(p.clear)
+	check(GetRaidTargetIndex("target") == nil,
+		"Clear takes it off (" .. tostring(GetRaidTargetIndex("target")) .. ")")
+end)
+
+section("party controls: what a member may press", function()
+	local PF = A:GetModule("partyframes")
+	local p = PF.panel
+	local calls = _G.__partyCalls
+	_G.__units.target = _G.__units.target
+		or { exists = true, hp = 1, hpMax = 1 }
+
+	-- HIDDEN, NOT DIMMED. The client gates ready-check itself, but simply
+	-- IGNORES a role poll or a convert from a member - no error, nothing said -
+	-- and a button that does nothing without saying so is a button you keep
+	-- pressing. So they are gone for a member and the panel is shorter.
+	_G.__units.player.leader = false
+	PF:RefreshPanel()
+	local shortH = p:GetHeight()
+	local hidden, visible = 0, 0
+	for _, b in ipairs(p.rows) do
+		if b:IsShown() then visible = visible + 1 else hidden = hidden + 1 end
+	end
+	check(hidden == 3 and visible == 1,
+		"a member sees one row of four (" .. visible .. " shown, " .. hidden ..
+		" hidden)")
+	check(p.rows[2]:IsShown(),
+		"and the one left is Countdown - the client does not gate that one")
+
+	_G.__units.player.leader = true
+	PF:RefreshPanel()
+	check(p:GetHeight() > shortH,
+		"the panel is taller for a leader (" .. p:GetHeight() .. " from " ..
+		shortH .. ")")
+
+	-- Each row calls the client, and the RIGHT call.
+	calls.ready, calls.countdown, calls.roles, calls.raid = 0, 0, 0, 0
+	p.rows[1]:GetScript("OnClick")(p.rows[1])
+	check(calls.ready == 1, "Ready Check reaches C_PartyInfo.DoReadyCheck")
+	p.rows[3]:GetScript("OnClick")(p.rows[3])
+	check(calls.roles == 1, "Role Check reaches InitiateRolePoll")
+
+	-- THE CONFIRMING CONVERT. A raid cannot be turned back into a party, and
+	-- the client has a call that asks first - using the other one is a group
+	-- somebody has changed for everybody by mis-clicking a row.
+	p.rows[4]:GetScript("OnClick")(p.rows[4])
+	check(calls.raid == 1, "Convert to Raid reaches the client")
+	check(calls.confirmed == true,
+		"through the call that ASKS first - it cannot be undone")
+
+	-- The countdown carries its own number, and the client's cap rather than
+	-- one of ours: DoCountdown refuses anything longer and says nothing.
+	p.rows[2].seconds = 10
+	p.rows[2]:GetScript("OnClick")(p.rows[2])
+	check(calls.countdown == 1 and calls.seconds == 10,
+		"Countdown runs for the number on its picker (" ..
+		tostring(calls.seconds) .. ")")
+	p.rows[2].seconds = 9999
+	p.rows[2]:GetScript("OnClick")(p.rows[2])
+	check(calls.seconds <= 60,
+		"and never longer than the client will take (" ..
+		tostring(calls.seconds) .. ")")
+	p.rows[2].seconds = 10
+
+	PF.panel:Hide()
+end)
 section("party: a diagnostic that answers the question", function()
 	local PF = A:GetModule("partyframes")
 	A:SetModuleEnabled("partyframes", true)

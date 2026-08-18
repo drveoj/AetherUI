@@ -1,0 +1,96 @@
+name: Feature request
+description: Something AetherUI doesn't do at all yet.
+title: "[feature] "
+labels: ["feature"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful feature requests describe a problem, not a solution.
+        Tell us what you are stuck with and we may find a better answer than the
+        one you had in mind - or discover that three people are stuck on the
+        same thing in different ways.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What are you trying to do that AetherUI makes hard or impossible?
+        Try to write this without naming the feature you want.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you had in mind
+      description: Your proposed solution, if you have one. It is fine to leave this blank.
+    validations:
+      required: false
+
+  - type: input
+    id: acceptance
+    attributes:
+      label: When would this be done?
+      description: >
+        One sentence, testable. Something we could put in front of you and you
+        would say yes, that is it.
+      placeholder: I can drag the tracker anywhere and it stays there through a zone change.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where it would live
+      options:
+        - Don't know
+        - Somewhere new
+        - Unit frames
+        - Action bars
+        - Auras / buffs
+        - Quest tracker
+        - Quest log
+        - Bags
+        - Minimap
+        - XP bar
+        - Chat
+        - Tooltips
+        - Nameplates
+        - Popups / static dialogs
+        - Party frames
+        - Fonts
+        - Menus
+        - Options panel
+        - Conveniences
+        - Panels (skinned Blizzard windows)
+        - Timers
+        - Zen
+        - Toolbox
+        - In-flight console (IFEC)
+        - Movers / positioning
+        - Skin, colours, glass
+    validations:
+      required: true
+
+  - type: textarea
+    id: prior
+    attributes:
+      label: Does another addon already do this?
+      description: >
+        Not a disqualification - often the opposite. Naming it tells us exactly
+        what you mean and saves a long conversation about it.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        If you already know this needs a protected or restricted API, say so.
+        Classic Era says no to a lot of things in combat.
+    validations:
+      required: false

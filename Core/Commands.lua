@@ -1250,7 +1250,23 @@ handlers.quests = function(arg)
 	end
 end
 
-handlers.party = function()
+handlers.party = function(arg)
+	local PF = A:GetModule("partyframes")
+	
+	-- Bare /aether party opens the controls, because that is the thing a
+	-- player wants; the report is scaffolding and takes the sub-command.
+	-- Until the dock handle exists this is the only way in.
+	if arg ~= "diag" then
+		if not PF or not PF.enabled then
+			A:Print("party frames are switched off.")
+			return
+		end
+		local open = PF:TogglePanel()
+		A:Print("party controls " .. (open and A.Good("open") or A.Dim("closed"))
+			.. "  ·  " .. A.Hi("/aether party diag") .. " for the report")
+		return
+	end
+	
 	A:Print("party")
 	A.PartyDiag(function(fmt, ...)
 		A:Print(string.format(fmt, ...))

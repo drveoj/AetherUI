@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask on Discord
+    url: https://discord.gg/
+    about: >
+      Not sure whether it is a bug, or whether it is us at all? Ask first - it
+      is often faster, and someone may have hit it already.

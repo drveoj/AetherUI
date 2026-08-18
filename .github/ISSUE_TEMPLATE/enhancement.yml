@@ -1,0 +1,103 @@
+name: Enhancement
+description: Something AetherUI already does, but it should do it differently.
+title: "[enhancement] "
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when the thing exists and works - it just behaves in a way that
+        costs you something. If it is broken, file a bug instead. If it does not
+        exist at all, file a feature request.
+
+  - type: textarea
+    id: current
+    attributes:
+      label: What it does now
+      description: Precisely. Describe the behaviour, not your feelings about it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: wanted
+    attributes:
+      label: What it should do instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What the current behaviour costs you
+      description: >
+        In play, concretely. "I have to re-drag the tracker every time I zone"
+        is an argument. "It feels wrong" is not one we can act on, though it is
+        worth saying if that is honestly the whole of it.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: Default change or new option?
+      description: >
+        These have very different bars. Changing a default changes it for
+        everybody; a new option is a switch, a saved variable, a line in the
+        panel, and one more combination that has to keep working.
+      options:
+        - Change the default (I think everyone wants this)
+        - Add an option (I want it, others may not)
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where
+      options:
+        - Don't know
+        - Unit frames
+        - Action bars
+        - Auras / buffs
+        - Quest tracker
+        - Quest log
+        - Bags
+        - Minimap
+        - XP bar
+        - Chat
+        - Tooltips
+        - Nameplates
+        - Popups / static dialogs
+        - Party frames
+        - Fonts
+        - Menus
+        - Options panel
+        - Conveniences
+        - Panels (skinned Blizzard windows)
+        - Timers
+        - Zen
+        - Toolbox
+        - In-flight console (IFEC)
+        - Movers / positioning
+        - Skin, colours, glass
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: AetherUI version
+      description: Top line of `/aether errors diag`, or the Options panel.
+      placeholder: "0.13.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots or mockups help a lot for anything about layout or colour.
+    validations:
+      required: false
