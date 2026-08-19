@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.17.0",
+		date    = "2026-08-19",
+		lines   = {
+			"Your equipped bags and the keyring are in a drawer now. Shut, there is a slim handle on the bag window's right edge carrying a bag and a key with the number of each under them; click it and the drawer slides out. It remembers whether you left it open.",
+			"The Toolbox drawer no longer opens in three jumps - it slides. The party controls slide now too, where before they simply appeared.",
+			"The party controls' handle travels with them instead of staying stuck to the edge of the screen, which is how the Toolbox and the bag drawer have always worked.",
+			"Fixed: the party dock's handle never lit up under the cursor.",
+		},
+	},
+	{
 		version = "0.16.0",
 		date    = "2026-08-19",
 		lines   = {
