@@ -106,22 +106,23 @@ local function BuildRow(parent)
 	return row
 end
 
-local function BuildTab(parent, kind)
-	local t = W.CreateButton(parent, { corner = 6 })
+--- One of the drawer's filters. A TAB, not a button: it changes which of the
+--- library you are looking at rather than doing anything, and the interface
+--- draws that distinction the same way everywhere now - see W.Tab.
+local function BuildTab(parent, kind, rail)
+	local t = CreateFrame("Button", nil, parent)
 	t:SetHeight(TAB_H)
 	t:EnableMouse(true)
 	t.kind = kind
 
 	t.label = W.Text(t, "ifecCaption", "CENTER", "OVERLAY")
 	t.label:SetPoint("CENTER", t, "CENTER", 0, 0)
-	t.__aetherLabel = t.label
 
-	t:HookScript("OnEnter", function(self)
-		W.SetButtonState(self, self.__aetherSelected, true)
-	end)
-	t:HookScript("OnLeave", function(self)
-		W.SetButtonState(self, self.__aetherSelected, false)
-	end)
+	-- Its rail is above the list it filters, so the line and the mark are on
+	-- the bottom - the edge facing the thing they switch. The rail is handed
+	-- over rather than looked up: nothing here promises a tab is a child of
+	-- the frame that owns its rail, and on the spellbook it is not.
+	W.Tab(t, { edge = "TOP", label = t.label, rail = rail })
 	t:SetScript("OnClick", function(self)
 		Library.filter = self.kind
 		Library:Paint()
@@ -151,13 +152,20 @@ function Library:Build(host)
 	-- All once there is more than one. A tab onto an empty list is worse than no
 	-- tab, and with a single channel installed the whole row says nothing the
 	-- list does not already say, so it is not built at all.
+	-- The rail they stand on, above the list they filter - so its line and
+	-- their marks are on its bottom, the edge facing that list.
+	f.rail = W.TabRail(f, "TOP")
+	f.rail:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", -2, -8)
+	f.rail:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD_X, -(PAD_T + 18 + 8))
+	f.rail:SetHeight(TAB_H)
+
 	f.tabs = {}
 	for i, kind in ipairs({ "all", "podcast", "music", "gossip" }) do
-		local t = BuildTab(f, kind)
+		local t = BuildTab(f, kind, f.rail)
 		if i == 1 then
-			t:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", -2, -8)
+			t:SetPoint("BOTTOMLEFT", f.rail, "BOTTOMLEFT", 0, 0)
 		else
-			t:SetPoint("LEFT", f.tabs[i - 1], "RIGHT", 4, 0)
+			t:SetPoint("BOTTOMLEFT", f.tabs[i - 1], "BOTTOMRIGHT", 0, 0)
 		end
 		f.tabs[i] = t
 	end
@@ -290,8 +298,10 @@ function Library:PaintTabs()
 	local top = PAD_T + 18 + 8
 	if n < 2 then
 		for _, t in ipairs(f.tabs) do t:Hide() end
+		f.rail:Hide()
 		self.filter = "all"
 	else
+		f.rail:Show()
 		top = top + TAB_H + 8
 	end
 	f.list:ClearAllPoints()
@@ -324,7 +334,7 @@ function Library:PaintTabs()
 			prev = t
 
 			t.__aetherSelected = (self.filter == t.kind) or nil
-			W.SetButtonState(t, t.__aetherSelected, false)
+			W.TabState(t, t.__aetherSelected, false)
 		end
 	end
 	return true

@@ -979,6 +979,343 @@ function W.SkinButton(btn, opts)
 end
 
 -- ---------------------------------------------------------------------------
+-- tabs
+--
+-- ONE TAB LANGUAGE, and it is not the button's.
+--
+-- A tab is BARE TEXT ON A SHARED HAIRLINE. Only the one you are standing on
+-- carries anything: a 2px accent mark with a soft glow, sitting ON the
+-- hairline, always on the edge that touches the content the tab switches. No
+-- pill, no rim, no fill - nothing that reads as pressable.
+--
+-- That distinction is the whole point of the pattern. A BUTTON does a thing; a
+-- TAB changes which view of the same frame you are looking at, and telling the
+-- two apart at a glance is what this interface was failing at: every tabbed
+-- surface in it - the client's panels, the chat dock, the spellbook's schools,
+-- the console's library - had grown its own answer, and four of them were the
+-- same filled pill that Create, Send and Accept wear.
+--
+-- THE MARK BELONGS TO THE TAB, not to the rail, which is the one place this
+-- departs from the handoff's markup. A rail owning a sliding bar has to know
+-- where every tab is - and these tabs are Blizzard's: re-anchored, re-sized
+-- and re-parented by the client on every dock update and every tab click. A
+-- mark hung off the tab cannot be left behind by any of that. The handoff's
+-- slide between positions is optional in its own words, and this is what buys
+-- it: there is nothing to slide.
+--
+-- The ink is this interface's own three-step ladder rather than the deck's
+-- three literal alphas: textFaint for the tabs you are not on, textDim under
+-- the cursor, text for the one you are. Same ordering, and it follows a skin
+-- change on its own.
+-- ---------------------------------------------------------------------------
+
+-- The deck's numbers. A rail is FIXED: tabs give way, the frame never grows.
+W.TAB_RAIL_H = 38          -- a horizontal rail's height; tabs fill it
+W.TAB_RAIL_W = 52          -- a vertical icon rail's width
+
+-- What gives, and in what order, when a row stops fitting: the padding either
+-- side first, then a point off the lettering, and only then the words
+-- themselves. A label shortened to three dots tells you less than the word did,
+-- so it goes last and never without a tooltip carrying the whole of it.
+W.TAB_PADS = { 16, 14, 10 }
+
+-- TWO WASHES, and the whole point is that they are not the same wash.
+--
+-- `rowHover` is this interface's you-are-over-this fill, and both of these are
+-- struck from it so a skin change reaches both. HOVER is that fill at half;
+-- the RAIL's is a fraction of it - the deck says .07 and .04 against the same
+-- hue, and they were briefly the same number here, which drew the spellbook's
+-- whole school column looking permanently hovered.
+local TAB_WASH      = 0.5
+local TAB_RAIL_WASH = 0.28
+
+local TAB_MARK    = 2      -- the indicator's thickness
+local TAB_MARK_IN = 5      -- ...inset from each end of the tab it marks
+local TAB_GLOW    = 12     -- how far its bloom reaches across the rail
+local TAB_DOT     = 5
+
+--- Which edge of a rail faces the content it switches.
+--
+--  A rail along the BOTTOM of a panel has its hairline and its mark on its
+--  TOP, because that is the side the panel is on. Chat's rail is on top and
+--  everything mirrors. Getting this backwards draws a tab attached to the
+--  world rather than to its own window.
+local TAB_FACE = {
+	BOTTOM = "TOP", TOP = "BOTTOM", RIGHT = "LEFT", LEFT = "RIGHT",
+}
+
+local TAB_VERTICAL = { LEFT = true, RIGHT = true }
+
+--- The line a row of tabs sits on.
+--
+--  One per host, kept on the frame, so a second call is a re-layout rather
+--  than a second rail. Sizing and placing it is the caller's: only the caller
+--  knows where its own tab row lives.
+--
+--  `tint` is a faint wash over the whole rail, and it is MANDATORY on a
+--  vertical icon rail - it is the only thing that says four pictures in a
+--  column are one control rather than four loose buttons. A row of words does
+--  not need it; the hairline already gathers them.
+function W.TabRail(host, edge, opts)
+	if not host or not host.CreateTexture then return nil end
+	opts = opts or {}
+
+	local rail = host.__aetherRail
+	if not rail then
+		rail = CreateFrame("Frame", nil, host)
+		rail.tint = rail:CreateTexture(nil, "BACKGROUND")
+		rail.tint:SetTexture(Media.texture.flat)
+		rail.tint:SetAllPoints(rail)
+		rail.rule = rail:CreateTexture(nil, "BORDER")
+		rail.rule:SetTexture(Media.texture.flat)
+		host.__aetherRail = rail
+	end
+
+	rail._edge = TAB_FACE[edge] and edge or "BOTTOM"
+	local face = TAB_FACE[rail._edge]
+
+	rail.rule:ClearAllPoints()
+	if TAB_VERTICAL[rail._edge] then
+		rail.rule:SetPoint("TOP" .. face, rail, "TOP" .. face, 0, 0)
+		rail.rule:SetPoint("BOTTOM" .. face, rail, "BOTTOM" .. face, 0, 0)
+		rail.rule:SetWidth(A:Px(1))
+	else
+		rail.rule:SetPoint(face .. "LEFT", rail, face .. "LEFT", 0, 0)
+		rail.rule:SetPoint(face .. "RIGHT", rail, face .. "RIGHT", 0, 0)
+		rail.rule:SetHeight(A:Px(1))
+	end
+
+	local c = A.Palette.c
+	local rule = c.glassEdge
+	rail.rule:SetVertexColor(rule[1], rule[2], rule[3], rule[4] or 1)
+
+	-- OFF UNLESS ASKED FOR. The handoff calls the vertical rail's wash
+	-- mandatory, on the argument that it is the only thing saying a column
+	-- of pictures is one control - and that argument is written against a
+	-- FLAT background. Ours is frosted glass: a wash lands on top of a fill
+	-- that is already semi-transparent and doubles it locally, so four per
+	-- cent of lilac came out as a slab down the side of the spellbook and
+	-- read as a column stuck permanently under the cursor.
+	--
+	-- The hairline runs the whole length of the column and gathers it
+	-- perfectly well, which is exactly how the horizontal rail gathers a row
+	-- of words. One mechanism for both, and no slab.
+	local wash = opts.tint
+	if wash then
+		local h = c.rowHover
+		rail.tint:SetVertexColor(h[1], h[2], h[3], (h[4] or 1) * TAB_RAIL_WASH)
+		rail.tint:Show()
+	else
+		rail.tint:Hide()
+	end
+
+	return rail
+end
+
+--- Dress a button as a tab. Idempotent: the parts are made once.
+--
+--  `icon` says this is one of a vertical rail's pictures rather than a word,
+--  which changes how the three states are drawn - a picture dims and drains
+--  where a word goes quiet, being the exact analogue of dim text.
+function W.Tab(tab, opts)
+	if not tab or not tab.CreateTexture then return nil end
+	opts = opts or {}
+
+	if not tab.__aetherMark then
+		-- UNDER the mark and wider than it, additively, so it brightens the
+		-- hairline rather than painting a band over it.
+		local glow = tab:CreateTexture(nil, "ARTWORK")
+		glow:SetTexture(Media.texture.glow)
+		glow:SetBlendMode("ADD")
+		tab.__aetherMarkGlow = glow
+
+		local mark = tab:CreateTexture(nil, "OVERLAY")
+		mark:SetTexture(Media.texture.flat)
+		tab.__aetherMark = mark
+
+		-- The hover wash, the full height of the tab. No rim and no corner:
+		-- the moment a tab has an outline it is a button again.
+		local wash = tab:CreateTexture(nil, "BACKGROUND")
+		wash:SetTexture(Media.texture.flat)
+		wash:SetAllPoints(tab)
+		wash:Hide()
+		tab.__aetherWash = wash
+
+		-- Something new on a tab you are not looking at. Never a flashing
+		-- fill, which is what the client does and what this replaces.
+		local dot = tab:CreateTexture(nil, "OVERLAY")
+		dot:SetTexture(Media.texture.chipDisc)
+		dot:SetSize(TAB_DOT, TAB_DOT)
+		dot:Hide()
+		tab.__aetherDot = dot
+	end
+
+	tab.__aetherTabIcon = opts.icon and true or nil
+	tab.__aetherTabEdge = TAB_FACE[opts.edge] and opts.edge or nil
+	-- WHICH RAIL'S LINE IT STANDS ON, handed in rather than looked up off
+	-- the parent. A tab is not reliably a child of its rail's host: the
+	-- spellbook's schools are children of SpellBookSideTabsFrame, a
+	-- full-window frame of Blizzard's that exists only to hold them - so
+	-- the parent lookup found nothing and the mark fell back to the
+	-- icon's own edge, six pixels in from the line it belongs on.
+	if opts.rail then tab.__aetherTabRail = opts.rail end
+
+	if opts.label then tab.__aetherLabel = opts.label end
+	if opts.art then tab.__aetherTabArt = opts.art end
+
+	if tab.HookScript and not tab.__aetherTabHooked then
+		tab.__aetherTabHooked = true
+		tab:HookScript("OnEnter", function(self)
+			W.TabState(self, self.__aetherSelected, true)
+		end)
+		tab:HookScript("OnLeave", function(self)
+			W.TabState(self, self.__aetherSelected, false)
+		end)
+	end
+
+	return tab.__aetherMark
+end
+
+--- Where a tab's own mark sits: on the rail's hairline, inset from both ends.
+--- Where a tab's own mark sits: ON THE RAIL'S HAIRLINE, inset from both ends
+--- of the tab it belongs to.
+--
+--  THREE POINTS, and they come from two different frames. The two that fix
+--  its LENGTH are the tab's, because the mark is as long as the thing it
+--  marks; the one that fixes which line it sits on is the RAIL's, because
+--  that is the line.
+--
+--  Those were the same frame for a row of words - LayoutTabs makes each tab
+--  the full height of its rail, so the tab's bottom edge IS the hairline. They
+--  are not the same frame for a column of icons: a 32px picture in a 44px rail
+--  leaves six either side, and a mark on the icon's own edge drew as a bar
+--  stuck to the picture rather than as a marker on the rail.
+local function PlaceMark(tab, edge, rail)
+	local mark, glow = tab.__aetherMark, tab.__aetherMarkGlow
+	if not mark then return end
+
+	local face = TAB_FACE[edge]
+	local line = rail or tab
+	mark:ClearAllPoints()
+	glow:ClearAllPoints()
+
+	if TAB_VERTICAL[edge] then
+		mark:SetPoint("TOP", tab, "TOP", 0, -TAB_MARK_IN)
+		mark:SetPoint("BOTTOM", tab, "BOTTOM", 0, TAB_MARK_IN)
+		mark:SetPoint(face, line, face, 0, 0)
+		mark:SetWidth(TAB_MARK)
+	else
+		mark:SetPoint("LEFT", tab, "LEFT", TAB_MARK_IN, 0)
+		mark:SetPoint("RIGHT", tab, "RIGHT", -TAB_MARK_IN, 0)
+		mark:SetPoint(face, line, face, 0, 0)
+		mark:SetHeight(TAB_MARK)
+	end
+
+	glow:SetPoint("TOPLEFT", mark, "TOPLEFT", -TAB_GLOW / 2, TAB_GLOW / 2)
+	glow:SetPoint("BOTTOMRIGHT", mark, "BOTTOMRIGHT",
+		TAB_GLOW / 2, -TAB_GLOW / 2)
+end
+
+--- The three states, and nothing else draws them.
+--
+--  Selected is BRIGHT TEXT AND A MARK, not a filled surface - which is the
+--  difference between this and W.SetButtonState, and the difference the player
+--  is meant to read. A filled tab and a filled button say the same thing in an
+--  interface where they mean two different things.
+function W.TabState(tab, selected, hovered)
+	if not tab or not tab.__aetherMark then return end
+	local c = A.Palette.c
+	tab.__aetherSelected = selected and true or false
+
+	local host = tab.GetParent and tab:GetParent()
+	local edge = tab.__aetherTabEdge
+		or (host and host.__aetherRail and host.__aetherRail._edge)
+		or "BOTTOM"
+	-- UNLESS THE CALLER OWNS IT. A chat tab's own box is Blizzard's 32-tall
+	-- art frame, three pixels taller than the dock it sits in and centred on
+	-- a line that is not the hairline - and its width is rewritten twice per
+	-- click - so that one anchors its own, to the LABEL for length and to the
+	-- rail's line for the rest. Same rule, stated against different frames.
+	if not tab.__aetherMarkOwn then
+		PlaceMark(tab, edge, tab.__aetherTabRail)
+	end
+
+	local a = c.accent
+	tab.__aetherMark:SetVertexColor(a[1], a[2], a[3], 1)
+	tab.__aetherMark:SetShown(selected and true or false)
+	tab.__aetherMarkGlow:SetVertexColor(a[1], a[2], a[3], 0.55)
+	tab.__aetherMarkGlow:SetShown(selected and true or false)
+
+	local h = c.rowHover
+	tab.__aetherWash:SetVertexColor(h[1], h[2], h[3], (h[4] or 1) * TAB_WASH)
+	-- NOT ON AN ICON. A picture's hover is the picture coming back - full
+	-- colour, full strength - and a wash behind it as well is a second answer
+	-- to the same question, laid over a rail that is already washed.
+	tab.__aetherWash:SetShown((hovered and not selected
+		and not tab.__aetherTabIcon) and true or false)
+
+	-- A PICTURE DIMS AND DRAINS where a word goes quiet: same three steps,
+	-- drawn the only way a coloured icon can carry them.
+	if tab.__aetherTabIcon then
+		local art = tab.__aetherTabArt
+			or (tab.GetNormalTexture and tab:GetNormalTexture())
+		if art then
+			art:SetAlpha((selected or hovered) and 1 or 0.45)
+			if art.SetDesaturated then
+				pcall(art.SetDesaturated, art,
+					(not selected and not hovered) or nil)
+			end
+		end
+		return
+	end
+
+	local label = tab.__aetherLabel
+		or (tab.GetFontString and tab:GetFontString())
+	if not label or not label.SetTextColor then return end
+
+	local ink = selected and c.text or (hovered and c.textDim or c.textFaint)
+	label:SetTextColor(ink[1], ink[2], ink[3], ink[4] or 1)
+	-- NO SHADOW ON ANY OF THEM. Blizzard bakes one into its tab fonts -
+	-- GameFontNormalSmall inherits SystemFont_Shadow_Small, and SetFont does
+	-- not clear it - and a black halo under a word on glass reads as a smudge
+	-- rather than as depth. It used to be cleared on the SELECTED tab only,
+	-- because that one had a pale fill behind it to be smudged against. There
+	-- is no fill behind any of them now.
+	if label.SetShadowOffset then label:SetShadowOffset(0, 0) end
+	if label.SetShadowColor then label:SetShadowColor(0, 0, 0, 0) end
+end
+
+--- Something wants your attention on a tab you are not looking at.
+--
+--  `kind` is nil for nothing, "new" for ordinary traffic, and
+--  "personal" for something addressed to you - a whisper, an
+--  invite - which takes the reserved gold rather than the accent, the way
+--  every other personal signal in this interface does.
+function W.TabDot(tab, kind, anchorTo)
+	local dot = tab and tab.__aetherDot
+	if not dot then return end
+	if not kind then return dot:Hide() end
+
+	local c = A.Palette.c
+	local col = (kind == "personal") and c.semanticGold or c.accent
+	dot:SetVertexColor(col[1], col[2], col[3], 1)
+
+	dot:ClearAllPoints()
+	if tab.__aetherTabIcon then
+		-- The icon's top-right corner, clear of the picture.
+		dot:SetPoint("CENTER", tab, "TOPRIGHT", -1, -1)
+	else
+		local to = anchorTo or tab.__aetherLabel
+			or (tab.GetFontString and tab:GetFontString())
+		if to then
+			dot:SetPoint("LEFT", to, "RIGHT", 6, 0)
+		else
+			dot:SetPoint("RIGHT", tab, "RIGHT", -4, 0)
+		end
+	end
+	dot:Show()
+end
+-- ---------------------------------------------------------------------------
 -- icon slot (aura icons now, action buttons later)
 -- ---------------------------------------------------------------------------
 

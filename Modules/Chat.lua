@@ -63,14 +63,7 @@ local PAD      = 10    -- panel inset around the chat frame
 -- dock it sits in is 26 (DockManagerTemplate), so the tab overhangs the dock by
 -- 3px top and bottom. The divider is placed from this number.
 local TAB_H    = 20
-local TAB_PAD  = 10    -- horizontal padding inside a tab pill
--- The pill is NOT the tab. It used to be anchored to the tab's corners inset by
--- 2, which made it 32 - 4 = 28 tall: a slab rather than a pill, and 3px of it
--- sat on top of the divider. Tabs are anchored by LEFT - i.e. by their vertical
--- CENTRE - so the pill is centred on the same line and given its own height,
--- which leaves 2px of clearance above the divider and does not depend on
--- Blizzard's tab art at all.
-local PILL_H   = 18
+local TAB_PAD  = 10    -- horizontal padding either side of a tab's word
 local EDIT_H   = 26
 -- The resize grip's hit target. Bigger than the mark drawn inside it, because a
 -- corner grip is found with a cursor rather than read.
@@ -208,30 +201,18 @@ function Chat:SkinTab(tab)
 	if not tab._aether then
 		tab._aether = true
 
-		-- THE SHARED BUTTON SURFACE, like every other pressable thing in this
-		-- interface. It was a CreatePill, and a capsule's two caps come out of
-		-- a 256-texel texture - at this height they are minified more than ten
-		-- times and the client does not mipmap.
+		-- A TAB, WHICH IS NOT A BUTTON. It was a filled pill - the same surface
+		-- Send, Accept and Create wear - and that is exactly the confusion the
+		-- tab language exists to end: a button does a thing, a tab changes
+		-- which view of the frame you are looking at.
 		--
-		-- `anchor = false` because this one is measured from the LABEL, for the
-		-- reason StyleTab records; `quiet` because an unselected chat tab shows
-		-- nothing at all, which is this row's own rule and not a general one.
-		local pill = W.SkinButton(tab, {
-			anchor = false,
-			quiet  = true,
-			label  = TabText(tab),
-		})
-		pill:SetHeight(PILL_H)
-		tab._pill = pill
-
-		-- Blizzard flashes an unselected tab when something arrives on it. The
-		-- concept draws that as a dot beside the name rather than a flashing
-		-- slab, so the flash texture goes and this takes its meaning.
-		local dot = tab:CreateTexture(nil, "OVERLAY")
-		dot:SetTexture(Media.texture.glow)
-		dot:SetSize(7, 7)
-		dot:SetAlpha(0)
-		tab._dot = dot
+		-- Chat's rail is on TOP of the window, so its line and its marks are on
+		-- the bottom - the edge facing the log they switch between. And the
+		-- mark is placed HERE rather than by the shared code, because a chat
+		-- tab's own frame is Blizzard's 32-tall art box, three pixels taller
+		-- than the dock and centred on a line that is not the hairline.
+		W.Tab(tab, { edge = "TOP", label = TabText(tab) })
+		tab.__aetherMarkOwn = true
 
 		tab:HookScript("OnEnter", function(t) Chat:StyleTab(t) end)
 		tab:HookScript("OnLeave", function(t) Chat:StyleTab(t) end)
@@ -361,10 +342,9 @@ end
 
 Chat.TabIsSelected = TabIsSelected
 
---- Colour a tab for its current state and size the pill to its text.
+--- Colour a tab for its current state and size it to its word.
 function Chat:StyleTab(tab)
 	if not tab or not tab._aether then return end
-	local c = Palette.c
 	local fs = TabText(tab)
 	local selected = TabIsSelected(tab)
 	local hovered = tab.IsMouseOver and tab:IsMouseOver()
@@ -373,80 +353,67 @@ function Chat:StyleTab(tab)
 		-- Hand the label back its own dimensions before measuring it.
 		--
 		-- PanelTemplates_TabResize runs twice per click (FCF_SelectDockFrame
-		-- rebuilds the tabs, then FCF_DockUpdate rebuilds them again with
-		-- forceUpdate) and for every tab but ChatFrame1's it ends
-		-- `tabText:SetWidth(dynTabSize - 32)` - a hard 28 to 58 pixels, from
-		-- FCFDock_CalculateTabSize's 60..90 clamp. The XML template also gives
-		-- the string a fixed height of 8 that nothing ever clears.
+		-- then FCFDock_UpdateTabs) and leaves the string a hard width, and on
+		-- the selected tab it also leaves the string a fixed height of 8 that
+		-- nothing ever clears.
 		--
 		-- A FontString with a hard width narrower than its text WRAPS, and a
-		-- rect that is not the size of its own text is what makes "CENTER" stop
-		-- meaning centred. Both are why the label drifted off the middle of the
-		-- pill after the first click and stayed there. Zero restores auto-size,
-		-- which is what Blizzard's own code uses to measure (line 372).
+		-- rect that is not the size of its own text is what makes "CENTER"
+		-- stop meaning centred. Both are why the label drifted off the middle
+		-- after the first click and stayed there.
 		if fs.SetWidth then fs:SetWidth(0) end
 		if fs.SetHeight then fs:SetHeight(0) end
 		if fs.SetJustifyV then fs:SetJustifyV("MIDDLE") end
 
 		local w = (fs:GetStringWidth() or 30) + TAB_PAD * 2
 		tab:SetWidth(w)
-
-		-- The label's colour and its shadow are the shared button's business
-		-- now - both of the rules that used to live here, the inverted ink on a
-		-- filled tab and the shadow that has to come off with it, moved into
-		-- W.SetButtonState when every other tab in the interface started
-		-- needing them too. Only the offset is re-asserted here, because
-		-- GameFontNormalSmall bakes one in that SetFont does not clear.
-		if fs.SetShadowOffset and not selected then fs:SetShadowOffset(1, -1) end
 	end
 
-	local pill = tab._pill
-	if pill then
-		-- Anchored to the LABEL, not to the tab.
-		--
-		-- The tab is not ours: PanelTemplates_TabResize overwrites its width on
-		-- every dock update, to `dynTabSize` for a dynamic tab and to
-		-- `textWidth + sideWidths` (a hard 32 of Blizzard's own art padding) for
-		-- ChatFrame1's. A pill measured from the tab inherits every one of those
-		-- and drifts away from the word it is supposed to be wrapping. Measured
-		-- from the text it cannot drift: the pill IS the text plus its padding,
-		-- and its centre IS the text's centre, so the label cannot end up
-		-- off-centre in it no matter what the tab does.
-		--
-		-- Re-anchored every pass rather than once at creation, because that is
-		-- the only way it survives a client that rewrites the tab twice a click.
-		pill:ClearAllPoints()
-		if fs then
-			pill:SetPoint("LEFT", fs, "LEFT", -TAB_PAD, 0)
-			pill:SetPoint("RIGHT", fs, "RIGHT", TAB_PAD, 0)
-		else
-			pill:SetPoint("LEFT", tab, "LEFT", 0, 0)
-			pill:SetPoint("RIGHT", tab, "RIGHT", 0, 0)
+	-- THE THREE STATES, and they are the interface's, not this file's: bright
+	-- for the tab you are reading, dim under the cursor, faint for the rest.
+	tab.__aetherLabel = fs
+	W.TabState(tab, selected, hovered)
+
+	-- THE MARK ON THE RAIL'S OWN LINE. Measured from the LABEL for its width
+	-- and from the divider for its height, which is the only way it can be
+	-- right: the tab is not ours - PanelTemplates_TabResize overwrites its
+	-- width on every dock update, to `dynTabSize` for a dynamic tab and to a
+	-- hard 32 of Blizzard's own art padding for ChatFrame1's - so anything
+	-- measured from the tab drifts away from the word it belongs to. And the
+	-- tab's box is 32 tall against a 26 dock, so its bottom edge is nowhere
+	-- near the hairline the mark is supposed to sit on.
+	local mark = tab.__aetherMark
+	local rule = self.panel and self.panel.divider
+	if mark and fs and rule then
+		mark:ClearAllPoints()
+		mark:SetPoint("LEFT", fs, "LEFT", -4, 0)
+		mark:SetPoint("RIGHT", fs, "RIGHT", 4, 0)
+		mark:SetPoint("BOTTOM", rule, "BOTTOM", 0, 0)
+		mark:SetHeight(2)
+
+		local glow = tab.__aetherMarkGlow
+		if glow then
+			glow:ClearAllPoints()
+			glow:SetPoint("TOPLEFT", mark, "TOPLEFT", -6, 6)
+			glow:SetPoint("BOTTOMRIGHT", mark, "BOTTOMRIGHT", 6, -6)
 		end
-		-- FCFDock_UpdateTabs re-parents the tab (SetParent(dock) or
-		-- SetParent(scrollChild)), which moves its frame level out from under
-		-- the level the pill was given once at creation. Re-asserted here, or
-		-- the fill eventually draws over the label it is meant to sit behind.
-		pill:SetHeight(PILL_H)
-		pill:SetFrameLevel(math.max(0, tab:GetFrameLevel() - 1))
-		-- The state itself is the shared one now. Selected is a filled surface
-		-- with dark type on it, hovered is a soft fill, and an unselected chat
-		-- tab is nothing at all - `quiet`, set when the surface was made.
-		tab.__aetherSelected = selected
-		tab.__aetherLabel = fs
-		W.SetButtonState(tab, selected, hovered)
-
-		-- Re-snapped after the height and the level: a corner is snapped to
-		-- whole physical pixels and the answer depends on the effective scale,
-		-- which the client can change out from under this tab by reparenting it.
-		if pill._Relayout then pill:_Relayout() end
 	end
 
-	if tab._dot and fs then
-		tab._dot:ClearAllPoints()
-		tab._dot:SetPoint("LEFT", fs, "RIGHT", 3, 1)
-		tab._dot:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
+end
+
+--- Is this window one you get spoken to in?
+--
+--  The handoff reserves the GOLD dot for something addressed to you - a
+--  whisper, an invite - and leaves the accent for ordinary traffic. Blizzard's
+--  flash says only that something arrived, so the window is asked what it is
+--  registered to carry instead.
+local function IsPersonal(frame)
+	if not frame or not _G.ChatFrame_ContainsMessageGroup then return false end
+	for _, group in ipairs({ "WHISPER", "BN_WHISPER" }) do
+		local ok, yes = pcall(_G.ChatFrame_ContainsMessageGroup, frame, group)
+		if ok and yes then return true end
 	end
+	return false
 end
 
 --- The unread dot. Blizzard's flash texture is the signal; it is driven by an
@@ -455,18 +422,19 @@ end
 function Chat:UpdateFlashes()
 	EachFrame(function(f)
 		local tab = _G[(f:GetName() or "") .. "Tab"]
-		if tab and tab._dot then
-			local flash = Region(tab, "Flash", nil)
-			local lit = flash and flash.IsShown and flash:IsShown()
+		if not tab or not tab.__aetherDot then return end
 
-			-- Never on the tab you are reading. Blizzard's flash runs with
-			-- flashDuration -1, so it stays shown until something stops it, and
-			-- selecting a tab is not always that something - which put an unread
-			-- marker on the window whose contents were in front of you.
-			if TabIsSelected(tab) then lit = false end
+		local flash = Region(tab, "Flash", nil)
+		local lit = flash and flash.IsShown and flash:IsShown()
 
-			tab._dot:SetAlpha(lit and 1 or 0)
-		end
+		-- Never on the tab you are reading. Blizzard's flash runs with
+		-- flashDuration -1, so it stays shown until something stops it, and
+		-- selecting a tab is not always that something - which put an unread
+		-- marker on the window whose contents were in front of you.
+		if TabIsSelected(tab) then lit = false end
+
+		W.TabDot(tab, lit and (IsPersonal(f) and "personal" or "new") or nil,
+			TabText(tab))
 	end)
 end
 

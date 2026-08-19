@@ -580,13 +580,20 @@ function Reskin.ArrowButton(btn, facing, store)
 	return btn.__aetherArrow
 end
 
---- A tab along the bottom of a client panel.
+--- A tab along the edge of a client panel.
 --
 --  Blizzard draws these in three pieces - left cap, stretched middle, right cap
 --  - plus a disabled set of all three, so there is no single texture to swap.
---  All six come off and a pill goes behind.
-function Reskin.Tab(tab, store, style)
-	if not tab or tab.__aetherTab then return end
+--  All six come off, and what goes back is NOT a surface.
+--
+--  It was a pill, filled when selected, which is what every pressable thing in
+--  this interface wears. That made a tab and a button look the same, and they
+--  are not the same: a button does a thing, a tab changes which view of the
+--  frame you are looking at. See W.Tab for the language they share instead -
+--  bare text on a hairline, and a mark under the one you are on.
+function Reskin.Tab(tab, store, style, opts)
+	if not tab then return end
+	opts = opts or {}
 
 	Reskin.ClearButton(tab)
 	if store then Reskin.Strip(tab, store) end
@@ -594,21 +601,17 @@ function Reskin.Tab(tab, store, style)
 	local text = Reskin.Element(tab, "Text")
 		or (tab.GetFontString and tab:GetFontString())
 
-	-- The same surface every other button in this interface gets. A tab is a
-	-- button you can be standing on, which is the only thing that makes it
-	-- different - and that is a STATE on the shared surface rather than a
-	-- second kind of surface.
-	local skin = A.Widgets.SkinButton(tab, { label = text })
-	tab.__aetherTab = skin
+	local mark = A.Widgets.Tab(tab, {
+		label = text, edge = opts.edge, icon = opts.icon, art = opts.art,
+		rail = opts.rail,
+	})
+	tab.__aetherTab = mark
 
 	if text and text.SetText then
-		-- The caller's role where it has one: a tab in a client window wants
-		-- outlined type, because its label sits over whatever that window is
-		-- showing rather than over an even fill of ours.
 		A.Widgets.Restyle(text, style or "tbCardTitle")
-		A.Widgets.Color(text, A.Palette.c.text)
 	end
-	return skin
+	A.Widgets.TabState(tab, tab.__aetherSelected, false)
+	return mark
 end
 
 --- One of the client's status bars in our fill.

@@ -2302,6 +2302,15 @@ end
 function GameTooltip_Hide() GameTooltip.__shows = nil GameTooltip:Hide() end
 function ResetCursor() end
 function CursorUpdate() end
+-- WHICH WINDOW GETS SPOKEN TO. The handoff reserves the gold dot for
+-- something addressed to you and leaves the accent for ordinary traffic, and
+-- Blizzard's flash says only that something arrived - so the window has to be
+-- asked what it is registered to carry. ChatFrame2 is the whispers window.
+function ChatFrame_ContainsMessageGroup(frame, group)
+	local want = frame and frame.__groups
+	return want ~= nil and want[group] == true
+end
+
 function ShowInspectCursor() end
 TOOLTIP_UPDATE_TIME = 0.2
 
@@ -2966,10 +2975,28 @@ do
 	-- Blizzard's at the same time.
 	do
 		local sp = buildPanel("SettingsPanel")
+		-- THIS WINDOW SAYS WHICH TAB IS OPEN DIFFERENTLY from every other one.
+		-- The old panels disable the selected tab; this is
+		-- SelectableButtonMixin, and OnSelected moves the label and swaps the
+		-- font object on the way - so a skin that dresses these once loses the
+		-- word back to Blizzard on the first click.
 		for _, key in ipairs({ "GameTab", "AddOnsTab" }) do
 			local tab = CreateFrame("Button", nil, sp)
 			tab:SetNormalTexture("tab-up")
-			tab:CreateFontString(nil, "OVERLAY")
+			tab.Text = tab:CreateFontString(nil, "OVERLAY")
+			tab.Text:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			tab.Text:SetText(key)
+			tab.__sel = (key == "GameTab")
+			function tab:IsSelected() return self.__sel end
+			function tab:OnSelected(on)
+				self.__sel = on and true or false
+				-- The client's own two side effects, which is what our hook has
+				-- to answer: the word moves and takes a font object back.
+				self.Text:ClearAllPoints()
+				self.Text:SetPoint("BOTTOM", self, "BOTTOM", 0, on and 6 or 4)
+				self.Text:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+				self.Text._aetherStyle = nil
+			end
 			sp[key] = tab
 		end
 		for _, key in ipairs({ "CloseButton", "ApplyButton" }) do
@@ -6153,6 +6180,13 @@ local function MakeChatFrame(id)
 	-- label's rect the size of its own text?" answers yes for free.
 	txt:SetSize(50, 8)
 	txt:SetText("Chat " .. id)
+	-- AND IT ARRIVES WITH A SHADOW ON IT. ChatTabArtTemplate's label inherits
+	-- GameFontNormalSmall, which inherits SystemFont_Shadow_Small - a hard
+	-- black shadow that SetFont does not clear. A mock whose labels start
+	-- with none agrees that any amount of not clearing it is fine, which is
+	-- how a black halo under pale type on glass would ship.
+	txt:SetShadowColor(0, 0, 0, 1)
+	txt:SetShadowOffset(1, -1)
 	_G[name .. "TabText"] = txt
 	function tab:GetFontString() return txt end
 
@@ -9018,24 +9052,39 @@ do
 		.. (#tabArt > 0 and ("  -- " .. table.concat(tabArt, ", ")) or ""))
 
 	local tab1, tab2 = _G.ChatFrame1Tab, _G.ChatFrame2Tab
-	check(tab1._pill and tab2._pill, "each tab gets a surface of its own")
 
-	-- THE SHARED BUTTON SURFACE, like every other pressable thing here. It was
-	-- a CreatePill, and a capsule's two caps come out of a 256-texel texture -
-	-- at tab height they are minified more than ten times and the client does
-	-- not mipmap, which is the crunch that started this.
-	check(tab1._pill._kind == "panel" and tab1.__aetherSkin == tab1._pill,
-		"and it is the shared button surface rather than a capsule of its own"
-		.. " (" .. tostring(tab1._pill._kind) .. ")")
-	check(tab2.__aetherQuiet == true,
-		"kept QUIET: an unselected chat tab shows nothing at all, which is this"
-		.. " row's own rule - it sits over the world rather than in a window,"
-		.. " and four glass chips along the top of the log compete with the"
-		.. " thing you are reading")
-	check(tab1._pill:GetAlpha() > 0.9 and tab2._pill:GetAlpha() == 0,
-		"and only the selected one is filled in - that inversion is the signal")
-	check(not tab1._pill._edge[1]:IsShown(),
-		"with no extra bright rim around the selected tab")
+	-- NOT A SURFACE AT ALL. These were filled pills, which is what Send,
+	-- Accept and Create wear - and telling a tab from a button at a glance is
+	-- the whole point of the tab language. Every tabbed surface in this
+	-- interface speaks it now: bare text on a hairline, and a 2px mark on that
+	-- line under the one you are reading.
+	check(tab1.__aetherMark ~= nil and tab2.__aetherMark ~= nil,
+		"each tab gets the shared mark")
+	check(tab1.__aetherSkin == nil and tab2.__aetherSkin == nil,
+		"and no button surface anywhere on either of them")
+	check(tab1.__aetherMark:IsShown() and not tab2.__aetherMark:IsShown(),
+		"only the tab you are reading is marked")
+
+	-- ON THE RAIL'S OWN LINE, and measured from the WORD rather than from the
+	-- tab. The tab is not ours: PanelTemplates_TabResize overwrites its width
+	-- on every dock update, and its art box is 32 tall against a 26 dock - so
+	-- a mark measured from it drifts sideways and sits nowhere near the
+	-- hairline it is supposed to be on.
+	local mp, mrel = tab1.__aetherMark:GetPoint(1)
+	check(mp == "LEFT" and mrel == _G.ChatFrame1TabText,
+		"the mark is measured from the label (" .. tostring(mp) .. ")")
+	local _, brel, brelP = tab1.__aetherMark:GetPoint(3)
+	check(brel == C.panel.divider,
+		"and sits on the divider under the row, which IS the rail's line (" ..
+		tostring(brelP) .. ")")
+
+	-- THE INK LADDER. Bright for the one you are reading, faint for the rest.
+	local onA = select(4, _G.ChatFrame1TabText:GetTextColor())
+	local offA = select(4, _G.ChatFrame2TabText:GetTextColor())
+	check(onA > offA,
+		"the tab you are on reads brighter than the ones you are not (" ..
+		string.format("%.2f", onA) .. " vs " .. string.format("%.2f", offA) ..
+		")")
 	check(_G.ChatFrame1TabText._aetherStyle == "chatTab", "tab type is ours")
 
 	-- The edit box sits *inside* the panel's bottom edge, not hanging off
@@ -11556,12 +11605,13 @@ section("panels: somebody else's character sheet", function()
 	-- THE TABS HANG OFF THE BOTTOM EDGE, outside the window's own art, the
 	-- way the vendor's do - so the glass has to reach past the frame or the
 	-- row sits on bare screen.
-	check(_G.InspectFrameTab1.__aetherTab ~= nil, "a tab gets our pill")
+	check(_G.InspectFrameTab1.__aetherMark ~= nil,
+		"a tab gets the mark every other tab in the interface gets")
 	local _, rel, at = _G.InspectFrameTab1:GetPoint()
-	check(rel == inf and at == "BOTTOMLEFT",
-		"laid out from the window's bottom-left corner rather than left on"
-		.. " the client's centre anchor, which reads an x as where the middle"
-		.. " goes and hangs half the tab off the side")
+	check(rel == inf.__aetherRail and at == "BOTTOMLEFT",
+		"laid out from the rail's bottom-left corner rather than left on the"
+		.. " client's centre anchor, which reads an x as where the middle goes"
+		.. " and hangs half the tab off the side")
 	local ins = PN.ENTRY.InspectFrame.insets
 	check(ins and ins[4] and ins[4] < 0,
 		"and the glass reaches below the frame to hold them (" ..
@@ -14616,9 +14666,39 @@ section("panels: the Options window our settings live inside", function()
 	-- nothing in the shell strip reaches a child frame with art of its own.
 	for _, key in ipairs({ "GameTab", "AddOnsTab" }) do
 		local tab = sp[key]
-		check(tab and tab.__aetherSkin ~= nil,
-			key .. " is ours rather than the client's plate")
+		check(tab and tab.__aetherMark ~= nil and tab.__aetherSkin == nil,
+			key .. " is ours rather than the client's plate - and a MARK rather"
+			.. " than a fill, like every other tab in the interface")
 	end
+	-- ITS RAIL IS ON TOP, because its tabs are - the line and the mark go on
+	-- whichever edge faces the settings they switch between.
+	local srail = sp.__aetherRail
+	check(srail ~= nil and srail._edge == "TOP",
+		"the Options tabs sit on a rail of their own (" ..
+		tostring(srail and srail._edge) .. ")")
+
+	-- AND THIS WINDOW SAYS WHICH IS OPEN DIFFERENTLY. The older panels disable
+	-- the selected tab; this one uses SelectableButtonMixin and moves the
+	-- label and swaps the font object on every selection - so the state is
+	-- read from IsSelected and re-asserted from a hook, or the first click
+	-- hands the word straight back to Blizzard's own font.
+	-- AT DRESS TIME, before anything has been clicked. The window opens on
+	-- whichever tab it was left on, and a mark that only appears once you
+	-- click is a window that comes up saying you are nowhere.
+	check(sp.GameTab.__aetherMark:IsShown()
+		and not sp.AddOnsTab.__aetherMark:IsShown(),
+		"the one it opened on is the marked one, with no click involved")
+
+	sp.GameTab:OnSelected(false)
+	sp.AddOnsTab:OnSelected(true)
+	check(sp.AddOnsTab.__aetherMark:IsShown()
+		and not sp.GameTab.__aetherMark:IsShown(),
+		"and it moves when the client moves its own selection")
+	sp.AddOnsTab:OnSelected(false)
+	sp.GameTab:OnSelected(true)
+	check(sp.GameTab.Text._aetherStyle == "pnBody",
+		"with its word still in our type after the client re-fonted it (" ..
+		tostring(sp.GameTab.Text._aetherStyle) .. ")")
 
 	for _, key in ipairs({ "CloseButton", "ApplyButton" }) do
 		local btn = sp[key]
@@ -22788,6 +22868,177 @@ do
 		"with the item still in it")
 end
 
+print("== tabs: one language, and it is not the button's ==")
+do
+	local W = A.Widgets
+	-- A BUTTON DOES A THING; A TAB CHANGES WHICH VIEW OF THE FRAME YOU ARE
+	-- LOOKING AT. Four tabbed surfaces here drew the second as the first - the
+	-- same filled accent pill that Create, Send and Accept wear - so the only
+	-- thing telling them apart was knowing which was which already.
+	--
+	-- The pattern is bare text on a shared hairline, with a 2px accent mark on
+	-- that line under the one you are on. This block checks the language
+	-- itself; the surfaces that speak it are checked where they live.
+	local host = CreateFrame("Frame", nil, UIParent)
+	host:SetSize(200, 40)
+
+	local rail = W.TabRail(host, "BOTTOM")
+	check(rail ~= nil and host.__aetherRail == rail,
+		"a rail is made once and kept on its host")
+	check(W.TabRail(host, "BOTTOM") == rail,
+		"so asking again is a re-layout rather than a second rail")
+
+	-- WHICH EDGE FACES THE CONTENT is the whole of the placement rule. A rail
+	-- along the bottom of a panel has its line and its marks on its TOP,
+	-- because that is the side the panel is on; chat's rail is on top and all
+	-- of it mirrors. Backwards, a tab reads as attached to the world.
+	check(rail.rule:GetPoint(1) == "TOPLEFT",
+		"a bottom rail's hairline is on its top (" ..
+		tostring(rail.rule:GetPoint(1)) .. ")")
+	W.TabRail(host, "TOP")
+	check(rail.rule:GetPoint(1) == "BOTTOMLEFT",
+		"and a top rail's is on its bottom (" ..
+		tostring(rail.rule:GetPoint(1)) .. ")")
+
+	-- THE WASH IS MANDATORY ON A VERTICAL RAIL and absent on a horizontal one.
+	-- It is the only thing saying a column of pictures is one control rather
+	-- than a handful of loose buttons; a row of words has the hairline.
+	-- NO WASH ON EITHER ORIENTATION. The handoff calls the vertical rail's
+	-- mandatory, on the argument that it is the only thing saying a column of
+	-- pictures is one control - and that argument is written against a FLAT
+	-- background. Ours is frosted glass: a wash lands on a fill that is
+	-- already semi-transparent and doubles it locally, so four per cent of
+	-- lilac came out as a slab down the side of the spellbook. The hairline
+	-- runs the length of the column and gathers it, which is exactly how the
+	-- horizontal rail gathers a row of words. One mechanism for both.
+	check(not rail.tint:IsShown(), "a row of words gets no wash")
+	W.TabRail(host, "RIGHT")
+	check(not rail.tint:IsShown(),
+		"and neither does a column of icons - the hairline is the grouping,"
+		.. " here as everywhere else")
+	check(rail.rule:GetPoint(1) == "TOPLEFT",
+		"with its line on the side facing the content")
+	W.TabRail(host, "RIGHT", { tint = true })
+	check(rail.tint:IsShown(),
+		"though a caller that wants one may still ask")
+	W.TabRail(host, "RIGHT")
+
+	-- A TAB, and what it is made of.
+	W.TabRail(host, "BOTTOM")
+	local tab = CreateFrame("Button", nil, host)
+	tab:SetSize(60, 38)
+	local label = tab:CreateFontString(nil, "OVERLAY")
+	label:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+	label:SetText("Character")
+	-- THE RAIL IS HANDED OVER, never looked up off the parent. Nothing here
+	-- promises a tab is a child of the frame that owns its rail, and on the
+	-- spellbook it is not: the schools hang off SpellBookSideTabsFrame, a
+	-- full-window frame of Blizzard's that exists only to hold them.
+	W.Tab(tab, { label = label, rail = rail })
+
+	check(tab.__aetherMark ~= nil and tab.__aetherDot ~= nil,
+		"a tab gets a mark and an attention dot")
+	check(tab.__aetherSkin == nil,
+		"and NO button surface - which is the whole of the distinction")
+
+	W.TabState(tab, false, false)
+	check(not tab.__aetherMark:IsShown(),
+		"unselected, it carries nothing at all")
+	local faint = select(4, label:GetTextColor())
+	W.TabState(tab, false, true)
+	local dim = select(4, label:GetTextColor())
+	local hoverA = select(4, tab.__aetherWash:GetVertexColor())
+	check(hoverA > 0 and hoverA < 0.15,
+		"a hovered tab washes faintly - it is a hint, not a fill (" ..
+		string.format("%.3f", hoverA) .. ")")
+	check(tab.__aetherWash:IsShown() and dim > faint,
+		"hovered, the word brightens and a faint wash comes up behind it (" ..
+		string.format("%.2f", faint) .. " -> " .. string.format("%.2f", dim) ..
+		")")
+	W.TabState(tab, true, false)
+	local bright = select(4, label:GetTextColor())
+	check(tab.__aetherMark:IsShown() and bright > dim,
+		"and selected it takes the mark, brightest of the three (" ..
+		string.format("%.2f", bright) .. ")")
+	W.TabState(tab, true, true)
+	check(not tab.__aetherWash:IsShown() and tab.__aetherMark:IsShown(),
+		"and hovering the tab you are ALREADY on adds no wash - the mark is"
+		.. " the signal, and two signals for one state is one too many")
+	W.TabState(tab, true, false)
+
+	-- THREE POINTS, FROM TWO FRAMES. The two that fix its LENGTH are the
+	-- tab's, because the mark is as long as the thing it marks; the one that
+	-- fixes WHICH LINE it sits on is the rail's, because that is the line.
+	--
+	-- They were the same frame for a row of words, where each tab is the full
+	-- height of its rail - and not the same frame for a column of icons, where
+	-- a 32px picture in a 44px rail leaves six either side. On the spellbook's
+	-- schools that drew the mark stuck to the icon rather than on the rail.
+	local mp, mrel, mrelP, mx = tab.__aetherMark:GetPoint(1)
+	check(mp == "LEFT" and mrel == tab and mrelP == "LEFT" and mx == 5,
+		"the mark is as long as its tab, less an inset at each end (" ..
+		tostring(mp) .. " x=" .. tostring(mx) .. ")")
+	local lp, lrel, lrelP = tab.__aetherMark:GetPoint(3)
+	check(lp == "TOP" and lrel == rail and lrelP == "TOP",
+		"and it sits on the RAIL's content-facing edge rather than the tab's ("
+		.. tostring(lp) .. " -> " .. tostring(lrelP) .. ")")
+	check(tab.__aetherMark:GetHeight() == 2,
+		"two pixels of it")
+
+	-- A VERTICAL TAB TURNS THE SAME MARK ON ITS SIDE, and takes the same rule
+	-- with it: length from the icon, line from the rail.
+	W.TabRail(host, "RIGHT")
+	W.Tab(tab, { label = label, edge = "RIGHT", rail = rail })
+	W.TabState(tab, true, false)
+	local vp, vrel = tab.__aetherMark:GetPoint(1)
+	local vf, vfrel, vfrelP = tab.__aetherMark:GetPoint(3)
+	check(vp == "TOP" and vrel == tab and tab.__aetherMark:GetWidth() == 2,
+		"its length still comes from the icon (" .. tostring(vp) .. ")")
+	check(vf == "LEFT" and vfrel == rail and vfrelP == "LEFT",
+		"and it stands on the rail's own left edge, not the icon's - which is"
+		.. " six pixels further in and reads as a bar glued to the picture (" ..
+		tostring(vf) .. ")")
+
+	-- A PICTURE'S HOVER IS THE PICTURE COMING BACK - full colour, full
+	-- strength - and a wash behind it as well is a second answer to the same
+	-- question, laid over a rail that is already washed.
+	W.Tab(tab, { icon = true, edge = "RIGHT", rail = rail })
+	W.TabState(tab, false, true)
+	check(not tab.__aetherWash:IsShown(),
+		"a hovered ICON takes no wash of its own")
+	W.Tab(tab, { label = label, edge = "RIGHT", rail = rail })
+	W.TabRail(host, "BOTTOM")
+	W.Tab(tab, { label = label, edge = "BOTTOM", rail = rail })
+
+	-- ATTENTION: an accent dot for ordinary traffic, the RESERVED GOLD for
+	-- something addressed to you. Never a flashing fill, which is what the
+	-- client does and what this replaces.
+	W.TabDot(tab, nil)
+	check(not tab.__aetherDot:IsShown(), "no dot until something arrives")
+	W.TabDot(tab, "new", label)
+	local dr = { tab.__aetherDot:GetVertexColor() }
+	check(tab.__aetherDot:IsShown()
+		and math.abs(dr[1] - A.Palette.c.accent[1]) < 0.01,
+		"ordinary traffic takes the accent")
+	W.TabDot(tab, "personal", label)
+	local gr = { tab.__aetherDot:GetVertexColor() }
+	check(math.abs(gr[1] - A.Palette.c.semanticGold[1]) < 0.01,
+		"and something addressed to you takes the reserved gold, the way every"
+		.. " other personal signal in this interface does")
+	local dp, drel = tab.__aetherDot:GetPoint(1)
+	check(dp == "LEFT" and drel == label,
+		"sitting after the word rather than over it")
+
+	-- A SKIN CHANGE REACHES IT, because every colour above is a token.
+	local wasSkin = A.db.profile.skin
+	A.Palette:Apply("dusk")
+	W.TabState(tab, true, false)
+	local after = { tab.__aetherMark:GetVertexColor() }
+	check(math.abs(after[1] - A.Palette.c.accent[1]) < 0.01,
+		"the mark follows a skin change on its own")
+	A.Palette:Apply(wasSkin or "midnight")
+end
+
 print("== panels: the client's windows in our glass ==")
 do
 	local PNm = A:GetModule("panels")
@@ -23094,54 +23345,77 @@ do
 		"the hidden pet tab is left out of the row (" .. #shown .. " of 5 placed)")
 
 	local t1, t2 = shown[1], shown[2]
-	local tp, trel, _, chosenGap = t2:GetPoint(1)
-	check(tp == "LEFT" and trel == t1,
+
+	-- BARE TEXT ON A SHARED HAIRLINE. The rail is the one thing the row sits
+	-- on, and its line is on the edge facing the content the tabs switch -
+	-- these are bottom tabs, so the top of the rail. Get that backwards and a
+	-- tab reads as attached to the world rather than to its own window.
+	local rail = cf.__aetherRail
+	check(rail ~= nil and rail._edge == "BOTTOM", "the row sits on a rail (" ..
+		tostring(rail and rail._edge) .. ")")
+	local rp = rail.rule:GetPoint(1)
+	check(rp == "TOPLEFT",
+		"whose hairline is on the edge that faces the content (" ..
+		tostring(rp) .. ")")
+
+	local tp, trel, trelP, tgap = t2:GetPoint(1)
+	check(tp == "BOTTOMLEFT" and trel == t1 and trelP == "BOTTOMRIGHT",
 		"and each tab chains off the one before it IN THE ROW rather than in the"
 		.. " client's numbering, which is where that hole came from")
+	check(tgap == 0,
+		"flush against it, with no gap - the padding either side of a word is"
+		.. " what separates one from the next now there is no pill to space")
 
-	-- ONE WIDTH FOR ALL OF THEM. Sizing each to its own word leaves the strip
-	-- sprung: "Character" is half again the width of "Skills", so the space
-	-- between the pills lands differently at every join.
-	local w1, uneven = t1:GetWidth(), nil
-	for i, tb in ipairs(shown) do
-		if math.abs(tb:GetWidth() - w1) > 0.01 then
-			uneven = "#" .. i .. " " .. string.format("%.1f", tb:GetWidth())
-		end
+	-- EACH HUGS ITS OWN LABEL. It used to be one width for all of them, on the
+	-- argument that a row of pills at five different widths reads as sprung.
+	-- That was true of pills. With no container left to be uneven, an even row
+	-- was only wasting the rail - and the handoff says so in as many words.
+	local hugs = true
+	for _, tb in ipairs(shown) do
+		local lb = tb:GetFontString()
+		local slack = tb:GetWidth() - (lb and lb:GetStringWidth() or 0)
+		if slack < 18 or slack > 34 then hugs = false end
 	end
-	check(uneven == nil,
-		"every tab is the same width (" .. string.format("%.1f", w1) .. ")"
-		.. (uneven and (" - " .. uneven) or ""))
+	check(hugs, "each tab is its own word plus the padding, not one width for"
+		.. " all of them (" .. string.format("%.1f", t1:GetWidth()) .. " vs " ..
+		string.format("%.1f", shown[3]:GetWidth()) .. ")")
+	check(math.abs(t1:GetWidth() - shown[3]:GetWidth()) > 1,
+		"which for Character and Skills is visibly not the same number")
 
 	local _, tabSize, tabFlags = t1:GetFontString():GetFont()
 	check(tabFlags == "",
 		"a tab's label is our own type and unoutlined (" .. tostring(tabFlags)
-		.. " at " .. tostring(tabSize) .. ") - on a FILLED tab a black stroke"
-		.. " around dark type on a light fill reads as a sticker")
+		.. " at " .. tostring(tabSize) .. ")")
 
 	local spilled = RowSpill(shown)
 	check(spilled == nil,
-		"no label is wider than the tab it sits in" .. (spilled and (": " .. spilled) or ""))
+		"no label is wider than the tab it sits in" ..
+		(spilled and (": " .. spilled) or ""))
 
-	-- LEFT-ALIGNED, and it used to be centred.
-	--
-	-- A row of tabs is a list of places you can go, and a list starts at the
-	-- left edge of the thing it belongs to - the same edge everything else in
-	-- the window starts at. Centred, the row moved every time a tab appeared or
-	-- went away: a hunter's pet tab arriving slid Character, Skills and
-	-- Reputation sideways under the cursor.
-	local total = w1 * #shown + chosenGap * (#shown - 1)
+	-- LEFT-ALIGNED, off the rail's own corner. A row of tabs is a list of
+	-- places you can go, and a list starts at the left edge of the thing it
+	-- belongs to. Centred, the row moved every time a tab appeared or went
+	-- away: a hunter's pet tab arriving slid Character, Skills and Reputation
+	-- sideways under the cursor.
+	local sp, srel, srelP, sx = t1:GetPoint(1)
+	check(sp == "BOTTOMLEFT" and srel == rail and srelP == "BOTTOMLEFT"
+		and sx == 0,
+		"the row starts at the rail's own left corner (" .. tostring(sp) ..
+		" -> " .. tostring(srelP) .. " x=" .. tostring(sx) .. ")")
+
 	local insL, insR = 10, -30
 	local visible = cf:GetWidth() + insR - insL
-	local _, _, _, startX = t1:GetPoint(1)
-	local leftAir = startX - insL
-	check(math.abs(leftAir - 16) < 0.5,
-		"and the row starts at the left edge rather than floating in the middle"
-		.. " (" .. string.format("%.1f", leftAir) .. " in)")
-	check(total <= visible + 0.5,
-		"inside it (" .. string.format("%.1f", total) .. " of "
-		.. string.format("%.1f", visible) .. ")")
+	local function RowWidth(list)
+		local total = 0
+		for _, tb in ipairs(list) do total = total + tb:GetWidth() end
+		return total
+	end
+	check(RowWidth(shown) <= visible + 0.5,
+		"and the whole row is inside the window (" ..
+		string.format("%.1f", RowWidth(shown)) .. " of " ..
+		string.format("%.1f", visible) .. ")")
 
-	-- AND WITH A PET, WHICH IS FIVE. Every check above this ran on the four a
+	-- AND WITH A PET, WHICH IS FIVE. Every check above ran on the four a
 	-- character without one has, so the row that actually overhung in game -
 	-- Character, Pet, Reputation, Skills, Honor - was the one arrangement
 	-- nothing here had ever laid out.
@@ -23151,98 +23425,86 @@ do
 
 		local five = ShownTabs()
 		check(#five == 5, "a hunter's sheet has five tabs (" .. #five .. ")")
-
-		local _, _, _, gap5 = five[2]:GetPoint(1)
-		local total5 = five[1]:GetWidth() * #five + gap5 * (#five - 1)
-		local _, _, _, start5 = five[1]:GetPoint(1)
-
-		-- HOW FAR OVER, against how far the window may give. That is the whole
-		-- decision: the layout spends padding, then the gap, then a point or two
-		-- of lettering, and whatever is still over is taken out of the glass -
-		-- up to a cap, past which the row overhangs and that is the honest
-		-- answer. Five tabs went past that cap, which is what was on screen.
-		--
-		-- The cap is named here rather than read, deliberately: a test that asks
-		-- the module what its own limit is cannot notice the limit being wrong.
-		local TAB_GROW_MAX, TAB_EDGE = 48, 16
-		local visible5 = cf:GetWidth() + insR - insL
-		local over = total5 + TAB_EDGE * 2 - visible5
-
 		check(RowSpill(five) == nil,
-			"no label is wider than its tab with five of them"
-			.. (RowSpill(five) and (": " .. RowSpill(five)) or ""))
-		check(over <= TAB_GROW_MAX + 0.5,
-			"and the row of five is within what the window may give up ("
-			.. string.format("%.1f", over) .. " over, cap " .. TAB_GROW_MAX .. ")")
+			"no label is wider than its tab with five of them")
+		check(RowWidth(five) <= visible + 0.5,
+			"and five still fit, on tighter padding (" ..
+			string.format("%.1f", RowWidth(five)) .. " of " ..
+			string.format("%.1f", visible) .. ")")
 
 		_G.CharacterFrameTab2:Hide()
 		fire("PLAYER_ENTERING_WORLD")
 	end
 
-	-- A window too narrow for the words at any padding we can give up. The row
-	-- has to stay inside it and the labels inside their pills, which is the
-	-- path the clamp exists for - at full width the padding alone absorbs it
-	-- and the clamp never runs.
-	--
-	-- The number is chosen to force the LAST rung of the gap, and it had to come
-	-- down when the tab font did: a smaller word needs a narrower window before
-	-- the gap is what is left to give, and 350 was no longer tight enough to
-	-- prove anything.
-	local fullWidth = cf:GetWidth()
-	cf:SetWidth(320)                                -- a few pixels short, as it goes
-	fire("PLAYER_ENTERING_WORLD")
+	-- Scoped, because this file's main chunk is close to Lua's ceiling of 200
+	-- locals and this run alone declares a dozen.
+	do
+		-- WHAT GIVES, AND IN WHAT ORDER. Padding first, then a point off the
+		-- lettering, and only then the words - a ranking of what each costs the
+		-- player. White space costs nothing; half a word costs a lot.
+		local fullWidth = cf:GetWidth()
+		local basePad = (t1:GetWidth() - t1:GetFontString():GetStringWidth()) / 2
+		local baseSize = t1:GetFontString():GetFont() and
+			select(2, t1:GetFontString():GetFont())
 
-	local tightTabs = ShownTabs()
-	local tightSpill = RowSpill(tightTabs)
-	local _, _, _, tightGap = tightTabs[2]:GetPoint(1)
+		cf:SetWidth(320)
+		fire("PLAYER_ENTERING_WORLD")
+		local tight = ShownTabs()
+		local tightPad = (tight[1]:GetWidth()
+			- tight[1]:GetFontString():GetStringWidth()) / 2
+		local _, tightSize = tight[1]:GetFontString():GetFont()
+		check(tightPad < basePad,
+			"squeezed, the padding gives first (" ..
+			string.format("%.0f", tightPad) .. " from " ..
+			string.format("%.0f", basePad) .. ")")
+		check(tightSize < baseSize,
+			"and after that a point off the lettering (" .. tostring(tightSize) ..
+			" from " .. tostring(baseSize) .. ")")
+		check(RowSpill(tight) == nil, "with every label still inside its tab")
+		local cutYet
+		for _, tb in ipairs(tight) do cutYet = cutYet or tb.__aetherCut end
+		check(cutYet == nil,
+			"and NO word cut yet - three dots in place of three letters tells the"
+			.. " player less than the word did, so it is the last thing spent")
 
-	local tight = 0
-	for _, tb in ipairs(tightTabs) do tight = tight + tb:GetWidth() end
-	tight = tight + tightGap * (#tightTabs - 1)
-
-	check(tightGap == 2,
-		"squeezed into a narrow window the gap gives way first (" .. tightGap .. ")")
-
-	-- And when there is nothing of ours left to give, the WINDOW gives: a few
-	-- pixels of glass either side costs nothing and beats a row hanging over
-	-- the edge of it.
-	local grownRight
-	for pi = 1, 4 do
-		local pt, _, _, px = cf.__aetherPanel:GetPoint(pi)
-		if pt == "BOTTOMRIGHT" then grownRight = px end
-	end
-	check(grownRight and grownRight > -30,
-		"and after that the window widens to hold the row (right edge "
-		.. string.format("%.1f", grownRight or -30) .. " from -30)")
-	check(tight + 32 <= 350 + (grownRight or -30) - 10 + 0.5,
-		"which is then wide enough for it (" .. string.format("%.1f", tight) .. ")")
-
-	-- Then, and only then, a point or two of the lettering.
-	local baseSize = (A.Media.style["tbCardTitle"] or {})[2]
-	local lettering = _G.CharacterFrameTab1Text._aetherSize
-	check(lettering ~= nil and baseSize and lettering < baseSize,
-		"and after that the lettering gives a point (" .. tostring(lettering)
-		.. " from " .. tostring(baseSize) .. ") - a shade smaller reads fine,"
-		.. " three dots in place of three letters does not")
-
-	-- The words survive. Shortening "Character" to "Charac..." trades three
-	-- letters for three dots and tells the player less than the word did.
-	local shortened
-	for _, tb in ipairs(tightTabs) do
-		local lb = tb:GetFontString()
-		if lb and lb.GetWidth and (lb:GetWidth() or 0) > 0 then
-			shortened = lb:GetText()
+		-- AND WHEN THERE IS NOTHING ELSE LEFT, the words themselves - with the
+		-- whole of each on a tooltip, because a cut label that says nothing else
+		-- is a tab you have to click to identify.
+		cf:SetWidth(280)
+		fire("PLAYER_ENTERING_WORLD")
+		local cut = ShownTabs()
+		local cutOne
+		for _, tb in ipairs(cut) do cutOne = cutOne or tb.__aetherCut end
+		check(cutOne ~= nil,
+			"narrower still and a long label is cut (" .. tostring(cutOne) .. ")")
+		check(RowSpill(cut) == nil, "and it is inside its tab when it is")
+		local tipped
+		for _, tb in ipairs(cut) do
+			if tb.__aetherCut then
+				tb:GetScript("OnEnter")(tb)
+				tipped = GameTooltip:IsShown() and GameTooltip.__lines[1]
+				tb:GetScript("OnLeave")(tb)
+				break
+			end
 		end
-	end
-	check(shortened == nil,
-		"and no word is truncated to make it fit" ..
-		(shortened and (": " .. shortened) or "") .. " - the padding gives way,"
-		.. " then the gap, and after that the row is simply wider than the"
-		.. " window and says so")
-	check(tightSpill == nil, "with every label still inside its own pill")
+		check(tipped ~= nil,
+			"and the whole word is on a tooltip (" .. tostring(tipped) .. ")")
 
-	cf:SetWidth(fullWidth)
-	fire("PLAYER_ENTERING_WORLD")
+		-- THE WINDOW NEVER GROWS. It used to widen by up to 48 units to hold a row
+		-- that would not fit, which is a panel changing shape because of how many
+		-- tabs it happens to have. The rail is set by the frame, never the reverse.
+		local grownRight
+		for pi = 1, 4 do
+			local pt, _, _, px = cf.__aetherPanel:GetPoint(pi)
+			if pt == "BOTTOMRIGHT" then grownRight = px end
+		end
+		check(grownRight == insR,
+			"and the glass is still trimmed to the window rather than stretched"
+			.. " round the row (" .. tostring(grownRight) .. " of " .. insR .. ")")
+
+		cf:SetWidth(fullWidth)
+		fire("PLAYER_ENTERING_WORLD")
+	end
 
 	-- AND IT HAS TO STAY FITTED. The client re-sizes its own tabs on show and
 	-- on every click, straight over anything we set. A row that is only correct
@@ -23254,40 +23516,63 @@ do
 		.. ") - it does this on show and on every tab click, so a width set"
 		.. " once at dress time lasts until the player touches the window")
 
-	local tpt1, trel1, trelP1, tx1 = t1:GetPoint(1)
-	check(tpt1 == "BOTTOMLEFT" and trelP1 == "BOTTOMLEFT" and trel1 == cf,
-		"the row is anchored by its own bottom-left corner to the frame's ("
-		.. tostring(tpt1) .. " -> " .. tostring(trelP1) .. " x=" .. tostring(tx1)
-		.. ") - the client anchors this tab by its CENTRE, so keeping its point"
-		.. " and overwriting only the x reads 18 as 'put the middle here' and"
-		.. " hangs half the tab off the side of the screen")
-
 	-- The client's own placement is still remembered, because off has to put
 	-- the tab back where it found it.
 	check(t1.__aetherAnchor and t1.__aetherAnchor[1] == "CENTER",
 		"while the client's own anchor is still recorded for the way back")
 
 	-- The client marks the OPEN tab by disabling it, which reads backwards
-	-- until you know it.
-	-- Selecting through the CLIENT'S OWN function, which moves the label up
-	-- into the raised part of its stone art on the way.
+	-- until you know it. Selected through the CLIENT'S OWN function, which
+	-- moves the label up into the raised part of its stone art on the way.
 	_G.PanelTemplates_SelectTab(t1)
 	_G.PanelTemplates_UpdateTabs(cf)
 
-	local lp, lrel, lrelP, lx, ly = t1:GetFontString():GetPoint(1)
+	local lp, _, lrelP, lx, ly = t1:GetFontString():GetPoint(1)
 	check(lp == "CENTER" and lrelP == "CENTER" and lx == 0 and ly == 0,
-		"the selected tab's label stays in the middle of its pill (y="
-		.. tostring(ly) .. ") - the client nudges it up on every selection,"
-		.. " which is right for raised stone and wrong for a flat pill")
+		"the selected tab's label stays in the middle of its tab (y=" ..
+		tostring(ly) .. ") - the client nudges it up on every selection, which"
+		.. " is right for raised stone and wrong for a flat rail")
 
 	fire("PLAYER_ENTERING_WORLD")
-	-- FILLED, the way the chat's selected tab is: dark type on the accent,
-	-- inverted from everything else on screen. A tab that was merely brighter
-	-- than its neighbours read as hovered rather than as the one you are on.
-	check(t1.__aetherTab._fillColor == A.Palette.c.accent
-		and t2.__aetherTab._fillColor ~= A.Palette.c.accent,
-		"the open tab is FILLED and the rest are not - brighter alone reads as"
-		.. " hovered, and the inversion is the whole signal")
+
+	do
+		-- A MARK, NOT A FILL. This is the whole of the pattern: a tab changes
+		-- which view of the frame you are looking at, a button does a thing, and
+		-- an interface where both wear the accent fill is one where you cannot
+		-- tell them apart. Four tabbed surfaces here wore that fill.
+		check(t1.__aetherMark ~= nil and t1.__aetherMark:IsShown(),
+			"the open tab carries a mark")
+		check(not t2.__aetherMark:IsShown(),
+			"and the others carry nothing at all")
+		check(t1.__aetherSkin == nil,
+			"with no button surface anywhere on it - a filled tab is Create, Send"
+			.. " and Accept in a row along the bottom of the window")
+
+		-- ON THE HAIRLINE, on the content-facing edge, inset from both ends.
+		local mp, mrel, mrelP, mx = t1.__aetherMark:GetPoint(1)
+		check(mp == "LEFT" and mrel == t1 and mrelP == "LEFT" and mx == 5,
+			"as long as its own tab, less an inset at each end (" ..
+			tostring(mp) .. " x=" .. tostring(mx) .. ")")
+		local lp, lrel = t1.__aetherMark:GetPoint(3)
+		check(lp == "TOP" and lrel == rail,
+			"and standing on the rail's own line (" .. tostring(lp) .. ")")
+		check(t1.__aetherMark:GetHeight() == 2,
+			"two pixels of it (" .. tostring(t1.__aetherMark:GetHeight()) .. ")")
+		local mr = { t1.__aetherMark:GetVertexColor() }
+		local acc = A.Palette.c.accent
+		check(math.abs(mr[1] - acc[1]) < 0.01 and math.abs(mr[2] - acc[2]) < 0.01,
+			"in the skin's accent, so it follows a skin change on its own")
+
+		-- AND THE INK IS THE LADDER. Bright for the one you are on, faint for the
+		-- ones you are not - the interface's own three steps rather than three
+		-- literal alphas out of the deck.
+		local onR = { t1:GetFontString():GetTextColor() }
+		local offR = { t2:GetFontString():GetTextColor() }
+		check(onR[4] > offR[4],
+			"the open tab's word is brighter than the rest (" ..
+			string.format("%.2f", onR[4]) .. " vs " ..
+			string.format("%.2f", offR[4]) .. ")")
+	end
 	t1:Enable()
 
 	-- SCALE. Every other frame of ours is drawn at profile.scale.
@@ -23413,9 +23698,54 @@ do
 	check(st1:GetCheckedTexture():GetTexture() == "Interface\\Buttons\\CheckButtonHilight",
 		"and so does the mark saying which school you are on")
 
+	-- THE SAME RAIL, ROTATED. The schools are a secondary filter within the
+	-- book the bottom rail has already chosen - two axes, one panel - so they
+	-- get the icon rail rather than a second row of words.
+	local srail = sb.__aetherRail
+	check(srail ~= nil and srail._edge == "RIGHT",
+		"the column sits on a vertical rail down the window's right edge (" ..
+		tostring(srail and srail._edge) .. ")")
+	local rrp = srail.rule:GetPoint(1)
+	check(rrp == "TOPLEFT",
+		"with its hairline on the side facing the spells (" .. tostring(rrp) ..
+		")")
+	check(not srail.tint:IsShown(),
+		"and NO wash behind it - four per cent of lilac on a frosted panel is"
+		.. " a slab down the side of the window, and the hairline gathers the"
+		.. " column the same way it gathers a row of words")
+
 	local sPt, sRel, sRelPt = st1:GetPoint(1)
-	check(sPt == "TOPRIGHT" and sRel == sb and sRelPt == "TOPRIGHT",
-		"the column hangs off the glass's own right edge (" .. tostring(sPt) .. ")")
+	check(sPt == "TOP" and sRel == srail and sRelPt == "TOP",
+		"the column hangs off the rail rather than off the glass (" ..
+		tostring(sPt) .. ")")
+
+	-- AN INACTIVE ICON DIMS AND DRAINS, which is the exact analogue of dim
+	-- text: a picture cannot go faint without losing what it is a picture of.
+	local st2 = _G.SpellBookSkillLineTab2
+	st1:SetChecked(true)
+	st2:SetChecked(false)
+	sb:UpdateSkillLineTabs()
+	check(st1.__aetherMark:IsShown() and not st2.__aetherMark:IsShown(),
+		"the school you are in carries the same mark a word tab does")
+
+	-- ON THE RAIL'S LINE, NOT THE ICON'S EDGE. These tabs are children of
+	-- SpellBookSideTabsFrame - a full-window frame of Blizzard's that exists
+	-- only to hold them - so looking the rail up off the parent finds nothing
+	-- and the mark falls back to the icon, six pixels in from the line. It has
+	-- to be handed the rail, and this is the check that says so.
+	local _, sfrel, sfrelP = st1.__aetherMark:GetPoint(3)
+	check(sfrel == srail and sfrelP == "LEFT",
+		"and it stands on the rail's own left edge rather than the icon's (" ..
+		tostring(sfrelP) .. ")")
+	check(st1:GetParent() ~= srail:GetParent(),
+		"which the parent could not have told it - the tab hangs off a frame of"
+		.. " Blizzard's and the rail off the window")
+	check(st1:GetNormalTexture():GetAlpha() == 1
+		and st2:GetNormalTexture():GetAlpha() < 1,
+		"and the ones you are not in are dimmed (" ..
+		string.format("%.2f", st2:GetNormalTexture():GetAlpha()) .. ")")
+	check(st2:GetNormalTexture().__desaturated == true,
+		"and drained of their colour with it")
 	local s2Rel, s2Y = select(2, st2:GetPoint(1)), select(5, st2:GetPoint(1))
 	check(s2Rel == st1 and s2Y == -6,
 		"and closes up under it (" .. tostring(s2Y) .. ") - Blizzard's 17 is the"
@@ -23472,8 +23802,11 @@ do
 	check(bt1.__aetherTab ~= nil and bt2.__aetherTab ~= nil,
 		"and are laid out when the client shows them - from the client's own"
 		.. " update, not from a re-dress nobody would have run")
-	check(math.abs(bt1:GetWidth() - bt2:GetWidth()) < 0.01,
-		"in one even row (" .. string.format("%.1f", bt1:GetWidth()) .. ")")
+	check(math.abs(bt1:GetWidth() - bt2:GetWidth()) > 1,
+		"each hugging its own word rather than sharing one width - Spellbook"
+		.. " and Demon are not the same length and there is no pill left to be"
+		.. " uneven (" .. string.format("%.1f", bt1:GetWidth()) .. " / " ..
+		string.format("%.1f", bt2:GetWidth()) .. ")")
 
 	local hl, hr, ht, hb = bt1:GetHitRectInsets()
 	check(hl == 0 and hr == 0 and ht == 0 and hb == 0,
@@ -23482,13 +23815,14 @@ do
 		.. " two insets meet, so it draws, highlights, reads correctly and does"
 		.. " nothing at all when you click it")
 
-	check(bt1.__aetherTab._fillColor == A.Palette.c.accent
-		and bt2.__aetherTab._fillColor ~= A.Palette.c.accent,
-		"and the book you are in is the filled one")
+	check(bt1.__aetherMark:IsShown() and not bt2.__aetherMark:IsShown(),
+		"and the book you are in is the marked one - a FILLED tab is Create,"
+		.. " Send and Accept in a row along the bottom of the window")
 
 	local bPt, bRel, bRelPt = bt1:GetPoint(1)
-	check(bPt == "BOTTOMLEFT" and bRel == sb and bRelPt == "BOTTOMLEFT",
-		"anchored by its own corner (" .. tostring(bPt) .. ")")
+	check(bPt == "BOTTOMLEFT" and bRel == sb.__aetherRail
+		and bRelPt == "BOTTOMLEFT",
+		"anchored by its own corner to the RAIL's (" .. tostring(bPt) .. ")")
 
 	-- AND WITH NO CLICK INVOLVED. Enabling a tab moves its label up into the
 	-- raised part of art that is no longer there, and the client enables and
@@ -23497,7 +23831,7 @@ do
 	sb:Update()
 	local lPt, _, lRelPt, lx, ly = bt1:GetFontString():GetPoint(1)
 	check(lPt == "CENTER" and lRelPt == "CENTER" and lx == 0 and ly == 0,
-		"the selected tab's label is put back in the middle of its pill (y="
+		"the selected tab's label is put back in the middle of its tab (y="
 		.. tostring(ly) .. ") after the client's own rebuild")
 
 	-- OFF AND ON AGAIN. Switching the module off hands the client every texture
@@ -23578,15 +23912,18 @@ do
 		"and drawn as a rounded rectangle at the deck's own radius rather than"
 		.. " a capsule (" .. tostring(_G.QuestFrameAcceptButton.__aetherSkin._kind)
 		.. ")")
-	check(_G.MerchantFrameTab1.__aetherTab._kind == "panel",
-		"a tab is the same surface in a different state, not a second kind")
+	check(_G.MerchantFrameTab1.__aetherSkin == nil
+		and _G.MerchantFrameTab1.__aetherMark ~= nil,
+		"a tab is NOT a surface at all - it is a word on a rail with a mark"
+		.. " under the one you are on, which is the only thing telling it apart"
+		.. " from the Accept button above it")
 
 	-- LEFT-ALIGNED, and this is the window that can tell. The character sheet's
 	-- four tabs happen to total exactly the width that centring would give
 	-- them, so it agreed with both rules; two tabs in a 336-wide window do not.
-	local _, _, _, mtx = _G.MerchantFrameTab1:GetPoint(1)
-	check(mtx and math.abs(mtx - 16) < 0.5,
-		"the vendor's tab row starts at the left edge (" .. tostring(mtx)
+	local _, mrel, _, mtx = _G.MerchantFrameTab1:GetPoint(1)
+	check(mtx == 0 and mrel == _G.MerchantFrame.__aetherRail,
+		"the vendor's tab row starts at the rail's left edge (" .. tostring(mtx)
 		.. ") - centred, a row slides sideways every time a tab comes or goes")
 	-- NOT A CELL. These are wide rows - an icon at one end, the item's name
 	-- beside it - and a cell sizes its picture to the whole button, so the icon
@@ -24105,8 +24442,9 @@ do
 	check(r1b == open[1], "and the rims still say what state each talent is in")
 
 	local tb1, tb2 = _G.PlayerTalentFrameTab1, _G.PlayerTalentFrameTab2
-	check(tb1.__aetherTab ~= nil and math.abs(tb1:GetWidth() - tb2:GetWidth()) < 0.01,
-		"its tabs are one even row (" .. string.format("%.1f", tb1:GetWidth()) .. ")")
+	check(tb1.__aetherTab ~= nil and tb1.__aetherMark ~= nil,
+		"its tabs are on the same rail as everything else (" ..
+		string.format("%.1f", tb1:GetWidth()) .. ")")
 	check(_G.PlayerTalentFrameTab4.__aetherTab == nil,
 		"and the glyph tab, which this flavour never shows, is left out of it")
 
@@ -25013,9 +25351,9 @@ do
 		flash2:Show()
 		flash1:Show()
 		C3:UpdateFlashes()
-		check(tab2._dot:GetAlpha() == 1,
+		check(tab2.__aetherDot:IsShown(),
 			"an unselected tab with a live flash gets the unread dot")
-		check(tab1._dot:GetAlpha() == 0,
+		check(not tab1.__aetherDot:IsShown(),
 			"and the SELECTED tab does not, however long its flash has been"
 			.. " shown - an unread marker on the window you are reading is"
 			.. " noise, and it is the one that was reported")
@@ -25023,30 +25361,49 @@ do
 		-- Select the other one and the dots swap.
 		_G.GeneralDockManager.selected = _G.ChatFrame2
 		C3:UpdateFlashes()
-		check(tab2._dot:GetAlpha() == 0 and tab1._dot:GetAlpha() == 1,
+		check(not tab2.__aetherDot:IsShown() and tab1.__aetherDot:IsShown(),
 			"selecting a tab clears its dot and the other one keeps its own")
 		_G.GeneralDockManager.selected = _G.ChatFrame1
 
 		flash1:Hide(); flash2:Hide()
 		C3:UpdateFlashes()
-		check(tab1._dot:GetAlpha() == 0 and tab2._dot:GetAlpha() == 0,
+		check(not tab1.__aetherDot:IsShown()
+			and not tab2.__aetherDot:IsShown(),
 			"and with nothing flashing there are no dots at all")
+
+		-- AND A WHISPER IS NOT A CHANNEL. The handoff reserves the gold dot for
+		-- something addressed to you; Blizzard's flash says only that something
+		-- arrived, so the window is asked what it is registered to carry.
+		_G.ChatFrame2.__groups = { WHISPER = true }
+		flash2:Show()
+		C3:UpdateFlashes()
+		local wr = { tab2.__aetherDot:GetVertexColor() }
+		check(math.abs(wr[1] - A.Palette.c.semanticGold[1]) < 0.01,
+			"a window you get whispered in takes the reserved gold")
+		_G.ChatFrame2.__groups = nil
+		C3:UpdateFlashes()
+		local cr = { tab2.__aetherDot:GetVertexColor() }
+		check(math.abs(cr[1] - A.Palette.c.accent[1]) < 0.01,
+			"and an ordinary channel takes the accent")
+		flash2:Hide()
+		C3:UpdateFlashes()
 	end
 
 	C3:StyleTab(tab1)
 	C3:StyleTab(tab2)
-	check(tab1._pill and tab1._pill:GetAlpha() == 1,
-		"the selected tab draws its pill")
-	check(tab1._pill._fillColor == A.Palette.c.accent,
-		"filled with the accent, which is the concept's coloured pill")
-	check(tab2._pill and tab2._pill:GetAlpha() == 0,
+	check(tab1.__aetherMark:IsShown(),
+		"the selected tab draws its mark")
+	local mk = { tab1.__aetherMark:GetVertexColor() }
+	check(math.abs(mk[1] - A.Palette.c.accent[1]) < 0.01,
+		"in the skin's accent, which is the one colour the pattern uses")
+	check(not tab2.__aetherMark:IsShown(),
 		"and an unselected tab draws none")
 
 	-- Selecting the other one moves it.
 	FCFDock_SelectWindow(_G.GeneralDockManager, _G.ChatFrame2)
 	C3:StyleTab(tab1)
 	C3:StyleTab(tab2)
-	check(tab2._pill:GetAlpha() == 1 and tab1._pill:GetAlpha() == 0,
+	check(tab2.__aetherMark:IsShown() and not tab1.__aetherMark:IsShown(),
 		"and it follows the selection")
 
 	-- A client that hands back a number instead must still work.
@@ -25065,15 +25422,15 @@ do
 	-- The client hands the answer to the hook and the old one declared
 	-- `function(tab)` and dropped it on the floor.
 	FCFTab_UpdateColors(tab2, true)
-	check(tab2._pill:GetAlpha() == 1,
+	check(tab2.__aetherMark:IsShown(),
 		"a tab the client itself calls selected lights up, whatever the dock says")
 
 	-- ...and that must not outlive the selection that produced it. This is the
-	-- stale-flag case: two pills lit at once.
+	-- stale-flag case: two tabs marked at once.
 	FCFDock_SelectWindow(_G.GeneralDockManager, _G.ChatFrame1)
 	C3:SkinAllTabs()
-	check(tab1._pill:GetAlpha() == 1 and tab2._pill:GetAlpha() == 0,
-		"and moving the selection back leaves exactly one pill lit")
+	check(tab1.__aetherMark:IsShown() and not tab2.__aetherMark:IsShown(),
+		"and moving the selection back leaves exactly one tab marked")
 
 	-- An undocked window is not in the dock, so it can never be the dock's
 	-- selection - but it is the window you are reading.
@@ -25085,7 +25442,7 @@ do
 	-- nothing whatsoever in game.
 	_G.ChatFrame2.isDocked = nil
 	C3:SkinAllTabs()
-	check(tab2._pill:GetAlpha() == 1,
+	check(tab2.__aetherMark:IsShown(),
 		"an undocked window's tab is not dimmed forever for not being in the dock")
 
 	-- ...and the whole undock sequence, in the client's order: colour the tab
@@ -25095,13 +25452,13 @@ do
 	FCFTab_UpdateColors(tab2, true)
 	FCFDock_UpdateTabs(_G.GeneralDockManager)
 	C3:SkinAllTabs()
-	check(tab2._pill:GetAlpha() == 1,
+	check(tab2.__aetherMark:IsShown(),
 		"and it survives the dock update that follows the undock")
 
 	-- A CLOSED window is undocked too, and stays in CHAT_FRAMES forever.
 	_G.ChatFrame2:Hide()
 	C3:SkinAllTabs()
-	check(tab2._pill:GetAlpha() == 0,
+	check(not tab2.__aetherMark:IsShown(),
 		"but a closed window's tab is not lit just for being undocked")
 	_G.ChatFrame2:Show()
 
@@ -25132,42 +25489,33 @@ do
 	local tab1 = _G.ChatFrame1Tab
 	C3:StyleTab(tab1)
 
-	-- The first version anchored the pill to the tab's corners inset by 2. A
-	-- docked ChatFrameTab is 32 tall, so that drew a 28-tall slab - and the
-	-- divider is only 24 below the dock's top edge, so 3px of it sat on the line.
-	local pillH = tab1._pill:GetHeight()
-	check(pillH < tab1:GetHeight() - 4,
-		"the pill does not inherit the tab's height (" .. pillH .. " of "
-		.. tab1:GetHeight() .. ")")
+	-- THE MARK IS NOT THE TAB. A docked ChatFrameTab is 32 tall against a 26
+	-- dock, so its own bottom edge is three pixels BELOW the divider the mark
+	-- is supposed to sit on - and a mark measured from the tab would be down
+	-- there rather than on the line.
+	check(tab1.__aetherMark:GetHeight() == 2,
+		"the mark is two pixels of it, whatever the tab is (" ..
+		tab1.__aetherMark:GetHeight() .. ")")
 
-	-- ...and it must not START inheriting it again. A taller tab is the thing
+	-- ...and it must not START inheriting the tab. A taller tab is the thing
 	-- that would reveal a corner anchor, so give it one.
 	local was = tab1:GetHeight()
 	tab1:SetHeight(64)
 	C3:StyleTab(tab1)
-	check(tab1._pill:GetHeight() == pillH,
-		"and doubling the tab's height does not change it")
+	local _, mrel = tab1.__aetherMark:GetPoint(1)
+	check(mrel == _G.ChatFrame1TabText and tab1.__aetherMark:GetHeight() == 2,
+		"and doubling the tab's height moves neither its width nor its"
+		.. " thickness, because neither comes from the tab")
 	tab1:SetHeight(was)
 	C3:StyleTab(tab1)
-
-	-- The clearance, computed from what the module actually anchored rather
-	-- than from numbers retyped here. Tabs are anchored by LEFT - by their
-	-- vertical CENTRE - to the dock, so the pill's centre is the dock's centre.
-	local p = C3.panel
-	local _, _, _, _, panelY = p:GetPoint(1)             -- panel top from dock top
-	local dy
-	for i = 1, 4 do
-		local pt, _, _, _, y = p.divider:GetPoint(i)
-		if pt == "TOPLEFT" then dy = y end
-	end
-	if panelY and dy then
-		local dockH = _G.GeneralDockManager:GetHeight()
-		local dividerFromDockTop = panelY + dy           -- 10 + -34 = -24
-		local pillBottomFromDockTop = -(dockH / 2) - pillH / 2   -- -13 - 9 = -22
-		check(pillBottomFromDockTop > dividerFromDockTop,
-			"the pill's bottom clears the divider by "
-			.. (pillBottomFromDockTop - dividerFromDockTop) .. "px")
-	end
+	-- THE MARK SITS ON THE DIVIDER, which is the rail's own line - computed
+	-- from what the module actually anchored rather than from numbers retyped
+	-- here. The pill this replaced had to CLEAR the divider by a couple of
+	-- pixels; the mark is the opposite of that. It belongs on it.
+	local _, drel, drelP, _, dy = tab1.__aetherMark:GetPoint(3)
+	check(drel == C3.panel.divider and drelP == "BOTTOM" and dy == 0,
+		"exactly on the line rather than clear of it (" .. tostring(drelP) ..
+		" y=" .. tostring(dy) .. ")")
 end
 
 print("== chat: clicking a tab does not deform the pill ==")
@@ -25196,27 +25544,29 @@ do
 	check(math.abs(tab2:GetWidth() - want) < 0.01,
 		"the tab is our width, not the client's 60 (" .. tab2:GetWidth() .. ")")
 
-	-- The invariant that makes "off-centre label" impossible rather than merely
-	-- unlikely: the pill is anchored to the LABEL. Its centre is then the
-	-- label's centre by construction, whatever the tab is doing.
-	local p1, rel1 = tab2._pill:GetPoint(1)
-	local p2, rel2 = tab2._pill:GetPoint(2)
+	-- The invariant that makes a drifting mark impossible rather than merely
+	-- unlikely: it is anchored to the LABEL for its width. Its centre is then
+	-- the word's centre by construction, whatever the tab is doing - and the
+	-- tab is doing a lot, because PanelTemplates_TabResize rewrites its width
+	-- twice on every click.
+	local p1, rel1 = tab2.__aetherMark:GetPoint(1)
+	local p2, rel2 = tab2.__aetherMark:GetPoint(2)
 	check(rel1 == fs2 and rel2 == fs2,
-		"and the pill hangs off the label, not off the tab (" .. tostring(p1)
+		"the mark hangs off the label, not off the tab (" .. tostring(p1)
 		.. "/" .. tostring(p2) .. ")")
-	check(tab2._pill:GetHeight() == 18,
-		"with its height still its own (" .. tab2._pill:GetHeight() .. ")")
 
-	-- Two points, not four and not two stacked on two: re-anchoring every pass
-	-- without clearing first would pile them up until the frame is over-defined.
+	-- Three points, not six: re-anchoring every pass without clearing first
+	-- would pile them up until the frame is over-defined. Two for the width,
+	-- one for the line it sits on.
 	local n = 0
-	while tab2._pill:GetPoint(n + 1) do n = n + 1 end
-	check(n == 2, "and exactly two anchor points survive repeated styling ("
+	while tab2.__aetherMark:GetPoint(n + 1) do n = n + 1 end
+	check(n == 3, "and exactly three anchor points survive repeated styling ("
 		.. n .. ")")
 
 	FCFDock_SelectWindow(_G.GeneralDockManager, _G.ChatFrame1)
 	C3:SkinAllTabs()
-	check(_G.ChatFrame1TabText:GetWidth() == 0 and tab1._pill:GetHeight() == 18,
+	check(_G.ChatFrame1TabText:GetWidth() == 0
+		and tab1.__aetherMark:GetHeight() == 2,
 		"and clicking back leaves the first tab as it started")
 end
 
@@ -25229,34 +25579,32 @@ do
 
 	local sel, unsel = _G.ChatFrame1TabText, _G.ChatFrame2TabText
 
-	-- GameFontNormalSmall inherits SystemFont_Shadow_Small, which carries
-	-- `<Shadow x="1" y="-1"><Color r="0" g="0" b="0"/></Shadow>`. SetFont does
-	-- not clear it, so dark type on the pale accent pill came with an opaque
-	-- black halo baked in.
+	-- NO SHADOW ON ANY OF THEM. GameFontNormalSmall inherits
+	-- SystemFont_Shadow_Small, which carries a hard black shadow, and SetFont
+	-- does not clear it. It used to be cleared on the SELECTED tab only,
+	-- because that was the one with a pale fill behind it to be smudged
+	-- against - and there is no fill behind any of them now. A black halo
+	-- under a word on glass reads as a smudge rather than as depth.
 	local _, _, _, sa = sel:GetShadowColor()
-	check(sa == 0, "the selected label casts no shadow onto its own pill ("
-		.. tostring(sa) .. ")")
-
-	-- ...but pale type on the dark panel still wants one.
 	local _, _, _, ua = unsel:GetShadowColor()
-	check(ua and ua > 0,
-		"while an unselected one keeps it, as the message text does ("
-		.. tostring(ua) .. ")")
+	check(sa == 0 and ua == 0,
+		"neither the tab you are reading nor the ones you are not casts a"
+		.. " shadow (" .. tostring(sa) .. " / " .. tostring(ua) .. ")")
 
-	-- And the ink is opaque. `c.glass` is the panel FILL and carries alpha 0.55;
-	-- passing it through as a text colour drew the label fainter than the black
-	-- shadow behind it, which is what made it look blurred rather than dark.
+	-- And the ink is opaque. `c.glass` is the panel FILL and carries alpha
+	-- 0.55; passing it through as a text colour drew the label fainter than
+	-- the black shadow behind it, which is what made it look blurred.
 	local _, _, _, ta = sel:GetTextColor()
-	check(ta == 1, "and the selected label is fully opaque, not the panel fill's"
-		.. " alpha (" .. tostring(ta) .. ")")
+	check(ta == 1, "and the tab you are reading is fully opaque, not the panel"
+		.. " fill's alpha (" .. tostring(ta) .. ")")
 
-	-- Reselecting has to put both back, or the treatment is one-way.
+	-- Reselecting has to leave both alone, or the treatment is one-way.
 	FCFDock_SelectWindow(_G.GeneralDockManager, _G.ChatFrame2)
 	C3:SkinAllTabs()
 	local _, _, _, a1 = _G.ChatFrame1TabText:GetShadowColor()
 	local _, _, _, a2 = _G.ChatFrame2TabText:GetShadowColor()
-	check(a1 and a1 > 0 and a2 == 0,
-		"and the shadow follows the selection rather than being cleared once")
+	check(a1 == 0 and a2 == 0,
+		"and moving the selection does not hand one of them a shadow back")
 
 	FCFDock_SelectWindow(_G.GeneralDockManager, _G.ChatFrame1)
 	C3:SkinAllTabs()

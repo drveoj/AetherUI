@@ -380,30 +380,30 @@ PN.Dress = Dress
 -- Classic skin, which is maintained against this client - the character frame's
 -- own source is not in the Blizzard dump.
 
--- The tab strip. Blizzard's tabs are sized for art with wide transparent
--- margins and are meant to overlap - the art hides the join. Strip the art and
--- the overlap is all you can see, so they are measured to their own label and
--- chained with a gap of ours.
-local TAB_PAD, TAB_GAP, TAB_H, TAB_EDGE = 26, 6, 26, 16
+-- THE TAB STRIP. One language for every tabbed surface in this interface, and
+-- it lives in W.Tab / W.TabRail - bare text on a hairline, with a mark under
+-- the one you are standing on. What is left here is the LAYOUT: how a row of
+-- somebody else's buttons is measured into a rail that must not grow.
+--
+-- Blizzard's tabs are sized for art with wide transparent margins and are
+-- meant to overlap, the art hiding the join. With the art off there is no
+-- join to hide, so each one is measured to its own word and they sit flush.
+local TAB_H = W.TAB_RAIL_H
 
--- What to give up, in order, when the row is too wide for the window. Padding
--- first and the gap second, because both are ours to spend; the label's own
--- width is not, and a tab squeezed narrower than the word inside it just spills
--- the word out over both ends of the pill.
-local TAB_PADS = { 26, 22, 18, 14 }
-local TAB_GAPS = { 6, 4, 2 }
+-- Each tab HUGS ITS OWN LABEL now. It used to be one width for all of them,
+-- on the argument that a row of pills at five different widths reads as
+-- sprung - which was true of pills and is not true of words. With no
+-- container to be uneven, the even row was only wasting the rail.
+local TAB_PADS = W.TAB_PADS
 
--- And after both of those, a point or two off the lettering. Still not the
--- word: a shade smaller reads fine, three dots in place of three letters does
--- not.
-local TAB_STYLE = "pnTab"
--- Three, because the row starts a point up: this spends the bump and one more
--- besides before it gives up and lets the row overhang.
-local TAB_FONT_STEPS = 3
+-- And after the padding, a point or two off the lettering. Still not the word:
+-- a shade smaller reads fine, three dots in place of three letters does not.
+local TAB_STYLE = 'pnTab'
+local TAB_FONT_STEPS = 2
 
--- The most glass we will add either side to stop a row overhanging. A few
--- pixels is the point; a window stretched around whatever it is given is not.
-local TAB_GROW_MAX = 48
+-- Last of all, and only when nothing else has bought the room: the words
+-- themselves, cut with an ellipsis and the whole of it moved to a tooltip.
+local TAB_MIN_LABEL = 34
 
 local function TabLabel(tab)
 	return Reskin.Element(tab, "Text") or (tab.GetFontString and tab:GetFontString())
@@ -427,20 +427,17 @@ local function StyleTabState(tab)
 	local enabled = (tab.IsEnabled == nil) or tab:IsEnabled()
 	local selected = not enabled
 
-	-- FILLED, the way the chat's selected tab is - dark type on the accent,
-	-- inverted from everything else on screen. That inversion is the whole
-	-- signal, and a tab that was merely BRIGHTER than its neighbours read as
-	-- hovered rather than as the one you are standing on. One rule for every
-	-- tab in the interface now, and it lives on the shared button surface.
-	tab.__aetherSelected = selected
-	W.SetButtonState(tab, selected, tab.IsMouseOver and tab:IsMouseOver())
+	-- BRIGHT TEXT AND A MARK, never a fill. See W.TabState: a filled tab is
+	-- indistinguishable from Create, Send or Accept, and those do things
+	-- rather than change what you are looking at.
+	W.TabState(tab, selected, tab.IsMouseOver and tab:IsMouseOver())
 
 	local text = TabLabel(tab)
 	if not text then return end
 
-	-- AND PUT THE LABEL BACK IN THE MIDDLE. Selecting a tab moves its text: the
-	-- client nudges it up into the raised part of its own stone art, which is
-	-- right for that art and wrong for a flat pill. It does this on every
+	-- AND PUT THE LABEL BACK WHERE WE PUT IT. Selecting a tab moves its text:
+	-- the client nudges it up into the raised part of its own stone art, which
+	-- is right for that art and wrong for a flat rail. It does this on every
 	-- selection, so it has to be answered on every selection.
 	if text.ClearAllPoints then
 		text:ClearAllPoints()
@@ -449,13 +446,17 @@ local function StyleTabState(tab)
 	if text.SetJustifyH then text:SetJustifyH("CENTER") end
 end
 
---- How much room the tab row actually has: the visible window, less a margin.
+--- How much room the tab row actually has: the visible window, and no more.
+--
+--  THE RAIL IS SET BY THE FRAME, never the reverse. This used to grow the
+--  window by up to 48 units when a row would not fit, which is a panel that
+--  changes shape because of how many tabs it happens to have.
 local function StripWidth(frame, name)
 	local w = (frame.GetWidth and frame:GetWidth()) or 0
 	local entry = PN.ENTRY and PN.ENTRY[name]
 	local ins = entry and entry.insets
 	if ins then w = w + (ins[3] or 0) - (ins[1] or 0) end
-	return w - TAB_EDGE * 2
+	return w
 end
 
 --- Measure every tab's label, at a given font size.
@@ -483,6 +484,14 @@ local function MeasureTabs(tabs, size)
 	return widths, textSum
 end
 
+--- The row, and the rail it sits on.
+--
+--  THE RAIL NEVER GROWS. What gives, in order, is the padding either side of
+--  each word, then a point or two off the lettering, and only then the words
+--  themselves - cut with an ellipsis, with the whole of it on a tooltip. That
+--  order is the handoff's and it is a ranking of how much each costs the
+--  player: white space costs nothing, a smaller word costs a little, half a
+--  word costs a lot.
 local function LayoutTabs(frame, store)
 	local name = frame.GetName and frame:GetName()
 	if not name then return end
@@ -522,115 +531,80 @@ local function LayoutTabs(frame, store)
 
 	if #tabs == 0 then return end
 
-	local room = StripWidth(frame, name)
-	local base = (A.Media.style[TAB_STYLE] or {})[2]
-	base = base and (base + FONT_BUMP)
-
-	local gap = TAB_GAP
-	local widths = MeasureTabs(tabs, base)
-
-	local function widest(ws)
-		local m = 0
-		for _, w in ipairs(ws) do if w > m then m = w end end
-		return m
-	end
-
-	-- EVERY TAB THE SAME WIDTH, sharing the row out evenly.
-	--
-	-- Sizing each one to its own word instead leaves the strip looking sprung:
-	-- "Character" is half again the width of "Skills", so the space between the
-	-- pills lands differently at every join and the row reads as a mistake. One
-	-- width for all of them is what makes it a row.
-	--
-	-- It only works while the widest word still fits its share. When it does
-	-- not, a point or two off the lettering buys the room - and if even that is
-	-- not enough, each tab takes its own width back, because a word that will
-	-- not fit its pill is worse than an uneven row.
-	-- The width every tab gets is the WIDEST word plus padding: that is the
-	-- narrowest one width that fits all of them. If the row of those is too
-	-- wide for the window, the padding gives, then the gap, then a point or two
-	-- of the lettering - and a smaller font makes the widest word narrower,
-	-- which is what buys the room back.
-	local even
-	for stepIndex = 0, TAB_FONT_STEPS do
-		if stepIndex > 0 then
-			if not base then break end
-			widths = MeasureTabs(tabs, base - stepIndex)
-		end
-
-		local word = widest(widths)
-		for _, g in ipairs(TAB_GAPS) do
-			for _, p in ipairs(TAB_PADS) do
-				if room <= 0 or (word + p) * #tabs + g * (#tabs - 1) <= room then
-					even, gap = word + p, g
-					break
-				end
-			end
-			if even then break end
-		end
-
-		if even then break end
-	end
-
-	-- Nothing fitted: tightest of everything and the row is wider than the
-	-- window. Still one width, because an even row that overhangs reads as a
-	-- row; an uneven one reads as a mistake.
-	if not even then
-		even, gap = widest(widths) + TAB_PADS[#TAB_PADS], TAB_GAPS[#TAB_GAPS]
-	end
-
-	-- The group, and where it goes: measured end to end, then centred in the
-	-- window. If it is wider than the window even at the tightest of
-	-- everything, the WINDOW gives - a few pixels of glass either side costs
-	-- nothing and is better than a row that hangs over the edge.
-	local total = even * #tabs + gap * (#tabs - 1)
 	local entry = PN.ENTRY and PN.ENTRY[name]
 	local ins = entry and entry.insets or {}
 	local left, right = ins[1] or 0, ins[3] or 0
 
-	local visible = (frame.GetWidth and frame:GetWidth() or 0) + right - left
-	if total + TAB_EDGE * 2 > visible then
-		-- Capped, because this is meant to be the few pixels that stop a row
-		-- from overhanging - not a way to stretch a window around anything you
-		-- put in it. Past the cap the row overhangs and that is the honest
-		-- answer.
-		local grow = math.min(total + TAB_EDGE * 2 - visible, TAB_GROW_MAX)
-		right = right + grow
-		visible = visible + grow
+	-- THE RAIL: a hairline across the foot of the window, on the edge that
+	-- faces the content the tabs switch. Every panel here keeps WoW's
+	-- bottom-tab convention, so the line and the marks are on its top.
+	local rail = W.TabRail(frame, "BOTTOM")
+	rail:ClearAllPoints()
+	rail:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", left, ins[4] or 0)
+	rail:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right, ins[4] or 0)
+	rail:SetHeight(TAB_H)
+	rail:Show()
 
-		-- Both corners, from clear: setting one anchor again leaves the old one
-		-- in place on some paths, and then the panel has two right edges.
-		local panel = frame.__aetherPanel
-		if panel and panel.ClearAllPoints then
-			panel:ClearAllPoints()
-			panel:SetPoint("TOPLEFT", frame, "TOPLEFT", left, ins[2] or 0)
-			panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right, ins[4] or 0)
+	local room = StripWidth(frame, name)
+	local base = (A.Media.style[TAB_STYLE] or {})[2]
+	base = base and (base + FONT_BUMP)
+
+	--- What the row costs at a given padding and size, and the widths with it.
+	local function fit(pad, size)
+		local widths = MeasureTabs(tabs, size)
+		local total = 0
+		for _, w in ipairs(widths) do total = total + w + pad * 2 end
+		return total, widths
+	end
+
+	local pad, size, widths, cap
+	for step = 0, TAB_FONT_STEPS do
+		local try = base and (base - step) or nil
+		for _, p in ipairs(TAB_PADS) do
+			local total, ws = fit(p, try)
+			if room <= 0 or total <= room then
+				pad, size, widths = p, try, ws
+				break
+			end
 		end
+		if pad then break end
+		if not base then break end
+	end
+
+	-- NOTHING FITTED, so the words give. Every tab gets the same share of what
+	-- is left after the padding, floored so a cut label is still a word rather
+	-- than an ellipsis on its own - below that the row overhangs, which is the
+	-- honest answer and better than a rail of dots.
+	if not pad then
+		pad = TAB_PADS[#TAB_PADS]
+		size = base and (base - TAB_FONT_STEPS) or nil
+		widths = MeasureTabs(tabs, size)
+		cap = math.max(TAB_MIN_LABEL,
+			math.floor(room / #tabs) - pad * 2)
 	end
 
 	-- LEFT, not centred. A row of tabs is a list of places you can go, and a
-	-- list starts at the left edge of the thing it belongs to - the same edge
-	-- everything else in the window starts at. Centred, the row moved every
-	-- time a tab appeared or went away: a hunter's pet tab arriving slid
-	-- Character, Skills and Reputation sideways under the cursor, which is a
-	-- window that will not sit still.
-	local startX = left + TAB_EDGE
-
+	-- list starts at the left edge of the thing it belongs to. Centred, the row
+	-- moved every time a tab appeared or went away: a hunter's pet tab arriving
+	-- slid Character, Skills and Reputation sideways under the cursor, which is
+	-- a window that will not sit still.
 	local last
 
 	for i, tab in ipairs(tabs) do
-		Reskin.Tab(tab, store, TAB_STYLE)
+		Reskin.Tab(tab, store, TAB_STYLE, { rail = rail })
 
-		-- One width, the same for every tab in the row.
-		local w = even
-		if tab.SetSize then tab:SetSize(w, TAB_H) end
+		local label = TabLabel(tab)
+		local w = (widths[i] or 60)
+		if cap and w > cap then w = cap end
+
+		if tab.SetSize then tab:SetSize(w + pad * 2, TAB_H) end
 
 		-- AND ITS CLICKABLE AREA BACK. The spellbook's tabs are 128x64 in the
 		-- client's art with a hit rect inset 13 from the top and 15 from the
 		-- bottom, to keep the clicks off the transparent margin. Resize that tab
-		-- to 26 high and the two insets meet in the middle: the tab is drawn,
-		-- reads correctly, highlights on hover - and cannot be clicked. The
-		-- client's own values are recorded so switching off puts them back.
+		-- and the two insets meet in the middle: the tab is drawn, reads
+		-- correctly, highlights on hover - and cannot be clicked. The client's
+		-- own values are recorded so switching off puts them back.
 		if tab.SetHitRectInsets then
 			if tab.__aetherHit == nil and tab.GetHitRectInsets then
 				tab.__aetherHit = { tab:GetHitRectInsets() }
@@ -638,16 +612,19 @@ local function LayoutTabs(frame, store)
 			tab:SetHitRectInsets(0, 0, 0, 0)
 		end
 
-		-- Keep the label inside its pill. Measured from zero every time: a
-		-- width set on a previous pass would otherwise be what we measure, and
-		-- the label would ratchet narrower on every re-layout.
-		local label = TabLabel(tab)
 		if label then
-			-- NEVER TRUNCATED. Shortening "Character" to "Charac..." trades
-			-- three letters for three dots and tells the player less than the
-			-- word did. If a row is tight the padding gives way, not the word.
-			if label.SetWordWrap then label:SetWordWrap(true) end
-			if label.SetWidth then label:SetWidth(0) end
+			-- CUT ONLY AS A LAST RESORT, and never silently: the whole word
+			-- goes on a tooltip, because three dots in place of three letters
+			-- tells the player less than the word did.
+			if cap then
+				if label.SetWordWrap then label:SetWordWrap(false) end
+				if label.SetWidth then label:SetWidth(cap) end
+				tab.__aetherCut = (widths[i] or 0) > cap and label:GetText() or nil
+			else
+				if label.SetWordWrap then label:SetWordWrap(true) end
+				if label.SetWidth then label:SetWidth(0) end
+				tab.__aetherCut = nil
+			end
 
 			-- Centred in the tab, not where Blizzard's art wanted it: its own
 			-- offsets were written for a raised stone tab whose face sat above
@@ -667,9 +644,11 @@ local function LayoutTabs(frame, store)
 
 		-- Where the client had it, before we move it. Off has to put it back.
 		if tab.__aetherAnchor == nil and tab.GetPoint then
-			local p = { tab:GetPoint() }
-			tab.__aetherAnchor = (p[1] and p) or false
-			if tab.GetWidth then tab.__aetherSize = { tab:GetWidth(), tab:GetHeight() } end
+			local pt = { tab:GetPoint() }
+			tab.__aetherAnchor = (pt[1] and pt) or false
+			if tab.GetWidth then
+				tab.__aetherSize = { tab:GetWidth(), tab:GetHeight() }
+			end
 		end
 
 		-- ONE ANCHOR, OURS, in a shape we control. The client's anchor is not
@@ -677,16 +656,31 @@ local function LayoutTabs(frame, store)
 		-- the middle goes", so an offset written for a left edge hangs half the
 		-- tab off the side of the screen. It is still RECORDED, because
 		-- switching the module off has to put it back where the client had it.
+		tab:ClearAllPoints()
 		if last then
-			tab:ClearAllPoints()
-			tab:SetPoint("LEFT", last, "RIGHT", gap, 0)
+			tab:SetPoint("BOTTOMLEFT", last, "BOTTOMRIGHT", 0, 0)
 		else
-			tab:ClearAllPoints()
-			tab:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", startX, (ins[4] or 0) + TAB_EDGE)
+			tab:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", 0, 0)
 		end
 		last = tab
 
 		StyleTabState(tab)
+
+		-- The whole word, for a tab whose label had to be cut. Hooked once and
+		-- reading __aetherCut, so a row that stops needing it stops showing it.
+		if tab.HookScript and not tab.__aetherTabTip then
+			tab.__aetherTabTip = true
+			tab:HookScript("OnEnter", function(self)
+				if not PN.enabled or not self.__aetherCut then return end
+				if not _G.GameTooltip then return end
+				_G.GameTooltip:SetOwner(self, "ANCHOR_TOP")
+				_G.GameTooltip:SetText(self.__aetherCut)
+				_G.GameTooltip:Show()
+			end)
+			tab:HookScript("OnLeave", function()
+				if _G.GameTooltip then _G.GameTooltip:Hide() end
+			end)
+		end
 
 		-- The selection only changes on a click, so that is where it is worth
 		-- answering. Hooked once per tab.
@@ -702,7 +696,6 @@ local function LayoutTabs(frame, store)
 			end)
 		end
 	end
-
 end
 
 --- Answer the client when it re-sizes or re-selects its own tabs.
@@ -1258,7 +1251,11 @@ local SPELL_TABS    = 8          -- MAX_SKILLLINE_TABS
 -- 32px button carries 64px of stone behind it and the stone has to clear its
 -- neighbour; with the stone gone that gap reads as a column of unrelated icons.
 local SIDE_TAB_GAP  = 6
-local SIDE_TAB_EDGE = 6          -- in from the glass
+-- The rail the schools sit on, and its width comes from the icon it has to
+-- hold rather than from the handoff's 52 - the day somebody changes the icon
+-- size, a number here stops fitting it.
+local SIDE_TAB_ICON = 32
+local SIDE_RAIL_W   = SIDE_TAB_ICON + SIDE_TAB_GAP * 2
 local SIDE_TAB_TOP  = 62         -- below the title and the ranks check box
 
 -- The page turner. Angle marks rather than Blizzard's engraved arrows: with
@@ -1338,12 +1335,33 @@ end
 --  The spellbook's schools and the talent frame's specs are the same widget
 --  under two names - both are PlayerSpecTab-shaped 32px check buttons carrying
 --  64px of stone, and both keep their picture as the normal texture.
+--- The vertical half of the tab language: a column of pictures, not words.
+--
+--  Same rail, rotated. The schools are a SECONDARY filter within the book the
+--  bottom rail has already chosen - two axes, one panel - so they get the
+--  icon rail rather than a second row of words.
+--
+--  THE RAIL'S FAINT WASH IS NOT DECORATION. It is the only thing saying that
+--  eight pictures in a column are one control rather than eight loose buttons,
+--  which is what they read as before: the handoff calls it mandatory and it is
+--  right. The hairline does that job for a row of words; a column of icons has
+--  no words to gather.
+--
+--  An inactive icon DIMS AND DRAINS rather than going quiet, which is the
+--  exact analogue of dim text - a picture cannot be made faint without losing
+--  what it is a picture of.
 local function DressSideTabs(frame, store, prefix, count)
 	local name = frame.GetName and frame:GetName()
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
 	local ins = entry and entry.insets or {}
 
-	local last
+	local rail = W.TabRail(frame, "RIGHT")
+	rail:ClearAllPoints()
+	rail:SetPoint("TOPRIGHT", frame, "TOPRIGHT",
+		(ins[3] or 0), (ins[2] or 0) - SIDE_TAB_TOP + SIDE_TAB_GAP)
+	rail:SetWidth(SIDE_RAIL_W)
+
+	local last, shown = nil, 0
 	for i = 1, count do
 		local tab = _G[prefix .. i]
 		if not tab then break end
@@ -1351,14 +1369,16 @@ local function DressSideTabs(frame, store, prefix, count)
 		-- No icon named: the school's picture IS this button's normal texture,
 		-- which is what IconButton assumes when it is not told otherwise.
 		Reskin.IconButton(tab, store)
+		local art = tab.GetNormalTexture and tab:GetNormalTexture()
+		W.Tab(tab, { icon = true, edge = "RIGHT", art = art, rail = rail })
+		W.TabState(tab, tab.GetChecked and tab:GetChecked() or false, false)
 
 		if tab.ClearAllPoints then
 			tab:ClearAllPoints()
 			if last then
-				tab:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -SIDE_TAB_GAP)
+				tab:SetPoint("TOP", last, "BOTTOM", 0, -SIDE_TAB_GAP)
 			else
-				tab:SetPoint("TOPRIGHT", frame, "TOPRIGHT",
-					(ins[3] or 0) - SIDE_TAB_EDGE, (ins[2] or 0) - SIDE_TAB_TOP)
+				tab:SetPoint("TOP", rail, "TOP", 0, -SIDE_TAB_GAP)
 			end
 		end
 
@@ -1366,7 +1386,15 @@ local function DressSideTabs(frame, store, prefix, count)
 		-- the chain, so anchoring only the visible ones leaves a gap the moment
 		-- the player learns a profession and the ninth tab arrives.
 		last = tab
+		if not tab.IsShown or tab:IsShown() then shown = shown + 1 end
 	end
+
+	-- THE RAIL IS AS LONG AS WHAT IS ON IT, and no longer: a column of wash
+	-- running past the last icon reads as a control with empty slots in it.
+	local iconH = (last and last.GetHeight and last:GetHeight()) or 32
+	rail:SetHeight(math.max(1,
+		shown * (iconH + SIDE_TAB_GAP) + SIDE_TAB_GAP))
+	rail:SetShown(shown > 0)
 end
 
 local function DressSpellBook(frame, store)
@@ -1402,10 +1430,23 @@ local function DressSpellBook(frame, store)
 	DressSpellButtons(store)
 	DressSideTabs(frame, store, "SpellBookSkillLineTab", SPELL_TABS)
 
-	-- No hook of its own on the client's rebuild. Its update hides all three
-	-- tabs and shows the ones that apply, so the OnShow every hidden tab already
-	-- carries answers it - and that is also what puts the label back in the
-	-- middle of its pill, because enabling a tab is what moved it up.
+	-- AND AGAIN WHENEVER THE CLIENT REBUILDS THAT COLUMN. Picking a school
+	-- runs UpdateSkillLineTabs, which re-sets every icon and moves the check
+	-- from one button to the next - so a mark drawn once at dress time stays
+	-- on whichever school happened to be open when the window was first shown.
+	if hooksecurefunc and not PN.__skillLineHook
+		and frame.UpdateSkillLineTabs then
+		PN.__skillLineHook = true
+		hooksecurefunc(frame, "UpdateSkillLineTabs", function(self)
+			if not PN.enabled or not self.__aetherArt then return end
+			DressSideTabs(self, self.__aetherArt, "SpellBookSkillLineTab", SPELL_TABS)
+		end)
+	end
+
+	-- No hook of its own on the client's rebuild of the BOOK tabs. Its update
+	-- hides all three and shows the ones that apply, so the OnShow every hidden
+	-- tab already carries answers it - and that is also what puts the label
+	-- back in the middle, because enabling a tab is what moved it up.
 	LayoutTabs(frame, store)
 	InstallTabHooks()
 end
@@ -2513,15 +2554,53 @@ local function DressSettings(frame, store)
 	-- The two tabs. MinimalTabTemplate, which sizes itself to its label - so
 	-- the plate comes off and the SIZE has to be put back by hand, or one tab
 	-- is the width of the word Game and the other of the word AddOns.
+	-- ITS TWO TABS, on the same rail as every other tabbed surface here. They
+	-- sit at the TOP of this window, so the line and the mark are on the
+	-- bottom - the edge facing the settings they switch between.
+	--
+	-- This window says which one is open through SelectableButtonMixin rather
+	-- than by disabling it the way the older panels do, and it moves the label
+	-- and swaps the font object on every selection - so the state is read from
+	-- IsSelected and re-asserted from a hook on OnSelected, or the first click
+	-- hands the word back to Blizzard's own font.
+	local first
 	for _, key in ipairs({ "GameTab", "AddOnsTab" }) do
 		local tab = frame[key]
 		if tab then
-			Reskin.Tab(tab, store, "pnBody")
+			Reskin.Tab(tab, store, "pnBody", { edge = "TOP" })
 			tab:SetHeight(SETTINGS_TAB_H)
 			local label = tab.Text or (tab.GetFontString and tab:GetFontString())
-			local wide = label and label.GetStringWidth and label:GetStringWidth() or 0
+			local wide = label and label.GetStringWidth
+				and label:GetStringWidth() or 0
 			tab:SetWidth(math.max(SETTINGS_TAB_W, wide + SETTINGS_TAB_PAD * 2))
+
+			W.TabState(tab, tab.IsSelected and tab:IsSelected() or false, false)
+			if hooksecurefunc and tab.OnSelected and not tab.__aetherSelHook then
+				tab.__aetherSelHook = true
+				hooksecurefunc(tab, "OnSelected", function(self, on)
+					if not PN.enabled then return end
+					local lb = self.Text
+						or (self.GetFontString and self:GetFontString())
+					if lb then
+						Reskin.Font(lb, "pnBody")
+						lb:ClearAllPoints()
+						lb:SetPoint("CENTER", self, "CENTER", 0, 0)
+					end
+					W.TabState(self, on and true or false, false)
+				end)
+			end
+
+			first = first or tab
 		end
+	end
+
+	-- The rail under them, spanning the window and sitting on the row.
+	if first then
+		local rail = W.TabRail(frame, "TOP")
+		rail:ClearAllPoints()
+		rail:SetPoint("TOPLEFT", first, "TOPLEFT", 0, 0)
+		rail:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -SETTINGS_TAB_PAD, 0)
+		rail:SetHeight(SETTINGS_TAB_H)
 	end
 
 	-- The buttons along the bottom. CloseButton here is the one that says
