@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.16.0",
+		date    = "2026-08-19",
+		lines   = {
+			"The window that shows you somebody else's gear is ours. Their name and class line in our lettering, every piece of their equipment in one of our cells with its quality on the rim, and the Character and Honor tabs no longer sitting outside the glass.",
+			"The buttons that turn a character model have their arrows back - on your own sheet as well as on theirs. They had been drawing nothing at all.",
+			"Fixed: the rank badge on the Honor tab was coming off with the parchment behind it.",
+		},
+	},
+	{
 		version = "0.15.0",
 		date    = "2026-08-18",
 		lines   = {
