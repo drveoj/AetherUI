@@ -3530,7 +3530,8 @@ do
 
 		-- One epic, one uncommon, two empty. A single quality would exercise one
 		-- branch of the rim and look like coverage.
-		local QUALITY = { CharacterHeadSlot = 4, CharacterChestSlot = 2 }
+		local QUALITY = { CharacterHeadSlot = 4, CharacterChestSlot = 2,
+			CharacterMainHandSlot = 4 }
 		local qualityByID = {}
 
 		local items = CreateFrame("Frame", "PaperDollItemsFrame", cf)
@@ -3551,9 +3552,16 @@ do
 			qualityByID[id] = QUALITY[slotName]
 		end
 
+		-- ASKED BY UNIT, because the same slots and the same rim serve the
+		-- inspect window. A mock that answers out of one table whatever unit it
+		-- is handed agrees that your own gear may colour somebody else's, which
+		-- is a green suite over a window showing the wrong qualities.
+		local qualityByUnit = { player = qualityByID }
+		_G.__slotQualityByUnit = qualityByUnit
+
 		function _G.GetInventoryItemQuality(unit, slotID)
-			if unit ~= "player" then return nil end
-			return qualityByID[slotID]
+			local byID = qualityByUnit[unit]
+			return byID and byID[slotID]
 		end
 
 		-- Exists so the skin has something to hook. The client calls it whenever
@@ -3621,6 +3629,13 @@ do
 			CreateFrame("Frame", n, cf):CreateTexture(nil, "BORDER")
 				:SetTexture("pane-stone")
 		end
+
+		-- THE RANK BADGE IS A REGION OF THE HONOUR PANE, exactly as the
+		-- parchment behind it is - so a sweep that takes the pane's art takes
+		-- the picture of the rank with it and leaves the words beside nothing.
+		_G.HonorFramePvPIcon = _G.HonorFrame:CreateTexture("HonorFramePvPIcon",
+			"OVERLAY")
+		_G.HonorFramePvPIcon:SetTexture("Interface\\PvPRankBadges\\PvPRank09")
 
 		-- The stat rows, in the client's own lettering at the client's own
 		-- sizes. A pane with no strings in it lets a skin claim to have re-roled
@@ -3767,6 +3782,130 @@ do
 		_G.CharacterLevelText = rank
 	end
 
+	-- SOMEBODY ELSE'S CHARACTER SHEET, which shares the shape and not one of
+	-- the names. Everything here is spelled Inspect-something, its slots keep
+	-- their stone plate in a BACKGROUND region rather than in the normal
+	-- texture, and every item in it belongs to a different unit.
+	do
+		local inf = buildPanel("InspectFrame")
+		inf.unit = "target"
+
+		-- The portrait is a region of the frame itself, so the shell sweep
+		-- takes it with the rest of the stone.
+		_G.InspectFramePortrait = inf:CreateTexture("InspectFramePortrait",
+			"BACKGROUND")
+		_G.InspectFramePortrait:SetTexture("portrait-target")
+
+		-- THE NAME IS NOT THE TITLE BAND. This window never fills its own
+		-- TitleText in: the client hangs the name off a little frame of its
+		-- own, measured 109 wide for twelve-point type. A skin that only
+		-- re-roles $parentTitleText re-roles an empty string and leaves the
+		-- one word on screen in Blizzard's lettering.
+		_G.InspectFrameTitleText:SetText("")
+		local nameFrame = CreateFrame("Frame", "InspectNameFrame", inf)
+		local who = nameFrame:CreateFontString("InspectNameText", "OVERLAY")
+		who:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+		who:SetText("Dudeo-Firemaw")
+		who:SetWidth(109)
+		_G.InspectNameText = who
+
+		-- The panes. The honour one carries the rank badge among its
+		-- parchment, and the doll one carries the faction crest it shows in
+		-- place of a model you are too far off to draw - both pictures, both
+		-- regions of a frame whose art is coming off.
+		for _, n in ipairs({ "InspectPaperDollFrame", "InspectHonorFrame",
+			"InspectPaperDollItemsFrame" }) do
+			CreateFrame("Frame", n, inf):CreateTexture(nil, "ARTWORK")
+				:SetTexture("pane-stone")
+		end
+		_G.InspectHonorFramePvPIcon = _G.InspectHonorFrame:CreateTexture(
+			"InspectHonorFramePvPIcon", "OVERLAY")
+		_G.InspectHonorFramePvPIcon:SetTexture("Interface\\PvPRankBadges\\PvPRank11")
+		_G.InspectFaction = _G.InspectPaperDollFrame:CreateTexture(
+			"InspectFaction", "ARTWORK")
+		_G.InspectFaction:SetTexture("Interface\\Timer\\Horde-Logo")
+
+		-- The class line under the name, and the two strings the client
+		-- leaves hidden until it has something to put in them.
+		for _, n in ipairs({ "InspectLevelText", "InspectTitleText",
+			"InspectGuildText" }) do
+			local fs = _G.InspectPaperDollFrame:CreateFontString(n, "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			fs:SetText("Level 60 Orc Warrior")
+			fs:SetTextColor(1, 0.82, 0, 1)
+			_G[n] = fs
+		end
+
+		-- THE MODEL BOX AND THE TWO BUTTONS THAT TURN IT. Each of those is a
+		-- PICTURE OF A BUTTON - the curved arrow and the disc it stands on are
+		-- one texture - so clearing the plate takes the arrow with it and
+		-- leaves a live control with nothing drawn on it at all.
+		local model = CreateFrame("Frame", "InspectModelFrame", inf)
+		model:CreateTexture(nil, "OVERLAY"):SetTexture("Char-Inner-Left")
+		for _, key in ipairs({ "RotateLeftButton", "RotateRightButton" }) do
+			local b = CreateFrame("Button", "InspectModelFrame" .. key, model)
+			b:SetNormalTexture("Interface\\Buttons\\UI-RotationLeft-Button-Up")
+		end
+
+		-- THE SLOTS. Nineteen in the client; four here, one of each shape the
+		-- rim has to answer for. Their plate is a BACKGROUND region and the
+		-- item's picture is in the same layer, so a sweep that takes one takes
+		-- the other and a clear that takes neither leaves them all in stone.
+		--
+		-- DIFFERENT QUALITIES IN THE SAME SLOT IDS as the player's, on purpose.
+		-- A mock where both units happen to be wearing the same thing agrees
+		-- that a rim asking for "player" is a rim reading the unit you are
+		-- looking at, and the whole point of the unit is that it is not you.
+		-- Head is rare here and epic on the player; the weapon is empty here
+		-- and epic on the player.
+		local QUALITY = { InspectHeadSlot = 3, InspectChestSlot = 4 }
+		local inspectQuality = {}
+		_G.__slotQualityByUnit.target = inspectQuality
+
+		for id, slotName in ipairs({ "InspectHeadSlot", "InspectNeckSlot",
+			"InspectChestSlot", "InspectMainHandSlot" }) do
+			local b = CreateFrame("Button", slotName, _G.InspectPaperDollItemsFrame)
+			b:SetWidth(37) b:SetHeight(37)
+			b.__id = id
+			function b:GetID() return self.__id end
+
+			-- The stone plate the slot sits in, which is NOT the normal
+			-- texture: it is $parentFrame, a background region of the button.
+			local plate = b:CreateTexture(slotName .. "Frame", "BACKGROUND")
+			plate:SetTexture("Char-LeftSlot")
+			_G[slotName .. "Frame"] = plate
+
+			local icon = b:CreateTexture(slotName .. "IconTexture", "BORDER")
+			icon:SetTexture("item-icon-" .. slotName)
+			_G[slotName .. "IconTexture"] = icon
+
+			b.Count = b:CreateFontString(nil, "OVERLAY")
+			b:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
+			inspectQuality[id] = QUALITY[slotName]
+		end
+
+		-- The client calls this whenever it is told what is in a slot, which
+		-- on this window is not only an item changing: the whole set arrives
+		-- late, on INSPECT_READY, after any skin has already been past.
+		function _G.InspectPaperDollItemSlotButton_Update(btn) end
+		function _G.__setInspectQuality(id, q) inspectQuality[id] = q end
+
+		CreateFrame("StatusBar", "InspectHonorFrameProgressBar", _G.InspectHonorFrame)
+
+		-- Two tabs, anchored by their CENTRE below the bottom edge, which is
+		-- where this template hangs them - outside the window's own art.
+		for i, label in ipairs({ "Character", "Honor" }) do
+			local t = CreateFrame("Button", "InspectFrameTab" .. i, inf)
+			t:SetNormalTexture("tab-up")
+			t:SetDisabledTexture("tab-disabled")
+			t:SetPoint("CENTER", inf, "BOTTOMLEFT", 60 + (i - 1) * 100, -12)
+			local fs = t:CreateFontString(nil, "OVERLAY")
+			fs:SetText(label)
+			_G["InspectFrameTab" .. i .. "Text"] = fs
+			t.__fs = fs
+			function t:GetFontString() return self.__fs end
+		end
+	end
 	-- The spellbook's insides.
 	--
 	-- IT SPELLS NOTHING THE WAY THE OTHERS DO. Its title is SpellBookTitleText
@@ -11290,6 +11429,135 @@ section("panels: the postbox, the book and the trade skills", function()
 		"CraftFrame" }) do
 		_G[n]:Hide()
 	end
+end)
+section("panels: somebody else's character sheet", function()
+	local PN = A:GetModule("panels")
+	local inf = _G.InspectFrame
+	inf:Show()
+	PN:Skin()
+
+	check(inf.__aetherPanel ~= nil, "the inspect window has glass behind it")
+	check(PN.failures == nil or PN.failures.InspectFrame == nil,
+		"and its dresser ran clean (" ..
+		tostring(PN.failures and PN.failures.InspectFrame) .. ")")
+
+	-- THE NAME IS NOT IN THE TITLE BAND. This window leaves its own TitleText
+	-- empty and puts the name in a frame of its own, so a skin that only
+	-- re-roles $parentTitleText re-roles an empty string and leaves the one
+	-- word on screen in Blizzard's lettering.
+	check(_G.InspectNameText._aetherStyle == "pnTitle",
+		"the name at the top is in our type, not the client's")
+	check(_G.InspectNameText:GetWidth() == 0,
+		"and free of the 109 the client measured for its smaller type - left"
+		.. " at that width a name of any length comes out clipped")
+
+	-- THE SLOTS. Their plate is a BACKGROUND region rather than the normal
+	-- texture, the way a mail attachment's is, so clearing the button alone
+	-- leaves all nineteen of them in stone.
+	local head, neck = _G.InspectHeadSlot, _G.InspectNeckSlot
+	check(head.__aetherSlot == true, "an inspected slot wears our cell")
+	check(_G.InspectHeadSlotFrame:GetTexture() == 0,
+		"and the stone plate behind it is gone - it is a background region"
+		.. " of the button, which is where ClearButton cannot reach")
+	check(_G.InspectHeadSlotIconTexture:GetTexture()
+		== "item-icon-InspectHeadSlot",
+		"with THE ITEM STILL IN IT - the picture is in that same layer, so"
+		.. " the sweep that takes the plate takes the item unless it is told"
+		.. " not to")
+
+	-- AND THE RIM READS THE UNIT BEING INSPECTED. Every item in this window
+	-- belongs to somebody else: asked for "player" it is your own gear
+	-- colouring theirs, which looks entirely correct and is not. The head is
+	-- RARE on the unit and epic on the player, so the two answers differ.
+	local hr, hg, hb = head.edge:GetVertexColor()
+	local q = _G.ITEM_QUALITY_COLORS[3]
+	check(hr == q.r and hg == q.g and hb == q.b,
+		"the rim is the quality the UNIT is wearing, not the one you are")
+
+	-- Empty here and epic on the player, which is the same question the other
+	-- way round: a slot with nothing in it must not borrow your own rim.
+	local e = A.Palette.c.glassEdge
+	local wr, wg, wb = _G.InspectMainHandSlot.edge:GetVertexColor()
+	check(wr == e[1] and wg == e[2] and wb == e[3],
+		"and a slot they have nothing in keeps the ordinary one, even where"
+		.. " you have an epic")
+	local nr, ng, nb = neck.edge:GetVertexColor()
+	check(nr == e[1] and ng == e[2] and nb == e[3],
+		"as does a slot neither of you has filled")
+
+	-- The whole set arrives LATE on this window - on INSPECT_READY, after any
+	-- skin has already been past - so a rim set once at dress time is a rim
+	-- for whatever the slots held before the answer came back.
+	_G.__setInspectQuality(1, nil)
+	_G.InspectPaperDollItemSlotButton_Update(head)
+	hr, hg, hb = head.edge:GetVertexColor()
+	check(hr == e[1] and hg == e[2] and hb == e[3],
+		"and the rim answers the client when it fills a slot in later")
+	_G.__setInspectQuality(1, 3)
+
+	-- THE PANES, and the two pictures among their stone.
+	check(_G.InspectPaperDollFrame:GetRegions():GetTexture() == 0,
+		"the panes lose their stone")
+	check(_G.InspectHonorFramePvPIcon:GetTexture() ~= 0,
+		"the PvP rank badge survives the honour pane's sweep - it is a"
+		.. " region of that pane exactly as the parchment is, and taking one"
+		.. " took the picture of the rank the words beside it are naming")
+	check(_G.InspectFaction:GetTexture() ~= 0,
+		"and so does the faction crest shown in place of a model too far"
+		.. " off to draw")
+	check(_G.InspectHonorFrameProgressBar.__aetherFill ~= nil,
+		"the honour tab's rank bar takes our fill")
+
+	-- THE ROTATE BUTTONS ARE A PICTURE OF A BUTTON - arrow and disc in one
+	-- texture - so clearing the plate leaves a live control drawing nothing.
+	local blank, turns = 0, {}
+	for _, btn in ipairs({
+		_G.InspectModelFrameRotateRightButton,
+		_G.InspectModelFrameRotateLeftButton,
+		_G.CharacterModelFrameRotateRightButton,
+		_G.CharacterModelFrameRotateLeftButton,
+	}) do
+		local mark = btn.__aetherArrow
+		if not mark then blank = blank + 1
+		else turns[#turns + 1] = mark:GetRotation() end
+	end
+	check(blank == 0,
+		"both windows' turn buttons still have an arrow on them (" .. blank
+		.. " bare of 4)")
+
+	-- POINTING OPPOSITE WAYS, and the one on the LEFT points left. Blizzard
+	-- names these from the model's point of view rather than the camera's and
+	-- says so in its own XML, so RotateRightButton is the one on the left.
+	local backwards = 0
+	for i = 1, #turns, 2 do
+		if not (turns[i] and turns[i + 1] and turns[i] == -turns[i + 1]
+			and turns[i] < 0) then backwards = backwards + 1 end
+	end
+	check(backwards == 0,
+		"and the one on the left turns it left (" .. backwards ..
+		" pairs wrong)")
+
+	-- THE TABS HANG OFF THE BOTTOM EDGE, outside the window's own art, the
+	-- way the vendor's do - so the glass has to reach past the frame or the
+	-- row sits on bare screen.
+	check(_G.InspectFrameTab1.__aetherTab ~= nil, "a tab gets our pill")
+	local _, rel, at = _G.InspectFrameTab1:GetPoint()
+	check(rel == inf and at == "BOTTOMLEFT",
+		"laid out from the window's bottom-left corner rather than left on"
+		.. " the client's centre anchor, which reads an x as where the middle"
+		.. " goes and hangs half the tab off the side")
+	local ins = PN.ENTRY.InspectFrame.insets
+	check(ins and ins[4] and ins[4] < 0,
+		"and the glass reaches below the frame to hold them (" ..
+		tostring(ins and ins[4]) .. ")")
+
+	-- The character sheet's own honour tab has the same badge under a name of
+	-- its own, and it had been coming off with the parchment since the day
+	-- that pane was first swept.
+	check(_G.HonorFramePvPIcon:GetTexture() ~= 0,
+		"the badge on your OWN honour tab survives too")
+
+	inf:Hide()
 end)
 section("panels: one broken dresser does not take the window with it", function()
 	local PN = A:GetModule("panels")

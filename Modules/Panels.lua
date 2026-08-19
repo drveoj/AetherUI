@@ -55,6 +55,13 @@ local MAIL_TAB_DROP = 40
 
 local PANELS = {
 	{ frame = "CharacterFrame", insets = { 10, -10, -30, 26 } },
+	-- SOMEBODY ELSE'S, which is not the same window and not the same shape.
+	-- The character sheet is the old parchment build with a wide margin; this
+	-- one is ButtonFrameTemplate, so tight - and its two tabs hang off the
+	-- bottom edge outside its own art the way the vendor's do, which is what
+	-- the negative inset is for.
+	{ frame = "InspectFrame", addon = "Blizzard_InspectUI", tight = true,
+		insets = { 0, 0, 0, -34 } },
 	-- The spellbook names none of its parts the way the others do: its title is
 	-- a global of its own rather than $parentTitleText, its close button is
 	-- SpellBookCloseButton rather than $parentCloseButton, and its tabs are
@@ -849,20 +856,59 @@ local CHAR_PANES = {
 	"ReputationListScrollFrame", "SkillListScrollFrame", "SkillDetailScrollFrame",
 }
 
+--- Art in one of those panes that is not the pane's own.
+--
+--  A sweep takes every texture on a frame, and some of these hold a picture
+--  the player is reading among the stone: the PvP rank badge is a region of
+--  the honour pane exactly as its parchment is, so taking the parchment took
+--  the badge and left the rank with nothing beside it. Same shape as the
+--  flight map, and named the same way.
+local PANE_KEEP = {
+	HonorFrame            = { "HonorFramePvPIcon" },
+	InspectHonorFrame     = { "InspectHonorFramePvPIcon" },
+	-- Shown in place of the model when the player is too far off to draw:
+	-- their faction's crest, filling the box the doll would have stood in.
+	InspectPaperDollFrame = { "InspectFaction" },
+}
+
 --- An equipped item's rim, in its quality colour.
 --
 --  Re-run on every slot update, because the client repaints its own border
 --  whenever the item changes and ours has to answer.
-local function SlotQuality(btn)
+--
+--  The unit is asked for rather than assumed: the same slots and the same rim
+--  serve the inspect window, and "player" there is your own gear colouring
+--  somebody else's.
+local function SlotQuality(btn, unit)
 	if not btn or not btn.SetEdgeColor then return end
 
 	local id = btn.GetID and btn:GetID()
-	local q = id and GetInventoryItemQuality and GetInventoryItemQuality("player", id)
+	local q = id and GetInventoryItemQuality
+		and GetInventoryItemQuality(unit or "player", id)
 	local c = q and q > 1 and _G.ITEM_QUALITY_COLORS and _G.ITEM_QUALITY_COLORS[q]
 
 	-- Common and poor get the ordinary rim: a white border on every empty slot
 	-- is noise, and the point of the colour is that it stands out.
 	btn:SetEdgeColor(c and { c.r, c.g, c.b, 1 } or Palette.c.glassEdge)
+end
+
+--- The doll's box, and the two buttons that turn it.
+--
+--  THE ROTATE BUTTONS ARE A PICTURE OF A BUTTON - the curved arrow and the
+--  stone disc it is drawn on are one texture - so clearing the plate takes the
+--  arrow with it and leaves two live controls with nothing on them at all.
+--  Exactly what the postbox's page turners were doing, and the same answer.
+--
+--  Blizzard names them from the MODEL's point of view rather than the camera's
+--  and says so in its own XML, which is why RotateRightButton is the one on
+--  the LEFT and gets the arrow pointing that way.
+local function DressModel(prefix, store)
+	local model = _G[prefix .. "ModelFrame"]
+	if not model then return end
+
+	Reskin.Strip(model, store)
+	Reskin.ArrowButton(_G[prefix .. "ModelFrameRotateRightButton"], "LEFT", store)
+	Reskin.ArrowButton(_G[prefix .. "ModelFrameRotateLeftButton"], "RIGHT", store)
 end
 
 local function EachEquipSlot(fn)
@@ -880,7 +926,7 @@ local function DressCharacter(frame, store)
 	for _, name in ipairs(CHAR_PANES) do
 		local pane = _G[name]
 		if pane then
-			Reskin.Strip(pane, store)
+			Reskin.Strip(pane, store, PANE_KEEP[name])
 
 			-- And every string in it into our lettering. The client's own
 			-- sizes are kept: these sit in rows and columns it measured, and a
@@ -909,14 +955,7 @@ local function DressCharacter(frame, store)
 	LayoutTabs(frame, store)
 	InstallTabHooks()
 
-	local model = _G.CharacterModelFrame
-	if model then
-		Reskin.Strip(model, store)
-		for _, key in ipairs({ "RotateLeftButton", "RotateRightButton" }) do
-			local btn = _G["CharacterModelFrame" .. key]
-			if btn then Reskin.ClearButton(btn) end
-		end
-	end
+	DressModel("Character", store)
 
 	-- Resistance chips down the side, and the pet's set on its own tab.
 	for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
@@ -1033,6 +1072,102 @@ local function DressCharacter(frame, store)
 		PN.__slotHook = true
 		hooksecurefunc("PaperDollItemSlotButton_Update", function(btn)
 			if PN.enabled then SlotQuality(btn) end
+		end)
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- somebody else's character sheet
+-- ---------------------------------------------------------------------------
+--
+-- The same paper doll and not one shared name, so the parts that are genuinely
+-- the same - the model box, the quality rim - are asked for by prefix or by
+-- unit and the rest is spelled out here.
+--
+-- Two things it does that ours does not. Its slots keep their STONE PLATE in a
+-- background region rather than in the normal texture, the way a mail
+-- attachment does, so the cell dresser only reaches it when it is handed a
+-- store. And every slot on it belongs to somebody else, so the rim reads the
+-- unit being inspected - "player" there is your own gear colouring their gear.
+
+local INSPECT_PANES = {
+	"InspectPaperDollFrame", "InspectHonorFrame", "InspectPaperDollItemsFrame",
+}
+
+-- Nineteen, in the client's own spelling. Not walked off the items frame the
+-- way ours are: the ranged slot is hidden on a class that cannot use one, and
+-- a hidden slot is still a slot with our cell on it.
+local INSPECT_SLOTS = {
+	"Head", "Neck", "Shoulder", "Back", "Chest", "Shirt", "Tabard", "Wrist",
+	"Hands", "Waist", "Legs", "Feet", "Finger0", "Finger1", "Trinket0",
+	"Trinket1", "MainHand", "SecondaryHand", "Ranged",
+}
+
+--- Who the window is looking at.
+--
+--  The client keeps it on the frame and clears it on hide, so this is asked
+--  every time rather than remembered.
+local function InspectUnit()
+	return (_G.InspectFrame and _G.InspectFrame.unit) or "target"
+end
+
+local function DressInspect(frame, store)
+	for _, name in ipairs(INSPECT_PANES) do
+		local pane = _G[name]
+		if pane then
+			Reskin.Strip(pane, store, PANE_KEEP[name])
+			Reskin.Fonts(pane, "pnBody")
+		end
+	end
+
+	-- WHO YOU ARE LOOKING AT. The window's own title band is never filled in -
+	-- the client puts the name in a little frame of its own instead - so this
+	-- is the title of the window whatever the template calls it.
+	local who = _G.InspectNameText
+	if who then
+		-- Measured at 109 wide for the client's twelve-point type, and ours is
+		-- bigger: left at that width a name of any length comes out clipped.
+		-- It is centred, so letting it size itself grows it evenly either way.
+		if who.SetWidth then who:SetWidth(0) end
+		Roled(who, "pnTitle")
+		W.Color(who, Palette.c.text)
+	end
+
+	local rank = _G.InspectLevelText
+	if rank then
+		Roled(rank, "pnSub")
+		W.Color(rank, Palette.c.textDim)
+	end
+	for _, name in ipairs({ "InspectTitleText", "InspectGuildText" }) do
+		local fs = _G[name]
+		if fs then W.Color(fs, Palette.c.textDim) end
+	end
+
+	DressModel("Inspect", store)
+
+	local unit = InspectUnit()
+	for _, slot in ipairs(INSPECT_SLOTS) do
+		local btn = _G["Inspect" .. slot .. "Slot"]
+		if btn then
+			Reskin.Slot(btn, { store = store })
+			SlotQuality(btn, unit)
+		end
+	end
+
+	-- The honour tab's rank progress, which is the only bar in the window.
+	Reskin.StatusBar(_G.InspectHonorFrameProgressBar, store)
+
+	LayoutTabs(frame, store)
+	InstallTabHooks()
+
+	-- The client repaints a slot's border every time it is told what is in it,
+	-- and on this window that is not only an item changing - the whole set
+	-- arrives late, on INSPECT_READY, after we have already been past.
+	if not PN.__inspectHook and hooksecurefunc
+		and _G.InspectPaperDollItemSlotButton_Update then
+		PN.__inspectHook = true
+		hooksecurefunc("InspectPaperDollItemSlotButton_Update", function(btn)
+			if PN.enabled then SlotQuality(btn, InspectUnit()) end
 		end)
 	end
 end
@@ -2751,6 +2886,7 @@ end
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
+	InspectFrame      = DressInspect,
 	MailFrame         = DressMail,
 	ItemTextFrame     = DressItemText,
 	TradeSkillFrame   = DressSkillWindow("TradeSkill"),
