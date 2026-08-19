@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.17.1",
+		date    = "2026-08-19",
+		lines   = {
+			"The pet's own paper doll is ours now: the buttons that turn it, the frame behind it, and the spare Close button under it is gone - the corner already has one.",
+		},
+	},
+	{
 		version = "0.17.0",
 		date    = "2026-08-19",
 		lines   = {
