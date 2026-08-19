@@ -124,6 +124,7 @@ Media.icons = {
 		"grip", "tick",
 		"library", "ifec", "zoom", "close",
 		"crown", "healer", "dps", "resurrect",
+		"bags", "keys",
 	},
 
 	--- One drawing, more than one name for it.

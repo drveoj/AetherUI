@@ -1015,6 +1015,8 @@ ICON_ORDER = [
     # figures is `social` - the same drawing means the same thing, so they
     # are aliased in Core/Media.lua rather than drawn twice.
     "crown", "healer", "dps", "resurrect",
+    # the bags window's drawer handle: what is in it, and what is under that
+    "bags", "keys",
 ]
 
 
@@ -1322,6 +1324,28 @@ def _glyph(name, cell):
         # pair reading as opposites is the point, not a coincidence.
         return U(seg(64, 96, 64, 36), seg(64, 36, 46, 56), seg(64, 36, 82, 56),
                   seg(32, 106, 96, 106))
+
+    if name == "bags":
+        # A tote: a body WIDER AT THE BASE than at the mouth, with a shallow
+        # handle arcing off the top edge.
+        #
+        # The flare is what keeps it apart from `lock`, which is also a body
+        # with a curve over it. That one is squat - sixty across by forty-six
+        # down, with two straight stubs - and this one is tall and splayed. At
+        # sixteen pixels the outline is nearly all you have, so the two
+        # silhouettes have to differ in PROPORTION rather than in detail.
+        return U(seg(38, 52, 22, 106), seg(90, 52, 106, 106),
+                 seg(22, 106, 106, 106), seg(38, 52, 90, 52),
+                 arc(64, 52, 20, 25, 155))
+
+    if name == "keys":
+        # A key, side on: a round bow, a shaft, and two teeth off the end.
+        #
+        # Two rather than one. A single tooth at this size reads as a lollipop
+        # with a nick in it; the pair is what says key, and they are set well
+        # apart because fourteen units of gap is under two pixels in the sheet.
+        return U(circ(40, 64, 17), seg(57, 64, 102, 64),
+                 seg(84, 64, 84, 84), seg(100, 64, 100, 80))
 
     if name == "lock":
         # A padlock: a body and a shackle. ONE glyph for both states, because

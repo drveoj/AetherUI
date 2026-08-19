@@ -491,6 +491,10 @@ end
 --  thing can share an edge without either of them hunting for space.
 local SLOT_FRACTION = { [1] = 0.25, [2] = 0.75 }
 
+-- 300ms, per the brief, as a rate so the slide reverses rather than queues.
+-- The same number the bags drawer uses, and the same step: W.StepTravel's.
+local SLIDE_RATE = 1 / 0.30
+
 local HANDLE_THICK  = 34
 local HANDLE_LONG   = 68
 local HANDLE_CORNER = 8
@@ -575,7 +579,7 @@ function PF:AnchorStack()
 	-- that a frame should not move when you glance at something. That is a
 	-- fine argument and it is not what the default UI does, which is what
 	-- somebody installing this has in their hands already.
-	local host = (self.panel:IsShown() and self.panel) or self.handle or self.panel
+	local host = (self:PanelOpen() and self.panel) or self.handle or self.panel
 	local a = ATTACH[self:PanelEdge()] or ATTACH.LEFT
 	self.stack:ClearAllPoints()
 	self.stack:SetPoint(a[1], host, a[2], a[3], a[4])
@@ -591,36 +595,92 @@ function PF:ResetStack()
 	return self:AnchorStack()
 end
 
-function PF:AnchorPanel()
-	local p = self.panel
-	if not p then return end
-	local edge = self:PanelEdge()
-	p:ClearAllPoints()
-	-- OUT OF THE HANDLE, not off the bare edge - and biting into it by its
-	-- own corner radius, so the two read as one shape rather than as a tab
-	-- floating beside a panel with a gap of shadow between them.
-	local h = self.handle
-	if h then
-		self:LayoutHandle()
-		if IsVertical(edge) then
-			local anchor = (edge == "LEFT") and "LEFT" or "RIGHT"
-			local opposite = (edge == "LEFT") and "RIGHT" or "LEFT"
-			local dx = (edge == "LEFT") and -HANDLE_BITE or HANDLE_BITE
-			p:SetPoint(anchor, h, opposite, dx, 0)
-		else
-			local anchor = (edge == "TOP") and "TOP" or "BOTTOM"
-			local opposite = (edge == "TOP") and "BOTTOM" or "TOP"
-			local dy = (edge == "TOP") and HANDLE_BITE or -HANDLE_BITE
-			p:SetPoint(anchor, h, opposite, 0, dy)
-		end
-	else
-		p:SetPoint(edge, UIParent, edge, 0, 0)
-	end
-
-	-- The stack rides with it, unless it has been placed by hand.
-	self:AnchorStack()
+--- Whether the controls are out. The INTENT, not where the slide has got to,
+--- so the arrow turns over the moment you click rather than halfway back.
+function PF:PanelOpen()
+	return (self._want or 0) > 0.5
 end
 
+--- Where the panel and its handle sit, from the travel.
+--
+--  THE HANDLE RIDES THE PANEL'S OUTER EDGE rather than staying put on the
+--  screen. Blizzard's own party dock leaves its tab where it is and reveals
+--  the panel beside it, and this copied that - but the Toolbox drawer and the
+--  bags drawer both carry their handle out with them, and three docks in one
+--  interface disagreeing about whether the handle moves is the kind of thing
+--  you notice without being able to name.
+--
+--  CLAMPED AT THE SCREEN EDGE, which is what the Toolbox's rail does and for
+--  the same reason: shut, the panel is a full width off screen, so a handle
+--  simply hung off it would go with it and sit a bite's worth past the edge
+--  with its icons cut off. The bite is a JOIN with the panel, and there is
+--  nothing to join to once the panel has gone.
+function PF:AnchorPanel(moving)
+	local p = self.panel
+	if not p then return end
+
+	local h = self.handle
+	if h then self:LayoutHandle() end
+
+	-- BOTH AT THE PROFILE'S SCALE, set here rather than only where the panel
+	-- is filled in. Everything below is measured in the anchored frame's own
+	-- units, and one conversion serves the two of them only while the two
+	-- agree - so a scale change that reached the handle and not the panel put
+	-- the handle a third of the way down the screen and the panel a quarter.
+	p:SetScale(A.db.profile.scale or 1)
+
+	local edge = self:PanelEdge()
+	local t = self._travel or 0
+	local w, ph = p:GetWidth() or 0, p:GetHeight() or 0
+
+	-- ALONG the edge, at its slot, and in the PANEL's own units. SetPoint
+	-- measures in the anchored frame's coordinate space and this frame runs at
+	-- the profile scale, so a quarter of the screen expressed in UIParent
+	-- pixels lands at a third of it at 0.71. The handle is at the same scale,
+	-- which is why one conversion serves both.
+	local ps = p:GetEffectiveScale() or 1
+	local us = UIParent:GetEffectiveScale() or 1
+	local k = (ps > 0 and us > 0) and (us / ps) or 1
+	local frac = SLOT_FRACTION[self:PanelSlot()] or 0.25
+
+	local ox, oy = W.ClosedOffset(edge, w, ph)
+	local dx, dy = ox * (1 - t), oy * (1 - t)
+
+	p:ClearAllPoints()
+	if h then h:ClearAllPoints() end
+
+	if IsVertical(edge) then
+		-- 0.25 is a quarter down from the TOP, so the offset is positive.
+		local da = (0.5 - frac) * (UIParent:GetHeight() or 768) * k
+		p:SetPoint(edge, UIParent, edge, dx, da)
+		if h then
+			local hx = (edge == "LEFT") and math.max(0, dx + w - HANDLE_BITE)
+				or math.min(0, dx - w + HANDLE_BITE)
+			h:SetPoint(edge, UIParent, edge, hx, da)
+		end
+	else
+		local da = (frac - 0.5) * (UIParent:GetWidth() or 1024) * k
+		p:SetPoint(edge, UIParent, edge, da, dy)
+		if h then
+			local hy = (edge == "TOP") and math.min(0, dy - ph + HANDLE_BITE)
+				or math.max(0, dy + ph - HANDLE_BITE)
+			h:SetPoint(edge, UIParent, edge, da, hy)
+		end
+	end
+
+	-- OFF SCREEN IS NOT ENOUGH. A panel parked past the edge is out of sight
+	-- and still a live frame under the cursor at the map's corner, so it goes
+	-- properly away once it has ARRIVED there - not the moment it is asked to
+	-- close, which would take the slide with it.
+	p:SetShown(t > 0 or self:PanelOpen())
+
+	-- The stack rides with it, unless it has been placed by hand. NOT on the
+	-- animation frame: re-anchoring it moves secure children and is refused in
+	-- combat, so once per open is one chance to be refused and sixty times a
+	-- second is sixty. It shifts on the INTENT, at the start, so the party
+	-- moves out of the way as the panel comes out rather than after it.
+	if not moving then self:AnchorStack() end
+end
 local function MaxCountdown()
 	local k = _G.Constants and _G.Constants.PartyCountdownConstants
 	return (k and k.MaxCountdownSeconds) or 60
@@ -955,25 +1015,9 @@ function PF:LayoutHandle()
 	local vertical = IsVertical(edge)
 
 	h:SetScale(A.db.profile.scale or 1)
-	-- ALONG the edge, at its slot. The offsets are in the HANDLE's own units
-	-- rather than UIParent's: SetPoint measures in the anchored frame's
-	-- coordinate space, and this frame runs at the profile scale - so a
-	-- quarter of the screen expressed in UIParent pixels would land at a
-	-- third of it at 0.71 and off the bottom edge on a small one.
-	local hs = h:GetEffectiveScale() or 1
-	local us = UIParent:GetEffectiveScale() or 1
-	local k = (hs > 0 and us > 0) and (us / hs) or 1
-	local frac = SLOT_FRACTION[self:PanelSlot()] or 0.25
-
-	h:ClearAllPoints()
-	if vertical then
-		-- 0.25 is a quarter down from the TOP, so the offset is positive.
-		local dy = (0.5 - frac) * (UIParent:GetHeight() or 768) * k
-		h:SetPoint(edge, UIParent, edge, 0, dy)
-	else
-		local dx = (frac - 0.5) * (UIParent:GetWidth() or 1024) * k
-		h:SetPoint(edge, UIParent, edge, dx, 0)
-	end
+	-- WHERE it goes is AnchorPanel's, not this function's: the handle rides
+	-- the panel's outer edge now, so its position falls out of the travel
+	-- rather than out of the slot alone.
 	if vertical then
 		h:SetSize(HANDLE_THICK, HANDLE_LONG)
 	else
@@ -1010,7 +1054,7 @@ function PF:LayoutHandle()
 		end
 	end
 
-	W.PointChevron(h.chev, edge, self.panel and self.panel:IsShown())
+	W.PointChevron(h.chev, edge, self:PanelOpen())
 
 	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
 	h.count:SetText(n > 0 and (n .. "/" .. n) or "")
@@ -1157,17 +1201,40 @@ function PF:RefreshPanel()
 	p:SetHeight(160 + shown * (ROW_H + 6) + 10)
 end
 
-function PF:TogglePanel()
+--- Open or shut the controls, sliding unless told otherwise.
+function PF:SetPanelOpen(open, instant)
 	local p = self:BuildPanel()
-	if p:IsShown() then
-		p:Hide()
-	else
+	self._want = open and 1 or 0
+
+	-- SHOWN BEFORE THE SLIDE STARTS, because a hidden frame gets no
+	-- OnUpdate and the driver hangs off the panel itself - opening one that
+	-- is still hidden would install a script nothing ever calls.
+	--
+	-- RefreshPanel re-anchors on its own account: it changes the panel's
+	-- HEIGHT, and where the handle sits on the edge comes out of that.
+	if open then
 		self:RefreshPanel()
 		p:Show()
 	end
-	-- The arrow turns round, and the stack shifts with the drawer.
-	self:AnchorPanel()
-	return p:IsShown()
+
+	if instant then
+		self._travel = self._want
+		W.StopSlide(p)
+		self:AnchorPanel()
+		return self:PanelOpen()
+	end
+
+	W.DriveSlide(p, self, SLIDE_RATE, function(o) o:AnchorPanel(true) end)
+	-- ONLY ON THE WAY IN. Closing does not go through RefreshPanel, so this
+	-- is where the arrow turns over and the party stack comes back to the
+	-- handle on that path - and doing it on both would move the stack twice
+	-- for one press, which is two protected calls where one will do.
+	if not open then self:AnchorPanel() end
+	return self:PanelOpen()
+end
+
+function PF:TogglePanel()
+	return self:SetPanelOpen(not self:PanelOpen())
 end
 -- ---------------------------------------------------------------------------
 -- lifecycle
@@ -1290,7 +1357,11 @@ function PF:OnDisable()
 	end
 	self.stack:Hide()
 	if self.handle then self.handle:Hide() end
-	if self.panel then self.panel:Hide() end
+	if self.panel then
+		W.StopSlide(self.panel)
+		self._want, self._travel = 0, 0
+		self.panel:Hide()
+	end
 end
 
 function PF:OnSkinChanged()

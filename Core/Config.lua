@@ -32,6 +32,12 @@ Config.defaults = {
 		-- comes back the shape it was. See Modules/Chat.lua.
 		chat      = { w = nil, h = nil },
 
+		-- Whether the equipped-bags drawer is out. Per character for the same
+		-- reason the Toolbox's edge is: whether you keep your bag list open is
+		-- a habit somebody forms on one character. Shut to start with, per the
+		-- handoff - the handle on the edge is what says it is there.
+		bags      = { drawerOpen = false },
+
 		tracked   = {},   -- whitelist, used when autoTrack is off
 		untracked = {},   -- blacklist, used when autoTrack is on
 	},
@@ -375,11 +381,10 @@ Config.defaults = {
 				qualityRim   = true,
 				dimJunk      = true,
 
-				-- The equipped bags and the keyring, on a rail off the right
-				-- edge. Permanently open rather than behind a handle: the deck
-				-- opens it from the capacity chip, and on screen that was a
-				-- control nobody could find. A panel edge that is sometimes
-				-- there is worse than one that always is.
+				-- The equipped bags and the keyring, in a drawer off the right
+				-- edge. This is whether the drawer EXISTS, not whether it is
+				-- out - that is db.char.bags.drawerOpen, and there is a handle
+				-- on the window's edge for it.
 				showFlyout   = true,
 				showKeyring  = true,
 

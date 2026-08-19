@@ -88,6 +88,35 @@ local FLY_PAD       = 14
 local FLY_CORNER    = 22
 local FLY_ROW_H     = 42
 local FLY_GAP       = 6
+
+-- How far the clip window is opened out on the three sides that are NOT the
+-- reveal line. The drawer's shadow reaches corner/2 outside it (Glass's
+-- _LayoutPanelShadow), and a clip rect flush to the drawer would shave that off
+-- the open drawer's own edges - which reads as the glass being cut with a
+-- knife down the right-hand side.
+local FLY_CLIP_PAD  = FLY_CORNER
+
+-- 300ms in the handoff, as a rate so the slide reverses rather than queues.
+local FLY_SLIDE_RATE = 1 / 0.30
+
+-- The handle on the drawer's outer edge. Same shape and the same trick as the
+-- Toolbox rail and the party dock's tab: overlapped INTO whatever it is
+-- attached to by its own corner radius, so the inner curve disappears and the
+-- two read as one shape rather than as a tab with a gap of shadow beside it.
+--
+-- Its LENGTH is derived rather than written down, the way the Toolbox rail's
+-- width is. What it holds changes - the keyring section is a setting, and on a
+-- game version without one there is nothing to count - and a number here would
+-- leave a hole in the tab the day the keys stop being drawn.
+local RAIL_CHEV     = 11
+local RAIL_GLYPH    = 16
+local RAIL_PAD      = 7
+local RAIL_THICK    = RAIL_GLYPH + RAIL_PAD * 2
+local RAIL_GAP      = 7    -- between one thing on the rail and the next
+local RAIL_TIGHT    = 1    -- a count belongs TO its glyph, so it sits close
+local RAIL_COUNT_H  = 11
+local RAIL_CORNER   = 8
+local RAIL_BITE     = RAIL_CORNER
 local TILE          = 30   -- a bag glyph tile
 local TILE_CORNER   = 10
 local KEY_SLOT      = 34
@@ -867,12 +896,38 @@ local function BuildFooter(frame)
 end
 
 -- ---------------------------------------------------------------------------
--- the equipped-bags flyout, and the keyring under it
+-- the equipped-bags drawer, and the keyring under it
 --
--- Anchored so its left edge sits INSIDE the bags panel by one corner radius and
--- at a lower frame level. That is how the deck's flush, square-on-the-left edge
--- is reproduced without a second nine-slice: our panels have one corner radius
--- for all four corners, so the two left corners are simply covered.
+-- A DRAWER THAT SLIDES, not a wing that is always there. Shut, all you get is a
+-- slim handle hugging the window's right edge - the same rail language as the
+-- Toolbox and the party dock, so it is a control the player has already met.
+--
+-- CLIPPED, NEVER TUCKED BEHIND. This is the whole reason the drawer is not a
+-- frame at a lower level that the window slides over, which is how you would
+-- write it anywhere else:
+--
+--   our panels are TRANSLUCENT. A drawer parked behind the bags window reads
+--   straight through the glass, so "shut" is a bag-shaped smear down the right
+--   edge and the slide is that smear getting darker.
+--
+-- So the drawer lives inside a clip window whose LEFT edge sits exactly on the
+-- bags panel's right edge. Anything left of that line is not drawn at all -
+-- there is no level, no alpha and no strata involved, and nothing to show
+-- through. The drawer TRANSLATES within it, which is why there is no fade: the
+-- handoff's opacity ramp exists to stop a one-pixel sliver of glass popping in
+-- when the container's WIDTH is what animates, and a drawer that emerges
+-- whole from behind an edge has no sliver to hide.
+--
+-- Its left corners still sit under the panel by one corner radius. Our panels
+-- have one radius on all four corners, so that overlap is what gives the deck's
+-- flush, square-on-the-left edge without a second nine-slice - and now the clip
+-- takes it rather than the panel merely covering it.
+--
+-- CLIPPING IS VISUAL ONLY. A clipped frame still takes the mouse, and shut, the
+-- whole drawer is sitting over the item grid: an invisible bag row would eat
+-- clicks meant for the bags underneath it and pop tooltips for a list nobody
+-- can see. So the drawer is HIDDEN at rest and its controls are mouse-dead
+-- while it is in transit; only a settled, fully open drawer is live.
 -- ---------------------------------------------------------------------------
 
 -- Forward-declared: BuildBagTile wires each tile as it makes one, and the
@@ -968,16 +1023,94 @@ local function BindBagTile(tile, bag, invSlot)
 	tile.buyable = nil
 end
 
+--- The tab you pull the drawer out by.
+--
+--  A SIBLING OF THE CLIP WINDOW, not a child of it: it is the one part that has
+--  to still be there when everything else has been clipped away to nothing.
+--  It travels with the drawer's outer edge, which is the Toolbox rail's rule -
+--  a handle that stays behind while the thing it opens moves is a handle for
+--  something else.
+--
+--  It also SAYS WHAT IS BEHIND IT, which is the party dock handle's idea: a
+--  glyph with a number under it, so a shut drawer still tells you how many bags
+--  you are carrying and how many keys are on the ring. A tab with nothing on it
+--  but an arrow says only that something opens.
+local function BuildRail(frame)
+	local rail = Glass.CreatePanel(frame, {
+		frameType = "Button",
+		corner    = RAIL_CORNER,
+		fill      = "glass",
+		shadow    = A.db.profile.glass.shadow,
+	})
+	rail:SetWidth(RAIL_THICK)
+	-- Above the window it is attached to AND above the drawer it opens, because
+	-- it bites into both and has to be the thing on top at the join.
+	rail:SetFrameLevel(frame:GetFrameLevel() + 8)
+	frame.flyRail = rail
+
+	local chev = rail:CreateTexture(nil, "OVERLAY")
+	chev:SetSize(RAIL_CHEV, RAIL_CHEV)
+	chev:SetTexture(Media.texture.chevron)
+	-- Plain text at 75%, which is what the Toolbox rail's arrow is. Two docks
+	-- whose arrows disagree is a detail nobody can name and everybody sees.
+	W.Tint(chev, Palette.c.text, 0.75)
+	rail.chev = chev
+
+	-- The handoff's hairline under the arrow: the control above it, the
+	-- readouts below. 18 in the deck, and the rail is only 16 across inside its
+	-- padding - so it is the inner width, which is what "a rule across the tab"
+	-- means at this size.
+	rail.rule = BuildHairline(rail, "glassEdge", 0.7)
+
+	-- One pair per thing the drawer holds. Both are drawn from the sheet rather
+	-- than from a letter, because a "B" and a "K" on a tab this narrow read as
+	-- a keybinding rather than as a picture of what is inside.
+	for _, part in ipairs({ "bags", "keys" }) do
+		local glyph = rail:CreateTexture(nil, "OVERLAY")
+		glyph:SetSize(RAIL_GLYPH, RAIL_GLYPH)
+		Media:SetIcon(glyph, part)
+		W.Tint(glyph, Palette.c.text, 0.7)
+
+		local count = W.Text(rail, "tiny", "CENTER")
+		rail[part] = { glyph = glyph, count = count }
+	end
+
+	rail:EnableMouse(true)
+	rail:RegisterForClicks("AnyUp")
+	rail:SetScript("OnClick", function() Bags:ToggleDrawer() end)
+	rail:SetScript("OnEnter", function(self)
+		W.SetButtonState(self, false, true)
+		if not _G.GameTooltip then return end
+		_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		_G.GameTooltip:SetText("Equipped bags")
+		_G.GameTooltip:Show()
+	end)
+	rail:SetScript("OnLeave", function(self)
+		W.SetButtonState(self, false, false)
+		if _G.GameTooltip then _G.GameTooltip:Hide() end
+	end)
+
+	return rail
+end
+
 local function BuildFlyout(frame)
-	local fly = Glass.CreatePanel(frame, {
+	-- THE CLIP WINDOW. Its left edge is the reveal line, flush with the bags
+	-- panel's right edge; the other three are opened out by the drawer's shadow
+	-- reach so the clip does not shave it off. See the note above this section
+	-- for why this exists at all.
+	local clip = CreateFrame("Frame", nil, frame)
+	clip:SetPoint("TOPLEFT", frame, "TOPRIGHT", 0, -FLY_TOP + FLY_CLIP_PAD)
+	clip:SetSize(FLY_W + FLY_CLIP_PAD, FLY_CLIP_PAD * 2)
+	if clip.SetClipsChildren then pcall(clip.SetClipsChildren, clip, true) end
+	frame.flyClip = clip
+
+	local fly = Glass.CreatePanel(clip, {
 		corner = FLY_CORNER, fill = "glass", shadow = A.db.profile.glass.shadow,
 	})
 	fly:SetWidth(FLY_W + FLY_CORNER)
-	-- Behind the panel, overlapping it by a corner, so the flyout's own left
-	-- corners are never seen.
-	fly:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
-	fly:SetPoint("TOPLEFT", frame, "TOPRIGHT", -FLY_CORNER, -FLY_TOP)
 	frame.flyout = fly
+
+	BuildRail(frame)
 
 	fly.label = W.Text(fly, "bagLabel", "LEFT")
 	fly.label:SetPoint("TOPLEFT", fly, "TOPLEFT", FLY_CORNER + FLY_PAD + 4, -FLY_PAD)
@@ -990,9 +1123,12 @@ local function BuildFlyout(frame)
 	fly.rule:SetPoint("LEFT", fly, "LEFT", FLY_CORNER + FLY_PAD, 0)
 	fly.rule:SetPoint("RIGHT", fly, "RIGHT", -FLY_PAD, 0)
 
+	-- THE KEY BESIDE THE KEYRING HEADING. A little flat square stood in
+	-- for it until the sheet had a key on it; now that the handle needs
+	-- one, both take the same drawing.
 	fly.keyIcon = fly:CreateTexture(nil, "ARTWORK")
-	fly.keyIcon:SetTexture(Media.texture.flat)
-	fly.keyIcon:SetSize(4, 4)
+	Media:SetIcon(fly.keyIcon, "keys")
+	fly.keyIcon:SetSize(11, 11)
 
 	fly.keyLabel = W.Text(fly, "bagLabel", "LEFT")
 	fly.keyLabel:SetText(Media:Track("KEYRING", 1))
@@ -1030,6 +1166,180 @@ local function FlyRowPool(fly, n)
 		fly.rows[n] = row
 	end
 	return row
+end
+
+-- ---------------------------------------------------------------------------
+-- opening and closing the drawer
+-- ---------------------------------------------------------------------------
+
+--- Under the cursor only when the drawer has arrived.
+--
+--  CLIPPING HIDES; IT DOES NOT DEAFEN. Shut, the drawer is sitting whole over
+--  the item grid with nothing drawn of it - so an invisible bag row would take
+--  the hover, pop a tooltip for a bag that is not on screen and swallow a click
+--  meant for the item underneath. Hiding covers the resting state; this covers
+--  the 300ms in between, where the drawer has to be drawn and must not be live.
+local function SetDrawerLive(fly, live)
+	if not fly or fly.__live == live then return end
+	fly.__live = live
+
+	for _, row in ipairs(fly.rows or {}) do
+		row:EnableMouse(live)
+		if row.tile then row.tile:EnableMouse(live) end
+		-- A row hovered as the drawer starts closing keeps its highlight
+		-- otherwise: OnLeave never fires for a frame that stops taking mouse.
+		if not live and row.bg then row.bg:SetAlpha(0) end
+	end
+	for _, b in pairs(fly.keyButtons or {}) do b:EnableMouse(live) end
+end
+
+--- Whether the drawer is out, remembered per character.
+--
+--  Per character rather than per profile, and for the same reason the Toolbox's
+--  dock is: whether you keep your bag list open is a habit somebody forms on
+--  one character, not a look they picked.
+function Bags:DrawerOpen()
+	local c = A.db and A.db.char
+	return (c and c.bags and c.bags.drawerOpen) and true or false
+end
+
+--- What the handle holds, and how long it has to be to hold it.
+--
+--  Sized from its contents rather than from a number, the way the Toolbox
+--  rail's width is: the keyring is a setting, and on a game version with no
+--  keyring there is nothing to count - so a fixed length would leave a hole in
+--  the tab the day the keys stop being drawn.
+--
+--  The counts come off the last refresh rather than from the client, so this is
+--  free to run on the animation frame.
+function Bags:LayoutRail(frame)
+	frame = frame or (self.frames and self.frames.bags)
+	local rail, fly = frame and frame.flyRail, frame and frame.flyout
+	if not (rail and fly) then return end
+
+	local c = Palette.c
+	local keys = fly.__nKeys or 0
+	local pairs_ = { { rail.bags, fly.__nBags or 0 } }
+	if keys > 0 then pairs_[#pairs_ + 1] = { rail.keys, keys } end
+
+	local y = RAIL_PAD
+	rail.chev:ClearAllPoints()
+	rail.chev:SetPoint("TOP", rail, "TOP", 0, -y)
+	y = y + RAIL_CHEV + RAIL_GAP
+
+	rail.rule:ClearAllPoints()
+	rail.rule:SetPoint("TOPLEFT", rail, "TOPLEFT", RAIL_PAD, -y)
+	rail.rule:SetPoint("TOPRIGHT", rail, "TOPRIGHT", -RAIL_PAD, -y)
+	ColorHairline(rail.rule)
+	y = y + 1 + RAIL_GAP
+
+	for _, pair in ipairs(pairs_) do
+		local part, n = pair[1], pair[2]
+		part.glyph:ClearAllPoints()
+		part.glyph:SetPoint("TOP", rail, "TOP", 0, -y)
+		part.glyph:Show()
+		W.Tint(part.glyph, c.text, 0.7)
+		y = y + RAIL_GLYPH + RAIL_TIGHT
+
+		part.count:ClearAllPoints()
+		part.count:SetPoint("TOP", rail, "TOP", 0, -y)
+		part.count:SetText(tostring(n))
+		part.count:Show()
+		W.Color(part.count, c.textDim)
+		y = y + RAIL_COUNT_H + RAIL_GAP
+	end
+
+	if keys <= 0 then
+		rail.keys.glyph:Hide()
+		rail.keys.count:Hide()
+	end
+
+	-- The last gap is inside the tab rather than under the last thing in it.
+	rail:SetHeight(y - RAIL_GAP + RAIL_PAD)
+end
+
+--- Put the drawer, the clip window and the handle where `_travel` says.
+function Bags:LayoutDrawer(frame)
+	frame = frame or (self.frames and self.frames.bags)
+	local clip, fly, rail = frame and frame.flyClip, frame and frame.flyout,
+		frame and frame.flyRail
+	if not (clip and fly and rail) then return end
+
+	-- Off entirely is off entirely: no handle either, or there is a control on
+	-- screen for a thing the player has turned off.
+	if A.Config:Module("bags").showFlyout == false then
+		fly:Hide()
+		clip:Hide()
+		rail:Hide()
+		return
+	end
+	clip:Show()
+	rail:Show()
+
+	local t = self._travel or 0
+	-- EASE OUT: away from the edge quickly, settling into place. Over 300ms a
+	-- linear travel reads as a panel being dragged rather than one let go of.
+	local e = 1 - (1 - t) * (1 - t)
+
+	local h = fly:GetHeight() or 0
+	clip:SetHeight(h + FLY_CLIP_PAD * 2)
+
+	-- Shut, the drawer's RIGHT edge lands exactly on the reveal line and none
+	-- of it is drawn. Open, its left corners sit a radius past that line, under
+	-- the panel, where the clip takes them.
+	fly:ClearAllPoints()
+	fly:SetPoint("TOPLEFT", clip, "TOPLEFT",
+		-FLY_CORNER - (1 - e) * FLY_W, -FLY_CLIP_PAD)
+
+	fly:SetShown(t > 0)
+	SetDrawerLive(fly, t >= 1)
+
+	-- The handle rides the drawer's outer edge, biting into it by its own
+	-- corner radius so the two read as one shape. Centred on the drawer, which
+	-- is a fixed place whether it is out or not.
+	rail:ClearAllPoints()
+	rail:SetPoint("LEFT", frame, "TOPRIGHT",
+		e * FLY_W - RAIL_BITE, -(FLY_TOP + h / 2))
+
+	-- THE ARROW POINTS THE WAY THE CLICK WILL SEND IT, and it follows the
+	-- INTENT rather than where the drawer has got to - so reversing mid-slide
+	-- turns it over at once instead of halfway through the journey back.
+	W.FaceChevron(rail.chev, (self._want or 0) > 0.5 and "LEFT" or "RIGHT")
+end
+
+function Bags:SetDrawerOpen(open, instant)
+	open = open and true or false
+
+	local c = A.db and A.db.char
+	if c then
+		c.bags = c.bags or {}
+		c.bags.drawerOpen = open
+	end
+	self._want = open and 1 or 0
+
+	local frame = self.frames and self.frames.bags
+	if not (frame and frame.flyClip) then
+		self._travel = self._want
+		return
+	end
+
+	if instant or not frame:IsShown() then
+		self._travel = self._want
+		W.StopSlide(frame.flyClip)
+		self:LayoutDrawer(frame)
+		return
+	end
+
+	-- Hung on the CLIP WINDOW because that is a frame which is on screen for
+	-- the whole slide - the drawer inside it is not, being hidden at rest.
+	W.DriveSlide(frame.flyClip, self, FLY_SLIDE_RATE, function(o)
+		o:LayoutDrawer(frame)
+	end)
+end
+
+function Bags:ToggleDrawer()
+	self:SetDrawerOpen(not self:DrawerOpen())
+	return self:DrawerOpen()
 end
 
 -- ---------------------------------------------------------------------------
@@ -1130,6 +1440,12 @@ local function BuildFrame(kind)
 	frame:SetScript("OnShow", function(self)
 		self:EnableKeyboard(A:SetPropagate(self, true))
 		if self.dirty or not self.drawn then Bags:Rebuild(self) end
+		-- THE DRAWER COMES BACK WHERE YOU LEFT IT, and without the slide. An
+		-- animation on open is 300ms of the window still assembling itself in
+		-- front of you every single time you press B.
+		if self.kind == "bags" then
+			Bags:SetDrawerOpen(Bags:DrawerOpen(), true)
+		end
 	end)
 	frame:SetScript("OnHide", function(self)
 		if self.search then self.search.box:ClearFocus() end
@@ -1339,8 +1655,13 @@ function Bags:Rebuild(frame)
 	self:RefreshHeader(frame)
 	self:RefreshFooter(frame)
 	if frame.kind == "bags" then
+		-- Contents first: the drawer's height comes out of that pass, and the
+		-- clip window and the handle are both placed from it. The handle's
+		-- own layout is in the middle because its LENGTH comes out of what it
+		-- has to hold, and the drawer's placement centres it on that.
 		self:RefreshFlyout(frame)
-		frame.flyout:SetShown(cfg.showFlyout ~= false)
+		self:LayoutRail(frame)
+		self:LayoutDrawer(frame)
 	end
 
 	frame.drawn = true
@@ -1572,10 +1893,16 @@ function Bags:RefreshFlyout(frame)
 
 	for i = n + 1, #fly.rows do fly.rows[i]:Hide() end
 
+	-- What the handle says while the drawer is shut. Kept here rather than
+	-- asked for again in the handle's own layout, which runs on the animation
+	-- frame: this is the pass that already knows.
+	fly.__nBags = n
+
 	-- The keyring, a fixed open section at the foot. Not swappable, not counted
 	-- in bag capacity, and it grows downward with the key count -- no cap and no
 	-- collapse, which is the handoff's instruction.
 	local keys = cfg.showKeyring and KeyringSize() or 0
+	fly.__nKeys = keys
 	fly.rule:SetShown(keys > 0)
 	fly.keyIcon:SetShown(keys > 0)
 	fly.keyLabel:SetShown(keys > 0)
@@ -1588,7 +1915,7 @@ function Bags:RefreshFlyout(frame)
 		y = y + 8
 
 		fly.keyIcon:ClearAllPoints()
-		fly.keyIcon:SetSize(9, 9)
+		fly.keyIcon:SetSize(11, 11)
 		fly.keyIcon:SetPoint("TOPLEFT", fly, "TOPLEFT", FLY_CORNER + FLY_PAD + 4, -y - 3)
 		fly.keyIcon:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 
@@ -1914,17 +2241,22 @@ function Bags:HideBank()
 	end
 end
 
---- The flyout is part of the window, not a thing you open.
+--- Whether the drawer exists at all - which is not whether it is out.
 --
---  It started life behind a click on the capacity chip, which is what the deck
---  describes. On screen that was a control nobody could find: no affordance, no
---  hover state, and the one time it appeared it was not clear what had done it.
---  A panel edge that is sometimes there is worse than one that always is.
+--  It started life behind a click on the CAPACITY CHIP, which is what the first
+--  deck described, and on screen that was a control nobody could find: no
+--  affordance, no hover state, and the one time it appeared it was not clear
+--  what had done it. So it was pinned open instead, on the argument that a
+--  panel edge which is sometimes there is worse than one that always is.
+--
+--  The handoff answers that properly: a handle on the edge, the same one the
+--  Toolbox and the party dock use. The objection was to a hidden control, not
+--  to a drawer, so the drawer is back and this setting is now the coarser
+--  question - is there a bag list on this window at all.
 function Bags:SetFlyoutShown(shown)
 	local cfg = A.Config:Module("bags")
 	cfg.showFlyout = shown and true or false
-	local f = self.frames and self.frames.bags
-	if f and f.flyout then f.flyout:SetShown(cfg.showFlyout) end
+	self:LayoutDrawer()
 end
 
 -- ---------------------------------------------------------------------------
@@ -2448,6 +2780,11 @@ local function RestyleFrame(frame)
 		W.Color(frame.flyout.label, c.textDim)
 		ColorHairline(frame.flyout.rule)
 	end
+	if frame.flyRail then
+		frame.flyRail:ApplySkin("glass")
+		W.Tint(frame.flyRail.chev, c.text, 0.75)
+		Bags:LayoutRail(frame)
+	end
 end
 
 function Bags:OnSkinChanged()
@@ -2469,6 +2806,7 @@ function Bags:OnConfigChanged()
 		f:SetScale(A.db.profile.scale)
 		f:SetShadow(A.db.profile.glass.shadow)
 		if f.flyout then f.flyout:SetShadow(A.db.profile.glass.shadow) end
+		if f.flyRail then f.flyRail:SetShadow(A.db.profile.glass.shadow) end
 		f.dirty = true
 	end
 	-- hideBlizzard can be toggled at runtime. Turning it back on has to

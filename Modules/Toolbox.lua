@@ -376,12 +376,7 @@ end
 
 --- How far off screen the panel sits when closed: its own depth on the docking
 --  axis, so the whole thing clears the edge.
-local function ClosedOffset(edge, w, h)
-	if edge == "LEFT"  then return -w, 0 end
-	if edge == "RIGHT" then return  w, 0 end
-	if edge == "TOP"   then return  0, h end
-	return 0, -h
-end
+local ClosedOffset = W.ClosedOffset
 
 function TB:Layout()
 	if not self.panel then return end
@@ -524,29 +519,6 @@ end
 -- opening and closing
 -- ---------------------------------------------------------------------------
 
---- Driven from the shared ticker. `_travel` chases `_want`, so a click that
---  reverses direction mid-slide simply changes the target and the panel carries
---  on from where it is - no queue, no snap back to the start.
-local function Slide(self, dt)
-	local want = self._want or 0
-	local at   = self._travel or 0
-	if math.abs(want - at) < 0.001 then
-		self._travel = want
-		self:Layout()
-		A:UnregisterTicker(self)
-		self._sliding = nil
-		return
-	end
-
-	local step = SLIDE_RATE * dt
-	if want > at then
-		at = math.min(want, at + step)
-	else
-		at = math.max(want, at - step)
-	end
-	self._travel = at
-	self:Layout()
-end
 
 function TB:SetOpen(open, instant)
 	local c = Char()
@@ -582,16 +554,20 @@ function TB:SetOpen(open, instant)
 
 	if instant or not self.panel then
 		self._travel = self._want
-		self._sliding = nil
-		A:UnregisterTicker(self)
+		W.StopSlide(self.panel)
 		self:Layout()
 		return
 	end
 
-	if not self._sliding then
-		self._sliding = true
-		A:RegisterTicker(self, Slide)
-	end
+	-- PER FRAME, off the panel itself. This used to ride the shared 0.1s
+	-- ticker, which is three steps across a 340ms slide - a snap with two
+	-- stops in it rather than a drawer being drawn out. Reversing is still
+	-- only changing `_want`, because the step clamps rather than queues.
+	--
+	-- The panel is the host because it is on screen for the whole slide: it
+	-- travels off the edge rather than being hidden, so it always gets its
+	-- OnUpdate.
+	W.DriveSlide(self.panel, self, SLIDE_RATE, TB.Layout)
 end
 
 function TB:Toggle()
@@ -1032,13 +1008,12 @@ function TB:OnDisable()
 
 	if self.panel then
 		self._want, self._travel = 0, 0
+		W.StopSlide(self.panel)
 		self:Layout()
 		self.panel:Hide()
 		self.rail:Hide()
 		self.scrim:Hide()
 	end
-	A:UnregisterTicker(self)
-	self._sliding = nil
 end
 
 function TB:OnSkinChanged()

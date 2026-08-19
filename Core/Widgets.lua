@@ -866,7 +866,14 @@ local BUTTON_CORNER = 8
 --  and drawing a second one in the same colour on top doubles the value there
 --  and comes back as a bright outline rather than a solid.
 function W.SetButtonState(btn, selected, hovered)
-	local skin = btn and btn.__aetherSkin
+	-- OR THE BUTTON ITSELF, when it IS a surface rather than one that was
+	-- handed a skin. The dock handles are built as glass panels with a button
+	-- frame type - the Toolbox rail's, the party dock's, the bags drawer's -
+	-- so they carry no __aetherSkin and this returned early on every one of
+	-- them. Which is why the party handle had no hover state at all: the call
+	-- was there, correct, and doing nothing.
+	local skin = btn and (btn.__aetherSkin
+		or (btn.SetFillColor and btn.SetEdgeShown and btn))
 	if not skin then return end
 
 	local c = A.Palette.c
@@ -1383,6 +1390,77 @@ function W.PointChevron(tex, edge, open)
 	local f = CHEV_FACING[edge] or CHEV_FACING.LEFT
 	return W.FaceChevron(tex, open and f.open or f.shut)
 end
+
+--- One step of a reversible 0..1 slide. The scheduling is the caller's.
+--
+--  There are two drawers in this interface - the Toolbox and the bags' equipped
+--  list - and both slide by chasing a single travel toward a target rather than
+--  by remembering a start time and a duration. That shape is what makes them
+--  INTERRUPTIBLE: clicking twice quickly reverses, because reversing is only
+--  changing the target and the panel carries on from wherever it had got to.
+--
+--  Here rather than twice, because the trap is the same both times and it is
+--  not obvious: a lerp written as `at + (want - at) * k` approaches its target
+--  and never reaches it, so the drawer creeps for ever and the ticker never
+--  stops. This one steps by a fixed rate and CLAMPS, and says when it has
+--  arrived - exactly, not nearly.
+--
+--  `rate` is 1/seconds, so a 300ms slide is 1/0.30.
+function W.StepTravel(at, want, rate, dt)
+	at, want = at or 0, want or 0
+	if math.abs(want - at) < 0.001 then return want, true end
+
+	local step = (rate or 1) * (dt or 0)
+	if want > at then
+		at = math.min(want, at + step)
+	else
+		at = math.max(want, at - step)
+	end
+	return at, at == want
+end
+
+--- Walk `owner._travel` toward `owner._want`, once per frame, until it lands.
+--
+--  ON A FRAME rather than on the shared ticker in Core, which fires at 0.1s.
+--  Ten steps a second is THREE of them across a 300ms slide, and three
+--  positions over a couple of hundred pixels is a snap with two stops in it
+--  rather than a movement. All three drawers here - the Toolbox, the party
+--  controls and the bags' equipped list - used to look like that.
+--
+--  `host` is only somewhere to hang the script, but it must be a frame that is
+--  SHOWN for the length of the slide: a hidden frame gets no OnUpdate and the
+--  drawer would stop dead where it was. The script is taken off again the
+--  moment it lands, so nothing polls while a drawer is sitting still.
+function W.DriveSlide(host, owner, rate, onStep)
+	if not (host and host.SetScript and owner) then return end
+
+	host:SetScript("OnUpdate", function(self, dt)
+		local at, arrived = W.StepTravel(owner._travel, owner._want, rate, dt)
+		owner._travel = at
+		if onStep then onStep(owner) end
+		-- AFTER the step is drawn, not before: the last frame of a slide is
+		-- the one that puts it exactly where it belongs.
+		if arrived then self:SetScript("OnUpdate", nil) end
+	end)
+end
+
+--- Stop one where it stands.
+function W.StopSlide(host)
+	if host and host.SetScript then host:SetScript("OnUpdate", nil) end
+end
+
+--- How far a drawer docked to `edge` has to move to be entirely off screen.
+--
+--  The other half of a slide: StepTravel says how far along it is, this says
+--  how far along there is to go. Shared by the Toolbox drawer and the party
+--  controls, which dock to the same four edges by the same rules.
+function W.ClosedOffset(edge, w, h)
+	if edge == "LEFT"  then return -w, 0 end
+	if edge == "RIGHT" then return  w, 0 end
+	if edge == "TOP"   then return  0, h end
+	return 0, -h
+end
+
 --- Which screen edge a point belongs to.
 --
 --  BY FRACTION OF THE SCREEN, not by distance in pixels. On a wide monitor

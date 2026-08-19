@@ -860,9 +860,11 @@ local function BagsGroup()
 			{ defaultTrue = true }),
 		dimJunk = toggle("Dim poor-quality items", nil, at("dimJunk"),
 			{ defaultTrue = true }),
-		showFlyout = toggle("Show the equipped-bags rail",
-			"The rail off the right edge carrying your equipped bags and, under"
-			.. " it, the keyring. Drag a new bag onto one to swap it.",
+		showFlyout = toggle("Show the equipped-bags drawer",
+			"A drawer off the right edge carrying your equipped bags and, under"
+			.. " it, the keyring. Drag a new bag onto one to swap it. The handle"
+			.. " on the window's edge slides it out; whether it is out is"
+			.. " remembered per character.",
 			at("showFlyout"), { defaultTrue = true }),
 		showKeyring = toggle("Show the keyring", nil, at("showKeyring"),
 			{ defaultTrue = true }),

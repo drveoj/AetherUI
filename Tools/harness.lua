@@ -955,6 +955,12 @@ function CreateFrame(kind, name, parent, template)
 		self.__bounds = { minW, minH, maxW, maxH }
 	end
 	function f:SetClampedToScreen() end
+	-- RECORDED, not swallowed. Clipping is the only thing that stops a drawer
+	-- parked behind a TRANSLUCENT panel from reading straight through it, and
+	-- a no-op here would agree with a drawer that was merely put on a lower
+	-- frame level - which is the bug, drawn at the same coordinates.
+	function f:SetClipsChildren(v) self.__clips = v and true or false end
+	function f:DoesClipChildren() return self.__clips or false end
 	-- Strata and level are modelled rather than swallowed: the last minimap bug
 	-- was purely an ordering one, and a mock that forgets both cannot see it.
 	function f:SetFrameStrata(v)
@@ -16424,26 +16430,39 @@ do
 
 	-- Interruptible. Clicking the chevron twice quickly must REVERSE, not queue
 	-- a second animation behind the first.
+	--
+	-- DRIVEN OFF THE PANEL, per frame. It rode the shared 0.1s ticker until
+	-- the bags drawer was written, which is three steps across a 340ms slide -
+	-- a snap with two stops in it. Both drawers walk the same travel now, and
+	-- the driver is the panel's own OnUpdate.
 	TBm:SetOpen(false, true)
 	TBm:SetOpen(true)                    -- start opening, no instant
-	tick(0.1)
-	tick(0.1)                            -- two ticks, so the reversal below has
-	local mid = TBm._travel              -- somewhere to land that is not zero
+	local drive = TBm.panel:GetScript("OnUpdate")
+	check(drive ~= nil, "opening installs a per-frame driver on the panel")
+	drive(TBm.panel, 0.05)
+	drive(TBm.panel, 0.05)               -- two frames, so the reversal below
+	local mid = TBm._travel              -- has somewhere to land that is not 0
 	check(mid > 0 and mid < 1, "mid-slide, the drawer is part way (" ..
 		string.format("%.2f", mid) .. ")")
 	TBm:SetOpen(false)                   -- reverse before it arrives
-	tick(0.1)
+	TBm.panel:GetScript("OnUpdate")(TBm.panel, 0.05)
 	check(TBm._travel < mid and TBm._travel > 0,
 		"reversing mid-slide carries on from where it had got to rather than"
 		.. " snapping back to the start or queueing behind the first move. It"
 		.. " has to land BETWEEN, or a drawer that simply snapped shut would"
 		.. " pass this too (" .. string.format("%.2f", mid) .. " -> "
 		.. string.format("%.2f", TBm._travel) .. ")")
-	-- Ticks, not settle(): settle drains C_Timer, and the slide runs on the
-	-- shared ticker. Draining timers advances this by exactly nothing.
-	tick(0.1); tick(0.1)
+	-- Frames, not settle(): settle drains C_Timer, and the slide runs off the
+	-- panel's OnUpdate. Draining timers advances this by exactly nothing.
+	for _ = 1, 20 do
+		local fn = TBm.panel:GetScript("OnUpdate")
+		if not fn then break end
+		fn(TBm.panel, 0.05)
+	end
 	check(TBm._travel == 0, "and it arrives, exactly, rather than creeping"
 		.. " toward zero for ever (" .. tostring(TBm._travel) .. ")")
+	check(TBm.panel:GetScript("OnUpdate") == nil,
+		"and the driver comes off, so nothing polls while it sits still")
 
 	-- Persistence, per character.
 	TBm:SetDock("BOTTOM")
@@ -20558,15 +20577,154 @@ do
 	end
 end
 
-print("== bags: the equipped-bags rail is part of the window ==")
+print("== bags: the equipped-bags drawer slides, and is clipped rather than tucked ==")
 do
 	local f = Bg.frames.bags
-	check(f.flyout ~= nil, "the rail is built with the window")
-	check(f.flyout:IsShown(),
-		"and is on screen whenever the window is - it started life behind a"
-		.. " click on the capacity chip, which is what the concept describes,"
-		.. " and on screen that was a control nobody could find")
+	check(f.flyout ~= nil, "the drawer is built with the window")
+	check(f.flyClip ~= nil and f.flyRail ~= nil,
+		"and so are the clip window it lives in and the handle that pulls it")
 
+	-- CLIPPED, NEVER TUCKED BEHIND. Our panels are translucent: a drawer
+	-- parked behind the window at a lower frame level reads straight through
+	-- the glass, so shut it is a bag-shaped smear down the right edge and the
+	-- slide is that smear getting darker. Nothing about a level or an alpha
+	-- can fix that; only a clip rect the drawer is not drawn outside of.
+	check(f.flyClip.__clips == true,
+		"the clip window really clips - which is the whole mechanism, and a"
+		.. " drawer merely put on a lower level looks identical from here")
+	check(f.flyout:GetParent() == f.flyClip,
+		"and the drawer is INSIDE it, or there is nothing being clipped")
+
+	-- The handle is the one part that must survive the clip: it is what is
+	-- left on screen when the drawer has been reduced to nothing.
+	check(f.flyRail:GetParent() == f and f.flyRail:GetParent() ~= f.flyClip,
+		"the handle is a SIBLING of the clip window, not a child of it")
+
+	-- SHUT TO START WITH, per the handoff. The handle is the affordance.
+	Bg:SetDrawerOpen(false, true)
+	check(not f.flyout:IsShown(), "shut, the drawer is not drawn")
+	check(f.flyRail:IsVisible(),
+		"and the handle still is - a drawer with nothing on screen to open it"
+		.. " is a feature nobody finds")
+
+	-- HIDDEN, NOT MERELY CLIPPED. Clipping is visual: a clipped frame still
+	-- takes the mouse, and shut the drawer sits whole over the item grid. An
+	-- invisible bag row would swallow clicks meant for the items under it.
+	check(f.flyout.__live == false,
+		"and its rows are mouse-dead, because clipping hides and does not"
+		.. " deafen (" .. tostring(f.flyout.__live) .. ")")
+
+	-- WHERE IT SITS WHEN SHUT: its right edge exactly on the reveal line, so
+	-- there is none of it to the right of the window's edge to be seen.
+	local function flyX()
+		local pt = f.flyout.__points[#f.flyout.__points]
+		return pt and pt[4]
+	end
+	local function railX()
+		local pt = f.flyRail.__points[#f.flyRail.__points]
+		return pt and pt[4]
+	end
+	local shutX = flyX()
+	check(math.abs(shutX + 224 + 22) < 0.01,
+		"shut, the drawer is parked a full width plus a corner to the left of"
+		.. " the reveal line (" .. tostring(shutX) .. ")")
+
+	-- THE SLIDE. Driven per frame off the clip window rather than off the
+	-- shared 0.1s ticker: ten steps a second over 300ms is three of them.
+	Bg:SetDrawerOpen(true)
+	local drive = f.flyClip:GetScript("OnUpdate")
+	check(drive ~= nil,
+		"opening starts a slide rather than snapping the drawer into place")
+	drive(f.flyClip, 0.1)
+	local mid = flyX()
+	check(mid > shutX and mid < -22,
+		"mid-slide it is part way out (" .. string.format("%.1f", mid) .. ")")
+	check(f.flyout:IsShown() and f.flyout.__live == false,
+		"drawn while it travels and still mouse-dead - the half of it left of"
+		.. " the reveal line is invisible and would otherwise be live")
+
+	-- INTERRUPTIBLE. Clicking the handle twice quickly must REVERSE, not
+	-- queue a second slide behind the first.
+	Bg:SetDrawerOpen(false)
+	f.flyClip:GetScript("OnUpdate")(f.flyClip, 0.05)
+	local back = flyX()
+	check(back < mid and back > shutX,
+		"reversing mid-slide carries on from where it had got to rather than"
+		.. " snapping back or queueing - it has to land BETWEEN, or a drawer"
+		.. " that simply shut would pass this too (" ..
+		string.format("%.1f", mid) .. " -> " .. string.format("%.1f", back) .. ")")
+
+	-- AND IT ARRIVES, exactly. A lerp that approaches its target never gets
+	-- there, and the driver never stops.
+	for _ = 1, 10 do
+		local fn = f.flyClip:GetScript("OnUpdate")
+		if not fn then break end
+		fn(f.flyClip, 0.1)
+	end
+	check(f.flyClip:GetScript("OnUpdate") == nil,
+		"the driver stops when it lands rather than running for the session")
+	check(math.abs(flyX() - shutX) < 0.01,
+		"and it is back exactly where it started (" ..
+		string.format("%.1f", flyX()) .. ")")
+
+	-- THE HANDLE TRAVELS WITH THE DRAWER'S OUTER EDGE. One that stays behind
+	-- while the thing it opens moves is a handle for something else.
+	local shutRail = railX()
+	Bg:SetDrawerOpen(true, true)
+	local openRail = railX()
+	check(math.abs((openRail - shutRail) - 224) < 0.01,
+		"open, the handle has moved a full drawer width out (" ..
+		string.format("%.1f", shutRail) .. " -> " ..
+		string.format("%.1f", openRail) .. ")")
+	check(shutRail < 0,
+		"and it bites INTO whatever it is attached to by its own corner, so"
+		.. " the two read as one shape rather than as a tab with a gap of"
+		.. " shadow beside it (" .. string.format("%.1f", shutRail) .. ")")
+
+	-- IT LIGHTS UP UNDER THE CURSOR. The handle IS a glass panel with a button
+	-- frame type rather than a frame that was handed a skin, so it carries no
+	-- __aetherSkin - and the shared state setter used to give up on exactly
+	-- that shape and return. The call was there, correct, and doing nothing,
+	-- on this handle and on the party dock's.
+	local rest = f.flyRail._fillColor
+	f.flyRail:GetScript("OnEnter")(f.flyRail)
+	local hot = f.flyRail._fillColor
+	check(hot ~= nil and hot ~= rest,
+		"hovering the handle tints it, rather than a hover call that returns"
+		.. " before it has done anything")
+	f.flyRail:GetScript("OnLeave")(f.flyRail)
+	check(f.flyRail._fillColor ~= hot, "and moving off puts it back")
+
+	-- Open and settled, the drawer is live and its left corners are the only
+	-- part still over the window - where the clip takes them.
+	check(f.flyout:IsShown() and f.flyout.__live == true,
+		"settled open, the rows take the mouse again")
+	check(math.abs(flyX() + 22) < 0.01,
+		"and the drawer sits one corner radius under the panel edge, which is"
+		.. " what gives it a flush square left side without a second"
+		.. " nine-slice (" .. string.format("%.1f", flyX()) .. ")")
+
+	-- THE ARROW POINTS THE WAY THE CLICK WILL SEND IT.
+	local openTurn = f.flyRail.chev:GetRotation()
+	Bg:SetDrawerOpen(false, true)
+	local shutTurn = f.flyRail.chev:GetRotation()
+	check(openTurn == -shutTurn and shutTurn > 0,
+		"shut it points out and open it points back (" ..
+		string.format("%.2f", shutTurn) .. " / " ..
+		string.format("%.2f", openTurn) .. ")")
+
+	-- REMEMBERED PER CHARACTER, and restored WITHOUT the slide: 300ms of the
+	-- window assembling itself in front of you on every press of B.
+	Bg:ToggleDrawer()
+	check(Bg:DrawerOpen() == true and A.db.char.bags.drawerOpen == true,
+		"the handle toggles it, and the answer is kept in db.char")
+	Bg:Hide()
+	Bg:Show()
+	check(f.flyClip:GetScript("OnUpdate") == nil and f.flyout:IsShown(),
+		"reopening the window brings the drawer straight back out rather than"
+		.. " playing the slide again")
+
+	-- The contents are still the contents.
 	check(#f.flyout.rows == 5,
 		"it lists every equipped bag, backpack included (" .. #f.flyout.rows .. ")")
 	check(f.flyout.keyButtons and f.flyout.keyButtons[1]
@@ -20576,32 +20734,83 @@ do
 		"with its buttons parented to a KEYRING proxy, which is what makes"
 		.. " Blizzard's own OnEnter take the SetInventoryItem branch for them")
 
-	-- Parented to the window rather than to UIParent, which is what makes it
-	-- go with it. Note IsVisible, not IsShown: hiding a parent leaves every
-	-- child's own shown flag set, so IsShown would answer true here and prove
-	-- nothing at all.
-	check(f.flyout:GetParent() == f, "it hangs off the window itself")
+	-- WHAT IS BEHIND THE TAB, SAID ON THE TAB. The party dock's handle does
+	-- this: a glyph with a number under it, so a drawer that is shut still
+	-- tells you how many bags you are carrying and how many keys are on the
+	-- ring - a tab with nothing on it but an arrow says only that something
+	-- opens.
+	local rail = f.flyRail
+	check(rail.bags.glyph:GetTexture() == A.Media.icons.file
+		and rail.keys.glyph:GetTexture() == A.Media.icons.file,
+		"the handle carries a bag glyph and a key glyph off the icon sheet")
+	local bl, _, bt = rail.bags.glyph:GetTexCoord()
+	local kl, _, kt = rail.keys.glyph:GetTexCoord()
+	check(bl ~= kl or bt ~= kt,
+		"from DIFFERENT cells of it - two names resolving to one drawing is"
+		.. " how the keybinds tile shipped as a bare blob")
+	check(rail.bags.count:GetText() == "5"
+		and rail.keys.count:GetText() == "2",
+		"with the number of each under it (" ..
+		tostring(rail.bags.count:GetText()) .. " bags, " ..
+		tostring(rail.keys.count:GetText()) .. " keys)")
+
+	-- AND THE NUMBERS FOLLOW THE CONTENTS. A count written once at build
+	-- time is a count that is right until the first key you pick up.
+	_G.__bags[-2].size = 4
+	Bg:Rebuild(f)
+	check(rail.keys.count:GetText() == "4",
+		"picking up a key moves the number on the handle (" ..
+		tostring(rail.keys.count:GetText()) .. ")")
+	_G.__bags[-2].size = 2
+	Bg:Rebuild(f)
+
+	-- THE TAB IS AS LONG AS WHAT IT HOLDS, not a number written down. The
+	-- keyring is a setting and some game versions have none at all, so a
+	-- fixed length would leave a hole in the tab the day the keys stop being
+	-- drawn.
+	local withKeys = rail:GetHeight()
+	local cfg = A.Config:Module("bags")
+	cfg.showKeyring = false
+	Bg:Rebuild(f)
+	check(not rail.keys.glyph:IsShown() and not rail.keys.count:IsShown(),
+		"with no keyring there is no key on the handle")
+	check(rail:GetHeight() < withKeys,
+		"and the tab is shorter for it rather than carrying an empty slot (" ..
+		string.format("%.0f", rail:GetHeight()) .. " from " ..
+		string.format("%.0f", withKeys) .. ")")
+	cfg.showKeyring = true
+	Bg:Rebuild(f)
+	check(rail.keys.glyph:IsShown() and rail:GetHeight() == withKeys,
+		"and it comes back the same length")
+
+	-- It hangs off the window, so it goes with it. IsVisible, not IsShown:
+	-- hiding a parent leaves every child's own shown flag set.
+	check(f.flyClip:GetParent() == f, "the drawer hangs off the window itself")
 	Bg:Hide()
 	check(not f.flyout:IsVisible(), "so it goes off screen with it")
 	Bg:Show()
 	check(f.flyout:IsVisible(), "and comes back with it, without being asked")
 
-	-- A redraw asserts the setting rather than leaving whatever state the rail
-	-- happened to be in. Otherwise "it is shown" only holds because nothing has
-	-- hidden it yet, which is not the same claim.
+	-- A redraw asserts the state rather than leaving whatever the drawer
+	-- happened to be in.
 	f.flyout:Hide()
 	Bg:Rebuild(f)
 	check(f.flyout:IsShown(),
-		"a redraw puts it back, so nothing can leave it closed by accident")
+		"a redraw puts an open drawer back, so nothing can leave it shut by"
+		.. " accident")
 
-	-- Still a setting, for anyone who wants the panel on its own.
+	-- Still a setting, for anyone who wants the panel on its own. It turns
+	-- off the HANDLE as well: a control on screen for a thing the player has
+	-- switched off is worse than no control.
 	Bg:SetFlyoutShown(false)
-	check(not f.flyout:IsShown(), "turning it off hides it")
+	check(not f.flyout:IsShown(), "turning it off hides the drawer")
+	check(not f.flyRail:IsShown(), "and the handle with it")
 	Bg:Rebuild(f)
 	check(not f.flyout:IsShown(), "and a redraw does not bring it back")
 	Bg:SetFlyoutShown(true)
 	Bg:Rebuild(f)
-	check(f.flyout:IsShown(), "and turning it back on restores it")
+	check(f.flyout:IsShown() and f.flyRail:IsShown(),
+		"and turning it back on restores both")
 end
 
 print("== bags: a bank tooltip survives the tooltip's own refresh ==")
@@ -28751,18 +28960,88 @@ section("party controls: the marks go on your target", function()
 
 	check(PF:PanelEdge() == "LEFT", "docked left by default")
 
-	-- THE HANDLE IS THE THING AT THE EDGE, and the panel comes out of the
-	-- handle. That chain is the shape the brief describes - a tab flush to the
-	-- screen with a drawer behind it - and it is also what makes the panel
-	-- move when the handle is re-docked without either of them knowing about
-	-- the other.
+	-- BOTH HANG OFF THE SCREEN EDGE, and the handle RIDES the panel's outer
+	-- edge as it comes out - clamped so that shut it stops flush at the screen
+	-- rather than going off it with the panel.
+	--
+	-- It used to be the other way round: the handle stayed put and the panel
+	-- was anchored out of it, which is how Blizzard's own party dock behaves.
+	-- The Toolbox drawer and the bags drawer both CARRY their handle, and
+	-- three docks in one interface disagreeing about that is the kind of thing
+	-- you notice without being able to name.
 	check(PF.handle ~= nil, "there is a dock handle")
-	local _, hrel, hat = PF.handle:GetPoint()
+	PF:SetPanelOpen(false, true)
+	local _, hrel, hat, hx = PF.handle:GetPoint()
 	check(hrel == UIParent and hat == "LEFT",
 		"the handle is flush to the screen edge (" .. tostring(hat) .. ")")
-	local _, prel = p:GetPoint()
-	check(prel == PF.handle,
-		"and the panel comes out of the handle, not off the bare edge")
+	check(hx == 0,
+		"and shut it stops AT it rather than a bite past it, because there is"
+		.. " no panel left to join to (" .. tostring(hx) .. ")")
+	local _, prel, pat = p:GetPoint()
+	check(prel == UIParent and pat == "LEFT",
+		"the panel hangs off the same edge rather than off the handle")
+	check(not p:IsShown(),
+		"and shut, it is properly away rather than a live frame parked past"
+		.. " the edge")
+
+	-- OPEN, THE HANDLE HAS TRAVELLED a panel's width less its own bite.
+	PF:SetPanelOpen(true, true)
+	local _, _, _, hxOpen = PF.handle:GetPoint()
+	check(math.abs(hxOpen - (p:GetWidth() - 8)) < 0.01,
+		"open, it has moved out with the panel and bitten into it by its own"
+		.. " corner (" .. string.format("%.1f", hxOpen) .. " for a panel " ..
+		string.format("%.0f", p:GetWidth()) .. " across)")
+
+	-- AND IT SLIDES, per frame, the way the other two do.
+	PF:SetPanelOpen(false, true)
+	PF:TogglePanel()
+	local drive = p:GetScript("OnUpdate")
+	check(drive ~= nil, "opening installs a per-frame driver on the panel")
+	drive(p, 0.05)
+	drive(p, 0.05)
+	local mid = PF._travel
+	check(mid > 0 and mid < 1,
+		"mid-slide the panel is part way out (" ..
+		string.format("%.2f", mid) .. ")")
+	PF:TogglePanel()
+	p:GetScript("OnUpdate")(p, 0.05)
+	check(PF._travel < mid and PF._travel > 0,
+		"reversing carries on from where it had got to rather than snapping"
+		.. " back or queueing (" .. string.format("%.2f", mid) .. " -> " ..
+		string.format("%.2f", PF._travel) .. ")")
+	for _ = 1, 20 do
+		local fn = p:GetScript("OnUpdate")
+		if not fn then break end
+		fn(p, 0.05)
+	end
+	check(PF._travel == 0,
+		"and it arrives exactly rather than creeping toward zero for ever (" ..
+		tostring(PF._travel) .. ")")
+	check(p:GetScript("OnUpdate") == nil and not p:IsShown(),
+		"the driver comes off and the panel goes properly away")
+
+	-- AND THE PARTY STACK MOVES ONCE, not sixty times. Re-anchoring it is a
+	-- PROTECTED call - the stack carries secure children - and it is refused
+	-- outright in combat, so doing it on every frame of a slide is sixty
+	-- chances to be refused where one would do. It shifts on the INTENT, at
+	-- the start, so the party moves out of the way as the panel comes out
+	-- rather than after it has arrived.
+	local realAnchor = PF.AnchorStack
+	local anchored = 0
+	PF.AnchorStack = function(self)
+		anchored = anchored + 1
+		return realAnchor(self)
+	end
+	PF:TogglePanel()
+	for _ = 1, 20 do
+		local fn = p:GetScript("OnUpdate")
+		if not fn then break end
+		fn(p, 0.05)
+	end
+	PF.AnchorStack = realAnchor
+	check(anchored == 1,
+		"one re-anchor for the whole slide (" .. anchored .. ")")
+	PF:SetPanelOpen(false, true)
 
 	check(PF:SetPanelEdge("RIGHT"), "it can be moved to another edge")
 	local _, _, hat2 = PF.handle:GetPoint()
@@ -28809,7 +29088,7 @@ section("party controls: the marks go on your target", function()
 	local wasScale = A.db.profile.scale
 	local _, _, _, _, atOne = PF.handle:GetPoint()
 	A.db.profile.scale = 0.5
-	PF:LayoutHandle()
+	PF:AnchorPanel()
 	local _, _, _, _, atHalf = PF.handle:GetPoint()
 	-- The offset scales by exactly the ratio of the two scales: the same
 	-- quarter of the screen, counted in smaller units.
@@ -28819,7 +29098,7 @@ section("party controls: the marks go on your target", function()
 		.. " shrinks (" .. string.format("%.0f -> %.0f, wanted %.0f",
 		atOne, atHalf, want) .. ")")
 	A.db.profile.scale = wasScale
-	PF:LayoutHandle()
+	PF:AnchorPanel()
 	-- IT LOOKS MOVABLE WHEN IT IS. Every other frame wears an accent wash in
 	-- placement mode; this one is not a Movers frame - it docks to an edge
 	-- rather than sitting at a point - so it gets no handle of its own, and
