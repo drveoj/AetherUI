@@ -3622,11 +3622,18 @@ do
 			if label == "Pet" then t:Hide() end
 		end
 
-		local model = CreateFrame("Frame", "CharacterModelFrame", cf)
-		model:CreateTexture(nil, "BORDER"):SetTexture("model-stone")
-		for _, key in ipairs({ "RotateLeftButton", "RotateRightButton" }) do
-			CreateFrame("Button", "CharacterModelFrame" .. key, model)
-				:SetNormalTexture("rotate-art")
+		-- TWO DOLLS, and the pet's is on its own tab with its own model box
+		-- and its own pair of turn buttons. A mock with only the player's
+		-- agrees that dressing one dresses both, which is exactly what it
+		-- did not: the pet kept Blizzard's stone discs beside a sheet that
+		-- was otherwise ours.
+		for _, doll in ipairs({ "Character", "Pet" }) do
+			local model = CreateFrame("Frame", doll .. "ModelFrame", cf)
+			model:CreateTexture(nil, "BORDER"):SetTexture("model-stone")
+			for _, key in ipairs({ "RotateLeftButton", "RotateRightButton" }) do
+				CreateFrame("Button", doll .. "ModelFrame" .. key, model)
+					:SetNormalTexture("rotate-art")
+			end
 		end
 
 		for _, n in ipairs({ "PaperDollFrame", "PetPaperDollFrame",
@@ -3773,11 +3780,14 @@ do
 			end
 		end
 
-		-- A second Close, in the middle of the skills list, doing what the one
-		-- in the corner already does.
-		local spare = CreateFrame("Button", "SkillFrameCancelButton", cf)
-		spare:SetNormalTexture("cancel-up")
-		spare:Show()
+		-- SPARE CLOSE BUTTONS, one per tab that has one: the skills list keeps
+		-- one in the middle of itself and the pet tab one under the doll. Both
+		-- do exactly what the X in the corner already does.
+		for _, n in ipairs({ "SkillFrameCancelButton", "PetPaperDollCloseButton" }) do
+			local spare = CreateFrame("Button", n, cf)
+			spare:SetNormalTexture("cancel-up")
+			spare:Show()
+		end
 
 		local who = cf:CreateFontString(nil, "OVERLAY")
 		who:SetText("Palabras")
@@ -23002,9 +23012,49 @@ do
 		.. " has no SetFont, so handing it straight to the font setter took the"
 		.. " whole module down with a nil call")
 
-	check(not _G.SkillFrameCancelButton:IsShown(),
-		"the spare Close in the middle of the skills list is gone - the corner"
-		.. " already has one and two of them is one too many")
+	check(not _G.SkillFrameCancelButton:IsShown()
+		and not _G.PetPaperDollCloseButton:IsShown(),
+		"the spare Close on the skills list and the one on the pet tab are"
+		.. " both gone - the corner already has an X and three of them is two"
+		.. " too many")
+
+	-- BOTH DOLLS GET THE TURN BUTTONS. The pet has a model box of its own on
+	-- its own tab, and it kept the client's stone discs beside a sheet that
+	-- was otherwise ours - a mock with only the player's doll in it agrees
+	-- that dressing one dresses both.
+	-- Scoped, because this file's main chunk is close to Lua's 200-local
+	-- ceiling and three more at the top level is what tips it over.
+	do
+		local bare, turns = 0, {}
+		for _, btn in ipairs({
+			_G.CharacterModelFrameRotateRightButton,
+			_G.CharacterModelFrameRotateLeftButton,
+			_G.PetModelFrameRotateRightButton,
+			_G.PetModelFrameRotateLeftButton,
+		}) do
+			local mark = btn.__aetherArrow
+			if not mark then bare = bare + 1
+			else turns[#turns + 1] = mark:GetRotation() end
+		end
+		check(bare == 0,
+			"the pet's turn buttons wear our arrow as well as the player's (" ..
+			bare .. " bare of 4)")
+
+		local wrong = 0
+		for i = 1, #turns, 2 do
+			if not (turns[i] and turns[i + 1] and turns[i] == -turns[i + 1]
+				and turns[i] < 0) then wrong = wrong + 1 end
+		end
+		check(wrong == 0,
+			"and the one on the left turns it left on both (" .. wrong ..
+			" pairs wrong)")
+
+		-- AND THE BOX BEHIND THE PET comes off with them. It was never in the
+		-- list of panes - only PetPaperDollFrame was, which is the tab and not
+		-- the model box - so the doll stood in a stone frame on glass.
+		check(_G.PetModelFrame:GetRegions():GetTexture() == 0,
+			"the pet's model box loses its stone the way the player's does")
+	end
 
 	-- INSETS. A client frame is bigger than the window you can see: its art
 	-- carries wide transparent margins and it reserves room below for the tabs.

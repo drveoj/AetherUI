@@ -955,7 +955,11 @@ local function DressCharacter(frame, store)
 	LayoutTabs(frame, store)
 	InstallTabHooks()
 
+	-- BOTH DOLLS. The pet has a model box of its own on its own tab, with its
+	-- own pair of turn buttons under names of the same shape - and it had been
+	-- left with the client's stone discs beside a sheet that is otherwise ours.
 	DressModel("Character", store)
+	DressModel("Pet", store)
 
 	-- Resistance chips down the side, and the pet's set on its own tab.
 	for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
@@ -1002,13 +1006,17 @@ local function DressCharacter(frame, store)
 		end
 	end
 
-	-- A second close button, in the middle of the skills list, doing exactly
-	-- what the one in the corner already does. Hidden rather than cleared: it
-	-- is a whole button we do not want, not art we are replacing.
-	local spare = _G.SkillFrameCancelButton
-	if spare and spare.Hide and not spare.__aetherHidden then
-		spare.__aetherHidden = spare:IsShown() and true or false
-		spare:Hide()
+	-- SPARE CLOSE BUTTONS, one per tab that has one, each doing exactly what
+	-- the X in the corner already does: the skills list has one in the middle
+	-- of it and the pet tab has one under the doll. Hidden rather than cleared,
+	-- because they are whole buttons we do not want rather than art we are
+	-- replacing - and clearing one leaves a live invisible button behind.
+	for _, name in ipairs({ "SkillFrameCancelButton", "PetPaperDollCloseButton" }) do
+		local spare = _G[name]
+		if spare and spare.Hide and not spare.__aetherHidden then
+			spare.__aetherHidden = spare:IsShown() and true or false
+			spare:Hide()
+		end
 	end
 
 	-- "ALL", which expands and collapses the whole tree - so it belongs at the
