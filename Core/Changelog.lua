@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.18.0",
+		date    = "2026-08-19",
+		lines   = {
+			"Tabs look like tabs now, everywhere. The character sheet, the spellbook, the chat windows, the inspect panel, the game's own Options and the flight console's library all draw them the same way: bare words on a hairline, with a glowing mark under the one you are on. They were coloured buttons before, which is what Create, Send and Accept are.",
+			"A tab whose word will not fit gives up its padding first, then a point of lettering, and only then the word itself - with the whole of it on a tooltip. The window no longer stretches to hold the row.",
+			"The spellbook's school icons say which school you are in. They never did.",
+			"Fixed: an unread whisper puts a gold dot on its chat tab, where any other traffic puts a purple one.",
+			"Fixed: the Options window's tabs kept their own lettering after the first click.",
+		},
+	},
+	{
 		version = "0.17.1",
 		date    = "2026-08-19",
 		lines   = {
