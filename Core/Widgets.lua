@@ -155,6 +155,22 @@ function W.Color(fs, c)
 		fs = fs:GetFontString()
 	end
 	if not fs or not fs.SetTextColor then return end
+
+	-- A SimpleHTML COLOURS BY TEXT TYPE. Its SetTextColor takes the type first -
+	-- P, H1, H2, H3 - and calling it the FontString way is an outright error,
+	-- not a no-op. The letter you open in the postbox is one of these, and one
+	-- line naming it alongside the ordinary strings threw and took the whole
+	-- mail dresser with it: shell in our glass, every inside in Blizzard's art.
+	--
+	-- The same shape as SetFont on one of these, which Reskin already knows
+	-- about. Colour is the half that did not.
+	if fs.GetObjectType and fs:GetObjectType() == "SimpleHTML" then
+		for _, kind in ipairs({ "P", "H1", "H2", "H3" }) do
+			pcall(fs.SetTextColor, fs, kind, c[1], c[2], c[3], c[4] or 1)
+		end
+		return
+	end
+
 	fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
 
 	-- WHICH token, if it was one. A caller handing over a mixed or dimmed
@@ -388,6 +404,8 @@ function W.Pill(parent, style, opts)
 	-- `frameType` so a pill can be a Button. Everything else about a pill that
 	-- happens to be clickable is identical, and the alternative is a second
 	-- capsule that only looks like this one.
+	-- Glass.CreatePill picks its own drawing from the height it ends up at -
+	-- see Glass.PILL_ART_MIN - so there is nothing to decide here.
 	local pill = A.Glass.CreatePill(parent, {
 		fill = "glass", edge = "glassEdge", frameType = opts.frameType })
 	pill:SetHeight(opts.height or PILL_H)
@@ -979,6 +997,866 @@ function W.SkinButton(btn, opts)
 end
 
 -- ---------------------------------------------------------------------------
+-- panel anatomy
+--
+-- ONE CONSTRUCTION SYSTEM for every windowed panel here, ours and the
+-- client's alike: header, then the body, then a footer or a tab rail. Chrome
+-- never scrolls.
+--
+-- These numbers were four sets of numbers. The corner radius alone was 16 on
+-- the client's windows, 20 on the party controls and 28 on the bags, the quest
+-- log and the Toolbox - three answers to a question with one, and nobody could
+-- see all three at once to notice. Same for the header height, and the way out
+-- was drawn four separate times.
+--
+-- The handoff's own figures are given BEFORE its 0.92 multiplier and are
+-- already the tightened set (body padding 18 to 16, gap 14 to 12, well padding
+-- 16 to 14, header 54 to 50). The multiplier itself is a scale on the panel
+-- root rather than something baked in here - cherry-picking it per element is
+-- what breaks alignment.
+-- ---------------------------------------------------------------------------
+
+W.PANEL_CORNER   = 20   -- every framed panel, no per-panel variations
+W.PANEL_HEAD_H   = 54   -- ...64 when the header carries a subtitle line
+W.PANEL_HEAD_SUB = 64
+W.PANEL_PAD      = 18   -- body padding, all four sides
+W.PANEL_GAP      = 14   -- between one block in the body and the next
+W.PANEL_FOOT_H   = 52   -- a footer strip, where a panel has one
+
+-- The way out. One hit target, one radius, one inset, everywhere.
+local CLOSE_HIT    = 28
+local CLOSE_CORNER = 9
+local CLOSE_INSET  = 13
+local CLOSE_GLYPH  = 14
+
+W.PANEL_CLOSE_INSET = CLOSE_INSET
+
+--- The way out of a panel.
+--
+--  ONE DESIGN, on ours and on the client's. There were four: a bare
+--  multiplication sign on the client's own button, a 22px one on the quest
+--  log, an 18px one on the Toolbox and an icon button on the bags - four
+--  hit targets, four hover behaviours and four sizes of cross.
+--
+--  `attach` dresses a button that already exists, which is how the client's
+--  windows get theirs: the frame there is Blizzard's and still does the
+--  closing, so nothing is rebuilt or rewired. Without it a button is made.
+--
+--  It is NOT the shared button surface. A close is chrome rather than an
+--  action you read and choose, so it wears nothing at rest and lights a soft
+--  wash under the cursor - the same wash a tab does, for the same reason.
+function W.CloseButton(host, opts)
+	if not host then return nil end
+	opts = opts or {}
+
+	local btn = opts.attach
+	if not btn then
+		btn = CreateFrame("Button", nil, host)
+	end
+	if btn.__aetherClose then return btn end
+
+	btn:SetSize(CLOSE_HIT, CLOSE_HIT)
+	if btn.EnableMouse then btn:EnableMouse(true) end
+
+	-- The hover wash, behind the cross and no bigger than the hit target.
+	local wash = A.Glass.CreatePanel(btn, {
+		corner = CLOSE_CORNER, fill = "glassSoft", edge = "glassEdge",
+	})
+	wash:SetAllPoints(btn)
+	wash:SetEdgeShown(false)
+
+	-- BEHIND, and a level below is not enough on its own: a button we make
+	-- ourselves can land at level 0, math.max clamps the wash to 0 as well,
+	-- and a child at its parent's level draws OVER the parent's regions - so
+	-- the wash would sit on top of the cross rather than under it. Lift the
+	-- button first so there is a level below it to use.
+	if (btn:GetFrameLevel() or 0) < 1 and btn.SetFrameLevel then
+		btn:SetFrameLevel(1)
+	end
+	wash:SetFrameLevel(math.max(0, (btn:GetFrameLevel() or 1) - 1))
+	if wash.EnableMouse then wash:EnableMouse(false) end
+	wash:SetAlpha(0)
+	btn.__aetherCloseWash = wash
+
+	-- U+00D7, at one size in one weight. A drawn cross would be two textures
+	-- rotated forty-five degrees, which at this size resolves to two grey
+	-- smudges - the same minification trap the chip rim and the check box
+	-- already record.
+	local x = W.Text(btn, "pnClose", "CENTER")
+	x:SetPoint("CENTER", btn, "CENTER", 0, 0)
+	x:SetText("\195\151")
+	btn.__aetherClose = x
+
+	local function paint(self, over)
+		W.Color(self.__aetherClose, over and A.Palette.c.text
+			or A.Palette.c.textDim)
+		self.__aetherCloseWash:SetAlpha(over and 1 or 0)
+	end
+	btn.__aetherClosePaint = paint
+	paint(btn, false)
+
+	if btn.HookScript then
+		btn:HookScript("OnEnter", function(self) paint(self, true) end)
+		btn:HookScript("OnLeave", function(self) paint(self, false) end)
+	end
+	if opts.onClick and btn.SetScript then
+		btn:SetScript("OnClick", opts.onClick)
+	end
+
+	return btn
+end
+
+--- Put one in the corner of a panel, at the shared inset.
+function W.PlaceClose(btn, frame, insets)
+	if not btn or not btn.ClearAllPoints then return end
+	local ins = insets or {}
+	btn:ClearAllPoints()
+	btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT",
+		(ins[3] or 0) - CLOSE_INSET, (ins[2] or 0) - CLOSE_INSET)
+end
+
+--- A panel's close, re-inked on a skin change.
+function W.RepaintClose(btn)
+	if btn and btn.__aetherClosePaint then
+		btn.__aetherClosePaint(btn, btn.IsMouseOver and btn:IsMouseOver())
+	end
+end
+-- ---------------------------------------------------------------------------
+-- navigation and manipulation
+--
+-- A CHEVRON MEANS NAVIGATION AND NOTHING ELSE: a page, a carousel, a drawer
+-- that opens. Turning the thing you are looking at is MANIPULATION, and it
+-- gets its own glyph - a circular arrow - and lives on the content rather than
+-- in the chrome.
+--
+-- The rule falls out of where each belongs: navigation is a property of the
+-- window, so it sits in the window's furniture; manipulation is a property of
+-- the thing being manipulated, so it sits on that. Two chevrons beside a
+-- character model say "there is a next page of character", which there is not.
+-- ---------------------------------------------------------------------------
+
+local ROUND       = 28   -- both kinds of control are this circle
+local ROUND_GLYPH = 13
+local ROUND_GAP   = 8    -- between the two of a pair
+local ROUND_INSET = 10   -- ...and in from the corner of what they sit on
+
+W.ROUND = ROUND
+
+--- A round control: a disc with a rim and one glyph in it.
+--
+--  `fill` is the caller's because these sit on two different things. A pager
+--  is in the chrome, over the panel's own glass, and wants almost nothing
+--  behind it; a rotate button sits over a MODEL - a lit, moving, arbitrary
+--  picture - and needs enough behind it to stay legible against anything.
+function W.RoundButton(parent, opts)
+	if not parent then return nil end
+	opts = opts or {}
+
+	local btn = opts.attach or CreateFrame("Button", nil, parent)
+	if btn.__aetherRound then return btn end
+
+	btn:SetSize(ROUND, ROUND)
+	if btn.EnableMouse then btn:EnableMouse(true) end
+
+	-- A DISC, not a rounded square. These are the one control in the
+	-- interface that is genuinely round, and the pair of them reading as a
+	-- pair depends on it.
+	local disc = btn:CreateTexture(nil, "BACKGROUND")
+	disc:SetTexture(Media.texture.chipDisc)
+	disc:SetAllPoints(btn)
+	btn.__aetherRoundDisc = disc
+
+	local rim = btn:CreateTexture(nil, "BORDER")
+	rim:SetTexture(Media.texture.chipRim)
+	rim:SetAllPoints(btn)
+	btn.__aetherRoundRim = rim
+
+	local glyph = btn:CreateTexture(nil, "ARTWORK")
+	glyph:SetSize(opts.glyph or ROUND_GLYPH, opts.glyph or ROUND_GLYPH)
+	glyph:SetPoint("CENTER", btn, "CENTER", 0, 0)
+	btn.__aetherRound = glyph
+
+	btn.__aetherRoundFill = opts.fill
+	W.PaintRound(btn, false)
+
+	if btn.HookScript then
+		btn:HookScript("OnEnter", function(self) W.PaintRound(self, true) end)
+		btn:HookScript("OnLeave", function(self) W.PaintRound(self, false) end)
+	end
+	if opts.onClick and btn.SetScript then
+		btn:SetScript("OnClick", opts.onClick)
+	end
+
+	return btn
+end
+
+--- Its two states, and the one place they are written down.
+--
+--  IDLE IS THREE QUARTERS. These sit ON the thing they act on rather than in
+--  the furniture, so at full strength they compete with it; at three quarters
+--  they are plainly there and plainly secondary, and the cursor brings them up.
+function W.PaintRound(btn, over)
+	if not btn or not btn.__aetherRound then return end
+	local c = A.Palette.c
+
+	local fill = c[btn.__aetherRoundFill or "glassStrong"] or c.glassStrong
+	btn.__aetherRoundDisc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1)
+	local rim = c.glassEdge
+	btn.__aetherRoundRim:SetVertexColor(rim[1], rim[2], rim[3], rim[4] or 1)
+	W.Tint(btn.__aetherRound, c.text, over and 1 or 0.75)
+	btn:SetAlpha(over and 1 or 0.75)
+end
+
+--- A pair of turn controls, on the bottom-right corner of what they turn.
+--
+--  ON THE MODEL, not beside it. They were two chevrons in the window's
+--  furniture, which is the language for turning a PAGE - and the model does
+--  not have pages. Drag-to-rotate still works and always did; these are the
+--  discoverable half of it.
+--
+--  One drawing, mirrored. The left-turning one is the right-turning one with
+--  two texture coordinates swapped, so the two can never disagree about what
+--  a circular arrow looks like.
+function W.RotatePair(host, left, right, opts)
+	if not host then return end
+	opts = opts or {}
+	local fill = opts.fill or "dialogFill"
+
+	for _, pair in ipairs({ { right, false }, { left, true } }) do
+		local btn = pair[1]
+		if btn then
+			W.RoundButton(host, { attach = btn, fill = fill })
+			Media:SetIcon(btn.__aetherRound, "rotate", pair[2])
+			W.PaintRound(btn, false)
+		end
+	end
+
+	-- BOTTOM-RIGHT, inside the corner of the thing they turn. Right-handed
+	-- because that is where a cursor already is on a model you have just been
+	-- dragging, and inside because a control that hangs off the edge of what
+	-- it acts on belongs to the window instead.
+	if right and right.ClearAllPoints then
+		right:ClearAllPoints()
+		right:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT",
+			-ROUND_INSET, ROUND_INSET)
+	end
+	if left and right and left.ClearAllPoints then
+		left:ClearAllPoints()
+		left:SetPoint("RIGHT", right, "LEFT", -ROUND_GAP, 0)
+	end
+end
+-- ---------------------------------------------------------------------------
+-- check boxes
+--
+-- A BOX, AND OUR OWN TICK. It was a round badge carrying the CLIENT's check
+-- mark - a piece of Blizzard's art, in Blizzard's weight, sitting in the
+-- middle of everything else that is ours. Two things wrong with that and they
+-- are separate:
+--
+--   a circle is a RADIO button. Round means one of several; square means on or
+--   off. Drawing an independent toggle as a disc says the wrong thing about
+--   what pressing it does, before anybody reads the label.
+--
+--   and the tick was theirs. The atlas has had one since the console's channel
+--   list needed it; there was never a reason for two.
+--
+-- Sized from the label rather than from the client's button, which is a small
+-- mark inside a much larger transparent hit area - taking its width gave a box
+-- the size of a bag slot.
+-- ---------------------------------------------------------------------------
+
+W.CHECK_SIZE   = 18
+local CHECK_CORNER = 5
+local CHECK_TICK   = 12
+-- AND THE ROUND ONE IS A RADIO, by the same rule read the other way: where the
+-- choice IS one of several, a disc is what says so. Same chip, same states,
+-- and no tick - a radio is filled or it is empty.
+--
+-- SMALLER THAN A CHECK BOX, because a radio never appears alone and the client
+-- stacks a group of them FIFTEEN apart - its own button is 16 with a ring of
+-- about 12 drawn inside it. At the check box's 18 the postbox's pair ran into
+-- each other, which is the one shape a group of radio buttons must not have.
+W.RADIO_SIZE   = 12
+-- A CORNER OF HALF THE SIZE is the true circle and is exactly what cannot be
+-- drawn: Layout9 anchors the top and bottom corner pieces to opposite edges,
+-- so at half they meet - and any rounding at all overlaps them and doubles the
+-- rim's alpha in a band through the middle. See Glass.CreatePill, which found
+-- this the hard way. One short of half is round enough at this size.
+local function RadioCorner(size) return size / 2 - 1 end
+
+--- One check box: a rounded square, and our tick in it when it is on.
+--
+--  `attach` dresses a button that already exists, which is how the client's
+--  windows get theirs - that button is still the thing being toggled.
+--  `round` makes it a radio instead: a disc, and no tick.
+function W.CheckBox(host, opts)
+	if not host then return nil end
+	opts = opts or {}
+
+	local box = opts.attach or host
+	if box.__aetherCheckBox then return box.__aetherCheckBox end
+
+	local size = opts.size or (opts.round and W.RADIO_SIZE) or W.CHECK_SIZE
+	local chip = A.Glass.CreatePanel(box, {
+		corner = opts.round and RadioCorner(size) or CHECK_CORNER,
+		fill = "glassSoft", edge = "glassEdgeHi",
+	})
+	chip:SetSize(size, size)
+	chip:SetPoint("CENTER", box, "CENTER", 0, 0)
+	chip:SetFrameLevel(math.max(0, (box:GetFrameLevel() or 1) - 1))
+	if chip.EnableMouse then chip:EnableMouse(false) end
+
+	if not opts.round then
+		local tick = chip:CreateTexture(nil, "OVERLAY")
+		tick:SetSize(CHECK_TICK, CHECK_TICK)
+		tick:SetPoint("CENTER", chip, "CENTER", 0, 0)
+		Media:SetIcon(tick, "tick")
+		tick:Hide()
+		chip.tick = tick
+	end
+
+	box.__aetherCheckBox = chip
+	return chip
+end
+
+--- On or off, in our own ink.
+function W.CheckState(box, on)
+	local chip = box and box.__aetherCheckBox
+	if not chip then return end
+	local c = A.Palette.c
+
+	-- THE BOX FILLS WHEN IT IS ON, and the tick goes dark on it. Same
+	-- inversion the selected chat tab uses, and for the same reason: a mark
+	-- that is merely brighter reads as hovered.
+	if on then
+		chip:SetFillColor(c.accent)
+		chip:SetEdgeShown(false)
+		W.Tint(chip.tick, c.btnFillText or c.bg or c.text, 1)
+	else
+		chip:ApplySkin("glassSoft", "glassEdgeHi")
+		chip:SetEdgeShown(true)
+	end
+	-- A radio has no tick: filled or empty is the whole of what it says.
+	if chip.tick then chip.tick:SetShown(on and true or false) end
+end
+-- ---------------------------------------------------------------------------
+-- the threat ring
+--
+-- 16b: a 3px arc wrapped round the class pip, clockwise from twelve o'clock,
+-- 44 outer on a 38 pip. It REUSES the disc everybody already watches rather
+-- than adding an element, which is what makes it work at the party capsule's
+-- size and the player frame's without being two designs.
+--
+-- Drawn from Media.dial.threat, which is a sheet of 64 baked steps - Classic
+-- has no conic gradient and no arc primitive, so a fill by angle is a texture
+-- swap. Same mechanism as the flight console's dial and deliberately not a
+-- second one: see Core/Media.lua.
+--
+-- UNDER THE DECORATORS AND OVER THE DISC. The crown, the raid mark, the PvP
+-- flag and the role glyph ride the disc's four corners on a layer at disc + 2,
+-- and 16b says they keep their positions on top - so this sits at disc + 1.
+-- ---------------------------------------------------------------------------
+
+-- The design's proportions, as a ratio rather than two sizes: the same ring
+-- has to sit round a 38 pip on a party capsule and a 46 orb on the player
+-- frame, and 16b's "scale proportionally" is the whole instruction.
+W.RING_OUTER = 44
+W.RING_DISC  = 38
+
+-- The holder's shield, at the size the disc's other decorators use.
+local HOLD_MARK = 13
+
+-- 300ms on combat end, per 16b.
+local RING_FADE = 0.3
+
+--- The box a ring of this outer diameter needs.
+--
+--  The sheet insets the ring inside its cell so a bilinear sample at the edge
+--  cannot read the frame next door, so the frame is a little larger than the
+--  ring it draws. Dividing by that inset is what lands the drawn ring on 44.
+--
+--  SNAPPED TO AN EVEN NUMBER OF PHYSICAL PIXELS. 44/38 of a 38 pip over the
+--  0.875 inset is 50.3 units, which at any scale is a fractional number of
+--  pixels - and a frame centred on another frame at a fractional size puts its
+--  edges on half pixels, so the ring came out a pixel up and to the left of the
+--  disc it is supposed to be concentric with. Even rather than merely whole,
+--  because half of an odd number of pixels is a half pixel again.
+local function RingBox(ring, discSize)
+	local outer = (discSize or W.RING_DISC) * (W.RING_OUTER / W.RING_DISC)
+	local inset = (Media.dialSheet and Media.dialSheet.ring) or 1
+	local box = outer / inset
+
+	local step = (A.PxIn and A:PxIn(ring)) or 1
+	if step <= 0 then return box end
+	return math.max(step * 2, math.floor(box / (step * 2) + 0.5) * step * 2)
+end
+
+--- Resize a ring to sit round a disc of `discSize`.
+function W.SizeThreatRing(ring, discSize)
+	if not ring then return end
+	local box = RingBox(ring, discSize)
+	ring:SetSize(box, box)
+end
+
+--- One ring, on the disc it belongs to.
+--
+--  Kept on the disc, so a second call is the same ring: the frames rebuild
+--  their contents on a skin change and a ring built per call would stack.
+function W.ThreatRing(host, disc)
+	if not (host and disc and disc.GetWidth) then return nil end
+	if disc.__aetherThreatRing then return disc.__aetherThreatRing end
+
+	local ring = CreateFrame("Frame", nil, host)
+	local base = (disc.GetFrameLevel and disc:GetFrameLevel())
+		or (host.GetFrameLevel and host:GetFrameLevel()) or 0
+	ring:SetFrameLevel(base + 1)
+	ring:SetPoint("CENTER", disc, "CENTER", 0, 0)
+
+	local arc = ring:CreateTexture(nil, "ARTWORK", nil, 2)
+	arc:SetAllPoints(ring)
+	ring.arc = arc
+
+	-- THE STEADY SOFT GLOW, which 16a gives to exactly one state: a tank
+	-- holding securely. Off for everything else - motion and light both mean
+	-- "act now" in this design, and a glow on a warning would say it twice.
+	local glow = ring:CreateTexture(nil, "ARTWORK", nil, 1)
+	glow:SetTexture(Media.texture.ringGlow)
+	glow:SetBlendMode("ADD")
+	glow:SetPoint("CENTER", ring, "CENTER", 0, 0)
+	glow:Hide()
+	ring.glow = glow
+
+	-- WHO IS ACTUALLY HOLDING IT, said outright.
+	--
+	-- The design says it in colour: the holder is a tank holding securely,
+	-- which is 16a's one calm-accent state, so theirs is the lit ring. That
+	-- stopped being legible the moment your own ring became continuous - a lit
+	-- ring no longer means "this one has it", it means "this one is a unit".
+	-- Reported from the game as the thing most missing: "it's not clear who
+	-- currently has aggro. The gauge is not definitive."
+	--
+	-- So it is a MARK, not a shade. The disc's other three corners carry the
+	-- crown, the raid mark and the role glyph; this is the fourth, in the same
+	-- vocabulary, and a shield already on the sheet rather than a second
+	-- drawing of one.
+	local held = ring:CreateTexture(nil, "OVERLAY", nil, 6)
+	held:SetSize(HOLD_MARK, HOLD_MARK)
+	held:SetPoint("CENTER", disc, "TOPRIGHT", -1, -1)
+	Media:SetIcon(held, "tank")
+	held:Hide()
+	ring.held = held
+
+	ring:Hide()
+	disc.__aetherThreatRing = ring
+	W.SizeThreatRing(ring, disc:GetWidth())
+	return ring
+end
+
+--- Is this the unit the mob is actually on?
+function W.SetThreatHolder(ring, holding, colour)
+	if not (ring and ring.held) then return end
+	if holding then
+		W.Tint(ring.held, colour or A.Palette.c.accent, 1)
+		ring.held:Show()
+	else
+		ring.held:Hide()
+	end
+end
+
+--- Fill it to `fraction` in `colour`, or pass nil to fade it out.
+--
+--  `glow` asks for the ambient halo; see above, it belongs to one state.
+--
+--  BELOW THE FIRST STEP THERE IS NO FRAME. The sheet's first cell is already
+--  1/64 of a turn, so a fill under that has nothing to draw and the ring is
+--  hidden - which is also the right answer: a ring you cannot see the end of
+--  is a ring that says nothing.
+function W.SetThreatRing(ring, fraction, colour, glow)
+	if not ring then return end
+
+	local file, l, r, t, b = Media:DialArc(fraction, "threat")
+	if not file or not colour then
+		W.SetThreatHolder(ring, false)
+		-- AND DRIVE IT. This set the target and returned, so the ring was asked
+		-- to go and then nothing ever stepped it: it sat at full alpha round
+		-- the pip for the rest of the session. The check beside it read
+		-- `__aetherWant == 0` - it asked whether the ring had been TOLD to go,
+		-- which is not the same question and is the easier one.
+		ring.__aetherWant = 0
+		ring.fill = nil
+		W.DriveFade(ring)
+		return
+	end
+
+	ring.arc:SetTexture(file)
+	ring.arc:SetTexCoord(l, r, t, b)
+	W.Tint(ring.arc, colour)
+	-- Kept, because the tex coords are the only other record of it and reading
+	-- a cell out of an eight-value GetTexCoord to find out how full a ring is
+	-- is arithmetic nobody should have to do twice.
+	ring.fill = fraction
+
+	if glow then
+		-- Drawn at twice the ring and centred, which is how the source is
+		-- authored - see ring_glow() in the generator.
+		local box = ring:GetWidth() or 0
+		ring.glow:SetSize(box * 2, box * 2)
+		W.Tint(ring.glow, colour, (colour[4] or 1) * 0.35)
+		ring.glow:Show()
+	else
+		ring.glow:Hide()
+	end
+
+	ring.__aetherWant = 1
+	if not ring:IsShown() then
+		ring:SetAlpha(0)
+		ring:Show()
+	end
+	W.DriveFade(ring)
+end
+
+--- One step of a fade toward `f.__aetherWant`. True while there is more to do.
+--
+--  A FUNCTION RATHER THAN THE BODY OF AN OnUpdate, so it can be driven a step
+--  at a time by something that is not the game. The suite delivers OnUpdate to
+--  one shared frame and not to every frame that asked for one, so a fade
+--  written straight into the script is a fade nothing here can watch - and it
+--  would have shipped as "it looked right when I ran it".
+--
+--  `__aetherFadeSecs` is how long the whole travel takes; the ring's 300ms is
+--  the default because it was the first caller, and the alarm's clear is the
+--  second. One fade, two durations - not two fades.
+function W.StepFade(f, dt)
+	if not f then return false end
+	local want = f.__aetherWant or 0
+	local at = f:GetAlpha() or 0
+
+	if math.abs(want - at) < 0.02 then
+		f:SetAlpha(want)
+		if want <= 0 then f:Hide() end
+		return false
+	end
+
+	local step = (dt or 0) / (f.__aetherFadeSecs or RING_FADE)
+	f:SetAlpha(want > at and math.min(want, at + step)
+		or math.max(want, at - step))
+	return true
+end
+
+--- Drive it on the frame's own OnUpdate.
+--
+--  Its own rather than the shared ticker: the ticker runs at a tenth of a
+--  second, which is three steps across a 300ms fade and reads as a stutter.
+function W.DriveFade(f)
+	if not f or f.__aetherFading then return end
+	f.__aetherFading = true
+	f:SetScript("OnUpdate", function(self, dt)
+		if not W.StepFade(self, dt) then
+			self.__aetherFading = nil
+			self:SetScript("OnUpdate", nil)
+		end
+	end)
+end
+
+-- ---------------------------------------------------------------------------
+-- the threat alarm
+--
+-- 16c, tiers two and three: the capsule itself starts talking. A border and a
+-- wash in the tier's colour, a solid chip naming the problem, and a pulse -
+-- 1.2s to warn, 0.8s when it has already happened. Steady states never animate;
+-- only these two do, and motion is the whole of what says "act now".
+--
+-- DRAWN ON A SURFACE OF OURS OVER THE CAPSULE, not by re-colouring the
+-- capsule's own glass. The capsule's fill and edge already have owners - the
+-- party module tints them for offline and again for its highlight - and two
+-- writers on one property is a state that is right until the other one updates.
+-- Ours goes over the top and goes away again, which is the same rule the
+-- decorators follow.
+--
+-- AND IT LIES OVER THE LINE BESIDE THE NAME - "Undead Warlock", "Demon - Lv 8".
+-- 16c says the chip replaces nothing, and that line is the least load-bearing
+-- text on the capsule: it does not change during a fight and it is not what you
+-- are looking at when a mob is coming for you. It is also where the design's own
+-- chip sits, roughly, and it leaves the readout alone.
+--
+-- Nothing is hidden underneath it. Laid over, so the moment it clears the
+-- capsule is exactly what it was.
+-- ---------------------------------------------------------------------------
+
+W.PULSE_WARN = 1.2      -- 16c: the warning tier
+W.PULSE_FAIL = 0.8      -- and the failure tier, faster
+local PULSE_PEAK = 1.35 -- brightness 1 -> 1.35 -> 1
+local CHIP_DIM   = 0.85 -- the chip's text pulses in opacity rather than light
+local ALARM_WASH = 0.16 -- how much of the tier colour washes the capsule
+local ALARM_EDGE = 0.85
+local ALARM_CLEAR = 0.3 -- 16c gives it 500ms; this is comfortably inside it
+
+-- HOW LONG IT STAYS UP AT ALL, however fast the state resolves.
+--
+-- A DEPARTURE FROM 16c, which says the chip clears within 500ms of the state
+-- resolving and says nothing about a floor. In practice the state does not
+-- linger: you cross the threshold and drop back, and the chip flashed up and
+-- was gone before the eye had been drawn to it - you could tell something had
+-- happened and had no idea what. A warning nobody can read is not a warning.
+--
+-- The RING is not held: it is the gauge and it tracks the live number, which is
+-- what an ambient reading is for. This is the part that shouts, and a shout has
+-- to last long enough to be heard.
+local ALARM_DWELL = 3
+local CHIP_GAP   = 8
+-- Above the capsule's contents, which sit on the glass a level or two up.
+local CHIP_LIFT  = 6
+local CHIP_TRACK = 1    -- the design letter-spaces the chip; see Media:Track
+
+--- Ease-in-out, 0 at the ends and 1 at the half period.
+--
+--  A cosine rather than a curve table: it is the ease the handoff names and it
+--  costs one call.
+local function PulseAt(elapsed, period)
+	local phase = ((elapsed or 0) % (period or 1)) / (period or 1)
+	return 0.5 - 0.5 * math.cos(phase * 2 * math.pi)
+end
+
+--- Borrow a surface's colours so they can be given back exactly.
+function W.HoldSurface(s)
+	if not s or s.__aetherHeld then return end
+	s.__aetherHeld = {
+		fill = s._fillColor, fillToken = s._fillToken,
+		edge = s._edgeColor, edgeToken = s._edgeToken,
+		edgeHidden = s._edgeHidden,
+	}
+end
+
+function W.ReleaseSurface(s)
+	local was = s and s.__aetherHeld
+	if not was then return end
+	s.__aetherHeld = nil
+	if was.fillToken and was.edgeToken then
+		s:ApplySkin(was.fillToken, was.edgeToken)
+	else
+		if was.fill then s:SetFillColor(was.fill) end
+		if was.edge then s:SetEdgeColor(was.edge) end
+	end
+	s:SetEdgeShown(not was.edgeHidden)
+end
+
+--- One alarm, on the capsule it belongs to.
+--
+--  `side` is which end the chip sits at - the one away from the disc, so it
+--  never crosses the thing the ring is drawn on. `over` is the region it lies
+--  on top of, which is what it is aligned to: reaching for the readout is
+--  simpler and steadier than a padding constant per module, because the readout
+--  is already where the design puts the chip.
+function W.ThreatAlarm(host, opts)
+	if not host then return nil end
+	if host.__aetherAlarm then return host.__aetherAlarm end
+	opts = opts or {}
+
+	local a = { host = host, side = opts.side or "RIGHT" }
+
+	-- The capsule's shape, over the capsule. A pill because both frames that
+	-- carry one are pills; taking the corner from the host would be guessing at
+	-- a shape we can simply match.
+	a.wash = A.Glass.CreatePill(host, { fill = "glassSoft", edge = "glassEdgeHi" })
+	a.wash:SetAllPoints(host)
+	a.wash:SetFrameLevel(math.max(0, (host:GetFrameLevel() or 1)))
+	if a.wash.EnableMouse then a.wash:EnableMouse(false) end
+	a.wash:SetAlpha(0)
+	a.wash:Hide()
+
+	a.chip = W.Pill(host, "thChip", { height = 16, padX = 8 })
+	a.chip:SetEdgeShown(false)
+	if a.chip.EnableMouse then a.chip:EnableMouse(false) end
+	-- ANCHORED BY ITS NEAR EDGE, so it grows AWAY from the name into the empty
+	-- half of the capsule rather than back across it.
+	local near = (a.side == "LEFT") and "RIGHT" or "LEFT"
+	a.chip:ClearAllPoints()
+	if opts.over then
+		a.chip:SetPoint(near, opts.over, near, 0, 0)
+	else
+		a.chip:SetPoint(a.side, host, a.side,
+			(a.side == "LEFT" and CHIP_GAP or -CHIP_GAP), 0)
+	end
+
+	-- OVER THE CAPSULE'S CONTENTS. The name, the bars and the readout are all
+	-- children of the glass and the chip is a child of the FRAME, so without
+	-- this it draws underneath the very thing it is meant to interject on.
+	a.chip:SetFrameLevel((host:GetFrameLevel() or 1) + CHIP_LIFT)
+	a.chip:SetAlpha(0)
+	a.chip:Hide()
+
+	host.__aetherAlarm = a
+	return a
+end
+
+--- Put a tier on it, or nil to clear.
+--
+--  `spec`: { colour, chipBg, chipInk, label, period }. The words and the
+--  colours are the caller's - which tier means which is a decision, and this
+--  draws decisions rather than making them.
+function W.SetThreatAlarm(a, spec)
+	if not a then return end
+
+	if not spec or not spec.colour then
+		if not a.spec then return end
+		-- HELD FOR ITS MINIMUM. The state resolving is not the same as the
+		-- warning having been read; see ALARM_DWELL. The pulse carries on while
+		-- it waits, because a thing that stopped moving and then vanished reads
+		-- as a glitch rather than as a message ending.
+		if (a.up or 0) < ALARM_DWELL then
+			a.pending = true
+			return
+		end
+		return W.ClearThreatAlarm(a)
+	end
+
+	a.spec = spec
+	a.pending = nil
+	a.elapsed = a.elapsed or 0
+	if not a.wash:IsShown() then a.up = 0 end
+
+	local c = spec.colour
+	W.HoldSurface(a.wash)
+	a.wash:SetFillColor({ c[1], c[2], c[3], ALARM_WASH })
+	a.wash:SetEdgeColor({ c[1], c[2], c[3], ALARM_EDGE })
+	a.wash:SetEdgeShown(true)
+	a.wash.__aetherWant, a.wash.__aetherFadeSecs = 1, ALARM_CLEAR
+	if not a.wash:IsShown() then a.wash:SetAlpha(0) a.wash:Show() end
+	W.DriveFade(a.wash)
+
+	if spec.label then
+		a.chip:SetColors(spec.chipBg or c, spec.chipInk)
+		a.chip:SetLabel(A.Media:Track(spec.label, CHIP_TRACK))
+		a.chip.__aetherWant, a.chip.__aetherFadeSecs = 1, ALARM_CLEAR
+		if not a.chip:IsShown() then a.chip:SetAlpha(0) a.chip:Show() end
+		W.DriveFade(a.chip)
+	else
+		a.chip.__aetherWant, a.chip.__aetherFadeSecs = 0, ALARM_CLEAR
+		W.DriveFade(a.chip)
+	end
+end
+
+--- Take it off, now.
+function W.ClearThreatAlarm(a)
+	if not a then return end
+	a.spec, a.pending, a.up = nil, nil, nil
+	a.wash.__aetherWant, a.chip.__aetherWant = 0, 0
+	a.wash.__aetherFadeSecs = ALARM_CLEAR
+	a.chip.__aetherFadeSecs = ALARM_CLEAR
+	W.DriveFade(a.wash)
+	W.DriveFade(a.chip)
+	W.ReleaseSurface(a.wash)
+end
+
+--- One step of the pulse. Nothing happens for an alarm that is not up.
+--
+--  ON THE SHARED TICKER, unlike the fade. A tenth of a second is twelve steps
+--  across a 1.2s pulse and eight across a 0.8s one, which is smooth enough for
+--  a brightness ramp - where three steps across a 300ms fade is not.
+function W.StepThreatAlarm(a, dt)
+	local spec = a and a.spec
+	if not spec then return false end
+
+	a.elapsed = (a.elapsed or 0) + (dt or 0)
+	a.up = (a.up or 0) + (dt or 0)
+
+	-- Its minimum served, and the state already gone.
+	if a.pending and a.up >= ALARM_DWELL then
+		W.ClearThreatAlarm(a)
+		return false
+	end
+
+	local at = PulseAt(a.elapsed, spec.period or W.PULSE_WARN)
+
+	-- BRIGHTNESS, which on a tinted surface is the tint scaled up and clamped.
+	local c, k = spec.colour, 1 + (PULSE_PEAK - 1) * at
+	a.wash:SetEdgeColor({ math.min(1, c[1] * k), math.min(1, c[2] * k),
+		math.min(1, c[3] * k), ALARM_EDGE })
+	a.wash:SetFillColor({ math.min(1, c[1] * k), math.min(1, c[2] * k),
+		math.min(1, c[3] * k), ALARM_WASH })
+
+	-- The chip's text pulses in OPACITY rather than in light: it is already a
+	-- solid fill, and brightening dark ink on gold takes it toward the fill.
+	if a.chip:IsShown() and a.chip.text then
+		a.chip.text:SetAlpha(CHIP_DIM + (1 - CHIP_DIM) * at)
+	end
+	return true
+end
+
+-- ---------------------------------------------------------------------------
+-- the screen flash
+--
+-- 16c, and ONLY for the player's own failure: a brief red pulse round the edge
+-- of the viewport, two beats, so that you never learn you have aggro from the
+-- damage numbers. The rate limit and the "your own state" rule are the module's
+-- - this draws it and says when it has finished.
+--
+-- NOT ON A NAMEPLATE, EVER. The handoff is explicit that screen-level alarms
+-- belong to the unit frame; a plate that could fire this would fire it once per
+-- mob in a pack.
+-- ---------------------------------------------------------------------------
+
+local FLASH_BEATS = 2
+local FLASH_BEAT  = 0.35    -- seconds per beat
+local FLASH_PEAK  = 0.55    -- alpha at the top of one
+
+--- The one flash frame, built the first time it is wanted.
+--
+--  One for the whole interface: it is the player's own state and there is only
+--  one player. A pool here would be a pool of one.
+function W.ScreenFlashFrame()
+	if W.__flash then return W.__flash end
+
+	local f = CreateFrame("Frame", nil, UIParent)
+	f:SetAllPoints(UIParent)
+	f:SetFrameStrata("FULLSCREEN_DIALOG")
+	if f.EnableMouse then f:EnableMouse(false) end
+
+	local tex = f:CreateTexture(nil, "OVERLAY")
+	tex:SetTexture(Media.texture.threatEdge)
+	tex:SetAllPoints(f)
+	tex:SetBlendMode("ADD")
+	f.edge = tex
+
+	f:SetAlpha(0)
+	f:Hide()
+	W.__flash = f
+	return f
+end
+
+--- Start it, in `colour`.
+function W.ScreenFlash(colour)
+	local f = W.ScreenFlashFrame()
+	W.Tint(f.edge, colour, 1)
+	f.__aetherFlashAt = 0
+	f:SetAlpha(0)
+	f:Show()
+	return f
+end
+
+--- One step. False when it has finished.
+--
+--  A function for the same reason the fade is one: the suite drives a single
+--  shared frame's OnUpdate and not every frame that asked for one, and an
+--  animation nothing can step is an animation nothing can check.
+function W.StepScreenFlash(dt)
+	local f = W.__flash
+	if not f or not f:IsShown() then return false end
+
+	f.__aetherFlashAt = (f.__aetherFlashAt or 0) + (dt or 0)
+	local total = FLASH_BEATS * FLASH_BEAT
+	if f.__aetherFlashAt >= total then
+		f:SetAlpha(0)
+		f:Hide()
+		return false
+	end
+
+	local phase = (f.__aetherFlashAt % FLASH_BEAT) / FLASH_BEAT
+	f:SetAlpha(FLASH_PEAK * (0.5 - 0.5 * math.cos(phase * 2 * math.pi)))
+	return true
+end
+
+-- ---------------------------------------------------------------------------
 -- tabs
 --
 -- ONE TAB LANGUAGE, and it is not the button's.
@@ -1060,7 +1938,16 @@ function W.TabRail(host, edge, opts)
 	if not host or not host.CreateTexture then return nil end
 	opts = opts or {}
 
-	local rail = host.__aetherRail
+	-- ONE RAIL PER EDGE, not one per host. The spellbook carries TWO - the
+	-- schools down its right side and the books along its foot - and they were
+	-- sharing a frame: whichever was laid out last re-pointed it, and the other
+	-- set of tabs was left chained to a rail that had become the other rail.
+	-- On screen that is the school column hanging below the window on the first
+	-- dress, and the book tabs in the middle of it after a click.
+	edge = TAB_FACE[edge] and edge or "BOTTOM"
+	host.__aetherRails = host.__aetherRails or {}
+
+	local rail = host.__aetherRails[edge]
 	if not rail then
 		rail = CreateFrame("Frame", nil, host)
 		rail.tint = rail:CreateTexture(nil, "BACKGROUND")
@@ -1068,26 +1955,29 @@ function W.TabRail(host, edge, opts)
 		rail.tint:SetAllPoints(rail)
 		rail.rule = rail:CreateTexture(nil, "BORDER")
 		rail.rule:SetTexture(Media.texture.flat)
-		host.__aetherRail = rail
+		host.__aetherRails[edge] = rail
 	end
 
-	rail._edge = TAB_FACE[edge] and edge or "BOTTOM"
+	rail._edge = edge
 	local face = TAB_FACE[rail._edge]
 
+	-- A PIXEL SHORT AT BOTH ENDS. A hairline and the panel's border are the
+	-- same colour, and where one runs into the other the two alphas add: the
+	-- rail arrives at the rim and lights a bright pip exactly on the join.
+	-- Stopping short leaves the border to be the border.
+	local nib = W.RULE_GAP
 	rail.rule:ClearAllPoints()
+	rail.rule.__aetherUpright = TAB_VERTICAL[rail._edge] or nil
 	if TAB_VERTICAL[rail._edge] then
-		rail.rule:SetPoint("TOP" .. face, rail, "TOP" .. face, 0, 0)
-		rail.rule:SetPoint("BOTTOM" .. face, rail, "BOTTOM" .. face, 0, 0)
-		rail.rule:SetWidth(A:Px(1))
+		rail.rule:SetPoint("TOP" .. face, rail, "TOP" .. face, 0, -nib)
+		rail.rule:SetPoint("BOTTOM" .. face, rail, "BOTTOM" .. face, 0, nib)
 	else
-		rail.rule:SetPoint(face .. "LEFT", rail, face .. "LEFT", 0, 0)
-		rail.rule:SetPoint(face .. "RIGHT", rail, face .. "RIGHT", 0, 0)
-		rail.rule:SetHeight(A:Px(1))
+		rail.rule:SetPoint(face .. "LEFT", rail, face .. "LEFT", nib, 0)
+		rail.rule:SetPoint(face .. "RIGHT", rail, face .. "RIGHT", -nib, 0)
 	end
 
 	local c = A.Palette.c
-	local rule = c.glassEdge
-	rail.rule:SetVertexColor(rule[1], rule[2], rule[3], rule[4] or 1)
+	W.PaintHairline(rail.rule)
 
 	-- OFF UNLESS ASKED FOR. The handoff calls the vertical rail's wash
 	-- mandatory, on the argument that it is the only thing saying a column
@@ -1227,9 +2117,12 @@ function W.TabState(tab, selected, hovered)
 	local c = A.Palette.c
 	tab.__aetherSelected = selected and true or false
 
-	local host = tab.GetParent and tab:GetParent()
+	-- THE TAB'S OWN EDGE, or the rail it was handed. There is no looking it
+	-- up off the parent: a host may carry two rails - the spellbook carries a
+	-- vertical one and a horizontal one - and asking the parent for THE rail
+	-- is asking a question with two answers.
 	local edge = tab.__aetherTabEdge
-		or (host and host.__aetherRail and host.__aetherRail._edge)
+		or (tab.__aetherTabRail and tab.__aetherTabRail._edge)
 		or "BOTTOM"
 	-- UNLESS THE CALLER OWNS IT. A chat tab's own box is Blizzard's 32-tall
 	-- art frame, three pixels taller than the dock it sits in and centred on
@@ -1417,15 +2310,213 @@ end
 -- scrolling lists
 -- ---------------------------------------------------------------------------
 
---- A scroll frame with no visible bar, because the concept has none. The wheel
---  is the only way to move it, which is what the design implies. `step` is how
---  far one wheel click moves it.
-function W.Scroller(parent, step)
+-- ---------------------------------------------------------------------------
+-- content wells
+--
+-- THE FIX FOR CONTENT FLOATING IN CHROME. Anything that can grow - a list, a
+-- grid, a page of reading, a log, a model - sits in a recess with a visible
+-- edge, and that recess is the ONLY thing that scrolls. The header, the
+-- footer, the pager and the tab rail never move.
+--
+-- The scrollbar hugs the well's own right edge from the inside, which is the
+-- whole reason it can never read as floating: it is measured against a border
+-- you can see. Four pixels of accent at forty per cent, fading out about a
+-- second after you stop - present while you are moving, gone while you read.
+-- ---------------------------------------------------------------------------
+
+W.WELL_CORNER = 14
+W.WELL_PAD    = 16   -- 15b: the padding inside a well, on all four sides
+
+-- How far short of the panel's border every hairline in it stops. A rail and
+-- the rim are drawn in the same ink, so where one meets the other the alphas
+-- add and the join lights up.
+W.RULE_GAP    = 2
+
+--- One hairline: one ink, and one physical pixel of it.
+--
+--  THE INK. A tab rail took glassEdge whole, the quest log's two dividers
+--  took 0.55 and 0.5 of it and a panel's header band took 0.7 - so the rails
+--  came out at 0.32 and the rest between 0.16 and 0.22.
+--
+--  THE THICKNESS, which is the one that actually hid them. A.pixel is in
+--  UIParent units and every one of these lines lives inside a frame drawn at
+--  the profile's scale, so SetHeight(A:Px(1)) asks for seven tenths of a
+--  pixel: present in every measurement, correct in every anchor, and grey to
+--  nothing on screen. A:PxIn is the conversion, and Core/Core.lua has carried
+--  a comment describing this exact failure since it was written.
+--
+--  Both are re-applied on every repaint, because the scale can change under a
+--  line that was right when it was drawn.
+function W.PaintHairline(t)
+	if not t then return end
+	local c = A.Palette.c.glassEdge
+	t:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+
+	local px = A:PxIn(t.GetParent and t:GetParent())
+	if t.__aetherUpright then t:SetWidth(px) else t:SetHeight(px) end
+end
+
+--- ...and the texture to paint, sized but not placed.
+function W.Hairline(parent, vertical)
+	local t = parent:CreateTexture(nil, "ARTWORK")
+	t:SetTexture(A.Media.texture.flat)
+	t.__aetherUpright = vertical and true or nil
+	W.PaintHairline(t)
+	return t
+end
+-- How far the recess reaches OUTSIDE the scroll frame it holds. Small, and the
+-- caller's to set: the room available differs per panel - the quest log's list
+-- has twelve to its right and the bags have twenty-four - and a number here
+-- that suits one of them pushes the other's rim through the side of the
+-- window. Eight is what fits everywhere without being asked.
+W.WELL_OUTSET = 8
+
+local BAR_W     = 4
+-- INSIDE THE WELL'S RIM, and OUTSIDE the scroll frame - which is to say in
+-- the gutter between the two, where there is nothing to sit on top of. It
+-- was inset from the SCROLL frame's own right edge, which put it over the
+-- last few pixels of every row in the quest log's list.
+local BAR_INSET = 4      -- from the well's rim
+local BAR_ROOM  = BAR_INSET + BAR_W
+local BAR_MIN   = 24     -- a thumb shorter than this is a dot, not a position
+local BAR_HOLD  = 1.0    -- seconds it stays up after the last movement
+local BAR_FADE  = 0.35
+local WELL_FADE = 34     -- the more-below gradient at the foot of a well
+
+--- The recess anything that scrolls sits in.
+function W.ContentWell(parent, opts)
+	if not parent then return nil end
+	opts = opts or {}
+
+	local well = A.Glass.CreatePanel(parent, {
+		corner = opts.corner or W.WELL_CORNER,
+		fill   = "wellFill",
+		edge   = "wellEdge",
+	})
+	well.__aetherWellOut = opts.outset or W.WELL_OUTSET
+	return well
+end
+
+--- Where a thumb belongs, given how far down a scroll frame is.
+--
+--  Returned rather than applied so the arithmetic can be read on its own: the
+--  thumb is as tall a fraction of the track as the view is of the content, and
+--  as far down it as the scroll is through its range.
+local function ThumbGeometry(view, content, scrolled, track)
+	if view <= 0 or content <= view then return nil end
+
+	local h = math.max(BAR_MIN, track * (view / content))
+	local room = track - h
+	local through = scrolled / (content - view)
+	if through < 0 then through = 0 elseif through > 1 then through = 1 end
+	return h, room * through
+end
+
+--- A scroll frame, in a well, with a bar that hugs the well's edge.
+--
+--  `step` is how far one wheel click moves it. Pass `well = false` for a
+--  scroller inside something that is already a recess - the bank's grid sits
+--  in the window's own well, and a well inside a well draws two rims.
+function W.Scroller(parent, step, opts)
+	opts = opts or {}
 	local scroll = CreateFrame("ScrollFrame", nil, parent)
 	local child = CreateFrame("Frame", nil, scroll)
 	child:SetSize(1, 1)
 	scroll:SetScrollChild(child)
 	scroll.child = child
+
+	if opts.well ~= false then
+		local well = W.ContentWell(parent, opts)
+		local out = well.__aetherWellOut
+		-- THE RIGHT SIDE IS AT LEAST WIDE ENOUGH FOR THE BAR, whatever the
+		-- caller asked for. The gutter is where the bar lives, so a well that
+		-- is too narrow on that side has no room for one and the bar ends up
+		-- over the content - which is what it did.
+		local right = math.max(out, BAR_ROOM)
+		scroll.__aetherGutter = right
+		well:SetPoint("TOPLEFT", scroll, "TOPLEFT", -out, out)
+		well:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", right, -out)
+		-- BELOW what it holds. It is a sibling of the scroll frame rather than
+		-- its parent, because a ScrollFrame clips its child to itself and a
+		-- recess drawn inside that clip would be cut off with the content.
+		well:SetFrameLevel(math.max(0, (scroll:GetFrameLevel() or 1) - 1))
+		if well.EnableMouse then well:EnableMouse(false) end
+		scroll.well = well
+	end
+
+	-- THE BAR. A pill rather than a rectangle, four wide, inset inside the
+	-- well's right edge - which is what stops it reading as floating in the
+	-- panel: it is measured against a border you can see.
+	local bar = scroll:CreateTexture(nil, "OVERLAY")
+	bar:SetTexture(Media.texture.pill)
+	bar:SetWidth(BAR_W)
+	bar:SetAlpha(0)
+	scroll.bar = bar
+
+	-- AND THE HINT THAT THERE IS MORE. A gradient at the foot of the well,
+	-- fading the last rows into it, so a list that runs past the bottom says
+	-- so without a scrollbar having to be up.
+	local fade = scroll:CreateTexture(nil, "OVERLAY")
+	fade:SetTexture(Media.texture.shadow)
+	fade:SetHeight(WELL_FADE)
+	fade:SetPoint("BOTTOMLEFT", scroll, "BOTTOMLEFT", 0, 0)
+	fade:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 0, 0)
+	fade:Hide()
+	scroll.fade = fade
+
+	--- Put the bar where the scroll is, and say whether there is more below.
+	function scroll:Measure()
+		local view = self:GetHeight() or 0
+		local content = self.child:GetHeight() or 0
+		local at = self:GetVerticalScroll() or 0
+		-- CENTRED IN THE GUTTER, on the far side of the scroll frame's own
+		-- edge. With no well there is no gutter, so it tucks just inside.
+		local gutter = self.__aetherGutter
+		local x = gutter and ((gutter - BAR_W) / 2) or -BAR_INSET
+
+		local h, down = ThumbGeometry(view, content, at, view)
+		if not h then
+			self.bar:Hide()
+			self.fade:Hide()
+			return false
+		end
+
+		self.bar:ClearAllPoints()
+		self.bar:SetPoint("TOPLEFT", self, "TOPRIGHT", x, -down)
+		self.bar:SetHeight(h)
+		self.bar:Show()
+
+		local c = A.Palette.c.accent
+		self.bar:SetVertexColor(c[1], c[2], c[3], 0.4)
+
+		-- Only while there IS more below. At the end of a list the gradient
+		-- would be a shadow over the last row for no reason.
+		self.fade:SetShown(at < content - view - 0.5)
+		local f = A.Palette.c.wellFill
+		self.fade:SetVertexColor(f[1], f[2], f[3], f[4] or 1)
+		return true
+	end
+
+	--- Show the bar and start it fading again.
+	--
+	--  The countdown rides an OnUpdate installed only while it is fading, so a
+	--  panel sitting still polls nothing at all.
+	function scroll:Flash()
+		if not self:Measure() then return end
+		self.__hold = BAR_HOLD
+		self.bar:SetAlpha(1)
+		self:SetScript("OnUpdate", function(me, dt)
+			me.__hold = (me.__hold or 0) - dt
+			if me.__hold > 0 then return end
+			local a = me.bar:GetAlpha() - dt / BAR_FADE
+			if a <= 0 then
+				me.bar:SetAlpha(0)
+				me:SetScript("OnUpdate", nil)
+			else
+				me.bar:SetAlpha(a)
+			end
+		end)
+	end
 
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
@@ -1433,6 +2524,7 @@ function W.Scroller(parent, step)
 		local v = (self:GetVerticalScroll() or 0) - delta * step
 		if v < 0 then v = 0 elseif v > max then v = max end
 		self:SetVerticalScroll(v)
+		self:Flash()
 	end)
 
 	--- Re-clamp after a rebuild, or a shorter list leaves the view scrolled past
@@ -1440,6 +2532,7 @@ function W.Scroller(parent, step)
 	function scroll:Clamp()
 		local max = math.max(0, (self.child:GetHeight() or 0) - (self:GetHeight() or 0))
 		if (self:GetVerticalScroll() or 0) > max then self:SetVerticalScroll(max) end
+		self:Measure()
 	end
 
 	return scroll

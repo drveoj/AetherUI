@@ -2440,7 +2440,7 @@ corner block draws a small glass disc beside the zone and the clock.
 
 The live map was built and tried first -- it is the better argument on paper,
 being the one part of the HUD still saying something while you are not playing.
-On screen it is not what zen is for. Joe, having seen both: *"I preferred that
+On screen it is not what zen is for. Having seen both: *"I preferred that
 even if it was imperfect."* A quiet screen beats an informative one here. It is
 still there behind the setting, and when it is on the map is **left where it is
 rather than shrunk into the corner block** -- zen exits on

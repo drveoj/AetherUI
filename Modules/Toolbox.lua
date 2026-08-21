@@ -103,7 +103,7 @@ local RAIL_CORNER = 8
 -- off the screen edge, so it hugs there too.
 local RAIL_BITE  = 14
 
-local PANEL_CORNER = 28
+local PANEL_CORNER = W.PANEL_CORNER   -- shared; see Core/Widgets.lua
 
 -- 300-400ms, per the handoff. Expressed as a rate so the lerp is reversible.
 local SLIDE_RATE = 1 / 0.34
@@ -1277,7 +1277,11 @@ end
 -- ---------------------------------------------------------------------------
 
 local CARD_H, CARD_GAP = 46, 8
-local PAD = 22
+-- THE SHARED NUMBERS. 15a gives one header height and one body padding
+-- for every panel in the interface, and a window of ours is a panel like
+-- any other - the only reason these were local was that they were written
+-- before there was anywhere to put them.
+local PAD = W.PANEL_PAD
 
 --- The deck letter-spaces its section headings. The client has no
 --  letter-spacing, so the spacing is baked into the string - which is why these

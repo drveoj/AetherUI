@@ -133,6 +133,23 @@ Config.defaults = {
 				clickTarget = true,
 			},
 
+			-- Threat: the ring round the pip, the escalation on the capsule and
+			-- the disposition colour on a hostile plate. The 70 and 90 thresholds
+			-- are the handoff's and are deliberately not here - see
+			-- docs/PLAN-Threat.md.
+			threat = {
+				enabled = true,
+				-- full | rings | off. "rings" keeps the ring and drops the chips.
+				display = "full",
+				-- The screen-edge vignette and the ping, which are the player's own
+				-- state only and are worth being able to switch off on their own.
+				alarms  = true,
+				-- auto | tank | damage. Auto is the assigned role where the client
+				-- has one and the stance or form where it does not; on Classic Era
+				-- that is almost always the second.
+				role    = "auto",
+			},
+
 			unitframes = {
 				-- The pet capsule: the same shape as the other two at a size of
 				-- its own, because a pet is a thing you glance at rather than
@@ -541,11 +558,12 @@ Config.defaults = {
 			panels = {
 				enabled = true,
 
-				-- On top of profile.scale, because these windows are not ours.
-				-- Everything inside them is the client's own furniture at a
-				-- fixed pixel size - item icons, the paper doll, its stat rows
-				-- - so a profile scale that suits our frames shrinks a Blizzard
-				-- window past the point where you can read it.
+				-- ON TOP OF profile.scale, and 1 by default - which is to say a
+				-- panel is the size the rest of the interface is, less the panel
+				-- package's own tenth. This is here for somebody who wants the
+				-- client's windows a shade bigger than their HUD because the
+				-- furniture inside them is Blizzard's fixed pixel art; it is not
+				-- a second scale slider for panels in general.
 				scale   = 1.0,
 			},
 
@@ -757,8 +775,8 @@ Config.defaults = {
 				--
 				-- The live map was tried and is the better argument on paper --
 				-- it is the one part of the HUD still saying something while you
-				-- are not playing. On screen it is not what zen is for. Joe,
-				-- having seen both: "I preferred that even if it was imperfect."
+				-- are not playing. On screen it is not what zen is for. Having
+				-- seen both: "I preferred that even if it was imperfect."
 				-- A quiet screen beats an informative one here.
 				keepMinimap = false,
 				-- The corner glyph draws the zone's own map art, cropped to a

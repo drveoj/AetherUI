@@ -383,6 +383,39 @@ def glass_pill_edge():
                     * vgrad(size, 1.0, 0.55, gamma=0.9))
 
 
+def glass_pill_small():
+    """The same capsule, authored for the sizes it is actually drawn at.
+
+    128x64: caps occupy x 0..32 and 96..128 - the same 0.25 slice fraction as
+    the big one, so the geometry in Core/Glass.lua is identical and only the
+    texture changes.
+
+    THE BIG ONE IS AUTHORED AT 2x A 4K DISPLAY, which is right for a cast bar
+    or a unit frame capsule and wrong for a level chip: a 128-texel cap drawn
+    at ten pixels is a thirteenfold minification of a curve, and the client
+    does not mipmap. The ends come back jagged, and they came back jagged four
+    separate times - the chip rim, the check box, the tooltip badge, the chat
+    tab - each found on its own with no idea it was the same fault.
+
+    At 32 texels a ten-pixel cap is a three-times minification, which bilinear
+    filtering resolves cleanly. Same shape, same gradient, same rim: only the
+    scale it was drawn for.
+    """
+    size = (128, 64)
+    shape = rrect_mask(size, 32)
+    grad = vgrad(size, 1.0, 0.80, gamma=0.85)
+    sheen = np.clip(vgrad(size, 0.22, 0.0, gamma=2.4), 0, 1)
+    return rgba_lum(0.86 + sheen * 0.14, shape * grad * grain(size, GRAIN, 0xB177))
+
+
+def glass_pill_small_edge():
+    size = (128, 64)
+    # 0.9 texels here is the same hairline the big one draws at 3.6, scaled
+    # with the texture. Still feathered - that feathering is the whole point.
+    return rgba_lum(1.0, _rim(size, 32, width=0.9)
+                    * vgrad(size, 1.0, 0.55, gamma=0.9))
+
+
 def glass_shadow():
     """9-slice ambient shadow for panels. 256x256, corner slice 0.375 (96 texels).
 
@@ -794,6 +827,28 @@ def glow_soft():
     return rgba_lum(1.0, a)
 
 
+def threat_edge():
+    """The screen-edge flash for a threat failure (16c).
+
+    A SQUARE falloff, not a round one: this hugs the four edges of the viewport
+    rather than making a circle in the middle of it, which is what "viewport-edge
+    falloff" means and is also the only version that survives being stretched
+    across an ultrawide.
+
+    White RGB so it can be TINTED. The Vignette beside it is authored black - it
+    darkens corners for Zen - and a vertex colour multiplies, so tinting that one
+    red gives black. Two textures because they are two jobs, not because nobody
+    checked.
+    """
+    n = 256
+    y, x = np.mgrid[0:n, 0:n].astype(np.float32)
+    c = (n - 1) / 2.0
+    d = np.maximum(np.abs(x - c), np.abs(y - c)) / c
+    # The outer 40% of the frame, per the handoff.
+    a = np.clip((d - 0.6) / 0.4, 0, 1) ** 1.6
+    return rgba_lum(1.0, a)
+
+
 def vignette():
     """Full-screen corner darkening, matching the radial-gradient in the concepts."""
     n = 256
@@ -1017,6 +1072,10 @@ ICON_ORDER = [
     "crown", "healer", "dps", "resurrect",
     # the bags window's drawer handle: what is in it, and what is under that
     "bags", "keys",
+    # turning a paper doll. ONE drawing: the other direction is this one
+    # mirrored by its texture coordinates, which is a swap of two numbers
+    # rather than a second cell that has to agree about what an arrow is.
+    "rotate",
 ]
 
 
@@ -1325,6 +1384,19 @@ def _glyph(name, cell):
         return U(seg(64, 96, 64, 36), seg(64, 36, 46, 56), seg(64, 36, 82, 56),
                   seg(32, 106, 96, 106))
 
+    if name == "rotate":
+        # A CIRCULAR ARROW - an arc most of the way round with a head on one
+        # end. Rotation is manipulation of the thing you are looking at, and a
+        # chevron means navigation; drawing both as chevrons is what put two
+        # page-turners beside a character model.
+        #
+        # The gap is at the top rather than the side, so the glyph reads as a
+        # turn rather than as a C. The head is two short strokes off the arc's
+        # end, angled to follow it - a filled triangle at this size resolves to
+        # a blob.
+        return U(arc(64, 64, 36, 25, 335),
+                 seg(97, 49, 100, 33), seg(97, 49, 83, 41))
+
     if name == "bags":
         # A tote: a body WIDER AT THE BASE than at the mouth, with a shallow
         # handle arcing off the top edge.
@@ -1451,8 +1523,20 @@ DIAL_PAD = 2.0
 # land the drawn ring on the design's 44px.
 DIAL_RING = (DIAL_CELL - 2.0 * (MARGIN + DIAL_PAD)) / DIAL_CELL
 
-# 4.5px of band on a 44px ring.
-DIAL_BAND = 4.5 * (DIAL_CELL * DIAL_RING) / 44.0
+# The band, in final texels, for a ring drawn at 44. Two of them:
+#
+#   the flight dial   4.5, which is the console's header capsule
+#   the threat ring   3.0, which is 16b - 44 outer round a 38 pip, so three
+#                     each side
+#
+# Same geometry, same sheet layout, same sweep. Only the band differs, which is
+# the whole reason there is one pair of functions here and not two.
+def _band(px):
+    return px * (DIAL_CELL * DIAL_RING) / 44.0
+
+
+DIAL_BAND = _band(4.5)
+THREAT_BAND = _band(3.0)
 
 
 def _annulus(n, scale, band, pad):
@@ -1486,19 +1570,39 @@ def _sweep(n, turns):
     return (ang <= turns).astype(np.float32)
 
 
+# The dial's own supersample, above the shared SS. The band is under four
+# texels wide and is then minified again on screen; at SS=4 a BOX average has
+# seventeen levels to describe both of its edges with, which is visibly stepped
+# on a curve.
+DIAL_SS = 8
+
+
 def _shrink(mask, n):
+    """Area-average, NOT Lanczos.
+
+    Lanczos has negative lobes, so downsampling a hard-edged ring overshoots:
+    the alpha profile through a full ring came back `0 1 0 17 237 255 255 188 0
+    2 0` - stray coverage OUTSIDE the band on both sides, and a cliff from 188
+    to nothing on the inner edge with no ramp at all. On a 3px band minified
+    again on screen that reads as a ring assembled out of segments with gaps
+    between them, which is exactly what it was reported as.
+
+    A box filter is the correct downsample for a coverage mask: each output
+    texel is the fraction of it the shape covers, which is the definition of
+    anti-aliasing and cannot ring.
+    """
     img = Image.fromarray(np.clip(mask * 255.0, 0, 255).astype(np.uint8), mode="L")
-    return np.asarray(img.resize((n, n), Image.LANCZOS), dtype=np.float32) / 255.0
+    return np.asarray(img.resize((n, n), Image.BOX), dtype=np.float32) / 255.0
 
 
-def ifec_dial_track():
-    """The dial's unfilled ring, under the arc. Same geometry as one arc cell."""
-    big = _annulus(DIAL_CELL * SS, SS, DIAL_BAND, DIAL_PAD)
+def _dial_track(band):
+    """A dial's unfilled ring, under the arc. Same geometry as one arc cell."""
+    big = _annulus(DIAL_CELL * DIAL_SS, DIAL_SS, band, DIAL_PAD)
     return rgba_lum(1.0, _shrink(big, DIAL_CELL))
 
 
-def ifec_dial_arc():
-    """The filled part of the dial, as a sheet of 64 steps.
+def _dial_arc(band):
+    """The filled part of a dial, as a sheet of 64 steps.
 
     Classic has no conic gradient and no way to fill a ring by angle, so the
     steps are baked and the module picks a cell. 64 of them on a three-minute
@@ -1514,23 +1618,38 @@ def ifec_dial_arc():
     n = DIAL_CELL
     sheet = np.zeros((rows * n, cols * n), dtype=np.float32)
 
-    band = _annulus(n * SS, SS, DIAL_BAND, DIAL_PAD)
+    ring = _annulus(n * DIAL_SS, DIAL_SS, band, DIAL_PAD)
     for i in range(DIAL_STEPS):
-        cell = _shrink(band * _sweep(n * SS, (i + 1) / float(DIAL_STEPS)), n)
+        cell = _shrink(ring * _sweep(n * DIAL_SS, (i + 1) / float(DIAL_STEPS)), n)
         r, c = divmod(i, cols)
         sheet[r * n:(r + 1) * n, c * n:(c + 1) * n] = cell
 
     return rgba_lum(1.0, sheet)
 
 
+def ifec_dial_track():
+    return _dial_track(DIAL_BAND)
+
+
+def ifec_dial_arc():
+    return _dial_arc(DIAL_BAND)
+
+
+def threat_dial_arc():
+    return _dial_arc(THREAT_BAND)
+
+
 ASSETS = {
     "IFEC-Dial-Track": ifec_dial_track,
     "IFEC-Dial-Arc": ifec_dial_arc,
+    "Threat-Dial-Arc": threat_dial_arc,
     "Glass-Panel": glass_panel,
     "Glass-Panel-Solid": glass_panel_solid,
     "Glass-Panel-Edge": glass_panel_edge,
     "Glass-Pill": glass_pill,
     "Glass-Pill-Edge": glass_pill_edge,
+    "Glass-Pill-Small": glass_pill_small,
+    "Glass-Pill-Small-Edge": glass_pill_small_edge,
     "Glass-Shadow": glass_shadow,
     "Glass-Pill-Shadow": glass_pill_shadow,
     "Noise": noise_tile,
@@ -1554,6 +1673,7 @@ ASSETS = {
     "Bar-Glow": bar_glow,
     "Glow-Soft": glow_soft,
     "Vignette": vignette,
+    "Threat-Edge": threat_edge,
     "Send": send_glyph,
     "Divider": divider,
     "Chevron": chevron,
@@ -1561,14 +1681,14 @@ ASSETS = {
     "Toolbox-Icons": toolbox_icons,
 }
 
-NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette",
+NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette", "Threat-Edge",
             "Glass-Shadow", "Glass-Pill-Shadow", "Minimap-Border",
             # Its rows are neighbours. Bleeding would pull each word's ink into
             # the pill above and below it; it fills RGB itself instead.
             "Chat-Badges",
             # A sheet whose cells touch: the ring reaches the edge of its cell,
             # so a bleed would run one frame's arc into the next.
-            "IFEC-Dial-Arc"}
+            "IFEC-Dial-Arc", "Threat-Dial-Arc"}
 
 
 def main():

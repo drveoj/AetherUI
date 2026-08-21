@@ -14,7 +14,7 @@
 	--------------------------------------------------------------------------
 	Why reskin rather than rebuild
 
-	Joe's client runs MobInfo2, Pawn, VendorPricePlus, BagBrother, Questie and
+	The test client runs MobInfo2, Pawn, VendorPricePlus, BagBrother, Questie and
 	the whole Auctioneer suite. Every one of them writes into GameTooltip. A
 	bespoke frame that reads UnitLevel and GetItemInfo itself would look exactly
 	like the deck and would silently delete all of it - the mob's damage table,
@@ -449,6 +449,26 @@ end
 --- Size and place the card. This is the function that has to be cheap, because
 --  it runs on every OnSizeChanged - which, with Pawn and LibExtraTip in the
 --  mix, is several times per tooltip.
+--- A tooltip is drawn over everything, on every show.
+--
+--  W.Tooltip says this too, but only for the tooltips WE raise - and most of
+--  them are raised by the client: a quest reward, a merchant's wares, a bag
+--  slot. A tooltip is a shared object anything can reparent or restrata, and
+--  this addon does exactly that (the console takes it out of UIParent for a
+--  flight so it can be read over a hidden interface). Anything that leaves it
+--  somewhere else - a landing missed in combat, another addon with the same
+--  idea - leaves it drawing UNDER a panel, which is where a quest reward's was
+--  found: half of it behind the quest window.
+--
+--  Idempotent, and TOOLTIP is where the client puts it anyway, so saying so on
+--  every show can never be wrong.
+local function AssertStrata(tip)
+	if tip.GetFrameStrata and tip:GetFrameStrata() ~= "TOOLTIP" then
+		if tip.SetFrameStrata then tip:SetFrameStrata("TOOLTIP") end
+	end
+	if tip.SetToplevel then tip:SetToplevel(true) end
+end
+
 local function LayoutCard(tip)
 	local card = tip.aetherCard
 	if not card then return end
@@ -531,6 +551,7 @@ function TT:Register(tip)
 		ApplyScale(self)
 		StripArt(self)
 		LayoutCard(self)
+		AssertStrata(self)
 	end)
 
 	-- The important one. Pawn, VendorPricePlus and every LibExtraTip consumer add

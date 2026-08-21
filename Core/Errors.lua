@@ -212,6 +212,15 @@ local function Build()
 		self:ClearFocus()
 		f:Hide()
 	end)
+
+	-- AND ON THE WAY OUT, HOWEVER IT GOES. This box takes the keyboard when it
+	-- opens so that Ctrl+A works the moment you look at it - and Escape was the
+	-- only thing giving it back. Closed by its own cross, or hidden by anything
+	-- else, it kept the keyboard while invisible: every key went into a box
+	-- nobody could see and the chat frame took nothing at all.
+	f:HookScript("OnHide", function()
+		if box.ClearFocus then box:ClearFocus() end
+	end)
 	scroll:SetScrollChild(box)
 	f.box = box
 

@@ -36,7 +36,8 @@ local function usage()
 		A.Hi("/aether bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		A.Hi("/aether tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		A.Hi("/aether toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
-		A.Hi("/aether panels dump") .. " <FrameName>  ·  what a window is made of",
+		A.Hi("/aether panels") .. " <dump NAME|measure [NAME]|diag>  ·  what a window is made of",
+		A.Hi("/aether threat") .. " probe  ·  what the threat API answers, in a box you can copy",
 		A.Hi("/aether ifec") .. " [reset]  ·  content packs, what is playing, forget history",
 		A.Hi("/aether errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
@@ -250,6 +251,9 @@ end
 --- `/aether panels dump <FrameName>`, into the box you can copy out of.
 function A:DumpPanel(name)
 	name = (name or ""):gsub("%s", "")
+	-- Recorded so the suite can prove a frame name reaches here with its
+	-- capitals intact; the dispatcher used to fold the whole tail.
+	A.__lastDumpName = name
 	if name == "" then
 		A:Print(A.Hi("/aether panels dump <FrameName>") .. "  ·  part of a name"
 			.. " will do, and it will list what it could have meant.")
@@ -746,6 +750,8 @@ handlers.greet = function(arg)
 end
 
 handlers.zen = function(arg, rest)
+	-- Keywords, so folded here; see the dispatcher.
+	local key = rest and rest:lower() or nil
 	local cfg = A.db.profile.modules.zen
 	local cap = A.Fader.AFK_TIMEOUT
 
@@ -763,15 +769,15 @@ handlers.zen = function(arg, rest)
 		cfg.delay = v
 		A:Print("zen delay -> " .. v .. "s")
 	elseif arg == "afk" then
-		cfg.onAFK = (rest ~= "off")
+		cfg.onAFK = (key ~= "off")
 		A:Print("zen on going away -> " .. (cfg.onAFK and "on" or "off"))
 	elseif arg == "frost" then
-		cfg.frost = (rest ~= "off")
+		cfg.frost = (key ~= "off")
 		A:Print("the frosted pane -> " .. (cfg.frost and "on" or "off")
 			.. " " .. A.Hi("(a pane in front of the world, not a blur of it -"
 				.. " nothing can blur the world)"))
 	elseif arg == "plates" then
-		cfg.hideNameplates = (rest ~= "off")
+		cfg.hideNameplates = (key ~= "off")
 		local Z = A:GetModule("zen")
 		-- Turning it off mid-zen has to hand them straight back; the module only
 		-- re-reads this on its next tick, and the next tick may be a fade away.
@@ -780,12 +786,12 @@ handlers.zen = function(arg, rest)
 			.. (cfg.hideNameplates and "on" or "off")
 			.. " " .. A.Hi("(two separate CVar families; one switch drives both)"))
 	elseif arg == "sit" then
-		cfg.sit = (rest ~= "off")
+		cfg.sit = (key ~= "off")
 		local Z = A:GetModule("zen")
 		if not cfg.sit and Z and Z.StandUp then Z:StandUp() end
 		A:Print("sit down in zen -> " .. (cfg.sit and "on" or "off"))
 	elseif arg == "camera" then
-		cfg.camera = (rest ~= "off")
+		cfg.camera = (key ~= "off")
 		local Z = A:GetModule("zen")
 		-- Straight back if it is being switched off mid-shot. Leaving somebody
 		-- zoomed in because they flipped a switch would be a setting that does
@@ -827,7 +833,7 @@ handlers.zen = function(arg, rest)
 			Z:SetCamera(1)
 		end
 	elseif arg == "audio" then
-		cfg.audio = (rest ~= "off")
+		cfg.audio = (key ~= "off")
 		local Z = A:GetModule("zen")
 		if not cfg.audio and Z and Z.RestoreAudio then Z:RestoreAudio() end
 		A:Print("zen audio -> " .. (cfg.audio and "on" or "off"))
@@ -880,6 +886,8 @@ handlers.auras = function(arg)
 end
 
 handlers.bags = function(arg, rest)
+	-- Keywords, so folded here; see the dispatcher.
+	local key = rest and rest:lower() or nil
 	local B = A:GetModule("bags")
 	if not B or not B.enabled then A:Print("bags module is not enabled.") return end
 
@@ -908,8 +916,8 @@ handlers.bags = function(arg, rest)
 		return
 	elseif arg == "junk" then
 		local cfg = A.Config:Module("bags")
-		if rest == "on" then cfg.junkAutoSell = true
-		elseif rest == "off" then cfg.junkAutoSell = false
+		if key == "on" then cfg.junkAutoSell = true
+		elseif key == "off" then cfg.junkAutoSell = false
 		else cfg.junkAutoSell = not cfg.junkAutoSell end
 		A:Print("junk auto-sell " .. (cfg.junkAutoSell
 			and A.Good("on") .. " - poor-quality items go the moment a merchant opens."
@@ -1139,16 +1147,15 @@ handlers.toolbox = function(arg, rest)
 			A:Print("pinned: " .. (#p > 0 and table.concat(p, ", ") or A.Dim("nothing")))
 			return
 		end
-		-- The dispatcher lowercases `rest`, and LDB object names are
-		-- case-sensitive - "CmdLauncher" arrives as "cmdlauncher" and matches
-		-- nothing. Resolved case-insensitively rather than by un-lowercasing the
-		-- dispatcher, which every other handler depends on; and it is the better
-		-- answer anyway, since nobody types an addon's LDB name in its exact
-		-- case from memory.
+		-- MATCHED WITHOUT REGARD TO CASE, because nobody types an addon's LDB
+		-- name in its exact case from memory. Both sides are folded here: the
+		-- dispatcher hands the tail over as typed now, since it is just as often
+		-- a frame name, and a global in this client IS case sensitive.
+		local want = tostring(rest):lower()
 		local key
 		if A.Launchers then
 			for e in A.Launchers:Iterate() do
-				if tostring(e.key):lower() == rest then key = e.key break end
+				if tostring(e.key):lower() == want then key = e.key break end
 			end
 		end
 		if not key or not TB:TogglePin(key) then
@@ -1222,12 +1229,229 @@ handlers.toolbox = function(arg, rest)
 		tostring(GetCVarBool and GetCVarBool("useClassicGuildUI")))
 end
 
+--- What a dressed panel's header and body actually measured, in game.
+--
+--  The harness can say a hairline exists, is parented where we meant and is
+--  anchored where we meant. It cannot say the window it is on came up 40
+--  units taller than the glass you can see, which is the difference between
+--  a band with a foot and a band without one - and four rounds of reading
+--  screenshots did not settle which of those the vendor window was.
+--- Where a window's parts actually are, in a box you can copy out of.
+--
+--  INTO THE ERROR BOX, not the chat frame. This is a wall of numbers whose
+--  whole purpose is to be sent to somebody, and the chat frame is the one
+--  place in the interface that cannot be selected - so every reading of it so
+--  far has come back as a photograph of a screen.
+local function MeasurePanels(arg)
+	local PN = A:GetModule("panels")
+	if not PN then A:Print("panels module not loaded") return end
+
+	-- Printed through a local rather than A:Print so the whole readout can be
+	-- captured; falls back to the chat frame if the catcher is not loaded.
+	local out = {}
+	local function A_Print(line) out[#out + 1] = tostring(line) end
+
+	local names = {}
+	if arg and arg ~= "" then
+		names[1] = arg
+	else
+		for name, f in pairs(PN.ENTRY or {}) do
+			local frame = _G[name]
+			if frame and frame.__aetherPanel and frame:IsShown() then
+				names[#names + 1] = name
+			end
+			local _ = f
+		end
+		table.sort(names)
+	end
+	if #names == 0 then
+		A:Print("no dressed panel is open - open one, or name it")
+		return
+	end
+
+-- WHAT A PANE MEASURES NOW, against what it measured when the window was
+-- dressed. A pane that answers now and did not then was measured before it
+-- had a rect to measure, which is the difference between a window laid out
+-- wrongly and one laid out too early.
+--
+-- The cache is put back afterwards: a readout that changes what it is reading
+-- is not a readout.
+	local function remeasure(frame, pane)
+		local PN2 = A:GetModule("panels")
+		if not (PN2 and PN2.MeasureTop) then return "?" end
+		local top, left, right =
+			pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight
+		pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight = nil, nil, nil
+		local ok, got = pcall(PN2.MeasureTop, frame, pane)
+		pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight = top, left, right
+		if not ok then return "threw: " .. tostring(got) end
+		return got
+	end
+
+	local function box(f)
+		if not (f and f.GetTop and f:GetTop()) then return "-" end
+		return string.format("t%.0f l%.0f w%.0f h%.0f",
+			f:GetTop(), f:GetLeft(), f:GetWidth(), f:GetHeight())
+	end
+
+	for _, name in ipairs(names) do
+		local f = _G[name]
+		if not f then
+			A_Print(name .. ": no such frame")
+		else
+			local glass, rule = f.__aetherPanel, f.__aetherHeadRule
+			A_Print(name .. "  head=" .. tostring(f.__aetherHeadH) ..
+				"  shift=" .. tostring(f.__aetherBodyShift) ..
+				-- HOW MANY TIMES the body has been laid out, and what the window
+				-- could tell us the last time. One run, at login, against a window
+				-- with no rect, looks on screen exactly like a run that got the
+				-- wrong answer - and the two want opposite fixes.
+				"  runs=" .. tostring(f.__aetherRuns) ..
+				"  seen=" .. tostring(f.__aetherSeen))
+			A_Print("  frame " .. box(f) .. "   glass " .. box(glass))
+			A_Print("  chrome " .. box(f.__aetherChrome) ..
+				"  lvl " .. tostring(f.__aetherChrome
+				and f.__aetherChrome:GetFrameLevel()) ..
+				" vs frame " .. tostring(f:GetFrameLevel()))
+			-- IDENTITY, so an anchor printed below as "on table: ..." can be told
+			-- apart from these two. The glass and the chrome layer have the same
+			-- rect by construction, so a rect cannot tell them apart.
+			A_Print("  glass=" .. tostring(glass) ..
+				"  chrome=" .. tostring(f.__aetherChrome) ..
+				"  strata " .. tostring(f.GetFrameStrata and f:GetFrameStrata()) ..
+				"/" .. tostring(f.__aetherChrome and f.__aetherChrome.GetFrameStrata
+				and f.__aetherChrome:GetFrameStrata()))
+
+			-- ANYTHING OF THE CLIENT'S DRAWN OVER OUR CHROME. A child at a higher
+			-- STRATA beats any frame level, and one that covers only the band would
+			-- hide the band's hairline and leave the footer's alone - which is the
+			-- exact shape of the complaint.
+			local ORDER = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4,
+				DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+			local layer = f.__aetherChrome
+			if layer and f.GetChildren then
+				local mine = (ORDER[layer:GetFrameStrata()] or 0) * 1000
+					+ (layer:GetFrameLevel() or 0)
+				local over = {}
+				for _, kid in ipairs({ f:GetChildren() }) do
+					if kid ~= layer and kid ~= glass and kid.IsShown and kid:IsShown() then
+						local rank = (ORDER[kid:GetFrameStrata()] or 0) * 1000
+							+ (kid:GetFrameLevel() or 0)
+						if rank > mine then
+							over[#over + 1] = (kid.GetName and kid:GetName() or tostring(kid))
+								.. " " .. tostring(kid:GetFrameStrata()) .. ":" ..
+								tostring(kid:GetFrameLevel()) .. " " .. box(kid)
+						end
+					end
+				end
+				if #over == 0 then
+					A_Print("  over chrome: nothing")
+				else
+					for _, line in ipairs(over) do
+						A_Print("  OVER CHROME " .. line)
+					end
+				end
+			end
+			if rule then
+				local pt, rel, relP, x, y = rule:GetPoint(1)
+				A_Print("  rule " .. box(rule) .. "  shown=" ..
+					tostring(rule:IsShown()) .. " a=" ..
+					string.format("%.2f", select(4, rule:GetVertexColor())) ..
+					"  " .. tostring(pt) .. "->" .. tostring(relP) .. " " ..
+					tostring(x) .. "," .. tostring(y) .. " on " ..
+					tostring(rel and rel.GetName and rel:GetName() or rel))
+			else
+				A_Print("  rule MISSING")
+			end
+			A_Print("  body " .. box(f.__aetherBody))
+
+			-- THE FOOT RULE AND THE STRIP, which is half of what goes wrong on a
+			-- window now: the band and the strip are drawn by the same component
+			-- and one of them turning up without the other says where to look.
+			local foot = f.__aetherFootRule
+			if foot then
+				local fp, frel, frelP, fx, fy = foot:GetPoint(1)
+				A_Print("  foot " .. box(foot) .. "  shown=" ..
+					tostring(foot:IsShown()) .. "  " .. tostring(fp) .. "->" ..
+					tostring(frelP) .. " " .. tostring(fx) .. "," .. tostring(fy) ..
+					" on " .. tostring(frel and frel.GetName and frel:GetName() or frel))
+			else
+			A_Print("  foot none")
+			end
+
+			-- WHAT THE WINDOW SAYS ITS CONTENT IS, and where that content actually
+			-- is. A pane measuring as nothing is a pane the walk could not reach.
+			local entry = PN.ENTRY and PN.ENTRY[name]
+			for _, part in ipairs(entry and entry.body or {}) do
+				local pane = PN.Part and PN.Part(part)
+				if not pane then
+					A_Print("  body " .. part .. ": NOT FOUND")
+				else
+					local pt, rel, relP, x, y = pane:GetPoint(1)
+					A_Print("  body " .. part .. " " .. box(pane) ..
+						"  pts=" .. tostring(pane.GetNumPoints and pane:GetNumPoints()) ..
+						-- Recorded by the mover the first time it touches a pane. Nil here
+						-- says the pane never reached it - which is a lookup that failed
+						-- when the window was dressed, not a measurement that went wrong.
+						" saved=" .. tostring(pane.__aetherPts ~= nil) ..
+						"  top=" .. tostring(pane.__aetherTop) ..
+						" now=" .. tostring(remeasure(f, pane)) ..
+						" l=" .. tostring(pane.__aetherLeft) ..
+						" r=" .. tostring(pane.__aetherRight) ..
+						"  " .. tostring(pt) .. "->" .. tostring(relP) .. " " ..
+						tostring(x) .. "," .. tostring(y) .. " on " ..
+						tostring(rel and rel.GetName and rel:GetName() or rel))
+				end
+			end
+
+			-- AND WHAT IT SAYS IT DOES. An action that is shown but not VISIBLE is
+			-- one whose pane is down, and the strip is laid out for what is up.
+			for _, side in ipairs({ "left", "right", "mid" }) do
+				for _, part in ipairs(entry and entry.actions
+					and entry.actions[side] or {}) do
+					local w = PN.Part and PN.Part(part)
+					if not w then
+						A_Print("  act " .. side .. " " .. part .. ": NOT FOUND")
+					else
+						local pt, rel, relP, x, y = w:GetPoint(1)
+						A_Print("  act " .. side .. " " .. part .. " " .. box(w) ..
+							"  shown=" .. tostring(w.IsShown and w:IsShown()) ..
+							" vis=" .. tostring(w.IsVisible and w:IsVisible()) ..
+							"  " .. tostring(pt) .. "->" .. tostring(relP) .. " " ..
+							tostring(x) .. "," .. tostring(y) .. " on " ..
+							tostring(rel and rel.GetName and rel:GetName() or rel))
+					end
+				end
+			end
+
+			local why = PN.failures and PN.failures[name]
+			if why then A_Print("  interior FAILED: " .. why) end
+		end
+	end
+
+	local text = table.concat(out, string.char(10))
+	if A.Errors and A.Errors.ShowText then
+		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "") .. text)
+	else
+		for _, line in ipairs(out) do A:Print(line) end
+	end
+end
+
 handlers.panels = function(arg, rest)
 	if arg == "dump" then A:DumpPanel(rest) return end
+	if arg == "measure" then MeasurePanels(rest) return end
+	if arg == "diag" then
+		A:Print("panels")
+		A.PanelsDiag(function(fmt, ...) A:Print(string.format(fmt, ...)) end)
+		return
+	end
 
 	local P = A:GetModule("panels")
-	A:Print("panels is " .. A.Val(((P and P.enabled) and "on" or "off")) .. ".  " .. A.Hi("/aether panels dump <FrameName>") .. " reads a window's"
-		.. " parts into a box you can copy out of.")
+	A:Print("panels is " .. A.Val(((P and P.enabled) and "on" or "off")) .. ".  "
+		.. A.Hi("dump <FrameName>") .. " reads a window's parts into a box you"
+		.. " can copy out of, " .. A.Hi("measure") .. " reports what its header and"
+		.. " body actually came out as, " .. A.Hi("diag") .. " says why one is"
+		.. " still wearing its own art.")
 end
 
 handlers.tooltips = function(arg)
@@ -1293,12 +1517,6 @@ handlers.quests = function(arg)
 	end
 end
 
-handlers.panels = function()
-	A:Print("panels")
-	A.PanelsDiag(function(fmt, ...)
-		A:Print(string.format(fmt, ...))
-	end)
-end
 
 handlers.party = function(arg)
 	local PF = A:GetModule("partyframes")
@@ -1331,18 +1549,272 @@ handlers.party = function(arg)
 	end)
 end
 
+-- ---------------------------------------------------------------------------
+-- threat
+--
+-- PHASE 0 OF THE THREAT PLAN, and its whole job is evidence. Everything in
+-- docs/PLAN-Threat.md says UnitDetailedThreatSituation answers on this client -
+-- the generated docs declare it, Blizzard's own Classic unit frame drives off
+-- it, and NKThreat 2.12.1 at Interface-Vanilla 11509 uses it as its only source
+-- with no combat-log fallback. Nothing has SEEN it answer, and a design built
+-- on a number nobody has read is a design built on a guess.
+--
+-- It also answers the second question in the plan, which is the one that
+-- changes the shape of the thing: what UnitGroupRolesAssigned says about a real
+-- party. If it says NONE for everyone - which is what Classic Era's opt-in
+-- roles imply - then a tank gets the DPS treatment, and the DPS treatment for a
+-- tank holding aggro is a red screen and an alarm for doing their job.
+--
+-- INTO THE ERROR BOX. Same reason /aether panels measure goes there: this is a
+-- wall of numbers whose purpose is to come back to me, and the chat frame is
+-- the one part of the interface that cannot be selected.
+-- ---------------------------------------------------------------------------
+
+-- HAS THE SERVER EVER SENT A THREAT TABLE. This is the decisive signal and a
+-- readout taken after the fact cannot have it, so it is counted from load.
+--
+-- UNIT_THREAT_LIST_UPDATE is what the server fires when a mob's threat table
+-- changes, and it is what NKThreat registers - unit-filtered on "target",
+-- alongside a polling loop, because the event alone does not cover a target
+-- change. If that event never fires during a fight then the API is a stub on
+-- this client whatever it answers, and the ring needs a threat meter of our
+-- own rather than a display onto somebody else's number.
+--
+-- TEMPORARY. This belongs to Phase 0 of docs/PLAN-Threat.md and goes when the
+-- threat module lands and owns the event properly.
+local threatSeen = { list = 0, situation = 0, unit = nil }
+do
+	local watch = CreateFrame("Frame")
+	watch:RegisterEvent("UNIT_THREAT_LIST_UPDATE")
+	watch:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
+	watch:SetScript("OnEvent", function(_, event, unit)
+		if event == "UNIT_THREAT_LIST_UPDATE" then
+			threatSeen.list = threatSeen.list + 1
+		else
+			threatSeen.situation = threatSeen.situation + 1
+		end
+		threatSeen.unit = unit or threatSeen.unit
+	end)
+end
+
+--- Every mob we can ask ABOUT, and what to call it in the readout.
+--
+--  Threat is queried per unit PER MOB, and the mob has to be a unit TOKEN -
+--  the generated docs name that argument `mobGUID` and then type it UnitToken,
+--  which is a trap worth falling into once and never again. So the set of mobs
+--  we can see is exactly: your target, anything with a nameplate, and whatever
+--  each group member and pet is swinging at.
+local function ThreatMobs()
+	local mobs, seen = {}, {}
+	local function add(token, why)
+		if not token or seen[token] then return end
+		if not UnitExists(token) or UnitIsFriend("player", token) then return end
+		if UnitIsDead and UnitIsDead(token) then return end
+		seen[token] = true
+		mobs[#mobs + 1] = { token = token, why = why,
+			name = UnitName(token) or "?" }
+	end
+
+	add("target", "your target")
+	if C_NamePlate and C_NamePlate.GetNamePlates then
+		for _, base in ipairs(C_NamePlate.GetNamePlates()) do
+			add(base.unitToken, "nameplate")
+		end
+	end
+	add("pettarget", "what your pet is on")
+	for i = 1, 4 do add("party" .. i .. "target", "party" .. i .. "'s target") end
+	return mobs
+end
+
+--- Everyone whose threat we would ever draw.
+local function ThreatUnits()
+	local units = { { token = "player", why = "you" } }
+	if UnitExists("pet") then units[#units + 1] = { token = "pet", why = "pet" } end
+	for i = 1, 4 do
+		local u = "party" .. i
+		if UnitExists(u) then
+			units[#units + 1] = { token = u, why = UnitName(u) or u }
+		end
+	end
+	return units
+end
+
+--- What the client thinks the player's role is, by each route the plan names.
+--
+--  Reported rather than decided. The plan's effective-role scheme picks between
+--  these; this prints all of them side by side so the pick can be made against
+--  what the client actually says rather than against what it ought to say.
+local function ThreatRole(say)
+	local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned("player")
+	say("  assigned role: " .. tostring(assigned) ..
+		(assigned == "NONE" and "   <- the case the plan is written for" or ""))
+
+	-- The inference, per PLAN-Threat.md 2.2: a stance or a form or an aura, all
+	-- of which the player changes deliberately and we can read directly.
+	local form = GetShapeshiftForm and GetShapeshiftForm()
+	if form and form > 0 and GetShapeshiftFormInfo then
+		local icon, name = GetShapeshiftFormInfo(form)
+		say("  stance/form " .. tostring(form) .. ": " ..
+			tostring(name or icon or "?"))
+	else
+		say("  stance/form: none (" .. tostring(form) .. ")")
+	end
+
+	local tanking = {}
+	for i = 1, 40 do
+		local aura = UnitBuff and UnitBuff("player", i)
+		if not aura then break end
+		tanking[#tanking + 1] = aura
+	end
+	say("  buffs: " .. (#tanking > 0 and table.concat(tanking, ", ") or "none"))
+end
+
+local function ThreatProbe()
+	local out = {}
+	local function say(line) out[#out + 1] = tostring(line) end
+
+	say("threat probe  ·  " .. tostring(A.version))
+	say("API: UnitDetailedThreatSituation=" ..
+		tostring(type(UnitDetailedThreatSituation)) ..
+		"  UnitThreatSituation=" .. tostring(type(UnitThreatSituation)) ..
+		"  UnitThreatPercentageOfLead=" ..
+		tostring(type(UnitThreatPercentageOfLead)))
+	say("combat=" .. tostring(UnitAffectingCombat("player")) ..
+		"  group=" .. tostring(GetNumGroupMembers and GetNumGroupMembers() or 0) ..
+		"  raid=" .. tostring(IsInRaid and IsInRaid()) ..
+		"  pet=" .. tostring(UnitExists("pet")))
+
+	-- THE CLIENT'S OWN GATE ON ITS OWN THREAT DISPLAY. Blizzard's Classic unit
+	-- frame checks this before it draws anything, so a client with threat data
+	-- and this switched off looks exactly like a client with no threat data.
+	local okw, warn = pcall(function()
+		return IsThreatWarningEnabled and IsThreatWarningEnabled()
+	end)
+	local okc, cvar = pcall(GetCVar, "threatWarning")
+	say("IsThreatWarningEnabled=" .. tostring(okw and warn) ..
+		"  cvar threatWarning=" .. tostring(okc and cvar))
+
+	-- COUNTED SINCE LOGIN, not asked for now. If the server has never sent a
+	-- threat table then nothing else in this readout matters.
+	say("UNIT_THREAT_LIST_UPDATE fired " .. tostring(threatSeen.list) ..
+		"x  UNIT_THREAT_SITUATION_UPDATE " .. tostring(threatSeen.situation) ..
+		"x  last unit=" .. tostring(threatSeen.unit) ..
+		(threatSeen.list == 0 and "   <- never, so far" or ""))
+	say("")
+	say("role, every route the plan considers:")
+	ThreatRole(say)
+	say("")
+
+	if type(UnitDetailedThreatSituation) ~= "function" then
+		say("NO THREAT API ON THIS CLIENT. Everything in PLAN-Threat.md 1 is")
+		say("wrong and the module needs combat-log inference after all.")
+	end
+
+	local mobs, units = ThreatMobs(), ThreatUnits()
+	say("units: " .. #units .. "   mobs with a token: " .. #mobs)
+	if #mobs == 0 then
+		say("")
+		say("NOTHING TO ASK ABOUT. Threat is per unit PER MOB and the mob has to")
+		say("be a unit token, so this wants a live target - or a nameplate up -")
+		say("in combat. Out of combat every one of these reads nil, which is")
+		say("also the right answer and not a fault.")
+	else
+		say("")
+		say("READ IT LIKE THIS: rets=0 everywhere, while you are in combat with a")
+		say("mob YOU have attacked yourself, AND the event count above is still")
+		say("zero, means the call is present and the server is sending nothing -")
+		say("and the ring needs a threat meter of our own rather than a display")
+		say("onto somebody else's number. rets=0 while your PET has done all the")
+		say("damage means only that you are not on its table, which is correct.")
+		say("A non-zero event count with rets=0 means the data arrives and you")
+		say("simply were not on that particular table.")
+	end
+
+	for _, mob in ipairs(mobs) do
+		say("")
+		say(mob.name .. "  [" .. mob.token .. ", " .. mob.why .. "]")
+		say("   its combat=" .. tostring(UnitAffectingCombat(mob.token)) ..
+			"  its target=" .. tostring(UnitName(mob.token .. "target")))
+		for _, u in ipairs(units) do
+			-- HOW MANY VALUES CAME BACK, not just what they were. The call is
+			-- declared MayReturnNothing, and "returned five nils" and "returned
+			-- nothing at all" are different faults wearing the same face: the
+			-- first is a unit that is not on this mob's table, which is normal;
+			-- the second is a function present and not wired, which is the whole
+			-- feature.
+			--
+			-- pcall, because an API that is declared and not wired can also
+			-- answer by throwing, and one probe throwing is not a reason to lose
+			-- the rest of the readout.
+			local packed = { pcall(UnitDetailedThreatSituation, u.token, mob.token) }
+			local rets = #packed - 1
+			local ok = packed[1]
+			local tanking, status, scaled, raw, value =
+				packed[2], packed[3], packed[4], packed[5], packed[6]
+
+			-- AND THE SIMPLE CALL BESIDE THE DETAILED ONE. They are separate
+			-- entry points onto the same data; one answering while the other
+			-- does not would say precisely where the wiring stops.
+			local oks, simple = pcall(UnitThreatSituation, u.token, mob.token)
+			local plain = "  simple=" .. tostring(oks and simple)
+
+			if not ok then
+				say("  " .. u.why .. " (" .. u.token .. "): THREW " ..
+					tostring(tanking))
+			elseif scaled == nil and status == nil then
+				say("  " .. u.why .. " (" .. u.token .. "): nothing back  rets=" ..
+					tostring(rets) .. plain ..
+					(rets == 0 and "   <- no return values at all"
+						or "   <- returned nils"))
+			else
+				local lead = ""
+				if tanking and UnitThreatPercentageOfLead then
+					local okl, pct = pcall(UnitThreatPercentageOfLead, u.token,
+						mob.token)
+					if okl and pct then
+						lead = "  lead=" .. string.format("%.1f", pct) .. "%"
+					end
+				end
+				say(string.format(
+					"  %s (%s): tanking=%s status=%s scaled=%s raw=%s threat=%s%s%s",
+					u.why, u.token, tostring(tanking), tostring(status),
+					scaled and string.format("%.1f", scaled) or "nil",
+					raw and string.format("%.1f", raw) or "nil",
+					value and string.format("%.0f", value) or "nil", plain, lead))
+			end
+		end
+	end
+
+	local text = table.concat(out, string.char(10))
+	if A.Errors and A.Errors.ShowText then
+		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "") .. text)
+	else
+		for _, line in ipairs(out) do A:Print(line) end
+	end
+end
+
+handlers.threat = function(arg)
+	if arg == "probe" or arg == nil or arg == "" then
+		ThreatProbe()
+		return
+	end
+	A:Print(A.Hi("/aether threat probe") .. "  ·  what the threat API answers")
+end
+
 handlers.module = function(arg, rest)
+	-- Keywords, so folded here; see the dispatcher.
+	local key = rest and rest:lower() or nil
 	if not arg or not A.modules[arg] then
 		local names = {}
 		for name in A:IterateModules() do names[#names + 1] = name end
 		A:Print("modules: " .. table.concat(names, ", "))
 		return
 	end
-	if rest ~= "on" and rest ~= "off" then
+	if key ~= "on" and key ~= "off" then
 		A:Print("usage: /aether module " .. arg .. " on|off")
 		return
 	end
-	A:SetModuleEnabled(arg, rest == "on")
+	A:SetModuleEnabled(arg, key == "on")
 	A:Print("module " .. arg .. " -> " .. rest)
 end
 
@@ -1364,7 +1836,14 @@ SlashCmdList["AETHERUI"] = function(msg)
 
 	local fn = handlers[cmd]
 	if fn then
-		fn(arg ~= "" and arg:lower() or nil, rest ~= "" and rest:lower() or nil)
+		-- THE TAIL KEEPS ITS CASE. A sub-command is a keyword and folds down
+		-- safely; what follows it is often a NAME - a frame, a music track, an
+		-- addon - and a global in this client is case sensitive. Folded, every
+		-- one of those came back "no such frame" for a frame that was on screen
+		-- at the time, which is what happened to /aether panels dump.
+		--
+		-- Handlers that compare the tail to a keyword lower it themselves.
+		fn(arg ~= "" and arg:lower() or nil, rest ~= "" and rest or nil)
 	else
 		A:Print("unknown command '" .. cmd .. "'")
 		usage()

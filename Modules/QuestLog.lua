@@ -65,10 +65,14 @@ local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 -- ---------------------------------------------------------------------------
 
 local WIN_W, WIN_H     = 1240, 820
-local WIN_CORNER       = 28
+local WIN_CORNER       = W.PANEL_CORNER   -- shared; see Core/Widgets.lua
 
-local HEAD_H           = 62          -- 20 pad + 22 icon + 20 pad
-local HEAD_PAD_X       = 26
+-- THE SHARED NUMBERS. 15a gives one header height and one body padding
+-- for every panel in the interface, and a window of ours is a panel like
+-- any other - the only reason these were local was that they were written
+-- before there was anywhere to put them.
+local HEAD_H           = W.PANEL_HEAD_H
+local HEAD_PAD_X       = W.PANEL_PAD
 local HEAD_GAP         = 14
 
 local LIST_W           = 430
@@ -83,6 +87,10 @@ local ROW_CORNER       = 14
 local CHIP_W, CHIP_H   = 30, 17
 
 local DET_PAD_X, DET_PAD_Y = 32, 26
+-- How far the reading well reaches outside its scroll frame. Named because
+-- the footer has to be told about it: the buttons sit a block's gap below
+-- the well's edge, not below the scroll frame's.
+local DET_WELL_OUT = 12
 local DET_GAP          = 18
 local CARD_CORNER      = 16
 local CARD_PAD_X, CARD_PAD_Y = 18, 14
@@ -617,17 +625,18 @@ local BuildPill = W.Pill
 
 --- A one-pixel rule. Hairlines are everywhere in this concept and they are the
 --  first thing to go blurry, so they are snapped to the physical grid.
-local function BuildHairline(parent, token, alpha)
-	local t = parent:CreateTexture(nil, "ARTWORK")
-	t:SetTexture(Media.texture.flat)
-	t:SetHeight(A:Px(1))
-	t._token, t._alpha = token or "glassEdge", alpha or 1
-	return t
+-- Kept as a local for the call sites, but it is the shared one underneath:
+-- one ink and one physical pixel, and the pixel is the part that was wrong.
+-- See W.PaintHairline.
+local function BuildHairline(parent, upright)
+	return W.Hairline(parent, upright)
 end
 
+-- ONE INK, shared with every other line in the interface - see
+-- W.PaintHairline. These carried their own fraction of glassEdge and came
+-- out fainter than the tab rails, which is a separator you cannot see.
 local function ColorHairline(t)
-	local c = Palette.c[t._token] or Palette.c.glassEdge
-	t:SetVertexColor(c[1], c[2], c[3], (c[4] or 1) * t._alpha)
+	W.PaintHairline(t)
 end
 
 -- ---------------------------------------------------------------------------
@@ -660,19 +669,21 @@ local function BuildHeader(win)
 	head.count:SetPoint("LEFT", head.title, "RIGHT", HEAD_GAP, 0)
 
 	-- close ---------------------------------------------------------------
-	local close = CreateFrame("Button", nil, head)
-	close:SetSize(22, 22)
+	-- The shared one. It was 22 square with its own hover here, 28 on the
+	-- bags, 18 on the Toolbox and a bare cross on the client's windows.
+	local close = W.CloseButton(head, { onClick = function() QL:Hide() end })
 	close:SetPoint("RIGHT", head, "RIGHT", -HEAD_PAD_X, 0)
-	close.label = W.Text(close, "qlHeading", "CENTER")
-	close.label:SetPoint("CENTER", close, "CENTER", 0, 1)
-	close.label:SetText("\195\151")            -- U+00D7 MULTIPLICATION SIGN
-	close:SetScript("OnClick", function() QL:Hide() end)
-	close:SetScript("OnEnter", function(self) W.Color(self.label, Palette.c.text) end)
-	close:SetScript("OnLeave", function(self) W.Color(self.label, Palette.c.textDim) end)
 	head.close = close
 
 	-- search ---------------------------------------------------------------
-	local search = Glass.CreatePill(head, { fill = "glassSoft", edge = "glassEdge" })
+	-- A ROUNDED RECTANGLE, not a capsule. A pill's two caps come out of a
+	-- 256-texel texture, and at thirty pixels tall they are minified more
+	-- than eight times with no mipmap behind them - which is the crunch on
+	-- the ends of this field. The same fix the chat tabs and the check box
+	-- already carry.
+	local search = Glass.CreatePanel(head, {
+		corner = W.WELL_CORNER, fill = "glassSoft", edge = "glassEdge",
+	})
 	search:SetSize(SEARCH_W, SEARCH_H)
 	search:SetPoint("RIGHT", close, "LEFT", -HEAD_GAP, 0)
 	head.search = search
@@ -697,7 +708,7 @@ local function BuildHeader(win)
 	search:EnableMouse(true)
 	search:SetScript("OnMouseDown", function() box:SetFocus() end)
 
-	head.rule = BuildHairline(head, "glassEdge", 0.55)
+	head.rule = BuildHairline(head)
 	head.rule:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", 0, 0)
 	head.rule:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", 0, 0)
 
@@ -829,9 +840,21 @@ local function BuildButton(parent, style, label)
 			self:SetFillColor(self._over and c.btnHover or { 0, 0, 0, 0 })
 			self:SetEdgeShown(true)
 			self:SetEdgeColor(c.btnEdge)
-			W.Color(self.label, c.textDim)
+			W.Color(self.label, c.text)
 		end
-		self:SetAlpha(self._disabled and 0.4 or 1)
+
+		-- A BUTTON YOU CANNOT PRESS IS STILL A BUTTON YOU CAN READ. This dimmed
+		-- the whole frame to 0.4, which multiplies the LABEL as well - and an
+		-- outline button's label is already the dim ink, so 0.55 by 0.4 is 0.22
+		-- and Share simply vanished over anything bright. Share is off more
+		-- often than it is on: you have to be grouped for it.
+		--
+		-- So the frame stays at full strength and the INK goes quiet instead -
+		-- one step down the ladder, not two. It went to textFaint, which is the
+		-- soft ink at 0.38, and over the footer's own glass that is a button
+		-- with a border and no word in it. Enabled is the bright ink and
+		-- disabled is the dim one: still a word, plainly not for pressing.
+		if self._disabled then W.Color(self.label, c.textDim) end
 	end
 
 	function b:SetLabel(text)
@@ -877,13 +900,14 @@ local function BuildPanes(win)
 	list:SetWidth(LIST_W)
 	win.list = list
 
-	list.rule = BuildHairline(list, "glassEdge", 0.5)
+	-- UPRIGHT, so the shared one knows which way to be a pixel thick.
+	list.rule = BuildHairline(list, true)
 	list.rule:SetPoint("TOPRIGHT", list, "TOPRIGHT", 0, 0)
 	list.rule:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", 0, 0)
-	list.rule:SetWidth(A:Px(1))
-	list.rule:SetHeight(0)
 
-	local scroll = W.Scroller(list, SCROLL_STEP)
+	-- Six, because this column has only twelve to its right before the
+	-- divider between the list and the detail.
+	local scroll = W.Scroller(list, SCROLL_STEP, { outset = 6 })
 	scroll:SetPoint("TOPLEFT", list, "TOPLEFT", LIST_PAD_L, -LIST_PAD_Y)
 	scroll:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -LIST_PAD_R, LIST_PAD_Y)
 	scroll.child:SetWidth(LIST_W - LIST_PAD_L - LIST_PAD_R)
@@ -902,14 +926,21 @@ local function BuildPanes(win)
 	detail:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", 0, 0)
 	win.detail = detail
 
-	local dscroll = W.Scroller(detail, SCROLL_STEP)
+	-- A PAGE OF READING, which is what the well was invented for: the
+	-- description ran to the edges of the pane with nothing saying where it
+	-- stopped. Twelve, out of this pane's own thirty-two.
+	local dscroll = W.Scroller(detail, SCROLL_STEP, { outset = DET_WELL_OUT })
 	dscroll:SetPoint("TOPLEFT", detail, "TOPLEFT", DET_PAD_X, -DET_PAD_Y)
 	-- The scroll region stops above the footer. The footer is pinned rather than
 	-- scrolled with the content: it is the same three actions wherever you are in
 	-- a long description, and a Abandon button that scrolls off is a Abandon
 	-- button you cannot find.
+	-- AND CLEARS THE BUTTONS. The well's own edge is what separates the two
+	-- now, so the reading has to stop a block's gap above the row of
+	-- actions - it used to stop two pixels above them, which reads as the
+	-- buttons being part of the description.
 	dscroll:SetPoint("BOTTOMRIGHT", detail, "BOTTOMRIGHT", -DET_PAD_X,
-		DET_PAD_Y + FOOT_H + FOOT_PAD)
+		DET_PAD_Y + FOOT_H + DET_WELL_OUT + W.PANEL_GAP)
 	local dw = WIN_W - LIST_W - DET_PAD_X * 2
 	dscroll.child:SetWidth(dw)
 	detail.scroll = dscroll
@@ -959,9 +990,10 @@ local function BuildPanes(win)
 	foot:SetHeight(FOOT_H)
 	detail.foot = foot
 
-	foot.rule = BuildHairline(foot, "glassEdge", 0.5)
-	foot.rule:SetPoint("TOPLEFT", foot, "TOPLEFT", 0, FOOT_PAD)
-	foot.rule:SetPoint("TOPRIGHT", foot, "TOPRIGHT", 0, FOOT_PAD)
+	-- NO RULE ABOVE THE BUTTONS. There was one, and with the description now
+	-- sitting in a well of its own the two draw as a doubled line with a
+	-- sliver between them - a stray hairline across the foot of the pane.
+	-- The well's bottom edge is the separation.
 
 	foot.track = BuildButton(foot, "filled", "Track quest")
 	foot.track:SetPoint("LEFT", foot, "LEFT", 0, 0)
@@ -1083,7 +1115,7 @@ function BuildZoneRow(parent)
 	row.text = W.Text(row, "qlZone", "LEFT")
 	row.text:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 10, 6)
 
-	row.rule = BuildHairline(row, "glassEdge", 0.45)
+	row.rule = BuildHairline(row)
 	row.rule:SetPoint("LEFT", row.text, "RIGHT", 8, 0)
 	row.rule:SetPoint("RIGHT", row, "RIGHT", -2, 0)
 
@@ -2020,11 +2052,10 @@ function QL:OnSkinChanged()
 
 	local c = Palette.c
 	W.Color(win.head.title, c.text)
-	W.Color(win.head.close.label, c.textDim)
+	W.RepaintClose(win.head.close)
 	W.Color(win.head.search.placeholder, c.textFaint)
 	for _, b in pairs({ win.detail.foot.track, win.detail.foot.share,
 		win.detail.foot.abandon }) do b:Restyle() end
-	ColorHairline(win.detail.foot.rule)
 	win.head.mark:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 	ColorHairline(win.head.rule)
 	ColorHairline(win.list.rule)

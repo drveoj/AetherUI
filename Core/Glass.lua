@@ -200,6 +200,20 @@ end
 
 local PL, PC, PR = 1, 2, 3
 
+--- The three slices' texture coordinates, out on their own.
+--
+--  Because a pill re-applies them: it carries two textures of very different
+--  sizes and swaps between them by height, and the half-texel inset is
+--  computed from those dimensions. Left at the big one's, the small art would
+--  be sampled a quarter-texel wrong at every join.
+local function SliceCoords3(t, frac, size)
+	local q = frac or 0.25
+	local hx = size and (0.5 / size[1]) or 0   -- see ApplyTexCoords
+	t[PL]:SetTexCoord(0, q - hx, 0, 1)
+	t[PC]:SetTexCoord(q + hx, 1 - q - hx, 0, 1)
+	t[PR]:SetTexCoord(1 - q + hx, 1, 0, 1)
+end
+
 local function Build3(frame, texPath, layer, sub, frac, size)
 	local t = {}
 	for i = 1, 3 do
@@ -207,11 +221,7 @@ local function Build3(frame, texPath, layer, sub, frac, size)
 		tex:SetTexture(texPath)
 		t[i] = tex
 	end
-	local q = frac or 0.25
-	local hx = size and (0.5 / size[1]) or 0   -- see ApplyTexCoords
-	t[PL]:SetTexCoord(0, q - hx, 0, 1)
-	t[PC]:SetTexCoord(q + hx, 1 - q - hx, 0, 1)
-	t[PR]:SetTexCoord(1 - q + hx, 1, 0, 1)
+	SliceCoords3(t, frac, size)
 	return t
 end
 
@@ -293,6 +303,10 @@ function Surface:SetEdgeColor(c)
 end
 
 function Surface:SetEdgeShown(show)
+	-- RECORDED, because a pill carries two drawings and swaps between them by
+	-- height. A rim hidden on the set that is up would come straight back the
+	-- moment the other one did.
+	self._edgeHidden = not show
 	ShowAll(self._edge, show)
 end
 
@@ -554,6 +568,20 @@ function Glass.SetPanelCorner(f, corner)
 	if f._Relayout then f:_Relayout() end
 end
 
+--- THE HEIGHT BELOW WHICH THE CAPSULE ART CANNOT BE DRAWN.
+--
+--  A pill is a 3-slice out of a 512x256 texture and its two caps are 128
+--  texels wide, drawn at half the pill's height. At 20 tall that is a
+--  twelvefold minification of a curve, with no mipmap behind it - and the
+--  ends come back jagged. This is the same fault the chip rim, the check
+--  box, the tooltip badge and the chat tab all record, found separately
+--  four times, because nothing in the code said where the line was.
+--
+--  It says so now. Below this, a capsule is drawn as a PANEL with its
+--  corner set to half its height - which is the same shape, out of art
+--  whose corner is snapped to whole physical pixels. See Glass.Capsule.
+Glass.PILL_ART_MIN = 40
+
 --- Capsule (unit frames, buffs, cast bar, nameplates).
 --  Cap width tracks height automatically so the ends stay circular.
 --  Same opts as CreatePanel, minus corner.
@@ -564,8 +592,37 @@ function Glass.CreatePill(parent, opts)
 
 	f._kind = "pill"
 
-	f._fill = Build3(f, Media.texture.pill, "BACKGROUND", 0, Media.slice.pill, Media.textureSize.pill)
-	f._edge = Build3(f, Media.texture.pillEdge, "BORDER", 0, Media.slice.pill, Media.textureSize.pill)
+	-- ONE GEOMETRY, TWO TEXTURES. See Glass.PILL_ART_MIN: the capsule art is
+	-- authored at twice a 4K display, which is right for a cast bar and wrong
+	-- for a level chip - at twenty pixels tall its 128-texel cap is minified
+	-- thirteen times with no mipmap behind it and the ends come back jagged.
+	-- The small pair is the same shape at 128x64, on the same 0.25 slice, so
+	-- ONLY THE TEXTURE CHANGES and the geometry below is untouched.
+	--
+	-- This was briefly done by swapping the geometry instead - a nine-slice
+	-- panel with its corner at half the height, which is the same shape on
+	-- paper. It is not the same shape in practice: Layout9 anchors the top and
+	-- bottom corner pieces to opposite edges, so a corner of half the height
+	-- makes them meet exactly - and any rounding at all makes them OVERLAP,
+	-- doubling the rim's alpha in a band through the middle. That is a bright
+	-- line straight through every chip, which is what it drew.
+	--
+	-- Done here rather than at the nineteen call sites because four of those
+	-- had already found this fault separately and fixed it locally, and most
+	-- of the rest were still drawing it wrong. A rule nobody has to know is
+	-- the only kind that holds.
+	f._fill = Build3(f, Media.texture.pillSmall, "BACKGROUND", 0,
+		Media.slice.pill, Media.textureSize.pillSmall)
+	f._edge = Build3(f, Media.texture.pillSmallEdge, "BORDER", 0,
+		Media.slice.pill, Media.textureSize.pillSmall)
+
+	-- SMALL IS THE DEFAULT, and the big art is what a pill grows INTO. Round
+	-- the other way and a pill that is never explicitly resized - one whose
+	-- height comes from a pair of anchors, which is most of them - keeps
+	-- whatever it was born with. The failure modes are not symmetric: the
+	-- small art magnified onto a cast bar is soft, and the big art minified
+	-- onto a chip is jagged.
+	f._art = "small"
 
 	--- A pill is a HORIZONTAL capsule: the caps sit left and right and their
 	--  width comes from the height, so the ends stay circular however wide the
@@ -585,6 +642,30 @@ function Glass.CreatePill(parent, opts)
 	--  tall rounded shape should use CreatePanel with a corner radius.
 	local function resize(self)
 		local h, w = self:GetHeight() or 0, self:GetWidth() or 0
+		if h <= 0 or w <= 0 then return end
+
+		-- WHICH ART, decided from the height every time it changes. A pill built
+		-- at a default and sized afterwards - which is most of them - would
+		-- otherwise be judged on a height it never had.
+		local want = (h < Glass.PILL_ART_MIN) and "small" or "big"
+		if want ~= self._art then
+			self._art = want
+			local small = (want == "small")
+			local fill = small and Media.texture.pillSmall or Media.texture.pill
+			local edge = small and Media.texture.pillSmallEdge
+				or Media.texture.pillEdge
+			local size = small and Media.textureSize.pillSmall
+				or Media.textureSize.pill
+			for i = 1, #self._fill do self._fill[i]:SetTexture(fill) end
+			for i = 1, #self._edge do self._edge[i]:SetTexture(edge) end
+			-- AND THE HALF-TEXEL INSET WITH THEM. It is computed from the source
+			-- dimensions, and these two differ by a factor of four - left alone,
+			-- the small art would be sampled with the big one's inset and pull a
+			-- neighbouring slice's texels in at every join.
+			SliceCoords3(self._fill, Media.slice.pill, size)
+			SliceCoords3(self._edge, Media.slice.pill, size)
+		end
+
 		local cap = SnapIn(self, math.min(h, w) / 2)
 		if cap <= 0 then return end
 		Layout3(self._fill, self, cap, 0)

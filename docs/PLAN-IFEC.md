@@ -15,7 +15,7 @@ brief's own framing: **the console always exists, the content might not.**
 
 ## 1. Decisions taken before any code
 
-**The console is a module inside AetherUI.** Joe, 2026-08-15. Content seasons
+**The console is a module inside AetherUI.** Decided 2026-08-15. Content seasons
 ship as their own addons and are added to `## OptionalDeps` as they release.
 This answers the brief's §4 open question.
 
@@ -43,12 +43,12 @@ This answers the brief's §4 open question.
 
 ### 2.1 Route durations are generated, as the brief wanted — and the spline correction is not needed
 
-Joe supplied the three DB2 tables as CSV at `E:\AetherUI Design\IFEC-Taxidata`,
+The three DB2 tables were supplied as CSV in the design folder,
 for build **1.15.9.69109**, matching the client. So §5's plan is available after
 all: 87 nodes, 294 paths, 9,582 path points.
 
 **Taxi speed is a single constant.** Fitting `duration = length / v` against the
-nine of Joe's measured routes that are single paths:
+nine of the measured routes that are single paths:
 
     v = 30.122 yd/s      RMS error 0.34s      worst error 0.66s
 
@@ -266,7 +266,7 @@ Enough to exercise sequencing, queueing and resume with real files.
 on the channel (`:1332`). The IFEC uses `PlaySoundFile(path, "Music")` plus
 `StopSound(handle)`, per the brief.
 
-**Decided** (Joe, 2026-08-15): the console takes the channel. Zen's loop stops
+**Decided** 2026-08-15: the console takes the channel. Zen's loop stops
 on boarding and is restored on landing — the flight is the foreground activity
 and its content is the point of the feature. Zen's own state must be recorded
 before it is stopped so that "restore" means what Zen had, not what we guessed;

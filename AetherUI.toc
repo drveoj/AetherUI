@@ -43,6 +43,7 @@ Modules\Menus.lua
 Modules\OptionsSkin.lua
 Modules\Conveniences.lua
 Modules\Panels.lua
+Modules\Threat.lua
 Modules\Timers.lua
 Modules\Zen.lua
 Modules\Toolbox.lua

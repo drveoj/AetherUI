@@ -325,6 +325,15 @@ local function Compose(name, k)
 		glassEdge   = A_(k.border, 0.32),
 		glassEdgeHi = A_(k.deep, 0.55),
 
+		-- A CONTENT WELL: the recess anything that scrolls sits in. Its fill is
+		-- BLACK rather than the skin's, and deliberately so - a recess is an
+		-- absence of light rather than a colour, and tinting it would make the
+		-- inside of a well a different hue from the inside of the next one down
+		-- when a panel carries two. Its rim is the skin's, quieter than the
+		-- frame's, because that one does belong to the skin.
+		wellFill    = { 0, 0, 0, 0.22 },
+		wellEdge    = A_(k.border, 0.13),
+
 		-- type
 		text      = A_(k.bright, 1),
 		textDim   = A_(k.soft, 0.55),
@@ -526,16 +535,24 @@ function Palette:InkHex(hex, text)
 	return "|cff" .. tostring(hex) .. tostring(text) .. "|r"
 end
 
---- The five roles chat text actually comes in, named short because they are
---  written INSIDE other strings and a long call swamps the line it decorates.
+--- The roles chat text actually comes in, named short because they are written
+--  INSIDE other strings and a long call swamps the line it decorates.
 --
---  Five, and no more without a reason. A sixth grey that is not quite `dim` is
+--  Few, and no more without a reason. A sixth grey that is not quite `dim` is
 --  how the 203 escapes happened in the first place.
 function A.Hi(text)   return Palette:Ink("accent", text) end     -- a command, a name
 function A.Val(text)  return Palette:Ink("text", text) end       -- a value being reported
 function A.Good(text) return Palette:Ink("friendly", text) end   -- on, ok, done
 function A.Bad(text)  return Palette:Ink("danger", text) end     -- off, failed, missing
 function A.Dim(text)  return Palette:Ink("dim", text) end        -- an aside
+
+--- THE RESERVED GOLD, and the reason for a sixth. Everything else on a line of
+--  ours is the accent, and the accent is what a slash command is - so an
+--  address printed in it reads as a fourth command rather than as the one thing
+--  on the line you are meant to copy. Gold is the interface's one conditional
+--  colour, already spent on personal signals, and this is one: it is where you
+--  go when something has gone wrong for YOU.
+function A.Gold(text) return Palette:Ink("semanticGold", text) end
 
 -- ---------------------------------------------------------------------------
 -- dynamic colours

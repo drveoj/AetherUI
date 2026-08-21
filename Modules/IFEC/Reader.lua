@@ -53,7 +53,11 @@ local PAGE = 1024
 -- it. The screen is a CLAMP now rather than the source of the number.
 local PAGE_DRAW = 0.7
 
-local PAD    = 12          -- around the page inside the panel
+-- THE SHARED NUMBERS. 15a gives one header height and one body padding
+-- for every panel in the interface, and a window of ours is a panel like
+-- any other - the only reason these were local was that they were written
+-- before there was anywhere to put them.
+local PAD    = W.PANEL_PAD
 local TOP_H  = 26          -- the strip over it: what this is, and the way out
 local BAR_H  = 30          -- the strip under it: the pager and the zoom
 local MARGIN = 48          -- the least the panel leaves of the screen

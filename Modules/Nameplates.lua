@@ -583,14 +583,28 @@ local function ApplyEmphasis(f)
 	f:SetAlpha(OFF_ALPHA + (1 - OFF_ALPHA) * t)
 
 	if not f.unit or f._nameForm then return end
-	local c = Palette:NameReaction(f.unit)
-	f:SetEdgeColor({ c[1], c[2], c[3], EDGE_OFF + (EDGE_ON - EDGE_OFF) * t })
 
-	-- The glow is the target's alone. Carried at a fraction of its strength on
-	-- the way in and out, so it arrives with the scale rather than snapping on
-	-- at the end of it.
-	if t > 0.01 then
-		f:SetRimGlow({ c[1], c[2], c[3], GLOW_ALPHA * t })
+	-- THREAT OWNS THE HUE, THE DECK OWNS THE STRENGTH. 16d wants the border and
+	-- the glow, and this function already owns both for target emphasis - two
+	-- writers on one property is a state that is right until the other one
+	-- paints. So the disposition, where there is one, replaces the reaction
+	-- colour and sets a floor under the emphasis; the deck keeps scaling above
+	-- it. A red plate you are not targeting is still dimmer than the one you
+	-- are, which is what both features wanted.
+	local th = A:GetModule("threat")
+	local c, floor = nil, 0
+	if th and th.enabled and th.Plate then c, floor = th:Plate(f.unit) end
+	c = c or Palette:NameReaction(f.unit)
+	local lit = math.max(t, floor or 0)
+
+	f:SetEdgeColor({ c[1], c[2], c[3], EDGE_OFF + (EDGE_ON - EDGE_OFF) * lit })
+
+	-- The glow is the target's alone - unless a plate is carrying a disposition,
+	-- which 16d gives to every engaged hostile whether you are looking at it or
+	-- not. Carried at a fraction of its strength on the way in and out, so it
+	-- arrives with the scale rather than snapping on at the end of it.
+	if lit > 0.01 then
+		f:SetRimGlow({ c[1], c[2], c[3], GLOW_ALPHA * lit })
 	else
 		f:SetRimGlow(nil)
 	end
@@ -634,6 +648,20 @@ end
 local function UpdateEdge(f)
 	if not f.unit then return end
 	ApplyEmphasis(f)
+end
+
+--- Repaint whichever plates threat has something to say about.
+--
+--  Called by the threat module on its own tick, because the deck's animation
+--  frame runs only while a plate is growing or shrinking - a pulsing border has
+--  nothing moving it otherwise. Passing nil repaints everything, which is how
+--  the colours go back when the module is switched off.
+function NP:RepaintThreat(which)
+	for token, f in pairs(byUnit) do
+		if f.unit and not f._nameForm and (which == nil or which[token]) then
+			ApplyEmphasis(f)
+		end
+	end
 end
 
 --- Restore the capsule's own geometry, which the name form takes apart.

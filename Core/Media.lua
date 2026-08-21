@@ -32,6 +32,13 @@ Media.texture = {
 	panelSolid  = TEX .. "Glass-Panel-Solid",
 	pill        = TEX .. "Glass-Pill",        -- 512x256, 3-slice, cap 128 (0.25)
 	pillEdge    = TEX .. "Glass-Pill-Edge",
+	-- THE SAME CAPSULE, AUTHORED SMALL. 128x64, the same 0.25 slice, so the
+	-- geometry is identical and only the texture changes. The big one is drawn
+	-- for 2x a 4K display; at a level chip's twenty pixels its 128-texel cap is
+	-- minified thirteen times with no mipmap behind it, and the ends come back
+	-- jagged. Core/Glass.lua picks between them by height.
+	pillSmall     = TEX .. "Glass-Pill-Small",
+	pillSmallEdge = TEX .. "Glass-Pill-Small-Edge",
 	shadow      = TEX .. "Glass-Shadow",      -- 256x256, 9-slice, corner 96 (0.375)
 	pillShadow  = TEX .. "Glass-Pill-Shadow", -- 512x256, 3-slice, spread = h/4
 	noise       = TEX .. "Noise",             -- 128x128, seamless, tileable
@@ -72,6 +79,11 @@ Media.texture = {
 	-- misc
 	glow        = TEX .. "Glow-Soft",
 	vignette    = TEX .. "Vignette",
+	-- The threat alarm's screen edge. Its own texture rather than the vignette
+	-- above: that one is authored BLACK, to darken corners for Zen, and a vertex
+	-- colour multiplies - so tinting it red gives black. This one is white and
+	-- hugs the four edges rather than making a circle in the middle.
+	threatEdge  = TEX .. "Threat-Edge",
 	divider     = TEX .. "Divider",
 	chevron     = TEX .. "Chevron",
 	send        = TEX .. "Send",             -- the edit box's paper plane
@@ -125,6 +137,10 @@ Media.icons = {
 		"library", "ifec", "zoom", "close",
 		"crown", "healer", "dps", "resurrect",
 		"bags", "keys",
+		-- Turning a paper doll. ONE drawing: the other direction is this one
+		-- mirrored, which is a swap of two texture coordinates rather than a
+		-- second cell that has to agree about what an arrow looks like.
+		"rotate",
 	},
 
 	--- One drawing, more than one name for it.
@@ -157,29 +173,55 @@ end
 --- Point a texture at one. Returns false when the name is unknown, so a caller
 --- can fall back rather than draw the whole sheet - which is what a texture
 --- with no SetTexCoord does, and it is unmistakable on screen.
-function Media:SetIcon(tex, name)
+--- `flip` mirrors it left to right, which is two coordinates swapped rather
+--- than a second drawing of the same thing facing the other way.
+function Media:SetIcon(tex, name, flip)
 	if not tex then return false end
 	local file, l, r, t, b = Media:Icon(name)
 	if not file then return false end
 	tex:SetTexture(file)
+	if flip then l, r = r, l end
 	tex:SetTexCoord(l, r, t, b)
 	return true
 end
 
--- THE FLIGHT DIAL, as a sheet of baked steps.
+-- A DIAL: A RING THAT FILLS CLOCKWISE, as a sheet of baked steps.
 --
 -- Classic cannot fill a ring by angle - there is no conic gradient and no arc
--- primitive - so the sweep is 64 frames and the module picks one. A step every
--- 1/64 of a flight is about three seconds on a long haul, which is under
--- noticing for something moving this slowly, and it costs one SetTexCoord
--- rather than a mask stack rebuilt every frame.
+-- primitive - so the sweep is 64 frames and the caller picks one. A step every
+-- 1/64 is under noticing for anything that moves at a readable speed, and it
+-- costs one SetTexCoord rather than a mask stack rebuilt every frame.
 --
 -- Frame i is (i+1)/64 of a turn, so there is no empty frame: nothing showing is
 -- the texture hidden. Keep `steps`, `cols` and `ring` in step with
 -- generate_textures.py, which is the other half of this contract.
+--
+-- TWO OF THEM, AND ONE MECHANISM. The flight console's dial and the threat ring
+-- are the same shape at two band widths, so the generator draws both from one
+-- pair of functions and this is a family rather than a second dial invented
+-- beside the first. Anything else wanting a gauge that fills round a disc adds
+-- a row here; it does not add a mechanism.
 Media.dial = {
-	track = TEX .. "IFEC-Dial-Track",
-	arc   = TEX .. "IFEC-Dial-Arc",
+	-- The flight console's, 4.5 of band on a 44 ring.
+	ifec = {
+		track = TEX .. "IFEC-Dial-Track",
+		arc   = TEX .. "IFEC-Dial-Arc",
+	},
+	-- 16b's threat ring: 3 of band, 44 outer round a 38 pip.
+	--
+	-- NO TRACK. The console's dial has one because a flight has a length you
+	-- are part way along; a threat ring does not. 16b describes an arc and
+	-- nothing behind it, and below the floor the design shows NOTHING - so a
+	-- track would be a faint ring sitting round every pip for the whole fight,
+	-- which is the one thing quiet-by-default is against.
+	threat = {
+		arc = TEX .. "Threat-Dial-Arc",
+	},
+}
+
+-- Shared by every family, because the sheet layout is the mechanism and the
+-- band is the only thing that differs.
+Media.dialSheet = {
 	cell  = 64,
 	cols  = 8,
 	rows  = 8,
@@ -195,8 +237,10 @@ Media.dial = {
 --  Returns nil below the first step rather than a blank frame - there isn't
 --  one, and a caller that hides the texture reads better than one that draws
 --  nothing very carefully.
-function Media:DialArc(fraction)
-	local d = Media.dial
+function Media:DialArc(fraction, family)
+	local d = Media.dialSheet
+	local art = Media.dial[family or "ifec"]
+	if not art then return nil end
 	if type(fraction) ~= "number" or fraction <= 0 then return nil end
 	if fraction > 1 then fraction = 1 end
 
@@ -205,7 +249,7 @@ function Media:DialArc(fraction)
 	if i >= d.steps then i = d.steps - 1 end
 
 	local c, r = i % d.cols, math.floor(i / d.cols)
-	return d.arc, c / d.cols, (c + 1) / d.cols, r / d.rows, (r + 1) / d.rows
+	return art.arc, c / d.cols, (c + 1) / d.cols, r / d.rows, (r + 1) / d.rows
 end
 
 Media.badges = {
@@ -256,6 +300,7 @@ Media.textureSize = {
 	-- comes out smooth. See Tools/generate_textures.py.
 	panel      = { 256, 256 },
 	pill       = { 512, 256 },
+	pillSmall  = { 128, 64 },
 	shadow     = { 256, 256 },
 	pillShadow = { 512, 256 },
 }
@@ -401,6 +446,7 @@ Media.style = {
 	tbValue      = { "semibold", 15, "" },
 	tbLabel      = { "medium",   11, "" },
 	ttChip       = { "bold",     10, "" },   -- ELITE
+	thChip       = { "bold",     10, "" },   -- LOSING AGGRO
 	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
 
 	-- The client's own windows (Panels.lua).
@@ -414,7 +460,19 @@ Media.style = {
 	-- here is outlined. On a filled tab it was worse than useless - a black
 	-- stroke around dark type on a light fill, which reads as a sticker.
 	pnTab        = { "semibold", 12, "" },
-	pnTitle      = { "semibold", 18, "" },
+	-- 16 AND NEVER LARGER, which is the panel package's one hard number for
+	-- type: one title size for every panel in the interface. It was 18, and
+	-- the client windows added a point on top of that for 19.
+	pnTitle      = { "semibold", 16, "" },
+	-- The way out. Its own role because the cross is drawn at one size
+	-- everywhere, and hanging it off the title role made it grow and shrink
+	-- with a heading it has nothing to do with.
+	-- SEMIBOLD. The quest log's own cross was semibold 19 before the shared
+	-- button took the job, and at medium 14 it went from a mark you could see
+	-- across a 1240-wide window to a grey smudge. The handoff's "14px stroke"
+	-- is a number for a browser at 1:1; everything here is drawn at the
+	-- profile's scale, so 14 lands at ten physical pixels of thin type.
+	pnClose      = { "semibold", 16, "" },
 	pnSub        = { "medium",   13, "" },
 	-- Everything else inside one: stat rows, resistances, faction names. Drawn
 	-- at whatever size the client already gave the string, so its own layout
@@ -564,13 +622,42 @@ end
 --
 --  CJK is passed through untouched. Those scripts have no letter-spacing
 --  convention to imitate and the result reads as broken rather than as tracked.
+--- The code point of one UTF-8 character.
+local function CodePoint(ch)
+	local b1 = ch:byte(1)
+	if not b1 then return 0 end
+	if b1 < 0xC0 then return b1 end
+	if b1 < 0xE0 then
+		return (b1 - 0xC0) * 0x40 + ((ch:byte(2) or 0) - 0x80)
+	end
+	if b1 < 0xF0 then
+		return (b1 - 0xE0) * 0x1000 + ((ch:byte(2) or 0) - 0x80) * 0x40
+			+ ((ch:byte(3) or 0) - 0x80)
+	end
+	return 0x10000
+end
+
+--- Is this a script with no tracking convention to imitate?
+local function IsCJK(cp)
+	return (cp >= 0x2E80 and cp <= 0x9FFF)     -- radicals through unified han
+		or (cp >= 0xAC00 and cp <= 0xD7AF)     -- hangul
+		or (cp >= 0xF900 and cp <= 0xFAFF)     -- compatibility ideographs
+		or (cp >= 0xFF00 and cp <= 0xFF60)     -- fullwidth forms
+end
+
 function Media:Track(text, spaces)
 	if not text or text == "" then return "" end
-	if text:find("[\224-\244]") then return text end
 
 	local sep = string.rep(" ", spaces or 1)
 	local out = {}
 	for ch in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+		-- BY CODE POINT, NOT BY LEAD BYTE. This used to bail on any character
+		-- whose first byte was in the three-byte range, which is every
+		-- three-byte sequence in UTF-8 - so an EM DASH, at U+2014, read as CJK
+		-- and turned tracking off for the whole string. The threat chips found
+		-- it: two of the four carry a real dash, and both came out untracked
+		-- beside two that were.
+		if IsCJK(CodePoint(ch)) then return text end
 		out[#out + 1] = ch
 	end
 	return table.concat(out, sep)

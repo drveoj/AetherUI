@@ -57,17 +57,27 @@ local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 -- virtual units. 8 * 44 + 7 * 6 + 2 * 24 = 442, which is the panel width.
 -- ---------------------------------------------------------------------------
 
-local WIN_CORNER    = 28
+-- Every framed panel in this interface, ours and the client's alike. It was
+-- 28 here, 28 on the quest log, 28 on the Toolbox, 20 on the party controls
+-- and 16 on the client's windows - three answers, and nobody sees all of
+-- them at once to notice.
+local WIN_CORNER    = W.PANEL_CORNER
 local GRID_PAD_X    = 24
 
-local HEAD_H        = 54
-local HEAD_PAD_X    = 24
+-- THE SHARED NUMBERS. 15a gives one header height and one body padding
+-- for every panel in the interface, and a window of ours is a panel like
+-- any other - the only reason these were local was that they were written
+-- before there was anywhere to put them.
+local HEAD_H        = W.PANEL_HEAD_H
+local HEAD_PAD_X    = W.PANEL_PAD
 local HEAD_GAP      = 10
 local ICON_SIZE     = 17
 
-local SEARCH_H      = 34
+-- The field in the header band. Its own height, because 34 fills a 54 band
+-- corner to corner; 30 is the quest log's and leaves the band around it.
+local SEARCH_H      = 30
+local SEARCH_W      = 200
 local SEARCH_PAD_X  = 20
-local SEARCH_GAP    = 6
 
 local SEC_GAP       = 14   -- between one category and the next
 local SEC_LABEL_H   = 15
@@ -367,17 +377,22 @@ end
 -- ---------------------------------------------------------------------------
 
 --- A one-pixel rule, snapped to the physical grid so it does not go soft.
-local function BuildHairline(parent, token, alpha)
-	local t = parent:CreateTexture(nil, "ARTWORK")
-	t:SetTexture(Media.texture.flat)
-	t:SetHeight(A:Px(1))
-	t._token, t._alpha = token or "glassEdge", alpha or 1
-	return t
+-- Kept as a local for the call sites, but it is the shared one underneath:
+-- one ink and one physical pixel, and the pixel is the part that was wrong.
+-- See W.PaintHairline.
+local function BuildHairline(parent, upright)
+	return W.Hairline(parent, upright)
 end
 
+-- Declared here and defined with the rest of the skinning, because the build
+-- runs it too - see BuildFrame.
+local RestyleFrame
+
+-- ONE INK, shared with every other line in the interface - see
+-- W.PaintHairline. These carried their own fraction of glassEdge and came
+-- out fainter than the tab rails, which is a separator you cannot see.
 local function ColorHairline(t)
-	local c = Palette.c[t._token] or Palette.c.glassEdge
-	t:SetVertexColor(c[1], c[2], c[3], (c[4] or 1) * t._alpha)
+	W.PaintHairline(t)
 end
 
 --- Money, in the deck's treatment: the gold bright, the small change dimmed.
@@ -740,7 +755,7 @@ end
 --  control is three descending rules -- which is what the lucide icon is, minus
 --  the arrow -- and the close is the multiplication sign, as everywhere else in
 --  this UI.
-local function BuildIconButton(parent, kind, onClick)
+local function BuildIconButton(parent, kind, onClick, tip)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(22, 22)
 	b._kind = kind
@@ -773,8 +788,24 @@ local function BuildIconButton(parent, kind, onClick)
 		end
 	end
 
-	b:SetScript("OnEnter", function(self) self:Restyle(true) end)
-	b:SetScript("OnLeave", function(self) self:Restyle(false) end)
+	-- AND IT SAYS WHAT IT DOES. Three bars in a header is a picture of a
+	-- list, not a promise about what pressing it will do to your bags - and
+	-- this one moves every item you own.
+	b:SetScript("OnEnter", function(self)
+		self:Restyle(true)
+		if not (tip and _G.GameTooltip) then return end
+		_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		_G.GameTooltip:AddLine(tip[1])
+		if tip[2] then
+			local c = Palette.c.textDim
+			_G.GameTooltip:AddLine(tip[2], c[1], c[2], c[3], true)
+		end
+		_G.GameTooltip:Show()
+	end)
+	b:SetScript("OnLeave", function(self)
+		self:Restyle(false)
+		if _G.GameTooltip then _G.GameTooltip:Hide() end
+	end)
 	b:SetScript("OnClick", function(self) if onClick then onClick(self) end end)
 	b:Restyle(false)
 	return b
@@ -794,20 +825,45 @@ local function BuildHeader(frame)
 	head.count = W.Pill(head, "bagChip", { height = 20, padX = 9 })
 	head.count:SetPoint("LEFT", head.title, "RIGHT", HEAD_GAP, 0)
 
-	head.close = BuildIconButton(head, "close", function() Bags:CloseFrom(frame) end)
+	-- The shared way out, which every panel in this interface wears. It was
+	-- one of four designs; see W.CloseButton.
+	head.close = W.CloseButton(head, {
+		onClick = function() Bags:CloseFrom(frame) end,
+	})
 	head.close:SetPoint("RIGHT", head, "RIGHT", -HEAD_PAD_X, 0)
 
-	head.sort = BuildIconButton(head, "sort", function() Bags:StartSort(frame) end)
+	head.sort = BuildIconButton(head, "sort",
+		function() Bags:StartSort(frame) end,
+		{ "Combine", "Stack what can be stacked and move everything up, so the" .. " empty slots end up together at the bottom." })
 	head.sort:SetPoint("RIGHT", head.close, "LEFT", -6, 0)
+
+	-- THE HAIRLINE ALONG ITS FOOT, which is what makes this a header band
+	-- rather than a row of controls floating over the grid. Every panel in the
+	-- interface wears one; this window had one under its FOOTER and nothing
+	-- under its head.
+	head.rule = BuildHairline(head)
+	head.rule:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", W.RULE_GAP, 0)
+	head.rule:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", -W.RULE_GAP, 0)
 
 	return head
 end
 
 local function BuildSearch(frame)
-	local search = Glass.CreatePill(frame, { fill = "glassSoft", edge = "glassEdge" })
+	-- A ROUNDED RECTANGLE, not a capsule, for the reason the quest log's
+	-- carries: a pill's two caps come out of a 256-texel texture and at this
+	-- height they are minified past the point the client can resolve, with no
+	-- mipmap behind them. Crunched ends on a field you look straight at.
+	-- IN THE HEADER BAND, not on a row of its own under it. A search field is
+	-- chrome - it acts on what the window is showing - and the quest log has
+	-- carried it in the band since it was built. A whole strip of window given
+	-- over to one field is the thing 15a's header exists to stop.
+	local head = frame.head
+	local search = Glass.CreatePanel(head, {
+		corner = W.WELL_CORNER, fill = "glassSoft", edge = "glassEdge",
+	})
 	search:SetHeight(SEARCH_H)
-	search:SetPoint("TOPLEFT", frame, "TOPLEFT", SEARCH_PAD_X, -HEAD_H)
-	search:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -SEARCH_PAD_X, -HEAD_H)
+	search:SetWidth(SEARCH_W)
+	search:SetPoint("RIGHT", head.sort, "LEFT", -HEAD_GAP, 0)
 	frame.search = search
 
 	-- The deck's magnifier. There is no vector drawing in the WoW UI, so it is
@@ -860,7 +916,7 @@ local function BuildFooter(frame)
 	foot:SetHeight(FOOT_H)
 	frame.foot = foot
 
-	foot.rule = BuildHairline(foot, "glassEdge", 0.55)
+	foot.rule = BuildHairline(foot)
 	foot.rule:SetPoint("TOPLEFT", foot, "TOPLEFT", 0, 0)
 	foot.rule:SetPoint("TOPRIGHT", foot, "TOPRIGHT", 0, 0)
 
@@ -977,7 +1033,7 @@ function WireBagTile(tile)
 	-- handlers torn off and a "buy" click put in their place. Tiles are recycled
 	-- by index, and nothing put the handlers back when a slot was bought - so a
 	-- freshly bought bank slot would not accept a bag and offered to sell you
-	-- the NEXT one instead, which is exactly what it did to Joe for 10g.
+	-- the NEXT one instead, which is exactly what it did in game, for 10g.
 	tile:SetScript("OnDragStart", function(self)
 		if self.invSlot and _G.PickupBagFromSlot then
 			pcall(_G.PickupBagFromSlot, self.invSlot)
@@ -1060,7 +1116,7 @@ local function BuildRail(frame)
 	-- readouts below. 18 in the deck, and the rail is only 16 across inside its
 	-- padding - so it is the inner width, which is what "a rule across the tab"
 	-- means at this size.
-	rail.rule = BuildHairline(rail, "glassEdge", 0.7)
+	rail.rule = BuildHairline(rail)
 
 	-- One pair per thing the drawer holds. Both are drawn from the sheet rather
 	-- than from a letter, because a "B" and a "K" on a tab this narrow read as
@@ -1119,7 +1175,7 @@ local function BuildFlyout(frame)
 	fly.rows = {}
 	fly.keys = {}
 
-	fly.rule = BuildHairline(fly, "glassEdge", 0.7)
+	fly.rule = BuildHairline(fly)
 	fly.rule:SetPoint("LEFT", fly, "LEFT", FLY_CORNER + FLY_PAD, 0)
 	fly.rule:SetPoint("RIGHT", fly, "RIGHT", -FLY_PAD, 0)
 
@@ -1388,10 +1444,22 @@ local function BuildFrame(kind)
 	BuildSearch(frame)
 	BuildFooter(frame)
 
-	local scroll = W.Scroller(frame, SCROLL_STEP)
+	-- IN A WELL. The grid is the thing on this window that grows, and it
+	-- used to float in the frame with nothing marking where it began or
+	-- ended. Ten out of the grid's own twenty-four leaves fourteen of air
+	-- between the recess and the side of the window.
+	local scroll = W.Scroller(frame, SCROLL_STEP, { outset = 10 })
 	frame.scroll = scroll
 
 	if kind == "bags" then BuildFlyout(frame) end
+
+	-- AND PAINTED, HERE, rather than only when the skin changes. Every colour
+	-- on this window - the title's ink, both hairlines, the search field's
+	-- placeholder and its lens - was set in one function that OnSkinChanged
+	-- was the only caller of. So a freshly built window wore whatever those
+	-- pieces happened to default to until you switched skins and back, which
+	-- is why it came up with no title and no line under its header.
+	RestyleFrame(frame)
 
 	-- ESC, handled on the frame rather than through UISpecialFrames.
 	--
@@ -1628,15 +1696,21 @@ function Bags:Rebuild(frame)
 	frame.scroll:Clamp()
 
 	-- Height hugs the contents, up to the budget. Past that the grid scrolls.
-	local searchH = cfg.showSearch and (SEARCH_H + SEARCH_GAP) or 0
 	frame.search:SetShown(cfg.showSearch and true or false)
 
+	-- THE WELL'S RIM IS OUTSIDE THE SCROLL FRAME. The recess is drawn a little
+	-- larger than the thing scrolling in it, so a window sized to the scroll
+	-- frame alone is a window whose recess runs down into the footer - which
+	-- is the line cutting through the money row.
+	local out = W.WELL_OUTSET
 	local budget = math.max(160, tonumber(cfg.maxHeight) or 720)
 	local contentH = math.min(y, budget)
 	frame.scroll:ClearAllPoints()
-	frame.scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", GRID_PAD_X, -(HEAD_H + searchH))
+	frame.scroll:SetPoint("TOPLEFT", frame, "TOPLEFT",
+		GRID_PAD_X, -(HEAD_H + W.PANEL_PAD + out))
 	frame.scroll:SetSize(gridW, contentH)
-	frame:SetSize(gridW + GRID_PAD_X * 2, HEAD_H + searchH + contentH + FOOT_H)
+	frame:SetSize(gridW + GRID_PAD_X * 2,
+		HEAD_H + W.PANEL_PAD + out + contentH + out + W.PANEL_PAD + FOOT_H)
 
 	frame.used, frame.total = used, total
 
@@ -2753,7 +2827,7 @@ end
 -- skin and config
 -- ---------------------------------------------------------------------------
 
-local function RestyleFrame(frame)
+function RestyleFrame(frame)
 	if not frame then return end
 	local c = Palette.c
 
@@ -2762,7 +2836,7 @@ local function RestyleFrame(frame)
 	frame.search:ApplySkin("glassSoft")
 
 	W.Color(frame.head.title, c.text)
-	frame.head.close:Restyle(false)
+	W.RepaintClose(frame.head.close)
 	frame.head.sort:Restyle(false)
 	W.Color(frame.search.placeholder, c.textFaint)
 	if frame.search.lens then
@@ -2770,6 +2844,7 @@ local function RestyleFrame(frame)
 		frame.search.lens:SetVertexColor(t[1], t[2], t[3], (t[4] or 1) * 0.9)
 		frame.search.lensHandle:SetVertexColor(t[1], t[2], t[3], (t[4] or 1) * 0.9)
 	end
+	ColorHairline(frame.head.rule)
 	ColorHairline(frame.foot.rule)
 
 	if frame.foot.money then W.Color(frame.foot.free, c.textDim) end

@@ -1071,7 +1071,7 @@ function PF:BuildPanel()
 	self:BuildHandle()
 
 	local p = Glass.CreatePanel(UIParent, {
-		corner = 20, fill = "dialogFill", edge = "glassEdgeHi",
+		corner = W.PANEL_CORNER, fill = "dialogFill", edge = "glassEdgeHi",
 		shadow = A.db.profile.glass.shadow,
 	})
 	p:SetWidth(PANEL_W)

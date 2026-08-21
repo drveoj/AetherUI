@@ -453,8 +453,7 @@ local function DressHeading(widget)
 		local t = widget[key]
 		if t then
 			t:SetTexture(A.Media.texture.flat)
-			W.Tint(t, Palette.c.glassEdge, 0.5)
-			if t.SetHeight then t:SetHeight(A:Px(1)) end
+			W.PaintHairline(t)
 		end
 	end
 end

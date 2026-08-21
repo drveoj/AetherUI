@@ -63,6 +63,16 @@ local ART_CHILDREN = {
 -- The four a Button draws itself.
 local BUTTON_STATES = { "Normal", "Pushed", "Highlight", "Disabled" }
 
+-- How much of the accent a picked row takes. Enough to find at a glance and
+-- not enough to fight the words printed on it.
+local ROW_MARK_ALPHA = 0.14
+
+-- How far in from an edit box's own edge its text starts. A box draws from
+-- that edge, and the well we put round it has a rim there - so the caret and
+-- the first character sat on the rim. The trade skill's count box is the one
+-- that shows it plainly: a single digit hard against the side.
+local EDIT_INSET = 8
+
 -- ---------------------------------------------------------------------------
 -- finding
 -- ---------------------------------------------------------------------------
@@ -478,6 +488,28 @@ function Reskin.EditBox(box, opts)
 	Reskin.StripExcept(box, box.__aetherStripped, opts.keep)
 
 	local well = Reskin.Well(box, opts)
+
+	-- A UNIT MARK AT THE FIELD'S RIGHT EDGE, where the field has one.
+	--
+	-- The client hangs the coin off the OUTSIDE of the gold box and the INSIDE
+	-- of the silver and copper ones - +2 against -8 - because its own border
+	-- art stops ten short on the narrow pair and the overhang had to be filled.
+	-- With that art gone and one of our pills drawn to the box's real bounds,
+	-- the row came up with one coin clear of its field and two sitting in
+	-- theirs. Where the mark goes is the FIELD's business, not each coin's.
+	--
+	-- At the text inset, so the mark begins exactly where the digits stop -
+	-- there is no room to put it outside, the gap to the next field is sixteen
+	-- and a coin is thirteen.
+	local pad = opts.inset or EDIT_INSET
+	local mark = opts.unit
+	if mark and mark.ClearAllPoints then
+		mark:ClearAllPoints()
+		mark:SetPoint("LEFT", box, "RIGHT", -pad, 0)
+	end
+	if box.SetTextInsets then
+		box:SetTextInsets(pad, pad, 0, 0)
+	end
 	Reskin.Font(box, opts.style or "qlRow")
 	A.Widgets.Color(box, A.Palette.c.text)
 	return well
@@ -557,26 +589,105 @@ local ARROW_GLYPH = 10
 --  So both go, and one of our surfaces goes back with our own chevron on it.
 --  `facing` is a plain compass direction, turned by the one piece of code
 --  that owns which way a chevron points.
+-- The two marks a page turn wears. Angle quotes rather than Blizzard's
+-- engraved arrows: with the art off there is nothing left on the button to
+-- click at all.
+local GLYPH_PREV, GLYPH_NEXT = string.char(226, 128, 185), string.char(226, 128, 186)
+
+--- Every button on a frame that is really a button, dressed as one.
+--
+--  Found by SHAPE - a Button with a label on it - because these windows carry
+--  a dozen between them across three game versions and naming them all is a
+--  list that goes stale. Create, Create All, Close, Send, Reply, Delete.
+--
+--  `skip` is the set that is NOT one, and it is the whole reason this is a
+--  function rather than a loop written out three times. A LIST ROW is a Button
+--  with a label on it too: every recipe in a trade skill, every letter in the
+--  postbox. Swept by shape they all got a pressable surface, and the list came
+--  up as a column of pills - which is not how a row is drawn anywhere else in
+--  this interface. Three separate sweeps had the same bug because there were
+--  three separate sweeps.
+function Reskin.Buttons(frame, style, skip)
+	if not (frame and frame.GetChildren) then return end
+
+	for _, child in ipairs({ frame:GetChildren() }) do
+		if child.GetObjectType and child:GetObjectType() == "Button"
+			and child.GetFontString and child:GetFontString()
+			and not (skip and skip[child]) and not child.__aetherSkin then
+			Reskin.Button(child, style)
+		end
+	end
+end
+
+--- A page turn: one mark on a bare button, and nothing round it.
+--
+--  ONE LOOK FOR ALL OF THEM. There were two: the spellbook's, which is a mark
+--  on nothing, and the postbox's, which is a filled circle - and they are the
+--  same control doing the same job one window apart. 15c: a chevron means
+--  navigation, and navigation reads as chrome, not as an action you choose.
+function Reskin.PageTurn(btn, facing, store)
+	if not btn then return nil end
+
+	Reskin.ClearButton(btn)
+	if type(store) == "table" then Reskin.Strip(btn, store) end
+
+	-- The circle comes off too, for a button that used to wear one.
+	if btn.__aetherRound then btn.__aetherRound:Hide() end
+	if btn.__aetherSkin then btn.__aetherSkin:Hide() end
+
+	local mark = btn.__aetherMark
+	if not mark then
+		mark = A.Widgets.Text(btn, "pnTitle", "CENTER")
+		mark:SetPoint("CENTER", btn, "CENTER", 0, 0)
+		btn.__aetherMark = mark
+	end
+	-- AND THE WORD COMES OFF. The postbox's turns carry "Prev" and "Next", and
+	-- each is anchored OUTSIDE its own button - Prev's to the right of it,
+	-- Next's to the left - so two turns a chevron apart print one word over the
+	-- other. The mark says which way it goes; saying it twice is what made it
+	-- unreadable.
+	--
+	-- A REGION OF THE BUTTON, not the button's own label: it is an unnamed
+	-- FontString in the artwork layer, so GetFontString never sees it and
+	-- clearing that alone left both words exactly where they were.
+	local word = btn.GetFontString and btn:GetFontString()
+	if word and word.SetText then word:SetText("") end
+	if btn.GetRegions then
+		for _, r in ipairs({ btn:GetRegions() }) do
+			-- Not our own mark, which is a region of the button too. It happens
+			-- to be re-set a line later, but a sweep that relies on the order of
+			-- the two is a sweep that breaks the day either moves.
+			if r ~= mark and r.GetObjectType
+				and r:GetObjectType() == "FontString" and r.SetText then
+				r:SetText("")
+			end
+		end
+	end
+
+	mark:SetText(facing == "RIGHT" and GLYPH_NEXT or GLYPH_PREV)
+	A.Widgets.Color(mark, A.Palette.c.textDim)
+	mark:Show()
+	return mark
+end
+
 function Reskin.ArrowButton(btn, facing, store)
 	if not btn then return nil end
 
 	Reskin.ClearButton(btn)
 	if type(store) == "table" then Reskin.Strip(btn, store) end
 
+	-- A CIRCLE, which is what a pager is in this interface. It was the shared
+	-- button surface - a rounded rectangle, the same one Create and Send wear -
+	-- and a page turner is not an action you read and choose, it is a direction.
 	if not btn.__aetherArrow then
-		A.Widgets.SkinButton(btn, {})
-		local arrow = btn:CreateTexture(nil, "OVERLAY")
-		arrow:SetTexture(A.Media.texture.chevron)
-		arrow:SetSize(ARROW_GLYPH, ARROW_GLYPH)
-		arrow:SetPoint("CENTER", btn, "CENTER", 0, 0)
-		btn.__aetherArrow = arrow
+		A.Widgets.RoundButton(btn, { attach = btn, fill = "glassSoft" })
+		btn.__aetherArrow = btn.__aetherRound
+		btn.__aetherArrow:SetTexture(A.Media.texture.chevron)
+		btn.__aetherArrow:SetSize(ARROW_GLYPH, ARROW_GLYPH)
 	end
 
 	A.Widgets.FaceChevron(btn.__aetherArrow, facing)
-	local c = A.Palette.c.text
-	if btn.__aetherArrow.SetVertexColor then
-		btn.__aetherArrow:SetVertexColor(c[1], c[2], c[3])
-	end
+	A.Widgets.PaintRound(btn, false)
 	return btn.__aetherArrow
 end
 
@@ -650,11 +761,42 @@ end
 --
 --  Only the frame's REGIONS go. Its content is a child frame, not a region,
 --  so there is nothing here that can take the thing you came to read.
-function Reskin.ScrollFrame(sf, store)
+--  `opts.headroom` reaches the well UP past the scroll frame, for a window
+--  whose list carries a control or two above it - a collapse-all, a progress
+--  bar. Those are content: they act on the list and belong in the recess with
+--  it rather than floating between two wells on bare glass.
+function Reskin.ScrollFrame(sf, store, opts)
 	if not sf then return nil end
+	opts = opts or {}
 
 	sf.__aetherStore = sf.__aetherStore or {}
 	Reskin.Strip(sf, sf.__aetherStore)
+
+	-- IN A WELL, like every other list in this interface. 15b: anything that
+	-- can grow sits in a recess, and the recess is the ONLY scroll container.
+	-- Our own windows have had this since the quest log was built; the
+	-- client's never did, so a trade skill's recipe list and its detail pane
+	-- floated on bare glass with nothing marking where either began or ended.
+	--
+	-- Below the scroll frame, not around it: the rows are children of the
+	-- scrolling child and draw over anything at the scroll frame's own level.
+	local well = sf.__aetherWell
+	if not well then
+		local host = (sf.GetParent and sf:GetParent()) or sf
+		well = A.Widgets.ContentWell(host)
+		well:SetFrameLevel(math.max(0, (sf:GetFrameLevel() or 1) - 1))
+		if well.EnableMouse then well:EnableMouse(false) end
+		sf.__aetherWell = well
+	end
+
+	-- RE-ANCHORED EVERY TIME, not only when the well is built: the headroom
+	-- above a list is the room a control needs, and what is up there can change
+	-- between one dress and the next.
+	local out = well.__aetherWellOut or 0
+	well:ClearAllPoints()
+	well:SetPoint("TOPLEFT", sf, "TOPLEFT", -out, out + (opts.headroom or 0))
+	well:SetPoint("BOTTOMRIGHT", sf, "BOTTOMRIGHT", out, -out)
+	well:ApplySkin("wellFill", "wellEdge")
 
 	local bar = Reskin.Element(sf, "ScrollBar")
 	if bar then
@@ -731,67 +873,76 @@ end
 -- Air between a check box and the words beside it.
 local CHECK_LABEL_GAP = 6
 
---- A check box: box art off, the tick kept and re-tinted.
+--- One of the client's toggles, in our own chip: its art off and ours on.
 --
---  The tick is the one part worth keeping - it reads as a tick at any size and
---  nothing of ours would read better. Only the box around it goes.
-function Reskin.CheckBox(box, store)
+--  `round` makes it a radio rather than a check box. Both go through here
+--  because everything below is the same for the two of them - the sweep, the
+--  chip, the state, the label off the mark's edge - and the shape is the only
+--  thing that differs. Written as two functions, the postbox's pair would have
+--  been the third copy of a label anchor that had already drifted twice.
+local function Toggle(box, store, round)
 	if not box then return end
 
 	Reskin.ClearButton(box)
 
-	-- EVERYTHING BUT THE TICK. The tick is a region of the button like the box
-	-- around it, so a plain strip takes both - and a check box with no tick in
-	-- it is a check box that never looks checked, whatever the client thinks its
-	-- state is.
-	local checked = box.GetCheckedTexture and box:GetCheckedTexture()
-	if type(store) == "table" then
-		ClearRegions(box, store, checked and { [checked] = true } or nil)
+	-- EVERYTHING, THE CLIENT'S TICK INCLUDED. It used to be spared, and the
+	-- box carried Blizzard's own check mark: their art, in their weight, in
+	-- the middle of a control that is otherwise entirely ours. The atlas has
+	-- had a tick on it since the console's channel list needed one.
+	if type(store) == "table" then Reskin.Strip(box, store) end
+
+
+	-- THE SHAPE SAYS WHICH IT IS. Square is on or off; round is one of
+	-- several. Blizzard draws BOTH as a round badge, so an independent toggle
+	-- said the wrong thing about what pressing it does before anybody had read
+	-- the label beside it - and it was drawn at the client's own button width,
+	-- which is the hit area rather than the mark, so it came out the size of a
+	-- bag slot.
+	local chip = A.Widgets.CheckBox(box, { attach = box, round = round })
+	A.Widgets.CheckState(box, box.GetChecked and box:GetChecked() or false)
+
+	-- AND IT ANSWERS THE CLIENT. A check box is toggled by Blizzard's own
+	-- OnClick as often as by ours, and a mark drawn once at dress time is a
+	-- mark that is right until the first press.
+	if box.HookScript and not box.__aetherCheckHook then
+		box.__aetherCheckHook = true
+		box:HookScript("OnClick", function(self)
+			A.Widgets.CheckState(self, self.GetChecked and self:GetChecked())
+		end)
+		box:HookScript("OnShow", function(self)
+			A.Widgets.CheckState(self, self.GetChecked and self:GetChecked())
+		end)
 	end
 
-	if checked and checked.SetVertexColor then
-		local c = A.Palette.c.text
-		checked:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
-	end
-
-	-- AND ITS LABEL OFF THE EDGE OF IT. Blizzard's check box art is a small
-	-- square inside a larger transparent button, so a label anchored flush to
-	-- that button still cleared the box by several pixels. Ours fills the
-	-- button, and the words ended up touching it.
+	-- AND ITS LABEL OFF THE EDGE OF THE MARK, not off the edge of the button.
+	--
+	-- Blizzard's check box is a small square inside a much larger transparent
+	-- hit area, and its label is anchored flush to that - which clears the
+	-- square by several pixels. Ours is the size of the MARK and centred in
+	-- the hit area, so measuring the gap from the button's left edge put the
+	-- words underneath it. The mark is the thing the words have to clear, so
+	-- the mark is what they hang off.
 	local label = Reskin.Element(box, "Text")
-	if label and label.SetPoint and not box.__aetherBoxLabel then
-		box.__aetherBoxLabel = true
+	if label and label.SetPoint then
 		label:ClearAllPoints()
-		label:SetPoint("LEFT", box, "RIGHT", CHECK_LABEL_GAP, 0)
+		label:SetPoint("LEFT", chip, "RIGHT", CHECK_LABEL_GAP, 0)
+		box.__aetherBoxLabel = true
 	end
-
-	-- The chip once; the clearing above on every pass, for the same reason
-	-- Slot re-clears - off gives the client its art back.
-	if box.__aetherCheck then
-		box.__aetherCheck:SetColors(A.Palette.c.glass, A.Palette.c.glassEdgeHi)
-		return box.__aetherCheck
-	end
-
-	-- A BADGE, NOT A PILL. A pill whose width equals its height is a circle made
-	-- of two cap slices meeting in the middle with a zero-width centre between
-	-- them - the seam Core\Glass.lua's header warns about, and the one place
-	-- snapping cannot save it. That came back as the jagged ring reported around
-	-- this box, and W.CreateBadge exists because the tooltip's level chip and
-	-- Zen's corner glyph both learned it first: chip art authored at 64 for a
-	-- disc drawn near 26, rather than a shape stretched into a circle.
-	local size = (box.GetWidth and box:GetWidth()) or 26
-	local chip = A.Widgets.CreateBadge(box, { size = size })
-	chip:SetPoint("CENTER", box, "CENTER", 0, 0)
-	chip:SetFrameLevel(math.max(0, box:GetFrameLevel() - 1))
-	chip:SetColors(A.Palette.c.glass, A.Palette.c.glassEdgeHi)
-
-	-- A badge carries a number. This one carries the client's own tick, which is
-	-- a region of the button above it.
-	chip.label:Hide()
 
 	box.__aetherCheck = chip
 	return chip
 end
+
+--- A check box: on or off, on its own.
+function Reskin.CheckBox(box, store) return Toggle(box, store, false) end
+
+--- A radio button: one of several, so a disc rather than a box.
+--
+--  The others in its group are turned off by the client CALLING SetChecked on
+--  them rather than by anybody clicking them, so the hook above cannot see it
+--  happen. Whatever drives the group has to say so - see the postbox, where
+--  both paths go through one global and that is what is hooked.
+function Reskin.Radio(box, store) return Toggle(box, store, true) end
 
 -- A tree's disclosure marks, in type rather than in Blizzard's stone buttons.
 -- U+2212, the real minus: a hyphen next to a full-height plus reads as a dash
@@ -831,6 +982,34 @@ function Reskin.Collapse(btn, style)
 	glyph:SetText(btn.isExpanded and GLYPH_MINUS or GLYPH_PLUS)
 	A.Widgets.Color(glyph, A.Palette.c.textDim)
 	return glyph
+end
+
+--- The bar the client slides onto whichever row is picked, in our own ink.
+--
+--  Every one of these windows keeps ONE highlight frame and moves it onto the
+--  row you clicked, with Blizzard's blue listbox slice drawn on it. Stripping
+--  it leaves the list with nothing at all saying which row you are on; leaving
+--  it leaves somebody else's blue lying across our glass.
+--
+--  A wash rather than a slice: the accent at a low alpha across the whole
+--  frame, which is what a selected row looks like everywhere else in this
+--  interface.
+function Reskin.RowMark(frame, store)
+	if not frame then return nil end
+
+	Reskin.Strip(frame, store)
+
+	local wash = frame.__aetherRowMark
+	if not wash then
+		wash = frame:CreateTexture(nil, "BACKGROUND")
+		wash:SetTexture(A.Media.texture.flat)
+		wash:SetAllPoints(frame)
+		frame.__aetherRowMark = wash
+	end
+
+	local c = A.Palette.c.accent
+	wash:SetVertexColor(c[1], c[2], c[3], ROW_MARK_ALPHA)
+	return wash
 end
 
 function Reskin.ReleaseCollapse(btn)
@@ -920,6 +1099,15 @@ end
 
 function Reskin.Font(fs, style, lighten)
 	if not fs or not fs.GetFont or not fs.SetFont then return end
+
+	-- A STRING, NOT A FRAME. Four of the lines on the postbox's receipt LOOK
+	-- like text and are MoneyFrames - gold, silver and copper each in a string
+	-- of their own - and a caller naming them alongside the real strings is a
+	-- caller who has not looked. Nothing is styled by being the wrong shape.
+	if fs.GetObjectType then
+		local kind = fs:GetObjectType()
+		if kind ~= "FontString" and kind ~= "SimpleHTML" then return end
+	end
 	if Reskin.SimpleHTML(fs, style, lighten) then return end
 
 	local _, size = fs:GetFont()

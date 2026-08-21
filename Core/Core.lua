@@ -562,12 +562,15 @@ function A:Greet()
 	-- sends people somewhere that does not list any.
 	A:Print(A.Hi("/aether") .. " settings  ·  " .. A.Hi("/aether help") .. " commands"
 		.. "  ·  " .. A.Hi("/aether errors") .. " bug report"
-		.. "  ·  Please join discord at " .. A.Hi("discord.gg/drveoj")
+		.. "  ·  Please join discord at " .. A.Gold("discord.gg/drveoj")
 		.. " for support")
 	-- WHERE TO ASK, on the same line rather than a third. Two lines is the
 	-- whole budget - a greeting long enough to scroll the chat frame is one
-	-- people turn off - and the suite holds us to it. The address is
-	-- highlighted because it is the part somebody has to copy.
+	-- people turn off - and the suite holds us to it.
+	--
+	-- THE ADDRESS IS GOLD, and the three commands beside it are the accent.
+	-- It was the accent too, which made it read as a fourth command rather
+	-- than as the one thing on the line you are meant to copy.
 end
 
 A:RegisterEvent(A, "ADDON_LOADED", function(_, _, addon)

@@ -1252,10 +1252,44 @@ local function PartyFramesGroup()
 		placement = note("The four slots are fixed and the group moves as one: unlock with " .. A.Hi("/aether unlock") .. " and drag any part of the stack.\n\nA slot whose member has gone leaves a gap rather than closing up. Re-anchoring a frame you can click to target is refused by the game in combat, which is exactly when somebody drops group - so the slots stay where you put them."),
 	})
 end
+--- Threat. Three controls and no thresholds: the 70 and the 90 are the
+--  handoff's and are deliberately not a setting - a player who moves them is a
+--  player whose ring means something different from everybody else's.
+local function ThreatGroup()
+	local function at(k) return { "modules", "threat", k } end
+	return group("Threat", {
+		enabled = toggle("Enabled", "The ring round your class pip, the warning"
+			.. " on the capsule when a state is about to flip, and the"
+			.. " disposition colour on a hostile nameplate.", at("enabled")),
+		display = choice("Show", "Rings only keeps the ring and drops the"
+			.. " warnings written on the capsule - quieter, and it still tells"
+			.. " you the number at a glance.", at("display"), {
+				full  = "Rings and warnings",
+				rings = "Rings only",
+				off   = "Nothing",
+			}),
+		alarms = toggle("Screen flash and ping", "On your own state only, and"
+			.. " never more than once every six seconds. This is the one that"
+			.. " stops you learning you have aggro from the damage numbers.",
+			at("alarms")),
+
+		role = choice("Your role", "Everything here inverts on role: holding a"
+			.. " mob is the good state for a tank and the bad one for everybody"
+			.. " else. Classic Era's assigned roles are opt-in and usually say"
+			.. " nothing at all, so Automatic reads your stance, form or aura"
+			.. " instead - and this is here for when that is wrong.",
+			at("role"), {
+				auto   = "Automatic",
+				tank   = "Tank",
+				damage = "Damage or healing",
+			}),
+	})
+end
 local PAGE_ORDER = {
 	general = 1, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
 	minimap = 6, quests = 7, bags = 8, chat = 9, tooltips = 10,
 	toolbox = 11, fader = 12, xpbar = 13, nameplates = 14, ifec = 15,
+	threat = 15.5,
 	conveniences = 16, gameown = 17,
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
@@ -1315,6 +1349,7 @@ function Options:Build()
 			xpbar = XPGroup(),
 			ifec = IFECGroup(),
 			nameplates = NameplatesGroup(),
+			threat = ThreatGroup(),
 			conveniences = ConveniencesGroup(),
 			gameown = GameOwnGroup(),
 			changelog = ChangelogGroup(),

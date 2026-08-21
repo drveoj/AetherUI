@@ -52,16 +52,72 @@ local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 -- client by the stone border drawn over the join, and not hidden once that
 -- border is off. The glass follows it down, or the tabs sit outside.
 local MAIL_TAB_DROP = 40
+-- Letters on a page of the inbox. Seven, and the client pages rather than
+-- scrolls: the postbox holds fifty and shows a page of these at a time, which
+-- is what its Prev and Next are for.
+local MAIL_ROWS     = 7
+-- Item slots on a letter, which the client also places from Lua.
+local MAIL_ATTACHMENTS = 16
+-- Ink below this is the client writing for parchment; ink above it is the
+-- client meaning something - a gold subject, a red loss.
+local RECEIPT_DARK  = 0.5
+
+-- The rank switch's row at the top of the spellbook's well: the switch, and
+-- the gap to the first spell under it. The well's own padding is not in here -
+-- LayoutBody puts every window's content inside that already.
+local RANKS_ROW        = 22 + W.PANEL_GAP
+
+-- Room kept at the top of a crafting window's LIST well, INSIDE the recess,
+-- for the All control and the progress bar under it. Two lines, the gap
+-- between them, then the body's own gap down to the first recipe.
+--
+-- DECLARED HERE, above the panel list that uses it. Written below, it was nil
+-- when the table was built - so the entry carried an empty lead and the list
+-- never made room for anything. That is the fourth constant this file has had
+-- read before it existed.
+local SKILL_ALL_H      = 22
+local SKILL_BAR_H      = 16
+local SKILL_HEAD       = SKILL_ALL_H + 6 + SKILL_BAR_H + W.PANEL_GAP
+
+-- And room over the DETAIL pane for the two filters, which belong to it: they
+-- change what the list shows and the list is what the detail is read from.
+-- OUTSIDE its well rather than in it - a filter is chrome, and chrome does not
+-- go in a recess. So the recess on that side starts this much lower.
+local SKILL_FILTER_H   = 26
+local SKILL_FILTERS    = SKILL_FILTER_H + W.PANEL_GAP
 
 local PANELS = {
-	{ frame = "CharacterFrame", insets = { 10, -10, -30, 26 } },
+	-- ITS TITLE IS THE NAME AND ITS SUBTITLE IS THE CLASS LINE. Neither is
+	-- the frame's own $parentTitleText, which this window never fills in.
+	--
+	-- AND THE PET TAB BRINGS ITS OWN PAIR. The window is one frame with five
+	-- panes in it, and on that pane the thing the header is naming is not you.
+	{ frame = "CharacterFrame", insets = { 10, -10, -30, 26 },
+		title = "CharacterNameText", subtitle = "CharacterLevelText",
+		panes = {
+			{ pane = "PetPaperDollFrame",
+				title = "PetNameText", subtitle = "PetLevelText" },
+		},
+		-- THE FIVE TABS. Every one is setAllPoints to the window, so moving
+		-- the pane carries every slot, string and model hanging off it - and
+		-- each is measured on its own, because they do not agree about where
+		-- their content begins: the first equipment slot is 74 below the
+		-- frame, the reputation columns are headed at 57 and the skill
+		-- list's ALL tab sits at 49.
+		body = { "PaperDollFrame", "PetPaperDollFrame", "ReputationFrame",
+			"SkillFrame", "HonorFrame" } },
 	-- SOMEBODY ELSE'S, which is not the same window and not the same shape.
 	-- The character sheet is the old parchment build with a wide margin; this
 	-- one is ButtonFrameTemplate, so tight - and its two tabs hang off the
 	-- bottom edge outside its own art the way the vendor's do, which is what
 	-- the negative inset is for.
 	{ frame = "InspectFrame", addon = "Blizzard_InspectUI", tight = true,
-		insets = { 0, 0, 0, -34 } },
+		insets = { 0, 0, 0, -34 },
+		title = "InspectNameText", subtitle = "InspectLevelText",
+		-- Its two tabs, moved into the recess the way the character sheet's four
+		-- are. Same shape, same problem: every one of them starts in the strip
+		-- the stone title plate used to need.
+		body = { "InspectPaperDollFrame", "InspectHonorFrame" } },
 	-- The spellbook names none of its parts the way the others do: its title is
 	-- a global of its own rather than $parentTitleText, its close button is
 	-- SpellBookCloseButton rather than $parentCloseButton, and its tabs are
@@ -73,17 +129,23 @@ local PANELS = {
 		insets      = { 4, -4, -4, 24 },
 		title       = "SpellBookTitleText",
 		close       = "SpellBookCloseButton",
-		closeCorner = true,
 		tabs        = "SpellBookFrameTabButton",
+		-- The rank switch sits above the spells in the recess, which is
+		-- RANKS_ROW of reserved room over whatever the page measures at.
+		lead        = RANKS_ROW,
+		body        = { "SpellBookSpellIconsFrame" },
 	},
-	-- The talent frame names its parts the usual way, but it puts its close
-	-- button 44 in and 25 down like the spellbook does - in the middle of a
-	-- stone rim that comes off with the rest of the art.
 	{
 		frame       = "PlayerTalentFrame",
 		addon       = "Blizzard_TalentUI",
 		insets      = { 4, -4, -4, 24 },
-		closeCorner = true,
+		-- "Points spent in Fire Talents: 0" is a status line about the tab
+		-- you are on - the same shape as the character sheet's class line
+		-- under your name, and it changes with the tab exactly as the pet's
+		-- does. So it is this window's SUBTITLE, which gives it the taller
+		-- band and a place of its own instead of a line jammed against the
+		-- title above and the talent grid below.
+		subtitle    = "PlayerTalentFrameSpentPointsText",
 	},
 	{ frame = "TalentFrame",       addon = "Blizzard_TalentUI" },
 	{ frame = "FriendsFrame" },
@@ -103,28 +165,140 @@ local PANELS = {
 	-- rather than sniffed at runtime, because "does this frame have a
 	-- TitleContainer" is true of windows on both templates and answers a
 	-- different question.
-	{ frame = "GossipFrame",   tight = true },
+	{ frame = "GossipFrame",   tight = true,
+		-- WHAT YOU CAN SAY, which is a scroll box with no name of its own - the
+		-- modern templates stopped naming things globally, so it is reached by
+		-- the path through the window instead. The client hangs it off the WINDOW
+		-- at 8 in and 65 down: the strip its stone title plate used to need, and
+		-- neither our band nor our padding.
+		body = { "GossipFrame.GreetingPanel.ScrollBox" },
+		-- Goodbye sat in the window's bottom right corner, four up from the glass
+		-- and under the recess. 15a: actions live in a strip of their own.
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "GossipFrame.GreetingPanel.GoodbyeButton" } },
+		-- HOW WELL THIS ONE KNOWS YOU, where they are somebody who keeps track.
+		-- Most are not, so the row is empty on nearly every NPC in the game - and
+		-- an empty row still cost the body forty-two units until it was measured
+		-- rather than declared.
+		row = { left = { "GossipFrame.FriendshipStatusBar" } } },
 	-- The vendor's glass reaches BELOW the frame, which is the one place an
 	-- inset goes negative. Blizzard hangs this window's tabs off the bottom
 	-- edge, outside its own art - so trimmed to the frame the tab row landed on
 	-- top of the buyback row, the repair buttons and your purse all at once.
 	-- Thirty-four is the tab strip plus air.
-	{ frame = "MerchantFrame", tight = true, insets = { 0, 0, 0, -34 } },
-	{ frame = "TradeFrame",    tight = true },
+	-- ITS TITLE IS WHO YOU ARE BUYING FROM. The frame's own $parentTitleText
+	-- says "Merchant", which is what the window plainly is; the vendor's name
+	-- is the thing worth putting in the band, and the client hangs it off its
+	-- portrait rather than naming it after the frame.
+	{ frame = "MerchantFrame", tight = true, insets = { 0, 0, 0, -34 },
+		title = "MerchantNameText",
+		-- ITS REPAIR BUTTONS AND YOUR PURSE ARE A FOOTER. Both are anchored
+		-- to the window's bottom edge, so the recess has to stop above them
+		-- rather than run down through the money row.
+		footer = W.PANEL_FOOT_H,
+		-- ITS PAGE TURNERS GO IN THE FOOTER. 15c: a page turn is chrome and
+		-- never floats in the body. These sat inside the recess, over the last
+		-- row of what you were being sold - and they are laid out by the same
+		-- line as every other window's actions rather than by a page-turn one.
+		actions = { mid = { "MerchantPrevPageButton", "MerchantPageText",
+			"MerchantNextPageButton" } },
+		-- AND IT HAS NO PANE. Its ten rows are children of the window itself,
+		-- but only the FIRST is anchored to it - the other nine chain off that
+		-- one - so moving it moves the grid and leaves the page turners and
+		-- the money row where they belong, on the window's own edges.
+		body = { "MerchantItem1" } },
+	{ frame = "TradeFrame",    tight = true,
+		-- A DOZEN PIECES, ALL HUNG OFF THE FRAME at their own fixed offsets: two
+		-- names five units down, two purses at sixty, two columns of slots at
+		-- eighty-nine. `together` because shifting each by what IT is short of
+		-- squeezes the window: the names would travel eighty units and the slots
+		-- eight, and what was a layout becomes a heap.
+		together = true,
+		body = { "TradeFramePlayerNameText", "TradeFrameRecipientNameText",
+			"TradePlayerItemsInset", "TradeRecipientItemsInset",
+			"TradePlayerInputMoneyInset", "TradeRecipientMoneyInset",
+			"TradePlayerItem1", "TradeRecipientItem1",
+			"TradePlayerInputMoneyFrame", "TradeRecipientMoneyFrame" },
+		-- Trade and Cancel sat in the bottom right corner, five up from the
+		-- glass and under the recess.
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "TradeFrameTradeButton",
+			"TradeFrameCancelButton" } } },
 	-- 62 at the foot, because that is where this window's buttons are: Accept,
 	-- Complete Quest and Cancel all sit 72 up from the bottom edge, and the art
 	-- below them is margin. Trimmed to 22 the glass ran a hand's width past the
 	-- last thing in the window.
-	{ frame = "QuestFrame",        insets = { 8, -8, -28, 62 } },
+	{ frame = "QuestFrame",        insets = { 8, -8, -28, 62 },
+		-- WHO IS TALKING is the title, and this window never had one: its name
+		-- string is QuestFrameNpcNameText, hung off a frame called
+		-- QuestNpcNameFrame - so the "name + Text" that finds every other
+		-- window's title looks up QuestNpcNameFrameText and finds nothing. It
+		-- was being roled by hand in the interior below instead, which is why it
+		-- sat where the parchment wanted it rather than in the band.
+		title = "QuestFrameNpcNameText",
+		-- Four panels, one up at a time, and no tab anywhere to say which. Named
+		-- so the band and the strip are redrawn when the client swaps them.
+		panes = {
+			{ pane = "QuestFrameDetailPanel" },
+			{ pane = "QuestFrameProgressPanel" },
+			{ pane = "QuestFrameRewardPanel" },
+			{ pane = "QuestFrameGreetingPanel" },
+		},
+		-- ACCEPT AT ONE END AND DECLINE AT THE OTHER. Every one of these is
+		-- anchored to a bottom CORNER of a window 384 across, with the whole
+		-- quest between them. 15a puts them in the strip, together.
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = {
+			"QuestFrameAcceptButton", "QuestFrameDeclineButton",
+			"QuestFrameCompleteButton", "QuestFrameGoodbyeButton",
+			"QuestFrameCompleteQuestButton", "QuestFrameCancelButton",
+			"QuestFrameGreetingGoodbyeButton",
+		} },
+		-- The quest itself. Each panel prints it in a scroll frame anchored to
+		-- the WINDOW rather than to the panel, 23 in and 81 down - the margin the
+		-- parchment used to need.
+		body = { "QuestDetailScrollFrame", "QuestProgressScrollFrame",
+			"QuestRewardScrollFrame", "QuestGreetingScrollFrame" } },
 	{ frame = "ClassTrainerFrame", addon = "Blizzard_TrainerUI",
-	                               insets = { 8, -8, -28, 22 } },
+		insets = { 8, -8, -28, 22 },
+		-- The filter over the list it filters. Your purse is NOT up here with it:
+		-- what it says is what the thing you are about to buy will leave you
+		-- with, so it belongs beside the Train button, in the strip.
+		row = {
+			right = { "ClassTrainerFrameFilterDropDown" },
+		},
+		-- TRAIN, TRAIN ALL AND CLOSE, centred in the strip, with the purse pinned
+		-- to its left end. The client puts all four at fixed offsets from the
+		-- window's TOPLEFT, 420 down a frame that is no longer that tall - so they
+		-- sat across the foot of both recesses.
+		--
+		-- Train All has no name of its own, so it cannot be listed: it is an
+		-- anonymous child whose label is ClassTrainerFrameText. The window's own
+		-- dresser finds all three by shape and registers them.
+		actions = { left = { "ClassTrainerMoneyFrame" } },
+		-- The two lists, so they clear the band and the body padding.
+		body = { "ClassTrainerListScrollFrame", "ClassTrainerDetailScrollFrame" },
+		-- AND THE ROWS THAT GO IN THE LIST, which are not in it: this is a faux
+		-- scroll frame - the client hangs eleven row buttons off the WINDOW and
+		-- scrolls them by refilling. So the list moved into the recess and left
+		-- every skill behind, printed on the glass above an empty box.
+		inside = { ClassTrainerSkill1 = "ClassTrainerListScrollFrame" },
+		-- ...which are wells in their own right, so no recess round the pair.
+		wells = false,
+		footer = W.PANEL_FOOT_H },
 	-- The flight map IS a region of the frame, so the sweep that takes the
 	-- parchment takes the map with it and leaves the nodes floating in the
 	-- dark. Its close button is TaxiCloseButton, not TaxiFrameCloseButton,
 	-- which is why it kept the client's red X.
 	{ frame = "TaxiFrame",         insets = { 8, -8, -28, 22 },
 	                               close = "TaxiCloseButton",
-	                               keep  = { "TaxiMap" } },
+	                               keep  = { "TaxiMap" },
+		-- THE MAP AND THE ROUTES DRAWN OVER IT, moved together - two pieces at
+		-- the same offset, and a shift measured per piece would part them. The
+		-- flight points themselves are anchored to the MAP's own corner by the
+		-- client, so every node comes with it.
+		together = true,
+		body = { "TaxiMap", "TaxiRouteMap" } },
 
 	-- NOT GuildFrame. The old FriendsFrame XML still defines a GuildFrame pane,
 	-- setAllPoints inside the social window, and this list used to name it as a
@@ -133,7 +307,10 @@ local PANELS = {
 	-- sees it either way: the guild button on this client opens Communities.
 	{ frame = "CommunitiesFrame",  addon = "Blizzard_Communities" },
 	{ frame = "WorldMapFrame",     addon = "Blizzard_WorldMap" },
-	{ frame = "GameMenuFrame" },
+	-- IT LAYS ITSELF OUT. A VerticalLayoutFrame places its buttons from
+	-- layoutIndex on every show, so nudging one is undone before you see it -
+	-- and its first button, Options, sat straight across the header's hairline.
+	{ frame = "GameMenuFrame", layout = true },
 	{ frame = "HelpFrame",         addon = "Blizzard_HelpFrame" },
 	-- The Options window itself. Our own settings page lives inside it, and
 	-- skinning the page while leaving the frame around it in stone is the
@@ -144,12 +321,78 @@ local PANELS = {
 	-- bottom edge outside its own art the way the vendor's do, and trimmed to
 	-- the frame the Inbox and Send Mail tabs land outside the glass.
 	{ frame = "MailFrame", tight = true, insets = { 0, 0, 0, -MAIL_TAB_DROP - 8 },
-		tabs = "MailFrameTab" },
+		tabs = "MailFrameTab",
+		-- ITS TITLE IS PER TAB. The frame's own $parentTitleText is never
+		-- filled in; the words are INBOX and SEND MAIL, one on each pane, and
+		-- the client prints them inside the pane rather than in the band. Same
+		-- shape as the character sheet's pet tab, so the same mechanism.
+		panes = {
+			{ pane = "InboxFrame",    title = "InboxTitleText" },
+			{ pane = "SendMailFrame", title = "SendMailTitleText" },
+		},
+		-- AND BOTH PANES ARE MOVED, which they never were: this window had no
+		-- body at all, so everything the client hangs off either pane stayed in
+		-- the strip its stone title plate used to need. On the inbox that is only
+		-- the first row; on Send Mail it is the whole form, which came up with To,
+		-- Subject, the letter, the attachments and the money row overlapping.
+		body = { "InboxFrame", "SendMailFrame" },
+		-- ITS ACTIONS WERE IN THE BODY, hard against the last letter in the list -
+		-- the client hangs all four 114 up from the window's bottom edge, which in
+		-- a window this shape is inside the recess. 15a: they go in a strip, and
+		-- the strip is what keeps them clear of the content above.
+		--
+		-- Both panes' worth, because the strip is laid out for whatever is UP: the
+		-- page turns and Open All while you are reading, Send and Cancel while you
+		-- are writing.
+		footer = W.PANEL_FOOT_H,
+		actions = {
+			mid   = { "InboxPrevPageButton", "InboxNextPageButton",
+				"SendMailMailButton", "SendMailCancelButton" },
+			-- Open All is an ACTION and the turns either side of it are
+			-- NAVIGATION. On one line they read as three of a kind; under them it
+			-- reads as the thing you do to the page you are looking at.
+			--
+			-- The turns stay even though this client's inbox also scrolls: they are
+			-- the client's own, they still work, and replacing a list that works with
+			-- one of ours to be rid of two buttons is not a trade worth making.
+			under = { "OpenAllMail" },
+		} },
 
 	-- A LETTER OR A BOOK out of your bags. Also ButtonFrameTemplate, and
 	-- what is inside it is printed on paper - so its text is lifted the way
 	-- the quest giver's is.
-	{ frame = "ItemTextFrame", tight = true },
+	-- THE LETTER ITSELF, which is a window of its own and was in none of these
+	-- lists - so it came up in the client's own stone beside a postbox in
+	-- glass. ButtonFrameTemplate, like the postbox, and its three actions are
+	-- chained off the bottom right corner the same way.
+	{ frame = "OpenMailFrame", tight = true,
+		title = "OpenMailTitleText",
+		-- AS TALL AS THE POSTBOX BESIDE IT. The client hangs this off the inbox's
+		-- top right corner and gives it a height of its own, so the pair came up
+		-- as two windows of different sizes side by side.
+		matchHeight = "MailFrame",
+		-- WHO IT IS FROM AND WHAT IT IS ABOUT are body content: the client hangs
+		-- both off the window's own TOPLEFT, 33 and 55 down, which is inside our
+		-- band - so they were printed across the window's title.
+		body = { "OpenMailSenderLabel", "OpenMailSubjectLabel",
+			"OpenMailScrollFrame" },
+		-- All three by the same amount: they are one block of header, and
+		-- measuring each against its own top would stagger them.
+		together = true,
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "OpenMailReplyButton", "OpenMailDeleteButton",
+			"OpenMailCancelButton" } } },
+
+	{ frame = "ItemTextFrame", tight = true,
+		-- The page itself, which starts 63 down - the strip the stone title plate
+		-- used to need, and neither our band nor our padding.
+		body = { "ItemTextScrollFrame" },
+		-- ITS PAGE TURNS ARE IN THE BAND, one at each end of the window with the
+		-- book's title between them, and the count under the title. 15c: a page
+		-- turn is chrome and lives in the footer, as a group.
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "ItemTextPrevPageButton", "ItemTextCurrentPage",
+			"ItemTextNextPageButton" } } },
 
 	-- THE TRADE SKILLS. Two windows, not one: TradeSkillFrame is First Aid,
 	-- cooking, blacksmithing and the rest, and CraftFrame is enchanting and
@@ -157,9 +400,55 @@ local PANELS = {
 	-- old hand-built shape with their own art and a wide margin, so they
 	-- want trimming like the trainer rather than tight like the modern ones.
 	{ frame = "TradeSkillFrame", addon = "Blizzard_TradeSkillUI",
-		insets = { 8, -8, -28, 22 } },
+		insets = { 8, -8, -28, 22 },
+		-- A TOOL ROW, not a subtitle. The rank bar reads like one - it says how
+		-- far along this window's subject you are - but it is three hundred
+		-- across, and a band is one line of type wide: put it there and the two
+		-- filters land on top of it. So it shares a row of its own with them,
+		-- under the hairline and above the lists.
+		-- THE FILTERS ARE CHROME and the rank bars are NOT. A filter changes what
+		-- the list is showing; a bar says how far along the thing in the list you
+		-- are, and there can be several of them - first aid, fishing, riding. That
+		-- is a column of content, so it goes in the recess WITH the list, and the
+		-- All control over it goes there too.
+		--
+		-- NOT IN A TOOL ROW UNDER THE TITLE EITHER. They filter what you are
+		-- reading on the RIGHT, so they belong over that pane and nowhere else -
+		-- put across the whole window they read as being about the window.
+		lead = {
+			TradeSkillListScrollFrame   = SKILL_HEAD,
+			TradeSkillDetailScrollFrame = SKILL_FILTERS,
+		},
+		-- The two lists, so they clear the band and the body padding.
+		body = { "TradeSkillListScrollFrame", "TradeSkillDetailScrollFrame" },
+		-- AND THE ROWS THAT GO IN THE LIST, which are not in it: the client hangs
+		-- eight buttons off the WINDOW and scrolls them by refilling, so the list
+		-- moved into the recess and left every recipe behind, above it.
+		inside = { TradeSkillSkill1 = "TradeSkillListScrollFrame" },
+		-- ...which are wells in their own right, so no recess round the pair.
+		wells = false,
+		footer = W.PANEL_FOOT_H,
+		-- Create, Create All and Close, centred in the strip. The client puts
+		-- them 422 down from the window's TOPLEFT, which is below the foot of a
+		-- window this shape no longer has.
+		-- ...AND THE COUNT SPINNER WITH THEM. How many to make is part of making
+		-- them: left out of the strip it stayed where the client had put it,
+		-- which is on top of Create.
+		actions = { mid = { "TradeSkillCreateAllButton", "TradeSkillDecrementButton",
+			"TradeSkillInputBox", "TradeSkillIncrementButton",
+			"TradeSkillCreateButton", "TradeSkillCancelButton" } } },
+	-- ENCHANTING AND A HUNTER'S BEAST TRAINING, which is the trade skill window
+	-- again under a second set of names: same margins, same two lists, same
+	-- rows hung off the window rather than off the list, same buttons 422 down
+	-- a frame that is not that tall any more.
 	{ frame = "CraftFrame", addon = "Blizzard_CraftUI",
-		insets = { 8, -8, -28, 22 } },
+		insets = { 8, -8, -28, 22 },
+		lead = { CraftListScrollFrame = SKILL_HEAD },
+		body = { "CraftListScrollFrame", "CraftDetailScrollFrame" },
+		inside = { Craft1 = "CraftListScrollFrame" },
+		wells = false,
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "CraftCreateButton", "CraftCancelButton" } } },
 }
 
 PN.PANELS = PANELS
@@ -170,14 +459,34 @@ for _, entry in ipairs(PANELS) do PN.ENTRY[entry.frame] = entry end
 
 local function cfg() return A.Config:Module("panels") end
 
---- A floor under how small these windows may be drawn.
+--- PANELS ARE A LITTLE TIGHTER THAN THE HUD, and never larger than it.
 --
---  Ours are drawn at profile.scale and look right there, because everything in
---  them is ours and sized for it. These are not ours: the paper doll, the item
---  icons and the client's own stat rows are fixed pixel art, and below about
---  this they stop being readable rather than merely small. A profile scale that
---  suits our HUD is not automatically one that suits a Blizzard window.
-local PANEL_MIN_SCALE = 0.85
+--  This was a FLOOR of 0.85, on the argument that the client's own furniture
+--  - the paper doll, the item icons, its stat rows - is fixed pixel art that
+--  stops being readable below about there. The argument is real and the floor
+--  was the wrong shape for it: at a profile scale of 0.71 it drew every panel
+--  at 0.85, which is a fifth larger than everything else on screen. The
+--  windows did not look readable, they looked oversized - which is what was
+--  reported.
+--
+--  So panels ride the profile's own scale, A TENTH ABOVE IT.
+--
+--  The panel package asks for its metrics at 0.92, on the grounds that they
+--  were measured for review at a size that reads a tenth too generous. That is
+--  a fair rule about the metrics THAT PACKAGE OWNS, and these windows are not
+--  those: what is inside them is Blizzard's own furniture at a fixed pixel
+--  size - a paper doll, item icons, stat rows - and none of it gets smaller
+--  when our numbers do. It only gets more cramped.
+--
+--  0.92, then parity, then this, each step on the strength of looking at it,
+--  which is the only test this one has. It is not derived from anything and
+--  the comment should not pretend otherwise.
+local PANEL_TIGHTEN = 1.1
+
+--  The floor stays, an order lower, and it is now about the one thing it was
+--  ever really about: below this the client's own art is not small, it is
+--  gone. Nothing a player would choose comes near it.
+local PANEL_MIN_SCALE = 0.45
 
 --- A point on top of our usual sizes, for the same reason.
 --
@@ -189,7 +498,7 @@ local FONT_BUMP = 1
 local function PanelScale()
 	local profile = A.db and A.db.profile
 	local s = (profile and profile.scale or 1) * (cfg().scale or 1)
-	return math.max(s, PANEL_MIN_SCALE)
+	return math.max(s * PANEL_TIGHTEN, PANEL_MIN_SCALE)
 end
 
 PN.Scale = PanelScale
@@ -228,23 +537,1155 @@ end
 
 PN.CloseButton = CloseButton
 
+-- Where the title sits inside the header band: centred in it on a plain
+-- window, and lifted to make room when a subtitle follows. UP HERE because
+-- DressHeader is written above the tab-strip metrics and a `local` used before
+-- its declaration resolves to a GLOBAL - which is nil, and errors on the first
+-- window dressed.
+local HEAD_TITLE_Y     = W.PANEL_HEAD_H / 2
+local HEAD_TITLE_Y_SUB = W.PANEL_HEAD_SUB / 2 - 7
+-- Under the title, and not against it. One pixel was the handoff's number
+-- and it is a number about 12pt type in a browser; at our sizes the two
+-- lines touched.
+local HEAD_SUB_GAP     = 4
+
+-- How far above the window the chrome layer sits.
+--
+-- MEASURED, NOT DECLARED. Twenty was picked off the old hand-built windows,
+-- whose panes sit a level or two above the frame. A modern one is nothing
+-- like that: the gossip window carries children at 400, 500 and 510, so a
+-- chrome layer at 21 was UNDER the client's own furniture and the band's
+-- hairline was drawn behind the window it belongs to.
+local CHROME_LIFT      = 20
+
+-- How many times a window that cannot be measured is asked again. Bounded,
+-- because one that never gets a rect must not be asked about it once a frame
+-- for the rest of the session.
+local SETTLE_TRIES     = 8
+
+
+--- A level clear of everything the client has put in this window.
+local function ChromeLevel(frame)
+	local top = (frame.GetFrameLevel and frame:GetFrameLevel()) or 1
+
+	-- NOT { frame.GetChildren and frame:GetChildren() }. An `and` in a table
+	-- constructor is an expression, so it keeps the FIRST child and throws the
+	-- rest away - which measured this window by whatever happened to be built
+	-- first and put the chrome layer two levels above the frame again.
+	local kids = frame.GetChildren and { frame:GetChildren() } or {}
+	for _, kid in ipairs(kids) do
+		-- OURS DO NOT COUNT. The chrome layer is a child of the window too, so
+		-- measuring against it would push itself one lift higher on every dress
+		-- until it ran out of levels.
+		if kid ~= frame.__aetherChrome and kid ~= frame.__aetherPanel then
+			-- PCALLED. A FORBIDDEN frame answers nothing at all - asking it for
+			-- its own frame level throws "calling '?' on bad self" - and one of
+			-- these windows has one among its children. Unguarded it took the
+			-- whole module down with it at login: every panel in the interface
+			-- came up in Blizzard's own art with no sign of why.
+			local ok, lvl = pcall(kid.GetFrameLevel, kid)
+			if ok and lvl and lvl > top then top = lvl end
+		end
+	end
+	return top + CHROME_LIFT
+end
+
+-- Room kept clear at the right-hand end of a header band for the way out.
+-- The row of controls under a header band, where a window has one: a filter,
+-- a rank bar, a page count. Tall enough for the client's own dropdowns.
+local TOOL_ROW         = 28
+-- Between two actions in the footer. 15a's strip sets its own gap rather
+-- than taking the body's 14 - a pair of buttons is not two blocks of
+-- content.
+local FOOT_GAP        = 12
+-- A row of chrome in the footer. A window with two of them - a page turn and
+-- an action under it - GROWS by one rather than splitting the 52 between
+-- them: split, each row got 26 and a 22 tall button has two pixels of air
+-- under it, so Open All sat on the postbox's tab rule. 15a's 52 is what ONE
+-- row needs; a second row needs its own.
+local FOOT_ROW        = W.PANEL_FOOT_H / 2
+
+
+-- ---------------------------------------------------------------------------
+-- the header band
+--
+-- EVERY PANEL WEARS THE SAME ONE: a fixed band at the top with the title
+-- centred in it and a hairline along its foot, and the way out in the corner.
+-- The client's windows had none of it - each one put its title wherever its
+-- own art wanted it, and nothing separated the title from what was under it,
+-- so the two ran together on every window that has content near the top.
+--
+-- Taller when there is a subtitle. That is the one variation, and it is the
+-- handoff's: a character sheet says who you are and then what you are, and the
+-- second line needs somewhere to be.
+-- ---------------------------------------------------------------------------
+
+--- How tall this window's header is: the plain band, or the taller one.
+function PN.HeaderHeight(name)
+	local frame = name and _G[name]
+	if frame and frame.__aetherHeadH then return frame.__aetherHeadH end
+	local entry = name and PN.ENTRY and PN.ENTRY[name]
+	if entry and entry.subtitle and _G[entry.subtitle] then
+		return W.PANEL_HEAD_SUB
+	end
+	return W.PANEL_HEAD_H
+end
+
+--- A string in the header band, in the header band's type.
+--
+--  NO BUMP, unlike every other client string here. The point is added because
+--  these sit in rows and columns the client measured for its own smaller type;
+--  a title has the width of the window to itself and does not need it.
+local function HeadType(fs, style, colour)
+	if not fs then return end
+	-- NOT ALWAYS LETTERING. A window's second line can be a thing rather than
+	-- a sentence: the trade skill's rank bar and the trainer's purse both sit
+	-- under the title saying what this window is about, and both are frames.
+	-- They get the place; the type is for strings.
+	if not fs.SetFont then return end
+	fs._aetherSize = nil
+	W.Restyle(fs, style)
+	W.Color(fs, colour)
+end
+
+--- Which pair of strings this window's header is naming right now.
+--
+--  Usually the entry's own. A window with panes in it can hand the band over
+--  on one of them: the character sheet's pet tab is still CharacterFrame, but
+--  the name at the top of it is the pet's.
+function PN.HeaderPair(entry)
+	for _, p in ipairs(entry and entry.panes or {}) do
+		local pane = _G[p.pane]
+		-- ...and that brought a title with it. A pane can be up on a build
+		-- where the string it names does not exist, and a header with no
+		-- title at all is worse than one naming the wrong thing.
+		if pane and pane.IsShown and pane:IsShown() and _G[p.title] then
+			return _G[p.title], p.subtitle and _G[p.subtitle] or nil
+		end
+	end
+	return entry and entry.title and _G[entry.title] or nil,
+		entry and entry.subtitle and _G[entry.subtitle] or nil
+end
+
+--- The frame a panel entry means by a name.
+--
+--  A global, or a PATH through one - because the modern templates stopped
+--  naming things globally. The gossip window's list of what you can say is
+--  GossipFrame.GreetingPanel.ScrollBox and has no name of its own at all, so
+--  a list of globals cannot reach a single part of it.
+function PN.Part(name)
+	if type(name) ~= "string" then return nil end
+	local w
+	for step in name:gmatch("[^.]+") do
+		w = (w == nil) and _G[step] or (type(w) == "table" and w[step] or nil)
+		if w == nil then return nil end
+	end
+	return w
+end
+local Part = PN.Part
+
+--- ONE THING IN A ROW, UNDER ANY OF THE NAMES IT MIGHT HAVE.
+--
+--  These windows are named three ways across the game versions this client
+--  carries: a global, a parentKey on the window, or a global under a different
+--  spelling again. The trade skill's filters are
+--  TradeSkillFrame.SubClassDropdown here and TradeSkillSubClassDropDown in the
+--  source Blizzard published - and an entry that named one of them put neither
+--  filter in the row, so both stayed where the client's own art had left them,
+--  across the window's title.
+local function RowPart(frame, name)
+	if type(name) == "table" then
+		for _, alias in ipairs(name) do
+			local found = RowPart(frame, alias)
+			if found then return found end
+		end
+		return nil
+	end
+	local w = Part(name) or Reskin.Element(frame, name)
+	return w and w.ClearAllPoints and w or nil
+end
+
+--- Is there anything in this list for the pane that is up?
+--
+--  VISIBLE, not shown - see ChromeRow. Every one of the postbox's actions is a
+--  child of the pane it belongs to and carries its own flag the whole time;
+--  what the client hides is the PANE.
+local function RowLive(frame, list)
+	for _, name in ipairs(list or {}) do
+		local w = RowPart(frame, name)
+		if w and w.IsVisible and w:IsVisible() then return true end
+	end
+	return false
+end
+
+--- A row of chrome: a group pinned to each end, a group centred between.
+--
+--  The tool row under the band and the footer strip along the bottom are the
+--  same shape at two heights, so they are one function - the row's version
+--  had already drifted, and it anchored from the layer's LEFT. A frame's LEFT
+--  is its vertical MIDDLE: the trainer's purse ended up two thirds of the way
+--  down the window with the skill list drawn over the top of it.
+--
+--  `edge` is TOP or BOTTOM, `y` is from that edge, and `gap` is what goes
+--  between two things in the row.
+local function ChromeRow(frame, spec, anchor, edge, y, gap)
+	if not spec then return end
+
+	-- WHAT A THING TAKES UP in a row. A font string's declared width is the
+	-- BOX the client reserved for it and not the words in it - the page count
+	-- in a book is 192 wide and says "Page 1" - so measuring the box pushed
+	-- the two page turns to opposite ends of the strip.
+	local function span(w)
+		if w.GetStringWidth and w.GetObjectType
+			and w:GetObjectType() == "FontString" then
+			local words = w:GetStringWidth()
+			if words and words > 0 then return words end
+		end
+		return (w.GetWidth and w:GetWidth()) or 0
+	end
+
+	local part = function(name) return RowPart(frame, name) end
+
+	local prev
+	for _, name in ipairs(spec.left or {}) do
+		local w = part(name)
+		if w then
+			w:ClearAllPoints()
+			if prev then
+				w:SetPoint("LEFT", prev, "RIGHT", gap, 0)
+			else
+				w:SetPoint("LEFT", anchor, edge .. "LEFT", W.PANEL_PAD, y)
+			end
+			prev = w
+		end
+	end
+
+	prev = nil
+	for _, name in ipairs(spec.right or {}) do
+		local w = part(name)
+		if w then
+			w:ClearAllPoints()
+			if prev then
+				w:SetPoint("RIGHT", prev, "LEFT", -gap, 0)
+			else
+				w:SetPoint("RIGHT", anchor, edge .. "RIGHT", -W.PANEL_PAD, y)
+			end
+			prev = w
+		end
+	end
+
+	-- THE MIDDLE GROUP is measured rather than chained off an end, because it
+	-- is centred on the window: where it starts depends on how wide the whole
+	-- group is, and which of its members are up changes with the pane.
+	--
+	-- VISIBLE, not shown. Every one of the quest giver's seven buttons is a
+	-- child of the panel it belongs to and carries its own flag the whole
+	-- time; what the client hides is the PANEL. Asking IsShown put all seven
+	-- in the strip on top of each other.
+	local shown, total = {}, 0
+	for _, name in ipairs(spec.mid or {}) do
+		local w = part(name)
+		if w and w.IsVisible and w:IsVisible() then
+			shown[#shown + 1] = w
+			total = total + span(w)
+		end
+	end
+	for _, w in ipairs(frame.__aetherActions or {}) do
+		if w.IsVisible and w:IsVisible() and w.ClearAllPoints then
+			shown[#shown + 1] = w
+			total = total + span(w)
+		end
+	end
+	if #shown == 0 then return end
+	total = total + gap * (#shown - 1)
+
+	-- IN THE ORDER THE CLIENT HAD THEM, left to right. Some of these have no
+	-- name to declare - the trainer's Train All is an anonymous child - so
+	-- they are found by shape, and where they were is the only thing that
+	-- says which of them the player reads first.
+	table.sort(shown, function(a, b)
+		return ((a.GetLeft and a:GetLeft()) or 0) < ((b.GetLeft and b:GetLeft()) or 0)
+	end)
+
+	local x = -total / 2
+	for _, w in ipairs(shown) do
+		w:ClearAllPoints()
+		w:SetPoint("LEFT", anchor, edge, x, y)
+		x = x + span(w) + gap
+	end
+end
+
+--- The band's hairline, and the title placed in it.
+--
+--  `title` and `sub` are passed rather than looked up, because one frame can
+--  carry more than one of each: the character sheet's header says who YOU are
+--  on its first tab and who your PET is on its second, out of two different
+--  pairs of strings that the client owns.
+function PN.DressHeader(frame, entry, title, sub)
+	local ins = entry and entry.insets or {}
+	local name = frame.GetName and frame:GetName()
+	local h = (sub and W.PANEL_HEAD_SUB) or W.PANEL_HEAD_H
+	frame.__aetherHeadH = h
+
+	-- ON THE CHROME LAYER, which is the only place a hairline is safe.
+	--
+	-- It was a texture of the WINDOW first, and a frame's own textures always
+	-- draw under its children - so the glass, which is a child, painted over
+	-- it on every panel. Moving it onto the glass fixed the windows whose
+	-- content starts below the band and not the ones whose content starts in
+	-- it: the client's panes are children of the window too, so they draw over
+	-- the glass and over anything on it. The vendor window lost its hairline
+	-- that way while the character sheet kept one.
+	--
+	-- The band is CHROME. Nothing the client draws is allowed above it, so it
+	-- gets a layer of its own with a level well clear of the panes'.
+	local host = frame.__aetherPanel or frame
+	local layer = frame.__aetherChrome
+	if not layer then
+		layer = CreateFrame("Frame", nil, frame)
+		if layer.EnableMouse then layer:EnableMouse(false) end
+		frame.__aetherChrome = layer
+	end
+	layer:ClearAllPoints()
+	layer:SetAllPoints(host)
+	if layer.SetFrameLevel and frame.GetFrameLevel then
+		layer:SetFrameLevel(ChromeLevel(frame))
+	end
+	layer:Show()
+
+	-- THROUGH THE COMPONENT, like every other hairline in the interface. This
+	-- one was the last hand-rolled copy - its own CreateTexture, its own layer,
+	-- its own texture - which is exactly the arrangement that had four private
+	-- versions of a one-pixel line drifting apart from each other.
+	local rule = frame.__aetherHeadRule
+	if not rule or rule.__aetherHost ~= layer then
+		rule = W.Hairline(layer)
+		rule.__aetherHost = layer
+		frame.__aetherHeadRule = rule
+	end
+
+	-- Across the GLASS, which is already trimmed to the window you can see -
+	-- so there are no insets to apply a second time here.
+	rule:ClearAllPoints()
+	rule:SetPoint("TOPLEFT", layer, "TOPLEFT", W.RULE_GAP, -h)
+	rule:SetPoint("TOPRIGHT", layer, "TOPRIGHT", -W.RULE_GAP, -h)
+	W.PaintHairline(rule)
+	rule:Show()
+
+	-- AND THE TOOL ROW, under the band rather than in it.
+	--
+	-- These are the things that act on what the window is SHOWING - a filter, a
+	-- rank bar, a page count. Chrome, so they do not belong in the recess; but
+	-- a band is one line of type wide and they do not fit beside a title
+	-- either. The trade skill proved it: its rank bar is three hundred across
+	-- and its two filters were laid over the top of it.
+	ChromeRow(frame, entry and entry.row, layer, "TOP",
+		-(h + W.PANEL_PAD + TOOL_ROW / 2), W.PANEL_GAP)
+	-- CENTRED IN THE BAND, and centred across the window. Every one of these
+	-- put its title where its own art wanted it - the spellbook's six pixels
+	-- right of centre, because the page it was printed on was not centred in
+	-- the frame either.
+	if title and title.ClearAllPoints then
+		title:ClearAllPoints()
+		title:SetPoint("TOP", host, "TOP", 0,
+			-(sub and HEAD_TITLE_Y_SUB or HEAD_TITLE_Y))
+		if title.SetJustifyH then title:SetJustifyH("CENTER") end
+	end
+
+	if sub and sub.ClearAllPoints then
+		sub:ClearAllPoints()
+		sub:SetPoint("TOP", title or host, title and "BOTTOM" or "TOP", 0,
+			title and -HEAD_SUB_GAP or -HEAD_TITLE_Y_SUB)
+		if sub.SetJustifyH then sub:SetJustifyH("CENTER") end
+	end
+	return h
+end
+
+local DressHeader = PN.DressHeader
+
+--- Redraw a window's header for whatever pane it is showing now.
+function PN.RefreshHeader(name)
+	local frame, entry = _G[name], PN.ENTRY and PN.ENTRY[name]
+	if not (frame and entry and frame.__aetherPanel) then return end
+	local title, sub = PN.HeaderPair(entry)
+	title = title or frame.__aetherTitle
+	-- RECORDED, because on a window with panes the band's title is not the
+	-- one Dress found: the postbox's own $parentTitleText is never filled in
+	-- and the words that name the tab live inside the pane. Everything that
+	-- asks what this window is called reads this.
+	frame.__aetherTitle = title
+	HeadType(title, "pnTitle", Palette.c.text)
+	HeadType(sub, "pnSub", Palette.c.textDim)
+	DressHeader(frame, entry, title, sub)
+end
+
+-- ---------------------------------------------------------------------------
+-- the body
+--
+-- ONE WELL, ON EVERY PANEL. 15a: a panel is header, then body, then footer or
+-- tab rail; the body is the padding in from the glass on all four sides, and
+-- everything bounded inside it sits in a recess - background black at 0.22,
+-- the skin's border at 0.13, corner 14. This was being drawn per window, on
+-- whatever that window's dresser happened to think was content: a well round
+-- the character model and nothing at all round the rest of the sheet.
+--
+-- THE CLIENT'S CONTENT DOES NOT START WHERE OUR BODY DOES. Every one of these
+-- windows left a strip at the top for the stone title plate it used to wear -
+-- the character sheet's first slot is anchored 74 below the frame, which is 64
+-- below the glass - and that strip is close to our header band but not the
+-- same, and has no room in it for the body padding. So the body is placed
+-- first and the client's panes are moved DOWN by whatever they are short of
+-- it, and the window grows by the same amount so nothing anchored to its
+-- bottom edge falls out.
+--
+-- The panes are the containers the client hangs a whole tab off, and they are
+-- setAllPoints to the window - so moving the pane carries every slot, string
+-- and model in it, and nothing inside needs to know.
+-- ---------------------------------------------------------------------------
+
+--- A rail on one edge of this window, if there is one up.
+--
+--  Returned rather than measured, because the body stops AT the rail and the
+--  rail already knows where it is - a width would be a second copy of a number
+--  the tab code owns, and the two would drift the first time either moved.
+local function RailOn(frame, edge)
+	local rail = frame.__aetherRails and frame.__aetherRails[edge]
+	if rail and rail:IsShown() then return rail end
+	return nil
+end
+
+--- Everything on this window that belongs to US and not to the client.
+--
+--  Wanted for measuring: the walk below is looking for the client's content
+--  and our own glass, hairline and recess are all children of the same frame.
+local function OurParts(frame)
+	local ours = {}
+	for _, key in ipairs({ "__aetherPanel", "__aetherChrome", "__aetherBody",
+		"__aetherTitle", "__aetherClose" }) do
+		if frame[key] then ours[frame[key]] = true end
+	end
+	for _, rail in pairs(frame.__aetherRails or {}) do ours[rail] = true end
+	-- EVERY TITLE THE ENTRY NAMES, not merely the one the band is carrying.
+	--
+	-- A window with panes has a title string per pane, and the ones belonging
+	-- to the panes that are DOWN are still strings sitting near the top of the
+	-- window. Send Mail's is four units below the glass, so measuring the pane
+	-- while the inbox was up said its content started there - and the form was
+	-- pushed down by eighty-four units to clear a band it was already clear of,
+	-- leaving a hand's width of nothing at the top of the recess.
+	local entry = frame.GetName and PN.ENTRY and PN.ENTRY[frame:GetName()]
+	local function spare(name)
+		local fs = name and _G[name]
+		if fs then ours[fs] = true end
+	end
+	spare(entry and entry.title)
+	spare(entry and entry.subtitle)
+	for _, pane in ipairs(entry and entry.panes or {}) do
+		spare(pane.title)
+		spare(pane.subtitle)
+	end
+	return ours
+end
+
+--- Where the client's own content starts, in units below the top of the glass.
+--
+--  MEASURED, NOT DECLARED. This started as a number per window read out of
+--  Blizzard's XML, and every window turned out to need a different one - the
+--  character sheet's first slot at 74, the reputation columns at 57, the skill
+--  list's ALL tab at 49, the talent frame's points line somewhere else again -
+--  and the character sheet alone needs four, because each of its tabs starts
+--  at its own height. Four rounds of screenshots found four of them.
+--
+--  Only frames and lettering count. A stripped texture still has the size the
+--  art had, so a window whose parchment we took off would measure as content
+--  starting at its very top edge; and a container anchored to the whole window
+--  says nothing about where what is IN it begins, so those are walked through
+--  rather than counted.
+local function MeasureTop(frame, pane)
+	if pane.__aetherTop then
+		return pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight
+	end
+	local host = frame.__aetherPanel or frame
+	local ceiling = host.GetTop and host:GetTop()
+	local wall = host.GetLeft and host:GetLeft()
+	local far = host.GetRight and host:GetRight()
+
+	-- AND THE FAR EDGE IS THE RAIL WHERE THERE IS ONE. The recess stops at the
+	-- tab column, not at the glass - so a window measured against the glass
+	-- thinks its content has a hand's width of room it does not have, and the
+	-- spellbook's second column of spell names ran out through the rim and
+	-- under the school tabs.
+	local side = RailOn(frame, "RIGHT")
+	local rail = side and side.GetLeft and side:GetLeft()
+	if rail and (not far or rail < far) then far = rail end
+
+	if not (ceiling and wall and far) then return nil end
+
+	local ours = OurParts(frame)
+	local best, side, edge
+	-- NOTHING WITH NO ANCHORS. A frame the client has not placed has no rect
+	-- at all, and taking one from it is measuring a coordinate that does not
+	-- exist - which lands at the window's own corner and reads as content
+	-- starting there.
+	local function placed(f)
+		return f.GetNumPoints and (f:GetNumPoints() or 0) > 0
+	end
+
+	local function note(f)
+		if not placed(f) then return end
+		local top = f.GetTop and f:GetTop()
+		if top and top < ceiling and (not best or top > best) then best = top end
+		local left = f.GetLeft and f:GetLeft()
+		if left and left >= wall and (not side or left < side) then side = left end
+		-- WHEREVER IT IS, including past the edge it should have stopped at. This
+		-- used to ignore anything reaching beyond the boundary, which meant the
+		-- one thing it could never measure was content that ALREADY overflows -
+		-- so a window whose text runs out through the rim could not be widened to
+		-- fit it. The spellbook's second column of spell names is that case: our
+		-- lettering is wider than the client's, and the names ran under the
+		-- school tabs.
+		local right = f.GetRight and f:GetRight()
+		if right and (not edge or right > edge) then edge = right end
+	end
+
+	local function walk(f, depth)
+		if depth > 4 or ours[f] then return end
+		-- NOT { (f:GetRegions()) }. Parentheses round a call truncate it to one
+		-- value, so a walk written that way sees the first region and the first
+		-- child of every frame and nothing else - which measured three of the
+		-- character sheet's tabs correctly by luck and the fourth not at all.
+		local regs = f.GetRegions and { f:GetRegions() } or {}
+		for _, r in ipairs(regs) do
+			-- Lettering with something in it. A texture is either art we have
+			-- already taken off - which keeps its rect - or a decoration.
+			if not ours[r] and r.GetText and r:IsShown()
+				and (r:GetText() or "") ~= "" then
+				note(r)
+			end
+		end
+		-- WHAT A SCROLL FRAME HOLDS IS NOT PART OF THE WINDOW'S SHAPE. The page
+		-- inside one is CLIPPED by it and can be any size at all - a trade
+		-- skill's detail page is the whole recipe - so measuring it grew the
+		-- window by a hand's width of empty glass. The scroll frame's own rect is
+		-- the honest answer and it has already been taken.
+		local scrolled = f.GetScrollChild and f:GetScrollChild()
+		local kids = f.GetChildren and { f:GetChildren() } or {}
+		for _, c in ipairs(kids) do
+			-- NO `goto` HERE, and none anywhere else in this addon: the game runs
+			-- Lua 5.1, which has no such statement. LuaJIT does, so the harness
+			-- compiled it happily and the whole file failed to load in the client.
+			if c ~= scrolled and not ours[c] and c.IsShown and c:IsShown() then
+				local top = c.GetTop and c:GetTop()
+				-- A CONTAINER SAYS NOTHING. One anchored to the whole window
+				-- reaches the top edge whatever is inside it, so it is walked
+				-- through instead of counted.
+				if top and top < ceiling then note(c) end
+				-- AND KEEP GOING. The widest thing on the vendor's window is not the
+				-- row - its template is a good deal wider than the name and price
+				-- printed in it - so stopping at the row measures a box with air in
+				-- it and pads the window out to fit the air.
+
+				walk(c, depth + 1)
+			end
+		end
+	end
+	-- The mover may BE the content rather than contain it: a window with no
+	-- pane at all is moved by its first item, and everything the client chains
+	-- off that comes with it. Anything sitting at the top edge is a container,
+	-- so it is walked into instead.
+	local own = pane.GetTop and pane:GetTop()
+	if own and own < ceiling then note(pane) end
+	walk(pane, 0)
+
+	if not best then return nil end
+	pane.__aetherTop = ceiling - best
+	pane.__aetherLeft = side and (side - wall) or nil
+	pane.__aetherRight = edge and (far - edge) or nil
+	return pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight
+end
+--- How far up the body has to stop for this window's footer.
+--
+--  THE STRIP ITSELF AND NOTHING UNDER IT. 15a puts a fixed 52 above the
+--  window's bottom edge - or above the tab rail, where one replaces it - with
+--  the body's padding only on TOP of it. Inset by the padding at both ends it
+--  read as a row of buttons pushed up, with a third of the strip's height of
+--  empty glass beneath them and nothing in it.
+--- How many rows of chrome the footer carries. One, unless the entry declares
+--  something to go under them.
+local function FootRows(entry)
+	local acts = entry and entry.actions
+	return (acts and acts.under and #acts.under > 0) and 2 or 1
+end
+
+local function FootStrip(entry)
+	local strip = (entry and entry.footer) or 0
+	if strip <= 0 then return 0 end
+	return strip + (FootRows(entry) - 1) * FOOT_ROW
+end
+
+--- The hairline along the top of the footer strip.
+--
+--  15a draws one: the strip is bounded above the way the header band is
+--  bounded below, and without it the actions read as floating in the glass
+--  under the recess rather than standing in a strip of their own.
+local function FootRule(frame, host, foot, strip)
+	local rule = frame.__aetherFootRule
+	if strip <= 0 then
+		if rule then rule:Hide() end
+		return
+	end
+
+	-- ON THE CHROME LAYER, for the same reason the header's is: a texture on
+	-- the window draws under the window's children, and the client's panes are
+	-- children of it - so a rule drawn anywhere else is under whatever the
+	-- window is showing.
+	local layer = frame.__aetherChrome or host
+	if not rule or rule.__aetherHost ~= layer then
+		rule = W.Hairline(layer)
+		rule.__aetherHost = layer
+		frame.__aetherFootRule = rule
+	end
+	W.PaintHairline(rule)
+
+	-- OFF THE RAIL WHERE THERE IS ONE. The strip sits above the tabs, not on
+	-- the window's bottom edge - 15e: a rail replaces the footer, and where a
+	-- window has both the client put them there, they stack in that order.
+	local anchor = foot or host
+	local edge = foot and "TOP" or "BOTTOM"
+	rule:ClearAllPoints()
+	rule:SetPoint("BOTTOMLEFT", anchor, edge .. "LEFT", W.RULE_GAP, strip)
+	rule:SetPoint("BOTTOMRIGHT", anchor, edge .. "RIGHT", -W.RULE_GAP, strip)
+	rule:Show()
+end
+
+--- The panes of a window that swaps them without a tab to say so.
+--
+--  A tabbed window tells us through PanelTemplates_UpdateTabs. The quest
+--  giver has no tabs at all: it swaps between reading a quest, handing one in
+--  and being thanked for it by showing one of four panels, and both the band
+--  and the footer strip say something different on each.
+--
+--  HOOKED ONCE. A dresser runs again on every skin change, and a second hook
+--  on the same pane is a second pass over the same buttons.
+local function WatchPanes(frame, entry)
+	local name = frame.GetName and frame:GetName()
+	if not name then return end
+
+	-- THE WINDOW ITSELF TOO. A pane fires OnShow only on the way from hidden
+	-- to shown, and the client puts the panel up before it puts the window up
+	-- - so on the first quest of a session the strip was laid out while
+	-- nothing in it was visible yet, and stayed where the client left it.
+	if frame.HookScript and not frame.__aetherPaneWatch then
+		frame.__aetherPaneWatch = true
+		frame:HookScript("OnShow", function()
+			if not PN.enabled then return end
+			PN.RefreshFooter(name)
+		end)
+	end
+
+	for _, p in ipairs(entry and entry.panes or {}) do
+		local pane = _G[p.pane]
+		if pane and pane.HookScript and not pane.__aetherWatched then
+			pane.__aetherWatched = true
+			pane:HookScript("OnShow", function()
+				if not PN.enabled then return end
+				PN.RefreshHeader(name)
+				PN.RefreshFooter(name)
+			end)
+		end
+	end
+end
+
+-- Reachable for the diagnostic, which needs to ask what a pane measures at
+-- RIGHT NOW rather than what it measured whenever the window was last
+-- dressed. The two being different is the whole question when a window comes
+-- up laid out for a rect it did not have yet.
+PN.MeasureTop = MeasureTop
+
+--- Does this pane FILL the window, corner to corner?
+--
+--  A pane that does is a container, not a box: the client hangs things off
+--  its top for the ones that read down the page and off its BOTTOM for the
+--  ones that sit along the foot. The character sheet's weapon row is the
+--  second kind - 127 up from the pane's bottom edge - so shifting the whole
+--  pane down moved it twice: once with the pane and once more when the window
+--  grew underneath it. It ended up through the foot of the recess and across
+--  the tab rail, on the character sheet and on the inspect window both.
+local function Fills(frame, pts)
+	-- ONE CORNER IS ENOUGH when it is the window's own and carries no offset:
+	-- the postbox's two panes are 384 by 512 pinned to the top left of a window
+	-- exactly that size, which is a page by any reading. They are not pinned by
+	-- both corners, so nothing held their feet and the money block Send Mail
+	-- hangs off its bottom went down the window with the rest of the pane and
+	-- landed on top of Send and Cancel.
+	if #pts == 1 then
+		local pt = pts[1]
+		return pt[1] == "TOPLEFT" and pt[2] == frame and pt[3] == "TOPLEFT"
+			and (pt[4] or 0) == 0 and (pt[5] or 0) == 0, true
+	end
+	if #pts < 2 then return false end
+	local top, bottom = false, false
+	for _, pt in ipairs(pts) do
+		if pt[2] == frame and (pt[4] or 0) == 0 and (pt[5] or 0) == 0 then
+			if pt[1] == "TOPLEFT" and pt[3] == "TOPLEFT" then top = true end
+			if pt[1] == "BOTTOMRIGHT" and pt[3] == "BOTTOMRIGHT" then
+				bottom = true
+			end
+		end
+	end
+	return top and bottom
+end
+
+--- Rows that belong to a list but are not in it.
+--
+--  A faux scroll frame is a scroll BAR and nothing else: the client hangs the
+--  rows off the WINDOW and scrolls them by refilling. So moving the list into
+--  the recess left every row exactly where it was - printed on the glass
+--  above an empty box, which is what the trainer and both crafting windows
+--  looked like.
+--
+--  Re-anchored to the list rather than offset alongside it, and ONCE: the
+--  offset is measured off where the CLIENT had the two of them, so a second
+--  pass would be measuring our own work.
+local function Inside(entry)
+	for who, host in pairs(entry and entry.inside or {}) do
+		local w, h = Part(who), Part(host)
+		if w and h and not w.__aetherInside and w.GetLeft and h.GetLeft
+			and w:GetLeft() and h:GetLeft() and w:GetTop() and h:GetTop() then
+			w.__aetherInside = true
+			local dx = w:GetLeft() - h:GetLeft()
+			local dy = h:GetTop() - w:GetTop()
+			w:ClearAllPoints()
+			w:SetPoint("TOPLEFT", h, "TOPLEFT", dx, -dy)
+		end
+	end
+end
+
+--- Is there anything in this window's tool row right now?
+local function RowUp(spec)
+	for _, side in ipairs({ "left", "right", "mid" }) do
+		for _, name in ipairs(spec[side] or {}) do
+			local w = Part(name)
+			if w and w.IsShown and w:IsShown() then return true end
+		end
+	end
+	return false
+end
+
+--- The recess, and the client's content moved into it.
+function PN.LayoutBody(frame, entry)
+	local host = frame.__aetherPanel
+	if not host then return end
+
+
+	-- HOW MANY TIMES THIS HAS RUN, and what the window was able to tell us
+	-- each time. A window laid out once, at login, while it had no rect is
+	-- indistinguishable on screen from one laid out wrongly - and the two want
+	-- opposite fixes. The readout prints both.
+	frame.__aetherRuns = (frame.__aetherRuns or 0) + 1
+	frame.__aetherSeen = host.GetTop and host:GetTop()
+
+	-- AND ANOTHER GO IF THERE WAS NOTHING TO MEASURE. A window has no rect at
+	-- all until the panel system places it, which happens after it is shown, so
+	-- the first answer is nil and the window keeps it.
+	--
+	-- WATCHED ON OUR OWN LAYER RATHER THAN ON A HOOK OF THE CLIENT'S. Three
+	-- hooks were tried before this and not one of them fired on the gossip
+	-- window: OnShow does not come round again for a window that was already up
+	-- when the addon loaded, and not every window goes up through the panel
+	-- system's front door. The chrome layer is a CHILD of the window, so its
+	-- OnUpdate runs exactly when there is a window on screen to measure and
+	-- never otherwise - no hook to miss, and nothing ticking while it is shut.
+	local watch = frame.__aetherChrome
+	if frame.__aetherSeen then
+		frame.__aetherTries = nil
+		if watch and watch.SetScript then watch:SetScript("OnUpdate", nil) end
+	elseif watch and watch.SetScript then
+		watch:SetScript("OnUpdate", function(self)
+			self:SetScript("OnUpdate", nil)
+			if not PN.enabled then return end
+			frame.__aetherTries = (frame.__aetherTries or 0) + 1
+			if frame.__aetherTries > SETTLE_TRIES then return end
+			local ok, err = pcall(PN.Dress, frame)
+			if not ok then
+				PN.failures = PN.failures or {}
+				local who = frame.GetName and frame:GetName()
+				if who then PN.failures[who] = "on watch: " .. tostring(err) end
+			end
+		end)
+	end
+
+	Inside(entry)
+	local headH = frame.__aetherHeadH or W.PANEL_HEAD_H
+	local pad   = W.PANEL_PAD
+
+	-- SHIFT FIRST, because the well is placed off the header and the header is
+	-- the thing the content has to clear.
+	--
+	-- PER PANE, because a window with tabs has a different answer on each of
+	-- them: the character sheet's first equipment slot, its reputation column
+	-- headings and its skill list's ALL tab all start at different heights, and
+	-- one number for the window put two of the three across the hairline.
+	--
+	-- `lead` is room reserved INSIDE the well, above the client's content, for
+	-- something of the window's own that is content rather than chrome - the
+	-- spellbook's rank switch is the case: it is a control over the list, the
+	-- same as a tree's expand-all would be, so it belongs in the recess with
+	-- the list and not floating in the band above it.
+	-- BOTH AXES. The vendor's rows are anchored eleven in from the window and
+	-- the body is eighteen, so its icons hung out of the recess on the left and
+	-- its prices out of it on the right - the same seven units at each end.
+	--
+	-- AND INSIDE THE WELL'S OWN PADDING, not against its rim. 15b gives a well
+	-- sixteen on all four sides; content moved only as far as the body's edge
+	-- is content jammed into the corner of the recess, which is where the
+	-- reputation columns ended up - touching the top rail and the left one.
+	-- A WINDOW WHOSE PANES ARE ALREADY WELLS is inset by what its own rim
+	-- costs rather than by the well padding: the recess round a client scroll
+	-- frame is drawn WELL_OUTSET outside it, so a list moved in by the full
+	-- padding puts its RIM that far inside the body, and the two windows of
+	-- this shape wore a wider margin than everything else in the interface.
+	local inner = pad + ((entry and entry.wells == false)
+		and W.WELL_OUTSET or W.WELL_PAD)
+	-- PER PANE WHERE IT HAS TO BE. A number reserves the room above every pane
+	-- in the body; a table names the one pane it belongs to. The trade skill
+	-- window is why: its All control and its progress bars sit over the LIST,
+	-- and the detail pane beside it must not move down to match.
+	local leads = entry and entry.lead
+	if type(leads) ~= "table" then leads = nil end
+	local lead = (type(entry and entry.lead) == "number" and entry.lead) or 0
+	-- ...AND ONLY IF THERE IS ANYTHING IN IT. The gossip window's row is one
+	-- reputation bar and most of the people you talk to do not have one, so a
+	-- window that always reserved the row wore an empty band on every NPC in
+	-- the game bar a handful.
+	if entry and entry.row and RowUp(entry.row) then
+		lead = lead + TOOL_ROW + W.PANEL_GAP
+	end
+	-- HOW FAR UP THE BODY STOPS, wanted before anything is moved: a pane that
+	-- fills the window has its foot lifted clear of the strip, and that is part
+	-- of placing it rather than something done to it afterwards.
+	local strip = FootStrip(entry)
+
+	-- WHAT THE STRIP TAKES: its own height and the body's padding over it.
+	-- Nought where the window has no strip.
+	local ins = entry and entry.insets or {}
+	local room = strip > 0 and (pad + strip) or 0
+
+	-- HOW FAR A PAGE'S FOOT COMES UP off the WINDOW's own edge to sit on the
+	-- body's floor. Not the same number as the room: the glass does not end
+	-- where the window does - the postbox's reaches 48 BELOW it to carry the
+	-- tabs - and this one is measured from the window while the room is
+	-- measured from the glass.
+	local lift = strip > 0 and ((ins[4] or 0) + room) or 0
+
+	local want = headH + inner + lead
+	-- MEASURED FIRST AND MOVED AFTER, in two passes, because a window can want
+	-- ONE answer for all of its content rather than a per-pane one. The trade
+	-- window is a dozen pieces all hung off the frame at their own offsets -
+	-- names at the top, two columns of slots, two purses - and shifting each by
+	-- what IT is short of squeezes the layout together: the names travel eighty
+	-- units and the slots eight. `together` moves the lot by the deepest.
+	local most, wide, tail = 0, 0, 0
+	local shifts = {}
+	for _, name in ipairs(entry and entry.body or {}) do
+		local pane = Part(name)
+		if pane and pane.ClearAllPoints then
+			local top, left, right = MeasureTop(frame, pane)
+			top = (entry and entry.contentTop) or top
+			local mine = want + ((leads and leads[name]) or 0)
+			local down = top and math.max(0, mine - top) or 0
+			local over = left and math.max(0, inner - left) or 0
+			local back = right and math.max(0, inner - right) or over
+			if down > most then most = down end
+			if over > wide then wide = over end
+			if back > tail then tail = back end
+			shifts[#shifts + 1] = { pane, down, over }
+		end
+	end
+
+	for _, shift in ipairs(shifts) do
+		local pane, down, over = shift[1], shift[2], shift[3]
+		if entry and entry.together then down, over = most, wide end
+		-- MOVED BY OFFSETTING THE ANCHORS IT ALREADY HAS, rather than by being
+		-- re-anchored to the window. A pane fills the frame and a rewrite is
+		-- harmless; the vendor has no pane and is moved by its first item, which
+		-- the other nine hang off - and rewriting THAT to the window's corners
+		-- would stretch one row across the window.
+		local pts = pane.__aetherPts
+		if not pts then
+			pts = {}
+			for i = 1, (pane.GetNumPoints and pane:GetNumPoints() or 0) do
+				pts[i] = { pane:GetPoint(i) }
+			end
+			pane.__aetherPts = pts
+		end
+		-- A PANE THAT FILLS THE WINDOW IS MOVED BY ITS TOP CORNER ONLY. Its
+		-- bottom stays on the window's bottom, so what the client hangs off the
+		-- FOOT of the page stays at the foot of the page instead of travelling
+		-- down twice and out through the recess.
+		--
+		-- ...EXCEPT THAT THE FOOT OF THE PAGE IS NOT THE FOOT OF THE WINDOW when
+		-- there is a strip down there. Send Mail hangs its money field, its two
+		-- radio buttons and your purse off the bottom of its pane, and with Send
+		-- and Cancel moved into the strip the rest of that block was left sitting
+		-- on top of them. So the pane's bottom comes UP by the strip and the body
+		-- padding, which makes its box the BODY's box rather than the window's.
+		--
+		-- Only where there IS a strip: a window without one has its foot in the
+		-- right place already, and the character sheet's weapon row is hung off
+		-- exactly this edge.
+		local corner = Fills(frame, pts)
+		if #pts > 0 then
+			pane:ClearAllPoints()
+			for _, pt in ipairs(pts) do
+				if corner and pt[1] ~= "TOPLEFT" then
+					pane:SetPoint(pt[1], pt[2], pt[3], pt[4] or 0,
+						(pt[5] or 0) + lift)
+				else
+					-- SIDEWAYS ONLY WHERE SIDEWAYS MEANS INWARD. `over` moves content in
+					-- from the LEFT edge, so adding it to a point pinned to the RIGHT one
+					-- pushes that piece OUTWARD instead - the letter's spam button went
+					-- fourteen units past the glass and took the sender's box, which is
+					-- stretched between it and the label, with it.
+					local sideways = pt[3] and pt[3]:find("RIGHT") and 0 or over
+					pane:SetPoint(pt[1], pt[2], pt[3],
+						(pt[4] or 0) + sideways, (pt[5] or 0) - down)
+				end
+			end
+		end
+	end
+
+	-- AND THE WINDOW GROWS TO TAKE IT. Down by the DEEPEST of the panes -
+	-- growing per tab would have the frame jump every time you changed one, so
+	-- the tab needing most room sets the height and the rest have air under
+	-- them. Across by what EACH SIDE is short, added together: moving the
+	-- content in from the left puts it that much closer to the right, and the
+	-- two edges do not have to be short by the same amount. Doubling the left
+	-- was an assumption that the client centred its content, and the vendor's
+	-- rows are not centred in its window.
+	-- ...AND BY WHAT THE STRIP TAKES AT THE OTHER END.
+	--
+	-- The client laid a page's insides out for a window with no strip in it, so
+	-- everything it hangs off the page's foot - Send Mail's attachment row, its
+	-- money field, your purse - sits where the strip now is. Growing by the
+	-- strip's own height and the padding over it moves the window's foot down
+	-- past the lot of them, which is the same answer as shortening the page
+	-- reached without touching a number the client owns.
+	-- RECORDED ONLY WHERE IT WAS APPLIED. The note of how much this window has
+	-- grown is what the NEXT pass measures against, so writing it down after a
+	-- growth that did not happen makes every later pass believe in room the
+	-- window has not got.
+	local taller = most + room
+	local applied = frame.__aetherBodyShift or 0
+	if frame.SetHeight and frame.GetHeight then
+		if taller ~= applied then
+			frame:SetHeight((frame:GetHeight() or 0) + (taller - applied))
+		end
+		frame.__aetherBodyShift = taller
+	end
+
+	-- AND A WINDOW TOLD TO MATCH ANOTHER TAKES THE TALLER OF THE TWO.
+	--
+	-- Standing beside something is not a reason to be too short for your own
+	-- insides: skipping the growth outright left the letter with no room made
+	-- for its strip at all, and its attachment row sat under Delete. So it
+	-- grows for what it needs first, and then reaches its twin's height if that
+	-- is the greater - which is the case that made the pair look mismatched.
+	local twin2 = entry and entry.matchHeight and _G[entry.matchHeight]
+	if twin2 and twin2.GetHeight and frame.SetHeight then
+		local reach = twin2:GetHeight()
+		if reach and reach > (frame:GetHeight() or 0) then
+			frame:SetHeight(reach)
+		end
+	end
+
+	local grow = wide + tail
+	local wasWide = frame.__aetherBodyGrow or 0
+	if grow ~= wasWide and frame.SetWidth and frame.GetWidth then
+		frame:SetWidth((frame:GetWidth() or 0) + (grow - wasWide))
+	end
+	frame.__aetherBodyInset = wide
+	frame.__aetherBodyGrow = grow
+
+	-- A WINDOW THAT LAYS ITSELF OUT gets told the padding instead of having
+	-- its children moved. The game menu is a VerticalLayoutFrame: its buttons
+	-- are placed by the client from layoutIndex and re-placed on every show, so
+	-- moving one is undone before you see it. LayoutFrame reads topPadding and
+	-- bottomPadding off the frame, which is exactly the question being asked.
+	if entry and entry.layout and frame.Layout then
+		frame.topPadding = headH + inner
+		frame.bottomPadding = inner + ((entry.footer or 0) > 0
+			and (entry.footer + pad) or 0)
+		frame.leftPadding = inner
+		frame.rightPadding = inner
+		pcall(frame.Layout, frame)
+	end
+
+	-- ONE RECESS DEEP. A window whose content is ALREADY in wells does not get
+	-- another one round the outside: the trainer and the trade skills each
+	-- carry two client scroll frames, and every one of those is in a recess of
+	-- its own now. A body well behind them is a second rim round the first and
+	-- a second helping of the same black - the recess reads as twice as deep
+	-- wherever the two overlap, which is everywhere.
+	-- THE STRIP FIRST, and whether or not the body gets a recess: the trade
+	-- skills and the trainer are in wells already and still have a footer.
+	PN.LayoutFooter(frame, entry)
+
+	-- A SCROLL FRAME STOPS WHERE THE RECESS DOES.
+	--
+	-- ONE CLIPS AT ITS OWN BOUNDS and nowhere else, so moving it down the
+	-- window without shortening it moves where the clipping happens too: the
+	-- quest giver's text carried on past the foot of the well, over the
+	-- hairline and under Accept and Decline. The trade skill's two lists did
+	-- the same thing forty units past their own rims.
+	--
+	-- SHORTENED, NEVER STRETCHED. A pane already above the floor is one in a
+	-- window that stacks its lists rather than setting them side by side, and
+	-- pulling that one down would drag it through the list beneath it.
+	--
+	-- SCROLL FRAMES, AND PAGES PINNED BY ONE CORNER. A page pinned by BOTH is
+	-- held at the foot already and must not be touched: the character sheet's
+	-- is a page and a footer at once, with the weapon row hung off its bottom
+	-- edge, and shortening that one cuts the row off. A page pinned by one
+	-- corner has nothing holding its foot, so shortening it IS what holds it -
+	-- which is what keeps Send Mail's money block out of the strip.
+	-- SCROLL FRAMES ONLY, and this is a rule that had to be learned twice.
+	--
+	-- A PAGE'S DECLARED HEIGHT IS PART OF THE CLIENT'S ARITHMETIC. Send Mail's
+	-- pane is 512 tall inside a window 424 tall, deliberately: the client
+	-- anchors the attachment row a fixed distance ABOVE the pane's bottom and
+	-- places it from Lua on every update. Shortening the pane to fit the body
+	-- dragged that row eighty-eight units up into the middle of the letter.
+	--
+	-- Nothing needs shortening there anyway: growing the window at both ends
+	-- moves the window's foot down past the block, which is the same answer
+	-- reached without touching a number the client owns.
+	local base = (host.GetBottom and host:GetBottom())
+	if base then
+		local floorY = base + strip + inner
+		for _, shift in ipairs(shifts) do
+			local pane = shift[1]
+			local top = pane.GetTop and pane:GetTop()
+			local low = pane.GetBottom and pane:GetBottom()
+			if pane.GetScrollChild and top and low and low < floorY
+				and pane.SetHeight then
+				pane:SetHeight(math.max(1, top - floorY))
+			end
+		end
+	end
+
+	if entry and entry.wells == false then
+		if frame.__aetherBody then frame.__aetherBody:Hide() end
+		return
+	end
+
+	local well = frame.__aetherBody
+	if not well or well.__aetherHost ~= host then
+		well = W.ContentWell(host)
+		well.__aetherHost = host
+		frame.__aetherBody = well
+	end
+
+	-- BEHIND THE CLIENT'S OWN FRAMES. The panes are children of the WINDOW
+	-- and the glass is another child of it, so the panes draw over the glass
+	-- whatever level the well takes - which is what a recess wants anyway.
+	if well.SetFrameLevel and host.GetFrameLevel then
+		well:SetFrameLevel(math.max(0, (host:GetFrameLevel() or 1)))
+	end
+
+	-- IT STOPS AT THE RAILS, on the edges that have one. A recess that runs
+	-- under the tab column reads as the tabs floating on the content rather
+	-- than standing beside it.
+	-- ONE POINT PER EDGE, and each edge stops at whatever is beside it. A
+	-- recess running under the tab column or behind the tab row reads as the
+	-- tabs floating on the content rather than standing next to it.
+	local side = RailOn(frame, "RIGHT")
+	local foot = RailOn(frame, "BOTTOM")
+	well:ClearAllPoints()
+	well:SetPoint("TOPLEFT", host, "TOPLEFT", pad, -(headH + pad))
+	if side then
+		well:SetPoint("RIGHT", side, "LEFT", -pad, 0)
+	else
+		well:SetPoint("RIGHT", host, "RIGHT", -pad, 0)
+	end
+	-- A FOOTER, where the window keeps one. 15a: actions live in a strip above
+	-- the bottom edge, never scattered in the body - and some of the client's
+	-- windows already have one whether we asked or not. The vendor's repair
+	-- buttons and your purse are anchored to its bottom edge, so a body that
+	-- reached the tab rail ran its recess straight through both of them.
+	if foot then
+		well:SetPoint("BOTTOM", foot, "TOP", 0, pad + strip)
+	else
+		well:SetPoint("BOTTOM", host, "BOTTOM", 0, pad + strip)
+	end
+	well:Show()
+end
+
+--- The footer strip: its hairline, its page turn and what the window does.
+--
+--  Its own pass, because the strip changes while the window stays open and
+--  the body does not: the quest giver swaps one pair of buttons for another
+--  every time you turn a page of a quest, and re-laying the whole window for
+--  that would move content that has not moved.
+function PN.LayoutFooter(frame, entry)
+	local host = frame and frame.__aetherPanel
+	if not host then return end
+	local foot = RailOn(frame, "BOTTOM")
+	local strip = FootStrip(entry)
+	FootRule(frame, host, foot, strip)
+	if strip <= 0 then return end
+
+	-- THE SAME ROW THE TOOL ROW IS, at the other end of the window: a purse
+	-- pinned to one side, and what the window DOES centred between. 15a is
+	-- specific that actions live here and never in the body, and 15c that a
+	-- page turn is one of them - the vendor's Prev, Page 1 and Next sat inside
+	-- the recess, over the last row of what you were being sold.
+	local anchor = foot or host
+	local edge = foot and "TOP" or "BOTTOM"
+	local acts = entry and entry.actions
+
+	-- ONE ROW OR TWO, each centred in its own equal share of the strip - and
+	-- the strip is a row taller for the second, so the share does not shrink.
+	-- The postbox reads as a page turn with Open All under it, both with the
+	-- air round them a single row gets, rather than three on one line or two
+	-- pressed against the rule at either end.
+	--
+	-- COUNTED FROM WHAT IS UP, not from what the entry declares. The strip's
+	-- HEIGHT is the declared count, so the window is the same size whichever
+	-- pane you are on - but the postbox's second row belongs to the inbox, and
+	-- on Send Mail there is nothing in it. Laid out as two rows regardless,
+	-- Send and Cancel took the upper half and sat with an empty row's worth of
+	-- glass under them.
+	local rows = (acts and RowLive(frame, acts.under)) and 2 or 1
+	local slice = strip / rows
+	ChromeRow(frame, acts, anchor, edge, strip - slice / 2, FOOT_GAP)
+	if rows > 1 then
+		ChromeRow(frame, { mid = acts.under }, anchor, edge, slice / 2, FOOT_GAP)
+	end
+end
+
+--- Redraw a window's footer for whatever pane it is showing now.
+function PN.RefreshFooter(name)
+	local frame, entry = _G[name], PN.ENTRY and PN.ENTRY[name]
+	if frame and entry then PN.LayoutFooter(frame, entry) end
+end
 local function DressClose(frame, store)
 	local close = CloseButton(frame)
 	if not close then return end
 
-	-- Into the corner of the glass, where the window put its own well inside the
-	-- art. The spellbook's and the talent frame's both sit 44 in from the right
-	-- and 25 down - the middle of a stone rim that is no longer there - and read
-	-- as a stray cross floating in the page.
+	-- INTO THE CORNER OF THE GLASS, always, at the shared inset - where the
+	-- window put its own well inside its art. The spellbook's and the talent
+	-- frame's both sit 44 in from the right and 25 down, the middle of a stone
+	-- rim that is no longer there, and read as a stray cross in the page.
+	--
+	-- It used to be per-window, behind a `closeCorner` flag, which is how the
+	-- vendor's and the postbox's ended up at a different inset from the
+	-- spellbook's. One inset, and the flag is gone.
 	local name = frame.GetName and frame:GetName()
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
-	if entry and entry.closeCorner and close.ClearAllPoints then
-		local ins = entry.insets or {}
-		close:ClearAllPoints()
-		close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", (ins[3] or 0) - 2, (ins[2] or 0) - 2)
-	end
+	W.PlaceClose(close, frame, entry and entry.insets)
 
-	if close.__aetherX then return end
+	if close.__aetherClose then return end
 
 	-- State textures first, then the regions: ClearButton wants to see the
 	-- client's own paths, and Strip empties them. Reskin.ClearButton copes with
@@ -252,11 +1693,9 @@ local function DressClose(frame, store)
 	Reskin.ClearButton(close)
 	Reskin.Strip(close, store)
 
-	local x = W.Text(close, "tbCardTitle", "CENTER")
-	x:SetPoint("CENTER", close, "CENTER", 0, 0)
-	x:SetText("\195\151")          -- U+00D7, the same one our own panels use
-	W.Color(x, Palette.c.textDim)
-	close.__aetherX = x
+	-- ON THE CLIENT'S OWN BUTTON. It is still the thing that closes the
+	-- window; nothing here is rebuilt or rewired, only dressed.
+	W.CloseButton(close, { attach = close })
 end
 
 --- Art off, glass behind, title re-roled. Safe to call repeatedly.
@@ -277,7 +1716,8 @@ local function Dress(frame)
 	-- region spared later has already gone.
 	Reskin.Strip(frame, store, entry and entry.keep)
 
-	Reskin.Panel(frame, { corner = 16, insets = entry and entry.insets })
+	Reskin.Panel(frame, { corner = W.PANEL_CORNER,
+		insets = entry and entry.insets })
 
 	-- Drawn at the profile's scale, like everything else of ours - but never
 	-- below the floor, because what is inside these is the client's own art at
@@ -312,33 +1752,38 @@ local function Dress(frame)
 		moved = title and true or nil
 	end
 
-	-- A header from that template STRADDLES the top edge on purpose: the stone
-	-- plate is meant to overhang the frame, so its words sit half outside. Take
-	-- the plate away and they hang over the rim, so they come inside.
-	if moved and title.ClearAllPoints then
-		local ins = entry and entry.insets
-		title:ClearAllPoints()
-		title:SetPoint("TOP", frame, "TOP", 0, (ins and ins[2] or 0) - 14)
-	end
+	-- WHERE IT GOES is the header band's business now, not this line's - see
+	-- DressHeader. It used to be moved only for a window whose title we had to
+	-- name ourselves, and left where the client put it otherwise, which is why
+	-- no two of them lined up.
 	if title and title.SetText then
-		-- A TITLE IN A BAND KEEPS THE CLIENT'S SIZE. The modern template hands
-		-- its title a band twenty pixels tall, and our pnTitle at nineteen
-		-- fills it corner to corner and overhangs the ends - which is the
-		-- gossip window's name reading as though it had been shouted.
+		-- ONE TITLE SIZE, on every panel in the interface, and 16 is the
+		-- ceiling. This branched: a window on the modern template kept the
+		-- CLIENT's size, because its title band is twenty tall and ours at
+		-- nineteen filled it corner to corner; an old one took ours plus the
+		-- point every client string here gets, for nineteen.
 		--
-		-- The old windows have the whole width to themselves and no such band,
-		-- so those keep the bigger role. Same reasoning as Reskin.Font's: where
-		-- the client measured a space for the words, the metrics stay theirs.
-		if entry and entry.tight then
-			Reskin.Font(title, "pnTitle")
-		else
-			Roled(title, "pnTitle")
-		end
-		W.Color(title, Palette.c.text)
+		-- At 16 neither problem exists, and a title that is one size on the
+		-- gossip window and another on the spellbook is the thing the panel
+		-- package is for. The bump is for text sitting in the client's own
+		-- rows and columns; a title has the width of the window to itself.
 		frame.__aetherTitle = title
 	end
 
+	-- THE BAND, on every window: a hairline along its foot and the title
+	-- centred in it. The subtitle too, where the window has one. ONE PLACE,
+	-- because this was being done three times over - here, in DressCharacter
+	-- and again wherever a window's own dresser felt like moving its title.
+	frame.__aetherTitle = title
+	PN.RefreshHeader(frame:GetName())
+
 	DressClose(frame, store)
+
+	-- THE BODY, on every window: one recess, the same padding, and the
+	-- client's own content moved down into it where it would otherwise sit
+	-- across the header band.
+	PN.LayoutBody(frame, entry)
+	WatchPanes(frame, entry)
 
 	-- The insides, where this window has a policy for them. Reached through PN
 	-- rather than an upvalue: the interiors are defined below this, and a local
@@ -389,6 +1834,7 @@ PN.Dress = Dress
 -- meant to overlap, the art hiding the join. With the art off there is no
 -- join to hide, so each one is measured to its own word and they sit flush.
 local TAB_H = W.TAB_RAIL_H
+
 
 -- Each tab HUGS ITS OWN LABEL now. It used to be one width for all of them,
 -- on the argument that a row of pills at five different widths reads as
@@ -541,7 +1987,16 @@ local function LayoutTabs(frame, store)
 	local rail = W.TabRail(frame, "BOTTOM")
 	rail:ClearAllPoints()
 	rail:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", left, ins[4] or 0)
-	rail:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right, ins[4] or 0)
+	-- AND ITS RIGHT EDGE STOPS AT THE COLUMN, where there is one. The two
+	-- hairlines are the same line at ninety degrees to each other, and running
+	-- one through the other draws a cross in the corner of the window - which
+	-- is a join nothing is joining.
+	local side = frame.__aetherRails and frame.__aetherRails.RIGHT
+	if side and side:IsShown() then
+		rail:SetPoint("BOTTOMRIGHT", side, "BOTTOMLEFT", 0, 0)
+	else
+		rail:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right, ins[4] or 0)
+	end
 	rail:SetHeight(TAB_H)
 	rail:Show()
 
@@ -742,6 +2197,10 @@ local function InstallTabHooks()
 				StyleTabState(TabAt(name, n))
 				n = n + 1
 			end
+
+			-- AND THE HEADER, because on a window with panes in it the tab is
+			-- what decides whose name the band is carrying.
+			PN.RefreshHeader(name)
 		end)
 	end
 end
@@ -887,21 +2346,52 @@ end
 
 --- The doll's box, and the two buttons that turn it.
 --
---  THE ROTATE BUTTONS ARE A PICTURE OF A BUTTON - the curved arrow and the
---  stone disc it is drawn on are one texture - so clearing the plate takes the
---  arrow with it and leaves two live controls with nothing on them at all.
---  Exactly what the postbox's page turners were doing, and the same answer.
+--  ON THE MODEL, BOTTOM-RIGHT, and not beside it. They were a picture of a
+--  button - arrow and stone disc in one texture - and then, briefly, two
+--  chevrons in the window's furniture, which is worse: a chevron means
+--  NAVIGATION, a page or a carousel or a drawer, and a character model has no
+--  pages. Turning it is manipulation, and manipulation belongs on the thing
+--  being manipulated.
 --
---  Blizzard names them from the MODEL's point of view rather than the camera's
---  and says so in its own XML, which is why RotateRightButton is the one on
---  the LEFT and gets the arrow pointing that way.
+--  Blizzard names them from the MODEL's point of view rather than the
+--  camera's and says so in its own XML, which is why RotateRightButton is the
+--  one that turns it left.
 local function DressModel(prefix, store)
 	local model = _G[prefix .. "ModelFrame"]
 	if not model then return end
 
 	Reskin.Strip(model, store)
-	Reskin.ArrowButton(_G[prefix .. "ModelFrameRotateRightButton"], "LEFT", store)
-	Reskin.ArrowButton(_G[prefix .. "ModelFrameRotateLeftButton"], "RIGHT", store)
+	for _, key in ipairs({ "RotateRightButton", "RotateLeftButton" }) do
+		local btn = _G[prefix .. "ModelFrame" .. key]
+		if btn then
+			Reskin.ClearButton(btn)
+			if type(store) == "table" then Reskin.Strip(btn, store) end
+		end
+	end
+
+	-- THE BOX THE DOLL STANDS IN, DRAWN. Without it the model floats in the
+	-- window and every asymmetry in it reads as OUR mistake: the imp on the
+	-- pet tab looks pushed to the right, and the reason is that its own box -
+	-- which the client centres it in - has whitespace on one side that nothing
+	-- was marking. With a rim round it the whitespace is plainly whitespace.
+	--
+	-- Below the model rather than around it: a PlayerModel renders a scene
+	-- with a transparent ground once the client's black overlay is off, so a
+	-- recess behind it shows through exactly where the doll is not.
+	local host = (model.GetParent and model:GetParent()) or model
+	local well = model.__aetherModelWell
+	if not well then
+		well = W.ContentWell(host)
+		well:SetAllPoints(model)
+		well:SetFrameLevel(math.max(0, (model:GetFrameLevel() or 1) - 1))
+		if well.EnableMouse then well:EnableMouse(false) end
+		model.__aetherModelWell = well
+	end
+	well:ApplySkin("wellFill", "wellEdge")
+
+	W.RotatePair(model,
+		_G[prefix .. "ModelFrameRotateLeftButton"],
+		_G[prefix .. "ModelFrameRotateRightButton"])
 end
 
 local function EachEquipSlot(fn)
@@ -928,17 +2418,13 @@ local function DressCharacter(frame, store)
 		end
 	end
 
-	-- Who you are, above the sheet.
-	local who = _G.CharacterNameText
-	if who and who.SetText then
-		Roled(who, "pnTitle")
-		W.Color(who, Palette.c.text)
-	end
+	-- WHO YOU ARE is the window's TITLE and what you are is its subtitle,
+	-- named as such in the panel list - so the shell has already roled and
+	-- placed both by the time this runs. It used to do it here, one point
+	-- larger than every other panel's title, which is exactly the drift the
+	-- header band exists to end.
 	local rank = _G.CharacterLevelText
-	if rank and rank.SetText then
-		Roled(rank, "pnSub")
-		W.Color(rank, Palette.c.textDim)
-	end
+	if rank and rank.SetText then W.Color(rank, Palette.c.textDim) end
 
 	EachEquipSlot(function(slot)
 		Reskin.Slot(slot)
@@ -954,11 +2440,26 @@ local function DressCharacter(frame, store)
 	DressModel("Character", store)
 	DressModel("Pet", store)
 
-	-- Resistance chips down the side, and the pet's set on its own tab.
+	-- RESISTANCE CHIPS, and the school's own icon KEPT. These were stripped
+	-- whole, which took the icon with them and left five bare numbers floating
+	-- down the side of the sheet with nothing saying which school each one
+	-- was - arcane, fire, nature, frost, shadow, and no way to tell.
+	--
+	-- The icon is unnamed and is the frame's only texture, so it is found by
+	-- walking the regions rather than asked for by key. Same shape as the
+	-- spellbook's school tabs: the picture IS the thing, and a sweep that
+	-- takes every texture takes the thing.
 	for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
 		for n = 1, 5 do
 			local chip = _G[prefix .. n]
-			if chip then Reskin.Strip(chip, store) end
+			if chip and chip.GetRegions then
+				local icon
+				for _, r in ipairs({ chip:GetRegions() }) do
+					if not icon and r.GetObjectType and r:GetObjectType() == "Texture"
+						then icon = r end
+				end
+				Reskin.StripExcept(chip, store, icon and { icon } or nil)
+			end
 		end
 	end
 
@@ -1192,7 +2693,12 @@ end
 -- off itself every time it lays out, and Reset clears neither - so setting
 -- them once holds for every open after.
 local MENU_SPACING = 6
-local MENU_TOP_PAD = 44   -- 32 in the template, and the title sits in it
+
+-- The TOP padding is not here. It is the header band's height plus the body
+-- padding, which LayoutBody works out for every window in the interface - and
+-- a private 44 in this file was a fourth copy of that sum, set AFTER the
+-- shared one because interiors run last. On screen: the first button across
+-- the hairline, on the one window that had already been told not to.
 
 -- Forward-declared: it hooks InitButtons with a closure that calls itself,
 -- and a `local function` cannot refer to its own name from inside.
@@ -1201,7 +2707,6 @@ DressGameMenu = function(frame, store)
 	if not frame.GetChildren then return end
 
 	frame.spacing = MENU_SPACING
-	frame.topPadding = MENU_TOP_PAD
 
 	-- ITS BUTTONS COME OUT OF A POOL, and the pool is refilled by
 	-- InitButtons - which the client calls on OnShow and again on its own
@@ -1355,10 +2860,22 @@ local function DressSideTabs(frame, store, prefix, count)
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
 	local ins = entry and entry.insets or {}
 
+	-- FROM UNDER THE HEADER TO THE FOOT OF THE PANEL. It used to be only as
+	-- long as the icons on it, on the argument that a column of rail running
+	-- past the last one reads as a control with empty slots. That is an
+	-- argument about a WASH, which this no longer has - what is left is a
+	-- hairline, and a hairline that stops halfway down the window is a line
+	-- that has been cut off rather than an edge.
+	--
+	-- It eats the side padding and never the header: the title and the way out
+	-- run the full width of the frame, exactly as they do on a window with no
+	-- rail at all.
 	local rail = W.TabRail(frame, "RIGHT")
 	rail:ClearAllPoints()
 	rail:SetPoint("TOPRIGHT", frame, "TOPRIGHT",
-		(ins[3] or 0), (ins[2] or 0) - SIDE_TAB_TOP + SIDE_TAB_GAP)
+		(ins[3] or 0), (ins[2] or 0) - PN.HeaderHeight(name))
+	rail:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",
+		(ins[3] or 0), (ins[4] or 0))
 	rail:SetWidth(SIDE_RAIL_W)
 
 	local last, shown = nil, 0
@@ -1378,7 +2895,7 @@ local function DressSideTabs(frame, store, prefix, count)
 			if last then
 				tab:SetPoint("TOP", last, "BOTTOM", 0, -SIDE_TAB_GAP)
 			else
-				tab:SetPoint("TOP", rail, "TOP", 0, -SIDE_TAB_GAP)
+				tab:SetPoint("TOP", rail, "TOP", 0, -SIDE_TAB_TOP)
 			end
 		end
 
@@ -1389,11 +2906,8 @@ local function DressSideTabs(frame, store, prefix, count)
 		if not tab.IsShown or tab:IsShown() then shown = shown + 1 end
 	end
 
-	-- THE RAIL IS AS LONG AS WHAT IS ON IT, and no longer: a column of wash
-	-- running past the last icon reads as a control with empty slots in it.
-	local iconH = (last and last.GetHeight and last:GetHeight()) or 32
-	rail:SetHeight(math.max(1,
-		shown * (iconH + SIDE_TAB_GAP) + SIDE_TAB_GAP))
+	-- NO RAIL WITH NOTHING ON IT. A hairline down the side of a window with no
+	-- schools behind it is a line dividing the content from nothing.
 	rail:SetShown(shown > 0)
 end
 
@@ -1414,9 +2928,13 @@ local function DressSpellBook(frame, store)
 		if page.SetJustifyH then page:SetJustifyH("CENTER") end
 	end
 
-	MarkButton(_G.SpellBookPrevPageButton, store, GLYPH_PREV)
-	MarkButton(_G.SpellBookNextPageButton, store, GLYPH_NEXT)
+	Reskin.PageTurn(_G.SpellBookPrevPageButton, "LEFT", store)
+	Reskin.PageTurn(_G.SpellBookNextPageButton, "RIGHT", store)
 
+	-- THE RANK SWITCH IS CONTENT, not chrome. It is a control over the list -
+	-- the same thing an expand-all would be over a tree - so it belongs in the
+	-- recess with the list. The client hangs it 38 below the frame, which is
+	-- inside our header band, and it sat across the hairline.
 	local ranks = _G.ShowAllSpellRanksCheckbox
 	if ranks then
 		Reskin.CheckBox(ranks, store)
@@ -1424,6 +2942,12 @@ local function DressSpellBook(frame, store)
 		if label then
 			Roled(label, "pnBody")
 			W.Color(label, Palette.c.textDim)
+		end
+		local body = frame.__aetherBody
+		if body and ranks.ClearAllPoints then
+			ranks:ClearAllPoints()
+			ranks:SetPoint("TOPLEFT", body, "TOPLEFT",
+				W.WELL_PAD, -W.WELL_PAD)
 		end
 	end
 
@@ -1738,24 +3262,23 @@ end
 --
 --  Its own store, because it belongs to no window: the frame outlives the
 --  trainer that opened it.
+--- The menu a dropdown opens. WE DO NOT TOUCH IT, and here is why.
+--
+--  THERE IS ONE OF THESE IN THE WHOLE INTERFACE. The menu system keeps a POOL
+--  and hands the same frame to every dropdown, every right-click on a unit,
+--  every context menu in the game. Dressing it is not dressing a window: it is
+--  editing a frame that something else will be handed thirty seconds later,
+--  and what we did to it stayed done.
+--
+--  Stripped and glassed, it came back as an empty black box - first on the
+--  trade skill's filters, then on every context menu in the game, with no
+--  error anywhere because nothing had gone wrong as far as Lua was concerned.
+--
+--  A pooled frame is not ours to keep. If these are ever to wear our glass it
+--  has to be put back when the menu is released, and that is a mechanism
+--  rather than a paint job - so until it is written, the client keeps its own.
 local function DressMenu(menu)
-	if not menu or not menu.GetRegions then return end
-
-	local store = menu.__aetherArt
-	if not store then
-		store = {}
-		menu.__aetherArt = store
-	end
-
-	Reskin.Strip(menu, store)
-	Reskin.Panel(menu, { corner = 12 })
-
-	-- LOCKED STRINGS. The menu wraps its own font strings and forbids SetFont -
-	-- reading the key is enough to trip its assert - so these are re-roled
-	-- through a font object instead. Colour is left alone either way: green, red
-	-- and grey are the client saying whether you can learn the thing, which is
-	-- what the filter is for.
-	Reskin.Fonts(menu, "pnBody", 0, nil, true)
+	local _ = menu
 end
 
 -- The chevron on a dropdown. Ten against a control 24 tall, and eight in from
@@ -2057,12 +3580,11 @@ local function DressMerchant(frame, store)
 		W.Color(page, Palette.c.textDim)
 	end
 
-	-- Who you are buying from.
-	local who = _G.MerchantNameText
-	if who then
-		Roled(who, "pnSub")
-		W.Color(who, Palette.c.text)
-	end
+	-- WHO YOU ARE BUYING FROM is this window's title, named as such in the
+	-- panel list - so the shell has already roled and placed it. It used to be
+	-- done here instead, in body type at a body size and left wherever the
+	-- client's portrait art had put it, which is the fourth place this file
+	-- was setting a title before the header band took the job.
 
 	LayoutTabs(frame, store)
 	InstallTabHooks()
@@ -2071,7 +3593,7 @@ end
 --- The quest giver: four panels of the same window, one shown at a time.
 local QUEST_PANES = {
 	"QuestFrameDetailPanel", "QuestFrameProgressPanel", "QuestFrameRewardPanel",
-	"QuestFrameGreetingPanel", "QuestNpcNameFrame",
+	"QuestFrameGreetingPanel",
 	"QuestDetailScrollFrame", "QuestProgressScrollFrame",
 	"QuestRewardScrollFrame", "QuestGreetingScrollFrame",
 	"QuestProgressRequiredMoneyFrame",
@@ -2083,6 +3605,68 @@ local QUEST_BUTTONS = {
 	"QuestFrameGoodbyeButton", "QuestFrameCancelButton",
 	"QuestFrameGreetingGoodbyeButton",
 }
+
+-- MAX_NUM_QUESTS in the client's own source, and a stop rather than a count:
+-- the buttons above the number an NPC is offering are hidden, not absent.
+local QUEST_TITLE_CAP = 25
+
+--- The greeting: an NPC with more than one quest, listed under two headings.
+--
+--  ITS OWN DRESSER BECAUSE IT IS REDRAWN UNDER US. QuestFrameGreetingPanel_OnShow
+--  is not only an OnShow - QuestFrame re-runs it on QUEST_LOG_UPDATE whenever
+--  this panel is up, which is what happens the moment you accept one of the
+--  quests on it. And it re-runs the whole thing:
+--
+--    QuestFrame_SetMaterial   puts the parchment back on the panel
+--    QuestFrame_SetTextColor  puts the near-black back in the greeting
+--    SetTitleTextColor        puts it back in both headings
+--    SetFormattedText         re-embeds |cff000000 in every quest title
+--    HorizontalBreak:Show     brings back the gold swirl between the sections
+--
+--  So accepting the first of three quests handed back a window with our glass,
+--  our band and our well round a page of the client's own art in the client's
+--  own near-black ink - which read as the interior never having been dressed
+--  at all, and was in fact the interior being dressed and then overwritten.
+local function DressQuestGreeting(store)
+	local panel = _G.QuestFrameGreetingPanel
+	if not panel then return end
+
+	-- The parchment, which SetMaterial re-applies every time.
+	Reskin.Strip(panel, store)
+
+	-- AND THE SCROLL CHILD, which is where the page's art actually lives -
+	-- including QuestGreetingFrameHorizontalBreak, the gold swirl between
+	-- Current Quests and Available Quests. A sweep of the PANEL never reached
+	-- it, and the client shows it again whenever there is at least one active
+	-- quest, which is exactly the case that produced this. Our glass has one
+	-- language for a divider and it is the hairline; filigree is the client's.
+	local page = _G.QuestGreetingScrollChildFrame
+	if page then Reskin.Strip(page, store) end
+
+	for _, name in ipairs({ "GreetingText", "CurrentQuestsText",
+		"AvailableQuestsText" }) do
+		local fs = _G[name]
+		if fs then Reskin.Font(fs, "pnBody", Palette.c.text) end
+	end
+
+	-- EVERY TITLE IN THE LIST. The black is not the string's COLOUR - the
+	-- client formats each one through NORMAL_QUEST_DISPLAY, which is
+	-- |cff000000%s|r, so the escape is inside the text and SetTextColor cannot
+	-- reach it. Reskin.Font rewrites the escape; this is the same fault the
+	-- gossip list has, one window along.
+	for i = 1, QUEST_TITLE_CAP do
+		local btn = _G["QuestTitleButton" .. i]
+		if not btn then break end
+		if btn.IsShown and btn:IsShown() then
+			-- Its own art off but NOT its icon: the exclamation mark and the
+			-- question mark are the only thing saying which quests are yours
+			-- already and which are on offer.
+			Reskin.ClearButton(btn)
+			Reskin.StripExcept(btn, store, { _G["QuestTitleButton" .. i .. "QuestIcon"] })
+			Reskin.Fonts(btn, "pnBody", 0, Palette.c.text)
+		end
+	end
+end
 
 local function DressQuest(frame, store)
 	for _, name in ipairs(QUEST_PANES) do
@@ -2097,13 +3681,19 @@ local function DressQuest(frame, store)
 		end
 	end
 
-	-- Who you are talking to, above the parchment.
+	-- The stone plate behind the name comes off, but the name itself is NOT
+	-- swept with the panels: the sweep re-roles every string it finds to body
+	-- type, and the band had already put this one in title type. Interiors run
+	-- last, so the sweep won.
 	local who = _G.QuestNpcNameFrame
-	local whoText = who and Reskin.Element(who, "Text")
-	if whoText then
-		Roled(whoText, "pnTitle")
-		W.Color(whoText, Palette.c.text)
-	end
+	if who then Reskin.Strip(who, store) end
+
+	-- WHO YOU ARE TALKING TO is this window's title, named as such in the panel
+	-- list - so the band has already roled it and put it in the middle. It was
+	-- done here instead, and by a lookup that never found the string: the name
+	-- is QuestFrameNpcNameText and the frame it hangs off is QuestNpcNameFrame,
+	-- so "frame name + Text" asked for QuestNpcNameFrameText. The quest giver
+	-- has had no title of ours on it at all.
 
 	for _, name in ipairs(QUEST_BUTTONS) do
 		local btn = _G[name]
@@ -2135,6 +3725,23 @@ local function DressQuest(frame, store)
 		local bar = _G[name]
 		if bar then Reskin.ScrollBar(bar, store) end
 	end
+
+	DressQuestGreeting(store)
+
+	-- AND AGAIN EVERY TIME THE CLIENT REDRAWS IT. Once is not enough here and
+	-- the event that proves it is QUEST_LOG_UPDATE: accept one of an NPC's
+	-- three quests and QuestFrame re-runs the whole OnShow, which repaints the
+	-- parchment, re-inks the greeting and both headings, re-embeds the black in
+	-- every title and shows the swirl again.
+	--
+	-- A GLOBAL FUNCTION, not a method, so it is hooked by name.
+	if hooksecurefunc and not PN.__questGreetHook
+		and _G.QuestFrameGreetingPanel_OnShow then
+		PN.__questGreetHook = true
+		hooksecurefunc("QuestFrameGreetingPanel_OnShow", function()
+			if PN.enabled then DressQuestGreeting(store) end
+		end)
+	end
 end
 
 --- Anyone you can talk to. Built on the portrait template, so the shell is
@@ -2151,20 +3758,32 @@ end
 --  own words, and naming the string on each meant a quest title - which is not
 --  reachable through GetFontString - kept our lettering from the first pass and
 --  got its parchment ink back on every refresh.
-local function DressGossipRows(frame)
+local function GossipBox(frame)
 	local panel = Reskin.Element(frame, "GreetingPanel")
-	local box = panel and Reskin.Element(panel, "ScrollBox")
+	return panel and Reskin.Element(panel, "ScrollBox") or nil
+end
+
+local function DressGossipRows(frame)
+	local box = GossipBox(frame)
 	if not box then return end
 
-	local rows
-	if box.GetFrames then
-		local ok, got = pcall(box.GetFrames, box)
-		rows = ok and got or nil
+	local function lift(row)
+		if row then Reskin.Fonts(row, "pnBody", 0, Palette.c.text) end
 	end
-	if not rows then return end
 
-	for _, row in ipairs(rows) do
-		Reskin.Fonts(row, "pnBody", 0, Palette.c.text)
+	-- ITS OWN ITERATOR, where it has one. ForEachFrame walks what the box is
+	-- SHOWING at the moment you ask; GetFrames hands back a list, and a list
+	-- obtained a moment too early is a list of the rows that were there before
+	-- the rebuild. Both are on ScrollBoxListMixin, and only one of them cannot
+	-- be stale.
+	if box.ForEachFrame then
+		if pcall(box.ForEachFrame, box, lift) then return end
+	end
+	if box.GetFrames then
+		local ok, rows = pcall(box.GetFrames, box)
+		if ok and rows then
+			for _, row in ipairs(rows) do lift(row) end
+		end
 	end
 end
 
@@ -2192,38 +3811,33 @@ local function DressGossip(frame, store)
 
 	DressGossipRows(frame)
 
-	-- The list is rebuilt on open and on every option you pick. Two entry
-	-- points, and BOTH of them, because they are not the same thing:
-	-- Update rebuilds the data and UpdateScrollBox rebuilds the box.
+	-- THE LIST IS REBUILT UNDER US, and not only when you pick something. The
+	-- client re-runs it on QUEST_LOG_UPDATE whenever the NPC has an active
+	-- quest - so accepting the first of three redraws the window into Current
+	-- Quests, a divider and Available Quests, all in pooled rows nobody has
+	-- lifted, and every word in it comes back in the near-black gossip is
+	-- printed in.
 	--
-	-- AND AGAIN ON THE NEXT FRAME, which is the part that matters. The
-	-- greeting and every option are POOLED ELEMENTS of a scroll box, and a
-	-- scroll box acquires its frames during LAYOUT - after Update has
-	-- returned. Asking GetFrames from inside the hook answers the set that
-	-- was there before, so the new rows are never lifted and the window
-	-- comes up in the near-black the client prints gossip in.
+	-- ON THE SCROLL BOX'S OWN Update, not the window's. This hooked
+	-- GossipFrame:Update and GossipFrame:UpdateScrollBox and then re-swept a
+	-- second time from a zero-length timer, because a scroll box acquires its
+	-- rows during LAYOUT - after the window's Update has returned - and a sweep
+	-- from inside that hook reads the set that was there before. The timer was
+	-- a guess at when layout would have happened, which is why it looked
+	-- intermittent: whether a row was lifted depended on whether the pool
+	-- happened to hand back one that already had been.
 	--
-	-- Which is also why it looked intermittent: whether a row had been
-	-- lifted depended on whether the pool happened to hand back one that
-	-- had.
-	if hooksecurefunc and not PN.__gossipHook then
-		local function relift(self)
-			if not PN.enabled then return end
-			DressGossipRows(self)
-			if C_Timer and C_Timer.After then
-				C_Timer.After(0, function()
-					if PN.enabled then DressGossipRows(self) end
-				end)
-			end
-		end
-		local hooked = false
-		for _, name in ipairs({ "Update", "UpdateScrollBox" }) do
-			if frame[name] then
-				hooksecurefunc(frame, name, relift)
-				hooked = true
-			end
-		end
-		PN.__gossipHook = hooked
+	-- ScrollBoxListMixin:Update runs on the box itself, after its own layout,
+	-- and there is nothing to guess. Found in ElvUI's gossip skin, which hooks
+	-- exactly this - the symbol was the thing worth having, and it cost a look
+	-- rather than another round of timing experiments.
+	local box = GossipBox(frame)
+	if hooksecurefunc and box and box.Update and not box.__aetherGossipHook then
+		box.__aetherGossipHook = true
+		hooksecurefunc(box, "Update", function()
+			if PN.enabled then DressGossipRows(frame) end
+		end)
+		PN.__gossipHook = true
 	end
 end
 
@@ -2250,7 +3864,6 @@ local TRAINER_PANES = {
 	"ClassTrainerListScrollFrame", "ClassTrainerDetailScrollFrame",
 	"ClassTrainerDetailScrollChildFrame", "ClassTrainerMoneyFrame",
 	"ClassTrainerDetailMoneyFrame", "ClassTrainerExpandButtonFrame",
-	"ClassTrainerSkillHighlightFrame",
 }
 
 local TRAINER_TEXT = {
@@ -2306,10 +3919,13 @@ local function DressTrainerRows()
 			btn.isExpanded = isExpanded or nil
 			Reskin.Collapse(btn)
 			if btn.__aetherGlyph then btn.__aetherGlyph:Show() end
-		elseif btn.__aetherGlyph then
-			-- It is a spell this time round, not a heading. The client
-			-- clears its own mark here; ours has to go with it.
-			btn.__aetherGlyph:Hide()
+		else
+			-- It is a spell this time round, not a heading. The client clears
+			-- its own NORMAL texture here; ours has to go with it - and the
+			-- template's other three states do not go with it, so a spell row
+			-- still lit up with Blizzard's plus button when you hovered it.
+			if btn.__aetherGlyph then btn.__aetherGlyph:Hide() end
+			Reskin.ClearButton(btn)
 		end
 
 		local label = btn.GetFontString and btn:GetFontString()
@@ -2331,6 +3947,14 @@ local function DressTrainerRows()
 end
 
 local function DressTrainer(frame, store)
+	-- ITS TWO LISTS, IN WELLS. Every list in this interface sits in a recess;
+	-- the trainer's skills and the detail beside them floated on bare glass
+	-- with nothing marking where either began or ended.
+	for _, name in ipairs({ "ClassTrainerListScrollFrame",
+		"ClassTrainerDetailScrollFrame" }) do
+		Reskin.ScrollFrame(_G[name], store)
+	end
+
 	for _, name in ipairs(TRAINER_PANES) do
 		local pane = _G[name]
 		if pane then
@@ -2338,6 +3962,12 @@ local function DressTrainer(frame, store)
 			Reskin.Fonts(pane, "pnBody", 2, Palette.c.text)
 		end
 	end
+
+	-- WHICH ROW YOU ARE ON. The client keeps one highlight frame and slides it
+	-- onto whatever you picked, with its blue listbox slice drawn on it. This
+	-- was in the list of panes to strip, which left the window with nothing at
+	-- all saying which skill was selected.
+	Reskin.RowMark(_G.ClassTrainerSkillHighlightFrame, store)
 
 	-- The little stone tab the All control hangs off, the same one the
 	-- character sheet's skill list has.
@@ -2369,6 +3999,12 @@ local function DressTrainer(frame, store)
 	-- anonymous child whose label is ClassTrainerFrameText - so all three are
 	-- found by shape instead. They are the client's three-slice push button and
 	-- nothing else on this window carries Left, Middle and Right.
+	--
+	-- AND HANDED TO THE FOOTER STRIP, because a nameless button cannot be
+	-- listed in the panel entry the way every other window's actions are. The
+	-- client anchors all three 420 down from the window's TOPLEFT, in a frame
+	-- that is no longer that tall, so they sat across the foot of both recesses.
+	local acts = {}
 	for _, kid in ipairs({ frame:GetChildren() }) do
 		if kid.GetObjectType and kid:GetObjectType() == "Button"
 			and Reskin.Element(kid, "Left")
@@ -2378,8 +4014,13 @@ local function DressTrainer(frame, store)
 			-- Train All carries its label twice, so the label is re-roled by
 			-- sweeping the button rather than by asking for GetFontString.
 			Reskin.Fonts(kid, "pnBody")
+			acts[#acts + 1] = kid
 		end
 	end
+	frame.__aetherActions = acts
+
+	-- Interiors run LAST, so the strip was laid out before these were found.
+	PN.LayoutFooter(frame, PN.ENTRY and PN.ENTRY["ClassTrainerFrame"])
 
 	for _, name in ipairs({ "ClassTrainerListScrollFrameScrollBar",
 	                        "ClassTrainerDetailScrollFrameScrollBar" }) do
@@ -2709,6 +4350,39 @@ local function DressMail(frame, store)
 	local page = _G.InboxCurrentPage
 	if page then W.Color(page, Palette.c.textDim) end
 
+	-- THE AUCTION HOUSE'S RECEIPT, which the client prints in a dark brown that
+	-- reads on parchment and all but vanishes on glass. It is not black enough
+	-- for the sweep to lift - that catches ink under 0.35 and this sits just
+	-- over it - so the lines are named and given ours outright.
+	--
+	-- The labels take the dim ink and the amounts the full, which is the same
+	-- pairing the rest of the deck uses for a name and its value.
+	for _, name in ipairs({ "OpenMailInvoiceItemLabel", "OpenMailInvoiceBuyMode",
+		"OpenMailInvoiceNotYetSent", "OpenMailInvoiceMoneyDelay" }) do
+		local fs = _G[name]
+		if fs then
+			Reskin.Font(fs, "pnBody")
+			W.Color(fs, Palette.c.textDim)
+		end
+	end
+	for _, name in ipairs({ "OpenMailInvoicePurchaser", "OpenMailBodyText" }) do
+		local fs = _G[name]
+		if fs then
+			Reskin.Font(fs, "pnBody")
+			W.Color(fs, Palette.c.text)
+		end
+	end
+
+	-- WHAT YOU CAME FOR, LIFTED OUT OF THE STRIP. The letter's attachment row
+	-- and its label are placed by the CLIENT, from Lua, against the window's own
+	-- BOTTOM edge - 31 units up - and re-placed on every update. Growing the
+	-- window cannot help with that: the bottom edge takes them with it, so they
+	-- stayed in the footer with Reply and Delete printed over them.
+	--
+	-- Hooked once, and it adds the room the strip takes rather than replacing
+	-- the client's arithmetic - which depends on how many items the letter has
+	-- and is none of our business.
+
 	-- THE LETTER YOU ARE WRITING. A ScrollingEditBox with its parchment in
 	-- its OWN background layer and its bar as a frame beside it - neither is a
 	-- region of the pane, so the sweep above reaches neither.
@@ -2738,9 +4412,37 @@ local function DressMail(frame, store)
 	-- The three money boxes, which keep their coin: it is a background region
 	-- like the border is, and a sweep that takes both leaves the player typing
 	-- gold, silver and copper into three identical nameless boxes.
+	--
+	-- And the coin is the FIELD's mark rather than a picture that happens to be
+	-- near it, because the client puts gold's outside the box and the other two
+	-- inside - so with its own border art gone the row wore its coins three
+	-- different distances from three identical pills.
 	for _, name in ipairs({ "SendMailMoneyGold", "SendMailMoneySilver",
 		"SendMailMoneyCopper" }) do
-		Reskin.EditBox(_G[name], { keep = { "texture" } })
+		local box = _G[name]
+		Reskin.EditBox(box, { keep = { "texture" }, unit = box and box.texture })
+	end
+
+	-- SEND MONEY OR C.O.D., which are one choice with two answers - so they
+	-- are radio buttons, and a radio button is round. They were the client's
+	-- own gold-rimmed disc, the last piece of its art left on this pane.
+	local radios = { _G.SendMailSendMoneyButton, _G.SendMailCODButton }
+	for _, box in ipairs(radios) do Reskin.Radio(box, store) end
+
+	-- THE PAIR MOVES TOGETHER, and only one of them is ever clicked. The client
+	-- turns the other off by calling SetChecked on it, and it does the same
+	-- from its own update when an attachment rules C.O.D. out - so a mark
+	-- refreshed from its own button's OnClick would leave the one you just
+	-- left filled in. Both paths go through the one global, so that is the hook.
+	local function Marks()
+		for _, box in ipairs(radios) do
+			W.CheckState(box, box.GetChecked and box:GetChecked())
+		end
+	end
+	Marks()
+	if not PN.__mailRadio and _G.SendMailRadioButton_OnClick then
+		PN.__mailRadio = true
+		hooksecurefunc("SendMailRadioButton_OnClick", Marks)
 	end
 
 	-- THE TOTAL, which the client wraps TWICE - a black inset and a thin gold
@@ -2784,23 +4486,40 @@ local function DressMail(frame, store)
 	-- THE PAGE TURNERS. The client draws these as a picture of a button -
 	-- arrow and plate in one texture - so clearing the plate took the arrow
 	-- with it and left two live controls with nothing drawn on them at all.
-	Reskin.ArrowButton(_G.InboxPrevPageButton, "LEFT", store)
-	Reskin.ArrowButton(_G.InboxNextPageButton, "RIGHT", store)
+	--
+	-- The same mark the spellbook's wear. These were a filled circle, which is
+	-- the same control doing the same job one window apart in two different
+	-- flavours.
+	Reskin.PageTurn(_G.InboxPrevPageButton, "LEFT", store)
+	Reskin.PageTurn(_G.InboxNextPageButton, "RIGHT", store)
 
 	-- Send, Cancel, Reply, Delete, Open All and the rest. A dozen of them
 	-- across three panes, so they are found the way the Options pages' are: a
 	-- button with a label on it.
-	for _, name in ipairs({ "SendMailFrame", "OpenMailFrame", "InboxFrame" }) do
-		local pane = _G[name]
-		if pane and pane.GetChildren then
-			for _, child in ipairs({ pane:GetChildren() }) do
-				if child.GetObjectType and child:GetObjectType() == "Button"
-					and child.GetFontString and child:GetFontString()
-					and not child.__aetherSkin then
-					Reskin.Button(child, "pnBody")
-				end
-			end
+	--
+	-- BUT NOT THE LETTERS. Every row in the inbox is a Button with a label on
+	-- it and a child of the pane, so the sweep gave all seven a pressable
+	-- surface - which is the panel behind each line in the list. A letter is a
+	-- row you pick, not a button you press.
+	-- EVERY LETTER IN THE LIST, and its own art off. The row is drawn as two
+	-- slices of MailItemBorder plus a rule under it, all BACKGROUND regions of
+	-- the row itself - so a sweep over the PANE reaches none of them and seven
+	-- stone-and-parchment plaques sat in the recess.
+	local letters = {}
+	for i = 1, MAIL_ROWS do
+		local row = _G["MailItem" .. i]
+		if row then
+			letters[row] = true
+			row.__aetherStore = row.__aetherStore or {}
+			Reskin.Strip(row, row.__aetherStore)
+
+			-- The letter's picture is a BUTTON inside the row, the way a vendor's
+			-- goods are - so stripping the row is safe and the icon goes in a cell.
+			Reskin.Slot(_G["MailItem" .. i .. "Button"], { store = store })
 		end
+	end
+	for _, name in ipairs({ "SendMailFrame", "OpenMailFrame", "InboxFrame" }) do
+		Reskin.Buttons(_G[name], "pnBody", letters)
 	end
 end
 
@@ -2824,10 +4543,10 @@ local function DressItemText(frame, store)
 
 	Reskin.ScrollFrame(_G.ItemTextScrollFrame, store)
 
-	-- The page turners, art rather than words, and the same treatment the
-	-- postbox's get.
-	Reskin.ArrowButton(_G.ItemTextPrevPageButton, "LEFT", store)
-	Reskin.ArrowButton(_G.ItemTextNextPageButton, "RIGHT", store)
+	-- The page turners, art rather than words, and the same mark every other
+	-- page turn in the interface wears.
+	Reskin.PageTurn(_G.ItemTextPrevPageButton, "LEFT", store)
+	Reskin.PageTurn(_G.ItemTextNextPageButton, "RIGHT", store)
 end
 
 --- The trade skill and craft windows - First Aid, cooking, enchanting, and a
@@ -2893,10 +4612,13 @@ local function DressSkillRows(prefix)
 			btn.isExpanded = expanded or nil
 			Reskin.Collapse(btn)
 			if btn.__aetherGlyph then btn.__aetherGlyph:Show() end
-		elseif btn.__aetherGlyph then
-			-- A row that was a heading a moment ago is a recipe now. The
-			-- client clears its own mark here; ours has to go with it.
-			btn.__aetherGlyph:Hide()
+		else
+		-- A row that was a heading a moment ago is a recipe now. The client
+		-- clears its own NORMAL texture here; ours has to go with it - and the
+		-- template's other three states do not go with it, so a recipe row
+		-- still lit up with Blizzard's plus button when you hovered it.
+		if btn.__aetherGlyph then btn.__aetherGlyph:Hide() end
+		Reskin.ClearButton(btn)
 		end
 	end
 
@@ -2911,14 +4633,74 @@ end
 
 local function DressSkillWindow(prefix)
 	return function(frame, store)
-		for _, suffix in ipairs({ "ListScrollFrame", "DetailScrollFrame" }) do
-			Reskin.ScrollFrame(_G[prefix .. suffix], store)
+		-- THE LIST'S WELL REACHES UP over its own controls. The All switch and
+		-- the progress bar are content - they act on the list, and there can be
+		-- several bars - so they belong in the recess with it rather than
+		-- floating between two wells on bare glass.
+		Reskin.ScrollFrame(_G[prefix .. "ListScrollFrame"], store,
+			{ headroom = SKILL_HEAD })
+		Reskin.ScrollFrame(_G[prefix .. "DetailScrollFrame"], store)
+
+		-- ...AND THEY ARE PLACED INSIDE IT, off the well rather than off the
+		-- window: the well is the thing they belong to, and it moves.
+		local listWell = _G[prefix .. "ListScrollFrame"]
+			and _G[prefix .. "ListScrollFrame"].__aetherWell
+		if listWell then
+			local allBtn = _G[prefix .. "CollapseAllButton"]
+			if allBtn and allBtn.ClearAllPoints then
+				allBtn:ClearAllPoints()
+				allBtn:SetPoint("TOPLEFT", listWell, "TOPLEFT",
+					W.WELL_PAD, -W.WELL_PAD)
+			end
+
+			-- HOW FAR ALONG YOU ARE, in our own bar. The client's is its stone
+			-- trough and a blue fill, which is the one thing on this window still
+			-- wearing Blizzard's colours.
+			local rank = Reskin.Element(frame, "RankFrame")
+				or _G[prefix .. "RankFrame"]
+			if rank and rank.ClearAllPoints then
+				Reskin.StatusBar(rank, store)
+				rank:ClearAllPoints()
+				rank:SetPoint("TOPLEFT", allBtn or listWell,
+					allBtn and "BOTTOMLEFT" or "TOPLEFT",
+					allBtn and 0 or W.WELL_PAD, -6)
+				rank:SetPoint("RIGHT", listWell, "RIGHT", -W.WELL_PAD, 0)
+				if rank.SetHeight then rank:SetHeight(SKILL_BAR_H) end
+			end
 		end
+
+		-- WHICH ROW YOU ARE ON, in our ink rather than Blizzard's blue - and
+		-- neither of these two windows touched it at all, so the slice stayed
+		-- lying across our glass on whichever recipe you had picked.
+		Reskin.RowMark(_G[prefix .. "HighlightFrame"], store)
 
 		-- THE LITTLE STONE TAB the All control hangs off - a trainer's left cap
 		-- with a quest log's sort tab stretched across it. Its own frame, and
 		-- not one the shell walks, so it sat behind All on our glass.
 		Reskin.Strip(_G[prefix .. "ExpandButtonFrame"], store)
+
+		-- ...AND THE FILTERS SIT OVER THE PANE THEY FILTER, right-aligned above
+		-- the detail's recess and chained leftward from its corner. They were in a
+		-- tool row across the whole window, which reads as being about the window
+		-- rather than about what you are reading on the right.
+		local detailWell = _G[prefix .. "DetailScrollFrame"]
+			and _G[prefix .. "DetailScrollFrame"].__aetherWell
+		if detailWell then
+			local prev
+			for _, key in ipairs({ "InvSlotDropdown", "SubClassDropdown" }) do
+				local dd = Reskin.Element(frame, key)
+				if dd and dd.ClearAllPoints then
+					dd:ClearAllPoints()
+					if prev then
+						dd:SetPoint("RIGHT", prev, "LEFT", -W.PANEL_GAP, 0)
+					else
+						dd:SetPoint("BOTTOMRIGHT", detailWell, "TOPRIGHT", 0,
+							W.PANEL_GAP)
+					end
+					prev = dd
+				end
+			end
+		end
 
 		-- THE FILTERS, which are the modern dropdown Communities uses: a stone
 		-- holder, an arrow and a label, all regions of the button. None of them
@@ -2941,15 +4723,23 @@ local function DressSkillWindow(prefix)
 		-- Every button on it, by what it is: Create, Create All, Close, the
 		-- filter dropdowns' arrows and the count spinner. They are named, and
 		-- there are ten of them across two game versions of this window.
-		if frame.GetChildren then
-			for _, child in ipairs({ frame:GetChildren() }) do
-				if child.GetObjectType and child:GetObjectType() == "Button"
-					and child.GetFontString and child:GetFontString()
-					and not child.__aetherSkin then
-					Reskin.Button(child, "pnBody")
-				end
-			end
+		--
+		-- BUT NOT THE LIST. Every recipe in it is a Button with a font string on
+		-- it and a child of the window - so a sweep by shape gave all thirty a
+		-- pressable SURFACE, and the recipe list came up as thirty pills stacked
+		-- on each other. A row in a list is not a button you press, it is a line
+		-- you pick; nowhere else in this interface draws one that way, and the
+		-- trainer - whose sweep looks for the client's three-slice plate rather
+		-- than for words - never did.
+		local rows = {}
+		for i = 1, SKILL_ROW_CAP do
+			local row = spec and spec.row and _G[spec.row .. i]
+			if row then rows[row] = true end
 		end
+		local all = spec and spec.all and _G[spec.all]
+		if all then rows[all] = true end
+
+		Reskin.Buttons(frame, "pnBody", rows)
 
 		-- The detail pane is printed on paper like a quest.
 		local detail = _G[prefix .. "DetailScrollChildFrame"]
@@ -2970,12 +4760,183 @@ local function DressSkillWindow(prefix)
 		end
 	end
 end
+--- The letter you open, which is a window of its own.
+--
+--  ITS OWN DRESSER, not the postbox's. All of this used to run inside the
+--  postbox's, reaching across into another window's globals - so anything
+--  that threw earlier in THAT function took the letter with it, silently, and
+--  the letter came up with its sender adrift and its receipt unreadable while
+--  the postbox beside it looked perfect.
+local function DressOpenMail(frame, store)
+	local _ = frame
+
+	-- Its own art off, and the words on it lifted: printed on stationery, like
+	-- the quest giver's, and a dark smudge on glass.
+	frame.__aetherStore = frame.__aetherStore or {}
+	Reskin.Strip(frame, frame.__aetherStore)
+	Reskin.Fonts(frame, "pnBody", 2, Palette.c.text)
+	-- WHO IT IS FROM, OFF A BUTTON THIS CLIENT DOES NOT USE.
+	--
+	-- The sender's name lives in a frame pinned by TWO corners: its label on
+	-- one side and the Report Player button on the other. That button is HIDDEN
+	-- on this build - there is no reporting here - and never laid out, so the
+	-- box came out with its bottom ABOVE its top: 239 wide and NOTHING tall,
+	-- with the name drawn up beside the window's title instead of beside From.
+	--
+	-- So it hangs off its own label and carries a size of its own. Nothing that
+	-- has to be visible should be pinned to something that is not.
+	local who, label = _G.OpenMailSender, _G.OpenMailSenderLabel
+	if who and label and who.ClearAllPoints and who.SetSize then
+		who:ClearAllPoints()
+		who:SetPoint("LEFT", label, "RIGHT", 5, 0)
+		who:SetSize(239, label.GetHeight and label:GetHeight() or 16)
+	end
+
+	-- AND THE REST OF THE RECEIPT IS SWEPT RATHER THAN NAMED. Its labels -
+	-- Sale Price, Deposit, Auction House Cut - are unnamed strings inside the
+	-- invoice frame, and four of the lines are not text at all: the amounts are
+	-- MoneyFrames, gold silver and copper each in a string of their own.
+	--
+	-- RED IS LEFT ALONE. The client prints the house's cut in red and means it,
+	-- the way a quest heading's gold is meant - so a string that is markedly
+	-- redder than it is anything else keeps what it was given.
+	local function ReceiptInk(host, depth)
+		if not host or (depth or 0) > 4 then return end
+		for _, r in ipairs({ host.GetRegions and host:GetRegions() or {} }) do
+			if r.GetObjectType and r:GetObjectType() == "FontString" then
+				local red, green, blue = r:GetTextColor()
+				local mean = (red and green and blue)
+					and (red + green + blue) / 3 or 1
+
+				-- RED IS MEANT AND SO IS GOLD. The client prints the house's cut in
+				-- red and the subject in gold, the way a quest heading is gold - so
+				-- only genuinely DARK ink is lifted. The receipt's labels sit around
+				-- a third and gold sits above a half, which separates them.
+				local meant = (red and green and blue
+					and red > green + 0.2 and red > blue + 0.2)
+					or mean >= RECEIPT_DARK
+				Reskin.Font(r, "pnBody")
+				if not meant then W.Color(r, Palette.c.text) end
+			end
+		end
+		for _, kid in ipairs({ host.GetChildren and host:GetChildren() or {} }) do
+			ReceiptInk(kid, (depth or 0) + 1)
+		end
+	end
+	-- SWEPT WHEREVER IT IS. There is no invoice frame on this build at all: the
+	-- receipt is printed inside the letter's own scrolling page, so naming a
+	-- container out of the published source found nothing to lift.
+	-- ON EVERY LETTER, not once. The receipt is BUILT when a letter is opened -
+	-- an auction's lines do not exist until there is an auction to print - so a
+	-- sweep at dress time finds an empty page and everything after it arrives
+	-- in the client's own near-black.
+	local function InkReceipt()
+		if not PN.enabled then return end
+		-- THE RECEIPT'S INK IS ON A FONT OBJECT, not on its strings.
+		--
+		-- Every line of it inherits InvoiceTextFontNormal or InvoiceTextFontSmall,
+		-- and those carry a colour of their own - 0.18, 0.12, 0.06, near black,
+		-- chosen for the parchment the letter used to be printed on. A string that
+		-- takes its colour from an object does not keep one you set on the string,
+		-- so painting them one at a time was never going to hold however many
+		-- containers I swept.
+		--
+		-- Recorded before it is changed: these are the CLIENT's font objects,
+		-- shared with anything else that might use them, so switching the module
+		-- off has to give them back.
+		local c = Palette.c.text
+		for _, name in ipairs({ "InvoiceTextFontNormal", "InvoiceTextFontSmall" }) do
+			local font = _G[name]
+			if font and font.SetTextColor then
+				PN.__invoiceInk = PN.__invoiceInk or {}
+				if not PN.__invoiceInk[name] and font.GetTextColor then
+					PN.__invoiceInk[name] = { font:GetTextColor() }
+				end
+				font:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+			end
+		end
+
+		-- ...and the sweep stays for what is NOT on those objects: the money
+		-- frames print their own amounts and the client colours a loss red.
+		ReceiptInk(_G.OpenMailFrame, 0)
+	end
+
+	local function LiftAttachments()
+		if not PN.enabled then return end
+		local up = W.PANEL_PAD + W.PANEL_FOOT_H
+
+		-- AND IN FROM THE LEFT BY WHAT THE BODY MOVED. These hang off the
+		-- window's BOTTOM LEFT corner, so they want both of the body's insets and
+		-- not just the vertical one - "Take Attachments" sat outside the recess.
+		local across = frame and frame.__aetherBodyInset or 0
+		-- AND THE MONEY BUTTON AMONG THEM. What a letter carries is not always an
+		-- attachment: coin arrives in OpenMailMoneyButton, which is placed the
+		-- same way and was in none of the lists - so on an auction receipt the one
+		-- icon on the window was the one that stayed in the footer.
+		local moved = { _G.OpenMailAttachmentText, _G.OpenMailLetterButton,
+			_G.OpenMailMoneyButton, _G.OpenMailHorizontalBarLeft }
+		for i = 1, MAIL_ATTACHMENTS do
+			moved[#moved + 1] = _G["OpenMailAttachmentButton" .. i]
+		end
+		-- AND THE SLOTS LINE UP UNDER THE WORDS. The client centres a single item
+		-- across the whole width while leaving its label at the left margin, so
+		-- the one attachment on a letter floated in the middle with nothing above
+		-- it. A row and its heading start at the same place everywhere else here.
+		local label = _G.OpenMailAttachmentText
+		local first = _G.OpenMailLetterButton
+		if first and not (first.IsShown and first:IsShown()) then
+			first = _G.OpenMailMoneyButton
+		end
+		if first and not (first.IsShown and first:IsShown()) then
+			first = _G.OpenMailAttachmentButton1
+		end
+		local shunt = 0
+		if label and first and label.GetLeft and first.GetLeft
+			and label:GetLeft() and first:GetLeft() then
+			shunt = label:GetLeft() - first:GetLeft()
+		end
+
+		for _, part in ipairs(moved) do
+			if part and part.GetPoint and part:GetNumPoints() > 0 then
+				local pt, rel, relP, x, y = part:GetPoint(1)
+				if relP == "BOTTOMLEFT" and not part.__aetherLifted then
+					part.__aetherLifted = true
+					part:ClearAllPoints()
+					local mine = (part == label) and 0 or shunt
+				part:SetPoint(pt, rel, relP, (x or 0) + across + mine,
+					(y or 0) + up)
+					part.__aetherLifted = nil
+				end
+			end
+		end
+	end
+
+	-- BOTH DOORS. The row is placed by UpdateButtonPositions and the label by
+	-- Update, and the client calls them from different places - hooking one of
+	-- the two lifted the words and left the slots where they were.
+	PN.__mailHooks = PN.__mailHooks or {}
+	for _, fn in ipairs({ "OpenMail_Update",
+		"OpenMailFrame_UpdateButtonPositions" }) do
+		if hooksecurefunc and _G[fn] and not PN.__mailHooks[fn] then
+			PN.__mailHooks[fn] = true
+			hooksecurefunc(fn, function()
+				LiftAttachments()
+				InkReceipt()
+			end)
+		end
+	end
+
+	-- Once now for the letter already open, and on every one after it.
+	InkReceipt()
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
 	InspectFrame      = DressInspect,
 	MailFrame         = DressMail,
 	ItemTextFrame     = DressItemText,
+	OpenMailFrame     = DressOpenMail,
 	TradeSkillFrame   = DressSkillWindow("TradeSkill"),
 	CraftFrame        = DressSkillWindow("Craft"),
 	GameMenuFrame     = DressGameMenu,
@@ -2996,12 +4957,64 @@ PN.INTERIORS = INTERIORS
 -- module
 -- ---------------------------------------------------------------------------
 
+--- Dress it again once the client has finished putting it up.
+--
+--  A WINDOW HAS NO RECT WHEN IT TELLS YOU IT HAS OPENED. ShowUIPanel clears a
+--  panel's anchors and places it AFTER its OnShow has run, so everything this
+--  file measures - where the client's content starts, how far in from the
+--  glass it is - is being asked of a frame that is not anywhere yet, and comes
+--  back nil. The window then sits there laid out for the answer it got at
+--  login, which is the same nil.
+--
+--  The client is also still working on the window at that point: the title
+--  goes back where its own template wants it and a button anchored to a
+--  corner goes back to that corner, both after our pass has run.
+--
+--  So: once more on the next frame, when there is something to measure and the
+--  client has finished. Once, not on a ticker - a window that is up is not
+--  changing shape underneath us.
+
+function PN.Settle(frame)
+	if frame.__aetherSettling or not C_Timer or not C_Timer.After then return end
+	if not (frame.IsShown and frame:IsShown()) then return end
+	frame.__aetherTries = (frame.__aetherTries or 0) + 1
+	if frame.__aetherTries > SETTLE_TRIES then return end
+	frame.__aetherSettling = true
+	C_Timer.After(0, function()
+		frame.__aetherSettling = nil
+		if not (PN.enabled and frame.IsShown and frame:IsShown()) then return end
+		local ok, err = pcall(Dress, frame)
+		if not ok then
+			PN.failures = PN.failures or {}
+			local name = frame.GetName and frame:GetName()
+			if name then PN.failures[name] = "on settle: " .. tostring(err) end
+		end
+	end)
+end
+
 --- Skin whatever exists now. Called again whenever more of it might.
 function PN:Skin()
 	for _, entry in ipairs(PANELS) do
 		local frame = _G[entry.frame]
 		if frame and frame.GetRegions then
-			Dress(frame)
+			-- PCALLED, AND THE FAILURE KEPT, per window. A throw in here used to
+			-- come out of OnEnable, which turns the WHOLE MODULE off - and the
+			-- windows already dressed by the time it threw keep their glass. So
+			-- the interface came up looking skinned, with every hook, refresh and
+			-- re-measure in the module dead, and nothing on screen saying so.
+			--
+			-- One forbidden frame among one window's children did exactly that.
+			-- The interiors have been guarded this way for the same reason; the
+			-- shell was the half that was not.
+			PN.failures = PN.failures or {}
+			local ok, err = pcall(Dress, frame)
+			if ok then
+				PN.failures[entry.frame] = nil
+			else
+				PN.failures[entry.frame] = tostring(err)
+				A.lastFailure = "panels " .. entry.frame .. ": " .. tostring(err)
+				A:Debug("panel shell failed:", entry.frame, err)
+			end
 
 			if frame.HookScript and not frame.__aetherHooked then
 				frame.__aetherHooked = true
@@ -3011,15 +5024,50 @@ function PN:Skin()
 				-- again. See Core\Reskin.lua on hiding versus clearing.
 				frame:HookScript("OnShow", function(self)
 					if not PN.enabled then return end
-					Dress(self)
+					-- PCALLED, AND THE FAILURE KEPT, for the same reason the interiors
+					-- are: a throw in here is swallowed by the client's own handler and
+					-- the window simply stays as it was dressed at login, which looks
+					-- exactly like a layout that ran and got the wrong answer.
+					local ok, err = pcall(Dress, self)
+					if not ok then
+						PN.failures = PN.failures or {}
+						PN.failures[entry.frame] = "on show: " .. tostring(err)
+					end
+					PN.Settle(self)
 				end)
 			end
 		end
 	end
 end
 
+--- The panel system putting a window UP, which is a later moment than OnShow.
+--
+--  OnShow fires from Show(), and ShowUIPanel clears the window's anchors and
+--  places it AFTER that - so being told a window has opened is being told
+--  about a frame that is not anywhere yet, and everything measured off it
+--  comes back nil. This fires when the panel system has finished, which is
+--  the first moment there is anything to measure.
+--
+--  Hooked once, on the shared entry point rather than per window: every one of
+--  these windows goes up through it.
+function PN:WatchPanelSystem()
+	if PN.__panelHook or not hooksecurefunc or not ShowUIPanel then return end
+	PN.__panelHook = true
+	hooksecurefunc("ShowUIPanel", function(frame)
+		if not PN.enabled or type(frame) ~= "table" then return end
+		local name = frame.GetName and frame:GetName()
+		if not (name and PN.ENTRY and PN.ENTRY[name]) then return end
+		local ok, err = pcall(Dress, frame)
+		if not ok then
+			PN.failures = PN.failures or {}
+			PN.failures[name] = "on panel show: " .. tostring(err)
+		end
+	end)
+end
+
 function PN:OnEnable()
 	self:Skin()
+	self:WatchPanelSystem()
 
 	-- The load-on-demand half. Each arrives with its own addon the first time
 	-- it is opened, so this runs again rather than only at login.
@@ -3030,13 +5078,29 @@ end
 function PN:OnDisable()
 	A:UnregisterAllEvents(self)
 
+	-- THE CLIENT'S OWN FONT OBJECTS, HANDED BACK. The postbox's receipt takes
+	-- its ink from InvoiceTextFontNormal and InvoiceTextFontSmall rather than
+	-- from its own strings, so lifting it means editing something shared - and
+	-- a module that switches off has to leave the interface as it found it.
+	for name, was in pairs(PN.__invoiceInk or {}) do
+		local font = _G[name]
+		if font and font.SetTextColor and was[1] then
+			font:SetTextColor(was[1], was[2], was[3], was[4] or 1)
+		end
+	end
+	PN.__invoiceInk = nil
+
 	for _, entry in ipairs(PANELS) do
 		local frame = _G[entry.frame]
 		if frame and frame.__aetherPanel then
 			local close = CloseButton(frame)
-			if close and close.__aetherX then
-				close.__aetherX:Hide()
-				close.__aetherX = nil
+			if close and close.__aetherClose then
+				close.__aetherClose:Hide()
+				close.__aetherClose = nil
+				if close.__aetherCloseWash then
+					close.__aetherCloseWash:Hide()
+					close.__aetherCloseWash = nil
+				end
 			end
 
 			-- Regions first, buttons after: a button's state textures are also

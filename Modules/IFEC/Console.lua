@@ -43,7 +43,7 @@ local GAP     = 12
 -- 44 across the ring. The sheet insets the ring inside its cell so the frames
 -- cannot bleed into each other, so the frame is a little larger than the ring.
 local DIAL    = 44
-local DIAL_FRAME = DIAL / (Media.dial and Media.dial.ring or 1)
+local DIAL_FRAME = DIAL / (Media.dialSheet and Media.dialSheet.ring or 1)
 local CHEV    = 18                     -- the fold control's box
 local GLYPH_ROOM = 17                  -- the exit mark plus its gap, inside a pill
 local DISC    = 35
@@ -140,11 +140,11 @@ local function Build()
 	dial.rim:SetSize(DIAL + RIM * 2, DIAL + RIM * 2)
 
 	dial.track = dial:CreateTexture(nil, "BORDER")
-	dial.track:SetTexture(Media.dial.track)
+	dial.track:SetTexture(Media.dial.ifec.track)
 	dial.track:SetAllPoints(dial)
 
 	dial.arc = dial:CreateTexture(nil, "ARTWORK")
-	dial.arc:SetTexture(Media.dial.arc)
+	dial.arc:SetTexture(Media.dial.ifec.arc)
 	dial.arc:SetAllPoints(dial)
 	dial.arc:Hide()
 

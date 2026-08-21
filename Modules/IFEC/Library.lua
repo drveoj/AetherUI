@@ -33,9 +33,13 @@ local Content, Playback, Registry = A.IFEC.Content, A.IFEC.Playback, A.IFEC.Regi
 local WIDTH   = 300
 local HEIGHT  = 320
 local GAP     = 8              -- between the console and the drawer
-local PAD_X   = 14
-local PAD_T   = 12
-local PAD_B   = 12
+-- THE SHARED NUMBERS. 15a gives one header height and one body padding
+-- for every panel in the interface, and a window of ours is a panel like
+-- any other - the only reason these were local was that they were written
+-- before there was anywhere to put them.
+local PAD_X   = W.PANEL_PAD
+local PAD_T   = W.PANEL_PAD
+local PAD_B   = W.PANEL_PAD
 local ROW_H   = 30
 local HEAD_H  = 20             -- a season heading
 local TAB_H   = 22
@@ -170,7 +174,9 @@ function Library:Build(host)
 		f.tabs[i] = t
 	end
 
-	f.list = W.Scroller(f, SCROLL_STEP)
+	-- Two: this drawer is narrow and its list already sits ten from the
+	-- edge, so a deeper recess would put its rim through the frame's rim.
+	f.list = W.Scroller(f, SCROLL_STEP, { outset = 2 })
 	f.list:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(PAD_X - 4), PAD_B)
 
 	f.rows     = W.Pool(function() return BuildRow(f.list.child) end)

@@ -8,7 +8,7 @@ The brief has two halves and the second one is the hard one:
 1. Make tooltips look like the rest of Aether UI.
 2. Do not stop other addons putting things in them.
 
-Joe runs MobInfo2, Pawn, VendorPricePlus, Bagnon/BagBrother, Questie and the whole
+The test client runs MobInfo2, Pawn, VendorPricePlus, Bagnon/BagBrother, Questie and the whole
 Auctioneer suite (Informant, Enchantrix, BeanCounter — all of which go through
 LibExtraTip). Every one of them writes into `GameTooltip`. That constraint decides
 the architecture before any of the visual decisions do.
@@ -59,7 +59,7 @@ Three more facts that each cost a decision:
 ## 2. The compatibility contract
 
 This is the part worth being strict about. Each rule below exists because a
-specific addon in Joe's folder would otherwise break.
+specific addon in that folder would otherwise break.
 
 ### 2.1 `HookScript` only — never `SetScript`
 

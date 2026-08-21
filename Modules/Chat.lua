@@ -169,7 +169,7 @@ function Chat:AnchorPanel()
 	p.divider:ClearAllPoints()
 	p.divider:SetPoint("TOPLEFT", p, "TOPLEFT", PAD, -(PAD + TAB_H + 4))
 	p.divider:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PAD, -(PAD + TAB_H + 4))
-	p.divider:SetHeight(A:Px(1))
+	W.PaintHairline(p.divider)
 
 	self:UpdateZone()
 end
