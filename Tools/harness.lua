@@ -34254,11 +34254,19 @@ section("threat: one place decides which tier a unit is in", function()
 			TH:Poll()
 			A.Config:Module("threat").role = savedRole
 
-			-- A COMFORTABLE LEAD CLOSES THE RING. Five times the runner-up's
-			-- threat, which is as secure as it gets.
-			check(lit.fill == 1,
-				"and holding it comfortably closes the ring completely (" ..
-				tostring(lit.fill) .. ")")
+			-- A HOLDER'S RING IS THE HEADROOM LEFT, and it is the exact
+			-- complement of the closest challenger's. A challenger's ring is
+			-- their share of the PULL THRESHOLD - at 1 they take it - so what
+			-- is left of the holder's is precisely how much room there is
+			-- before somebody does.
+			local challenger = TH:For("party1")
+			check(challenger and lit.fill
+				and math.abs(lit.fill + math.min(1, challenger.scaled / 100) - 1)
+					< 0.01,
+				"the holder's ring and the challenger's sum to one (" ..
+				string.format("%.2f", lit.fill or -1) .. " + " ..
+				string.format("%.2f", challenger and challenger.scaled / 100 or -1)
+				.. ")")
 
 			-- AND BEING CAUGHT DRAINS IT. Two readings of one fight, moving
 			-- against each other: the holder used to sit at a flat full,
@@ -34289,7 +34297,7 @@ section("threat: one place decides which tier a unit is in", function()
 			tick(4)
 			local wide = lit.fill
 			table_({ player = { true, 3, 100.0, 100.0, 4800 },
-				party1 = { false, 0, 70.0, 91.0, 4000 } })
+				party1 = { false, 0, 80.0, 104.0, 4000 } })
 			TH:Poll()
 			check(wide and lit.fill and lit.fill < wide - 0.1,
 				"a lead closing redraws the holder's ring, though their share"
@@ -34300,8 +34308,11 @@ section("threat: one place decides which tier a unit is in", function()
 			-- NEVER QUITE NOTHING. A ring that vanishes at the moment it
 			-- matters most reads as the module having given up rather than as
 			-- a lead having gone.
+			-- A DEAD HEAT: the challenger is AT the threshold, so the
+			-- complement is exactly nothing. Ninety-nine leaves a hundredth
+			-- behind and cannot show whether the floor is doing anything.
 			table_({ player = { true, 3, 100.0, 100.0, 5000 },
-				party1 = { false, 1, 99.0, 128.7, 5000 } })
+				party1 = { false, 1, 100.0, 130.0, 5000 } })
 			TH:Poll()
 			tick(4)
 			check((lit.fill or 0) > 0,
@@ -34317,10 +34328,23 @@ section("threat: one place decides which tier a unit is in", function()
 			TH:Poll()
 			local mine = TH:For("player")
 			local theirs = TH:For("party1")
-			check(mine and theirs and mine.fill > 0.9 and theirs.fill < 0.3,
+			check(mine and theirs and mine.fill > 0.9 and theirs.fill < 0.1,
 				"about to take it: yours nearly closed, theirs nearly open (" ..
 				string.format("%.2f", mine and mine.fill or -1) .. " vs " ..
 				string.format("%.2f", theirs and theirs.fill or -1) .. ")")
+
+			-- AND THE REPORTED CASE, exactly. A warlock at 52% of the pull
+			-- threshold with the pet holding: the pet used to read 96% under a
+			-- lead-based mapping, because 52% of the threshold is already two
+			-- thirds of the pet's threat and half again the runner-up counted
+			-- as secure. "I have 60% threat but the pet shows 100% still."
+			table_({ pet = { true, 3, 100.0, 255.0, 5000 },
+				player = { false, 0, 52.0, 67.6, 3380 } })
+			TH:Poll()
+			local heldBy = TH:For("pet")
+			check(heldBy and math.abs(heldBy.fill - 0.48) < 0.02,
+				"a pet holding against a warlock on 52% reads 48%, not 96% (" ..
+				string.format("%.2f", heldBy and heldBy.fill or -1) .. ")")
 
 			A.Config:Module("threat").role = "tank"
 			table_({ player = { true, 3, 100.0, 100.0, 5000 },

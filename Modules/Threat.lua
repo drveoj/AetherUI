@@ -131,19 +131,29 @@ local TANK_SETTLE = 3
 -- changes hands on every trade, which is the opposite of what it is for.
 local TANK_MARGIN = 1.5
 
--- WHAT COUNTS AS A COMFORTABLE LEAD, as a percentage of the runner-up's threat.
+-- A HOLDER'S RING IS THE HEADROOM LEFT, AND IT IS THE EXACT COMPLEMENT OF THE
+-- CLOSEST CHALLENGER'S.
 --
--- The holder's ring used to sit at a flat full, because the server reports
--- whoever is holding at a scaled 100 by definition - so as somebody climbed
--- toward them, nothing on their capsule moved. Reported from the game: "when
--- I'm gaining 40% aggro on my gauge, they should be missing 40% on theirs."
+-- The holder used to sit at a flat full, because the server reports whoever is
+-- holding at a scaled 100 by definition - so as somebody climbed toward them,
+-- nothing on their capsule moved at all. Reported from the game: "when I'm
+-- gaining 40% aggro on my gauge, they should be missing 40% on theirs."
 --
--- They are two readings of one fight and they should move against each other.
--- So a non-holder's ring fills toward pulling and a holder's DRAINS toward
--- being caught: half again as much threat as the runner-up is a full ring, a
--- dead heat is an empty one, and the moment of a steal is one ring closing as
--- the other opens.
-local SECURE_LEAD = 150
+-- The first attempt at that mapped their LEAD onto the ring - half again the
+-- runner-up's threat being full - and it was far too generous: a warlock at 52%
+-- of the pull threshold already holds two thirds of the pet's threat, and the
+-- pet still read 96%. Reported again, with the picture: "I have 60% threat but
+-- the pet shows 100% still."
+--
+-- So it is the complement, and it means something exact. A challenger's ring is
+-- their share of the PULL THRESHOLD - at 1 they take it - so what is left of
+-- the holder's is precisely how much headroom there is before somebody does.
+-- The two sum to one, they move against each other, and the moment of a steal
+-- is one ring closing as the other opens.
+--
+-- 16b says the holder shows a full ring. They do, when there is nobody else on
+-- the table; below that this is the more useful reading and it is what was
+-- asked for twice.
 
 -- Never quite nothing, though. A ring that vanishes at the moment it matters
 -- most reads as the module having given up rather than as a lead having gone.
@@ -620,18 +630,33 @@ function TH:Poll()
 			if r.tanking then r.lead = Lead(r.unit, r.mob) end
 			r.tier, r.reason = Judge(r.unit, r, crowd[r.key])
 
-			-- TWO READINGS OF ONE FIGHT, moving against each other. A
-			-- non-holder fills toward pulling; a holder drains toward being
-			-- caught. See SECURE_LEAD.
-			if r.tanking then
-				r.fill = r.lead
-					and math.max(LEAD_FLOOR, math.min(1,
-						(r.lead - 100) / (SECURE_LEAD - 100)))
-					or 1
-			else
-				r.fill = math.min(1, (r.scaled or 0) / 100)
-			end
+			r.fill = math.min(1, (r.scaled or 0) / 100)
 			if r.tier ~= TIER.NONE then now[r.unit] = r end
+		end
+
+		-- AND THE HOLDER'S RING IS WHAT IS LEFT OF IT. A second pass, because
+		-- the answer is a fact about the whole table rather than about any one
+		-- unit: the closest challenger's share is what the holder has left to
+		-- give away.
+		--
+		-- FROM THE RECORDS WHERE WE HAVE THEM, from the lead where we do not -
+		-- somebody outside the group can be on the table and we cannot see
+		-- them, but the server's own lead figure counts them. 100/lead is the
+		-- runner-up's share of the holder's threat, which is the same reading
+		-- one step earlier.
+		for _, r in ipairs(pending) do
+			if r.tanking then
+				local top = 0
+				for _, o in ipairs(pending) do
+					if o.key == r.key and o.unit ~= r.unit then
+						top = math.max(top, math.min(1, (o.scaled or 0) / 100))
+					end
+				end
+				if top <= 0 and r.lead and r.lead > 0 then
+					top = math.min(1, 100 / r.lead)
+				end
+				r.fill = math.max(LEAD_FLOOR, 1 - top)
+			end
 		end
 	end
 

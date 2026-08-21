@@ -739,6 +739,30 @@ probe` to dump the module's own state per unit (mob, scaled, tier, reason, rate,
 projection, plus the focus mob and who it thinks is tanking) is the cheap way to
 get them, and is the next thing to do if it still feels wrong.
 
+## 7f. The gauges still did not add up — 2026-08-21
+
+*"I have 60% threat but the pet shows 100% still. We're not reducing their
+threat by the amount I'm stealing."*
+
+§7e mapped the holder's ring onto their **lead** — half again the runner-up's
+threat counting as a full ring. That was far too generous and the picture proved
+it: a warlock at 52% of the pull threshold already holds two thirds of the pet's
+threat, and the pet still read 96%.
+
+**The holder's ring is now the exact complement of the closest challenger's**,
+and that means something precise rather than being a fudge. A challenger's ring
+is their share of the *pull threshold* — at 1 they take it — so what is left of
+the holder's is exactly how much headroom there is before somebody does. The two
+sum to one. At 52%, the pet reads 48%.
+
+Taken from the records for units we can see and from the server's own lead
+figure when we cannot — somebody outside the group can be on the table, and
+`100/lead` is the same reading one step earlier.
+
+16b says the holder shows a full ring. They do, when there is nobody else on the
+table. Below that this is the more useful reading, and it is what was asked for
+twice.
+
 ## 8. What is left
 
 All five phases are built and the suite is green. What remains is in game:
