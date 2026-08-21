@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.20.0",
+		date    = "2026-08-21",
+		lines   = {
+			"Threat: the tank's ring and yours now add up. Theirs shows the headroom left before somebody takes the mob, so as your ring fills, theirs empties by the same amount.",
+			"Whoever is holding it no longer reads as secure while you are climbing all over them - at 52% on your gauge they are at 48% on theirs, not 96%.",
+			"No more 'losing aggro' at the pull. A holder with nobody behind them is not losing it, and the warning now waits for somebody to actually be there.",
+			"The same applied to hostile nameplates: a tank's plate no longer turns gold the moment a fight starts.",
+		},
+	},
+	{
 		version = "0.19.0",
 		date    = "2026-08-21",
 		lines   = {
