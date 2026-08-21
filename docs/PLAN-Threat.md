@@ -763,6 +763,32 @@ figure when we cannot — somebody outside the group can be on the table, and
 table. Below that this is the more useful reading, and it is what was asked for
 twice.
 
+## 7g. Warned at the pull — 2026-08-21
+
+*"Right at the beginning of the fight, the pet shows a 'losing aggro' message
+but I haven't even cast yet."*
+
+**Nobody behind you is not a dead heat.** The tank's warning read
+`UnitThreatPercentageOfLead`, which is the holder's threat as a percentage of
+the runner-up's — and with no runner-up that figure is not a lead at all. Taken
+at face value it read as somebody breathing down the pet's neck.
+
+Replaced with the server's own `rawPercentage`, which is a unit's threat against
+the **holder's** — so 16a's "someone is past 90% of your threat" is the rule
+verbatim rather than derived from anything. No challenger, no warning.
+
+**The same fault was in two places and only one was reported.** A nameplate has
+no per-unit records to read a challenger off, so the lead is its only route
+there; a tank's plate would have gone gold at the pull for exactly the same
+reason. Guarded.
+
+**And it turned up two unreachable branches.** The fallbacks to the lead in the
+tier decision and in the holder's fill could never run: a holder whose only
+challengers are invisible to us has a crowd of one, and the "nobody to lose it
+to" rule has already returned by then. Both gone, along with the `r.lead` that
+fed them. Third time this session that a line with a confident comment turned
+out to be doing nothing.
+
 ## 8. What is left
 
 All five phases are built and the suite is green. What remains is in game:

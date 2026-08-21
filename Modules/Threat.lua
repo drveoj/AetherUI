@@ -61,10 +61,16 @@ local RING_FLOOR = 70
 
 -- A TANK IS LOSING GRIP WHEN THE RUNNER-UP IS PAST 90% OF THEIR THREAT, which
 -- is what the design says and is NOT what `status` reports: status turns 2 at
--- 100%, by which time the act-now window has closed. UnitThreatPercentageOfLead
--- gives the holder's threat as a percentage of the runner-up's - 1175% when the
--- holder has 4700 against 400 - so 90% of yours is 1/0.9 of theirs.
-local GRIP_LEAD = 100 / 0.90
+-- 100%, by which time the act-now window has closed.
+--
+-- Read straight off `rawPercentage` where we can see the challenger - that IS a
+-- unit's threat against the holder's, so past 90 is the rule verbatim. Where we
+-- cannot, which is a nameplate we hold no records for,
+-- UnitThreatPercentageOfLead says the same thing upside down: the holder's
+-- threat as a percentage of the runner-up's, so 90% of yours is 1/0.9 of
+-- theirs.
+local GRIP = 90
+local GRIP_LEAD = 100 / (GRIP / 100)
 
 -- How often the table is re-read. The events below say "something moved" and a
 -- poll covers what they do not: UNIT_THREAT_LIST_UPDATE arrives naming
@@ -497,8 +503,22 @@ local function Judge(unit, r, crowd)
 			if unit == "pet" then return TIER.NONE end
 			return TIER.FAIL, "lost"
 		end
-		local lead = r.lead
-		if lead and lead < GRIP_LEAD then return TIER.WARN, "losing" end
+		-- SOMEBODY HAS TO ACTUALLY BE THERE.
+		--
+		-- `rawPercentage` is a unit's threat against the HOLDER's, so a
+		-- challenger past 90 is exactly 16a's "someone is past 90% of your
+		-- threat" - the server's own number, with nothing derived from it.
+		--
+		-- The lead is only the fallback now, for a challenger outside the group
+		-- that we cannot see, and it is guarded: with nobody on the table at
+		-- all the lead comes back as nothing or as zero, and zero read as a
+		-- dead heat. That is why the pet was warned it was losing aggro at the
+		-- pull, before a single cast had gone out.
+		-- NO FALLBACK TO THE LEAD HERE, and not for want of trying: a holder
+		-- whose only challengers are invisible to us has a crowd of one, and
+		-- the rule at the top of this function has already returned. Written,
+		-- the branch could not be reached from anywhere.
+		if r.chase and r.chase >= GRIP then return TIER.WARN, "losing" end
 		-- GOOD NEWS NEVER ESCALATES. A tank holding securely stays here for as
 		-- long as the fight lasts.
 		return TIER.RING, "holding"
@@ -625,9 +645,31 @@ function TH:Poll()
 		end
 		if key then self:NoteHolder(key, holder, at) end
 
+		-- WHO IS CLOSEST BEHIND EACH HOLDER, before anything is judged: both
+		-- the tank's warning and the holder's ring are facts about the whole
+		-- table rather than about the holder, and the warning needs it early.
+		--
+		-- `chase` is the challenger's threat as a percentage of the HOLDER's,
+		-- `press` their share of the pull threshold. nil for both when there is
+		-- nobody else on the table at all - which is a different thing from
+		-- nobody being close, and is the distinction the pull-time warning
+		-- turned on.
+		for _, r in ipairs(pending) do
+			if r.tanking then
+				local chase, press, seen = 0, 0, false
+				for _, o in ipairs(pending) do
+					if o.key == r.key and o.unit ~= r.unit then
+						seen = true
+						chase = math.max(chase, o.raw or 0)
+						press = math.max(press, math.min(1, (o.scaled or 0) / 100))
+					end
+				end
+				if seen then r.chase, r.press = chase, press end
+			end
+		end
+
 		for _, r in ipairs(pending) do
 			r.rate, r.ahead = self:Trend(r.unit, r.key, r.scaled or 0, at)
-			if r.tanking then r.lead = Lead(r.unit, r.mob) end
 			r.tier, r.reason = Judge(r.unit, r, crowd[r.key])
 
 			r.fill = math.min(1, (r.scaled or 0) / 100)
@@ -645,17 +687,10 @@ function TH:Poll()
 		-- runner-up's share of the holder's threat, which is the same reading
 		-- one step earlier.
 		for _, r in ipairs(pending) do
+			-- Same as the warning above: `press` is nil only when nobody else
+			-- is on the table, and that has already been shown nothing at all.
 			if r.tanking then
-				local top = 0
-				for _, o in ipairs(pending) do
-					if o.key == r.key and o.unit ~= r.unit then
-						top = math.max(top, math.min(1, (o.scaled or 0) / 100))
-					end
-				end
-				if top <= 0 and r.lead and r.lead > 0 then
-					top = math.min(1, 100 / r.lead)
-				end
-				r.fill = math.max(LEAD_FLOOR, 1 - top)
+				r.fill = math.max(LEAD_FLOOR, 1 - (r.press or 0))
 			end
 		end
 	end
@@ -909,8 +944,17 @@ function TH:PlateFor(unit)
 		-- COMING AT THE WRONG PERSON means anyone who is not you.
 		if not tanking then return c.danger, true end
 		-- Or somebody else on its table is rising, which is the plate to act on.
+		-- THE LEAD IS THE ONLY ROUTE HERE. A plate is a mob we hold no records
+		-- for, so there is no challenger to read a rawPercentage off.
+		--
+		-- AND IT HAS TO BE POSITIVE. With nobody behind you the figure is not a
+		-- lead at all, and taking it at face value reads as a dead heat - which
+		-- is the same fault that told a pet it was losing aggro at the pull,
+		-- one surface along.
 		local lead = Lead("player", unit)
-		if lead and lead < GRIP_LEAD then return c.semanticGold, false end
+		if lead and lead > 0 and lead < GRIP_LEAD then
+			return c.semanticGold, false
+		end
 		return nil
 	end
 

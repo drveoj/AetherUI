@@ -7932,7 +7932,14 @@ function UnitThreatPercentageOfLead(unit, mob)
 		local v = row[5] or 0
 		if u == unit then mine = v elseif v > best then best = v end
 	end
-	if best <= 0 then return end
+	-- NOBODY BEHIND YOU IS NOT A DEAD HEAT, and this is where that gets
+	-- decided. With no runner-up the figure is not a lead at all; returning
+	-- nothing would let a module that treats a small value as "they are right
+	-- behind me" look correct in here. Zero is the value that breaks things, so
+	-- zero is what this hands back - the mock's job is to be no kinder than the
+	-- client, and something at or below the threshold is what a pet warned of
+	-- losing aggro at the pull was reading.
+	if best <= 0 then return 0 end
 	return mine / best * 100
 end
 
@@ -34050,6 +34057,38 @@ section("threat: one place decides which tier a unit is in", function()
 	check(t == TIER.WARN and why == "losing",
 		"a tank whose runner-up is past 90% is warned while status still says"
 		.. " secure (" .. tostring(t) .. "/" .. tostring(why) .. ")")
+
+	-- AND NOT AT THE PULL. Reported from the game: a pet showing LOSING AGGRO
+	-- before a single cast had gone out. Nobody behind you is not a dead heat -
+	-- the lead figure is meaningless with no runner-up, and taken at face value
+	-- it reads as somebody breathing down your neck.
+	--
+	-- Read off the challenger's own rawPercentage now, which IS their threat
+	-- against the holder's, so 16a's "someone is past 90% of your threat" is
+	-- the rule verbatim rather than derived from anything.
+	table_({ player = { true, 3, 100.0, 100.0, 5000 },
+		party1 = { false, 0, 0.0, 0.0, 0 } })
+	TH:Poll()
+	local tz, wz = tier("player")
+	check(tz == TIER.RING and wz == "holding",
+		"a holder with nobody behind them is not warned they are losing it ("
+		.. tostring(tz) .. "/" .. tostring(wz) .. ")")
+
+	-- AND THE PLATE SAYS THE SAME, one surface along. A plate is a mob we hold
+	-- no records for, so the lead is its only route and it needs the same
+	-- guard - the fault was in two places and only one of them was reported.
+	do
+		_G.__units.target.inCombat = true
+		__spawnPlate("nameplate8", { exists = true, name = "Kolkar Drudge",
+			level = 17, reaction = 2, hp = 400, hpMax = 900, inCombat = true })
+		_G.__threat[UnitGUID("nameplate8")] = {
+			player = { true, 3, 100.0, 100.0, 3000 },
+		}
+		TH:Poll()
+		check(TH:Plate("nameplate8") == nil,
+			"and a tank's plate is not gold at the pull either")
+		__despawnPlate("nameplate8")
+	end
 
 	table_({ player = { false, 1, 90.0, 117.0, 4500 },
 		party1 = { true, 3, 100.0, 100.0, 5000 } })
