@@ -38,6 +38,20 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.19.0",
+		date    = "2026-08-21",
+		lines   = {
+			"Threat: a ring round your class pip that fills as your threat climbs, so you can pace against it rather than be told after the fact.",
+			"It warns before the flip, not at it - past half way and rising, it reads where the rate says you will be in about a cast.",
+			"Whoever is holding the mob carries a shield on their disc, and their ring drains as the runner-up closes on them.",
+			"Losing it, or taking it, turns the capsule gold or red and names the problem - and the warning stays up long enough to read.",
+			"Hostile nameplates carry the same reading as a border colour: quiet on its proper target, gold when you are rising on it, red when it is coming for the wrong person.",
+			"Toolbox: Threat has its own settings page - rings only, or off, and the screen flash and ping on their own switch.",
+			"The postbox, the letter you are reading and the trade skill windows are in glass, with their buttons in a strip along the foot.",
+			"An NPC with more than one quest no longer hands you its list back in the game's own parchment after you accept one.",
+		},
+	},
+	{
 		version = "0.18.0",
 		date    = "2026-08-19",
 		lines   = {
