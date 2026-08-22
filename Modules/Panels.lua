@@ -318,7 +318,12 @@ local PANELS = {
 			"TradePlayerItem1", "TradeRecipientItem1",
 			"TradeFramePlayerEnchantText",
 			"TradeHighlightPlayer", "TradeHighlightRecipient",
-			"TradePlayerInputMoneyFrame", "TradeRecipientMoneyFrame" },
+			-- NOT TradePlayerInputMoneyFrame. TradeFrame_OnLoad calls
+			-- SetForbidden on it, so every method on it and on its three
+			-- fields throws from here - it cannot be measured, moved or
+			-- dressed. Its recess above travels for it, which is the whole of
+			-- what we can do about that corner of the window.
+			"TradeRecipientMoneyFrame" },
 		-- ITS CONTENT IS ALREADY IN RECESSES - six of them, and every piece of
 		-- this window is inside one. A body well round the outside would be a
 		-- second rim round the first, which is the trainer's case exactly.
@@ -784,6 +789,16 @@ function PN.Part(name)
 		w = (w == nil) and _G[step] or (type(w) == "table" and w[step] or nil)
 		if w == nil then return nil end
 	end
+	-- ...AND NOT ONE THE CLIENT HAS PUT OUT OF REACH. Every name this file
+	-- resolves is handed straight to something that measures or moves it, and
+	-- every method on a forbidden frame throws - so the guard belongs here,
+	-- once, rather than at each of the dozen places a part is used.
+	--
+	-- The trade window's own money field is one: TradeFrame_OnLoad calls
+	-- SetForbidden on it, it is named in that window's body list, and the
+	-- first pass that measured it took the footer and the whole interior down
+	-- with it.
+	if Reskin.Forbidden(w) then return nil end
 	return w
 end
 local Part = PN.Part
@@ -1164,7 +1179,16 @@ local function MeasureTop(frame, pane)
 	end
 
 	local function walk(f, depth)
-		if depth > 4 or ours[f] then return end
+		-- NOTHING THE CLIENT HAS PUT OUT OF REACH. It is still in its parent's
+		-- child list and every method on it throws, so a walk that asks each
+		-- child for its rect would die on the first one it met.
+		--
+		-- BELT AND BRACES, and said so plainly: PN.Part already refuses to
+		-- hand one of these out, so no window we know of reaches this line
+		-- with a forbidden frame - the trade window's money field is a child
+		-- of the WINDOW rather than of anything measured. Kept because the
+		-- next one might not be, and the cost is one call.
+		if depth > 4 or ours[f] or Reskin.Forbidden(f) then return end
 		-- NOT { (f:GetRegions()) }. Parentheses round a call truncate it to one
 		-- value, so a walk written that way sees the first region and the first
 		-- child of every frame and nothing else - which measured three of the
@@ -1186,10 +1210,11 @@ local function MeasureTop(frame, pane)
 		local scrolled = f.GetScrollChild and f:GetScrollChild()
 		local kids = f.GetChildren and { f:GetChildren() } or {}
 		for _, c in ipairs(kids) do
+			if Reskin.Forbidden(c) then c = nil end
 			-- NO `goto` HERE, and none anywhere else in this addon: the game runs
 			-- Lua 5.1, which has no such statement. LuaJIT does, so the harness
 			-- compiled it happily and the whole file failed to load in the client.
-			if c ~= scrolled and not ours[c] and c.IsShown and c:IsShown() then
+			if c and c ~= scrolled and not ours[c] and c.IsShown and c:IsShown() then
 				local top = c.GetTop and c:GetTop()
 				-- A CONTAINER SAYS NOTHING. One anchored to the whole window
 				-- reaches the top edge whatever is inside it, so it is walked
@@ -5398,14 +5423,25 @@ local function DressTrade(frame, store)
 		Reskin.Well(_G.TradeRecipientMoneyBg, { inset = { 0, 0, 0, 0 } })
 	end
 
-	-- YOUR OWN, three slices of Common-Input-Border each, drawn as background
-	-- regions of the box itself - and the coin is the FIELD's mark rather than
-	-- a picture near it, because the client hangs gold's OUTSIDE the box and
-	-- the other two INSIDE. Send Mail's money row is the same template with
-	-- the same problem, and the same answer.
-	for _, part in ipairs({ "Gold", "Silver", "Copper" }) do
-		local box = _G["TradePlayerInputMoneyFrame" .. part]
-		Reskin.EditBox(box, { keep = { "texture" }, unit = box and box.texture })
+	-- AND YOURS IS OUT OF REACH, WHICH IS THE CLIENT'S DOING AND NOT A GAP
+	-- HERE. TradeFrame_OnLoad calls SetForbidden on TradePlayerInputMoneyFrame,
+	-- so every method on it and on its three fields throws from insecure code:
+	-- it cannot be swept, welled or moved, and Send Mail's answer to the same
+	-- template - three of our pills with the coin as the field's own mark -
+	-- cannot be applied here at any price.
+	--
+	-- What CAN be done is the recess round it, which is a frame of the window
+	-- like any other. So your purse sits in one of ours with the client's own
+	-- field art still inside it, and theirs sits in one with our figure in it.
+	-- The pair still reads as a pair.
+	--
+	-- This is also what killed the whole dresser: the frame is a child of the
+	-- window, it is named in the body list, and the first thing that measured
+	-- it took the footer strip and every line below this one down with it.
+	-- Nothing in this file guarded for a forbidden frame; PN.Part does now.
+	if _G.TradePlayerInputMoneyInset then
+		Reskin.Well(_G.TradePlayerInputMoneyInset, { inset = { 0, 0, 0, 0 },
+			corner = W.WELL_CORNER, fill = "wellFill", edge = "wellEdge" })
 	end
 
 	-- AND THEIRS IS A ROW OF BUTTONS, which is the trap in this window: a

@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.21.1",
+		date    = "2026-08-22",
+		lines   = {
+			"Trade: the Trade and Cancel buttons are in the footer strip and wear our glass. They were in neither, and so was everything else that should have happened after the point where the window's dresser stopped dead.",
+			"The client puts the money field you type into out of an addon's reach entirely, and nothing here was checking for that - one throw took the footer and the whole interior with it. Your purse keeps the game's own fields, but it sits in a recess of ours now, the way the other side's figure does.",
+		},
+	},
+	{
 		version = "0.21.0",
 		date    = "2026-08-22",
 		lines   = {

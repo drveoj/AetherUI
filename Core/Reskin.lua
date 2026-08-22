@@ -83,6 +83,24 @@ local EDIT_INSET = 8
 --  gives it. PLAIN INDEXING, never rawget: the reworked frames are mixin
 --  objects and resolve their parts through __index, so rawget finds a frame
 --  and none of its pieces.
+--- Has the client put this frame out of reach?
+--
+--  SetForbidden is real, and this game uses it on ORDINARY WINDOWS rather than
+--  only on the shop: TradeFrame_OnLoad calls it on TradePlayerInputMoneyFrame.
+--  From insecure code every method on such a frame throws, the answer is
+--  inherited by its children, and the frame is still in its parent's child
+--  list - so any sweep that walks children and asks each one a question dies
+--  on it. Nothing in this file or in Panels.lua guarded for it, and the trade
+--  window's dresser stopped dead the first time one was reached.
+--
+--  IsForbidden is the one question you are allowed to ask, and even that is
+--  pcalled: a throw asking it is itself an answer.
+function Reskin.Forbidden(f)
+	if type(f) ~= "table" or not f.IsForbidden then return false end
+	local ok, forbidden = pcall(f.IsForbidden, f)
+	return (not ok) or (forbidden and true or false)
+end
+
 function Reskin.Element(frame, key)
 	if type(frame) ~= "table" or type(key) ~= "string" then return nil end
 
@@ -179,6 +197,7 @@ end
 --  its own regions. It applies to this frame only - the art children below are
 --  swept whole, which is what they are in the list for.
 function Reskin.Strip(frame, store, keep)
+	if Reskin.Forbidden(frame) then return end
 	if not frame or not frame.GetRegions or type(store) ~= "table" then return end
 
 	ClearRegions(frame, store, KeepSet(frame, keep))
@@ -210,6 +229,7 @@ end
 --  `names` are keys Element understands - a parentKey or a $parent global - so
 --  the caller names the parts to keep the way the client names them.
 function Reskin.StripExcept(frame, store, names)
+	if Reskin.Forbidden(frame) then return end
 	if not frame or not frame.GetRegions or type(store) ~= "table" then return end
 
 	ClearRegions(frame, store, KeepSet(frame, names))
@@ -237,7 +257,7 @@ end
 --  The only thing that works. Hiding the regions loses to the client, which
 --  shows the pushed one on mousedown with nothing of ours in between.
 function Reskin.ClearButton(btn)
-	if not btn then return end
+	if not btn or Reskin.Forbidden(btn) then return end
 	btn.__aetherState = btn.__aetherState or {}
 
 	for _, kind in ipairs(BUTTON_STATES) do
@@ -327,7 +347,7 @@ end
 --  below, and so does anything else that puts a pressable surface on screen -
 --  see the note above it for what three separate versions of this cost.
 function Reskin.Button(btn, style)
-	if not btn then return end
+	if not btn or Reskin.Forbidden(btn) then return end
 
 	Reskin.ClearButton(btn)
 
@@ -393,7 +413,7 @@ end
 --  border still gone. A slot's art is its border, which is the normal texture,
 --  which is ClearButton's job.
 function Reskin.Slot(btn, opts)
-	if not btn then return end
+	if not btn or Reskin.Forbidden(btn) then return end
 	opts = opts or {}
 
 	-- THE ITEM'S OWN PICTURE, under any of the names the client gives it:
@@ -452,7 +472,9 @@ end
 --  asks for a rounded panel rather than a capsule, which is what anything
 --  taller than a single line wants.
 function Reskin.Well(frame, opts)
-	if not frame or not frame.GetFrameLevel then return nil end
+	if not frame or Reskin.Forbidden(frame) or not frame.GetFrameLevel then
+		return nil
+	end
 	opts = opts or {}
 
 	local fill, edge = opts.fill or "glassSoft", opts.edge or "glassEdge"
@@ -481,7 +503,7 @@ end
 --  coin in the same background layer its border is drawn in, so a plain sweep
 --  takes the coin as well and the player is typing gold into a nameless box.
 function Reskin.EditBox(box, opts)
-	if not box then return nil end
+	if not box or Reskin.Forbidden(box) then return nil end
 	opts = opts or {}
 
 	box.__aetherStripped = box.__aetherStripped or {}
@@ -608,10 +630,15 @@ local GLYPH_PREV, GLYPH_NEXT = string.char(226, 128, 185), string.char(226, 128,
 --  this interface. Three separate sweeps had the same bug because there were
 --  three separate sweeps.
 function Reskin.Buttons(frame, style, skip)
-	if not (frame and frame.GetChildren) then return end
+	if not (frame and frame.GetChildren) or Reskin.Forbidden(frame) then return end
 
 	for _, child in ipairs({ frame:GetChildren() }) do
-		if child.GetObjectType and child:GetObjectType() == "Button"
+		-- ...AND NOT ONE THE CLIENT HAS PUT OUT OF REACH. A forbidden frame is
+		-- still in its parent's child list, and asking it what kind of object
+		-- it is throws - so this loop was the last statement in the trade
+		-- window's dresser and the one that killed it.
+		if not Reskin.Forbidden(child)
+			and child.GetObjectType and child:GetObjectType() == "Button"
 			and child.GetFontString and child:GetFontString()
 			and not (skip and skip[child]) and not child.__aetherSkin then
 			Reskin.Button(child, style)
@@ -766,7 +793,7 @@ end
 --  bar. Those are content: they act on the list and belong in the recess with
 --  it rather than floating between two wells on bare glass.
 function Reskin.ScrollFrame(sf, store, opts)
-	if not sf then return nil end
+	if not sf or Reskin.Forbidden(sf) then return nil end
 	opts = opts or {}
 
 	sf.__aetherStore = sf.__aetherStore or {}
@@ -1203,6 +1230,7 @@ end
 --  string dark enough to have been meant for parchment is lifted to it.
 --  `locked` says the strings belong to something that forbids SetFont.
 function Reskin.Fonts(frame, style, depth, lighten, locked)
+	if Reskin.Forbidden(frame) then return end
 	if not frame or type(frame) ~= "table" then return end
 	depth = depth or 0
 	if depth > 4 then return end            -- deep enough for any of these

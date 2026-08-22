@@ -152,6 +152,42 @@ always holds. The hook's real justification is the growing pool above, and the
 check now tests that instead — the comment claiming otherwise was wrong and is
 gone.
 
+## Fixed — the trade window's forbidden money frame (2026-08-22)
+
+Reported from the game: Trade and Cancel were neither in the footer strip nor
+styled, while the rest of the window looked right.
+
+**`TradeFrame_OnLoad` calls `TradePlayerInputMoneyFrame:SetForbidden()`.** That
+is a real call on an ordinary window — not something reserved for the in-game
+shop — and from insecure code every method on a forbidden frame throws. The
+frame is a child of the window and was named in that window's body list, so the
+first pass that measured it took `LayoutBody` down, and with it the footer strip
+and the whole interior dresser. **Nothing in `Panels.lua` or `Reskin.lua`
+guarded for a forbidden frame anywhere.**
+
+- `Reskin.Forbidden` is the one place that asks, and it pcalls `IsForbidden`
+  because a throw asking the question is itself an answer.
+- `PN.Part` refuses to hand one out. Every name this file resolves goes
+  straight to something that measures or moves it, so one guard there covers
+  the dozen places a part is used.
+- `Strip`, `StripExcept`, `ClearButton`, `Button`, `Buttons`, `Slot`, `Well`,
+  `EditBox`, `ScrollFrame` and `Fonts` each refuse one too. `Buttons` is the
+  one that matters most: a forbidden frame is still in its parent's child list,
+  and asking it what kind of object it is throws.
+
+**Your own purse cannot be dressed at all**, and that is the client's decision
+rather than a gap here. Send Mail's answer to the identical
+`MoneyInputFrameTemplate` — three of our pills with the coin as the field's own
+mark — cannot be applied at any price. What can be done is the recess round it,
+which is an ordinary frame of the window: your purse now sits in one of ours
+with the client's own fields inside it, and theirs in one with our figure. The
+pair still reads as a pair.
+
+**The mock had no notion of a forbidden frame** — the shop was faked by making
+one method throw. It now has `__forbid`, which replaces every method on a frame
+and its whole subtree, and `TradePlayerInputMoneyFrame` is marked with it. That
+is the seventh time the mock being kinder than the client hid a shipped bug.
+
 ## Built — the trade window's interior (2026-08-22)
 
 `DressTrade`, and the entry gained `wells = false` and six more names in its

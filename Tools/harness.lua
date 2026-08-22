@@ -2554,6 +2554,32 @@ end
 uiChild("MainActionBar")
 uiChild("MicroMenu")
 uiChild("PetActionBar")
+--- A FRAME THE CLIENT HAS PUT OUT OF REACH, and its whole subtree with it.
+--
+--  SetForbidden is real and this game uses it on ordinary windows, not only on
+--  the shop: TradeFrame_OnLoad calls it on TradePlayerInputMoneyFrame. From
+--  insecure code EVERY method on such a frame throws - IsForbidden is the one
+--  question you are allowed to ask - and the answer is inherited by children,
+--  so a forbidden frame sitting in a window's child list is a trap for any
+--  sweep that walks children and calls something on each.
+--
+--  Mocked by replacing the methods rather than by setting a flag, because a
+--  flag is only as strict as whoever remembers to read it, and nobody did.
+_G.__forbid = function(f)
+	if not f or f.__forbidden then return f end
+	f.__forbidden = true
+	for _, c in ipairs(f.__children or {}) do _G.__forbid(c) end
+	for k, v in pairs(f) do
+		if type(v) == "function" and k ~= "IsForbidden" then
+			f[k] = function()
+				error("attempt to access forbidden object from code tainted "
+					.. "by an AddOn", 2)
+			end
+		end
+	end
+	return f
+end
+
 -- The in-game shop is forbidden: any method call on it throws in the real
 -- client, which is exactly what crashed the first sweep.
 local shop = uiChild("CatalogShopFrame", true)
@@ -4274,6 +4300,16 @@ do
 				_G[n] = box
 				prev = box
 			end
+
+			-- AND THE CLIENT PUTS IT OUT OF REACH. TradeFrame_OnLoad calls
+			-- TradePlayerInputMoneyFrame:SetForbidden() - a real call on an
+			-- ordinary window, not something reserved for the shop - so every
+			-- method on it and on its three fields throws from our side.
+			--
+			-- It is still a CHILD OF THE WINDOW, which is the trap: any sweep
+			-- that walks TradeFrame's children and asks each one a question
+			-- dies on this one.
+			_G.__forbid(pm)
 
 			-- AND THEIRS IS A READOUT, three coins and three numbers on three
 			-- BUTTONS - which is the trap in sweeping this window for buttons
@@ -28009,34 +28045,29 @@ do
 		"and is lifted out of the near-black paper wanted (" ..
 		tostring(red) .. "," .. tostring(green) .. "," .. tostring(blue) .. ")")
 
-	-- YOUR PURSE IS THREE FIELDS AND THEIRS IS ONE FIGURE, which is the same
-	-- MoneyInputFrameTemplate Send Mail uses and the same three coins at three
-	-- different distances from three identical boxes.
-	local trCoins, trStone = 0, {}
-	for _, part in ipairs({ "Gold", "Silver", "Copper" }) do
-		local n = "TradePlayerInputMoneyFrame" .. part
-		local box = _G[n]
-		for _, edge in ipairs({ "Left", "Middle", "Right" }) do
-			if _G[n .. edge]:IsShown() then trStone[#trStone + 1] = n .. edge end
-		end
-		if not box.__aetherPill then trStone[#trStone + 1] = n .. ":well" end
-		-- THE OFFSET, NOT THE ANCHOR. The client already hangs all three off
-		-- LEFT-of-box-to-RIGHT; what differs is the distance - gold's coin sits
-		-- 2 OUTSIDE its box and the other two 8 INSIDE theirs, because the
-		-- narrow pair's border art stopped ten short and the overhang had to
-		-- be filled. So a check on the anchor is a check on the mock's own
-		-- setup and cannot fail; the number is the thing that moved.
-		local at, rel, relP, x = box.texture:GetPoint(1)
-		if at == "LEFT" and rel == box and relP == "RIGHT" and x == -8 then
-			trCoins = trCoins + 1
-		end
-	end
-	check(#trStone == 0, "your own purse is three of our fields (" ..
-		(#trStone > 0 and table.concat(trStone, ",") or "all three") .. ")")
-	check(trCoins == 3,
-		"and all three coins sit the SAME distance in, at the field's own text"
-		.. " inset, rather than each keeping the distance the client's border"
-		.. " art needed (" .. trCoins .. "/3)")
+	-- YOUR PURSE IS OUT OF REACH, AND THAT IS THE CLIENT'S DOING.
+	--
+	-- TradeFrame_OnLoad calls SetForbidden on TradePlayerInputMoneyFrame - a
+	-- real call on an ordinary window, not something reserved for the shop -
+	-- so every method on it and on its three fields throws from insecure code.
+	-- Send Mail's answer to the identical template cannot be applied here at
+	-- any price, and the honest thing to check is that we do not try.
+	check(_G.TradePlayerInputMoneyFrame:IsForbidden(),
+		"the client has put your own purse out of reach")
+	check(A:GetModule("panels").Part("TradePlayerInputMoneyFrame") == nil,
+		"and nothing in this file will hand it to something that measures or"
+		.. " moves it")
+	check(_G.TradePlayerInputMoneyFrameGoldLeft:IsShown(),
+		"so its field art is left exactly as the client drew it, rather than"
+		.. " half-taken")
+
+	-- WHAT CAN BE DONE IS THE RECESS ROUND IT, which is a frame of the window
+	-- like any other. Your purse sits in one of ours with the client's own
+	-- fields inside it and theirs sits in one with our figure in it, so the
+	-- pair still reads as a pair.
+	check(_G.TradePlayerInputMoneyInset.__aetherPill
+		and _G.TradeRecipientMoneyBg.__aetherPill,
+		"but both purses are in a recess of ours all the same")
 
 	-- AND THEIRS IS WRAPPED TWICE by the client - the recess and a thin gold
 	-- edge inside it. One comes off and one well goes back on the inner of
