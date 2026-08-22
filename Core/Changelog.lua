@@ -38,6 +38,17 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.21.0",
+		date    = "2026-08-22",
+		lines   = {
+			"Trade: the window has an inside now. The two columns of goods, both enchant slots and both purses sit in recesses of ours instead of the client's stone, every row has lost its plate and its strip of parchment, and your side of the exchange is three fields to type in while theirs is a figure to read.",
+			"Three pieces of that window were never moving at all: the two enchant recesses and the edge round the other person's purse are pinned to the window's own corners, so they stayed where they were while everything else came down to clear the header.",
+			"Social: friends, ignore, who and raid all have interiors. Every list is in a recess with the client's scroll art gone, the who query has moved up to sit over the list it filters, the column heads read as headings rather than buttons, and a friend's row keeps its online lamp and its game badge while losing the plaque behind them.",
+			"The guild roster's rows are dressed too, including the ones you scroll into view afterwards - they come out of a pool the window itself does not own.",
+			"Toolbox: the micro row had a Guild button where the game's own menu has Social. It now asks the client's own buttons which of the two it is showing rather than reading a setting for itself.",
+		},
+	},
+	{
 		version = "0.20.0",
 		date    = "2026-08-21",
 		lines   = {

@@ -3341,6 +3341,17 @@ local COMM_DROPDOWNS = {
 	{ "GuildMemberDetailFrame", "RankDropdown" },
 }
 
+-- Panes whose contents are POOLED ROWS out of a modern scroll box.
+--
+--  A ScrollBox does not own its rows: it acquires them from a pool during its
+--  own layout and hands them back when they scroll out, so what is in the list
+--  when the window is dressed is not what is in it a moment later. Stripping
+--  the PANE reaches none of them - a row's plaque is its own NORMAL TEXTURE,
+--  setAllPoints, out of Interface\GuildFrame\GuildFrame - which is why the
+--  roster came up as our glass with a column of the client's stone plaques on
+--  it.
+local COMM_LISTS = { "MemberList", "CommunitiesList", "ApplicantList" }
+
 -- The guild crest, drawn inside the window rather than hung off the corner.
 local COMM_CREST, COMM_CREST_IN = 44, 8
 
@@ -3472,6 +3483,51 @@ local function DressDropdown(btn, store)
 	end
 end
 
+--- One line of a roster.
+--
+--  KEEPING THE CLASS GLYPH AND THE VOICE LAMP. Both are regions of the row in
+--  the same layer the plaque behind them is drawn in, so a plain strip takes
+--  the two things the row is telling you along with the stone.
+local function DressCommRow(row, store)
+	if not row or not row.GetRegions then return end
+
+	Reskin.ClearButton(row)
+	row.__aetherStore = row.__aetherStore or {}
+	Reskin.StripExcept(row, row.__aetherStore,
+		{ "Class", "VoiceChatStatusIcon", "ExpandedIcon", "CollapsedIcon" })
+	Reskin.Fonts(row, "pnBody", 1, Palette.c.text)
+end
+
+--- A pane's scroll box, where it has one.
+local function CommBox(frame, key)
+	local pane = Reskin.Element(frame, key)
+	return pane and Reskin.Element(pane, "ScrollBox") or nil
+end
+
+--- Whatever each of those lists is SHOWING at this moment.
+--
+--  ForEachFrame first, for the reason the gossip window's rows use it:
+--  GetFrames hands back a list, and a list obtained a moment too early is a
+--  list of the rows that were there before the rebuild.
+local function DressCommRows(frame, store)
+	for _, key in ipairs(COMM_LISTS) do
+		local box = CommBox(frame, key)
+		if box then
+			local function lift(row) DressCommRow(row, store) end
+			local walked = false
+			if box.ForEachFrame then
+				walked = pcall(box.ForEachFrame, box, lift)
+			end
+			if not walked and box.GetFrames then
+				local ok, rows = pcall(box.GetFrames, box)
+				if ok and rows then
+					for _, row in ipairs(rows) do lift(row) end
+				end
+			end
+		end
+	end
+end
+
 local function DressCommunities(frame, store)
 	for _, key in ipairs(COMM_TABS) do
 		local tab = Reskin.Element(frame, key)
@@ -3579,6 +3635,29 @@ local function DressCommunities(frame, store)
 	-- The chat pane's composer: three slices of stone around an edit box.
 	local box = Reskin.Element(frame, "ChatEditBox")
 	if box then Reskin.Strip(box, store) end
+
+	-- AND THE ROWS IN THE THREE LISTS, which stripping the panes never reached.
+	DressCommRows(frame, store)
+
+	-- ...AND AGAIN EVERY TIME ONE OF THEM IS LAID OUT. A ScrollBox acquires
+	-- its rows from a pool during its OWN Update, after the window's has
+	-- returned, and hands them back when they scroll out - so a row scrolled
+	-- into view later is a row nobody has been near.
+	--
+	-- On the box's own Update, which is where the gossip window's rows are
+	-- caught for exactly the same reason. Hooking the window instead reads the
+	-- set that was there before layout, and looks intermittent rather than
+	-- broken: whether a row was dressed depended on whether the pool happened
+	-- to hand back one that already had been.
+	for _, key in ipairs(COMM_LISTS) do
+		local box = CommBox(frame, key)
+		if hooksecurefunc and box and box.Update and not box.__aetherCommRows then
+			box.__aetherCommRows = true
+			hooksecurefunc(box, "Update", function()
+				if PN.enabled then DressCommRows(frame, store) end
+			end)
+		end
+	end
 
 	-- A PANE ARRIVES WHEN ITS TAB IS PICKED, hidden until then and undressed
 	-- with it. The four tabs are the only thing that changes which is showing,

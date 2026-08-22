@@ -1582,6 +1582,48 @@ function GetCVarBool(name)
 	return v == "1" or v == 1 or v == true
 end
 
+-- SOCIAL AND GUILD, the client's own two, because which of them is up is the
+-- CLIENT's answer and not a CVar anybody reads for themselves. Both mixins run
+-- UpdateVisibility off `useClassicGuildUI` at load - and they read it through
+-- CVarCallbackRegistry, which is not the getter an addon reaches for, so the
+-- two can disagree. They did in the game: the toolbox row carried Guild where
+-- the menu carried Social.
+--
+-- Mocked as real buttons with a real shown flag so that disagreement can be
+-- set up, which is the whole point of them.
+-- AND THE GETTER THE CLIENT ITSELF USES. Both mixins read the CVar through
+-- CVarCallbackRegistry:GetCVarValueBool, not through GetCVarBool - a real
+-- global on this build, and one an addon does not normally reach for. Mocked
+-- with a store of its own so it can be made to disagree with the plain getter,
+-- which is the only way to show which of the two is being believed.
+_G.__registryCVars = {}
+CVarCallbackRegistry = {
+	GetCVarValueBool = function(_, name)
+		local v = _G.__registryCVars[name]
+		if v == nil then return nil end
+		return v == "1" or v == 1 or v == true
+	end,
+}
+
+_G.__microPair = function(which)
+	for _, spec in ipairs({ { "SocialsMicroButton", "social" },
+		{ "GuildMicroButton", "guild" } }) do
+		if which == nil then
+			_G[spec[1]] = nil
+		else
+			local btn = _G[spec[1]]
+			if not btn then
+				btn = CreateFrame("Button", spec[1], _G.UIParent)
+				_G[spec[1]] = btn
+			end
+			-- "down" is BOTH hidden, which is what our own action bar sweep
+			-- leaves behind - a state the client never puts them in, and one
+			-- that has to be told apart from an answer.
+			btn:SetShown(which == spec[2])
+		end
+	end
+end
+
 -- ---------------------------------------------------------------------------
 -- CVars
 --
@@ -5557,8 +5599,9 @@ do
 			cf[key] = t
 		end
 
-		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat",
-			"GuildBenefitsFrame", "GuildDetailsFrame", "GuildMemberDetailFrame" }) do
+		for _, key in ipairs({ "CommunitiesList", "MemberList", "ApplicantList",
+			"Chat", "GuildBenefitsFrame", "GuildDetailsFrame",
+			"GuildMemberDetailFrame" }) do
 			local pane = CreateFrame("Frame", nil, cf)
 			pane:CreateTexture(nil, "ARTWORK"):SetTexture("communities-pane-art")
 
@@ -5584,6 +5627,48 @@ do
 
 			cf[key] = pane
 			pane:Hide()          -- panes arrive when their tab is picked
+		end
+
+		-- THE ROSTER'S ROWS, WHICH ARE NOT THE PANE'S. A modern ScrollBox does
+		-- not own them: it takes them from a pool during its OWN layout and
+		-- hands them back when they scroll out - so what the list holds when
+		-- the window is dressed is not what it holds a moment later.
+		--
+		-- And a row's plaque is its own NORMAL TEXTURE, setAllPoints, out of
+		-- Interface\\GuildFrame\\GuildFrame. Stripping the PANE reaches none of
+		-- it, which a mock with no rows in it could not show.
+		for _, key in ipairs({ "MemberList", "CommunitiesList", "ApplicantList" }) do
+			local pane = cf[key]
+			local box = CreateFrame("Frame", nil, pane)
+			box.__rows = {}
+			local function commRow()
+				local row = CreateFrame("Button", nil, box)
+				row:SetSize(280, 20)
+				row:SetNormalTexture("Interface\\GuildFrame\\GuildFrame")
+				-- The class glyph and the voice lamp are regions of the row in
+				-- the same layer, so a plain strip takes both.
+				row.Class = row:CreateTexture(nil, "OVERLAY")
+				row.Class:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
+				row.VoiceChatStatusIcon = row:CreateTexture(nil, "OVERLAY")
+				row.VoiceChatStatusIcon:SetTexture("voice-chat-lamp")
+				row.Name = row:CreateFontString(nil, "OVERLAY")
+				row.Name:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+				row.Name:SetText("Guildmate")
+				box.__rows[#box.__rows + 1] = row
+				return row
+			end
+			for _ = 1, 6 do commRow() end
+			-- ITS OWN ITERATOR, which is what the addon reaches for first: a
+			-- list handed back a moment too early is the set that was there
+			-- before the rebuild.
+			function box:ForEachFrame(fn)
+				for _, row in ipairs(self.__rows) do fn(row) end
+			end
+			-- AND ROWS ACQUIRED DURING ITS OWN LAYOUT. Update is where a
+			-- scroll box takes them from the pool, which is why it is the hook
+			-- point and the window's Update is not.
+			function box:Update() commRow() end
+			pane.ScrollBox = box
 		end
 
 		-- The ornate frame around the community list: corners and bars in an
@@ -19975,14 +20060,58 @@ do
 			return false
 		end
 
+		_G.__microPair("social")
+		check(has("social") and not has("guild"),
+			"the row carries whichever of Social and Guild the client's own"
+			.. " menu carries - here Social")
+		_G.__microPair("guild")
+		check(has("guild") and not has("social"),
+			"and the other way round when the client's is Guild - drawing both"
+			.. " would put a button on screen that opens a window this client"
+			.. " does not use")
+
+		-- AND WHERE THE CVAR DISAGREES WITH THE BUTTON, THE BUTTON WINS. It
+		-- has already run its own UpdateVisibility; a getter has not.
+		_G.__microPair("social")
+		_G.__cvars.useClassicGuildUI = "0"
+		check(has("social") and not has("guild"),
+			"and where the CVar disagrees with a button that is UP, the button"
+			.. " is believed")
+
+		-- BOTH DOWN SAYS NOTHING. That is our own action bar sweep having
+		-- banished them, not the client's answer - so the CVar is asked.
+		_G.__microPair("down")
+		check(has("guild") and not has("social"),
+			"two hidden buttons are our own sweep, not an answer, so the CVar"
+			.. " is asked instead")
 		_G.__cvars.useClassicGuildUI = "1"
 		check(has("social") and not has("guild"),
-			"with the classic guild UI it is Social and not Guild")
-		_G.__cvars.useClassicGuildUI = "0"
-		check(has("guild") and not has("social"),
-			"and without it, Guild and not Social - drawing both would put a"
-			.. " button on screen that opens a window this client does not use")
+			"and it is read the right way round")
+
+		-- AND ASKED THE WAY THE CLIENT ASKS IT. Both mixins read this through
+		-- CVarCallbackRegistry, not through GetCVarBool, and the two do not
+		-- have to agree - the registry answers from what it was told at
+		-- registration and the plain getter answers off the CVar store.
+		_G.__registryCVars.useClassicGuildUI = "0"
 		_G.__cvars.useClassicGuildUI = "1"
+		check(has("guild") and not has("social"),
+			"the registry the client's own buttons read is believed over the"
+			.. " getter an addon would reach for")
+		_G.__registryCVars.useClassicGuildUI = nil
+
+		-- AND NOTHING AT ALL IS NOT FALSE. This is the fault as reported: the
+		-- row carried Guild - which opens Communities, a window this flavour
+		-- reaches by keypress and never from the menu - where the client's own
+		-- menu carries Social. GetCVarBool answers false for a CVar that is
+		-- simply absent, and false is a real answer meaning the other button.
+		_G.__microPair("down")
+		_G.__cvars.useClassicGuildUI = nil
+		check(has("social") and not has("guild"),
+			"a CVar this client does not have falls back to Social, which is"
+			.. " what this flavour's menu carries - not to Guild")
+		_G.__cvars.useClassicGuildUI = "1"
+
+		_G.__microPair("social")
 	end
 
 	-- Every action is probed. A global that is not there is a button that is
@@ -28739,6 +28868,40 @@ do
 		and select(1, cf.CommunitiesList.FilligreeOverlay:GetRegions()):GetTexture() == 0,
 		"the ornate frame around the community list is cleared - it hangs off a"
 		.. " child of its own, so a strip of the list alone leaves it drawing")
+
+	-- THE ROSTER'S ROWS. A ScrollBox takes them from a pool during its own
+	-- layout, so stripping the PANE reaches none of them - and a row's plaque
+	-- is its own NORMAL TEXTURE, which is not a region of anything the pane
+	-- sweep walks.
+	local stony, glyphless = {}, {}
+	for _, key in ipairs({ "MemberList", "CommunitiesList", "ApplicantList" }) do
+		for i, row in ipairs(cf[key].ScrollBox.__rows) do
+			if row:GetNormalTexture() and row:GetNormalTexture():GetTexture() ~= 0 then
+				stony[#stony + 1] = key .. i
+			end
+			if not (row.Class:IsShown() and row.VoiceChatStatusIcon:IsShown()) then
+				glyphless[#glyphless + 1] = key .. i
+			end
+		end
+	end
+	check(#stony == 0, "every row in the three lists has lost its plaque (" ..
+		(#stony > 0 and table.concat(stony, ",") or "all of them") .. ")")
+	check(#glyphless == 0, "and kept its class glyph and its voice lamp, which "
+		.. "are in the same layer (" ..
+		(#glyphless > 0 and table.concat(glyphless, ",") or "all of them") .. ")")
+
+	-- AND A ROW SCROLLED INTO VIEW AFTERWARDS IS DRESSED TOO. A ScrollBox
+	-- acquires from its pool during its own Update, after the window's has
+	-- returned - so the window is the wrong thing to hook, which is the same
+	-- lesson the gossip window taught.
+	local rosterBox = cf.MemberList.ScrollBox
+	local was = #rosterBox.__rows
+	rosterBox:Update()
+	local fresh = rosterBox.__rows[was + 1]
+	check(fresh and fresh:GetNormalTexture()
+		and fresh:GetNormalTexture():GetTexture() == 0,
+		"a row the list acquires later is dressed as well (" .. was .. " -> "
+		.. #rosterBox.__rows .. ")")
 
 	check(cf.MemberList.ShowOfflineButton.__aetherCheck ~= nil,
 		"and the roster's own check box is ours")

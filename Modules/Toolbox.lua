@@ -2951,11 +2951,70 @@ end
 -- buttons declared and eight on screen, and a row that drew both would have one
 -- that opens a window this client does not use.
 --
+-- AND WHICH OF THE TWO IS THE CLIENT'S ANSWER, NOT A CVAR WE READ OURSELVES.
+-- Reported from the game: the row carried a Guild button - which opens
+-- Communities - where the client's own menu carries Social, and Communities on
+-- this flavour is reached by keypress rather than from the menu at all. Both
+-- mixins read the CVar through CVarCallbackRegistry:GetCVarValueBool and this
+-- file was reading it through GetCVarBool; on that build the two did not agree.
+--
+-- So the pair is asked rather than derived. Blizzard's own two buttons have
+-- already run their UpdateVisibility and carry the answer as their own shown
+-- flag - which survives our hiding of the menu, because what is hidden is
+-- their PARENT and not them.
+--
 -- Every action is probed before its button is built. A global that is not there
 -- is a button that is not drawn, rather than a button that errors on click.
 -- ---------------------------------------------------------------------------
 
 local MICRO_SIZE, MICRO_GAP = 26, 6
+
+--- Whether the client's own micro menu is showing a given button.
+--
+--  nil where there is no such button at all, which is a different answer from
+--  "there is one and it is down".
+local function MicroShows(name)
+	local btn = _G[name]
+	if btn and btn.IsShown then return btn:IsShown() and true or false end
+	return nil
+end
+
+--- Is this client on the classic guild UI - Social rather than Guild?
+--
+--  THREE ANSWERS, IN ORDER OF HOW MUCH THEY KNOW.
+--
+--  The client's own pair first, WHERE EITHER IS STILL UP. They have run their
+--  UpdateVisibility and exactly one of them is showing, which is the answer
+--  with no getter in it at all. Both down means our own action bar sweep has
+--  already banished them, and two hidden buttons say nothing.
+--
+--  Then the CVar, asked the way the client asks it. Both mixins read it
+--  through CVarCallbackRegistry:GetCVarValueBool rather than through
+--  GetCVarBool, and the two do not have to agree.
+--
+--  And NOTHING AT ALL IS NOT FALSE, which is the fault as reported: the row
+--  carried a Guild button - which opens Communities, a window this flavour
+--  reaches by keypress and never from the menu - where the client's own menu
+--  carries Social. GetCVarBool answers false for a CVar that is simply absent,
+--  so the string getter is asked whether there is one to read before its
+--  answer is believed. Social is what is left, because Social is what this
+--  flavour's menu has.
+local function ClassicGuildUI()
+	local social = MicroShows("SocialsMicroButton")
+	local guild = MicroShows("GuildMicroButton")
+	if social or guild then return social == true end
+
+	local reg = _G.CVarCallbackRegistry
+	if reg and reg.GetCVarValueBool then
+		local ok, v = pcall(reg.GetCVarValueBool, reg, "useClassicGuildUI")
+		if ok and v ~= nil then return v and true or false end
+	end
+
+	if GetCVar and GetCVar("useClassicGuildUI") ~= nil then
+		return GetCVarBool and GetCVarBool("useClassicGuildUI") and true or false
+	end
+	return true
+end
 
 TB.MICRO = {
 	{ key = "character", label = "Character",
@@ -2975,15 +3034,13 @@ TB.MICRO = {
 	  probe = function()
 		  if not ToggleFriendsFrame then return false end
 		  -- Only with the classic guild UI; otherwise Guild takes this slot.
-		  if GetCVarBool then return GetCVarBool("useClassicGuildUI") and true or false end
-		  return true
+		  return ClassicGuildUI()
 	  end },
 	{ key = "guild",     label = "Guild",
 	  fn = function() ToggleGuildFrame() end,
 	  probe = function()
 		  if not ToggleGuildFrame then return false end
-		  if GetCVarBool then return not GetCVarBool("useClassicGuildUI") end
-		  return false
+		  return not ClassicGuildUI()
 	  end },
 	{ key = "map",       label = "Map",
 	  fn = function() ToggleWorldMap() end,

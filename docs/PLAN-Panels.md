@@ -9,7 +9,12 @@ what has not been looked at yet, not a list of faults.
 1. ~~**`FriendsFrame`**~~ — **built 2026-08-22**, see below.
 2. ~~**`TradeFrame`**~~ — **built 2026-08-22**, see below.
 3. **`CommunitiesFrame`** — the guild panes. Written from a live dump and never
-   seen, because there was no guild to look at when they were built.
+   seen, because there was no guild to look at when they were built. The two
+   suspicions recorded at the time were both real and are **fixed 2026-08-22**,
+   see below; the window still wants a look from inside a guild.
+4. **`Blizzard_GroupFinder_VanillaStyle`** — the LFG window. Asked for
+   2026-08-22, not started. Source at
+   `_classic_era_\BlizzardInterfaceCode\Interface\AddOns\Blizzard_GroupFinder_VanillaStyle`.
 
 `SettingsPanel`, `HelpFrame` and `WorldMapFrame` are **signed off at shell
 depth** — 2026-08-21: *"we're not touching those any more than they are
@@ -40,6 +45,54 @@ Still Blizzard's, all of it children rather than regions:
 
 It opens solo for a look: `/run ShowUIPanel(TradeFrame)` puts it up empty,
 which covers every piece of art except the highlight.
+
+## Fixed — the Communities roster's rows (2026-08-22)
+
+Both suspicions recorded when this window was written blind turned out to be
+right, and the source confirms them without needing a guild to look at:
+
+- **A row's plaque is its own `NormalTexture`** — `setAllPoints`, out of
+  `Interface\GuildFrame\GuildFrame`. Stripping the *pane* reaches nothing of
+  it, so the roster came up as our glass with a column of the client's stone
+  plaques on it. The class glyph and the voice lamp are regions of the same
+  button in the same layer, so they are spared by name.
+- **Nothing hooked the roster's scroll.** These lists are modern `ScrollBox`es:
+  they take rows from a pool during their **own** `Update`, after the window's
+  has returned, and hand them back when they scroll out. So a row scrolled into
+  view later was a row nobody had been near. Hooked on the box's `Update`,
+  which is exactly where the gossip window's rows are caught and for exactly
+  the same reason.
+
+Applied to `MemberList`, `CommunitiesList` and `ApplicantList`. Three mutations
+are caught. A fourth — dropping `Reskin.ClearButton` — is not, because the
+mock's state textures are ordinary regions and the strip blanks them either
+way; `ClearButton` stays because it is the primitive that survives the client
+re-showing a pushed state, which is what its own docstring is about.
+
+## Fixed — the toolbox's Social/Guild button (2026-08-22)
+
+Reported from the game: the toolbox's micro row carried a **Guild** button —
+which opens Communities, a window this flavour reaches by keypress and never
+from the menu — where the client's own menu carries **Social**.
+
+Blizzard's two micro buttons are mutually exclusive and both decide it from
+`useClassicGuildUI`, but they read it through
+`CVarCallbackRegistry:GetCVarValueBool` and this file was reading it through
+`GetCVarBool`. Three things were wrong with that:
+
+1. **The buttons themselves are the answer** and were never asked. They have
+   run their own `UpdateVisibility`; a getter has not. Believed only where one
+   of them is genuinely up — both down is our own action bar sweep having
+   banished them, which says nothing.
+2. **The registry is the getter the client uses**, and the two do not have to
+   agree.
+3. **Nothing at all is not false.** `GetCVarBool` answers false for a CVar that
+   is simply absent, and false is a real answer meaning *the other button*. The
+   string getter is asked whether there is a CVar to read before its answer is
+   believed, and Social is what is left — because Social is what this flavour's
+   menu has.
+
+Four mutations are caught, including the reported case.
 
 ## Built — the social window's interior (2026-08-22)
 
