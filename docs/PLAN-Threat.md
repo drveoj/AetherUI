@@ -797,9 +797,9 @@ All five phases are built and the suite is green. What remains is in game:
   now holds for three seconds; both came out of the first look in game (§7a).
 - **Tune the alarms.** Beat length, peak alpha, and whether `RAID_WARNING` is
   the right ping.
-- **The pet rules (16c)** need a hunter or warlock, a pet, and a mob that breaks
-  off it. They are the one part of the design that cannot be verified any other
-  way — though the engine's pet cases are all covered by the suite.
+- ~~**The pet rules (16c)**~~ **Verified in game, 2026-08-22.** Joe took a
+  warlock and a pet against a mob that broke off it and reported them working.
+  This was the one part of the design that could not be verified any other way.
 - **A party run**, to see what `UnitGroupRolesAssigned` says about real group
   members and whether the stance inference picks up other people's tanks.
 
@@ -816,6 +816,5 @@ All five phases are built and the suite is green. What remains is in game:
 - **Tuning passes in game** for Phase 3's pulse and Phase 4's alarms. Both are
   stated in the handoff as CSS against a browser, and neither will transfer
   exactly.
-- **A hunter or warlock, eventually.** The pet rules in 16c need a pet and a
-  mob that breaks off it; they are the one part of the design that cannot be
-  verified any other way.
+- ~~**A hunter or warlock, eventually.**~~ Done, 2026-08-22: the 16c pet rules
+  were verified in game and work.

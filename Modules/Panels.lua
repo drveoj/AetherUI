@@ -58,6 +58,26 @@ local MAIL_TAB_DROP = 40
 local MAIL_ROWS     = 7
 -- Item slots on a letter, which the client also places from Lua.
 local MAIL_ATTACHMENTS = 16
+-- Rows a side in the trade window. Six goods and the enchant slot, which is
+-- the seventh and sits in a recess of its own below the other six.
+local TRADE_ROWS    = 7
+
+-- WHERE THE SOCIAL WINDOW'S TABS HANG: below its own bottom edge, outside its
+-- art, the way the postbox's and the vendor's do.
+local FRIENDS_TAB_DROP = 31
+-- The Friends tab has TABS OF ITS OWN - Friends and Ignore - 36 above the list
+-- they switch between. Reserved over that list rather than measured, so the
+-- pair and the list travel by the same amount and keep the gap the client left
+-- between them.
+local FRIENDS_SUBTABS  = 36
+-- Same shape one pane along: the who list's five column headers sit 30 above
+-- the list they head.
+local WHO_HEAD         = 30
+-- Rows the client hangs off the WINDOW for the two faux-scrolling lists here.
+local IGNORE_ROWS      = 19
+local WHO_ROWS         = 17
+-- The who list's columns, each a sort control with its own stone tab art.
+local WHO_COLUMNS      = 5
 -- Ink below this is the client writing for parchment; ink above it is the
 -- client meaning something - a gold subject, a red loss.
 local RECEIPT_DARK  = 0.5
@@ -148,7 +168,76 @@ local PANELS = {
 		subtitle    = "PlayerTalentFrameSpentPointsText",
 	},
 	{ frame = "TalentFrame",       addon = "Blizzard_TalentUI" },
-	{ frame = "FriendsFrame" },
+	-- THE SOCIAL WINDOW: four tabs over five panes, and every pane is
+	-- setAllPoints to the window. So moving a pane moves nothing at all - a
+	-- setAllPoints frame has no points to offset - and everything in here is
+	-- hung off the WINDOW at its own fixed distance instead.
+	--
+	-- ButtonFrameTemplate, so tight; and its tabs hang off the bottom edge
+	-- outside its own art the way the postbox's do, which is what the negative
+	-- inset is for.
+	{ frame = "FriendsFrame", tight = true,
+		insets = { 0, 0, 0, -FRIENDS_TAB_DROP - 8 },
+		tabs = "FriendsFrameTab",
+		-- ITS TITLE IS PER TAB and the client writes it: Friends List, Ignore
+		-- List, Who, the guild's name, Raid. The frame's own $parentTitleText
+		-- IS that string here, unusually - it is just never given a fixed word.
+		title = "FriendsFrameTitleText",
+		-- Five panels, one up at a time, and the window's tab says which -
+		-- named so the band and the strip are redrawn when the client swaps
+		-- them, the way the quest giver's four are.
+		panes = {
+			{ pane = "FriendsListFrame" },
+			{ pane = "IgnoreListFrame" },
+			{ pane = "WhoFrame" },
+			{ pane = "GuildFrame" },
+			{ pane = "RaidFrame" },
+		},
+		-- WHAT ACTS ON THE LIST YOU ARE LOOKING AT. A query over the who list,
+		-- the raid's assist switch, and Raid Info at the other end. Every one
+		-- of them was in the band or under the strip: the query is anchored to
+		-- the window's BOTTOM edge, which is where the footer now is, and the
+		-- other two are 23 and 24 down from the top.
+		--
+		-- ONE ROW SERVES ALL FIVE PANES because only one pane is ever up, and
+		-- the row is laid out from what is VISIBLE rather than from what is
+		-- shown - a hidden pane's children still report themselves shown.
+		row = {
+			left  = { "WhoFrameEditBox", "RaidFrameAllAssistCheckButton" },
+			right = { "RaidFrameRaidInfoButton" },
+		},
+		-- ROOM RESERVED OVER TWO OF THE LISTS, for the row of controls the
+		-- client puts immediately above each. Reserved rather than measured so
+		-- that the header and its list are short of the band by the SAME
+		-- amount and travel together; measured, the sub-tabs would move 36
+		-- further than the list under them and land on top of it.
+		lead = {
+			FriendsFrameFriendsScrollFrame = FRIENDS_SUBTABS,
+			FriendsFrameIgnoreScrollFrame  = FRIENDS_SUBTABS,
+			WhoListScrollFrame             = WHO_HEAD,
+		},
+		body = { "FriendsTabHeaderTab1",
+			"FriendsFrameFriendsScrollFrame", "FriendsFrameIgnoreScrollFrame",
+			"WhoFrameColumnHeader1", "WhoListScrollFrame",
+			"RaidFrameRaidDescription" },
+		-- AND THE ROWS THAT BELONG TO THE TWO FAUX-SCROLLING LISTS, which are
+		-- not in them: the client hangs them off the WINDOW and scrolls by
+		-- refilling, exactly as the trainer does.
+		inside = {
+			FriendsFrameIgnoreButton1 = "FriendsFrameIgnoreScrollFrame",
+			WhoFrameButton1           = "WhoListScrollFrame",
+		},
+		-- Every list in here gets a recess of its own, so no seventh one round
+		-- the outside.
+		wells = false,
+		footer = W.PANEL_FOOT_H,
+		-- All four panes' worth: the strip is laid out for whatever is UP.
+		actions = { mid = {
+			"FriendsFrameAddFriendButton", "FriendsFrameSendMessageButton",
+			"FriendsFrameIgnorePlayerButton", "FriendsFrameUnsquelchButton",
+			"WhoFrameWhoButton", "WhoFrameAddFriendButton",
+			"WhoFrameGroupInviteButton", "RaidFrameConvertToRaidButton",
+		} } },
 
 	-- The windows an NPC opens, and WHICH TEMPLATE EACH IS BUILT ON, because
 	-- that is what decides whether it wants trimming at all.
@@ -214,11 +303,26 @@ local PANELS = {
 		-- squeezes the window: the names would travel eighty units and the slots
 		-- eight, and what was a layout becomes a heap.
 		together = true,
+		-- EVERYTHING HUNG OFF THE WINDOW, and nothing that is chained off
+		-- something already here. Item 1 brings the other six with it; the
+		-- recipient's enchant label is anchored to the player's. The two
+		-- ENCHANT recesses and the second wrap round their purse are NOT
+		-- chained off anything - the client pins all three to the window's own
+		-- corners - so left out of this list they stayed where they were while
+		-- the rest of the window moved down past them.
 		body = { "TradeFramePlayerNameText", "TradeFrameRecipientNameText",
 			"TradePlayerItemsInset", "TradeRecipientItemsInset",
+			"TradePlayerEnchantInset", "TradeRecipientEnchantInset",
 			"TradePlayerInputMoneyInset", "TradeRecipientMoneyInset",
+			"TradeRecipientMoneyBg",
 			"TradePlayerItem1", "TradeRecipientItem1",
+			"TradeFramePlayerEnchantText",
+			"TradeHighlightPlayer", "TradeHighlightRecipient",
 			"TradePlayerInputMoneyFrame", "TradeRecipientMoneyFrame" },
+		-- ITS CONTENT IS ALREADY IN RECESSES - six of them, and every piece of
+		-- this window is inside one. A body well round the outside would be a
+		-- second rim round the first, which is the trainer's case exactly.
+		wells = false,
 		-- Trade and Cancel sat in the bottom right corner, five up from the
 		-- glass and under the recess.
 		footer = W.PANEL_FOOT_H,
@@ -746,9 +850,20 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 
 	local part = function(name) return RowPart(frame, name) end
 
+	-- VISIBLE, the way the middle group below already is. These two chains
+	-- used to place everything named whether it was up or not, which is fine
+	-- for a window whose row belongs to one pane and wrong for one whose row
+	-- serves five: the social window's query field would hold the first slot
+	-- on the raid tab and push the raid's own switch along behind it.
+	local function live(name)
+		local w = part(name)
+		if w and w.IsVisible and w:IsVisible() then return w end
+		return nil
+	end
+
 	local prev
 	for _, name in ipairs(spec.left or {}) do
-		local w = part(name)
+		local w = live(name)
 		if w then
 			w:ClearAllPoints()
 			if prev then
@@ -762,7 +877,7 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 
 	prev = nil
 	for _, name in ipairs(spec.right or {}) do
-		local w = part(name)
+		local w = live(name)
 		if w then
 			w:ClearAllPoints()
 			if prev then
@@ -1262,11 +1377,17 @@ local function Inside(entry)
 end
 
 --- Is there anything in this window's tool row right now?
+--
+--  VISIBLE, NOT SHOWN, which is the same distinction the footer's middle
+--  group is written round: what the client hides when it swaps panes is the
+--  PANE, and every child of it goes on reporting itself shown the whole time.
+--  The social window is why it matters here - one row serves five panes, and
+--  asked whether they were shown, all five panes' worth answered yes.
 local function RowUp(spec)
 	for _, side in ipairs({ "left", "right", "mid" }) do
 		for _, name in ipairs(spec[side] or {}) do
 			local w = Part(name)
-			if w and w.IsShown and w:IsShown() then return true end
+			if w and w.IsVisible and w:IsVisible() then return true end
 		end
 	end
 	return false
@@ -4930,6 +5051,345 @@ local function DressOpenMail(frame, store)
 	InkReceipt()
 end
 
+--- One line of the friends list.
+--
+--  KEEPING THE LAMP AND THE BADGE. A row's backing, the little online lamp and
+--  the game badge are all regions of the same button in the same two layers,
+--  so a plain strip takes the two things the row is actually telling you along
+--  with the plaque behind them.
+--
+--  The backing goes. The client does not draw it from a file - it calls
+--  SetColorTexture on it with a different colour for online, offline and
+--  Battle.net - and what that colour says is said twice over anyway: the lamp
+--  says online, and an offline name is printed grey. Hiding it holds, because
+--  SetColorTexture paints a texture rather than showing one.
+local function DressFriendRow(row, store)
+	if not row or not row.GetRegions then return end
+
+	Reskin.ClearButton(row)
+	row.__aetherStore = row.__aetherStore or {}
+	Reskin.StripExcept(row, row.__aetherStore, { "status", "gameIcon" })
+
+	local name = Reskin.Element(row, "name")
+	if name then
+		Reskin.Font(name, "pnBody")
+	end
+end
+
+--- A row in one of the two faux-scrolling lists - ignore, or who.
+--
+--  Not a friends row: these carry no art of their own beyond the client's
+--  highlight, and the who row is five strings rather than one.
+local function DressListRow(btn)
+	if not btn then return end
+	Reskin.ClearButton(btn)
+	Reskin.Fonts(btn, "pnBody", 1, Palette.c.text)
+end
+
+--- The social window: friends, ignore, who, the guild and the raid.
+--
+--  FIVE PANES AND ONE ROW OF CHROME. Everything the player acts with lives on
+--  the window rather than on the pane that owns it, so the strip and the tool
+--  row are laid out from whatever is VISIBLE and the panes themselves are only
+--  swept.
+local function DressFriends(frame, store)
+	-- THE PANES, and the client's own recess behind them. FriendsFrameInset is
+	-- moved by the client per tab - 83 down on Friends, 80 on Who, 60 on Raid
+	-- - which is a stone box being re-placed inside our glass on every switch.
+	for _, name in ipairs({ "FriendsListFrame", "IgnoreListFrame", "WhoFrame",
+		"GuildFrame", "RaidFrame", "RaidFrameNotInRaid", "FriendsTabHeader",
+		"FriendsFrameInset", "WhoFrameListInset", "FriendsFrameBattlenetFrame" }) do
+		local pane = _G[name]
+		if pane then
+			pane.__aetherStore = pane.__aetherStore or {}
+			Reskin.Strip(pane, pane.__aetherStore)
+		end
+	end
+
+	-- THE FRIENDS TAB'S OWN TABS, which are tabs and are dressed as tabs -
+	-- they are the same control the window's four are, one level in.
+	for i = 1, 2 do
+		local tab = _G["FriendsTabHeaderTab" .. i]
+		if tab then
+			tab.__aetherStore = tab.__aetherStore or {}
+			Reskin.Tab(tab, tab.__aetherStore, "pnBody")
+		end
+	end
+
+	-- THE THREE LISTS, each in a recess. The friends list is a hybrid scroll
+	-- with its rows inside it; the other two are faux scrolls, which are a
+	-- scroll BAR and nothing else.
+	for _, name in ipairs({ "FriendsFrameFriendsScrollFrame",
+		"FriendsFrameIgnoreScrollFrame", "WhoListScrollFrame" }) do
+		Reskin.ScrollFrame(_G[name], store)
+	end
+
+	-- WHO IS IN THE LIST. The friends rows are pooled by the hybrid scroll and
+	-- handed out as the list grows, so they are reached through it rather than
+	-- by name; the other two lists' rows are named and fixed.
+	local hybrid = _G.FriendsFrameFriendsScrollFrame
+	for _, row in ipairs((hybrid and hybrid.buttons) or {}) do
+		DressFriendRow(row, store)
+	end
+	for i = 1, IGNORE_ROWS do
+		DressListRow(_G["FriendsFrameIgnoreButton" .. i])
+	end
+	for i = 1, WHO_ROWS do
+		DressListRow(_G["WhoFrameButton" .. i])
+	end
+
+	-- AND THE HEADINGS OVER THE IGNORE LIST - Ignored, Blocked Invites, Muted
+	-- - which are frames with one string in them.
+	for _, name in ipairs({ "FriendsFrameIgnoredHeader",
+		"FriendsFrameBlockedInviteHeader", "FriendsFrameMutedHeader" }) do
+		local head = _G[name]
+		if head then
+			head.__aetherStore = head.__aetherStore or {}
+			Reskin.Strip(head, head.__aetherStore)
+			Reskin.Fonts(head, "pnHead", 1, Palette.c.textDim)
+		end
+	end
+
+	-- THE WHO LIST'S FIVE COLUMNS, each a sort control drawn as three slices
+	-- of WhoFrame-ColumnTabs. A column head is not an action you press, so it
+	-- gets no surface - the art comes off and the word is re-inked, which is
+	-- what every other list heading in this interface looks like.
+	local columns = {}
+	for i = 1, WHO_COLUMNS do
+		local head = _G["WhoFrameColumnHeader" .. i]
+		if head then
+			columns[head] = true
+			Reskin.ClearButton(head)
+			head.__aetherStore = head.__aetherStore or {}
+			local label = head.GetFontString and head:GetFontString()
+			Reskin.StripExcept(head, head.__aetherStore,
+				label and { label } or nil)
+			if label then
+				Reskin.Font(label, "pnHead")
+				W.Color(label, Palette.c.textDim)
+			end
+		end
+	end
+
+	-- THE QUERY, which is a search box: three slices of border, a magnifying
+	-- glass and a clear button. The glass is the FIELD's mark and stays.
+	Reskin.EditBox(_G.WhoFrameEditBox, { keep = { "searchIcon" } })
+	Reskin.EditBox(_G.FriendsFrameBroadcastInput)
+	local totals = _G.WhoFrameTotals
+	if totals then
+		Reskin.Font(totals, "pnBody")
+		W.Color(totals, Palette.c.textDim)
+	end
+
+	-- THE RAID TAB. A switch, a paragraph telling you what a raid is, and two
+	-- buttons - one in the strip and one in the tool row.
+	Reskin.CheckBox(_G.RaidFrameAllAssistCheckButton, store)
+	local blurb = _G.RaidFrameRaidDescription
+	if blurb then
+		Reskin.Font(blurb, "pnBody")
+		W.Color(blurb, Palette.c.textDim)
+	end
+
+	-- EVERY BUTTON ON EVERY PANE. They are children of the panes rather than
+	-- of the window, so one sweep of the window reaches none of them.
+	--
+	-- BUT NOT THE COLUMN HEADS. Every one of the five is a Button with a label
+	-- on it and a child of the who pane, which is exactly what this sweep
+	-- looks for - so all five came back as pressable surfaces. A column head
+	-- is something you read, the same argument that keeps a letter in the
+	-- postbox from being drawn as a button.
+	for _, name in ipairs({ "FriendsListFrame", "IgnoreListFrame", "WhoFrame",
+		"RaidFrame", "FriendsFrame" }) do
+		Reskin.Buttons(_G[name], "pnBody", columns)
+	end
+
+	-- AND AGAIN WHENEVER A LIST IS REFILLED, because the friends list GROWS
+	-- ITS ROWS ON DEMAND and we are the reason it does.
+	--
+	-- HybridScrollFrame_CreateButtons makes as many rows as fit the box's
+	-- height and adds more whenever that height changes - and changing it is
+	-- precisely what this file does to every window it dresses. So the rows
+	-- that exist when the dresser runs are not the rows the player ends up
+	-- looking at, and the ones made afterwards would be the only stone left in
+	-- the window.
+	--
+	-- The other two lists are refilled rather than grown, and are re-inked
+	-- here for the same reason at no extra cost.
+	PN.__friendHooks = PN.__friendHooks or {}
+	for _, fn in ipairs({ "FriendsList_Update", "IgnoreList_Update",
+		"WhoList_Update" }) do
+		if hooksecurefunc and _G[fn] and not PN.__friendHooks[fn] then
+			PN.__friendHooks[fn] = true
+			hooksecurefunc(fn, function()
+				if not PN.enabled then return end
+				local box = _G.FriendsFrameFriendsScrollFrame
+				for _, row in ipairs((box and box.buttons) or {}) do
+					DressFriendRow(row, store)
+				end
+				for i = 1, IGNORE_ROWS do
+					DressListRow(_G["FriendsFrameIgnoreButton" .. i])
+				end
+				for i = 1, WHO_ROWS do
+					DressListRow(_G["WhoFrameButton" .. i])
+				end
+			end)
+		end
+	end
+end
+
+-- The two people, and the two halves of the window each owns.
+local TRADE_SIDES = { "TradePlayer", "TradeRecipient" }
+
+--- One line of the exchange: a plate, a strip of parchment, a name and a slot.
+--
+--  A ROW IS NOT A BUTTON. The client builds each of the fourteen as a FRAME
+--  carrying three pieces of art in its own BACKGROUND layer - the empty-slot
+--  plate, the quest giver's parchment name strip, and the item's name printed
+--  on that parchment - with the pressable ItemButton laid on top. So a sweep
+--  of the WINDOW reaches none of it, and fourteen stone-and-paper strips sat
+--  in the recess.
+local function DressTradeRow(name, store)
+	local row = _G[name]
+	if not row then return end
+
+	row.__aetherStore = row.__aetherStore or {}
+	Reskin.Strip(row, row.__aetherStore)
+
+	-- The item's picture is a BUTTON inside the row, the way a letter's is in
+	-- the postbox - so stripping the row is safe and the icon goes in a cell.
+	Reskin.Slot(_G[name .. "ItemButton"], { store = store })
+
+	-- AND ITS NAME, which was printed on that parchment in the near-black
+	-- paper wanted and is a smudge on glass.
+	local fs = _G[name .. "Name"]
+	if fs then
+		Reskin.Font(fs, "pnBody")
+		W.Color(fs, Palette.c.text)
+	end
+end
+
+--- A recess of the client's, in glass, at its own bounds.
+--
+--  The inset IS the recess here rather than a border drawn round content, so
+--  ours goes exactly where theirs was instead of standing WELL_OUTSET proud
+--  of a scroll frame the way the trainer's lists do.
+local function TradeWell(name)
+	local ins = _G[name]
+	if not ins then return nil end
+	ins.__aetherStore = ins.__aetherStore or {}
+	Reskin.Strip(ins, ins.__aetherStore)
+	return Reskin.Well(ins, { corner = W.WELL_CORNER, inset = { 0, 0, 0, 0 },
+		fill = "wellFill", edge = "wellEdge" })
+end
+
+--- The two-player trade window.
+--
+--  IT IS TWO WINDOWS DRAWN AS ONE. The client marks the divide by stitching a
+--  SECOND window onto the right half - its own portrait ring, its own left
+--  border, its own bottom corner and a pale wash behind the lot - and every
+--  one of those is a region of the frame, so the shell's strip has already
+--  taken them. What is left is what hangs off the window rather than being
+--  drawn on it: six recesses, fourteen rows, two purses and four highlights.
+local function DressTrade(frame, store)
+	-- THE SIX RECESSES, which are this window's wells. Two columns of goods,
+	-- two enchant slots and two purses, and nothing in the window is outside
+	-- one of them.
+	for _, side in ipairs(TRADE_SIDES) do
+		TradeWell(side .. "ItemsInset")
+		TradeWell(side .. "EnchantInset")
+	end
+
+	-- THE TWO PURSES ARE NOT SYMMETRICAL AND SHOULD NOT LOOK IT. Yours is
+	-- three fields you type in and theirs is a figure you read, so yours wears
+	-- three pills and theirs one well - and the recess round each comes off,
+	-- because a well inside a recess draws the same rim twice.
+	--
+	-- Theirs is wrapped TWICE by the client - the recess and a thin gold edge
+	-- inside it, the same double wrap the postbox's total has - so the well
+	-- goes on the inner of the two, which is the one sized to the number.
+	for _, name in ipairs({ "TradePlayerInputMoneyInset",
+		"TradeRecipientMoneyInset", "TradeRecipientMoneyBg" }) do
+		local f = _G[name]
+		if f then
+			f.__aetherStore = f.__aetherStore or {}
+			Reskin.Strip(f, f.__aetherStore)
+		end
+	end
+	if _G.TradeRecipientMoneyBg then
+		Reskin.Well(_G.TradeRecipientMoneyBg, { inset = { 0, 0, 0, 0 } })
+	end
+
+	-- YOUR OWN, three slices of Common-Input-Border each, drawn as background
+	-- regions of the box itself - and the coin is the FIELD's mark rather than
+	-- a picture near it, because the client hangs gold's OUTSIDE the box and
+	-- the other two INSIDE. Send Mail's money row is the same template with
+	-- the same problem, and the same answer.
+	for _, part in ipairs({ "Gold", "Silver", "Copper" }) do
+		local box = _G["TradePlayerInputMoneyFrame" .. part]
+		Reskin.EditBox(box, { keep = { "texture" }, unit = box and box.texture })
+	end
+
+	-- AND THEIRS IS A ROW OF BUTTONS, which is the trap in this window: a
+	-- MoneyFrame prints gold, silver and copper on three Buttons with labels
+	-- on them, and the sweep at the foot of this function finds buttons with
+	-- labels. They are children of the money frame rather than of the window,
+	-- so it never reaches them - but only by luck, so the ink is set here and
+	-- the reason is written down.
+	Reskin.Fonts(_G.TradeRecipientMoneyFrame, "pnBody", 2, Palette.c.text)
+
+	-- FOURTEEN ROWS, seven a side. The seventh is the enchant slot.
+	for _, side in ipairs(TRADE_SIDES) do
+		for i = 1, TRADE_ROWS do
+			DressTradeRow(side .. "Item" .. i, store)
+		end
+	end
+
+	-- WHOSE NAME IS OVER WHICH COLUMN, and WILL NOT BE TRADED over each
+	-- enchant recess. The names are the client's gold on what used to be its
+	-- own stone header; the two labels are a note about the row under them.
+	for _, name in ipairs({ "TradeFramePlayerNameText",
+		"TradeFrameRecipientNameText" }) do
+		local fs = _G[name]
+		if fs then
+			Reskin.Font(fs, "pnTitle")
+			W.Color(fs, Palette.c.text)
+		end
+	end
+	for _, name in ipairs({ "TradeFramePlayerEnchantText",
+		"TradeFrameRecipientEnchantText" }) do
+		local fs = _G[name]
+		if fs then
+			Reskin.Font(fs, "pnBody")
+			W.Color(fs, Palette.c.textDim)
+		end
+	end
+
+	-- WHICH SIDE IS LIVE. Four frames, three slices of UI-TradeFrame-Highlight
+	-- each, and the client shows the pair belonging to whoever is putting
+	-- something in. That is a row being marked, so it is marked the way every
+	-- other row in this interface is - a wash of the accent rather than a gold
+	-- rope round it.
+	--
+	-- BEHIND THE GOODS. The wash fills the frame, and the frame covers the
+	-- whole column, so at the level the client gave it the mark would be drawn
+	-- over the seven items it is meant to be pointing at.
+	for _, side in ipairs(TRADE_SIDES) do
+		for _, tail in ipairs({ "", "Enchant" }) do
+			local hi = _G["TradeHighlight" .. side:sub(6) .. tail]
+			if hi then
+				hi.__aetherStore = hi.__aetherStore or {}
+				Reskin.RowMark(hi, hi.__aetherStore)
+				if hi.SetFrameLevel and frame.GetFrameLevel then
+					hi:SetFrameLevel(math.max(0, (frame:GetFrameLevel() or 1) - 1))
+				end
+			end
+		end
+	end
+
+	-- Trade and Cancel, which are the only two real buttons on the window.
+	Reskin.Buttons(frame, "pnBody")
+end
+
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
@@ -4948,6 +5408,8 @@ local INTERIORS = {
 	GossipFrame       = DressGossip,
 	ClassTrainerFrame = DressTrainer,
 	TaxiFrame         = DressTaxi,
+	TradeFrame        = DressTrade,
+	FriendsFrame      = DressFriends,
 	SettingsPanel     = DressSettings,
 }
 

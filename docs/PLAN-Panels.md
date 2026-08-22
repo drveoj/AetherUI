@@ -6,10 +6,8 @@ what has not been looked at yet, not a list of faults.
 
 ## What is left to build
 
-1. **`FriendsFrame`** — Friends / Who / Raid tabs. Shell only, no interior.
-2. **`TradeFrame`** — the two-player trade window. Shell only. Confirmed with
-   2026-08-21; the client's `TargetFrame` is a different thing and is not
-   in this list.
+1. ~~**`FriendsFrame`**~~ — **built 2026-08-22**, see below.
+2. ~~**`TradeFrame`**~~ — **built 2026-08-22**, see below.
 3. **`CommunitiesFrame`** — the guild panes. Written from a live dump and never
    seen, because there was no guild to look at when they were built.
 
@@ -42,6 +40,107 @@ Still Blizzard's, all of it children rather than regions:
 
 It opens solo for a look: `/run ShowUIPanel(TradeFrame)` puts it up empty,
 which covers every piece of art except the highlight.
+
+## Built — the social window's interior (2026-08-22)
+
+`DressFriends`, plus a full entry where there had been `{ frame =
+"FriendsFrame" }` and nothing else. Four tabs over five panes — friends,
+ignore, who, guild, raid.
+
+**The fact the whole window turns on: every pane is `setAllPoints` to the
+window.** A `setAllPoints` frame has *no points*, so the body mover has nothing
+to offset and a body list of panes would move nothing while reporting that it
+had. Everything the player looks at is hung off the **window** at its own fixed
+distance instead, so the body list is the content and never the panes.
+
+- **Two lists have a control row immediately above them** — the Friends tab's
+  own Friends/Ignore sub-tabs, 36 up, and the who list's five column heads, 30
+  up. Measured against the band each on its own, the header travels further
+  than the list under it and lands on top of it. The room is **reserved over
+  the list** with `lead` instead, which makes header and list short of the band
+  by the same amount so they travel together. Same trick the trade skill window
+  uses for its rank bars.
+- **One tool row serves five panes**, and that forced a real fix: `ChromeRow`
+  placed everything named whether it was up or not, and `RowUp` asked `IsShown`.
+  What the client hides when it swaps tabs is the **pane** — every child of it
+  goes on reporting itself shown — so the who query held the row's first slot
+  on the raid tab and pushed the raid's own switch along behind it. Both now
+  ask `IsVisible`, which is the distinction the footer's middle group was
+  already written round and had documented.
+- **The who query is chrome.** The client hangs it off the window's *bottom*
+  edge, which is where the footer strip now is, so it sat under Refresh and Add
+  Friend. It is a filter over the list it filters — the trainer's rule — so it
+  goes in the tool row, and it keeps its magnifying glass, which is in the same
+  layer as the border that came off.
+- **The five column heads are headings, not buttons.** Each is a `Button` with
+  a label on it and a child of the who pane, which is exactly what
+  `Reskin.Buttons` looks for, so all five came back as pressable surfaces. Same
+  argument that keeps a letter in the postbox from being drawn as a button —
+  and it had to be made a second time here.
+- **The two faux-scrolling lists** (ignore, who) hang their rows off the window
+  and scroll by refilling, so they need `inside`, exactly as the trainer does.
+- **A friend's row keeps its lamp and its badge.** Backing, lamp and badge are
+  all regions of the same button in the same two layers. The backing goes: the
+  client paints it a different colour for online, offline and Battle.net, and
+  what that says is said twice over by the lamp and by an offline name being
+  grey.
+- **The friends list grows its rows on demand, and we are the reason it does.**
+  `HybridScrollFrame_CreateButtons` makes as many rows as fit the box and adds
+  more whenever the box's height changes — which is precisely what dressing a
+  window does to it. So the rows that exist when the dresser runs are not the
+  rows the player ends up looking at. Hooked on `FriendsList_Update`,
+  `IgnoreList_Update` and `WhoList_Update`.
+
+**The mock had a bare shell and nothing else** — no panes, no tabs, no lists,
+no rows. Thirteen mutations are caught. One check written first could not fail:
+it asserted the row backing "stays off when the client repaints it", and
+`SetColorTexture` paints a texture rather than showing one, so hiding it once
+always holds. The hook's real justification is the growing pool above, and the
+check now tests that instead — the comment claiming otherwise was wrong and is
+gone.
+
+## Built — the trade window's interior (2026-08-22)
+
+`DressTrade`, and the entry gained `wells = false` and six more names in its
+body list. What was found on the way:
+
+- **Three pieces were never moving at all.** The two enchant recesses and the
+  thin gold edge round the other person's purse are pinned to the WINDOW's own
+  corners rather than chained off anything above them, so with the window's
+  content shifted down past them they stayed where the client had put them.
+  The body list is the only thing that moves a piece, and they were not in it.
+  Neither were the two highlights or the enchant label.
+- **The recesses ARE this window's wells.** Every piece of content in it sits
+  in one of the six, which is the trainer's case exactly — so no body recess
+  round the outside, and ours go at each inset's own bounds rather than
+  `WELL_OUTSET` proud of it: the inset is the recess, not a border round
+  content.
+- **A row is a frame, not a button.** Each of the fourteen carries the
+  empty-slot plate, the quest giver's parchment name strip and the item's name
+  in its own BACKGROUND layer, with the pressable `ItemButton` laid on top — so
+  a sweep of the window reached none of it. The name is a FontString in that
+  same layer, so the sweep has to spare it or the row comes up empty.
+- **The two purses are not symmetrical and should not look it.** Yours is three
+  fields of `MoneyInputFrameTemplate` — the same template Send Mail uses, with
+  the same three coins at three different distances from three identical boxes
+  — and theirs is a figure you only read, wrapped twice by the client. Three
+  pills against one well.
+- **Their coin readout is three Buttons with labels on them**, which is exactly
+  what `Reskin.Buttons` looks for. They are children of the money frame rather
+  than of the window so the sweep never reaches them, but only by luck, and
+  that is now written down beside the sweep.
+- **The live-side highlight is a row being marked**, so it is marked the way
+  every row in this interface is — `Reskin.RowMark` — and dropped a level,
+  because the wash fills a frame covering the whole column and at the client's
+  own level it draws over the seven items it is pointing at.
+
+**The mock had none of it.** It had four insets, twelve rows built as bare
+Buttons, two empty money frames and two buttons with no labels on them. Every
+one of those was kinder than the client. Seven mutations are now caught, and
+two of the first checks written could not fail: one compared a frame with its
+own grandchild's level, which parenting settles either way, and one checked the
+coin's ANCHOR when the client already writes that anchor — only the offset
+moves.
 
 ## Fixed after parking — the quest greeting page (2026-08-21)
 
@@ -86,10 +185,12 @@ Two other things came out of it:
 - **Trade skill detail pane** does not stretch to fill the window — about 30
   units of slack down the right. We move the client's panes; we do not resize
   them.
-- **Stage D** (size classes S 360 / M 520 / L 760 / XL 1040) and **Stage E**
-  (UIPanel detach and movability) of the panels handoff are unstarted.
-- **Nothing is committed since 0.18.0.** 25 changed files. `Tools/bump.py
-  --minor` when the working state is ready to bank.
+- **Stage D** (size classes S 360 / M 520 / L 760 / XL 1040) is unstarted.
+  **Stage E** (UIPanel detach and movability) was researched and **decided
+  against** — `ShowUIPanel` refuses in combat from insecure code before it
+  reaches the bail-out, so every combat toggle becomes a visible error unless
+  every open and close path is rerouted. The mechanism is recorded in memory if
+  it is ever revisited.
 
 ---
 

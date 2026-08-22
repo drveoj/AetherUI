@@ -3212,6 +3212,332 @@ do
 		buildPanel(n)
 	end
 
+	-- THE SOCIAL WINDOW, which had a shell in this mock and nothing inside it:
+	-- four tabs, five panes and not one piece of any of them. Every pane is
+	-- setAllPoints to the window, which is the fact the whole window turns on -
+	-- a setAllPoints frame has NO POINTS, so moving a pane moves nothing at
+	-- all, and everything the player looks at is hung off the WINDOW.
+	do
+		local ff = _G.FriendsFrame
+
+		-- ITS OWN RECESS, moved by the client per tab - 83 down on Friends, 80
+		-- on Who, 60 on Raid. A stone box re-placed inside our glass on every
+		-- switch.
+		local fins = CreateFrame("Frame", "FriendsFrameInset", ff)
+		fins:SetPoint("TOPLEFT", ff, "TOPLEFT", 4, -83)
+		fins:SetPoint("BOTTOMRIGHT", ff, "BOTTOMRIGHT", -6, 26)
+		fins:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\FrameGeneral\\UI-Frame-InnerTopLeft")
+
+		-- FOUR TABS, HANGING BELOW THE WINDOW. Only the first is anchored to
+		-- the frame; the other three chain off it.
+		local prevTab
+		for i, word in ipairs({ "FRIENDS", "WHO", "GUILD", "RAID" }) do
+			local t = CreateFrame("Button", "FriendsFrameTab" .. i, ff)
+			t:SetSize(70, 32)
+			t:SetNormalTexture("Interface\\ChatFrame\\UI-ChatFrame-Tab-Up")
+			local fs = t:CreateFontString("FriendsFrameTab" .. i .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText(word)
+			t:SetFontString(fs)
+			if prevTab then
+				t:SetPoint("LEFT", prevTab, "RIGHT", -14, 0)
+			else
+				t:SetPoint("BOTTOMLEFT", ff, "BOTTOMLEFT", -2, -31)
+			end
+			prevTab = t
+		end
+
+		-- EVERY PANE setAllPoints, and hidden but for the one that is up.
+		local panes = {}
+		for _, n in ipairs({ "FriendsListFrame", "IgnoreListFrame", "WhoFrame",
+			"GuildFrame", "RaidFrame" }) do
+			local pane = CreateFrame("Frame", n, ff)
+			pane:SetAllPoints(ff)
+			pane:CreateTexture(nil, "BACKGROUND"):SetTexture("friends-pane-stone")
+			pane:Hide()
+			panes[n] = pane
+		end
+		panes.FriendsListFrame:Show()
+
+		-- THE FRIENDS TAB'S OWN TABS - Friends and Ignore - 51 down, which is
+		-- inside our band. They live on a header frame of their own that the
+		-- client shows only while the Friends TAB is selected.
+		local hdr = CreateFrame("Frame", "FriendsTabHeader", ff)
+		hdr:SetAllPoints(ff)
+		for i, word in ipairs({ "FRIENDS", "IGNORE" }) do
+			local t = CreateFrame("Button", "FriendsTabHeaderTab" .. i, hdr)
+			t:SetSize(64, 24)
+			t:SetNormalTexture("Interface\\ChatFrame\\UI-ChatFrame-Tab-Up")
+			local fs = t:CreateFontString("FriendsTabHeaderTab" .. i .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText(word)
+			t:SetFontString(fs)
+			if i == 1 then
+				t:SetPoint("TOPLEFT", hdr, "TOPLEFT", 18, -51)
+			else
+				t:SetPoint("LEFT", _G.FriendsTabHeaderTab1, "RIGHT", 0, 0)
+			end
+		end
+		-- The Battle.net strip, which this flavour shows nobody but which is a
+		-- frame of the window all the same.
+		local bnet = CreateFrame("Frame", "FriendsFrameBattlenetFrame", hdr)
+		bnet:SetSize(190, 29)
+		bnet:SetPoint("TOPLEFT", hdr, "TOPLEFT", 109, -26)
+		bnet:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\FriendsFrame\\PlusManz-BattleNetBG")
+		local bcast = CreateFrame("EditBox", "FriendsFrameBroadcastInput", bnet)
+		bcast:SetSize(160, 20)
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			local t = bcast:CreateTexture("FriendsFrameBroadcastInput" .. part, "BACKGROUND")
+			t:SetTexture("Interface\\Common\\Common-Input-Border")
+			_G["FriendsFrameBroadcastInput" .. part] = t
+		end
+
+		-- THE FRIENDS LIST is a HYBRID scroll: its rows are children of the
+		-- scrolling child and it grows them on demand, so they have no names
+		-- and are reached through the box's own `buttons` array.
+		local fsf = CreateFrame("ScrollFrame", "FriendsFrameFriendsScrollFrame",
+			panes.FriendsListFrame)
+		fsf:SetSize(302, 302)
+		fsf:SetPoint("TOPLEFT", ff, "TOPLEFT", 8, -87)
+		for _, part in ipairs({ "Top", "Bottom", "Middle" }) do
+			local t = fsf:CreateTexture("FriendsFrameFriendsScrollFrame" .. part, "ARTWORK")
+			t:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar")
+			_G["FriendsFrameFriendsScrollFrame" .. part] = t
+		end
+		fsf.ScrollBar = CreateFrame("Slider", "FriendsFrameFriendsScrollFrameScrollBar", fsf)
+		-- A HYBRID SCROLL GROWS ITS ROWS ON DEMAND, and we are the reason it
+		-- does: HybridScrollFrame_CreateButtons makes as many as fit the box's
+		-- height and adds more whenever that height changes - which is exactly
+		-- what dressing a window does to it. So the rows that exist when the
+		-- dresser runs are not the rows the player ends up looking at.
+		fsf.buttons = {}
+		local function friendRow()
+			local row = CreateFrame("Button", nil, fsf)
+			row:SetSize(302, 34)
+			-- ITS BACKING IS NOT DRAWN FROM A FILE: the client calls
+			-- SetColorTexture on it with a different colour for online,
+			-- offline and Battle.net.
+			row.background = row:CreateTexture(nil, "BACKGROUND")
+			row.background:SetColorTexture(0.3, 0.3, 0.6, 0.35)
+			-- ...and the lamp and the badge are regions of the same button in
+			-- the same layers, so a plain strip takes both.
+			row.status = row:CreateTexture(nil, "ARTWORK")
+			row.status:SetTexture("Interface\\FriendsFrame\\StatusIcon-Online")
+			row.gameIcon = row:CreateTexture(nil, "ARTWORK")
+			row.gameIcon:SetTexture("Interface\\FriendsFrame\\Battlenet-WoWicon")
+			row.name = row:CreateFontString(nil, "ARTWORK")
+			row.name:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			row.name:SetText("Somebody, Level 60 Warlock")
+			row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+			fsf.buttons[#fsf.buttons + 1] = row
+			return row
+		end
+		for _ = 1, 10 do friendRow() end
+
+		local addf = CreateFrame("Button", "FriendsFrameAddFriendButton",
+			panes.FriendsListFrame)
+		addf:SetSize(130, 21)
+		addf:SetPoint("BOTTOMLEFT", ff, "BOTTOMLEFT", 4, 4)
+		addf:SetNormalTexture("panel-button-up")
+		local addfs = addf:CreateFontString("FriendsFrameAddFriendButtonText", "OVERLAY")
+		addfs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+		addfs:SetText("Add Friend")
+		addf:SetFontString(addfs)
+		local sendm = CreateFrame("Button", "FriendsFrameSendMessageButton",
+			panes.FriendsListFrame)
+		sendm:SetSize(130, 21)
+		sendm:SetPoint("BOTTOMRIGHT", ff, "BOTTOMRIGHT", -6, 4)
+		sendm:SetNormalTexture("panel-button-up")
+		local sendms = sendm:CreateFontString("FriendsFrameSendMessageButtonText", "OVERLAY")
+		sendms:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+		sendms:SetText("Send Message")
+		sendm:SetFontString(sendms)
+
+		-- THE IGNORE LIST is a FAUX scroll - a scroll BAR and nothing else.
+		-- Its nineteen rows are hung off the WINDOW and scrolled by refilling,
+		-- so moving the list leaves every one of them where it was.
+		local isf = CreateFrame("ScrollFrame", "FriendsFrameIgnoreScrollFrame",
+			panes.IgnoreListFrame)
+		isf:SetSize(298, 309)
+		isf:SetPoint("TOPRIGHT", ff, "TOPRIGHT", -32, -87)
+		for _, part in ipairs({ "Top", "Bottom", "Middle" }) do
+			local t = isf:CreateTexture("FriendsFrameIgnoreScrollFrame" .. part, "ARTWORK")
+			t:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar")
+			_G["FriendsFrameIgnoreScrollFrame" .. part] = t
+		end
+		isf.ScrollBar = CreateFrame("Slider", nil, isf)
+		for i = 1, 19 do
+			local n = "FriendsFrameIgnoreButton" .. i
+			local b = CreateFrame("Button", n, panes.IgnoreListFrame)
+			b:SetSize(298, 16)
+			if i == 1 then
+				b:SetPoint("TOPLEFT", ff, "TOPLEFT", 8, -89)
+			else
+				b:SetPoint("TOPLEFT", _G["FriendsFrameIgnoreButton" .. (i - 1)],
+					"BOTTOMLEFT", 0, 0)
+			end
+			b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+			local fs = b:CreateFontString(n .. "Name", "BORDER")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText("Nuisance")
+			_G[n .. "Name"] = fs
+		end
+		for _, n in ipairs({ "FriendsFrameIgnoredHeader",
+			"FriendsFrameBlockedInviteHeader", "FriendsFrameMutedHeader" }) do
+			local h = CreateFrame("Frame", n, panes.IgnoreListFrame)
+			h:SetSize(298, 16)
+			h:CreateTexture(nil, "BACKGROUND"):SetTexture("friends-header-stone")
+			local fs = h:CreateFontString(n .. "Title", "ARTWORK")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText("Ignored")
+			_G[n .. "Title"] = fs
+		end
+		for _, spec in ipairs({ { "FriendsFrameIgnorePlayerButton", 131,
+			"BOTTOMLEFT", 4 }, { "FriendsFrameUnsquelchButton", 134,
+			"BOTTOMRIGHT", -6 } }) do
+			local b = CreateFrame("Button", spec[1], panes.IgnoreListFrame)
+			b:SetSize(spec[2], 21)
+			b:SetPoint(spec[3], ff, spec[3], spec[4], 4)
+			b:SetNormalTexture("panel-button-up")
+			local fs = b:CreateFontString(spec[1] .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText(spec[1])
+			b:SetFontString(fs)
+		end
+
+		-- WHO: a query field hung off the window's BOTTOM edge, a stone recess
+		-- round the list, five column heads 30 above it, and another faux
+		-- scroll.
+		local wsearch = CreateFrame("EditBox", "WhoFrameEditBox", panes.WhoFrame)
+		wsearch:SetSize(296, 32)
+		wsearch:SetPoint("BOTTOMLEFT", panes.WhoFrame, "BOTTOMLEFT", 18, 26)
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			local t = wsearch:CreateTexture("WhoFrameEditBox" .. part, "BACKGROUND")
+			t:SetTexture("Interface\\Common\\Common-Input-Border")
+			_G["WhoFrameEditBox" .. part] = t
+		end
+		-- The magnifying glass is in the same layer as the border, so a plain
+		-- sweep takes it and the field says nothing about what it is for.
+		wsearch.searchIcon = wsearch:CreateTexture(nil, "BACKGROUND")
+		wsearch.searchIcon:SetTexture("common-search-magnifyingglass")
+
+		local winset = CreateFrame("Frame", "WhoFrameListInset", panes.WhoFrame)
+		winset:SetPoint("TOPLEFT", panes.WhoFrame, "TOPLEFT", 5, -83)
+		winset:SetPoint("BOTTOMRIGHT", panes.WhoFrame, "BOTTOMRIGHT", -5, 26)
+		winset:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\FrameGeneral\\UI-Frame-InnerTopLeft")
+		local wtot = winset:CreateFontString("WhoFrameTotals", "ARTWORK")
+		wtot:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		wtot:SetText("12 players found")
+		wtot:SetPoint("BOTTOM", wsearch, "TOP", 0, -6)
+		_G.WhoFrameTotals = wtot
+
+		local prevCol
+		for i, word in ipairs({ "Name", "Level", "Class", "Zone", "Guild" }) do
+			local n = "WhoFrameColumnHeader" .. i
+			local b = CreateFrame("Button", n, panes.WhoFrame)
+			b:SetSize(83, 24)
+			if prevCol then
+				b:SetPoint("LEFT", prevCol, "RIGHT", -2, 0)
+			else
+				b:SetPoint("TOPLEFT", panes.WhoFrame, "TOPLEFT", 7, -57)
+			end
+			for _, part in ipairs({ "Left", "Middle", "Right" }) do
+				local t = b:CreateTexture(n .. part, "BACKGROUND")
+				t:SetTexture("Interface\\FriendsFrame\\WhoFrame-ColumnTabs")
+				_G[n .. part] = t
+			end
+			local fs = b:CreateFontString(n .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			fs:SetText(word)
+			b:SetFontString(fs)
+			b:SetHighlightTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight")
+			prevCol = b
+		end
+
+		local wsf = CreateFrame("ScrollFrame", "WhoListScrollFrame", panes.WhoFrame)
+		wsf:SetSize(296, 287)
+		wsf:SetPoint("TOPRIGHT", panes.WhoFrame, "TOPRIGHT", -33, -87)
+		for _, part in ipairs({ "Top", "Bottom", "Middle" }) do
+			local t = wsf:CreateTexture("WhoListScrollFrame" .. part, "ARTWORK")
+			t:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar")
+			_G["WhoListScrollFrame" .. part] = t
+		end
+		wsf.ScrollBar = CreateFrame("Slider", nil, wsf)
+		for i = 1, 17 do
+			local n = "WhoFrameButton" .. i
+			local b = CreateFrame("Button", n, panes.WhoFrame)
+			b:SetSize(296, 16)
+			if i == 1 then
+				b:SetPoint("TOPLEFT", panes.WhoFrame, "TOPLEFT", 8, -89)
+			else
+				b:SetPoint("TOPLEFT", _G["WhoFrameButton" .. (i - 1)],
+					"BOTTOMLEFT", 0, 0)
+			end
+			-- FIVE STRINGS, not one: this row is a table row.
+			for _, col in ipairs({ "Name", "Level", "Class", "Zone" }) do
+				local fs = b:CreateFontString(n .. col, "BORDER")
+				fs:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+				fs:SetText(col)
+				_G[n .. col] = fs
+			end
+		end
+		for _, spec in ipairs({ { "WhoFrameGroupInviteButton", 120 },
+			{ "WhoFrameAddFriendButton", 120 }, { "WhoFrameWhoButton", 85 } }) do
+			local b = CreateFrame("Button", spec[1], panes.WhoFrame)
+			b:SetSize(spec[2], 22)
+			b:SetPoint("BOTTOMRIGHT", panes.WhoFrame, "BOTTOMRIGHT", -6, 4)
+			b:SetNormalTexture("panel-button-up")
+			local fs = b:CreateFontString(spec[1] .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText(spec[1])
+			b:SetFontString(fs)
+		end
+
+		-- RAID: a switch and a button in the band, a paragraph below them, and
+		-- one button on the bottom edge.
+		local assist = CreateFrame("CheckButton", "RaidFrameAllAssistCheckButton",
+			panes.RaidFrame)
+		assist:SetSize(24, 24)
+		assist:SetPoint("TOPLEFT", panes.RaidFrame, "TOPLEFT", 58, -23)
+		assist:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+		assist:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+		local notin = CreateFrame("Frame", "RaidFrameNotInRaid", panes.RaidFrame)
+		notin:SetAllPoints(panes.RaidFrame)
+		local blurb = notin:CreateFontString("RaidFrameRaidDescription", "ARTWORK")
+		blurb:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+		blurb:SetText("You are not in a raid group.")
+		blurb:SetSize(300, 40)
+		blurb:SetPoint("TOPLEFT", panes.RaidFrame, "TOPLEFT", 15, -73)
+		_G.RaidFrameRaidDescription = blurb
+		for _, spec in ipairs({ { "RaidFrameRaidInfoButton", 100, "TOPRIGHT", -7, -24 },
+			{ "RaidFrameConvertToRaidButton", 130, "BOTTOMRIGHT", -7, 5 } }) do
+			local b = CreateFrame("Button", spec[1], panes.RaidFrame)
+			b:SetSize(spec[2], 22)
+			b:SetPoint(spec[3], panes.RaidFrame, spec[3], spec[4], spec[5])
+			b:SetNormalTexture("panel-button-up")
+			local fs = b:CreateFontString(spec[1] .. "Text", "OVERLAY")
+			fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+			fs:SetText(spec[1])
+			b:SetFontString(fs)
+		end
+
+		-- THE CLIENT'S OWN THREE REFRESHES, which is what the dresser hooks:
+		-- every one of these lists is refilled rather than rebuilt, so a row
+		-- dressed once is undressed by the next update.
+		function _G.FriendsList_Update()
+			for _, row in ipairs(fsf.buttons) do
+				row.background:SetColorTexture(0.3, 0.3, 0.6, 0.35)
+			end
+			-- ...AND ONE MORE ROW, which is what a hybrid scroll does when the
+			-- box it fills has grown. A mock that only ever refilled the ten it
+			-- started with could not show a row arriving after the dresser had
+			-- been past, which is the whole reason the hook exists.
+			friendRow()
+		end
+		function _G.IgnoreList_Update() end
+		function _G.WhoList_Update() end
+	end
+
 	-- THE POSTBOX, THE BOOK READER AND THE TRADE SKILLS. Three windows a
 	-- player opens constantly and none of them was in this mock, so none of
 	-- them could be checked - which is how all three shipped in stone.
@@ -3746,12 +4072,34 @@ do
 			txt("TradeFramePlayerNameText", 65, -5, 100)
 			txt("TradeFrameRecipientNameText", 230, -5, 80)
 
-			-- THE FOUR STONE RECESSES, each pinned by TWO corners - one to the
-			-- panel it is in and one to the window's TOPLEFT - so a mover that
-			-- rewrote a single point would stretch them.
+			-- WHAT THE OTHER PERSON IS PUTTING IN goes under a heading of its
+			-- own, and the client draws that heading as a SECOND WINDOW stitched
+			-- onto the right half: its own portrait ring, its own left border,
+			-- its own bottom corner and a pale wash behind the lot. Every one is
+			-- a region of the frame, so the shell strip already takes them - and
+			-- a mock without them cannot show that it does.
+			for _, n in ipairs({ "TradeFramePlayerPortrait",
+				"TradeFrameRecipientPortrait", "TradeRecipientPortraitFrame",
+				"TradeRecipientBotLeftCorner", "TradeRecipientLeftBorder",
+				"TradeRecipientBG" }) do
+				local t = tr:CreateTexture(n, "OVERLAY")
+				t:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Border")
+				_G[n] = t
+			end
+
+			-- SIX STONE RECESSES, each pinned by TWO corners - one to the panel
+			-- it is in and one to the window's TOPLEFT - so a mover that rewrote
+			-- a single point would stretch them.
+			--
+			-- The two ENCHANT recesses are down at -354, below the columns, and
+			-- they are anchored to the WINDOW rather than chained off anything
+			-- above them: left out of the body list they stay where the client
+			-- put them while the rest of the window moves down past them.
 			for _, spec in ipairs({
 				{ "TradePlayerItemsInset", 4, -83, 166, -352 },
 				{ "TradeRecipientItemsInset", 175, -83, 338, -352 },
+				{ "TradePlayerEnchantInset", 4, -354, 166, -418 },
+				{ "TradeRecipientEnchantInset", 175, -354, 338, -418 },
 				{ "TradePlayerInputMoneyInset", 4, -58, 166, -82 },
 				{ "TradeRecipientMoneyInset", 175, -58, 338, -81 },
 			}) do
@@ -3761,37 +4109,175 @@ do
 				ins:CreateTexture(nil, "BACKGROUND"):SetTexture("trade-inset-stone")
 			end
 
-			-- TWO COLUMNS OF SLOTS, each chained off its own first one.
+			-- AND THE OTHER PERSON'S PURSE IS WRAPPED TWICE - the recess above
+			-- and a thin gold edge inside it, two surrounds for one number. The
+			-- same double wrap the postbox's total has.
+			local rbg = CreateFrame("Frame", "TradeRecipientMoneyBg", tr)
+			rbg:SetSize(120, 30)
+			rbg:SetPoint("TOPRIGHT", tr, "TOPRIGHT", -7, -60)
+			rbg:CreateTexture(nil, "BORDER"):SetTexture("Interface\\Common\\ThinGoldEdge")
+
+			-- FOURTEEN ITEM ROWS, AND A ROW IS NOT A BUTTON. Each is a FRAME
+			-- carrying three pieces of art in its own background layer - the
+			-- empty-slot plate, the quest giver's parchment name strip, and the
+			-- item's name printed on that parchment - with the pressable
+			-- ItemButton laid on top. Mocked as a bare Button the whole row read
+			-- as one control and none of that art existed to be taken.
 			for _, spec in ipairs({ { "TradePlayerItem", 14 },
 				{ "TradeRecipientItem", 182 } }) do
-				for i = 1, 6 do
-					local b = CreateFrame("Button", spec[1] .. i, tr)
-					b:SetSize(153, 37)
+				for i = 1, 7 do
+					local n = spec[1] .. i
+					local row = CreateFrame("Frame", n, tr)
+					row:SetSize(153, 37)
 					if i == 1 then
-						b:SetPoint("TOPLEFT", tr, "TOPLEFT", spec[2], -89)
+						row:SetPoint("TOPLEFT", tr, "TOPLEFT", spec[2], -89)
 					else
-						b:SetPoint("TOPLEFT", _G[spec[1] .. (i - 1)], "BOTTOMLEFT", 0, 0)
+						-- The seventh is the ENCHANT slot and sits in a recess of its
+						-- own, so it drops 28 rather than the 7 between the other six.
+						row:SetPoint("TOPLEFT", _G[spec[1] .. (i - 1)], "BOTTOMLEFT",
+							0, i == 7 and -28 or -7)
 					end
+					local plate = row:CreateTexture(n .. "SlotTexture", "BACKGROUND")
+					plate:SetTexture("Interface\\Buttons\\UI-EmptySlot")
+					row.SlotTexture = plate
+					_G[n .. "SlotTexture"] = plate
+					local strip = row:CreateTexture(n .. "NameFrame", "BACKGROUND")
+					strip:SetTexture("Interface\\QuestFrame\\UI-QuestItemNameFrame")
+					_G[n .. "NameFrame"] = strip
+					local fs = row:CreateFontString(n .. "Name", "BACKGROUND")
+					fs:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+					fs:SetTextColor(1, 0.82, 0, 1)
+					fs:SetText("Item Name")
+					_G[n .. "Name"] = fs
+					-- The enchant slot wears a glyph of its own, one layer up.
+					if i == 7 then
+						row:CreateTexture(nil, "ARTWORK")
+							:SetTexture("Interface\\TradeFrame\\UI-TradeFrame-EnchantIcon")
+					end
+					local btn = CreateFrame("Button", n .. "ItemButton", row)
+					btn:SetSize(37, 37)
+					btn:SetPoint("TOPLEFT", row, "TOPLEFT")
+					btn:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
+					local icon = btn:CreateTexture(n .. "ItemButtonIconTexture", "BACKGROUND")
+					icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
+					_G[n .. "ItemButtonIconTexture"] = icon
+					_G[n .. "ItemButton"] = btn
 				end
 			end
 
+			-- WILL NOT BE TRADED, twice - one label over each enchant recess,
+			-- both hung off the WINDOW at -360 like the recesses they head.
+			local pench = tr:CreateFontString("TradeFramePlayerEnchantText", "ARTWORK")
+			pench:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			pench:SetText("Will not be traded")
+			pench:SetSize(120, 10)
+			pench:SetPoint("TOPLEFT", tr, "TOPLEFT", 15, -360)
+			_G.TradeFramePlayerEnchantText = pench
+			local rench = tr:CreateFontString("TradeFrameRecipientEnchantText", "ARTWORK")
+			rench:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+			rench:SetText("Will not be traded")
+			rench:SetSize(120, 10)
+			rench:SetPoint("LEFT", pench, "LEFT", 166, 0)
+			_G.TradeFrameRecipientEnchantText = rench
+
+			-- FOUR HIGHLIGHTS MARKING THE LIVE SIDE, each three slices of
+			-- UI-TradeFrame-Highlight in a frame of its own.
+			for _, spec in ipairs({
+				{ "TradeHighlightPlayer", 150, 266, nil, 6, -85 },
+				{ "TradeHighlightRecipient", 150, 266, nil, 176, -85 },
+				{ "TradeHighlightPlayerEnchant", 150, 61, "TradeHighlightPlayer", 0, -4 },
+				{ "TradeHighlightRecipientEnchant", 150, 61, "TradeHighlightRecipient", 0, -4 },
+			}) do
+				local h = CreateFrame("Frame", spec[1], tr)
+				h:SetSize(spec[2], spec[3])
+				if spec[4] then
+					h:SetPoint("TOPLEFT", _G[spec[4]], "BOTTOMLEFT", spec[5], spec[6])
+				else
+					h:SetPoint("TOPLEFT", tr, "TOPLEFT", spec[5], spec[6])
+				end
+				for _, part in ipairs({ "Top", "Bottom", "Middle" }) do
+					local t = h:CreateTexture(spec[1] .. part, "ARTWORK")
+					t:SetTexture("Interface\\TradeFrame\\UI-TradeFrame-Highlight")
+					_G[spec[1] .. part] = t
+				end
+			end
+
+			-- YOUR OWN PURSE IS THREE FIELDS, not a readout: the same
+			-- MoneyInputFrameTemplate Send Mail uses, with the same three coins
+			-- at three different distances from three identical boxes.
 			local pm = CreateFrame("Frame", "TradePlayerInputMoneyFrame", tr)
 			pm:SetSize(120, 24)
 			pm:SetPoint("TOPLEFT", tr, "TOPLEFT", 11, -61)
+			local prev
+			for _, spec in ipairs({ { "Gold", 56, 2, 0 }, { "Silver", 30, -8, 22 },
+				{ "Copper", 30, -8, 11 } }) do
+				local n = "TradePlayerInputMoneyFrame" .. spec[1]
+				local box = CreateFrame("EditBox", n, pm)
+				box:SetSize(spec[2], 20)
+				for _, part in ipairs({ "Left", "Middle", "Right" }) do
+					local t = box:CreateTexture(n .. part, "BACKGROUND")
+					t:SetTexture("Interface\\Common\\Common-Input-Border")
+					_G[n .. part] = t
+				end
+				box.texture = box:CreateTexture(nil, "BACKGROUND")
+				box.texture:SetTexture("Interface\\MoneyFrame\\UI-MoneyIcons")
+				box.texture:SetSize(13, 13)
+				if prev then
+					box:SetPoint("LEFT", prev, "RIGHT", spec[4], 0)
+				else
+					box:SetPoint("TOPLEFT", pm, "TOPLEFT", 0, 0)
+				end
+				box.texture:SetPoint("LEFT", box, "RIGHT", spec[3], 0)
+				pm[spec[1]:lower()] = box
+				_G[n] = box
+				prev = box
+			end
+
+			-- AND THEIRS IS A READOUT, three coins and three numbers on three
+			-- BUTTONS - which is the trap in sweeping this window for buttons
+			-- with labels on them.
 			local rm = CreateFrame("Frame", "TradeRecipientMoneyFrame", tr)
 			rm:SetSize(120, 24)
 			rm:SetPoint("TOPRIGHT", tr, "TOPRIGHT", -5, -64)
+			for _, part in ipairs({ "Gold", "Silver", "Copper" }) do
+				local n = "TradeRecipientMoneyFrame" .. part .. "Button"
+				local b = CreateFrame("Button", n, rm)
+				b:SetSize(30, 14)
+				local fs = b:CreateFontString(n .. "Text", "OVERLAY")
+				fs:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+				fs:SetTextColor(1, 1, 1, 1)
+				fs:SetText("12")
+				b:SetFontString(fs)
+				b:CreateTexture(nil, "OVERLAY")
+					:SetTexture("Interface\\MoneyFrame\\UI-MoneyIcons")
+				_G[n .. "Text"] = fs
+				_G[n] = b
+			end
 
 			-- TRADE AND CANCEL, in the corner, five up from the glass and under the
 			-- recess. 15a puts them in a strip of their own.
-			local trade = CreateFrame("Button", "TradeFrameTradeButton", tr)
-			trade:SetSize(85, 22)
-			trade:SetPoint("BOTTOMRIGHT", tr, "BOTTOMRIGHT", -85, 5)
-			trade:SetNormalTexture("panel-button-up")
-			local cancel = CreateFrame("Button", "TradeFrameCancelButton", tr)
-			cancel:SetSize(77, 22)
-			cancel:SetPoint("TOPLEFT", trade, "TOPRIGHT", 3, 0)
-			cancel:SetNormalTexture("panel-button-up")
+			-- ...AND EACH WITH THE WORD ON IT. Both are UIPanelButtonTemplate,
+			-- which means a ButtonText - and a button with no label is not a
+			-- button the sweep for buttons-with-labels can find, so a mock
+			-- without one cannot show whether either was ever dressed.
+			local function action(name, w, place)
+				local b = CreateFrame("Button", name, tr)
+				b:SetSize(w, 22)
+				b:SetNormalTexture("panel-button-up")
+				local fs = b:CreateFontString(name .. "Text", "OVERLAY")
+				fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+				fs:SetText(name)
+				b:SetFontString(fs)
+				place(b)
+				_G[name] = b
+				return b
+			end
+			local trade = action("TradeFrameTradeButton", 85, function(b)
+				b:SetPoint("BOTTOMRIGHT", tr, "BOTTOMRIGHT", -85, 5)
+			end)
+			action("TradeFrameCancelButton", 77, function(b)
+				b:SetPoint("TOPLEFT", trade, "TOPRIGHT", 3, 0)
+			end)
 		end
 
 		-- Two of them: TradeSkillFrame is First Aid and cooking, CraftFrame is
@@ -27101,6 +27587,187 @@ do
 	_G.QuestFrameRewardPanel:Hide()
 	_G.QuestFrameDetailPanel:Show()
 
+	-- THE SOCIAL WINDOW. Four tabs over five panes, every pane setAllPoints to
+	-- the window - which is the fact the whole thing turns on: a setAllPoints
+	-- frame has no points, so moving a pane moves nothing at all and every
+	-- piece of content is hung off the WINDOW instead.
+	do
+	local PN = A:GetModule("panels")
+	_G.FriendsFrame:Show()
+	PN.Dress(_G.FriendsFrame)
+	local fInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_OUTSET
+	local fWant = A.Widgets.PANEL_HEAD_H + fInner
+
+	-- ITS TABS HANG BELOW THE WINDOW, and the glass has to follow them down or
+	-- they sit outside it - the postbox's case one window along.
+	local _, tRel, tAt, _, tY = _G.FriendsFrameTab1:GetPoint(1)
+	check(tRel == _G.FriendsFrame and tAt == "BOTTOMLEFT" and tY < 0,
+		"the social window's tabs hang off its bottom edge (" .. tostring(tY)
+		.. ")")
+	check(PN.ENTRY.FriendsFrame.insets[4] <= tY,
+		"and the glass reaches past them (" ..
+		tostring(PN.ENTRY.FriendsFrame.insets[4]) .. " vs " .. tostring(tY) .. ")")
+
+	-- NOT ONE OF THE FIVE PANES IS IN THE BODY LIST, and that is deliberate:
+	-- setAllPoints leaves a frame with NO POINTS, so the mover has nothing to
+	-- offset and a body list of panes would move nothing while reporting that
+	-- it had.
+	local paned = {}
+	for _, n in ipairs(PN.ENTRY.FriendsFrame.body) do
+		if _G[n] and _G[n].GetNumPoints and _G[n]:GetNumPoints() == 0 then
+			paned[#paned + 1] = n
+		end
+	end
+	check(#paned == 0, "nothing in the body list is a setAllPoints pane, "
+		.. "which has no points to move (" ..
+		(#paned > 0 and table.concat(paned, ",") or "none of them") .. ")")
+
+	-- THE SUB-TABS AND THE LIST UNDER THEM TRAVEL TOGETHER. Friends and Ignore
+	-- sit 36 above the list they switch; measured against the band each on its
+	-- own, the pair would move 36 further than the list and land on it. The
+	-- room is RESERVED over the list instead, which makes both short of the
+	-- band by the same amount.
+	local subY = select(5, _G.FriendsTabHeaderTab1:GetPoint(1))
+	local listY = select(5, _G.FriendsFrameFriendsScrollFrame:GetPoint(1))
+	check(subY == -fWant and listY == -(fWant + 36),
+		"the friends sub-tabs sit under the band with their list 36 below "
+		.. "them, as the client had it (" .. tostring(subY) .. ", "
+		.. tostring(listY) .. ")")
+
+	-- AND THE IGNORE LIST'S ROWS ARE MOVED INTO ITS LIST. A faux scroll frame
+	-- is a scroll BAR and nothing else - the client hangs the rows off the
+	-- WINDOW - so the list went into the recess and left all nineteen of them
+	-- printed on the glass above an empty box.
+	local ig1 = _G.FriendsFrameIgnoreButton1
+	check(select(2, ig1:GetPoint(1)) == _G.FriendsFrameIgnoreScrollFrame,
+		"the ignore rows are re-anchored into the list they belong to")
+	local who1 = _G.WhoFrameButton1
+	check(select(2, who1:GetPoint(1)) == _G.WhoListScrollFrame,
+		"and so are the who list's")
+
+	-- EVERY LIST IN A RECESS OF ITS OWN, and none round the outside.
+	local bare = {}
+	for _, n in ipairs({ "FriendsFrameFriendsScrollFrame",
+		"FriendsFrameIgnoreScrollFrame", "WhoListScrollFrame" }) do
+		if not _G[n].__aetherWell then bare[#bare + 1] = n end
+		for _, part in ipairs({ "Top", "Bottom", "Middle" }) do
+			if _G[n .. part]:GetTexture() ~= 0 then
+				bare[#bare + 1] = n .. part
+			end
+		end
+	end
+	check(#bare == 0, "all three lists are in recesses of ours with the "
+		.. "client's scroll art gone (" ..
+		(#bare > 0 and table.concat(bare, ",") or "all three") .. ")")
+	check(not (_G.FriendsFrame.__aetherBody
+		and _G.FriendsFrame.__aetherBody:IsShown()),
+		"and no seventh recess round the three")
+
+	-- A FRIEND'S ROW KEEPS THE LAMP AND THE BADGE. Its backing, the online
+	-- lamp and the game badge are all regions of the same button in the same
+	-- two layers, so a plain strip takes the two things the row is telling you
+	-- along with the plaque behind them.
+	local frow = _G.FriendsFrameFriendsScrollFrame.buttons[1]
+	check(not frow.background:IsShown() and frow.status:IsShown()
+		and frow.gameIcon:IsShown(),
+		"a friend's row loses its plaque and keeps its lamp and its badge")
+
+	-- AND A ROW THAT ARRIVES AFTERWARDS IS DRESSED TOO, which is the whole
+	-- reason the client's own refresh is hooked.
+	--
+	-- HybridScrollFrame_CreateButtons makes as many rows as fit the box and
+	-- adds more whenever the box's height changes - and changing it is exactly
+	-- what dressing this window does. So the rows that existed when the
+	-- dresser ran are not the rows the player ends up looking at, and the ones
+	-- made afterwards would be the only stone left in the window.
+	local before = #_G.FriendsFrameFriendsScrollFrame.buttons
+	_G.FriendsList_Update()
+	local grown = _G.FriendsFrameFriendsScrollFrame.buttons[before + 1]
+	check(grown and not grown.background:IsShown() and grown.status:IsShown(),
+		"a row the list grows after we have been past is dressed as well ("
+		.. before .. " -> " ..
+		#_G.FriendsFrameFriendsScrollFrame.buttons .. ")")
+
+	-- THE WHO LIST'S COLUMNS ARE HEADINGS, NOT BUTTONS. Each is drawn as three
+	-- slices of stone tab art and each is a Button with a label on it, so the
+	-- sweep for buttons-with-labels hands all five a pressable surface - and a
+	-- column head is something you read, not an action you choose. Same
+	-- argument that keeps a letter in the postbox from being drawn as a
+	-- button, and it had to be made twice.
+	local cols = {}
+	for i = 1, 5 do
+		local n = "WhoFrameColumnHeader" .. i
+		for _, part in ipairs({ "Left", "Middle", "Right" }) do
+			if _G[n .. part]:IsShown() then cols[#cols + 1] = n .. part end
+		end
+		if _G[n].__aetherSkin then cols[#cols + 1] = n .. ":surface" end
+	end
+	check(#cols == 0, "the five column heads lose their stone and are given "
+		.. "no surface (" ..
+		(#cols > 0 and table.concat(cols, ",") or "all five") .. ")")
+
+	-- ON THE WHO TAB NOW, because a row that serves five panes can only be
+	-- read while the pane it belongs to is up.
+	_G.FriendsListFrame:Hide()
+	_G.WhoFrame:Show()
+	PN.Dress(_G.FriendsFrame)
+
+	-- THE QUERY IS CHROME AND GOES IN THE TOOL ROW. The client hangs it off
+	-- the window's BOTTOM edge, which is where the footer strip now is - so
+	-- left alone it sat under Refresh and Add Friend.
+	local qAt, qRel, qRelP, qX, qY = _G.WhoFrameEditBox:GetPoint(1)
+	check(qAt == "LEFT" and qRelP == "TOPLEFT" and qX == A.Widgets.PANEL_PAD,
+		"the who query is in the tool row under the band, not in the footer ("
+		.. tostring(qAt) .. "/" .. tostring(qRelP) .. "/" .. tostring(qX) .. ")")
+	check(_G.WhoFrameEditBox.searchIcon:IsShown()
+		and _G.WhoFrameEditBoxLeft:GetTexture() == 0,
+		"and it keeps its magnifying glass, which is in the same layer as the "
+		.. "border that came off")
+
+	-- AND THE COLUMN HEADS AND THE LIST UNDER THEM TRAVEL TOGETHER, the same
+	-- reserved-room trick the sub-tabs use one pane along: the heads sit 30
+	-- above the list, so 30 is reserved over the list and both are short of
+	-- the band by the same amount.
+	local colY = select(5, _G.WhoFrameColumnHeader1:GetPoint(1))
+	local wlY = select(5, _G.WhoListScrollFrame:GetPoint(1))
+	check(wlY - colY == -30, "the who columns keep the 30 the client left "
+		.. "between them and their list (" .. tostring(colY) .. ", "
+		.. tostring(wlY) .. ")")
+
+	-- ONE ROW SERVES FIVE PANES, AND IT IS LAID OUT FROM WHAT IS VISIBLE.
+	--
+	-- What the client hides when it swaps tabs is the PANE; every child of it
+	-- goes on reporting itself shown. Asked that question the who query held
+	-- the row's first slot on the raid tab and pushed the raid's own switch
+	-- along behind it - which is the same trap the footer's middle group was
+	-- already written round.
+	_G.WhoFrame:Hide()
+	_G.RaidFrame:Show()
+	PN.Dress(_G.FriendsFrame)
+	local aAt, aRel, aRelP, aX = _G.RaidFrameAllAssistCheckButton:GetPoint(1)
+	check(aAt == "LEFT" and aX == A.Widgets.PANEL_PAD,
+		"on the raid tab the raid's own switch starts the tool row (" ..
+		tostring(aAt) .. " at " .. tostring(aX) .. ")")
+
+	-- AND THE STRIP IS CENTRED ON WHAT IS UP. Convert to Raid is the raid
+	-- tab's one action, so it is centred alone - counting the seven buttons
+	-- the other three panes own would push it most of the way off the window.
+	--
+	-- The hidden panes' buttons are LEFT where they last were rather than put
+	-- back, which is the same thing the quest giver's reward panel does: they
+	-- are invisible while their pane is down and re-laid when it comes up.
+	local cAt, cRel, cRelP, cX, cY = _G.RaidFrameConvertToRaidButton:GetPoint(1)
+	check(cRel == _G.FriendsFrame.__aetherPanel and cRelP == "BOTTOM"
+		and cX == -_G.RaidFrameConvertToRaidButton:GetWidth() / 2
+		and cY == A.Widgets.PANEL_FOOT_H / 2,
+		"Convert to Raid is centred in the strip on its own (" .. tostring(cX)
+		.. ", " .. tostring(cY) .. ")")
+
+	_G.RaidFrame:Hide()
+	_G.FriendsListFrame:Show()
+	_G.FriendsFrame:Hide()
+	end
+
 	-- THE TRADE WINDOW: a dozen pieces hung off the frame at their own fixed
 	-- offsets, and the two nearest the top - the names, five units down - are
 	-- inside our header band.
@@ -27111,7 +27778,11 @@ do
 	do
 	_G.TradeFrame:Show()
 	A:GetModule("panels").Dress(_G.TradeFrame)
-	local trInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD
+	-- WELL_OUTSET AND NOT WELL_PAD. This window's content is already in six
+	-- recesses of the client's, so the entry asks for no body well round the
+	-- outside - and a window of that shape is inset by what its own rims cost
+	-- rather than by the body padding.
+	local trInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_OUTSET
 	local trDown = A.Widgets.PANEL_HEAD_H + trInner - 5
 	local nameY = select(5, _G.TradeFramePlayerNameText:GetPoint(1))
 	local slotY = select(5, _G.TradePlayerItem1:GetPoint(1))
@@ -27141,6 +27812,137 @@ do
 		and tby == A.Widgets.PANEL_FOOT_H / 2,
 		"trade starts the pair, centred in the footer strip (" .. tostring(tbx)
 		.. ", " .. tostring(tby) .. ")")
+
+	-- AND SO DO THE PIECES PINNED TO THE WINDOW'S OWN CORNERS. The two enchant
+	-- recesses and the second wrap round their purse are anchored to the frame
+	-- rather than chained off anything above them, so a body list without them
+	-- leaves three pieces where the client put them while the rest of the
+	-- window travels down past them.
+	local stuck = {}
+	for _, n in ipairs({ "TradePlayerEnchantInset", "TradeRecipientEnchantInset",
+		"TradeRecipientMoneyBg", "TradeFramePlayerEnchantText",
+		"TradeHighlightPlayer" }) do
+		local y = select(5, _G[n]:GetPoint(1))
+		local was = ({ TradePlayerEnchantInset = -354,
+			TradeRecipientEnchantInset = -354, TradeRecipientMoneyBg = -60,
+			TradeFramePlayerEnchantText = -360, TradeHighlightPlayer = -85 })[n]
+		if y ~= was - trDown then stuck[#stuck + 1] = n .. "@" .. tostring(y) end
+	end
+	check(#stuck == 0, "everything pinned to the window travels with it (" ..
+		(#stuck > 0 and table.concat(stuck, ",") or "all five") .. ")")
+
+	-- THE RECESSES ARE THE WELLS, so there is no seventh one round the lot.
+	check(not (_G.TradeFrame.__aetherBody
+		and _G.TradeFrame.__aetherBody:IsShown()),
+		"no body recess round content that is already in six of them")
+	local dry = {}
+	for _, side in ipairs({ "TradePlayer", "TradeRecipient" }) do
+		for _, part in ipairs({ "ItemsInset", "EnchantInset" }) do
+			local ins = _G[side .. part]
+			local stone = select(1, ins:GetRegions())
+			if stone and stone:GetTexture() ~= 0 then
+				dry[#dry + 1] = side .. part .. ":stone"
+			end
+			if not ins.__aetherPill then dry[#dry + 1] = side .. part end
+		end
+	end
+	check(#dry == 0, "and each of the four wears one of ours instead (" ..
+		(#dry > 0 and table.concat(dry, ",") or "all four") .. ")")
+
+	-- A ROW IS A FRAME, NOT A BUTTON, and its plate and its parchment strip
+	-- are BACKGROUND regions of that frame - so a sweep of the WINDOW reaches
+	-- neither and fourteen stone-and-paper strips sit in the recess.
+	local plated = {}
+	for _, side in ipairs({ "TradePlayer", "TradeRecipient" }) do
+		for i = 1, 7 do
+			local n = side .. "Item" .. i
+			for _, part in ipairs({ "SlotTexture", "NameFrame" }) do
+				local t = _G[n .. part]
+				if t and t:GetTexture() ~= 0 then plated[#plated + 1] = n .. part end
+			end
+			if not _G[n .. "ItemButton"].__aetherSlot then
+				plated[#plated + 1] = n .. ":cell"
+			end
+		end
+	end
+	check(#plated == 0, "every row has lost its plate and its parchment, and "
+		.. "its picture is in a cell (" ..
+		(#plated > 0 and table.concat(plated, ",") or "all fourteen") .. ")")
+
+	-- AND THE ITEM'S NAME SURVIVES BOTH. It is a FontString in the same
+	-- background layer as the parchment it was printed on, so a sweep that
+	-- takes the paper without sparing the words leaves the row empty.
+	check(_G.TradePlayerItem1Name:GetText() == "Item Name",
+		"the item's name survives the sweep that takes the paper under it")
+	local red, green, blue = _G.TradePlayerItem1Name:GetTextColor()
+	check(red == A.Palette.c.text[1] and green == A.Palette.c.text[2]
+		and blue == A.Palette.c.text[3],
+		"and is lifted out of the near-black paper wanted (" ..
+		tostring(red) .. "," .. tostring(green) .. "," .. tostring(blue) .. ")")
+
+	-- YOUR PURSE IS THREE FIELDS AND THEIRS IS ONE FIGURE, which is the same
+	-- MoneyInputFrameTemplate Send Mail uses and the same three coins at three
+	-- different distances from three identical boxes.
+	local trCoins, trStone = 0, {}
+	for _, part in ipairs({ "Gold", "Silver", "Copper" }) do
+		local n = "TradePlayerInputMoneyFrame" .. part
+		local box = _G[n]
+		for _, edge in ipairs({ "Left", "Middle", "Right" }) do
+			if _G[n .. edge]:IsShown() then trStone[#trStone + 1] = n .. edge end
+		end
+		if not box.__aetherPill then trStone[#trStone + 1] = n .. ":well" end
+		-- THE OFFSET, NOT THE ANCHOR. The client already hangs all three off
+		-- LEFT-of-box-to-RIGHT; what differs is the distance - gold's coin sits
+		-- 2 OUTSIDE its box and the other two 8 INSIDE theirs, because the
+		-- narrow pair's border art stopped ten short and the overhang had to
+		-- be filled. So a check on the anchor is a check on the mock's own
+		-- setup and cannot fail; the number is the thing that moved.
+		local at, rel, relP, x = box.texture:GetPoint(1)
+		if at == "LEFT" and rel == box and relP == "RIGHT" and x == -8 then
+			trCoins = trCoins + 1
+		end
+	end
+	check(#trStone == 0, "your own purse is three of our fields (" ..
+		(#trStone > 0 and table.concat(trStone, ",") or "all three") .. ")")
+	check(trCoins == 3,
+		"and all three coins sit the SAME distance in, at the field's own text"
+		.. " inset, rather than each keeping the distance the client's border"
+		.. " art needed (" .. trCoins .. "/3)")
+
+	-- AND THEIRS IS WRAPPED TWICE by the client - the recess and a thin gold
+	-- edge inside it. One comes off and one well goes back on the inner of
+	-- them, which is the one sized to the number.
+	check(select(1, _G.TradeRecipientMoneyInset:GetRegions()):GetTexture() == 0
+		and _G.TradeRecipientMoneyBg.__aetherPill,
+		"and theirs is unwrapped once and welled once, not both or neither")
+
+	-- WHICH SIDE IS LIVE, marked the way every other row in this interface is.
+	--
+	-- AND BEHIND THE GOODS. The wash fills the frame and the frame covers the
+	-- whole column, so at the level the client gave it the mark would be drawn
+	-- over the seven items it is pointing at.
+	check(_G.TradeHighlightPlayer.__aetherRowMark
+		and _G.TradeHighlightPlayerTop:GetTexture() == 0,
+		"the live column wears a wash of ours rather than the client's rope")
+	-- AGAINST THE ROW, which is the highlight's SIBLING - both are children of
+	-- the window and both take its level plus one, so that is a comparison the
+	-- dresser has to win. Against the item BUTTON it could not be lost: the
+	-- button is a child of the row and a level above it either way, so the
+	-- check passed with the line that earns it deleted.
+	check(_G.TradeHighlightPlayer:GetFrameLevel()
+		< _G.TradePlayerItem1:GetFrameLevel(),
+		"under what it is pointing at, not over it (" ..
+		_G.TradeHighlightPlayer:GetFrameLevel() .. " vs " ..
+		_G.TradePlayerItem1:GetFrameLevel() .. ")")
+
+	-- AND THE READOUT IS NOT A ROW OF PRESSABLE BUTTONS. A MoneyFrame prints
+	-- gold, silver and copper on three Buttons WITH LABELS ON THEM, which is
+	-- exactly what the sweep at the foot of the dresser looks for.
+	check(not _G.TradeRecipientMoneyFrameGoldButton.__aetherSkin,
+		"the other side's coin readout is not given three pressable surfaces")
+	check(_G.TradeFrameTradeButton.__aetherSkin
+		and _G.TradeFrameCancelButton.__aetherSkin,
+		"while Trade and Cancel, which are buttons, get one each")
 	end
 
 	-- GOSSIP, on the modern template - so the shell is the shared one and what
