@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.24.1",
+		date    = "2026-08-23",
+		lines   = {
+			"ifec: a magazine you are part way through no longer turns up in the flight's playlist",
+		},
+	},
+	{
 		version = "0.24.0",
 		date    = "2026-08-23",
 		lines   = {

@@ -33198,6 +33198,33 @@ section("ifec: what is in season, and what fills a flight", function()
 	check(queue[1].key == "S01:old1", "something part-played comes first next time ("
 		.. tostring(queue[1].key) .. ")")
 
+	-- A MAGAZINE YOU ARE PART WAY THROUGH IS NOT A PROGRAMME ITEM.
+	--
+	-- Reader:Remember writes the PAGE you are on through the same
+	-- Content:Remember a played segment goes through, so three pages into a
+	-- magazine looks exactly like a part-heard episode - and the resume rule,
+	-- written as "anything that is not music", put it at the head of the
+	-- programme. Everything downstream steps past a bulletin correctly, so it
+	-- never made a sound; it sat in the playlist saying it was about to play.
+	-- A REAL MAGAZINE, which is PAGES rather than segments: the registry
+	-- refuses gossip without any, so an item built like an episode would
+	-- never reach the programme and the check could not fail.
+	R:Register(pack("Mags", 4, { { id = "rag", type = "gossip",
+		title = "The Ogler", pages = { "page1.tga", "page2.tga",
+		"page3.tga", "page4.tga" } } }))
+	C:Remember("Mags:rag", 3, false)
+	queue = C:Programme(600)
+	local sawMag = false
+	for _, q in ipairs(queue) do if q.type == "gossip" then sawMag = true end end
+	check(not sawMag, "a part-read magazine stays out of the programme")
+	
+	-- ...and an episode you are part way through still leads it, which is the
+	-- thing the rule was there for.
+	queue = C:Programme(600)
+	check(queue[1].key == "S01:old1",
+		"and a part-played episode still does (" .. tostring(queue[1].key)
+		.. ")")
+	
 	-- A finished one is not offered again as though it were new.
 	C:Remember("S03:new1", 9, true)
 	queue = C:Programme(600)

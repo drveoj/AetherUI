@@ -179,15 +179,27 @@ function Content:Programme(seconds, picked, when)
 	-- Anything part-played, oldest listening first so a half-finished episode
 	-- is what greets you rather than something new.
 	--
+	-- A PODCAST, AND ONLY A PODCAST. It used to be everything that was not
+	-- music, which is right about music and wrong about magazines.
+	--
 	-- NOT MUSIC. A song is not a thing you are part way through - you start it
 	-- again - and the distinction only became visible once a track was CHUNKED
 	-- to buy a pause: sixty segments means a stop halfway writes segment 30, and
 	-- the track would then have been dragged to the front of every programme
 	-- until somebody sat through the end of it.
+	--
+	-- AND NOT A MAGAZINE. Reader:Remember writes the PAGE you are on through
+	-- the same Content:Remember a played segment goes through, so a magazine
+	-- you had read three pages of looked exactly like a part-heard episode -
+	-- and came back at the head of the programme. Everything below it steps
+	-- past a bulletin correctly, so it never made a sound; it just sat in the
+	-- playlist saying it was about to play. Gossip is READ, and the only thing
+	-- that resumes into a running order is an episode.
 	local resume = {}
 	for _, item in ipairs(available) do
 		local p = self:Progress(item.key)
-		if item.type ~= "music" and p and not p.complete and (p.segment or 0) > 0 then
+		if item.type == "podcast" and p and not p.complete
+			and (p.segment or 0) > 0 then
 			resume[#resume + 1] = item
 		end
 	end
