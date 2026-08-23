@@ -38,9 +38,22 @@
 	smaller than frames along the bottom of an ultrawide, and a preset that moved
 	everything and left the size alone would be half an arrangement.
 
-	WHAT A PRESET DOES NOT TOUCH: which modules are on, colours, fonts, or
-	anything a player has chosen about behaviour. It is where things are, and
-	that is all it is.
+	AND IT OWNS THE ACTION BARS, on and off both.
+
+	An arrangement that places bar 5 on a profile where bar 5 is switched off
+	places nothing, and a layout designed around six bars has a hole in it with
+	two. So a preset records which of the six numbered bars are on and sets them
+	exactly - a bar it does not use is switched OFF, because leaving one on where
+	the last arrangement put it is two layouts at once, which is the same reason
+	the anchors are wiped rather than merged.
+
+	THE SIX NUMBERED BARS AND NOTHING ELSE. The stance, pet, taxi and extra-action
+	bars are not layout choices - the game gives you one or it does not, by class
+	and by circumstance - and a preset captured by a mage that switched off a
+	druid's stance bar would be reaching well past where things go.
+
+	WHAT A PRESET STILL DOES NOT TOUCH: any other module, colours, fonts, or
+	anything else a player has chosen about behaviour.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -87,6 +100,45 @@ local function Resolve(a, scale)
 		point = a.point, relPoint = a.relPoint,
 		x = math.floor((x or 0) + 0.5), y = math.floor((y or 0) + 0.5),
 	}
+end
+
+--- The six numbered action bars, and nothing else. See the file header.
+local BARS = { "1", "2", "3", "4", "5", "6" }
+
+--- Which of them are on, as the profile has it now.
+local function BarsNow()
+	local AB = A.GetModule and A:GetModule("actionbars")
+	if not AB or not AB.BarConfig then return nil end
+
+	local out = {}
+	for _, id in ipairs(BARS) do
+		local cfg = AB:BarConfig(id)
+		if cfg then out[id] = cfg.enabled and true or false end
+	end
+	return out
+end
+
+--- Set them, and rebuild once rather than once per bar.
+--
+--  ONE REBUILD. SetBarEnabled is the per-bar door and it calls OnConfigChanged
+--  itself, so six of them is six teardowns of every button on the screen for
+--  one click.
+local function SetBars(want)
+	local AB = A.GetModule and A:GetModule("actionbars")
+	if not AB or not AB.BarConfig or type(want) ~= "table" then return end
+
+	local changed = false
+	for _, id in ipairs(BARS) do
+		local on = want[id]
+		if on ~= nil then
+			local cfg = AB:BarConfig(id)
+			if cfg and (cfg.enabled and true or false) ~= (on and true or false) then
+				cfg.enabled = on and true or false
+				changed = true
+			end
+		end
+	end
+	if changed and AB.OnConfigChanged then AB:OnConfigChanged() end
 end
 
 Presets.order = { "corner", "centre", "bottom" }
@@ -191,7 +243,8 @@ function Presets:Current()
 
 	for _, key in ipairs(self.order) do
 		local preset = self.list[key]
-		if preset and self:Matches(preset.anchors, anchors, preset.scale) then
+		if preset and self:Matches(preset.anchors, anchors, preset.scale)
+			and self:BarsMatch(preset.bars) then
 			return key
 		end
 	end
@@ -231,6 +284,23 @@ function Presets:Matches(want, have, scale)
 	return true
 end
 
+--- Are the action bars switched the way this preset wants them?
+--
+--  PART OF THE ARRANGEMENT, so part of the question. Two presets that place the
+--  same frames and differ only in how many bars are under them are two different
+--  layouts, and one that answered "yes, this is the one you have" while three of
+--  its bars were missing would be telling the player something plainly untrue.
+function Presets:BarsMatch(want)
+	if type(want) ~= "table" then return true end
+	local now = BarsNow()
+	if not now then return true end
+
+	for id, on in pairs(want) do
+		if now[id] ~= nil and now[id] ~= (on and true or false) then return false end
+	end
+	return true
+end
+
 --- Put an arrangement on screen.
 --
 --  WIPED, NOT MERGED. A preset is a whole arrangement, and merging one over
@@ -245,6 +315,11 @@ function Presets:Apply(key)
 		anchors = {}
 		A.db.profile.anchors = anchors
 	end
+	-- THE BARS FIRST, because a bar that is switched off has no frame and no
+	-- mover registered - so anchors written before it is on are anchors for
+	-- something that is not there yet, and RestoreAll walks straight past it.
+	SetBars(preset.bars)
+
 	-- EXCEPT THE ONES THAT ARE NOT POSITIONS. `__lockButton` is where the
 	-- player shoved the button that hides the handles; no arrangement has an
 	-- opinion about it, so wiping it puts that button back in the middle of
@@ -313,6 +388,19 @@ function Presets:Capture(key)
 	out[#out + 1] = string.format("\t\tblurb = %q,", (self.list[key]
 		and self.list[key].blurb) or "")
 	out[#out + 1] = string.format("\t\tscale = %.2f,", A.db.profile.scale or 1)
+
+	-- AND WHICH BARS ARE UNDER IT. An arrangement designed around six has a
+	-- hole in it with two, and one that places bar 5 on a profile where bar 5
+	-- is off places nothing at all.
+	local bars = BarsNow()
+	if bars then
+		local on = {}
+		for _, id in ipairs(BARS) do
+			on[#on + 1] = string.format("[%q] = %s", id,
+				bars[id] and "true" or "false")
+		end
+		out[#out + 1] = "\t\tbars = { " .. table.concat(on, ", ") .. " },"
+	end
 	-- WHAT IT WAS MADE ON, written down. An arrangement is a judgement made by
 	-- eye at one aspect ratio, and the fractions below say where things went
 	-- but not whether they still compose at 16:9. This is the line that tells

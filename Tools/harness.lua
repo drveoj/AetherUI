@@ -19072,6 +19072,115 @@ do
 		P.order[#P.order] = nil
 	end
 
+	-- AND A PRESET OWNS THE ACTION BARS, on and off both.
+	--
+	-- An arrangement that places bar 5 on a profile where bar 5 is switched off
+	-- places nothing, and a layout designed around six bars has a hole in it
+	-- with two. So a preset records which of the six numbered bars are on and
+	-- sets them exactly - a bar it does not use is switched OFF, because
+	-- leaving one on where the last arrangement put it is two layouts at once.
+	do
+		local AB = A:GetModule("actionbars")
+		local was = {}
+		for _, id in ipairs({ "1", "2", "3", "4", "5", "6" }) do
+			was[id] = AB:BarConfig(id).enabled
+		end
+
+		P.order[#P.order + 1] = "__bars"
+		P.list.__bars = {
+			label = "bars", blurb = "", scale = 0.71,
+			bars = { ["1"] = true, ["2"] = true, ["3"] = false,
+				["4"] = false, ["5"] = true, ["6"] = false },
+			anchors = {
+				player = { point = "CENTER", relPoint = "CENTER", fx = 0, fy = 0 },
+			},
+		}
+
+		-- Switched the other way round to start with, so both directions are
+		-- actually exercised rather than one of them happening to be right.
+		AB:SetBarEnabled("1", false)
+		AB:SetBarEnabled("5", false)
+		AB:SetBarEnabled("3", true)
+
+		P:Apply("__bars")
+		check(AB:BarConfig("1").enabled and AB:BarConfig("5").enabled,
+			"applying an arrangement switches on the bars it uses")
+		check(not AB:BarConfig("3").enabled,
+			"and switches OFF the ones it does not - a bar left on where the last "
+			.. "arrangement put it is two layouts at once")
+
+		-- AND IT IS PART OF THE QUESTION "which arrangement is this". One that
+		-- answered "yes, this is the one you have" with three of its bars missing
+		-- would be telling the player something plainly untrue.
+		check(P:Current() == "__bars",
+			"the arrangement reads back as itself with its bars set (" ..
+			tostring(P:Current()) .. ")")
+		AB:SetBarEnabled("6", true)
+		check(P:Current() ~= "__bars",
+			"and stops being itself the moment a bar it does not want is switched "
+			.. "on (" .. tostring(P:Current()) .. ")")
+
+		-- REBUILT ONCE, not once per bar. SetBarEnabled is the per-bar door and
+		-- calls OnConfigChanged itself, so six of them is six teardowns of every
+		-- button on the screen for one click.
+		local rebuilds = 0
+		local realChanged = AB.OnConfigChanged
+		AB.OnConfigChanged = function(self)
+			rebuilds = rebuilds + 1
+			return realChanged(self)
+		end
+		-- Three bars away from the preset, then one. If the dock were torn
+		-- down per bar the first would cost three times the second; the same
+		-- number both ways is the whole claim. Counted rather than asserted
+		-- as a fixed figure, because Reconfigure rebuilds at the end of an
+		-- Apply too and that is not the thing being measured.
+		AB:SetBarEnabled("1", false)
+		AB:SetBarEnabled("5", false)
+		AB:SetBarEnabled("3", true)
+		rebuilds = 0
+		P:Apply("__bars")
+		local three = rebuilds
+
+		AB:SetBarEnabled("3", true)
+		rebuilds = 0
+		P:Apply("__bars")
+		local one = rebuilds
+		AB.OnConfigChanged = realChanged
+		check(three == one,
+			"and three bars changing costs the same rebuild as one - the dock is "
+			.. "not torn down once per bar (" .. three .. ", " .. one .. ")")
+
+		-- THE SIX NUMBERED BARS AND NOTHING ELSE. Stance, pet, taxi and the extra
+		-- action button are not layout choices - the game gives you one or it does
+		-- not, by class and by circumstance - and a preset captured by a mage that
+		-- switched off a druid's stance bar would be reaching well past where
+		-- things go.
+		local stance = AB:BarConfig("stance")
+		if stance then
+			stance.enabled = true
+			P.list.__bars.bars.stance = false
+			P:Apply("__bars")
+			check(stance.enabled,
+				"a preset cannot switch off the stance bar even when it says to")
+			P.list.__bars.bars.stance = nil
+		end
+
+		-- AND A CAPTURE RECORDS THEM, which is what makes the next arrangement
+		-- reproducible at all.
+		local text = table.concat((P:Capture("__bars")), "\n")
+		check(text:find("bars = {", 1, true) ~= nil
+			and text:find('%["5"%] = true') ~= nil
+			and text:find('%["3"%] = false') ~= nil,
+			"a capture writes which bars are on AND which are off, because a preset "
+			.. "that only names what it wants cannot switch anything off")
+
+		for _, id in ipairs({ "1", "2", "3", "4", "5", "6" }) do
+			AB:SetBarEnabled(id, was[id])
+		end
+		P.list.__bars = nil
+		P.order[#P.order] = nil
+	end
+
 	A.Movers.RestoreAll = realRestore
 	wipe(anchors)
 	A.db.profile.scale = wasScale
