@@ -612,17 +612,30 @@ handlers.preset = function(arg, rest)
 		local key = (rest or ""):gsub("%s", "")
 		if key == "" then key = P:Current() or "PRESET" end
 		local lines, count = P:Capture(key)
-		-- THROUGH Errors:Capture, which is what the panel dump uses: it
-		-- collects what goes to the chat frame and hands back one block. A
-		-- string built here and passed straight to ShowText arrived as its
-		-- first line and nothing else.
+
+		-- TO THE CHAT FRAME, plainly, one line at a time.
+		--
+		-- NOT ONLY THE COPY BOX. That box is the usual home for a report you
+		-- paste somewhere, and on this text it arrived as its first line
+		-- followed by a few thousand blank ones - twice, by two different
+		-- routes into it, with the string handed to ShowText verified correct
+		-- both times. Whatever that is, it is the box's and not this
+		-- command's, and a capture nobody can copy is a capture that does not
+		-- work.
+		--
+		-- Chat has no such trouble and every client can copy from it. Eight
+		-- lines is a reasonable thing to put there; the box is still opened
+		-- as well, for when it is behaving.
+		for _, line in ipairs(lines) do say(line) end
+
 		local text = A.Errors:Capture(function()
 			for _, line in ipairs(lines) do say(line) end
 		end)
 		A.Errors:ShowText(text)
 		A:Print("captured " .. count .. " frame position"
 			.. (count == 1 and "" or "s") .. " as " .. A.Val(key)
-			.. " - paste it into Core\\Presets.lua")
+			.. " - the lines above are the thing to paste into"
+			.. " Core\\Presets.lua")
 		return
 	end
 

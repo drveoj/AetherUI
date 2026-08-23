@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.26.4",
+		date    = "2026-08-23",
+		lines   = {
+			"presets: a captured layout is printed to chat as well as the copy box, so it can always be copied",
+		},
+	},
+	{
 		version = "0.26.3",
 		date    = "2026-08-23",
 		lines   = {
