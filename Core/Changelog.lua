@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.23.0",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: every one of the client's windows in scope is now reskinned and checked in game - the last of them was the group finder",
+		},
+	},
+	{
 		version = "0.22.1",
 		date    = "2026-08-23",
 		lines   = {
