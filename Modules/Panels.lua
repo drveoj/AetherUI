@@ -745,6 +745,39 @@ local function Roled(fs, style)
 	W.Restyle(fs, style)
 end
 
+--- A page turn: two chevrons and the number between them.
+--
+--  ONE OF THESE, EVERYWHERE. Four windows page - the spellbook, the postbox,
+--  a book you are reading and the vendor - and each had grown its own
+--  answer. The spellbook's is the one to keep, so this is it: bare chevrons
+--  on the buttons, the count between them in subtitle type, and nothing
+--  round any of the three. 15c - a chevron means navigation, and navigation
+--  reads as chrome rather than as an action you choose.
+--
+--  THE VENDOR'S WAS THE ODD ONE: its turns kept the client's words in a pill
+--  of ours. The words are anchored OUTSIDE their own buttons - Prev's to the
+--  right of it, Next's to the left - so both landed in the middle, on top of
+--  the page number. Reskin.PageTurn takes them off, which is why it walks the
+--  button's regions rather than asking for its label.
+--
+--  AND THE NUMBER IS CUT TO ITS WORDS. The client gives these strings a box
+--  far wider than what is in them - 104 on the vendor, 192 in a book, for
+--  "Page 1" - and a string draws centred in its box however little it says.
+--  So a row that measures the WORDS, as the footer strip correctly does,
+--  reserves forty units for something that paints a hundred and four, and the
+--  ends of it slide under whatever is beside it.
+local function DressPager(prev, nxt, label, store)
+	Reskin.PageTurn(prev, "LEFT", store)
+	Reskin.PageTurn(nxt, "RIGHT", store)
+	if not label then return nil end
+
+	Roled(label, "pnSub")
+	W.Color(label, Palette.c.textDim)
+	if label.SetWidth then label:SetWidth(0) end
+	if label.SetJustifyH then label:SetJustifyH("CENTER") end
+	return label
+end
+
 -- ---------------------------------------------------------------------------
 -- dressing
 -- ---------------------------------------------------------------------------
@@ -3280,22 +3313,16 @@ end
 local function DressSpellBook(frame, store)
 	-- The page number, which the client draws in near-black because it is
 	-- printing it on parchment. On glass that is a page number you cannot read.
-	local page = _G.SpellBookPageText
-	if page then
-		Roled(page, "pnSub")
-		W.Color(page, Palette.c.textDim)
-
-		-- And between the two arrows rather than off in the bottom corner: the
-		-- corner it was in is where the book's tabs sit now.
-		if page.ClearAllPoints then
-			page:ClearAllPoints()
-			page:SetPoint("CENTER", frame, "BOTTOM", 0, PAGE_TURNER_Y)
-		end
-		if page.SetJustifyH then page:SetJustifyH("CENTER") end
+	-- THE PAGE TURN, which is the one every other window's is copied from.
+	local page = DressPager(_G.SpellBookPrevPageButton,
+		_G.SpellBookNextPageButton, _G.SpellBookPageText, store)
+	-- And between the two arrows rather than off in the bottom corner: the
+	-- corner it was in is where the book's tabs sit now. Placement is this
+	-- window's own - the vendor's three are laid out by the footer strip.
+	if page and page.ClearAllPoints then
+		page:ClearAllPoints()
+		page:SetPoint("CENTER", frame, "BOTTOM", 0, PAGE_TURNER_Y)
 	end
-
-	Reskin.PageTurn(_G.SpellBookPrevPageButton, "LEFT", store)
-	Reskin.PageTurn(_G.SpellBookNextPageButton, "RIGHT", store)
 
 	-- THE RANK SWITCH IS CONTENT, not chrome. It is a control over the list -
 	-- the same thing an expand-all would be over a tree - so it belongs in the
@@ -3997,33 +4024,15 @@ local function DressMerchant(frame, store)
 		W.Color(repairLabel, Palette.c.textDim)
 	end
 
-	-- The page turner says "Prev" and "Next" in words of its own, so it wants a
-	-- pill rather than one of our marks - a glyph as well was a chevron sitting
-	-- beside a word that already said the same thing.
-	for _, name in ipairs({ "MerchantPrevPageButton", "MerchantNextPageButton" }) do
-		local btn = _G[name]
-		if btn then
-			Reskin.ClearButton(btn)
-			Reskin.Strip(btn, store)
-			-- BY WALKING THE BUTTON, not by asking for $parentText. The client's
-			-- label on these is a plain FontString region with no name and no
-			-- ButtonText, so both of the usual ways to reach it answer nil and
-			-- the restyle quietly did nothing at all - which is a page turner
-			-- still in the client's gold.
-			Reskin.Fonts(btn, "pnBody", 0, Palette.c.text)
-			for _, region in ipairs({ btn:GetRegions() }) do
-				if region.GetObjectType and region:GetObjectType() == "FontString" then
-					W.Color(region, Palette.c.text)
-				end
-			end
-		end
-	end
-
-	local page = _G.MerchantPageText
-	if page then
-		Roled(page, "pnSub")
-		W.Color(page, Palette.c.textDim)
-	end
+	-- THE PAGE TURN, which is now the spellbook's like every other one.
+	--
+	-- It used to keep the client's words in a pill of ours, on the argument
+	-- that "Prev" and "Next" already said which way they went. They did, and
+	-- they said it in the wrong place: each word is anchored OUTSIDE its own
+	-- button, so both landed in the middle - on top of the page number, which
+	-- is what got reported. Two chevrons and the count between them.
+	DressPager(_G.MerchantPrevPageButton, _G.MerchantNextPageButton,
+		_G.MerchantPageText, store)
 
 	-- WHO YOU ARE BUYING FROM is this window's title, named as such in the
 	-- panel list - so the shell has already roled and placed it. It used to be
@@ -4939,8 +4948,7 @@ local function DressMail(frame, store)
 	-- The same mark the spellbook's wear. These were a filled circle, which is
 	-- the same control doing the same job one window apart in two different
 	-- flavours.
-	Reskin.PageTurn(_G.InboxPrevPageButton, "LEFT", store)
-	Reskin.PageTurn(_G.InboxNextPageButton, "RIGHT", store)
+	DressPager(_G.InboxPrevPageButton, _G.InboxNextPageButton, nil, store)
 
 	-- Send, Cancel, Reply, Delete, Open All and the rest. A dozen of them
 	-- across three panes, so they are found the way the Options pages' are: a
@@ -4987,15 +4995,14 @@ local function DressItemText(frame, store)
 
 	local title = _G.ItemTextTitleText
 	if title then W.Color(title, Palette.c.text) end
-	local pageNo = _G.ItemTextCurrentPage
-	if pageNo then W.Color(pageNo, Palette.c.textDim) end
 
 	Reskin.ScrollFrame(_G.ItemTextScrollFrame, store)
 
-	-- The page turners, art rather than words, and the same mark every other
-	-- page turn in the interface wears.
-	Reskin.PageTurn(_G.ItemTextPrevPageButton, "LEFT", store)
-	Reskin.PageTurn(_G.ItemTextNextPageButton, "RIGHT", store)
+	-- The page turn, which is the spellbook's - see DressPager. ITS COUNT IS
+	-- 192 WIDE AND SAYS "Page 1", which is the case that rule is written
+	-- against.
+	DressPager(_G.ItemTextPrevPageButton, _G.ItemTextNextPageButton,
+		_G.ItemTextCurrentPage, store)
 end
 
 --- The trade skill and craft windows - First Aid, cooking, enchanting, and a

@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.25.3",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: one page turn everywhere - the vendor's count is no longer hidden behind the words Prev and Next",
+		},
+	},
+	{
 		version = "0.25.2",
 		date    = "2026-08-23",
 		lines   = {

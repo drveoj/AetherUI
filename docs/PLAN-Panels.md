@@ -242,6 +242,47 @@ rather than a second copy of its six lines being written.
 
 Five mutations are caught.
 
+## Fixed — one page turn, everywhere (2026-08-23)
+
+Reported from the game: on the vendor, "Page 1" is behind and occluded by Prev
+and Next — which are words rather than the chevrons everything else uses. And
+the standing instruction with it: **the spellbook's pager is the standard and
+should be reused wherever pages appear.**
+
+**Both halves were the same cause.** The vendor's turns were deliberately left
+as the client's words in a pill of ours, on the argument that "Prev" and "Next"
+already said which way they went. They did — and they said it in the wrong
+place: each word is anchored **outside** its own button, Prev's to the right of
+it and Next's to the left, so both landed in the middle. On top of the page
+number.
+
+`Reskin.PageTurn` already takes those words off — it walks the button's regions
+rather than asking for its label, because they are unnamed FontStrings that
+`GetFontString` never sees. The vendor simply was not using it.
+
+**And the count is now cut to its words.** The client gives these strings a box
+far wider than what is in them — 104 on the vendor, 192 in a book, for "Page 1"
+— and a string draws **centred in its box** however little it says. So a row
+that measures the words, as the footer strip correctly does, reserves forty
+units for something that paints a hundred and four, and the ends slide under
+whatever is beside it. `SetWidth(0)` makes the box the string.
+
+**`DressPager` is the shared one**, and all four windows that page now go
+through it: the spellbook, the postbox, a book you are reading and the vendor.
+It owns the *look* — two chevrons, the count between them in subtitle type,
+nothing round any of the three — and says nothing about placement, because the
+two cases genuinely differ: the vendor's three are laid out by the footer strip
+and the spellbook's count is pinned between its arrows.
+
+**The mock was hiding half of this.** A font string with no width of its own
+reported nought, where the client reports the width of its string — so "cut to
+its words" and "has no text at all" were the same answer, and the check could
+not be written. It reports the string now, and `MerchantPageText` carries the
+client's real 104-wide box. Three existing checks said `GetWidth() == 0` meaning
+"auto"; they say `== GetStringWidth()` now, which is what they meant.
+
+Four mutations are caught.
+
 ## Built — the toolbox gutter (2026-08-23)
 
 The client docks its own windows against the left edge of the screen, and the

@@ -679,6 +679,20 @@ local function newFontString(owner, layer)
 	-- with and without them and comparing widths. Counting characters would
 	-- answer "no" on a client that supports it perfectly well, and a mock that
 	-- answers a probe wrongly is worse than no mock at all.
+	-- A FONT STRING WITH NO WIDTH OF ITS OWN IS THE WIDTH OF ITS STRING.
+	--
+	--  SetWidth(0) on one of these is not "zero wide", it is "size yourself to
+	--  what you say" - and GetWidth then answers with the string's extent. The
+	--  mock answered a literal 0, which is kinder and makes a whole class of
+	--  check impossible to write: cutting a 104-wide box down to its words and
+	--  having no text at all both came back as nought.
+	local baseWidth = f.GetWidth
+	function f:GetWidth()
+		local w = baseWidth(self)
+		if (w or 0) > 0 then return w end
+		return self:GetStringWidth()
+	end
+
 	function f:GetStringWidth()
 		local size = (self.__font and self.__font[2]) or 11
 		local text, textures = MEASURE(self.__text or "")
@@ -6251,6 +6265,13 @@ do
 		local page = merchant:CreateFontString("MerchantPageText", "OVERLAY")
 		page:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
 		page:SetText("Page 1")
+		-- A BOX FAR WIDER THAN WHAT IS IN IT, which is the client's own number:
+		-- 104 for the words "Page 1". A string draws CENTRED in its box however
+		-- little it says, so the ends of that box slide under whatever is beside
+		-- it - which on this window is the two page turns. Without the width
+		-- here the mock could not tell a box cut to its words from one that was
+		-- never wide in the first place.
+		page:SetWidth(104)
 
 		-- WHO YOU ARE BUYING FROM, which is the thing worth putting in this
 		-- window's header - the frame's own title says "MerchantFrame", which
@@ -14117,7 +14138,11 @@ section("panels: somebody else's character sheet", function()
 	-- word on screen in Blizzard's lettering.
 	check(_G.InspectNameText._aetherStyle == "pnTitle",
 		"the name at the top is in our type, not the client's")
-	check(_G.InspectNameText:GetWidth() == 0,
+	-- AUTO, which for a font string means "as wide as what you say" rather
+	-- than nought: with a width set it reports that width, and without one it
+	-- reports its string.
+	check(_G.InspectNameText:GetWidth()
+		== _G.InspectNameText:GetStringWidth(),
 		"and free of the 109 the client measured for its smaller type - left"
 		.. " at that width a name of any length comes out clipped")
 
@@ -28159,9 +28184,50 @@ do
 		"and keeps its anvil, which is a region of its own and not this"
 		.. " button's normal texture")
 
-	check(_G.MerchantPrevPageButtonText._aetherStyle ~= nil,
-		"the page turner keeps its own words, re-roled - it already says Prev"
-		.. " and Next, and a chevron of ours beside them said it twice")
+	-- THE PAGE TURN IS THE SPELLBOOK'S, like every other one in the interface.
+	--
+	-- It used to keep the client's words in a pill of ours, on the argument that
+	-- "Prev" and "Next" already said which way they went. They did, and they
+	-- said it in the WRONG PLACE: each word is anchored outside its own button -
+	-- Prev's to the right of it, Next's to the left - so both landed in the
+	-- middle, on top of the page number. Reported from the game as the count
+	-- being occluded by the turns.
+	check(_G.MerchantPrevPageButton.__aetherMark ~= nil
+		and _G.MerchantNextPageButton.__aetherMark ~= nil,
+		"both page turns wear a chevron of ours")
+	check((_G.MerchantPrevPageButtonText:GetText() or "") == "",
+		"and the client's own word is off, rather than printed over the count "
+		.. "in the middle (" .. tostring(_G.MerchantPrevPageButtonText:GetText())
+		.. ")")
+	check(not _G.MerchantPrevPageButton.__aetherSkin
+		or not _G.MerchantPrevPageButton.__aetherSkin:IsShown(),
+		"with nothing round it - a chevron means navigation, and navigation is "
+		.. "chrome rather than an action you choose")
+
+	-- AND THE COUNT IS CUT TO ITS WORDS. The client gives it a box 104 wide
+	-- with "Page 1" in it, and a string draws CENTRED in its box however little
+	-- it says - so a row that measures the words, as the footer strip correctly
+	-- does, reserves forty units for something that paints a hundred and four
+	-- and the ends slide under whatever is beside it.
+	check(_G.MerchantPageText:GetWidth() < 104,
+		"the page count is cut to its words rather than keeping the box the "
+		.. "client reserved (" .. string.format("%.0f",
+		_G.MerchantPageText:GetWidth()) .. " of 104)")
+
+	-- ONE OF THESE, EVERYWHERE. Four windows page and each had grown its own
+	-- answer; the spellbook's is the one kept.
+	do
+		local bare = {}
+		for _, n in ipairs({ "SpellBookPrevPageButton", "SpellBookNextPageButton",
+			"InboxPrevPageButton", "InboxNextPageButton",
+			"ItemTextPrevPageButton", "ItemTextNextPageButton",
+			"MerchantPrevPageButton", "MerchantNextPageButton" }) do
+			local b = _G[n]
+			if b and not b.__aetherMark then bare[#bare + 1] = n end
+		end
+		check(#bare == 0, "every page turn in the interface wears the same mark (" ..
+			(#bare > 0 and table.concat(bare, ",") or "all eight") .. ")")
+	end
 	check(_G.MerchantFrameTab1.__aetherTab ~= nil,
 		"and its two tabs are laid out like every other window's")
 
@@ -31335,7 +31401,9 @@ do
 	FCFDock_UpdateTabs(_G.GeneralDockManager)                    -- ...and again
 	C3:SkinAllTabs()
 
-	check(fs2:GetWidth() == 0,
+	-- AUTO, which for a font string is "as wide as the word in it" rather than
+	-- nought - the client pinned it to a hard dynTabSize - 32.
+	check(fs2:GetWidth() == fs2:GetStringWidth(),
 		"the label is handed back its auto width after the client pins it ("
 		.. fs2:GetWidth() .. ")")
 	check(fs2:GetHeight() == 0,
@@ -31366,7 +31434,8 @@ do
 
 	FCFDock_SelectWindow(_G.GeneralDockManager, _G.ChatFrame1)
 	C3:SkinAllTabs()
-	check(_G.ChatFrame1TabText:GetWidth() == 0
+	check(_G.ChatFrame1TabText:GetWidth()
+			== _G.ChatFrame1TabText:GetStringWidth()
 		and tab1.__aetherMark:GetHeight() == 2,
 		"and clicking back leaves the first tab as it started")
 end
