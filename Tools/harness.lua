@@ -18810,10 +18810,21 @@ do
 	-- made: by eye, in the game, at a real resolution. Guessing coordinates in a
 	-- text editor gives a layout that is plausible in every dimension and right
 	-- in none.
-	local text, count = P:Capture("centre")
+	-- A LIST OF LINES, not one string: the copy box is fed through
+	-- Errors:Capture, which collects what goes to the chat frame - the same
+	-- path the panel dump uses and the only one known to arrive whole.
+	local lines, count = P:Capture("centre")
+	check(type(lines) == "table" and #lines > 1,
+		"a capture comes back as lines, one per row of the table (" ..
+		tostring(type(lines)) .. ", " .. tostring(#lines) .. ")")
+	local text = table.concat(lines, "\n")
 	check(count == 3 and text:find('%["player"%]') ~= nil,
 		"the current layout comes back as a table naming every frame in it (" ..
 		tostring(count) .. ")")
+	check(text:find("	", 1, true) == nil,
+		"and indented with spaces - a tab is not reliably carried through a "
+		.. "chat frame and out through the clipboard, and this text exists to "
+		.. "be pasted")
 	check(text:find("scale", 1, true) ~= nil,
 		"with the scale in it, because that is part of an arrangement")
 

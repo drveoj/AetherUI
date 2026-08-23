@@ -611,7 +611,14 @@ handlers.preset = function(arg, rest)
 		-- The key is a NAME and keeps its case, like every other tail here.
 		local key = (rest or ""):gsub("%s", "")
 		if key == "" then key = P:Current() or "PRESET" end
-		local text, count = P:Capture(key)
+		local lines, count = P:Capture(key)
+		-- THROUGH Errors:Capture, which is what the panel dump uses: it
+		-- collects what goes to the chat frame and hands back one block. A
+		-- string built here and passed straight to ShowText arrived as its
+		-- first line and nothing else.
+		local text = A.Errors:Capture(function()
+			for _, line in ipairs(lines) do say(line) end
+		end)
 		A.Errors:ShowText(text)
 		A:Print("captured " .. count .. " frame position"
 			.. (count == 1 and "" or "s") .. " as " .. A.Val(key)

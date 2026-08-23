@@ -137,6 +137,13 @@ end
 --
 --  The other half of "the numbers are not written by hand": lay the frames out
 --  in the game, run this, and the answer is the thing you paste.
+--
+--  A LIST OF LINES, not one string with newlines in it. The copy box is fed
+--  through Errors:Capture, which collects what goes to the chat frame - the
+--  same path the panel dump uses and the only one known to arrive whole.
+--
+--  AND INDENTED WITH SPACES. A tab is not reliably carried through a chat
+--  frame and out through the clipboard, and this text exists to be pasted.
 function Presets:Capture(key)
 	local anchors = A.db and A.db.profile and A.db.profile.anchors or {}
 
@@ -164,5 +171,10 @@ function Presets:Capture(key)
 	end
 	out[#out + 1] = "\t\t},"
 	out[#out + 1] = "\t},"
-	return table.concat(out, "\n"), #names
+
+	-- SPACES, and the list itself rather than one joined string. See above.
+	for i, line in ipairs(out) do
+		out[i] = line:gsub("\t", "    ")
+	end
+	return out, #names
 end

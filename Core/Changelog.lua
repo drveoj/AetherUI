@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.26.3",
+		date    = "2026-08-23",
+		lines   = {
+			"presets: the captured layout arrives in the copy box whole, instead of just its first line",
+		},
+	},
+	{
 		version = "0.26.2",
 		date    = "2026-08-23",
 		lines   = {
