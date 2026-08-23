@@ -34362,6 +34362,74 @@ section("ifec: the player region, on the flight's own axis", function()
 	check(f.rows[1]:IsShown() and f.rows[1].title:GetText() == "Episode Two",
 		"up next starts after the current item (" .. tostring(f.rows[1].title:GetText()) .. ")")
 
+	-- QUEUEING ANOTHER TRACK MAKES THE REGION TALLER, and the console has to
+	-- be told. The row count IS the height - UP NEXT grows a row per queued
+	-- item up to its cap - and the console keeps whatever height it was handed
+	-- at AttachRegion, re-asserting it on every lay-out.
+	--
+	-- So drawing a row without saying so drew it into a frame that was still
+	-- the old size, and it came out underneath the console. Reported from the
+	-- game as picking an extra song and then folding the player away and
+	-- bringing it back, which is the point it becomes impossible to miss.
+	do
+		-- A TRACK THAT IS NOT IN THE PROGRAMME. A programme is built to COVER the
+		-- flight, so on this fixture it already holds everything installed - and a
+		-- check that can find nothing to add is a check that quietly does nothing.
+		R:Register({ packId = "S02", apiVersion = 1, seasonIndex = 2, items = {
+			{ id = "spare", type = "music", title = "Spare Track",
+				totalDuration = 60,
+				segments = { { file = "spare.ogg", duration = 60 } } },
+		} })
+
+		local before = IF.frame.regionHeight
+		local rowsBefore = 0
+		for _, row in ipairs(f.rows) do
+			if row:IsShown() then rowsBefore = rowsBefore + 1 end
+		end
+
+		-- Through the library, which is how a player picks one.
+		local Lib = A.IFEC.Library
+		local extra = nil
+		for _, item in ipairs(A.IFEC.Content:Available() or {}) do
+			local queued = false
+			for _, q in ipairs(P.queue or {}) do
+				if q.key == item.key then queued = true end
+			end
+			if not queued and item.type ~= "gossip" then extra = item end
+		end
+
+		check(extra ~= nil, "there is a track to add that is not already queued")
+		if extra and Lib then
+			Lib:Toggle(extra)
+			local rowsAfter = 0
+			for _, row in ipairs(f.rows) do
+				if row:IsShown() then rowsAfter = rowsAfter + 1 end
+			end
+			check(rowsAfter > rowsBefore,
+				"queueing another track draws another row into UP NEXT (" ..
+				rowsBefore .. " to " .. rowsAfter .. ")")
+			check(IF.frame.regionHeight > before,
+				"and the console is told the region got taller (" ..
+				tostring(before) .. " to " .. tostring(IF.frame.regionHeight) .. ")")
+			check(math.abs(IF.frame.regionHeight - PL:Height()) < 0.01,
+				"which is exactly what the region says it wants (" ..
+				tostring(IF.frame.regionHeight) .. " vs " .. tostring(PL:Height())
+				.. ")")
+
+			-- AND FOLDING IT AWAY AND BACK KEEPS THAT, which is the sequence in
+			-- the report: Lay re-asserts the STORED height, so a stale one shows
+			-- up the moment the player is put away and brought back.
+			IF:SetCollapsed(true)
+			IF:SetCollapsed(false)
+			check(math.abs(f:GetHeight() - PL:Height()) < 0.01,
+				"and folding the player away and back leaves it the same height (" ..
+				string.format("%.0f vs %.0f", f:GetHeight(), PL:Height()) .. ")")
+			check(f.rows[rowsAfter]:GetBottom() >= f:GetBottom() - 0.5,
+				"with the last row inside the frame rather than under it (" ..
+				string.format("%.0f vs %.0f", f.rows[rowsAfter]:GetBottom(),
+				f:GetBottom()) .. ")")
+		end
+	end
 	-- IT COUNTS DOWN ON ITS OWN. Everything painted here is a countdown, and
 	-- the only thing repainting it was a playback event - which happens once a
 	-- minute at best. So the region sat frozen on whatever the last boundary

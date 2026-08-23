@@ -369,6 +369,33 @@ function Player:Height()
 		+ 20 + rows * UPNEXT_H + PAD_B
 end
 
+--- Tell the console how tall the region wants to be NOW.
+--
+--  THE ROW COUNT IS THE HEIGHT, so drawing the rows and sizing the region
+--  are one operation and not two. They were two: Paint drew whatever UP NEXT
+--  had in it and said nothing to the console, which keeps the height it was
+--  handed at AttachRegion and re-asserts it on every lay-out. So queueing an
+--  extra track drew an extra row into a frame that was still the old size,
+--  and the row came out underneath the console - which is what folding the
+--  player away and bringing it back made impossible to miss.
+--
+--  ONLY WHEN IT HAS CHANGED. Paint runs on every item, every skip and every
+--  tick of the flight, and Lay is not free.
+function Player:Fit()
+	local IF = A:GetModule("ifec")
+	if not (IF and IF.frame and self.frame) then return false end
+	-- Not ours to resize if the console is showing somebody else's region,
+	-- or none at all.
+	if IF.frame.region ~= self.frame then return false end
+
+	local want = self:Height()
+	if IF.frame.regionHeight == want then return false end
+	IF.frame.regionHeight = want
+	self.frame:SetHeight(want)
+	IF:Lay()
+	return true
+end
+
 --- The complete state: one line and three quiet choices, in place of the lot.
 --
 --  "Never dump the player into dead silence over the Barrens" is the design's
@@ -396,6 +423,11 @@ function Player:PaintComplete()
 	f.chips[2]:SetShown(last ~= nil)
 	f.chips[1]:Show()
 	f.chips[3]:Show()
+
+	-- The complete state is a different height from a running one, so it says
+	-- so here as well - PaintComplete is the one branch Paint returns from
+	-- before it reaches the fit at the foot of it.
+	self:Fit()
 
 	-- The third follows whichever of the first two is showing, so a missing
 	-- replay closes the gap rather than leaving a hole in the row.
@@ -474,6 +506,11 @@ function Player:Paint()
 
 	self:PaintNowPlaying()
 	self:PaintUpNext()
+
+	-- AND THE REGION IS AS TALL AS WHAT WAS JUST DRAWN INTO IT. See Fit:
+	-- painting the rows and sizing the region are one operation, because the
+	-- row count IS the height.
+	self:Fit()
 end
 
 --- The brass ticks: where one leg ends and the next begins.

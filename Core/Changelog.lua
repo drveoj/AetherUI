@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.26.1",
+		date    = "2026-08-23",
+		lines   = {
+			"ifec: queueing another track makes the player taller, instead of drawing the extra row under the console",
+		},
+	},
+	{
 		version = "0.26.0",
 		date    = "2026-08-23",
 		lines   = {
