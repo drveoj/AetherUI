@@ -287,6 +287,33 @@ local function GeneralGroup()
 	})
 end
 
+local function OnboardGroup()
+	return group("First run", {
+		desc = note("Eight stops over the real HUD, where the tour IS the setup:"
+			.. " the world dims, one element at a time is lifted out of the dim,"
+			.. " and the callout beside it carries that stop's control."
+			.. "\n\nNothing is staged. Every choice writes straight into the"
+			.. " system that owns it the moment you touch it, so there is no"
+			.. " Apply at the end and quitting half way through costs nothing."
+			.. "\n\nWhether it has run is remembered per "
+			.. A.Hi("character") .. ", not per profile - the tour teaches an"
+			.. " interface rather than a profile, and somebody who has seen it"
+			.. " on their main has seen it."),
+		enabled = toggle("Offer it on a new character", nil,
+			{ "modules", "onboard", "enabled" }, { defaultTrue = true }),
+
+		runHeader = header("Run it now"),
+		runNote = note("Re-running clears this character's "
+			.. A.Hi("already done") .. " mark and starts at the welcome card."
+			.. " Your current palette, layout and Toolbox edge are untouched"
+			.. " until you pick something else."),
+		run = action("Take the tour", nil, function()
+			local OB = A.GetModule and A:GetModule("onboard")
+			if OB then OB:Start() end
+		end),
+	})
+end
+
 local function ToolboxGroup()
 	return group("Toolbox", {
 		desc = note("A drawer that docks to the centre of any screen edge, with a"
@@ -1291,6 +1318,7 @@ local PAGE_ORDER = {
 	toolbox = 11, fader = 12, xpbar = 13, nameplates = 14, ifec = 15,
 	threat = 15.5,
 	conveniences = 16, gameown = 17,
+	onboard = 17.5,   -- after the modules it introduces, before the changelog
 	changelog = 90,    -- after the modules, before profiles
 	profiles = 99,     -- last, always
 }
@@ -1345,6 +1373,7 @@ function Options:Build()
 			chat = ChatGroup(),
 			tooltips = TooltipsGroup(),
 			toolbox = ToolboxGroup(),
+			onboard = OnboardGroup(),
 			fader = FaderGroup(),
 			xpbar = XPGroup(),
 			ifec = IFECGroup(),

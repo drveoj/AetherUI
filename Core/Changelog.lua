@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.29.0",
+		date    = "2026-08-23",
+		lines   = {
+			"First-run onboarding, stage one: the welcome card, eight stops over the real HUD with a scrim and a spotlight, skip, back, combat interrupt and the finish card. Also at /aether tour.",
+		},
+	},
+	{
 		version = "0.28.1",
 		date    = "2026-08-23",
 		lines   = {

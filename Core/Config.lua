@@ -55,6 +55,13 @@ Config.defaults = {
 		-- handoff - the handle on the edge is what says it is there.
 		bags      = { drawerOpen = false },
 
+		-- Whether this character has been through the first-run tour, and
+		-- how far. Per character because the tour teaches an interface
+		-- rather than a profile: somebody who has seen it on their main
+		-- has seen it, and a fresh alt gets the offer to copy that setup
+		-- rather than the whole tour again.
+		onboard   = { completed = false, stopIndex = 0 },
+
 		tracked   = {},   -- whitelist, used when autoTrack is off
 		untracked = {},   -- blacklist, used when autoTrack is on
 	},
@@ -336,6 +343,13 @@ Config.defaults = {
 			-- Concept 4. Layer 1 only for now - the drawer, the rail and the
 			-- dock. What goes INSIDE it (widgets, addons, settings tiles, the
 			-- micro menu) lands in later layers; see docs/PLAN-Toolbox.md.
+			-- The first run: eight stops over the real HUD, where the tour IS
+			-- the setup. Whether it has been done is per CHARACTER and lives
+			-- in db.char.onboard; this only says whether it may run at all.
+			onboard = {
+				enabled = true,
+			},
+
 			toolbox = {
 				enabled = true,
 

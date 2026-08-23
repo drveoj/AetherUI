@@ -603,6 +603,17 @@ handlers.options = handlers.config
 --  numbers in Core\Presets.lua are captured from a layout somebody has
 --  actually made rather than typed into a text editor. Lay the frames out,
 --  run this, paste the answer.
+--- The first run, on demand.
+--
+--  THE RE-RUN DOOR. The design puts it in the Toolbox under Help; this is
+--  the same door before that page exists, and it is the one the finish card
+--  names - so whatever else moves, this has to keep working.
+handlers.tour = function()
+	local OB = A.GetModule and A:GetModule("onboard")
+	if not OB then A:Print("the tour is not loaded.") return end
+	OB:Start()
+end
+
 handlers.preset = function(arg, rest)
 	local P = A.Presets
 	if not P then A:Print("presets are not loaded.") return end

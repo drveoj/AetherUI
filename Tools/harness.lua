@@ -9511,6 +9511,7 @@ local FILES = {
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
+	"Modules/Onboard.lua",
 	"Modules/IFEC/Routes.lua", "Modules/IFEC/Route.lua",
 	"Modules/IFEC/Taxi.lua", "Modules/IFEC/Console.lua",
 	"Modules/IFEC/Registry.lua", "Modules/IFEC/Content.lua",
@@ -38014,6 +38015,158 @@ section("threat: one place decides which tier a unit is in", function()
 	_G.__units.target.inCombat = false
 	TH:Poll()
 end)
+
+print("== onboarding: the tour IS the setup ==")
+do
+	local OB = A:GetModule("onboard")
+	check(OB ~= nil, "the tour loaded")
+	A.db.char.onboard = {}
+
+	-- EIGHT STOPS, THREE THAT SET AND FIVE THAT SHOW. A first run that asked
+	-- eight questions would be a form and one that asked none would be a
+	-- slideshow; the split is the design.
+	check(#OB.stops == 8, "there are eight stops (" .. #OB.stops .. ")")
+	local sets, shows = 0, 0
+	for _, stop in ipairs(OB.stops) do
+		if stop.kind == "set" then sets = sets + 1 else shows = shows + 1 end
+		check(stop.name and stop.head and stop.body and stop.target,
+			"\"" .. tostring(stop.key) .. "\" has a name, a headline, a body and "
+			.. "something to point at")
+	end
+	check(sets == 3 and shows == 5,
+		"three of them set something and five show something (" .. sets .. ", "
+		.. shows .. ")")
+
+	-- THE WELCOME CARD COMES FIRST, not stop 1. Somebody who has just
+	-- installed this has no idea what it is, and dropping them straight into
+	-- "pick a palette" answers a question they have not been asked.
+	OB:Start()
+	check(OB.card and OB.card:IsShown(),
+		"starting shows the welcome card")
+	check(not (OB.callout and OB.callout:IsShown()),
+		"and not a stop yet")
+	check(OB.scrim and OB.scrim:IsShown(),
+		"over a dimmed world")
+
+	-- SKIP IS ON THE CARD AND ON EVERY STOP. The deck pins it to the bottom
+	-- of the screen throughout, because a tour you cannot leave is a modal
+	-- dialog with better manners.
+	OB.card.go:GetScript("OnClick")(OB.card.go)
+	check(OB.index == 1 and OB.callout:IsShown(),
+		"taking the tour opens stop 1 (" .. tostring(OB.index) .. ")")
+	check(OB.skip and OB.skip:IsShown(),
+		"with the way out pinned to the screen, not buried in the callout")
+	check(not OB.card:IsShown(),
+		"and the welcome card gone - never both at once")
+
+	-- WRITTEN THE MOMENT IT IS REACHED. A player who alt-F4s on stop 5 comes
+	-- back to stop 5, which is only true if the number is on disk before they
+	-- do it rather than at the end.
+	OB:Next()
+	OB:Next()
+	check(A.db.char.onboard.stopIndex == 3,
+		"the stop reached is written down as it is reached (" ..
+		tostring(A.db.char.onboard.stopIndex) .. ")")
+
+	-- BACK ALWAYS WORKS, and never off the front. Back restores nothing -
+	-- every value was written the moment it was touched - so it only re-shows
+	-- the callout you were looking at.
+	OB:Back()
+	check(OB.index == 2, "back goes back (" .. tostring(OB.index) .. ")")
+	OB:Back()
+	OB:Back()
+	check(OB.index == 1,
+		"and stops at the first stop rather than walking off the front (" ..
+		tostring(OB.index) .. ")")
+
+	-- WHAT IS LIFTED IS PUT BACK.
+	--
+	-- The spotlight raises a real frame's strata so it stands out of the
+	-- scrim. Half of what this tour points at is secure and cannot be
+	-- reparented at all, which is why it is done by strata - and a frame whose
+	-- strata was raised and never restored draws over the player's dialogs for
+	-- the rest of the session.
+	do
+		local pf = _G.AetherUIPlayerFrame
+		if pf then
+			-- Sampled with the tour DOWN. Stop 1 points at this very frame, so
+			-- reading its strata part way through the tour reads the lift.
+			OB:Teardown()
+			local was = pf:GetFrameStrata()
+			OB:Go(1)
+			check(pf:GetFrameStrata() == "FULLSCREEN",
+				"the stop lifts its element out of the dim (" ..
+				tostring(pf:GetFrameStrata()) .. ")")
+			OB:Go(2)
+			check(pf:GetFrameStrata() == was,
+				"and the next stop puts it back where it found it (" ..
+				tostring(pf:GetFrameStrata()) .. " against " .. tostring(was) .. ")")
+			OB:Go(1)
+			OB:Teardown()
+			check(pf:GetFrameStrata() == was,
+				"and so does leaving - a frame left raised draws over every dialog "
+				.. "the player opens for the rest of the session")
+		end
+	end
+
+	-- A FIGHT TAKES IT DOWN INSTANTLY, and puts it back afterwards.
+	--
+	-- Not paused - dropped. A scrim over the world and a panel over your
+	-- action bars are the two things you least want when a mob opens on you.
+	OB:Go(4)
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	check(not OB.scrim:IsShown() and not OB.callout:IsShown(),
+		"combat drops the scrim and the callout on the spot")
+	check(OB.lifted == nil,
+		"and leaves nothing raised")
+
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(OB.index == 4 and OB.callout:IsShown(),
+		"and it comes back to the stop it was on when the fight ended (" ..
+		tostring(OB.index) .. ")")
+
+	-- AND IT WILL NOT START MID-FIGHT. Everything above is why.
+	OB:Teardown()
+	_G.__inCombat = true
+	check(OB:Start() == false, "the tour refuses to start in combat")
+	check(not OB.scrim:IsShown(),
+		"and nothing goes up when it refuses")
+	_G.__inCombat = false
+
+	-- SKIPPING IS FINISHING. It keeps the defaults, marks the character, and
+	-- never asks again - an addon that keeps asking is one you uninstall.
+	OB:Start()
+	OB.card.go:GetScript("OnClick")(OB.card.go)
+	OB:Skip()
+	check(OB:Completed(), "skipping marks the character done")
+	check(not OB.scrim:IsShown() and not OB.callout:IsShown()
+		and not OB.skip:IsShown(),
+		"and takes the whole thing down with it")
+	check(A.db.char.onboard.stopIndex == nil,
+		"with nothing left to resume (" ..
+		tostring(A.db.char.onboard.stopIndex) .. ")")
+
+	-- AND THE FINISH CARD RECAPS WHAT YOU ACTUALLY CHOSE, read back out of the
+	-- systems that own it rather than out of anything the tour remembered. If
+	-- the recap and the HUD ever disagree, the recap is the one that is wrong.
+	OB:Start()
+	OB:Go(8)
+	OB:Next()
+	check(OB.card:IsShown() and not OB.callout:IsShown(),
+		"past the last stop is the finish card")
+	do
+		local said = OB.card.lines[1]:GetText() or ""
+		local skin = A.Palette.skins[A.Palette.current]
+		check(said:find(skin.label, 1, true) ~= nil,
+			"which names the palette that is actually on (" .. said .. ")")
+	end
+	OB.card.go:GetScript("OnClick")(OB.card.go)
+	check(OB:Completed(), "and Done marks the character done")
+
+	A.db.char.onboard = {}
+end
 
 print("")
 if #FAIL == 0 then
