@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.21.6",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: the friends list settles after the client finishes changing tabs, not in the middle of it",
+			"panels: which fixes the raid tab on its first visit and the buttons moving on the way back",
+		},
+	},
+	{
 		version = "0.21.5",
 		date    = "2026-08-23",
 		lines   = {

@@ -3627,6 +3627,65 @@ do
 			b:SetFontString(fs)
 		end
 
+		-- AND THE RAID PANE BELONGS TO NOBODY UNTIL IT IS CLAIMED. Its XML
+		-- carries no parent - "Parent set dynamically. See ClaimRaidFrame()" -
+		-- and no hidden attribute either, so from load it is a shown frame with
+		-- nothing above it: never drawn, and every child of it answers yes to
+		-- IsVisible, because a parent chain that simply ends has no hidden link.
+		panes.RaidFrame:SetParent(nil)
+		panes.RaidFrame:Show()
+		function _G.ClaimRaidFrame(parent)
+			if panes.RaidFrame:GetParent() == parent then return end
+			panes.RaidFrame:SetParent(parent)
+		end
+
+		-- THE SWAP IS NOT ATOMIC, and that is the client's own doing: it loops
+		-- the five panes with `pairs`, so the one going UP can be shown before
+		-- the one coming DOWN is hidden. Anything hooked to a pane's OnShow
+		-- fires in that gap and sees a window with two panes up. Modelled in the
+		-- worst order on purpose - show first, hide after - because the point of
+		-- a mock is to be no kinder than the thing it stands for.
+		--
+		-- AND RaidFrame IS ONLY HIDDEN IF THIS WINDOW OWNS IT, which is the
+		-- client's test verbatim.
+		local SUBFRAMES = { "FriendsListFrame", "IgnoreListFrame", "WhoFrame",
+			"GuildFrame", "RaidFrame" }
+		function _G.FriendsFrame_ShowSubFrame(name)
+			_G[name]:Show()
+			for _, other in ipairs(SUBFRAMES) do
+				if other ~= name then
+					if other == "RaidFrame" then
+						if panes.RaidFrame:GetParent() == ff then
+							panes.RaidFrame:Hide()
+						end
+					else
+						_G[other]:Hide()
+					end
+				end
+			end
+		end
+
+		-- WHICH PANE IS UP, AND THE HEADER ONLY ON THE FRIENDS TAB. The client
+		-- claims the raid pane BEFORE it shows it, so a post-hook on this sees a
+		-- settled window whichever tab you are on - which is what the dresser
+		-- hooks, the pane's own OnShow being unable to see the end of a swap it
+		-- is in the middle of.
+		function _G.FriendsFrame_Update()
+			local tab = ff.selectedTab or 1
+			hdr:SetShown(tab == 1)
+			if tab == 1 then
+				_G.FriendsFrame_ShowSubFrame(hdr.selectedTab == 2
+					and "IgnoreListFrame" or "FriendsListFrame")
+			elseif tab == 2 then
+				_G.FriendsFrame_ShowSubFrame("WhoFrame")
+			elseif tab == 3 then
+				_G.FriendsFrame_ShowSubFrame("GuildFrame")
+			else
+				_G.ClaimRaidFrame(ff)
+				_G.FriendsFrame_ShowSubFrame("RaidFrame")
+			end
+		end
+
 		-- THE CLIENT'S OWN THREE REFRESHES, which is what the dresser hooks:
 		-- every one of these lists is refilled rather than rebuilt, so a row
 		-- dressed once is undressed by the next update.
@@ -27986,10 +28045,14 @@ do
 	-- `FriendsTabHeader:SetShown(selectedTab == FRIEND_TAB_FRIENDS)`, so the
 	-- status dropdown, the tag and the broadcast button are down on every
 	-- other tab - which is the only reason one row can serve all five.
-	_G.FriendsListFrame:Hide()
-	_G.FriendsTabHeader:Hide()
-	_G.WhoFrame:Show()
-	PN.Dress(_G.FriendsFrame)
+	--
+	-- AND THE TAB IS CHANGED THE WAY THE PLAYER CHANGES IT, through the
+	-- client's own FriendsFrame_Update. Hiding one pane and showing another by
+	-- hand is a tidier swap than the client performs and hides both of the
+	-- faults this window had: the arbitrary order inside ShowSubFrame, and the
+	-- raid pane never firing OnShow because it was shown all along.
+	_G.FriendsFrame.selectedTab = 2
+	_G.FriendsFrame_Update()
 
 	-- THE QUERY IS CHROME AND GOES IN THE TOOL ROW. The client hangs it off
 	-- the window's BOTTOM edge, which is where the footer strip now is - so
@@ -28035,9 +28098,18 @@ do
 	-- the row's first slot on the raid tab and pushed the raid's own switch
 	-- along behind it - which is the same trap the footer's middle group was
 	-- already written round.
-	_G.WhoFrame:Hide()
-	_G.RaidFrame:Show()
-	PN.Dress(_G.FriendsFrame)
+	-- AND THE RAID TAB IS THE ONE THAT NEVER FIRED A HOOK AT ALL: its pane is
+	-- shown from load, so the client's own Show() on it does nothing and no
+	-- OnShow of ours runs. First visit came up with the blurb still under the
+	-- band and Convert to Raid wherever the last pane had left it.
+	_G.FriendsFrame.selectedTab = 4
+	_G.FriendsFrame_Update()
+	check(_G.RaidFrame:GetParent() == _G.FriendsFrame,
+		"the raid pane is claimed by this window before it is shown")
+	local blurbY = select(5, _G.RaidFrameRaidDescription:GetPoint(1))
+	check(blurbY < -(A.Widgets.PANEL_HEAD_H + A.Widgets.PANEL_PAD),
+		"and its blurb is below the band rather than printed across it (" ..
+		tostring(blurbY) .. ")")
 	local aAt, aRel, aRelP, aX = _G.RaidFrameAllAssistCheckButton:GetPoint(1)
 	check(aAt == "LEFT" and aX == A.Widgets.PANEL_PAD,
 		"on the raid tab the raid's own switch starts the tool row (" ..
@@ -28064,9 +28136,20 @@ do
 		"Convert to Raid is centred in the strip on its own, above the tab "
 		.. "rail (" .. tostring(cX) .. ", " .. tostring(cY) .. ")")
 
-	_G.RaidFrame:Hide()
-	_G.FriendsTabHeader:Show()
-	_G.FriendsListFrame:Show()
+	-- AND BACK ON THE FRIENDS TAB. This is the swap that broke it: the pane
+	-- going up can be shown before the raid pane coming down is hidden, so a
+	-- hook on the first one sees a window with two panes up and lays Convert to
+	-- Raid into the friends list's strip - which pushed Add Friend and Send
+	-- Message a button's width apart, one off each side of the glass.
+	_G.FriendsFrame.selectedTab = 1
+	_G.FriendsFrame_Update()
+	local pair = _G.FriendsFrameAddFriendButton:GetWidth()
+		+ _G.FriendsFrameSendMessageButton:GetWidth() + 12
+	check(select(4, _G.FriendsFrameAddFriendButton:GetPoint(1)) == -pair / 2,
+		"coming back off the raid tab leaves the strip centred on its own two "
+		.. "buttons (" ..
+		tostring(select(4, _G.FriendsFrameAddFriendButton:GetPoint(1)))
+		.. " of " .. tostring(-pair / 2) .. ")")
 
 	-- AND BACK ON THE FRIENDS TAB WITH THE RAID PANE CLAIMED BY SOMEBODY ELSE,
 	-- which is the state the client leaves it in.
@@ -28090,8 +28173,6 @@ do
 	PN.Dress(_G.FriendsFrame)
 	check(_G.RaidFrameConvertToRaidButton:IsVisible(),
 		"a pane with no parent at all still reports its buttons visible")
-	local pair = _G.FriendsFrameAddFriendButton:GetWidth()
-		+ _G.FriendsFrameSendMessageButton:GetWidth() + 12
 	local backX = select(4, _G.FriendsFrameAddFriendButton:GetPoint(1))
 	check(backX == -pair / 2,
 		"but it is not this window's button and takes no room in its strip ("

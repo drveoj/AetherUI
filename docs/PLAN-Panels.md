@@ -235,7 +235,32 @@ it belongs to this window — the last marked **NOT OURS** with the parent it do
 belong to. That one line is the whole answer, and it took three builds to get it
 without one.
 
-Four mutations are caught.
+**And the same cause again from the other side (0.21.6).** Fixing the filter was
+not enough, because on two of the client's own paths nothing of ours ran at all:
+
+- **`FriendsFrame_ShowSubFrame` loops the five panes with `pairs`**, so the order
+  is arbitrary and the pane going *up* can be shown before the one coming *down*
+  is hidden. Our pane `OnShow` hook fires in that gap and lays the strip out from
+  a window that is briefly showing two panes — which put Convert to Raid back in
+  the friends list's strip on the way home from the raid tab.
+- **The raid pane never fires `OnShow` at all.** It is shown from the moment its
+  addon loads, so the client's own `Show()` on it is a no-op. The first visit to
+  that tab came up with the blurb still under the band, Convert to Raid wherever
+  the last pane had left it, and only the tool row correct — because that one is
+  redrawn by the tab hook instead.
+
+A **post-hook on `FriendsFrame_Update`** answers both: it runs after the claim and
+after the swap, with exactly one pane up, every time the client changes its mind
+about which. Guarded against re-entry, and skipped while the window is down —
+the client calls it on a who result and on joining a group too.
+
+The harness now performs the swap the way the client does, in the worst order on
+purpose: `FriendsFrame_Update`, `FriendsFrame_ShowSubFrame` and `ClaimRaidFrame`
+are modelled, the checks change tabs through them rather than hiding panes by
+hand, and the raid pane starts parentless and shown. Removing the settle hook
+reproduces all three screenshots exactly.
+
+Six mutations are caught.
 
 ## Fixed — the trade window's money row (2026-08-23)
 

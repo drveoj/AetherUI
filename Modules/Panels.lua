@@ -5442,7 +5442,44 @@ local function DressFriends(frame, store)
 	--
 	-- The other two lists are refilled rather than grown, and are re-inked
 	-- here for the same reason at no extra cost.
+	-- THE WHOLE WINDOW AGAIN AFTER THE CLIENT HAS FINISHED SWAPPING PANES,
+	-- because the pane hooks cannot see the end of that swap from inside it.
+	--
+	-- TWO SEPARATE FAULTS, ONE CAUSE. FriendsFrame_ShowSubFrame loops the
+	-- five panes with `pairs`, so the order is arbitrary: the one going UP
+	-- can be shown before the one coming DOWN is hidden. Our OnShow hook
+	-- fires in that gap and lays the strip out from a window that is briefly
+	-- showing two panes - which is Convert to Raid taking a slot in the
+	-- friends list's strip and pushing its two buttons off both sides.
+	--
+	-- And the RAID pane never fires OnShow at all. RaidFrame is shown from
+	-- the moment its addon loads - no `hidden` in its XML - so the client's
+	-- own Show() on it is a no-op and no hook of ours runs. First visit to
+	-- that tab came up with the blurb still under the band, Convert to Raid
+	-- wherever the last pane had left it, and only the tool row correct,
+	-- because that one is redrawn by the tab hook instead.
+	--
+	-- A POST-HOOK ON FriendsFrame_Update ANSWERS BOTH: it runs after the
+	-- claim and after the swap, with exactly one pane up, every time the
+	-- client changes its mind about which. Guarded because dressing a window
+	-- is not something to do twice from inside itself.
 	PN.__friendHooks = PN.__friendHooks or {}
+	if hooksecurefunc and _G.FriendsFrame_Update
+		and not PN.__friendHooks.FriendsFrame_Update then
+		PN.__friendHooks.FriendsFrame_Update = true
+		hooksecurefunc("FriendsFrame_Update", function()
+			if not PN.enabled or PN.__friendSettling then return end
+			-- The client calls this on a who result and on joining or leaving
+			-- a group as well as on a tab, and none of that is worth a pass
+			-- over a window nobody is looking at.
+			local social = _G.FriendsFrame
+			if not (social and social.IsShown and social:IsShown()) then return end
+			PN.__friendSettling = true
+			pcall(PN.Dress, social)
+			PN.__friendSettling = nil
+		end)
+	end
+
 	for _, fn in ipairs({ "FriendsList_Update", "IgnoreList_Update",
 		"WhoList_Update" }) do
 		if hooksecurefunc and _G[fn] and not PN.__friendHooks[fn] then
