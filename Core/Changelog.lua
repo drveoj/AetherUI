@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.26.5",
+		date    = "2026-08-23",
+		lines   = {
+			"copy box: the window is on screen before its text goes in, and says how many lines it was handed",
+		},
+	},
+	{
 		version = "0.26.4",
 		date    = "2026-08-23",
 		lines   = {

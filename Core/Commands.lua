@@ -613,25 +613,10 @@ handlers.preset = function(arg, rest)
 		if key == "" then key = P:Current() or "PRESET" end
 		local lines, count = P:Capture(key)
 
-		-- TO THE CHAT FRAME, plainly, one line at a time.
-		--
-		-- NOT ONLY THE COPY BOX. That box is the usual home for a report you
-		-- paste somewhere, and on this text it arrived as its first line
-		-- followed by a few thousand blank ones - twice, by two different
-		-- routes into it, with the string handed to ShowText verified correct
-		-- both times. Whatever that is, it is the box's and not this
-		-- command's, and a capture nobody can copy is a capture that does not
-		-- work.
-		--
-		-- Chat has no such trouble and every client can copy from it. Eight
-		-- lines is a reasonable thing to put there; the box is still opened
-		-- as well, for when it is behaving.
-		for _, line in ipairs(lines) do say(line) end
-
-		local text = A.Errors:Capture(function()
-			for _, line in ipairs(lines) do say(line) end
-		end)
-		A.Errors:ShowText(text)
+		-- INTO THE COPY BOX, which is the only thing in this client whose text
+		-- can be selected - chat cannot be copied from at all, which is why
+		-- that box exists.
+		A.Errors:ShowText(table.concat(lines, "\n"))
 		A:Print("captured " .. count .. " frame position"
 			.. (count == 1 and "" or "s") .. " as " .. A.Val(key)
 			.. " - the lines above are the thing to paste into"

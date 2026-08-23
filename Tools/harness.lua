@@ -18751,55 +18751,62 @@ do
 
 end
 
-print("== presets: the capture reaches somewhere you can copy from ==")
+print("== the copy box ==")
 do
 	A.db.profile.anchors = A.db.profile.anchors or {}
 	A.db.profile.anchors.player = { point = "CENTER", relPoint = "CENTER",
 		x = -180, y = -120 }
 
-	-- STRAIGHT TO THE CHAT FRAME, one line at a time, as well as into the copy
-	-- box. That box arrived as the first line followed by a few thousand blank
-	-- ones - twice, by two different routes into it, with the string handed to
-	-- ShowText verified correct both times. Whatever that is, it is the box's;
-	-- and a capture nobody can copy is a capture that does not work.
+	-- CHAT CANNOT BE COPIED FROM IN THIS CLIENT. That is the whole reason the
+	-- copy box exists, so a capture that only reaches chat has not reached
+	-- anybody - and a route through chat is not a way round a box that is
+	-- misbehaving.
 	local said = {}
 	local chat = _G.DEFAULT_CHAT_FRAME
 	local realAdd = chat.AddMessage
-	local box
-	local realShow = A.Errors.ShowText
-	A.Errors.ShowText = function(_, t) box = t end
 	chat.AddMessage = function(self, msg)
 		said[#said + 1] = tostring(msg)
 		return realAdd(self, msg)
 	end
 	SlashCmdList["AETHERUI"]("preset capture centre")
 	chat.AddMessage = realAdd
-	A.Errors.ShowText = realShow
 
-	local sawOpen, sawAnchor, sawClose = false, false, false
-	for _, line in ipairs(said) do
-		if line:find("centre = {", 1, true) then sawOpen = true end
-		if line:find("player", 1, true) and line:find("CENTER", 1, true) then
-			sawAnchor = true
-		end
-		if line:find("anchors = {", 1, true) then sawClose = true end
+	local box = _G.AetherUIErrorBox
+	check(box ~= nil, "the copy box was opened")
+	local text = box and box:GetText() or ""
+	check(text:find("centre = {", 1, true) ~= nil
+		and text:find("player", 1, true) ~= nil,
+		"the whole table is in the box, which is the only thing in this client "
+		.. "whose text can be selected")
+
+	-- SHOWN BEFORE IT IS FILLED. A multiline EditBox lays its text out when it
+	-- is on screen, and a hidden one has no laid-out lines to put a string into
+	-- - which is the suspect for a report arriving as its first line and a
+	-- great many empty ones.
+	local order = {}
+	local dialog = box and box:GetParent() and box:GetParent():GetParent()
+	if dialog then
+		local realShow = dialog.Show
+		local realSet = box.SetText
+		dialog.Show = function(self) order[#order + 1] = "show" return realShow(self) end
+		box.SetText = function(self, t) order[#order + 1] = "text" return realSet(self, t) end
+		A.Errors:ShowText("one\ntwo\nthree")
+		dialog.Show, box.SetText = realShow, realSet
+		check(order[1] == "show" and order[2] == "text",
+			"the box is on screen before the text goes into it (" ..
+			table.concat(order, ",") .. ")")
 	end
-	check(sawOpen and sawAnchor and sawClose,
-		"the whole table reaches the chat frame, which every client can copy "
-		.. "from (" .. #said .. " lines)")
 
-	-- AND THE BOX STILL GETS IT, for when it is behaving.
-	check(type(box) == "string" and box:find("centre = {", 1, true) ~= nil,
-		"and the copy box is still offered it as well")
-
-	-- NOTHING BLANK IN IT. Every line the capture emits says something; a run
-	-- of empty ones is the symptom that started this.
-	local blank = 0
+	-- AND IT SAYS HOW MUCH IT WAS GIVEN. A box showing one line of an
+	-- eight-line report looks exactly like a report that had one line in it,
+	-- and telling those apart from the outside took two builds.
+	local counted = false
 	for _, line in ipairs(said) do
-		if line:gsub("%s", "") == "" then blank = blank + 1 end
+		if line:find("copy box:", 1, true) then counted = true end
 	end
-	check(blank == 0,
-		"and not one line of it is empty (" .. blank .. " of " .. #said .. ")")
+	check(counted,
+		"and it says how many characters and lines it was handed, so a short "
+		.. "box can be told from a short report")
 
 	A.db.profile.anchors.player = nil
 end

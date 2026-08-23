@@ -300,14 +300,29 @@ end
 --- Show any text at all, ready to copy.
 function Errors:ShowText(text)
 	local f = Build()
+
+	-- SHOWN FIRST, THEN FILLED. A multiline EditBox lays its text out when
+	-- it is on screen, and a hidden one has no laid-out lines to put a string
+	-- into - so text handed over while it was down came back as its first
+	-- line and, depending on the run, a great many empty ones after it. Two
+	-- captures were reported that way before this was the suspect, and the
+	-- string handed over was verified correct both times.
+	f:Show()
 	f.box:SetText(text or "")
 	f.box:HighlightText()
 	-- Back to the top. A second report opened where the last one was left
 	-- scrolled to, which reads as a box that has lost its first ten lines.
 	f.scroll:SetVerticalScroll(0)
-	f:Show()
 	f.box:SetFocus()
 	if f.UpdateRail then f.UpdateRail() end
+
+	-- WHAT WENT IN, in numbers, beside what came out on screen. A box that
+	-- shows one line of an eight-line report looks exactly like a report that
+	-- had one line in it, and telling those apart from the outside took two
+	-- builds. Now it is one line of chat.
+	local lines = 1 + select(2, tostring(text or ""):gsub("\n", ""))
+	A:Print(("copy box: %d characters, %d lines"):format(#(text or ""),
+		lines))
 	return f
 end
 
