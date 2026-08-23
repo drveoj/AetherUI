@@ -771,6 +771,13 @@ Config.defaults = {
 				-- fadeOut is the HUD leaving, which is the slow, deliberate one.
 				fadeOut     = 2.5,
 				fadeIn      = 0.30,
+				-- HOW LONG ZEN TAKES TO LEAVE, which is its own number rather than the
+				-- HUD's fade-in. Coming back it borrowed 0.30 and stepped
+				-- PROPORTIONALLY - fourteen per cent of what was left, every frame -
+				-- so half of it was gone in five frames and the rest trailed off. That
+				-- reads as a snap with a tail rather than as something ending, and it
+				-- takes the music with it.
+				easeOut     = 0.80,
 				hudAlpha    = 0,
 				-- Fade UIParent itself rather than chasing individual frames.
 				-- See the note at the top of Modules\Zen.lua: the list of things

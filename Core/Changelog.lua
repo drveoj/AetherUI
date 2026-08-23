@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.26.0",
+		date    = "2026-08-23",
+		lines   = {
+			"zen: eases out over most of a second instead of snapping, and the track fades with it",
+			"toolbox: a click outside the drawer closes it and still reaches whatever you clicked on",
+		},
+	},
+	{
 		version = "0.25.5",
 		date    = "2026-08-23",
 		lines   = {

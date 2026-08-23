@@ -560,6 +560,16 @@ function TB:Transient()
 	catch:SetFrameStrata("FULLSCREEN_DIALOG")
 	catch:SetFrameLevel(0)
 	catch:EnableMouse(true)
+	-- AND THE CLICK GOES THROUGH. A mouse-enabled frame eats what it catches,
+	-- so the first click anywhere else only shut the drawer - and the thing
+	-- the player was actually clicking on, which might be anything, never
+	-- heard about it. SetPropagateMouseClicks hands it on to whatever is
+	-- underneath after we have seen it, which is the behaviour a transient
+	-- wants: closing is a side effect of the click rather than the whole of
+	-- it.
+	if catch.SetPropagateMouseClicks then
+		pcall(catch.SetPropagateMouseClicks, catch, true)
+	end
 	catch:Hide()
 	catch:SetScript("OnMouseDown", function()
 		if TB.enabled and TB:IsOpen() then TB:SetOpen(false) end

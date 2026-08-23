@@ -1316,16 +1316,24 @@ function Zen:SetAudio(a)
 		end
 	end
 
-	-- Music goes the other way: up to the floor, and only if it is under it.
-	-- Ramped from where the player had it so the track arrives rather than
-	-- starting at full.
+	-- AND THE TRACK ITSELF FADES WITH THE READOUT, both ways.
+	--
+	-- This used to ramp only when the player's own music volume was UNDER the
+	-- floor - the case where zen has to lift it to be heard at all. Anybody
+	-- already above the floor got no ramp at all: the track started at full
+	-- and was cut dead by StopMusic on the way out, which is half of what
+	-- "zen ends abruptly" was.
+	--
+	-- So the volume is ALWAYS a fraction of the readout's alpha now. At the
+	-- top it is the player's own level, or the floor if that is higher; at the
+	-- bottom it is silence, and StopMusic lands on a track nobody can hear.
+	-- The player's own setting is untouched throughout: it is borrowed, and
+	-- handed back by GiveBack whatever we happened to leave it at.
 	local floor = tonumber(cfg.musicFloor) or 0
-	if floor > 0 then
-		local was = store.Sound_MusicVolume and tonumber(store.Sound_MusicVolume.was)
-			or CVarNumber("Sound_MusicVolume")
-		if was and was < floor then
-			Borrow(store, "Sound_MusicVolume", Step(was + (floor - was) * a))
-		end
+	local was = store.Sound_MusicVolume and tonumber(store.Sound_MusicVolume.was)
+		or CVarNumber("Sound_MusicVolume")
+	if was then
+		Borrow(store, "Sound_MusicVolume", Step(math.max(was, floor) * a))
 	end
 end
 
@@ -1632,6 +1640,7 @@ local function TickBody(self, dt)
 
 	if math.abs(diff) < 0.005 then
 		f:SetAlpha(want)
+		self._out = nil
 		if want <= 0 then
 			-- Parked. Put everything back first, then stop costing anything until
 			-- the fader asks for us again. The music and the plates are released
@@ -1650,11 +1659,37 @@ local function TickBody(self, dt)
 			self:SetKeysEnabled(false)
 			return
 		end
-	else
-		-- Rising is the HUD going away, so it borrows the HUD's fade-out time;
-		-- falling is the HUD coming back, and borrows its fade-in.
-		local speed = diff > 0 and (cfg.fadeOut or 2.5) or (cfg.fadeIn or 0.30)
+	elseif diff > 0 then
+		-- RISING is the HUD going away, so it borrows the HUD's fade-out time
+		-- and its shape: proportional, which arrives gently because most of the
+		-- movement is at the start and there is nothing on screen yet to
+		-- notice it.
+		self._out = nil
+		local speed = cfg.fadeOut or 2.5
 		f:SetAlpha(cur + diff * math.min(1, (dt / math.max(0.01, speed)) * 2.5))
+	else
+		-- FALLING IS ZEN ENDING, and that wants a shape of its own.
+		--
+		-- It used to borrow the HUD's fade-in - 0.30 - and step
+		-- PROPORTIONALLY, fourteen per cent of whatever was left every frame.
+		-- An exponential decay is front-loaded: half of it is gone in five
+		-- frames and the rest trails away under the eye, which reads as a snap
+		-- with a tail rather than as something ending. Reported as zen ending
+		-- abruptly, picture and sound together.
+		--
+		-- SMOOTHSTEP OVER A FIXED TIME instead, from wherever it happened to be
+		-- when the player moved: slow at both ends, quickest in the middle, and
+		-- the same length however far it has to travel. Everything else in here
+		-- follows this alpha - the dim, the frost, the world text, the camera
+		-- and the volumes - so easing this eases all of them.
+		local out = self._out
+		if not out or out.from < cur then
+			out = { from = cur, t = 0 }
+			self._out = out
+		end
+		out.t = out.t + dt
+		local p = math.min(1, out.t / math.max(0.05, cfg.easeOut or 0.80))
+		f:SetAlpha(out.from * (1 - p * p * (3 - 2 * p)))
 	end
 
 	self:DimUI(f:GetAlpha())

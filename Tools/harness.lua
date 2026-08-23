@@ -1060,6 +1060,12 @@ function CreateFrame(kind, name, parent, template)
 	-- writes its layout values through: those are read back when a window is
 	-- placed rather than acted on when they change.
 	function f:SetAttributeNoHandler(k, v) self.__attrs[k] = v end
+	-- WHETHER A CLICK CARRIES ON PAST THIS FRAME. Recorded rather than
+	-- modelled - nothing here dispatches a real click - because its ABSENCE
+	-- was the failure: a full-screen catcher that swallows what it catches is
+	-- a transient that costs the player the click they meant to make.
+	function f:SetPropagateMouseClicks(on) self.__passClicks = on and true or false end
+	function f:GetPropagateMouseClicks() return self.__passClicks == true end
 	function f:GetAttribute(k) return self.__attrs[k] end
 	function f:GetName() return self.__name end
 
@@ -18729,6 +18735,9 @@ do
 		-- clickable and everything outside them is not.
 		TBm:SetOpen(true, true)
 		local catch = TBm._catch
+		check(catch and catch:GetPropagateMouseClicks(),
+			"the catcher passes the click on to whatever is underneath - closing "
+			.. "is a side effect of the click, not the whole of it")
 		check(catch ~= nil and catch:IsShown() and catch:GetFrameLevel() == 0,
 			"and a catcher across the screen, under the panel and the rail (level "
 			.. tostring(catch and catch:GetFrameLevel()) .. ")")
@@ -18742,6 +18751,108 @@ do
 
 end
 
+print("== zen: it eases out rather than snapping ==")
+do
+	local Z = A:GetModule("zen")
+	local cfg = A.Config:Module("zen")
+	local f = Z.frame
+
+	-- ZEN ENDING WANTS A SHAPE OF ITS OWN. It used to borrow the HUD's
+	-- fade-in - 0.30 - and step PROPORTIONALLY, fourteen per cent of whatever
+	-- was left every frame. An exponential decay is front-loaded: half of it
+	-- is gone in five frames and the rest trails away under the eye, which
+	-- reads as a snap with a tail rather than as something ending.
+	-- Through the module's own door, which is what registers the ticker that
+	-- drives the fade - the fade function itself is a file local.
+	Z:SetActive(false)
+	f:SetAlpha(1)
+	Z._out = nil
+
+	-- A TENTH OF THE WAY IN it has barely moved, because smoothstep is slow
+	-- at both ends. The old curve was a fifth of the way gone by here.
+	tick((cfg.easeOut or 0.8) * 0.1)
+	check(f:GetAlpha() > 0.9,
+		"a tenth of the way out, zen has barely started to go (" ..
+		string.format("%.2f", f:GetAlpha()) .. ")")
+
+	-- HALFWAY THROUGH IT IS HALFWAY OUT, which is what a fixed time buys: the
+	-- fade is the same length however far it has to travel.
+	tick((cfg.easeOut or 0.8) * 0.4)
+	check(math.abs(f:GetAlpha() - 0.5) < 0.08,
+		"halfway through the time, halfway out (" ..
+		string.format("%.2f", f:GetAlpha()) .. ")")
+
+	-- AND IT IS STILL GOING AT HALF A SECOND, which is the whole of the
+	-- report: the old one was done in a fifth of that.
+	check((cfg.easeOut or 0.8) >= 0.5,
+		"and the whole of it takes at least half a second (" ..
+		tostring(cfg.easeOut) .. "s)")
+
+	-- THEN IT ARRIVES. The rest of the time and a frame to park.
+	tick((cfg.easeOut or 0.8) * 0.6)
+	tick(0.05)
+	check(f:GetAlpha() <= 0.001,
+		"and it gets all the way there (" ..
+		string.format("%.3f", f:GetAlpha()) .. ")")
+
+	-- FROM WHEREVER IT HAD GOT TO. The player can move at any point in the
+	-- fade IN, so the fade out starts from that alpha and still takes its own
+	-- time rather than being quicker because there was less to do.
+	Z:SetActive(false)
+	f:SetAlpha(0.5)
+	Z._out = nil
+	tick((cfg.easeOut or 0.8) * 0.5)
+	check(math.abs(f:GetAlpha() - 0.25) < 0.05,
+		"starting from half, it is a quarter at the halfway mark - the same "
+		.. "length of fade, not a quicker one (" ..
+		string.format("%.2f", f:GetAlpha()) .. ")")
+
+	-- AND THE TRACK FADES WITH IT. This used to ramp only for somebody whose
+	-- own music volume was UNDER zen's floor; anybody above it got no ramp at
+	-- all - the track started at full and StopMusic cut it dead.
+	do
+		local seen = {}
+		local realSet = _G.SetCVar
+		_G.SetCVar = function(name, value)
+			if name == "Sound_MusicVolume" then seen[#seen + 1] = tonumber(value) end
+			return realSet(name, value)
+		end
+
+		-- Well above zen's floor, which is the case that had no ramp.
+		realSet("Sound_MusicVolume", "1.0")
+		Z._audio = nil
+		Z:SetAudio(1)
+		Z:SetAudio(0.5)
+		Z:SetAudio(0.1)
+		_G.SetCVar = realSet
+
+		-- COUNTED, not indexed: Borrow writes only when the value CHANGES, so at
+		-- the top of the fade - where the track plays at the player's own level -
+		-- there is nothing to write and no call to see.
+		local falling = #seen > 0
+		for i = 2, #seen do
+			if seen[i] >= seen[i - 1] then falling = false end
+		end
+		local low = seen[#seen]
+		check(falling and #seen >= 2,
+			"the track's volume comes down with the readout rather than playing "
+			.. "at full until StopMusic cuts it (" ..
+			table.concat(seen, " to ") .. ")")
+		check(low and low < 0.2,
+			"and is all but silent by the time the readout is (" ..
+			tostring(low) .. ")")
+
+		-- AND THE PLAYER'S OWN SETTING COMES BACK, whatever we left it at.
+		Z:RestoreAudio()
+		check(tonumber(GetCVar("Sound_MusicVolume")) == 1.0,
+			"and the player's own volume is handed back untouched (" ..
+			tostring(GetCVar("Sound_MusicVolume")) .. ")")
+	end
+
+	Z.want = 0
+	f:SetAlpha(0)
+	Z._out = nil
+end
 print("== toolbox: the drawer breathes with everything else ==")
 do
 	local TBm = A:GetModule("toolbox")
