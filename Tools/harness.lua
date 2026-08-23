@@ -38109,6 +38109,115 @@ do
 		end
 	end
 
+	-- THE THREE CONTROLS WRITE STRAIGHT INTO THE SYSTEM THAT OWNS THEM.
+	--
+	-- No staging and no Apply at the end: the palette into the profile, the
+	-- layout into the anchors, the edge into the character's Toolbox record.
+	-- Which is the whole reason quitting half way through costs nothing - and
+	-- a tour that held its answers until the last card would lose every one of
+	-- them to a disconnect.
+	do
+		local slot = OB.callout.slot
+
+		-- Stop 1: four swatches, and tapping one recolours the whole interface.
+		A.db.profile.skin = "midnight"
+		A:Restyle()
+		OB:Go(1)
+		local swatches = slot.__aetherKids and slot.__aetherKids.palette or {}
+		check(#swatches == 4,
+			"stop 1 offers the four palettes (" .. #swatches .. ")")
+
+		-- THE SWATCH IS THAT PALETTE'S OWN ACCENT, not the one in use. Four
+		-- cards drawn in the current skin's accent would make the choice
+		-- invisible, which is the one thing this stop cannot do.
+		local seen = {}
+		for _, card in ipairs(swatches) do
+			local r, g, b = card.dot:GetVertexColor()
+			seen[string.format("%.2f %.2f %.2f", r or 0, g or 0, b or 0)] = true
+		end
+		local shades = 0
+		for _ in pairs(seen) do shades = shades + 1 end
+		check(shades == 4,
+			"each drawn in its OWN accent rather than the one in use (" ..
+			shades .. " colours)")
+
+		-- AND TAPPING ONE GOES THROUGH THE SAME DOOR the options panel uses. A
+		-- palette applied any other way is one half the interface has not heard
+		-- about, and this stop must not preview something the player will not get.
+		swatches[2]:GetScript("OnClick")(swatches[2])
+		check(A.Palette.current == A.Palette.order[2],
+			"tapping a swatch recolours the whole interface on the spot (" ..
+			tostring(A.Palette.current) .. ")")
+		check(A.db.profile.skin == A.Palette.order[2],
+			"and writes it into the profile, not into the tour")
+
+		-- THE TOUR REPAINTS WITH EVERYTHING ELSE. The callout, the ring and the
+		-- dots are drawn in the accent that just changed; a tour left Midnight
+		-- while the HUD went Dawn would be the one thing on screen contradicting
+		-- its own copy.
+		do
+			local r, g, b = OB.callout.kicker:GetTextColor()
+			local a = A.Palette.c.accent
+			check(math.abs((r or 0) - a[1]) < 0.02
+				and math.abs((g or 0) - a[2]) < 0.02,
+				"and the callout is repainted with it (" ..
+				string.format("%.2f %.2f %.2f", r or 0, g or 0, b or 0) .. ")")
+		end
+		A.db.profile.skin = "midnight"
+		A:Restyle()
+
+		-- Stop 2: three arrangements, and tapping one moves the real frames.
+		OB:Go(2)
+		local cards = slot.__aetherKids and slot.__aetherKids.layout or {}
+		check(#cards == #A.Presets.order,
+			"stop 2 offers every shipped arrangement (" .. #cards .. ")")
+
+		-- A WIREFRAME DRAWN FROM THE ARRANGEMENT ITSELF, not three hand-drawn
+		-- thumbnails. The anchors are already fractions of the screen - that is
+		-- what makes them portable - so a thumbnail cannot drift away from what
+		-- the card actually does.
+		check(cards[1].box and cards[1].box.marks and #cards[1].box.marks > 3,
+			"with a wireframe drawn out of its own anchors (" ..
+			tostring(cards[1].box and cards[1].box.marks
+			and #cards[1].box.marks) .. " marks)")
+
+		cards[2]:GetScript("OnClick")(cards[2])
+		check(A.Presets:Current() == A.Presets.order[2],
+			"and tapping one moves the real frames on the spot (" ..
+			tostring(A.Presets:Current()) .. ")")
+
+		-- Stop 3: four edges, and tapping one docks the drawer.
+		OB:Go(3)
+		local edges = slot.__aetherKids and slot.__aetherKids.toolbox or {}
+		check(#edges == 5,
+			"stop 3 offers a box with four edges on it (" .. #edges .. ")")
+		edges[4]:GetScript("OnClick")(edges[4])
+		check(A.db.char.toolbox.docked == "RIGHT",
+			"and tapping one docks the drawer there (" ..
+			tostring(A.db.char.toolbox.docked) .. ")")
+		local TB = A:GetModule("toolbox")
+		if TB.SetDock then TB:SetDock("LEFT") end
+
+		-- AND EACH CONTROL HAS ITS OWN FRAMES.
+		--
+		-- The three share one slot, and their frames are not interchangeable: with
+		-- one pool by index the fourth palette swatch and the first layout card
+		-- are the same frame, and the layout card looks for a wireframe box a
+		-- swatch has not got. Which is how this failed the first time it was run.
+		check(slot.__aetherKids.palette[1] ~= slot.__aetherKids.layout[1],
+			"a swatch and a layout card are never the same frame")
+
+		-- AND NOTHING FROM THE LAST STOP IS STILL LIVE. A control left over is a
+		-- control that still works - and stop 3's box would still be recolouring
+		-- the interface.
+		local live = 0
+		for _, card in ipairs(slot.__aetherKids.palette) do
+			if card:IsShown() then live = live + 1 end
+		end
+		check(live == 0,
+			"and stop 1's swatches are down while stop 3 is up (" .. live .. ")")
+	end
+
 	-- A FIGHT TAKES IT DOWN INSTANTLY, and puts it back afterwards.
 	--
 	-- Not paused - dropped. A scrim over the world and a panel over your

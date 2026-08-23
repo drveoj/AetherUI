@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.30.0",
+		date    = "2026-08-23",
+		lines   = {
+			"Onboarding stage two: the three stops that set something now carry live controls - four palette swatches, three layout cards with wireframes drawn from the arrangements themselves, and a tap-an-edge picker for the Toolbox.",
+		},
+	},
+	{
 		version = "0.29.0",
 		date    = "2026-08-23",
 		lines   = {

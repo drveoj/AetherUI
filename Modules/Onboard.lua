@@ -540,6 +540,288 @@ local function BuildSkip()
 end
 
 -- ---------------------------------------------------------------------------
+-- the controls
+--
+-- Three stops carry one, and every one of them writes STRAIGHT INTO THE SYSTEM
+-- THAT OWNS IT the moment it is touched. No staging, no Apply at the end - the
+-- palette goes into the profile, the layout into the anchors, the edge into the
+-- character's Toolbox record, and each of those systems repaints itself the way
+-- it would if the change had come from the options panel. Which is the whole
+-- reason quitting half way through costs nothing.
+-- ---------------------------------------------------------------------------
+
+local CHIP_H     = 58      -- a swatch card
+local CARD_H     = 62      -- a layout card, wireframe and all
+local EDGE_H     = 74      -- the edge picker
+
+--- Everything a stop put in the slot, gone.
+--
+--  POOLED BY THE SLOT rather than destroyed, because frames cannot be
+--  destroyed - and the tour can be re-run as many times as somebody likes.
+--  A control left over from the last stop is a control that still works.
+function OB:ClearSlot(slot)
+	slot.__aetherKids = slot.__aetherKids or {}
+	for _, pool in pairs(slot.__aetherKids) do
+		for _, f in ipairs(pool) do
+			f:Hide()
+			f:ClearAllPoints()
+			f:SetScript("OnClick", nil)
+		end
+	end
+end
+
+--- One frame out of the slot's pool, built by `make` the first time.
+--
+--  A POOL PER CONTROL, not one list by index. The three controls share this
+--  slot and their frames are not interchangeable - the fourth palette swatch
+--  and the first layout card would be the same frame, and the layout card
+--  would be looking for a wireframe box a swatch has not got. Which is exactly
+--  how this failed the first time it was run.
+local function Kid(slot, kind, i, make)
+	slot.__aetherKids = slot.__aetherKids or {}
+	slot.__aetherKids[kind] = slot.__aetherKids[kind] or {}
+	local pool = slot.__aetherKids[kind]
+	local f = pool[i]
+	if not f then
+		f = make(slot)
+		pool[i] = f
+	end
+	f:Show()
+	return f
+end
+
+--- The look of a card that is either the chosen one or not.
+--
+--  THE ACCENT RIM IS THE WHOLE SIGNAL. There is no tick and no radio dot in
+--  the deck: the chosen card is lit and the others are not, which is the same
+--  language the Toolbox tiles and the chat tabs already speak.
+local function Chosen(card, on)
+	local c = Palette.c
+	if card.SetFillColor then
+		card:SetFillColor(on and c.glassEdgeHi or c.glass)
+		card:SetEdgeColor(on and c.accent or c.glassEdge)
+	end
+	if card.label then W.Color(card.label, on and c.text or c.textDim) end
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 1: the palette
+-- ---------------------------------------------------------------------------
+
+--- Four swatch cards. Tapping one recolours the ENTIRE interface, live.
+--
+--  THROUGH A:Restyle, the same door the options panel and /aether skin use.
+--  A palette applied any other way is a palette that half the interface has
+--  not heard about - and the one thing this stop must not do is show somebody
+--  a preview that is not what they will get.
+local function PaletteControl(slot)
+	local list = Palette:List()
+	local gap = 7
+	local w = (slot:GetWidth() - gap * (#list - 1)) / #list
+
+	for i, entry in ipairs(list) do
+		local card = Kid(slot, "palette", i, function(parent)
+			local f = Glass.CreatePanel(parent, {
+				frameType = "Button", corner = 11,
+			})
+			f.dot = f:CreateTexture(nil, "OVERLAY")
+			f.dot:SetSize(19, 19)
+			-- chipDisc, not circleMask: the same circle authored at 64 for
+			-- things drawn near that size. The 256px one minified to 19 is
+			-- eight times down with no mipmap behind it, which is the crunch
+			-- the chip rim, the check box and the tooltip badge all record.
+			f.dot:SetTexture(A.Media.texture.chipDisc)
+			f.dot:SetPoint("TOP", f, "TOP", 0, -8)
+			f.label = W.Text(f, "tbLabel", "CENTER")
+			f.label:SetPoint("BOTTOM", f, "BOTTOM", 0, 7)
+			return f
+		end)
+
+		card:SetSize(w, CHIP_H)
+		card:ClearAllPoints()
+		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
+
+		-- THE SWATCH IS THAT PALETTE'S OWN ACCENT, not the one in use. The
+		-- point of four cards is to show four colours; drawing them all in the
+		-- current skin's accent would make the choice invisible.
+		local skin = Palette.skins[entry.key]
+		W.Tint(card.dot, skin and skin.accent or Palette.c.accent, 1)
+		card.label:SetText(entry.label or entry.key)
+		Chosen(card, Palette.current == entry.key)
+
+		card:SetScript("OnClick", function()
+			A.db.profile.skin = entry.key
+			A:Restyle()
+			-- AND THE TOUR REPAINTS ITSELF WITH EVERYTHING ELSE. The callout,
+			-- the ring and the dots are all drawn in the accent that just
+			-- changed, and a tour that stayed Midnight while the HUD went Dawn
+			-- would be the one thing on screen contradicting its own copy.
+			OB:Go(OB.index or 1)
+		end)
+	end
+
+	slot:SetHeight(CHIP_H)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 2: the layout
+-- ---------------------------------------------------------------------------
+
+--- A wireframe of an arrangement, drawn from the arrangement itself.
+--
+--  FROM THE PRESET'S OWN NUMBERS, not from three hand-drawn thumbnails. The
+--  anchors are already fractions of the screen - that is what makes them
+--  portable - so a thumbnail is those fractions on a small rectangle, and it
+--  cannot drift away from what the card actually does.
+local UNITS = { player = true, target = true, pet = true, party = true }
+
+local function Wireframe(box, preset)
+	box.marks = box.marks or {}
+	for _, m in ipairs(box.marks) do m:Hide() end
+
+	local n = 0
+	for name, a in pairs(preset.anchors or {}) do
+		local bar = name:find("^bar") ~= nil
+		if UNITS[name] or bar then
+			n = n + 1
+			local m = box.marks[n]
+			if not m then
+				m = box:CreateTexture(nil, "OVERLAY")
+				m:SetTexture(A.Media.texture.flat)
+				box.marks[n] = m
+			end
+
+			-- The fraction is an offset from the anchor point, so it is turned
+			-- into a position on the box the same way Presets turns it into a
+			-- position on the screen: from the corner it is measured from.
+			local bw, bh = box:GetWidth(), box:GetHeight()
+			local px = (a.fx or 0) * bw
+			local py = (a.fy or 0) * bh
+			m:SetSize(bar and bw * 0.22 or bw * 0.16, math.max(2, bh * 0.09))
+			m:ClearAllPoints()
+			m:SetPoint("CENTER", box, a.point or "CENTER", px, py)
+			W.Tint(m, Palette.c.accent, bar and 0.45 or 0.7)
+			m:Show()
+		end
+	end
+end
+
+--- Three cards. Tapping one moves the real frames, live.
+local function LayoutControl(slot)
+	local P = A.Presets
+	if not P then slot:SetHeight(1) return end
+
+	local keys = P.order
+	local gap = 7
+	local w = (slot:GetWidth() - gap * (#keys - 1)) / #keys
+	local now = P:Current()
+
+	for i, key in ipairs(keys) do
+		local preset = P.list[key]
+		local card = Kid(slot, "layout", i, function(parent)
+			local f = Glass.CreatePanel(parent, {
+				frameType = "Button", corner = 11,
+			})
+			f.box = CreateFrame("Frame", nil, f)
+			f.box:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -6)
+			f.box:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
+			f.box:SetHeight(34)
+			f.label = W.Text(f, "tbLabel", "CENTER")
+			f.label:SetPoint("BOTTOM", f, "BOTTOM", 0, 5)
+			return f
+		end)
+
+		card:SetSize(w, CARD_H)
+		card:ClearAllPoints()
+		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
+		card.box:SetWidth(w - 12)
+		Wireframe(card.box, preset)
+		card.label:SetText(preset.label or key)
+		Chosen(card, now == key)
+
+		card:SetScript("OnClick", function()
+			P:Apply(key)
+			OB:Go(OB.index or 2)
+		end)
+	end
+
+	slot:SetHeight(CARD_H)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 3: the Toolbox edge
+-- ---------------------------------------------------------------------------
+
+local EDGES = { "LEFT", "TOP", "RIGHT", "BOTTOM" }
+
+--- Tap an edge. A rectangle with four targets on it, which is the picker the
+--  movers already use when you drag the rail - the same gesture in a smaller
+--  box, so the one you learn here is the one that works later.
+local function ToolboxControl(slot)
+	local TB = A.GetModule and A:GetModule("toolbox")
+	local now = (A.db and A.db.char and A.db.char.toolbox
+		and A.db.char.toolbox.docked) or "LEFT"
+
+	local box = Kid(slot, "toolbox", 1, function(parent)
+		local f = Glass.CreatePanel(parent, { corner = 11 })
+		f.hint = W.Text(f, "tbLabel", "CENTER")
+		f.hint:SetPoint("CENTER")
+		f.hint:SetText("tap an edge")
+		return f
+	end)
+	box:SetSize(slot:GetWidth(), EDGE_H)
+	box:ClearAllPoints()
+	box:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
+	W.Color(box.hint, Palette.c.textFaint)
+
+	for i, edge in ipairs(EDGES) do
+		local tab = Kid(slot, "toolbox", i + 1, function(parent)
+			local f = CreateFrame("Button", nil, parent)
+			f.fill = f:CreateTexture(nil, "OVERLAY")
+			f.fill:SetAllPoints(f)
+			f.fill:SetTexture(A.Media.texture.flat)
+			return f
+		end)
+		tab:SetParent(box)
+		tab:ClearAllPoints()
+
+		if edge == "LEFT" then
+			tab:SetSize(9, 32)
+			tab:SetPoint("LEFT", box, "LEFT", 0, 0)
+		elseif edge == "RIGHT" then
+			tab:SetSize(9, 32)
+			tab:SetPoint("RIGHT", box, "RIGHT", 0, 0)
+		elseif edge == "TOP" then
+			tab:SetSize(32, 9)
+			tab:SetPoint("TOP", box, "TOP", 0, 0)
+		else
+			tab:SetSize(32, 9)
+			tab:SetPoint("BOTTOM", box, "BOTTOM", 0, 0)
+		end
+
+		W.Tint(tab.fill, Palette.c.accent, now == edge and 1 or 0.25)
+		tab:SetScript("OnClick", function()
+			if TB and TB.SetDock then TB:SetDock(edge) end
+			OB:Go(OB.index or 3)
+		end)
+	end
+
+	slot:SetHeight(EDGE_H)
+end
+
+--- Which control a SET stop carries.
+local CONTROLS = {
+	palette = PaletteControl,
+	layout  = LayoutControl,
+	toolbox = ToolboxControl,
+}
+
+function OB:Control(stop, slot)
+	local fn = CONTROLS[stop.key]
+	if fn then fn(slot) end
+end
+
+-- ---------------------------------------------------------------------------
 -- running
 -- ---------------------------------------------------------------------------
 
