@@ -14833,9 +14833,10 @@ for _, cmd in ipairs({ "", "status", "diag", "hide", "scale 1.2", "shadow 14", "
 	if not ok then fail("/aether " .. cmd .. ": " .. tostring(err)) end
 end
 check(A:GetModule("unitframes").enabled, "module toggled back on cleanly")
--- THREE NOW: player, target and pet. The count is the point of the check - a
--- rebuild would leak a second set, because WoW has no way to destroy a frame.
-check(UF.player == A:GetModule("unitframes").player and #UF.frames == 3,
+-- FOUR NOW: player, target, pet and the target's target. The count is the
+-- point of the check - a rebuild would leak a second set, because WoW has no
+-- way to destroy a frame.
+check(UF.player == A:GetModule("unitframes").player and #UF.frames == 4,
 	"toggling the module reuses its frames instead of leaking a second set ("
 	.. #UF.frames .. ")")
 check(UF.pet ~= nil and UF.pet.unit == "pet", "and the pet capsule is one of them")
@@ -14902,6 +14903,60 @@ do
 	_G.__units.pet.exists = true
 	fire("UNIT_PET", "player")
 	check(pet.glass:IsShown(), "and calling one back brings it up")
+end
+check(UF.tot ~= nil and UF.tot.unit == "targettarget",
+	"and so is the target's target")
+
+if UF.tot then
+	local tot = UF.tot
+	UF.UpdateAll(tot)
+
+	-- THE PET'S ARGUMENT THE OTHER WAY ROUND: a thing you glance at, at a
+	-- size of its own. This client has a target-of-target frame and hides it
+	-- behind a setting most players never find.
+	check(tot.glass:IsShown(), "with the target on somebody, the capsule is up")
+	check(tot.orb ~= nil and tot.health ~= nil,
+		"carrying an orb and a health bar like the other three")
+	check(math.abs(tot:GetScale() - A.db.profile.scale * 0.85) < 0.001,
+		"at its own scale on top of the profile's (" .. tostring(tot:GetScale())
+		.. " of " .. tostring(A.db.profile.scale) .. ")")
+
+	-- MIRRORED, like the target's rather than the player's - orb on the
+	-- right. It belongs to the target, and the pair reads as a pair wherever
+	-- the two are put.
+	check(tot.mirror == true, "drawn as the target's is, not the player's")
+
+	-- ITS OWN MOVER, for the reason the pet has one: welded under the target
+	-- it would be a frame you turn off rather than move.
+	local totEntry = A.Movers.registry and A.Movers.registry["targettarget"]
+	check(totEntry ~= nil and totEntry.frame == tot,
+		"and its own entry in the mover, like the other three")
+
+	-- A NAME PER UNIT ON THE SECURE BUTTON. This was two names for four
+	-- frames - the pet's button and the player's both came out as
+	-- AetherUIPlayerFrame - and a click-cast binding names this button.
+	local names = {}
+	for _, f in ipairs(UF.frames) do
+		local n = f.click and f.click.GetName and f.click:GetName()
+		if n then
+			if names[n] then names[#names + 1] = n end
+			names[n] = true
+		end
+	end
+	check(#names == 0, "every capsule's click button has a name of its own ("
+		.. (#names > 0 and table.concat(names, ",") or "all four") .. ")")
+
+	-- AND IT FOLLOWS THE TARGET'S TARGET, which changes without your own
+	-- target changing. That is a unit event on the TARGET rather than on the
+	-- target's target: UNIT_TARGET fires with the unit whose target moved,
+	-- and nothing else reports it at all.
+	_G.__units.targettarget = { name = "Watermule", hp = 40, hpMax = 100,
+		power = 10, powerMax = 100, level = 12, exists = true, class = "MAGE" }
+	fire("UNIT_TARGET", "target")
+	check(tot.name:GetText() == "Watermule",
+		"the capsule follows the target's target without your target changing ("
+		.. tostring(tot.name:GetText()) .. ")")
+	_G.__units.targettarget = nil
 end
 check(UF.player:IsShown() and UF.player.name:GetText() == "Palabras",
 	"reused frames repopulate after a toggle")

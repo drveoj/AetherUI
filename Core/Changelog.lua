@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.24.0",
+		date    = "2026-08-23",
+		lines   = {
+			"unit frames: a target-of-target capsule, at its own size and on its own mover",
+			"unit frames: each capsule's click button has a name of its own, so a click-cast binding names the right one",
+		},
+	},
+	{
 		version = "0.23.0",
 		date    = "2026-08-23",
 		lines   = {

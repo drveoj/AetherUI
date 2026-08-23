@@ -45,9 +45,13 @@ function UF:HideBlizzard()
 
 	Banish(_G.PlayerFrame)
 	Banish(_G.TargetFrame)
-	Banish(_G.TargetFrameToT)
 	Banish(_G.ComboFrame)
+	-- EACH OF THESE ONLY WHERE OURS IS TAKING ITS PLACE. Hiding a frame we
+	-- are not replacing is taking something away and putting nothing back:
+	-- a player who has switched our pet or target-of-target capsule off is
+	-- asking to be left with the client's, not with neither.
 	if cfg.showPet ~= false then Banish(_G.PetFrame) end
+	if cfg.showToT ~= false then Banish(_G.TargetFrameToT) end
 
 	if cfg.showCastBar then
 		Banish(_G.CastingBarFrame)
@@ -65,6 +69,13 @@ local function MinWidth(cfg)
 	return 10 + cfg.orbSize + 13 + cfg.barWidth + 12 + 40 + 24
 end
 
+
+-- What each capsule's secure click button is called. One name per unit,
+-- because a binding that click-casts on a frame names it.
+local CLICK_NAME = {
+	player = "PlayerFrame", target = "TargetFrame", pet = "PetFrame",
+	targettarget = "TargetOfTargetFrame",
+}
 
 --- mirror = true builds the target variant: orb on the right, text right-aligned.
 local function BuildCapsule(unit, mirror)
@@ -199,8 +210,14 @@ local function BuildCapsule(unit, mirror)
 	-- above and below - those carry their own mouse-enabled tiles - and it stays
 	-- a fixed size for its whole life.
 	if cfg.clickTarget then
-		local click = CreateFrame("Button",
-			ADDON .. (mirror and "TargetFrame" or "PlayerFrame"),
+		-- A NAME PER UNIT. This was `mirror and "TargetFrame" or
+		-- "PlayerFrame"`, which is two names for four frames: the pet's
+		-- button and the player's both came out as AetherUIPlayerFrame and
+		-- the second one built took the global. Nothing depended on it, but
+		-- a click-cast binding names this button and would have been
+		-- pointed at the wrong capsule.
+		local click = CreateFrame("Button", ADDON .. (CLICK_NAME[unit]
+			or unit:gsub("^%l", string.upper) .. "Frame"),
 			f, "SecureUnitButtonTemplate")
 		click:SetAllPoints(f)
 		click:SetAttribute("unit", unit)
@@ -846,8 +863,18 @@ function UF:RegisterEvents()
 		if UF.pet then UpdateAll(UF.pet) end
 	end)
 
+	-- THE TARGET'S TARGET CHANGES WITHOUT YOUR TARGET CHANGING, and that is
+	-- a unit event on the TARGET rather than on the target's target:
+	-- UNIT_TARGET fires with the unit whose target moved. Nothing else
+	-- reports it, so without this the capsule sat on whoever the mob had
+	-- been hitting when you first clicked it.
+	A:RegisterEvent(self, "UNIT_TARGET", function(_, _, unit)
+		if UF.tot and unit == "target" then UpdateAll(UF.tot) end
+	end)
+
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
 		UpdateAll(UF.target)
+		if UF.tot then UpdateAll(UF.tot) end
 		if UF.targetCast then
 			CastStop(UF.targetCast)
 			-- a target may already be mid-cast when you click it
@@ -964,6 +991,14 @@ function UF:RegisterMovers()
 		A.Movers:Register("pet", self.pet,
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, "Pet")
 	end
+	if self.tot then
+		-- Under the TARGET, which is the mirror of where the pet sits and
+		-- where this one is looked for: it answers a question about the
+		-- thing above it.
+		A.Movers:Register("targettarget", self.tot,
+			{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 140 },
+			"Target of Target")
+	end
 	self:AnchorCastBar()
 end
 
@@ -985,12 +1020,14 @@ function UF:OnEnable()
 		A.Fader:Register(self.player, {})
 		A.Fader:Register(self.target, {})
 		if self.pet then A.Fader:Register(self.pet, {}) end
+		if self.tot then A.Fader:Register(self.tot, {}) end
 		A.Fader:Refresh()
 		self:RegisterEvents()
 		A:RegisterTicker(self, Reconcile)
 		UpdateAll(self.player)
 		UpdateAll(self.target)
 		if self.pet then UpdateAll(self.pet) end
+		if self.tot then UpdateAll(self.tot) end
 		return
 	end
 
@@ -1010,6 +1047,15 @@ function UF:OnEnable()
 		self.frames[#self.frames + 1] = self.pet
 	end
 
+	-- AND THE TARGET'S TARGET, the same argument mirrored: a thing you
+	-- glance at, at a size of its own. MIRRORED IN THE OTHER SENSE TOO -
+	-- orb on the right, like the target's - because it belongs to the
+	-- target and the pair reads as a pair wherever they are put.
+	if cfg.showToT ~= false then
+		self.tot = BuildCapsule("targettarget", true)
+		self.frames[#self.frames + 1] = self.tot
+	end
+
 	if cfg.showCastBar then
 		self.cast = BuildCastBar("player")
 		if cfg.showTargetCastBar then
@@ -1026,6 +1072,7 @@ function UF:OnEnable()
 	A.Fader:Register(self.player, {})
 	A.Fader:Register(self.target, {})
 	if self.pet then A.Fader:Register(self.pet, {}) end
+	if self.tot then A.Fader:Register(self.tot, {}) end
 	A.Fader:Refresh()
 
 	self:RegisterEvents()
@@ -1035,6 +1082,7 @@ function UF:OnEnable()
 	UpdateAll(self.player)
 	UpdateAll(self.target)
 	if self.pet then UpdateAll(self.pet) end
+	if self.tot then UpdateAll(self.tot) end
 end
 
 function UF:OnDisable()
@@ -1053,6 +1101,8 @@ function UF:OnDisable()
 	if self.targetCast then self.targetCast:Hide() end
 	A.Movers:Unregister("player")
 	A.Movers:Unregister("target")
+	A.Movers:Unregister("pet")
+	A.Movers:Unregister("targettarget")
 	A.Movers:Unregister("cast")
 	A.Movers:Unregister("targetcast")
 end
@@ -1078,7 +1128,14 @@ function UF:OnConfigChanged()
 		-- console and the nameplates have. Set here rather than only at build,
 		-- because this loop runs on every config change and would otherwise put
 		-- the pet back to the size of the other two.
-		f:SetScale(scale * ((f == self.pet and (cfg.petScale or 0.85)) or 1))
+		-- ON TOP OF THE PROFILE'S. The pet and the target's target each carry
+		-- a multiplier of their own, for the same reason: both are glanced at
+		-- rather than read, and a smaller capsule is a scale rather than a
+		-- second set of measurements to keep in step.
+		local own = 1
+		if f == self.pet then own = cfg.petScale or 0.85 end
+		if f == self.tot then own = cfg.totScale or 0.85 end
+		f:SetScale(scale * own)
 		f:SetSize(width, cfg.height)
 		-- The glass fills the core, so resizing the core has already resized it;
 		-- _Resize just rebuilds the caps and the shadow on this frame rather than

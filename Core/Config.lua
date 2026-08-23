@@ -158,6 +158,13 @@ Config.defaults = {
 				-- one you end up turning off.
 				showPet  = true,
 				petScale = 0.85,
+				-- AND THE TARGET'S TARGET, which this client has and hides behind a
+				-- setting most players never find. It is the pet's argument the
+				-- other way round: a thing you glance at, at a size of its own,
+				-- with a mover of its own so it can sit where it is wanted rather
+				-- than being welded under the target.
+				showToT  = true,
+				totScale = 0.85,
 				enabled  = true,
 				-- 10 pad + 46 orb + 13 + 200 bars + 12 + 40 readout + 24 pad
 				width    = 345,
