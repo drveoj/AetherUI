@@ -21,12 +21,14 @@
 	AND THE NUMBERS ARE FRACTIONS OF THE SCREEN, not pixels.
 
 	An arrangement made on a 3840x1600 monitor and shipped in pixels is an
-	arrangement for that monitor. The client's UI is 768 units tall whatever the
-	display - so the vertical numbers carry over untouched - but its WIDTH is
-	768 x the aspect ratio: 1843 units on a 2.4:1 ultrawide and 1365 on a
-	16:9 1920x1080. A frame placed 596 units in from the left edge is a third
-	of the way across one screen and nearly half way across the other, and a
-	"bottom corners" layout quietly becomes "bottom middle".
+	arrangement for that monitor. UIParent is measured in UI units, and how many
+	of them there are depends on BOTH the aspect ratio and the player's UI Scale
+	slider: the capture these three came from reports 2885 x 1202 in the units a
+	preset is written in, and 768-tall is only what you get at the default scale.
+
+	So neither axis can be assumed. A frame placed 596 units in from the left
+	edge is a third of the way across one screen and nearly half way across
+	another, and a "bottom corners" layout quietly becomes "bottom middle".
 
 	So a preset stores `fx` and `fy`: where the frame sits as a fraction of
 	UIParent, and Apply multiplies them by the screen actually in front of the
@@ -143,91 +145,94 @@ end
 
 Presets.order = { "corner", "centre", "bottom" }
 
--- STILL IN UNITS, not fractions. These three were laid out by eye on a
--- 3840x1600 display and pasted in as captured, so they are right on that
--- display and approximately right elsewhere. Converting them here would mean
--- guessing what UIParent measured at the time; re-capturing them does not.
--- Apply each, run `/aether preset capture <name>`, paste the answer back.
+-- CAPTURED, NOT WRITTEN. Each of these was laid out by eye in the game and
+-- read back out with `/aether preset capture`, which is the only way the
+-- numbers are ever produced - guessing coordinates in a text editor gives a
+-- layout that is plausible in every dimension and right in none.
 Presets.list = {
 	corner = {
-		label = "Classic Corner",
-		blurb = "Unitframes in the top left corner as they're laid out in the classic UI.",
-		scale = 0.71,
 		-- OFFERED FIRST, and deliberately the one that surprises least:
 		-- somebody who has played this game before knows where to look, and a
 		-- first run that moves their health bar somewhere new has spent its
 		-- first decision making them hunt for it.
+		label = "Classic Corner",
+		blurb = "Unitframes in the top left corner as they're laid out in the classic UI.",
+		scale = 0.71,
+		bars = { ["1"] = true, ["2"] = false, ["3"] = false, ["4"] = false, ["5"] = false, ["6"] = false },
+		-- captured on a 2885 x 1202 screen
 		anchors = {
-			["bar1"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 20 },
-			["bar2"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 442, y = 17 },
-			["bar3"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -13, y = 66 },
-			["bar4"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 444, y = 127 },
-			["bar5"] = { point = "RIGHT", relPoint = "RIGHT", x = -4, y = -67 },
-			["bar6"] = { point = "RIGHT", relPoint = "RIGHT", x = -553, y = -219 },
-			["barextra"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 471, y = 17 },
-			["cast"] = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 42, y = -214 },
-			["chat"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 16, y = 54 },
-			["party"] = { point = "LEFT", relPoint = "LEFT", x = 66, y = 76 },
-			["pet"] = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 27, y = -324 },
-			["player"] = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 127, y = -80 },
-			["quests"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -8, y = -330 },
-			["target"] = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 541, y = -80 },
-			["targetcast"] = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 541, y = -214 },
-			["targettarget"] = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 839, y = -324 },
-			["tooltip"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -193, y = -17 },
+			["bar1"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.00000, fy = 0.01664 },
+			["bar2"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.15323, fy = 0.01414 },
+			["bar3"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.00451, fy = 0.05491 },
+			["bar4"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.15393, fy = 0.10567 },
+			["bar5"] = { point = "RIGHT", relPoint = "RIGHT", fx = -0.00139, fy = -0.05575 },
+			["bar6"] = { point = "RIGHT", relPoint = "RIGHT", fx = -0.19171, fy = -0.18221 },
+			["barextra"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.16329, fy = 0.01414 },
+			["cast"] = { point = "TOPLEFT", relPoint = "TOPLEFT", fx = 0.01456, fy = -0.17805 },
+			["chat"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", fx = 0.00555, fy = 0.04493 },
+			["party"] = { point = "LEFT", relPoint = "LEFT", fx = 0.02288, fy = 0.06323 },
+			["pet"] = { point = "TOPLEFT", relPoint = "TOPLEFT", fx = 0.00936, fy = -0.26958 },
+			["player"] = { point = "TOPLEFT", relPoint = "TOPLEFT", fx = 0.04403, fy = -0.06656 },
+			["quests"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", fx = -0.00277, fy = -0.27457 },
+			["target"] = { point = "TOPLEFT", relPoint = "TOPLEFT", fx = 0.18755, fy = -0.06656 },
+			["targetcast"] = { point = "TOPLEFT", relPoint = "TOPLEFT", fx = 0.18755, fy = -0.17805 },
+			["targettarget"] = { point = "TOPLEFT", relPoint = "TOPLEFT", fx = 0.29086, fy = -0.26958 },
+			["tooltip"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", fx = -0.06691, fy = -0.01414 },
 		},
 	},
-
 	centre = {
 		label = "Centre focus",
 		blurb = "Unitframes in the center where most of the action is.",
 		scale = 0.71,
-		-- No party and no player frame for the music deck: neither was placed
-		-- when this was laid out, so both keep the position their own module
-		-- ships with. A preset names what it moves.
+		bars = { ["1"] = true, ["2"] = true, ["3"] = false, ["4"] = false, ["5"] = false, ["6"] = false },
+		-- captured on a 2885 x 1202 screen
 		anchors = {
-			["bar1"] = { point = "BOTTOM", relPoint = "BOTTOM", x = -441, y = 17 },
-			["bar2"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 442, y = 17 },
-			["bar3"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -13, y = 66 },
-			["bar4"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 444, y = 127 },
-			["bar5"] = { point = "RIGHT", relPoint = "RIGHT", x = -4, y = -67 },
-			["bar6"] = { point = "RIGHT", relPoint = "RIGHT", x = -553, y = -219 },
-			["barextra"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -692, y = 17 },
-			["cast"] = { point = "CENTER", relPoint = "CENTER", x = -306, y = -22 },
-			["chat"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 16, y = 54 },
-			["pet"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 839, y = 437 },
-			["player"] = { point = "CENTER", relPoint = "CENTER", x = -264, y = -143 },
-			["quests"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -8, y = -330 },
-			["target"] = { point = "CENTER", relPoint = "CENTER", x = 263, y = -143 },
-			["targetcast"] = { point = "CENTER", relPoint = "CENTER", x = 305, y = -24 },
-			["targettarget"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -839, y = 437 },
-			["tooltip"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -193, y = -17 },
+			["bar1"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = -0.15289, fy = 0.01414 },
+			["bar2"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.15323, fy = 0.01414 },
+			["bar3"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.00451, fy = 0.05491 },
+			["bar4"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.15393, fy = 0.10567 },
+			["bar5"] = { point = "RIGHT", relPoint = "RIGHT", fx = -0.00139, fy = -0.05575 },
+			["bar6"] = { point = "RIGHT", relPoint = "RIGHT", fx = -0.19171, fy = -0.18221 },
+			["barextra"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.23990, fy = 0.01414 },
+			["cast"] = { point = "CENTER", relPoint = "CENTER", fx = -0.10608, fy = -0.01830 },
+			["chat"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", fx = 0.00555, fy = 0.04493 },
+			["pet"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", fx = 0.29086, fy = 0.36360 },
+			["player"] = { point = "CENTER", relPoint = "CENTER", fx = -0.09152, fy = -0.11898 },
+			["quests"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", fx = -0.00277, fy = -0.27457 },
+			["target"] = { point = "CENTER", relPoint = "CENTER", fx = 0.09118, fy = -0.11898 },
+			["targetcast"] = { point = "CENTER", relPoint = "CENTER", fx = 0.10574, fy = -0.01997 },
+			["targettarget"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.29086, fy = 0.36360 },
+			["tooltip"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", fx = -0.06691, fy = -0.01414 },
 		},
 	},
-
 	bottom = {
+		-- The only one that places the music deck, which is why it is the only
+		-- one with an `ifec` line. A preset names what it moves.
 		label = "Bottom Corners",
 		blurb = "Unitframes positioned towards the bottom and out to the corners.",
 		scale = 0.71,
+		bars = { ["1"] = true, ["2"] = true, ["3"] = false, ["4"] = false, ["5"] = false, ["6"] = false },
+		-- captured on a 2885 x 1202 screen
 		anchors = {
-			["bar1"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 20 },
-			["bar2"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 442, y = 17 },
-			["bar3"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -13, y = 66 },
-			["bar4"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 444, y = 127 },
-			["bar5"] = { point = "RIGHT", relPoint = "RIGHT", x = -4, y = -67 },
-			["bar6"] = { point = "RIGHT", relPoint = "RIGHT", x = -553, y = -219 },
-			["barextra"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 187 },
-			["cast"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 737, y = 242 },
-			["chat"] = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 26, y = -52 },
-			["ifec"] = { point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 394 },
-			["party"] = { point = "LEFT", relPoint = "LEFT", x = 66, y = 76 },
-			["pet"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 487, y = 106 },
-			["player"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 737, y = 86 },
-			["quests"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -8, y = -330 },
-			["target"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -737, y = 86 },
-			["targetcast"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -742, y = 242 },
-			["targettarget"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -452, y = 106 },
-			["tooltip"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -193, y = -17 },
+			["bar1"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.00000, fy = 0.01664 },
+			["bar2"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.00000, fy = 0.08903 },
+			["bar3"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.00451, fy = 0.05491 },
+			["bar4"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.15393, fy = 0.10567 },
+			["bar5"] = { point = "RIGHT", relPoint = "RIGHT", fx = -0.00139, fy = -0.05575 },
+			["bar6"] = { point = "RIGHT", relPoint = "RIGHT", fx = -0.19171, fy = -0.18221 },
+			["barextra"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.00000, fy = 0.20634 },
+			["barpet"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.00000, fy = 0.17223 },
+			["cast"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", fx = 0.25550, fy = 0.20135 },
+			["chat"] = { point = "TOPLEFT", relPoint = "TOPLEFT", fx = 0.00901, fy = -0.04327 },
+			["ifec"] = { point = "BOTTOM", relPoint = "BOTTOM", fx = 0.00000, fy = 0.32782 },
+			["party"] = { point = "LEFT", relPoint = "LEFT", fx = 0.02288, fy = 0.06323 },
+			["pet"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", fx = 0.16883, fy = 0.08820 },
+			["player"] = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", fx = 0.25550, fy = 0.07155 },
+			["quests"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", fx = -0.00277, fy = -0.27457 },
+			["target"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.25550, fy = 0.07155 },
+			["targetcast"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.25724, fy = 0.20135 },
+			["targettarget"] = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", fx = -0.15670, fy = 0.08820 },
+			["tooltip"] = { point = "TOPRIGHT", relPoint = "TOPRIGHT", fx = -0.06691, fy = -0.01414 },
 		},
 	},
 }

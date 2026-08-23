@@ -19005,11 +19005,12 @@ do
 	-- AND THE NUMBERS ARE FRACTIONS OF THE SCREEN, not pixels.
 	--
 	-- An arrangement made on a 3840x1600 monitor and shipped in pixels is an
-	-- arrangement for that monitor. The client's UI is 768 units tall whatever
-	-- the display, so the vertical numbers carry - but its WIDTH is 768 x the
-	-- aspect ratio: 1843 units on a 2.4:1 ultrawide against 1365 on 16:9. A
+	-- arrangement for that monitor. How many UI units UIParent measures
+	-- depends on BOTH the aspect ratio and the player's UI Scale slider - the
+	-- capture the shipped three came from reports 2885 x 1202, where 768-tall
+	-- is what the default scale gives you - so neither axis can be assumed. A
 	-- frame 596 units in from the left edge is a third of the way across one
-	-- screen and nearly half way across the other, and a "bottom corners"
+	-- screen and nearly half way across another, and a "bottom corners"
 	-- layout quietly becomes "bottom middle".
 	do
 		P.order[#P.order + 1] = "__probe"
@@ -19045,11 +19046,22 @@ do
 			"and one placed left of centre moves in rather than out (" ..
 			string.format("%.0f then %.0f", wideC, narrowC) .. ")")
 
-		-- VERTICAL IS UNTOUCHED, because the client's UI is 768 units tall on
-		-- every display. Which is why this only ever looked like half a problem.
+		-- AND THE OTHER AXIS ON ITS OWN TERMS. Both screens here are the same
+		-- height, so nothing should move vertically - but that is a property of
+		-- these two screens, not of the client. UIParent's height follows the
+		-- player's UI Scale slider as well as the display, which is why `fy` is
+		-- a fraction rather than carried across untouched.
 		check(wideY == narrowY,
-			"and nothing moves vertically, the UI being 768 units tall on every "
-			.. "display (" .. wideY .. ", " .. narrowY .. ")")
+			"and nothing moves vertically between two screens of the same height "
+			.. "(" .. wideY .. ", " .. narrowY .. ")")
+
+		local _, _, shortY = at(1365)
+		UIParent:SetSize(1365, 384)
+		P:Apply("__probe")
+		check(anchors.player.y < shortY,
+			"and a shorter screen moves it proportionally too, because UIParent's "
+			.. "height follows the UI Scale slider and is not a constant (" ..
+			anchors.player.y .. " against " .. shortY .. ")")
 
 		-- AND THE ARRANGEMENT STILL READS BACK AS ITSELF once resolved. Comparing
 		-- a preset's fractions against the units the movers wrote makes every
