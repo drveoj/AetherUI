@@ -4238,6 +4238,17 @@ do
 			eyeIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-PORTRAIT")
 			eyeIcon:SetSize(64, 64)
 
+			-- ITS X HAS NO NAME AND NO PARENT KEY. The client declares an
+			-- anonymous <Button inherits="UIPanelCloseButton"> and nothing can ask
+			-- for it - so a window built with a named one could not show that the
+			-- generic dresser misses it, and it kept the client's red X.
+			local shut = CreateFrame("Button", nil, lfg)
+			shut:SetSize(32, 32)
+			shut:SetPoint("TOPRIGHT", lfg, "TOPRIGHT", -26, -8)
+			shut:SetNormalTexture("RedButton-Exit")
+			shut:SetPushedTexture("RedButton-Exit-Pressed")
+			lfg.__shut = shut
+
 			-- ITS TWO TABS, on CharacterFrameTabButtonTemplate like the character
 			-- sheet's - three slices of stone and a word.
 			for i, word in ipairs({ "Group", "Browse" }) do
@@ -4437,20 +4448,52 @@ do
 			foot("LFGListingFrame", listing, "BackButton", 111, "BOTTOMLEFT", 19)
 			foot("LFGListingFrame", listing, "PostButton", 109, "BOTTOMRIGHT", -40)
 
+			-- THE BABY HACK, which is the client's own word for it: each pane
+			-- re-anchors BOTH tabs from its OnShow, with a hard SetPoint and the
+			-- comment "the selected tab texture doesn't blend well with the LFG
+			-- texture, so move it down a hair when it's selected". Two hairs: 45
+			-- up from the frame on browse and 43 on the listing.
+			--
+			-- Nothing calls PanelTemplates_TabResize on that path, so the hook on
+			-- that never fires for it and the row simply left the rail.
+			for _, pair in ipairs({ { browse, 45 }, { listing, 43 } }) do
+				local up = pair[2]
+				pair[1]:SetScript("OnShow", function()
+					_G.LFGParentFrameTab1:ClearAllPoints()
+					_G.LFGParentFrameTab1:SetPoint("BOTTOMLEFT", lfg, "BOTTOMLEFT",
+						16, up)
+				end)
+			end
+
 			-- THE CLIENT'S OWN TAB CLICKS, which is how a check should change tabs:
 			-- doing it by hand is a tidier swap than the client performs, and that is
 			-- exactly what hid two faults in the social window.
+			-- IN THE CLIENT'S OWN ORDER: the tab is SET first, then the pane going
+			-- up is SHOWN, and only then is the one coming down hidden. Anything
+			-- hooked to the first of those sees a window with two panes up.
 			function _G.LFGParentFrameTab1_OnClick()
 				lfg.selectedTab = 1
+				_G.PanelTemplates_UpdateTabs(lfg)
 				listing:Show()
 				browse:Hide()
-				_G.PanelTemplates_UpdateTabs(lfg)
 			end
 			function _G.LFGParentFrameTab2_OnClick()
 				lfg.selectedTab = 2
+				_G.PanelTemplates_UpdateTabs(lfg)
+				browse:Show()
+				listing:Hide()
+			end
+			-- AND ONE PATH THAT SWAPS PANES WITHOUT GOING THROUGH EITHER OF THEM.
+			-- LFGParentFrame_SearchActiveEntry - what the listing's own "find my
+			-- group" does - hides one pane and shows the other by hand. No click
+			-- function runs, so nothing hooked to those fires, and the only thing
+			-- left to answer the tabs being moved by the pane's OnShow is the pane
+			-- watch itself.
+			function _G.LFGParentFrame_SearchActiveEntry()
+				lfg.selectedTab = 2
+				_G.PanelTemplates_UpdateTabs(lfg)
 				listing:Hide()
 				browse:Show()
-				_G.PanelTemplates_UpdateTabs(lfg)
 			end
 		end
 		-- THE TRADE WINDOW, which was not in this mock at all - so nothing about
@@ -28514,13 +28557,13 @@ do
 			"and the gear is at the far end of it (" .. tostring(oAt) .. "/" ..
 			tostring(oRelP) .. ")")
 
-		-- REFRESH AND THE GEAR ARE PICTURES. Each keeps its own glyph and loses
-		-- the square stone plate behind it - and IconButton has to be TOLD which
-		-- region the picture is, because on both of these the normal texture is
-		-- the plate and the glyph is a region of its own.
+		-- THE TWO GEARS ARE PICTURES. Each keeps its own glyph and loses the
+		-- plate behind it - and IconButton has to be TOLD which region the
+		-- picture is, because on both of these the normal texture is the plate
+		-- and the glyph is a region of its own.
 		local plates = {}
-		for _, n in ipairs({ "LFGBrowseFrameRefreshButton",
-			"LFGBrowseFrameOptionsButton", "LFGListingFrameOptionsButton" }) do
+		for _, n in ipairs({ "LFGBrowseFrameOptionsButton",
+			"LFGListingFrameOptionsButton" }) do
 			local btn = _G[n]
 			if btn.Icon and btn.Icon:GetTexture() == 0 then
 				plates[#plates + 1] = n .. ":glyph gone"
@@ -28530,8 +28573,23 @@ do
 				plates[#plates + 1] = n .. ":plate kept"
 			end
 		end
-		check(#plates == 0, "refresh and both gears keep the glyph and lose the plate (" ..
-			(#plates > 0 and table.concat(plates, ",") or "all three") .. ")")
+		check(#plates == 0, "both gears keep the glyph and lose the plate (" ..
+			(#plates > 0 and table.concat(plates, ",") or "both") .. ")")
+
+		-- AND SEARCH AGAIN IS OUR OWN CIRCULAR ARROW ON OUR OWN ROUND BUTTON.
+		-- The client's is a 16px glyph centred on a 32px stone square, and a
+		-- slot cell sized to the button stretched it across the whole face. It
+		-- is the same gesture the character sheet's model turners are - go round
+		-- again - so it takes the same control, from the same one drawing.
+		local again = _G.LFGBrowseFrameRefreshButton
+		check(again.__aetherRound
+			and again.__aetherRound:GetTexture() == A.Media.icons.file,
+			"search again wears our own circular arrow rather than a 16px client "
+			.. "glyph stretched across a 32px cell")
+		check(again.Icon:GetTexture() == 0
+			and (again:GetNormalTexture() == nil
+				or again:GetNormalTexture():GetTexture() == 0),
+			"and the client's glyph and its stone square are both gone")
 		check(_G.LFGBrowseFrameCategoryDropdown.Arrow:GetTexture()
 			== A.Media.texture.chevron,
 			"and the two filters are the control the trade skill's are")
@@ -28608,6 +28666,57 @@ do
 			"and the strip is Back and Post alone, not all four buttons (" ..
 			tostring(select(4, _G.LFGListingFrameBackButton:GetPoint(1)))
 			.. " of " .. tostring(-lPair / 2) .. ")")
+		-- AND ALL OF IT SURVIVES THE PLAYER CHANGING TABS - with no dress of our
+		-- own after the click, which is the whole point: what the client does on
+		-- that path has to be answered by something already hooked.
+		do
+			_G.LFGParentFrameTab2_OnClick()
+			_G.LFGParentFrameTab1_OnClick()
+
+			-- THE TABS ARE STILL ON THE RAIL. Each pane re-anchors BOTH of them from
+			-- its OnShow - the client's own "baby hack", 45 up from the frame on one
+			-- pane and 43 on the other - and neither is where our rail is, so the row
+			-- left the rail and sat above it the moment a tab was clicked. Nothing
+			-- calls PanelTemplates_TabResize on that path, so the hook on that never
+			-- fires for it either.
+			local rail3 = lfg.__aetherRails.BOTTOM
+			local tAt, tRel, _, _, tY = _G.LFGParentFrameTab1:GetPoint(1)
+			check(tAt == "BOTTOMLEFT" and tRel == rail3 and tY == 0,
+				"the tabs are still standing on the rail after a tab change (" ..
+				tostring(tAt) .. "/" .. tostring(tY) .. ")")
+
+			-- AND THE STRIP IS THIS PANE'S TWO BUTTONS. LFGParentFrameTab1_OnClick
+			-- shows the listing and THEN hides the browse, so anything hooked to the
+			-- pane going up fires while the pane coming down is still visible - and
+			-- the strip is laid out for four buttons instead of two, which is Back and
+			-- List Self a button's width too far apart.
+			local lp = _G.LFGListingFrameBackButton:GetWidth()
+				+ _G.LFGListingFramePostButton:GetWidth() + 12
+			check(select(4, _G.LFGListingFrameBackButton:GetPoint(1)) == -lp / 2,
+				"and the strip is laid out for the pane that ended up showing (" ..
+				tostring(select(4, _G.LFGListingFrameBackButton:GetPoint(1)))
+				.. " of " .. tostring(-lp / 2) .. ")")
+
+			-- AND ON THE PATH THAT CHANGES PANE WITHOUT A TAB CLICK. The listing's
+			-- own "find my group" hides one pane and shows the other by hand, so
+			-- the hook on the click functions never fires - and the pane it shows
+			-- moves both tabs off the rail from its OnShow all the same.
+			_G.LFGParentFrame_SearchActiveEntry()
+			local sAt, sRel, _, _, sY = _G.LFGParentFrameTab1:GetPoint(1)
+			check(sAt == "BOTTOMLEFT" and sRel == rail3 and sY == 0,
+				"and after a pane change that no tab click was part of (" ..
+				tostring(sAt) .. "/" .. tostring(sY) .. ")")
+			_G.LFGParentFrameTab1_OnClick()
+
+			-- ITS X HAS NO NAME AND NO PARENT KEY, so nothing could ask for it and it
+			-- kept the client's red one on a window where everything else had come
+			-- off. Found by shape instead: the only nameless Button child this window
+			-- has, the two tabs being named and everything else a Frame.
+			check(lfg.__shut.__aetherClose ~= nil
+				and (lfg.__shut:GetNormalTexture() == nil
+					or lfg.__shut:GetNormalTexture():GetTexture() == 0),
+				"the window's X is ours, though the client gave it no name to ask for")
+		end
 		lfg:Hide()
 	end
 	-- THE TRADE WINDOW: a dozen pieces hung off the frame at their own fixed

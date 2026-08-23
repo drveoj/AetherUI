@@ -1493,6 +1493,11 @@ local function WatchPanes(frame, entry)
 				if not PN.enabled then return end
 				PN.RefreshHeader(name)
 				PN.RefreshFooter(name)
+				-- AND THE TABS, for a window whose panes move them. See
+				-- PN.RefreshTabs: the group finder re-anchors both of its
+				-- tabs from each pane's OnShow, and that lands them off the
+				-- rail they are meant to be standing on.
+				PN.RefreshTabs(name)
 			end)
 		end
 	end
@@ -1999,8 +2004,13 @@ function PN.RefreshFooter(name)
 	local frame, entry = _G[name], PN.ENTRY and PN.ENTRY[name]
 	if frame and entry then PN.LayoutFooter(frame, entry) end
 end
-local function DressClose(frame, store)
-	local close = CloseButton(frame)
+--- `btn` is for a window whose X has no name and no parentKey at all.
+--
+--  The group finder's is an anonymous <Button inherits="UIPanelCloseButton">
+--  and nothing can ask for it by name, so its dresser finds it by shape and
+--  hands it over rather than a second copy of these six lines being written.
+local function DressClose(frame, store, btn)
+	local close = btn or CloseButton(frame)
 	if not close then return end
 
 	-- INTO THE CORNER OF THE GLASS, always, at the shared inset - where the
@@ -2481,6 +2491,32 @@ local function LayoutTabs(frame, store)
 			end)
 		end
 	end
+end
+
+PN.LayoutTabs = LayoutTabs
+
+--- Lay a window's tab row out again, for a client that has moved it.
+--
+--  THE GROUP FINDER MOVES ITS OWN TABS FROM EACH PANE'S OnShow, with a hard
+--  SetPoint and the comment "Baby hack... the selected tab texture doesn't
+--  blend well with the LFG texture, so move it down a hair when it's
+--  selected". Two hairs, in fact: 45 up from the frame on one pane and 43 on
+--  the other. Neither is where our rail is, so the row jumped off the rail
+--  and sat above it the moment a tab was clicked.
+--
+--  Nothing calls PanelTemplates_TabResize on that path, so the hook below
+--  never fires for it. This is the one that does.
+function PN.RefreshTabs(name)
+	local frame = _G[name]
+	if not (frame and frame.__aetherArt and PN.enabled) then return end
+	-- AGAIN, never for the first time. A window whose tabs nothing has
+	-- dressed has no rail, and laying its row out from here would be this
+	-- function deciding for the whole interface which windows have a tab
+	-- rail - the postbox's row, which sits below its own bottom edge on the
+	-- client's anchors, moved onto a rail it never had.
+	local rail = frame.__aetherRails and frame.__aetherRails.BOTTOM
+	if not (rail and rail:IsShown()) then return end
+	LayoutTabs(frame, frame.__aetherArt)
 end
 
 --- Answer the client when it re-sizes or re-selects its own tabs.
@@ -5685,16 +5721,49 @@ local function DressGroupFinder(frame, store)
 	DressDropdown(_G.LFGBrowseFrameCategoryDropdown, store)
 	DressDropdown(_G.LFGBrowseFrameActivityDropdown, store)
 
-	-- REFRESH AND THE TWO GEARS ARE PICTURES, not words - so each keeps its
-	-- own glyph and loses the square stone plate behind it. IconButton is
-	-- passed the icon explicitly because on all three the NORMAL texture is
-	-- the plate rather than the picture, and left to guess it would keep the
-	-- stone and throw the glyph away.
-	for _, name in ipairs({ "LFGBrowseFrameRefreshButton",
-		"LFGBrowseFrameOptionsButton", "LFGListingFrameOptionsButton" }) do
+	-- THE TWO GEARS ARE PICTURES, not words - so each keeps its own glyph
+	-- and loses the plate behind it. IconButton is passed the icon
+	-- explicitly because on both the NORMAL texture is the plate rather
+	-- than the picture, and left to guess it would keep the stone and throw
+	-- the glyph away.
+	for _, name in ipairs({ "LFGBrowseFrameOptionsButton",
+		"LFGListingFrameOptionsButton" }) do
 		local btn = _G[name]
 		if btn then
 			Reskin.IconButton(btn, store, { icon = Reskin.Element(btn, "Icon") })
+		end
+	end
+
+	-- AND SEARCH AGAIN IS OUR OWN CIRCULAR ARROW ON OUR OWN ROUND BUTTON.
+	--
+	-- The client's is a 16px glyph centred on a 32px stone square, and a
+	-- slot cell sized to the button stretched it across the whole face. It
+	-- is the same gesture the character sheet's model turners are - go round
+	-- again - so it takes the same control, drawn from the same one drawing.
+	local again = _G.LFGBrowseFrameRefreshButton
+	if again then
+		Reskin.ClearButton(again)
+		again.__aetherStore = again.__aetherStore or {}
+		Reskin.Strip(again, again.__aetherStore)
+		if not again.__aetherRound then
+			W.RoundButton(again, { attach = again })
+		end
+		A.Media:SetIcon(again.__aetherRound, "rotate")
+		W.PaintRound(again, false)
+	end
+
+	-- ITS X HAS NO NAME AND NO PARENT KEY: the client declares an anonymous
+	-- <Button inherits="UIPanelCloseButton"> and nothing can ask for it. It
+	-- is the only nameless Button child this window has - the two tabs are
+	-- named and everything else is a Frame - so it is found by that and
+	-- handed to the same dresser every other window's X goes through.
+	if frame.GetChildren then
+		for _, kid in ipairs({ frame:GetChildren() }) do
+			if kid.GetObjectType and kid:GetObjectType() == "Button"
+				and not (kid.GetName and kid:GetName()) then
+				DressClose(frame, store, kid)
+				break
+			end
 		end
 	end
 
@@ -5750,6 +5819,34 @@ local function DressGroupFinder(frame, store)
 			else
 				Reskin.Fonts(part, "pnBody", 2, Palette.c.textDim)
 			end
+		end
+	end
+
+	-- AND THE WHOLE WINDOW AGAIN AFTER THE CLIENT HAS FINISHED SWAPPING.
+	--
+	-- LFGParentFrameTab1_OnClick shows the listing and THEN hides the
+	-- browse, so anything hooked to the pane going up fires while the pane
+	-- coming down is still visible - and the strip is laid out for four
+	-- buttons instead of two, which is Back and List Self a button's width
+	-- too far apart. The social window's fault exactly, in a window that
+	-- reaches it by a different route.
+	--
+	-- A post-hook on the two click functions runs after both, with one pane
+	-- up. Guarded, because dressing a window from inside its own dress is
+	-- not something to do twice.
+	PN.__lfgHooks = PN.__lfgHooks or {}
+	for _, fn in ipairs({ "LFGParentFrameTab1_OnClick",
+		"LFGParentFrameTab2_OnClick" }) do
+		if hooksecurefunc and _G[fn] and not PN.__lfgHooks[fn] then
+			PN.__lfgHooks[fn] = true
+			hooksecurefunc(fn, function()
+				if not PN.enabled or PN.__lfgSettling then return end
+				local win = _G.LFGParentFrame
+				if not (win and win.IsShown and win:IsShown()) then return end
+				PN.__lfgSettling = true
+				pcall(PN.Dress, win)
+				PN.__lfgSettling = nil
+			end)
 		end
 	end
 

@@ -198,6 +198,50 @@ unknown. See below.
 
 Five mutations are caught.
 
+## Fixed — the group finder on a tab change (2026-08-23)
+
+Reported from the game: the window loads perfectly and comes apart the moment a
+tab is clicked. Three faults, two of them the same one this session has now met
+three times.
+
+**The tabs left the rail.** Each pane re-anchors *both* tabs from its own
+`OnShow`, with a hard `SetPoint` and the client's own comment: *"Baby hack... the
+selected tab texture doesn't blend well with the LFG texture, so move it down a
+hair when it's selected."* Two hairs, in fact — 45 up from the frame on browse
+and 43 on the listing — and neither is where our rail is. Nothing calls
+`PanelTemplates_TabResize` on that path, so the hook on *that* never fired for it
+either. `PN.RefreshTabs` answers it from the pane watch, and lays a row out
+**again, never for the first time**: it returns unless the window already has a
+rail, or it would be this function deciding for the whole interface which windows
+get one — the postbox's row, which sits below its own bottom edge on the client's
+anchors, moved onto a rail it never had.
+
+**Back and List Self moved apart.** `LFGParentFrameTab1_OnClick` shows the
+listing and *then* hides the browse, so anything hooked to the pane going up
+fires while the pane coming down is still visible, and the strip is laid out for
+four buttons instead of two. The social window's fault reached by a different
+route. A post-hook on the two click functions settles the window after both.
+
+**And one path swaps panes with no click at all** — `LFGParentFrame_SearchActiveEntry`,
+what the listing's "find my group" does, hides one pane and shows the other by
+hand. The click hooks never fire there; the pane watch is the only thing that
+does. That path is in the mock and is what makes `RefreshTabs` provable.
+
+**Search Again was a stretched Pac-Man.** The client's is a 16px glyph centred on
+a 32px stone square, and a slot cell sized to the button stretched it across the
+whole face. It is the same gesture the character sheet's model turners are — go
+round again — so it now takes the same control, drawn from the same one drawing:
+`W.RoundButton` with the atlas's own `rotate` icon.
+
+**And the window's X was still the client's red one.** `LFGParentFrame` declares
+an anonymous `<Button inherits="UIPanelCloseButton">` — no name, no parentKey —
+so nothing could ask for it. It is the only nameless `Button` child this window
+has, the two tabs being named and everything else a `Frame`, so it is found by
+that and handed to `DressClose`, which now takes a button for exactly this case
+rather than a second copy of its six lines being written.
+
+Five mutations are caught.
+
 ## Built — the group finder (2026-08-23)
 
 `LFGParentFrame`, from `Blizzard_GroupFinder_VanillaStyle`: two windows behind

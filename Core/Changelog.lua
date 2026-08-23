@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.22.1",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: the group finder keeps its shape when you change tabs",
+			"panels: Search Again is our own circular arrow instead of a stretched client glyph",
+			"panels: and the group finder's close button is ours, though the client gave it no name",
+		},
+	},
+	{
 		version = "0.22.0",
 		date    = "2026-08-23",
 		lines   = {
