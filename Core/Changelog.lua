@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.25.2",
+		date    = "2026-08-23",
+		lines   = {
+			"edit boxes: a caret of our own, so you can see where you are typing in a letter",
+		},
+	},
+	{
 		version = "0.25.1",
 		date    = "2026-08-23",
 		lines   = {

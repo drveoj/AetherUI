@@ -4839,6 +4839,10 @@ local function DressMail(frame, store)
 		if eb then
 			Reskin.Font(eb, "pnBody")
 			W.Color(eb, Palette.c.text)
+			-- AND A CARET, which the two fields above get through
+			-- Reskin.EditBox and this one does not: the letter itself is a
+			-- ScrollingEditBox and the box you type in is inside it.
+			Reskin.Caret(eb)
 		end
 	end
 	local ebar = _G.MailEditBoxScrollBar

@@ -28754,6 +28754,67 @@ do
 				"and switching them on again takes the gutter back")
 		end
 	end
+	-- SOMETHING SAYING WHERE YOU ARE IN A FIELD. Reported from the game as a
+	-- letter you can type into with no cursor in it - and nothing this addon
+	-- does can hide the engine's own: it is not a region, so no sweep reaches
+	-- it, the well behind the box is a frame level below the box's, and the
+	-- text beside it is perfectly legible. So the caret is ours instead, where
+	-- it can be seen, coloured and checked.
+	do
+		local box = _G.SendMailSubjectEditBox
+		local caret = box and box.__aetherCaret
+		check(caret ~= nil,
+			"a dressed field carries a caret of ours")
+		check(caret and not caret:IsShown(),
+			"which is down until the field is the one being typed in - four fields "
+			.. "on a letter is four cursors otherwise")
+
+		-- WHERE THE CLIENT SAYS IT IS. OnCursorChanged hands over the caret's x,
+		-- y and HEIGHT in the box's own coordinates, which is exactly the question
+		-- and saves measuring the text ourselves. y is negative downward, which is
+		-- already the sign SetPoint wants.
+		caret = caret or { GetPoint = function() end, GetHeight = function() end,
+			GetWidth = function() end, GetAlpha = function() end,
+			IsShown = function() end }
+		local focus = box:GetScript("OnEditFocusGained")
+		if focus then focus(box) end
+		check(caret:IsShown(), "and comes up when the field takes focus")
+
+		local moved = box:GetScript("OnCursorChanged")
+		if moved then moved(box, 37, -4, 1, 15) end
+		local at, rel, relP, cx, cy = caret:GetPoint(1)
+		check(at == "TOPLEFT" and rel == box and relP == "TOPLEFT"
+			and cx == 37 and cy == -4,
+			"and it goes where the client says the cursor is (" .. tostring(cx)
+			.. ", " .. tostring(cy) .. ")")
+		check(caret:GetHeight() == 15,
+			"at the height the client says, rather than a guess at the font (" ..
+			tostring(caret:GetHeight()) .. ")")
+		check(caret:GetWidth() == 1,
+			"and a hairline wide, because a text cursor is a hairline")
+
+		-- IT BLINKS, because a cursor that does not is hard to find in a line of
+		-- type and easy to mistake for a letter.
+		local tick = box:GetScript("OnUpdate")
+		local lit = caret:GetAlpha()
+		if tick then tick(box, 1.0) end
+		check(caret:GetAlpha() ~= lit,
+			"it blinks rather than sitting there being mistaken for a letter (" ..
+			tostring(lit) .. " to " .. tostring(caret:GetAlpha()) .. ")")
+
+		-- AND GOES WITH THE FOCUS.
+		local lost = box:GetScript("OnEditFocusLost")
+		if lost then lost(box) end
+		check(not caret:IsShown(),
+			"and goes away with the focus, so only the field you are in has one")
+
+		-- THE LETTER ITSELF TOO, which does not go through Reskin.EditBox: it is a
+		-- ScrollingEditBox and the box you type in is inside it.
+		local body = _G.MailEditBox and _G.MailEditBox.GetEditBox
+			and _G.MailEditBox:GetEditBox()
+		check(body == nil or body.__aetherCaret ~= nil,
+			"the letter you are writing has one as well as the fields above it")
+	end
 	-- THE GROUP FINDER: two windows behind two tabs, both setAllPoints to the
 	-- frame, on the OLD parchment build carrying MODERN content - a
 	-- WowScrollBoxList for its results and two WowStyle1 dropdowns for its

@@ -502,6 +502,85 @@ end
 --  `opts.keep` names regions the sweep must spare: a money box carries its
 --  coin in the same background layer its border is drawn in, so a plain sweep
 --  takes the coin as well and the player is typing gold into a nameless box.
+-- The caret: how wide, how fast it blinks, and how tall when the client
+-- declines to say. One unit, because a text cursor is a hairline - and 0.53,
+-- which is the client's own blink for its own boxes.
+local CARET_W, CARET_BLINK, CARET_H = 1, 0.53, 12
+
+--- A text cursor for an edit box, drawn by us.
+--
+--  THE CLIENT DRAWS ONE AND IT IS NOT VISIBLE ON A DRESSED BOX. Reported as
+--  a letter you can type into with nothing saying where you are.
+--
+--  WHAT IT IS NOT: nothing this file does can hide the engine's caret. It is
+--  not a region, so no sweep reaches it; the well behind the box is a frame
+--  level below the box's own; and the text drawn beside it is perfectly
+--  legible, so neither the ink nor the font is missing. Beyond that the
+--  engine does not say, and there is no API to ask - there is no
+--  SetCursorColor on this client and no cursor region in any template.
+--
+--  So rather than keep guessing at somebody else's renderer, the caret is
+--  OURS: drawn, placed and blinked here, where it can be seen, coloured and
+--  checked. That is the same answer this addon reaches for
+--  every other mark it needs: drawn at the accent, snapped to a whole unit,
+--  and placed from the one thing the client tells us - OnCursorChanged hands
+--  over the caret's x, y and HEIGHT in the box's own coordinates, which is
+--  exactly the question and saves measuring the text ourselves.
+function Reskin.Caret(box)
+	if not box or box.__aetherCaret then return box and box.__aetherCaret end
+	if not (box.CreateTexture and box.HookScript) then return nil end
+
+	local caret = box:CreateTexture(nil, "OVERLAY")
+	caret:SetTexture(A.Media.texture.flat)
+	caret:SetWidth(CARET_W)
+	caret:SetHeight(CARET_H)
+	caret:Hide()
+	box.__aetherCaret = caret
+
+	--- Where the client says the cursor is. y is NEGATIVE downward from the
+	--  box's top-left, which is already the sign SetPoint wants.
+	local function place(_, x, y, _, h)
+		caret:ClearAllPoints()
+		caret:SetPoint("TOPLEFT", box, "TOPLEFT", x or 0, y or 0)
+		if h and h > 0 then caret:SetHeight(h) end
+	end
+	box:HookScript("OnCursorChanged", place)
+
+	-- ONLY WHILE THE BOX HAS FOCUS. A cursor in a field you are not typing in
+	-- is a field claiming to be the one you are typing in - and with four of
+	-- them on a letter, four of those.
+	box:HookScript("OnEditFocusGained", function()
+		caret.__aetherOn = 0
+		caret:SetAlpha(1)
+		caret:Show()
+	end)
+	box:HookScript("OnEditFocusLost", function() caret:Hide() end)
+
+	-- AND IT BLINKS, because a cursor that does not is hard to find in a line
+	-- of type and easy to mistake for a letter. On the box's own OnUpdate: it
+	-- is on screen exactly when there is a caret to blink.
+	box:HookScript("OnUpdate", function(_, elapsed)
+		if not caret:IsShown() then return end
+		caret.__aetherOn = (caret.__aetherOn or 0) + (elapsed or 0)
+		if caret.__aetherOn >= CARET_BLINK then
+			caret.__aetherOn = 0
+			caret:SetAlpha(caret:GetAlpha() > 0.5 and 0 or 1)
+		end
+	end)
+
+	Reskin.PaintCaret(box)
+	return caret
+end
+
+--- The caret in the current skin's accent. Re-asserted on a restyle, which
+--  is what changes what the accent IS.
+function Reskin.PaintCaret(box)
+	local caret = box and box.__aetherCaret
+	if not caret then return end
+	local a = A.Palette.c.accent
+	caret:SetVertexColor(a[1], a[2], a[3], 1)
+end
+
 function Reskin.EditBox(box, opts)
 	if not box or Reskin.Forbidden(box) then return nil end
 	opts = opts or {}
@@ -534,6 +613,11 @@ function Reskin.EditBox(box, opts)
 	end
 	Reskin.Font(box, opts.style or "qlRow")
 	A.Widgets.Color(box, A.Palette.c.text)
+
+	-- AND SOMETHING SAYING WHERE YOU ARE IN IT. See Reskin.Caret: the
+	-- client's own is one physical pixel and vanishes at the profile's
+	-- scale, so this one is ours.
+	Reskin.Caret(box)
 	return well
 end
 --- A button whose picture is one of its own regions, in the same cell.
