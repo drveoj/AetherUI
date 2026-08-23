@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.30.1",
+		date    = "2026-08-23",
+		lines   = {
+			"The tour's callout is kept on screen instead of being centred on an element near the edge, and leaving a stop no longer throws.",
+		},
+	},
+	{
 		version = "0.30.0",
 		date    = "2026-08-23",
 		lines   = {

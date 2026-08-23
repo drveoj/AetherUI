@@ -462,35 +462,87 @@ end
 -- placing the callout
 -- ---------------------------------------------------------------------------
 
---- Beside the element, on whichever side has room.
+--- Beside the element, and never off the screen.
 --
 --  MEASURED AGAINST THE SCREEN, not chosen by the stop. Which side of a frame
 --  has room depends on where the player has dragged that frame, and a callout
---  anchored "to the right of the player frame" by a designer looking at their
---  own layout is a callout half off the screen on somebody else's.
+--  anchored "to the right of the player frame" by somebody looking at their own
+--  layout is a callout half off the screen on anybody else's.
+--
+--  AND CLAMPED, WHICH IS THE HALF THAT WAS MISSING. Anchoring the callout's
+--  LEFT to the element's RIGHT centres it vertically on the element - so a
+--  target near the top of the screen puts most of the callout above the top of
+--  the screen, and the first build showed nothing but its footer. Reported in
+--  game against 0.30.0.
+--
+--  PLACED IN SCREEN PIXELS, against UIParent's bottom-left corner. The callout
+--  hangs off the scrim, which is parentless and therefore at scale 1 whatever
+--  the player's UI Scale slider says - so its offsets ARE pixels, and the
+--  element's own centre becomes pixels by multiplying by its effective scale.
+--  Doing this in anchor points instead means clamping something whose position
+--  you have not got a number for.
 local function PlaceCallout(c, frame)
 	c:ClearAllPoints()
 	c.arrow:Hide()
 
-	if not frame or not frame.GetCenter or not frame:GetCenter() then
+	local sw = (UIParent:GetWidth() or 0) * (UIParent:GetEffectiveScale() or 1)
+	local sh = (UIParent:GetHeight() or 0) * (UIParent:GetEffectiveScale() or 1)
+	local cw, ch = c:GetWidth() or 0, c:GetHeight() or 0
+
+	if not frame or not frame.GetCenter or not frame:GetCenter()
+		or sw <= 0 or sh <= 0 then
 		c:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 		return
 	end
 
-	local cx = select(1, frame:GetCenter()) or 0
-	local sw = (UIParent:GetWidth() or 0)
-	local right = cx < sw / 2
+	local fs = frame:GetEffectiveScale() or 1
+	local fx, fy = frame:GetCenter()
+	fx, fy = fx * fs, fy * fs
+	local halfW = ((frame:GetWidth() or 0) * fs) / 2
 
-	if right then
-		c:SetPoint("LEFT", frame, "RIGHT", CALLOUT_GAP, 0)
-		c.arrow:ClearAllPoints()
-		c.arrow:SetPoint("CENTER", c, "LEFT", 0, 0)
-	else
-		c:SetPoint("RIGHT", frame, "LEFT", -CALLOUT_GAP, 0)
-		c.arrow:ClearAllPoints()
-		c.arrow:SetPoint("CENTER", c, "RIGHT", 0, 0)
-	end
+	-- The side with room, then the position on it.
+	local onRight = fx < sw / 2
+	local x = onRight and (fx + halfW + CALLOUT_GAP + cw / 2)
+		or (fx - halfW - CALLOUT_GAP - cw / 2)
+	local y = fy
 
+	-- INSIDE THE SCREEN, both ways. A margin rather than flush, because a panel
+	-- touching the edge of the monitor reads as one that has been cut off.
+	local m = 16
+	local wantX = x
+	x = math.max(cw / 2 + m, math.min(sw - cw / 2 - m, x))
+	y = math.max(ch / 2 + m, math.min(sh - ch / 2 - m, y))
+
+	c:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+
+	-- WHERE IT WENT, IN NUMBERS, kept on the frame.
+	--
+	-- Not for the addon - nothing reads this - but because the arithmetic
+	-- above IS the thing that went wrong, and it cannot be checked from the
+	-- outside: asking a frame where it ended up means resolving an anchor
+	-- chain, which the harness models as a fixed answer. So the sum shows
+	-- its working.
+	c.__aetherAt = { x = x, y = y, w = cw, h = ch,
+		sw = sw, sh = sh, onRight = onRight, wantX = wantX }
+
+	-- THE ARROW FOLLOWS THE ELEMENT, not the callout's middle. Once the callout
+	-- has been shoved back onto the screen the two are no longer level, and an
+	-- arrow left in the centre points at nothing.
+	--
+	-- Only when the callout is still on the side it asked for: pushed past the
+	-- element entirely there is nothing sensible for it to point at, and an
+	-- arrow on the wrong edge is worse than none.
+	local slid = math.abs(x - wantX) > cw / 2
+	if slid then return end
+
+	local edge = onRight and "LEFT" or "RIGHT"
+	local dy = fy - y
+	local limit = ch / 2 - ARROW
+	if dy > limit then dy = limit elseif dy < -limit then dy = -limit end
+
+	c.arrow:ClearAllPoints()
+	c.arrow:SetPoint("CENTER", c, edge, 0, dy)
+	c.__aetherAt.edge, c.__aetherAt.dy = edge, dy
 	W.Tint(c.arrow, Palette.c.dialogFill, 1)
 	c.arrow:Show()
 end
@@ -565,7 +617,13 @@ function OB:ClearSlot(slot)
 		for _, f in ipairs(pool) do
 			f:Hide()
 			f:ClearAllPoints()
-			f:SetScript("OnClick", nil)
+			-- ASKED FIRST. Not everything in a slot is a Button - stop 3's box
+			-- is a plain Frame with four tabs on it - and the client throws on
+			-- SetScript for a script the type has not got, CLEARING one as
+			-- much as setting one. Reported in game against 0.30.0.
+			if f.HasScript and f:HasScript("OnClick") then
+				f:SetScript("OnClick", nil)
+			end
 		end
 	end
 end

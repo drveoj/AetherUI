@@ -1018,7 +1018,23 @@ function CreateFrame(kind, name, parent, template)
 		end
 	end
 
-	function f:SetScript(s, fn) self.__scripts[s] = fn end
+	--- ONLY THE SCRIPTS THE FRAME TYPE ACTUALLY HAS.
+	--
+	--  The client throws `Frame:SetScript(): Doesn't have a "OnClick"
+	--  script` on a plain Frame, and it throws it for CLEARING one as much
+	--  as for setting one - which is how a tidy-up loop that nils OnClick on
+	--  everything it is holding went out. The mock took any name at all and
+	--  the loop passed every check in here.
+	--
+	--  OnClick only, because that is the one this addon reaches for on a
+	--  frame that has not got it: a Button has it and nothing else does.
+	function f:SetScript(s, fn)
+		if not self:HasScript(s) then
+			error(("%s:SetScript(): Doesn't have a \"%s\" script")
+				:format(self.__kind or "Frame", tostring(s)), 2)
+		end
+		self.__scripts[s] = fn
+	end
 	function f:GetScript(s) return self.__scripts[s] end
 
 	--- HookScript CHAINS. It does not replace.
@@ -1049,8 +1065,22 @@ function CreateFrame(kind, name, parent, template)
 	--  for OnTooltipSetUnit; real GameTooltips answer true. The tooltip module
 	--  branches on it before hooking, so a mock without it silently exercises
 	--  the wrong path.
+	--  AND OnClick BELONGS TO BUTTONS. The client throws
+	--  `Frame:SetScript(): Doesn't have a "OnClick" script` on a plain
+	--  Frame, for CLEARING one as much as for setting one - which is how a
+	--  tidy-up loop that nils OnClick on everything it holds went out.
 	function f:HasScript(s)
 		if self.__hasScript then return self.__hasScript[s] and true or false end
+		if s == "OnClick" then
+			-- CASE-INSENSITIVE, and templates count. CreateFrame takes the kind
+			-- in whatever case the caller typed it - AceGUI says "BUTTON" - and
+			-- a frame built from a ...ButtonTemplate has the script by
+			-- inheritance whatever its own type says.
+			local kind = tostring(self.__kind or ""):lower()
+			if kind == "button" or kind == "checkbutton" then return true end
+			local t = tostring(self.__template or "")
+			return t:lower():find("button", 1, true) ~= nil
+		end
 		return true
 	end
 
@@ -38107,6 +38137,107 @@ do
 				"and so does leaving - a frame left raised draws over every dialog "
 				.. "the player opens for the rest of the session")
 		end
+	end
+
+	-- THE CALLOUT STAYS ON THE SCREEN.
+	--
+	-- Anchoring its LEFT to the element's RIGHT centres it vertically on the
+	-- element - so an element near the top of the screen puts most of the
+	-- callout above the top of the screen. The first build showed nothing but
+	-- its footer, on a player frame docked to the top right.
+	do
+		local probe = CreateFrame("Frame", nil, UIParent)
+		probe:SetSize(200, 60)
+
+		-- PLACED WITH SetGeom, which is the mock's door for "this frame is
+		-- actually here": GetCenter answers a fixed 500, 300 otherwise, and a
+		-- check that moved the probe with SetPoint passed on all five corners
+		-- while measuring the same one five times.
+		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
+		UIParent:SetSize(1920, 1080)
+		local sw, sh = 1920, 1080
+
+		local corners = {
+			{ "top left", 120, 1040 }, { "top right", 1800, 1040 },
+			{ "bottom left", 120, 40 }, { "bottom right", 1800, 40 },
+			{ "middle", 960, 540 },
+		}
+
+		-- Its own stop, so this does not depend on where a real HUD element
+		-- happens to be sitting when the suite runs.
+		local was = OB.stops[1].target
+		OB.stops[1].target = function() return probe end
+
+		-- READ OFF THE SUM, not off the frame. Asking the callout where it
+		-- ended up means resolving an anchor chain, and the harness answers that
+		-- with a fixed 500, 300 for every frame that has not been placed with
+		-- SetGeom - which is why the first version of this check passed on all
+		-- five corners while measuring the same one five times. PlaceCallout
+		-- records what it computed; that is the thing that was wrong.
+		for _, spot in ipairs(corners) do
+			probe:SetGeom({ cx = spot[2], cy = spot[3] })
+			OB:Go(1)
+
+			local at = OB.callout.__aetherAt
+			local inside = at and at.x - at.w / 2 >= -1
+				and at.x + at.w / 2 <= at.sw + 1
+				and at.y - at.h / 2 >= -1 and at.y + at.h / 2 <= at.sh + 1
+			check(inside,
+				"an element at the " .. spot[1] .. " keeps the whole callout on "
+				.. "screen (" .. (at and string.format(
+				"%.0f..%.0f x %.0f..%.0f in %.0fx%.0f", at.x - at.w / 2,
+				at.x + at.w / 2, at.y - at.h / 2, at.y + at.h / 2, at.sw, at.sh)
+				or "nowhere") .. ")")
+		end
+
+		-- AND IT IS BESIDE THE ELEMENT, not merely somewhere legal. A callout
+		-- clamped to the middle of the screen is on screen and useless.
+		probe:SetGeom({ cx = 400, cy = 540 })
+		OB:Go(1)
+		check(OB.callout.__aetherAt.onRight
+			and OB.callout.__aetherAt.x > 400,
+			"and an element left of centre puts it on the element's right (" ..
+			string.format("%.0f", OB.callout.__aetherAt.x) .. ")")
+
+		probe:SetGeom({ cx = 1500, cy = 540 })
+		OB:Go(1)
+		check(not OB.callout.__aetherAt.onRight
+			and OB.callout.__aetherAt.x < 1500,
+			"and one right of centre puts it on the left (" ..
+			string.format("%.0f", OB.callout.__aetherAt.x) .. ")")
+
+		-- AND THE ARROW FOLLOWS THE ELEMENT rather than the callout's middle.
+		-- Once the callout has been pushed back onto the screen the two are no
+		-- longer level, and an arrow left in the centre points at nothing.
+		probe:SetGeom({ cx = 300, cy = 1040 })
+		OB:Go(1)
+		do
+			local at = OB.callout.__aetherAt
+			check(at.y < 1040,
+				"an element at the very top pushes the callout down to fit (" ..
+				string.format("%.0f from %.0f", at.y, 1040) .. ")")
+			check(OB.callout.arrow:IsShown() and at.dy
+				and math.abs((at.y + at.dy) - 1040) < 6,
+				"and the arrow is offset back up to stay level with it (" ..
+				string.format("%.0f + %.0f", at.y, at.dy or 0) .. ")")
+		end
+
+		UIParent:SetSize(wasW, wasH)
+		OB.stops[1].target = was
+	end
+
+	-- AND A CONTROL THAT IS NOT A BUTTON IS NOT ASKED TO FORGET A CLICK.
+	--
+	-- The client throws on SetScript for a script the widget type has not got,
+	-- for CLEARING one as much as for setting one - and stop 3's box is a plain
+	-- Frame with four tabs on it. The tidy-up between stops nilled OnClick on
+	-- everything it was holding, and every check in this file passed.
+	do
+		OB:Go(3)
+		local ok, err = pcall(function() OB:Go(1) end)
+		check(ok,
+			"leaving stop 3 does not throw on the way out (" ..
+			tostring(err) .. ")")
 	end
 
 	-- THE THREE CONTROLS WRITE STRAIGHT INTO THE SYSTEM THAT OWNS THEM.
