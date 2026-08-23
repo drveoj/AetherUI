@@ -1004,6 +1004,10 @@ function CreateFrame(kind, name, parent, template)
 
 	f.__attrs = {}
 	function f:SetAttribute(k, v) self.__attrs[k] = v end
+	-- WITHOUT FIRING OnAttributeChanged, which is what the panel manager
+	-- writes its layout values through: those are read back when a window is
+	-- placed rather than acted on when they change.
+	function f:SetAttributeNoHandler(k, v) self.__attrs[k] = v end
 	function f:GetAttribute(k) return self.__attrs[k] end
 	function f:GetName() return self.__name end
 
@@ -7165,7 +7169,49 @@ _G.QuestLogFrame:Hide()
 _G.UIPanelWindows = {
 	QuestLogFrame = { area = "left", pushable = 0, width = 353, height = 424 },
 	BankFrame = { area = "left", pushable = 6, width = 353, height = 424 },
+	-- THE DOCKING WINDOWS, which is what the toolbox's rail opens on top of.
+	-- CharacterFrame carries no xoffset of its own and the group finder
+	-- carries -16, so the two together show that the gutter is ADDED to the
+	-- client's number rather than replacing it.
+	CharacterFrame = { area = "left", pushable = 1, width = 353, height = 424 },
+	LFGParentFrame = { area = "left", pushable = 7, xoffset = -16,
+		width = 353, height = 424 },
+	-- AND ONE THAT IS NOT PINNED TO THAT EDGE. A centred window deliberately
+	-- ignores xoffset - see UIParentPanelManager - so moving it would be a
+	-- write that does nothing, dressed up as a fix.
+	GameMenuFrame = { area = "center", pushable = 0 },
 }
+
+-- THE PANEL SYSTEM'S PER-FRAME LAYOUT ATTRIBUTES, faithfully: the first
+-- write stamps UIPanelLayout-defined on the frame, and from then on the
+-- manager reads the FRAME rather than the table above. That is the whole
+-- reason moving a window this way writes nothing into a table the client
+-- reads inside secure code.
+--
+-- IT BAILS WITHOUT A DECLARATION. A frame with no UIPanelWindows entry is
+-- not a panel, and the client refuses rather than inventing one - so a
+-- caller that runs too early silently does nothing, which is a real trap
+-- and one a kinder mock would hide.
+function _G.SetUIPanelAttribute(frame, name, value)
+	local decl = _G.UIPanelWindows[frame:GetName()]
+	if not decl then return end
+	if not frame:GetAttribute("UIPanelLayout-defined") then
+		frame:SetAttribute("UIPanelLayout-defined", true)
+		for k, v in pairs(decl) do
+			frame:SetAttribute("UIPanelLayout-" .. k, v)
+		end
+	end
+	frame:SetAttributeNoHandler("UIPanelLayout-" .. name, value)
+end
+
+--- What the manager would use when it next places this window.
+function _G.__panelXOffset(frame)
+	if frame:GetAttribute("UIPanelLayout-defined") then
+		return frame:GetAttribute("UIPanelLayout-xoffset")
+	end
+	local decl = _G.UIPanelWindows[frame:GetName()]
+	return decl and decl.xoffset
+end
 _G.UISpecialFrames = {}
 
 _G.QuestLogMicroButton = CreateFrame("Button", "QuestLogMicroButton", UIParent)
@@ -28534,6 +28580,102 @@ do
 	_G.FriendsFrame:Hide()
 	end
 
+	-- THE TOOLBOX'S GUTTER. The client docks its own windows against the left
+	-- edge of the screen and the Toolbox's rail lives there too, so the
+	-- character sheet opened on top of the handle and the handle could not be
+	-- reached without shutting the sheet.
+	do
+		local PN = A:GetModule("panels")
+		local TBg = A:GetModule("toolbox")
+
+		-- APPLIED BY THE DRESSER ITSELF, not only when something asks for it. The
+		-- offset is read when the panel system PLACES a window, so it has to be
+		-- set before one opens rather than in answer to it opening.
+		PN:Skin()
+		check((_G.__panelXOffset(_G.CharacterFrame) or 0) > 0,
+			"skinning the panels moves them clear of the rail (" ..
+			tostring(_G.__panelXOffset(_G.CharacterFrame)) .. ")")
+
+		-- NOT BY DETACHING THE WINDOW. Clearing its `area` is supported and was
+		-- researched, and it forfeits whileDead, checkFit and bottomClampOverride
+		-- and turns every combat toggle into a blocked-action error. What moves it
+		-- is the panel system's OWN number: a left-area window is placed at
+		-- leftOffset + xoffset.
+		PN:LayoutGutter(48)
+		check(_G.CharacterFrame:GetAttribute("UIPanelLayout-area") == "left",
+			"the character sheet is still a panel of the client's, not detached")
+		check(_G.__panelXOffset(_G.CharacterFrame) == 48,
+			"and is moved clear of the rail by the panel system's own offset (" ..
+			tostring(_G.__panelXOffset(_G.CharacterFrame)) .. ")")
+
+		-- ADDED TO THE CLIENT'S NUMBER, not instead of it. The group finder carries
+		-- -16 of its own, and a gutter that replaced it would drag that window
+		-- sixteen units away from where the client wanted it.
+		check(_G.__panelXOffset(_G.LFGParentFrame) == 32,
+			"a window with an offset of its own keeps it, plus the gutter (" ..
+			tostring(_G.__panelXOffset(_G.LFGParentFrame)) .. " of 32)")
+
+		-- AND NOTHING IS WRITTEN INTO UIPanelWindows, which the client reads inside
+		-- secure code. SetUIPanelAttribute stamps the FRAME; the table keeps the
+		-- client's own numbers, which is also why the original is never lost.
+		check(_G.UIPanelWindows.LFGParentFrame.xoffset == -16
+			and _G.UIPanelWindows.CharacterFrame.xoffset == nil,
+			"and the client's own table is not written to at all")
+
+		-- A CENTRED WINDOW IS LEFT ALONE. UIParentPanelManager deliberately ignores
+		-- xoffset when it centres one, so moving it would be a write that does
+		-- nothing dressed up as a fix.
+		check(_G.GameMenuFrame == nil
+			or _G.GameMenuFrame:GetAttribute("UIPanelLayout-defined") == nil,
+			"a centred window is not touched, because the offset would do nothing")
+
+		-- THE GUTTER IS MEASURED, NOT DECLARED: the rail is drawn at the profile's
+		-- scale and the panel system's offsets are in UIParent's, so a constant
+		-- would be right at one scale and wrong at every other. And it is NOUGHT
+		-- when the rail is not on that edge - there is nothing to clear.
+		-- THE REAL FUNCTION BACK, not a closure that answers the same thing.
+		-- Three toolbox checks further down move the dock and read it again, and
+		-- a stand-in that always says LEFT makes all three of them fail.
+		local realDock = TBg and TBg.Dock
+		if TBg then
+			TBg.Dock = function() return "RIGHT" end
+			PN:LayoutGutter()
+			check(_G.__panelXOffset(_G.CharacterFrame) == 0,
+				"with the toolbox docked elsewhere the windows go back to the "
+				.. "client's own place (" ..
+				tostring(_G.__panelXOffset(_G.CharacterFrame)) .. ")")
+			TBg.Dock = realDock
+			PN:LayoutGutter()
+			check((_G.__panelXOffset(_G.CharacterFrame) or 0) > 0,
+				"and clear of it again when it comes back")
+
+			-- MOVING THE RAIL SAYS SO NOW. The offset is read when a window is
+			-- PLACED, so a dock change that left it until the next login is a
+			-- character sheet sitting in a gutter with no rail in it.
+			if TBg.SetDock then
+				TBg:SetDock("RIGHT")
+				check(_G.__panelXOffset(_G.CharacterFrame) == 0,
+					"docking the toolbox elsewhere hands the windows back at once (" ..
+					tostring(_G.__panelXOffset(_G.CharacterFrame)) .. ")")
+				TBg:SetDock("LEFT")
+				check((_G.__panelXOffset(_G.CharacterFrame) or 0) > 0,
+					"and takes the gutter back when it returns")
+			end
+
+			-- AND SWITCHING THE PANELS OFF PUTS THEM WHERE THE CLIENT HAD THEM.
+			-- Through the module's own OnDisable rather than by calling the mover
+			-- with a nought: what is being checked is that switching off REACHES it.
+			PN:OnDisable()
+			check(_G.__panelXOffset(_G.CharacterFrame) == 0
+				and _G.__panelXOffset(_G.LFGParentFrame) == -16,
+				"switching the panels off hands every window back to the client's "
+				.. "own place (" .. tostring(_G.__panelXOffset(_G.CharacterFrame))
+				.. ", " .. tostring(_G.__panelXOffset(_G.LFGParentFrame)) .. ")")
+			PN:OnEnable()
+			check((_G.__panelXOffset(_G.CharacterFrame) or 0) > 0,
+				"and switching them on again takes the gutter back")
+		end
+	end
 	-- THE GROUP FINDER: two windows behind two tabs, both setAllPoints to the
 	-- frame, on the OLD parchment build carrying MODERN content - a
 	-- WowScrollBoxList for its results and two WowStyle1 dropdowns for its

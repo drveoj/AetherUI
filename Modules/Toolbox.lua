@@ -581,6 +581,14 @@ function TB:SetDock(edge)
 	if c then c.docked = edge end
 	self:Layout()
 
+	-- AND THE CLIENT'S OWN WINDOWS, which dock against the left edge of the
+	-- screen and were opening on top of the rail there. They are pushed clear
+	-- of it by the panel system's own offset - see PN:LayoutGutter - and that
+	-- offset is read when a window is PLACED, so moving the rail has to say so
+	-- now rather than leave it until the next login.
+	local PNm = A.GetModule and A:GetModule("panels")
+	if PNm and PNm.enabled and PNm.LayoutGutter then PNm:LayoutGutter() end
+
 	-- ...and the CONTENT, which is the whole of what changes.
 	--
 	-- This was missing, and it is the bug you see rather than the one you

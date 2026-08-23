@@ -6111,7 +6111,98 @@ function PN.Settle(frame)
 end
 
 --- Skin whatever exists now. Called again whenever more of it might.
+-- ---------------------------------------------------------------------------
+-- the toolbox gutter
+-- ---------------------------------------------------------------------------
+--
+-- The client docks its own windows against the left edge of the screen, and
+-- the Toolbox's rail lives there too - so the character sheet opened on top of
+-- the handle and the handle could not be reached without shutting the sheet.
+--
+-- NOT BY DETACHING THEM. Taking a window out of the panel system is a
+-- supported thing to do - clear its `area` attribute and ShowUIPanel hands it
+-- straight to Show() - but CheckProtectedFunctionsAllowed runs BEFORE that
+-- bail-out, so every open and close in combat becomes a visible blocked-action
+-- error unless every path is rerouted. It also forfeits whileDead, checkFit
+-- and bottomClampOverride. That was researched and dropped; nothing here
+-- revisits it.
+--
+-- WHAT MOVES THEM IS THE PANEL SYSTEM'S OWN NUMBER. A left-area window is
+-- placed at `leftOffset + xoffset`, and xoffset is a per-frame attribute:
+-- SetUIPanelAttribute stamps UIPanelLayout-defined on the frame, after which
+-- GetUIPanelAttribute reads the FRAME and never the global UIPanelWindows
+-- table again for it. So nothing of ours is written into a table the client
+-- reads inside secure code, `area` is untouched, and every reason the detach
+-- was dropped stays untouched with it.
+
+-- Air between the rail and the window's edge. The rail is a handle you have to
+-- be able to hit, and a window flush against it reads as one object.
+local GUTTER_AIR = 8
+
+-- The areas the panel system pins to the LEFT of the screen, which are the
+-- only ones the rail can be under. A centred window deliberately ignores
+-- xoffset - see UIParentPanelManager - so listing it here would do nothing.
+local LEFT_AREAS = { left = true, doublewide = true }
+
+--- How far in from the screen's left edge the Toolbox's rail reaches.
+--
+--  MEASURED, NOT DECLARED. The rail is drawn at the profile's scale and the
+--  panel system's offsets are in UIParent's, so a constant here would be
+--  right at one scale and wrong at every other. Nought when the Toolbox is
+--  off or docked anywhere else: there is nothing to clear.
+local function ToolboxGutter()
+	local TB = A.GetModule and A:GetModule("toolbox")
+	if not (TB and TB.enabled and TB.rail) then return 0 end
+	if TB.Dock and TB:Dock() ~= "LEFT" then return 0 end
+
+	local rail = TB.rail
+	local wide = rail.GetWidth and rail:GetWidth()
+	if not wide or wide <= 0 then return 0 end
+
+	local mine = rail.GetEffectiveScale and rail:GetEffectiveScale() or 1
+	local theirs = UIParent and UIParent.GetEffectiveScale
+		and UIParent:GetEffectiveScale() or 1
+	if theirs <= 0 then return 0 end
+	return wide * mine / theirs + GUTTER_AIR
+end
+
+--- Push one window clear of the rail, or put it back where the client had it.
+--
+--  THE CLIENT'S OWN NUMBER IS ALWAYS READABLE, because UIPanelWindows is never
+--  written to - only the frame's attribute is. So the original is not
+--  something to record and risk losing; it is simply still there.
+local function ApplyGutter(name, frame, gutter)
+	if not (SetUIPanelAttribute and _G.UIPanelWindows) then return false end
+	local decl = _G.UIPanelWindows[name]
+	if not (decl and LEFT_AREAS[decl.area]) then return false end
+
+	-- IT BAILS WITHOUT AN ENTRY, so this can only run while one exists - which
+	-- is after the window's own addon has loaded. PN:Skin is called on
+	-- ADDON_LOADED for exactly that reason.
+	local ok = pcall(SetUIPanelAttribute, frame, "xoffset",
+		(decl.xoffset or 0) + gutter)
+	return ok
+end
+
+--- Every window we dress, moved clear of the rail. Reachable for the checks.
+function PN:LayoutGutter(gutter)
+	gutter = gutter or ToolboxGutter()
+	local moved = 0
+	for _, entry in ipairs(PANELS) do
+		local frame = _G[entry.frame]
+		if frame and ApplyGutter(entry.frame, frame, gutter) then
+			moved = moved + 1
+		end
+	end
+	return moved
+end
+
 function PN:Skin()
+	-- CLEAR OF THE TOOLBOX'S HANDLE FIRST. The offset is read by the panel
+	-- system when it PLACES a window, so setting it before dressing means a
+	-- window opened during this pass is already in the right place.
+	self:LayoutGutter()
+
 	for _, entry in ipairs(PANELS) do
 		local frame = _G[entry.frame]
 		if frame and frame.GetRegions then
@@ -6195,6 +6286,10 @@ end
 
 function PN:OnDisable()
 	A:UnregisterAllEvents(self)
+
+	-- THE CLIENT'S OWN PLACE BACK. The gutter is an offset of ours on top of
+	-- the client's number, and a nought gutter is that number on its own.
+	self:LayoutGutter(0)
 
 	-- THE CLIENT'S OWN FONT OBJECTS, HANDED BACK. The postbox's receipt takes
 	-- its ink from InvoiceTextFontNormal and InvoiceTextFontSmall rather than

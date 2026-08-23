@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.25.0",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: the client's own windows open clear of the toolbox handle instead of on top of it",
+		},
+	},
+	{
 		version = "0.24.2",
 		date    = "2026-08-23",
 		lines   = {

@@ -242,6 +242,47 @@ rather than a second copy of its six lines being written.
 
 Five mutations are caught.
 
+## Built — the toolbox gutter (2026-08-23)
+
+The client docks its own windows against the left edge of the screen, and the
+Toolbox's rail lives there too — so the character sheet opened on top of the
+handle, and the handle could not be reached without shutting the sheet.
+
+**Not by detaching them.** Taking a window out of the panel system is supported
+and was researched in full on 2026-08-14: clear its `area` attribute and
+`ShowUIPanel` hands it straight to `Show()`. It was dropped because
+`CheckProtectedFunctionsAllowed` runs *before* that bail-out, so every open and
+close in combat becomes a visible blocked-action error unless every path is
+rerouted, and detaching forfeits `whileDead`, `checkFit` and
+`bottomClampOverride`. Nothing here revisits that.
+
+**What moves them is the panel system's own number.** A left-area window is
+placed at `leftOffset + xoffset`, and `xoffset` is a per-frame attribute:
+`SetUIPanelAttribute` stamps `UIPanelLayout-defined` on the frame, after which
+`GetUIPanelAttribute` reads the **frame** and never the global `UIPanelWindows`
+table again for it. So nothing of ours is written into a table the client reads
+inside secure code, `area` is untouched, and every reason the detach was dropped
+stays untouched with it.
+
+- **Added to the client's number, never instead of it.** The group finder carries
+  `xoffset = -16` of its own; a gutter that replaced it would drag that window
+  sixteen units away from where the client wanted it. It also means the original
+  is not something to record and risk losing — `UIPanelWindows` is never written
+  to, so it is simply still there, and a gutter of nought is the client's own
+  place back.
+- **Measured, not declared.** The rail is drawn at the profile's scale and the
+  panel system's offsets are in UIParent's, so a constant would be right at one
+  scale and wrong at every other. Nought when the Toolbox is off or docked
+  anywhere else: there is nothing to clear.
+- **Left-anchored areas only** (`left`, `doublewide`). `UIParentPanelManager`
+  deliberately ignores `xoffset` when it centres a window, so moving one of those
+  would be a write that does nothing dressed up as a fix.
+- **Moving the rail says so at once.** The offset is read when a window is
+  *placed*, so a dock change that left it until the next login is a character
+  sheet sitting in a gutter with no rail in it. `TB:SetDock` tells the panels.
+
+Seven mutations are caught, including one for each of those four rules.
+
 ## Built — the group finder (2026-08-23)
 
 `LFGParentFrame`, from `Blizzard_GroupFinder_VanillaStyle`: two windows behind
