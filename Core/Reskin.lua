@@ -637,9 +637,17 @@ function Reskin.Buttons(frame, style, skip)
 		-- still in its parent's child list, and asking it what kind of object
 		-- it is throws - so this loop was the last statement in the trade
 		-- window's dresser and the one that killed it.
+		--
+		-- ...AND NOT A TAB. A tab is a Button with a label on it and a child of
+		-- the window, which is exactly what this sweep looks for - so on the
+		-- social window all four of its tabs came back wearing the pill every
+		-- pressable thing here wears, on top of the tab treatment they had
+		-- already been given. See Reskin.Tab: a tab and a button are not the
+		-- same control and are deliberately not drawn the same way.
 		if not Reskin.Forbidden(child)
 			and child.GetObjectType and child:GetObjectType() == "Button"
 			and child.GetFontString and child:GetFontString()
+			and not child.__aetherTab
 			and not (skip and skip[child]) and not child.__aetherSkin then
 			Reskin.Button(child, style)
 		end

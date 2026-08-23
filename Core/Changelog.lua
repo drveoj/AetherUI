@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.21.2",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: the social window's tabs are tabs, not buttons wearing a pill",
+			"panels: your Battle.net name, status and broadcast move out of the title bar into the tool row",
+			"panels: an action strip too wide for its window crowds rather than hanging off the side",
+		},
+	},
+	{
 		version = "0.21.1",
 		date    = "2026-08-22",
 		lines   = {

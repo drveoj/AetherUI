@@ -3346,12 +3346,43 @@ do
 				t:SetPoint("LEFT", _G.FriendsTabHeaderTab1, "RIGHT", 0, 0)
 			end
 		end
-		-- The Battle.net strip, which this flavour shows nobody but which is a
-		-- frame of the window all the same.
+		-- WHO YOU ARE ON BATTLE.NET: a status dropdown at 56, your tag at 109
+		-- and the broadcast button hung off the tag's right edge. All three 26
+		-- or 27 down from the WINDOW's top, which is the middle of our header
+		-- band - so left alone all three print across the window's own title.
+		--
+		-- The dropdown is WowStyle1DropdownTemplate, the same control the trade
+		-- skill's filters are, and it carries a coloured dot rather than a word.
+		local drop = CreateFrame("Button", "FriendsFrameStatusDropdown", hdr)
+		drop:SetSize(48, 24)
+		drop:SetPoint("TOPLEFT", hdr, "TOPLEFT", 56, -27)
+		drop.Background = drop:CreateTexture(nil, "BACKGROUND")
+		drop.Background:SetTexture("common-dropdown-classic-textholder")
+		drop.Arrow = drop:CreateTexture(nil, "OVERLAY")
+		drop.Arrow:SetTexture("common-dropdown-classic-a-buttonDown")
+		drop.Text = drop:CreateFontString(nil, "OVERLAY")
+		drop.Text:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+		drop.Text:SetText("|TInterface\\FriendsFrame\\StatusIcon-Online:16|t")
+		function drop:OnButtonStateChanged()
+			self.Arrow:SetTexture("common-dropdown-classic-a-buttonDown-pressed")
+			self.Arrow:SetSize(24, 24)
+			self.Text:SetTextColor(1, 1, 1)
+		end
+
 		local bnet = CreateFrame("Frame", "FriendsFrameBattlenetFrame", hdr)
 		bnet:SetSize(190, 29)
 		bnet:SetPoint("TOPLEFT", hdr, "TOPLEFT", 109, -26)
-		bnet:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\FriendsFrame\\PlusManz-BattleNetBG")
+		bnet:CreateTexture(nil, "BACKGROUND"):SetTexture("Interface\\FriendsFrame\\battlenet-friends-main")
+		bnet.Tag = bnet:CreateFontString(nil, "ARTWORK")
+		bnet.Tag:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+		bnet.Tag:SetText("DrVeoj#2768")
+		bnet.Tag:SetTextColor(0.345, 0.667, 0.867)
+		bnet.Tag:SetPoint("CENTER", bnet, "CENTER", 0, 0)
+		bnet.BroadcastButton = CreateFrame("Button", nil, bnet)
+		bnet.BroadcastButton:SetSize(32, 32)
+		bnet.BroadcastButton:SetPoint("LEFT", bnet, "RIGHT", 2, 0)
+		bnet.BroadcastButton:SetNormalTexture("Interface\\FriendsFrame\\broadcast-normal")
+		bnet.BroadcastButton:SetPushedTexture("Interface\\FriendsFrame\\broadcast-press")
 		local bcast = CreateFrame("EditBox", "FriendsFrameBroadcastInput", bnet)
 		bcast:SetSize(160, 20)
 		for _, part in ipairs({ "Left", "Middle", "Right" }) do
@@ -27763,15 +27794,98 @@ do
 	local fInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_OUTSET
 	local fWant = A.Widgets.PANEL_HEAD_H + fInner
 
-	-- ITS TABS HANG BELOW THE WINDOW, and the glass has to follow them down or
-	-- they sit outside it - the postbox's case one window along.
-	local _, tRel, tAt, _, tY = _G.FriendsFrameTab1:GetPoint(1)
-	check(tRel == _G.FriendsFrame and tAt == "BOTTOMLEFT" and tY < 0,
-		"the social window's tabs hang off its bottom edge (" .. tostring(tY)
-		.. ")")
-	check(PN.ENTRY.FriendsFrame.insets[4] <= tY,
-		"and the glass reaches past them (" ..
-		tostring(PN.ENTRY.FriendsFrame.insets[4]) .. " vs " .. tostring(tY) .. ")")
+	do
+		-- ITS TABS ARE TABS. Nothing in this window's dresser laid them out,
+		-- so the only thing that ever reached them was the client's own resize
+		-- hook - and until that fired they were whatever the pane sweep had
+		-- made of them, which is the pill Add Friend and Send Message wear. A
+		-- tab and a button are not the same control and are deliberately not
+		-- drawn the same way.
+		local rail = _G.FriendsFrame.__aetherRails
+			and _G.FriendsFrame.__aetherRails.BOTTOM
+		local _, tRel = _G.FriendsFrameTab1:GetPoint(1)
+		check(rail and rail:IsShown() and tRel == rail,
+			"the social window's four tabs stand on a rail of ours (" ..
+			tostring(tRel and tRel.GetName and tRel:GetName() or tRel) .. ")")
+
+		local pilled = {}
+		for i = 1, 4 do
+			local tab = _G["FriendsFrameTab" .. i]
+			if tab.__aetherSkin then
+				pilled[#pilled + 1] = "FriendsFrameTab" .. i
+			end
+			if not tab.__aetherTab then
+				pilled[#pilled + 1] = "FriendsFrameTab" .. i .. ":untabbed"
+			end
+		end
+		check(#pilled == 0,
+			"and none of them is also wearing a button's surface (" ..
+			(#pilled > 0 and table.concat(pilled, ",") or "all four clean")
+			.. ")")
+
+		-- AND THE GLASS REACHES PAST THE RAIL, or the row sits outside it -
+		-- the postbox's case one window along.
+		local railY = rail and select(5, rail:GetPoint(1)) or 0
+		check(PN.ENTRY.FriendsFrame.insets[4] <= railY,
+			"and the glass reaches past them (" ..
+			tostring(PN.ENTRY.FriendsFrame.insets[4]) .. " vs " ..
+			tostring(railY) .. ")")
+	end
+
+	do
+		-- WHO YOU ARE ON BATTLE.NET IS AT THE TOP OF THE CONTENT, not in the
+		-- band. The client hangs the status dropdown, your tag and the
+		-- broadcast button 26 and 27 down from the WINDOW's top edge, which is
+		-- the middle of our header - so all three came up printed across the
+		-- window's own title.
+		local dAt, _, dRelP, dX = _G.FriendsFrameStatusDropdown:GetPoint(1)
+		check(dAt == "LEFT" and dRelP == "TOPLEFT"
+			and dX == A.Widgets.PANEL_PAD,
+			"your status dropdown starts the tool row under the band (" ..
+			tostring(dAt) .. "/" .. tostring(dRelP) .. "/" .. tostring(dX)
+			.. ")")
+		local gAt, gRel = _G.FriendsFrameBattlenetFrame:GetPoint(1)
+		check(gAt == "LEFT" and gRel == _G.FriendsFrameStatusDropdown,
+			"your tag follows it along the same row (" .. tostring(gAt) .. ")")
+		local bAt, _, bRelP =
+			_G.FriendsFrameBattlenetFrame.BroadcastButton:GetPoint(1)
+		check(bAt == "RIGHT" and bRelP == "TOPRIGHT",
+			"and the broadcast button is at the far end of it (" ..
+			tostring(bAt) .. "/" .. tostring(bRelP) .. ")")
+
+		-- AND THE TAG IS IN OUR INK. The client draws it in Battle.net's own
+		-- blue - 0.345, 0.667, 0.867 - which is a second accent nothing else
+		-- in this interface uses, a line under the window's title.
+		local tr, tg, tb = _G.FriendsFrameBattlenetFrame.Tag:GetTextColor()
+		check(not (tr < 0.4 and tg > 0.6 and tb > 0.8),
+			"your tag is re-inked out of Battle.net blue (" ..
+			string.format("%.2f %.2f %.2f", tr, tg, tb) .. ")")
+		check(_G.FriendsFrameStatusDropdown.__aetherSkin
+			and _G.FriendsFrameStatusDropdown.Arrow:GetTexture()
+				== A.Media.texture.chevron,
+			"and the status dropdown is the same control the trade skill's"
+			.. " filters are, chevron and all")
+	end
+
+	do
+		-- THE STRIP NEVER OVERHANGS THE WINDOW. A row wider than the glass
+		-- puts its first button off the side - unreadable, drawn over whatever
+		-- is behind the window, and at the screen's edge not reliably
+		-- clickable at all. The air between them gives first, and past that
+		-- the group crowds instead.
+		local wide = _G.FriendsFrame.__aetherPanel:GetWidth()
+		_G.FriendsFrameAddFriendButton:SetWidth(wide * 0.7)
+		_G.FriendsFrameSendMessageButton:SetWidth(wide * 0.7)
+		PN.Dress(_G.FriendsFrame)
+		local firstX = select(4, _G.FriendsFrameAddFriendButton:GetPoint(1))
+		check(firstX >= -wide / 2,
+			"a strip too wide for the window crowds rather than hanging off"
+			.. " the side of it (" .. string.format("%.1f", firstX) .. " of "
+			.. string.format("%.1f", -wide / 2) .. ")")
+		_G.FriendsFrameAddFriendButton:SetWidth(131)
+		_G.FriendsFrameSendMessageButton:SetWidth(131)
+		PN.Dress(_G.FriendsFrame)
+	end
 
 	-- NOT ONE OF THE FIVE PANES IS IN THE BODY LIST, and that is deliberate:
 	-- setAllPoints leaves a frame with NO POINTS, so the mover has nothing to
@@ -27792,8 +27906,14 @@ do
 	-- own, the pair would move 36 further than the list and land on it. The
 	-- room is RESERVED over the list instead, which makes both short of the
 	-- band by the same amount.
+	--
+	-- AND BOTH CLEAR THE TOOL ROW, which this pane now has one of: the
+	-- Battle.net header is chrome and sits in it, so the body starts a row
+	-- lower here than it does on a pane with nothing in the row.
+	local fRow = A.Widgets.PANEL_GAP + 28
 	local subY = select(5, _G.FriendsTabHeaderTab1:GetPoint(1))
 	local listY = select(5, _G.FriendsFrameFriendsScrollFrame:GetPoint(1))
+	fWant = fWant + fRow
 	check(subY == -fWant and listY == -(fWant + 36),
 		"the friends sub-tabs sit under the band with their list 36 below "
 		.. "them, as the client had it (" .. tostring(subY) .. ", "
@@ -27873,7 +27993,13 @@ do
 
 	-- ON THE WHO TAB NOW, because a row that serves five panes can only be
 	-- read while the pane it belongs to is up.
+	--
+	-- AND THE FRIENDS TAB'S OWN HEADER GOES WITH IT. FriendsFrame_Update does
+	-- `FriendsTabHeader:SetShown(selectedTab == FRIEND_TAB_FRIENDS)`, so the
+	-- status dropdown, the tag and the broadcast button are down on every
+	-- other tab - which is the only reason one row can serve all five.
 	_G.FriendsListFrame:Hide()
+	_G.FriendsTabHeader:Hide()
 	_G.WhoFrame:Show()
 	PN.Dress(_G.FriendsFrame)
 
@@ -27921,14 +28047,22 @@ do
 	-- The hidden panes' buttons are LEFT where they last were rather than put
 	-- back, which is the same thing the quest giver's reward panel does: they
 	-- are invisible while their pane is down and re-laid when it comes up.
+	--
+	-- OFF THE RAIL, because this window has one: 15e stacks the strip ABOVE
+	-- the tab row rather than on the window's own bottom edge, and the tabs
+	-- hang below that edge. Centred on the panel instead, the strip sat on top
+	-- of the tabs.
+	local cRail = _G.FriendsFrame.__aetherRails
+		and _G.FriendsFrame.__aetherRails.BOTTOM
 	local cAt, cRel, cRelP, cX, cY = _G.RaidFrameConvertToRaidButton:GetPoint(1)
-	check(cRel == _G.FriendsFrame.__aetherPanel and cRelP == "BOTTOM"
+	check(cRel == cRail and cRelP == "TOP"
 		and cX == -_G.RaidFrameConvertToRaidButton:GetWidth() / 2
 		and cY == A.Widgets.PANEL_FOOT_H / 2,
-		"Convert to Raid is centred in the strip on its own (" .. tostring(cX)
-		.. ", " .. tostring(cY) .. ")")
+		"Convert to Raid is centred in the strip on its own, above the tab "
+		.. "rail (" .. tostring(cX) .. ", " .. tostring(cY) .. ")")
 
 	_G.RaidFrame:Hide()
+	_G.FriendsTabHeader:Show()
 	_G.FriendsListFrame:Show()
 	_G.FriendsFrame:Hide()
 	end

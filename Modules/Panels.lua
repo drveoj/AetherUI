@@ -202,9 +202,23 @@ local PANELS = {
 		-- ONE ROW SERVES ALL FIVE PANES because only one pane is ever up, and
 		-- the row is laid out from what is VISIBLE rather than from what is
 		-- shown - a hidden pane's children still report themselves shown.
+		--
+		-- AND WHO YOU ARE ON BATTLE.NET IS THE SAME KIND OF THING. The client
+		-- hangs your status dropdown, your tag and the broadcast button 26 and
+		-- 27 down from the window's TOP edge - which is the middle of our
+		-- header band, so all three came up sitting on the window's title with
+		-- the tag reading as a second, fainter title. They belong at the top of
+		-- the CONTENT, which is what this row is.
+		--
+		-- All three are children of FriendsTabHeader, and the client shows that
+		-- only on the Friends tab - so the visible test sorts them from the who
+		-- query and the raid's switch at no cost.
 		row = {
-			left  = { "WhoFrameEditBox", "RaidFrameAllAssistCheckButton" },
-			right = { "RaidFrameRaidInfoButton" },
+			left  = { "FriendsFrameStatusDropdown",
+				"FriendsFrameBattlenetFrame",
+				"WhoFrameEditBox", "RaidFrameAllAssistCheckButton" },
+			right = { "FriendsFrameBattlenetFrame.BroadcastButton",
+				"RaidFrameRaidInfoButton" },
 		},
 		-- ROOM RESERVED OVER TWO OF THE LISTS, for the row of controls the
 		-- client puts immediately above each. Reserved rather than measured so
@@ -707,6 +721,10 @@ local TOOL_ROW         = 28
 -- than taking the body's 14 - a pair of buttons is not two blocks of
 -- content.
 local FOOT_GAP        = 12
+-- ...and the least it may ever be, for a row that will not otherwise fit
+-- inside the window. Below this the words on two buttons touch and the pair
+-- reads as one control.
+local ROW_GAP_MIN     = 4
 -- A row of chrome in the footer. A window with two of them - a page turn and
 -- an action under it - GROWS by one rather than splitting the 52 between
 -- them: split, each row got 26 and a 22 tall button has two pixels of air
@@ -937,7 +955,23 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 		return ((a.GetLeft and a:GetLeft()) or 0) < ((b.GetLeft and b:GetLeft()) or 0)
 	end)
 
-	local x = -total / 2
+	-- AND IT NEVER OVERHANGS THE WINDOW, which is the same rule the tab rail
+	-- is written round: the row is bounded by the frame and never the
+	-- reverse. What gives first is the air between them, down to a floor;
+	-- past that the group starts at the strip's left edge and crowds.
+	--
+	-- Crowded is bad and OUTSIDE is worse: a button hanging off the side of
+	-- the glass is unreadable, is drawn over whatever is behind the window,
+	-- and at the screen's edge is not reliably clickable at all.
+	local room = ((anchor.GetWidth and anchor:GetWidth()) or 0)
+		- W.PANEL_PAD * 2
+	if room > 0 and total > room and #shown > 1 then
+		local words = total - gap * (#shown - 1)
+		gap = math.max(ROW_GAP_MIN, (room - words) / (#shown - 1))
+		total = words + gap * (#shown - 1)
+	end
+
+	local x = (room > 0 and total > room) and -room / 2 or -total / 2
 	for _, w in ipairs(shown) do
 		w:ClearAllPoints()
 		w:SetPoint("LEFT", anchor, edge, x, y)
@@ -5197,6 +5231,17 @@ end
 --  row are laid out from whatever is VISIBLE and the panes themselves are only
 --  swept.
 local function DressFriends(frame, store)
+	-- ITS OWN FOUR TABS, AND FIRST. Nothing in here ever laid them out, so the
+	-- only thing that reached them was the client's resize hook - and in
+	-- between they were whatever the button sweep at the foot of this function
+	-- had made of them, which is the pill every pressable thing in this
+	-- interface wears. That is what "a different tab type" was: a tab drawn as
+	-- a button, over the top of a tab.
+	--
+	-- FIRST rather than last, because the sweep skips anything already dressed
+	-- as a tab and cannot skip what does not exist yet.
+	LayoutTabs(frame, store)
+
 	-- THE PANES, and the client's own recess behind them. FriendsFrameInset is
 	-- moved by the client per tab - 83 down on Friends, 80 on Who, 60 on Raid
 	-- - which is a stone box being re-placed inside our glass on every switch.
@@ -5273,6 +5318,23 @@ local function DressFriends(frame, store)
 				W.Color(label, Palette.c.textDim)
 			end
 		end
+	end
+
+	-- WHO YOU ARE ON BATTLE.NET: a status dropdown, your tag, and the button
+	-- that sets what you are broadcasting. The dropdown is the modern
+	-- WowStyle1 control the trade skill's filters are, so it takes the same
+	-- dressing; the tag is a string in the client's Battle.net blue, which is
+	-- a second accent nothing else in the window uses.
+	DressDropdown(_G.FriendsFrameStatusDropdown, store)
+	local bnet = _G.FriendsFrameBattlenetFrame
+	if bnet then
+		if bnet.Tag then
+			Reskin.Font(bnet.Tag, "pnBody")
+			W.Color(bnet.Tag, Palette.c.textDim)
+		end
+		-- THE BROADCAST BUTTON IS A PICTURE, not a word - so it gets the icon
+		-- treatment rather than a surface with a label on it.
+		Reskin.IconButton(bnet.BroadcastButton, store)
 	end
 
 	-- THE QUERY, which is a search box: three slices of border, a magnifying

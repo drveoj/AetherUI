@@ -152,6 +152,58 @@ always holds. The hook's real justification is the growing pool above, and the
 check now tests that instead — the comment claiming otherwise was wrong and is
 gone.
 
+## Fixed — the social window's tabs and its Battle.net header (2026-08-23)
+
+Reported from the game against the built window: the tabs were "a different tab
+type", and your name, availability dropdown and broadcast button sat in the
+title bar rather than at the top of the content.
+
+**Nothing in `DressFriends` ever laid the window's four tabs out.** `LayoutTabs`
+is called by five interiors — the character sheet, inspect, the spellbook, the
+talent frame and the vendor — and by nothing else. So the only thing that ever
+reached this window's tabs was the hook on the client's own
+`PanelTemplates_TabResize`, and in the gap before that fired they were whatever
+`Reskin.Buttons(_G.FriendsFrame, ...)` had made of them: **the pill every
+pressable thing in this interface wears.** A tab drawn as a button, over the top
+of a tab. That is the "different tab type".
+
+- `DressFriends` calls `LayoutTabs` **first**, before its own sweeps.
+- `Reskin.Buttons` now skips anything carrying `__aetherTab`. A tab is a
+  `Button` with a label on it and a child of the window, which is exactly what
+  that sweep looks for — the same trap the who list's five column heads fell
+  into, and the general rule rather than a third skip list.
+- With the tabs laid out the window has a **rail**, so `LayoutFooter` stacks the
+  action strip above it instead of on the window's own bottom edge. 15e, and the
+  reason the strip and the tabs no longer share a band.
+
+**The Battle.net header is chrome and belongs in the tool row.** The client hangs
+`FriendsFrameStatusDropdown` at 56, `FriendsFrameBattlenetFrame` at 109 and its
+`BroadcastButton` off the tag's right edge, all 26 or 27 down from the window's
+*top* — which is the middle of our header band, so all three came up printed
+across the window's own title with the tag reading as a second, fainter one.
+They go in `row` with the who query and the raid's switch: the client shows
+`FriendsTabHeader` only on the Friends tab, so the `IsVisible` test that already
+sorts one row across five panes sorts these too at no cost. The dropdown takes
+the same dressing the trade skill's filters do, and the tag is re-inked out of
+Battle.net's blue — a second accent nothing else in the interface uses.
+
+**And the action strip can no longer overhang the window.** `ChromeRow` centred
+its middle group on the strip's midpoint with no bound, so a group wider than
+the glass put its first button off the side — unreadable, drawn over whatever is
+behind the window, and at the screen's edge not reliably clickable. Same rule the
+tab rail is written round: the air between them gives first, down to a floor, and
+past that the group starts at the strip's left edge and crowds. Crowded is bad;
+outside is worse.
+
+**Not reproduced:** the report also said Add Friend and Send Message were off the
+sides of the frame. On the Friends pane they measure correctly centred — two
+131-wide buttons in a 384-wide window — and the screenshot supplied with the
+report shows them centred. The bound above makes the symptom impossible whatever
+produced it, but the cause is still unknown and the pane it was seen on has not
+been established.
+
+Five mutations are caught.
+
 ## Fixed — the trade window's forbidden money frame (2026-08-22)
 
 Reported from the game: Trade and Cancel were neither in the footer strip nor
