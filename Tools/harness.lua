@@ -18881,16 +18881,67 @@ print("== presets: three arrangements of the HUD ==")
 do
 	local P = A.Presets
 	check(P ~= nil, "the presets loaded")
+
+	-- PUT BACK AFTERWARDS. Applying an arrangement writes the profile scale
+	-- and every anchor in it, and the checks after this one are laid out
+	-- against the scale the suite started at.
+	local wasScale = A.db.profile.scale
 	check(#P.order == 3, "there are three of them (" .. #P.order .. ")")
 
-	-- A PRESET IS ONE TABLE. Every frame this addon lets you move writes
-	-- db.profile.anchors[name] and nothing else, so an arrangement is a copy of
-	-- that - which is why there is no second mechanism in here.
+	-- AND EVERY ONE OF THEM HAS COORDINATES IN IT.
+	--
+	-- These three shipped as empty tables for two builds while the layouts were
+	-- being made by eye in the game, and an empty preset APPLIES CLEANLY: it
+	-- wipes the anchors, moves nothing, and reads back as the arrangement you
+	-- just chose. A first-run tour offering three cards that all do nothing is
+	-- the worst possible version of this feature and it looks like it works.
 	local anchors = A.db.profile.anchors
+	for _, key in ipairs(P.order) do
+		local preset = P.list[key]
+		local named = 0
+		for _ in pairs(preset and preset.anchors or {}) do named = named + 1 end
+		check(named > 6,
+			"\"" .. key .. "\" is a real arrangement rather than an empty table ("
+			.. named .. " frames)")
+		check((preset.scale or 0) > 0,
+			"and the scale travels with it, because frames hugging the character "
+			.. "want to be smaller than frames along the bottom of an ultrawide")
+	end
+
+	-- NO NAME IN THEM THAT IS NOT A FRAME. These tables are pasted in by hand
+	-- from a capture, and a mistyped key is not an error - it is an entry that
+	-- silently moves nothing. Bars past the first are exempt: they register
+	-- only when they are switched on, and this profile has one.
+	for _, key in ipairs(P.order) do
+		local bad = {}
+		for name in pairs(P.list[key].anchors) do
+			if not A.Movers.registry[name] and not tostring(name):find("^bar%d$") then
+				bad[#bad + 1] = name
+			end
+		end
+		table.sort(bad)
+		check(#bad == 0,
+			"every frame \"" .. key .. "\" names is one this addon can move (" ..
+			(#bad > 0 and table.concat(bad, ", ") or "all of them") .. ")")
+	end
+
+	-- AND NO TWO OF THEM ARE THE SAME LAYOUT. Three cards on the tour that
+	-- differ only in their wording is a choice that is not one.
+	for i = 1, #P.order do
+		for j = i + 1, #P.order do
+			local a, b = P.order[i], P.order[j]
+			check(not P:Matches(P.list[a].anchors, P.list[b].anchors),
+				"\"" .. a .. "\" and \"" .. b .. "\" are different arrangements")
+		end
+	end
+
+	-- NOTHING CHOSEN YET reads as nothing chosen. Every shipped arrangement now
+	-- has coordinates, so an untouched profile is none of them - and a tour
+	-- that ticked one anyway would be telling a new player they had already
+	-- picked.
 	wipe(anchors)
-	check(P:Current() == "classic",
-		"an untouched profile IS the shipped arrangement (" ..
-		tostring(P:Current()) .. ")")
+	check(P:Current() == nil,
+		"an untouched profile is none of them (" .. tostring(P:Current()) .. ")")
 
 	-- APPLYING ONE WRITES IT AND TELLS THE FRAMES TO LOOK AGAIN. The movers put
 	-- a frame back from the store on demand rather than watching it, so writing
@@ -18902,51 +18953,57 @@ do
 		return realRestore(self)
 	end
 
-	-- A PRESET WITH SOMETHING IN IT, built here rather than shipped empty: the
-	-- three real ones are captured from a layout somebody has made by eye, and
-	-- until they are there is nothing to apply.
-	P.list.centre.anchors = {
-		player = { point = "CENTER", relPoint = "CENTER", x = -180, y = -120 },
-		target = { point = "CENTER", relPoint = "CENTER", x = 180, y = -120 },
-		chat   = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 20, y = 20 },
-	}
-	P.list.centre.scale = 0.85
+	-- EACH OF THE THREE, there and back. Reading the arrangement off the
+	-- anchors rather than off a note somebody wrote down is the whole point:
+	-- a stored answer goes stale the first time a frame is dragged.
+	for _, key in ipairs(P.order) do
+		check(P:Apply(key), "\"" .. key .. "\" applies")
+		check(P:Current() == key,
+			"and reads back as itself off the anchors (" ..
+			tostring(P:Current()) .. ")")
+		check(A.db.profile.scale == P.list[key].scale,
+			"at its own scale (" .. tostring(A.db.profile.scale) .. ")")
+	end
+	check(moved == #P.order,
+		"and every frame is told to look again each time (" .. moved .. ")")
 
-	check(P:Apply("centre"), "a preset applies")
-	check(moved == 1,
-		"and every frame is told to look again (" .. moved .. ")")
-	check(anchors.player and anchors.player.x == -180,
-		"the positions are the preset's (" ..
-		tostring(anchors.player and anchors.player.x) .. ")")
-	check(A.db.profile.scale == 0.85,
-		"and the scale travels with the layout, because frames hugging the "
-		.. "character want to be smaller than frames along the bottom")
-	check(P:Current() == "centre",
-		"which is read back off the anchors rather than a note somebody wrote "
-		.. "down - a stored answer goes stale the first time a frame is dragged")
-
-	-- WIPED, NOT MERGED. Two arrangements at once belongs to neither.
+	-- WIPED, NOT MERGED. What the last arrangement moved and this one does not
+	-- mention is two layouts at once and belongs to neither.
 	anchors.minimap = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -9, y = -9 }
 	P:Apply("centre")
 	check(anchors.minimap == nil,
 		"applying a preset takes away what the last one moved and this one does "
 		.. "not mention")
 
-	-- AND A LAYOUT CAN BE CAPTURED BACK OUT, which is how the shipped three are
-	-- made: by eye, in the game, at a real resolution. Guessing coordinates in a
-	-- text editor gives a layout that is plausible in every dimension and right
-	-- in none.
-	-- A LIST OF LINES, not one string: the copy box is fed through
-	-- Errors:Capture, which collects what goes to the chat frame - the same
-	-- path the panel dump uses and the only one known to arrive whole.
-	local lines, count = P:Capture("centre")
+	-- EXCEPT THE LOCK BUTTON, which is not a position in an arrangement at all.
+	-- It is the button that hides the handles, parked wherever the player last
+	-- shoved it out of the way; Movers keeps its spot in this same table under
+	-- __lockButton precisely because it is NOT a mover entry. Wiping it puts
+	-- that button back in the middle of the screen every time somebody tries a
+	-- preset on.
+	anchors.__lockButton = { point = "CENTER", relPoint = "CENTER", x = 2, y = 164 }
+	P:Apply("bottom")
+	check(anchors.__lockButton ~= nil and anchors.__lockButton.y == 164,
+		"where the player parked the lock button survives a preset being applied "
+		.. "over it")
+
+	-- AND IT IS NEVER CAPTURED. Shipping it would send one player's idea of
+	-- where that button goes to everybody - and would stop Current() 
+	-- recognising its own arrangement the moment somebody dragged it.
+	local lines, count = P:Capture("bottom")
+	local text = table.concat(lines, "\n")
+	check(text:find("__lockButton", 1, true) == nil,
+		"and never goes into a capture")
+
+	-- A LAYOUT CAN BE CAPTURED BACK OUT, which is how these three were made: by
+	-- eye, in the game, at a real resolution. Guessing coordinates in a text
+	-- editor gives a layout that is plausible in every dimension and right in
+	-- none.
 	check(type(lines) == "table" and #lines > 1,
 		"a capture comes back as lines, one per row of the table (" ..
 		tostring(type(lines)) .. ", " .. tostring(#lines) .. ")")
-	local text = table.concat(lines, "\n")
-	check(count == 3 and text:find('%["player"%]') ~= nil,
-		"the current layout comes back as a table naming every frame in it (" ..
-		tostring(count) .. ")")
+	check(count > 6 and text:find('%["player"%]') ~= nil,
+		"naming every frame in it (" .. tostring(count) .. ")")
 	check(text:find("	", 1, true) == nil,
 		"and indented with spaces - a tab is not reliably carried through a "
 		.. "chat frame and out through the clipboard, and this text exists to "
@@ -18955,20 +19012,91 @@ do
 		"with the scale in it, because that is part of an arrangement")
 
 	-- SORTED, so two captures of the same layout are the same text and a diff
-	-- shows the line that really changed. Three names, in an order pairs() has
-	-- no reason to produce: chat, player, target is alphabetical and nothing
-	-- else.
-	local atChat = text:find('%["chat"%]')
-	local atPlayer = text:find('%["player"%]')
-	local atTarget = text:find('%["target"%]')
-	check(atChat and atPlayer and atTarget
-		and atChat < atPlayer and atPlayer < atTarget,
-		"and in a fixed order rather than whatever pairs() felt like")
+	-- shows the line that really changed.
+	local order = {}
+	for name in text:gmatch('%["([%w_]+)"%]') do order[#order + 1] = name end
+	local sorted = true
+	for i = 2, #order do
+		if order[i] < order[i - 1] then sorted = false end
+	end
+	check(#order > 1 and sorted,
+		"and in a fixed order rather than whatever pairs() felt like (" ..
+		#order .. " frames)")
+
+	-- AND THE NUMBERS ARE FRACTIONS OF THE SCREEN, not pixels.
+	--
+	-- An arrangement made on a 3840x1600 monitor and shipped in pixels is an
+	-- arrangement for that monitor. The client's UI is 768 units tall whatever
+	-- the display, so the vertical numbers carry - but its WIDTH is 768 x the
+	-- aspect ratio: 1843 units on a 2.4:1 ultrawide against 1365 on 16:9. A
+	-- frame 596 units in from the left edge is a third of the way across one
+	-- screen and nearly half way across the other, and a "bottom corners"
+	-- layout quietly becomes "bottom middle".
+	do
+		P.order[#P.order + 1] = "__probe"
+		P.list.__probe = {
+			label = "probe", blurb = "", scale = 0.71,
+			anchors = {
+				player = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT",
+					fx = 0.25, fy = 0.10 },
+				target = { point = "CENTER", relPoint = "CENTER", fx = -0.20, fy = 0 },
+			},
+		}
+
+		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
+		local function at(width)
+			UIParent:SetSize(width, 768)
+			P:Apply("__probe")
+			return anchors.player.x, anchors.target.x, anchors.player.y
+		end
+
+		-- The two shapes that matter, in the units the client draws in.
+		local wideX, wideC, wideY = at(1843)
+		local narrowX, narrowC, narrowY = at(1365)
+
+		check(wideX > narrowX and math.abs(narrowX / wideX - 1365 / 1843) < 0.01,
+			"a frame placed a quarter of the way across stays a quarter of the way "
+			.. "across on a narrower screen (" .. string.format("%.0f then %.0f",
+			wideX, narrowX) .. ")")
+
+		-- BOTH DIRECTIONS FROM CENTRE. A negative offset that grew instead of
+		-- shrinking would put the left-hand frame off the left edge, which is the
+		-- one failure of this that is not merely untidy.
+		check(wideC < 0 and narrowC < 0 and narrowC > wideC,
+			"and one placed left of centre moves in rather than out (" ..
+			string.format("%.0f then %.0f", wideC, narrowC) .. ")")
+
+		-- VERTICAL IS UNTOUCHED, because the client's UI is 768 units tall on
+		-- every display. Which is why this only ever looked like half a problem.
+		check(wideY == narrowY,
+			"and nothing moves vertically, the UI being 768 units tall on every "
+			.. "display (" .. wideY .. ", " .. narrowY .. ")")
+
+		-- AND THE ARRANGEMENT STILL READS BACK AS ITSELF once resolved. Comparing
+		-- a preset's fractions against the units the movers wrote makes every
+		-- preset answer "not this one" on every display.
+		check(P:Current() == "__probe",
+			"and it is still recognised as the arrangement on screen (" ..
+			tostring(P:Current()) .. ")")
+
+		-- A CAPTURE COMES BACK IN FRACTIONS, which is what makes the next one
+		-- portable. A capture in units is a capture of one monitor.
+		local text = table.concat((P:Capture("__probe")), "\n")
+		check(text:find("fx = ", 1, true) ~= nil and text:find("x = %-?%d+,") == nil,
+			"and a capture writes fractions rather than the units it read")
+		check(text:find("captured on a", 1, true) ~= nil,
+			"saying what size screen it was made on, because whether a layout still "
+			.. "composes at 16:9 is a question the numbers cannot answer")
+
+		UIParent:SetSize(wasW, wasH)
+		P.list.__probe = nil
+		P.order[#P.order] = nil
+	end
 
 	A.Movers.RestoreAll = realRestore
-	P.list.centre.anchors = {}
-	P.list.centre.scale = nil
 	wipe(anchors)
+	A.db.profile.scale = wasScale
+	A:Reconfigure()
 end
 print("== zen: it eases out rather than snapping ==")
 do

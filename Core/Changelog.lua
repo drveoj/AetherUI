@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.27.0",
+		date    = "2026-08-23",
+		lines   = {
+			"Three shipped layout presets - Classic Corner, Centre focus and Bottom Corners - chosen with /aether preset <name>.",
+			"Preset positions are stored as fractions of the screen rather than pixels, so an arrangement made on an ultrawide lands in the same place on a 1920x1080 display.",
+		},
+	},
+	{
 		version = "0.26.6",
 		date    = "2026-08-23",
 		lines   = {
