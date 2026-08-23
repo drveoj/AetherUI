@@ -46,8 +46,46 @@ local function widgetBase(kind)
 		__regions = {},
 	}
 
+	--- Does anchoring to `rel` mean anchoring to ourselves, round the houses?
+	--
+	--  THE CLIENT REFUSES THIS AND SAYS SO: "Cannot anchor to a region
+	--  dependent on it", a real error with a real stack. The mock accepted it
+	--  silently, which is how a loop shipped: the vendor's two repair buttons
+	--  were anchored one off the other in OUR direction, and the client's own
+	--  MerchantFrame_UpdateRepairButtons - which anchors them the other way
+	--  round, on every merchant update - threw the moment a vendor opened.
+	--
+	--  BOUNDED, because a chain that already loops would hang this walk rather
+	--  than report it, and a mock that hangs is worse than one that is kind.
+	local function anchorsBackTo(rel, me)
+		local seen, hops = {}, 0
+		local queue = { rel }
+		while #queue > 0 and hops < 64 do
+			local f = table.remove(queue)
+			hops = hops + 1
+			if f == me then return true end
+			if type(f) == "table" and not seen[f] then
+				seen[f] = true
+				for _, pt in ipairs(f.__points or {}) do
+					if pt[2] then queue[#queue + 1] = pt[2] end
+				end
+			end
+		end
+		return false
+	end
+
 	function o:SetPoint(p, rel, relP, x, y)
 		if type(p) ~= "string" then fail(kind .. ":SetPoint got non-string point " .. tostring(p)) end
+		if rel and rel ~= self and anchorsBackTo(rel, self) then
+			fail(("ANCHOR LOOP: %s:SetPoint(%q, %s) - cannot anchor to a"
+				.. " region dependent on it"):format(
+				tostring(self.__name or self.__kind), p,
+				tostring(rel.__name or rel.__kind)))
+		end
+		if rel == self then
+			fail(("ANCHOR LOOP: %s:SetPoint(%q) anchored to itself"):format(
+				tostring(self.__name or self.__kind), p))
+		end
 		self.__points[#self.__points + 1] = { p, rel, relP, x or 0, y or 0 }
 	end
 	function o:GetPoint(i)
@@ -6266,6 +6304,26 @@ do
 		buyBtn:CreateTexture(nil, "BACKGROUND"):SetTexture("buyback-icon")
 		buy.ItemButton = buyBtn
 
+		-- AND THE CLIENT RE-PLACES ALL THREE ON EVERY MERCHANT UPDATE, WITHOUT
+		-- CLEARING THEIR POINTS FIRST. Both halves of that matter.
+		--
+		-- It anchors RepairItem OFF RepairAll, so anything of ours hanging
+		-- RepairAll off RepairItem closes a loop and this SetPoint is the one
+		-- that throws. And its own corners are ADDED to whatever is already
+		-- there, so a placement made once is a button stretched between two
+		-- anchors the next time a vendor updates.
+		function _G.MerchantFrame_UpdateRepairButtons()
+			_G.MerchantRepairAllButton:SetSize(36, 36)
+			_G.MerchantRepairItemButton:SetSize(36, 36)
+			_G.MerchantRepairItemButton:SetPoint("RIGHT",
+				_G.MerchantRepairAllButton, "LEFT", -2, 0)
+			_G.MerchantRepairAllButton:SetPoint("BOTTOMRIGHT", merchant,
+				"BOTTOMLEFT", 160, 32)
+			_G.MerchantRepairText:ClearAllPoints()
+			_G.MerchantRepairText:SetPoint("BOTTOMLEFT", merchant,
+				"BOTTOMLEFT", 14, 45)
+		end
+
 		local repairText = merchant:CreateFontString("MerchantRepairText", "BACKGROUND")
 		repairText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
 		repairText:SetText("Repair Items")
@@ -9758,12 +9816,17 @@ section("the harness itself: a size worked out from anchors", function()
 		.. "; taking the first frame for both would say 30)")
 
 	-- A cycle terminates instead of running the stack out.
+	--
+	-- BUILT PAST THE SETTER, ON PURPOSE. SetPoint now refuses a cycle the way
+	-- the client does - "cannot anchor to a region dependent on it" - so this
+	-- one is written straight into the points to keep proving the other half:
+	-- that a chain which HAS looped is walked to a stop rather than running
+	-- the stack out. Both matter, and only one of them can go through the
+	-- front door.
 	local a = CreateFrame("Frame", nil, parent)
 	local b = CreateFrame("Frame", nil, parent)
-	a:SetPoint("LEFT", b, "LEFT", 0, 0)
-	a:SetPoint("RIGHT", b, "RIGHT", 0, 0)
-	b:SetPoint("LEFT", a, "LEFT", 0, 0)
-	b:SetPoint("RIGHT", a, "RIGHT", 0, 0)
+	a.__points = { { "LEFT", b, "LEFT", 0, 0 }, { "RIGHT", b, "RIGHT", 0, 0 } }
+	b.__points = { { "LEFT", a, "LEFT", 0, 0 }, { "RIGHT", a, "RIGHT", 0, 0 } }
 	local ok, w = pcall(a.GetWidth, a)
 	check(ok and w == 0,
 		"two frames anchored to each other report zero rather than overflowing"
@@ -28233,6 +28296,25 @@ do
 			"the two repair buttons stand apart rather than running into each "
 			.. "other (" .. string.format("%.0f", all:GetLeft() - one:GetRight())
 			.. " apart, the client's own is 2)")
+
+		-- AND IT ALL SURVIVES THE CLIENT DOING IT AGAIN.
+		--
+		-- MerchantFrame_UpdateRepairButtons runs on every merchant update and
+		-- re-places all three WITHOUT clearing their points. So a placement made
+		-- once is a button stretched between two anchors the next time somebody
+		-- opens a vendor - and the pair anchored the other way round from the
+		-- client's is an ANCHOR LOOP, which is a real error with a real stack.
+		-- Reported from the game as exactly that.
+		_G.MerchantFrame_UpdateRepairButtons()
+		check(one:GetNumPoints() == 1 and all:GetNumPoints() == 1,
+			"each repair button is left pinned by ONE corner after the client "
+			.. "has been past (" .. one:GetNumPoints() .. ", "
+			.. all:GetNumPoints() .. ")")
+		check(math.abs(one:GetTop() - buy:GetTop()) < 0.5
+			and all:GetLeft() - one:GetRight() >= 6,
+			"and still on the buyback row, still apart (" ..
+			string.format("%.0f vs %.0f, %.0f apart", one:GetTop(),
+			buy:GetTop(), all:GetLeft() - one:GetRight()) .. ")")
 
 		-- AND THE LABEL IS UNDER THE PAIR IT NAMES, not 16 in from a corner that
 		-- is now the footer strip.

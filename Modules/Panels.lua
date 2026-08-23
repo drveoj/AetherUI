@@ -3993,6 +3993,69 @@ local function DressMerchantRow(row, store)
 	if money then Reskin.Fonts(money, "pnBody", 2) end
 end
 
+--- The vendor's two repair buttons, on the row the buyback slot is on.
+--
+--  THE LAST ROW OF THE GRID IS HALF EMPTY. The client hangs the buyback slot
+--  53 below the tenth item, in the RIGHT column, and nothing is ever drawn
+--  beside it - so the repair pair goes in the left half of that row, level
+--  with it. What you can sell back and what you can repair read as one line,
+--  and the strip below is left to the page turn and your purse.
+--
+--  The client pins them to the window's own bottom-left corner, which is
+--  where our footer strip now is, so the pair sat across its hairline. And it
+--  spaces them TWO units apart, which is close enough that two surfaces with
+--  a rim on them read as one shape with a seam down it.
+--
+--  AGAIN AFTER THE CLIENT, EVERY TIME, AND IN THE CLIENT'S OWN DIRECTION.
+--
+--  MerchantFrame_UpdateRepairButtons runs on every merchant update and
+--  re-places all three - and it does NOT clear their points first, so its
+--  SetPoints are added to whatever is already there. Two things follow.
+--
+--  The first is that anchoring the pair the other way round is an ERROR, not
+--  a cosmetic problem: the client anchors RepairItem off RepairAll, so ours
+--  hanging RepairAll off RepairItem closed a loop and the client's own
+--  SetPoint threw "Cannot anchor to a region dependent on it". So RepairAll
+--  takes the row and RepairItem hangs off it, which is the client's
+--  direction and cannot cycle whatever either of us does.
+--
+--  The second is that placing them once is not enough - the next update adds
+--  the client's corners back alongside ours and stretches both buttons
+--  between two anchors. So this runs from the dresser AND from a hook on
+--  that function, and clears every point each time.
+local function PlaceRepair()
+	local buy = _G.MerchantBuyBackItem
+	local col = _G.MerchantItem1 and _G.MerchantItem1.ItemButton
+	local one, all = _G.MerchantRepairItemButton, _G.MerchantRepairAllButton
+	if not (buy and col and one and all) then return false end
+
+	-- MEASURED off the two frames rather than copied from the client's layout:
+	-- they are the two columns of one grid, so the distance between them is the
+	-- grid's own and stays true whatever the window is doing.
+	local colX = col.GetLeft and col:GetLeft()
+	local buyX = buy.GetLeft and buy:GetLeft()
+	if not (colX and buyX) then return false end
+
+	-- The right-hand button takes the row, and the left one hangs off it.
+	local wide = (one.GetWidth and one:GetWidth()) or 36
+	all:ClearAllPoints()
+	all:SetPoint("TOPLEFT", buy, "TOPLEFT",
+		(colX - buyX) + wide + REPAIR_GAP, 0)
+	one:ClearAllPoints()
+	one:SetPoint("RIGHT", all, "LEFT", -REPAIR_GAP, 0)
+
+	-- AND THE LABEL UNDER THE PAIR IT NAMES. The client clears this one's
+	-- points and puts it 14 in from the window's bottom-left corner, which is
+	-- now the footer strip - so it has to be moved again here with them.
+	local label = _G.MerchantRepairText
+	if label and label.ClearAllPoints then
+		label:ClearAllPoints()
+		label:SetPoint("TOPLEFT", one, "BOTTOMLEFT", 0, -4)
+		if label.SetJustifyH then label:SetJustifyH("LEFT") end
+	end
+	return true
+end
+
 local function DressMerchant(frame, store)
 	for i = 1, MERCHANT_ROWS do
 		DressMerchantRow(_G["MerchantItem" .. i], store)
@@ -4022,55 +4085,21 @@ local function DressMerchant(frame, store)
 		if btn then W.SkinButton(btn, {}) end
 	end
 
-	-- AND THEY GO ON THE ROW THE BUYBACK SLOT IS ON.
-	--
-	-- The client pins them to the window's own bottom-left corner, which is
-	-- where our footer strip now is - so the pair sat across the strip's
-	-- hairline with the page turn beside them. And they are TWO UNITS apart
-	-- in its own layout, which is close enough that two surfaces with a rim
-	-- on them overlap: both of those were reported together.
-	--
-	-- THE LAST ROW OF THE GRID IS HALF EMPTY. The client hangs the buyback
-	-- slot 53 below the tenth item, in the RIGHT column, and nothing is ever
-	-- drawn beside it - so the repair pair goes in the left half of that row,
-	-- level with it. What you can sell back and what you can repair read as
-	-- one line, and the strip below is left to the page turn and your purse.
-	--
-	-- ANCHORED TO THE SLOT ITSELF rather than to a number: the buyback is
-	-- moved by the body like everything else in the grid, so hung off it the
-	-- pair travels with the window instead of needing its own arithmetic.
-	local buy = _G.MerchantBuyBackItem
-	local col = _G.MerchantItem1 and _G.MerchantItem1.ItemButton
-	local one, all = _G.MerchantRepairItemButton, _G.MerchantRepairAllButton
-	-- ONE POINT, CARRYING BOTH AXES. The obvious way is two - LEFT from the
-	-- column and TOP from the buyback - and that is legal, but a frame is
-	-- easier to reason about with a single corner pinned. The sideways step
-	-- is MEASURED off the two frames rather than copied from the client's
-	-- layout: they are the two columns of one grid, so the distance between
-	-- them is the grid's own and stays true whatever the window is doing.
-	local colX = col.GetLeft and col:GetLeft()
-	local buyX = buy and buy.GetLeft and buy:GetLeft()
-	if buy and one and all and colX and buyX then
-		one:ClearAllPoints()
-		one:SetPoint("TOPLEFT", buy, "TOPLEFT", colX - buyX, 0)
-		all:ClearAllPoints()
-		-- A GAP OF OURS, not the client's two: two rimmed surfaces that close
-		-- together are one shape with a seam in it.
-		all:SetPoint("LEFT", one, "RIGHT", REPAIR_GAP, 0)
+	-- AND THEY GO ON THE ROW THE BUYBACK SLOT IS ON - see PlaceRepair, which
+	-- has to run again after the client every time, and says why.
+	PlaceRepair()
+	if hooksecurefunc and _G.MerchantFrame_UpdateRepairButtons
+		and not PN.__repairHook then
+		PN.__repairHook = true
+		hooksecurefunc("MerchantFrame_UpdateRepairButtons", function()
+			if PN.enabled then PlaceRepair() end
+		end)
 	end
 
 	local repairLabel = _G.MerchantRepairText
 	if repairLabel then
 		Reskin.Font(repairLabel, "pnBody", Palette.c.text)
 		W.Color(repairLabel, Palette.c.textDim)
-		-- UNDER THE PAIR IT NAMES, which is where a label belongs and is not
-		-- where the client had it: 16 in from the window's bottom-left corner,
-		-- which is now the footer strip.
-		if one and repairLabel.ClearAllPoints then
-			repairLabel:ClearAllPoints()
-			repairLabel:SetPoint("TOPLEFT", one, "BOTTOMLEFT", 0, -4)
-			if repairLabel.SetJustifyH then repairLabel:SetJustifyH("LEFT") end
-		end
 	end
 
 	-- THE PAGE TURN, which is now the spellbook's like every other one.
