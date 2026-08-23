@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.27.1",
+		date    = "2026-08-23",
+		lines   = {
+			"The error and capture window's button writes the text to the saved variables file, which is the only route out of this client that carries it intact - CopyToClipboard is forbidden to addons.",
+		},
+	},
+	{
 		version = "0.27.0",
 		date    = "2026-08-23",
 		lines   = {

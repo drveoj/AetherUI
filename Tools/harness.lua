@@ -1448,25 +1448,23 @@ DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) print("    | " .. tostring(
 
 STANDARD_TEXT_FONT = [[Fonts\FRIZQT__.TTF]]
 
---- THE CLIENT'S OWN CLIPBOARD CALL, which this one has: Blizzard_Console,
---  the API browser and the Edit Mode layout export all use it on 1.15.9, and
---  OsDocumentation declares it - CopyToClipboard(text, removeMarkup) putting
---  the string on the system clipboard and answering with its length.
+--- THE CLIENT'S OWN CLIPBOARD CALL, WHICH ADDONS MAY NOT USE.
 --
---  It matters because it is the ONE route out of the game that does not go
---  through a widget. Ctrl+A, Ctrl+C copies what an EditBox has LAID OUT, and
---  a twenty-five line capture that reads correctly in the box arrived in
---  Windows as thousands of lines. This copies the string itself.
-_G.__clipboard = nil
-function CopyToClipboard(text, removeMarkup)
-	-- Not nilable in the documentation, and the client faults on nil.
-	assert(type(text) == "string", "CopyToClipboard wants a string")
-	local out = text
-	if removeMarkup then out = out:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") end
-	_G.__clipboard = out
-	return #out
+--  CopyToClipboard is in this client - Blizzard_Console, the API browser and
+--  the Edit Mode layout export all call it, and OsDocumentation declares it
+--  with HasRestrictions = true. That flag is the whole story: called from an
+--  addon it raises "attempted to call a forbidden function (UNKNOWN()) from a
+--  tainted execution path", and it is raised whether or not you pcall it, so
+--  the error is REPORTED either way. There is no quiet attempt.
+--
+--  Modelled as the refusal rather than left out, because a mock that simply
+--  has no CopyToClipboard makes the addon's pcall fall through to its own
+--  fallback and pass - which is exactly how this shipped, and the first thing
+--  that came back was the in-game error report.
+function CopyToClipboard()
+	error("AddOn AetherUI attempted to call a forbidden function (UNKNOWN()) "
+		.. "from a tainted execution path.")
 end
-
 function GetTime() return time end
 function GetCursorPosition() return cursorX, cursorY end
 --- Move it. Tests that drag things were setting the upvalue directly, which
@@ -18778,8 +18776,7 @@ do
 
 	-- CHAT CANNOT BE COPIED FROM IN THIS CLIENT. That is the whole reason the
 	-- copy box exists, so a capture that only reaches chat has not reached
-	-- anybody - and a route through chat is not a way round a box that is
-	-- misbehaving.
+	-- anybody.
 	local said = {}
 	local chat = _G.DEFAULT_CHAT_FRAME
 	local realAdd = chat.AddMessage
@@ -18798,71 +18795,53 @@ do
 		"the whole table is in the box, which is the only thing in this client "
 		.. "whose text can be selected")
 
-	-- SHOWN BEFORE IT IS FILLED. A multiline EditBox lays its text out when it
-	-- is on screen, and a hidden one has no laid-out lines to put a string into
-	-- - which is the suspect for a report arriving as its first line and a
-	-- great many empty ones.
-	local order = {}
-	local dialog = box and box:GetParent() and box:GetParent():GetParent()
-	if dialog then
-		local realShow = dialog.Show
-		local realSet = box.SetText
-		dialog.Show = function(self) order[#order + 1] = "show" return realShow(self) end
-		box.SetText = function(self, t) order[#order + 1] = "text" return realSet(self, t) end
-		A.Errors:ShowText("one\ntwo\nthree")
-		dialog.Show, box.SetText = realShow, realSet
-		check(order[1] == "show" and order[2] == "text",
-			"the box is on screen before the text goes into it (" ..
-			table.concat(order, ",") .. ")")
-	end
-
-	-- COPY, WHICH DOES NOT GO THROUGH THE BOX.
+	-- AND OUT TO THE DISK, WHICH IS THE ONLY ROUTE THAT WORKS.
 	--
-	-- Ctrl+A, Ctrl+C copies what the EditBox has LAID OUT, not the string it
-	-- was handed. A capture that read correctly in the box, and counted
+	-- Ctrl+A, Ctrl+C takes what the EditBox LAID OUT rather than the string it
+	-- was handed: a capture that read correctly in the box, and counted
 	-- correctly in chat at 1683 characters and 25 lines, arrived in Windows as
-	-- thousands of lines. So the string has to have a way out that no widget
-	-- touches, and this client has one.
+	-- thousands of lines. CopyToClipboard would have stepped over the box and
+	-- is forbidden to addons - see the mock. What is left is the saved
+	-- variables file, which is a text file that holds what it is given.
+	local out = A.db.global.export and A.db.global.export.preset_centre
+	check(out == text,
+		"a capture is written to the saved variables byte for byte, which is the "
+		.. "one way text leaves this client intact")
+
+	-- NOTHING TRAILING. The symptom was the report followed by a screenful of
+	-- empty lines, so what matters is that the last character of the export is
+	-- the last character of the report.
+	local pad = tostring(out or ""):match("%s*$") or ""
+	check(pad:find("\n") == nil,
+		"and not one blank line after it (" .. #pad .. " characters of trailing "
+		.. "space)")
+
+	-- THE BUTTON DOES THE SAME, for a panel dump or an error log that was not
+	-- put there by a command.
 	local dlg = box and box:GetParent() and box:GetParent():GetParent()
-	check(dlg and dlg.copy ~= nil, "the copy box has a Copy button")
+	check(dlg and dlg.copy ~= nil, "the copy box has an Export button")
 	if dlg and dlg.copy then
-		-- Its own text, not whatever the last check left in the box.
-		local want = "centre = {\n\tplayer = { x = -180 },\n}"
-		A.Errors:ShowText(want)
-		_G.__clipboard = nil
-		-- The box is made to answer with something else for the length of the
-		-- click. If Copy reads the widget rather than the string, that is what
-		-- lands on the clipboard - which is the whole fault, in miniature.
-		local realGet = box.GetText
-		box.GetText = function() return "whatever the box laid out" end
+		A.Errors:ShowText("one\ntwo\nthree")
 		dlg.copy:GetScript("OnClick")(dlg.copy)
-		box.GetText = realGet
-		check(_G.__clipboard == want,
-			"and it puts the string itself on the clipboard, byte for byte, rather "
-			.. "than whatever the box laid out"
-			)
-
-		-- AND NOTHING TRAILING. The symptom was the report followed by a screenful
-		-- of empty lines, so the check that matters is that the last character is
-		-- the last character of the report.
-		local pad = tostring(_G.__clipboard or ""):match("[%s]*$") or ""
-		check(pad:find("\n") == nil,
-			"and not one blank line after it (" .. #pad .. " characters of trailing "
-			.. "space)")
+		check(A.db.global.export.last == "one\ntwo\nthree",
+			"and its Export button writes whatever is on screen (" ..
+			tostring(A.db.global.export.last) .. ")")
 	end
 
-	-- IT SURVIVES THE CALL GOING AWAY. The function is restricted and this is
-	-- a client that changes; a Copy button that throws inside the error dialog
-	-- would take the error report down with it.
+	-- AND NOTHING GOES NEAR THE CLIPBOARD. CopyToClipboard is in this client -
+	-- Blizzard's own console and Edit Mode both call it - and forbidden to
+	-- addons, so an attempt is an error report in the player's face whether or
+	-- not it is pcall'd. It shipped once and came straight back.
+	local tried = false
+	local realCopy = _G.CopyToClipboard
+	_G.CopyToClipboard = function() tried = true end
 	if dlg and dlg.copy then
-		local real = _G.CopyToClipboard
-		_G.CopyToClipboard = function() error("restricted") end
-		local ok = pcall(dlg.copy:GetScript("OnClick"), dlg.copy)
-		_G.CopyToClipboard = real
-		check(ok,
-			"and a client that refuses the call leaves the button harmless rather "
-			.. "than throwing inside the error dialog")
+		pcall(dlg.copy:GetScript("OnClick"), dlg.copy)
 	end
+	pcall(SlashCmdList["AETHERUI"], "preset capture centre")
+	_G.CopyToClipboard = realCopy
+	check(not tried,
+		"and nothing on this path calls the forbidden clipboard function")
 
 	-- AND IT SAYS HOW MUCH IT WAS GIVEN. A box showing one line of an
 	-- eight-line report looks exactly like a report that had one line in it,

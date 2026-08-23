@@ -181,7 +181,7 @@ local function Build()
 
 	local hint = W.Text(f, "tbCardSub", "CENTER")
 	hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-	hint:SetText("Copy, or Ctrl+A then Ctrl+C. Escape closes.")
+	hint:SetText("Export writes it to SavedVariables\\AetherUI.lua. Escape closes.")
 	W.Color(hint, Palette.c.textDim)
 
 	-- A SCROLL FRAME AROUND IT, because a diag runs to eighty lines.
@@ -293,42 +293,39 @@ local function Build()
 	hit:SetPoint("CENTER", close, "CENTER", 0, 0)
 	hit:SetScript("OnClick", function() f:Hide() end)
 
-	-- COPY, WHICH DOES NOT GO THROUGH THE BOX AT ALL.
+	-- EXPORT, WHICH DOES NOT GO THROUGH THE CLIPBOARD.
 	--
-	-- Ctrl+A, Ctrl+C copies what the EditBox has LAID OUT, not the string it
-	-- was handed. A twenty-five line capture that read correctly in the box -
-	-- and counted correctly in chat, 1683 characters and 25 lines - arrived in
-	-- Windows as thousands of lines. Whatever the box is doing between the
-	-- string and the selection, this steps over it: CopyToClipboard takes the
-	-- string itself and answers with how many bytes it took.
+	-- There is no way to copy out of this client that works. Ctrl+A, Ctrl+C
+	-- takes what the EditBox LAID OUT rather than the string it was handed,
+	-- and a twenty-five line capture that read correctly in the box - and
+	-- counted correctly in chat at 1683 characters and 25 lines - arrived in
+	-- Windows as thousands of lines.
 	--
-	-- The call is in this client - Blizzard_Console, the API browser and the
-	-- Edit Mode layout export all use it - and it is restricted, so it has to
-	-- run from a hardware event. A button click is one. It is also pcall'd:
-	-- if a future build takes it away, the box is still there and the hint
-	-- still says so.
+	-- CopyToClipboard would have stepped over the box entirely, and it IS in
+	-- this client: Blizzard_Console, the API browser and the Edit Mode layout
+	-- export all call it, and OsDocumentation declares it. It is also
+	-- forbidden to addons, which the documentation says as HasRestrictions
+	-- and the client says as "attempted to call a forbidden function from a
+	-- tainted execution path". A pcall catches it and the error is reported
+	-- anyway, so there is not a quiet version of that attempt either.
+	--
+	-- What is left is the saved variables file: a text file on the disk that
+	-- holds what it is given, flushed on /reload or logout. Slower than a
+	-- clipboard and the only one of the three that works.
 	local copy = W.CreateButton(f, { corner = 8 })
-	copy:SetSize(72, 22)
+	copy:SetSize(84, 22)
 	copy:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -12)
 
 	local copyText = W.Text(copy, "tbCardSub", "CENTER")
 	copyText:SetPoint("CENTER")
-	copyText:SetText("Copy")
+	copyText:SetText("Export")
 	W.Color(copyText, Palette.c.text)
 	copy.__label = copyText
 
 	copy:SetScript("OnEnter", function(self) W.SetButtonState(self, false, true) end)
 	copy:SetScript("OnLeave", function(self) W.SetButtonState(self, false, false) end)
 	copy:SetScript("OnClick", function()
-		local text = f.__text or ""
-		local ok, n = pcall(_G.CopyToClipboard, text, false)
-		if ok then
-			-- The length it reports, not the length we sent: those differing is
-			-- exactly the fault this button exists for, and silently.
-			A:Print(("copied %d characters to the clipboard"):format(n or 0))
-		else
-			A:Print("this client will not copy for us - use Ctrl+A then Ctrl+C")
-		end
+		Errors:Export("last", f.__text or "")
 	end)
 	f.copy = copy
 
@@ -336,7 +333,28 @@ local function Build()
 	return f
 end
 
---- Show any text at all, ready to copy.
+--- Put text where it can be read from outside the game.
+--
+--  THE SAVED VARIABLES FILE, because nothing else in this client works. See
+--  the Export button above for the two routes that do not.
+--
+--  NOT FLUSHED UNTIL /reload OR LOGOUT. The client writes that file when it
+--  feels like it and never on demand, so saying so is part of the job - a
+--  player who alt-tabs straight to the file finds the last one there and
+--  concludes this is broken.
+function Errors:Export(key, text)
+	if not A.db then return false end
+	A.db.global.export = A.db.global.export or {}
+	A.db.global.export[key or "last"] = tostring(text or "")
+
+	A:Print(("exported %d characters as %s - /reload, then open"):format(
+		#tostring(text or ""), A.Val(key or "last"))
+		.. " " .. A.Hi("WTF\\Account\\<account>\\SavedVariables\\"
+			.. "AetherUI.lua") .. " and look under " .. A.Val("export"))
+	return true
+end
+
+--- Show any text at all, ready to read.
 function Errors:ShowText(text)
 	local f = Build()
 

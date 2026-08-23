@@ -616,7 +616,12 @@ handlers.preset = function(arg, rest)
 		-- INTO THE COPY BOX, which is the only thing in this client whose text
 		-- can be selected - chat cannot be copied from at all, which is why
 		-- that box exists.
-		A.Errors:ShowText(table.concat(lines, "\n"))
+		local text = table.concat(lines, "\n")
+		A.Errors:ShowText(text)
+
+		-- AND OUT TO THE DISK, which is the only route out of this client
+		-- that carries the text intact. The box above is for reading.
+		A.Errors:Export("preset_" .. key, text)
 		A:Print("captured " .. count .. " frame position"
 			.. (count == 1 and "" or "s") .. " as " .. A.Val(key)
 			.. " - the lines above are the thing to paste into"

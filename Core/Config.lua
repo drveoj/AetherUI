@@ -17,6 +17,23 @@ local Config = {}
 A.Config = Config
 
 Config.defaults = {
+	-- TEXT ON ITS WAY OUT OF THE GAME, and nothing else.
+	--
+	-- There is no way to copy from this client. Chat cannot be selected, and
+	-- CopyToClipboard - which IS in the 1.15.9 API and which Blizzard's own
+	-- console and Edit Mode both call - is forbidden to addons: calling it
+	-- gets "attempted to call a forbidden function from a tainted execution
+	-- path". The copy box can be selected, but what Ctrl+C takes out of it is
+	-- what the box LAID OUT rather than the string it was handed, and a
+	-- twenty-five line capture arrived in Windows as thousands of lines.
+	--
+	-- So the way out is the saved variables file, which is a text file on the
+	-- disk and holds exactly what it is given. Written here, flushed on
+	-- /reload or logout, opened in any editor.
+	global = {
+		export = {},
+	},
+
 	-- A quest log belongs to a character, not to a profile. Tracked quest IDs
 	-- shared across an alt would just be noise in everybody's tracker.
 	char = {
