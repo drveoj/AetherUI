@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.30.2",
+		date    = "2026-08-23",
+		lines   = {
+			"Layout preset thumbnails show the unit frames and the bars each arrangement switches on, rather than every frame it names. The finish card and a tooltip diagnostic no longer print an arrow the interface font cannot draw.",
+		},
+	},
+	{
 		version = "0.30.1",
 		date    = "2026-08-23",
 		lines   = {

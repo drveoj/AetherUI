@@ -38046,6 +38046,50 @@ section("threat: one place decides which tier a unit is in", function()
 	TH:Poll()
 end)
 
+print("== glyphs: nothing drawn that the font has not got ==")
+do
+	-- ARROWS ARE TEXTURES HERE, NEVER CHARACTERS.
+	--
+	-- The interface font carries Latin-1 and the punctuation this addon
+	-- already draws - the em dash and the middle dot both come out right - but
+	-- it has no arrows. A design deck that writes "Toolbox -> Layout" with a
+	-- real arrow character produces a hollow box in game, which is what the
+	-- onboarding finish card shipped as.
+	--
+	-- Every arrow this addon draws is Media.texture.chevron for exactly that
+	-- reason. This is the guard that stops the next one arriving as text: the
+	-- fault is invisible in every check that reads a string back, because the
+	-- string is perfectly correct - it is the FONT that cannot draw it.
+	local ARROWS = {
+		"\226\134\144", "\226\134\145", "\226\134\146", "\226\134\147",
+		"\226\135\144", "\226\135\146", "\226\150\182", "\226\150\184",
+	}
+
+	local offenders = {}
+	for _, path in ipairs(FILES) do
+		local fh = io.open(path, "rb")
+		if fh then
+			local text = fh:read("*a") or ""
+			fh:close()
+			for _, arrow in ipairs(ARROWS) do
+				local at = text:find(arrow, 1, true)
+				if at then
+					-- The line, so the report says where rather than merely that.
+					local line = 1
+					for _ in text:sub(1, at):gmatch("\n") do line = line + 1 end
+					offenders[#offenders + 1] = path .. ":" .. line
+				end
+			end
+		end
+	end
+	table.sort(offenders)
+
+	check(#offenders == 0,
+		"no file draws an arrow as a character - they are textures, because "
+		.. "the font has none (" .. (#offenders > 0 and
+		table.concat(offenders, ", ") or "clean") .. ")")
+end
+
 print("== onboarding: the tour IS the setup ==")
 do
 	local OB = A:GetModule("onboard")
@@ -38307,10 +38351,33 @@ do
 		-- thumbnails. The anchors are already fractions of the screen - that is
 		-- what makes them portable - so a thumbnail cannot drift away from what
 		-- the card actually does.
-		check(cards[1].box and cards[1].box.marks and #cards[1].box.marks > 3,
-			"with a wireframe drawn out of its own anchors (" ..
-			tostring(cards[1].box and cards[1].box.marks
-			and #cards[1].box.marks) .. " marks)")
+		--
+		-- AND FOUR MARKS AT MOST, NOT ELEVEN. The first version drew every
+		-- anchor a preset names - six bars, the party frame, the pet, the
+		-- tooltip - which in a box the size of a postage stamp is a texture
+		-- rather than a layout. Reported as "this image is a mess".
+		for i, key in ipairs(A.Presets.order) do
+			local preset = A.Presets.list[key]
+			local shown = 0
+			for _, m in ipairs(cards[i].box.marks or {}) do
+				if m:IsShown() then shown = shown + 1 end
+			end
+
+			-- The player, the target, and the bars this preset SWITCHES ON. A
+			-- preset that leaves bar 5 off has no business drawing it, and the
+			-- anchors table carries a position for it either way.
+			local want = 0
+			if preset.anchors.player then want = want + 1 end
+			if preset.anchors.target then want = want + 1 end
+			for id, on in pairs(preset.bars or {}) do
+				if on and preset.anchors["bar" .. id] then want = want + 1 end
+			end
+
+			check(shown == want and shown > 1 and shown <= 4,
+				"\"" .. key .. "\" draws its unit frames and the bars it switches "
+				.. "on, and nothing else (" .. shown .. " of a wanted " .. want ..
+				")")
+		end
 
 		cards[2]:GetScript("OnClick")(cards[2])
 		check(A.Presets:Current() == A.Presets.order[2],

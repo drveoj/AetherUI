@@ -731,36 +731,57 @@ end
 --  anchors are already fractions of the screen - that is what makes them
 --  portable - so a thumbnail is those fractions on a small rectangle, and it
 --  cannot drift away from what the card actually does.
-local UNITS = { player = true, target = true, pet = true, party = true }
+--
+--  FOUR MARKS AT MOST, AND NOT ELEVEN.
+--
+--  The first version drew every anchor a preset names, which is six bars, the
+--  party frame, the pet, the tooltip and the rest - eleven smears in a box the
+--  size of a postage stamp, overlapping into a texture rather than a layout.
+--  A thumbnail is not a map; it has one job, which is to let somebody tell
+--  three arrangements apart at a glance.
+--
+--  So: the player frame, the target frame, and the bars this preset actually
+--  SWITCHES ON. A preset that leaves bar 5 off has no business drawing it, and
+--  the anchors table still carries a position for it either way.
+local SHOWN = { player = true, target = true }
 
 local function Wireframe(box, preset)
 	box.marks = box.marks or {}
 	for _, m in ipairs(box.marks) do m:Hide() end
 
-	local n = 0
-	for name, a in pairs(preset.anchors or {}) do
-		local bar = name:find("^bar") ~= nil
-		if UNITS[name] or bar then
-			n = n + 1
-			local m = box.marks[n]
-			if not m then
-				m = box:CreateTexture(nil, "OVERLAY")
-				m:SetTexture(A.Media.texture.flat)
-				box.marks[n] = m
-			end
+	local bw, bh = box:GetWidth(), box:GetHeight()
+	if not bw or bw <= 0 or not bh or bh <= 0 then return end
 
-			-- The fraction is an offset from the anchor point, so it is turned
-			-- into a position on the box the same way Presets turns it into a
-			-- position on the screen: from the corner it is measured from.
-			local bw, bh = box:GetWidth(), box:GetHeight()
-			local px = (a.fx or 0) * bw
-			local py = (a.fy or 0) * bh
-			m:SetSize(bar and bw * 0.22 or bw * 0.16, math.max(2, bh * 0.09))
-			m:ClearAllPoints()
-			m:SetPoint("CENTER", box, a.point or "CENTER", px, py)
-			W.Tint(m, Palette.c.accent, bar and 0.45 or 0.7)
-			m:Show()
+	local n = 0
+	local function mark(a, wide, strong)
+		n = n + 1
+		local m = box.marks[n]
+		if not m then
+			m = box:CreateTexture(nil, "OVERLAY")
+			m:SetTexture(A.Media.texture.flat)
+			box.marks[n] = m
 		end
+
+		-- The fraction is an offset from the anchor point, so it becomes a
+		-- position on the box the same way Presets turns it into a position on
+		-- the screen: from the corner it is measured from.
+		m:SetSize(bw * (wide and 0.30 or 0.20), math.max(2, bh * 0.11))
+		m:ClearAllPoints()
+		m:SetPoint("CENTER", box, a.point or "CENTER",
+			(a.fx or 0) * bw, (a.fy or 0) * bh)
+		W.Tint(m, Palette.c.accent, strong and 0.75 or 0.4)
+		m:Show()
+	end
+
+	for name in pairs(SHOWN) do
+		local a = preset.anchors and preset.anchors[name]
+		if a then mark(a, false, true) end
+	end
+
+	for id in pairs(preset.bars or {}) do
+		local a = preset.bars[id] and preset.anchors
+			and preset.anchors["bar" .. id]
+		if a then mark(a, true, false) end
 	end
 end
 
@@ -1135,14 +1156,20 @@ function OB:ShowFinish()
 	local skin = Palette.skins[Palette.current]
 	local preset = A.Presets and A.Presets:Current()
 	local presetName = preset and A.Presets.list[preset]
-		and A.Presets.list[preset].label or "your own layout"
+		and A.Presets.list[preset].label or "a layout of your own"
 	local edge = A.db and A.db.char and A.db.char.toolbox
 		and A.db.char.toolbox.docked or "LEFT"
 
 	LayCard(c, {
 		("%s palette · %s · Toolbox %s"):format(
 			(skin and skin.label) or "Midnight", presetName, edge:lower()),
-		"Fine-tune anytime: Toolbox → Layout unlocks every frame",
+		-- NO ARROW. The deck writes this with a rightwards arrow between
+		-- "Toolbox" and "Layout", and the
+		-- interface font has not got that character - it came out as a hollow
+		-- box in game. Every arrow this addon draws is a TEXTURE for exactly
+		-- that reason (Media.texture.chevron); a line of recap text is not
+		-- worth a texture, so it is worded without one.
+		"Fine-tune anytime: unlock frames from the Toolbox and drag any of them",
 		"Re-run this tour: /aether tour",
 	})
 
