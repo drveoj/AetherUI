@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.25.4",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: the vendor's repair buttons sit on the buyback row instead of across the footer, and no longer touch each other",
+		},
+	},
+	{
 		version = "0.25.3",
 		date    = "2026-08-23",
 		lines   = {

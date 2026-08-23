@@ -865,6 +865,10 @@ local TOOL_ROW         = 28
 -- than taking the body's 14 - a pair of buttons is not two blocks of
 -- content.
 local FOOT_GAP        = 12
+-- Between the vendor's two repair buttons. The client's own is TWO, which is
+-- close enough that two surfaces with a rim on them read as one shape with a
+-- seam down it - and looked, correctly, like an overlap.
+local REPAIR_GAP      = 8
 -- How far up a chain we look for the window a widget belongs to. Two is
 -- the deepest any of these actually is - a button on a pane on the window -
 -- and the cap is there so a parent cycle cannot hang the layout.
@@ -4018,10 +4022,55 @@ local function DressMerchant(frame, store)
 		if btn then W.SkinButton(btn, {}) end
 	end
 
+	-- AND THEY GO ON THE ROW THE BUYBACK SLOT IS ON.
+	--
+	-- The client pins them to the window's own bottom-left corner, which is
+	-- where our footer strip now is - so the pair sat across the strip's
+	-- hairline with the page turn beside them. And they are TWO UNITS apart
+	-- in its own layout, which is close enough that two surfaces with a rim
+	-- on them overlap: both of those were reported together.
+	--
+	-- THE LAST ROW OF THE GRID IS HALF EMPTY. The client hangs the buyback
+	-- slot 53 below the tenth item, in the RIGHT column, and nothing is ever
+	-- drawn beside it - so the repair pair goes in the left half of that row,
+	-- level with it. What you can sell back and what you can repair read as
+	-- one line, and the strip below is left to the page turn and your purse.
+	--
+	-- ANCHORED TO THE SLOT ITSELF rather than to a number: the buyback is
+	-- moved by the body like everything else in the grid, so hung off it the
+	-- pair travels with the window instead of needing its own arithmetic.
+	local buy = _G.MerchantBuyBackItem
+	local col = _G.MerchantItem1 and _G.MerchantItem1.ItemButton
+	local one, all = _G.MerchantRepairItemButton, _G.MerchantRepairAllButton
+	-- ONE POINT, CARRYING BOTH AXES. The obvious way is two - LEFT from the
+	-- column and TOP from the buyback - and that is legal, but a frame is
+	-- easier to reason about with a single corner pinned. The sideways step
+	-- is MEASURED off the two frames rather than copied from the client's
+	-- layout: they are the two columns of one grid, so the distance between
+	-- them is the grid's own and stays true whatever the window is doing.
+	local colX = col.GetLeft and col:GetLeft()
+	local buyX = buy and buy.GetLeft and buy:GetLeft()
+	if buy and one and all and colX and buyX then
+		one:ClearAllPoints()
+		one:SetPoint("TOPLEFT", buy, "TOPLEFT", colX - buyX, 0)
+		all:ClearAllPoints()
+		-- A GAP OF OURS, not the client's two: two rimmed surfaces that close
+		-- together are one shape with a seam in it.
+		all:SetPoint("LEFT", one, "RIGHT", REPAIR_GAP, 0)
+	end
+
 	local repairLabel = _G.MerchantRepairText
 	if repairLabel then
 		Reskin.Font(repairLabel, "pnBody", Palette.c.text)
 		W.Color(repairLabel, Palette.c.textDim)
+		-- UNDER THE PAIR IT NAMES, which is where a label belongs and is not
+		-- where the client had it: 16 in from the window's bottom-left corner,
+		-- which is now the footer strip.
+		if one and repairLabel.ClearAllPoints then
+			repairLabel:ClearAllPoints()
+			repairLabel:SetPoint("TOPLEFT", one, "BOTTOMLEFT", 0, -4)
+			if repairLabel.SetJustifyH then repairLabel:SetJustifyH("LEFT") end
+		end
 	end
 
 	-- THE PAGE TURN, which is now the spellbook's like every other one.

@@ -6238,11 +6238,33 @@ do
 		for _, n in ipairs({ "MerchantRepairAllButton", "MerchantRepairItemButton",
 			"MerchantGuildBankRepairButton" }) do
 			local b = CreateFrame("Button", n, merchant)
+			b:SetSize(36, 36)
 			local icon = b:CreateTexture(
 				n == "MerchantRepairAllButton" and "MerchantRepairAllIcon" or nil, "BORDER")
 			icon:SetTexture("Interface\\MerchantFrame\\UI-Merchant-RepairIcons")
 			icon:SetTexCoord(0.28125, 0.5625, 0, 0.5625)
 		end
+
+		-- WHERE THE CLIENT PUTS THEM: hard against the window's bottom-left,
+		-- and TWO UNITS APART - close enough that a surface with a rim on it
+		-- has the two overlapping. Both facts matter, and a mock that left
+		-- them unplaced could show neither.
+		_G.MerchantRepairAllButton:SetPoint("BOTTOMRIGHT", merchant,
+			"BOTTOMLEFT", 172, 11)
+		_G.MerchantRepairItemButton:SetPoint("RIGHT",
+			_G.MerchantRepairAllButton, "LEFT", -2, 0)
+
+		-- THE LAST THING YOU SOLD, which the client hangs 53 below the tenth
+		-- item - so it is the final row of the grid, in the RIGHT column, with
+		-- the left half of that row empty.
+		local buy = CreateFrame("Frame", "MerchantBuyBackItem", merchant)
+		buy:SetSize(153, 37)
+		buy:SetPoint("TOPLEFT", _G.MerchantItem10, "BOTTOMLEFT", 0, -53)
+		local buyBtn = CreateFrame("Button", "MerchantBuyBackItemItemButton", buy)
+		buyBtn:SetSize(37, 37)
+		buyBtn:SetPoint("TOPLEFT", buy, "TOPLEFT", 2, -2)
+		buyBtn:CreateTexture(nil, "BACKGROUND"):SetTexture("buyback-icon")
+		buy.ItemButton = buyBtn
 
 		local repairText = merchant:CreateFontString("MerchantRepairText", "BACKGROUND")
 		repairText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
@@ -28179,6 +28201,47 @@ do
 	-- these as icon buttons cleared the anvils and left two empty squares.
 	check(_G.MerchantRepairAllButton.__aetherSkin ~= nil,
 		"repair gets our surface behind it")
+
+	do
+		-- AND THE PAIR GOES ON THE ROW THE BUYBACK SLOT IS ON.
+		--
+		-- The client pins them to the window's own bottom-left corner, which is
+		-- where our footer strip now is, so they sat across its hairline with the
+		-- page turn beside them. The last row of the grid is half empty - the
+		-- client hangs the buyback slot 53 below the tenth item, in the RIGHT
+		-- column, and nothing is ever drawn beside it - so the pair goes in the
+		-- left half of that row, level with it.
+		local one, all = _G.MerchantRepairItemButton, _G.MerchantRepairAllButton
+		local buy = _G.MerchantBuyBackItem
+		check(math.abs(one:GetTop() - buy:GetTop()) < 0.5,
+			"the repair pair is level with the buyback slot (" ..
+			string.format("%.0f vs %.0f", one:GetTop(), buy:GetTop()) .. ")")
+		check(math.abs(one:GetLeft() - _G.MerchantItem1ItemButton:GetLeft()) < 0.5,
+			"and starts where the left column of items does (" ..
+			string.format("%.0f vs %.0f", one:GetLeft(),
+			_G.MerchantItem1ItemButton:GetLeft()) .. ")")
+
+		-- CLEAR OF THE STRIP BELOW, which is the page turn's and your purse's.
+		local rule = _G.MerchantFrame.__aetherFootRule
+		check(rule == nil or one:GetBottom() > rule:GetTop(),
+			"and clear of the footer's hairline rather than sitting across it")
+
+		-- AND THEY DO NOT TOUCH EACH OTHER. The client spaces them TWO apart,
+		-- which is close enough that two surfaces with a rim on them read as one
+		-- shape with a seam down it - reported as the icons overlapping.
+		check(all:GetLeft() - one:GetRight() >= 6,
+			"the two repair buttons stand apart rather than running into each "
+			.. "other (" .. string.format("%.0f", all:GetLeft() - one:GetRight())
+			.. " apart, the client's own is 2)")
+
+		-- AND THE LABEL IS UNDER THE PAIR IT NAMES, not 16 in from a corner that
+		-- is now the footer strip.
+		local lbl = _G.MerchantRepairText
+		check(math.abs(lbl:GetLeft() - one:GetLeft()) < 0.5
+			and lbl:GetTop() <= one:GetBottom(),
+			"and Repair Items sits under them (" ..
+			string.format("%.0f, %.0f", lbl:GetLeft(), lbl:GetTop()) .. ")")
+	end
 	check(_G.MerchantRepairAllIcon:GetTexture()
 			== "Interface\\MerchantFrame\\UI-Merchant-RepairIcons",
 		"and keeps its anvil, which is a region of its own and not this"
