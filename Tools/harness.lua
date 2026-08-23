@@ -18583,6 +18583,53 @@ do
 	end
 
 	TBm:SetOpen(false, true)
+
+	-- THE DRAWER IS TRANSIENT: Escape shuts it, and so does a click anywhere
+	-- else on the screen.
+	--
+	-- TWO FRAMES, because the drawer never hides - it SLIDES, travelling off
+	-- the edge and staying shown the whole time. So neither of the usual
+	-- mechanisms can be pointed at the panel itself.
+	do
+		TBm:SetOpen(true, true)
+		local esc = TBm._escape
+		check(esc ~= nil and esc.IsShown and esc:IsShown(),
+			"with the drawer out there is a proxy frame up for Escape to close")
+
+		-- IN UISpecialFrames BY NAME, which is how the client closes a window on
+		-- Escape: it walks that list and HIDES what it finds shown. Given the
+		-- panel it would stop the slide dead and leave the travel bookkeeping
+		-- believing the drawer was still out.
+		local listed = false
+		for _, n in ipairs(_G.UISpecialFrames or {}) do
+			if esc and n == esc:GetName() then listed = true end
+		end
+		check(listed, "and it is in UISpecialFrames, which is what Escape reads")
+		check(TBm.panel and TBm.panel:IsShown(),
+			"while the panel itself stays shown, because it travels rather than "
+			.. "hiding")
+
+		-- ESCAPE, as the client performs it.
+		if esc then esc:Hide() end
+		check(not TBm:IsOpen(), "hiding that proxy - which is Escape - shuts the "
+			.. "drawer")
+
+		-- A CLICK ANYWHERE ELSE. The catcher is under everything the drawer draws
+		-- - the panel is at frame level 10 and the rail at 20 - so both stay
+		-- clickable and everything outside them is not.
+		TBm:SetOpen(true, true)
+		local catch = TBm._catch
+		check(catch ~= nil and catch:IsShown() and catch:GetFrameLevel() == 0,
+			"and a catcher across the screen, under the panel and the rail (level "
+			.. tostring(catch and catch:GetFrameLevel()) .. ")")
+		local onDown = catch and catch:GetScript("OnMouseDown")
+		if onDown then onDown(catch) end
+		check(not TBm:IsOpen(),
+			"and clicking it puts the drawer away")
+		check(catch and esc and not catch:IsShown() and not esc:IsShown(),
+			"after which neither is left up eating clicks or answering Escape")
+	end
+
 end
 
 print("== toolbox: the drawer breathes with everything else ==")
@@ -20142,6 +20189,37 @@ do
 			.. " the label into nothing")
 		check(tile.name.__wordWrap == false,
 			"and stops wrapping, because stacked the line above it is the chip")
+
+		-- AND IT SITS IN THE SPACE UNDER THE CHIP rather than hanging off the
+		-- tile's bottom edge. Given only a bottom anchor the string has no
+		-- height of its own to justify inside, so BOTTOM put its descenders on
+		-- the rim - the words read as falling out of the tile with the chip
+		-- floating in air above them, which is how it was reported.
+		local stackTop, stackBot = nil, nil
+		for i = 1, (tile.name:GetNumPoints() or 0) do
+			local at = select(1, tile.name:GetPoint(i))
+			if at == "TOPLEFT" then stackTop = true end
+			if at == "BOTTOMRIGHT" then stackBot = true end
+		end
+		check(stackTop and stackBot,
+			"the stacked label is given BOTH vertical anchors, so it has a box "
+			.. "to sit in rather than one it defines by falling out of")
+		check(tile.name.__justifyV == "MIDDLE",
+			"and is centred between them (" ..
+			tostring(tile.name.__justifyV) .. ")")
+
+		-- ITS BOX CLEARS THE CHIP ABOVE AND THE RIM BELOW. Measured, because
+		-- the numbers are what was wrong: 62 tall, a 30 chip and 10 of air at
+		-- each end leaves no line height at all.
+		local underChip = tile.chip:GetBottom() - tile.name:GetTop()
+		local overRim = tile.name:GetBottom() - tile:GetBottom()
+		check(underChip >= 0 and overRim >= 6,
+			"and clears the chip above it and the tile's rim below (" ..
+			string.format("%.0f under the chip, %.0f over the rim", underChip,
+				overRim) .. ")")
+		check(tile.name:GetHeight() >= 12,
+			"with a line's worth of height to be centred in (" ..
+			string.format("%.0f", tile.name:GetHeight()) .. ")")
 		TBm:ArrangeTile(tile, tile:GetWidth())
 		check(tile._row == true, "and back again when the room returns")
 	end

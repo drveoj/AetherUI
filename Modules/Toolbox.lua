@@ -520,8 +520,71 @@ end
 -- ---------------------------------------------------------------------------
 
 
+--- The drawer is TRANSIENT: Escape shuts it, and so does a click anywhere
+--- else on the screen.
+--
+--  TWO FRAMES, because the drawer never hides. It SLIDES - it travels off
+--  the edge of the screen and stays shown the whole time - so neither of the
+--  two usual mechanisms can be pointed at the panel itself.
+--
+--  ESCAPE is UISpecialFrames, which works by HIDING the frame it is given.
+--  Given the panel that would stop the slide dead and leave the travel
+--  bookkeeping believing it was still out. So it is given a proxy: an empty
+--  frame that is shown exactly while the drawer is out, and whose OnHide -
+--  which is Escape, or CloseSpecialWindows, or anything else the client
+--  closes windows with - shuts the drawer properly.
+--
+--  A CLICK ELSEWHERE is a catcher across the whole screen, under everything
+--  the drawer draws: the panel is at frame level 10 and the rail at 20, so
+--  both stay clickable and everything outside them is not. The click is
+--  eaten, which is what transient means - the first click puts the drawer
+--  away rather than doing two things at once.
+function TB:Transient()
+	if self._escape then return end
+	if not CreateFrame then return end
+
+	local esc = CreateFrame("Frame", ADDON .. "ToolboxEscape", UIParent)
+	esc:Hide()
+	esc:SetScript("OnHide", function()
+		-- OURS, or the client's? Only the client's should close anything.
+		if TB._closing then return end
+		if TB.enabled and TB:IsOpen() then TB:SetOpen(false) end
+	end)
+	self._escape = esc
+	if UISpecialFrames then
+		UISpecialFrames[#UISpecialFrames + 1] = esc:GetName()
+	end
+
+	local catch = CreateFrame("Frame", nil, UIParent)
+	catch:SetAllPoints(UIParent)
+	catch:SetFrameStrata("FULLSCREEN_DIALOG")
+	catch:SetFrameLevel(0)
+	catch:EnableMouse(true)
+	catch:Hide()
+	catch:SetScript("OnMouseDown", function()
+		if TB.enabled and TB:IsOpen() then TB:SetOpen(false) end
+	end)
+	self._catch = catch
+end
+
+--- Both of them following the drawer, which is the only state they have.
+function TB:Watch(open)
+	self:Transient()
+	if not self._escape then return end
+
+	-- FLAGGED WHILE WE DO IT. Hiding the proxy ourselves fires the same
+	-- OnHide Escape does, and without this closing the drawer closed it a
+	-- second time - harmless today and a loop the moment anything is added
+	-- to the close path.
+	self._closing = true
+	self._escape:SetShown(open and true or false)
+	self._catch:SetShown(open and true or false)
+	self._closing = nil
+end
+
 function TB:SetOpen(open, instant)
 	local c = Char()
+	self:Watch(open)
 	if c then c.open = open and true or false end
 
 	self._want = open and 1 or 0
@@ -2144,6 +2207,15 @@ local TILE_CHIP   = 30
 local TILE_GAP_X  = 10     -- chip to label
 local TILE_STATE  = 30     -- room reserved for "On" / "Off"
 local TILE_NAME_MIN = 60   -- below this a row is not worth having
+-- The stacked form's own three numbers. Air over the chip, air under the
+-- label, and the gap between them - and the label is given BOTH vertical
+-- anchors rather than being hung off the bottom edge. Hung off it, a string
+-- with no height of its own justifies BOTTOM inside a box it is defining,
+-- so its descenders sit on the tile's rim and the whole tile reads
+-- bottom-heavy: chip floating with air under it, words falling out.
+local TILE_STACK_TOP = 8
+local TILE_STACK_BOT = 8
+local TILE_STACK_GAP = 2
 
 -- ---------------------------------------------------------------------------
 -- the MAIL section
@@ -2353,12 +2425,22 @@ function TB:ArrangeTile(tile, width)
 		-- Not enough width beside the icon, so the label goes under it. No
 		-- wrapping here: the chip is in the top of a 62px tile and a second line
 		-- lands on it.
-		tile.chip:SetPoint("TOPLEFT", tile, "TOPLEFT", TILE_PAD, -10)
-		tile.state:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -TILE_PAD, -16)
-		tile.name:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", TILE_PAD, 10)
-		tile.name:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -TILE_PAD, 10)
+		--
+		-- BOTH VERTICAL ANCHORS, and centred between them. Hung off the tile's
+		-- bottom edge alone the string has no height of its own to justify
+		-- inside, so BOTTOM put its descenders on the rim - the words read as
+		-- falling out of the tile, with the chip floating in air above them.
+		-- Given the whole space under the chip, one line sits in the middle of
+		-- it and the tile is balanced whatever the label turns out to be.
+		tile.chip:SetPoint("TOPLEFT", tile, "TOPLEFT", TILE_PAD, -TILE_STACK_TOP)
+		tile.state:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -TILE_PAD,
+			-(TILE_STACK_TOP + 6))
+		tile.name:SetPoint("TOPLEFT", tile, "TOPLEFT", TILE_PAD,
+			-(TILE_STACK_TOP + TILE_CHIP + TILE_STACK_GAP))
+		tile.name:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -TILE_PAD,
+			TILE_STACK_BOT)
 		tile.name:SetWordWrap(false)
-		tile.name:SetJustifyV("BOTTOM")
+		tile.name:SetJustifyV("MIDDLE")
 	end
 	-- Written down rather than recomputed by anyone who wants it. The label's
 	-- two anchors are to two DIFFERENT frames in the row form, so its width

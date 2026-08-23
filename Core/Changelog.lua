@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.25.1",
+		date    = "2026-08-23",
+		lines   = {
+			"toolbox: a stacked settings tile's label sits in the space under its icon instead of on the tile's rim",
+			"toolbox: the drawer closes on Escape, and on a click anywhere outside it",
+		},
+	},
+	{
 		version = "0.25.0",
 		date    = "2026-08-23",
 		lines   = {
