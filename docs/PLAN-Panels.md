@@ -12,9 +12,9 @@ what has not been looked at yet, not a list of faults.
    seen, because there was no guild to look at when they were built. The two
    suspicions recorded at the time were both real and are **fixed 2026-08-22**,
    see below; the window still wants a look from inside a guild.
-4. **`Blizzard_GroupFinder_VanillaStyle`** — the LFG window. Asked for
-   2026-08-22, not started. Source at
-   `_classic_era_\BlizzardInterfaceCode\Interface\AddOns\Blizzard_GroupFinder_VanillaStyle`.
+4. ~~**`Blizzard_GroupFinder_VanillaStyle`**~~ — the LFG window. Asked for
+   2026-08-22, **built 2026-08-23**, see below. Not yet seen in game; its
+   insets are a first guess and will want a nudge by eye.
 
 `SettingsPanel`, `HelpFrame` and `WorldMapFrame` are **signed off at shell
 depth** — 2026-08-21: *"we're not touching those any more than they are
@@ -197,6 +197,60 @@ makes the thing it was guessing about worse comes out; the cause is still
 unknown. See below.
 
 Five mutations are caught.
+
+## Built — the group finder (2026-08-23)
+
+`LFGParentFrame`, from `Blizzard_GroupFinder_VanillaStyle`: two windows behind
+two tabs, the listing you post and the browse you search with. Item 4 on the
+list, asked for on the 22nd and deferred until the trade and social work had
+been seen.
+
+**What is unusual about it is that it is the OLD parchment build carrying MODERN
+content.** Three slabs of `UI-LFG-FRAME` and an eye for a portrait, wrapped
+round a `WowScrollBoxList` for its results and two `WowStyle1Dropdown`s for its
+filters. So it wants the parchment margin trimmed like the quest giver's *and*
+the pooled-row treatment the gossip window needed, in the same window.
+
+- **Both panes are `setAllPoints`**, so neither is in the body list — the social
+  window's shape one window on, and the same reason. Everything the player looks
+  at is hung off a pane at its own fixed distance and is named individually.
+- **Tab one is the listing and tab two is the browse**, which reads backwards
+  until you look at `LFGParentFrameTab1_OnClick`.
+- **Its title is per pane.** The frame's own is never filled in; each pane prints
+  `LFG_TITLE` inside itself, the way the postbox prints INBOX and SEND MAIL.
+- **The two filters and the refresh are chrome** and go in the tool row — the
+  client hangs them 94 down from the window's top, which is our header band and
+  a line under it. The options gear takes the far end of the same row.
+- **Refresh and both gears are pictures, not words**, and on all three the
+  *normal* texture is the square stone plate while the glyph is a region of its
+  own. `Reskin.IconButton` is told which region the picture is; left to guess it
+  keeps the plate and throws the glyph away.
+- **The listing's three views sit under a strip of role buttons.** Measured
+  against the band each on its own, the role strip travels 74 and the views
+  travel 6 — and the strip lands on top of them. `lead` reserves the room over
+  the views instead, which is the social window's sub-tab trick again.
+- **The results list is pooled**, so it is dressed from the box's own `Update`
+  rather than from the dresser alone. Third window to need this after the gossip
+  window and Communities.
+
+**One new thing in the mover: `fill`.** The rule up to now was *shortened, never
+stretched* — right for a page the client sized for its own window, wrong for a
+box it sized for a window **shorter** than ours. Every one of the group finder's
+content boxes is a fixed 324 by 282 in a frame 512 tall; ours is 656, because the
+band, the tool row and the footer strip all cost height and the window grows to
+take them. Left alone the list sits in a recess with a hand's width of empty
+glass under it and shows fewer results than there is room for. `fill` names the
+parts whose height follows the body's floor — named rather than guessed, because
+Send Mail's pane is 512 tall inside a window of 424 *deliberately*, and a rule
+that stretched everything would drag its attachment row down through the letter.
+
+**The insets are a first guess** — `{ 4, -4, -26, 22 }`, measured off the
+client's own numbers rather than off the art, and expected to want a nudge by
+eye.
+
+Six mutations are caught. The mock is a full one: both panes, both tabs through
+the client's own `LFGParentFrameTab1_OnClick`, the pooled box with a row minted
+during layout and another acquired after the dresser has been past.
 
 ## Fixed — Add Friend and Send Message off the sides (2026-08-23)
 

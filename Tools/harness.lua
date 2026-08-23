@@ -4217,6 +4217,242 @@ do
 			_G[spec[1]] = b
 		end
 		
+		-- THE GROUP FINDER, which is two windows behind two tabs on one parchment
+		-- frame. LFGParentFrame is the OLD build - 384 by 512, an eye where a
+		-- portrait goes, tabs INSIDE its bottom margin rather than below it - and
+		-- both of its panes are setAllPoints, so neither has a point to move by.
+		--
+		-- TAB ONE IS THE LISTING AND TAB TWO IS THE BROWSE, which reads backwards
+		-- until you look at LFGParentFrameTab1_OnClick.
+		do
+			local lfg = buildPanel("LFGParentFrame")
+			lfg:SetSize(384, 512)
+			lfg.selectedTab = 1
+
+			-- THE EYE, which is this window's portrait: a frame with the picture in
+			-- it rather than a texture of the window.
+			local eye = CreateFrame("Frame", "LFGParentFramePortrait", lfg)
+			eye:SetSize(64, 64)
+			eye:SetPoint("TOPLEFT", lfg, "TOPLEFT", 9, -5)
+			local eyeIcon = eye:CreateTexture("LFGParentFramePortraitIcon", "BACKGROUND")
+			eyeIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-PORTRAIT")
+			eyeIcon:SetSize(64, 64)
+
+			-- ITS TWO TABS, on CharacterFrameTabButtonTemplate like the character
+			-- sheet's - three slices of stone and a word.
+			for i, word in ipairs({ "Group", "Browse" }) do
+				local tab = CreateFrame("Button", "LFGParentFrameTab" .. i, lfg)
+				tab:SetSize(80, 32)
+				for _, part in ipairs({ "Left", "Middle", "Right" }) do
+					local t = tab:CreateTexture("LFGParentFrameTab" .. i .. part, "BACKGROUND")
+					t:SetTexture("Interface\\ChatFrame\\UI-ChatFrame-Tab-Up")
+					_G["LFGParentFrameTab" .. i .. part] = t
+				end
+				local fs = tab:CreateFontString("LFGParentFrameTab" .. i .. "Text", "OVERLAY")
+				fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+				fs:SetText(word)
+				tab:SetFontString(fs)
+				if i == 1 then
+					tab:SetPoint("BOTTOMLEFT", lfg, "BOTTOMLEFT", 16, 45)
+				else
+					tab:SetPoint("LEFT", _G.LFGParentFrameTab1, "RIGHT", -14, 0)
+				end
+				lfg["Tab" .. i] = tab
+			end
+
+			--- One of the two panes: setAllPoints, its own parchment, its own title.
+			local function pane(name, hidden)
+				local f = CreateFrame("Frame", name, lfg)
+				f:SetAllPoints(lfg)
+				for _, art in ipairs({ "FrameBackgroundTop", "FrameBackgroundBottom" }) do
+					local t = f:CreateTexture(name .. art, "BACKGROUND")
+					t:SetTexture("Interface\\LFGFrame\\UI-LFG-FRAME")
+					_G[name .. art] = t
+				end
+				f.BackgroundArt = f:CreateTexture(name .. "BackgroundArt", "BACKGROUND")
+				f.BackgroundArt:SetTexture("groupfinder-background-classic")
+				f.BackgroundArt:SetSize(324, 282)
+				f.BackgroundArt:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -129)
+				local fs = f:CreateFontString(name .. "FrameTitle", "BACKGROUND")
+				fs:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+				fs:SetText("Group Finder")
+				fs:SetPoint("TOP", f, "TOP", 0, -18)
+				fs:SetTextColor(1, 0.82, 0)
+				_G[name .. "FrameTitle"] = fs
+				if hidden then f:Hide() end
+				return f
+			end
+
+			--- A WowStyle1 dropdown, which is what both filters are.
+			local function drop(name, parent, width)
+				local d = CreateFrame("Button", name, parent)
+				d:SetSize(width, 24)
+				d.Background = d:CreateTexture(nil, "BACKGROUND")
+				d.Background:SetTexture("common-dropdown-classic-textholder")
+				d.Arrow = d:CreateTexture(nil, "OVERLAY")
+				d.Arrow:SetTexture("common-dropdown-classic-a-buttonDown")
+				d.Text = d:CreateFontString(nil, "OVERLAY")
+				d.Text:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+				d.Text:SetText(name)
+				return d
+			end
+
+			--- The gear, one per pane: a 16x16 dropdown with an atlas for a face and
+			--  no label at all.
+			local function gear(name, parent)
+				local g = CreateFrame("Button", name, parent)
+				g:SetSize(16, 16)
+				g:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -40, -44)
+				g.Icon = g:CreateTexture(nil, "ARTWORK")
+				g.Icon:SetTexture("OptionsIcon-Brown")
+				return g
+			end
+
+			--- One of the four buttons on a pane's bottom edge.
+			local function foot(pfx, parent, key, width, corner, x)
+				local b = CreateFrame("Button", pfx .. key, parent)
+				b:SetSize(width, 22)
+				b:SetPoint(corner, parent, corner, x, 79)
+				b:SetNormalTexture("panel-button-up")
+				local fs = b:CreateFontString(nil, "OVERLAY")
+				fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+				fs:SetText(key)
+				b:SetFontString(fs)
+				parent[key] = b
+			end
+
+			-- BROWSE: two filters and a refresh across the top, a modern scroll box
+			-- under them, and two buttons on the bottom edge.
+			local browse = pane("LFGBrowseFrame", false)
+			browse.CategoryDropdown = drop("LFGBrowseFrameCategoryDropdown", browse, 115)
+			browse.CategoryDropdown:SetPoint("TOPLEFT", browse, "TOPLEFT", 26, -94)
+			browse.ActivityDropdown = drop("LFGBrowseFrameActivityDropdown", browse, 115)
+			browse.ActivityDropdown:SetPoint("LEFT", browse.CategoryDropdown, "RIGHT",
+				5, 0)
+			local refresh = CreateFrame("Button", "LFGBrowseFrameRefreshButton", browse)
+			refresh:SetSize(32, 32)
+			refresh:SetPoint("LEFT", browse.ActivityDropdown, "RIGHT", -1, 0)
+			refresh.Icon = refresh:CreateTexture(nil, "ARTWORK")
+			refresh.Icon:SetTexture("Interface\\Buttons\\UI-RefreshButton")
+			refresh:SetNormalTexture("Interface\\Buttons\\UI-SquareButton-Up")
+			refresh:SetPushedTexture("Interface\\Buttons\\UI-SquareButton-Down")
+			browse.RefreshButton = refresh
+			browse.OptionsButton = gear("LFGBrowseFrameOptionsButton", browse)
+
+			-- A MODERN SCROLL BOX, which does not own its rows: it acquires them from
+			-- a pool during its OWN layout, after the window's update has returned.
+			local box = CreateFrame("Frame", "LFGBrowseFrameScrollBox", browse)
+			box:SetSize(324, 282)
+			box:SetPoint("TOPLEFT", browse, "TOPLEFT", 22, -128)
+			box.__rows = {}
+			local function mintRow()
+				local row = CreateFrame("Button", nil, box)
+				row:SetSize(312, 36)
+				row.ResultBG = row:CreateTexture(nil, "BACKGROUND")
+				row.ResultBG:SetColorTexture(1, 1, 1, 0.04)
+				row.PartyIcon = row:CreateTexture(nil, "ARTWORK")
+				row.PartyIcon:SetTexture("Interface\\GroupFrame\\UI-Group-LeaderIcon")
+				row.ClassIcon = row:CreateTexture(nil, "ARTWORK")
+				row.ClassIcon:SetTexture("groupfinder-icon-class-warrior")
+				row.Selected = row:CreateTexture(nil, "OVERLAY")
+				row.Selected:SetTexture("groupfinder-highlightbar-yellow")
+				row.Highlight = row:CreateTexture(nil, "HIGHLIGHT")
+				row.Highlight:SetTexture("groupfinder-highlightbar-blue")
+				for _, key in ipairs({ "Name", "Level", "ActivityName" }) do
+					local fs = row:CreateFontString(nil, "ARTWORK")
+					fs:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+					fs:SetText(key)
+					fs:SetTextColor(1, 0.82, 0)
+					row[key] = fs
+				end
+				row.__fs = row.Name
+				function row:GetFontString() return self.__fs end
+				box.__rows[#box.__rows + 1] = row
+				return row
+			end
+			for _ = 1, 6 do mintRow() end
+			function box:GetFrames() return self.__rows end
+			function box:ForEachFrame(fn)
+				for _, row in ipairs(self.__rows) do fn(row) end
+			end
+			-- ...AND ONE MINTED LATE, during the box's own layout, which is the whole
+			-- shape of the pooled-row trap: anything asked from inside the WINDOW's
+			-- update is answered with the set that was there before.
+			-- A ROW MINTED DURING LAYOUT, AND ANOTHER ON EVERY LAYOUT AFTER IT.
+			-- One is enough to show that a sweep from inside the WINDOW's update
+			-- reads the set that was there before; it takes a SECOND, minted
+			-- after the dresser has been past, to show that the hook on the box's
+			-- own Update is doing anything. Scrolling a real list does exactly
+			-- this, over and over.
+			-- A ROW ACQUIRED DURING LAYOUT, which is after the WINDOW's update has
+			-- returned. That is the whole shape of the pooled-row trap: anything
+			-- that asks the box what it is holding from inside a window hook is
+			-- answered with the set that was there before.
+			--
+			-- ASKED FOR, rather than minted on a count: the dresser lays this
+			-- window out several times over a run, and a box that grew on each of
+			-- them ran out of pool before the check that needs one.
+			function box:Update()
+				if self.__wantRow then
+					self.__wantRow = nil
+					self.__grew = mintRow()
+				end
+			end
+			-- AND THE WAY YOU ASK IT TO. ScrollBoxListMixin carries both: Update
+			-- is what it runs for itself, FullUpdate is what anything that has
+			-- changed its shape calls to make it run one now - and a box whose
+			-- shape has changed acquires whatever the new height has room for.
+			function box:FullUpdate()
+				self.__wantRow = true
+				self:Update()
+			end
+			browse.ScrollBox = box
+			local bbar = CreateFrame("Slider", "LFGBrowseFrameScrollBar", browse)
+			bbar:SetSize(16, 282)
+			bbar:SetPoint("TOPLEFT", box, "TOPRIGHT", 0, 4)
+			browse.ScrollBar = bbar
+			foot("LFGBrowseFrame", browse, "SendMessageButton", 111, "BOTTOMLEFT", 19)
+			foot("LFGBrowseFrame", browse, "GroupInviteButton", 109, "BOTTOMRIGHT", -40)
+
+			-- THE LISTING: three views of the same size and place, a strip of role
+			-- buttons above them, and two buttons on the bottom edge.
+			local listing = pane("LFGListingFrame", true)
+			listing.OptionsButton = gear("LFGListingFrameOptionsButton", listing)
+			for _, key in ipairs({ "CategoryView", "ActivityView", "LockedView" }) do
+				local v = CreateFrame("Frame", "LFGListingFrame" .. key, listing)
+				v:SetSize(324, 282)
+				v:SetPoint("TOPLEFT", listing, "TOPLEFT", 22, -128)
+				if key ~= "CategoryView" then v:Hide() end
+				listing[key] = v
+			end
+			for _, spec in ipairs({ { "SoloRoleButtons", 194, "TOPLEFT", 67, -60 },
+				{ "GroupRoleButtons", 192, "TOPLEFT", 67, -60 },
+				{ "NewPlayerFriendlyButton", 48, "TOPRIGHT", -47, -60 } }) do
+				local f = CreateFrame("Button", "LFGListingFrame" .. spec[1], listing)
+				f:SetSize(spec[2], 48)
+				f:SetPoint(spec[3], listing, spec[3], spec[4], spec[5])
+				if spec[1] == "GroupRoleButtons" then f:Hide() end
+				listing[spec[1]] = f
+			end
+			foot("LFGListingFrame", listing, "BackButton", 111, "BOTTOMLEFT", 19)
+			foot("LFGListingFrame", listing, "PostButton", 109, "BOTTOMRIGHT", -40)
+
+			-- THE CLIENT'S OWN TAB CLICKS, which is how a check should change tabs:
+			-- doing it by hand is a tidier swap than the client performs, and that is
+			-- exactly what hid two faults in the social window.
+			function _G.LFGParentFrameTab1_OnClick()
+				lfg.selectedTab = 1
+				listing:Show()
+				browse:Hide()
+				_G.PanelTemplates_UpdateTabs(lfg)
+			end
+			function _G.LFGParentFrameTab2_OnClick()
+				lfg.selectedTab = 2
+				listing:Hide()
+				browse:Show()
+				_G.PanelTemplates_UpdateTabs(lfg)
+			end
+		end
 		-- THE TRADE WINDOW, which was not in this mock at all - so nothing about
 		-- it could be checked. Hand-built, with a dozen pieces hung off the frame
 		-- at their own fixed offsets: two names five units down, two purses at
@@ -28200,6 +28436,180 @@ do
 	_G.FriendsFrame:Hide()
 	end
 
+	-- THE GROUP FINDER: two windows behind two tabs, both setAllPoints to the
+	-- frame, on the OLD parchment build carrying MODERN content - a
+	-- WowScrollBoxList for its results and two WowStyle1 dropdowns for its
+	-- filters, inside three slabs of UI-LFG-FRAME.
+	do
+		local PN = A:GetModule("panels")
+		local lfg = _G.LFGParentFrame
+		lfg:Show()
+		-- THROUGH THE CLIENT'S OWN TAB CLICK, not by hiding a pane by hand: a
+		-- tidier swap than the client performs is what hid two faults in the
+		-- social window.
+		_G.LFGParentFrameTab2_OnClick()
+		PN.Dress(lfg)
+
+		-- ITS TITLE IS PER PANE. The frame's own has nothing in it; the words
+		-- are printed inside whichever pane is up, the way the postbox prints
+		-- INBOX and SEND MAIL inside its two.
+		check(lfg.__aetherTitle == _G.LFGBrowseFrameFrameTitle,
+			"the group finder is titled by the pane it is showing")
+		local gAt, gRel = _G.LFGBrowseFrameFrameTitle:GetPoint(1)
+		check(gAt == "TOP" and gRel == lfg.__aetherPanel,
+			"centred in the header band like every other window's (" ..
+			tostring(gAt) .. ")")
+
+		-- NEITHER PANE IS IN THE BODY LIST, and that is deliberate: both are
+		-- setAllPoints to the window, so moving one moves the window's own
+		-- extent and nothing inside it. Everything the player looks at is hung
+		-- off a pane at its own fixed distance and is listed here by name.
+		local paned = {}
+		for _, n in ipairs({ "LFGBrowseFrame", "LFGListingFrame" }) do
+			for _, part in ipairs(PN.ENTRY.LFGParentFrame.body) do
+				if part == n then paned[#paned + 1] = n .. ":in body" end
+			end
+		end
+		check(#paned == 0, "neither pane is in the body list, having no points to move by (" ..
+			(#paned > 0 and table.concat(paned, ",") or "both out") .. ")")
+
+		-- ITS TWO TABS ARE TABS, not buttons wearing a pill. A tab is a Button
+		-- with a label on it and a child of the window, which is exactly what the
+		-- pane sweep looks for.
+		local rail = lfg.__aetherRails and lfg.__aetherRails.BOTTOM
+		local pilled = {}
+		for i = 1, 2 do
+			local tab = _G["LFGParentFrameTab" .. i]
+			if tab.__aetherSkin then pilled[#pilled + 1] = "Tab" .. i .. ":pill" end
+			if not tab.__aetherTab then pilled[#pilled + 1] = "Tab" .. i .. ":untabbed" end
+		end
+		check(rail and rail:IsShown() and #pilled == 0,
+			"its two tabs stand on a rail of ours and wear no button surface (" ..
+			(#pilled > 0 and table.concat(pilled, ",") or "both clean") .. ")")
+
+		-- THE PARCHMENT GOES, all three slabs of it and the decorative atlas
+		-- behind the list - every one a region of the pane rather than of the
+		-- window, so a sweep of the window reaches none of them.
+		local stone = {}
+		for _, n in ipairs({ "LFGBrowseFrameFrameBackgroundTop",
+			"LFGBrowseFrameFrameBackgroundBottom", "LFGListingFrameFrameBackgroundTop",
+			"LFGParentFramePortraitIcon" }) do
+			if _G[n]:GetTexture() ~= 0 then stone[#stone + 1] = n end
+		end
+		if _G.LFGBrowseFrame.BackgroundArt:GetTexture() ~= 0 then
+			stone[#stone + 1] = "BackgroundArt"
+		end
+		check(#stone == 0, "the parchment, the eye and the art behind the list all come off (" ..
+			(#stone > 0 and table.concat(stone, ",") or "all of it") .. ")")
+
+		-- THE TWO FILTERS AND THE REFRESH ARE CHROME and go in the tool row. The
+		-- client hangs them 94 down from the window's top, which is our header
+		-- band and a line under it.
+		local dAt, _, dRelP, dX = _G.LFGBrowseFrameCategoryDropdown:GetPoint(1)
+		check(dAt == "LEFT" and dRelP == "TOPLEFT" and dX == A.Widgets.PANEL_PAD,
+			"the category filter starts the tool row under the band (" ..
+			tostring(dAt) .. "/" .. tostring(dRelP) .. "/" .. tostring(dX) .. ")")
+		local oAt, _, oRelP = _G.LFGBrowseFrameOptionsButton:GetPoint(1)
+		check(oAt == "RIGHT" and oRelP == "TOPRIGHT",
+			"and the gear is at the far end of it (" .. tostring(oAt) .. "/" ..
+			tostring(oRelP) .. ")")
+
+		-- REFRESH AND THE GEAR ARE PICTURES. Each keeps its own glyph and loses
+		-- the square stone plate behind it - and IconButton has to be TOLD which
+		-- region the picture is, because on both of these the normal texture is
+		-- the plate and the glyph is a region of its own.
+		local plates = {}
+		for _, n in ipairs({ "LFGBrowseFrameRefreshButton",
+			"LFGBrowseFrameOptionsButton", "LFGListingFrameOptionsButton" }) do
+			local btn = _G[n]
+			if btn.Icon and btn.Icon:GetTexture() == 0 then
+				plates[#plates + 1] = n .. ":glyph gone"
+			end
+			local norm = btn.GetNormalTexture and btn:GetNormalTexture()
+			if norm and norm:GetTexture() ~= 0 and norm ~= btn.Icon then
+				plates[#plates + 1] = n .. ":plate kept"
+			end
+		end
+		check(#plates == 0, "refresh and both gears keep the glyph and lose the plate (" ..
+			(#plates > 0 and table.concat(plates, ",") or "all three") .. ")")
+		check(_G.LFGBrowseFrameCategoryDropdown.Arrow:GetTexture()
+			== A.Media.texture.chevron,
+			"and the two filters are the control the trade skill's are")
+
+		-- THE LIST REACHES THE FLOOR OF THE RECESS. It is a fixed 324 by 282 in a
+		-- frame the client made 512 tall; ours is half as tall again, so left
+		-- alone it sits in a recess with a hand's width of empty glass under it
+		-- and shows fewer results than there is room for.
+		local box = _G.LFGBrowseFrameScrollBox
+		check(box:GetHeight() > 282, "the results list is stretched to the recess rather than left at the height the client gave it (" ..
+			tostring(box:GetHeight()) .. " of 282)")
+		check(box.__grew ~= nil, "and the box was asked to lay itself out again after it, which is when it acquires its rows")
+
+		-- ITS ROWS ARE POOLED, and a scroll box acquires them during its OWN
+		-- layout - after the window's update has returned. So a row minted late
+		-- is dressed too, or it is the only stone left in the window.
+		-- AND ONE MORE ACQUIRED AFTER THE DRESSER HAS BEEN PAST, which is what
+		-- scrolling a real list does over and over. Nothing but the hook on the
+		-- box's own Update can reach that one.
+		box.__wantRow = true
+		box:Update()
+		local raw = {}
+		for _, row in ipairs(box.__rows) do
+			if row.Selected:GetTexture() ~= 0 or row.ResultBG:GetTexture() ~= 0 then
+				raw[#raw + 1] = "bar"
+			end
+			if row.PartyIcon:GetTexture() == 0 then raw[#raw + 1] = "icon gone" end
+			-- ITS INK IS THE CLIENT'S BUSINESS AND ITS LETTERING IS OURS. A name
+			-- in this list is coloured to mean something - whose group it is,
+			-- what class they are - and Reskin.Font lifts only ink chosen for
+			-- PARCHMENT. What has to change is the face it is set in.
+			if select(1, row.Name:GetFont())
+				~= A.Media.font[A.Media.style.pnBody[1]] then
+				raw[#raw + 1] = "font"
+			end
+		end
+		check(#raw == 0, "every row in the box - the one it minted late"
+			.. " included - loses its bars, keeps its icons and takes our"
+			.. " lettering (" .. #box.__rows .. " rows, " ..
+			(#raw > 0 and table.concat(raw, ",") or "all clean") .. ")")
+
+		-- AND THE STRIP IS LAID OUT FOR THE PANE THAT IS UP. Four buttons across
+		-- two panes and only one pane is ever showing, so the other pane's pair
+		-- must not take room between them.
+		local bPair = _G.LFGBrowseFrameSendMessageButton:GetWidth()
+			+ _G.LFGBrowseFrameGroupInviteButton:GetWidth() + 12
+		local bAt, bRel, bRelP, bX, bY =
+			_G.LFGBrowseFrameSendMessageButton:GetPoint(1)
+		check(bAt == "LEFT" and bRel == rail and bRelP == "TOP"
+			and bX == -bPair / 2 and bY == A.Widgets.PANEL_FOOT_H / 2,
+			"Send Message starts the pair, centred in the strip above the tab rail (" .. tostring(bX) .. ", " .. tostring(bY) .. ")")
+
+		-- ON THE LISTING TAB NOW, which is tab ONE - it reads backwards until you
+		-- look at LFGParentFrameTab1_OnClick.
+		_G.LFGParentFrameTab1_OnClick()
+		PN.Dress(lfg)
+		check(lfg.__aetherTitle == _G.LFGListingFrameFrameTitle,
+			"the title follows the tab")
+
+		-- THE ROLE STRIP AND THE VIEW UNDER IT TRAVEL TOGETHER. The client puts
+		-- the role buttons 60 down and the views 128, so measured against the
+		-- band each on its own the strip travels 74 and the view travels 6 - and
+		-- the strip lands on top of the view. The room is RESERVED over the view
+		-- instead, which is the social window's sub-tab trick.
+		local roleY = select(5, _G.LFGListingFrameSoloRoleButtons:GetPoint(1))
+		local viewY = select(5, _G.LFGListingFrameCategoryView:GetPoint(1))
+		check(viewY - roleY == -62,
+			"the listing's views clear the role strip above them (" ..
+			tostring(roleY) .. ", " .. tostring(viewY) .. ")")
+
+		local lPair = _G.LFGListingFrameBackButton:GetWidth()
+			+ _G.LFGListingFramePostButton:GetWidth() + 12
+		check(select(4, _G.LFGListingFrameBackButton:GetPoint(1)) == -lPair / 2,
+			"and the strip is Back and Post alone, not all four buttons (" ..
+			tostring(select(4, _G.LFGListingFrameBackButton:GetPoint(1)))
+			.. " of " .. tostring(-lPair / 2) .. ")")
+		lfg:Hide()
+	end
 	-- THE TRADE WINDOW: a dozen pieces hung off the frame at their own fixed
 	-- offsets, and the two nearest the top - the names, five units down - are
 	-- inside our header band.

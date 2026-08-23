@@ -73,6 +73,11 @@ local FRIENDS_SUBTABS  = 36
 -- Same shape one pane along: the who list's five column headers sit 30 above
 -- the list they head.
 local WHO_HEAD         = 30
+-- Room reserved over the group finder listing's three views, for the strip of
+-- role buttons the client puts above them. Reserved rather than measured, for
+-- the reason the social window's sub-tabs are: measured, the role strip travels
+-- 74 and the views travel 6, so the strip lands on top of them.
+local LFG_ROLE_ROW     = 62
 -- Rows the client hangs off the WINDOW for the two faux-scrolling lists here.
 local IGNORE_ROWS      = 19
 local WHO_ROWS         = 17
@@ -252,6 +257,79 @@ local PANELS = {
 			"WhoFrameWhoButton", "WhoFrameAddFriendButton",
 			"WhoFrameGroupInviteButton", "RaidFrameConvertToRaidButton",
 		} } },
+
+	-- THE GROUP FINDER, which is two windows behind two tabs: the listing you
+	-- post and the browse you search with. LFGParentFrame is the old parchment
+	-- build - 384 by 512, an eye where a portrait goes, its close button 26 in
+	-- from the rim - so it wants the margin trimmed the way the quest giver and
+	-- the trainer do, and its tabs sit INSIDE that margin rather than below it.
+	--
+	-- ITS ADDON LOADS ON DEMAND. Nothing here exists until the player opens the
+	-- window once, which is what `addon` is for.
+	{ frame = "LFGParentFrame", addon = "Blizzard_GroupFinder_VanillaStyle",
+		insets = { 4, -4, -26, 22 },
+		-- ITS TITLE IS PER PANE, and both panes carry one saying the same thing:
+		-- the client prints LFG_TITLE inside the pane rather than in the band, the
+		-- way the postbox prints INBOX and SEND MAIL inside its two.
+		--
+		-- TAB ONE IS THE LISTING AND TAB TWO IS THE BROWSE, which reads backwards
+		-- until you look: LFGParentFrameTab1_OnClick shows LFGListingFrame.
+		panes = {
+			{ pane = "LFGListingFrame", title = "LFGListingFrameFrameTitle" },
+			{ pane = "LFGBrowseFrame",  title = "LFGBrowseFrameFrameTitle" },
+		},
+		-- NEITHER PANE IS IN THE BODY LIST. Both are setAllPoints to the window,
+		-- and a setAllPoints frame has NO POINTS - so moving one moves nothing
+		-- while reporting that it had. The social window's lesson, one window on.
+		--
+		-- WHAT FILTERS THE LIST GOES IN THE TOOL ROW: the category and activity
+		-- dropdowns and the refresh beside them, with the options gear at the far
+		-- end. The client hangs all four at their own fixed offsets from the
+		-- window's top - 94 for the dropdowns, 44 for the gear - which is our
+		-- header band and a line under it.
+		--
+		-- ONE ROW SERVES BOTH PANES, laid out from what is VISIBLE and OURS: only
+		-- one pane is ever up, and each carries a gear of its own.
+		row = {
+			left  = { "LFGBrowseFrameCategoryDropdown",
+				"LFGBrowseFrameActivityDropdown", "LFGBrowseFrameRefreshButton" },
+			right = { "LFGBrowseFrameOptionsButton",
+				"LFGListingFrameOptionsButton" },
+		},
+		-- THE CONTENT OF BOTH PANES. Browse is one scroll box; the listing swaps
+		-- between three views of the same size and place, with the role buttons
+		-- and the newcomer switch in a strip above them.
+		-- ROOM RESERVED OVER THE LISTING'S THREE VIEWS for the strip of role
+		-- buttons the client puts above them. Reserved rather than measured,
+		-- for the reason the social window's sub-tabs are: measured, the role
+		-- strip travels 74 and the views travel 6, so the strip lands on top
+		-- of them. Browse has nothing above its list and takes none.
+		lead = {
+			LFGListingFrameCategoryView = LFG_ROLE_ROW,
+			LFGListingFrameActivityView = LFG_ROLE_ROW,
+			LFGListingFrameLockedView   = LFG_ROLE_ROW,
+		},
+		-- AND THE CONTENT REACHES THE FLOOR OF THE RECESS. Every one of these
+		-- is a fixed 324 by 282 in a frame the client made 512 tall; ours is
+		-- half as tall again, so left alone the list sits in a recess with a
+		-- hand's width of empty glass under it and shows fewer results than
+		-- there is room for.
+		fill = {
+			LFGBrowseFrameScrollBox     = true,
+			LFGListingFrameCategoryView = true,
+			LFGListingFrameActivityView = true,
+			LFGListingFrameLockedView   = true,
+		},
+		body = { "LFGBrowseFrameScrollBox",
+			"LFGListingFrameCategoryView", "LFGListingFrameActivityView",
+			"LFGListingFrameLockedView",
+			"LFGListingFrameSoloRoleButtons", "LFGListingFrameGroupRoleButtons",
+			"LFGListingFrameNewPlayerFriendlyButton" },
+		footer = W.PANEL_FOOT_H,
+		-- BOTH PANES' WORTH: the strip is laid out for whatever is up.
+		actions = { mid = { "LFGBrowseFrameSendMessageButton",
+			"LFGBrowseFrameGroupInviteButton", "LFGListingFrameBackButton",
+			"LFGListingFramePostButton" } } },
 
 	-- The windows an NPC opens, and WHICH TEMPLATE EACH IS BUILT ON, because
 	-- that is what decides whether it wants trimming at all.
@@ -1790,11 +1868,36 @@ function PN.LayoutBody(frame, entry)
 	local base = (host.GetBottom and host:GetBottom())
 	if base then
 		local floorY = base + strip + inner
+		local fills = entry and entry.fill
 		for _, shift in ipairs(shifts) do
 			local pane = shift[1]
 			local top = pane.GetTop and pane:GetTop()
 			local low = pane.GetBottom and pane:GetBottom()
-			if pane.GetScrollChild and top and low and low < floorY
+			local who = pane.GetName and pane:GetName()
+			-- ...AND STRETCHED, WHERE THE ENTRY ASKS FOR IT.
+			--
+			-- The rule above is right for a page the client sized for its own
+			-- window and wrong for a box it sized for a window SHORTER than
+			-- ours. The group finder's list is a fixed 324 by 282 in a frame
+			-- 512 tall; ours is half as tall again, because the band, the tool
+			-- row and the footer strip all cost height and the window grows to
+			-- take them. Left at 282 it sits in a recess with a hand's width of
+			-- empty glass under it and shows fewer results than there is room
+			-- for.
+			--
+			-- NAMED, never guessed. Send Mail's pane is 512 tall inside a
+			-- window of 424 deliberately - the client hangs the attachment row
+			-- a fixed distance above its BOTTOM - so a rule that stretched
+			-- everything to the floor would drag that row down through the
+			-- letter. Only a window that says so gets it.
+			if fills and who and fills[who] and top and pane.SetHeight then
+				pane:SetHeight(math.max(1, top - floorY))
+				-- A MODERN SCROLL BOX RE-READS ITS HEIGHT WHEN IT NEXT LAYS
+				-- OUT, and asking is cheaper than waiting for whatever happens
+				-- to make it. Pcalled because only some of these are boxes; the
+				-- rest are plain containers with nothing to do.
+				if pane.FullUpdate then pcall(pane.FullUpdate, pane) end
+			elseif pane.GetScrollChild and top and low and low < floorY
 				and pane.SetHeight then
 				pane:SetHeight(math.max(1, top - floorY))
 			end
@@ -5501,6 +5604,164 @@ local function DressFriends(frame, store)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- the group finder
+-- ---------------------------------------------------------------------------
+--
+-- Two windows behind two tabs: the listing you post and the browse you search
+-- with. Both panes are setAllPoints to LFGParentFrame, so neither has a point
+-- to move by and every piece of content is hung off a pane at its own fixed
+-- distance - the social window's shape exactly, one window on.
+--
+-- WHAT IS DIFFERENT is that this one is the OLD parchment build carrying
+-- MODERN content: a WowScrollBoxList for its results and two WowStyle1
+-- dropdowns for its filters, inside a frame whose background is three slabs
+-- of UI-LFG-FRAME. So it wants the parchment margin trimmed like the quest
+-- giver's AND the pooled-row treatment the gossip window needed.
+
+--- One result in the browse list: who is looking, for what, and their roles.
+--
+--  A ROW IS A BUTTON WITH FIVE PICTURES AND THREE STRINGS, and two of the
+--  pictures are the client's own highlight bars - a gold one for the row you
+--  have picked and a blue one for the row under the cursor. Both go: a picked
+--  row is marked the way every other list in this interface marks one.
+local function DressLFGRow(row, store)
+	if not row or not row.GetRegions then return end
+
+	Reskin.ClearButton(row)
+	row.__aetherStore = row.__aetherStore or {}
+	-- THE PICTURES STAY AND THE BARS GO. The party, class and newcomer icons
+	-- are what the row is telling you; ResultBG is a four-per-cent white wash
+	-- doing the work our own row backing does, and the two atlas bars are a
+	-- gold rope round a row.
+	Reskin.StripExcept(row, row.__aetherStore,
+		{ "PartyIcon", "ClassIcon", "NewPlayerFriendlyIcon" })
+	Reskin.Fonts(row, "pnBody", 1, Palette.c.text)
+
+	-- AND THE PICKED ROW WEARS THE ACCENT. Reskin.RowMark is the same wash the
+	-- trade window's live column and the mail list's unread row wear, so a
+	-- selection reads the same wherever the player meets one.
+	if row.Selected and not row.__aetherPicked then
+		row.__aetherPicked = true
+		Reskin.RowMark(row, row.__aetherStore)
+	end
+end
+
+--- The browse list's rows, however many it is holding right now.
+--
+--  POOLED. A ScrollBox acquires its rows during its OWN layout, after the
+--  window's update has returned - so this runs from the box's Update rather
+--  than from the dresser alone. Same lesson as the gossip window, and it is
+--  ForEachFrame rather than GetFrames for the same reason: one walks what the
+--  box is showing and the other hands back a list that can already be stale.
+local function DressLFGRows(store)
+	local box = _G.LFGBrowseFrameScrollBox
+	if not box then return end
+	local function lift(row) DressLFGRow(row, store) end
+	if box.ForEachFrame and pcall(box.ForEachFrame, box, lift) then return end
+	for _, row in ipairs(ScrollBoxFrames(box)) do lift(row) end
+end
+
+--- The group finder: a listing you post and a browse you search with.
+local function DressGroupFinder(frame, store)
+	-- ITS TWO TABS, AND FIRST. A tab is a Button with a label on it and a
+	-- child of the window, which is exactly what the sweep at the foot of this
+	-- function looks for - so they are dressed as tabs before anything can
+	-- mistake them for buttons. The social window's lesson.
+	LayoutTabs(frame, store)
+
+	-- THE PANES AND THEIR PARCHMENT. Three slabs of UI-LFG-FRAME and a
+	-- decorative atlas behind the list, all of them regions of the pane.
+	for _, name in ipairs({ "LFGBrowseFrame", "LFGListingFrame",
+		"LFGParentFramePortrait" }) do
+		local pane = _G[name]
+		if pane then
+			pane.__aetherStore = pane.__aetherStore or {}
+			Reskin.Strip(pane, pane.__aetherStore)
+		end
+	end
+
+	-- THE TWO FILTERS, which are the WowStyle1 control the trade skill's are.
+	DressDropdown(_G.LFGBrowseFrameCategoryDropdown, store)
+	DressDropdown(_G.LFGBrowseFrameActivityDropdown, store)
+
+	-- REFRESH AND THE TWO GEARS ARE PICTURES, not words - so each keeps its
+	-- own glyph and loses the square stone plate behind it. IconButton is
+	-- passed the icon explicitly because on all three the NORMAL texture is
+	-- the plate rather than the picture, and left to guess it would keep the
+	-- stone and throw the glyph away.
+	for _, name in ipairs({ "LFGBrowseFrameRefreshButton",
+		"LFGBrowseFrameOptionsButton", "LFGListingFrameOptionsButton" }) do
+		local btn = _G[name]
+		if btn then
+			Reskin.IconButton(btn, store, { icon = Reskin.Element(btn, "Icon") })
+		end
+	end
+
+	-- THE RESULTS LIST, and the bar beside it. The box is not a scroll FRAME -
+	-- it clips with a ScrollTarget rather than a scroll child - so it is swept
+	-- rather than handed to Reskin.ScrollFrame, and the recess round it is the
+	-- body's own.
+	local box = _G.LFGBrowseFrameScrollBox
+	if box then
+		box.__aetherStore = box.__aetherStore or {}
+		Reskin.Strip(box, box.__aetherStore)
+	end
+	Reskin.ScrollBar(_G.LFGBrowseFrameScrollBar, store)
+	DressLFGRows(store)
+
+	-- AND AGAIN EVERY TIME THE BOX LAYS ITSELF OUT, because that is when it
+	-- acquires its rows: a sweep from inside the WINDOW's update reads the set
+	-- that was there before. Hooked on the box's own Update, which is the
+	-- answer the gossip window arrived at after three guesses at timing.
+	if hooksecurefunc and box and box.Update and not box.__aetherLFGHook then
+		box.__aetherLFGHook = true
+		hooksecurefunc(box, "Update", function()
+			if PN.enabled then DressLFGRows(store) end
+		end)
+	end
+
+	-- THE LISTING'S THREE VIEWS, one up at a time, and the strip of role
+	-- buttons above them. The activity view carries a horizontal bar in three
+	-- slices of the TRAINER's art, which is a divider and becomes a hairline.
+	for _, name in ipairs({ "LFGListingFrameCategoryView",
+		"LFGListingFrameActivityView", "LFGListingFrameLockedView",
+		"LFGListingFrameSoloRoleButtons", "LFGListingFrameGroupRoleButtons",
+		"LFGListingFrameNewPlayerFriendlyButton" }) do
+		local part = _G[name]
+		if part then
+			part.__aetherStore = part.__aetherStore or {}
+			Reskin.Strip(part, part.__aetherStore)
+			Reskin.Fonts(part, "pnBody", 2, Palette.c.text)
+		end
+	end
+
+	-- WHAT THE WINDOW SAYS WHEN IT HAS NOTHING TO SHOW, which is a line of
+	-- type on empty glass and reads as the window having failed unless it is
+	-- dimmed on purpose.
+	for _, pair in ipairs({ { "LFGBrowseFrame", "NoResultsFound" },
+		{ "LFGBrowseFrame", "SearchingSpinner" } }) do
+		local host = _G[pair[1]]
+		local part = host and Reskin.Element(host, pair[2])
+		if part then
+			if part.GetObjectType and part:GetObjectType() == "FontString" then
+				Reskin.Font(part, "pnBody")
+				W.Color(part, Palette.c.textDim)
+			else
+				Reskin.Fonts(part, "pnBody", 2, Palette.c.textDim)
+			end
+		end
+	end
+
+	-- EVERY BUTTON ON EITHER PANE. They are children of the panes rather than
+	-- of the window, so one sweep of the window reaches none of them - and the
+	-- window's own two tabs are already dressed as tabs, so the sweep leaves
+	-- them alone.
+	for _, name in ipairs({ "LFGBrowseFrame", "LFGListingFrame",
+		"LFGParentFrame" }) do
+		Reskin.Buttons(_G[name], "pnBody")
+	end
+end
 -- The two people, and the two halves of the window each owns.
 local TRADE_SIDES = { "TradePlayer", "TradeRecipient" }
 
@@ -5707,6 +5968,7 @@ local INTERIORS = {
 	TaxiFrame         = DressTaxi,
 	TradeFrame        = DressTrade,
 	FriendsFrame      = DressFriends,
+	LFGParentFrame    = DressGroupFinder,
 	SettingsPanel     = DressSettings,
 }
 
