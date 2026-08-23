@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.24.2",
+		date    = "2026-08-23",
+		lines   = {
+			"build: the pack deploy copies only real addon folders, and says so when a pack's audio has not been built",
+		},
+	},
+	{
 		version = "0.24.1",
 		date    = "2026-08-23",
 		lines   = {

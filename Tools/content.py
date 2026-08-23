@@ -1,6 +1,12 @@
 """Build an IFEC content pack from a folder of audio.
 
-    python Tools/content.py E:\\AetherUI-Packs\\AetherUI_IFEC_S01
+    python Tools/content.py E:\\src\\veoj\\AetherUI-Packs\\AetherUI_IFEC_S01
+
+THE CUT AUDIO IS DERIVED AND GIT-IGNORED, so a fresh clone of the packs repo
+has the manifest, the magazines and no music at all - and nothing says so:
+PlaySoundFile answers false for every segment and the console sits in its
+muted state, which on screen is a play button that does nothing. Run this
+after cloning. The Stop hook that deploys the packs checks for it too.
 
 Reads pack.json from the pack folder, copies the declared audio in, probes every
 file for its true length and writes Content.lua and the .toc. Run it again after

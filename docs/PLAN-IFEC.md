@@ -272,12 +272,29 @@ and its content is the point of the feature. Zen's own state must be recorded
 before it is stopped so that "restore" means what Zen had, not what we guessed;
 and a Zen timer firing mid-flight must not steal the channel back.
 
-**Pack deployment.** The Stop hook mirrors `E:\AetherUI` to
+**Pack deployment.** The Stop hook mirrors `E:\src\veoj\AetherUI` to
 `Interface\AddOns\AetherUI`.
 
-**Decided:** packs live in a sibling root, `E:\AetherUI-Packs\<AddonName>`, each
-its own addon folder under version control, with a second mirror step in the
-deploy hook. The AetherUI repo stays one addon, which is what it is.
+**Decided:** packs live in a sibling root,
+`E:\src\veoj\AetherUI-Packs\<AddonName>` - its own GitHub repo since August
+2026 - each an addon folder under version control, with a second mirror step in
+the deploy hook. The AetherUI repo stays one addon, which is what it is.
+
+That mirror step copies only directories with a **`.toc`** in them. It used to
+copy every child of the packs root, and `Source/` - the uncut masters, 141MB of
+them - is one of those: it was mirrored into the AddOns folder on every turn,
+where WoW ignored it for having no `.toc` and nobody noticed.
+
+**The cut audio is derived and git-ignored.** `Tools/content.py` makes 814
+crossfaded pieces for one season and ffmpeg stamps a random stream serial into
+each, so a rebuild from identical masters is 814 byte-different files git
+cannot tell from real changes. The masters are committed under `Source/`.
+
+A fresh clone therefore has the manifest and no music, and **the failure is
+silent**: every segment fails to play and the console sits in its muted state,
+which reads as a play button that does nothing. Reported exactly that way on
+2026-08-23, after the repos moved to `E:\src\veoj`. The deploy hook now
+names any pack whose manifest asks for audio the pack has not got.
 
 **`willPlay` is nil when the music channel is muted.** Detect and surface in the
 UI rather than playing silence and appearing broken. The design already has a
