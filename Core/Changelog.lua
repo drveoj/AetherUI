@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.21.5",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: a window's action strip only takes buttons that belong to that window",
+			"panels: which fixes Add Friend and Send Message drifting off the sides of the friends list",
+			"aether panels dump now reports what the layout can see, not only what the client built",
+		},
+	},
+	{
 		version = "0.21.4",
 		date    = "2026-08-23",
 		lines   = {

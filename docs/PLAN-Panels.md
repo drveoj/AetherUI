@@ -198,6 +198,45 @@ unknown. See below.
 
 Five mutations are caught.
 
+## Fixed — Add Friend and Send Message off the sides (2026-08-23)
+
+Reported three times, guessed at twice, and finally reproduced: the friends
+window's two buttons are correct when it is first opened, and a button's width
+too far apart after switching tabs and coming back — one hanging off each side of
+the glass.
+
+**`RaidFrame` carries no parent in its XML** — *"Parent set dynamically. See
+ClaimRaidFrame()"* — **and is not hidden either.** So from the moment its addon
+loads it is a shown frame with nothing above it. A frame outside UIParent's
+hierarchy is never *drawn*, but `IsVisible` walks the parent chain and **a chain
+that simply ends has no hidden link in it**: every child of it answers yes. So
+`RaidFrameConvertToRaidButton` took a slot in the friends window's strip, 115
+wide, and drew nothing in it. It only appears after the raid tab has been visited
+once, because until then the button does not exist at all.
+
+Visible is not enough. **A row now takes only what is visible AND a descendant of
+the window being laid out** — `RowUsable`, used by `ChromeRow`'s three groups,
+its anonymous actions, and `RowUp`. The client makes the same test itself:
+`FriendsFrame_ShowSubFrame` hides `RaidFrame` only `if RaidFrame:GetParent() ==
+FriendsFrame`. A pane somebody else has claimed is not this window's to hide, and
+its buttons are not this window's to place.
+
+**Two earlier attempts at this were wrong and are recorded as such.** 0.21.2 added
+a clamp on the strip's width, which was a guess at a symptom and made it worse;
+0.21.3 took it out again. Neither could be made to fail in the harness, because
+the harness's `RaidFrame` was a well-behaved hidden child of the window. It is
+now parentless and shown, as the client's is.
+
+**And `/aether panels dump` now reports what the layout can SEE.** A dump of this
+window while it was wrong said nothing at all about it: the tree describes what
+the client built, and the question was what our own row filter makes of it. Each
+member of `row` and `actions` is listed with its size, shown, visible, and whether
+it belongs to this window — the last marked **NOT OURS** with the parent it does
+belong to. That one line is the whole answer, and it took three builds to get it
+without one.
+
+Four mutations are caught.
+
 ## Fixed — the trade window's money row (2026-08-23)
 
 Reported from the game: your gold, silver and copper were at the top left of the

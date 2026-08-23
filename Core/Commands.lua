@@ -248,6 +248,64 @@ local function FindFrame(want)
 	return nil, nil, near
 end
 
+--- What the panel layout can SEE of a window's rows, and what it makes of it.
+--
+--  The tree above says what the client built. This says what our own layout
+--  thinks of it, which is a different question and the one that goes wrong:
+--  a row is laid out from what is VISIBLE and OURS, and both of those can be
+--  true of something you cannot see anywhere on the window.
+--
+--  The friends window is why it exists. Add Friend and Send Message came out
+--  a button's width too far apart, one hanging off each side of the glass,
+--  and a dump of the tree said nothing at all about it - because the widget
+--  taking the room between them was RaidFrameConvertToRaidButton, whose pane
+--  has no parent, is never drawn, and answers yes to IsVisible.
+local function DumpRows(frame, name)
+	local PN = A.GetModule and A:GetModule("panels")
+	local entry = PN and PN.ENTRY and PN.ENTRY[name]
+	if not entry then return end
+
+	--- The first ancestor with a name, and whether the window is among them.
+	local function lineage(w)
+		local f, hops, ours = w, 0, false
+		while f and hops < 8 do
+			if f == frame then ours = true break end
+			f = f.GetParent and f:GetParent()
+			hops = hops + 1
+		end
+		local up = w.GetParent and w:GetParent()
+		return ours, (up and up.GetName and up:GetName()) or "none"
+	end
+
+	local function row(tag, list)
+		for _, key in ipairs(list or {}) do
+			local w = type(key) == "string" and PN.Part(key) or nil
+			if not w then
+				say("   %-5s %-34s %s", tag, tostring(key), A.Dim("not found"))
+			else
+				local ours, up = lineage(w)
+				local shown = w.IsShown and w:IsShown()
+				local vis = w.IsVisible and w:IsVisible()
+				say("   %-5s %-34s %.0fx%.0f  %s %s %s", tag, tostring(key),
+					(w.GetWidth and w:GetWidth()) or 0,
+					(w.GetHeight and w:GetHeight()) or 0,
+					shown and "shown" or A.Dim("hidden"),
+					vis and "visible" or A.Dim("unseen"),
+					ours and "ours" or A.Bad("NOT OURS, parent " .. up))
+			end
+		end
+	end
+
+	say(" ")
+	say("what the layout can see  ·  a row takes only what is VISIBLE and OURS")
+	for _, side in ipairs({ "left", "right", "mid" }) do
+		row("row", entry.row and entry.row[side])
+	end
+	for _, side in ipairs({ "left", "right", "mid", "under" }) do
+		row("strip", entry.actions and entry.actions[side])
+	end
+end
+
 --- `/aether panels dump <FrameName>`, into the box you can copy out of.
 function A:DumpPanel(name)
 	name = (name or ""):gsub("%s", "")
@@ -287,6 +345,7 @@ function A:DumpPanel(name)
 			date and date("%Y-%m-%d %H:%M") or "")
 		say("a leading dot is a parentKey, which is what Reskin.Element takes")
 		DumpFrame(frame, "", DUMP_DEPTH, frame.GetParent and frame:GetParent())
+		DumpRows(frame, name)
 	end)
 	A.Errors:ShowText(text)
 end

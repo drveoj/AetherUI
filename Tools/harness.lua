@@ -3316,6 +3316,13 @@ do
 		end
 
 		-- EVERY PANE setAllPoints, and hidden but for the one that is up.
+		--
+		-- ...EXCEPT THE RAID PANE, WHICH BELONGS TO NOBODY UNTIL IT IS CLAIMED.
+		-- RaidFrame's XML carries no parent at all - "Parent set dynamically,
+		-- see ClaimRaidFrame" - and no hidden attribute either, so from the
+		-- moment its addon loads it is a shown frame with nothing above it. It
+		-- is re-parented below, which is what the client does when you press
+		-- the raid tab.
 		local panes = {}
 		for _, n in ipairs({ "FriendsListFrame", "IgnoreListFrame", "WhoFrame",
 			"GuildFrame", "RaidFrame" }) do
@@ -28060,6 +28067,55 @@ do
 	_G.RaidFrame:Hide()
 	_G.FriendsTabHeader:Show()
 	_G.FriendsListFrame:Show()
+
+	-- AND BACK ON THE FRIENDS TAB WITH THE RAID PANE CLAIMED BY SOMEBODY ELSE,
+	-- which is the state the client leaves it in.
+	--
+	-- RaidFrame carries no parent in its XML - "Parent set dynamically, see
+	-- ClaimRaidFrame" - and is not hidden either, so once its addon has loaded
+	-- it is a SHOWN frame with nothing above it. A frame outside UIParent's
+	-- hierarchy is never drawn, but IsVisible walks the parent chain and a
+	-- chain that simply ends has no hidden link in it: every child answers yes.
+	--
+	-- So Convert to Raid took a slot in this window's strip, 115 wide, and drew
+	-- nothing in it - Add Friend and Send Message a button's width further
+	-- apart than they should be, one hanging off each side of the glass. And
+	-- only after the raid tab had been visited once, because until then the
+	-- button does not exist at all.
+	--
+	-- The client makes the same test: FriendsFrame_ShowSubFrame hides RaidFrame
+	-- only `if RaidFrame:GetParent() == FriendsFrame`.
+	_G.RaidFrame:SetParent(nil)
+	_G.RaidFrame:Show()
+	PN.Dress(_G.FriendsFrame)
+	check(_G.RaidFrameConvertToRaidButton:IsVisible(),
+		"a pane with no parent at all still reports its buttons visible")
+	local pair = _G.FriendsFrameAddFriendButton:GetWidth()
+		+ _G.FriendsFrameSendMessageButton:GetWidth() + 12
+	local backX = select(4, _G.FriendsFrameAddFriendButton:GetPoint(1))
+	check(backX == -pair / 2,
+		"but it is not this window's button and takes no room in its strip ("
+		.. tostring(backX) .. " of " .. tostring(-pair / 2) .. ")")
+	-- AND THE DUMP SAYS SO OUT LOUD, because the tree above it does not. A
+	-- report of what the client built cannot show why two buttons are a
+	-- button's width too far apart - what is missing is what OUR layout can
+	-- see, and a dump of this window while it was wrong said nothing at all.
+	do
+		local box
+		local realShow = A.Errors.ShowText
+		A.Errors.ShowText = function(_, text) box = text end
+		A:DumpPanel("FriendsFrame")
+		A.Errors.ShowText = realShow
+		check(box and box:find("NOT OURS", 1, true) ~= nil,
+			"the dump names the widget that is visible but not this window's")
+		check(box and box:find("FriendsFrameAddFriendButton", 1, true) ~= nil
+			and box:find("WhoFrameEditBox", 1, true) ~= nil,
+			"and lists every member of the strip and the tool row beside it")
+	end
+
+	_G.RaidFrame:Hide()
+	_G.RaidFrame:SetParent(_G.FriendsFrame)
+	PN.Dress(_G.FriendsFrame)
 	_G.FriendsFrame:Hide()
 	end
 

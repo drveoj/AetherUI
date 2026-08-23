@@ -754,6 +754,10 @@ local TOOL_ROW         = 28
 -- than taking the body's 14 - a pair of buttons is not two blocks of
 -- content.
 local FOOT_GAP        = 12
+-- How far up a chain we look for the window a widget belongs to. Two is
+-- the deepest any of these actually is - a button on a pane on the window -
+-- and the cap is there so a parent cycle cannot hang the layout.
+local ROW_OWN_DEPTH   = 8
 -- A row of chrome in the footer. A window with two of them - a page turn and
 -- an action under it - GROWS by one rather than splitting the 52 between
 -- them: split, each row got 26 and a 22 tall button has two pixels of air
@@ -876,10 +880,43 @@ end
 --  VISIBLE, not shown - see ChromeRow. Every one of the postbox's actions is a
 --  child of the pane it belongs to and carries its own flag the whole time;
 --  what the client hides is the PANE.
+--- Is this widget actually a part of the window being laid out?
+--
+--  VISIBLE IS NOT ENOUGH, and the social window is why. RaidFrame carries
+--  no parent in its XML - "Parent set dynamically, see ClaimRaidFrame" - and
+--  it is not hidden either, so from the moment its addon loads it is a shown
+--  frame with nothing above it. A frame outside UIParent's hierarchy is never
+--  DRAWN, but IsVisible walks the parent chain and a chain that simply ends
+--  has no hidden link in it: every child of it answers yes.
+--
+--  So Convert to Raid took a slot in the friends window's strip, 115 wide,
+--  and drew nothing in it - which is Add Friend and Send Message a button's
+--  width further apart than they should be, one of them hanging off each
+--  side of the glass. It only appears after the raid tab has been visited
+--  once, because until then the button does not exist at all.
+--
+--  The client makes the same test itself: FriendsFrame_ShowSubFrame hides
+--  RaidFrame only `if RaidFrame:GetParent() == FriendsFrame`. A pane that
+--  has been claimed by somebody else is not this window's to hide, and its
+--  buttons are not this window's to place.
+local function Owns(frame, w)
+	local f = w
+	for _ = 1, ROW_OWN_DEPTH do
+		if f == frame then return true end
+		f = f.GetParent and f:GetParent()
+		if not f then return false end
+	end
+	return false
+end
+
+--- Up, and ours: the two questions every one of these rows asks.
+local function RowUsable(frame, w)
+	return w and w.IsVisible and w:IsVisible() and Owns(frame, w) or false
+end
+
 local function RowLive(frame, list)
 	for _, name in ipairs(list or {}) do
-		local w = RowPart(frame, name)
-		if w and w.IsVisible and w:IsVisible() then return true end
+		if RowUsable(frame, RowPart(frame, name)) then return true end
 	end
 	return false
 end
@@ -919,7 +956,7 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 	-- on the raid tab and push the raid's own switch along behind it.
 	local function live(name)
 		local w = part(name)
-		if w and w.IsVisible and w:IsVisible() then return w end
+		if RowUsable(frame, w) then return w end
 		return nil
 	end
 
@@ -962,13 +999,13 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 	local shown, total = {}, 0
 	for _, name in ipairs(spec.mid or {}) do
 		local w = part(name)
-		if w and w.IsVisible and w:IsVisible() then
+		if RowUsable(frame, w) then
 			shown[#shown + 1] = w
 			total = total + span(w)
 		end
 	end
 	for _, w in ipairs(frame.__aetherActions or {}) do
-		if w.IsVisible and w:IsVisible() and w.ClearAllPoints then
+		if RowUsable(frame, w) and w.ClearAllPoints then
 			shown[#shown + 1] = w
 			total = total + span(w)
 		end
@@ -1455,12 +1492,9 @@ end
 --  PANE, and every child of it goes on reporting itself shown the whole time.
 --  The social window is why it matters here - one row serves five panes, and
 --  asked whether they were shown, all five panes' worth answered yes.
-local function RowUp(spec)
+local function RowUp(frame, spec)
 	for _, side in ipairs({ "left", "right", "mid" }) do
-		for _, name in ipairs(spec[side] or {}) do
-			local w = Part(name)
-			if w and w.IsVisible and w:IsVisible() then return true end
-		end
+		if RowLive(frame, spec[side]) then return true end
 	end
 	return false
 end
@@ -1551,7 +1585,7 @@ function PN.LayoutBody(frame, entry)
 	-- reputation bar and most of the people you talk to do not have one, so a
 	-- window that always reserved the row wore an empty band on every NPC in
 	-- the game bar a handful.
-	if entry and entry.row and RowUp(entry.row) then
+	if entry and entry.row and RowUp(frame, entry.row) then
 		lead = lead + TOOL_ROW + W.PANEL_GAP
 	end
 	-- HOW FAR UP THE BODY STOPS, wanted before anything is moved: a pane that
