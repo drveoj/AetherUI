@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.26.6",
+		date    = "2026-08-23",
+		lines   = {
+			"The error and capture window has a Copy button that puts the text on the system clipboard directly, rather than relying on Ctrl+A and Ctrl+C selecting the box.",
+		},
+	},
+	{
 		version = "0.26.5",
 		date    = "2026-08-23",
 		lines   = {

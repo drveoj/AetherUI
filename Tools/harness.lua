@@ -1448,6 +1448,25 @@ DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) print("    | " .. tostring(
 
 STANDARD_TEXT_FONT = [[Fonts\FRIZQT__.TTF]]
 
+--- THE CLIENT'S OWN CLIPBOARD CALL, which this one has: Blizzard_Console,
+--  the API browser and the Edit Mode layout export all use it on 1.15.9, and
+--  OsDocumentation declares it - CopyToClipboard(text, removeMarkup) putting
+--  the string on the system clipboard and answering with its length.
+--
+--  It matters because it is the ONE route out of the game that does not go
+--  through a widget. Ctrl+A, Ctrl+C copies what an EditBox has LAID OUT, and
+--  a twenty-five line capture that reads correctly in the box arrived in
+--  Windows as thousands of lines. This copies the string itself.
+_G.__clipboard = nil
+function CopyToClipboard(text, removeMarkup)
+	-- Not nilable in the documentation, and the client faults on nil.
+	assert(type(text) == "string", "CopyToClipboard wants a string")
+	local out = text
+	if removeMarkup then out = out:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") end
+	_G.__clipboard = out
+	return #out
+end
+
 function GetTime() return time end
 function GetCursorPosition() return cursorX, cursorY end
 --- Move it. Tests that drag things were setting the upvalue directly, which
@@ -18795,6 +18814,54 @@ do
 		check(order[1] == "show" and order[2] == "text",
 			"the box is on screen before the text goes into it (" ..
 			table.concat(order, ",") .. ")")
+	end
+
+	-- COPY, WHICH DOES NOT GO THROUGH THE BOX.
+	--
+	-- Ctrl+A, Ctrl+C copies what the EditBox has LAID OUT, not the string it
+	-- was handed. A capture that read correctly in the box, and counted
+	-- correctly in chat at 1683 characters and 25 lines, arrived in Windows as
+	-- thousands of lines. So the string has to have a way out that no widget
+	-- touches, and this client has one.
+	local dlg = box and box:GetParent() and box:GetParent():GetParent()
+	check(dlg and dlg.copy ~= nil, "the copy box has a Copy button")
+	if dlg and dlg.copy then
+		-- Its own text, not whatever the last check left in the box.
+		local want = "centre = {\n\tplayer = { x = -180 },\n}"
+		A.Errors:ShowText(want)
+		_G.__clipboard = nil
+		-- The box is made to answer with something else for the length of the
+		-- click. If Copy reads the widget rather than the string, that is what
+		-- lands on the clipboard - which is the whole fault, in miniature.
+		local realGet = box.GetText
+		box.GetText = function() return "whatever the box laid out" end
+		dlg.copy:GetScript("OnClick")(dlg.copy)
+		box.GetText = realGet
+		check(_G.__clipboard == want,
+			"and it puts the string itself on the clipboard, byte for byte, rather "
+			.. "than whatever the box laid out"
+			)
+
+		-- AND NOTHING TRAILING. The symptom was the report followed by a screenful
+		-- of empty lines, so the check that matters is that the last character is
+		-- the last character of the report.
+		local pad = tostring(_G.__clipboard or ""):match("[%s]*$") or ""
+		check(pad:find("\n") == nil,
+			"and not one blank line after it (" .. #pad .. " characters of trailing "
+			.. "space)")
+	end
+
+	-- IT SURVIVES THE CALL GOING AWAY. The function is restricted and this is
+	-- a client that changes; a Copy button that throws inside the error dialog
+	-- would take the error report down with it.
+	if dlg and dlg.copy then
+		local real = _G.CopyToClipboard
+		_G.CopyToClipboard = function() error("restricted") end
+		local ok = pcall(dlg.copy:GetScript("OnClick"), dlg.copy)
+		_G.CopyToClipboard = real
+		check(ok,
+			"and a client that refuses the call leaves the button harmless rather "
+			.. "than throwing inside the error dialog")
 	end
 
 	-- AND IT SAYS HOW MUCH IT WAS GIVEN. A box showing one line of an

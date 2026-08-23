@@ -181,7 +181,7 @@ local function Build()
 
 	local hint = W.Text(f, "tbCardSub", "CENTER")
 	hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-	hint:SetText("Ctrl+A then Ctrl+C. Escape closes.")
+	hint:SetText("Copy, or Ctrl+A then Ctrl+C. Escape closes.")
 	W.Color(hint, Palette.c.textDim)
 
 	-- A SCROLL FRAME AROUND IT, because a diag runs to eighty lines.
@@ -293,6 +293,45 @@ local function Build()
 	hit:SetPoint("CENTER", close, "CENTER", 0, 0)
 	hit:SetScript("OnClick", function() f:Hide() end)
 
+	-- COPY, WHICH DOES NOT GO THROUGH THE BOX AT ALL.
+	--
+	-- Ctrl+A, Ctrl+C copies what the EditBox has LAID OUT, not the string it
+	-- was handed. A twenty-five line capture that read correctly in the box -
+	-- and counted correctly in chat, 1683 characters and 25 lines - arrived in
+	-- Windows as thousands of lines. Whatever the box is doing between the
+	-- string and the selection, this steps over it: CopyToClipboard takes the
+	-- string itself and answers with how many bytes it took.
+	--
+	-- The call is in this client - Blizzard_Console, the API browser and the
+	-- Edit Mode layout export all use it - and it is restricted, so it has to
+	-- run from a hardware event. A button click is one. It is also pcall'd:
+	-- if a future build takes it away, the box is still there and the hint
+	-- still says so.
+	local copy = W.CreateButton(f, { corner = 8 })
+	copy:SetSize(72, 22)
+	copy:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -12)
+
+	local copyText = W.Text(copy, "tbCardSub", "CENTER")
+	copyText:SetPoint("CENTER")
+	copyText:SetText("Copy")
+	W.Color(copyText, Palette.c.text)
+	copy.__label = copyText
+
+	copy:SetScript("OnEnter", function(self) W.SetButtonState(self, false, true) end)
+	copy:SetScript("OnLeave", function(self) W.SetButtonState(self, false, false) end)
+	copy:SetScript("OnClick", function()
+		local text = f.__text or ""
+		local ok, n = pcall(_G.CopyToClipboard, text, false)
+		if ok then
+			-- The length it reports, not the length we sent: those differing is
+			-- exactly the fault this button exists for, and silently.
+			A:Print(("copied %d characters to the clipboard"):format(n or 0))
+		else
+			A:Print("this client will not copy for us - use Ctrl+A then Ctrl+C")
+		end
+	end)
+	f.copy = copy
+
 	Errors.frame = f
 	return f
 end
@@ -308,6 +347,9 @@ function Errors:ShowText(text)
 	-- captures were reported that way before this was the suspect, and the
 	-- string handed over was verified correct both times.
 	f:Show()
+	-- KEPT AS HANDED, for the Copy button. What is in the box after this is
+	-- the box's version of it, and the two turned out not to be the same.
+	f.__text = text or ""
 	f.box:SetText(text or "")
 	f.box:HighlightText()
 	-- Back to the top. A second report opened where the last one was left
