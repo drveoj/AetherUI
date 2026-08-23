@@ -9475,7 +9475,7 @@ FRIZ = FRIZ    -- the client face, shared with the checks below
 local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
-	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Fader.lua",
+	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Presets.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/PartyFrames.lua",
@@ -18751,6 +18751,88 @@ do
 
 end
 
+print("== presets: three arrangements of the HUD ==")
+do
+	local P = A.Presets
+	check(P ~= nil, "the presets loaded")
+	check(#P.order == 3, "there are three of them (" .. #P.order .. ")")
+
+	-- A PRESET IS ONE TABLE. Every frame this addon lets you move writes
+	-- db.profile.anchors[name] and nothing else, so an arrangement is a copy of
+	-- that - which is why there is no second mechanism in here.
+	local anchors = A.db.profile.anchors
+	wipe(anchors)
+	check(P:Current() == "classic",
+		"an untouched profile IS the shipped arrangement (" ..
+		tostring(P:Current()) .. ")")
+
+	-- APPLYING ONE WRITES IT AND TELLS THE FRAMES TO LOOK AGAIN. The movers put
+	-- a frame back from the store on demand rather than watching it, so writing
+	-- the table is only half of the job.
+	local moved = 0
+	local realRestore = A.Movers.RestoreAll
+	A.Movers.RestoreAll = function(self)
+		moved = moved + 1
+		return realRestore(self)
+	end
+
+	-- A PRESET WITH SOMETHING IN IT, built here rather than shipped empty: the
+	-- three real ones are captured from a layout somebody has made by eye, and
+	-- until they are there is nothing to apply.
+	P.list.centre.anchors = {
+		player = { point = "CENTER", relPoint = "CENTER", x = -180, y = -120 },
+		target = { point = "CENTER", relPoint = "CENTER", x = 180, y = -120 },
+		chat   = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 20, y = 20 },
+	}
+	P.list.centre.scale = 0.85
+
+	check(P:Apply("centre"), "a preset applies")
+	check(moved == 1,
+		"and every frame is told to look again (" .. moved .. ")")
+	check(anchors.player and anchors.player.x == -180,
+		"the positions are the preset's (" ..
+		tostring(anchors.player and anchors.player.x) .. ")")
+	check(A.db.profile.scale == 0.85,
+		"and the scale travels with the layout, because frames hugging the "
+		.. "character want to be smaller than frames along the bottom")
+	check(P:Current() == "centre",
+		"which is read back off the anchors rather than a note somebody wrote "
+		.. "down - a stored answer goes stale the first time a frame is dragged")
+
+	-- WIPED, NOT MERGED. Two arrangements at once belongs to neither.
+	anchors.minimap = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -9, y = -9 }
+	P:Apply("centre")
+	check(anchors.minimap == nil,
+		"applying a preset takes away what the last one moved and this one does "
+		.. "not mention")
+
+	-- AND A LAYOUT CAN BE CAPTURED BACK OUT, which is how the shipped three are
+	-- made: by eye, in the game, at a real resolution. Guessing coordinates in a
+	-- text editor gives a layout that is plausible in every dimension and right
+	-- in none.
+	local text, count = P:Capture("centre")
+	check(count == 3 and text:find('%["player"%]') ~= nil,
+		"the current layout comes back as a table naming every frame in it (" ..
+		tostring(count) .. ")")
+	check(text:find("scale", 1, true) ~= nil,
+		"with the scale in it, because that is part of an arrangement")
+
+	-- SORTED, so two captures of the same layout are the same text and a diff
+	-- shows the line that really changed. Three names, in an order pairs() has
+	-- no reason to produce: chat, player, target is alphabetical and nothing
+	-- else.
+	local atChat = text:find('%["chat"%]')
+	local atPlayer = text:find('%["player"%]')
+	local atTarget = text:find('%["target"%]')
+	check(atChat and atPlayer and atTarget
+		and atChat < atPlayer and atPlayer < atTarget,
+		"and in a fixed order rather than whatever pairs() felt like")
+
+	A.Movers.RestoreAll = realRestore
+	P.list.centre.anchors = {}
+	P.list.centre.scale = nil
+	wipe(anchors)
+end
 print("== zen: it eases out rather than snapping ==")
 do
 	local Z = A:GetModule("zen")

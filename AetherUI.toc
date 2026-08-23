@@ -2,7 +2,7 @@
 ## Title: Aether|cff9d7bffUI|r
 ## Notes: A frosted-glass HUD for Classic Era. Core skin engine + modules.
 ## Author: DrVeoj
-## Version: 0.26.1
+## Version: 0.26.2
 ## SavedVariables: AetherUIDB
 ## X-Category: Interface Enhancements
 
@@ -18,6 +18,9 @@ Core\Errors.lua
 Core\Reskin.lua
 Core\Config.lua
 Core\Movers.lua
+# Three arrangements of the HUD, which are a copy of what the movers store.
+# After Movers, because that is where a position lives.
+Core\Presets.lua
 Core\Fader.lua
 Core\Nav.lua
 Core\Launchers.lua

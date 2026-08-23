@@ -596,6 +596,50 @@ end
 
 handlers.config  = function(arg) A.Options:Open(arg) end
 handlers.options = handlers.config
+--- `/aether preset` - the three shipped arrangements of the HUD.
+--
+--  `capture` is the half that matters during development: an arrangement is a
+--  design decision made by eye, in the game, at a real resolution - so the
+--  numbers in Core\Presets.lua are captured from a layout somebody has
+--  actually made rather than typed into a text editor. Lay the frames out,
+--  run this, paste the answer.
+handlers.preset = function(arg, rest)
+	local P = A.Presets
+	if not P then A:Print("presets are not loaded.") return end
+
+	if arg == "capture" then
+		-- The key is a NAME and keeps its case, like every other tail here.
+		local key = (rest or ""):gsub("%s", "")
+		if key == "" then key = P:Current() or "PRESET" end
+		local text, count = P:Capture(key)
+		A.Errors:ShowText(text)
+		A:Print("captured " .. count .. " frame position"
+			.. (count == 1 and "" or "s") .. " as " .. A.Val(key)
+			.. " - paste it into Core\\Presets.lua")
+		return
+	end
+
+	if arg and P.list[arg] then
+		if P:Apply(arg) then
+			A:Print("layout: " .. A.Hi(P.list[arg].label))
+		else
+			A:Print("could not apply " .. A.Val(arg) .. ".")
+		end
+		return
+	end
+
+	-- No argument, or one nobody recognises: say what there is and which is on.
+	local now = P:Current()
+	A:Print(A.Hi("/aether preset <name>") .. "  ·  or "
+		.. A.Hi("/aether preset capture <name>") .. " to record the one you have"
+		.. " made")
+	for _, key in ipairs(P.order) do
+		local one = P.list[key]
+		A:Print("   " .. (key == now and A.Good(key) or A.Val(key)) .. "  "
+			.. one.label .. (key == now and "   (on now)" or ""))
+	end
+end
+
 handlers.unlock = function() A.Movers:Unlock() end
 handlers.lock   = function() A.Movers:Lock() end
 handlers.reset  = function() A.Movers:ResetAll() end
