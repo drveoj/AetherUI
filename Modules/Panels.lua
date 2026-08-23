@@ -338,6 +338,13 @@ local PANELS = {
 		-- squeezes the window: the names would travel eighty units and the slots
 		-- eight, and what was a layout becomes a heap.
 		together = true,
+		-- AND NOT THE TWO NAMES EITHER, which are in the BAND. See DressTrade:
+		-- this window's title is who is trading with whom, and it takes two
+		-- strings to say it because each names a column. Leaving them in the
+		-- body cost twice over - a line of type where the title should be, and
+		-- a shift of 99 driven by strings five units down that dropped a
+		-- hand's width of empty glass under the purses.
+		--
 		-- EVERYTHING HUNG OFF THE WINDOW, and nothing that is chained off
 		-- something already here. Item 1 brings the other six with it; the
 		-- recipient's enchant label is anchored to the player's. The two
@@ -345,8 +352,7 @@ local PANELS = {
 		-- chained off anything - the client pins all three to the window's own
 		-- corners - so left out of this list they stayed where they were while
 		-- the rest of the window moved down past them.
-		body = { "TradeFramePlayerNameText", "TradeFrameRecipientNameText",
-			"TradePlayerItemsInset", "TradeRecipientItemsInset",
+		body = { "TradePlayerItemsInset", "TradeRecipientItemsInset",
 			"TradePlayerEnchantInset", "TradeRecipientEnchantInset",
 			"TradePlayerItem1", "TradeRecipientItem1",
 			"TradeFramePlayerEnchantText",
@@ -5542,15 +5548,37 @@ local function DressTrade(frame, store)
 		end
 	end
 
-	-- WHOSE NAME IS OVER WHICH COLUMN, and WILL NOT BE TRADED over each
-	-- enchant recess. The names are the client's gold on what used to be its
-	-- own stone header; the two labels are a note about the row under them.
-	for _, name in ipairs({ "TradeFramePlayerNameText",
-		"TradeFrameRecipientNameText" }) do
-		local fs = _G[name]
+	-- WHOSE NAME IS OVER WHICH COLUMN - AND THAT IS THIS WINDOW'S TITLE.
+	--
+	-- Every other panel says what it is in the band. This one says it twice,
+	-- because what it is is two people and each name belongs over a column;
+	-- one centred string cannot carry that. So both go in the band, at the
+	-- title's own baseline, each centred over the goods it names.
+	--
+	-- CENTRED OVER THE COLUMN rather than where the client had them: its own
+	-- offsets are 65 and 230 against columns whose middles are 85 and 256, so
+	-- neither name sat over the goods it was naming.
+	--
+	-- The x comes from the column and the y from the glass, which is two
+	-- points on one string - so it is ONE point, at an offset worked out from
+	-- the column's middle. Two points on a font string stretch it.
+	local host = frame.__aetherPanel
+	for _, pair in ipairs({ { "TradeFramePlayerNameText",
+		"TradePlayerItemsInset" }, { "TradeFrameRecipientNameText",
+		"TradeRecipientItemsInset" } }) do
+		local fs, column = _G[pair[1]], _G[pair[2]]
 		if fs then
 			Reskin.Font(fs, "pnTitle")
 			W.Color(fs, Palette.c.text)
+		end
+		if fs and host and column and column.GetLeft and host.GetLeft
+			and column:GetLeft() and host:GetLeft() then
+			local middle = (column:GetLeft() + column:GetRight()) / 2
+			local centre = (host:GetLeft() + host:GetRight()) / 2
+			fs:ClearAllPoints()
+			fs:SetPoint("CENTER", host, "TOP", middle - centre,
+				-(frame.__aetherHeadH or W.PANEL_HEAD_H) / 2)
+			if fs.SetJustifyH then fs:SetJustifyH("CENTER") end
 		end
 	end
 	for _, name in ipairs({ "TradeFramePlayerEnchantText",

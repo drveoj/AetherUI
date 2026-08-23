@@ -28082,23 +28082,41 @@ do
 	-- window that cannot travel - the client has forbidden your own - so the
 	-- body starts below where they already are rather than at the usual 80.
 	local trLead = A:GetModule("panels").ENTRY.TradeFrame.lead or 0
-	local trDown = A.Widgets.PANEL_HEAD_H + trInner + trLead - 5
-	local nameY = select(5, _G.TradeFramePlayerNameText:GetPoint(1))
+	-- MEASURED FROM THE COLUMNS, which are the topmost thing in the body now
+	-- that the two names are in the band. They used to set this from five
+	-- units down, and `together` handed that same 99 to everything - which
+	-- left a hand's width of empty glass between the purses and the goods.
+	local trDown = A.Widgets.PANEL_HEAD_H + trInner + trLead - 83
 	local slotY = select(5, _G.TradePlayerItem1:GetPoint(1))
-	check(nameY == -(5 + trDown) and slotY == -(89 + trDown),
-		"the names and the slots below them move by the SAME amount (" ..
-		tostring(nameY) .. ", " .. tostring(slotY) .. ")")
-	-- AND THEY CLEAR THE PURSES, which is what the reserved room is for. The
-	-- money row ends 90 down and cannot move, so anything laid out at the
-	-- usual 80 lands on top of it - the two names first.
-	check(-nameY >= 90,
-		"the names start below the money row rather than on top of it (" ..
-		tostring(nameY) .. ", the purses end at -90)")
-	local nameX = select(4, _G.TradeFramePlayerNameText:GetPoint(1))
+	local insY = select(5, _G.TradePlayerItemsInset:GetPoint(1))
+	check(insY == -(83 + trDown) and slotY == -(89 + trDown),
+		"the columns and the slots in them move by the SAME amount (" ..
+		tostring(insY) .. ", " .. tostring(slotY) .. ")")
+
+	-- AND THEY START A GAP BELOW THE PURSES, which is what the reserved room
+	-- is for: the money row ends 90 down and cannot move, so anything laid out
+	-- at the usual 80 lands on top of it.
+	check(-insY - 90 == A.Widgets.PANEL_GAP,
+		"the goods start one gap under the money row - no more and no less ("
+		.. tostring(-insY - 90) .. " of " .. tostring(A.Widgets.PANEL_GAP)
+		.. ")")
+
+	-- THE TWO NAMES ARE THIS WINDOW'S TITLE, and they are in the band with it.
+	-- It takes two strings to say what this window is - two people, one per
+	-- column - and one centred string cannot carry that.
+	local trGlass = _G.TradeFrame.__aetherPanel
+	local nAt, nRel, nRelP, nX, nY = _G.TradeFramePlayerNameText:GetPoint(1)
+	check(nAt == "CENTER" and nRel == trGlass and nRelP == "TOP"
+		and nY == -A.Widgets.PANEL_HEAD_H / 2,
+		"the names sit in the band at the title's own baseline (" ..
+		tostring(nAt) .. "/" .. tostring(nRelP) .. "/" .. tostring(nY) .. ")")
+	local col = _G.TradePlayerItemsInset
+	check(nX and math.abs(nX - ((col:GetLeft() + col:GetRight()) / 2
+		- (trGlass:GetLeft() + trGlass:GetRight()) / 2)) < 0.5,
+		"and each one over the middle of the goods it names, not where the "
+		.. "client had it (" .. tostring(nX) .. ")")
+
 	local slotX = select(4, _G.TradePlayerItem1:GetPoint(1))
-	check(nameX - 65 == slotX - 14,
-		"and sideways by the same amount too, so the two columns keep the gap"
-		.. " between them (" .. tostring(nameX) .. ", " .. tostring(slotX) .. ")")
 
 	-- BOTH CORNERS OF AN INSET, not one. These stone recesses are pinned by
 	-- TOPLEFT and BOTTOMRIGHT both; a mover that rewrote a single point would
@@ -28158,10 +28176,9 @@ do
 	-- MeasureTop measures against - so the sideways shift comes out as zero
 	-- rather than needing a flag of its own, and every recess still stands the
 	-- standard distance in from the rim.
-	local trGlass = _G.TradeFrame.__aetherPanel
-	check(select(4, _G.TradeFramePlayerNameText:GetPoint(1)) == 65
-		and select(4, _G.TradePlayerItem1:GetPoint(1)) == 14,
-		"nothing in the trade window travels sideways")
+	check(slotX == 14 and select(4, _G.TradeRecipientItem1:GetPoint(1)) == 182,
+		"nothing in the trade window travels sideways (" .. tostring(slotX)
+		.. ")")
 	check(_G.TradePlayerItemsInset:GetLeft() - trGlass:GetLeft() == trInner,
 		"and the glass reaching past the frame puts its recesses the standard "
 		.. "distance in all the same (" ..

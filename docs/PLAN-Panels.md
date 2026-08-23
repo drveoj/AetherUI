@@ -226,7 +226,20 @@ the window is laid out around it:
   `MeasureTop` measures against the glass, so this makes the sideways shift come
   out as zero rather than needing a flag of its own.
 
-Four mutations are caught.
+**The two names are this window's title, and they now sit in the band
+(2026-08-23).** Every other panel says what it is in the band; this one says it
+twice, because what it is is two people and each name belongs over a column — one
+centred string cannot carry that. They are centred over the middle of the goods
+they name rather than at the client's own 65 and 230, which were over neither.
+
+Taking them out of the body list fixed the second half of the same report as a
+side effect. They were the topmost thing in it, five units down, and `together`
+hands the deepest shift to everything — so a shift computed for two strings in
+the header band was applied to the goods as well, and dropped a hand's width of
+empty glass under the purses. Measured from the columns instead, the shift is 21
+and the goods start exactly one gap below the money row.
+
+Seven mutations are caught.
 
 ## Fixed — the who list's count, and a guess withdrawn (2026-08-23)
 
