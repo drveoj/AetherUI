@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.21.3",
+		date    = "2026-08-23",
+		lines   = {
+			"panels: the trade window's money row stays with the purse the client will not let anyone move",
+			"panels: the who list's count goes back to the foot of the window",
+			"panels: the action strip is centred again, with no bound on it",
+		},
+	},
+	{
 		version = "0.21.2",
 		date    = "2026-08-23",
 		lines   = {

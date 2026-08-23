@@ -27867,25 +27867,6 @@ do
 			.. " filters are, chevron and all")
 	end
 
-	do
-		-- THE STRIP NEVER OVERHANGS THE WINDOW. A row wider than the glass
-		-- puts its first button off the side - unreadable, drawn over whatever
-		-- is behind the window, and at the screen's edge not reliably
-		-- clickable at all. The air between them gives first, and past that
-		-- the group crowds instead.
-		local wide = _G.FriendsFrame.__aetherPanel:GetWidth()
-		_G.FriendsFrameAddFriendButton:SetWidth(wide * 0.7)
-		_G.FriendsFrameSendMessageButton:SetWidth(wide * 0.7)
-		PN.Dress(_G.FriendsFrame)
-		local firstX = select(4, _G.FriendsFrameAddFriendButton:GetPoint(1))
-		check(firstX >= -wide / 2,
-			"a strip too wide for the window crowds rather than hanging off"
-			.. " the side of it (" .. string.format("%.1f", firstX) .. " of "
-			.. string.format("%.1f", -wide / 2) .. ")")
-		_G.FriendsFrameAddFriendButton:SetWidth(131)
-		_G.FriendsFrameSendMessageButton:SetWidth(131)
-		PN.Dress(_G.FriendsFrame)
-	end
 
 	-- NOT ONE OF THE FIVE PANES IS IN THE BODY LIST, and that is deliberate:
 	-- setAllPoints leaves a frame with NO POINTS, so the mover has nothing to
@@ -28025,6 +28006,21 @@ do
 		.. "between them and their list (" .. tostring(colY) .. ", "
 		.. tostring(wlY) .. ")")
 
+	-- AND WHAT THE QUERY FOUND IS AT THE FOOT OF THE BODY, not under the band.
+	-- The client anchors the count to the SEARCH BOX - BOTTOM to its TOP - so
+	-- moving the box into the tool row took the count up with it, where "0
+	-- People Found" read as a subtitle for the window.
+	--
+	-- Off the footer's own hairline rather than off the list: the list keeps
+	-- the height the client gave it and stops well short of the body's floor,
+	-- so a count hung under the list floats in the middle of the window.
+	local totAt, totRel, totRelP, _, totY = _G.WhoFrameTotals:GetPoint(1)
+	check(totAt == "BOTTOM" and totRel == _G.FriendsFrame.__aetherFootRule
+		and totRelP == "TOP" and totY == A.Widgets.PANEL_GAP,
+		"the who count sits at the foot of the body, over the footer's rule ("
+		.. tostring(totAt) .. "/" .. tostring(totRelP) .. "/" .. tostring(totY)
+		.. ")")
+
 	-- ONE ROW SERVES FIVE PANES, AND IT IS LAID OUT FROM WHAT IS VISIBLE.
 	--
 	-- What the client hides when it swaps tabs is the PANE; every child of it
@@ -28082,12 +28078,22 @@ do
 	-- outside - and a window of that shape is inset by what its own rims cost
 	-- rather than by the body padding.
 	local trInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_OUTSET
-	local trDown = A.Widgets.PANEL_HEAD_H + trInner - 5
+	-- ...PLUS THE ROOM RESERVED FOR THE PURSES. They are the one row in this
+	-- window that cannot travel - the client has forbidden your own - so the
+	-- body starts below where they already are rather than at the usual 80.
+	local trLead = A:GetModule("panels").ENTRY.TradeFrame.lead or 0
+	local trDown = A.Widgets.PANEL_HEAD_H + trInner + trLead - 5
 	local nameY = select(5, _G.TradeFramePlayerNameText:GetPoint(1))
 	local slotY = select(5, _G.TradePlayerItem1:GetPoint(1))
 	check(nameY == -(5 + trDown) and slotY == -(89 + trDown),
 		"the names and the slots below them move by the SAME amount (" ..
 		tostring(nameY) .. ", " .. tostring(slotY) .. ")")
+	-- AND THEY CLEAR THE PURSES, which is what the reserved room is for. The
+	-- money row ends 90 down and cannot move, so anything laid out at the
+	-- usual 80 lands on top of it - the two names first.
+	check(-nameY >= 90,
+		"the names start below the money row rather than on top of it (" ..
+		tostring(nameY) .. ", the purses end at -90)")
 	local nameX = select(4, _G.TradeFramePlayerNameText:GetPoint(1))
 	local slotX = select(4, _G.TradePlayerItem1:GetPoint(1))
 	check(nameX - 65 == slotX - 14,
@@ -28119,16 +28125,48 @@ do
 	-- window travels down past them.
 	local stuck = {}
 	for _, n in ipairs({ "TradePlayerEnchantInset", "TradeRecipientEnchantInset",
-		"TradeRecipientMoneyBg", "TradeFramePlayerEnchantText",
+		"TradeFramePlayerEnchantText",
 		"TradeHighlightPlayer" }) do
 		local y = select(5, _G[n]:GetPoint(1))
 		local was = ({ TradePlayerEnchantInset = -354,
-			TradeRecipientEnchantInset = -354, TradeRecipientMoneyBg = -60,
+			TradeRecipientEnchantInset = -354,
 			TradeFramePlayerEnchantText = -360, TradeHighlightPlayer = -85 })[n]
 		if y ~= was - trDown then stuck[#stuck + 1] = n .. "@" .. tostring(y) end
 	end
 	check(#stuck == 0, "everything pinned to the window travels with it (" ..
-		(#stuck > 0 and table.concat(stuck, ",") or "all five") .. ")")
+		(#stuck > 0 and table.concat(stuck, ",") or "all four") .. ")")
+
+	-- AND THE MONEY ROW DOES NOT TRAVEL AT ALL, because one piece of it
+	-- cannot. TradeFrame_OnLoad forbids your own purse, so moving the four
+	-- pieces that CAN move only separates them from the one that cannot: the
+	-- recesses went down with the window and your gold, silver and copper
+	-- stayed at 61, above the two players' names, with an empty recess a
+	-- hundred units below them.
+	local drift = {}
+	for n, was in pairs({ TradePlayerInputMoneyInset = -58,
+		TradeRecipientMoneyInset = -58, TradeRecipientMoneyBg = -60,
+		TradeRecipientMoneyFrame = -64 }) do
+		local y = select(5, _G[n]:GetPoint(1))
+		if y ~= was then drift[#drift + 1] = n .. "@" .. tostring(y) end
+	end
+	check(#drift == 0, "the money row stays exactly where the client has it, "
+		.. "which is the only place the forbidden half of it can be (" ..
+		(#drift > 0 and table.concat(drift, ",") or "all four") .. ")")
+
+	-- AND NOTHING IN THIS WINDOW MOVES SIDEWAYS EITHER, for the same reason.
+	-- The margin is made by widening the GLASS past the frame instead, which
+	-- MeasureTop measures against - so the sideways shift comes out as zero
+	-- rather than needing a flag of its own, and every recess still stands the
+	-- standard distance in from the rim.
+	local trGlass = _G.TradeFrame.__aetherPanel
+	check(select(4, _G.TradeFramePlayerNameText:GetPoint(1)) == 65
+		and select(4, _G.TradePlayerItem1:GetPoint(1)) == 14,
+		"nothing in the trade window travels sideways")
+	check(_G.TradePlayerItemsInset:GetLeft() - trGlass:GetLeft() == trInner,
+		"and the glass reaching past the frame puts its recesses the standard "
+		.. "distance in all the same (" ..
+		tostring(_G.TradePlayerItemsInset:GetLeft() - trGlass:GetLeft())
+		.. " vs " .. tostring(trInner) .. ")")
 
 	-- THE RECESSES ARE THE WELLS, so there is no seventh one round the lot.
 	check(not (_G.TradeFrame.__aetherBody

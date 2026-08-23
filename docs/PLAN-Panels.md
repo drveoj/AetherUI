@@ -187,22 +187,66 @@ sorts one row across five panes sorts these too at no cost. The dropdown takes
 the same dressing the trade skill's filters do, and the tag is re-inked out of
 Battle.net's blue — a second accent nothing else in the interface uses.
 
-**And the action strip can no longer overhang the window.** `ChromeRow` centred
-its middle group on the strip's midpoint with no bound, so a group wider than
-the glass put its first button off the side — unreadable, drawn over whatever is
-behind the window, and at the screen's edge not reliably clickable. Same rule the
-tab rail is written round: the air between them gives first, down to a floor, and
-past that the group starts at the strip's left edge and crowds. Crowded is bad;
-outside is worse.
-
-**Not reproduced:** the report also said Add Friend and Send Message were off the
-sides of the frame. On the Friends pane they measure correctly centred — two
-131-wide buttons in a 384-wide window — and the screenshot supplied with the
-report shows them centred. The bound above makes the symptom impossible whatever
-produced it, but the cause is still unknown and the pane it was seen on has not
-been established.
+**A bound on the action strip was added here and taken out again in 0.21.3.**
+It clamped a middle group wider than the strip so it crowded rather than hanging
+off the side. It was written for a symptom that could not be reproduced — Add
+Friend and Send Message measure correctly centred on the Friends pane — and the
+next build in the game showed Send Message almost entirely outside the window,
+with its position fitting the clamped arithmetic and nothing else. A guess that
+makes the thing it was guessing about worse comes out; the cause is still
+unknown. See below.
 
 Five mutations are caught.
+
+## Fixed — the trade window's money row (2026-08-23)
+
+Reported from the game: your gold, silver and copper were at the top left of the
+window, above both players' names, with the recess meant for them a hundred units
+lower.
+
+**One piece of this window cannot move, and it turns out that sets the shape of
+the whole thing.** `TradeFrame_OnLoad` forbids `TradePlayerInputMoneyFrame`, so
+your own purse cannot be moved a single unit in either direction. The four pieces
+around it — both recesses, the wrap behind their figure, and their money frame —
+can move, and did: they travelled down with the rest of the window while the
+fields stayed at 61. Moving what can move is worse than moving nothing when the
+result is a recess with nothing in it and a row of fields with nothing round them.
+
+So the whole money row now stays exactly where the client put it, and the rest of
+the window is laid out around it:
+
+- **`lead = 24`** reserves room down to 90, where the purses end, so the body
+  starts below them instead of at the usual 80. The names came down on top of the
+  purses otherwise. The row ends up four units under the header rule and reads as
+  a strip of its own — which is as much air as there is to give.
+- **`insets = { -22, 0, 20, 0 }`** — the glass reaches past the frame on both
+  sides, and nothing travels sideways at all. The client's insets sit 4 in from
+  the frame on the left and 6 on the right; 22 and 20 of glass outside those puts
+  every one of them the standard 26 in from the rim without touching a point.
+  `MeasureTop` measures against the glass, so this makes the sideways shift come
+  out as zero rather than needing a flag of its own.
+
+Four mutations are caught.
+
+## Fixed — the who list's count, and a guess withdrawn (2026-08-23)
+
+**"0 People Found" was under the header band.** The client anchors
+`WhoFrameTotals` to the search box — BOTTOM to its TOP — and the search box is
+chrome, so it went into the tool row and took the count with it, where it read as
+a subtitle for the window. It now hangs off the footer's own hairline, at the foot
+of the body where the client has it. Not off the list: the list keeps the height
+the client gave it and stops well short of the body's floor, so a count hung under
+the list floats in the middle of the window.
+
+**And the action-strip clamp added in 0.21.2 is gone.** It was written for a
+report that could not be reproduced in the harness or measured in the screenshot
+that came with it. In the next build Send Message was almost entirely outside the
+window: Add Friend's position fits `x = -room / 2` with a `room` far smaller than
+the window, and the step to Send Message fits the clamped gap of 4 with a third
+member in the row. Both of those are the clamp's arithmetic and neither happens
+without it. The row is centred with no bound again, which is what it was in
+0.21.1, and the original report needs a `/aether panels dump FriendsFrame` before
+anything else is written for it.
 
 ## Fixed — the trade window's forbidden money frame (2026-08-22)
 

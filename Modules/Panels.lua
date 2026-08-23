@@ -311,6 +311,27 @@ local PANELS = {
 		-- the money row where they belong, on the window's own edges.
 		body = { "MerchantItem1" } },
 	{ frame = "TradeFrame",    tight = true,
+		-- THE GLASS REACHES PAST THE FRAME ON BOTH SIDES, and nothing in this
+		-- window moves sideways at all. That is forced by one piece: the
+		-- client's own SetForbidden on TradePlayerInputMoneyFrame means your
+		-- purse cannot be moved a single unit, in either direction. Everything
+		-- else moving in by twenty-two to reach the body's margin left the
+		-- purse behind, and a recess with nothing in it above a row of fields
+		-- with nothing round them is what that looked like.
+		--
+		-- So the margin is made by widening the GLASS instead of by moving the
+		-- content: the client's insets sit 4 in from the frame on the left and
+		-- 6 on the right, and 22 and 20 of glass outside those puts every one
+		-- of them the standard 26 in from the rim without touching a point.
+		-- MeasureTop measures against the glass, so this also makes the
+		-- sideways shift measure zero rather than needing a flag of its own.
+		insets = { -22, 0, 20, 0 },
+		-- ROOM RESERVED FOR THE PURSES, which are the one row that cannot
+		-- travel. The client puts them 58 to 90 down - four below our header
+		-- rule - so they read as a strip of their own under the band, and the
+		-- body starts a gap below the deepest of them rather than at the usual
+		-- 80. Without it the names came down on top of them.
+		lead = 24,
 		-- A DOZEN PIECES, ALL HUNG OFF THE FRAME at their own fixed offsets: two
 		-- names five units down, two purses at sixty, two columns of slots at
 		-- eighty-nine. `together` because shifting each by what IT is short of
@@ -327,17 +348,23 @@ local PANELS = {
 		body = { "TradeFramePlayerNameText", "TradeFrameRecipientNameText",
 			"TradePlayerItemsInset", "TradeRecipientItemsInset",
 			"TradePlayerEnchantInset", "TradeRecipientEnchantInset",
-			"TradePlayerInputMoneyInset", "TradeRecipientMoneyInset",
-			"TradeRecipientMoneyBg",
 			"TradePlayerItem1", "TradeRecipientItem1",
 			"TradeFramePlayerEnchantText",
-			"TradeHighlightPlayer", "TradeHighlightRecipient",
-			-- NOT TradePlayerInputMoneyFrame. TradeFrame_OnLoad calls
-			-- SetForbidden on it, so every method on it and on its three
-			-- fields throws from here - it cannot be measured, moved or
-			-- dressed. Its recess above travels for it, which is the whole of
-			-- what we can do about that corner of the window.
-			"TradeRecipientMoneyFrame" },
+			"TradeHighlightPlayer", "TradeHighlightRecipient" },
+		-- AND NOT ONE PIECE OF THE MONEY ROW - not your fields, not their
+		-- figure, and not either recess round them.
+		--
+		-- TradeFrame_OnLoad calls SetForbidden on TradePlayerInputMoneyFrame,
+		-- so your own purse cannot be moved at all. Moving the four pieces
+		-- that CAN move only separates them from the one that cannot: the
+		-- recesses travelled down with the rest of the window and the fields
+		-- stayed at 61, which put your gold, silver and copper above the two
+		-- players' names in the header band with an empty recess a hundred
+		-- units below them.
+		--
+		-- So the whole row stays where the client put it and the rest of the
+		-- window is laid out around it - see `lead` above. One immovable piece
+		-- sets the shape, which is the honest answer and the only one.
 		-- ITS CONTENT IS ALREADY IN RECESSES - six of them, and every piece of
 		-- this window is inside one. A body well round the outside would be a
 		-- second rim round the first, which is the trainer's case exactly.
@@ -721,10 +748,6 @@ local TOOL_ROW         = 28
 -- than taking the body's 14 - a pair of buttons is not two blocks of
 -- content.
 local FOOT_GAP        = 12
--- ...and the least it may ever be, for a row that will not otherwise fit
--- inside the window. Below this the words on two buttons touch and the pair
--- reads as one control.
-local ROW_GAP_MIN     = 4
 -- A row of chrome in the footer. A window with two of them - a page turn and
 -- an action under it - GROWS by one rather than splitting the 52 between
 -- them: split, each row got 26 and a 22 tall button has two pixels of air
@@ -955,23 +978,7 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 		return ((a.GetLeft and a:GetLeft()) or 0) < ((b.GetLeft and b:GetLeft()) or 0)
 	end)
 
-	-- AND IT NEVER OVERHANGS THE WINDOW, which is the same rule the tab rail
-	-- is written round: the row is bounded by the frame and never the
-	-- reverse. What gives first is the air between them, down to a floor;
-	-- past that the group starts at the strip's left edge and crowds.
-	--
-	-- Crowded is bad and OUTSIDE is worse: a button hanging off the side of
-	-- the glass is unreadable, is drawn over whatever is behind the window,
-	-- and at the screen's edge is not reliably clickable at all.
-	local room = ((anchor.GetWidth and anchor:GetWidth()) or 0)
-		- W.PANEL_PAD * 2
-	if room > 0 and total > room and #shown > 1 then
-		local words = total - gap * (#shown - 1)
-		gap = math.max(ROW_GAP_MIN, (room - words) / (#shown - 1))
-		total = words + gap * (#shown - 1)
-	end
-
-	local x = (room > 0 and total > room) and -room / 2 or -total / 2
+	local x = -total / 2
 	for _, w in ipairs(shown) do
 		w:ClearAllPoints()
 		w:SetPoint("LEFT", anchor, edge, x, y)
@@ -5341,10 +5348,24 @@ local function DressFriends(frame, store)
 	-- glass and a clear button. The glass is the FIELD's mark and stays.
 	Reskin.EditBox(_G.WhoFrameEditBox, { keep = { "searchIcon" } })
 	Reskin.EditBox(_G.FriendsFrameBroadcastInput)
+	-- AND WHAT THE QUERY FOUND STAYS AT THE FOOT OF THE LIST, which is where
+	-- the client has it and where a count of what you are looking at belongs.
+	-- It is anchored to the SEARCH BOX rather than to the list - BOTTOM to the
+	-- box's TOP - so moving the box into the tool row took the count up under
+	-- the band with it, where it read as a subtitle for the window.
+	--
+	-- Off the footer's own hairline, not off the list: the list keeps the
+	-- height the client gave it and stops well short of the body's floor, so a
+	-- count hung under the list floats in the middle of the window.
 	local totals = _G.WhoFrameTotals
 	if totals then
 		Reskin.Font(totals, "pnBody")
 		W.Color(totals, Palette.c.textDim)
+		local floor = frame.__aetherFootRule
+		if floor and totals.ClearAllPoints then
+			totals:ClearAllPoints()
+			totals:SetPoint("BOTTOM", floor, "TOP", 0, W.PANEL_GAP)
+		end
 	end
 
 	-- THE RAID TAB. A switch, a paragraph telling you what a raid is, and two
