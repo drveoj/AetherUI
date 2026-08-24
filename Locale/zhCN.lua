@@ -24,6 +24,6 @@ local ADDON, A = ...
 -- nine cost a file read and an early return.
 if GetLocale() ~= "zhCN" then return end
 
-local L = A.L
+local L = A.Phrases("zhCN")
 
 --@localization(locale="zhCN", format="lua_additive_table", handle-unlocalized="ignore", escape-non-ascii="false", table-name="L")@

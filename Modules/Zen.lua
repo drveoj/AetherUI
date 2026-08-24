@@ -1738,7 +1738,7 @@ local function Tick(self, dt)
 	self:SetKeysEnabled(false)
 	A:UnregisterTicker(self)
 	A.lastFailure = "zen: " .. tostring(err)
-	A:Print(A.Bad(L["zen failed and put the interface back:"]) .. " " .. tostring(err))
+	A:Print(A.Bad(L.zen.tick.zen_failed_put_interface) .. " " .. tostring(err))
 end
 
 --- Called by the fader on every state change.

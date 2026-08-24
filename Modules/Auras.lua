@@ -900,7 +900,7 @@ end
 --  came from printing the numbers. This prints the numbers.
 function Aur:Diagnose()
 	local now = GetTime()
-	A:Print(A.F("aura diagnostic  ·  GetTime %.1f  ·  source %s", now,
+	A:Print(A.F(L.auras.diagnose.aura_diagnostic_gettime_1f, now,
 		(C_UnitAuras and C_UnitAuras.GetAuraDataByIndex)
 			and "C_UnitAuras" or "UnitAura"))
 

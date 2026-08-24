@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.0",
+		date    = "2026-08-24",
+		lines   = {
+			"Phrase keys are names now - L.options.minimap.desc rather than the whole English sentence. Correcting the wording of anything no longer orphans its translations.",
+			"Locale/enUS.lua is the English and is edited by hand; that is where to fix a typo.",
+			"A further 101 option descriptions that the first pass could not reach are translatable too.",
+		},
+	},
+	{
 		version = "0.35.2",
 		date    = "2026-08-24",
 		lines   = {

@@ -3,21 +3,37 @@
 
 	Every word this addon puts on a screen, in one place per language.
 
-	THE KEY IS THE ENGLISH. `L["Take the tour"]` rather than `L.TOUR_TAKE`, which
-	is the convention CurseForge and the BigWigs packager are both built around:
-	a phrase's key IS its English text, so a translator sees the sentence they
-	are translating rather than a name somebody invented for it, and a string
-	with no translation falls back to something readable rather than to a
-	shouty identifier.
+	A KEY NAMES THE PHRASE; IT IS NOT THE PHRASE.
 
-	It has one more property that matters more than it looks: a key that is
-	missing is a key that still READS. See the metatable below.
+		desc = note(A.F(L.options.minimap.desc, A.Bad(L.common.inCombat))),
+
+	The first version of this used the English itself as the key, which is the
+	CurseForge convention and is wrong for a project that is still being
+	written: correcting a typo in a sentence CHANGES ITS KEY, and every
+	translation of it already submitted is orphaned by the fix. It also puts two
+	hundred characters of prose in the middle of a line of code.
+
+	So a key is a name. The English lives in Locale/enUS.lua, which is a file
+	you EDIT - it is the source of truth for the English text, not a generated
+	echo of the source. Fix wording there and no translation is disturbed,
+	because the key did not move.
+
+	NESTED, THOUGH THE STORAGE IS FLAT. `L.options.minimap.desc` reads as what
+	it is; underneath it is one table keyed `"options.minimap.desc"`, because
+	that is the shape the packager writes and a nested table is not. The walk
+	from one to the other is the metatable below, and it costs a table lookup
+	per level on paths that are resolved once and drawn from thereafter.
+
+	TWO LAYERS. The player's language sits on top of English, so a phrase
+	nobody has translated yet draws correctly rather than blank - and a language
+	that is half done is half done rather than half missing. A key missing from
+	BOTH draws its own path, which is loud on purpose: that is a coding mistake
+	rather than a translation gap, and it should look like one.
 
 	HOW A TRANSLATION GETS HERE
 	---------------------------
-	Locale/enUS.lua is generated from the source by `Tools/i18n.py --export` and
-	is the master list. It is also the file to paste into CurseForge's phrase
-	importer, once, which is how the phrases get created over there.
+	Locale/enUS.lua is the master list and the file to paste into CurseForge's
+	phrase importer, once, which is how the phrases get created over there.
 
 	Locale/deDE.lua and its nine siblings carry nothing but an @localization@
 	block. The BigWigs packager replaces that block with the translations
@@ -26,8 +42,8 @@
 	repository those files are empty of strings, which is correct: the
 	repository is not where translations live.
 
-	See docs/I18N.md for the whole arrangement, and the packager's own wiki page
-	on Localization Substitution for the block's parameters.
+	See docs/I18N.md, and the packager's own wiki page on Localization
+	Substitution for the block's parameters.
 
 	WHAT IS NOT IN HERE
 	-------------------
@@ -39,50 +55,101 @@
 	Nor the changelog. It is release notes rather than interface, it is written
 	fresh every version, and asking volunteers to translate a paragraph that
 	will be replaced on Tuesday is how a translation project dies.
+
+	Nor a slash command, an option key or a value the command itself takes -
+	`/aether unlock`, `left`, `class`. You have to be able to type them.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
 
---- Every word this addon wrote, by the English of it.
+-- The English, and the player's language over the top of it. Both flat, both
+-- keyed by the dotted path.
+local EN, LOC = {}, {}
+
+--- Where a locale file writes its phrases.
 --
---  A MISSING KEY IS ITS OWN ENGLISH, which is the whole reason the key is the
---  English. The alternatives are both worse: nil reaches SetText and draws
---  nothing, so a phrase somebody forgot to add is an empty label nobody
---  notices, and an error turns a missing translation into a broken addon for
---  the one player whose language is furthest behind.
---
---  So a phrase with no entry at all still reads correctly in English, and a
---  language that is half translated is half translated rather than half blank.
---  That is exactly what `handle-unlocalized="english"` does at package time;
---  this is the same rule at runtime, for the keys the packager never saw.
---
---  NOTHING IS COLLECTED AT RUNTIME to check this. Whether every key the source
---  asks for has an entry is a question about the SOURCE, so the suite answers
---  it by reading the files - see the `== phrases ==` block in the harness.
---  Counting lookups in game would be a thousand-entry table built for a
---  question nobody asks from inside the client.
-local L = setmetatable({}, {
-	__index = function(_, key) return key end,
+--  ASKED FOR BY NAME rather than handed out as one table, because there are two
+--  and they are not interchangeable: English is the floor everything else
+--  stands on, and it has to stay reachable when a translation is loaded on top.
+function A.Phrases(locale)
+	return (locale == "enUS") and EN or LOC
+end
+
+-- ---------------------------------------------------------------------------
+-- the walk from L.a.b.c to "a.b.c"
+-- ---------------------------------------------------------------------------
+
+-- One proxy per path, built on first use and kept. Without the cache every
+-- `L.options.minimap.desc` in a layout pass allocates two tables for the two
+-- branches it passes through.
+local nodes = {}
+
+local Node
+
+--- The value at a path, or nil.
+local function value(path)
+	local v = LOC[path]
+	if v ~= nil then return v end
+	return EN[path]
+end
+
+local meta = {
+	__index = function(self, key)
+		local path = self.__path .. "." .. tostring(key)
+		local v = value(path)
+		if v ~= nil then return v end
+		return Node(path)
+	end,
+
+	-- A PATH USED AS A STRING IS THE PATH. Reaching here means the phrase is in
+	-- neither table, so what draws is `options.minimap.desc` - which nobody
+	-- will mistake for a sentence, and which says exactly what is missing.
+	__tostring = function(self) return self.__path end,
+	__concat = function(a, b)
+		if type(a) == "table" and a.__path then a = a.__path end
+		if type(b) == "table" and b.__path then b = b.__path end
+		return a .. b
+	end,
+	__len = function(self) return #self.__path end,
+}
+
+Node = function(path)
+	local n = nodes[path]
+	if not n then
+		n = setmetatable({ __path = path }, meta)
+		nodes[path] = n
+	end
+	return n
+end
+
+--- Every word this addon wrote, reached by name.
+A.L = setmetatable({}, {
+	__index = function(_, key)
+		local v = value(key)
+		if v ~= nil then return v end
+		return Node(tostring(key))
+	end,
 })
 
-A.L = L
+-- ---------------------------------------------------------------------------
 
 --- One phrase, formatted.
 --
---  `A.F("Step %d of %d", 3, 9)` - the format string is the phrase, so a
---  translator gets the whole sentence with its placeholders in it and can move
---  them, which is the entire point of translating a sentence rather than the
---  words in it. String.format on a translated string is the one place this
---  addon must not build a sentence out of pieces.
-function A.F(key, ...)
-	local ok, out = pcall(string.format, L[key], ...)
-	-- A TRANSLATION WITH THE WRONG PLACEHOLDERS IN IT DOES NOT TAKE THE ADDON
-	-- DOWN. `%s` where the English had `%d` throws, and it is submitted by a
-	-- volunteer on a website rather than reviewed here - so the failure lands
-	-- on the phrase and nowhere else, and what draws is the English.
+--  `A.F(L.tour.step, 3, 9)` - the format string is the phrase, so a translator
+--  gets the whole sentence with its placeholders in it and can move them, which
+--  is the entire point of translating a sentence rather than the words in it.
+--  Building a sentence out of pieces is the one thing this addon must not do.
+--
+--  A TRANSLATION WITH THE WRONG PLACEHOLDERS IN IT DOES NOT TAKE THE ADDON
+--  DOWN. `%d` where the English had `%s` throws, and these arrive from
+--  volunteers on a website rather than through review here - so the failure
+--  lands on the one phrase and what draws is the format string itself,
+--  unformatted. Ugly, and legible, and not an error.
+function A.F(fmt, ...)
+	fmt = tostring(fmt)
+	local ok, out = pcall(string.format, fmt, ...)
 	if ok then return out end
-	local fallback = select(2, pcall(string.format, key, ...))
-	return fallback or key
+	return fmt
 end
 
-return L
+return A.L

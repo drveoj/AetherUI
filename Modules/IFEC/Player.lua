@@ -238,7 +238,7 @@ function Player:Build()
 
 	f.upNextLabel = W.Text(f, "ifecSection", "LEFT", "OVERLAY")
 	f.upNextLabel:SetPoint("TOPLEFT", f.rule, "BOTTOMLEFT", 2, -6)
-	f.upNextLabel:SetText(L["UP NEXT"])
+	f.upNextLabel:SetText(L.player.build.up_next)
 
 	f.rows = {}
 	for i = 1, UPNEXT_MAX do
@@ -256,7 +256,7 @@ function Player:Build()
 	-- and three chips, in place of everything above.
 	f.done = W.Text(f, "ifecTitle", "LEFT", "OVERLAY")
 	f.done:SetPoint("TOPLEFT", f, "TOPLEFT", PAD_X, -PAD_T - 2)
-	f.done:SetText(L["Programme complete."])
+	f.done:SetText(L.player.build.programme_complete)
 	f.done:Hide()
 
 	f.chips = {}
@@ -499,13 +499,13 @@ function Player:Paint()
 	f.landing:ClearAllPoints()
 	f.landing:SetPoint("TOP", f.flight, "TOPLEFT", f.flight:XFor(total), 6)
 	f.landing:SetPoint("BOTTOM", f.programme, "BOTTOMLEFT", f.flight:XFor(total), -2)
-	f.landingLabel:SetText(A.F("LANDING %s", clock(total - elapsed)))
+	f.landingLabel:SetText(A.F(L.player.paint.landing_s, clock(total - elapsed)))
 
 	self:PaintLegs(flight)
 
-	f.fills:SetText(A.F("programme fills %s of %s",
+	f.fills:SetText(A.F(L.player.paint.programme_fills_s_s,
 		clock(filled), clock(total)))
-	f.legend:SetText(L["outlined = queued"])
+	f.legend:SetText(L.player.paint.outlined_queued)
 
 	self:PaintNowPlaying()
 	self:PaintUpNext()
@@ -632,7 +632,7 @@ function Player:PaintUpNext()
 			-- kept here: the mini-player queues things too, and two surfaces
 			-- with their own idea of what the player chose is one of them wrong.
 			if Playback and Playback.picked[item.key] then
-				row.meta:SetText(L["queued by you"])
+				row.meta:SetText(L.player.paint_up_next.queued)
 				W.Color(row.meta, Palette.c.textDim)
 			else
 				row.meta:SetText(clock(item.duration or 0) .. "  \194\183  auto")

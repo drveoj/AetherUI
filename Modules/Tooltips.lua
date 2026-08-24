@@ -1471,7 +1471,7 @@ function TT:Diagnose()
 	end
 
 	if #missing > 0 then
-		A:Print(A.F("absent on this client: %s",
+		A:Print(A.F(L.tooltips.diagnose.absent_client_s,
 			A.Dim(table.concat(missing, ", "))))
 	end
 
@@ -1489,9 +1489,8 @@ function TT:Diagnose()
 			.. " " .. A.Hi("/aether config") .. ", Tooltips, to override."):format(reader))
 	elseif cfg().levelBadge then
 		A:Print(reader
-			and A.F("level badge %s (override: %s is running and reads that"
-				.. " line)", A.Good(L["on"]), A.Val(reader))
-			or A.F("level badge %s", A.Good(L["on"])))
+			and A.F(L.tooltips.diagnose.level_badge_s_override, A.Good(L.common.on), A.Val(reader))
+			or A.F(L.tooltips.diagnose.level_badge_s, A.Good(L.common.on)))
 	end
 end
 

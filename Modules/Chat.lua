@@ -2166,7 +2166,7 @@ function Chat:SetWhisperTab(on)
 	if on then
 		if not frame then
 			if type(_G.FCF_OpenNewWindow) ~= "function" then
-				A:Print(A.F("this client has no %s - no whispers tab.",
+				A:Print(A.F(L.chat.set_whisper_tab.client_has_s_whispers,
 					A.Val("FCF_OpenNewWindow")))
 				return false
 			end
@@ -2176,8 +2176,8 @@ function Chat:SetWhisperTab(on)
 			local ok, f = pcall(_G.FCF_OpenNewWindow, name, true)
 			if not ok or not f then
 				A:Print(type(f) == "string"
-					and A.F("could not open a new chat window: %s", f)
-					or L["could not open a new chat window."])
+					and A.F(L.chat.set_whisper_tab.could_open_new_chat, f)
+					or L.chat.set_whisper_tab.could_open_new_chat2)
 				return false
 			end
 			frame = f
@@ -2191,10 +2191,10 @@ function Chat:SetWhisperTab(on)
 		self:Reskin()
 
 		if moved == 0 then
-			A:Print(L["the whispers tab exists but no message group would move to it."])
+			A:Print(L.chat.set_whisper_tab.whispers_tab_exists_but)
 			return false
 		end
-		A:Print(A.F("whispers now go to %s.", A.Val(name)))
+		A:Print(A.F(L.chat.set_whisper_tab.whispers_now_go_s, A.Val(name)))
 		return true
 	end
 
@@ -2206,8 +2206,8 @@ function Chat:SetWhisperTab(on)
 	-- a setting changed is a bigger thing than the setting, and Blizzard's own
 	-- close is on the tab's right-click menu, which is where anyone would look.
 	A:Print(frame
-		and L["whispers are back in the main window. The empty tab is yours to close."]
-		or L["whispers are back in the main window."])
+		and L.chat.set_whisper_tab.whispers_back_main_window
+		or L.chat.set_whisper_tab.whispers_back_main_window2)
 	return true
 end
 
@@ -2423,8 +2423,8 @@ end
 --  who its parent is and whether it is on screen.
 function Chat:Diagnose()
 	local eb = _G.ChatFrame1 and (_G.ChatFrame1.editBox or _G.ChatFrame1EditBox)
-	if not eb then A:Print(L["no edit box found."]) return end
-	A:Print(A.F("edit box: %s", tostring(eb:GetName())))
+	if not eb then A:Print(L.chat.diagnose.edit_box_found) return end
+	A:Print(A.F(L.chat.diagnose.edit_box_s, tostring(eb:GetName())))
 
 	local function walk(frame, depth, path)
 		if not frame or depth > 3 then return end
@@ -2442,7 +2442,7 @@ function Chat:Diagnose()
 							"   %s%s  " .. A.Val("'%s'") .. "  alpha=%.2f %s",
 							string.rep("  ", depth), path,
 							tostring(txt), r:GetAlpha() or 1,
-							visible and A.Bad(L["ON SCREEN"]) or A.Good("not drawn")))
+							visible and A.Bad(L.chat.diagnose.screen) or A.Good("not drawn")))
 					end
 				end
 			end
@@ -2458,13 +2458,13 @@ function Chat:Diagnose()
 
 	walk(eb, 0, tostring(eb:GetName()))
 	local insets = eb.GetTextInsets and select(1, eb:GetTextInsets())
-	A:Print(A.F("left text inset: %s", tostring(insets)))
+	A:Print(A.F(L.chat.diagnose.left_text_inset_s, tostring(insets)))
 
 	-- Where each piece actually is, because "the composer is not attached to the
 	-- chat window" is a question about anchors and nothing else in this dump
 	-- answers it. Blizzard re-anchors the edit box on activation, so what we set
 	-- at skin time is not necessarily what is on the frame now.
-	A:Print(L["anchors:"])
+	A:Print(L.chat.diagnose.anchors)
 	local function report(label, frame)
 		if not frame then
 			DEFAULT_CHAT_FRAME:AddMessage("   " .. label .. "  " .. A.Bad("absent"))
@@ -2473,7 +2473,7 @@ function Chat:Diagnose()
 		local n = (frame.GetNumPoints and frame:GetNumPoints()) or 0
 		if n == 0 then
 			DEFAULT_CHAT_FRAME:AddMessage("   " .. label
-				.. "  " .. A.Bad(L["no points at all"]))
+				.. "  " .. A.Bad(L.chat.diagnose.points_all))
 			return
 		end
 		for i = 1, n do
@@ -2499,9 +2499,9 @@ function Chat:Diagnose()
 		end
 	end)
 	A:Print(#shown > 0
-		and A.F("composers on screen: %s (%s)",
+		and A.F(L.chat.diagnose.composers_screen_s_s,
 			A.Val(#shown), table.concat(shown, ", "))
-		or A.F("composers on screen: %s", A.Val(#shown)))
+		or A.F(L.chat.diagnose.composers_screen_s, A.Val(#shown)))
 
 	self:DiagnoseLines()
 end
@@ -2522,7 +2522,7 @@ function Chat:DiagnoseLines()
 			detail and ("  " .. A.Dim(detail)) or ""))
 	end
 
-	A:Print(L["message lines:"])
+	A:Print(L.chat.diagnose_lines.message_lines)
 	say("ChatFrameUtil", U ~= nil)
 	say("sender filter", self._senderFilter == true,
 		U and type(U.AddSenderNameFilter) == "function"
@@ -2675,7 +2675,7 @@ function Chat:OnDisable()
 	-- Blizzard's own look does not come back without a reload, and saying so is
 	-- better than pretending: every region we hid is hidden, and the functions
 	-- that would re-show them are the ones we are hooked onto.
-	A:Print(A.F("chat skin off. %s to get Blizzard's frames back.",
+	A:Print(A.F(L.chat.on_disable.chat_skin_off_s,
 		A.Hi("/reload")))
 end
 

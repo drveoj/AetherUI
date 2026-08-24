@@ -303,7 +303,7 @@ local CLASS_CATEGORY = {
 local CATEGORIES = {
 	{ key = "equipment",  label = "EQUIPMENT"   },
 	{ key = "consumable", label = "CONSUMABLES" },
-	{ key = "trade",      label = L["TRADE GOODS"] },
+	{ key = "trade",      label = L.bags.slot_info.trade_goods },
 	{ key = "quest",      label = "QUEST"       },
 	{ key = "misc",       label = "MISCELLANEOUS" },
 	{ key = "junk",       label = "JUNK"        },
@@ -1140,7 +1140,7 @@ local function BuildRail(frame)
 		W.SetButtonState(self, false, true)
 		if not _G.GameTooltip then return end
 		_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		_G.GameTooltip:SetText(L["Equipped bags"])
+		_G.GameTooltip:SetText(L.bags.build_rail.equipped_bags)
 		_G.GameTooltip:Show()
 	end)
 	rail:SetScript("OnLeave", function(self)
@@ -2392,7 +2392,7 @@ end
 function Bags:StartSort(frame)
 	if self.sorting then return end
 	if _G.InCombatLockdown and _G.InCombatLockdown() then
-		A:Print(L["not while you are in combat."])
+		A:Print(L.bags.start_sort.while_combat)
 		return
 	end
 	-- The pass timer cannot be cancelled once queued, so the run identifies
@@ -2431,7 +2431,7 @@ function Bags:SortPass(token)
 		-- Said out loud rather than swallowed. A sort that stops halfway in
 		-- silence reads to the player as "sort is broken", and the cap being
 		-- reached at all means an assumption in here is wrong.
-		A:Print(L["stopped compacting after 40 passes - run it again if there is still work to do."])
+		A:Print(L.bags.sort_pass.stopped_compacting_after_40)
 		self:StopSort()
 		return
 	end
@@ -2765,10 +2765,10 @@ function Bags:AskBuyBankSlot()
 	local box = self.confirm.box
 
 	local price = (_G.GetCoinTextureString and _G.GetCoinTextureString(cost)) or MoneyText(cost)
-	local body = A.F("Buy another bank bag slot for %s?", price)
+	local body = A.F(L.bags.ask_buy_bank_slot.buy_another_bank_bag, price)
 	if money < cost then
 		body = body .. "\n\n"
-			.. Palette:Ink("dangerText", L["You cannot afford this."])
+			.. Palette:Ink("dangerText", L.bags.ask_buy_bank_slot.cannot_afford)
 	end
 	box.text:SetText(body)
 	-- Primary ink, not dim. It is a question that has to be read and answered.
@@ -2811,7 +2811,7 @@ function Bags:ConfirmBuyBankSlot()
 
 	local owned = (_G.GetNumBankSlots and _G.GetNumBankSlots()) or 0
 	if owned + 1 ~= want then
-		A:Print(L["the bank has changed since that was asked - nothing was bought."])
+		A:Print(L.bags.confirm_buy_bank_slot.bank_has_changed_since)
 		self:Invalidate("bank")
 		return
 	end
@@ -2905,7 +2905,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function Bags:Diagnose()
-	A:Print(L["bags:"])
+	A:Print(L.bags.diagnose.bags)
 	A:Print(("  api  " .. A.Val("%s") .. " container, " .. A.Val("%s") .. " item")
 		:format(GetItemInfoAt and "yes" or "MISSING", ItemInfoInstant and "yes" or "MISSING"))
 

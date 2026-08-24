@@ -233,7 +233,7 @@ function TB:Build()
 	gear:SetScript("OnEnter", function(self2)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
-		GameTooltip:SetText(L["AetherUI settings"])
+		GameTooltip:SetText(L.toolbox.build.aetherui_settings)
 		GameTooltip:Show()
 	end)
 	gear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -825,7 +825,7 @@ function TB:BuildDockHandle()
 		self._dockTarget = nil
 		if edge and EDGES[edge] and edge ~= self:Dock() then
 			self:SetDock(edge)
-			A:Print(A.F("toolbox docked -> %s", A.Val(edge:lower())))
+			A:Print(A.F(L.common.toolbox_docked_s, A.Val(edge:lower())))
 		end
 		self:AnchorDockHandle()
 	end
@@ -856,7 +856,7 @@ function TB:BuildDockHandle()
 
 	h:SetScript("OnDragStart", function(self2)
 		if InCombatLockdown() then
-			A:Print(A.Bad(L["can't re-dock the toolbox in combat."]))
+			A:Print(A.Bad(L.toolbox.build_dock_handle.can_t_re_dock))
 			return
 		end
 		self._dragging = true
@@ -1155,7 +1155,7 @@ TB.PROVIDERS = {
 	-- kind of difference that reads as "sometimes it works".
 	{ key = "Gold",       label = "Gold",
 	  events = { "PLAYER_MONEY", "PLAYER_ENTERING_WORLD" } },
-	{ key = "BagSpace",   label = L["Bag space"],  events = { "BAG_UPDATE", "PLAYER_ENTERING_WORLD" } },
+	{ key = "BagSpace",   label = L.toolbox.on_config_changed.bag_space,  events = { "BAG_UPDATE", "PLAYER_ENTERING_WORLD" } },
 	{ key = "Durability", label = "Durability", events = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_ENTERING_WORLD" } },
 	{ key = "XPHour",     label = "XP / hr",
 	  events = { "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" } },
@@ -1700,7 +1700,7 @@ function TB:RefreshNews()
 	-- its own text hanging out of it.
 	local chip = self.content.chip
 	if chip and chip.text then
-		chip.text:SetText(A.F("Aether UI %s", A.version or "?"))
+		chip.text:SetText(A.F(L.common.aether_ui_s, A.version or "?"))
 		chip:SetWidth((chip.text:GetStringWidth() or 40) + 14)
 	end
 end
@@ -1732,7 +1732,7 @@ function TB:BuildContent()
 	chip:ApplySkin("btnFill", "btnFill")
 	local chipText = W.Text(chip, "tbChip", "CENTER", nil, 10)
 	chipText:SetPoint("CENTER", chip, "CENTER", 0, 0)
-	chipText:SetText(A.F("Aether UI %s", A.version or "0.1.0"))
+	chipText:SetText(A.F(L.common.aether_ui_s, A.version or "0.1.0"))
 	W.Color(chipText, Palette.c.btnFillText)
 	chipText:SetShadowColor(0, 0, 0, 0)
 	chip:SetWidth((chipText:GetStringWidth() or 40) + 14)
@@ -1765,7 +1765,7 @@ function TB:BuildContent()
 
 	local ct = W.Text(card, "tbCardTitle", "LEFT")
 	ct:SetPoint("TOPLEFT", tile, "TOPRIGHT", 12, -2)
-	ct:SetText(L["What's new"])
+	ct:SetText(L.common.what_s_new)
 	card.titleText = ct
 
 	-- The unread dot needs a notion of READ, or it is either always lit or never
@@ -2031,23 +2031,23 @@ end
 TB.TILES = {
 	{ kind = "setting", key = "zen", label = "Zen",
 	  path = { "modules", "zen", "enabled" },
-	  tip = L["Fades the interface away when you stand still, and brings it straight back the moment anything happens. Your character sits down and the camera pulls back for the view."] },
+	  tip = L.toolbox.refresh_widgets.tip },
 
 	-- The in-flight player, NOT the flight timer. Combat collapse had this slot
 	-- and has gone to the options panel, where it already lived: four tiles is
 	-- what the deck draws and the one thing that had no home anywhere else was
 	-- this. A player who never wants a programme on a griffin still wants to
 	-- know when the griffin lands.
-	{ kind = "setting", key = "ifec", label = L["I.F.E.C."],
+	{ kind = "setting", key = "ifec", label = L.common.i_f_e_c,
 	  path = { "modules", "ifec", "player" },
-	  tip = L["Plays the season's music and stories while you are a passenger. The flight timer, the route and the countdown are not this and stay either way."] },
+	  tip = L.toolbox.refresh_widgets.tip2 },
 
 	-- Both of the below are MODES. They are read from the module that owns the
 	-- state rather than from the profile, because that is where the truth is:
 	-- /aether lock, the options panel and this tile all move the same flag, and
 	-- a copy of it in the profile would be a second answer that goes stale the
 	-- first time somebody uses the slash command.
-	{ kind = "mode", key = "lock", label = L["Unlock frames"],
+	{ kind = "mode", key = "lock", label = L.toolbox.refresh_widgets.unlock_frames,
 	  get = function() return A.Movers and A.Movers.unlocked or false end,
 	  set = function(want)
 		if not A.Movers then return false end
@@ -2058,7 +2058,7 @@ TB.TILES = {
 	     .. " pixel at a time - hold shift to nudge sideways. Locked again from"
 	     .. " here or with /aether lock." },
 
-	{ kind = "mode", key = "keybinds", label = L["Keybind mode"],
+	{ kind = "mode", key = "keybinds", label = L.toolbox.refresh_widgets.keybind_mode,
 	  get = function()
 		local AB = A:GetModule("actionbars")
 		return (AB and AB.enabled and AB.bindMode) and true or false
@@ -2069,7 +2069,7 @@ TB.TILES = {
 		AB:SetBindMode(want)
 		return true
 	  end,
-	  tip = L["Hover an action button and press a key to bind it. Keys go into Blizzard's own binding set, so they survive this addon being disabled and show up in the keybinding panel."] },
+	  tip = L.toolbox.refresh_widgets.tip3 },
 }
 
 local function Resolve(path)
@@ -2342,7 +2342,7 @@ function TB:RefreshMailRows()
 			local e = c.glassEdge
 			row.chip.ring:SetVertexColor(e[1], e[2], e[3], 0.9)
 			W.Color(row.chip.label, c.textDim)
-			row.name:SetText(L["No unread mail"])
+			row.name:SetText(L.toolbox.refresh_mail_rows.unread_mail)
 			W.Color(row.name, c.textDim)
 		elseif who and explain then
 			-- The one row that is not a sender. A question mark rather than an
@@ -2356,7 +2356,7 @@ function TB:RefreshMailRows()
 			local e = c.glassEdge
 			row.chip.ring:SetVertexColor(e[1], e[2], e[3], 0.9)
 			W.Color(row.chip.label, c.textDim)
-			row.name:SetText(L["Senders show after a mailbox visit"])
+			row.name:SetText(L.toolbox.refresh_mail_rows.senders_show_after_mailbox)
 			W.Color(row.name, c.textDim)
 		elseif who then
 			W.Color(row.name, Palette.c.text)
@@ -2648,8 +2648,13 @@ end
 
 function TB:AddonRows()
 	local rows = {}
-	local L = A.Launchers
-	if not L then return rows end
+	-- `LA`, NOT `L`. In this file `L` is the phrase table, and it is the phrase
+	-- table in every file that has one - so a second thing called L, however
+	-- local, is a trap: the next phrase written inside one of these functions
+	-- would silently read a launcher record instead. Core/Launchers.lua keeps
+	-- its own `L` because it has no phrases in it.
+	local LA = A.Launchers
+	if not LA then return rows end
 
 	-- ONLY addons with a launcher. The first version listed every loaded addon
 	-- on the theory that you want to know what is installed - and on screen that
@@ -2668,7 +2673,7 @@ function TB:AddonRows()
 	end
 	self._addonsLoaded = count
 
-	for entry in L:Iterate() do
+	for entry in LA:Iterate() do
 		rows[#rows + 1] = {
 			name  = entry.key,
 			-- see PrettyName below
@@ -2711,18 +2716,18 @@ end
 --  releases, and the drawer takes it back on its next layout.
 function TB:SetPinned(key, on)
 	local pinned = self:Pinned()
-	local L = A.Launchers
-	local entry = L and L.byKey[key]
+	local LA = A.Launchers
+	local entry = LA and LA.byKey[key]
 	if not entry then return false end
 
 	if on and not self:IsPinned(key) then
 		pinned[#pinned + 1] = key
-		L:Claim(entry, self, true)
+		LA:Claim(entry, self, true)
 	elseif not on then
 		for i = #pinned, 1, -1 do
 			if pinned[i] == key then table.remove(pinned, i) end
 		end
-		L:Release(entry, self)
+		LA:Release(entry, self)
 	end
 
 	self:LayoutRail()
@@ -2736,16 +2741,16 @@ end
 --  only at enable - which is the difference between a pin surviving a reload
 --  and appearing to have been forgotten.
 function TB:ClaimPins()
-	local L = A.Launchers
-	if not L then return 0 end
+	local LA = A.Launchers
+	if not LA then return 0 end
 	local n = 0
 
 	-- Pins first, and forced: a pin is an explicit instruction to put this
 	-- addon on the rail, so it overrides whoever holds it.
 	for _, key in ipairs(self:Pinned()) do
-		local e = L.byKey[key]
-		if e and L:OwnerOf(e) ~= self then
-			L:Claim(e, self, true)
+		local e = LA.byKey[key]
+		if e and LA:OwnerOf(e) ~= self then
+			LA:Claim(e, self, true)
 			n = n + 1
 		end
 	end
@@ -2762,9 +2767,9 @@ function TB:ClaimPins()
 	-- back when the drawer was still a setting; the key is gone now and the gate
 	-- read nil rather than false, so it never fired and every launcher went
 	-- unowned. There is one surface, so there is nothing to defer to.
-	for e in L:Iterate() do
-		if not L:OwnerOf(e) then
-			L:Claim(e, self)
+	for e in LA:Iterate() do
+		if not LA:OwnerOf(e) then
+			LA:Claim(e, self)
 			n = n + 1
 		end
 	end
@@ -2789,17 +2794,17 @@ end
 --  do. Alpha and EnableMouse, the same rule the minimap drawer follows.
 function TB:LayoutRail()
 	if not self.rail then return end
-	local L = A.Launchers
-	if not L then return end
+	local LA = A.Launchers
+	if not LA then return end
 
 	local edge = self:Dock()
 	local vertical = IsVertical(edge)
 	local n = 0
 
 	for _, key in ipairs(self:Pinned()) do
-		local entry = L.byKey[key]
+		local entry = LA.byKey[key]
 		local b = entry and entry.button
-		if b and L:OwnerOf(entry) == self then
+		if b and LA:OwnerOf(entry) == self then
 			n = n + 1
 
 			-- RE-PREPARED on every layout, not just when claimed. LibDBIcon pins
@@ -2815,18 +2820,18 @@ function TB:LayoutRail()
 			-- The drawer did exactly this on every layout and said why; that
 			-- line went with the drawer and did not come to the rail.
 			entry._prepared = nil
-			L:Prepare(entry)
+			LA:Prepare(entry)
 
-			pcall(L.RawSetParent, b, self.rail)
-			pcall(L.RawClearAllPoints, b)
+			pcall(LA.RawSetParent, b, self.rail)
+			pcall(LA.RawClearAllPoints, b)
 			local off = RAIL_PAD + RAIL_CHEV + RAIL_PAD + (n - 1) * (RAIL_ICON + RAIL_PAD)
 			-- chevron, then pins, then the gear at the far end
 			if vertical then
-				pcall(L.RawSetPoint, b, "TOP", self.rail, "TOP", 0, -off)
+				pcall(LA.RawSetPoint, b, "TOP", self.rail, "TOP", 0, -off)
 			else
-				pcall(L.RawSetPoint, b, "LEFT", self.rail, "LEFT", off, 0)
+				pcall(LA.RawSetPoint, b, "LEFT", self.rail, "LEFT", off, 0)
 			end
-			pcall(L.RawSetSize, b, RAIL_ICON, RAIL_ICON)
+			pcall(LA.RawSetSize, b, RAIL_ICON, RAIL_ICON)
 			if b.SetFrameStrata then pcall(b.SetFrameStrata, b, self.rail:GetFrameStrata()) end
 			if b.SetFrameLevel then pcall(b.SetFrameLevel, b, self.rail:GetFrameLevel() + 5) end
 			if b.SetAlpha then pcall(b.SetAlpha, b, 1) end
@@ -2837,9 +2842,9 @@ function TB:LayoutRail()
 	-- Everything we own that is NOT pinned goes off screen. Parked, never
 	-- hidden: these belong to other addons and may carry secure templates, and
 	-- hiding a frame with a protected descendant is refused in combat.
-	for e in L:Iterate() do
-		if L:OwnerOf(e) == self and not self:IsPinned(e.key) then
-			L:Park(e)
+	for e in LA:Iterate() do
+		if LA:OwnerOf(e) == self and not self:IsPinned(e.key) then
+			LA:Park(e)
 		end
 	end
 
@@ -3091,7 +3096,7 @@ TB.MICRO = {
 	{ key = "talents",   label = "Talents",
 	  fn = function() ToggleTalentFrame() end,
 	  probe = function() return ToggleTalentFrame ~= nil end },
-	{ key = "quests",    label = L["Quest log"],
+	{ key = "quests",    label = L.toolbox.refresh_addons.quest_log,
 	  fn = function() ToggleQuestLog() end,
 	  probe = function() return ToggleQuestLog ~= nil end },
 	{ key = "bags",      label = "Bags",

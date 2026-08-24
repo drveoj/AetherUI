@@ -969,7 +969,7 @@ end
 
 local function SetBindingTo(overlay, keyString)
 	if InCombatLockdown() then
-		A:Print(A.Bad(L["can't change bindings in combat."]))
+		A:Print(A.Bad(L.common.can_t_change_bindings))
 		return
 	end
 	local name = overlay.bindingName
@@ -983,7 +983,7 @@ local function SetBindingTo(overlay, keyString)
 	end
 
 	if not SetBinding(keyString, name) then
-		A:Print(A.Bad(L["that key can't be bound."]))
+		A:Print(A.Bad(L.bars.set_binding_to.key_can_t_bound))
 		return
 	end
 	A:Print((A.Good("%s") .. " -> %s"):format(ShortKey(keyString), name))
@@ -997,7 +997,7 @@ end
 
 local function ClearBindingOn(overlay)
 	if InCombatLockdown() then
-		A:Print(A.Bad(L["can't change bindings in combat."]))
+		A:Print(A.Bad(L.common.can_t_change_bindings))
 		return
 	end
 	local name = overlay.bindingName
@@ -1102,7 +1102,7 @@ end
 --  hover and type at.
 function AB:SetBindMode(on)
 	if on and InCombatLockdown() then
-		A:Print(A.Bad(L["can't rebind in combat."]))
+		A:Print(A.Bad(L.bars.set_bind_mode.can_t_rebind_combat))
 		return
 	end
 
@@ -1115,7 +1115,7 @@ function AB:SetBindMode(on)
 			Swallow(o, true)
 			o:Hide()
 		end
-		A:Print(L["keybind mode off."])
+		A:Print(L.bars.set_bind_mode.keybind_mode_off)
 		return
 	end
 
@@ -1156,9 +1156,9 @@ function AB:SetBindMode(on)
 		end
 	end
 
-	A:Print(A.F("keybind mode %s - hover a button and press a key.",
-		A.Good(L["on"])) .. "  "
-		.. A.Dim(L["Escape clears, right-click or /aether bind again to finish."]))
+	A:Print(A.F(L.bars.set_bind_mode.keybind_mode_s_hover,
+		A.Good(L.common.on)) .. "  "
+		.. A.Dim(L.bars.set_bind_mode.escape_clears_right_click))
 end
 
 function AB:ToggleBindMode()

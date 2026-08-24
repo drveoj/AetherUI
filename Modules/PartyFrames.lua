@@ -719,7 +719,7 @@ local ACTIONS = {
 		end,
 	},
 	{
-		key = "roles", label = L["Role Check"], glyph = "dps", token = "text",
+		key = "roles", label = L.party.is_leader.key, glyph = "dps", token = "text",
 		leader = true,
 		run = function()
 			if InitiateRolePoll then InitiateRolePoll() end
@@ -949,8 +949,8 @@ function PF:BuildHandle()
 	h:SetScript("OnDragStop", function()
 		if not PF._dragging then return end
 		Stop()
-		A:Print(A.F("party dock -> %s", A.Val(PF:PanelEdge():lower()))
-			.. "  " .. A.Dim(A.F("slot %s", PF:PanelSlot())))
+		A:Print(A.F(L.party.build_handle.party_dock_s, A.Val(PF:PanelEdge():lower()))
+			.. "  " .. A.Dim(A.F(L.party.build_handle.slot_s, PF:PanelSlot())))
 	end)
 	h:SetScript("OnClick", function() PF:TogglePanel() end)
 	h:SetScript("OnEnter", function(self2)

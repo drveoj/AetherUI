@@ -4,7 +4,8 @@
     python Tools/i18n.py --report            what is left, by file
     python Tools/i18n.py --report Core/Options.lua   ... for one file
     python Tools/i18n.py --wrap  Core/Options.lua    rewrite one file's phrases
-    python Tools/i18n.py --export            regenerate Locale/enUS.lua
+    python Tools/i18n.py --wrap              ... every file
+    then Tools/rekey.py, which names them and files the English
 
 WHY A TOOL AND NOT A SED. There are ten thousand quoted strings in this addon
 and perhaps a tenth of them are words a human reads; the rest are frame names,
@@ -20,8 +21,11 @@ conservative: a site it does not recognise is left alone and reported, rather
 than guessed at. A wrong guess here is a frame name run through a translation
 table, which is a nil at some distance from the mistake.
 
-THE KEY IS THE ENGLISH, which is the CurseForge and BigWigs packager
-convention - see Core/Locale.lua.
+WHAT IT DOES NOT DO IS NAME THEM. `--wrap` puts a bare string into `L["..."]`,
+which is a phrase with a placeholder for a name; `Tools/rekey.py` turns that
+into `L.area.group.leaf` and writes the English into Locale/enUS.lua. Two steps
+because they answer different questions - "is this a phrase?" and "what is it
+called?" - and only the first can be decided by looking at a call site.
 """
 import argparse
 import io
@@ -139,7 +143,13 @@ def positional_sites(rel):
             # The opening paren, then pos-1 arguments we do not touch, then
             # ours. Each skipped argument is "anything that is not a comma or a
             # bracket", which is enough for the literal-first calls here.
-            skip = r'(?:[^,()"]*,\s*)' * (pos - 1)
+            # NON-GREEDY, AND QUOTES ALLOWED THROUGH. The first version refused
+            # them, which was fine until argument ONE became `L["..."]` - and
+            # then argument two of every options builder was unreachable and
+            # seventy-eight descriptions were reported as done when nothing had
+            # touched them. What separates arguments is the comma; a quote in
+            # the one before is not this rule's business.
+            skip = r'(?:[^,\n]*,\s*)' * (pos - 1)
             out.append((r'(\b' + fn + r'\(\s*' + skip + r')' + STR,
                         "%s#%d" % (fn, pos)))
     return out
@@ -487,8 +497,8 @@ def main():
     files = args.files or sources()
 
     if args.export:
-        print("Locale/enUS.lua: %d phrases" % export())
-        return 0
+        raise SystemExit("--export is gone: Locale/enUS.lua is edited by hand"
+                         " now, and Tools/rekey.py files new phrases into it.")
 
     if args.wrap:
         total = 0

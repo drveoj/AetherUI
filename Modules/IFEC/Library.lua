@@ -421,11 +421,11 @@ function Library:Paint()
 					local read = progress and progress.complete
 					local at = progress and progress.segment or 0
 					if read then
-						row.meta:SetText(L["read"])
+						row.meta:SetText(L.library.paint.read)
 					elseif at > 0 then
-						row.meta:SetText(A.F("page %d of %d", at, pages))
+						row.meta:SetText(A.F(L.library.paint.page_d_d, at, pages))
 					else
-						row.meta:SetText(A.F("%d pages", pages))
+						row.meta:SetText(A.F(L.library.paint.d_pages, pages))
 					end
 					W.Color(row.meta, read and c.textFaint or tint)
 				elseif playing then
@@ -462,7 +462,7 @@ function Library:Paint()
 	f.list:Clamp()
 
 	f.empty:SetShown(shown == 0)
-	if shown == 0 then f.empty:SetText(L["Nothing of that kind this season."]) end
+	if shown == 0 then f.empty:SetText(L.library.paint.nothing_kind_season) end
 	f.count:SetText(shown > 0 and (shown .. (shown == 1 and " item" or " items")) or "")
 end
 

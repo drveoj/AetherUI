@@ -192,17 +192,17 @@ end
 OB.stops = {
 	{
 		key   = "palette",
-		name  = L["YOUR PALETTE"],
-		head  = L["This is you. Pick the light you'll live in."],
-		body  = L["One palette colours your ENTIRE interface — tap to try each live; everything recolours at once, not just this frame."],
+		name  = L.tour.adopt_from.name,
+		head  = L.tour.adopt_from.head,
+		body  = L.tour.adopt_from.body,
 		kind  = "set",
 		target = function() return _G[ADDON .. "PlayerFrame"] end,
 	},
 	{
 		key   = "layout",
-		name  = L["YOUR LAYOUT"],
-		head  = L["Where should everything live?"],
-		body  = L["Three starting layouts — watch the unit frames move as you tap. You can fine-tune every frame later."],
+		name  = L.tour.adopt_from.name2,
+		head  = L.tour.adopt_from.head2,
+		body  = L.tour.adopt_from.body2,
 		kind  = "set",
 		-- No spotlight: the whole HUD is the subject, so the scrim stays down
 		-- and nothing is lifted out of it. A ring around one frame here would
@@ -211,9 +211,9 @@ OB.stops = {
 	},
 	{
 		key   = "toolbox",
-		name  = L["THE TOOLBOX"],
-		head  = L["Every panel, one drawer."],
-		body  = L["Quests, addons, settings, this menu — all slide from the Toolbox. Pick which edge it lives on."],
+		name  = L.tour.adopt_from.name3,
+		head  = L.tour.adopt_from.head3,
+		body  = L.tour.adopt_from.body3,
 		kind  = "set",
 		target = function()
 			local TB = A.GetModule and A:GetModule("toolbox")
@@ -222,9 +222,9 @@ OB.stops = {
 	},
 	{
 		key   = "zen",
-		name  = L["ZEN MODE"],
-		head  = L["When you stop, so does the interface."],
-		body  = L["After a while of quiet the HUD fades to a breath, a clock and the zone you are in. Pick how long — or never."],
+		name  = L.tour.adopt_from.name4,
+		head  = L.tour.adopt_from.head4,
+		body  = L.tour.adopt_from.body4,
 		kind  = "set",
 		-- NO SPOTLIGHT, for the same reason the layout stop has none: the
 		-- subject is EVERYTHING going away, and a ring round any one frame
@@ -233,9 +233,9 @@ OB.stops = {
 	},
 	{
 		key   = "bars",
-		name  = L["ACTION BARS"],
-		head  = L["Your spells, undecorated."],
-		body  = L["Cooldowns, charges and range all draw ON the icon — no extra widgets. Watch: this one's on cooldown."],
+		name  = L.tour.adopt_from.name5,
+		head  = L.tour.adopt_from.head5,
+		body  = L.tour.adopt_from.body5,
 		kind  = "show",
 		-- THE DOCK, which is the glass the bar is drawn on - the header above
 		-- it is a secure state driver with no art of its own.
@@ -254,9 +254,9 @@ OB.stops = {
 	},
 	{
 		key   = "quests",
-		name  = L["QUEST TRACKER"],
-		head  = L["It knows when you're busy."],
-		body  = L["The tracker folds itself away the moment combat starts and returns when it ends — like this."],
+		name  = L.tour.adopt_from.name6,
+		head  = L.tour.adopt_from.head6,
+		body  = L.tour.adopt_from.body6,
 		kind  = "show",
 		-- THE PANEL, which is what the tracker calls its own frame. This asked
 		-- for QT.frame and got nil, which is the third of three: see the
@@ -269,8 +269,8 @@ OB.stops = {
 	{
 		key   = "bags",
 		name  = "BAGS",
-		head  = L["One bag. Everything in its place."],
-		body  = L["All your bags pour into one organised panel — gear, potions, trade goods, junk, each under its own heading."],
+		head  = L.tour.adopt_from.head7,
+		body  = L.tour.adopt_from.body7,
 		kind  = "show",
 		-- THE PANEL IS THE DEMO, so it opens before the spotlight looks for it
 		-- and closes on the way out - unless it was already open, in which case
@@ -291,21 +291,21 @@ OB.stops = {
 	{
 		key   = "threat",
 		name  = "THREAT",
-		head  = L["It watches who the monsters want."],
-		body  = L["Your frame warns you BEFORE trouble: gold means act now, red means it is on you. What counts as trouble flips with your role."],
+		head  = L.tour.adopt_from.head8,
+		body  = L.tour.adopt_from.body8,
 		kind  = "show",
 		target = function() return _G[ADDON .. "PlayerFrame"] end,
 	},
 	{
 		key   = "ifec",
-		name  = L["I.F.E.C."],
-		head  = L["Long flight? We've got you."],
+		name  = L.common.i_f_e_c,
+		head  = L.tour.adopt_from.head9,
 		-- AND WHERE IT IS ON THE GROUND, which the first version left out
 		-- entirely: it said "boards on your next flight" and stopped, so the
 		-- honest reading was that there is nothing to look at until then. There
 		-- is - the same programme, in the Toolbox, under its own bad joke of a
 		-- name. Reported from the game against 0.31.0.
-		body  = L["Music, podcasts and a truly disreputable gossip rag, timed to your route. Boards at takeoff — and N.I.F.E.C. plays it on the ground, from the Toolbox."],
+		body  = L.tour.adopt_from.body9,
 		kind  = "show",
 		-- THE DRAWER OPENS, the same way the bags stop opens the bag panel,
 		-- and for the same reason: the thing being described lives inside it.
@@ -799,7 +799,7 @@ local function BuildSkip()
 
 	b.label = W.Text(b, "tbLabel", "CENTER")
 	b.label:SetPoint("CENTER")
-	b.label:SetText(L["Skip tour — keep defaults"])
+	b.label:SetText(L.tour.build_skip.skip_tour_keep_defaults)
 	W.Color(b.label, Palette.c.textFaint)
 
 	b:SetScript("OnEnter", function() W.Color(b.label, Palette.c.textDim) end)
@@ -1058,8 +1058,8 @@ end
 -- could ever fire.
 local ZEN_DELAYS = {
 	{ label = "30s",   secs = 30 },
-	{ label = L["1 min"], secs = 60 },
-	{ label = L["5 min"], secs = 300 },
+	{ label = L.tour.layout_control.n1_min, secs = 60 },
+	{ label = L.tour.layout_control.n5_min, secs = 300 },
 	{ label = "never" },
 }
 
@@ -1137,7 +1137,7 @@ local function ToolboxControl(slot)
 		local f = Glass.CreatePanel(parent, { corner = 11 })
 		f.hint = W.Text(f, "tbLabel", "CENTER")
 		f.hint:SetPoint("CENTER")
-		f.hint:SetText(L["tap an edge"])
+		f.hint:SetText(L.tour.toolbox_control.tap_edge)
 		return f
 	end)
 	box:SetSize(slot:GetWidth(), EDGE_H)
@@ -1446,7 +1446,7 @@ local function QuestsDemo(slot)
 
 	-- The deck's own quest, and the gag is in the content rather than the
 	-- chrome - which is the copy rule for this whole addon.
-	card.title:SetText(L["Wanted: Hogger"])
+	card.title:SetText(L.tour.quests_demo.wanted_hogger)
 	card.line:SetText("0/1 slain")
 	W.Color(card.title, Palette.c.text)
 	W.Color(card.line, Palette.c.textDim)
@@ -1490,7 +1490,7 @@ local function QuestsDemo(slot)
 
 		card:SetHeight(FOLDED)
 		card.line:Hide()
-		pill:Say(L["in combat — folded"], Palette.c.danger)
+		pill:Say(L.tour.quests_demo.combat_folded, Palette.c.danger)
 		chev:SetAlpha(1)
 		if QT then QT:SetCollapsed(true) end
 		return false
@@ -1598,8 +1598,8 @@ local function ThreatDemo(slot)
 	calm:ClearAllPoints()
 	calm:SetPoint("LEFT", chev, "RIGHT", 9, 0)
 
-	warn:Say(L["trouble coming"], Palette.c.semanticGold)
-	calm:Say(L["eased off — quiet again"], Palette.c.friendly)
+	warn:Say(L.tour.threat_demo.trouble_coming, Palette.c.semanticGold)
+	calm:Say(L.tour.threat_demo.eased_off_quiet_again, Palette.c.friendly)
 	slot:SetHeight(STATE_H)
 
 	local state = nil
@@ -1719,7 +1719,7 @@ local function IfecDemo(slot)
 		-- play, and saying so is more use than an empty row.
 		Media:SetIcon(pill.glyph, "music")
 		W.Tint(pill.glyph, Palette.c.textFaint, 0.8)
-		pill.title:SetText(L["Nothing installed yet"])
+		pill.title:SetText(L.tour.ifec_demo.nothing_installed_yet)
 		W.Color(pill.title, Palette.c.textDim)
 		-- FROM THE CONSOLE, because there are three reasons for this and only
 		-- one of them is "you have not installed it".
@@ -1927,7 +1927,7 @@ end
 --- Start at the top, from a fresh character or from the Toolbox.
 function OB:Start()
 	if InCombatLockdown() then
-		A:Print(L["not during a fight - try again when it is over."])
+		A:Print(L.tour.start.during_fight_try_again)
 		return false
 	end
 	local s = Store()
@@ -2133,9 +2133,9 @@ function OB:ShowWelcome()
 	if self.skip then self.skip:Hide() end
 
 	local c = BuildCard()
-	c.kicker:SetText(L["AETHER UI"])
-	c.head:SetText(L["A quieter, glassier way to play"])
-	c.body:SetText(L["Your whole interface, rebuilt as calm dark glass — nothing shouts, everything is where you left it. A quick tour will set you up; every choice applies live and nothing is locked in."])
+	c.kicker:SetText(L.tour.show_welcome.aether_ui)
+	c.head:SetText(L.tour.show_welcome.quieter_glassier_way_play)
+	c.body:SetText(L.tour.show_welcome.whole_interface_rebuilt_calm)
 	W.Color(c.kicker, Palette.c.accent)
 	W.Color(c.head, Palette.c.text)
 	W.Color(c.body, Palette.c.textDim)
@@ -2151,18 +2151,18 @@ function OB:ShowWelcome()
 		.. "panel and addon",
 	})
 
-	c.go.label:SetText(L["Take the tour"])
+	c.go.label:SetText(L.common.take_tour)
 	W.Color(c.go.label, Palette.c.text)
 	c.go:SetScript("OnClick", function() c:Hide() OB:Go(1) end)
 
 	c.alt:Show()
-	c.alt.label:SetText(L["Skip the tour"])
+	c.alt.label:SetText(L.tour.show_welcome.skip_tour)
 	W.Color(c.alt.label, Palette.c.textDim)
 	c.alt:SetScript("OnClick", function() OB:Skip() end)
 
 	-- HONEST, and the deck says so in as many words. A tour that claims to be
 	-- quick and is not is one nobody finishes.
-	c.note:SetText(L["~1 minute"])
+	c.note:SetText(L.tour.show_welcome.n1_minute)
 	W.Color(c.note, Palette.c.textFaint)
 
 	c:Show()
@@ -2175,8 +2175,8 @@ function OB:ShowFinish()
 	if self.skip then self.skip:Hide() end
 
 	local c = BuildCard()
-	c.kicker:SetText(L["ALL SET"])
-	c.head:SetText(L["Your HUD, your way. Go break it in."])
+	c.kicker:SetText(L.tour.show_finish.all_set)
+	c.head:SetText(L.tour.show_finish.hud_way_go_break)
 	c.body:SetText("")
 	W.Color(c.kicker, Palette.c.accent)
 	W.Color(c.head, Palette.c.text)

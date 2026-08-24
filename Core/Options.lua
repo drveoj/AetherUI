@@ -215,34 +215,25 @@ local function GeneralGroup()
 		-- glass, which is the only thing that tells you what picking it
 		-- would do - a list of four words does not. The option is unchanged
 		-- underneath: same profile key, same setter, same restyle after.
-		skin = choice("Skin", "Each one is its own accent on its own glass."
-			.. " The change is live - no reload.",
+		skin = choice("Skin", L.options.general.skin.desc,
 			{ "skin" }, SkinValues,
 			{ after = "restyle", control = "AetherUISkinSwatches" }),
-		scale = range("Scale", "Everything at once. 0.71 maps the deck's 1920px"
-			.. " geometry onto WoW's virtual space one-for-one, which is why it is"
-			.. " not 1.0.", { "scale" }, 0.6, 1.6, 0.01),
-		classColorHealth = toggle(L["Class-coloured health"],
-			"Off uses the concept's green and reserves colour for reaction.",
+		scale = range("Scale", L.options.general.scale.desc, { "scale" }, 0.6, 1.6, 0.01),
+		classColorHealth = toggle(L.options.general.class_color_health.name,
+			L.options.general.off_uses_concept_s,
 			{ "classColorHealth" }, { after = "restyle" }),
 
 		glassHeader = header("Glass"),
-		shadow = range(L["Shadow opacity"], "An opacity, not a distance - the shadow's"
-			.. " geometry is derived from the shape it sits under so its hole lines"
-			.. " up with that shape's own curve.",
+		shadow = range(L.options.general.shadow.name, L.options.general.shadow.desc,
 			{ "glass", "shadow" }, 0, 1, 0.05, { after = "restyle" }),
-		corner = range(L["Panel corner radius"], nil, { "glass", "corner" }, 4, 24, 1,
+		corner = range(L.options.general.corner.name, nil, { "glass", "corner" }, 4, 24, 1,
 			{ after = "restyle" }),
-		readOpacity = range(L["Reading panel opacity"],
-			"How much deeper chat and the quest log sit than the rest of the HUD."
-			.. " 0% matches the action bars and capsules; 100% is solid. They"
-			.. " carry paragraphs of small text over moving scenery, so they need"
-			.. " more than a surface you only glance at - how much more depends on"
-			.. " your eyes.",
+		readOpacity = range(L.options.general.read_opacity.name,
+			L.options.general.how_much_deeper_chat,
 			{ "glass", "readOpacity" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
 
-		posHeader = header(L["Positions and keys"]),
+		posHeader = header(L.options.general.pos_header),
 		-- BOTH of these name what pressing them will DO, not what they did the
 		-- first time. They are toggles wearing a button's clothes: each one
 		-- closes this panel and leaves a mode running, so the next time anybody
@@ -270,24 +261,22 @@ local function GeneralGroup()
 			end,
 			"Drag to move, scroll to nudge. Also on a tile in the Toolbox.",
 			function() A.Options:Close(); A.Movers:Toggle() end),
-		reset = action(L["Reset positions"], "Forget every saved anchor.",
+		reset = action(L.options.general.reset.name, L.options.general.reset.desc,
 			function() A.Movers:ResetAll() end),
 
-		gridHeader = header(L["While frames are unlocked"]),
-		gridNote = note(L["Edges and centres snap to the grid and to the other frames on screen, which is what actually gets two bars lined up. Another frame always wins over the grid, and holding alt while you drag turns the whole thing off for that one placement."]),
-		grid = toggle(L["Show grid"], nil, { "movers", "grid" }, { after = "grid" }),
-		gridSize = range(L["Grid spacing"], "Every fourth line is drawn brighter.",
+		gridHeader = header(L.options.general.grid_header),
+		gridNote = note(L.options.general.grid_note),
+		grid = toggle(L.options.general.grid.name, nil, { "movers", "grid" }, { after = "grid" }),
+		gridSize = range(L.options.general.grid_size.name, L.options.general.grid_size.desc,
 			{ "movers", "gridSize" }, 4, 64, 2, { after = "grid" }),
-		snap = toggle(L["Snap to edges"], nil, { "movers", "snap" }, { after = "grid" }),
-		snapDistance = range(L["Snap distance"], "How close an edge has to come before"
-			.. " it is caught. Much above 20 and you can no longer put a frame where"
-			.. " you actually meant to.",
+		snap = toggle(L.options.general.snap.name, nil, { "movers", "snap" }, { after = "grid" }),
+		snapDistance = range(L.options.general.snap_distance.name, L.options.general.snap_distance.desc,
 			{ "movers", "snapDistance" }, 2, 30, 1, { after = "grid" }),
 	})
 end
 
 local function OnboardGroup()
-	return group(L["First run"], {
+	return group(L.options.onboard.first_run, {
 		desc = note("Eight stops over the real HUD, where the tour IS the setup:"
 			.. " the world dims, one element at a time is lifted out of the dim,"
 			.. " and the callout beside it carries that stop's control."
@@ -298,15 +287,13 @@ local function OnboardGroup()
 			.. A.Hi("character") .. ", not per profile - the tour teaches an"
 			.. " interface rather than a profile, and somebody who has seen it"
 			.. " on their main has seen it."),
-		enabled = toggle(L["Offer it on a new character"], nil,
+		enabled = toggle(L.options.onboard.enabled.name, nil,
 			{ "modules", "onboard", "enabled" }, { defaultTrue = true }),
 
-		runHeader = header(L["Run it now"]),
-		runNote = note(A.F("Re-running clears this character's %s mark and"
-			.. " starts at the welcome card. Your current palette, layout and"
-			.. " Toolbox edge are untouched until you pick something else.",
-			A.Hi(L["already done"]))),
-		run = action(L["Take the tour"], nil, function()
+		runHeader = header(L.options.onboard.run_header),
+		runNote = note(A.F(L.options.onboard.run_note,
+			A.Hi(L.options.onboard.already_done))),
+		run = action(L.common.take_tour, nil, function()
 			local OB = A.GetModule and A:GetModule("onboard")
 			if OB then OB:Start() end
 		end),
@@ -317,7 +304,7 @@ local function ToolboxGroup()
 	return group("Toolbox", {
 		desc = note("A drawer that docks to the centre of any screen edge, with a"
 			.. " rail that stays on screen when the drawer is shut."
-			.. "\n\nTo move it, " .. A.Hi(L["unlock frames"]) .. " and drag the rail: four"
+			.. "\n\nTo move it, " .. A.Hi(L.options.toolbox.unlock_frames) .. " and drag the rail: four"
 			.. " targets appear, one per edge, and the one nearest the cursor is"
 			.. " the one you get. It has four legal places rather than a"
 			.. " position, because each edge is a different layout."
@@ -328,28 +315,22 @@ local function ToolboxGroup()
 			{ defaultTrue = true }),
 
 		widgetsHeader = header("Widgets"),
-		widgetsNote = note(A.F("The six widgets are published as %s rather than"
-			.. " drawn straight onto the panel. Two consequences: anything that"
-			.. " displays LDB - Titan, Bazooka, ChocolateBar - shows AetherUI's"
-			.. " numbers without being told, and anyone can write a seventh"
-			.. " widget in about ten lines.", A.Hi(L["LibDataBroker data sources"]))
+		widgetsNote = note(A.F(L.options.toolbox.widgets_note, A.Hi(L.options.toolbox.libdatabroker_data_sources))
 			.. "\n\n"
-			.. L["Only latency and FPS are polled, and only while the drawer is open; the rest follow their own events."]),
-		widgetColumns = range(L["Widget columns"], nil,
+			.. L.options.toolbox.only_latency_fps_polled),
+		widgetColumns = range(L.options.toolbox.widget_columns.name, nil,
 			{ "modules", "toolbox", "widgetColumns" }, 1, 6, 1, { after = "reconfigure" }),
 
 		gridHeader = header("Grids"),
-		tileColumns = range(L["Setting tile columns"], nil,
+		tileColumns = range(L.options.toolbox.tile_columns.name, nil,
 			{ "modules", "toolbox", "tileColumns" }, 1, 4, 1, { after = "reconfigure" }),
-		addonColumns = range(L["Addon list columns"], nil,
+		addonColumns = range(L.options.toolbox.addon_columns.name, nil,
 			{ "modules", "toolbox", "addonColumns" }, 1, 4, 1, { after = "reconfigure" }),
 
-		lookHeader = header(L["The overlay"]),
-		lookNote = note(A.F("The drawer slides out %s the HUD. Nothing"
-			.. " underneath moves or resizes; the covered strip is dimmed"
-			.. " instead, so it reads as being behind rather than merely dark.",
-			A.Hi(L["over"]))),
-		scrim = range(L["Dim the covered strip"], nil,
+		lookHeader = header(L.options.toolbox.look_header),
+		lookNote = note(A.F(L.options.toolbox.look_note,
+			A.Hi(L.options.toolbox.over))),
+		scrim = range(L.options.toolbox.scrim.name, nil,
 			{ "modules", "toolbox", "scrim" }, 0, 1, 0.02, { after = "reconfigure" }),
 	})
 	-- No order argument: group()'s third parameter is `opts`, and the page order
@@ -361,25 +342,25 @@ local function FaderGroup()
 	-- The client's own auto-AFK delay, from Core\Fader.lua. Read here rather than
 	-- written twice so the slider and the state machine cannot drift apart.
 	local ZEN_MAX = (A.Fader and A.Fader.AFK_TIMEOUT) or 300
-	return group(L["Idle fade"], {
-		desc = note(L["The HUD breathes out when nothing is happening. Idle is inferred rather than observed: Classic gives addons no general keypress hook, so this watches consequences - combat, casting, having a target, being below full health or mana, cursor movement - and treats their absence as idle."]),
+	return group(L.options.fader.idle_fade, {
+		desc = note(L.options.fader.desc),
 		enabled = toggle("Enabled", nil, { "fader", "enabled" }, { after = "none" }),
-		idleAlpha = range(L["Idle opacity"], nil, { "fader", "idleAlpha" }, 0, 1, 0.05,
+		idleAlpha = range(L.options.fader.idle_alpha.name, nil, { "fader", "idleAlpha" }, 0, 1, 0.05,
 			{ after = "none" }),
-		activeAlpha = range(L["Active opacity"], nil, { "fader", "activeAlpha" }, 0.2, 1, 0.05,
+		activeAlpha = range(L.options.fader.active_alpha.name, nil, { "fader", "activeAlpha" }, 0.2, 1, 0.05,
 			{ after = "none" }),
-		delay = range(L["Quiet before fading"], "Seconds.", { "fader", "delay" }, 0.5, 60, 0.5,
+		delay = range(L.options.fader.delay.name, L.options.fader.delay.desc, { "fader", "delay" }, 0.5, 60, 0.5,
 			{ after = "none" }),
-		fadeOut = range(L["Fade out time"], nil, { "fader", "fadeOut" }, 0, 3, 0.05,
+		fadeOut = range(L.options.fader.fade_out.name, nil, { "fader", "fadeOut" }, 0, 3, 0.05,
 			{ after = "none" }),
-		fadeIn = range(L["Fade in time"], nil, { "fader", "fadeIn" }, 0, 3, 0.05,
+		fadeIn = range(L.options.fader.fade_in.name, nil, { "fader", "fadeIn" }, 0, 3, 0.05,
 			{ after = "none" }),
-		keepHeader = header(L["Stay awake while"]),
-		keepOnTarget = toggle(L["You have a target"], nil, { "fader", "keepOnTarget" },
+		keepHeader = header(L.options.fader.keep_header),
+		keepOnTarget = toggle(L.options.fader.keep_on_target.name, nil, { "fader", "keepOnTarget" },
 			{ after = "none" }),
-		keepOnHurt = toggle(L["Health or mana is down"], nil, { "fader", "keepOnHurt" },
+		keepOnHurt = toggle(L.options.fader.keep_on_hurt.name, nil, { "fader", "keepOnHurt" },
 			{ after = "none" }),
-		keepOnMouse = toggle(L["The cursor is over a frame"], nil, { "fader", "keepOnMouse" },
+		keepOnMouse = toggle(L.options.fader.keep_on_mouse.name, nil, { "fader", "keepOnMouse" },
 			{ after = "none" }),
 
 		zenHeader = header("Zen"),
@@ -388,75 +369,55 @@ local function FaderGroup()
 			.. " breath - with the zone and the time in the corner. Anything you do"
 			.. " brings it back, including a keypress, which is the one thing stage"
 			.. " one cannot see."
-			.. "\n\n" .. A.Hi(L["Only the hard signals hold this off"]) .. ": combat, casting,"
+			.. "\n\n" .. A.Hi(L.options.fader.only_hard_signals_hold) .. ": combat, casting,"
 			.. " and the cursor sitting on the HUD. Having a target or being below"
 			.. " full health keeps stage one awake but not this one, because"
 			.. " neither is evidence that you are still in the chair."),
 		zenEnabled = toggle("Enabled", nil, { "modules", "zen", "enabled" },
 			{ after = "none" }),
-		zenOnAFK = toggle(L["When you go away"],
-			"The client flags you away by itself after five minutes without input,"
-			.. " so this fires even if the timer below is longer than that.",
+		zenOnAFK = toggle(L.options.fader.zen_on_a_f_k.name,
+			L.options.fader.client_flags_away_itself,
 			{ "modules", "zen", "onAFK" }, { after = "none", defaultTrue = true }),
-		zenDelay = range(L["Quiet before zen"],
-			"Minutes. At least one, so zen always comes after the HUD has faded"
-			.. " - the fade waits up to a minute, and a zen that started at ten"
-			.. " seconds arrived first and skipped it. Capped at five, because"
-			.. " that is when the client flags you away and zen would happen"
-			.. " anyway.",
+		zenDelay = range(L.options.fader.zen_delay.name,
+			L.options.fader.minutes_least_one_so,
 			{ "modules", "zen", "delay" }, 1, ZEN_MAX / 60, 0.5,
 			{ after = "none", scale = 60 }),
-		zenFadeOut = range(L["Time to sink into it"], nil, { "modules", "zen", "fadeOut" },
+		zenFadeOut = range(L.options.fader.zen_fade_out.name, nil, { "modules", "zen", "fadeOut" },
 			0.2, 6, 0.1, { after = "none" }),
-		zenFadeIn = range(L["Time to come back"], nil, { "modules", "zen", "fadeIn" },
+		zenFadeIn = range(L.options.fader.zen_fade_in.name, nil, { "modules", "zen", "fadeIn" },
 			0.05, 2, 0.05, { after = "none" }),
-		zenKeys = toggle(L["A keypress wakes it"],
-			"Adds a frame that listens for keys while zen is on screen and passes"
-			.. " every one of them straight through. It is only listening while"
-			.. " zen is up.",
+		zenKeys = toggle(L.options.fader.zen_keys.name,
+			L.options.fader.adds_frame_listens_keys,
 			{ "modules", "zen", "keyboardWake" }, { after = "none", defaultTrue = true }),
 
-		zenLookHeader = header(L["Zen readout"]),
-		zenDimUI = toggle(L["Take the whole interface with it"],
-			"Fades UIParent, which is everything: the minimap, the chat frame, the"
-			.. " XP hairline, nameplates, and anything any other addon has put on"
-			.. " screen. Off leaves only AetherUI's own frames fading, which means"
-			.. " everything else stays up.",
+		zenLookHeader = header(L.options.fader.zen_look_header),
+		zenDimUI = toggle(L.options.fader.zen_dim_u_i.name,
+			L.options.fader.fades_uiparent_which_everything,
 			{ "modules", "zen", "dimUI" }, { after = "none", defaultTrue = true }),
-		zenMapArt = toggle(L["Draw the map glyph"],
-			"The corner block shows a circle of the zone's own map art around"
-			.. " where you are standing, with the accent dot marking you. It is"
-			.. " the world map's art rather than the minimap's view - nothing"
-			.. " can capture what the minimap renders - and being static suits a"
-			.. " calm mode better. Off, or anywhere there is no art, it falls"
-			.. " back to a plain glass disc.",
+		zenMapArt = toggle(L.options.fader.zen_map_art.name,
+			L.options.fader.corner_block_shows_circle,
 			{ "modules", "zen", "showMapArt" }, { defaultTrue = true }),
-		zenGlyph = range(L["Glyph size"], nil, { "modules", "zen", "glyphSize" },
+		zenGlyph = range(L.options.fader.zen_glyph.name, nil, { "modules", "zen", "glyphSize" },
 			10, 48, 1),
-		zenKeepMap = toggle(L["Keep the minimap"],
-			"On, the map survives zen and the zone and clock move under it -"
-			.. " the one part of the HUD still telling you something while you"
-			.. " are not playing. Off, which is the default, it goes with"
-			.. " everything else and the block draws a small glass disc beside"
-			.. " the zone in its place.",
+		zenKeepMap = toggle(L.options.fader.zen_keep_map.name,
+			L.options.fader.map_survives_zen_zone,
 			{ "modules", "zen", "keepMinimap" }),
-		zenWidth = range(L["Capsule width"], nil, { "modules", "zen", "width" },
+		zenWidth = range(L.options.fader.zen_width.name, nil, { "modules", "zen", "width" },
 			160, 600, 5),
-		zenY = range(L["Height above the bottom edge"], nil, { "modules", "zen", "yOffset" },
+		zenY = range(L.options.fader.zen_y.name, nil, { "modules", "zen", "yOffset" },
 			0, 200, 2),
-		zenCaption = toggle(L["Show the caption"], nil, { "modules", "zen", "showCaption" },
+		zenCaption = toggle(L.options.fader.zen_caption.name, nil, { "modules", "zen", "showCaption" },
 			{ defaultTrue = true }),
-		zenDots = toggle(L["Show the breath"],
-			"The row of dots. They carry no information - they are a slow pulse,"
-			.. " so a still screen still looks alive.",
+		zenDots = toggle(L.options.fader.zen_dots.name,
+			L.options.fader.row_dots_they_carry,
 			{ "modules", "zen", "showDots" }, { defaultTrue = true }),
-		zenPill = toggle(L["Show the zone and time"], nil, { "modules", "zen", "showPill" },
+		zenPill = toggle(L.options.fader.zen_pill.name, nil, { "modules", "zen", "showPill" },
 			{ defaultTrue = true }),
 
-		zenFrostHeader = header(L["The frosted pane"]),
+		zenFrostHeader = header(L.options.fader.zen_frost_header),
 		zenFrostNote = note("A pane of frosted glass drawn in front of the world"
 			.. " while zen is on."
-			.. "\n\n" .. A.Hi(L["It is not a blur, and it cannot be"]) .. ". The client gives"
+			.. "\n\n" .. A.Hi(L.options.fader.blur_cannot) .. ". The client gives"
 			.. " addons no way to read or filter the 3D scene - no render-to-texture,"
 			.. " no shader, no post-process hook - so the world behind stays sharp."
 			.. " What frosted glass actually is, though, is a surface in front of a"
@@ -467,48 +428,34 @@ local function FaderGroup()
 			.. " crisp and simply turns the lights off."),
 		zenFrost = toggle("Enabled", nil, { "modules", "zen", "frost" },
 			{ after = "none", defaultTrue = true }),
-		zenFrostOpacity = range(L["Pane opacity"],
-			"How much of the world the glass keeps. Past about 85% it stops being"
-			.. " a window and becomes a wall.",
+		zenFrostOpacity = range(L.options.fader.zen_frost_opacity.name,
+			L.options.fader.how_much_world_glass,
 			{ "modules", "zen", "frostOpacity" }, 0, 0.95, 0.05,
 			{ after = "restyle", percent = true }),
-		zenFrostBrightness = range(L["Pane brightness"],
-			"How far the skin's glass colour is lifted toward white. Low values"
-			.. " give you the skin's own hue at full strength, which on a dark skin"
-			.. " means a dark pane - legible, but it reads as the lights going out"
-			.. " rather than as glass.",
+		zenFrostBrightness = range(L.options.fader.zen_frost_brightness.name,
+			L.options.fader.how_far_skin_s,
 			{ "modules", "zen", "frostBrightness" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
 		zenFrostScatter = range("Scatter",
-			"The layer doing the actual work, in two parts: visible patches of"
-			.. " thicker and thinner glass, and an additive light over them that"
-			.. " lifts the darks without touching the brights. That second part is"
-			.. " what flattens the contrast of the world behind the pane, and"
-			.. " contrast is most of what a real blur takes away.",
+			L.options.fader.layer_doing_actual_work,
 			{ "modules", "zen", "frostScatter" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
 		zenFrostVignette = range("Vignette",
-			"Darker toward the edges, so the pane has a shape rather than being an"
-			.. " even wash. Kept low - this was doing most of the darkening the pane"
-			.. " used to be blamed for.",
+			L.options.fader.darker_toward_edges_so,
 			{ "modules", "zen", "frostVignette" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
 		zenFrostDrift = range("Drift",
-			"Screens per second the two scatter layers slide past each other, in"
-			.. " opposite directions. Far too slow to read as movement - it is there"
-			.. " for the parallax against a world that is not moving, which is the"
-			.. " cheapest cue there is for 'something is between you and this'."
-			.. " Set it to 0 to stop it dead.",
+			L.options.fader.screens_per_second_two,
 			{ "modules", "zen", "frostDrift" }, 0, 0.1, 0.005,
 			{ after = "none" }),
 
 		zenQuietHeader = header("Distractions"),
-		zenNameplates = toggle(L["Take the nameplates and names away"],
+		zenNameplates = toggle(L.options.fader.zen_nameplates.name,
 			"The one thing fading the interface does not reach: nameplates and the"
 			.. " floating unit names are drawn against the world rather than"
 			.. " composited into the interface, so they are left hanging over an"
 			.. " empty hillside otherwise."
-			.. "\n\nThese are " .. A.Hi(L["two separate systems"]) .. " in the client - the"
+			.. "\n\nThese are " .. A.Hi(L.options.fader.two_separate_systems) .. " in the client - the"
 			.. " bars and the text have unrelated settings - so this drives both."
 			.. " Taking the bars away and leaving every name, guild tag and pet"
 			.. " label floating looks like a fault rather than a choice. Everything"
@@ -519,69 +466,57 @@ local function FaderGroup()
 			{ "modules", "zen", "hideNameplates" },
 			{ after = "none", defaultTrue = true }),
 
-		zenShotHeader = header(L["The shot"]),
+		zenShotHeader = header(L.options.fader.zen_shot_header),
 		zenShotNote = note("Zen sets up a camera rather than just clearing the"
 			.. " screen: the character settles, and the view pulls back over their"
 			.. " shoulder."
 			.. "\n\nThe zoom is exact and exactly reversible - the game will tell us"
 			.. " the current distance, so yours is put back rather than guessed at."
-			.. " " .. A.Hi(L["The tilt is not"]) .. ": the client offers no way to read the"
+			.. " " .. A.Hi(L.options.fader.tilt) .. ": the client offers no way to read the"
 			.. " camera's pitch, only to move it, so the way back is the same"
 			.. " movement reversed for the same time."),
-		zenSit = toggle(L["Sit down"],
-			"Skipped while you are mounted, on a taxi, in combat or dead - a"
-			.. " refused emote puts a red error across the middle of a screen"
-			.. " whose whole point is being quiet. You are stood back up when zen"
-			.. " ends.",
+		zenSit = toggle(L.options.fader.zen_sit.name,
+			L.options.fader.skipped_while_mounted_taxi,
 			{ "modules", "zen", "sit" }, { after = "none", defaultTrue = true }),
-		zenCamera = toggle(L["Move the camera"], nil, { "modules", "zen", "camera" },
+		zenCamera = toggle(L.options.fader.zen_camera.name, nil, { "modules", "zen", "camera" },
 			{ after = "none", defaultTrue = true }),
-		zenCameraZoom = range(L["Distance behind you"],
-			"Roughly metres. The camera glides there at the client's own pace"
-			.. " rather than ours - asking it to move ten times a second is a"
-			.. " camera that never arrives anywhere.",
+		zenCameraZoom = range(L.options.fader.zen_camera_zoom.name,
+			L.options.fader.roughly_metres_camera_glides,
 			{ "modules", "zen", "cameraZoom" }, 0, 15, 0.5, { after = "none" }),
 
 
-		zenAudioHeader = header(L["The audio profile"]),
+		zenAudioHeader = header(L.options.fader.zen_audio_header),
 		zenAudioNote = note("Zen borrows the sound channels while it is on screen"
 			.. " and gives them back when it ends."
-			.. "\n\nThe three sliders below are " .. A.Hi(L["fractions of your own settings"])
+			.. "\n\nThe three sliders below are " .. A.Hi(L.options.fader.fractions_own_settings)
 			.. ", not volumes. 5% of an effects channel you keep at 80%"
 			.. " is 4%; at 20% it is 1%. Your master volume is never touched, and a"
 			.. " channel you change by hand during zen is left where you put it"
 			.. " rather than being handed a stale value back."),
-		zenAudio = toggle("Enabled", "Nothing happens at all if you have the"
-			.. " game's sound switched off entirely.",
+		zenAudio = toggle("Enabled", L.options.fader.zen_audio.desc,
 			{ "modules", "zen", "audio" }, { after = "none", defaultTrue = true }),
-		zenTrack = choice("Track", "Looped on the music channel for as long as zen"
-			.. " lasts. Random picks once each time zen begins, not once per session.",
+		zenTrack = choice("Track", L.options.fader.zen_track.desc,
 			{ "modules", "zen", "track" }, TrackValues, { after = "none" }),
-		zenPreview = action(L["Preview the track"],
-			"Plays it now so you can choose without waiting out the timer. Press"
-			.. " again to stop. A preview changes no volumes.",
+		zenPreview = action(L.options.fader.zen_preview.name,
+			L.options.fader.plays_now_so_can,
 			function()
 				local Z = A:GetModule("zen")
 				if not Z then return end
 				local name = Z:PreviewTrack(A.db.profile.modules.zen.track)
-				if name then A:Print(A.F("playing %s", A.Val(name))) end
+				if name then A:Print(A.F(L.options.fader.playing_s, A.Val(name))) end
 			end),
-		zenMusicFloor = range(L["Lift the music channel to at least"],
-			"The one channel zen raises rather than lowers, and only if it is under"
-			.. " this already. A meditation track played through a music channel"
-			.. " somebody left at zero is a feature that silently does nothing."
-			.. " Set it to 0 to leave the music channel completely alone.",
+		zenMusicFloor = range(L.options.fader.zen_music_floor.name,
+			L.options.fader.one_channel_zen_raises,
 			{ "modules", "zen", "musicFloor" }, 0, 1, 0.05,
 			{ after = "none", percent = true }),
-		zenDuckSFX = range(L["Effects, as a fraction of yours"],
+		zenDuckSFX = range(L.options.fader.zen_duck_s_f_x.name,
 			nil, { "modules", "zen", "duckSFX" }, 0, 1, 0.01,
 			{ after = "none", percent = true }),
-		zenDuckAmbience = range(L["Ambience, as a fraction of yours"],
-			"Kept higher than the others on purpose: a little wind and water under"
-			.. " the music is the difference between a quiet world and a dead one.",
+		zenDuckAmbience = range(L.options.fader.zen_duck_ambience.name,
+			L.options.fader.kept_higher_than_others,
 			{ "modules", "zen", "duckAmbience" }, 0, 1, 0.01,
 			{ after = "none", percent = true }),
-		zenDuckDialog = range(L["Dialogue, as a fraction of yours"],
+		zenDuckDialog = range(L.options.fader.zen_duck_dialog.name,
 			nil, { "modules", "zen", "duckDialog" }, 0, 1, 0.01,
 			{ after = "none", percent = true }),
 	})
@@ -590,47 +525,37 @@ end
 local function UnitFramesGroup()
 	local m = { "modules", "unitframes" }
 	local function at(k) return { "modules", "unitframes", k } end
-	return group(L["Unit frames"], {
+	return group(L.options.unit_frames.unit_frames, {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		hideBlizzard = toggle(L["Hide Blizzard's frames"], nil, at("hideBlizzard")),
-		clickTarget = toggle(L["Click to target"],
-			"Left-click targets, right-click opens the unit menu.", at("clickTarget")),
+		hideBlizzard = toggle(L.options.unit_frames.hide_blizzard.name, nil, at("hideBlizzard")),
+		clickTarget = toggle(L.common.click_target,
+			L.common.left_click_targets_right, at("clickTarget")),
 
 		sizeHeader = header("Capsule"),
 		width = range("Width", nil, at("width"), 240, 520, 1),
 		height = range("Height", nil, at("height"), 48, 96, 1),
-		gap = range(L["Gap between player and target"], nil, at("gap"), 0, 200, 1),
-		orbSize = range(L["Orb size"], nil, at("orbSize"), 28, 72, 1),
-		barWidth = range(L["Bar width"], nil, at("barWidth"), 120, 380, 1),
-		showPower = toggle(L["Show power bar"], nil, at("showPower")),
-		showPortrait = toggle(L["Portrait in the orb"],
-			"Off draws the class-tinted level disc the concept uses.",
+		gap = range(L.options.unit_frames.gap.name, nil, at("gap"), 0, 200, 1),
+		orbSize = range(L.options.unit_frames.orb_size.name, nil, at("orbSize"), 28, 72, 1),
+		barWidth = range(L.common.bar_width, nil, at("barWidth"), 120, 380, 1),
+		showPower = toggle(L.common.show_power_bar, nil, at("showPower")),
+		showPortrait = toggle(L.options.unit_frames.show_portrait.name,
+			L.options.unit_frames.off_draws_class_tinted,
 			at("showPortrait")),
 
-		castHeader = header(L["Cast bars"]),
-		showPet = toggle(L["Pet frame"],
-			"A capsule for your pet, with its own place on screen. A hunter's"
-			.. " pet also wears its mood on the orb's rim.", at("showPet")),
-		petScale = range(L["Pet frame size"], "On top of the interface scale, the way"
-			.. " the console and the nameplates have their own.",
+		castHeader = header(L.options.unit_frames.cast_header),
+		showPet = toggle(L.options.unit_frames.show_pet.name,
+			L.options.unit_frames.capsule_pet_own_place, at("showPet")),
+		petScale = range(L.options.unit_frames.pet_scale.name, L.options.unit_frames.pet_scale.desc,
 			at("petScale"), 0.6, 1.2, 0.05, { after = "both" }),
 
-		showCastBar = toggle(L["Player cast bar"], nil, at("showCastBar")),
-		showTargetCastBar = toggle(L["Target cast bar"],
-			"Classic Era does not report other units' casts natively; this reads"
-			.. " them from the combat log via LibClassicCasterino.",
+		showCastBar = toggle(L.options.unit_frames.show_cast_bar.name, nil, at("showCastBar")),
+		showTargetCastBar = toggle(L.options.unit_frames.show_target_cast_bar.name,
+			L.options.unit_frames.classic_era_does_report,
 			at("showTargetCastBar")),
-		castNote = note(A.F("Both cast bars float free on their own movers,"
-			.. " well above the cluster: every edge of a capsule now belongs to"
-			.. " an aura tray.  %s to place them - they are held up while you"
-			.. " do, since a bar you only ever see mid-cast is a bar you could"
-			.. " never aim at.", A.Hi("/aether unlock"))),
-		castWidth = range(L["Cast bar width"], nil, at("castWidth"), 160, 520, 1),
-		reactionTint = toggle(L["Colour the target by reaction"],
-			"The target's capsule rim, orb ring and cast bar take their reaction -"
-			.. " red for hostile, amber for neutral, green for friendly. Yours stay"
-			.. " the concept's blue, which is what makes the two stacked cast bars"
-			.. " tellable apart mid-fight.",
+		castNote = note(A.F(L.options.unit_frames.cast_note, A.Hi("/aether unlock"))),
+		castWidth = range(L.options.unit_frames.cast_width.name, nil, at("castWidth"), 160, 520, 1),
+		reactionTint = toggle(L.options.unit_frames.reaction_tint.name,
+			L.options.unit_frames.target_s_capsule_rim,
 			at("reactionTint"), { defaultTrue = true, after = "restyle" }),
 	})
 end
@@ -639,46 +564,43 @@ local function AurasGroup()
 	local function at(...) return { "modules", "auras", ... } end
 	return group("Auras", {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		hideBlizzard = toggle(L["Hide Blizzard's buff row"],
-			"Takes the weapon-enchant icons with it, and nothing replaces those yet.",
+		hideBlizzard = toggle(L.options.auras.hide_blizzard.name,
+			L.options.auras.takes_weapon_enchant_icons,
 			at("hideBlizzard"), { defaultTrue = true }),
 
-		desc = note(L["Four trays: buffs above each capsule, debuffs below, on the player and the target alike. Nothing sits inside a capsule, so the frames never resize and the two are always the same shape."]),
+		desc = note(L.options.auras.desc),
 
 		tileHeader = header("Tiles"),
-		tileNote = note(L["A tile is an icon and a timer, with no name - the name is on the tooltip, and dropping it takes a row from three across a capsule to a dozen. Right-click one of your own buffs to cancel it, in combat as well as out of it."]),
-		size = range(L["Icon size"], nil, at("size"), 12, 48, 1),
+		tileNote = note(L.options.auras.tile_note),
+		size = range(L.options.auras.size.name, nil, at("size"), 12, 48, 1),
 		spacing = range("Spacing", nil, at("spacing"), 0, 16, 1),
-		offset = range(L["Gap from the capsule"], nil, at("offset"), 0, 40, 1),
-		showTime = toggle(L["Show timers"], nil, at("showTime"), { defaultTrue = true }),
-		showCount = toggle(L["Show stack counts"], nil, at("showCount"), { defaultTrue = true }),
-		align = choice(L["Row alignment"],
-			"Centred splits the slack a row cannot fill into two margins. Mirrored"
-			.. " follows the unit's own name and readout - left on the player,"
-			.. " right on the target - which puts all of it on one side.",
+		offset = range(L.options.auras.offset.name, nil, at("offset"), 0, 40, 1),
+		showTime = toggle(L.options.auras.show_time.name, nil, at("showTime"), { defaultTrue = true }),
+		showCount = toggle(L.options.auras.show_count.name, nil, at("showCount"), { defaultTrue = true }),
+		align = choice(L.options.auras.align.name,
+			L.options.auras.centred_splits_slack_row,
 			at("align"), { CENTER = "Centred", MIRROR = "Mirrored" }),
-		perRow = range(L["Cap the columns"],
-			"0 fits as many as the frame is wide enough for, which is what keeps a"
-			.. " tray inside the unit it belongs to. Set a number to use fewer.",
+		perRow = range(L.options.auras.per_row.name,
+			L.options.auras.n0_fits_many_frame,
 			at("perRow"), 0, 16, 1),
 
 		buffs = group("Buffs", {
 			enabled = toggle("Enabled", nil, at("buffs", "enabled")),
-			player = toggle(L["On the player"], nil, at("buffs", "player")),
-			target = toggle(L["On the target"], nil, at("buffs", "target")),
-			max = range(L["Most to show"], nil, at("buffs", "max"), 1, 40, 1),
-			maxRows = range(L["Rows at most"], nil, at("buffs", "maxRows"), 1, 4, 1),
+			player = toggle(L.common.player, nil, at("buffs", "player")),
+			target = toggle(L.common.target, nil, at("buffs", "target")),
+			max = range(L.common.most_show, nil, at("buffs", "max"), 1, 40, 1),
+			maxRows = range(L.common.rows_most, nil, at("buffs", "maxRows"), 1, 4, 1),
 		}, { inline = true }),
 
 		debuffs = group("Debuffs", {
 			enabled = toggle("Enabled", nil, at("debuffs", "enabled")),
-			player = toggle(L["On the player"], nil, at("debuffs", "player")),
-			target = toggle(L["On the target"], nil, at("debuffs", "target")),
-			onlyMine = toggle(L["Only mine, on the target"],
-				"On yourself every debuff matters whoever cast it.",
+			player = toggle(L.common.player, nil, at("debuffs", "player")),
+			target = toggle(L.common.target, nil, at("debuffs", "target")),
+			onlyMine = toggle(L.options.auras.only_mine.name,
+				L.options.auras.yourself_every_debuff_matters,
 				at("debuffs", "onlyMine")),
-			max = range(L["Most to show"], nil, at("debuffs", "max"), 1, 40, 1),
-			maxRows = range(L["Rows at most"], nil, at("debuffs", "maxRows"), 1, 4, 1),
+			max = range(L.common.most_show, nil, at("debuffs", "max"), 1, 40, 1),
+			maxRows = range(L.common.rows_most, nil, at("debuffs", "maxRows"), 1, 4, 1),
 		}, { inline = true }),
 	})
 end
@@ -687,27 +609,24 @@ local function MinimapGroup()
 	local function at(...) return { "modules", "minimap", ... } end
 	return group("Minimap", {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		desc = note(A.F("A round map with a frosted rim, and a glass pill under"
-			.. " it carrying the zone, your coordinates and the time - which"
-			.. " swaps for a red dot and %s in a fight.",
-			A.Bad(L["In combat"]))),
+		desc = note(A.F(L.options.minimap.desc,
+			A.Bad(L.options.minimap.combat))),
 		size = range("Size", nil, at("size"), 120, 320, 1),
 		ring = toggle("Border", nil, at("ring"), { defaultTrue = true }),
-		showNorth = toggle(L["North marker"], nil, at("showNorth"), { defaultTrue = true }),
-		pillOffset = range(L["Gap below the map"], nil, at("pillOffset"), 0, 40, 1),
-		border = range(L["Border strength"],
-			"The dark band around the inside of the map's edge, and the hairline"
-			.. " on it. One texture, so one number.",
+		showNorth = toggle(L.options.minimap.show_north.name, nil, at("showNorth"), { defaultTrue = true }),
+		pillOffset = range(L.options.minimap.pill_offset.name, nil, at("pillOffset"), 0, 40, 1),
+		border = range(L.options.minimap.border.name,
+			L.options.minimap.dark_band_around_inside,
 			at("border"), 0, 1, 0.05),
 
-		pillHeader = header(L["The pill"]),
-		showZone = toggle(L["Zone name"], nil, at("showZone"), { defaultTrue = true }),
+		pillHeader = header(L.options.minimap.pill_header),
+		showZone = toggle(L.options.minimap.show_zone.name, nil, at("showZone"), { defaultTrue = true }),
 		showCoords = toggle("Coordinates",
-			"Unavailable inside an instance, where the pill simply drops them.",
+			L.options.minimap.unavailable_inside_instance_where,
 			at("showCoords"), { defaultTrue = true }),
 		showClock = toggle("Clock", nil, at("showClock"), { defaultTrue = true }),
-		blizzHeader = header(L["Blizzard's own"]),
-		hideBlizzard = toggle(L["Hide the minimap furniture"],
+		blizzHeader = header(L.options.minimap.blizz_header),
+		hideBlizzard = toggle(L.options.minimap.hide_blizzard.name,
 			"Zoom, tracking, the day/night dial, the battleground eye, the border"
 			.. " art and the toggle tab. Zoom moves to the mouse wheel and tracking"
 			.. " to right-clicking the map, so nothing is actually lost.",
@@ -743,18 +662,16 @@ local function BarPages()
 						.. " are the only ones that work."
 					or ("Sized by the game: however many " .. kind
 						.. " slots you have."))),
-			rows = range("Rows", "Columns fall out of this.", at("rows"), 1, 12, 1),
-			scale = range("Scale", "On top of the global scale.", at("scale"), 0.4, 2.0, 0.05),
-			backdrop = toggle(L["Glass panel"], "Off leaves the buttons bare.",
+			rows = range("Rows", L.options.bar_pages.rows.desc, at("rows"), 1, 12, 1),
+			scale = range("Scale", L.common.top_global_scale, at("scale"), 0.4, 2.0, 0.05),
+			backdrop = toggle(L.options.bar_pages.backdrop.name, L.options.bar_pages.backdrop.desc,
 				at("backdrop"), { defaultTrue = true }),
 		}
 
 		if kind == "action" then
 			args.buttons = range("Buttons", nil, at("buttons"), 1, 12, 1)
 			args.page = range("Page",
-				"Bar N owns page N. Pages 7-10 are the bonus bars a druid or rogue"
-				.. " gets in a form - point a bar at one and you simply see those"
-				.. " abilities rather than having a bar swap under you.",
+				L.options.bar_pages.bar_n_owns_page,
 				at("page"), 1, 10, 1)
 		end
 
@@ -769,24 +686,24 @@ local function ActionBarsGroup()
 
 	local shared = {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		hideBlizzard = toggle(L["Hide Blizzard's bars"], nil, at("hideBlizzard")),
-		scale = range(L["Scale (all bars)"], nil, at("scale"), 0.4, 1.5, 0.05),
-		size = range(L["Button size"], "The concept draws 62px slots.", at("size"), 24, 80, 1),
+		hideBlizzard = toggle(L.options.action_bars.hide_blizzard.name, nil, at("hideBlizzard")),
+		scale = range(L.options.action_bars.scale.name, nil, at("scale"), 0.4, 1.5, 0.05),
+		size = range(L.options.action_bars.size.name, L.options.action_bars.size.desc, at("size"), 24, 80, 1),
 		spacing = range("Spacing", nil, at("spacing"), 0, 30, 1),
-		padding = range(L["Panel padding"], nil, at("padding"), 0, 30, 1),
-		fontDelta = range(L["Text size offset"],
-			"Points added to the keybind, count and cooldown text.",
+		padding = range(L.options.action_bars.padding.name, nil, at("padding"), 0, 30, 1),
+		fontDelta = range(L.options.action_bars.font_delta.name,
+			L.options.action_bars.points_added_keybind_count,
 			at("fontDelta"), -4, 8, 1),
-		showKeybinds = toggle(L["Show keybinds"], nil, at("showKeybinds")),
+		showKeybinds = toggle(L.options.action_bars.show_keybinds.name, nil, at("showKeybinds")),
 		tooltips = toggle("Tooltips", nil, at("tooltips")),
-		lockButtons = toggle(L["Lock buttons"],
-			"Require a modified click to pick an action up.", at("lockButtons")),
-		emptyAlpha = range(L["Empty slot opacity"], nil, at("emptyAlpha"), 0, 1, 0.05),
+		lockButtons = toggle(L.options.action_bars.lock_buttons.name,
+			L.options.action_bars.require_modified_click_pick, at("lockButtons")),
+		emptyAlpha = range(L.options.action_bars.empty_alpha.name, nil, at("emptyAlpha"), 0, 1, 0.05),
 	}
 
 	local args = {
 		shared = group("Shared", shared, { inline = true }),
-		pagingNote = note(A.Hi(L["There is no paging."]) .. " Every bar names its own"
+		pagingNote = note(A.Hi(L.options.action_bars.paging_note) .. " Every bar names its own"
 			.. " source once and never changes it. The page Blizzard tracks is a"
 			.. " number this addon does not own and could not keep still, and"
 			.. " following it is what made the dock empty itself."),
@@ -796,46 +713,39 @@ local function ActionBarsGroup()
 		args["bar" .. id] = page
 	end
 
-	return group(L["Action bars"], args, { childGroups = "tab" })
+	return group(L.options.action_bars.action_bars, args, { childGroups = "tab" })
 end
 
 local function QuestGroup()
 	local function at(k) return { "modules", "questtracker", k } end
-	return group(L["Quest tracker"], {
+	return group(L.options.quest.quest_tracker, {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		hideBlizzard = toggle(L["Hide Blizzard's tracker"], nil, at("hideBlizzard")),
+		hideBlizzard = toggle(L.options.quest.hide_blizzard.name, nil, at("hideBlizzard")),
 		-- The LOG, which is a different module and a different window, but
 		-- the same subject - and it had no control anywhere at all, which
 		-- made it a feature nobody could switch off.
-		questlog = toggle(L["Our quest log"],
-			"Replaces the game's own quest log window. Off gives you Blizzard's back.",
+		questlog = toggle(L.options.quest.questlog.name,
+			L.options.quest.replaces_game_s_own,
 			{ "modules", "questlog", "enabled" }),
-		autoTrack = toggle(L["Track everything automatically"],
-			"On, the tracker shows every quest in your log and you dismiss the ones"
-			.. " you do not want. Off, it shows nothing until you shift-click a"
-			.. " quest in the log.", at("autoTrack"), { defaultTrue = true }),
-		combatCollapse = toggle(L["Fold in combat"],
-			"Shrinks to the heading when a fight starts. Folding it by hand"
-			.. " mid-fight wins over the automatic restore.", at("combatCollapse")),
-		showObjectives = toggle(L["Show objective lines"], nil, at("showObjectives")),
-		showLevel = toggle(L["Show quest level"],
-			"A tinted chip in front of each title, coloured by difficulty the same"
-			.. " way the quest log colours it. Off, the titles start at the edge.",
+		autoTrack = toggle(L.options.quest.auto_track.name,
+			L.options.quest.tracker_shows_every_quest, at("autoTrack"), { defaultTrue = true }),
+		combatCollapse = toggle(L.options.quest.combat_collapse.name,
+			L.options.quest.shrinks_heading_when_fight, at("combatCollapse")),
+		showObjectives = toggle(L.options.quest.show_objectives.name, nil, at("showObjectives")),
+		showLevel = toggle(L.options.quest.show_level.name,
+			L.options.quest.tinted_chip_front_each,
 			at("showLevel")),
 
 		sizeHeader = header("Size"),
 		width = range("Width", nil, at("width"), 180, 420, 1),
-		maxHeight = range(L["Height budget"],
-			"Whatever does not fit is reported as '+N more' rather than silently"
-			.. " dropped.", at("maxHeight"), 120, 900, 10),
-		max = range(L["Most quests to show"], nil, at("max"), 1, 20, 1),
+		maxHeight = range(L.common.height_budget,
+			L.options.quest.whatever_does_fit_reported, at("maxHeight"), 120, 900, 10),
+		max = range(L.options.quest.max.name, nil, at("max"), 1, 20, 1),
 
 		trackHeader = header("Tracking"),
-		adoptWatches = toggle(L["Adopt Blizzard's watch list"],
-			"Whitelist mode only. Blizzard caps its list at five, so taking the"
-			.. " entries and handing the slots back is what keeps shift-click"
-			.. " working past the fifth quest.", at("adoptWatches")),
-		clear = action(L["Reset tracking"], "Forget every dismissed and tracked quest.",
+		adoptWatches = toggle(L.options.quest.adopt_watches.name,
+			L.options.quest.whitelist_mode_only_blizzard, at("adoptWatches")),
+		clear = action(L.options.quest.clear.name, L.options.quest.clear.desc,
 			function()
 				if A.db.char then
 					A.db.char.tracked, A.db.char.untracked = {}, {}
@@ -850,49 +760,38 @@ local function BagsGroup()
 	local function at(k) return { "modules", "bags", k } end
 	return group("Bags", {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		desc = note(L["One window for the backpack and your four bags, sorted into categories, with the equipped bags and the keyring on a flyout off the right edge. At a banker the bank opens beside it. This replaces Blizzard's bags rather than reskinning them; turning it off gives them back, including the B key."]),
-		hideBlizzard = toggle(L["Hide Blizzard's bags"], nil, at("hideBlizzard")),
+		desc = note(L.options.bags.desc),
+		hideBlizzard = toggle(L.options.bags.hide_blizzard.name, nil, at("hideBlizzard")),
 
 		gridHeader = header("Grid"),
 		columns = range("Columns",
-			"The window is as wide as the grid: eight columns of 44 is the"
-			.. " concept's 442px panel.", at("columns"), 4, 16, 1),
-		slotSize = range(L["Slot size"], nil, at("slotSize"), 24, 64, 1),
-		slotGap = range(L["Gap between slots"], nil, at("slotGap"), 0, 16, 1),
-		maxHeight = range(L["Height budget"],
-			"The panel hugs its contents up to this, then the grid scrolls on"
-			.. " the wheel. There is no scroll bar; the concept has none.",
+			L.options.bags.window_wide_grid_eight, at("columns"), 4, 16, 1),
+		slotSize = range(L.options.bags.slot_size.name, nil, at("slotSize"), 24, 64, 1),
+		slotGap = range(L.options.bags.slot_gap.name, nil, at("slotGap"), 0, 16, 1),
+		maxHeight = range(L.common.height_budget,
+			L.options.bags.panel_hugs_contents_up,
 			at("maxHeight"), 200, 1200, 10),
 
 		lookHeader = header("Look"),
-		showSearch = toggle(L["Show the search box"],
-			"Typing dims what does not match rather than removing it, so nothing"
-			.. " moves under the cursor while you narrow it down.",
+		showSearch = toggle(L.options.bags.show_search.name,
+			L.options.bags.typing_dims_what_does,
 			at("showSearch"), { defaultTrue = true }),
-		qualityRim = toggle(L["Colour slots by quality"], nil, at("qualityRim"),
+		qualityRim = toggle(L.options.bags.quality_rim.name, nil, at("qualityRim"),
 			{ defaultTrue = true }),
-		dimJunk = toggle(L["Dim poor-quality items"], nil, at("dimJunk"),
+		dimJunk = toggle(L.options.bags.dim_junk.name, nil, at("dimJunk"),
 			{ defaultTrue = true }),
-		showFlyout = toggle(L["Show the equipped-bags drawer"],
-			"A drawer off the right edge carrying your equipped bags and, under"
-			.. " it, the keyring. Drag a new bag onto one to swap it. The handle"
-			.. " on the window's edge slides it out; whether it is out is"
-			.. " remembered per character.",
+		showFlyout = toggle(L.options.bags.show_flyout.name,
+			L.options.bags.drawer_off_right_edge,
 			at("showFlyout"), { defaultTrue = true }),
-		showKeyring = toggle(L["Show the keyring"], nil, at("showKeyring"),
+		showKeyring = toggle(L.options.bags.show_keyring.name, nil, at("showKeyring"),
 			{ defaultTrue = true }),
-		showEmpty = toggle(L["Show free slots"],
-			"A FREE section at the foot of the grid. Off, the panel is the"
-			.. " concept's exactly - but with no empty slot on screen there is"
-			.. " nowhere to drop something you are carrying.",
+		showEmpty = toggle(L.options.bags.show_empty.name,
+			L.options.bags.free_section_foot_grid,
 			at("showEmpty"), { defaultTrue = true }),
 
 		sellHeader = header("Junk"),
-		junkAutoSell = toggle(L["Sell junk at a merchant"],
-			"Sells every poor-quality item that has a value the moment you open"
-			.. " any merchant, one item at a time, and tells you what it made."
-			.. " Off by default: this is the only thing here that spends your"
-			.. " items for you.", at("junkAutoSell")),
+		junkAutoSell = toggle(L.options.bags.junk_auto_sell.name,
+			L.options.bags.sells_every_poor_quality, at("junkAutoSell")),
 	})
 end
 
@@ -900,71 +799,58 @@ local function ChatGroup()
 	local function at(k) return { "modules", "chat", k } end
 	return group("Chat", {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		desc = note(L["Blizzard's chat frames, skinned in place. One frosted panel, tabs as pills along the top with the zone beside them, and the edit box inset into the bottom edge with a channel tag and a send glyph."]),
+		desc = note(L.options.chat.desc),
 
 		lookHeader = header("Look"),
-		fontDelta = range(L["Text size"],
-			"Added to whatever size Blizzard's own chat settings say, so that"
-			.. " stays the setting and this is the nudge.",
+		fontDelta = range(L.options.chat.font_delta.name,
+			L.options.chat.added_whatever_size_blizzard,
 			at("fontDelta"), -4, 8, 1),
-		showZone = toggle(L["Zone beside the tabs"], nil, at("showZone"),
+		showZone = toggle(L.options.chat.show_zone.name, nil, at("showZone"),
 			{ defaultTrue = true }),
-		unlocked = toggle(L["Movable and resizable"],
-			"Unlocks Blizzard's own move and resize, which is also what saves"
-			.. " them - drag a tab to move it, drag the corner to resize. Locked is"
-			.. " the client's default and it ignores both.",
+		unlocked = toggle(L.options.chat.unlocked.name,
+			L.options.chat.unlocks_blizzard_s_own,
 			at("unlocked"), { defaultTrue = true }),
-		resizable = toggle(L["Show the resize corner"], nil, at("resizable"),
+		resizable = toggle(L.options.chat.resizable.name, nil, at("resizable"),
 			{ defaultTrue = true }),
-		hideButtons = toggle(L["Lose the buttons"],
-			"The scroll arrows, the resize grip and the menu buttons down the"
-			.. " side. Scrolling still works on the wheel.",
+		hideButtons = toggle(L.options.chat.hide_buttons.name,
+			L.options.chat.scroll_arrows_resize_grip,
 			at("hideButtons"), { defaultTrue = true }),
 
-		linesHeader = header(L["Message lines"]),
+		linesHeader = header(L.options.chat.lines_header),
 		linesNote = note("The name is class-coloured and its realm dimmed, the"
 			.. " \"says:\" becomes an em dash, and the channel gets a badge."
-			.. "\n\n" .. A.Hi(L["None of this rewrites the author."]) .. " Blizzard hands"
+			.. "\n\n" .. A.Hi(L.options.chat.none_rewrites_author) .. " Blizzard hands"
 			.. " out the decorated name and builds the player link around what"
 			.. " comes back, so whispers, ignore and the right-click menu are out"
 			.. " of reach rather than carefully avoided."),
-		styleLines = toggle(L["Style the lines"],
-			"The master switch. Everything below hangs off one filter and one set"
-			.. " of format strings, and half of them on is a line that reads as"
-			.. " neither Blizzard's nor ours.",
+		styleLines = toggle(L.options.chat.style_lines.name,
+			L.options.chat.master_switch_everything_below,
 			at("styleLines"), { defaultTrue = true }),
-		classColorNames = toggle(L["Class-colour names"],
-			"From the sender's GUID, which is what Blizzard's own class colouring"
-			.. " uses - so it is right for two people with the same name on"
-			.. " different realms.",
+		classColorNames = toggle(L.options.chat.class_color_names.name,
+			L.options.chat.sender_s_guid_which,
 			at("classColorNames"), { defaultTrue = true }),
-		hideRealm = toggle(L["Drop the realm entirely"],
-			"On by default: it is rare on Classic Era and never what you are"
-			.. " reading a line for. Off dims it instead of losing it. Either"
-			.. " way the player link still carries the full name, so whispering"
-			.. " and right-clicking work on a cross-realm name you cannot see.",
+		hideRealm = toggle(L.options.chat.hide_realm.name,
+			L.options.chat.default_rare_classic_era,
 			at("hideRealm"), { defaultTrue = true }),
-		emDash = toggle(L["Em dash instead of \"says:\""],
+		emDash = toggle(L.options.chat.em_dash.name,
 			nil, at("emDash"), { defaultTrue = true }),
-		badges = toggle(L["Channel badges"],
+		badges = toggle(L.options.chat.badges.name,
 			"A pill carrying the channel, in whatever colour your own chat"
 			.. " settings give that channel.\n\nThe words are baked into a"
 			.. " texture, so the four channels a Classic Era character actually"
 			.. " joins have one and anything else gets its own name as text.",
 			at("badges"), { defaultTrue = true }),
-		badgeSize = range(L["Badge height"], nil, at("badgeSize"), 8, 20, 1),
-		badgeOffset = range(L["Badge baseline nudge"],
+		badgeSize = range(L.options.chat.badge_size.name, nil, at("badgeSize"), 8, 20, 1),
+		badgeOffset = range(L.options.chat.badge_offset.name,
 			"The client already centres a badge on its line, so zero is normally"
 			.. " right. Negative sinks it, positive raises it.\n\nOnly new lines"
 			.. " take a change - a chat line is a string with the badge baked into"
 			.. " it, so the log above keeps whatever it was printed with.",
 			at("badgeOffset"), -8, 4, 1),
-		channelPrefix = toggle(L["Keep Blizzard's [1. General]"],
-			"Off is the concept: the badge is what replaces it. Blizzard builds"
-			.. " that bracket after the line is formatted, so it comes off the"
-			.. " finished string rather than through a filter.",
+		channelPrefix = toggle(L.options.chat.channel_prefix.name,
+			L.options.chat.off_concept_badge_what,
 			at("channelPrefix")),
-		dimSystem = toggle(L["Dim system lines"],
+		dimSystem = toggle(L.options.chat.dim_system.name,
 			"The concept draws these in italics. There is no italic escape"
 			.. " sequence in the game's markup and a chat frame draws every line"
 			.. " in one font, so dimming carries the same intent: this is not"
@@ -976,8 +862,8 @@ local function ChatGroup()
 			at("dimSystem"), { defaultTrue = true }),
 
 		whisperHeader = header("Whispers"),
-		whisperTab = toggle(L["Whispers get their own tab"],
-			A.Bad(L["This one outlives the addon."]) .. " It opens a real Blizzard"
+		whisperTab = toggle(L.options.chat.whisper_tab.name,
+			A.Bad(L.options.chat.one_outlives_addon) .. " It opens a real Blizzard"
 			.. " chat window and moves the whisper message groups onto it, and"
 			.. " Blizzard saves all of that - including with AetherUI turned off."
 			.. "\n\nIt is also the only answer to the concept's \"whispers stay"
@@ -991,15 +877,13 @@ local function ChatGroup()
 			end }),
 
 		behaveHeader = header("Behaviour"),
-		fade = toggle(L["Breathes with the HUD"],
-			"Chat dims with everything else when you go idle, and goes altogether"
-			.. " in zen. Off leaves it fully readable at all times.",
+		fade = toggle(L.options.chat.fade.name,
+			L.options.chat.chat_dims_everything_else,
 			at("fade"), { defaultTrue = true, after = "none" }),
-		fadeMessages = toggle(L["Fade old lines out"],
-			"Blizzard's own message fade, which empties the log rather than"
-			.. " dimming the frame. Different thing from the setting above.",
+		fadeMessages = toggle(L.options.chat.fade_messages.name,
+			L.options.chat.blizzard_s_own_message,
 			at("fadeMessages")),
-		timeVisible = range(L["Seconds a line stays"], nil, at("timeVisible"), 10, 600, 10),
+		timeVisible = range(L.options.chat.time_visible.name, nil, at("timeVisible"), 10, 600, 10),
 	})
 end
 
@@ -1009,7 +893,7 @@ local function ConveniencesGroup()
 	return group("Conveniences", {
 		enabled = toggle("Enabled", nil, at("enabled")),
 
-		instantQuestText = toggle(L["Instant quest text"],
+		instantQuestText = toggle(L.options.conveniences.instant_quest_text.name,
 			"Quest text appears at once instead of being typed out."
 			.. "\n\nThis is the game's OWN setting - Interface, Controls, Instant"
 			.. " Quest Text - set for you. Off puts it back the way you had it,"
@@ -1017,7 +901,7 @@ local function ConveniencesGroup()
 			.. " typing on purpose.",
 			at("instantQuestText"), { after = "reconfigure" }),
 
-		autoRepair = toggle(L["Repair at a vendor automatically"],
+		autoRepair = toggle(L.options.conveniences.auto_repair.name,
 			"Repairs everything the moment you open a merchant who can."
 			.. "\n\nOFF by default, because it SPENDS YOUR MONEY. It will not"
 			.. " repair when you cannot afford it - it tells you instead, rather"
@@ -1040,8 +924,8 @@ end
 --  off gives Blizzard's back whole.
 local function GameOwnGroup()
 	local function at(m) return { "modules", m, "enabled" } end
-	return group(L["The game's own"], {
-		note = note(L["Everything here is the GAME'S, redressed rather than replaced. Each switch is the same promise: off gives you Blizzard's back whole, art and all."]),
+	return group(L.options.game_own.game_s_own, {
+		note = note(L.options.game_own.note),
 
 		lettering = toggle("Lettering", "The game's own type in this interface's letters"
 			.. " - every panel, every tooltip, every menu, and \"You can't do that yet\"."
@@ -1053,37 +937,28 @@ local function GameOwnGroup()
 			.. " One that chose its own lettering keeps it.",
 			at("fonts")),
 
-		windows = toggle("Windows", "The game's own windows - character, spellbook,"
-			.. " talents, guild, map, menu and help. What is INSIDE them is left alone:"
-			.. " item slots, spell buttons and map pins are still the game's own.",
+		windows = toggle("Windows", L.options.game_own.windows.desc,
 			at("panels")),
 
-		dialogs = toggle("Dialogs", "The confirmation boxes - \"do you want to destroy"
-			.. " this?\" and the like.", at("popups")),
+		dialogs = toggle("Dialogs", L.options.game_own.dialogs.desc, at("popups")),
 
-		menus = toggle("Menus", "The right-click menus - the one on your portrait,"
-			.. " your pet's, a chat tab's. One hook rather than a list of frames, so"
-			.. " it covers every menu the game opens.", at("menus")),
+		menus = toggle("Menus", L.options.game_own.menus.desc, at("menus")),
 
-		timers = toggle("Timers", "The breath, fatigue and feign-death bars."
-			.. " Which timer it is stays in the colour - blue for breath, yellow for"
-			.. " fatigue, orange for death - in this interface's own hues.",
+		timers = toggle("Timers", L.options.game_own.timers.desc,
 			at("timers")),
 
-		settings = toggle(L["This panel"], "These settings, in the same glass as the"
-			.. " rest of it. Off leaves the options panel looking like Blizzard's,"
-			.. " which is where it started.", at("optionsskin")),
+		settings = toggle(L.options.game_own.settings.name, L.options.game_own.settings.desc, at("optionsskin")),
 	})
 end
 
 local function XPGroup()
 	local function at(k) return { "modules", "xpbar", k } end
-	return group(L["XP hairline"], {
+	return group(L.options.x_p.xp_hairline, {
 		enabled = toggle("Enabled", nil, at("enabled")),
 		height = range("Height", nil, at("height"), 1, 12, 1),
-		showText = toggle(L["Show the readout"], nil, at("showText")),
-		textSide = choice(L["Readout corner"],
-			"Which end of the hairline the readout sits above.", at("textSide"),
+		showText = toggle(L.options.x_p.show_text.name, nil, at("showText")),
+		textSide = choice(L.options.x_p.text_side.name,
+			L.options.x_p.which_end_hairline_readout, at("textSide"),
 			{ LEFT = "Left", RIGHT = "Right" }),
 	})
 end
@@ -1095,25 +970,19 @@ end
 --  it, which is the rule every mode in this addon follows.
 local function IFECGroup()
 	local function at(k) return { "modules", "ifec", k } end
-	return group(L["In-flight console"], {
-		enabled = toggle("Enabled", "A flight timer on every taxi, and the"
-			.. " console for content when a season is installed.", at("enabled")),
-		player = toggle(L["Play a programme in flight"],
-			"The music and stories while you are a passenger. The flight timer,"
-			.. " the route and the countdown are not this and stay either way.",
+	return group(L.options.i_f_e_c.flight_console, {
+		enabled = toggle("Enabled", L.options.i_f_e_c.enabled.desc, at("enabled")),
+		player = toggle(L.options.i_f_e_c.player.name,
+			L.options.i_f_e_c.music_stories_while_passenger,
 			at("player")),
-		playOn = toggle(L["Keep playing after landing"],
-			"The programme carries on into the Toolbox's mini-player instead of"
-			.. " stopping with the flight.", at("playOn")),
-		readerScale = range(L["Magazine size"], "How much of a page to draw, against"
-			.. " the 1024 it is drawn at. The magnifier still goes to actual"
-			.. " size whatever this says.", at("readerScale"), 0.4, 1, 0.05,
+		playOn = toggle(L.options.i_f_e_c.play_on.name,
+			L.options.i_f_e_c.programme_carries_into_toolbox, at("playOn")),
+		readerScale = range(L.options.i_f_e_c.reader_scale.name, L.options.i_f_e_c.reader_scale.desc, at("readerScale"), 0.4, 1, 0.05,
 			{ after = "both" }),
-		hideUI = toggle(L["Hide the interface in flight"],
-			"You are a passenger. The console stays.", at("hideUI")),
-		scale = range("Size", "On top of the interface scale, like the action bars"
-			.. " have their own.", at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
-		note = note(A.F("Move it with %s.", A.Hi("/aether unlock"))),
+		hideUI = toggle(L.options.i_f_e_c.hide_u_i.name,
+			L.options.i_f_e_c.passenger_console_stays, at("hideUI")),
+		scale = range("Size", L.options.i_f_e_c.scale.desc, at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
+		note = note(A.F(L.options.i_f_e_c.note, A.Hi("/aether unlock"))),
 	})
 end
 
@@ -1123,52 +992,33 @@ end
 local function NameplatesGroup()
 	local function at(k) return { "modules", "nameplates", k } end
 	return group("Nameplates", {
-		enabled = toggle("Enabled", "Turn this off and Blizzard's own plates come"
-			.. " back - the module reskins them, it does not replace them.",
+		enabled = toggle("Enabled", L.options.nameplates.enabled.desc,
 			at("enabled")),
-		scale = range("Size", "On top of the global scale. A plate is read at thirty"
-			.. " yards and the HUD at arm's length, so the size that suits one need"
-			.. " not suit the other.", at("scale"), 0.6, 1.6, 0.05,
+		scale = range("Size", L.options.nameplates.scale.desc, at("scale"), 0.6, 1.6, 0.05,
 			{ after = "reconfigure" }),
-		alwaysShow = toggle(L["Always show them"], "Off, the game only draws a"
-			.. " nameplate for your target and for whatever is fighting you -"
-			.. " everything else keeps its own floating name in the game's font."
-			.. " This is what the V key toggles.",
+		alwaysShow = toggle(L.options.nameplates.always_show.name, L.options.nameplates.always_show.desc,
 			at("alwaysShow"), { after = "reconfigure" }),
-		maxDistance = range("Range", "How far out the client bothers to make a"
-			.. " nameplate. Past this there is no plate at all and the game draws"
-			.. " its own floating name instead, so the boundary shows up as the"
-			.. " lettering changing at a fixed distance. Twenty to forty-one is"
-			.. " all the client offers.",
+		maxDistance = range("Range", L.options.nameplates.max_distance.desc,
 			at("maxDistance"), 20, 41, 1, { after = "reconfigure" }),
-		hideBlizzard = toggle(L["Hide Blizzard's plate"], "The one underneath ours."
-			.. " Off is the way back if a plate ever fails to draw.",
+		hideBlizzard = toggle(L.options.nameplates.hide_blizzard.name, L.options.nameplates.hide_blizzard.desc,
 			at("hideBlizzard"), { after = "reconfigure" }),
 
-		capsule = header(L["The capsule"]),
-		badgeSize = range(L["Level disc"], nil, at("badgeSize"), 18, 40, 1,
+		capsule = header(L.options.nameplates.capsule),
+		badgeSize = range(L.options.nameplates.badge_size.name, nil, at("badgeSize"), 18, 40, 1,
 			{ after = "reconfigure" }),
-		barWidth = range(L["Health bar width"], nil, at("barWidth"), 80, 260, 5,
+		barWidth = range(L.options.nameplates.bar_width.name, nil, at("barWidth"), 80, 260, 5,
 			{ after = "reconfigure" }),
-		barHeight = range(L["Health bar height"], nil, at("barHeight"), 2, 12, 1,
+		barHeight = range(L.options.nameplates.bar_height.name, nil, at("barHeight"), 2, 12, 1,
 			{ after = "reconfigure" }),
-		neutralBarInCombat = toggle(L["Neutral bars only in combat"],
-			"A yellow plate means 'not my problem yet'. Off shows their health"
-			.. " all the time.", at("neutralBarInCombat"), { after = "reconfigure" }),
+		neutralBarInCombat = toggle(L.options.nameplates.neutral_bar_in_combat.name,
+			L.options.nameplates.yellow_plate_means_my, at("neutralBarInCombat"), { after = "reconfigure" }),
 
 		friendly = header("Friendlies"),
-		friendlyNames = toggle(L["Draw friendlies as names"],
-			"Plain shadowed text rather than a capsule: a class-coloured level pip"
-			.. " and the name for a player, the name alone for an NPC. Off gives"
-			.. " them the same capsule everything else wears. Either way the client"
-			.. " is asked to show friendly nameplates at all, which it does not do"
-			.. " by default.",
+		friendlyNames = toggle(L.options.nameplates.friendly_names.name,
+			L.options.nameplates.plain_shadowed_text_rather,
 			at("friendlyNames"), { after = "reconfigure" }),
-		partyClassColors = toggle(L["Class-colour party names"],
-			"Off, a friendly player's name is blue - which is what 'friendly"
-			.. " player' looks like everywhere else in this UI. On, your party"
-			.. " take their class colours. Your party only: a street of nine"
-			.. " class colours says something you did not ask.",
+		partyClassColors = toggle(L.options.nameplates.party_class_colors.name,
+			L.options.nameplates.off_friendly_player_s,
 			at("partyClassColors"), { after = "reconfigure" }),
 	})
 end
@@ -1186,54 +1036,43 @@ local function TooltipsGroup()
 	local function at(k) return { "modules", "tooltips", k } end
 	return group("Tooltips", {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		scale = range("Size", "On top of the global scale.", at("scale"), 0.6, 1.6, 0.05,
+		scale = range("Size", L.common.top_global_scale, at("scale"), 0.6, 1.6, 0.05,
 			{ after = "reconfigure" }),
-		corner = range(L["Corner radius"], nil, at("corner"), 4, 24, 1, { after = "reconfigure" }),
-		restyleFonts = toggle(L["Aether typography"], "Restyles the client's tooltip"
-			.. " fonts, so every line - including lines other addons add - comes"
-			.. " out in Outfit.", at("restyleFonts"), { after = "reconfigure" }),
+		corner = range(L.options.tooltips.corner.name, nil, at("corner"), 4, 24, 1, { after = "reconfigure" }),
+		restyleFonts = toggle(L.options.tooltips.restyle_fonts.name, L.options.tooltips.restyle_fonts.desc, at("restyleFonts"), { after = "reconfigure" }),
 
 		anchoring = group("Anchoring", {
-			unitAnchor = toggle(L["Anchor unit tooltips"], "World mouseovers go to the"
-				.. " corner instead of following the mouse. Drag it in unlock mode."
-				.. " Only affects tooltips that took the default anchor.",
+			unitAnchor = toggle(L.options.tooltips.unit_anchor.name, L.options.tooltips.unit_anchor.desc,
 				at("unitAnchor")),
-			cursorItems = toggle(L["Item and spell tooltips follow the cursor"],
-				"Only where nothing else asked for a position - a bag slot or a"
-				.. " merchant row keeps the anchor it chose.", at("cursorItems")),
+			cursorItems = toggle(L.options.tooltips.cursor_items.name,
+				L.options.tooltips.only_where_nothing_else, at("cursorItems")),
 		}, { inline = true }),
 
-		content = group(L["Unit header"], {
+		content = group(L.options.tooltips.content, {
 			-- Named, not positional. An AceConfig args table is keyed by STRING;
 			-- a bare note() lands in the array part and the registry rejects the
 			-- whole tree, taking every page down with it.
-			caution = note(A.Hi(L["These four change the tooltip's text"]) .. ", not just its"
+			caution = note(A.Hi(L.options.tooltips.caution) .. ", not just its"
 				.. " colour. Everything else on this page is styling. If a tooltip"
 				.. " ever reads oddly alongside MobInfo2 or another mob addon,"
 				.. " this is the group to turn off first."),
-			levelBadge = toggle(L["Level badge"], "Moves the level out of the type line"
-				.. " and into a disc beside the name. Declines silently if the line"
-				.. " does not parse.", at("levelBadge")),
-			deferToLevelReaders = toggle(L["...unless an addon is reading that line"],
+			levelBadge = toggle(L.options.tooltips.level_badge.name, L.options.tooltips.level_badge.desc, at("levelBadge")),
+			deferToLevelReaders = toggle(L.options.tooltips.defer_to_level_readers.name,
 				"MobInfo2 finds a mob's extra info by looking for the level NUMBER in"
 				.. " the tooltip line. Move it into the badge and it finds nothing."
 				.. " Leave this on and the badge stands down while MobInfo2 is"
 				.. " running; /aether tooltips will tell you it has.",
 				at("deferToLevelReaders"), { defaultTrue = true }),
-			eliteChip = toggle(L["Elite chip"], nil, at("eliteChip")),
-			reactionWord = toggle(L["Append the reaction"], "\"Humanoid\" becomes"
-				.. " \"Humanoid - Hostile\".", at("reactionWord")),
-			healthValues = toggle(L["Health numbers"], nil, at("healthValues")),
+			eliteChip = toggle(L.options.tooltips.elite_chip.name, nil, at("eliteChip")),
+			reactionWord = toggle(L.options.tooltips.reaction_word.name, L.options.tooltips.reaction_word.desc, at("reactionWord")),
+			healthValues = toggle(L.options.tooltips.health_values.name, nil, at("healthValues")),
 		}, { inline = true }),
 
 		colour = group("Colour", {
-			qualityBorder = toggle(L["Quality rim on items"], nil, at("qualityBorder")),
-			loreGold = toggle(L["Lore gold on spell text"], "Only lines the client left"
-				.. " white - anything another addon coloured keeps its colour.",
+			qualityBorder = toggle(L.options.tooltips.quality_border.name, nil, at("qualityBorder")),
+			loreGold = toggle(L.options.tooltips.lore_gold.name, L.options.tooltips.lore_gold.desc,
 				at("loreGold")),
-			classColorNames = toggle(L["Class-colour player names"], "On by default,"
-				.. " to agree with the unit frames. Off is the deck's own"
-				.. " treatment: one blue for every friendly player.",
+			classColorNames = toggle(L.options.tooltips.class_color_names.name, L.options.tooltips.class_color_names.desc,
 				at("classColorNames"), { defaultTrue = true }),
 		}, { inline = true }),
 	})
@@ -1241,27 +1080,25 @@ end
 
 local function PartyFramesGroup()
 	local function at(k) return { "modules", "partyframes", k } end
-	return group(L["Party frames"], {
+	return group(L.options.party_frames.party_frames, {
 		enabled = toggle("Enabled",
-			"Four capsules for your party, in the same glass as your own"
-			.. " frame.", at("enabled"), { defaultTrue = true }),
-		hideBlizzard = toggle(L["Hide Blizzard's party frames"], nil,
+			L.options.party_frames.four_capsules_party_same, at("enabled"), { defaultTrue = true }),
+		hideBlizzard = toggle(L.options.party_frames.hide_blizzard.name, nil,
 			at("hideBlizzard")),
-		clickTarget = toggle(L["Click to target"],
-			"Left-click targets, right-click opens the unit menu.", at("clickTarget")),
+		clickTarget = toggle(L.common.click_target,
+			L.common.left_click_targets_right, at("clickTarget")),
 
 		sizeHeader = header("Capsule"),
 		width = range("Width", nil, at("width"), 240, 460, 1),
 		height = range("Height", nil, at("height"), 40, 80, 1),
-		gap = range(L["Gap between members"], nil, at("gap"), 0, 40, 1),
-		barWidth = range(L["Bar width"], nil, at("barWidth"), 100, 300, 1),
-		showPower = toggle(L["Show power bar"], nil, at("showPower")),
+		gap = range(L.options.party_frames.gap.name, nil, at("gap"), 0, 40, 1),
+		barWidth = range(L.common.bar_width, nil, at("barWidth"), 100, 300, 1),
+		showPower = toggle(L.common.show_power_bar, nil, at("showPower")),
 
-		placement = note(A.F("The four slots are fixed and the group moves as"
-			.. " one: unlock with %s and drag any part of the stack.",
+		placement = note(A.F(L.options.party_frames.placement,
 			A.Hi("/aether unlock"))
 			.. "\n\n"
-			.. L["A slot whose member has gone leaves a gap rather than closing up. Re-anchoring a frame you can click to target is refused by the game in combat, which is exactly when somebody drops group - so the slots stay where you put them."]),
+			.. L.options.party_frames.slot_whose_member_has),
 	})
 end
 --- Threat. Three controls and no thresholds: the 70 and the 90 are the
@@ -1270,26 +1107,16 @@ end
 local function ThreatGroup()
 	local function at(k) return { "modules", "threat", k } end
 	return group("Threat", {
-		enabled = toggle("Enabled", "The ring round your class pip, the warning"
-			.. " on the capsule when a state is about to flip, and the"
-			.. " disposition colour on a hostile nameplate.", at("enabled")),
-		display = choice("Show", "Rings only keeps the ring and drops the"
-			.. " warnings written on the capsule - quieter, and it still tells"
-			.. " you the number at a glance.", at("display"), {
+		enabled = toggle("Enabled", L.options.threat.enabled.desc, at("enabled")),
+		display = choice("Show", L.options.threat.display.desc, at("display"), {
 				full  = "Rings and warnings",
 				rings = "Rings only",
 				off   = "Nothing",
 			}),
-		alarms = toggle(L["Screen flash and ping"], "On your own state only, and"
-			.. " never more than once every six seconds. This is the one that"
-			.. " stops you learning you have aggro from the damage numbers.",
+		alarms = toggle(L.options.threat.alarms.name, L.options.threat.alarms.desc,
 			at("alarms")),
 
-		role = choice(L["Your role"], "Everything here inverts on role: holding a"
-			.. " mob is the good state for a tank and the bad one for everybody"
-			.. " else. Classic Era's assigned roles are opt-in and usually say"
-			.. " nothing at all, so Automatic reads your stance, form or aura"
-			.. " instead - and this is here for when that is wrong.",
+		role = choice(L.options.threat.role.name, L.options.threat.role.desc,
 			at("role"), {
 				auto   = "Automatic",
 				tank   = "Tank",
@@ -1320,13 +1147,11 @@ local function ChangelogGroup()
 		-- placeholder it would leave a translator holding "Numbering is %s - a
 		-- major for a" with the rest of the paragraph glued on outside, which
 		-- is the fragment this whole pass exists to stop making.
-		running = note(A.F("Running %s.",
-				A.Hi(A.F("Aether UI %s", A.version or "?")))
+		running = note(A.F(L.options.changelog.running,
+				A.Hi(A.F(L.common.aether_ui_s, A.version or "?")))
 			.. "\n\n"
-			.. A.F("Numbering is %s - a major for a release with new features"
-				.. " in it, a minor for accumulated fixes and small"
-				.. " enhancements, and a build for hotfixes between the two.",
-				A.Val(L["major.minor.build"]))),
+			.. A.F(L.options.changelog.numbering_s_major_release,
+				A.Val(L.options.changelog.major_minor_build))),
 	}
 
 	local history = A.NotesHistory and A:NotesHistory() or {}
@@ -1343,7 +1168,7 @@ local function ChangelogGroup()
 			{ inline = true })
 	end
 
-	return group(L["What's new"], args)
+	return group(L.common.what_s_new, args)
 end
 
 --- Build the whole tree. Pure: no libraries, no frames, no side effects.
@@ -1436,8 +1261,7 @@ end
 
 function Options:Open(section)
 	if not self:Register() then
-		A:Print(A.F("the options panel needs the Ace3 libraries, which are"
-			.. " missing from this install. %s still lists everything.",
+		A:Print(A.F(L.options.open.options_panel_needs_ace3,
 			A.Dim("/aether help")))
 		return false
 	end

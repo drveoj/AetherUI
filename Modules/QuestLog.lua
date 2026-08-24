@@ -665,7 +665,7 @@ local function BuildHeader(win)
 
 	head.title = W.Text(head, "qlHeading", "LEFT")
 	head.title:SetPoint("LEFT", mark, "RIGHT", HEAD_GAP - 2, 0)
-	head.title:SetText(L["Quest Log"])
+	head.title:SetText(L.questlog.build_header.quest_log)
 
 	head.count = BuildPill(head, "qlCount", { height = 22, padX = 13 })
 	head.count:SetPoint("LEFT", head.title, "RIGHT", HEAD_GAP, 0)
@@ -784,7 +784,7 @@ local function RewardCardClick(self)
 		if not link then
 			-- The client has not cached the item yet. Saying so beats a click that
 			-- silently does nothing.
-			A:Print(L["that reward is still loading - try again in a moment."])
+			A:Print(L.questlog.reward_card_click.reward_still_loading_try)
 			return
 		end
 		local insert = _G.ChatEdit_InsertLink
@@ -1011,7 +1011,7 @@ local function BuildPanes(win)
 
 	detail.empty = W.Text(body, "qlSummary", "CENTER")
 	detail.empty:SetWidth(dw)
-	detail.empty:SetText(L["No quest selected."])
+	detail.empty:SetText(L.questlog.build_panes.quest_selected)
 	detail.empty:Hide()
 
 	return list, detail
@@ -1309,7 +1309,7 @@ function QL:AskAbandon()
 
 	local index = self:ShownIndex()
 	if not index then
-		A:Print(L["that quest is no longer in your log."])
+		A:Print(L.questlog.ask_abandon.quest_longer_log)
 		return
 	end
 	if not SelectQuest(index) then return end
@@ -1336,10 +1336,10 @@ function QL:AskAbandon()
 
 	self.confirm = self.confirm or BuildConfirm()
 	local c = Palette.c
-	local body = A.F("Abandon %s?", Palette:Ink("text", name))
+	local body = A.F(L.questlog.ask_abandon.abandon_s, Palette:Ink("text", name))
 	if items then
 		body = body .. "\n\n"
-			.. A.F("You will lose: %s", Palette:Ink("dangerText", items))
+			.. A.F(L.questlog.ask_abandon.will_lose_s, Palette:Ink("dangerText", items))
 	end
 	local box = self.confirm.box
 	box.text:SetText(body)
@@ -1386,7 +1386,7 @@ function QL:ConfirmAbandon()
 	-- confident wrong one.
 	local fresh = IndexForQuest(questID, index, title)
 	if not fresh then
-		A:Print(L["that quest is no longer in your log - nothing was abandoned."])
+		A:Print(L.questlog.confirm_abandon.quest_longer_log_nothing)
 		return
 	end
 
@@ -1761,7 +1761,7 @@ function QL:RefreshDetail()
 
 	local moneyText = Money(rw.money)
 	if moneyText then
-		d.money:SetText(A.F("Reward: %s", moneyText))
+		d.money:SetText(A.F(L.questlog.refresh_detail.reward_s, moneyText))
 		W.Color(d.money, c.textDim)
 		d.money:ClearAllPoints()
 		d.money:SetPoint("TOPLEFT", d.scroll.child, "TOPLEFT", 0, -y)
@@ -1773,7 +1773,7 @@ function QL:RefreshDetail()
 
 	local reqText = Money(rw.required)
 	if reqText then
-		d.required:SetText(A.F("Required: %s", reqText))
+		d.required:SetText(A.F(L.questlog.refresh_detail.required_s, reqText))
 		-- Red when you cannot afford it, which is Blizzard's own treatment and
 		-- the one field here whose absence could actually cost the player gold.
 		local short = GetMoney and (GetMoney() or 0) < rw.required

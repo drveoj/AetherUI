@@ -368,13 +368,13 @@ end
 --  thing this addon is going to be responsible for.
 local function AbandonQuestAt(index, title)
 	if not SelectQuestLogEntry or not StaticPopup_Show then
-		A:Print(L["can't abandon from here on this client - use the quest log."])
+		A:Print(L.common.can_t_abandon_here)
 		return
 	end
 	pcall(SelectQuestLogEntry, index)
 	if SetAbandonQuest then pcall(SetAbandonQuest) end
 	if not pcall(StaticPopup_Show, "ABANDON_QUEST", title) then
-		A:Print(L["can't abandon from here on this client - use the quest log."])
+		A:Print(L.common.can_t_abandon_here)
 	end
 end
 
@@ -387,9 +387,9 @@ end
 local function Navigate(questID, title, loc)
 	local ok, detail = A.Nav:Route(questID, title, loc)
 	if ok then
-		A:Print(A.F("routing to %s.", detail or title or L["the quest"]))
+		A:Print(A.F(L.tracker.navigate.routing_s, detail or title or L.tracker.navigate.quest))
 	else
-		A:Print(detail or L["can't route to that quest."])
+		A:Print(detail or L.tracker.navigate.can_t_route_quest)
 	end
 end
 
@@ -514,7 +514,7 @@ local function Build()
 	-- in the WoW font engine, so the spaces are in the string.
 	header.title = W.Text(header, "label", "LEFT")
 	header.title:SetPoint("LEFT", header, "LEFT", 0, 0)
-	header.title:SetText(L["Q U E S T S"])
+	header.title:SetText(L.tracker.build.q_u_e_s)
 
 	header.count = W.Text(header, "tiny", "RIGHT")
 	header.count:SetPoint("RIGHT", header, "RIGHT", 0, 0)

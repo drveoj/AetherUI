@@ -86,7 +86,7 @@ end
 function A:ChatWhere()
 	local C = A:GetModule("chat")
 	local cf = _G.ChatFrame1
-	if not C or not cf then A:Print(L["no chat window to report on."]) return end
+	if not C or not cf then A:Print(L.cmd.chat_where.chat_window_report) return end
 
 	local entry = A.Movers and A.Movers.registry and A.Movers.registry.chat
 	local saved = A.db.profile.anchors and A.db.profile.anchors.chat
@@ -293,7 +293,7 @@ local function DumpRows(frame, name)
 					(w.GetHeight and w:GetHeight()) or 0,
 					shown and "shown" or A.Dim("hidden"),
 					vis and "visible" or A.Dim("unseen"),
-					ours and L["ours"] or A.Bad(A.F("NOT OURS, parent %s", up)))
+					ours and L.cmd.dump_rows.ours or A.Bad(A.F(L.cmd.dump_rows.ours_parent_s, up)))
 			end
 		end
 	end
@@ -323,8 +323,7 @@ function A:DumpPanel(name)
 	local frame, found, near = FindFrame(name)
 
 	if not frame then
-		A:Print(A.F("no frame called %s. Open the window first - half of these"
-			.. " arrive with their own addon the first time you use them.",
+		A:Print(A.F(L.cmd.dump_panel.frame_called_s_open,
 			A.Val(name)))
 		for i = 1, math.min(#(near or {}), 15) do
 			say("   " .. A.Val("%s"), near[i])
@@ -353,8 +352,8 @@ function A:DumpPanel(name)
 end
 
 local function diag()
-	A:Print(A.F("diagnostics  (%s, %s)",
-		A.Bad(L["red = shown"]), A.Good(L["green = hidden"])))
+	A:Print(A.F(L.cmd.diag.diagnostics_s_s,
+		A.Bad(L.cmd.diag.red_shown), A.Good(L.cmd.diag.green_hidden)))
 
 	for name, m in A:IterateModules() do
 		say("   %s %s%s", m.enabled and A.Good("on ") or A.Bad("off"), name,
@@ -463,7 +462,7 @@ local function diag()
 			say("      %-34s %s", n, ink(r))
 		end
 	else
-		say("   " .. A.Bad(L["no banish report - HideBlizzard never ran"]))
+		say("   " .. A.Bad(L.common.banish_report_hideblizzard_never))
 	end
 end
 
@@ -476,7 +475,7 @@ end
 local function partyDiag(say)
 	local PF = A:GetModule("partyframes")
 	if not PF then
-		say("   " .. A.Bad(L["no party module"]))
+		say("   " .. A.Bad(L.cmd.party_diag.party_module))
 		return
 	end
 
@@ -496,7 +495,7 @@ local function partyDiag(say)
 			say("      %-20s %s", n, ink(r))
 		end
 	else
-		say("   " .. A.Bad(L["no banish report - HideBlizzard never ran"]))
+		say("   " .. A.Bad(L.common.banish_report_hideblizzard_never))
 	end
 
 	-- Per member: what the client answers, and whether the mark is up. The two
@@ -548,7 +547,7 @@ A.PartyDiag = partyDiag
 local function panelsDiag(say)
 	local PN = A:GetModule("panels")
 	if not PN then
-		say("   " .. A.Bad(L["no panels module"]))
+		say("   " .. A.Bad(L.cmd.panels_diag.panels_module))
 		return
 	end
 	say("   enabled: %s", PN.enabled and A.Good("yes") or A.Bad("no"))
@@ -586,14 +585,14 @@ local handlers = {}
 handlers.diag = diag
 handlers.hide = function()
 	local AB = A:GetModule("actionbars")
-	if not AB or not AB.enabled then A:Print(L["actionbars module is not enabled."]) return end
+	if not AB or not AB.enabled then A:Print(L.common.actionbars_module_enabled) return end
 	AB:HideBlizzard()
 	diag()
 end
 
 handlers.bind = function()
 	local AB = A:GetModule("actionbars")
-	if not AB or not AB.enabled then A:Print(L["actionbars module is not enabled."]) return end
+	if not AB or not AB.enabled then A:Print(L.common.actionbars_module_enabled) return end
 	AB:ToggleBindMode()
 end
 
@@ -613,13 +612,13 @@ handlers.options = handlers.config
 --  names - so whatever else moves, this has to keep working.
 handlers.tour = function()
 	local OB = A.GetModule and A:GetModule("onboard")
-	if not OB then A:Print(L["the tour is not loaded."]) return end
+	if not OB then A:Print(L.cmd.tour.tour_loaded) return end
 	OB:Start()
 end
 
 handlers.preset = function(arg, rest)
 	local P = A.Presets
-	if not P then A:Print(L["presets are not loaded."]) return end
+	if not P then A:Print(L.cmd.preset.presets_loaded) return end
 
 	if arg == "capture" then
 		-- The key is a NAME and keeps its case, like every other tail here.
@@ -647,9 +646,9 @@ handlers.preset = function(arg, rest)
 
 	if arg and P.list[arg] then
 		if P:Apply(arg) then
-			A:Print(A.F("layout: %s", A.Hi(P.list[arg].label)))
+			A:Print(A.F(L.cmd.preset.layout_s, A.Hi(P.list[arg].label)))
 		else
-			A:Print(A.F("could not apply %s.", A.Val(arg)))
+			A:Print(A.F(L.cmd.preset.could_apply_s, A.Val(arg)))
 		end
 		return
 	end
@@ -676,27 +675,24 @@ handlers.skin = function(arg)
 	if not arg or not A.Palette.skins[arg] then
 		local names = {}
 		for _, s in ipairs(A.Palette:List()) do names[#names + 1] = s.key end
-		A:Print(A.F("skins: %s", table.concat(names, ", ")))
+		A:Print(A.F(L.cmd.skin.skins_s, table.concat(names, ", ")))
 		return
 	end
 	A.db.profile.skin = arg
 	A:Restyle()
-	A:Print(A.F("skin -> %s", A.Val(arg)))
+	A:Print(A.F(L.cmd.skin.skin_s, A.Val(arg)))
 end
 
 handlers.scale = function(arg)
 	local v = tonumber(arg)
 	if not v or v < 0.6 or v > 1.6 then
-		A:Print(A.F("scale takes 0.6 - 1.6 (currently %.2f). 1.0 is the"
-			.. " default; 0.71 is what maps the concept deck's own 1920px"
-			.. " measurements onto WoW's virtual space one-for-one, if you want"
-			.. " everything at exactly the size it was drawn.",
+		A:Print(A.F(L.cmd.scale.scale_takes_0_6,
 			A.db.profile.scale))
 		return
 	end
 	A.db.profile.scale = v
 	A:Reconfigure()
-	A:Print(A.F("scale -> %.2f", v))
+	A:Print(A.F(L.cmd.scale.scale_2f, v))
 end
 
 --- Turn the running commentary on. There was no way to reach this at all, which
@@ -707,15 +703,13 @@ handlers.debug = function(arg)
 	elseif arg == "off" then want = false
 	else want = not A.db.profile.debug end
 	A.db.profile.debug = want
-	A:Print(A.F("debug -> %s", want and L["on"] or L["off"]))
+	A:Print(A.F(L.cmd.debug.debug_s, want and L.common.on or L.common.off))
 end
 
 handlers.shadow = function(arg)
 	local v = tonumber(arg)
 	if not v or v < 0 or v > 1 then
-		A:Print(A.F("shadow takes 0 - 1 (currently %s). It is an opacity, not"
-			.. " a distance - the geometry is derived from the shape so the"
-			.. " shadow's hole matches its corner.",
+		A:Print(A.F(L.cmd.shadow.shadow_takes_0_1,
 			tostring(A.db.profile.glass.shadow)))
 		return
 	end
@@ -728,21 +722,21 @@ handlers.fade = function(arg, rest)
 	if arg == "on" or arg == "off" then
 		cfg.enabled = (arg == "on")
 		A.Fader:Refresh()
-		A:Print(A.F("idle fade -> %s", arg))
+		A:Print(A.F(L.cmd.fade.idle_fade_s, arg))
 	elseif arg == "delay" then
 		local v = tonumber(rest)
-		if not v or v < 0.5 or v > 60 then A:Print(L["delay takes 0.5 - 60 seconds"]) return end
+		if not v or v < 0.5 or v > 60 then A:Print(L.cmd.fade.delay_takes_0_5) return end
 		cfg.delay = v
-		A:Print(A.F("idle delay -> %ss", v))
+		A:Print(A.F(L.cmd.fade.idle_delay_ss, v))
 	elseif arg == "idle" then
 		local v = tonumber(rest)
-		if not v or v < 0 or v > 1 then A:Print(L["idle alpha takes 0 - 1"]) return end
+		if not v or v < 0 or v > 1 then A:Print(L.cmd.fade.idle_alpha_takes_0) return end
 		cfg.idleAlpha = v
 		A.Fader:Update()
-		A:Print(A.F("idle alpha -> %s", v))
+		A:Print(A.F(L.cmd.fade.idle_alpha_s, v))
 	else
-		A:Print(A.F("idle fade %s · delay %.1fs · idle alpha %.2f",
-			cfg.enabled and L["on"] or L["off"], cfg.delay, cfg.idleAlpha))
+		A:Print(A.F(L.cmd.fade.idle_fade_s_delay,
+			cfg.enabled and L.common.on or L.common.off, cfg.delay, cfg.idleAlpha))
 	end
 end
 
@@ -758,7 +752,7 @@ end
 handlers.ifec = function(arg)
 	local IFEC = A.IFEC
 	if not IFEC or not IFEC.Registry then
-		A:Print(L["ifec: not loaded"])
+		A:Print(L.cmd.ifec.ifec_loaded)
 		return
 	end
 
@@ -782,11 +776,11 @@ handlers.ifec = function(arg)
 	end
 	local packs = R:Sorted()
 
-	A:Print(A.F("ifec  ·  content API %s-%s",
+	A:Print(A.F(L.cmd.ifec.ifec_content_api_s,
 		tostring(R.API_MIN), tostring(R.API_MAX)))
 
 	if #packs == 0 then
-		A:Print(L["  no packs registered"])
+		A:Print(L.cmd.ifec.packs_registered)
 	end
 	for _, id in ipairs(packs) do
 		local pack = R.packs[id]
@@ -807,10 +801,10 @@ handlers.ifec = function(arg)
 
 	if P then
 		A:Print(P.item
-			and A.F("  playback: %s  ·  %s seg %s of %s",
+			and A.F(L.cmd.ifec.playback_s_s_seg,
 				A.Val(tostring(P.state)), tostring(P.item.title),
 				tostring(P.index), tostring(#(P.item.segments or {})))
-			or A.F("  playback: %s", A.Val(tostring(P.state))))
+			or A.F(L.cmd.ifec.playback_s, A.Val(tostring(P.state))))
 
 		-- THE BOUNDARY, IN SECONDS. There is no playback-finished event on this
 		-- client, so "the next segment did not start" and "the next segment
@@ -825,15 +819,15 @@ handlers.ifec = function(arg)
 		end
 
 		if P.lastFail then
-			A:Print("  " .. A.Bad(L["last file that would not play"]) .. ": " .. tostring(P.lastFail))
+			A:Print("  " .. A.Bad(L.cmd.ifec.last_file_would_play) .. ": " .. tostring(P.lastFail))
 		end
 	end
 
 	local PL = IFEC.Player
 	if PL then
-		A:Print(A.F("  queue: %d items  ·  at %s  ·  region %s",
+		A:Print(A.F(L.cmd.ifec.queue_d_items_s,
 			#(PL.queue or {}), tostring(PL.at),
-			A:GetModule("ifec"):HasRegion() and L["attached"] or L["absent"]))
+			A:GetModule("ifec"):HasRegion() and L.cmd.ifec.attached or L.cmd.ifec.absent))
 		for i, item in ipairs(PL.queue or {}) do
 			A:Print(("    %d. %s  ·  %s  ·  %ds")
 				:format(i, tostring(item.title), tostring(item.type),
@@ -844,7 +838,7 @@ end
 
 handlers.errors = function(arg)
 	if not A.Errors then
-		A:Print(L["errors: the catcher is not loaded"])
+		A:Print(L.cmd.errors.errors_catcher_loaded)
 		return
 	end
 
@@ -860,7 +854,7 @@ handlers.errors = function(arg)
 
 	if arg == "clear" then
 		for i = #A.Errors.log, 1, -1 do A.Errors.log[i] = nil end
-		A:Print(L["errors: cleared"])
+		A:Print(L.cmd.errors.errors_cleared)
 		return
 	end
 
@@ -882,8 +876,8 @@ handlers.greet = function(arg)
 		A:Greet()
 		return
 	end
-	A:Print(A.F("greeting at login -> %s",
-		A.db.profile.greet and L["on"] or L["off"]))
+	A:Print(A.F(L.cmd.greet.greeting_login_s,
+		A.db.profile.greet and L.common.on or L.common.off))
 end
 
 handlers.zen = function(arg, rest)
@@ -895,41 +889,40 @@ handlers.zen = function(arg, rest)
 	if arg == "on" or arg == "off" then
 		A:SetModuleEnabled("zen", arg == "on")
 		A.Fader:Refresh()
-		A:Print(A.F("zen mode -> %s", arg))
+		A:Print(A.F(L.cmd.zen.zen_mode_s, arg))
 	elseif arg == "delay" then
 		local v = tonumber(rest)
 		if not v or v < 5 or v > cap then
-			A:Print(A.F("zen delay takes 5 - %d seconds. The client flags you"
-				.. " away at %d, and zen follows it there regardless.",
+			A:Print(A.F(L.cmd.zen.zen_delay_takes_5,
 				cap, cap))
 			return
 		end
 		cfg.delay = v
-		A:Print(A.F("zen delay -> %ss", v))
+		A:Print(A.F(L.cmd.zen.zen_delay_ss, v))
 	elseif arg == "afk" then
 		cfg.onAFK = (key ~= "off")
-		A:Print(A.F("zen on going away -> %s",
-			cfg.onAFK and L["on"] or L["off"]))
+		A:Print(A.F(L.cmd.zen.zen_going_away_s,
+			cfg.onAFK and L.common.on or L.common.off))
 	elseif arg == "frost" then
 		cfg.frost = (key ~= "off")
-		A:Print(A.F("the frosted pane -> %s %s",
-			cfg.frost and L["on"] or L["off"],
-			A.Hi(L["(a pane in front of the world, not a blur of it - nothing can blur the world)"])))
+		A:Print(A.F(L.cmd.zen.frosted_pane_s_s,
+			cfg.frost and L.common.on or L.common.off,
+			A.Hi(L.cmd.zen.pane_front_world_blur)))
 	elseif arg == "plates" then
 		cfg.hideNameplates = (key ~= "off")
 		local Z = A:GetModule("zen")
 		-- Turning it off mid-zen has to hand them straight back; the module only
 		-- re-reads this on its next tick, and the next tick may be a fade away.
 		if not cfg.hideNameplates and Z and Z.RestoreWorldText then Z:RestoreWorldText() end
-		A:Print(A.F("nameplates %s go with zen -> %s %s",
-			A.Hi(L["and names"]),
-			cfg.hideNameplates and L["on"] or L["off"],
-			A.Hi(L["(two separate CVar families; one switch drives both)"])))
+		A:Print(A.F(L.cmd.zen.nameplates_s_go_zen,
+			A.Hi(L.cmd.zen.names),
+			cfg.hideNameplates and L.common.on or L.common.off,
+			A.Hi(L.cmd.zen.two_separate_cvar_families)))
 	elseif arg == "sit" then
 		cfg.sit = (key ~= "off")
 		local Z = A:GetModule("zen")
 		if not cfg.sit and Z and Z.StandUp then Z:StandUp() end
-		A:Print(A.F("sit down in zen -> %s", cfg.sit and L["on"] or L["off"]))
+		A:Print(A.F(L.cmd.zen.sit_down_zen_s, cfg.sit and L.common.on or L.common.off))
 	elseif arg == "camera" then
 		cfg.camera = (key ~= "off")
 		local Z = A:GetModule("zen")
@@ -937,8 +930,8 @@ handlers.zen = function(arg, rest)
 		-- zoomed in because they flipped a switch would be a setting that does
 		-- the opposite of what it says.
 		if not cfg.camera and Z and Z.RestoreCamera then Z:RestoreCamera() end
-		A:Print(A.F("move the camera in zen -> %s",
-			cfg.camera and L["on"] or L["off"]))
+		A:Print(A.F(L.cmd.zen.move_camera_zen_s,
+			cfg.camera and L.common.on or L.common.off))
 	elseif arg == "zoom" then
 		-- Live, because it cannot be reasoned about from a number: the only way
 		-- to find a distance anybody likes is to try one, watch it, and try
@@ -955,14 +948,14 @@ handlers.zen = function(arg, rest)
 
 		local v = tonumber(rest)
 		if not v then
-			A:Print(A.F("zen %s -> %s  ·  %s",
+			A:Print(A.F(L.common.zen_s_s_s,
 				arg, A.Val(tostring(cfg[k.key])), k.what))
 			local example = "zen " .. arg .. " " .. k.lo .. "-" .. k.hi
-			A:Print(A.F("%s to change it", A.Hi(example)))
+			A:Print(A.F(L.cmd.zen.s_change, A.Hi(example)))
 			return
 		end
 		cfg[k.key] = math.max(k.lo, math.min(k.hi, v))
-		A:Print(A.F("zen %s -> %s  ·  %s", arg, A.Val(cfg[k.key]), k.what))
+		A:Print(A.F(L.common.zen_s_s_s, arg, A.Val(cfg[k.key]), k.what))
 
 		-- Re-stage it on the spot if the shot is up, so the new value is visible
 		-- now rather than at the next zen. Restore first: the camera is set ONCE
@@ -978,7 +971,7 @@ handlers.zen = function(arg, rest)
 		cfg.audio = (key ~= "off")
 		local Z = A:GetModule("zen")
 		if not cfg.audio and Z and Z.RestoreAudio then Z:RestoreAudio() end
-		A:Print(A.F("zen audio -> %s", cfg.audio and L["on"] or L["off"]))
+		A:Print(A.F(L.cmd.zen.zen_audio_s, cfg.audio and L.common.on or L.common.off))
 	elseif arg == "track" then
 		local Z = A:GetModule("zen")
 		local names = { "random" }
@@ -987,28 +980,27 @@ handlers.zen = function(arg, rest)
 		local found = false
 		for _, k in ipairs(names) do if k == want then found = true break end end
 		if not found then
-			A:Print(A.F("zen track takes one of: %s",
+			A:Print(A.F(L.cmd.zen.zen_track_takes_one,
 				A.Val(table.concat(names, ", "))))
 			return
 		end
 		cfg.track = want
-		A:Print(A.F("zen track -> %s", want))
+		A:Print(A.F(L.cmd.zen.zen_track_s, want))
 	elseif arg == "preview" then
 		local Z = A:GetModule("zen")
-		if not Z or not Z.PreviewTrack then A:Print(L["zen module is not enabled."]) return end
+		if not Z or not Z.PreviewTrack then A:Print(L.common.zen_module_enabled) return end
 		local name = Z:PreviewTrack(rest and rest:lower() or cfg.track)
 		A:Print(name and ("playing " .. A.Val(name) .. " · run it again to stop")
 			or "stopped.")
 	elseif arg == "test" then
 		local Z = A:GetModule("zen")
-		if not Z or not Z.enabled then A:Print(L["zen module is not enabled."]) return end
+		if not Z or not Z.enabled then A:Print(L.common.zen_module_enabled) return end
 		if not A.db.profile.fader.enabled then
-			A:Print(A.F("idle fade is off, so there is no stage two to preview."
-				.. " %s first.", A.Hi("/aether fade on")))
+			A:Print(A.F(L.cmd.zen.idle_fade_off_so, A.Hi("/aether fade on")))
 			return
 		end
 		A.Fader:ForceZen()
-		A:Print(L["zen preview · move the mouse or press a key"])
+		A:Print(L.cmd.zen.zen_preview_move_mouse)
 	else
 		A:Print(string.format("zen %s · after %ds of quiet%s · state " .. A.Val("%s"),
 			(A:GetModule("zen") or {}).enabled and "on" or "off",
@@ -1019,10 +1011,10 @@ end
 
 handlers.auras = function(arg)
 	local Au = A:GetModule("auras")
-	if not Au or not Au.enabled then A:Print(L["auras module is not enabled."]) return end
+	if not Au or not Au.enabled then A:Print(L.cmd.auras.auras_module_enabled) return end
 	if arg == "refresh" then
 		Au:UpdateAll()
-		A:Print(L["all four trays re-read."])
+		A:Print(L.cmd.auras.all_four_trays_re)
 		return
 	end
 	Au:Diagnose()
@@ -1032,7 +1024,7 @@ handlers.bags = function(arg, rest)
 	-- Keywords, so folded here; see the dispatcher.
 	local key = rest and rest:lower() or nil
 	local B = A:GetModule("bags")
-	if not B or not B.enabled then A:Print(L["bags module is not enabled."]) return end
+	if not B or not B.enabled then A:Print(L.cmd.bags.bags_module_enabled) return end
 
 	if arg == "open" then
 		B:Toggle()
@@ -1040,11 +1032,11 @@ handlers.bags = function(arg, rest)
 	elseif arg == "sort" then
 		local f = B.frames and B.frames.bags
 		if f then B:StartSort(f) end
-		A:Print(L["compacting stacks."])
+		A:Print(L.cmd.bags.compacting_stacks)
 		return
 	elseif arg == "sell" then
 		local list, value = B:JunkList()
-		if #list == 0 then A:Print(L["no junk to sell."]) return end
+		if #list == 0 then A:Print(L.cmd.bags.junk_sell) return end
 		if not _G.MerchantFrame or not _G.MerchantFrame:IsShown() then
 			A:Print((A.Val("%d") .. " junk item%s worth " .. A.Val("%s") .. " - open a merchant first.")
 				:format(#list, #list == 1 and "" or "s",
@@ -1063,9 +1055,8 @@ handlers.bags = function(arg, rest)
 		elseif key == "off" then cfg.junkAutoSell = false
 		else cfg.junkAutoSell = not cfg.junkAutoSell end
 		A:Print(cfg.junkAutoSell
-			and A.F("junk auto-sell %s - poor-quality items go the moment a"
-				.. " merchant opens.", A.Good(L["on"]))
-			or A.F("junk auto-sell %s.", A.Dim(L["off"])))
+			and A.F(L.cmd.bags.junk_auto_sell_s, A.Good(L.common.on))
+			or A.F(L.cmd.bags.junk_auto_sell_s2, A.Dim(L.common.off)))
 		B:Invalidate()
 		return
 	end
@@ -1075,7 +1066,7 @@ end
 
 handlers.chat = function(arg, rest)
 	local C = A:GetModule("chat")
-	if not C or not C.enabled then A:Print(L["chat module is not enabled."]) return end
+	if not C or not C.enabled then A:Print(L.cmd.chat.chat_module_enabled) return end
 
 	-- Two parameters, like every other multi-word handler here. The dispatcher
 	-- splits into cmd/arg/rest and re-splitting `arg` gets a single word with an
@@ -1083,7 +1074,7 @@ handlers.chat = function(arg, rest)
 	local what, value = arg or "", rest or ""
 	local cfg = A.Config:Module("chat")
 
-	if what == "reskin" then C:Reskin(); A:Print(L["chat re-skinned."]) return end
+	if what == "reskin" then C:Reskin(); A:Print(L.cmd.chat.chat_re_skinned) return end
 
 	if what == "where" then A:ChatWhere() return end
 
@@ -1091,8 +1082,8 @@ handlers.chat = function(arg, rest)
 	--  rest live in the options panel, where a setting with a paragraph of
 	--  explanation belongs.
 	local switches = {
-		lines  = { key = "styleLines", label = L["message line styling"] },
-		badges = { key = "badges",     label = L["channel badges"] },
+		lines  = { key = "styleLines", label = L.cmd.chat.lines },
+		badges = { key = "badges",     label = L.cmd.chat.badges },
 	}
 	local sw = switches[what]
 	if sw then
@@ -1108,10 +1099,8 @@ handlers.chat = function(arg, rest)
 
 	if what == "whispers" then
 		if value ~= "on" and value ~= "off" then
-			A:Print(A.F("whispers tab is %s. It opens a real chat window and"
-				.. " moves the whisper message groups onto it - which Blizzard"
-				.. " saves, and keeps saved with this addon off.",
-				A.Val(cfg.whisperTab == true and L["on"] or L["off"])))
+			A:Print(A.F(L.cmd.chat.whispers_tab_s_opens,
+				A.Val(cfg.whisperTab == true and L.common.on or L.common.off)))
 			return
 		end
 		if C:SetWhisperTab(value == "on") then
@@ -1128,17 +1117,15 @@ handlers.health = function(arg, rest)
 		-- `class` and `deck` stay English: they are the words the command
 		-- itself takes, so translating them would name a setting nobody can
 		-- type.
-		A:Print(A.F("health bar colour is %s. 'class' colours players by"
-			.. " class; 'deck' uses the concept's green and reserves colour"
-			.. " for reaction.",
+		A:Print(A.F(L.cmd.health.health_bar_colour_s,
 			A.Val(A.db.profile.classColorHealth and "class" or "deck")))
-		A:Print(A.F("%s and %s tune the two ends of a class-coloured bar.",
+		A:Print(A.F(L.cmd.health.s_s_tune_two,
 			A.Dim("/aether health lift N"), A.Dim("depth N")))
 		return
 	end
 	A.db.profile.classColorHealth = (arg == "class")
 	A:Restyle()
-	A:Print(A.F("health bar colour -> %s", A.Val(arg)))
+	A:Print(A.F(L.cmd.health.health_bar_colour_s2, A.Val(arg)))
 end
 
 --- Bars are independent, so the command surface is `/aether bar <id> <what> <n>`
@@ -1153,7 +1140,7 @@ local BAR_PROPS = {
 local function BarList()
 	local AB = A:GetModule("actionbars")
 	local cfg = A.Config:Module("actionbars")
-	A:Print(L["bars:"])
+	A:Print(L.cmd.bar_list.bars)
 	for _, b in ipairs(cfg.bars) do
 		local live
 		for _, built in ipairs(AB and AB.bars or {}) do
@@ -1199,7 +1186,7 @@ handlers.bar = function(arg, rest)
 	-- per-bar ---------------------------------------------------------------
 	local barCfg = AB and AB.BarConfig and AB:BarConfig(arg)
 	if not barCfg then
-		A:Print(A.F("no bar %s.", A.Val(tostring(arg))))
+		A:Print(A.F(L.cmd.bar.bar_s, A.Val(tostring(arg))))
 		BarList()
 		return
 	end
@@ -1214,7 +1201,7 @@ handlers.bar = function(arg, rest)
 	end
 
 	if what == "on" or what == "off" then
-		if not AB or not AB.enabled then A:Print(L["actionbars module is not enabled."]) return end
+		if not AB or not AB.enabled then A:Print(L.common.actionbars_module_enabled) return end
 		AB:SetBarEnabled(barCfg.id, what == "on")
 		A:Print(("bar %s -> %s"):format(tostring(barCfg.id), what))
 		return
@@ -1268,19 +1255,19 @@ end
 handlers.toolbox = function(arg, rest)
 	local TB = A:GetModule("toolbox")
 	if not TB or not TB.enabled then
-		A:Print(L["toolbox module is not enabled."])
+		A:Print(L.cmd.toolbox.toolbox_module_enabled)
 		return
 	end
 	local cfg = A.Config:Module("toolbox")
 
 	if arg == "dock" then
 		if not TB:SetDock(rest or "") then
-			A:Print(A.F("dock takes %s, %s, %s or %s.",
+			A:Print(A.F(L.cmd.toolbox.dock_takes_s_s,
 				A.Val("left"), A.Val("right"),
 				A.Val("top"), A.Val("bottom")))
 			return
 		end
-		A:Print(A.F("toolbox docked -> %s", A.Val(TB:Dock():lower())))
+		A:Print(A.F(L.common.toolbox_docked_s, A.Val(TB:Dock():lower())))
 		return
 	elseif arg == "open" then
 		TB:SetOpen(true)
@@ -1294,8 +1281,8 @@ handlers.toolbox = function(arg, rest)
 	elseif arg == "pin" then
 		if not rest or rest == "" then
 			local p = TB:Pinned()
-			A:Print(A.F("pinned: %s",
-				#p > 0 and table.concat(p, ", ") or A.Dim(L["nothing"])))
+			A:Print(A.F(L.cmd.toolbox.pinned_s,
+				#p > 0 and table.concat(p, ", ") or A.Dim(L.cmd.toolbox.nothing)))
 			return
 		end
 		-- MATCHED WITHOUT REGARD TO CASE, because nobody types an addon's LDB
@@ -1310,19 +1297,18 @@ handlers.toolbox = function(arg, rest)
 			end
 		end
 		if not key or not TB:TogglePin(key) then
-			A:Print(A.F("nothing called %s offers a launcher. %s lists what"
-				.. " does.", A.Val(rest), A.Hi("/aether toolbox")))
+			A:Print(A.F(L.cmd.toolbox.nothing_called_s_offers, A.Val(rest), A.Hi("/aether toolbox")))
 			return
 		end
-		A:Print(A.F("pin %s -> %s", key,
-			TB:IsPinned(key) and L["on"] or L["off"]))
+		A:Print(A.F(L.cmd.toolbox.pin_s_s, key,
+			TB:IsPinned(key) and L.common.on or L.common.off))
 		return
 	end
 
 	-- the diagnostic
-	A:Print(A.F("toolbox  ·  docked %s  ·  %s  ·  scrim %.2f",
+	A:Print(A.F(L.cmd.toolbox.toolbox_docked_s_s,
 		A.Val(TB:Dock():lower()),
-		TB:IsOpen() and L["open"] or L["shut"],
+		TB:IsOpen() and L.common.open or L.cmd.toolbox.shut,
 		tonumber(cfg.scrim) or 0.28))
 
 	local w, h = TB:PanelSize(TB:Dock())
@@ -1335,7 +1321,7 @@ handlers.toolbox = function(arg, rest)
 	-- what the GRID is showing rather than what the module happens to compute.
 	local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
 	local list = TB:WidgetList()
-	say("   widgets: %d shown%s", #list, ldb and "" or " " .. A.Bad(L["(no LibDataBroker!)"]))
+	say("   widgets: %d shown%s", #list, ldb and "" or " " .. A.Bad(L.cmd.toolbox.libdatabroker))
 	for _, name in ipairs(list) do
 		local obj = ldb and ldb:GetDataObjectByName(name)
 		local big, small = TB:CardText(name, obj)
@@ -1344,21 +1330,26 @@ handlers.toolbox = function(arg, rest)
 
 	-- launchers: the whole point is that neither mechanism contains the other,
 	-- so the counts are worth seeing separately.
-	local L = A.Launchers
-	if L then
+	-- `LA`, NOT `L`. In this file `L` is the phrase table, and it is the phrase
+	-- table in every file that has one - so a second thing called L, however
+	-- local, is a trap: the next phrase written inside one of these functions
+	-- would silently read a launcher record instead. Core/Launchers.lua keeps
+	-- its own `L` because it has no phrases in it.
+	local LA = A.Launchers
+	if LA then
 		local ldbN, iconN, mapN = 0, 0, 0
-		for e in L:Iterate() do
+		for e in LA:Iterate() do
 			if e.source == "ldb" then ldbN = ldbN + 1
 			elseif e.source == "dbicon" then iconN = iconN + 1
 			else mapN = mapN + 1 end
 		end
 		say("   launchers: %d total  ·  %d from LDB  ·  %d LibDBIcon  ·  %d hand-rolled",
-			L:Count(), ldbN, iconN, mapN)
-		if L.scanError then
-			say("      " .. A.Bad(L["minimap scan failed: %s"]), tostring(L.scanError))
+			LA:Count(), ldbN, iconN, mapN)
+		if LA.scanError then
+			say("      " .. A.Bad(L.cmd.toolbox.minimap_scan_failed_s), tostring(LA.scanError))
 		end
-		for e in L:Iterate() do
-			local owner = L:OwnerOf(e)
+		for e in LA:Iterate() do
+			local owner = LA:OwnerOf(e)
 			say("      %-26s %-8s %s%s", tostring(e.key), tostring(e.source),
 				owner == TB and A.Good("rail")
 					or owner and A.Dim("drawer") or A.Dim("unclaimed"),
@@ -1397,7 +1388,7 @@ end
 --  far has come back as a photograph of a screen.
 local function MeasurePanels(arg)
 	local PN = A:GetModule("panels")
-	if not PN then A:Print(L["panels module not loaded"]) return end
+	if not PN then A:Print(L.cmd.measure_panels.panels_module_loaded) return end
 
 	-- Printed through a local rather than A:Print so the whole readout can be
 	-- captured; falls back to the chat frame if the catcher is not loaded.
@@ -1418,7 +1409,7 @@ local function MeasurePanels(arg)
 		table.sort(names)
 	end
 	if #names == 0 then
-		A:Print(L["no dressed panel is open - open one, or name it"])
+		A:Print(L.cmd.measure_panels.dressed_panel_open_open)
 		return
 	end
 
@@ -1600,34 +1591,31 @@ handlers.panels = function(arg, rest)
 	end
 
 	local P = A:GetModule("panels")
-	A:Print(A.F("panels is %s.  %s reads a window's parts into a box you can"
-		.. " copy out of, %s reports what its header and body actually came"
-		.. " out as, %s says why one is still wearing its own art.",
-		A.Val((P and P.enabled) and L["on"] or L["off"]),
-		A.Hi(L["dump <FrameName>"]), A.Hi("measure"), A.Hi("diag")))
+	A:Print(A.F(L.cmd.panels.panels_s_s_reads,
+		A.Val((P and P.enabled) and L.common.on or L.common.off),
+		A.Hi(L.cmd.panels.dump_framename), A.Hi("measure"), A.Hi("diag")))
 end
 
 handlers.tooltips = function(arg)
 	local T = A:GetModule("tooltips")
-	if not T or not T.enabled then A:Print(L["tooltips module is not enabled."]) return end
+	if not T or not T.enabled then A:Print(L.cmd.tooltips.tooltips_module_enabled) return end
 	local cfg = A.Config:Module("tooltips")
 
 	if arg == "cursor" then
 		cfg.cursorItems = not cfg.cursorItems
 		A:Print(cfg.cursorItems
-			and A.F("item and spell tooltips %s.",
-				A.Good(L["follow the cursor"]))
-			or A.F("item and spell tooltips %s.",
-				A.Dim(L["stay where whatever opened them put them"])))
+			and A.F(L.common.item_spell_tooltips_s,
+				A.Good(L.cmd.tooltips.follow_cursor))
+			or A.F(L.common.item_spell_tooltips_s,
+				A.Dim(L.cmd.tooltips.stay_where_whatever_opened)))
 	elseif arg == "anchor" then
 		cfg.unitAnchor = not cfg.unitAnchor
 		A:Print(cfg.unitAnchor
-			and L["unit tooltips anchored to their corner - /aether unlock to move it."]
-			or L["unit tooltips back on Blizzard's default anchor."])
+			and L.cmd.tooltips.unit_tooltips_anchored_their
+			or L.cmd.tooltips.unit_tooltips_back_blizzard)
 	elseif arg == "badge" then
 		cfg.levelBadge = not cfg.levelBadge
-		A:Print(A.F("level badge %s - this is the one setting that rewrites"
-			.. " tooltip text.", cfg.levelBadge and L["on"] or L["off"]))
+		A:Print(A.F(L.cmd.tooltips.level_badge_s_one, cfg.levelBadge and L.common.on or L.common.off))
 	elseif arg == "sweep" then
 		local n = T:Sweep()
 		A:Print(("swept: " .. A.Val("%d") .. " new tooltip frame%s adopted.")
@@ -1640,18 +1628,18 @@ end
 
 handlers.quests = function(arg)
 	local QT = A:GetModule("questtracker")
-	if not QT or not QT.enabled then A:Print(L["questtracker module is not enabled."]) return end
+	if not QT or not QT.enabled then A:Print(L.cmd.quests.questtracker_module_enabled) return end
 	local cfg = A.Config:Module("questtracker")
 
 	if arg == "fold" then
 		QT:ToggleCollapsed()
-		A:Print(QT.collapsed and L["quest tracker folded."]
-			or L["quest tracker unfolded."])
+		A:Print(QT.collapsed and L.cmd.quests.quest_tracker_folded
+			or L.cmd.quests.quest_tracker_unfolded)
 	elseif arg == "objectives" then
 		cfg.showObjectives = not cfg.showObjectives
 		QT:Refresh()
-		A:Print(A.F("objective lines %s.",
-			cfg.showObjectives and L["on"] or L["off"]))
+		A:Print(A.F(L.cmd.quests.objective_lines_s,
+			cfg.showObjectives and L.common.on or L.common.off))
 	elseif arg == "auto" then
 		cfg.autoTrack = not (cfg.autoTrack ~= false)
 		QT:Refresh()
@@ -1664,7 +1652,7 @@ handlers.quests = function(arg)
 			A.db.char.untracked = {}
 		end
 		QT:Refresh()
-		A:Print(L["tracking reset."])
+		A:Print(L.cmd.quests.tracking_reset)
 	else
 		local n = QT.quests and #QT.quests or 0
 		A:Print(string.format(
@@ -1684,18 +1672,18 @@ handlers.party = function(arg)
 	if arg == "reset" then
 		if not PF then return end
 		PF:ResetStack()
-		A:Print(L["party frames back on the dock. Drag them again to place them where you want."])
+		A:Print(L.cmd.party.party_frames_back_dock)
 		return
 	end
 
 	if arg ~= "diag" then
 		if not PF or not PF.enabled then
-			A:Print(L["party frames are switched off."])
+			A:Print(L.cmd.party.party_frames_switched_off)
 			return
 		end
 		local open = PF:TogglePanel()
-		A:Print(A.F("party controls %s  ·  %s for the report",
-			open and A.Good(L["open"]) or A.Dim(L["closed"]),
+		A:Print(A.F(L.cmd.party.party_controls_s_s,
+			open and A.Good(L.common.open) or A.Dim(L.cmd.party.closed),
 			A.Hi("/aether party diag")))
 		return
 	end
@@ -1964,7 +1952,7 @@ handlers.module = function(arg, rest)
 	if not arg or not A.modules[arg] then
 		local names = {}
 		for name in A:IterateModules() do names[#names + 1] = name end
-		A:Print(A.F("modules: %s", table.concat(names, ", ")))
+		A:Print(A.F(L.cmd.module.modules_s, table.concat(names, ", ")))
 		return
 	end
 	if key ~= "on" and key ~= "off" then
@@ -1972,7 +1960,7 @@ handlers.module = function(arg, rest)
 		return
 	end
 	A:SetModuleEnabled(arg, key == "on")
-	A:Print(A.F("module %s -> %s", arg, rest))
+	A:Print(A.F(L.cmd.module.module_s_s, arg, rest))
 end
 
 SLASH_AETHERUI1 = "/aether"
@@ -2002,7 +1990,7 @@ SlashCmdList["AETHERUI"] = function(msg)
 		-- Handlers that compare the tail to a keyword lower it themselves.
 		fn(arg ~= "" and arg:lower() or nil, rest ~= "" and rest or nil)
 	else
-		A:Print(A.F("unknown command '%s'", cmd))
+		A:Print(A.F(L.cmd.module.unknown_command_s, cmd))
 		usage()
 	end
 end

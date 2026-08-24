@@ -368,9 +368,9 @@ local function EnableModule(name, module)
 		if not ok then
 			module.enabled = false
 			module.lastError = tostring(err)
-			A:Print(A.Bad(A.F("module '%s' failed to enable:", name))
+			A:Print(A.Bad(A.F(L.core.enable_module.module_s_failed_enable, name))
 				.. " " .. tostring(err))
-			A:Print(A.Bad("run") .. " /aether diag " .. A.Bad(L["for the full picture."]))
+			A:Print(A.Bad("run") .. " /aether diag " .. A.Bad(L.core.enable_module.full_picture))
 		end
 	end
 end
@@ -443,7 +443,7 @@ local function FireSkinChanged()
 		local ok, err = pcall(skinListeners[i])
 		if not ok then
 			A.lastFailure = tostring(err)
-			A:Print(A.Bad(L["a skin listener failed:"]) .. " " .. tostring(err))
+			A:Print(A.Bad(L.core.fire_skin_changed.skin_listener_failed) .. " " .. tostring(err))
 		end
 	end
 end
@@ -538,7 +538,7 @@ local function Boot()
 		if m.OnInitialize then
 			local ok, err = pcall(m.OnInitialize, m)
 			if not ok then
-				A:Print(A.Bad(A.F("init '%s':", name)) .. " " .. tostring(err))
+				A:Print(A.Bad(A.F(L.core.boot.init_s, name)) .. " " .. tostring(err))
 			end
 		end
 	end
