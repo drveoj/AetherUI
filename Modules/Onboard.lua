@@ -43,6 +43,24 @@ local RING_PAD       = 6       -- how far the accent ring stands off the element
 local DOT            = 5
 local OFFER_H        = 28      -- the alt offer's own row
 local TOAST_H        = 34      -- the resume toast
+
+-- THE SKIP LINE'S OWN STRIP, ACROSS THE TOP.
+--
+-- The deck pins it to the bottom of the screen, and the deck's callouts are
+-- always beside something. Ours is clamped back onto the screen when its
+-- element is near an edge, so a stop pointing at anything low put the callout's
+-- footer straight through this line - Back, the dots and "Skip tour" all in the
+-- same twenty pixels. Reported from the game against 0.34.1.
+--
+-- MOVED TO THE TOP, which is where Joe asked for it and is also the emptier
+-- half of a dimmed screen: the HUD everything points at lives below the middle.
+--
+-- AND THE CALLOUT MAY NOT ENTER IT. Moving the line without this only moves the
+-- collision, because the callout clamps to the top edge just as readily as to
+-- the bottom. The band is the line's own row plus a gap, and the vertical clamp
+-- below subtracts it.
+local SKIP_TOP       = 44      -- from the top of the screen to the line's top
+local SKIP_H         = 24
 -- Long enough for the movers to have put every frame back. The tour places
 -- its callout against real frames, and a frame that has not been restored
 -- yet is a frame in the wrong place.
@@ -664,8 +682,11 @@ local function PlaceCallout(c, frame)
 	-- touching the edge of the monitor reads as one that has been cut off.
 	local m = 16
 	local wantX = x
+	-- The skip line owns the top of the screen, and this is what keeps the two
+	-- apart by construction rather than by hoping they never meet.
+	local ceiling = sh - ch / 2 - m - (SKIP_TOP + SKIP_H)
 	x = math.max(cw / 2 + m, math.min(sw - cw / 2 - m, x))
-	y = math.max(ch / 2 + m, math.min(sh - ch / 2 - m, y))
+	y = math.max(ch / 2 + m, math.min(ceiling, y))
 
 	c:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
 
@@ -689,11 +710,19 @@ local function PlaceCallout(c, frame)
 	local slid = math.abs(x - wantX) > cw / 2
 	if slid then return end
 
-	local edge = onRight and "LEFT" or "RIGHT"
+	-- AND THE SAME RULE VERTICALLY, which was missing until the skip line moved.
+	--
+	-- The arrow can only travel as far as its own edge, so an element pushed
+	-- further above the callout than half the callout's height leaves it parked
+	-- at the top corner pointing at nothing in particular. That is the failure
+	-- the horizontal guard above exists to prevent, arrived at down the other
+	-- axis - and it only started happening because the ceiling now pushes
+	-- callouts further down the screen than the screen edge alone did.
 	local dy = fy - y
 	local limit = ch / 2 - ARROW
-	if dy > limit then dy = limit elseif dy < -limit then dy = -limit end
+	if math.abs(dy) > limit then return end
 
+	local edge = onRight and "LEFT" or "RIGHT"
 	c.arrow:ClearAllPoints()
 	c.arrow:SetPoint("CENTER", c, edge, 0, dy)
 	c.__aetherAt.edge, c.__aetherAt.dy = edge, dy
@@ -723,16 +752,17 @@ end
 -- the skip line
 -- ---------------------------------------------------------------------------
 
---- "Skip tour — keep defaults", pinned to the bottom of the screen at every
+--- "Skip tour — keep defaults", pinned across the top of the screen at every
 --  stop. Its own frame rather than part of the callout, because the callout
---  moves with the element and this must not.
+--  moves with the element and this must not - which is also why the callout is
+--  clamped out of its strip: two frames that move independently will meet.
 local function BuildSkip()
 	if OB.skip then return OB.skip end
 
 	local b = CreateFrame("Button", nil, BuildScrim())
 	b:SetFrameStrata("FULLSCREEN_DIALOG")
-	b:SetSize(220, 24)
-	b:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 42)
+	b:SetSize(220, SKIP_H)
+	b:SetPoint("TOP", UIParent, "TOP", 0, -SKIP_TOP)
 
 	b.label = W.Text(b, "tbLabel", "CENTER")
 	b.label:SetPoint("CENTER")

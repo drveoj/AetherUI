@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.34.2",
+		date    = "2026-08-24",
+		lines   = {
+			"The tour's 'Skip tour - keep defaults' line has moved to the top of the screen, and the callout is kept out of its way - it was being drawn straight through the Back button and the progress dots.",
+		},
+	},
+	{
 		version = "0.34.1",
 		date    = "2026-08-24",
 		lines   = {

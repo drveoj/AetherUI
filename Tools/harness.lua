@@ -38585,18 +38585,75 @@ do
 		-- AND THE ARROW FOLLOWS THE ELEMENT rather than the callout's middle.
 		-- Once the callout has been pushed back onto the screen the two are no
 		-- longer level, and an arrow left in the centre points at nothing.
+		--
+		-- A SMALL PUSH, so the offset is one the arrow can actually travel.
+		probe:SetGeom({ cx = 300, cy = 950 })
+		OB:Go(1)
+		do
+			local at = OB.callout.__aetherAt
+			check(at.y < 950,
+				"an element near the top pushes the callout down to fit (" ..
+				string.format("%.0f from %.0f", at.y, 950) .. ")")
+			check(OB.callout.arrow:IsShown() and at.dy
+				and math.abs((at.y + at.dy) - 950) < 6,
+				"and the arrow is offset back up to stay level with it (" ..
+				string.format("%.0f + %.0f", at.y, at.dy or 0) .. ")")
+		end
+
+		-- AND PAST THE ARROW'S OWN REACH, THERE IS NO ARROW.
+		--
+		-- It can only travel as far as its own edge, so an element further above
+		-- the callout than half the callout's height leaves it parked in the top
+		-- corner pointing at nothing in particular. That is the same failure the
+		-- sideways guard exists to prevent, arrived at down the other axis - and
+		-- it only started happening when the skip line moved to the top and the
+		-- callout got a ceiling to stay under.
 		probe:SetGeom({ cx = 300, cy = 1040 })
 		OB:Go(1)
 		do
 			local at = OB.callout.__aetherAt
-			check(at.y < 1040,
-				"an element at the very top pushes the callout down to fit (" ..
-				string.format("%.0f from %.0f", at.y, 1040) .. ")")
-			check(OB.callout.arrow:IsShown() and at.dy
-				and math.abs((at.y + at.dy) - 1040) < 6,
-				"and the arrow is offset back up to stay level with it (" ..
-				string.format("%.0f + %.0f", at.y, at.dy or 0) .. ")")
+			check(1040 - at.y > at.h / 2,
+				"an element at the very top ends up further away than the arrow can "
+				.. "reach (" .. string.format("%.0f past %.0f", 1040 - at.y, at.h / 2)
+				.. ")")
+			check(not OB.callout.arrow:IsShown(),
+				"and then there is no arrow at all, rather than one on the edge "
+				.. "pointing at empty screen")
 		end
+
+		-- AND THE SKIP LINE IS NEVER UNDER THE CALLOUT.
+		--
+		-- Reported from the game: Back, the progress dots and the skip line all
+		-- in the same twenty pixels. The line is pinned and the
+		-- callout moves, so the two were always going to meet somewhere - they
+		-- are kept apart by the ceiling in PlaceCallout rather than by luck.
+		do
+			local skip = OB.skip
+			local point, _, relPoint, _, sTop = skip:GetPoint(1)
+			-- ACROSS THE TOP, which is where Joe asked for it and is also the
+			-- emptier half of a dimmed screen: everything the tour points at
+			-- lives below the middle. Asserted rather than merely measured
+			-- against, because the overlap checks below read the line's own
+			-- anchor - move it back to the bottom and the yardstick moves with
+			-- it, and every one of them passes.
+			check(point == "TOP" and relPoint == "TOP" and (sTop or 0) < 0,
+				"the skip line hangs from the top of the screen (" ..
+				tostring(point) .. " " .. tostring(sTop) .. ")")
+			for _, spot in ipairs({ { 300, 1040 }, { 1500, 1040 }, { 960, 1070 },
+				{ 300, 20 }, { 960, 540 } }) do
+				probe:SetGeom({ cx = spot[1], cy = spot[2] })
+				OB:Go(1)
+				local at = OB.callout.__aetherAt
+				-- The line hangs from the top by a negative offset; its underside is
+				-- that far down from the top of the screen.
+				local floor = at.sh + sTop - skip:GetHeight()
+				check(at.y + at.h / 2 <= floor,
+					"a stop at " .. spot[1] .. "," .. spot[2] ..
+					" keeps the callout clear of the skip line (top " ..
+					string.format("%.0f under %.0f", at.y + at.h / 2, floor) .. ")")
+			end
+		end
+
 
 		UIParent:SetSize(wasW, wasH)
 		OB.stops[1].target = was
