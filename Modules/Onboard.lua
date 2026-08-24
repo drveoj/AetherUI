@@ -2168,6 +2168,32 @@ function OB:OnCombat()
 	self:Teardown()
 end
 
+--- Everything that means "not yet", in one place.
+--
+--  A CINEMATIC IS THE ONE THAT ACTUALLY HAPPENS. A brand new character watches
+--  the intro movie before it can do anything at all, and the tour opened
+--  underneath it - reported from the game. MovieFrame hides WorldFrame for the
+--  duration, so the scrim was dimming a world that was not being drawn and the
+--  welcome card was behind a full-screen video.
+--
+--  BOTH KINDS, because they are different frames and only one of them is the
+--  intro: MovieFrame plays the pre-rendered films, CinematicFrame plays the
+--  ones acted out by the engine. A tour that waited for one would open over the
+--  other.
+--
+--  AND COMBAT, which was already here. Same answer, same door: a scrim over the
+--  world is the last thing anybody wants while something is happening.
+local function NotNow()
+	if InCombatLockdown() then return true end
+	if MovieFrame and MovieFrame.IsShown and MovieFrame:IsShown() then
+		return true
+	end
+	if CinematicFrame and CinematicFrame.IsShown and CinematicFrame:IsShown() then
+		return true
+	end
+	return false
+end
+
 --- What this character sees when it arrives.
 --
 --  THREE ANSWERS, AND THE FIRST ONE IS NOTHING. A character that has finished
@@ -2182,12 +2208,14 @@ end
 function OB:OnLogin()
 	if self:Completed() then return end
 
-	-- NOT DURING A FIGHT, and not dropped either: held until it ends, down the
-	-- same door an interrupted tour already uses.
-	if InCombatLockdown() then
+	-- HELD RATHER THAN DROPPED, whatever is in the way. The flag means "this
+	-- character is still owed its first run", and whichever gate lifts last
+	-- delivers it.
+	if NotNow() then
 		self.__pendingLogin = true
 		return
 	end
+	self.__pendingLogin = nil
 
 	local s = Store()
 	local at = tonumber(s and s.stopIndex) or 0
@@ -2198,11 +2226,22 @@ function OB:OnLogin()
 	end
 end
 
-function OB:OnCombatOver()
-	if self.__pendingLogin then
-		self.__pendingLogin = nil
-		return self:OnLogin()
+--- Try the first run again, if one is still owed.
+--
+--  A BEAT LATER, for the same reason the first attempt is one: the frame that
+--  was in the way is hidden by the very handler that fires this, and the world
+--  has to be back before there is anything to hang a spotlight on.
+function OB:Retry()
+	if not self.__pendingLogin then return end
+	if _G.C_Timer and _G.C_Timer.After then
+		_G.C_Timer.After(FIRST_RUN_DELAY, function() OB:OnLogin() end)
+	else
+		self:OnLogin()
 	end
+end
+
+function OB:OnCombatOver()
+	if self.__pendingLogin then return self:Retry() end
 	if not self.resumeAt then return end
 	local at = self.resumeAt
 	self.resumeAt = nil
@@ -2236,12 +2275,19 @@ function OB:OnEnable()
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
 		if OB.__arrived then return end
 		OB.__arrived = true
-		if _G.C_Timer and _G.C_Timer.After then
-			_G.C_Timer.After(FIRST_RUN_DELAY, function() OB:OnLogin() end)
-		else
-			OB:OnLogin()
-		end
+		OB.__pendingLogin = true
+		OB:Retry()
 	end)
+
+	-- AND WHEN THE FILM ENDS. On a brand new character the intro movie is
+	-- playing at the moment we arrive, so the first attempt is always going to
+	-- be turned away - these are how it gets asked again.
+	--
+	-- Both stops, and the skip goes down the same road: skipping a movie IS
+	-- STOP_MOVIE, so there is nothing extra to listen for.
+	for _, event in ipairs({ "STOP_MOVIE", "CINEMATIC_STOP" }) do
+		A:RegisterEvent(self, event, function() OB:Retry() end)
+	end
 end
 
 function OB:OnDisable()

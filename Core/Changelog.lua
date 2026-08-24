@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.34.1",
+		date    = "2026-08-24",
+		lines   = {
+			"The tour waits for the intro cinematic on a brand new character instead of opening underneath it. Watched or skipped, it opens when the film stops.",
+		},
+	},
+	{
 		version = "0.34.0",
 		date    = "2026-08-24",
 		lines   = {

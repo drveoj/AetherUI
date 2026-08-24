@@ -3384,6 +3384,12 @@ do
 	end
 
 	for _, n in ipairs({ "CharacterFrame", "SpellBookFrame", "FriendsFrame",
+		-- THE TWO THAT COVER THE WHOLE SCREEN. MovieFrame plays the
+		-- pre-rendered films - a brand new character watches one before it can
+		-- do anything at all - and CinematicFrame the ones the engine acts out.
+		-- Neither existed here, so anything asking "is a film playing" got nil
+		-- and read it as no.
+		"MovieFrame", "CinematicFrame",
 		"GameMenuFrame", "MerchantFrame", "QuestFrame", "GossipFrame",
 		"TaxiFrame" }) do
 		buildPanel(n)
@@ -39254,8 +39260,62 @@ do
 		"arriving in combat holds the first run rather than dropping it")
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
+	_G.__drainTimers(2)
 	check(OB.card:IsShown(),
 		"and the end of the fight is when it opens")
+
+	-- AND A FILM HOLDS IT TOO.
+	--
+	-- THE ONE THAT ACTUALLY HAPPENS. A brand new character watches the intro
+	-- movie before it can do anything at all, and the tour opened underneath
+	-- it: MovieFrame hides WorldFrame for the duration, so the scrim was
+	-- dimming a world that was not being drawn and the welcome card was behind
+	-- a full-screen video. Reported from the game against 0.34.0 - which is to
+	-- say, on the very first thing the feature was built for.
+	--
+	-- BOTH KINDS, because they are different frames and only one of them is
+	-- the intro: MovieFrame plays the pre-rendered films, CinematicFrame the
+	-- ones the engine acts out. A tour that waited for one would open over
+	-- the other.
+	for _, film in ipairs({ { "MovieFrame", "STOP_MOVIE" },
+		{ "CinematicFrame", "CINEMATIC_STOP" } }) do
+		local frame, stop = _G[film[1]], film[2]
+		fresh()
+		frame:Show()
+		fire("PLAYER_ENTERING_WORLD")
+		_G.__drainTimers(2)
+		check(not OB.card:IsShown() and OB.__pendingLogin == true,
+			"arriving while " .. film[1] .. " is up holds the first run")
+
+		-- SKIPPING THE FILM IS THE SAME EVENT, so there is nothing extra to
+		-- listen for: whether you watched it or pressed escape, this is what
+		-- the client fires.
+		frame:Hide()
+		fire(stop)
+		_G.__drainTimers(2)
+		check(OB.card:IsShown(),
+			"and " .. stop .. " is when it opens - watched or skipped, it is the "
+			.. "same event")
+	end
+
+	-- AND THE HOLD SURVIVES A SECOND REASON. Whichever gate lifts last is
+	-- the one that delivers it: a film that ends while a fight is on must not
+	-- open the tour over the fight.
+	fresh()
+	_G.MovieFrame:Show()
+	_G.__inCombat = true
+	fire("PLAYER_ENTERING_WORLD")
+	_G.__drainTimers(2)
+	_G.MovieFrame:Hide()
+	fire("STOP_MOVIE")
+	_G.__drainTimers(2)
+	check(not OB.card:IsShown() and OB.__pendingLogin == true,
+		"a film ending mid-fight does not open the tour over the fight")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	_G.__drainTimers(2)
+	check(OB.card:IsShown(),
+		"and the last gate to lift is the one that delivers it")
 
 	-- THE ALT OFFER.
 	--
