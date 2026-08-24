@@ -1238,6 +1238,37 @@ end
 function PF:TogglePanel()
 	return self:SetPanelOpen(not self:PanelOpen())
 end
+
+--- No group, no controls.
+--
+--  LayoutHandle takes the handle off screen the moment the group empties, and
+--  the handle is the only thing that shuts the panel - so a panel that was open
+--  when the last person left is a window with nothing to close it, sitting in
+--  the middle of the screen for the rest of the session. Reported from the game:
+--  uninvite the last member with the controls up and they stay up.
+--
+--  HERE RATHER THAN IN LayoutHandle, which is where the handle is hidden and
+--  looks like the obvious home for it. AnchorPanel calls LayoutHandle, and
+--  closing the panel calls AnchorPanel: the recursion terminates, because
+--  `_want` is cleared first and the second pass finds the panel already shut,
+--  but a rule that depends on the order of two assignments in another function
+--  is a rule waiting to be broken. This is a fact about the ROSTER, so it lives
+--  with the roster.
+function PF:HideWithGroup()
+	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
+	if n > 0 then return end
+	if not self.panel or not self:PanelOpen() then return end
+
+	-- Instant: it would otherwise slide back toward a handle that has just
+	-- gone, which is an animation to nowhere.
+	--
+	-- And nothing else. A `panel:Hide()` beside this looked like the belt to
+	-- that braces and was doing nothing: AnchorPanel already ends on
+	-- `SetShown(travel > 0 or open)`, so a shut panel at rest hides itself. A
+	-- line that repeats what the call it follows already did reads as a caller
+	-- that does not trust it.
+	self:SetPanelOpen(false, true)
+end
 -- ---------------------------------------------------------------------------
 -- lifecycle
 -- ---------------------------------------------------------------------------
@@ -1266,6 +1297,9 @@ function PF:RegisterEvents()
 	local function sweep()
 		PF:LayoutHandle()
 		PF:RefreshPanel()
+		-- After both, because it asks whether the panel is open and the two
+		-- above are what decide where it is.
+		PF:HideWithGroup()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end
 	-- Blizzard's frames come back with the roster and cannot be sent away

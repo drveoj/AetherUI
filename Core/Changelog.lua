@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.5",
+		date    = "2026-08-24",
+		lines   = {
+			"Uninviting the last person in your party while the party controls were open left them stranded on screen with no way to shut them. They close with the handle now.",
+		},
+	},
+	{
 		version = "0.36.4",
 		date    = "2026-08-24",
 		lines   = {

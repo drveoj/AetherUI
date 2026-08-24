@@ -36819,6 +36819,59 @@ section("party: a diagnostic that answers the question", function()
 	fire("RAID_TARGET_UPDATE")
 end)
 
+section("party controls: the last person leaves and they go too", function()
+	local PF = A:GetModule("partyframes")
+
+	-- THE ROSTER PUT BACK EXACTLY AS IT WAS FOUND. Blocks above this one
+	-- leave members standing, and blocks below expect them - a section that
+	-- empties the party and walks away takes forty other checks with it.
+	local UNITS = { "party1", "party2", "party3", "party4" }
+	local was = {}
+	for _, u in ipairs(UNITS) do was[u] = _G.__units[u].exists end
+
+	-- THE HANDLE IS THE ONLY THING THAT SHUTS THE PANEL, and LayoutHandle
+	-- takes it off screen the moment the group empties. So the controls, left
+	-- open, became a window with nothing to close it - sitting in the middle of
+	-- the screen for the rest of the session. Reported from the game: uninvite
+	-- the last member with the controls up.
+	for _, u in ipairs(UNITS) do _G.__units[u].exists = false end
+	_G.__units.party1.exists = true
+	_G.__units.party2.exists = true
+	fire("GROUP_ROSTER_UPDATE")
+	PF:SetPanelOpen(true, true)
+	check(PF:PanelOpen() and PF.panel:IsShown() and PF.handle:IsShown(),
+		"with a party, the controls open and the handle is there to shut them")
+
+	-- One leaves, and nothing has changed: there is still somebody to mark.
+	_G.__units.party2.exists = false
+	fire("GROUP_ROSTER_UPDATE")
+	check(PF:PanelOpen() and PF.panel:IsShown(),
+		"one member leaving leaves them open - there is still a party")
+
+	-- And the last one does.
+	_G.__units.party1.exists = false
+	fire("GROUP_ROSTER_UPDATE")
+	check(GetNumGroupMembers() == 0 and not PF.handle:IsShown(),
+		"the handle goes when the group empties (" ..
+		GetNumGroupMembers() .. " left)")
+	check(not PF:PanelOpen() and not PF.panel:IsShown(),
+		"and the controls go with it, rather than being left with no way to "
+		.. "shut them")
+
+	-- AND THEY COME BACK. Shutting them on the way out must not be a one-way
+	-- door: the next invite has to be able to open them again.
+	_G.__units.party1.exists = true
+	fire("GROUP_ROSTER_UPDATE")
+	PF:SetPanelOpen(true, true)
+	check(PF:PanelOpen() and PF.panel:IsShown(),
+		"and a new party opens them again")
+	PF:SetPanelOpen(false, true)
+
+	for _, u in ipairs(UNITS) do _G.__units[u].exists = was[u] end
+	fire("GROUP_ROSTER_UPDATE")
+end)
+
+
 section("nameplates: a pet's title is not every boar's title", function()
 	local NP = A:GetModule("nameplates")
 
