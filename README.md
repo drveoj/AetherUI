@@ -152,4 +152,4 @@ Typeface is [Outfit](https://github.com/Outfitio/Outfit-Fonts), SIL Open Font
 Licence. Uses LibStub, Ace3, LibSharedMedia and LibClassicCasterino; licences
 included.
 
-Translators welcome — contact on Discord.
+Translators welcome — contact on discord - https://discord.gg/drveoj
