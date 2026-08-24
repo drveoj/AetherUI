@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.1",
+		date    = "2026-08-24",
+		lines   = {
+			"Another 103 phrases are translatable: every single-word label in the options panel and elsewhere, which the extractor had been refusing as if it were a variable name.",
+		},
+	},
+	{
 		version = "0.36.0",
 		date    = "2026-08-24",
 		lines   = {

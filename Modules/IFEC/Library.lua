@@ -149,7 +149,7 @@ function Library:Build(host)
 
 	f.title = W.Text(f, "ifecSection", "LEFT", "OVERLAY")
 	f.title:SetPoint("TOPLEFT", f, "TOPLEFT", PAD_X, -PAD_T)
-	f.title:SetText("LIBRARY")
+	f.title:SetText(L.library.build.library)
 
 	f.count = W.Text(f, "ifecCaption", "RIGHT", "OVERLAY")
 	f.count:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD_X, -PAD_T + 1)
@@ -429,10 +429,10 @@ function Library:Paint()
 					end
 					W.Color(row.meta, read and c.textFaint or tint)
 				elseif playing then
-					row.meta:SetText("playing")
+					row.meta:SetText(L.library.paint.playing)
 					W.Color(row.meta, tint)
 				elseif ahead then
-					row.meta:SetText("queued")
+					row.meta:SetText(L.library.paint.queued)
 					W.Color(row.meta, tint)
 				elseif progress and progress.complete then
 					row.meta:SetText("heard  \194\183  " .. clock(item.duration))

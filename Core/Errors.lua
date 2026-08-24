@@ -23,6 +23,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local Errors = {}
 A.Errors = Errors
 
@@ -176,7 +178,7 @@ local function Build()
 
 	local title = W.Text(f, "tbTitle", "CENTER")
 	title:SetPoint("TOP", f, "TOP", 0, -14)
-	title:SetText("Errors")
+	title:SetText(L.errors.build.errors)
 	W.Color(title, Palette.c.text)
 
 	local hint = W.Text(f, "tbCardSub", "CENTER")
@@ -318,7 +320,7 @@ local function Build()
 
 	local copyText = W.Text(copy, "tbCardSub", "CENTER")
 	copyText:SetPoint("CENTER")
-	copyText:SetText("Export")
+	copyText:SetText(L.errors.build.export)
 	W.Color(copyText, Palette.c.text)
 	copy.__label = copyText
 

@@ -813,7 +813,7 @@ function TB:BuildDockHandle()
 	-- level above the drawer - and vanish with it.
 	local label = W.Text(h, "tbSection", "CENTER")
 	W.Color(label, c.text)
-	label:SetText("TOOLBOX")
+	label:SetText(L.toolbox.build_dock_handle.toolbox)
 	h.label = label
 
 	local function Stop(self2)
@@ -873,7 +873,7 @@ function TB:BuildDockHandle()
 	h:SetScript("OnEnter", function(self2)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
-		GameTooltip:SetText("Toolbox")
+		GameTooltip:SetText(L.common.toolbox)
 		GameTooltip:AddLine("Drag to any screen edge. The drawer docks to one of"
 			.. " four, and each edge has its own layout.", 0.8, 0.8, 0.85, true)
 		GameTooltip:Show()
@@ -1714,7 +1714,7 @@ function TB:BuildContent()
 	self.content = content
 
 	local title = W.Text(content, "tbTitle", "LEFT")
-	title:SetText("Toolbox")
+	title:SetText(L.common.toolbox)
 	content.title = title
 
 	-- The version pill: DARK TEXT ON THE ACCENT, which is the one place the
@@ -1802,7 +1802,7 @@ function TB:BuildContent()
 	notes:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", NEWS_TEXT_X, 12)
 	local nt = W.Text(notes, "tbLabel", "LEFT")
 	nt:SetPoint("LEFT", notes, "LEFT", 0, 0)
-	nt:SetText("Notes")
+	nt:SetText(L.toolbox.build_content.notes)
 	W.Color(nt, Palette.c.accent)
 	notes.text = nt
 	-- An underline, because "Notes" in the accent beside body text at the same

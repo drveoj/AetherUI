@@ -210,20 +210,20 @@ local function TrackValues()
 end
 
 local function GeneralGroup()
-	return group("General", {
+	return group(L.options.general.general, {
 		-- FOUR CHIPS, NOT A DROPDOWN. Each shows its own accent on its own
 		-- glass, which is the only thing that tells you what picking it
 		-- would do - a list of four words does not. The option is unchanged
 		-- underneath: same profile key, same setter, same restyle after.
-		skin = choice("Skin", L.options.general.skin.desc,
+		skin = choice(L.options.general.skin.name, L.options.general.skin.desc,
 			{ "skin" }, SkinValues,
 			{ after = "restyle", control = "AetherUISkinSwatches" }),
-		scale = range("Scale", L.options.general.scale.desc, { "scale" }, 0.6, 1.6, 0.01),
+		scale = range(L.common.scale, L.options.general.scale.desc, { "scale" }, 0.6, 1.6, 0.01),
 		classColorHealth = toggle(L.options.general.class_color_health.name,
 			L.options.general.off_uses_concept_s,
 			{ "classColorHealth" }, { after = "restyle" }),
 
-		glassHeader = header("Glass"),
+		glassHeader = header(L.options.general.glass_header),
 		shadow = range(L.options.general.shadow.name, L.options.general.shadow.desc,
 			{ "glass", "shadow" }, 0, 1, 0.05, { after = "restyle" }),
 		corner = range(L.options.general.corner.name, nil, { "glass", "corner" }, 4, 24, 1,
@@ -301,7 +301,7 @@ local function OnboardGroup()
 end
 
 local function ToolboxGroup()
-	return group("Toolbox", {
+	return group(L.common.toolbox, {
 		desc = note("A drawer that docks to the centre of any screen edge, with a"
 			.. " rail that stays on screen when the drawer is shut."
 			.. "\n\nTo move it, " .. A.Hi(L.options.toolbox.unlock_frames) .. " and drag the rail: four"
@@ -311,17 +311,17 @@ local function ToolboxGroup()
 			.. "\n\nThe edge it is docked to and whether it is open are remembered"
 			.. " per " .. A.Hi("character") .. " rather than per profile - a drawer edge"
 			.. " is a habit somebody forms on one character."),
-		enabled = toggle("Enabled", nil, { "modules", "toolbox", "enabled" },
+		enabled = toggle(L.common.enabled, nil, { "modules", "toolbox", "enabled" },
 			{ defaultTrue = true }),
 
-		widgetsHeader = header("Widgets"),
+		widgetsHeader = header(L.options.toolbox.widgets_header),
 		widgetsNote = note(A.F(L.options.toolbox.widgets_note, A.Hi(L.options.toolbox.libdatabroker_data_sources))
 			.. "\n\n"
 			.. L.options.toolbox.only_latency_fps_polled),
 		widgetColumns = range(L.options.toolbox.widget_columns.name, nil,
 			{ "modules", "toolbox", "widgetColumns" }, 1, 6, 1, { after = "reconfigure" }),
 
-		gridHeader = header("Grids"),
+		gridHeader = header(L.options.toolbox.grid_header),
 		tileColumns = range(L.options.toolbox.tile_columns.name, nil,
 			{ "modules", "toolbox", "tileColumns" }, 1, 4, 1, { after = "reconfigure" }),
 		addonColumns = range(L.options.toolbox.addon_columns.name, nil,
@@ -344,7 +344,7 @@ local function FaderGroup()
 	local ZEN_MAX = (A.Fader and A.Fader.AFK_TIMEOUT) or 300
 	return group(L.options.fader.idle_fade, {
 		desc = note(L.options.fader.desc),
-		enabled = toggle("Enabled", nil, { "fader", "enabled" }, { after = "none" }),
+		enabled = toggle(L.common.enabled, nil, { "fader", "enabled" }, { after = "none" }),
 		idleAlpha = range(L.options.fader.idle_alpha.name, nil, { "fader", "idleAlpha" }, 0, 1, 0.05,
 			{ after = "none" }),
 		activeAlpha = range(L.options.fader.active_alpha.name, nil, { "fader", "activeAlpha" }, 0.2, 1, 0.05,
@@ -373,7 +373,7 @@ local function FaderGroup()
 			.. " and the cursor sitting on the HUD. Having a target or being below"
 			.. " full health keeps stage one awake but not this one, because"
 			.. " neither is evidence that you are still in the chair."),
-		zenEnabled = toggle("Enabled", nil, { "modules", "zen", "enabled" },
+		zenEnabled = toggle(L.common.enabled, nil, { "modules", "zen", "enabled" },
 			{ after = "none" }),
 		zenOnAFK = toggle(L.options.fader.zen_on_a_f_k.name,
 			L.options.fader.client_flags_away_itself,
@@ -426,7 +426,7 @@ local function FaderGroup()
 			.. " light, so it is brighter than what is behind it and what it destroys"
 			.. " is contrast. A dark pane leaves every edge in the scene perfectly"
 			.. " crisp and simply turns the lights off."),
-		zenFrost = toggle("Enabled", nil, { "modules", "zen", "frost" },
+		zenFrost = toggle(L.common.enabled, nil, { "modules", "zen", "frost" },
 			{ after = "none", defaultTrue = true }),
 		zenFrostOpacity = range(L.options.fader.zen_frost_opacity.name,
 			L.options.fader.how_much_world_glass,
@@ -436,20 +436,20 @@ local function FaderGroup()
 			L.options.fader.how_far_skin_s,
 			{ "modules", "zen", "frostBrightness" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
-		zenFrostScatter = range("Scatter",
+		zenFrostScatter = range(L.options.fader.zen_frost_scatter.name,
 			L.options.fader.layer_doing_actual_work,
 			{ "modules", "zen", "frostScatter" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
-		zenFrostVignette = range("Vignette",
+		zenFrostVignette = range(L.options.fader.zen_frost_vignette.name,
 			L.options.fader.darker_toward_edges_so,
 			{ "modules", "zen", "frostVignette" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
-		zenFrostDrift = range("Drift",
+		zenFrostDrift = range(L.options.fader.zen_frost_drift.name,
 			L.options.fader.screens_per_second_two,
 			{ "modules", "zen", "frostDrift" }, 0, 0.1, 0.005,
 			{ after = "none" }),
 
-		zenQuietHeader = header("Distractions"),
+		zenQuietHeader = header(L.options.fader.zen_quiet_header),
 		zenNameplates = toggle(L.options.fader.zen_nameplates.name,
 			"The one thing fading the interface does not reach: nameplates and the"
 			.. " floating unit names are drawn against the world rather than"
@@ -493,9 +493,9 @@ local function FaderGroup()
 			.. " is 4%; at 20% it is 1%. Your master volume is never touched, and a"
 			.. " channel you change by hand during zen is left where you put it"
 			.. " rather than being handed a stale value back."),
-		zenAudio = toggle("Enabled", L.options.fader.zen_audio.desc,
+		zenAudio = toggle(L.common.enabled, L.options.fader.zen_audio.desc,
 			{ "modules", "zen", "audio" }, { after = "none", defaultTrue = true }),
-		zenTrack = choice("Track", L.options.fader.zen_track.desc,
+		zenTrack = choice(L.options.fader.zen_track.name, L.options.fader.zen_track.desc,
 			{ "modules", "zen", "track" }, TrackValues, { after = "none" }),
 		zenPreview = action(L.options.fader.zen_preview.name,
 			L.options.fader.plays_now_so_can,
@@ -526,14 +526,14 @@ local function UnitFramesGroup()
 	local m = { "modules", "unitframes" }
 	local function at(k) return { "modules", "unitframes", k } end
 	return group(L.options.unit_frames.unit_frames, {
-		enabled = toggle("Enabled", nil, at("enabled")),
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		hideBlizzard = toggle(L.options.unit_frames.hide_blizzard.name, nil, at("hideBlizzard")),
 		clickTarget = toggle(L.common.click_target,
 			L.common.left_click_targets_right, at("clickTarget")),
 
-		sizeHeader = header("Capsule"),
-		width = range("Width", nil, at("width"), 240, 520, 1),
-		height = range("Height", nil, at("height"), 48, 96, 1),
+		sizeHeader = header(L.common.capsule),
+		width = range(L.common.width, nil, at("width"), 240, 520, 1),
+		height = range(L.common.height, nil, at("height"), 48, 96, 1),
 		gap = range(L.options.unit_frames.gap.name, nil, at("gap"), 0, 200, 1),
 		orbSize = range(L.options.unit_frames.orb_size.name, nil, at("orbSize"), 28, 72, 1),
 		barWidth = range(L.common.bar_width, nil, at("barWidth"), 120, 380, 1),
@@ -562,18 +562,18 @@ end
 
 local function AurasGroup()
 	local function at(...) return { "modules", "auras", ... } end
-	return group("Auras", {
-		enabled = toggle("Enabled", nil, at("enabled")),
+	return group(L.options.auras.auras, {
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		hideBlizzard = toggle(L.options.auras.hide_blizzard.name,
 			L.options.auras.takes_weapon_enchant_icons,
 			at("hideBlizzard"), { defaultTrue = true }),
 
 		desc = note(L.options.auras.desc),
 
-		tileHeader = header("Tiles"),
+		tileHeader = header(L.options.auras.tile_header),
 		tileNote = note(L.options.auras.tile_note),
 		size = range(L.options.auras.size.name, nil, at("size"), 12, 48, 1),
-		spacing = range("Spacing", nil, at("spacing"), 0, 16, 1),
+		spacing = range(L.common.spacing, nil, at("spacing"), 0, 16, 1),
 		offset = range(L.options.auras.offset.name, nil, at("offset"), 0, 40, 1),
 		showTime = toggle(L.options.auras.show_time.name, nil, at("showTime"), { defaultTrue = true }),
 		showCount = toggle(L.options.auras.show_count.name, nil, at("showCount"), { defaultTrue = true }),
@@ -584,16 +584,16 @@ local function AurasGroup()
 			L.options.auras.n0_fits_many_frame,
 			at("perRow"), 0, 16, 1),
 
-		buffs = group("Buffs", {
-			enabled = toggle("Enabled", nil, at("buffs", "enabled")),
+		buffs = group(L.options.auras.buffs, {
+			enabled = toggle(L.common.enabled, nil, at("buffs", "enabled")),
 			player = toggle(L.common.player, nil, at("buffs", "player")),
 			target = toggle(L.common.target, nil, at("buffs", "target")),
 			max = range(L.common.most_show, nil, at("buffs", "max"), 1, 40, 1),
 			maxRows = range(L.common.rows_most, nil, at("buffs", "maxRows"), 1, 4, 1),
 		}, { inline = true }),
 
-		debuffs = group("Debuffs", {
-			enabled = toggle("Enabled", nil, at("debuffs", "enabled")),
+		debuffs = group(L.options.auras.debuffs, {
+			enabled = toggle(L.common.enabled, nil, at("debuffs", "enabled")),
 			player = toggle(L.common.player, nil, at("debuffs", "player")),
 			target = toggle(L.common.target, nil, at("debuffs", "target")),
 			onlyMine = toggle(L.options.auras.only_mine.name,
@@ -607,12 +607,12 @@ end
 
 local function MinimapGroup()
 	local function at(...) return { "modules", "minimap", ... } end
-	return group("Minimap", {
-		enabled = toggle("Enabled", nil, at("enabled")),
+	return group(L.options.minimap.minimap, {
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		desc = note(A.F(L.options.minimap.desc,
 			A.Bad(L.options.minimap.combat))),
-		size = range("Size", nil, at("size"), 120, 320, 1),
-		ring = toggle("Border", nil, at("ring"), { defaultTrue = true }),
+		size = range(L.common.size, nil, at("size"), 120, 320, 1),
+		ring = toggle(L.options.minimap.ring.name, nil, at("ring"), { defaultTrue = true }),
 		showNorth = toggle(L.options.minimap.show_north.name, nil, at("showNorth"), { defaultTrue = true }),
 		pillOffset = range(L.options.minimap.pill_offset.name, nil, at("pillOffset"), 0, 40, 1),
 		border = range(L.options.minimap.border.name,
@@ -621,10 +621,10 @@ local function MinimapGroup()
 
 		pillHeader = header(L.options.minimap.pill_header),
 		showZone = toggle(L.options.minimap.show_zone.name, nil, at("showZone"), { defaultTrue = true }),
-		showCoords = toggle("Coordinates",
+		showCoords = toggle(L.options.minimap.show_coords.name,
 			L.options.minimap.unavailable_inside_instance_where,
 			at("showCoords"), { defaultTrue = true }),
-		showClock = toggle("Clock", nil, at("showClock"), { defaultTrue = true }),
+		showClock = toggle(L.options.minimap.show_clock.name, nil, at("showClock"), { defaultTrue = true }),
 		blizzHeader = header(L.options.minimap.blizz_header),
 		hideBlizzard = toggle(L.options.minimap.hide_blizzard.name,
 			"Zoom, tracking, the day/night dial, the battleground eye, the border"
@@ -652,7 +652,7 @@ local function BarPages()
 		local function at(k) return { "modules", "actionbars", "bars", i, k } end
 
 		local args = {
-			enabled = toggle("Enabled", nil, at("enabled")),
+			enabled = toggle(L.common.enabled, nil, at("enabled")),
 			source = note(kind == "action"
 				and ("Actions " .. (((barCfg.page or 1) - 1) * 12 + 1) .. "-"
 					.. ((barCfg.page or 1) * 12) .. ".")
@@ -662,15 +662,15 @@ local function BarPages()
 						.. " are the only ones that work."
 					or ("Sized by the game: however many " .. kind
 						.. " slots you have."))),
-			rows = range("Rows", L.options.bar_pages.rows.desc, at("rows"), 1, 12, 1),
-			scale = range("Scale", L.common.top_global_scale, at("scale"), 0.4, 2.0, 0.05),
+			rows = range(L.options.bar_pages.rows.name, L.options.bar_pages.rows.desc, at("rows"), 1, 12, 1),
+			scale = range(L.common.scale, L.common.top_global_scale, at("scale"), 0.4, 2.0, 0.05),
 			backdrop = toggle(L.options.bar_pages.backdrop.name, L.options.bar_pages.backdrop.desc,
 				at("backdrop"), { defaultTrue = true }),
 		}
 
 		if kind == "action" then
-			args.buttons = range("Buttons", nil, at("buttons"), 1, 12, 1)
-			args.page = range("Page",
+			args.buttons = range(L.options.bar_pages.buttons, nil, at("buttons"), 1, 12, 1)
+			args.page = range(L.options.bar_pages.page,
 				L.options.bar_pages.bar_n_owns_page,
 				at("page"), 1, 10, 1)
 		end
@@ -685,24 +685,24 @@ local function ActionBarsGroup()
 	local function at(k) return { "modules", "actionbars", k } end
 
 	local shared = {
-		enabled = toggle("Enabled", nil, at("enabled")),
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		hideBlizzard = toggle(L.options.action_bars.hide_blizzard.name, nil, at("hideBlizzard")),
 		scale = range(L.options.action_bars.scale.name, nil, at("scale"), 0.4, 1.5, 0.05),
 		size = range(L.options.action_bars.size.name, L.options.action_bars.size.desc, at("size"), 24, 80, 1),
-		spacing = range("Spacing", nil, at("spacing"), 0, 30, 1),
+		spacing = range(L.common.spacing, nil, at("spacing"), 0, 30, 1),
 		padding = range(L.options.action_bars.padding.name, nil, at("padding"), 0, 30, 1),
 		fontDelta = range(L.options.action_bars.font_delta.name,
 			L.options.action_bars.points_added_keybind_count,
 			at("fontDelta"), -4, 8, 1),
 		showKeybinds = toggle(L.options.action_bars.show_keybinds.name, nil, at("showKeybinds")),
-		tooltips = toggle("Tooltips", nil, at("tooltips")),
+		tooltips = toggle(L.common.tooltips, nil, at("tooltips")),
 		lockButtons = toggle(L.options.action_bars.lock_buttons.name,
 			L.options.action_bars.require_modified_click_pick, at("lockButtons")),
 		emptyAlpha = range(L.options.action_bars.empty_alpha.name, nil, at("emptyAlpha"), 0, 1, 0.05),
 	}
 
 	local args = {
-		shared = group("Shared", shared, { inline = true }),
+		shared = group(L.options.action_bars.shared, shared, { inline = true }),
 		pagingNote = note(A.Hi(L.options.action_bars.paging_note) .. " Every bar names its own"
 			.. " source once and never changes it. The page Blizzard tracks is a"
 			.. " number this addon does not own and could not keep still, and"
@@ -719,7 +719,7 @@ end
 local function QuestGroup()
 	local function at(k) return { "modules", "questtracker", k } end
 	return group(L.options.quest.quest_tracker, {
-		enabled = toggle("Enabled", nil, at("enabled")),
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		hideBlizzard = toggle(L.options.quest.hide_blizzard.name, nil, at("hideBlizzard")),
 		-- The LOG, which is a different module and a different window, but
 		-- the same subject - and it had no control anywhere at all, which
@@ -736,13 +736,13 @@ local function QuestGroup()
 			L.options.quest.tinted_chip_front_each,
 			at("showLevel")),
 
-		sizeHeader = header("Size"),
-		width = range("Width", nil, at("width"), 180, 420, 1),
+		sizeHeader = header(L.common.size),
+		width = range(L.common.width, nil, at("width"), 180, 420, 1),
 		maxHeight = range(L.common.height_budget,
 			L.options.quest.whatever_does_fit_reported, at("maxHeight"), 120, 900, 10),
 		max = range(L.options.quest.max.name, nil, at("max"), 1, 20, 1),
 
-		trackHeader = header("Tracking"),
+		trackHeader = header(L.options.quest.track_header),
 		adoptWatches = toggle(L.options.quest.adopt_watches.name,
 			L.options.quest.whitelist_mode_only_blizzard, at("adoptWatches")),
 		clear = action(L.options.quest.clear.name, L.options.quest.clear.desc,
@@ -758,13 +758,13 @@ end
 
 local function BagsGroup()
 	local function at(k) return { "modules", "bags", k } end
-	return group("Bags", {
-		enabled = toggle("Enabled", nil, at("enabled")),
+	return group(L.options.bags.bags, {
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		desc = note(L.options.bags.desc),
 		hideBlizzard = toggle(L.options.bags.hide_blizzard.name, nil, at("hideBlizzard")),
 
-		gridHeader = header("Grid"),
-		columns = range("Columns",
+		gridHeader = header(L.options.bags.grid_header),
+		columns = range(L.options.bags.columns.name,
 			L.options.bags.window_wide_grid_eight, at("columns"), 4, 16, 1),
 		slotSize = range(L.options.bags.slot_size.name, nil, at("slotSize"), 24, 64, 1),
 		slotGap = range(L.options.bags.slot_gap.name, nil, at("slotGap"), 0, 16, 1),
@@ -772,7 +772,7 @@ local function BagsGroup()
 			L.options.bags.panel_hugs_contents_up,
 			at("maxHeight"), 200, 1200, 10),
 
-		lookHeader = header("Look"),
+		lookHeader = header(L.common.look),
 		showSearch = toggle(L.options.bags.show_search.name,
 			L.options.bags.typing_dims_what_does,
 			at("showSearch"), { defaultTrue = true }),
@@ -789,7 +789,7 @@ local function BagsGroup()
 			L.options.bags.free_section_foot_grid,
 			at("showEmpty"), { defaultTrue = true }),
 
-		sellHeader = header("Junk"),
+		sellHeader = header(L.options.bags.sell_header),
 		junkAutoSell = toggle(L.options.bags.junk_auto_sell.name,
 			L.options.bags.sells_every_poor_quality, at("junkAutoSell")),
 	})
@@ -797,11 +797,11 @@ end
 
 local function ChatGroup()
 	local function at(k) return { "modules", "chat", k } end
-	return group("Chat", {
-		enabled = toggle("Enabled", nil, at("enabled")),
+	return group(L.options.chat.chat, {
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		desc = note(L.options.chat.desc),
 
-		lookHeader = header("Look"),
+		lookHeader = header(L.common.look),
 		fontDelta = range(L.options.chat.font_delta.name,
 			L.options.chat.added_whatever_size_blizzard,
 			at("fontDelta"), -4, 8, 1),
@@ -861,7 +861,7 @@ local function ChatGroup()
 			.. " the line is.",
 			at("dimSystem"), { defaultTrue = true }),
 
-		whisperHeader = header("Whispers"),
+		whisperHeader = header(L.options.chat.whisper_header),
 		whisperTab = toggle(L.options.chat.whisper_tab.name,
 			A.Bad(L.options.chat.one_outlives_addon) .. " It opens a real Blizzard"
 			.. " chat window and moves the whisper message groups onto it, and"
@@ -876,7 +876,7 @@ local function ChatGroup()
 				return C:SetWhisperTab(value and true or false)
 			end }),
 
-		behaveHeader = header("Behaviour"),
+		behaveHeader = header(L.options.chat.behave_header),
 		fade = toggle(L.options.chat.fade.name,
 			L.options.chat.chat_dims_everything_else,
 			at("fade"), { defaultTrue = true, after = "none" }),
@@ -890,8 +890,8 @@ end
 --- Two small things the game makes you wait for.
 local function ConveniencesGroup()
 	local function at(k) return { "modules", "conveniences", k } end
-	return group("Conveniences", {
-		enabled = toggle("Enabled", nil, at("enabled")),
+	return group(L.options.conveniences.conveniences, {
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
 
 		instantQuestText = toggle(L.options.conveniences.instant_quest_text.name,
 			"Quest text appears at once instead of being typed out."
@@ -927,7 +927,7 @@ local function GameOwnGroup()
 	return group(L.options.game_own.game_s_own, {
 		note = note(L.options.game_own.note),
 
-		lettering = toggle("Lettering", "The game's own type in this interface's letters"
+		lettering = toggle(L.options.game_own.lettering.name, "The game's own type in this interface's letters"
 			.. " - every panel, every tooltip, every menu, and \"You can't do that yet\"."
 			.. "\n\nA change of FACE only: sizes stay as the game had them, so nothing"
 			.. " moves; outlines stay, because text drawn over the world needs them;"
@@ -937,14 +937,14 @@ local function GameOwnGroup()
 			.. " One that chose its own lettering keeps it.",
 			at("fonts")),
 
-		windows = toggle("Windows", L.options.game_own.windows.desc,
+		windows = toggle(L.options.game_own.windows.name, L.options.game_own.windows.desc,
 			at("panels")),
 
-		dialogs = toggle("Dialogs", L.options.game_own.dialogs.desc, at("popups")),
+		dialogs = toggle(L.options.game_own.dialogs.name, L.options.game_own.dialogs.desc, at("popups")),
 
-		menus = toggle("Menus", L.options.game_own.menus.desc, at("menus")),
+		menus = toggle(L.options.game_own.menus.name, L.options.game_own.menus.desc, at("menus")),
 
-		timers = toggle("Timers", L.options.game_own.timers.desc,
+		timers = toggle(L.options.game_own.timers.name, L.options.game_own.timers.desc,
 			at("timers")),
 
 		settings = toggle(L.options.game_own.settings.name, L.options.game_own.settings.desc, at("optionsskin")),
@@ -954,8 +954,8 @@ end
 local function XPGroup()
 	local function at(k) return { "modules", "xpbar", k } end
 	return group(L.options.x_p.xp_hairline, {
-		enabled = toggle("Enabled", nil, at("enabled")),
-		height = range("Height", nil, at("height"), 1, 12, 1),
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
+		height = range(L.common.height, nil, at("height"), 1, 12, 1),
 		showText = toggle(L.options.x_p.show_text.name, nil, at("showText")),
 		textSide = choice(L.options.x_p.text_side.name,
 			L.options.x_p.which_end_hairline_readout, at("textSide"),
@@ -971,7 +971,7 @@ end
 local function IFECGroup()
 	local function at(k) return { "modules", "ifec", k } end
 	return group(L.options.i_f_e_c.flight_console, {
-		enabled = toggle("Enabled", L.options.i_f_e_c.enabled.desc, at("enabled")),
+		enabled = toggle(L.common.enabled, L.options.i_f_e_c.enabled.desc, at("enabled")),
 		player = toggle(L.options.i_f_e_c.player.name,
 			L.options.i_f_e_c.music_stories_while_passenger,
 			at("player")),
@@ -981,7 +981,7 @@ local function IFECGroup()
 			{ after = "both" }),
 		hideUI = toggle(L.options.i_f_e_c.hide_u_i.name,
 			L.options.i_f_e_c.passenger_console_stays, at("hideUI")),
-		scale = range("Size", L.options.i_f_e_c.scale.desc, at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
+		scale = range(L.common.size, L.options.i_f_e_c.scale.desc, at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
 		note = note(A.F(L.options.i_f_e_c.note, A.Hi("/aether unlock"))),
 	})
 end
@@ -991,14 +991,14 @@ end
 --  two things that hang under whichever of them is your target.
 local function NameplatesGroup()
 	local function at(k) return { "modules", "nameplates", k } end
-	return group("Nameplates", {
-		enabled = toggle("Enabled", L.options.nameplates.enabled.desc,
+	return group(L.options.nameplates.nameplates, {
+		enabled = toggle(L.common.enabled, L.options.nameplates.enabled.desc,
 			at("enabled")),
-		scale = range("Size", L.options.nameplates.scale.desc, at("scale"), 0.6, 1.6, 0.05,
+		scale = range(L.common.size, L.options.nameplates.scale.desc, at("scale"), 0.6, 1.6, 0.05,
 			{ after = "reconfigure" }),
 		alwaysShow = toggle(L.options.nameplates.always_show.name, L.options.nameplates.always_show.desc,
 			at("alwaysShow"), { after = "reconfigure" }),
-		maxDistance = range("Range", L.options.nameplates.max_distance.desc,
+		maxDistance = range(L.options.nameplates.max_distance.name, L.options.nameplates.max_distance.desc,
 			at("maxDistance"), 20, 41, 1, { after = "reconfigure" }),
 		hideBlizzard = toggle(L.options.nameplates.hide_blizzard.name, L.options.nameplates.hide_blizzard.desc,
 			at("hideBlizzard"), { after = "reconfigure" }),
@@ -1013,7 +1013,7 @@ local function NameplatesGroup()
 		neutralBarInCombat = toggle(L.options.nameplates.neutral_bar_in_combat.name,
 			L.options.nameplates.yellow_plate_means_my, at("neutralBarInCombat"), { after = "reconfigure" }),
 
-		friendly = header("Friendlies"),
+		friendly = header(L.options.nameplates.friendly),
 		friendlyNames = toggle(L.options.nameplates.friendly_names.name,
 			L.options.nameplates.plain_shadowed_text_rather,
 			at("friendlyNames"), { after = "reconfigure" }),
@@ -1034,14 +1034,14 @@ end
 --  interaction with MobInfo2 or Pawn will want to reach first.
 local function TooltipsGroup()
 	local function at(k) return { "modules", "tooltips", k } end
-	return group("Tooltips", {
-		enabled = toggle("Enabled", nil, at("enabled")),
-		scale = range("Size", L.common.top_global_scale, at("scale"), 0.6, 1.6, 0.05,
+	return group(L.common.tooltips, {
+		enabled = toggle(L.common.enabled, nil, at("enabled")),
+		scale = range(L.common.size, L.common.top_global_scale, at("scale"), 0.6, 1.6, 0.05,
 			{ after = "reconfigure" }),
 		corner = range(L.options.tooltips.corner.name, nil, at("corner"), 4, 24, 1, { after = "reconfigure" }),
 		restyleFonts = toggle(L.options.tooltips.restyle_fonts.name, L.options.tooltips.restyle_fonts.desc, at("restyleFonts"), { after = "reconfigure" }),
 
-		anchoring = group("Anchoring", {
+		anchoring = group(L.options.tooltips.anchoring, {
 			unitAnchor = toggle(L.options.tooltips.unit_anchor.name, L.options.tooltips.unit_anchor.desc,
 				at("unitAnchor")),
 			cursorItems = toggle(L.options.tooltips.cursor_items.name,
@@ -1068,7 +1068,7 @@ local function TooltipsGroup()
 			healthValues = toggle(L.options.tooltips.health_values.name, nil, at("healthValues")),
 		}, { inline = true }),
 
-		colour = group("Colour", {
+		colour = group(L.options.tooltips.colour, {
 			qualityBorder = toggle(L.options.tooltips.quality_border.name, nil, at("qualityBorder")),
 			loreGold = toggle(L.options.tooltips.lore_gold.name, L.options.tooltips.lore_gold.desc,
 				at("loreGold")),
@@ -1081,16 +1081,16 @@ end
 local function PartyFramesGroup()
 	local function at(k) return { "modules", "partyframes", k } end
 	return group(L.options.party_frames.party_frames, {
-		enabled = toggle("Enabled",
+		enabled = toggle(L.common.enabled,
 			L.options.party_frames.four_capsules_party_same, at("enabled"), { defaultTrue = true }),
 		hideBlizzard = toggle(L.options.party_frames.hide_blizzard.name, nil,
 			at("hideBlizzard")),
 		clickTarget = toggle(L.common.click_target,
 			L.common.left_click_targets_right, at("clickTarget")),
 
-		sizeHeader = header("Capsule"),
-		width = range("Width", nil, at("width"), 240, 460, 1),
-		height = range("Height", nil, at("height"), 40, 80, 1),
+		sizeHeader = header(L.common.capsule),
+		width = range(L.common.width, nil, at("width"), 240, 460, 1),
+		height = range(L.common.height, nil, at("height"), 40, 80, 1),
 		gap = range(L.options.party_frames.gap.name, nil, at("gap"), 0, 40, 1),
 		barWidth = range(L.common.bar_width, nil, at("barWidth"), 100, 300, 1),
 		showPower = toggle(L.common.show_power_bar, nil, at("showPower")),
@@ -1106,9 +1106,9 @@ end
 --  player whose ring means something different from everybody else's.
 local function ThreatGroup()
 	local function at(k) return { "modules", "threat", k } end
-	return group("Threat", {
-		enabled = toggle("Enabled", L.options.threat.enabled.desc, at("enabled")),
-		display = choice("Show", L.options.threat.display.desc, at("display"), {
+	return group(L.options.threat.threat, {
+		enabled = toggle(L.common.enabled, L.options.threat.enabled.desc, at("enabled")),
+		display = choice(L.options.threat.display.name, L.options.threat.display.desc, at("display"), {
 				full  = "Rings and warnings",
 				rings = "Rings only",
 				off   = "Nothing",

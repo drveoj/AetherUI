@@ -1585,7 +1585,7 @@ handlers.panels = function(arg, rest)
 	if arg == "dump" then A:DumpPanel(rest) return end
 	if arg == "measure" then MeasurePanels(rest) return end
 	if arg == "diag" then
-		A:Print("panels")
+		A:Print(L.cmd.panels.panels)
 		A.PanelsDiag(function(fmt, ...) A:Print(string.format(fmt, ...)) end)
 		return
 	end
@@ -1688,7 +1688,7 @@ handlers.party = function(arg)
 		return
 	end
 	
-	A:Print("party")
+	A:Print(L.cmd.party.party)
 	A.PartyDiag(function(fmt, ...)
 		A:Print(string.format(fmt, ...))
 	end)

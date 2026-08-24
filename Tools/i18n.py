@@ -197,10 +197,27 @@ NOT_A_PHRASE = [
 MIN_LEN = 4
 
 
-def is_phrase(text):
+# WHERE A SINGLE WORD IS STILL A PHRASE.
+#
+# The identifier rules below refuse a bare word - `name = "AetherUIPlayerFrame"`,
+# `GetModule("bags")`, `SetPoint("LEFT")` - and they have to, because most bare
+# words in this file are keys and frame names. But at a site that can only ever
+# be prose they are exactly wrong: `toggle("Border", ...)` is the label on a
+# checkbox and `SetText("read")` is a word somebody reads.
+#
+# Eighty-eight option labels were refused on this rule and reported as done -
+# every single-word one in the panel, which is why the phrase list came out
+# looking like nothing but long descriptions.
+PROSE_ONLY = re.compile(r'^(SetText|SetLabel|Say|Print)$|#\d+$')
+
+def is_phrase(text, site=None):
     if len(text) < MIN_LEN:
         return False, "shorter than %d characters" % MIN_LEN
-    for rx, why in NOT_A_PHRASE:
+    prose = site is not None and PROSE_ONLY.search(site) is not None
+    for i, (rx, why) in enumerate(NOT_A_PHRASE):
+        # The three identifier rules sit together at the top of the list.
+        if prose and 2 <= i <= 4:
+            continue
         if rx.search(text):
             return False, why
     # It has to contain a letter of its OWN. Format specifiers are stripped
@@ -352,7 +369,7 @@ def find(rel):
                 continue
             stop, pieces, whole = chain(body, at)
             text = unescape("".join(pieces))
-            ok, why = is_phrase(text)
+            ok, why = is_phrase(text, site)
             if not ok:
                 continue
             seen.append((at, stop, m.start(1), text, whole, site))

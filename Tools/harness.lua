@@ -38322,6 +38322,52 @@ do
 		table.concat(missing, ", ", 1, math.min(#missing, 4))
 		or count .. " phrases") .. ")")
 
+	-- AND EVERY KEY IN IT CAN ACTUALLY BE REACHED.
+	--
+	-- Locale/enUS.lua is EDITED BY HAND, which is the whole point of naming
+	-- the keys - and a hand-edited key is a key somebody can mistype. A path
+	-- is read as `L.a.b.c`, so every part of it has to be a Lua identifier: a
+	-- doubled dot, a leading digit, a space, and the phrase is unreachable
+	-- from the source no matter how right the English beside it looks.
+	do
+		local bad = {}
+		for key in pairs(A.Phrases("enUS")) do
+			-- PART BY PART, because a Lua pattern cannot repeat a group: the
+			-- one-liner for this reads as if it works and matches nothing.
+			local ok, parts = true, 0
+			for part in key:gmatch("[^%.]+") do
+				parts = parts + 1
+				if not part:match("^[%a_][%w_]*$") then ok = false end
+			end
+			-- A doubled or trailing dot leaves a gap gmatch walks straight
+			-- past, so the pieces are counted against the dots.
+			local _, dots = key:gsub("%.", "")
+			if parts ~= dots + 1 then ok = false end
+			if not ok then bad[#bad + 1] = key end
+		end
+		table.sort(bad)
+		check(#bad == 0,
+			"and every key in it is a path the source can reach (" ..
+			(#bad > 0 and table.concat(bad, ", ", 1, math.min(#bad, 4))
+			or "all of them") .. ")")
+	end
+
+	-- AND NOTHING IN IT IS EMPTY. A phrase edited down to nothing draws
+	-- nothing, which is a label somebody has to notice is absent - the same
+	-- failure the fallback exists to prevent, arrived at from the other side.
+	do
+		local empty = {}
+		for key, text in pairs(A.Phrases("enUS")) do
+			if type(text) ~= "string" or text == "" then
+				empty[#empty + 1] = key
+			end
+		end
+		table.sort(empty)
+		check(#empty == 0,
+			"and none of them is empty (" .. (#empty > 0 and
+			table.concat(empty, ", ", 1, math.min(#empty, 4)) or "none") .. ")")
+	end
+
 	-- AND NOTHING IN THE LIST IS DEAD WEIGHT. A phrase nobody asks for is a
 	-- phrase somebody is being asked to translate for nothing.
 	do

@@ -603,7 +603,7 @@ local function BuildNav(c)
 	back:SetPoint("LEFT", nav, "LEFT", 0, 0)
 	back.label = W.Text(back, "tbLabel", "CENTER")
 	back.label:SetPoint("CENTER")
-	back.label:SetText("Back")
+	back.label:SetText(L.tour.build_nav.back)
 	back:SetScript("OnClick", function() OB:Back() end)
 	nav.back = back
 
@@ -612,7 +612,7 @@ local function BuildNav(c)
 	next_:SetPoint("RIGHT", nav, "RIGHT", 0, 0)
 	next_.label = W.Text(next_, "tbLabel", "CENTER")
 	next_.label:SetPoint("CENTER")
-	next_.label:SetText("Next")
+	next_.label:SetText(L.tour.build_nav.next)
 	next_:SetScript("OnClick", function() OB:Next() end)
 	nav.next = next_
 
@@ -1483,7 +1483,7 @@ local function QuestsDemo(slot)
 		if want == "open" then
 			card:SetHeight(OPEN)
 			card.line:Show()
-			pill:Say("tracking", Palette.c.textFaint)
+			pill:Say(L.tour.quests_demo.tracking, Palette.c.textFaint)
 			chev:SetAlpha(0.25)
 			return true
 		end
@@ -1967,7 +1967,7 @@ local function BuildToast()
 	t.label:SetPoint("LEFT", t, "LEFT", 14, 0)
 
 	t.go = W.Text(t, "tbLabel", "RIGHT")
-	t.go:SetText("Resume")
+	t.go:SetText(L.tour.build_toast.resume)
 
 	-- The shared close, which is also the shared HIT SIZE: a dismiss smaller
 	-- than the thing it dismisses is a dismiss people miss and click through.
@@ -2204,7 +2204,7 @@ function OB:ShowFinish()
 		"Re-run this tour: /aether tour",
 	})
 
-	c.go.label:SetText("Done")
+	c.go.label:SetText(L.tour.show_finish.done)
 	W.Color(c.go.label, Palette.c.text)
 	c.go:SetScript("OnClick", function() OB:Finish() end)
 	c.alt:Hide()
