@@ -22,6 +22,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local CV = A:NewModule("conveniences")
 
 local function cfg() return A.Config:Module("conveniences") end
@@ -94,7 +96,7 @@ function CV:Repair()
 	-- repaired and leave you in a fight with a broken weapon.
 	local purse = GetMoney and GetMoney() or 0
 	if purse < cost then
-		A:Print(A.Bad("not enough for repairs:") .. " " .. Coins(cost)
+		A:Print(A.Bad(L["not enough for repairs:"]) .. " " .. Coins(cost)
 			.. " needed, " .. Coins(purse) .. " on you")
 		return "broke"
 	end

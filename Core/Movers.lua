@@ -12,6 +12,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local Movers = {}
 A.Movers = Movers
 
@@ -430,7 +432,7 @@ local function CreateHandle(entry)
 		-- The dock's children are secure; moving their ancestor mid-combat is a
 		-- protected action. Refuse rather than let the client throw.
 		if InCombatLockdown() then
-			A:Print(A.Bad("can't move frames in combat."))
+			A:Print(A.Bad(L["can't move frames in combat."]))
 			return
 		end
 		local f = entry.frame
@@ -639,7 +641,7 @@ local function BuildLockButton()
 	local c = A.Palette.c
 	b.label = A.Widgets.Text(b, "label", "CENTER")
 	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
-	b.label:SetText("Lock frames")
+	b.label:SetText(L["Lock frames"])
 	A.Widgets.Color(b.label, c.text)
 	b.__aetherLabel = b.label
 
@@ -709,7 +711,7 @@ function Movers:Unlock()
 		entry.handle:Show()
 	end
 	Announce()
-	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). Press " .. A.Hi("Lock frames") .. ", or " .. A.Hi("/aether lock") .. ", when done.")
+	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). Press " .. A.Hi(L["Lock frames"]) .. ", or " .. A.Hi("/aether lock") .. ", when done.")
 	A:Print(A.Dim("Edges snap to the grid and to other frames; hold alt while dragging"
 		.. " to place freely. Frames that only appear when the game says so - the pet"
 		.. " bar, the taxi button - are held up so you can place them."))
@@ -725,7 +727,7 @@ function Movers:Lock()
 		if entry.preview then pcall(entry.preview, false) end
 	end
 	Announce()
-	A:Print("frames locked.")
+	A:Print(L["frames locked."])
 end
 
 --- Re-lay the grid after a settings change, so turning it off or changing the
@@ -742,5 +744,5 @@ end
 function Movers:ResetAll()
 	wipe(A.db.profile.anchors)
 	Movers:RestoreAll()
-	A:Print("frame positions reset.")
+	A:Print(L["frame positions reset."])
 end

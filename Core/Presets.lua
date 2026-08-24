@@ -60,6 +60,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local Presets = {}
 A.Presets = Presets
 
@@ -155,8 +157,8 @@ Presets.list = {
 		-- somebody who has played this game before knows where to look, and a
 		-- first run that moves their health bar somewhere new has spent its
 		-- first decision making them hunt for it.
-		label = "Classic Corner",
-		blurb = "Unitframes in the top left corner as they're laid out in the classic UI.",
+		label = L["Classic Corner"],
+		blurb = L["Unitframes in the top left corner as they're laid out in the classic UI."],
 		scale = 0.71,
 		bars = { ["1"] = true, ["2"] = false, ["3"] = false, ["4"] = false, ["5"] = false, ["6"] = false },
 		-- captured on a 2885 x 1202 screen
@@ -181,8 +183,8 @@ Presets.list = {
 		},
 	},
 	centre = {
-		label = "Centre focus",
-		blurb = "Unitframes in the center where most of the action is.",
+		label = L["Centre focus"],
+		blurb = L["Unitframes in the center where most of the action is."],
 		scale = 0.71,
 		bars = { ["1"] = true, ["2"] = true, ["3"] = false, ["4"] = false, ["5"] = false, ["6"] = false },
 		-- captured on a 2885 x 1202 screen
@@ -208,8 +210,8 @@ Presets.list = {
 	bottom = {
 		-- The only one that places the music deck, which is why it is the only
 		-- one with an `ifec` line. A preset names what it moves.
-		label = "Bottom Corners",
-		blurb = "Unitframes positioned towards the bottom and out to the corners.",
+		label = L["Bottom Corners"],
+		blurb = L["Unitframes positioned towards the bottom and out to the corners."],
 		scale = 0.71,
 		bars = { ["1"] = true, ["2"] = true, ["3"] = false, ["4"] = false, ["5"] = false, ["6"] = false },
 		-- captured on a 2885 x 1202 screen

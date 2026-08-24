@@ -16,6 +16,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 A.IFEC = A.IFEC or {}
 local Player = {}
 A.IFEC.Player = Player
@@ -236,7 +238,7 @@ function Player:Build()
 
 	f.upNextLabel = W.Text(f, "ifecSection", "LEFT", "OVERLAY")
 	f.upNextLabel:SetPoint("TOPLEFT", f.rule, "BOTTOMLEFT", 2, -6)
-	f.upNextLabel:SetText("UP NEXT")
+	f.upNextLabel:SetText(L["UP NEXT"])
 
 	f.rows = {}
 	for i = 1, UPNEXT_MAX do
@@ -254,7 +256,7 @@ function Player:Build()
 	-- and three chips, in place of everything above.
 	f.done = W.Text(f, "ifecTitle", "LEFT", "OVERLAY")
 	f.done:SetPoint("TOPLEFT", f, "TOPLEFT", PAD_X, -PAD_T - 2)
-	f.done:SetText("Programme complete.")
+	f.done:SetText(L["Programme complete."])
 	f.done:Hide()
 
 	f.chips = {}
@@ -502,7 +504,7 @@ function Player:Paint()
 	self:PaintLegs(flight)
 
 	f.fills:SetText("programme fills " .. clock(filled) .. " of " .. clock(total))
-	f.legend:SetText("outlined = queued")
+	f.legend:SetText(L["outlined = queued"])
 
 	self:PaintNowPlaying()
 	self:PaintUpNext()
@@ -629,7 +631,7 @@ function Player:PaintUpNext()
 			-- kept here: the mini-player queues things too, and two surfaces
 			-- with their own idea of what the player chose is one of them wrong.
 			if Playback and Playback.picked[item.key] then
-				row.meta:SetText("queued by you")
+				row.meta:SetText(L["queued by you"])
 				W.Color(row.meta, Palette.c.textDim)
 			else
 				row.meta:SetText(clock(item.duration or 0) .. "  \194\183  auto")

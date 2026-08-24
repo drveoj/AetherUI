@@ -59,6 +59,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local TB = A:NewModule("toolbox")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -231,7 +233,7 @@ function TB:Build()
 	gear:SetScript("OnEnter", function(self2)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
-		GameTooltip:SetText("AetherUI settings")
+		GameTooltip:SetText(L["AetherUI settings"])
 		GameTooltip:Show()
 	end)
 	gear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -854,7 +856,7 @@ function TB:BuildDockHandle()
 
 	h:SetScript("OnDragStart", function(self2)
 		if InCombatLockdown() then
-			A:Print(A.Bad("can't re-dock the toolbox in combat."))
+			A:Print(A.Bad(L["can't re-dock the toolbox in combat."]))
 			return
 		end
 		self._dragging = true
@@ -1153,7 +1155,7 @@ TB.PROVIDERS = {
 	-- kind of difference that reads as "sometimes it works".
 	{ key = "Gold",       label = "Gold",
 	  events = { "PLAYER_MONEY", "PLAYER_ENTERING_WORLD" } },
-	{ key = "BagSpace",   label = "Bag space",  events = { "BAG_UPDATE", "PLAYER_ENTERING_WORLD" } },
+	{ key = "BagSpace",   label = L["Bag space"],  events = { "BAG_UPDATE", "PLAYER_ENTERING_WORLD" } },
 	{ key = "Durability", label = "Durability", events = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_ENTERING_WORLD" } },
 	{ key = "XPHour",     label = "XP / hr",
 	  events = { "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" } },
@@ -1763,7 +1765,7 @@ function TB:BuildContent()
 
 	local ct = W.Text(card, "tbCardTitle", "LEFT")
 	ct:SetPoint("TOPLEFT", tile, "TOPRIGHT", 12, -2)
-	ct:SetText("What's new")
+	ct:SetText(L["What's new"])
 	card.titleText = ct
 
 	-- The unread dot needs a notion of READ, or it is either always lit or never
@@ -2029,27 +2031,23 @@ end
 TB.TILES = {
 	{ kind = "setting", key = "zen", label = "Zen",
 	  path = { "modules", "zen", "enabled" },
-	  tip = "Fades the interface away when you stand still, and brings it"
-	     .. " straight back the moment anything happens. Your character sits"
-	     .. " down and the camera pulls back for the view." },
+	  tip = L["Fades the interface away when you stand still, and brings it straight back the moment anything happens. Your character sits down and the camera pulls back for the view."] },
 
 	-- The in-flight player, NOT the flight timer. Combat collapse had this slot
 	-- and has gone to the options panel, where it already lived: four tiles is
 	-- what the deck draws and the one thing that had no home anywhere else was
 	-- this. A player who never wants a programme on a griffin still wants to
 	-- know when the griffin lands.
-	{ kind = "setting", key = "ifec", label = "I.F.E.C.",
+	{ kind = "setting", key = "ifec", label = L["I.F.E.C."],
 	  path = { "modules", "ifec", "player" },
-	  tip = "Plays the season's music and stories while you are a passenger."
-	     .. " The flight timer, the route and the countdown are not this and"
-	     .. " stay either way." },
+	  tip = L["Plays the season's music and stories while you are a passenger. The flight timer, the route and the countdown are not this and stay either way."] },
 
 	-- Both of the below are MODES. They are read from the module that owns the
 	-- state rather than from the profile, because that is where the truth is:
 	-- /aether lock, the options panel and this tile all move the same flag, and
 	-- a copy of it in the profile would be a second answer that goes stale the
 	-- first time somebody uses the slash command.
-	{ kind = "mode", key = "lock", label = "Unlock frames",
+	{ kind = "mode", key = "lock", label = L["Unlock frames"],
 	  get = function() return A.Movers and A.Movers.unlocked or false end,
 	  set = function(want)
 		if not A.Movers then return false end
@@ -2060,7 +2058,7 @@ TB.TILES = {
 	     .. " pixel at a time - hold shift to nudge sideways. Locked again from"
 	     .. " here or with /aether lock." },
 
-	{ kind = "mode", key = "keybinds", label = "Keybind mode",
+	{ kind = "mode", key = "keybinds", label = L["Keybind mode"],
 	  get = function()
 		local AB = A:GetModule("actionbars")
 		return (AB and AB.enabled and AB.bindMode) and true or false
@@ -2071,9 +2069,7 @@ TB.TILES = {
 		AB:SetBindMode(want)
 		return true
 	  end,
-	  tip = "Hover an action button and press a key to bind it. Keys go into"
-	     .. " Blizzard's own binding set, so they survive this addon being"
-	     .. " disabled and show up in the keybinding panel." },
+	  tip = L["Hover an action button and press a key to bind it. Keys go into Blizzard's own binding set, so they survive this addon being disabled and show up in the keybinding panel."] },
 }
 
 local function Resolve(path)
@@ -2346,7 +2342,7 @@ function TB:RefreshMailRows()
 			local e = c.glassEdge
 			row.chip.ring:SetVertexColor(e[1], e[2], e[3], 0.9)
 			W.Color(row.chip.label, c.textDim)
-			row.name:SetText("No unread mail")
+			row.name:SetText(L["No unread mail"])
 			W.Color(row.name, c.textDim)
 		elseif who and explain then
 			-- The one row that is not a sender. A question mark rather than an
@@ -2360,7 +2356,7 @@ function TB:RefreshMailRows()
 			local e = c.glassEdge
 			row.chip.ring:SetVertexColor(e[1], e[2], e[3], 0.9)
 			W.Color(row.chip.label, c.textDim)
-			row.name:SetText("Senders show after a mailbox visit")
+			row.name:SetText(L["Senders show after a mailbox visit"])
 			W.Color(row.name, c.textDim)
 		elseif who then
 			W.Color(row.name, Palette.c.text)
@@ -3095,7 +3091,7 @@ TB.MICRO = {
 	{ key = "talents",   label = "Talents",
 	  fn = function() ToggleTalentFrame() end,
 	  probe = function() return ToggleTalentFrame ~= nil end },
-	{ key = "quests",    label = "Quest log",
+	{ key = "quests",    label = L["Quest log"],
 	  fn = function() ToggleQuestLog() end,
 	  probe = function() return ToggleQuestLog ~= nil end },
 	{ key = "bags",      label = "Bags",

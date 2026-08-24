@@ -225,6 +225,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local Zen = A:NewModule("zen")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -1736,7 +1738,7 @@ local function Tick(self, dt)
 	self:SetKeysEnabled(false)
 	A:UnregisterTicker(self)
 	A.lastFailure = "zen: " .. tostring(err)
-	A:Print(A.Bad("zen failed and put the interface back:") .. " " .. tostring(err))
+	A:Print(A.Bad(L["zen failed and put the interface back:"]) .. " " .. tostring(err))
 end
 
 --- Called by the fader on every state change.

@@ -22,6 +22,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 A.IFEC = A.IFEC or {}
 local Library = {}
 A.IFEC.Library = Library
@@ -460,7 +462,7 @@ function Library:Paint()
 	f.list:Clamp()
 
 	f.empty:SetShown(shown == 0)
-	if shown == 0 then f.empty:SetText("Nothing of that kind this season.") end
+	if shown == 0 then f.empty:SetText(L["Nothing of that kind this season."]) end
 	f.count:SetText(shown > 0 and (shown .. (shown == 1 and " item" or " items")) or "")
 end
 

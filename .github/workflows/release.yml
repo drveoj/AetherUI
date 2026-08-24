@@ -1,0 +1,38 @@
+# Build a zip on every version tag, and attach it to the GitHub release.
+#
+# THE UPLOAD IS OPT-IN. BigWigsMods/packager uploads to CurseForge, WoWInterface
+# and Wago when it finds a token for each, and does not when it does not - so
+# this workflow builds and attaches the zip today, and starts publishing the day
+# a CF_API_KEY secret is added to the repository. Nothing here reaches the
+# outside world until somebody puts a key in.
+#
+# THE TAG IS THE VERSION. `Tools/bump.py` writes the .toc and the changelog
+# together and the harness refuses a build where the two disagree; tagging
+# vN.N.N is what turns that into a release.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The packager reads the changelog out of the git history, so a
+          # shallow clone gives it one commit to describe a release with.
+          fetch-depth: 0
+
+      - name: Package and release
+        uses: BigWigsMods/packager@master
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}

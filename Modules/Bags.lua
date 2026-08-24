@@ -45,6 +45,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local Bags = A:NewModule("bags")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -301,7 +303,7 @@ local CLASS_CATEGORY = {
 local CATEGORIES = {
 	{ key = "equipment",  label = "EQUIPMENT"   },
 	{ key = "consumable", label = "CONSUMABLES" },
-	{ key = "trade",      label = "TRADE GOODS" },
+	{ key = "trade",      label = L["TRADE GOODS"] },
 	{ key = "quest",      label = "QUEST"       },
 	{ key = "misc",       label = "MISCELLANEOUS" },
 	{ key = "junk",       label = "JUNK"        },
@@ -1138,7 +1140,7 @@ local function BuildRail(frame)
 		W.SetButtonState(self, false, true)
 		if not _G.GameTooltip then return end
 		_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		_G.GameTooltip:SetText("Equipped bags")
+		_G.GameTooltip:SetText(L["Equipped bags"])
 		_G.GameTooltip:Show()
 	end)
 	rail:SetScript("OnLeave", function(self)
@@ -2390,7 +2392,7 @@ end
 function Bags:StartSort(frame)
 	if self.sorting then return end
 	if _G.InCombatLockdown and _G.InCombatLockdown() then
-		A:Print("not while you are in combat.")
+		A:Print(L["not while you are in combat."])
 		return
 	end
 	-- The pass timer cannot be cancelled once queued, so the run identifies
@@ -2429,8 +2431,7 @@ function Bags:SortPass(token)
 		-- Said out loud rather than swallowed. A sort that stops halfway in
 		-- silence reads to the player as "sort is broken", and the cap being
 		-- reached at all means an assumption in here is wrong.
-		A:Print("stopped compacting after 40 passes - run it again if there is"
-			.. " still work to do.")
+		A:Print(L["stopped compacting after 40 passes - run it again if there is still work to do."])
 		self:StopSort()
 		return
 	end
@@ -2810,7 +2811,7 @@ function Bags:ConfirmBuyBankSlot()
 
 	local owned = (_G.GetNumBankSlots and _G.GetNumBankSlots()) or 0
 	if owned + 1 ~= want then
-		A:Print("the bank has changed since that was asked - nothing was bought.")
+		A:Print(L["the bank has changed since that was asked - nothing was bought."])
 		self:Invalidate("bank")
 		return
 	end
@@ -2904,7 +2905,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function Bags:Diagnose()
-	A:Print("bags:")
+	A:Print(L["bags:"])
 	A:Print(("  api  " .. A.Val("%s") .. " container, " .. A.Val("%s") .. " item")
 		:format(GetItemInfoAt and "yes" or "MISSING", ItemInfoInstant and "yes" or "MISSING"))
 

@@ -31,6 +31,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local AB = A:NewModule("actionbars")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -967,7 +969,7 @@ end
 
 local function SetBindingTo(overlay, keyString)
 	if InCombatLockdown() then
-		A:Print(A.Bad("can't change bindings in combat."))
+		A:Print(A.Bad(L["can't change bindings in combat."]))
 		return
 	end
 	local name = overlay.bindingName
@@ -981,7 +983,7 @@ local function SetBindingTo(overlay, keyString)
 	end
 
 	if not SetBinding(keyString, name) then
-		A:Print(A.Bad("that key can't be bound."))
+		A:Print(A.Bad(L["that key can't be bound."]))
 		return
 	end
 	A:Print((A.Good("%s") .. " -> %s"):format(ShortKey(keyString), name))
@@ -995,7 +997,7 @@ end
 
 local function ClearBindingOn(overlay)
 	if InCombatLockdown() then
-		A:Print(A.Bad("can't change bindings in combat."))
+		A:Print(A.Bad(L["can't change bindings in combat."]))
 		return
 	end
 	local name = overlay.bindingName
@@ -1100,7 +1102,7 @@ end
 --  hover and type at.
 function AB:SetBindMode(on)
 	if on and InCombatLockdown() then
-		A:Print(A.Bad("can't rebind in combat."))
+		A:Print(A.Bad(L["can't rebind in combat."]))
 		return
 	end
 
@@ -1113,7 +1115,7 @@ function AB:SetBindMode(on)
 			Swallow(o, true)
 			o:Hide()
 		end
-		A:Print("keybind mode off.")
+		A:Print(L["keybind mode off."])
 		return
 	end
 

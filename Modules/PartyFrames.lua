@@ -33,6 +33,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local PF = A:NewModule("partyframes")
 
 local W, Glass, Palette = A.Widgets, A.Glass, A.Palette
@@ -717,7 +719,7 @@ local ACTIONS = {
 		end,
 	},
 	{
-		key = "roles", label = "Role Check", glyph = "dps", token = "text",
+		key = "roles", label = L["Role Check"], glyph = "dps", token = "text",
 		leader = true,
 		run = function()
 			if InitiateRolePoll then InitiateRolePoll() end

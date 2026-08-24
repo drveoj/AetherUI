@@ -24,6 +24,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 A.IFEC = A.IFEC or {}
 local Playback = {}
 A.IFEC.Playback = Playback
@@ -384,7 +386,7 @@ function Playback:Poll()
 	local ok, err = pcall(advance)
 	if not ok then
 		Playback.state = "stopped"
-		A:Print(A.Bad("ifec: the programme stopped at a boundary") .. ": " .. tostring(err))
+		A:Print(A.Bad(L["ifec: the programme stopped at a boundary"]) .. ": " .. tostring(err))
 	end
 	return true
 end

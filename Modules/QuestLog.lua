@@ -53,6 +53,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local QL = A:NewModule("questlog")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -663,7 +665,7 @@ local function BuildHeader(win)
 
 	head.title = W.Text(head, "qlHeading", "LEFT")
 	head.title:SetPoint("LEFT", mark, "RIGHT", HEAD_GAP - 2, 0)
-	head.title:SetText("Quest Log")
+	head.title:SetText(L["Quest Log"])
 
 	head.count = BuildPill(head, "qlCount", { height = 22, padX = 13 })
 	head.count:SetPoint("LEFT", head.title, "RIGHT", HEAD_GAP, 0)
@@ -782,7 +784,7 @@ local function RewardCardClick(self)
 		if not link then
 			-- The client has not cached the item yet. Saying so beats a click that
 			-- silently does nothing.
-			A:Print("that reward is still loading - try again in a moment.")
+			A:Print(L["that reward is still loading - try again in a moment."])
 			return
 		end
 		local insert = _G.ChatEdit_InsertLink
@@ -1009,7 +1011,7 @@ local function BuildPanes(win)
 
 	detail.empty = W.Text(body, "qlSummary", "CENTER")
 	detail.empty:SetWidth(dw)
-	detail.empty:SetText("No quest selected.")
+	detail.empty:SetText(L["No quest selected."])
 	detail.empty:Hide()
 
 	return list, detail
@@ -1307,7 +1309,7 @@ function QL:AskAbandon()
 
 	local index = self:ShownIndex()
 	if not index then
-		A:Print("that quest is no longer in your log.")
+		A:Print(L["that quest is no longer in your log."])
 		return
 	end
 	if not SelectQuest(index) then return end
@@ -1384,7 +1386,7 @@ function QL:ConfirmAbandon()
 	-- confident wrong one.
 	local fresh = IndexForQuest(questID, index, title)
 	if not fresh then
-		A:Print("that quest is no longer in your log - nothing was abandoned.")
+		A:Print(L["that quest is no longer in your log - nothing was abandoned."])
 		return
 	end
 

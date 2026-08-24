@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.35.0",
+		date    = "2026-08-24",
+		lines   = {
+			"Every word AetherUI writes is now a translatable phrase - titles, options and their descriptions, the tour, the chat output. Nothing is translated yet; everything is ready to be.",
+			"Releases are built from a version tag by the standard addon packager, which drops translations in as it builds.",
+		},
+	},
+	{
 		version = "0.34.2",
 		date    = "2026-08-24",
 		lines   = {

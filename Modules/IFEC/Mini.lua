@@ -21,6 +21,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 A.IFEC = A.IFEC or {}
 local Mini = {}
 A.IFEC.Mini = Mini
@@ -198,7 +200,7 @@ function Mini:Paint()
 		-- failed rather than one that is waiting.
 		Media:SetIcon(f.glyph, "music")
 		f.glyph:SetVertexColor(c.textFaint[1], c.textFaint[2], c.textFaint[3], 0.8)
-		f.title:SetText("Nothing playing")
+		f.title:SetText(L["Nothing playing"])
 		W.Color(f.title, c.textDim)
 		-- WHICH KIND OF NOTHING, when there is nothing: a pack refused and a
 		-- pack absent are different problems and only one of them is the

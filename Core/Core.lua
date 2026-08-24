@@ -16,6 +16,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 _G[ADDON] = A
 
 A.name     = ADDON
@@ -367,7 +369,7 @@ local function EnableModule(name, module)
 			module.enabled = false
 			module.lastError = tostring(err)
 			A:Print(A.Bad("module '" .. name .. "' failed to enable:") .. " " .. tostring(err))
-			A:Print(A.Bad("run") .. " /aether diag " .. A.Bad("for the full picture."))
+			A:Print(A.Bad("run") .. " /aether diag " .. A.Bad(L["for the full picture."]))
 		end
 	end
 end
@@ -440,7 +442,7 @@ local function FireSkinChanged()
 		local ok, err = pcall(skinListeners[i])
 		if not ok then
 			A.lastFailure = tostring(err)
-			A:Print(A.Bad("a skin listener failed:") .. " " .. tostring(err))
+			A:Print(A.Bad(L["a skin listener failed:"]) .. " " .. tostring(err))
 		end
 	end
 end

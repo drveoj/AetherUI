@@ -53,6 +53,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local Chat = A:NewModule("chat")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -2187,7 +2189,7 @@ function Chat:SetWhisperTab(on)
 		self:Reskin()
 
 		if moved == 0 then
-			A:Print("the whispers tab exists but no message group would move to it.")
+			A:Print(L["the whispers tab exists but no message group would move to it."])
 			return false
 		end
 		A:Print("whispers now go to " .. A.Val(name) .. ".")
@@ -2418,7 +2420,7 @@ end
 --  who its parent is and whether it is on screen.
 function Chat:Diagnose()
 	local eb = _G.ChatFrame1 and (_G.ChatFrame1.editBox or _G.ChatFrame1EditBox)
-	if not eb then A:Print("no edit box found.") return end
+	if not eb then A:Print(L["no edit box found."]) return end
 	A:Print("edit box: " .. tostring(eb:GetName()))
 
 	local function walk(frame, depth, path)
@@ -2437,7 +2439,7 @@ function Chat:Diagnose()
 							"   %s%s  " .. A.Val("'%s'") .. "  alpha=%.2f %s",
 							string.rep("  ", depth), path,
 							tostring(txt), r:GetAlpha() or 1,
-							visible and A.Bad("ON SCREEN") or A.Good("not drawn")))
+							visible and A.Bad(L["ON SCREEN"]) or A.Good("not drawn")))
 					end
 				end
 			end
@@ -2459,7 +2461,7 @@ function Chat:Diagnose()
 	-- chat window" is a question about anchors and nothing else in this dump
 	-- answers it. Blizzard re-anchors the edit box on activation, so what we set
 	-- at skin time is not necessarily what is on the frame now.
-	A:Print("anchors:")
+	A:Print(L["anchors:"])
 	local function report(label, frame)
 		if not frame then
 			DEFAULT_CHAT_FRAME:AddMessage("   " .. label .. "  " .. A.Bad("absent"))
@@ -2468,7 +2470,7 @@ function Chat:Diagnose()
 		local n = (frame.GetNumPoints and frame:GetNumPoints()) or 0
 		if n == 0 then
 			DEFAULT_CHAT_FRAME:AddMessage("   " .. label
-				.. "  " .. A.Bad("no points at all"))
+				.. "  " .. A.Bad(L["no points at all"]))
 			return
 		end
 		for i = 1, n do
@@ -2515,7 +2517,7 @@ function Chat:DiagnoseLines()
 			detail and ("  " .. A.Dim(detail)) or ""))
 	end
 
-	A:Print("message lines:")
+	A:Print(L["message lines:"])
 	say("ChatFrameUtil", U ~= nil)
 	say("sender filter", self._senderFilter == true,
 		U and type(U.AddSenderNameFilter) == "function"

@@ -2,11 +2,28 @@
 ## Title: Aether|cff9d7bffUI|r
 ## Notes: A frosted-glass HUD for Classic Era. Core skin engine + modules.
 ## Author: DrVeoj
-## Version: 0.34.2
+## Version: 0.35.0
 ## SavedVariables: AetherUIDB
 ## X-Category: Interface Enhancements
 
 Libs\Libs.xml
+
+# Every word this addon wrote, and the ten files a translator's work arrives
+# in. BEFORE Core, because Core has words in it too - the addon table the
+# client hands each file exists from the first one, so nothing here needs
+# anything that has not loaded.
+Core\Locale.lua
+Locale\enUS.lua
+Locale\deDE.lua
+Locale\esES.lua
+Locale\esMX.lua
+Locale\frFR.lua
+Locale\itIT.lua
+Locale\koKR.lua
+Locale\ptBR.lua
+Locale\ruRU.lua
+Locale\zhCN.lua
+Locale\zhTW.lua
 
 Core\Core.lua
 Core\Changelog.lua

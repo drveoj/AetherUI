@@ -46,6 +46,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local QT = A:NewModule("questtracker")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -366,13 +368,13 @@ end
 --  thing this addon is going to be responsible for.
 local function AbandonQuestAt(index, title)
 	if not SelectQuestLogEntry or not StaticPopup_Show then
-		A:Print("can't abandon from here on this client - use the quest log.")
+		A:Print(L["can't abandon from here on this client - use the quest log."])
 		return
 	end
 	pcall(SelectQuestLogEntry, index)
 	if SetAbandonQuest then pcall(SetAbandonQuest) end
 	if not pcall(StaticPopup_Show, "ABANDON_QUEST", title) then
-		A:Print("can't abandon from here on this client - use the quest log.")
+		A:Print(L["can't abandon from here on this client - use the quest log."])
 	end
 end
 
@@ -512,7 +514,7 @@ local function Build()
 	-- in the WoW font engine, so the spaces are in the string.
 	header.title = W.Text(header, "label", "LEFT")
 	header.title:SetPoint("LEFT", header, "LEFT", 0, 0)
-	header.title:SetText("Q U E S T S")
+	header.title:SetText(L["Q U E S T S"])
 
 	header.count = W.Text(header, "tiny", "RIGHT")
 	header.count:SetPoint("RIGHT", header, "RIGHT", 0, 0)
