@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.4",
+		date    = "2026-08-24",
+		lines   = {
+			"The README is written for somebody installing the addon rather than for somebody writing it. The developer notes moved to docs/NOTES.md.",
+		},
+	},
+	{
 		version = "0.36.3",
 		date    = "2026-08-24",
 		lines   = {

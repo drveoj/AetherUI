@@ -1,17 +1,19 @@
 package-as: AetherUI
 
-# WHAT SHIPS IS WHAT THE CLIENT LOADS, AND NOTHING ELSE.
+# WHAT SHIPS IS WHAT THE CLIENT LOADS, plus the one file a person might read.
 #
-# The harness is thirty thousand lines and the design handoffs are megabytes of
-# HTML; neither is any use inside an addon folder, and both are the difference
-# between a 2MB download and a 12MB one. The tools stay in the repository, where
-# they belong, and out of the zip.
+# The harness alone is thirty thousand lines and the plans and handoff notes are
+# most of a megabyte; none of it is any use inside an addon folder. The tools
+# stay in the repository, where they belong, and out of the zip.
+#
+# README.md DOES ship. It is written for somebody who has just installed this
+# and is looking at the folder, which is a different audience from every other
+# file here - the developer's notes moved to docs/NOTES.md to make room for it.
 ignore:
     - Tools
     - docs
     - .claude
     - .github
-    - README.md
 
 # The libraries are vendored rather than pulled at package time, deliberately.
 #
