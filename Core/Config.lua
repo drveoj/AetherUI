@@ -266,9 +266,22 @@ Config.defaults = {
 
 					-- Button count comes from the game, not from config: however many
 					-- forms you have, and the ten pet slots.
+					-- BESIDE BAR 1, for the same reason `extra` is: a fixed
+					-- screen position for a bar whose width depends on the
+					-- class is a position that is right for one class. The old
+					-- one was BOTTOMLEFT 24, 220, and it landed on top of the
+					-- chat window - which is where all three presets put the
+					-- chat.
+					--
+					-- It matters MORE here than for `extra`, because no preset
+					-- names this bar. The classes that have one are a minority,
+					-- so nobody capturing an arrangement has a stance bar on
+					-- screen to place - which means applying any arrangement at
+					-- all dropped it back on this default. Reported from the
+					-- game against 0.31.0.
 					{ id = "stance", kind = "stance", enabled = true,
 					  rows = 1, scale = 0.8, backdrop = true,
-					  label = "Stances", point = "BOTTOMLEFT", x = 24, y = 220 },
+					  label = "Stances", beside = "1", side = "left", y = 26 },
 					{ id = "pet", kind = "pet", enabled = true,
 					  rows = 1, scale = 0.8, backdrop = true,
 					  label = "Pet", point = "BOTTOM", x = 0, y = 118 },

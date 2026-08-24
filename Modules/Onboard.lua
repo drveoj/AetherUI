@@ -145,6 +145,18 @@ OB.stops = {
 		end,
 	},
 	{
+		key   = "zen",
+		name  = "ZEN MODE",
+		head  = "When you stop, so does the interface.",
+		body  = "After a while of quiet the HUD fades to a breath, a clock and "
+			.. "the zone you are in. Pick how long — or never.",
+		kind  = "set",
+		-- NO SPOTLIGHT, for the same reason the layout stop has none: the
+		-- subject is EVERYTHING going away, and a ring round any one frame
+		-- would be saying that frame is the thing that fades.
+		target = function() return nil end,
+	},
+	{
 		key   = "bars",
 		name  = "ACTION BARS",
 		head  = "Your spells, undecorated.",
@@ -217,24 +229,46 @@ OB.stops = {
 		key   = "ifec",
 		name  = "I.F.E.C.",
 		head  = "Long flight? We've got you.",
+		-- AND WHERE IT IS ON THE GROUND, which the first version left out
+		-- entirely: it said "boards on your next flight" and stopped, so the
+		-- honest reading was that there is nothing to look at until then. There
+		-- is - the same programme, in the Toolbox, under its own bad joke of a
+		-- name. Reported from the game against 0.31.0.
 		body  = "Music, podcasts and a truly disreputable gossip rag, timed to "
-			.. "your route. It boards automatically on your next flight.",
+			.. "your route. Boards at takeoff — and N.I.F.E.C. plays it on "
+			.. "the ground, from the Toolbox.",
 		kind  = "show",
-		-- THE RAIL CHIP, which is the console's presence on the ground: the
-		-- region itself hangs at the foot of the Toolbox drawer and is only on
-		-- screen while the drawer is open. Its own frame comes first for the
-		-- case where the drawer IS open, because then it is the better thing to
-		-- be pointing at.
+		-- THE DRAWER OPENS, the same way the bags stop opens the bag panel,
+		-- and for the same reason: the thing being described lives inside it.
+		-- A stop that says "it is in the Toolbox" over a shut Toolbox is a stop
+		-- that has told you where to look and then not let you.
+		--
+		-- Shut again on the way out unless it was already open, in which case
+		-- it was the player's and stays theirs.
+		before = function()
+			local TB = A.GetModule and A:GetModule("toolbox")
+			if not TB or not TB.SetOpen then return end
+			if TB:IsOpen() then return end
+			-- Instant, because the callout is placed against the region inside
+			-- it on this same frame - mid-slide, the drawer is off the edge of
+			-- the screen and the callout goes with it.
+			TB:SetOpen(true, true)
+			OB:OnLeave(function() TB:SetOpen(false, true) end)
+		end,
+		-- N.I.F.E.C. ITSELF, at the foot of the drawer, with the rail's
+		-- transport chip as the fallback: with no content installed the region
+		-- is ABSENT rather than empty - the Toolbox lays out as though it were
+		-- never there - and then there is genuinely nothing to point at.
 		--
 		-- And off A.IFEC rather than off the module: the console's module is
-		-- "ifec" and the mini is not on it. This asked for `M.mini` and got
-		-- nil, the same way stop 4 did.
+		-- "ifec" and the mini is not on it. This asked for `M.mini` and got nil.
 		target = function()
 			local M = A.IFEC and A.IFEC.Mini
 			if not M then return nil end
 			local f = M.frame
 			if f and f.IsVisible and f:IsVisible() then return f end
-			return M.railChip
+			local TB = A.GetModule and A:GetModule("toolbox")
+			return TB and TB.rail and TB.rail.play
 		end,
 	},
 }
@@ -641,6 +675,7 @@ end
 local CHIP_H     = 58      -- a swatch card
 local CARD_H     = 62      -- a layout card, wireframe and all
 local EDGE_H     = 74      -- the edge picker
+local ZEN_H      = 34      -- a delay card
 
 --- Everything a stop put in the slot, gone.
 --
@@ -864,6 +899,77 @@ local function LayoutControl(slot)
 end
 
 -- ---------------------------------------------------------------------------
+-- stop 4: how long before the HUD goes quiet
+-- ---------------------------------------------------------------------------
+
+-- The three timings worth offering, and off. In the words somebody thinks in
+-- rather than in seconds, and topped out by the client: it flags you away at
+-- five minutes and zen follows it there regardless, so nothing longer than that
+-- could ever fire.
+local ZEN_DELAYS = {
+	{ label = "30s",   secs = 30 },
+	{ label = "1 min", secs = 60 },
+	{ label = "5 min", secs = 300 },
+	{ label = "never" },
+}
+
+--- Four cards. Tapping one sets the timer, or switches the whole thing off.
+--
+--  STRAIGHT INTO THE PROFILE, the same door /aether zen delay uses - and the
+--  fader with it. Zen is stage TWO of one feature: with the idle fade switched
+--  off there is no stage one to fade out of, so a delay chosen here would be a
+--  delay for something that can never happen. Picking a time is asking for the
+--  breathing HUD, and this is what asking for it means.
+local function ZenControl(slot)
+	local zcfg = A.db.profile.modules.zen or {}
+	local live = (A:GetModule("zen") or {}).enabled and true or false
+	local gap = 7
+	local w = (slot:GetWidth() - gap * (#ZEN_DELAYS - 1)) / #ZEN_DELAYS
+
+	for i, opt in ipairs(ZEN_DELAYS) do
+		local card = Kid(slot, "zen", i, function(parent)
+			local f = Glass.CreatePanel(parent, {
+				frameType = "Button", corner = 11,
+			})
+			f.label = W.Text(f, "tbLabel", "CENTER")
+			f.label:SetPoint("CENTER")
+			return f
+		end)
+
+		card:SetSize(w, ZEN_H)
+		card:ClearAllPoints()
+		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
+		card.label:SetText(opt.label)
+
+		-- "never" IS THE MODULE BEING OFF rather than a fourth delay. A timer
+		-- that never elapses is a ticker running for ever to do nothing.
+		local on
+		if opt.secs then
+			on = live and (zcfg.delay or 60) == opt.secs
+		else
+			on = not live
+		end
+		Chosen(card, on)
+
+		card:SetScript("OnClick", function()
+			if not opt.secs then
+				A:SetModuleEnabled("zen", false)
+			else
+				A.db.profile.modules.zen = A.db.profile.modules.zen or {}
+				A.db.profile.modules.zen.delay = opt.secs
+				A.db.profile.fader.enabled = true
+				if not (A:GetModule("zen") or {}).enabled then
+					A:SetModuleEnabled("zen", true)
+				end
+			end
+			OB:Go(OB.index or 4)
+		end)
+	end
+
+	slot:SetHeight(ZEN_H)
+end
+
+-- ---------------------------------------------------------------------------
 -- stop 3: the Toolbox edge
 -- ---------------------------------------------------------------------------
 
@@ -929,6 +1035,7 @@ local CONTROLS = {
 	palette = PaletteControl,
 	layout  = LayoutControl,
 	toolbox = ToolboxControl,
+	zen     = ZenControl,
 }
 
 function OB:Control(stop, slot)
@@ -1372,36 +1479,62 @@ end
 -- stop 8: the flight console
 -- ---------------------------------------------------------------------------
 
---- A route, and a programme filling itself against it.
+--- What is actually aboard, and the programme it would make.
 --
---  DRAWN IN THE CALLOUT, and this is the one stop where there is nothing real
---  to point at: the console boards at takeoff and there is no flight to be on.
---  The programme bar is the console's own W.CreateSegmentedBar, filled the way
---  the console fills it, so a restyle of one is a restyle of both.
+--  READ OFF THE REAL LIBRARY. The first version drew a made-up flight from
+--  Booty Bay to Ironforge with three invented legs on it, and it was a picture
+--  of the feature rather than the feature - which is exactly what Joe said when
+--  he saw it: it does not show us the console.
+--
+--  This does. The title is the first thing the console would really play, the
+--  bar is the console's own segmented bar filled from the real durations in the
+--  three channel colours, and the line under it counts what is installed in the
+--  library's own three words. On a clone with no audio in it, it says so.
 local function IfecDemo(slot)
+	local Content = A.IFEC and A.IFEC.Content
+
+	-- IN THE ORDER THE CONSOLE WOULD REACH FOR THEM. Everything() is the
+	-- programme builder run over the whole library, so the first item here is
+	-- the first item a flight would actually get - not the first one the
+	-- registry happens to hold.
+	local queue = (Content and Content:Everything()) or {}
+	local all = (Content and Content:Available()) or {}
+
+	-- The three channels in the library's order and its own words, because a
+	-- filter tab reading "Stories" and a count reading "podcasts" are the same
+	-- thing under two names.
+	local CHANNELS = {
+		{ key = "podcast", word = "Stories" },
+		{ key = "music",   word = "Music" },
+		{ key = "gossip",  word = "Gossip" },
+	}
+	local TINT = {
+		podcast = Palette.c.ifecPodcast,
+		music   = Palette.c.ifecMusic,
+		gossip  = Palette.c.ifecGossip,
+	}
+
+	local count = {}
+	for _, item in ipairs(all) do
+		count[item.type] = (count[item.type] or 0) + 1
+	end
+
 	local pill = Kid(slot, "ifec.pill", 1, function(parent)
+		-- A PANEL, not a pill. The deck draws this as a capsule and the deck's
+		-- is one line tall; three rows in a capsule is a balloon - see the note
+		-- on Glass.CreatePill, which clamps rather than draws one.
 		local f = Glass.CreatePanel(parent, { corner = 12 })
 
-		f.from = W.Text(f, "ifecRoute", "LEFT")
-		f.from:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -9)
+		f.glyph = f:CreateTexture(nil, "OVERLAY")
+		f.glyph:SetSize(13, 13)
+		f.glyph:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -11)
 
-		-- A chevron between the two ends of the route, because the style's own
-		-- comment in Media reads "Booty Bay -> Ironforge" and the font cannot
-		-- draw that arrow.
-		f.chev = f:CreateTexture(nil, "OVERLAY")
-		f.chev:SetSize(11, 11)
-		f.chev:SetTexture(Media.texture.chevron)
-		f.chev:SetPoint("LEFT", f.from, "RIGHT", 7, 0)
+		f.title = W.Text(f, "ifecTitle", "LEFT")
+		f.title:SetPoint("LEFT", f.glyph, "RIGHT", 8, 0)
+		f.title:SetPoint("RIGHT", f, "RIGHT", -12, 0)
 
-		f.to = W.Text(f, "ifecRoute", "LEFT")
-		f.to:SetPoint("LEFT", f.chev, "RIGHT", 7, 0)
-
-		-- ONE ANCHOR AND A WIDTH, not two anchors. A TOPLEFT off the route
-		-- line and a RIGHT off the panel fix the bar's top from one frame and
-		-- its middle from another, and the client is entitled to resolve that
-		-- however it likes. The width is known by the time this is laid out.
 		f.bar = W.CreateSegmentedBar(f, { height = BAR_H })
-		f.bar:SetPoint("TOPLEFT", f.from, "BOTTOMLEFT", 0, -8)
+		f.bar:SetPoint("TOPLEFT", f.glyph, "BOTTOMLEFT", 0, -9)
 
 		f.sub = W.Text(f, "ifecSub", "LEFT")
 		f.sub:SetPoint("TOPLEFT", f.bar, "BOTTOMLEFT", 0, -6)
@@ -1412,32 +1545,77 @@ local function IfecDemo(slot)
 	pill:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
 	pill:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
 
-	pill.from:SetText("Booty Bay")
-	pill.to:SetText("Ironforge")
-	W.Color(pill.from, Palette.c.text)
-	W.Color(pill.to, Palette.c.text)
-	W.FaceChevron(pill.chev, "RIGHT")
-	W.Tint(pill.chev, Palette.c.accent, 0.6)
+	local first = queue[1]
+	if first then
+		Media:SetIcon(pill.glyph, first.type)
+		local tint = TINT[first.type] or Palette.c.accent
+		W.Tint(pill.glyph, tint, 1)
+		pill.title:SetText(first.title or "")
+		W.Color(pill.title, Palette.c.text)
+
+		local said = {}
+		for _, ch in ipairs(CHANNELS) do
+			local n = count[ch.key]
+			if n then said[#said + 1] = n .. " " .. ch.word end
+		end
+		-- A middle dot, which this font has. See the glyph guard in the harness
+		-- for the one it has not.
+		pill.sub:SetText(table.concat(said, "  ·  "))
+		W.Color(pill.sub, Palette.c.textFaint)
+	else
+		-- NOTHING INSTALLED IS A STATE, not a failure to load - a clone of this
+		-- repository has the magazines and no audio, because the cut music is
+		-- derived and untracked. The console still boards; it has nothing to
+		-- play, and saying so is more use than an empty row.
+		Media:SetIcon(pill.glyph, "music")
+		W.Tint(pill.glyph, Palette.c.textFaint, 0.8)
+		pill.title:SetText("Nothing installed yet")
+		W.Color(pill.title, Palette.c.textDim)
+		-- FROM THE CONSOLE, because there are three reasons for this and only
+		-- one of them is "you have not installed it".
+		pill.sub:SetText((Content and Content:DormantReason())
+			or "No content installed")
+		W.Color(pill.sub, Palette.c.textFaint)
+	end
 
 	-- The bar has one anchor, so its width is said here - and it is known by
 	-- now, because the callout sized the slot before it asked for the demo.
 	pill.bar:SetWidth(math.max(40, (slot:GetWidth() or CALLOUT_W) - 24))
-	pill.sub:SetText("preview — boards at takeoff")
-	W.Color(pill.sub, Palette.c.textFaint)
 
-	local h = 9 + (pill.from:GetStringHeight() or 14) + 8 + BAR_H + 6
-		+ (pill.sub:GetStringHeight() or 12) + 10
+	local h = 11 + math.max(13, pill.title:GetStringHeight() or 13) + 9 + BAR_H
+		+ 6 + (pill.sub:GetStringHeight() or 12) + 11
 	pill:SetHeight(h)
 	slot:SetHeight(h)
 
-	-- The programme's three kinds, in the mix the route would actually get:
-	-- music under the long leg, a podcast, and the gossip rag to land on.
-	local TOTAL = 252
-	local LEGS = {
-		{ 132, Palette.c.ifecMusic },
-		{  78, Palette.c.ifecPodcast },
-		{  42, Palette.c.ifecGossip },
-	}
+	-- THE FIRST FEW LEGS, at their real lengths in their real colours. Four,
+	-- because a whole library on a 300px bar is a row of hairlines - and the
+	-- programme a flight gets is a handful of items, not all of them.
+	--
+	-- THE RAG IS NOT ON THE BAR, and that is not an omission. A programme is
+	-- built to COVER a flight, so it is assembled out of things that take time;
+	-- gossip is read rather than played and occupies none, so the builder never
+	-- reaches for it. The bar says what will PLAY and the line above says what
+	-- is ABOARD, which is a real distinction and the one the console makes.
+	--
+	-- A nominal slice was given to it here at first, to get its colour onto the
+	-- bar. It was dead code from the moment it was written: nothing with no
+	-- length ever arrives in this queue to be given one.
+	local LEGS, TOTAL = {}, 0
+	for i = 1, math.min(4, #queue) do
+		local item = queue[i]
+		local secs = (Content and Content:Length(item)) or 0
+		if secs > 0 then
+			LEGS[#LEGS + 1] = { secs, TINT[item.type] or Palette.c.accent }
+			TOTAL = TOTAL + secs
+		end
+	end
+
+	if TOTAL <= 0 then
+		pill.bar:SetPieces({}, 1)
+		slot:SetScript("OnUpdate", nil)
+		return
+	end
+
 	local FILL = 1.6      -- seconds to fill the whole programme
 
 	Play(slot, function(at)

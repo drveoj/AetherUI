@@ -18889,6 +18889,63 @@ do
 end
 print("== presets: three arrangements of the HUD ==")
 do
+	-- WHAT NO ARRANGEMENT NAMES, AND WHY.
+	--
+	-- Apply wipes the anchors and writes the preset's, so a mover that no
+	-- preset names falls back on its coded default every time somebody tries
+	-- an arrangement on. That is harmless for a default that is right
+	-- anywhere and a bug for one that is not: the stance bar's used to be
+	-- BOTTOMLEFT 24, 220, which is on top of the chat window in all three of
+	-- them. Reported from the game against 0.31.0.
+	--
+	-- A NEW NAME ON THIS LIST IS A DECISION rather than an oversight, which is
+	-- the whole point of writing them down. Anything else appearing here fails
+	-- this and somebody has to say which of the two it is.
+	do
+		local UNNAMED = {
+			-- Parks itself beside bar 1, computed from bar 1's real width, so it
+			-- lands correctly in every arrangement without any of them naming
+			-- it. Which is just as well: only some classes have a stance bar, so
+			-- nobody capturing an arrangement has one on screen to place.
+			barstance = true,
+			-- Twenty-four in from the top right, and no arrangement moves it.
+			minimap = true,
+		}
+
+		local named = {}
+		for _, key in ipairs(A.Presets.order) do
+			for name in pairs(A.Presets.list[key].anchors or {}) do
+				named[name] = true
+			end
+		end
+
+		local surprises = {}
+		for name in pairs(A.Movers.registry) do
+			if not named[name] and not UNNAMED[name] then
+				surprises[#surprises + 1] = name
+			end
+		end
+		table.sort(surprises)
+		check(#surprises == 0,
+			"every mover is either named by an arrangement or written down as one "
+			.. "that is not (" .. (#surprises > 0 and
+			table.concat(surprises, ", ") or "no surprises") .. ")")
+
+		-- AND THE STANCE BAR'S OWN DEFAULT IS THE COMPUTED ONE. The list above
+		-- excuses it on the grounds that it parks itself beside bar 1; this is
+		-- the half that checks it actually does, so the excuse cannot outlive
+		-- the reason for it.
+		local stance
+		for _, bar in ipairs(A:GetModule("actionbars").bars or {}) do
+			if bar.id == "stance" then stance = bar end
+		end
+		local entry = A.Movers.registry.barstance
+		check(stance ~= nil and stance.cfg.beside == "1"
+			and entry and entry.default and entry.default.point == "BOTTOM",
+			"the stance bar parks beside bar 1 rather than in the chat's corner ("
+			.. tostring(entry and entry.default and entry.default.point) .. ")")
+	end
+
 	local P = A.Presets
 	check(P ~= nil, "the presets loaded")
 
@@ -38090,16 +38147,77 @@ do
 		table.concat(offenders, ", ") or "clean") .. ")")
 end
 
+print("== ifec: which kind of nothing ==")
+do
+	-- THREE CAUSES, THREE ANSWERS.
+	--
+	-- IsDormant collapses them into one, which is right for LAYOUT - the
+	-- region is absent either way - and wrong for a MESSAGE. "No content
+	-- installed" printed while a pack sits in the addon list, ticked and using
+	-- memory, sends somebody looking for a file they already have. Reported
+	-- from the game against 0.31.0.
+	local C, R = A.IFEC.Content, A.IFEC.Registry
+	local was = { packs = R.packs, order = R.order,
+		failed = R.failed, dirty = R.dirty }
+
+	-- NOTHING AT ALL, which is the one the old message always said.
+	R.packs, R.order, R.failed, R.dirty = {}, {}, {}, true
+	check(C:DormantReason() == "No content installed",
+		"with no packs at all it says nothing is installed (" ..
+		C:DormantReason() .. ")")
+
+	-- REFUSED, which is a fault rather than a state and is the only one of
+	-- the three with somewhere to go and read more.
+	R:Register({ packId = "Broken", apiVersion = 99, items = {} })
+	check(C:DormantReason():find("refused", 1, true) ~= nil,
+		"a refused pack is not the same thing as an absent one (" ..
+		C:DormantReason() .. ")")
+
+	-- INSTALLED, REGISTERED, AND OUT OF SEASON. The third cause, and the one
+	-- nobody would ever guess from "no content installed".
+	R.packs, R.order, R.failed, R.dirty = {}, {}, {}, true
+	R:Register({
+		packId = "Yule", apiVersion = 1, seasonIndex = 1,
+		items = { {
+			id = "carol", type = "music", title = "Winter Veil Reel",
+			totalDuration = 90,
+			segments = { { file = "w.ogg", duration = 90 } },
+			-- A window that has certainly closed, so this does not start
+			-- passing or failing with the calendar.
+			activeFrom = "2001-12-01", activeUntil = "2001-12-31",
+		} },
+	})
+	check(#R:Catalogue() == 1 and C:IsDormant(),
+		"a pack out of season is installed and dormant at the same time")
+	check(C:DormantReason():find("season", 1, true) ~= nil,
+		"and says so, rather than saying it is missing (" ..
+		C:DormantReason() .. ")")
+
+	R.packs, R.order, R.failed, R.dirty =
+		was.packs, was.order, was.failed, was.dirty
+end
+
+
 print("== onboarding: the tour IS the setup ==")
 do
 	local OB = A:GetModule("onboard")
+	-- BY KEY, NOT BY NUMBER. Everything below used to address its stop by
+	-- index, and inserting the zen stop at four moved five of them - which
+	-- showed up as ten failures in three unrelated features. A stop's key is
+	-- the thing that does not move when the running order changes.
+	local function At(key)
+		for i, stop in ipairs(OB.stops) do
+			if stop.key == key then return i end
+		end
+		error("no stop keyed " .. tostring(key), 2)
+	end
 	check(OB ~= nil, "the tour loaded")
 	A.db.char.onboard = {}
 
 	-- EIGHT STOPS, THREE THAT SET AND FIVE THAT SHOW. A first run that asked
 	-- eight questions would be a form and one that asked none would be a
 	-- slideshow; the split is the design.
-	check(#OB.stops == 8, "there are eight stops (" .. #OB.stops .. ")")
+	check(#OB.stops == 9, "there are nine stops (" .. #OB.stops .. ")")
 	local sets, shows = 0, 0
 	for _, stop in ipairs(OB.stops) do
 		if stop.kind == "set" then sets = sets + 1 else shows = shows + 1 end
@@ -38107,8 +38225,11 @@ do
 			"\"" .. tostring(stop.key) .. "\" has a name, a headline, a body and "
 			.. "something to point at")
 	end
-	check(sets == 3 and shows == 5,
-		"three of them set something and five show something (" .. sets .. ", "
+	-- FOUR THAT SET AND FIVE THAT SHOW. The deck drew eight and did not have
+	-- zen in it; the split is the design, and zen belongs on the setting side
+	-- because the one real decision about it is whether you want it at all.
+	check(sets == 4 and shows == 5,
+		"four of them set something and five show something (" .. sets .. ", "
 		.. shows .. ")")
 
 	-- THE WELCOME CARD COMES FIRST, not stop 1. Somebody who has just
@@ -38416,6 +38537,56 @@ do
 			"and stop 1's swatches are down while stop 3 is up (" .. live .. ")")
 	end
 
+	-- STOP 4 SETS HOW LONG BEFORE THE HUD GOES QUIET.
+	--
+	-- The fourth thing you decide, and the only real decision about zen is
+	-- whether you want it at all - which is why "never" is on the same row as
+	-- the three timings rather than hidden in the options tree.
+	do
+		OB:Go(At("zen"))
+		local cards = OB.callout.slot.__aetherKids.zen or {}
+		check(#cards == 4,
+			"the zen stop offers three timings and never (" .. #cards .. ")")
+
+		-- STRAIGHT INTO THE PROFILE, and the fader with it: zen is stage two of
+		-- one feature, so a delay chosen with the idle fade switched off is a
+		-- delay for something that can never happen.
+		A.db.profile.fader.enabled = false
+		cards[3]:GetScript("OnClick")(cards[3])
+		check(A.db.profile.modules.zen.delay == 300,
+			"tapping 5 min writes the delay (" ..
+			tostring(A.db.profile.modules.zen.delay) .. ")")
+		check(A.db.profile.fader.enabled == true,
+			"and switches the idle fade back on, or nothing would ever fade OUT")
+		check((A:GetModule("zen") or {}).enabled == true,
+			"and the module is on")
+
+		-- NEVER IS THE MODULE BEING OFF rather than a fourth delay. A timer that
+		-- never elapses is a ticker running for ever to do nothing.
+		cards[4]:GetScript("OnClick")(cards[4])
+		check((A:GetModule("zen") or {}).enabled == false,
+			"never switches the whole thing off")
+
+		-- AND THE CHOSEN CARD IS READ BACK OUT OF THE SYSTEM rather than out of
+		-- anything the tour remembered. If the card and the HUD ever disagree,
+		-- the card is the one that is wrong.
+		OB:Go(At("zen"))
+		local litLabel
+		for _, card in ipairs(OB.callout.slot.__aetherKids.zen) do
+			local r = select(1, card.label:GetTextColor())
+			local lit = math.abs(r - A.Palette.c.text[1]) < 0.01
+			if lit then litLabel = card.label:GetText() end
+		end
+		check(litLabel == "never",
+			"with the module off, never is the one lit (" ..
+			tostring(litLabel) .. ")")
+
+		-- Back the way it was found, or six later checks are looking at a HUD
+		-- with no idle fade in it.
+		A:SetModuleEnabled("zen", true)
+		A.db.profile.modules.zen.delay = 60
+	end
+
 	-- AND WHAT EACH STOP POINTS AT, IT CAN ACTUALLY FIND.
 	--
 	-- The stop table check above asks whether `target` EXISTS, which is a
@@ -38425,15 +38596,22 @@ do
 	-- QT.panel, and stop 8 looked for the console's mini on the module rather
 	-- than on A.IFEC. All three shipped, and all three lit nothing at all.
 	--
-	-- ONE STOP IS ALLOWED NIL, and only one: the layout stop's subject is the
-	-- whole HUD, so the scrim stays down and a ring round any single frame
-	-- would be pointing at the wrong thing.
+	-- TWO STOPS ARE ALLOWED NIL, and they are named here rather than shrugged
+	-- at. Both have the same reason: their subject is the whole HUD, so the
+	-- scrim stays down and a ring round any single frame would be pointing at
+	-- the wrong thing. Layout moves everything; zen makes everything go away.
+	--
+	-- A NEW NAME ON THIS LIST IS A DECISION, which is the point of listing them:
+	-- a stop that quietly resolves to nil is a stop that lights nothing, and
+	-- three of them shipped that way.
+	local MAY_POINT_AT_NOTHING = { layout = true, zen = true }
 	for i, stop in ipairs(OB.stops) do
 		OB:Go(i)
 		local at = stop.target()
-		if stop.key == "layout" then
+		if MAY_POINT_AT_NOTHING[stop.key] then
 			check(at == nil,
-				"\"layout\" deliberately points at nothing - the subject is the whole HUD")
+				"\"" .. stop.key .. "\" deliberately points at nothing - its "
+				.. "subject is the whole HUD")
 		else
 			check(at ~= nil and at.GetObjectType ~= nil,
 				"\"" .. stop.key .. "\" finds the thing it points at (" ..
@@ -38484,7 +38662,7 @@ do
 	-- "your spells, undecorated", and a row of invented squares would be
 	-- decorating them.
 	do
-		OB:Go(4)
+		OB:Go(At("bars"))
 		local tiles = OB.callout.slot.__aetherKids["bars.tile"] or {}
 		check(#tiles == 4, "the bars stop draws four slots (" .. #tiles .. ")")
 		local mine = GetActionTexture and GetActionTexture(1)
@@ -38504,27 +38682,112 @@ do
 			tostring(tiles[2].cdText:GetText()) .. ")")
 	end
 
-	-- AND THE CONSOLE'S PROGRAMME BAR ACTUALLY FILLS.
+	-- AND THE CONSOLE STOP SHOWS THE CONTENT THAT IS ACTUALLY INSTALLED.
 	--
-	-- The parts count above says the pill is drawn and says nothing about what
-	-- is on it - which is how this went out with the bar carrying no width at
-	-- all. A segmented bar with no width hides every piece and draws as an
-	-- empty groove, and the demo counted as present the whole time.
+	-- The first version of this demo drew a made-up flight from Booty Bay to
+	-- Ironforge with three invented legs on it. It was a picture of the feature
+	-- rather than the feature, which is what Joe said the moment he saw it - and
+	-- the check beside it counted ONE part and passed, because the pill was
+	-- drawn. What is on the pill is the whole question here.
+	--
+	-- ITS OWN PACK, registered here and taken away again. The demo reads the
+	-- real library, so a check that hoped the suite had left something in the
+	-- registry is a check that passes or fails on the order of the file.
 	do
-		OB:Go(8)
+		local R = A.IFEC.Registry
+		local was = { packs = R.packs, order = R.order,
+			failed = R.failed, dirty = R.dirty }
+		R.packs, R.order, R.failed, R.dirty = {}, {}, {}, true
+
+		-- ONE OF EACH CHANNEL, because the three colours on the bar are the
+		-- claim: a programme is music AND stories AND the rag, not a playlist.
+		check(R:Register({
+			packId = "TourPack", apiVersion = 1, seasonIndex = 1,
+			items = {
+				{ id = "m", type = "music", title = "Big Drum Deep Water",
+					artist = "The Mudfoot Kings", totalDuration = 210,
+					segments = { { file = "a.ogg", duration = 210 } } },
+				{ id = "p", type = "podcast", title = "The Gadgeteer",
+					totalDuration = 600,
+					segments = { { file = "b.ogg", duration = 600 } } },
+				{ id = "g", type = "gossip", masthead = "ogler",
+					title = "The Orgrimmar Ogler", pages = { "p1" } },
+			},
+		}) == true, "the tour's own content pack registers")
+
+		OB:Go(At("ifec"))
 		local pill = (OB.callout.slot.__aetherKids["ifec.pill"] or {})[1]
 		check(pill ~= nil and (pill.bar:GetWidth() or 0) > 40,
 			"the programme bar has a width to fill (" ..
 			tostring(pill and math.floor(pill.bar:GetWidth() or 0)) .. ")")
+
+		-- THE FIRST THING A FLIGHT WOULD REALLY GET, named on the pill. Not the
+		-- first thing the registry happens to hold - the programme builder's own
+		-- first pick, which is the one the console would play.
+		local want = A.IFEC.Content:Everything()[1]
+		check(want ~= nil and pill.title:GetText() == want.title,
+			"and names the first thing the console would really play (" ..
+			tostring(pill.title:GetText()) .. ")")
+
+		-- AND COUNTS WHAT IS ABOARD in the library's own three words, because a
+		-- filter tab reading Stories beside a count reading podcasts is the same
+		-- thing under two names.
+		local said = pill.sub:GetText() or ""
+		for _, word in ipairs({ "Stories", "Music", "Gossip" }) do
+			check(said:find(word, 1, true) ~= nil,
+				"and counts the " .. word .. " that are aboard (" .. said .. ")")
+		end
+
+		-- THE BAR IS THE PROGRAMME, and the programme is what will PLAY. The
+		-- first version of this check asked for all three channels on it and was
+		-- wrong about the feature rather than about the code: a programme is built
+		-- to COVER a flight, so it is assembled out of things that take time, and
+		-- the rag takes none - it is read, not played. It is counted on the line
+		-- above and it is not on the bar, which is the distinction the console
+		-- itself makes.
 		drive(OB.callout.slot)
+		local playable = 0
+		for _, item in ipairs(A.IFEC.Content:Everything()) do
+			if A.IFEC.Content:Length(item) > 0 then playable = playable + 1 end
+		end
 		local lit = 0
-		for _, part in ipairs((pill and pill.bar.parts) or {}) do
+		for _, part in ipairs(pill.bar.parts or {}) do
 			if part:IsShown() then lit = lit + 1 end
 		end
-		-- Three legs: music under the long haul, a podcast, and the gossip rag to
-		-- land on. All three by the end, or the programme is not a programme.
-		check(lit >= 3,
-			"and fills with all three kinds of thing by the end (" .. lit .. ")")
+		check(playable >= 2 and lit == playable,
+			"and fills with one leg per playable item by the end (" .. lit ..
+			" of " .. playable .. ")")
+
+		-- AND THE RAG IS COUNTED WITHOUT BEING PLAYED, which is the whole of the
+		-- distinction above and the part a reader would otherwise get wrong.
+		local aboard, played = 0, 0
+		for _, item in ipairs(A.IFEC.Content:Available()) do
+			if item.type == "gossip" then aboard = aboard + 1 end
+		end
+		for _, item in ipairs(A.IFEC.Content:Everything()) do
+			if item.type == "gossip" then played = played + 1 end
+		end
+		check(aboard > 0 and played == 0
+			and (pill.sub:GetText() or ""):find("Gossip", 1, true) ~= nil,
+			"the rag is aboard and counted, and not on the programme (" ..
+			aboard .. " aboard, " .. played .. " playing)")
+
+		-- AND WITH NOTHING INSTALLED IT SAYS SO, rather than drawing an empty
+		-- groove and a blank line. A clone of this repository is exactly this
+		-- case: the cut music is derived and untracked, so it has the magazines
+		-- and silence.
+		R.packs, R.order, R.dirty = {}, {}, true
+		OB:Go(At("threat"))
+		OB:Go(At("ifec"))
+		check((pill.title:GetText() or ""):find("Nothing", 1, true) ~= nil,
+			"nothing installed is a state the pill has words for (" ..
+			tostring(pill.title:GetText()) .. ")")
+		check(pill.sub:GetText() == A.IFEC.Content:DormantReason(),
+			"and says WHICH kind of nothing - refused, absent or out of season (" ..
+			tostring(pill.sub:GetText()) .. ")")
+
+		R.packs, R.order, R.failed, R.dirty =
+			was.packs, was.order, was.failed, was.dirty
 	end
 
 	-- AND WHAT A DEMO CHANGES OUT IN THE WORLD, IT PUTS BACK.
@@ -38538,21 +38801,21 @@ do
 		local BG = A:GetModule("bags")
 
 		QT:SetCollapsed(false)
-		OB:Go(5)
+		OB:Go(At("quests"))
 		-- To the end, because the fold is the second half of the demo.
 		drive(OB.callout.slot)
 		check(QT.collapsed == true,
 			"the quest tracker stop folds the REAL tracker")
-		OB:Go(6)
+		OB:Go(At("bags"))
 		check(QT.collapsed == false,
 			"and unfolds it on the way out")
 
 		-- TO WHAT IT WAS, not to open. Somebody who keeps their tracker folded
 		-- should get it back folded.
 		QT:SetCollapsed(true)
-		OB:Go(5)
+		OB:Go(At("quests"))
 		drive(OB.callout.slot)
-		OB:Go(6)
+		OB:Go(At("bags"))
 		check(QT.collapsed == true,
 			"restored to what it was, rather than to open")
 
@@ -38565,15 +38828,15 @@ do
 			"the bags stop opens the REAL bag panel")
 		check(OB.lifted ~= nil and OB.lifted.frame == bags,
 			"and the spotlight lifts that panel out of the scrim")
-		OB:Go(7)
+		OB:Go(At("threat"))
 		check(not bags:IsShown(),
 			"and shuts it again on the way out")
 
 		-- UNLESS IT WAS ALREADY OPEN, in which case it is the player's window and
 		-- stays theirs.
 		BG:Show()
-		OB:Go(6)
-		OB:Go(7)
+		OB:Go(At("bags"))
+		OB:Go(At("threat"))
 		check(bags:IsShown(),
 			"a panel that was already open is left open")
 		BG:Hide()
@@ -38591,7 +38854,7 @@ do
 			if f.unit == "player" then pdisc = f.orb or f.pip end
 		end
 		if pdisc then
-			OB:Go(7)
+			OB:Go(At("threat"))
 			local ring = pdisc.__aetherThreatRing
 			check(ring ~= nil and ring:IsShown() and (ring.fill or 0) > 0.5,
 				"the threat stop warns on the player's own frame (" ..
@@ -38603,7 +38866,7 @@ do
 
 			-- AND IT COMES OFF. Left standing, a gold ring on a frame that is not
 			-- in a fight is a warning about nothing for the rest of the session.
-			OB:Go(8)
+			OB:Go(At("ifec"))
 			check((ring.fill or 0) == 0 or not ring:IsShown(),
 				"and comes off the frame on the way out (" ..
 				tostring(ring.fill) .. ")")
@@ -38620,7 +38883,7 @@ do
 	-- and failed on alternate runs, which is worse than either.
 	do
 		local BG = A:GetModule("bags")
-		OB:Go(6)
+		OB:Go(At("bags"))
 		local bags = BG.frames and BG.frames.bags
 		check(bags ~= nil and bags:IsShown(), "stop 6 has the panel open")
 		_G.__inCombat = true
@@ -38638,7 +38901,7 @@ do
 	--
 	-- Not paused - dropped. A scrim over the world and a panel over your
 	-- action bars are the two things you least want when a mob opens on you.
-	OB:Go(4)
+	OB:Go(At("bars"))
 	_G.__inCombat = true
 	fire("PLAYER_REGEN_DISABLED")
 	check(not OB.scrim:IsShown() and not OB.callout:IsShown(),
@@ -38648,7 +38911,7 @@ do
 
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
-	check(OB.index == 4 and OB.callout:IsShown(),
+	check(OB.index == At("bars") and OB.callout:IsShown(),
 		"and it comes back to the stop it was on when the fight ended (" ..
 		tostring(OB.index) .. ")")
 
@@ -38677,7 +38940,7 @@ do
 	-- systems that own it rather than out of anything the tour remembered. If
 	-- the recap and the HUD ever disagree, the recap is the one that is wrong.
 	OB:Start()
-	OB:Go(8)
+	OB:Go(At("ifec"))
 	OB:Next()
 	check(OB.card:IsShown() and not OB.callout:IsShown(),
 		"past the last stop is the finish card")

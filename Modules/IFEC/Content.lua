@@ -119,14 +119,47 @@ function Content:IsDormant(when)
 	return #self:Available(when) == 0
 end
 
+--- WHY there is nothing to play, in a few words for a player.
+--
+--  IsDormant collapses three causes into one answer, which is right for LAYOUT
+--  - the region is absent either way - and wrong for a MESSAGE. "No content
+--  installed" printed while a pack sits in the addon list, ticked and using
+--  memory, sends somebody looking for a file they already have. Reported from
+--  the game.
+--
+--  The registry already knows all three; nothing here works anything out.
+function Content:DormantReason()
+	if not Registry then return "No content installed" end
+
+	-- REFUSED FIRST, because it is the only one of the three that is a fault
+	-- rather than a state, and the only one with somewhere to go and read more.
+	local failed = Registry:Failures() or {}
+	if #failed > 0 then
+		return "A content pack was refused  ·  /aether ifec"
+	end
+
+	if #Registry:Catalogue() == 0 then return "No content installed" end
+
+	-- Installed, registered, and not one item of it in season today.
+	return "Nothing in season right now"
+end
+
 --- How long an item runs, for filling a programme.
-local function lengthOf(item)
+--
+--  PUBLIC, because the onboarding tour draws a real programme bar out of the
+--  really installed content and needs the same answer. Asked rather than worked
+--  out again: a second copy of "its duration, or the sum of its segments, or no
+--  time at all because it is a magazine" is a second thing to get wrong.
+function Content:Length(item)
+	if not item then return 0 end
 	if type(item.duration) == "number" and item.duration > 0 then return item.duration end
 	local total = 0
 	for _, seg in ipairs(item.segments or {}) do total = total + (seg.duration or 0) end
 	-- Gossip is read, not played. It occupies no time on the programme bar.
 	return total
 end
+
+local function lengthOf(item) return Content:Length(item) end
 
 --- Catalogue order: NEWEST SEASON FIRST, but in the season's own order within
 --  it. Walking the catalogue backwards got the seasons right and reversed the

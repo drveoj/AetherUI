@@ -200,8 +200,11 @@ function Mini:Paint()
 		f.glyph:SetVertexColor(c.textFaint[1], c.textFaint[2], c.textFaint[3], 0.8)
 		f.title:SetText("Nothing playing")
 		W.Color(f.title, c.textDim)
+		-- WHICH KIND OF NOTHING, when there is nothing: a pack refused and a
+		-- pack absent are different problems and only one of them is the
+		-- player's to fix.
 		f.meta:SetText(self:HasContent() and "Press play for the season's music"
-			or "No content installed")
+			or (Content and Content:DormantReason()) or "No content installed")
 		W.Color(f.meta, c.textFaint)
 		f.bar:SetPieces({}, 1)
 		return

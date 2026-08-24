@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.32.0",
+		date    = "2026-08-24",
+		lines   = {
+			"A ninth stop on the tour: Zen mode, where you pick how long the interface waits before it fades to a breath and a clock - or turn it off.",
+			"The tour's I.F.E.C. stop now opens the Toolbox and shows the real console, with the content you actually have installed on it, and says where N.I.F.E.C. lives on the ground.",
+			"The stance bar parks itself beside your main bar instead of on top of the chat window.",
+			"When the console has nothing to play it now says which kind of nothing - not installed, refused, or out of season.",
+		},
+	},
+	{
 		version = "0.31.0",
 		date    = "2026-08-24",
 		lines   = {
