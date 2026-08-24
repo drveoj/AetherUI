@@ -70,6 +70,37 @@ Fader.AFK_TIMEOUT = AFK_TIMEOUT
 
 local lastActivity = 0
 local lastCursorX, lastCursorY = 0, 0
+
+-- HOW FAR THE CURSOR HAS TO MOVE TO END ZEN, in UIParent units.
+--
+-- STAGE ONE WAKES ON ONE PIXEL and should: a mouse that moved means somebody is
+-- at the keyboard, and a dim you were not meant to notice costs nothing to
+-- undo. Zen is the far end of that - a state that took a minute of stillness to
+-- earn, with the entire interface faded out of it - and there the same
+-- hair-trigger threw the mode away for a desk bump, a trackpad brush or a mouse
+-- settling on its pad. Reported from the game: it cancelled on a mouse move
+-- with no interaction at all.
+--
+-- MEASURED FROM WHERE THE CURSOR WAS WHEN ZEN BEGAN rather than from the last
+-- tick, so a slow drift has to cross the same line as a flick. Read the other
+-- way, a hand creeping across the desk a unit per tick would never wake it.
+--
+-- EVERYTHING ELSE STILL WAKES INSTANTLY. A keypress, a cast, a target change,
+-- combat and leaving AFK all call Touch directly and never come through here -
+-- this is the mouse and only the mouse, which is the one input that moves
+-- without anybody meaning it to.
+local ZEN_DEADZONE = 48
+
+-- Where the cursor was when zen began, and nil when we are not in zen.
+--
+-- UP HERE WITH THE REST OF THIS FILE'S STATE, and not beside the tick that
+-- reads it. Declared down there, the write in Update is above the declaration
+-- and therefore writes a GLOBAL of the same name while the tick reads a local
+-- that is nil for ever - so the dead zone did nothing at all, silently. Caught
+-- by the check that was written for the feature rather than by the feature
+-- appearing not to work.
+local zenCursorX, zenCursorY
+
 local casting = false
 
 Fader.state = "awake"   -- "awake" | "idle" | "zen"
@@ -266,6 +297,15 @@ function Fader:Update()
 	end
 
 	if changed then
+		-- WHERE THE CURSOR WAS WHEN WE ARRIVED, for the dead zone above. Taken
+		-- on the crossing rather than every tick: the whole point is that the
+		-- distance is measured from the start of zen and not from a moment ago.
+		if state == "zen" then
+			zenCursorX, zenCursorY = GetCursorPosition()
+		else
+			zenCursorX, zenCursorY = nil, nil
+		end
+
 		local Z = A.modules and A.modules.zen
 		if Z and Z.SetActive then Z:SetActive(state == "zen") end
 	end
@@ -279,7 +319,14 @@ local function Tick(_, dt)
 	local x, y = GetCursorPosition()
 	if x ~= lastCursorX or y ~= lastCursorY then
 		lastCursorX, lastCursorY = x, y
-		Fader:Touch()
+		if Fader.state == "zen" and zenCursorX then
+			local dx, dy = x - zenCursorX, y - zenCursorY
+			if (dx * dx + dy * dy) >= ZEN_DEADZONE * ZEN_DEADZONE then
+				Fader:Touch()
+			end
+		else
+			Fader:Touch()
+		end
 	end
 
 	Fader:Update()

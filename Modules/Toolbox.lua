@@ -1917,6 +1917,21 @@ function TB:RefreshPlayer()
 
 	M:AdoptRailChip(play)
 	M:PaintRailChip(play)
+
+	-- AND THE REGION'S OWN WORDS, which nothing else was repainting.
+	--
+	-- The mini paints itself from a playback event and from its own ticker, and
+	-- the ticker only runs while something is playing - so with nothing ever
+	-- played the row kept whatever it said the first time it was drawn. That is
+	-- at login, which can be BEFORE the registry has drained the packs that
+	-- loaded before us: the row then read "No content installed" for the rest of
+	-- the session, over a season that was installed and would play the moment
+	-- you pressed the button. Reported from the game against 0.31.0.
+	--
+	-- Here rather than on a login event, because here has no ordering to get
+	-- wrong: this runs on every layout, so the row is right the moment anybody
+	-- can see it.
+	M:Paint()
 end
 
 --- One card per chosen data source. Frames are POOLED by index, because WoW has

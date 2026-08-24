@@ -10575,6 +10575,46 @@ do
 		.. string.format("%.2f", UIParent:GetAlpha()) .. ")")
 	check(Z.frame.__parent == nil,
 		"which only works because the readout lives outside UIParent")
+	-- AND A CURSOR TWITCH DOES NOT END IT.
+	--
+	-- Stage one wakes on one pixel and should. Zen took a minute of stillness
+	-- to earn and faded the whole interface out, and the same hair-trigger threw
+	-- it away for a desk bump or a mouse settling on its pad - reported from the
+	-- game as cancelling on a mouse move with no interaction at all.
+	do
+		local zx, zy = GetCursorPosition()
+		__setCursor(zx + 6, zy - 5)
+		tick(0.1)
+		check(A.Fader.state == "zen",
+			"a few units of cursor drift leaves zen where it is (state " ..
+			A.Fader.state .. ")")
+
+		-- FROM WHERE ZEN BEGAN, not from the last tick: read the other way, a
+		-- hand creeping across the desk a unit per tick would never wake it.
+		for i = 1, 8 do
+			__setCursor(zx + 6 * i, zy)
+			tick(0.1)
+		end
+		check(A.Fader.state ~= "zen",
+			"and a drift that adds up to a real move ends it (state " ..
+			A.Fader.state .. ")")
+
+		-- Back into zen for the checks below, which are all about what it draws.
+		__setCursor(zx, zy)
+		for i = 1, 60 do tick(0.1) end
+		check(A.Fader.state == "zen", "and stillness brings it back")
+
+		-- AND A KEYPRESS STILL ENDS IT ON THE SPOT, which is the other half of
+		-- the caption: the dead zone is the mouse and only the mouse, because the
+		-- mouse is the one input that moves without anybody meaning it to.
+		A.Fader:Touch()
+		tick(0.1)
+		check(A.Fader.state ~= "zen",
+			"anything that calls Touch ends it immediately, dead zone or not")
+		for i = 1, 60 do tick(0.1) end
+		check(A.Fader.state == "zen", "and it settles back for the rest of this")
+	end
+
 	-- ...including the map, which is the default. Three separate things have to
 	-- happen for it to go, and each one covers a layer the one before it misses:
 	-- the widget's own alpha, the frames hung on it, and the layers the engine
@@ -38146,6 +38186,60 @@ do
 		.. "the font has none (" .. (#offenders > 0 and
 		table.concat(offenders, ", ") or "clean") .. ")")
 end
+
+print("== ifec: the row says what is true when you open the drawer ==")
+do
+	-- THE ROW WAS PAINTED ONCE AND NEVER AGAIN.
+	--
+	-- The mini paints itself on a playback event and on its own ticker, and the
+	-- ticker only runs while something is playing. With nothing ever played the
+	-- row kept whatever it said the first time it was drawn - which is at login,
+	-- and can be BEFORE the registry has drained the packs that loaded before
+	-- us. It then read "No content installed" for the whole session, over a
+	-- season that was installed and played the moment you pressed the button.
+	local M, R, P = A.IFEC.Mini, A.IFEC.Registry, A.IFEC.Playback
+	local TB = A:GetModule("toolbox")
+	local was = { packs = R.packs, order = R.order,
+		failed = R.failed, dirty = R.dirty }
+	local wasOpen = TB:IsOpen()
+
+	-- PAINTED EMPTY FIRST, which is the state the bug was frozen in.
+	R.packs, R.order, R.failed, R.dirty = {}, {}, {}, true
+	P.item = nil
+	M:Paint()
+	check((M.frame.meta:GetText() or ""):find("installed", 1, true) ~= nil,
+		"with nothing registered the row says nothing is installed (" ..
+		tostring(M.frame.meta:GetText()) .. ")")
+
+	-- THEN THE PACK ARRIVES, the way a drain after the drawer was built does.
+	-- Nothing plays, so nothing repaints it of its own accord.
+	R:Register({
+		packId = "LatePack", apiVersion = 1, seasonIndex = 1,
+		items = { {
+			id = "m", type = "music", title = "Big Drum Deep Water",
+			artist = "The Mudfoot Kings", totalDuration = 210,
+			segments = { { file = "a.ogg", duration = 210 } },
+		} },
+	})
+	check((M.frame.meta:GetText() or ""):find("installed", 1, true) ~= nil,
+		"and registering a pack does not repaint it by itself")
+
+	-- OPENING THE DRAWER DOES. Here rather than on a login event, because
+	-- here has no ordering to get wrong: it runs on every layout, so the row
+	-- is right the moment anybody can see it.
+	TB:SetOpen(true, true)
+	check(M.frame.meta:GetText() == "Press play for the season's music",
+		"opening the drawer repaints it against what is actually installed (" ..
+		tostring(M.frame.meta:GetText()) .. ")")
+	check(M.frame.title:GetText() == "Nothing playing",
+		"and nothing playing is what it says, because that is what is true (" ..
+		tostring(M.frame.title:GetText()) .. ")")
+
+	TB:SetOpen(wasOpen, true)
+	R.packs, R.order, R.failed, R.dirty =
+		was.packs, was.order, was.failed, was.dirty
+end
+
 
 print("== ifec: which kind of nothing ==")
 do

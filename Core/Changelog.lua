@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.32.1",
+		date    = "2026-08-24",
+		lines   = {
+			"The console's row in the Toolbox no longer says 'No content installed' over a season that is installed - it is repainted when you open the drawer.",
+			"Zen mode no longer ends on a cursor twitch. A deliberate mouse move still brings you straight back; a desk bump does not.",
+		},
+	},
+	{
 		version = "0.32.0",
 		date    = "2026-08-24",
 		lines   = {
