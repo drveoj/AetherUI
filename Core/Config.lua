@@ -60,7 +60,11 @@ Config.defaults = {
 		-- rather than a profile: somebody who has seen it on their main
 		-- has seen it, and a fresh alt gets the offer to copy that setup
 		-- rather than the whole tour again.
-		onboard   = { completed = false, stopIndex = 0 },
+		-- completedAt so a fresh alt offering another character's setup can
+		-- name the one who finished MOST RECENTLY rather than whichever one
+		-- happens to sort first. Absent on a record written before it
+		-- existed, which reads as long ago and is the right answer for it.
+		onboard   = { completed = false, completedAt = 0, stopIndex = 0 },
 
 		tracked   = {},   -- whitelist, used when autoTrack is off
 		untracked = {},   -- blacklist, used when autoTrack is on

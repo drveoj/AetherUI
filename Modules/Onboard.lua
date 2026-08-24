@@ -41,6 +41,12 @@ local CARD_W         = 520     -- welcome and finish
 local ARROW          = 14      -- the rotated square pointing at the element
 local RING_PAD       = 6       -- how far the accent ring stands off the element
 local DOT            = 5
+local OFFER_H        = 28      -- the alt offer's own row
+local TOAST_H        = 34      -- the resume toast
+-- Long enough for the movers to have put every frame back. The tour places
+-- its callout against real frames, and a frame that has not been restored
+-- yet is a frame in the wrong place.
+local FIRST_RUN_DELAY = 2
 local DOT_GAP        = 7
 
 -- Timings, in seconds. The deck asks for 200ms on the scrim and 160ms on the
@@ -90,9 +96,62 @@ function OB:Finish()
 	local s = Store()
 	if s then
 		s.completed = true
+		-- AND WHEN, for the alt offer: with two characters done, the one worth
+		-- naming is the one you were just playing.
+		s.completedAt = (time and time()) or 0
 		s.stopIndex = nil
 	end
 	self:Teardown()
+end
+
+--- Somebody else who has already been through this, or nothing.
+--
+--  OFF db.sv.char, WHICH IS THE WHOLE SAVED FILE rather than this character's
+--  slice of it. `A.db.char` is the current character and nothing else; the
+--  other records are there beside it and AceDB does not hide them.
+--
+--  THE MOST RECENT ONE, because with two alts done the one worth naming is the
+--  one you were just playing. A record written before completedAt existed reads
+--  as zero, which is "long ago" and is the right answer for it.
+function OB:Others()
+	local sv = A.db and A.db.sv and A.db.sv.char
+	local me = A.db and A.db.keys and A.db.keys.char
+	if not sv then return nil end
+
+	local bestKey, bestAt
+	for key, rec in pairs(sv) do
+		local ob = (key ~= me) and rec and rec.onboard
+		if ob and ob.completed then
+			local at = tonumber(ob.completedAt) or 0
+			if not bestKey or at > bestAt
+				or (at == bestAt and key < bestKey) then
+				bestKey, bestAt = key, at
+			end
+		end
+	end
+	if not bestKey then return nil end
+
+	-- AceDB builds the key as "Name - Realm"; the name is the half worth
+	-- saying, and a realm nobody has to read is a longer button.
+	return bestKey, (bestKey:match("^(.-) %- ") or bestKey)
+end
+
+--- Take that character's setup, and skip the questions.
+--
+--  ONE THING TO COPY, AND THAT IS NOT A SHORTCOMING. The palette, the layout
+--  and the scale live in the PROFILE, and this addon opens on the shared
+--  Default profile - so an alt already HAS them, which is the whole reason the
+--  offer makes sense. The Toolbox edge is the only choice the tour makes that
+--  is stored per character, so it is the only one there is to carry over.
+function OB:AdoptFrom(key)
+	local sv = A.db and A.db.sv and A.db.sv.char
+	local them = key and sv and sv[key]
+	if not them then return false end
+
+	local edge = them.toolbox and them.toolbox.docked
+	local TB = A.GetModule and A:GetModule("toolbox")
+	if edge and TB and TB.SetDock then TB:SetDock(edge) end
+	return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -274,6 +333,20 @@ OB.stops = {
 }
 
 OB.COUNT = #OB.stops
+
+--- The first stop that only shows something, which is where the alt offer
+--- lands: everything before it is a question this character has answered.
+--
+--  COMPUTED RATHER THAN WRITTEN DOWN. The deck says "jumps to stop 4", which
+--  was true while three stops set something and stopped being true the moment
+--  zen made it four. A number here is a number that goes wrong the next time a
+--  stop is added, silently, by landing in the middle of the questions.
+function OB:FirstShow()
+	for i, stop in ipairs(self.stops) do
+		if stop.kind == "show" then return i end
+	end
+	return 1
+end
 
 -- ---------------------------------------------------------------------------
 -- the scrim
@@ -457,6 +530,17 @@ local function BuildCallout()
 	c.slot:SetWidth(CALLOUT_W - CALLOUT_PAD * 2)
 	c.slot:SetHeight(1)
 
+	-- THE ALT OFFER, under the control and above the footer. Its own row rather
+	-- than a fifth swatch in the slot: it is not another palette, it is a way
+	-- of not being asked about palettes at all.
+	c.offer = W.CreateButton(c, { corner = 11 })
+	c.offer:SetHeight(OFFER_H)
+	c.offer:SetPoint("TOPLEFT", c.slot, "BOTTOMLEFT", 0, -10)
+	c.offer:SetPoint("RIGHT", c.slot, "RIGHT", 0, 0)
+	c.offer.label = W.Text(c.offer, "tbLabel", "CENTER")
+	c.offer.label:SetPoint("CENTER")
+	c.offer:Hide()
+
 	OB.callout = c
 	return c
 end
@@ -619,11 +703,14 @@ end
 
 --- Tall enough for what is in it, and no taller.
 local function SizeCallout(c)
+	-- The offer's row only when there is one. Left in the sum unconditionally,
+	-- a stop with no offer gets a strip of empty glass above its footer.
+	local offer = (c.offer and c.offer:IsShown()) and (OFFER_H + 10) or 0
 	local h = CALLOUT_PAD
 		+ (c.kicker:GetStringHeight() or 0) + 8
 		+ (c.head:GetStringHeight() or 0) + 8
 		+ (c.body:GetStringHeight() or 0) + 12
-		+ (c.slot:GetHeight() or 0) + 14
+		+ (c.slot:GetHeight() or 0) + offer + 14
 		+ 28 + CALLOUT_PAD
 	c:SetHeight(h)
 	c.nav:ClearAllPoints()
@@ -1710,6 +1797,27 @@ function OB:Go(index)
 		self:Demo(stop, c.slot)
 	end
 
+	-- THE ALT OFFER, ON THE FIRST STOP AND NOWHERE ELSE.
+	--
+	-- A fresh character on an account that has already been set up is being
+	-- asked four questions it has answered. The offer is the way out of them,
+	-- and it belongs on the first one rather than on the welcome card: the card
+	-- is where you decide whether to do this at all, and this is a shortcut
+	-- through the doing.
+	c.offer:Hide()
+	if index == 1 then
+		local key, who = self:Others()
+		if key then
+			c.offer.label:SetText(("Use %s's setup"):format(who))
+			W.Color(c.offer.label, Palette.c.text)
+			c.offer:SetScript("OnClick", function()
+				OB:AdoptFrom(key)
+				OB:Go(OB:FirstShow())
+			end)
+			c.offer:Show()
+		end
+	end
+
 	PaintNav(c.nav, index)
 	SizeCallout(c)
 	PlaceCallout(c, target)
@@ -1748,6 +1856,7 @@ function OB:Teardown()
 	if self.callout then self.callout:Hide() end
 	if self.skip then self.skip:Hide() end
 	if self.card then self.card:Hide() end
+	if self.toast then self.toast:Hide() end
 	if self.scrim then self.scrim:Hide() end
 	self.index = nil
 end
@@ -1762,6 +1871,93 @@ function OB:Start()
 	if s then s.completed = nil end
 	self:ShowWelcome()
 	return true
+end
+
+-- ---------------------------------------------------------------------------
+-- the resume toast
+--
+-- ONE QUIET LINE, AND ONLY ONE. Somebody who left half way through has already
+-- shown you what they think of being interrupted, so this is not the tour
+-- coming back - it is a door being held open, once, with a handle on it for
+-- shutting it for good. Dismissing counts as skipping, which is the design's
+-- own rule and the reason there is never a second toast.
+--
+-- PARENTED TO UIParent AND AT THE PROFILE'S SCALE, unlike the tour itself. The
+-- tour hangs off a parentless scrim because it has to draw OVER a faded world;
+-- this is a notice sitting on the HUD with everything else, so it is the size
+-- of everything else.
+-- ---------------------------------------------------------------------------
+
+local function BuildToast()
+	if OB.toast then return OB.toast end
+
+	local t = Glass.CreatePanel(UIParent, {
+		frameType = "Button", corner = 14,
+		fill = "dialogFill", edge = "glassEdgeHi", shadow = 0.5,
+	})
+	t:SetFrameStrata("HIGH")
+	t:SetHeight(TOAST_H)
+	t:SetPoint("TOP", UIParent, "TOP", 0, -120)
+	t:Hide()
+
+	t.label = W.Text(t, "tbLabel", "LEFT")
+	t.label:SetPoint("LEFT", t, "LEFT", 14, 0)
+
+	t.go = W.Text(t, "tbLabel", "RIGHT")
+	t.go:SetText("Resume")
+
+	-- The shared close, which is also the shared HIT SIZE: a dismiss smaller
+	-- than the thing it dismisses is a dismiss people miss and click through.
+	t.close = W.CloseButton(t)
+	t.close:SetScript("OnClick", function()
+		-- DISMISSING IS SKIPPING. The design says so, and it is the only
+		-- reading that makes this a single toast rather than a nag: a dismiss
+		-- that only closed the window would be answered with another one at
+		-- the next login.
+		OB:Hush()
+		OB:Finish()
+	end)
+
+	t:SetScript("OnClick", function()
+		OB:Hush()
+		local at = (Store() and Store().stopIndex) or 1
+		OB:Go(at)
+	end)
+
+	OB.toast = t
+	return t
+end
+
+--- Take the toast down without answering it, which the two answers both do
+--- first: one goes on to resume and the other to mark the character done.
+function OB:Hush()
+	if self.toast then self.toast:Hide() end
+end
+
+--- "Finish setup? N stops left"
+function OB:ShowResume(at)
+	at = math.max(1, math.min(tonumber(at) or 1, OB.COUNT))
+	local left = OB.COUNT - at + 1
+
+	local t = BuildToast()
+	t:SetScale((A.db and A.db.profile and A.db.profile.scale) or 1)
+	t.label:SetText(("Finish setup? %d stop%s left")
+		:format(left, left == 1 and "" or "s"))
+	W.Color(t.label, Palette.c.text)
+	W.Color(t.go, Palette.c.accent)
+
+	-- Sized to what it says, because a fixed width is either too wide for one
+	-- stop left or too narrow for nine.
+	W.PlaceClose(t.close, t)
+	t.go:ClearAllPoints()
+	t.go:SetPoint("RIGHT", t.close, "LEFT", -4, 0)
+	t:SetWidth(14 + math.ceil(t.label:GetStringWidth() or 0) + 16
+		+ math.ceil(t.go:GetStringWidth() or 0) + 30)
+
+	t:Show()
+	t:SetAlpha(0)
+	FadeTo(t, 1, CALLOUT_FADE)
+	return t
 end
 
 -- ---------------------------------------------------------------------------
@@ -1809,10 +2005,21 @@ local function BuildCard()
 	c.go.label = W.Text(c.go, "tbLabel", "CENTER")
 	c.go.label:SetPoint("CENTER")
 
-	c.alt = W.CreateButton(c, { corner = 12, fill = "none" })
+	-- A PLAIN BUTTON, NOT A GLASS ONE. This is the quiet half of the pair and
+	-- the deck draws it as bare text beside the filled pill - so it was built
+	-- with `fill = "none"`, which is not a token: Glass has no transparent
+	-- fill, the lookup misses, and the surface keeps whatever colour it was
+	-- born with for the rest of the session. It went unnoticed because nothing
+	-- built this card before the skin checks ran.
+	--
+	-- The skip line at the foot of the screen is the same shape and was already
+	-- written this way; this is that, on a card.
+	c.alt = CreateFrame("Button", nil, c)
 	c.alt:SetSize(120, 28)
 	c.alt.label = W.Text(c.alt, "tbLabel", "CENTER")
 	c.alt.label:SetPoint("CENTER")
+	c.alt:SetScript("OnEnter", function(b) W.Color(b.label, Palette.c.text) end)
+	c.alt:SetScript("OnLeave", function(b) W.Color(b.label, Palette.c.textDim) end)
 
 	c.note = W.Text(c, "tbLabel", "RIGHT")
 
@@ -1961,7 +2168,41 @@ function OB:OnCombat()
 	self:Teardown()
 end
 
+--- What this character sees when it arrives.
+--
+--  THREE ANSWERS, AND THE FIRST ONE IS NOTHING. A character that has finished
+--  or skipped is never asked again, by anything, ever - which is the promise
+--  that makes a first-run tour tolerable at all.
+--
+--  Then a stop index, which means somebody was half way through when they
+--  logged out: one quiet toast rather than the tour reopening over whatever
+--  they logged in to do.
+--
+--  And otherwise the welcome card, which is the first run.
+function OB:OnLogin()
+	if self:Completed() then return end
+
+	-- NOT DURING A FIGHT, and not dropped either: held until it ends, down the
+	-- same door an interrupted tour already uses.
+	if InCombatLockdown() then
+		self.__pendingLogin = true
+		return
+	end
+
+	local s = Store()
+	local at = tonumber(s and s.stopIndex) or 0
+	if at > 0 then
+		self:ShowResume(at)
+	else
+		self:ShowWelcome()
+	end
+end
+
 function OB:OnCombatOver()
+	if self.__pendingLogin then
+		self.__pendingLogin = nil
+		return self:OnLogin()
+	end
 	if not self.resumeAt then return end
 	local at = self.resumeAt
 	self.resumeAt = nil
@@ -1979,6 +2220,27 @@ function OB:OnEnable()
 	end)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
 		OB:OnCombatOver()
+	end)
+
+	-- THE FIRST RUN, ONCE.
+	--
+	-- PLAYER_ENTERING_WORLD rather than login, because it is the one that also
+	-- arrives after a loading screen - and once, because it arrives after EVERY
+	-- loading screen. A tour that reopened on the far side of a zone line would
+	-- be the thing this whole file is written to avoid.
+	--
+	-- AND A BEAT LATER. The tour spotlights real frames and places its callout
+	-- against them, and at the moment this fires the unit frames have been
+	-- built but not yet had their saved positions restored - so a callout
+	-- placed now is placed beside where a frame was going to be.
+	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
+		if OB.__arrived then return end
+		OB.__arrived = true
+		if _G.C_Timer and _G.C_Timer.After then
+			_G.C_Timer.After(FIRST_RUN_DELAY, function() OB:OnLogin() end)
+		else
+			OB:OnLogin()
+		end
 	end)
 end
 

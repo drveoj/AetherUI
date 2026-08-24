@@ -31464,6 +31464,30 @@ section("skins: a live switch, with no reload", function()
 	-- Every registered surface, every registered string, every registered
 	-- texture. Swept as a set rather than named one at a time: a check that
 	-- lists frames only covers the frames somebody thought to list.
+	-- AND EVERY TOKEN A SURFACE WAS DRESSED FROM IS ONE THE PALETTE HAS.
+	--
+	-- Glass looks the name up in Palette.c and falls back SILENTLY when it
+	-- misses, so `fill = "none"` - which is what somebody writes meaning "no
+	-- fill", and which Glass has no token for - draws the default glass and
+	-- then never moves again. The welcome card's quiet button carried one, and
+	-- the only symptom was the loop below indexing nil three hundred checks
+	-- later, in a block about something else entirely.
+	do
+		local bogus = {}
+		for _, sf in ipairs(A.Glass.surfaces) do
+			if sf._fillToken and not P.c[sf._fillToken] then
+				bogus[#bogus + 1] = "fill:" .. tostring(sf._fillToken)
+			end
+			if sf._edgeToken and not P.c[sf._edgeToken] then
+				bogus[#bogus + 1] = "edge:" .. tostring(sf._edgeToken)
+			end
+		end
+		check(#bogus == 0,
+			"no surface was dressed from a token this palette has not got (" ..
+			(#bogus > 0 and table.concat(bogus, ", ", 1, math.min(#bogus, 6))
+			or "none") .. ")")
+	end
+
 	local stale = {}
 	for _, sf in ipairs(A.Glass.surfaces) do
 		if sf._fillToken and sf._fillColor
@@ -39136,6 +39160,160 @@ do
 
 	A.db.char.onboard = {}
 end
+
+print("== onboarding: the first run, the resume and the alt ==")
+do
+	local OB = A:GetModule("onboard")
+	local function At(key)
+		for i, stop in ipairs(OB.stops) do
+			if stop.key == key then return i end
+		end
+	end
+
+	-- The character record, and the whole saved file it sits in.
+	local me = A.db.keys.char
+	local function fresh()
+		OB:Teardown()
+		OB.__arrived = nil
+		OB.__pendingLogin = nil
+		A.db.sv.char[me] = { onboard = {} }
+		A.db.char = A.db.sv.char[me]
+	end
+
+	-- NOTHING STARTED THE TOUR AT ALL until this. Eight stops, a welcome
+	-- card and a finish card were built over three builds and the only door
+	-- into any of it was a slash command.
+	fresh()
+	fire("PLAYER_ENTERING_WORLD")
+	check(not (OB.card and OB.card:IsShown()),
+		"nothing opens on the loading screen itself - the frames are built and "
+		.. "not yet put back where they were saved")
+	_G.__drainTimers(2)
+	check(OB.card and OB.card:IsShown(),
+		"a beat later, a fresh character gets the welcome card")
+
+	-- ONCE. This event arrives after EVERY loading screen, and a tour that
+	-- reopened on the far side of a zone line is the thing this whole file
+	-- is written to avoid.
+	OB:Teardown()
+	fire("PLAYER_ENTERING_WORLD")
+	_G.__drainTimers(2)
+	check(not OB.card:IsShown(),
+		"and never again in the same session, however many zone lines")
+
+	-- AND NEVER FOR SOMEBODY WHO HAS ANSWERED. Finishing and skipping both
+	-- set this, and it is the promise that makes a first-run tour tolerable.
+	fresh()
+	A.db.char.onboard.completed = true
+	fire("PLAYER_ENTERING_WORLD")
+	_G.__drainTimers(2)
+	check(not OB.card:IsShown() and not (OB.toast and OB.toast:IsShown()),
+		"a character that has finished or skipped is not asked again, ever")
+
+	-- HALF WAY THROUGH IS ONE QUIET TOAST, not the tour reopening over
+	-- whatever they logged in to do.
+	fresh()
+	A.db.char.onboard.stopIndex = At("bags")
+	fire("PLAYER_ENTERING_WORLD")
+	_G.__drainTimers(2)
+	check(OB.toast and OB.toast:IsShown() and not OB.card:IsShown(),
+		"a half-finished character gets a toast rather than the tour")
+	do
+		local left = OB.COUNT - At("bags") + 1
+		check(OB.toast.label:GetText() ==
+			("Finish setup? %d stops left"):format(left),
+			"which counts what is left, including the one they were on (" ..
+			tostring(OB.toast.label:GetText()) .. ")")
+	end
+
+	-- AND IT RESUMES WHERE THEY WERE.
+	OB.toast:GetScript("OnClick")(OB.toast)
+	check(OB.index == At("bags") and OB.callout:IsShown()
+		and not OB.toast:IsShown(),
+		"clicking it picks the tour up on the stop they left (" ..
+		tostring(OB.index) .. ")")
+
+	-- DISMISSING IS SKIPPING, which is the design's own rule and the only
+	-- reading that makes this a single toast rather than a nag: a dismiss
+	-- that merely closed the window would be answered by another one at the
+	-- next login, for ever.
+	fresh()
+	A.db.char.onboard.stopIndex = 3
+	OB:ShowResume(3)
+	OB.toast.close:GetScript("OnClick")(OB.toast.close)
+	check(OB:Completed() and not OB.toast:IsShown(),
+		"dismissing it marks the character done - there is never a second one")
+
+	-- A FIGHT HOLDS IT rather than dropping it. A scrim over the world is
+	-- the last thing you want when a mob opens on you at the flight point.
+	fresh()
+	_G.__inCombat = true
+	fire("PLAYER_ENTERING_WORLD")
+	_G.__drainTimers(2)
+	check(not OB.card:IsShown() and OB.__pendingLogin == true,
+		"arriving in combat holds the first run rather than dropping it")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(OB.card:IsShown(),
+		"and the end of the fight is when it opens")
+
+	-- THE ALT OFFER.
+	--
+	-- A fresh character on an account already set up is being asked four
+	-- questions it has answered. What there is to COPY is one thing and that
+	-- is not a shortcoming: the palette, the layout and the scale live in the
+	-- profile and this addon opens on the shared one, so an alt already has
+	-- them - which is the whole reason the offer makes sense at all.
+	do
+		fresh()
+		A.db.sv.char["Padreamuerto - Nek'Rosh"] = {
+			onboard = { completed = true, completedAt = 100 },
+			toolbox = { docked = "RIGHT" },
+		}
+		A.db.sv.char["Olderalt - Nek'Rosh"] = {
+			onboard = { completed = true, completedAt = 50 },
+			toolbox = { docked = "TOP" },
+		}
+
+		local key, who = OB:Others()
+		check(who == "Padreamuerto",
+			"the offer names the character who finished MOST recently, not the "
+			.. "one that sorts first (" .. tostring(who) .. ")")
+
+		OB:Go(1)
+		check(OB.callout.offer:IsShown()
+			and OB.callout.offer.label:GetText() == "Use Padreamuerto's setup",
+			"and stop 1 carries it (" ..
+			tostring(OB.callout.offer.label:GetText()) .. ")")
+
+		-- PAST THE QUESTIONS, computed rather than written down. The deck says
+		-- "jumps to stop 4", which was true while three stops set something and
+		-- stopped being true the moment zen made it four.
+		local TB = A:GetModule("toolbox")
+		TB:SetDock("LEFT")
+		OB.callout.offer:GetScript("OnClick")(OB.callout.offer)
+		check(A.db.char.toolbox.docked == "RIGHT",
+			"taking it copies the one thing that IS per character - the Toolbox "
+			.. "edge (" .. tostring(A.db.char.toolbox.docked) .. ")")
+		check(OB.index == OB:FirstShow() and OB.stops[OB.index].kind == "show",
+			"and lands on the first stop that only shows something, past every "
+			.. "question (" .. tostring(OB.index) .. ")")
+
+		-- AND ON THE FIRST CHARACTER OF ALL, THERE IS NO OFFER. Nobody to
+		-- borrow from is not an empty button, it is no button.
+		A.db.sv.char["Padreamuerto - Nek'Rosh"] = nil
+		A.db.sv.char["Olderalt - Nek'Rosh"] = nil
+		OB:Go(1)
+		check(not OB.callout.offer:IsShown(),
+			"with nobody to borrow from there is no offer at all")
+		check(OB:Others() == nil,
+			"and nothing to name")
+	end
+
+	fresh()
+	OB:Teardown()
+end
+
 
 print("")
 if #FAIL == 0 then

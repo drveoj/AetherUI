@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.34.0",
+		date    = "2026-08-24",
+		lines   = {
+			"The tour now opens by itself on a brand new character - until this it had no door but a slash command.",
+			"Log out half way through and the next login offers one quiet toast: 'Finish setup? N stops left'. Dismissing it counts as skipping, and there is never a second one.",
+			"On an alt, the first stop offers 'Use <name>'s setup' - it takes the Toolbox edge from whichever character finished most recently and skips straight past the questions.",
+			"The welcome card's 'Skip the tour' button had been drawn from a colour token that does not exist, so it never followed a palette change.",
+		},
+	},
+	{
 		version = "0.33.0",
 		date    = "2026-08-24",
 		lines   = {
