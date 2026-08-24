@@ -1067,6 +1067,65 @@ function TH:Redraw()
 	end
 end
 
+--- One warning on a unit that is not in a fight, for the tour to point at.
+--
+--  A REAL RECORD THROUGH THE REAL DRAW. There is no honest second way to show
+--  somebody what this looks like: a hand-drawn imitation in a callout would be
+--  a picture of the design rather than a picture of the addon, and the two
+--  drift the first time a threshold moves.
+--
+--  THE RECORD SHAPE STAYS IN THIS FILE. Onboarding could assemble the table
+--  itself - Draw is public and so is TIER - and then two files would know what
+--  a threat record is, one of them by copy.
+--
+--  ROLE-AWARE, because the thing being demonstrated IS the role inversion: a
+--  tank is warned that it is losing its grip, everybody else that they are
+--  climbing toward it, and the chip says whichever of those is true of you.
+--
+--  AND IT TAKES ITSELF DOWN. The alarm holds for its dwell and Pulse then
+--  clears it against the LIVE state, which out of combat is nothing - so the
+--  warning plays once and fades. That is not a special case for the tour: it is
+--  exactly what happens to a real warning when the fight ends.
+function TH:Preview(unit)
+	unit = unit or "player"
+	local tank = self:RoleOf(unit) == "tank"
+	self:Draw(unit, {
+		unit    = unit,
+		tier    = TIER.WARN,
+		reason  = tank and "losing" or "high",
+		tanking = tank and true or false,
+		-- Comfortably over RING_FLOOR, so the gauge is most of the way round
+		-- and the number on the chip is one worth reading.
+		scaled  = 76,
+		raw     = 76,
+		fill    = 0.76,
+	})
+end
+
+--- Take a preview off again, hold and all.
+--
+--  NOT Draw(unit, nil), which is what this tried first and is a real trap. The
+--  alarm holds itself up for its dwell so that it CAN be read, and Draw honours
+--  that hold: handed a live nothing it redraws the held record instead. That is
+--  right for a fight ending - the chip has to outlast the state it is reporting
+--  - and wrong for a tour moving on, so the hold has to be cancelled rather
+--  than waited out.
+--
+--  AND THEN BACK TO THE LIVE STATE, whatever it is. Out of combat that is
+--  nothing, which is the whole point; in a fight that started while the tour
+--  was up it is the real reading, and the frame goes straight back to telling
+--  the truth.
+function TH:ClearPreview(unit)
+	unit = unit or "player"
+	local host = DiscFor(unit)
+	local alarm = host and host.__aetherAlarm
+	if alarm then
+		A.Widgets.ClearThreatAlarm(alarm)
+		alarm.record = nil
+	end
+	self:Draw(unit, self.state[unit])
+end
+
 -- ---------------------------------------------------------------------------
 -- module
 -- ---------------------------------------------------------------------------

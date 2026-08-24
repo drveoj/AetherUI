@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.31.0",
+		date    = "2026-08-24",
+		lines   = {
+			"The tour's five feature stops now play their demo: a spell of yours sweeping through a cooldown, the tracker folding for a fight, the bag panel opening on its own headings, a threat warning rising and easing off on your own frame, and a flight programme filling itself in.",
+			"Everything a stop does out on the HUD is put back when you leave it - your tracker, your bags, your frame.",
+			"Three of the tour's eight stops were spotlighting nothing at all. They all light their element now.",
+		},
+	},
+	{
 		version = "0.30.2",
 		date    = "2026-08-23",
 		lines   = {

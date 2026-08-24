@@ -38416,6 +38416,224 @@ do
 			"and stop 1's swatches are down while stop 3 is up (" .. live .. ")")
 	end
 
+	-- AND WHAT EACH STOP POINTS AT, IT CAN ACTUALLY FIND.
+	--
+	-- The stop table check above asks whether `target` EXISTS, which is a
+	-- different and much easier question than whether it returns a frame - and
+	-- THREE of the eight were returning nil. Stop 4 called an AB:Bar(id) that
+	-- has never existed, stop 5 asked the tracker for a QT.frame it calls
+	-- QT.panel, and stop 8 looked for the console's mini on the module rather
+	-- than on A.IFEC. All three shipped, and all three lit nothing at all.
+	--
+	-- ONE STOP IS ALLOWED NIL, and only one: the layout stop's subject is the
+	-- whole HUD, so the scrim stays down and a ring round any single frame
+	-- would be pointing at the wrong thing.
+	for i, stop in ipairs(OB.stops) do
+		OB:Go(i)
+		local at = stop.target()
+		if stop.key == "layout" then
+			check(at == nil,
+				"\"layout\" deliberately points at nothing - the subject is the whole HUD")
+		else
+			check(at ~= nil and at.GetObjectType ~= nil,
+				"\"" .. stop.key .. "\" finds the thing it points at (" ..
+				tostring(at) .. ")")
+		end
+	end
+
+	-- THE FIVE THAT SHOW.
+	--
+	-- A SHOW stop asks for nothing and carries one behaviour instead. The two
+	-- rules that make that a demonstration rather than decoration are that it
+	-- actually draws, and that it plays ONCE - and the third, which is the one
+	-- that costs the player something when it is wrong, is that whatever it
+	-- changed out in the world goes back.
+	local function drive(slot, ticks)
+		-- Ten seconds in tenths by default, which is longer than the longest of
+		-- the five. Stops the moment the demo takes its own script off, so a
+		-- demo that never finishes is a loop that runs out rather than one that
+		-- passes.
+		for _ = 1, (ticks or 100) do
+			local step = slot:GetScript("OnUpdate")
+			if not step then return end
+			step(slot, 0.1)
+		end
+	end
+
+	for i, stop in ipairs(OB.stops) do
+		if stop.kind == "show" then
+			OB:Go(i)
+			local slot = OB.callout.slot
+			local live = 0
+			for _, pool in pairs(slot.__aetherKids or {}) do
+				for _, f in ipairs(pool) do
+					if f:IsShown() then live = live + 1 end
+				end
+			end
+			check(live > 0 and (slot:GetHeight() or 0) > 1,
+				"\"" .. stop.key .. "\" draws a demo rather than an empty slot (" ..
+				live .. " parts, " .. math.floor(slot:GetHeight() or 0) .. " tall)")
+
+			drive(slot)
+			check(slot:GetScript("OnUpdate") == nil,
+				"\"" .. stop.key .. "\" plays once and stops")
+		end
+	end
+
+	-- THE PLAYER'S OWN SPELLS, on the bars stop. The sentence beside it reads
+	-- "your spells, undecorated", and a row of invented squares would be
+	-- decorating them.
+	do
+		OB:Go(4)
+		local tiles = OB.callout.slot.__aetherKids["bars.tile"] or {}
+		check(#tiles == 4, "the bars stop draws four slots (" .. #tiles .. ")")
+		local mine = GetActionTexture and GetActionTexture(1)
+		check(mine ~= nil and tiles[1] and tiles[1].icon:GetTexture() == mine,
+			"carrying the icon that is actually in the player's first slot (" ..
+			tostring(mine) .. ")")
+
+		-- AND A REAL Cooldown FRAME ON THE SECOND ONE, swiping a real duration.
+		-- The whole claim being made is that the cooldown draws ON the icon, so a
+		-- rectangle drawn to look like one would be arguing the opposite.
+		local cd = tiles[2] and tiles[2].cd
+		check(cd ~= nil and cd:IsShown() and cd.__cd ~= nil and cd.__cd[2] > 0,
+			"the second is on cooldown, through a Cooldown frame (" ..
+			tostring(cd and cd.__cd and cd.__cd[2]) .. "s)")
+		check((tiles[2].cdText:GetText() or "") ~= "",
+			"with the countdown drawn on the icon (" ..
+			tostring(tiles[2].cdText:GetText()) .. ")")
+	end
+
+	-- AND THE CONSOLE'S PROGRAMME BAR ACTUALLY FILLS.
+	--
+	-- The parts count above says the pill is drawn and says nothing about what
+	-- is on it - which is how this went out with the bar carrying no width at
+	-- all. A segmented bar with no width hides every piece and draws as an
+	-- empty groove, and the demo counted as present the whole time.
+	do
+		OB:Go(8)
+		local pill = (OB.callout.slot.__aetherKids["ifec.pill"] or {})[1]
+		check(pill ~= nil and (pill.bar:GetWidth() or 0) > 40,
+			"the programme bar has a width to fill (" ..
+			tostring(pill and math.floor(pill.bar:GetWidth() or 0)) .. ")")
+		drive(OB.callout.slot)
+		local lit = 0
+		for _, part in ipairs((pill and pill.bar.parts) or {}) do
+			if part:IsShown() then lit = lit + 1 end
+		end
+		-- Three legs: music under the long haul, a podcast, and the gossip rag to
+		-- land on. All three by the end, or the programme is not a programme.
+		check(lit >= 3,
+			"and fills with all three kinds of thing by the end (" .. lit .. ")")
+	end
+
+	-- AND WHAT A DEMO CHANGES OUT IN THE WORLD, IT PUTS BACK.
+	--
+	-- Three of the five touch something real - the tracker folds, the bag panel
+	-- opens, the player's frame wears a warning - and each of those is a change
+	-- the player did not ask for. A tour that folded somebody's tracker and then
+	-- took a disconnect is a tour that cost them their tracker.
+	do
+		local QT = A:GetModule("questtracker")
+		local BG = A:GetModule("bags")
+
+		QT:SetCollapsed(false)
+		OB:Go(5)
+		-- To the end, because the fold is the second half of the demo.
+		drive(OB.callout.slot)
+		check(QT.collapsed == true,
+			"the quest tracker stop folds the REAL tracker")
+		OB:Go(6)
+		check(QT.collapsed == false,
+			"and unfolds it on the way out")
+
+		-- TO WHAT IT WAS, not to open. Somebody who keeps their tracker folded
+		-- should get it back folded.
+		QT:SetCollapsed(true)
+		OB:Go(5)
+		drive(OB.callout.slot)
+		OB:Go(6)
+		check(QT.collapsed == true,
+			"restored to what it was, rather than to open")
+
+		-- THE BAG PANEL OPENS FOR REAL, and the spotlight lifts the panel itself
+		-- - which is the reason it is opened BEFORE the target is resolved. Opened
+		-- after, it would sit under the scrim with no ring on it, and the one
+		-- thing on screen you could not see would be the thing being described.
+		local bags = BG.frames and BG.frames.bags
+		check(bags ~= nil and bags:IsShown(),
+			"the bags stop opens the REAL bag panel")
+		check(OB.lifted ~= nil and OB.lifted.frame == bags,
+			"and the spotlight lifts that panel out of the scrim")
+		OB:Go(7)
+		check(not bags:IsShown(),
+			"and shuts it again on the way out")
+
+		-- UNLESS IT WAS ALREADY OPEN, in which case it is the player's window and
+		-- stays theirs.
+		BG:Show()
+		OB:Go(6)
+		OB:Go(7)
+		check(bags:IsShown(),
+			"a panel that was already open is left open")
+		BG:Hide()
+	end
+
+	-- AND THE THREAT STOP PUTS A REAL WARNING ON THE REAL FRAME.
+	--
+	-- Through Threat's own Preview, which builds the record: Draw is public and
+	-- so is TIER, so onboarding COULD assemble one itself - and then two files
+	-- would know what a threat record is, one of them by copy.
+	do
+		local uf3 = A:GetModule("unitframes")
+		local pdisc
+		for _, f in ipairs((uf3 and uf3.frames) or {}) do
+			if f.unit == "player" then pdisc = f.orb or f.pip end
+		end
+		if pdisc then
+			OB:Go(7)
+			local ring = pdisc.__aetherThreatRing
+			check(ring ~= nil and ring:IsShown() and (ring.fill or 0) > 0.5,
+				"the threat stop warns on the player's own frame (" ..
+				tostring(ring and ring.fill) .. ")")
+			local gold = A.Palette.c.semanticGold
+			local rr = ring and select(1, ring.arc:GetVertexColor())
+			check(rr ~= nil and math.abs(rr - gold[1]) < 0.01,
+				"in the gold that means act now (" .. tostring(rr) .. ")")
+
+			-- AND IT COMES OFF. Left standing, a gold ring on a frame that is not
+			-- in a fight is a warning about nothing for the rest of the session.
+			OB:Go(8)
+			check((ring.fill or 0) == 0 or not ring:IsShown(),
+				"and comes off the frame on the way out (" ..
+				tostring(ring.fill) .. ")")
+		end
+	end
+
+	-- AND A FIGHT MID-DEMO PUTS IT BACK TOO. Every other way out of a stop
+	-- goes through Teardown, and combat is the one that arrives unasked.
+	--
+	-- ON THE BAG PANEL RATHER THAN THE TRACKER, and the first draft had it the
+	-- other way round: the tracker has a combat rule OF ITS OWN, so the same
+	-- event that tells the tour to put the fold back tells the tracker to fold.
+	-- Both are right and the check was a race between two handlers - it passed
+	-- and failed on alternate runs, which is worse than either.
+	do
+		local BG = A:GetModule("bags")
+		OB:Go(6)
+		local bags = BG.frames and BG.frames.bags
+		check(bags ~= nil and bags:IsShown(), "stop 6 has the panel open")
+		_G.__inCombat = true
+		fire("PLAYER_REGEN_DISABLED")
+		check(bags ~= nil and not bags:IsShown(),
+			"a fight starting mid-demo shuts the panel with everything else")
+		_G.__inCombat = false
+		fire("PLAYER_REGEN_ENABLED")
+		-- The resume reopens it, because it is stop 6 that it resumes to.
+		OB:Teardown()
+		BG:Hide()
+	end
+
 	-- A FIGHT TAKES IT DOWN INSTANTLY, and puts it back afterwards.
 	--
 	-- Not paused - dropped. A scrim over the world and a panel over your

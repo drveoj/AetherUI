@@ -151,9 +151,19 @@ OB.stops = {
 		body  = "Cooldowns, charges and range all draw ON the icon — no extra "
 			.. "widgets. Watch: this one's on cooldown.",
 		kind  = "show",
+		-- THE DOCK, which is the glass the bar is drawn on - the header above
+		-- it is a secure state driver with no art of its own.
+		--
+		-- And found by walking AB.bars, because there is no AB:Bar(id) and
+		-- there never was: this asked for one and got nil, so stop 4 lit
+		-- nothing for two builds. `stop.target` being a function is not the
+		-- same as it finding anything, which is the check that was missing.
 		target = function()
 			local AB = A.GetModule and A:GetModule("actionbars")
-			return AB and AB.Bar and AB:Bar("1")
+			for _, bar in ipairs((AB and AB.bars) or {}) do
+				if bar.id == "1" then return bar.dock end
+			end
+			return nil
 		end,
 	},
 	{
@@ -163,9 +173,12 @@ OB.stops = {
 		body  = "The tracker folds itself away the moment combat starts and "
 			.. "returns when it ends — like this.",
 		kind  = "show",
+		-- THE PANEL, which is what the tracker calls its own frame. This asked
+		-- for QT.frame and got nil, which is the third of three: see the
+		-- harness note under "what each stop points at".
 		target = function()
 			local QT = A.GetModule and A:GetModule("questtracker")
-			return QT and QT.frame
+			return QT and QT.panel
 		end,
 	},
 	{
@@ -175,9 +188,20 @@ OB.stops = {
 		body  = "All your bags pour into one organised panel — gear, potions, "
 			.. "trade goods, junk, each under its own heading.",
 		kind  = "show",
+		-- THE PANEL IS THE DEMO, so it opens before the spotlight looks for it
+		-- and closes on the way out - unless it was already open, in which case
+		-- it was the player's and stays theirs.
+		before = function()
+			local BG = A.GetModule and A:GetModule("bags")
+			if not BG or not BG.Show then return end
+			local f = BG.frames and BG.frames.bags
+			if f and f:IsShown() then return end
+			BG:Show()
+			OB:OnLeave(function() if BG.Hide then BG:Hide() end end)
+		end,
 		target = function()
 			local BG = A.GetModule and A:GetModule("bags")
-			return BG and BG.frame
+			return BG and BG.frames and BG.frames.bags
 		end,
 	},
 	{
@@ -196,9 +220,21 @@ OB.stops = {
 		body  = "Music, podcasts and a truly disreputable gossip rag, timed to "
 			.. "your route. It boards automatically on your next flight.",
 		kind  = "show",
+		-- THE RAIL CHIP, which is the console's presence on the ground: the
+		-- region itself hangs at the foot of the Toolbox drawer and is only on
+		-- screen while the drawer is open. Its own frame comes first for the
+		-- case where the drawer IS open, because then it is the better thing to
+		-- be pointing at.
+		--
+		-- And off A.IFEC rather than off the module: the console's module is
+		-- "ifec" and the mini is not on it. This asked for `M.mini` and got
+		-- nil, the same way stop 4 did.
 		target = function()
-			local M = A.GetModule and A:GetModule("ifec")
-			return M and M.mini and M.mini.frame
+			local M = A.IFEC and A.IFEC.Mini
+			if not M then return nil end
+			local f = M.frame
+			if f and f.IsVisible and f:IsVisible() then return f end
+			return M.railChip
 		end,
 	},
 }
@@ -901,12 +937,550 @@ function OB:Control(stop, slot)
 end
 
 -- ---------------------------------------------------------------------------
+-- stops 4-8: the demos
+--
+-- A SHOW stop carries no control. What it carries is one behaviour, played
+-- ONCE - the deck's own note under each of these five reads "SHOWS ... once" -
+-- and once is the whole discipline. A demo that loops is a screensaver: the eye
+-- reads it twice and then stops seeing it, and the callout beside it goes
+-- unread with it.
+--
+-- AND THE REAL THING DOES IT WHERE THE REAL THING CAN. Three of the five cost
+-- the player nothing to show for real - the tracker really folds, the bag panel
+-- really opens, the player's own frame really wears the warning - so those are
+-- not demonstrations of a behaviour, they ARE the behaviour, with the tour
+-- pointing at it. The other two have nowhere real to happen without a spell on
+-- cooldown or a flight to be on, so their demo is drawn in the callout. Even
+-- there it is drawn with the SAME widgets the real one uses: the bar tiles are
+-- W.DecorateSlot carrying the player's own spell icons under a real Cooldown
+-- frame, and the console's programme bar is the console's programme bar. A demo
+-- built out of its own rectangles is a demo that goes stale the first time the
+-- real one is restyled.
+--
+-- WHAT A DEMO CHANGES OUT THERE, IT PUTS BACK. See OB:Undo - a tour that folded
+-- somebody's tracker and then took a disconnect is a tour that cost them their
+-- tracker.
+-- ---------------------------------------------------------------------------
+
+local TILE     = 34       -- an icon square in the bars demo
+local CD_SECS  = 4.2      -- the deck's own number on the sweeping tile
+local SWAP_AT  = 2.4      -- when a before-and-after demo turns over
+local STAGGER  = 0.14     -- between one category chip and the next
+local STATE_H  = 24       -- a dot-and-a-line pill
+local CAT_H    = 22       -- a category chip
+local BAR_H    = 7        -- the console's programme bar
+
+--- The same colour, softer.
+--
+--  There is no token for a 14%-alpha accent and there should not be: it is the
+--  fill under a chip's own label, wanted in one place, and a token exists so
+--  that four palettes can disagree about a colour. This one cannot.
+local function Soft(c, a)
+	return { c[1], c[2], c[3], a }
+end
+
+--- Anything a stop changed out in the world, put back.
+--
+--  ONE LIST, POPPED IN REVERSE, and every route out of a stop goes through it:
+--  Go on the way to the next stop, and Teardown for finishing, skipping, a
+--  fight starting and the module being switched off. A demo's undo is not
+--  optional tidying - the tracker being folded and the bag panel being open are
+--  states the player did not ask for and must not be left holding.
+function OB:Undo()
+	local list = self.__undo
+	self.__undo = nil
+	for i = #(list or {}), 1, -1 do pcall(list[i]) end
+end
+
+--- Do this when the stop is left, whatever leaves it.
+function OB:OnLeave(fn)
+	if type(fn) ~= "function" then return end
+	self.__undo = self.__undo or {}
+	self.__undo[#self.__undo + 1] = fn
+end
+
+--- Play one demo, once. `step(at)` gets seconds since entry, and returns false
+--- when it has finished.
+--
+--  ON THE SLOT'S OWN OnUpdate rather than a chain of C_Timer.After. A timer
+--  that fires after the player has moved on is a timer writing into the NEXT
+--  stop's frames: the pools are shared by design, so the frame is still there
+--  and still takes the write. This stops when the stop does, because leaving
+--  the stop takes the script off.
+--
+--  THE OPENING FRAME NOW, not on the first tick. A demo whose first state
+--  arrives a frame late shows an empty callout for that frame, which reads as
+--  the thing having failed to load.
+local function Play(slot, step)
+	if step(0) == false then return end
+	local at = 0
+	slot:SetScript("OnUpdate", function(self, dt)
+		at = at + (dt or 0)
+		if step(at) == false then self:SetScript("OnUpdate", nil) end
+	end)
+	OB:OnLeave(function() slot:SetScript("OnUpdate", nil) end)
+end
+
+--- The little arrow between a before and an after.
+--
+--  A TEXTURE, because this font has no arrows. A real arrow character comes out
+--  of it as a hollow box, which is exactly how one shipped on the finish card
+--  and a second sat in a tooltip diagnostic for months. Every arrow this addon
+--  draws is Media.texture.chevron.
+local function Chev(slot, key)
+	local f = Kid(slot, key, 1, function(parent)
+		local c = CreateFrame("Frame", nil, parent)
+		c:SetSize(13, 13)
+		c.tex = c:CreateTexture(nil, "OVERLAY")
+		c.tex:SetAllPoints(c)
+		c.tex:SetTexture(Media.texture.chevron)
+		return c
+	end)
+	W.FaceChevron(f.tex, "RIGHT")
+	W.Tint(f.tex, Palette.c.accent, 0.6)
+	return f
+end
+
+--- A dot and a line of words: "tracking", "in combat - folded".
+--
+--  Not W.Pill, and this is the one place in here it is not. A pill centres its
+--  label by design and this has a dot in front of the label, so the text is
+--  off-centre by half the dot for ever - the two cannot be reconciled without
+--  giving W.Pill an asymmetric padding that only this caller would ever pass.
+local function StatePill(slot, key)
+	local p = Kid(slot, key, 1, function(parent)
+		local f = Glass.CreatePill(parent, {
+			fill = "glass", edge = "glassEdge" })
+		f:SetHeight(STATE_H)
+		f.dot = f:CreateTexture(nil, "OVERLAY")
+		f.dot:SetSize(7, 7)
+		f.dot:SetTexture(Media.texture.chipDisc)
+		f.dot:SetPoint("LEFT", f, "LEFT", 11, 0)
+		f.label = W.Text(f, "tbLabel", "LEFT")
+		f.label:SetPoint("LEFT", f.dot, "RIGHT", 7, 0)
+
+		--- One state, said in one call: the words, and the colour that means
+		--  them. The dot, the ink and the rim all move together or the pill
+		--  says two things.
+		function f:Say(text, colour)
+			colour = colour or Palette.c.textDim
+			self.label:SetText(text or "")
+			W.Color(self.label, colour)
+			W.Tint(self.dot, colour, 1)
+			self:SetEdgeColor(Soft(colour, 0.35))
+			self:SetWidth(11 + 7 + 7
+				+ math.ceil(self.label:GetStringWidth() or 0) + 13)
+		end
+		return f
+	end)
+	return p
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 4: the action bars
+-- ---------------------------------------------------------------------------
+
+--- Four slots, and the second one goes on cooldown.
+--
+--  THE PLAYER'S OWN SPELLS, read straight off action slots 1 to 4. The sentence
+--  beside this says "your spells, undecorated" and a row of invented squares
+--  would be decorating them. An empty slot draws empty, which is the honest
+--  answer on a level-one character with two things on the bar and is the same
+--  silhouette either way.
+--
+--  A REAL Cooldown FRAME, swiping a real duration with the real swipe texture
+--  and the real countdown formatter. Nothing in here is a drawing of a
+--  cooldown - which matters because the whole claim being made is that the
+--  cooldown draws ON the icon.
+local function BarsDemo(slot)
+	local gap = 6
+	local tiles = {}
+
+	for i = 1, 4 do
+		local tile = Kid(slot, "bars.tile", i, function(parent)
+			local f = CreateFrame("Frame", nil, parent)
+			f:SetSize(TILE, TILE)
+			-- No count: there is no stack to show and the string would sit
+			-- over the countdown.
+			W.DecorateSlot(f, TILE, { count = false })
+
+			local cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
+			cd:SetAllPoints(f)
+			pcall(cd.SetSwipeTexture, cd, Media.texture.slotMask)
+			pcall(cd.SetSwipeColor, cd, 0.02, 0.01, 0.06, 0.72)
+			pcall(cd.SetDrawEdge, cd, false)
+			pcall(cd.SetDrawBling, cd, false)
+			pcall(cd.SetHideCountdownNumbers, cd, true)
+			cd:Hide()
+			f.cd = cd
+
+			f.cdText = W.Text(f, "stack", "CENTER")
+			f.cdText:SetPoint("CENTER", f, "CENTER", 0, 0)
+			-- Sized off the tile the way the real button's is sized off the
+			-- button, rather than off the role: a number that fits a 44px slot
+			-- does not fit a 34px one.
+			Media:SetFont(f.cdText, "stack", math.max(10, TILE * 0.24))
+			W.Color(f.cdText, Palette.c.text)
+			return f
+		end)
+
+		tile:ClearAllPoints()
+		tile:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (TILE + gap), 0)
+
+		local tex = GetActionTexture and GetActionTexture(i)
+		tile.icon:SetTexture(tex or Media.texture.flat)
+		tile.icon:SetAlpha(tex and 1 or 0.10)
+		tile.cdText:SetText("")
+		tile.cd:Hide()
+
+		-- THE FOURTH WEARS THE READY RIM, which is the other half of the claim:
+		-- range and readiness are the slot's own edge, not a widget beside it.
+		W.Tint(tile.edge, i == 4 and Palette.c.accent or Palette.c.glassEdge,
+			i == 4 and 0.9 or 1)
+
+		tiles[i] = tile
+	end
+
+	slot:SetHeight(TILE)
+
+	local hot = tiles[2]
+	hot.cd:Show()
+	hot.cd:SetCooldown((GetTime and GetTime()) or 0, CD_SECS)
+
+	Play(slot, function(at)
+		local left = CD_SECS - at
+		if left <= 0 then
+			hot.cdText:SetText("")
+			hot.cd:Hide()
+			return false
+		end
+		-- W.Duration, the same formatter the real button uses - which is why
+		-- this reads 4.2 and then 4.1 rather than 4 and then 4.
+		hot.cdText:SetText(W.Duration(left))
+	end)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 5: the quest tracker
+-- ---------------------------------------------------------------------------
+
+--- A quest, and then the tracker folds - the real one included.
+local function QuestsDemo(slot)
+	-- THE REAL TRACKER REALLY FOLDS, through the same call the combat handler
+	-- makes. Restored on the way out, and restored to what it WAS rather than
+	-- to open: somebody who keeps their tracker folded should get it back
+	-- folded.
+	local QT = A.GetModule and A:GetModule("questtracker")
+	if QT and QT.SetCollapsed then
+		local was = QT.collapsed and true or false
+		OB:OnLeave(function() QT:SetCollapsed(was) end)
+	else
+		QT = nil
+	end
+
+	local card = Kid(slot, "quests.card", 1, function(parent)
+		local f = Glass.CreatePanel(parent, { corner = 10 })
+		f.title = W.Text(f, "tbLabel", "LEFT")
+		f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 11, -9)
+		f.line = W.Text(f, "tbLabel", "LEFT")
+		f.line:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -3)
+		return f
+	end)
+
+	-- The deck's own quest, and the gag is in the content rather than the
+	-- chrome - which is the copy rule for this whole addon.
+	card.title:SetText("Wanted: Hogger")
+	card.line:SetText("0/1 slain")
+	W.Color(card.title, Palette.c.text)
+	W.Color(card.line, Palette.c.textDim)
+	card:SetWidth(math.max(card.title:GetStringWidth() or 0,
+		card.line:GetStringWidth() or 0) + 24)
+
+	local chev = Chev(slot, "quests.chev")
+	local pill = StatePill(slot, "quests.pill")
+
+	local OPEN, FOLDED = 44, 28
+	card:ClearAllPoints()
+	card:SetPoint("LEFT", slot, "LEFT", 0, 0)
+	chev:ClearAllPoints()
+	chev:SetPoint("LEFT", card, "RIGHT", 9, 0)
+	pill:ClearAllPoints()
+	pill:SetPoint("LEFT", chev, "RIGHT", 9, 0)
+
+	-- THE SLOT'S HEIGHT DOES NOT MOVE with the card's. The callout is sized
+	-- from the slot, and a callout that changed height half way through a demo
+	-- would jump - and it is anchored beside the element, so it would jump
+	-- sideways as well.
+	slot:SetHeight(OPEN)
+
+	-- TWO STATES, WRITTEN ON THE CHANGE. A before-and-after demo has nothing
+	-- to animate between its two halves, so it is a latch rather than a curve -
+	-- and without the latch the pill re-measures its own label a hundred and
+	-- forty times to say the same word.
+	local state = nil
+	Play(slot, function(at)
+		local want = (at < SWAP_AT) and "open" or "folded"
+		if want == state then return want == "open" end
+		state = want
+
+		if want == "open" then
+			card:SetHeight(OPEN)
+			card.line:Show()
+			pill:Say("tracking", Palette.c.textFaint)
+			chev:SetAlpha(0.25)
+			return true
+		end
+
+		card:SetHeight(FOLDED)
+		card.line:Hide()
+		pill:Say("in combat — folded", Palette.c.danger)
+		chev:SetAlpha(1)
+		if QT then QT:SetCollapsed(true) end
+		return false
+	end)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 6: the bags
+-- ---------------------------------------------------------------------------
+
+-- The headings the panel actually sorts into, in the order it sorts them.
+-- Junk is last and is dimmed in the deck, and it is dimmed for a reason: it is
+-- the one heading you are being invited to sell rather than to keep.
+local CATEGORIES = { "Gear", "Consumables", "Trade goods", "Quest", "Junk" }
+
+--- The headings, arriving one at a time.
+local function BagsDemo(slot)
+	local gap, chips = 6, {}
+	local avail = slot:GetWidth() or CALLOUT_W
+	local x, y, rows = 0, 0, 1
+
+	for i, name in ipairs(CATEGORIES) do
+		local chip = Kid(slot, "bags.chip", i, function(parent)
+			return W.Pill(parent, "tbLabel",
+				{ height = CAT_H, padX = 10, edge = true })
+		end)
+		chip:SetLabel(name)
+
+		local lit = (name ~= "Junk")
+		chip:SetColors(lit and Soft(Palette.c.accent, 0.12) or Palette.c.glass,
+			lit and Palette.c.accent or Palette.c.textFaint)
+		chip:SetEdgeColor(lit and Soft(Palette.c.accent, 0.28)
+			or Palette.c.glassEdge)
+
+		-- WRAPPED, because five headings do not fit across a 330 callout and
+		-- the fifth one running off the edge is the one that says "Junk".
+		local w = chip:GetWidth() or 0
+		if x > 0 and x + w > avail then
+			x, y, rows = 0, y - (CAT_H + gap), rows + 1
+		end
+		chip:ClearAllPoints()
+		chip:SetPoint("TOPLEFT", slot, "TOPLEFT", x, y)
+		x = x + w + gap
+
+		chips[i] = chip
+	end
+
+	slot:SetHeight(rows * CAT_H + (rows - 1) * gap)
+
+	local shown = nil
+	Play(slot, function(at)
+		local n = math.floor(at / STAGGER) + 1
+		if n == shown then return n < #chips end
+		shown = n
+		for i, chip in ipairs(chips) do
+			chip:SetAlpha(i <= n and 1 or 0)
+		end
+		return n < #chips
+	end)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 7: threat
+-- ---------------------------------------------------------------------------
+
+--- The warning goes on the real frame, and the callout says it goes away again.
+local function ThreatDemo(slot)
+	-- THE REAL FRAME REALLY WEARS IT. Threat owns what a threat record is, so
+	-- this asks for a preview rather than assembling one - and the preview
+	-- clears itself the way a real warning does, when its dwell runs out
+	-- against a live state of nothing. The undo is here for the case where it
+	-- does not get that far, which is somebody pressing Next after one second.
+	local TH = A.GetModule and A:GetModule("threat")
+	if TH and TH.Preview then
+		TH:Preview("player")
+		OB:OnLeave(function()
+			-- ClearPreview rather than Draw(nil): the alarm holds itself up so
+			-- that it can be read, and Draw honours the hold. Handed nothing,
+			-- it redraws the held record - so the ring stayed gold on a frame
+			-- that was not in a fight.
+			if TH.ClearPreview then TH:ClearPreview("player") end
+		end)
+	end
+
+	-- AND THE CALLOUT NARRATES rather than drawing a second capsule.
+	--
+	-- The deck puts a miniature of the warned capsule in here and was right to:
+	-- the deck had nothing else to show it on. We have - this stop's spotlight
+	-- IS the player frame, and it is wearing the warning a few inches away
+	-- while you read this. Two of the same capsule side by side is the reader
+	-- working out which one is the real one.
+	--
+	-- What the callout adds is the half the frame cannot say: that it stops.
+	-- And it says it WITHOUT the chip's own words, deliberately - those are
+	-- role-dependent and they live in Threat's own table. Spelling "HIGH
+	-- THREAT" here would be a copy of that table which is wrong for a tank.
+	local warn = StatePill(slot, "threat.warn")
+	local chev = Chev(slot, "threat.chev")
+	local calm = StatePill(slot, "threat.calm")
+
+	warn:ClearAllPoints()
+	warn:SetPoint("LEFT", slot, "LEFT", 0, 0)
+	chev:ClearAllPoints()
+	chev:SetPoint("LEFT", warn, "RIGHT", 9, 0)
+	calm:ClearAllPoints()
+	calm:SetPoint("LEFT", chev, "RIGHT", 9, 0)
+
+	warn:Say("trouble coming", Palette.c.semanticGold)
+	calm:Say("eased off — quiet again", Palette.c.friendly)
+	slot:SetHeight(STATE_H)
+
+	local state = nil
+	Play(slot, function(at)
+		local want = (at < SWAP_AT) and "warned" or "eased"
+		if want == state then return want == "warned" end
+		state = want
+
+		if want == "warned" then
+			-- Set here rather than once before the play, so a second visit to
+			-- this stop starts where the first one did.
+			warn:SetAlpha(1)
+			chev:SetAlpha(0.25)
+			calm:SetAlpha(0.18)
+			return true
+		end
+
+		chev:SetAlpha(1)
+		calm:SetAlpha(1)
+		-- The gold has had its moment. Both left lit says both are true.
+		warn:SetAlpha(0.35)
+		return false
+	end)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 8: the flight console
+-- ---------------------------------------------------------------------------
+
+--- A route, and a programme filling itself against it.
+--
+--  DRAWN IN THE CALLOUT, and this is the one stop where there is nothing real
+--  to point at: the console boards at takeoff and there is no flight to be on.
+--  The programme bar is the console's own W.CreateSegmentedBar, filled the way
+--  the console fills it, so a restyle of one is a restyle of both.
+local function IfecDemo(slot)
+	local pill = Kid(slot, "ifec.pill", 1, function(parent)
+		local f = Glass.CreatePanel(parent, { corner = 12 })
+
+		f.from = W.Text(f, "ifecRoute", "LEFT")
+		f.from:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -9)
+
+		-- A chevron between the two ends of the route, because the style's own
+		-- comment in Media reads "Booty Bay -> Ironforge" and the font cannot
+		-- draw that arrow.
+		f.chev = f:CreateTexture(nil, "OVERLAY")
+		f.chev:SetSize(11, 11)
+		f.chev:SetTexture(Media.texture.chevron)
+		f.chev:SetPoint("LEFT", f.from, "RIGHT", 7, 0)
+
+		f.to = W.Text(f, "ifecRoute", "LEFT")
+		f.to:SetPoint("LEFT", f.chev, "RIGHT", 7, 0)
+
+		-- ONE ANCHOR AND A WIDTH, not two anchors. A TOPLEFT off the route
+		-- line and a RIGHT off the panel fix the bar's top from one frame and
+		-- its middle from another, and the client is entitled to resolve that
+		-- however it likes. The width is known by the time this is laid out.
+		f.bar = W.CreateSegmentedBar(f, { height = BAR_H })
+		f.bar:SetPoint("TOPLEFT", f.from, "BOTTOMLEFT", 0, -8)
+
+		f.sub = W.Text(f, "ifecSub", "LEFT")
+		f.sub:SetPoint("TOPLEFT", f.bar, "BOTTOMLEFT", 0, -6)
+		return f
+	end)
+
+	pill:ClearAllPoints()
+	pill:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
+	pill:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
+
+	pill.from:SetText("Booty Bay")
+	pill.to:SetText("Ironforge")
+	W.Color(pill.from, Palette.c.text)
+	W.Color(pill.to, Palette.c.text)
+	W.FaceChevron(pill.chev, "RIGHT")
+	W.Tint(pill.chev, Palette.c.accent, 0.6)
+
+	-- The bar has one anchor, so its width is said here - and it is known by
+	-- now, because the callout sized the slot before it asked for the demo.
+	pill.bar:SetWidth(math.max(40, (slot:GetWidth() or CALLOUT_W) - 24))
+	pill.sub:SetText("preview — boards at takeoff")
+	W.Color(pill.sub, Palette.c.textFaint)
+
+	local h = 9 + (pill.from:GetStringHeight() or 14) + 8 + BAR_H + 6
+		+ (pill.sub:GetStringHeight() or 12) + 10
+	pill:SetHeight(h)
+	slot:SetHeight(h)
+
+	-- The programme's three kinds, in the mix the route would actually get:
+	-- music under the long leg, a podcast, and the gossip rag to land on.
+	local TOTAL = 252
+	local LEGS = {
+		{ 132, Palette.c.ifecMusic },
+		{  78, Palette.c.ifecPodcast },
+		{  42, Palette.c.ifecGossip },
+	}
+	local FILL = 1.6      -- seconds to fill the whole programme
+
+	Play(slot, function(at)
+		local through = math.min(1, at / FILL) * TOTAL
+		local pieces, used = {}, 0
+		for _, leg in ipairs(LEGS) do
+			local secs = math.max(0, math.min(leg[1], through - used))
+			if secs > 0 then
+				pieces[#pieces + 1] =
+					{ seconds = secs, colour = leg[2], filled = true }
+			end
+			used = used + leg[1]
+		end
+		pill.bar:SetPieces(pieces, TOTAL)
+		return at < FILL
+	end)
+end
+
+--- Which demo a SHOW stop plays.
+local DEMOS = {
+	bars   = BarsDemo,
+	quests = QuestsDemo,
+	bags   = BagsDemo,
+	threat = ThreatDemo,
+	ifec   = IfecDemo,
+}
+
+function OB:Demo(stop, slot)
+	local fn = DEMOS[stop.key]
+	if fn then fn(slot) end
+end
+
+-- ---------------------------------------------------------------------------
 -- running
 -- ---------------------------------------------------------------------------
 
 --- Show one stop.
 function OB:Go(index)
 	if index < 1 then index = 1 end
+	-- WHATEVER THE LAST STOP CHANGED, PUT BACK - before anything about this one
+	-- is decided. Run after the new stop had set itself up, an undo would be
+	-- closing the panel this stop had just opened.
+	self:Undo()
 	if index > OB.COUNT then return self:ShowFinish() end
 
 	local stop = self.stops[index]
@@ -926,6 +1500,12 @@ function OB:Go(index)
 	BuildNav(c)
 
 	Drop()
+	-- WHAT THIS STOP NEEDS ON SCREEN BEFORE THE SPOTLIGHT GOES LOOKING FOR IT.
+	-- The bags stop points at the bag panel and the bag panel is shut: opened
+	-- after the target had been resolved it would sit UNDER the scrim with no
+	-- ring on it, which is the one place in the tour where the thing being
+	-- described would be the only thing you could not see.
+	if stop.before then stop.before() end
 	local target = stop.target and stop.target()
 	if target and target.IsVisible and target:IsVisible() then
 		Lift(target)
@@ -980,6 +1560,11 @@ end
 
 --- Everything down, nothing left raised.
 function OB:Teardown()
+	-- EVERY OTHER WAY OUT comes through here: finishing, skipping, a fight
+	-- starting, the module being switched off. Go handles stop-to-stop; this
+	-- handles the rest, and between them there is no exit that leaves a demo's
+	-- change standing.
+	self:Undo()
 	Drop()
 	if self.ring then self.ring:Hide() end
 	if self.callout then self.callout:Hide() end
