@@ -1,20 +1,27 @@
-# Build a zip on every version tag, and attach it to the GitHub release.
+# Build a zip and attach it to a GitHub release. BY HAND, ON PURPOSE.
 #
-# THE UPLOAD IS OPT-IN. BigWigsMods/packager uploads to CurseForge, WoWInterface
-# and Wago when it finds a token for each, and does not when it does not - so
-# this workflow builds and attaches the zip today, and starts publishing the day
-# a CF_API_KEY secret is added to the repository. Nothing here reaches the
-# outside world until somebody puts a key in.
+# MANUAL ONLY. This used to fire on every `v*` tag, which sounds right and is
+# not: a tag gets cut on every bump, and bumps happen several times an afternoon
+# while something is being fixed. That produced eleven releases in a day, none of
+# which was one - and they all had to be deleted before 1.0 could be the first.
 #
-# THE TAG IS THE VERSION. `Tools/bump.py` writes the .toc and the changelog
-# together and the harness refuses a build where the two disagree; tagging
-# vN.N.N is what turns that into a release.
+# A release is a decision. This is where you make it: Actions -> Release -> Run
+# workflow, and pick the TAG in the ref dropdown rather than a branch. The
+# packager reads the version out of whatever it finds at that ref, and a tagged
+# HEAD is what tells it this is a release rather than an alpha.
+#
+# So the sequence is still `bump.py`, commit, tag, push - and then, when you
+# actually mean it, press the button.
+#
+# THE UPLOAD IS OPT-IN. BigWigsMods/packager publishes to CurseForge,
+# WoWInterface and Wago when it finds a token for each, and does not when it does
+# not - so today this builds the zip and attaches it to a GitHub release and
+# sends nothing anywhere else. It starts publishing the day a CF_API_KEY secret
+# is added, which also wants `## X-Curse-Project-ID` in the .toc.
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
