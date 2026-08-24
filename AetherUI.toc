@@ -5,6 +5,10 @@
 ## Version: 0.36.10
 ## SavedVariables: AetherUIDB
 ## X-Category: Interface Enhancements
+# The CurseForge project. The packager needs this to upload at all, and
+# needs it again to resolve the @localization@ blocks in Locale/ - a key
+# without an id substitutes nothing.
+## X-Curse-Project-ID: 1666829
 
 Libs\Libs.xml
 
