@@ -355,6 +355,19 @@ local function diag()
 	A:Print(A.F(L.cmd.diag.diagnostics_s_s,
 		A.Bad(L.cmd.diag.red_shown), A.Good(L.cmd.diag.green_hidden)))
 
+	-- WHO IS ACTUALLY DELIVERING OTHER PEOPLE'S CASTS.
+	--
+	-- Classic Era has never fired UNIT_SPELLCAST_* for anything but the player,
+	-- so everything else comes from LibClassicCasterino reading the combat log.
+	-- Both paths are wired and native is tried first, which means the day the
+	-- client starts reporting it the library stops mattering - silently. This is
+	-- the line that says which of the two is true, after a fight.
+	do
+		local c = A.castSource or {}
+		say("   casts for others  native %d  ·  LibClassicCasterino %d",
+			c.native or 0, c.lib or 0)
+	end
+
 	for name, m in A:IterateModules() do
 		say("   %s %s%s", m.enabled and A.Good("on ") or A.Bad("off"), name,
 			m.lastError and ("  " .. A.Bad(m.lastError)) or "")

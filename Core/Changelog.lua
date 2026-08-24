@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.8",
+		date    = "2026-08-24",
+		lines   = {
+			"/aether diag now says which source delivered other people's casts - the client itself, or LibClassicCasterino. One fight settles whether the library is still doing anything.",
+		},
+	},
+	{
 		version = "0.36.7",
 		date    = "2026-08-24",
 		lines   = {

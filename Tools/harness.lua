@@ -10328,6 +10328,43 @@ fire("UNIT_SPELLCAST_STOP", "player")
 check(not UF.cast:IsShown(), "cast bar hides on stop")
 check(UF.cast:GetScript("OnUpdate") == nil, "cast bar stops updating when hidden")
 
+print("== casts: which source delivered somebody else's ==")
+do
+	-- THE QUESTION THE COUNTER EXISTS TO ANSWER.
+	--
+	-- Classic Era has never fired UNIT_SPELLCAST_* for anything but the
+	-- player, so everything else comes from LibClassicCasterino reading the
+	-- combat log. Both paths are wired and native is tried first, which means
+	-- the day the client starts reporting it the library stops mattering -
+	-- silently, and with nobody able to say which is true without guessing.
+	--
+	-- What is checked here is only that BOTH paths are counted. Which of them
+	-- fires in the real client is not a question a mock can answer - it is the
+	-- question - so this proves the instrument works and the game reads it.
+	local NP = A:GetModule("nameplates")
+	local was = { native = A.castSource.native, lib = A.castSource.lib }
+	A.castSource.native, A.castSource.lib = 0, 0
+
+	fire("UNIT_SPELLCAST_START", "nameplate1")
+	check(A.castSource.native == 1,
+		"a native cast event for a unit that is not the player is counted (" ..
+		A.castSource.native .. ")")
+
+	-- And the library's relay, through the same handlers.
+	local lib = LibStub("LibClassicCasterino", true)
+	if lib and lib.__fire then
+		lib.__fire("UNIT_SPELLCAST_START", "nameplate1")
+		check(A.castSource.lib == 1,
+			"and a relayed one is counted separately, so the two can be told "
+			.. "apart (" .. A.castSource.lib .. ")")
+	else
+		check(A.castSource.lib == 0,
+			"and the library counter starts at nothing")
+	end
+
+	A.castSource.native, A.castSource.lib = was.native, was.lib
+end
+
 print("== target cast bar (LibClassicCasterino) ==")
 check(UF.targetCast ~= nil, "target cast bar built")
 do

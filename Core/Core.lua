@@ -556,6 +556,19 @@ end
 --  So a player reporting a bug can say what they are running without being
 --  asked first, which is the whole point of it. Two lines, not a banner - a
 --  greeting long enough to scroll the chat frame is one people turn off.
+-- WHICH SOURCE DELIVERED A CAST FOR SOMEBODY WHO IS NOT YOU.
+--
+-- Classic Era has never fired UNIT_SPELLCAST_* for anything but the player, so
+-- everything else comes from LibClassicCasterino reading the combat log. Both
+-- paths are wired and the native one is tried first, which means the day the
+-- client starts reporting it the library stops mattering - silently, and with
+-- nobody able to say so without guessing.
+--
+-- Counted rather than assumed. `/aether diag` prints both, and a session with a
+-- fight in it settles the question: native above zero and the library is dead
+-- weight, library above zero and it is still the only thing that works.
+A.castSource = { native = 0, lib = 0 }
+
 function A:Greet()
 	if A.db and A.db.profile and A.db.profile.greet == false then return end
 	if A.__greeted then return end

@@ -1179,13 +1179,20 @@ function NP:OnEnable()
 		UNIT_SPELLCAST_CHANNEL_STOP    = onStop,
 	}
 	for event, fn in pairs(CAST_EVENTS) do
-		A:RegisterEvent(self, event, fn)
+		-- Counted on the way past. A nameplate token is never the player, so
+		-- anything arriving here at all is the client reporting somebody
+		-- else's cast - which it has never done on this flavour.
+		A:RegisterEvent(self, event, function(owner, ev, token)
+			A.castSource.native = A.castSource.native + 1
+			return fn(owner, ev, token)
+		end)
 	end
 
 	local LibCC = LibStub and LibStub("LibClassicCasterino", true)
 	if LibCC and not self._ccHooked then
 		self._ccHooked = true
 		local function relay(event, token)
+			A.castSource.lib = A.castSource.lib + 1
 			local fn = CAST_EVENTS[event]
 			-- The library's handler signature is (event, unit); ours is
 			-- (owner, event, unit). Line them up rather than writing a second
