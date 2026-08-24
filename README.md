@@ -1,5 +1,7 @@
 # AetherUI
 
+![A Glass user interface for World of Warcraft - Classic Era](docs/screenshots/AetherUI-Logo.png)
+
 A complete interface replacement for **WoW Classic Era**. Frosted glass, four
 palettes, and a HUD that gets out of your way when nothing is happening.
 
