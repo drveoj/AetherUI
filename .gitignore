@@ -26,3 +26,10 @@ commit-tracker-chip.sh
 
 # Claude Code local settings — machine-specific absolute paths, not source.
 .claude/settings.local.json
+
+# The full-size screenshots. Media/ SHIPS - it is where the addon's own textures
+# live - so thirty megabytes of PNG in there is thirty megabytes on every
+# download. The web-sized copies committed under docs/screenshots/ are what the
+# README points at, and docs/ does not ship. Keep the originals here; they are
+# just not the repository's business.
+Media/Screenshots/

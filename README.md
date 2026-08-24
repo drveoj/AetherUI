@@ -6,7 +6,8 @@ palettes, and a HUD that gets out of your way when nothing is happening.
 One addon, no modules to install, no profile to import. It sets itself up the
 first time you log in.
 
-<!-- SCREENSHOT: the HUD in Midnight, mid-combat, target selected -->
+![The HUD in combat: player, pet, target and its target, with a cast bar
+and the target's debuffs on the frame rather than beside it](docs/screenshots/1-HUD.jpg)
 
 ---
 
@@ -25,7 +26,8 @@ Then start the game.
 A short tour runs on your first character. Nine stops, takes about a minute, and 
 every choice you make applies live on the real interface rather than in a preview.
 
-<!-- SCREENSHOT: the tour, stop 1 - the palette swatches beside the player frame -->
+![The tour's first stop: four palette swatches in a callout beside the real
+player frame, with the world dimmed behind](docs/screenshots/2-Tour.jpg)
 
 The tour helps you make 4 choices:
 
@@ -46,19 +48,23 @@ Run it again any time with `/aether tour` (or from Config).
 **Unit frames** — you, your target, its target, and your pet, as glass capsules
 with a class-coloured level orb. Buffs above, debuffs below.
 
-**Party frames** — four capsules in fixed slots that move as one block.
+**Party frames** — four capsules in fixed slots that move as one block, with a
+controls drawer for raid marks, ready check, role check and a countdown.
+
+![A full screen: party frames and their controls, unit frames centred on the
+character, quest tracker, minimap, chat and the action bars](docs/screenshots/7-Layout.jpg)
 
 **Action bars** — six of them, independent, plus stance and pet bars. Cooldowns,
 charges and range draw *on* the icons. `/aether bind` puts you in keybind mode: 
 hover over a button, press a key.
 
-<!-- SCREENSHOT: an action bar close up, one button mid-cooldown -->
+![An action bar close up, one button counting down under its own icon](docs/screenshots/6-Bar.png)
 
 **The Toolbox** — a drawer that docks to any screen edge. Everything you'd
 otherwise hunt for is in it: UI settings, useful widgets, your addon buttons, and 
 a standard menu. It has a rail that stays on screen when the drawer is shut.
 
-<!-- SCREENSHOT: the Toolbox drawer open on the left edge -->
+![The Toolbox drawer open on the left edge](docs/screenshots/3-Toolbox.png)
 
 **Bags** — all your bags in one panel, sorted into categories, with a automated
 junk sale and repair (configurable) and your equipped bags in a drawer at the edge.
@@ -80,7 +86,7 @@ with your role, so a tank is warned about the opposite thing.
 leaving a slow breath, your health, the zone and the clock. Move and it's back.
 Your character sits down and the camera pulls back for the view.
 
-<!-- SCREENSHOT: zen mode -->
+![Zen mode: the interface gone, a slow breath and a clock left behind](docs/screenshots/4-Zen.jpg)
 
 **I.F.E.C.** — the In-Flight Entertainment Console. If you have installed an
 AetherUI Content Pack (seasonal) You will find music, stories and some 
@@ -91,7 +97,7 @@ to keep going.
 It plays on the ground too, from the Toolbox, where it is called N.I.F.E.C. for 
 reasons I stand behind (note: The "N" stands for "Not").
 
-<!-- SCREENSHOT: the console, mid-flight -->
+![The console mid-flight, library open, counting down to landing](docs/screenshots/5-IFEC.jpg)
 
 ## Moving things
 
