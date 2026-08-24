@@ -567,10 +567,16 @@ end
 -- Counted rather than assumed. `/aether diag` prints both, and a session with a
 -- fight in it settles the question: native above zero and the library is dead
 -- weight, library above zero and it is still the only thing that works.
--- `only` is the one that decides it: a relayed event with no native one for the
--- same unit and event a moment either side. Zero of those over a few fights and
--- every library event is a duplicate; anything above zero and the library is
--- still the only thing reporting some casts.
+-- `only` is the one that answers it: a relayed event with no native one for the
+-- same unit and event a moment either side. It came back at twenty-one out of
+-- thirty-five, so the library is not a duplicate of the client - it is carrying
+-- most of what it delivers on its own.
+--
+-- KEPT RATHER THAN TAKEN OUT NOW THAT IT HAS ANSWERED. The answer has a shelf
+-- life: it was the opposite two expansions ago, and the comments that said so
+-- were left standing for however long it took somebody to ask. Three counters
+-- and a table cost nothing, and the next time this changes the readout will say
+-- so instead of somebody guessing again.
 A.castSource = { native = 0, lib = 0, only = 0, seen = {} }
 
 function A:Greet()

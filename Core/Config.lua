@@ -205,8 +205,11 @@ Config.defaults = {
 				showPower     = true,
 				showPortrait  = false,   -- false = class-tinted level disc, as drawn
 				showCastBar   = true,
-				-- Needs LibClassicCasterino: Classic Era does not report other
-				-- units' casts natively.
+				-- Needs LibClassicCasterino for most of it. This client does
+				-- report SOME of other units' casts natively - it did not
+				-- always, and this comment said it never did - but the library
+				-- catches the rest, and the rest is the majority. See
+				-- /aether diag, which counts all three numbers.
 				showTargetCastBar = true,
 				-- Both cast bars float free on their own movers, well above the
 				-- cluster. Every edge of a capsule now belongs to an aura tray,

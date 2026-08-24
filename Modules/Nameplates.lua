@@ -1162,10 +1162,11 @@ function NP:OnEnable()
 	-- counts both sources, and a fight reports native events in the same
 	-- numbers as the library's.
 	--
-	-- LibClassicCasterino is still relayed alongside them, because "both fire"
-	-- is not the same as "the library adds nothing" - it infers from the combat
-	-- log and may still catch what the client misses. The `library ONLY` count
-	-- in that readout is the number that decides whether it can go.
+	-- LibClassicCasterino is relayed alongside them and is going nowhere.
+	-- MEASURED, NOT ASSUMED: over a few fights, native 31, library 35, and
+--  twenty-one of the library's were casts the client never announced at all.
+--  Both sources are real and neither is a superset of the other, which is why
+--  both are wired.
 	local function onStart(_, _, token)   local f = token and byUnit[token]; if f then CastStart(f, false) end end
 	local function onChannel(_, _, token) local f = token and byUnit[token]; if f then CastStart(f, true) end end
 	local function onStop(_, _, token)    local f = token and byUnit[token]; if f then CastStop(f) end end

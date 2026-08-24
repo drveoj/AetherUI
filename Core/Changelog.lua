@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.10",
+		date    = "2026-08-24",
+		lines   = {
+			"LibClassicCasterino stays: measured over a few fights, most of the enemy casts it reports are ones the client never announces at all.",
+		},
+	},
+	{
 		version = "0.36.9",
 		date    = "2026-08-24",
 		lines   = {
