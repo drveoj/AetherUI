@@ -1156,10 +1156,16 @@ function NP:OnEnable()
 	A:RegisterEvent(self, "CVAR_UPDATE", function() ApplyCVars(false) end)
 	A:RegisterEvent(self, "UNIT_AURA", OnAuraChanged)
 
-	-- Casts. The native events never fire for a nameplate unit on this client -
-	-- they are registered anyway, so that if Blizzard ever does expose them the
-	-- library quietly stops being the only source - and LibClassicCasterino
-	-- re-broadcasts the same names through its own registry for everyone else.
+	-- Casts. THE NATIVE EVENTS DO FIRE FOR A NAMEPLATE UNIT on this build, and
+	-- this comment used to say they never did - written when that was true and
+	-- left standing when it stopped being. Measured, not assumed: /aether diag
+	-- counts both sources, and a fight reports native events in the same
+	-- numbers as the library's.
+	--
+	-- LibClassicCasterino is still relayed alongside them, because "both fire"
+	-- is not the same as "the library adds nothing" - it infers from the combat
+	-- log and may still catch what the client misses. The `library ONLY` count
+	-- in that readout is the number that decides whether it can go.
 	local function onStart(_, _, token)   local f = token and byUnit[token]; if f then CastStart(f, false) end end
 	local function onChannel(_, _, token) local f = token and byUnit[token]; if f then CastStart(f, true) end end
 	local function onStop(_, _, token)    local f = token and byUnit[token]; if f then CastStop(f) end end
@@ -1184,6 +1190,12 @@ function NP:OnEnable()
 		-- else's cast - which it has never done on this flavour.
 		A:RegisterEvent(self, event, function(owner, ev, token)
 			A.castSource.native = A.castSource.native + 1
+			-- Stamped so the relay below can tell a duplicate from a cast
+			-- only the library saw. Keyed on unit AND event, because a stop
+			-- arriving from one source and a start from the other is two
+			-- different facts about the same cast.
+			A.castSource.seen[tostring(token) .. ev] =
+				(GetTime and GetTime()) or 0
 			return fn(owner, ev, token)
 		end)
 	end
@@ -1193,6 +1205,14 @@ function NP:OnEnable()
 		self._ccHooked = true
 		local function relay(event, token)
 			A.castSource.lib = A.castSource.lib + 1
+			-- A SECOND EITHER SIDE. The library infers from the combat log, so
+			-- its copy of an event the client also sent arrives near it rather
+			-- than with it - and a window is the only honest way to pair them.
+			local at = (GetTime and GetTime()) or 0
+			local when = A.castSource.seen[tostring(token) .. event]
+			if not when or math.abs(at - when) > 1 then
+				A.castSource.only = A.castSource.only + 1
+			end
 			local fn = CAST_EVENTS[event]
 			-- The library's handler signature is (event, unit); ours is
 			-- (owner, event, unit). Line them up rather than writing a second

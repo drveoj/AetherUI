@@ -668,11 +668,15 @@ end
 
 --- Cast data for a unit.
 --
---  Classic Era only reports this natively for the player. Everything else comes
---  from LibClassicCasterino, which infers casts from the combat log - the same
---  library ShadowedUnitFrames and Gnosis both ship, for the same reason. Native
---  is tried first regardless, so if Blizzard ever does expose it the library
---  quietly stops being the source.
+--  NATIVE FIRST, LIBRARY BEHIND IT - and which of the two is actually answering
+--  has changed. This was written when Classic Era reported casts for the player
+--  and nobody else; on the current build the native events fire for other units
+--  too, which /aether diag counts.
+--
+--  The fallback stays until the `library ONLY` count in that readout says it is
+--  never the sole source. LibClassicCasterino infers casts from the combat log -
+--  the same library ShadowedUnitFrames and Gnosis both ship - and it can see a
+--  cast the client did not announce.
 local LibCC = LibStub and LibStub("LibClassicCasterino", true)
 
 local function CastInfo(unit, channel)

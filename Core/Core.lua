@@ -567,7 +567,11 @@ end
 -- Counted rather than assumed. `/aether diag` prints both, and a session with a
 -- fight in it settles the question: native above zero and the library is dead
 -- weight, library above zero and it is still the only thing that works.
-A.castSource = { native = 0, lib = 0 }
+-- `only` is the one that decides it: a relayed event with no native one for the
+-- same unit and event a moment either side. Zero of those over a few fights and
+-- every library event is a duplicate; anything above zero and the library is
+-- still the only thing reporting some casts.
+A.castSource = { native = 0, lib = 0, only = 0, seen = {} }
 
 function A:Greet()
 	if A.db and A.db.profile and A.db.profile.greet == false then return end

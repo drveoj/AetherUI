@@ -364,8 +364,8 @@ local function diag()
 	-- the line that says which of the two is true, after a fight.
 	do
 		local c = A.castSource or {}
-		say("   casts for others  native %d  ·  LibClassicCasterino %d",
-			c.native or 0, c.lib or 0)
+		say("   casts for others  native %d  ·  library %d  ·  "
+			.. "library ONLY %d", c.native or 0, c.lib or 0, c.only or 0)
 	end
 
 	for name, m in A:IterateModules() do
