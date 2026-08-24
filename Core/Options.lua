@@ -277,16 +277,8 @@ end
 
 local function OnboardGroup()
 	return group(L.options.onboard.first_run, {
-		desc = note("Eight stops over the real HUD, where the tour IS the setup:"
-			.. " the world dims, one element at a time is lifted out of the dim,"
-			.. " and the callout beside it carries that stop's control."
-			.. "\n\nNothing is staged. Every choice writes straight into the"
-			.. " system that owns it the moment you touch it, so there is no"
-			.. " Apply at the end and quitting half way through costs nothing."
-			.. "\n\nWhether it has run is remembered per "
-			.. A.Hi("character") .. ", not per profile - the tour teaches an"
-			.. " interface rather than a profile, and somebody who has seen it"
-			.. " on their main has seen it."),
+		desc = note(A.F(L.options.onboard.desc,
+			A.Hi(L.common.character))),
 		enabled = toggle(L.options.onboard.enabled.name, nil,
 			{ "modules", "onboard", "enabled" }, { defaultTrue = true }),
 
@@ -302,15 +294,8 @@ end
 
 local function ToolboxGroup()
 	return group(L.common.toolbox, {
-		desc = note("A drawer that docks to the centre of any screen edge, with a"
-			.. " rail that stays on screen when the drawer is shut."
-			.. "\n\nTo move it, " .. A.Hi(L.options.toolbox.unlock_frames) .. " and drag the rail: four"
-			.. " targets appear, one per edge, and the one nearest the cursor is"
-			.. " the one you get. It has four legal places rather than a"
-			.. " position, because each edge is a different layout."
-			.. "\n\nThe edge it is docked to and whether it is open are remembered"
-			.. " per " .. A.Hi("character") .. " rather than per profile - a drawer edge"
-			.. " is a habit somebody forms on one character."),
+		desc = note(A.F(L.options.toolbox.desc,
+			A.Hi(L.options.toolbox.unlock_frames), A.Hi(L.common.character))),
 		enabled = toggle(L.common.enabled, nil, { "modules", "toolbox", "enabled" },
 			{ defaultTrue = true }),
 
@@ -364,15 +349,8 @@ local function FaderGroup()
 			{ after = "none" }),
 
 		zenHeader = header("Zen"),
-		zenNote = note("Stage two. The whole interface goes and a single capsule"
-			.. " takes its place along the bottom edge - health, power, and a slow"
-			.. " breath - with the zone and the time in the corner. Anything you do"
-			.. " brings it back, including a keypress, which is the one thing stage"
-			.. " one cannot see."
-			.. "\n\n" .. A.Hi(L.options.fader.only_hard_signals_hold) .. ": combat, casting,"
-			.. " and the cursor sitting on the HUD. Having a target or being below"
-			.. " full health keeps stage one awake but not this one, because"
-			.. " neither is evidence that you are still in the chair."),
+		zenNote = note(A.F(L.options.fader.zen_note,
+			A.Hi(L.options.fader.only_hard_signals_hold))),
 		zenEnabled = toggle(L.common.enabled, nil, { "modules", "zen", "enabled" },
 			{ after = "none" }),
 		zenOnAFK = toggle(L.options.fader.zen_on_a_f_k.name,
@@ -415,17 +393,8 @@ local function FaderGroup()
 			{ defaultTrue = true }),
 
 		zenFrostHeader = header(L.options.fader.zen_frost_header),
-		zenFrostNote = note("A pane of frosted glass drawn in front of the world"
-			.. " while zen is on."
-			.. "\n\n" .. A.Hi(L.options.fader.blur_cannot) .. ". The client gives"
-			.. " addons no way to read or filter the 3D scene - no render-to-texture,"
-			.. " no shader, no post-process hook - so the world behind stays sharp."
-			.. " What frosted glass actually is, though, is a surface in front of a"
-			.. " sharp scene."
-			.. "\n\nIt gets " .. A.Hi("brighter") .. ", not darker. Frosted glass scatters"
-			.. " light, so it is brighter than what is behind it and what it destroys"
-			.. " is contrast. A dark pane leaves every edge in the scene perfectly"
-			.. " crisp and simply turns the lights off."),
+		zenFrostNote = note(A.F(L.options.fader.zen_frost_note,
+			A.Hi(L.options.fader.blur_cannot), A.Hi(L.common.brighter))),
 		zenFrost = toggle(L.common.enabled, nil, { "modules", "zen", "frost" },
 			{ after = "none", defaultTrue = true }),
 		zenFrostOpacity = range(L.options.fader.zen_frost_opacity.name,
@@ -451,30 +420,13 @@ local function FaderGroup()
 
 		zenQuietHeader = header(L.options.fader.zen_quiet_header),
 		zenNameplates = toggle(L.options.fader.zen_nameplates.name,
-			"The one thing fading the interface does not reach: nameplates and the"
-			.. " floating unit names are drawn against the world rather than"
-			.. " composited into the interface, so they are left hanging over an"
-			.. " empty hillside otherwise."
-			.. "\n\nThese are " .. A.Hi(L.options.fader.two_separate_systems) .. " in the client - the"
-			.. " bars and the text have unrelated settings - so this drives both."
-			.. " Taking the bars away and leaving every name, guild tag and pet"
-			.. " label floating looks like a fault rather than a choice. Everything"
-			.. " is turned off at the bottom of the fade and turned back on the"
-			.. " moment you come out, including on the way to a logout."
-			.. "\n\nTooltips need nothing: they belong to the interface and go with"
-			.. " it.",
+			A.F(L.options.fader.one_thing_fading_interface, A.Hi(L.options.fader.two_separate_systems)),
 			{ "modules", "zen", "hideNameplates" },
 			{ after = "none", defaultTrue = true }),
 
 		zenShotHeader = header(L.options.fader.zen_shot_header),
-		zenShotNote = note("Zen sets up a camera rather than just clearing the"
-			.. " screen: the character settles, and the view pulls back over their"
-			.. " shoulder."
-			.. "\n\nThe zoom is exact and exactly reversible - the game will tell us"
-			.. " the current distance, so yours is put back rather than guessed at."
-			.. " " .. A.Hi(L.options.fader.tilt) .. ": the client offers no way to read the"
-			.. " camera's pitch, only to move it, so the way back is the same"
-			.. " movement reversed for the same time."),
+		zenShotNote = note(A.F(L.options.fader.zen_shot_note,
+			A.Hi(L.options.fader.tilt))),
 		zenSit = toggle(L.options.fader.zen_sit.name,
 			L.options.fader.skipped_while_mounted_taxi,
 			{ "modules", "zen", "sit" }, { after = "none", defaultTrue = true }),
@@ -486,13 +438,8 @@ local function FaderGroup()
 
 
 		zenAudioHeader = header(L.options.fader.zen_audio_header),
-		zenAudioNote = note("Zen borrows the sound channels while it is on screen"
-			.. " and gives them back when it ends."
-			.. "\n\nThe three sliders below are " .. A.Hi(L.options.fader.fractions_own_settings)
-			.. ", not volumes. 5% of an effects channel you keep at 80%"
-			.. " is 4%; at 20% it is 1%. Your master volume is never touched, and a"
-			.. " channel you change by hand during zen is left where you put it"
-			.. " rather than being handed a stale value back."),
+		zenAudioNote = note(A.F(L.options.fader.zen_audio_note,
+			A.Hi(L.options.fader.fractions_own_settings))),
 		zenAudio = toggle(L.common.enabled, L.options.fader.zen_audio.desc,
 			{ "modules", "zen", "audio" }, { after = "none", defaultTrue = true }),
 		zenTrack = choice(L.options.fader.zen_track.name, L.options.fader.zen_track.desc,
@@ -817,12 +764,7 @@ local function ChatGroup()
 			at("hideButtons"), { defaultTrue = true }),
 
 		linesHeader = header(L.options.chat.lines_header),
-		linesNote = note("The name is class-coloured and its realm dimmed, the"
-			.. " \"says:\" becomes an em dash, and the channel gets a badge."
-			.. "\n\n" .. A.Hi(L.options.chat.none_rewrites_author) .. " Blizzard hands"
-			.. " out the decorated name and builds the player link around what"
-			.. " comes back, so whispers, ignore and the right-click menu are out"
-			.. " of reach rather than carefully avoided."),
+		linesNote = note(A.F(L.options.chat.lines_note, A.Hi(L.options.chat.none_rewrites_author))),
 		styleLines = toggle(L.options.chat.style_lines.name,
 			L.options.chat.master_switch_everything_below,
 			at("styleLines"), { defaultTrue = true }),
@@ -835,17 +777,11 @@ local function ChatGroup()
 		emDash = toggle(L.options.chat.em_dash.name,
 			nil, at("emDash"), { defaultTrue = true }),
 		badges = toggle(L.options.chat.badges.name,
-			"A pill carrying the channel, in whatever colour your own chat"
-			.. " settings give that channel.\n\nThe words are baked into a"
-			.. " texture, so the four channels a Classic Era character actually"
-			.. " joins have one and anything else gets its own name as text.",
+			L.options.chat.pill_carrying_channel_whatever,
 			at("badges"), { defaultTrue = true }),
 		badgeSize = range(L.options.chat.badge_size.name, nil, at("badgeSize"), 8, 20, 1),
 		badgeOffset = range(L.options.chat.badge_offset.name,
-			"The client already centres a badge on its line, so zero is normally"
-			.. " right. Negative sinks it, positive raises it.\n\nOnly new lines"
-			.. " take a change - a chat line is a string with the badge baked into"
-			.. " it, so the log above keeps whatever it was printed with.",
+			L.options.chat.client_already_centres_badge,
 			at("badgeOffset"), -8, 4, 1),
 		channelPrefix = toggle(L.options.chat.channel_prefix.name,
 			L.options.chat.off_concept_badge_what,
@@ -894,19 +830,11 @@ local function ConveniencesGroup()
 		enabled = toggle(L.common.enabled, nil, at("enabled")),
 
 		instantQuestText = toggle(L.options.conveniences.instant_quest_text.name,
-			"Quest text appears at once instead of being typed out."
-			.. "\n\nThis is the game's OWN setting - Interface, Controls, Instant"
-			.. " Quest Text - set for you. Off puts it back the way you had it,"
-			.. " which is why it is off here to begin with: you may have chosen the"
-			.. " typing on purpose.",
+			L.options.conveniences.quest_text_appears_once,
 			at("instantQuestText"), { after = "reconfigure" }),
 
 		autoRepair = toggle(L.options.conveniences.auto_repair.name,
-			"Repairs everything the moment you open a merchant who can."
-			.. "\n\nOFF by default, because it SPENDS YOUR MONEY. It will not"
-			.. " repair when you cannot afford it - it tells you instead, rather"
-			.. " than half-repairing - and every repair prints what it cost, so"
-			.. " nothing leaves your purse quietly.",
+			L.options.conveniences.repairs_everything_moment_open,
 			at("autoRepair")),
 	})
 end
@@ -927,14 +855,7 @@ local function GameOwnGroup()
 	return group(L.options.game_own.game_s_own, {
 		note = note(L.options.game_own.note),
 
-		lettering = toggle(L.options.game_own.lettering.name, "The game's own type in this interface's letters"
-			.. " - every panel, every tooltip, every menu, and \"You can't do that yet\"."
-			.. "\n\nA change of FACE only: sizes stay as the game had them, so nothing"
-			.. " moves; outlines stay, because text drawn over the world needs them;"
-			.. " and colours stay, because a colour is the game telling you something."
-			.. "\n\nOTHER ADDONS COME WITH IT. Anything drawn with the game's own type"
-			.. " reads as part of the same interface without its author doing anything."
-			.. " One that chose its own lettering keeps it.",
+		lettering = toggle(L.options.game_own.lettering.name, L.options.game_own.lettering.desc,
 			at("fonts")),
 
 		windows = toggle(L.options.game_own.windows.name, L.options.game_own.windows.desc,

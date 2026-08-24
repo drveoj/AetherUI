@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.2",
+		date    = "2026-08-24",
+		lines   = {
+			"The long multi-paragraph descriptions in the options panel are translatable too. The extractor was reading the backslash in a line break as a file path and throwing every one of them away.",
+		},
+	},
+	{
 		version = "0.36.1",
 		date    = "2026-08-24",
 		lines   = {

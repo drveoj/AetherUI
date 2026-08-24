@@ -213,6 +213,13 @@ PROSE_ONLY = re.compile(r'^(SetText|SetLabel|Say|Print)$|#\d+$')
 def is_phrase(text, site=None):
     if len(text) < MIN_LEN:
         return False, "shorter than %d characters" % MIN_LEN
+    # AN ESCAPE IS NOT A SLASH. A newline in a Lua string is a backslash and an
+    # n, and the path rule below saw the backslash and refused the phrase - so
+    # every multi-paragraph description in the options panel was thrown out as
+    # if it were a texture path. Those are the longest and most useful phrases
+    # in the addon, and the report said there was nothing left to do.
+    text = re.sub(r'\\[ntr"\\]', ' ', text)
+
     prose = site is not None and PROSE_ONLY.search(site) is not None
     for i, (rx, why) in enumerate(NOT_A_PHRASE):
         # The three identifier rules sit together at the top of the list.

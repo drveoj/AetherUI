@@ -183,7 +183,7 @@ local function Build()
 
 	local hint = W.Text(f, "tbCardSub", "CENTER")
 	hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-	hint:SetText("Export writes it to SavedVariables\\AetherUI.lua. Escape closes.")
+	hint:SetText(L.errors.build.export_writes_savedvariables_aetherui)
 	W.Color(hint, Palette.c.textDim)
 
 	-- A SCROLL FRAME AROUND IT, because a diag runs to eighty lines.
