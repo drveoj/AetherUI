@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.7",
+		date    = "2026-08-24",
+		lines   = {
+			"The wide shot leads the README.",
+		},
+	},
+	{
 		version = "0.36.6",
 		date    = "2026-08-24",
 		lines   = {

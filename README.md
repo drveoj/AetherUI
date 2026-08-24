@@ -6,8 +6,8 @@ palettes, and a HUD that gets out of your way when nothing is happening.
 One addon, no modules to install, no profile to import. It sets itself up the
 first time you log in.
 
-![The HUD in combat: player, pet, target and its target, with a cast bar
-and the target's debuffs on the frame rather than beside it](docs/screenshots/1-HUD.jpg)
+![A full screen: party frames and their controls, unit frames centred on the
+character, quest tracker, minimap, chat and the action bars](docs/screenshots/7-Layout.jpg)
 
 ---
 
@@ -48,11 +48,11 @@ Run it again any time with `/aether tour` (or from Config).
 **Unit frames** — you, your target, its target, and your pet, as glass capsules
 with a class-coloured level orb. Buffs above, debuffs below.
 
+![The HUD in combat: player, pet, target and its target, with a cast bar
+and the target's debuffs on the frame rather than beside it](docs/screenshots/1-HUD.jpg)
+
 **Party frames** — four capsules in fixed slots that move as one block, with a
 controls drawer for raid marks, ready check, role check and a countdown.
-
-![A full screen: party frames and their controls, unit frames centred on the
-character, quest tracker, minimap, chat and the action bars](docs/screenshots/7-Layout.jpg)
 
 **Action bars** — six of them, independent, plus stance and pet bars. Cooldowns,
 charges and range draw *on* the icons. `/aether bind` puts you in keybind mode: 
