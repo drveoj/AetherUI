@@ -38707,6 +38707,19 @@ do
 				and math.abs((at.y + at.dy) - 950) < 6,
 				"and the arrow is offset back up to stay level with it (" ..
 				string.format("%.0f + %.0f", at.y, at.dy or 0) .. ")")
+
+			-- AND WRITTEN IN THE ARROW'S OWN UNITS. `dy` is a pixel figure like
+			-- everything else in the sum, and the arrow is a child of a callout
+			-- drawn at the profile's scale - so it goes through the same
+			-- division the callout's own anchor does. Nothing above can see
+			-- that: `at.dy` is the pixel figure, and it is right either way.
+			do
+				local _, _, _, _, ay = OB.callout.arrow:GetPoint(1)
+				check(math.abs((ay or 0) * at.scale - at.dy) < 1,
+					"and the arrow's offset is in its own units too (" ..
+					string.format("%.1f x %.2f vs %.1f", ay or 0, at.scale, at.dy)
+					.. ")")
+			end
 		end
 
 		-- AND PAST THE ARROW'S OWN REACH, THERE IS NO ARROW.
@@ -38730,7 +38743,100 @@ do
 				.. "pointing at empty screen")
 		end
 
-		-- AND THE SKIP LINE IS NEVER UNDER THE CALLOUT.
+		-- AND ALL OF IT AT THE PROFILE'S SCALE, like everything else this addon
+	-- draws.
+	--
+	-- The scrim is PARENTLESS - it has to be, to dim a world that UIParent is
+	-- part of - so it has nothing to inherit a scale from and the whole tour
+	-- sat at 1.0 while the HUD it was pointing at sat at 0.71. A callout half
+	-- again the size of the unit frame it describes, and this file's own header
+	-- claimed otherwise from the day it was written.
+	--
+	-- MOVED BEFORE IT IS ASKED, which is the only way this can be checked at
+	-- all: a default profile sits at one and so does an unscaled frame, so an
+	-- assertion made at the default passes either way.
+	do
+		local wasScale = A.db.profile.scale
+		for _, scale in ipairs({ 0.71, 1.0, 1.25 }) do
+			A.db.profile.scale = scale
+			OB:OnConfigChanged()
+			OB:Go(1)
+
+			check(math.abs((OB.scrim:GetScale() or 0) - scale) < 0.001,
+				"the tour draws at the profile's scale (" .. scale .. " -> " ..
+				tostring(OB.scrim:GetScale()) .. ")")
+			check(math.abs((OB.callout:GetEffectiveScale() or 0) - scale) < 0.001,
+				"and the callout with it, being a child of the scrim")
+
+			-- AND THE BUILDER DOES IT TOO, not only the config hook. Both apply
+			-- it, and a check that always asks after a config change cannot tell
+			-- which of the two is carrying it - removing the builder's call left
+			-- every assertion above passing.
+			OB:Teardown()
+			OB.scrim, OB.callout, OB.ring, OB.skip, OB.card = nil, nil, nil, nil, nil
+			OB:Go(1)
+			check(math.abs((OB.scrim:GetScale() or 0) - scale) < 0.001,
+				"and a scrim built from scratch arrives at that scale (" ..
+				tostring(OB.scrim:GetScale()) .. ")")
+
+			-- AND THE PLACEMENT ARITHMETIC SURVIVES IT. The clamps are worked out
+			-- in screen pixels and written back in the callout's own units; get
+			-- the division wrong and the panel lands 1/scale from where it was
+			-- measured to go, which at 1.25 is off the screen entirely.
+			probe:SetGeom({ cx = 300, cy = 1040 })
+			OB:Go(1)
+			local at = OB.callout.__aetherAt
+
+			-- THE RECORDED SIZE IS IN PIXELS, which is the conversion everything
+			-- else here is built on. Left in the callout's own units the whole
+			-- sum stays SELF-CONSISTENT and lands the panel in the wrong place,
+			-- so nothing downstream can see it - this is the one assertion that
+			-- compares the record against the frame.
+			check(math.abs(at.w - (OB.callout:GetWidth() or 0) * scale) < 1
+				and math.abs(at.h - (OB.callout:GetHeight() or 0) * scale) < 1,
+				"and its size was measured in pixels, not in its own units (" ..
+				string.format("%.0fx%.0f vs %.0fx%.0f", at.w, at.h,
+				(OB.callout:GetWidth() or 0) * scale,
+				(OB.callout:GetHeight() or 0) * scale) .. ")")
+
+			check(at.x - at.w / 2 >= -1 and at.x + at.w / 2 <= at.sw + 1
+				and at.y - at.h / 2 >= -1 and at.y + at.h / 2 <= at.sh + 1,
+				"and the whole callout is still on the screen at " .. scale .. " (" ..
+				string.format("%.0f..%.0f x %.0f..%.0f in %.0fx%.0f",
+				at.x - at.w / 2, at.x + at.w / 2, at.y - at.h / 2,
+				at.y + at.h / 2, at.sw, at.sh) .. ")")
+
+			-- THE OFFSET THAT WAS ACTUALLY WRITTEN, against the pixel figure it
+			-- came from. This is the division itself, and nothing else here can
+			-- see it: the record is in pixels and the anchor is not.
+			local _, _, _, ox, oy = OB.callout:GetPoint(1)
+			check(math.abs((ox or 0) * at.scale - at.x) < 1
+				and math.abs((oy or 0) * at.scale - at.y) < 1,
+				"and its anchor is written in its OWN units, not in pixels (" ..
+				string.format("%.0f,%.0f x %.2f vs %.0f,%.0f",
+				ox or 0, oy or 0, at.scale, at.x, at.y) .. ")")
+
+			-- AND THE SKIP LINE'S BAND SCALES WITH EVERYTHING ELSE. It is a
+			-- child of the same scrim, so its own numbers are in the same units
+			-- the callout's are - and left unscaled the ceiling is too generous
+			-- below 1.0 and too mean above it, which is the direction that puts
+			-- the footer back through the line. Checked HERE rather than beside
+			-- the other overlap assertions, because those run at one scale.
+			do
+				local skip = OB.skip
+				local _, _, _, _, sTop = skip:GetPoint(1)
+				local floor = at.sh + ((sTop or 0) - skip:GetHeight()) * at.scale
+				check(at.y + at.h / 2 <= floor,
+					"and the callout is clear of the skip line at " .. scale ..
+					" (top " .. string.format("%.0f under %.0f",
+					at.y + at.h / 2, floor) .. ")")
+			end
+		end
+		A.db.profile.scale = wasScale
+		OB:OnConfigChanged()
+	end
+
+	-- AND THE SKIP LINE IS NEVER UNDER THE CALLOUT.
 		--
 		-- Reported from the game: Back, the progress dots and the skip line all
 		-- in the same twenty pixels. The line is pinned and the
@@ -38755,7 +38861,12 @@ do
 				local at = OB.callout.__aetherAt
 				-- The line hangs from the top by a negative offset; its underside is
 				-- that far down from the top of the screen.
-				local floor = at.sh + sTop - skip:GetHeight()
+				--
+				-- IN PIXELS, because `at` is. The line's own numbers are in its own
+				-- units and the tour is drawn at the profile's scale, so comparing
+				-- the two directly made the floor 1/scale too low and every one of
+				-- these passed without meaning anything.
+				local floor = at.sh + (sTop - skip:GetHeight()) * at.scale
 				check(at.y + at.h / 2 <= floor,
 					"a stop at " .. spot[1] .. "," .. spot[2] ..
 					" keeps the callout clear of the skip line (top " ..

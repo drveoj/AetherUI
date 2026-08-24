@@ -358,6 +358,17 @@ function OB:FirstShow()
 	return 1
 end
 
+--- Put a frame at the scale the rest of the HUD is drawn at.
+--
+--  One place, because a scale applied in the builder and not on a config change
+--  is a scale that is right until somebody moves the slider.
+local function Rescale(f)
+	if not f or not f.SetScale then return end
+	local scale = (A.db and A.db.profile and A.db.profile.scale) or 1
+	if type(scale) ~= "number" or scale <= 0 then scale = 1 end
+	f:SetScale(scale)
+end
+
 -- ---------------------------------------------------------------------------
 -- the scrim
 -- ---------------------------------------------------------------------------
@@ -380,6 +391,22 @@ local function BuildScrim()
 	f:SetFrameStrata("FULLSCREEN")
 	f:SetFrameLevel(0)
 	f:SetAllPoints(WorldFrame or UIParent)
+
+	-- AT THE PROFILE'S SCALE, LIKE EVERYTHING ELSE THIS ADDON DRAWS.
+	--
+	-- Parentless, this frame has nothing to inherit a scale from, so the whole
+	-- tour sat at 1.0 while the HUD it was pointing at sat at 0.71 - a callout
+	-- half again the size of the unit frame it was describing. The header of
+	-- this file has claimed otherwise since the day it was written.
+	--
+	-- ON THE SCRIM AND NOWHERE ELSE, because everything the tour draws is a
+	-- child of it: one SetScale sizes the callout, the cards, the ring and the
+	-- skip line together. The resume toast is the exception and sets its own,
+	-- because it hangs off UIParent rather than off this.
+	--
+	-- The cost is that PlaceCallout can no longer treat its own numbers as
+	-- pixels. See the note there.
+	Rescale(f)
 	f:EnableMouse(true)
 	f:Hide()
 
@@ -639,19 +666,26 @@ end
 --  the screen, and the first build showed nothing but its footer. Reported in
 --  game against 0.30.0.
 --
---  PLACED IN SCREEN PIXELS, against UIParent's bottom-left corner. The callout
---  hangs off the scrim, which is parentless and therefore at scale 1 whatever
---  the player's UI Scale slider says - so its offsets ARE pixels, and the
---  element's own centre becomes pixels by multiplying by its effective scale.
---  Doing this in anchor points instead means clamping something whose position
---  you have not got a number for.
+--  MEASURED IN SCREEN PIXELS, WRITTEN BACK IN THE CALLOUT'S OWN UNITS, and the
+--  two are not the same number. Every frame here is drawn at the profile's
+--  scale, so the callout's width is not its width on screen and a SetPoint
+--  offset is not a count of pixels: an offset written straight in from a pixel
+--  figure lands 1/scale too far from the corner it was measured from.
+--
+--  So `cs` is taken once, everything below is pixels, and the division happens
+--  at the two anchors and nowhere else. Doing the clamping in anchor points
+--  instead means clamping something whose position you have not got a number
+--  for.
 local function PlaceCallout(c, frame)
 	c:ClearAllPoints()
 	c.arrow:Hide()
 
 	local sw = (UIParent:GetWidth() or 0) * (UIParent:GetEffectiveScale() or 1)
 	local sh = (UIParent:GetHeight() or 0) * (UIParent:GetEffectiveScale() or 1)
-	local cw, ch = c:GetWidth() or 0, c:GetHeight() or 0
+
+	local cs = c:GetEffectiveScale() or 1
+	if cs <= 0 then cs = 1 end
+	local cw, ch = (c:GetWidth() or 0) * cs, (c:GetHeight() or 0) * cs
 
 	if not frame or not frame.GetCenter or not frame:GetCenter()
 		or sw <= 0 or sh <= 0 then
@@ -664,23 +698,27 @@ local function PlaceCallout(c, frame)
 	fx, fy = fx * fs, fy * fs
 	local halfW = ((frame:GetWidth() or 0) * fs) / 2
 
-	-- The side with room, then the position on it.
+	-- The side with room, then the position on it. The gap is a design number
+	-- in the callout's own units, so it becomes pixels the same way its width
+	-- does.
 	local onRight = fx < sw / 2
-	local x = onRight and (fx + halfW + CALLOUT_GAP + cw / 2)
-		or (fx - halfW - CALLOUT_GAP - cw / 2)
+	local gap = CALLOUT_GAP * cs
+	local x = onRight and (fx + halfW + gap + cw / 2)
+		or (fx - halfW - gap - cw / 2)
 	local y = fy
 
 	-- INSIDE THE SCREEN, both ways. A margin rather than flush, because a panel
 	-- touching the edge of the monitor reads as one that has been cut off.
-	local m = 16
+	local m = 16 * cs
 	local wantX = x
 	-- The skip line owns the top of the screen, and this is what keeps the two
-	-- apart by construction rather than by hoping they never meet.
-	local ceiling = sh - ch / 2 - m - (SKIP_TOP + SKIP_H)
+	-- apart by construction rather than by hoping they never meet. It is a
+	-- child of the same scrim, so its own numbers scale with ours.
+	local ceiling = sh - ch / 2 - m - (SKIP_TOP + SKIP_H) * cs
 	x = math.max(cw / 2 + m, math.min(sw - cw / 2 - m, x))
 	y = math.max(ch / 2 + m, math.min(ceiling, y))
 
-	c:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+	c:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / cs, y / cs)
 
 	-- WHERE IT WENT, IN NUMBERS, kept on the frame.
 	--
@@ -689,8 +727,11 @@ local function PlaceCallout(c, frame)
 	-- outside: asking a frame where it ended up means resolving an anchor
 	-- chain, which the harness models as a fixed answer. So the sum shows
 	-- its working.
+	-- All of it in pixels, including the scale it took to get there: a check
+	-- comparing this against a frame's own numbers has to know which space it
+	-- is reading.
 	c.__aetherAt = { x = x, y = y, w = cw, h = ch,
-		sw = sw, sh = sh, onRight = onRight, wantX = wantX }
+		sw = sw, sh = sh, onRight = onRight, wantX = wantX, scale = cs }
 
 	-- THE ARROW FOLLOWS THE ELEMENT, not the callout's middle. Once the callout
 	-- has been shoved back onto the screen the two are no longer level, and an
@@ -711,12 +752,12 @@ local function PlaceCallout(c, frame)
 	-- axis - and it only started happening because the ceiling now pushes
 	-- callouts further down the screen than the screen edge alone did.
 	local dy = fy - y
-	local limit = ch / 2 - ARROW
+	local limit = ch / 2 - ARROW * cs
 	if math.abs(dy) > limit then return end
 
 	local edge = onRight and "LEFT" or "RIGHT"
 	c.arrow:ClearAllPoints()
-	c.arrow:SetPoint("CENTER", c, edge, 0, dy)
+	c.arrow:SetPoint("CENTER", c, edge, 0, dy / cs)
 	c.__aetherAt.edge, c.__aetherAt.dy = edge, dy
 	W.Tint(c.arrow, Palette.c.dialogFill, 1)
 	c.arrow:Show()
@@ -2308,6 +2349,36 @@ function OB:OnEnable()
 	for _, event in ipairs({ "STOP_MOVIE", "CINEMATIC_STOP" }) do
 		A:RegisterEvent(self, event, function() OB:Retry() end)
 	end
+end
+
+--- The scale is a setting, and a setting can move while the tour is up.
+--
+--  APPLIED IN THE BUILDER AND AGAIN HERE, which is the pattern every other
+--  module in this addon follows for the same reason: a scale set once at build
+--  time is a scale that is right until somebody touches the slider, and the
+--  tour is the one surface a player is most likely to be looking at while they
+--  do - the layout stop changes it under them.
+function OB:OnConfigChanged()
+	if not self.scrim then return end
+	Rescale(self.scrim)
+	-- And the callout is placed from pixel arithmetic that has just changed
+	-- under it, so it has to be placed again.
+	if self.index then self:Go(self.index) end
+end
+
+--- The scale is a setting, and a setting can move while the tour is up.
+--
+--  APPLIED IN THE BUILDER AND AGAIN HERE, which is the pattern every other
+--  module in this addon follows for the same reason: a scale set once at build
+--  time is a scale that is right until somebody touches the slider, and the
+--  tour is the one surface a player is most likely to be looking at while they
+--  do - the layout stop changes it under them.
+function OB:OnConfigChanged()
+	if not self.scrim then return end
+	Rescale(self.scrim)
+	-- And the callout is placed from pixel arithmetic that has just changed
+	-- under it, so it has to be placed again.
+	if self.index then self:Go(self.index) end
 end
 
 function OB:OnDisable()

@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.35.2",
+		date    = "2026-08-24",
+		lines   = {
+			"The tour is drawn at your UI scale like everything else. It was fixed at 1.0, so the callout came out about half again the size of the frame it was pointing at.",
+		},
+	},
+	{
 		version = "0.35.1",
 		date    = "2026-08-24",
 		lines   = {
