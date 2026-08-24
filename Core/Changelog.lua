@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.36.3",
+		date    = "2026-08-24",
+		lines   = {
+			"Starting the tour now closes the options panel and the Toolbox drawer first. Pressing Take the tour left the panel up with the tour behind it.",
+		},
+	},
+	{
 		version = "0.36.2",
 		date    = "2026-08-24",
 		lines   = {

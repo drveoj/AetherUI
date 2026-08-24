@@ -39466,6 +39466,42 @@ do
 		"and it comes back to the stop it was on when the fight ended (" ..
 		tostring(OB.index) .. ")")
 
+	-- AND STARTING IT TAKES DOWN WHATEVER IT WOULD OPEN BEHIND.
+	--
+	-- The tour dims the world and points at real frames, so a window still
+	-- open over the top is a window over the thing being pointed at - and it
+	-- is most often started FROM one, by the button on the options panel's own
+	-- First run page. Reported from the game: the panel stayed up and the tour
+	-- opened behind it.
+	--
+	-- The Ace config libraries are not loaded in here, so Options:Close is a
+	-- no-op and asserting on it would prove nothing. A dialog is stood in its
+	-- place instead: what is being checked is the WIRING - that Start reaches
+	-- for the panel at all - which is the half that was missing.
+	do
+		local wasReg, wasDlg = A.Options.registered, A.Options.dialog
+		local closed = nil
+		A.Options.registered = true
+		A.Options.dialog = { Close = function(_, app) closed = app end }
+
+		local TB = A:GetModule("toolbox")
+		TB:SetOpen(true, true)
+		OB:Teardown()
+		OB:Start()
+
+		check(closed ~= nil,
+			"starting the tour closes the options panel it was started from (" ..
+			tostring(closed) .. ")")
+		check(not TB:IsOpen(),
+			"and the Toolbox drawer, which would otherwise cover the HUD the "
+			.. "tour is describing")
+		check(OB.card and OB.card:IsShown(),
+			"and the welcome card is up, in front of nothing")
+
+		A.Options.registered, A.Options.dialog = wasReg, wasDlg
+		OB:Teardown()
+	end
+
 	-- AND IT WILL NOT START MID-FIGHT. Everything above is why.
 	OB:Teardown()
 	_G.__inCombat = true

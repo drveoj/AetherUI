@@ -972,13 +972,13 @@ L["options.nameplates.yellow_plate_means_my"] =
 
 L["options.onboard.already_done"] = "already done"
 L["options.onboard.desc"] =
-	"Eight stops over the real HUD, where the tour IS the setup: the "
+	"A tour of the interface, with a card for each stop. The rest of the "
 		.. "world dims, one element at a time is lifted out of the dim, and "
-		.. "the callout beside it carries that stop's control.\\n\\nNothing is "
-		.. "staged. Every choice writes straight into the system that owns it "
-		.. "the moment you touch it, so there is no Apply at the end and "
+		.. "the callout beside it explains what it is and how to use it."
+		.. "Every choice writes straight into your configuration the when"
+		.. "you change it, so there is no Apply at the end and "
 		.. "quitting half way through costs nothing.\\n\\nWhether it has run "
-		.. "is remembered per %s, not per profile - the tour teaches an "
+		.. "is remembered per %s, not per profile - the tour teaches the "
 		.. "interface rather than a profile, and somebody who has seen it on "
 		.. "their main has seen it."
 L["options.onboard.enabled.name"] = "Offer it on a new character"

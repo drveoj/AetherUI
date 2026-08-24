@@ -1930,6 +1930,29 @@ function OB:Start()
 		A:Print(L.tour.start.during_fight_try_again)
 		return false
 	end
+
+	-- AND NOTHING LEFT IN FRONT OF IT.
+	--
+	-- The tour dims the world and points at real frames, so a window still
+	-- open over the top is a window over the thing being pointed at. This is
+	-- most often started FROM one - the button on the options panel's own First
+	-- run page - and that panel stayed up with the tour behind it. Reported
+	-- from the game.
+	--
+	-- HERE RATHER THAN AT THE BUTTON, because every door in has the same
+	-- problem: `/aether tour` typed with the options open, or with the drawer
+	-- out, lands in exactly the same place.
+	--
+	-- The drawer goes too, and comes back on its own: the console stop opens it
+	-- again when it needs it.
+	if A.Options and A.Options.Close then A.Options:Close() end
+	do
+		local TB = A.GetModule and A:GetModule("toolbox")
+		if TB and TB.IsOpen and TB:IsOpen() and TB.SetOpen then
+			TB:SetOpen(false, true)
+		end
+	end
+
 	local s = Store()
 	if s then s.completed = nil end
 	self:ShowWelcome()
