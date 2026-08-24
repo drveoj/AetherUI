@@ -129,7 +129,12 @@ POSITIONAL = {
 def positional_sites(rel):
     """(regex, label) for each phrase argument of each builder in this file."""
     out = []
-    for fn, positions in POSITIONAL.get(rel, {}).items():
+    # NORMALISED, because a path typed on the command line has forward slashes
+    # and one built with os.path.join has whatever this platform uses. They are
+    # the same file and the lookup missed one of them silently, so a per-file
+    # report on Options.lua listed nothing at all.
+    key = rel.replace("/", os.sep).replace(chr(92), os.sep)
+    for fn, positions in POSITIONAL.get(key, {}).items():
         for pos in positions:
             # The opening paren, then pos-1 arguments we do not touch, then
             # ours. Each skipped argument is "anything that is not a comma or a
@@ -381,7 +386,16 @@ def wrapped(rel):
     with io.open(path, encoding='utf-8') as fh:
         body = fh.read()
     keys = set(unescape(k) for k in re.findall(r'\bL\[' + STR + r'\]', body))
-    keys |= set(unescape(k) for k in re.findall(r'\bA\.F\(\s*' + STR, body))
+
+    # A.F'S PHRASE IS A CHAIN, not the first literal after the bracket. Most of
+    # the long ones are written across several lines and joined with `..`, and
+    # reading only the first put "Both cast bars float free on their own
+    # movers," into the phrase list - the exact fragment this whole pass exists
+    # to stop making.
+    for m in re.finditer(r'\bA\.F\(\s*(?=")', body):
+        _stop, pieces, whole = chain(body, m.end())
+        if whole and pieces:
+            keys.add(unescape("".join(pieces)))
     return keys
 
 

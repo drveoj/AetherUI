@@ -2765,10 +2765,10 @@ function Bags:AskBuyBankSlot()
 	local box = self.confirm.box
 
 	local price = (_G.GetCoinTextureString and _G.GetCoinTextureString(cost)) or MoneyText(cost)
-	local body = "Buy another bank bag slot for " .. price .. "?"
+	local body = A.F("Buy another bank bag slot for %s?", price)
 	if money < cost then
 		body = body .. "\n\n"
-			.. Palette:Ink("dangerText", "You cannot afford this.")
+			.. Palette:Ink("dangerText", L["You cannot afford this."])
 	end
 	box.text:SetText(body)
 	-- Primary ink, not dim. It is a question that has to be read and answered.

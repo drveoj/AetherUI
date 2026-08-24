@@ -711,7 +711,9 @@ function Movers:Unlock()
 		entry.handle:Show()
 	end
 	Announce()
-	A:Print("frames unlocked - drag to move, scroll to nudge (hold shift for horizontal). Press " .. A.Hi(L["Lock frames"]) .. ", or " .. A.Hi("/aether lock") .. ", when done.")
+	A:Print(A.F("frames unlocked - drag to move, scroll to nudge (hold shift"
+		.. " for horizontal). Press %s, or %s, when done.",
+		A.Hi(L["Lock frames"]), A.Hi("/aether lock")))
 	A:Print(A.Dim("Edges snap to the grid and to other frames; hold alt while dragging"
 		.. " to place freely. Frames that only appear when the game says so - the pet"
 		.. " bar, the taxi button - are held up so you can place them."))

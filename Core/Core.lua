@@ -368,7 +368,8 @@ local function EnableModule(name, module)
 		if not ok then
 			module.enabled = false
 			module.lastError = tostring(err)
-			A:Print(A.Bad("module '" .. name .. "' failed to enable:") .. " " .. tostring(err))
+			A:Print(A.Bad(A.F("module '%s' failed to enable:", name))
+				.. " " .. tostring(err))
 			A:Print(A.Bad("run") .. " /aether diag " .. A.Bad(L["for the full picture."]))
 		end
 	end
@@ -536,7 +537,9 @@ local function Boot()
 	for name, m in A:IterateModules() do
 		if m.OnInitialize then
 			local ok, err = pcall(m.OnInitialize, m)
-			if not ok then A:Print(A.Bad("init '" .. name .. "':") .. " " .. tostring(err)) end
+			if not ok then
+				A:Print(A.Bad(A.F("init '%s':", name)) .. " " .. tostring(err))
+			end
 		end
 	end
 	for name, m in A:IterateModules() do

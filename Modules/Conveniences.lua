@@ -102,7 +102,7 @@ function CV:Repair()
 	end
 
 	RepairAllItems()
-	A:Print("repaired for " .. A.Val(Coins(cost)))
+	A:Print(A.F("repaired for %s", A.Val(Coins(cost))))
 	return "repaired"
 end
 

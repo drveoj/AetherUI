@@ -421,11 +421,11 @@ function Library:Paint()
 					local read = progress and progress.complete
 					local at = progress and progress.segment or 0
 					if read then
-						row.meta:SetText("read")
+						row.meta:SetText(L["read"])
 					elseif at > 0 then
-						row.meta:SetText("page " .. at .. " of " .. pages)
+						row.meta:SetText(A.F("page %d of %d", at, pages))
 					else
-						row.meta:SetText(pages .. " pages")
+						row.meta:SetText(A.F("%d pages", pages))
 					end
 					W.Color(row.meta, read and c.textFaint or tint)
 				elseif playing then

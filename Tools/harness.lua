@@ -38313,6 +38313,34 @@ do
 		or (function() local n = 0 for _ in pairs(seen) do n = n + 1 end
 		return n end)() .. " phrases") .. ")")
 
+	-- AND EVERY FILE THAT ASKS FOR A PHRASE HAS SOMETHING TO ASK.
+	--
+	-- `L` is a file-scope local, put there by the wrapping tool when it wraps
+	-- something. A phrase added BY HAND to a file the tool never touched has no
+	-- L to look in, and the failure waits for that code path to run: the
+	-- tooltip diagnostic carried one for exactly as long as it took somebody to
+	-- type /aether tooltips.
+	do
+		local naked = {}
+		for _, path in ipairs(FILES) do
+			local fh = io.open(path, "rb")
+			if fh then
+				local text = fh:read("*a") or ""
+				fh:close()
+				-- Locale.lua is where L is BUILT, so it declares its own.
+				local uses = text:find("L%[\"") or text:find("A%.F%(")
+				local has = text:find("\nlocal L = A%.L")
+				if uses and not has and not path:find("Locale", 1, true) then
+					naked[#naked + 1] = path
+				end
+			end
+		end
+		table.sort(naked)
+		check(#naked == 0,
+			"every file that asks for a phrase declares L (" ..
+			(#naked > 0 and table.concat(naked, ", ") or "all of them") .. ")")
+	end
+
 	-- AND THE FALLBACK IS THE ENGLISH, which is the whole reason the key IS
 	-- the English. A key with no entry has to READ: nil reaches SetText and
 	-- draws nothing, so a phrase somebody forgot is an empty label nobody

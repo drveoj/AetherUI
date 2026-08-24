@@ -825,7 +825,7 @@ function TB:BuildDockHandle()
 		self._dockTarget = nil
 		if edge and EDGES[edge] and edge ~= self:Dock() then
 			self:SetDock(edge)
-			A:Print("toolbox docked -> " .. A.Val(edge:lower()))
+			A:Print(A.F("toolbox docked -> %s", A.Val(edge:lower())))
 		end
 		self:AnchorDockHandle()
 	end
@@ -1700,7 +1700,7 @@ function TB:RefreshNews()
 	-- its own text hanging out of it.
 	local chip = self.content.chip
 	if chip and chip.text then
-		chip.text:SetText("Aether UI " .. (A.version or "?"))
+		chip.text:SetText(A.F("Aether UI %s", A.version or "?"))
 		chip:SetWidth((chip.text:GetStringWidth() or 40) + 14)
 	end
 end
@@ -1732,7 +1732,7 @@ function TB:BuildContent()
 	chip:ApplySkin("btnFill", "btnFill")
 	local chipText = W.Text(chip, "tbChip", "CENTER", nil, 10)
 	chipText:SetPoint("CENTER", chip, "CENTER", 0, 0)
-	chipText:SetText("Aether UI " .. (A.version or "0.1.0"))
+	chipText:SetText(A.F("Aether UI %s", A.version or "0.1.0"))
 	W.Color(chipText, Palette.c.btnFillText)
 	chipText:SetShadowColor(0, 0, 0, 0)
 	chip:SetWidth((chipText:GetStringWidth() or 40) + 14)

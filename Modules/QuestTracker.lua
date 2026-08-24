@@ -387,9 +387,9 @@ end
 local function Navigate(questID, title, loc)
 	local ok, detail = A.Nav:Route(questID, title, loc)
 	if ok then
-		A:Print("routing to " .. (detail or title or "the quest") .. ".")
+		A:Print(A.F("routing to %s.", detail or title or L["the quest"]))
 	else
-		A:Print(detail or "can't route to that quest.")
+		A:Print(detail or L["can't route to that quest."])
 	end
 end
 

@@ -99,6 +99,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local TT = A:NewModule("tooltips")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -1469,7 +1471,8 @@ function TT:Diagnose()
 	end
 
 	if #missing > 0 then
-		A:Print("absent on this client: " .. A.Dim(table.concat(missing, ", ")))
+		A:Print(A.F("absent on this client: %s",
+			A.Dim(table.concat(missing, ", "))))
 	end
 
 	A:Print(("anchor " .. A.Val("%s") .. "  ·  cursor-follow " .. A.Val("%s") .. "  ·  fonts " .. A.Val("%s"))
@@ -1485,7 +1488,10 @@ function TT:Diagnose()
 			.. " out of that line, and moving it into the badge would blind it."
 			.. " " .. A.Hi("/aether config") .. ", Tooltips, to override."):format(reader))
 	elseif cfg().levelBadge then
-		A:Print("level badge " .. A.Good("on") .. (reader and " (override: " .. A.Val(reader) .. " is running and reads that line)" or ""))
+		A:Print(reader
+			and A.F("level badge %s (override: %s is running and reads that"
+				.. " line)", A.Good(L["on"]), A.Val(reader))
+			or A.F("level badge %s", A.Good(L["on"])))
 	end
 end
 

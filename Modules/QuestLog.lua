@@ -1336,10 +1336,10 @@ function QL:AskAbandon()
 
 	self.confirm = self.confirm or BuildConfirm()
 	local c = Palette.c
-	local body = "Abandon " .. Palette:Ink("text", name) .. "?"
+	local body = A.F("Abandon %s?", Palette:Ink("text", name))
 	if items then
-		body = body .. "\n\nYou will lose: "
-			.. Palette:Ink("dangerText", items)
+		body = body .. "\n\n"
+			.. A.F("You will lose: %s", Palette:Ink("dangerText", items))
 	end
 	local box = self.confirm.box
 	box.text:SetText(body)
@@ -1761,7 +1761,7 @@ function QL:RefreshDetail()
 
 	local moneyText = Money(rw.money)
 	if moneyText then
-		d.money:SetText("Reward: " .. moneyText)
+		d.money:SetText(A.F("Reward: %s", moneyText))
 		W.Color(d.money, c.textDim)
 		d.money:ClearAllPoints()
 		d.money:SetPoint("TOPLEFT", d.scroll.child, "TOPLEFT", 0, -y)
@@ -1773,7 +1773,7 @@ function QL:RefreshDetail()
 
 	local reqText = Money(rw.required)
 	if reqText then
-		d.required:SetText("Required: " .. reqText)
+		d.required:SetText(A.F("Required: %s", reqText))
 		-- Red when you cannot afford it, which is Blizzard's own treatment and
 		-- the one field here whose absence could actually cost the player gold.
 		local short = GetMoney and (GetMoney() or 0) < rw.required

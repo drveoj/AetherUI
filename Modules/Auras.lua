@@ -58,6 +58,8 @@
 
 local ADDON, A = ...
 
+
+local L = A.L
 local Aur = A:NewModule("auras")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
@@ -898,8 +900,8 @@ end
 --  came from printing the numbers. This prints the numbers.
 function Aur:Diagnose()
 	local now = GetTime()
-	A:Print("aura diagnostic  ·  GetTime " .. string.format("%.1f", now)
-		.. "  ·  source " .. ((C_UnitAuras and C_UnitAuras.GetAuraDataByIndex)
+	A:Print(A.F("aura diagnostic  ·  GetTime %.1f  ·  source %s", now,
+		(C_UnitAuras and C_UnitAuras.GetAuraDataByIndex)
 			and "C_UnitAuras" or "UnitAura"))
 
 	for _, tray in ipairs(self.trays or {}) do

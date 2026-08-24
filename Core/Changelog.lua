@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.35.1",
+		date    = "2026-08-24",
+		lines   = {
+			"The last of the chat and options text is translatable too - the sentences that had a value spliced into the middle of them now hand a translator the whole sentence with the value's place still in it.",
+		},
+	},
+	{
 		version = "0.35.0",
 		date    = "2026-08-24",
 		lines   = {

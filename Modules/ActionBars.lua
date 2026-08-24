@@ -1156,8 +1156,9 @@ function AB:SetBindMode(on)
 		end
 	end
 
-	A:Print("keybind mode " .. A.Good("on") .. " - hover a button and press a key."
-		.. "  " .. A.Dim("Escape clears, right-click or /aether bind again to finish."))
+	A:Print(A.F("keybind mode %s - hover a button and press a key.",
+		A.Good(L["on"])) .. "  "
+		.. A.Dim(L["Escape clears, right-click or /aether bind again to finish."]))
 end
 
 function AB:ToggleBindMode()

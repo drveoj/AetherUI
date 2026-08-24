@@ -302,10 +302,10 @@ local function OnboardGroup()
 			{ "modules", "onboard", "enabled" }, { defaultTrue = true }),
 
 		runHeader = header(L["Run it now"]),
-		runNote = note("Re-running clears this character's "
-			.. A.Hi(L["already done"]) .. " mark and starts at the welcome card."
-			.. " Your current palette, layout and Toolbox edge are untouched"
-			.. " until you pick something else."),
+		runNote = note(A.F("Re-running clears this character's %s mark and"
+			.. " starts at the welcome card. Your current palette, layout and"
+			.. " Toolbox edge are untouched until you pick something else.",
+			A.Hi(L["already done"]))),
 		run = action(L["Take the tour"], nil, function()
 			local OB = A.GetModule and A:GetModule("onboard")
 			if OB then OB:Start() end
@@ -328,14 +328,13 @@ local function ToolboxGroup()
 			{ defaultTrue = true }),
 
 		widgetsHeader = header("Widgets"),
-		widgetsNote = note("The six widgets are published as "
-			.. A.Hi(L["LibDataBroker data sources"])
-			.. " rather than drawn straight onto the panel. Two"
-			.. " consequences: anything that displays LDB - Titan, Bazooka,"
-			.. " ChocolateBar - shows AetherUI's numbers without being told, and"
-			.. " anyone can write a seventh widget in about ten lines."
-			.. "\n\nOnly latency and FPS are polled, and only while the drawer is"
-			.. " open; the rest follow their own events."),
+		widgetsNote = note(A.F("The six widgets are published as %s rather than"
+			.. " drawn straight onto the panel. Two consequences: anything that"
+			.. " displays LDB - Titan, Bazooka, ChocolateBar - shows AetherUI's"
+			.. " numbers without being told, and anyone can write a seventh"
+			.. " widget in about ten lines.", A.Hi(L["LibDataBroker data sources"]))
+			.. "\n\n"
+			.. L["Only latency and FPS are polled, and only while the drawer is open; the rest follow their own events."]),
 		widgetColumns = range(L["Widget columns"], nil,
 			{ "modules", "toolbox", "widgetColumns" }, 1, 6, 1, { after = "reconfigure" }),
 
@@ -346,9 +345,10 @@ local function ToolboxGroup()
 			{ "modules", "toolbox", "addonColumns" }, 1, 4, 1, { after = "reconfigure" }),
 
 		lookHeader = header(L["The overlay"]),
-		lookNote = note("The drawer slides out " .. A.Hi("over") .. " the HUD. Nothing"
-			.. " underneath moves or resizes; the covered strip is dimmed instead,"
-			.. " so it reads as being behind rather than merely dark."),
+		lookNote = note(A.F("The drawer slides out %s the HUD. Nothing"
+			.. " underneath moves or resizes; the covered strip is dimmed"
+			.. " instead, so it reads as being behind rather than merely dark.",
+			A.Hi(L["over"]))),
 		scrim = range(L["Dim the covered strip"], nil,
 			{ "modules", "toolbox", "scrim" }, 0, 1, 0.02, { after = "reconfigure" }),
 	})
@@ -564,7 +564,7 @@ local function FaderGroup()
 				local Z = A:GetModule("zen")
 				if not Z then return end
 				local name = Z:PreviewTrack(A.db.profile.modules.zen.track)
-				if name then A:Print("playing " .. A.Val(name)) end
+				if name then A:Print(A.F("playing %s", A.Val(name))) end
 			end),
 		zenMusicFloor = range(L["Lift the music channel to at least"],
 			"The one channel zen raises rather than lowers, and only if it is under"
@@ -620,11 +620,11 @@ local function UnitFramesGroup()
 			"Classic Era does not report other units' casts natively; this reads"
 			.. " them from the combat log via LibClassicCasterino.",
 			at("showTargetCastBar")),
-		castNote = note("Both cast bars float free on their own movers, well above"
-			.. " the cluster: every edge of a capsule now belongs to an aura tray."
-			.. "  " .. A.Hi("/aether unlock") .. " to place them - they are held up while"
-			.. " you do, since a bar you only ever see mid-cast is a bar you could"
-			.. " never aim at."),
+		castNote = note(A.F("Both cast bars float free on their own movers,"
+			.. " well above the cluster: every edge of a capsule now belongs to"
+			.. " an aura tray.  %s to place them - they are held up while you"
+			.. " do, since a bar you only ever see mid-cast is a bar you could"
+			.. " never aim at.", A.Hi("/aether unlock"))),
 		castWidth = range(L["Cast bar width"], nil, at("castWidth"), 160, 520, 1),
 		reactionTint = toggle(L["Colour the target by reaction"],
 			"The target's capsule rim, orb ring and cast bar take their reaction -"
@@ -687,9 +687,10 @@ local function MinimapGroup()
 	local function at(...) return { "modules", "minimap", ... } end
 	return group("Minimap", {
 		enabled = toggle("Enabled", nil, at("enabled")),
-		desc = note("A round map with a frosted rim, and a glass pill under it"
-			.. " carrying the zone, your coordinates and the time - which swaps for"
-			.. " a red dot and " .. A.Bad(L["In combat"]) .. " in a fight."),
+		desc = note(A.F("A round map with a frosted rim, and a glass pill under"
+			.. " it carrying the zone, your coordinates and the time - which"
+			.. " swaps for a red dot and %s in a fight.",
+			A.Bad(L["In combat"]))),
 		size = range("Size", nil, at("size"), 120, 320, 1),
 		ring = toggle("Border", nil, at("ring"), { defaultTrue = true }),
 		showNorth = toggle(L["North marker"], nil, at("showNorth"), { defaultTrue = true }),
@@ -1112,7 +1113,7 @@ local function IFECGroup()
 			"You are a passenger. The console stays.", at("hideUI")),
 		scale = range("Size", "On top of the interface scale, like the action bars"
 			.. " have their own.", at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
-		note = note("Move it with " .. A.Hi("/aether unlock") .. "."),
+		note = note(A.F("Move it with %s.", A.Hi("/aether unlock"))),
 	})
 end
 
@@ -1256,7 +1257,11 @@ local function PartyFramesGroup()
 		barWidth = range(L["Bar width"], nil, at("barWidth"), 100, 300, 1),
 		showPower = toggle(L["Show power bar"], nil, at("showPower")),
 
-		placement = note("The four slots are fixed and the group moves as one: unlock with " .. A.Hi("/aether unlock") .. " and drag any part of the stack.\n\nA slot whose member has gone leaves a gap rather than closing up. Re-anchoring a frame you can click to target is refused by the game in combat, which is exactly when somebody drops group - so the slots stay where you put them."),
+		placement = note(A.F("The four slots are fixed and the group moves as"
+			.. " one: unlock with %s and drag any part of the stack.",
+			A.Hi("/aether unlock"))
+			.. "\n\n"
+			.. L["A slot whose member has gone leaves a gap rather than closing up. Re-anchoring a frame you can click to target is refused by the game in combat, which is exactly when somebody drops group - so the slots stay where you put them."]),
 	})
 end
 --- Threat. Three controls and no thresholds: the 70 and the 90 are the
@@ -1311,11 +1316,17 @@ local PAGE_ORDER = {
 --  before. A history nobody can reach is a history nobody keeps.
 local function ChangelogGroup()
 	local args = {
-		running = note("Running " .. A.Hi("Aether UI " .. (A.version or "?"))
-			.. ".\n\nNumbering is " .. A.Val(L["major.minor.build"]) .. " - a major for a"
-			.. " release with new features in it, a minor for accumulated fixes"
-			.. " and small enhancements, and a build for hotfixes between the"
-			.. " two."),
+		-- TWO SENTENCES, TWO PHRASES, and the second one whole. Split at the
+		-- placeholder it would leave a translator holding "Numbering is %s - a
+		-- major for a" with the rest of the paragraph glued on outside, which
+		-- is the fragment this whole pass exists to stop making.
+		running = note(A.F("Running %s.",
+				A.Hi(A.F("Aether UI %s", A.version or "?")))
+			.. "\n\n"
+			.. A.F("Numbering is %s - a major for a release with new features"
+				.. " in it, a minor for accumulated fixes and small"
+				.. " enhancements, and a build for hotfixes between the two.",
+				A.Val(L["major.minor.build"]))),
 	}
 
 	local history = A.NotesHistory and A:NotesHistory() or {}
@@ -1425,8 +1436,9 @@ end
 
 function Options:Open(section)
 	if not self:Register() then
-		A:Print("the options panel needs the Ace3 libraries, which are missing from"
-			.. " this install. " .. A.Dim("/aether help") .. " still lists everything.")
+		A:Print(A.F("the options panel needs the Ace3 libraries, which are"
+			.. " missing from this install. %s still lists everything.",
+			A.Dim("/aether help")))
 		return false
 	end
 	if section then

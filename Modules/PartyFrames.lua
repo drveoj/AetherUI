@@ -949,8 +949,8 @@ function PF:BuildHandle()
 	h:SetScript("OnDragStop", function()
 		if not PF._dragging then return end
 		Stop()
-		A:Print("party dock -> " .. A.Val(PF:PanelEdge():lower()) ..
-			"  " .. A.Dim("slot " .. PF:PanelSlot()))
+		A:Print(A.F("party dock -> %s", A.Val(PF:PanelEdge():lower()))
+			.. "  " .. A.Dim(A.F("slot %s", PF:PanelSlot())))
 	end)
 	h:SetScript("OnClick", function() PF:TogglePanel() end)
 	h:SetScript("OnEnter", function(self2)

@@ -2166,7 +2166,8 @@ function Chat:SetWhisperTab(on)
 	if on then
 		if not frame then
 			if type(_G.FCF_OpenNewWindow) ~= "function" then
-				A:Print("this client has no " .. A.Val("FCF_OpenNewWindow") .. " - no whispers tab.")
+				A:Print(A.F("this client has no %s - no whispers tab.",
+					A.Val("FCF_OpenNewWindow")))
 				return false
 			end
 			-- noDefaultChannels. Without it the new window subscribes to SAY,
@@ -2174,8 +2175,9 @@ function Chat:SetWhisperTab(on)
 			-- window rather than a whispers tab.
 			local ok, f = pcall(_G.FCF_OpenNewWindow, name, true)
 			if not ok or not f then
-				A:Print("could not open a new chat window" ..
-					(type(f) == "string" and (": " .. f) or "."))
+				A:Print(type(f) == "string"
+					and A.F("could not open a new chat window: %s", f)
+					or L["could not open a new chat window."])
 				return false
 			end
 			frame = f
@@ -2192,7 +2194,7 @@ function Chat:SetWhisperTab(on)
 			A:Print(L["the whispers tab exists but no message group would move to it."])
 			return false
 		end
-		A:Print("whispers now go to " .. A.Val(name) .. ".")
+		A:Print(A.F("whispers now go to %s.", A.Val(name)))
 		return true
 	end
 
@@ -2203,8 +2205,9 @@ function Chat:SetWhisperTab(on)
 	-- The window itself is left standing. Closing somebody's chat window because
 	-- a setting changed is a bigger thing than the setting, and Blizzard's own
 	-- close is on the tab's right-click menu, which is where anyone would look.
-	A:Print("whispers are back in the main window."
-		.. (frame and " The empty tab is yours to close." or ""))
+	A:Print(frame
+		and L["whispers are back in the main window. The empty tab is yours to close."]
+		or L["whispers are back in the main window."])
 	return true
 end
 
@@ -2421,7 +2424,7 @@ end
 function Chat:Diagnose()
 	local eb = _G.ChatFrame1 and (_G.ChatFrame1.editBox or _G.ChatFrame1EditBox)
 	if not eb then A:Print(L["no edit box found."]) return end
-	A:Print("edit box: " .. tostring(eb:GetName()))
+	A:Print(A.F("edit box: %s", tostring(eb:GetName())))
 
 	local function walk(frame, depth, path)
 		if not frame or depth > 3 then return end
@@ -2455,7 +2458,7 @@ function Chat:Diagnose()
 
 	walk(eb, 0, tostring(eb:GetName()))
 	local insets = eb.GetTextInsets and select(1, eb:GetTextInsets())
-	A:Print("left text inset: " .. tostring(insets))
+	A:Print(A.F("left text inset: %s", tostring(insets)))
 
 	-- Where each piece actually is, because "the composer is not attached to the
 	-- chat window" is a question about anchors and nothing else in this dump
@@ -2495,8 +2498,10 @@ function Chat:Diagnose()
 			shown[#shown + 1] = f:GetName() or "?"
 		end
 	end)
-	A:Print("composers on screen: " .. A.Val(#shown) .. " "
-		.. (#shown > 0 and ("(" .. table.concat(shown, ", ") .. ")") or ""))
+	A:Print(#shown > 0
+		and A.F("composers on screen: %s (%s)",
+			A.Val(#shown), table.concat(shown, ", "))
+		or A.F("composers on screen: %s", A.Val(#shown)))
 
 	self:DiagnoseLines()
 end
@@ -2670,7 +2675,8 @@ function Chat:OnDisable()
 	-- Blizzard's own look does not come back without a reload, and saying so is
 	-- better than pretending: every region we hid is hidden, and the functions
 	-- that would re-show them are the ones we are hooked onto.
-	A:Print("chat skin off. " .. A.Hi("/reload") .. " to get Blizzard's frames back.")
+	A:Print(A.F("chat skin off. %s to get Blizzard's frames back.",
+		A.Hi("/reload")))
 end
 
 function Chat:OnSkinChanged()

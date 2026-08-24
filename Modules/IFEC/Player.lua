@@ -499,11 +499,12 @@ function Player:Paint()
 	f.landing:ClearAllPoints()
 	f.landing:SetPoint("TOP", f.flight, "TOPLEFT", f.flight:XFor(total), 6)
 	f.landing:SetPoint("BOTTOM", f.programme, "BOTTOMLEFT", f.flight:XFor(total), -2)
-	f.landingLabel:SetText("LANDING " .. clock(total - elapsed))
+	f.landingLabel:SetText(A.F("LANDING %s", clock(total - elapsed)))
 
 	self:PaintLegs(flight)
 
-	f.fills:SetText("programme fills " .. clock(filled) .. " of " .. clock(total))
+	f.fills:SetText(A.F("programme fills %s of %s",
+		clock(filled), clock(total)))
 	f.legend:SetText(L["outlined = queued"])
 
 	self:PaintNowPlaying()
