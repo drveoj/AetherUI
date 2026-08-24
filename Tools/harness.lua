@@ -7126,6 +7126,16 @@ function ShowUIPanel(frame)
 	frame.__unplaced = nil
 end
 
+--- BOTH HALVES OF THE PAIR. This one was simply absent, and the client has it:
+--  a panel that can be shown and not hidden is a window nobody can close. It
+--  hid nothing rather than erroring, because the caller guards with
+--  `if HideUIPanel then` - which is the right guard for a global that some
+--  flavour might not have, and turns a missing mock into a silent no-op.
+function HideUIPanel(frame)
+	if type(frame) ~= "table" then return end
+	if frame.Hide then frame:Hide() end
+end
+
 -- rewards, all selection-scoped: none of these takes an index, which is the
 -- whole reason the module moves the cursor once and reads them in one pass.
 local function selectedQuest()
@@ -7213,7 +7223,35 @@ function ToggleTalentFrame() _G.__toggled.talents = true end
 function ToggleFriendsFrame() _G.__toggled.social = true end
 function ToggleGuildFrame() _G.__toggled.guild = true end
 function ToggleWorldMap() _G.__toggled.map = true end
-function ToggleGameMenu() _G.__toggled.menu = true end
+-- HOW MANY THINGS THE ESCAPE CHAIN WOULD FIND TO CLOSE BEFORE THE MENU.
+-- A check sets this to stand something in the chain's way.
+_G.__escClosable = 0
+function CloseMenus() return false end
+function CloseAllWindows()
+	if (_G.__escClosable or 0) > 0 then
+		_G.__escClosable = 0
+		return true
+	end
+	return false
+end
+
+--- THE ESCAPE HANDLER, NOT THE MENU BUTTON, which is the whole point of it.
+--
+--  The client's ToggleGameMenu walks a chain of "is there anything to close
+--  first" and reaches the menu only at the end - `securecall("CloseAllWindows")`
+--  is one of the links - so a button wired to it behaves as Escape and does
+--  nothing visible whenever any window is open. This mock set a flag and
+--  returned, so the broken wiring passed every check in this file.
+function ToggleGameMenu()
+	_G.__toggled.menu = true
+	if CloseAllWindows() then return end
+	if not _G.GameMenuFrame then return end
+	if _G.GameMenuFrame:IsShown() then
+		HideUIPanel(_G.GameMenuFrame)
+	else
+		ShowUIPanel(_G.GameMenuFrame)
+	end
+end
 function ToggleHelpFrame() _G.__toggled.help = true end
 BOOKTYPE_SPELL = "spell"
 
@@ -21438,67 +21476,47 @@ do
 	local list = TBm:MicroList()
 	check(#list >= 6, "the row is built (" .. #list .. " buttons)")
 
-	-- SOCIAL AND GUILD ARE MUTUALLY EXCLUSIVE. Both Blizzard mixins carry an
-	-- UpdateVisibility reading `useClassicGuildUI`, and each shows only when the
-	-- other does not - so nine are declared and eight are ever on screen.
+	-- BOTH SOCIAL AND GUILD, AND A BAG. TEN, IN TWO FIVES.
+	--
+	-- Blizzard's two are mutually exclusive - each mixin reads
+	-- `useClassicGuildUI` and shows only when the other does not - so its own
+	-- strip carries eight of the nine it declares. That is a constraint on a
+	-- fixed row of nine slots, and this row is neither fixed nor nine.
+	--
+	-- Both destinations exist and work whichever way that CVar is set, so
+	-- picking one left the other unreachable from the drawer for no reason -
+	-- and the picking was a piece of CVar archaeology that had already got it
+	-- wrong once. Reported from the game twice.
 	do
 		local function has(key)
-			for _, m in ipairs(TBm:MicroList()) do if m.key == key then return true end end
-			return false
+			for _, m in ipairs(TBm:MicroList()) do
+				if m.key == key then return true end
+			end
+		return false
+	end
+
+	-- WHATEVER THE CLIENT'S OWN PAIR IS DOING, we carry both.
+	for _, how in ipairs({ "social", "guild", "down" }) do
+		_G.__microPair(how)
+		for _, cv in ipairs({ "0", "1" }) do
+			_G.__cvars.useClassicGuildUI = cv
+			check(has("social") and has("guild"),
+				"Social and Guild are both in the row, with the client's pair " ..
+				how .. " and the CVar " .. cv)
 		end
+	end
+	_G.__microPair("social")
+	_G.__cvars.useClassicGuildUI = "1"
 
-		_G.__microPair("social")
-		check(has("social") and not has("guild"),
-			"the row carries whichever of Social and Guild the client's own"
-			.. " menu carries - here Social")
-		_G.__microPair("guild")
-		check(has("guild") and not has("social"),
-			"and the other way round when the client's is Guild - drawing both"
-			.. " would put a button on screen that opens a window this client"
-			.. " does not use")
+	-- AND A BAG, which Blizzard's strip has not got at all: the backpack
+	-- lives on a bar of its own. Through the global rather than through our
+	-- module, because the global is what our module hooks - so the entry
+	-- behaves the same with the bags module on, off, or never loaded.
+	check(has("bags"), "and there is a Bags entry")
 
-		-- AND WHERE THE CVAR DISAGREES WITH THE BUTTON, THE BUTTON WINS. It
-		-- has already run its own UpdateVisibility; a getter has not.
-		_G.__microPair("social")
-		_G.__cvars.useClassicGuildUI = "0"
-		check(has("social") and not has("guild"),
-			"and where the CVar disagrees with a button that is UP, the button"
-			.. " is believed")
-
-		-- BOTH DOWN SAYS NOTHING. That is our own action bar sweep having
-		-- banished them, not the client's answer - so the CVar is asked.
-		_G.__microPair("down")
-		check(has("guild") and not has("social"),
-			"two hidden buttons are our own sweep, not an answer, so the CVar"
-			.. " is asked instead")
-		_G.__cvars.useClassicGuildUI = "1"
-		check(has("social") and not has("guild"),
-			"and it is read the right way round")
-
-		-- AND ASKED THE WAY THE CLIENT ASKS IT. Both mixins read this through
-		-- CVarCallbackRegistry, not through GetCVarBool, and the two do not
-		-- have to agree - the registry answers from what it was told at
-		-- registration and the plain getter answers off the CVar store.
-		_G.__registryCVars.useClassicGuildUI = "0"
-		_G.__cvars.useClassicGuildUI = "1"
-		check(has("guild") and not has("social"),
-			"the registry the client's own buttons read is believed over the"
-			.. " getter an addon would reach for")
-		_G.__registryCVars.useClassicGuildUI = nil
-
-		-- AND NOTHING AT ALL IS NOT FALSE. This is the fault as reported: the
-		-- row carried Guild - which opens Communities, a window this flavour
-		-- reaches by keypress and never from the menu - where the client's own
-		-- menu carries Social. GetCVarBool answers false for a CVar that is
-		-- simply absent, and false is a real answer meaning the other button.
-		_G.__microPair("down")
-		_G.__cvars.useClassicGuildUI = nil
-		check(has("social") and not has("guild"),
-			"a CVar this client does not have falls back to Social, which is"
-			.. " what this flavour's menu carries - not to Guild")
-		_G.__cvars.useClassicGuildUI = "1"
-
-		_G.__microPair("social")
+	check(#TBm:MicroList() == 10,
+		"ten entries, which is two rows of five rather than an odd nine (" ..
+		#TBm:MicroList() .. ")")
 	end
 
 	-- Every action is probed. A global that is not there is a button that is
@@ -21550,6 +21568,75 @@ do
 		check(fired.map == true and fired.help == true, "map and help fire too")
 
 		for g, fn in pairs(saved) do _G[g] = fn end
+	end
+
+	-- AND FIVE TO A ROW, which is the point of there being ten.
+	--
+	-- Nine across a four-wide grid is 4 + 4 + 1, and the odd one on its own
+	-- line reads as something having gone wrong rather than as a menu.
+	do
+		TBm:SetDock("LEFT")
+		TBm:SetOpen(true, true)
+		TBm:RefreshMicro()
+		local rows = {}
+		for i = 1, #TBm._microList do
+			local btn = TBm.content.micro[i]
+			local _, _, _, _, y = btn:GetPoint(1)
+			local key = string.format("%.0f", y or 0)
+			rows[key] = (rows[key] or 0) + 1
+		end
+		local n, sizes = 0, {}
+		for _, count in pairs(rows) do n = n + 1; sizes[#sizes + 1] = count end
+		table.sort(sizes)
+		check(n == 2 and sizes[1] == 5 and sizes[2] == 5,
+			"the drawer lays the ten out five and five (" .. n .. " rows of " ..
+			table.concat(sizes, "+") .. ")")
+	end
+
+	-- AND THE TWO THAT DO NOT GO THROUGH A Toggle GLOBAL.
+	do
+		TBm:RefreshMicro()
+		local function press(key)
+			for i, m in ipairs(TBm._microList) do
+				if m.key == key then
+					local btn = TBm.content.micro[i]
+					btn:GetScript("OnClick")(btn)
+					return true
+				end
+			end
+		end
+
+		-- BAGS opens ours, because ToggleAllBags is the global our own module
+		-- hooks - so this one line of wiring covers the module being on and off.
+		local Bg = A:GetModule("bags")
+		Bg:Hide()
+		press("bags")
+		check(Bg.frames and Bg.frames.bags and Bg.frames.bags:IsShown(),
+			"the Bags entry opens our bag window through the hooked global")
+		Bg:Hide()
+
+		-- MENU OPENS THE MENU, EVEN WITH A WINDOW OPEN.
+		--
+		-- ToggleGameMenu is the escape handler: it walks a chain of "is there
+		-- anything to close first" and reaches the menu only at the end, and
+		-- CloseAllWindows is one of the links. Wired to it, the button closed
+		-- something instead and the menu never appeared - which from a drawer
+		-- full of buttons is most of the time. Reported from the game as the
+		-- Menu button doing nothing.
+		_G.GameMenuFrame:Hide()
+		_G.__escClosable = 1
+		press("menu")
+		check(_G.GameMenuFrame:IsShown(),
+			"the Menu entry opens the game menu with a window still open, rather "
+			.. "than behaving as Escape and closing that instead")
+		check(_G.__escClosable == 0,
+			"and shuts the windows on the way, the way Blizzard's own Menu button "
+			.. "does")
+
+		-- AND CLOSES IT AGAIN, because it is one button and not two.
+		press("menu")
+		check(not _G.GameMenuFrame:IsShown(),
+			"and closes it again on a second press")
 	end
 
 	TBm:SetOpen(false, true)

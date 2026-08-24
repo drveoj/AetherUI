@@ -38,6 +38,14 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "0.33.0",
+		date    = "2026-08-24",
+		lines   = {
+			"The Toolbox menu now carries ten entries in two rows of five, with Social and Bags added: Character, Spellbook, Talents, Quest log, Bags, then Social, Guild, Map, Menu, Help.",
+			"The Menu entry opens the game menu. It was wired to the Escape handler, which closes whatever is open in front of it first - so with the drawer up it did nothing.",
+		},
+	},
+	{
 		version = "0.32.1",
 		date    = "2026-08-24",
 		lines   = {

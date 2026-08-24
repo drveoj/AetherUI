@@ -3059,77 +3059,31 @@ end
 --   Menu       ToggleGameMenu()                    bound in Bindings_Vanilla
 --   Help       ToggleHelpFrame()                   XML OnClick
 --
--- SOCIAL AND GUILD ARE MUTUALLY EXCLUSIVE, which is the one thing here that is
--- not obvious. Both mixins carry an UpdateVisibility that reads the
--- `useClassicGuildUI` CVar, and each shows only when the other does not:
--- Socials with the classic guild UI, Guild without it. So there are nine
--- buttons declared and eight on screen, and a row that drew both would have one
--- that opens a window this client does not use.
+-- SOCIAL AND GUILD ARE MUTUALLY EXCLUSIVE IN BLIZZARD'S ROW. BOTH ARE IN OURS.
 --
--- AND WHICH OF THE TWO IS THE CLIENT'S ANSWER, NOT A CVAR WE READ OURSELVES.
--- Reported from the game: the row carried a Guild button - which opens
--- Communities - where the client's own menu carries Social, and Communities on
--- this flavour is reached by keypress rather than from the menu at all. Both
--- mixins read the CVar through CVarCallbackRegistry:GetCVarValueBool and this
--- file was reading it through GetCVarBool; on that build the two did not agree.
+-- Their two mixins each read the `useClassicGuildUI` CVar and show only when
+-- the other does not, so the client's own strip carries eight of the nine it
+-- declares. That is a constraint on a fixed row of nine slots. This row is
+-- neither fixed nor nine, and both destinations exist and work whichever way
+-- the CVar is set: Social opens the Friends frame, Guild opens the guild frame
+-- or Communities depending on it. Picking one left the other unreachable from
+-- the drawer for no reason, and the pick itself was a piece of CVar archaeology
+-- that had already got it wrong once.
 --
--- So the pair is asked rather than derived. Blizzard's own two buttons have
--- already run their UpdateVisibility and carry the answer as their own shown
--- flag - which survives our hiding of the menu, because what is hidden is
--- their PARENT and not them.
+-- BAGS IS OURS RATHER THAN BLIZZARD'S. There is no bag micro button - the
+-- backpack lives on a bar of its own - but "open my bags" belongs in a menu of
+-- places to go, and ToggleAllBags is the door our own bags module already
+-- hooks. So the entry works with that module on, off, or absent.
+--
+-- TEN, IN TWO FIVES. Five things about your character and five about the world
+-- and the game - which is also what makes the block square rather than nine
+-- across an even grid.
 --
 -- Every action is probed before its button is built. A global that is not there
 -- is a button that is not drawn, rather than a button that errors on click.
 -- ---------------------------------------------------------------------------
 
 local MICRO_SIZE, MICRO_GAP = 26, 6
-
---- Whether the client's own micro menu is showing a given button.
---
---  nil where there is no such button at all, which is a different answer from
---  "there is one and it is down".
-local function MicroShows(name)
-	local btn = _G[name]
-	if btn and btn.IsShown then return btn:IsShown() and true or false end
-	return nil
-end
-
---- Is this client on the classic guild UI - Social rather than Guild?
---
---  THREE ANSWERS, IN ORDER OF HOW MUCH THEY KNOW.
---
---  The client's own pair first, WHERE EITHER IS STILL UP. They have run their
---  UpdateVisibility and exactly one of them is showing, which is the answer
---  with no getter in it at all. Both down means our own action bar sweep has
---  already banished them, and two hidden buttons say nothing.
---
---  Then the CVar, asked the way the client asks it. Both mixins read it
---  through CVarCallbackRegistry:GetCVarValueBool rather than through
---  GetCVarBool, and the two do not have to agree.
---
---  And NOTHING AT ALL IS NOT FALSE, which is the fault as reported: the row
---  carried a Guild button - which opens Communities, a window this flavour
---  reaches by keypress and never from the menu - where the client's own menu
---  carries Social. GetCVarBool answers false for a CVar that is simply absent,
---  so the string getter is asked whether there is one to read before its
---  answer is believed. Social is what is left, because Social is what this
---  flavour's menu has.
-local function ClassicGuildUI()
-	local social = MicroShows("SocialsMicroButton")
-	local guild = MicroShows("GuildMicroButton")
-	if social or guild then return social == true end
-
-	local reg = _G.CVarCallbackRegistry
-	if reg and reg.GetCVarValueBool then
-		local ok, v = pcall(reg.GetCVarValueBool, reg, "useClassicGuildUI")
-		if ok and v ~= nil then return v and true or false end
-	end
-
-	if GetCVar and GetCVar("useClassicGuildUI") ~= nil then
-		return GetCVarBool and GetCVarBool("useClassicGuildUI") and true or false
-	end
-	return true
-end
 
 TB.MICRO = {
 	{ key = "character", label = "Character",
@@ -3144,40 +3098,51 @@ TB.MICRO = {
 	{ key = "quests",    label = "Quest log",
 	  fn = function() ToggleQuestLog() end,
 	  probe = function() return ToggleQuestLog ~= nil end },
+	{ key = "bags",      label = "Bags",
+	  -- Through the global rather than through our own module, because the
+	  -- global is what our own module hooks: the entry then behaves the same
+	  -- with the bags module on, off, or never loaded.
+	  fn = function() ToggleAllBags() end,
+	  probe = function() return ToggleAllBags ~= nil end },
+
 	{ key = "social",    label = "Social",
 	  fn = function() ToggleFriendsFrame() end,
-	  probe = function()
-		  if not ToggleFriendsFrame then return false end
-		  -- Only with the classic guild UI; otherwise Guild takes this slot.
-		  return ClassicGuildUI()
-	  end },
+	  probe = function() return ToggleFriendsFrame ~= nil end },
 	{ key = "guild",     label = "Guild",
 	  fn = function() ToggleGuildFrame() end,
-	  probe = function()
-		  if not ToggleGuildFrame then return false end
-		  return not ClassicGuildUI()
-	  end },
+	  probe = function() return ToggleGuildFrame ~= nil end },
 	{ key = "map",       label = "Map",
 	  fn = function() ToggleWorldMap() end,
 	  probe = function() return ToggleWorldMap ~= nil end },
 	{ key = "menu",      label = "Menu",
+	  -- NOT ToggleGameMenu, WHICH IS THE ESCAPE HANDLER RATHER THAN THE BUTTON.
+	  --
+	  -- It walks a long chain of "is there anything to close first" and reaches
+	  -- the menu only at the end of it, and `securecall("CloseAllWindows")` is
+	  -- one of the links. Pressed with any window open - which, from a drawer
+	  -- full of buttons, is most of the time - it closed something instead and
+	  -- the menu never appeared. Reported from the game as the Menu button
+	  -- doing nothing at all.
+	  --
+	  -- This is what MainMenuMicroButtonMixin:OnMouseUp does, which is the
+	  -- honest model for a button labelled Menu: shut the windows, then open
+	  -- the menu. Blizzard's own button does not run the escape chain either.
 	  fn = function()
-		  if ToggleGameMenu then return ToggleGameMenu() end
-		  -- What MainMenuMicroButtonMixin:OnMouseUp does by hand, for a client
-		  -- without the global.
 		  if GameMenuFrame and GameMenuFrame:IsShown() then
 			  if HideUIPanel then HideUIPanel(GameMenuFrame) end
-		  elseif GameMenuFrame and ShowUIPanel then
-			  ShowUIPanel(GameMenuFrame)
+			  return
 		  end
+		  if CloseMenus then pcall(CloseMenus) end
+		  if CloseAllWindows then pcall(CloseAllWindows) end
+		  if GameMenuFrame and ShowUIPanel then ShowUIPanel(GameMenuFrame) end
 	  end,
-	  probe = function() return ToggleGameMenu ~= nil or GameMenuFrame ~= nil end },
+	  probe = function() return GameMenuFrame ~= nil and ShowUIPanel ~= nil end },
 	{ key = "help",      label = "Help",
 	  fn = function() ToggleHelpFrame() end,
 	  probe = function() return ToggleHelpFrame ~= nil end },
 }
 
---- Which of the nine this client actually offers.
+--- Which of the ten this client actually offers.
 function TB:MicroList()
 	local out = {}
 	for _, m in ipairs(self.MICRO) do
@@ -3310,7 +3275,7 @@ local NEWS_H     = 100
 local SECTION_H  = 20      -- a section label and the gap under it
 local SECTION_GAP = 14     -- between one section's last row and the next label
 local MICRO_CELL_H = 46
-local MICRO_PER_ROW = 4
+local MICRO_PER_ROW = 5
 
 -- Flat, the row is glyphs ONLY and the cell shrinks to fit them.
 --
@@ -3605,11 +3570,12 @@ function TB:LayoutHorizontal()
 		-- single strip under the card, and the 20px a "MENU" label costs is the
 		-- 20px that decides whether the strip fits above the panel's floor.
 		--
-		-- One row of however many the client offers, rather than a fixed four per
-		-- row: at most eight are ever present (social and guild are mutually
-		-- exclusive), and wrapping to a second row in a 240px panel would put it
-		-- through the floor. A tenth entry added later makes the cells narrower,
-		-- which is visible, rather than hiding one, which is not.
+		-- One row of however many the client offers, rather than a fixed five
+		-- per row: wrapping to a second row in a 240px panel would put it
+		-- through the floor. Ten entries make the cells narrower, which is
+		-- visible, rather than hiding one, which is not - and that trade was
+		-- written down here before the tenth arrived, so this is it being taken
+		-- rather than rediscovered.
 		local micro = self._microList or {}
 		if content.microHead then content.microHead:Hide() end
 		if #micro > 0 then
