@@ -1,6 +1,6 @@
 """Build an IFEC content pack from a folder of audio.
 
-    python Tools/content.py E:\\src\\veoj\\AetherUI-Packs\\AetherUI_IFEC_S01
+    python Tools/content.py E:\\src\\veoj\\AetherUI-Packs\\AetherUI_IFEC_Vanilla
 
 THE CUT AUDIO IS DERIVED AND GIT-IGNORED, so a fresh clone of the packs repo
 has the manifest, the magazines and no music at all - and nothing says so:

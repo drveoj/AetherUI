@@ -879,8 +879,8 @@ L["options.general.snap_distance.desc"] =
 L["options.general.snap_distance.name"] = "Snap distance"
 
 L["options.i_f_e_c.enabled.desc"] =
-	"A flight timer on every taxi, and the I.F.E.C. for content when "
-		.. "content seasons are installed."
+	"A flight timer on every taxi, and the I.F.E.C. for content when a "
+		.. "content pack is installed."
 L["options.i_f_e_c.flight_console"] = "In-flight Entertainment Console"
 L["options.i_f_e_c.hide_u_i.name"] = "Hide the interface in flight"
 L["options.i_f_e_c.music_stories_while_passenger"] =
@@ -1246,7 +1246,8 @@ L["toolbox.refresh_widgets.tip"] =
 		.. "the when something happens. Your character sits down and the "
 		.. "camera pulls back for the a Zen moment."
 L["toolbox.refresh_widgets.tip2"] =
-	"Plays the season's music and stories while you are a passenger. "
+	"Plays your installed packs' music and stories while you are a "
+		.. "passenger. "
 		.. "The flight timer, the route and the countdown are separate and "
 		.. "stay either way."
 L["toolbox.refresh_widgets.tip3"] =
