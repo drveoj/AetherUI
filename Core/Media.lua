@@ -100,7 +100,10 @@ Media.texture = {
 	-- so the band below is the ink. Draw with it and the size you ask for is the
 	-- size you get; draw without it and a fifth of your height is air.
 	logo        = TEX .. "Logo",
-	-- 128x128, the mark on its own, transparent to the edge of its glow.
+	-- 64x64, the mark on its own, transparent to the edge of its glow. Sixty-four
+	-- rather than 128 for the reason the icon atlas above is: this is drawn near
+	-- 35 physical pixels on the rail and in the addon list, and a texture minified
+	-- four times with no mipmap behind it comes back speckled.
 	icon        = TEX .. "Icon",
 }
 

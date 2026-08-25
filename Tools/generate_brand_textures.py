@@ -149,15 +149,39 @@ def trim(rgba, floor=0.06, margin=4, border=12):
 
 
 def fit(rgba, cw, ch):
-    """Centre the art in a POT canvas, its aspect kept, the rest transparent."""
+    """Centre the art in a POT canvas, its aspect kept, the rest transparent.
+
+    PREMULTIPLIED ACROSS THE RESIZE, which the first version was not, and that
+    alone was most of the damage. Averaging straight-alpha colour pulls whatever
+    happens to be in the fully transparent texels into every soft edge - and
+    around a glow, most of the neighbourhood IS transparent. Measured against a
+    correctly filtered reference at the sizes this is actually drawn, straight
+    alpha at 64 came out worse than premultiplied at 128: the mistake cost more
+    than authoring the art four times too big did.
+
+    BOX RATHER THAN LANCZOS ON THE WAY DOWN, for the reason _shrink() in
+    Tools/generate_textures.py gives at length: Lanczos has negative lobes, so it
+    overshoots at an edge and leaves a bright rim outside a dark one. On this
+    mark it doubled the error. Lanczos is kept for anything close to its own
+    size, where a box filter is barely averaging at all - that is the logo,
+    which comes down 540 to 512 and is not being minified in any real sense.
+    """
     h, w = rgba.shape[:2]
     s = min(cw / w, ch / h)
     tw, th = max(1, int(round(w * s))), max(1, int(round(h * s)))
-    im = Image.fromarray(np.clip(rgba * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA")
-    im = im.resize((tw, th), Image.LANCZOS)
+
+    a = rgba[..., 3:4]
+    pre = np.concatenate([rgba[..., :3] * a, a], 2)
+    im = Image.fromarray(np.clip(pre * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA")
+    im = im.resize((tw, th), Image.BOX if s < 0.75 else Image.LANCZOS)
+
+    out = np.array(im).astype(float) / 255.0
+    oa = np.maximum(out[..., 3:4], 1e-6)
+    out = np.concatenate([np.clip(out[..., :3] / oa, 0.0, 1.0), out[..., 3:4]], 2)
+
     canvas = np.zeros((ch, cw, 4))
     y, x = (ch - th) // 2, (cw - tw) // 2
-    canvas[y:y + th, x:x + tw] = np.array(im).astype(float) / 255.0
+    canvas[y:y + th, x:x + tw] = out
     return canvas
 
 
@@ -224,8 +248,20 @@ def icon():
     im = Image.open(os.path.join(SRC, "AetherUI-Icon.png")).convert("RGBA")
     art = np.array(im).astype(float) / 255.0
     # Already cut out, already square, already all artwork - only the pixel
-    # count comes down. 128 is the cell every other icon in here is drawn in.
-    return bleed(fit(art, 128, 128))
+    # count comes down.
+    #
+    # 64, NOT 128. This is drawn at 26 units on the Toolbox rail and 20 in the
+    # addon list, and UIParent is not at 1: on a 1440p screen a unit is 1.875
+    # physical pixels, so both land near 35 real ones and a 4K screen at the
+    # default scale reaches about 52. A 128 texture minified four times with no
+    # mipmap behind it - the client builds none - samples one texel in sixteen,
+    # which is the speckling that got reported. 64 covers the largest of those
+    # without ever magnifying.
+    #
+    # The same reasoning is already written down twice in Core/Media.lua: the
+    # icon atlas uses 64 cells rather than 128, and chipDisc/chipRim exist at 64
+    # beside the 256 originals. This is that, a third time.
+    return bleed(fit(art, 64, 64))
 
 
 def main():
