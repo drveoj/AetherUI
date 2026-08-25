@@ -460,10 +460,27 @@ def write_toc(pack_dir, pack):
         "## Author: %s" % pack.get("author", "DrVeoj"),
         "## Version: %s" % pack.get("version", "1.0.0"),
         "## X-Category: Interface Enhancements",
+    ]
+    # The CurseForge project, when the pack has one. Each pack is its own
+    # project over there - they are separate addons with separate folders - so
+    # the id belongs in pack.json beside the rest of the pack's identity rather
+    # than anywhere in here.
+    if pack.get("curseProjectId"):
+        lines += [
+            "# The CurseForge project. The packager needs this to upload at all.",
+            "## X-Curse-Project-ID: %s" % pack["curseProjectId"],
+        ]
+    lines += [
         "",
-        "# Nudges load order only. The registration handshake works both ways round,",
-        "# so correctness never depends on this - see Content.lua.",
-        "## OptionalDeps: AetherUI",
+        "# A HARD DEPENDENCY. Without AetherUI this addon is a hundred and fifty",
+        "# megabytes that do nothing at all - there is no console to play it in -",
+        "# so the client should say so in the addon list rather than load it into",
+        "# silence. Disabling AetherUI disables this with it, which is right.",
+        "#",
+        "# It is a load-order guarantee as well, but nothing depends on that: the",
+        "# registration handshake in Content.lua works whichever loads first, and",
+        "# has to, because a pack installed later arrives after login.",
+        "## Dependencies: AetherUI",
         "",
         "Content.lua",
         "",

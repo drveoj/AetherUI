@@ -167,10 +167,15 @@ end
 
 --- The shared-table handshake, for packs that loaded before we did.
 --
---  Load order is not guaranteed and OptionalDeps only nudges it, so a pack
---  calls our register function if it is there and otherwise leaves its manifest
---  in a global for us to collect. Both paths have to work or the pack that
---  happens to sort first stops existing.
+--  A pack calls our register function if it is there and otherwise leaves its
+--  manifest in a global for us to collect. Both paths have to work.
+--
+--  A pack DOES declare `## Dependencies: AetherUI`, so the client loads us
+--  first and the direct call is what normally happens - but that guarantee is
+--  not what this rests on. A pack installed while the game is running arrives
+--  after login with no load order involved at all, and anything can be
+--  force-enabled out of order. The pack that happens to sort first must not
+--  stop existing.
 function Registry:Drain()
 	local pending = _G.AetherUI_IFEC_Pending
 	if type(pending) ~= "table" then return 0 end
