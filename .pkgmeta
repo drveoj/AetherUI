@@ -14,6 +14,17 @@ ignore:
     - docs
     - .claude
     - .github
+    # A GUARD, not a description. Media/Screenshots is gone - the web-sized
+    # copies under docs/screenshots are the only ones kept - but the line stays,
+    # because the failure it prevents was silent and expensive.
+    #
+    # Anything git ignores is invisible to the packager, which builds from a
+    # checkout. Tools/package.py builds from the WORKING TREE, where an ignored
+    # folder is sitting right there, so it shipped thirty-eight megabytes of
+    # full-size PNG inside the addon and nothing said a word. Ignored-but-present
+    # has to be named HERE as well, or the two builders disagree about what a
+    # release is.
+    - Media/Screenshots
 
 # The libraries are vendored rather than pulled at package time, deliberately.
 #

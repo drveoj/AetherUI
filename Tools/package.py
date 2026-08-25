@@ -19,6 +19,12 @@ localization blocks are Lua comments that resolve to nothing - which is exactly
 what ships today, unsubstituted, by choice. The day translations exist, the
 workflow is what builds the release.
 
+IT BUILDS FROM THE WORKING TREE, and the packager builds from a git checkout.
+That difference is the one thing to keep in mind here: a file git ignores is
+simply absent for the packager and is sitting right there for this, so anything
+ignored-but-present must ALSO be named in .pkgmeta. Media/Screenshots was not,
+and thirty-eight megabytes of full-size PNG shipped inside the addon.
+
 WHAT SHIPS is `.pkgmeta`'s ignore list where there is one, and a plain sensible
 default where there is not. Both always drop version-control furniture and the
 build inputs, because a zip a player unpacks into Interface\\AddOns should hold
@@ -64,11 +70,33 @@ def pkgmeta(folder):
                 continue
             m = re.match(r"\s+-\s*(\S+)", line)
             if in_ignore and m:
-                ignore.add(m.group(1).strip("/\\"))
+                ignore.add(m.group(1).strip("/\\").replace(chr(92)+chr(92), "/"))
                 continue
             if not line[:1].isspace():
                 in_ignore = False
     return name, ignore
+
+
+def join(rel, name):
+    return name if not rel else rel + "/" + name
+
+
+def ignored(rel, drop):
+    """Is this path, relative to the addon root, on the drop list?
+
+    TWO SHAPES OF ENTRY, because .pkgmeta uses both. A bare name like `Tools` or
+    `.git` matches wherever it appears; a path like `Media/Screenshots` matches
+    only from the root, which is the whole point of writing it that way.
+
+    The first version of this compared single path COMPONENTS, so a two-part
+    entry could never match anything and `Media/Screenshots` was silently
+    ignored - which is a drop list that quietly does not drop, the worst
+    possible failure for this particular file.
+    """
+    parts = rel.split("/")
+    if parts[-1] in drop:
+        return True
+    return any("/".join(parts[:i + 1]) in drop for i in range(len(parts)))
 
 
 def build(folder, out_dir):
@@ -93,12 +121,11 @@ def build(folder, out_dir):
 
     files, raw = [], 0
     for root, dirs, names in os.walk(folder):
-        dirs[:] = sorted(d for d in dirs if d not in drop)
-        rel = os.path.relpath(root, folder)
-        if rel != "." and rel.split(os.sep)[0] in drop:
-            continue
+        rel = os.path.relpath(root, folder).replace("\\", "/")
+        rel = "" if rel == "." else rel
+        dirs[:] = sorted(d for d in dirs if not ignored(join(rel, d), drop))
         for f in sorted(names):
-            if f in drop:
+            if ignored(join(rel, f), drop):
                 continue
             full = os.path.join(root, f)
             files.append(full)
