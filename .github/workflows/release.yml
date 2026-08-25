@@ -38,6 +38,22 @@ jobs:
 
       - name: Package and release
         uses: BigWigsMods/packager@master
+        with:
+          # -l SKIPS @localization@ KEYWORD REPLACEMENT, and it has to.
+          #
+          # That step calls wow.curseforge.com/api/projects/<id>/localization/
+          # export, which is the LEGACY author-portal API and wants the legacy
+          # per-project token. CF_API_KEY is the modern upload token from
+          # authors.curseforge.com - a different credential entirely - so the
+          # export answers "API token is malformed" and takes the whole build
+          # down with it, twice, before the upload is even attempted. Project
+          # approval made no difference because approval was never the problem.
+          #
+          # Nothing is lost. There are no translations: every Locale/*.lua but
+          # enUS holds one @localization@ comment and nothing else, and an
+          # unsubstituted comment is exactly what ships today. When there ARE
+          # translations, this flag comes off and the legacy token goes in.
+          args: -l
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
