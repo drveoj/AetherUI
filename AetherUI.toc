@@ -18,6 +18,9 @@
 # needs it again to resolve the @localization@ blocks in Locale/ - a key
 # without an id substitutes nothing.
 ## X-Curse-Project-ID: 1666829
+# Wago Addons. Its id is a short string rather than a number, and it is not a
+# slug you can guess - it comes off the project page.
+## X-Wago-ID: EGPegON1
 
 Libs\Libs.xml
 
