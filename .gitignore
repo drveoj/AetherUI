@@ -33,3 +33,12 @@ commit-tracker-chip.sh
 # README points at, and docs/ does not ship. Keep the originals here; they are
 # just not the repository's business.
 Media/Screenshots/
+
+# The plans and the developer notes. They stay on disk and out of the repository.
+#
+# NOT the whole of docs/ - the README's images live under docs/brand and
+# docs/screenshots and have to be tracked or every picture in it is a broken
+# link on the repository page. It is the prose that is private: the handoff
+# plans and NOTES.md are working notes with local machine paths in them, and
+# the source comments that cite them still cite them.
+docs/*.md

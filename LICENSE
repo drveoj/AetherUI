@@ -1,0 +1,30 @@
+AetherUI
+Copyright (c) 2026 DrVeoj. All rights reserved.
+
+You may download AetherUI and use it in World of Warcraft. You may read the
+source, and you are welcome to - it is public so that anyone who runs an addon
+can see what it does before they trust it with their interface.
+
+You may not redistribute it, repackage it, or publish a modified version,
+whether or not you charge for it. If you want to do something this does not
+allow, ask.
+
+The addon is provided as is, without warranty of any kind.
+
+
+WHAT THIS DOES NOT COVER
+
+Not everything in this repository is mine to license, and none of the following
+is affected by the terms above.
+
+Libs/ is other people's work, vendored unchanged. AceConfig-3.0, AceConsole-3.0,
+AceDB-3.0, AceDBOptions-3.0, AceGUI-3.0, CallbackHandler-1.0, LibDataBroker-1.1,
+LibSharedMedia-3.0 and LibStub carry their own licenses, as does
+LibClassicCasterino. Each remains under its own terms and its own copyright.
+
+Media/Fonts/ is the Outfit typeface, under the SIL Open Font License. Its full
+text ships beside it as Media/Fonts/Outfit-OFL.txt.
+
+World of Warcraft, its interface and its artwork are the property of Blizzard
+Entertainment. This is an unofficial addon and is not affiliated with, endorsed
+by, or sponsored by Blizzard.
