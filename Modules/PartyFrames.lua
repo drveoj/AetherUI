@@ -560,6 +560,28 @@ function PF:StackIsPlaced()
 	return (a and a.party) ~= nil
 end
 
+--- Whether the dock's own furniture can be moved right now.
+--
+--  THE PANEL AND THE HANDLE ARE PROTECTED FRAMES, which is not something you
+--  can see by looking at them: both are plain frames on UIParent, neither
+--  carries a secure template, and nothing in this file marks them. AnchorStack
+--  is what does it. It hangs the stack - whose capsules hold secure buttons -
+--  off whichever of the two is showing, and a frame a protected frame is
+--  anchored to is in that frame's anchor family and restricted with it.
+--
+--  AnchorStack already knew this about ITSELF and said so in as many words.
+--  What nobody noticed is that the same line makes the HOST protected too, so
+--  every SetPoint, SetSize, SetScale and SetShown on the panel and the handle
+--  is refused for the whole fight. Reported from the game: five blocked calls
+--  on PLAYER_TARGET_CHANGED, which fires constantly in combat because the
+--  panel's marker grid follows your target.
+--
+--  Nothing is lost by waiting. Everything that lays this dock out runs off the
+--  roster sweep, and the sweep is registered on PLAYER_REGEN_ENABLED.
+function PF:Locked()
+	return (InCombatLockdown and InCombatLockdown()) and true or false
+end
+
 function PF:AnchorStack()
 	if not self.stack or not self.panel then return false end
 	if self:StackIsPlaced() then return false end
@@ -570,8 +592,8 @@ function PF:AnchorStack()
 	-- suite caught this the moment the handle started calling it: eleven
 	-- refused calls on one event.
 	--
-	-- Nothing is lost by waiting: PLAYER_REGEN_ENABLED sweeps again.
-	if InCombatLockdown and InCombatLockdown() then return false end
+	-- And this line is also why PF:Locked exists at all - see it.
+	if self:Locked() then return false end
 	-- IT SHIFTS WITH THE DRAWER, the way the client's own party frames do:
 	-- off the panel while the controls are open, off the handle while they
 	-- are shut. Opening the controls pushes the party out of the way rather
@@ -620,6 +642,10 @@ end
 function PF:AnchorPanel(moving)
 	local p = self.panel
 	if not p then return end
+
+	-- Every line below this is a protected call on a frame the stack is
+	-- anchored to. See PF:Locked.
+	if self:Locked() then return end
 
 	local h = self.handle
 	if h then self:LayoutHandle() end
@@ -1013,6 +1039,14 @@ end
 function PF:LayoutHandle()
 	local h = self.handle
 	if not h then return end
+
+	-- ALL OF IT, not just the three calls on the button. The size and the
+	-- visibility below are protected (see PF:Locked) and the glyph positions
+	-- that sit between them are not - but a handle laid out for an edge it has
+	-- not been resized for is a worse state than a handle left alone, and the
+	-- sweep on PLAYER_REGEN_ENABLED does the whole thing again a moment later.
+	if self:Locked() then return end
+
 	local edge = self:PanelEdge()
 	local vertical = IsVertical(edge)
 
@@ -1154,8 +1188,16 @@ function PF:RefreshPanel()
 	-- At the profile's scale, like every frame this addon draws. Here
 	-- rather than at build, because a scale change has to reach a panel
 	-- that was built before it.
-	p:SetScale(A.db.profile.scale or 1)
-	self:AnchorPanel()
+	--
+	-- THE GEOMETRY GOES, THE DRESSING STAYS. Both of these are protected calls
+	-- on the panel (see PF:Locked) and everything below them is not - and this
+	-- function's busiest caller is PLAYER_TARGET_CHANGED, whose whole reason
+	-- for being here is the marker grid. Skipping the lot would leave that grid
+	-- pointing at the wrong target for the length of a fight.
+	if not self:Locked() then
+		p:SetScale(A.db.profile.scale or 1)
+		self:AnchorPanel()
+	end
 
 	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
 	p.count:SetText(n > 0 and (n .. "/" .. n) or "")
@@ -1200,7 +1242,14 @@ function PF:RefreshPanel()
 			end
 		end
 	end
-	p:SetHeight(160 + shown * (ROW_H + 6) + 10)
+	-- THE PANEL'S OWN HEIGHT IS PROTECTED and the rows above it are not, which
+	-- is why they are on opposite sides of this line. See PF:Locked. A row
+	-- appearing or going in a fight leaves the panel the size it was until the
+	-- sweep on PLAYER_REGEN_ENABLED, which is a little air at the foot of a
+	-- drawer rather than a refused call in the player's error log.
+	if not self:Locked() then
+		p:SetHeight(160 + shown * (ROW_H + 6) + 10)
+	end
 end
 
 --- Open or shut the controls, sliding unless told otherwise.

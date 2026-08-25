@@ -810,10 +810,29 @@ function _G.__frameCount() return #frames end
 --- it. `Hide()` on a frame with a protected descendant is refused in combat -
 --- hiding it would change that descendant's effective visibility - and that is
 --- *not* the same rule as SetPoint/SetHeight, which really are per-object.
-local function HasProtectedDescendant(f)
+---
+--- AND ANCHORING SPREADS IT SIDEWAYS, which this modelled parentage-only and
+--- did not. Point a protected frame AT a frame and the two are in one anchor
+--- family: moving the host moves the protected frame, so the host is restricted
+--- as well, however plain it looks on its own.
+---
+--- That is not a corner case here, it is the party dock. The stack carries the
+--- secure capsules and hangs off whichever of the panel or the handle is
+--- showing - so both of those, two ordinary frames on UIParent with no template
+--- between them, are protected the whole time you are in a group. Five refused
+--- calls per target change, reported from a fight, with a suite that was green.
+local function ProtectedInFamily(f, seen)
 	if f.__protected then return f end
+	seen = seen or {}
+	if seen[f] then return nil end
+	seen[f] = true
 	for _, c in ipairs(f.__children or {}) do
-		local hit = HasProtectedDescendant(c)
+		local hit = ProtectedInFamily(c, seen)
+		if hit then return hit end
+	end
+	-- Everything anchored TO this frame, which is the sideways half.
+	for c in pairs(f.__anchoredKids or {}) do
+		local hit = ProtectedInFamily(c, seen)
 		if hit then return hit end
 	end
 	return nil
@@ -834,6 +853,8 @@ function CreateFrame(kind, name, parent, template)
 	f.__parent = parent
 	f.__name = name
 	f.__template = template
+	f.__anchoredKids = {}
+	f.__anchorHosts = {}
 	if template and template:find("Secure") then f.__protected = true end
 	if parent and parent.__children then
 		parent.__children[#parent.__children + 1] = f
@@ -841,7 +862,7 @@ function CreateFrame(kind, name, parent, template)
 	if name then _G[name] = f end
 	frames[#frames + 1] = f
 
-	function f:IsProtected() return HasProtectedDescendant(self) ~= nil end
+	function f:IsProtected() return ProtectedInFamily(self) ~= nil end
 
 	-- widgetBase's Show/Hide are the ones that dispatch OnShow/OnHide; these wrap
 	-- them with the combat check rather than replacing them, or a protected-frame
@@ -850,10 +871,10 @@ function CreateFrame(kind, name, parent, template)
 
 	function f:Hide()
 		if _G.__inCombat then
-			local p = HasProtectedDescendant(self)
+			local p = ProtectedInFamily(self)
 			if p then
-				fail(("ADDON BLOCKED: Hide() on %s, which has a protected"
-					.. " descendant (%s) - refused in combat")
+				fail(("ADDON BLOCKED: Hide() on %s, which a protected frame"
+					.. " hangs off (%s) - refused in combat")
 					:format(tostring(self.__name or self.__kind),
 						tostring(p.__name or p.__template or "?")))
 			end
@@ -862,10 +883,10 @@ function CreateFrame(kind, name, parent, template)
 	end
 	function f:Show()
 		if _G.__inCombat then
-			local p = HasProtectedDescendant(self)
+			local p = ProtectedInFamily(self)
 			if p and not self.__shown then
-				fail(("ADDON BLOCKED: Show() on %s, which has a protected"
-					.. " descendant (%s) - refused in combat")
+				fail(("ADDON BLOCKED: Show() on %s, which a protected frame"
+					.. " hangs off (%s) - refused in combat")
 					:format(tostring(self.__name or self.__kind),
 						tostring(p.__name or p.__template or "?")))
 			end
@@ -898,10 +919,10 @@ function CreateFrame(kind, name, parent, template)
 	-- on itself four times per aura change in a fight.
 	local function blocked(self, method)
 		if not _G.__inCombat then return false end
-		local p = HasProtectedDescendant(self)
+		local p = ProtectedInFamily(self)
 		if not p then return false end
-		fail(("ADDON BLOCKED: %s() on %s, which has a protected descendant (%s)"
-			.. " - refused in combat")
+		fail(("ADDON BLOCKED: %s() on %s, which a protected frame hangs off"
+			.. " (%s) - refused in combat")
 			:format(method, tostring(self.__name or self.__kind),
 				tostring(p.__name or p.__template or "?")))
 		return true
@@ -916,6 +937,31 @@ function CreateFrame(kind, name, parent, template)
 				return orig(self, ...)
 			end
 		end
+	end
+
+	-- WHO IS ANCHORED TO ME, which is what makes the sideways half of
+	-- ProtectedInFamily answerable. Recorded on the HOST rather than walked
+	-- from every frame on demand: the suite builds thousands, and asking each
+	-- one where its points go every time somebody calls SetSize is the kind of
+	-- cost that turns a one-second suite into a coffee break.
+	local anchorPoint, clearPoints = f.SetPoint, f.ClearAllPoints
+	function f:SetPoint(point, rel, ...)
+		local host = rel
+		if type(host) == "string" then host = _G[host] end
+		-- SetPoint("CENTER") with no host anchors to the parent.
+		if host == nil and type(rel) ~= "string" then host = self.__parent end
+		if type(host) == "table" and host ~= self and host.__anchoredKids then
+			host.__anchoredKids[self] = true
+			self.__anchorHosts[host] = true
+		end
+		return anchorPoint(self, point, rel, ...)
+	end
+	function f:ClearAllPoints()
+		for host in pairs(self.__anchorHosts) do
+			if host.__anchoredKids then host.__anchoredKids[self] = nil end
+			self.__anchorHosts[host] = nil
+		end
+		return clearPoints(self)
 	end
 
 	-- HONOURS THE NAME, like CreateFontString beside it. A named texture is a
@@ -13488,6 +13534,51 @@ section("party: a slot that empties does not move the others", function()
 		(_G.__blocked - blocked) .. " refused calls)")
 	_G.__units.party3.exists = true
 	fire("GROUP_ROSTER_UPDATE")
+
+	-- CHANGING TARGET MID-FIGHT, which is the one that actually shipped. The
+	-- panel's marker grid follows your target, so PLAYER_TARGET_CHANGED lays
+	-- the whole dock out again - and the panel and the handle are protected
+	-- frames, because the stack full of secure capsules is anchored to
+	-- whichever of them is showing. Five refused calls per target swap, in a
+	-- fight, on a green suite: the mock knew that parentage spread protection
+	-- and did not know that anchoring does.
+	--
+	-- The dressing still has to run. Skipping the whole refresh would leave the
+	-- marker grid lit for whoever you were fighting a minute ago, which is the
+	-- opposite of what this event is here for.
+	PF:SetPanelOpen(true, true)
+	_G.__inCombat = false
+	fire("PLAYER_TARGET_CHANGED")
+	local x0, y0 = select(4, PF.panel:GetPoint())
+	_G.__inCombat = true
+	blocked = _G.__blocked
+	_G.__units.target = _G.__units.target or {}
+	fire("PLAYER_TARGET_CHANGED")
+	check(_G.__blocked == blocked,
+		"picking a new target mid-fight blocks nothing (" ..
+		(_G.__blocked - blocked) .. " refused calls)")
+	local x1, y1 = select(4, PF.panel:GetPoint())
+	check(x1 == x0 and y1 == y0,
+		"the dock stays exactly where the fight found it")
+
+	-- AND CATCHES UP WHEN THE FIGHT ENDS, which is the half that makes waiting
+	-- honest rather than a shrug. Nothing here needs a deferral of its own: the
+	-- roster sweep lays the dock out and is registered on the same event.
+	local scale = A.db.profile.scale or 1
+	A.db.profile.scale = scale * 0.5
+	fire("PLAYER_TARGET_CHANGED")
+	check(math.abs(PF.panel:GetScale() - scale) < 0.001,
+		"a scale change mid-fight does not reach the panel (" ..
+		tostring(PF.panel:GetScale()) .. ")")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(math.abs(PF.panel:GetScale() - scale * 0.5) < 0.001,
+		"and lands on PLAYER_REGEN_ENABLED (" ..
+		tostring(PF.panel:GetScale()) .. ")")
+	A.db.profile.scale = scale
+	fire("PLAYER_REGEN_ENABLED")
+	PF:SetPanelOpen(false, true)
+	_G.__inCombat = true
 
 	local w = A.Config:Module("partyframes").width
 	A.Config:Module("partyframes").width = 400
