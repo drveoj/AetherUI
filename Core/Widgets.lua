@@ -1344,14 +1344,19 @@ end
 --
 -- 16b: a 3px arc wrapped round the class pip, 44 outer on a 38 pip.
 --
--- CLOCKWISE FROM SIX, not from twelve, which is where 16b put it and where
--- this shipped for its first thirty versions. Twelve to twelve is a CLOCK -
--- it reads as something counting down, and the eye looks for the hand to come
--- round to where it started. Threat has no length and no end. It has a level,
--- which is what a GAUGE shows, and a gauge sweeps up from the bottom.
+-- ELEVEN TWELFTHS, CLOCKWISE FROM HALF PAST SIX. 16b said twelve to twelve and
+-- that is how this shipped for its first thirty versions, but twelve to twelve
+-- is a CLOCK - it reads as something counting down, and the eye waits for the
+-- hand to come back round to where it started. Threat has no length and no end.
+-- It has a level, which is what a GAUGE shows: up from the bottom, and stopping
+-- short of it on the way back so the two ends of the scale stay apart.
 --
--- The origin is baked into the sheet rather than applied here; see
--- Media.dial.threat.from, which the generator holds itself to. It REUSES the disc everybody already watches rather
+-- THE GAP IS THE ADDON'S MARK, MEASURED. The ring in the icon opens 29 degrees
+-- about six o'clock and covers 91.9% of a turn; 11/12 is that to within half a
+-- degree. So full threat is not a closed circle, which is the point.
+--
+-- The sweep is baked into the sheet rather than applied here; see
+-- Media.dial.threat, which the generator holds itself to. It REUSES the disc everybody already watches rather
 -- than adding an element, which is what makes it work at the party capsule's
 -- size and the player frame's without being two designs.
 --

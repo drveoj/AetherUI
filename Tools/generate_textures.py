@@ -1609,8 +1609,13 @@ def _dial_track(band):
     return rgba_lum(1.0, _shrink(big, DIAL_CELL))
 
 
-def _dial_arc(band, start=0.0):
+def _dial_arc(band, start=0.0, span=1.0):
     """The filled part of a dial, as a sheet of 64 steps, sweeping from `start`.
+
+    `span` is how much of a turn a FULL dial covers. Below 1.0 the ring never
+    closes: the threat gauge stops eleven twelfths round and leaves the bottom
+    open, the way the addon's mark does. The steps still divide the whole sheet,
+    so frame 63 is always full - full is just less than a circle.
 
     Classic has no conic gradient and no way to fill a ring by angle, so the
     steps are baked and the module picks a cell. 64 of them on a three-minute
@@ -1628,19 +1633,35 @@ def _dial_arc(band, start=0.0):
 
     ring = _annulus(n * DIAL_SS, DIAL_SS, band, DIAL_PAD)
     for i in range(DIAL_STEPS):
-        cell = _shrink(
-            ring * _sweep(n * DIAL_SS, (i + 1) / float(DIAL_STEPS), start), n)
+        turns = (i + 1) / float(DIAL_STEPS) * span
+        cell = _shrink(ring * _sweep(n * DIAL_SS, turns, start), n)
         r, c = divmod(i, cols)
         sheet[r * n:(r + 1) * n, c * n:(c + 1) * n] = cell
 
     return rgba_lum(1.0, sheet)
 
 
-# THE ONE PLACE EACH DIAL'S ORIGIN IS DECIDED, and Core/Media.lua quotes both
-# as `from`. dial_origins_agree() below refuses to write anything if it stops
-# being true - a dial that starts somewhere the Lua does not say it starts is
-# not an error, it is just a gauge pointing the wrong way round.
-DIAL_START = {"ifec": 0.0, "threat": 0.5}
+# THE ONE PLACE EACH DIAL'S SWEEP IS DECIDED: where it starts, and how much of
+# a turn it covers. Both in turns, both clockwise from twelve o'clock.
+#
+# The flight dial is a CLOCK and goes all the way round from the top, because a
+# flight is a length of time you are part way along and a countdown has to be
+# able to reach the end.
+#
+# The threat ring is a GAUGE and sweeps eleven twelfths from half past six,
+# leaving thirty degrees of air either side of the bottom. That gap is not an
+# invention: it is the addon's own mark, measured. The ring in
+# docs/brand/AetherUI-Icon.png opens 29 degrees about six o'clock and covers
+# 91.9% of a turn, which is 11/12 to within half a degree.
+#
+# Core/Media.lua quotes both numbers per family as `from` and `span`, and
+# dial_sweeps_agree() below refuses to write anything if they stop matching - a
+# dial that starts or stops somewhere the Lua does not say is not an error, it
+# is just a gauge pointing the wrong way round.
+DIAL_SWEEP = {
+    "ifec":   (0.0,        1.0),
+    "threat": (6.5 / 12.0, 11.0 / 12.0),
+}
 
 
 def ifec_dial_track():
@@ -1648,11 +1669,11 @@ def ifec_dial_track():
 
 
 def ifec_dial_arc():
-    return _dial_arc(DIAL_BAND, DIAL_START["ifec"])
+    return _dial_arc(DIAL_BAND, *DIAL_SWEEP["ifec"])
 
 
 def threat_dial_arc():
-    return _dial_arc(THREAT_BAND, DIAL_START["threat"])
+    return _dial_arc(THREAT_BAND, *DIAL_SWEEP["threat"])
 
 
 ASSETS = {
@@ -1707,35 +1728,41 @@ NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette", 
             "IFEC-Dial-Arc", "Threat-Dial-Arc"}
 
 
-def dial_origins_agree():
-    """Core/Media.lua quotes each dial's origin as `from`. Check it is true.
+def dial_sweeps_agree():
+    """Core/Media.lua quotes each dial's sweep. Check it is still true.
 
-    Nothing in Lua reads the value - it is documentation - which is exactly why
-    it needs checking. A comment that has quietly stopped being true is this
-    project's most expensive kind of bug, and a dial that starts somewhere other
-    than the file says throws no error at all: it just points the wrong way.
+    Nothing in Lua reads `from` or `span` - they are documentation - which is
+    exactly why they need checking. A comment that has quietly stopped being
+    true is this project's most expensive kind of bug, and a dial whose sweep
+    does not match the file throws no error at all: it just draws a different
+    instrument from the one the file describes.
     """
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "Core", "Media.lua")
     with io.open(path, encoding="utf-8") as fh:
         src = fh.read()
-    want = {"TOP": 0.0, "BOTTOM": 0.5}
-    body = re.search(r"Media\.dial\s*=\s*\{(.*?)\n\}", src, re.S)
-    if not body:
+    table = re.search(r"Media\.dial\s*=\s*\{(.*?)\n\}", src, re.S)
+    if not table:
         sys.exit("Core/Media.lua has no Media.dial table to check against")
-    for family, turns in DIAL_START.items():
-        m = re.search(r"\b%s\s*=\s*\{(.*?)\}" % family, body.group(1), re.S)
-        edge = m and re.search(r'from\s*=\s*"(\w+)"', m.group(1))
-        if not edge:
-            sys.exit("Core/Media.lua does not say where the %s dial starts" % family)
-        if want.get(edge.group(1)) != turns:
-            sys.exit("Core/Media.lua says the %s dial fills from %s; the "
-                     "generator starts it at %.3f of a turn from the top"
-                     % (family, edge.group(1), turns))
+
+    for family, (start, span) in DIAL_SWEEP.items():
+        m = re.search(r"\b%s\s*=\s*\{(.*?)\}" % family, table.group(1), re.S)
+        if not m:
+            sys.exit("Core/Media.lua has no %s dial to check against" % family)
+        for key, want in (("from", start), ("span", span)):
+            f = re.search(r"\b%s\s*=\s*([-0-9./ ]+?)\s*," % key, m.group(1))
+            if not f:
+                sys.exit("Core/Media.lua does not say the %s dial's %s"
+                         % (family, key))
+            got = eval(f.group(1), {"__builtins__": {}})
+            if abs(got - want) > 1e-6:
+                sys.exit("Core/Media.lua says the %s dial's %s is %s (%.5f); "
+                         "the generator uses %.5f"
+                         % (family, key, f.group(1).strip(), got, want))
 
 
 def main():
-    dial_origins_agree()
+    dial_sweeps_agree()
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Media", "Textures")
     os.makedirs(out, exist_ok=True)

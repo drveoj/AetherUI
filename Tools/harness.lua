@@ -38286,12 +38286,17 @@ section("threat: one place decides which tier a unit is in", function()
 	-- the wrong way round throws no error anywhere - it just looks like a clock
 	-- again. Tools/generate_textures.py reads the same two words and refuses to
 	-- write a texture that disagrees with them.
-	check(A.Media.dial.threat.from == "BOTTOM",
-		"the threat ring fills from the bottom, like a gauge and not a clock ("
-		.. tostring(A.Media.dial.threat.from) .. ")")
-	check(A.Media.dial.ifec.from == "TOP",
-		"and the flight dial still fills from the top, which is where a clock"
-		.. " starts (" .. tostring(A.Media.dial.ifec.from) .. ")")
+	local function near(a, b) return a and math.abs(a - b) < 1e-6 end
+	check(near(A.Media.dial.threat.from, 6.5 / 12)
+		and near(A.Media.dial.threat.span, 11 / 12),
+		"the threat ring sweeps eleven twelfths from half past six, like a"
+		.. " gauge and not a clock")
+	check(A.Media.dial.threat.span < 1,
+		"so full threat is an open ring rather than a closed circle - a gauge"
+		.. " at the top of its scale still has to read as a gauge")
+	check(near(A.Media.dial.ifec.from, 0) and near(A.Media.dial.ifec.span, 1),
+		"and the flight dial is still a whole turn from the top, because a"
+		.. " countdown has to be able to reach the end")
 
 	check(A.Media.dial.threat.track == nil,
 		"the threat ring has no track behind it - below the floor 16b draws"

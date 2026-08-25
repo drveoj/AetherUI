@@ -229,14 +229,23 @@ end
 -- beside the first. Anything else wanting a gauge that fills round a disc adds
 -- a row here; it does not add a mechanism.
 Media.dial = {
+	-- Each family says where its sweep starts and how much of a turn a full one
+	-- covers, both in turns clockwise from twelve o'clock. Nothing here reads
+	-- them - the sweep is baked into the sheet - but Tools/generate_textures.py
+	-- holds itself to them and the harness holds this file to them, because a
+	-- dial that starts or stops somewhere else throws no error anywhere. It just
+	-- looks like a different instrument.
+
 	-- The flight console's, 4.5 of band on a 44 ring.
 	--
-	-- FROM THE TOP, because it is a clock rather than a gauge. A flight is a
-	-- length of time you are part way along, and time starts at twelve.
+	-- A WHOLE TURN FROM THE TOP, because it is a clock rather than a gauge. A
+	-- flight is a length of time you are part way along; time starts at twelve,
+	-- and a countdown has to be able to reach the end.
 	ifec = {
 		track = TEX .. "IFEC-Dial-Track",
 		arc   = TEX .. "IFEC-Dial-Arc",
-		from  = "TOP",
+		from  = 0,
+		span  = 1,
 	},
 	-- 16b's threat ring: 3 of band, 44 outer round a 38 pip.
 	--
@@ -246,18 +255,23 @@ Media.dial = {
 	-- track would be a faint ring sitting round every pip for the whole fight,
 	-- which is the one thing quiet-by-default is against.
 	--
-	-- FROM THE BOTTOM, which is the difference between the two. This one is a
-	-- GAUGE - a needle sweeping a scale - and every gauge ever built starts at
-	-- the bottom and comes round clockwise to the bottom again. Filling from
+	-- ELEVEN TWELFTHS, FROM HALF PAST SIX, which is the difference between the
+	-- two. This one is a GAUGE - a needle sweeping a scale - and every gauge
+	-- ever built sweeps up from the bottom and stops short of it on the way
+	-- back, leaving the scale's two ends distinguishable. Filling twelve to
 	-- twelve made it read as a clock counting something down, which is the one
 	-- thing threat is not: it has no length and no end, only a level.
 	--
-	-- It is also the shape of the addon's own mark, whose ring opens at the
-	-- foot. The mark does not close at the top - a gauge at full does, because
-	-- full is a state a gauge has to be able to show.
+	-- THE GAP IS MEASURED, NOT CHOSEN. It is the addon's own mark: the ring in
+	-- docs/brand/AetherUI-Icon.png opens 29 degrees about six o'clock and covers
+	-- 91.9% of a turn, and 11/12 is that to within half a degree.
+	--
+	-- Which means full is not a closed circle here. That is the point - a gauge
+	-- at the top of its scale should still read as a gauge.
 	threat = {
 		arc  = TEX .. "Threat-Dial-Arc",
-		from = "BOTTOM",
+		from = 6.5 / 12,
+		span = 11 / 12,
 	},
 }
 
