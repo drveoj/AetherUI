@@ -41,6 +41,41 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TOC = ROOT / "AetherUI.toc"
 LOG = ROOT / "Core" / "Changelog.lua"
 
+MD = ROOT / "CHANGELOG.md"
+
+
+def write_markdown() -> None:
+    """Render Core/Changelog.lua to CHANGELOG.md at the repository root.
+
+    A THIRD FILE, and not for taste. BigWigsMods/packager builds a GitHub
+    release's body from the git log since the previous tag unless a manual
+    changelog is set in .pkgmeta - and with every pre-1.0 tag deleted, "since
+    the previous tag" was all three hundred and seven commits. That came to more
+    than the 125,000 characters GitHub accepts and the release failed outright.
+
+    It is also not what belongs on a public release page. Those messages are
+    working notes, written to the next person to open the file.
+
+    GENERATED, never edited, for exactly the reason the .toc and Changelog.lua
+    are written together: a version that has to be typed into three places is a
+    version that will be wrong in one of them.
+    """
+    data = LOG.read_text(encoding="utf-8")
+    entries = re.findall(
+        r'\{\s*version\s*=\s*"([^"]+)",\s*date\s*=\s*"([^"]+)",'
+        r'\s*lines\s*=\s*\{(.*?)\n\t\t\},',
+        data, re.S)
+
+    out = ["# AetherUI", ""]
+    for version, date, body in entries:
+        out += ["## %s - %s" % (version, date), ""]
+        for line in re.findall(r'"((?:[^"\\]|\\.)*)"', body):
+            out.append("- " + line.replace('\\"', '"').replace("\\\\", "\\"))
+        out.append("")
+
+    MD.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8", newline="\n")
+
+
 VERSION_RE = re.compile(rb"^(##\s*Version:\s*)(\S+)\s*$", re.MULTILINE)
 ANCHOR = b"A.CHANGELOG = {\r\n"
 ANCHOR_LF = b"A.CHANGELOG = {\n"
@@ -124,6 +159,7 @@ def write_changelog(new: str, date: str, lines: list[str]) -> None:
 
     entry = eol.join(body) + eol
     LOG.write_bytes(data.replace(anchor, anchor + entry, 1))
+    write_markdown()
 
 
 def main() -> None:

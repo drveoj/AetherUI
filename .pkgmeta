@@ -9,6 +9,24 @@ package-as: AetherUI
 # README.md DOES ship. It is written for somebody who has just installed this
 # and is looking at the folder, which is a different audience from every other
 # file here - the developer's notes moved to docs/NOTES.md to make room for it.
+# THE RELEASE NOTES, WRITTEN BY US RATHER THAN BY THE GIT LOG.
+#
+# Without this the packager builds a GitHub release's body from every commit
+# since the previous tag - and with the pre-1.0 tags deleted that was all three
+# hundred and seven of them, which came to more than the 125,000 characters
+# GitHub accepts and failed the release outright.
+#
+# It would have been the wrong content even at the right length. Those messages
+# are working notes for whoever opens the file next; a release page wants the
+# line the player reads on the What's new card.
+#
+# CHANGELOG.md is GENERATED from Core/Changelog.lua by Tools/bump.py, so it is
+# not a third place to keep a version in step - it is a rendering of the one
+# place that already holds it.
+manual-changelog:
+    filename: CHANGELOG.md
+    markup-type: markdown
+
 ignore:
     - Tools
     - docs
