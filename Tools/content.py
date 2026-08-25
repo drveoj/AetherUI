@@ -451,6 +451,41 @@ def write_content(pack_dir, pack, tracks, mags):
     return path
 
 
+def write_credits(pack_dir, pack):
+    """CREDITS.txt, from pack.json's `credits` block.
+
+    A REQUIREMENT, not a courtesy. CurseForge's moderation policy: "Projects may
+    include music only if the author owns it or has redistribution rights.
+    Attribution must be provided when submitting the project." A pack is mostly
+    audio, so the provenance of that audio travels with it rather than living
+    only in a store description somebody has to go and find.
+
+    Plain text rather than markdown: this sits in an addon folder next to a .toc
+    and a .lua, and the person most likely to open it is doing so in whatever
+    the operating system opens .txt with.
+
+    Written only when pack.json has something to say. A generated file full of
+    headings and no content is worse than no file.
+    """
+    credits = pack.get("credits")
+    if not credits:
+        return None
+
+    name = pack.get("displayName", pack["packId"])
+    out = ["%s" % name, "=" * len(name), ""]
+    if credits.get("summary"):
+        out += [credits["summary"], ""]
+    for section in credits.get("sections", []):
+        out += [section["title"], "-" * len(section["title"])]
+        out += [line for line in section.get("lines", [])]
+        out += [""]
+
+    path = os.path.join(pack_dir, "CREDITS.txt")
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(out).rstrip() + "\n")
+    return path
+
+
 def write_toc(pack_dir, pack):
     packId = pack["packId"]
     lines = [
@@ -622,6 +657,7 @@ def main(argv):
     removed = sync_audio(pack_dir, tracks) + sync_magazines(pack_dir, mags)
     write_content(pack_dir, pack, tracks, mags)
     write_toc(pack_dir, pack)
+    write_credits(pack_dir, pack)
 
     verify_chunks(pack_dir, tracks)
 
