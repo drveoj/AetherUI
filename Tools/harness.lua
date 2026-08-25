@@ -21080,7 +21080,23 @@ do
 	end
 
 	-- Notes, for what the card has not got room for.
+	--
+	-- ON A FIXTURE, not on the shipped changelog. This read the real one and
+	-- asserted the link was there, which was true for a hundred and nineteen
+	-- versions and false the moment 1.0.0 cleared the history: one release with
+	-- one line has nothing more to offer, the link correctly went, and a check
+	-- about whether the link WORKS failed because of what happened to be in a
+	-- data file. The block below already builds its own history for exactly
+	-- this reason; this is that, applied one paragraph earlier.
 	do
+		local realLog = A.CHANGELOG
+		A.CHANGELOG = {
+			{ version = A.version, date = "2026-01-01",
+			  lines = { "One.", "Two.", "Three.", "Four." } },
+			{ version = "0.0.1", date = "2025-12-01", lines = { "Older." } },
+		}
+		TBm:RefreshNews()
+
 		local notes = TBm.content.news.notes
 		check(notes ~= nil and notes:IsShown(),
 			"the card offers a Notes link, because there is more than two lines"
@@ -21090,6 +21106,9 @@ do
 		check(not TBm:NewsUnread(),
 			"and following it counts as reading them - a link that leaves the"
 			.. " dot lit means the dot is about the card rather than the news")
+
+		A.CHANGELOG = realLog
+		TBm:RefreshNews()
 	end
 
 	-- One entry, fully shown, with nothing behind it: no link. The link is an
@@ -22252,14 +22271,25 @@ do
 	end
 
 	-- A build whose version has no entry shows the notes for what is RUNNING.
+	--
+	-- The version asked for is a FIXTURE's. This named 0.1.0, which was in the
+	-- shipped changelog for as long as there was a pre-release history and is
+	-- not in it now - so the check was really asserting that a particular old
+	-- release had never been deleted.
 	do
-		local entry = A:Notes("0.1.0")
-		check(entry and entry.version == "0.1.0",
+		local realLog = A.CHANGELOG
+		A.CHANGELOG = {
+			{ version = "2.0.0", date = "2026-02-01", lines = { "Newest." } },
+			{ version = "1.5.0", date = "2026-01-01", lines = { "Older." } },
+		}
+		local entry = A:Notes("1.5.0")
+		check(entry and entry.version == "1.5.0",
 			"asking for a specific version gets that version's notes")
 		local missing = A:Notes("9.9.9")
 		check(missing == A.CHANGELOG[1],
 			"and a version with no entry falls back to the newest rather than to"
 			.. " an empty card")
+		A.CHANGELOG = realLog
 	end
 end
 
