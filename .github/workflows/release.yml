@@ -57,5 +57,13 @@ jobs:
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
-          WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
-          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          # THE SECRET IS *_API_KEY AND THE PACKAGER WANTS *_API_TOKEN, so the
+          # mapping is not a tautology and the names must not be "tidied" to
+          # match. They were WOWI_API_TOKEN on both sides, the secrets got
+          # created as WOWI_API_KEY, and a missing secret is an EMPTY STRING
+          # rather than an error - the packager then sees no token, skips the
+          # site in silence, and the run goes green having published nothing.
+          # CF_API_KEY is the same shape and only worked by luck: the packager
+          # happens to read that name too.
+          WOWI_API_TOKEN: ${{ secrets.WOWI_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_KEY }}
