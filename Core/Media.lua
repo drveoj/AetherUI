@@ -230,9 +230,13 @@ end
 -- a row here; it does not add a mechanism.
 Media.dial = {
 	-- The flight console's, 4.5 of band on a 44 ring.
+	--
+	-- FROM THE TOP, because it is a clock rather than a gauge. A flight is a
+	-- length of time you are part way along, and time starts at twelve.
 	ifec = {
 		track = TEX .. "IFEC-Dial-Track",
 		arc   = TEX .. "IFEC-Dial-Arc",
+		from  = "TOP",
 	},
 	-- 16b's threat ring: 3 of band, 44 outer round a 38 pip.
 	--
@@ -241,8 +245,19 @@ Media.dial = {
 	-- nothing behind it, and below the floor the design shows NOTHING - so a
 	-- track would be a faint ring sitting round every pip for the whole fight,
 	-- which is the one thing quiet-by-default is against.
+	--
+	-- FROM THE BOTTOM, which is the difference between the two. This one is a
+	-- GAUGE - a needle sweeping a scale - and every gauge ever built starts at
+	-- the bottom and comes round clockwise to the bottom again. Filling from
+	-- twelve made it read as a clock counting something down, which is the one
+	-- thing threat is not: it has no length and no end, only a level.
+	--
+	-- It is also the shape of the addon's own mark, whose ring opens at the
+	-- foot. The mark does not close at the top - a gauge at full does, because
+	-- full is a state a gauge has to be able to show.
 	threat = {
-		arc = TEX .. "Threat-Dial-Arc",
+		arc  = TEX .. "Threat-Dial-Arc",
+		from = "BOTTOM",
 	},
 }
 

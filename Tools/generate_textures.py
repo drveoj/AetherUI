@@ -21,7 +21,9 @@ Design rules baked into every asset here:
 Run:  python3 Tools/generate_textures.py [outdir]
 """
 
+import io
 import os
+import re
 import struct
 import sys
 
@@ -1554,8 +1556,14 @@ def _annulus(n, scale, band, pad):
     return np.clip(outer - inner, 0.0, 1.0)
 
 
-def _sweep(n, turns):
-    """1 where the angle from twelve o'clock, going clockwise, is within `turns`.
+def _sweep(n, turns, start=0.0):
+    """1 where the angle clockwise from `start` is within `turns`.
+
+    `start` is in turns from twelve o'clock: 0.0 starts at the top, 0.5 at the
+    bottom. It exists because the two dials are different instruments. A flight
+    is a length of time you are part way along, and time starts at twelve; a
+    threat ring is a GAUGE, and a gauge sweeps from the bottom - which is also
+    the shape of the addon's own mark.
 
     Hard-edged on purpose. It is drawn at SS and taken down with LANCZOS, which
     is what puts the anti-aliasing on the two radial edges - an analytic ramp
@@ -1566,7 +1574,7 @@ def _sweep(n, turns):
     px = xx + 0.5 - n / 2.0
     py = yy + 0.5 - n / 2.0
     ang = np.arctan2(px, -py)                    # 0 straight up, growing clockwise
-    ang = np.mod(ang, 2.0 * np.pi) / (2.0 * np.pi)
+    ang = np.mod(ang / (2.0 * np.pi) - start, 1.0)
     return (ang <= turns).astype(np.float32)
 
 
@@ -1601,8 +1609,8 @@ def _dial_track(band):
     return rgba_lum(1.0, _shrink(big, DIAL_CELL))
 
 
-def _dial_arc(band):
-    """The filled part of a dial, as a sheet of 64 steps.
+def _dial_arc(band, start=0.0):
+    """The filled part of a dial, as a sheet of 64 steps, sweeping from `start`.
 
     Classic has no conic gradient and no way to fill a ring by angle, so the
     steps are baked and the module picks a cell. 64 of them on a three-minute
@@ -1620,11 +1628,19 @@ def _dial_arc(band):
 
     ring = _annulus(n * DIAL_SS, DIAL_SS, band, DIAL_PAD)
     for i in range(DIAL_STEPS):
-        cell = _shrink(ring * _sweep(n * DIAL_SS, (i + 1) / float(DIAL_STEPS)), n)
+        cell = _shrink(
+            ring * _sweep(n * DIAL_SS, (i + 1) / float(DIAL_STEPS), start), n)
         r, c = divmod(i, cols)
         sheet[r * n:(r + 1) * n, c * n:(c + 1) * n] = cell
 
     return rgba_lum(1.0, sheet)
+
+
+# THE ONE PLACE EACH DIAL'S ORIGIN IS DECIDED, and Core/Media.lua quotes both
+# as `from`. dial_origins_agree() below refuses to write anything if it stops
+# being true - a dial that starts somewhere the Lua does not say it starts is
+# not an error, it is just a gauge pointing the wrong way round.
+DIAL_START = {"ifec": 0.0, "threat": 0.5}
 
 
 def ifec_dial_track():
@@ -1632,11 +1648,11 @@ def ifec_dial_track():
 
 
 def ifec_dial_arc():
-    return _dial_arc(DIAL_BAND)
+    return _dial_arc(DIAL_BAND, DIAL_START["ifec"])
 
 
 def threat_dial_arc():
-    return _dial_arc(THREAT_BAND)
+    return _dial_arc(THREAT_BAND, DIAL_START["threat"])
 
 
 ASSETS = {
@@ -1691,7 +1707,35 @@ NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette", 
             "IFEC-Dial-Arc", "Threat-Dial-Arc"}
 
 
+def dial_origins_agree():
+    """Core/Media.lua quotes each dial's origin as `from`. Check it is true.
+
+    Nothing in Lua reads the value - it is documentation - which is exactly why
+    it needs checking. A comment that has quietly stopped being true is this
+    project's most expensive kind of bug, and a dial that starts somewhere other
+    than the file says throws no error at all: it just points the wrong way.
+    """
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "Core", "Media.lua")
+    with io.open(path, encoding="utf-8") as fh:
+        src = fh.read()
+    want = {"TOP": 0.0, "BOTTOM": 0.5}
+    body = re.search(r"Media\.dial\s*=\s*\{(.*?)\n\}", src, re.S)
+    if not body:
+        sys.exit("Core/Media.lua has no Media.dial table to check against")
+    for family, turns in DIAL_START.items():
+        m = re.search(r"\b%s\s*=\s*\{(.*?)\}" % family, body.group(1), re.S)
+        edge = m and re.search(r'from\s*=\s*"(\w+)"', m.group(1))
+        if not edge:
+            sys.exit("Core/Media.lua does not say where the %s dial starts" % family)
+        if want.get(edge.group(1)) != turns:
+            sys.exit("Core/Media.lua says the %s dial fills from %s; the "
+                     "generator starts it at %.3f of a turn from the top"
+                     % (family, edge.group(1), turns))
+
+
 def main():
+    dial_origins_agree()
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Media", "Textures")
     os.makedirs(out, exist_ok=True)

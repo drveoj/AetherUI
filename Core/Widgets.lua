@@ -1342,8 +1342,16 @@ end
 -- ---------------------------------------------------------------------------
 -- the threat ring
 --
--- 16b: a 3px arc wrapped round the class pip, clockwise from twelve o'clock,
--- 44 outer on a 38 pip. It REUSES the disc everybody already watches rather
+-- 16b: a 3px arc wrapped round the class pip, 44 outer on a 38 pip.
+--
+-- CLOCKWISE FROM SIX, not from twelve, which is where 16b put it and where
+-- this shipped for its first thirty versions. Twelve to twelve is a CLOCK -
+-- it reads as something counting down, and the eye looks for the hand to come
+-- round to where it started. Threat has no length and no end. It has a level,
+-- which is what a GAUGE shows, and a gauge sweeps up from the bottom.
+--
+-- The origin is baked into the sheet rather than applied here; see
+-- Media.dial.threat.from, which the generator holds itself to. It REUSES the disc everybody already watches rather
 -- than adding an element, which is what makes it work at the party capsule's
 -- size and the player frame's without being two designs.
 --

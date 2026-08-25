@@ -38276,6 +38276,23 @@ section("threat: one place decides which tier a unit is in", function()
 	check(ifecFile ~= threatFile and threatFile ~= nil,
 		"and asking for one gets that one, not the other (" ..
 		tostring(threatFile) .. ")")
+	-- AND EACH ONE SWEEPS FROM WHERE ITS INSTRUMENT SHOULD. The flight dial is
+	-- a clock - a length of time you are part way along - and starts at twelve.
+	-- The threat ring is a gauge, which has no length and no end, only a level,
+	-- and every gauge ever built sweeps up from the bottom.
+	--
+	-- Nothing in the addon reads these; they are documentation, which is why
+	-- they are checked. The origin is baked into the sheet, so a dial pointing
+	-- the wrong way round throws no error anywhere - it just looks like a clock
+	-- again. Tools/generate_textures.py reads the same two words and refuses to
+	-- write a texture that disagrees with them.
+	check(A.Media.dial.threat.from == "BOTTOM",
+		"the threat ring fills from the bottom, like a gauge and not a clock ("
+		.. tostring(A.Media.dial.threat.from) .. ")")
+	check(A.Media.dial.ifec.from == "TOP",
+		"and the flight dial still fills from the top, which is where a clock"
+		.. " starts (" .. tostring(A.Media.dial.ifec.from) .. ")")
+
 	check(A.Media.dial.threat.track == nil,
 		"the threat ring has no track behind it - below the floor 16b draws"
 		.. " nothing, and a track would be a faint ring round every pip all"
