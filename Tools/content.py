@@ -177,7 +177,25 @@ def collect_music(spec, seen_ids):
 # one is the elapsed time rather than the length.
 # ---------------------------------------------------------------------------
 
-CHUNK_Q = "6"          # libvorbis quality; ~10% larger than the source at 160k
+# VORBIS QUALITY 4, AND THE NUMBER IS SET BY A DISTRIBUTION LIMIT RATHER THAN BY
+# TASTE. It was 6, which came out about 10% larger than the 160k sources and
+# gave a 115.6 MB zip - over WoWInterface's 100 MB ceiling for a single file, so
+# the pack simply could not be published there.
+#
+# The magazines are the bulk of a pack (96 MB of the 140 on disk) and CANNOT
+# come down: they are 1024x1024 because Reader:Fit zooms to one texel per screen
+# pixel so the small print is readable, which is the whole point of the feature.
+# So the audio is the only lever, and q=4 takes the zip to 97.8 MB.
+#
+# It is background music heard through a game's mixer under an engine noise. The
+# generation loss from re-encoding a 160k source is not the thing anybody is
+# going to notice; not being able to download it at all is.
+#
+# THE HEADROOM IS 2.2 MB, which is not much. The next pack that adds a fifth
+# magazine will not fit, and the answer then is a structural one - shipping the
+# magazines separately, or a lower "fitted" page and no 1:1 zoom - rather than
+# turning this dial down again.
+CHUNK_Q = "4"
 
 # How much of the NEXT piece is also in this one. The pieces are crossfaded
 # across this window rather than butted together.
