@@ -22030,6 +22030,30 @@ do
 	check(tocVersion ~= nil, "AetherUI.toc declares a version (" ..
 		tostring(tocVersion) .. ")")
 
+	-- THE ADDON LIST'S ICON, and the second place that texture path is written.
+	--
+	-- The .toc is read before a line of this addon runs, so it cannot ask
+	-- Media.texture.icon what the path is - it has to spell it out. Which means
+	-- renaming the file fixes the Lua, ships, and leaves the addon list drawing
+	-- nothing at all beside the title: an inline texture escape that resolves to
+	-- no file is not an error anywhere, it is just a gap.
+	do
+		local tocIcon
+		local f = io.open("AetherUI.toc", "r")
+		if f then
+			for line in f:lines() do
+				local v = line:match("^##%s*IconTexture:%s*(%S+)")
+				if v then tocIcon = v break end
+			end
+			f:close()
+		end
+		check(tocIcon ~= nil,
+			"AetherUI.toc names an icon for the addon list, rather than taking"
+			.. " the question mark (" .. tostring(tocIcon) .. ")")
+		check(tocIcon == A.Media.texture.icon,
+			"and it is the same path Media.texture.icon resolves to")
+	end
+
 	-- AND THE SAME FILES THE CLIENT LOADS. This file keeps its own list, in its
 	-- own order, and the two drifted the moment a module was added: Timers.lua
 	-- went into the .toc and shipped, while every check in here ran against an

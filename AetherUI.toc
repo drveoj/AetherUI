@@ -5,6 +5,15 @@
 ## Version: 0.36.10
 ## SavedVariables: AetherUIDB
 ## X-Category: Interface Enhancements
+# THE ICON IN THE ADDON LIST. Blizzard_AddOnList reads this and prepends it to
+# the title as a 20x20 inline texture; set neither this nor IconAtlas and you
+# get the yellow question mark that every unlabelled addon wears.
+#
+# NO FILE EXTENSION, and the path is spelled out rather than built. The .toc is
+# read before a line of this addon's Lua runs, so Media.texture.icon does not
+# exist yet to be asked - which makes this the second place that path is
+# written down, and the harness checks the two still agree.
+## IconTexture: Interface\AddOns\AetherUI\Media\Textures\Icon
 # The CurseForge project. The packager needs this to upload at all, and
 # needs it again to resolve the @localization@ blocks in Locale/ - a key
 # without an id substitutes nothing.
