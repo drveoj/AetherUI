@@ -209,23 +209,30 @@ function TB:Build()
 	chev:SetScript("OnClick", function() TB:Toggle() end)
 	rail.chev = chev
 
-	-- The gear, at the far end of the rail. The drawer carries the settings the
+	-- THE MARK, at the far end of the rail. The drawer carries the settings the
 	-- deck asks for; this is the way to the rest of them, and it belongs on the
 	-- rail because it has to be reachable with the drawer shut.
 	local gear = CreateFrame("Button", nil, rail)
 	gear:SetSize(RAIL_ICON, RAIL_ICON)
-	-- NOT a unicode gear. Outfit is a text face with no geometric shapes in it -
-	-- generate_textures.py says as much where it draws the chevron from line
-	-- segments rather than borrowing a glyph - so U+2699 came out as the three
-	-- bytes of its own UTF-8 rendered as latin: "]lk" on the rail.
+	-- IT WAS A GEAR, drawn as a ring with eight radial stubs, and at this size
+	-- eight stubs on a ring is an asterisk. The note it replaced said a ring was
+	-- standing in "until there is real art" and that the concept wanted a gear
+	-- or the star; there is real art now, and it is neither - it is the addon's
+	-- own mark, which is what the one button on the rail that opens the addon's
+	-- own settings should be wearing.
 	--
-	-- A ring stands in until there is real art. It is a shape rather than a
-	-- symbol, which is the honest version of "we have no gear yet"; the concept
-	-- wants a gear or the star, and both need a generator pass.
+	-- (Not a unicode gear either, then or now: Outfit is a text face with no
+	-- geometric shapes in it, so U+2699 came out as the three bytes of its own
+	-- UTF-8 rendered as latin - "]lk" on the rail.)
+	--
+	-- FLUSH WITH THE SLOT rather than at RAIL_GLYPH like its neighbours. The two
+	-- off the icon size is air for a line glyph, which needs room inside its
+	-- box; this is a filled disc that brings its own margin of glow, so the same
+	-- inset twice would leave it visibly the smallest thing on the rail.
 	local gg = gear:CreateTexture(nil, "ARTWORK")
 	gg:SetPoint("CENTER", gear, "CENTER", 0, 0)
-	gg:SetSize(RAIL_GLYPH, RAIL_GLYPH)
-	Media:SetIcon(gg, "gear")
+	gg:SetSize(RAIL_ICON, RAIL_ICON)
+	gg:SetTexture(Media.texture.icon)
 	gear.glyph = gg
 	gear:SetScript("OnClick", function()
 		if A.Options and A.Options.Open then A.Options:Open() end

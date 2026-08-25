@@ -40,6 +40,12 @@ local CALLOUT_W      = 330
 local CALLOUT_PAD    = 20
 local CALLOUT_GAP    = 22      -- from the spotlit element to the callout
 local CARD_W         = 520     -- welcome and finish
+-- THE MARK, on the welcome card. Width chosen, height taken from the art so
+-- nobody squashes it: Media.logoAspect is the ink inside Logo.tga, and
+-- Media.logoCoord is where that ink is, which is what makes the height honest.
+-- Without the coord a fifth of this box would be the canvas's empty top and
+-- bottom and the headline would sit adrift under it.
+local LOGO_W         = 300
 local ARROW          = 14      -- the rotated square pointing at the element
 local RING_PAD       = 6       -- how far the accent ring stands off the element
 local DOT            = 5
@@ -2067,8 +2073,21 @@ local function BuildCard()
 	c.kicker = W.Text(c, "tbSection", "LEFT")
 	c.kicker:SetPoint("TOPLEFT", c, "TOPLEFT", 28, -26)
 
+	-- THE MARK, where the kicker line goes, and only on the welcome card. The
+	-- kicker there read "AETHER UI" in small caps, which is the wordmark spelled
+	-- out by a font that is not the wordmark - and this is the one screen in the
+	-- addon that is introducing itself rather than getting on with something.
+	--
+	-- The finish card keeps its kicker: by then you know what this is, and "ALL
+	-- SET" is doing work the mark cannot.
+	c.logo = c:CreateTexture(nil, "ARTWORK")
+	c.logo:SetTexture(Media.texture.logo)
+	c.logo:SetTexCoord(unpack(Media.logoCoord))
+	c.logo:SetSize(LOGO_W, math.floor(LOGO_W / Media.logoAspect + 0.5))
+	c.logo:SetPoint("TOPLEFT", c, "TOPLEFT", 28, -26)
+	c.logo:Hide()
+
 	c.head = W.Text(c, "tbTitle", "LEFT")
-	c.head:SetPoint("TOPLEFT", c.kicker, "BOTTOMLEFT", 0, -10)
 	c.head:SetWidth(CARD_W - 56)
 	c.head:SetWordWrap(true)
 
@@ -2115,8 +2134,18 @@ end
 
 --- Stack the card's parts and size it to them.
 local function LayCard(c, lines)
+	-- Whichever of the two tops is showing is what the headline hangs off. The
+	-- welcome card wears the mark, the finish card wears the kicker line, and
+	-- one of them is always hidden - so the anchor is set HERE rather than at
+	-- build time, where it would have to guess which card this was going to be.
+	local top   = c.logo:IsShown() and c.logo or c.kicker
+	local topH  = c.logo:IsShown() and (c.logo:GetHeight() or 0)
+		or (c.kicker:GetStringHeight() or 0)
+	c.head:ClearAllPoints()
+	c.head:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, -10)
+
 	local y = -26
-	y = y - (c.kicker:GetStringHeight() or 0) - 10
+	y = y - topH - 10
 	y = y - (c.head:GetStringHeight() or 0) - 10
 	y = y - (c.body:GetStringHeight() or 0) - 14
 
@@ -2156,10 +2185,10 @@ function OB:ShowWelcome()
 	if self.skip then self.skip:Hide() end
 
 	local c = BuildCard()
-	c.kicker:SetText(L.tour.show_welcome.aether_ui)
+	c.kicker:Hide()
+	c.logo:Show()
 	c.head:SetText(L.tour.show_welcome.quieter_glassier_way_play)
 	c.body:SetText(L.tour.show_welcome.whole_interface_rebuilt_calm)
-	W.Color(c.kicker, Palette.c.accent)
 	W.Color(c.head, Palette.c.text)
 	W.Color(c.body, Palette.c.textDim)
 
@@ -2198,6 +2227,8 @@ function OB:ShowFinish()
 	if self.skip then self.skip:Hide() end
 
 	local c = BuildCard()
+	c.logo:Hide()
+	c.kicker:Show()
 	c.kicker:SetText(L.tour.show_finish.all_set)
 	c.head:SetText(L.tour.show_finish.hud_way_go_break)
 	c.body:SetText("")

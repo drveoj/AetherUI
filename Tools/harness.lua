@@ -23026,9 +23026,15 @@ do
 			"cropped to ONE cell rather than the whole sheet (" ..
 			string.format("%.2f..%.2f", l, r) .. ")")
 
-		check(TBm.rail.gear.glyph:GetTexture() == A.Media.icons.file,
-			"the rail's gear is the drawn gear, not a unicode glyph the bundled"
-			.. " font has never had")
+		-- THE BRAND MARK, not the sheet. It was the sheet's gear, which at this
+		-- size is a ring with eight radial stubs on it - which is an asterisk.
+		-- The whole point of the check is that this button is never a character
+		-- the bundled font has not got; a texture from a file the addon ships
+		-- satisfies that as well as an atlas cell does.
+		check(TBm.rail.gear.glyph:GetTexture() == A.Media.texture.icon,
+			"the rail's settings button wears the addon's own mark")
+		check(TBm.rail.gear.glyph:GetWidth() == TBm.rail.gear:GetWidth(),
+			"flush with its slot, not inset like the line glyphs beside it")
 
 		local tile = TBm.content.tiles[1]
 		check(tile and tile.icon:IsShown()
@@ -38715,6 +38721,40 @@ do
 		"and not a stop yet")
 	check(OB.scrim and OB.scrim:IsShown(),
 		"over a dimmed world")
+
+	-- AND IT INTRODUCES ITSELF BY NAME. The kicker line said "AETHER UI" in
+	-- small caps, which is the wordmark spelled out by a font that is not the
+	-- wordmark. The mark goes here and the kicker goes away - both, or the card
+	-- carries the same three syllables twice, once as art and once as type.
+	check(OB.card.logo and OB.card.logo:IsShown()
+		and OB.card.logo:GetTexture() == A.Media.texture.logo,
+		"the welcome card wears the mark")
+	check(not OB.card.kicker:IsShown(),
+		"instead of the kicker line, not as well as it")
+
+	-- AT THE ART'S OWN ASPECT, and the art is a band inside a bigger canvas -
+	-- so the crop and the shape have to agree. Sized from the canvas instead,
+	-- the box is a fifth taller than the ink and the headline sits adrift.
+	local _, _, top, bottom = OB.card.logo:GetTexCoord()
+	check(top and bottom and math.abs((bottom - top)
+		- (A.Media.logoCoord[4] - A.Media.logoCoord[3])) < 0.001,
+		"cropped to the ink rather than the whole canvas")
+	check(math.abs(OB.card.logo:GetWidth() / OB.card.logo:GetHeight()
+		- A.Media.logoAspect) < 0.02,
+		"and drawn at the ink's aspect, not squashed to fit ("
+		.. string.format("%.2f vs %.2f",
+			OB.card.logo:GetWidth() / OB.card.logo:GetHeight(),
+			A.Media.logoAspect) .. ")")
+
+	-- THE HEADLINE HANGS OFF WHICHEVER TOP IS SHOWING. Anchored to the kicker
+	-- at build time it would hang off a hidden font string on this card, which
+	-- keeps the geometry it would have had - an empty line's worth of hole
+	-- between the mark and the words.
+	do
+		local rel = select(2, OB.card.head:GetPoint(1))
+		check(rel == OB.card.logo,
+			"and the headline hangs off the mark, not off the hidden kicker")
+	end
 
 	-- SKIP IS ON THE CARD AND ON EVERY STOP. The deck pins it to the bottom
 	-- of the screen throughout, because a tour you cannot leave is a modal

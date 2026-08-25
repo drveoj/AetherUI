@@ -1329,7 +1329,6 @@ L["tour.show_finish.all_set"] = "ALL SET"
 L["tour.show_finish.done"] = "Done"
 L["tour.show_finish.hud_way_go_break"] = "Your UI is ready. Go try it out."
 
-L["tour.show_welcome.aether_ui"] = "AETHER UI"
 L["tour.show_welcome.n1_minute"] = "~1 minute"
 L["tour.show_welcome.quieter_glassier_way_play"] =
 	"A modern UI for Classic WoW"

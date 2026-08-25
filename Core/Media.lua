@@ -88,7 +88,34 @@ Media.texture = {
 	chevron     = TEX .. "Chevron",
 	send        = TEX .. "Send",             -- the edit box's paper plane
 	badges      = TEX .. "Chat-Badges",      -- the chat line pills, one per row
+
+	-- THE BRAND. Not drawn by generate_textures.py like everything above it -
+	-- these two are artwork, and they come in from docs/brand via
+	-- Tools/generate_brand_textures.py, which strips the logo's dark plate so
+	-- the mark sits on whichever palette is loaded rather than on Midnight's
+	-- navy wherever it is put.
+	--
+	-- 512x256, holding a 3.3:1 lockup: the mark, then the wordmark. The nearest
+	-- power of two that holds it leaves a fifth of the height empty at each end,
+	-- so the band below is the ink. Draw with it and the size you ask for is the
+	-- size you get; draw without it and a fifth of your height is air.
+	logo        = TEX .. "Logo",
+	-- 128x128, the mark on its own, transparent to the edge of its glow.
+	icon        = TEX .. "Icon",
 }
+
+--- Where the logo's ink actually is inside its canvas. SetTexCoord takes it
+--  straight: `tex:SetTexCoord(unpack(Media.logoCoord))`.
+--
+--  A CONTRACT with Tools/generate_brand_textures.py, the same way the icon
+--  atlas order is one: that script measures the band it produced and refuses to
+--  write anything if these four numbers disagree with it.
+Media.logoCoord = { 0, 1, 53 / 256, 205 / 256 }
+
+--- That band's aspect, width over height: 512 texels by 152. A caller picks
+--  one dimension and takes the other from here, so the mark is never squashed
+--  by somebody guessing the second number.
+Media.logoAspect = 512 / 152
 
 --- The chat badge atlas: thirteen pills, one per row, three characters each.
 --
