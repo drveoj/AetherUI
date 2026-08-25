@@ -1,6 +1,6 @@
 # AetherUI
 
-![A Glass user interface for World of Warcraft - Classic Era](docs/brand/AetherUI-Logo.png)
+![A Glass user interface for World of Warcraft - Classic Era](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/brand/AetherUI-Logo.png)
 
 A complete interface replacement for **WoW Classic Era**. Frosted glass, four
 palettes, and a HUD that gets out of your way when nothing is happening.
@@ -9,7 +9,7 @@ One addon, no modules to install, no profile to import. It sets itself up the
 first time you log in.
 
 ![A full screen: party frames and their controls, unit frames centred on the
-character, quest tracker, minimap, chat and the action bars](docs/screenshots/7-Layout.jpg)
+character, quest tracker, minimap, chat and the action bars](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/screenshots/7-Layout.jpg)
 
 ---
 
@@ -29,7 +29,7 @@ A short tour runs on your first character. Nine stops, takes about a minute, and
 every choice you make applies live on the real interface rather than in a preview.
 
 ![The tour's first stop: four palette swatches in a callout beside the real
-player frame, with the world dimmed behind](docs/screenshots/2-Tour.jpg)
+player frame, with the world dimmed behind](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/screenshots/2-Tour.jpg)
 
 The tour helps you make 4 choices:
 
@@ -51,7 +51,7 @@ Run it again any time with `/aether tour` (or from Config).
 with a class-coloured level orb. Buffs above, debuffs below.
 
 ![The HUD in combat: player, pet, target and its target, with a cast bar
-and the target's debuffs on the frame rather than beside it](docs/screenshots/1-HUD.jpg)
+and the target's debuffs on the frame rather than beside it](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/screenshots/1-HUD.jpg)
 
 **Party frames** — four capsules in fixed slots that move as one block, with a
 controls drawer for raid marks, ready check, role check and a countdown.
@@ -60,13 +60,13 @@ controls drawer for raid marks, ready check, role check and a countdown.
 charges and range draw *on* the icons. `/aether bind` puts you in keybind mode: 
 hover over a button, press a key.
 
-![An action bar close up, one button counting down under its own icon](docs/screenshots/6-Bar.png)
+![An action bar close up, one button counting down under its own icon](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/screenshots/6-Bar.png)
 
 **The Toolbox** — a drawer that docks to any screen edge. Everything you'd
 otherwise hunt for is in it: UI settings, useful widgets, your addon buttons, and 
 a standard menu. It has a rail that stays on screen when the drawer is shut.
 
-![The Toolbox drawer open on the left edge](docs/screenshots/3-Toolbox.png)
+![The Toolbox drawer open on the left edge](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/screenshots/3-Toolbox.png)
 
 **Bags** — all your bags in one panel, sorted into categories, with a automated
 junk sale and repair (configurable) and your equipped bags in a drawer at the edge.
@@ -88,7 +88,7 @@ with your role, so a tank is warned about the opposite thing.
 leaving a slow breath, your health, the zone and the clock. Move and it's back.
 Your character sits down and the camera pulls back for the view.
 
-![Zen mode: the interface gone, a slow breath and a clock left behind](docs/screenshots/4-Zen.jpg)
+![Zen mode: the interface gone, a slow breath and a clock left behind](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/screenshots/4-Zen.jpg)
 
 **I.F.E.C.** — the In-Flight Entertainment Console. If you have installed an
 AetherUI Content Pack (seasonal) You will find music, stories and some 
@@ -99,7 +99,7 @@ to keep going.
 It plays on the ground too, from the Toolbox, where it is called N.I.F.E.C. for 
 reasons I stand behind (note: The "N" stands for "Not").
 
-![The console mid-flight, library open, counting down to landing](docs/screenshots/5-IFEC.jpg)
+![The console mid-flight, library open, counting down to landing](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/screenshots/5-IFEC.jpg)
 
 ## Moving things
 
