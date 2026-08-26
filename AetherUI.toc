@@ -1,6 +1,17 @@
-## Interface: 11509
+# TWO CLIENTS, ONE FILE. 11509 is Classic Era 1.15.9; 50504 is Mists of
+# Pandaria Classic 5.5.0.4 - and it is 50504 rather than the 50500 you would
+# guess from the expansion, because the client is 5.5.0.4 and that is what every
+# shipping MoP addon declares.
+#
+# ONE TOC RATHER THAN AetherUI_Vanilla.toc + AetherUI_Mists.toc. Both spellings
+# work and both are in live use, but the split one writes the VERSION down twice
+# and Tools/bump.py is the only thing allowed to write it. A version that has to
+# be typed into two files is a version that will be wrong in one of them. Split
+# it the day the two flavours need different FILE LISTS, and not before -
+# everything flavour-specific so far branches inside Lua on A.isMists.
+## Interface: 11509, 50504
 ## Title: Aether|cff9d7bffUI|r
-## Notes: A frosted-glass HUD for Classic Era. Core skin engine + modules.
+## Notes: A frosted-glass HUD for Classic Era and Mists of Pandaria Classic.
 ## Author: DrVeoj
 ## Version: 1.0.0
 ## SavedVariables: AetherUIDB

@@ -10,6 +10,41 @@
 	Run:  lua5.1 Tools/harness.lua
 ----------------------------------------------------------------------------]]
 
+-- ---------------------------------------------------------------------------
+-- which client this run is pretending to be
+--
+--     luajit Tools/harness.lua            Classic Era, the default
+--     luajit Tools/harness.lua mists      Mists of Pandaria Classic
+--
+-- AN ARGUMENT RATHER THAN AN ENVIRONMENT VARIABLE, because this repository is
+-- driven from two shells and `FOO=bar cmd` is a bash-ism PowerShell parses as a
+-- command name.
+--
+-- THE WHOLE FAMILY IS DECLARED, not just the two we compare. The client declares
+-- all six on every flavour - Era's own Constants.lua has
+-- WOW_PROJECT_MISTS_CLASSIC in it - and a mock that declared only the ones it
+-- needed would let a module compare against a nil and be quietly false.
+-- ---------------------------------------------------------------------------
+
+WOW_PROJECT_MAINLINE = 1
+WOW_PROJECT_CLASSIC = 2
+WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 5
+WOW_PROJECT_WRATH_CLASSIC = 11
+WOW_PROJECT_CATACLYSM_CLASSIC = 14
+WOW_PROJECT_MISTS_CLASSIC = 19
+
+-- GLOBALS, NOT LOCALS, and not for taste: this file is one enormous main chunk
+-- and Lua caps a function at 200 locals. It is already near the ceiling, so a
+-- new top-level `local` here costs a check somewhere else in the file.
+_G.__flavour = "era"
+for _, v in ipairs(arg or {}) do
+	if v == "mists" then _G.__flavour = "mists" end
+end
+_G.__mists = _G.__flavour == "mists"
+
+WOW_PROJECT_ID = _G.__mists and WOW_PROJECT_MISTS_CLASSIC or WOW_PROJECT_CLASSIC
+print(("== running as %s (WOW_PROJECT_ID %d) =="):format(_G.__flavour, WOW_PROJECT_ID))
+
 local FAIL = {}
 
 -- Refusals counted separately as well as failed. A blocked call already
@@ -7464,6 +7499,45 @@ function _G.QuestLogMicroButton:SetButtonState(state) self.__state = state end
 _G.__blizzToggled = 0
 function ToggleQuestLog() _G.__blizzToggled = _G.__blizzToggled + 1 end
 
+-- ---------------------------------------------------------------------------
+-- Blizzard's quest tracker, whose NAME IS NOT THE SAME ON THE TWO CLIENTS
+--
+-- Era draws it as QuestWatchFrame, out of Vanilla/QuestLogFrame. Mists loads
+-- Wrath/WatchFrame and calls it WatchFrame, with the scenario block
+-- (WatchFrameScenarioFrame) hanging inside it - so hiding the one frame covers
+-- both and there is no second name to chase.
+--
+-- NEITHER WAS MOCKED AT ALL until now, which is the tenth time this file has
+-- been kinder than the client: QuestTracker:HideBlizzard has been shipping
+-- untested since it was written, because there was nothing here for it to find
+-- and `if f then` over an empty room passes every time.
+--
+-- IT PUTS ITSELF BACK. The client's own code shows this frame on a quest
+-- accept, a zone change and an objective tick, which is why the module hooks
+-- OnShow rather than calling Hide once - and a mock that only ever stayed
+-- hidden would let a Hide-once implementation look correct.
+-- ---------------------------------------------------------------------------
+
+_G.__trackerName = _G.__mists and "WatchFrame" or "QuestWatchFrame"
+do
+	local tracker = CreateFrame("Frame", _G.__trackerName, UIParent)
+	tracker:SetSize(204, 300)
+	tracker:SetPoint("RIGHT", UIParent, "RIGHT", -20, 0)
+	_G[_G.__trackerName] = tracker
+
+	-- The scenario block only exists on Mists, and only as a descendant.
+	if _G.__mists then
+		local lines = CreateFrame("Frame", "WatchFrameLines", tracker)
+		_G.WatchFrameScenarioFrame =
+			CreateFrame("ScrollFrame", "WatchFrameScenarioFrame", lines)
+	end
+
+	--- The client deciding, on its own, that the tracker should be up.
+	function _G.__blizzardShowsTracker()
+		_G[_G.__trackerName]:Show()
+	end
+end
+
 -- containers ----------------------------------------------------------------
 --
 -- The bags fixture. Modelled on __questLog: a plain table of what is really in
@@ -8111,15 +8185,34 @@ function UnitInParty(u) return units[u] ~= nil and units[u].exists or false end
 
 function UnitIsDND(u) return units[u] and units[u].dnd or false end
 
+-- WHO THE CLIENT WILL ANSWER FOR, and it is not the same two clients.
+--
+-- Classic Era has never fired UNIT_SPELLCAST_* or answered UnitCastingInfo for
+-- anything but the player - which is the entire reason LibClassicCasterino
+-- exists and the reason UnitFrames wires two sources. Mists answers for every
+-- unit, natively, and does not ship the library at all.
+--
+-- Modelling that as "player only, always" was right for one client and is a
+-- lie on the other: it would let the Mists run pass while the target cast bar
+-- silently never started, because the library that used to feed it is gone and
+-- the native path the mock refuses to exercise is the only one left.
 local castState
-function UnitCastingInfo(u)
-	if u ~= "player" or not castState or castState.channel then return nil end
-	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
+_G.__nativeCasts = {}
+
+local function nativeCast(u, channel)
+	local c = castState
+	if u ~= "player" then
+		if not _G.__mists then return nil end
+		c = _G.__nativeCasts[u]
+	end
+	if not c then return nil end
+	if (not c.channel) ~= (not channel) then return nil end
+	return c.name, c.name, c.icon,
+		c.startTime or c.start, c.endTime or c.finish
 end
-function UnitChannelInfo(u)
-	if u ~= "player" or not castState or not castState.channel then return nil end
-	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
-end
+
+function UnitCastingInfo(u) return nativeCast(u, false) end
+function UnitChannelInfo(u) return nativeCast(u, true) end
 
 -- The addon list is a SUPERSET of the actionable one: most addons offer neither
 -- an LDB launcher nor a minimap button. Only about half declare ## IconTexture
@@ -8236,9 +8329,16 @@ end
 
 -- LibClassicCasterino bails on any non-Classic client, and the mock is not one,
 -- so stand in for it. The point under test is our wiring, not the library.
-WOW_PROJECT_ID, WOW_PROJECT_CLASSIC = 2, 2
+--
+-- AND ON MISTS IT IS NOT THERE AT ALL. The real library's first executable line
+-- is `if WOW_PROJECT_ID ~= WOW_PROJECT_CLASSIC then return end`, which returns
+-- before LibStub:NewLibrary - so `LibStub("LibClassicCasterino", true)` hands
+-- back nil and the two call sites fall through to the native UnitCastingInfo
+-- that every client from 3.0 onward has. Standing it in on Mists would hide the
+-- one path that matters there.
 do
-	local lib = LibStub:NewLibrary("LibClassicCasterino", 37)
+	local lib = _G.__mists and { callbacks = {} }
+		or LibStub:NewLibrary("LibClassicCasterino", 37)
 	lib.callbacks = LibStub("CallbackHandler-1.0"):New(lib)
 	_G.__ccCasts = {}
 	function lib:UnitCastingInfo(unit)
@@ -8250,6 +8350,50 @@ do
 		if c and c.channel then return c.name, nil, c.icon, c.start, c.finish end
 	end
     _G.__ccFire = function(event, unit) lib.callbacks:Fire(event, unit) end
+end
+
+-- ---------------------------------------------------------------------------
+-- somebody else's cast, through whichever source this client has
+--
+-- THREE CHECKS NEEDED THIS AND ALL THREE HAD SPELT IT OUT, which was fine while
+-- there was only one way for a nameplate or a target to start casting. There
+-- are two now - the library on Era, the client itself on Mists - and three
+-- hand-written copies of that fork is three places for it to drift.
+--
+-- The unit is never "player": the player's own cast has one source on every
+-- client and `castState` remains the way to drive it.
+-- ---------------------------------------------------------------------------
+
+function _G.__castStart(unit, spell, icon, secs, channel)
+	secs = secs or 3
+	local event = channel and "UNIT_SPELLCAST_CHANNEL_START"
+		or "UNIT_SPELLCAST_START"
+	if LibStub("LibClassicCasterino", true) then
+		_G.__ccCasts[unit] = { name = spell, icon = icon, channel = channel or false,
+			start = time * 1000, finish = (time + secs) * 1000 }
+		_G.__ccFire(event, unit)
+	else
+		_G.__nativeCasts[unit] = { name = spell, icon = icon, channel = channel or false,
+			startTime = time * 1000, endTime = (time + secs) * 1000 }
+		_G.__fire(event, unit)
+	end
+end
+
+function _G.__castStop(unit, channel)
+	_G.__ccCasts[unit], _G.__nativeCasts[unit] = nil, nil
+	local event = channel and "UNIT_SPELLCAST_CHANNEL_STOP"
+		or "UNIT_SPELLCAST_STOP"
+	if LibStub("LibClassicCasterino", true) then
+		_G.__ccFire(event, unit)
+	else
+		_G.__fire(event, unit)
+	end
+end
+
+--- What delivered it, for a check message that says which client it is about.
+function _G.__castSource()
+	return LibStub("LibClassicCasterino", true) and "the library's callback"
+		or "the client's own event"
 end
 
 -- A stand-in LibDBIcon, because the real one belongs to whichever addon on the
@@ -9668,6 +9812,12 @@ fire = function(event, ...)
 	end
 end
 
+-- AND A GLOBAL HANDLE ON IT, for the few helpers defined above this line.
+-- `fire` is a local declared some six hundred lines up, so anything written
+-- before that declaration cannot see it - __castStart is the first thing that
+-- has needed to.
+_G.__fire = fire
+
 -- Expanding or collapsing a header fires QUEST_LOG_UPDATE on the live client.
 -- Modelling that matters more than it looks: it is what makes a collapse visible
 -- to every other module's rebuild, and a mock that stays silent here hides the
@@ -9706,6 +9856,40 @@ local function check(cond, msg)
 	else
 		fail(msg)
 	end
+end
+
+print("== which client ==")
+do
+	-- THE ADDON'S ANSWER AND THE RUN'S ANSWER, checked against each other. Both
+	-- come from WOW_PROJECT_ID, so this is not circular in the useful direction:
+	-- what it catches is A.isEra and A.isMists both being true, or both false,
+	-- which is what a typo'd constant name produces and which nothing downstream
+	-- would report - a module would simply take the wrong branch for ever.
+	check(A.project == WOW_PROJECT_ID,
+		"the addon reads the client's project id (" .. tostring(A.project) .. ")")
+	check(A.isEra ~= A.isMists,
+		"and it is exactly one flavour, never both and never neither")
+	check(A.isMists == _G.__mists,
+		"which is the one this run was asked for (" .. _G.__flavour .. ")")
+	check(A.flavourName == (_G.__mists and "Mists" or "Era"),
+		"with a name a bug report can carry (" .. A.flavourName .. ")")
+
+	-- THE .TOC HAS TO CLAIM BOTH, or half of this is theory. The interface
+	-- numbers are the only thing that decides whether the client will load the
+	-- addon at all, and they live in a file no check had ever read.
+	local toc = io.open("AetherUI.toc", "r")
+	local iface = ""
+	if toc then
+		for line in toc:lines() do
+			local v = line:match("^##%s*Interface:%s*(.+)")
+			if v then iface = v break end
+		end
+		toc:close()
+	end
+	check(iface:find("11509", 1, true) ~= nil,
+		"the .toc declares Classic Era 11509 (" .. iface .. ")")
+	check(iface:find("50504", 1, true) ~= nil,
+		"and Mists 50504 - which is 5.5.0.4, not the 50500 the expansion suggests")
 end
 
 --- A block of checks that cannot take the rest of the suite down with it.
@@ -10423,27 +10607,28 @@ do
 		"and defaults above the player's, which is the order the two things are"
 		.. " happening in front of you")
 
-	_G.__ccCasts.target = { name = "Shadow Bolt", icon = 136197, channel = false,
-		start = time * 1000, finish = (time + 3) * 1000 }
-	_G.__ccFire("UNIT_SPELLCAST_START", "target")
-	check(UF.targetCast:IsShown(), "library callback starts the target cast bar")
+	-- WHICHEVER SOURCE THIS CLIENT HAS, and the bar has to start either way.
+	--
+	-- On Era that is the library relaying what it read out of the combat log;
+	-- on Mists the library is not there and the client announces the target's
+	-- casts itself. The module tries native first and falls through, so these
+	-- checks are run against whichever source is real here rather than being
+	-- skipped on Mists and the bar called tested.
+	__castStart("target", "Shadow Bolt", 136197)
+	check(UF.targetCast:IsShown(), __castSource() .. " starts the target cast bar")
 	check(UF.targetCast.spellName:GetText() == "Shadow Bolt", "target spell named")
 
 	time = time + 1
 	UF.targetCast:GetScript("OnUpdate")(UF.targetCast, 1)
 	check(UF.targetCast.bar:GetValue() > 0.2, "target cast progresses")
 
-	_G.__ccCasts.target = nil
-	_G.__ccFire("UNIT_SPELLCAST_STOP", "target")
-	check(not UF.targetCast:IsShown(), "library callback stops it")
+	__castStop("target")
+	check(not UF.targetCast:IsShown(), __castSource() .. " stops it")
 
 	-- a player-unit event must never drive the target's bar and vice versa
-	_G.__ccCasts.target = { name = "Fear", icon = 1, channel = false,
-		start = time * 1000, finish = (time + 3) * 1000 }
-	_G.__ccFire("UNIT_SPELLCAST_START", "target")
+	__castStart("target", "Fear", 1)
 	check(not UF.cast:IsShown(), "target cast does not leak onto the player bar")
-	_G.__ccCasts.target = nil
-	_G.__ccFire("UNIT_SPELLCAST_STOP", "target")
+	__castStop("target")
 end
 
 print("== idle fader ==")
@@ -15834,15 +16019,12 @@ do
 	-- the toggle really turns it off
 	A.db.profile.modules.unitframes.reactionTint = false
 	_G.__units.target.reaction = 2
-	_G.__ccCasts.target = { name = "Lightning Bolt", icon = 1, channel = false,
-		start = time * 1000, finish = (time + 3) * 1000 }
-	_G.__ccFire("UNIT_SPELLCAST_START", "target")
+	__castStart("target", "Lightning Bolt", 1)
 	check(UFm.targetCast.bar._colors == A.Palette.c.cast,
 		"turning the tint off puts both bars back to blue")
 	A.db.profile.modules.unitframes.reactionTint = true
 
-	_G.__ccCasts.target = nil
-	_G.__ccFire("UNIT_SPELLCAST_STOP", "target")
+	__castStop("target")
 	castState = nil
 	fire("UNIT_SPELLCAST_STOP", "player")
 	_G.__units.target.reaction = 2
@@ -16447,6 +16629,49 @@ do  -- both sets are pruned against the live log, the way Questie prunes its two
 	check(A.db.char.untracked[999999] == nil and A.db.char.tracked[888888] == nil,
 		"IDs that are not in the log are dropped from both sets - neither can grow"
 		.. " without bound")
+end
+
+print("== quest tracker: Blizzard's own tracker gets out of the way ==")
+do
+	local name = _G.__trackerName
+	local blizz = _G[name]
+
+	-- ALREADY DOWN BY THE TIME ANYTHING ASKS. The module hides it as it enables,
+	-- which is at boot, so the honest check is the state after login rather than
+	-- one this block sets up for itself. Showing it first and asserting it was
+	-- shown is a check of the mock, not of the module - and it fails, because
+	-- the OnShow hook put in at boot is already doing its job.
+	check(blizz ~= nil, "the client draws its tracker as " .. name .. " here")
+	check(not blizz:IsShown(), name .. " is down after login, and it is found BY"
+		.. " NAME - QuestWatchFrame on Era, WatchFrame on Mists, and a list"
+		.. " carrying only one of them leaves two trackers on screen")
+
+	-- AND IT STAYS DOWN. Blizzard shows this frame again on a quest accept, a
+	-- zone change and an objective tick; Hide() alone is undone by the first of
+	-- them, which is why the module hooks OnShow.
+	__blizzardShowsTracker()
+	check(not blizz:IsShown(),
+		"and it stays hidden when the client puts it back up by itself")
+
+	if _G.__mists then
+		check(WatchFrameScenarioFrame:GetParent():GetParent() == blizz,
+			"the scenario block is INSIDE it, so one name covers both and there is"
+			.. " no second frame to chase")
+	end
+
+	-- The switch is a switch: off means the client keeps its own tracker.
+	local cfg = A.Config:Module("questtracker")
+	local was = cfg.hideBlizzard
+	cfg.hideBlizzard = false
+	blizz.__aetherHooked = nil
+	blizz:SetScript("OnShow", nil)
+	blizz:Show()
+	QT:HideBlizzard()
+	check(blizz:IsShown(), "and turning the option off leaves it alone")
+	cfg.hideBlizzard = was
+
+	blizz:Show()
+	QT:HideBlizzard()
 end
 
 print("== quest tracker: manual mode ==")
@@ -26552,14 +26777,13 @@ do
 
 	check(f.cast == nil or not f.cast:IsShown(), "nothing casting, no capsule")
 
-	-- Through the LIBRARY's registry, which is the only route that exists for a
-	-- nameplate unit: the native UNIT_SPELLCAST_* events fire for the player
-	-- alone on this client.
-	_G.__ccCasts.nameplate1 = { name = "Lightning Bolt", icon = 136048,
-		channel = false, start = time * 1000, finish = (time + 3) * 1000 }
-	_G.__ccFire("UNIT_SPELLCAST_START", "nameplate1")
+	-- On Era, through the LIBRARY's registry, which is the only route that
+	-- exists for a nameplate unit there: the native UNIT_SPELLCAST_* events
+	-- fire for the player alone on that client. On Mists the client announces
+	-- it and the library is not installed at all.
+	__castStart("nameplate1", "Lightning Bolt", 136048)
 
-	check(f.cast and f.cast:IsShown(), "the library's callback opens the capsule")
+	check(f.cast and f.cast:IsShown(), __castSource() .. " opens the capsule")
 	check(f.cast.text:GetText() == "Lightning Bolt", "with the spell named")
 	check(f.cast.bar:GetValue() < 0.1, "and the bar at the start of it")
 
@@ -26581,16 +26805,13 @@ do
 		"and it hangs off the CAST capsule while one is open, rather than being"
 		.. " drawn through the middle of it")
 
-	_G.__ccCasts.nameplate1 = nil
-	_G.__ccFire("UNIT_SPELLCAST_STOP", "nameplate1")
+	__castStop("nameplate1")
 	check(not f.cast:IsShown(), "the capsule closes when the cast stops")
 	check(select(2, f.chips[1]:GetPoint()) == f,
 		"and the chips move back up under the plate")
 
 	-- A channel runs the other way.
-	_G.__ccCasts.nameplate1 = { name = "Drain Life", icon = 136163, channel = true,
-		start = time * 1000, finish = (time + 4) * 1000 }
-	_G.__ccFire("UNIT_SPELLCAST_CHANNEL_START", "nameplate1")
+	__castStart("nameplate1", "Drain Life", 136163, 4, true)
 	local atStart = f.cast.bar:GetValue()
 	time = time + 2
 	f.cast:GetScript("OnUpdate")(f.cast, 2)
@@ -26604,7 +26825,7 @@ do
 		"a plate released mid-cast stops casting, rather than showing the last"
 		.. " tenant's spell over whoever gets it next")
 
-	_G.__ccCasts.nameplate1 = nil
+	__castStop("nameplate1", true)
 	_G.__auras.target = savedAuras
 	_G.__units.target = nil
 end

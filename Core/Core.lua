@@ -27,6 +27,38 @@ A.modules  = {}
 A.moduleOrder = {}
 
 -- ---------------------------------------------------------------------------
+-- which game
+--
+-- WOW_PROJECT_ID, not the interface number and not GetBuildInfo. The .toc says
+-- which clients this addon SUPPORTS; only the project id says which one is
+-- running it, and it is a plain integer the client sets before a line of this
+-- loads.
+--
+-- THE CLIENT'S OWN CONSTANTS, WITH NO `or 2` FALLBACK BEHIND THEM. Every
+-- flavour declares the whole family in Blizzard_FrameXMLBase - Era's Constants
+-- carries WOW_PROJECT_MISTS_CLASSIC = 19 as surely as Mists' does - so a guard
+-- against them being missing would never fire on a real client.
+--
+-- It would, though, make a MISSPELLED CONSTANT indistinguishable from a correct
+-- one: `WOW_PROJECT_MISTS_CLASIC or 19` is nil-or-19, which is 19, which is the
+-- right answer for the wrong reason. That typo was written here and the suite
+-- could not see it, because the fallback quietly supplied what the typo had
+-- lost. A wrong name now yields nil, both flags go false, and the check says so.
+--
+-- A FLAG PER FLAVOUR rather than a string to compare against. `A.isMists` reads
+-- at the call site as the question being asked; `A.flavour == "mists"` reads as
+-- a string comparison that a typo makes silently false forever.
+-- ---------------------------------------------------------------------------
+
+A.project = WOW_PROJECT_ID
+A.isEra   = A.project ~= nil and A.project == WOW_PROJECT_CLASSIC
+A.isMists = A.project ~= nil and A.project == WOW_PROJECT_MISTS_CLASSIC
+
+--- What to call this client in a bug report or a diagnostic line.
+A.flavourName = A.isMists and "Mists" or A.isEra and "Era"
+                or ("project " .. tostring(A.project))
+
+-- ---------------------------------------------------------------------------
 -- chat output
 -- ---------------------------------------------------------------------------
 

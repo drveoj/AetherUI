@@ -283,10 +283,28 @@ QT.Collect = Collect
 -- Blizzard frame removal
 -- ---------------------------------------------------------------------------
 
+--- Get the client's own tracker out from behind ours.
+--
+--  THREE NAMES FOR ONE THING, and which of them exists is the flavour:
+--
+--    QuestWatchFrame        Classic Era, from Vanilla/QuestLogFrame
+--    WatchFrame             Mists, from Wrath/WatchFrame
+--    ObjectiveTrackerFrame  Retail, and on neither of these - the client's own
+--                           code only ever reaches for it behind an `if`
+--
+--  Mists' scenario block, WatchFrameScenarioFrame, is a descendant of
+--  WatchFrame rather than a sibling, so hiding the one frame takes it with it
+--  and there is no fourth name here.
+--
+--  ALL THREE ARE TRIED rather than branching on A.isMists. The absent ones cost
+--  a nil lookup each, and a list that cannot be wrong on a flavour nobody has
+--  tested yet is worth more than the two comparisons it saves.
 function QT:HideBlizzard()
 	local cfg = A.Config:Module("questtracker")
 	if not cfg.hideBlizzard then return end
-	for _, name in ipairs({ "QuestWatchFrame", "ObjectiveTrackerFrame" }) do
+	for _, name in ipairs({
+		"QuestWatchFrame", "WatchFrame", "ObjectiveTrackerFrame",
+	}) do
 		local f = _G[name]
 		if f and not (f.IsForbidden and f:IsForbidden()) then
 			pcall(f.Hide, f)
