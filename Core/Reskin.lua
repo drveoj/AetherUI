@@ -1023,14 +1023,30 @@ local function Toggle(box, store, round)
 	-- AND IT ANSWERS THE CLIENT. A check box is toggled by Blizzard's own
 	-- OnClick as often as by ours, and a mark drawn once at dress time is a
 	-- mark that is right until the first press.
-	if box.HookScript and not box.__aetherCheckHook then
-		box.__aetherCheckHook = true
+	-- `HasScript`, NOT `HookScript`. Every widget in the game has a HookScript
+	-- METHOD; only a button has an OnClick SCRIPT, and hooking one a widget has
+	-- not got is an error rather than a no-op:
+	--
+	--   ReputationBar15AtWarCheck:HookScript(): Doesn't have a "OnClick" script
+	--
+	-- That shipped in 1.0.0, from a caller that reskinned an at-war INDICATOR
+	-- as a check box because it was called AtWarCheck. The call site is fixed,
+	-- and so is this: a helper handed something that is not a control should
+	-- decline rather than take the window down with it.
+	--
+	-- AND THE FLAG IS SET LAST. It used to be set first, so a throw left it
+	-- true and the next dress skipped that box and died on the following one -
+	-- which turned one bad frame into one failure per frame, spread over as
+	-- many opens.
+	local clickable = box.HasScript and box:HasScript("OnClick")
+	if clickable and not box.__aetherCheckHook then
 		box:HookScript("OnClick", function(self)
 			A.Widgets.CheckState(self, self.GetChecked and self:GetChecked())
 		end)
 		box:HookScript("OnShow", function(self)
 			A.Widgets.CheckState(self, self.GetChecked and self:GetChecked())
 		end)
+		box.__aetherCheckHook = true
 	end
 
 	-- AND ITS LABEL OFF THE EDGE OF THE MARK, not off the edge of the button.
