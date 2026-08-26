@@ -1,0 +1,8 @@
+## Interface: 11509, 50504
+## Title: Aether Probe
+## Notes: Records what a client actually has, for the Mists port. Not shipped.
+## Author: DrVeoj
+## Version: 1.0.0
+## SavedVariables: AetherProbeDB
+
+AetherProbe.lua
