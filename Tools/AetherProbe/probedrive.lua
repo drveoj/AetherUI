@@ -138,10 +138,34 @@ local ADDONS = {
 	{ "Blizzard_TalentUI", true }, { "Blizzard_TradeSkillUI", false },
 	{ "Blizzard_AchievementUI", false }, { "AetherUI", true },
 }
+-- name, loaded, loadable, reason
+local ADDONLIST = {
+	{ "Blizzard_TalentUI", true, true },
+	{ "Blizzard_TradeSkillUI", false, true },
+	{ "Blizzard_AchievementUI", false, true },
+	{ "Refused", false, false, "INTERFACE_VERSION" },
+}
+ADDONS = ADDONLIST
 C_AddOns = {
-	GetNumAddOns = function() return #ADDONS end,
-	GetAddOnInfo = function(i) return ADDONS[i] and ADDONS[i][1] end,
-	IsAddOnLoaded = function(i) return ADDONS[i] and ADDONS[i][2] end,
+	GetNumAddOns = function() return #ADDONLIST end,
+	GetAddOnInfo = function(i)
+		local a = ADDONLIST[i]
+		if a then return a[1], a[1] .. " title", "", a[3], a[4] end
+	end,
+	IsAddOnLoaded = function(i) return ADDONLIST[i] and ADDONLIST[i][2] end,
+	GetAddOnMetadata = function() return "11509, 50504" end,
+	-- MISTS' SIGNATURE, WHICH THROWS ON THE OLD ONE. 5.5.4 spells this
+	-- GetAddOnEnableState(name [, character]); the older clients spelt it
+	-- GetAddOnEnableState(character, index) - opposite order - and calling it
+	-- the old way here does not return nil, it raises. That took the whole
+	-- login handler down on the first real Mists run and cost a session.
+	GetAddOnEnableState = function(name)
+		if type(name) ~= "string" then
+			error("bad argument #1 to '?' (Usage: local state = "
+				.. "C_AddOns.GetAddOnEnableState(name [, character]))", 2)
+		end
+		return 2
+	end,
 }
 
 -- The windows the probe will find. Deliberately a MIXTURE: some present, most
@@ -153,12 +177,23 @@ GetQuestLogTitle = function() end
 
 -- --------------------------------------------------------------------------
 
-print("== loading the probe ==")
+print("== loading the probe, THE WAY THE CLIENT DOES ==")
+-- THE ORDER IS THE TEST. WoW runs an addon's Lua first, restores its saved
+-- table over the global SECOND, and fires ADDON_LOADED third. A driver that
+-- loads the chunk into a clean environment and calls it done can never catch
+-- the commonest SavedVariables bug there is - a `local DB = MyAddonDB` at file
+-- scope, left holding an orphan the moment the client overwrites the global.
+--
+-- So this pretends to be the SECOND run: there is already a saved table, and
+-- it arrives after the file has been read.
 local chunk, err = loadfile("Tools/AetherProbe/AetherProbe.lua")
 if not chunk then print("  !!  " .. tostring(err)) os.exit(1) end
 local ok, e = pcall(chunk, "AetherProbe")
 check(ok, "the file loads" .. (ok and "" or (": " .. tostring(e))))
 if not ok then os.exit(1) end
+
+local RESTORED = { fromALastSession = true }
+AetherProbeDB = RESTORED
 
 -- The probe's own event frame: the only one here that listens for login.
 local pump
@@ -170,10 +205,25 @@ print("== login ==")
 check(pump ~= nil, "the probe built an event frame that listens for login")
 if not pump then os.exit(1) end
 local fire = pump:GetScript("OnEvent")
+
+-- ADDON_LOADED for our own name comes before PLAYER_LOGIN, and is where the
+-- record has to be bound.
+pcall(fire, pump, "ADDON_LOADED", "AetherProbe")
+check(AetherProbeDB == RESTORED,
+	"the probe adopts the table the client RESTORED rather than replacing it -"
+	.. " everything collected before now would otherwise be thrown away")
+check(AetherProbeDB.fromALastSession == true,
+	"so last session's record survives into this one")
+
 ok, e = pcall(fire, pump, "PLAYER_LOGIN")
 check(ok, "PLAYER_LOGIN runs clean" .. (ok and "" or (": " .. tostring(e))))
 
 check(AetherProbeDB.client ~= nil, "it recorded the client")
+check(rawequal(AetherProbeDB, RESTORED),
+	"and wrote it into the table the client will SAVE, not into an orphan that"
+	.. " is discarded at logout")
+check(AetherProbeDB.runs == 1, "with a run counter, so a record that never"
+	.. " changes is visible as a record that never changed")
 check(AetherProbeDB.client.interface == 50504, "with the interface number (50504)")
 check(AetherProbeDB.client.projectIsMists == true, "and it knows this is Mists")
 check(AetherProbeDB.client.maxLevel == 90, "and the level cap (90)")
@@ -192,6 +242,34 @@ check(AetherProbeDB.names.GetQuestLogTitle == "function",
 	"a function is recorded as a function")
 check(AetherProbeDB.blizzardAddOns.Blizzard_TradeSkillUI == "on demand",
 	"a load-on-demand Blizzard addon is listed as such")
+check(AetherProbeDB.addOns and AetherProbeDB.addOns.Refused
+	and AetherProbeDB.addOns.Refused.reason == "INTERFACE_VERSION",
+	"an addon the client REFUSED is recorded with the client's own reason -"
+	.. " which is the only way to tell `refused` from `loaded and died`")
+check(AetherProbeDB.addOns.Refused.enabled == 2,
+	"the enable state is read with THIS client's signature, not the older one"
+	.. " that takes its arguments the other way round and raises")
+check(AetherProbeDB.errors == nil,
+	"and no phase of login recorded a failure")
+check(AetherProbeDB.aether == "AetherUI is not loaded",
+	"and AetherUI's absence is stated rather than left to be inferred from an"
+	.. " empty SavedVariables file")
+
+print("== one bad call does not cost the session ==")
+do
+	local real = C_AddOns.GetAddOnInfo
+	C_AddOns.GetAddOnInfo = function() error("boom") end
+	AetherProbeDB.names, AetherProbeDB.errors = nil, nil
+	pcall(fire, pump, "PLAYER_LOGIN")
+	check(AetherProbeDB.errors and AetherProbeDB.errors.addOns,
+		"a phase that throws is recorded by name")
+	check(AetherProbeDB.names ~= nil,
+		"and the phases AFTER it still run - which is the whole difference"
+		.. " between a session collected and a session wasted")
+	C_AddOns.GetAddOnInfo = real
+	AetherProbeDB.errors = nil
+	pcall(fire, pump, "PLAYER_LOGIN")
+end
 
 print("== opening a window ==")
 CharacterFrame:Show()
@@ -229,6 +307,10 @@ check(AetherProbeDB.windows.CharacterFrame == before,
 	"the shape is taken once, on first open")
 
 print("== a flight ==")
+-- THE MAP FIRST. The origin is only readable while the taxi map is open, which
+-- is the bug the first run of this found: both real flights came back with "?"
+-- for `from`, because the node list was read after the window had closed.
+pcall(fire, pump, "TAXIMAP_OPENED")
 pcall(fire, pump, "PLAYER_CONTROL_LOST")
 now = now + 212.5
 pcall(fire, pump, "PLAYER_CONTROL_GAINED")

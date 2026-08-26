@@ -42,8 +42,30 @@
 
 local ADDON = ...
 
-AetherProbeDB = AetherProbeDB or {}
-local DB = AetherProbeDB
+-- ---------------------------------------------------------------------------
+-- the record, BOUND ON ADDON_LOADED AND NOT BEFORE
+--
+-- This was two lines at file scope:
+--
+--     AetherProbeDB = AetherProbeDB or {}
+--     local DB = AetherProbeDB
+--
+-- and it is the oldest trap in SavedVariables. The client loads an addon's Lua
+-- FIRST, restores its saved table over the global SECOND, and fires
+-- ADDON_LOADED THIRD. So those two lines run while the global is still nil,
+-- make a fresh table, point both the global and DB at it - and are then
+-- overwritten: the global becomes the restored table and DB is left holding an
+-- orphan nothing will ever save.
+--
+-- Every write went into the orphan. It looked like it worked exactly once,
+-- because on the very first run there was no saved file to restore and the
+-- global stayed where we put it. From the second run on, the file was rewritten
+-- byte-for-byte identical every logout and no new field ever appeared - which
+-- is the worst shape a bug can take in a tool whose whole job is to come back
+-- with a record.
+-- ---------------------------------------------------------------------------
+
+local DB
 
 -- ---------------------------------------------------------------------------
 -- the list of names to ask about
@@ -226,6 +248,28 @@ end
 -- collecting
 -- ---------------------------------------------------------------------------
 
+--- Is this addon enabled, asked in whichever way THIS client spells it.
+--
+--  TWO SIGNATURES, and they take their arguments in opposite orders:
+--
+--    GetAddOnEnableState(character, index)   the old one
+--    GetAddOnEnableState(name [, character]) Mists 5.5.4, and it THROWS on the
+--                                            other order rather than returning
+--                                            nil
+--
+--  That throw took the whole login handler down on the first run and cost a
+--  session's worth of collection. Try the new spelling, fall back to the old,
+--  and give up quietly rather than raising - this is one field on a diagnostic,
+--  and no field is worth losing the diagnostic over.
+local function enableState(api, name, index)
+	if not api.GetAddOnEnableState then return nil end
+	local ok, v = pcall(api.GetAddOnEnableState, name)
+	if ok then return v end
+	ok, v = pcall(api.GetAddOnEnableState, nil, index)
+	if ok then return v end
+	return nil
+end
+
 local function say(...)
 	local parts = {}
 	for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
@@ -306,16 +350,25 @@ end
 -- ---------------------------------------------------------------------------
 
 local flight
+local standingAt
 
-local function flightStart()
-	local from
-	-- The node you are standing at is the one marked CURRENT.
+--- Where you are, read WHILE THE MAP IS OPEN.
+--
+--  This used to run at PLAYER_CONTROL_LOST, which is the moment the flight
+--  starts - and by then the taxi map has closed, NumTaxiNodes() answers 0 and
+--  the loop finds nothing. Both recorded flights came back with "?" as their
+--  origin, which makes a duration useless: without knowing the route you cannot
+--  tell a slower client from a longer path.
+local function noteWhereWeAre()
 	for i = 1, (NumTaxiNodes and NumTaxiNodes() or 0) do
 		if TaxiNodeGetType and TaxiNodeGetType(i) == "CURRENT" then
-			from = TaxiNodeName and TaxiNodeName(i)
+			standingAt = TaxiNodeName and TaxiNodeName(i)
 		end
 	end
-	flight = { from = from or "?", start = GetTime() }
+end
+
+local function flightStart()
+	flight = { from = standingAt or "?", start = GetTime() }
 end
 
 local function flightEnd()
@@ -421,8 +474,31 @@ f:RegisterEvent("PLAYER_CONTROL_GAINED")
 f:RegisterEvent("ADDON_ACTION_BLOCKED")
 f:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 
+--- Run one phase of collection, and survive it failing.
+--
+--  THE WHOLE POINT OF THIS ADDON is to come back with a record from a client
+--  nobody has run it on, so a single bad call must not take the rest of the
+--  record with it. One did: GetAddOnEnableState threw on the first Mists login,
+--  and because the handler was a straight run of statements, everything after
+--  it - the name scan, the window hooks, the protection experiment - never
+--  happened and the session collected nothing.
+--
+--  The failure is RECORDED rather than swallowed. A phase that did not run
+--  leaves a note saying so, which is the difference between "this client does
+--  not have it" and "we never asked".
+local function phase(name, fn)
+	local ok, err = pcall(fn)
+	if not ok then
+		DB.errors = DB.errors or {}
+		DB.errors[name] = tostring(err)
+		say("|cffff6666" .. name .. " failed|r: " .. tostring(err))
+	end
+	return ok
+end
+
 f:SetScript("OnEvent", function(_, event, arg1, arg2)
 	if event == "PLAYER_LOGIN" then
+	  phase("client", function()
 		local build, buildNo, buildDate, iface = GetBuildInfo()
 		DB.client = {
 			build = build, buildNumber = buildNo, buildDate = buildDate,
@@ -436,32 +512,79 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
 			playerLevel = UnitLevel("player"),
 			class = select(2, UnitClass("player")),
 		}
+	  end)
 
-		-- WHICH BLIZZARD ADDONS THIS CLIENT HAS AT ALL, load-on-demand
-		-- included. This is what settles the group-finder question: if
-		-- Blizzard_GroupFinder_VanillaStyle is not in the list, MoP does not
-		-- ship it and the LFGParentFrame entry is dead code there.
+	  phase("addOns", function()
+		-- EVERY ADDON, WITH WHY IT DID OR DID NOT LOAD.
+		--
+		-- The first version recorded only names beginning Blizzard_, and only
+		-- whether they were loaded. That answered neither question it was
+		-- written for: it found four addons on Era and seven on Mists, because
+		-- what it was really recording was "which load-on-demand addons this
+		-- session happened to open" - and it could say nothing at all about
+		-- AetherUI, which was sitting in the folder NOT LOADING and left no
+		-- trace anywhere on disk to say why.
+		--
+		-- GetAddOnInfo's fourth and fifth returns are the diagnostic:
+		-- `loadable` and, when it is false, a `reason` - DISABLED,
+		-- INTERFACE_VERSION, MISSING, DEP_DISABLED, BANNED. That is the
+		-- difference between "the client refused it" and "it loaded and died",
+		-- which cannot be told apart from outside the game.
+		DB.addOns = {}
 		DB.blizzardAddOns = {}
 		local api = C_AddOns or _G
 		local count = (api.GetNumAddOns and api.GetNumAddOns()) or 0
 		for i = 1, count do
-			local n = api.GetAddOnInfo and api.GetAddOnInfo(i)
-			if n and n:find("^Blizzard_") then
-				DB.blizzardAddOns[n] =
-					(api.IsAddOnLoaded and api.IsAddOnLoaded(i)) and "loaded"
-					or "on demand"
+			local n, title, _notes, loadable, reason = api.GetAddOnInfo(i)
+			if n then
+				local loaded = api.IsAddOnLoaded and api.IsAddOnLoaded(i)
+				DB.addOns[n] = {
+					title = title,
+					loaded = loaded and true or false,
+					loadable = loadable and true or false,
+					reason = reason,
+					enabled = enableState(api, n, i),
+					interface = api.GetAddOnMetadata
+						and api.GetAddOnMetadata(n, "Interface") or nil,
+				}
+				if n:find("^Blizzard_") then
+					DB.blizzardAddOns[n] = loaded and "loaded" or "on demand"
+				end
 			end
 		end
 
-		scanNames()
-		watchAll()
-		runProtectionTest()
-		say("recording. Open some windows, take a flight, then log out and read"
-			.. " SavedVariables\\AetherProbe.lua")
+		-- AND WHAT AetherUI ITSELF THINKS. If it is loaded, its own namespace
+		-- carries the flavour it decided on and the last module that failed to
+		-- enable - which is the answer to "did it load and die" in one line.
+		local A = _G.AetherUI
+		DB.aether = A and {
+			version = A.version,
+			project = A.project,
+			flavourName = A.flavourName,
+			isEra = A.isEra,
+			isMists = A.isMists,
+			lastFailure = A.lastFailure,
+			moduleCount = A.moduleOrder and #A.moduleOrder or 0,
+		} or "AetherUI is not loaded"
+	  end)
+
+	  phase("names", scanNames)
+	  phase("windows", watchAll)
+	  phase("protection", runProtectionTest)
+	  say("recording. Open some windows, take a flight, then log out and read"
+		  .. " SavedVariables\\AetherProbe.lua")
+
+	elseif event == "ADDON_LOADED" and arg1 == ADDON then
+		-- OURS. The saved table has been restored by now, so this is the first
+		-- moment DB can be bound to something that will actually be written
+		-- back out again. Nothing above may touch DB before this fires.
+		AetherProbeDB = AetherProbeDB or {}
+		DB = AetherProbeDB
+		DB.runs = (DB.runs or 0) + 1
 
 	elseif event == "ADDON_LOADED" then
 		-- A load-on-demand addon has just brought its frames into being.
-		if arg1 and arg1:find("^Blizzard_") then
+		if DB and arg1 and arg1:find("^Blizzard_") then
 			DB.blizzardAddOns = DB.blizzardAddOns or {}
 			DB.blizzardAddOns[arg1] = "loaded"
 			scanNames()
@@ -474,6 +597,7 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
 
 	elseif event == "TAXIMAP_OPENED" then
 		dump("TaxiFrame", "taxi map opened")
+		noteWhereWeAre()
 
 	elseif event == "PLAYER_CONTROL_LOST" then
 		flightStart()

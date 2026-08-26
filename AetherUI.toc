@@ -1,7 +1,20 @@
+## Interface: 11509, 50504
+# THE FIRST LINE OF THE FILE, AND IT HAS TO BE.
+#
+# This sat at line 12, behind the comment block now below it, and the Mists
+# client refused the addon outright - GetAddOnInfo reported
+# `loadable=false, reason=INTERFACE_VERSION` while the .toc plainly declared
+# 50504 and the client plainly was 50504. AetherProbe, byte-identical on this
+# line but carrying it as line 1, loaded fine beside it.
+#
+# Era never showed it: that install has `checkAddonVersion "0"` set, so nothing
+# is ever refused for its interface version and a .toc the client could not read
+# looked perfectly healthy for a day.
+#
 # TWO CLIENTS, ONE FILE. 11509 is Classic Era 1.15.9; 50504 is Mists of
-# Pandaria Classic 5.5.0.4 - and it is 50504 rather than the 50500 you would
-# guess from the expansion, because the client is 5.5.0.4 and that is what every
-# shipping MoP addon declares.
+# Pandaria Classic 5.5.0.4 - 50504 rather than the 50500 the expansion suggests,
+# because the client is 5.5.0.4 and that is what every shipping MoP addon
+# declares.
 #
 # ONE TOC RATHER THAN AetherUI_Vanilla.toc + AetherUI_Mists.toc. Both spellings
 # work and both are in live use, but the split one writes the VERSION down twice
@@ -9,7 +22,6 @@
 # be typed into two files is a version that will be wrong in one of them. Split
 # it the day the two flavours need different FILE LISTS, and not before -
 # everything flavour-specific so far branches inside Lua on A.isMists.
-## Interface: 11509, 50504
 ## Title: Aether|cff9d7bffUI|r
 ## Notes: A frosted-glass HUD for Classic Era and Mists of Pandaria Classic.
 ## Author: DrVeoj
