@@ -10,6 +10,18 @@
 	Run:  lua5.1 Tools/harness.lua
 ----------------------------------------------------------------------------]]
 
+-- Scripts EVERY frame has, whatever type it is. A global rather than a local
+-- because this file is one enormous main chunk and Lua caps a function at 200
+-- locals - it is already near that ceiling - and because a table per widget
+-- would be thousands of copies of the same seventeen keys.
+_G.__UNIVERSAL_SCRIPTS = {
+	OnShow = true, OnHide = true, OnUpdate = true, OnEvent = true,
+	OnSizeChanged = true, OnEnter = true, OnLeave = true, OnLoad = true,
+	OnMouseDown = true, OnMouseUp = true, OnMouseWheel = true,
+	OnDragStart = true, OnDragStop = true, OnAttributeChanged = true,
+	OnKeyDown = true, OnKeyUp = true, OnReceiveDrag = true,
+}
+
 local FAIL = {}
 
 -- Refusals counted separately as well as failed. A blocked call already
@@ -1096,6 +1108,22 @@ function CreateFrame(kind, name, parent, template)
 	--  Modules/Tooltips.lua has to be correct under both - and why the suite
 	--  below drives it both ways round.
 	function f:HookScript(s, fn)
+		-- AND IT VALIDATES, exactly as SetScript above does.
+		--
+		-- SetScript was taught this and HookScript was not, and the gap shipped
+		-- a bug in 1.0.0: Reskin.CheckBox hooks OnClick, Panels called it on
+		-- ReputationBarNAtWarCheck - which is a plain <Frame> in Blizzard's
+		-- ReputationBarTemplate, not a control - and the client threw
+		--
+		--   ReputationBar15AtWarCheck:HookScript(): Doesn't have a "OnClick" script
+		--
+		-- on every character sheet with that many factions on it. The guard in
+		-- Toggle asks `if box.HookScript`, which every widget answers yes to;
+		-- the question that matters is whether the widget has the SCRIPT.
+		if not self:HasScript(s) then
+			error(("%s:HookScript(): Doesn't have a \"%s\" script")
+				:format(self.__kind or "Frame", tostring(s)), 2)
+		end
 		local prev = self.__scripts[s]
 		if not prev then
 			self.__scripts[s] = fn
@@ -1116,7 +1144,18 @@ function CreateFrame(kind, name, parent, template)
 	--  Frame, for CLEARING one as much as for setting one - which is how a
 	--  tidy-up loop that nils OnClick on everything it holds went out.
 	function f:HasScript(s)
-		if self.__hasScript then return self.__hasScript[s] and true or false end
+		-- THE UNIVERSAL ONES FIRST, and before any override.
+		--
+		-- `__hasScript` was written as a REPLACEMENT set, listing what a
+		-- GameTooltip has. That was harmless while only SetScript consulted it
+		-- and only OnTooltipSet* was ever asked. The moment HookScript began
+		-- validating too, an empty override - `anon.__hasScript = {}`, meaning
+		-- "no tooltip scripts" - started claiming a frame had no OnShow either,
+		-- which no frame in the game is true of.
+		--
+		-- So the override governs the SPECIAL scripts only. Every frame has
+		-- these, whatever it is.
+		if _G.__UNIVERSAL_SCRIPTS[s] then return true end
 		if s == "OnClick" then
 			-- CASE-INSENSITIVE, and templates count. CreateFrame takes the kind
 			-- in whatever case the caller typed it - AceGUI says "BUTTON" - and
@@ -1127,6 +1166,7 @@ function CreateFrame(kind, name, parent, template)
 			local t = tostring(self.__template or "")
 			return t:lower():find("button", 1, true) ~= nil
 		end
+		if self.__hasScript then return self.__hasScript[s] and true or false end
 		return true
 	end
 
@@ -5453,8 +5493,23 @@ do
 
 		for i = 1, _G.NUM_FACTIONS_DISPLAYED do
 			local bar = CreateFrame("StatusBar", "ReputationBar" .. i, cf)
-			CreateFrame("CheckButton", "ReputationBar" .. i .. "AtWarCheck", bar)
-				:SetNormalTexture("checkbox-up")
+			-- A FRAME, WHICH IS WHAT THE CLIENT MAKES IT.
+			--
+			-- ReputationBarTemplate carries `<Frame name="$parentAtWarCheck"
+			-- hidden="true">` - the crossed swords that appear beside a faction
+			-- you are at war with. It is an INDICATOR, not a control: it has no
+			-- OnClick and it never had one.
+			--
+			-- This was a CheckButton here, and the name is what did it: a thing
+			-- called AtWarCheck reads like a check box, Panels reskinned it as
+			-- one, and the mock agreed. On the live client the OnClick hook
+			-- inside Reskin.CheckBox threw and took the character sheet's
+			-- dressing with it.
+			local war = CreateFrame("Frame", "ReputationBar" .. i .. "AtWarCheck", bar)
+			war:Hide()
+			war.__swords = war:CreateTexture(nil, "OVERLAY")
+			war.__swords:SetTexture(
+				[[Interface\PVPFrame\UI-Character-PVP-Highlight]])
 		end
 
 		for i = 1, _G.SKILLS_TO_DISPLAY do
@@ -9700,7 +9755,27 @@ fire("PLAYER_ENTERING_WORLD")
 
 print("== assertions ==")
 
+--- Failures the ADDON swallowed, gathered as the suite goes.
+--
+--  Panels, Zen and OptionsSkin all dress inside a pcall and record the error in
+--  A.lastFailure rather than raising - which is right, because one bad window
+--  must not take the other twenty-two down with it. The cost is that a broken
+--  window is SILENT here, and 1.0.0 shipped a character sheet that threw on
+--  first open because of it.
+--
+--  Sampling A.lastFailure at a chosen moment does not work: the failure is
+--  TRANSIENT. Reskin.CheckBox sets its hooked flag before it hooks, so the
+--  first dress throws and every dress after it skips the hook and succeeds -
+--  and the next module enable sets lastFailure back to nil. By the time
+--  anything looks, there is nothing to see.
+--
+--  So it is drained on every check() call and kept. A test that provokes a
+--  failure on purpose acknowledges it by clearing __swallowed alongside
+--  A.lastFailure; anything left at the end is a real one nobody looked at.
+_G.__swallowed = {}
+
 local function check(cond, msg)
+	if A and A.lastFailure then _G.__swallowed[A.lastFailure] = true end
 	if cond then
 		print("  ok  " .. msg)
 	else
@@ -10913,14 +10988,14 @@ do
 	check(UIParent:GetAlpha() < 0.05, "back in zen, interface down")
 	local realUpdate = Z.UpdateBars
 	Z.UpdateBars = function() error("deliberate") end
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	tick(0.1)
 	Z.UpdateBars = realUpdate
 	check(UIParent:GetAlpha() == 1 and Minimap:GetAlpha() == 1,
 		"an error inside the tick puts the interface back rather than leaving it"
 		.. " invisible until a reload")
 	check((A.lastFailure or ""):find("zen"), "and says so")
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	A.Fader:Touch()
 	A.Fader:Update()
 	for i = 1, 20 do tick(0.1) end
@@ -12045,7 +12120,7 @@ do
 
 	-- Blizzard calls these to put its own look back; we are hooked onto them, so
 	-- running the whole skin twice has to be safe.
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	C:Reskin()
 	C:Reskin()
 	check(A.lastFailure == nil and not _G.ChatFrame1Background:IsShown(),
@@ -12167,7 +12242,7 @@ do
 	-- it means a nil global string and a red error on every single login, since
 	-- joining General fires YOU_CHANGED. DeliverChatMessage fails outright if
 	-- the token comes through changed, so this is a real assertion.
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	local notice = DeliverChatMessage(f, "CHAT_MSG_CHANNEL_NOTICE",
 		"YOU_CHANGED", "", "", "1. General - Durotar", "", "", 0, 1, "General", 0, 83)
 	check(A.lastFailure == nil and notice
@@ -12459,7 +12534,7 @@ do
 end
 
 print("== skins ==")
-A.lastFailure = nil
+A.lastFailure = nil _G.__swallowed = {}
 SlashCmdList["AETHERUI"]("skin " .. OTHER)
 check(A.Palette.current == OTHER, "skin switched to " .. OTHER)
 SlashCmdList["AETHERUI"]("skin midnight")
@@ -12487,7 +12562,7 @@ do
 				local info = { arg = opt.arg, type = "toggle" }
 				local before = opt.get(info)
 				for _, v in ipairs({ not before, before }) do
-					A.lastFailure = nil
+					A.lastFailure = nil _G.__swallowed = {}
 					local ok, err = pcall(opt.set, info, v)
 					if not ok then
 						failures[#failures + 1] = where .. " threw: " .. tostring(err)
@@ -12507,7 +12582,7 @@ do
 			.. (#failures > 1 and ("  (+" .. (#failures - 1) .. " more)") or "")) or ""))
 
 	-- put the world back
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	A:Restyle()
 	A:Reconfigure()
 	check(A.lastFailure == nil, "and the suite is left in a working state")
@@ -16356,7 +16431,7 @@ do
 	-- it produced fourteen blocked-action reports per fight.
 	local savedBuffs = _G.__auras.player.HELPFUL
 	_G.__inCombat = true
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 
 	_G.__auras.player.HELPFUL = {
 		{ "Arcane Intellect", "T1", 0, nil, 1800, GetTime() + 1500, true },
@@ -17922,7 +17997,7 @@ section("menus: a client without them costs a skin, not the interface", function
 
 	local keep1, keep2 = _G.MenuStyle1Mixin, _G.MenuStyle2Mixin
 	_G.MenuStyle1Mixin, _G.MenuStyle2Mixin = nil, nil
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	A:SetModuleEnabled("menus", true)
 	check(A.lastFailure == nil,
 		"enabling against a client with no menu system raises nothing (" ..
@@ -18308,7 +18383,7 @@ section("options: our own settings, in our own interface", function()
 	-- THE STANDALONE WINDOW has three parts a plain container does not, and all
 	-- three are anchored to art we have just taken off.
 	local win = gui:Create("Frame")
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	M.Dress(win)
 	check(A.lastFailure == nil,
 		"dressing the window raises nothing (" .. tostring(A.lastFailure) .. ")")
@@ -18404,7 +18479,7 @@ section("options: our own settings, in our own interface", function()
 		after .. " of " .. n .. ")")
 
 	-- A TYPE WE DO NOT DRESS IS LEFT ALONE, not guessed at.
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	local ok = pcall(M.Dress, { type = "SomethingElse", frame = CreateFrame("Frame") })
 	check(ok and A.lastFailure == nil,
 		"a widget type this does not know is passed over in silence")
@@ -18413,7 +18488,7 @@ section("options: our own settings, in our own interface", function()
 	-- somebody else's frames, built by a library that changes shape between
 	-- versions, and a settings panel that errors is worse than one that looks
 	-- like Blizzard's.
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	ok = pcall(M.Dress, { type = "Slider" })   -- no slider, no editbox, no frame
 	check(ok, "a dresser handed a widget with nothing on it raises nothing")
 end)
@@ -28210,6 +28285,29 @@ do
 	A.Palette:Apply(wasSkin or "midnight")
 end
 
+print("== panels: nothing threw on the way in ==")
+do
+	-- THE CHECK THIS FILE DID NOT HAVE, and 1.0.0 shipped a broken character
+	-- sheet because of it.
+	--
+	-- Panels dresses each window inside a pcall and records the error in
+	-- A.lastFailure rather than raising - correct behaviour, because one bad
+	-- window must not take the other twenty-two down with it. But it means a
+	-- window that throws is SILENT: the suite ran green while the reputation
+	-- pane on the live client died with
+	--
+	--   panels CharacterFrame: ReputationBar15AtWarCheck:HookScript():
+	--   Doesn't have a "OnClick" script
+	--
+	-- There is a check like this at the end of the boot section, but the
+	-- windows are not dressed until one is opened, which is here. A swallowed
+	-- error needs somebody to look in the place it was swallowed into.
+	check(A.lastFailure == nil,
+		"no window errored while being dressed: " .. tostring(A.lastFailure))
+	A.lastFailure = nil _G.__swallowed = {}
+end
+
+
 print("== panels: the client's windows in our glass ==")
 do
 	local PNm = A:GetModule("panels")
@@ -28299,6 +28397,16 @@ do
 		"the panes inside lose their stone as well")
 
 	check(_G.ReputationBar1.__aetherFill ~= nil, "a reputation bar takes our fill")
+
+	-- AND THE THING BESIDE IT IS NOT A CONTROL. $parentAtWarCheck is a 24x22
+	-- frame holding the crossed swords, shown when you are at war with that
+	-- faction. It reads like a check box and was reskinned as one, which threw
+	-- on the live client and left the sheet undressed. The guard in Reskin
+	-- means it no longer throws - so what is checked here is the OTHER half:
+	-- that nothing draws a tick box over the swords.
+	check(_G.ReputationBar1AtWarCheck.__aetherCheck == nil,
+		"the at-war indicator is left alone - crossed swords, not a control,"
+		.. " and no glass equivalent of \"at war\" to replace them with")
 	check(_G.ReputationBar1:GetStatusBarTexture():GetTexture() == A.Media.texture.bar,
 		"set AFTER the strip, which empties the fill along with everything else")
 
@@ -31819,7 +31927,7 @@ section("profiles: nothing keeps a reference to a config table", function()
 	-- them where it lived.
 	A.db:SetProfile(was)
 	_G.__inCombat = true
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	A.db:SetProfile("__profiletest")
 
 	local liveNow = {}
@@ -32046,12 +32154,12 @@ section("skins: things that are not modules get told too", function()
 	A:OnSkinChanged(function() error("deliberate") end)
 	local after = 0
 	A:OnSkinChanged(function() after = after + 1 end)
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 	A:Restyle()
 	check(after == 1,
 		"a listener that errors does not stop the ones behind it")
 	check(A.lastFailure ~= nil, "and the failure is recorded rather than swallowed")
-	A.lastFailure = nil
+	A.lastFailure = nil _G.__swallowed = {}
 end)
 
 print("== skins: chat ink follows the skin, because it is not baked in ==")
@@ -40047,6 +40155,29 @@ do
 	OB:Teardown()
 end
 
+
+-- ---------------------------------------------------------------------------
+-- anything the addon swallowed and nobody looked at
+-- ---------------------------------------------------------------------------
+
+print("== nothing was swallowed ==")
+do
+	local left = {}
+	for msg in pairs(_G.__swallowed) do
+		-- The skin-listener test registers a listener that raises "deliberate"
+		-- to prove one bad listener does not stop the ones behind it, and there
+		-- is no way to unregister a listener - so it fires on every Restyle for
+		-- the rest of the run. Named rather than counted: a whitelist of one
+		-- string is honest; a tolerance of "up to N failures" is not.
+		if not tostring(msg):find("deliberate", 1, true) then
+			left[#left + 1] = msg
+		end
+	end
+	table.sort(left)
+	check(#left == 0, #left == 0
+		and "no module or window recorded a failure that went unexamined"
+		or ("a failure was recorded and never looked at: " .. table.concat(left, " | ")))
+end
 
 print("")
 if #FAIL == 0 then

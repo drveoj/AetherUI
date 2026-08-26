@@ -2867,12 +2867,30 @@ local function DressCharacter(frame, store)
 	end
 
 	-- Reputation: one bar per faction row, plus the list's scroll bar.
+	--
+	-- AND NOT $parentAtWarCheck, WHICH IS NOT A CHECK BOX. The name reads like
+	-- one and it was reskinned as one; ReputationBarTemplate declares it
+	--
+	--   <Frame name="$parentAtWarCheck" hidden="true">
+	--
+	-- a 24x22 frame holding the crossed swords, shown when you are at war with
+	-- that faction. An INDICATOR, with no OnClick and never any - so the hook
+	-- inside Reskin.CheckBox threw:
+	--
+	--   ReputationBar15AtWarCheck:HookScript(): Doesn't have a "OnClick" script
+	--
+	-- and took the whole character sheet's dressing down with it. Once per
+	-- open, too, rather than once ever: Toggle sets its hooked flag BEFORE it
+	-- hooks, so each attempt died on the next bar that had not been reached
+	-- yet, and the sheet came up undressed for as many opens as there are
+	-- faction rows. Fifteen of them, which is the number in the report.
+	--
+	-- The swords are LEFT AS THEY ARE, for the same reason the resistance
+	-- chips above keep their school icons: the picture is the information, and
+	-- there is no glass equivalent of "at war".
 	for n = 1, (_G.NUM_FACTIONS_DISPLAYED or 0) do
 		local bar = _G["ReputationBar" .. n]
 		if bar then Reskin.StatusBar(bar, store) end
-
-		local war = _G["ReputationBar" .. n .. "AtWarCheck"]
-		if war then Reskin.CheckBox(war, store) end
 	end
 
 	-- More rows first, so the loop below skins the ones we just added too.
