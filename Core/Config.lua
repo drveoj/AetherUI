@@ -83,8 +83,16 @@ Config.defaults = {
 		-- one, and shipped as the default on the strength of it. 0.71 is a
 		-- taste, and a taste for one particular monitor at that.
 		--
-		-- Anyone who wants it smaller has a slider and /aether scale.
-		scale       = 1.0,
+		-- SO IT IS NOT A CONSTANT ANY MORE. Every number in this addon is a
+		-- screen pixel measured off a real display, and profile.scale is what
+		-- turns those into the client's virtual units - so the right value is
+		-- 768 / screen height / the client's own UI scale, and that is a
+		-- property of the monitor, not of anybody's taste.
+		--
+		-- 0 means "not chosen yet" and is replaced by A:FittedScale() the first
+		-- time a profile is used. A number that is already saved is the
+		-- player's and is left alone, slider and /aether scale included.
+		scale       = 0,
 		debug       = false,
 
 		-- One line at login saying which build this is. On by default: the
@@ -1093,13 +1101,37 @@ function Config:Initialize()
 	local AceDB = LibStub("AceDB-3.0")
 	A.db = AceDB:New("AetherUIDB", Config.defaults, true)
 	Migrate(A.db)
+	Config.FitScale()
 
 	-- All three through the one path. A copy and a reset rewrite the tables
 	-- under a module exactly as a switch does, so a module holding a
 	-- reference is just as wrong after either of them.
-	A.db.RegisterCallback(A, "OnProfileChanged", function() A:ProfileChanged() end)
-	A.db.RegisterCallback(A, "OnProfileCopied",  function() A:ProfileChanged() end)
-	A.db.RegisterCallback(A, "OnProfileReset",   function() A:ProfileChanged() end)
+	--  ...AND FIRST, because a fresh profile arrives carrying the 0 sentinel
+	--  and every module that reads profile.scale is about to be rebuilt at it.
+	--  A frame at scale 0 is not small, it is absent.
+	A.db.RegisterCallback(A, "OnProfileChanged", function()
+		Config.FitScale() A:ProfileChanged()
+	end)
+	A.db.RegisterCallback(A, "OnProfileCopied",  function()
+		Config.FitScale() A:ProfileChanged()
+	end)
+	A.db.RegisterCallback(A, "OnProfileReset",   function()
+		Config.FitScale() A:ProfileChanged()
+	end)
+end
+
+--- Give a profile that has never had a scale the one this monitor asks for.
+--
+--  ONLY WHEN IT HAS NONE. A saved number is the player's answer and is never
+--  overwritten - not on a reload, not when they plug in another monitor. The
+--  way back to the fitted value is /aether scale fit, which is a thing they
+--  asked for rather than a thing that happened to them.
+function Config.FitScale()
+	local p = A.db and A.db.profile
+    if not p then return end
+	if type(p.scale) ~= "number" or p.scale <= 0 then
+		p.scale = A:FittedScale()
+	end
 end
 
 --- Convenience accessor: A.Config:Module("unitframes")

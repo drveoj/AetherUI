@@ -115,6 +115,28 @@ function A:UpdatePixelScale()
 	A.pixel = p
 end
 
+--- The profile scale at which one design unit is one screen pixel.
+--
+--  EVERY NUMBER IN THIS ADDON IS A SCREEN PIXEL. The 62-unit action slot, the
+--  15-unit inset, the textures - all authored against a real display and
+--  measured off it. What turns those into virtual units is profile.scale, and
+--  the right value for it is not a taste: it is 768 / screen height / the
+--  client's own UI scale, which is exactly A.pixel.
+--
+--  Shipping 1.0 assumed a 768-tall screen, which no monitor is. On a 1080-tall
+--  display with the client's UI Scale off that made every slot 1.4x the size it
+--  was drawn at; on a 1440-tall one, 1.9x. It is why the action bars looked
+--  twice the size of Blizzard's.
+--
+--  Clamped to the slider's own range so a peculiar display cannot produce a
+--  number the player then cannot move.
+function A:FittedScale()
+	A:UpdatePixelScale()
+	local s = A.pixel
+	if s ~= s or s <= 0 then return 1 end
+	return math.max(0.4, math.min(2.0, math.floor(s * 100 + 0.5) / 100))
+end
+
 --- Snap a virtual-unit value onto the physical pixel grid.
 function A:Snap(v)
 	local p = A.pixel

@@ -2420,21 +2420,6 @@ function OB:OnConfigChanged()
 	if self.index then self:Go(self.index) end
 end
 
---- The scale is a setting, and a setting can move while the tour is up.
---
---  APPLIED IN THE BUILDER AND AGAIN HERE, which is the pattern every other
---  module in this addon follows for the same reason: a scale set once at build
---  time is a scale that is right until somebody touches the slider, and the
---  tour is the one surface a player is most likely to be looking at while they
---  do - the layout stop changes it under them.
-function OB:OnConfigChanged()
-	if not self.scrim then return end
-	Rescale(self.scrim)
-	-- And the callout is placed from pixel arithmetic that has just changed
-	-- under it, so it has to be placed again.
-	if self.index then self:Go(self.index) end
-end
-
 function OB:OnDisable()
 	self:Teardown()
 end

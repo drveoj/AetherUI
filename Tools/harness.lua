@@ -27385,11 +27385,46 @@ do
 	SlashCmdList["AETHERUI"]("debug off")
 	check(A.db.profile.debug == false, "and off again")
 
-	check(A.Config.defaults.profile.scale == 1.0,
-		"the default scale is 1, which is what a 1920x1080 screen wants. It was"
-		.. " 0.71 under a comment deriving it from the DECK's proportions, which"
-		.. " is sound arithmetic about the deck and was never a claim about what"
-		.. " a player should get")
+	-- THE DEFAULT SCALE IS NOT A NUMBER. It was 0.71 under a comment deriving
+	-- it from a Steam Deck, then 1.0 under one saying 0.71 was a taste - and
+	-- both were constants where the right answer is a property of the monitor.
+	-- Every size in this addon is a screen pixel measured off a real display,
+	-- and profile.scale is what turns those into virtual units: 768 / screen
+	-- height / the client's own UI scale, which is what A.pixel already is.
+	--
+	-- Shipping 1.0 is the claim that the player's UI Scale is at maximum. With
+	-- it off on a 1080-tall screen every slot came out 1.4x the size it was
+	-- drawn at, and on 1440 1.9x - which is what "the action bars are twice
+	-- the size of Blizzard's" was.
+	check(A.Config.defaults.profile.scale == 0,
+		"the shipped default is the 0 sentinel, not a size for somebody else's"
+		.. " monitor")
+
+	-- The mock's screen is 2560x1440 with the client's UI scale at 1, so one
+	-- design pixel is 768/1440 of a virtual unit.
+	check(math.abs(A:FittedScale() - 0.53) < 0.005,
+		"and this screen asks for " .. string.format("%.2f", A:FittedScale())
+		.. " (768 / 1440 / 1)")
+	-- A NUMBER ALREADY SAVED IS THE PLAYER'S. Fitting runs on a profile that
+	-- carries the sentinel and on no other, so a reload does not walk over a
+	-- scale somebody chose.
+	A.db.profile.scale = 1.25
+	A.Config.FitScale()
+	check(A.db.profile.scale == 1.25, "and a scale already chosen is left alone")
+	A.db.profile.scale = 0
+	A.Config.FitScale()
+	check(math.abs(A.db.profile.scale - A:FittedScale()) < 0.005,
+		"while the sentinel is filled in again")
+
+	-- AND THERE IS A WAY BACK. Fitting never runs again on its own, so a
+	-- player who has moved the slider and wants the drawn sizes has to be able
+	-- to ask - with a word, not a number they would have to work out.
+	A.db.profile.scale = 1.4
+	SlashCmdList["AETHERUI"]("scale fit")
+	check(math.abs(A.db.profile.scale - A:FittedScale()) < 0.005,
+		"and /aether scale fit asks for it by name ("
+		.. string.format("%.2f", A.db.profile.scale) .. ")")
+	A.db.profile.scale = 1.0
 
 	check(math.abs(RAID_CLASS_COLORS.SHAMAN.r - 0.96) < 0.004
 		and math.abs(RAID_CLASS_COLORS.SHAMAN.b - 0.73) < 0.004,
@@ -39304,6 +39339,17 @@ end
 print("== onboarding: the tour IS the setup ==")
 do
 	local OB = A:GetModule("onboard")
+
+	-- AT A STATED SCALE. Every coordinate below is a screen position picked
+	-- against a callout of a particular size, and the callout is drawn at
+	-- profile.scale - so this block was silently reading whatever the last
+	-- section left behind. It said so the day the shipped default stopped
+	-- being a constant: at the fitted 0.53 the callout is small enough that
+	-- an element at y 950 needs no pushing, and the check that it gets pushed
+	-- failed. The numbers here mean 1.0; now they say it.
+	local wasCalloutScale = A.db.profile.scale
+	A.db.profile.scale = 1.0
+	OB:OnConfigChanged()
 	-- BY KEY, NOT BY NUMBER. Everything below used to address its stop by
 	-- index, and inserting the zen stop at four moved five of them - which
 	-- showed up as ten failures in three unrelated features. A stop's key is
@@ -40295,6 +40341,7 @@ do
 	check(OB:Completed(), "and Done marks the character done")
 
 	A.db.char.onboard = {}
+	A.db.profile.scale = wasCalloutScale
 end
 
 print("== onboarding: the first run, the resume and the alt ==")

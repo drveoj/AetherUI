@@ -202,10 +202,10 @@ L["cmd.quests.tracking_reset"] = "tracking reset."
 
 L["cmd.scale.scale_2f"] = "scale -> %.2f"
 L["cmd.scale.scale_takes_0_6"] =
-	"scale takes 0.6 - 1.6 (currently %.2f). 1.0 is the default; 0.71 "
-		.. "is what maps the concept deck's own 1920px measurements onto WoW's "
-		.. "virtual space one-for-one, if you want everything at exactly the "
-		.. "size it was drawn."
+	"scale takes 0.6 - 1.6, or fit (currently %.2f). Every size in AetherUI "
+		.. "is a screen pixel measured off a real display; fit is the scale "
+		.. "that draws them at exactly that size on yours, and is what a new "
+		.. "profile starts at."
 
 L["cmd.shadow.shadow_takes_0_1"] =
 	"shadow takes 0 - 1 (currently %s). It is an opacity, not a "
