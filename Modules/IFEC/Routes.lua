@@ -4,6 +4,10 @@
 	Written by Tools/taxidata.py from the client's own DB2 export, build
 	1.15.9.69109. Edit the generator, not this file.
 
+	ONE CLIENT'S TABLE. Cataclysm renamed flight points, and these
+	are keyed on the name TaxiNodeName returns - so the other flavour
+	has a file of its own, and this one stands down when it is not it.
+
 	Seconds per SINGLE-HOP leg, keyed [from][to] on the names TaxiNodeName
 	returns. A multi-hop journey is the sum of its legs - proved against
 	measured flights, and the reason only legs are stored.
@@ -12,6 +16,8 @@
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
+
+if A.isMists then return end
 
 A.IFEC_ROUTE_BUILD = "1.15.9.69109"
 A.IFEC_TAXI_SPEED  = 30.122

@@ -10,7 +10,13 @@ so the polyline already traces the curve - the "splines make point-to-point
 summation underestimate" correction is not needed and is not applied. Fitted
 against nine real flights the residuals are under a second.
 
-    python Tools/taxidata.py [--csv DIR] [--dry-run]
+TWO CLIENTS, TWO TABLES. Cataclysm renamed flight points - Era's
+"Crossroads, The Barrens" is "The Crossroads, Northern Barrens" on Mists -
+and the tables are keyed on the name TaxiNodeName returns, so one table
+cannot serve both. Each build in data/taxi gets its own generated file and
+each file refuses to build its table on the client it is not for.
+
+    python Tools/taxidata.py [--csv DIR] [--build 5.5.4.69383] [--dry-run]
 """
 
 import argparse
@@ -28,7 +34,13 @@ REPO = os.path.dirname(HERE)
 # including this machine after a tidy-up.
 DEFAULT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "data", "taxi")
-OUT = os.path.join(REPO, "Modules", "IFEC", "Routes.lua")
+# Which client a build belongs to, and where its table is written. Keyed on
+# the leading version so a new build of either flavour needs no edit here.
+FLAVOURS = {
+    "1.15": ("era",   "A.isMists",     "Routes.lua"),
+    "5.5":  ("mists", "not A.isMists", "Routes_Mists.lua"),
+}
+OUTDIR = os.path.join(REPO, "Modules", "IFEC")
 
 # Yards per second. Fitted against nine measured flights spanning six zones;
 # they imply 30.00-30.31 and the fit lands at 30.122 with a worst error of
@@ -41,25 +53,40 @@ TAXI_SPEED = 30.122
 PSEUDO_PREFIXES = ("Transport,", "Generic,")
 
 
-def read(csv_dir, table):
-    """The one CSV for `table`, whatever build suffix it carries."""
-    hits = [f for f in os.listdir(csv_dir)
-            if f.startswith(table + ".") and f.endswith(".csv")]
-    if not hits:
-        sys.exit("no CSV for %s in %s" % (table, csv_dir))
-    if len(hits) > 1:
-        sys.exit("more than one CSV for %s: %s" % (table, ", ".join(sorted(hits))))
-    with open(os.path.join(csv_dir, hits[0]), encoding="utf-8-sig", newline="") as f:
-        return hits[0], list(csv.DictReader(f))
+def builds(csv_dir):
+    """Every build the CSV directory holds, by the stamp in the filename.
+
+    TaxiNodes.1.15.9.69109.csv -> 1.15.9.69109, and the other two tables are
+    expected under the same stamp.
+    """
+    found = sorted(f[len("TaxiNodes."):-len(".csv")]
+                   for f in os.listdir(csv_dir)
+                   if f.startswith("TaxiNodes.") and f.endswith(".csv"))
+    if not found:
+        sys.exit("no TaxiNodes CSV in %s" % csv_dir)
+    return found
 
 
-def build(csv_dir):
-    nodes_file, node_rows = read(csv_dir, "TaxiNodes")
-    _, path_rows = read(csv_dir, "TaxiPath")
-    _, point_rows = read(csv_dir, "TaxiPathNode")
+def flavour(build_id):
+    for prefix, spec in FLAVOURS.items():
+        if build_id.startswith(prefix + "."):
+            return spec
+    sys.exit("no flavour known for build %s - add it to FLAVOURS" % build_id)
 
-    # The build stamp is in the filename: TaxiNodes.1.15.9.69109.csv
-    build_id = nodes_file[len("TaxiNodes."):-len(".csv")]
+
+def read(csv_dir, table, build_id):
+    """The CSV for `table` at this build."""
+    path = os.path.join(csv_dir, "%s.%s.csv" % (table, build_id))
+    if not os.path.exists(path):
+        sys.exit("missing %s" % path)
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def build(csv_dir, build_id):
+    node_rows = read(csv_dir, "TaxiNodes", build_id)
+    path_rows = read(csv_dir, "TaxiPath", build_id)
+    point_rows = read(csv_dir, "TaxiPathNode", build_id)
 
     names = {}
     for r in node_rows:
@@ -111,10 +138,10 @@ def build(csv_dir):
         if len(secs) > 1 and (max(secs) - min(secs)) > 1.0:
             fuzzy.append(key)
 
-    return build_id, out, skipped, delayed, sorted(fuzzy)
+    return out, skipped, delayed, sorted(fuzzy)
 
 
-def emit(build_id, legs, fuzzy):
+def emit(build_id, legs, fuzzy, guard):
     by_from = {}
     for (a, b), secs in legs.items():
         by_from.setdefault(a, {})[b] = secs
@@ -127,6 +154,10 @@ def emit(build_id, legs, fuzzy):
     w("\tWritten by Tools/taxidata.py from the client's own DB2 export, build")
     w("\t%s. Edit the generator, not this file." % build_id)
     w("")
+    w("\tONE CLIENT\'S TABLE. Cataclysm renamed flight points, and these")
+    w("\tare keyed on the name TaxiNodeName returns - so the other flavour")
+    w("\thas a file of its own, and this one stands down when it is not it.")
+    w("")
     w("\tSeconds per SINGLE-HOP leg, keyed [from][to] on the names TaxiNodeName")
     w("\treturns. A multi-hop journey is the sum of its legs - proved against")
     w("\tmeasured flights, and the reason only legs are stored.")
@@ -135,6 +166,11 @@ def emit(build_id, legs, fuzzy):
     w("----------------------------------------------------------------------------]]")
     w("")
     w("local ADDON, A = ...")
+    w("")
+    # NOT THIS CLIENT'S TABLE, so it is never built. The file is in the list
+    # on both flavours - one .toc, see AetherUI.toc - and the whole cost of
+    # the one that does not apply is compiling a chunk that returns at once.
+    w("if %s then return end" % guard)
     w("")
     w("A.IFEC_ROUTE_BUILD = %s" % lua_str(build_id))
     # Recorded rather than used: the durations below are already baked.
@@ -175,32 +211,39 @@ def fmt(x):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--csv", default=DEFAULT_CSV, help="directory holding the three CSVs")
+    ap.add_argument("--csv", default=DEFAULT_CSV, help="directory holding the CSVs")
+    ap.add_argument("--build", help="one build stamp; default is every build present")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    build_id, legs, skipped, delayed, fuzzy = build(args.csv)
-    text = emit(build_id, legs, fuzzy)
+    for build_id in ([args.build] if args.build else builds(args.csv)):
+        name, guard, out_file = flavour(build_id)
+        legs, skipped, delayed, fuzzy = build(args.csv, build_id)
+        text = emit(build_id, legs, fuzzy, guard)
 
-    froms = len({a for a, _ in legs})
-    print("  build      %s" % build_id)
-    print("  legs       %d  (from %d origin nodes)" % (len(legs), froms))
-    print("  skipped    %d  (boats, zeppelins and their aiming points)" % skipped)
-    print("  with delay %d" % delayed)
-    print("  two-path   %d  (mean taken, learner overrides)" % len(fuzzy))
-    print("  speed      %s yd/s" % fmt(TAXI_SPEED))
+        froms = len({a for a, _ in legs})
+        oneway = sum(1 for (a, b) in legs if (b, a) not in legs)
+        print("  build      %s  (%s)" % (build_id, name))
+        print("  legs       %d  (from %d origin nodes)" % (len(legs), froms))
+        print("  skipped    %d  (boats, zeppelins and their aiming points)"
+              % skipped)
+        print("  with delay %d" % delayed)
+        print("  two-path   %d  (mean taken, learner overrides)" % len(fuzzy))
+        print("  speed      %s yd/s" % fmt(TAXI_SPEED))
+        print("  one-way    %d" % oneway)
 
-    oneway = sum(1 for (a, b) in legs if (b, a) not in legs)
-    print("  one-way    %d" % oneway)
-
-    if args.dry_run:
-        print("  (dry run, nothing written)")
-        return
-
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w", encoding="utf-8", newline="\r\n") as f:
-        f.write(text)
-    print("  wrote      %s" % os.path.relpath(OUT, REPO))
+        if args.dry_run:
+            print("  (dry run, nothing written)")
+        else:
+            # LF, like every other file here - .gitattributes says the tree
+            # is authored with LF and copied verbatim into the AddOns folder,
+            # and this generator was the one thing writing CRLF into it.
+            os.makedirs(OUTDIR, exist_ok=True)
+            out = os.path.join(OUTDIR, out_file)
+            with open(out, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+            print("  wrote      %s" % os.path.relpath(out, REPO))
+        print("")
 
 
 if __name__ == "__main__":

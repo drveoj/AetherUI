@@ -45,6 +45,24 @@ _G.__mists = _G.__flavour == "mists"
 WOW_PROJECT_ID = _G.__mists and WOW_PROJECT_MISTS_CLASSIC or WOW_PROJECT_CLASSIC
 print(("== running as %s (WOW_PROJECT_ID %d) =="):format(_G.__flavour, WOW_PROJECT_ID))
 
+-- CATACLYSM RENAMED TWO FLIGHT POINTS THIS FILE USES. The taxi checks name
+-- real ones, because the route table is keyed on the name the client returns -
+-- and Ratchet and the Crossroads are spelled differently on Mists. Nothing
+-- else these checks name was touched, so the map is two lines rather than a
+-- second set of expectations.
+_G.__NODES = {
+	["Ratchet, The Barrens"]    = "Ratchet, Northern Barrens",
+	["Crossroads, The Barrens"] = "The Crossroads, Northern Barrens",
+	-- And one that moved rather than being renamed: the Un'Goro camp is
+	-- Marshal's Stand from Cataclysm on.
+	["Marshal's Refuge, Un'Goro Crater"] = "Marshal's Stand, Un'Goro Crater",
+}
+
+--- This client's name for a flight point, given Era's.
+function _G.__node(era)
+	return _G.__mists and _G.__NODES[era] or era
+end
+
 -- Scripts EVERY frame has, whatever type it is. A global rather than a local
 -- for the reason given above the flavour block: this chunk is near Lua's
 -- 200-local ceiling, and one table per widget would be thousands of copies.
@@ -9841,7 +9859,8 @@ local FILES = {
 	"Modules/Zen.lua",
 	"Modules/Toolbox.lua",
 	"Modules/Onboard.lua",
-	"Modules/IFEC/Routes.lua", "Modules/IFEC/Route.lua",
+	"Modules/IFEC/Routes.lua", "Modules/IFEC/Routes_Mists.lua",
+	"Modules/IFEC/Route.lua",
 	"Modules/IFEC/Taxi.lua", "Modules/IFEC/Console.lua",
 	"Modules/IFEC/Registry.lua", "Modules/IFEC/Content.lua",
 	"Modules/IFEC/Playback.lua", "Modules/IFEC/Player.lua",
@@ -34274,7 +34293,11 @@ end
 section("ifec: the route table, against flights that were actually flown", function()
 	local Route = A.IFEC and A.IFEC.Route
 	check(Route ~= nil, "the route lookup loaded")
-	check(A.IFEC_ROUTE_BUILD == "1.15.9.69109",
+	-- ONE TABLE PER CLIENT, and the one that loaded has to be this client's.
+	-- Both files are in the .toc; each returns at once when it is not wanted,
+	-- so the wrong build here means the guard in one of them is wrong.
+	local WANT_BUILD = _G.__mists and "5.5.4.69383" or "1.15.9.69109"
+	check(A.IFEC_ROUTE_BUILD == WANT_BUILD,
 		"the table was generated from the client's own build (" ..
 		tostring(A.IFEC_ROUTE_BUILD) .. ")")
 
@@ -34288,15 +34311,22 @@ section("ifec: the route table, against flights that were actually flown", funct
 	-- These are the whole justification for the generated table: they are what
 	-- the taxi speed was fitted against, and a change to the generator that
 	-- moves any of them is a change that needs looking at.
-	local FLOWN = {
-		{ "Camp Taurajo, The Barrens",    "Crossroads, The Barrens",           79 },
-		{ "Crossroads, The Barrens",      "Orgrimmar, Durotar",               141 },
-		{ "Crossroads, The Barrens",      "Ratchet, The Barrens",              51 },
-		{ "Crossroads, The Barrens",      "Splintertree Post, Ashenvale",     162 },
-		{ "Orgrimmar, Durotar",           "Crossroads, The Barrens",          109 },
-		{ "Ratchet, The Barrens",         "Crossroads, The Barrens",           68 },
+	--
+	-- ERA ONLY, because these are Era flights. Mists flies the same names over
+	-- different ground - Orgrimmar to the Crossroads is 38 yards further - and
+	-- one of the nine, Camp Taurajo, was razed in Cataclysm and has no flight
+	-- master at all. The speed constant is shared, and the one measured Mists
+	-- flight agrees with it to 1.2s; saying more would need nine of them, and
+	-- until they are flown there is nothing here to check.
+	local FLOWN = _G.__mists and {} or {
+		{ "Camp Taurajo, The Barrens",    __node("Crossroads, The Barrens"),           79 },
+		{ __node("Crossroads, The Barrens"),      "Orgrimmar, Durotar",               141 },
+		{ __node("Crossroads, The Barrens"),      __node("Ratchet, The Barrens"),              51 },
+		{ __node("Crossroads, The Barrens"),      "Splintertree Post, Ashenvale",     162 },
+		{ "Orgrimmar, Durotar",           __node("Crossroads, The Barrens"),          109 },
+		{ __node("Ratchet, The Barrens"),         __node("Crossroads, The Barrens"),           68 },
 		{ "Splintertree Post, Ashenvale", "Orgrimmar, Durotar",                95 },
-		{ "Thunder Bluff, Mulgore",       "Crossroads, The Barrens",          158 },
+		{ "Thunder Bluff, Mulgore",       __node("Crossroads, The Barrens"),          158 },
 		{ "Undercity, Tirisfal",          "The Sepulcher, Silverpine Forest", 106 },
 	}
 
@@ -34315,9 +34345,12 @@ section("ifec: the route table, against flights that were actually flown", funct
 
 	-- DIRECTIONAL. The same two nodes take different times each way, so a table
 	-- that stored one figure per pair would be half a minute out on one of them.
-	local there = Route:Leg("Orgrimmar, Durotar", "Crossroads, The Barrens")
-	local back  = Route:Leg("Crossroads, The Barrens", "Orgrimmar, Durotar")
-	check(there and back and math.abs(there - back) > 25,
+	local there = Route:Leg("Orgrimmar, Durotar", __node("Crossroads, The Barrens"))
+	local back  = Route:Leg(__node("Crossroads, The Barrens"), "Orgrimmar, Durotar")
+	-- Era's pair differs by 32s and Mists' by 8; both are far larger than the
+	-- table's own precision, which is the point being made.
+	local APART = _G.__mists and 5 or 25
+	check(there and back and math.abs(there - back) > APART,
 		"a leg is not the same in both directions (" .. string.format("%.0f", there)
 		.. "s out, " .. string.format("%.0f", back) .. "s back)")
 
@@ -34325,14 +34358,25 @@ section("ifec: the route table, against flights that were actually flown", funct
 	-- once for a whole multi-hop trip, so this is the only way to know a
 	-- two-legged flight - and the measured 209s says it is the right way.
 	local total, breakdown, complete = Route:Journey({
-		"Ratchet, The Barrens", "Crossroads, The Barrens", "Orgrimmar, Durotar" })
-	check(complete and total and math.abs(total - 209) < 2,
+		__node("Ratchet, The Barrens"), __node("Crossroads, The Barrens"), "Orgrimmar, Durotar" })
+	-- MEASURED ON ERA, so that is where the measured figure is claimed. On
+	-- Mists the two hops are the table's own, and what is being tested - that
+	-- a journey is the sum of its legs and the tick lands on the first
+	-- boundary - is the same statement either way.
+	local hop1 = Route:Leg(__node("Ratchet, The Barrens"),
+		__node("Crossroads, The Barrens"))
+	local hop2 = Route:Leg(__node("Crossroads, The Barrens"), "Orgrimmar, Durotar")
+	local WANT_TOTAL = _G.__mists and (hop1 + hop2) or 209
+	local WANT_FIRST = _G.__mists and hop1 or 68
+	check(complete and total and math.abs(total - WANT_TOTAL) < 2,
 		"Ratchet to Orgrimmar via Crossroads comes to what it took ("
-		.. string.format("%.0f", total or 0) .. "s vs 209s measured)")
+		.. string.format("%.0f", total or 0) .. "s vs "
+		.. string.format("%.0f", WANT_TOTAL) .. "s)")
 	check(#breakdown == 2, "reported as two legs")
-	check(breakdown[1].at and math.abs(breakdown[1].at - 68) < 2,
+	check(breakdown[1].at and math.abs(breakdown[1].at - WANT_FIRST) < 2,
 		"with the boundary tick where the first leg ends ("
-		.. string.format("%.0f", breakdown[1].at or 0) .. "s vs 68s measured)")
+		.. string.format("%.0f", breakdown[1].at or 0) .. "s vs "
+		.. string.format("%.0f", WANT_FIRST) .. "s)")
 
 	-- An unknown leg does not sink the journey: the console still opens and
 	-- still counts, it just cannot say when you land.
@@ -34345,7 +34389,7 @@ section("ifec: the route table, against flights that were actually flown", funct
 	-- is a mean and is marked as one.
 	check(Route:IsFuzzy("Gadgetzan, Tanaris", "Cenarion Hold, Silithus"),
 		"a leg with one path per faction is flagged")
-	check(not Route:IsFuzzy("Ratchet, The Barrens", "Crossroads, The Barrens"),
+	check(not Route:IsFuzzy(__node("Ratchet, The Barrens"), __node("Crossroads, The Barrens")),
 		"and an ordinary one is not")
 
 	-- Learning beats the table, which is what makes a fuzzy leg fixable.
@@ -34395,8 +34439,8 @@ section("ifec: boarding, flying and landing", function()
 	-- Ratchet to Crossroads: a real single-hop leg, 68s in the table and 68s on
 	-- the stopwatch when it was flown.
 	flightMap({
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 	})
 
 	-- A STUN IS NOT A FLIGHT. PLAYER_CONTROL_LOST fires for stuns, fear and
@@ -34413,7 +34457,7 @@ section("ifec: boarding, flying and landing", function()
 	check(Taxi:IsFlying(), "boarding opens it")
 	check(seen[1] and seen[1][1] == "board", "and the console is told")
 	local f = seen[1][2]
-	check(f.from == "Ratchet, The Barrens" and f.to == "Crossroads, The Barrens",
+	check(f.from == __node("Ratchet, The Barrens") and f.to == __node("Crossroads, The Barrens"),
 		"with the route read off the map before it closed")
 	check(f.expected and math.abs(f.expected - 68) < 2,
 		"and the duration from the table (" .. string.format("%.0f", f.expected or 0) .. "s)")
@@ -34428,34 +34472,41 @@ section("ifec: boarding, flying and landing", function()
 	check(not Taxi:IsFlying(), "landing closes it")
 	check(seen[2] and seen[2][1] == "land", "and the console is told that too")
 	check(seen[2][2].learned == true, "a clean single-hop flight is learned from")
-	check(math.abs(Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens") - 67.4) < 1,
+	check(math.abs(Route:Leg(__node("Ratchet, The Barrens"), __node("Crossroads, The Barrens")) - 67.4) < 1,
 		"and the measured time replaces the table's")
 
 	-- AN EARLY LANDING DID NOT GO WHERE IT WAS BOOKED. Recording it against the
 	-- booked destination would teach the table a duration for a trip nobody
 	-- took. Prior art misses this.
-	local before = Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens")
+	local before = Route:Leg(__node("Ratchet, The Barrens"), __node("Crossroads, The Barrens"))
 	board(2)
 	TaxiRequestEarlyLanding()
 	land(40)
-	check(Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens") == before,
+	check(Route:Leg(__node("Ratchet, The Barrens"), __node("Crossroads, The Barrens")) == before,
 		"a flight cut short teaches the table nothing")
 
 	-- A MULTI-HOP JOURNEY reads every node off the map, and is not learned from
 	-- because control is lost and regained once for the whole trip.
 	flightMap({
-		{ name = "Ratchet, The Barrens",   kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),   kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 		{ name = "Orgrimmar, Durotar",     kind = "REACHABLE" },
 	}, { [3] = { 2, 3 } })
 
 	board(3)
 	local m = seen[#seen][2]
 	check(m.nodes and #m.nodes == 3, "a two-leg journey names all three nodes")
-	check(m.expected and math.abs(m.expected - 209) < 2,
+	-- Era's measured 209s; on Mists the same two hops off this client's table.
+	local R = A.IFEC.Route
+	local h1 = R:Leg(__node("Ratchet, The Barrens"), __node("Crossroads, The Barrens"))
+	local h2 = R:Leg(__node("Crossroads, The Barrens"), "Orgrimmar, Durotar")
+	local WHOLE = _G.__mists and (h1 + h2) or 209
+	local FIRST = _G.__mists and h1 or 68
+	check(m.expected and math.abs(m.expected - WHOLE) < 2,
 		"and totals what the flight really takes ("
-		.. string.format("%.0f", m.expected or 0) .. "s vs 209s measured)")
-	check(m.legs and #m.legs == 2 and m.legs[1].at and math.abs(m.legs[1].at - 68) < 2,
+		.. string.format("%.0f", m.expected or 0) .. "s vs "
+		.. string.format("%.0f", WHOLE) .. "s)")
+	check(m.legs and #m.legs == 2 and m.legs[1].at and math.abs(m.legs[1].at - FIRST) < 2,
 		"with a boundary tick at the stopover")
 	land()
 
@@ -34482,14 +34533,14 @@ section("ifec: the console, which is a flight timer when it is nothing else", fu
 
 	Taxi:Start()
 	_G.__taxi.nodes = {
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 	}
 	_G.__taxi.routes = {}
 
 	-- The leg has been flown earlier in this file, so its duration is the
 	-- learned one rather than the shipped one. Read it rather than assume.
-	local LEG = A.IFEC.Route:Leg("Ratchet, The Barrens", "Crossroads, The Barrens")
+	local LEG = A.IFEC.Route:Leg(__node("Ratchet, The Barrens"), __node("Crossroads, The Barrens"))
 	local function mmss(s)
 		if s < 0 then s = 0 end
 		return string.format("%d:%02d", math.floor(s / 60), math.floor(s % 60))
@@ -34504,7 +34555,8 @@ section("ifec: the console, which is a flight timer when it is nothing else", fu
 	check(f ~= nil and f:IsShown(), "boarding opens it")
 	-- NOT AN ARROW. Outfit has no U+2192 and renders the missing-glyph box for
 	-- it, which is what shipped and what it looked like on screen.
-	check(f.route:GetText() == "Ratchet, The Barrens  \194\187  Crossroads, The Barrens",
+	check(f.route:GetText() == __node("Ratchet, The Barrens")
+		.. "  \194\187  " .. __node("Crossroads, The Barrens"),
 		"showing where you are going")
 	check(f.route:GetText():find("\226\134\146", 1, true) == nil,
 		"with a separator the font actually has")
@@ -34578,8 +34630,8 @@ section("ifec: landing, at the scale of everything else, out of the way", functi
 
 	Taxi:Start()
 	_G.__taxi.nodes = {
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 	}
 	local function board()
 		TakeTaxiNode(2)
@@ -34711,9 +34763,14 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- THE DESIGN'S 560 IS A CEILING, not a width. It is a 1920-wide screen's
 	-- 560, and on a smaller one at minimum scale it is most of a third of the
 	-- screen - for a route whose names are short and mostly empty capsule.
+	-- THE SHORTEST PAIR OF NAMES IN THE GAME, near enough - and it has to be
+	-- short on BOTH clients, because the capsule is capped at the design's 560
+	-- and two names that reach the cap cannot show that width tracks the text.
+	-- Ratchet to the Crossroads did exactly that once Cataclysm's longer
+	-- spellings arrived: 560 and 560, and the check read as passing width.
 	fly({
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = "Moonglade",              kind = "CURRENT" },
+		{ name = "Everlook, Winterspring", kind = "REACHABLE" },
 	})
 	local f = IF.frame
 	local short = f:GetWidth()
@@ -34722,8 +34779,8 @@ section("ifec: cut to its contents, and the map you still want", function()
 	land()
 
 	fly({
-		{ name = "Marshal's Refuge, Un'Goro Crater", kind = "CURRENT" },
-		{ name = "Thunder Bluff, Mulgore",           kind = "REACHABLE" },
+		{ name = __node("Marshal's Refuge, Un'Goro Crater"), kind = "CURRENT" },
+		{ name = "Thunder Bluff, Mulgore",                  kind = "REACHABLE" },
 	})
 	check(f:GetWidth() > short,
 		"a longer route gets a longer capsule (" .. f:GetWidth() .. " vs " .. short .. ")")
@@ -34733,16 +34790,16 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- the NEXT flight master, which on a single-hop flight is where you were
 	-- going anyway.
 	fly({
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 	})
 	check(IF.jump == nil or not IF.jump:IsShown(),
 		"a single-hop flight offers no way to jump off")
 	land()
 
 	fly({
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 		{ name = "Orgrimmar, Durotar",      kind = "REACHABLE" },
 	}, { [3] = { 2, 3 } })
 	check(IF.jump ~= nil and IF.jump:IsShown(), "a two-leg journey offers one")
@@ -35582,8 +35639,8 @@ section("ifec: the player region, on the flight's own axis", function()
 
 	local function fly()
 		_G.__taxi.nodes = {
-			{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-			{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+			{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+			{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 		}
 		_G.__taxi.routes = {}
 		TakeTaxiNode(2)
@@ -35777,8 +35834,8 @@ section("ifec: the player region, on the flight's own axis", function()
 	-- flight bar rather than being a piece of it - and over, not under: the bar
 	-- is a child frame and each piece is a child of that.
 	_G.__taxi.nodes = {
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 		{ name = "Orgrimmar, Durotar",      kind = "REACHABLE" },
 	}
 	_G.__taxi.routes = { [3] = { 2, 3 } }
@@ -36593,8 +36650,8 @@ section("nifec: the mini-player, on the ground", function()
 	check(boardingWith ~= nil, "something is playing as the griffin arrives")
 	A.IFEC.Taxi:Start()
 	_G.__taxi.nodes = {
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 	}
 	_G.__taxi.routes = {}
 	TakeTaxiNode(2)
@@ -36754,8 +36811,8 @@ section("ifec: the console takes a region, and gives it back", function()
 
 	Taxi:Start()
 	_G.__taxi.nodes = {
-		{ name = "Ratchet, The Barrens",    kind = "CURRENT" },
-		{ name = "Crossroads, The Barrens", kind = "REACHABLE" },
+		{ name = __node("Ratchet, The Barrens"),    kind = "CURRENT" },
+		{ name = __node("Crossroads, The Barrens"), kind = "REACHABLE" },
 	}
 	TakeTaxiNode(2)
 	_G.__onTaxi = true
