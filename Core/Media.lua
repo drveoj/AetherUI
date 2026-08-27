@@ -171,6 +171,9 @@ Media.icons = {
 		-- mirrored, which is a swap of two texture coordinates rather than a
 		-- second cell that has to agree about what an arrow looks like.
 		"rotate",
+		-- what Mists puts on its menu and Era has not got. Dungeons and the
+		-- Guide are aliases below, because the sheet already means them.
+		"achievements", "pvp", "collections",
 	},
 
 	--- One drawing, more than one name for it.
@@ -182,6 +185,14 @@ Media.icons = {
 	alias = {
 		tank  = "guild",
 		party = "social",
+		-- The Mists menu entries, where a drawing already on the sheet means
+		-- the thing: the group finder IS a group of people, and the encounter
+		-- journal IS a book. Achievements, Collections and PvP get their own
+		-- cells in the next generator pass and stand as initials until then -
+		-- a letter is honest about being a placeholder in a way that a nearly
+		-- right picture is not.
+		dungeons = "social",
+		guide    = "library",
 	},
 }
 

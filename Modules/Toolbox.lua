@@ -3148,9 +3148,45 @@ TB.MICRO = {
 	{ key = "help",      label = "Help",
 	  fn = function() ToggleHelpFrame() end,
 	  probe = function() return ToggleHelpFrame ~= nil end },
+
+	-- THE ONES MISTS ADDS. Its own strip carries thirteen where Era's carries
+	-- nine, and the five below are the ones that are somewhere to GO rather
+	-- than somewhere to spend money. Read off Blizzard_MicroMenu/Classic the
+	-- same way the nine above were, not guessed:
+	--
+	--   Achievements  ToggleAchievementFrame()   XML OnClick
+	--   Dungeons      PVEFrame_ToggleFrame()     XML OnClick, LFGMicroButton
+	--   PvP           TogglePVPFrame()           XML OnClick
+	--   Collections   ToggleCollectionsJournal() CollectionMicroButtonMixin
+	--   Guide         ToggleEncounterJournal()   EJMicroButtonMixin
+	--
+	-- NO SHOP. StoreMicroButton is the thirteenth and its action is
+	-- ToggleStoreUI. A HUD is not a shopfront, and the button is one keypress
+	-- away in the game menu for anybody who wants it.
+	--
+	-- NOT GATED ON A.isMists. Every entry here already states its own
+	-- condition as a probe, which is the same test either way and does not go
+	-- stale when a flavour gains one of these - Era would need only the
+	-- global to appear.
+	{ key = "achievements", label = "Achievements",
+	  fn = function() ToggleAchievementFrame() end,
+	  probe = function() return ToggleAchievementFrame ~= nil end },
+	{ key = "dungeons",  label = "Dungeons",
+	  fn = function() PVEFrame_ToggleFrame() end,
+	  probe = function() return PVEFrame_ToggleFrame ~= nil end },
+	{ key = "pvp",       label = "PvP",
+	  fn = function() TogglePVPFrame() end,
+	  probe = function() return TogglePVPFrame ~= nil end },
+	{ key = "collections", label = "Collections",
+	  fn = function() ToggleCollectionsJournal() end,
+	  probe = function() return ToggleCollectionsJournal ~= nil end },
+	{ key = "guide",     label = "Guide",
+	  fn = function() ToggleEncounterJournal() end,
+	  probe = function() return ToggleEncounterJournal ~= nil end },
 }
 
---- Which of the ten this client actually offers.
+--- Which of them this client actually offers - nine on Era, thirteen on Mists
+--- minus the shop, and it is the probes that decide rather than the flavour.
 function TB:MicroList()
 	local out = {}
 	for _, m in ipairs(self.MICRO) do
@@ -3292,6 +3328,40 @@ local MICRO_PER_ROW = 5
 -- "Ch...". The concept draws this row as bare glyphs for exactly that reason,
 -- and the names are on the tooltips where a name that does not fit belongs.
 local MICRO_CELL_H_FLAT = 30
+
+-- The narrowest a cell may be before the row wraps instead of shrinking.
+--
+-- The glyph is 20 and it is drawn CENTRED, so at anything under about 22 the
+-- glyphs start touching and then overlapping - and the row was shrinking
+-- without limit. On a flat dock in a two-column panel ten entries were already
+-- eleven pixels each, and Mists' fifteen were seven: a smear rather than a
+-- menu, and nothing said so because the check counted buttons rather than
+-- measuring them.
+local MICRO_MIN_CELL = 24
+
+-- ...and on a FLAT dock, ONE ROW, whatever there is to put in it.
+--
+-- MEASURED, not preferred. That dock is a strip 210 units tall and its identity
+-- column already spends a header and a hundred-unit news card; one row of micro
+-- lands at 180 and a SECOND row lands at 240, through a floor the other five
+-- columns share. So the wrap the vertical drawer uses is not available here and
+-- the glyph gives way instead - see MicroGlyph. Every entry stays present,
+-- which was the original trade and is still the right one; what was wrong was
+-- letting the glyph keep its 20 units while its cell shrank under it.
+local MICRO_FLAT_MAX_ROWS = 1
+
+--- How big the glyph in a cell that wide may be.
+--
+--  IT USED TO BE 20 WHATEVER THE CELL WAS. Ten entries across a flat dock's
+--  identity column are eleven units each, so the glyphs overlapped their
+--  neighbours by nine - every entry present, none of them readable, and the
+--  check watching this counted buttons rather than measuring them.
+local function MicroGlyph(cellW)
+	-- The cell is the hard ceiling: eight is the smallest worth drawing, but a
+	-- cell narrower than eight gets a glyph narrower than eight rather than one
+	-- lapping over the entry beside it.
+	return math.min(cellW, math.max(8, math.min(20, cellW - 6)))
+end
 
 local function Cols(key, fallback)
 	return math.max(1, tonumber(A.Config:Module("toolbox")[key]) or fallback)
@@ -3578,19 +3648,30 @@ function TB:LayoutHorizontal()
 		-- single strip under the card, and the 20px a "MENU" label costs is the
 		-- 20px that decides whether the strip fits above the panel's floor.
 		--
-		-- One row of however many the client offers, rather than a fixed five
-		-- per row: wrapping to a second row in a 240px panel would put it
-		-- through the floor. Ten entries make the cells narrower, which is
-		-- visible, rather than hiding one, which is not - and that trade was
-		-- written down here before the tenth arrived, so this is it being taken
-		-- rather than rediscovered.
+		-- ONE ROW WHERE ONE ROW FITS. The row shrank its cells to hold however
+		-- many the client offered, on the grounds that narrower cells are
+		-- visible where a hidden entry is not - and that is right, up to the
+		-- point where the cells are narrower than the thing in them. Ten in a
+		-- two-column panel were eleven pixels each and Mists' fifteen were
+		-- seven, against a 20px glyph: the entries were all there and none of
+		-- them could be read.
+		--
+		-- So it wraps at MICRO_MIN_CELL, into as few rows as keep the cells
+		-- that wide. Still no entry hidden; the strip just gets taller, and
+		-- the panel's own fitting already knows what to do with that.
 		local micro = self._microList or {}
 		if content.microHead then content.microHead:Hide() end
 		if #micro > 0 then
-			local per   = #micro
+			local fits = math.max(1, math.min(#micro,
+				math.floor(cw / MICRO_MIN_CELL)))
+			-- An even split across whatever rows are allowed, rather than a
+			-- full row and a remainder: fifteen across a row of eleven is
+			-- 11 + 4, and the four read as a mistake.
+			local rows  = math.min(MICRO_FLAT_MAX_ROWS, RowsFor(#micro, fits))
+			local per   = math.ceil(#micro / rows)
 			local cellW = cw / per
 			for i, b in ipairs(micros) do
-				if i <= per then
+				if i <= #micro then
 					b:SetSize(cellW, MICRO_CELL_H_FLAT)
 					GridPlace(content, b, i, x, y, per, cellW, MICRO_CELL_H_FLAT, 0, 0)
 					-- Glyph only. The name goes with the label's own row: eight
@@ -3598,12 +3679,17 @@ function TB:LayoutHorizontal()
 					-- and "Character" came out as "Ch...". It is still on the
 					-- tooltip, which is where a name that does not fit belongs.
 					if b.name then b.name:Hide() end
+					-- ...and the glyph gives way where the cell is narrow,
+					-- rather than drawing over its neighbours.
+					local g = MicroGlyph(cellW)
+					if b.glyph then b.glyph:SetSize(g, g) end
+					if b.initial then b.initial:SetText(b.initial:GetText()) end
 					b:Show()
 				else
 					b:Hide()
 				end
 			end
-			y = y + MICRO_CELL_H_FLAT
+			y = y + RowsFor(#micro, per) * MICRO_CELL_H_FLAT
 		end
 		used(y)
 	end

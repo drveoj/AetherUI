@@ -1078,6 +1078,12 @@ ICON_ORDER = [
     # mirrored by its texture coordinates, which is a swap of two numbers
     # rather than a second cell that has to agree about what an arrow is.
     "rotate",
+    # what Mists puts on its micro menu that Era has not got. Dungeons is the
+    # `social` pair of figures and the Guide is the `library` book - the same
+    # drawing means the same thing, so those two are aliased in Core/Media.lua
+    # rather than drawn again. These three had nothing on the sheet that meant
+    # them.
+    "achievements", "pvp", "collections",
 ]
 
 
@@ -1360,6 +1366,28 @@ def _glyph(name, cell):
         return U(seg(64, 26, 64, 78),
                  seg(46, 60, 64, 78), seg(82, 60, 64, 78),
                  seg(30, 98, 98, 98))
+
+    if name == "achievements":
+        # A medal on a ribbon. The ribbon is a V rather than two tails, because
+        # two tails at 20px are two specks either side of a circle and the eye
+        # reads them as noise; a V closes and reads as one shape.
+        return U(circ(64, 50, 28),
+                 seg(46, 74, 40, 112), seg(82, 74, 88, 112),
+                 seg(40, 112, 64, 96), seg(88, 112, 64, 96))
+
+    if name == "pvp":
+        # Crossed swords: two blades and a guard across each, no pommels. A
+        # pommel is four pixels at this size and only thickens the ends.
+        return U(seg(28, 100, 96, 32), seg(100, 100, 32, 32),
+                 seg(78, 26, 102, 50), seg(26, 50, 50, 26))
+
+    if name == "collections":
+        # A paw: what a collection of mounts and pets IS. Four toes and a pad,
+        # as rings rather than discs - a filled paw at 20px is a blob, and the
+        # rings keep the count of toes legible, which is the whole silhouette.
+        return U(circ(64, 88, 26),
+                 circ(34, 56, 11), circ(53, 40, 11),
+                 circ(75, 40, 11), circ(94, 56, 11))
 
     if name == "crown":
         # Who leads. Three peaks and a band, drawn as one closed outline so

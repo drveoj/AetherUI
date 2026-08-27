@@ -7389,6 +7389,17 @@ function ToggleTalentFrame() _G.__toggled.talents = true end
 function ToggleFriendsFrame() _G.__toggled.social = true end
 function ToggleGuildFrame() _G.__toggled.guild = true end
 function ToggleWorldMap() _G.__toggled.map = true end
+
+-- AND THE FIVE MISTS ADDS, on Mists only. Declaring them on both flavours
+-- would make the probes in TB.MICRO pass everywhere and the run would never
+-- see the Era menu the addon actually ships to Era players.
+if _G.__mists then
+	function ToggleAchievementFrame()   _G.__toggled.achievements = true end
+	function PVEFrame_ToggleFrame()     _G.__toggled.dungeons     = true end
+	function TogglePVPFrame()           _G.__toggled.pvp          = true end
+	function ToggleCollectionsJournal() _G.__toggled.collections  = true end
+	function ToggleEncounterJournal()   _G.__toggled.guide        = true end
+end
 -- HOW MANY THINGS THE ESCAPE CHAIN WOULD FIND TO CLOSE BEFORE THE MENU.
 -- A check sets this to stand something in the chain's way.
 _G.__escClosable = 0
@@ -22120,9 +22131,30 @@ do
 	-- behaves the same with the bags module on, off, or never loaded.
 	check(has("bags"), "and there is a Bags entry")
 
-	check(#TBm:MicroList() == 10,
-		"ten entries, which is two rows of five rather than an odd nine (" ..
+	-- TEN ON ERA, FIFTEEN ON MISTS. Mists' own strip carries thirteen where
+	-- Era's carries nine; five of the four it adds are somewhere to GO and are
+	-- in ours, and the thirteenth is the shop, which is not.
+	--
+	-- Both counts are a whole number of rows of five, which is what MENU is
+	-- laid out in.
+	local WANT = _G.__mists and 15 or 10
+	check(#TBm:MicroList() == WANT,
+		WANT .. " entries, a whole number of rows of five (" ..
 		#TBm:MicroList() .. ")")
+
+	-- AND THEY ARE THE RIGHT FIVE, named rather than counted - a count passes
+	-- just as well with the wrong five in it.
+	for _, key in ipairs({ "achievements", "dungeons", "pvp", "collections",
+		"guide" }) do
+		check(has(key) == (_G.__mists and true or false),
+			key .. " is in the row on Mists and not on Era (" ..
+			tostring(has(key)) .. ")")
+	end
+
+	-- NO SHOP, ON EITHER. A HUD is not a shopfront, and this is the sort of
+	-- decision that gets quietly undone by somebody completing a list.
+	check(not has("store") and not has("shop"),
+		"and the shop is not in it")
 	end
 
 	-- Every action is probed. A global that is not there is a button that is
@@ -22176,7 +22208,8 @@ do
 		for g, fn in pairs(saved) do _G[g] = fn end
 	end
 
-	-- AND FIVE TO A ROW, which is the point of there being ten.
+	-- AND FIVE TO A ROW, WITH NO SHORT ROW - which is the point of there
+	-- being ten on Era and fifteen on Mists rather than nine and thirteen.
 	--
 	-- Nine across a four-wide grid is 4 + 4 + 1, and the odd one on its own
 	-- line reads as something having gone wrong rather than as a menu.
@@ -22191,12 +22224,51 @@ do
 			local key = string.format("%.0f", y or 0)
 			rows[key] = (rows[key] or 0) + 1
 		end
-		local n, sizes = 0, {}
-		for _, count in pairs(rows) do n = n + 1; sizes[#sizes + 1] = count end
+		local n, sizes, short = 0, {}, false
+		for _, count in pairs(rows) do
+			n = n + 1
+			sizes[#sizes + 1] = count
+			if count ~= 5 then short = true end
+		end
 		table.sort(sizes)
-		check(n == 2 and sizes[1] == 5 and sizes[2] == 5,
-			"the drawer lays the ten out five and five (" .. n .. " rows of " ..
-			table.concat(sizes, "+") .. ")")
+		check(n == #TBm._microList / 5 and not short,
+			"the drawer lays them out five to a row with none left over (" ..
+			n .. " rows of " .. table.concat(sizes, "+") .. ")")
+	end
+
+	-- FLAT, THE ROW WRAPS RATHER THAN SHRINKING PAST THE GLYPH.
+	--
+	-- It used to hold every entry on one line whatever that cost, on the
+	-- grounds that a narrower cell is visible where a hidden entry is not.
+	-- True until the cell is narrower than the thing in it: ten entries in a
+	-- two-column panel were ELEVEN pixels each against a 20px glyph, and
+	-- Mists' fifteen were seven. Everything present, nothing readable, and
+	-- the check that watched this counted buttons instead of measuring them.
+	do
+		TBm:SetDock("BOTTOM")
+		TBm:SetOpen(true, true)
+		TBm:RefreshMicro()
+		local narrow, shown, over = nil, 0, nil
+		for i = 1, #TBm._microList do
+			local b = TBm.content.micro[i]
+			if b:IsShown() then shown = shown + 1 end
+			narrow = math.min(narrow or b:GetWidth(), b:GetWidth())
+			local g = b.glyph and b.glyph:GetWidth() or 0
+			if g > b:GetWidth() then over = b:GetWidth() .. "/" .. g end
+		end
+		check(shown == #TBm._microList,
+			"every entry is on the flat dock too (" .. shown .. " of "
+			.. #TBm._microList .. ")")
+
+		-- THE GLYPH FITS ITS CELL. It does not have to be twenty units - this
+		-- strip cannot afford a second row and the entries are all staying -
+		-- but a 20-unit glyph in an 11-unit cell is drawn nine units into its
+		-- neighbour, twice over, and that is what shipped.
+		check(over == nil,
+			"and no glyph is drawn wider than the cell holding it ("
+			.. tostring(over) .. ")")
+		check(narrow and narrow > 0, "with a cell to hold it ("
+			.. string.format("%.1f", narrow or 0) .. ")")
 	end
 
 	-- AND THE TWO THAT DO NOT GO THROUGH A Toggle GLOBAL.
