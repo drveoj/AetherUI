@@ -117,8 +117,14 @@ local PANELS = {
 	--
 	-- AND THE PET TAB BRINGS ITS OWN PAIR. The window is one frame with five
 	-- panes in it, and on that pane the thing the header is naming is not you.
+	--
+	-- ON MISTS NEITHER NAME EXISTS. That sheet is built on the portrait
+	-- template and puts your name in the title bar as CharacterFrameTitleText,
+	-- with no second line at all - so the Era name is tried first and the
+	-- Mists one answers when it is absent. See PN.Part.
 	{ frame = "CharacterFrame", insets = { 10, -10, -30, 26 },
-		title = "CharacterNameText", subtitle = "CharacterLevelText",
+		title = { "CharacterNameText", "CharacterFrameTitleText" },
+		subtitle = "CharacterLevelText",
 		panes = {
 			{ pane = "PetPaperDollFrame",
 				title = "PetNameText", subtitle = "PetLevelText" },
@@ -152,8 +158,9 @@ local PANELS = {
 	{
 		frame       = "SpellBookFrame",
 		insets      = { 4, -4, -4, 24 },
-		title       = "SpellBookTitleText",
-		close       = "SpellBookCloseButton",
+		-- Mists spells both the ordinary way, after the frame.
+		title       = { "SpellBookTitleText", "SpellBookFrameTitleText" },
+		close       = { "SpellBookCloseButton", "SpellBookFrameCloseButton" },
 		tabs        = "SpellBookFrameTabButton",
 		-- The rank switch sits above the spells in the recess, which is
 		-- RANKS_ROW of reserved room over whatever the page measures at.
@@ -524,8 +531,15 @@ local PANELS = {
 	-- parchment takes the map with it and leaves the nodes floating in the
 	-- dark. Its close button is TaxiCloseButton, not TaxiFrameCloseButton,
 	-- which is why it kept the client's red X.
+	--
+	-- ON MISTS IT NAMES NOTHING. That flight map is built on
+	-- BasicFrameTemplateWithInset, which carries its title and its X as parent
+	-- keys and gives neither a global - so the second name here is a path
+	-- through the window rather than a global of its own.
 	{ frame = "TaxiFrame",         insets = { 8, -8, -28, 22 },
-	                               close = "TaxiCloseButton",
+	                               close = { "TaxiCloseButton",
+	                                         "TaxiFrame.CloseButton" },
+	                               title = { "TaxiFrame.TitleText" },
 	                               keep  = { "TaxiMap" },
 		-- THE MAP AND THE ROUTES DRAWN OVER IT, moved together - two pieces at
 		-- the same offset, and a shift measured per piece would part them. The
@@ -797,9 +811,15 @@ local function CloseButton(frame)
 	-- name CloseButton for the ordinary button along the bottom - so the
 	-- generic answer put our X on the wrong one, behind the word Close, and
 	-- left the client's red one where it was.
-	return (entry and entry.close
-		and ((frame[entry.close]) or _G[entry.close]))
-		or Reskin.Element(frame, "CloseButton")
+	-- ...OR UNDER ANY OF SEVERAL, because the two clients spell some of these
+	-- differently. First one the client has wins; see PN.Part.
+	for _, alias in ipairs(entry and (type(entry.close) == "table"
+		and entry.close or { entry.close }) or {}) do
+		local btn = type(alias) == "string"
+			and (frame[alias] or PN.Part(alias)) or nil
+		if btn then return btn end
+	end
+	return Reskin.Element(frame, "CloseButton")
 end
 
 PN.CloseButton = CloseButton
@@ -900,7 +920,7 @@ function PN.HeaderHeight(name)
 	local frame = name and _G[name]
 	if frame and frame.__aetherHeadH then return frame.__aetherHeadH end
 	local entry = name and PN.ENTRY and PN.ENTRY[name]
-	if entry and entry.subtitle and _G[entry.subtitle] then
+	if entry and PN.Part(entry.subtitle) then
 		return W.PANEL_HEAD_SUB
 	end
 	return W.PANEL_HEAD_H
@@ -930,16 +950,16 @@ end
 --  the name at the top of it is the pet's.
 function PN.HeaderPair(entry)
 	for _, p in ipairs(entry and entry.panes or {}) do
-		local pane = _G[p.pane]
+		local pane = PN.Part(p.pane)
 		-- ...and that brought a title with it. A pane can be up on a build
 		-- where the string it names does not exist, and a header with no
 		-- title at all is worse than one naming the wrong thing.
-		if pane and pane.IsShown and pane:IsShown() and _G[p.title] then
-			return _G[p.title], p.subtitle and _G[p.subtitle] or nil
-		end
+		local title = pane and pane.IsShown and pane:IsShown()
+			and PN.Part(p.title) or nil
+		if title then return title, PN.Part(p.subtitle) end
 	end
-	return entry and entry.title and _G[entry.title] or nil,
-		entry and entry.subtitle and _G[entry.subtitle] or nil
+	return entry and PN.Part(entry.title) or nil,
+		entry and PN.Part(entry.subtitle) or nil
 end
 
 --- The frame a panel entry means by a name.
@@ -949,6 +969,19 @@ end
 --  GossipFrame.GreetingPanel.ScrollBox and has no name of its own at all, so
 --  a list of globals cannot reach a single part of it.
 function PN.Part(name)
+	-- OR ANY OF SEVERAL NAMES. The same part of the same window is spelled
+	-- differently across the two clients this addon serves - the spell book's
+	-- title is SpellBookTitleText on Era and SpellBookFrameTitleText on Mists -
+	-- so an entry may give a LIST, and the first name the client has wins.
+	-- That keeps the flavour difference in the ENTRY table, where the rest of
+	-- the anatomy lives, rather than in a branch at every place a part is read.
+	if type(name) == "table" then
+		for _, alias in ipairs(name) do
+			local found = PN.Part(alias)
+			if found then return found end
+		end
+		return nil
+	end
 	if type(name) ~= "string" then return nil end
 	local w
 	for step in name:gmatch("[^.]+") do
@@ -1304,7 +1337,7 @@ local function OurParts(frame)
 	-- leaving a hand's width of nothing at the top of the recess.
 	local entry = frame.GetName and PN.ENTRY and PN.ENTRY[frame:GetName()]
 	local function spare(name)
-		local fs = name and _G[name]
+		local fs = PN.Part(name)
 		if fs then ours[fs] = true end
 	end
 	spare(entry and entry.title)
@@ -1523,7 +1556,7 @@ local function WatchPanes(frame, entry)
 	end
 
 	for _, p in ipairs(entry and entry.panes or {}) do
-		local pane = _G[p.pane]
+		local pane = PN.Part(p.pane)
 		if pane and pane.HookScript and not pane.__aetherWatched then
 			pane.__aetherWatched = true
 			pane:HookScript("OnShow", function()
@@ -2116,7 +2149,7 @@ local function Dress(frame)
 	-- dialog template keeps it inside a Header child alongside the stone plate.
 	local header = Reskin.Element(frame, "Header")
 	local moved = nil
-	local title = (entry and entry.title and _G[entry.title]) or nil
+	local title = (entry and PN.Part(entry.title)) or nil
 	if title then
 		-- Named here because the client did not name it after its frame, and
 		-- placed by the client for art we have just taken off - so it moves.

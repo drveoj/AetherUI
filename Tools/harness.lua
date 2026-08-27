@@ -15330,6 +15330,52 @@ section("panels: a report that says which window and why", function()
 		"and reads as dressed, because it is")
 	_G.MailFrame:Hide()
 end)
+section("panels: one part, several names", function()
+	local PN = A:GetModule("panels")
+
+	-- WHY A LIST AT ALL. The two clients spell the same part of the same
+	-- window differently: the spell book's title is SpellBookTitleText on Era
+	-- and SpellBookFrameTitleText on Mists, and the flight map's X has no
+	-- global name on Mists at all. An entry may therefore give a LIST of
+	-- names, and the first one THIS client has is the one used - so the
+	-- flavour difference stays in the anatomy table instead of becoming a
+	-- branch at every place a part is read.
+	check(PN.Part("CharacterFrame") == _G.CharacterFrame,
+		"a plain name still resolves to its global")
+	check(PN.Part("NoSuchFrameAnywhere") == nil,
+		"and a name the client does not have is nil, not an error")
+	check(PN.Part({ "NoSuchFrameAnywhere", "CharacterFrame" })
+		== _G.CharacterFrame,
+		"a list SKIPS PAST the names this client does not have")
+	check(PN.Part({ "CharacterFrame", "SpellBookFrame" }) == _G.CharacterFrame,
+		"and stops at the first one it does, so order is the preference")
+	check(PN.Part({ "NoSuchFrameAnywhere", "NorThisOne" }) == nil,
+		"a list of names none of which exist is nil, like a single one")
+	check(PN.Part({}) == nil, "and so is an empty list")
+
+	-- A PATH THROUGH A GLOBAL, in a list like any other name - which is how
+	-- the flight map's X is reached on Mists, where BasicFrameTemplate names
+	-- nothing globally and everything by parent key.
+	check(PN.Part({ "NoSuchFrameAnywhere", "CharacterFrame.__aetherPanel" })
+		== _G.CharacterFrame.__aetherPanel,
+		"and a list entry may be a path through a global, not just a global")
+
+	-- THE X, UNDER EITHER SPELLING. Same rule, its own resolver, because a
+	-- close button may also be a parent key on the window itself.
+	local sb = _G.SpellBookFrame
+	local was = PN.ENTRY.SpellBookFrame.close
+	local found = PN.CloseButton(sb)
+	check(found ~= nil, "the spell book's X is found under the names it has")
+
+	local list = { "NoSuchCloseButton" }
+	for _, n in ipairs(type(was) == "table" and was or { was }) do
+		list[#list + 1] = n
+	end
+	PN.ENTRY.SpellBookFrame.close = list
+	check(PN.CloseButton(sb) == found,
+		"and still found with a name this client does not carry in front")
+	PN.ENTRY.SpellBookFrame.close = was
+end)
 section("panels: the Options window, part by part", function()
 	local PN = A:GetModule("panels")
 	local sp = _G.SettingsPanel
