@@ -112,6 +112,12 @@ local KEY_SHORT = {
 	{ "INSERT", "ins" }, { "DELETE", "del" }, { "HOME", "hm" },
 	{ "PAGEUP", "pu" }, { "PAGEDOWN", "pd" },
 	{ "NUMPAD", "n" }, { "BUTTON", "m" },
+	-- THE NUMPAD'S NAMED KEYS, after the prefix that carries them. NUMPADPLUS
+	-- shortened to the prefix alone and left the word: the slot read NPLUS,
+	-- five letters where the point of this table is two. ASCII, because the
+	-- typographic minus is one of the glyphs Outfit does not carry.
+	{ "PLUS", "+" }, { "MINUS", "-" }, { "DIVIDE", "/" },
+	{ "MULTIPLY", "*" }, { "DECIMAL", "." },
 	{ "ALT%-", "a" }, { "CTRL%-", "c" }, { "SHIFT%-", "s" },
 }
 

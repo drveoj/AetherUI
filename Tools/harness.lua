@@ -2156,7 +2156,9 @@ function C_ChatInfo.PerformEmote(token)
 	return true
 end
 
-local bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "SHIFT-BUTTON4", ACTIONBUTTON3 = "NUMPAD7" }
+local bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "SHIFT-BUTTON4",
+	ACTIONBUTTON3 = "NUMPAD7", ACTIONBUTTON4 = "NUMPADPLUS",
+	ACTIONBUTTON5 = "NUMPADMINUS", ACTIONBUTTON6 = "NUMPADDIVIDE" }
 _G.__bindingSet = bindings
 function GetBindingKey(name) return bindings[name] end
 function GetBindingText(k) return k end
@@ -15866,6 +15868,16 @@ check(_G.__overrides["1"] == "AetherUIBar1Button1"
 	"override bindings point Blizzard's keys at our buttons")
 check(bar.buttons[2].hotkey:GetText() == "SM4", "keybind text abbreviated")
 check(bar.buttons[3].hotkey:GetText() == "N7", "numpad keybind abbreviated")
+
+-- THE NAMED NUMPAD KEYS. Shortening only the prefix left the word behind, so
+-- the slot with numpad-plus bound to it read NPLUS - five letters in a corner
+-- meant for two, and it is what shipped.
+check(bar.buttons[4].hotkey:GetText() == "N+",
+	"and so is the plus (" .. bar.buttons[4].hotkey:GetText() .. ")")
+check(bar.buttons[5].hotkey:GetText() == "N-",
+	"and the minus (" .. bar.buttons[5].hotkey:GetText() .. ")")
+check(bar.buttons[6].hotkey:GetText() == "N/",
+	"and the divide (" .. bar.buttons[6].hotkey:GetText() .. ")")
 
 print("== dock sizing ==")
 do
