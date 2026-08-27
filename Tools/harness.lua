@@ -2841,6 +2841,11 @@ for _, prefix in ipairs({ "ActionButton", "MultiBarBottomLeftButton",
 	"MultiBarBottomRightButton", "MultiBarLeftButton", "MultiBarRightButton" }) do
 	for i = 1, 12 do
 		local b = CreateFrame("CheckButton", prefix .. i, UIParent)
+		-- AT THE CLIENT'S OWN SIZE. ActionButtonTemplate is
+		-- <Size x="36" y="36"/> on both flavours, and these had no size at
+		-- all here - so nothing could compare our slot against the one the
+		-- player sees beside it, and 62 shipped.
+		b:SetSize(36, 36)
 		b:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 		b:Show()
 	end
@@ -15879,6 +15884,53 @@ check(bar.buttons[5].hotkey:GetText() == "N-",
 check(bar.buttons[6].hotkey:GetText() == "N/",
 	"and the divide (" .. bar.buttons[6].hotkey:GetText() .. ")")
 
+-- ---------------------------------------------------------------------------
+print("== the slot is the size the game's is ==")
+-- THE ONLY SENSE IN WHICH AN ACTION BAR HAS A RIGHT SIZE. A player compares
+-- the dock against the bar the game drew, and 62px slots against Blizzard's
+-- 36 read as a different addon's - 1.7x, reported from a screenshot on
+-- 2026-08-27 after it had shipped in 1.0.0.
+--
+-- The concept called for 62px slots. It was drawn at a size, not at a scale,
+-- and the game had already answered this one.
+do
+	local blizz = _G.ActionButton1
+	-- THE SHIPPED DEFAULT, not the live one - the sections above move it.
+	local cfg = A.Config.defaults.profile.modules.actionbars
+	check(blizz and blizz:GetWidth() == 36,
+		"the client's own action button is 36 wide")
+	check(cfg.size == blizz:GetWidth(),
+		"and ours is the same number (" .. cfg.size .. " vs "
+		.. blizz:GetWidth() .. ")")
+	-- The main bar sets its buttons 8 apart in the XML.
+	check(cfg.spacing == 8, "with the gap the game leaves between two of them")
+
+	-- AND A PROFILE THAT ALREADY CARRIES 62 IS BROUGHT ACROSS. It shipped in
+	-- 1.0.0, so every existing profile has it - and has it because it was
+	-- handed over rather than chosen.
+	local had = { size = 62, spacing = 9, padding = 10, fontDelta = 4 }
+	A.Config.Migrate({ profile = { modules = { actionbars = had } } })
+	check(had.size == 36 and had.spacing == 8 and had.padding == 6
+		and had.fontDelta == 2,
+		"a profile carrying the old defaults is moved onto the new ones ("
+		.. had.size .. "/" .. had.spacing .. "/" .. had.padding .. ")")
+
+	-- ...AND ONE THAT CARRIES A CHOICE IS NOT. 62 typed at /aether bar size is
+	-- somebody's answer; the migration matches the whole old set or nothing,
+	-- which is the difference between a migration and helping yourself.
+	local chose = { size = 62, spacing = 3, padding = 10, fontDelta = 4 }
+	A.Config.Migrate({ profile = { modules = { actionbars = chose } } })
+	check(chose.size == 62 and chose.spacing == 3,
+		"while a 62 somebody typed is left alone (" .. chose.size .. ")")
+
+	-- AND AT SCALE 1 THAT IS WHAT REACHES THE SCREEN, because ours is the
+	-- only one of the two carrying a scale of its own. Blizzard's button is a
+	-- plain child of UIParent; a profile scale of 1 is the statement that our
+	-- units are its units.
+	check(A.Config.defaults.profile.scale == 1.0,
+		"which the shipped profile scale of 1 puts on screen unchanged")
+end
+
 print("== dock sizing ==")
 do
 	local dock = bar.dock
@@ -27385,40 +27437,28 @@ do
 	SlashCmdList["AETHERUI"]("debug off")
 	check(A.db.profile.debug == false, "and off again")
 
-	-- THE DEFAULT SCALE IS NOT A NUMBER. It was 0.71 under a comment deriving
-	-- it from a Steam Deck, then 1.0 under one saying 0.71 was a taste - and
-	-- both were constants where the right answer is a property of the monitor.
-	-- Every size in this addon is a screen pixel measured off a real display,
-	-- and profile.scale is what turns those into virtual units: 768 / screen
-	-- height / the client's own UI scale, which is what A.pixel already is.
+	-- THE DEFAULT SCALE IS 1, WHICH IS THE GAME'S OWN UNITS. Everything here
+	-- is a child of UIParent and so is everything Blizzard draws, so a scale
+	-- of 1 says a 36-unit slot of ours is the size of the game's 36-unit one.
+	-- The client adapts UIParent to the monitor from its UI Scale setting and
+	-- both of us ride that; there is nothing left here to adapt.
 	--
-	-- Shipping 1.0 is the claim that the player's UI Scale is at maximum. With
-	-- it off on a 1080-tall screen every slot came out 1.4x the size it was
-	-- drawn at, and on 1440 1.9x - which is what "the action bars are twice
-	-- the size of Blizzard's" was.
-	check(A.Config.defaults.profile.scale == 0,
-		"the shipped default is the 0 sentinel, not a size for somebody else's"
-		.. " monitor")
+	-- It was briefly fitted to the display instead. That drew everything at
+	-- the physical pixel size it was authored at, which is a real thing to
+	-- want - but as a DEFAULT it made the HUD smaller than the game around
+	-- it, and the size that was actually wrong was the action slot.
+	check(A.Config.defaults.profile.scale == 1.0,
+		"the shipped scale is 1, which is the game's own units")
 
-	-- The mock's screen is 2560x1440 with the client's UI scale at 1, so one
-	-- design pixel is 768/1440 of a virtual unit.
+	-- STILL REACHABLE, because "draw it at the size it was drawn" is worth
+	-- having. The mock's screen is 2560x1440 with the client's UI scale at 1,
+	-- so one authored pixel is 768/1440 of a virtual unit.
 	check(math.abs(A:FittedScale() - 0.53) < 0.005,
 		"and this screen asks for " .. string.format("%.2f", A:FittedScale())
 		.. " (768 / 1440 / 1)")
-	-- A NUMBER ALREADY SAVED IS THE PLAYER'S. Fitting runs on a profile that
-	-- carries the sentinel and on no other, so a reload does not walk over a
-	-- scale somebody chose.
-	A.db.profile.scale = 1.25
-	A.Config.FitScale()
-	check(A.db.profile.scale == 1.25, "and a scale already chosen is left alone")
-	A.db.profile.scale = 0
-	A.Config.FitScale()
-	check(math.abs(A.db.profile.scale - A:FittedScale()) < 0.005,
-		"while the sentinel is filled in again")
-
-	-- AND THERE IS A WAY BACK. Fitting never runs again on its own, so a
-	-- player who has moved the slider and wants the drawn sizes has to be able
-	-- to ask - with a word, not a number they would have to work out.
+	-- ASKED FOR, NEVER APPLIED BEHIND THEM. It is a command and nothing else
+	-- calls it: no reload, no profile change, no new monitor moves a scale
+	-- somebody chose.
 	A.db.profile.scale = 1.4
 	SlashCmdList["AETHERUI"]("scale fit")
 	check(math.abs(A.db.profile.scale - A:FittedScale()) < 0.005,

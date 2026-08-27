@@ -83,16 +83,19 @@ Config.defaults = {
 		-- one, and shipped as the default on the strength of it. 0.71 is a
 		-- taste, and a taste for one particular monitor at that.
 		--
-		-- SO IT IS NOT A CONSTANT ANY MORE. Every number in this addon is a
-		-- screen pixel measured off a real display, and profile.scale is what
-		-- turns those into the client's virtual units - so the right value is
-		-- 768 / screen height / the client's own UI scale, and that is a
-		-- property of the monitor, not of anybody's taste.
+		-- 1.0 IS "THE GAME'S OWN UNITS". Everything drawn here is a child of
+		-- UIParent, and so is every frame Blizzard draws; a scale of 1 is the
+		-- statement that a 36-unit slot of ours is the same size on screen as
+		-- the game's 36-unit one. The client already adapts UIParent to the
+		-- monitor from its UI Scale setting, and both of us ride that - so
+		-- there is nothing here left to adapt.
 		--
-		-- 0 means "not chosen yet" and is replaced by A:FittedScale() the first
-		-- time a profile is used. A number that is already saved is the
-		-- player's and is left alone, slider and /aether scale included.
-		scale       = 0,
+		-- It was briefly a 0 sentinel fitted to the display, which drew
+		-- everything at the physical pixel size it was authored at. That is a
+		-- real thing to want and /aether scale fit still does it - but as a
+		-- DEFAULT it made the HUD smaller than the game it sits in, and the
+		-- size that was actually wrong was the 62px action slot below.
+		scale       = 1.0,
 		debug       = false,
 
 		-- One line at login saying which build this is. On by default: the
@@ -239,14 +242,28 @@ Config.defaults = {
 				-- dock is the one element people most want to tune independently
 				-- of the unit frames.
 				scale        = 1.0,
-				size         = 62,      -- concept 2a: 62px slots, 17px radius
-				spacing      = 9,
-				padding      = 10,
+				-- BLIZZARD'S OWN NUMBERS. ActionButtonTemplate is
+				-- <Size x="36" y="36"/> on both clients and the main bar sets
+				-- its buttons 8 apart, so 36/8 at scale 1.0 puts our dock at
+				-- exactly the size the game's is - which is the thing a player
+				-- compares it against, and the only sense in which an action
+				-- bar has a right size.
+				--
+				-- The concept called for 62px slots and that shipped. 62 is
+				-- 1.7x Blizzard's, so the dock came out looking like a
+				-- different addon's - see the report of 2026-08-27. The
+				-- concept was drawn at a size, not at a scale; the game had
+				-- already answered this one.
+				size         = 36,
+				spacing      = 8,
+				-- Proportional to the slot: the old 10 was a sixth of a 62px
+				-- slot and would be more than a quarter of a 36px one.
+				padding      = 6,
 				-- Points added to the button text roles (keybind, count, cooldown).
 				-- Offset rather than absolute so the type roles stay the single
 				-- source of truth. Note the dock is drawn at profile.scale, so
 				-- +2 here lands at roughly +1.4 on screen at the default 0.71.
-				fontDelta    = 4,
+				fontDelta    = 2,
 				showKeybinds = true,
 				tooltips     = true,
 				lockButtons  = true,    -- require a modified click to pick up
@@ -1014,6 +1031,22 @@ local function Migrate(db)
 		m.zen.cameraShoulderSide = nil
 	end
 
+	-- THE 62px SLOT. It was the concept's number and it shipped in 1.0.0, and
+	-- it is 1.7x the size of the action button the game draws beside it - so
+	-- every profile that has one has it because it was handed over, not
+	-- because anybody chose it. The three that travel with it go too.
+	--
+	-- ONLY THE EXACT OLD DEFAULTS. A player who typed /aether bar size 62 gets
+	-- to keep it, which is the difference between a migration and helping
+	-- yourself to somebody's settings.
+	if m.actionbars then
+		local ab = m.actionbars
+		if ab.size == 62 and ab.spacing == 9 and ab.padding == 10 then
+			ab.size, ab.spacing, ab.padding = 36, 8, 6
+			if ab.fontDelta == 4 then ab.fontDelta = 2 end
+		end
+	end
+
 	-- The in-flight console was called `inflight` for an afternoon. Renamed to
 	-- avoid colliding with an existing addon of that name; the learned flight
 	-- durations under it are real measurements and worth carrying across.
@@ -1097,41 +1130,22 @@ local function Migrate(db)
 	end
 end
 
+--  Reachable so it can be tested. Every rule in here rewrites somebody's saved
+--  settings on the strength of an assumption about how they got them, which is
+--  exactly the sort of thing that should have to prove itself.
+Config.Migrate = Migrate
+
 function Config:Initialize()
 	local AceDB = LibStub("AceDB-3.0")
 	A.db = AceDB:New("AetherUIDB", Config.defaults, true)
 	Migrate(A.db)
-	Config.FitScale()
 
 	-- All three through the one path. A copy and a reset rewrite the tables
 	-- under a module exactly as a switch does, so a module holding a
 	-- reference is just as wrong after either of them.
-	--  ...AND FIRST, because a fresh profile arrives carrying the 0 sentinel
-	--  and every module that reads profile.scale is about to be rebuilt at it.
-	--  A frame at scale 0 is not small, it is absent.
-	A.db.RegisterCallback(A, "OnProfileChanged", function()
-		Config.FitScale() A:ProfileChanged()
-	end)
-	A.db.RegisterCallback(A, "OnProfileCopied",  function()
-		Config.FitScale() A:ProfileChanged()
-	end)
-	A.db.RegisterCallback(A, "OnProfileReset",   function()
-		Config.FitScale() A:ProfileChanged()
-	end)
-end
-
---- Give a profile that has never had a scale the one this monitor asks for.
---
---  ONLY WHEN IT HAS NONE. A saved number is the player's answer and is never
---  overwritten - not on a reload, not when they plug in another monitor. The
---  way back to the fitted value is /aether scale fit, which is a thing they
---  asked for rather than a thing that happened to them.
-function Config.FitScale()
-	local p = A.db and A.db.profile
-    if not p then return end
-	if type(p.scale) ~= "number" or p.scale <= 0 then
-		p.scale = A:FittedScale()
-	end
+	A.db.RegisterCallback(A, "OnProfileChanged", function() A:ProfileChanged() end)
+	A.db.RegisterCallback(A, "OnProfileCopied",  function() A:ProfileChanged() end)
+	A.db.RegisterCallback(A, "OnProfileReset",   function() A:ProfileChanged() end)
 end
 
 --- Convenience accessor: A.Config:Module("unitframes")
