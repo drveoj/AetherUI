@@ -5597,8 +5597,134 @@ do
 		end
 
 		for i = 1, _G.NUM_FACTIONS_DISPLAYED do
-			CreateFrame("Button", "ReputationHeader" .. i, cf)
-				:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+			local h = CreateFrame("Button", "ReputationHeader" .. i, cf)
+			h:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+			-- isCollapsed, AND NOT isExpanded. The skill list writes one sense
+			-- and the reputation list writes the other, and a mock that set the
+			-- skill list's flag here agreed with a mark that read a flag the
+			-- client never sets: every faction header drew a plus whether it
+			-- was open or shut, and the suite called that dressed.
+			h.isCollapsed = (i ~= 1)
+		end
+
+		-- CATACLYSM'S SHEET, WHICH IS THE ONE MISTS SHIPS. Every name here
+		-- REPLACES one built above rather than joining it, and the replaced
+		-- ones are cleared: leaving Era's spellings standing on this flavour is
+		-- the mock being kinder than the client, and a skin that finds them
+		-- here finds nothing in the game.
+		--
+		-- Three changes, all from Blizzard_CharacterFrame/Cata: the attribute
+		-- panes and the five resistance chips became one CharacterStatsPane of
+		-- collapsible groups; the player's doll became a ModelScene with its
+		-- controls in a row of five rather than two loose discs; and the
+		-- reputation headers became ordinary rows with the control INSIDE them
+		-- and the collapsed flag on the row.
+		if _G.__mists then
+			for _, gone in ipairs({ "CharacterAttributesFrame",
+				-- AND THE ROWS THAT WERE IN IT. Clearing the pane and leaving
+				-- its strings standing is the mock being kinder than the
+				-- client in the narrowest possible way: the check that reads
+				-- them finds Era's, passes, and never looks at the rows this
+				-- flavour actually draws.
+				"CharacterStatFrame1", "CharacterStatFrame1Label",
+				"CharacterStatFrame1StatText",
+				"PetAttributesFrame", "CharacterModelFrame",
+				"CharacterModelFrameRotateLeftButton",
+				"CharacterModelFrameRotateRightButton" }) do
+				_G[gone] = nil
+			end
+			for i = 1, 5 do
+				_G["MagicResFrame" .. i] = nil
+				_G["PetMagicResFrame" .. i] = nil
+			end
+
+			-- INSIDE THE PAPER DOLL TAB and beside the model, which is where
+			-- CharacterFrame.xml anchors it: to CharacterFrameInsetRight. It
+			-- is not a sixth tab, so it must not be a sixth full-window pane
+			-- here - a mock that made it one has the sheet on two tabs at
+			-- once and every measurement of the window disagrees.
+			local stats = CreateFrame("Frame", "CharacterStatsPane",
+				_G.PaperDollFrame)
+			stats:SetSize(172, 350)
+			stats:SetPoint("TOPRIGHT", _G.PaperDollFrame, "TOPRIGHT", -4, -74)
+			stats.ClassBackground = stats:CreateTexture(nil, "BACKGROUND")
+			stats.ClassBackground:SetTexture("stats-class-backing")
+			for i = 1, 7 do
+				local g = CreateFrame("Frame", "CharacterStatsPaneCategory" .. i,
+					stats)
+				g:SetSize(169, 60)
+				-- Its own three-slice stone, drawn on the GROUP rather than
+				-- inherited from the pane - so stripping the pane alone leaves
+				-- seven banded blocks of parchment down our glass.
+				for _, part in ipairs({ "BgTop", "BgMiddle", "BgBottom" }) do
+					g[part] = g:CreateTexture(nil, "BACKGROUND")
+					g[part]:SetTexture("Interface" .. [[\]] .. "CharacterFrame"
+						.. [[\]] .. "Char-Stat-Middle")
+				end
+				-- AND ITS MARK IS A TEXTURE ON THE GROUP, not a button's normal
+				-- texture: two of them, one shown at a time. The strip takes
+				-- both, which is why the row needs one of ours put back.
+				g.CollapsedIcon = g:CreateTexture(nil, "ARTWORK")
+				g.CollapsedIcon:SetTexture("Char-Stat-Plus")
+				g.ExpandedIcon = g:CreateTexture(nil, "ARTWORK")
+				g.ExpandedIcon:SetTexture("Char-Stat-Minus")
+				g.collapsed = (i ~= 1) or nil
+
+				local label = g:CreateFontString(nil, "OVERLAY")
+				label:SetFont("Fonts" .. [[\]] .. "FRIZQT__.TTF", 10, "")
+				label:SetText("Attributes")
+
+				-- AND THE NUMBERS THEMSELVES, one level down inside the
+				-- group. On Era these sat in CharacterAttributesFrame; the
+				-- rows did not go away with that frame, they moved.
+				g.__label = label
+				local row = CreateFrame("Frame", nil, g)
+				local value = row:CreateFontString(nil, "OVERLAY")
+				g.__value = value
+				value:SetFont("Fonts" .. [[\]] .. "FRIZQT__.TTF", 12, "")
+				value:SetText("21")
+
+				-- THE WHOLE HEADER IS THE BUTTON, 169 wide with the category's
+				-- name across it and NO normal texture of its own - so a glyph
+				-- centred on it lands in the middle of the words.
+				local bar = CreateFrame("Button",
+					"CharacterStatsPaneCategory" .. i .. "Toolbar", g)
+				bar:SetSize(169, 20)
+				bar:SetPoint("TOPLEFT", g, "TOPLEFT", 0, 0)
+			end
+
+			local scene = CreateFrame("Frame", "CharacterModelScene",
+				_G.PaperDollFrame)
+			scene:SetSize(231, 320)
+			scene:SetPoint("TOPLEFT", _G.PaperDollFrame, "TOPLEFT", 52, -66)
+			scene:CreateTexture(nil, "BORDER"):SetTexture("model-stone")
+			-- FIVE CONTROLS IN ONE ROW - zoom in and out, turn left and right,
+			-- reset - laid out end to end by the client and re-laid whenever it
+			-- runs. Under parent keys, with no globals: the old names find
+			-- nothing, which is the whole reason the player's doll kept
+			-- Blizzard's stone on this flavour.
+			scene.ControlFrame = CreateFrame("Frame", nil, scene)
+			for _, key in ipairs({ "zoomInButton", "zoomOutButton",
+				"rotateLeftButton", "rotateRightButton", "resetButton" }) do
+				scene.ControlFrame[key] = CreateFrame("Button", nil,
+					scene.ControlFrame)
+				scene.ControlFrame[key]:SetNormalTexture("model-control-art")
+			end
+
+			for i = 1, _G.NUM_FACTIONS_DISPLAYED do
+				_G["ReputationHeader" .. i] = nil
+				local row = _G["ReputationBar" .. i]
+				-- ON THE ROW, and the control inside it. ReputationBar_OnClick
+				-- reads self:GetParent().isCollapsed, so the flag and the button
+				-- are two different frames - which is exactly the shape a mark
+				-- that only looks at the button it was handed cannot read.
+				row.isCollapsed = (i ~= 1)
+				local btn = CreateFrame("Button",
+					"ReputationBar" .. i .. "ExpandOrCollapseButton", row)
+				btn:SetSize(13, 13)
+				btn:SetNormalTexture("Interface" .. [[\]] .. "Buttons"
+					.. [[\]] .. "UI-MinusButton-UP")
+			end
 		end
 
 		-- The client repaints every mark whenever the list changes - which is
@@ -14897,12 +15023,20 @@ section("panels: somebody else's character sheet", function()
 	-- sits ON the model rather than in the window's furniture. Two chevrons
 	-- beside a character model say there is a next page of character.
 	local bare, wrong = 0, 0
-	for _, pair in ipairs({
+	_G.__dolls = {
 		{ _G.InspectModelFrame, _G.InspectModelFrameRotateRightButton,
 			_G.InspectModelFrameRotateLeftButton },
-		{ _G.CharacterModelFrame, _G.CharacterModelFrameRotateRightButton,
-			_G.CharacterModelFrameRotateLeftButton },
-	}) do
+	}
+	-- ONLY THE DOLLS THE CLIENT LEAVES A LOOSE PAIR ON. Cataclysm's
+	-- character sheet draws its model in a ModelScene whose five controls
+	-- are one row the client re-anchors on every layout, so there is no
+	-- pair there to move into the corner and Mists gets none of this.
+	if _G.CharacterModelFrame then
+		_G.__dolls[#_G.__dolls + 1] = { _G.CharacterModelFrame,
+			_G.CharacterModelFrameRotateRightButton,
+			_G.CharacterModelFrameRotateLeftButton }
+	end
+	for _, pair in ipairs(_G.__dolls) do
 		local model, right, left = pair[1], pair[2], pair[3]
 		if not (right.__aetherRound and left.__aetherRound) then
 			bare = bare + 1
@@ -14929,7 +15063,11 @@ section("panels: somebody else's character sheet", function()
 	-- IDLE AT THREE QUARTERS. These sit ON the thing they act on rather than
 	-- in the furniture, so at full strength they compete with it - and what
 	-- they are over is a lit, moving picture. The cursor brings them up.
+	-- ON WHICHEVER DOLL HAS A LOOSE PAIR. The pet keeps its PlayerModel on
+	-- both clients; the player's became a ModelScene on Mists, whose five
+	-- controls are the client's own row and not ours to move.
 	local rb = _G.CharacterModelFrameRotateRightButton
+		or _G.PetModelFrameRotateRightButton
 	check(math.abs(rb:GetAlpha() - 0.75) < 0.01,
 		"and they sit back at three quarters over the model (" ..
 		string.format("%.2f", rb:GetAlpha()) .. ")")
@@ -27909,7 +28047,13 @@ do
 
 	-- MEASURED, not declared. Every window turned out to want a different
 	-- number and the character sheet three of them, one per tab.
-	check(_G.PaperDollFrame.__aetherTop == 64
+	-- ...AND THE PAPER DOLL TAB WANTS A DIFFERENT ONE PER CLIENT. Era's
+	-- topmost thing on it is the first gear slot at 74 down; Cataclysm
+	-- put the model above the slots, anchored 66 down, and that is what
+	-- the measure now finds. A number written into this check rather than
+	-- measured is the thing the check exists to catch.
+	_G.__dollTop = _G.__mists and 56 or 64
+	check(_G.PaperDollFrame.__aetherTop == _G.__dollTop
 		and _G.ReputationFrame.__aetherTop == 47
 		and _G.SkillFrame.__aetherTop == 39,
 		"each tab is measured on its own rather than sharing one number (" ..
@@ -27922,7 +28066,7 @@ do
 		tostring(cf.__aetherBodyShift) .. " against " .. tostring(want) .. ")")
 	local pp, prel, pprel, _, py = _G.PaperDollFrame:GetPoint(1)
 	check(pp == "TOPLEFT" and prel == cf and pprel == "TOPLEFT"
-		and py == -(cf.__aetherHeadH + inner - 64),
+		and py == -(cf.__aetherHeadH + inner - _G.__dollTop),
 		"by moving the PANE, so every slot and model on the tab travels with"
 		.. " it (" .. tostring(py) .. ")")
 	local _, _, _, _, ry = _G.ReputationFrame:GetPoint(1)
@@ -28928,8 +29072,26 @@ do
 		and header.__aetherGlyph:GetText() == "\226\136\146",
 		"and the mark stays ours after the client repaints the list")
 
-	check(_G.ReputationHeader1.__aetherGlyph ~= nil,
+	-- THE REPUTATION TREE TOO, under whichever name this client gives the
+	-- control: Era makes the header a row of its own and Cataclysm folds
+	-- it into an ordinary row with the button inside.
+	function _G.__repMark(n)
+		return _G["ReputationHeader" .. n]
+			or _G["ReputationBar" .. n .. "ExpandOrCollapseButton"]
+	end
+	check(_G.__repMark(1).__aetherGlyph ~= nil,
 		"the reputation tree's headers get the same treatment")
+
+	-- AND THE MARK POINTS THE WAY THE LIST ACTUALLY IS. This read
+	-- isExpanded, which no reputation list has ever set - so header one,
+	-- which is open, drew the plus that means shut, and so did every
+	-- other. Shipped on Era in 1.0.0 and found porting to Mists, where
+	-- the flag moved again: onto the ROW that owns the button.
+	check(_G.__repMark(1).__aetherGlyph:GetText() == "\226\136\146",
+		"an OPEN faction header shows the minus, from the isCollapsed the"
+		.. " client actually writes rather than the isExpanded it does not")
+	check(_G.__repMark(2).__aetherGlyph:GetText() == "+",
+		"and a shut one still shows the plus")
 
 	-- A SCROLL BAR HAS TO SAY IT SCROLLS. A list you can scroll with no visible
 	-- sign of it reads as a list that ends where its rows stop.
@@ -28955,7 +29117,11 @@ do
 
 	-- THE INSIDE LETTERING. A window in our glass with the client's own font in
 	-- every row of it is half a skin.
+	-- WHEREVER THE ROWS LIVE. Cataclysm moved them out of
+	-- CharacterAttributesFrame and into the stat groups, and named none
+	-- of them: the client reaches them through the group, so this does.
 	local statLabel = _G.CharacterStatFrame1Label
+		or _G.CharacterStatsPaneCategory1.__label
 	local labelFont, labelSize, labelFlags = statLabel:GetFont()
 	check(labelFont and labelFont:find("Outfit", 1, true) ~= nil,
 		"a stat row is in our lettering (" .. tostring(labelFont) .. ")")
@@ -28965,7 +29131,8 @@ do
 	check(labelFlags == "", "and unoutlined like the rest of the window")
 
 	-- Nested one deeper, because the client nests these.
-	local nestedFont, nestedSize = _G.CharacterStatFrame1StatText:GetFont()
+	local nestedFont, nestedSize = (_G.CharacterStatFrame1StatText
+		or _G.CharacterStatsPaneCategory1.__value):GetFont()
 	check(nestedFont and nestedFont:find("Outfit", 1, true) and nestedSize == 12,
 		"including the ones a level down inside it (" .. tostring(nestedSize) .. ")")
 
@@ -29019,7 +29186,12 @@ do
 	-- was marking. With a rim round it the whitespace is plainly whitespace.
 	do
 		local bare = {}
-		for _, name in ipairs({ "CharacterModelFrame", "PetModelFrame",
+		-- UNDER WHATEVER NAME. Cataclysm replaced the player's PlayerModel
+		-- with a ModelScene called CharacterModelScene, and the sheet kept
+		-- Blizzard's stone behind the character until the skin learned to
+		-- look for it - the one thing on that window you actually look at.
+		for _, name in ipairs({ _G.CharacterModelFrame and "CharacterModelFrame"
+			or "CharacterModelScene", "PetModelFrame",
 			"InspectModelFrame" }) do
 			local m = _G[name]
 			local well = m and m.__aetherModelWell
@@ -29051,16 +29223,63 @@ do
 	-- walking the regions rather than asked for by key - the same shape as the
 	-- spellbook's school tabs, where the picture IS the thing.
 	do
-		local gone = 0
+		local gone, seen = 0, 0
 		for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
 			for i = 1, 5 do
+				-- ERA ONLY. Cataclysm folded the five schools into rows of the
+				-- stats pane, so there are no chips on Mists to keep an icon.
 				local chip = _G[prefix .. i]
-				if chip.__icon:GetTexture() == 0 then gone = gone + 1 end
+				if chip then
+					seen = seen + 1
+					if chip.__icon:GetTexture() == 0 then gone = gone + 1 end
+				end
 			end
 		end
+		check(seen == (_G.__mists and 0 or 10),
+			"the client has the resistance chips this game version has ("
+			.. seen .. ")")
 		check(gone == 0,
 			"every resistance keeps the icon that says which school it is (" ..
-			gone .. " blanked of 10)")
+			gone .. " blanked of " .. seen .. ")")
+	end
+
+	-- THE STAT GROUPS, which are Cataclysm's answer to the attribute panes and
+	-- carry their own stone rather than the pane's: seven three-slice blocks of
+	-- Blizzard's parchment that a strip of CharacterStatsPane alone leaves
+	-- standing down the side of our glass. Era has no such thing.
+	if _G.__mists then
+		local stone, marks, placed = 0, 0, 0
+		for i = 1, 7 do
+			local g = _G["CharacterStatsPaneCategory" .. i]
+			for _, part in ipairs({ "BgTop", "BgMiddle", "BgBottom",
+				"CollapsedIcon", "ExpandedIcon" }) do
+				if g[part]:GetTexture() ~= 0 then stone = stone + 1 end
+			end
+			local glyph = _G["CharacterStatsPaneCategory" .. i .. "Toolbar"]
+				.__aetherGlyph
+			if glyph then
+				marks = marks + 1
+				local pt, _, _, x = glyph:GetPoint(1)
+				if pt == "LEFT" and x == 13 then placed = placed + 1 end
+			end
+		end
+		check(stone == 0,
+			"every stat group loses its own stone, not just the pane around them ("
+			.. stone .. " left of 35)")
+		check(marks == 7,
+			"and each keeps a mark saying it opens (" .. marks .. " of 7)")
+		-- ON THE LEFT WHERE ITS OWN WAS. The group's header button is the whole
+		-- 169px row with the category's name across it, so a glyph centred on
+		-- the button lands in the middle of the words.
+		check(placed == 7,
+			"at the left edge where the client's own plus sat, not centred over"
+			.. " the category's name (" .. placed .. " of 7)")
+		check(_G.CharacterStatsPaneCategory1Toolbar.__aetherGlyph:GetText()
+			== "\226\136\146"
+			and _G.CharacterStatsPaneCategory2Toolbar.__aetherGlyph:GetText() == "+",
+			"pointing the way the group actually is - and this one has to be TOLD:"
+			.. " an open stat group carries no flag at all, because the client"
+			.. " clears `collapsed` rather than setting it false")
 	end
 
 	-- BOTH DOLLS. The pet has a model box of its own on its own tab, and it
@@ -29069,10 +29288,12 @@ do
 	-- both.
 	do
 		local bare = 0
-		for _, pair in ipairs({
-			{ _G.CharacterModelFrame, _G.CharacterModelFrameRotateRightButton },
-			{ _G.PetModelFrame, _G.PetModelFrameRotateRightButton },
-		}) do
+		_G.__pairs = { { _G.PetModelFrame, _G.PetModelFrameRotateRightButton } }
+		if _G.CharacterModelFrame then
+			table.insert(_G.__pairs, 1, { _G.CharacterModelFrame,
+				_G.CharacterModelFrameRotateRightButton })
+		end
+		for _, pair in ipairs(_G.__pairs) do
 			local model, right = pair[1], pair[2]
 			local rp, rrel = right:GetPoint(1)
 			if not (right.__aetherRound
@@ -29082,7 +29303,8 @@ do
 		end
 		check(bare == 0,
 			"the pet's doll carries the same turn controls as the player's, on"
-			.. " the model rather than beside it (" .. bare .. " of 2)")
+			.. " the model rather than beside it (" .. bare .. " of "
+			.. #_G.__pairs .. ")")
 
 		-- AND THE BOX BEHIND THE PET comes off with them. It was never in the
 		-- list of panes - only PetPaperDollFrame was, which is the tab and not

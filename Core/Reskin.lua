@@ -1084,12 +1084,49 @@ function Reskin.Radio(box, store) return Toggle(box, store, true) end
 -- that has lost something.
 local GLYPH_PLUS, GLYPH_MINUS = "+", "\226\136\146"
 
+--- Which way one of those marks points, from whichever flag the client set.
+--
+--  There is no single flag. The skill tree writes isExpanded on the control
+--  itself; the reputation tree writes isCollapsed, the opposite sense - and
+--  Cataclysm's rebuilt reputation list writes it on the ROW that owns the
+--  control rather than on the control. Reading isExpanded alone found nothing
+--  on either reputation list, so every faction header drew a plus whether it
+--  was open or shut, on both clients this addon serves.
+--
+--  Both spellings, in the order the client is most likely to mean them, and
+--  the owning frame consulted only when the control itself carries none:
+--  Cataclysm's reputation rows put the flag on the row and the control
+--  inside it.
+local COLLAPSE_FLAGS = {
+	{ "isExpanded",  false },
+	{ "isCollapsed", true },
+}
+
+local function Expanded(btn)
+	for _, f in ipairs({ btn, btn.GetParent and btn:GetParent() or false }) do
+		if f then
+			for _, flag in ipairs(COLLAPSE_FLAGS) do
+				local v = f[flag[1]]
+				if v ~= nil then
+					if flag[2] then return not v end
+					return v and true or false
+				end
+			end
+		end
+	end
+	return false
+end
+
 --- One collapse control: its stone plus or minus off, ours on.
 --
 --  Safe to call repeatedly, and it HAS to be: the client re-sets the button's
 --  normal texture every time it refreshes the list, so a mark applied once at
 --  dress time is a mark you see until the first click.
-function Reskin.Collapse(btn, style)
+--  A caller that KNOWS may say so. Cataclysm's stat groups carry the flag
+--  only while they are shut - an open one has no flag at all, which is
+--  indistinguishable from a control that reports its state some fourth
+--  way - so that one window tells us rather than being read.
+function Reskin.Collapse(btn, style, expanded)
 	if not btn or not btn.SetNormalTexture then return end
 
 	Reskin.ClearButton(btn)
@@ -1114,7 +1151,8 @@ function Reskin.Collapse(btn, style)
 		btn.__aetherGlyph = glyph
 	end
 
-	glyph:SetText(btn.isExpanded and GLYPH_MINUS or GLYPH_PLUS)
+	if expanded == nil then expanded = Expanded(btn) end
+	glyph:SetText(expanded and GLYPH_MINUS or GLYPH_PLUS)
 	A.Widgets.Color(glyph, A.Palette.c.textDim)
 	return glyph
 end

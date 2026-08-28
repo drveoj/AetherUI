@@ -2707,8 +2707,14 @@ local function DressCollapses()
 	for n = 1, (_G.SKILLS_TO_DISPLAY or 0) do
 		Reskin.Collapse(_G["SkillTypeLabel" .. n])
 	end
+	-- WHICHEVER THING THE CONTROL IS. Era gives a faction header a row of its
+	-- own, ReputationHeaderN, and the row IS the button. Cataclysm folded the
+	-- headers into the ordinary rows, so on Mists the control is a child of
+	-- ReputationBarN - and is hidden on every row that is not a header, which
+	-- takes our mark with it exactly as it takes Blizzard's.
 	for n = 1, (_G.NUM_FACTIONS_DISPLAYED or 0) do
-		Reskin.Collapse(_G["ReputationHeader" .. n])
+		Reskin.Collapse(Part({ "ReputationHeader" .. n,
+		                       "ReputationBar" .. n .. "ExpandOrCollapseButton" }))
 	end
 	Reskin.Collapse(_G.SkillFrameCollapseAllButton)
 end
@@ -2742,7 +2748,24 @@ local CHAR_PANES = {
 	"PaperDollFrame", "PetPaperDollFrame", "ReputationFrame", "SkillFrame",
 	"HonorFrame", "CharacterAttributesFrame", "PetAttributesFrame",
 	"ReputationListScrollFrame", "SkillListScrollFrame", "SkillDetailScrollFrame",
+	-- Cataclysm rebuilt the sheet. The attribute panes became one scrolling
+	-- CharacterStatsPane of collapsible groups, the slots moved into a frame of
+	-- their own, and the pet's numbers went to PetPaperDollPetInfo. None of
+	-- those names exist on Era and none of Era's exist on Mists, so the list
+	-- carries both and the loop takes whichever the client has.
+	"CharacterStatsPane", "PaperDollItemsFrame", "PetPaperDollPetInfo",
 }
+
+--- The stat groups inside that pane, which carry their own stone.
+--
+--  Each group draws its own top, middle and bottom slice rather than
+--  inheriting the pane's, so stripping the pane leaves seven banded blocks of
+--  Blizzard's parchment down the side of our glass.
+local STAT_GROUPS = 7
+
+-- Where its own plus sat: Char-Stat-Plus is anchored 5 in from the group's
+-- top-left and is 16 wide, so its middle is 13.
+local STAT_GROUP_MARK_X = 13
 
 --- Art in one of those panes that is not the pane's own.
 --
@@ -2792,13 +2815,38 @@ end
 --  Blizzard names them from the MODEL's point of view rather than the
 --  camera's and says so in its own XML, which is why RotateRightButton is the
 --  one that turns it left.
+--  WHATEVER THE CLIENT DRAWS THE DOLL IN. Era uses a PlayerModel called
+--  CharacterModelFrame with the two turn buttons named off it. Cataclysm
+--  replaced it with a ModelScene called CharacterModelScene and moved the
+--  controls into a ControlFrame on it under parent keys - so the old names
+--  find nothing on Mists and the sheet keeps Blizzard's stone backdrop behind
+--  the character, which is the one thing on that window you actually look at.
+--  The pet kept its PlayerModel on both.
+local MODEL_HOSTS = {
+	Character = { "CharacterModelScene", "CharacterModelFrame" },
+	Pet       = { "PetModelFrame" },
+}
+
+--- The two buttons that turn one of those, WHEN THEY ARE OURS TO MOVE.
+--
+--  Only the pair the client leaves loose. A ModelScene keeps its five
+--  controls - zoom in and out, turn left and right, reset - in one row that
+--  ModelSceneControlFrameMixin:UpdateLayout anchors end to end and re-anchors
+--  whenever it runs, so pulling two of the five into the model's corner both
+--  breaks the row that is left and is undone by the client's next layout.
+--  Blizzard's row is a coherent thing; ours would be two of its pieces.
+local function ModelTurners(prefix)
+	return _G[prefix .. "ModelFrameRotateLeftButton"],
+	       _G[prefix .. "ModelFrameRotateRightButton"]
+end
+
 local function DressModel(prefix, store)
-	local model = _G[prefix .. "ModelFrame"]
+	local model = Part(MODEL_HOSTS[prefix] or (prefix .. "ModelFrame"))
 	if not model then return end
 
 	Reskin.Strip(model, store)
-	for _, key in ipairs({ "RotateRightButton", "RotateLeftButton" }) do
-		local btn = _G[prefix .. "ModelFrame" .. key]
+	local left, right = ModelTurners(prefix)
+	for _, btn in ipairs({ right or false, left or false }) do
 		if btn then
 			Reskin.ClearButton(btn)
 			if type(store) == "table" then Reskin.Strip(btn, store) end
@@ -2825,9 +2873,7 @@ local function DressModel(prefix, store)
 	end
 	well:ApplySkin("wellFill", "wellEdge")
 
-	W.RotatePair(model,
-		_G[prefix .. "ModelFrameRotateLeftButton"],
-		_G[prefix .. "ModelFrameRotateRightButton"])
+	W.RotatePair(model, left, right)
 end
 
 local function EachEquipSlot(fn)
@@ -2859,6 +2905,30 @@ local function DressCharacter(frame, store)
 	-- placed both by the time this runs. It used to do it here, one point
 	-- larger than every other panel's title, which is exactly the drift the
 	-- header band exists to end.
+	for n = 1, STAT_GROUPS do
+		local group = Part("CharacterStatsPaneCategory" .. n)
+		if group then
+			Reskin.Strip(group, store)
+			Reskin.Fonts(group, "pnBody")
+
+			-- ITS MARK BACK, ON THE LEFT WHERE ITS OWN WAS. The group draws the
+			-- plus and minus as two textures on ITSELF rather than on a button,
+			-- so the strip above takes them and leaves the row with nothing
+			-- saying it opens. The toolbar is the whole 169px header, so a glyph
+			-- centred on it lands in the middle of the category's name.
+			local bar = Part("CharacterStatsPaneCategory" .. n .. "Toolbar")
+			-- AND IT HAS TO TELL US. A stat group carries `collapsed` only
+			-- while it is shut: PaperDollFrame_ExpandStatCategory clears
+			-- the field rather than setting it false, so an open group is
+			-- a group with no state on it at all.
+			local glyph = Reskin.Collapse(bar, nil, not group.collapsed)
+			if glyph and bar then
+				glyph:ClearAllPoints()
+				glyph:SetPoint("LEFT", bar, "LEFT", STAT_GROUP_MARK_X, 0)
+			end
+		end
+	end
+
 	local rank = _G.CharacterLevelText
 	if rank and rank.SetText then W.Color(rank, Palette.c.textDim) end
 
