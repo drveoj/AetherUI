@@ -552,13 +552,8 @@ local FLYOUT_WRAP = [==[
 	return false
 ]==]
 
---- ...and what a DRAWER slot does after it casts: shut the drawer.
---
---  A post body, so the spell goes off first. In the pre body this would be
---  hiding the frame the click is still travelling through.
-local FLYOUT_SLOT_WRAP_POST = [==[
-	owner:Hide()
-]==]
+-- (A post body that shut the drawer after a cast lived here. It is gone until
+--  the slots are known to be clickable without it.)
 
 --- The flyout contract, WITHOUT THE TEMPLATE THAT CARRIES IT.
 --
@@ -630,6 +625,14 @@ local function FlyoutHandler()
 
 	flyout:SetAttribute("slots", 0)
 	flyout:SetAttribute("HandleFlyout", FLYOUT_SNIPPET)
+
+	-- THE NUMBERS THE SNIPPET LAYS OUT WITH. It reads them off attributes and
+	-- falls back to 36/4/7, which is right only while the slot size is the
+	-- default - so a player who had changed it got a drawer built to somebody
+	-- else's measurements. The size itself is written by SyncFlyouts, because
+	-- it is a setting and settings change.
+	flyout:SetAttribute("slotGap", FLYOUT_GAP)
+	flyout:SetAttribute("slotInset", FLYOUT_INSET)
 	flyout.slots = {}
 	return flyout
 end
@@ -652,10 +655,14 @@ local function EnsureSlots(n, size)
 		b.AetherPaintSlot = PaintSlot
 		b:Hide()
 
-		-- ...and the drawer shuts behind it. After the cast, not before.
-		if f.WrapScript then
-			pcall(f.WrapScript, f, b, "OnClick", "", FLYOUT_SLOT_WRAP_POST)
-		end
+		-- NOT WRAPPED. A post body here was the only thing this session put
+		-- between a drawer slot and the secure handler that casts its spell,
+		-- and the slots were not clickable - so it comes off first, on the
+		-- principle that has worked twice today: take away what was added
+		-- before theorising about what was not.
+		--
+		-- What it cost is the drawer shutting itself after a cast. It still
+		-- shuts on a second click of the slot that opened it.
 
 		f.slots[i] = b
 		f:SetFrameRef("slot" .. i, b)
@@ -700,6 +707,7 @@ function AB:SyncFlyouts()
 	end
 
 	EnsureSlots(most, cfg.size)
+	f:SetAttribute("slotSize", cfg.size)
 	f:Execute(table.concat(data, "\n"))
 end
 
