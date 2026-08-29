@@ -123,16 +123,61 @@ local NAMES = {
 
 	-- the HUD, where nothing is expected to have moved
 	"PlayerFrame", "TargetFrame", "TargetFrameToT", "PetFrame", "ComboFrame",
-	"MainMenuBar", "MultiBarBottomLeft", "StanceBarFrame", "PetActionBarFrame",
+	-- THE NAMES THE CLIENT USES, WHICH WERE NOT THE ONES ASKED FOR.
+	--
+	-- This list carried StanceBarFrame, PetActionBarFrame and PossessBarFrame,
+	-- and every one of them came back absent - on Mists AND on Era, which
+	-- should have been the giveaway. They are retail's spellings. Both clients
+	-- load Blizzard_ActionBar/Classic, where the frames are StanceBar,
+	-- PetActionBar and PossessActionBar, and the file is the SAME file on both:
+	-- there was never a difference here to find.
+	--
+	-- Three false findings out of five, and they went into a triage that read
+	-- them as windows Mists had renamed. A probe that asks the wrong name is
+	-- worse than no probe, because its answer looks like evidence.
+	"MainMenuBar", "MultiBarBottomLeft", "StanceBar", "PetActionBar",
 	"OverrideActionBar", "ExtraActionBarFrame", "VehicleSeatIndicator",
-	"MultiCastActionBarFrame", "PossessBarFrame", "DurabilityFrame",
+	"PossessActionBar", "DurabilityFrame",
+
+	-- ...and this one IS absent on both, by the toc rather than by accident:
+	-- MultiCastActionBarFrame.xml is [AllowLoadGameType wrath, cata]. The
+	-- shaman totem bar belongs to neither client we serve. Kept so that the
+	-- record says so, rather than leaving the next person to look it up again.
+	"MultiCastActionBarFrame",
 	"Minimap", "MiniMapTracking", "GameTimeFrame", "MiniMapMailFrame",
 	"BuffFrame", "TemporaryEnchantFrame", "ConsolidatedBuffs",
 
-	-- MoP's class resource bars, none of which AetherUI names
-	"RuneFrame", "TotemFrame", "ShardBar", "EclipseBarFrame",
-	"PaladinPowerBar", "MonkHarmonyBar", "MonkStaggerBar", "PriestBar",
+	-- MoP's class resource bars, none of which AetherUI names.
+	--
+	-- Read off Blizzard_UnitFrame's toc and XML rather than guessed: everything
+	-- here is [AllowLoadGameType cata, mists] or [mists], so Era has none of
+	-- them and Mists has all of them - and each is created in XML, so it exists
+	-- whatever class is logged in. Their being there is not a question a second
+	-- character can answer.
+	--
+	-- ShardBar and PriestBar were asked for and came back absent. The frames
+	-- are ShardBarFrame and PriestBarFrame, and the warlock's sits inside a
+	-- WarlockPowerFrame that also holds DemonicFuryBarFrame - two bars and a
+	-- host, where the list had one wrong name.
+	"RuneFrame", "TotemFrame", "EclipseBarFrame", "PaladinPowerBar",
+	"MonkHarmonyBar", "MonkStaggerBar",
+	"WarlockPowerFrame", "ShardBarFrame", "DemonicFuryBarFrame",
+	"PriestBarFrame",
 	"PlayerFrameAlternateManaBar",
+
+	-- AND THE THING THEY ARE ALL ANCHORED BY, which is the finding that
+	-- actually shapes the work. Every one of them is parent="PlayerFrame"
+	-- inheriting PlayerFrameBottomManagedFrameTemplate: MoP does not hang them
+	-- off the player frame at fixed points, it LAYS THEM OUT in a managed stack
+	-- underneath it. So the question for UnitFrames is not "where does each of
+	-- these go" but "what happens to that stack when the player frame is
+	-- ours" - one question rather than eight.
+	--
+	-- The container is in Shared/PlayerFrameTemplates.xml, so BOTH clients have
+	-- it and only its contents differ: Era's is empty. That makes this the rare
+	-- flavour difference with nothing to alias - the same frame, on both, with
+	-- eight things in it on one of them.
+	"PlayerFrameBottomManagedFramesContainer",
 
 	-- API that the port leans on
 	"GetQuestLogTitle", "GetNumQuestLogEntries", "SelectQuestLogEntry",
