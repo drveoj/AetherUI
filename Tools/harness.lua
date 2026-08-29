@@ -2976,36 +2976,90 @@ MinimapCluster = CreateFrame("Frame", "MinimapCluster")
 function MinimapCluster:EnableMouse(v) self.__mouse = v end
 Minimap:SetParent(MinimapCluster)
 
--- MinimapBackdrop is the parent of the round-edge buttons on this client, not
--- the cluster - which is why the sweep has to recurse rather than stop at the
--- top.
-MinimapBackdrop = CreateFrame("Frame", "MinimapBackdrop", MinimapCluster)
-for _, n in ipairs({
-	"MinimapZoomIn", "MinimapZoomOut", "MiniMapTracking",
-	"MiniMapBattlefieldFrame", "GameTimeFrame", "MiniMapMailFrame",
-}) do
+-- THE TREE Blizzard_Minimap/Classic/Minimap.xml ACTUALLY BUILDS, which is not
+-- the one this mock had. That file is UNGATED and byte-identical in both
+-- reference trees, so every name in it is on both clients - and the mock's
+-- parentage was wrong in a way that decides what the sweep can reach.
+--
+-- MinimapBackdrop is a child of MINIMAP, not of the cluster, and so are the
+-- mail and battlefield frames. The module knows: it sweeps the backdrop by
+-- name in a second pass, precisely because Minimap itself is excluded by
+-- identity and the recursion cannot arrive there.
+MinimapBackdrop = CreateFrame("Frame", "MinimapBackdrop", Minimap)
+for _, n in ipairs({ "MiniMapBattlefieldFrame", "MiniMapMailFrame" }) do
+	CreateFrame("Frame", n, Minimap)
+end
+-- ...and these hang off the backdrop. MiniMapWorldMapButton was left out of
+-- this mock as "Wrath+ only", which is not what the file says: it is declared
+-- right beside MinimapZoomIn, hidden="true", on both clients.
+for _, n in ipairs({ "MinimapZoomIn", "MinimapZoomOut", "MiniMapWorldMapButton" }) do
 	CreateFrame("Frame", n, MinimapBackdrop)
 end
 for _, n in ipairs({
-	"MinimapBorder", "MinimapBorderTop", "MinimapNorthTag",
+	"MinimapBorder", "MinimapNorthTag",
 	"MinimapToggleButton", "MinimapZoneTextButton", "MinimapCompassTexture",
+	-- Cluster-level, hidden until the game has something to say with them.
+	-- Two of the three are MoP's: a challenge-mode medal and a guild instance
+	-- difficulty, which is furniture that appears on a client Era never runs.
+	"MiniMapInstanceDifficulty", "GuildInstanceDifficulty", "MiniMapChallengeMode",
 }) do
 	CreateFrame("Frame", n, MinimapCluster)
 end
--- MiniMapWorldMapButton is deliberately absent: it is Wrath+ only, and a module
--- that reached for it here would be reaching for it in the game too.
+-- MinimapBorderTop is NOT built, and is not in that file on either client. The
+-- module names it, which costs nothing - Banish on a missing global is a no-op
+-- - but a mock that invents it lets the list keep a name nothing answers to.
+
+-- THE DAY/NIGHT BUTTON IS A DIFFERENT WIDGET, IN A DIFFERENT PLACE.
+--
+-- Era loads Classic/GameTime_NoCalendar.xml, where GameTimeFrame is a FRAME on
+-- the backdrop. Mists loads Wrath/GameTime.xml, where it is a BUTTON on the
+-- cluster with the calendar's invite and alarm textures on it. The probe
+-- recorded exactly that - "Frame" on one, "Button" on the other - and it is
+-- the sort of difference a name-only list cannot see.
+if _G.__mists then
+	CreateFrame("Button", "GameTimeFrame", MinimapCluster)
+	for _, n in ipairs({ "GameTimeCalendarInvitesTexture",
+		"GameTimeCalendarInvitesGlow", "GameTimeCalendarEventAlarmTexture" }) do
+		_G[n] = GameTimeFrame:CreateTexture(n)
+	end
+else
+	CreateFrame("Frame", "GameTimeFrame", MinimapBackdrop)
+end
 
 -- An anonymous texture on the cluster, and an addon's frame sitting on it. The
 -- sweep has to take the first and leave the second.
 _G.__clusterArt = MinimapCluster:CreateTexture(nil, "OVERLAY")
 CreateFrame("Frame", "SomeAddonOnTheCluster", MinimapCluster)
 
--- TRACKING IS A DropdownButton ON THIS CLIENT, not a dropdown frame. Same
--- fabrication as the unit menus: the mock invented MiniMapTrackingDropDown
--- because we asked for it, and right-clicking the map did nothing in the game.
-MiniMapTrackingButton = CreateFrame("Button", "MiniMapTrackingButton")
-MiniMapTrackingButton.menuGenerator = function() end
-function MiniMapTrackingButton:OpenMenu() _G.__trackingMenu = "button" end
+-- TRACKING IS TWO DIFFERENT THINGS, AND ONLY ONE OF THEM IS A MENU.
+--
+-- The toc: MinimapTracking_Simple is [AllowLoadGameType vanilla] and
+-- MinimapTracking_Dropdown is [ExcludeLoadGameType vanilla]. So Era gets the
+-- simple one - a bare Frame with an icon, no button inside it, and a
+-- right-click that calls CancelTrackingBuff, because on vanilla tracking is a
+-- BUFF YOU CAST and there is no list to choose from. Mists gets the dropdown,
+-- where MiniMapTracking holds a DropdownButton whose OnLoad calls SetupMenu.
+--
+-- This mock built MiniMapTrackingButton unconditionally. That is the second
+-- fabrication in the same three lines of the module: the first invented
+-- MiniMapTrackingDropDown, was found in the game, and was replaced by a
+-- reach for a button that Era has not got either. The suite was green both
+-- times, for the same reason both times.
+--
+-- Its host differs too. The dropdown's MiniMapTracking is parent="MinimapBackdrop";
+-- the simple one declares no parent at all, so on Era it is a child of UIParent
+-- and the cluster sweep can never reach it. The named list is the only thing
+-- that takes it there, which is worth the mock being able to prove.
+if _G.__mists then
+	CreateFrame("Frame", "MiniMapTracking", MinimapBackdrop)
+	MiniMapTrackingButton = CreateFrame("Button", "MiniMapTrackingButton",
+		_G.MiniMapTracking)
+	MiniMapTrackingButton.menuGenerator = function() end
+	function MiniMapTrackingButton:OpenMenu() _G.__trackingMenu = "button" end
+else
+	CreateFrame("Frame", "MiniMapTracking", UIParent)
+	function CancelTrackingBuff() _G.__trackingCancelled = true end
+end
 
 MenuUtil = MenuUtil or {}
 function MenuUtil.CreateContextMenu(owner, generator)
@@ -3087,6 +3141,12 @@ for _, n in ipairs({
 	"MinimapZoneTextButton", "MiniMapTracking", "MiniMapBattlefieldFrame",
 	"GameTimeFrame", "MinimapCompassTexture", "MiniMapMailFrame",
 	"MinimapBackdrop",
+	-- Declared in the same ungated file as the rest, so secure on both clients.
+	-- Left out of this list, the sweep read them as an addon's frames and left
+	-- them sitting on the map.
+	"MiniMapWorldMapButton", "MiniMapInstanceDifficulty",
+	"GuildInstanceDifficulty", "MiniMapChallengeMode",
+	"MiniMapTrackingButton",
 }) do
 	_G.__secureNames[n] = true
 end
@@ -19387,9 +19447,26 @@ do  -- the furniture
 	check(_G.MinimapZoomIn:GetParent() ~= MinimapCluster,
 		"banished frames are reparented off the cluster, so another addon calling"
 		.. " Show() on one cannot put it back")
-	check(r.MiniMapWorldMapButton == nil,
-		"MiniMapWorldMapButton is never touched - it is Wrath+ only and does not"
-		.. " exist on this client")
+	-- IT IS NOT WRATH+ ONLY, which is what this check used to assert and what
+	-- the mock was built to match. MiniMapWorldMapButton is declared in
+	-- Blizzard_Minimap/Classic/Minimap.xml beside MinimapZoomIn - an ungated
+	-- file, byte-identical in both reference trees - so it is on both clients,
+	-- hidden until something shows it, and it is ours to take like the rest.
+	check(r.MiniMapWorldMapButton == "hidden",
+		"the world map button goes too - it is in the same file as the zoom"
+		.. " buttons, on both clients, whatever the old comment said (" ..
+		tostring(r.MiniMapWorldMapButton) .. ")")
+
+	-- AND THE THREE THE GAME PUTS THERE WHEN IT HAS SOMETHING TO SAY. All
+	-- cluster-level, all hidden="true" until the client shows them - so a run
+	-- that never enters an instance or a challenge never sees them, and neither
+	-- did this suite. Two of the three are things only Mists can raise.
+	for _, n in ipairs({ "MiniMapInstanceDifficulty", "GuildInstanceDifficulty",
+		"MiniMapChallengeMode" }) do
+		check(r[n] == "hidden", n .. " is banished rather than left to appear"
+			.. " over the map the first time the game shows it (" ..
+			tostring(r[n]) .. ")")
+	end
 
 	-- The named list is not the whole job: some of the art up there is an
 	-- anonymous region with no global to put in a list, which is what left a
@@ -19411,15 +19488,30 @@ do  -- the furniture
 	check(Minimap:GetZoom() == 1, "the wheel zooms in")
 	Minimap:GetScript("OnMouseWheel")(Minimap, -1)
 	check(Minimap:GetZoom() == 0, "and out")
-	-- THROUGH THE CLIENT'S OWN MENU. The dropdown frame this used to reach for
-	-- has not existed for years; the mock invented it because we asked, so the
-	-- suite was green while right-clicking the map did nothing at all. Opened
-	-- as a CONTEXT menu, which puts it at the cursor: the button's own OpenMenu
-	-- anchors to the button, and the button is hidden furniture in a corner.
+	-- THROUGH THE CLIENT'S OWN MENU, WHERE THE CLIENT HAS ONE.
+	--
+	-- Twice now this has been checked against a frame the client had not got.
+	-- First MiniMapTrackingDropDown, invented by the mock because the module
+	-- asked for it; then MiniMapTrackingButton, built by the mock on both
+	-- flavours when the toc gives it to only one. Both times the suite was
+	-- green while right-clicking the map did nothing in the game.
+	--
+	-- Mists: the menu, opened as a CONTEXT menu so it lands at the cursor - the
+	-- button's own OpenMenu anchors to the button, and the button is hidden
+	-- furniture in a corner. Era: there is no menu to open, because tracking is
+	-- a buff you cast; the right-click does what the frame we hid did, which is
+	-- cancel it.
+	_G.__trackingCancelled = nil
 	Minimap:GetScript("OnMouseUp")(Minimap, "RightButton")
-	check(_G.__trackingMenu == Minimap,
-		"right-click opens the tracking menu at the map, not at the hidden"
-		.. " button that used to own it")
+	if _G.__mists then
+		check(_G.__trackingMenu == Minimap,
+			"right-click opens the tracking menu at the map, not at the hidden"
+			.. " button that used to own it")
+	else
+		check(_G.__trackingCancelled == true,
+			"right-click cancels the tracking buff - this client has no menu,"
+			.. " and that is the whole of what the frame we hid did")
+	end
 	Minimap:GetScript("OnMouseUp")(Minimap, "LeftButton")
 	check(_G.__minimapPinged, "and left-click still pings")
 end

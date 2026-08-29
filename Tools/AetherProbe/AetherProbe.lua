@@ -145,6 +145,23 @@ local NAMES = {
 	-- record says so, rather than leaving the next person to look it up again.
 	"MultiCastActionBarFrame",
 	"Minimap", "MiniMapTracking", "GameTimeFrame", "MiniMapMailFrame",
+
+	-- THE MINIMAP'S FURNITURE, asked for by name because the interesting half
+	-- of it is invisible until the game raises it.
+	--
+	-- MiniMapTrackingButton is the one that matters: the toc gives Era
+	-- MinimapTracking_Simple, which has no button in it at all, and gives Mists
+	-- the dropdown, which does. The source says so; this is the client saying
+	-- so. GameTimeFrame is a Frame on one and a Button on the other, which the
+	-- record already shows and a name-only list cannot see.
+	--
+	-- The last three are cluster-level and hidden="true" until there is
+	-- something to say with them, so a probe run that stays out of instances
+	-- records them present and never sees them - which is the point: they are
+	-- ours to hide before the first time the game shows one.
+	"MiniMapTrackingButton", "MiniMapWorldMapButton", "MinimapBackdrop",
+	"MiniMapInstanceDifficulty", "GuildInstanceDifficulty",
+	"MiniMapChallengeMode", "MinimapBorderTop",
 	"BuffFrame", "TemporaryEnchantFrame", "ConsolidatedBuffs",
 
 	-- MoP's class resource bars, none of which AetherUI names.

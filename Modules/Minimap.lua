@@ -184,7 +184,17 @@ function MM:HideBlizzard()
 	-- Then everything the list could not name.
 	local keep = { [_G.Minimap] = true }
 	SweepCluster(_G.MinimapCluster, self.hideReport, keep, 0)
-	SweepCluster(_G.MinimapBackdrop, self.hideReport, keep, 1)
+
+	-- SEPARATELY, BECAUSE THE RECURSION CANNOT ARRIVE THERE. The backdrop is a
+	-- child of Minimap rather than of the cluster, and Minimap is excluded by
+	-- identity - so the pass above walks straight past it. It is swept by name
+	-- instead, and says so in the report either way: which path reached it is
+	-- an implementation detail, and a report that only records one of them
+	-- reads as a gap.
+	if _G.MinimapBackdrop then
+		SweepCluster(_G.MinimapBackdrop, self.hideReport, keep, 1)
+		self.hideReport.MinimapBackdrop = "swept"
+	end
 
 	-- The cluster is a mouse-enabled rectangle considerably larger than the map,
 	-- and it swallows clicks meant for whatever is behind it. It stays *on
@@ -618,6 +628,20 @@ function MM:OnEnable()
 			-- whatever Blizzard says it is - and opened as a CONTEXT menu, which
 			-- puts it at the cursor. Its own OpenMenu would anchor to the button,
 			-- and the button is hidden furniture parked off in a corner.
+			--
+			-- AND ONLY ONE CLIENT HAS A MENU AT ALL, which the second version of
+			-- this got wrong the same way the first did. The toc gates
+			-- MinimapTracking_Simple to vanilla and MinimapTracking_Dropdown to
+			-- everything else: Era's tracking is a bare frame with an icon and
+			-- NO button inside it, because on vanilla tracking is a buff you
+			-- cast and there is no list to choose from. MiniMapTrackingButton is
+			-- a Mists frame, and reaching for it on Era was reaching for
+			-- MiniMapTrackingDropDown all over again.
+			--
+			-- So: the menu where there is a menu, and otherwise the thing the
+			-- hidden frame itself did on a right-click - cancel the tracking
+			-- buff. That is the whole of the function we took off the screen,
+			-- and it is why this handler exists.
 			_G.Minimap:SetScript("OnMouseUp", function(self_, button)
 				if button == "RightButton" then
 					local b = _G.MiniMapTrackingButton
@@ -625,6 +649,8 @@ function MM:OnEnable()
 						pcall(MenuUtil.CreateContextMenu, _G.Minimap, b.menuGenerator)
 					elseif b and b.OpenMenu then
 						pcall(b.OpenMenu, b)
+					elseif _G.CancelTrackingBuff then
+						pcall(_G.CancelTrackingBuff)
 					end
 					return
 				end
