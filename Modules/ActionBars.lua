@@ -663,7 +663,27 @@ local function EnsureSlots(n, size)
 		local b = CreateFrame("CheckButton", "AetherUIFlyoutSlot" .. i, f,
 			"SecureActionButtonTemplate")
 		b:SetSize(size, size)
-		b:RegisterForClicks(UseKeyDown() and "AnyDown" or "AnyUp")
+
+		-- BOTH EDGES. The bar's own slots follow the player's cast-on-down
+		-- setting because a keybind and a click have to agree there. A drawer
+		-- slot has no keybind, nothing races it, and registering for one edge
+		-- is one more way for a click to arrive and find nobody listening -
+		-- which is the fault being chased.
+		b.__clicks = "AnyUp AnyDown"
+		b:RegisterForClicks("AnyUp", "AnyDown")
+
+		-- COUNTED, NOT INTERCEPTED. HookScript runs after the template's own
+		-- handler instead of replacing it, so this says whether the click
+		-- arrives at all without being able to eat it. That distinction is the
+		-- measurement: a click that never fires is a different fault from one
+		-- that fires and cast nothing.
+		b:HookScript("OnClick", function(self2, btn)
+			self2.__clicked = (self2.__clicked or 0) + 1
+			self2.__lastBtn = btn
+		end)
+		b:HookScript("OnMouseDown", function(self2)
+			self2.__pressed = (self2.__pressed or 0) + 1
+		end)
 		W.DecorateSlot(b, size)
 		b.AetherPaintSlot = PaintSlot
 
@@ -780,11 +800,18 @@ function AB:DiagnoseFlyout()
 	local b = f.slots and f.slots[1]
 	box(b, "slot 1")
 	if b then
-		say(("slot 1: type=%s spell=%s clicks=%s protected=%s")
+		say(("slot 1: type=%s type1=%s spell=%s unit=%s protected=%s")
 			:format(tostring(b:GetAttribute("type")),
+				tostring(b:GetAttribute("type1")),
 				tostring(b:GetAttribute("spell")),
-				tostring(b.__clicks or "?"),
+				tostring(b:GetAttribute("unit")),
 				tostring(b.IsProtected and select(1, b:IsProtected()))))
+		say(("slot 1 clicks: registered=%s pressed=%s clicked=%s last=%s")
+			:format(tostring(b.__clicks), tostring(b.__pressed or 0),
+				tostring(b.__clicked or 0), tostring(b.__lastBtn)))
+		say("SecureActionButton_OnClick present: "
+			.. tostring(_G.SecureActionButton_OnClick ~= nil)
+			.. "  own OnClick: " .. tostring(b:GetScript("OnClick") ~= nil))
 		say("slot 1 parent: " .. tostring(b:GetParent() and b:GetParent():GetName()))
 		local ok, mx, my = pcall(b.GetCenter, b)
 		say("slot 1 centre: " .. tostring(ok and mx) .. ", " .. tostring(ok and my))
