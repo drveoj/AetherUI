@@ -841,8 +841,20 @@ local function EnsureSlots(n, size)
 		-- for the header inside a wrap body, and the header here IS the
 		-- drawer. GetParent goes through a handle for no reason.
 		if f.WrapScript then
-			local ok, err = pcall(f.WrapScript, f, b, "OnClick",
-				"return nil", "owner:Hide()")
+			-- IT LEAVES A MARK. The wrap is accepted - the client says so - and
+			-- the drawer still stands open in a fight, so the question is
+			-- whether the body RUNS and its Hide is refused, or whether it
+			-- never runs at all. Those need opposite fixes and nothing here
+			-- could tell them apart.
+			--
+			-- An attribute, because that is the one thing a snippet can leave
+			-- behind for ordinary Lua to read.
+			local ok, err = pcall(f.WrapScript, f, b, "OnClick", "return nil",
+				[==[
+					owner:SetAttribute("aetherPostRan", 1)
+					owner:Hide()
+					owner:SetAttribute("aetherPostHid", 1)
+				]==])
 			f.__wrapOk, f.__wrapErr = ok, err
 		else
 			f.__wrapOk, f.__wrapErr = false, "no WrapScript method"
@@ -962,6 +974,10 @@ function AB:DiagnoseFlyout()
 		.. " demands of a header)"):format(tostring(prot), tostring(explicit)))
 	say(("drawer slot wrap: ok=%s err=%s"):format(tostring(f.__wrapOk),
 		tostring(f.__wrapErr)))
+	say(("post body: ran=%s reachedHide=%s  (ran=nil means it never fired;"
+		.. " ran=1 with the drawer still shown means the Hide was refused)")
+		:format(tostring(f:GetAttribute("aetherPostRan")),
+			tostring(f:GetAttribute("aetherPostHid"))))
 	say("drawer parent: " .. tostring(f:GetParent() and f:GetParent():GetName()))
 	box(f.panel, "drawer glass")
 
