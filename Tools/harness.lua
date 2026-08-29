@@ -16213,6 +16213,201 @@ do
 		"no action button has had its click taken by a template it inherited"
 		.. " for something else (" .. stolen .. " of " .. #bar.buttons .. ")")
 
+	-- THE SNIPPETS THEMSELVES, RUN.
+	--
+	-- They cannot run in the restricted environment here - there is not one -
+	-- but they are strings of ordinary Lua, and loadstring will take them. So
+	-- the branching and the arithmetic ARE checkable; what is not is the
+	-- environment's own rules about what a frame may do and when.
+	--
+	-- That distinction is worth stating precisely, because "unverified" was
+	-- about to be written in a commit message about a wrap that runs on every
+	-- click in the game.
+	local function RunSnippet(body, env)
+		local fn = loadstring(body)
+		if not fn then return nil, "would not compile" end
+		env.GetActionInfo = env.GetActionInfo or GetActionInfo
+		env.ipairs, env.select, env.print = ipairs, select, print
+		setfenv(fn, setmetatable(env, { __index = _G }))
+		return pcall(fn, env.__arg)
+	end
+
+	do
+		local calls = {}
+		local handler = {
+			SetAttribute = function(_, k, v) calls[k] = v end,
+			RunAttribute = function(_, k, v) calls.ran, calls.ranWith = k, v end,
+		}
+		local header = { GetFrameRef = function() return handler end }
+
+		local function Click(actionSlot, kind)
+			calls = {}
+			local btn = {
+				GetAttribute = function(_, k)
+					if k == "type" then return kind or "action" end
+					if k == "action" then return actionSlot end
+				end,
+			}
+			local ok, ret = RunSnippet(AB.__flyoutWrap,
+				{ self = btn, owner = header, down = false })
+			return ok, ret, calls
+		end
+
+		local ok, ret, c = Click(10)
+		check(ok, "the click wrap compiles and runs (" .. tostring(ret) .. ")")
+		check(ret == false,
+			"a flyout slot is taken off Blizzard's path - return false, or"
+			.. " SECURE_ACTIONS.action calls the Toggle that does not work")
+		check(c.ran == "HandleFlyout" and c.ranWith == 42,
+			"and the drawer is asked to open that flyout (" .. tostring(c.ran)
+			.. " " .. tostring(c.ranWith) .. ")")
+		check(c.owner ~= nil, "with the button it opens from")
+
+		-- THE HALF THAT COST A LIVE SESSION. Every OTHER click has to come out
+		-- of here untouched: nothing returned, nothing called. A wrap sits on
+		-- every action button on every bar, so a wrap that does anything at
+		-- all on an ordinary click is a wrap that can take the whole bar down
+		-- - which is what happened, from a different cause, and is the reason
+		-- this check exists rather than a comment saying to be careful.
+		local ok2, ret2, c2 = Click(1)
+		check(ok2 and ret2 == nil,
+			"an ordinary action click returns nothing at all - the wrap has no"
+			.. " opinion about it (" .. tostring(ret2) .. ")")
+		check(c2.ran == nil and next(c2) == nil,
+			"and reaches the drawer not at all")
+
+		local ok3, ret3 = Click(1, "spell")
+		check(ok3 and ret3 == nil,
+			"a button that is not an action button is out before the first"
+			.. " question")
+		local ok4, ret4 = Click(11)
+		check(ok4 and ret4 == nil,
+			"and an EMPTY slot is too - GetActionInfo answers nil there, and"
+			.. " comparing nil to \"flyout\" is the sort of thing that throws"
+			.. " inside a secure snippet and eats the click")
+	end
+
+	-- AND THE DRAWER SNIPPET, which is where the arithmetic is.
+	--
+	-- Same sandbox: a table of stub frames that record what was done to them,
+	-- and the AETHER_FLYOUTS the real one is loaded with, built here by hand
+	-- in the shape SyncFlyouts writes. Two known slots out of three, because
+	-- an untrained pet in the drawer is the failure worth designing against.
+	do
+		local function Slot(name)
+			local o = { name = name, attrs = {}, points = {}, shown = false }
+			o.SetAttribute = function(_, k, v) o.attrs[k] = v end
+			o.GetAttribute = function(_, k) return o.attrs[k] end
+			o.CallMethod = function(_, m, v) o.called = { m, v } end
+			o.SetWidth = function(_, v) o.w = v end
+			o.SetHeight = function(_, v) o.h = v end
+			o.ClearAllPoints = function() o.points = {} end
+			o.SetPoint = function(_, ...) o.points[#o.points + 1] = { ... } end
+			o.Show = function() o.shown = true end
+			o.Hide = function() o.shown = false end
+			return o
+		end
+
+		local slots = { Slot(1), Slot(2), Slot(3), Slot(4) }
+		local parent = { GetAttribute = function(_, k)
+			if k == "aetherFlyoutDirection" then return "UP" end
+		end }
+
+		local drawer
+		drawer = {
+			attrs = { slots = 4, slotSize = 36, slotGap = 4, slotInset = 7,
+				owner = parent },
+			points = {}, shown = false, parent = nil,
+			SetAttribute = function(_, k, v) drawer.attrs[k] = v end,
+			GetAttribute = function(_, k) return drawer.attrs[k] end,
+			GetFrameRef = function(_, k) return slots[tonumber(k:match("%d+"))] end,
+			SetParent = function(_, v) drawer.parent = v end,
+			GetParent = function() return drawer.parent end,
+			IsShown = function() return drawer.shown end,
+			Show = function() drawer.shown = true end,
+			Hide = function() drawer.shown = false end,
+			ClearAllPoints = function() drawer.points = {} end,
+			SetPoint = function(_, ...) drawer.points[#drawer.points + 1] = { ... } end,
+			SetWidth = function(_, v) drawer.w = v end,
+			SetHeight = function(_, v) drawer.h = v end,
+		}
+
+		local env = {
+			self = drawer,
+			AETHER_FLYOUTS = { [42] = {
+				{ spell = 688, known = true },
+				{ spell = 697, known = true },
+				{ spell = 691, known = false },
+			} },
+			__arg = 42,
+		}
+
+		local ok = RunSnippet(AB.__flyoutSnippet, env)
+		check(ok, "the drawer snippet compiles and runs")
+		check(drawer.shown, "and the drawer opens")
+		check(drawer.parent == parent,
+			"onto the button that was clicked, so it moves with the bar")
+
+		-- TWO SLOTS, NOT THREE. The third is a pet this character has not
+		-- trained; GetFlyoutSlotInfo says so and the drawer must not offer it.
+		check(slots[1].shown and slots[2].shown,
+			"the slots that can be cast are shown")
+		check(not slots[3].shown,
+			"and the one that cannot is not - an untrained summon in the"
+			.. " drawer is a button that fails when it is pressed")
+		check(slots[1].attrs.spell == 688 and slots[2].attrs.spell == 697,
+			"each carries its own spell (" .. tostring(slots[1].attrs.spell)
+			.. ", " .. tostring(slots[2].attrs.spell) .. ")")
+		check(slots[1].attrs.type == "spell",
+			"as a spell, which is what a secure button needs to cast one")
+
+		-- DISARMED, NOT MERELY HIDDEN - and checked by SHRINKING the drawer,
+		-- because a slot that was never armed reads the same as one that was
+		-- cleared. The first version of this check looked at a slot the
+		-- untrained pet had never reached and passed without the code that
+		-- makes it pass.
+		--
+		-- So: open it with all three known, untrain one, open it again. Slot 3
+		-- held Felhunter a moment ago and must not still be holding it.
+		env.AETHER_FLYOUTS[42][3].known = true
+		drawer.parent = nil
+		RunSnippet(AB.__flyoutSnippet, env)
+		check(slots[3].attrs.spell == 691,
+			"a third slot arms when a third summon is known")
+
+		env.AETHER_FLYOUTS[42][3].known = false
+		drawer.parent = nil
+		RunSnippet(AB.__flyoutSnippet, env)
+		check(slots[3].shown == false and slots[3].attrs.spell == nil
+			and slots[3].attrs.type == nil,
+			"and is emptied as well as hidden when it goes - a slot still"
+			.. " holding a spell casts it the next time the drawer opens"
+			.. " shorter than it did before (" .. tostring(slots[3].attrs.spell)
+			.. ")")
+
+		-- THE SIZE, WHICH IS THE ONLY REAL ARITHMETIC IN THERE.
+		-- Two 36s, one 4 gap, 7 of inset at each end: 7 + 36 + 4 + 36 + 7.
+		check(drawer.h == 90, "the drawer is exactly as long as what is in it ("
+			.. tostring(drawer.h) .. " against 90)")
+		check(drawer.w == 50, "and as wide as one slot and its inset ("
+			.. tostring(drawer.w) .. " against 50)")
+		check(drawer.points[1] and drawer.points[1][1] == "BOTTOM"
+			and drawer.points[1][3] == "TOP",
+			"opening upward means its foot on the button's head")
+
+		-- A SECOND CLICK SHUTS IT, which is the muscle memory from Blizzard's.
+		RunSnippet(AB.__flyoutSnippet, env)
+		check(not drawer.shown, "clicking the same slot again shuts it")
+
+		-- AND A FLYOUT NOTHING IS KNOWN IN DOES NOT LEAVE AN EMPTY BOX OPEN.
+		env.AETHER_FLYOUTS[43] = { { spell = 9, known = false } }
+		env.__arg = 43
+		drawer.parent = nil
+		RunSnippet(AB.__flyoutSnippet, env)
+		check(not drawer.shown,
+			"a flyout with nothing castable in it does not open at all")
+	end
+
 	local ok, err = pcall(SpellFlyout.Toggle, SpellFlyout, fb, 42)
 	check(ok, "clicking a flyout slot opens it rather than erroring ("
 		.. tostring(err) .. ")")

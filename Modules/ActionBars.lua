@@ -525,31 +525,39 @@ local FLYOUT_SNIPPET = [==[
 
 --- The click wrap that sends a flyout slot here INSTEAD of to Blizzard.
 --
---  `return false` is the important word. Without it the wrapped script runs on
---  and SECURE_ACTIONS.action calls SpellFlyout:Toggle, which is the thing that
---  does not work - so the drawer would open and Blizzard's would then try to
---  open over it and fail.
+--  `return false` is the important word: without it the wrapped script runs on
+--  into SECURE_ACTIONS.action, which calls the SpellFlyout:Toggle that does not
+--  work off our buttons.
 --
---  The other half closes the drawer on any click that is NOT a flyout, which
---  is what makes it behave like a menu rather than like a frame somebody left
---  open. The `down` guard keeps a press on a drawer slot from shutting the
---  drawer out from under itself before the release casts.
+--  IT RETURNS EARLY, WITH NOTHING, FOR EVERY CLICK THAT IS NOT A FLYOUT. Three
+--  guards before it touches anything, and no branch that runs on an ordinary
+--  action. The first version of this had a tail that ran on every click in the
+--  game to close the drawer, and while it was not what broke the bars, a wrap
+--  on every action button is not the place to be doing work that is not
+--  strictly necessary. The drawer closes from its own slots instead.
+--
+--  No Keybind translation, unlike LibActionButton's: it binds with a virtual
+--  button of that name and we bind with SetOverrideBindingClick(..., "LeftButton"),
+--  so a keypress arrives here as an ordinary left click and needs no rewriting.
 local FLYOUT_WRAP = [==[
+	if self:GetAttribute("type") ~= "action" then return end
+	local kind, id = GetActionInfo(self:GetAttribute("action"))
+	if kind ~= "flyout" then return end
+
 	local handler = owner:GetFrameRef("aetherFlyout")
-	if self:GetAttribute("type") == "action" then
-		local kind = GetActionInfo(self:GetAttribute("action"))
-		if kind == "flyout" and handler then
-			if not down then
-				handler:SetAttribute("owner", self)
-				handler:RunAttribute("HandleFlyout",
-					select(2, GetActionInfo(self:GetAttribute("action"))))
-			end
-			return false
-		end
-	end
-	if handler and (not down or self:GetParent() ~= handler) then
-		handler:Hide()
-	end
+	if not handler then return end
+
+	handler:SetAttribute("owner", self)
+	handler:RunAttribute("HandleFlyout", id)
+	return false
+]==]
+
+--- ...and what a DRAWER slot does after it casts: shut the drawer.
+--
+--  A post body, so the spell goes off first. In the pre body this would be
+--  hiding the frame the click is still travelling through.
+local FLYOUT_SLOT_WRAP_POST = [==[
+	owner:Hide()
 ]==]
 
 --- The flyout contract, WITHOUT THE TEMPLATE THAT CARRIES IT.
@@ -578,6 +586,15 @@ local function ArmFlyoutContract(b)
 	function b:TogglePopup() self.__popupOpen = not self.__popupOpen end
 	function b:ClosePopup() self.__popupOpen = false end
 end
+
+-- REACHABLE FROM THE SUITE. These two are strings, and a string of Lua is
+-- something a test can load and run - so the control flow through them is
+-- checkable even though the restricted environment they really run in is not
+-- reproducible here. What is NOT covered by that is the environment's own
+-- rules: what it will let a frame do, and when. The arithmetic and the
+-- branching are.
+AB.__flyoutWrap    = FLYOUT_WRAP
+AB.__flyoutSnippet = FLYOUT_SNIPPET
 
 local flyout
 
@@ -634,6 +651,12 @@ local function EnsureSlots(n, size)
 		W.DecorateSlot(b, size)
 		b.AetherPaintSlot = PaintSlot
 		b:Hide()
+
+		-- ...and the drawer shuts behind it. After the cast, not before.
+		if f.WrapScript then
+			pcall(f.WrapScript, f, b, "OnClick", "", FLYOUT_SLOT_WRAP_POST)
+		end
+
 		f.slots[i] = b
 		f:SetFrameRef("slot" .. i, b)
 	end
@@ -812,12 +835,12 @@ local function BuildButton(bar, index)
 		UpdateAllOn(self)
 	end)
 
-	-- THE WRAP IS OFF. It broke every button on the bar in combat - keypresses
-	-- and clicks alike, with the one flyout slot ironically still working -
-	-- and a bar you cannot press is worse than a flyout you cannot open.
-	-- Reinstated when it is written the way LibActionButton writes it, with
-	-- the Keybind translation and the post-body it has and this did not.
-	-- WrapFlyoutClick(bar, b)
+	-- A FLYOUT SLOT GOES TO OUR DRAWER RATHER THAN TO BLIZZARD'S.
+	--
+	-- Back on, with the cause of the dead bars found and fixed elsewhere - it
+	-- was the inherited template's OnClick, not this - and with this rewritten
+	-- to return early and empty-handed for every click that is not a flyout.
+	WrapFlyoutClick(bar, b)
 
 	return b
 end
