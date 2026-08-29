@@ -16252,6 +16252,52 @@ do
 		-- AND CLEAR OF THE SLOT, not two units inside it. Its own anchor is
 		-- the opposite edge to the one it pins to, which is what "outside"
 		-- means in anchor terms and is the whole of the fix.
+		-- IT FLIPS WHILE THE DRAWER IS OPEN. Where it sits says which way the
+		-- drawer goes and does not change; which way it POINTS says whether
+		-- the drawer is open. Reported from the game as not doing so.
+		do
+			local f = _G.AetherUIFlyout
+			local function coords()
+				local _, _, _, t, b2 = fb.flyoutMark:GetTexCoord()
+				return tostring(t) .. "," .. tostring(b2)
+			end
+			local shut = coords()
+			f:SetParent(fb)
+
+			-- Guarded, because a missing script throws where a wrong texcoord
+			-- fails - and a run that stops at the first fault hides every one
+			-- after it. Third time this has come up today; it is the same
+			-- shape each time.
+			local onShow, onHide = f:GetScript("OnShow"), f:GetScript("OnHide")
+			check(onShow ~= nil and onHide ~= nil,
+				"the drawer tells its button when it opens and shuts")
+			if onShow then onShow(f) end
+			local open = coords()
+			check(open ~= shut,
+				"the mark points the other way while the drawer is open ("
+				.. shut .. " -> " .. open .. ")")
+
+			if onHide then onHide(f) end
+			check(coords() == shut,
+				"and back again when it shuts - a mark stuck open is worse"
+				.. " than one that never moved, because it is now lying")
+		end
+
+		-- AND THE DRAWER SHUTS AFTER A CAST. A post body on the slot, so the
+		-- spell goes off first. Reported from the game as not happening: the
+		-- first version passed an EMPTY pre body and named `owner`, and this
+		-- one names the frame it is standing in instead.
+		do
+			local f = _G.AetherUIFlyout
+			local w = f.slots and f.slots[1] and f.slots[1].__wrap
+				and f.slots[1].__wrap.OnClick
+			check(w ~= nil, "a drawer slot's click is wrapped")
+			check(w and w.post and w.post:find("Hide", 1, true) ~= nil,
+				"with a POST body that shuts the drawer - pre would hide the"
+				.. " frame the click is still travelling through ("
+				.. tostring(w and w.post) .. ")")
+		end
+
 		local own = fb.flyoutMark:GetPoint(1)
 		check(own == "TOP" or own == "BOTTOM",
 			"pinned by its opposite edge, so it sits outside the button rather"

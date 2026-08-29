@@ -173,7 +173,7 @@ end
 --
 --  It points the way the drawer opens, on the edge the drawer opens from. The
 --  chevron is authored pointing DOWN, so up is the same picture flipped.
-local function FlyoutMark(b, dir, on)
+local function FlyoutMark(b, dir, on, open)
 	if not on then
 		if b.flyoutMark then b.flyoutMark:Hide() end
 		return
@@ -207,13 +207,25 @@ local function FlyoutMark(b, dir, on)
 	-- drawer opens from that edge and covers it while open, which is right:
 	-- the mark says "there is more here", and while the more is on screen it
 	-- has nothing to say.
+	-- THE EDGE IS THE DRAWER'S; THE GLYPH IS THE STATE.
+	--
+	-- Where it sits says which way the drawer opens and does not change. Which
+	-- way it POINTS says whether the drawer is open: shut, it points the way
+	-- the drawer will go; open, it points back at the button, which is the way
+	-- clicking again will send it. Blizzard's arrow does exactly this and the
+	-- gesture is older than this addon.
+	--
+	-- The chevron is authored pointing DOWN, so "points up" is the flipped
+	-- texcoord and "points down" is the plain one.
+	local up = (dir == "UP")
+	if open then up = not up end
+
 	if dir == "UP" then
 		m:SetPoint("BOTTOM", b, "TOP", 0, 1)
-		m:SetTexCoord(0, 1, 1, 0)
 	else
 		m:SetPoint("TOP", b, "BOTTOM", 0, -1)
-		m:SetTexCoord(0, 1, 0, 1)
 	end
+	if up then m:SetTexCoord(0, 1, 1, 0) else m:SetTexCoord(0, 1, 0, 1) end
 	-- The same weight as the other two rails' arrows. Three arrows in one
 	-- interface that disagree about how dark an arrow is is a thing nobody can
 	-- name and everybody sees.
@@ -230,6 +242,7 @@ end
 local function UpdateFlyout(b)
 	if not b.SetPopupDirection then return end
 	local dir = FlyoutDirection(b)
+	b.__flyoutDir = dir
 	pcall(b.SetPopupDirection, b, dir)
 
 	-- AND WHERE THE SNIPPET CAN READ IT. The mixin keeps the direction on a
@@ -248,7 +261,7 @@ local function UpdateFlyout(b)
 	elseif b.ClearPopup then
 		pcall(b.ClearPopup, b)
 	end
-	FlyoutMark(b, dir, kind == "flyout")
+	FlyoutMark(b, dir, kind == "flyout", b.__flyoutOpen == true)
 end
 
 local function UpdateIcon(b)
@@ -701,6 +714,19 @@ local function FlyoutHandler()
 	})
 	flyout.panel:SetAllPoints(flyout)
 
+	-- WHEN IT OPENS AND SHUTS, so the mark on the button can say so. Both
+	-- scripts are insecure and only read the parent, which the snippet has
+	-- already set - nothing here is protected work.
+	local function tellOwner(self2, open)
+		local b = self2:GetParent()
+		if b and b.flyoutMark and b.__flyoutDir then
+			b.__flyoutOpen = open
+			FlyoutMark(b, b.__flyoutDir, true, open)
+		end
+	end
+	flyout:SetScript("OnShow", function(self2) tellOwner(self2, true) end)
+	flyout:SetScript("OnHide", function(self2) tellOwner(self2, false) end)
+
 	flyout:SetAttribute("slots", 0)
 	flyout:SetAttribute("HandleFlyout", FLYOUT_SNIPPET)
 
@@ -790,8 +816,14 @@ local function EnsureSlots(n, size)
 		-- SecureHandlerBaseTemplate and therefore protected: hiding it from
 		-- ordinary Lua works out of combat and silently does not in one, which
 		-- is the worst of both.
+		-- SHUT AFTER THE CAST. Through the slot's own parent rather than
+		-- through `owner`: the drawer IS the header here, so the two are the
+		-- same frame, but a post body that names the thing it is standing in
+		-- does not depend on which of them the wrap binds. An empty pre body
+		-- is a real body that returns nothing, which is what is wanted.
 		if f.WrapScript then
-			pcall(f.WrapScript, f, b, "OnClick", "", "owner:Hide()")
+			pcall(f.WrapScript, f, b, "OnClick",
+				"return nil", "self:GetParent():Hide()")
 		end
 
 		f.slots[i] = b
