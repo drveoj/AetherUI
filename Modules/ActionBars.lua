@@ -453,6 +453,15 @@ local FLYOUT_SNIPPET = [==[
 
 	self:SetParent(parent)
 
+	-- AND ITS BAND BACK. SetParent takes the strata with it: the drawer is
+	-- built at DIALOG and came up at MEDIUM, level 4, in the same band as the
+	-- bar it is opening off - with its own glass at level 5 and its slots at
+	-- level 5 beside it rather than above it. Reported by the client itself
+	-- when finally asked. A drawer is a thing that opens OVER the interface,
+	-- so it says so again here, every time, because every open reparents it.
+	self:SetFrameStrata("DIALOG")
+	self:SetFrameLevel(20)
+
 	local dir  = parent:GetAttribute("aetherFlyoutDirection") or "UP"
 	local size = self:GetAttribute("slotSize") or 36
 	local gap  = self:GetAttribute("slotGap") or 4
@@ -469,6 +478,10 @@ local FLYOUT_SNIPPET = [==[
 				b:CallMethod("AetherPaintSlot", slot.spell)
 				b:SetWidth(size)
 				b:SetHeight(size)
+				-- ABOVE THE GLASS, not level with it. The panel behind these
+				-- is a sibling, and a slot that ties with it is a slot the
+				-- client is free to sort underneath.
+				b:SetFrameLevel(30)
 				b:ClearAllPoints()
 				if dir == "UP" then
 					if prev then b:SetPoint("BOTTOM", prev, "TOP", 0, gap)
@@ -653,6 +666,29 @@ local function EnsureSlots(n, size)
 		b:RegisterForClicks(UseKeyDown() and "AnyDown" or "AnyUp")
 		W.DecorateSlot(b, size)
 		b.AetherPaintSlot = PaintSlot
+
+		-- A NAME ON IT. There was no OnEnter on a drawer slot at all - not
+		-- broken, never written - so hovering one said nothing while the same
+		-- spell in the spell book says plenty.
+		--
+		-- It doubles as the answer to whether the mouse reaches these at all:
+		-- a slot that will not show a tooltip is a slot the cursor is not
+		-- getting to, and that is a different problem from a click that does
+		-- not cast.
+		b:SetScript("OnEnter", function(self2)
+			local id = self2:GetAttribute("spell")
+			if not id or not GameTooltip then return end
+			GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+			if GameTooltip.SetSpellByID then
+				pcall(GameTooltip.SetSpellByID, GameTooltip, tonumber(id))
+			end
+			GameTooltip:Show()
+			self2.__hovered = true
+		end)
+		b:SetScript("OnLeave", function(self2)
+			if GameTooltip then GameTooltip:Hide() end
+		end)
+
 		b:Hide()
 
 		-- NOT WRAPPED. A post body here was the only thing this session put
@@ -753,6 +789,9 @@ function AB:DiagnoseFlyout()
 		local ok, mx, my = pcall(b.GetCenter, b)
 		say("slot 1 centre: " .. tostring(ok and mx) .. ", " .. tostring(ok and my))
 		say("slot 1 under cursor: " .. tostring(b.IsMouseOver and b:IsMouseOver()))
+		say("slot 1 has ever been hovered: " .. tostring(b.__hovered == true))
+		say("mouse focus: " .. tostring(GetMouseFocus and GetMouseFocus()
+			and (GetMouseFocus():GetName() or "unnamed")))
 	end
 	say("slots built: " .. tostring(f.slots and #f.slots)
 		.. "  attr slots=" .. tostring(f:GetAttribute("slots"))

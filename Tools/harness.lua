@@ -16305,6 +16305,7 @@ do
 			o.SetPoint = function(_, ...) o.points[#o.points + 1] = { ... } end
 			o.Show = function() o.shown = true end
 			o.Hide = function() o.shown = false end
+			o.SetFrameLevel = function(_, v) o.level = v end
 			return o
 		end
 
@@ -16330,6 +16331,8 @@ do
 			SetPoint = function(_, ...) drawer.points[#drawer.points + 1] = { ... } end,
 			SetWidth = function(_, v) drawer.w = v end,
 			SetHeight = function(_, v) drawer.h = v end,
+			SetFrameStrata = function(_, v) drawer.strata = v end,
+			SetFrameLevel = function(_, v) drawer.level = v end,
 		}
 
 		local env = {
@@ -16344,9 +16347,29 @@ do
 
 		local ok = RunSnippet(AB.__flyoutSnippet, env)
 		check(ok, "the drawer snippet compiles and runs")
+
+		-- AND THE DIAGNOSTIC ANSWERS. It is the thing being leaned on to find
+		-- what four guesses did not, so a typo in it costs another reload and
+		-- another report - which is the currency this has been spending.
+		check(pcall(AB.DiagnoseFlyout, AB),
+			"/aether bar flyout prints rather than erroring")
 		check(drawer.shown, "and the drawer opens")
 		check(drawer.parent == parent,
 			"onto the button that was clicked, so it moves with the bar")
+
+		-- AND IN THE BAND IT ASKED FOR. SetParent takes the strata with it,
+		-- which is how a drawer built at DIALOG came up at MEDIUM level 4 -
+		-- level with its own glass, with its slots level with that. The client
+		-- said so when it was finally asked; nothing here had thought to.
+		check(drawer.strata == "DIALOG",
+			"the drawer is put back in the band it was built for, every open,"
+			.. " because every open reparents it (" .. tostring(drawer.strata)
+			.. ")")
+		check((drawer.level or 0) > 5,
+			"above the bar it opens off (" .. tostring(drawer.level) .. ")")
+		check((slots[1].level or 0) > (drawer.level or 0),
+			"and a slot above the glass behind it rather than level with it ("
+			.. tostring(slots[1].level) .. ")")
 
 		-- TWO SLOTS, NOT THREE. The third is a pet this character has not
 		-- trained; GetFlyoutSlotInfo says so and the drawer must not offer it.
