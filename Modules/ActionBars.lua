@@ -771,6 +771,18 @@ local function EnsureSlots(n, size)
 		b:HookScript("OnClick", function(self2, btn)
 			self2.__clicked = (self2.__clicked or 0) + 1
 			self2.__lastBtn = btn
+
+			-- ...AND SHUT THE DRAWER. Belt as well as braces: there is a
+			-- secure post body doing this too, and the drawer went on standing
+			-- open after a cast with only that.
+			--
+			-- HookScript runs AFTER the template's own handler, so the spell
+			-- has already gone off by the time this fires - the same ordering
+			-- the post body was chosen for. Insecure, so it is refused while a
+			-- fight is on IF the drawer turns out to be protected, which is
+			-- what the secure body is still there for.
+			local d = self2:GetParent()
+			if d and d.Hide and not InCombatLockdown() then pcall(d.Hide, d) end
 		end)
 		b:HookScript("OnMouseDown", function(self2)
 			self2.__pressed = (self2.__pressed or 0) + 1
@@ -934,6 +946,8 @@ function AB:DiagnoseFlyout()
 	end
 
 	box(f, "drawer")
+	say("drawer protected: " .. tostring(f.IsProtected and select(1, f:IsProtected()))
+		.. "  (if false, the insecure close works in combat too)")
 	say("drawer parent: " .. tostring(f:GetParent() and f:GetParent():GetName()))
 	box(f.panel, "drawer glass")
 

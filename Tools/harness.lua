@@ -16292,6 +16292,30 @@ do
 			local w = f.slots and f.slots[1] and f.slots[1].__wrap
 				and f.slots[1].__wrap.OnClick
 			check(w ~= nil, "a drawer slot's click is wrapped")
+			-- AND THE INSECURE ONE ACTUALLY RUNS. The secure post body is
+			-- checked below by its text, which says it was installed and not
+			-- that it fired - and the drawer went on standing open after a
+			-- cast with only that. This clicks a slot and looks at the drawer.
+			f:Show()
+			local hook = f.slots[1]:GetScript("OnClick")
+			if hook then hook(f.slots[1], "LeftButton") end
+			check(not f:IsShown(),
+				"clicking a drawer slot shuts the drawer - checked by clicking"
+				.. " one, rather than by reading the body of a wrap that says"
+				.. " it would")
+
+			-- ...and not while a fight is on, where hiding it from ordinary
+			-- Lua is refused if it is protected. That is what the secure body
+			-- is still there for.
+			f:Show()
+			_G.__inCombat = true
+			if hook then hook(f.slots[1], "LeftButton") end
+			_G.__inCombat = false
+			check(f:IsShown(),
+				"the insecure close stands down in combat rather than failing"
+				.. " silently there")
+			f:Hide()
+
 			check(w and w.post and w.post:find("Hide", 1, true) ~= nil,
 				"with a POST body that shuts the drawer - pre would hide the"
 				.. " frame the click is still travelling through ("
