@@ -912,11 +912,32 @@ function CreateFont(name)
 	return obj
 end
 
+-- FlyoutButtonTemplate CARRIES A MIXIN AND SOME KEY VALUES, and a frame built
+-- without it has none of them. ActionButtonTemplate inherits it, which is how
+-- every one of Blizzard's own action buttons answers GetPopupDirection; a
+-- button built from SecureActionButtonTemplate alone does not, and the mock
+-- has to be that unkind or the difference cannot be seen from here.
+-- A GLOBAL, because the main chunk is at LuaJIT's 200-local ceiling and one
+-- more `local function` here costs the whole file.
+function _G.__applyFlyoutTemplate(f)
+	f.popupDirection, f.popupOffset, f.popupCrossAxisSize = "DOWN", -3, 38
+	function f:GetPopupDirection() return self.popupDirection or "DOWN" end
+	function f:SetPopupDirection(d) self.popupDirection = d end
+	function f:SetPopup(p) self.popup = p end
+	function f:ClearPopup() self.popup = nil end
+	function f:HasPopup() return self.popup ~= nil end
+	function f:TogglePopup() self.__popupOpen = not self.__popupOpen end
+	function f:ClosePopup() self.__popupOpen = false end
+end
+
 function CreateFrame(kind, name, parent, template)
 	local f = widgetBase(kind)
 	f.__parent = parent
 	f.__name = name
 	f.__template = template
+	if type(template) == "string" and template:find("FlyoutButton") then
+		_G.__applyFlyoutTemplate(f)
+	end
 	f.__anchoredKids = {}
 	f.__anchorHosts = {}
 	if template and template:find("Secure") then f.__protected = true end
@@ -1699,9 +1720,23 @@ actions[11] = nil                                   -- an empty slot
 -- with two different answers to test against.
 actions[13] = { texture = "Icons\\Page2A", count = 0, usable = true, inRange = true }
 actions[14] = { texture = "Icons\\Page2B", count = 0, usable = true, inRange = true }
+-- A FLYOUT SLOT. Summon Demon, Call Pet, the mage's portals: one action whose
+-- type is "flyout" and which opens a popup of its own rather than casting.
+-- The harness had never heard of one, which is why nothing caught what happens
+-- when somebody clicks it.
+actions[10] = { texture = "Icons\\Flyout", count = 0, usable = true,
+	inRange = true, kind = "flyout", flyoutID = 42 }
 _G.__actions = actions
 
 function HasAction(s) return actions[s] ~= nil end
+
+-- GetActionInfo(slot) -> actionType, id. SecureTemplates reads the type to
+-- choose between UseAction and SpellFlyout:Toggle.
+function GetActionInfo(s)
+	local a = actions[s]
+	if not a then return nil end
+	return a.kind or "spell", a.flyoutID or s
+end
 function GetActionTexture(s) return actions[s] and actions[s].texture end
 
 -- The game answers GetActionCount for a slot that no longer holds anything with
@@ -1712,6 +1747,23 @@ function GetActionCount(s)
 	if actions[s] then return actions[s].count or 0 end
 	return _G.__staleCounts[s] or 0
 end
+-- SpellFlyout, AS Blizzard_ActionBar/Shared/SpellFlyout.lua WRITES IT - one
+-- file, byte-identical on both clients. Toggle reads the direction off the
+-- BUTTON and ends by asking the button to toggle its popup, so a button that
+-- is not a flyout button takes the whole call down with it:
+--
+--   SpellFlyout.lua:235: attempt to call a nil value  ('GetPopupDirection')
+--
+-- Reported from the game on Mists, summoning a demon.
+SpellFlyout = CreateFrame("Frame", "SpellFlyout")
+function SpellFlyout:Toggle(flyoutButton, flyoutID)
+	_G.__flyoutOpened = nil
+	local direction = flyoutButton:GetPopupDirection()
+	_G.__flyoutDirection = direction
+	flyoutButton:TogglePopup()
+	_G.__flyoutOpened = flyoutID
+end
+
 function GetActionCooldown(s)
 	local a = actions[s]
 	if a and a.cd then return a.cd[1], a.cd[2], 1 end
@@ -16070,6 +16122,63 @@ SlashCmdList["AETHERUI"]("diag")   -- must not error with a live report
 
 check(bar.buttons[1].icon:GetTexture() == 130001, "action icon painted")
 check(bar.buttons[8].count:GetText() == 20, "stack count shown")
+
+-- A FLYOUT SLOT, CLICKED. Reported from the game on Mists, summoning a demon:
+--
+--   SpellFlyout.lua:235: attempt to call a nil value  ('GetPopupDirection')
+--
+-- SecureTemplates reads GetActionInfo, sees "flyout", and calls
+-- SpellFlyout:Toggle(self, ...) - which asks OUR button which way to open and
+-- then asks it to toggle its popup. Blizzard's own action buttons answer both
+-- because ActionButtonTemplate inherits FlyoutButtonTemplate.
+--
+-- Ours were built from SecureActionButtonTemplate alone, under a comment
+-- saying that is "exactly what Blizzard's own ActionBarButtonTemplate is". It
+-- is not. That template is ActionButtonTemplate plus a secure one, and the
+-- flyout half is the half we left behind - on BOTH clients, from one shared
+-- file, since the bars were written.
+do
+	local fb = bar.buttons[10]
+	local ok, err = pcall(SpellFlyout.Toggle, SpellFlyout, fb, 42)
+	check(ok, "clicking a flyout slot opens it rather than erroring ("
+		.. tostring(err) .. ")")
+	check(_G.__flyoutOpened == 42,
+		"and the popup opened is the one the slot names")
+
+	-- THE SLOT OWNS THE POPUP, AND ONLY WHILE IT IS A FLYOUT. Blizzard's own
+	-- buttons take and give this back as the action changes; ours do not run
+	-- that code, so it is done from the same trigger and has to be checked
+	-- from both sides - a slot that keeps the popup after the flyout is
+	-- dragged off it opens the demons that used to be there.
+	check(fb:HasPopup(), "the flyout slot holds the popup")
+	check(not bar.buttons[1]:HasPopup(),
+		"and an ordinary spell slot does not")
+	_G.__actions[10] = nil
+	AB:RefreshAll()
+	check(not fb:HasPopup(),
+		"emptying the slot gives the popup back rather than leaving it armed")
+	_G.__actions[10] = { texture = "Icons" .. string.char(92) .. string.char(92)
+		.. "Flyout", count = 0, usable = true, inRange = true,
+		kind = "flyout", flyoutID = 42 }
+	AB:RefreshAll()
+
+	-- AWAY FROM THE NEARER EDGE, and asked of the button rather than assumed.
+	-- Blizzard's template defaults to DOWN, which puts the demons off the
+	-- bottom of the monitor for every bar anybody docks along the floor - and
+	-- that is where an action bar goes. Placed explicitly at both ends here,
+	-- because a direction that happens to be right at whatever size the
+	-- previous section left the screen is not a rule.
+	local h = UIParent:GetHeight()
+	for _, case in ipairs({ { 0.2 * h, "UP" }, { 0.8 * h, "DOWN" } }) do
+		fb:SetGeom({ cx = 500, cy = case[1] })
+		AB:RefreshAll()
+		pcall(SpellFlyout.Toggle, SpellFlyout, fb, 42)
+		check(_G.__flyoutDirection == case[2],
+			"a slot " .. (case[2] == "UP" and "low on" or "high up") .. " the"
+			.. " screen opens " .. case[2] .. " (" ..
+			tostring(_G.__flyoutDirection) .. ")")
+	end
+end
 check(bar.buttons[11].icon:IsShown() == false, "empty slot hides its icon")
 check(bar.buttons[11].count:GetText() == "",
 	"an emptied slot shows no count - the game keeps answering GetActionCount"

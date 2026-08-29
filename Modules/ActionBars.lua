@@ -141,8 +141,45 @@ local function ButtonAction(b)
 	return tonumber(b:GetAttribute("action")) or 0
 end
 
+--- Which way a flyout opens off this button: AWAY FROM THE NEARER EDGE.
+--
+--  Blizzard's template defaults to DOWN and its own bars override that from
+--  the bar the button sits on. Ours are placed by the player, so the button
+--  is asked where it is rather than told: a slot in the lower half of the
+--  screen opens upward, which is every bar anybody docks along the bottom.
+--
+--  Off the BUTTON, not the bar, because the button is the thing the popup is
+--  anchored to and it knows its own position without a reference to thread.
+local function FlyoutDirection(b)
+	local okH, h = pcall(UIParent.GetHeight, UIParent)
+	if not okH or not h or h <= 0 then return "UP" end
+	local ok, _, y = pcall(b.GetCenter, b)
+	if not ok or not y then return "UP" end
+	return (y < h * 0.5) and "UP" or "DOWN"
+end
+
+--- The popup this slot owns, if the slot is a flyout at all.
+--
+--  Blizzard's own buttons do this in ActionBarActionButtonDerivedMixin when
+--  the action changes; ours do not run that code, so it is done here, from the
+--  same trigger. A slot that stops being a flyout gives the popup back, or the
+--  next click on it opens the demons that used to be there.
+local function UpdateFlyout(b)
+	if not b.SetPopupDirection then return end
+	pcall(b.SetPopupDirection, b, FlyoutDirection(b))
+
+	local action = ButtonAction(b)
+	local kind = HasAction(action) and GetActionInfo and GetActionInfo(action)
+	if kind == "flyout" and _G.SpellFlyout then
+		if b.SetPopup then pcall(b.SetPopup, b, _G.SpellFlyout) end
+	elseif b.ClearPopup then
+		pcall(b.ClearPopup, b)
+	end
+end
+
 local function UpdateIcon(b)
 	local action = ButtonAction(b)
+	UpdateFlyout(b)
 	local texture = HasAction(action) and GetActionTexture(action)
 
 	if texture then
@@ -352,9 +389,27 @@ local function BuildButton(bar, index)
 	local cfg = A.Config:Module("actionbars")
 	local name = ("AetherUIBar%sButton%d"):format(bar.id, index)
 
-	-- CheckButton + SecureActionButtonTemplate is exactly what Blizzard's own
-	-- ActionBarButtonTemplate is; the checked state carries "this toggle is on".
-	local b = CreateFrame("CheckButton", name, bar.header, "SecureActionButtonTemplate")
+	-- ...AND FlyoutButtonTemplate, WHICH IS THE HALF THAT WAS MISSING.
+	--
+	-- This said SecureActionButtonTemplate was "exactly what Blizzard's own
+	-- ActionBarButtonTemplate is". It is not. That template is
+	-- ActionButtonTemplate plus ActionBarButtonCodeTemplate, and the first of
+	-- those inherits FlyoutButtonTemplate - the mixin that answers
+	-- GetPopupDirection and owns the popup.
+	--
+	-- Without it, clicking a flyout slot took the click down with it, because
+	-- SecureTemplates hands OUR button to SpellFlyout:Toggle and Toggle asks
+	-- the button which way to open:
+	--
+	--   SpellFlyout.lua:235: attempt to call a nil value ('GetPopupDirection')
+	--
+	-- Summon Demon, Call Pet, the mage's portals. One shared file, so both
+	-- clients, since the bars were written - it only surfaced now because
+	-- vanilla has few flyouts and Mists gives one to everybody.
+	--
+	-- The checked state still carries "this toggle is on"; that part was right.
+	local b = CreateFrame("CheckButton", name, bar.header,
+		"SecureActionButtonTemplate, FlyoutButtonTemplate")
 	b:SetSize(cfg.size, cfg.size)
 	b:RegisterForClicks(UseKeyDown() and "AnyDown" or "AnyUp")
 	b:RegisterForDrag("LeftButton")
