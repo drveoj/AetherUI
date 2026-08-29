@@ -180,9 +180,17 @@ local function FlyoutMark(b, dir, on)
 	end
 
 	if not b.flyoutMark then
-		local t = b:CreateTexture(nil, "OVERLAY")
+		-- SUBLEVEL 7, not the default 0. The slot's rim is an OVERLAY texture
+		-- covering the whole button, and two textures on the same layer at the
+		-- same sublevel are sorted by creation order - which is a rule that
+		-- happens to favour this one today and is not something to rely on.
+		-- Said outright instead.
+		local t = b:CreateTexture(nil, "OVERLAY", nil, 7)
 		t:SetTexture(Media.texture.chevron)
-		t:SetSize(8, 8)
+		-- 10, not 8. Eight units on a 36-unit slot, in a corner, at 75% - the
+		-- suite said it was drawn and the screen said it was not, and "too
+		-- small to see" and "not there" look identical from here.
+		t:SetSize(10, 10)
 		b.flyoutMark = t
 	end
 
@@ -760,14 +768,20 @@ local function EnsureSlots(n, size)
 
 		b:Hide()
 
-		-- NOT WRAPPED. A post body here was the only thing this session put
-		-- between a drawer slot and the secure handler that casts its spell,
-		-- and the slots were not clickable - so it comes off first, on the
-		-- principle that has worked twice today: take away what was added
-		-- before theorising about what was not.
+		-- ...AND THE DRAWER SHUTS BEHIND IT.
 		--
-		-- What it cost is the drawer shutting itself after a cast. It still
-		-- shuts on a second click of the slot that opened it.
+		-- A POST body, so the spell goes off first: in the pre body this would
+		-- be hiding the frame the click is still travelling through. It was
+		-- taken off while the click was being hunted and is back now that the
+		-- click is understood - the fault was the spell id, not this.
+		--
+		-- Secure rather than insecure, because the drawer is a
+		-- SecureHandlerBaseTemplate and therefore protected: hiding it from
+		-- ordinary Lua works out of combat and silently does not in one, which
+		-- is the worst of both.
+		if f.WrapScript then
+			pcall(f.WrapScript, f, b, "OnClick", "", "owner:Hide()")
+		end
 
 		f.slots[i] = b
 		f:SetFrameRef("slot" .. i, b)
@@ -914,6 +928,28 @@ function AB:DiagnoseFlyout()
 				tostring(b.IsProtected and select(1, b:IsProtected())),
 				tostring(b:GetScript("OnClick") ~= nil)))
 	end
+	-- THE MARK ON THE BUTTON THE DRAWER OPENS FROM. The suite says it is
+	-- drawn; the screen says it is not, and the screen wins. So the client is
+	-- asked what it thinks the texture is.
+	local owner = f:GetAttribute("owner") or f:GetParent()
+	if owner and owner.GetName then
+		local m = owner.flyoutMark
+		say("owner: " .. tostring(owner:GetName()))
+		if not m then
+			say("owner mark: NONE - never created")
+		else
+			local pt, _, rel, ox, oy = m:GetPoint(1)
+			local r, g, bl, a = 1, 1, 1, 1
+			if m.GetVertexColor then r, g, bl, a = m:GetVertexColor() end
+			say(("owner mark: shown=%s tex=%s size=%.0fx%.0f point=%s(%s,%s)"
+				.. " rgba=%.2f,%.2f,%.2f,%.2f layer=%s")
+				:format(tostring(m:IsShown()), tostring(m:GetTexture()),
+					m:GetWidth() or 0, m:GetHeight() or 0,
+					tostring(pt), tostring(ox), tostring(oy),
+					r, g, bl, a, tostring(m.GetDrawLayer and m:GetDrawLayer())))
+		end
+	end
+
 	say("mouse focus: " .. tostring(GetMouseFocus and GetMouseFocus()
 		and (GetMouseFocus():GetName() or "unnamed")))
 	say("slots built: " .. tostring(f.slots and #f.slots)
