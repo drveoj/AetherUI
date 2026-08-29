@@ -833,9 +833,19 @@ local function EnsureSlots(n, size)
 		-- same frame, but a post body that names the thing it is standing in
 		-- does not depend on which of them the wrap binds. An empty pre body
 		-- is a real body that returns nothing, which is what is wanted.
+		-- WRAPPED, AND THE FAILURE KEPT. This was a bare pcall, so two
+		-- attempts at the secure close failed silently and looked installed -
+		-- the drawer stayed open in combat and nothing said why.
+		--
+		-- `owner` rather than self:GetParent(): owner is the documented name
+		-- for the header inside a wrap body, and the header here IS the
+		-- drawer. GetParent goes through a handle for no reason.
 		if f.WrapScript then
-			pcall(f.WrapScript, f, b, "OnClick",
-				"return nil", "self:GetParent():Hide()")
+			local ok, err = pcall(f.WrapScript, f, b, "OnClick",
+				"return nil", "owner:Hide()")
+			f.__wrapOk, f.__wrapErr = ok, err
+		else
+			f.__wrapOk, f.__wrapErr = false, "no WrapScript method"
 		end
 
 		f.slots[i] = b
@@ -946,8 +956,12 @@ function AB:DiagnoseFlyout()
 	end
 
 	box(f, "drawer")
-	say("drawer protected: " .. tostring(f.IsProtected and select(1, f:IsProtected()))
-		.. "  (if false, the insecure close works in combat too)")
+	local prot, explicit = false, false
+	if f.IsProtected then prot, explicit = f:IsProtected() end
+	say(("drawer protected=%s explicit=%s  (explicit is what WrapScript"
+		.. " demands of a header)"):format(tostring(prot), tostring(explicit)))
+	say(("drawer slot wrap: ok=%s err=%s"):format(tostring(f.__wrapOk),
+		tostring(f.__wrapErr)))
 	say("drawer parent: " .. tostring(f:GetParent() and f:GetParent():GetName()))
 	box(f.panel, "drawer glass")
 

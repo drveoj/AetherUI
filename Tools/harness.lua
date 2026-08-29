@@ -16316,6 +16316,14 @@ do
 				.. " silently there")
 			f:Hide()
 
+			-- AND THE WRAP WAS ACCEPTED. It was applied under a bare pcall,
+			-- so two attempts at the secure close failed silently and looked
+			-- installed - the drawer stayed open in combat and nothing said
+			-- why. The result is kept now, and checked.
+			check(f.__wrapOk == true,
+				"the drawer's own wrap on a slot was accepted (" ..
+				tostring(f.__wrapErr) .. ")")
+
 			check(w and w.post and w.post:find("Hide", 1, true) ~= nil,
 				"with a POST body that shuts the drawer - pre would hide the"
 				.. " frame the click is still travelling through ("
