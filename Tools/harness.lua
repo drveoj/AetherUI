@@ -16234,7 +16234,12 @@ do
 			fb:SetGeom({ cx = 500, cy = cy })
 			AB:RefreshAll()
 			if not fb.flyoutMark then return "none" end
-			return (fb.flyoutMark:GetPoint(1))
+			-- The RELATIVE point, which is the edge of the button the mark is
+			-- pinned to. Its own point is the opposite one, because the mark
+			-- now sits clear of the slot rather than inside it - it was under
+			-- the rim and the gloss, reported shown, and could not be seen.
+			local _, _, rel = fb.flyoutMark:GetPoint(1)
+			return rel
 		end
 		local h = UIParent:GetHeight()
 		local lowPoint = markFor(0.2 * h)
@@ -16243,6 +16248,15 @@ do
 			"on the edge the drawer opens from, which is the top of a slot low"
 			.. " on the screen and the bottom of one high up (" ..
 			tostring(lowPoint) .. ", " .. tostring(highPoint) .. ")")
+
+		-- AND CLEAR OF THE SLOT, not two units inside it. Its own anchor is
+		-- the opposite edge to the one it pins to, which is what "outside"
+		-- means in anchor terms and is the whole of the fix.
+		local own = fb.flyoutMark:GetPoint(1)
+		check(own == "TOP" or own == "BOTTOM",
+			"pinned by its opposite edge, so it sits outside the button rather"
+			.. " than under the rim that decorates it (" .. tostring(own)
+			.. ")")
 	end
 
 	local stolen = 0

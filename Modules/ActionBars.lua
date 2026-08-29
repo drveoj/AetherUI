@@ -196,11 +196,22 @@ local function FlyoutMark(b, dir, on)
 
 	local m = b.flyoutMark
 	m:ClearAllPoints()
+
+	-- OUTSIDE THE SLOT, NOT INSIDE IT. At TOP(0,-2) it sat two units in from
+	-- the top edge, which is exactly where the rim and the gloss are - the
+	-- client reported it shown, white, at 75%, and it could not be seen. A
+	-- mark drawn under the art that decorates the thing it marks is a mark
+	-- nobody looks at.
+	--
+	-- Just clear of the edge instead, the way Blizzard's own arrow sits. The
+	-- drawer opens from that edge and covers it while open, which is right:
+	-- the mark says "there is more here", and while the more is on screen it
+	-- has nothing to say.
 	if dir == "UP" then
-		m:SetPoint("TOP", b, "TOP", 0, -2)
+		m:SetPoint("BOTTOM", b, "TOP", 0, 1)
 		m:SetTexCoord(0, 1, 1, 0)
 	else
-		m:SetPoint("BOTTOM", b, "BOTTOM", 0, 2)
+		m:SetPoint("TOP", b, "BOTTOM", 0, -1)
 		m:SetTexCoord(0, 1, 0, 1)
 	end
 	-- The same weight as the other two rails' arrows. Three arrows in one
@@ -954,6 +965,10 @@ function AB:DiagnoseFlyout()
 					local pt, _, _, ox, oy = m:GetPoint(1)
 					local r, g, bl, a = 1, 1, 1, 1
 					if m.GetVertexColor then r, g, bl, a = m:GetVertexColor() end
+					local mx, my = 0, 0
+					if m.GetCenter then mx, my = m:GetCenter() end
+					local bx, by = 0, 0
+					if btn.GetCenter then bx, by = btn:GetCenter() end
 					say(("%s (action %d): mark shown=%s tex=%s %.0fx%.0f"
 						.. " point=%s(%s,%s) rgba=%.2f,%.2f,%.2f,%.2f")
 						:format(btn:GetName() or "?", act,
@@ -961,6 +976,13 @@ function AB:DiagnoseFlyout()
 							m:GetWidth() or 0, m:GetHeight() or 0,
 							tostring(pt), tostring(ox), tostring(oy),
 							r, g, bl, a))
+					-- WHERE IT ACTUALLY IS, against where the button is. A
+					-- mark that reports itself shown and sits under the slot's
+					-- own rim reads exactly like a mark that is not there.
+					say(("  ...mark at %.0f,%.0f  button at %.0f,%.0f"
+						.. "  buttonShown=%s btnAlpha=%.2f")
+						:format(mx or 0, my or 0, bx or 0, by or 0,
+							tostring(btn:IsShown()), btn:GetAlpha() or 0))
 				end
 				say(("  ...contract=%s dirAttr=%s")
 					:format(tostring(btn.SetPopupDirection ~= nil),
