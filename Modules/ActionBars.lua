@@ -475,7 +475,7 @@ local FLYOUT_SNIPPET = [==[
 			if b then
 				b:SetAttribute("type", "spell")
 				b:SetAttribute("spell", slot.spell)
-				b:CallMethod("AetherPaintSlot", slot.spell)
+				b:CallMethod("AetherPaintSlot", slot.icon or slot.spell)
 				b:SetWidth(size)
 				b:SetHeight(size)
 				-- ABOVE THE GLASS, not level with it. The panel behind these
@@ -609,6 +609,7 @@ local flyout
 --- Paint one drawer slot. Called from the snippet by name, so it is insecure
 --  code doing the one thing the snippet cannot: reading the spell's icon.
 local function PaintSlot(b, spellID)
+	b.__shown = spellID
 	local tex = spellID and GetSpellTexture and GetSpellTexture(spellID)
 	if b.icon then
 		b.icon:SetTexture(tex or "")
@@ -696,7 +697,10 @@ local function EnsureSlots(n, size)
 		-- getting to, and that is a different problem from a click that does
 		-- not cast.
 		b:SetScript("OnEnter", function(self2)
-			local id = self2:GetAttribute("spell")
+			-- The spell as DRAWN, not as cast: a glyphed summon casts 691 and
+			-- is called Summon Observer, and the name on the picture is the
+			-- one the player is looking for.
+			local id = self2.__shown or self2:GetAttribute("spell")
 			if not id or not GameTooltip then return end
 			GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
 			if GameTooltip.SetSpellByID then
@@ -723,6 +727,17 @@ local function EnsureSlots(n, size)
 		f.slots[i] = b
 		f:SetFrameRef("slot" .. i, b)
 	end
+	-- ...AND THE ONES ALREADY BUILT FOLLOW THE SETTING. They are made once and
+	-- kept, so a drawer built before the slot size was changed stayed at the
+	-- old size for the rest of the session - 36 beside a bar of 44, which the
+	-- suite caught the moment it compared the two rather than assuming.
+	for _, b in ipairs(f.slots) do
+		if b:GetWidth() ~= size then
+			b:SetSize(size, size)
+			if b.edge then b.edge:SetAllPoints(b) end
+		end
+	end
+
 	if #f.slots > 0 then f:SetAttribute("slots", #f.slots) end
 end
 
@@ -750,10 +765,25 @@ function AB:SyncFlyouts()
 					local spellID, overrideID, slotKnown = GetFlyoutSlotInfo(id, slot)
 					if spellID then
 						kept = kept + 1
+						-- TWO IDS, AND THEY ARE NOT INTERCHANGEABLE.
+						--
+						-- GetFlyoutSlotInfo returns the spell the character
+						-- KNOWS and the spell it currently RESOLVES TO. A
+						-- glyphed warlock knows Summon Felhunter, 691, and it
+						-- shows as Summon Observer, 112866.
+						--
+						-- This stored the override and cast it, so the drawer
+						-- asked the client to cast a spell nobody has: clicks
+						-- arrived - 7 presses, 14 clicks, the diagnostic
+						-- counted them - and cast nothing, silently, which is
+						-- exactly what casting an unknown spell id does.
+						--
+						-- Cast the base, draw the override. That is the split
+						-- LibActionButton makes too, in as many words.
 						data[#data + 1] = ("local s = newtable() "
 							.. "AETHER_FLYOUTS[%d][%d] = s "
-							.. "s.spell = %d s.known = %s")
-							:format(id, kept, overrideID or spellID,
+							.. "s.spell = %d s.icon = %d s.known = %s")
+							:format(id, kept, spellID, overrideID or spellID,
 								slotKnown and "true" or "false")
 					end
 				end
@@ -780,7 +810,15 @@ function AB:DiagnoseFlyout()
 	local f = flyout
 	if not f then A:Print("flyout: no drawer built") return end
 
-	local function say(...) A:Print(...) end
+	-- INTO THE TEXT BOX, NOT THE CHAT FRAME. /aether errors diag has done this
+	-- since it was written, for the reason written there: the chat frame is
+	-- the one place an answer cannot be selected. This printed to chat anyway
+	-- and cost four screenshots of text that was never copyable.
+	--
+	-- Chat gets one line saying where to look, because a command that appears
+	-- to do nothing is worse than a verbose one.
+	local lines = {}
+	local function say(...) lines[#lines + 1] = table.concat({ ... }, " ") end
 	local function box(fr, label)
 		if not fr then say(label .. ": nil") return end
 		say(("%s: shown=%s mouse=%s strata=%s level=%s size=%.0fx%.0f alpha=%.2f")
@@ -836,6 +874,17 @@ function AB:DiagnoseFlyout()
 	say("slots built: " .. tostring(f.slots and #f.slots)
 		.. "  attr slots=" .. tostring(f:GetAttribute("slots"))
 		.. "  size=" .. tostring(f:GetAttribute("slotSize")))
+
+	local body = table.concat(lines, "\n")
+	if A.Errors and A.Errors.ShowText then
+		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "")
+			.. "flyout\n\n" .. body)
+		A:Print("flyout: in the text window - Ctrl+A then Ctrl+C to copy")
+	else
+		-- No error catcher on this build, so chat is all there is. Still
+		-- better than saying nothing.
+		for _, line in ipairs(lines) do A:Print(line) end
+	end
 end
 
 --- Point a bar's buttons at the drawer.

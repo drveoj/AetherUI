@@ -1780,7 +1780,9 @@ _G.__flyouts = {
 	[42] = { known = true, slots = {
 		{ spell = 688, known = true },    -- Imp
 		{ spell = 697, known = true },    -- Voidwalker
-		{ spell = 691, known = false },   -- Felhunter, untrained
+		-- GLYPHED, which is the case that broke it in the game: the character
+		-- knows 691 and the client resolves it to 112866, Summon Observer.
+		{ spell = 691, override = 112866, known = false },
 	} },
 	[43] = { known = true, slots = { { spell = 1122, known = true } } },
 	[44] = { known = false, slots = { { spell = 999, known = true } } },
@@ -1798,7 +1800,7 @@ function GetFlyoutSlotInfo(id, slot)
 	local f = _G.__flyouts[id]
 	local sl = f and f.slots[slot]
 	if not sl then return nil end
-	return sl.spell, sl.spell, sl.known, "Spell" .. sl.spell, 0
+	return sl.spell, sl.override or sl.spell, sl.known, "Spell" .. sl.spell, 0
 end
 function GetSpellTexture(id) return "Icons" .. string.char(92) .. "Spell" .. tostring(id) end
 
@@ -16453,6 +16455,131 @@ do
 		.. "Flyout", count = 0, usable = true, inRange = true,
 		kind = "flyout", flyoutID = 42 }
 	AB:RefreshAll()
+
+	-- OUR DRAWER, NOT BLIZZARD'S - which is the whole of why the fix above was
+	-- not the end of it. SpellFlyout inherits SecureFrameTemplate and its
+	-- AttachToButton reparents it onto the clicked button and shows it; off one
+	-- of ours that call is tainted and the Show does not take, so the arrow
+	-- flipped open and no drawer appeared. LibActionButton settles it in a
+	-- line - FlyoutButtonMixin and not ActionButton_UpdateFlyout - and both of
+	-- our clients answer yes, which is why ElvUI and Bartender4 both build
+	-- their own here.
+	--
+	-- WHAT THESE COVER AND WHAT THEY DO NOT. There is no restricted
+	-- environment in this harness and there is not going to be one, so the
+	-- snippet body is unchecked. Everything it depends on is checked here: the
+	-- table it reads, the buttons it moves, the direction it is handed, the
+	-- reference it reaches through and the wrap that calls it. If the drawer
+	-- misbehaves in the game, the arithmetic inside the snippet is where to
+	-- look, because it is the only part nothing here has seen.
+	do
+		AB:SyncFlyouts()
+		local f = _G.AetherUIFlyout
+		check(f ~= nil, "the drawer exists")
+		check(f:GetAttribute("HandleFlyout") ~= nil,
+			"and carries the snippet it runs on a click")
+
+		-- THE BIGGEST FLYOUT, NOT THE FIRST. Three slots in one and one in
+		-- another: a drawer built to the first would open two short.
+		check(#f.slots == 3, "with a slot for every spell the biggest flyout"
+			.. " holds (" .. #f.slots .. ")")
+		check(f:GetAttribute("slots") == 3,
+			"and the snippet is told how many there are, since it cannot count"
+			.. " frames it has not been handed")
+		for i = 1, 3 do
+			check(f:GetFrameRef("slot" .. i) == f.slots[i],
+				"slot " .. i .. " is reachable from the snippet by reference -"
+				.. " a name would not be, in there")
+		end
+		local barSize = A.db.profile.modules.actionbars.size
+		check(f.slots[1]:GetWidth() == barSize,
+			"a drawer slot is the size of a bar slot (" ..
+			tostring(f.slots[1]:GetWidth()) .. " against " ..
+			tostring(barSize) .. ")")
+		check(f:GetAttribute("slotSize") == barSize,
+			"and the snippet is TOLD that size rather than falling back to a"
+			.. " 36 written into it - which is right only while nobody has"
+			.. " changed the setting (" .. tostring(f:GetAttribute("slotSize"))
+			.. ")")
+		check(f.slots[1].edge ~= nil,
+			"and wears our own rim rather than arriving bare")
+
+		-- THE PAYLOAD, which is the one thing here the snippet actually reads.
+		local body = table.concat(f.__executed, "\n")
+		check(body:find("AETHER_FLYOUTS = newtable()", 1, true) ~= nil,
+			"the restricted environment is loaded with a table rather than a"
+			.. " string it would have to parse")
+		check(body:find("AETHER_FLYOUTS%[42%]") ~= nil,
+			"the known flyout is in it")
+		check(body:find("AETHER_FLYOUTS%[44%]") == nil,
+			"and one the character has not learned is not - GetFlyoutInfo says"
+			.. " so, and offering it would be offering a spell that fails")
+		check(body:find("s.spell = 688") ~= nil and body:find("s.known = true") ~= nil,
+			"each slot carries its spell and whether it can be cast")
+		check(body:find("s.spell = 691") ~= nil and body:find("s.known = false") ~= nil,
+			"including the one that cannot - the snippet skips it, rather than"
+			.. " this list pretending it is not there")
+
+		-- THE SPELL IT CASTS AND THE SPELL IT DRAWS, kept apart.
+		--
+		-- GetFlyoutSlotInfo answers with the spell the character KNOWS and the
+		-- one it currently resolves to. This stored the override and cast it,
+		-- so a glyphed warlock's drawer asked the client for a spell nobody
+		-- has: the clicks arrived and nothing happened, silently, which is
+		-- what casting an unknown id does. Seven presses and fourteen clicks
+		-- were counted in the game before it was found.
+		check(body:find("s.icon = 112866") ~= nil,
+			"a glyphed slot draws the id it resolves to (112866)")
+		check(body:find("s.spell = 691 s.icon = 112866") ~= nil,
+			"and casts the id the character knows (691) - two fields, because"
+			.. " they are two different spells")
+
+		-- THE WAY IN. Both halves: the bar has to be able to find the drawer,
+		-- and the click has to be intercepted before Blizzard's handler sees a
+		-- flyout and calls the Toggle that does not work.
+		local hdr = bar.header
+		check(hdr:GetFrameRef("aetherFlyout") == f,
+			"the bar's header can reach the drawer - the wrap runs as the"
+			.. " header, so the reference has to be on it")
+		local wrap = fb.__wrap and fb.__wrap.OnClick
+		check(wrap ~= nil, "and a flyout slot's click is wrapped")
+		check(wrap and wrap.pre:find("return false", 1, true) ~= nil,
+			"with a return false in it - without that the wrapped script runs"
+			.. " on into SECURE_ACTIONS.action and calls SpellFlyout:Toggle")
+		-- The direction is read by the DRAWER snippet, not the wrap - the wrap
+		-- does as little as a thing on every action button's click should.
+		check(AB.__flyoutSnippet:find("aetherFlyoutDirection", 1, true) ~= nil,
+			"the drawer reads its direction off an attribute, which is the"
+			.. " only channel the restricted environment has to the field the"
+			.. " mixin keeps it in")
+		check(fb:GetAttribute("aetherFlyoutDirection") ~= nil,
+			"...which is written (" ..
+			tostring(fb:GetAttribute("aetherFlyoutDirection")) .. ")")
+
+		-- PAINTED BY US, because the snippet cannot read a spell's icon.
+		f.slots[1]:AetherPaintSlot(688)
+		check(f.slots[1].icon:GetTexture() == GetSpellTexture(688),
+			"the snippet calls back out to paint a slot - reading a spell's"
+			.. " icon is not something it can do in there")
+
+		-- AND NOT A LINE OF IT WITH A FIGHT ON. Creating a secure button and
+		-- writing the restricted environment are both forbidden in combat, and
+		-- the failure is silent: a sync that "worked" mid-fight is a drawer
+		-- that is quietly wrong.
+		_G.__flyouts[43].slots[2] = { spell = 1234, known = true }
+		_G.__flyouts[43].slots[3] = { spell = 1235, known = true }
+		_G.__flyouts[43].slots[4] = { spell = 1236, known = true }
+		local before = #f.__executed
+		_G.__inCombat = true
+		AB:SyncFlyouts()
+		check(#f.__executed == before and #f.slots == 3,
+			"a sync in combat writes nothing and builds nothing")
+		_G.__inCombat = false
+		AB:SyncFlyouts()
+		check(#f.slots == 4,
+			"and the end of the fight is when it catches up (" .. #f.slots
+			.. " slots)")
+	end
 
 	-- AWAY FROM THE NEARER EDGE, and asked of the button rather than assumed.
 	-- Blizzard's template defaults to DOWN, which puts the demons off the
