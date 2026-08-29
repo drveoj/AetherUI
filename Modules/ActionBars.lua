@@ -797,29 +797,42 @@ function AB:DiagnoseFlyout()
 	say("drawer parent: " .. tostring(f:GetParent() and f:GetParent():GetName()))
 	box(f.panel, "drawer glass")
 
+	-- EVERY SLOT, not the first one. The last dump said slot 1 had never been
+	-- hovered and had seen no clicks, which was true and useless: the drawer
+	-- shows five and the one under the cursor was not that one. A measurement
+	-- that only looks where the fault is not will keep saying nothing is
+	-- wrong.
+	local shown, press, click, hover = 0, 0, 0, 0
+	for i, sl in ipairs(f.slots or {}) do
+		if sl:IsShown() then
+			shown = shown + 1
+			say(("slot %d: spell=%s level=%s mouse=%s pressed=%s clicked=%s"
+				.. " last=%s hovered=%s size=%.0fx%.0f")
+				:format(i, tostring(sl:GetAttribute("spell")),
+					tostring(sl.GetFrameLevel and sl:GetFrameLevel()),
+					tostring(sl.IsMouseEnabled and sl:IsMouseEnabled()),
+					tostring(sl.__pressed or 0), tostring(sl.__clicked or 0),
+					tostring(sl.__lastBtn), tostring(sl.__hovered == true),
+					sl:GetWidth() or 0, sl:GetHeight() or 0))
+		end
+		press = press + (sl.__pressed or 0)
+		click = click + (sl.__clicked or 0)
+		hover = hover + ((sl.__hovered == true) and 1 or 0)
+	end
+	say(("across all slots: shown=%d pressed=%d clicked=%d hovered=%d")
+		:format(shown, press, click, hover))
+
 	local b = f.slots and f.slots[1]
-	box(b, "slot 1")
 	if b then
-		say(("slot 1: type=%s type1=%s spell=%s unit=%s protected=%s")
+		say(("slot 1 attrs: type=%s type1=%s unit=%s protected=%s ownOnClick=%s")
 			:format(tostring(b:GetAttribute("type")),
 				tostring(b:GetAttribute("type1")),
-				tostring(b:GetAttribute("spell")),
 				tostring(b:GetAttribute("unit")),
-				tostring(b.IsProtected and select(1, b:IsProtected()))))
-		say(("slot 1 clicks: registered=%s pressed=%s clicked=%s last=%s")
-			:format(tostring(b.__clicks), tostring(b.__pressed or 0),
-				tostring(b.__clicked or 0), tostring(b.__lastBtn)))
-		say("SecureActionButton_OnClick present: "
-			.. tostring(_G.SecureActionButton_OnClick ~= nil)
-			.. "  own OnClick: " .. tostring(b:GetScript("OnClick") ~= nil))
-		say("slot 1 parent: " .. tostring(b:GetParent() and b:GetParent():GetName()))
-		local ok, mx, my = pcall(b.GetCenter, b)
-		say("slot 1 centre: " .. tostring(ok and mx) .. ", " .. tostring(ok and my))
-		say("slot 1 under cursor: " .. tostring(b.IsMouseOver and b:IsMouseOver()))
-		say("slot 1 has ever been hovered: " .. tostring(b.__hovered == true))
-		say("mouse focus: " .. tostring(GetMouseFocus and GetMouseFocus()
-			and (GetMouseFocus():GetName() or "unnamed")))
+				tostring(b.IsProtected and select(1, b:IsProtected())),
+				tostring(b:GetScript("OnClick") ~= nil)))
 	end
+	say("mouse focus: " .. tostring(GetMouseFocus and GetMouseFocus()
+		and (GetMouseFocus():GetName() or "unnamed")))
 	say("slots built: " .. tostring(f.slots and #f.slots)
 		.. "  attr slots=" .. tostring(f:GetAttribute("slots"))
 		.. "  size=" .. tostring(f:GetAttribute("slotSize")))
