@@ -16292,34 +16292,20 @@ do
 			local w = f.slots and f.slots[1] and f.slots[1].__wrap
 				and f.slots[1].__wrap.OnClick
 			check(w ~= nil, "a drawer slot's click is wrapped")
-			-- AND THE INSECURE ONE ACTUALLY RUNS. The secure post body is
-			-- checked below by its text, which says it was installed and not
-			-- that it fired - and the drawer went on standing open after a
-			-- cast with only that. This clicks a slot and looks at the drawer.
-			f:Show()
-			local hook = f.slots[1]:GetScript("OnClick")
-			if hook then hook(f.slots[1], "LeftButton") end
-			check(not f:IsShown(),
-				"clicking a drawer slot shuts the drawer - checked by clicking"
-				.. " one, rather than by reading the body of a wrap that says"
-				.. " it would")
-
-			-- ...and not while a fight is on, where hiding it from ordinary
-			-- Lua is refused if it is protected. That is what the secure body
-			-- is still there for.
-			f:Show()
-			_G.__inCombat = true
-			if hook then hook(f.slots[1], "LeftButton") end
-			_G.__inCombat = false
-			check(f:IsShown(),
-				"the insecure close stands down in combat rather than failing"
-				.. " silently there")
-			f:Hide()
-
-			-- AND THE WRAP WAS ACCEPTED. It was applied under a bare pcall,
-			-- so two attempts at the secure close failed silently and looked
-			-- installed - the drawer stayed open in combat and nothing said
-			-- why. The result is kept now, and checked.
+			-- THE CLOSE IS SECURE-ONLY NOW, so it cannot be exercised here.
+			--
+			-- There was an insecure close alongside it and this clicked a slot
+			-- and watched the drawer shut. That close is gone: it worked out
+			-- of combat and was refused in one, and the secure post body does
+			-- both. What is left is a snippet, and there is no restricted
+			-- environment in this harness to run one in.
+			--
+			-- So the three checks below are what can be had: the wrap was
+			-- accepted, its pre body returns a message, and its post body
+			-- hides. The middle one is the whole reason this took as long as
+			-- it did, and it is checkable by reading - which is worth more
+			-- than the click test that was replaced, because the click test
+			-- passed throughout.
 			check(f.__wrapOk == true,
 				"the drawer's own wrap on a slot was accepted (" ..
 				tostring(f.__wrapErr) .. ")")

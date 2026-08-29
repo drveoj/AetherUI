@@ -755,13 +755,14 @@ local function EnsureSlots(n, size)
 			"SecureActionButtonTemplate")
 		b:SetSize(size, size)
 
-		-- BOTH EDGES. The bar's own slots follow the player's cast-on-down
-		-- setting because a keybind and a click have to agree there. A drawer
-		-- slot has no keybind, nothing races it, and registering for one edge
-		-- is one more way for a click to arrive and find nobody listening -
-		-- which is the fault being chased.
-		b.__clicks = "AnyUp AnyDown"
-		b:RegisterForClicks("AnyUp", "AnyDown")
+		-- ONE EDGE, the same one the bar's own slots use. Both were registered
+		-- while the click was being chased, on the grounds that one more way
+		-- in could not hurt - and it can: the secure handler runs on each
+		-- edge, so a press was dispatching the cast twice. It only ever looked
+		-- harmless because the first edge hid the drawer and the second landed
+		-- on a hidden button.
+		b.__clicks = UseKeyDown() and "AnyDown" or "AnyUp"
+		b:RegisterForClicks(b.__clicks)
 
 		-- COUNTED, NOT INTERCEPTED. HookScript runs after the template's own
 		-- handler instead of replacing it, so this says whether the click
@@ -772,17 +773,12 @@ local function EnsureSlots(n, size)
 			self2.__clicked = (self2.__clicked or 0) + 1
 			self2.__lastBtn = btn
 
-			-- ...AND SHUT THE DRAWER. Belt as well as braces: there is a
-			-- secure post body doing this too, and the drawer went on standing
-			-- open after a cast with only that.
-			--
-			-- HookScript runs AFTER the template's own handler, so the spell
-			-- has already gone off by the time this fires - the same ordering
-			-- the post body was chosen for. Insecure, so it is refused while a
-			-- fight is on IF the drawer turns out to be protected, which is
-			-- what the secure body is still there for.
-			local d = self2:GetParent()
-			if d and d.Hide and not InCombatLockdown() then pcall(d.Hide, d) end
+			-- NO CLOSE HERE. There was an insecure one for as long as the
+			-- secure post body was not firing; it worked out of combat and was
+			-- refused in one, because the drawer inherits SecureFrameTemplate
+			-- and is explicitly protected. The post body does both now, so a
+			-- second route that only covers half the cases is a second thing
+			-- to keep true.
 		end)
 		b:HookScript("OnMouseDown", function(self2)
 			self2.__pressed = (self2.__pressed or 0) + 1
@@ -868,7 +864,6 @@ local function EnsureSlots(n, size)
 				[==[
 					owner:SetAttribute("aetherPostRan", 1)
 					owner:Hide()
-					owner:SetAttribute("aetherPostHid", 1)
 				]==])
 			f.__wrapOk, f.__wrapErr = ok, err
 		else
@@ -989,10 +984,13 @@ function AB:DiagnoseFlyout()
 		.. " demands of a header)"):format(tostring(prot), tostring(explicit)))
 	say(("drawer slot wrap: ok=%s err=%s"):format(tostring(f.__wrapOk),
 		tostring(f.__wrapErr)))
-	say(("post body: ran=%s reachedHide=%s  (ran=nil means it never fired;"
-		.. " ran=1 with the drawer still shown means the Hide was refused)")
-		:format(tostring(f:GetAttribute("aetherPostRan")),
-			tostring(f:GetAttribute("aetherPostHid"))))
+	-- Kept. One attribute per cast, and it is the difference between reading
+	-- one line and spending another evening: ran=nil says the post body is not
+	-- firing, which is the failure this whole drawer spent longest on and the
+	-- one the API reports no error for.
+	say(("post body ran: %s  (nil after a cast means the pre body stopped"
+		.. " returning a message)"):format(
+			tostring(f:GetAttribute("aetherPostRan"))))
 	say("drawer parent: " .. tostring(f:GetParent() and f:GetParent():GetName()))
 	box(f.panel, "drawer glass")
 
