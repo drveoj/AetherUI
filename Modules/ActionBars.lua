@@ -711,6 +711,54 @@ function AB:SyncFlyouts()
 	f:Execute(table.concat(data, "\n"))
 end
 
+--- WHAT THE CLIENT SAYS ABOUT THE DRAWER, with it open.
+--
+--  Four guesses in, and each one cost a reload and a report. This asks the
+--  question instead: it is the same move as AetherProbe, at the scale of one
+--  frame. Open a flyout, run /aether bars flyout, and it prints what the
+--  client thinks is true about the drawer and its first slot.
+--
+--  Everything here is a getter. It changes nothing, so it is safe to run in
+--  combat or out, and safe to leave in the shipped file.
+function AB:DiagnoseFlyout()
+	local f = flyout
+	if not f then A:Print("flyout: no drawer built") return end
+
+	local function say(...) A:Print(...) end
+	local function box(fr, label)
+		if not fr then say(label .. ": nil") return end
+		say(("%s: shown=%s mouse=%s strata=%s level=%s size=%.0fx%.0f alpha=%.2f")
+			:format(label,
+				tostring(fr:IsShown()),
+				tostring(fr.IsMouseEnabled and fr:IsMouseEnabled()),
+				tostring(fr.GetFrameStrata and fr:GetFrameStrata()),
+				tostring(fr.GetFrameLevel and fr:GetFrameLevel()),
+				fr:GetWidth() or 0, fr:GetHeight() or 0,
+				fr:GetAlpha() or 0))
+	end
+
+	box(f, "drawer")
+	say("drawer parent: " .. tostring(f:GetParent() and f:GetParent():GetName()))
+	box(f.panel, "drawer glass")
+
+	local b = f.slots and f.slots[1]
+	box(b, "slot 1")
+	if b then
+		say(("slot 1: type=%s spell=%s clicks=%s protected=%s")
+			:format(tostring(b:GetAttribute("type")),
+				tostring(b:GetAttribute("spell")),
+				tostring(b.__clicks or "?"),
+				tostring(b.IsProtected and select(1, b:IsProtected()))))
+		say("slot 1 parent: " .. tostring(b:GetParent() and b:GetParent():GetName()))
+		local ok, mx, my = pcall(b.GetCenter, b)
+		say("slot 1 centre: " .. tostring(ok and mx) .. ", " .. tostring(ok and my))
+		say("slot 1 under cursor: " .. tostring(b.IsMouseOver and b:IsMouseOver()))
+	end
+	say("slots built: " .. tostring(f.slots and #f.slots)
+		.. "  attr slots=" .. tostring(f:GetAttribute("slots"))
+		.. "  size=" .. tostring(f:GetAttribute("slotSize")))
+end
+
 --- Point a bar's buttons at the drawer.
 --
 --  The frame reference goes on the HEADER, because that is the frame the wrap

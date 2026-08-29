@@ -1190,6 +1190,16 @@ handlers.bar = function(arg, rest)
 
 	if not arg or arg == "" or arg == "list" then return BarList() end
 
+	-- WITH THE DRAWER OPEN. Every line of it is a getter, so it changes
+	-- nothing and can be run in a fight. Four guesses at why a flyout slot
+	-- will not take a click have each cost a reload and a report; this asks
+	-- the client instead, which is how everything else here got settled.
+	if arg == "flyout" then
+		if AB and AB.DiagnoseFlyout then AB:DiagnoseFlyout()
+		else A:Print("this build has no flyout drawer") end
+		return
+	end
+
 	-- globals that apply to every bar --------------------------------------
 	if arg == "size" or arg == "spacing" or arg == "font" then
 		local v = tonumber(rest)
