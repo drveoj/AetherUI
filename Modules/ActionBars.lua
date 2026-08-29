@@ -158,6 +158,50 @@ local function FlyoutDirection(b)
 	return (y < h * 0.5) and "UP" or "DOWN"
 end
 
+--- THE MARK THAT SAYS A SLOT HAS MORE BEHIND IT.
+--
+--  Blizzard's arrow came free with FlyoutButtonTemplate and went when the
+--  template did - and it went for a good reason, since that template's OnClick
+--  took every button's action with it. But the arrow was the ONLY thing saying
+--  a slot opens rather than casts, and a summon slot that looks like every
+--  other slot is a slot you press once and wonder about.
+--
+--  Media.texture.chevron, which is already this addon's arrow: the dropdowns
+--  use it, the bag rail uses it, the Toolbox rail uses it. Not a new texture -
+--  those need a client RESTART rather than a reload, and a shared one is the
+--  standing instruction anyway.
+--
+--  It points the way the drawer opens, on the edge the drawer opens from. The
+--  chevron is authored pointing DOWN, so up is the same picture flipped.
+local function FlyoutMark(b, dir, on)
+	if not on then
+		if b.flyoutMark then b.flyoutMark:Hide() end
+		return
+	end
+
+	if not b.flyoutMark then
+		local t = b:CreateTexture(nil, "OVERLAY")
+		t:SetTexture(Media.texture.chevron)
+		t:SetSize(8, 8)
+		b.flyoutMark = t
+	end
+
+	local m = b.flyoutMark
+	m:ClearAllPoints()
+	if dir == "UP" then
+		m:SetPoint("TOP", b, "TOP", 0, -2)
+		m:SetTexCoord(0, 1, 1, 0)
+	else
+		m:SetPoint("BOTTOM", b, "BOTTOM", 0, 2)
+		m:SetTexCoord(0, 1, 0, 1)
+	end
+	-- The same weight as the other two rails' arrows. Three arrows in one
+	-- interface that disagree about how dark an arrow is is a thing nobody can
+	-- name and everybody sees.
+	W.Tint(m, Palette.c.text, 0.75)
+	m:Show()
+end
+
 --- The popup this slot owns, if the slot is a flyout at all.
 --
 --  Blizzard's own buttons do this in ActionBarActionButtonDerivedMixin when
@@ -185,6 +229,7 @@ local function UpdateFlyout(b)
 	elseif b.ClearPopup then
 		pcall(b.ClearPopup, b)
 	end
+	FlyoutMark(b, dir, kind == "flyout")
 end
 
 local function UpdateIcon(b)

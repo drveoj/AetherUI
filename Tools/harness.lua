@@ -16207,6 +16207,44 @@ do
 	--
 	-- Every button, not the flyout one: the flyout slot was the ONLY one still
 	-- working, so a check that looked at it would have found nothing wrong.
+	-- THE MARK THAT SAYS A SLOT OPENS RATHER THAN CASTS.
+	--
+	-- Blizzard's arrow came free with FlyoutButtonTemplate and went out with
+	-- it - correctly, since that template's OnClick took every button's action
+	-- too - and its absence was reported from the game. It is ours to draw,
+	-- and it is the chevron every other arrow here already uses.
+	do
+		check(fb.flyoutMark ~= nil and fb.flyoutMark:IsShown(),
+			"a flyout slot is marked as one")
+		check(fb.flyoutMark:GetTexture() == A.Media.texture.chevron,
+			"with the chevron the dropdowns and both rails use, not a new"
+			.. " texture - a new texture needs a client restart, and one arrow"
+			.. " is the standing instruction anyway")
+		check(bar.buttons[1].flyoutMark == nil
+			or not bar.buttons[1].flyoutMark:IsShown(),
+			"and an ordinary slot is not marked")
+
+		-- IT POINTS THE WAY THE DRAWER OPENS. The chevron is authored pointing
+		-- down, so up is the same picture flipped - and a mark that says down
+		-- over a drawer that opens up is worse than no mark.
+		-- Guarded, so a missing mark FAILS the check below rather than
+		-- throwing here and taking the rest of the run with it. A suite that
+		-- crashes reports one fault; a suite that fails reports all of them.
+		local function markFor(cy)
+			fb:SetGeom({ cx = 500, cy = cy })
+			AB:RefreshAll()
+			if not fb.flyoutMark then return "none" end
+			return (fb.flyoutMark:GetPoint(1))
+		end
+		local h = UIParent:GetHeight()
+		local lowPoint = markFor(0.2 * h)
+		local highPoint = markFor(0.8 * h)
+		check(lowPoint == "TOP" and highPoint == "BOTTOM",
+			"on the edge the drawer opens from, which is the top of a slot low"
+			.. " on the screen and the bottom of one high up (" ..
+			tostring(lowPoint) .. ", " .. tostring(highPoint) .. ")")
+	end
+
 	local stolen = 0
 	for i = 1, #bar.buttons do
 		if bar.buttons[i].__clickStolenBy then stolen = stolen + 1 end
