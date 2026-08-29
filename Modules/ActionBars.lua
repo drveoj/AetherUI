@@ -849,7 +849,22 @@ local function EnsureSlots(n, size)
 			--
 			-- An attribute, because that is the one thing a snippet can leave
 			-- behind for ordinary Lua to read.
-			local ok, err = pcall(f.WrapScript, f, b, "OnClick", "return nil",
+			-- THE PRE BODY HAS TO RETURN A MESSAGE OR THE POST BODY IS NEVER
+			-- RUN. From SecureHandlers.lua's own wrapper:
+			--
+			--   if (postBody and message ~= nil) then
+			--
+			-- The pre handler returns (button, message), and the message is
+			-- what arms the post. Returning nil from it - which is what this
+			-- did, twice - leaves a wrap the client accepts, reports no error
+			-- for, and never fires half of. The diagnostic said ran=nil
+			-- against a slot with two counted clicks, which is that line
+			-- exactly.
+			--
+			-- LibActionButton carries the same discovery in a comment:
+			-- "we also need some phony message, or it won't work =/".
+			local ok, err = pcall(f.WrapScript, f, b, "OnClick",
+				[==[ return nil, "aether-flyout" ]==],
 				[==[
 					owner:SetAttribute("aetherPostRan", 1)
 					owner:Hide()

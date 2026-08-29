@@ -16324,6 +16324,22 @@ do
 				"the drawer's own wrap on a slot was accepted (" ..
 				tostring(f.__wrapErr) .. ")")
 
+			-- AND ITS PRE BODY RETURNS A MESSAGE, which is what arms the post
+			-- body at all. SecureHandlers.lua runs the post only when the pre
+			-- returned one:
+			--
+			--   if (postBody and message ~= nil) then
+			--
+			-- Twice this wrap was installed with a pre body returning nil. The
+			-- client accepted it both times and reported no error, and half of
+			-- it never ran. Checked by reading the body, because there is no
+			-- restricted environment here to run it in - but the RULE is the
+			-- thing worth writing down, and it is not discoverable from the
+			-- API's own error messages.
+			check(w and w.pre and w.pre:find("return nil,", 1, true) ~= nil,
+				"and its pre body returns a message - a post body is only run"
+				.. " when the pre returned one (" .. tostring(w and w.pre) .. ")")
+
 			check(w and w.post and w.post:find("Hide", 1, true) ~= nil,
 				"with a POST body that shuts the drawer - pre would hide the"
 				.. " frame the click is still travelling through ("
