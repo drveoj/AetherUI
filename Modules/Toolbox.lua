@@ -3319,7 +3319,6 @@ local NEWS_H     = 100
 local SECTION_H  = 20      -- a section label and the gap under it
 local SECTION_GAP = 14     -- between one section's last row and the next label
 local MICRO_CELL_H = 46
-local MICRO_PER_ROW = 5
 
 -- Flat, the row is glyphs ONLY and the cell shrinks to fit them.
 --
@@ -3350,6 +3349,20 @@ local MICRO_MIN_CELL = 24
 -- letting the glyph keep its 20 units while its cell shrank under it.
 local MICRO_FLAT_MAX_ROWS = 1
 
+-- ...and TWO in the drawer, for the same kind of reason and a different number.
+--
+-- MEASURED. The vertical panel is 388 deck px, which is about 166 units of row
+-- once the padding is off it - so at the floor it holds six across, and Mists'
+-- fifteen want three rows. Three rows of glyphs is 90 units down a panel whose
+-- foot is the mini-player and whose middle is the widget cards and the addon
+-- list, and it reads as a keypad rather than as a menu.
+--
+-- So the drawer stops at two and the glyph gives way below that, which is the
+-- trade the flat dock already makes one row earlier. Era's ten are two rows of
+-- five at the floor and are untouched; Mists' fifteen are 8 + 7 at 20.8 units,
+-- with a 14.8 glyph in each.
+local MICRO_DRAWER_MAX_ROWS = 2
+
 --- How big the glyph in a cell that wide may be.
 --
 --  IT USED TO BE 20 WHATEVER THE CELL WAS. Ten entries across a flat dock's
@@ -3363,6 +3376,7 @@ local function MicroGlyph(cellW)
 	return math.min(cellW, math.max(8, math.min(20, cellW - 6)))
 end
 
+
 local function Cols(key, fallback)
 	return math.max(1, tonumber(A.Config:Module("toolbox")[key]) or fallback)
 end
@@ -3370,6 +3384,35 @@ end
 --- Rows of `n` items at `per` per row.
 local function RowsFor(n, per)
 	return math.ceil(math.max(0, n) / math.max(1, per))
+end
+
+--- How the micro row divides: rows, entries per row, and the cell that gives.
+--
+--  FEWEST ROWS THAT KEEP THE CELL AT ITS FLOOR, then an even split across them.
+--
+--  The flat dock worked this out for itself and the vertical drawer did not: it
+--  was laid out at a fixed five per row, which was two tidy rows while Era
+--  offered ten and became THREE the moment Mists offered fifteen - down a panel
+--  whose foot is already spoken for. A count of five is a guess about how many
+--  entries there will be, and the client is what decides that.
+--
+--  Both halves are needed. Wrapping at the floor alone gives fifteen across a
+--  row of fourteen: a full row and an orphan, which reads as a mistake rather
+--  than as a layout. So the ROW COUNT comes from the floor and the PER-ROW
+--  comes from dividing evenly into it.
+--
+--  `maxRows` is the flat dock's ceiling of one, where a second row does not fit
+--  above the floor the other five columns share. Clamped there the cell falls
+--  under MICRO_MIN_CELL and MicroGlyph gives way instead - every entry present,
+--  which is that dock's trade and still the right one. The drawer passes none:
+--  it has the height, and would rather spend it than shrink a glyph.
+local function MicroFit(n, avail, maxRows)
+	if n <= 0 then return 0, 1, avail end
+	local fits = math.max(1, math.min(n, math.floor(avail / MICRO_MIN_CELL)))
+	local rows = RowsFor(n, fits)
+	if maxRows then rows = math.min(maxRows, rows) end
+	local per  = math.ceil(n / rows)
+	return rows, per, avail / per
 end
 
 --- Place the i-th frame of a grid whose top-left corner is (x, y) in content
@@ -3662,14 +3705,7 @@ function TB:LayoutHorizontal()
 		local micro = self._microList or {}
 		if content.microHead then content.microHead:Hide() end
 		if #micro > 0 then
-			local fits = math.max(1, math.min(#micro,
-				math.floor(cw / MICRO_MIN_CELL)))
-			-- An even split across whatever rows are allowed, rather than a
-			-- full row and a remainder: fifteen across a row of eleven is
-			-- 11 + 4, and the four read as a mistake.
-			local rows  = math.min(MICRO_FLAT_MAX_ROWS, RowsFor(#micro, fits))
-			local per   = math.ceil(#micro / rows)
-			local cellW = cw / per
+			local rows, per, cellW = MicroFit(#micro, cw, MICRO_FLAT_MAX_ROWS)
 			for i, b in ipairs(micros) do
 				if i <= #micro then
 					b:SetSize(cellW, MICRO_CELL_H_FLAT)
@@ -3689,7 +3725,7 @@ function TB:LayoutHorizontal()
 					b:Hide()
 				end
 			end
-			y = y + RowsFor(#micro, per) * MICRO_CELL_H_FLAT
+			y = y + rows * MICRO_CELL_H_FLAT
 		end
 		used(y)
 	end
@@ -3923,19 +3959,25 @@ function TB:LayoutVertical()
 		-- costing sixteen pixels a row for words the tooltip says better, and the
 		-- drawer needed them for the mini-player at its foot. Nothing was lost
 		-- that the flat panel had not already decided it could do without.
-		local cellW = avail / MICRO_PER_ROW
+		local rows, per, cellW = MicroFit(#micro, avail, MICRO_DRAWER_MAX_ROWS)
 		for i, b in ipairs(micros) do
 			if i <= #micro then
 				b:SetSize(cellW, MICRO_CELL_H_FLAT)
-				GridPlace(content, b, i, PAD, y, MICRO_PER_ROW, cellW,
+				GridPlace(content, b, i, PAD, y, per, cellW,
 					MICRO_CELL_H_FLAT, 0, 0)
 				if b.name then b.name:Hide() end
+				-- The glyph gives way here too. It never had to at five a row,
+				-- because five across 358 is a 71-unit cell - but the count is
+				-- the client's now, and a rule that only holds at the widths we
+				-- happen to ship is not a rule.
+				local g = MicroGlyph(cellW)
+				if b.glyph then b.glyph:SetSize(g, g) end
 				b:Show()
 			else
 				b:Hide()
 			end
 		end
-		y = y + RowsFor(#micro, MICRO_PER_ROW) * MICRO_CELL_H_FLAT + SECTION_GAP
+		y = y + rows * MICRO_CELL_H_FLAT + SECTION_GAP
 	end
 
 	-- WIDGETS ----------------------------------------------------------------

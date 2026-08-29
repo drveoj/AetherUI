@@ -20649,9 +20649,24 @@ do
 	-- block was the difference. Now the section is always there, so the
 	-- difference is only the two extra ROWS - a smaller step, which moves the
 	-- band.
+	--
+	-- ...AND THE BAND IS A DIFFERENT ONE PER CLIENT, because the drawer above
+	-- these tiles is a different height. At this screen the panel is its full
+	-- 388 and the micro row divides at the cell floor, so Era's ten go on ONE
+	-- line and Mists' fifteen on two: thirty units apart, and so is the band.
+	-- 620 was swept for while that row was laid out five at a time and Era took
+	-- two rows of it; a screen that used to cut two tiles now fits them all.
+	--
+	-- ...AND THE BAND IS A DIFFERENT ONE PER CLIENT, because the drawer above
+	-- these tiles is a different height. The micro row is laid out at as few
+	-- rows as keep its cells at the floor, so Era's ten entries take one row
+	-- and Mists' fifteen take two: thirty units of difference, and the band is
+	-- thirty units apart. 620 was swept for on a drawer whose micro row was two
+	-- rows on Era; it is one now, and a screen that used to cut two tiles fits
+	-- them all.
 	do
 		local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-		UIParent:SetSize(1365, 620)
+		UIParent:SetSize(1365, _G.__mists and 620 or 590)
 
 		-- A long addon list too, so the OTHER list that gives way is not empty.
 		for i = 1, 10 do _G.__makeLDB("RoomTest" .. i, "launcher") end
@@ -22273,12 +22288,13 @@ do
 	-- Era's carries nine; five of the four it adds are somewhere to GO and are
 	-- in ours, and the thirteenth is the shop, which is not.
 	--
-	-- Both counts are a whole number of rows of five, which is what MENU is
-	-- laid out in.
+	-- How they divide is not this check's business any more. The row used to
+	-- be laid out five at a time, so ten and fifteen were the tidy counts and
+	-- nine and thirteen were not; it is laid out at whatever the width holds
+	-- now, so the COUNT is just the count and the layout is checked below.
 	local WANT = _G.__mists and 15 or 10
 	check(#TBm:MicroList() == WANT,
-		WANT .. " entries, a whole number of rows of five (" ..
-		#TBm:MicroList() .. ")")
+		WANT .. " entries (" .. #TBm:MicroList() .. ")")
 
 	-- AND THEY ARE THE RIGHT FIVE, named rather than counted - a count passes
 	-- just as well with the wrong five in it.
@@ -22346,32 +22362,79 @@ do
 		for g, fn in pairs(saved) do _G[g] = fn end
 	end
 
-	-- AND FIVE TO A ROW, WITH NO SHORT ROW - which is the point of there
-	-- being ten on Era and fifteen on Mists rather than nine and thirteen.
+	-- AND THE DRAWER TAKES AS FEW ROWS AS THE CELL FLOOR ALLOWS.
 	--
-	-- Nine across a four-wide grid is 4 + 4 + 1, and the odd one on its own
-	-- line reads as something having gone wrong rather than as a menu.
+	-- It was laid out five at a time, which was two tidy rows while Era offered
+	-- ten and became THREE the moment Mists offered fifteen - down a panel that
+	-- already spends its foot on the mini-player. A count of five is a guess
+	-- about how many entries there will be, and the client decides that.
+	--
+	-- Four things, because three of them pass on their own with the layout
+	-- wrong: the rows are as few as the floor allows, they are EVEN (fifteen
+	-- across a row of fourteen is a full row and an orphan, which reads as a
+	-- mistake), every cell is still at the floor, and no glyph is drawn wider
+	-- than the cell holding it.
 	do
+		local FLOOR = 24
 		TBm:SetDock("LEFT")
 		TBm:SetOpen(true, true)
 		TBm:RefreshMicro()
-		local rows = {}
+
+		local rows, order, over, narrow = {}, {}, nil, nil
 		for i = 1, #TBm._microList do
 			local btn = TBm.content.micro[i]
 			local _, _, _, _, y = btn:GetPoint(1)
 			local key = string.format("%.0f", y or 0)
+			if not rows[key] then order[#order + 1] = key end
 			rows[key] = (rows[key] or 0) + 1
+			narrow = math.min(narrow or btn:GetWidth(), btn:GetWidth())
+			local g = btn.glyph and btn.glyph:GetWidth() or 0
+			if g > btn:GetWidth() then over = btn:GetWidth() .. "/" .. g end
 		end
-		local n, sizes, short = 0, {}, false
-		for _, count in pairs(rows) do
-			n = n + 1
-			sizes[#sizes + 1] = count
-			if count ~= 5 then short = true end
+
+		local n, sizes, most, least = #order, {}, 0, math.huge
+		for _, key in ipairs(order) do
+			sizes[#sizes + 1] = rows[key]
+			most, least = math.max(most, rows[key]), math.min(least, rows[key])
 		end
-		table.sort(sizes)
-		check(n == #TBm._microList / 5 and not short,
-			"the drawer lays them out five to a row with none left over (" ..
-			n .. " rows of " .. table.concat(sizes, "+") .. ")")
+
+		-- The width the row is laid out across, measured off the panel rather
+		-- than restated: this check exists to catch a number that stopped
+		-- matching the thing it was copied from.
+		local avail = TBm.content.micro[1]:GetWidth() * sizes[1]
+
+		check(n <= 2, "the drawer never takes three rows of them (" .. n
+			.. " rows of " .. table.concat(sizes, "+") .. ")")
+		check(most - least <= 1,
+			"and the rows are even, with no orphan on a line of its own")
+		-- The floor holds UNLESS the two-row ceiling bit, which is the whole
+		-- trade: the drawer would rather shrink a glyph than draw a third row.
+		-- Written as one check with two arms rather than as a floor the layout
+		-- is allowed to miss, because "at the floor or else" is the rule and a
+		-- check that only asserts the easy arm passes on Era forever.
+		if narrow and narrow >= FLOOR then
+			check(true, "every cell is at the " .. FLOOR .. "-unit floor ("
+				.. string.format("%.1f", narrow) .. ")")
+		else
+			check(n == 2, "the cells are under the " .. FLOOR .. "-unit floor"
+				.. " only because the two-row ceiling bit ("
+				.. string.format("%.1f", narrow or 0) .. " over " .. n
+				.. " rows)")
+		end
+		check(over == nil,
+			"and no glyph is drawn wider than the cell holding it ("
+			.. tostring(over) .. ")")
+
+		-- FEWEST, not merely few. One row less would have to put a cell under
+		-- the floor, or the layout is spending height it did not need to.
+		if n > 1 then
+			local tighter = avail / math.ceil(#TBm._microList / (n - 1))
+			check(tighter < FLOOR,
+				"and one row fewer would not fit - " .. (n - 1) .. " rows is a "
+				.. string.format("%.1f", tighter) .. "-unit cell")
+		else
+			check(true, "and one row is all it needs")
+		end
 	end
 
 	-- FLAT, THE ROW WRAPS RATHER THAN SHRINKING PAST THE GLYPH.
