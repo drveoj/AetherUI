@@ -912,14 +912,20 @@ function CreateFont(name)
 	return obj
 end
 
--- FlyoutButtonTemplate CARRIES A MIXIN AND SOME KEY VALUES, and a frame built
--- without it has none of them. ActionButtonTemplate inherits it, which is how
--- every one of Blizzard's own action buttons answers GetPopupDirection; a
--- button built from SecureActionButtonTemplate alone does not, and the mock
--- has to be that unkind or the difference cannot be seen from here.
+-- FlyoutButtonTemplate CARRIES A MIXIN, SOME KEY VALUES - AND AN OnClick.
+--
+-- That last one is the whole lesson. Flyout.xml declares
+-- <OnClick method="Flyout_OnClick"/>, and an inherited OnClick replaces the
+-- one SecureActionButtonTemplate installs. Inheriting it to get
+-- GetPopupDirection took the action off every button on every bar, by click
+-- and by keybind, in combat and out - and the mock handed over the methods
+-- without the cost, so the suite called it a fix.
+--
+-- Both halves now: the members, and the click it steals.
 -- A GLOBAL, because the main chunk is at LuaJIT's 200-local ceiling and one
 -- more `local function` here costs the whole file.
 function _G.__applyFlyoutTemplate(f)
+	f.__clickStolenBy = "FlyoutButtonTemplate"
 	f.popupDirection, f.popupOffset, f.popupCrossAxisSize = "DOWN", -3, 38
 	function f:GetPopupDirection() return self.popupDirection or "DOWN" end
 	function f:SetPopupDirection(d) self.popupDirection = d end
@@ -16188,6 +16194,25 @@ check(bar.buttons[8].count:GetText() == 20, "stack count shown")
 -- file, since the bars were written.
 do
 	local fb = bar.buttons[10]
+
+	-- NOTHING MAY TAKE THE CLICK. This is the check that was missing, and its
+	-- absence cost a live session: the fix for the flyout error inherited
+	-- FlyoutButtonTemplate, that template declares its own OnClick, and an
+	-- inherited OnClick replaces the one SecureActionButtonTemplate installs.
+	-- Every button on every bar stopped doing anything - and the suite was
+	-- green, because the mock handed over the template's methods and modelled
+	-- none of its cost.
+	--
+	-- Every button, not the flyout one: the flyout slot was the ONLY one still
+	-- working, so a check that looked at it would have found nothing wrong.
+	local stolen = 0
+	for i = 1, #bar.buttons do
+		if bar.buttons[i].__clickStolenBy then stolen = stolen + 1 end
+	end
+	check(stolen == 0,
+		"no action button has had its click taken by a template it inherited"
+		.. " for something else (" .. stolen .. " of " .. #bar.buttons .. ")")
+
 	local ok, err = pcall(SpellFlyout.Toggle, SpellFlyout, fb, 42)
 	check(ok, "clicking a flyout slot opens it rather than erroring ("
 		.. tostring(err) .. ")")

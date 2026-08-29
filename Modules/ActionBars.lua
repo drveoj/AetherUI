@@ -552,6 +552,33 @@ local FLYOUT_WRAP = [==[
 	end
 ]==]
 
+--- The flyout contract, WITHOUT THE TEMPLATE THAT CARRIES IT.
+--
+--  SpellFlyout:Toggle asks a button for its direction and then asks it to
+--  toggle its popup. Blizzard's own buttons answer because
+--  ActionButtonTemplate inherits FlyoutButtonTemplate - and that template also
+--  declares an OnClick, which replaces the secure action handler and kills the
+--  button. Ours are given the answers and none of the scripts.
+--
+--  Deliberately not Mixin(b, FlyoutButtonMixin) either: that mixin's
+--  TogglePopup runs on into UpdateArrowRotation, which reads a self.Arrow the
+--  template would have made and we have not. Six small methods that do only
+--  what is asked of them, and no arrow of Blizzard's on our glass.
+local function ArmFlyoutContract(b)
+	b.popupOffset, b.popupCrossAxisSize = -3, 38
+	function b:GetPopupDirection() return self.__popupDir or "UP" end
+	function b:SetPopupDirection(d) self.__popupDir = d end
+	function b:SetPopup(p) self.__popup = p end
+	function b:ClearPopup() self.__popup = nil end
+	function b:HasPopup() return self.__popup ~= nil end
+	function b:IsPopupOpen()
+		local p = self.__popup
+		return p and p.IsAttachedToButton and p:IsAttachedToButton(self) or false
+	end
+	function b:TogglePopup() self.__popupOpen = not self.__popupOpen end
+	function b:ClosePopup() self.__popupOpen = false end
+end
+
 local flyout
 
 --- Paint one drawer slot. Called from the snippet by name, so it is insecure
@@ -674,7 +701,7 @@ local function BuildButton(bar, index)
 	local cfg = A.Config:Module("actionbars")
 	local name = ("AetherUIBar%sButton%d"):format(bar.id, index)
 
-	-- ...AND FlyoutButtonTemplate, WHICH IS THE HALF THAT WAS MISSING.
+	-- ...AND NOT FlyoutButtonTemplate, WHICH TAKES THE CLICK WITH IT.
 	--
 	-- This said SecureActionButtonTemplate was "exactly what Blizzard's own
 	-- ActionBarButtonTemplate is". It is not. That template is
@@ -692,9 +719,23 @@ local function BuildButton(bar, index)
 	-- clients, since the bars were written - it only surfaced now because
 	-- vanilla has few flyouts and Mists gives one to everybody.
 	--
+	-- INHERITING IT COST EVERY BUTTON ITS ACTION. Flyout.xml declares
+	--
+	--   <OnClick method="Flyout_OnClick"/>
+	--
+	-- on that template, and an inherited OnClick replaces the one
+	-- SecureActionButtonTemplate installs - so every button on every bar
+	-- stopped doing anything at all, by click or by keybind, in combat and
+	-- out, while the single flyout slot went on working because toggling a
+	-- popup is exactly what Flyout_OnClick does.
+	--
+	-- So the contract is supplied directly instead, below: the methods
+	-- SpellFlyout:Toggle asks for, and not one script.
+	--
 	-- The checked state still carries "this toggle is on"; that part was right.
 	local b = CreateFrame("CheckButton", name, bar.header,
-		"SecureActionButtonTemplate, FlyoutButtonTemplate")
+		"SecureActionButtonTemplate")
+	ArmFlyoutContract(b)
 	b:SetSize(cfg.size, cfg.size)
 	b:RegisterForClicks(UseKeyDown() and "AnyDown" or "AnyUp")
 	b:RegisterForDrag("LeftButton")
