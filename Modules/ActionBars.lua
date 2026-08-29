@@ -928,27 +928,47 @@ function AB:DiagnoseFlyout()
 				tostring(b.IsProtected and select(1, b:IsProtected())),
 				tostring(b:GetScript("OnClick") ~= nil)))
 	end
-	-- THE MARK ON THE BUTTON THE DRAWER OPENS FROM. The suite says it is
-	-- drawn; the screen says it is not, and the screen wins. So the client is
-	-- asked what it thinks the texture is.
-	local owner = f:GetAttribute("owner") or f:GetParent()
-	if owner and owner.GetName then
-		local m = owner.flyoutMark
-		say("owner: " .. tostring(owner:GetName()))
-		if not m then
-			say("owner mark: NONE - never created")
-		else
-			local pt, _, rel, ox, oy = m:GetPoint(1)
-			local r, g, bl, a = 1, 1, 1, 1
-			if m.GetVertexColor then r, g, bl, a = m:GetVertexColor() end
-			say(("owner mark: shown=%s tex=%s size=%.0fx%.0f point=%s(%s,%s)"
-				.. " rgba=%.2f,%.2f,%.2f,%.2f layer=%s")
-				:format(tostring(m:IsShown()), tostring(m:GetTexture()),
-					m:GetWidth() or 0, m:GetHeight() or 0,
-					tostring(pt), tostring(ox), tostring(oy),
-					r, g, bl, a, tostring(m.GetDrawLayer and m:GetDrawLayer())))
+	-- THE MARK, READ OFF OUR OWN BUTTON RATHER THAN THROUGH THE DRAWER.
+	--
+	-- The last version asked f:GetAttribute("owner"), which is what the secure
+	-- snippet stored - and a frame put into an attribute from in there comes
+	-- back as a restricted HANDLE. A handle answers method calls, which is why
+	-- owner:GetName() gave the right name, and hides plain fields, so
+	-- owner.flyoutMark read nil whether or not there was one. The measurement
+	-- said "never created" about a table it could not see into.
+	--
+	-- So: walk our own bars, which are ordinary Lua, and report every slot the
+	-- client calls a flyout.
+	local marked = 0
+	for _, bar in ipairs(AB.bars or {}) do
+		for _, btn in ipairs(bar.buttons or {}) do
+			local act = tonumber(btn:GetAttribute("action")) or 0
+			local kind = HasAction(act) and GetActionInfo and GetActionInfo(act)
+			if kind == "flyout" then
+				marked = marked + 1
+				local m = btn.flyoutMark
+				if not m then
+					say(("%s (action %d): NO MARK - never created")
+						:format(btn:GetName() or "?", act))
+				else
+					local pt, _, _, ox, oy = m:GetPoint(1)
+					local r, g, bl, a = 1, 1, 1, 1
+					if m.GetVertexColor then r, g, bl, a = m:GetVertexColor() end
+					say(("%s (action %d): mark shown=%s tex=%s %.0fx%.0f"
+						.. " point=%s(%s,%s) rgba=%.2f,%.2f,%.2f,%.2f")
+						:format(btn:GetName() or "?", act,
+							tostring(m:IsShown()), tostring(m:GetTexture()),
+							m:GetWidth() or 0, m:GetHeight() or 0,
+							tostring(pt), tostring(ox), tostring(oy),
+							r, g, bl, a))
+				end
+				say(("  ...contract=%s dirAttr=%s")
+					:format(tostring(btn.SetPopupDirection ~= nil),
+						tostring(btn:GetAttribute("aetherFlyoutDirection"))))
+			end
 		end
 	end
+	say("flyout slots found on our bars: " .. marked)
 
 	say("mouse focus: " .. tostring(GetMouseFocus and GetMouseFocus()
 		and (GetMouseFocus():GetName() or "unnamed")))
