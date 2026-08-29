@@ -1258,6 +1258,25 @@ function CreateFrame(kind, name, parent, template)
 	function f:GetAttribute(k) return self.__attrs[k] end
 	function f:GetName() return self.__name end
 
+	-- THE SECURE HANDLER SURFACE, RECORDED RATHER THAN RUN.
+	--
+	-- Nothing here executes a restricted-environment snippet: there is no
+	-- restricted environment, and writing one would be writing a second game.
+	-- What these do is keep what was handed to them, so the INSECURE half -
+	-- the table that gets loaded, the frames that get referenced, the scripts
+	-- that get wrapped - can be checked, and so that the untested half is
+	-- exactly the snippet body and nothing else.
+	f.__refs, f.__executed, f.__wrapped = {}, {}, {}
+	function f:SetFrameRef(k, frame) self.__refs[k] = frame end
+	function f:GetFrameRef(k) return self.__refs[k] end
+	function f:Execute(body) self.__executed[#self.__executed + 1] = body end
+	function f:WrapScript(frame, script, pre, post)
+		frame.__wrappedBy = self
+		frame.__wrap = frame.__wrap or {}
+		frame.__wrap[script] = { pre = pre, post = post }
+	end
+	function f:RunAttribute(k, ...) self.__ran = k end
+
 	function f:RegisterForClicks(...) self.__clicks = { ... } end
 	function f:SetChecked(v) self.__checked = v and true or false end
 	function f:GetChecked() return self.__checked end
@@ -1747,6 +1766,36 @@ function GetActionCount(s)
 	if actions[s] then return actions[s].count or 0 end
 	return _G.__staleCounts[s] or 0
 end
+-- WHAT THIS CHARACTER CAN SUMMON. Two flyouts: one everything is known in,
+-- and one with a slot the character has not trained - because "every slot the
+-- client offers" and "every slot you can actually cast" are different lists,
+-- and a drawer that shows the second is the one worth having.
+_G.__flyouts = {
+	[42] = { known = true, slots = {
+		{ spell = 688, known = true },    -- Imp
+		{ spell = 697, known = true },    -- Voidwalker
+		{ spell = 691, known = false },   -- Felhunter, untrained
+	} },
+	[43] = { known = true, slots = { { spell = 1122, known = true } } },
+	[44] = { known = false, slots = { { spell = 999, known = true } } },
+}
+_G.__flyoutOrder = { 42, 43, 44 }
+
+function GetNumFlyouts() return #_G.__flyoutOrder end
+function GetFlyoutID(i) return _G.__flyoutOrder[i] end
+function GetFlyoutInfo(id)
+	local f = _G.__flyouts[id]
+	if not f then return nil end
+	return "Flyout" .. id, "", #f.slots, f.known
+end
+function GetFlyoutSlotInfo(id, slot)
+	local f = _G.__flyouts[id]
+	local sl = f and f.slots[slot]
+	if not sl then return nil end
+	return sl.spell, sl.spell, sl.known, "Spell" .. sl.spell, 0
+end
+function GetSpellTexture(id) return "Icons" .. string.char(92) .. "Spell" .. tostring(id) end
+
 -- SpellFlyout, AS Blizzard_ActionBar/Shared/SpellFlyout.lua WRITES IT - one
 -- file, byte-identical on both clients. Toggle reads the direction off the
 -- BUTTON and ends by asking the button to toggle its popup, so a button that

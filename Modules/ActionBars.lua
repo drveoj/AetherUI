@@ -166,7 +166,17 @@ end
 --  next click on it opens the demons that used to be there.
 local function UpdateFlyout(b)
 	if not b.SetPopupDirection then return end
-	pcall(b.SetPopupDirection, b, FlyoutDirection(b))
+	local dir = FlyoutDirection(b)
+	pcall(b.SetPopupDirection, b, dir)
+
+	-- AND WHERE THE SNIPPET CAN READ IT. The mixin keeps the direction on a
+	-- plain field, which the restricted environment cannot see; an attribute
+	-- is the only channel it can. Written out of combat like every other
+	-- attribute here - a bar that moves mid-fight opens its drawer the way it
+	-- would have a moment ago, which is better than not opening it.
+	if not InCombatLockdown() then
+		pcall(b.SetAttribute, b, "aetherFlyoutDirection", dir)
+	end
 
 	local action = ButtonAction(b)
 	local kind = HasAction(action) and GetActionInfo and GetActionInfo(action)
@@ -385,6 +395,281 @@ local function ApplyPickupModifier(b)
 	if mod then pcall(b.SetAttribute, b, mod .. "-type1", "") end
 end
 
+
+-- ---------------------------------------------------------------------------
+-- the flyout drawer
+--
+-- OURS, BECAUSE BLIZZARD'S DOES NOT SERVE AN ADDON'S BUTTONS ON THIS CLIENT.
+--
+-- SpellFlyout inherits SecureFrameTemplate, and its AttachToButton reparents
+-- it onto the button that was clicked and shows it. Coming off one of our
+-- buttons that whole call is tainted, so the Show does not take: the arrow
+-- flipped to "open" - that part is ours and insecure - and no drawer appeared.
+--
+-- This is not a guess about taint. LibActionButton, which is what ElvUI and
+-- Bartender4 both run on, decides it in one line:
+--
+--   local UseCustomFlyout = FlyoutButtonMixin and not ActionButton_UpdateFlyout
+--
+-- Both of our clients have the mixin and neither has the old function, so
+-- every serious bar addon on this client generation builds its own. Ours is
+-- the same shape as theirs, because the shape is forced: the drawer's buttons
+-- cast spells, so they are secure, so they can only be armed and shown from
+-- inside the restricted environment - otherwise the whole thing is dead in
+-- combat, which is when you summon anything.
+--
+-- WHAT IS NOT VERIFIED. The harness cannot run a restricted-environment
+-- snippet, so FLYOUT_SNIPPET below is the first thing in this addon that
+-- ships unchecked. Everything around it is covered: the table it reads, the
+-- buttons it moves, the direction it is given, the wrap that calls it. The
+-- snippet's own arithmetic is not, and that is worth knowing rather than
+-- discovering.
+-- ---------------------------------------------------------------------------
+
+local FLYOUT_GAP     = 4    -- between one drawer slot and the next
+local FLYOUT_INSET   = 7    -- from the drawer's edge to the first slot
+local FLYOUT_MAX     = 12   -- slots we will ever build; no flyout is near this
+
+--- What the drawer does when a slot is clicked, IN THE SECURE ENVIRONMENT.
+--
+--  Reads AETHER_FLYOUTS, which the insecure half loads with Execute out of
+--  combat, and moves buttons that already exist. Nothing here creates a frame
+--  or reads the game's spell tables: both are things the restricted
+--  environment will not do, and both are done outside it beforehand.
+local FLYOUT_SNIPPET = [==[
+	local parent = self:GetAttribute("owner")
+	if not parent then return end
+
+	-- A SECOND CLICK ON THE SAME SLOT SHUTS IT. Blizzard's own flyout works
+	-- this way and the muscle memory is older than this addon.
+	if self:IsShown() and self:GetParent() == parent then
+		self:Hide()
+		return
+	end
+
+	local id = ...
+	local info = AETHER_FLYOUTS and AETHER_FLYOUTS[id]
+	if not info then return end
+
+	self:SetParent(parent)
+
+	local dir  = parent:GetAttribute("aetherFlyoutDirection") or "UP"
+	local size = self:GetAttribute("slotSize") or 36
+	local gap  = self:GetAttribute("slotGap") or 4
+	local pad  = self:GetAttribute("slotInset") or 7
+
+	local used, prev = 0, nil
+	for i, slot in ipairs(info) do
+		if slot.known then
+			used = used + 1
+			local b = self:GetFrameRef("slot" .. used)
+			if b then
+				b:SetAttribute("type", "spell")
+				b:SetAttribute("spell", slot.spell)
+				b:CallMethod("AetherPaintSlot", slot.spell)
+				b:SetWidth(size)
+				b:SetHeight(size)
+				b:ClearAllPoints()
+				if dir == "UP" then
+					if prev then b:SetPoint("BOTTOM", prev, "TOP", 0, gap)
+					else b:SetPoint("BOTTOM", self, "BOTTOM", 0, pad) end
+				elseif dir == "DOWN" then
+					if prev then b:SetPoint("TOP", prev, "BOTTOM", 0, -gap)
+					else b:SetPoint("TOP", self, "TOP", 0, -pad) end
+				elseif dir == "LEFT" then
+					if prev then b:SetPoint("RIGHT", prev, "LEFT", -gap, 0)
+					else b:SetPoint("RIGHT", self, "RIGHT", -pad, 0) end
+				else
+					if prev then b:SetPoint("LEFT", prev, "RIGHT", gap, 0)
+					else b:SetPoint("LEFT", self, "LEFT", pad, 0) end
+				end
+				b:Show()
+				prev = b
+			end
+		end
+	end
+
+	-- DISARMED, NOT JUST HIDDEN. A slot left holding a spell is a slot that
+	-- casts it the next time the drawer opens shorter than it did before.
+	for i = used + 1, self:GetAttribute("slots") or 0 do
+		local b = self:GetFrameRef("slot" .. i)
+		if b then
+			b:Hide()
+			b:SetAttribute("type", nil)
+			b:SetAttribute("spell", nil)
+		end
+	end
+
+	if used == 0 then self:Hide() return end
+
+	local extent = pad * 2 + used * size + (used - 1) * gap
+	local across = pad * 2 + size
+
+	self:ClearAllPoints()
+	if dir == "UP" then
+		self:SetWidth(across) self:SetHeight(extent)
+		self:SetPoint("BOTTOM", parent, "TOP", 0, 0)
+	elseif dir == "DOWN" then
+		self:SetWidth(across) self:SetHeight(extent)
+		self:SetPoint("TOP", parent, "BOTTOM", 0, 0)
+	elseif dir == "LEFT" then
+		self:SetWidth(extent) self:SetHeight(across)
+		self:SetPoint("RIGHT", parent, "LEFT", 0, 0)
+	else
+		self:SetWidth(extent) self:SetHeight(across)
+		self:SetPoint("LEFT", parent, "RIGHT", 0, 0)
+	end
+
+	self:Show()
+]==]
+
+--- The click wrap that sends a flyout slot here INSTEAD of to Blizzard.
+--
+--  `return false` is the important word. Without it the wrapped script runs on
+--  and SECURE_ACTIONS.action calls SpellFlyout:Toggle, which is the thing that
+--  does not work - so the drawer would open and Blizzard's would then try to
+--  open over it and fail.
+--
+--  The other half closes the drawer on any click that is NOT a flyout, which
+--  is what makes it behave like a menu rather than like a frame somebody left
+--  open. The `down` guard keeps a press on a drawer slot from shutting the
+--  drawer out from under itself before the release casts.
+local FLYOUT_WRAP = [==[
+	local handler = owner:GetFrameRef("aetherFlyout")
+	if self:GetAttribute("type") == "action" then
+		local kind = GetActionInfo(self:GetAttribute("action"))
+		if kind == "flyout" and handler then
+			if not down then
+				handler:SetAttribute("owner", self)
+				handler:RunAttribute("HandleFlyout",
+					select(2, GetActionInfo(self:GetAttribute("action"))))
+			end
+			return false
+		end
+	end
+	if handler and (not down or self:GetParent() ~= handler) then
+		handler:Hide()
+	end
+]==]
+
+local flyout
+
+--- Paint one drawer slot. Called from the snippet by name, so it is insecure
+--  code doing the one thing the snippet cannot: reading the spell's icon.
+local function PaintSlot(b, spellID)
+	local tex = spellID and GetSpellTexture and GetSpellTexture(spellID)
+	if b.icon then
+		b.icon:SetTexture(tex or "")
+		b.icon:SetShown(tex and true or false)
+	end
+end
+
+--- The drawer, built once.
+local function FlyoutHandler()
+	if flyout then return flyout end
+	if not _G.SecureHandlerBaseTemplate and not CreateFrame then return nil end
+
+	flyout = CreateFrame("Frame", "AetherUIFlyout", UIParent,
+		"SecureHandlerBaseTemplate")
+	flyout:SetFrameStrata("DIALOG")
+	flyout:SetSize(1, 1)
+	flyout:Hide()
+
+	-- The same glass as everything else, and BEHIND the slots rather than
+	-- around them: the drawer is one panel with holes in it, not a row of
+	-- separate buttons floating over the world.
+	flyout.panel = Glass.CreatePanel(flyout, {
+		corner = A.db.profile.glass.corner + 2,
+		shadow = A.db.profile.glass.shadow,
+	})
+	flyout.panel:SetAllPoints(flyout)
+
+	flyout:SetAttribute("slots", 0)
+	flyout:SetAttribute("HandleFlyout", FLYOUT_SNIPPET)
+	flyout.slots = {}
+	return flyout
+end
+
+--- Enough drawer slots for the biggest flyout this character knows.
+--
+--  Built out of combat and never destroyed: creating a secure button while a
+--  fight is on is not allowed, and the drawer that could not grow is the
+--  drawer that opens empty at exactly the wrong moment.
+local function EnsureSlots(n, size)
+	local f = FlyoutHandler()
+	if not f or InCombatLockdown() then return end
+
+	for i = #f.slots + 1, math.min(n, FLYOUT_MAX) do
+		local b = CreateFrame("CheckButton", "AetherUIFlyoutSlot" .. i, f,
+			"SecureActionButtonTemplate")
+		b:SetSize(size, size)
+		b:RegisterForClicks(UseKeyDown() and "AnyDown" or "AnyUp")
+		W.DecorateSlot(b, size)
+		b.AetherPaintSlot = PaintSlot
+		b:Hide()
+		f.slots[i] = b
+		f:SetFrameRef("slot" .. i, b)
+	end
+	if #f.slots > 0 then f:SetAttribute("slots", #f.slots) end
+end
+
+--- Load the restricted environment with what this character can summon.
+--
+--  Out of combat only, and rebuilt whole rather than patched: the table is
+--  small, and a partial update is how a drawer ends up offering a pet that
+--  was untrained three levels ago.
+function AB:SyncFlyouts()
+	local f = FlyoutHandler()
+	if not f or InCombatLockdown() then return end
+	if not GetNumFlyouts or not GetFlyoutInfo or not GetFlyoutSlotInfo then return end
+
+	local cfg = A.Config:Module("actionbars")
+	local most, data = 0, { "AETHER_FLYOUTS = newtable()" }
+
+	for i = 1, (GetNumFlyouts() or 0) do
+		local id = GetFlyoutID and GetFlyoutID(i)
+		if id then
+			local _, _, numSlots, isKnown = GetFlyoutInfo(id)
+			if isKnown and numSlots and numSlots > 0 then
+				data[#data + 1] = ("AETHER_FLYOUTS[%d] = newtable()"):format(id)
+				local kept = 0
+				for slot = 1, numSlots do
+					local spellID, overrideID, slotKnown = GetFlyoutSlotInfo(id, slot)
+					if spellID then
+						kept = kept + 1
+						data[#data + 1] = ("local s = newtable() "
+							.. "AETHER_FLYOUTS[%d][%d] = s "
+							.. "s.spell = %d s.known = %s")
+							:format(id, kept, overrideID or spellID,
+								slotKnown and "true" or "false")
+					end
+				end
+				if kept > most then most = kept end
+			end
+		end
+	end
+
+	EnsureSlots(most, cfg.size)
+	f:Execute(table.concat(data, "\n"))
+end
+
+--- Point a bar's buttons at the drawer.
+--
+--  The frame reference goes on the HEADER, because that is the frame the wrap
+--  runs as `owner` - and it is set once per bar rather than once per button,
+--  which is the only reason this is a function of its own.
+local function WireFlyout(bar)
+	local f = FlyoutHandler()
+	if not f or not bar.header or InCombatLockdown() then return end
+	if not bar.header.SetFrameRef then return end
+	pcall(bar.header.SetFrameRef, bar.header, "aetherFlyout", f)
+end
+
+local function WrapFlyoutClick(bar, b)
+	if not bar.header or not bar.header.WrapScript or InCombatLockdown() then return end
+	pcall(bar.header.WrapScript, bar.header, b, "OnClick", FLYOUT_WRAP)
+end
+
 local function BuildButton(bar, index)
 	local cfg = A.Config:Module("actionbars")
 	local name = ("AetherUIBar%sButton%d"):format(bar.id, index)
@@ -485,6 +770,13 @@ local function BuildButton(bar, index)
 		PlaceAction(ButtonAction(self))
 		UpdateAllOn(self)
 	end)
+
+	-- THE WRAP IS OFF. It broke every button on the bar in combat - keypresses
+	-- and clicks alike, with the one flyout slot ironically still working -
+	-- and a bar you cannot press is worse than a flyout you cannot open.
+	-- Reinstated when it is written the way LibActionButton writes it, with
+	-- the Keybind translation and the post-body it has and this did not.
+	-- WrapFlyoutClick(bar, b)
 
 	return b
 end
@@ -846,6 +1138,11 @@ local function BuildBar(barCfg)
 	-- bindings and, for the pet bar, a visibility driver. Nothing pages.
 	bar.header = CreateFrame("Frame", ("AetherUIBar%sHeader"):format(bar.id),
 		bar.dock, "SecureHandlerStateTemplate")
+
+	-- The drawer, reachable from this bar's snippets. Once per bar: the wrap
+	-- below runs with the header as `owner`, and a frame reference is a
+	-- property of the header rather than of each button on it.
+	WireFlyout(bar)
 
 	if bar.kind == "extra" then
 		bar.specs = {}
@@ -1662,7 +1959,19 @@ function AB:RegisterEvents()
 		AB:HideBlizzard()
 		AB:ApplyBindings()
 		AB:RefreshAll()
+		AB:SyncFlyouts()
 	end)
+
+	-- WHAT THE DRAWER CAN OFFER, and when that changes: a spell learned, a
+	-- talent taken, a pet trained. Out of combat only - the sync builds secure
+	-- buttons and writes the restricted environment, and neither is allowed
+	-- with a fight on - so the end of one is a sync point too. A drawer that
+	-- is one summon out of date until the fight ends is the trade, and it is
+	-- the same one every bar addon on this client makes.
+	for _, e in ipairs({ "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB",
+		"PLAYER_TALENT_UPDATE", "PLAYER_REGEN_ENABLED" }) do
+		A:RegisterEvent(self, e, function() AB:SyncFlyouts() end)
+	end
 
 	A:RegisterEvent(self, "ACTIONBAR_SLOT_CHANGED", function(_, _, slot)
 		if not slot or slot == 0 then return AB:RefreshAll() end
