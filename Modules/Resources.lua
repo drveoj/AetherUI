@@ -95,23 +95,9 @@ local TRAY_PAD_X = 14
 local TRAY_PAD_Y = 7
 local ROW_GAP    = 7         -- between the two rows a Death Knight gets
 
---- HOW FAR THE TRAY'S TOP HIDES BEHIND THE CAPSULE, and it is not a constant.
---
---  Two goes at this were wrong for the same reason and neither was arithmetic
---  anybody could have argued with: the number was picked to look right and it
---  did not. What is actually in the way is the CAPSULE'S OWN SHADOW. A pill
---  draws its shadow at a spread of height/4 - Core/Glass.lua says so, and says
---  the geometry is fixed because the hole in the shadow has to line up with the
---  shape - so a 64-tall capsule casts sixteen units of shade below its foot,
---  and any tray whose top edge appears inside that band appears through a dark
---  wash. That reads as a gap, which is exactly what was reported: twice.
---
---  So the tuck clears the shadow rather than guessing at it, and it tracks the
---  capsule height, which is a setting between 48 and 96.
-local function TuckFor(host)
-	local h = (host and host:GetHeight()) or 64
-	return math.floor(h / 4) + 2
-end
+-- The corner, and it is also how far the glass reaches up past the clip so its
+-- top two corners are cut off square. See the clip window in Build.
+local TRAY_CORNER = 16
 
 -- 150ms pop on a pip arriving, 120ms fade on one spent. Both from the handoff.
 local POP_TIME   = 0.15
@@ -463,30 +449,47 @@ function RS:Build()
 	local host = self:Host()
 	if not host then return nil end
 
-	local tray = CreateFrame("Frame", "AetherUIResourceTray", host)
-
-	-- BEHIND THE CAPSULE, WHICH IS THE WHOLE OF THE TUCK WORKING.
+	-- CLIPPED, NEVER TUCKED BEHIND - and the bags drawer had already written
+	-- this down, in a comment I did not read until the third go at this seam:
 	--
-	-- A child draws above its parent by default, so the overlapping top of the
-	-- tray was being drawn ON TOP of the capsule's foot - a rounded lip across
-	-- the bottom of the player frame, which is exactly the seam the tuck exists
-	-- to hide. One level below the capsule and the capsule covers it instead.
-	tray:SetFrameStrata(host:GetFrameStrata())
-	tray:SetFrameLevel(math.max(0, (host:GetFrameLevel() or 1) - 1))
+	--   our panels are TRANSLUCENT. A drawer parked behind the bags window
+	--   reads straight through the glass.
+	--
+	-- Which is exactly what was on screen. Three attempts at hiding the tray's
+	-- top edge behind the capsule - four pixels, then ten, then clear of the
+	-- capsule's shadow - and every one was the wrong IDEA rather than the wrong
+	-- number, because a translucent capsule hides nothing. What was reported
+	-- each time was the tray showing THROUGH the player frame.
+	--
+	-- So the tray is a clip window whose top edge is the reveal line, flush
+	-- with the capsule's lower edge. Anything above it is not drawn at all: no
+	-- level, no alpha, no strata, nothing to show through. The glass inside is
+	-- one corner radius taller than the window, so its top corners are cut off
+	-- square and the shelf meets the capsule flush - which is the handoff's
+	-- "0 0 16 16" without a second nine-slice to draw it with.
+	local tray = CreateFrame("Frame", "AetherUIResourceTray", host)
+	tray:SetPoint("TOP", host, "BOTTOM", 0, 0)
+	if tray.SetClipsChildren then pcall(tray.SetClipsChildren, tray, true) end
 
-	-- Its own surface, not the capsule's - there is no shared border in this
-	-- API. The handoff's 0 0 16 16 is a corner of 16 with the top two hidden
-	-- behind the capsule, and NO SHADOW: the capsule already casts one, and a
-	-- second from a frame overlapping it draws a dark band across the seam.
-	--  DARKER THAN THE CAPSULE, not the same. The handoff's tray is rgba(12,10,
-	--  28,.6) against a capsule that is lighter, and the default panel surface
-	--  came out as a pale slab under a dark frame - the panel art carries a
-	--  top-light falloff in its alpha, which is flattering at a window's size
-	--  and washes out a shelf thirty pixels tall. glassStrong is the token for
-	--  a surface that has to stay readable, and it is the nearest to the
-	--  handoff's own alpha.
-	tray.glass = Glass.CreatePanel(tray, { corner = 16, shadow = false })
-	tray.glass:SetAllPoints(tray)
+
+	-- ABOVE the capsule now rather than below it. Below was only ever an
+	-- attempt to hide the overlap; the clip does that, and being above means
+	-- the capsule's own shadow no longer washes the top of the shelf - which
+	-- is what read as a gap between the two.
+	tray:SetFrameStrata(host:GetFrameStrata())
+	tray:SetFrameLevel((host:GetFrameLevel() or 1) + 1)
+
+	-- DARKER THAN THE CAPSULE, not the same. The handoff's tray is
+	-- rgba(12,10,28,.6) against a capsule that is lighter, and the default
+	-- panel surface came out as a pale slab under a dark frame: the panel art
+	-- carries a top-light falloff in its alpha, flattering at a window's size
+	-- and washing out a shelf thirty pixels tall.
+	--
+	-- NO SHADOW. It would be cut off by the clip on the one side that matters
+	-- and the capsule above is already casting one.
+	tray.glass = Glass.CreatePanel(tray, { corner = TRAY_CORNER, shadow = false })
+	tray.glass:SetPoint("TOPLEFT", tray, "TOPLEFT", 0, TRAY_CORNER)
+	tray.glass:SetPoint("BOTTOMRIGHT", tray, "BOTTOMRIGHT", 0, 0)
 	tray.glass:ApplySkin("glassStrong", "glassEdge")
 
 	tray.pips = {}
@@ -678,19 +681,12 @@ function RS:Refresh()
 
 	local nextPip, nextFlow = 1, 1
 
-	-- CONTENT STARTS BELOW THE TUCK, and the version that did not is the one
-	-- that put the pips inside the player frame.
-	--
-	-- The tray's frame is taller than the shelf you see: its top edge is up
-	-- behind the capsule, clear of the shadow that capsule casts. So a row
-	-- placed one padding down from the TOP OF THE FRAME is placed one padding
-	-- down from a point well above the capsule's foot - which is exactly where
-	-- four soul shards were last seen, tucked up under the health bar.
-	--
-	-- Everything below measures from the top of the VISIBLE shelf instead.
+	-- The clip window IS the visible shelf, so one padding down from its top is
+	-- one padding down from the capsule's lower edge and there is no offset to
+	-- carry. The version that had one put four soul shards up inside the health
+	-- bar, and every check in the suite passed while it did.
 	local host = self:Host()
-	local tuck = TuckFor(host)
-	local widest, y = 0, tuck + TRAY_PAD_Y
+	local widest, y = 0, TRAY_PAD_Y
 
 	for i, row in ipairs(rows) do
 		if i > 1 then y = y + ROW_GAP end
@@ -713,10 +709,6 @@ function RS:Refresh()
 	local capW = host and host:GetWidth() or (widest + TRAY_PAD_X * 2)
 	local want = widest + TRAY_PAD_X * 2
 
-	-- ANCHORED HERE rather than at build, because the tuck follows the capsule
-	-- height and that is a setting the player can move.
-	tray:ClearAllPoints()
-	tray:SetPoint("TOP", host, "BOTTOM", 0, tuck)
 	tray:SetSize(math.min(want, capW), y + TRAY_PAD_Y)
 
 	self._rows = rows

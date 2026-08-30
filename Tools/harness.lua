@@ -1360,6 +1360,11 @@ function CreateFrame(kind, name, parent, template)
 	-- a no-op here would agree with a drawer that was merely put on a lower
 	-- frame level - which is the bug, drawn at the same coordinates.
 	function f:SetClipsChildren(v) self.__clips = v and true or false end
+	-- Recorded AND readable. Clipping is how two of our surfaces meet without a
+	-- seam - the bags drawer and the resource tray both rely on it, because a
+	-- translucent panel hides nothing parked behind it - so "is this clipped?"
+	-- is a real question a check has to be able to ask.
+	function f:GetClipsChildren() return self.__clips == true end
 	function f:DoesClipChildren() return self.__clips or false end
 	-- Strata and level are modelled rather than swallowed: the last minimap bug
 	-- was purely an ordering one, and a mock that forgets both cannot see it.
@@ -18176,57 +18181,44 @@ do
 		"the tray never exceeds the capsule (" .. RSm.tray:GetWidth()
 		.. " of " .. UFm.player:GetWidth() .. ")")
 
-	-- AND IT IS ONE SHAPE WITH THE CAPSULE, not a second box below it. Both
-	-- halves of that are here because the first version had neither and it
-	-- showed at a glance: a rounded tray floating under the player frame with
-	-- daylight between them.
-	check(RSm.tray:GetFrameLevel() < UFm.player:GetFrameLevel(),
-		"the tray draws BEHIND the capsule (" .. RSm.tray:GetFrameLevel()
-		.. " against " .. UFm.player:GetFrameLevel() .. ") - a child is above"
-		.. " its parent by default, so the tucked top was being drawn ON TOP of"
-		.. " the capsule's foot as a rounded lip")
+	-- AND IT IS ONE SHAPE WITH THE CAPSULE, not a second box below it.
+	--
+	-- CLIPPED, NEVER TUCKED BEHIND. Three goes at this hid the tray's top edge
+	-- behind the capsule at four pixels, then ten, then past the capsule's own
+	-- shadow, and every one was the wrong IDEA rather than the wrong number:
+	-- our panels are translucent, so a frame parked behind one reads straight
+	-- through it. The bags drawer says exactly that in a comment, and had said
+	-- it for months.
+	check(RSm.tray:GetClipsChildren() == true,
+		"the tray clips its children - which is what removes the overlap, since"
+		.. " nothing behind a translucent capsule is actually hidden by it")
 
-	-- AND THE OVERLAP CLEARS THE CAPSULE'S OWN SHADOW, which is the thing that
-	-- was actually in the way and was guessed at twice. A pill casts its shadow
-	-- at a spread of height/4 - Core/Glass.lua fixes that geometry deliberately
-	-- - so a tray whose top edge lands inside that band appears through a dark
-	-- wash and reads as a gap. Tracked off the capsule height rather than
-	-- written down, because that height is a setting.
 	local pt, _, rel, _, yoff = RSm.tray:GetPoint(1)
-	check(pt == "TOP" and rel == "BOTTOM",
-		"the tray hangs from the capsule's lower edge")
-	check((yoff or 0) > UFm.player:GetHeight() / 4,
-		"and reaches past the shadow that edge casts - " .. tostring(yoff)
-		.. " against a spread of " .. (UFm.player:GetHeight() / 4))
+	check(pt == "TOP" and rel == "BOTTOM" and (yoff or 0) == 0,
+		"and its top edge is the reveal line, flush with the capsule's foot -"
+		.. " not overlapping it (" .. tostring(yoff) .. ")")
 
-	-- WHICH FOLLOWS THE CAPSULE. A player who makes the frame taller makes its
-	-- shadow deeper, and a tuck written as a number would be too short again
-	-- with nothing to say why.
-	local wasH = A.db.profile.modules.unitframes.height
-	A.db.profile.modules.unitframes.height = 96
-	A:Reconfigure()
-	RSm:Refresh()
-	local _, _, _, _, tallOff = RSm.tray:GetPoint(1)
-	check((tallOff or 0) > (yoff or 0),
-		"a taller capsule tucks the tray further under (" .. tostring(tallOff)
-		.. " against " .. tostring(yoff) .. ")")
-	A.db.profile.modules.unitframes.height = wasH
-	A:Reconfigure()
-	RSm:Refresh()
+	-- THE GLASS REACHES UP PAST THE LINE, which is what squares off its top two
+	-- corners: the handoff's "0 0 16 16" out of a nine-slice that has one radius
+	-- on all four.
+	local _, _, _, _, gy = RSm.tray.glass:GetPoint(1)
+	check((gy or 0) > 0,
+		"the glass inside reaches above that line so its top corners are cut"
+		.. " off square rather than drawn (" .. tostring(gy) .. ")")
 
-	-- AND THE PIPS ARE ON THE SHELF, NOT UP INSIDE THE CAPSULE.
-	--
-	-- This is the check that was missing, and its absence cost a reload and a
-	-- screenshot. The tray's frame is TALLER than the shelf you see - its top
-	-- edge is up behind the capsule, clear of the shadow - so a row placed one
-	-- padding down from the top of the FRAME lands one padding down from a
-	-- point well above the capsule's foot. Which is where four soul shards
-	-- were last seen, tucked under the health bar.
-	--
-	-- Everything above still passed. The tray was the right size, in the right
-	-- place, behind the right frame, clear of the shadow; what was inside it
-	-- was not.
-	local _, _, _, _, tuckNow = RSm.tray:GetPoint(1)
+	-- ABOVE the capsule, not below. Below was only ever an attempt to hide the
+	-- overlap, and it put the shelf under the capsule's shadow - which is what
+	-- read as a gap between the two.
+	check(RSm.tray:GetFrameLevel() > UFm.player:GetFrameLevel(),
+		"and it draws above the capsule, clear of the shadow that edge casts ("
+		.. RSm.tray:GetFrameLevel() .. " against "
+		.. UFm.player:GetFrameLevel() .. ")")
+
+	-- AND THE PIPS ARE ON THE SHELF, NOT UP INSIDE THE CAPSULE. This is the
+	-- check that was missing when the tray grew a top offset and the contents
+	-- did not move down with it: every other check here passed - right size,
+	-- right place, right level - because they were all about the box and none
+	-- of them about what was in it.
 	local highest = nil
 	for _, pip in ipairs(RSm.tray.pips) do
 		if pip:IsShown() then
@@ -18235,11 +18227,9 @@ do
 			if not highest or top < highest then highest = top end
 		end
 	end
-	check(highest ~= nil and highest >= (tuckNow or 0),
-		"every pip sits below the capsule's lower edge rather than up behind"
-		.. " it - the shelf is what is drawn under the frame, not the frame"
-		.. " the shelf is anchored to (" .. tostring(highest) .. " against a"
-		.. " tuck of " .. tostring(tuckNow) .. ")")
+	check(highest ~= nil and highest >= 0,
+		"every pip sits below the capsule's lower edge rather than up behind it"
+		.. " (" .. tostring(highest) .. ")")
 end
 
 print("== class resources: when it is on screen ==")
