@@ -18025,6 +18025,32 @@ do
 			"filled to half its height ("
 			.. tostring(third and third.fill:GetHeight()) .. " of 13)")
 
+		-- AND IT IS NOT LIT WHILE IT FILLS, which is the fault that was
+		-- reported: a socket that lights the moment the client's ROUNDED count
+		-- ticks over says you have something to spend when you have most of it.
+		check(not third.orb:IsShown(),
+			"and it is not lit while it fills - a part-full socket that looks"
+			.. " like a full one is an ability you press and cannot cast")
+
+		-- THE GRAIN IS THE CLIENT'S, not a ten written into the table. This is
+		-- the same resource with the client counting it differently: five units
+		-- to an ember rather than ten, and the drawing follows without anything
+		-- here being told.
+		local wasFine = _G.__units.player.secondaryFine[PT.BurningEmbers]
+		_G.__units.player.secondaryFine[PT.BurningEmbers] = { cur = 12, max = 20 }
+		RSm:Refresh()
+		check(shownPips() == 4,
+			"a finer count does not change how many sockets there are ("
+			.. shownPips() .. ")")
+		check(litPips() == 2, "nor how many are full")
+		check(math.abs(RSm.tray.pips[3].fill:GetHeight() - 13 * 0.4) < 0.51,
+			"but the one filling is two fifths up rather than a half - the size"
+			.. " of a pip is the ratio between the client's two maxima, asked"
+			.. " every draw ("
+			.. tostring(RSm.tray.pips[3].fill:GetHeight()) .. " of 13)")
+		_G.__units.player.secondaryFine[PT.BurningEmbers] = wasFine
+		RSm:Refresh()
+
 		_G.__spec = nil
 	else
 		beResource("WARLOCK", lock, fine)
@@ -18193,10 +18219,18 @@ do
 		"the tray clips its children - which is what removes the overlap, since"
 		.. " nothing behind a translucent capsule is actually hidden by it")
 
+	-- FLUSH, TO WITHIN A PIXEL. Not zero: both surfaces have a soft edge and two
+	-- of them on the same line leave a hairline of background between. One
+	-- physical pixel of overlap closes that; more than one and the tray is back
+	-- to being tucked under, which is the mistake this whole approach replaced.
 	local pt, _, rel, _, yoff = RSm.tray:GetPoint(1)
-	check(pt == "TOP" and rel == "BOTTOM" and (yoff or 0) == 0,
-		"and its top edge is the reveal line, flush with the capsule's foot -"
-		.. " not overlapping it (" .. tostring(yoff) .. ")")
+	local px = A:PxIn(RSm.tray)
+	check(pt == "TOP" and rel == "BOTTOM",
+		"the tray hangs from the capsule's lower edge")
+	check((yoff or 0) >= 0 and (yoff or 0) <= px + 0.001,
+		"and its top edge is the reveal line, overlapping by one physical pixel"
+		.. " and no more (" .. tostring(yoff) .. " against " .. tostring(px)
+		.. ")")
 
 	-- THE GLASS REACHES UP PAST THE LINE, which is what squares off its top two
 	-- corners: the handoff's "0 0 16 16" out of a nine-slice that has one radius

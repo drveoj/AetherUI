@@ -25,9 +25,15 @@
 	anybody is looking at it.
 
 	Nor can the tray literally share the capsule's border, which is how the
-	handoff describes it. There is no shared border in this API. It is drawn as
-	its own rounded surface with its top edge suppressed and its top four pixels
-	behind the capsule, which reads as one shape and is two.
+	handoff describes it. There is no shared border in this API.
+
+	CLIPPED, NEVER TUCKED BEHIND, which the bags drawer had already written down
+	and which took three goes to read: our panels are TRANSLUCENT, so a frame
+	parked behind one shows straight through it. The tray is a clip window whose
+	top edge is flush with the capsule's foot; anything above that line is not
+	drawn at all. The glass inside reaches a corner radius higher, so its top two
+	corners are cut off square and the shelf meets the capsule flush - the
+	handoff's "0 0 16 16" out of a nine-slice with one radius on all four.
 
 	ONLY THE PLAYER. Not the party capsules - not even your own - not the target,
 	not a nameplate. One place to look.
@@ -192,11 +198,38 @@ end
 -- respecced out of a resource loses its row without anything being told.
 -- ---------------------------------------------------------------------------
 
---- Pips read straight off a power: how many are lit, and how many sockets.
-local function PipsFrom(name)
+--- A row of pips read off one power.
+--
+--  HOW FINE THE CLIENT COUNTS IS THE CLIENT'S ANSWER, not a fact written down
+--  per resource. UnitPower takes an `unmodified` flag; with it the client
+--  reports in its own smallest units, and the ratio between the two maxima IS
+--  the size of one pip:
+--
+--    burning embers   40 / 4 = 10    a pip is ten units, and part-fills
+--    anything 1:1      4 / 4 =  1    a pip is one unit, and never part-fills
+--
+--  Written as `unit = 10` on the ember row alone, which is what this was, the
+--  code says "embers are the resource that builds up" - and that was wrong on
+--  screen. A shard that is regenerating lit its socket the moment the rounded
+--  number ticked over, so the second pip claimed to be spendable while it was
+--  still filling. Asking the client instead means any resource with a grain
+--  finer than one gets the fill for free, and any that has not is unaffected:
+--  the arithmetic collapses to "lit or not" at a unit of one.
+--
+--  A CLIENT THAT WILL NOT ANSWER the fine question gets a unit of one, which is
+--  the discrete drawing and never worse than what was there before.
+local function Pips(key, hue, name, spec)
 	return {
+		key = key, kind = "pips", hue = hue, spec = spec,
 		max  = function() return PowerMax(name) end,
-		fill = function() return Power(name) end,
+		fill = function() return Power(name, true) end,
+		unit = function()
+			local whole = PowerMax(name)
+			local fine  = PowerMax(name, true)
+			if whole <= 0 or fine <= 0 then return 1 end
+			local u = fine / whole
+			return (u >= 1) and u or 1
+		end,
 	}
 end
 
@@ -204,10 +237,7 @@ RS.TABLE = {
 	WARLOCK = {
 		-- SPEC-GATED, because all three of these report a maximum at once and
 		-- Blizzard's own ShardBar picks between them the same way.
-		{ key = "shards", kind = "pips", hue = "soulShard",
-		  spec = "SPEC_WARLOCK_AFFLICTION",
-		  max  = function() return PowerMax("SoulShards") end,
-		  fill = function() return Power("SoulShards") end },
+		Pips("shards", "soulShard", "SoulShards", "SPEC_WARLOCK_AFFLICTION"),
 
 		{ key = "fury", kind = "flow", hue = "demonicFury",
 		  spec = "SPEC_WARLOCK_DEMONOLOGY",
@@ -219,14 +249,9 @@ RS.TABLE = {
 		  -- other is not a case that exists.
 		  threshold = function() return PowerMax("DemonicFury") * 0.4 end },
 
-		-- TENTHS, NOT EMBERS. The unmodified flag is what makes a part-filled
-		-- ember drawable; without it this is four steps and the design's
-		-- partial fill has nothing to fill with.
-		{ key = "embers", kind = "pips", hue = "burningEmber", partial = true,
-		  spec = "SPEC_WARLOCK_DESTRUCTION",
-		  unit = 10,
-		  max  = function() return PowerMax("BurningEmbers", true) end,
-		  fill = function() return Power("BurningEmbers", true) end },
+		-- Ten units to an ember, which Pips works out from the client rather
+		-- than being told - see there.
+		Pips("embers", "burningEmber", "BurningEmbers", "SPEC_WARLOCK_DESTRUCTION"),
 	},
 
 	DEATHKNIGHT = {
@@ -244,17 +269,9 @@ RS.TABLE = {
 		  threshold = function() return 30 end },
 	},
 
-	MONK    = { { key = "chi",   kind = "pips", hue = "chi",
-	              max = function() return PowerMax("Chi") end,
-	              fill = function() return Power("Chi") end } },
-
-	PALADIN = { { key = "holy",  kind = "pips", hue = "holyPower",
-	              max = function() return PowerMax("HolyPower") end,
-	              fill = function() return Power("HolyPower") end } },
-
-	PRIEST  = { { key = "orbs",  kind = "pips", hue = "shadowOrb",
-	              max = function() return PowerMax("ShadowOrbs") end,
-	              fill = function() return Power("ShadowOrbs") end } },
+	MONK    = { Pips("chi",  "chi",       "Chi") },
+	PALADIN = { Pips("holy", "holyPower", "HolyPower") },
+	PRIEST  = { Pips("orbs", "shadowOrb", "ShadowOrbs") },
 
 	-- COMBO POINTS ARE THE ONE ROW ERA ALSO GETS, and the one whose count and
 	-- fill come from different places: the cap is a power maximum, the value is
@@ -468,7 +485,7 @@ function RS:Build()
 	-- square and the shelf meets the capsule flush - which is the handoff's
 	-- "0 0 16 16" without a second nine-slice to draw it with.
 	local tray = CreateFrame("Frame", "AetherUIResourceTray", host)
-	tray:SetPoint("TOP", host, "BOTTOM", 0, 0)
+	tray:SetPoint("TOP", host, "BOTTOM", 0, 0)   -- re-anchored in Refresh
 	if tray.SetClipsChildren then pcall(tray.SetClipsChildren, tray, true) end
 
 
@@ -479,18 +496,21 @@ function RS:Build()
 	tray:SetFrameStrata(host:GetFrameStrata())
 	tray:SetFrameLevel((host:GetFrameLevel() or 1) + 1)
 
-	-- DARKER THAN THE CAPSULE, not the same. The handoff's tray is
-	-- rgba(12,10,28,.6) against a capsule that is lighter, and the default
-	-- panel surface came out as a pale slab under a dark frame: the panel art
-	-- carries a top-light falloff in its alpha, flattering at a window's size
-	-- and washing out a shelf thirty pixels tall.
+	-- THE CAPSULE'S OWN SURFACE, which is `glass` and not `glassStrong`.
 	--
-	-- NO SHADOW. It would be cut off by the clip on the one side that matters
+	-- glassStrong is the token for a surface that has to stay READABLE - a cast
+	-- bar, a tooltip - and it is a third more opaque. Reaching for it here was
+	-- an over-correction to the tray looking pale, which was really the panel
+	-- art's top-light falloff being clipped away; with the top gone the two
+	-- tokens are simply two different greys, and the handoff says the tray's
+	-- chrome is the capsule's. It is one object with the frame above it.
+	--
+	-- NO SHADOW. It would be cut off by the clip on the one side that matters,
 	-- and the capsule above is already casting one.
 	tray.glass = Glass.CreatePanel(tray, { corner = TRAY_CORNER, shadow = false })
 	tray.glass:SetPoint("TOPLEFT", tray, "TOPLEFT", 0, TRAY_CORNER)
 	tray.glass:SetPoint("BOTTOMRIGHT", tray, "BOTTOMRIGHT", 0, 0)
-	tray.glass:ApplySkin("glassStrong", "glassEdge")
+	tray.glass:ApplySkin("glass", "glassEdge")
 
 	tray.pips = {}
 	tray.flows = {}
@@ -533,10 +553,11 @@ end
 --- Lay one pips row out and paint it. Returns its width and height.
 local function DrawPips(tray, row, nextPip, y)
 	local n = math.floor(row.max() or 0)
-	if row.unit then n = math.floor(n / row.unit) end
 	if n <= 0 then return 0, 0, nextPip end
 
 	local value = row.fill and (row.fill() or 0) or 0
+	local unit  = (row.unit and row.unit()) or 1
+	if unit <= 0 then unit = 1 end
 	local width = n * PIP_SIZE + (n - 1) * PIP_GAP
 	local x = -width / 2 + PIP_SIZE / 2
 
@@ -552,15 +573,16 @@ local function DrawPips(tray, row, nextPip, y)
 			-- Per socket: a rune's hue and fill are its own.
 			local hue, state = row.each(i)
 			PaintPip(p, hue, state)
-		elseif row.partial then
-			-- Tenths: this pip is full, empty, or the one being filled.
-			local unit = row.unit or 1
+		else
+			-- ONE PATH FOR FULL, EMPTY AND FILLING. There used to be two, and
+			-- the discrete one lit a socket the instant the client's rounded
+			-- count ticked over - so a shard still regenerating read as one you
+			-- could spend. At a grain of one this is exactly the old arithmetic;
+			-- at anything finer the socket fills instead of blinking on.
 			local mine = value - (i - 1) * unit
 			local state = mine / unit
 			if state < 0 then state = 0 elseif state > 1 then state = 1 end
 			PaintPip(p, row.hue, state)
-		else
-			PaintPip(p, row.hue, i <= value and 1 or 0)
 		end
 	end
 
@@ -709,6 +731,17 @@ function RS:Refresh()
 	local capW = host and host:GetWidth() or (widest + TRAY_PAD_X * 2)
 	local want = widest + TRAY_PAD_X * 2
 
+	-- FLUSH IS NOT QUITE FLUSH. Both surfaces carry a soft edge of their own,
+	-- and two of them meeting on the same line leave a hairline of background
+	-- showing between - small, and the last thing on screen still saying these
+	-- are two objects.
+	--
+	-- ONE PHYSICAL PIXEL of overlap closes it. Physical rather than a frame
+	-- unit because everything here is drawn at profile scale: a flat 1 is 0.71
+	-- of a pixel at the default and lands between rows, which is the same
+	-- correction the type shadow and the tooltip rim already make.
+	tray:ClearAllPoints()
+	tray:SetPoint("TOP", host, "BOTTOM", 0, (A.PxIn and A:PxIn(tray)) or 1)
 	tray:SetSize(math.min(want, capW), y + TRAY_PAD_Y)
 
 	self._rows = rows
