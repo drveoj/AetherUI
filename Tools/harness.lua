@@ -1751,6 +1751,20 @@ end
 function GetQuestGreenRange() return 8 end
 function wipe(t) for k in pairs(t) do t[k] = nil end return t end
 function CreateColor(r, g, b, a) return { r = r, g = g, b = b, a = a, GetRGBA = function(s) return s.r, s.g, s.b, s.a end } end
+
+-- WHICH CLIENT THIS IS, and it was not mocked at all - so every check of
+-- anything that reports a version was reading nil and agreeing with itself.
+-- The bug report header truncated this call and printed "interface ?" on both
+-- clients since it was written; nothing here could have noticed, because there
+-- was nothing to truncate.
+--
+-- FOUR RETURNS, in the client's order: version, build, build date, and the
+-- interface number - which is the fourth and is the one an addon actually cares
+-- about, since it is what the .toc is matched against.
+function GetBuildInfo()
+	if _G.__mists then return "5.5.4", "62741", "Aug 12 2026", 50504 end
+	return "1.15.9", "61234", "Aug 12 2026", 11509
+end
 function SetPortraitTexture() end
 
 SlashCmdList = {}
@@ -36406,6 +36420,39 @@ do
 	end)
 	check(quiet == "", "off means silent")
 	A.db.profile.greet = was
+end
+
+print("== errors: the header every report is copied out with ==")
+do
+	-- A BUG REPORT WITHOUT A VERSION IS A BUG REPORT ABOUT SOME BUILD OR OTHER,
+	-- which is what this header exists to prevent - and it was not doing it.
+	--
+	--   local build, _, _, iface = GetBuildInfo and GetBuildInfo()
+	--
+	-- An `and` expression yields ONE value, so the guard truncated the call and
+	-- `iface` was nil on every client since the line was written. It printed
+	-- "interface ?" and nobody wondered why, because a question mark is what a
+	-- missing thing looks like anyway.
+	--
+	-- Nothing here could have caught it either: GetBuildInfo was not mocked at
+	-- all, so the check and the code agreed on nil.
+	local h = A.Errors:Header()
+	local build, _, _, iface = GetBuildInfo()
+
+	check(h:find(tostring(iface), 1, true) ~= nil,
+		"the header carries the interface number (" .. tostring(iface)
+		.. ") rather than a question mark")
+	check(h:find(tostring(build), 1, true) ~= nil,
+		"and the build (" .. tostring(build) .. ")")
+
+	-- AND WHICH FLAVOUR, which is the first thing worth knowing about a report
+	-- now that one addon serves two clients and they disagree about frames.
+	check(h:find(A.flavourName, 1, true) ~= nil,
+		"and names the flavour - " .. A.flavourName .. " - because \"client"
+		.. " 5.5.4\" only says it to somebody who knows the build numbers")
+
+	check(h:find("AetherUI", 1, true) and h:find(A.Palette.current, 1, true),
+		"with the addon version and the skin, which were never the broken half")
 end
 
 print("== errors: an error you cannot copy is an error you cannot send anybody ==")

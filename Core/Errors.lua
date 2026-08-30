@@ -84,14 +84,27 @@ end
 --  A bug report without a version is a bug report about some build or other.
 --  This costs four lines and removes the first question every time.
 function Errors:Header()
-	local build, _, _, iface = GetBuildInfo and GetBuildInfo()
+	-- `local a, b, c, d = f and f()` KEEPS ONLY THE FIRST RETURN. An `and`
+	-- expression yields one value, so this guard silently truncated the call and
+	-- the interface number has been nil in every bug report copied out of here,
+	-- on both clients, since the day it was written. It printed "interface ?"
+	-- and nobody wondered why - a question mark is what a missing thing looks
+	-- like anyway.
+	local build, iface = "?", "?"
+	if GetBuildInfo then
+		local v, _, _, toc = GetBuildInfo()
+		build, iface = v or "?", toc or "?"
+	end
 	local skin = A.Palette and A.Palette.current or "?"
 	local scale = A.db and A.db.profile and A.db.profile.scale or 1
 
 	return table.concat({
 		("AetherUI %s  ·  skin %s  ·  scale %.2f"):format(A.version or "?", skin, scale),
-		("client %s (interface %s)  ·  %s"):format(
-			tostring(build or "?"), tostring(iface or "?"),
+		-- AND WHICH FLAVOUR, now that there are two. "client 5.5.4" says it to
+		-- somebody who already knows the build numbers; the name says it to
+		-- everybody, and it is the first thing worth knowing about a report.
+		("client %s %s (interface %s)  ·  %s"):format(
+			tostring(A.flavourName or "?"), tostring(build), tostring(iface),
 			(date and date("%Y-%m-%d %H:%M")) or "?"),
 		"",
 	}, "\n")
