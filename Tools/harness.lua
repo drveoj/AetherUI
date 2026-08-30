@@ -7757,7 +7757,39 @@ end
 _G.__toggled = {}
 function ToggleCharacter(which) _G.__toggled.character = which end
 function ToggleSpellBook(which) _G.__toggled.spellbook = which end
-function ToggleTalentFrame() _G.__toggled.talents = true end
+-- THE GUARD BLIZZARD'S OWN PUTS IN FRONT OF IT, which this mock did not have
+-- and which made the talents door untestable: it returned silently below the
+-- level, so a button that was drawn, lit and completely inert looked exactly
+-- like one that worked.
+--
+-- TWO NAMES, and the flavours do not agree about which one matters. Era's
+-- ToggleTalentFrame guards on CanPlayerUseTalentUI; Mists' guards on
+-- CanPlayerUseTalentSpecUI. Both are DOCUMENTED on both clients, which is why
+-- asking the wrong one is a wrong answer rather than an error - so both are
+-- here, and each answers the way its own client would.
+--
+--   * CanPlayerUseTalentUI is the plain "may I open the talent window",
+--     which on either client is a level question.
+--   * CanPlayerUseTalentSpecUI additionally wants specialisations to exist,
+--     and Era has none - so it is false there at any level, which is exactly
+--     the trap a flavour-blind probe falls into.
+_G.__talentLevel = 10
+C_SpecializationInfo = {
+	CanPlayerUseTalentUI = function()
+		return (_G.__units.player.level or 1) >= _G.__talentLevel
+	end,
+	CanPlayerUseTalentSpecUI = function()
+		if not _G.__mists then return false end
+		return (_G.__units.player.level or 1) >= _G.__talentLevel
+	end,
+}
+
+function ToggleTalentFrame()
+	local S = C_SpecializationInfo
+	local fn = _G.__mists and S.CanPlayerUseTalentSpecUI or S.CanPlayerUseTalentUI
+	if not fn() then return end
+	_G.__toggled.talents = true
+end
 function ToggleFriendsFrame() _G.__toggled.social = true end
 function ToggleGuildFrame() _G.__toggled.guild = true end
 function ToggleWorldMap() _G.__toggled.map = true end
@@ -23154,6 +23186,64 @@ do
 			.. " all - not drawn and dead, which is a button that errors the"
 			.. " first time somebody trusts it")
 		_G.ToggleTalentFrame = was
+	end
+
+	-- AND A GLOBAL THAT IS THERE AND WILL NOT WORK, which is the harder half and
+	-- the one that shipped. ToggleTalentFrame exists at every level and returns
+	-- silently below ten: the door was drawn, lit, clickable and inert, and
+	-- nothing on screen said why. Blizzard's own talent button hides itself on
+	-- exactly this test.
+	do
+		local wasLevel = _G.__units.player.level
+		_G.__units.player.level = 9
+		TBm:RefreshMicro()
+
+		local has9 = false
+		for _, m in ipairs(TBm:MicroList()) do
+			if m.key == "talents" then has9 = true end
+		end
+		check(not has9,
+			"below the level the client will open it at, the Talents door is not"
+			.. " offered - a door that does nothing is worse than no door,"
+			.. " because there is nothing to report")
+
+		-- IT IS THE DOOR THAT GOES, NOT THE ROW. Everything else is still there
+		-- and the count moves by exactly one; a probe that threw would take the
+		-- whole menu with it and this is what says it did not.
+		local WANT9 = _G.__mists and 14 or 9
+		check(#TBm:MicroList() == WANT9,
+			"and only that one - " .. WANT9 .. " left (" ..
+			#TBm:MicroList() .. ")")
+
+		-- THE ROW IS NOT FIXED FOR THE SESSION, which is what MicroList was
+		-- being treated as. It was worked out at build and on a config change,
+		-- so a character who dinged 10 with the drawer open went on not having
+		-- the door until they opened the settings and closed them again.
+		_G.__units.player.level = 10
+		fire("PLAYER_LEVEL_UP", 10)
+		local backAgain = false
+		for _, m in ipairs(TBm:MicroList()) do
+			if m.key == "talents" then backAgain = true end
+		end
+		check(backAgain,
+			"and at ten the client will open it again, so the door belongs in"
+			.. " the row")
+
+		-- WHICH THE CHECK ABOVE DOES NOT PROVE IS ON SCREEN, and the difference
+		-- matters: MicroList builds a fresh table every call, so it answers
+		-- correctly whether or not anything has redrawn. Deleting the level-up
+		-- registration leaves that check passing and only this one fails - it
+		-- was written after watching exactly that happen.
+		local drawn = 0
+		for _, b in ipairs(TBm.content.micro or {}) do
+			if b:IsShown() then drawn = drawn + 1 end
+		end
+		check(drawn == #TBm:MicroList(),
+			"and the buttons on screen match it (" .. drawn .. " of " ..
+			#TBm:MicroList() .. ")")
+
+		_G.__units.player.level = wasLevel
+		TBm:RefreshMicro()
 	end
 
 	-- The actions are Blizzard's own, read off their handlers rather than

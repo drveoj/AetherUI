@@ -1030,6 +1030,20 @@ function TB:OnEnable()
 	-- something to say for the rest of the time - see TB:ReadInbox.
 	A:RegisterEvent(self, "MAIL_INBOX_UPDATE", function() TB:ReadInbox() end)
 
+	-- THE MENU ROW IS NOT FIXED FOR THE SESSION any more, and until now it was
+	-- treated as though it were: MicroList was worked out at build and again on
+	-- a config change, which is fine while every door is a global that either
+	-- exists or does not. The Talents door asks a question whose answer changes
+	-- while you play, and a character who dings 10 with the drawer open would
+	-- have gone on not having it until they opened the settings.
+	--
+	-- PLAYER_ENTERING_WORLD as well as the level-up, because a character who
+	-- was already past it logs in with no level-up to fire, and the row is
+	-- first laid out before the client will answer the question at all.
+	for _, ev in ipairs({ "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" }) do
+		A:RegisterEvent(self, ev, function() TB:RefreshMicro() TB:Layout() end)
+	end
+
 	self:RefreshMail()
 
 	-- The HUD breathes and this was the one thing that did not.
@@ -3093,6 +3107,37 @@ end
 
 local MICRO_SIZE, MICRO_GAP = 26, 6
 
+--- Whether this character can open the talent window at all.
+--
+--  THE DOOR WAS ALWAYS DRAWN AND DID NOTHING BELOW LEVEL 10. Blizzard's own
+--  ToggleTalentFrame opens with a guard and returns silently when it fails, so
+--  the button was lit, clickable, and inert, with nothing on screen to say why.
+--  Blizzard's own talent button does not have this problem because it HIDES
+--  itself on the same test - MainMenuBarMicroButtons does it in one line - and
+--  ours is the one that got left out.
+--
+--  AND THE TWO CLIENTS ASK DIFFERENT QUESTIONS, which is the part that cannot
+--  be probed around. Era's ToggleTalentFrame guards on CanPlayerUseTalentUI;
+--  Mists' guards on CanPlayerUseTalentSpecUI. BOTH names are documented on both
+--  clients, so calling the wrong one is not an error that shows up - it is a
+--  wrong answer that looks like a right one. Era has no specialisations at all,
+--  so asking it the spec question would hide the door on that client for good.
+--  Hence a flavour branch here where everything else in this file is a probe.
+--
+--  A CLIENT THAT WILL NOT ANSWER GETS THE DOOR. Failing open is the right way
+--  round: a door that is offered and does nothing is the bug being fixed, but a
+--  door silently missing for everyone because a lookup moved is worse - nobody
+--  would report it, because there is nothing there to report.
+local function CanUseTalents()
+	local S = _G.C_SpecializationInfo
+	local fn = S and (A.isMists and S.CanPlayerUseTalentSpecUI
+		or S.CanPlayerUseTalentUI)
+	if type(fn) ~= "function" then return true end
+	local ok, can = pcall(fn)
+	if not ok then return true end
+	return can and true or false
+end
+
 TB.MICRO = {
 	{ key = "character", label = "Character",
 	  fn = function() ToggleCharacter("PaperDollFrame") end,
@@ -3102,7 +3147,10 @@ TB.MICRO = {
 	  probe = function() return ToggleSpellBook ~= nil end },
 	{ key = "talents",   label = "Talents",
 	  fn = function() ToggleTalentFrame() end,
-	  probe = function() return ToggleTalentFrame ~= nil end },
+	  -- Level is what moves this in practice, but the question asked is the
+	  -- client's own rather than a number of our own - see RefreshMicro's
+	  -- callers for what makes the door appear when it changes.
+	  probe = function() return ToggleTalentFrame ~= nil and CanUseTalents() end },
 	{ key = "quests",    label = L.toolbox.refresh_addons.quest_log,
 	  fn = function() ToggleQuestLog() end,
 	  probe = function() return ToggleQuestLog ~= nil end },
@@ -3401,11 +3449,15 @@ end
 --  than as a layout. So the ROW COUNT comes from the floor and the PER-ROW
 --  comes from dividing evenly into it.
 --
---  `maxRows` is the flat dock's ceiling of one, where a second row does not fit
---  above the floor the other five columns share. Clamped there the cell falls
---  under MICRO_MIN_CELL and MicroGlyph gives way instead - every entry present,
---  which is that dock's trade and still the right one. The drawer passes none:
---  it has the height, and would rather spend it than shrink a glyph.
+--  `maxRows` is a CEILING, and both callers pass one. The flat dock passes one
+--  row, where a second does not fit above the floor the other five columns
+--  share; the drawer passes two, because a third goes into a foot that is
+--  already spoken for by the mini-player.
+--
+--  Clamped there the cell can fall under MICRO_MIN_CELL, and MicroGlyph gives
+--  way instead - every entry present and the drawing smaller, which is the
+--  right trade in both docks. At the width this ships at it does not arise:
+--  fifteen doors in two rows is eight across 358, a 44-unit cell.
 local function MicroFit(n, avail, maxRows)
 	if n <= 0 then return 0, 1, avail end
 	local fits = math.max(1, math.min(n, math.floor(avail / MICRO_MIN_CELL)))

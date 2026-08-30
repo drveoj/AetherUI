@@ -187,10 +187,14 @@ Media.icons = {
 		party = "social",
 		-- The Mists menu entries, where a drawing already on the sheet means
 		-- the thing: the group finder IS a group of people, and the encounter
-		-- journal IS a book. Achievements, Collections and PvP get their own
-		-- cells in the next generator pass and stand as initials until then -
-		-- a letter is honest about being a placeholder in a way that a nearly
-		-- right picture is not.
+		-- journal IS a book. Aliases rather than new cells, so there is never a
+		-- second drawing that has to agree with the first about what a book
+		-- looks like.
+		--
+		-- The other three - Achievements, Collections and PvP - did get cells of
+		-- their own, in the generator pass that followed. They are in `order`
+		-- above and drawn on the sheet; nothing in this row stands as a letter
+		-- any more.
 		dungeons = "social",
 		guide    = "library",
 	},
