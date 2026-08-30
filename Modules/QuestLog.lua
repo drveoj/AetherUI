@@ -22,7 +22,8 @@
 	    in progress. `if isComplete then` is true for a *failed* quest.
 	  * `questTag` (third) is a LOCALIZED STRING - "Dungeon", "Elite", "PvP" - not
 	    a numeric group size. It is display-ready, which is exactly what the tag
-	    pill in the concept wants, so it is shown verbatim rather than mapped.
+	    pill in the concept wants, so it is shown almost verbatim - see TagFor,
+	    which folds the frequency into it the way Blizzard's own list does.
 	  * headers are entries in the same list and carry a junk `level`. Branch on
 	    isHeader before touching anything else.
 
@@ -49,6 +50,25 @@
 	Note the order: description FIRST. Blizzard's own frame reads it the other way
 	round into confusingly-named font strings, which is a good way to talk
 	yourself into the wrong one.
+
+	Mists reads the same, and has a second quest log
+	------------------------------------------------
+	The tuple above is unchanged on 5.5: Blizzard's Cata list unpacks the same
+	seventeen returns in the same order, and every call this module makes - the
+	Select, the leader boards, the abandon latch, the rewards - is present on
+	both clients. So none of the READING needed porting, which is not what was
+	expected of a window built against 1.15.
+
+	Two things did.
+
+	  * `frequency` was discarded here, because Era has almost nothing that
+	    repeats. Mists is built on dailies, and a zone of them all drawn without
+	    a tag is a tag pill doing no work. TagFor draws them.
+	  * QUESTMAPFRAME. Era has no such frame; Mists puts a whole second quest
+	    log down the side of the world map, with its own idea of which quest is
+	    selected. Replacing QuestLogFrame alone leaves the player with two logs
+	    that disagree. HideBlizzard suppresses it - through the map's own
+	    question rather than by hiding the panel; see there for why.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -117,10 +137,77 @@ local function NumEntries()
 	return entries or 0, quests or 0
 end
 
+--- A client string, or nil if the client has not got one.
+--
+--  Written out because the three globals below are read the same way and two of
+--  them are not confirmed to exist. `_G.WEEKLY or fallback` is not enough on its
+--  own: a global that exists and is the empty string is falsy in no language,
+--  and an empty tag pill is a blank box rather than a missing one.
+local function ClientString(v)
+	if type(v) == "string" and v ~= "" then return v end
+	return nil
+end
+
+--- The word for a quest's frequency, and the template that folds a tag into it.
+--
+--  `frequency` is the seventh return of GetQuestLogTitle and this module threw
+--  it away, which was right on Era and is not right on Mists. Blizzard's own
+--  Vanilla quest log does not draw it either - there is next to nothing on 1.15
+--  that repeats - but Mists is built on dailies, and a Golden Lotus quest that
+--  reads exactly like the one beside it is a tag pill doing no work at all.
+--
+--  THE NUMBERS COME FROM THE CLIENT. Enum.QuestFrequency is on both clients -
+--  Era's own GossipFrame reads it - and the literals are there only so that a
+--  client which drops the enum degrades to the values it has always used rather
+--  than to no frequency at all.
+--
+--  THE WORDS COME FROM THE CLIENT TOO, which is Locale/enUS.lua's rule stated
+--  in its own header: if Blizzard wrote them they do not belong in there, and
+--  DAILY arrives already in the player's language. The fallbacks exist because
+--  only DAILY and DAILY_QUEST_TAG_TEMPLATE are confirmed present - Blizzard's
+--  Cata list uses both unconditionally - while WEEKLY is a tag *id* in the
+--  client source, an atlas key, and nowhere shown to be a phrase as well.
+local function FrequencyWords(freq)
+	if type(freq) ~= "number" or freq <= 0 then return nil end
+
+	local E = _G.Enum and _G.Enum.QuestFrequency
+	if freq == ((E and E.Daily) or 1) then
+		return ClientString(_G.DAILY) or L.questlog.frequency.daily,
+			ClientString(_G.DAILY_QUEST_TAG_TEMPLATE) or L.questlog.frequency.daily_s
+	elseif freq == ((E and E.Weekly) or 2) then
+		return ClientString(_G.WEEKLY) or L.questlog.frequency.weekly,
+			L.questlog.frequency.weekly_s
+	end
+
+	return nil
+end
+
+--- One tag string out of the two the client answers with.
+--
+--  FOLDED IN RATHER THAN SET BESIDE, which is what Blizzard does as well:
+--  DAILY_QUEST_TAG_TEMPLATE turns "Dungeon" into "Daily Dungeon". The reason
+--  here is narrower than theirs - there is one `tag` field on a quest and it is
+--  drawn in two places, the list row's pill and the detail pane's, so a second
+--  pill would be a second widget to build, anchor, colour and hide twice over.
+--
+--  A TEMPLATE, NOT A CONCATENATION. `word .. " " .. tag` is the one thing the
+--  locale header forbids outright - a translator handed two words cannot put
+--  them in the order their language wants, and several want the other one.
+local function TagFor(questTag, freq)
+	local word, template = FrequencyWords(freq)
+	if not word then return questTag end
+	if not questTag or questTag == "" then return word end
+	return A.F(template, questTag)
+end
+
 --- title, level, questTag, isHeader, isCollapsed, isComplete, questID
+--
+--  The tag returned is DISPLAY-READY and may not be the client's third return
+--  verbatim: a daily leaves here as "Daily" or "Daily Dungeon". Callers draw it
+--  and nothing branches on it, which is what makes that safe.
 local function LogTitle(index)
 	if not GetQuestLogTitle then return nil end
-	local title, level, questTag, isHeader, isCollapsed, isComplete, _, questID =
+	local title, level, questTag, isHeader, isCollapsed, isComplete, frequency, questID =
 		GetQuestLogTitle(index)
 	if not title then return nil end
 
@@ -129,7 +216,8 @@ local function LogTitle(index)
 		if ok then questID = id end
 	end
 
-	return title, level, questTag, isHeader, isCollapsed, isComplete, questID
+	return title, level, TagFor(questTag, frequency), isHeader, isCollapsed,
+		isComplete, questID
 end
 
 --- Which of Blizzard's five difficulty bands a quest level falls in.
@@ -504,7 +592,60 @@ local BLIZZ_QUESTLOG_EVENTS = {
 	"PARTY_MEMBER_DISABLE", "PLAYER_LOGIN", "PLAYER_LEVEL_UP",
 }
 
+--- Mists' OTHER quest log, which lives inside the world map.
+--
+--  Era has no QuestMapFrame at all. On Mists the map opens with Blizzard's own
+--  quest list down its right-hand side, and it is a real quest log: it selects,
+--  it tracks, it abandons, and it writes the same one hidden selection cursor
+--  this module is careful about. Replacing QuestLogFrame and stopping there
+--  leaves the player with two quest logs that disagree with each other.
+--
+--  SUPPRESSED THROUGH THE MAP'S OWN QUESTION rather than by hiding the panel.
+--  ShouldShowQuestLogPanel is a plain method QuestLogOwnerMixin puts on the
+--  frame, and every route into the panel asks it first - SetDisplayState takes
+--  its NO_LOG branch, HandleUserActionToggleQuestLog does the same - so the map
+--  lands in a display state Blizzard already ships and already maintains.
+--
+--  That matters more than it sounds. SetQuestLogPanelShown does not merely show
+--  and hide: it moves ScrollContainer's BOTTOMRIGHT between -320,236 and
+--  -11,30, so the map fills the space the panel was in. Hiding the panel
+--  ourselves would leave a map sized around a frame that is not there, with a
+--  third of it empty and no way to tell that we had caused it.
+--  THE STATE LIVES ON THE FRAME, not on the module. Blizzard_WorldMap is load
+--  on demand, so the frame this runs against is not the one that existed when
+--  the module was enabled - and a module-side "already suppressed" flag would
+--  then answer for a frame that has been gone since before the map arrived,
+--  leaving the real one untouched. Asking the frame what has been done to it
+--  cannot get that wrong.
+local function SuppressMapQuestLog(on)
+	local map = _G.WorldMapFrame
+	if not map or (map.IsForbidden and map:IsForbidden()) then return end
+
+	local saved = map.__aetherMapQuestLog
+	if on then
+		if saved then return end
+		if type(map.ShouldShowQuestLogPanel) ~= "function" then return end
+		map.__aetherMapQuestLog = map.ShouldShowQuestLogPanel
+		map.ShouldShowQuestLogPanel = function() return false end
+	else
+		if not saved then return end
+		map.ShouldShowQuestLogPanel = saved
+		map.__aetherMapQuestLog = nil
+	end
+
+	-- AND CATCH THE MAP IF IT IS ALREADY OPEN. The question above is only asked
+	-- when the display state changes, so a map on screen right now keeps whatever
+	-- panel it has until the player closes and reopens it.
+	if map.SetQuestLogPanelShown and map.IsShown and map:IsShown() then
+		local want = false
+		if not on then want = map:ShouldShowQuestLogPanel() and true or false end
+		pcall(map.SetQuestLogPanelShown, map, want)
+	end
+end
+
 function QL:HideBlizzard()
+	SuppressMapQuestLog(true)
+
 	local f = _G.QuestLogFrame
 	if not f or (f.IsForbidden and f:IsForbidden()) then return end
 
@@ -552,6 +693,8 @@ function QL:HideBlizzard()
 end
 
 function QL:RestoreBlizzard()
+	SuppressMapQuestLog(false)
+
 	local f = _G.QuestLogFrame
 	if f and not (f.IsForbidden and f:IsForbidden()) then
 		f.__aetherSuppress = nil
@@ -2020,6 +2163,15 @@ function QL:OnEnable()
 	-- player joins a party and nothing on screen explains why.
 	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE", function()
 		if QL.win and QL.win:IsShown() then QL:RefreshFooter() end
+	end)
+
+	-- BLIZZARD_WORLDMAP IS LOAD ON DEMAND. The map addon is not there at login,
+	-- so the HideBlizzard above suppressed nothing: there was no frame to ask.
+	-- It arrives the first time anything opens the map, which is also the first
+	-- time its quest panel could be seen, so this is the one chance to get in
+	-- front of it. Era never fires this with that name and loses nothing.
+	A:RegisterEvent(self, "ADDON_LOADED", function(_, _, name)
+		if name == "Blizzard_WorldMap" then QL:HideBlizzard() end
 	end)
 
 	A:RegisterEvent(self, "LOADING_SCREEN_ENABLED", function() QL.loading = true end)

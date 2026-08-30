@@ -2000,6 +2000,12 @@ _G.__cvars = {
 	-- SetCVar to a name the client does not have is an error, which is how
 	-- this mock catches an addon writing a setting that does not exist.
 	instantQuestText = "0",
+	-- The two the world map asks before it shows its quest panel, on by default
+	-- as they are on a real client. Both, because ShouldShowQuestLogPanel ANDs
+	-- them - a check that turned only one on would pass whether the map was
+	-- suppressed or not.
+	questPOI = "1",
+	questHelper = "1",
 	Sound_EnableAllSound  = "1",
 	Sound_MasterVolume    = "1",
 	Sound_MusicVolume     = "0.2",
@@ -3475,12 +3481,31 @@ function GetNumQuestLogEntries()
 	return #vis, quests
 end
 
+-- Enum.QuestFrequency is on BOTH clients - Era's own Classic/GossipFrame.lua
+-- reads it - so it is not behind the flavour switch. The values are the client's
+-- and are the same on 1.15 and 5.5.
+Enum = _G.Enum or {}
+Enum.QuestFrequency = { Default = 0, Daily = 1, Weekly = 2 }
+
+-- The client's words for them. DAILY and DAILY_QUEST_TAG_TEMPLATE are the two
+-- Blizzard's own quest log uses unconditionally, so both are here; WEEKLY is
+-- deliberately ABSENT, because the client source only ever uses "WEEKLY" as an
+-- atlas key and there is no evidence it is a phrase as well. A mock that
+-- invented it would hide the fallback that exists for exactly that case.
+DAILY = "Daily"
+DAILY_QUEST_TAG_TEMPLATE = "Daily %s"
+
 function GetQuestLogTitle(index)
 	local q = _G.__visibleLog()[index]
 	if not q then return nil end
 	-- title, level, questTag, isHeader, isCollapsed, isComplete, frequency, questID
+	--
+	-- FREQUENCY WAS HARDCODED NIL HERE, which made this mock kinder than either
+	-- client: the quest log read the seventh return, got nothing, and could not
+	-- have told a daily from anything else even if it had tried. Era has almost
+	-- nothing that repeats so it never showed; Mists is built on them.
 	return q.title, q.level, q.tag, q.header or false, q.collapsed or false,
-	       q.complete, nil, q.id
+	       q.complete, q.frequency, q.id
 end
 
 function ExpandQuestHeader(index)
@@ -7499,11 +7524,63 @@ do
 		end
 	end
 
+	--- The world map's OWN quest log, which is a Mists frame and nothing else.
+	--
+	--  QuestLogOwnerMixin is mixed into WorldMapFrameTemplate on Cata and Wrath,
+	--  and Mists loads the Wrath one; Era's world map has no such mixin and no
+	--  QuestLog child. So this is behind the flavour switch, and Era's map stays
+	--  a map with nothing down the side of it - which is the point of the check
+	--  that reads the two clients differently.
+	--
+	--  MODELLED THROUGH THE MIXIN'S OWN SHAPE rather than as a panel that shows
+	--  and hides. ShouldShowQuestLogPanel is the question every route asks, and
+	--  SetQuestLogPanelShown MOVES THE MAP as well as the panel - the client
+	--  drags ScrollContainer's BOTTOMRIGHT between -320,236 and -11,30 so the
+	--  map fills the space. An addon that hides the panel and leaves the map at
+	--  its narrow size has a third of the window empty, which is the bug this
+	--  mock exists to be able to see.
+	local function buildWorldMapQuestLog(map)
+		map.QuestLog = CreateFrame("Frame", nil, map)
+		map.QuestLog:Hide()
+		map.ScrollContainer = CreateFrame("Frame", nil, map)
+		-- The XML's own BOTTOMRIGHT: -11,30, panel-less. SetQuestLogPanelShown
+		-- only moves it when the state CHANGES, so a mock that started this at
+		-- nil read as "not moved" and "moved back" alike, and the check that the
+		-- map takes its space back could not fail.
+		map.__mapInset = -11
+
+		function map:ShouldShowQuestLogPanel()
+			return GetCVarBool("questPOI") and GetCVarBool("questHelper")
+		end
+
+		function map:SetQuestLogPanelShown(shown)
+			if shown == self.QuestLog:IsShown() then return end
+			if shown then
+				self.QuestLog:Show()
+				self.__mapInset = -320
+			else
+				self.QuestLog:Hide()
+				self.__mapInset = -11
+			end
+		end
+
+		-- The two the map is actually opened by. Blizzard's SetDisplayState is a
+		-- five-branch thing about minimise and maximise; the only part of it any
+		-- of this turns on is which way the question above was answered.
+		function map:Open()
+			self:Show()
+			self:SetQuestLogPanelShown(self:ShouldShowQuestLogPanel())
+		end
+	end
+
 	function _G.__loadPanelAddon(name)
 		buildPanel(name)
 		if name == "PlayerTalentFrame" then _G.__buildTalentInsides() end
 		if name == "CommunitiesFrame" then _G.__buildCommunities() end
 		if name == "ClassTrainerFrame" then _G.__buildTrainer() end
+		if name == "WorldMapFrame" and _G.__mists then
+			buildWorldMapQuestLog(_G.WorldMapFrame)
+		end
 	end
 end
 
@@ -25086,6 +25163,77 @@ do
 	check(_G.ClassicQuestLog == QLog.win,
 		"and answers to ClassicQuestLog, so Questie opens ours instead of popping"
 		.. " Blizzard's dead frame over the top")
+
+	-- MISTS HAS A SECOND QUEST LOG, and everything above missed it entirely.
+	-- QuestMapFrame is absent on Era; on Mists the world map opens with a full
+	-- quest list down its side that selects, tracks, abandons and writes the same
+	-- hidden selection cursor this module is careful about. Two quest logs
+	-- disagreeing with each other is not a skinning bug, so it is checked here
+	-- with the rest of the takeover rather than with the map.
+	do
+		SetCVar("questPOI", "1")
+		SetCVar("questHelper", "1")
+
+		check(_G.WorldMapFrame == nil,
+			"the map addon is not loaded at login, so HideBlizzard had nothing to"
+			.. " suppress - which is the whole reason for the event below")
+
+		_G.__loadPanelAddon("WorldMapFrame")
+		fire("ADDON_LOADED", "Blizzard_WorldMap")
+		local map = _G.WorldMapFrame
+
+		if _G.__mists then
+			check(map.ShouldShowQuestLogPanel ~= nil and
+				not map:ShouldShowQuestLogPanel(),
+				"the map is made to answer NO to its own question, even with both"
+				.. " CVars on - which is what every route into the panel asks")
+
+			map:Open()
+			check(not map.QuestLog:IsShown(),
+				"so opening the map draws no second quest log")
+			check(map.__mapInset == -11,
+				"and the map takes the space back - the panel's inset is the"
+				.. " client's own -11 rather than the -320 it uses with a panel"
+				.. " down the side (" .. tostring(map.__mapInset) .. ")")
+			map:Hide()
+
+			-- OFF HANDS IT BACK. A player who turns our quest log off and finds
+			-- the map has permanently lost its quest panel has been left worse
+			-- than if the addon had never touched it.
+			A:SetModuleEnabled("questlog", false)
+			check(map:ShouldShowQuestLogPanel(),
+				"switching the module off gives the map its own question back")
+			map:Open()
+			check(map.QuestLog:IsShown(), "and the panel returns")
+			map:Hide()
+			A:SetModuleEnabled("questlog", true)
+			check(not map:ShouldShowQuestLogPanel(), "and on again re-suppresses it")
+
+			-- AND SUPPRESSED AGAIN ON A FRESH FRAME, which is the case the
+			-- module-side flag got wrong. The map addon is load on demand, so
+			-- the frame HideBlizzard first ran against does not exist yet; a
+			-- "have I already done this" flag kept on the module answers yes for
+			-- a frame that has been gone since before the real one arrived, and
+			-- the map keeps its panel with nothing on screen to explain it.
+			_G.WorldMapFrame = nil
+			_G.__loadPanelAddon("WorldMapFrame")
+			fire("ADDON_LOADED", "Blizzard_WorldMap")
+			check(not _G.WorldMapFrame:ShouldShowQuestLogPanel(),
+				"a map addon arriving a second time is suppressed too - the state"
+				.. " is kept on the frame, so it cannot be answered for by one"
+				.. " that is no longer there")
+		else
+			check(map.ShouldShowQuestLogPanel == nil,
+				"Era's map has no quest panel to suppress, and nothing pretended"
+				.. " it did")
+		end
+
+		-- PUT THE WORLD BACK. The panels block below opens with "the map is not
+		-- loaded yet" and then proves it gets skinned when its addon turns up,
+		-- which is a check about load-on-demand and is worth nothing if this
+		-- block has already loaded it.
+		_G.WorldMapFrame = nil
+	end
 end
 
 print("== quest log: the L key, the micro button, and combat ==")
@@ -25148,6 +25296,109 @@ do
 		"but opening the window expands it first, so the zone is not silently"
 		.. " missing")
 	check(_G.__questLog[4].collapsed == false, "and the header is left expanded")
+end
+
+print("== quest log: daily and weekly, which Era has almost none of ==")
+do
+	-- SET UP AND TORN DOWN HERE, like the collapsed header above, so the log's
+	-- indices and tags stay exactly as every block around this one expects them.
+	--
+	-- Two quests, chosen for the two cases that differ: index 5 already carries
+	-- the tag "Dungeon", index 6 carries none at all. A daily with a tag has to
+	-- fold into it; a daily without one has to become the tag.
+	local tagged, bare = _G.__questLog[5], _G.__questLog[6]
+	tagged.frequency = Enum.QuestFrequency.Daily
+	bare.frequency   = Enum.QuestFrequency.Weekly
+
+	QLog:Hide()
+	QLog:Show()
+	local byTitle = {}
+	for _, e in ipairs(QLog.entries) do
+		if e.kind == "quest" then byTitle[e.title] = e end
+	end
+
+	check(byTitle["Lost in Battle"].tag == "Weekly",
+		"a repeating quest with no tag of its own becomes one ("
+		.. tostring(byTitle["Lost in Battle"].tag) .. ")")
+	check(byTitle["Prowlers of the Barrens"].tag == "Daily Dungeon",
+		"and one that HAS a tag folds into it rather than losing it - a Dungeon"
+		.. " daily that reads only \"Daily\" has thrown away the half that says"
+		.. " where to go (" .. tostring(byTitle["Prowlers of the Barrens"].tag) .. ")")
+
+	-- THE CLIENT'S WORDS WHERE THE CLIENT HAS THEM. DAILY and
+	-- DAILY_QUEST_TAG_TEMPLATE arrive already in the player's language, which is
+	-- why the fold above reads as Blizzard's own list does. WEEKLY is not in this
+	-- mock and deliberately so - the client source only ever uses that name as an
+	-- atlas key - so the weekly above came out of Locale/enUS.lua, and this is
+	-- the check that says the fallback is load-bearing rather than decorative.
+	check(_G.WEEKLY == nil,
+		"the client has no WEEKLY phrase here, so the weekly above is ours")
+	local wasDaily, wasTemplate = _G.DAILY, _G.DAILY_QUEST_TAG_TEMPLATE
+	_G.DAILY = "Taeglich"
+	-- NOT "Taeglich %s". The template is the client's and it is a SENTENCE: some
+	-- languages put the word after. This one does, which is the point - a fold
+	-- built as word .. " " .. tag would pass every check above and come out
+	-- backwards here, and that is exactly the construction the locale header
+	-- forbids.
+	_G.DAILY_QUEST_TAG_TEMPLATE = "%s (taeglich)"
+	bare.frequency = Enum.QuestFrequency.Daily
+
+	QLog:Hide()
+	QLog:Show()
+	for _, e in ipairs(QLog.entries) do
+		if e.kind == "quest" then byTitle[e.title] = e end
+	end
+	check(byTitle["Lost in Battle"].tag == "Taeglich",
+		"a client that says it differently is followed, not overridden ("
+		.. tostring(byTitle["Lost in Battle"].tag) .. ")")
+	check(byTitle["Prowlers of the Barrens"].tag == "Dungeon (taeglich)",
+		"and the fold is the CLIENT'S template, so a language that wants the"
+		.. " word last gets it last ("
+		.. tostring(byTitle["Prowlers of the Barrens"].tag) .. ")")
+
+	_G.DAILY, _G.DAILY_QUEST_TAG_TEMPLATE = wasDaily, wasTemplate
+	bare.frequency = Enum.QuestFrequency.Weekly
+	QLog:Hide()
+	QLog:Show()
+	for _, e in ipairs(QLog.entries) do
+		if e.kind == "quest" then byTitle[e.title] = e end
+	end
+
+	-- OUR OWN TEMPLATES, which are the half of Locale/enUS.lua that only draws on
+	-- a client missing the phrase. Nothing exercised them above: the weekly there
+	-- had no tag to fold, so it took the bare word and left both templates alone.
+	tagged.frequency = Enum.QuestFrequency.Weekly
+	QLog:Hide()
+	QLog:Show()
+	for _, e in ipairs(QLog.entries) do
+		if e.kind == "quest" then byTitle[e.title] = e end
+	end
+	check(byTitle["Prowlers of the Barrens"].tag == "Weekly Dungeon",
+		"a weekly WITH a tag folds through ours, because the client has no weekly"
+		.. " template either ("
+		.. tostring(byTitle["Prowlers of the Barrens"].tag) .. ")")
+
+	local hadTemplate = _G.DAILY_QUEST_TAG_TEMPLATE
+	_G.DAILY_QUEST_TAG_TEMPLATE = nil
+	tagged.frequency = Enum.QuestFrequency.Daily
+	QLog:Hide()
+	QLog:Show()
+	for _, e in ipairs(QLog.entries) do
+		if e.kind == "quest" then byTitle[e.title] = e end
+	end
+	check(byTitle["Prowlers of the Barrens"].tag == "Daily Dungeon",
+		"and a client with no daily template falls back rather than drawing the"
+		.. " tag with the frequency silently dropped ("
+		.. tostring(byTitle["Prowlers of the Barrens"].tag) .. ")")
+	_G.DAILY_QUEST_TAG_TEMPLATE = hadTemplate
+
+		-- AND A QUEST THAT DOES NOT REPEAT IS UNTOUCHED, which is nearly all of Era.
+	check(byTitle["Chen's Empty Keg"].tag == nil,
+		"a one-off keeps whatever tag it had, which here is none")
+
+	tagged.frequency, bare.frequency = nil, nil
+	QLog:Hide()
+	QLog:Show()
 end
 
 print("== quest log: difficulty bands and the tri-state complete flag ==")

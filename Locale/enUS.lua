@@ -1213,6 +1213,14 @@ L["questlog.build_header.quest_log"] = "Quest Log"
 
 L["questlog.build_panes.quest_selected"] = "No quest selected."
 
+-- Only ever drawn on a client that has no word of its own for these - the tag
+-- pill prefers DAILY and DAILY_QUEST_TAG_TEMPLATE, which arrive already in the
+-- player's language. See FrequencyWords in Modules/QuestLog.lua.
+L["questlog.frequency.daily"] = "Daily"
+L["questlog.frequency.daily_s"] = "Daily %s"
+L["questlog.frequency.weekly"] = "Weekly"
+L["questlog.frequency.weekly_s"] = "Weekly %s"
+
 L["questlog.confirm_abandon.quest_longer_log_nothing"] =
 	"that quest is no longer in your log - nothing was abandoned."
 
