@@ -40,6 +40,7 @@ local function usage()
 		A.Hi("/aether toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
 		A.Hi("/aether panels") .. " <dump NAME|measure [NAME]|diag>  ·  what a window is made of",
 		A.Hi("/aether threat") .. " probe  ·  what the threat API answers, in a box you can copy",
+		A.Hi("/aether resources") .. " demo  ·  step the class resource tray through every class",
 		A.Hi("/aether ifec") .. " [reset]  ·  content packs, what is playing, forget history",
 		A.Hi("/aether errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
@@ -1980,6 +1981,45 @@ handlers.threat = function(arg)
 		return
 	end
 	A:Print(A.Hi("/aether threat probe") .. "  ·  what the threat API answers")
+end
+
+--- The class resource tray, and the preview that lets one character check all
+--  of it.
+--
+--  NINE OF THE ELEVEN ROWS BELONG TO A CLASS OR A SPEC, and three of the
+--  interesting ones are unreachable on any single character: the Death Knight
+--  is the only stacked case, the only per-socket hue and the only recharging
+--  fill, and eclipse is the only bar that runs both ways from a centre mark.
+--  Checking those meant levelling alts, which is not a thing anybody does to
+--  sign off a shelf thirty pixels tall.
+--
+--  The preview drives the REAL drawing from a script - the module's Rows
+--  returns the scripted set and nothing downstream knows - so what is on screen
+--  is the tray, not a picture of it.
+handlers.resources = function(arg)
+	local RSm = A:GetModule("resources")
+	if not RSm then A:Print("this build has no resource tray") return end
+
+	if arg == "demo" or arg == "preview" then RSm:Demo() return end
+	if arg == "off" then RSm:Demo("off") return end
+	if arg == "next" then RSm:Demo("next") return end
+
+	-- WHAT THE CLIENT SAYS THIS CHARACTER HAS, which is the other half of the
+	-- question and the one that answers "why is there no tray". Every row is a
+	-- power the client either reports a maximum for or does not.
+	local rows = RSm:Rows()
+	if #rows == 0 then
+		A:Print("no class resource on this character - "
+			.. A.Dim("nothing reports a maximum"))
+	else
+		for _, row in ipairs(rows) do
+			A:Print(("   %s  %s · %d socket%s"):format(
+				A.Hi(row.key), row.kind,
+				math.floor(row.max() or 0),
+				math.floor(row.max() or 0) == 1 and "" or "s"))
+		end
+	end
+	A:Print("   " .. A.Dim("/aether resources demo|next|off"))
 end
 
 handlers.module = function(arg, rest)

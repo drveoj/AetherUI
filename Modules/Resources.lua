@@ -306,9 +306,151 @@ local function HasAura(spellID)
 	return (ok and aura) and true or false
 end
 
+-- ---------------------------------------------------------------------------
+-- the preview
+--
+-- WHY THIS EXISTS. Nine of the eleven rows in the table above belong to a class
+-- or a spec, and signing off how they LOOK meant levelling four alts - which is
+-- not a thing anybody is going to do to check a tray. Worse, three of the rows
+-- are the interesting ones and none of them is reachable on a warlock: the
+-- Death Knight is the only stacked case, the only per-socket hue and the only
+-- recharging fill, and eclipse is the only bar that runs both ways from a
+-- centre mark.
+--
+-- So the preview drives the tray from a script instead of from the client.
+-- Every row is drawn by the SAME code the game drives - Rows returns these
+-- instead of the real ones and nothing downstream knows the difference - so
+-- what you are looking at is the drawing, not a mock-up of it. A preview that
+-- had its own layout would be a preview that could agree with itself while the
+-- real thing was wrong.
+--
+-- NOTHING IS WRITTEN TO THE CLIENT and nothing is written to the profile. It is
+-- a table of numbers this file walks; the only lasting effect is that the tray
+-- is shown while it runs.
+-- ---------------------------------------------------------------------------
+
+local DEMO_HOLD = 4.0      -- seconds on each set before moving to the next
+local DEMO_STEP = 0.05     -- how often the scripted values move
+
+--- The scripted value, 0..1, sawtooth: it climbs across the hold and starts
+--  again. That is what makes a part-filled socket and a moving bar visible -
+--  a still frame would show one state of three.
+local function DemoRamp()
+	local t = ((GetTime and GetTime() or 0) % DEMO_HOLD) / DEMO_HOLD
+	return t
+end
+
+--- Every set the preview walks, in the order it walks them. Each is what Rows
+--  would return for that character, with the readers replaced.
+--
+--  THE COUNTS AND GRAINS ARE THE REAL ONES - four embers of ten units, six
+--  runes, three orbs - because a preview that draws five chi is a preview that
+--  cannot be used to check that four is right.
+local function DemoSets()
+	local function pips(key, hue, n, unit)
+		return {
+			key = key, kind = "pips", hue = hue,
+			max  = function() return n end,
+			unit = function() return unit or 1 end,
+			fill = function() return DemoRamp() * n * (unit or 1) end,
+		}
+	end
+
+	local function flow(key, hue, max, tick, signed)
+		return {
+			key = key, kind = "flow", hue = hue, signed = signed,
+			max  = function() return max end,
+			fill = function()
+				if signed then return (DemoRamp() * 2 - 1) * max end
+				return DemoRamp() * max
+			end,
+			threshold = tick and function() return tick end or nil,
+		}
+	end
+
+	return {
+		{ name = "Warlock · soul shards",   rows = { pips("shards", "soulShard", 4) } },
+		{ name = "Warlock · burning embers",
+		  rows = { pips("embers", "burningEmber", 4, 10) } },
+		{ name = "Warlock · demonic fury",
+		  rows = { flow("fury", "demonicFury", 1000, 400) } },
+		-- THE ONE STACKED CASE, and the reason this command was written.
+		{ name = "Death Knight · runes and runic power", rows = {
+			{ key = "runes", kind = "pips",
+			  max = function() return 6 end,
+			  -- Per socket, as the real one is: two of each type, and one of
+			  -- them part way through its recharge so the liquid fill is
+			  -- actually on screen rather than merely possible.
+			  each = function(i)
+				local hue = RUNE_HUE[math.ceil(i / 2)] or "runeBlood"
+				if i == 2 then return hue, DemoRamp() end
+				return hue, 1
+			  end },
+			flow("runicPower", "runicPower", 100, 30),
+		} },
+		{ name = "Monk · chi",              rows = { pips("chi", "chi", 4) } },
+		{ name = "Paladin · holy power",    rows = { pips("holy", "holyPower", 3) } },
+		{ name = "Rogue · combo points",    rows = { pips("combo", "comboPoint", 5) } },
+		{ name = "Priest · shadow orbs",    rows = { pips("orbs", "shadowOrb", 3) } },
+		{ name = "Druid · eclipse",
+		  rows = { flow("eclipse", "eclipseSun", 100, nil, true) } },
+	}
+end
+
+--- Start, stop, or step the preview.
+function RS:Demo(what)
+	if what == "off" or (self._demo and what ~= "next") then
+		self._demo = nil
+		if self._demoTicker then
+			self._demoTicker:Cancel()
+			self._demoTicker = nil
+		end
+		self:Refresh()
+		A:Print("resource preview off")
+		return
+	end
+
+	if what == "next" and self._demo then
+		self._demo.at = (self._demo.at % #self._demo.sets) + 1
+	else
+		self._demo = { sets = DemoSets(), at = 1, from = GetTime and GetTime() or 0 }
+	end
+
+	-- A TICKER, not an OnUpdate on the tray. The tray is hidden between sets on
+	-- a character whose real rows are empty, and a script on a hidden frame does
+	-- not run - which is how the first version of this appeared to do nothing at
+	-- all on a warrior.
+	if not self._demoTicker and C_Timer and C_Timer.NewTicker then
+		self._demoTicker = C_Timer.NewTicker(DEMO_STEP, function() RS:DemoTick() end)
+	end
+
+	self:DemoTick(true)
+	A:Print("resource preview: " .. A.Hi(self._demo.sets[self._demo.at].name)
+		.. "  ·  " .. A.Dim("/aether resources demo off"))
+end
+
+function RS:DemoTick(announce)
+	local d = self._demo
+	if not d then return end
+
+	local now = GetTime and GetTime() or 0
+	if not announce and (now - d.from) >= DEMO_HOLD then
+		d.at = (d.at % #d.sets) + 1
+		d.from = now
+		A:Print("resource preview: " .. A.Hi(d.sets[d.at].name))
+	end
+
+	self:Refresh()
+end
+
 --- Every row this character actually has, in tray order.
 function RS:Rows()
-    local _, class = UnitClass("player")
+	-- THE PREVIEW STANDS IN HERE AND NOWHERE ELSE, which is what makes it worth
+	-- having: everything below this line is the drawing the game drives.
+
+	if self._demo then return self._demo.sets[self._demo.at].rows end
+
+	local _, class = UnitClass("player")
 	local rows = self.TABLE[class or ""]
 	if not rows then return {} end
 
@@ -784,6 +926,14 @@ function RS:UpdateVisibility()
 	local tray = self.tray
 	if not tray then return end
 	if not self._rows or #self._rows == 0 then tray:Hide() return end
+
+	-- The preview ignores every rule below, including "off". You asked to look
+	-- at it; a preview that obeyed the fade would spend most of its time hidden.
+	if self._demo then
+		tray:Show()
+		tray:SetAlpha(1)
+		return
+	end
 
 	local mode = cfg().display or "on"
 	if mode == "off" then tray:Hide() return end

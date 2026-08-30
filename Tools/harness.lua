@@ -18327,6 +18327,100 @@ do
 	_G.__units.target.exists = wasTarget
 end
 
+print("== class resources: the preview ==")
+do
+	-- A WARRIOR, deliberately. The preview has to work on a character with no
+	-- resource of their own - that is most of the point of it - and the first
+	-- version drove the tray from an OnUpdate, which does not run on a hidden
+	-- frame, so on exactly this character it did nothing at all.
+	beResource("WARRIOR", nil, nil)
+	check(#RSm:Rows() == 0 and not RSm.tray:IsShown(),
+		"a warrior has no rows and no tray")
+
+	RSm:Demo()
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() == 1,
+		"the preview shows the tray on a character who has no resource at all")
+
+	-- THROUGH THE REAL DRAWING, which is the whole value of it. Rows returns the
+	-- scripted set and nothing downstream is told - so a preview that looks
+	-- right is the tray looking right, rather than a second layout agreeing
+	-- with itself while the first one is wrong.
+	local seen, sets = {}, 0
+	for _ = 1, 40 do
+		local rows = RSm:Rows()
+		check(#rows > 0, "every preview set draws at least one row")
+		for _, r in ipairs(rows) do seen[r.key] = true end
+		sets = sets + 1
+		RSm:Demo("next")
+		if RSm._demo.at == 1 then break end
+	end
+
+	-- EVERY ROW IN THE TABLE, named rather than counted. A count passes just as
+	-- well with the same set nine times.
+	for _, key in ipairs({ "shards", "embers", "fury", "runes", "runicPower",
+		"chi", "holy", "combo", "orbs", "eclipse" }) do
+		check(seen[key] == true, "the preview reaches " .. key)
+	end
+
+	-- THE THREE THAT ARE UNREACHABLE ON ONE CHARACTER, which is why this exists.
+	do
+		local dk
+		for _, set in ipairs(RSm._demo.sets) do
+			if #set.rows == 2 then dk = set end
+		end
+		check(dk ~= nil, "the stacked case is in it - pips above a bar, which no"
+			.. " single character other than a Death Knight can show")
+
+		RSm._demo.at = 1
+		for i, set in ipairs(RSm._demo.sets) do
+			if set == dk then RSm._demo.at = i end
+		end
+		RSm:Refresh()
+		check(shownPips() == 6, "six runes drawn (" .. shownPips() .. ")")
+		check(RSm.tray.flows[1]:IsShown(), "and the bar under them")
+
+		-- Per socket, and one of them mid-recharge, so the liquid fill is
+		-- actually on screen rather than merely possible.
+		local _, first = RSm.tray.pips[1].orb:GetGradient()
+		local _, third = RSm.tray.pips[3].orb:GetGradient()
+		check(first and third
+			and math.abs(first[1] - third[1]) > 0.01,
+			"in more than one hue, which is the only row in the game that is")
+		check(RSm.tray.pips[2].fill:IsShown(),
+			"with one part way through its recharge, so the fill is on screen"
+			.. " rather than only reachable")
+	end
+
+	-- AND IT PUTS THE CHARACTER BACK. A preview that left the tray showing a
+	-- Death Knight's runes on a warlock would be worse than no preview.
+	RSm:Demo("off")
+	check(RSm._demo == nil, "switching it off clears the scripted rows")
+	beResource("PALADIN", { [PT.HolyPower] = { cur = 2, max = 3 } })
+	check(rowKeys() == "holy",
+		"and the character's own resource is back (" .. rowKeys() .. ")")
+
+	-- NOTHING WAS WRITTEN TO THE CLIENT. The preview is a table of numbers this
+	-- module walks; a preview that got there by calling SetCVar or by writing
+	-- the profile would be a debugging tool that changes the thing it is
+	-- debugging.
+	check(A.db.profile.modules.resources.display == "on",
+		"and nothing in the profile moved")
+
+	-- AND THE COMMAND ITSELF RUNS. Every route into it, on a character with a
+	-- resource and on one without - a diagnostic that errors is the one thing
+	-- worse than no diagnostic, and this one is reached by typing rather than
+	-- by any code path above.
+	A.lastFailure = nil
+	for _, tail in ipairs({ "", " demo", " next", " off" }) do
+		local ok = pcall(SlashCmdList["AETHERUI"], "resources" .. tail)
+		check(ok, "/aether resources" .. tail .. " runs")
+	end
+	beResource("WARRIOR", nil, nil)
+	check(pcall(SlashCmdList["AETHERUI"], "resources"),
+		"and reports on a character with no resource rather than erroring")
+	RSm:Demo("off")
+end
+
 print("== class resources: the hues are not the skin's ==")
 do
 	beResource("MONK", { [PT.Chi] = { cur = 2, max = 4 } })
