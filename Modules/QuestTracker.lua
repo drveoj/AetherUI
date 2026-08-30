@@ -768,6 +768,121 @@ function QT:ToggleCollapsed()
 	self:SetCollapsed(not self.collapsed)
 end
 
+--- What the tracker believes about itself, in a window you can copy out of.
+--
+--  WRITTEN BECAUSE OF A REPORT WITH FOUR POSSIBLE CAUSES and no way to tell
+--  them apart from a screenshot: the tracker closing itself out of combat and
+--  not opening again when clicked. That is at least four different faults -
+--
+--    * it is COLLAPSED and the combat restore did not run
+--    * the panel is HIDDEN, by the module or by something else
+--    * the panel is at ALPHA ZERO, which the fader can do
+--    * the panel is fine and the header is not taking the click
+--
+--  - and every one of them looks identical on screen. Asking the frame is one
+--  command; guessing costs a reload each time.
+--
+--  EVERY LINE IS A GETTER. Nothing here changes anything, so it is safe in a
+--  fight, which is when half of these states arise.
+function QT:Diagnose()
+	local lines = {}
+	local function say(...) lines[#lines + 1] = table.concat({ ... }, " ") end
+
+	local cfg = A.Config:Module("questtracker")
+	local p = self.panel
+
+	say("module: enabled=" .. tostring(self.enabled)
+		.. " panel=" .. tostring(p ~= nil))
+	if not p then
+		say("")
+		say("no panel was ever built - nothing below can be answered")
+		if A.Errors and A.Errors.ShowText then
+			A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "")
+				.. "quest tracker\n\n" .. table.concat(lines, "\n"))
+		end
+		return
+	end
+
+	-- THE FOUR CANDIDATES, each answered separately. IsShown is this frame's own
+	-- flag; IsVisible walks its parents, and they disagree whenever something
+	-- above has been hidden - which is a fault nobody would look for here.
+	say(("panel: shown=%s visible=%s alpha=%.2f effective=%.2f"):format(
+		tostring(p:IsShown()), tostring(p:IsVisible()),
+		p:GetAlpha() or 0,
+		(p.GetEffectiveAlpha and p:GetEffectiveAlpha()) or p:GetAlpha() or 0))
+	say(("       size=%.0fx%.0f strata=%s level=%s"):format(
+		p:GetWidth() or 0, p:GetHeight() or 0,
+		tostring(p:GetFrameStrata()), tostring(p:GetFrameLevel())))
+
+	local parent = p:GetParent()
+	say("parent: " .. tostring(parent and (parent:GetName() or "unnamed"))
+		.. " shown=" .. tostring(parent and parent:IsShown()))
+
+	-- COLLAPSED IS NOT HIDDEN, and telling them apart is most of the point of
+	-- this. `_preCombat` is the flag that says "unfold when the fight ends";
+	-- left set with the fight over, the restore did not run.
+	say("")
+	say("fold: collapsed=" .. tostring(self.collapsed)
+		.. " preCombat=" .. tostring(self._preCombat)
+		.. " combatCollapse=" .. tostring(cfg.combatCollapse)
+		.. " inCombat=" .. tostring(InCombatLockdown and InCombatLockdown()))
+
+	say(("body: shown=%s height=%.0f rows=%d"):format(
+		tostring(p.body and p.body:IsShown()),
+		(p.body and p.body:GetHeight()) or 0,
+		p.rows and #p.rows or 0))
+
+	-- THE HEADER IS THE CONTROL. If it is not taking the mouse, clicking it does
+	-- nothing and the panel looks stuck whatever state it is in.
+	local h = p.header
+	say(("header: shown=%s mouse=%s click=%s size=%.0fx%.0f"):format(
+		tostring(h and h:IsShown()),
+		tostring(h and h.IsMouseEnabled and h:IsMouseEnabled()),
+		tostring(h and h.GetScript and h:GetScript("OnClick") ~= nil),
+		(h and h:GetWidth()) or 0, (h and h:GetHeight()) or 0))
+
+	-- WHAT IT THINKS IT HAS TO SHOW. A tracker with nothing in it is a tracker
+	-- that draws nothing, and that is not a bug.
+	local entries, numQuests = 0, 0
+	if GetNumQuestLogEntries then
+		local ok, e, q = pcall(GetNumQuestLogEntries)
+		if ok then entries, numQuests = e or 0, q or 0 end
+	end
+	say("")
+	say(("log: %d entries, %d quests · tracker holds %d, %d did not fit"):format(
+		entries, numQuests, self.quests and #self.quests or 0, self.hidden or 0))
+	say("mode: " .. ((cfg.autoTrack ~= false) and "auto" or "manual")
+		.. " objectives=" .. tostring(cfg.showObjectives))
+
+	-- A COLLAPSED ZONE HEADER hides its quests from the client entirely, which
+	-- is a real way for the tracker to empty itself with nothing wrong.
+	local collapsedZones = 0
+	for i = 1, entries do
+		local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(i)
+		if isHeader and isCollapsed then collapsedZones = collapsedZones + 1 end
+	end
+	say("collapsed zones in the log: " .. collapsedZones
+		.. (collapsedZones > 0 and "  (their quests are not in the log at all)" or ""))
+
+	-- THE FADER OWNS THIS PANEL'S ALPHA, and a fader that has faded it to
+	-- nothing looks exactly like a panel that closed itself.
+	say("")
+	local fe = A.Fader and A.Fader.watched and A.Fader.watched[p]
+	say(("fader: registered=%s target=%s min=%s"):format(
+		tostring(fe ~= nil),
+		tostring(fe and fe.target), tostring(fe and fe.minAlpha)))
+	say("lastFailure: " .. tostring(A.lastFailure))
+
+	local body = table.concat(lines, "\n")
+	if A.Errors and A.Errors.ShowText then
+		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "")
+			.. "quest tracker\n\n" .. body)
+		A:Print("quest tracker: in the text window - Ctrl+A then Ctrl+C to copy")
+	else
+		A:Print(body)
+	end
+end
+
 -- ---------------------------------------------------------------------------
 -- module lifecycle
 -- ---------------------------------------------------------------------------

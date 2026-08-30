@@ -323,15 +323,35 @@ A.pump = pump
 
 local listeners = {}   -- event -> { [module or table] = handlerName or function }
 
+-- ONE LISTENER THROWING MUST NOT TAKE THE OTHERS WITH IT.
+--
+-- This loop called each handler directly, so an error in any one of them
+-- aborted the whole loop and every listener after it never ran - and which
+-- ones those were depended on `pairs` order, so the same fault presented
+-- differently on different sessions.
+--
+-- The failure that found it: PLAYER_REGEN_ENABLED carries the quest tracker's
+-- "unfold now the fight is over" and, since round 17, the resource tray's
+-- visibility. A throw in one left the other silently unrun, and what the player
+-- saw was a tracker that had closed itself and would not come back - with no
+-- error, because nothing was watching this loop.
+--
+-- Recorded rather than swallowed: A.lastFailure is what /aether errors diag
+-- reads and what the suite fails on, which is the difference between a pcall
+-- and a pcall worth having.
 pump:SetScript("OnEvent", function(_, event, ...)
 	local bucket = listeners[event]
 	if not bucket then return end
 	for owner, handler in pairs(bucket) do
-		if type(handler) == "function" then
-			handler(owner, event, ...)
-		else
-			local fn = owner[handler]
-			if fn then fn(owner, event, ...) end
+		local fn = handler
+		if type(handler) ~= "function" then fn = owner[handler] end
+		if fn then
+			local ok, err = pcall(fn, owner, event, ...)
+			if not ok then
+				A.lastFailure = "event '" .. tostring(event) .. "': " .. tostring(err)
+				if type(owner) == "table" then owner.lastError = tostring(err) end
+				A:Print(A.Bad("event '" .. tostring(event) .. "':") .. " " .. tostring(err))
+			end
 		end
 	end
 end)

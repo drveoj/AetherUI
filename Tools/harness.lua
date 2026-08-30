@@ -17948,6 +17948,46 @@ local function shownPips()
 	return n
 end
 
+print("== events: one listener throwing does not take the others with it ==")
+do
+	-- THE FAULT THIS RECORDS. PLAYER_REGEN_ENABLED carries the quest tracker's
+	-- "unfold now the fight is over" and, since the resource tray landed, that
+	-- tray's visibility. The dispatcher called each handler directly, so a throw
+	-- in one aborted the loop and every listener after it never ran - and which
+	-- ones those were came down to `pairs` order, so the same fault presented
+	-- differently from one session to the next.
+	--
+	-- What the player saw was a quest tracker that had closed itself and would
+	-- not come back, with nothing in chat, because nothing was watching the loop.
+	local ran = {}
+	local first  = {}
+	local boom   = {}
+	local last   = {}
+
+	A:RegisterEvent(first, "AETHER_TEST_EVENT", function() ran.first = true end)
+	A:RegisterEvent(boom,  "AETHER_TEST_EVENT", function() error("deliberate") end)
+	A:RegisterEvent(last,  "AETHER_TEST_EVENT", function() ran.last = true end)
+
+	A.lastFailure = nil
+	fire("AETHER_TEST_EVENT")
+
+	check(ran.first and ran.last,
+		"both healthy listeners ran even though one between them threw - which"
+		.. " is the whole point, and `pairs` order means neither can be said to"
+		.. " be the lucky one")
+	check(A.lastFailure ~= nil and A.lastFailure:find("AETHER_TEST_EVENT", 1, true),
+		"and the throw is RECORDED rather than swallowed, naming the event ("
+		.. tostring(A.lastFailure) .. ")")
+	check(boom.lastError ~= nil,
+		"on the owner as well, so /aether errors diag can say who")
+
+	A:UnregisterEvent(first, "AETHER_TEST_EVENT")
+	A:UnregisterEvent(boom,  "AETHER_TEST_EVENT")
+	A:UnregisterEvent(last,  "AETHER_TEST_EVENT")
+	A.lastFailure = nil
+	_G.__swallowed = {}
+end
+
 print("== class resources: which row is live ==")
 do
 	check(RSm and RSm.enabled, "the resources module is enabled")

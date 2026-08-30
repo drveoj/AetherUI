@@ -1668,6 +1668,10 @@ handlers.quests = function(arg)
 	if not QT or not QT.enabled then A:Print(L.cmd.quests.questtracker_module_enabled) return end
 	local cfg = A.Config:Module("questtracker")
 
+	-- FOUR FAULTS LOOK THE SAME ON SCREEN - collapsed, hidden, faded to nothing,
+	-- or a header not taking the click - so ask the frame rather than guess.
+	if arg == "diag" then QT:Diagnose() return end
+
 	if arg == "fold" then
 		QT:ToggleCollapsed()
 		A:Print(QT.collapsed and L.cmd.quests.quest_tracker_folded
@@ -1693,7 +1697,7 @@ handlers.quests = function(arg)
 	else
 		local n = QT.quests and #QT.quests or 0
 		A:Print(string.format(
-			"%s mode · showing %d quest%s%s  (usage: /aether quests fold|auto|objectives|clear)",
+			"%s mode · showing %d quest%s%s  (usage: /aether quests diag|fold|auto|objectives|clear)",
 			(cfg.autoTrack ~= false) and "auto" or "manual", n, n == 1 and "" or "s",
 			(QT.hidden or 0) > 0 and (" · " .. QT.hidden .. " did not fit") or ""))
 	end
