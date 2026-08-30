@@ -18213,6 +18213,33 @@ do
 	A.db.profile.modules.unitframes.height = wasH
 	A:Reconfigure()
 	RSm:Refresh()
+
+	-- AND THE PIPS ARE ON THE SHELF, NOT UP INSIDE THE CAPSULE.
+	--
+	-- This is the check that was missing, and its absence cost a reload and a
+	-- screenshot. The tray's frame is TALLER than the shelf you see - its top
+	-- edge is up behind the capsule, clear of the shadow - so a row placed one
+	-- padding down from the top of the FRAME lands one padding down from a
+	-- point well above the capsule's foot. Which is where four soul shards
+	-- were last seen, tucked under the health bar.
+	--
+	-- Everything above still passed. The tray was the right size, in the right
+	-- place, behind the right frame, clear of the shadow; what was inside it
+	-- was not.
+	local _, _, _, _, tuckNow = RSm.tray:GetPoint(1)
+	local highest = nil
+	for _, pip in ipairs(RSm.tray.pips) do
+		if pip:IsShown() then
+			local _, _, _, _, py = pip:GetPoint(1)
+			local top = -(py or 0) - 13 / 2      -- centre-anchored, half a pip up
+			if not highest or top < highest then highest = top end
+		end
+	end
+	check(highest ~= nil and highest >= (tuckNow or 0),
+		"every pip sits below the capsule's lower edge rather than up behind"
+		.. " it - the shelf is what is drawn under the frame, not the frame"
+		.. " the shelf is anchored to (" .. tostring(highest) .. " against a"
+		.. " tuck of " .. tostring(tuckNow) .. ")")
 end
 
 print("== class resources: when it is on screen ==")

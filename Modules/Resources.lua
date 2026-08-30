@@ -677,7 +677,20 @@ function RS:Refresh()
 	end
 
 	local nextPip, nextFlow = 1, 1
-	local widest, y = 0, TRAY_PAD_Y
+
+	-- CONTENT STARTS BELOW THE TUCK, and the version that did not is the one
+	-- that put the pips inside the player frame.
+	--
+	-- The tray's frame is taller than the shelf you see: its top edge is up
+	-- behind the capsule, clear of the shadow that capsule casts. So a row
+	-- placed one padding down from the TOP OF THE FRAME is placed one padding
+	-- down from a point well above the capsule's foot - which is exactly where
+	-- four soul shards were last seen, tucked up under the health bar.
+	--
+	-- Everything below measures from the top of the VISIBLE shelf instead.
+	local host = self:Host()
+	local tuck = TuckFor(host)
+	local widest, y = 0, tuck + TRAY_PAD_Y
 
 	for i, row in ipairs(rows) do
 		if i > 1 then y = y + ROW_GAP end
@@ -697,16 +710,14 @@ function RS:Refresh()
 	-- THE TRAY HUGS ITS CONTENT AND NEVER EXCEEDS THE CAPSULE, which is the
 	-- handoff's rule and also the only thing keeping a six-rune row from
 	-- sticking out from under a narrow player frame.
-	local host = self:Host()
 	local capW = host and host:GetWidth() or (widest + TRAY_PAD_X * 2)
 	local want = widest + TRAY_PAD_X * 2
 
 	-- ANCHORED HERE rather than at build, because the tuck follows the capsule
 	-- height and that is a setting the player can move.
-	local tuck = TuckFor(host)
 	tray:ClearAllPoints()
 	tray:SetPoint("TOP", host, "BOTTOM", 0, tuck)
-	tray:SetSize(math.min(want, capW), y + TRAY_PAD_Y + tuck)
+	tray:SetSize(math.min(want, capW), y + TRAY_PAD_Y)
 
 	self._rows = rows
 	self:UpdateVisibility()
