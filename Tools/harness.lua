@@ -18186,10 +18186,33 @@ do
 		.. " its parent by default, so the tucked top was being drawn ON TOP of"
 		.. " the capsule's foot as a rounded lip")
 
+	-- AND THE OVERLAP CLEARS THE CAPSULE'S OWN SHADOW, which is the thing that
+	-- was actually in the way and was guessed at twice. A pill casts its shadow
+	-- at a spread of height/4 - Core/Glass.lua fixes that geometry deliberately
+	-- - so a tray whose top edge lands inside that band appears through a dark
+	-- wash and reads as a gap. Tracked off the capsule height rather than
+	-- written down, because that height is a setting.
 	local pt, _, rel, _, yoff = RSm.tray:GetPoint(1)
-	check(pt == "TOP" and rel == "BOTTOM" and (yoff or 0) > 0,
-		"and its top is anchored INSIDE the capsule's lower edge rather than"
-		.. " level with it (" .. tostring(yoff) .. ")")
+	check(pt == "TOP" and rel == "BOTTOM",
+		"the tray hangs from the capsule's lower edge")
+	check((yoff or 0) > UFm.player:GetHeight() / 4,
+		"and reaches past the shadow that edge casts - " .. tostring(yoff)
+		.. " against a spread of " .. (UFm.player:GetHeight() / 4))
+
+	-- WHICH FOLLOWS THE CAPSULE. A player who makes the frame taller makes its
+	-- shadow deeper, and a tuck written as a number would be too short again
+	-- with nothing to say why.
+	local wasH = A.db.profile.modules.unitframes.height
+	A.db.profile.modules.unitframes.height = 96
+	A:Reconfigure()
+	RSm:Refresh()
+	local _, _, _, _, tallOff = RSm.tray:GetPoint(1)
+	check((tallOff or 0) > (yoff or 0),
+		"a taller capsule tucks the tray further under (" .. tostring(tallOff)
+		.. " against " .. tostring(yoff) .. ")")
+	A.db.profile.modules.unitframes.height = wasH
+	A:Reconfigure()
+	RSm:Refresh()
 end
 
 print("== class resources: when it is on screen ==")

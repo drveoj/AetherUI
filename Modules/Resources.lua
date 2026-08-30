@@ -91,15 +91,27 @@ local FLOW_H     = 6
 local FLOW_GAP   = 8         -- bar to its numeric readout
 local READOUT_W  = 34
 
-local TRAY_PAD_X = 18
-local TRAY_PAD_Y = 10
+local TRAY_PAD_X = 14
+local TRAY_PAD_Y = 7
 local ROW_GAP    = 7         -- between the two rows a Death Knight gets
--- HOW FAR THE TRAY'S TOP HIDES BEHIND THE CAPSULE. Four was not enough: the
--- capsule carries a shadow under its own lower edge, so a four pixel overlap
--- still read as two separate boxes with a gap between them. Ten puts the tray's
--- top corners well inside the capsule's foot, which is what makes the two draw
--- as one shape.
-local TUCK       = 10
+
+--- HOW FAR THE TRAY'S TOP HIDES BEHIND THE CAPSULE, and it is not a constant.
+--
+--  Two goes at this were wrong for the same reason and neither was arithmetic
+--  anybody could have argued with: the number was picked to look right and it
+--  did not. What is actually in the way is the CAPSULE'S OWN SHADOW. A pill
+--  draws its shadow at a spread of height/4 - Core/Glass.lua says so, and says
+--  the geometry is fixed because the hole in the shadow has to line up with the
+--  shape - so a 64-tall capsule casts sixteen units of shade below its foot,
+--  and any tray whose top edge appears inside that band appears through a dark
+--  wash. That reads as a gap, which is exactly what was reported: twice.
+--
+--  So the tuck clears the shadow rather than guessing at it, and it tracks the
+--  capsule height, which is a setting between 48 and 96.
+local function TuckFor(host)
+	local h = (host and host:GetHeight()) or 64
+	return math.floor(h / 4) + 2
+end
 
 -- 150ms pop on a pip arriving, 120ms fade on one spent. Both from the handoff.
 local POP_TIME   = 0.15
@@ -452,7 +464,6 @@ function RS:Build()
 	if not host then return nil end
 
 	local tray = CreateFrame("Frame", "AetherUIResourceTray", host)
-	tray:SetPoint("TOP", host, "BOTTOM", 0, TUCK)
 
 	-- BEHIND THE CAPSULE, WHICH IS THE WHOLE OF THE TUCK WORKING.
 	--
@@ -467,8 +478,16 @@ function RS:Build()
 	-- API. The handoff's 0 0 16 16 is a corner of 16 with the top two hidden
 	-- behind the capsule, and NO SHADOW: the capsule already casts one, and a
 	-- second from a frame overlapping it draws a dark band across the seam.
+	--  DARKER THAN THE CAPSULE, not the same. The handoff's tray is rgba(12,10,
+	--  28,.6) against a capsule that is lighter, and the default panel surface
+	--  came out as a pale slab under a dark frame - the panel art carries a
+	--  top-light falloff in its alpha, which is flattering at a window's size
+	--  and washes out a shelf thirty pixels tall. glassStrong is the token for
+	--  a surface that has to stay readable, and it is the nearest to the
+	--  handoff's own alpha.
 	tray.glass = Glass.CreatePanel(tray, { corner = 16, shadow = false })
 	tray.glass:SetAllPoints(tray)
+	tray.glass:ApplySkin("glassStrong", "glassEdge")
 
 	tray.pips = {}
 	tray.flows = {}
@@ -681,7 +700,13 @@ function RS:Refresh()
 	local host = self:Host()
 	local capW = host and host:GetWidth() or (widest + TRAY_PAD_X * 2)
 	local want = widest + TRAY_PAD_X * 2
-	tray:SetSize(math.min(want, capW), y + TRAY_PAD_Y + TUCK)
+
+	-- ANCHORED HERE rather than at build, because the tuck follows the capsule
+	-- height and that is a setting the player can move.
+	local tuck = TuckFor(host)
+	tray:ClearAllPoints()
+	tray:SetPoint("TOP", host, "BOTTOM", 0, tuck)
+	tray:SetSize(math.min(want, capW), y + TRAY_PAD_Y + tuck)
 
 	self._rows = rows
 	self:UpdateVisibility()
