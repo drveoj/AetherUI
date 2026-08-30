@@ -504,6 +504,26 @@ local function UnitFramesGroup()
 		reactionTint = toggle(L.options.unit_frames.reaction_tint.name,
 			L.options.unit_frames.target_s_capsule_rim,
 			at("reactionTint"), { defaultTrue = true, after = "restyle" }),
+
+		-- CLASS RESOURCES LIVE HERE rather than on a page of their own. The
+		-- tray hangs off the player capsule and appears nowhere else in the
+		-- interface, so this is where somebody goes looking for it - a page
+		-- called "Resources" would be a second place to look for one shelf.
+		--
+		-- Two controls and no more. The handoff is explicit that the hues are
+		-- not customisable: they are what a soul shard IS, and a player who
+		-- recolours them has stopped sharing a language with everybody else.
+		resourceHeader = header(L.options.resources.header),
+		resourceDisplay = choice(L.options.resources.display.name,
+			L.options.resources.display.desc,
+			{ "modules", "resources", "display" }, {
+				on     = "Always",
+				combat = "In combat only",
+				off    = "Never",
+			}),
+		resourceEnabled = toggle(L.options.resources.enabled.name,
+			L.options.resources.enabled.desc,
+			{ "modules", "resources", "enabled" }),
 	})
 end
 

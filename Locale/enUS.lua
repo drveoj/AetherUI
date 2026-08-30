@@ -1216,6 +1216,17 @@ L["questlog.build_panes.quest_selected"] = "No quest selected."
 -- Only ever drawn on a client that has no word of its own for these - the tag
 -- pill prefers DAILY and DAILY_QUEST_TAG_TEMPLATE, which arrive already in the
 -- player's language. See FrequencyWords in Modules/QuestLog.lua.
+L["options.resources.header"] = "Class resources"
+L["options.resources.display.name"] = "Show the resource tray"
+L["options.resources.display.desc"] =
+	"The shelf under your own frame carrying shards, runes, chi, combo points"
+	.. " and the rest. In combat only drops the three-second grace after a"
+	.. " change and the dimmed full-bar state with it."
+L["options.resources.enabled.name"] = "Class resources"
+L["options.resources.enabled.desc"] =
+	"Off removes the tray entirely. Characters with no secondary resource"
+	.. " never have one either way."
+
 L["questlog.frequency.daily"] = "Daily"
 L["questlog.frequency.daily_s"] = "Daily %s"
 L["questlog.frequency.weekly"] = "Weekly"

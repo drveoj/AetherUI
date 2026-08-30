@@ -1450,6 +1450,10 @@ function CreateFrame(kind, name, parent, template)
 		end
 		function f:GetStatusBarTexture() return self.__barTex end
 		function f:SetStatusBarColor(r, g, b, a) self.__barTex:SetVertexColor(r, g, b, a) end
+		-- The client has this and the mock did not, which made a bar's colour
+		-- write-only here: anything checking what a bar was tinted had to reach
+		-- through GetStatusBarTexture and know that was where it landed.
+		function f:GetStatusBarColor() return self.__barTex:GetVertexColor() end
 		function f:SetMinMaxValues(a, b) self.__min, self.__max = a, b end
 		function f:GetMinMaxValues() return self.__min, self.__max end
 		--- SetValue fires OnValueChanged, exactly as the client does.
@@ -1465,7 +1469,11 @@ function CreateFrame(kind, name, parent, template)
 			if fn then fn(self, v) end
 		end
 		function f:GetValue() return self.__value end
-		function f:SetReverseFill() end
+		-- RECORDED, not swallowed. A centre-anchored bar is drawn by reversing
+		-- the fill, and a stub that forgets which way it was pointed makes the
+		-- eclipse bar's two directions indistinguishable.
+		function f:SetReverseFill(on) self.__reversed = on and true or false end
+		function f:GetReverseFill() return self.__reversed or false end
 		function f:SetOrientation() end
 	end
 
@@ -8061,6 +8069,21 @@ Enum.ItemClass = {
 }
 Enum.ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 }
 
+-- THE CLIENT'S POWER NUMBERING, and it is the same on both flavours - the enum
+-- is generated from one source and Era carries the Mists entries it has no use
+-- for. Every number here is read off PowerTypeConstantsDocumentation rather
+-- than remembered, because a resource drawn from the wrong number is a resource
+-- that reads as permanently empty and never errors.
+Enum.PowerType = {
+	Mana = 0, Rage = 1, Focus = 2, Energy = 3, ComboPoints = 4,
+	Runes = 5, RunicPower = 6, SoulShards = 7, LunarPower = 8, HolyPower = 9,
+	Alternate = 10, Maelstrom = 11, Chi = 12, Insanity = 13,
+	BurningEmbers = 14, DemonicFury = 15, ArcaneCharges = 16, Fury = 17,
+	Pain = 18, Essence = 19, RuneBlood = 20, RuneFrost = 21, RuneUnholy = 22,
+	AlternateQuest = 23, AlternateEncounter = 24, AlternateMount = 25,
+	Balance = 26, Happiness = 27, ShadowOrbs = 28, RuneChromatic = 29,
+}
+
 -- itemID -> { name, classID, subclassID, quality, maxStack, sellPrice, icon }
 _G.__items = {
 	[6948]  = { "Hearthstone",        15, 0, 1, 1,   0,    "hearth.tga" },
@@ -8548,9 +8571,97 @@ function UnitClass(u) local d = units[u]; return d and d.class, d and d.classTok
 function UnitCreatureType(u) return units[u] and units[u].creature end
 function UnitHealth(u) return units[u] and units[u].hp or 0 end
 function UnitHealthMax(u) return units[u] and units[u].hpMax or 0 end
-function UnitPower(u) return units[u] and units[u].power or 0 end
-function UnitPowerMax(u) return units[u] and units[u].powerMax or 0 end
+-- SECONDARY POWERS, WHICH THESE TWO USED TO IGNORE ENTIRELY.
+--
+-- UnitPower(u) answered the display power whatever second argument it was
+-- handed, so every read of a soul shard, a rune or a chi came back as the
+-- player's mana - and a class resource tray built against that would have drawn
+-- perfectly against a mock that could not tell one power from another.
+--
+-- `secondary` is keyed by the Enum.PowerType NUMBER, as the client is. A power
+-- this character has not got is ABSENT rather than zero, so that
+-- UnitPowerMax answering nothing is a real state and not a full bar at zero.
+--
+-- THE THIRD ARGUMENT IS REAL. Burning embers count in tenths and the client
+-- only says so when asked with `unmodified` set; without it you get whole
+-- embers. Modelled, because the design's part-filled ember cannot be drawn
+-- from the rounded number and a mock that ignored the flag would have hidden
+-- that completely.
+-- A GLOBAL, not a local: the main chunk is at LuaJIT's 200-local ceiling and
+-- has been for some time. See __applyFlyoutTemplate for the same reason.
+function _G.__powerSlot(u, t, unmodified)
+	local d = units[u]
+	if not d then return nil end
+	local tbl = unmodified and d.secondaryFine or d.secondary
+	if not tbl then return nil end
+	return tbl[t]
+end
+
+function UnitPower(u, powerType, unmodified)
+	if powerType ~= nil then
+		local slot = _G.__powerSlot(u, powerType, unmodified)
+		return slot and slot.cur or 0
+	end
+	return units[u] and units[u].power or 0
+end
+
+function UnitPowerMax(u, powerType, unmodified)
+	if powerType ~= nil then
+		local slot = _G.__powerSlot(u, powerType, unmodified)
+		return slot and slot.max or 0
+	end
+	return units[u] and units[u].powerMax or 0
+end
 function UnitPowerType(u) local d = units[u]; return d and d.powerType or 0, d and d.powerToken or "MANA" end
+
+-- THE RESOURCES THAT DO NOT COME FROM UnitPower AT ALL, which is the half of
+-- this a power-type-aware mock still would not have caught.
+--
+-- COMBO POINTS ARE THE TARGET'S. On this client GetComboPoints("player",
+-- "target") is where they live; UnitPower answers zero for them all day and a
+-- rogue's tray built on it would simply never light. Losing the target does not
+-- make them stale - it makes them GONE - so this returns zero with no target,
+-- which is the client's own answer and not a convenience.
+_G.__comboPoints = 0
+function GetComboPoints(unit, target)
+	if not units[target or ""] or not units[target].exists then return 0 end
+	return _G.__comboPoints
+end
+
+-- RUNES. Six of them, each with a type and its own recharge, and neither
+-- readable through the power API.
+MAX_RUNES = 6
+_G.__runes = {}
+for i = 1, MAX_RUNES do
+	-- Blizzard's own starting arrangement: two blood, two frost, two unholy.
+	_G.__runes[i] = { type = math.ceil(i / 2), start = 0, duration = 0, ready = true }
+end
+
+function GetRuneType(i) local r = _G.__runes[i]; return r and r.type end
+function GetRuneCooldown(i)
+	local r = _G.__runes[i]
+	if not r then return nil end
+	return r.start, r.duration, r.ready
+end
+
+-- ECLIPSE. The direction is its own call, and it is not the sign of the power:
+-- a druid sitting at zero is still travelling one way or the other.
+_G.__eclipseDirection = "sun"
+function GetEclipseDirection() return _G.__eclipseDirection end
+
+-- SPECIALISATION, which Era has not got and answers nil for. Only the three
+-- warlock rows ask, because only the warlock has three powers reporting a
+-- maximum at once - which is Blizzard's own reason for asking there.
+_G.__spec = nil
+C_SpecializationInfo = C_SpecializationInfo or {}
+C_SpecializationInfo.GetSpecialization = function()
+	if not _G.__mists then return nil end
+	return _G.__spec
+end
+
+SPEC_WARLOCK_AFFLICTION  = 1
+SPEC_WARLOCK_DEMONOLOGY  = 2
+SPEC_WARLOCK_DESTRUCTION = 3
 function UnitReaction(u) return units[u] and units[u].reaction end
 -- PLAYER_FLAGS_CHANGED carries the unit whose flags moved, and the client
 -- sets this by itself after five minutes without input.
@@ -10264,7 +10375,7 @@ local FILES = {
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Presets.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
-	"Modules/UnitFrames.lua", "Modules/PartyFrames.lua",
+	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
@@ -17766,6 +17877,367 @@ do
 
 	_G.__auras.player.HELPFUL = savedBuffs
 	fire("UNIT_AURA", "player")
+end
+
+-- ---------------------------------------------------------------------------
+-- class resources (round 17)
+--
+-- A tray under the player capsule and nowhere else. Almost everything that can
+-- go wrong here is silent on screen: a resource read through the wrong power
+-- number draws as permanently empty, and one read without the flag the client
+-- wants draws as a bar that never moves. So most of what follows is about WHAT
+-- WAS READ rather than about what was placed.
+-- ---------------------------------------------------------------------------
+
+-- WRAPPED IN A BLOCK, and it has to be. The main chunk sits at LuaJIT's
+-- ceiling of 200 locals; six more at chunk scope will not compile. Inside a
+-- do...end their slots are released at the end of it, which is also the truer
+-- scoping - none of this is wanted by anything below.
+do
+
+local RSm = A:GetModule("resources")
+local PT = Enum.PowerType
+
+--- Give the player a class and whatever powers go with it, then rebuild.
+local function beResource(class, secondary, fine)
+	_G.__units.player.classToken = class
+	_G.__units.player.secondary = secondary
+	_G.__units.player.secondaryFine = fine
+	RSm:Refresh()
+end
+
+local function rowKeys()
+	local out = {}
+	for _, r in ipairs(RSm:Rows()) do out[#out + 1] = r.key end
+	return table.concat(out, ",")
+end
+
+local function litPips()
+	local n = 0
+	for _, pip in ipairs(RSm.tray and RSm.tray.pips or {}) do
+		if pip:IsShown() and pip.orb:IsShown() then n = n + 1 end
+	end
+	return n
+end
+
+local function shownPips()
+	local n = 0
+	for _, pip in ipairs(RSm.tray and RSm.tray.pips or {}) do
+		if pip:IsShown() then n = n + 1 end
+	end
+	return n
+end
+
+print("== class resources: which row is live ==")
+do
+	check(RSm and RSm.enabled, "the resources module is enabled")
+	check(RSm.tray ~= nil, "and a tray was built")
+
+	-- NOBODY GETS A TRAY BY DEFAULT. A warrior has no secondary resource and
+	-- must not have a shelf under their frame - an empty tray is a permanent
+	-- piece of furniture that says nothing.
+	beResource("WARRIOR", nil, nil)
+	check(rowKeys() == "", "a class with no secondary resource has no rows")
+	check(not RSm.tray:IsShown(), "and no tray at all, rather than an empty one")
+
+	-- THE MAXIMUM IS WHAT SAYS YOU HAVE IT. No spec API involved, which is why
+	-- the same table works on a client that has no specs.
+	beResource("PALADIN", { [PT.HolyPower] = { cur = 2, max = 3 } })
+	check(rowKeys() == "holy", "a paladin's row is holy power (" .. rowKeys() .. ")")
+	check(shownPips() == 3 and litPips() == 2,
+		"three sockets and two lit - the EMPTY ones are drawn too, or two-of-three"
+		.. " has to be inferred from a row that changes length ("
+		.. shownPips() .. " / " .. litPips() .. ")")
+
+	-- AND THE COUNT IS THE CLIENT'S, NOT OURS. Boundless Conviction takes holy
+	-- power to five and Ascension takes chi to five; a number written into the
+	-- table would be wrong for both, and wrong silently.
+	_G.__units.player.secondary[PT.HolyPower].max = 5
+	RSm:Refresh()
+	check(shownPips() == 5,
+		"raising the client's maximum adds sockets without touching the table -"
+		.. " the count is read every draw (" .. shownPips() .. ")")
+
+	beResource("MONK", { [PT.Chi] = { cur = 4, max = 4 } })
+	check(rowKeys() == "chi" and shownPips() == 4, "a monk's row is chi")
+end
+
+print("== class resources: the warlock, who has three at once ==")
+do
+	-- ALL THREE REPORT A MAXIMUM. This is the case the max-is-enough rule does
+	-- not cover, and it is Blizzard's own reason for asking about spec in
+	-- ShardBar rather than something invented here.
+	local lock = {
+		[PT.SoulShards]    = { cur = 2, max = 4 },
+		[PT.DemonicFury]   = { cur = 600, max = 1000 },
+		[PT.BurningEmbers] = { cur = 2, max = 4 },
+	}
+	local fine = { [PT.BurningEmbers] = { cur = 25, max = 40 } }
+
+	if _G.__mists then
+		_G.__spec = SPEC_WARLOCK_AFFLICTION
+		beResource("WARLOCK", lock, fine)
+		check(rowKeys() == "shards",
+			"affliction draws shards and NOT the other two, though all three"
+			.. " report a maximum (" .. rowKeys() .. ")")
+
+		_G.__spec = SPEC_WARLOCK_DEMONOLOGY
+		RSm:Refresh()
+		check(rowKeys() == "fury", "demonology draws demonic fury")
+
+		_G.__spec = SPEC_WARLOCK_DESTRUCTION
+		RSm:Refresh()
+		check(rowKeys() == "embers", "destruction draws burning embers")
+
+		-- THE UNMODIFIED FLAG, which is the whole of whether a part-filled ember
+		-- can be drawn at all. 25 tenths is two embers and half of a third; read
+		-- without the flag it is 2 of 4 and the half is not there to draw.
+		check(shownPips() == 4,
+			"four ember sockets, from the maximum divided by ten ("
+			.. shownPips() .. ")")
+		check(litPips() == 2, "two of them full")
+		local third = RSm.tray.pips[3]
+		check(third and third.fill:IsShown(),
+			"and the THIRD is part filled - which is only readable through"
+			.. " UnitPower's unmodified flag; without it 25 rounds to 2 and the"
+			.. " half ember does not exist")
+		check(third and math.abs(third.fill:GetHeight() - 13 * 0.5) < 0.51,
+			"filled to half its height ("
+			.. tostring(third and third.fill:GetHeight()) .. " of 13)")
+
+		_G.__spec = nil
+	else
+		beResource("WARLOCK", lock, fine)
+		check(rowKeys() == "",
+			"on a client with no specs the warlock's rows all drop - every one"
+			.. " of them names a spec, and none of them is an Era resource")
+	end
+end
+
+print("== class resources: combo points live on the target ==")
+do
+	beResource("ROGUE", { [PT.ComboPoints] = { cur = 0, max = 5 } })
+	check(rowKeys() == "combo", "a rogue's row is combo points")
+
+	local wasTarget = _G.__units.target.exists
+	_G.__units.target.exists = true
+	_G.__comboPoints = 3
+	RSm:Refresh()
+	check(shownPips() == 5 and litPips() == 3,
+		"five sockets and three lit, read from GetComboPoints rather than from"
+		.. " the power - UnitPower answers zero for these all day ("
+		.. litPips() .. ")")
+
+	-- GONE, NOT STALE. The points belong to the target; losing it does not leave
+	-- you holding three, and a tray that kept showing them would be telling you
+	-- that you can spend something you cannot.
+	_G.__units.target.exists = false
+	RSm:Refresh()
+	check(shownPips() == 5 and litPips() == 0,
+		"losing the target empties the row and KEEPS the sockets - the points"
+		.. " are gone rather than stale (" .. litPips() .. ")")
+
+	_G.__units.target.exists = wasTarget
+end
+
+print("== class resources: the death knight, the one stacked case ==")
+do
+	beResource("DEATHKNIGHT", { [PT.RunicPower] = { cur = 45, max = 100 } })
+	check(rowKeys() == "runes,runicPower",
+		"two rows, pips above the bar (" .. rowKeys() .. ")")
+	check(shownPips() == 6, "six runes (" .. shownPips() .. ")")
+
+	-- HUED BY TYPE, and the hue is per SOCKET rather than per row. This is the
+	-- one resource where two pips in the same row are different colours, and a
+	-- row-level hue would have drawn six identical runes.
+	local blood = A.Palette.c.resource.runeBlood[2]
+	local frost = A.Palette.c.resource.runeFrost[2]
+	local p1r, _, p1b = RSm.tray.pips[1].orb:GetVertexColor()
+	local p3r, _, p3b = RSm.tray.pips[3].orb:GetVertexColor()
+	check(math.abs(p1r - blood[1]) < 0.01 and math.abs(p1b - blood[3]) < 0.01,
+		"the first rune is blood-hued")
+	check(math.abs(p3r - frost[1]) < 0.01 and math.abs(p3b - frost[3]) < 0.01,
+		"and the third is frost - the hue is the socket's, not the row's")
+
+	-- RECHARGING IS A LIQUID LEVEL AND NOT A SWEEP. The handoff rules out radial
+	-- cooldowns everywhere in this interface.
+	_G.__runes[2] = { type = 1, start = GetTime() - 5, duration = 10, ready = false }
+	RSm:Refresh()
+	local r2 = RSm.tray.pips[2]
+	check(not r2.orb:IsShown() and r2.fill:IsShown(),
+		"a spent rune is a filling socket rather than a lit orb")
+	check(math.abs(r2.fill:GetHeight() - 13 * 0.5) < 0.6,
+		"half way through its recharge, half way up ("
+		.. tostring(r2.fill:GetHeight()) .. ")")
+
+	-- A RUNE THAT HAS NEVER BEEN SPENT reports a start of zero, and arithmetic
+	-- on that duration is how a full set came out half lit in the first draft.
+	_G.__runes[2] = { type = 1, start = 0, duration = 0, ready = true }
+	RSm:Refresh()
+	check(RSm.tray.pips[2].orb:IsShown(),
+		"and a rune that was never spent is simply ready, rather than being"
+		.. " arithmetic on a start time of zero")
+
+	-- THE FLOW BAR BESIDE IT, with the tick at 30 the handoff names.
+	local flow = RSm.tray.flows[1]
+	check(flow and flow:IsShown(), "and the runic power bar is drawn")
+	check(flow.readout:GetText() == "45",
+		"with its value read out (" .. tostring(flow.readout:GetText()) .. ")")
+	check(flow.tick:IsShown(), "and a threshold tick")
+end
+
+print("== class resources: eclipse, which reads from three places ==")
+do
+	beResource("DRUID", {
+		[PT.ComboPoints] = { cur = 0, max = 5 },
+		[PT.Balance]     = { cur = 40, max = 100 },
+	})
+	check(rowKeys() == "combo,eclipse",
+		"a druid gets both rows (" .. rowKeys() .. ")")
+
+	local flow = RSm.tray.flows[1]
+	_G.__eclipseDirection = "sun"
+	RSm:Refresh()
+	local sun = A.Palette.c.resource.eclipseSun[1]
+	local r, g = flow.bar:GetStatusBarColor()
+	check(math.abs(r - sun[1]) < 0.01 and math.abs(g - sun[2]) < 0.01,
+		"heading for the sun, the bar is sun gold")
+
+	-- THE DIRECTION IS NOT THE SIGN OF THE VALUE. A druid sitting at forty is
+	-- still travelling somewhere, and the client answers which way.
+	_G.__eclipseDirection = "moon"
+	RSm:Refresh()
+	local moon = A.Palette.c.resource.eclipseMoon[1]
+	local mr, _, mb = flow.bar:GetStatusBarColor()
+	check(math.abs(mr - moon[1]) < 0.01 and math.abs(mb - moon[3]) < 0.01,
+		"and turning toward the moon turns it silver-blue, off the DIRECTION"
+		.. " rather than off the value's sign - the value did not change")
+
+	-- A CENTRE MARK RATHER THAN A THRESHOLD TICK. There is nothing to cross on a
+	-- bar that runs both ways from the middle.
+	check(flow.tick:IsShown(), "the centre mark is drawn")
+	local tr = select(1, flow.tick:GetVertexColor())
+	check(math.abs(tr - A.Palette.c.semanticGold[1]) > 0.01,
+		"and it is NOT the gold threshold tick - a bar with no threshold that"
+		.. " draws one is telling you to wait for something that never comes")
+end
+
+print("== class resources: only the player ==")
+do
+	beResource("PALADIN", { [PT.HolyPower] = { cur = 1, max = 3 } })
+	local UFm = A:GetModule("unitframes")
+	check(RSm.tray:GetParent() == UFm.player,
+		"the tray hangs off the player capsule")
+
+	-- NOT THE TARGET, NOT A PARTY MEMBER, NOT EVEN YOUR OWN PARTY CAPSULE. One
+	-- place to look; the handoff is explicit, and this is the check that keeps
+	-- it true when somebody adds a second caller.
+	local strays = 0
+	local function sweep(f)
+		if not f or not f.GetChildren then return end
+		for _, kid in ipairs({ f:GetChildren() }) do
+			if kid == RSm.tray then strays = strays + 1 end
+		end
+	end
+	sweep(UFm.target) sweep(UFm.pet) sweep(UFm.tot)
+	local PF = A:GetModule("partyframes")
+	for _, f in ipairs((PF and PF.frames) or {}) do sweep(f) end
+	check(strays == 0, "and off nothing else at all (" .. strays .. ")")
+
+	-- AND IT NEVER OVERHANGS. The rule matters for a player who has narrowed the
+	-- capsule: a shelf sticking out from under one reads as a bug in the capsule
+	-- rather than in the tray.
+	check(RSm.tray:GetWidth() <= UFm.player:GetWidth() + 0.01,
+		"the tray never exceeds the capsule (" .. RSm.tray:GetWidth()
+		.. " of " .. UFm.player:GetWidth() .. ")")
+end
+
+print("== class resources: when it is on screen ==")
+do
+	beResource("PALADIN", { [PT.HolyPower] = { cur = 1, max = 3 } })
+	local was = A.db.profile.modules.resources.display
+	local wasTarget = _G.__units.target.exists
+
+	_G.__units.target.exists = false
+	_G.__inCombat = true
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() == 1,
+		"in combat it is up, at full strength")
+
+	_G.__inCombat = false
+	_G.__units.target.exists = true
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown(), "a target keeps it up out of combat")
+
+	-- THE GRACE PERIOD. Three seconds after a change, so spending a resource out
+	-- of combat does not happen behind a tray that has already gone.
+	_G.__units.target.exists = false
+	RSm._changed = GetTime() - 1
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown(), "and a change keeps it up for three seconds")
+
+	RSm._changed = GetTime() - 10
+	RSm:UpdateVisibility()
+	check(not RSm.tray:IsShown(), "past that, with nothing happening, it goes")
+
+	-- THE ONE EXCEPTION. A full builder out of combat fades rather than
+	-- vanishing: a full bar you cannot see is information lost, and it is the
+	-- state where the answer matters most and nothing is happening to show it.
+	_G.__units.player.secondary[PT.HolyPower].cur = 3
+	RSm:Refresh()
+	RSm._changed = GetTime() - 10
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() < 1,
+		"but a FULL one fades to a dim rather than going ("
+		.. RSm.tray:GetAlpha() .. ")")
+
+	-- COMBAT ONLY IS THE WHOLE RULE, not a shade of it: no grace, no dim.
+	A.db.profile.modules.resources.display = "combat"
+	RSm._changed = GetTime()
+	RSm:UpdateVisibility()
+	check(not RSm.tray:IsShown(),
+		"combat only means combat only - neither the grace period nor the full"
+		.. " bar keeps it up, because both of those ARE it being visible out of"
+		.. " combat")
+
+	_G.__inCombat = true
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown(), "and a fight brings it straight back")
+	_G.__inCombat = false
+
+	A.db.profile.modules.resources.display = "off"
+	RSm:UpdateVisibility()
+	check(not RSm.tray:IsShown(), "off is off, in combat or out")
+
+	A.db.profile.modules.resources.display = was
+	_G.__units.target.exists = wasTarget
+end
+
+print("== class resources: the hues are not the skin's ==")
+do
+	beResource("MONK", { [PT.Chi] = { cur = 2, max = 4 } })
+	local wasSkin = A.db.profile.skin
+	local before = { RSm.tray.pips[1].orb:GetVertexColor() }
+
+	-- THE HANDOFF IS EXPLICIT: resource hues are invariant across skins, because
+	-- they are gameplay and not theme. A Dawn player and a Midnight player have
+	-- to see the same colour for chi, or the colour has stopped meaning chi.
+	for _, skin in ipairs({ "dawn", "noon", "dusk", "midnight" }) do
+		A.db.profile.skin = skin
+		A:Restyle()
+		RSm:Refresh()
+		local now = { RSm.tray.pips[1].orb:GetVertexColor() }
+		check(math.abs(now[1] - before[1]) < 0.001
+			and math.abs(now[2] - before[2]) < 0.001
+			and math.abs(now[3] - before[3]) < 0.001,
+			"chi is the same colour on " .. skin)
+	end
+
+	A.db.profile.skin = wasSkin
+	A:Restyle()
+	beResource("WARRIOR", nil, nil)
+end
+
 end
 
 print("== quest tracker ==")

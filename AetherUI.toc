@@ -85,6 +85,7 @@ Core\Commands.lua
 Core\Options.lua
 
 Modules\UnitFrames.lua
+Modules\Resources.lua
 Modules\ActionBars.lua
 Modules\Auras.lua
 Modules\QuestTracker.lua

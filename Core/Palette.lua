@@ -252,6 +252,38 @@ local SEMANTIC = {
 	npRare        = C(205, 216, 232),
 	npChipInk     = C(191, 227, 255),
 
+	-- CLASS RESOURCES, and they are semantic for the same reason health is.
+	--
+	--  The handoff says it plainly: resource hues are invariant across skins,
+	--  because they are gameplay and not theme. A Dawn player and a Midnight
+	--  player have to see the same colour for a soul shard or the colour has
+	--  stopped meaning soul shard.
+	--
+	--  TWO SHADES EACH, light then deep, in the order the bar tokens above use.
+	--  A pip is drawn as the deep one lit from up and left by the light one, and
+	--  a flow bar runs light to mid across its fill, so both primitives take the
+	--  pair and neither needs a third.
+	resource = {
+		soulShard    = { C(232, 216, 255), C(164, 120, 240) },  -- #e8d8ff -> #a478f0
+		demonicFury  = { C(190, 255, 150), C(122, 208,  74) },
+		burningEmber = { C(255, 198, 130), C(232, 122,  46) },
+		runeBlood    = { C(255, 168, 168), C(216,  74,  74) },
+		runeFrost    = { C(178, 226, 255), C( 90, 168, 232) },
+		runeUnholy   = { C(168, 240, 176), C( 76, 190, 108) },
+		runeDeath    = { C(226, 200, 255), C(160, 116, 232) },
+		runicPower   = { C(190, 232, 255), C(110, 178, 232) },
+		chi          = { C(228, 255, 242), C(106, 216, 168) },  -- #e4fff2 -> #6ad8a8
+		holyPower    = { C(255, 236, 178), C(232, 190,  84) },
+		comboPoint   = { C(255, 168, 186), C(216,  60,  96) },
+		shadowOrb    = { C(216, 208, 232), C(140, 128, 176) },
+		eclipseSun   = { C(240, 217, 168), C(240, 180, 106) },  -- #f0d9a8 -> #f0b46a
+		eclipseMoon  = { C(206, 224, 255), C(130, 168, 232) },
+		-- The empty socket, which is one drawing whatever the resource is: the
+		-- rim carries the hue and the fill does not, so a row of empties reads
+		-- as sockets rather than as a row of dim resources.
+		socket       = C(255, 255, 255, 0.10),
+	},
+
 	-- quest difficulty, and the same scale on a tooltip
 	-- A quest's difficulty, as a row tint and the ink on it. Two colours per
 	-- step and not one: the tint is a wash behind a whole row and the text has
