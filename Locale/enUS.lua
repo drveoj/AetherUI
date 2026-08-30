@@ -1227,6 +1227,28 @@ L["options.resources.enabled.desc"] =
 	"Off removes the tray entirely. Characters with no secondary resource"
 	.. " never have one either way."
 
+-- resources --------------------------------------------------------------
+--
+-- The preview's labels. The class names are the CLIENT'S words everywhere else
+-- in this addon, but these are not a class - they are the name of one board in
+-- a walkthrough, and a translator handed "Warlock" and "soul shards"
+-- separately cannot put them in the order their language wants.
+L["cmd.resources.no_tray"] = "this build has no resource tray"
+L["cmd.resources.none_s"] = "no class resource on this character - %s"
+L["cmd.resources.no_maximum"] = "nothing reports a maximum"
+
+L["resources.demo.shards"] = "Warlock · soul shards"
+L["resources.demo.embers"] = "Warlock · burning embers"
+L["resources.demo.fury"] = "Warlock · demonic fury"
+L["resources.demo.runes"] = "Death Knight · runes and runic power"
+L["resources.demo.chi"] = "Monk · chi"
+L["resources.demo.holy"] = "Paladin · holy power"
+L["resources.demo.combo"] = "Rogue · combo points"
+L["resources.demo.orbs"] = "Priest · shadow orbs"
+L["resources.demo.eclipse"] = "Druid · eclipse"
+L["resources.demo.showing_s"] = "resource preview: %s"
+L["resources.demo.off"] = "resource preview off"
+
 L["questlog.frequency.daily"] = "Daily"
 L["questlog.frequency.daily_s"] = "Daily %s"
 L["questlog.frequency.weekly"] = "Weekly"

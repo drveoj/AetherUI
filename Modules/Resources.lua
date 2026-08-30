@@ -82,6 +82,7 @@ local ADDON, A = ...
 
 local RS = A:NewModule("resources")
 
+local L = A.L
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 
 local function cfg() return A.Config:Module("resources") end
@@ -369,13 +370,13 @@ local function DemoSets()
 	end
 
 	return {
-		{ name = "Warlock · soul shards",   rows = { pips("shards", "soulShard", 4) } },
-		{ name = "Warlock · burning embers",
+		{ name = L.resources.demo.shards,   rows = { pips("shards", "soulShard", 4) } },
+		{ name = L.resources.demo.embers,
 		  rows = { pips("embers", "burningEmber", 4, 10) } },
-		{ name = "Warlock · demonic fury",
+		{ name = L.resources.demo.fury,
 		  rows = { flow("fury", "demonicFury", 1000, 400) } },
 		-- THE ONE STACKED CASE, and the reason this command was written.
-		{ name = "Death Knight · runes and runic power", rows = {
+		{ name = L.resources.demo.runes, rows = {
 			{ key = "runes", kind = "pips",
 			  max = function() return 6 end,
 			  -- Per socket, as the real one is: two of each type, and one of
@@ -388,11 +389,11 @@ local function DemoSets()
 			  end },
 			flow("runicPower", "runicPower", 100, 30),
 		} },
-		{ name = "Monk · chi",              rows = { pips("chi", "chi", 4) } },
-		{ name = "Paladin · holy power",    rows = { pips("holy", "holyPower", 3) } },
-		{ name = "Rogue · combo points",    rows = { pips("combo", "comboPoint", 5) } },
-		{ name = "Priest · shadow orbs",    rows = { pips("orbs", "shadowOrb", 3) } },
-		{ name = "Druid · eclipse",
+		{ name = L.resources.demo.chi,      rows = { pips("chi", "chi", 4) } },
+		{ name = L.resources.demo.holy,     rows = { pips("holy", "holyPower", 3) } },
+		{ name = L.resources.demo.combo,    rows = { pips("combo", "comboPoint", 5) } },
+		{ name = L.resources.demo.orbs,     rows = { pips("orbs", "shadowOrb", 3) } },
+		{ name = L.resources.demo.eclipse,
 		  rows = { flow("eclipse", "eclipseSun", 100, nil, true) } },
 	}
 end
@@ -406,7 +407,7 @@ function RS:Demo(what)
 			self._demoTicker = nil
 		end
 		self:Refresh()
-		A:Print("resource preview off")
+		A:Print(L.resources.demo.off)
 		return
 	end
 
@@ -425,7 +426,8 @@ function RS:Demo(what)
 	end
 
 	self:DemoTick(true)
-	A:Print("resource preview: " .. A.Hi(self._demo.sets[self._demo.at].name)
+	A:Print(A.F(L.resources.demo.showing_s,
+		A.Hi(self._demo.sets[self._demo.at].name))
 		.. "  ·  " .. A.Dim("/aether resources demo off"))
 end
 
@@ -437,7 +439,7 @@ function RS:DemoTick(announce)
 	if not announce and (now - d.from) >= DEMO_HOLD then
 		d.at = (d.at % #d.sets) + 1
 		d.from = now
-		A:Print("resource preview: " .. A.Hi(d.sets[d.at].name))
+		A:Print(A.F(L.resources.demo.showing_s, A.Hi(d.sets[d.at].name)))
 	end
 
 	self:Refresh()

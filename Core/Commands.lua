@@ -1998,7 +1998,7 @@ end
 --  is the tray, not a picture of it.
 handlers.resources = function(arg)
 	local RSm = A:GetModule("resources")
-	if not RSm then A:Print("this build has no resource tray") return end
+	if not RSm then A:Print(L.cmd.resources.no_tray) return end
 
 	if arg == "demo" or arg == "preview" then RSm:Demo() return end
 	if arg == "off" then RSm:Demo("off") return end
@@ -2009,8 +2009,7 @@ handlers.resources = function(arg)
 	-- power the client either reports a maximum for or does not.
 	local rows = RSm:Rows()
 	if #rows == 0 then
-		A:Print("no class resource on this character - "
-			.. A.Dim("nothing reports a maximum"))
+		A:Print(A.F(L.cmd.resources.none_s, A.Dim(L.cmd.resources.no_maximum)))
 	else
 		for _, row in ipairs(rows) do
 			A:Print(("   %s  %s · %d socket%s"):format(
