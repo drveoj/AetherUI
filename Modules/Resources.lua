@@ -94,7 +94,12 @@ local READOUT_W  = 34
 local TRAY_PAD_X = 18
 local TRAY_PAD_Y = 10
 local ROW_GAP    = 7         -- between the two rows a Death Knight gets
-local TUCK       = 4         -- how far the tray's top edge hides behind the capsule
+-- HOW FAR THE TRAY'S TOP HIDES BEHIND THE CAPSULE. Four was not enough: the
+-- capsule carries a shadow under its own lower edge, so a four pixel overlap
+-- still read as two separate boxes with a gap between them. Ten puts the tray's
+-- top corners well inside the capsule's foot, which is what makes the two draw
+-- as one shape.
+local TUCK       = 10
 
 -- 150ms pop on a pip arriving, 120ms fade on one spent. Both from the handoff.
 local POP_TIME   = 0.15
@@ -334,19 +339,23 @@ local function BuildPip(parent)
 	p.glow:SetSize(PIP_SIZE * 2, PIP_SIZE * 2)
 	p.glow:Hide()
 
-	-- THE ORB, in two pieces. The handoff wants a radial gradient lit from up
-	-- and left; there is no gradient primitive here, so it is the deep hue as a
-	-- disc with the light hue as a smaller disc offset into the same corner the
-	-- CSS names - 35% across, 30% down. Two textures already on the sheet
-	-- rather than a new one per resource.
+	-- THE ORB, AND IT IS ONE TEXTURE WITH A GRADIENT ACROSS IT.
+	--
+	-- The handoff asks for a radial gradient lit from up and left. The first
+	-- version of this drew the deep hue as a disc and put a smaller light disc
+	-- into that corner, which is what a radial gradient is made of - and at
+	-- thirteen pixels the highlight read as a SECOND DOT sitting on the pip
+	-- rather than as light falling on it. Reported from the game on sight.
+	--
+	-- The level disc had already solved this and nobody looked: a flat texture
+	-- under a circle mask with a vertical gradient run across it, which is
+	-- W.SetGradient and Orb:SetColors. Not a radial gradient, and near enough
+	-- at this size that the difference is not visible - which the two dots
+	-- most certainly were.
 	p.orb = p:CreateTexture(nil, "ARTWORK")
-	p.orb:SetTexture(Media.texture.chipDisc)
+	p.orb:SetTexture(Media.texture.flat)
 	p.orb:SetAllPoints(p)
-
-	p.lit = p:CreateTexture(nil, "ARTWORK", nil, 1)
-	p.lit:SetTexture(Media.texture.chipDisc)
-	p.lit:SetSize(PIP_SIZE * 0.55, PIP_SIZE * 0.55)
-	p.lit:SetPoint("CENTER", p, "TOPLEFT", PIP_SIZE * 0.35, -PIP_SIZE * 0.30)
+	W.AddMask(p.orb, p, Media.texture.circleMask, p.orb)
 
 	-- THE RECHARGE FILL, which is a rune's and nothing else's. Bottom-up, so it
 	-- is a liquid level rather than a sweep: the handoff is explicit that there
@@ -374,15 +383,15 @@ local function PaintPip(p, hue, state)
 
 	if state >= 1 then
 		p.orb:Show()
-		p.lit:Show()
 		p.fill:Hide()
-		W.Tint(p.orb, deep, 1)
-		W.Tint(p.lit, light, 0.85)
+		-- Light at the top, deep at the bottom, which is the same lift the
+		-- level disc gets and for the same reason: it reads as a lit sphere
+		-- rather than as a coloured circle.
+		W.SetGradient(p.orb, "VERTICAL", light, deep)
 		p.glow:Show()
 		W.Tint(p.glow, deep, 0.70)
 	else
 		p.orb:Hide()
-		p.lit:Hide()
 		p.glow:Hide()
 		if state > 0 then
 			-- Bottom-up: the texture is cropped from the bottom of the disc and
@@ -444,13 +453,21 @@ function RS:Build()
 
 	local tray = CreateFrame("Frame", "AetherUIResourceTray", host)
 	tray:SetPoint("TOP", host, "BOTTOM", 0, TUCK)
-	tray:SetFrameStrata("MEDIUM")
 
-	-- Its own surface, not the capsule's. Rounded at the foot only, which is
-	-- what the handoff's 0 0 16 16 radius means, and the top four pixels sit
-	-- behind the capsule so the seam is never drawn.
-	tray.glass = Glass.CreatePanel and Glass.CreatePanel(tray, {})
-		or Glass.CreatePill(tray, {})
+	-- BEHIND THE CAPSULE, WHICH IS THE WHOLE OF THE TUCK WORKING.
+	--
+	-- A child draws above its parent by default, so the overlapping top of the
+	-- tray was being drawn ON TOP of the capsule's foot - a rounded lip across
+	-- the bottom of the player frame, which is exactly the seam the tuck exists
+	-- to hide. One level below the capsule and the capsule covers it instead.
+	tray:SetFrameStrata(host:GetFrameStrata())
+	tray:SetFrameLevel(math.max(0, (host:GetFrameLevel() or 1) - 1))
+
+	-- Its own surface, not the capsule's - there is no shared border in this
+	-- API. The handoff's 0 0 16 16 is a corner of 16 with the top two hidden
+	-- behind the capsule, and NO SHADOW: the capsule already casts one, and a
+	-- second from a frame overlapping it draws a dark band across the seam.
+	tray.glass = Glass.CreatePanel(tray, { corner = 16, shadow = false })
 	tray.glass:SetAllPoints(tray)
 
 	tray.pips = {}

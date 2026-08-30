@@ -641,9 +641,24 @@ local function newTexture(owner, layer, sub)
 	-- and no check could tell the difference.
 	function t:SetDesaturated(on) self.__desaturated = on and true or false end
 	function t:IsDesaturated() return self.__desaturated == true end
+	-- RECORDED, not merely validated. A gradient is where a colour ends up on
+	-- anything drawn as a lit face rather than a flat one - the level disc, and
+	-- now every resource pip - and a mock that checked the argument's types and
+	-- threw them away meant GetVertexColor was the only colour a test could
+	-- read. Switching a pip from a tinted disc to a lit one therefore looked
+	-- like the pip losing its colour entirely.
 	function t:SetGradient(orient, c1, c2)
 		if type(orient) ~= "string" then fail("SetGradient orientation " .. tostring(orient)) end
 		if type(c1) ~= "table" then fail("SetGradient c1 not a colour object") end
+		if type(c2) ~= "table" then fail("SetGradient c2 not a colour object") end
+		self.__gradient = { orient,
+			{ c1.r, c1.g, c1.b, c1.a }, { c2.r, c2.g, c2.b, c2.a } }
+	end
+	--- The two stops, top first, or nil if this texture is not drawn as one.
+	function t:GetGradient()
+		local g = self.__gradient
+		if not g then return nil end
+		return g[1], g[2], g[3]
 	end
 	--- Recorded, not just validated.
 	--
@@ -18050,13 +18065,23 @@ do
 	-- HUED BY TYPE, and the hue is per SOCKET rather than per row. This is the
 	-- one resource where two pips in the same row are different colours, and a
 	-- row-level hue would have drawn six identical runes.
-	local blood = A.Palette.c.resource.runeBlood[2]
-	local frost = A.Palette.c.resource.runeFrost[2]
-	local p1r, _, p1b = RSm.tray.pips[1].orb:GetVertexColor()
-	local p3r, _, p3b = RSm.tray.pips[3].orb:GetVertexColor()
-	check(math.abs(p1r - blood[1]) < 0.01 and math.abs(p1b - blood[3]) < 0.01,
+	-- READ OFF THE GRADIENT, because a pip is a lit face rather than a tinted
+	-- disc: the colour lives in the two gradient stops and GetVertexColor is
+	-- white. Worth finding out from a failing check rather than from a
+	-- screenshot - which is where the FIRST version of the pip's lighting came
+	-- from, a highlight disc that read on sight as a second dot.
+	local blood = A.Palette.c.resource.runeBlood
+	local frost = A.Palette.c.resource.runeFrost
+	local _, p1top, p1bot = RSm.tray.pips[1].orb:GetGradient()
+	local _, p3top = RSm.tray.pips[3].orb:GetGradient()
+	check(p1top and math.abs(p1top[1] - blood[1][1]) < 0.01
+		and math.abs(p1top[3] - blood[1][3]) < 0.01,
 		"the first rune is blood-hued")
-	check(math.abs(p3r - frost[1]) < 0.01 and math.abs(p3b - frost[3]) < 0.01,
+	check(p1bot and math.abs(p1bot[1] - blood[2][1]) < 0.01,
+		"lit from the top and deep at the foot - one texture with light falling"
+		.. " across it, rather than a disc with a second dot sitting on it")
+	check(p3top and math.abs(p3top[1] - frost[1][1]) < 0.01
+		and math.abs(p3top[3] - frost[1][3]) < 0.01,
 		"and the third is frost - the hue is the socket's, not the row's")
 
 	-- RECHARGING IS A LIQUID LEVEL AND NOT A SWEEP. The handoff rules out radial
@@ -18150,6 +18175,21 @@ do
 	check(RSm.tray:GetWidth() <= UFm.player:GetWidth() + 0.01,
 		"the tray never exceeds the capsule (" .. RSm.tray:GetWidth()
 		.. " of " .. UFm.player:GetWidth() .. ")")
+
+	-- AND IT IS ONE SHAPE WITH THE CAPSULE, not a second box below it. Both
+	-- halves of that are here because the first version had neither and it
+	-- showed at a glance: a rounded tray floating under the player frame with
+	-- daylight between them.
+	check(RSm.tray:GetFrameLevel() < UFm.player:GetFrameLevel(),
+		"the tray draws BEHIND the capsule (" .. RSm.tray:GetFrameLevel()
+		.. " against " .. UFm.player:GetFrameLevel() .. ") - a child is above"
+		.. " its parent by default, so the tucked top was being drawn ON TOP of"
+		.. " the capsule's foot as a rounded lip")
+
+	local pt, _, rel, _, yoff = RSm.tray:GetPoint(1)
+	check(pt == "TOP" and rel == "BOTTOM" and (yoff or 0) > 0,
+		"and its top is anchored INSIDE the capsule's lower edge rather than"
+		.. " level with it (" .. tostring(yoff) .. ")")
 end
 
 print("== class resources: when it is on screen ==")
@@ -18217,7 +18257,7 @@ print("== class resources: the hues are not the skin's ==")
 do
 	beResource("MONK", { [PT.Chi] = { cur = 2, max = 4 } })
 	local wasSkin = A.db.profile.skin
-	local before = { RSm.tray.pips[1].orb:GetVertexColor() }
+	local before = select(2, RSm.tray.pips[1].orb:GetGradient())
 
 	-- THE HANDOFF IS EXPLICIT: resource hues are invariant across skins, because
 	-- they are gameplay and not theme. A Dawn player and a Midnight player have
@@ -18226,7 +18266,7 @@ do
 		A.db.profile.skin = skin
 		A:Restyle()
 		RSm:Refresh()
-		local now = { RSm.tray.pips[1].orb:GetVertexColor() }
+		local now = select(2, RSm.tray.pips[1].orb:GetGradient())
 		check(math.abs(now[1] - before[1]) < 0.001
 			and math.abs(now[2] - before[2]) < 0.001
 			and math.abs(now[3] - before[3]) < 0.001,
