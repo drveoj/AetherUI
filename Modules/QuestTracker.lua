@@ -214,15 +214,73 @@ local function AdoptWatches()
 	end
 end
 
+--- A COLLAPSED ZONE HEADER EMPTIES THIS TRACKER, and nothing said so.
+--
+--  Reported as the tracker closing itself and not opening again when clicked,
+--  and /aether quests diag answered it in one line: one entry in the log, one
+--  quest, tracker holds zero, one collapsed zone. A collapsed header does not
+--  merely fold its quests on screen - it removes them from GetQuestLogTitle
+--  entirely, so the walk below sees a header and nothing else, draws no rows,
+--  and the body collapses to nothing. Clicking the header then toggles a fold
+--  state over an empty list, which is why it appeared dead.
+--
+--  ONCE, AT LOGIN, AND NEVER AGAIN. The first attempt at this expanded from
+--  the scan itself, which meant collapsing a zone anywhere - in Questie, in
+--  anything - was undone in the same frame, because ExpandQuestHeader fires
+--  QUEST_LOG_UPDATE and the scan runs from that. That is not a policy, it is a
+--  fight, and the suite caught it immediately.
+--
+--  So: one sweep when the tracker starts, which clears the state that caused
+--  the report - collapsed in some earlier session, invisible ever since,
+--  because this interface has no collapsed-zone concept and nowhere to undo
+--  one. After that the player's own collapses stand, and the tracker SAYS SO
+--  rather than emptying silently; see the hidden count in Collect.
+--
+--  Downward, because expanding a header renumbers everything below it.
+local expanding = false
+
+local function ExpandCollapsedZones()
+	if expanding or not ExpandQuestHeader then return false end
+
+	-- THROUGH THE CLIENT'S OWN TUPLE, not through LogTitle: that helper drops
+	-- isCollapsed, because nothing else here has ever needed it. Reading the
+	-- fifth return directly is the same call one field wider.
+	local entries = NumEntries()
+	local found = false
+	for index = 1, entries do
+		local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(index)
+		if isHeader and isCollapsed then found = true break end
+	end
+	if not found then return false end
+
+	expanding = true
+	pcall(function()
+		for index = entries, 1, -1 do
+			local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(index)
+			if isHeader and isCollapsed then pcall(ExpandQuestHeader, index) end
+		end
+	end)
+	expanding = false
+	return true
+end
+
 --- Tracked quests that are actually in the log right now, in log order.
 --
 --  Log order is zone order, so the rows come out grouped by zone for free.
 local function Collect()
 	local out, seen = {}, {}
 
+	-- WHAT THE COLLAPSE IS HIDING. GetNumQuestLogEntries answers a count of
+	-- ENTRIES and a count of QUESTS, and only the first is affected by a folded
+	-- header - so the two disagreeing is the client telling us, for free, that
+	-- there are quests it will not name. Without this the tracker simply drew
+	-- nothing and looked broken, which is exactly how it was reported.
 	local entries, quests = NumEntries()
+	local visible = 0
+
 	for index = 1, entries do
 		local title, level, isHeader, isComplete, questID = LogTitle(index)
+		if title and not isHeader then visible = visible + 1 end
 		if title and not isHeader and questID then
 			seen[questID] = true
 			if IsTracked(questID) then
@@ -274,7 +332,10 @@ local function Collect()
 		end
 	end
 
-	return out, quests
+	-- The third return is the client's own two counts disagreeing: it will admit
+	-- to `quests` quests and name only `visible` of them, and the difference is
+	-- what a folded zone is holding back.
+	return out, quests, math.max(0, (quests or 0) - visible)
 end
 
 QT.Collect = Collect
@@ -598,7 +659,8 @@ function QT:Refresh()
 	local c = Palette.c
 
 	AdoptWatches()
-	local quests, numQuests = Collect()
+	local quests, numQuests, behindFold = Collect()
+	self.behindFold = behindFold
 
 	-- A waypoint outlives its quest otherwise. Turned in, abandoned or just
 	-- dismissed, the quest drops out of this list and nothing else would ever
@@ -716,7 +778,20 @@ function QT:Refresh()
 
 	for i = shown + 1, #panel.rows do panel.rows[i]:Hide() end
 
-	if hidden > 0 and not collapsed then
+	-- QUESTS THE CLIENT WOULD NOT NAME. A folded zone header hides its quests
+	-- from GetQuestLogTitle entirely, so the tracker draws nothing and looks
+	-- broken - reported exactly that way, with the count chip reading "1 / 25"
+	-- over an empty body, which is the client and this list disagreeing in
+	-- public. Say it instead. One line, in the same slot the overflow line uses.
+	if self.behindFold and self.behindFold > 0 and shown == 0 and not collapsed then
+		panel.more:SetText(A.F(L.questtracker.behind_fold_d, self.behindFold))
+		W.Color(panel.more, c.textFaint)
+		panel.more:ClearAllPoints()
+		panel.more:SetPoint("TOPLEFT", panel.body, "TOPLEFT", 0, -(bodyH + 4))
+		panel.more:Show()
+		panel.moreHit:Hide()
+		bodyH = bodyH + 4 + LINE_H
+	elseif hidden > 0 and not collapsed then
 		panel.more:SetText(string.format("+%d more", hidden))
 		W.Color(panel.more, c.textFaint)
 		panel.more:ClearAllPoints()
@@ -934,6 +1009,18 @@ function QT:OnEnable()
 	end)
 
 	A.Fader:Register(self.panel, {})
+
+	-- ONE SWEEP AT THE START. A zone folded in some earlier session - before this
+	-- addon, or in Questie - is invisible here and cannot be undone here, and it
+	-- empties the tracker. Cleared once, on the way in and after each loading
+	-- screen; never from the scan itself, which would undo the player's own
+	-- folds in the same frame that they made them.
+
+	ExpandCollapsedZones()
+	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
+		ExpandCollapsedZones()
+		QT:Refresh()
+	end)
 
 	self:HideBlizzard()
 	self:OnConfigChanged()

@@ -1237,6 +1237,10 @@ L["cmd.resources.no_tray"] = "this build has no resource tray"
 L["cmd.resources.none_s"] = "no class resource on this character - %s"
 L["cmd.resources.no_maximum"] = "nothing reports a maximum"
 
+-- questtracker ------------------------------------------------------------
+L["questtracker.behind_fold_d"] =
+	"%d hidden by a folded zone in the quest log"
+
 L["resources.demo.shards"] = "Warlock · soul shards"
 L["resources.demo.embers"] = "Warlock · burning embers"
 L["resources.demo.fury"] = "Warlock · demonic fury"

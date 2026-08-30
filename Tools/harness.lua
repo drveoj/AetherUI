@@ -3514,10 +3514,21 @@ function _G.__visibleLog()
 	return out
 end
 
+-- THE TWO COUNTS DO NOT MOVE TOGETHER, and this mock had them moving together.
+--
+-- Folding a zone header removes its quests from the ENTRY list - they are not
+-- addressable, GetQuestLogTitle will not name them - but the client still
+-- counts them as quests you are on. Measured from a live 5.5.4 session, which
+-- reported "1 entries, 1 quests" with one zone folded.
+--
+-- That difference is the only signal an addon gets that a fold is hiding
+-- something, and a mock that folded both numbers together made it unreadable:
+-- the quest tracker drew nothing, the count chip said "1 / 25", and every check
+-- here agreed with the empty version.
 function GetNumQuestLogEntries()
 	local vis = _G.__visibleLog()
 	local quests = 0
-	for _, q in ipairs(vis) do
+	for _, q in ipairs(_G.__questLog) do
 		if not q.header then quests = quests + 1 end
 	end
 	return #vis, quests
@@ -26134,8 +26145,13 @@ do
 	tagged.frequency = Enum.QuestFrequency.Daily
 	bare.frequency   = Enum.QuestFrequency.Weekly
 
-	QLog:Hide()
+	-- REFRESHED EXPLICITLY, not by closing and reopening. Show only rebuilds a
+	-- window it thinks is stale, and until the quest log stopped re-folding the
+	-- player's zones on close, that close happened to fire QUEST_LOG_UPDATE and
+	-- mark it stale for us. This block was leaning on that without knowing.
 	QLog:Show()
+	QLog:Invalidate()
+	QLog:Refresh()
 	local byTitle = {}
 	for _, e in ipairs(QLog.entries) do
 		if e.kind == "quest" then byTitle[e.title] = e end
@@ -26167,8 +26183,13 @@ do
 	_G.DAILY_QUEST_TAG_TEMPLATE = "%s (taeglich)"
 	bare.frequency = Enum.QuestFrequency.Daily
 
-	QLog:Hide()
+	-- REFRESHED EXPLICITLY, not by closing and reopening. Show only rebuilds a
+	-- window it thinks is stale, and until the quest log stopped re-folding the
+	-- player's zones on close, that close happened to fire QUEST_LOG_UPDATE and
+	-- mark it stale for us. This block was leaning on that without knowing.
 	QLog:Show()
+	QLog:Invalidate()
+	QLog:Refresh()
 	for _, e in ipairs(QLog.entries) do
 		if e.kind == "quest" then byTitle[e.title] = e end
 	end
@@ -26182,8 +26203,13 @@ do
 
 	_G.DAILY, _G.DAILY_QUEST_TAG_TEMPLATE = wasDaily, wasTemplate
 	bare.frequency = Enum.QuestFrequency.Weekly
-	QLog:Hide()
+	-- REFRESHED EXPLICITLY, not by closing and reopening. Show only rebuilds a
+	-- window it thinks is stale, and until the quest log stopped re-folding the
+	-- player's zones on close, that close happened to fire QUEST_LOG_UPDATE and
+	-- mark it stale for us. This block was leaning on that without knowing.
 	QLog:Show()
+	QLog:Invalidate()
+	QLog:Refresh()
 	for _, e in ipairs(QLog.entries) do
 		if e.kind == "quest" then byTitle[e.title] = e end
 	end
@@ -26192,8 +26218,13 @@ do
 	-- a client missing the phrase. Nothing exercised them above: the weekly there
 	-- had no tag to fold, so it took the bare word and left both templates alone.
 	tagged.frequency = Enum.QuestFrequency.Weekly
-	QLog:Hide()
+	-- REFRESHED EXPLICITLY, not by closing and reopening. Show only rebuilds a
+	-- window it thinks is stale, and until the quest log stopped re-folding the
+	-- player's zones on close, that close happened to fire QUEST_LOG_UPDATE and
+	-- mark it stale for us. This block was leaning on that without knowing.
 	QLog:Show()
+	QLog:Invalidate()
+	QLog:Refresh()
 	for _, e in ipairs(QLog.entries) do
 		if e.kind == "quest" then byTitle[e.title] = e end
 	end
@@ -26205,8 +26236,13 @@ do
 	local hadTemplate = _G.DAILY_QUEST_TAG_TEMPLATE
 	_G.DAILY_QUEST_TAG_TEMPLATE = nil
 	tagged.frequency = Enum.QuestFrequency.Daily
-	QLog:Hide()
+	-- REFRESHED EXPLICITLY, not by closing and reopening. Show only rebuilds a
+	-- window it thinks is stale, and until the quest log stopped re-folding the
+	-- player's zones on close, that close happened to fire QUEST_LOG_UPDATE and
+	-- mark it stale for us. This block was leaning on that without knowing.
 	QLog:Show()
+	QLog:Invalidate()
+	QLog:Refresh()
 	for _, e in ipairs(QLog.entries) do
 		if e.kind == "quest" then byTitle[e.title] = e end
 	end
@@ -26221,8 +26257,13 @@ do
 		"a one-off keeps whatever tag it had, which here is none")
 
 	tagged.frequency, bare.frequency = nil, nil
-	QLog:Hide()
+	-- REFRESHED EXPLICITLY, not by closing and reopening. Show only rebuilds a
+	-- window it thinks is stale, and until the quest log stopped re-folding the
+	-- player's zones on close, that close happened to fire QUEST_LOG_UPDATE and
+	-- mark it stale for us. This block was leaning on that without knowing.
 	QLog:Show()
+	QLog:Invalidate()
+	QLog:Refresh()
 end
 
 print("== quest log: difficulty bands and the tri-state complete flag ==")
@@ -26470,19 +26511,116 @@ do
 	check(A.lastFailure == nil, "and nothing raises")
 end
 
+print("== quest tracker: a folded zone must not empty it silently ==")
+do
+	local QTf = A:GetModule("questtracker")
+
+	-- THE REPORT. The tracker closing itself and not opening again when clicked,
+	-- with the count chip reading "1 / 25" over an empty body. A folded zone
+	-- header does not fold its quests on screen - it removes them from
+	-- GetQuestLogTitle entirely - so the scan saw a header and nothing else,
+	-- drew no rows, and the body collapsed to nothing. Clicking the header then
+	-- toggled a fold state over an empty list, which is why it looked dead.
+	--
+	-- Nothing in this suite could have caught it: every quest-log check either
+	-- opened our window first, which expands, or asserted the tracker's saved
+	-- sets rather than what it DREW.
+	A.db.char.tracked, A.db.char.untracked = {}, {}
+	ExpandQuestHeader(0)
+	QTf:Refresh()
+	local wasRows = 0
+	for _, r in ipairs(QTf.panel.rows) do if r:IsShown() then wasRows = wasRows + 1 end end
+	check(wasRows > 0, "with nothing folded the tracker draws rows (" .. wasRows .. ")")
+
+	-- Fold every zone, the way a player would, and the way an earlier session
+	-- can leave it.
+	for i = GetNumQuestLogEntries(), 1, -1 do
+		local _, _, _, isHeader = GetQuestLogTitle(i)
+		if isHeader then CollapseQuestHeader(i) end
+	end
+	QTf:Refresh()
+
+	local rows = 0
+	for _, r in ipairs(QTf.panel.rows) do if r:IsShown() then rows = rows + 1 end end
+	local _, numQuests = GetNumQuestLogEntries()
+
+	-- THE CLIENT STILL ADMITS TO THE QUESTS. Only the entry count moves when a
+	-- header folds, which is what makes the difference readable at all - and it
+	-- is the difference the header chip was already showing while the body
+	-- showed nothing.
+	check(numQuests > 0,
+		"the client still counts the quests (" .. numQuests .. ") even folded")
+	check(QTf.behindFold ~= nil and QTf.behindFold > 0,
+		"and the tracker knows how many it was not allowed to name ("
+		.. tostring(QTf.behindFold) .. ")")
+
+	-- THE POINT. Empty is fine; empty WITHOUT SAYING WHY is what looked broken.
+	if rows == 0 then
+		check(QTf.panel.more:IsShown(),
+			"an empty tracker with quests behind a fold says so, in the line the"
+			.. " overflow count already uses - rather than drawing nothing and"
+			.. " looking like a window that has stopped working")
+		check(QTf.panel.more:GetText():find("fold", 1, true) ~= nil,
+			"and says WHAT is hiding them (" ..
+			tostring(QTf.panel.more:GetText()) .. ")")
+	end
+
+	-- AND IT DOES NOT UNDO THE PLAYER'S FOLD ON THE WAY PAST. The first fix
+	-- expanded from the scan itself, so folding a zone anywhere was reversed in
+	-- the same frame - ExpandQuestHeader fires QUEST_LOG_UPDATE and the scan
+	-- runs from that. That is not a policy, it is a fight.
+	local stillFolded = false
+	for i = 1, #_G.__questLog do
+		if _G.__questLog[i].header and _G.__questLog[i].collapsed then stillFolded = true end
+	end
+	check(stillFolded,
+		"a fold the player just made is still there after a refresh - the sweep"
+		.. " is once at login, not once per scan")
+
+	-- AND THE SWEEP THAT CLEARS AN INHERITED ONE. The fold that caused the
+	-- report came from an earlier session - before this addon, or from Questie -
+	-- and could not be undone anywhere in this interface, because both of our
+	-- quest windows group by zone themselves and neither has a fold to click.
+	-- So the tracker clears it once on the way in.
+	check(stillFolded, "a fold is standing")
+	A:SetModuleEnabled("questtracker", false)
+	A:SetModuleEnabled("questtracker", true)
+	local inherited = false
+	for i = 1, #_G.__questLog do
+		if _G.__questLog[i].header and _G.__questLog[i].collapsed then inherited = true end
+	end
+	check(not inherited,
+		"starting the tracker clears a fold it inherited - the one state that"
+		.. " empties this window and that nothing in this interface can undo")
+
+	ExpandQuestHeader(0)
+	QTf:Refresh()
+	A.db.char.tracked, A.db.char.untracked = {}, {}
+end
+
 print("== quest log: collapsed zones, and whose state that is ==")
 do
 	local QT2 = A:GetModule("questtracker")
 
-	-- Closing the window puts the player's collapsed zones back. That state is
-	-- shared with Blizzard's log and with Questie; leaving every zone expanded
-	-- would be reaching into someone else's UI and changing it for good.
+	-- THE POLICY CHANGED, AND A REPORT CHANGED IT. Closing the window used to
+	-- put the player's collapsed zones back, on the grounds that the state is
+	-- shared with Blizzard's log and with Questie and is not ours to keep.
+	--
+	-- What that cost was found in the game: a zone folded in some earlier
+	-- session left the QUEST TRACKER PERMANENTLY EMPTY, with the count chip
+	-- reading "1 / 25" over nothing at all - because a folded header does not
+	-- hide its quests, it removes them from GetQuestLogTitle entirely. And with
+	-- Blizzard's log banished and the map's panel suppressed on Mists, there is
+	-- nowhere left in this interface to unfold it. A state nobody can see, nobody
+	-- can undo, and which silently empties a window: not one worth honouring.
 	QLog:Hide()
 	CollapseQuestHeader(4)
 	QLog:Show()
 	check(_G.__questLog[4].collapsed == false, "opening expands the player's zones")
 	QLog:Hide()
-	check(_G.__questLog[4].collapsed == true, "and closing puts them back")
+	check(_G.__questLog[4].collapsed == false,
+		"and closing LEAVES them expanded - the fold is put back nowhere, because"
+		.. " the only thing it does in this interface is hide quests from us")
 
 	-- ...but re-collapsing fires QUEST_LOG_UPDATE, and a collapsed header's quests
 	-- are not in the log at all. The tracker prunes its saved sets against what it
