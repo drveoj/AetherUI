@@ -6088,6 +6088,84 @@ do
 				_G.PaperDollFrame.EquipmentManagerPane[key] = b
 			end
 
+			-- SAVING AN EQUIPMENT SET: the name field and the icon picker. A
+			-- DIALOG rather than a panel - IconSelectorPopupFrameTemplate - and
+			-- a child of PaperDollFrame, so it is already at our scale and
+			-- already moves with the sheet.
+			do
+				local pop = CreateFrame("Frame", "GearManagerPopupFrame",
+					_G.PaperDollFrame)
+				pop:SetSize(525, 495)
+				pop:SetPoint("TOPLEFT", _G.PaperDollFrame, "TOPRIGHT", 0, 5)
+				pop:Hide()
+				-- ITS BACKING IS A SCRIM, not stone: a plain black fill at
+				-- eight tenths. Left in place it sits behind our glass as a
+				-- second darker pane, which reads as muddy rather than
+				-- translucent - so a mock that gave it stone would have been
+				-- testing the wrong thing coming off.
+				pop.BG = pop:CreateTexture(nil, "BACKGROUND")
+				pop.BG:SetTexture("popup-black-scrim")
+
+				local bb = CreateFrame("Frame", nil, pop)
+				bb:SetAllPoints(pop)
+				bb.NineSlice = CreateFrame("Frame", nil, bb)
+				bb.NineSlice:CreateTexture(nil, "BORDER"):SetTexture("dialog-border")
+				pop.BorderBox = bb
+
+				for _, key in ipairs({ "OkayButton", "CancelButton" }) do
+					local b = CreateFrame("Button", nil, bb)
+					b:SetSize(78, 22)
+					b:SetNormalTexture("blizzard-button-plate")
+					local fs = b:CreateFontString(nil, "OVERLAY")
+					fs:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+					fs:SetText(key)
+					b.__fs = fs
+					function b:GetFontString() return self.__fs end
+					bb[key] = b
+				end
+
+				-- THE ICON YOU HAVE CHOSEN, whose picture is the button's
+				-- NORMAL TEXTURE rather than a region of its own - the opposite
+				-- arrangement to the model controls and the sidebar tabs, on
+				-- the same window. A dresser that cleared the button would rub
+				-- out the very thing the dialog is for, and a mock that put the
+				-- picture in a region could not show it.
+				bb.SelectedIconArea = CreateFrame("Frame", nil, bb)
+				local chosen = CreateFrame("Button", nil, bb.SelectedIconArea)
+				chosen:SetNormalTexture("chosen-icon-art")
+				chosen:SetHighlightTexture(
+					[[Interface\Buttons\ButtonHilight-Square]])
+				bb.SelectedIconArea.SelectedIconButton = chosen
+
+				-- The name field, bordered with three slices of the class
+				-- trainer's filter art - which is why it read as a dropdown
+				-- rather than somewhere to type.
+				local eb = CreateFrame("EditBox", nil, bb)
+				eb:SetSize(200, 20)
+				for _, part in ipairs({ "IconSelectorPopupNameLeft",
+					"IconSelectorPopupNameMiddle", "IconSelectorPopupNameRight" }) do
+					eb[part] = eb:CreateTexture(nil, "BACKGROUND")
+					eb[part]:SetTexture(
+						[[Interface\ClassTrainerFrame\UI-ClassTrainer-FilterBorder]])
+				end
+				bb.IconSelectorEditBox = eb
+
+				-- The grid, pooled like every ScrollBox's contents.
+				local sel = CreateFrame("Frame", nil, pop)
+				sel.ScrollBox = CreateFrame("Frame", nil, sel)
+				sel.__icons = {}
+				for i = 1, 4 do
+					local ib = CreateFrame("Button", nil, sel.ScrollBox)
+					ib:SetSize(36, 36)
+					ib:SetNormalTexture("grid-icon-" .. i)
+					ib.selectedTexture = ib:CreateTexture(nil, "OVERLAY")
+					ib.selectedTexture:SetTexture("search-highlight")
+					sel.__icons[i] = ib
+				end
+				function sel.ScrollBox:GetFrames() return sel.__icons end
+				pop.IconSelector = sel
+			end
+
 			-- AND THE SHEET SETS ITS OWN WIDTH, per tab, every time you change
 			-- one - CharacterFrameMixin:UpdateSize. This is the part with no Era
 			-- equivalent at all: a window we widened to fit our padding is put
@@ -31734,6 +31812,49 @@ do
 				"a saved set's row loses its stone")
 			check(_G.__row:GetFontString()._aetherStyle ~= nil,
 				"and its name is in our lettering")
+
+			-- AND THE DIALOG BEHIND THE SAVE BUTTON: the name field and the
+			-- icon picker. A DIALOG rather than a panel, so it is treated the
+			-- way the client's other dialogs are - stripped, given glass, and
+			-- its contents dressed in place.
+			_G.__pop = _G.GearManagerPopupFrame
+			check(_G.__pop.BG:GetTexture() == 0,
+				"the picker's own black scrim comes off - left under our glass"
+				.. " it is a second darker pane and the frosting reads as muddy")
+			check(_G.__pop.__aetherSkin ~= nil or _G.__pop.__aetherPanel ~= nil,
+				"and it gets glass of its own, the way a StaticPopup does")
+
+			_G.__bb = _G.__pop.BorderBox
+			check(_G.__bb.OkayButton:GetNormalTexture():GetTexture() == 0
+				and _G.__bb.OkayButton:GetFontString()._aetherStyle ~= nil,
+				"Okay and Cancel are ours")
+
+			-- THE OPPOSITE ARRANGEMENT TO EVERYTHING ELSE ON THIS WINDOW. The
+			-- model controls and the sidebar tabs keep the picture in a region
+			-- beside the plate; here the picture IS the normal texture, so
+			-- clearing the button rubs out the very thing the dialog is for.
+			_G.__chosen = _G.__bb.SelectedIconArea.SelectedIconButton
+			check(_G.__chosen:GetNormalTexture():GetTexture() == "chosen-icon-art",
+				"the icon you have chosen survives - its picture IS the normal"
+				.. " texture here, so ClearButton would have taken it ("
+				.. tostring(_G.__chosen:GetNormalTexture():GetTexture()) .. ")")
+			check(_G.__chosen:GetHighlightTexture():GetTexture() == 0,
+				"while the square hilite around it does not")
+			check(_G.__chosen.__aetherSlot ~= nil,
+				"and it stands in a cell of ours")
+
+			-- The name field: three slices of the class trainer's filter art,
+			-- which is why it read as a dropdown rather than somewhere to type.
+			check(_G.__bb.IconSelectorEditBox.IconSelectorPopupNameMiddle
+				:GetTexture() == 0,
+				"the name field loses its borrowed border")
+
+			-- The grid, pooled like every ScrollBox's contents.
+			_G.__gridIcon = _G.__pop.IconSelector.__icons[1]
+			check(_G.__gridIcon:GetNormalTexture():GetTexture() == "grid-icon-1"
+				and _G.__gridIcon.selectedTexture:GetTexture() == 0,
+				"and every icon in the grid keeps its picture and loses the"
+				.. " search hilite over it")
 		end
 	end
 

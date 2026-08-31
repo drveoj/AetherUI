@@ -3071,6 +3071,110 @@ local function DressSidebar(store)
 	end
 end
 
+--- Saving an equipment set: the name field and the icon picker.
+--
+--  THE LAST PIECE OF THIS SHEET, and the only part of it that is a DIALOG
+--  rather than a panel - so it is treated the way the client's other dialogs
+--  are, in Modules/Popups.lua: stripped, given glass of its own, and its
+--  contents dressed in place. A PANELS entry would have wrapped it in a header
+--  band and a footer strip, and it has neither a title nor a close button to
+--  put in them.
+--
+--  It is a child of PaperDollFrame, so it is already at our scale and already
+--  moves with the sheet. Nothing here re-anchors anything.
+--- One icon in the picker, cell and all.
+--
+--  NOT Reskin.Slot, WHICH IS THE OBVIOUS ANSWER AND THE WRONG ONE. Slot clears
+--  the button's states first and looks for the picture in an IconTexture or an
+--  Icon region afterwards - which is right for every item button in the game,
+--  and exactly backwards here: on these the picture IS the normal texture, so
+--  Slot rubs it out and then draws a cell round the hole.
+--
+--  IconButton is the primitive that knows the difference - it skips whichever
+--  state holds the picture - so the sequence is IconButton for the art and the
+--  cell drawn afterwards with that same texture handed to it.
+local function PickerIcon(btn, store)
+	if not btn or Reskin.Forbidden(btn) then return end
+	local icon = btn.GetNormalTexture and btn:GetNormalTexture()
+	Reskin.IconButton(btn, store, { icon = icon })
+	if not btn.__aetherSlot then
+		W.DecorateSlot(btn, (btn.GetWidth and btn:GetWidth()) or 36,
+			{ icon = icon, count = false })
+		btn.__aetherSlot = true
+	end
+end
+
+local function DressGearPopup(store)
+	local popup = Part("GearManagerPopupFrame")
+	if not popup then return end
+
+	-- Its own backing is a plain black fill at eight tenths, not stone - a
+	-- SCRIM, which is what a dialog over a window wants and what our glass
+	-- already is. Left in place it sits behind the glass as a second darker
+	-- pane and the frosting reads as muddy rather than translucent.
+	Reskin.Strip(popup, store)
+	Reskin.Panel(popup)
+
+	local box = popup.BorderBox
+	if not box then return end
+
+	Reskin.Fonts(popup, "pnBody")
+
+	-- OKAY AND CANCEL, which live on the border box rather than on the dialog.
+	for _, key in ipairs({ "OkayButton", "CancelButton" }) do
+		local btn = box[key]
+		if btn then
+			Reskin.ClearButton(btn)
+			Reskin.Strip(btn, store)
+			Reskin.Button(btn, "pnBody")
+		end
+	end
+
+	-- THE ICON YOU HAVE CHOSEN. Its picture is the button's NORMAL texture
+	-- here, not a separate region - so ClearButton would rub out the very
+	-- thing the dialog is for. IconButton is the primitive that knows the
+	-- difference: it keeps whichever texture is the picture and clears the
+	-- states around it.
+	local area = box.SelectedIconArea
+	if area and area.SelectedIconButton then
+		PickerIcon(area.SelectedIconButton, store)
+	end
+
+	-- THE NAME FIELD, whose border is three slices of the class trainer's
+	-- filter art - which is why it looked like a dropdown rather than
+	-- somewhere to type.
+	if box.IconSelectorEditBox then
+		Reskin.EditBox(box.IconSelectorEditBox)
+	end
+
+	-- THE KIND OF ICON FILTER. Reached through PN rather than through the
+	-- local: DressDropdown is declared a thousand lines below this and a Lua
+	-- local is not hoisted, so naming it here is naming nil. The sidebar's
+	-- buttons hit the same wall a moment ago and were spelled out instead;
+	-- a dropdown is too much to spell out twice.
+	if box.IconTypeDropdown and PN.DressDropdown then
+		PN.DressDropdown(box.IconTypeDropdown, store)
+	end
+
+	-- AND THE GRID. Its buttons are pooled by the scroll box, so they are
+	-- walked on every dress for the same reason the saved sets are - and each
+	-- one's picture is its normal texture, the same as the chosen icon above.
+	local grid = popup.IconSelector
+	local scroll = grid and (grid.ScrollBox or grid)
+	if scroll then
+		local function lift(btn) PickerIcon(btn, store) end
+		if scroll.ForEachFrame then
+			if not pcall(scroll.ForEachFrame, scroll, lift) and scroll.GetFrames then
+				local ok, rows = pcall(scroll.GetFrames, scroll)
+				if ok and rows then for _, b in ipairs(rows) do lift(b) end end
+			end
+		elseif scroll.GetFrames then
+			local ok, rows = pcall(scroll.GetFrames, scroll)
+			if ok and rows then for _, b in ipairs(rows) do lift(b) end end
+		end
+	end
+end
+
 local function EachEquipSlot(fn)
 	local items = _G.PaperDollItemsFrame
 	if not items or not items.GetChildren then return end
@@ -3170,6 +3274,7 @@ local function DressCharacter(frame, store)
 	InstallTabHooks()
 
 	DressSidebar(store)
+	DressGearPopup(store)
 
 	-- BOTH DOLLS. The pet has a model box of its own on its own tab, with its
 	-- own pair of turn buttons under names of the same shape - and it had been
@@ -4110,6 +4215,9 @@ local function DressDropdown(btn, store)
 		end)
 	end
 end
+-- Published so DressGearPopup can reach it: that runs a thousand lines
+-- above this and a Lua local is not hoisted.
+PN.DressDropdown = DressDropdown
 
 --- One line of a roster.
 --
