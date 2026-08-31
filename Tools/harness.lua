@@ -5944,6 +5944,15 @@ do
 				_G[gone] = nil
 			end
 
+			-- ITS X IS A PARENT KEY. This sheet is ButtonFrameTemplate on
+			-- Mists, and that template carries the close button as
+			-- frame.CloseButton with no name of its own; Era's declares
+			-- CharacterFrameCloseButton. The mock gave every window the
+			-- global, so a lookup that only knew Era's spelling found one here
+			-- and the sheet came up with no way out of it in the game.
+			cf.CloseButton = _G.CharacterFrameCloseButton
+			_G.CharacterFrameCloseButton = nil
+
 			-- THE SHEET'S TWO RECESSES. Every window on the portrait template
 			-- has an Inset; this one has a SECOND, InsetRight, which is where
 			-- the stat panel lives and which is shown only while the sheet is
@@ -6171,7 +6180,7 @@ do
 			-- equivalent at all: a window we widened to fit our padding is put
 			-- back to the client's number the moment the player clicks
 			-- Reputation, and our record of what we added is then a lie.
-			local TAB_WIDTH = {
+			_G.__tabWidth = {
 				PaperDollFrame    = _G.PANEL_DEFAULT_WIDTH,
 				PetPaperDollFrame = _G.PANEL_DEFAULT_WIDTH,
 				ReputationFrame   = 400,
@@ -6179,7 +6188,7 @@ do
 			}
 			cf.activeSubframe = "PaperDollFrame"
 			function cf:UpdateSize()
-				local w = TAB_WIDTH[self.activeSubframe] or _G.PANEL_DEFAULT_WIDTH
+				local w = _G.__tabWidth[self.activeSubframe] or _G.PANEL_DEFAULT_WIDTH
 				if self.Expanded and (self.activeSubframe == "PaperDollFrame"
 					or self.activeSubframe == "PetPaperDollFrame") then
 					w = _G.CHARACTERFRAME_EXPANDED_WIDTH
@@ -6194,14 +6203,29 @@ do
 				self.activeSubframe = name
 				self:UpdateSize()
 			end
+			-- AND BOTH OF THESE PAINT THE EXPAND BUTTON BACK. Blizzard sets all
+			-- three of its textures afresh in Expand and in Collapse, so art we
+			-- cleared once holds exactly until the first time the player uses
+			-- it. The mock did not, so a dresser that cleared it once looked
+			-- permanent in here and was Blizzard's again on the first click.
+			local function repaintExpand(self)
+				local b = _G.CharacterFrameExpandButton
+				local page = self.Expanded and "PrevPage" or "NextPage"
+				b:SetNormalTexture("Interface" .. [[\]] .. "Buttons"
+					.. [[\]] .. "UI-SpellbookIcon-" .. page .. "-Up")
+				b:SetPushedTexture("Interface" .. [[\]] .. "Buttons"
+					.. [[\]] .. "UI-SpellbookIcon-" .. page .. "-Down")
+			end
 			function cf:Expand()
 				self.Expanded = true
 				self.InsetRight:Show()
+				repaintExpand(self)
 				self:UpdateSize()
 			end
 			function cf:Collapse()
 				self.Expanded = false
 				self.InsetRight:Hide()
+				repaintExpand(self)
 				self:UpdateSize()
 			end
 			cf:UpdateSize()
@@ -30396,7 +30420,15 @@ do
 	-- the window and the body is eighteen, so its icons hung out of the recess
 	-- on the left and its prices out of it on the right - the same seven units
 	-- at each end, and the well drawn round content it did not contain.
-	check(_G.PaperDollFrame.__aetherLeft == 11,
+	-- ELEVEN ON ERA AND TWENTY-ONE ON MISTS, and the difference is not the
+	-- client: it is the GLASS. Era's sheet is the old parchment build with a
+	-- margin to trim, so the glass starts ten inside the frame and content
+	-- anchored 21 in measures as 11 from it. The Mists sheet is
+	-- ButtonFrameTemplate - tight, no margin - so the glass IS the frame and
+	-- the same content measures 21. Trimming it anyway cut into the window and
+	-- put both columns of gear outside the recess.
+	_G.__dollLeft = _G.__mists and 21 or 11
+	check(_G.PaperDollFrame.__aetherLeft == _G.__dollLeft,
 		"the client's content is measured across too (" ..
 		tostring(_G.PaperDollFrame.__aetherLeft) .. ")")
 	-- INSIDE THE WELL'S OWN PADDING, not against its rim: 15b gives a well 16
@@ -30404,7 +30436,7 @@ do
 	-- content jammed into the corner of the recess.
 	local inner = W.PANEL_PAD + W.WELL_PAD
 	local ix = select(4, _G.PaperDollFrame:GetPoint(1))
-	check(ix == inner - 11 and ix > 0,
+	check(ix == inner - _G.__dollLeft and ix > 0,
 		"and moved in past the well's own padding (" .. tostring(ix) ..
 		" for content that started at 11)")
 
@@ -30434,14 +30466,18 @@ do
 	-- put the model above the slots, anchored 66 down, and that is what
 	-- the measure now finds. A number written into this check rather than
 	-- measured is the thing the check exists to catch.
-	_G.__dollTop = _G.__mists and 56 or 64
+	-- ...AND BY HOW MUCH GLASS IS ABOVE IT. Era's sheet has a margin to trim,
+	-- so the glass starts inside the frame; the Mists sheet is tight and the
+	-- glass IS the frame, which moves every measurement on it.
+	_G.__dollTop = _G.__mists and 66 or 64
+	_G.__repTop  = _G.__mists and 57 or 47
 	-- ...AND THE THIRD TAB IS NOT THE SAME TAB. Era's is Skills; Cataclysm
 	-- dropped Skills and Honour and added Currency, and the client publishes
 	-- which it has as CHARACTERFRAME_SUBFRAMES. Naming SkillFrame here was
 	-- this check asserting a tab half the players do not have.
 	_G.__thirdPane = _G[_G.__mists and "TokenFrame" or "SkillFrame"]
 	check(_G.PaperDollFrame.__aetherTop == _G.__dollTop
-		and _G.ReputationFrame.__aetherTop == 47
+		and _G.ReputationFrame.__aetherTop == _G.__repTop
 		and _G.__thirdPane.__aetherTop ~= nil,
 		"each tab is measured on its own rather than sharing one number (" ..
 		tostring(_G.PaperDollFrame.__aetherTop) .. "/" ..
@@ -30467,7 +30503,7 @@ do
 		"by moving the PANE, so every slot and model on the tab travels with"
 		.. " it (" .. tostring(py) .. ")")
 	local _, _, _, _, ry = _G.ReputationFrame:GetPoint(1)
-	check(ry == -(cf.__aetherHeadH + inner - 47),
+	check(ry == -(cf.__aetherHeadH + inner - _G.__repTop),
 		"and each tab by its own amount rather than all by the window's (" ..
 		tostring(ry) .. ")")
 
@@ -30625,18 +30661,21 @@ do
 			.. " ours (" .. tostring(_G.__bare) .. " from "
 			.. tostring(_G.__wide) .. ")")
 
-		-- AND THE NEXT LAYOUT HAS TO PUT IT BACK. Without this the note of
-		-- having grown the window outlives the growth: the pass compares what
-		-- it wants against a number that is no longer true, finds them equal,
-		-- and adds nothing - leaving the sheet at the client's own width with
-		-- our padding still expected inside it.
-		PN.LayoutBody(cf, PN.ENTRY.CharacterFrame)
-		check(cf:GetWidth() >= _G.__bare + cf.__aetherBodyGrow - 0.5,
-			"and the next layout puts our padding back on top of it rather than"
-			.. " believing a note the client has invalidated (" ..
-			string.format("%.0f", cf:GetWidth()) .. " for " ..
-			string.format("%.0f", _G.__bare) .. " + " ..
-			tostring(cf.__aetherBodyGrow) .. ")")
+		-- AND IT IS PUT BACK BEFORE ANYBODY SEES IT. Not by the next layout
+		-- whenever that happens to be - by THIS one: UpdateSize is hooked, so
+		-- the resize and the re-layout are one event rather than two in an
+		-- order nobody controls.
+		--
+		-- Left to luck it showed both ways round in the game. Opened, the sheet
+		-- was too wide - grown, then not resized back. Expanded, it was too
+		-- narrow - resized, and not grown again. Same race, two faces.
+		check(cf:GetWidth() >= _G.__tabWidth.ReputationFrame
+			+ cf.__aetherBodyGrow - 0.5,
+			"the client's own resize carries our padding with it rather than"
+			.. " leaving the window at its bare number (" ..
+			string.format("%.0f", cf:GetWidth()) .. " for the client's "
+			.. tostring(_G.__tabWidth.ReputationFrame) .. " + "
+			.. tostring(cf.__aetherBodyGrow) .. ")")
 
 		-- AND DOES IT ONCE. The same pass run twice must not keep adding.
 		_G.__settled = cf:GetWidth()
@@ -31114,7 +31153,8 @@ do
 	local closes = {
 		{ "the bags", Bg.frames.bags.head.close },
 		{ "the quest log", A:GetModule("questlog").win.head.close },
-		{ "the character sheet", _G.CharacterFrameCloseButton },
+		{ "the character sheet", _G.CharacterFrameCloseButton
+			or _G.CharacterFrame.CloseButton },
 	}
 	local odd = {}
 	for _, pair in ipairs(closes) do
@@ -31403,7 +31443,12 @@ do
 		.. " is a thing this interface does nowhere else ("
 		.. tostring(titleFlags) .. ")")
 
-	local close = _G.CharacterFrameCloseButton
+	-- UNDER WHICHEVER NAME THIS CLIENT GIVES IT. Era declares the global;
+	-- ButtonFrameTemplate on Mists keeps it as a parent key and names it
+	-- nothing - so a lookup that knew only Era's spelling left that sheet with
+	-- no way out of it at all.
+	local close = _G.CharacterFrameCloseButton or _G.CharacterFrame.CloseButton
+	check(close ~= nil, "the sheet has an X to click")
 	check(close.__aetherClose and (close.__aetherClose:GetText() or "") ~= "",
 		"and the way out is our own mark - with the stone X cleared there would"
 		.. " otherwise be nothing left to click")
@@ -31757,6 +31802,16 @@ do
 				"and turns round when the sheet is already expanded ("
 				.. tostring(ex.__aetherChevron:GetRotation()) .. " from "
 				.. tostring(_G.__shut) .. ")")
+
+			-- AND THE CLIENT PAINTS IT BACK. Expand and Collapse each set all
+			-- three of this button's textures afresh, so clearing it once holds
+			-- until the first time the player uses it - and the sheet Joe was
+			-- looking at had Blizzard's yellow page-turn arrow on it. Same
+			-- shape as the slot borders, same answer: hook the repaint.
+			check(ex:GetNormalTexture():GetTexture() == 0
+				and ex:GetPushedTexture():GetTexture() == 0,
+				"and its art stays ours after the client has repainted it ("
+				.. tostring(ex:GetNormalTexture():GetTexture()) .. ")")
 			cf:Collapse()
 			A:GetModule("panels").Dress(cf, cf.__aetherArt)
 
@@ -31958,9 +32013,19 @@ do
 	-- INSETS. A client frame is bigger than the window you can see: its art
 	-- carries wide transparent margins and it reserves room below for the tabs.
 	local px, _, _, ox, oy = cf.__aetherPanel:GetPoint(1)
-	check(px == "TOPLEFT" and ox ~= 0 and oy ~= 0,
-		"the glass is inset to the visible window rather than the frame's full"
-		.. " extent, which is what left a slab of padding down the right")
+	if _G.__mists then
+		-- TIGHT, AND THAT IS THE POINT. This sheet is ButtonFrameTemplate on
+		-- Mists - modern, no transparent margin - so there is nothing to trim
+		-- and the glass is the window. Trimming it anyway put both columns of
+		-- gear, the stat panel, the sidebar and the X outside the glass.
+		check(px == "TOPLEFT" and ox == 0 and oy == 0,
+			"the glass is the window, because this one has no margin to take"
+			.. " back (" .. tostring(ox) .. ", " .. tostring(oy) .. ")")
+	else
+		check(px == "TOPLEFT" and ox ~= 0 and oy ~= 0,
+			"the glass is inset to the visible window rather than the frame's"
+			.. " full extent, which is what left a slab of padding down the right")
+	end
 
 	-- TABS. Blizzard's overlap on purpose and the art hides the join; with the
 	-- art gone the overlap is the only thing you can see.
@@ -32068,7 +32133,15 @@ do
 		"the row starts at the rail's own left corner (" .. tostring(sp) ..
 		" -> " .. tostring(srelP) .. " x=" .. tostring(sx) .. ")")
 
-	local insL, insR = 10, -30
+	-- THIS WINDOW'S OWN INSETS, not two numbers copied out of Era's entry. The
+	-- Mists sheet is tight and has none, so a rail width computed from 10 and
+	-- -30 was forty units wider than the rail actually is.
+	_G.__chIns = A:GetModule("panels").ENTRY.CharacterFrame.insets or {}
+	local insL = _G.__chIns[1] or 0
+	-- [1] LEFT, [2] TOP, [3] RIGHT, [4] BOTTOM. Reading the right inset out of
+	-- slot 2 gets the top one, which on Era is -10 against the -30 that is
+	-- actually there.
+	local insR = _G.__chIns[3] or 0
 	local visible = cf:GetWidth() + insR - insL
 	local function RowWidth(list)
 		local total = 0

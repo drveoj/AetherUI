@@ -51,6 +51,10 @@ local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 -- 30, which puts their top edge inside the money row - hidden in the
 -- client by the stone border drawn over the join, and not hidden once that
 -- border is off. The glass follows it down, or the tabs sit outside.
+-- How far the Mists character sheet's tabs hang below its own bottom edge.
+-- Same arrangement as the vendor's and the postbox's.
+local CHAR_TAB_DROP = 34
+
 local MAIL_TAB_DROP = 40
 -- Letters on a page of the inbox. Seven, and the client pages rather than
 -- scrolls: the postbox holds fifty and shows a page of these at a time, which
@@ -730,6 +734,38 @@ do
 		local body = {}
 		for i = 1, #subs do body[i] = subs[i] end
 		PN.ENTRY.CharacterFrame.body = body
+	end
+
+	-- AND IT IS NOT THE SAME SHAPE OF WINDOW EITHER.
+	--
+	-- Era's character sheet is the old parchment build: a wide transparent
+	-- margin round the art, which is what the insets in the table above trim
+	-- back. Cataclysm rebuilt it on ButtonFrameTemplate - modern, tight, no
+	-- margin at all - and trimming ten off each side, thirty off the top and
+	-- twenty-six off the foot of a window with nothing to spare CUTS INTO IT.
+	--
+	-- That is the whole of "the window doesn't encompass all the elements":
+	-- both columns of gear hung outside the glass, the stat panel and the
+	-- sidebar sat beyond its right edge, and the X went off the top corner as
+	-- soon as the sheet was widened. This module's own vendor entry says so in
+	-- as many words - "Insetting one of those cuts into the window ... which is
+	-- what sizing and alignment issues looked like" - and this window was in
+	-- the other list.
+	--
+	-- Its tabs hang off the BOTTOM edge outside its own art, the way the
+	-- vendor's and the postbox's do, so the glass reaches below the frame to
+	-- carry them rather than stopping at it.
+	if A.isMists then
+		local ch = PN.ENTRY.CharacterFrame
+		ch.tight  = true
+		ch.insets = { 0, 0, 0, -CHAR_TAB_DROP }
+		-- ITS X NEEDS NO ENTRY. ButtonFrameTemplate carries the close button as
+		-- frame.CloseButton with no name of its own, where Era's sheet declares
+		-- CharacterFrameCloseButton - but CloseButton() already falls back to
+		-- Reskin.Element(frame, "CloseButton"), which finds a parent key. It was
+		-- never lost; it was OUTSIDE THE GLASS, sitting at the top corner of a
+		-- window our insets had trimmed thirty units in from. Naming it here
+		-- would have looked like the fix and changed nothing.
 	end
 end
 
@@ -3255,6 +3291,33 @@ local function DressCharacter(frame, store)
 		chev:SetPoint("CENTER", expand, "CENTER", 0, 0)
 		expand.__aetherChevron = chev
 	end
+	-- AND IT PAINTS ITSELF BACK. CharacterFrameMixin:Expand and :Collapse each
+	-- set all three of this button's textures afresh, so clearing it once holds
+	-- exactly until the first time the player uses it. Same shape as the slot
+	-- borders below, and the same answer: hook the thing that repaints.
+	--
+	-- The hook also carries the layout. UpdateSize writes the window's WIDTH
+	-- outright from the tab you are on, and it runs after us as often as
+	-- before - so a window we had grown to fit our padding was put back to the
+	-- client's number a moment later, and one we had not grown yet stayed too
+	-- narrow. "Opens too wide, then when you open the character info panel it's
+	-- not wide enough" is that race, seen from both sides. Re-laying it out
+	-- from the client's own resize makes the order fixed instead of lucky.
+	if frame and not PN.__charSizeHook and hooksecurefunc
+		and type(frame.UpdateSize) == "function" then
+		PN.__charSizeHook = true
+		hooksecurefunc(frame, "UpdateSize", function(self)
+			if not PN.enabled then return end
+			pcall(PN.LayoutBody, self, PN.ENTRY and PN.ENTRY.CharacterFrame)
+			local btn = _G.CharacterFrameExpandButton
+			if btn and btn.__aetherChevron then
+				Reskin.ClearButton(btn)
+				W.FaceChevron(btn.__aetherChevron,
+					self.Expanded and "LEFT" or "RIGHT")
+			end
+		end)
+	end
+
 	if expand and expand.__aetherChevron then
 		W.Color(expand.__aetherChevron, Palette.c.textDim)
 		-- WHICH WAY IT POINTS IS WHICH WAY IT GOES. The client swaps its own
