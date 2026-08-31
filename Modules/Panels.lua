@@ -2948,6 +2948,37 @@ local function DressModel(prefix, store)
 	well:ApplySkin("wellFill", "wellEdge")
 
 	W.RotatePair(model, left, right)
+
+	-- AND THE ROW OF FIVE, WHERE THERE IS ONE. A ModelScene keeps zoom in and
+	-- out, turn left and right, and reset in a ControlFrame that
+	-- ModelSceneControlFrameMixin:UpdateLayout anchors end to end and re-anchors
+	-- whenever it runs - which is why the pair above is not pulled out of it.
+	--
+	-- Not moving them is not the same as leaving them alone. Every one is a
+	-- grey stone plate out of the common-button-square-gray atlas with the
+	-- picture on a SEPARATE 16x16 Icon texture centred on it, so the plate can
+	-- come off and the picture stay - the same division as the resistance
+	-- chips' school icons and the spellbook's school tabs, and the same rule:
+	-- the picture IS the information and the stone is not.
+	--
+	-- Left as they were, five stone squares sat on the glass over the one thing
+	-- on that window you actually look at.
+	local controls = model.ControlFrame
+	if controls then
+		for _, key in ipairs({ "zoomInButton", "zoomOutButton",
+			"rotateLeftButton", "rotateRightButton", "resetButton" }) do
+			local btn = controls[key]
+			if btn and not Reskin.Forbidden(btn) then
+				Reskin.ClearButton(btn)
+				-- ITS OWN ICON KEPT, and nothing else: the plate is a normal
+				-- texture and comes off above, but a control button can carry
+				-- decoration in ordinary regions too.
+				if type(store) == "table" then
+					Reskin.StripExcept(btn, store, btn.Icon and { btn.Icon } or nil)
+				end
+			end
+		end
+	end
 end
 
 local function EachEquipSlot(fn)

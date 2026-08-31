@@ -6106,9 +6106,22 @@ do
 			scene.ControlFrame = CreateFrame("Frame", nil, scene)
 			for _, key in ipairs({ "zoomInButton", "zoomOutButton",
 				"rotateLeftButton", "rotateRightButton", "resetButton" }) do
-				scene.ControlFrame[key] = CreateFrame("Button", nil,
-					scene.ControlFrame)
-				scene.ControlFrame[key]:SetNormalTexture("model-control-art")
+				local btn = CreateFrame("Button", nil, scene.ControlFrame)
+				-- THE PLATE IS THE NORMAL TEXTURE and the PICTURE IS A REGION,
+				-- 16x16 and centred - ModelSceneControlButtonTemplate keeps them
+				-- apart, and the mock did not. With the picture baked into the
+				-- plate there was no way to take one and keep the other, so a
+				-- dresser that cleared the button looked correct in here and
+				-- rubbed out the arrow in the game.
+				btn:SetNormalTexture("common-button-square-gray-up")
+				btn:SetPushedTexture("common-button-square-gray-down")
+				btn.Icon = btn:CreateTexture(nil, "OVERLAY")
+				btn.Icon:SetTexture("model-control-" .. key)
+				-- And a piece of decoration that is NOT the picture, so
+				-- "keep everything" and "keep the icon" are different answers.
+				btn.Shadow = btn:CreateTexture(nil, "BACKGROUND")
+				btn.Shadow:SetTexture("model-control-shadow")
+				scene.ControlFrame[key] = btn
 			end
 
 			for i = 1, _G.NUM_FACTIONS_DISPLAYED do
@@ -31505,6 +31518,42 @@ do
 		local w = _G.PetModelFrame.__aetherModelWell
 		check(w:GetParent() ~= _G.PetModelFrame,
 			"as a sibling rather than a child, so the model draws over it")
+
+		-- AND THE ROW OF FIVE ON THE SCENE, which is Mists only. Zoom in and
+		-- out, turn left and right, reset - each a grey stone plate out of the
+		-- common-button-square-gray atlas with its picture on a SEPARATE 16x16
+		-- Icon centred on it. They are not moved, because the client re-anchors
+		-- that row end to end whenever it lays it out, but not moving them is
+		-- not the same as leaving them alone: five stone squares sat on the
+		-- glass over the one thing on that window you actually look at.
+		if _G.__mists then
+			local ctl = _G.CharacterModelScene.ControlFrame
+			local stone, lost, kept = {}, {}, 0
+			for _, key in ipairs({ "zoomInButton", "zoomOutButton",
+				"rotateLeftButton", "rotateRightButton", "resetButton" }) do
+				local b = ctl[key]
+				if b:GetNormalTexture():GetTexture() ~= 0 then
+					stone[#stone + 1] = key
+				end
+				-- THE PICTURE SURVIVES. Clearing the button and sweeping the
+				-- regions with it takes the arrow too, and a row of five blank
+				-- squares is worse than a row of five stone ones.
+				if b.Icon:GetTexture() == 0 or not b.Icon:IsShown() then
+					lost[#lost + 1] = key
+				end
+				if b.Shadow:GetTexture() == 0 then kept = kept + 1 end
+			end
+			check(#stone == 0, "the model controls lose their stone plates ("
+				.. (#stone > 0 and table.concat(stone, ", ") or "all five") .. ")")
+			check(#lost == 0, "and keep the picture that says what each one does"
+				.. " (" .. (#lost > 0 and table.concat(lost, ", ")
+				or "all five") .. ")")
+			-- ...WHICH IS NOT THE SAME AS KEEPING EVERYTHING. A button can
+			-- carry decoration in an ordinary region too, and that goes.
+			check(kept == 5,
+				"while decoration that is not the picture still comes off ("
+				.. kept .. " of 5)")
+		end
 	end
 
 	-- THE RESISTANCE SCHOOLS KEEP THEIR ICONS. These chips were stripped
