@@ -6280,8 +6280,19 @@ do
 			stats.ScrollBox = CreateFrame("Frame", nil, stats)
 			stats.ScrollBar = CreateFrame("Frame", nil, stats)
 			stats.ScrollBar.Track = CreateFrame("Frame", nil, stats.ScrollBar)
-			stats.ScrollBar.Track.Thumb = CreateFrame("Frame", nil,
+			stats.ScrollBar.Track.Begin = stats.ScrollBar.Track
+				:CreateTexture(nil, "ARTWORK")
+			stats.ScrollBar.Track.Begin:SetTexture("minimal-scrollbar-track-top")
+			-- THE THUMB IS INSIDE THE TRACK, not on the bar - which is the whole
+			-- shape of MinimalScrollBar and the reason `bar.Thumb` finds nothing
+			-- on any of them. Its three slices are painted again from the mixin's
+			-- KeyValues on every enter, leave and press.
+			stats.ScrollBar.Track.Thumb = CreateFrame("Button", nil,
 				stats.ScrollBar.Track)
+			stats.ScrollBar.Track.Thumb.Middle = stats.ScrollBar.Track.Thumb
+				:CreateTexture(nil, "ARTWORK")
+			stats.ScrollBar.Track.Thumb.Middle:SetTexture(
+				"minimal-scrollbar-small-thumb-middle")
 			stats:SetSize(172, 350)
 			stats:SetPoint("TOPRIGHT", _G.PaperDollFrame, "TOPRIGHT", -4, -74)
 			stats.ClassBackground = stats:CreateTexture(nil, "BACKGROUND")
@@ -30495,8 +30506,18 @@ do
 		-- AND THE STAT PANEL'S SCROLL BAR IS OURS. A MinimalScrollBar left
 		-- Blizzard's is a grey bar down our glass beside seven groups of
 		-- numbers in our lettering.
-		check(_G.CharacterStatsPane.ScrollBar.__aetherScroll ~= nil,
-			"and the stat panel scrolls on one of ours")
+		-- ...AND THE THUMB WITH IT, which the marker alone does not say.
+		-- MinimalScrollBar keeps its Thumb inside TRACK rather than on the bar,
+		-- so a dresser reaching for `bar.Thumb` found nothing on any of them and
+		-- set its own "done" flag anyway - the flag was true and Blizzard's grey
+		-- thumb went on sliding down our rail. Here, in the Options window, and
+		-- on both of the sidebar's panes.
+		_G.__grip = _G.CharacterStatsPane.ScrollBar.Track.Thumb
+		check(_G.CharacterStatsPane.ScrollBar.__aetherScroll ~= nil
+			and _G.__grip.__aetherFill ~= nil
+			and _G.__grip.Middle:GetTexture() == 0,
+			"and the stat panel scrolls on one of ours, thumb and all ("
+			.. tostring(_G.__grip.Middle:GetTexture()) .. ")")
 	else
 		-- IT HANGS OFF THE GLASS, for the same reason the hairline does.
 		check(cf.__aetherBody:GetParent() == cf.__aetherPanel,

@@ -979,17 +979,27 @@ function Reskin.ScrollBar(bar, store)
 		if thumb.SetWidth then thumb:SetWidth(A:Px(6)) end
 	end
 
-	if bar.Thumb then
-		bar.Thumb.__aetherStore = bar.Thumb.__aetherStore or {}
-		Reskin.Strip(bar.Thumb, bar.Thumb.__aetherStore)
-		if not bar.Thumb.__aetherFill then
-			local fill = bar.Thumb:CreateTexture(nil, "ARTWORK")
+	-- ...AND ON THE NEW ONE THE THUMB IS NOT THE BAR'S CHILD. MinimalScrollBar
+	-- puts Thumb inside TRACK, so `bar.Thumb` is nil on every one of them and
+	-- this dressed nothing at all - the Options window, the sidebar's panes and
+	-- the character sheet's stat panel all kept Blizzard's grey thumb sliding
+	-- down our rail. Both spellings, first one the bar has.
+	local grip = bar.Thumb or (bar.Track and bar.Track.Thumb)
+	if grip then
+		grip.__aetherStore = grip.__aetherStore or {}
+		Reskin.Strip(grip, grip.__aetherStore)
+		if not grip.__aetherFill then
+			-- OVERLAY, NOT ARTWORK, which is where the client draws its own
+			-- three slices. MinimalScrollBarThumbScriptsMixin paints them again
+			-- from its KeyValues on every enter, leave and press, so a fill in
+			-- the same layer is covered the first time the pointer touches it.
+			local fill = grip:CreateTexture(nil, "OVERLAY")
 			fill:SetTexture(A.Media.texture.flat)
-			fill:SetPoint("TOPLEFT", bar.Thumb, "TOPLEFT", 1, -1)
-			fill:SetPoint("BOTTOMRIGHT", bar.Thumb, "BOTTOMRIGHT", -1, 1)
-			bar.Thumb.__aetherFill = fill
+			fill:SetPoint("TOPLEFT", grip, "TOPLEFT", 1, -1)
+			fill:SetPoint("BOTTOMRIGHT", grip, "BOTTOMRIGHT", -1, 1)
+			grip.__aetherFill = fill
 		end
-		A.Widgets.Tint(bar.Thumb.__aetherFill, A.Palette.c.text, 0.45)
+		A.Widgets.Tint(grip.__aetherFill, A.Palette.c.text, 0.45)
 	end
 
 	bar.__aetherScroll = true
