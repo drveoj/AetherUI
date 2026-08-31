@@ -5960,6 +5960,12 @@ do
 			rightInset:SetPoint("BOTTOMRIGHT", cf, "BOTTOMRIGHT", -6, 4)
 			rightInset:Hide()
 			cf.InsetRight = rightInset
+			-- BOTH RECESSES CARRY STONE, which is what makes stripping them
+			-- observable. InsetRight is the only frame in either client spelled
+			-- that way round; with only RightInset in the sweep's list its art
+			-- outlived the strip on the tab a player spends most time on.
+			inset:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
+			rightInset:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
 
 			-- THE ARROW THAT WIDENS THE SHEET, which Era has no equivalent of.
 			local expand = CreateFrame("Button", "CharacterFrameExpandButton", cf)
@@ -31553,6 +31559,44 @@ do
 			check(kept == 5,
 				"while decoration that is not the picture still comes off ("
 				.. kept .. " of 5)")
+
+			-- THE SECOND RECESS. This sheet has two - Inset, and InsetRight
+			-- holding the stat panel - and it is the only frame in either
+			-- client spelled that way round rather than RightInset, so the
+			-- sweep's list walked past it and its stone outlived the strip.
+			check(_G.CharacterFrameInsetRight:GetRegions():GetTexture() == 0,
+				"the stat panel's recess loses its stone as the other one does")
+
+			-- THE ARROW THAT WIDENS THE SHEET. All three of its states are
+			-- Blizzard's page-turn art with the arrow baked into the plate, so
+			-- unlike the model's controls there is nothing here to keep - and a
+			-- cleared button with nothing on it is an invisible button.
+			local ex = _G.CharacterFrameExpandButton
+			check(ex:GetNormalTexture():GetTexture() == 0,
+				"the expand arrow's own art is cleared")
+			-- THE CHEVRON ITSELF, named. "not zero" passed with the texture
+			-- set to nil, which is an invisible button - exactly the state the
+			-- check was written to rule out.
+			check(ex.__aetherChevron ~= nil
+				and ex.__aetherChevron:GetTexture() == A.Media.texture.chevron,
+				"and it is not left invisible - it gets a chevron, which for"
+				.. " once is the right glyph: this really does turn the sheet"
+				.. " from its narrow page to its wide one ("
+				.. tostring(ex.__aetherChevron
+					and ex.__aetherChevron:GetTexture()) .. ")")
+
+			-- AND IT POINTS THE WAY IT GOES. The client swaps its own art
+			-- between next-page and prev-page; a chevron that pointed one way
+			-- for both states would say the sheet only ever widens.
+			_G.__shut = ex.__aetherChevron:GetRotation()
+			cf:Expand()
+			A:GetModule("panels").Dress(cf, cf.__aetherArt)
+			check(ex.__aetherChevron:GetRotation() ~= _G.__shut,
+				"and turns round when the sheet is already expanded ("
+				.. tostring(ex.__aetherChevron:GetRotation()) .. " from "
+				.. tostring(_G.__shut) .. ")")
+			cf:Collapse()
+			A:GetModule("panels").Dress(cf, cf.__aetherArt)
 		end
 	end
 

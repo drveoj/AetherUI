@@ -47,6 +47,12 @@ A.Reskin = Reskin
 -- collected by looking at what actually turns up on them.
 local ART_CHILDREN = {
 	"Inset", "inset", "InsetFrame", "LeftInset", "RightInset",
+	-- AND THE SAME WORDS THE OTHER WAY ROUND. The Mists character sheet is the
+	-- only window in either client that spells it InsetRight - it has a SECOND
+	-- recess, holding the stat panel, shown while the sheet is expanded - and
+	-- with only RightInset listed here its stone outlived the strip on the one
+	-- tab a player spends the most time on.
+	"InsetRight", "InsetLeft",
 	"NineSlice", "BG", "Bg", "border", "Border", "Background", "BorderFrame",
 	"BorderBox", "bottomInset", "BottomInset", "bgLeft", "bgRight",
 	-- The shared dialog template keeps its title bar in one of these: a Header

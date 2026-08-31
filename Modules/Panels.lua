@@ -2841,6 +2841,9 @@ local STAT_GROUPS = 7
 -- top-left and is 16 wide, so its middle is 13.
 local STAT_GROUP_MARK_X = 13
 
+-- The chevron on the sheet's expand arrow, inside a 32px button.
+local EXPAND_CHEV = 11
+
 --- Art in one of those panes that is not the pane's own.
 --
 --  A sweep takes every texture on a frame, and some of these hold a picture
@@ -3036,6 +3039,40 @@ local function DressCharacter(frame, store)
 
 	local rank = _G.CharacterLevelText
 	if rank and rank.SetText then W.Color(rank, Palette.c.textDim) end
+
+	-- THE ARROW THAT WIDENS THE SHEET, which only Mists has. It carries three
+	-- states of Blizzard's spellbook page-turn art - up, down and disabled -
+	-- and the picture and the plate are ONE texture here, unlike the model's
+	-- controls, so there is nothing to keep: the button is cleared and given a
+	-- chevron of ours, which is the right glyph for once. This one really is
+	-- navigation - it turns the sheet from the narrow page to the wide one.
+	local expand = _G.CharacterFrameExpandButton
+	if expand and not expand.__aetherChevron then
+		Reskin.ClearButton(expand)
+		if type(store) == "table" then Reskin.Strip(expand, store) end
+
+		-- AND SOMETHING PUT BACK, because a cleared button with nothing on it
+		-- is an invisible button. The model's controls keep their own pictures;
+		-- this one cannot - all three of its states are Blizzard's page-turn
+		-- art with the arrow baked into the plate - so it gets a chevron of
+		-- ours. Which is the right glyph for once: a chevron means navigation,
+		-- and this genuinely turns the sheet from its narrow page to its wide
+		-- one.
+		local chev = expand:CreateTexture(nil, "OVERLAY")
+		chev:SetTexture(Media.texture.chevron)
+		chev:SetSize(EXPAND_CHEV, EXPAND_CHEV)
+		chev:SetPoint("CENTER", expand, "CENTER", 0, 0)
+		expand.__aetherChevron = chev
+	end
+	if expand and expand.__aetherChevron then
+		W.Color(expand.__aetherChevron, Palette.c.textDim)
+		-- WHICH WAY IT POINTS IS WHICH WAY IT GOES. The client swaps its own
+		-- art between next-page and prev-page in Expand and Collapse, so ours
+		-- has to answer the same question - and the flag it sets is the honest
+		-- place to ask it.
+		W.FaceChevron(expand.__aetherChevron,
+			(frame and frame.Expanded) and "LEFT" or "RIGHT")
+	end
 
 	EachEquipSlot(function(slot)
 		Reskin.Slot(slot)
