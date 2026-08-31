@@ -5766,7 +5766,14 @@ do
 			t.__fs = fs
 			function t:GetFontString() return self.__fs end
 
-			if label == "Pet" then t:Hide() end
+			-- HIDDEN UNTIL THE CHARACTER HAS ONE. The pet tab is the obvious
+			-- case; the CURRENCY tab is the same shape and was missed. Its
+			-- button ships hidden="true" in Cata/CharacterFrame.xml and
+			-- MainMenuBar only shows it once GetCurrencyListInfo reports a
+			-- currency with a count above nought - so a fresh character has
+			-- three tabs on this sheet, not four, and Currency arrives partway
+			-- through a session the way the pet tab does.
+			if label == "Pet" or label == "Currency" then t:Hide() end
 		end
 
 		-- TWO DOLLS, and the pet's is on its own tab with its own model box
@@ -31637,9 +31644,13 @@ do
 	-- A GLOBAL, not a local: this chunk is within a few names of Lua's ceiling
 	-- of 200 locals in one function, and the game runs 5.1.
 	_G.__tabCount = #_G.CHARACTERFRAME_SUBFRAMES
-	check(#shown == _G.__tabCount - 1 and not _G.CharacterFrameTab2:IsShown(),
-		"the hidden pet tab is left out of the row (" .. #shown .. " of "
-		.. _G.__tabCount .. " placed)")
+	-- TWO OF THEM CAN BE DOWN ON MISTS: the pet tab, and the currency tab,
+	-- which is hidden until the character actually holds a currency.
+	_G.__hiddenTabs = _G.__mists and 2 or 1
+	check(#shown == _G.__tabCount - _G.__hiddenTabs
+		and not _G.CharacterFrameTab2:IsShown(),
+		"the tabs the client is not showing are left out of the row (" .. #shown
+		.. " of " .. _G.__tabCount .. " placed)")
 
 	local t1, t2 = shown[1], shown[2]
 
@@ -31673,11 +31684,17 @@ do
 		local slack = tb:GetWidth() - (lb and lb:GetStringWidth() or 0)
 		if slack < 18 or slack > 34 then hugs = false end
 	end
+	-- THE LAST TAB IN THE ROW, whichever it is. Naming the third was naming
+	-- Skills, which Mists does not have - and on a character with neither a pet
+	-- nor a currency that row is two tabs long.
+	_G.__lastTab = shown[#shown]
 	check(hugs, "each tab is its own word plus the padding, not one width for"
 		.. " all of them (" .. string.format("%.1f", t1:GetWidth()) .. " vs " ..
-		string.format("%.1f", shown[3]:GetWidth()) .. ")")
-	check(math.abs(t1:GetWidth() - shown[3]:GetWidth()) > 1,
-		"which for Character and Skills is visibly not the same number")
+		string.format("%.1f", _G.__lastTab:GetWidth()) .. ")")
+	check(math.abs(t1:GetWidth() - _G.__lastTab:GetWidth()) > 1,
+		"which for " .. tostring(t1:GetFontString():GetText()) .. " and "
+		.. tostring(_G.__lastTab:GetFontString():GetText())
+		.. " is visibly not the same number")
 
 	local _, tabSize, tabFlags = t1:GetFontString():GetFont()
 	check(tabFlags == "",
@@ -31721,7 +31738,8 @@ do
 		fire("PLAYER_ENTERING_WORLD")
 
 		local five = ShownTabs()
-		check(#five == _G.__tabCount, "a hunter's sheet has every tab (" .. #five
+		check(#five == _G.__tabCount - (_G.__hiddenTabs - 1),
+			"a hunter's sheet has its pet tab too (" .. #five
 			.. " of " .. _G.__tabCount .. ")")
 		check(RowSpill(five) == nil,
 			"no label is wider than its tab with all of them up")
@@ -31759,7 +31777,14 @@ do
 		-- else took off the window - which is the right answer for the client
 		-- resizing its own sheet and quite wrong for a test trying to hold a
 		-- window narrow and watch the row cope.
-		cf:SetWidth(math.floor(_G.__natural * 0.95))
+		-- PER TAB, not a flat width. 320 was picked against Era's four-tab row
+		-- and is roomy for a Mists character whose row is two, so the squeeze
+		-- this block exists to watch never happened on that flavour. The rail
+		-- is the window less its insets, so the width that puts a given
+		-- pressure on each tab is the row plus that allowance, less the
+		-- pressure.
+		cf:SetWidth(math.floor(_G.__natural + (insL - insR)
+			- #ShownTabs() * 12))
 		A:GetModule("panels").RefreshTabs("CharacterFrame")
 		local tight = ShownTabs()
 		local tightPad = (tight[1]:GetWidth()
@@ -31782,7 +31807,8 @@ do
 		-- AND WHEN THERE IS NOTHING ELSE LEFT, the words themselves - with the
 		-- whole of each on a tooltip, because a cut label that says nothing else
 		-- is a tab you have to click to identify.
-		cf:SetWidth(math.floor(_G.__natural * 0.80))
+		cf:SetWidth(math.floor(_G.__natural + (insL - insR)
+			- #ShownTabs() * 22))
 		A:GetModule("panels").RefreshTabs("CharacterFrame")
 		local cut = ShownTabs()
 		local cutOne
