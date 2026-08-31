@@ -6186,6 +6186,21 @@ do
 				ReputationFrame   = 400,
 				TokenFrame        = 338,
 			}
+			-- THE CLIENT RE-ANCHORS THE SUBTITLE, which is not what a function
+			-- called SetLevel sounds like it does. PaperDollFrame_SetLevel puts
+			-- CharacterLevelText back at TOP, -36 on the WINDOW every time it
+			-- runs - login, every expand, every collapse - and nudges it ten
+			-- either way depending on whether the stat panel is out. A mock
+			-- that only set the words could not show the band losing it.
+			function _G.PaperDollFrame_SetLevel()
+				local t = _G.CharacterLevelText
+				if not t then return end
+				t:SetText("Level 85 Affliction Warlock")
+				t:ClearAllPoints()
+				t:SetPoint("TOP", _G.PaperDollFrame, "TOP",
+					_G.CharacterFrameInsetRight:IsShown() and -10 or 10, -36)
+			end
+
 			cf.activeSubframe = "PaperDollFrame"
 			function cf:UpdateSize()
 				local w = _G.__tabWidth[self.activeSubframe] or _G.PANEL_DEFAULT_WIDTH
@@ -6220,12 +6235,14 @@ do
 				self.Expanded = true
 				self.InsetRight:Show()
 				repaintExpand(self)
+				_G.PaperDollFrame_SetLevel()
 				self:UpdateSize()
 			end
 			function cf:Collapse()
 				self.Expanded = false
 				self.InsetRight:Hide()
 				repaintExpand(self)
+				_G.PaperDollFrame_SetLevel()
 				self:UpdateSize()
 			end
 			cf:UpdateSize()
@@ -6237,6 +6254,14 @@ do
 			-- once and every measurement of the window disagrees.
 			local stats = CreateFrame("Frame", "CharacterStatsPane",
 				_G.PaperDollFrame)
+			-- IT SCROLLS, on a MinimalScrollBar the client hangs off the pane -
+			-- seven groups of numbers do not fit the recess. Left out of the
+			-- mock, a grey Blizzard bar down our glass could not be seen here.
+			stats.ScrollBox = CreateFrame("Frame", nil, stats)
+			stats.ScrollBar = CreateFrame("Frame", nil, stats)
+			stats.ScrollBar.Track = CreateFrame("Frame", nil, stats.ScrollBar)
+			stats.ScrollBar.Track.Thumb = CreateFrame("Frame", nil,
+				stats.ScrollBar.Track)
 			stats:SetSize(172, 350)
 			stats:SetPoint("TOPRIGHT", _G.PaperDollFrame, "TOPRIGHT", -4, -74)
 			stats.ClassBackground = stats:CreateTexture(nil, "BACKGROUND")
@@ -15138,7 +15163,11 @@ section("panels: the postbox, the book and the trade skills", function()
 	-- which is everywhere.
 	check(not (ts.__aetherBody and ts.__aetherBody:IsShown()),
 		"and there is no recess drawn round the pair of them")
-	check(_G.CharacterFrame.__aetherBody:IsShown(),
+	-- ...WHILE A WINDOW WHOSE CONTENT IS BARE STILL GETS ONE. Named per
+	-- flavour: the character sheet was the example, and on Mists its content is
+	-- inside the client's own two insets, so it is now on the other side of
+	-- this comparison. The gossip window is bare on both.
+	check(_G.GossipFrame.__aetherBody:IsShown(),
 		"while a window whose content is bare still gets one")
 
 	-- ALL FOUR GET THE GLASS. Three windows a player opens constantly - the
@@ -30369,11 +30398,17 @@ do
 	-- EVERY PANEL HAS A BODY, and it is one recess rather than whatever that
 	-- window's own dresser thought was content - which on the character sheet
 	-- was a box round the model and nothing at all round the rest of it.
+	-- ...UNLESS THE WINDOW'S OWN PANES ARE ALREADY RECESSES, which is what
+	-- `wells = false` says: the trainer, the trade window and - on Mists - the
+	-- character sheet, whose two insets hold everything on it. A body well
+	-- round those is a second rim round the first.
 	local bare = {}
 	for _, name in ipairs({ "CharacterFrame", "SpellBookFrame", "MerchantFrame",
 		"GossipFrame", "MailFrame" }) do
 		local f = _G[name]
-		if f and f.__aetherPanel and not f.__aetherBody then
+		local ent = A:GetModule("panels").ENTRY[name]
+		if f and f.__aetherPanel and not f.__aetherBody
+			and not (ent and ent.wells == false) then
 			bare[#bare + 1] = name
 		end
 	end
@@ -30381,17 +30416,47 @@ do
 		"every window has one (" .. (#bare > 0 and
 		(table.concat(bare, ", ") .. " without") or "all of them") .. ")")
 
-	-- IT HANGS OFF THE GLASS, for the same reason the hairline does.
-	check(cf.__aetherBody:GetParent() == cf.__aetherPanel,
-		"drawn on the glass rather than on the window under it")
+	-- WHICH SURFACE THAT IS depends on the window. Era's character sheet has
+	-- bare content and gets a body well; the Mists one keeps everything inside
+	-- the client's own two insets, so those ARE its wells and a third round the
+	-- outside would be a second rim round the first.
+	if _G.__mists then
+		-- BOTH OF THEM, and dressed the way the trade window's six are.
+		_G.__insetsBare = {}
+		for _, n in ipairs({ "CharacterFrameInset", "CharacterFrameInsetRight" }) do
+			local ins = _G[n]
+			if not (ins and ins.__aetherPill) then
+				_G.__insetsBare[#_G.__insetsBare + 1] = n
+			end
+		end
+		check(#_G.__insetsBare == 0,
+			"the sheet's own two recesses are its wells (" ..
+			(#_G.__insetsBare > 0 and table.concat(_G.__insetsBare, ", ")
+			or "both") .. ")")
+		-- AND THERE IS NO SEVENTH ROUND THE OUTSIDE. A body well here would be
+		-- a second rim round the first and a second helping of the same black,
+		-- twice as deep wherever they overlap - which on this window is
+		-- everywhere. Same reason the trainer and the trade window have none.
+		check(cf.__aetherBody == nil or not cf.__aetherBody:IsShown(),
+			"and no body well is drawn round the pair of them")
+		-- AND THE STAT PANEL'S SCROLL BAR IS OURS. A MinimalScrollBar left
+		-- Blizzard's is a grey bar down our glass beside seven groups of
+		-- numbers in our lettering.
+		check(_G.CharacterStatsPane.ScrollBar.__aetherScroll ~= nil,
+			"and the stat panel scrolls on one of ours")
+	else
+		-- IT HANGS OFF THE GLASS, for the same reason the hairline does.
+		check(cf.__aetherBody:GetParent() == cf.__aetherPanel,
+			"drawn on the glass rather than on the window under it")
 
-	-- AND IT CLEARS THE HEADER BY THE BODY PADDING.
-	local bp, brel, brelP, bx, by = cf.__aetherBody:GetPoint(1)
-	check(bp == "TOPLEFT" and brel == cf.__aetherPanel and brelP == "TOPLEFT"
-		and bx == W.PANEL_PAD
-		and by == -(cf.__aetherHeadH + W.PANEL_PAD),
-		"starting a body padding below the header rather than against it (" ..
-		tostring(bx) .. ", " .. tostring(by) .. ")")
+		-- AND IT CLEARS THE HEADER BY THE BODY PADDING.
+		local bp, brel, brelP, bx, by = cf.__aetherBody:GetPoint(1)
+		check(bp == "TOPLEFT" and brel == cf.__aetherPanel and brelP == "TOPLEFT"
+			and bx == W.PANEL_PAD
+			and by == -(cf.__aetherHeadH + W.PANEL_PAD),
+			"starting a body padding below the header rather than against it ("
+			.. tostring(bx) .. ", " .. tostring(by) .. ")")
+	end
 
 	-- AND IT STOPS AT THE RAILS. The spellbook wears both: a column of school
 	-- icons down the right and a row of book tabs along the foot. A recess
@@ -30406,10 +30471,12 @@ do
 	-- The row is read off the character sheet, which wears five tabs and no
 	-- column at all.
 	local cfFoot = cf.__aetherRails["BOTTOM"]
-	local fp, frel, frelP = cf.__aetherBody:GetPoint(3)
-	check(fp == "BOTTOM" and frel == cfFoot and frelP == "TOP",
-		"and stands on the tab row rather than behind it (" .. tostring(fp) ..
-		" to " .. tostring(frelP) .. ")")
+	if not _G.__mists then
+		local fp, frel, frelP = cf.__aetherBody:GetPoint(3)
+		check(fp == "BOTTOM" and frel == cfFoot and frelP == "TOP",
+			"and stands on the tab row rather than behind it (" .. tostring(fp)
+			.. " to " .. tostring(frelP) .. ")")
+	end
 
 	-- THE CLIENT'S CONTENT IS MOVED DOWN INTO IT. The character sheet's first
 	-- slot is anchored 74 below the frame, which is 64 below the glass - the
@@ -30434,9 +30501,19 @@ do
 	-- INSIDE THE WELL'S OWN PADDING, not against its rim: 15b gives a well 16
 	-- on all four sides, and content moved only as far as the body's edge is
 	-- content jammed into the corner of the recess.
-	local inner = W.PANEL_PAD + W.WELL_PAD
+	-- ...BY WHAT THIS WINDOW'S BODY IS INSET, which is not one number for every
+	-- window: a window whose panes are already recesses is inset by what its
+	-- own rim costs instead of by the well padding.
+	local inner = W.PANEL_PAD + (A:GetModule("panels").ENTRY.CharacterFrame.wells
+		== false and W.WELL_OUTSET or W.WELL_PAD)
 	local ix = select(4, _G.PaperDollFrame:GetPoint(1))
-	check(ix == inner - _G.__dollLeft and ix > 0,
+	-- NOUGHT ON MISTS, AND THAT IS THE ANSWER. That sheet's content is already
+	-- inside the client's own two recesses and correctly placed within them;
+	-- moving it across takes the gear out of the recess drawn for it and leaves
+	-- the stat panel, which hangs off the OTHER recess, going the other way.
+	-- See `keepWidth`.
+	check(ix == (_G.__mists and 0 or (inner - _G.__dollLeft))
+		and (_G.__mists or ix > 0),
 		"and moved in past the well's own padding (" .. tostring(ix) ..
 		" for content that started at 11)")
 
@@ -30446,7 +30523,9 @@ do
 	-- left was an assumption that the client centred its content in its own
 	-- window, and the vendor's rows are not centred in its.
 	local grown, grow = cf:GetWidth(), cf.__aetherBodyGrow
-	check(grow and grow > 0,
+	-- ...AND NOT AT ALL WHERE THE CONTENT NEEDED NO INSET. Growing to pay for a
+	-- shift that did not happen is the "opens too wide" half of the report.
+	check(_G.__mists and grow == 0 or (grow and grow > 0),
 		"the window is widened to pay for the inset (" .. tostring(grow) .. ")")
 	PN.LayoutBody(cf, PN.ENTRY.CharacterFrame)
 	check(math.abs(grown - cf:GetWidth()) < 0.5,
@@ -30493,19 +30572,35 @@ do
 			_G.__shallowest = top
 		end
 	end
+	-- AND WITH `together` EVERY PANE MOVES BY THE DEEPEST, which is what keeps
+	-- this sheet's two anchoring schemes - gear off the pane, stat panel off
+	-- the recess - from drifting apart.
 	local want = cf.__aetherHeadH + inner - _G.__shallowest
 	check(cf.__aetherBodyShift == want and want > 0,
 		"and the window grows by the deepest of them (" ..
 		tostring(cf.__aetherBodyShift) .. " against " .. tostring(want) .. ")")
 	local pp, prel, pprel, _, py = _G.PaperDollFrame:GetPoint(1)
+	_G.__paneDrop = _G.__mists and -want
+		or -(cf.__aetherHeadH + inner - _G.__dollTop)
 	check(pp == "TOPLEFT" and prel == cf and pprel == "TOPLEFT"
-		and py == -(cf.__aetherHeadH + inner - _G.__dollTop),
+		and py == _G.__paneDrop,
 		"by moving the PANE, so every slot and model on the tab travels with"
 		.. " it (" .. tostring(py) .. ")")
 	local _, _, _, _, ry = _G.ReputationFrame:GetPoint(1)
-	check(ry == -(cf.__aetherHeadH + inner - _G.__repTop),
-		"and each tab by its own amount rather than all by the window's (" ..
-		tostring(ry) .. ")")
+	if _G.__mists then
+		-- ALL BY THE SAME AMOUNT HERE, deliberately. This sheet anchors its
+		-- content two ways at once and the recesses are in the body list beside
+		-- the panes; measuring each on its own would move the gear and the box
+		-- drawn round it by different numbers.
+		check(ry == _G.__paneDrop,
+			"and every pane and both recesses by the SAME amount, so the gear"
+			.. " and the recess behind it cannot drift apart (" ..
+			tostring(ry) .. ")")
+	else
+		check(ry == -(cf.__aetherHeadH + inner - _G.__repTop),
+			"and each tab by its own amount rather than all by the window's ("
+			.. tostring(ry) .. ")")
+	end
 
 	-- BY ITS TOP CORNER ONLY, because a pane that fills the window is a page
 	-- AND a footer at once: the client hangs the gear down from its top edge
@@ -30602,10 +30697,16 @@ do
 	check(my == W.PANEL_PAD + W.PANEL_FOOT_H,
 		"the recess stops a footer's height clear of the tab rail (" ..
 		tostring(my) .. ")")
-	local _, _, _, _, cy = cf.__aetherBody:GetPoint(3)
-	check(cy == W.PANEL_PAD,
-		"and a window with no footer keeps none of it back (" ..
-		tostring(cy) .. ")")
+	-- READ OFF THE CHARACTER SHEET, which has no footer - and which on Mists
+	-- has no body well either, its content living in the client's own two
+	-- recesses. Nothing else in the mock is both footer-less and bare, so the
+	-- pair is asked of Era only rather than asked of the wrong window.
+	if not _G.__mists then
+		local _, _, _, _, cy = cf.__aetherBody:GetPoint(3)
+		check(cy == W.PANEL_PAD,
+			"and a window with no footer keeps none of it back (" ..
+			tostring(cy) .. ")")
+	end
 	local _ = mfoot
 
 	-- A HIDDEN RAIL IS NOT A RAIL. A window can carry a rail it is not using -
@@ -30614,8 +30715,9 @@ do
 	-- strip of bare glass along that edge with nothing standing in it.
 	cfFoot:Hide()
 	PN.LayoutBody(cf, PN.ENTRY.CharacterFrame)
-	local hp, hrel = cf.__aetherBody:GetPoint(3)
-	check(hp == "BOTTOM" and hrel == cf.__aetherPanel,
+	local hp, hrel = (_G.__mists and _G.GossipFrame or cf).__aetherBody:GetPoint(3)
+	check(hp == "BOTTOM"
+		and hrel == (_G.__mists and _G.GossipFrame or cf).__aetherPanel,
 		"the body reaches the foot of the glass when the rail is down")
 	cfFoot:Show()
 	PN.LayoutBody(cf, PN.ENTRY.CharacterFrame)
@@ -30647,8 +30749,11 @@ do
 	-- depend on which number either side thinks it is holding.
 	if _G.__mists then
 		_G.__wide = cf:GetWidth()
-		check(cf.__aetherBodyGrow and cf.__aetherBodyGrow > 0,
-			"the sheet has been widened to pay for its padding ("
+		-- NOT WIDENED AT ALL, which is the point of keepWidth: this sheet's
+		-- content is already inside the client's own recesses, so there is no
+		-- inset to pay for and nothing to grow by.
+		check(cf.__aetherBodyGrow == 0,
+			"the sheet is left at the client's own width ("
 			.. tostring(cf.__aetherBodyGrow) .. ")")
 
 		-- THE CLIENT'S OWN NUMBER for the tab being switched to, which is what
@@ -31812,6 +31917,28 @@ do
 				and ex:GetPushedTexture():GetTexture() == 0,
 				"and its art stays ours after the client has repainted it ("
 				.. tostring(ex:GetNormalTexture():GetTexture()) .. ")")
+
+			-- AND THE SUBTITLE STAYS IN THE BAND. PaperDollFrame_SetLevel
+			-- re-anchors CharacterLevelText to TOP, -36 on the WINDOW - not
+			-- what a function of that name sounds like it does - and runs on
+			-- every expand and collapse. Left to it, "Level 85 Affliction
+			-- Warlock" printed below the header's hairline and slid sideways
+			-- across the gear whenever the stat panel opened, because it is
+			-- centred on a window whose width changes.
+			_G.PaperDollFrame_SetLevel()
+			_G.__lvl = _G.CharacterLevelText
+			_G.__lp, _G.__lrel = _G.__lvl:GetPoint(1)
+			-- ANCHORED UNDER THE TITLE, which is where the band puts it - and
+			-- emphatically NOT to PaperDollFrame, which is where the client
+			-- puts it back and which is the whole window.
+			check(_G.__lrel ~= _G.PaperDollFrame and _G.__lrel ~= cf
+				and (_G.__lrel == cf.__aetherTitle
+					or _G.__lrel == cf.__aetherPanel),
+				"the subtitle is put back under the title after the client has"
+				.. " re-anchored it to the window")
+			check(_G.__lvl:GetTop() and cf.__aetherHeadRule:GetTop()
+				and _G.__lvl:GetTop() >= cf.__aetherHeadRule:GetTop(),
+				"which is ABOVE the hairline rather than under it")
 			cf:Collapse()
 			A:GetModule("panels").Dress(cf, cf.__aetherArt)
 

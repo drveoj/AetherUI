@@ -759,6 +759,42 @@ do
 		local ch = PN.ENTRY.CharacterFrame
 		ch.tight  = true
 		ch.insets = { 0, 0, 0, -CHAR_TAB_DROP }
+
+		-- AND IT ALREADY HAS ITS OWN RECESSES - two of them. CharacterFrameInset
+		-- holds the doll and the gear; CharacterFrameInsetRight holds the stat
+		-- panel and the sidebar's panes. Every piece of content on this window
+		-- is inside one of them, which makes it the trainer's case and the trade
+		-- window's: a body well round the outside would be a second rim round
+		-- the first. They are dressed as our wells instead.
+		ch.wells = false
+
+		-- THE RECESSES MOVE WITH WHAT IS IN THEM. This window anchors its
+		-- content two ways at once - the gear hangs off the PANE, the stat
+		-- panel off the RECESS - so shifting the panes alone slid the doll and
+		-- the slots out of a recess that had not moved. Both recesses are in
+		-- the body list, and `together` moves the lot by one amount so the two
+		-- schemes cannot drift apart.
+		local body = ch.body
+		body[#body + 1] = "CharacterFrameInset"
+		body[#body + 1] = "CharacterFrameInsetRight"
+		ch.together = true
+
+		-- AND NOTHING MOVES SIDEWAYS, which is the part that was making a mess.
+		--
+		-- The inset shift exists for windows whose content the client hung
+		-- against the frame's own edge, with nothing drawn round it - the
+		-- vendor's rows are the case it was written for. This window is the
+		-- opposite: its content is ALREADY inside two recesses of the client's
+		-- own, correctly placed within them, and every horizontal relationship
+		-- on it is already right.
+		--
+		-- Shifting it across broke that in two ways at once. The gear moved and
+		-- the recess behind it did not, so both columns ended up outside the
+		-- well; and the window then grew to pay for an inset it did not need,
+		-- which is the "opens too wide" half of the report. The stat panel and
+		-- the sidebar hang off the RIGHT-hand recess, so they went the other
+		-- way and left the glass entirely.
+		ch.keepWidth = true
 		-- ITS X NEEDS NO ENTRY. ButtonFrameTemplate carries the close button as
 		-- frame.CloseButton with no name of its own, where Era's sheet declares
 		-- CharacterFrameCloseButton - but CloseButton() already falls back to
@@ -1858,6 +1894,12 @@ function PN.LayoutBody(frame, entry)
 			local down = top and math.max(0, mine - top) or 0
 			local over = left and math.max(0, inner - left) or 0
 			local back = right and math.max(0, inner - right) or over
+			-- A WINDOW WHOSE CONTENT IS ALREADY INSIDE THE CLIENT'S OWN
+			-- RECESSES does not want moving across. See `keepWidth` on the
+			-- character sheet's entry: shifting one of those moves the content
+			-- out of the recess drawn for it, and growing the window to pay for
+			-- the shift makes it too wide for what is in it.
+			if entry and entry.keepWidth then over, back = 0, 0 end
 			if down > most then most = down end
 			if over > wide then wide = over end
 			if back > tail then tail = back end
@@ -1965,7 +2007,7 @@ function PN.LayoutBody(frame, entry)
 		end
 	end
 
-	local grow = wide + tail
+	local grow = (entry and entry.keepWidth) and 0 or (wide + tail)
 	local wasWide = frame.__aetherBodyGrow or 0
 
 	-- IS THE GROWTH STILL THERE? Every other window in this list is whatever
@@ -3267,6 +3309,29 @@ local function DressCharacter(frame, store)
 	local rank = _G.CharacterLevelText
 	if rank and rank.SetText then W.Color(rank, Palette.c.textDim) end
 
+	-- AND THE CLIENT PUTS THE SUBTITLE BACK WHERE IT WANTS IT.
+	--
+	-- PaperDollFrame_SetLevel does not merely set the words: it re-anchors
+	-- CharacterLevelText to TOP, -36, centred on the WINDOW - and nudges it ten
+	-- either way depending on whether the stat panel is out. It runs on login
+	-- and on every expand and collapse, so the band we had just put it in lasted
+	-- until the first time the sheet changed width.
+	--
+	-- What that looked like: "Level 85 Affliction Warlock" printed below the
+	-- header's hairline instead of inside the band, and sliding right across the
+	-- gear when the stat panel opened. Centred on a window that had grown, it
+	-- landed on the right-hand column of slots.
+	--
+	-- Third time on this window - the slot borders, the expand arrow, and now
+	-- this - so it is the same answer: hook the thing that repaints.
+	if not PN.__dollLevelHook and hooksecurefunc
+		and type(_G.PaperDollFrame_SetLevel) == "function" then
+		PN.__dollLevelHook = true
+		hooksecurefunc("PaperDollFrame_SetLevel", function()
+			if PN.enabled then pcall(PN.RefreshHeader, "CharacterFrame") end
+		end)
+	end
+
 	-- THE ARROW THAT WIDENS THE SHEET, which only Mists has. It carries three
 	-- states of Blizzard's spellbook page-turn art - up, down and disabled -
 	-- and the picture and the plate are ONE texture here, unlike the model's
@@ -3335,6 +3400,28 @@ local function DressCharacter(frame, store)
 
 	LayoutTabs(frame, store)
 	InstallTabHooks()
+
+	-- THIS WINDOW'S WELLS ARE THE CLIENT'S OWN RECESSES on Mists - the doll and
+	-- the gear in one, the stat panel and the sidebar's panes in the other -
+	-- so they are drawn the way the trade window's six are, and there is no
+	-- seventh round the outside.
+	for _, name in ipairs({ "CharacterFrameInset", "CharacterFrameInsetRight" }) do
+		local ins = Part(name)
+		if ins then
+			ins.__aetherStore = ins.__aetherStore or {}
+			Reskin.Strip(ins, ins.__aetherStore)
+			Reskin.Well(ins, { corner = W.WELL_CORNER, inset = { 0, 0, 0, 0 },
+				fill = "wellFill", edge = "wellEdge" })
+		end
+	end
+
+	-- AND THE STAT PANEL SCROLLS, on a MinimalScrollBar that had been left
+	-- Blizzard's - a grey bar down our glass beside seven groups of numbers in
+	-- our lettering.
+	local statsPane = Part("CharacterStatsPane")
+	if statsPane and statsPane.ScrollBar then
+		Reskin.ScrollBar(statsPane.ScrollBar, store)
+	end
 
 	DressSidebar(store)
 	DressGearPopup(store)
