@@ -63,7 +63,11 @@ local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 --  Only that corner is ours to move; see ClientRecess.
 --  `schoolCol` is the column of school tabs the Mists spellbook hangs off its
 --  own RIGHT edge - 32 wide, plus air.
-local CHAR = { tabDrop = 34, insetX = 4, insetY = 60, schoolCol = 40 }
+--  `pages` are the three the same rebuild added to the spellbook, which Era
+--  has none of - every one setAllPoints to the window, like the spell page.
+local CHAR = { tabDrop = 34, insetX = 4, insetY = 60, schoolCol = 40,
+	pages = { "SpellBookProfessionFrame", "SpellBookCoreAbilitiesFrame",
+		"SpellBookWhatHasChanged" } }
 
 local MAIL_TAB_DROP = 40
 -- Letters on a page of the inbox. Seven, and the client pages rather than
@@ -833,9 +837,10 @@ do
 		-- professions, and the abilities the client thinks define your spec.
 		-- Both are setAllPoints to the window like the spell page, so both want
 		-- measuring and moving with it.
+		-- THREE, not two: "What has changed?" is a page of this book as well,
+		-- and setAllPoints to the window like the rest.
 		local sbody = sb.body
-		sbody[#sbody + 1] = "SpellBookProfessionFrame"
-		sbody[#sbody + 1] = "SpellBookCoreAbilitiesFrame"
+		for _, page in ipairs(CHAR.pages) do sbody[#sbody + 1] = page end
 
 		-- AND NO ROOM RESERVED FOR THE RANK SWITCH. Mists has no spell ranks,
 		-- so ShowAllSpellRanksCheckbox does not exist and the lead reserved
@@ -4012,6 +4017,34 @@ local function DressSpellBook(frame, store)
 	-- ITS OWN RECESS IS ITS WELL on Mists, the same as the character sheet's -
 	-- ButtonFrameTemplate again, and everything in the book sits inside it.
 	ClientRecess(frame, "SpellBookFrame.Inset", CHAR.insetX, CHAR.insetY)
+
+	-- AND THE THREE NEW PAGES ARE PRINTED ON PARCHMENT.
+	--
+	-- Professions, Core Abilities and "What has changed?" are near-black
+	-- throughout - headings, descriptions and all - because that is what reads
+	-- on the paper the client drew them for. On glass it is a page you cannot
+	-- read at all, which is what Joe was looking at: three tabs of dark grey on
+	-- dark blue.
+	--
+	-- The lighten argument is the whole answer and it is already here: any
+	-- string dark enough to have been meant for parchment is lifted, a gold
+	-- heading is left saying what it was put there to say, and Reskin.Ink
+	-- catches the ones whose black is an escape INSIDE the text rather than a
+	-- colour on the font string.
+	--
+	-- FROM DEPTH NOUGHT, which is the deepest and not the shallowest: the
+	-- third argument is where the walk STARTS and it stops at four, so a large
+	-- number is less reach rather than more. Written as three first, on the
+	-- reasoning that these nest a level or two - and it reached one level
+	-- instead of four. A profession is a frame holding a heading, a
+	-- description and a progress bar with text of its own.
+	for _, page in ipairs(CHAR.pages) do
+		local pane = Part(page)
+		if pane then
+			Reskin.Strip(pane, store)
+			Reskin.Fonts(pane, "pnBody", 0, Palette.c.text)
+		end
+	end
 
 	-- The page number, which the client draws in near-black because it is
 	-- printing it on parchment. On glass that is a page number you cannot read.

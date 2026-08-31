@@ -6833,11 +6833,51 @@ do
 			-- YOUR PROFESSIONS AND YOUR CORE ABILITIES, both setAllPoints to
 			-- the window exactly as the spell page is, so both want measuring
 			-- and moving with it.
+			-- THREE PAGES, and every word on them PRINTED ON PARCHMENT. The
+			-- client draws these near-black because that is what reads on the
+			-- paper it drew them for; on glass they are a page you cannot read.
+			-- A mock that left them white could not show it, and the fix - the
+			-- lighten argument that lifts anything dark enough to have been
+			-- meant for paper - would have looked like a no-op.
 			for _, n in ipairs({ "SpellBookProfessionFrame",
-				"SpellBookCoreAbilitiesFrame" }) do
+				"SpellBookCoreAbilitiesFrame", "SpellBookWhatHasChanged" }) do
 				local page = CreateFrame("Frame", n, sb)
 				page:SetAllPoints(sb)
 				page:CreateTexture(nil, "BACKGROUND"):SetTexture("page-stone")
+				page:Hide()
+
+				local head = page:CreateFontString(n .. "Head", "OVERLAY")
+				head:SetFont([[Fonts\FRIZQT__.TTF]], 14, "")
+				head:SetText("First Profession")
+				head:SetTextColor(0.10, 0.10, 0.10)
+
+				-- THREE LEVELS DOWN, because these nest and the sweep's depth
+				-- argument is where the walk STARTS rather than how far it
+				-- goes - so a number chosen to mean "these nest a bit" reaches
+				-- LESS far, not more. One level of nesting could not show that.
+				local row = CreateFrame("Frame", nil, page)
+				row = CreateFrame("Frame", nil, row)
+				row = CreateFrame("Frame", nil, row)
+				local body = row:CreateFontString(n .. "Body", "OVERLAY")
+				body:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				body:SetText("Visit a profession trainer in a major city.")
+				body:SetTextColor(0.12, 0.12, 0.12)
+
+				-- ITS INK INSIDE THE STRING, which SetTextColor cannot reach
+				-- and GetTextColor never sees.
+				local baked = row:CreateFontString(n .. "Baked", "OVERLAY")
+				baked:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				baked:SetText("|cff000000Archaeology|r")
+				baked:SetTextColor(1, 1, 1)
+
+				-- AND ONE THAT IS GOLD BECAUSE SOMEBODY MEANT IT. A sweep that
+				-- lifted every string would flatten this to the same grey as
+				-- the rest and lose what it was put there to say.
+				local gold = page:CreateFontString(n .. "Gold", "OVERLAY")
+				gold:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				gold:SetText("Trainer")
+				gold:SetTextColor(1, 0.82, 0)
+
 				page:Hide()
 			end
 			-- A primary profession, with the bar that says how far along it is.
@@ -30616,6 +30656,39 @@ do
 		-- round the first and a second helping of the same black.
 		check(sb.__aetherBody == nil or not sb.__aetherBody:IsShown(),
 			"and no body well is drawn round it")
+
+		-- AND THE THREE NEW PAGES ARE READABLE. Professions, Core Abilities
+		-- and "What has changed?" are printed near-black throughout, because
+		-- that is what reads on the paper the client drew them for. On glass
+		-- they are three tabs of dark grey on dark blue.
+		_G.__dark, _G.__flat = {}, {}
+		for _, n in ipairs({ "SpellBookProfessionFrame",
+			"SpellBookCoreAbilitiesFrame", "SpellBookWhatHasChanged" }) do
+			for _, part in ipairs({ "Head", "Body" }) do
+				local fs = _G[n .. part]
+				local r, g, b = fs:GetTextColor()
+				if (r + g + b) < 1 then _G.__dark[#_G.__dark + 1] = n .. part end
+			end
+			-- ITS INK INSIDE THE STRING, which SetTextColor cannot reach.
+			if (_G[n .. "Baked"]:GetText() or ""):find("|cff000000", 1, true) then
+				_G.__dark[#_G.__dark + 1] = n .. "Baked"
+			end
+			-- ...AND THE ONE THAT IS GOLD BECAUSE SOMEBODY MEANT IT. A sweep
+			-- that lifted every string would flatten this to the same grey as
+			-- the rest and lose what it was put there to say.
+			local gr, gg, gb = _G[n .. "Gold"]:GetTextColor()
+			if not (gr > 0.9 and gg > 0.7 and gb < 0.2) then
+				_G.__flat[#_G.__flat + 1] = n .. "Gold"
+			end
+		end
+		check(#_G.__dark == 0,
+			"the book's three new pages are lifted off the parchment (" ..
+			(#_G.__dark > 0 and table.concat(_G.__dark, ", ")
+			or "every string on all three") .. ")")
+		check(#_G.__flat == 0,
+			"while a heading that is gold on purpose keeps its colour (" ..
+			(#_G.__flat > 0 and table.concat(_G.__flat, ", ") or "all three")
+			.. ")")
 		check(_G.SpellBookFrame.Inset:GetRight() and sbSide:GetLeft()
 			and _G.SpellBookFrame.Inset:GetRight() <= sbSide:GetLeft() + 0.5,
 			"and it still stops short of the school tabs (" ..
