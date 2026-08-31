@@ -6209,6 +6209,26 @@ do
 					w = _G.CHARACTERFRAME_EXPANDED_WIDTH
 				end
 				self:SetWidth(w)
+
+				-- AND IT RE-ANCHORS THE RECESS, which is the half of UpdateSize
+				-- that matters most to anything outside the client. The doll
+				-- and pet tabs want a recess of a FIXED width whatever the
+				-- window is doing, so its far corner is pinned 338 from the
+				-- window's LEFT edge; every other tab wants one that follows
+				-- the window, so it is pinned 6 from the RIGHT.
+				--
+				-- That corner is therefore not anybody else's to hold. A mock
+				-- that left it alone could not show what happens when it is
+				-- cached and put back: the recess spans the whole window,
+				-- InsetRight is pushed off the end of it, and the entire stat
+				-- panel lands outside the glass.
+				if self.activeSubframe == "PaperDollFrame"
+					or self.activeSubframe == "PetPaperDollFrame" then
+					self.Inset:SetPoint("BOTTOMRIGHT", self, "BOTTOMLEFT",
+						_G.PANEL_DEFAULT_WIDTH - 6, 4)
+				else
+					self.Inset:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -6, 4)
+				end
 			end
 			function cf:ShowSubFrame(name)
 				for _, other in ipairs(_G.CHARACTERFRAME_SUBFRAMES) do
@@ -30439,6 +30459,39 @@ do
 		-- everywhere. Same reason the trainer and the trade window have none.
 		check(cf.__aetherBody == nil or not cf.__aetherBody:IsShown(),
 			"and no body well is drawn round the pair of them")
+
+		-- AND BOTH STAY INSIDE THE GLASS ACROSS A TAB CHANGE, which is the
+		-- check that was missing when the recesses went into the body list.
+		--
+		-- The mover caches a pane's points the first time it touches one and
+		-- re-applies them for ever. CharacterFrameInset's far corner is not
+		-- ours to cache: UpdateSize pins it either 338 from the window's LEFT
+		-- edge, for the tabs that want a fixed-width recess, or 6 from its
+		-- RIGHT for the rest. Held at the wrong one, the recess spans the whole
+		-- window, InsetRight is pushed off the end of it, and the entire stat
+		-- panel sits outside the glass with a Blizzard scroll bar beside it.
+		--
+		-- Asked of the rects, across every tab, because it is a fault that only
+		-- appears once the client has re-anchored something we were holding.
+		for _, tab in ipairs(_G.CHARACTERFRAME_SUBFRAMES) do
+			cf:ShowSubFrame(tab)
+			_G.__outside = {}
+			for _, n in ipairs({ "CharacterFrameInset", "CharacterFrameInsetRight" }) do
+				local ins = _G[n]
+				if ins:GetRight() and cf.__aetherPanel:GetRight()
+					and ins:GetRight() > cf.__aetherPanel:GetRight() + 0.5 then
+					_G.__outside[#_G.__outside + 1] = n .. " on " .. tab
+						.. " (" .. string.format("%.0f", ins:GetRight())
+						.. " past " .. string.format("%.0f",
+							cf.__aetherPanel:GetRight()) .. ")"
+				end
+			end
+			check(#_G.__outside == 0,
+				"both recesses stay inside the glass on the " .. tab
+				.. " tab (" .. (#_G.__outside > 0
+					and table.concat(_G.__outside, ", ") or "both") .. ")")
+		end
+		cf:ShowSubFrame("PaperDollFrame")
 		-- AND THE STAT PANEL'S SCROLL BAR IS OURS. A MinimalScrollBar left
 		-- Blizzard's is a grey bar down our glass beside seven groups of
 		-- numbers in our lettering.

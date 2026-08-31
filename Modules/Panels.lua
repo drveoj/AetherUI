@@ -51,9 +51,17 @@ local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 -- 30, which puts their top edge inside the money row - hidden in the
 -- client by the stone border drawn over the join, and not hidden once that
 -- border is off. The glass follows it down, or the tabs sit outside.
--- How far the Mists character sheet's tabs hang below its own bottom edge.
--- Same arrangement as the vendor's and the postbox's.
-local CHAR_TAB_DROP = 34
+--- The Mists character sheet's own numbers, in one table.
+--
+--  ONE LOCAL RATHER THAN THREE. This file's main chunk is within a few names
+--  of Lua's ceiling of 200 locals in a function, and the game runs 5.1 - three
+--  constants took it over and the whole module stopped loading.
+--
+--  `tabDrop` is how far its tabs hang below its own bottom edge, the same
+--  arrangement as the vendor's and the postbox's. `insetX`/`insetY` are where
+--  its recess starts, out of its XML: TOPLEFT 4, -60. Only that corner is ours
+--  to move; see DressCharacter.
+local CHAR = { tabDrop = 34, insetX = 4, insetY = 60 }
 
 local MAIL_TAB_DROP = 40
 -- Letters on a page of the inbox. Seven, and the client pages rather than
@@ -758,7 +766,7 @@ do
 	if A.isMists then
 		local ch = PN.ENTRY.CharacterFrame
 		ch.tight  = true
-		ch.insets = { 0, 0, 0, -CHAR_TAB_DROP }
+		ch.insets = { 0, 0, 0, -CHAR.tabDrop }
 
 		-- AND IT ALREADY HAS ITS OWN RECESSES - two of them. CharacterFrameInset
 		-- holds the doll and the gear; CharacterFrameInsetRight holds the stat
@@ -768,15 +776,11 @@ do
 		-- the first. They are dressed as our wells instead.
 		ch.wells = false
 
-		-- THE RECESSES MOVE WITH WHAT IS IN THEM. This window anchors its
-		-- content two ways at once - the gear hangs off the PANE, the stat
-		-- panel off the RECESS - so shifting the panes alone slid the doll and
-		-- the slots out of a recess that had not moved. Both recesses are in
-		-- the body list, and `together` moves the lot by one amount so the two
-		-- schemes cannot drift apart.
-		local body = ch.body
-		body[#body + 1] = "CharacterFrameInset"
-		body[#body + 1] = "CharacterFrameInsetRight"
+		-- EVERY PANE BY THE SAME AMOUNT. This window anchors its content two
+		-- ways at once - the gear hangs off the PANE, the stat panel off the
+		-- RECESS - so a per-pane shift slides the gear out of the box drawn
+		-- round it. The recess is brought down to match in DressCharacter; it
+		-- is NOT in this list, for the reason written there.
 		ch.together = true
 
 		-- AND NOTHING MOVES SIDEWAYS, which is the part that was making a mess.
@@ -3374,6 +3378,11 @@ local function DressCharacter(frame, store)
 		hooksecurefunc(frame, "UpdateSize", function(self)
 			if not PN.enabled then return end
 			pcall(PN.LayoutBody, self, PN.ENTRY and PN.ENTRY.CharacterFrame)
+			local ins = _G.CharacterFrameInset
+			if ins and self.__aetherBodyShift then
+				ins:SetPoint("TOPLEFT", self, "TOPLEFT",
+					CHAR.insetX, -(CHAR.insetY + self.__aetherBodyShift))
+			end
 			local btn = _G.CharacterFrameExpandButton
 			if btn and btn.__aetherChevron then
 				Reskin.ClearButton(btn)
@@ -3400,6 +3409,29 @@ local function DressCharacter(frame, store)
 
 	LayoutTabs(frame, store)
 	InstallTabHooks()
+
+	-- AND THE RECESS COMES DOWN TO MEET THE PANES.
+	--
+	-- ITS TOP CORNER ONLY, AND NEVER THROUGH THE BODY LIST. Putting the two
+	-- insets in that list looked right and was not: the mover caches a pane's
+	-- points the first time it touches one and re-applies them for ever, and
+	-- CharacterFrameInset's BOTTOMRIGHT is not ours to cache - UpdateSize
+	-- rewrites it on every tab change, pinning it either 338 from the window's
+	-- LEFT edge (the doll and pet tabs, which want a fixed-width recess) or 6
+	-- from its RIGHT (everything else). Frozen at the wrong one the recess
+	-- spanned the whole window and pushed InsetRight, and with it the entire
+	-- stat panel, clean off the glass.
+	--
+	-- So only the TOPLEFT is touched, which is static XML and nobody else's.
+	-- InsetRight hangs off this one's TOPRIGHT and the expand arrow off its
+	-- BOTTOMRIGHT, so both come with it, and setting the same point twice
+	-- costs nothing - which is what makes this safe to run from a hook that
+	-- fires whenever the client resizes.
+	local recess = Part("CharacterFrameInset")
+	if recess and frame and frame.__aetherBodyShift then
+		recess:SetPoint("TOPLEFT", frame, "TOPLEFT",
+			CHAR.insetX, -(CHAR.insetY + frame.__aetherBodyShift))
+	end
 
 	-- THIS WINDOW'S WELLS ARE THE CLIENT'S OWN RECESSES on Mists - the doll and
 	-- the gear in one, the stat panel and the sidebar's panes in the other -
