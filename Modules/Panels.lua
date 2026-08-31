@@ -135,6 +135,13 @@ local PANELS = {
 		-- their content begins: the first equipment slot is 74 below the
 		-- frame, the reputation columns are headed at 57 and the skill
 		-- list's ALL tab sits at 49.
+		--
+		-- WRITTEN BY THE CLIENT, not by us - see below the table. Era's five
+		-- are Character, Pet, Reputation, Skills and Honour; Cataclysm dropped
+		-- the last two and added Currency, and both clients publish the answer
+		-- as CHARACTERFRAME_SUBFRAMES. Era's list stood here for both, so on
+		-- Mists the Currency tab was never measured and never moved: its list
+		-- is anchored to the client's own recess and sat wherever that put it.
 		body = { "PaperDollFrame", "PetPaperDollFrame", "ReputationFrame",
 			"SkillFrame", "HonorFrame" } },
 	-- SOMEBODY ELSE'S, which is not the same window and not the same shape.
@@ -704,6 +711,27 @@ PN.PANELS = PANELS
 --- The same list, by frame name, for the things Dress needs mid-flight.
 PN.ENTRY = {}
 for _, entry in ipairs(PANELS) do PN.ENTRY[entry.frame] = entry end
+
+-- THE CHARACTER SHEET'S TABS, FROM THE CLIENT ITSELF.
+--
+-- This is the one window in the list whose panes differ between the two
+-- flavours, and the one case where guessing is unnecessary: both clients
+-- declare CHARACTERFRAME_SUBFRAMES, and ToggleCharacter, ShowSubFrame and the
+-- sheet's own hide sweep all read it. Taking it rather than restating it means
+-- a tab Blizzard adds is measured the day it appears, and a tab they remove
+-- stops being asked for.
+--
+-- The table above keeps Era's five as the written answer for when the global
+-- is missing - a .toc that failed to load its character frame, chiefly, where
+-- half a body list is better than none.
+do
+	local subs = _G.CHARACTERFRAME_SUBFRAMES
+	if type(subs) == "table" and #subs > 0 then
+		local body = {}
+		for i = 1, #subs do body[i] = subs[i] end
+		PN.ENTRY.CharacterFrame.body = body
+	end
+end
 
 local function cfg() return A.Config:Module("panels") end
 
@@ -1875,6 +1903,10 @@ function PN.LayoutBody(frame, entry)
 	-- window has not got.
 	local taller = most + room
 	local applied = frame.__aetherBodyShift or 0
+	-- NOT THE SAME TEST AS THE WIDTH BELOW, deliberately. A window's HEIGHT is
+	-- changed from outside on purpose - matchHeight has the letter reach the
+	-- postbox's height every time either is laid out - so "taller than we left
+	-- it" is a normal state here and not evidence that our growth is gone.
 	if frame.SetHeight and frame.GetHeight then
 		if taller ~= applied then
 			frame:SetHeight((frame:GetHeight() or 0) + (taller - applied))
@@ -1899,11 +1931,35 @@ function PN.LayoutBody(frame, entry)
 
 	local grow = wide + tail
 	local wasWide = frame.__aetherBodyGrow or 0
+
+	-- IS THE GROWTH STILL THERE? Every other window in this list is whatever
+	-- size we last left it, so "how much have we added" and "how much is
+	-- present" are the same question and one number answered both.
+	--
+	-- THE CHARACTER SHEET ON MISTS IS NOT. CharacterFrameMixin:UpdateSize sets
+	-- the window's width OUTRIGHT from the tab you are on - 338 for the doll,
+	-- 540 with the stat panel out, 400 for reputation - and it runs on every
+	-- tab click, every expand and every collapse. So the width we added to pay
+	-- for the body padding is discarded, while our note of having added it
+	-- survives; the next pass compares what it wants against that note, finds
+	-- them equal, and adds nothing. The window sits at the client's own width
+	-- with our padding still expected inside it and the content back out
+	-- through the rim it had just been moved in from.
+	--
+	-- So the note records the WIDTH WE LEFT IT AT as well as the amount. A
+	-- window that is no longer that width was resized by somebody else, and
+	-- whatever we added went with it.
+	if frame.__aetherBodyWidth and frame.GetWidth
+		and math.abs((frame:GetWidth() or 0) - frame.__aetherBodyWidth) > 0.5 then
+		wasWide = 0
+	end
+
 	if grow ~= wasWide and frame.SetWidth and frame.GetWidth then
 		frame:SetWidth((frame:GetWidth() or 0) + (grow - wasWide))
 	end
 	frame.__aetherBodyInset = wide
 	frame.__aetherBodyGrow = grow
+	if frame.GetWidth then frame.__aetherBodyWidth = frame:GetWidth() end
 
 	-- A WINDOW THAT LAYS ITSELF OUT gets told the padding instead of having
 	-- its children moved. The game menu is a VerticalLayoutFrame: its buttons

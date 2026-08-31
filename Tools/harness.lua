@@ -5577,12 +5577,42 @@ do
 	do
 		local cf = _G.CharacterFrame
 
+		-- WHICH TABS THIS SHEET HAS, AND THE CLIENT PUBLISHES THE LIST. Era
+		-- shows Character, Pet, Reputation, Skills and Honor; Cataclysm dropped
+		-- the last two and added Currency, so Mists is Character, Pet,
+		-- Reputation, Currency. BOTH clients declare it as
+		-- CHARACTERFRAME_SUBFRAMES - which makes the global the honest source
+		-- and either hard-coded list a guess that is wrong on one flavour.
+		_G.CHARACTERFRAME_SUBFRAMES = _G.__mists
+			and { "PaperDollFrame", "PetPaperDollFrame", "ReputationFrame",
+				"TokenFrame" }
+			or { "PaperDollFrame", "PetPaperDollFrame", "ReputationFrame",
+				"SkillFrame", "HonorFrame" }
+
+		-- AND THE SHEET RESIZES ITSELF ON MISTS, which Era's never does.
+		-- CharacterFrameMixin:UpdateSize sets the window's width outright from
+		-- the tab you are on - 384 for the doll, 540 with the stat panel out,
+		-- 400 for reputation, 338 for currency - so any width WE added is
+		-- overwritten the next time you change tab.
+		-- 338 IS THE CLIENT'S OWN NUMBER, out of Constants.lua - not the 384
+		-- the sheet looks like it is. Writing the number it looks like is how a
+		-- mock ends up agreeing with a guess.
+		_G.CHARACTERFRAME_EXPANDED_WIDTH = 540
+		_G.PANEL_DEFAULT_WIDTH = 338
+
 		_G.NUM_FACTIONS_DISPLAYED = 3
 		-- Twelve, as the client ships: SkillFrame.xml builds twelve rows and
 		-- reuses them as you scroll, which is why the list ends halfway down a
 		-- window of ours with empty glass underneath it.
-		_G.SKILLS_TO_DISPLAY = 12
-		_G.SKILLFRAME_SKILL_HEIGHT = 15
+		-- ERA ONLY, both of them. Cataclysm removed the skills tab outright -
+		-- weapon skills went with it and professions moved to the spellbook - so
+		-- neither global exists on Mists, and a mock that declared them let a
+		-- loop over "every skill row" run happily against a tab the client does
+		-- not have.
+		if not _G.__mists then
+			_G.SKILLS_TO_DISPLAY = 12
+			_G.SKILLFRAME_SKILL_HEIGHT = 15
+		end
 		_G.ITEM_QUALITY_COLORS = {
 			[0] = { r = 0.62, g = 0.62, b = 0.62 },
 			[1] = { r = 1.00, g = 1.00, b = 1.00 },
@@ -5597,9 +5627,19 @@ do
 		-- the window shows exactly one of them; a mock with all five up is a
 		-- window that is on every tab at once, and anything that asks WHICH TAB
 		-- AM I ON gets an answer the client would never give.
-		for _, n in ipairs({ "PaperDollFrame", "PetPaperDollFrame",
-			"ReputationFrame", "SkillFrame", "HonorFrame",
-			"CharacterAttributesFrame", "PetAttributesFrame" }) do
+		local charPanes = {}
+		for _, n in ipairs(_G.CHARACTERFRAME_SUBFRAMES) do
+			charPanes[#charPanes + 1] = n
+		end
+		-- NOT SUBFRAMES, but panes in their own right on Era: the attribute
+		-- columns down the side of the doll. Cataclysm folded them into
+		-- CharacterStatsPane, which is built below and is a CHILD of the paper
+		-- doll rather than a tab of its own.
+		if not _G.__mists then
+			charPanes[#charPanes + 1] = "CharacterAttributesFrame"
+			charPanes[#charPanes + 1] = "PetAttributesFrame"
+		end
+		for _, n in ipairs(charPanes) do
 			local pane = CreateFrame("Frame", n, cf)
 			pane:CreateTexture(nil, "BORDER"):SetTexture("pane-stone")
 			-- SET ALL POINTS TO THE WINDOW, which is how the client anchors
@@ -5687,7 +5727,14 @@ do
 		-- tab the client defined gives it a slot of its own, and the row ends up
 		-- with a hole in it exactly one tab wide. Four visible tabs in a row
 		-- cannot show that; this can.
-		for i, label in ipairs({ "Character", "Pet", "Reputation", "Skills", "Honor" }) do
+		-- ONE PER SUBFRAME, in the client's own order and with the client's own
+		-- words - their LENGTH is what is under test. Mists has four where Era
+		-- has five, and a mock that gave both five put a tab on this sheet that
+		-- the game does not draw.
+		local tabLabels = _G.__mists
+			and { "Character", "Pet", "Reputation", "Currency" }
+			or { "Character", "Pet", "Reputation", "Skills", "Honor" }
+		for i, label in ipairs(tabLabels) do
 			local t = CreateFrame("Button", "CharacterFrameTab" .. i, cf)
 			t:SetNormalTexture("tab-up")
 			t:SetDisabledTexture("tab-disabled")
@@ -5750,51 +5797,62 @@ do
 		-- so a walk that reads only a frame's first child gets 200 here instead
 		-- of 49 and still looks right on a pane whose content happens to be
 		-- declared in order.
-		local firstRow = CreateFrame("Frame", "SkillRankFrame1", _G.SkillFrame)
-		firstRow:SetSize(200, 16)
-		firstRow:SetPoint("TOPLEFT", _G.SkillFrame, "TOPLEFT", 38, -200)
+		-- NEITHER TAB EXISTS ON MISTS, so neither does anything hung off them.
+		if not _G.__mists then
+			local firstRow = CreateFrame("Frame", "SkillRankFrame1", _G.SkillFrame)
+			firstRow:SetSize(200, 16)
+			firstRow:SetPoint("TOPLEFT", _G.SkillFrame, "TOPLEFT", 38, -200)
 
-		local allTab = CreateFrame("Button", "SkillFrameCollapseAllButton",
-			_G.SkillFrame)
-		allTab:SetSize(54, 32)
-		allTab:SetPoint("TOPLEFT", _G.SkillFrame, "TOPLEFT", 70, -49)
+			local allTab = CreateFrame("Button", "SkillFrameCollapseAllButton",
+				_G.SkillFrame)
+			allTab:SetSize(54, 32)
+			allTab:SetPoint("TOPLEFT", _G.SkillFrame, "TOPLEFT", 70, -49)
 
-		-- THE RANK BADGE IS A REGION OF THE HONOUR PANE, exactly as the
-		-- parchment behind it is - so a sweep that takes the pane's art takes
-		-- the picture of the rank with it and leaves the words beside nothing.
-		_G.HonorFramePvPIcon = _G.HonorFrame:CreateTexture("HonorFramePvPIcon",
-			"OVERLAY")
-		_G.HonorFramePvPIcon:SetTexture("Interface\\PvPRankBadges\\PvPRank09")
+			-- THE RANK BADGE IS A REGION OF THE HONOUR PANE, exactly as the
+			-- parchment behind it is - so a sweep that takes the pane's art takes
+			-- the picture of the rank with it and leaves the words beside nothing.
+			_G.HonorFramePvPIcon = _G.HonorFrame:CreateTexture("HonorFramePvPIcon",
+				"OVERLAY")
+			_G.HonorFramePvPIcon:SetTexture("Interface\\PvPRankBadges\\PvPRank09")
+		end
 
 		-- The stat rows, in the client's own lettering at the client's own
 		-- sizes. A pane with no strings in it lets a skin claim to have re-roled
 		-- an interior it never touched - and the SIZE matters as much as the
 		-- family: these sit in rows the client measured, so handing them a size
 		-- of ours reflows somebody else's window.
-		do
-			local attrs = _G.CharacterAttributesFrame
-			local label = attrs:CreateFontString("CharacterStatFrame1Label", "OVERLAY")
-			label:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
-			label:SetText("Strength:")
+		-- ERA'S ATTRIBUTE COLUMNS AND ITS RESISTANCE CHIPS. Cataclysm folded
+		-- both into CharacterStatsPane - the numbers moved into collapsible
+		-- groups and the five schools stopped being shown at all - so none of
+		-- these names exists on Mists. They used to be built here and cleared
+		-- below, which left the frames behind under no name; not building them
+		-- is the same statement without the litter.
+		if not _G.__mists then
+			do
+				local attrs = _G.CharacterAttributesFrame
+				local label = attrs:CreateFontString("CharacterStatFrame1Label", "OVERLAY")
+				label:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+				label:SetText("Strength:")
 
-			-- One level down, because the client nests these.
-			local row = CreateFrame("Frame", "CharacterStatFrame1", attrs)
-			local value = row:CreateFontString("CharacterStatFrame1StatText", "OVERLAY")
-			value:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
-			value:SetText("21")
-		end
-
-		for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
-			for i = 1, 5 do
-				local rf = CreateFrame("Frame", prefix .. i, cf)
-				-- THE SCHOOL'S OWN ICON: the frame's only texture, and unnamed - so a
-				-- sweep that takes every texture takes the one thing saying which of
-				-- the five this number is. Arcane, fire, nature, frost, shadow, and
-				-- five bare numbers down the side of the sheet saying none of it.
-				rf.__icon = rf:CreateTexture(nil, "BACKGROUND")
-				rf.__icon:SetTexture(
-					"Interface\\PaperDollInfoFrame\\UI-Character-ResistanceIcons")
+				-- One level down, because the client nests these.
+				local row = CreateFrame("Frame", "CharacterStatFrame1", attrs)
+				local value = row:CreateFontString("CharacterStatFrame1StatText", "OVERLAY")
+				value:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+				value:SetText("21")
 			end
+
+			for _, prefix in ipairs({ "MagicResFrame", "PetMagicResFrame" }) do
+				for i = 1, 5 do
+					local rf = CreateFrame("Frame", prefix .. i, cf)
+					-- THE SCHOOL'S OWN ICON: the frame's only texture, and unnamed - so a
+					-- sweep that takes every texture takes the one thing saying which of
+					-- the five this number is. Arcane, fire, nature, frost, shadow, and
+					-- five bare numbers down the side of the sheet saying none of it.
+					rf.__icon = rf:CreateTexture(nil, "BACKGROUND")
+					rf.__icon:SetTexture(
+						"Interface\\PaperDollInfoFrame\\UI-Character-ResistanceIcons")
+				end
+		end
 		end
 
 		for i = 1, _G.NUM_FACTIONS_DISPLAYED do
@@ -5818,7 +5876,7 @@ do
 				[[Interface\PVPFrame\UI-Character-PVP-Highlight]])
 		end
 
-		for i = 1, _G.SKILLS_TO_DISPLAY do
+		for i = 1, (_G.SKILLS_TO_DISPLAY or 0) do
 			local bar = CreateFrame("StatusBar", "SkillRankFrame" .. i, cf)
 			_G["SkillRankFrame" .. i .. "Border"] = bar:CreateTexture(nil, "OVERLAY")
 			_G["SkillRankFrame" .. i .. "Border"]:SetTexture("skill-border")
@@ -5867,23 +5925,111 @@ do
 		-- reputation headers became ordinary rows with the control INSIDE them
 		-- and the collapsed flag on the row.
 		if _G.__mists then
-			for _, gone in ipairs({ "CharacterAttributesFrame",
-				-- AND THE ROWS THAT WERE IN IT. Clearing the pane and leaving
-				-- its strings standing is the mock being kinder than the
-				-- client in the narrowest possible way: the check that reads
-				-- them finds Era's, passes, and never looks at the rows this
-				-- flavour actually draws.
-				"CharacterStatFrame1", "CharacterStatFrame1Label",
-				"CharacterStatFrame1StatText",
-				"PetAttributesFrame", "CharacterModelFrame",
+			-- The player's doll became a ModelScene, so Era's frame and its two
+			-- loose turn discs go. The attribute panes and the resistance chips
+			-- are not cleared here because they are no longer BUILT here - see
+			-- the flavour gate above. Clearing a global leaves the frame behind
+			-- under no name, which is a fine way to say "this client does not
+			-- have it" and a poor way to say "this client never made it".
+			for _, gone in ipairs({ "CharacterModelFrame",
 				"CharacterModelFrameRotateLeftButton",
 				"CharacterModelFrameRotateRightButton" }) do
 				_G[gone] = nil
 			end
-			for i = 1, 5 do
-				_G["MagicResFrame" .. i] = nil
-				_G["PetMagicResFrame" .. i] = nil
+
+			-- THE SHEET'S TWO RECESSES. Every window on the portrait template
+			-- has an Inset; this one has a SECOND, InsetRight, which is where
+			-- the stat panel lives and which is shown only while the sheet is
+			-- expanded. Anything anchored to a recess rather than to the window
+			-- moves when the sheet is widened.
+			local inset = CreateFrame("Frame", "CharacterFrameInset", cf)
+			inset:SetPoint("TOPLEFT", cf, "TOPLEFT", 4, -60)
+			inset:SetPoint("BOTTOMRIGHT", cf, "BOTTOMLEFT",
+				_G.PANEL_DEFAULT_WIDTH - 6, 4)
+			cf.Inset = inset
+
+			local rightInset = CreateFrame("Frame", "CharacterFrameInsetRight", cf)
+			rightInset:SetPoint("TOPLEFT", inset, "TOPRIGHT", 4, 0)
+			rightInset:SetPoint("BOTTOMRIGHT", cf, "BOTTOMRIGHT", -6, 4)
+			rightInset:Hide()
+			cf.InsetRight = rightInset
+
+			-- THE ARROW THAT WIDENS THE SHEET, which Era has no equivalent of.
+			local expand = CreateFrame("Button", "CharacterFrameExpandButton", cf)
+			expand:SetSize(32, 32)
+			expand:SetPoint("BOTTOMRIGHT", cf, "BOTTOMRIGHT", -18, 68)
+			expand:SetNormalTexture(
+				[[Interface\Buttons\UI-SpellbookIcon-NextPage-Up]])
+
+			-- CURRENCY, WHICH IS A TAB ON THIS SHEET AND NOTHING ON ERA. Its
+			-- list is anchored to CharacterFrameInset rather than to the window
+			-- - TokenFrame_OnShow does it at run time - so it is the one pane
+			-- here that moves when the RECESS moves rather than when the window
+			-- does.
+			local tokens = CreateFrame("ScrollFrame", "TokenFrameContainer",
+				_G.TokenFrame)
+			tokens:SetSize(328, 360)
+			tokens:SetPoint("TOPLEFT", inset, "TOPLEFT", 4, -4)
+			local tokenPage = CreateFrame("Frame", nil, tokens)
+			tokenPage:SetSize(328, 600)
+			tokens:SetScrollChild(tokenPage)
+			tokens.buttons = {}
+			for i = 1, 3 do
+				local row = CreateFrame("Button", nil, tokenPage)
+				row:SetSize(328, 22)
+				row:SetPoint("TOPLEFT", tokenPage, "TOPLEFT", 0, -(i - 1) * 22)
+				row.stripe = row:CreateTexture(nil, "BACKGROUND")
+				row.stripe:SetTexture("token-row-stripe")
+				row.icon = row:CreateTexture(nil, "ARTWORK")
+				row.icon:SetTexture("token-icon")
+				row.name = row:CreateFontString(nil, "OVERLAY")
+				row.name:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				row.name:SetText("Justice Points")
+				row.count = row:CreateFontString(nil, "OVERLAY")
+				row.count:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				row.count:SetText("4000")
+				tokens.buttons[i] = row
 			end
+
+			-- AND THE SHEET SETS ITS OWN WIDTH, per tab, every time you change
+			-- one - CharacterFrameMixin:UpdateSize. This is the part with no Era
+			-- equivalent at all: a window we widened to fit our padding is put
+			-- back to the client's number the moment the player clicks
+			-- Reputation, and our record of what we added is then a lie.
+			local TAB_WIDTH = {
+				PaperDollFrame    = _G.PANEL_DEFAULT_WIDTH,
+				PetPaperDollFrame = _G.PANEL_DEFAULT_WIDTH,
+				ReputationFrame   = 400,
+				TokenFrame        = 338,
+			}
+			cf.activeSubframe = "PaperDollFrame"
+			function cf:UpdateSize()
+				local w = TAB_WIDTH[self.activeSubframe] or _G.PANEL_DEFAULT_WIDTH
+				if self.Expanded and (self.activeSubframe == "PaperDollFrame"
+					or self.activeSubframe == "PetPaperDollFrame") then
+					w = _G.CHARACTERFRAME_EXPANDED_WIDTH
+				end
+				self:SetWidth(w)
+			end
+			function cf:ShowSubFrame(name)
+				for _, other in ipairs(_G.CHARACTERFRAME_SUBFRAMES) do
+					if other ~= name and _G[other] then _G[other]:Hide() end
+				end
+				if _G[name] then _G[name]:Show() end
+				self.activeSubframe = name
+				self:UpdateSize()
+			end
+			function cf:Expand()
+				self.Expanded = true
+				self.InsetRight:Show()
+				self:UpdateSize()
+			end
+			function cf:Collapse()
+				self.Expanded = false
+				self.InsetRight:Hide()
+				self:UpdateSize()
+			end
+			cf:UpdateSize()
 
 			-- INSIDE THE PAPER DOLL TAB and beside the model, which is where
 			-- CharacterFrame.xml anchors it: to CharacterFrameInsetRight. It
@@ -15846,8 +15992,14 @@ section("panels: somebody else's character sheet", function()
 	-- The character sheet's own honour tab has the same badge under a name of
 	-- its own, and it had been coming off with the parchment since the day
 	-- that pane was first swept.
-	check(_G.HonorFramePvPIcon:GetTexture() ~= 0,
-		"the badge on your OWN honour tab survives too")
+	--
+	-- ERA ONLY. Cataclysm took the honour tab off this sheet altogether, so on
+	-- Mists there is no badge to survive - and asking for one is the check
+	-- testing a window the client does not build.
+	if not _G.__mists then
+		check(_G.HonorFramePvPIcon:GetTexture() ~= 0,
+			"the badge on your OWN honour tab survives too")
+	end
 
 	inf:Hide()
 end)
@@ -30095,14 +30247,29 @@ do
 	-- the measure now finds. A number written into this check rather than
 	-- measured is the thing the check exists to catch.
 	_G.__dollTop = _G.__mists and 56 or 64
+	-- ...AND THE THIRD TAB IS NOT THE SAME TAB. Era's is Skills; Cataclysm
+	-- dropped Skills and Honour and added Currency, and the client publishes
+	-- which it has as CHARACTERFRAME_SUBFRAMES. Naming SkillFrame here was
+	-- this check asserting a tab half the players do not have.
+	_G.__thirdPane = _G[_G.__mists and "TokenFrame" or "SkillFrame"]
 	check(_G.PaperDollFrame.__aetherTop == _G.__dollTop
 		and _G.ReputationFrame.__aetherTop == 47
-		and _G.SkillFrame.__aetherTop == 39,
+		and _G.__thirdPane.__aetherTop ~= nil,
 		"each tab is measured on its own rather than sharing one number (" ..
 		tostring(_G.PaperDollFrame.__aetherTop) .. "/" ..
 		tostring(_G.ReputationFrame.__aetherTop) .. "/" ..
-		tostring(_G.SkillFrame.__aetherTop) .. ")")
-	local want = cf.__aetherHeadH + inner - 39
+		tostring(_G.__thirdPane.__aetherTop) .. ")")
+	-- THE DEEPEST OF THEM, MEASURED. Era's shallowest tab is Skills at 39;
+	-- Mists has no Skills tab at all, so the number has to come from whatever
+	-- the client's own tab list turned out to hold.
+	_G.__shallowest = nil
+	for _, pane in ipairs(A:GetModule("panels").ENTRY.CharacterFrame.body) do
+		local top = _G[pane] and _G[pane].__aetherTop
+		if top and (not _G.__shallowest or top < _G.__shallowest) then
+			_G.__shallowest = top
+		end
+	end
+	local want = cf.__aetherHeadH + inner - _G.__shallowest
 	check(cf.__aetherBodyShift == want and want > 0,
 		"and the window grows by the deepest of them (" ..
 		tostring(cf.__aetherBodyShift) .. " against " .. tostring(want) .. ")")
@@ -30236,6 +30403,65 @@ do
 	check(cf:GetHeight() == tall,
 		"and dressing the window twice does not grow it twice (" ..
 		tostring(cf:GetHeight()) .. " against " .. tostring(tall) .. ")")
+
+	-- AND THE ONE WINDOW THAT SETS ITS OWN WIDTH BACK.
+	--
+	-- Era's character sheet is one size for ever. Cataclysm's is not:
+	-- CharacterFrameMixin:UpdateSize writes the width outright from the tab you
+	-- are on - 338 for the doll, 540 with the stat panel out, 400 for
+	-- reputation, 338 for currency - and it runs on every tab click, every
+	-- expand and every collapse.
+	--
+	-- So the width WE added to pay for the body padding is discarded the moment
+	-- the player clicks Reputation, while our note of having added it survives.
+	-- The next layout compares what it wants against that note, finds them
+	-- equal, and adds nothing - which leaves the sheet at the client's own
+	-- width with our padding still expected inside it, and the content back
+	-- out through the rim it had just been moved in from.
+	--
+	-- Asked as the two rects again, because that is the question that does not
+	-- depend on which number either side thinks it is holding.
+	if _G.__mists then
+		_G.__wide = cf:GetWidth()
+		check(cf.__aetherBodyGrow and cf.__aetherBodyGrow > 0,
+			"the sheet has been widened to pay for its padding ("
+			.. tostring(cf.__aetherBodyGrow) .. ")")
+
+		-- THE CLIENT'S OWN NUMBER for the tab being switched to, which is what
+		-- UpdateSize writes - not an adjustment to what is there, a plain
+		-- SetWidth.
+		cf:ShowSubFrame("ReputationFrame")
+		_G.__bare = cf:GetWidth()
+		check(_G.__bare ~= _G.__wide,
+			"changing tab makes the client set the width itself, discarding"
+			.. " ours (" .. tostring(_G.__bare) .. " from "
+			.. tostring(_G.__wide) .. ")")
+
+		-- AND THE NEXT LAYOUT HAS TO PUT IT BACK. Without this the note of
+		-- having grown the window outlives the growth: the pass compares what
+		-- it wants against a number that is no longer true, finds them equal,
+		-- and adds nothing - leaving the sheet at the client's own width with
+		-- our padding still expected inside it.
+		PN.LayoutBody(cf, PN.ENTRY.CharacterFrame)
+		check(cf:GetWidth() >= _G.__bare + cf.__aetherBodyGrow - 0.5,
+			"and the next layout puts our padding back on top of it rather than"
+			.. " believing a note the client has invalidated (" ..
+			string.format("%.0f", cf:GetWidth()) .. " for " ..
+			string.format("%.0f", _G.__bare) .. " + " ..
+			tostring(cf.__aetherBodyGrow) .. ")")
+
+		-- AND DOES IT ONCE. The same pass run twice must not keep adding.
+		_G.__settled = cf:GetWidth()
+		PN.LayoutBody(cf, PN.ENTRY.CharacterFrame)
+		check(cf:GetWidth() == _G.__settled,
+			"and only once - a window that regrows on every pass walks off the"
+			.. " screen a tab click at a time (" ..
+			string.format("%.0f", cf:GetWidth()) .. " against " ..
+			string.format("%.0f", _G.__settled) .. ")")
+
+		cf:ShowSubFrame("PaperDollFrame")
+		PN.LayoutBody(cf, PN.ENTRY.CharacterFrame)
+	end
 end
 
 print("== panels: the band carries the chrome, and the body starts under it ==")
@@ -31067,52 +31293,60 @@ do
 	-- rows down with empty glass under it. The rows come from the client's own
 	-- templates and its own update function fills them - we only add to the
 	-- pool and say how many there are.
-	check(_G.SKILLS_TO_DISPLAY > 12,
-		"the skill list grows to fit the window (" .. _G.SKILLS_TO_DISPLAY
-		.. " rows, from the client's twelve)")
-	check(_G.SkillRankFrame13 ~= nil and _G.SkillTypeLabel13 ~= nil,
-		"with real rows behind the number - a count raised over rows that do not"
-		.. " exist is an error in the client's own update loop, not a longer list")
+	--
+	-- ERA ONLY, all of it: Cataclysm removed the skills tab, weapon skills with
+	-- it and professions to the spellbook, so SKILLS_TO_DISPLAY is not a global
+	-- this client has. Comparing it to twelve on Mists is a check asserting the
+	-- size of a list that is not there.
+	if not _G.__mists then
+		check(_G.SKILLS_TO_DISPLAY > 12,
+			"the skill list grows to fit the window (" .. _G.SKILLS_TO_DISPLAY
+			.. " rows, from the client's twelve)")
+		check(_G.SkillRankFrame13 ~= nil and _G.SkillTypeLabel13 ~= nil,
+			"with real rows behind the number - a count raised over rows that do"
+			.. " not exist is an error in the client's own update loop, not a"
+			.. " longer list")
 
-	local newPt, newRel, newRelPt, _, newY = _G.SkillRankFrame13:GetPoint(1)
-	check(newPt == "TOPLEFT" and newRel == _G.SkillRankFrame12
-		and newRelPt == "BOTTOMLEFT",
-		"each new row hangs off the one above it, as the client's own do")
-	check(_G.SkillRankFrame13.__aetherFill ~= nil,
-		"and the rows we added are skinned like the rest")
+		local newPt, newRel, newRelPt, _, newY = _G.SkillRankFrame13:GetPoint(1)
+		check(newPt == "TOPLEFT" and newRel == _G.SkillRankFrame12
+			and newRelPt == "BOTTOMLEFT",
+			"each new row hangs off the one above it, as the client's own do")
+		check(_G.SkillRankFrame13.__aetherFill ~= nil,
+			"and the rows we added are skinned like the rest")
 
-	-- And it stops at the window. A count larger than the space is the same
-	-- bug in the other direction.
-	local tallEnough = _G.SKILLS_TO_DISPLAY * 18 + 79 + 78
-	check(tallEnough <= cf:GetHeight() + 18,
-		"and no more of them than the window can hold ("
-		.. _G.SKILLS_TO_DISPLAY .. " x 18 inside " .. cf:GetHeight() .. ")")
+		-- And it stops at the window. A count larger than the space is the same
+		-- bug in the other direction.
+		local tallEnough = _G.SKILLS_TO_DISPLAY * 18 + 79 + 78
+		check(tallEnough <= cf:GetHeight() + 18,
+			"and no more of them than the window can hold ("
+			.. _G.SKILLS_TO_DISPLAY .. " x 18 inside " .. cf:GetHeight() .. ")")
 
-	-- THE DISCLOSURE MARKS. Blizzard's stone plus and minus are the last thing
-	-- in either tree still drawn by the other interface.
-	local header = _G.SkillTypeLabel1
-	check(header:GetNormalTexture():GetTexture() == 0,
-		"a group header's stone mark is cleared")
-	check(header.__aetherGlyph ~= nil, "and ours is drawn instead")
-	check(header.__aetherGlyph:GetText() == "\226\136\146",
-		"an expanded group shows a minus - the real one, U+2212, because a"
-		.. " hyphen beside a full-height plus reads as a dash that lost something")
-	check(_G.SkillTypeLabel2.__aetherGlyph:GetText() == "+",
-		"and a collapsed one shows a plus")
+		-- THE DISCLOSURE MARKS. Blizzard's stone plus and minus are the last thing
+		-- in either tree still drawn by the other interface.
+		local header = _G.SkillTypeLabel1
+		check(header:GetNormalTexture():GetTexture() == 0,
+			"a group header's stone mark is cleared")
+		check(header.__aetherGlyph ~= nil, "and ours is drawn instead")
+		check(header.__aetherGlyph:GetText() == "\226\136\146",
+			"an expanded group shows a minus - the real one, U+2212, because a"
+			.. " hyphen beside a full-height plus reads as a dash that lost something")
+		check(_G.SkillTypeLabel2.__aetherGlyph:GetText() == "+",
+			"and a collapsed one shows a plus")
 
-	-- Where the client's own mark was, not in the middle of the row.
-	local gp, grel = header.__aetherGlyph:GetPoint(1)
-	check(gp == "CENTER" and grel == header:GetNormalTexture(),
-		"drawn on the texture we emptied, which still holds the client's own"
-		.. " anchors - a header button is the whole 285px row, so a glyph"
-		.. " centred on it lands in the middle of the group's name")
+		-- Where the client's own mark was, not in the middle of the row.
+		local gp, grel = header.__aetherGlyph:GetPoint(1)
+		check(gp == "CENTER" and grel == header:GetNormalTexture(),
+			"drawn on the texture we emptied, which still holds the client's own"
+			.. " anchors - a header button is the whole 285px row, so a glyph"
+			.. " centred on it lands in the middle of the group's name")
 
-	-- And it survives the client repainting them, which it does on every
-	-- expand, every collapse and every scroll.
-	_G.SkillFrame_UpdateSkills()
-	check(header:GetNormalTexture():GetTexture() == 0
-		and header.__aetherGlyph:GetText() == "\226\136\146",
-		"and the mark stays ours after the client repaints the list")
+		-- And it survives the client repainting them, which it does on every
+		-- expand, every collapse and every scroll.
+		_G.SkillFrame_UpdateSkills()
+		check(header:GetNormalTexture():GetTexture() == 0
+			and header.__aetherGlyph:GetText() == "\226\136\146",
+			"and the mark stays ours after the client repaints the list")
+	end
 
 	-- THE REPUTATION TREE TOO, under whichever name this client gives the
 	-- control: Era makes the header a row of its own and Cataclysm folds
@@ -31144,19 +31378,23 @@ do
 	check(thumbAlpha and thumbAlpha > 0.3,
 		"with a thumb you can actually see against the glass (" .. tostring(thumbAlpha) .. ")")
 
-	-- "ALL" governs every group in the tree, so it belongs at the head of them,
-	-- on the left. The client hangs it off a stone tab out to the right, which
-	-- reads as a sibling of the groups rather than their parent.
-	local allBtn = _G.SkillFrameCollapseAllButton
-	local allPt, allRel, allRelPt, _, allY = allBtn:GetPoint(1)
-	check(allPt == "BOTTOMLEFT" and allRel == _G.SkillTypeLabel1 and allRelPt == "TOPLEFT",
-		"the All control sits above the first group and shares its left edge,"
-		.. " which is what makes it read as their parent")
-	check(_G.SkillFrameExpandTabLeft:GetTexture() == 0,
-		"and the stone tab it used to hang off is cleared")
-	check(_G.CharacterNameText._aetherStyle == "pnTitle",
-		"the character's name is re-roled")
-
+	-- ERA ONLY: there is no skills tree on Mists for an ALL to govern.
+	if not _G.__mists then
+		-- "ALL" governs every group in the tree, so it belongs at the head of them,
+		-- on the left. The client hangs it off a stone tab out to the right, which
+		-- reads as a sibling of the groups rather than their parent.
+		local allBtn = _G.SkillFrameCollapseAllButton
+		local allPt, allRel, allRelPt, _, allY = allBtn:GetPoint(1)
+		check(allPt == "BOTTOMLEFT" and allRel == _G.SkillTypeLabel1 and allRelPt == "TOPLEFT",
+			"the All control sits above the first group and shares its left edge,"
+			.. " which is what makes it read as their parent")
+		check(_G.SkillFrameExpandTabLeft:GetTexture() == 0,
+			"and the stone tab it used to hang off is cleared")
+	end
+	check((_G.CharacterNameText or _G.CharacterFrameTitleText)._aetherStyle
+		== "pnTitle",
+		"the character's name is re-roled - CharacterNameText on Era, and the"
+		.. " title bar's own string on Mists, which is where that sheet puts it")
 	-- THE INSIDE LETTERING. A window in our glass with the client's own font in
 	-- every row of it is half a skin.
 	-- WHEREVER THE ROWS LIVE. Cataclysm moved them out of
@@ -31209,17 +31447,21 @@ do
 		"and it is brought inside the window (y=" .. tostring(htY) .. ") rather"
 		.. " than left hanging over the top edge where the plate used to be")
 
-	check(_G.SkillTypeLabel1:GetFontString()._aetherStyle ~= nil,
-		"a skill tree's collapse header is re-roled THROUGH the button - it is a"
-		.. " Button carrying a string, answers SetText like a FontString, and"
-		.. " has no SetFont, so handing it straight to the font setter took the"
-		.. " whole module down with a nil call")
+	-- ERA ONLY. The skills tab and the pet tab's spare Close both went with
+	-- Cataclysm's rebuild of this sheet.
+	if not _G.__mists then
+		check(_G.SkillTypeLabel1:GetFontString()._aetherStyle ~= nil,
+			"a skill tree's collapse header is re-roled THROUGH the button - it is a"
+			.. " Button carrying a string, answers SetText like a FontString, and"
+			.. " has no SetFont, so handing it straight to the font setter took the"
+			.. " whole module down with a nil call")
 
-	check(not _G.SkillFrameCancelButton:IsShown()
-		and not _G.PetPaperDollCloseButton:IsShown(),
-		"the spare Close on the skills list and the one on the pet tab are"
-		.. " both gone - the corner already has an X and three of them is two"
-		.. " too many")
+		check(not _G.SkillFrameCancelButton:IsShown()
+			and not _G.PetPaperDollCloseButton:IsShown(),
+			"the spare Close on the skills list and the one on the pet tab are"
+			.. " both gone - the corner already has an X and three of them is two"
+			.. " too many")
+	end
 
 	-- THE BOX THE DOLL STANDS IN, DRAWN. Without it the model floats in the
 	-- window and every asymmetry in it reads as OUR mistake - the imp on the
@@ -31388,9 +31630,16 @@ do
 	-- Reputation, and is hidden on a character without a pet. Laying out every
 	-- tab the client defined gave it a slot of its own, and the row had a hole
 	-- in it exactly one tab wide with nothing in it.
+	--
+	-- HOW MANY THERE ARE IS THE CLIENT'S ANSWER, not four: Era has five tabs on
+	-- this sheet and Mists has four, and the number written down was Era's.
 	local shown = ShownTabs()
-	check(#shown == 4 and not _G.CharacterFrameTab2:IsShown(),
-		"the hidden pet tab is left out of the row (" .. #shown .. " of 5 placed)")
+	-- A GLOBAL, not a local: this chunk is within a few names of Lua's ceiling
+	-- of 200 locals in one function, and the game runs 5.1.
+	_G.__tabCount = #_G.CHARACTERFRAME_SUBFRAMES
+	check(#shown == _G.__tabCount - 1 and not _G.CharacterFrameTab2:IsShown(),
+		"the hidden pet tab is left out of the row (" .. #shown .. " of "
+		.. _G.__tabCount .. " placed)")
 
 	local t1, t2 = shown[1], shown[2]
 
@@ -31472,9 +31721,10 @@ do
 		fire("PLAYER_ENTERING_WORLD")
 
 		local five = ShownTabs()
-		check(#five == 5, "a hunter's sheet has five tabs (" .. #five .. ")")
+		check(#five == _G.__tabCount, "a hunter's sheet has every tab (" .. #five
+			.. " of " .. _G.__tabCount .. ")")
 		check(RowSpill(five) == nil,
-			"no label is wider than its tab with five of them")
+			"no label is wider than its tab with all of them up")
 		-- RE-READ, because dressing the window can WIDEN it: the body inset
 		-- moves the client's content in to the panel padding and grows the
 		-- frame to pay for it. Measured once at the top, this compared a row
@@ -31500,8 +31750,17 @@ do
 		local baseSize = t1:GetFontString():GetFont() and
 			select(2, t1:GetFontString():GetFont())
 
-		cf:SetWidth(320)
-		fire("PLAYER_ENTERING_WORLD")
+		-- NARROWER THAN THE ROW WANTS, whatever the row is. 320 was chosen
+		-- against Era's five tabs and is roomy for Mists' four, so the squeeze
+		-- this block exists to test never happened on that flavour.
+		_G.__natural = RowWidth(ShownTabs())
+		-- THE TAB ROW ONLY, not the whole window. Firing the event here re-runs
+		-- the BODY layout too, and the body now puts back any width somebody
+		-- else took off the window - which is the right answer for the client
+		-- resizing its own sheet and quite wrong for a test trying to hold a
+		-- window narrow and watch the row cope.
+		cf:SetWidth(math.floor(_G.__natural * 0.95))
+		A:GetModule("panels").RefreshTabs("CharacterFrame")
 		local tight = ShownTabs()
 		local tightPad = (tight[1]:GetWidth()
 			- tight[1]:GetFontString():GetStringWidth()) / 2
@@ -31523,8 +31782,8 @@ do
 		-- AND WHEN THERE IS NOTHING ELSE LEFT, the words themselves - with the
 		-- whole of each on a tooltip, because a cut label that says nothing else
 		-- is a tab you have to click to identify.
-		cf:SetWidth(280)
-		fire("PLAYER_ENTERING_WORLD")
+		cf:SetWidth(math.floor(_G.__natural * 0.80))
+		A:GetModule("panels").RefreshTabs("CharacterFrame")
 		local cut = ShownTabs()
 		local cutOne
 		for _, tb in ipairs(cut) do cutOne = cutOne or tb.__aetherCut end
@@ -32282,7 +32541,7 @@ do
 			"and the quest starts inside the well's left padding rather than"
 			.. " against the window's edge (quest " ..
 			string.format("%.0f", qsf:GetLeft() or 0) .. ", well " ..
-			string.format("%.0f", (well and well:GetLeft()) or 0) .. ")")
+			string.format("%.0f", (_G.__well and _G.__well:GetLeft()) or 0) .. ")")
 	end
 
 	-- AND THE PAGE STOPS WHERE THE RECESS DOES. A scroll frame CLIPS AT ITS OWN
