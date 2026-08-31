@@ -2984,6 +2984,93 @@ local function DressModel(prefix, store)
 	end
 end
 
+--- The paper doll's sidebar, which only Mists has.
+--
+--  Three tabs down the right-hand recess - Stats, Titles, Equipment Manager -
+--  and a pane behind each. None of it existed before Cataclysm and none of it
+--  was touched here, so on that client the whole column was Blizzard's: three
+--  stone tabs, two parchment panes and a pair of stone buttons under them.
+--
+--  THE TABS ARE NAMED AND THE PANES ARE NOT. PaperDollSidebarTab1..3 are
+--  globals; the panes are parent keys on PaperDollFrame with no globals at
+--  all, the same shape as the gossip window's scroll box - so they are reached
+--  by path.
+local SIDEBAR_PANES = {
+	"PaperDollFrame.TitleManagerPane",
+	"PaperDollFrame.EquipmentManagerPane",
+}
+
+local function DressSidebar(store)
+	local bar = Part("PaperDollSidebarTabs")
+	if bar then Reskin.Strip(bar, store) end
+
+	for i = 1, 3 do
+		local tab = Part("PaperDollSidebarTab" .. i)
+		if tab then
+			-- THE STONE OFF AND THE PICTURE KEPT, which is this sheet's third
+			-- instance of the same division and the reason StripExcept is a
+			-- primitive. A sidebar tab carries three textures and only the
+			-- middle one is information: TabBg is the stone, Hider is a strip
+			-- of art that covers the selected tab's bottom edge, and Icon is
+			-- the picture - your own portrait on the first, an atlas cut on the
+			-- other two. Swept whole, the column becomes three blank squares
+			-- and nothing says which is which.
+			Reskin.ClearButton(tab)
+			if type(store) == "table" then
+				Reskin.StripExcept(tab, store, tab.Icon and { tab.Icon } or nil)
+			end
+		end
+	end
+
+	for _, path in ipairs(SIDEBAR_PANES) do
+		local pane = Part(path)
+		if pane then
+			Reskin.Strip(pane, store)
+			Reskin.Fonts(pane, "pnBody")
+
+			if pane.ScrollBar then Reskin.ScrollBar(pane.ScrollBar, store) end
+
+			-- ITS ROWS ARE POOLED, as every ScrollBox's are: acquired during
+			-- layout, so the set you can see now is not the set that will be
+			-- there after the next update. Walked on every dress for the same
+			-- reason the gossip window's options are.
+			local box = pane.ScrollBox
+			if box then
+				local function lift(row)
+					if row then Reskin.Fonts(row, "pnBody", 0, Palette.c.text) end
+					if row and type(store) == "table" then
+						Reskin.Strip(row, store)
+					end
+				end
+				if box.ForEachFrame then
+					if not pcall(box.ForEachFrame, box, lift) and box.GetFrames then
+						local ok, rows = pcall(box.GetFrames, box)
+						if ok and rows then for _, r in ipairs(rows) do lift(r) end end
+					end
+				elseif box.GetFrames then
+					local ok, rows = pcall(box.GetFrames, box)
+					if ok and rows then for _, r in ipairs(rows) do lift(r) end end
+				end
+			end
+
+			-- Equip and Save under the list. Named off a parent that has no
+			-- name of its own, so neither is a global either.
+			--
+			-- Spelled out rather than through DressWideButton, which is
+			-- declared several hundred lines below this and would be nil here -
+			-- the file runs top to bottom and a local is not hoisted.
+			for _, key in ipairs({ "EquipSet", "SaveSet" }) do
+				local btn = pane[key]
+				if btn then
+					Reskin.ClearButton(btn)
+					Reskin.Strip(btn, store)
+					Reskin.Button(btn, "pnBody")
+				end
+			end
+		end
+	end
+end
+
 local function EachEquipSlot(fn)
 	local items = _G.PaperDollItemsFrame
 	if not items or not items.GetChildren then return end
@@ -3081,6 +3168,8 @@ local function DressCharacter(frame, store)
 
 	LayoutTabs(frame, store)
 	InstallTabHooks()
+
+	DressSidebar(store)
 
 	-- BOTH DOLLS. The pet has a model box of its own on its own tab, with its
 	-- own pair of turn buttons under names of the same shape - and it had been

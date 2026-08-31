@@ -6004,6 +6004,90 @@ do
 				tokens.buttons[i] = row
 			end
 
+			-- THE PAPER DOLL'S SIDEBAR, which is the last piece of this sheet
+			-- with no Era equivalent at all. Three tabs down the right-hand
+			-- recess - Stats, Titles, Equipment Manager - and a pane behind
+			-- each. The tabs are named globally; THE PANES ARE NOT: they are
+			-- parent keys on PaperDollFrame with no globals of their own, the
+			-- same shape as the gossip window's scroll box.
+			local bar = CreateFrame("Frame", "PaperDollSidebarTabs", rightInset)
+			bar:SetSize(33, 105)
+			bar:SetPoint("TOPRIGHT", rightInset, "TOPRIGHT", 0, -20)
+			bar:Hide()
+			for i = 1, 3 do
+				local tab = CreateFrame("Button", "PaperDollSidebarTab" .. i, bar)
+				tab:SetSize(33, 35)
+				tab:SetPoint("TOP", bar, "TOP", 0, -(i - 1) * 35)
+				-- THE STONE TAB, THE PICTURE, AND A STRIP OF ART THAT HIDES
+				-- THE SELECTED TAB'S BOTTOM EDGE - three separate regions, and
+				-- only the middle one is information. The first tab's icon is
+				-- the player's own portrait; the other two come off an atlas.
+				tab.TabBg = tab:CreateTexture(nil, "BACKGROUND")
+				tab.TabBg:SetTexture(
+					[[Interface\PaperDollInfoFrame\PaperDollSidebarTabs]])
+				tab.Icon = tab:CreateTexture(nil, "ARTWORK")
+				tab.Icon:SetTexture("sidebar-icon-" .. i)
+				tab.Hider = tab:CreateTexture(nil, "OVERLAY")
+				tab.Hider:SetTexture(
+					[[Interface\PaperDollInfoFrame\PaperDollSidebarTabs]])
+				tab:SetHighlightTexture(
+					[[Interface\PaperDollInfoFrame\PaperDollSidebarTabs]])
+			end
+
+			-- THE TWO PANES, BY PATH. Both hang off CharacterFrameInsetRight
+			-- rather than off the window, so both move when the recess does.
+			for _, key in ipairs({ "TitleManagerPane", "EquipmentManagerPane" }) do
+				local pane = CreateFrame("Frame", nil, _G.PaperDollFrame)
+				pane:SetSize(172, 354)
+				pane:SetPoint("TOPLEFT", rightInset, "TOPLEFT", 4, -4)
+				pane:CreateTexture(nil, "BACKGROUND"):SetTexture("pane-stone")
+				pane:Hide()
+
+				pane.ScrollBox = CreateFrame("Frame", nil, pane)
+				pane.ScrollBox:SetSize(172, 331)
+				pane.ScrollBox:SetPoint("TOPLEFT", rightInset, "TOPLEFT", 4, -27)
+				pane.ScrollBar = CreateFrame("Frame", nil, pane)
+				pane.ScrollBar.Track = CreateFrame("Frame", nil, pane.ScrollBar)
+				pane.ScrollBar.Track.Thumb = CreateFrame("Frame", nil,
+					pane.ScrollBar.Track)
+
+				-- ITS ROWS ARE POOLED, as every ScrollBox's are - acquired
+				-- during layout, so anything that dresses them once dresses
+				-- whatever happened to be there at the time.
+				pane.__rows = {}
+				for i = 1, 3 do
+					local row = CreateFrame("Button", nil, pane.ScrollBox)
+					row:SetSize(172, 22)
+					row.BgTop = row:CreateTexture(nil, "BACKGROUND")
+					row.BgTop:SetTexture("gearset-row-stone")
+					row.text = row:CreateFontString(nil, "OVERLAY")
+					row.text:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+					row.text:SetText("Tank")
+					row.__fs = row.text
+					function row:GetFontString() return self.__fs end
+					pane.__rows[i] = row
+				end
+				function pane.ScrollBox:GetFrames() return pane.__rows end
+
+				_G.PaperDollFrame[key] = pane
+			end
+
+			-- Equip and Save, on the equipment manager pane. Ordinary
+			-- UIPanelButtonTemplate plates, and named off a parent that has no
+			-- name - so neither is reachable as a global.
+			for _, key in ipairs({ "EquipSet", "SaveSet" }) do
+				local b = CreateFrame("Button", nil,
+					_G.PaperDollFrame.EquipmentManagerPane)
+				b:SetSize(87, 22)
+				b:SetNormalTexture("blizzard-button-plate")
+				local fs = b:CreateFontString(nil, "OVERLAY")
+				fs:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				fs:SetText(key)
+				b.__fs = fs
+				function b:GetFontString() return self.__fs end
+				_G.PaperDollFrame.EquipmentManagerPane[key] = b
+			end
+
 			-- AND THE SHEET SETS ITS OWN WIDTH, per tab, every time you change
 			-- one - CharacterFrameMixin:UpdateSize. This is the part with no Era
 			-- equivalent at all: a window we widened to fit our padding is put
@@ -31597,6 +31681,59 @@ do
 				.. tostring(_G.__shut) .. ")")
 			cf:Collapse()
 			A:GetModule("panels").Dress(cf, cf.__aetherArt)
+
+			-- THE PAPER DOLL'S SIDEBAR, the last piece of this sheet with no
+			-- Era equivalent: three tabs down the right-hand recess and a pane
+			-- behind each. None of it was touched, so the whole column was
+			-- Blizzard's - three stone tabs, two parchment panes and a pair of
+			-- stone buttons under them, beside a window otherwise in glass.
+			_G.__stoneTabs, _G.__blankTabs = {}, {}
+			for i = 1, 3 do
+				local tb = _G["PaperDollSidebarTab" .. i]
+				if tb.TabBg:GetTexture() ~= 0 or tb.Hider:GetTexture() ~= 0
+					or tb:GetHighlightTexture():GetTexture() ~= 0 then
+					_G.__stoneTabs[#_G.__stoneTabs + 1] = i
+				end
+				-- THE THIRD TIME THIS DIVISION HAS COME UP ON THIS ONE WINDOW,
+				-- which is why StripExcept is a primitive: a sidebar tab
+				-- carries three textures and only the middle one is
+				-- information. Your own portrait on the first, an atlas cut on
+				-- the other two. Swept whole, the column is three blank squares
+				-- with nothing saying which is which.
+				if tb.Icon:GetTexture() == 0 then
+					_G.__blankTabs[#_G.__blankTabs + 1] = i
+				end
+			end
+			check(#_G.__stoneTabs == 0, "the sidebar tabs lose their stone ("
+				.. (#_G.__stoneTabs > 0
+					and table.concat(_G.__stoneTabs, ", ") or "all three") .. ")")
+			check(#_G.__blankTabs == 0,
+				"and keep the picture that says which is which ("
+				.. (#_G.__blankTabs > 0
+					and table.concat(_G.__blankTabs, ", ") or "all three") .. ")")
+
+			-- BY PATH, BECAUSE THEY HAVE NO NAMES. Both panes are parent keys
+			-- on PaperDollFrame - the same shape as the gossip window's scroll
+			-- box - so a sweep that only ever looks up globals cannot reach
+			-- either of them.
+			_G.__tm = _G.PaperDollFrame.TitleManagerPane
+			_G.__em = _G.PaperDollFrame.EquipmentManagerPane
+			check(_G.__tm:GetRegions():GetTexture() == 0
+				and _G.__em:GetRegions():GetTexture() == 0,
+				"both sidebar panes lose their parchment, reached through the"
+				.. " window rather than by a global neither of them has")
+			check(_G.__em.EquipSet:GetNormalTexture():GetTexture() == 0
+				and _G.__em.EquipSet:GetFontString()._aetherStyle ~= nil,
+				"Equip and Save are our buttons rather than Blizzard's plates")
+
+			-- ITS ROWS ARE POOLED, so they are walked on every dress rather
+			-- than once: the set on screen now is not the set that will be
+			-- there after the next update.
+			_G.__row = _G.__em.__rows[1]
+			check(_G.__row.BgTop:GetTexture() == 0,
+				"a saved set's row loses its stone")
+			check(_G.__row:GetFontString()._aetherStyle ~= nil,
+				"and its name is in our lettering")
 		end
 	end
 
