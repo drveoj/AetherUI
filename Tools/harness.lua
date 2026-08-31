@@ -6818,6 +6818,66 @@ do
 			b:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
 		end
 
+		-- CATACLYSM REBUILT THE BOOK TOO, on ButtonFrameTemplate - tight, 550
+		-- wide, with a recess of its own that every page sits inside - where
+		-- Era's is the old parchment volume at 384. Two pages Era has no
+		-- equivalent of, two more tabs, and no spell ranks at all.
+		if _G.__mists then
+			sb:SetSize(550, 525)
+			local ins = CreateFrame("Frame", nil, sb)
+			ins:SetPoint("TOPLEFT", sb, "TOPLEFT", 4, -60)
+			ins:SetPoint("BOTTOMRIGHT", sb, "BOTTOMRIGHT", -6, 26)
+			ins:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
+			sb.Inset = ins
+
+			-- YOUR PROFESSIONS AND YOUR CORE ABILITIES, both setAllPoints to
+			-- the window exactly as the spell page is, so both want measuring
+			-- and moving with it.
+			for _, n in ipairs({ "SpellBookProfessionFrame",
+				"SpellBookCoreAbilitiesFrame" }) do
+				local page = CreateFrame("Frame", n, sb)
+				page:SetAllPoints(sb)
+				page:CreateTexture(nil, "BACKGROUND"):SetTexture("page-stone")
+				page:Hide()
+			end
+			-- A primary profession, with the bar that says how far along it is.
+			local prof = CreateFrame("Frame", "PrimaryProfession1",
+				_G.SpellBookProfessionFrame)
+			prof:SetSize(298, 90)
+			prof:SetPoint("TOPLEFT", _G.SpellBookProfessionFrame, "TOPLEFT",
+				80, -67)
+			prof:CreateTexture(nil, "BACKGROUND"):SetTexture("profession-stone")
+			local pf = prof:CreateFontString(nil, "OVERLAY")
+			pf:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+			pf:SetText("Tailoring")
+			prof.statusBar = CreateFrame("StatusBar", nil, prof)
+
+			-- AND TWO MORE TABS, five where Era has three.
+			for i = 4, 5 do
+				local t = CreateFrame("Button",
+					"SpellBookFrameTabButton" .. i, sb)
+				t:SetSize(115, 32)
+				t:SetPoint("TOPLEFT", _G["SpellBookFrameTabButton" .. (i - 1)],
+					"TOPRIGHT", -15, 0)
+				t:SetNormalTexture("tab-up")
+				local fs = t:CreateFontString(nil, "OVERLAY")
+				fs:SetText(i == 4 and "Professions" or "Core Abilities")
+				_G["SpellBookFrameTabButton" .. i .. "Text"] = fs
+				t.text = fs
+				function t:GetFontString() return self.__fs end
+				t.__fs = fs
+			end
+
+			-- ITS X AND ITS TITLE ARE SPELLED THE OTHER WAY. Era declares
+			-- SpellBookCloseButton and SpellBookTitleText; the portrait
+			-- template keeps the X as a parent key and names the title after
+			-- the frame.
+			sb.CloseButton = _G.SpellBookCloseButton
+			_G.SpellBookCloseButton = nil
+			_G.SpellBookFrameTitleText = _G.SpellBookTitleText
+			_G.SpellBookTitleText = nil
+		end
+
 		local ranks = CreateFrame("CheckButton", "ShowAllSpellRanksCheckbox", sb)
 		ranks:SetSize(26, 26)
 		-- 38 BELOW THE FRAME, which is where the client puts it: up beside the
@@ -6835,6 +6895,14 @@ do
 		-- nothing. Ours fills the button, so flush means touching.
 		ranks.Text = ranksText
 		ranksText:SetPoint("LEFT", ranks, "RIGHT", 0, 1)
+
+		-- NO SPELL RANKS ON MISTS, so no switch for them. Left standing, the
+		-- book reserved a band of empty glass over every page for a control
+		-- this client does not have.
+		if _G.__mists then
+			_G.ShowAllSpellRanksCheckbox = nil
+			_G.ShowAllSpellRanksCheckboxText = nil
+		end
 
 		-- The client's own rebuild, as a mixin method copied onto the frame -
 		-- which is why it has to be hooked on the frame and not by name. It
@@ -30537,10 +30605,44 @@ do
 	-- running under either reads as the tabs floating on the content.
 	local sb = _G.SpellBookFrame
 	local sbSide = sb.__aetherRails["RIGHT"]
-	local rp, rrel, rrelP = sb.__aetherBody:GetPoint(2)
-	check(rp == "RIGHT" and rrel == sbSide and rrelP == "LEFT",
-		"the body stops at the tab column rather than running under it (" ..
-		tostring(rp) .. " to " .. tostring(rrelP) .. ")")
+	if _G.__mists then
+		-- THE MISTS BOOK IS BUTTONFRAMETEMPLATE TOO, so its well is the
+		-- client's own Inset and stopping at the rail is the client's business
+		-- rather than ours - that recess already ends before the school tabs.
+		check(_G.SpellBookFrame.Inset.__aetherPill ~= nil,
+			"the book's own recess is its well, the way the sheet's two are")
+		-- AND NOTHING ROUND IT. Same reason as the character sheet's, the
+		-- trainer's and the trade window's: a body well here is a second rim
+		-- round the first and a second helping of the same black.
+		check(sb.__aetherBody == nil or not sb.__aetherBody:IsShown(),
+			"and no body well is drawn round it")
+		check(_G.SpellBookFrame.Inset:GetRight() and sbSide:GetLeft()
+			and _G.SpellBookFrame.Inset:GetRight() <= sbSide:GetLeft() + 0.5,
+			"and it still stops short of the school tabs (" ..
+			string.format("%.0f", _G.SpellBookFrame.Inset:GetRight()) ..
+			" against " .. string.format("%.0f", sbSide:GetLeft()) .. ")")
+
+		-- WHICH IS ONLY TRUE BECAUSE THE GLASS REACHES PAST THE FRAME. Era
+		-- anchors the school column 32 INSIDE the window; Mists puts it hard on
+		-- the OUTSIDE, the same arrangement as the vendor's bottom tabs. Trimmed
+		-- to the frame, our rail landed on top of the book's own recess.
+		--
+		-- The width of the glass is the frame's plus insets[3] less insets[1],
+		-- so reaching PAST it wants a positive third number - a negative one
+		-- pulls the edge in, which is what Era's -30 on the character sheet
+		-- does, and what this had when it was first written.
+		check(_G.SpellBookFrame.__aetherPanel:GetRight()
+			> _G.SpellBookFrame:GetRight(),
+			"the glass reaches past the frame to carry them (" ..
+			string.format("%.0f", _G.SpellBookFrame.__aetherPanel:GetRight())
+			.. " against the frame's " ..
+			string.format("%.0f", _G.SpellBookFrame:GetRight()) .. ")")
+	else
+		local rp, rrel, rrelP = sb.__aetherBody:GetPoint(2)
+		check(rp == "RIGHT" and rrel == sbSide and rrelP == "LEFT",
+			"the body stops at the tab column rather than running under it (" ..
+			tostring(rp) .. " to " .. tostring(rrelP) .. ")")
+	end
 
 	-- The row is read off the character sheet, which wears five tabs and no
 	-- column at all.
@@ -30697,26 +30799,32 @@ do
 		.. " at, rather than that minus the shift twice over (" ..
 		tostring(weapon:GetBottom() - _G.PaperDollFrame:GetBottom()) .. ")")
 
-	-- A CONTROL OVER A LIST IS CONTENT. The spellbook's rank switch is the
-	-- same kind of thing an expand-all is over a tree, so it belongs in the
-	-- recess with the list rather than floating in the band above it - and the
-	-- client hangs it 38 below the frame, which is inside our header.
-	local ranks = _G.ShowAllSpellRanksCheckbox
-	local kp, krel, krelP, kx, ky = ranks:GetPoint(1)
-	check(kp == "TOPLEFT" and krel == sb.__aetherBody and krelP == "TOPLEFT"
-		and kx == W.WELL_PAD and ky == -W.WELL_PAD,
-		"the rank switch sits inside the well at its own padding (" ..
-		tostring(kx) .. ", " .. tostring(ky) .. ")")
+	-- ERA ONLY. Mists has no spell ranks at all, so there is no switch to put
+	-- in the well and no room to reserve over the page for it - the lead came
+	-- off that entry, and reserved anyway it was a band of empty glass above
+	-- every spell in the book.
+	if not _G.__mists then
+		-- A CONTROL OVER A LIST IS CONTENT. The spellbook's rank switch is the
+		-- same kind of thing an expand-all is over a tree, so it belongs in the
+		-- recess with the list rather than floating in the band above it - and the
+		-- client hangs it 38 below the frame, which is inside our header.
+		local ranks = _G.ShowAllSpellRanksCheckbox
+		local kp, krel, krelP, kx, ky = ranks:GetPoint(1)
+		check(kp == "TOPLEFT" and krel == sb.__aetherBody and krelP == "TOPLEFT"
+			and kx == W.WELL_PAD and ky == -W.WELL_PAD,
+			"the rank switch sits inside the well at its own padding (" ..
+			tostring(kx) .. ", " .. tostring(ky) .. ")")
 
-	-- ...AND THE SPELLS MOVE DOWN TO MAKE ROOM FOR IT. Putting the switch in
-	-- the well without that lands it on top of the first spell in the list.
-	local lead = 22 + W.PANEL_GAP
-	local wantShift = W.PANEL_HEAD_H + W.PANEL_PAD + W.WELL_PAD + lead
-		- _G.SpellBookSpellIconsFrame.__aetherTop
-	check(sb.__aetherBodyShift == wantShift and wantShift > 0,
-		"and the page is moved down by the room it takes (" ..
-		tostring(sb.__aetherBodyShift) .. " against " .. tostring(wantShift)
-		.. ")")
+		-- ...AND THE SPELLS MOVE DOWN TO MAKE ROOM FOR IT. Putting the switch in
+		-- the well without that lands it on top of the first spell in the list.
+		local lead = 22 + W.PANEL_GAP
+		local wantShift = W.PANEL_HEAD_H + W.PANEL_PAD + W.WELL_PAD + lead
+			- _G.SpellBookSpellIconsFrame.__aetherTop
+		check(sb.__aetherBodyShift == wantShift and wantShift > 0,
+			"and the page is moved down by the room it takes (" ..
+			tostring(sb.__aetherBodyShift) .. " against " .. tostring(wantShift)
+			.. ")")
+	end
 	local ip, irel, _, _, iy = _G.SpellBookSpellIconsFrame:GetPoint(1)
 	check(ip == "TOPLEFT" and irel == sb and iy == -sb.__aetherBodyShift,
 		"by moving the page, so all twelve travel together (" ..
@@ -32622,17 +32730,23 @@ do
 	-- ITS TITLE IS NOT $parentTitleText. Nothing errors when a skin looks for
 	-- one and does not find it; the window simply keeps the client's lettering
 	-- and the skin reports success.
-	check(_G.SpellBookTitleText._aetherStyle == "pnTitle",
+	-- UNDER WHICHEVER NAME THIS CLIENT GIVES IT. Era declares
+	-- SpellBookTitleText; the portrait template Mists rebuilt the book on names
+	-- it after the frame, like every other window's.
+	_G.__sbTitle = _G.SpellBookTitleText or _G.SpellBookFrameTitleText
+	check(_G.__sbTitle._aetherStyle == "pnTitle",
 		"the title is found under the client's own name for it and re-roled")
 
-	local tPt, tRel, tRelPt, _, tY = _G.SpellBookTitleText:GetPoint(1)
+	local tPt, tRel, tRelPt, _, tY = _G.__sbTitle:GetPoint(1)
 	check(tPt == "TOP" and tRel == sb.__aetherPanel and tRelPt == "TOP"
 		and tY < 0,
 		"and brought to the top of the glass (y=" .. tostring(tY) .. ") - the"
 		.. " client put it six pixels right of centre because the page it was"
 		.. " printed on is not centred in the frame either")
 
-	local close = _G.SpellBookCloseButton
+	-- ...AND ITS X THE SAME WAY. Era declares SpellBookCloseButton; the
+	-- portrait template keeps it as a parent key with no name of its own.
+	local close = _G.SpellBookCloseButton or _G.SpellBookFrame.CloseButton
 	check(close.__aetherClose and close:GetNormalTexture():GetTexture() == 0,
 		"its close button is found under ITS own name and gets our mark, rather"
 		.. " than being missed for want of a $parentCloseButton")
@@ -32749,60 +32863,64 @@ do
 		.. string.format("%.2f", pg) .. ") - the client prints it in near-black"
 		.. " because it is printing it on parchment")
 
-	local ranks = _G.ShowAllSpellRanksCheckbox
-	check(ranks.__aetherCheck ~= nil, "the spell-ranks box is ours")
+	-- ERA ONLY: Mists has no spell ranks, so no switch for them. Everything
+	-- below is about that one control.
+	if not _G.__mists then
+		local ranks = _G.ShowAllSpellRanksCheckbox
+		check(ranks.__aetherCheck ~= nil, "the spell-ranks box is ours")
 
-	-- A BOX, NOT A DISC. It was a round badge, and round is what a RADIO
-	-- button is: one of several. Square is on or off. Drawing an independent
-	-- toggle as a circle says the wrong thing about what pressing it does,
-	-- before anybody has read the label beside it.
-	local chip = ranks.__aetherCheck
-	check(chip._kind == "panel" and chip.tick ~= nil,
-		"and drawn as a rounded SQUARE with a tick in it (" ..
-		tostring(chip._kind) .. ")")
+		-- A BOX, NOT A DISC. It was a round badge, and round is what a RADIO
+		-- button is: one of several. Square is on or off. Drawing an independent
+		-- toggle as a circle says the wrong thing about what pressing it does,
+		-- before anybody has read the label beside it.
+		local chip = ranks.__aetherCheck
+		check(chip._kind == "panel" and chip.tick ~= nil,
+			"and drawn as a rounded SQUARE with a tick in it (" ..
+			tostring(chip._kind) .. ")")
 
-	-- AND SIZED FROM THE MARK, not from the client's button - which is a
-	-- small square inside a much larger transparent hit area. Taking its
-	-- width gave a box the size of a bag slot.
-	check(chip:GetWidth() == A.Widgets.CHECK_SIZE
-		and chip:GetWidth() < ranks:GetWidth(),
-		"at its own size rather than the hit area's (" .. chip:GetWidth() ..
-		" in a button of " .. ranks:GetWidth() .. ")")
+		-- AND SIZED FROM THE MARK, not from the client's button - which is a
+		-- small square inside a much larger transparent hit area. Taking its
+		-- width gave a box the size of a bag slot.
+		check(chip:GetWidth() == A.Widgets.CHECK_SIZE
+			and chip:GetWidth() < ranks:GetWidth(),
+			"at its own size rather than the hit area's (" .. chip:GetWidth() ..
+			" in a button of " .. ranks:GetWidth() .. ")")
 
-	-- OUR OWN TICK, off the atlas. It carried BLIZZARD'S check mark - their
-	-- art, in their weight, in the middle of a control that is otherwise
-	-- entirely ours. The sheet has had a tick on it since the console's
-	-- channel list needed one; there was never a reason for two.
-	check(chip.tick:GetTexture() == A.Media.icons.file,
-		"with our tick rather than the client's (" ..
-		tostring(chip.tick:GetTexture()) .. ")")
-	check(ranks:GetCheckedTexture():GetTexture() == 0,
-		"and the client's taken off with the rest of its art")
+		-- OUR OWN TICK, off the atlas. It carried BLIZZARD'S check mark - their
+		-- art, in their weight, in the middle of a control that is otherwise
+		-- entirely ours. The sheet has had a tick on it since the console's
+		-- channel list needed one; there was never a reason for two.
+		check(chip.tick:GetTexture() == A.Media.icons.file,
+			"with our tick rather than the client's (" ..
+			tostring(chip.tick:GetTexture()) .. ")")
+		check(ranks:GetCheckedTexture():GetTexture() == 0,
+			"and the client's taken off with the rest of its art")
 
-	-- ON OR OFF, and it answers the CLIENT: a check box is toggled by
-	-- Blizzard's own OnClick as often as by ours, so a mark drawn once at
-	-- dress time is right until the first press.
-	ranks:SetChecked(true)
-	ranks:GetScript("OnClick")(ranks)
-	check(chip.tick:IsShown(), "ticked when the client says it is on")
-	ranks:SetChecked(false)
-	ranks:GetScript("OnClick")(ranks)
-	check(not chip.tick:IsShown(), "and empty when it says it is off")
+		-- ON OR OFF, and it answers the CLIENT: a check box is toggled by
+		-- Blizzard's own OnClick as often as by ours, so a mark drawn once at
+		-- dress time is right until the first press.
+		ranks:SetChecked(true)
+		ranks:GetScript("OnClick")(ranks)
+		check(chip.tick:IsShown(), "ticked when the client says it is on")
+		ranks:SetChecked(false)
+		ranks:GetScript("OnClick")(ranks)
+		check(not chip.tick:IsShown(), "and empty when it says it is off")
 
-	-- AND ITS LABEL HANGS OFF THE MARK, not off the button.
-	--
-	-- Blizzard's check box is a small square inside a much larger transparent
-	-- hit area, and its label is anchored flush to THAT - which clears the
-	-- square by several pixels. Ours is the size of the mark and centred in
-	-- the hit area, so a gap measured from the button's left edge put the
-	-- words underneath it, which is what was reported.
-	local lPt, lRel, lRelPt, lx = _G.ShowAllSpellRanksCheckboxText:GetPoint(1)
-	check(lRel == ranks.__aetherCheck,
-		"the words hang off the mark rather than the hit area (" ..
-		tostring(lRel == ranks and "the button" or "the mark") .. ")")
-	check(lPt == "LEFT" and lRelPt == "RIGHT" and lx > 0,
-		"clear of its right edge (" .. tostring(lPt) .. " -> " ..
-		tostring(lRelPt) .. " x=" .. tostring(lx) .. ")")
+		-- AND ITS LABEL HANGS OFF THE MARK, not off the button.
+		--
+		-- Blizzard's check box is a small square inside a much larger transparent
+		-- hit area, and its label is anchored flush to THAT - which clears the
+		-- square by several pixels. Ours is the size of the mark and centred in
+		-- the hit area, so a gap measured from the button's left edge put the
+		-- words underneath it, which is what was reported.
+		local lPt, lRel, lRelPt, lx = _G.ShowAllSpellRanksCheckboxText:GetPoint(1)
+		check(lRel == ranks.__aetherCheck,
+			"the words hang off the mark rather than the hit area (" ..
+			tostring(lRel == ranks and "the button" or "the mark") .. ")")
+		check(lPt == "LEFT" and lRelPt == "RIGHT" and lx > 0,
+			"clear of its right edge (" .. tostring(lPt) .. " -> " ..
+			tostring(lRelPt) .. " x=" .. tostring(lx) .. ")")
+	end
 
 	-- THE BOOK'S OWN TABS. All three start hidden and the client shows the ones
 	-- that apply from its own update, so the first dress sees an empty row. A

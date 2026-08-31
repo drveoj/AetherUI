@@ -51,17 +51,19 @@ local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 -- 30, which puts their top edge inside the money row - hidden in the
 -- client by the stone border drawn over the join, and not hidden once that
 -- border is off. The glass follows it down, or the tabs sit outside.
---- The Mists character sheet's own numbers, in one table.
+--- The two Cataclysm-rebuilt windows' own numbers, in one table.
 --
 --  ONE LOCAL RATHER THAN THREE. This file's main chunk is within a few names
 --  of Lua's ceiling of 200 locals in a function, and the game runs 5.1 - three
 --  constants took it over and the whole module stopped loading.
 --
---  `tabDrop` is how far its tabs hang below its own bottom edge, the same
+--  `tabDrop` is how far their tabs hang below their own bottom edge, the same
 --  arrangement as the vendor's and the postbox's. `insetX`/`insetY` are where
---  its recess starts, out of its XML: TOPLEFT 4, -60. Only that corner is ours
---  to move; see DressCharacter.
-local CHAR = { tabDrop = 34, insetX = 4, insetY = 60 }
+--  the recess starts on both - TOPLEFT 4, -60, out of ButtonFrameTemplate.
+--  Only that corner is ours to move; see ClientRecess.
+--  `schoolCol` is the column of school tabs the Mists spellbook hangs off its
+--  own RIGHT edge - 32 wide, plus air.
+local CHAR = { tabDrop = 34, insetX = 4, insetY = 60, schoolCol = 40 }
 
 local MAIL_TAB_DROP = 40
 -- Letters on a page of the inbox. Seven, and the client pages rather than
@@ -806,6 +808,40 @@ do
 		-- never lost; it was OUTSIDE THE GLASS, sitting at the top corner of a
 		-- window our insets had trimmed thirty units in from. Naming it here
 		-- would have looked like the fix and changed nothing.
+
+		-- AND THE SPELLBOOK IS THE SAME WINDOW A SECOND TIME. Cataclysm rebuilt
+		-- that one on ButtonFrameTemplate as well - tight, 550 wide, with an
+		-- Inset of its own that everything in the book sits inside - where
+		-- Era's is the old parchment volume at 384. Same four answers, for the
+		-- same reasons; the comments above are the long version of each.
+		local sb = PN.ENTRY.SpellBookFrame
+		sb.tight     = true
+		-- AND ITS SCHOOL TABS HANG OFF THE RIGHT EDGE, which Era's do not:
+		-- Era anchors the column 32 INSIDE the window, Mists puts it hard on
+		-- the outside, the same arrangement as the vendor's bottom tabs. So the
+		-- glass reaches past the frame on that side to carry them, exactly as
+		-- it reaches below to carry the row along the foot.
+		-- POSITIVE, because the glass's width is the frame's plus insets[3]
+		-- less insets[1]: a negative there pulls the edge IN, which is what
+		-- Era's -30 does. Reaching PAST the frame wants a positive one.
+		sb.insets    = { 0, 0, CHAR.schoolCol, -CHAR.tabDrop }
+		sb.wells     = false
+		sb.keepWidth = true
+		sb.together  = true
+
+		-- TWO MORE PAGES, which Era's book has no equivalent of: your
+		-- professions, and the abilities the client thinks define your spec.
+		-- Both are setAllPoints to the window like the spell page, so both want
+		-- measuring and moving with it.
+		local sbody = sb.body
+		sbody[#sbody + 1] = "SpellBookProfessionFrame"
+		sbody[#sbody + 1] = "SpellBookCoreAbilitiesFrame"
+
+		-- AND NO ROOM RESERVED FOR THE RANK SWITCH. Mists has no spell ranks,
+		-- so ShowAllSpellRanksCheckbox does not exist and the lead reserved
+		-- over the page was a band of empty glass above every spell in the
+		-- book.
+		sb.lead = nil
 	end
 end
 
@@ -3066,6 +3102,39 @@ local function DressModel(prefix, store)
 	end
 end
 
+--- One of the client's own recesses, dressed as our well - and brought down to
+--- meet the content if it is the one the header has to clear.
+--
+--  THE STANDARD ANSWER FOR A WINDOW WHOSE PANES ARE ALREADY RECESSES. The
+--  trainer and the trade window have said so for months with `wells = false`;
+--  Cataclysm's rebuilds - the character sheet, the spellbook - are the same
+--  case and were each getting a body well of ours drawn round the client's,
+--  with their content then moved out of the client's to line up with it.
+--
+--  ITS TOP CORNER ONLY, WHERE IT MOVES AT ALL. The far corner of one of these
+--  can be the client's to hold: the character sheet's is rewritten by
+--  UpdateSize on every tab change, pinned either a fixed width from the
+--  window's LEFT edge or a margin from its RIGHT. Cached and put back it spans
+--  the whole window and pushes whatever follows it off the glass.
+--
+--  Setting the same point twice costs nothing, which is what makes this safe
+--  to call from a hook that runs whenever the client resizes.
+local function ClientRecess(frame, path, x, y)
+	local ins = Part(path)
+	if not ins then return nil end
+
+	ins.__aetherStore = ins.__aetherStore or {}
+	Reskin.Strip(ins, ins.__aetherStore)
+	Reskin.Well(ins, { corner = W.WELL_CORNER, inset = { 0, 0, 0, 0 },
+		fill = "wellFill", edge = "wellEdge" })
+
+	if frame and x and y and frame.__aetherBodyShift then
+		ins:SetPoint("TOPLEFT", frame, "TOPLEFT",
+			x, -(y + frame.__aetherBodyShift))
+	end
+	return ins
+end
+
 --- The paper doll's sidebar, which only Mists has.
 --
 --  Three tabs down the right-hand recess - Stats, Titles, Equipment Manager -
@@ -3410,6 +3479,8 @@ local function DressCharacter(frame, store)
 	LayoutTabs(frame, store)
 	InstallTabHooks()
 
+	ClientRecess(frame, "CharacterFrameInset", CHAR.insetX, CHAR.insetY)
+
 	-- AND THE RECESS COMES DOWN TO MEET THE PANES.
 	--
 	-- ITS TOP CORNER ONLY, AND NEVER THROUGH THE BODY LIST. Putting the two
@@ -3427,25 +3498,9 @@ local function DressCharacter(frame, store)
 	-- BOTTOMRIGHT, so both come with it, and setting the same point twice
 	-- costs nothing - which is what makes this safe to run from a hook that
 	-- fires whenever the client resizes.
-	local recess = Part("CharacterFrameInset")
-	if recess and frame and frame.__aetherBodyShift then
-		recess:SetPoint("TOPLEFT", frame, "TOPLEFT",
-			CHAR.insetX, -(CHAR.insetY + frame.__aetherBodyShift))
-	end
-
-	-- THIS WINDOW'S WELLS ARE THE CLIENT'S OWN RECESSES on Mists - the doll and
-	-- the gear in one, the stat panel and the sidebar's panes in the other -
-	-- so they are drawn the way the trade window's six are, and there is no
-	-- seventh round the outside.
-	for _, name in ipairs({ "CharacterFrameInset", "CharacterFrameInsetRight" }) do
-		local ins = Part(name)
-		if ins then
-			ins.__aetherStore = ins.__aetherStore or {}
-			Reskin.Strip(ins, ins.__aetherStore)
-			Reskin.Well(ins, { corner = W.WELL_CORNER, inset = { 0, 0, 0, 0 },
-				fill = "wellFill", edge = "wellEdge" })
-		end
-	end
+	-- The stat panel's recess follows the first one's TOPRIGHT, so it needs no
+	-- drop of its own - only the skin.
+	ClientRecess(nil, "CharacterFrameInsetRight")
 
 	-- AND THE STAT PANEL SCROLLS, on a MinimalScrollBar that had been left
 	-- Blizzard's - a grey bar down our glass beside seven groups of numbers in
@@ -3954,6 +4009,10 @@ local function DressSideTabs(frame, store, prefix, count)
 end
 
 local function DressSpellBook(frame, store)
+	-- ITS OWN RECESS IS ITS WELL on Mists, the same as the character sheet's -
+	-- ButtonFrameTemplate again, and everything in the book sits inside it.
+	ClientRecess(frame, "SpellBookFrame.Inset", CHAR.insetX, CHAR.insetY)
+
 	-- The page number, which the client draws in near-black because it is
 	-- printing it on parchment. On glass that is a page number you cannot read.
 	-- THE PAGE TURN, which is the one every other window's is copied from.
