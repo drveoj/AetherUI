@@ -1397,15 +1397,33 @@ local function MeasureTop(frame, pane)
 		if not placed(f) then return end
 		local top = f.GetTop and f:GetTop()
 		if top and top < ceiling and (not best or top > best) then best = top end
+		-- WHEREVER IT IS, at BOTH ends, including past the edge it should have
+		-- stopped at. This used to ignore anything reaching beyond the boundary,
+		-- which meant the one thing it could never measure was content that
+		-- ALREADY overflows - so a window whose text runs out through the rim
+		-- could not be widened to fit it. The spellbook's second column of spell
+		-- names is that case: our lettering is wider than the client's, and the
+		-- names ran under the school tabs.
+		--
+		-- THE LEFT KEPT ITS GUARD FOR A YEAR AFTER THE RIGHT LOST ITS OWN, and a
+		-- guard on one end only is worse than one on both: `left >= wall`
+		-- discards content that starts OUTSIDE the glass, and discarding it
+		-- leaves `side` nil, which reads as "nothing to measure" and moves the
+		-- pane not at all. So the one arrangement it could never fix - content
+		-- already out through the rim - was the one arrangement that most needed
+		-- fixing, and it failed by doing nothing, which looks like a window
+		-- nobody laid out rather than one laid out wrongly.
+		--
+		-- The quest giver on Mists is exactly that. Blizzard gates the templates
+		-- per flavour, and its scroll frames sit 23 in on Era but FIVE on Mists
+		-- against glass inset 8 - so every word of every quest was printed hard
+		-- against the window's edge, outside the recess drawn for it.
+		--
+		-- A negative `left` is not a special case: `inner - left` simply asks for
+		-- a larger shift, which is the right answer for content that starts
+		-- further out.
 		local left = f.GetLeft and f:GetLeft()
-		if left and left >= wall and (not side or left < side) then side = left end
-		-- WHEREVER IT IS, including past the edge it should have stopped at. This
-		-- used to ignore anything reaching beyond the boundary, which meant the
-		-- one thing it could never measure was content that ALREADY overflows -
-		-- so a window whose text runs out through the rim could not be widened to
-		-- fit it. The spellbook's second column of spell names is that case: our
-		-- lettering is wider than the client's, and the names ran under the
-		-- school tabs.
+		if left and (not side or left < side) then side = left end
 		local right = f.GetRight and f:GetRight()
 		if right and (not edge or right > edge) then edge = right end
 	end

@@ -6973,8 +6973,22 @@ do
 
 		-- FOUR PANELS, EACH FILLING THE WINDOW, one up at a time - and the quest
 		-- itself printed in a scroll frame anchored to the WINDOW rather than to
-		-- the panel, 23 in and 81 down. Unanchored mock panes measure as nothing,
-		-- so a window whose content never moved looked laid out.
+		-- the panel. Unanchored mock panes measure as nothing, so a window whose
+		-- content never moved looked laid out.
+		--
+		-- AND THE TWO CLIENTS DO NOT PUT IT IN THE SAME PLACE, which this mock
+		-- said they did. Blizzard gates the templates per flavour in
+		-- Blizzard_UIPanels_Game_Classic.toc:
+		--
+		--     Vanilla\QuestFrameTemplates.xml          [vanilla]   x=23 y=-81
+		--     Mists\QuestScrollFrameAndPanelTemplates.xml [mists]  x=5  y=-65
+		--
+		-- Twenty-three is INSIDE this window's glass, which is inset 8; five is
+		-- OUTSIDE it. That one difference is the whole of the quest giver's
+		-- misalignment on Mists, and a mock that placed both flavours at Era's
+		-- number could not show it. Mock strictness, twenty-two.
+		local SCROLL_X, SCROLL_Y = 23, -81
+		if _G.__mists then SCROLL_X, SCROLL_Y = 5, -65 end
 		for _, n in ipairs({ "QuestFrameDetailPanel", "QuestFrameProgressPanel",
 			"QuestFrameRewardPanel", "QuestFrameGreetingPanel",
 			"QuestDetailScrollFrame", "QuestProgressScrollFrame",
@@ -6992,7 +7006,7 @@ do
 				if n ~= "QuestFrameDetailPanel" then p:Hide() end
 			else
 				p:SetSize(300, 334)
-				p:SetPoint("TOPLEFT", quest, "TOPLEFT", 23, -81)
+				p:SetPoint("TOPLEFT", quest, "TOPLEFT", SCROLL_X, SCROLL_Y)
 				local page = CreateFrame("Frame", n .. "ChildFrame", p)
 				page:SetSize(300, 900)
 				p:SetScrollChild(page)
@@ -32226,19 +32240,50 @@ do
 		tostring(qp) .. ")")
 
 	-- AND THE QUEST IS MOVED INTO THE RECESS. The client anchors all four of
-	-- its scroll frames to the WINDOW rather than to the panel they are on, 23
-	-- in and 81 down - the margin the parchment used to need, which is neither
-	-- our band nor our padding.
+	-- its scroll frames to the WINDOW rather than to the panel they are on -
+	-- the margin the parchment used to need, which is neither our band nor our
+	-- padding.
+	--
+	-- AND NOT TO THE SAME MARGIN ON BOTH CLIENTS. Blizzard gates the quest
+	-- templates per flavour, so it is 23 in and 81 down on Era and FIVE in and
+	-- 65 down on Mists - and this window's glass is inset 8, which puts Era's
+	-- content inside the glass and Mists' content OUTSIDE it. Written as two
+	-- constants rather than two numbers so the arithmetic below is the same
+	-- statement on both.
 	local qsf = _G.QuestDetailScrollFrame
 	local qInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD
-	check(qsf.__aetherTop == 73 and qsf.__aetherLeft == 15,
+	local qAtX, qAtY = (_G.__mists and 5 or 23), (_G.__mists and 65 or 81)
+	local qGlass = 8                              -- QuestFrame's own left inset
+	check(qsf.__aetherTop == qAtY - qGlass and qsf.__aetherLeft == qAtX - qGlass,
 		"the quest text is measured where the client anchors it (" ..
 		tostring(qsf.__aetherTop) .. ", " .. tostring(qsf.__aetherLeft) .. ")")
 	local _, _, _, qx, qy = qsf:GetPoint(1)
-	check(qx == 23 + (qInner - 15)
-		and qy == -(81 + (_G.QuestFrame.__aetherHeadH + qInner - 73)),
+	check(qx == qAtX + (qInner - (qAtX - qGlass))
+		and qy == -(qAtY + (_G.QuestFrame.__aetherHeadH + qInner
+			- (qAtY - qGlass))),
 		"and moved down and in until it clears the band and sits inside the"
 		.. " well's own padding (" .. tostring(qx) .. ", " .. tostring(qy) .. ")")
+
+	-- AND WHERE IT ACTUALLY LANDED, which is the check that was missing. Every
+	-- assertion above is arithmetic against the anchor the client used, so all
+	-- of them passed on Era while the same code printed every word of every
+	-- quest on Mists hard against the window's edge, outside the recess drawn
+	-- for it. Content OUTSIDE the glass measured as nothing at all, `left` came
+	-- back nil, and nil moved the pane by nought - a failure that looks exactly
+	-- like a window nobody laid out.
+	--
+	-- Asked of the two rects instead: wherever the client put it and whatever
+	-- the numbers work out to, the quest has to start inside the well and
+	-- inside the well's own padding.
+	do
+		local well = _G.QuestFrame.__aetherBody
+		check(well and qsf:GetLeft()
+			and qsf:GetLeft() >= well:GetLeft() + A.Widgets.WELL_PAD - 0.5,
+			"and the quest starts inside the well's left padding rather than"
+			.. " against the window's edge (quest " ..
+			string.format("%.0f", qsf:GetLeft() or 0) .. ", well " ..
+			string.format("%.0f", (well and well:GetLeft()) or 0) .. ")")
+	end
 
 	-- AND THE PAGE STOPS WHERE THE RECESS DOES. A scroll frame CLIPS AT ITS OWN
 	-- BOUNDS and nowhere else, so moving one down the window without shortening
