@@ -7210,12 +7210,26 @@ do
 
 				-- THE WHEEL, which STAYS: the six sockets are positioned on it
 				-- and it says which are unlocked. Same as the flight map.
+				-- A FIXED 437x413 PINNED TOPLEFT. It does not stretch with the
+				-- frame, which is the whole reason the sockets can drift off
+				-- their painted holes - a mock whose wheel filled the frame
+				-- could not show it.
 				gf.background = gf:CreateTexture("GlyphFrameBackground", "BACKGROUND")
 				gf.background:SetTexture([[Interface\TalentFrame\glyph-bg]])
+				gf.background:SetSize(437, 413)
+				gf.background:SetPoint("TOPLEFT", gf, "TOPLEFT", 1, 0)
 				gf.specRing = gf:CreateTexture(nil, "ARTWORK")
 				gf.specRing:SetTexture([[Interface\TalentFrame\glyph-speccover]])
+
+				-- AND THE SOCKETS HANG OFF THE FRAME'S CENTRE, not off the
+				-- wheel. Their offsets are the client's own.
+				local SOCKET = { { 110, 43 }, { 0, 156 }, { -111, 43 },
+					{ -155, -109 }, { 0, -150 }, { 151, -109 } }
 				for i = 1, 6 do
 					local sock = CreateFrame("Button", "GlyphFrameGlyph" .. i, gf)
+					sock:SetSize(38, 38)
+					sock:SetPoint("CENTER", gf, "CENTER",
+						SOCKET[i][1], SOCKET[i][2])
 					sock.glyph = sock:CreateTexture(nil, "ARTWORK")
 					sock.glyph:SetTexture("glyph-icon-" .. i)
 					sock.ring = sock:CreateTexture(nil, "OVERLAY")
@@ -7224,7 +7238,12 @@ do
 				end
 
 				-- The list's own recess, the field, the filter and the list.
+				-- THE LIST HANGS OFF THE FRAME'S BOTTOM RIGHT CORNER, 358 up
+				-- from it - so a frame taller than the wheel takes the whole
+				-- right-hand column down with it.
 				gf.sideInset = CreateFrame("Frame", "GlyphFrameSideInset", gf)
+				gf.sideInset:SetPoint("TOPLEFT", gf, "BOTTOMRIGHT", 4, 358)
+				gf.sideInset:SetPoint("BOTTOMRIGHT", gf, "BOTTOMRIGHT", 194, -3)
 				gf.sideInset:CreateTexture(nil, "BACKGROUND")
 					:SetTexture("inset-stone")
 
@@ -36196,6 +36215,36 @@ do
 		local _, grel = _G.__gf.clearInfo:GetPoint(1)
 		check(grel ~= _G.__gf,
 			"the glyph page's own reagent line goes to the strip too")
+
+		-- AND THE SOCKETS SIT IN THEIR PAINTED HOLES.
+		--
+		-- The wheel is a FIXED 437x413 pinned TOPLEFT; the six sockets hang off
+		-- the FRAME'S CENTRE. So a frame bigger than the wheel moves its own
+		-- centre away from the wheel's and the rings drift out of their holes -
+		-- which is what growing the window for our padding did.
+		--
+		-- Asked as the two centres, because that is the relationship that has
+		-- to hold whatever size anything else is.
+		_G.__bgCx = (_G.__gf.background:GetLeft() + _G.__gf.background:GetRight()) / 2
+		_G.__bgCy = (_G.__gf.background:GetTop() + _G.__gf.background:GetBottom()) / 2
+		_G.__gfCx = (_G.__gf:GetLeft() + _G.__gf:GetRight()) / 2
+		_G.__gfCy = (_G.__gf:GetTop() + _G.__gf:GetBottom()) / 2
+		check(math.abs(_G.__bgCx - _G.__gfCx) < 1.5
+			and math.abs(_G.__bgCy - _G.__gfCy) < 1.5,
+			"the frame's centre is the wheel's, so the sockets land in their"
+			.. " painted holes (" ..
+			string.format("%.0f,%.0f against %.0f,%.0f", _G.__gfCx, _G.__gfCy,
+				_G.__bgCx, _G.__bgCy) .. ")")
+
+		-- AND THE RIGHT-HAND COLUMN STAYS UP. The list hangs off the frame's
+		-- BOTTOM RIGHT, 358 up from it, so a frame taller than the wheel takes
+		-- the search box, the filter and the whole list down with it.
+		check(_G.__gf.sideInset:GetTop() and _G.__gf:GetTop()
+			and (_G.__gf:GetTop() - _G.__gf.sideInset:GetTop()) < 60,
+			"and the list beside it starts near the top rather than being"
+			.. " pushed down by a frame taller than its art (" ..
+			string.format("%.0f", _G.__gf:GetTop()
+				- _G.__gf.sideInset:GetTop()) .. " below the frame's top)")
 		_G.__gf:Hide()
 
 		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its

@@ -1896,9 +1896,42 @@ end
 --  is exactly what the flight map does and says so where it is dressed.
 --  Everything AROUND the wheel is ours: the list beside it, its recess, the
 --  search field, the filter and the reagent line under it.
+-- The three units GlyphFrame is inset by inside the talent window's recess.
+local GLYPH_PAD = 3
+
 function PN.DressGlyphs(store)
 	local gf = Part("GlyphFrame")
 	if not gf then return end
+
+	-- ITS NATURAL SIZE, AND NOT THE RECESS'S.
+	--
+	-- GlyphFrame is told to FILL PlayerTalentFrameInset, and everything on it
+	-- is placed from a corner or from the middle of the frame rather than from
+	-- the art:
+	--
+	--   the wheel   a FIXED 437x413 texture pinned TOPLEFT
+	--   the sockets CENTER 110,43 / 0,156 / -155,-109 and so on
+	--   the list    TOPLEFT to the frame's BOTTOMRIGHT, +4,358
+	--
+	-- So a frame bigger than the wheel moves its own centre away from the
+	-- wheel's - the six rings drift out of their painted holes - and moves its
+	-- bottom-right corner down, taking the search box, the filter and the whole
+	-- list down with it. Growing the window for our padding did exactly that.
+	--
+	-- The frame is therefore sized to the wheel and anchored by its TOP LEFT
+	-- alone. Then its centre IS the wheel's centre and its bottom-right is
+	-- where the client drew it, whatever the recess round it is doing.
+	local bg = gf.background
+	if bg and bg.GetWidth and (bg:GetWidth() or 0) > 0 then
+		local ins = Part("PlayerTalentFrame.Inset")
+		if ins then
+			gf:ClearAllPoints()
+			gf:SetPoint("TOPLEFT", ins, "TOPLEFT", GLYPH_PAD, -GLYPH_PAD)
+			-- Plus the one unit the wheel is inset by at each side, so the two
+			-- centres coincide exactly.
+			gf:SetSize(bg:GetWidth() + 2, bg:GetHeight())
+		end
+	end
 
 	-- THE LIST'S OWN RECESS, dressed as a well the way the sheet's two are.
 	if gf.sideInset then
