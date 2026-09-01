@@ -65,7 +65,9 @@ local W, Palette, Reskin, Media = A.Widgets, A.Palette, A.Reskin, A.Media
 --  own RIGHT edge - 32 wide, plus air.
 --  `pages` are the three the same rebuild added to the spellbook, which Era
 --  has none of - every one setAllPoints to the window, like the spell page.
-local CHAR = { tabDrop = 34, insetX = 4, insetY = 60, schoolCol = 40,
+--  `tiers` is how many talent rows Mists draws - six, where Cataclysm had
+--  seven.
+local CHAR = { tabDrop = 34, insetX = 4, insetY = 60, schoolCol = 40, tiers = 6,
 	pages = { "SpellBookProfessionFrame", "SpellBookCoreAbilitiesFrame",
 		"SpellBookWhatHasChanged" } }
 
@@ -858,6 +860,43 @@ do
 		-- over the page was a band of empty glass above every spell in the
 		-- book.
 		sb.lead = nil
+
+		-- AND THE TALENT WINDOW IS A REWRITE, not a re-measure.
+		--
+		-- Era's is the old parchment tree: thirty talents, thirty branches and
+		-- thirty arrows drawn between them. Mists threw the lot away for six
+		-- tiers of three, plus a specialization page and a pet one - so the
+		-- names our dresser reaches for describe a window this client does not
+		-- build at all.
+		--
+		-- ButtonFrameTemplate again, 646x468, with its three tabs hanging off
+		-- the bottom edge outside its own art. Third window in a row with the
+		-- same shape; see ClientRecess and [[standard-components-first]].
+		local tal = PN.ENTRY.PlayerTalentFrame
+		tal.tight  = true
+		tal.insets = { 0, 0, 0, -CHAR.tabDrop }
+
+		-- WELLS = FALSE, AND EARNED THIS TIME. All three panes are anchored to
+		-- PlayerTalentFrameInsetBg - the Bg texture of the client's own Inset -
+		-- so their content cannot be moved away from that recess, exactly as
+		-- the character sheet's stat panel cannot leave InsetRight. That is the
+		-- test: an ANCHOR, not a template. The spellbook looks identical from
+		-- the outside and takes our own well, because nothing in it is anchored
+		-- to its Inset.
+		tal.wells    = false
+		tal.together = true
+
+		-- ITS SUBTITLE IS ERA'S ONLY. "Points spent in Fire Talents: 0" belongs
+		-- to a tree that no longer exists; PlayerTalentFrameSpentPointsText is
+		-- declared in Classic/Blizzard_TalentUI.xml and nowhere else, so on
+		-- Mists the band was reserving a second line for a string the client
+		-- never creates.
+		tal.subtitle = nil
+
+		-- Specialization, Talents, Glyphs - and the pet's specialization, which
+		-- has no tab of its own and is swapped in behind the first one.
+		tal.body = { "PlayerTalentFrameSpecialization",
+			"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }
 	end
 end
 
@@ -4400,7 +4439,102 @@ local function InstallTalentHooks(frame)
 	end)
 end
 
+--- The talent window Mists rebuilt: six tiers of three, and two spec pages.
+--
+--  A DIFFERENT WINDOW UNDER THE SAME NAME. Era's is the parchment tree -
+--  thirty talents with thirty branches and thirty arrows drawn between them -
+--  and every name the Era dresser below reaches for describes something this
+--  client does not build.
+--
+--  Its own recess is its well, because all three panes are anchored to
+--  PlayerTalentFrameInsetBg rather than to the frame: the same case as the
+--  character sheet's, and the reason `wells = false` is on this entry.
+-- On PN rather than a local: this file's main chunk is at Lua 5.1's ceiling
+-- of 200 locals in a function, and one more name will not load. See the note in
+-- [[mists-port]] - the file needs splitting, not another squeeze.
+function PN.DressMistsTalents(frame, store)
+	ClientRecess(frame, "PlayerTalentFrame.Inset", CHAR.insetX, CHAR.insetY)
+
+	for _, name in ipairs({ "PlayerTalentFrameSpecialization",
+		"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }) do
+		local pane = Part(name)
+		if pane then
+			Reskin.Strip(pane, store)
+			Reskin.Fonts(pane, "pnBody", 0, Palette.c.text)
+		end
+	end
+
+	-- SIX TIERS, reached as PlayerTalentFrameTalents["tier"..n]. Parent keys
+	-- with no globals of their own, which is how the client's own code walks
+	-- them - and a sweep that only knows globals reaches none of it.
+	local talents = Part("PlayerTalentFrameTalents")
+	for tier = 1, CHAR.tiers do
+		local row = talents and talents["tier" .. tier]
+		if row then
+			-- The row's own furniture: a tiled backing, two caps, three
+			-- separators and the two glow lines that mark the chosen tier.
+			Reskin.Strip(row, store)
+
+			-- WHAT LEVEL THE TIER UNLOCKS AT, which the client draws large and
+			-- gold down the left of each row. It is a heading for the row, so
+			-- it is roled as one rather than left shouting.
+			if row.level then
+				Roled(row.level, "pnSub")
+				W.Color(row.level, Palette.c.textDim)
+			end
+
+			for col = 1, 3 do
+				local b = row["talent" .. col]
+				if b then
+					-- THE PICTURE IS A REGION AND THE SLOT IS THE BORDER ROUND
+					-- IT, the same division as the sidebar tabs and the model
+					-- controls. Swept whole, every talent in the tree loses its
+					-- icon and the window becomes eighteen empty boxes.
+					Reskin.ClearButton(b)
+					if type(store) == "table" then
+						Reskin.StripExcept(b, store, b.icon and { b.icon } or nil)
+					end
+					Reskin.Slot(b, { icon = b.icon, store = store })
+					if b.name then
+						Roled(b.name, "pnBody")
+						W.Color(b.name, Palette.c.text)
+					end
+				end
+			end
+		end
+	end
+
+	-- LEARN, on both specialization pages, under a parent key rather than a
+	-- name - so neither is reachable as a global.
+	for _, name in ipairs({ "PlayerTalentFrameSpecialization",
+		"PlayerTalentFramePetSpecialization" }) do
+		local pane = Part(name)
+		local btn = pane and pane.learnButton
+		if btn then
+			Reskin.ClearButton(btn)
+			Reskin.Strip(btn, store)
+			Reskin.Button(btn, "pnBody")
+		end
+	end
+
+	-- The spec tabs down the side, which this flavour actually uses.
+	for i = 1, 3 do
+		local tab = Part("PlayerSpecTab" .. i)
+		if tab then
+			Reskin.ClearButton(tab)
+			if type(store) == "table" then
+				Reskin.StripExcept(tab, store,
+					tab.icon and { tab.icon } or nil)
+			end
+		end
+	end
+end
+
 local function DressTalents(frame, store)
+	-- MISTS REBUILT THIS WINDOW ENTIRELY. Everything below describes Era's
+	-- parchment tree, and none of those names exist on the other client.
+	if A.isMists then return PN.DressMistsTalents(frame, store) end
+
 	for _, name in ipairs(TALENT_PANES) do
 		local pane = _G[name]
 		if pane then Reskin.Strip(pane, store) end

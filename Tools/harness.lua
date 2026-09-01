@@ -7087,6 +7087,110 @@ do
 		tf.__insides = true
 		tf:SetSize(384, 512)
 
+		-- MISTS THREW THE TREE AWAY. Era's is thirty talents with thirty
+		-- branches and thirty arrows drawn between them, on parchment; Mists
+		-- is ButtonFrameTemplate at 646x468 with six tiers of three, a
+		-- specialization page and a pet one. Not a re-measure - a different
+		-- window under the same name, which is the whole reason this mock has
+		-- to build it separately rather than nudging the Era one.
+		if _G.__mists then
+			tf:SetSize(646, 468)
+
+			-- THE RECESS EVERY PANE HANGS OFF. ButtonFrameTemplate's Inset,
+			-- and specifically its Bg TEXTURE - all three panes anchor to
+			-- PlayerTalentFrameInsetBg, not to the frame - which is what earns
+			-- this window `wells = false`.
+			local ins = CreateFrame("Frame", "PlayerTalentFrameInset", tf)
+			ins:SetPoint("TOPLEFT", tf, "TOPLEFT", 4, -60)
+			ins:SetPoint("BOTTOMRIGHT", tf, "BOTTOMRIGHT", -6, 26)
+			local insBg = ins:CreateTexture("PlayerTalentFrameInsetBg", "BACKGROUND")
+			insBg:SetAllPoints(ins)
+			insBg:SetTexture("Interface\\FrameGeneral\\UI-Background-Marble")
+			ins.Bg = insBg
+			tf.Inset = ins
+
+			-- ITS TITLE HAS NO GLOBAL, like every other window on this
+			-- template: an unnamed TitleContainer holding $parentTitleText.
+			tf.TitleContainer = CreateFrame("Frame", nil, tf)
+			local tt = tf.TitleContainer:CreateFontString(nil, "OVERLAY")
+			tt:SetFont([[Fonts\FRIZQT__.TTF]], 14, "")
+			tt:SetText("Talents")
+			tf.TitleContainer.TitleText = tt
+
+			-- THE THREE PANES, all anchored to the recess's Bg.
+			for _, n in ipairs({ "PlayerTalentFrameSpecialization",
+				"PlayerTalentFramePetSpecialization",
+				"PlayerTalentFrameTalents" }) do
+				local pane = CreateFrame("Frame", n, tf)
+				pane:SetPoint("TOPLEFT", insBg, "TOPLEFT", 0, 0)
+				pane:SetPoint("BOTTOMRIGHT", insBg, "BOTTOMRIGHT", 0, 0)
+				pane:CreateTexture(nil, "BACKGROUND"):SetTexture("spec-paper-bg")
+				if n ~= "PlayerTalentFrameTalents" then pane:Hide() end
+			end
+
+			-- SIX TIERS OF THREE, reached as PlayerTalentFrameTalents["tier"..n]
+			-- - parent keys, with no globals of their own, which is how the
+			-- client's own code walks them.
+			local talents = _G.PlayerTalentFrameTalents
+			for tier = 1, 6 do
+				local row = CreateFrame("Frame", nil, talents)
+				row:SetSize(627, 50)
+				row:SetPoint("TOPLEFT", talents, "TOPLEFT", 0, -(tier - 1) * 52)
+				-- The row's own furniture: a tiled backing, two caps and three
+				-- separators, all of it Blizzard's talent art.
+				for _, part in ipairs({ "Bg", "LeftCap", "RightCap",
+					"Separator1", "Separator2", "Separator3" }) do
+					row[part] = row:CreateTexture(nil, "BACKGROUND")
+					row[part]:SetTexture("Interface\\TalentFrame\\talent-horiz")
+				end
+				row.level = row:CreateFontString(nil, "OVERLAY")
+				row.level:SetFont([[Fonts\FRIZQT__.TTF]], 20, "")
+				row.level:SetText(tostring(14 + tier * 15))
+				row.TopLine = row:CreateTexture(nil, "OVERLAY")
+				row.TopLine:SetTexture("Interface\\Common\\talent-blue-glow")
+				row.BottomLine = row:CreateTexture(nil, "OVERLAY")
+				row.BottomLine:SetTexture("Interface\\Common\\talent-blue-glow")
+
+				for col = 1, 3 do
+					local b = CreateFrame("Button", nil, row)
+					b:SetSize(190, 50)
+					b:SetPoint("LEFT", row, "LEFT", 10 + (col - 1) * 200, 0)
+					-- THE PICTURE IS A REGION and the SLOT is the border round
+					-- it, the same division as the sidebar tabs - so a sweep
+					-- that takes every texture takes the spell's icon.
+					b.icon = b:CreateTexture(nil, "ARTWORK")
+					b.icon:SetSize(40, 40)
+					b.icon:SetTexture("talent-icon-" .. tier .. col)
+					b.Slot = b:CreateTexture(nil, "BACKGROUND")
+					b.Slot:SetTexture("Interface\\TalentFrame\\talent-main")
+					b.knownSelection = b:CreateTexture(nil, "OVERLAY")
+					b.knownSelection:SetTexture("Interface\\TalentFrame\\talent-main")
+					b.name = b:CreateFontString(nil, "OVERLAY")
+					b.name:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+					b.name:SetText("Talent " .. tier .. "." .. col)
+					row["talent" .. col] = b
+				end
+				talents["tier" .. tier] = row
+			end
+
+			-- LEARN, on both specialization pages, under a parent key.
+			for _, n in ipairs({ "PlayerTalentFrameSpecialization",
+				"PlayerTalentFramePetSpecialization" }) do
+				local pane = _G[n]
+				local lb = CreateFrame("Button", nil, pane)
+				lb:SetSize(80, 22)
+				lb:SetNormalTexture("blizzard-button-plate")
+				local fs = lb:CreateFontString(nil, "OVERLAY")
+				fs:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				fs:SetText("Learn")
+				lb.__fs = fs
+				function lb:GetFontString() return self.__fs end
+				pane.learnButton = lb
+				pane.bg = pane:CreateTexture(nil, "BACKGROUND")
+				pane.bg:SetTexture("Interface\\TalentFrame\\spec-paper-bg")
+			end
+		end
+
 		local scroll = CreateFrame("ScrollFrame", "PlayerTalentFrameScrollFrame", tf)
 		for _, part in ipairs({ "TopLeft", "TopRight", "BottomLeft", "BottomRight" }) do
 			local t = scroll:CreateTexture("PlayerTalentFrameBackground" .. part, "BORDER")
@@ -35521,133 +35625,221 @@ do
 		.. " once at open leaves the other three in stone the moment you click")
 end
 
-print("== panels: the talent tree, without cutting its branches ==")
+print("== panels: the talent window Mists rebuilt ==")
 do
-	_G.__loadPanelAddon("PlayerTalentFrame")
-	fire("ADDON_LOADED", "Blizzard_TalentUI")
+		if _G.__mists then
+		local PN = A:GetModule("panels")
 
-	local tf = _G.PlayerTalentFrame
-	check(tf.__aetherPanel ~= nil,
-		"the talent frame is in glass when its addon turns up")
-	check(_G.PlayerTalentFrameBackgroundTopLeft:GetTexture() == 0,
-		"and the tree's parchment comes off it")
+		-- LOAD-ON-DEMAND, so the frame does not exist until something asks for
+		-- it. Done here rather than relied on from the block above, so this one
+		-- does not depend on the order two sections happen to sit in.
+		_G.__loadPanelAddon("PlayerTalentFrame")
+		fire("ADDON_LOADED", "Blizzard_TalentUI")
+		local tf = _G.PlayerTalentFrame
+		tf:Show()
+		PN.Dress(tf)
 
-	-- THE BRANCHES AND ARROWS STAY. They are regions of the scroll child and of
-	-- the arrow frame, and they are the only thing on screen saying which talent
-	-- depends on which. Strip either frame and the tree becomes forty
-	-- unconnected icons - which looks tidy enough to pass a screenshot.
-	check(_G.PlayerTalentFrameBranch1:GetTexture() == "Interface\\TalentFrame\\UI-TalentBranches"
-		and _G.PlayerTalentFrameArrow1:GetTexture() == "Interface\\TalentFrame\\UI-TalentArrows",
-		"but the branches and arrows are left alone - they ARE the tree, and a"
-		.. " sweep of the frame they hang off takes them with the parchment")
+		-- ITS TITLE COMES OUT OF THE UNNAMED CONTAINER, like every other window on
+		-- this template. There is no PlayerTalentFrameTitleText global to find.
+		check(tf.__aetherTitle == tf.TitleContainer.TitleText,
+			"the band is handed the title out of the template's unnamed container")
 
-	local t1, t2, t3 = _G.PlayerTalentFrameTalent1, _G.PlayerTalentFrameTalent2,
-		_G.PlayerTalentFrameTalent3
-	check(t1.__aetherSlot == true, "a talent wears the same cell as a spell")
-	check(_G.PlayerTalentFrameTalent1IconTexture:GetTexture() == "talent-icon-1",
-		"with the talent still in it")
-	check(_G.PlayerTalentFrameTalent1Slot:GetTexture() == 0
-		and t1:GetNormalTexture():GetTexture() == 0,
-		"and both the stone ring and the empty slot behind it cleared")
+		-- WELLS = FALSE, AND EARNED. All three panes anchor to
+		-- PlayerTalentFrameInsetBg - the Bg TEXTURE of the client's own Inset - so
+		-- their content cannot be moved away from that recess. That is the test:
+		-- an anchor, not a template. Drawn as our well, with nothing round it.
+		check(_G.PlayerTalentFrameInset.__aetherPill ~= nil,
+			"the client's own recess is this window's well")
+		check(tf.__aetherBody == nil or not tf.__aetherBody:IsShown(),
+			"and no body well is drawn round it")
 
-	-- THE STATE, IN THE RIM. The client weighs the rank against the maximum,
-	-- the tier against the points spent, the prerequisites and whether there is
-	-- a point spare - and then says the answer in the Slot's vertex colour.
-	-- Reading that is one source of truth; working it out again from
-	-- GetTalentInfo would be a second set of rules to keep in step.
-	local function rim(b)
-		local r, g = b.edge:GetVertexColor()
-		return r, g
-	end
-	local open, full, plain =
-		A.Palette.c.talentOpen, A.Palette.c.talentFull, A.Palette.c.glassEdge
+		-- SIX TIERS OF THREE. The rows are parent keys on the pane with no globals
+		-- of their own - PlayerTalentFrameTalents["tier"..n] - which is how the
+		-- client's own code walks them, and a sweep that only knows globals reaches
+		-- none of it.
+		_G.__stone, _G.__blank = {}, {}
+		for tier = 1, 6 do
+			local row = _G.PlayerTalentFrameTalents["tier" .. tier]
+			if row.Bg:GetTexture() ~= 0 or row.LeftCap:GetTexture() ~= 0 then
+				_G.__stone[#_G.__stone + 1] = "tier" .. tier
+			end
+			for col = 1, 3 do
+				local b = row["talent" .. col]
+				-- THE PICTURE IS A REGION and the Slot is the border round it, the
+				-- same division as the sidebar tabs: sweep the button whole and
+				-- every talent in the tree loses its icon.
+				if b.icon:GetTexture() == 0 then
+					_G.__blank[#_G.__blank + 1] = tier .. "." .. col
+				end
+			end
+		end
+		check(#_G.__stone == 0, "every tier loses Blizzard's talent art (" ..
+			(#_G.__stone > 0 and table.concat(_G.__stone, ", ") or "all six") .. ")")
+		check(#_G.__blank == 0, "and every talent keeps its icon (" ..
+			(#_G.__blank > 0 and table.concat(_G.__blank, ", ") or "all eighteen")
+			.. ")")
 
-	local r1, g1 = rim(t1)
-	check(r1 == open[1] and g1 == open[2],
-		"one you can put a point in takes the open rim")
-	local r2, g2 = rim(t2)
-	check(r2 == full[1] and g2 == full[2],
-		"a finished one takes the full rim")
-	local r3, g3 = rim(t3)
-	check(r3 == plain[1] and g3 == plain[2],
-		"and one you cannot reach yet keeps the ordinary one - three states, so"
-		.. " a rim set for one of them cannot pass by looking right once")
+		-- THE ROW'S LEVEL, which the client draws in twenty-point gold down the
+		-- left of each tier.
+		-- NAMED, NOT MERELY NON-NIL. The pane-wide font sweep re-roles every
+		-- string on the page as body text, so "has a style" was true whether or
+		-- not this line had been treated as the heading it is - and a mutation
+		-- removing that treatment passed.
+		local lvl = _G.PlayerTalentFrameTalents.tier1.level
+		local lr, lg, lb = lvl:GetTextColor()
+		check(lvl._aetherStyle == "pnSub",
+			"the tier's unlock level is roled as the row's heading rather than"
+			.. " left as twenty-point Blizzard gold (" ..
+			tostring(lvl._aetherStyle) .. ")")
+		check(math.abs(lr - A.Palette.c.textDim[1]) < 0.01
+			and math.abs(lg - A.Palette.c.textDim[2]) < 0.01
+			and math.abs(lb - A.Palette.c.textDim[3]) < 0.01,
+			"and dimmed, so it reads as a label on the row and not as a number"
+			.. " competing with the talents beside it")
 
-	check(t1.__aetherRank and t1.__aetherRank.disc:GetTexture() == A.Media.texture.chipDisc,
-		"the rank sits on a chip of ours rather than Blizzard's stone plate")
-	check(_G.PlayerTalentFrameTalent1Rank._aetherStyle ~= nil,
-		"with the client's own count on top of it, re-roled - it is what does"
-		.. " the counting, and ours would be a second number to keep in step")
-	check(not t3.__aetherRank:IsShown(),
-		"and no chip at all where the client shows no rank")
+		-- AND THE SPEC PAGES, which are a different window again behind the same
+		-- frame - the specialization picker and the pet's.
+		check(_G.PlayerTalentFrameSpecialization.learnButton
+			:GetNormalTexture():GetTexture() == 0,
+			"Learn on the specialization page is ours")
 
-	-- THE REPAINT. TalentFrame_Update runs on open, on every tab click and on
-	-- every point spent, and it re-sets all four background pieces from the
-	-- spec's own art. Art taken off once at dress time is art you see again on
-	-- the first click.
-	_G.TalentFrame_Update()
-	check(_G.PlayerTalentFrameBackgroundTopLeft:GetTexture() == 0
-		and t1:GetNormalTexture():GetTexture() == 0,
-		"the parchment and the rings stay off after the client repaints the tree")
-	local r1b = rim(t1)
-	check(r1b == open[1], "and the rims still say what state each talent is in")
+		tf:Hide()
+		end
+end
 
-	local tb1, tb2 = _G.PlayerTalentFrameTab1, _G.PlayerTalentFrameTab2
-	check(tb1.__aetherTab ~= nil and tb1.__aetherMark ~= nil,
-		"its tabs are on the same rail as everything else (" ..
-		string.format("%.1f", tb1:GetWidth()) .. ")")
-	check(_G.PlayerTalentFrameTab4.__aetherTab == nil,
-		"and the glyph tab, which this flavour never shows, is left out of it")
-
-	check(not _G.PlayerTalentFrameCancelButton:IsShown(),
-		"the spare Close in the corner of the tree is gone, like the skills"
-		.. " list's - the window already has one")
-
-	local cPt, cRel, cRelPt = _G.PlayerTalentFrameCloseButton:GetPoint(1)
-	check(cPt == "TOPRIGHT" and cRel == tf and cRelPt == "TOPRIGHT",
-		"and the real one is in the corner rather than 44 in and 25 down, where"
-		.. " the stone rim used to be")
-
-	check(_G.PlayerTalentFrameLearnButton.__aetherSkin ~= nil
-		and _G.PlayerTalentFrameLearnButton:GetNormalTexture():GetTexture() == 0,
-		"its buttons are ours")
-	check(_G.PlayerTalentFrameTalentPointsText._aetherStyle ~= nil
-		and _G.PlayerTalentFrameSpentPointsText._aetherStyle ~= nil,
-		"and both point readings are in our lettering")
-
-	-- THE OTHER SKIN. A window's shell is a surface and answers ApplySkin; a
-	-- talent's rim is a colour read out of the palette once, at dress time, and
-	-- nothing re-reads it. So the tree kept the skin it was dressed under until
-	-- the next time the frame happened to be redrawn.
-	--
-	-- Which rim to watch matters. The learned/available greens are SEMANTIC and
-	-- deliberately identical in every skin, so a tree that never re-read them at
-	-- all would still look right - they cannot prove anything. The unreachable
-	-- talent wears glassEdge, which is chrome and moves, and it is the only one
-	-- of the three that can tell a re-read from a stale colour.
+print("== panels: the talent tree, without cutting its branches ==")
+-- ERA ONLY. Mists replaced this window entirely - six tiers of three where
+-- Era has a thirty-talent tree with branches and arrows drawn between them -
+-- so every name below describes something that client does not build. The
+-- Mists shape is checked in its own block above.
+if not _G.__mists then
 	do
-		local was = A.db.profile.skin
-		local midEdge = A.Palette.skins.midnight.glassEdge
-		local otherEdge = A.Palette.skins[OTHER].glassEdge
-		check(midEdge[1] ~= otherEdge[1] or midEdge[2] ~= otherEdge[2],
-			"the ordinary rim is chrome, and really is a different colour on "
-			.. OTHER .. " - the greens are semantic and would prove nothing")
+		_G.__loadPanelAddon("PlayerTalentFrame")
+		fire("ADDON_LOADED", "Blizzard_TalentUI")
 
-		A.db.profile.skin = OTHER
-		A:Restyle()
-		local dr, dg = rim(t3)
-		check(math.abs(dr - otherEdge[1]) < 0.001 and math.abs(dg - otherEdge[2]) < 0.001,
-			"switching skin takes the talent rims with it (" ..
-			string.format("%.2f", dr) .. " vs " .. string.format("%.2f", otherEdge[1]) .. ")")
+		local tf = _G.PlayerTalentFrame
+		check(tf.__aetherPanel ~= nil,
+			"the talent frame is in glass when its addon turns up")
+		check(_G.PlayerTalentFrameBackgroundTopLeft:GetTexture() == 0,
+			"and the tree's parchment comes off it")
 
-		-- And the semantic half of the same tree did NOT move, which is the rule
-		-- the family is built on rather than an accident of this module.
-		check(rim(t1) == open[1],
-			"while the learned green is exactly what it was - a skin remaps"
-			.. " chrome, never what a colour MEANS")
+		-- THE BRANCHES AND ARROWS STAY. They are regions of the scroll child and of
+		-- the arrow frame, and they are the only thing on screen saying which talent
+		-- depends on which. Strip either frame and the tree becomes forty
+		-- unconnected icons - which looks tidy enough to pass a screenshot.
+		check(_G.PlayerTalentFrameBranch1:GetTexture() == "Interface\\TalentFrame\\UI-TalentBranches"
+			and _G.PlayerTalentFrameArrow1:GetTexture() == "Interface\\TalentFrame\\UI-TalentArrows",
+			"but the branches and arrows are left alone - they ARE the tree, and a"
+			.. " sweep of the frame they hang off takes them with the parchment")
 
-		A.db.profile.skin = was
-		A:Restyle()
+		local t1, t2, t3 = _G.PlayerTalentFrameTalent1, _G.PlayerTalentFrameTalent2,
+			_G.PlayerTalentFrameTalent3
+		check(t1.__aetherSlot == true, "a talent wears the same cell as a spell")
+		check(_G.PlayerTalentFrameTalent1IconTexture:GetTexture() == "talent-icon-1",
+			"with the talent still in it")
+		check(_G.PlayerTalentFrameTalent1Slot:GetTexture() == 0
+			and t1:GetNormalTexture():GetTexture() == 0,
+			"and both the stone ring and the empty slot behind it cleared")
+
+		-- THE STATE, IN THE RIM. The client weighs the rank against the maximum,
+		-- the tier against the points spent, the prerequisites and whether there is
+		-- a point spare - and then says the answer in the Slot's vertex colour.
+		-- Reading that is one source of truth; working it out again from
+		-- GetTalentInfo would be a second set of rules to keep in step.
+		local function rim(b)
+			local r, g = b.edge:GetVertexColor()
+			return r, g
+		end
+		local open, full, plain =
+			A.Palette.c.talentOpen, A.Palette.c.talentFull, A.Palette.c.glassEdge
+
+		local r1, g1 = rim(t1)
+		check(r1 == open[1] and g1 == open[2],
+			"one you can put a point in takes the open rim")
+		local r2, g2 = rim(t2)
+		check(r2 == full[1] and g2 == full[2],
+			"a finished one takes the full rim")
+		local r3, g3 = rim(t3)
+		check(r3 == plain[1] and g3 == plain[2],
+			"and one you cannot reach yet keeps the ordinary one - three states, so"
+			.. " a rim set for one of them cannot pass by looking right once")
+
+		check(t1.__aetherRank and t1.__aetherRank.disc:GetTexture() == A.Media.texture.chipDisc,
+			"the rank sits on a chip of ours rather than Blizzard's stone plate")
+		check(_G.PlayerTalentFrameTalent1Rank._aetherStyle ~= nil,
+			"with the client's own count on top of it, re-roled - it is what does"
+			.. " the counting, and ours would be a second number to keep in step")
+		check(not t3.__aetherRank:IsShown(),
+			"and no chip at all where the client shows no rank")
+
+		-- THE REPAINT. TalentFrame_Update runs on open, on every tab click and on
+		-- every point spent, and it re-sets all four background pieces from the
+		-- spec's own art. Art taken off once at dress time is art you see again on
+		-- the first click.
+		_G.TalentFrame_Update()
+		check(_G.PlayerTalentFrameBackgroundTopLeft:GetTexture() == 0
+			and t1:GetNormalTexture():GetTexture() == 0,
+			"the parchment and the rings stay off after the client repaints the tree")
+		local r1b = rim(t1)
+		check(r1b == open[1], "and the rims still say what state each talent is in")
+
+		local tb1, tb2 = _G.PlayerTalentFrameTab1, _G.PlayerTalentFrameTab2
+		check(tb1.__aetherTab ~= nil and tb1.__aetherMark ~= nil,
+			"its tabs are on the same rail as everything else (" ..
+			string.format("%.1f", tb1:GetWidth()) .. ")")
+		check(_G.PlayerTalentFrameTab4.__aetherTab == nil,
+			"and the glyph tab, which this flavour never shows, is left out of it")
+
+		check(not _G.PlayerTalentFrameCancelButton:IsShown(),
+			"the spare Close in the corner of the tree is gone, like the skills"
+			.. " list's - the window already has one")
+
+		local cPt, cRel, cRelPt = _G.PlayerTalentFrameCloseButton:GetPoint(1)
+		check(cPt == "TOPRIGHT" and cRel == tf and cRelPt == "TOPRIGHT",
+			"and the real one is in the corner rather than 44 in and 25 down, where"
+			.. " the stone rim used to be")
+
+		check(_G.PlayerTalentFrameLearnButton.__aetherSkin ~= nil
+			and _G.PlayerTalentFrameLearnButton:GetNormalTexture():GetTexture() == 0,
+			"its buttons are ours")
+		check(_G.PlayerTalentFrameTalentPointsText._aetherStyle ~= nil
+			and _G.PlayerTalentFrameSpentPointsText._aetherStyle ~= nil,
+			"and both point readings are in our lettering")
+
+		-- THE OTHER SKIN. A window's shell is a surface and answers ApplySkin; a
+		-- talent's rim is a colour read out of the palette once, at dress time, and
+		-- nothing re-reads it. So the tree kept the skin it was dressed under until
+		-- the next time the frame happened to be redrawn.
+		--
+		-- Which rim to watch matters. The learned/available greens are SEMANTIC and
+		-- deliberately identical in every skin, so a tree that never re-read them at
+		-- all would still look right - they cannot prove anything. The unreachable
+		-- talent wears glassEdge, which is chrome and moves, and it is the only one
+		-- of the three that can tell a re-read from a stale colour.
+		do
+			local was = A.db.profile.skin
+			local midEdge = A.Palette.skins.midnight.glassEdge
+			local otherEdge = A.Palette.skins[OTHER].glassEdge
+			check(midEdge[1] ~= otherEdge[1] or midEdge[2] ~= otherEdge[2],
+				"the ordinary rim is chrome, and really is a different colour on "
+				.. OTHER .. " - the greens are semantic and would prove nothing")
+
+			A.db.profile.skin = OTHER
+			A:Restyle()
+			local dr, dg = rim(t3)
+			check(math.abs(dr - otherEdge[1]) < 0.001 and math.abs(dg - otherEdge[2]) < 0.001,
+				"switching skin takes the talent rims with it (" ..
+				string.format("%.2f", dr) .. " vs " .. string.format("%.2f", otherEdge[1]) .. ")")
+
+			-- And the semantic half of the same tree did NOT move, which is the rule
+			-- the family is built on rather than an accident of this module.
+			check(rim(t1) == open[1],
+				"while the learned green is exactly what it was - a skin remaps"
+				.. " chrome, never what a colour MEANS")
+
+			A.db.profile.skin = was
+			A:Restyle()
+		end
 	end
 end
 
