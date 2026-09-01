@@ -6983,6 +6983,21 @@ do
 			sb.TitleContainer = CreateFrame("Frame", nil, sb)
 			sb.TitleContainer.TitleText = _G.SpellBookTitleText
 			_G.SpellBookTitleText = nil
+
+			-- AND A SECOND STRING OF THE SAME NAME, EMPTY. The portrait chain
+			-- declares one at frame level as well as the container's, and only
+			-- one of them is ever filled in - but the frame-level one HAS a
+			-- global, so a lookup by name finds it, reports success and hands
+			-- the band an empty string while the client's own title goes on
+			-- drawing in its own gold.
+			--
+			-- The mock had only the filled one, so naming the container as a
+			-- fallback passed in here and changed nothing in the game: the
+			-- fallback was never reached.
+			local blank = sb:CreateFontString("SpellBookFrameTitleText", "OVERLAY")
+			blank:SetFont([[Fonts\FRIZQT__.TTF]], 14, "")
+			blank:SetText("")
+			sb.TitleText = blank
 		end
 
 		local ranks = CreateFrame("CheckButton", "ShowAllSpellRanksCheckbox", sb)
@@ -30802,6 +30817,16 @@ do
 			.. " left at the client's forty points (" .. tostring(bigSize)
 			.. ")")
 
+		-- AND INSIDE THE WELL, CLEAR OF ITS RIM. The client hangs it at the top
+		-- of the page, which once the page has been moved down puts it hard on
+		-- the recess's top line - a label stuck to an edge rather than a
+		-- heading over a list.
+		check(_G.__big:GetTop() and sb.__aetherBody:GetTop()
+			and _G.__big:GetTop() <= sb.__aetherBody:GetTop() - W.WELL_PAD + 0.5,
+			"and it sits inside the well at its own padding rather than on the"
+			.. " rim (" .. string.format("%.0f", _G.__big:GetTop()) ..
+			" under " .. string.format("%.0f", sb.__aetherBody:GetTop()) .. ")")
+
 		-- AND THE PAGE NUMBER SITS WITH ITS ARROWS. Mists puts both hard in the
 		-- bottom right corner; centred on the window's foot, the number floated
 		-- in the middle of the page with the arrows off on their own.
@@ -32935,9 +32960,18 @@ do
 	-- none: the portrait template keeps the title inside an UNNAMED
 	-- TitleContainer, so there is no global to look up and the band has to be
 	-- handed the string through the frame.
-	_G.__sbTitle = _G.SpellBookTitleText or _G.SpellBookFrameTitleText
-		or (_G.SpellBookFrame.TitleContainer
-			and _G.SpellBookFrame.TitleContainer.TitleText)
+	-- THE ONE WITH WORDS IN IT. The portrait chain gives this window two
+	-- strings called TitleText and fills exactly one; the empty one is the one
+	-- with a global, so anything looking up a name finds the decoy.
+	_G.__sbTitle = nil
+	for _, cand in ipairs({ _G.SpellBookTitleText or false,
+		_G.SpellBookFrameTitleText or false,
+		(_G.SpellBookFrame.TitleContainer
+			and _G.SpellBookFrame.TitleContainer.TitleText) or false }) do
+		if cand and (cand:GetText() or "") ~= "" then
+			_G.__sbTitle = _G.__sbTitle or cand
+		end
+	end
 	check(_G.__sbTitle._aetherStyle == "pnTitle",
 		"the title is found under the client's own name for it and re-roled")
 

@@ -1116,6 +1116,23 @@ function PN.HeaderPair(entry)
 	end
 	local title = entry and PN.Part(entry.title) or nil
 
+	-- A TITLE WITH NO WORDS IN IT IS NOT THE TITLE.
+	--
+	-- The portrait chain gives a window TWO strings called TitleText: one on
+	-- the frame from PortraitFrameTemplateNoCloseButton, one inside
+	-- PortraitFrameBaseTemplate's unnamed TitleContainer. Only one of them is
+	-- ever filled in, and which is not something to guess at.
+	--
+	-- The frame-level one has a global, so a lookup by name finds it, reports
+	-- success, and hands the band an EMPTY string - while the client's own
+	-- title goes on drawing in its own place, in its own gold. That is what
+	-- "the title bar isn't being honoured" looked like on the spellbook, and
+	-- why naming the container as a fallback fixed nothing: the fallback was
+	-- never reached.
+	if title and title.GetText and (title:GetText() or "") == "" then
+		title = nil
+	end
+
 	-- ...AND THE PORTRAIT TEMPLATE'S TITLE HAS NO NAME AT ALL.
 	--
 	-- PortraitFrameBaseTemplate keeps it as $parentTitleText inside a
@@ -1131,8 +1148,25 @@ function PN.HeaderPair(entry)
 	-- string its entry asked for.
 	if not title and entry and entry.frame then
 		local f = _G[entry.frame]
+		-- BOTH SHAPES, because the chain gives a window both and which one the
+		-- client actually fills is not something to guess at.
+		-- PortraitFrameBaseTemplate puts the string in an unnamed
+		-- TitleContainer; PortraitFrameTemplateNoCloseButton declares another
+		-- at frame level. Either way it is `TitleText` on the thing that holds
+		-- it, so both are asked and the one carrying words wins.
+		--
+		-- SPELLED OUT RATHER THAN LOOPED. Written as ipairs over a two-element
+		-- table it read fine and did nothing: a hole at index one ends an ipairs
+		-- immediately, so a window with no frame-level string never reached the
+		-- container's - which is every window this fallback exists for.
 		local c = f and f.TitleContainer
-		title = c and c.TitleText or nil
+		local own, inner = f and f.TitleText, c and c.TitleText
+		local function worded(fs)
+			return fs and fs.GetText and (fs:GetText() or "") ~= "" and fs or nil
+		end
+		-- The one carrying words first, then either - a window whose title is
+		-- genuinely blank still wants a string in the band to write into.
+		title = worded(own) or worded(inner) or own or inner
 	end
 
 	return title, entry and PN.Part(entry.subtitle) or nil
@@ -4092,6 +4126,19 @@ local function DressSpellBook(frame, store)
 				if head then
 					Roled(head, "pnSub")
 					W.Color(head, Palette.c.textDim)
+
+					-- AND INSIDE THE WELL, CLEAR OF ITS RIM. The client hangs
+					-- it at the top of the page, which after the page has been
+					-- moved down puts it hard on the recess's top line - so it
+					-- reads as a label stuck to the edge rather than a heading
+					-- over the list. Placed in the well at the well's own
+					-- padding, which is where every other heading in this
+					-- interface sits.
+					local well = frame and frame.__aetherBody
+					if well and head.ClearAllPoints then
+						head:ClearAllPoints()
+						head:SetPoint("TOP", well, "TOP", 0, -W.WELL_PAD)
+					end
 				end
 			end
 		end
