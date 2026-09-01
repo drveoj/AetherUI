@@ -6809,9 +6809,20 @@ do
 		pageText:SetTextColor(0.25, 0.12, 0)
 		pageText:SetPoint("BOTTOMRIGHT", sb, "BOTTOMRIGHT", -110, 38)
 
-		for _, n in ipairs({ "SpellBookPrevPageButton", "SpellBookNextPageButton" }) do
+		-- THE PAIR IS NOT IN THE SAME PLACE ON THE TWO CLIENTS. Era puts them at
+		-- the foot of the book with the number reading as centred between them;
+		-- Mists puts both hard in the BOTTOM RIGHT corner, 66 and 31 in. A mock
+		-- that anchored them the same way on both could not show a number
+		-- floating in the middle of the page with its arrows off in the corner.
+		for i, n in ipairs({ "SpellBookPrevPageButton", "SpellBookNextPageButton" }) do
 			local b = CreateFrame("Button", n, nav)
 			b:SetSize(32, 32)
+			if _G.__mists then
+				b:SetPoint("BOTTOMRIGHT", sb, "BOTTOMRIGHT",
+					i == 1 and -66 or -31, 26)
+			else
+				b:SetPoint("BOTTOM", sb, "BOTTOM", i == 1 and -40 or 40, 30)
+			end
 			-- The arrow is engraved in the art. Take the art off without putting
 			-- something there and the page turner is two invisible squares.
 			b:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
@@ -6873,6 +6884,43 @@ do
 				-- AND ONE THAT IS GOLD BECAUSE SOMEBODY MEANT IT. A sweep that
 				-- lifted every string would flatten this to the same grey as
 				-- the rest and lose what it was put there to say.
+				-- THE PAGE'S OWN NAME - "Affliction" on Core Abilities,
+				-- "Warlock" on What Has Changed - in CoreAbilityFont, which is
+				-- forty points. A parent key, not a global, and the same shape
+				-- on both pages under two different keys.
+				if n ~= "SpellBookProfessionFrame" then
+					local big = page:CreateFontString(n .. "Big", "OVERLAY")
+					big:SetFont([[Fonts\FRIZQT__.TTF]], 40, "")
+					big:SetText("Affliction")
+					big:SetTextColor(0.10, 0.10, 0.10)
+					if n == "SpellBookCoreAbilitiesFrame" then
+						page.SpecName = big
+					else
+						page.ClassName = big
+					end
+				end
+
+				-- ITS ROWS ARE MINTED LAZILY, one at a time, by the client's
+				-- own update - SpellBook_GetCoreAbility and
+				-- SpellBook_GetWhatChangedItem each CreateFrame on first use.
+				-- So a sweep at dress time reaches whatever exists at that
+				-- moment, which is the first row and nothing else. The mock
+				-- built every row up front, which is the mock being kinder than
+				-- the client in the way that hides exactly this.
+				page.__late = {}
+				local function mint(idx)
+					if page.__late[idx] then return page.__late[idx] end
+					local row = CreateFrame("Frame", nil, page)
+					local fs = row:CreateFontString(n .. "Late" .. idx, "OVERLAY")
+					fs:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+					fs:SetText("Keep applied to the target.")
+					fs:SetTextColor(0.12, 0.12, 0.12)
+					page.__late[idx] = row
+					return row
+				end
+				mint(1)
+				page.__mint = mint
+
 				local gold = page:CreateFontString(n .. "Gold", "OVERLAY")
 				gold:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
 				gold:SetText("Trainer")
@@ -6891,6 +6939,16 @@ do
 			pf:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
 			pf:SetText("Tailoring")
 			prof.statusBar = CreateFrame("StatusBar", nil, prof)
+
+			-- THE CLIENT'S OWN UPDATES, which is where the rest of the rows
+			-- come from. Hooked rather than called on show, because the rows do
+			-- not exist until these have run.
+			function _G.SpellBook_UpdateCoreAbilitiesTab()
+				for i = 2, 6 do _G.SpellBookCoreAbilitiesFrame.__mint(i) end
+			end
+			function _G.SpellBook_UpdateWhatHasChangedTab()
+				for i = 2, 4 do _G.SpellBookWhatHasChanged.__mint(i) end
+			end
 
 			-- AND TWO MORE TABS, five where Era has three.
 			for i = 4, 5 do
@@ -30689,6 +30747,53 @@ do
 			"while a heading that is gold on purpose keeps its colour (" ..
 			(#_G.__flat > 0 and table.concat(_G.__flat, ", ") or "all three")
 			.. ")")
+
+		-- AND THE ROWS THE CLIENT MINTS LATER. Both of these pages CreateFrame
+		-- their contents on first use, so a sweep at dress time reaches the
+		-- first row and nothing else - which on screen is one line lifted and
+		-- every line under it still on parchment.
+		_G.SpellBook_UpdateCoreAbilitiesTab()
+		_G.SpellBook_UpdateWhatHasChangedTab()
+		_G.__late = {}
+		for _, n in ipairs({ "SpellBookCoreAbilitiesFrame",
+			"SpellBookWhatHasChanged" }) do
+			for i = 1, 4 do
+				local fs = _G[n .. "Late" .. i]
+				if fs then
+					local r, g, b = fs:GetTextColor()
+					if (r + g + b) < 1 then
+						_G.__late[#_G.__late + 1] = n .. i
+					end
+				end
+			end
+		end
+		check(#_G.__late == 0,
+			"and every row the client mints AFTER we dressed the page is"
+			.. " lifted too (" .. (#_G.__late > 0
+				and table.concat(_G.__late, ", ") or "all of them") .. ")")
+
+		-- THE PAGE'S OWN NAME, which the client draws in forty-point
+		-- CoreAbilityFont. Lifted with everything else it came up white and
+		-- enormous, shouting over the window's actual title two lines above it.
+		_G.__big = _G.SpellBookCoreAbilitiesFrame.SpecName
+		local _, bigSize = _G.__big:GetFont()
+		check(bigSize and bigSize < 40,
+			"the page's own name is roled as a heading of ours rather than"
+			.. " left at the client's forty points (" .. tostring(bigSize)
+			.. ")")
+
+		-- AND THE PAGE NUMBER SITS WITH ITS ARROWS. Mists puts both hard in the
+		-- bottom right corner; centred on the window's foot, the number floated
+		-- in the middle of the page with the arrows off on their own.
+		_G.__num = _G.SpellBookPageText
+		check(_G.__num:GetRight() and _G.SpellBookPrevPageButton:GetLeft()
+			and _G.__num:GetRight() <= _G.SpellBookPrevPageButton:GetLeft() + 0.5
+			and _G.__num:GetRight()
+				> _G.SpellBookPrevPageButton:GetLeft() - 40,
+			"and the page number sits just left of the arrows rather than in"
+			.. " the middle of the page (" ..
+			string.format("%.0f", _G.__num:GetRight()) .. " against " ..
+			string.format("%.0f", _G.SpellBookPrevPageButton:GetLeft()) .. ")")
 		check(_G.SpellBookFrame.Inset:GetRight() and sbSide:GetLeft()
 			and _G.SpellBookFrame.Inset:GetRight() <= sbSide:GetLeft() + 0.5,
 			"and it still stops short of the school tabs (" ..

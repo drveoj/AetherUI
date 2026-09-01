@@ -4038,11 +4038,49 @@ local function DressSpellBook(frame, store)
 	-- reasoning that these nest a level or two - and it reached one level
 	-- instead of four. A profession is a frame holding a heading, a
 	-- description and a progress bar with text of its own.
-	for _, page in ipairs(CHAR.pages) do
-		local pane = Part(page)
-		if pane then
-			Reskin.Strip(pane, store)
-			Reskin.Fonts(pane, "pnBody", 0, Palette.c.text)
+	local function LiftPages()
+		for _, page in ipairs(CHAR.pages) do
+			local pane = Part(page)
+			if pane then
+				Reskin.Strip(pane, store)
+				Reskin.Fonts(pane, "pnBody", 0, Palette.c.text)
+
+				-- THE PAGE'S OWN NAME - "Affliction", "Warlock" - which the
+				-- client draws in CoreAbilityFont, forty points of it, as a
+				-- heading over the list. Lifted with everything else it came up
+				-- white and enormous, shouting over the window's actual title
+				-- two lines above it. It is a heading for the page, so it is
+				-- roled as one and dimmed: our type, our size, quietly.
+				local head = pane.SpecName or pane.ClassName
+				if head then
+					Roled(head, "pnSub")
+					W.Color(head, Palette.c.textDim)
+				end
+			end
+		end
+	end
+	LiftPages()
+
+	-- AND AGAIN WHENEVER THE CLIENT BUILDS A ROW.
+	--
+	-- Both of these pages mint their contents LAZILY - SpellBook_GetCoreAbility
+	-- and SpellBook_GetWhatChangedItem each CreateFrame on first use - so a
+	-- sweep at dress time reaches whatever happened to exist at that moment,
+	-- which was the first row and nothing else. That is exactly what Joe saw:
+	-- one line lifted and the rest still on parchment.
+	--
+	-- Hooked on the two update functions rather than on the panes' OnShow: the
+	-- rows are minted DURING the update, so a hook on show runs before half of
+	-- them exist. Same shape as the gossip window's pooled options.
+	if not PN.__bookPageHook and hooksecurefunc then
+		PN.__bookPageHook = true
+		for _, fn in ipairs({ "SpellBook_UpdateCoreAbilitiesTab",
+			"SpellBook_UpdateWhatHasChangedTab" }) do
+			if type(_G[fn]) == "function" then
+				hooksecurefunc(fn, function()
+					if PN.enabled then pcall(LiftPages) end
+				end)
+			end
 		end
 	end
 
@@ -4056,7 +4094,17 @@ local function DressSpellBook(frame, store)
 	-- window's own - the vendor's three are laid out by the footer strip.
 	if page and page.ClearAllPoints then
 		page:ClearAllPoints()
-		page:SetPoint("CENTER", frame, "BOTTOM", 0, PAGE_TURNER_Y)
+		-- BESIDE THE ARROWS, WHERE THEY ARE. Era puts its pair at the foot of
+		-- the book and the number reads as centred between them; Mists puts
+		-- both hard in the BOTTOM RIGHT corner, so a number centred on the
+		-- window's foot floated in the middle of the page with the arrows off
+		-- in the corner on their own.
+		local prev = _G.SpellBookPrevPageButton
+		if A.isMists and prev then
+			page:SetPoint("RIGHT", prev, "LEFT", -W.PANEL_GAP, 0)
+		else
+			page:SetPoint("CENTER", frame, "BOTTOM", 0, PAGE_TURNER_Y)
+		end
 	end
 
 	-- THE RANK SWITCH IS CONTENT, not chrome. It is a control over the list -
