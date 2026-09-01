@@ -6972,7 +6972,16 @@ do
 			-- the frame.
 			sb.CloseButton = _G.SpellBookCloseButton
 			_G.SpellBookCloseButton = nil
-			_G.SpellBookFrameTitleText = _G.SpellBookTitleText
+
+			-- ITS TITLE HAS NO GLOBAL AT ALL, which is the part the mock was
+			-- being kind about. PortraitFrameBaseTemplate declares the string
+			-- as $parentTitleText inside a TitleContainer, and that container
+			-- carries a parentKey and NO name - so the string is given no
+			-- global either. Handing one over under the frame's name let a
+			-- lookup that could never work in the game succeed in here, and the
+			-- band came up empty on screen with Blizzard's gold title above it.
+			sb.TitleContainer = CreateFrame("Frame", nil, sb)
+			sb.TitleContainer.TitleText = _G.SpellBookTitleText
 			_G.SpellBookTitleText = nil
 		end
 
@@ -30707,13 +30716,24 @@ do
 		-- THE MISTS BOOK IS BUTTONFRAMETEMPLATE TOO, so its well is the
 		-- client's own Inset and stopping at the rail is the client's business
 		-- rather than ours - that recess already ends before the school tabs.
-		check(_G.SpellBookFrame.Inset.__aetherPill ~= nil,
-			"the book's own recess is its well, the way the sheet's two are")
-		-- AND NOTHING ROUND IT. Same reason as the character sheet's, the
-		-- trainer's and the trade window's: a body well here is a second rim
-		-- round the first and a second helping of the same black.
-		check(sb.__aetherBody == nil or not sb.__aetherBody:IsShown(),
-			"and no body well is drawn round it")
+		-- THE BOOK TAKES OUR OWN WELL, and the character sheet does not, and
+		-- the difference is ANCHORING rather than the template both are built
+		-- on. The sheet's stat panel and sidebar hang off its right-hand
+		-- recess, so its content cannot be moved away from the client's boxes
+		-- and those have to be the wells. Nothing in the book is anchored to
+		-- its Inset, so adopting that gave us the client's margins instead of
+		-- ours: four units at one side, six at the other, and the foot of it
+		-- against the tab rail.
+		check(_G.SpellBookFrame.Inset.__aetherPill == nil,
+			"the book does not adopt the client's recess as its well")
+		check(sb.__aetherBody ~= nil and sb.__aetherBody:IsShown(),
+			"it gets one of ours instead")
+		-- AND AT OUR PADDING, which is the whole point of the distinction.
+		local bx, by = select(4, sb.__aetherBody:GetPoint(1))
+		check(bx == W.PANEL_PAD,
+			"a body padding in from the glass rather than the client's four ("
+			.. tostring(bx) .. ")")
+		local _ = by
 
 		-- AND THE THREE NEW PAGES ARE READABLE. Professions, Core Abilities
 		-- and "What has changed?" are printed near-black throughout, because
@@ -32911,7 +32931,13 @@ do
 	-- UNDER WHICHEVER NAME THIS CLIENT GIVES IT. Era declares
 	-- SpellBookTitleText; the portrait template Mists rebuilt the book on names
 	-- it after the frame, like every other window's.
+	-- UNDER WHICHEVER NAME THIS CLIENT GIVES IT - and on Mists it gives it
+	-- none: the portrait template keeps the title inside an UNNAMED
+	-- TitleContainer, so there is no global to look up and the band has to be
+	-- handed the string through the frame.
 	_G.__sbTitle = _G.SpellBookTitleText or _G.SpellBookFrameTitleText
+		or (_G.SpellBookFrame.TitleContainer
+			and _G.SpellBookFrame.TitleContainer.TitleText)
 	check(_G.__sbTitle._aetherStyle == "pnTitle",
 		"the title is found under the client's own name for it and re-roled")
 

@@ -829,8 +829,19 @@ do
 		-- less insets[1]: a negative there pulls the edge IN, which is what
 		-- Era's -30 does. Reaching PAST the frame wants a positive one.
 		sb.insets    = { 0, 0, CHAR.schoolCol, -CHAR.tabDrop }
-		sb.wells     = false
-		sb.keepWidth = true
+		-- ...BUT NOT `wells = false`, WHICH THE CHARACTER SHEET DOES NEED.
+		--
+		-- That distinction is about ANCHORING, not about the template. The
+		-- sheet's stat panel and sidebar hang off CharacterFrameInsetRight, so
+		-- its content cannot be moved away from the client's recesses and they
+		-- have to be the wells. NOTHING in the book anchors to SpellBookFrame's
+		-- Inset - every page is setAllPoints to the window and every spell is
+		-- placed from the page's corner - so the book takes our own body well,
+		-- with our padding, stopping at the rails, like every other window.
+		--
+		-- Adopting the client's recess here gave us the client's margins: four
+		-- units at one side, six at the other and the foot of it against the
+		-- tab rail.
 		sb.together  = true
 
 		-- TWO MORE PAGES, which Era's book has no equivalent of: your
@@ -1103,8 +1114,28 @@ function PN.HeaderPair(entry)
 			and PN.Part(p.title) or nil
 		if title then return title, PN.Part(p.subtitle) end
 	end
-	return entry and PN.Part(entry.title) or nil,
-		entry and PN.Part(entry.subtitle) or nil
+	local title = entry and PN.Part(entry.title) or nil
+
+	-- ...AND THE PORTRAIT TEMPLATE'S TITLE HAS NO NAME AT ALL.
+	--
+	-- PortraitFrameBaseTemplate keeps it as $parentTitleText inside a
+	-- TitleContainer - and that container is declared with a parentKey and NO
+	-- name, so the string it holds is given no global either. Every window
+	-- Cataclysm rebuilt on ButtonFrameTemplate is in this position, and a list
+	-- of globals cannot reach one of them.
+	--
+	-- Which is why the band came up empty on the spellbook while the client's
+	-- own gold title sat above it, in its own place, in its own lettering: the
+	-- header component was working perfectly on a title it had never been
+	-- handed. Tried last, so a window that DOES name its title keeps whichever
+	-- string its entry asked for.
+	if not title and entry and entry.frame then
+		local f = _G[entry.frame]
+		local c = f and f.TitleContainer
+		title = c and c.TitleText or nil
+	end
+
+	return title, entry and PN.Part(entry.subtitle) or nil
 end
 
 --- The frame a panel entry means by a name.
@@ -4014,9 +4045,15 @@ local function DressSideTabs(frame, store, prefix, count)
 end
 
 local function DressSpellBook(frame, store)
-	-- ITS OWN RECESS IS ITS WELL on Mists, the same as the character sheet's -
-	-- ButtonFrameTemplate again, and everything in the book sits inside it.
-	ClientRecess(frame, "SpellBookFrame.Inset", CHAR.insetX, CHAR.insetY)
+	-- ITS OWN RECESS IS STRIPPED AND NOT USED. ButtonFrameTemplate gives this
+	-- window an Inset the way it gives the character sheet one, but nothing in
+	-- the book is anchored to it - so its stone comes off and our own body well
+	-- is drawn where a body well goes.
+	local ins = Part("SpellBookFrame.Inset")
+	if ins then
+		ins.__aetherStore = ins.__aetherStore or {}
+		Reskin.Strip(ins, ins.__aetherStore)
+	end
 
 	-- AND THE THREE NEW PAGES ARE PRINTED ON PARCHMENT.
 	--
