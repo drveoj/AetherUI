@@ -466,6 +466,42 @@ function PN.SeatRecess(ins, frame, top, bottom)
 	ins:ClearAllPoints()
 	ins:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -top)
 	ins:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, bottom)
+
+	-- ...AND THE CLIENT MOVES IT BACK, four different ways.
+	--
+	-- ButtonFrameTemplate_HideAttic and _ShowAttic re-anchor the Inset's
+	-- TOPLEFT; _HideButtonBar and _ShowButtonBar re-anchor its BOTTOMRIGHT.
+	-- Every tab on the talent window calls a different combination of them -
+	-- the glyph tab hides the attic, hiding it shows the button bar - which is
+	-- why each tab came out wrong in a DIFFERENT way and why every fix moved
+	-- the problem somewhere else rather than ending it.
+	--
+	-- Seated once at dress time, our answer survives exactly until the player
+	-- changes tab. So the four are hooked and the seat re-applied after them,
+	-- for whichever frames we have seated. The growth is not repeated: that is
+	-- guarded above.
+	--
+	-- THE GLYPH TAB IS LEFT ITS OWN RIGHT EDGE deliberately. GlyphFrame_OnShow
+	-- narrows the Inset by 197 to make room for the glyph list beside it, and
+	-- it does that AFTER calling HideAttic - so its BOTTOMRIGHT lands after
+	-- ours and wins, while our TOPLEFT still holds. That is the correct
+	-- outcome rather than an accident: the list needs the room.
+	frame.__aetherRecessSeat = { top = top, bottom = bottom }
+	if not PN.__atticHook and hooksecurefunc then
+		PN.__atticHook = true
+		for _, fn in ipairs({ "ButtonFrameTemplate_HideAttic",
+			"ButtonFrameTemplate_ShowAttic",
+			"ButtonFrameTemplate_HideButtonBar",
+			"ButtonFrameTemplate_ShowButtonBar" }) do
+			if type(_G[fn]) == "function" then
+				hooksecurefunc(fn, function(self)
+					local seat = self and self.__aetherRecessSeat
+					if not (PN.enabled and seat and self.Inset) then return end
+					pcall(PN.SeatRecess, self.Inset, self, seat.top, seat.bottom)
+				end)
+			end
+		end
+	end
 end
 
 function PN.MoveRecess(ins, frame, x, y)

@@ -8391,6 +8391,54 @@ do
 		end
 	end
 
+	-- THE FOUR THAT MOVE A ButtonFrameTemplate'S RECESS. Nothing in this mock
+	-- had them, so a window whose Inset we had seated looked settled here and
+	-- was dislodged by the first tab click in the game.
+	--
+	-- HideAttic/ShowAttic own the TOPLEFT, Hide/ShowButtonBar own the
+	-- BOTTOMRIGHT, and each tab of the talent window calls a different
+	-- combination - which is why every tab came out wrong differently.
+	do
+		local INSET_LEFT, INSET_TOP, INSET_ATTIC = 4, -23, -60
+		local INSET_RIGHT, INSET_BOTTOM, INSET_BAR = -6, 4, 26
+		local function inset(self)
+			return self and (self.topInset or self.bottomInset or self.Inset)
+		end
+
+		-- REPLACING THE POINT OF THAT TYPE, which is what the live client does
+		-- and what this mock's own SetPoint deliberately does not: it appends,
+		-- so a getter still answers about the FIRST anchor. Left appending
+		-- here, the client's re-anchor was invisible - our seated corner still
+		-- read back correct and the check passed while the game moved it.
+		local function reanchor(f, point, rel, relPoint, x, y)
+			if not f then return end
+			local kept = {}
+			for i = 1, (f.GetNumPoints and f:GetNumPoints() or 0) do
+				local p, r, rp, px, py = f:GetPoint(i)
+				if p ~= point then kept[#kept + 1] = { p, r, rp, px, py } end
+			end
+			f:ClearAllPoints()
+			for _, k in ipairs(kept) do f:SetPoint(k[1], k[2], k[3], k[4], k[5]) end
+			f:SetPoint(point, rel, relPoint, x, y)
+		end
+		function _G.ButtonFrameTemplate_HideAttic(self)
+			local i = inset(self)
+			reanchor(i, "TOPLEFT", self, "TOPLEFT", INSET_LEFT, INSET_TOP)
+		end
+		function _G.ButtonFrameTemplate_ShowAttic(self)
+			local i = inset(self)
+			reanchor(i, "TOPLEFT", self, "TOPLEFT", INSET_LEFT, INSET_ATTIC)
+		end
+		function _G.ButtonFrameTemplate_HideButtonBar(self)
+			local i = inset(self)
+			reanchor(i, "BOTTOMRIGHT", self, "BOTTOMRIGHT", INSET_RIGHT, INSET_BOTTOM)
+		end
+		function _G.ButtonFrameTemplate_ShowButtonBar(self)
+			local i = inset(self)
+			reanchor(i, "BOTTOMRIGHT", self, "BOTTOMRIGHT", INSET_RIGHT, INSET_BAR)
+		end
+	end
+
 	function _G.__loadPanelAddon(name)
 		buildPanel(name)
 		if name == "PlayerTalentFrame" then _G.__buildTalentInsides() end
@@ -35827,6 +35875,40 @@ do
 			and math.abs(tf:GetHeight() - _G.__h0) < 0.5,
 			"and dressing it again does not grow it again (" ..
 			string.format("%.0fx%.0f", tf:GetWidth(), tf:GetHeight()) .. ")")
+
+		-- AND THE CLIENT CANNOT DISLODGE IT BY CHANGING TAB.
+		--
+		-- Four shared functions re-anchor a ButtonFrameTemplate's Inset:
+		-- HideAttic and ShowAttic own its TOPLEFT, Hide/ShowButtonBar own its
+		-- BOTTOMRIGHT. Every tab on this window calls a different combination,
+		-- which is why each came out wrong in its own way and why six separate
+		-- fixes each moved the problem somewhere else instead of ending it.
+		--
+		-- Seated once at dress time, our answer lasted until the first tab
+		-- click. Asked here per function, because "it survives one of them" is
+		-- exactly the trap this window has been setting.
+		_G.__dislodged = {}
+		for _, fn in ipairs({ "ButtonFrameTemplate_HideAttic",
+			"ButtonFrameTemplate_ShowAttic",
+			"ButtonFrameTemplate_HideButtonBar",
+			"ButtonFrameTemplate_ShowButtonBar" }) do
+			_G[fn](tf)
+			local p1, _, _, x1, y1 = _G.__ins:GetPoint(1)
+			local p2, _, _, x2, y2 = _G.__ins:GetPoint(2)
+			local wantTop = -(tf.__aetherHeadH + _G.__pad)
+			local wantBot = A.Widgets.PANEL_FOOT_H + _G.__pad
+			if not (p1 == "TOPLEFT" and math.abs(x1 - _G.__pad) < 0.5
+				and math.abs(y1 - wantTop) < 0.5
+				and p2 == "BOTTOMRIGHT" and math.abs(x2 + _G.__pad) < 0.5
+				and math.abs(y2 - wantBot) < 0.5) then
+				_G.__dislodged[#_G.__dislodged + 1] = fn:gsub("ButtonFrameTemplate_", "")
+					.. string.format("(%.0f,%.0f %.0f,%.0f)", x1, y1, x2, y2)
+			end
+		end
+		check(#_G.__dislodged == 0,
+			"and none of the four template helpers can move the recess back ("
+			.. (#_G.__dislodged > 0 and table.concat(_G.__dislodged, " ")
+			or "all four re-seated") .. ")")
 
 		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its
 		-- own $parentLearnButton exactly as the two specialization pages do,
