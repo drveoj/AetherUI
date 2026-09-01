@@ -7196,6 +7196,111 @@ do
 				talents["tier" .. tier] = row
 			end
 
+			-- THE GLYPH PAGE, which is a SECOND ADDON parented into this
+			-- window: Blizzard_GlyphUI is load-on-demand, GlyphFrame sets its
+			-- own parent and fills PlayerTalentFrameInset +3/-3, and its
+			-- OnShow narrows that recess by 197 for the list beside it.
+			--
+			-- Built here so the dresser has something to reach; a mock without
+			-- it let a page with no dresser at all look finished.
+			do
+				local gf = CreateFrame("Frame", "GlyphFrame", ins)
+				gf:SetPoint("TOPLEFT", ins, "TOPLEFT", 3, -3)
+				gf:SetPoint("BOTTOMRIGHT", ins, "BOTTOMRIGHT", -3, 3)
+
+				-- THE WHEEL, which STAYS: the six sockets are positioned on it
+				-- and it says which are unlocked. Same as the flight map.
+				gf.background = gf:CreateTexture("GlyphFrameBackground", "BACKGROUND")
+				gf.background:SetTexture([[Interface\TalentFrame\glyph-bg]])
+				gf.specRing = gf:CreateTexture(nil, "ARTWORK")
+				gf.specRing:SetTexture([[Interface\TalentFrame\glyph-speccover]])
+				for i = 1, 6 do
+					local sock = CreateFrame("Button", "GlyphFrameGlyph" .. i, gf)
+					sock.glyph = sock:CreateTexture(nil, "ARTWORK")
+					sock.glyph:SetTexture("glyph-icon-" .. i)
+					sock.ring = sock:CreateTexture(nil, "OVERLAY")
+					sock.ring:SetTexture([[Interface\TalentFrame\glyph-main]])
+					gf["Glyph" .. i] = sock
+				end
+
+				-- The list's own recess, the field, the filter and the list.
+				gf.sideInset = CreateFrame("Frame", "GlyphFrameSideInset", gf)
+				gf.sideInset:CreateTexture(nil, "BACKGROUND")
+					:SetTexture("inset-stone")
+
+				local sb = CreateFrame("EditBox", "GlyphFrameSearchBox", gf)
+				sb:SetSize(160, 20)
+				sb.searchIcon = sb:CreateTexture(nil, "OVERLAY")
+				sb.searchIcon:SetTexture([[Interface\Common\UI-Searchbox-Icon]])
+				for _, part in ipairs({ "Left", "Middle", "Right" }) do
+					sb[part] = sb:CreateTexture(nil, "BACKGROUND")
+					sb[part]:SetTexture("searchbox-border")
+				end
+
+				gf.FilterDropdown = CreateFrame("Button", nil, gf)
+				gf.FilterDropdown:SetNormalTexture("dropdown-plate")
+
+				gf.scrollFrame = CreateFrame("ScrollFrame",
+					"GlyphFrameScrollFrame", gf)
+				gf.scrollFrame.ScrollBar = CreateFrame("Frame", nil, gf.scrollFrame)
+				gf.scrollFrame.ScrollBar.Track =
+					CreateFrame("Frame", nil, gf.scrollFrame.ScrollBar)
+				gf.scrollFrame.ScrollBar.Track.Thumb =
+					CreateFrame("Button", nil, gf.scrollFrame.ScrollBar.Track)
+				gf.scrollFrame.ScrollBar.Track.Thumb.Middle =
+					gf.scrollFrame.ScrollBar.Track.Thumb:CreateTexture(nil, "ARTWORK")
+				gf.scrollFrame.ScrollBar.Track.Thumb.Middle
+					:SetTexture("minimal-scrollbar-small-thumb-middle")
+
+				-- POOLED ROWS, minted by HybridScrollFrame_CreateButtons: a
+				-- WIDE row with the icon at one end and the name beside it.
+				gf.scrollFrame.buttons = {}
+				for i = 1, 4 do
+					local row = CreateFrame("Button", nil, gf.scrollFrame)
+					row:SetSize(190, 24)
+					row:SetNormalTexture("row-plate")
+					row.icon = row:CreateTexture(nil, "ARTWORK")
+					row.icon:SetSize(20, 20)
+					row.icon:SetTexture("glyph-row-" .. i)
+					row.selectedTex = row:CreateTexture(nil, "OVERLAY")
+					row.selectedTex:SetTexture("row-selected")
+					row.name = row:CreateFontString(nil, "OVERLAY")
+					row.name:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+					row.name:SetText("Glyph of Something")
+					row.name:SetTextColor(0.10, 0.10, 0.10)
+					gf.scrollFrame.buttons[i] = row
+				end
+
+				-- Major and Minor, on Blizzard's CollapsibleHeader art.
+				gf.headers = {}
+				for i = 1, 2 do
+					local h = CreateFrame("Button", nil, gf)
+					h:SetNormalTexture("header-plate")
+					h.middle = h:CreateTexture(nil, "BACKGROUND")
+					h.middle:SetTexture([[Interface\Buttons\CollapsibleHeader]])
+					h.expandedIcon = h:CreateTexture(nil, "OVERLAY")
+					h.expandedIcon:SetTexture("Char-Stat-Minus")
+					local hf = h:CreateFontString(nil, "OVERLAY")
+					hf:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+					hf:SetText(i == 1 and "Major Glyphs" or "Minor Glyphs")
+					h.name = hf
+					gf.headers[i] = h
+				end
+
+				-- ITS OWN REAGENT LINE, a second one: the talents pane has one
+				-- and so does this.
+				local ci = CreateFrame("Button", "GlyphFrameClearInfoFrame", gf)
+				ci:SetSize(140, 22)
+				ci:SetPoint("TOPLEFT", gf, "BOTTOMLEFT", 8, -2)
+				ci.icon = ci:CreateTexture(nil, "ARTWORK")
+				ci.icon:SetTexture("reagent-icon")
+				ci.name = ci:CreateFontString(nil, "OVERLAY")
+				ci.name:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+				ci.name:SetText("Vanishing Powder")
+				gf.clearInfo = ci
+				gf:Hide()
+			end
+
 			-- LEARN, on both specialization pages, under a parent key.
 			-- ALL THREE, because the talents pane declares its own the same
 			-- way. A mock that gave it to the two spec pages only could not
@@ -36022,6 +36127,76 @@ do
 		-- AND AT THE LEFT END, not centred with it.
 		check(_G.__reagent:GetLeft() < _G.__learn:GetLeft(),
 			"at the left end of the strip rather than beside it")
+
+		-- ---------------------------------------------------------------
+		-- THE GLYPH PAGE, which is a second addon parented into this window.
+		-- ---------------------------------------------------------------
+		_G.__gf = _G.GlyphFrame
+		_G.__gf:Show()
+
+		-- THE WHEEL STAYS. It is a picture the player reads - which socket is
+		-- which, which are unlocked - and the six sockets are positioned ON
+		-- it. Sweeping it leaves six rings floating in the dark, which is what
+		-- the flight map does and says so where it is dressed. This is the
+		-- obvious mistake on this page and the one worth a check of its own.
+		check(_G.__gf.background:GetTexture() ~= 0
+			and _G.__gf.specRing:GetTexture() ~= 0,
+			"the glyph wheel survives - the sockets are placed on it and it"
+			.. " says which are unlocked")
+		_G.__blankSock = {}
+		for i = 1, 6 do
+			local sock = _G.__gf["Glyph" .. i]
+			if sock.glyph:GetTexture() == 0 then
+				_G.__blankSock[#_G.__blankSock + 1] = i
+			end
+		end
+		check(#_G.__blankSock == 0, "and every socket keeps its glyph (" ..
+			(#_G.__blankSock > 0 and table.concat(_G.__blankSock, ", ")
+			or "all six") .. ")")
+
+		-- EVERYTHING AROUND IT IS OURS. The list's recess, the field, the
+		-- filter, the rows and the two collapsing headers.
+		check(_G.__gf.sideInset.__aetherPill ~= nil,
+			"the list beside it sits in a well of ours")
+		check(_G.GlyphFrameSearchBox.Middle:GetTexture() == 0,
+			"the search field loses its borrowed border")
+		check(_G.GlyphFrameSearchBox.searchIcon:GetTexture() ~= 0,
+			"and keeps the magnifier, which is the picture rather than the"
+			.. " border")
+		check(_G.__gf.scrollFrame.ScrollBar.Track.Thumb.Middle:GetTexture() == 0,
+			"the list scrolls on one of ours")
+
+		-- ITS ROWS ARE POOLED and printed on parchment, and each is a WIDE row
+		-- with the icon at one end - the talent rows taught that three windows
+		-- ago and this is the fourth.
+		_G.__glyphRows = {}
+		for _, row in ipairs(_G.__gf.scrollFrame.buttons) do
+			local r, g, b = row.name:GetTextColor()
+			if row:GetNormalTexture():GetTexture() ~= 0
+				or row.icon:GetTexture() == 0
+				or math.abs((row.icon:GetWidth() or 0) - 20) > 0.5
+				or (r + g + b) < 1 then
+				_G.__glyphRows[#_G.__glyphRows + 1] =
+					string.format("icon=%.0f ink=%.2f", row.icon:GetWidth() or 0, r)
+			end
+		end
+		check(#_G.__glyphRows == 0,
+			"every row loses its plate, keeps its icon at the size the client"
+			.. " gave it, and is lifted off the parchment (" ..
+			(#_G.__glyphRows > 0 and table.concat(_G.__glyphRows, ", ")
+			or "all four") .. ")")
+
+		check(_G.__gf.headers[1].middle:GetTexture() == 0
+			and _G.__gf.headers[1].__aetherGlyph ~= nil,
+			"and Major and Minor lose Blizzard's collapsing header for a mark"
+			.. " of ours")
+
+		-- AND ITS OWN REAGENT LINE JOINS THE STRIP. This page can undo a
+		-- glyph, so it has a second one - only ever one visible at a time.
+		local _, grel = _G.__gf.clearInfo:GetPoint(1)
+		check(grel ~= _G.__gf,
+			"the glyph page's own reagent line goes to the strip too")
+		_G.__gf:Hide()
 
 		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its
 		-- own $parentLearnButton exactly as the two specialization pages do,

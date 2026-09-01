@@ -1845,6 +1845,30 @@ function PN.DressMistsTalents(frame, store)
 		end
 	end
 
+	-- AND THE GLYPH PAGE, once its addon has turned up. Blizzard_GlyphUI is
+	-- load-on-demand, so this is nothing on the first dress and everything on
+	-- the one after PN:Skin runs for its ADDON_LOADED.
+	--
+	-- Hooked on the frame's own OnShow as well: its list rows are pooled and
+	-- minted by the client's update, so a sweep at dress time reaches whatever
+	-- happened to exist then.
+	local gf = Part("GlyphFrame")
+	if gf then
+		PN.DressGlyphs(store)
+		if gf.HookScript and not gf.__aetherGlyphWatch then
+			gf.__aetherGlyphWatch = true
+			gf:HookScript("OnShow", function()
+				if not PN.enabled then return end
+				pcall(PN.DressGlyphs, store)
+				-- AND THE STRIP, because this page brings its own reagent line
+				-- with it. GlyphFrame is not one of the window's panes - it is
+				-- another addon's frame parented in - so WatchPanes never hears
+				-- about it and the footer was never re-laid when it came up.
+				pcall(PN.RefreshFooter, "PlayerTalentFrame")
+			end)
+		end
+	end
+
 	-- The spec tabs down the side, which this flavour actually uses.
 	for i = 1, 3 do
 		local tab = Part("PlayerSpecTab" .. i)
@@ -1855,6 +1879,74 @@ function PN.DressMistsTalents(frame, store)
 					tab.icon and { tab.icon } or nil)
 			end
 		end
+	end
+end
+
+--- The glyph page, which is a second addon parented into the talent window.
+--
+--  Blizzard_GlyphUI is load-on-demand and GlyphFrame sets its OWN parent, size
+--  and anchors: it fills PlayerTalentFrameInset +3/-3, and GlyphFrame_OnShow
+--  narrows that recess by 197 to leave room for the list beside it. So this is
+--  not a pane of the talent window in any sense our entry table understands,
+--  and it gets dressed from here rather than declared there.
+--
+--  THE WHEEL STAYS. It is a picture the player is reading - which socket is
+--  which, which are unlocked and at what level - and the six sockets are
+--  positioned ON it. Sweeping it leaves six rings floating in the dark, which
+--  is exactly what the flight map does and says so where it is dressed.
+--  Everything AROUND the wheel is ours: the list beside it, its recess, the
+--  search field, the filter and the reagent line under it.
+function PN.DressGlyphs(store)
+	local gf = Part("GlyphFrame")
+	if not gf then return end
+
+	-- THE LIST'S OWN RECESS, dressed as a well the way the sheet's two are.
+	if gf.sideInset then
+		gf.sideInset.__aetherStore = gf.sideInset.__aetherStore or {}
+		Reskin.Strip(gf.sideInset, gf.sideInset.__aetherStore)
+		Reskin.Well(gf.sideInset, { corner = W.WELL_CORNER,
+			inset = { 0, 0, 0, 0 }, fill = "wellFill", edge = "wellEdge" })
+	end
+
+	-- WHAT YOU ARE LOOKING FOR, and what you are looking through. The field
+	-- carries the client's own magnifier, which is the picture rather than the
+	-- border, so it is kept.
+	local box = Part("GlyphFrameSearchBox")
+	if box then
+		Reskin.EditBox(box, { keep = box.searchIcon and { box.searchIcon } or nil })
+	end
+	if gf.FilterDropdown and PN.DressDropdown then
+		PN.DressDropdown(gf.FilterDropdown, store)
+	end
+
+	local scroll = gf.scrollFrame
+	if scroll then
+		Reskin.ScrollFrame(scroll, store)
+		if scroll.scrollBar then Reskin.ScrollBar(scroll.scrollBar, store) end
+		if scroll.ScrollBar then Reskin.ScrollBar(scroll.ScrollBar, store) end
+
+		-- ITS ROWS ARE POOLED by HybridScrollFrame_CreateButtons, so they are
+		-- walked on every dress rather than once - the same as the spellbook's
+		-- core abilities and the gossip window's options.
+		for _, row in ipairs(scroll.buttons or {}) do
+			-- A WIDE ROW, NOT A CELL: an icon at one end and the glyph's name
+			-- beside it. The talent rows taught this three windows ago.
+			Reskin.ClearButton(row)
+			if type(store) == "table" then
+				Reskin.StripExcept(row, store, row.icon and { row.icon } or nil)
+			end
+			Reskin.Fonts(row, "pnBody", 0, Palette.c.text)
+		end
+	end
+
+	-- MAJOR AND MINOR, which are collapsing headers on Blizzard's own
+	-- CollapsibleHeader art - three slices and a stone plus or minus.
+	for _, header in ipairs(gf.headers or {}) do
+		Reskin.ClearButton(header)
+		if type(store) == "table" then Reskin.Strip(header, store) end
+		Reskin.Fonts(header, "pnBody", 0, Palette.c.text)
+		Reskin.Collapse(header, nil, header.expandedIcon
+			and header.expandedIcon:IsShown())
 	end
 end
 

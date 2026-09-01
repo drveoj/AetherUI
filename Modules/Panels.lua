@@ -961,7 +961,11 @@ do
 			-- about the button next to it. Same shape as the trainer's purse,
 			-- which sits at the left end of the strip its Train button is
 			-- centred in - and only the talents pane has one.
-			left = { "PlayerTalentFrameTalents.clearInfo" },
+			-- TWO OF THEM, one per page that can undo something: the talents
+			-- pane has a reagent line and so does the glyph frame. Only one is
+			-- ever visible, and the strip lays out what is VISIBLE.
+			left = { "PlayerTalentFrameTalents.clearInfo",
+				"GlyphFrame.clearInfo" },
 		}
 	end
 end
