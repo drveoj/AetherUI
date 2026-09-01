@@ -7213,6 +7213,25 @@ do
 				lb.__fs = fs
 				function lb:GetFontString() return self.__fs end
 				pane.learnButton = lb
+
+				-- THE REAGENT READOUT, on the talents pane only: an icon, a
+				-- count and the item's name, hung off that pane's BOTTOM LEFT
+				-- corner. A mock without it cannot show it stranded in the gap
+				-- above the tab rail while Learn stands in the strip.
+				if n == "PlayerTalentFrameTalents" then
+					local ci = CreateFrame("Button", n .. "ClearInfoFrame", pane)
+					ci:SetSize(140, 22)
+					ci:SetPoint("TOPLEFT", pane, "BOTTOMLEFT", 8, -2)
+					ci.icon = ci:CreateTexture(nil, "ARTWORK")
+					ci.icon:SetTexture("reagent-icon")
+					ci.count = ci:CreateFontString(nil, "OVERLAY")
+					ci.count:SetFont([[Fonts\FRIZQT__.TTF]], 10, "")
+					ci.count:SetText("3")
+					ci.name = ci:CreateFontString(nil, "OVERLAY")
+					ci.name:SetFont([[Fonts\FRIZQT__.TTF]], 12, "")
+					ci.name:SetText("Vanishing Powder")
+					pane.clearInfo = ci
+				end
 				pane.bg = pane:CreateTexture(nil, "BACKGROUND")
 				pane.bg:SetTexture("Interface\\TalentFrame\\spec-paper-bg")
 			end
@@ -35973,6 +35992,36 @@ do
 			"every pane's Learn button is moved into the strip when its tab"
 			.. " comes up, not just the first (" .. (#_G.__stray > 0
 			and table.concat(_G.__stray, ", ") or "all three") .. ")")
+
+		-- AND THE REAGENT COMES DOWN WITH IT, on the same line. The client
+		-- hangs it off the talents pane's BOTTOM LEFT, 8 in and 2 down, so it
+		-- sat in the gap above the tab rail on no line at all while Learn stood
+		-- in the strip beside it. It says what undoing a talent costs, which is
+		-- a fact about the button next to it - the same shape as the trainer's
+		-- purse at the left end of the strip its Train button is centred in.
+		_G.__talents = _G.PlayerTalentFrameTalents
+		_G.__talents:Hide()
+		_G.__talents:Show()
+		_G.__reagent = _G.__talents.clearInfo
+		local _, crel = _G.__reagent:GetPoint(1)
+		check(crel ~= _G.__talents,
+			"the reagent readout is taken out of the pane and into the strip")
+
+		-- ON THE SAME CENTRE LINE as Learn, which is what makes them read as
+		-- one row rather than two things that happen to be near each other.
+		_G.__learn = _G.__talents.learnButton
+		check(_G.__reagent:GetTop() and _G.__learn:GetTop()
+			and math.abs((_G.__reagent:GetTop() + _G.__reagent:GetBottom())
+				- (_G.__learn:GetTop() + _G.__learn:GetBottom())) < 1.5,
+			"and centred on the same line as Learn (" ..
+			string.format("%.0f", (_G.__reagent:GetTop()
+				+ _G.__reagent:GetBottom()) / 2) .. " against " ..
+			string.format("%.0f", (_G.__learn:GetTop()
+				+ _G.__learn:GetBottom()) / 2) .. ")")
+
+		-- AND AT THE LEFT END, not centred with it.
+		check(_G.__reagent:GetLeft() < _G.__learn:GetLeft(),
+			"at the left end of the strip rather than beside it")
 
 		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its
 		-- own $parentLearnButton exactly as the two specialization pages do,

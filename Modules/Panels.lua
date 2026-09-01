@@ -946,11 +946,23 @@ do
 		}
 
 		tal.footer  = W.PANEL_FOOT_H
-		tal.actions = { mid = {
-			"PlayerTalentFrameSpecialization.learnButton",
-			"PlayerTalentFramePetSpecialization.learnButton",
-			"PlayerTalentFrameTalents.learnButton",
-		} }
+		tal.actions = {
+			mid = {
+				"PlayerTalentFrameSpecialization.learnButton",
+				"PlayerTalentFramePetSpecialization.learnButton",
+				"PlayerTalentFrameTalents.learnButton",
+			},
+			-- THE REAGENT, AT THE LEFT END OF THE SAME STRIP. The client hangs
+			-- it off the talents pane's BOTTOM LEFT corner, 8 in and 2 down -
+			-- so with the recess seated it sat in the gap above the tab rail,
+			-- on no line at all, while Learn stood in the strip beside it.
+			--
+			-- It says what undoing a talent will cost you, which is a fact
+			-- about the button next to it. Same shape as the trainer's purse,
+			-- which sits at the left end of the strip its Train button is
+			-- centred in - and only the talents pane has one.
+			left = { "PlayerTalentFrameTalents.clearInfo" },
+		}
 	end
 end
 
