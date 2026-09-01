@@ -7197,8 +7197,12 @@ do
 			end
 
 			-- LEARN, on both specialization pages, under a parent key.
+			-- ALL THREE, because the talents pane declares its own the same
+			-- way. A mock that gave it to the two spec pages only could not
+			-- show the third being missed.
 			for _, n in ipairs({ "PlayerTalentFrameSpecialization",
-				"PlayerTalentFramePetSpecialization" }) do
+				"PlayerTalentFramePetSpecialization",
+				"PlayerTalentFrameTalents" }) do
 				local pane = _G[n]
 				local lb = CreateFrame("Button", nil, pane)
 				lb:SetSize(80, 22)
@@ -35753,12 +35757,55 @@ do
 		-- AND THE RECESS ITSELF SITS WHERE A WELL SITS: a body padding below
 		-- the band, rather than at the client's own 60 - which leaves six units
 		-- under a band of 54.
-		local _, irel, _, _, iy = _G.PlayerTalentFrameInset:GetPoint(1)
-		check(irel == tf and math.abs((iy or 0)
-			+ (tf.__aetherHeadH + A.Widgets.PANEL_PAD)) < 0.5,
-			"and the recess clears the header band by the body padding (" ..
-			tostring(iy) .. " against " ..
-			tostring(-(tf.__aetherHeadH + A.Widgets.PANEL_PAD)) .. ")")
+		-- ALL FOUR EDGES, not the one I remembered. Seating only the TOP left
+		-- the client's own 4, 6 and 26 on the other three, so the window had a
+		-- body padding above its content and none beside or below it - the
+		-- "no padding in the content well" report for a third time.
+		--
+		-- Measured off the FRAME: the glass reaches below it to carry the tab
+		-- row, so a padding taken from the glass's bottom sits on the tabs.
+		_G.__pad = A.Widgets.PANEL_PAD
+		_G.__ins = _G.PlayerTalentFrameInset
+		_G.__edges = {}
+		do
+			local p1, r1, _, x1, y1 = _G.__ins:GetPoint(1)
+			local p2, r2, _, x2, y2 = _G.__ins:GetPoint(2)
+			if not (p1 == "TOPLEFT" and r1 == tf and math.abs(x1 - _G.__pad) < 0.5) then
+				_G.__edges[#_G.__edges + 1] = "left=" .. tostring(x1)
+			end
+			if not (p1 == "TOPLEFT" and math.abs((y1 or 0)
+				+ (tf.__aetherHeadH + _G.__pad)) < 0.5) then
+				_G.__edges[#_G.__edges + 1] = "top=" .. tostring(y1)
+			end
+			if not (p2 == "BOTTOMRIGHT" and r2 == tf
+				and math.abs((x2 or 0) + _G.__pad) < 0.5) then
+				_G.__edges[#_G.__edges + 1] = "right=" .. tostring(x2)
+			end
+			if not (p2 == "BOTTOMRIGHT" and math.abs((y2 or 0) - _G.__pad) < 0.5) then
+				_G.__edges[#_G.__edges + 1] = "bottom=" .. tostring(y2)
+			end
+		end
+		check(#_G.__edges == 0,
+			"the recess is inset a body padding on EVERY side, not just the"
+			.. " one that was remembered (" .. (#_G.__edges > 0
+			and table.concat(_G.__edges, ", ") or "all four at " ..
+			tostring(_G.__pad)) .. ")")
+
+		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its
+		-- own $parentLearnButton exactly as the two specialization pages do,
+		-- and dressing two of the three left a Blizzard plate on the tab a
+		-- player uses most.
+		_G.__plates = {}
+		for _, n in ipairs({ "PlayerTalentFrameSpecialization",
+			"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }) do
+			local lb = _G[n].learnButton
+			if lb and lb:GetNormalTexture():GetTexture() ~= 0 then
+				_G.__plates[#_G.__plates + 1] = n
+			end
+		end
+		check(#_G.__plates == 0, "every pane's Learn button is ours (" ..
+			(#_G.__plates > 0 and table.concat(_G.__plates, ", ")
+			or "all three") .. ")")
 
 		-- SIX TIERS OF THREE. The rows are parent keys on the pane with no globals
 		-- of their own - PlayerTalentFrameTalents["tier"..n] - which is how the

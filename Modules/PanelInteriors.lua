@@ -1655,8 +1655,20 @@ function PN.DressMistsTalents(frame, store)
 	-- client's own 60 leaves six units under a band of 54.
 	local ins = ClientRecess(nil, "PlayerTalentFrame.Inset")
 	if ins and frame then
-		PN.MoveRecess(ins, frame, CHAR.insetX,
-			(frame.__aetherHeadH or W.PANEL_HEAD_H) + W.PANEL_PAD)
+		-- ALL FOUR SIDES, which is the rule and not a suggestion. Seating only
+		-- the TOP left the client's own 4, 6 and 26 on the other three, so the
+		-- window had a body padding above its content and none beside or below
+		-- it. That is the same report a third time, and the check that goes
+		-- with it now measures every edge rather than the one I remembered.
+		--
+		-- Measured off the FRAME rather than the glass: the glass reaches 34
+		-- below the frame to carry the tab row, so a padding taken from its
+		-- bottom would put the recess on top of the tabs.
+		local pad = W.PANEL_PAD
+		ins:ClearAllPoints()
+		ins:SetPoint("TOPLEFT", frame, "TOPLEFT", pad,
+			-((frame.__aetherHeadH or W.PANEL_HEAD_H) + pad))
+		ins:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad)
 	end
 
 	for _, name in ipairs({ "PlayerTalentFrameSpecialization",
@@ -1725,8 +1737,11 @@ function PN.DressMistsTalents(frame, store)
 
 	-- LEARN, on both specialization pages, under a parent key rather than a
 	-- name - so neither is reachable as a global.
+	-- ALL THREE PANES HAVE ONE, not just the two specialization pages: the
+	-- talents pane declares its own $parentLearnButton the same way. Dressing
+	-- two of the three left one Blizzard plate on the tab a player uses most.
 	for _, name in ipairs({ "PlayerTalentFrameSpecialization",
-		"PlayerTalentFramePetSpecialization" }) do
+		"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }) do
 		local pane = Part(name)
 		local btn = pane and pane.learnButton
 		if btn then
