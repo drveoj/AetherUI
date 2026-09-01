@@ -39100,6 +39100,49 @@ section("ifec: the route table, against flights that were actually flown", funct
 	local div = Route:Divergence()
 	check(#div >= 1 and div[1].from == "Gadgetzan, Tanaris",
 		"divergence reports what we measured against what shipped")
+
+	-- AND THERE IS A WAY TO READ IT. Divergence was written, tested here, and
+	-- called by nothing - so the one thing the brief asks for, correcting the
+	-- table between releases, could not be done from inside the game. It goes
+	-- to the error box because it is a wall of numbers meant to be copied out.
+	do
+		local box
+		local realShow = A.Errors.ShowText
+		A.Errors.ShowText = function(_, text) box = text end
+		SlashCmdList["AETHERUI"]("ifec routes")
+		A.Errors.ShowText = realShow
+
+		check(box ~= nil, "/aether ifec routes answers into the copyable box")
+		check(box and box:find(A.IFEC_ROUTE_BUILD, 1, true) ~= nil,
+			"and names the build the table came from, so a paste says which"
+			.. " client it is about")
+		check(box and box:find("Gadgetzan, Tanaris", 1, true) ~= nil,
+			"and carries the measured leg, which is the whole point of it")
+		check(box and box:find("Cenarion Hold", 1, true) ~= nil
+			and box:find("%-?%d+%.%d+s") ~= nil,
+			"with the destination and a signed delta beside it")
+	end
+
+	-- NO MEASURED FLIGHTS IS THE USUAL STATE, and it must not read as a fault.
+	do
+		local cfg = A.Config:Module("ifec")
+		local held = cfg.learned
+		cfg.learned = {}
+
+		local box
+		local realShow = A.Errors.ShowText
+		A.Errors.ShowText = function(_, text) box = text end
+		SlashCmdList["AETHERUI"]("ifec routes")
+		A.Errors.ShowText = realShow
+
+		cfg.learned = held
+
+		check(box and box:find("nothing measured yet", 1, true) ~= nil,
+			"an empty report says so plainly rather than printing a bare header")
+		check(box and box:find("SINGLE", 1, true) ~= nil,
+			"and says what to fly, because a multi-hop teaches nothing and"
+			.. " flying one is how a person finds that out the slow way")
+	end
 end)
 
 section("ifec: boarding, flying and landing", function()

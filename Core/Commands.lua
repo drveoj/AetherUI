@@ -41,7 +41,7 @@ local function usage()
 		A.Hi("/aether panels") .. " <dump NAME|measure [NAME]|diag>  ·  what a window is made of",
 		A.Hi("/aether threat") .. " probe  ·  what the threat API answers, in a box you can copy",
 		A.Hi("/aether resources") .. " demo  ·  step the class resource tray through every class",
-		A.Hi("/aether ifec") .. " [reset]  ·  content packs, what is playing, forget history",
+		A.Hi("/aether ifec") .. " [reset|routes]  ·  packs, playback, measured flight legs",
 		A.Hi("/aether errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
@@ -801,6 +801,59 @@ handlers.ifec = function(arg)
 			or "ifec: forgot %d items of listening history", n))
 		return
 	end
+	-- WHAT WE SHIP AGAINST WHAT WAS FLOWN. Route:Learn records every single-hop
+	-- flight the player completes, and Route:Divergence has always been able to
+	-- say how those differ from the generated table - but nothing called it, so
+	-- the one thing the brief asks for (correct the table between releases) was
+	-- unreachable in game.
+	--
+	-- It matters most on Mists. Era's table is justified by nine measured
+	-- flights; Mists' by one, which is why the harness has no fit check for it.
+	-- The nine cannot be flown from here, and this is how they come back.
+	--
+	-- Into the error box, same as panels measure and threat probe: a wall of
+	-- numbers whose whole purpose is to be copied out, and the chat frame is
+	-- the one part of the interface that cannot be selected.
+	if arg == "routes" then
+		local Route = IFEC.Route
+		if not Route then A:Print("ifec: the route lookup is not loaded") return end
+
+		local out = {}
+		local function say(line) out[#out + 1] = tostring(line) end
+
+		local legs, origins = 0, 0
+		for _, row in pairs(A.IFEC_LEGS or {}) do
+			origins = origins + 1
+			for _ in pairs(row) do legs = legs + 1 end
+		end
+		say(("routes: build %s  %d legs from %d nodes")
+			:format(tostring(A.IFEC_ROUTE_BUILD), legs, origins))
+
+		local div = Route:Divergence()
+		if #div == 0 then
+			-- NOT AN ERROR. An empty report means no single-hop flight has been
+			-- flown yet on this character, which is the usual state - so it says
+			-- what to do rather than just saying nothing.
+			say("nothing measured yet - fly a SINGLE hop and it lands here.")
+			say("multi-hop teaches nothing: the client hides the leg boundaries.")
+		else
+			say(("%d measured against the table, worst first:"):format(#div))
+			for _, d in ipairs(div) do
+				say(("  %+6.1fs  flown %5.1f  table %5.1f  %s%s -> %s")
+					:format(d.delta, d.measured, d.shipped,
+						d.fuzzy and "[two-path] " or "", d.from, d.to))
+			end
+		end
+
+		local text = table.concat(out, string.char(10))
+		if A.Errors and A.Errors.ShowText then
+			A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "") .. text)
+		else
+			for _, line in ipairs(out) do A:Print(line) end
+		end
+		return
+	end
+
 	local packs = R:Sorted()
 
 	A:Print(A.F(L.cmd.ifec.ifec_content_api_s,
