@@ -441,26 +441,34 @@ end
 --  runs on every dress and a growth applied twice walks the window off screen.
 function PN.SeatRecess(ins, frame, top, bottom)
 	if not (ins and frame and ins.ClearAllPoints) then return end
+	bottom = bottom or W.PANEL_PAD
+	local pad = W.PANEL_PAD
 
-	-- The client's own insets, read once and kept: after the first seat they
-	-- are ours and reading them back would compound.
-	local was = frame.__aetherRecessWas
-	if not was then
-		local _, _, _, x1, y1 = ins:GetPoint(1)
-		local _, _, _, x2, y2 = ins:GetPoint(2)
-		if not (x1 and x2) then return end
-		was = { left = x1, top = -y1, right = -x2, bottom = y2 }
-		frame.__aetherRecessWas = was
+	-- THE SIZE THE CLIENT'S CONTENT WAS DRAWN FOR, remembered once. Not its
+	-- INSETS: those are state, not a size. The four template helpers move this
+	-- recess about between tabs, so "what the insets were" depends entirely on
+	-- when you looked, and the growth computed from it came out different every
+	-- time. The one thing that does not move is how much room the page needs.
+	local want = frame.__aetherRecessWant
+	if not want and ins.GetWidth and (ins:GetWidth() or 0) > 0 then
+		want = { w = ins:GetWidth(), h = ins:GetHeight() }
+		frame.__aetherRecessWant = want
 	end
 
-	local pad = W.PANEL_PAD
-	bottom = bottom or pad
-	local growW = math.max(0, pad - was.left) + math.max(0, pad - was.right)
-	local growH = math.max(0, top - was.top) + math.max(0, bottom - was.bottom)
-	if not frame.__aetherRecessGrown and frame.SetWidth and frame.GetWidth then
-		frame:SetWidth((frame:GetWidth() or 0) + growW)
-		frame:SetHeight((frame:GetHeight() or 0) + growH)
-		frame.__aetherRecessGrown = true
+	-- GROW UNTIL IT FITS, EVERY TIME, rather than once behind a flag. A
+	-- boolean guard cannot answer a requirement that CHANGES - putting Learn
+	-- in a footer strip took another 44 units out of the recess and the window
+	-- never grew for it, because it had already "been grown". Recomputed, this
+	-- is naturally idempotent: once the room is there the growth is nought.
+	if want and frame.SetWidth and frame.GetWidth then
+		local haveW = (frame:GetWidth() or 0) - pad * 2
+		local haveH = (frame:GetHeight() or 0) - top - bottom
+		if want.w - haveW > 0.5 then
+			frame:SetWidth(frame:GetWidth() + (want.w - haveW))
+		end
+		if want.h - haveH > 0.5 then
+			frame:SetHeight(frame:GetHeight() + (want.h - haveH))
+		end
 	end
 
 	ins:ClearAllPoints()

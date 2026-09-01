@@ -35854,18 +35854,19 @@ do
 		-- growing the frame takes the difference away from content that is
 		-- CLIPPED rather than reflowed, so the last two spells went under the
 		-- Learn button.
-		_G.__was = tf.__aetherRecessWas
-		_G.__hadW = 646 - _G.__was.left - _G.__was.right
-		-- The height it had, less the strip we have taken for its own Learn
-		-- button: that row was inside the client's recess and is now below it.
-		_G.__hadH = 468 - _G.__was.top - _G.__was.bottom - A.Widgets.PANEL_FOOT_H
-		check(_G.__ins:GetWidth() >= _G.__hadW - 0.5
-			and _G.__ins:GetHeight() >= _G.__hadH - 0.5,
+		-- THE ROOM THE PAGE WAS DRAWN FOR, kept whatever we do to the window.
+		-- Recorded as a SIZE and not as insets: the four template helpers move
+		-- this recess between tabs, so "what its insets were" depends on when
+		-- you looked, and a growth computed from that came out different every
+		-- time. How much room the page needs does not move.
+		_G.__want = tf.__aetherRecessWant
+		check(_G.__ins:GetWidth() >= _G.__want.w - 0.5
+			and _G.__ins:GetHeight() >= _G.__want.h - 0.5,
 			"and the window grew to pay for it, so the recess is no smaller"
 			.. " than the one the client drew its page to fill (" ..
 			string.format("%.0fx%.0f", _G.__ins:GetWidth(),
 				_G.__ins:GetHeight()) .. " against " ..
-			string.format("%.0fx%.0f", _G.__hadW, _G.__hadH) .. ")")
+			string.format("%.0fx%.0f", _G.__want.w, _G.__want.h) .. ")")
 
 		-- ...AND ONCE. A growth applied on every dress walks the window off
 		-- the screen a tab click at a time.
@@ -35909,6 +35910,36 @@ do
 			"and none of the four template helpers can move the recess back ("
 			.. (#_G.__dislodged > 0 and table.concat(_G.__dislodged, " ")
 			or "all four re-seated") .. ")")
+
+		-- AND A REQUIREMENT THAT CHANGES IS ANSWERED, which a flag cannot do.
+		--
+		-- The growth was guarded by a boolean: grown once, never again. Then
+		-- Learn moved into a footer strip, which takes another 52 units out of
+		-- the recess - and the window did not grow for it, because it had
+		-- already "been grown". The page was clipped and Learn sat on the last
+		-- two spells, which is exactly what it had done two builds earlier.
+		--
+		-- Seated with a deeper foot, the window must find the room; seated back
+		-- again it must not have shrunk the page.
+		PN.SeatRecess(_G.__ins, tf, tf.__aetherHeadH + _G.__pad,
+			A.Widgets.PANEL_FOOT_H + _G.__pad + 60)
+		check(_G.__ins:GetWidth() >= _G.__want.w - 0.5
+			and _G.__ins:GetHeight() >= _G.__want.h - 0.5,
+			"a deeper strip makes the window grow again rather than squeezing"
+			.. " the page (" .. string.format("%.0fx%.0f", _G.__ins:GetWidth(),
+				_G.__ins:GetHeight()) .. " for " ..
+			string.format("%.0fx%.0f", _G.__want.w, _G.__want.h) .. ")")
+
+		-- AND SETTLES. Re-seating the same way twice must not keep growing, or
+		-- the window walks off the screen a tab click at a time.
+		PN.SeatRecess(_G.__ins, tf, tf.__aetherHeadH + _G.__pad,
+			A.Widgets.PANEL_FOOT_H + _G.__pad)
+		_G.__w1 = tf:GetWidth()
+		PN.SeatRecess(_G.__ins, tf, tf.__aetherHeadH + _G.__pad,
+			A.Widgets.PANEL_FOOT_H + _G.__pad)
+		check(math.abs(tf:GetWidth() - _G.__w1) < 0.5,
+			"and seating it twice the same way settles (" ..
+			string.format("%.0f", tf:GetWidth()) .. ")")
 
 		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its
 		-- own $parentLearnButton exactly as the two specialization pages do,
