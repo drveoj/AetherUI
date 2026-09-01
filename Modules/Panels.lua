@@ -926,6 +926,25 @@ do
 		-- whatever is VISIBLE - the same as the quest giver's seven and the
 		-- postbox's four. They are parent keys with no globals of their own,
 		-- which the entry reaches by path.
+		-- AND THE PANES ARE DECLARED so their OnShow re-lays the strip.
+		--
+		-- WatchPanes hooks each named pane and refreshes the header, the footer
+		-- and the tab row when one comes up. This entry had no `panes` key at
+		-- all - its body list is empty on purpose, and I took that to mean the
+		-- window had no panes to watch - so switching tab never re-laid the
+		-- strip, and only the FIRST Learn button ever reached it. Joe's dump
+		-- said so exactly: one reading "on the strip" and two still at the
+		-- client's own "BOTTOM 0,-22" on their own panes.
+		--
+		-- Declaring a pane and listing it in `body` are different questions:
+		-- one is "tell me when this comes up", the other is "measure and move
+		-- this". These want the first and not the second.
+		tal.panes = {
+			{ pane = "PlayerTalentFrameSpecialization" },
+			{ pane = "PlayerTalentFramePetSpecialization" },
+			{ pane = "PlayerTalentFrameTalents" },
+		}
+
 		tal.footer  = W.PANEL_FOOT_H
 		tal.actions = { mid = {
 			"PlayerTalentFrameSpecialization.learnButton",

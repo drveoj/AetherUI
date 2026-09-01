@@ -35941,6 +35941,39 @@ do
 			"and seating it twice the same way settles (" ..
 			string.format("%.0f", tf:GetWidth()) .. ")")
 
+		-- AND EVERY PANE'S LEARN BUTTON REACHES THE STRIP, not just the first.
+		--
+		-- The strip is laid out from what is VISIBLE, and only one pane is up
+		-- at a time - so each one's button has to be placed when ITS tab comes
+		-- up. WatchPanes does that off each pane's OnShow, but this entry
+		-- declared no `panes` at all: its body list is empty on purpose, and
+		-- that was taken to mean there were no panes to watch.
+		--
+		-- Joe's dump said it in three lines: one button reading "on the strip"
+		-- and two still at the client's own BOTTOM 0,-22 on their own panes.
+		_G.__stray = {}
+		for _, n in ipairs({ "PlayerTalentFrameSpecialization",
+			"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }) do
+			local pane = _G[n]
+			-- PUT THE BUTTON BACK WHERE THE CLIENT HAS IT, so this measures
+			-- the pane's OnShow rather than a placement left over from the
+			-- first dress. Hidden first, because Show only fires OnShow on the
+			-- way from hidden to shown.
+			pane.learnButton:ClearAllPoints()
+			pane.learnButton:SetPoint("BOTTOM", pane, "BOTTOM", 0, -22)
+			pane:Hide()
+			pane:Show()
+			local _, rel = pane.learnButton:GetPoint(1)
+			if rel == pane then
+				_G.__stray[#_G.__stray + 1] = n
+			end
+			pane:Hide()
+		end
+		check(#_G.__stray == 0,
+			"every pane's Learn button is moved into the strip when its tab"
+			.. " comes up, not just the first (" .. (#_G.__stray > 0
+			and table.concat(_G.__stray, ", ") or "all three") .. ")")
+
 		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its
 		-- own $parentLearnButton exactly as the two specialization pages do,
 		-- and dressing two of the three left a Blizzard plate on the tab a
