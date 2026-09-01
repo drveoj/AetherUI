@@ -719,24 +719,41 @@ PN.PANELS = PANELS
 PN.ENTRY = {}
 for _, entry in ipairs(PANELS) do PN.ENTRY[entry.frame] = entry end
 
--- THE CHARACTER SHEET'S TABS, FROM THE CLIENT ITSELF.
+-- WHICH PANES A TABBED WINDOW HAS, FROM THE CLIENT ITSELF.
 --
--- This is the one window in the list whose panes differ between the two
--- flavours, and the one case where guessing is unnecessary: both clients
--- declare CHARACTERFRAME_SUBFRAMES, and ToggleCharacter, ShowSubFrame and the
--- sheet's own hide sweep all read it. Taking it rather than restating it means
--- a tab Blizzard adds is measured the day it appears, and a tab they remove
--- stops being asked for.
+-- Two windows in this list have panes that differ between the flavours, and
+-- both are cases where guessing is unnecessary: the client publishes the
+-- answer and then uses it itself.
 --
--- The table above keeps Era's five as the written answer for when the global
--- is missing - a .toc that failed to load its character frame, chiefly, where
--- half a body list is better than none.
+--   CHARACTERFRAME_SUBFRAMES  Era: Character, Pet, Reputation, Skills, Honour
+--                             MoP: Character, Pet, Reputation, Currency
+--   INSPECTFRAME_SUBFRAMES    Era: PaperDoll, Honor
+--                             MoP: PaperDoll, PVP, Talents, Guild
+--
+-- ToggleCharacter, ShowSubFrame, InspectFrameTab_OnClick and each window's own
+-- hide sweep all read these, so taking them rather than restating them means a
+-- tab Blizzard adds is measured the day it appears and a tab they remove stops
+-- being asked for.
+--
+-- THE INSPECT WINDOW IS WHY THIS IS A LOOP. Era's list was written into the
+-- table for both flavours, so on Mists its Talents, PVP and Guild pages were
+-- never measured and never moved - and InspectHonorFrame, which that client
+-- does not build, was asked for on every open.
+--
+-- The table above keeps Era's lists as the written answer for when a global is
+-- missing: a .toc that failed to load one of these frames, chiefly, where half
+-- a body list is better than none.
 do
-	local subs = _G.CHARACTERFRAME_SUBFRAMES
-	if type(subs) == "table" and #subs > 0 then
-		local body = {}
-		for i = 1, #subs do body[i] = subs[i] end
-		PN.ENTRY.CharacterFrame.body = body
+	for frame, global in pairs({
+		CharacterFrame = "CHARACTERFRAME_SUBFRAMES",
+		InspectFrame   = "INSPECTFRAME_SUBFRAMES",
+	}) do
+		local subs = _G[global]
+		if type(subs) == "table" and #subs > 0 and PN.ENTRY[frame] then
+			local body = {}
+			for i = 1, #subs do body[i] = subs[i] end
+			PN.ENTRY[frame].body = body
+		end
 	end
 
 	-- AND IT IS NOT THE SAME SHAPE OF WINDOW EITHER.

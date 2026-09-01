@@ -972,9 +972,26 @@ end
 -- store. And every slot on it belongs to somebody else, so the rim reads the
 -- unit being inspected - "player" there is your own gear colouring their gear.
 
-local INSPECT_PANES = {
-	"InspectPaperDollFrame", "InspectHonorFrame", "InspectPaperDollItemsFrame",
-}
+--- Which panes this window has, asked of the client rather than written down.
+--
+--  Era's are the doll and Honor; Cataclysm dropped Honor for PVP and added
+--  Talents and Guild. INSPECTFRAME_SUBFRAMES is what InspectFrameTab_OnClick
+--  itself reads, so it is the honest source - and Era's list written here for
+--  both flavours meant three of Mists' four pages were never swept.
+--
+--  The items frame is not a subframe and is not in that list: it is nested
+--  inside the doll pane and carries the slots.
+local function InspectPanes()
+	local panes = { "InspectPaperDollItemsFrame" }
+	local subs = _G.INSPECTFRAME_SUBFRAMES
+	if type(subs) == "table" then
+		for i = 1, #subs do panes[#panes + 1] = subs[i] end
+	else
+		panes[#panes + 1] = "InspectPaperDollFrame"
+		panes[#panes + 1] = "InspectHonorFrame"
+	end
+	return panes
+end
 
 -- Nineteen, in the client's own spelling. Not walked off the items frame the
 -- way ours are: the ranged slot is hidden on a class that cannot use one, and
@@ -994,7 +1011,7 @@ local function InspectUnit()
 end
 
 local function DressInspect(frame, store)
-	for _, name in ipairs(INSPECT_PANES) do
+	for _, name in ipairs(InspectPanes()) do
 		local pane = _G[name]
 		if pane then
 			Reskin.Strip(pane, store, PANE_KEEP[name])
@@ -1036,8 +1053,10 @@ local function DressInspect(frame, store)
 		end
 	end
 
-	-- The honour tab's rank progress, which is the only bar in the window.
-	Reskin.StatusBar(_G.InspectHonorFrameProgressBar, store)
+	-- The rank progress bar, under whichever pane this client puts it on:
+	-- Era draws it on the honour tab, Mists on the PVP one that replaced it.
+	Reskin.StatusBar(_G.InspectHonorFrameProgressBar
+		or _G.InspectPVPFrameProgressBar, store)
 
 	LayoutTabs(frame, store)
 	InstallTabHooks()

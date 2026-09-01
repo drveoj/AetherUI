@@ -6536,9 +6536,28 @@ do
 		-- THE DOLL PANE FILLS THE WINDOW, the honour one is hung off its top left
 		-- corner 62 down, and the slots inside the doll start at 74 - the strip
 		-- the stone title plate used to need, which is not our band.
-		for _, spec in ipairs({ { "InspectPaperDollFrame", nil },
-			{ "InspectHonorFrame", 9, -62 },
-			{ "InspectPaperDollItemsFrame", nil } }) do
+		-- WHICH PANES THIS WINDOW HAS, and the client publishes it: Era's two
+		-- are the doll and Honor; Cataclysm dropped Honor for PVP and added
+		-- Talents and Guild. INSPECTFRAME_SUBFRAMES is what
+		-- InspectFrameTab_OnClick itself reads, so a mock that declared Era's
+		-- list on both flavours let a body list written from it look correct.
+		_G.INSPECTFRAME_SUBFRAMES = _G.__mists
+			and { "InspectPaperDollFrame", "InspectPVPFrame",
+				"InspectTalentFrame", "InspectGuildFrame" }
+			or { "InspectPaperDollFrame", "InspectHonorFrame" }
+
+		local inspectPanes = { { "InspectPaperDollFrame", nil },
+			{ "InspectPaperDollItemsFrame", nil } }
+		if _G.__mists then
+			-- Three pages Era has none of, each anchored off the window's top
+			-- left the way the honour pane is.
+			inspectPanes[#inspectPanes + 1] = { "InspectPVPFrame", 9, -62 }
+			inspectPanes[#inspectPanes + 1] = { "InspectTalentFrame", 9, -62 }
+			inspectPanes[#inspectPanes + 1] = { "InspectGuildFrame", 9, -62 }
+		else
+			inspectPanes[#inspectPanes + 1] = { "InspectHonorFrame", 9, -62 }
+		end
+		for _, spec in ipairs(inspectPanes) do
 			-- PARENTED, not just anchored. The slots are nested two deep inside the
 			-- doll pane, and a mock that hung the items frame off the WINDOW put
 			-- every slot outside the pane being measured - so the pane measured as
@@ -6561,9 +6580,13 @@ do
 			pane:CreateTexture(nil, "ARTWORK"):SetTexture("pane-stone")
 		end
 
-		_G.InspectHonorFramePvPIcon = _G.InspectHonorFrame:CreateTexture(
-			"InspectHonorFramePvPIcon", "OVERLAY")
-		_G.InspectHonorFramePvPIcon:SetTexture("Interface\\PvPRankBadges\\PvPRank11")
+		-- ERA ONLY: this client has no honour pane to hang a rank badge on.
+		if not _G.__mists then
+			_G.InspectHonorFramePvPIcon = _G.InspectHonorFrame:CreateTexture(
+				"InspectHonorFramePvPIcon", "OVERLAY")
+			_G.InspectHonorFramePvPIcon:SetTexture(
+				"Interface\\PvPRankBadges\\PvPRank11")
+		end
 		_G.InspectFaction = _G.InspectPaperDollFrame:CreateTexture(
 			"InspectFaction", "ARTWORK")
 		_G.InspectFaction:SetTexture("Interface\\Timer\\Horde-Logo")
@@ -16169,15 +16192,23 @@ section("panels: somebody else's character sheet", function()
 	-- THE PANES, and the two pictures among their stone.
 	check(_G.InspectPaperDollFrame:GetRegions():GetTexture() == 0,
 		"the panes lose their stone")
-	check(_G.InspectHonorFramePvPIcon:GetTexture() ~= 0,
-		"the PvP rank badge survives the honour pane's sweep - it is a"
-		.. " region of that pane exactly as the parchment is, and taking one"
-		.. " took the picture of the rank the words beside it are naming")
+	-- ERA ONLY. Cataclysm dropped the honour pane for a PVP one, so on Mists
+	-- there is no rank badge to survive - and asking for one is a check testing
+	-- a pane this client does not build.
+	if not _G.__mists then
+		check(_G.InspectHonorFramePvPIcon:GetTexture() ~= 0,
+			"the PvP rank badge survives the honour pane's sweep - it is a"
+			.. " region of that pane exactly as the parchment is, and taking one"
+			.. " took the picture of the rank the words beside it are naming")
+	end
 	check(_G.InspectFaction:GetTexture() ~= 0,
 		"and so does the faction crest shown in place of a model too far"
 		.. " off to draw")
-	check(_G.InspectHonorFrameProgressBar.__aetherFill ~= nil,
-		"the honour tab's rank bar takes our fill")
+	-- Under whichever pane this client puts it on: Era draws the rank bar on
+	-- the honour tab, Mists on the PVP one that replaced it.
+	check((_G.InspectHonorFrameProgressBar
+		or _G.InspectPVPFrameProgressBar).__aetherFill ~= nil,
+		"the rank bar takes our fill")
 
 	-- AND BOTH PANES MOVE INTO THE RECESS, the way the character sheet's four
 	-- do. Same shape, same problem: the doll's first slot starts 65 down and
@@ -16186,14 +16217,51 @@ section("panels: somebody else's character sheet", function()
 	do
 		local inInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD
 		local want = A.Widgets.PANEL_HEAD_SUB + inInner
+		-- THE SECOND PANE, whichever this client's second one is: Honor on
+		-- Era, PVP on Mists. Named from INSPECTFRAME_SUBFRAMES so the check
+		-- follows the client rather than restating Era's list a third time.
+		_G.__inspect2 = _G[_G.INSPECTFRAME_SUBFRAMES[2]]
 		local doll = select(5, _G.InspectPaperDollFrame:GetPoint(1))
-		local hon = select(5, _G.InspectHonorFrame:GetPoint(1))
+		local hon = select(5, _G.__inspect2:GetPoint(1))
 		check(doll == -(want - 65) and hon == -(62 + (want - 62)),
 			"each of the two tabs clears the band by its OWN measurement (" ..
 			tostring(doll) .. ", " .. tostring(hon) .. ")")
 		check(_G.InspectFrame.__aetherHeadH == A.Widgets.PANEL_HEAD_SUB,
 			"and the band is the taller one, because this window has a class line"
 			.. " under the name (" .. tostring(_G.InspectFrame.__aetherHeadH) .. ")")
+
+		-- EVERY PANE THE CLIENT DECLARES, not the two Era happens to have.
+		-- Cataclysm dropped Honor for PVP and added Talents and Guild, and
+		-- Era's list was written into the entry for both flavours - so on
+		-- Mists three of the four pages were never measured, never moved and
+		-- never swept, while InspectHonorFrame was asked for on every open.
+		_G.__unswept = {}
+		for _, n in ipairs(_G.INSPECTFRAME_SUBFRAMES) do
+			local pane = _G[n]
+			if not pane then
+				_G.__unswept[#_G.__unswept + 1] = n .. ":missing"
+			elseif pane:GetRegions() and pane:GetRegions():GetTexture() ~= 0 then
+				_G.__unswept[#_G.__unswept + 1] = n
+			end
+		end
+		check(#_G.__unswept == 0,
+			"every pane the client declares is swept, not just Era's two ("
+			.. (#_G.__unswept > 0 and table.concat(_G.__unswept, ", ")
+			or (#_G.INSPECTFRAME_SUBFRAMES .. " of them")) .. ")")
+
+		-- AND EVERY ONE OF THEM IS IN THE BODY LIST, so it is measured and
+		-- moved rather than left wherever the client's own strip put it.
+		_G.__body = {}
+		for _, n in ipairs(A:GetModule("panels").ENTRY.InspectFrame.body) do
+			_G.__body[n] = true
+		end
+		_G.__unlisted = {}
+		for _, n in ipairs(_G.INSPECTFRAME_SUBFRAMES) do
+			if not _G.__body[n] then _G.__unlisted[#_G.__unlisted + 1] = n end
+		end
+		check(#_G.__unlisted == 0,
+			"and named in the body list (" .. (#_G.__unlisted > 0
+			and table.concat(_G.__unlisted, ", ") or "all of them") .. ")")
 	end
 
 	-- A CHEVRON MEANS NAVIGATION AND NOTHING ELSE - a page, a carousel, a
