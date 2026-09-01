@@ -51,6 +51,10 @@ L["bags.start_sort.while_combat"] = "not while you are in combat."
 
 -- bars --------------------------------------------------------------------
 
+L["bars.diagnose_flyout.flyout_drawer_built"] = "flyout: no drawer built"
+L["bars.diagnose_flyout.flyout_text_window_ctrl"] =
+	"flyout: in the text window - Ctrl+A then Ctrl+C to copy"
+
 L["bars.set_bind_mode.can_t_rebind_combat"] = "can't rebind in combat."
 L["bars.set_bind_mode.escape_clears_right_click"] =
 	"Escape clears, right-click or /aether bind again to finish."
@@ -105,6 +109,7 @@ L["cmd.bags.junk_auto_sell_s2"] = "junk auto-sell %s."
 L["cmd.bags.junk_sell"] = "no junk to sell."
 
 L["cmd.bar.bar_s"] = "no bar %s."
+L["cmd.bar.build_has_flyout_drawer"] = "this build has no flyout drawer"
 
 L["cmd.bar_list.bars"] = "bars:"
 
@@ -156,6 +161,7 @@ L["cmd.ifec.absent"] = "absent"
 L["cmd.ifec.attached"] = "attached"
 L["cmd.ifec.ifec_content_api_s"] = "ifec  ·  content API %s-%s"
 L["cmd.ifec.ifec_loaded"] = "ifec: not loaded"
+L["cmd.ifec.ifec_route_lookup_loaded"] = "ifec: the route lookup is not loaded"
 L["cmd.ifec.last_file_would_play"] = "last file that would not play"
 L["cmd.ifec.packs_registered"] = "  no packs registered"
 L["cmd.ifec.playback_s"] = "  playback: %s"
@@ -200,12 +206,16 @@ L["cmd.quests.questtracker_module_enabled"] =
 	"questtracker module is not enabled."
 L["cmd.quests.tracking_reset"] = "tracking reset."
 
+L["cmd.resources.no_maximum"] = "nothing reports a maximum"
+L["cmd.resources.no_tray"] = "this build has no resource tray"
+L["cmd.resources.none_s"] = "no class resource on this character - %s"
+
 L["cmd.scale.scale_2f"] = "scale -> %.2f"
 L["cmd.scale.scale_takes_0_6"] =
-	"scale takes 0.6 - 1.6, or fit (currently %.2f). Every size in AetherUI "
-		.. "is a screen pixel measured off a real display; fit is the scale "
-		.. "that draws them at exactly that size on yours, and is what a new "
-		.. "profile starts at."
+	"scale takes 0.6 - 1.6, or fit (currently %.2f). Every size in "
+		.. "AetherUI is a screen pixel measured off a real display; fit is the "
+		.. "scale that draws them at exactly that size on yours, and is what a "
+		.. "new profile starts at."
 
 L["cmd.shadow.shadow_takes_0_1"] =
 	"shadow takes 0 - 1 (currently %s). It is an opacity, not a "
@@ -371,12 +381,16 @@ L["core.misc.label4"] = "Bar 4"
 L["core.misc.label5"] = "Bar 5"
 L["core.misc.label6"] = "Bar 6"
 
+L["core.pump.event"] = "event '%s':"
+L["core.pump.ticker"] = "ticker:"
+
 -- errors ------------------------------------------------------------------
 
 L["errors.build.errors"] = "Errors"
 L["errors.build.export"] = "Export"
 L["errors.build.export_writes_savedvariables_aetherui"] =
-	"Export writes it to SavedVariables\\\\AetherUI.lua. Escape closes."
+	"Export writes it to SavedVariables\\\\\\\\AetherUI.lua. Escape "
+		.. "closes."
 
 -- library -----------------------------------------------------------------
 
@@ -537,10 +551,10 @@ L["options.chat.chat_dims_everything_else"] =
 L["options.chat.class_color_names.name"] = "Class-colour names"
 L["options.chat.client_already_centres_badge"] =
 	"The client already centres a badge on its line, so zero is "
-		.. "normally right. Negative sinks it, positive raises it.\\n\\nOnly "
-		.. "new lines take a change - a chat line is a string with the badge "
-		.. "baked into it, so the log above keeps whatever it was printed "
-		.. "with."
+		.. "normally right. Negative sinks it, positive raises "
+		.. "it.\\\\n\\\\nOnly new lines take a change - a chat line is a "
+		.. "string with the badge baked into it, so the log above keeps "
+		.. "whatever it was printed with."
 L["options.chat.default_rare_classic_era"] =
 	"On by default: it is rare on Classic Era and never what you are "
 		.. "reading a line for. Off dims it instead of losing it. Either way "
@@ -560,10 +574,10 @@ L["options.chat.hide_realm.name"] = "Drop the realm entirely"
 L["options.chat.lines_header"] = "Message lines"
 L["options.chat.lines_note"] =
 	"The name is class-coloured and its realm dimmed, the \"says:\" "
-		.. "becomes an em dash, and the channel gets a badge.\\n\\n%s Blizzard "
-		.. "hands out the decorated name and builds the player link around "
-		.. "what comes back, so whispers, ignore and the right-click menu are "
-		.. "out of reach rather than carefully avoided."
+		.. "becomes an em dash, and the channel gets a badge.\\\\n\\\\n%s "
+		.. "Blizzard hands out the decorated name and builds the player link "
+		.. "around what comes back, so whispers, ignore and the right-click "
+		.. "menu are out of reach rather than carefully avoided."
 L["options.chat.master_switch_everything_below"] =
 	"The master switch. Everything below hangs off one filter and one "
 		.. "set of format strings, and half of them on is a line that reads as "
@@ -576,7 +590,7 @@ L["options.chat.off_concept_badge_what"] =
 L["options.chat.one_outlives_addon"] = "This one outlives the addon."
 L["options.chat.pill_carrying_channel_whatever"] =
 	"A pill carrying the channel, in whatever colour your own chat "
-		.. "settings give that channel.\\n\\nThe words are baked into a "
+		.. "settings give that channel.\\\\n\\\\nThe words are baked into a "
 		.. "texture, so the four channels a Classic Era character actually "
 		.. "joins have one and anything else gets its own name as text."
 L["options.chat.resizable.name"] = "Show the resize corner"
@@ -602,15 +616,15 @@ L["options.conveniences.auto_repair.name"] = "Repair at a vendor automatically"
 L["options.conveniences.conveniences"] = "Conveniences"
 L["options.conveniences.instant_quest_text.name"] = "Instant quest text"
 L["options.conveniences.quest_text_appears_once"] =
-	"Quest text appears at once instead of being typed out.\\n\\nThis "
-		.. "is the game's OWN setting - Interface, Controls, Instant Quest "
-		.. "Text - set for you. Off puts it back the way you had it, which is "
-		.. "why it is off here to begin with: you may have chosen the typing "
-		.. "on purpose."
+	"Quest text appears at once instead of being typed "
+		.. "out.\\\\n\\\\nThis is the game's OWN setting - Interface, "
+		.. "Controls, Instant Quest Text - set for you. Off puts it back the "
+		.. "way you had it, which is why it is off here to begin with: you may "
+		.. "have chosen the typing on purpose."
 L["options.conveniences.repairs_everything_moment_open"] =
 	"Repairs everything the moment you open a merchant who "
-		.. "can.\\n\\nOFF by default, because it SPENDS YOUR MONEY. It will "
-		.. "not repair when you cannot afford it - it tells you instead, "
+		.. "can.\\\\n\\\\nOFF by default, because it SPENDS YOUR MONEY. It "
+		.. "will not repair when you cannot afford it - it tells you instead, "
 		.. "rather than half-repairing - and every repair prints what it cost, "
 		.. "so nothing leaves your purse quietly."
 
@@ -693,14 +707,14 @@ L["options.fader.one_thing_fading_interface"] =
 	"The one thing fading the interface does not reach: nameplates and "
 		.. "the floating unit names are drawn against the world rather than "
 		.. "composited into the interface, so they are left hanging over an "
-		.. "empty hillside otherwise.\\n\\nThese are %s in the client - the "
-		.. "bars and the text have unrelated settings - so this drives both. "
-		.. "Taking the bars away and leaving every name, guild tag and pet "
-		.. "label floating looks like a fault rather than a choice. Everything "
-		.. "is turned off at the bottom of the fade and turned back on the "
-		.. "moment you come out, including on the way to a "
-		.. "logout.\\n\\nTooltips need nothing: they belong to the interface "
-		.. "and go with it."
+		.. "empty hillside otherwise.\\\\n\\\\nThese are %s in the client - "
+		.. "the bars and the text have unrelated settings - so this drives "
+		.. "both. Taking the bars away and leaving every name, guild tag and "
+		.. "pet label floating looks like a fault rather than a choice. "
+		.. "Everything is turned off at the bottom of the fade and turned back "
+		.. "on the moment you come out, including on the way to a "
+		.. "logout.\\\\n\\\\nTooltips need nothing: they belong to the "
+		.. "interface and go with it."
 L["options.fader.only_hard_signals_hold"] =
 	"Only the hard signals hold this off"
 L["options.fader.playing_s"] = "playing %s"
@@ -729,8 +743,8 @@ L["options.fader.zen_audio.desc"] =
 L["options.fader.zen_audio_header"] = "The audio profile"
 L["options.fader.zen_audio_note"] =
 	"Zen borrows the sound channels while it is on screen and gives "
-		.. "them back when it ends.\\n\\nThe three sliders below are %s, not "
-		.. "volumes. 5%% of an effects channel you keep at 80%% is 4%%; at "
+		.. "them back when it ends.\\\\n\\\\nThe three sliders below are %s, "
+		.. "not volumes. 5%% of an effects channel you keep at 80%% is 4%%; at "
 		.. "20%% it is 1%%. Your master volume is never touched, and a channel "
 		.. "you change by hand during zen is left where you put it rather than "
 		.. "being handed a stale value back."
@@ -750,14 +764,14 @@ L["options.fader.zen_frost_drift.name"] = "Drift"
 L["options.fader.zen_frost_header"] = "The frosted pane"
 L["options.fader.zen_frost_note"] =
 	"A pane of frosted glass drawn in front of the world while zen is "
-		.. "on.\\n\\n%s. The client gives addons no way to read or filter the "
-		.. "3D scene - no render-to-texture, no shader, no post-process hook - "
-		.. "so the world behind stays sharp. What frosted glass actually is, "
-		.. "though, is a surface in front of a sharp scene.\\n\\nIt gets %s, "
-		.. "not darker. Frosted glass scatters light, so it is brighter than "
-		.. "what is behind it and what it destroys is contrast. A dark pane "
-		.. "leaves every edge in the scene perfectly crisp and simply turns "
-		.. "the lights off."
+		.. "on.\\\\n\\\\n%s. The client gives addons no way to read or filter "
+		.. "the 3D scene - no render-to-texture, no shader, no post-process "
+		.. "hook - so the world behind stays sharp. What frosted glass "
+		.. "actually is, though, is a surface in front of a sharp "
+		.. "scene.\\\\n\\\\nIt gets %s, not darker. Frosted glass scatters "
+		.. "light, so it is brighter than what is behind it and what it "
+		.. "destroys is contrast. A dark pane leaves every edge in the scene "
+		.. "perfectly crisp and simply turns the lights off."
 L["options.fader.zen_frost_opacity.name"] = "Pane opacity"
 L["options.fader.zen_frost_scatter.name"] = "Scatter"
 L["options.fader.zen_frost_vignette.name"] = "Vignette"
@@ -773,8 +787,8 @@ L["options.fader.zen_note"] =
 		.. "place along the bottom edge - health, power, and a slow breath - "
 		.. "with the zone and the time in the corner. Anything you do brings "
 		.. "it back, including a keypress, which is the one thing stage one "
-		.. "cannot see.\\n\\n%s: combat, casting, and the cursor sitting on "
-		.. "the HUD. Having a target or being below full health keeps stage "
+		.. "cannot see.\\\\n\\\\n%s: combat, casting, and the cursor sitting "
+		.. "on the HUD. Having a target or being below full health keeps stage "
 		.. "one awake but not this one, because neither is evidence that you "
 		.. "are still in the chair."
 L["options.fader.zen_on_a_f_k.name"] = "When you go away"
@@ -785,11 +799,11 @@ L["options.fader.zen_shot_header"] = "The shot"
 L["options.fader.zen_shot_note"] =
 	"Zen sets up a camera rather than just clearing the screen: the "
 		.. "character settles, and the view pulls back over their "
-		.. "shoulder.\\n\\nThe zoom is exact and exactly reversible - the game "
-		.. "will tell us the current distance, so yours is put back rather "
-		.. "than guessed at. %s: the client offers no way to read the camera's "
-		.. "pitch, only to move it, so the way back is the same movement "
-		.. "reversed for the same time."
+		.. "shoulder.\\\\n\\\\nThe zoom is exact and exactly reversible - the "
+		.. "game will tell us the current distance, so yours is put back "
+		.. "rather than guessed at. %s: the client offers no way to read the "
+		.. "camera's pitch, only to move it, so the way back is the same "
+		.. "movement reversed for the same time."
 L["options.fader.zen_sit.name"] = "Sit down"
 L["options.fader.zen_track.desc"] =
 	"Looped on the music channel for as long as zen lasts. Random picks "
@@ -805,13 +819,14 @@ L["options.game_own.dialogs.name"] = "Dialogs"
 L["options.game_own.game_s_own"] = "Game panels"
 L["options.game_own.lettering.desc"] =
 	"The game's own type in this interface's letters - every panel, "
-		.. "every tooltip, every menu, and \"You can't do that yet\".\\n\\nA "
-		.. "change of FACE only: sizes stay as the game had them, so nothing "
-		.. "moves; outlines stay, because text drawn over the world needs "
-		.. "them; and colours stay, because a colour is the game telling you "
-		.. "something.\\n\\nOTHER ADDONS COME WITH IT. Anything drawn with the "
-		.. "game's own type reads as part of the same interface without its "
-		.. "author doing anything. One that chose its own lettering keeps it."
+		.. "every tooltip, every menu, and \"You can't do that "
+		.. "yet\".\\\\n\\\\nA change of FACE only: sizes stay as the game had "
+		.. "them, so nothing moves; outlines stay, because text drawn over the "
+		.. "world needs them; and colours stay, because a colour is the game "
+		.. "telling you something.\\\\n\\\\nOTHER ADDONS COME WITH IT. "
+		.. "Anything drawn with the game's own type reads as part of the same "
+		.. "interface without its author doing anything. One that chose its "
+		.. "own lettering keeps it."
 L["options.game_own.lettering.name"] = "Lettering"
 L["options.game_own.menus.desc"] =
 	"The right-click menus - the one on your portrait, your pet's, a "
@@ -972,13 +987,13 @@ L["options.nameplates.yellow_plate_means_my"] =
 
 L["options.onboard.already_done"] = "already done"
 L["options.onboard.desc"] =
-	"A tour of the interface, with a card for each stop. The rest of the "
-		.. "world dims, one element at a time is lifted out of the dim, and "
-		.. "the callout beside it explains what it is and how to use it."
-		.. "Every choice writes straight into your configuration the when"
-		.. "you change it, so there is no Apply at the end and "
-		.. "quitting half way through costs nothing.\\n\\nWhether it has run "
-		.. "is remembered per %s, not per profile - the tour teaches the "
+	"A tour of the interface, with a card for each stop. The rest of "
+		.. "the world dims, one element at a time is lifted out of the dim, "
+		.. "and the callout beside it explains what it is and how to use "
+		.. "it.Every choice writes straight into your configuration the "
+		.. "whenyou change it, so there is no Apply at the end and quitting "
+		.. "half way through costs nothing.\\\\n\\\\nWhether it has run is "
+		.. "remembered per %s, not per profile - the tour teaches the "
 		.. "interface rather than a profile, and somebody who has seen it on "
 		.. "their main has seen it."
 L["options.onboard.enabled.name"] = "Offer it on a new character"
@@ -1038,6 +1053,17 @@ L["options.quest.whatever_does_fit_reported"] =
 L["options.quest.whitelist_mode_only_blizzard"] =
 	"Whitelist mode only. Blizzard caps its list at five."
 
+L["options.resources.display.desc"] =
+	"The shelf under your own frame carrying shards, runes, chi, combo "
+		.. "points and the rest. In combat only drops the three-second grace "
+		.. "after a change and the dimmed full-bar state with it."
+L["options.resources.display.name"] = "Show the resource tray"
+L["options.resources.enabled.desc"] =
+	"Off removes the tray entirely. Characters with no secondary "
+		.. "resource never have one either way."
+L["options.resources.enabled.name"] = "Class resources"
+L["options.resources.header"] = "Class resources"
+
 L["options.threat.alarms.desc"] =
 	"On your own state only, and never more than once every six "
 		.. "seconds. This is the one that stops you from learning you have "
@@ -1063,12 +1089,12 @@ L["options.threat.threat"] = "Threat"
 L["options.toolbox.addon_columns.name"] = "Addon list columns"
 L["options.toolbox.desc"] =
 	"A drawer that docks to the centre of any screen edge, with a rail "
-		.. "that stays on screen when the drawer is shut.\\n\\nTo move it, %s "
-		.. "and drag the rail: four targets appear, one per edge, and the one "
-		.. "nearest the cursor is the one you get. It has four legal places "
-		.. "rather than a position, because each edge is a different "
-		.. "layout.\\n\\nThe edge it is docked to and whether it is open are "
-		.. "remembered per %s rather than per profile - a drawer edge is a "
+		.. "that stays on screen when the drawer is shut.\\\\n\\\\nTo move it, "
+		.. "%s and drag the rail: four targets appear, one per edge, and the "
+		.. "one nearest the cursor is the one you get. It has four legal "
+		.. "places rather than a position, because each edge is a different "
+		.. "layout.\\\\n\\\\nThe edge it is docked to and whether it is open "
+		.. "are remembered per %s rather than per profile - a drawer edge is a "
 		.. "habit somebody forms on one character."
 L["options.toolbox.grid_header"] = "Grids"
 L["options.toolbox.libdatabroker_data_sources"] = "LibDataBroker data sources"
@@ -1213,59 +1239,37 @@ L["questlog.build_header.quest_log"] = "Quest Log"
 
 L["questlog.build_panes.quest_selected"] = "No quest selected."
 
--- Only ever drawn on a client that has no word of its own for these - the tag
--- pill prefers DAILY and DAILY_QUEST_TAG_TEMPLATE, which arrive already in the
--- player's language. See FrequencyWords in Modules/QuestLog.lua.
-L["options.resources.header"] = "Class resources"
-L["options.resources.display.name"] = "Show the resource tray"
-L["options.resources.display.desc"] =
-	"The shelf under your own frame carrying shards, runes, chi, combo points"
-	.. " and the rest. In combat only drops the three-second grace after a"
-	.. " change and the dimmed full-bar state with it."
-L["options.resources.enabled.name"] = "Class resources"
-L["options.resources.enabled.desc"] =
-	"Off removes the tray entirely. Characters with no secondary resource"
-	.. " never have one either way."
-
--- resources --------------------------------------------------------------
---
--- The preview's labels. The class names are the CLIENT'S words everywhere else
--- in this addon, but these are not a class - they are the name of one board in
--- a walkthrough, and a translator handed "Warlock" and "soul shards"
--- separately cannot put them in the order their language wants.
-L["cmd.resources.no_tray"] = "this build has no resource tray"
-L["cmd.resources.none_s"] = "no class resource on this character - %s"
-L["cmd.resources.no_maximum"] = "nothing reports a maximum"
-
--- questtracker ------------------------------------------------------------
-L["questtracker.behind_fold_d"] =
-	"%d hidden by a folded zone in the quest log"
-
-L["resources.demo.shards"] = "Warlock · soul shards"
-L["resources.demo.embers"] = "Warlock · burning embers"
-L["resources.demo.fury"] = "Warlock · demonic fury"
-L["resources.demo.runes"] = "Death Knight · runes and runic power"
-L["resources.demo.chi"] = "Monk · chi"
-L["resources.demo.holy"] = "Paladin · holy power"
-L["resources.demo.combo"] = "Rogue · combo points"
-L["resources.demo.orbs"] = "Priest · shadow orbs"
-L["resources.demo.eclipse"] = "Druid · eclipse"
-L["resources.demo.showing_s"] = "resource preview: %s"
-L["resources.demo.off"] = "resource preview off"
+L["questlog.confirm_abandon.quest_longer_log_nothing"] =
+	"that quest is no longer in your log - nothing was abandoned."
 
 L["questlog.frequency.daily"] = "Daily"
 L["questlog.frequency.daily_s"] = "Daily %s"
 L["questlog.frequency.weekly"] = "Weekly"
 L["questlog.frequency.weekly_s"] = "Weekly %s"
 
-L["questlog.confirm_abandon.quest_longer_log_nothing"] =
-	"that quest is no longer in your log - nothing was abandoned."
-
 L["questlog.refresh_detail.required_s"] = "Required: %s"
 L["questlog.refresh_detail.reward_s"] = "Reward: %s"
 
 L["questlog.reward_card_click.reward_still_loading_try"] =
 	"that reward is still loading - try again in a moment."
+
+-- questtracker ------------------------------------------------------------
+
+L["questtracker.behind_fold_d"] = "%d hidden by a folded zone in the quest log"
+
+-- resources ---------------------------------------------------------------
+
+L["resources.demo.chi"] = "Monk · chi"
+L["resources.demo.combo"] = "Rogue · combo points"
+L["resources.demo.eclipse"] = "Druid · eclipse"
+L["resources.demo.embers"] = "Warlock · burning embers"
+L["resources.demo.fury"] = "Warlock · demonic fury"
+L["resources.demo.holy"] = "Paladin · holy power"
+L["resources.demo.off"] = "resource preview off"
+L["resources.demo.orbs"] = "Priest · shadow orbs"
+L["resources.demo.runes"] = "Death Knight · runes and runic power"
+L["resources.demo.shards"] = "Warlock · soul shards"
+L["resources.demo.showing_s"] = "resource preview: %s"
 
 -- toolbox -----------------------------------------------------------------
 
@@ -1292,9 +1296,8 @@ L["toolbox.refresh_widgets.tip"] =
 		.. "camera pulls back for the a Zen moment."
 L["toolbox.refresh_widgets.tip2"] =
 	"Plays your installed packs' music and stories while you are a "
-		.. "passenger. "
-		.. "The flight timer, the route and the countdown are separate and "
-		.. "stay either way."
+		.. "passenger. The flight timer, the route and the countdown are "
+		.. "separate and stay either way."
 L["toolbox.refresh_widgets.tip3"] =
 	"Hover an action button and press a key to bind it. Keys go into "
 		.. "Blizzard's own binding set, so they survive this addon being "
@@ -1393,6 +1396,9 @@ L["tour.toolbox_control.tap_edge"] = "tap an edge"
 -- tracker -----------------------------------------------------------------
 
 L["tracker.build.q_u_e_s"] = "Q U E S T S"
+
+L["tracker.diagnose.quest_tracker_text_window"] =
+	"quest tracker: in the text window - Ctrl+A then Ctrl+C to copy"
 
 L["tracker.navigate.can_t_route_quest"] = "can't route to that quest."
 L["tracker.navigate.quest"] = "the quest"

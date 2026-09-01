@@ -954,7 +954,7 @@ end
 --  combat or out, and safe to leave in the shipped file.
 function AB:DiagnoseFlyout()
 	local f = flyout
-	if not f then A:Print("flyout: no drawer built") return end
+	if not f then A:Print(L.bars.diagnose_flyout.flyout_drawer_built) return end
 
 	-- INTO THE TEXT BOX, NOT THE CHAT FRAME. /aether errors diag has done this
 	-- since it was written, for the reason written there: the chat frame is
@@ -1091,7 +1091,7 @@ function AB:DiagnoseFlyout()
 	if A.Errors and A.Errors.ShowText then
 		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "")
 			.. "flyout\n\n" .. body)
-		A:Print("flyout: in the text window - Ctrl+A then Ctrl+C to copy")
+		A:Print(L.bars.diagnose_flyout.flyout_text_window_ctrl)
 	else
 		-- No error catcher on this build, so chat is all there is. Still
 		-- better than saying nothing.

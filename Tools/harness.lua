@@ -19046,7 +19046,11 @@ do
 	A:RegisterTicker(last,  function() ran.last = true end)
 
 	A.lastFailure = nil
+	local said = {}
+	local realPrint = A.Print
+	A.Print = function(_, m) said[#said + 1] = tostring(m or "") end
 	tick(0.2)
+	A.Print = realPrint
 
 	check(ran.first and ran.last,
 		"both healthy tickers ran even though one between them threw - and"
@@ -19056,6 +19060,9 @@ do
 		tostring(A.lastFailure) .. ")")
 	check(boom.lastError ~= nil,
 		"on the owner as well, so /aether errors diag can say who")
+	check(#said == 1 and said[1]:find("ticker", 1, true) ~= nil
+		and said[1]:find("deliberate", 1, true) ~= nil,
+		"and the player is TOLD which loop it was (" .. tostring(said[1]) .. ")")
 
 	A:UnregisterTicker(first)
 	A:UnregisterTicker(boom)
@@ -19084,7 +19091,15 @@ do
 	A:RegisterEvent(last,  "AETHER_TEST_EVENT", function() ran.last = true end)
 
 	A.lastFailure = nil
+	-- WHAT IT PRINTS, not just what it records. The message names the event
+	-- through a format string now, and a format string that lost its %s would
+	-- still print, still be recorded, and still say nothing about which handler
+	-- died - which is the one thing the line exists to say.
+	local said = {}
+	local realPrint = A.Print
+	A.Print = function(_, m) said[#said + 1] = tostring(m or "") end
 	fire("AETHER_TEST_EVENT")
+	A.Print = realPrint
 
 	check(ran.first and ran.last,
 		"both healthy listeners ran even though one between them threw - which"
@@ -19095,6 +19110,10 @@ do
 		.. tostring(A.lastFailure) .. ")")
 	check(boom.lastError ~= nil,
 		"on the owner as well, so /aether errors diag can say who")
+	check(#said == 1 and said[1]:find("AETHER_TEST_EVENT", 1, true) ~= nil
+		and said[1]:find("deliberate", 1, true) ~= nil,
+		"and the player is TOLD, with the event named beside the error ("
+		.. tostring(said[1]) .. ")")
 
 	A:UnregisterEvent(first, "AETHER_TEST_EVENT")
 	A:UnregisterEvent(boom,  "AETHER_TEST_EVENT")

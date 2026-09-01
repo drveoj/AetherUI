@@ -350,7 +350,7 @@ pump:SetScript("OnEvent", function(_, event, ...)
 			if not ok then
 				A.lastFailure = "event '" .. tostring(event) .. "': " .. tostring(err)
 				if type(owner) == "table" then owner.lastError = tostring(err) end
-				A:Print(A.Bad("event '" .. tostring(event) .. "':") .. " " .. tostring(err))
+				A:Print(A.Bad(A.F(L.core.pump.event, tostring(event))) .. " " .. tostring(err))
 			end
 		end
 	end
@@ -433,7 +433,7 @@ pump:SetScript("OnUpdate", function(_, elapsed)
 		if not ok then
 			A.lastFailure = "ticker: " .. tostring(err)
 			if type(owner) == "table" then owner.lastError = tostring(err) end
-			A:Print(A.Bad("ticker:") .. " " .. tostring(err))
+			A:Print(A.Bad(L.core.pump.ticker) .. " " .. tostring(err))
 		end
 	end
 end)

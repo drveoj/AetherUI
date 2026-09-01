@@ -952,7 +952,7 @@ function QT:Diagnose()
 	if A.Errors and A.Errors.ShowText then
 		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "")
 			.. "quest tracker\n\n" .. body)
-		A:Print("quest tracker: in the text window - Ctrl+A then Ctrl+C to copy")
+		A:Print(L.tracker.diagnose.quest_tracker_text_window)
 	else
 		A:Print(body)
 	end

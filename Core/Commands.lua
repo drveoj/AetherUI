@@ -816,7 +816,7 @@ handlers.ifec = function(arg)
 	-- the one part of the interface that cannot be selected.
 	if arg == "routes" then
 		local Route = IFEC.Route
-		if not Route then A:Print("ifec: the route lookup is not loaded") return end
+		if not Route then A:Print(L.cmd.ifec.ifec_route_lookup_loaded) return end
 
 		local out = {}
 		local function say(line) out[#out + 1] = tostring(line) end
@@ -1250,7 +1250,7 @@ handlers.bar = function(arg, rest)
 	-- the client instead, which is how everything else here got settled.
 	if arg == "flyout" then
 		if AB and AB.DiagnoseFlyout then AB:DiagnoseFlyout()
-		else A:Print("this build has no flyout drawer") end
+		else A:Print(L.cmd.bar.build_has_flyout_drawer) end
 		return
 	end
 
