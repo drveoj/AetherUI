@@ -6430,13 +6430,29 @@ do
 		-- SELECTING A TAB MOVES ITS TEXT. The client nudges the label up into
 		-- the raised part of its own stone art - right for that art, wrong for
 		-- a flat pill - and it does it on every selection, not once at setup.
+		-- ...AND IT READS THE OFFSET OFF THE TAB. `selectedTextY or -3`, and
+		-- `deselectedTextY or 2` on the way back up - four values the client
+		-- looks for on the button before falling back to its own numbers, which
+		-- makes them ours to set. A mock that hard-coded the nudge could not
+		-- show that setting them is what stops the fight.
 		function _G.PanelTemplates_SelectTab(tab)
 			local fs = tab:GetFontString()
 			if fs then
 				fs:ClearAllPoints()
-				fs:SetPoint("CENTER", tab, "CENTER", 0, 3)
+				fs:SetPoint("CENTER", tab, "CENTER",
+					tab.selectedTextX or 0, tab.selectedTextY or -3)
 			end
 			tab:Disable()
+		end
+
+		function _G.PanelTemplates_DeselectTab(tab)
+			local fs = tab:GetFontString()
+			if fs then
+				fs:ClearAllPoints()
+				fs:SetPoint("CENTER", tab, "CENTER",
+					tab.deselectedTextX or 0, tab.deselectedTextY or 2)
+			end
+			tab:Enable()
 		end
 
 		-- "All" collapses and expands the whole tree, and the client hangs it
@@ -32826,6 +32842,24 @@ do
 		"the selected tab's label stays in the middle of its tab (y=" ..
 		tostring(ly) .. ") - the client nudges it up on every selection, which"
 		.. " is right for raised stone and wrong for a flat rail")
+
+	-- AND WHEN THE CLIENT DOES IT WITH NOTHING OF OURS RUNNING.
+	--
+	-- Answering the nudge in our own tab dresser only covers the selections we
+	-- hear about. PAGING a tab re-runs the client's update, which re-selects
+	-- the tab without any event of ours firing - so the label dropped three
+	-- pixels and stayed there until the player next changed tabs. On every
+	-- multi-page tab, on every window with tabs.
+	--
+	-- The four offsets are read off the BUTTON, so they are ours to set: nought
+	-- on both states puts the client's own re-anchor where we want it and there
+	-- is nothing left to fight.
+	_G.PanelTemplates_DeselectTab(t1)
+	_G.PanelTemplates_SelectTab(t1)
+	local rp, _, rrelP, rx, ry = t1:GetFontString():GetPoint(1)
+	check(rp == "CENTER" and rrelP == "CENTER" and rx == 0 and ry == 0,
+		"and stays there when the client re-selects it on its own, with"
+		.. " nothing of ours running (y=" .. tostring(ry) .. ")")
 
 	fire("PLAYER_ENTERING_WORLD")
 

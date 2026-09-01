@@ -2562,6 +2562,27 @@ local function StyleTabState(tab)
 		text:SetPoint("CENTER", tab, "CENTER", 0, 0)
 	end
 	if text.SetJustifyH then text:SetJustifyH("CENTER") end
+
+	-- ...AND TELL THE CLIENT WHERE WE PUT IT, rather than putting it back
+	-- afterwards for ever.
+	--
+	-- PanelTemplates_SelectTab and _DeselectTab each re-anchor the label
+	-- themselves - CENTER at `selectedTextY or -3` when a tab goes down, at
+	-- `deselectedTextY or 2` when it comes up - because Blizzard's selected tab
+	-- art physically sits lower and the words move with it. Ours is a flat
+	-- rail, so both numbers are wrong for us.
+	--
+	-- Answering it in this function only covers the selections WE hear about.
+	-- Paging a tab re-runs the client's own update, which re-selects the tab
+	-- without anything of ours running - so the label dropped three pixels and
+	-- stayed there until the next time the player changed tabs, which is
+	-- exactly what Joe saw and on every multi-page tab.
+	--
+	-- Those four offsets are read off the tab, so they are ours to set. Nought
+	-- on both states makes the client's own re-anchor land where we want it and
+	-- there is nothing left to fight.
+	tab.selectedTextX, tab.selectedTextY = 0, 0
+	tab.deselectedTextX, tab.deselectedTextY = 0, 0
 end
 
 --- How much room the tab row actually has: the visible window, and no more.
