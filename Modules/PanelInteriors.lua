@@ -412,10 +412,31 @@ local function ClientRecess(frame, path, x, y)
 		fill = "wellFill", edge = "wellEdge" })
 
 	if frame and x and y and frame.__aetherBodyShift then
-		ins:SetPoint("TOPLEFT", frame, "TOPLEFT",
-			x, -(y + frame.__aetherBodyShift))
+		PN.MoveRecess(ins, frame, x, y + frame.__aetherBodyShift)
 	end
 	return ins
+end
+
+--- Put one of the client's recesses where a well goes, keeping its far corner.
+--
+--  CLEARED AND RE-SET, NOT SET AGAIN. A frame accumulates anchors: setting
+--  TOPLEFT a second time without clearing leaves the region spanned between
+--  two of them, and every getter still answers about the FIRST - which reads
+--  exactly like it worked. The harness says so where it records a point, and
+--  the talent window's recess sat at the client's own 60 for a build because
+--  of it.
+--
+--  The far corner is the client's business - on the character sheet UpdateSize
+--  rewrites it per tab - so it is read back and re-applied rather than
+--  invented.
+function PN.MoveRecess(ins, frame, x, y)
+	if not (ins and frame and ins.ClearAllPoints) then return end
+	local far = { ins:GetPoint(2) }
+	ins:ClearAllPoints()
+	ins:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -y)
+	if far[1] then
+		ins:SetPoint(far[1], far[2], far[3], far[4], far[5])
+	end
 end
 
 --- The paper doll's sidebar, which only Mists has.
@@ -1625,7 +1646,18 @@ end
 -- of 200 locals in a function, and one more name will not load. See the note in
 -- [[mists-port]] - the file needs splitting, not another squeeze.
 function PN.DressMistsTalents(frame, store)
-	ClientRecess(frame, "PlayerTalentFrame.Inset", CHAR.insetX, CHAR.insetY)
+	-- THE RECESS IS THIS WINDOW'S WELL, so it is put where a well goes: a body
+	-- padding below the header band. Everything on the window is anchored to
+	-- it and follows it, which is why nothing here is in the body list.
+	--
+	-- Not ClientRecess's shift-by-__aetherBodyShift, which is for a window
+	-- whose panes move too: with an empty body list there is no shift, and the
+	-- client's own 60 leaves six units under a band of 54.
+	local ins = ClientRecess(nil, "PlayerTalentFrame.Inset")
+	if ins and frame then
+		PN.MoveRecess(ins, frame, CHAR.insetX,
+			(frame.__aetherHeadH or W.PANEL_HEAD_H) + W.PANEL_PAD)
+	end
 
 	for _, name in ipairs({ "PlayerTalentFrameSpecialization",
 		"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }) do

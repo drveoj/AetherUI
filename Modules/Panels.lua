@@ -897,10 +897,24 @@ do
 		-- never creates.
 		tal.subtitle = nil
 
-		-- Specialization, Talents, Glyphs - and the pet's specialization, which
-		-- has no tab of its own and is swapped in behind the first one.
-		tal.body = { "PlayerTalentFrameSpecialization",
-			"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }
+		-- AND NOTHING IN THE BODY LIST, WHICH IS THE POINT.
+		--
+		-- The body list is for content the client hung off the WINDOW, which we
+		-- then move down and in to clear our band. Every pane here is anchored
+		-- to PlayerTalentFrameInsetBg instead - to the recess - so it is
+		-- already correctly placed WITHIN that recess, and shifting it moves it
+		-- out of the box drawn for it.
+		--
+		-- Listing them moved the content twice: once because the recess came
+		-- down, and again because each pane was offset inside it. The dump
+		-- showed all three reading "TOPLEFT->TOPLEFT 22,-20 on
+		-- PlayerTalentFrameInsetBg" - twenty-two units out of a recess whose
+		-- own measured inset was four.
+		--
+		-- So the recess is placed where a well goes and the panes are left
+		-- alone; they follow it because they are tied to it. Nothing to measure
+		-- means nothing to list.
+		tal.body = {}
 	end
 end
 

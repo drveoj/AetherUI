@@ -35723,6 +35723,43 @@ do
 		check(tf.__aetherBody == nil or not tf.__aetherBody:IsShown(),
 			"and no body well is drawn round it")
 
+		-- AND THE PANES ARE LEFT WHERE THE CLIENT PUT THEM IN IT.
+		--
+		-- Every pane is anchored to PlayerTalentFrameInsetBg, so it is already
+		-- correctly placed WITHIN the recess: the body shift is for content
+		-- hung off the WINDOW, and applying it here moves the content out of
+		-- the box drawn for it. Listing them moved everything twice - once
+		-- because the recess came down, again because each pane was offset
+		-- inside it - and the window's own dump said so in one line:
+		--
+		--   TOPLEFT->TOPLEFT 22,-20 on PlayerTalentFrameInsetBg
+		--
+		-- twenty-two units out of a recess whose measured inset was four.
+		_G.__moved = {}
+		for _, n in ipairs({ "PlayerTalentFrameSpecialization",
+			"PlayerTalentFramePetSpecialization", "PlayerTalentFrameTalents" }) do
+			local _, rel, _, ox, oy = _G[n]:GetPoint(1)
+			if rel == _G.PlayerTalentFrameInsetBg
+				and (math.abs(ox or 0) > 0.5 or math.abs(oy or 0) > 0.5) then
+				_G.__moved[#_G.__moved + 1] = n .. " by " ..
+					string.format("%.0f,%.0f", ox or 0, oy or 0)
+			end
+		end
+		check(#_G.__moved == 0,
+			"a pane anchored to the recess is not then shifted inside it ("
+			.. (#_G.__moved > 0 and table.concat(_G.__moved, ", ")
+			or "all three left alone") .. ")")
+
+		-- AND THE RECESS ITSELF SITS WHERE A WELL SITS: a body padding below
+		-- the band, rather than at the client's own 60 - which leaves six units
+		-- under a band of 54.
+		local _, irel, _, _, iy = _G.PlayerTalentFrameInset:GetPoint(1)
+		check(irel == tf and math.abs((iy or 0)
+			+ (tf.__aetherHeadH + A.Widgets.PANEL_PAD)) < 0.5,
+			"and the recess clears the header band by the body padding (" ..
+			tostring(iy) .. " against " ..
+			tostring(-(tf.__aetherHeadH + A.Widgets.PANEL_PAD)) .. ")")
+
 		-- SIX TIERS OF THREE. The rows are parent keys on the pane with no globals
 		-- of their own - PlayerTalentFrameTalents["tier"..n] - which is how the
 		-- client's own code walks them, and a sweep that only knows globals reaches
