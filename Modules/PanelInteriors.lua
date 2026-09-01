@@ -429,6 +429,44 @@ end
 --  The far corner is the client's business - on the character sheet UpdateSize
 --  rewrites it per tab - so it is read back and re-applied rather than
 --  invented.
+--- Seat one of the client's recesses as our well, growing the window for it.
+--
+--  THE CLIENT'S CONTENT IS DRAWN TO THE SIZE OF ITS OWN RECESS. Insetting that
+--  recess to our padding takes the difference away from content laid out at a
+--  fixed size, and it is clipped rather than reflowed - which on the talent
+--  window put Learn on top of the last two spells.
+--
+--  So the frame grows by exactly what our padding costs on each edge, and the
+--  recess keeps at least the room the client gave it. Recorded, because this
+--  runs on every dress and a growth applied twice walks the window off screen.
+function PN.SeatRecess(ins, frame, top)
+	if not (ins and frame and ins.ClearAllPoints) then return end
+
+	-- The client's own insets, read once and kept: after the first seat they
+	-- are ours and reading them back would compound.
+	local was = frame.__aetherRecessWas
+	if not was then
+		local _, _, _, x1, y1 = ins:GetPoint(1)
+		local _, _, _, x2, y2 = ins:GetPoint(2)
+		if not (x1 and x2) then return end
+		was = { left = x1, top = -y1, right = -x2, bottom = y2 }
+		frame.__aetherRecessWas = was
+	end
+
+	local pad = W.PANEL_PAD
+	local growW = math.max(0, pad - was.left) + math.max(0, pad - was.right)
+	local growH = math.max(0, top - was.top) + math.max(0, pad - was.bottom)
+	if not frame.__aetherRecessGrown and frame.SetWidth and frame.GetWidth then
+		frame:SetWidth((frame:GetWidth() or 0) + growW)
+		frame:SetHeight((frame:GetHeight() or 0) + growH)
+		frame.__aetherRecessGrown = true
+	end
+
+	ins:ClearAllPoints()
+	ins:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -top)
+	ins:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad)
+end
+
 function PN.MoveRecess(ins, frame, x, y)
 	if not (ins and frame and ins.ClearAllPoints) then return end
 	local far = { ins:GetPoint(2) }
@@ -1655,20 +1693,27 @@ function PN.DressMistsTalents(frame, store)
 	-- client's own 60 leaves six units under a band of 54.
 	local ins = ClientRecess(nil, "PlayerTalentFrame.Inset")
 	if ins and frame then
-		-- ALL FOUR SIDES, which is the rule and not a suggestion. Seating only
-		-- the TOP left the client's own 4, 6 and 26 on the other three, so the
-		-- window had a body padding above its content and none beside or below
-		-- it. That is the same report a third time, and the check that goes
-		-- with it now measures every edge rather than the one I remembered.
+		-- ALL FOUR SIDES, AND THE WINDOW GROWS TO PAY FOR THEM.
+		--
+		-- Seating only the TOP left the client's own 4, 6 and 26 on the other
+		-- three, so there was room above the content and none beside or below.
+		-- Seating all four without growing the frame is the other half of the
+		-- same mistake: this window is 646 by 468 and the client's recess is
+		-- 636 by 382, which is exactly what the specialization page is drawn
+		-- to fill. Insetting that to our padding takes 26 across and 12 down
+		-- AWAY from content laid out at a fixed size, so the page is clipped
+		-- and Learn ends up over the last two spells.
+		--
+		-- Every other window in this module grows by what its shift costs.
+		-- This one has an empty body list - its panes are anchored to the
+		-- recess and must not move - so nothing was growing it. The recess is
+		-- what moved, so the recess is what the window has to pay for.
 		--
 		-- Measured off the FRAME rather than the glass: the glass reaches 34
 		-- below the frame to carry the tab row, so a padding taken from its
 		-- bottom would put the recess on top of the tabs.
-		local pad = W.PANEL_PAD
-		ins:ClearAllPoints()
-		ins:SetPoint("TOPLEFT", frame, "TOPLEFT", pad,
-			-((frame.__aetherHeadH or W.PANEL_HEAD_H) + pad))
-		ins:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad)
+		PN.SeatRecess(ins, frame,
+			(frame.__aetherHeadH or W.PANEL_HEAD_H) + W.PANEL_PAD)
 	end
 
 	for _, name in ipairs({ "PlayerTalentFrameSpecialization",

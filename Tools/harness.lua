@@ -35791,6 +35791,36 @@ do
 			and table.concat(_G.__edges, ", ") or "all four at " ..
 			tostring(_G.__pad)) .. ")")
 
+		-- AND THE CONTENT KEEPS THE ROOM IT WAS DRAWN FOR. Joe, on the third
+		-- pass at this window: "It looks to me like you're just trying to stuff
+		-- too much into the space. Maybe make the window bigger?" - which is
+		-- exactly right and is what every other window in this module does.
+		--
+		-- The specialization page is laid out at a fixed size to fill the
+		-- client's own recess. Insetting that recess to our padding without
+		-- growing the frame takes the difference away from content that is
+		-- CLIPPED rather than reflowed, so the last two spells went under the
+		-- Learn button.
+		_G.__was = tf.__aetherRecessWas
+		_G.__hadW = 646 - _G.__was.left - _G.__was.right
+		_G.__hadH = 468 - _G.__was.top - _G.__was.bottom
+		check(_G.__ins:GetWidth() >= _G.__hadW - 0.5
+			and _G.__ins:GetHeight() >= _G.__hadH - 0.5,
+			"and the window grew to pay for it, so the recess is no smaller"
+			.. " than the one the client drew its page to fill (" ..
+			string.format("%.0fx%.0f", _G.__ins:GetWidth(),
+				_G.__ins:GetHeight()) .. " against " ..
+			string.format("%.0fx%.0f", _G.__hadW, _G.__hadH) .. ")")
+
+		-- ...AND ONCE. A growth applied on every dress walks the window off
+		-- the screen a tab click at a time.
+		_G.__w0, _G.__h0 = tf:GetWidth(), tf:GetHeight()
+		PN.Dress(tf)
+		check(math.abs(tf:GetWidth() - _G.__w0) < 0.5
+			and math.abs(tf:GetHeight() - _G.__h0) < 0.5,
+			"and dressing it again does not grow it again (" ..
+			string.format("%.0fx%.0f", tf:GetWidth(), tf:GetHeight()) .. ")")
+
 		-- AND ALL THREE LEARN BUTTONS ARE OURS. The talents pane declares its
 		-- own $parentLearnButton exactly as the two specialization pages do,
 		-- and dressing two of the three left a Blizzard plate on the tab a
