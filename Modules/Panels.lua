@@ -2621,8 +2621,34 @@ PN.TabAt = TabAt
 --  The client marks the open tab by DISABLING it - a disabled tab is the one
 --  you are looking at, which reads backwards until you know it.
 local function StyleTabState(tab)
-	local enabled = (tab.IsEnabled == nil) or tab:IsEnabled()
-	local selected = not enabled
+	-- WHICH TAB IS UP IS THE FRAME'S ANSWER, NOT THE BUTTON'S.
+	--
+	-- The client marks the selected tab by DISABLING it, so "disabled" reads
+	-- as "selected" - and that was the test here. But it disables a tab that is
+	-- not AVAILABLE by exactly the same means, and the two are indistinguishable
+	-- from the button alone.
+	--
+	-- Joe found it on the inspect window: clicking Guild on a character with no
+	-- guild left the mark under Guild AND under the tab that was actually up,
+	-- because the client had disabled the unavailable one and never changed
+	-- which pane was showing.
+	--
+	-- PanelTemplates_SetTab records the answer as `selectedTab` on the WINDOW,
+	-- and PanelTemplates_GetSelectedTab is the client reading its own note. So
+	-- the note is what we ask, and the enabled test is kept only for a window
+	-- that has no note to read.
+	local host = tab.GetParent and tab:GetParent()
+	for _ = 1, 2 do
+		if host and host.selectedTab then break end
+		host = host and host.GetParent and host:GetParent() or nil
+	end
+
+	local selected
+	if host and host.selectedTab and tab.GetID then
+		selected = tab:GetID() == host.selectedTab
+	else
+		selected = not ((tab.IsEnabled == nil) or tab:IsEnabled())
+	end
 
 	-- BRIGHT TEXT AND A MARK, never a fill. See W.TabState: a filled tab is
 	-- indistinguishable from Create, Send or Accept, and those do things

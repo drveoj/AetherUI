@@ -6669,17 +6669,33 @@ do
 
 		-- Two tabs, anchored by their CENTRE below the bottom edge, which is
 		-- where this template hangs them - outside the window's own art.
-		for i, label in ipairs({ "Character", "Honor" }) do
+		local inspectTabs = _G.__mists
+			and { "Character", "PvP", "Talents", "Guild" }
+			or { "Character", "Honor" }
+		for i, label in ipairs(inspectTabs) do
 			local t = CreateFrame("Button", "InspectFrameTab" .. i, inf)
 			t:SetNormalTexture("tab-up")
 			t:SetDisabledTexture("tab-disabled")
 			t:SetPoint("CENTER", inf, "BOTTOMLEFT", 60 + (i - 1) * 100, -12)
+			t:SetID(i)
 			local fs = t:CreateFontString(nil, "OVERLAY")
 			fs:SetText(label)
 			_G["InspectFrameTab" .. i .. "Text"] = fs
 			t.__fs = fs
 			function t:GetFontString() return self.__fs end
 		end
+
+		-- WHICH TAB IS UP IS A NOTE ON THE WINDOW, not a state of the button.
+		-- PanelTemplates_SetTab writes `selectedTab` and
+		-- PanelTemplates_GetSelectedTab reads it back; the client marks that
+		-- tab by DISABLING it - and it disables an UNAVAILABLE tab by exactly
+		-- the same means, which is why the button cannot be asked.
+		inf.selectedTab = 1
+		_G.InspectFrameTab1:Disable()
+
+		-- A TAB THAT IS NOT AVAILABLE, which is the case that told them apart:
+		-- Guild on a character with no guild. Disabled, and NOT selected.
+		if _G.__mists then _G.InspectFrameTab4:Disable() end
 	end
 	-- The spellbook's insides.
 	--
@@ -16824,6 +16840,31 @@ section("panels: somebody else's character sheet", function()
 	-- THE TABS HANG OFF THE BOTTOM EDGE, outside the window's own art, the
 	-- way the vendor's do - so the glass has to reach past the frame or the
 	-- row sits on bare screen.
+	-- ONE MARK, ON THE TAB THAT IS ACTUALLY UP.
+	--
+	-- The client marks the selected tab by DISABLING it - and it disables a tab
+	-- that is not AVAILABLE by exactly the same means. Asked of the button,
+	-- those are the same answer, so clicking Guild on a character with no guild
+	-- left the mark under Guild AND under the tab still showing.
+	--
+	-- PanelTemplates_SetTab writes the answer as `selectedTab` on the WINDOW.
+	-- That note is the only thing that can tell them apart.
+	if _G.__mists then
+		_G.__marked = {}
+		for i = 1, 4 do
+			local tb = _G["InspectFrameTab" .. i]
+			if tb.__aetherMark and tb.__aetherMark:IsShown() then
+				_G.__marked[#_G.__marked + 1] = i
+			end
+		end
+		check(#_G.__marked == 1 and _G.__marked[1] == _G.InspectFrame.selectedTab,
+			"exactly one tab is marked, and it is the one the window says is"
+			.. " up - not every tab the client happens to have disabled ("
+			.. (#_G.__marked > 0 and table.concat(_G.__marked, ", ") or "none")
+			.. " marked, window says " ..
+			tostring(_G.InspectFrame.selectedTab) .. ")")
+	end
+
 	check(_G.InspectFrameTab1.__aetherMark ~= nil,
 		"a tab gets the mark every other tab in the interface gets")
 	local _, rel, at = _G.InspectFrameTab1:GetPoint()
