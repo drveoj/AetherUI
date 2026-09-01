@@ -915,6 +915,23 @@ do
 		-- alone; they follow it because they are tied to it. Nothing to measure
 		-- means nothing to list.
 		tal.body = {}
+
+		-- AND LEARN IS AN ACTION, so it goes in a footer strip like every other
+		-- window's. The client hangs it off the BOTTOM of whichever pane is up,
+		-- 22 units BELOW that pane's own edge - so with the recess seated to
+		-- our padding it landed between the content and the tab rail, in the
+		-- gap rather than in a strip.
+		--
+		-- One per pane and all three listed, because the strip is laid out for
+		-- whatever is VISIBLE - the same as the quest giver's seven and the
+		-- postbox's four. They are parent keys with no globals of their own,
+		-- which the entry reaches by path.
+		tal.footer  = W.PANEL_FOOT_H
+		tal.actions = { mid = {
+			"PlayerTalentFrameSpecialization.learnButton",
+			"PlayerTalentFramePetSpecialization.learnButton",
+			"PlayerTalentFrameTalents.learnButton",
+		} }
 	end
 end
 

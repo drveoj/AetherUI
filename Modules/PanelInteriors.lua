@@ -439,7 +439,7 @@ end
 --  So the frame grows by exactly what our padding costs on each edge, and the
 --  recess keeps at least the room the client gave it. Recorded, because this
 --  runs on every dress and a growth applied twice walks the window off screen.
-function PN.SeatRecess(ins, frame, top)
+function PN.SeatRecess(ins, frame, top, bottom)
 	if not (ins and frame and ins.ClearAllPoints) then return end
 
 	-- The client's own insets, read once and kept: after the first seat they
@@ -454,8 +454,9 @@ function PN.SeatRecess(ins, frame, top)
 	end
 
 	local pad = W.PANEL_PAD
+	bottom = bottom or pad
 	local growW = math.max(0, pad - was.left) + math.max(0, pad - was.right)
-	local growH = math.max(0, top - was.top) + math.max(0, pad - was.bottom)
+	local growH = math.max(0, top - was.top) + math.max(0, bottom - was.bottom)
 	if not frame.__aetherRecessGrown and frame.SetWidth and frame.GetWidth then
 		frame:SetWidth((frame:GetWidth() or 0) + growW)
 		frame:SetHeight((frame:GetHeight() or 0) + growH)
@@ -464,7 +465,7 @@ function PN.SeatRecess(ins, frame, top)
 
 	ins:ClearAllPoints()
 	ins:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -top)
-	ins:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad)
+	ins:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, bottom)
 end
 
 function PN.MoveRecess(ins, frame, x, y)
@@ -1712,8 +1713,12 @@ function PN.DressMistsTalents(frame, store)
 		-- Measured off the FRAME rather than the glass: the glass reaches 34
 		-- below the frame to carry the tab row, so a padding taken from its
 		-- bottom would put the recess on top of the tabs.
+		-- ...AND STOPPING ABOVE THE FOOTER STRIP, which is where Learn now
+		-- lives. Without that the recess ran down to the tab rail and the
+		-- client's own action row sat in the gap between the two.
 		PN.SeatRecess(ins, frame,
-			(frame.__aetherHeadH or W.PANEL_HEAD_H) + W.PANEL_PAD)
+			(frame.__aetherHeadH or W.PANEL_HEAD_H) + W.PANEL_PAD,
+			W.PANEL_FOOT_H + W.PANEL_PAD)
 	end
 
 	for _, name in ipairs({ "PlayerTalentFrameSpecialization",

@@ -35781,7 +35781,12 @@ do
 				and math.abs((x2 or 0) + _G.__pad) < 0.5) then
 				_G.__edges[#_G.__edges + 1] = "right=" .. tostring(x2)
 			end
-			if not (p2 == "BOTTOMRIGHT" and math.abs((y2 or 0) - _G.__pad) < 0.5) then
+			-- THE FOOT STOPS ABOVE THE STRIP, not at the padding: Learn is an
+			-- action and lives in a footer strip like every other window's, so
+			-- the recess has to clear it. Without that the recess ran to the
+			-- tab rail and the client's action row sat in the gap between.
+			if not (p2 == "BOTTOMRIGHT" and math.abs((y2 or 0)
+				- (A.Widgets.PANEL_FOOT_H + _G.__pad)) < 0.5) then
 				_G.__edges[#_G.__edges + 1] = "bottom=" .. tostring(y2)
 			end
 		end
@@ -35803,7 +35808,9 @@ do
 		-- Learn button.
 		_G.__was = tf.__aetherRecessWas
 		_G.__hadW = 646 - _G.__was.left - _G.__was.right
-		_G.__hadH = 468 - _G.__was.top - _G.__was.bottom
+		-- The height it had, less the strip we have taken for its own Learn
+		-- button: that row was inside the client's recess and is now below it.
+		_G.__hadH = 468 - _G.__was.top - _G.__was.bottom - A.Widgets.PANEL_FOOT_H
 		check(_G.__ins:GetWidth() >= _G.__hadW - 0.5
 			and _G.__ins:GetHeight() >= _G.__hadH - 0.5,
 			"and the window grew to pay for it, so the recess is no smaller"
