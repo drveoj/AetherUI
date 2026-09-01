@@ -35749,6 +35749,30 @@ do
 			(#_G.__blank > 0 and table.concat(_G.__blank, ", ") or "all eighteen")
 			.. ")")
 
+		-- AT THE SIZE THE CLIENT GAVE IT. A talent is a WIDE ROW - 190 by 50,
+		-- with a 40px icon at one end and the name beside it - and a cell sizes
+		-- its picture from the BUTTON: DecorateSlot does icon:SetAllPoints(f),
+		-- so the size argument does not constrain it and every icon came out
+		-- stretched into an oval the width of the row.
+		--
+		-- The vendor's rows and the quest's reward items both say this where
+		-- they are dressed. This is the third window to invite it.
+		_G.__wide = {}
+		for tier = 1, 6 do
+			local row = _G.PlayerTalentFrameTalents["tier" .. tier]
+			for col = 1, 3 do
+				local ic = row["talent" .. col].icon
+				if math.abs((ic:GetWidth() or 0) - 40) > 0.5 then
+					_G.__wide[#_G.__wide + 1] = tier .. "." .. col .. "=" ..
+						string.format("%.0f", ic:GetWidth() or 0)
+				end
+			end
+		end
+		check(#_G.__wide == 0,
+			"and at the 40 the client sized it, not stretched across the row ("
+			.. (#_G.__wide > 0 and table.concat(_G.__wide, ", ")
+			or "all eighteen") .. ")")
+
 		-- THE ROW'S LEVEL, which the client draws in twenty-point gold down the
 		-- left of each tier.
 		-- NAMED, NOT MERELY NON-NIL. The pane-wide font sweep re-roles every

@@ -1662,11 +1662,26 @@ function PN.DressMistsTalents(frame, store)
 					-- IT, the same division as the sidebar tabs and the model
 					-- controls. Swept whole, every talent in the tree loses its
 					-- icon and the window becomes eighteen empty boxes.
+					-- NOT A CELL, WHICH IS THE MISTAKE THIS WINDOW INVITES. A
+					-- talent is a WIDE ROW - 190 by 50, with a 40px icon at one
+					-- end and the talent's name beside it - and Reskin.Slot
+					-- sizes its cell from the BUTTON, so every icon came out
+					-- stretched into an oval the width of the row.
+					--
+					-- Exactly the vendor's rows and the quest's reward items,
+					-- both of which say so where they are dressed. The picture
+					-- keeps the size the client gave it and gets a cell of its
+					-- own around it, not around the row.
 					Reskin.ClearButton(b)
 					if type(store) == "table" then
 						Reskin.StripExcept(b, store, b.icon and { b.icon } or nil)
 					end
-					Reskin.Slot(b, { icon = b.icon, store = store })
+					-- ...AND NOT DECORATED AT ALL. DecorateSlot does
+					-- icon:SetAllPoints(f) on the frame it is handed, so the
+					-- size argument does not constrain it: a cell round this
+					-- button stretches the picture across all 190 units however
+					-- small a size it is given. The icon keeps the 40 the client
+					-- gave it, which is what the vendor's rows do.
 					if b.name then
 						Roled(b.name, "pnBody")
 						W.Color(b.name, Palette.c.text)
