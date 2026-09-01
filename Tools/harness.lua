@@ -19027,6 +19027,42 @@ local function shownPips()
 	return n
 end
 
+print("== tickers: one throwing does not take the others with it ==")
+do
+	-- THE SAME FAULT THE EVENT LOOP WAS GIVEN ISOLATION FOR, and the ticker
+	-- loop never got it: a throw aborted the loop, so every module registered
+	-- after the thrower stopped animating for that frame - and which ones those
+	-- were came down to `pairs` order over a table keyed by the module itself.
+	--
+	-- Nothing throws in a ticker today, so this is a guard rather than a fix
+	-- for anything observed. It is here because the loop it mirrors has one and
+	-- the reason is the same: silence here is a module that has quietly stopped
+	-- animating, with nothing on screen and nothing in chat.
+	local ran = {}
+	local first, boom, last = {}, {}, {}
+
+	A:RegisterTicker(first, function() ran.first = true end)
+	A:RegisterTicker(boom,  function() error("deliberate") end)
+	A:RegisterTicker(last,  function() ran.last = true end)
+
+	A.lastFailure = nil
+	tick(0.2)
+
+	check(ran.first and ran.last,
+		"both healthy tickers ran even though one between them threw - and"
+		.. " `pairs` order means neither can be said to be the lucky one")
+	check(A.lastFailure ~= nil and A.lastFailure:find("ticker", 1, true),
+		"and the throw is RECORDED rather than swallowed (" ..
+		tostring(A.lastFailure) .. ")")
+	check(boom.lastError ~= nil,
+		"on the owner as well, so /aether errors diag can say who")
+
+	A:UnregisterTicker(first)
+	A:UnregisterTicker(boom)
+	A:UnregisterTicker(last)
+	A.lastFailure = nil
+end
+
 print("== events: one listener throwing does not take the others with it ==")
 do
 	-- THE FAULT THIS RECORDS. PLAYER_REGEN_ENABLED carries the quest tracker's
@@ -43272,9 +43308,27 @@ section("threat: one place decides which tier a unit is in", function()
 
 			-- AND THEN IT GOES.
 			tick(4)
+			-- AND IT SAYS WHY WHEN IT DOES NOT.
+			--
+			-- This has failed twice in about seventy runs and has never been
+			-- reproduced on demand: thirty runs of the code as it was, and
+			-- twenty-five of the code as it is, all clean. Both failures came
+			-- immediately after a module file was written, which is suggestive
+			-- and is not evidence.
+			--
+			-- The alarm is cleared by W.StepThreatAlarm once `up` passes
+			-- ALARM_DWELL, and `up` is accumulated from the shared ticker. So
+			-- the question at the moment of failure is only ever: did the
+			-- ticker run, and did anything throw on the way. Both are cheap to
+			-- print and neither is knowable afterwards - so rather than guess a
+			-- third time, the check carries its own evidence and the next
+			-- occurrence names the cause.
 			check(al.spec == nil and (al.wash.__aetherWant or 0) == 0
 				and (al.chip.__aetherWant or 0) == 0,
-				"and off once it has had its time")
+				"and off once it has had its time (up=" .. tostring(al.up)
+				.. " dwell=" .. tostring(A.Widgets.ALARM_DWELL)
+				.. " pending=" .. tostring(al.pending)
+				.. " lastFailure=" .. tostring(A.lastFailure) .. ")")
 
 			-- A STATE THAT COMES BACK DURING THE WAIT KEEPS IT UP, rather than
 			-- clearing on the old timer and flashing up again a moment later.

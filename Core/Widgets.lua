@@ -1616,6 +1616,9 @@ local ALARM_CLEAR = 0.3 -- 16c gives it 500ms; this is comfortably inside it
 -- what an ambient reading is for. This is the part that shouts, and a shout has
 -- to last long enough to be heard.
 local ALARM_DWELL = 3
+-- Published so a diagnostic can print the threshold beside the value it is
+-- being compared with; a number on its own says nothing.
+W.ALARM_DWELL = ALARM_DWELL
 local CHIP_GAP   = 8
 -- Above the capsule's contents, which sit on the glass a level or two up.
 local CHIP_LIFT  = 6

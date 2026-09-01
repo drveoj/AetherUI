@@ -412,8 +412,29 @@ pump:SetScript("OnUpdate", function(_, elapsed)
 	if tickAccum < TICK then return end
 	local dt = tickAccum
 	tickAccum = 0
+	-- ONE TICKER THROWING DOES NOT TAKE THE OTHERS WITH IT.
+	--
+	-- The SAME fault the event dispatcher above was given isolation for, and
+	-- the ticker loop never got it: a throw here aborted the loop, so every
+	-- module registered after the thrower stopped animating for that frame -
+	-- and which ones those were came down to `pairs` order over a table keyed
+	-- by the module itself, so the same fault presented differently from one
+	-- run to the next.
+	--
+	-- That is what the suite's threat check has been catching about once in
+	-- twenty: the alarm is cleared from TH:Pulse, which runs on this loop, so
+	-- a throw upstream of it left the warning on screen for ever. It looked
+	-- like a flake because the ORDER was the random part, not the fault.
+	--
+	-- Recorded rather than swallowed, for the same reason as above: silence
+	-- here is a module that has quietly stopped animating.
 	for owner, fn in pairs(tickers) do
-		fn(owner, dt)
+		local ok, err = pcall(fn, owner, dt)
+		if not ok then
+			A.lastFailure = "ticker: " .. tostring(err)
+			if type(owner) == "table" then owner.lastError = tostring(err) end
+			A:Print(A.Bad("ticker:") .. " " .. tostring(err))
+		end
 	end
 end)
 
