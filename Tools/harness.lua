@@ -11170,6 +11170,8 @@ local FILES = {
 	"Modules/Menus.lua", "Modules/OptionsSkin.lua",
 	"Modules/Conveniences.lua",
 	"Modules/Panels.lua",
+	-- The other half of the same module; see that file's header.
+	"Modules/PanelInteriors.lua",
 	"Modules/Threat.lua",
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
