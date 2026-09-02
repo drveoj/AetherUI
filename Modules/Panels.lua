@@ -133,8 +133,19 @@ local PANELS = {
 		title = { "CharacterNameText", "CharacterFrameTitleText" },
 		subtitle = "CharacterLevelText",
 		panes = {
+			-- AND THE PET'S NAME IS NOT IN THE SAME PLACE EITHER. Era's
+			-- Wrath\PetPaperDollFrame.lua gives the pane its own string and
+			-- fills it - `PetNameText:SetText(UnitName("pet"))`. Cata's, which
+			-- Mists loads, has no such string at all: it writes the name into
+			-- the WINDOW'S title instead, `CharacterFrameTitleText:SetText(
+			-- UnitPVPName("pet"))`, from inside PetPaperDollFrame_Update.
+			--
+			-- So the band came up blank on Mists while "Level 1 Imp" sat in the
+			-- pane below it, which is PetLevelText - the one string the two
+			-- clients do agree on.
 			{ pane = "PetPaperDollFrame",
-				title = "PetNameText", subtitle = "PetLevelText" },
+				title = { "PetNameText", "CharacterFrameTitleText" },
+				subtitle = "PetLevelText" },
 		},
 		-- THE FIVE TABS. Every one is setAllPoints to the window, so moving
 		-- the pane carries every slot, string and model hanging off it - and

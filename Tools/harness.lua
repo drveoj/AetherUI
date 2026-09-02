@@ -6514,13 +6514,37 @@ do
 		-- AND THE PET'S OWN PAIR, which is what the window's header says on
 		-- the pet tab. They are children of that PANE and not of the window,
 		-- so they are only up when it is.
+		--
+		-- TWO CLIENTS, TWO PLACES FOR THE NAME, and the mock claimed one for
+		-- both. Era's Wrath\PetPaperDollFrame.lua gives the pane its own
+		-- PetNameText and fills it. Cata's, which Mists loads, has NO SUCH
+		-- STRING: it writes the name into the window's own title instead,
+		-- `CharacterFrameTitleText:SetText(UnitPVPName("pet"))`. Handing Mists
+		-- a PetNameText it does not have made the header check pass here while
+		-- the real client showed a blank title bar over "Level 1 Imp".
 		local pet = _G.PetPaperDollFrame
-		local petName = pet:CreateFontString(nil, "OVERLAY")
-		petName:SetText("Gakrin")
-		_G.PetNameText = petName
+		if not _G.__mists then
+			local petName = pet:CreateFontString(nil, "OVERLAY")
+			petName:SetText("Gakrin")
+			_G.PetNameText = petName
+		end
 		local petRank = pet:CreateFontString(nil, "OVERLAY")
 		petRank:SetText("Level 18 Imp")
 		_G.PetLevelText = petRank
+
+		-- AND IT IS WRITTEN LATE. The client fills whichever string it uses
+		-- from PetPaperDollFrame_Update, which runs on showing the tab and on
+		-- UNIT_PET - never at dress time. A mock that set the text once, up
+		-- front, could not tell a header that reads it at the right moment
+		-- from one that read it too early and cached a blank.
+		function _G.PetPaperDollFrame_Update()
+			if _G.__mists then
+				_G.CharacterFrameTitleText:SetText("Gakrin")
+			else
+				_G.PetNameText:SetText("Gakrin")
+			end
+			_G.PetLevelText:SetText("Level 18 Imp")
+		end
 	end
 
 	-- SOMEBODY ELSE'S CHARACTER SHEET, which shares the shape and not one of
@@ -16526,14 +16550,23 @@ section("panels: somebody else's character sheet", function()
 			local ll, lr = left.__aetherRound:GetTexCoord()
 			if not (rl == lr and rr == ll and rl ~= rr) then wrong = wrong + 1 end
 		end
-		local rp, rrel = right:GetPoint(1)
-		if not (rp == "BOTTOMRIGHT" and rrel == model) then
+		-- TOP-LEFT, WHERE THE CLIENT PUTS THEM. They sat bottom-right until
+		-- 2026-09-02, on the reasoning that a cursor is already in that corner
+		-- after dragging the doll - which stopped being worth anything when it
+		-- turned out Mists anchors CharacterFrameExpandButton to the same
+		-- corner of the window's Inset and the two overlapped on the pet tab.
+		local lp, lrel = left:GetPoint(1)
+		if not (lp == "TOPLEFT" and lrel == model) then bare = bare + 1 end
+		-- And the pair still reads as a pair: the second hangs off the first,
+		-- so nothing has to keep two offsets from the model in step.
+		local rp, rrel, rrp = right:GetPoint(1)
+		if not (rp == "LEFT" and rrel == left and rrp == "RIGHT") then
 			bare = bare + 1
 		end
 	end
 	check(bare == 0,
-		"both dolls' turn controls sit on the model itself, bottom-right (" ..
-		bare .. " wrong of 4)")
+		"both dolls' turn controls sit on the model itself, top-left where"
+		.. " the client has always put them (" .. bare .. " wrong of 6)")
 	check(wrong == 0,
 		"and the two are one drawing mirrored rather than two that have to"
 		.. " agree (" .. wrong .. ")")
@@ -31817,22 +31850,53 @@ do
 	-- Driven THROUGH the client's own tab call, because that is the only
 	-- thing that tells us a tab changed - reaching in and redrawing the header
 	-- ourselves proves the header and not the wiring.
+	-- WHICHEVER STRING THIS CLIENT KEEPS THE NAME IN. Era fills the pane's own
+	-- PetNameText; Mists has no such string and writes the name into the
+	-- WINDOW's title, CharacterFrameTitleText, from PetPaperDollFrame_Update.
+	-- Asking for the Era name on both is what let this pass here while the
+	-- real Mists client showed an empty band over "Level 1 Imp".
 	_G.PaperDollFrame:Hide()
 	_G.PetPaperDollFrame:Show()
+	_G.PetPaperDollFrame_Update()
 	_G.PanelTemplates_UpdateTabs(cf)
-	local pPt, pRel, pRelP = _G.PetNameText:GetPoint(1)
+	local petTitle = _G.PetNameText or _G.CharacterFrameTitleText
+	check(petTitle:GetText() == "Gakrin",
+		"the pet's name is what the band is naming, not the player's ("
+		.. tostring(petTitle:GetText()) .. ")")
+	local pPt, pRel, pRelP = petTitle:GetPoint(1)
 	check(pPt == "TOP" and pRel == cf.__aetherPanel and pRelP == "TOP",
 		"the pet's name is placed as the window's title while its tab is up")
-	check(_G.PetNameText._aetherStyle == "pnTitle"
+	check(petTitle._aetherStyle == "pnTitle"
 		and _G.PetLevelText._aetherStyle == "pnSub",
 		"in the header's own type, title and subtitle both")
-	local _, petSize = _G.PetNameText:GetFont()
+	local _, petSize = petTitle:GetFont()
 	local _, gossipSize2 = _G.GossipFrameTitleText:GetFont()
 	check(petSize == gossipSize2,
 		"at the same size as every other title in the interface - the point" .. " every client string here gets is for text sitting in the client's" .. " own rows, and a title has the window to itself (" .. tostring(petSize).. " against " .. tostring(gossipSize2) .. ")")
 	local _, plRel = _G.PetLevelText:GetPoint(1)
-	check(plRel == _G.PetNameText,
+	check(plRel == petTitle,
 		"with its level and family hung under it exactly as the class line is")
+
+	-- AND IT FOLLOWS THE PET WITHOUT BEING TOLD. The name is written from
+	-- PetPaperDollFrame_Update, which runs on UNIT_PET and on a rename with no
+	-- tab change anywhere near it.
+	--
+	-- NO HOOK IS NEEDED FOR THIS AND ONE WAS BRIEFLY ADDED ANYWAY. The band
+	-- does not copy the title, it REPARENTS the client's own font string - so
+	-- the client writing to it is the band changing, and there is nothing in
+	-- between to keep in step. A hook on the update was written, could not be
+	-- distinguished from its absence by any case here, and was removed rather
+	-- than shipped on a guess. This check is what says the reparenting is what
+	-- makes that true.
+	_G.PetPaperDollFrame_Update = function()
+		_G.CharacterFrameTitleText:SetText("Zephyx")
+		if _G.PetNameText then _G.PetNameText:SetText("Zephyx") end
+		_G.PetLevelText:SetText("Level 19 Voidwalker")
+	end
+	_G.PetPaperDollFrame_Update()
+	check(cf.__aetherTitle and cf.__aetherTitle:GetText() == "Zephyx",
+		"summoning a different pet renames the band without a tab click ("
+		.. tostring(cf.__aetherTitle and cf.__aetherTitle:GetText()) .. ")")
 
 	-- ...and hands it straight back.
 	_G.PetPaperDollFrame:Hide()
@@ -33070,9 +33134,14 @@ do
 		end
 		for _, pair in ipairs(_G.__pairs) do
 			local model, right = pair[1], pair[2]
-			local rp, rrel = right:GetPoint(1)
-			if not (right.__aetherRound
-				and rp == "BOTTOMRIGHT" and rrel == model) then
+			local lb = _G[(model:GetName() or "") .. "RotateLeftButton"]
+			-- NOT `lb and lb:GetPoint(1)`. An `and` expression is adjusted to ONE
+			-- value, so the relativeTo silently arrives as nil and the check fails
+			-- on correct code - which is how this comment came to be written.
+			local lp, lrel
+			if lb then lp, lrel = lb:GetPoint(1) end
+			if not (right.__aetherRound and lp == "TOPLEFT" and lrel == model)
+			then
 				bare = bare + 1
 			end
 		end

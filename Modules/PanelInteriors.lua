@@ -792,6 +792,7 @@ local function DressCharacter(frame, store)
 		end)
 	end
 
+
 	-- THE ARROW THAT WIDENS THE SHEET, which only Mists has. It carries three
 	-- states of Blizzard's spellbook page-turn art - up, down and disabled -
 	-- and the picture and the plate are ONE texture here, unlike the model's

@@ -1231,18 +1231,25 @@ function W.RotatePair(host, left, right, opts)
 		end
 	end
 
-	-- BOTTOM-RIGHT, inside the corner of the thing they turn. Right-handed
-	-- because that is where a cursor already is on a model you have just been
-	-- dragging, and inside because a control that hangs off the edge of what
-	-- it acts on belongs to the window instead.
-	if right and right.ClearAllPoints then
-		right:ClearAllPoints()
-		right:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT",
-			-ROUND_INSET, ROUND_INSET)
-	end
-	if left and right and left.ClearAllPoints then
+	-- TOP-LEFT, WHERE THE CLIENT PUTS THEM, and it took a collision to get
+	-- here. These were moved to the model's bottom-right corner on the
+	-- reasoning that a cursor is already there after dragging the doll, and
+	-- that a control hanging off the edge of what it acts on belongs to the
+	-- window rather than to the model. Both of those are still true and
+	-- neither survives the corner being occupied.
+	--
+	-- Mists anchors CharacterFrameExpandButton - the arrow that widens the
+	-- sheet - to the BOTTOMRIGHT of the window's own Inset, two pixels in. On
+	-- the pet tab that lands on top of these two. Blizzard's own answer is
+	-- top-left on every model it draws, that corner is empty sky on all of
+	-- them, and matching it costs nothing that was worth keeping.
+	if left and left.ClearAllPoints then
 		left:ClearAllPoints()
-		left:SetPoint("RIGHT", right, "LEFT", -ROUND_GAP, 0)
+		left:SetPoint("TOPLEFT", host, "TOPLEFT", ROUND_INSET, -ROUND_INSET)
+	end
+	if right and left and right.ClearAllPoints then
+		right:ClearAllPoints()
+		right:SetPoint("LEFT", left, "RIGHT", ROUND_GAP, 0)
 	end
 end
 -- ---------------------------------------------------------------------------
