@@ -4803,22 +4803,40 @@ local function DressPVE(frame, store)
 		end
 	end
 
-	-- THE THREE ROLE BUTTONS, which are a picture in a ring exactly as the
-	-- finder rows are, and the same rule: the picture says tank, healer or
-	-- damage and the ring around it says nothing. They sit above the list on
-	-- the dungeon and raid panes and above the battleground one on PvP.
+	-- THE ROLE BUTTONS, AND NOT THROUGH Reskin.IconButton.
+	--
+	-- THE PICTURE IS AN ATLAS AND AN ATLAS CARRIES ITS OWN COORDINATES.
+	-- LFGRoleButtonTemplate has no `icon` part at all: the role is the button's
+	-- NORMAL texture, `<NormalTexture atlas="UI-LFG-RoleIcon-Generic"/>`, swapped
+	-- per role. IconButton hands that to W.DecorateSlot, which trims every icon
+	-- to `SetTexCoord(0.07, 0.93, 0.07, 0.93)` to cut the gutter Blizzard bakes
+	-- into an icon FILE - and doing that to an atlas overwrites the coordinates
+	-- that say WHICH slice of the sheet to draw. Two of the four came back as
+	-- empty squares, which is what a trimmed atlas looks like.
+	--
+	-- So the picture is kept and left entirely alone: no cell, no trim. What
+	-- goes is the stone plate behind it - `background` and `shortageBorder`
+	-- from the WithBackground template - and the other three state textures.
 	for _, name in ipairs({
 		"LFDQueueFrameRoleButtonTank", "LFDQueueFrameRoleButtonHealer",
 		"LFDQueueFrameRoleButtonDPS", "LFDQueueFrameRoleButtonLeader",
 		"RaidFinderQueueFrameRoleButtonTank",
 		"RaidFinderQueueFrameRoleButtonHealer",
 		"RaidFinderQueueFrameRoleButtonDPS",
+		"HonorFrameRoleInsetRoleButtonTank",
+		"HonorFrameRoleInsetRoleButtonHealer",
+		"HonorFrameRoleInsetRoleButtonDPS",
 	}) do
 		local btn = _G[name]
 		if btn and not Reskin.Forbidden(btn) then
-			local icon = RowPart(btn, "icon", "Icon")
-				or (btn.GetNormalTexture and btn:GetNormalTexture())
-			Reskin.IconButton(btn, store, { icon = icon })
+			local pic = btn.GetNormalTexture and btn:GetNormalTexture()
+			Reskin.StripExcept(btn, store, pic and { pic } or nil)
+			for _, kind in ipairs({ "Pushed", "Highlight", "Disabled" }) do
+				local set = btn["Set" .. kind .. "Texture"]
+				if set then set(btn, 0) end
+			end
+			-- Its opt-in tick is a check box like any other.
+			if btn.checkButton then Reskin.CheckBox(btn.checkButton, store) end
 		end
 	end
 

@@ -587,8 +587,38 @@ local function newTexture(owner, layer, sub)
 	function t:GetParent() return self.__owner end
 	function t:SetDrawLayer(l, s2) self.__layer, self.__sub = l, s2 end
 	function t:GetDrawLayer() return self.__layer, self.__sub end
-	function t:SetTexture(path) self.__tex = path end
+	function t:SetTexture(path)
+		self.__tex = path
+		-- A FILE REPLACES AN ATLAS. Setting one clears the other on the real
+		-- client, and a mock that let both stand would answer yes to every
+		-- question about which a region is.
+		self.__atlas = nil
+	end
 	function t:GetTexture() return self.__tex end
+
+	--- AN ATLAS, WHICH THIS MOCK DID NOT HAVE AT ALL until 2026-09-02.
+	--
+	--  Half the client's art is atlas-based and none of it could be told from a
+	--  file here: `GetAtlas` was nil, so `Reskin.Strip`'s own
+	--  `pcall(region.SetAtlas, region, "")` had never once run, and the role
+	--  buttons on the group finder - whose picture IS an atlas on their normal
+	--  texture - looked identical to a plain icon.
+	--
+	--  THE COORDINATES ARE THE POINT. An atlas names a SLICE of a sheet and
+	--  carries its own TexCoords; anything that trims an icon the way
+	--  W.DecorateSlot does overwrites them and draws the wrong slice, or none.
+	--  That shipped, and two of four role buttons came back empty.
+	function t:SetAtlas(name)
+		if name == nil or name == "" then
+			self.__atlas = nil
+			return
+		end
+		self.__atlas = name
+		self.__tex = name
+		self.__texcoord = { 0, 1, 0, 1 }
+		self.__coord = { 0, 1, 0, 1 }
+	end
+	function t:GetAtlas() return self.__atlas end
 	--- Real, and missing until now - so every SetDesaturated in this addon was
 	--  a pcall onto nothing and the junk drain had never once been checked.
 	function t:SetDesaturated(on) self.__desaturated = on and true or false end
@@ -4836,15 +4866,26 @@ do
 			lfdq.__art = lfdq:CreateTexture(nil, "BACKGROUND")
 			lfdq.__art:SetTexture("Interface\\LFGFrame\\UI-LFG-BACKGROUND-DUNGEON")
 
-			-- ITS THREE ROLES, a picture in a ring: the picture says tank,
-			-- healer or damage and the ring says nothing.
+			-- ITS THREE ROLES, AND THE PICTURE IS AN ATLAS ON THE NORMAL
+			-- TEXTURE. LFGRoleButtonTemplate has no `icon` part at all -
+			-- `<NormalTexture atlas="UI-LFG-RoleIcon-Generic"/>`, swapped per
+			-- role - with the stone plate behind it in `background` from the
+			-- WithBackground template.
+			--
+			-- THE MOCK HAD THIS BACKWARDS and invented an `icon`, which is why
+			-- a check of it passed while two of the four came back as empty
+			-- squares in game: an atlas carries its own coordinates, and the
+			-- icon trim W.DecorateSlot applies overwrites them.
 			for _, role in ipairs({ "Tank", "Healer", "DPS" }) do
 				local rb = CreateFrame("Button",
 					"LFDQueueFrameRoleButton" .. role, lfdq)
 				rb:SetSize(48, 48)
-				rb.icon = rb:CreateTexture(nil, "ARTWORK")
-				rb.icon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-ROLES")
-				rb:SetNormalTexture("lfg-role-ring")
+				rb:SetNormalTexture("UI-LFG-RoleIcon-" .. role)
+				rb:GetNormalTexture():SetAtlas("UI-LFG-RoleIcon-" .. role)
+				rb.background = rb:CreateTexture(nil, "BACKGROUND")
+				rb.background:SetTexture("Interface\\LFGFrame\\UI-LFG-ROLEBG")
+				rb.checkButton = CreateFrame("CheckButton", nil, rb)
+				rb.checkButton:SetNormalTexture("checkbox-minimal")
 			end
 
 			-- AND ITS ACTION BUTTON, MagicButtonTemplate, at the foot.
@@ -36509,17 +36550,33 @@ do
 	check(_G.LFDQueueFrame.__art:GetTexture() == 0,
 		"the queue frame's own backdrop goes too, not just its parent pane's")
 
-	-- THE THREE ROLES: a picture in a ring, and the ring says nothing.
-	local roles = 0
+	-- THE THREE ROLES. The picture is an ATLAS on the button's normal texture,
+	-- and the stone plate is a `background` region behind it.
+	local roles, trimmed = 0, 0
 	for _, role in ipairs({ "Tank", "Healer", "DPS" }) do
 		local rb = _G["LFDQueueFrameRoleButton" .. role]
-		if (rb.icon:GetTexture() or 0) ~= 0
-			and rb:GetNormalTexture():GetTexture() == 0 then
+		local pic = rb:GetNormalTexture()
+		if (pic:GetAtlas() or "") ~= "" and rb.background:GetTexture() == 0 then
 			roles = roles + 1
+		end
+		-- AND ITS COORDINATES ARE THE ATLAS'S OWN. This is the regression the
+		-- screenshots showed: Reskin.IconButton hands the picture to
+		-- W.DecorateSlot, which trims every icon to 0.07-0.93 to cut the gutter
+		-- baked into an icon FILE. Doing that to an atlas overwrites the
+		-- coordinates saying which slice of the sheet to draw, and the button
+		-- comes back empty.
+		local l, r2, t, b = pic:GetTexCoord()
+		if not (l == 0 and r2 == 1 and t == 0 and b == 1) then
+			trimmed = trimmed + 1
 		end
 	end
 	check(roles == 3,
-		"each role keeps its picture and loses its ring (" .. roles .. " of 3)")
+		"each role keeps its picture and loses the plate behind it ("
+		.. roles .. " of 3)")
+	check(trimmed == 0,
+		"and the picture is left at the ATLAS's own coordinates - an icon trim"
+		.. " on an atlas draws the wrong slice, or none (" .. trimmed
+		.. " trimmed)")
 
 	-- AND THE BUTTONS ALONG THE FOOT, which the first pass left out entirely -
 	-- so they sat in Blizzard's stone under a footer that was not there. Every

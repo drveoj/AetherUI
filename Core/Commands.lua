@@ -1627,6 +1627,50 @@ local function MeasurePanels(arg)
 						.. " any words - it is on a pane, not the window)")
 				end
 			end
+
+			-- WHAT ART SURVIVED OUR SWEEP, which is a different question from
+			-- what we dressed and the one a screenshot keeps asking. A gold
+			-- rule down the middle of the group finder was read three ways off
+			-- a picture - a leftover bluemenu vertical, an inset's edge, a
+			-- scroll bar - and none of them could be told apart by looking.
+			--
+			-- Only textures still DRAWING: a stripped one answers 0 and an
+			-- atlas answers its name. The layer is printed because that is
+			-- what says whether a thing is behind our glass or over it.
+			do
+				local live = {}
+				local function art(where, holder, depth)
+					if not (holder and holder.GetRegions) or (depth or 0) > 1 then
+						return
+					end
+					for _, r in ipairs({ holder:GetRegions() }) do
+						if r.GetObjectType and r:GetObjectType() == "Texture"
+							and r.IsShown and r:IsShown() then
+							local tex = r.GetTexture and r:GetTexture()
+							local atlas = r.GetAtlas and r:GetAtlas()
+							if (tex and tex ~= 0) or atlas then
+								live[#live + 1] = string.format(
+									"    %s %s [%s] = %s", where,
+									tostring(r.GetName and r:GetName() or "unnamed"),
+									tostring(r.GetDrawLayer and r:GetDrawLayer()),
+									tostring(atlas or tex))
+							end
+						end
+					end
+				end
+				art("frame", f, 0)
+				for _, kid in ipairs({ (f.GetChildren and f:GetChildren()) }) do
+					if kid and kid.GetRegions and kid.IsShown and kid:IsShown() then
+						art("child " .. tostring(kid.GetName and kid:GetName()
+							or "unnamed"), kid, 1)
+					end
+				end
+				A_Print("  art still drawing: " .. #live)
+				for i = 1, math.min(#live, 24) do A_Print(live[i]) end
+				if #live > 24 then
+					A_Print("    ... and " .. (#live - 24) .. " more")
+				end
+			end
 			A_Print("  chrome " .. box(f.__aetherChrome) ..
 				"  lvl " .. tostring(f.__aetherChrome
 				and f.__aetherChrome:GetFrameLevel()) ..
