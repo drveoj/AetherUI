@@ -5108,6 +5108,59 @@ do
 			hq:SetAllPoints(pvp)
 			hq.__art = hq:CreateTexture(nil, "BACKGROUND")
 			hq.__art:SetTexture("Interface\\PVPFrame\\PvPBG")
+
+			-- THE ROLE STRIP IS A RECESS, not three loose buttons, and its
+			-- three roles are PARENT KEYS rather than globals - which is why
+			-- every name guessed for them reached nothing. It carries a
+			-- Background and a NineSlice of its own: the black slab across the
+			-- top of that tab.
+			hq.RoleInset = CreateFrame("Frame", nil, hq)
+			hq.RoleInset:SetSize(300, 60)
+			hq.RoleInset.Background = hq.RoleInset:CreateTexture(nil, "BACKGROUND")
+			hq.RoleInset.Background:SetTexture("Interface\\PVPFrame\\RoleBG")
+			hq.RoleInset.NineSlice = CreateFrame("Frame", nil, hq.RoleInset)
+			hq.RoleInset.NineSlice.__edge =
+				hq.RoleInset.NineSlice:CreateTexture(nil, "BORDER")
+			hq.RoleInset.NineSlice.__edge:SetTexture("inset-nineslice")
+			for _, key in ipairs({ "TankIcon", "HealerIcon", "DPSIcon" }) do
+				local b = CreateFrame("Button", nil, hq.RoleInset)
+				b:SetSize(40, 40)
+				b:SetNormalTexture("UI-LFG-RoleIcon-" .. key)
+				b:GetNormalTexture():SetAtlas("UI-LFG-RoleIcon-" .. key)
+				b.__plate = b:CreateTexture(nil, "BACKGROUND")
+				b.__plate:SetTexture("role-stone")
+				b.checkButton = CreateFrame("CheckButton", nil, b)
+				b.checkButton:SetNormalTexture("checkbox-up")
+				hq.RoleInset[key] = b
+			end
+
+			-- ITS LIST'S SCROLL BAR IS A FLAT GLOBAL with FrameScrollBar in the
+			-- middle of the name, not a `.ScrollBar` on the queue frame - the
+			-- shape every one of my guesses assumed.
+			local hsb = CreateFrame("Slider",
+				"HonorQueueFrameSpecificFrameScrollBar", hq)
+			hsb.Track = CreateFrame("Frame", nil, hsb)
+			hsb.Track.Thumb = CreateFrame("Frame", nil, hsb.Track)
+			hsb.Track.__rail = hsb.Track:CreateTexture(nil, "BACKGROUND")
+			hsb.Track.__rail:SetTexture("scroll-rail-stone")
+
+			-- AND ITS PICKER IS SPELLED DropDown, capital D.
+			local hdd = CreateFrame("Frame", "HonorQueueFrameTypeDropDown", hq)
+			hdd.__hold = hdd:CreateTexture(nil, "BACKGROUND")
+			hdd.__hold:SetAtlas("common-dropdown-classic-textholder")
+
+			-- THE DUNGEON TAB'S LIST SCROLLS ON ITS SUB-PANE, not on the queue
+			-- frame. This is the one reported as "wrong scrollbar on Dungeons
+			-- and Raids": it was not the wrong one, it was Blizzard's, because
+			-- ours reached a path that does not exist.
+			local spec = CreateFrame("Frame", "LFDQueueFrameSpecific", lfdq)
+			spec.ScrollBar = CreateFrame("Slider", nil, spec)
+			spec.ScrollBar.Track = CreateFrame("Frame", nil, spec.ScrollBar)
+			spec.ScrollBar.Track.Thumb =
+				CreateFrame("Frame", nil, spec.ScrollBar.Track)
+			spec.ScrollBar.Track.__rail =
+				spec.ScrollBar.Track:CreateTexture(nil, "BACKGROUND")
+			spec.ScrollBar.Track.__rail:SetTexture("scroll-rail-stone")
 			for _, key in ipairs({ "SoloQueueButton", "GroupQueueButton" }) do
 				local b = CreateFrame("Button", "HonorQueueFrame" .. key, hq)
 				b:SetSize(135, 22)
@@ -36901,6 +36954,46 @@ do
 			"and showing the pane again does not bring them back (" .. back
 			.. ")")
 	end
+
+	-- THE PVP TAB, whose every part I had named wrongly until ElvUI's skin was
+	-- read. Reported as "the PVP tab is still not properly aligned", and the
+	-- reason was that none of the names reached anything.
+	do
+		local ri = _G.HonorQueueFrame.RoleInset
+		check(ri.Background.__aetherKilled ~= nil,
+			"the role strip's backing is killed - it is a RECESS with the three"
+			.. " roles in it, not three loose buttons, and it was the black slab"
+			.. " across the top of that tab")
+		check(ri.NineSlice.__edge:GetTexture() == 0,
+			"and its own nine-slice edge goes with it")
+
+		local kept = 0
+		for _, key in ipairs({ "TankIcon", "HealerIcon", "DPSIcon" }) do
+			local b = ri[key]
+			if (b:GetNormalTexture():GetAtlas() or "") ~= ""
+				and b.__plate:GetTexture() == 0 then
+				kept = kept + 1
+			end
+		end
+		check(kept == 3,
+			"each role keeps its atlas and loses its plate - and they are"
+			.. " PARENT KEYS on the inset, TankIcon and the rest, not the"
+			.. " globals I guessed (" .. kept .. " of 3)")
+
+		check(_G.HonorQueueFrameTypeDropDown.__hold:GetAtlas() == nil,
+			"its picker is dressed - spelled DropDown with a capital D, and"
+			.. " there is no HonorFrameTypeDropdown at all")
+	end
+
+	-- THE SCROLL BARS ARE PER SUB-PANE, NOT PER QUEUE FRAME. Reported as "wrong
+	-- scrollbar on Dungeons and Raids": it was not the wrong one, it was
+	-- Blizzard's, because every path we reached for was invented.
+	check(_G.LFDQueueFrameSpecific.ScrollBar.Track.__rail:GetTexture() == 0,
+		"the dungeon list's bar is ours - it hangs off LFDQueueFrameSpecific,"
+		.. " and there is no LFDQueueFrame.ScrollBar to find")
+	check(_G.HonorQueueFrameSpecificFrameScrollBar.Track.__rail:GetTexture() == 0,
+		"and the battleground list's is a flat global with FrameScrollBar in"
+		.. " the middle of it")
 
 	-- THE TYPE PICKER, named by the readout rather than guessed at. It is the
 	-- WowStyle control the trade skill's filters are, and it sat in

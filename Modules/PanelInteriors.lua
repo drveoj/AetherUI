@@ -4902,10 +4902,11 @@ local function DressPVE(frame, store)
 	-- `common-dropdown-classic-textholder` and its button arrow. It is the
 	-- WowStyle control the trade skill's filters are, so it takes the same
 	-- dresser they do.
+	-- EVERY NAME HERE OFF ELVUI'S SKIN, and every one I had guessed was wrong:
+	-- the battleground picker is HonorQueueFrameTypeDropDown, with a capital D
+	-- on Down, and there is no HonorFrameTypeDropdown at all.
 	for _, name in ipairs({ "LFDQueueFrameTypeDropdown",
-		"RaidFinderQueueFrameSelectionDropdown",
-		"ScenarioQueueFrameTypeDropdown",
-		"HonorFrameTypeDropdown", "ConquestFrameTypeDropdown" }) do
+		"HonorQueueFrameTypeDropDown" }) do
 		local dd = _G[name]
 		if dd then DressDropdown(dd, store) end
 	end
@@ -4913,11 +4914,71 @@ local function DressPVE(frame, store)
 	-- AND THE LISTS SCROLL IN OUR RAIL. MinimalScrollBar on this window, which
 	-- is the generation whose track is a CHILD FRAME rather than three regions
 	-- of the bar - see Reskin.ScrollBar for why that distinction matters.
-	for _, path in ipairs({ "LFDQueueFrame.ScrollBar",
-		"RaidFinderQueueFrame.ScrollBar", "ScenarioQueueFrame.ScrollBar",
-		"HonorQueueFrame.ScrollBar" }) do
+	-- AND THE SCROLL BARS ARE PER SUB-PANE, NOT PER QUEUE FRAME. Every path
+	-- here was a guess before and not one of them existed: there is no
+	-- LFDQueueFrame.ScrollBar. The list you scroll on the dungeon tab belongs
+	-- to LFDQueueFrameSpecific, the random pane has one of its own, and the
+	-- battleground list's is a flat global with FrameScrollBar in the middle
+	-- of it. Reported as "wrong scrollbar on Dungeons and Raids", and it was
+	-- not the wrong one - it was Blizzard's, because ours reached nothing.
+	for _, path in ipairs({
+		"LFDQueueFrameSpecific.ScrollBar",
+		"LFDQueueFrameRandomScrollFrame.ScrollBar",
+		"RaidFinderQueueFrameScrollFrame.ScrollBar",
+		"ScenarioQueueFrameSpecific.ScrollBar",
+		"ScenarioQueueFrameRandomScrollFrame.ScrollBar",
+		"LFGListFrame.SearchPanel.ScrollBar",
+		"LFGListFrame.ApplicationViewer.ScrollBar",
+		"HonorQueueFrameSpecificFrameScrollBar",
+	}) do
 		local bar = Part(path)
 		if bar then Reskin.ScrollBar(bar, store) end
+	end
+
+	-- THE PVP TAB'S ROLE STRIP, which is a RECESS with the three roles in it
+	-- rather than three loose buttons: HonorQueueFrame.RoleInset, carrying a
+	-- Background and a NineSlice of its own. That is the black slab across the
+	-- top of that tab, and nothing here had touched it.
+	--
+	-- ITS ROLES ARE PARENT KEYS, NOT GLOBALS - TankIcon, HealerIcon, DPSIcon on
+	-- the inset - so the names I guessed at (HonorFrameRoleInsetRoleButtonTank
+	-- and the rest) reached nothing at all.
+	local roleInset = Part("HonorQueueFrame.RoleInset")
+	if roleInset then
+		Reskin.Kill(roleInset.Background, store)
+		if roleInset.NineSlice then
+			roleInset.NineSlice.__aetherStore =
+				roleInset.NineSlice.__aetherStore or {}
+			Reskin.Strip(roleInset.NineSlice, roleInset.NineSlice.__aetherStore)
+		end
+		for _, key in ipairs({ "TankIcon", "HealerIcon", "DPSIcon" }) do
+			local btn = roleInset[key]
+			if btn and not Reskin.Forbidden(btn) then
+				local pic = btn.GetNormalTexture and btn:GetNormalTexture()
+				local drawn = pic and ((pic:GetAtlas() or "") ~= ""
+					or ((pic:GetTexture() or 0) ~= 0))
+				if drawn then
+					Reskin.StripExcept(btn, store, { pic })
+					if btn.checkButton then
+						Reskin.CheckBox(btn.checkButton, store)
+					end
+				end
+			end
+		end
+	end
+
+	-- AND THE PIECES EITHER SIDE OF THE TWO JOIN BUTTONS, which are separator
+	-- textures the client draws between them.
+	for _, name in ipairs({ "HonorQueueFrameSoloQueueButton_RightSeparator",
+		"HonorQueueFrameGroupQueueButton_LeftSeparator" }) do
+		local sep = _G[name]
+		if sep then
+			sep.__aetherStore = sep.__aetherStore or {}
+			Reskin.Strip(sep, sep.__aetherStore)
+		end
+	end
+	if _G.ConquestQueueFrame and _G.ConquestQueueFrame.ShadowOverlay then
+		Reskin.Kill(_G.ConquestQueueFrame.ShadowOverlay, store)
 	end
 
 	-- THE FOUR GROUP BUTTONS ARE ROWS, NOT SLOTS, and the first attempt at them
