@@ -4888,11 +4888,27 @@ do
 				rb.checkButton:SetNormalTexture("checkbox-minimal")
 			end
 
+			-- AND ONE ROLE THIS CLASS CANNOT TAKE, which has NO PICTURE AT ALL.
+			-- The warlock that turned this up can only ever be damage, so the
+			-- client leaves tank and healer unfilled - and StripExcept with
+			-- nothing to keep is Strip, so dressing them took the buttons away
+			-- entirely. A mock whose every role carries an atlas cannot show
+			-- that.
+			local leader = CreateFrame("Button",
+				"LFDQueueFrameRoleButtonLeader", lfdq)
+			leader:SetSize(48, 48)
+			leader.background = leader:CreateTexture(nil, "BACKGROUND")
+			leader.background:SetTexture("Interface\\LFGFrame\\UI-LFG-ROLEBG")
+
 			-- AND ITS ACTION BUTTON, MagicButtonTemplate, at the foot.
 			local find = CreateFrame("Button",
 				"LFDQueueFrameFindGroupButton", lfdq)
 			find:SetSize(135, 22)
-			find:SetPoint("BOTTOMRIGHT", lfd, "BOTTOMRIGHT", -8, 8)
+			-- INSIDE ITS OWN QUEUE FRAME, which is where the client anchors it -
+			-- `BOTTOM->BOTTOM 0,4 on LFDQueueFrame`, read off the live window.
+			-- It belongs to this one finder, not to the window, and that is the
+			-- whole reason PVEFrame takes no footer strip.
+			find:SetPoint("BOTTOM", lfdq, "BOTTOM", 0, 4)
 			find:SetNormalTexture("magic-button-up")
 			local ft = find:CreateFontString(nil, "OVERLAY")
 			ft:SetText("Find Group")
@@ -4955,6 +4971,20 @@ do
 			-- label dressed once is Blizzard's again the next time
 			-- EvaluateButtonVisibility runs - on LFG_UPDATE_RANDOM_INFO and
 			-- PLAYER_LEVEL_CHANGED as well as on load.
+			-- EVERY ROUTE INTO THIS WINDOW GOES THROUGH HERE. PVEFrame_ShowFrame
+			-- is what puts a pane up - from a tab click, from a finder row,
+			-- and from the client's own PVEFrame_ToggleFrame - so it is the one
+			-- place that knows a pane's content may have changed since it was
+			-- last measured.
+			function _G.PVEFrame_ShowFrame(name)
+				for _, pane in ipairs({ "GroupFinderFrame", "PVPQueueFrame" }) do
+					if _G[pane] then
+						if pane == name then _G[pane]:Show() else _G[pane]:Hide() end
+					end
+				end
+				_G.PVEFrame.activeSubframe = name
+			end
+
 			function _G.GroupFinderFrameButton_SetEnabled(button, enabled)
 				local part = button.name or button.Name
 				if part then
@@ -36578,6 +36608,18 @@ do
 		.. " on an atlas draws the wrong slice, or none (" .. trimmed
 		.. " trimmed)")
 
+	-- A ROLE THIS CLASS CANNOT TAKE HAS NO PICTURE, and dressing it takes the
+	-- button away rather than dressing it: StripExcept with nothing to keep is
+	-- Strip. Reported from the game as two role buttons that came back empty
+	-- and then vanished on the next pass.
+	do
+		local none = _G.LFDQueueFrameRoleButtonLeader
+		check(none.background:GetTexture() ~= 0,
+			"a role with no picture yet is left ALONE rather than stripped to"
+			.. " nothing - the client fills it in when the role becomes"
+			.. " available, and the sweep runs again from the next dress")
+	end
+
 	-- AND THE BUTTONS ALONG THE FOOT, which the first pass left out entirely -
 	-- so they sat in Blizzard's stone under a footer that was not there. Every
 	-- name resolved out of the XML: each is `$parentSomething` under an
@@ -36587,8 +36629,44 @@ do
 		check(_G[name]:GetNormalTexture():GetTexture() == 0,
 			name .. " loses its stone")
 	end
-	check(PN.ENTRY.PVEFrame.footer and PN.ENTRY.PVEFrame.footer > 0,
-		"and the window has a footer strip for them to stand in")
+	-- AND THE WINDOW HAS NO FOOTER STRIP, which is the opposite of what this
+	-- check first asserted. A strip was added here on the reasoning that these
+	-- are the window's actions; they are not - every one is already anchored
+	-- inside its own pane's recess, where the client put it, because each
+	-- belongs to one finder rather than to the window. The strip bought nothing
+	-- and cost height: the window went to 556 tall with an empty hand's width
+	-- under the list, and the body shift went from 58 to 128.
+	check(PN.ENTRY.PVEFrame.footer == nil,
+		"and the window takes NO footer strip - the client has already put"
+		.. " each of these inside the recess it belongs to, and a strip only"
+		.. " grows the window to make room for a row nothing stands in")
+	check(_G.LFDQueueFrameFindGroupButton:GetPoint(2) ~= nil
+		or select(2, _G.LFDQueueFrameFindGroupButton:GetPoint(1))
+			== _G.LFDQueueFrame,
+		"Find Group stays anchored to its own queue frame rather than being"
+		.. " pulled out into furniture of ours")
+
+	-- AND A PANE MEASURED BEFORE ITS CONTENT ARRIVED IS MEASURED AGAIN.
+	--
+	-- The live readout said it outright: `GroupFinderFrame saved=true top=100
+	-- now=46`. The pane was measured holding only the column of finder rows,
+	-- whose first sits 70 down; the role buttons and the type dropdown come
+	-- with LFDParentFrame, which is load-on-demand and lands later at 46. A
+	-- saved 100 says the pane already clears the header band, so nothing moves
+	-- - and everything that arrived afterwards sits up inside the title.
+	--
+	-- PVEFrame_ShowFrame is every route into this window, so forgetting the
+	-- measurement there is the fix. Recomputing beats a cached number the
+	-- client can invalidate, which is now the fourth time that has been true.
+	do
+		local gff = _G.GroupFinderFrame
+		gff.__aetherTop = 100          -- the stale reading, as recorded in game
+		_G.PVEFrame_ShowFrame("GroupFinderFrame")
+		check(gff.__aetherTop ~= 100,
+			"showing a pane forgets what it measured last time, rather than"
+			.. " trusting a number taken before its content existed (now "
+			.. tostring(gff.__aetherTop) .. ")")
+	end
 
 	-- ITS THREE TABS HANG BELOW THE FRAME, 30 down and outside its own art, so
 	-- the glass has to reach past the frame to carry them the way the

@@ -324,26 +324,25 @@ local PANELS = {
 		-- table lists them. Two are load-on-demand and simply are not there
 		-- until opened, which the dresser has to survive rather than assume.
 		body = { "GroupFinderFrame", "PVPQueueFrame", "ChallengesFrame" },
-		-- THE BUTTONS ALONG THE FOOT, which are MagicButtonTemplate on both
-		-- tabs: Find Group under the dungeon list, Join Battle and Join as
-		-- Group under the battleground one. Left out of the first pass, so
-		-- they sat in Blizzard's stone under a footer that was not there.
+		-- NO FOOTER STRIP, AND THAT WAS A WRONG TURN WORTH RECORDING.
 		--
-		-- ONE STRIP SERVES BOTH PANES, laid out from what is visible and ours,
-		-- the way the Era group finder's row is: only one tab is ever up.
-		footer = W.PANEL_FOOT_H,
-		-- EVERY NAME HERE RESOLVED FROM THE XML rather than guessed at. Each is
-		-- `$parentSomething` under a differently named enclosing frame, and the
-		-- enclosing frame is not the pane: Find Group hangs off LFDQueueFrame,
-		-- Find Raid off RaidFinderQueueFrame, the two battleground ones off
-		-- HonorQueueFrame. Two of them are simply spelled Conquest and War Game.
-		actions = { mid = {
-			"LFDQueueFrameFindGroupButton",
-			"RaidFinderQueueFrameFindRaidButton",
-			"ScenarioQueueFrameFindGroupButton",
-			"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton",
-			"ConquestJoinButton", "WarGameStartButton",
-		} } },
+		-- One was added here on the reasoning that Find Group and the two
+		-- battleground buttons are the actions of the window. They are not:
+		-- every one of them is already anchored INSIDE its own pane's recess -
+		-- `BOTTOM->BOTTOM 0,4 on LFDQueueFrame` - which is where the client
+		-- draws them and where they belong, because each belongs to one finder
+		-- rather than to the window.
+		--
+		-- What a strip cost was height. The window grew to make room for a row
+		-- nothing stood in, the body shift went from 58 to 128, and the readout
+		-- showed the result plainly: 556 tall with an empty hand's width under
+		-- the list. They are skinned where they stand instead; see
+		-- PanelInteriors.
+		--
+		-- A FOOTER IS FOR ACTIONS THAT BELONG TO THE WINDOW. Where the client
+		-- has already put a button inside a recess, that is its answer to the
+		-- same question and there is nothing to move.
+	},
 
 	-- THE GROUP FINDER, which is two windows behind two tabs: the listing you
 	-- post and the browse you search with. LFGParentFrame is the old parchment

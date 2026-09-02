@@ -4830,13 +4830,29 @@ local function DressPVE(frame, store)
 		local btn = _G[name]
 		if btn and not Reskin.Forbidden(btn) then
 			local pic = btn.GetNormalTexture and btn:GetNormalTexture()
-			Reskin.StripExcept(btn, store, pic and { pic } or nil)
-			for _, kind in ipairs({ "Pushed", "Highlight", "Disabled" }) do
-				local set = btn["Set" .. kind .. "Texture"]
-				if set then set(btn, 0) end
+			local drawn = pic and ((pic:GetAtlas() or "") ~= ""
+				or ((pic:GetTexture() or 0) ~= 0))
+
+			-- A ROLE THIS CLASS CANNOT TAKE HAS NO PICTURE YET, and stripping
+			-- it takes the button away rather than dressing it. The warlock
+			-- that turned this up can only ever be damage, so tank and healer
+			-- came back empty and then vanished altogether - twice, because
+			-- StripExcept with nothing to keep IS Strip.
+			--
+			-- Left entirely alone until it has something to keep. Nothing is
+			-- lost by waiting: the client fills it in when the role becomes
+			-- available and the sweep runs again from the window's next dress.
+			if drawn then
+				Reskin.StripExcept(btn, store, { pic })
+				for _, kind in ipairs({ "Pushed", "Highlight", "Disabled" }) do
+					local set = btn["Set" .. kind .. "Texture"]
+					if set then set(btn, 0) end
+				end
+				-- Its opt-in tick is a check box like any other.
+				if btn.checkButton then
+					Reskin.CheckBox(btn.checkButton, store)
+				end
 			end
-			-- Its opt-in tick is a check box like any other.
-			if btn.checkButton then Reskin.CheckBox(btn.checkButton, store) end
 		end
 	end
 
@@ -4882,6 +4898,36 @@ local function DressPVE(frame, store)
 	-- picture keeps its own size in the place the ring held on the left, and
 	-- the row gets a backing of ours behind the pair.
 	GroupButtons(store)
+
+	-- AND ITS PANES ARE MEASURED BEFORE THEY HAVE ANYTHING IN THEM.
+	--
+	-- The readout said it outright: `GroupFinderFrame ... saved=true top=100
+	-- now=46`. The pane was measured when it held only the column of finder
+	-- rows, whose first is 70 down; the role buttons and the type dropdown
+	-- arrive with LFDParentFrame, which is load-on-demand and lands later at
+	-- 46. A saved 100 says the pane already clears the header band, so nothing
+	-- moves - and the content that arrived afterwards sits up in the title.
+	--
+	-- PVEFrame_ShowFrame is what puts a pane up, and every route into this
+	-- window goes through it. Forgetting the measurement there and laying the
+	-- body out again is the fix; recomputing beats a cached number the client
+	-- can invalidate, which is the fourth time that has been true here.
+	if not PN.__pveShowHook and hooksecurefunc
+		and type(_G.PVEFrame_ShowFrame) == "function" then
+		PN.__pveShowHook = true
+		hooksecurefunc("PVEFrame_ShowFrame", function()
+			if not PN.enabled then return end
+			local entry = PN.ENTRY and PN.ENTRY.PVEFrame
+			for _, name in ipairs((entry and entry.body) or {}) do
+				local pane = _G[name]
+				if pane then
+					pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight =
+						nil, nil, nil
+				end
+			end
+			pcall(PN.LayoutBody, _G.PVEFrame, entry)
+		end)
+	end
 
 	-- AND THE CLIENT RE-LETTERS THEM. GroupFinderFrameButton_SetEnabled calls
 	-- `button.name:SetFontObject(...)` on every enable and disable - both

@@ -1639,8 +1639,12 @@ local function MeasurePanels(arg)
 			-- what says whether a thing is behind our glass or over it.
 			do
 				local live = {}
+				-- THREE DEEP, because one was not enough. A first pass capped
+				-- at the window and its own children answered "0 still
+				-- drawing" while a gold rule was plainly there on screen - the
+				-- thing drawing it was a grandchild.
 				local function art(where, holder, depth)
-					if not (holder and holder.GetRegions) or (depth or 0) > 1 then
+					if not (holder and holder.GetRegions) or (depth or 0) > 3 then
 						return
 					end
 					for _, r in ipairs({ holder:GetRegions() }) do
@@ -1658,13 +1662,18 @@ local function MeasurePanels(arg)
 						end
 					end
 				end
-				art("frame", f, 0)
-				for _, kid in ipairs({ (f.GetChildren and f:GetChildren()) }) do
-					if kid and kid.GetRegions and kid.IsShown and kid:IsShown() then
-						art("child " .. tostring(kid.GetName and kid:GetName()
-							or "unnamed"), kid, 1)
+				local function walk(where, frame, depth)
+					art(where, frame, depth)
+					if depth > 3 or not frame.GetChildren then return end
+					for _, kid in ipairs({ frame:GetChildren() }) do
+						if kid and kid.IsShown and kid:IsShown()
+							and not kid.__aetherPanel then
+							walk(tostring(kid.GetName and kid:GetName()
+								or "unnamed"), kid, depth + 1)
+						end
 					end
 				end
+				walk("frame", f, 0)
 				A_Print("  art still drawing: " .. #live)
 				for i = 1, math.min(#live, 24) do A_Print(live[i]) end
 				if #live > 24 then
