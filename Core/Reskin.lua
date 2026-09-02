@@ -268,7 +268,12 @@ end
 --  back after `/aether panels off` and `on` and could not be swept again. It
 --  was never about that bar: every status bar and scroll bar in the interface
 --  did it, which is why the fix is here rather than in either function.
-local REDRESS_MARKS = { "__aetherFill", "__aetherScroll", "__aetherCell" }
+--  is here for the same reason the others are: it guards work
+-- done ONCE, and a guard nothing clears makes the second dress a no-op. That
+-- mistake has now been made three times in this module, so the rule is: any
+-- "already done" mark belongs in this list the moment it is written.
+local REDRESS_MARKS = { "__aetherFill", "__aetherScroll", "__aetherCell",
+	"__aetherLifted" }
 
 --- Put a thing beyond the client's reach, rather than asking it to stay down.
 --

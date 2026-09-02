@@ -5058,10 +5058,25 @@ do
 			-- LFDQueueFrameTypeDropdown, still carrying
 			-- `common-dropdown-classic-textholder` and its button arrow long
 			-- after everything around it had been dressed.
+			-- THE OLD TEMPLATE, which is what the group finder still uses:
+			-- UIDropDownMenuTemplate, with Left, Middle and Right background
+			-- regions and a FRAME WIDER THAN THE BOX YOU CAN SEE. It reserves a
+			-- margin either side for art that overhangs its own bounds, so a
+			-- backing drawn to the frame is fifteen too wide at the left and six
+			-- at the right - which is the overrun reported.
+			--
+			-- The mock had none of the three, so the branch that insets our
+			-- backing could not fire and the check of it read zero.
 			local dd = CreateFrame("Frame", "LFDQueueFrameTypeDropdown", lfdq)
 			dd:SetSize(180, 32)
 			dd.__hold = dd:CreateTexture(nil, "BACKGROUND")
 			dd.__hold:SetAtlas("common-dropdown-classic-textholder")
+			dd.Left = dd:CreateTexture(nil, "BACKGROUND")
+			dd.Left:SetTexture("dropdown-left")
+			dd.Middle = dd:CreateTexture(nil, "BACKGROUND")
+			dd.Middle:SetTexture("dropdown-middle")
+			dd.Right = dd:CreateTexture(nil, "BACKGROUND")
+			dd.Right:SetTexture("dropdown-right")
 			dd.__arrow = dd:CreateTexture(nil, "OVERLAY")
 			dd.__arrow:SetAtlas("common-dropdown-classic-a-buttonDown")
 			dd.Text = dd:CreateFontString(nil, "OVERLAY")
@@ -5146,8 +5161,15 @@ do
 
 			-- AND ITS PICKER IS SPELLED DropDown, capital D.
 			local hdd = CreateFrame("Frame", "HonorQueueFrameTypeDropDown", hq)
+			hdd:SetSize(180, 32)
 			hdd.__hold = hdd:CreateTexture(nil, "BACKGROUND")
 			hdd.__hold:SetAtlas("common-dropdown-classic-textholder")
+			hdd.Left = hdd:CreateTexture(nil, "BACKGROUND")
+			hdd.Left:SetTexture("dropdown-left")
+			hdd.Middle = hdd:CreateTexture(nil, "BACKGROUND")
+			hdd.Middle:SetTexture("dropdown-middle")
+			hdd.Right = hdd:CreateTexture(nil, "BACKGROUND")
+			hdd.Right:SetTexture("dropdown-right")
 
 			-- THE DUNGEON TAB'S LIST SCROLLS ON ITS SUB-PANE, not on the queue
 			-- frame. This is the one reported as "wrong scrollbar on Dungeons
@@ -37041,6 +37063,33 @@ do
 	check(_G.LFDQueueFrameTypeDropdown.__hold:GetAtlas() == nil
 		and _G.LFDQueueFrameTypeDropdown.__arrow:GetAtlas() == nil,
 		"the finder's Type picker loses the client's dropdown art")
+
+	-- AND ITS BACKING SITS ON THE BOX, NOT ON THE FRAME. UIDropDownMenuTemplate
+	-- reserves a margin either side for art that overhangs its own bounds, so a
+	-- backing drawn to the frame is fifteen units too wide at the left and six
+	-- at the right - the overrun reported: the box ran past the recess beside
+	-- it. The numbers are ElvUI's, from HandleHonorDropdown.
+	do
+		local skin = _G.LFDQueueFrameTypeDropdown.__aetherSkin
+		if skin and skin.GetPoint then
+			local _, _, _, x = skin:GetPoint(1)
+			check(x and x > 0,
+				"the old dropdown's backing is inset from its frame rather than"
+				.. " drawn to it (" .. tostring(x) .. ")")
+		end
+	end
+
+	-- AND THE ACTION BUTTONS CLEAR THE TAB RAIL. Every one is anchored to the
+	-- bottom of its own pane, and every pane here is setAllPoints to the window
+	-- - so the pane's bottom IS the window's bottom, which is where our rail
+	-- now is. Find Group sat across its separator in both tabs.
+	do
+		local _, _, _, _, y = _G.LFDQueueFrameFindGroupButton:GetPoint(1)
+		check((y or 0) >= A.Widgets.TAB_RAIL_H,
+			"Find Group is lifted clear of the tab rail rather than sitting"
+			.. " across it (" .. tostring(y) .. " against a rail of "
+			.. A.Widgets.TAB_RAIL_H .. ")")
+	end
 
 	-- THE THREE ROLES. The picture is an ATLAS on the button's normal texture,
 	-- and the stone plate is a `background` region behind it.

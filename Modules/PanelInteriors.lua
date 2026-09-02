@@ -2243,7 +2243,24 @@ local function DressDropdown(btn, store)
 	if not btn then return end
 	Reskin.ClearButton(btn)
 	Reskin.Strip(btn, store)
-	Reskin.Button(btn, "pnBody")
+	local skin = Reskin.Button(btn, "pnBody")
+
+	-- THE OLD DROPDOWN'S FRAME IS WIDER THAN THE BOX YOU CAN SEE.
+	--
+	-- UIDropDownMenuTemplate - the generation the group finder still uses, with
+	-- Left, Middle and Right background regions - reserves a margin either side
+	-- for art that overhangs its own bounds. So a backing drawn to the FRAME
+	-- comes out fifteen units too wide at the left and six at the right, and
+	-- that is the overrun: the box ran past the recess beside it.
+	--
+	-- The numbers are ElvUI's, from HandleHonorDropdown in its Mists PVP skin,
+	-- which insets its backdrop by exactly this to sit on the visible box.
+	-- Constants read off the template once, not a measurement.
+	if skin and skin.ClearAllPoints and (btn.Left or btn.Middle or btn.Right) then
+		skin:ClearAllPoints()
+		skin:SetPoint("TOPLEFT", btn, "TOPLEFT", 14, -2)
+		skin:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -6, 10)
+	end
 
 	DropdownMarks(btn)
 
@@ -4916,9 +4933,35 @@ local function DressPVE(frame, store)
 	}) do
 		acts[#acts + 1] = Part(path)
 	end
+	-- AND THEY ARE LIFTED CLEAR OF THE TAB RAIL.
+	--
+	-- Every one of these is anchored to the BOTTOM of its own pane, and every
+	-- pane on this window is setAllPoints to the window - so the pane's bottom
+	-- is the window's bottom, which is where our tab rail now is. Find Group
+	-- sat across the rail's separator in both tabs.
+	--
+	-- A FIXED LIFT, read off our own furniture rather than measured: the rail's
+	-- height plus the panel padding, which is exactly what stands between the
+	-- window's foot and the first thing above it. ElvUI does the same kind of
+	-- thing with `Point('BOTTOMRIGHT', -6, 3)` - a constant, not a measurement.
+	local lift = W.TAB_RAIL_H + W.PANEL_PAD
+
 	for _, btn in ipairs(acts) do
 		if not Reskin.Forbidden(btn) then
 			Reskin.Button(btn, "pnBody")
+
+			-- KEEPING THE CLIENT'S OWN X, because which side of its pane a
+			-- button sits on is the client's business and differs per pane -
+			-- Join Battle and Join as Group are a pair, Find Group is alone.
+			-- Only the height is ours to correct.
+			if btn.GetPoint and btn.ClearAllPoints and not btn.__aetherLifted then
+				local pt, rel, relP, x, y = btn:GetPoint(1)
+				if pt and rel then
+					btn.__aetherLifted = true
+					btn:ClearAllPoints()
+					btn:SetPoint(pt, rel, relP, x or 0, (y or 0) + lift)
+				end
+			end
 			for _, side in ipairs({ "LeftSeparator", "RightSeparator" }) do
 				if btn[side] then Reskin.Kill(btn[side], store) end
 			end
