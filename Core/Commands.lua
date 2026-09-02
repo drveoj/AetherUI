@@ -1638,13 +1638,29 @@ local function MeasurePanels(arg)
 			-- atlas answers its name. The layer is printed because that is
 			-- what says whether a thing is behind our glass or over it.
 			do
-				local live = {}
-				-- THREE DEEP, because one was not enough. A first pass capped
-				-- at the window and its own children answered "0 still
-				-- drawing" while a gold rule was plainly there on screen - the
-				-- thing drawing it was a grandchild.
-				local function art(where, holder, depth)
-					if not (holder and holder.GetRegions) or (depth or 0) > 3 then
+				-- GROUPED BY WHOSE IT IS, because a flat list of unnamed
+				-- regions is not an answer. Seventy-five textures came back
+				-- from this window as "unnamed unnamed [BACKGROUND] = -165"
+				-- eighteen times over, which says there is a lot left and
+				-- nothing about where to go and take it off.
+				--
+				-- A region's own name is usually nil and its parent's often is
+				-- too, so the useful label is the nearest NAMED ancestor - the
+				-- thing a dresser can actually reach for.
+				local function ownerOf(frame)
+					local hops = 0
+					while frame and hops < 6 do
+						local n = frame.GetName and frame:GetName()
+						if n then return n end
+						frame = frame.GetParent and frame:GetParent()
+						hops = hops + 1
+					end
+					return "?"
+				end
+
+				local groups, order, total = {}, {}, 0
+				local function art(holder, depth)
+					if not (holder and holder.GetRegions) or depth > 4 then
 						return
 					end
 					for _, r in ipairs({ holder:GetRegions() }) do
@@ -1653,31 +1669,43 @@ local function MeasurePanels(arg)
 							local tex = r.GetTexture and r:GetTexture()
 							local atlas = r.GetAtlas and r:GetAtlas()
 							if (tex and tex ~= 0) or atlas then
-								live[#live + 1] = string.format(
-									"    %s %s [%s] = %s", where,
-									tostring(r.GetName and r:GetName() or "unnamed"),
-									tostring(r.GetDrawLayer and r:GetDrawLayer()),
-									tostring(atlas or tex))
+								total = total + 1
+								local key = ownerOf(holder) .. "  ["
+									.. tostring(r.GetDrawLayer and r:GetDrawLayer())
+									.. "] " .. tostring(atlas or tex)
+								if not groups[key] then
+									groups[key] = 0
+									order[#order + 1] = key
+								end
+								groups[key] = groups[key] + 1
 							end
 						end
 					end
 				end
-				local function walk(where, frame, depth)
-					art(where, frame, depth)
-					if depth > 3 or not frame.GetChildren then return end
+				local function walk(frame, depth)
+					art(frame, depth)
+					if depth > 4 or not frame.GetChildren then return end
 					for _, kid in ipairs({ frame:GetChildren() }) do
 						if kid and kid.IsShown and kid:IsShown()
 							and not kid.__aetherPanel then
-							walk(tostring(kid.GetName and kid:GetName()
-								or "unnamed"), kid, depth + 1)
+							walk(kid, depth + 1)
 						end
 					end
 				end
-				walk("frame", f, 0)
-				A_Print("  art still drawing: " .. #live)
-				for i = 1, math.min(#live, 24) do A_Print(live[i]) end
-				if #live > 24 then
-					A_Print("    ... and " .. (#live - 24) .. " more")
+				walk(f, 0)
+
+				table.sort(order, function(a, b)
+					if groups[a] ~= groups[b] then return groups[a] > groups[b] end
+					return a < b
+				end)
+				A_Print("  art still drawing: " .. total .. " in "
+					.. #order .. " kinds")
+				for i = 1, math.min(#order, 20) do
+					A_Print(string.format("    %3d x %s", groups[order[i]],
+						order[i]))
+				end
+				if #order > 20 then
+					A_Print("    ... and " .. (#order - 20) .. " more kinds")
 				end
 			end
 			A_Print("  chrome " .. box(f.__aetherChrome) ..
