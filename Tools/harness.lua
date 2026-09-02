@@ -4826,6 +4826,102 @@ do
 			lfd.Inset:SetPoint("TOPLEFT", lfd, "TOPLEFT", 224, -24)
 			lfd.Inset.__stone = lfd.Inset:CreateTexture(nil, "BORDER")
 			lfd.Inset.__stone:SetTexture("inset-stone")
+
+			-- THE QUEUE FRAME IS NOT THE PANE. LFDQueueFrame is a setAllPoints
+			-- CHILD of LFDParentFrame and carries the dungeon list's own
+			-- backdrop, so a sweep of the parent leaves it drawing - which is
+			-- the black brick showing through the list in the screenshots.
+			local lfdq = CreateFrame("Frame", "LFDQueueFrame", lfd)
+			lfdq:SetAllPoints(lfd)
+			lfdq.__art = lfdq:CreateTexture(nil, "BACKGROUND")
+			lfdq.__art:SetTexture("Interface\\LFGFrame\\UI-LFG-BACKGROUND-DUNGEON")
+
+			-- ITS THREE ROLES, a picture in a ring: the picture says tank,
+			-- healer or damage and the ring says nothing.
+			for _, role in ipairs({ "Tank", "Healer", "DPS" }) do
+				local rb = CreateFrame("Button",
+					"LFDQueueFrameRoleButton" .. role, lfdq)
+				rb:SetSize(48, 48)
+				rb.icon = rb:CreateTexture(nil, "ARTWORK")
+				rb.icon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-ROLES")
+				rb:SetNormalTexture("lfg-role-ring")
+			end
+
+			-- AND ITS ACTION BUTTON, MagicButtonTemplate, at the foot.
+			local find = CreateFrame("Button",
+				"LFDQueueFrameFindGroupButton", lfdq)
+			find:SetSize(135, 22)
+			find:SetPoint("BOTTOMRIGHT", lfd, "BOTTOMRIGHT", -8, 8)
+			find:SetNormalTexture("magic-button-up")
+			local ft = find:CreateFontString(nil, "OVERLAY")
+			ft:SetText("Find Group")
+			find.__fs = ft
+			function find:GetFontString() return self.__fs end
+
+			-- A MinimalScrollBar, whose track is a CHILD FRAME rather than
+			-- three regions of the bar.
+			lfdq.ScrollBar = CreateFrame("Frame", nil, lfdq)
+			lfdq.ScrollBar.Track = CreateFrame("Frame", nil, lfdq.ScrollBar)
+			lfdq.ScrollBar.Track.Thumb =
+				CreateFrame("Frame", nil, lfdq.ScrollBar.Track)
+			lfdq.ScrollBar.Track.__rail =
+				lfdq.ScrollBar.Track:CreateTexture(nil, "BACKGROUND")
+			lfdq.ScrollBar.Track.__rail:SetTexture("scroll-rail-stone")
+
+			-- THE SECOND TAB'S PANE, and it is a different template wearing
+			-- the same shape: PVPQueueFrame's four rows spell their parts
+			-- `Background`, `Ring`, `Icon`, `Name` where the finder's spell
+			-- them `bg`, `ring`, `icon`, `name`. One capital letter apart, and
+			-- reaching for the wrong spelling turns StripExcept into Strip and
+			-- takes the picture away with the plate.
+			local pvp = CreateFrame("Frame", "PVPQueueFrame", pve)
+			pvp:SetAllPoints(pve)
+			pvp.__art = pvp:CreateTexture(nil, "BACKGROUND")
+			pvp.__art:SetTexture("Interface\\PVPFrame\\PvPMegaQueue")
+			for i = 1, 4 do
+				local b = CreateFrame("Button",
+					"PVPQueueFrameCategoryButton" .. i, pvp)
+				b:SetSize(203, 60)
+				b:SetPoint("TOPLEFT", pvp, "TOPLEFT", 10, -70 - (i - 1) * 83)
+				b.Background = b:CreateTexture(nil, "BACKGROUND")
+				b.Background:SetTexture("Interface\\Common\\bluemenu-main")
+				b.Ring = b:CreateTexture(nil, "ARTWORK")
+				b.Ring:SetTexture("Interface\\TalentFrame\\talent-main")
+				b.Icon = b:CreateTexture(nil, "ARTWORK")
+				b.Icon:SetTexture("Interface\\Icons\\Achievement_PVP_0" .. i)
+				b.Name = b:CreateFontString(nil, "ARTWORK")
+				b.Name:SetText("PvP " .. i)
+				b:SetNormalTexture("bluemenu-plate")
+				pvp["CategoryButton" .. i] = b
+			end
+
+			local hq = CreateFrame("Frame", "HonorQueueFrame", pvp)
+			hq:SetAllPoints(pvp)
+			hq.__art = hq:CreateTexture(nil, "BACKGROUND")
+			hq.__art:SetTexture("Interface\\PVPFrame\\PvPBG")
+			for _, key in ipairs({ "SoloQueueButton", "GroupQueueButton" }) do
+				local b = CreateFrame("Button", "HonorQueueFrame" .. key, hq)
+				b:SetSize(135, 22)
+				b:SetNormalTexture("magic-button-up")
+				local t = b:CreateFontString(nil, "OVERLAY")
+				t:SetText(key)
+				b.__fs = t
+				function b:GetFontString() return self.__fs end
+			end
+
+			-- AND THE CLIENT RE-LETTERS THE FINDER ROWS. Both branches of
+			-- GroupFinderFrameButton_SetEnabled call name:SetFontObject, so a
+			-- label dressed once is Blizzard's again the next time
+			-- EvaluateButtonVisibility runs - on LFG_UPDATE_RANDOM_INFO and
+			-- PLAYER_LEVEL_CHANGED as well as on load.
+			function _G.GroupFinderFrameButton_SetEnabled(button, enabled)
+				local part = button.name or button.Name
+				if part then
+					part._aetherStyle = nil
+					part.__fontObject = enabled and "GameFontNormalLarge"
+						or "GameFontDisableLarge"
+				end
+			end
 		end
 
 		-- THE GROUP FINDER, which is two windows behind two tabs on one parchment
@@ -36307,6 +36403,14 @@ do
 	local PN = A:GetModule("panels")
 	local pve = _G.PVEFrame
 	pve:Show()
+	-- THE PANES A FOOTER'S BUTTONS LIVE ON. The strip is laid out from what is
+	-- VISIBLE and ours - only one tab is ever up in the client - so a pane left
+	-- hidden here has its buttons skipped, and the check that follows would be
+	-- reading an undressed button for the wrong reason.
+	_G.LFDParentFrame:Show()
+	_G.LFDQueueFrame:Show()
+	_G.PVPQueueFrame:Show()
+	_G.HonorQueueFrame:Show()
 	PN.Dress(pve)
 
 	check(pve.__aetherPanel ~= nil,
@@ -36347,22 +36451,87 @@ do
 	-- THE FOUR FINDER BUTTONS: a plate, a ring and a PICTURE. Same division as
 	-- the resistance chips and the spellbook's school tabs, same rule - the
 	-- picture is the information and the stone is not.
-	local kept, plates = 0, 0
+	-- BOTH TABS' ROWS, AND THEY SPELL THEIR PARTS DIFFERENTLY. The finder's are
+	-- `bg`, `ring`, `icon`, `name`; the PvP tab's are `Background`, `Ring`,
+	-- `Icon`, `Name`. One capital apart, and the first pass here reached only
+	-- for the lower-case spelling - so the PvP tab kept four of Blizzard's gold
+	-- discs and, worse, StripExcept with a nil keep is Strip: it would have
+	-- taken the picture too.
+	local kept, plates, wide = 0, 0, 0
+	local rows = {}
 	for i = 1, 4 do
-		local b = _G["GroupFinderFrameGroupButton" .. i]
-		if (b.icon:GetTexture() or 0) ~= 0 then kept = kept + 1 end
-		if (b.bg:GetTexture() or 0) ~= 0
-			or (b.ring:GetTexture() or 0) ~= 0 then plates = plates + 1 end
+		rows[#rows + 1] = { _G["GroupFinderFrameGroupButton" .. i],
+			"icon", "bg", "ring", "name" }
+		rows[#rows + 1] = { _G.PVPQueueFrame["CategoryButton" .. i],
+			"Icon", "Background", "Ring", "Name" }
 	end
-	check(kept == 4,
-		"all four finder buttons KEEP their picture (" .. kept .. " of 4)")
+	for _, r in ipairs(rows) do
+		local b, ic, bg, ring = r[1], r[2], r[3], r[4]
+		if (b[ic]:GetTexture() or 0) ~= 0 then kept = kept + 1 end
+		if (b[bg]:GetTexture() or 0) ~= 0
+			or (b[ring]:GetTexture() or 0) ~= 0 then plates = plates + 1 end
+		-- AND THE PICTURE KEEPS ITS OWN SIZE. This is the bug the screenshots
+		-- showed: the rows were first dressed with W.DecorateSlot, which does
+		-- `icon:SetAllPoints(f)` - right for a 36-square bag cell, and on a
+		-- 203 by 60 row it stretched a 66-pixel picture the full width until it
+		-- read as a white slab with the label sitting on it.
+		if (b[ic]:GetWidth() or 0) > b:GetWidth() - 40 then wide = wide + 1 end
+	end
+	check(kept == 8,
+		"every finder row on BOTH tabs keeps its picture (" .. kept .. " of 8)")
 	check(plates == 0,
-		"and lose the bluemenu plate and ring behind it (" .. plates
+		"and loses the plate and ring behind it (" .. plates
 		.. " still drawing)")
-	check(_G.GroupFinderFrameGroupButton1.name._aetherStyle == "pnBody",
+	check(wide == 0,
+		"and the picture stays a picture rather than being stretched the width"
+		.. " of the row - a slot helper on a row draws a white slab ("
+		.. wide .. " stretched)")
+	check(_G.GroupFinderFrameGroupButton1.name._aetherStyle == "pnBody"
+		and _G.PVPQueueFrame.CategoryButton1.Name._aetherStyle == "pnBody",
 		"with the label in the role every other list label here takes, rather"
 		.. " than a name Media.style has never heard of - which SetFont"
 		.. " silently answers with unitSub")
+
+	-- AND THE CLIENT RE-LETTERS THEM. Both branches of
+	-- GroupFinderFrameButton_SetEnabled call name:SetFontObject, so a row
+	-- dressed once is Blizzard's again the next time EvaluateButtonVisibility
+	-- runs - which is LFG_UPDATE_RANDOM_INFO and PLAYER_LEVEL_CHANGED, not
+	-- just load. Ninth instance of the client repainting behind us.
+	_G.GroupFinderFrameButton_SetEnabled(
+		_G.GroupFinderFrameGroupButton1, false)
+	check(_G.GroupFinderFrameGroupButton1.name._aetherStyle == "pnBody",
+		"and a row the client re-letters is put back into our type rather than"
+		.. " left in GameFontDisableLarge")
+
+	-- THE QUEUE FRAME IS NOT THE PANE. LFDQueueFrame is a setAllPoints child of
+	-- LFDParentFrame carrying the dungeon list's own backdrop; sweeping the
+	-- parent alone leaves it drawing, which is the black brick behind the list.
+	check(_G.LFDQueueFrame.__art:GetTexture() == 0,
+		"the queue frame's own backdrop goes too, not just its parent pane's")
+
+	-- THE THREE ROLES: a picture in a ring, and the ring says nothing.
+	local roles = 0
+	for _, role in ipairs({ "Tank", "Healer", "DPS" }) do
+		local rb = _G["LFDQueueFrameRoleButton" .. role]
+		if (rb.icon:GetTexture() or 0) ~= 0
+			and rb:GetNormalTexture():GetTexture() == 0 then
+			roles = roles + 1
+		end
+	end
+	check(roles == 3,
+		"each role keeps its picture and loses its ring (" .. roles .. " of 3)")
+
+	-- AND THE BUTTONS ALONG THE FOOT, which the first pass left out entirely -
+	-- so they sat in Blizzard's stone under a footer that was not there. Every
+	-- name resolved out of the XML: each is `$parentSomething` under an
+	-- enclosing frame that is NOT the pane.
+	for _, name in ipairs({ "LFDQueueFrameFindGroupButton",
+		"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton" }) do
+		check(_G[name]:GetNormalTexture():GetTexture() == 0,
+			name .. " loses its stone")
+	end
+	check(PN.ENTRY.PVEFrame.footer and PN.ENTRY.PVEFrame.footer > 0,
+		"and the window has a footer strip for them to stand in")
 
 	-- ITS THREE TABS HANG BELOW THE FRAME, 30 down and outside its own art, so
 	-- the glass has to reach past the frame to carry them the way the

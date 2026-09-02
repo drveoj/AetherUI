@@ -4674,6 +4674,87 @@ end
 -- PVEFrame.lua's own `panels` table gates the third on being at the level cap
 -- with challenge mode enabled. So every pane here is asked for and skipped
 -- when absent rather than assumed.
+-- The picture on a finder row, and the gap from the row's left edge to it.
+-- Blizzard hangs its ring at LEFT -12 and centres a 66-pixel icon in it; ours
+-- keeps the picture at that size and brings it inside the row.
+local PVE_ROW_ICON = 44
+local PVE_ROW_PAD  = 8
+
+--- The finder rows on both of this window's tabs.
+--
+--  ONE FUNCTION FOR TWO TEMPLATES, AND THEY DIFFER BY CAPITAL LETTERS.
+--  GroupFinderFrame's four are GroupFinderGroupButtonTemplate and spell their
+--  parts `bg`, `ring`, `icon`, `name`; PVPQueueFrame's four are
+--  PVPQueueFrameButtonTemplate and spell the same four parts `Background`,
+--  `Ring`, `Icon`, `Name`. Same row, drawn twice, one letter apart.
+--
+--  That is not a detail to guess at: reaching for `btn.icon` on a PvP row gets
+--  nil, which turns StripExcept into Strip and takes the picture away with the
+--  plate. The first pass here dressed only the first tab's rows, which is why
+--  the PvP tab still had four of Blizzard's gold discs down its side.
+local function RowPart(btn, ...)
+	for _, key in ipairs({ ... }) do
+		local part = btn[key]
+		if type(part) == "table" then return part end
+	end
+	return nil
+end
+
+local function GroupButtons(store)
+	local rows = {}
+	local pvp = _G.PVPQueueFrame
+	for i = 1, 4 do
+		rows[#rows + 1] = _G["GroupFinderFrameGroupButton" .. i]
+		if pvp then rows[#rows + 1] = pvp["CategoryButton" .. i] end
+	end
+
+	for _, btn in ipairs(rows) do
+		if not Reskin.Forbidden(btn) then
+			local icon  = RowPart(btn, "icon", "Icon")
+			local label = RowPart(btn, "name", "Name")
+
+			Reskin.ClearButton(btn)
+			-- StripExcept, because the picture is a region of the button
+			-- exactly as the plate is, and taking the lot takes the one thing
+			-- that says which finder the row opens.
+			Reskin.StripExcept(btn, store, icon and { icon } or nil)
+
+			-- THE PICTURE, at its own size and on the left where the ring was.
+			if icon and icon.ClearAllPoints then
+				icon:ClearAllPoints()
+				icon:SetSize(PVE_ROW_ICON, PVE_ROW_ICON)
+				icon:SetPoint("LEFT", btn, "LEFT", PVE_ROW_PAD, 0)
+				icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+				icon:Show()
+			end
+
+			-- A BACKING FOR THE ROW, once. Created rather than re-created on
+			-- every pass: this runs again from the client's own repaint hook.
+			if not btn.__aetherRowBack then
+				local back = btn:CreateTexture(nil, "BACKGROUND")
+				back:SetTexture(Media.texture.flat)
+				back:SetAllPoints(btn)
+				btn.__aetherRowBack = back
+			end
+			W.Tint(btn.__aetherRowBack, Palette:Track())
+
+			-- `pnBody`, the role every other list label in these windows takes.
+			-- Not a name invented here: Media.style has a fixed vocabulary and
+			-- SetFont answers anything it does not know with unitSub, so a
+			-- made-up role reads as styled and is the wrong size.
+			if label then
+				Roled(label, "pnBody")
+				if label.ClearAllPoints then
+					label:ClearAllPoints()
+					label:SetPoint("LEFT", btn, "LEFT",
+						PVE_ROW_PAD * 2 + PVE_ROW_ICON, 0)
+					label:SetPoint("RIGHT", btn, "RIGHT", -PVE_ROW_PAD, 0)
+				end
+			end
+		end
+	end
+end
+
 local function DressPVE(frame, store)
 	-- THE TABS FIRST, for the reason the social window taught: a tab is a
 	-- Button with a label that is a child of the window, which is what a
@@ -4704,9 +4785,17 @@ local function DressPVE(frame, store)
 	-- THE PANES' OWN ART. Each is a plain frame over the window with its
 	-- backing drawn on it, the way LFGBrowseFrame and LFGListingFrame are on
 	-- the Era window.
+	--
+	-- THE QUEUE FRAMES ARE IN HERE TOO, and they are not the panes. LFDQueueFrame
+	-- is a setAllPoints child of LFDParentFrame carrying the dungeon list's own
+	-- backdrop; a sweep of the parent leaves that drawing, which is the black
+	-- brick showing through the list in the screenshots.
 	for _, name in ipairs({ "GroupFinderFrame", "PVPQueueFrame",
-		"ChallengesFrame", "LFDParentFrame", "RaidFinderFrame",
-		"ScenarioFinderFrame", "LFGListFrame", "PVEFramePortrait" }) do
+		"ChallengesFrame", "LFDParentFrame", "LFDQueueFrame",
+		"RaidFinderFrame", "RaidFinderQueueFrame",
+		"ScenarioFinderFrame", "ScenarioQueueFrame",
+		"HonorQueueFrame", "ConquestQueueFrame", "WarGamesQueueFrame",
+		"LFGListFrame" }) do
 		local pane = _G[name]
 		if pane then
 			pane.__aetherStore = pane.__aetherStore or {}
@@ -4714,30 +4803,80 @@ local function DressPVE(frame, store)
 		end
 	end
 
-	-- THE FOUR GROUP BUTTONS, which are the resistance chips and the
-	-- spellbook's school tabs a third time: a bluemenu plate, a ring, and a
-	-- PICTURE that is the information. The plate and the ring go, the picture
-	-- stays, and the button gets a cell of ours in their place.
-	--
-	-- StripExcept rather than Strip, because the icon is a region of the
-	-- button exactly as the plate is and taking the lot takes the one thing
-	-- that says which finder this row opens.
-	for i = 1, 4 do
-		local btn = _G["GroupFinderFrameGroupButton" .. i]
+	-- THE THREE ROLE BUTTONS, which are a picture in a ring exactly as the
+	-- finder rows are, and the same rule: the picture says tank, healer or
+	-- damage and the ring around it says nothing. They sit above the list on
+	-- the dungeon and raid panes and above the battleground one on PvP.
+	for _, name in ipairs({
+		"LFDQueueFrameRoleButtonTank", "LFDQueueFrameRoleButtonHealer",
+		"LFDQueueFrameRoleButtonDPS", "LFDQueueFrameRoleButtonLeader",
+		"RaidFinderQueueFrameRoleButtonTank",
+		"RaidFinderQueueFrameRoleButtonHealer",
+		"RaidFinderQueueFrameRoleButtonDPS",
+	}) do
+		local btn = _G[name]
 		if btn and not Reskin.Forbidden(btn) then
-			Reskin.ClearButton(btn)
-			Reskin.StripExcept(btn, store, btn.icon and { btn.icon } or nil)
-			if btn.icon then
-				W.DecorateSlot(btn, btn:GetHeight() or 60,
-					{ icon = btn.icon, count = false })
-			end
-			-- `pnBody`, the role every other list label in these windows
-			-- takes. Not a name invented here: Media.style has a fixed
-			-- vocabulary and SetFont falls back to unitSub for anything it
-			-- does not know, so a made-up role reads as "styled" and is a
-			-- different size from everything beside it.
-			if btn.name then Roled(btn.name, "pnBody") end
+			local icon = RowPart(btn, "icon", "Icon")
+				or (btn.GetNormalTexture and btn:GetNormalTexture())
+			Reskin.IconButton(btn, store, { icon = icon })
 		end
+	end
+
+	-- THE BUTTONS ALONG THE FOOT. The entry's `actions` list PLACES them and
+	-- does not skin them - that is every dresser's own job here - so the first
+	-- pass left Find Group, Join Battle and Join as Group standing in
+	-- Blizzard's stone in a footer strip of ours.
+	--
+	-- MagicButtonTemplate, which is UIPanelButtonTemplate's shape: Left, Middle
+	-- and Right BACKGROUND regions rather than state textures, so a plain
+	-- ClearButton leaves the plate exactly where it was. Reskin.Button knows.
+	for _, name in ipairs({
+		"LFDQueueFrameFindGroupButton",
+		"RaidFinderQueueFrameFindRaidButton",
+		"ScenarioQueueFrameFindGroupButton",
+		"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton",
+		"ConquestJoinButton", "WarGameStartButton",
+	}) do
+		local btn = _G[name]
+		if btn and not Reskin.Forbidden(btn) then Reskin.Button(btn, "pnBody") end
+	end
+
+	-- AND THE LISTS SCROLL IN OUR RAIL. MinimalScrollBar on this window, which
+	-- is the generation whose track is a CHILD FRAME rather than three regions
+	-- of the bar - see Reskin.ScrollBar for why that distinction matters.
+	for _, path in ipairs({ "LFDQueueFrame.ScrollBar",
+		"RaidFinderQueueFrame.ScrollBar", "ScenarioQueueFrame.ScrollBar",
+		"HonorQueueFrame.ScrollBar" }) do
+		local bar = Part(path)
+		if bar then Reskin.ScrollBar(bar, store) end
+	end
+
+	-- THE FOUR GROUP BUTTONS ARE ROWS, NOT SLOTS, and the first attempt at them
+	-- treated them as slots. W.DecorateSlot does `icon:SetAllPoints(f)` and
+	-- lays a shade, a gloss and an edge over the whole frame - which is right
+	-- for a 36-square bag cell and wrong for a 203 by 60 row: the 66-pixel
+	-- picture was stretched the full width of the button until it read as a
+	-- white slab, with the client's label sitting on top of it. That is what
+	-- the screenshots showed.
+	--
+	-- What they actually are: a bluemenu plate, a ring, and a PICTURE that is
+	-- the information, laid out as a list row. So the plate and ring go, the
+	-- picture keeps its own size in the place the ring held on the left, and
+	-- the row gets a backing of ours behind the pair.
+	GroupButtons(store)
+
+	-- AND THE CLIENT RE-LETTERS THEM. GroupFinderFrameButton_SetEnabled calls
+	-- `button.name:SetFontObject(...)` on every enable and disable - both
+	-- branches, so a label dressed once is Blizzard's again the moment
+	-- EvaluateButtonVisibility runs, which it does on LFG_UPDATE_RANDOM_INFO
+	-- and PLAYER_LEVEL_CHANGED as well as on load. Ninth instance of the same
+	-- thing; hook what repaints.
+	if not PN.__pveButtonHook and hooksecurefunc
+		and type(_G.GroupFinderFrameButton_SetEnabled) == "function" then
+		PN.__pveButtonHook = true
+		hooksecurefunc("GroupFinderFrameButton_SetEnabled", function()
+			if PN.enabled then pcall(GroupButtons, store) end
+		end)
 	end
 end
 

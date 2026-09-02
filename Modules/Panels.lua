@@ -323,7 +323,27 @@ local PANELS = {
 		-- THE THREE TABS' PANES, in the order PVEFrame.lua's own `panels`
 		-- table lists them. Two are load-on-demand and simply are not there
 		-- until opened, which the dresser has to survive rather than assume.
-		body = { "GroupFinderFrame", "PVPQueueFrame", "ChallengesFrame" } },
+		body = { "GroupFinderFrame", "PVPQueueFrame", "ChallengesFrame" },
+		-- THE BUTTONS ALONG THE FOOT, which are MagicButtonTemplate on both
+		-- tabs: Find Group under the dungeon list, Join Battle and Join as
+		-- Group under the battleground one. Left out of the first pass, so
+		-- they sat in Blizzard's stone under a footer that was not there.
+		--
+		-- ONE STRIP SERVES BOTH PANES, laid out from what is visible and ours,
+		-- the way the Era group finder's row is: only one tab is ever up.
+		footer = W.PANEL_FOOT_H,
+		-- EVERY NAME HERE RESOLVED FROM THE XML rather than guessed at. Each is
+		-- `$parentSomething` under a differently named enclosing frame, and the
+		-- enclosing frame is not the pane: Find Group hangs off LFDQueueFrame,
+		-- Find Raid off RaidFinderQueueFrame, the two battleground ones off
+		-- HonorQueueFrame. Two of them are simply spelled Conquest and War Game.
+		actions = { mid = {
+			"LFDQueueFrameFindGroupButton",
+			"RaidFinderQueueFrameFindRaidButton",
+			"ScenarioQueueFrameFindGroupButton",
+			"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton",
+			"ConquestJoinButton", "WarGameStartButton",
+		} } },
 
 	-- THE GROUP FINDER, which is two windows behind two tabs: the listing you
 	-- post and the browse you search with. LFGParentFrame is the old parchment
