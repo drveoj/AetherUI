@@ -36955,6 +36955,38 @@ do
 			.. ")")
 	end
 
+	-- THE WINDOW HOLDS STILL WHEN YOU CHANGE TAB, which it did not.
+	--
+	-- LayoutBody grows the window once for the LARGEST shift any pane needs. A
+	-- pane that is down cannot be measured, so the figure it contributes is the
+	-- one cached from when it was up - and the re-measure hook I added was
+	-- clearing EVERY pane's cache, leaving only the pane just shown with a
+	-- reading. The maximum then swung between the two tabs' own numbers and the
+	-- window's height swung with it, which is exactly what was reported: "the
+	-- whole window resizes".
+	do
+		_G.PVEFrame_ShowFrame("GroupFinderFrame")
+		local h1, w1 = pve:GetHeight(), pve:GetWidth()
+		_G.PVEFrame_ShowFrame("PVPQueueFrame")
+		local h2, w2 = pve:GetHeight(), pve:GetWidth()
+		_G.PVEFrame_ShowFrame("GroupFinderFrame")
+		local h3 = pve:GetHeight()
+		check(math.abs(h1 - h2) < 0.5 and math.abs(h1 - h3) < 0.5,
+			"changing tab does not resize the window (" .. h1 .. " / " .. h2
+			.. " / " .. h3 .. ")")
+		check(math.abs(w1 - w2) < 0.5,
+			"nor rewiden it (" .. w1 .. " against " .. w2 .. ")")
+
+		-- AND BOTH PANES SIT AT THE SAME HEIGHT, so the content does not jump
+		-- between tabs even while the window holds still.
+		local _, _, _, _, y1 = _G.GroupFinderFrame:GetPoint(1)
+		local _, _, _, _, y2 = _G.PVPQueueFrame:GetPoint(1)
+		check(math.abs((y1 or 0) - (y2 or 0)) < 0.5,
+			"and both panes are moved down by the same amount, so the content"
+			.. " does not jump either (" .. tostring(y1) .. " against "
+			.. tostring(y2) .. ")")
+	end
+
 	-- THE PVP TAB, whose every part I had named wrongly until ElvUI's skin was
 	-- read. Reported as "the PVP tab is still not properly aligned", and the
 	-- reason was that none of the names reached anything.

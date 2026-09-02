@@ -5011,15 +5011,26 @@ local function DressPVE(frame, store)
 	if not PN.__pveShowHook and hooksecurefunc
 		and type(_G.PVEFrame_ShowFrame) == "function" then
 		PN.__pveShowHook = true
-		hooksecurefunc("PVEFrame_ShowFrame", function()
+		hooksecurefunc("PVEFrame_ShowFrame", function(name)
 			if not PN.enabled then return end
 			local entry = PN.ENTRY and PN.ENTRY.PVEFrame
-			for _, name in ipairs((entry and entry.body) or {}) do
-				local pane = _G[name]
-				if pane then
-					pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight =
-						nil, nil, nil
-				end
+
+			-- ONLY THE PANE BEING SHOWN, and forgetting all of them was the
+			-- reason the window changed size on a tab click.
+			--
+			-- LayoutBody takes the LARGEST shift any pane needs and grows the
+			-- window once for it. A pane that is down cannot be measured, so
+			-- the number it contributes is the one CACHED from when it was up -
+			-- and clearing every cache meant the only pane with a measurement
+			-- was the one just shown. The maximum then swung between 34 and 58
+			-- with the tab, and the window's height swung with it.
+			--
+			-- Forgetting one pane leaves the others' readings standing, so the
+			-- maximum is still taken across all of them.
+			local pane = name and _G[name]
+			if pane then
+				pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight =
+					nil, nil, nil
 			end
 			pcall(PN.LayoutBody, _G.PVEFrame, entry)
 		end)

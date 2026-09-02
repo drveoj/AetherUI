@@ -353,6 +353,25 @@ local PANELS = {
 		-- ScenarioFinderFrameInset, and LFGListFrame's several. A body well
 		-- round the outside would be a rim drawn round rims.
 		wells = false,
+		-- AND EVERY PANE TAKES THE SAME SHIFT. Without this each tab moves its
+		-- own pane down by its own amount - 34 for the group finder, 58 for the
+		-- battlegrounds - so the content jumps as you click between them even
+		-- when the window itself holds still. `together` gives them all the
+		-- largest, which is what the client does by keeping this window one
+		-- fixed size across all three tabs.
+		together = true,
+		-- AND IT IS NEVER WIDENED. The condition `keepWidth` documents is
+		-- exactly this window's: every pane's content is already inside a recess
+		-- of the client's own, so shifting it across moves it out of the recess
+		-- drawn for it, and growing the window to pay for that shift makes it too
+		-- wide for what is in it.
+		--
+		-- Without this the width swung by six units on every tab click, for the
+		-- same reason the height swung by twenty-four: the growth is the largest
+		-- any pane asks for, and which panes can be measured changes with which
+		-- one is up. The client keeps PVEFrame one fixed size across all three
+		-- tabs and so do we.
+		keepWidth = true,
 		-- THE THREE TABS' PANES, in the order PVEFrame.lua's own `panels`
 		-- table lists them. Two are load-on-demand and simply are not there
 		-- until opened, which the dresser has to survive rather than assume.
