@@ -4724,6 +4724,110 @@ do
 			_G[spec[1]] = b
 		end
 		
+		-- THE GROUP FINDER MISTS ACTUALLY OPENS, which is a different window
+		-- doing the same job as the parchment one below.
+		-- Blizzard_GroupFinder is gated `wrath, cata, mists` and carries
+		-- PVEFrame; Blizzard_GroupFinder_VanillaStyle is load-on-demand and
+		-- carries LFGParentFrame. The port dressed the Era one and left this
+		-- undressed - a whole window in Blizzard's stone inside our interface.
+		--
+		-- BUILT ON BOTH FLAVOURS. Nothing here is flavour-gated because the
+		-- entry is not either: an entry whose frame never appears never fires,
+		-- and having the mock carry it on both is what proves that claim rather
+		-- than assuming it.
+		do
+			local pve = buildPanel("PVEFrame")
+			pve:SetSize(563, 428)
+			pve.selectedTab = 1
+
+			-- A SECOND FRAME OF ART INSIDE THE FIRST, and eleven textures of
+			-- it: `Interface\Common\bluemenu-*` drawn round the left column on
+			-- top of the portrait template's own chrome. They are regions of
+			-- PVEFrame itself, which is the point - a dresser that only walked
+			-- the panes would leave every one of them drawing.
+			pve.__blue = {}
+			for _, part in ipairs({ "BlueBg", "TLCorner", "TRCorner",
+				"BRCorner", "BLCorner", "LLVert", "RLVert", "BottomLine",
+				"TopLine", "TopFiligree", "BottomFiligree" }) do
+				local t = pve:CreateTexture("PVEFrame" .. part, "BORDER")
+				t:SetTexture("Interface\\Common\\bluemenu-main")
+				pve.__blue[#pve.__blue + 1] = t
+			end
+
+			-- ITS RECESS IS THE LEFT COLUMN ONLY - 217 wide against a 563-wide
+			-- window - which is why this window cannot take a body well round
+			-- the outside and why every pane brings a recess of its own.
+			pve.Inset = CreateFrame("Frame", "PVEFrameLeftInset", pve)
+			pve.Inset:SetSize(217, 400)
+			pve.Inset:SetPoint("TOPLEFT", pve, "TOPLEFT", 4, -24)
+			pve.Inset.__stone = pve.Inset:CreateTexture(nil, "BORDER")
+			pve.Inset.__stone:SetTexture("inset-stone")
+
+			-- THREE TABS, hanging 30 BELOW the bottom edge outside the frame's
+			-- own art - the character sheet's case, not the vendor's.
+			for i, word in ipairs({ "Group Finder", "Player vs Player",
+				"Challenges" }) do
+				local tab = CreateFrame("Button", "PVEFrameTab" .. i, pve)
+				tab:SetID(i)
+				tab:SetSize(90, 32)
+				tab:SetPoint("BOTTOMLEFT", pve, "BOTTOMLEFT",
+					19 + (i - 1) * 74, -30)
+				local fs = tab:CreateFontString(nil, "OVERLAY")
+				fs:SetText(word)
+				tab.__fs = fs
+				function tab:GetFontString() return self.__fs end
+				tab:SetNormalTexture("tab-stone")
+				tab:SetDisabledTexture("tab-stone-selected")
+				pve["tab" .. i] = tab
+			end
+
+			-- THE FIRST TAB'S PANE, setAllPoints as they all are, with the
+			-- column of four finder buttons in the left recess.
+			local gff = CreateFrame("Frame", "GroupFinderFrame", pve)
+			gff:SetAllPoints(pve)
+			gff.__art = gff:CreateTexture(nil, "BACKGROUND")
+			gff.__art:SetTexture("Interface\\Common\\bluemenu-main")
+
+			-- EACH IS A PLATE, A RING AND A PICTURE, and the picture is the
+			-- information - the resistance chips and the spellbook's school
+			-- tabs a third time. A sweep that took the lot would take the one
+			-- thing saying which finder the row opens.
+			for i = 1, 4 do
+				local b = CreateFrame("Button",
+					"GroupFinderFrameGroupButton" .. i, gff)
+				b:SetSize(203, 60)
+				b:SetPoint("TOPLEFT", gff, "TOPLEFT", 10, -70 - (i - 1) * 83)
+				b.bg = b:CreateTexture(nil, "BACKGROUND")
+				b.bg:SetTexture("Interface\\Common\\bluemenu-main")
+				b.ring = b:CreateTexture(
+					"GroupFinderFrameGroupButton" .. i .. "Ring", "ARTWORK")
+				b.ring:SetTexture("bluemenu-Ring")
+				b.icon = b:CreateTexture(
+					"GroupFinderFrameGroupButton" .. i .. "Icon", "ARTWORK")
+				b.icon:SetTexture("Interface\\Icons\\INV_Misc_Group_0" .. i)
+				b.name = b:CreateFontString(nil, "ARTWORK")
+				b.name:SetText("Finder " .. i)
+				b:SetNormalTexture("bluemenu-plate")
+				b:SetHighlightTexture("bluemenu-highlight")
+			end
+
+			-- AND THE RIGHT-HAND PANE THE FIRST BUTTON OPENS, which brings a
+			-- recess of its own. LOAD ON DEMAND in the client - PVPQueueFrame
+			-- comes with Blizzard_PVPUI and ChallengesFrame with
+			-- Blizzard_ChallengesUI - so only this one is built here, and the
+			-- dresser has to survive the other two being absent rather than
+			-- assume all three.
+			local lfd = CreateFrame("Frame", "LFDParentFrame", gff)
+			lfd:SetAllPoints(pve)
+			lfd.__art = lfd:CreateTexture(nil, "BACKGROUND")
+			lfd.__art:SetTexture("Interface\\LFGFrame\\UI-LFG-BACKGROUND")
+			lfd.Inset = CreateFrame("Frame", "LFDParentFrameInset", lfd)
+			lfd.Inset:SetSize(320, 300)
+			lfd.Inset:SetPoint("TOPLEFT", lfd, "TOPLEFT", 224, -24)
+			lfd.Inset.__stone = lfd.Inset:CreateTexture(nil, "BORDER")
+			lfd.Inset.__stone:SetTexture("inset-stone")
+		end
+
 		-- THE GROUP FINDER, which is two windows behind two tabs on one parchment
 		-- frame. LFGParentFrame is the OLD build - 384 by 512, an eye where a
 		-- portrait goes, tabs INSIDE its bottom margin rather than below it - and
@@ -36196,6 +36300,88 @@ do
 	check(art:GetTexture() == 0,
 		"and a pane that comes back is taken back off, because a window dressed"
 		.. " once at open leaves the other three in stone the moment you click")
+end
+
+print("== panels: the group finder Mists actually opens ==")
+do
+	local PN = A:GetModule("panels")
+	local pve = _G.PVEFrame
+	pve:Show()
+	PN.Dress(pve)
+
+	check(pve.__aetherPanel ~= nil,
+		"PVEFrame is dressed at all - it was the one whole window in the"
+		.. " interface still in Blizzard's stone, because the port dressed"
+		.. " LFGParentFrame, which is the window ERA opens")
+
+	-- ELEVEN TEXTURES OF A SECOND FRAME, drawn round the left column on top of
+	-- the portrait template's own chrome. They are regions of PVEFrame itself,
+	-- so a dresser that walked only the panes would leave every one drawing.
+	local blue = 0
+	for _, t in ipairs(pve.__blue) do
+		if (t:GetTexture() or 0) ~= 0 then blue = blue + 1 end
+	end
+	check(blue == 0,
+		"and its bluemenu frame-within-a-frame goes with the rest - eleven"
+		.. " textures on the window itself, not on its panes (" .. blue
+		.. " left)")
+
+	-- WELLS = FALSE, EARNED BY AN ANCHOR. The window's own recess is the LEFT
+	-- COLUMN only - 217 wide in a 563-wide window - and each right-hand pane
+	-- brings another. A body well round the outside would be a rim round rims.
+	check(PN.ENTRY.PVEFrame.wells == false,
+		"it takes no body well, because every pane's content is already inside"
+		.. " a recess of the client's own")
+	for _, name in ipairs({ "PVEFrameLeftInset", "LFDParentFrameInset" }) do
+		local ins = _G[name]
+		-- `__aetherPill` is what Reskin.Well marks, whatever the corner makes
+		-- it look like. Asking for a plausible-sounding `__aetherWell` gets nil
+		-- from a correctly dressed recess.
+		check(ins.__aetherPill ~= nil,
+			name .. " is dressed as one of our wells")
+		check(ins.__stone:GetTexture() == 0,
+			"and loses the client's stone rim, which is what a recess left"
+			.. " undressed looks like inside our glass")
+	end
+
+	-- THE FOUR FINDER BUTTONS: a plate, a ring and a PICTURE. Same division as
+	-- the resistance chips and the spellbook's school tabs, same rule - the
+	-- picture is the information and the stone is not.
+	local kept, plates = 0, 0
+	for i = 1, 4 do
+		local b = _G["GroupFinderFrameGroupButton" .. i]
+		if (b.icon:GetTexture() or 0) ~= 0 then kept = kept + 1 end
+		if (b.bg:GetTexture() or 0) ~= 0
+			or (b.ring:GetTexture() or 0) ~= 0 then plates = plates + 1 end
+	end
+	check(kept == 4,
+		"all four finder buttons KEEP their picture (" .. kept .. " of 4)")
+	check(plates == 0,
+		"and lose the bluemenu plate and ring behind it (" .. plates
+		.. " still drawing)")
+	check(_G.GroupFinderFrameGroupButton1.name._aetherStyle == "pnBody",
+		"with the label in the role every other list label here takes, rather"
+		.. " than a name Media.style has never heard of - which SetFont"
+		.. " silently answers with unitSub")
+
+	-- ITS THREE TABS HANG BELOW THE FRAME, 30 down and outside its own art, so
+	-- the glass has to reach past the frame to carry them the way the
+	-- character sheet's does.
+	check(_G.PVEFrameTab1.__aetherTab ~= nil or _G.PVEFrameTab1._aetherStyle
+		or (_G.PVEFrameTab1:GetNormalTexture():GetTexture() == 0),
+		"and its tabs are dressed as tabs rather than left as three slices of"
+		.. " stone under the window")
+	-- BELOW IT, not level with it. `<=` was the first spelling here and it
+	-- passes on a window whose glass stops exactly at the frame - which is the
+	-- failure: the tabs are then hanging on bare screen under our panel. The
+	-- drop is the client's own 30, so anything short of most of that is wrong.
+	local drop = pve:GetBottom() - pve.__aetherPanel:GetBottom()
+	check(drop > 20,
+		"with the glass reaching PAST the frame's own foot to carry them,"
+		.. " rather than stopping level with it and leaving three tabs on bare"
+		.. " screen (" .. string.format("%.0f", drop) .. " below)")
+
+	pve:Hide()
 end
 
 print("== panels: the talent window Mists rebuilt ==")

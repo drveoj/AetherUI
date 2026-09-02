@@ -92,6 +92,10 @@ local WHO_HEAD         = 30
 -- 74 and the views travel 6, so the strip lands on top of them.
 local LFG_ROLE_ROW     = 62
 
+-- How far PVEFrame's three tabs hang below its bottom edge. Blizzard's own
+-- number, from the BOTTOMLEFT offset on $parentTab1 in Classic\PVEFrame.xml.
+local PVE_TAB_DROP     = 30
+
 -- The rank switch's row at the top of the spellbook's well: the switch, and
 -- the gap to the first spell under it. The well's own padding is not in here -
 -- LayoutBody puts every window's content inside that already.
@@ -289,6 +293,37 @@ local PANELS = {
 			"WhoFrameWhoButton", "WhoFrameAddFriendButton",
 			"WhoFrameGroupInviteButton", "RaidFrameConvertToRaidButton",
 		} } },
+
+	-- THE SAME JOB ON MISTS, AND A DIFFERENT WINDOW ENTIRELY.
+	--
+	-- Era opens LFGParentFrame below; Wrath onward opens PVEFrame, and the two
+	-- share nothing but their purpose. Blizzard_GroupFinder is gated
+	-- `wrath, cata, mists` and carries PVEFrame; Blizzard_GroupFinder_
+	-- VanillaStyle is load-on-demand and carries the parchment one. So the port
+	-- dressed the window Era shows and left the window Mists shows in Blizzard's
+	-- stone - the only whole window in the interface that was still theirs.
+	--
+	-- BOTH ENTRIES STAND, ungated. Neither frame exists on the other's client
+	-- and an entry whose frame never appears never fires, which is how every
+	-- load-on-demand window here already works.
+	--
+	-- PORTRAIT FRAME, SO TIGHT, and its three tabs hang 30 below the bottom
+	-- edge outside its own art - the character sheet's case exactly, so the
+	-- glass reaches past the frame to carry them rather than stopping at it.
+	{ frame = "PVEFrame", addon = "Blizzard_GroupFinder", tight = true,
+		insets = { 0, 0, 0, -PVE_TAB_DROP },
+		tabs = "PVEFrameTab",
+		-- WELLS = FALSE, AND EARNED. Every pane on this window puts its content
+		-- inside a recess of the client's own: PVEFrame's LeftInset holds the
+		-- column of group buttons, and each right-hand pane brings one more -
+		-- LFDParentFrameInset, RaidFinderFrameRoleInset and its BottomInset,
+		-- ScenarioFinderFrameInset, and LFGListFrame's several. A body well
+		-- round the outside would be a rim drawn round rims.
+		wells = false,
+		-- THE THREE TABS' PANES, in the order PVEFrame.lua's own `panels`
+		-- table lists them. Two are load-on-demand and simply are not there
+		-- until opened, which the dresser has to survive rather than assume.
+		body = { "GroupFinderFrame", "PVPQueueFrame", "ChallengesFrame" } },
 
 	-- THE GROUP FINDER, which is two windows behind two tabs: the listing you
 	-- post and the browse you search with. LFGParentFrame is the old parchment

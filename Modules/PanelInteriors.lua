@@ -4654,8 +4654,96 @@ local function DressTrade(frame, store)
 end
 
 --- Interiors, by frame. A window with no entry gets the shell treatment only.
+-- ---------------------------------------------------------------------------
+-- the group finder Mists actually opens
+--
+-- PVEFrame, and it is not LFGParentFrame with different numbers - it is a
+-- different window that does the same job. Blizzard_GroupFinder is gated
+-- `wrath, cata, mists` and carries this one; the parchment one below is in
+-- Blizzard_GroupFinder_VanillaStyle, load-on-demand, and is what Era opens.
+--
+-- A SECOND FRAME OF ART INSIDE THE FIRST. On top of the portrait template's
+-- own chrome this window draws eleven textures of `Interface\Common\bluemenu-*`
+-- around its left column - a background slab, four corners, two vertical
+-- rules, two horizontal ones and two filigrees. They are regions of PVEFrame
+-- itself, so the shell's own strip takes them; they are named here only so the
+-- next person to read this knows they were accounted for rather than missed.
+--
+-- Its three tabs are load-on-demand panes - PVPQueueFrame comes with
+-- Blizzard_PVPUI and ChallengesFrame with Blizzard_ChallengesUI, and
+-- PVEFrame.lua's own `panels` table gates the third on being at the level cap
+-- with challenge mode enabled. So every pane here is asked for and skipped
+-- when absent rather than assumed.
+local function DressPVE(frame, store)
+	-- THE TABS FIRST, for the reason the social window taught: a tab is a
+	-- Button with a label that is a child of the window, which is what a
+	-- button sweep would otherwise take it for.
+	LayoutTabs(frame, store)
+
+	-- EVERY RECESS ON THE WINDOW, and there is one per pane rather than one
+	-- for the window. PVEFrame's own LeftInset holds the column of group
+	-- buttons at a fixed 217 wide; each right-hand pane brings its own. That
+	-- is what earns `wells = false` on the entry - a body well round the
+	-- outside would draw a rim round these rims.
+	--
+	-- ASKED FOR BY PATH, because two of the three panes do not exist until
+	-- their addon has been loaded once.
+	for _, path in ipairs({
+		"PVEFrame.Inset",
+		"LFDParentFrame.Inset",
+		"RaidFinderFrame.Inset", "RaidFinderFrameBottomInset",
+		"ScenarioFinderFrame.Inset",
+		"LFGListFrame.SearchPanel.ResultsInset",
+		"LFGListFrame.CategorySelection.Inset",
+		"LFGListFrame.EntryCreation.Inset",
+		"LFGListFrame.ApplicationViewer.Inset",
+	}) do
+		ClientRecess(nil, path)
+	end
+
+	-- THE PANES' OWN ART. Each is a plain frame over the window with its
+	-- backing drawn on it, the way LFGBrowseFrame and LFGListingFrame are on
+	-- the Era window.
+	for _, name in ipairs({ "GroupFinderFrame", "PVPQueueFrame",
+		"ChallengesFrame", "LFDParentFrame", "RaidFinderFrame",
+		"ScenarioFinderFrame", "LFGListFrame", "PVEFramePortrait" }) do
+		local pane = _G[name]
+		if pane then
+			pane.__aetherStore = pane.__aetherStore or {}
+			Reskin.Strip(pane, pane.__aetherStore)
+		end
+	end
+
+	-- THE FOUR GROUP BUTTONS, which are the resistance chips and the
+	-- spellbook's school tabs a third time: a bluemenu plate, a ring, and a
+	-- PICTURE that is the information. The plate and the ring go, the picture
+	-- stays, and the button gets a cell of ours in their place.
+	--
+	-- StripExcept rather than Strip, because the icon is a region of the
+	-- button exactly as the plate is and taking the lot takes the one thing
+	-- that says which finder this row opens.
+	for i = 1, 4 do
+		local btn = _G["GroupFinderFrameGroupButton" .. i]
+		if btn and not Reskin.Forbidden(btn) then
+			Reskin.ClearButton(btn)
+			Reskin.StripExcept(btn, store, btn.icon and { btn.icon } or nil)
+			if btn.icon then
+				W.DecorateSlot(btn, btn:GetHeight() or 60,
+					{ icon = btn.icon, count = false })
+			end
+			-- `pnBody`, the role every other list label in these windows
+			-- takes. Not a name invented here: Media.style has a fixed
+			-- vocabulary and SetFont falls back to unitSub for anything it
+			-- does not know, so a made-up role reads as "styled" and is a
+			-- different size from everything beside it.
+			if btn.name then Roled(btn.name, "pnBody") end
+		end
+	end
+end
+
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
+	PVEFrame          = DressPVE,
 	InspectFrame      = DressInspect,
 	MailFrame         = DressMail,
 	ItemTextFrame     = DressItemText,
