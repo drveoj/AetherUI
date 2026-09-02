@@ -1595,6 +1595,37 @@ local function MeasurePanels(arg)
 				A_Print("    TitleContainer.TitleText = "
 					.. words(c and c.TitleText)
 					.. ((c and c.TitleText) == chosen and "   <- this one" or ""))
+
+				-- AND IF NONE OF THEM HAS THE WORDS, WHO DOES. Every candidate
+				-- above came back empty on the pet tab while the default UI
+				-- plainly showed the pet's name, which means the string being
+				-- drawn is one this list has never named. Guessing which from
+				-- Blizzard's XML has now failed twice, so the frame is asked
+				-- instead: every font string on it and on its title container,
+				-- with what it holds.
+				--
+				-- Only strings with WORDS in them, because a window has dozens
+				-- and the empty ones are what we already know about.
+				local found = 0
+				local function sweep(where, holder)
+					if not (holder and holder.GetRegions) then return end
+					for _, r in ipairs({ holder:GetRegions() }) do
+						if r.GetObjectType and r:GetObjectType() == "FontString"
+							and (r:GetText() or "") ~= "" then
+							found = found + 1
+							A_Print("    " .. where .. " "
+								.. tostring(r.GetName and r:GetName() or "unnamed")
+								.. " = " .. words(r)
+								.. "  shown=" .. tostring(r:IsShown()))
+						end
+					end
+				end
+				sweep("frame", f)
+				sweep("TitleContainer", c)
+				if found == 0 then
+					A_Print("    (no font string on the frame itself holds"
+						.. " any words - it is on a pane, not the window)")
+				end
 			end
 			A_Print("  chrome " .. box(f.__aetherChrome) ..
 				"  lvl " .. tostring(f.__aetherChrome

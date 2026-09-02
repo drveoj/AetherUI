@@ -6267,6 +6267,35 @@ do
 			end
 			cf:UpdateSize()
 
+			-- AND THE TITLE IS WRITTEN FROM A SNAPSHOT TAKEN BEFORE YOU HAD A
+			-- PET. Cata\CharacterFrame.lua builds characterFrameDisplayInfo as
+			-- a local at file scope, so the pet's `title = UnitPVPName("pet")`
+			-- is evaluated once at load - empty for the rest of the session -
+			-- and nothing refreshes it: the OnEvent branches that do refresh a
+			-- title skip outright while the pet pane is up.
+			--
+			-- So UpdateTitle writes that blank over whatever
+			-- PetPaperDollFrame_Update just wrote, and which of the two ran last
+			-- is the difference between a title bar naming the pet and one
+			-- naming nothing. Reproduced here as the stale table it is, because
+			-- a mock that recomputed the name would make the repair look
+			-- unnecessary.
+			cf.__displayInfo = {
+				PaperDollFrame    = "Palabras",
+				PetPaperDollFrame = "",          -- the snapshot, empty
+				ReputationFrame   = "Reputation",
+				TokenFrame        = "Currency",
+			}
+			function cf:UpdateTitle()
+				_G.CharacterFrameTitleText:SetText(
+					self.__displayInfo[self.activeSubframe] or "")
+			end
+			function cf:RefreshDisplay()
+				self:UpdateSize()
+				self:UpdateTitle()
+			end
+			cf:UpdateTitle()
+
 			-- INSIDE THE PAPER DOLL TAB and beside the model, which is where
 			-- CharacterFrame.xml anchors it: to CharacterFrameInsetRight. It
 			-- is not a sixth tab, so it must not be a sixth full-window pane
@@ -6538,10 +6567,13 @@ do
 		-- front, could not tell a header that reads it at the right moment
 		-- from one that read it too early and cached a blank.
 		function _G.PetPaperDollFrame_Update()
+			-- FROM THE CLIENT'S OWN API, the way the real one does it, so the
+			-- repair for the stale snapshot has the same source of truth here
+			-- as it has in game.
 			if _G.__mists then
-				_G.CharacterFrameTitleText:SetText("Gakrin")
+				_G.CharacterFrameTitleText:SetText(UnitPVPName("pet"))
 			else
-				_G.PetNameText:SetText("Gakrin")
+				_G.PetNameText:SetText(UnitName("pet"))
 			end
 			_G.PetLevelText:SetText("Level 18 Imp")
 		end
@@ -9625,6 +9657,13 @@ function HasPetUI() return true, _G.__isHunterPet end
 
 function UnitExists(u) return units[u] and units[u].exists or false end
 function UnitName(u) return units[u] and units[u].name end
+--- The name with a PVP or honour title on it, and the plain name when there is
+--  none - which is every unit here and every pet anywhere. Real on this client
+--  and missing from this mock until the character sheet's own code was found
+--  calling it: `characterFrameDisplayInfo` fills the pet's title with
+--  UnitPVPName("pet"), so a repair for that reached for a global that did not
+--  exist here and did nothing, quietly, in a suite that stayed green.
+function UnitPVPName(u) return units[u] and units[u].name end
 function UnitLevel(u) return units[u] and units[u].level or 0 end
 function UnitIsPlayer(u) return units[u] and units[u].isPlayer or false end
 function UnitIsDeadOrGhost(u) return units[u] and units[u].dead or false end
@@ -31860,9 +31899,48 @@ do
 	_G.PetPaperDollFrame_Update()
 	_G.PanelTemplates_UpdateTabs(cf)
 	local petTitle = _G.PetNameText or _G.CharacterFrameTitleText
-	check(petTitle:GetText() == "Gakrin",
+	check(petTitle:GetText() == "Raptor",
 		"the pet's name is what the band is naming, not the player's ("
 		.. tostring(petTitle:GetText()) .. ")")
+
+	-- AND THE CLIENT'S OWN REFRESH DOES NOT WIPE IT AGAIN.
+	--
+	-- This is the reported bug, and it is a fault in Cata\CharacterFrame.lua
+	-- rather than in the band: characterFrameDisplayInfo is a local built at
+	-- file scope, so the pet's title is UnitPVPName("pet") as evaluated BEFORE
+	-- you had a pet - empty for the session - and nothing refreshes it while
+	-- the pet pane is up. PetPaperDollFrame_Update writes the real name;
+	-- UpdateTitle writes the blank back; RefreshDisplay calls UpdateTitle after
+	-- UpdateSize, so anything that resizes this window reaches it.
+	if _G.__mists then
+		cf:RefreshDisplay()
+		check(petTitle:GetText() == "Raptor",
+			"and a resize of the window does not blank it - the client writes a"
+			.. " snapshot taken before the pet existed, and we put the name"
+			.. " back (" .. tostring(petTitle:GetText()) .. ")")
+		check(cf.__aetherTitle == petTitle,
+			"the band is still on that same string, which is why it needs no"
+			.. " telling: it reparents the client's font string rather than"
+			.. " copying what it said")
+
+		-- AND IT REPAIRS THE PET TAB ONLY. The title string is shared by all
+		-- four tabs, so a repair that forgot to ask which one is up would write
+		-- the pet's name across Reputation and Currency - whose titles the
+		-- client's snapshot has right, because those are constants rather than
+		-- something that had to exist at load time.
+		_G.PetPaperDollFrame:Hide()
+		_G.ReputationFrame:Show()
+		cf.activeSubframe = "ReputationFrame"
+		cf:RefreshDisplay()
+		check(petTitle:GetText() == "Reputation",
+			"another tab keeps its OWN title through the same refresh, rather"
+			.. " than inheriting the pet's ("
+			.. tostring(petTitle:GetText()) .. ")")
+		_G.ReputationFrame:Hide()
+		cf.activeSubframe = "PetPaperDollFrame"
+		_G.PetPaperDollFrame:Show()
+		_G.PetPaperDollFrame_Update()
+	end
 	local pPt, pRel, pRelP = petTitle:GetPoint(1)
 	check(pPt == "TOP" and pRel == cf.__aetherPanel and pRelP == "TOP",
 		"the pet's name is placed as the window's title while its tab is up")

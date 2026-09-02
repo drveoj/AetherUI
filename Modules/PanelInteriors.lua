@@ -792,6 +792,50 @@ local function DressCharacter(frame, store)
 		end)
 	end
 
+	-- AND THE PET TAB'S TITLE IS A CLIENT BUG WE HAVE TO REPAIR.
+	--
+	-- Cata\CharacterFrame.lua builds `characterFrameDisplayInfo` as a LOCAL
+	-- table at file scope, and the pet's entry reads
+	--
+	--     ["PetPaperDollFrame"] = { title = UnitPVPName("pet"), ... }
+	--
+	-- which is evaluated ONCE, when Blizzard_CharacterFrame loads - before you
+	-- have a pet, so it is empty for the rest of the session. Nothing ever
+	-- refreshes it: the OnEvent handler updates `["Default"].title` on
+	-- UNIT_NAME_UPDATE and PLAYER_PVP_RANK_CHANGED, and both branches skip
+	-- outright while the pet pane is up.
+	--
+	-- PetPaperDollFrame_Update writes the real name over the top, and
+	-- CharacterFrameMixin:UpdateTitle writes the stale blank back. Which of the
+	-- two ran last is the whole difference between a title bar saying "Piptik"
+	-- and one saying nothing, and it is not ours to order - RefreshDisplay
+	-- calls UpdateSize, UpdateTabBounds, UpdatePortrait and UpdateTitle in a
+	-- row, and anything that resizes this window reaches it.
+	--
+	-- So: after the client sets the title, if the pet pane is up and the pet
+	-- has a name, put the name back. Not inventing a title - this is the exact
+	-- string PetPaperDollFrame_Update itself writes, from the client's own API.
+	--
+	-- The band needs no telling. It REPARENTS this font string rather than
+	-- copying it, and $parentTitleText inside the unnamed TitleContainer and
+	-- the global CharacterFrameTitleText are ONE OBJECT - which `/aether panels
+	-- measure` settled by marking both lines, after the XML had implied they
+	-- were two.
+	if frame and not PN.__petTitleHook and hooksecurefunc
+		and type(frame.UpdateTitle) == "function" then
+		PN.__petTitleHook = true
+		hooksecurefunc(frame, "UpdateTitle", function()
+			if not PN.enabled then return end
+			local pane = _G.PetPaperDollFrame
+			if not (pane and pane.IsShown and pane:IsShown()) then return end
+			local name = UnitPVPName and UnitPVPName("pet")
+			local title = _G.CharacterFrameTitleText
+			if title and title.SetText and name and name ~= "" then
+				title:SetText(name)
+			end
+		end)
+	end
+
 
 	-- THE ARROW THAT WIDENS THE SHEET, which only Mists has. It carries three
 	-- states of Blizzard's spellbook page-turn art - up, down and disabled -
