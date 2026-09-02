@@ -3219,9 +3219,36 @@ TB.MICRO = {
 	{ key = "achievements", label = "Achievements",
 	  fn = function() ToggleAchievementFrame() end,
 	  probe = function() return ToggleAchievementFrame ~= nil end },
+	-- AND THIS ONE CAN BE PRESENT AND STILL REFUSE. PVEFrame_ToggleFrame opens
+	-- with
+	--
+	--     local canUse = C_LFGInfo.CanPlayerUseGroupFinder()
+	--                    and UnitLevel("player") >= SHOW_LFD_LEVEL
+	--     if not canUse or Kiosk.IsEnabled() then return end
+	--
+	-- and returns SILENTLY. Reported as "the Dungeons menu icon does nothing",
+	-- and it was doing exactly what the client told it to on a level 1
+	-- character - the same gate that greys Blizzard's own LFG micro button.
+	--
+	-- `probe` cannot answer this: it decides whether the entry EXISTS, once,
+	-- and the answer here changes as you level. So `usable` is asked every
+	-- refresh instead, and an entry that says no is drawn dim and says why
+	-- rather than looking broken.
 	{ key = "dungeons",  label = "Dungeons",
 	  fn = function() PVEFrame_ToggleFrame() end,
-	  probe = function() return PVEFrame_ToggleFrame ~= nil end },
+	  probe = function() return PVEFrame_ToggleFrame ~= nil end,
+	  usable = function()
+	  	local lvl = UnitLevel and UnitLevel("player") or 0
+	  	local need = SHOW_LFD_LEVEL or 15
+	  	if lvl < need then
+	  		return false, A.F(L.toolbox.micro.needs_level_d, need)
+	  	end
+	  	if C_LFGInfo and C_LFGInfo.CanPlayerUseGroupFinder
+	  		and not C_LFGInfo.CanPlayerUseGroupFinder() then
+	  		return false, L.toolbox.micro.unavailable
+	  	end
+	  	return true
+	  end },
 	{ key = "pvp",       label = "PvP",
 	  fn = function() TogglePVPFrame() end,
 	  probe = function() return TogglePVPFrame ~= nil end },
@@ -3286,7 +3313,13 @@ function TB:RefreshMicro()
 
 			b:SetScript("OnClick", function(self2)
 				local mm = self2.__micro
-				if mm then pcall(mm.fn) end
+				-- REFUSED SAYS SO. Pressing one the client will turn away used
+				-- to look like a dead button; it answers now.
+				if mm and self2 and self2.__aetherLive == false then
+					A:Print(self2.__aetherWhy or L.toolbox.micro.unavailable)
+				elseif mm then
+					pcall(mm.fn)
+				end
 			end)
 			b:SetScript("OnEnter", function(self2)
 				if not GameTooltip or not self2.__micro then return end
@@ -3317,10 +3350,23 @@ function TB:RefreshMicro()
 			end
 			b.initial:SetText((m.label or "?"):sub(1, 1):upper())
 		end
+		-- AN ENTRY THE CLIENT WILL REFUSE IS DRAWN AS REFUSED. Some of these
+		-- exist and still do nothing when pressed - the group finder returns
+		-- silently below SHOW_LFD_LEVEL - and a button that looks live and does
+		-- nothing reads as our bug. Asked every refresh, because the answer
+		-- changes as you level.
+		local live, why = true, nil
+		if m.usable then
+			local ok, yes, msg = pcall(m.usable)
+			if ok then live, why = yes and true or false, msg end
+		end
+		b.__aetherWhy = why
+		b.__aetherLive = live
+
 		W.Color(b.glyph and b.name or b.name, Palette.c.textDim)
 		if b.glyph.SetVertexColor then
 			local c = Palette.c.text
-			b.glyph:SetVertexColor(c[1], c[2], c[3], 0.9)
+			b.glyph:SetVertexColor(c[1], c[2], c[3], live and 0.9 or 0.3)
 		end
 		b.name:SetText(m.label or "")
 		W.Color(b.name, Palette.c.textDim)

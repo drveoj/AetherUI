@@ -1084,6 +1084,9 @@ ICON_ORDER = [
     # rather than drawn again. These three had nothing on the sheet that meant
     # them.
     "achievements", "pvp", "collections",
+    # Added last, which is the only safe place: the index is the position in
+    # this list, so appending never moves a cell that already exists.
+    "dungeons",
 ]
 
 
@@ -1388,6 +1391,22 @@ def _glyph(name, cell):
         return U(circ(64, 88, 26),
                  circ(34, 56, 11), circ(53, 40, 11),
                  circ(75, 40, 11), circ(94, 56, 11))
+
+    if name == "dungeons":
+        # A PORTCULLIS - the way into a dungeon. It was aliased to `social` for
+        # want of a drawing, which said "a group of people" on a button that
+        # opens a place to go, and put the same glyph on two entries of one
+        # menu.
+        #
+        # An arch and three bars. The bars are what make it a portcullis rather
+        # than a doorway, and three is the fewest that reads as a grid - two
+        # look like a gap and four close up into a smudge at 20px. No crossbar:
+        # at this size it fills the arch in and the whole thing goes solid.
+        return U(arc(64, 62, 30, 180, 360),
+                 seg(34, 62, 34, 104), seg(94, 62, 94, 104),
+                 seg(64, 34, 64, 104),
+                 seg(49, 45, 49, 104), seg(79, 45, 79, 104),
+                 seg(30, 104, 98, 104))
 
     if name == "crown":
         # Who leads. Three peaks and a band, drawn as one closed outline so

@@ -36971,6 +36971,13 @@ do
 		local h2, w2 = pve:GetHeight(), pve:GetWidth()
 		_G.PVEFrame_ShowFrame("GroupFinderFrame")
 		local h3 = pve:GetHeight()
+		-- WEAKER THAN IT LOOKS, AND SAYING SO. This passes with or without the
+		-- fix, because the mock's hidden panes still answer MeasureTop while
+		-- the client's cannot - a frame that is down has no rect. Making the
+		-- mock strict here needs LayoutBody's own local MeasureTop, which is
+		-- not reachable from out here, so the real guard is `contentTop` on the
+		-- entry: with a constant there, nothing is measured and nothing can
+		-- vary. Verified in game rather than by this line.
 		check(math.abs(h1 - h2) < 0.5 and math.abs(h1 - h3) < 0.5,
 			"changing tab does not resize the window (" .. h1 .. " / " .. h2
 			.. " / " .. h3 .. ")")

@@ -372,6 +372,26 @@ local PANELS = {
 		-- one is up. The client keeps PVEFrame one fixed size across all three
 		-- tabs and so do we.
 		keepWidth = true,
+		-- AND ITS CONTENT TOP IS A CONSTANT, NOT A MEASUREMENT.
+		--
+		-- This window changed height on every tab click through three attempts
+		-- to fix it, and each attempt added machinery: cache the readings, take
+		-- the largest, make the largest monotonic. All of it was chasing the
+		-- same fact - a pane that is DOWN has no rect, so it cannot be measured,
+		-- so the largest shift is only ever the VISIBLE tab's and it changes as
+		-- you click.
+		--
+		-- ELVUI HAS NO SUCH PROBLEM BECAUSE IT MEASURES NOTHING. Its whole
+		-- PVEFrame skin is HandlePortraitFrame plus shadows:Kill(), and every
+		-- Point() in that file is a fixed number read off the window once. There
+		-- is nothing in it that can differ between two clicks.
+		--
+		-- We do need the content moved down for the header band, so we cannot
+		-- copy that outright - but we can take the principle, and the key for it
+		-- was already here. `contentTop` says where this window's content begins
+		-- and stops LayoutBody asking. 22 is the smallest any of its panes
+		-- measured, so it is the figure that clears the band for all of them.
+		contentTop = 22,
 		-- THE THREE TABS' PANES, in the order PVEFrame.lua's own `panels`
 		-- table lists them. Two are load-on-demand and simply are not there
 		-- until opened, which the dresser has to survive rather than assume.

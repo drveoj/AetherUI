@@ -174,6 +174,10 @@ Media.icons = {
 		-- what Mists puts on its menu and Era has not got. Dungeons and the
 		-- Guide are aliases below, because the sheet already means them.
 		"achievements", "pvp", "collections",
+		-- The group finder gets a portcullis of its own rather than borrowing
+		-- the social glyph, which said "a group of people" on a button that
+		-- opens a place to go - and put one drawing on two entries of one menu.
+		"dungeons",
 	},
 
 	--- One drawing, more than one name for it.
@@ -195,7 +199,6 @@ Media.icons = {
 		-- their own, in the generator pass that followed. They are in `order`
 		-- above and drawn on the sheet; nothing in this row stands as a letter
 		-- any more.
-		dungeons = "social",
 		guide    = "library",
 	},
 }
