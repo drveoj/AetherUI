@@ -64,6 +64,19 @@ local ART_CHILDREN = {
 	-- the last thing left drawing on it, and every other part of that frame had
 	-- come off - which is how a bar with nothing above or below it survives.
 	"TitleContainer",
+	-- FROM ELVUI'S OWN LIST, which is the same idea arrived at independently
+	-- and a few names longer. `StripTexturesBlizzFrames` in its Toolkit.lua
+	-- carries 23 keys against our 20, and these are the ones we did not have.
+	-- Consulting it first would have been cheaper than finding them one
+	-- screenshot at a time; see [[consult-the-other-addons]].
+	"FilligreeOverlay", "PortraitOverlay", "ArtOverlayFrame",
+	"Portrait", "portrait",
+	"ScrollFrameBorder", "ScrollUpBorder", "ScrollDownBorder",
+	-- AND ONE NEITHER OF US LISTS. PVEFrame keeps two shadow covers and the
+	-- rule down its seam on a nameless `shadows` child; ElvUI handles it in
+	-- that window's own skin with a comment saying why. It is a general enough
+	-- name to be worth having here.
+	"shadows", "Shadows",
 }
 
 -- The four a Button draws itself.
@@ -257,6 +270,60 @@ end
 --  did it, which is why the fix is here rather than in either function.
 local REDRESS_MARKS = { "__aetherFill", "__aetherScroll" }
 
+--- Put a thing beyond the client's reach, rather than asking it to stay down.
+--
+--  THE PRIMITIVE WE DID NOT HAVE, and the one this module has been working
+--  around nine times. Everything in [[client-repaints-behind-us]] is the same
+--  shape: we take art off, the client puts it back, and the answer so far has
+--  always been to hook whatever put it back. That works and it costs a hook,
+--  an ordering assumption and a comment every time.
+--
+--  ElvUI's Toolkit.lua does it in four lines instead, and its LFG skin says
+--  why in one: `PVEFrame.shadows:Kill() -- We need to kill it, because if you
+--  switch to Mythic Dungeon Tab and back, it shows back up.` A frame that has
+--  no events and no parent on screen cannot come back; a region whose Show IS
+--  its Hide cannot either.
+--
+--  REVERSIBLE, WHICH THEIRS IS NOT. This addon turns modules off and on, so a
+--  kill records what it changed and Reskin.Restore undoes it. That is the one
+--  place our version has to differ.
+function Reskin.Kill(object, store)
+    if not object or Reskin.Forbidden(object) then return end
+    if object.__aetherKilled then return end
+
+    local undo = { object = object }
+
+    if object.UnregisterAllEvents then
+        undo.parent = object.GetParent and object:GetParent()
+        object:UnregisterAllEvents()
+        if object.SetParent then object:SetParent(Reskin.Attic()) end
+    elseif object.Hide then
+        -- A REGION HAS NO EVENTS AND NO PARENT TO MOVE IT TO, so the only way
+        -- to stop the client showing it is to make showing it do nothing.
+        undo.show = object.Show
+        object.Show = object.Hide
+    end
+
+    if object.Hide then object:Hide() end
+    object.__aetherKilled = true
+
+    if type(store) == "table" then
+        store.__aetherKills = store.__aetherKills or {}
+        local kills = store.__aetherKills
+        kills[#kills + 1] = undo
+    end
+end
+
+--- Where a killed frame goes: parented off-screen and never shown.
+function Reskin.Attic()
+    if not Reskin.__attic then
+        local attic = CreateFrame("Frame", nil, UIParent)
+        attic:Hide()
+        Reskin.__attic = attic
+    end
+    return Reskin.__attic
+end
+
 function Reskin.Restore(store)
 	if type(store) ~= "table" then return end
 	for frame, known in pairs(store) do
@@ -277,6 +344,20 @@ function Reskin.Restore(store)
 			end
 		end
 	end
+
+	-- AND ANYTHING KILLED COMES BACK. ElvUI's Kill is one-way because ElvUI
+	-- does not turn itself off; ours has to be undone when a module does.
+	for _, undo in ipairs(store.__aetherKills or {}) do
+		local o = undo.object
+		if o then
+			if undo.show then o.Show = undo.show end
+			if undo.parent and o.SetParent then o:SetParent(undo.parent) end
+			o.__aetherKilled = nil
+			if o.Show then o:Show() end
+		end
+	end
+	store.__aetherKills = nil
+
 	wipe(store)
 end
 

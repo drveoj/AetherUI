@@ -31344,6 +31344,7 @@ do
 	local backdrop = host.NineSlice:CreateTexture(nil, "BACKGROUND")
 	backdrop:SetTexture("dialog-background")
 
+	local Reskin = A.Reskin
 	local store = {}
 	R.Strip(host, store)
 	check(own:GetTexture() == 0 and not own:IsShown(),
@@ -36500,6 +36501,51 @@ do
 	check(art:GetTexture() == 0,
 		"and a pane that comes back is taken back off, because a window dressed"
 		.. " once at open leaves the other three in stone the moment you click")
+end
+
+print("== reskin: killing a thing the client keeps putting back ==")
+do
+	-- THE PRIMITIVE THIS MODULE WORKED AROUND NINE TIMES. Every entry in the
+	-- repaint list is the same shape - we take art off, the client puts it
+	-- back, we hook whatever put it back - and ElvUI's Toolkit does it in four
+	-- lines instead. Its LFG skin says why in one comment: `PVEFrame.shadows:
+	-- Kill() -- We need to kill it, because if you switch to Mythic Dungeon Tab
+	-- and back, it shows back up.`
+	local Reskin = A.Reskin
+	local store = {}
+
+	-- A FRAME loses its events and its place on screen.
+	local host = CreateFrame("Frame", nil, UIParent)
+	local doomed = CreateFrame("Frame", nil, host)
+	doomed:RegisterEvent("PLAYER_REGEN_ENABLED")
+	doomed:Show()
+	Reskin.Kill(doomed, store)
+	check(not doomed:IsShown(), "a killed frame is down")
+	check(doomed:GetParent() ~= host,
+		"and is off the frame it was on, so the client showing its parent"
+		.. " cannot bring it with it")
+
+	-- A REGION has neither, so showing it has to become doing nothing.
+	local art = host:CreateTexture(nil, "OVERLAY")
+	art:SetTexture("stone")
+	art:Show()
+	Reskin.Kill(art, store)
+	check(not art:IsShown(), "a killed region is down too")
+	art:Show()
+	check(not art:IsShown(),
+		"AND STAYS DOWN WHEN THE CLIENT SHOWS IT - which is the whole point,"
+		.. " and what nine hooks in this module were standing in for")
+
+	-- REVERSIBLE, WHICH ELVUI'S IS NOT. That addon does not turn itself off;
+	-- this one does, and a module coming back on must not leave the client
+	-- holding a frame it can never show again.
+	Reskin.Restore(store)
+	check(doomed:GetParent() == host,
+		"turning the module off gives a killed frame its parent back")
+	art:Show()
+	check(art:IsShown(),
+		"and a killed region can be shown again - Show is its own method"
+		.. " once more, not an alias for Hide")
 end
 
 print("== panels: the group finder Mists actually opens ==")
