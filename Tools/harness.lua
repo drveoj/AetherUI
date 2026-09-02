@@ -6425,6 +6425,27 @@ do
 			CreateFrame("StatusBar", n, cf)
 		end
 
+		-- AND THE PET'S BAR CARRIES DWARF PANELLING. These three were bare
+		-- StatusBars with no regions at all, so the sweep over them had nothing
+		-- to sweep and any check of it would have passed on an empty frame.
+		--
+		-- The real bar declares two OVERLAY textures off
+		-- UI-MainMenuBar-Dwarf - PetPaperDollXPBar1 and an unnamed twin
+		-- anchored to its right - plus PetPaperDollFrameExpBarText, which is
+		-- the XP numbers and must SURVIVE. Both flavours: the name is the same
+		-- in Wrath\PetPaperDollFrame.xml and Cata\PetPaperDollFrame.xml.
+		do
+			local xp = _G.PetPaperDollFrameExpBar
+			local one = xp:CreateTexture("PetPaperDollXPBar1", "OVERLAY")
+			one:SetTexture([[Interface\MainMenuBar\UI-MainMenuBar-Dwarf]])
+			local two = xp:CreateTexture(nil, "OVERLAY")
+			two:SetTexture([[Interface\MainMenuBar\UI-MainMenuBar-Dwarf]])
+			xp.__dwarf = { one, two }
+			xp.__xpText = xp:CreateFontString("PetPaperDollFrameExpBarText",
+				"OVERLAY")
+			xp.__xpText:SetText("1234/5678")
+		end
+
 		function _G.PanelTemplates_UpdateTabs(frame) end
 
 		-- SELECTING A TAB MOVES ITS TEXT. The client nudges the label up into
@@ -32491,6 +32512,50 @@ do
 		"the panes inside lose their stone as well")
 
 	check(_G.ReputationBar1.__aetherFill ~= nil, "a reputation bar takes our fill")
+
+	-- AND THE PET'S XP BAR LOSES ITS DWARF PANELLING. This was carried as an
+	-- open question for weeks - "may never have been swept" - and reading
+	-- settles it: the two textures are OVERLAY regions of the bar, Strip clears
+	-- every Texture region it finds, so they go. What was missing was any proof,
+	-- because the mock built this bar bare and the sweep over it had nothing to
+	-- sweep. It has the real regions now.
+	do
+		local xp = _G.PetPaperDollFrameExpBar
+		check(xp.__aetherFill ~= nil, "the pet's XP bar takes our fill")
+
+		-- AND IT SURVIVES BEING TURNED OFF AND ON. This is the bug the bar was
+		-- carried on the list for, and it was never about the pet: the module
+		-- toggle in the options tree runs Reskin.Release, which hands the client
+		-- its art back - and `__aetherFill` stayed behind, so the re-dress
+		-- returned at its first line and never stripped the art that had just
+		-- come back. Every status bar and scroll bar in the interface did it.
+		local PN = A:GetModule("panels")
+		-- HELD BEFORE THE TOGGLE, because clearing the mark is what makes the
+		-- fill unreachable afterwards - and asserting on a field that has just
+		-- been set to nil proves only that it is nil. The texture itself is the
+		-- thing that would still be drawing, and the first version of this check
+		-- could not tell the two apart.
+		local ourFill = xp.__aetherFill
+		A:SetModuleEnabled("panels", false)
+		check(_G.PetPaperDollXPBar1:GetTexture()
+			== [[Interface\MainMenuBar\UI-MainMenuBar-Dwarf]],
+			"turning panels off gives the client its dwarf panelling back")
+		check(xp.__aetherFill == nil and not ourFill:IsShown(),
+			"and OUR fill is both forgotten AND HIDDEN - forgetting it alone"
+			.. " leaves the texture drawing under art we no longer own")
+
+		A:SetModuleEnabled("panels", true)
+		_G.CharacterFrame:Hide()
+		_G.CharacterFrame:Show()
+		local _ = PN
+		check(_G.PetPaperDollXPBar1:GetTexture() == 0
+			and xp.__dwarf[2]:GetTexture() == 0,
+			"and turning it back on sweeps BOTH halves again - the named one"
+			.. " and the unnamed twin anchored to its right, which a sweep keyed"
+			.. " on names would have left behind either way")
+		check(xp.__xpText:GetText() == "1234/5678",
+			"while the XP numbers survive, being a font string and not art")
+	end
 
 	-- AND THE THING BESIDE IT IS NOT A CONTROL. $parentAtWarCheck is a 24x22
 	-- frame holding the crossed swords, shown when you are at war with that

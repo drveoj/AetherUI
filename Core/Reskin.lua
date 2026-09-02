@@ -242,13 +242,39 @@ function Reskin.StripExcept(frame, store, names)
 end
 
 --- Everything in a store, back the way it was found.
+--- Marks that make a SECOND dress do nothing, and the surface each stands for.
+--
+--  Reskin.StatusBar and Reskin.ScrollBar both open with `if bar.__aetherX then
+--  return end` and only strip AFTER it. That is right while a module stays on
+--  and wrong the moment one is turned off: Restore hands the client its art
+--  back, the mark stays behind, and the re-dress returns at the first line
+--  without stripping the art that just came back. The bar then draws Blizzard's
+--  panelling with our fill still sitting under it.
+--
+--  Found on the pet's XP bar, whose two UI-MainMenuBar-Dwarf textures came
+--  back after `/aether panels off` and `on` and could not be swept again. It
+--  was never about that bar: every status bar and scroll bar in the interface
+--  did it, which is why the fix is here rather than in either function.
+local REDRESS_MARKS = { "__aetherFill", "__aetherScroll" }
+
 function Reskin.Restore(store)
 	if type(store) ~= "table" then return end
-	for _, known in pairs(store) do
+	for frame, known in pairs(store) do
 		for _, entry in ipairs(known) do
 			local region, wasShown, path = entry[1], entry[2], entry[3]
 			if path and region.SetTexture then region:SetTexture(path) end
 			if wasShown and region.Show then region:Show() end
+		end
+
+		-- OUR SURFACE GOES WITH IT. The fill was created after the strip, so it
+		-- is not in the store and Restore above cannot reach it - it would go on
+		-- drawing over the client's returned art.
+		if type(frame) == "table" then
+			for _, mark in ipairs(REDRESS_MARKS) do
+				local ours = frame[mark]
+				if type(ours) == "table" and ours.Hide then ours:Hide() end
+				frame[mark] = nil
+			end
 		end
 	end
 	wipe(store)
