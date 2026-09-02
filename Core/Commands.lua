@@ -1543,6 +1543,59 @@ local function MeasurePanels(arg)
 				"  runs=" .. tostring(f.__aetherRuns) ..
 				"  seen=" .. tostring(f.__aetherSeen))
 			A_Print("  frame " .. box(f) .. "   glass " .. box(glass))
+
+			-- WHICH STRING THE BAND IS NAMING, AND WHAT EVERY CANDIDATE HOLDS.
+			--
+			-- Three windows have now come up with an empty title bar for three
+			-- different reasons: a global that exists but is never filled, a
+			-- second string of the same name inside an unnamed container, and a
+			-- pane whose name for its own title is not the name this client
+			-- uses. From the outside all three look identical - a blank band -
+			-- and reading Blizzard's XML settled two of them and pointed the
+			-- wrong way on the third.
+			--
+			-- So the readout answers it directly: what we chose, what it says,
+			-- and what each thing we could have chosen says instead. A name
+			-- with no object is "-", an object holding nothing is "".
+			do
+				local chosen = f.__aetherTitle
+				local function words(fs)
+					if not (fs and fs.GetText) then return "-" end
+					return '"' .. tostring(fs:GetText() or "") .. '"'
+				end
+				A_Print("  title chosen " .. words(chosen)
+					.. "  shown=" .. tostring(chosen and chosen.IsShown
+						and chosen:IsShown()))
+
+				local entry = PN.ENTRY and PN.ENTRY[name]
+				local seen = {}
+				local function candidate(who, key)
+					if type(key) == "table" then
+						for _, one in ipairs(key) do candidate(who, one) end
+						return
+					end
+					if type(key) ~= "string" or seen[key] then return end
+					seen[key] = true
+					local fs = _G[key]
+					A_Print("    " .. who .. " " .. key .. " = " .. words(fs)
+						.. (fs == chosen and "   <- this one" or ""))
+				end
+				candidate("entry", entry and entry.title)
+				for _, p in ipairs(entry and entry.panes or {}) do
+					local pane = _G[p.pane]
+					candidate("pane[" .. tostring(p.pane) .. " "
+						.. tostring(pane and pane.IsShown and pane:IsShown())
+						.. "]", p.title)
+				end
+				-- And the two the portrait chain gives every window, which is
+				-- where a title hides when no name in the entry can reach it.
+				local c = f.TitleContainer
+				A_Print("    frame.TitleText = " .. words(f.TitleText)
+					.. (f.TitleText == chosen and "   <- this one" or ""))
+				A_Print("    TitleContainer.TitleText = "
+					.. words(c and c.TitleText)
+					.. ((c and c.TitleText) == chosen and "   <- this one" or ""))
+			end
 			A_Print("  chrome " .. box(f.__aetherChrome) ..
 				"  lvl " .. tostring(f.__aetherChrome
 				and f.__aetherChrome:GetFrameLevel()) ..
