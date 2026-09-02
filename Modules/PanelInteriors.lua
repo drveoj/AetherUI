@@ -4875,6 +4875,19 @@ local function DressPVE(frame, store)
 		if btn and not Reskin.Forbidden(btn) then Reskin.Button(btn, "pnBody") end
 	end
 
+	-- THE TYPE PICKER ON EACH FINDER, which the readout named and I had not:
+	-- LFDQueueFrameTypeDropdown, still carrying
+	-- `common-dropdown-classic-textholder` and its button arrow. It is the
+	-- WowStyle control the trade skill's filters are, so it takes the same
+	-- dresser they do.
+	for _, name in ipairs({ "LFDQueueFrameTypeDropdown",
+		"RaidFinderQueueFrameSelectionDropdown",
+		"ScenarioQueueFrameTypeDropdown",
+		"HonorFrameTypeDropdown", "ConquestFrameTypeDropdown" }) do
+		local dd = _G[name]
+		if dd then DressDropdown(dd, store) end
+	end
+
 	-- AND THE LISTS SCROLL IN OUR RAIL. MinimalScrollBar on this window, which
 	-- is the generation whose track is a CHILD FRAME rather than three regions
 	-- of the bar - see Reskin.ScrollBar for why that distinction matters.

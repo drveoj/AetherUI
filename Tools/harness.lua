@@ -4915,6 +4915,19 @@ do
 			find.__fs = ft
 			function find:GetFontString() return self.__fs end
 
+			-- THE TYPE PICKER, whose real name came off the live readout:
+			-- LFDQueueFrameTypeDropdown, still carrying
+			-- `common-dropdown-classic-textholder` and its button arrow long
+			-- after everything around it had been dressed.
+			local dd = CreateFrame("Frame", "LFDQueueFrameTypeDropdown", lfdq)
+			dd:SetSize(180, 32)
+			dd.__hold = dd:CreateTexture(nil, "BACKGROUND")
+			dd.__hold:SetAtlas("common-dropdown-classic-textholder")
+			dd.__arrow = dd:CreateTexture(nil, "OVERLAY")
+			dd.__arrow:SetAtlas("common-dropdown-classic-a-buttonDown")
+			dd.Text = dd:CreateFontString(nil, "OVERLAY")
+			dd.Text:SetText("Specific Dungeons")
+
 			-- A MinimalScrollBar, whose track is a CHILD FRAME rather than
 			-- three regions of the bar.
 			lfdq.ScrollBar = CreateFrame("Frame", nil, lfdq)
@@ -36579,6 +36592,14 @@ do
 	-- parent alone leaves it drawing, which is the black brick behind the list.
 	check(_G.LFDQueueFrame.__art:GetTexture() == 0,
 		"the queue frame's own backdrop goes too, not just its parent pane's")
+
+	-- THE TYPE PICKER, named by the readout rather than guessed at. It is the
+	-- WowStyle control the trade skill's filters are, and it sat in
+	-- `common-dropdown-classic-textholder` through three passes because
+	-- nothing had asked the window what was still drawing on it.
+	check(_G.LFDQueueFrameTypeDropdown.__hold:GetAtlas() == nil
+		and _G.LFDQueueFrameTypeDropdown.__arrow:GetAtlas() == nil,
+		"the finder's Type picker loses the client's dropdown art")
 
 	-- THE THREE ROLES. The picture is an ATLAS on the button's normal texture,
 	-- and the stone plate is a `background` region behind it.

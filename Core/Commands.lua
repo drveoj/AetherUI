@@ -1658,6 +1658,23 @@ local function MeasurePanels(arg)
 					return "?"
 				end
 
+				-- OURS DOES NOT COUNT AS LEFTOVER ART, and the first two
+				-- readings were mostly ours: nine identical BACKGROUND
+				-- textures under a name is a NINE-SLICE, which is what every
+				-- panel and well in this interface is made of. Ninety-seven
+				-- "still drawing" was perhaps a dozen of Blizzard's and the
+				-- rest our own furniture, reported as though it were a fault.
+				--
+				-- Glass.MakePanel stamps `_kind` on every surface it makes, so
+				-- that is the flag to skip. What it cannot catch is a texture
+				-- WE created directly on one of the client's frames - a row
+				-- backing, a header rule - so those are matched by file
+				-- instead and marked rather than hidden.
+				local mine = {}
+				for _, path in pairs(A.Media and A.Media.texture or {}) do
+					mine[path] = true
+				end
+
 				local groups, order, total = {}, {}, 0
 				local function art(holder, depth)
 					if not (holder and holder.GetRegions) or depth > 4 then
@@ -1673,6 +1690,7 @@ local function MeasurePanels(arg)
 								local key = ownerOf(holder) .. "  ["
 									.. tostring(r.GetDrawLayer and r:GetDrawLayer())
 									.. "] " .. tostring(atlas or tex)
+									.. (mine[tex] and "   (ours)" or "")
 								if not groups[key] then
 									groups[key] = 0
 									order[#order + 1] = key
@@ -1687,7 +1705,7 @@ local function MeasurePanels(arg)
 					if depth > 4 or not frame.GetChildren then return end
 					for _, kid in ipairs({ frame:GetChildren() }) do
 						if kid and kid.IsShown and kid:IsShown()
-							and not kid.__aetherPanel then
+							and not kid.__aetherPanel and not kid._kind then
 							walk(kid, depth + 1)
 						end
 					end
@@ -1700,12 +1718,12 @@ local function MeasurePanels(arg)
 				end)
 				A_Print("  art still drawing: " .. total .. " in "
 					.. #order .. " kinds")
-				for i = 1, math.min(#order, 20) do
+				for i = 1, math.min(#order, 40) do
 					A_Print(string.format("    %3d x %s", groups[order[i]],
 						order[i]))
 				end
-				if #order > 20 then
-					A_Print("    ... and " .. (#order - 20) .. " more kinds")
+				if #order > 40 then
+					A_Print("    ... and " .. (#order - 40) .. " more kinds")
 				end
 			end
 			A_Print("  chrome " .. box(f.__aetherChrome) ..
