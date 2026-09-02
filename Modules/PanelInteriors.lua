@@ -4782,6 +4782,28 @@ local function DressPVE(frame, store)
 		ClientRecess(nil, path)
 	end
 
+	-- THE GOLD RULE DOWN THE MIDDLE, AT LAST.
+	--
+	-- It survived four passes and three wrong guesses off screenshots - a
+	-- leftover bluemenu vertical, an inset's edge, a scroll bar - because it is
+	-- not a region of PVEFrame at all. `PVEFrame.shadows` is a CHILD FRAME
+	-- declared with a parentKey and no name, and Reskin.Strip walks a frame's
+	-- own regions plus a fixed list of art-child keys; a nameless child under
+	-- an unlisted key is outside both.
+	--
+	-- It carries three textures, and Blizzard's XML labels the first two
+	-- `<!-- left line -->` and `<!-- right line -->`: two shadow covers off
+	-- bluemenu-shadowcovers, and a 5 by 403 slice of bluemenu-vert at x=211 -
+	-- exactly the seam between the 217-wide left column and the content. That
+	-- last one is the rule.
+	--
+	-- STRIPPED RATHER THAN HIDDEN, because PVEFrame_ShowFrame calls
+	-- `PVEFrame.shadows:Show()` on every pane change and would undo a hide.
+	if frame.shadows then
+		frame.shadows.__aetherStore = frame.shadows.__aetherStore or {}
+		Reskin.Strip(frame.shadows, frame.shadows.__aetherStore)
+	end
+
 	-- THE PANES' OWN ART. Each is a plain frame over the window with its
 	-- backing drawn on it, the way LFGBrowseFrame and LFGListingFrame are on
 	-- the Era window.

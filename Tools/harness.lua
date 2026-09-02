@@ -4784,6 +4784,26 @@ do
 				pve.__blue[#pve.__blue + 1] = t
 			end
 
+			-- AND A NAMELESS CHILD FRAME CARRYING THREE MORE TEXTURES.
+			-- `PVEFrame.shadows` is declared with a parentKey and no name, and
+			-- Reskin.Strip walks a frame's own regions plus a fixed list of
+			-- art-child KEYS - so a nameless child under an unlisted key is
+			-- outside both, and its art survived four passes.
+			--
+			-- Blizzard's own XML labels two of them `<!-- left line -->` and
+			-- `<!-- right line -->`; the third is a 5 by 403 slice of
+			-- bluemenu-vert at x=211, on the seam between the 217-wide left
+			-- column and the content. That is the gold rule the screenshots
+			-- kept showing and I kept guessing at.
+			pve.shadows = CreateFrame("Frame", nil, pve)
+			pve.__shadowArt = {}
+			for _, file in ipairs({ "bluemenu-shadowcovers",
+				"bluemenu-shadowcovers", "bluemenu-vert" }) do
+				local t = pve.shadows:CreateTexture(nil, "OVERLAY")
+				t:SetTexture("Interface\\Common\\" .. file)
+				pve.__shadowArt[#pve.__shadowArt + 1] = t
+			end
+
 			-- ITS RECESS IS THE LEFT COLUMN ONLY - 217 wide against a 563-wide
 			-- window - which is why this window cannot take a body well round
 			-- the outside and why every pane brings a recess of its own.
@@ -36592,6 +36612,36 @@ do
 	-- parent alone leaves it drawing, which is the black brick behind the list.
 	check(_G.LFDQueueFrame.__art:GetTexture() == 0,
 		"the queue frame's own backdrop goes too, not just its parent pane's")
+
+	-- THE GOLD RULE DOWN THE MIDDLE. Not a region of PVEFrame at all: three
+	-- textures on `PVEFrame.shadows`, a child frame with a parentKey and no
+	-- name, which Reskin.Strip cannot reach - it walks a frame's own regions
+	-- plus a fixed list of art-child keys, and a nameless child under an
+	-- unlisted key is outside both.
+	do
+		local left = 0
+		for _, t in ipairs(pve.__shadowArt) do
+			if (t:GetTexture() or 0) ~= 0 then left = left + 1 end
+		end
+		check(left == 0,
+			"the seam rule and its two shadow covers go with the rest - they"
+			.. " are on a NAMELESS child frame, which is why they survived four"
+			.. " passes (" .. left .. " still drawing)")
+	end
+
+	-- AND STRIPPED RATHER THAN HIDDEN, because PVEFrame_ShowFrame shows that
+	-- frame again on every pane change and would undo a hide.
+	_G.PVEFrame.shadows:Show()
+	_G.PVEFrame_ShowFrame("GroupFinderFrame")
+	do
+		local back = 0
+		for _, t in ipairs(pve.__shadowArt) do
+			if (t:GetTexture() or 0) ~= 0 then back = back + 1 end
+		end
+		check(back == 0,
+			"and showing the pane again does not bring them back (" .. back
+			.. ")")
+	end
 
 	-- THE TYPE PICKER, named by the readout rather than guessed at. It is the
 	-- WowStyle control the trade skill's filters are, and it sat in
