@@ -1304,7 +1304,6 @@ L["toolbox.refresh_widgets.tip3"] =
 		.. "disabled and show up in the keybinding panel."
 L["toolbox.refresh_widgets.unlock_frames"] = "Unlock frames"
 
-L["toolbox.micro.needs_level_d"] = "Requires level %d."
 L["toolbox.micro.unavailable"] = "Not available yet."
 
 -- tooltips ----------------------------------------------------------------

@@ -3219,36 +3219,20 @@ TB.MICRO = {
 	{ key = "achievements", label = "Achievements",
 	  fn = function() ToggleAchievementFrame() end,
 	  probe = function() return ToggleAchievementFrame ~= nil end },
-	-- AND THIS ONE CAN BE PRESENT AND STILL REFUSE. PVEFrame_ToggleFrame opens
-	-- with
+	-- NOT GATED, AND AN EARLIER ATTEMPT TO GATE IT WAS WRONG. Reading that
+	-- PVEFrame_ToggleFrame returns silently below SHOW_LFD_LEVEL, I decided
+	-- that was why the button did nothing and drew it dim on a level 1
+	-- character. It is not: the window opens perfectly well on that character
+	-- by every other route, so whatever the toolbox entry was doing wrong, the
+	-- client's level gate was not it. Disabling a working button on a guess is
+	-- worse than the fault I was chasing.
 	--
-	--     local canUse = C_LFGInfo.CanPlayerUseGroupFinder()
-	--                    and UnitLevel("player") >= SHOW_LFD_LEVEL
-	--     if not canUse or Kiosk.IsEnabled() then return end
-	--
-	-- and returns SILENTLY. Reported as "the Dungeons menu icon does nothing",
-	-- and it was doing exactly what the client told it to on a level 1
-	-- character - the same gate that greys Blizzard's own LFG micro button.
-	--
-	-- `probe` cannot answer this: it decides whether the entry EXISTS, once,
-	-- and the answer here changes as you level. So `usable` is asked every
-	-- refresh instead, and an entry that says no is drawn dim and says why
-	-- rather than looking broken.
+	-- `usable` stays in the framework - a button the client will refuse should
+	-- say so rather than look dead - but nothing claims this is one of those
+	-- until somebody has watched it refuse.
 	{ key = "dungeons",  label = "Dungeons",
 	  fn = function() PVEFrame_ToggleFrame() end,
-	  probe = function() return PVEFrame_ToggleFrame ~= nil end,
-	  usable = function()
-	  	local lvl = UnitLevel and UnitLevel("player") or 0
-	  	local need = SHOW_LFD_LEVEL or 15
-	  	if lvl < need then
-	  		return false, A.F(L.toolbox.micro.needs_level_d, need)
-	  	end
-	  	if C_LFGInfo and C_LFGInfo.CanPlayerUseGroupFinder
-	  		and not C_LFGInfo.CanPlayerUseGroupFinder() then
-	  		return false, L.toolbox.micro.unavailable
-	  	end
-	  	return true
-	  end },
+	  probe = function() return PVEFrame_ToggleFrame ~= nil end },
 	{ key = "pvp",       label = "PvP",
 	  fn = function() TogglePVPFrame() end,
 	  probe = function() return TogglePVPFrame ~= nil end },

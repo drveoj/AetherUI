@@ -4886,6 +4886,15 @@ local function DressPVE(frame, store)
 	-- MagicButtonTemplate, which is UIPanelButtonTemplate's shape: Left, Middle
 	-- and Right BACKGROUND regions rather than state textures, so a plain
 	-- ClearButton leaves the plate exactly where it was. Reskin.Button knows.
+	-- EVERY BUTTON ON EVERY SUB-PANE, and the ones I had were a fraction of
+	-- them. Each finder and each battleground mode brings its own pair, and on
+	-- the premade and entry-creation panes they are PARENT KEYS rather than
+	-- globals - the same trap as the PvP roles, one pane deeper.
+	--
+	-- AND EACH CARRIES A SEPARATOR. MagicButtonTemplate draws a hairline off
+	-- one side to butt against its neighbour; left on, they stand either side
+	-- of buttons that are ours now and belong to nothing.
+	local acts = {}
 	for _, name in ipairs({
 		"LFDQueueFrameFindGroupButton",
 		"RaidFinderQueueFrameFindRaidButton",
@@ -4893,8 +4902,32 @@ local function DressPVE(frame, store)
 		"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton",
 		"ConquestJoinButton", "WarGameStartButton",
 	}) do
-		local btn = _G[name]
-		if btn and not Reskin.Forbidden(btn) then Reskin.Button(btn, "pnBody") end
+		acts[#acts + 1] = _G[name]
+	end
+	for _, path in ipairs({
+		"LFGListFrame.CategorySelection.StartGroupButton",
+		"LFGListFrame.CategorySelection.FindGroupButton",
+		"LFGListFrame.EntryCreation.CancelButton",
+		"LFGListFrame.EntryCreation.ListGroupButton",
+		"LFGListFrame.SearchPanel.BackButton",
+		"LFGListFrame.SearchPanel.SignUpButton",
+		"LFGListFrame.ApplicationViewer.RemoveEntryButton",
+		"LFGListFrame.ApplicationViewer.EditButton",
+	}) do
+		acts[#acts + 1] = Part(path)
+	end
+	for _, btn in ipairs(acts) do
+		if not Reskin.Forbidden(btn) then
+			Reskin.Button(btn, "pnBody")
+			for _, side in ipairs({ "LeftSeparator", "RightSeparator" }) do
+				if btn[side] then Reskin.Kill(btn[side], store) end
+			end
+			local flat = _G[(btn.GetName and btn:GetName() or "") .. "_"
+				.. "LeftSeparator"]
+			if flat then Reskin.Kill(flat, store) end
+			flat = _G[(btn.GetName and btn:GetName() or "") .. "_RightSeparator"]
+			if flat then Reskin.Kill(flat, store) end
+		end
 	end
 
 	-- THE TYPE PICKER ON EACH FINDER, which the readout named and I had not:
@@ -4930,6 +4963,12 @@ local function DressPVE(frame, store)
 		"LFGListFrame.SearchPanel.ScrollBar",
 		"LFGListFrame.ApplicationViewer.ScrollBar",
 		"HonorQueueFrameSpecificFrameScrollBar",
+		-- THE WAR GAMES PANE HAS TWO - the game list and the description
+		-- beside it - and both were still Blizzard's, which is what "wrong
+		-- scrollbars" was pointing at.
+		"WarGamesQueueFrameScrollFrameScrollBar",
+		"WarGamesQueueFrameInfoScrollFrameScrollBar",
+		"WarGamesQueueFrameInfoScrollFrame.ScrollBar",
 	}) do
 		local bar = Part(path)
 		if bar then Reskin.ScrollBar(bar, store) end
@@ -4979,6 +5018,38 @@ local function DressPVE(frame, store)
 	end
 	if _G.ConquestQueueFrame and _G.ConquestQueueFrame.ShadowOverlay then
 		Reskin.Kill(_G.ConquestQueueFrame.ShadowOverlay, store)
+	end
+
+	-- THE WAR GAMES PANE'S OWN FURNITURE: the rule across it, and the arrow
+	-- caps on the description's bar, which our scroll dresser does not reach
+	-- because they are textures on frames hanging off the bar.
+	local wg = _G.WarGamesQueueFrame
+	if wg then
+		wg.__aetherStore = wg.__aetherStore or {}
+		Reskin.Strip(wg, wg.__aetherStore)
+		if wg.HorizontalBar then Reskin.Kill(wg.HorizontalBar, store) end
+	end
+	for _, path in ipairs({
+		"WarGamesQueueFrameInfoScrollFrame.ScrollBar.Back.Texture",
+		"WarGamesQueueFrameInfoScrollFrame.ScrollBar.Forward.Texture",
+	}) do
+		local t = Part(path)
+		if t then Reskin.Kill(t, store) end
+	end
+	if _G.WarGamesQueueFrameDescription then
+		Roled(_G.WarGamesQueueFrameDescription, "pnBody")
+	end
+
+	-- AND THE PREMADE PANES' RECESSES, which are parent keys on LFGListFrame.
+	for _, path in ipairs({
+		"LFGListFrame.CategorySelection.Inset",
+		"LFGListFrame.EntryCreation.Inset",
+	}) do
+		local ins = Part(path)
+		if ins then
+			ins.__aetherStore = ins.__aetherStore or {}
+			Reskin.Strip(ins, ins.__aetherStore)
+		end
 	end
 
 	-- THE FOUR GROUP BUTTONS ARE ROWS, NOT SLOTS, and the first attempt at them
