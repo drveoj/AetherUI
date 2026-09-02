@@ -4979,9 +4979,135 @@ local function DressPVE(frame, store)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- the achievement book
+--
+-- WRITTEN FROM ELVUI'S SKIN RATHER THAN FROM SCREENSHOTS, which is the whole
+-- change of method: Game/Mists/Skins/Achievement.lua names every part, and two
+-- of them would have cost a round trip each to find.
+--
+-- ITS FRAME IS TWELVE NAMED TEXTURES. AchievementFrame inherits
+-- BackdropTemplate rather than any portrait or button template, and draws its
+-- own wood and metal border as separate pieces - four wood corners and eight
+-- metal edges - so there is no margin convention to trim to. They are regions
+-- of the window, so the shell's own strip reaches them; they are listed anyway
+-- because a reader looking for "where did the frame go" should find the answer
+-- here rather than in Blizzard's XML.
+--
+-- AND ITS ROWS ARE MINTED LAZILY. HybridScrollFrame_CreateButtons makes them on
+-- demand, so a dresser that runs once at open dresses however many happened to
+-- exist that moment - the spellbook's lesson, on another window.
+-- ---------------------------------------------------------------------------
+
+local ACH_ICON = 36
+
+--- One achievement row: the picture, the two lines, and the tracking box.
+local function AchievementRow(row, store)
+	if not row or Reskin.Forbidden(row) then return end
+
+	-- NO PERMANENT "ALREADY DONE" FLAG, and the first draft had one. A mark
+	-- that nothing clears makes the SECOND dress a no-op, so turning the module
+	-- off - which hands the client its art back - and on again leaves the row
+	-- in Blizzard's plate for good. That is the same fault as the status bars'
+	-- `__aetherFill`, found and fixed a day earlier, and I wrote it again.
+	--
+	-- So: the strip and the kill run every pass and are idempotent, and the
+	-- only thing guarded is the cell, whose mark is in REDRESS_MARKS where
+	-- Reskin.Restore will clear it. The strip goes to the WINDOW's store for
+	-- the same reason - that is the store Restore is given.
+	Reskin.StripExcept(row, store,
+		row.icon and row.icon.texture and { row.icon.texture } or nil)
+
+	-- THE ICON'S RING AND ITS FLASH GO, and both are frames rather than
+	-- regions - which is exactly what Reskin.Kill is for now. ElvUI kills the
+	-- same two by name; the flash in particular is animated, so hiding it
+	-- loses to the animation the next time a row is filled in.
+	if row.icon then
+		Reskin.Kill(row.icon.bling, store)
+		Reskin.Kill(row.icon.frame, store)
+		if row.icon.texture and not row.icon.__aetherCell then
+			row.icon.__aetherCell = true
+			row.icon:SetSize(ACH_ICON, ACH_ICON)
+			W.DecorateSlot(row.icon, ACH_ICON,
+				{ icon = row.icon.texture, count = false })
+		end
+	end
+
+	if row.label then Roled(row.label, "pnBody") end
+	if row.description then Roled(row.description, "pnSub") end
+	if row.hiddenDescription then Roled(row.hiddenDescription, "pnSub") end
+	if row.tracked then Reskin.CheckBox(row.tracked, store) end
+end
+
+local function DressAchievements(frame, store)
+	LayoutTabs(frame, store)
+
+	-- THE WOOD AND THE METAL NEED NOTHING HERE, and a first draft listed all
+	-- twelve pieces by name to take them off. A mutation that stopped that loop
+	-- working changed nothing, which is the tell: every one of them is a REGION
+	-- of AchievementFrame, so the shell's own strip has already had them before
+	-- this function runs.
+	--
+	-- ElvUI hides them by name too, immediately before calling StripTextures on
+	-- the same frame - so the list is belt-and-braces there as well. Worth
+	-- knowing rather than copying: read their skin for WHICH PARTS EXIST, not
+	-- as a script to transcribe.
+
+	-- ITS HEADER IS A FRAME with the ornate plate on it, the game menu's shape
+	-- under another name.
+	for _, name in ipairs({ "AchievementFrameHeader",
+		"AchievementFrameCategories", "AchievementFrameSummary" }) do
+		local pane = _G[name]
+		if pane then
+			pane.__aetherStore = pane.__aetherStore or {}
+			Reskin.Strip(pane, pane.__aetherStore)
+		end
+	end
+
+	-- FIVE LISTS, FIVE RECESSES. The categories column plus one per tab, each
+	-- of which the client already draws a border round - which is what earns
+	-- `wells = false` on the entry.
+	for _, name in ipairs({
+		"AchievementFrameCategoriesContainer",
+		"AchievementFrameAchievementsContainer",
+		"AchievementFrameStatsContainer",
+		"AchievementFrameComparisonContainer",
+		"AchievementFrameComparisonStatsContainer",
+	}) do
+		ClientRecess(nil, name)
+		local bar = _G[name .. "ScrollBar"]
+		if bar then Reskin.ScrollBar(bar, store) end
+	end
+
+	if _G.AchievementFrameFilterDropdown then
+		DressDropdown(_G.AchievementFrameFilterDropdown, store)
+	end
+
+	-- AND EVERY ROW, WHENEVER IT IS MADE. HybridScrollFrame_CreateButtons mints
+	-- them on demand, so this has to run after the client rather than once at
+	-- open. Same shape as the spellbook's lazily built pages.
+	if not PN.__achRowHook and hooksecurefunc
+		and type(_G.HybridScrollFrame_CreateButtons) == "function" then
+		PN.__achRowHook = true
+		hooksecurefunc("HybridScrollFrame_CreateButtons", function(scroll)
+			if not PN.enabled then return end
+			for _, row in ipairs((scroll and scroll.buttons) or {}) do
+				pcall(AchievementRow, row, store)
+			end
+		end)
+	end
+	for _, list in ipairs({ _G.AchievementFrameAchievementsContainer,
+		_G.AchievementFrameStatsContainer }) do
+		for _, row in ipairs((list and list.buttons) or {}) do
+			AchievementRow(row, store)
+		end
+	end
+end
+
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
 	PVEFrame          = DressPVE,
+	AchievementFrame  = DressAchievements,
 	InspectFrame      = DressInspect,
 	MailFrame         = DressMail,
 	ItemTextFrame     = DressItemText,

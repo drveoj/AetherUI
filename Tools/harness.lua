@@ -4754,6 +4754,125 @@ do
 			_G[spec[1]] = b
 		end
 		
+		-- THE ACHIEVEMENT BOOK, which Mists has and Era does not - the addon is
+		-- gated `mists` outright. Built from ElvUI's skin rather than from
+		-- screenshots, which is why the mock has the two things that would
+		-- otherwise have cost a round trip each: a frame made of TWELVE named
+		-- texture pieces, and rows minted lazily.
+		do
+			local ach = CreateFrame("Frame", "AchievementFrame", UIParent)
+			ach:SetSize(1024, 447)
+			ach:Hide()
+			ach.selectedTab = 1
+
+			-- ITS FRAME IS NOT A TEMPLATE'S NINE-SLICE. It inherits
+			-- BackdropTemplate and draws its own wood and metal border as
+			-- separate named pieces - four wood corners and eight metal edges.
+			ach.__frameArt = {}
+			for _, part in ipairs({
+				"WoodBorderTopLeft", "WoodBorderTopRight",
+				"WoodBorderBottomLeft", "WoodBorderBottomRight",
+				"MetalBorderTop", "MetalBorderBottom", "MetalBorderLeft",
+				"MetalBorderRight", "MetalBorderTopLeft", "MetalBorderTopRight",
+				"MetalBorderBottomLeft", "MetalBorderBottomRight",
+				"CategoriesBG", "WaterMark",
+			}) do
+				local t = ach:CreateTexture("AchievementFrame" .. part, "BORDER")
+				t:SetTexture("Interface\\AchievementFrame\\UI-Achievement-" .. part)
+				ach.__frameArt[#ach.__frameArt + 1] = t
+			end
+
+			local head = CreateFrame("Frame", "AchievementFrameHeader", ach)
+			head.__plate = head:CreateTexture(nil, "BORDER")
+			head.__plate:SetTexture("Interface\\AchievementFrame\\UI-Achievement-Header")
+			local ht = head:CreateFontString("AchievementFrameHeaderTitle", "OVERLAY")
+			ht:SetText("Achievements")
+			local hp = head:CreateFontString("AchievementFrameHeaderPoints", "OVERLAY")
+			hp:SetText("1275")
+
+			local shut = CreateFrame("Button", "AchievementFrameCloseButton", ach)
+			shut:SetNormalTexture("close-up")
+
+			for i, word in ipairs({ "Achievements", "Statistics", "Comparison" }) do
+				local tab = CreateFrame("Button", "AchievementFrameTab" .. i, ach)
+				tab:SetID(i)
+				tab:SetSize(115, 32)
+				tab:SetPoint("BOTTOMLEFT", ach, "BOTTOMLEFT",
+					10 + (i - 1) * 100, -30)
+				local fs = tab:CreateFontString(nil, "OVERLAY")
+				fs:SetText(word)
+				tab.__fs = fs
+				function tab:GetFontString() return self.__fs end
+				tab:SetNormalTexture("tab-stone")
+				tab:SetDisabledTexture("tab-stone-selected")
+			end
+
+			for _, pane in ipairs({ "AchievementFrameAchievements",
+				"AchievementFrameStats", "AchievementFrameSummary",
+				"AchievementFrameComparison", "AchievementFrameCategories" }) do
+				local p2 = CreateFrame("Frame", pane, ach)
+				p2:SetAllPoints(ach)
+				p2.__art = p2:CreateTexture(nil, "BACKGROUND")
+				p2.__art:SetTexture("achievement-parchment")
+			end
+
+			-- FIVE LISTS, FIVE RECESSES, each with a scroll bar of its own.
+			for _, c in ipairs({ "AchievementFrameCategoriesContainer",
+				"AchievementFrameAchievementsContainer",
+				"AchievementFrameStatsContainer",
+				"AchievementFrameComparisonContainer",
+				"AchievementFrameComparisonStatsContainer" }) do
+				local box = CreateFrame("Frame", c, ach)
+				box:SetSize(300, 380)
+				box.__stone = box:CreateTexture(nil, "BORDER")
+				box.__stone:SetTexture("inset-stone")
+				local sb = CreateFrame("Slider", c .. "ScrollBar", box)
+				sb.Track = CreateFrame("Frame", nil, sb)
+				sb.Track.Thumb = CreateFrame("Frame", nil, sb.Track)
+				box.buttons = {}
+			end
+
+			local dd = CreateFrame("Frame", "AchievementFrameFilterDropdown", ach)
+			dd.__hold = dd:CreateTexture(nil, "BACKGROUND")
+			dd.__hold:SetAtlas("common-dropdown-classic-textholder")
+
+			--- One achievement row, the shape ElvUI's SkinAch expects.
+			--
+			--  ITS RING AND ITS FLASH ARE FRAMES, not regions - which is why
+			--  they need killing rather than stripping, and why a mock that
+			--  made them textures would have said the opposite.
+			function _G.__makeAchRow(list)
+				local row = CreateFrame("Button", nil, list)
+				row:SetSize(496, 76)
+				row.__plate = row:CreateTexture(nil, "BACKGROUND")
+				row.__plate:SetTexture("achievement-row-plate")
+				row.icon = CreateFrame("Frame", nil, row)
+				row.icon:SetSize(52, 52)
+				row.icon.texture = row.icon:CreateTexture(nil, "ARTWORK")
+				row.icon.texture:SetTexture("Interface\\Icons\\Achievement_Zone")
+				row.icon.bling = CreateFrame("Frame", nil, row.icon)
+				row.icon.frame = CreateFrame("Frame", nil, row.icon)
+				row.label = row:CreateFontString(nil, "OVERLAY")
+				row.label:SetText("Level 10")
+				row.description = row:CreateFontString(nil, "OVERLAY")
+				row.description:SetText("Reach level 10.")
+				row.tracked = CreateFrame("CheckButton", nil, row)
+				row.tracked:SetNormalTexture("checkbox-up")
+				list.buttons[#list.buttons + 1] = row
+				return row
+			end
+
+			-- TWO ROWS AT OPEN, and the rest minted later - which is the whole
+			-- point. HybridScrollFrame_CreateButtons makes them on demand, so a
+			-- dresser that runs once at open dresses only what existed then.
+			_G.__makeAchRow(_G.AchievementFrameAchievementsContainer)
+			_G.__makeAchRow(_G.AchievementFrameAchievementsContainer)
+
+			function _G.HybridScrollFrame_CreateButtons(list)
+				_G.__makeAchRow(list)
+			end
+		end
+
 		-- THE GROUP FINDER MISTS ACTUALLY OPENS, which is a different window
 		-- doing the same job as the parchment one below.
 		-- Blizzard_GroupFinder is gated `wrath, cata, mists` and carries
@@ -36546,6 +36665,100 @@ do
 	check(art:IsShown(),
 		"and a killed region can be shown again - Show is its own method"
 		.. " once more, not an alias for Hide")
+end
+
+print("== panels: the achievement book, written from ElvUI's map ==")
+do
+	local PN = A:GetModule("panels")
+	local ach = _G.AchievementFrame
+	ach:Show()
+	PN.Dress(ach)
+
+	check(ach.__aetherPanel ~= nil, "AchievementFrame is dressed")
+
+	-- TWELVE NAMED PIECES OF FRAME. It inherits BackdropTemplate rather than
+	-- any portrait or button template, so there is no nine-slice to take off -
+	-- four wood corners and eight metal edges, each named, plus the watermark
+	-- and the categories backing.
+	local left = 0
+	for _, t in ipairs(ach.__frameArt) do
+		if (t:GetTexture() or 0) ~= 0 then left = left + 1 end
+	end
+	check(left == 0,
+		"its wood and metal frame comes off - twelve named pieces, not a"
+		.. " template's nine-slice (" .. left .. " left)")
+
+	check(ach.__aetherTitle == _G.AchievementFrameHeaderTitle,
+		"the band is handed the title off its HEADER FRAME, which is neither"
+		.. " $parentTitleText nor in a TitleContainer - so the portrait"
+		.. " fallback would never have found it")
+
+	-- FIVE LISTS, FIVE RECESSES, which is what earns `wells = false`.
+	check(PN.ENTRY.AchievementFrame.wells == false,
+		"it takes no body well, every list being in a container already")
+	local welled = 0
+	for _, name in ipairs({ "AchievementFrameCategoriesContainer",
+		"AchievementFrameAchievementsContainer",
+		"AchievementFrameStatsContainer" }) do
+		if _G[name].__aetherPill ~= nil then welled = welled + 1 end
+		if _G[name].__stone:GetTexture() ~= 0 then welled = -99 end
+	end
+	check(welled == 3, "each list sits in one of our wells (" .. welled .. ")")
+
+	-- THE ROWS THAT EXISTED AT OPEN.
+	local first = _G.AchievementFrameAchievementsContainer.buttons[1]
+	check(first.__plate:GetTexture() == 0 and first.label._aetherStyle == "pnBody",
+		"an achievement row loses its plate and takes our lettering")
+	check(first.icon.texture:GetTexture() ~= 0,
+		"and keeps the picture that says which achievement it is")
+	check(first.icon.bling.__aetherKilled and first.icon.frame.__aetherKilled,
+		"with the icon's ring and its flash KILLED rather than hidden - both"
+		.. " are frames, and the flash is animated, so hiding loses to the"
+		.. " next animation")
+
+	-- AND THE ONES MINTED AFTERWARDS, which is the fault ElvUI's skin warned
+	-- about before I could hit it: HybridScrollFrame_CreateButtons makes rows
+	-- on demand, so a dresser that runs once at open dresses only what existed
+	-- then and every row scrolled into view later stays Blizzard's.
+	local list = _G.AchievementFrameAchievementsContainer
+	local before = #list.buttons
+	_G.HybridScrollFrame_CreateButtons(list)
+	local late = list.buttons[#list.buttons]
+	check(#list.buttons == before + 1, "a row can be minted after the dress")
+	check(late.__plate:GetTexture() == 0,
+		"and a row minted AFTER the window was dressed is dressed too - the"
+		.. " rows are made on demand, so anything scrolled into view later"
+		.. " would otherwise stay Blizzard's")
+
+	-- AND IT SURVIVES BEING TURNED OFF AND ON, which the first draft did not:
+	-- the row carried a permanent "already dressed" flag, so the second dress
+	-- was a no-op and a module toggle left every row in Blizzard's plate. Same
+	-- fault as the status bars' __aetherFill a day earlier, written again.
+	A:SetModuleEnabled("panels", false)
+	check(first.__plate:GetTexture() ~= 0,
+		"turning panels off gives an achievement row its plate back")
+	A:SetModuleEnabled("panels", true)
+	ach:Hide() ach:Show()
+	PN.Dress(ach)
+	check(first.__plate:GetTexture() == 0,
+		"and turning it back on takes it off AGAIN - a mark nothing clears"
+		.. " makes the second dress a no-op")
+
+	-- AND THE CELL IS BUILT ONCE PER DRESS, not once per pass. W.DecorateSlot
+	-- CREATES a shade, a gloss and an edge every time it is called, so a row
+	-- dressed on every sweep grows four textures a sweep - invisible on screen,
+	-- and a leak that only shows up as a window getting slower the longer it is
+	-- open. The mark that stops that is in REDRESS_MARKS, so Restore clears it
+	-- and a genuine re-dress still builds one.
+	local function regions(f) return #{ f:GetRegions() } end
+	local was = regions(first.icon)
+	PN.Dress(ach)
+	PN.Dress(ach)
+	check(regions(first.icon) == was,
+		"dressing the window again does not stack another cell on every row ("
+		.. regions(first.icon) .. " against " .. was .. ")")
+
+	ach:Hide()
 end
 
 print("== panels: the group finder Mists actually opens ==")

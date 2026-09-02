@@ -96,6 +96,9 @@ local LFG_ROLE_ROW     = 62
 -- number, from the BOTTOMLEFT offset on $parentTab1 in Classic\PVEFrame.xml.
 local PVE_TAB_DROP     = 30
 
+-- The achievement book's three, which hang off its BOTTOMLEFT the same way.
+local ACH_TAB_DROP     = 30
+
 -- The rank switch's row at the top of the spellbook's well: the switch, and
 -- the gap to the first spell under it. The well's own padding is not in here -
 -- LayoutBody puts every window's content inside that already.
@@ -310,6 +313,36 @@ local PANELS = {
 	-- PORTRAIT FRAME, SO TIGHT, and its three tabs hang 30 below the bottom
 	-- edge outside its own art - the character sheet's case exactly, so the
 	-- glass reaches past the frame to carry them rather than stopping at it.
+	-- THE ACHIEVEMENT BOOK, which Mists has and Era does not: the addon is
+	-- gated `mists` outright, so this entry never fires on the other client.
+	--
+	-- READ ELVUI'S SKIN FIRST, which is the point of the exercise -
+	-- Game/Mists/Skins/Achievement.lua. Two things came straight off it and
+	-- neither is obvious from the XML: the window is bordered by TWELVE named
+	-- texture pieces rather than a template's nine-slice, and its rows are
+	-- minted lazily by HybridScrollFrame_CreateButtons, so a dresser that runs
+	-- once at open dresses however many rows happen to exist that moment.
+	--
+	-- NOT A PORTRAIT FRAME AND NOT ButtonFrameTemplate. It inherits
+	-- BackdropTemplate and carries its own wood and metal frame, so there is no
+	-- margin convention to trim to - the pieces come off and the glass takes
+	-- their place.
+	{ frame = "AchievementFrame", addon = "Blizzard_AchievementUI",
+		insets = { 0, 0, 0, -ACH_TAB_DROP },
+		tabs = "AchievementFrameTab",
+		-- ITS HEADER IS A FRAME OF ITS OWN with the two strings on it, which is
+		-- why neither is $parentTitleText and why the portrait fallback would
+		-- never have found them.
+		title = "AchievementFrameHeaderTitle",
+		subtitle = "AchievementFrameHeaderPoints",
+		-- WELLS = FALSE, EARNED. Every list on this window is already in a
+		-- container the client draws a border round - the categories column and
+		-- one per tab - and ElvUI gives each its own backdrop for the same
+		-- reason. A body well would be a rim round five rims.
+		wells = false,
+		body = { "AchievementFrameAchievements", "AchievementFrameStats",
+			"AchievementFrameSummary", "AchievementFrameComparison" } },
+
 	{ frame = "PVEFrame", addon = "Blizzard_GroupFinder", tight = true,
 		insets = { 0, 0, 0, -PVE_TAB_DROP },
 		tabs = "PVEFrameTab",

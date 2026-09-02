@@ -268,7 +268,7 @@ end
 --  back after `/aether panels off` and `on` and could not be swept again. It
 --  was never about that bar: every status bar and scroll bar in the interface
 --  did it, which is why the fix is here rather than in either function.
-local REDRESS_MARKS = { "__aetherFill", "__aetherScroll" }
+local REDRESS_MARKS = { "__aetherFill", "__aetherScroll", "__aetherCell" }
 
 --- Put a thing beyond the client's reach, rather than asking it to stay down.
 --
