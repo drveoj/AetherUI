@@ -5185,7 +5185,13 @@ do
 			-- and whose category rows are parchment with a picture on. Both are
 			-- PARENT KEYS on LFGListFrame, so no list of globals reaches them.
 			local lfgl = CreateFrame("Frame", "LFGListFrame", gff)
+			-- DOWN AT DRESS TIME, as it is in the client: the dungeon finder is
+			-- the selection when the window opens, so the premade pane and its
+			-- two buttons are hidden. That is what made the footer skip them -
+			-- the strip is laid out from what is VISIBLE - and a mock that had
+			-- them up throughout could not show it.
 			lfgl.CategorySelection = CreateFrame("Frame", nil, lfgl)
+			lfgl.CategorySelection:Hide()
 			lfgl.CategorySelection.Label =
 				lfgl.CategorySelection:CreateFontString(nil, "ARTWORK")
 			lfgl.CategorySelection.Label:SetText("Premade Groups")
@@ -5247,6 +5253,55 @@ do
 				t:SetText(key)
 				b.__fs = t
 				function b:GetFontString() return self.__fs end
+			end
+
+			-- THE PVP TAB'S OWN SELECTION CALL. PVEFrame_ShowFrame changes TAB;
+			-- this changes which of Casual, Rated, War Games or Premade is up
+			-- INSIDE the PvP tab. Each of those brings its own pair of actions
+			-- and all but the first are down at dress time, so all but the
+			-- first pair kept the client's placement.
+			for _, n in ipairs({ "ConquestQueueFrame", "WarGamesQueueFrame" }) do
+				local q = CreateFrame("Frame", n, pvp)
+				q:SetAllPoints(pvp)
+				q:Hide()
+				q.__art = q:CreateTexture(nil, "BACKGROUND")
+				q.__art:SetTexture("pvp-pane-art")
+			end
+			for _, n in ipairs({ "ConquestJoinButton", "WarGameStartButton" }) do
+				local host = n == "ConquestJoinButton" and _G.ConquestQueueFrame
+					or _G.WarGamesQueueFrame
+				local b = CreateFrame("Button", n, host)
+				b:SetSize(135, 22)
+				b:SetPoint("BOTTOM", host, "BOTTOM", 0, 4)
+				b:SetNormalTexture("magic-button-up")
+				local t = b:CreateFontString(nil, "OVERLAY")
+				t:SetText(n)
+				b.__fs = t
+				function b:GetFontString() return self.__fs end
+			end
+
+			-- THE LEFT COLUMN'S OWN CALL, which is what a click on Dungeon
+			-- Finder or Premade Groups actually runs. It is NOT
+			-- PVEFrame_ShowFrame, which is why a hook on that one never fired
+			-- for the pane being clicked.
+			function _G.GroupFinderFrame_ShowGroupFrame(frame)
+				for _, n in ipairs({ "LFDParentFrame", "LFGListFrame" }) do
+					if _G[n] then
+						if _G[n] == frame then _G[n]:Show() else _G[n]:Hide() end
+					end
+				end
+				if frame == _G.LFGListFrame then
+					_G.LFGListFrame.CategorySelection:Show()
+				end
+			end
+
+			function _G.PVPQueueFrame_ShowFrame(frame)
+				for _, n in ipairs({ "HonorQueueFrame", "ConquestQueueFrame",
+					"WarGamesQueueFrame" }) do
+					if _G[n] then
+						if _G[n] == frame then _G[n]:Show() else _G[n]:Hide() end
+					end
+				end
 			end
 
 			-- AND THE CLIENT RE-LETTERS THE FINDER ROWS. Both branches of
@@ -37113,6 +37168,27 @@ do
 			"each role's tick is raised above the picture it sits on ("
 			.. tickUp .. " of 3)")
 
+		-- AND SELECTING ANOTHER PVP MODE PUTS ITS ACTIONS IN THE STRIP TOO.
+		-- The strip is laid out from what is VISIBLE, once, at dress time -
+		-- and all four of this tab's panes bar the first are down then, so
+		-- every pair but the first kept the client's placement. PVEFrame's own
+		-- ShowFrame does not fire for this: the PvP tab has a selection call of
+		-- its own.
+		-- THE TAB FIRST: a pane is only visible if the tab it lives on is up,
+		-- and the strip is laid out from what is VISIBLE.
+		_G.PVEFrame_ShowFrame("PVPQueueFrame")
+		_G.PVPQueueFrame_ShowFrame(_G.WarGamesQueueFrame)
+		do
+			local b = _G.WarGameStartButton
+			local _, rel = b:GetPoint(1)
+			check(rel ~= _G.WarGamesQueueFrame,
+				"a PvP mode selected after the window was dressed has its"
+				.. " actions moved into the strip, not left at the foot of its"
+				.. " own pane")
+		end
+		_G.PVPQueueFrame_ShowFrame(_G.HonorQueueFrame)
+		_G.PVEFrame_ShowFrame("GroupFinderFrame")
+
 		check(_G.HonorQueueFrameTypeDropDown.__hold:GetAtlas() == nil,
 			"its picker is dressed - spelled DropDown with a capital D, and"
 			.. " there is no HonorFrameTypeDropdown at all")
@@ -37138,6 +37214,34 @@ do
 				"the premade pane's recess stops a footer's height clear of the"
 				.. " bottom, so the actions are not drawn inside the well ("
 				.. tostring(by) .. ")")
+		end
+
+		-- AND ITS TWO ACTIONS ARE IN THE STRIP, WHICH THEY WERE NOT.
+		--
+		-- The strip is laid out from what is VISIBLE and ours, once, at dress
+		-- time - and at dress time this pane is DOWN, because the dungeon
+		-- finder is the selection. Its buttons failed that test, were skipped,
+		-- and kept the client's own placement hard against the pane's left and
+		-- right edges. Showing the pane placed nothing, because nothing re-ran
+		-- the strip.
+		-- FROM THE STATE THE CLIENT OPENS IN: pane down, window dressed, THEN
+		-- the pane shown. Asserting after a dress that already had it up proves
+		-- nothing, because the strip would have placed it either way.
+		cs:Hide()
+		cs.StartGroupButton:ClearAllPoints()
+		cs.StartGroupButton:SetPoint("BOTTOMLEFT", cs, "BOTTOMLEFT", -1, 3)
+		PN.Dress(pve)
+		-- THROUGH THE CLIENT'S OWN CALL, because that is what a click runs and
+		-- reaching in to show the pane ourselves proves the strip and not the
+		-- wiring.
+		_G.GroupFinderFrame_ShowGroupFrame(_G.LFGListFrame)
+		do
+			local b = cs.StartGroupButton
+			local _, rel = b:GetPoint(1)
+			check(rel ~= cs,
+				"showing the premade pane puts its actions in the footer strip"
+				.. " rather than leaving them where the client had them, hard"
+				.. " against the pane's edges")
 		end
 
 		local rows = 0

@@ -5196,6 +5196,66 @@ local function DressPVE(frame, store)
 					nil, nil, nil
 			end
 			pcall(PN.LayoutBody, _G.PVEFrame, entry)
+
+			-- AND THE FOOTER STRIP WITH IT, which is the whole of "they are not
+			-- in the footer".
+			--
+			-- The strip is laid out from what is VISIBLE and ours, once, at
+			-- dress time - and at dress time the premade pane is DOWN, because
+			-- the dungeon finder is the selection. So its two buttons failed
+			-- the visible test, were skipped, and kept the client's own
+			-- placement at the pane's left and right edges. Clicking Premade
+			-- Groups shows them and nothing re-ran the strip.
+			--
+			-- PVEFrame_ShowFrame is called for a change of SELECTION as well as
+			-- a change of tab - LFGList.lua calls it to open the premade pane -
+			-- so it is the right place, and LayoutFooter was simply never
+			-- called from here.
+			pcall(PN.LayoutFooter, _G.PVEFrame, entry)
+		end)
+	end
+
+	-- AND THE LEFT COLUMN'S OWN CALL, which is the one the premade pane comes
+	-- up through. Clicking Dungeon Finder or Premade Groups runs
+	-- GroupFinderFrameGroupButton_OnClick -> GroupFinderFrame_ShowGroupFrame,
+	-- and NOT PVEFrame_ShowFrame - so the hook on that one never fired for the
+	-- thing Joe was clicking.
+	--
+	-- THREE SELECTION CALLS ON ONE WINDOW: the tab rail's, the left column's,
+	-- and the PvP tab's own. Each shows a pane whose actions were skipped at
+	-- dress time for being down, and hooking any two of them leaves a third
+	-- route that still looks broken.
+	if not PN.__pveGroupHook and hooksecurefunc
+		and type(_G.GroupFinderFrame_ShowGroupFrame) == "function" then
+		PN.__pveGroupHook = true
+		hooksecurefunc("GroupFinderFrame_ShowGroupFrame", function()
+			if not PN.enabled then return end
+			local entry = PN.ENTRY and PN.ENTRY.PVEFrame
+			pcall(PN.LayoutBody, _G.PVEFrame, entry)
+			pcall(PN.LayoutFooter, _G.PVEFrame, entry)
+		end)
+	end
+
+	-- AND THE SAME ON THE PVP TAB, WHICH HAS ITS OWN SELECTION CALL.
+	--
+	-- PVEFrame_ShowFrame changes TAB; PVPQueueFrame_ShowFrame changes which of
+	-- Casual, Rated, War Games or Premade is up inside the PvP tab. Its four
+	-- panes each bring their own pair of actions, and every one of them is down
+	-- at dress time except the first - so all but that first pair kept the
+	-- client's placement, for exactly the reason the premade pane's did.
+	--
+	-- Two selection calls on one window, and hooking one of them fixes one tab.
+	-- That is the same shape as the role buttons appearing twice: a fix that
+	-- reaches one of two places looks finished from the tab you happen to be
+	-- on.
+	if not PN.__pvpShowHook and hooksecurefunc
+		and type(_G.PVPQueueFrame_ShowFrame) == "function" then
+		PN.__pvpShowHook = true
+		hooksecurefunc("PVPQueueFrame_ShowFrame", function()
+			if not PN.enabled then return end
+			local entry = PN.ENTRY and PN.ENTRY.PVEFrame
+			pcall(PN.LayoutBody, _G.PVEFrame, entry)
+			pcall(PN.LayoutFooter, _G.PVEFrame, entry)
 		end)
 	end
 
