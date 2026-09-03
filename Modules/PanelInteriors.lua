@@ -5086,6 +5086,17 @@ local function DressPVE(frame, store)
 	end
 
 	-- AND THE PREMADE PANES' RECESSES, which are parent keys on LFGListFrame.
+	--
+	-- THEY HAVE TO STOP ABOVE THE FOOTER STRIP. The client draws each of these
+	-- to the full height of its pane, because in ITS layout the two buttons sit
+	-- inside the recess at the bottom. We have moved those buttons into a strip
+	-- of our own - they are actions, not content - and left to itself the
+	-- recess still runs down past that strip, so the buttons ended up drawn
+	-- inside the well after all. Which is exactly what the strip was for.
+	--
+	-- Raised by the strip's height plus the padding over it: the same two
+	-- numbers the strip itself is built from, so the two cannot drift.
+	local floor = W.PANEL_FOOT_H + W.PANEL_PAD
 	for _, path in ipairs({
 		"LFGListFrame.CategorySelection.Inset",
 		"LFGListFrame.EntryCreation.Inset",
@@ -5094,6 +5105,21 @@ local function DressPVE(frame, store)
 		if ins then
 			ins.__aetherStore = ins.__aetherStore or {}
 			Reskin.Strip(ins, ins.__aetherStore)
+
+			-- CLEARED AND RE-SET, keeping the client's own top-left. A frame
+			-- accumulates anchors: setting BOTTOMRIGHT again without clearing
+			-- leaves it spanned between two and every getter answers about the
+			-- first, which reads exactly like it worked.
+			if not ins.__aetherFloored and ins.GetPoint then
+				local tPt, tRel, tRelP, tx, ty = ins:GetPoint(1)
+				local bPt, bRel, bRelP, bx, by = ins:GetPoint(2)
+				if tPt and bPt then
+					ins.__aetherFloored = true
+					ins:ClearAllPoints()
+					ins:SetPoint(tPt, tRel, tRelP, tx or 0, ty or 0)
+					ins:SetPoint(bPt, bRel, bRelP, bx or 0, (by or 0) + floor)
+				end
+			end
 		end
 	end
 

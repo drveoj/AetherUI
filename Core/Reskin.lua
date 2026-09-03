@@ -273,7 +273,7 @@ end
 -- mistake has now been made three times in this module, so the rule is: any
 -- "already done" mark belongs in this list the moment it is written.
 local REDRESS_MARKS = { "__aetherFill", "__aetherScroll", "__aetherCell",
-	"__aetherLifted" }
+	"__aetherLifted", "__aetherFloored" }
 
 --- Put a thing beyond the client's reach, rather than asking it to stay down.
 --

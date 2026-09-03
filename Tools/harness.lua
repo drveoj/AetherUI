@@ -5189,7 +5189,16 @@ do
 			lfgl.CategorySelection.Label =
 				lfgl.CategorySelection:CreateFontString(nil, "ARTWORK")
 			lfgl.CategorySelection.Label:SetText("Premade Groups")
+			-- TWO POINTS, as an InsetFrameTemplate has: the client draws it to
+			-- the FULL height of its pane, because in its layout the two
+			-- buttons sit inside the recess at the bottom. Ours moves them into
+			-- a footer strip, so the recess has to stop above that strip - and
+			-- a mock with only one point cannot show the difference.
 			lfgl.CategorySelection.Inset = CreateFrame("Frame", nil, lfgl.CategorySelection)
+			lfgl.CategorySelection.Inset:SetPoint("TOPLEFT",
+				lfgl.CategorySelection, "TOPLEFT", 4, -60)
+			lfgl.CategorySelection.Inset:SetPoint("BOTTOMRIGHT",
+				lfgl.CategorySelection, "BOTTOMRIGHT", -4, 4)
 			lfgl.CategorySelection.CategoryButtons = {}
 			for i = 1, 2 do
 				local cb = CreateFrame("Button", nil, lfgl.CategorySelection)
@@ -37117,6 +37126,20 @@ do
 		check(cs.Label._aetherStyle == "pnTitle",
 			"the premade pane's heading is in our lettering rather than the"
 			.. " client's ornate gold")
+		-- AND ITS RECESS STOPS ABOVE THE FOOTER STRIP. The client draws it to
+		-- the full height of the pane, because in ITS layout the two buttons
+		-- sit inside the recess at the bottom. We moved them into a strip -
+		-- they are actions, not content - and left alone the recess still ran
+		-- down past that strip, so the buttons were drawn inside the well after
+		-- all. Which is the one thing the strip existed to prevent.
+		do
+			local _, _, _, _, by = cs.Inset:GetPoint(2)
+			check((by or 0) >= A.Widgets.PANEL_FOOT_H,
+				"the premade pane's recess stops a footer's height clear of the"
+				.. " bottom, so the actions are not drawn inside the well ("
+				.. tostring(by) .. ")")
+		end
+
 		local rows = 0
 		for _, cb in ipairs(cs.CategoryButtons) do
 			if cb.__parch:GetTexture() == 0 and (cb.Icon:GetAtlas() or "") ~= ""
