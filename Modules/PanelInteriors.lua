@@ -2366,8 +2366,33 @@ local function DressCommunities(frame, store)
 			local columns = Reskin.Element(pane, "ColumnDisplay")
 			if columns then Reskin.Strip(columns, store) end
 
+			-- ITS RECESS IS DRESSED AS A WELL, not merely emptied. Stripping it
+			-- takes the client's stone off and leaves nothing, so the column
+			-- floats on bare glass with nothing saying where it starts - which
+			-- is what "content not positioned correctly" looked like on all
+			-- three columns at once.
+			--
+			-- THE CLIENT'S RECESS IS THE WELL. Same rule as every other window
+			-- carrying `wells = false`: where the client has already drawn a
+			-- box round its content, that box becomes ours rather than getting
+			-- a second one round the outside.
 			local inset = Reskin.Element(pane, "InsetFrame")
-			if inset then Reskin.Strip(inset, store) end
+			if inset then
+				inset.__aetherStore = inset.__aetherStore or {}
+				Reskin.Strip(inset, inset.__aetherStore)
+				Reskin.Well(inset, { corner = W.WELL_CORNER,
+					inset = { 0, 0, 0, 0 },
+					fill = "wellFill", edge = "wellEdge" })
+			end
+
+			-- AND THE FILIGREE WITH IT. The community list carries four pieces
+			-- of ornament the strip does not reach, because they hang off the
+			-- PANE rather than off its recess - ElvUI names all four.
+			for _, key in ipairs({ "FilligreeOverlay", "TopFiligree",
+				"BottomFiligree", "WatermarkFrame", "Bg" }) do
+				local art = Reskin.Element(pane, key)
+				if art then Reskin.Kill(art, store) end
+			end
 		end
 	end
 

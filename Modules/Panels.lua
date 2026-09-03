@@ -720,7 +720,23 @@ local PANELS = {
 	-- window of its own - so it got glass of its own behind a pane that already
 	-- had some, and a scale of its own inside a frame already scaled. Nobody
 	-- sees it either way: the guild button on this client opens Communities.
-	{ frame = "CommunitiesFrame",  addon = "Blizzard_Communities" },
+	-- THE GUILD WINDOW, and the first look at it with an actual guild behind
+	-- it: it was built from a live dump months ago and nobody could open it.
+	--
+	-- IT HAS THE STANDARD COMPONENTS AND WAS NOT GIVEN THEM. Three columns -
+	-- the community list, the chat, the roster - each with an InsetFrame of the
+	-- client's own that we STRIPPED and left bare, so all three floated on
+	-- glass with nothing marking where any of them began. They are dressed as
+	-- wells now, which is what `wells = false` means everywhere else: the
+	-- client's own recesses ARE the wells.
+	--
+	-- And its two actions sit in a strip rather than at the foot of a pane.
+	-- GuildRecruitmentButton and InviteButton, both read off
+	-- Blizzard_Communities/CommunitiesFrame.xml rather than guessed.
+	{ frame = "CommunitiesFrame",  addon = "Blizzard_Communities",
+		wells = false,
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "GuildRecruitmentButton", "InviteButton" } } },
 	{ frame = "WorldMapFrame",     addon = "Blizzard_WorldMap" },
 	-- IT LAYS ITSELF OUT. A VerticalLayoutFrame places its buttons from
 	-- layoutIndex on every show, so nudging one is undone before you see it -

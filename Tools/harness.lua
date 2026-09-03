@@ -8303,6 +8303,17 @@ do
 			pane.InsetFrame = CreateFrame("Frame", nil, pane)
 			pane.InsetFrame:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
 
+			-- AND THE ORNAMENT THAT HANGS OFF THE PANE RATHER THAN ITS RECESS.
+			-- Four pieces on the community list, which a strip of the recess
+			-- never reaches - ElvUI names every one. Without them here, the
+			-- sweep that takes them off could be deleted and nothing noticed.
+			for _, orn in ipairs({ "FilligreeOverlay", "TopFiligree",
+				"BottomFiligree", "WatermarkFrame" }) do
+				local f2 = CreateFrame("Frame", nil, pane)
+				f2:CreateTexture(nil, "OVERLAY"):SetTexture("communities-filigree")
+				pane[orn] = f2
+			end
+
 			local fs = pane:CreateFontString(nil, "OVERLAY")
 			fs:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
 			fs:SetText("0/0 Online")
@@ -36749,6 +36760,39 @@ do
 	-- is its own NORMAL TEXTURE, which is not a region of anything the pane
 	-- sweep walks.
 	local stony, glyphless = {}, {}
+	-- THE THREE COLUMNS SIT IN WELLS, which they did not: their recesses were
+	-- stripped and left bare, so each floated on glass with nothing marking
+	-- where it began. That is what "content not positioned correctly" was, on
+	-- all three at once, and the window had never been opened with a guild
+	-- behind it until today.
+	do
+		local welled, orn = 0, 0
+		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
+			local pane = cf[key]
+			if pane and pane.InsetFrame and pane.InsetFrame.__aetherPill then
+				welled = welled + 1
+			end
+			for _, k2 in ipairs({ "FilligreeOverlay", "TopFiligree",
+				"BottomFiligree", "WatermarkFrame" }) do
+				local f2 = pane and pane[k2]
+				if f2 and not f2.__aetherKilled then orn = orn + 1 end
+			end
+		end
+		check(welled == 3,
+			"each of the guild window's three columns sits in one of our wells"
+			.. " - the client's own recess dressed, not emptied (" .. welled
+			.. " of 3)")
+		check(orn == 0,
+			"and the filigree that hangs off the PANE rather than its recess"
+			.. " goes with it (" .. orn .. " left)")
+	end
+
+	local PNc = A:GetModule("panels")
+	check(PNc.ENTRY.CommunitiesFrame.footer
+		and PNc.ENTRY.CommunitiesFrame.footer > 0,
+		"and its two actions have a strip to stand in rather than floating at"
+		.. " the foot of a pane")
+
 	for _, key in ipairs({ "MemberList", "CommunitiesList", "ApplicantList" }) do
 		for i, row in ipairs(cf[key].ScrollBox.__rows) do
 			if row:GetNormalTexture() and row:GetNormalTexture():GetTexture() ~= 0 then
