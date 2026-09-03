@@ -5267,9 +5267,19 @@ do
 				q.__art = q:CreateTexture(nil, "BACKGROUND")
 				q.__art:SetTexture("pvp-pane-art")
 			end
-			for _, n in ipairs({ "ConquestJoinButton", "WarGameStartButton" }) do
-				local host = n == "ConquestJoinButton" and _G.ConquestQueueFrame
-					or _G.WarGamesQueueFrame
+			-- A DECOY OF THE SAME NAME. There IS a global called
+			-- WarGameStartButton and it belongs to the OLD PVPFrame, not to
+			-- this pane - the live readout said `WarGameStartButton ... on
+			-- PVPFrameLeftButton`. So reaching for it by name skins something
+			-- nobody can see and leaves the real one in Blizzard's red, which
+			-- is why ElvUI walks the children instead.
+			local decoyHost = CreateFrame("Frame", "PVPFrameLeftButton", UIParent)
+			local decoy = CreateFrame("Button", "WarGameStartButton", decoyHost)
+			decoy:SetNormalTexture("magic-button-up")
+			decoy:SetPoint("TOPLEFT", decoyHost, "TOPLEFT", 1, 0)
+
+			for _, n in ipairs({ "ConquestJoinButton" }) do
+				local host = _G.ConquestQueueFrame
 				local b = CreateFrame("Button", n, host)
 				b:SetSize(135, 22)
 				b:SetPoint("BOTTOM", host, "BOTTOM", 0, 4)
@@ -5284,6 +5294,22 @@ do
 			-- Finder or Premade Groups actually runs. It is NOT
 			-- PVEFrame_ShowFrame, which is why a hook on that one never fired
 			-- for the pane being clicked.
+			-- AND THE REAL ONE, a child of the war games pane carrying the same
+			-- name. Two frames may hold one name: the global points at whichever
+			-- was made last, and it is not this one.
+			do
+				local real = CreateFrame("Button", nil, _G.WarGamesQueueFrame)
+				real:SetSize(130, 22)
+				real:SetPoint("BOTTOM", _G.WarGamesQueueFrame, "BOTTOM", 0, 4)
+				real:SetNormalTexture("magic-button-up")
+				local t = real:CreateFontString(nil, "OVERLAY")
+				t:SetText("Start War Game")
+				real.__fs = t
+				function real:GetFontString() return self.__fs end
+				function real:GetName() return "WarGameStartButton" end
+				_G.__realWarGame = real
+			end
+
 			function _G.GroupFinderFrame_ShowGroupFrame(frame)
 				for _, n in ipairs({ "LFDParentFrame", "LFGListFrame" }) do
 					if _G[n] then
@@ -37179,12 +37205,18 @@ do
 		_G.PVEFrame_ShowFrame("PVPQueueFrame")
 		_G.PVPQueueFrame_ShowFrame(_G.WarGamesQueueFrame)
 		do
-			local b = _G.WarGameStartButton
+			-- THE REAL ONE, not the global of that name - which belongs to the
+			-- old PVPFrame and is not on this pane at all.
+			local b = _G.__realWarGame
 			local _, rel = b:GetPoint(1)
 			check(rel ~= _G.WarGamesQueueFrame,
 				"a PvP mode selected after the window was dressed has its"
 				.. " actions moved into the strip, not left at the foot of its"
 				.. " own pane")
+			check(b:GetNormalTexture():GetTexture() == 0,
+				"and Start War Game is SKINNED - found by walking the pane's"
+				.. " children, because the global of its name is a different"
+				.. " button belonging to the old PVPFrame")
 		end
 		_G.PVPQueueFrame_ShowFrame(_G.HonorQueueFrame)
 		_G.PVEFrame_ShowFrame("GroupFinderFrame")

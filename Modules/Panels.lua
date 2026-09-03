@@ -416,6 +416,12 @@ local PANELS = {
 			"RaidFinderQueueFrameFindRaidButton",
 			"ScenarioQueueFrameFindGroupButton",
 			"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton",
+			-- WarGameStartButton NAMES TWO BUTTONS on this client - one on the
+			-- war games pane and one belonging to the old PVPFrame, and the
+			-- global is the second. It can be named here anyway now: RowPart
+			-- walks this window for a child of that name before it falls back
+			-- to the global, which is the rule for every part on every window
+			-- rather than an exception carved out for this one.
 			"ConquestJoinButton", "WarGameStartButton",
 			"LFGListFrame.CategorySelection.StartGroupButton",
 			"LFGListFrame.CategorySelection.FindGroupButton",
@@ -1444,6 +1450,42 @@ local Part = PN.Part
 --  source Blizzard published - and an entry that named one of them put neither
 --  filter in the row, so both stayed where the client's own art had left them,
 --  across the window's title.
+--- A DESCENDANT OF THIS WINDOW CARRYING THIS NAME, preferred over a global of
+--- the same name.
+--
+--  TWO FRAMES MAY HOLD ONE NAME. The global points at whichever was created
+--  last, and that is not always the one on the window in front of you: Mists
+--  has a `WarGameStartButton` on the war games pane AND another belonging to
+--  the old PVPFrame, and `_G.WarGameStartButton` is the second. Reaching for it
+--  by name skinned something nobody can see and left the real one in Blizzard's
+--  red - which is why ElvUI walks that pane's children instead of naming it.
+--
+--  So WALK FIRST, EVERY TIME, rather than discovering the exception one window
+--  at a time. Joe's instruction after the third round trip on this window, and
+--  it is the right default: a name is a hint, and the frame in front of you is
+--  the fact. The global stays as the fallback, since most parts are only
+--  reachable that way.
+local FIND_DEPTH = 6
+local function Descendant(frame, name, depth)
+	if not (frame and frame.GetChildren) or (depth or 0) > FIND_DEPTH then
+		return nil
+	end
+	for _, kid in ipairs({ frame:GetChildren() }) do
+		-- FORBIDDEN FRAMES THROW ON EVERY METHOD, GetName included, and a walk
+		-- meets them where a named lookup never did: the trade window has one
+		-- among its children and asking its name took the whole dresser down
+		-- with "attempt to access forbidden object from code tainted by an
+		-- AddOn". IsForbidden is the one call that is safe to make.
+		if not Reskin.Forbidden(kid) then
+			if kid.GetName and kid:GetName() == name then return kid end
+			local found = Descendant(kid, name, (depth or 0) + 1)
+			if found then return found end
+		end
+	end
+	return nil
+end
+PN.Descendant = Descendant
+
 local function RowPart(frame, name)
 	if type(name) == "table" then
 		for _, alias in ipairs(name) do
@@ -1452,7 +1494,12 @@ local function RowPart(frame, name)
 		end
 		return nil
 	end
-	local w = Part(name) or Reskin.Element(frame, name)
+	-- THE WINDOW'S OWN FIRST. See Descendant above: a global may name a frame
+	-- on some other window entirely, and one that is not ours is worse than
+	-- none - it is dressed and moved where nobody can see it while the thing
+	-- the player is looking at stays Blizzard's.
+	local w = (type(name) == "string" and Descendant(frame, name))
+		or Part(name) or Reskin.Element(frame, name)
 	return w and w.ClearAllPoints and w or nil
 end
 

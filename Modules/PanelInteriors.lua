@@ -4943,10 +4943,20 @@ local function DressPVE(frame, store)
 		"RaidFinderQueueFrameFindRaidButton",
 		"ScenarioQueueFrameFindGroupButton",
 		"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton",
-		"ConquestJoinButton", "WarGameStartButton",
+		"ConquestJoinButton",
 	}) do
 		acts[#acts + 1] = _G[name]
 	end
+
+	-- START WAR GAME NAMES TWO BUTTONS, and PN.Descendant is what settles it:
+	-- the window is walked for a child of that name before the global is
+	-- consulted. The bespoke walk that used to live here is gone - it was the
+	-- right answer for one window written in the wrong place, and Joe's
+	-- instruction was to make it the default rather than keep discovering the
+	-- exception a window at a time.
+	local wg = PN.Descendant(frame, "WarGameStartButton")
+	if wg then acts[#acts + 1] = wg end
+
 	for _, path in ipairs({
 		"LFGListFrame.CategorySelection.StartGroupButton",
 		"LFGListFrame.CategorySelection.FindGroupButton",
@@ -5100,6 +5110,12 @@ local function DressPVE(frame, store)
 	for _, path in ipairs({
 		"LFGListFrame.CategorySelection.Inset",
 		"LFGListFrame.EntryCreation.Inset",
+		-- AND THE WINDOW'S OWN LEFT RECESS, whose right-hand edge is the line
+		-- down the middle of this window. It reaches the floor because the
+		-- client has no footer strip there; ours does, so the line ran on
+		-- through it and out the other side. It stops on the strip's top rule
+		-- now, which is where a divider between two panes should stop.
+		"PVEFrame.Inset",
 	}) do
 		local ins = Part(path)
 		if ins then
