@@ -36791,17 +36791,23 @@ do
 	-- is its own NORMAL TEXTURE, which is not a region of anything the pane
 	-- sweep walks.
 	local stony, glyphless = {}, {}
-	-- THE THREE COLUMNS SIT IN WELLS, which they did not: their recesses were
-	-- stripped and left bare, so each floated on glass with nothing marking
-	-- where it began. That is what "content not positioned correctly" was, on
-	-- all three at once, and the window had never been opened with a guild
-	-- behind it until today.
+	-- THE THREE COLUMNS SIT IN WELLS, AND THE WELL IS ON THE PANE.
+	--
+	-- The first attempt dressed the client's InsetFrame and it was the wrong
+	-- box: the chat's well came out smaller than the column it lives in and the
+	-- messages ran over the edges, because everything inside is anchored to the
+	-- PANE and nothing to the inset. The inset is the client's own idea of a
+	-- margin, not the box the content is in.
+	--
+	-- ElvUI hides those insets rather than dressing them, which is the same
+	-- conclusion reached from the other side.
 	do
-		local welled, orn = 0, 0
+		local welled, killed, orn = 0, 0, 0
 		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
 			local pane = cf[key]
-			if pane and pane.InsetFrame and pane.InsetFrame.__aetherPill then
-				welled = welled + 1
+			if pane and pane.__aetherPill then welled = welled + 1 end
+			if pane and pane.InsetFrame and pane.InsetFrame.__aetherKilled then
+				killed = killed + 1
 			end
 			for _, k2 in ipairs({ "FilligreeOverlay", "TopFiligree",
 				"BottomFiligree", "WatermarkFrame" }) do
@@ -36810,37 +36816,35 @@ do
 			end
 		end
 		check(welled == 3,
-			"each of the guild window's three columns sits in one of our wells"
-			.. " - the client's own recess dressed, not emptied (" .. welled
-			.. " of 3)")
+			"each column's well is drawn on the PANE, which is what its content"
+			.. " is anchored to (" .. welled .. " of 3)")
+		check(killed == 3,
+			"and the client's own inset is killed rather than dressed - it is a"
+			.. " margin, not the box anything sits in (" .. killed .. " of 3)")
 		check(orn == 0,
 			"and the filigree that hangs off the PANE rather than its recess"
 			.. " goes with it (" .. orn .. " left)")
 	end
 
-	-- AND THE COLUMNS STOP ABOVE THE STRIP. The client draws each to the floor
-	-- of the window because in ITS layout there is no strip down there. Ours
-	-- has one, so the chat's well ran into it and the strip's rule crossed the
-	-- roster's - and that second one is why the separator "doesn't stop at the
-	-- right side-bar". It was not the rule that was too long; it was the column.
+	-- AND THE WELL STOPS A STRIP'S HEIGHT CLEAR OF THE FLOOR. The client draws
+	-- each column to the floor because in ITS layout there is no footer strip
+	-- down there. Ours has one, so the chat's well ran into it and the strip's
+	-- rule crossed the roster's - which is why the separator looked as though
+	-- it did not stop at the right sidebar. It was the column, not the rule.
 	do
-		-- NOT `ins and ins:GetPoint(2)`. An `and` expression is adjusted to ONE
-		-- value, so every return past the first arrives nil and the check reads
-		-- zero off a correctly floored recess. Second time in this file.
 		local floored = 0
 		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
-			local ins = cf[key] and cf[key].InsetFrame
-			if ins then
-				local _, _, _, _, by = ins:GetPoint(2)
-				if (by or 0) >= A.Widgets.PANEL_FOOT_H then
+			local well = cf[key] and cf[key].__aetherPill
+			if well then
+				local _, _, _, _, by = well:GetPoint(2)
+				if math.abs(by or 0) >= A.Widgets.PANEL_FOOT_H then
 					floored = floored + 1
 				end
 			end
 		end
 		check(floored == 3,
-			"every column stops a footer's height clear of the floor, so"
-			.. " nothing runs into the strip and the rule crosses nothing ("
-			.. floored .. " of 3)")
+			"every column's well stops clear of the strip (" .. floored
+			.. " of 3)")
 	end
 
 	local PNc = A:GetModule("panels")

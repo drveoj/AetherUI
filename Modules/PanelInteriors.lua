@@ -2396,36 +2396,33 @@ local function DressCommunities(frame, store)
 			-- carrying `wells = false`: where the client has already drawn a
 			-- box round its content, that box becomes ours rather than getting
 			-- a second one round the outside.
+			-- THE WELL GOES ON THE PANE, NOT ON THE CLIENT'S INSET.
+			--
+			-- Dressing the inset drew a well the wrong size and the content
+			-- ignored it: the chat's box came out smaller than the column it
+			-- lives in, and the messages - which are anchored to the PANE -
+			-- ran straight over the edges. The inset is the client's own idea
+			-- of a margin and nothing inside is anchored to it.
+			--
+			-- ElvUI HIDES these rather than dressing them, which is the same
+			-- conclusion from the other direction: the inset is not the box
+			-- the content is in, so it is not the box to draw.
 			local inset = Reskin.Element(pane, "InsetFrame")
 			if inset then
 				inset.__aetherStore = inset.__aetherStore or {}
 				Reskin.Strip(inset, inset.__aetherStore)
-				Reskin.Well(inset, { corner = W.WELL_CORNER,
-					inset = { 0, 0, 0, 0 },
-					fill = "wellFill", edge = "wellEdge" })
+				Reskin.Kill(inset, store)
+			end
 
-				-- AND IT STOPS ABOVE THE FOOTER STRIP. The client draws each of
-				-- these to the floor of the window because in ITS layout there
-				-- is no strip down there. Ours has one, so the chat's well ran
-				-- down into it and the strip's rule crossed the roster's - two
-				-- faults with one cause, and the second is why the separator
-				-- "doesn't stop at the right side-bar": it was not the rule
-				-- that was too long, it was the column that was.
-				--
-				-- The same two numbers the strip is built from, so they cannot
-				-- drift; cleared and re-set, because a frame accumulates points
-				-- and every getter answers about the first.
-				if not inset.__aetherFloored and inset.GetPoint then
-					local tPt, tRel, tRelP, tx, ty = inset:GetPoint(1)
-					local bPt, bRel, bRelP, bx, by = inset:GetPoint(2)
-					if tPt and bPt then
-						inset.__aetherFloored = true
-						inset:ClearAllPoints()
-						inset:SetPoint(tPt, tRel, tRelP, tx or 0, ty or 0)
-						inset:SetPoint(bPt, bRel, bRelP, bx or 0,
-							(by or 0) + W.PANEL_FOOT_H + W.PANEL_PAD)
-					end
-				end
+			-- ONE WELL PER COLUMN, drawn to the PANE with our own padding, and
+			-- stopping a strip's height clear of the floor - the client draws
+			-- each column to the floor because in its layout there is no strip
+			-- down there.
+			if not pane.__aetherPill then
+				Reskin.Well(pane, { corner = W.WELL_CORNER,
+					inset = { W.PANEL_PAD, W.PANEL_PAD, W.PANEL_PAD,
+						W.PANEL_PAD + W.PANEL_FOOT_H },
+					fill = "wellFill", edge = "wellEdge" })
 			end
 
 			-- AND THE FILIGREE WITH IT. The community list carries four pieces
