@@ -1744,6 +1744,51 @@ local function MeasurePanels(arg)
 					return string.format("t%.0f l%.0f w%.0f h%.0f",
 						f:GetTop(), f:GetLeft(), f:GetWidth(), f:GetHeight())
 				end
+			-- EVERY NAME THIS ENTRY ASKS FOR THAT ANSWERS NOTHING.
+			--
+			-- A name that resolves to nothing is skipped IN SILENCE everywhere
+			-- in this module - the footer, the tool row, the tab rail all just
+			-- move on - so an entry can name a button that does not exist and
+			-- the window looks half-dressed with nothing anywhere to say why.
+			-- That cost several rounds on the guild window, where two actions
+			-- were parent keys asked for as globals.
+			--
+			-- Listed in one place now, for the whole entry rather than only for
+			-- the actions. A name here is either a typo, a parent key written
+			-- as a global, or a part this client does not have - and the third
+			-- is fine, which is why this reports rather than fails.
+			do
+				local entry = PN.ENTRY and PN.ENTRY[name]
+				local missing, seen = {}, {}
+				local function ask(what, key)
+					if type(key) == "table" then
+						for _, one in ipairs(key) do ask(what, one) end
+						return
+					end
+					if type(key) ~= "string" or seen[key] then return end
+					seen[key] = true
+					if not (PN.Part(key) or A.Reskin.Element(f, key)) then
+						missing[#missing + 1] = what .. " " .. key
+					end
+				end
+				if entry then
+					ask("title", entry.title)
+					ask("subtitle", entry.subtitle)
+					ask("close", entry.close)
+					ask("body", entry.body)
+					for _, p in ipairs(entry.panes or {}) do
+						ask("pane", p.pane) ask("pane.title", p.title)
+						ask("pane.subtitle", p.subtitle)
+					end
+					for _, side in ipairs({ "left", "right", "mid", "under" }) do
+						ask("row." .. side, entry.row and entry.row[side])
+						ask("act." .. side, entry.actions and entry.actions[side])
+					end
+				end
+				A_Print("  names answering nothing: " .. #missing)
+				for _, m in ipairs(missing) do A_Print("    " .. m) end
+			end
+
 				A_Print("  columns:")
 				-- NOT `{ f.GetChildren and f:GetChildren() }`. An `and` is
 				-- adjusted to ONE value, so that table holds a single child and
