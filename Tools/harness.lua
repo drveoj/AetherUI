@@ -36886,6 +36886,12 @@ do
 	-- second bug behind this one, not fixed here, and this check deliberately
 	-- claims only what is true.
 	do
+		-- SHOWN FIRST, because every row is laid out from what is VISIBLE and
+		-- this window is dressed while it is DOWN: the addon loads on demand
+		-- and we skin it the moment it arrives, long before anybody opens it.
+		cf:Hide()
+		cf:Show()
+
 		-- READ OFF THE ENTRY, not spelled out here. A check that writes the
 		-- right path itself passes whatever the entry says, which is how the
 		-- first version of this line failed to catch the bare names going back.
@@ -36898,6 +36904,20 @@ do
 			"the guild window's two actions RESOLVE - both are parent keys and"
 			.. " neither answers to the bare name the entry used to ask for ("
 			.. found .. " of 2)")
+
+		-- AND BOTH ARE PLACED, which needed the window to be shown. Laid out
+		-- against a hidden frame, every row finds nothing visible and returns
+		-- having placed nothing - so the actions kept the client's position and
+		-- the tool row could never be made to work. One cause, both symptoms.
+		local placed = 0
+		for _, key in ipairs({ "GuildRecruitmentButton", "InviteButton" }) do
+			local b = cf[key]
+			local _, rel = b:GetPoint(1)
+			if rel and rel ~= cf then placed = placed + 1 end
+		end
+		check(placed == 2,
+			"and both are moved into the strip once the window is up ("
+			.. placed .. " of 2)")
 	end
 
 	local PNc = A:GetModule("panels")

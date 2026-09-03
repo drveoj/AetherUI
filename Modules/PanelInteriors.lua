@@ -2341,25 +2341,18 @@ local function DressCommRows(frame, store)
 end
 
 local function DressCommunities(frame, store)
-	-- THE CLIENT RE-ANCHORS ITS OWN HEADER FURNITURE, so the tool row has to be
-	-- laid again after it.
+	-- NO OnShow HOOK HERE, AND THE ONE THAT WAS IS GONE.
 	--
-	-- CommunitiesFrame.lua's OnMaximize and OnMinimize each call
-	-- `StreamDropdown:ClearAllPoints()` and re-place the dropdown, the headset
-	-- and the chat, and one of the two runs on every show. So the row placed
-	-- them at dress time and the client cleared them a moment later - the
-	-- widgets came back with NO POINTS AT ALL, which is why they sat at the
-	-- window's top edge inside the title band.
+	-- I added one on the theory that every row is laid out from what is VISIBLE
+	-- and this window is dressed while it is down, so the footer found nothing
+	-- and placed nothing. The evidence for that was a print showing ChromeRow
+	-- returning with an empty list - and the list was empty because the two
+	-- action names DID NOT RESOLVE, not because the window was hidden. They
+	-- were parent keys asked for as globals.
 	--
-	-- Both are LOCAL functions, so there is no name to hook. The frame's own
-	-- OnShow runs after them, which is enough: re-laying the header there puts
-	-- the row back once the client has finished moving things.
-	if not PN.__commShowHook and frame.HookScript then
-		PN.__commShowHook = true
-		frame:HookScript("OnShow", function()
-			if PN.enabled then pcall(PN.RefreshHeader, "CommunitiesFrame") end
-		end)
-	end
+	-- With the paths corrected both are found and both are placed, and deleting
+	-- the hook changes nothing that any check can see. So it goes: a theory
+	-- that survived only because a real bug was sitting underneath it.
 
 	for _, key in ipairs(COMM_TABS) do
 		local tab = Reskin.Element(frame, key)
