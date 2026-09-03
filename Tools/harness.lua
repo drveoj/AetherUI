@@ -36886,9 +36886,13 @@ do
 	-- second bug behind this one, not fixed here, and this check deliberately
 	-- claims only what is true.
 	do
+		-- READ OFF THE ENTRY, not spelled out here. A check that writes the
+		-- right path itself passes whatever the entry says, which is how the
+		-- first version of this line failed to catch the bare names going back.
+		local PNe = A:GetModule("panels")
 		local found = 0
-		for _, key in ipairs({ "GuildRecruitmentButton", "InviteButton" }) do
-			if A:GetModule("panels").Part("CommunitiesFrame." .. key) then found = found + 1 end
+		for _, name in ipairs(PNe.ENTRY.CommunitiesFrame.actions.mid) do
+			if PNe.Part(name) then found = found + 1 end
 		end
 		check(found == 2,
 			"the guild window's two actions RESOLVE - both are parent keys and"
