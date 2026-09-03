@@ -171,7 +171,17 @@ local function ClearRegions(frame, store, keep)
 	for _, entry in ipairs(known) do
 		local region = entry[1]
 		if region.SetTexture then region:SetTexture(0) end
-		if region.SetAtlas then pcall(region.SetAtlas, region, "") end
+		-- NIL, NOT AN EMPTY STRING. `SetAtlas("")` leaves the region carrying an
+		-- atlas NAMED "" rather than none, and the client reads that name back:
+		-- MinimalScrollBar's own Update calls C_Texture.GetAtlasInfo on it and
+		-- throws "bad argument #1", every time a list is scrolled. Reported from
+		-- the guild window, where our sweep reaches a scroll bar the client is
+		-- still driving.
+		--
+		-- ElvUI passes '' here and gets away with it because it does not strip
+		-- that bar; we do, so we have to clear the atlas the way the API means
+		-- it to be cleared.
+		if region.SetAtlas then pcall(region.SetAtlas, region, nil) end
 		if region.Hide then region:Hide() end
 	end
 end

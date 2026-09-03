@@ -1747,7 +1747,7 @@ local function MeasurePanels(arg)
 				A_Print("  columns:")
 				local kids = { f.GetChildren and f:GetChildren() }
 				for _, kid in ipairs(kids) do
-					if kid and not Reskin.Forbidden(kid) and kid.IsShown
+					if kid and not A.Reskin.Forbidden(kid) and kid.IsShown
 						and kid:IsShown() and not kid._kind
 						and not kid.__aetherPanel then
 						local name = kid.GetName and kid:GetName()
@@ -1765,7 +1765,7 @@ local function MeasurePanels(arg)
 							local inner
 							for _, g in ipairs({ kid.GetChildren
 								and kid:GetChildren() }) do
-								if g and not Reskin.Forbidden(g) and g.IsShown
+								if g and not A.Reskin.Forbidden(g) and g.IsShown
 									and g:IsShown() and not g._kind then
 									inner = g break
 								end

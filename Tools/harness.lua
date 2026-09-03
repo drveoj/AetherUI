@@ -609,7 +609,17 @@ local function newTexture(owner, layer, sub)
 	--  W.DecorateSlot does overwrites them and draws the wrong slice, or none.
 	--  That shipped, and two of four role buttons came back empty.
 	function t:SetAtlas(name)
-		if name == nil or name == "" then
+		-- AN EMPTY STRING IS NOT NO ATLAS. The real client keeps "" as the
+		-- atlas NAME and its own code reads it back: MinimalScrollBar's Update
+		-- hands it to C_Texture.GetAtlasInfo and throws "bad argument #1" every
+		-- time a list is scrolled. A mock that treated "" as a clear let our
+		-- sweep look correct while breaking the client's own scroll bar - which
+		-- is exactly what shipped.
+		if name == "" then
+			self.__atlas, self.__tex = "", ""
+			return
+		end
+		if name == nil then
 			self.__atlas = nil
 			return
 		end
@@ -37409,6 +37419,27 @@ do
 	check(_G.LFDQueueFrameTypeDropdown.__hold:GetAtlas() == nil
 		and _G.LFDQueueFrameTypeDropdown.__arrow:GetAtlas() == nil,
 		"the finder's Type picker loses the client's dropdown art")
+
+	-- AND AN ATLAS IS CLEARED WITH NIL, NEVER WITH "". `SetAtlas("")` leaves
+	-- the region carrying an atlas NAMED "" rather than none, and the client
+	-- reads that name back: MinimalScrollBar's Update hands it to
+	-- C_Texture.GetAtlasInfo and throws "bad argument #1" every time a list is
+	-- scrolled. Reported from the guild window, where our sweep reaches a bar
+	-- the client is still driving.
+	do
+		-- ON A FRESH FRAME, because ClearRegions CACHES the region list per
+		-- frame in the store: a texture added to a frame already swept is not
+		-- in that cache and never gets touched, so the check passed on a probe
+		-- nothing had reached.
+		local host = CreateFrame("Frame", nil, UIParent)
+		local probe = host:CreateTexture(nil, "ARTWORK")
+		probe:SetAtlas("common-dropdown-classic-textholder")
+		A.Reskin.Strip(host, {})
+		check(probe:GetAtlas() == nil,
+			"a stripped atlas region answers NIL, not an empty string the"
+			.. " client will try to look up (" .. tostring(probe:GetAtlas())
+			.. ")")
+	end
 
 	-- AND ITS BACKING SITS ON THE BOX, NOT ON THE FRAME. UIDropDownMenuTemplate
 	-- reserves a margin either side for art that overhangs its own bounds, so a
