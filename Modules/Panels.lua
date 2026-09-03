@@ -736,7 +736,13 @@ local PANELS = {
 	{ frame = "CommunitiesFrame",  addon = "Blizzard_Communities",
 		wells = false,
 		footer = W.PANEL_FOOT_H,
-		actions = { mid = { "GuildRecruitmentButton", "InviteButton" } },
+		-- PARENT KEYS, NOT GLOBALS, and the readout said so outright:
+		-- "act mid GuildRecruitmentButton: NOT FOUND". I read both names off
+		-- CommunitiesFrame.xml as parentKey="..." and then used them as though
+		-- they were globals, so the strip resolved neither and the two buttons
+		-- have been sitting where the client put them all along.
+		actions = { mid = { "CommunitiesFrame.GuildRecruitmentButton",
+			"CommunitiesFrame.InviteButton" } },
 		-- ITS HEADER FURNITURE IS STILL IN THE TITLE BAR, and a tool row did
 		-- NOT fix it. Four client widgets hang off this window's top edge - the
 		-- stream picker, the headset, the member count and the calendar - and

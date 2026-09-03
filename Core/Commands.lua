@@ -1745,7 +1745,12 @@ local function MeasurePanels(arg)
 						f:GetTop(), f:GetLeft(), f:GetWidth(), f:GetHeight())
 				end
 				A_Print("  columns:")
-				local kids = { f.GetChildren and f:GetChildren() }
+				-- NOT `{ f.GetChildren and f:GetChildren() }`. An `and` is
+				-- adjusted to ONE value, so that table holds a single child and
+				-- the readout said this window has one column called NineSlice.
+				-- Third time this trap has bitten in this project.
+				local kids = {}
+				if f.GetChildren then kids = { f:GetChildren() } end
 				for _, kid in ipairs(kids) do
 					if kid and not A.Reskin.Forbidden(kid) and kid.IsShown
 						and kid:IsShown() and not kid._kind
@@ -1763,8 +1768,9 @@ local function MeasurePanels(arg)
 						if name and (kid:GetWidth() or 0) > 40
 							and (kid:GetHeight() or 0) > 40 then
 							local inner
-							for _, g in ipairs({ kid.GetChildren
-								and kid:GetChildren() }) do
+							local gs = {}
+							if kid.GetChildren then gs = { kid:GetChildren() } end
+							for _, g in ipairs(gs) do
 								if g and not A.Reskin.Forbidden(g) and g.IsShown
 									and g:IsShown() and not g._kind then
 									inner = g break

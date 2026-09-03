@@ -8359,6 +8359,23 @@ do
 		cf.MemberList.MemberCount:SetText("14/784 Online")
 		cf.MemberList.MemberCount:SetPoint("TOPRIGHT", cf, "TOPRIGHT", -60, -26)
 
+		-- ITS TWO ACTIONS ARE PARENT KEYS, NOT GLOBALS. Both are declared
+		-- `parentKey="..."` in CommunitiesFrame.xml and neither is reachable by
+		-- bare name - the entry asked for the bare names for a day and the
+		-- footer resolved neither, so both buttons stayed where the client had
+		-- them. A mock that made them globals could not show that.
+		for _, key in ipairs({ "GuildRecruitmentButton", "InviteButton" }) do
+			local b = CreateFrame("Button", nil, cf)
+			b:SetSize(135, 22)
+			b:SetPoint("BOTTOM", cf, "BOTTOM", 0, 6)
+			b:SetNormalTexture("magic-button-up")
+			local t = b:CreateFontString(nil, "OVERLAY")
+			t:SetText(key)
+			b.__fs = t
+			function b:GetFontString() return self.__fs end
+			cf[key] = b
+		end
+
 		-- AND THE CLIENT RE-ANCHORS THEM ON EVERY SHOW. OnMaximize and
 		-- OnMinimize in CommunitiesFrame.lua each ClearAllPoints the stream
 		-- dropdown and re-place it and the headset, and one of the two runs
@@ -36855,6 +36872,28 @@ do
 		check(floored == 3,
 			"every column's well stops clear of the strip (" .. floored
 			.. " of 3)")
+	end
+
+	-- AND BOTH ARE FOUND BY THE STRIP, which neither was. The readout said it
+	-- outright - "act mid GuildRecruitmentButton: NOT FOUND" - because both
+	-- names were read off CommunitiesFrame.xml as parentKey="..." and then used
+	-- as globals. A name that resolves to nothing is skipped in silence, so the
+	-- two buttons sat where the client put them and nothing said why.
+	--
+	-- FOUND IS NOT YET PLACED. One of the two still comes back with no points
+	-- at all, which is the same fault that defeated the tool row on this
+	-- window: ChromeRow clears a widget and then does not anchor it. That is a
+	-- second bug behind this one, not fixed here, and this check deliberately
+	-- claims only what is true.
+	do
+		local found = 0
+		for _, key in ipairs({ "GuildRecruitmentButton", "InviteButton" }) do
+			if A:GetModule("panels").Part("CommunitiesFrame." .. key) then found = found + 1 end
+		end
+		check(found == 2,
+			"the guild window's two actions RESOLVE - both are parent keys and"
+			.. " neither answers to the bare name the entry used to ask for ("
+			.. found .. " of 2)")
 	end
 
 	local PNc = A:GetModule("panels")
