@@ -736,7 +736,23 @@ local PANELS = {
 	{ frame = "CommunitiesFrame",  addon = "Blizzard_Communities",
 		wells = false,
 		footer = W.PANEL_FOOT_H,
-		actions = { mid = { "GuildRecruitmentButton", "InviteButton" } } },
+		actions = { mid = { "GuildRecruitmentButton", "InviteButton" } },
+		-- ITS HEADER FURNITURE IS STILL IN THE TITLE BAR, and a tool row did
+		-- NOT fix it. Four client widgets hang off this window's top edge - the
+		-- stream picker, the headset, the member count and the calendar - and
+		-- `row` left all four unplaced, with no points at all rather than the
+		-- wrong ones.
+		--
+		-- Part of the reason is known: CommunitiesFrame.lua's OnMaximize and
+		-- OnMinimize each ClearAllPoints the stream dropdown and re-place it and
+		-- the headset, and one of the two runs on every show - so anything laid
+		-- at dress time is wiped a moment later. Both are LOCAL functions, so
+		-- there is no name to hook, and re-laying the header from the frame's
+		-- own OnShow did not settle it either.
+		--
+		-- Left as it is rather than shipped half-working. See PanelInteriors for
+		-- the OnShow hook, which is right in principle and not sufficient.
+	},
 	{ frame = "WorldMapFrame",     addon = "Blizzard_WorldMap" },
 	-- IT LAYS ITSELF OUT. A VerticalLayoutFrame places its buttons from
 	-- layoutIndex on every show, so nudging one is undone before you see it -

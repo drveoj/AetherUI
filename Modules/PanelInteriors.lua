@@ -2341,6 +2341,26 @@ local function DressCommRows(frame, store)
 end
 
 local function DressCommunities(frame, store)
+	-- THE CLIENT RE-ANCHORS ITS OWN HEADER FURNITURE, so the tool row has to be
+	-- laid again after it.
+	--
+	-- CommunitiesFrame.lua's OnMaximize and OnMinimize each call
+	-- `StreamDropdown:ClearAllPoints()` and re-place the dropdown, the headset
+	-- and the chat, and one of the two runs on every show. So the row placed
+	-- them at dress time and the client cleared them a moment later - the
+	-- widgets came back with NO POINTS AT ALL, which is why they sat at the
+	-- window's top edge inside the title band.
+	--
+	-- Both are LOCAL functions, so there is no name to hook. The frame's own
+	-- OnShow runs after them, which is enough: re-laying the header there puts
+	-- the row back once the client has finished moving things.
+	if not PN.__commShowHook and frame.HookScript then
+		PN.__commShowHook = true
+		frame:HookScript("OnShow", function()
+			if PN.enabled then pcall(PN.RefreshHeader, "CommunitiesFrame") end
+		end)
+	end
+
 	for _, key in ipairs(COMM_TABS) do
 		local tab = Reskin.Element(frame, key)
 		if tab then
@@ -2383,6 +2403,29 @@ local function DressCommunities(frame, store)
 				Reskin.Well(inset, { corner = W.WELL_CORNER,
 					inset = { 0, 0, 0, 0 },
 					fill = "wellFill", edge = "wellEdge" })
+
+				-- AND IT STOPS ABOVE THE FOOTER STRIP. The client draws each of
+				-- these to the floor of the window because in ITS layout there
+				-- is no strip down there. Ours has one, so the chat's well ran
+				-- down into it and the strip's rule crossed the roster's - two
+				-- faults with one cause, and the second is why the separator
+				-- "doesn't stop at the right side-bar": it was not the rule
+				-- that was too long, it was the column that was.
+				--
+				-- The same two numbers the strip is built from, so they cannot
+				-- drift; cleared and re-set, because a frame accumulates points
+				-- and every getter answers about the first.
+				if not inset.__aetherFloored and inset.GetPoint then
+					local tPt, tRel, tRelP, tx, ty = inset:GetPoint(1)
+					local bPt, bRel, bRelP, bx, by = inset:GetPoint(2)
+					if tPt and bPt then
+						inset.__aetherFloored = true
+						inset:ClearAllPoints()
+						inset:SetPoint(tPt, tRel, tRelP, tx or 0, ty or 0)
+						inset:SetPoint(bPt, bRel, bRelP, bx or 0,
+							(by or 0) + W.PANEL_FOOT_H + W.PANEL_PAD)
+					end
+				end
 			end
 
 			-- AND THE FILIGREE WITH IT. The community list carries four pieces

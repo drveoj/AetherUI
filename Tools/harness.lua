@@ -8300,7 +8300,13 @@ do
 			pane.ScrollBar.Forward:SetNormalTexture("scroll-arrow-down")
 			pane.ColumnDisplay = CreateFrame("Frame", nil, pane)
 			pane.ColumnDisplay:CreateTexture(nil, "BACKGROUND"):SetTexture("column-stone")
+			-- TWO POINTS, as an InsetFrameTemplate has: the client draws each of
+			-- these to the FLOOR of the window, because in its layout there is
+			-- no footer strip down there. A mock with one point cannot show a
+			-- column running into the strip.
 			pane.InsetFrame = CreateFrame("Frame", nil, pane)
+			pane.InsetFrame:SetPoint("TOPLEFT", pane, "TOPLEFT", 4, -30)
+			pane.InsetFrame:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -4, 4)
 			pane.InsetFrame:CreateTexture(nil, "BACKGROUND"):SetTexture("inset-stone")
 
 			-- AND THE ORNAMENT THAT HANGS OFF THE PANE RATHER THAN ITS RECESS.
@@ -8330,6 +8336,31 @@ do
 		-- And a row's plaque is its own NORMAL TEXTURE, setAllPoints, out of
 		-- Interface\\GuildFrame\\GuildFrame. Stripping the PANE reaches none of
 		-- it, which a mock with no rows in it could not show.
+		-- THE FOUR WIDGETS THE CLIENT HANGS OFF THIS WINDOW'S TOP EDGE. The
+		-- header band was laid straight over them, so the stream picker, the
+		-- headset, the member count and the calendar all sat INSIDE the title.
+		cf.StreamDropdown = CreateFrame("Frame", nil, cf)
+		cf.StreamDropdown:SetPoint("TOPLEFT", cf, "TOPLEFT", 20, -26)
+		cf.VoiceChatHeadset = CreateFrame("Frame", nil, cf)
+		cf.VoiceChatHeadset:SetPoint("TOPRIGHT", cf, "TOPRIGHT", -180, -26)
+		cf.CommunitiesCalendarButton = CreateFrame("Button", nil, cf)
+		cf.CommunitiesCalendarButton:SetPoint("TOPRIGHT", cf, "TOPRIGHT", -10, -26)
+		cf.MemberList.MemberCount = cf.MemberList:CreateFontString(nil, "OVERLAY")
+		cf.MemberList.MemberCount:SetText("14/784 Online")
+		cf.MemberList.MemberCount:SetPoint("TOPRIGHT", cf, "TOPRIGHT", -60, -26)
+
+		-- AND THE CLIENT RE-ANCHORS THEM ON EVERY SHOW. OnMaximize and
+		-- OnMinimize in CommunitiesFrame.lua each ClearAllPoints the stream
+		-- dropdown and re-place it and the headset, and one of the two runs
+		-- whenever this window opens. A mock that placed them once could not
+		-- show a tool row being wiped a moment after it was laid.
+		cf:HookScript("OnShow", function(self)
+			self.StreamDropdown:ClearAllPoints()
+			self.StreamDropdown:SetPoint("TOPLEFT", self, "TOPLEFT", 195, -31)
+			self.VoiceChatHeadset:ClearAllPoints()
+			self.VoiceChatHeadset:SetPoint("TOPRIGHT", self, "TOPRIGHT", -180, -26)
+		end)
+
 		for _, key in ipairs({ "MemberList", "CommunitiesList", "ApplicantList" }) do
 			local pane = cf[key]
 			local box = CreateFrame("Frame", nil, pane)
@@ -36785,6 +36816,31 @@ do
 		check(orn == 0,
 			"and the filigree that hangs off the PANE rather than its recess"
 			.. " goes with it (" .. orn .. " left)")
+	end
+
+	-- AND THE COLUMNS STOP ABOVE THE STRIP. The client draws each to the floor
+	-- of the window because in ITS layout there is no strip down there. Ours
+	-- has one, so the chat's well ran into it and the strip's rule crossed the
+	-- roster's - and that second one is why the separator "doesn't stop at the
+	-- right side-bar". It was not the rule that was too long; it was the column.
+	do
+		-- NOT `ins and ins:GetPoint(2)`. An `and` expression is adjusted to ONE
+		-- value, so every return past the first arrives nil and the check reads
+		-- zero off a correctly floored recess. Second time in this file.
+		local floored = 0
+		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
+			local ins = cf[key] and cf[key].InsetFrame
+			if ins then
+				local _, _, _, _, by = ins:GetPoint(2)
+				if (by or 0) >= A.Widgets.PANEL_FOOT_H then
+					floored = floored + 1
+				end
+			end
+		end
+		check(floored == 3,
+			"every column stops a footer's height clear of the floor, so"
+			.. " nothing runs into the strip and the rule crosses nothing ("
+			.. floored .. " of 3)")
 	end
 
 	local PNc = A:GetModule("panels")
