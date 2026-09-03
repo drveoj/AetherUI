@@ -5144,8 +5144,10 @@ do
 				b:GetNormalTexture():SetAtlas("UI-LFG-RoleIcon-" .. key)
 				b.__plate = b:CreateTexture(nil, "BACKGROUND")
 				b.__plate:SetTexture("role-stone")
+				b:SetFrameLevel(5)
 				b.checkButton = CreateFrame("CheckButton", nil, b)
 				b.checkButton:SetNormalTexture("checkbox-up")
+				b.checkButton:SetFrameLevel(5)
 				hq.RoleInset[key] = b
 			end
 
