@@ -8364,8 +8364,15 @@ do
 		-- bare name - the entry asked for the bare names for a day and the
 		-- footer resolved neither, so both buttons stayed where the client had
 		-- them. A mock that made them globals could not show that.
+		-- AND THEY LIVE ON DIFFERENT FRAMES. InviteButton is a parent key on the
+		-- window; GuildRecruitmentButton is on CommunitiesControlFrame, which
+		-- CommunitiesFrame.xml declares as a template of its own. A mock that
+		-- put both on the window let a wrong path pass.
+		cf.CommunitiesControlFrame = CreateFrame("Frame", nil, cf)
 		for _, key in ipairs({ "GuildRecruitmentButton", "InviteButton" }) do
-			local b = CreateFrame("Button", nil, cf)
+			local host = key == "GuildRecruitmentButton"
+				and cf.CommunitiesControlFrame or cf
+			local b = CreateFrame("Button", nil, host)
 			b:SetSize(135, 22)
 			b:SetPoint("BOTTOM", cf, "BOTTOM", 0, 6)
 			b:SetNormalTexture("magic-button-up")
@@ -8373,7 +8380,7 @@ do
 			t:SetText(key)
 			b.__fs = t
 			function b:GetFontString() return self.__fs end
-			cf[key] = b
+			host[key] = b
 		end
 
 		-- AND THE CLIENT RE-ANCHORS THEM ON EVERY SHOW. OnMaximize and
@@ -8432,7 +8439,12 @@ do
 		cf.MemberList.ShowOfflineButton:SetNormalTexture("checkbox-up")
 		cf.MemberList.ShowOfflineButton:SetCheckedTexture("checkbox-tick")
 
-		cf.CommunitiesControlFrame = CreateFrame("Frame", nil, cf)
+		-- REUSING whatever the pane loop already made under this key rather than
+		-- replacing it: a second frame under one name leaves the button hanging
+		-- off an object nothing else can reach, which is what made the path
+		-- resolve to nothing here while being right for the client.
+		cf.CommunitiesControlFrame = cf.CommunitiesControlFrame
+			or CreateFrame("Frame", nil, cf)
 		WideButton(cf.CommunitiesControlFrame, "GuildControlButton", "Guild Settings")
 		WideButton(cf, "InviteButton", "Invite Member")
 		WideButton(cf, "GuildLogButton", "View Log")
@@ -36845,6 +36857,27 @@ do
 		check(welled == 3,
 			"each column's well is drawn on the PANE, which is what its content"
 			.. " is anchored to (" .. welled .. " of 3)")
+
+		-- AND IT IS INSIDE THE COLUMN, NOT ROUND IT. Reskin.Well's `inset` is
+		-- an OUTSET - it anchors at `-(pad[1])` from the left - so passing our
+		-- padding straight in drew every well 18 units outside its column and
+		-- 70 below. The live readout showed it plainly: chat pane l267 w416,
+		-- chat well l249 w452. That is why the wells looked wrong at every size
+		-- and why the roster's crossed the footer rule.
+		local outset = 0
+		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
+			local pane, well = cf[key], cf[key] and cf[key].__aetherPill
+			if pane and well then
+				if (well:GetLeft() or 0) < (pane:GetLeft() or 0) - 0.5
+					or (well:GetTop() or 0) > (pane:GetTop() or 0) + 0.5 then
+					outset = outset + 1
+				end
+			end
+		end
+		check(outset == 0,
+			"and it sits INSIDE the column rather than round it - `inset` on"
+			.. " Reskin.Well is an outset, so our padding has to go in negative"
+			.. " (" .. outset .. " drawn outside)")
 		check(killed == 3,
 			"and the client's own inset is killed rather than dressed - it is a"
 			.. " margin, not the box anything sits in (" .. killed .. " of 3)")
@@ -36910,10 +36943,12 @@ do
 		-- having placed nothing - so the actions kept the client's position and
 		-- the tool row could never be made to work. One cause, both symptoms.
 		local placed = 0
-		for _, key in ipairs({ "GuildRecruitmentButton", "InviteButton" }) do
-			local b = cf[key]
+		for _, b in ipairs({ cf.CommunitiesControlFrame.GuildRecruitmentButton,
+			cf.InviteButton }) do
 			local _, rel = b:GetPoint(1)
-			if rel and rel ~= cf then placed = placed + 1 end
+			if rel and rel ~= cf and rel ~= cf.CommunitiesControlFrame then
+				placed = placed + 1
+			end
 		end
 		check(placed == 2,
 			"and both are moved into the strip once the window is up ("

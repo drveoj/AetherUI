@@ -2412,9 +2412,23 @@ local function DressCommunities(frame, store)
 			-- each column to the floor because in its layout there is no strip
 			-- down there.
 			if not pane.__aetherPill then
+				-- NEGATIVE, BECAUSE `inset` IS AN OUTSET.
+				--
+				-- Reskin.Well anchors its panel at `-(pad[1])` from the left
+				-- and `pad[2]` from the top, so a POSITIVE number pushes the
+				-- well OUTSIDE the frame - the default {2,0,2,0} widens a pill
+				-- by two either side, which is what it is for.
+				--
+				-- Passing our padding straight in drew every column's well 18
+				-- units outside it and 70 below, which the readout showed
+				-- plainly: chat pane l267 w416, chat well l249 w452. That is
+				-- why the wells looked wrong at every size I tried and why the
+				-- roster's crossed the footer rule - it reached 70 past the
+				-- bottom of its own column.
+				local pad = -W.PANEL_PAD
 				Reskin.Well(pane, { corner = W.WELL_CORNER,
-					inset = { W.PANEL_PAD, W.PANEL_PAD, W.PANEL_PAD,
-						W.PANEL_PAD + W.PANEL_FOOT_H },
+					inset = { pad, pad, pad,
+						-(W.PANEL_PAD + W.PANEL_FOOT_H) },
 					fill = "wellFill", edge = "wellEdge" })
 			end
 

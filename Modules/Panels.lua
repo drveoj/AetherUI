@@ -741,7 +741,11 @@ local PANELS = {
 		-- CommunitiesFrame.xml as parentKey="..." and then used them as though
 		-- they were globals, so the strip resolved neither and the two buttons
 		-- have been sitting where the client put them all along.
-		actions = { mid = { "CommunitiesFrame.GuildRecruitmentButton",
+		-- AND RECRUITMENT IS ON THE CONTROL FRAME, not on the window. The
+		-- readout said "names answering nothing: 1" and named it, which is
+		-- exactly what that line is for - CommunitiesFrame.xml declares it
+		-- inside CommunitiesControlFrameTemplate.
+		actions = { mid = { "CommunitiesFrame.CommunitiesControlFrame.GuildRecruitmentButton",
 			"CommunitiesFrame.InviteButton" } },
 		-- ITS HEADER FURNITURE IS STILL IN THE TITLE BAR, and a tool row did
 		-- NOT fix it. Four client widgets hang off this window's top edge - the
