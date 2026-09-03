@@ -5171,6 +5171,44 @@ do
 			hdd.Right = hdd:CreateTexture(nil, "BACKGROUND")
 			hdd.Right:SetTexture("dropdown-right")
 
+			-- THE PREMADE PANE, whose heading is drawn in QuestFont_Huge and gold
+			-- - the ornate face, on a window where everything else is ours -
+			-- and whose category rows are parchment with a picture on. Both are
+			-- PARENT KEYS on LFGListFrame, so no list of globals reaches them.
+			local lfgl = CreateFrame("Frame", "LFGListFrame", gff)
+			lfgl.CategorySelection = CreateFrame("Frame", nil, lfgl)
+			lfgl.CategorySelection.Label =
+				lfgl.CategorySelection:CreateFontString(nil, "ARTWORK")
+			lfgl.CategorySelection.Label:SetText("Premade Groups")
+			lfgl.CategorySelection.Inset = CreateFrame("Frame", nil, lfgl.CategorySelection)
+			lfgl.CategorySelection.CategoryButtons = {}
+			for i = 1, 2 do
+				local cb = CreateFrame("Button", nil, lfgl.CategorySelection)
+				cb:SetSize(300, 60)
+				cb.Icon = cb:CreateTexture(nil, "ARTWORK")
+				cb.Icon:SetAtlas("groupfinder-button-battlegrounds")
+				cb.Cover = cb:CreateTexture(nil, "OVERLAY")
+				cb.Cover:SetAtlas("groupfinder-button-cover")
+				cb.__parch = cb:CreateTexture(nil, "BACKGROUND")
+				cb.__parch:SetTexture("groupfinder-parchment")
+				cb.Label = cb:CreateFontString(nil, "ARTWORK")
+				cb.Label:SetText("Quests & Zones")
+				function cb:GetFontString() return self.Label end
+				lfgl.CategorySelection.CategoryButtons[i] = cb
+			end
+			for _, key in ipairs({ "StartGroupButton", "FindGroupButton" }) do
+				local b = CreateFrame("Button", nil, lfgl.CategorySelection)
+				b:SetSize(135, 22)
+				b:SetNormalTexture("magic-button-up")
+				local t = b:CreateFontString(nil, "OVERLAY")
+				t:SetText(key)
+				b.__fs = t
+				function b:GetFontString() return self.__fs end
+				b.LeftSeparator = b:CreateTexture(nil, "OVERLAY")
+				b.LeftSeparator:SetTexture("sep")
+				lfgl.CategorySelection[key] = b
+			end
+
 			-- THE DUNGEON TAB'S LIST SCROLLS ON ITS SUB-PANE, not on the queue
 			-- frame. This is the one reported as "wrong scrollbar on Dungeons
 			-- and Raids": it was not the wrong one, it was Blizzard's, because
@@ -37041,9 +37079,45 @@ do
 			.. " PARENT KEYS on the inset, TankIcon and the rest, not the"
 			.. " globals I guessed (" .. kept .. " of 3)")
 
+		-- AND THE OPT-IN TICK DRAWS OVER THE PICTURE, not behind it. The
+		-- checkbox is a child of the role button, and a child draws above its
+		-- PARENT's regions but not above a sibling frame at the same level -
+		-- and the role's picture is on the button itself. Reported as "the
+		-- checkboxes for selecting role are behind the icons so can't be seen".
+		local tickUp = 0
+		for _, key in ipairs({ "TankIcon", "HealerIcon", "DPSIcon" }) do
+			local b = ri[key]
+			if b.checkButton:GetFrameLevel() > b:GetFrameLevel() then
+				tickUp = tickUp + 1
+			end
+		end
+		check(tickUp == 3,
+			"each role's tick is raised above the picture it sits on ("
+			.. tickUp .. " of 3)")
+
 		check(_G.HonorQueueFrameTypeDropDown.__hold:GetAtlas() == nil,
 			"its picker is dressed - spelled DropDown with a capital D, and"
 			.. " there is no HonorFrameTypeDropdown at all")
+	end
+
+	-- THE PREMADE PANE'S HEADING AND ITS ROWS. The heading is QuestFont_Huge
+	-- and gold - the ornate face, on a window where everything else is ours -
+	-- and both it and the rows are PARENT KEYS on LFGListFrame.
+	do
+		local cs = _G.LFGListFrame.CategorySelection
+		check(cs.Label._aetherStyle == "pnTitle",
+			"the premade pane's heading is in our lettering rather than the"
+			.. " client's ornate gold")
+		local rows = 0
+		for _, cb in ipairs(cs.CategoryButtons) do
+			if cb.__parch:GetTexture() == 0 and (cb.Icon:GetAtlas() or "") ~= ""
+				and cb.Cover.__aetherKilled then
+				rows = rows + 1
+			end
+		end
+		check(rows == 2,
+			"and its category rows keep the picture and lose the parchment and"
+			.. " the cover over it (" .. rows .. " of 2)")
 	end
 
 	-- THE SCROLL BARS ARE PER SUB-PANE, NOT PER QUEUE FRAME. Reported as "wrong
@@ -37077,18 +37151,6 @@ do
 				"the old dropdown's backing is inset from its frame rather than"
 				.. " drawn to it (" .. tostring(x) .. ")")
 		end
-	end
-
-	-- AND THE ACTION BUTTONS CLEAR THE TAB RAIL. Every one is anchored to the
-	-- bottom of its own pane, and every pane here is setAllPoints to the window
-	-- - so the pane's bottom IS the window's bottom, which is where our rail
-	-- now is. Find Group sat across its separator in both tabs.
-	do
-		local _, _, _, _, y = _G.LFDQueueFrameFindGroupButton:GetPoint(1)
-		check((y or 0) >= A.Widgets.TAB_RAIL_H,
-			"Find Group is lifted clear of the tab rail rather than sitting"
-			.. " across it (" .. tostring(y) .. " against a rail of "
-			.. A.Widgets.TAB_RAIL_H .. ")")
 	end
 
 	-- THE THREE ROLES. The picture is an ATLAS on the button's normal texture,
@@ -37140,22 +37202,23 @@ do
 		check(_G[name]:GetNormalTexture():GetTexture() == 0,
 			name .. " loses its stone")
 	end
-	-- AND THE WINDOW HAS NO FOOTER STRIP, which is the opposite of what this
-	-- check first asserted. A strip was added here on the reasoning that these
-	-- are the window's actions; they are not - every one is already anchored
-	-- inside its own pane's recess, where the client put it, because each
-	-- belongs to one finder rather than to the window. The strip bought nothing
-	-- and cost height: the window went to 556 tall with an empty hand's width
-	-- under the list, and the body shift went from 58 to 128.
-	check(PN.ENTRY.PVEFrame.footer == nil,
-		"and the window takes NO footer strip - the client has already put"
-		.. " each of these inside the recess it belongs to, and a strip only"
-		.. " grows the window to make room for a row nothing stands in")
-	check(_G.LFDQueueFrameFindGroupButton:GetPoint(2) ~= nil
-		or select(2, _G.LFDQueueFrameFindGroupButton:GetPoint(1))
-			== _G.LFDQueueFrame,
-		"Find Group stays anchored to its own queue frame rather than being"
-		.. " pulled out into furniture of ours")
+	-- AND ITS ACTIONS STAND IN A FOOTER STRIP.
+	--
+	-- This check asserted the OPPOSITE for a day: that the window took no
+	-- strip, because the client already anchors each of these inside its own
+	-- pane's recess and moving them looked like meddling. Joe settled it -
+	-- THEY ARE ACTIONS, NOT CONTENT - and where the client happens to put them
+	-- says nothing about where they belong in an interface that has a strip for
+	-- exactly this. Inside the content well is the one place they should not be.
+	check(PN.ENTRY.PVEFrame.footer and PN.ENTRY.PVEFrame.footer > 0,
+		"the window has a footer strip, because these are actions and the well"
+		.. " is for content")
+	do
+		local _, rel = _G.LFDQueueFrameFindGroupButton:GetPoint(1)
+		check(rel ~= _G.LFDQueueFrame,
+			"and Find Group is moved into it rather than left at the foot of"
+			.. " its own queue frame, which is inside the well")
+	end
 
 	-- AND A PANE MEASURED BEFORE ITS CONTENT ARRIVED IS MEASURED AGAIN.
 	--

@@ -396,24 +396,34 @@ local PANELS = {
 		-- table lists them. Two are load-on-demand and simply are not there
 		-- until opened, which the dresser has to survive rather than assume.
 		body = { "GroupFinderFrame", "PVPQueueFrame", "ChallengesFrame" },
-		-- NO FOOTER STRIP, AND THAT WAS A WRONG TURN WORTH RECORDING.
+		-- A FOOTER STRIP, AND THE ARGUMENT AGAINST ONE WAS WRONG.
 		--
-		-- One was added here on the reasoning that Find Group and the two
-		-- battleground buttons are the actions of the window. They are not:
-		-- every one of them is already anchored INSIDE its own pane's recess -
-		-- `BOTTOM->BOTTOM 0,4 on LFDQueueFrame` - which is where the client
-		-- draws them and where they belong, because each belongs to one finder
-		-- rather than to the window.
+		-- One was added, then removed on the reasoning that the client already
+		-- anchors these inside their own panes' recesses and moving them was
+		-- meddling. Joe's answer settles it: THEY ARE ACTIONS, NOT CONTENT.
+		-- Where the client happens to put them says nothing about where they
+		-- belong in an interface that has a footer strip for exactly this - and
+		-- inside the content well is the one place they should not be.
 		--
-		-- What a strip cost was height. The window grew to make room for a row
-		-- nothing stood in, the body shift went from 58 to 128, and the readout
-		-- showed the result plainly: 556 tall with an empty hand's width under
-		-- the list. They are skinned where they stand instead; see
-		-- PanelInteriors.
-		--
-		-- A FOOTER IS FOR ACTIONS THAT BELONG TO THE WINDOW. Where the client
-		-- has already put a button inside a recess, that is its answer to the
-		-- same question and there is nothing to move.
+		-- That also removes the lift added last night, which was raising each
+		-- button clear of the tab rail by hand. A strip is where they go; the
+		-- strip knows where it is.
+		footer = W.PANEL_FOOT_H,
+		-- EVERY NAME RESOLVED FROM THE XML OR FROM ELVUI'S SKIN, and the ones on
+		-- the premade panes are PARENT KEYS rather than globals.
+		actions = { mid = {
+			"LFDQueueFrameFindGroupButton",
+			"RaidFinderQueueFrameFindRaidButton",
+			"ScenarioQueueFrameFindGroupButton",
+			"HonorQueueFrameSoloQueueButton", "HonorQueueFrameGroupQueueButton",
+			"ConquestJoinButton", "WarGameStartButton",
+			"LFGListFrame.CategorySelection.StartGroupButton",
+			"LFGListFrame.CategorySelection.FindGroupButton",
+			"LFGListFrame.EntryCreation.CancelButton",
+			"LFGListFrame.EntryCreation.ListGroupButton",
+			"LFGListFrame.SearchPanel.BackButton",
+			"LFGListFrame.SearchPanel.SignUpButton",
+		} },
 	},
 
 	-- THE GROUP FINDER, which is two windows behind two tabs: the listing you

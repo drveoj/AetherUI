@@ -4772,6 +4772,22 @@ local function GroupButtons(store)
 	end
 end
 
+--- A role's opt-in tick, drawn OVER the picture rather than behind it.
+--
+--  The checkbox is a child of the role button, and a child draws above its
+--  parent's regions - but not above a SIBLING frame at the same level, and the
+--  role's picture is on the button itself. Reported as "the checkboxes for
+--  selecting role are behind the icons so can't be seen".
+--
+--  ElvUI's HandleRoleButton opens with `checkbox:OffsetFrameLevel(1)` for
+--  exactly this. We have no such helper, so it is spelled out.
+local function RaiseTick(tick, host)
+	if not (tick and host and tick.SetFrameLevel and host.GetFrameLevel) then
+		return
+	end
+	tick:SetFrameLevel((host:GetFrameLevel() or 1) + 2)
+end
+
 local function DressPVE(frame, store)
 	-- THE TABS FIRST, for the reason the social window taught: a tab is a
 	-- Button with a label that is a child of the window, which is what a
@@ -4933,35 +4949,10 @@ local function DressPVE(frame, store)
 	}) do
 		acts[#acts + 1] = Part(path)
 	end
-	-- AND THEY ARE LIFTED CLEAR OF THE TAB RAIL.
-	--
-	-- Every one of these is anchored to the BOTTOM of its own pane, and every
-	-- pane on this window is setAllPoints to the window - so the pane's bottom
-	-- is the window's bottom, which is where our tab rail now is. Find Group
-	-- sat across the rail's separator in both tabs.
-	--
-	-- A FIXED LIFT, read off our own furniture rather than measured: the rail's
-	-- height plus the panel padding, which is exactly what stands between the
-	-- window's foot and the first thing above it. ElvUI does the same kind of
-	-- thing with `Point('BOTTOMRIGHT', -6, 3)` - a constant, not a measurement.
-	local lift = W.TAB_RAIL_H + W.PANEL_PAD
-
 	for _, btn in ipairs(acts) do
 		if not Reskin.Forbidden(btn) then
 			Reskin.Button(btn, "pnBody")
 
-			-- KEEPING THE CLIENT'S OWN X, because which side of its pane a
-			-- button sits on is the client's business and differs per pane -
-			-- Join Battle and Join as Group are a pair, Find Group is alone.
-			-- Only the height is ours to correct.
-			if btn.GetPoint and btn.ClearAllPoints and not btn.__aetherLifted then
-				local pt, rel, relP, x, y = btn:GetPoint(1)
-				if pt and rel then
-					btn.__aetherLifted = true
-					btn:ClearAllPoints()
-					btn:SetPoint(pt, rel, relP, x or 0, (y or 0) + lift)
-				end
-			end
 			for _, side in ipairs({ "LeftSeparator", "RightSeparator" }) do
 				if btn[side] then Reskin.Kill(btn[side], store) end
 			end
@@ -5043,6 +5034,7 @@ local function DressPVE(frame, store)
 					Reskin.StripExcept(btn, store, { pic })
 					if btn.checkButton then
 						Reskin.CheckBox(btn.checkButton, store)
+						RaiseTick(btn.checkButton, btn)
 					end
 				end
 			end
@@ -5092,6 +5084,27 @@ local function DressPVE(frame, store)
 		if ins then
 			ins.__aetherStore = ins.__aetherStore or {}
 			Reskin.Strip(ins, ins.__aetherStore)
+		end
+	end
+
+	-- THAT PANE'S OWN HEADING, which is drawn in QuestFont_Huge and gold - the
+	-- ornate face, on a window where everything else is ours. Reported as
+	-- "the text that says Premade Groups is in the wrong font". It is
+	-- CategorySelection.Label, a parentKey, so no list of globals finds it.
+	local heading = Part("LFGListFrame.CategorySelection.Label")
+	if heading then Roled(heading, "pnTitle") end
+
+	-- AND ITS CATEGORY BUTTONS ARE PARCHMENT WITH A PICTURE ON. Same division
+	-- as every other row on this window: the Icon says which category, the
+	-- Cover and the parchment behind it say nothing.
+	for _, btn in ipairs(Part("LFGListFrame.CategorySelection.CategoryButtons")
+		or {}) do
+		if not Reskin.Forbidden(btn) then
+			Reskin.ClearButton(btn)
+			Reskin.StripExcept(btn, store, btn.Icon and { btn.Icon } or nil)
+			if btn.Cover then Reskin.Kill(btn.Cover, store) end
+			local label = btn.GetFontString and btn:GetFontString() or btn.Label
+			if label then Roled(label, "pnBody") end
 		end
 	end
 
