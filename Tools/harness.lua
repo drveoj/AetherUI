@@ -5023,8 +5023,15 @@ do
 				rb:GetNormalTexture():SetAtlas("UI-LFG-RoleIcon-" .. role)
 				rb.background = rb:CreateTexture(nil, "BACKGROUND")
 				rb.background:SetTexture("Interface\\LFGFrame\\UI-LFG-ROLEBG")
+				-- FLAT LEVELS, as the client leaves them. The mock's fallback is
+				-- "parent's level plus one" for any frame never given one, so a
+				-- tick was always above its button in here and the fault could
+				-- not be reproduced - which is how the first fix shipped
+				-- covering only one of the two places the roles appear.
+				rb:SetFrameLevel(5)
 				rb.checkButton = CreateFrame("CheckButton", nil, rb)
 				rb.checkButton:SetNormalTexture("checkbox-minimal")
+				rb.checkButton:SetFrameLevel(5)
 			end
 
 			-- AND ONE ROLE THIS CLASS CANNOT TAKE, which has NO PICTURE AT ALL.
@@ -37182,6 +37189,24 @@ do
 		"and the picture is left at the ATLAS's own coordinates - an icon trim"
 		.. " on an atlas draws the wrong slice, or none (" .. trimmed
 		.. " trimmed)")
+
+	-- AND THEIR TICKS ARE RAISED TOO. The roles appear TWICE on this window -
+	-- here on the dungeon and raid finders, and again on the battleground
+	-- pane's RoleInset - and the first fix reached only the second, so the tab
+	-- being looked at was the tab still wrong. Checking one place said nothing
+	-- about the other.
+	do
+		local up = 0
+		for _, role in ipairs({ "Tank", "Healer", "DPS" }) do
+			local rb = _G["LFDQueueFrameRoleButton" .. role]
+			if rb.checkButton:GetFrameLevel() > rb:GetFrameLevel() then
+				up = up + 1
+			end
+		end
+		check(up == 3,
+			"the dungeon finder's role ticks are raised above their pictures"
+			.. " as well as the battleground pane's (" .. up .. " of 3)")
+	end
 
 	-- A ROLE THIS CLASS CANNOT TAKE HAS NO PICTURE, and dressing it takes the
 	-- button away rather than dressing it: StripExcept with nothing to keep is

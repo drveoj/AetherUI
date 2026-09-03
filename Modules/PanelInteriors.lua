@@ -4903,9 +4903,19 @@ local function DressPVE(frame, store)
 					local set = btn["Set" .. kind .. "Texture"]
 					if set then set(btn, 0) end
 				end
-				-- Its opt-in tick is a check box like any other.
+				-- Its opt-in tick is a check box like any other, and it has to
+				-- be RAISED for the same reason the battleground ones do: it is
+				-- a child of the role button and the role's picture is on that
+				-- button, so without this it draws underneath.
+				--
+				-- ONE OF TWO LOOPS, AND THE FIRST FIX ONLY REACHED THE OTHER.
+				-- The roles appear twice on this window - here on the dungeon
+				-- and raid finders, and again on the battleground pane's own
+				-- RoleInset - and RaiseTick went into that one alone. So the
+				-- tab Joe was looking at was the tab still wrong.
 				if btn.checkButton then
 					Reskin.CheckBox(btn.checkButton, store)
+					RaiseTick(btn.checkButton, btn)
 				end
 			end
 		end
