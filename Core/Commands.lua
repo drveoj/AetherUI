@@ -1726,6 +1726,60 @@ local function MeasurePanels(arg)
 					A_Print("    ... and " .. (#order - 40) .. " more kinds")
 				end
 			end
+
+			-- WHERE EVERYTHING ACTUALLY IS, which is the question four rounds of
+			-- screenshots could not answer. A picture shows that something is
+			-- wrong; only the boxes say WHICH box is wrong, and this window has
+			-- three columns, three wells and a strip that all look alike at
+			-- 30% zoom.
+			--
+			-- For each named child of the window: its own box, whether it wears
+			-- one of our wells, that well's box, and the box of the first thing
+			-- INSIDE it. A column whose content sits outside its well shows up
+			-- here as two rectangles that do not contain one another, which is
+			-- exactly the fault that took four passes to name.
+			do
+				local function box(f)
+					if not (f and f.GetTop and f:GetTop()) then return "-" end
+					return string.format("t%.0f l%.0f w%.0f h%.0f",
+						f:GetTop(), f:GetLeft(), f:GetWidth(), f:GetHeight())
+				end
+				A_Print("  columns:")
+				local kids = { f.GetChildren and f:GetChildren() }
+				for _, kid in ipairs(kids) do
+					if kid and not Reskin.Forbidden(kid) and kid.IsShown
+						and kid:IsShown() and not kid._kind
+						and not kid.__aetherPanel then
+						local name = kid.GetName and kid:GetName()
+						-- Parent keys, not just globals: most of this window's
+						-- columns have no name at all.
+						if not name then
+							for k, v in pairs(f) do
+								if v == kid and type(k) == "string" then
+									name = k break
+								end
+							end
+						end
+						if name and (kid:GetWidth() or 0) > 40
+							and (kid:GetHeight() or 0) > 40 then
+							local inner
+							for _, g in ipairs({ kid.GetChildren
+								and kid:GetChildren() }) do
+								if g and not Reskin.Forbidden(g) and g.IsShown
+									and g:IsShown() and not g._kind then
+									inner = g break
+								end
+							end
+							A_Print(string.format(
+								"    %-22s %s", name, box(kid)))
+							A_Print(string.format(
+								"      well %s  first child %s",
+								kid.__aetherPill and box(kid.__aetherPill)
+									or "none", box(inner)))
+						end
+					end
+				end
+			end
 			A_Print("  chrome " .. box(f.__aetherChrome) ..
 				"  lvl " .. tostring(f.__aetherChrome
 				and f.__aetherChrome:GetFrameLevel()) ..
