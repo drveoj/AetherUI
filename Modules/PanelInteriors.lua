@@ -5490,8 +5490,88 @@ local function DressAchievements(frame, store)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- the guild bank
+--
+-- SEVEN COLUMNS OF FOURTEEN, which is ninety-eight item slots and the same
+-- shape as a bag: a plate, a picture, a quality rim. Plus six vault tabs down
+-- the right whose picture is `IconTexture` rather than the normal texture -
+-- the normal one is the plate, and a dresser left to guess keeps the stone and
+-- throws the picture away.
+--
+-- Read off ElvUI's Blizzard_GuildBankUI before a line of this was written.
+-- ---------------------------------------------------------------------------
+local function DressGuildBank(frame, store)
+	LayoutTabs(frame, store)
+
+	-- PURE ORNAMENT, and the only thing on this window that is. ElvUI kills it.
+	if frame.Emblem then Reskin.Kill(frame.Emblem, store) end
+
+	for c = 1, 7 do
+		local col = Reskin.Element(frame, "Column" .. c)
+		if col then
+			col.__aetherStore = col.__aetherStore or {}
+			Reskin.Strip(col, col.__aetherStore)
+			for i = 1, 14 do
+				local slot = Reskin.Element(col, "Button" .. i)
+				if slot then Reskin.Slot(slot, store) end
+			end
+		end
+	end
+
+	-- THE SIX VAULT TABS. The picture is IconTexture and is named rather than
+	-- guessed, for the reason above.
+	for i = 1, 6 do
+		local tab = _G["GuildBankTab" .. i]
+		if tab then
+			tab.__aetherStore = tab.__aetherStore or {}
+			Reskin.Strip(tab, tab.__aetherStore)
+			local btn = Reskin.Element(tab, "Button")
+			if btn then
+				Reskin.IconButton(btn, store,
+					{ icon = Reskin.Element(btn, "IconTexture") })
+			end
+		end
+	end
+
+	if _G.GuildItemSearchBox then
+		Reskin.EditBox(_G.GuildItemSearchBox, store)
+	end
+	if frame.MoneyFrameBG then
+		frame.MoneyFrameBG.__aetherStore = frame.MoneyFrameBG.__aetherStore or {}
+		Reskin.Strip(frame.MoneyFrameBG, frame.MoneyFrameBG.__aetherStore)
+	end
+
+	for _, n in ipairs({ "GuildBankInfoScrollFrame",
+		"GuildBankTransactionsScrollFrame" }) do
+		local sf = _G[n]
+		if sf then
+			sf.__aetherStore = sf.__aetherStore or {}
+			Reskin.Strip(sf, sf.__aetherStore)
+			local bar = _G[n .. "ScrollBar"]
+			if bar then Reskin.ScrollBar(bar, store) end
+		end
+	end
+	if _G.GuildBankInfoSaveButton then
+		Reskin.Button(_G.GuildBankInfoSaveButton, "pnBody")
+	end
+
+	-- AND ITS X HAS NO NAME, so nothing can ask for it. ElvUI walks the
+	-- children for a button that has a PUSHED texture and no name, which is
+	-- what an anonymous UIPanelCloseButton looks like from the outside - the
+	-- Era group finder has the same trick and the same answer.
+	for _, kid in ipairs({ frame:GetChildren() }) do
+		if not Reskin.Forbidden(kid) and kid.GetPushedTexture
+			and kid:GetPushedTexture()
+			and not (kid.GetName and kid:GetName()) then
+			PN.DressClose(frame, store, kid)
+		end
+	end
+end
+
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
+	GuildBankFrame    = DressGuildBank,
 	PVEFrame          = DressPVE,
 	AchievementFrame  = DressAchievements,
 	InspectFrame      = DressInspect,

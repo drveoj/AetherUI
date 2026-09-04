@@ -9391,11 +9391,117 @@ do
 		end
 	end
 
+	--- THE GUILD BANK, built BEFORE its dresser is written.
+	--
+	--  Every window before this one was mocked after the fact, to prove code
+	--  that had already shipped - and the guild window ended today with a
+	--  change whose own mutations said the checks could not see two thirds of
+	--  it. So this one goes the other way round: the shape first, off ElvUI's
+	--  skin and Blizzard's XML, and the dresser written against checks that
+	--  can already fail.
+	--
+	--  SEVEN COLUMNS OF FOURTEEN. GuildBankFrame.Column1..7, each holding
+	--  Button1..14 - ninety-eight item slots, each with an `icon` and an
+	--  `IconBorder`, which is the same shape as a bag slot and wants the same
+	--  cell.
+	function _G.__buildGuildBank()
+		local gb = _G.GuildBankFrame
+		if not gb or gb.__built then return end
+		gb.__built = true
+
+		-- The emblem ElvUI kills outright, and the money strip behind the
+		-- deposit controls.
+		gb.Emblem = gb:CreateTexture(nil, "ARTWORK")
+		gb.Emblem:SetTexture("Interface\\GuildBankFrame\\Emblem")
+		gb.MoneyFrameBG = CreateFrame("Frame", nil, gb)
+		gb.MoneyFrameBG:CreateTexture(nil, "BACKGROUND")
+			:SetTexture("money-stone")
+
+		for c = 1, 7 do
+			local col = CreateFrame("Frame", nil, gb)
+			col:CreateTexture(nil, "BACKGROUND"):SetTexture("column-stone")
+			for i = 1, 14 do
+				local b = CreateFrame("Button", nil, col)
+				b:SetSize(37, 37)
+				b:SetNormalTexture("slot-stone")
+				b.icon = b:CreateTexture(nil, "ARTWORK")
+				b.icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
+				b.IconBorder = b:CreateTexture(nil, "OVERLAY")
+				b.IconBorder:SetTexture("quality-rim")
+				col["Button" .. i] = b
+			end
+			gb["Column" .. c] = col
+		end
+
+		-- SIX TAB BUTTONS DOWN THE RIGHT, each a frame holding a Button whose
+		-- picture is IconTexture - not the normal texture, which is the plate.
+		for i = 1, 6 do
+			local tab = CreateFrame("Frame", "GuildBankTab" .. i, gb)
+			tab:CreateTexture(nil, "BACKGROUND"):SetTexture("tab-stone")
+			tab.Button = CreateFrame("Button", nil, tab)
+			tab.Button:SetNormalTexture("tab-plate")
+			tab.Button.IconTexture = tab.Button:CreateTexture(nil, "ARTWORK")
+			tab.Button.IconTexture:SetTexture("Interface\\Icons\\INV_Box_01")
+		end
+
+		-- AND FOUR ALONG THE BOTTOM, the ordinary kind.
+		for i, word in ipairs({ "Items", "Log", "Money Log", "Information" }) do
+			local tab = CreateFrame("Button", "GuildBankFrameTab" .. i, gb)
+			tab:SetID(i)
+			tab:SetSize(90, 32)
+			tab:SetPoint("BOTTOMLEFT", gb, "BOTTOMLEFT", -6 + (i - 1) * 74, -32)
+			local fs = tab:CreateFontString(nil, "OVERLAY")
+			fs:SetText(word)
+			tab.__fs = fs
+			function tab:GetFontString() return self.__fs end
+			tab:SetNormalTexture("tab-stone")
+			tab:SetDisabledTexture("tab-stone-selected")
+		end
+
+		for _, key in ipairs({ "DepositButton", "WithdrawButton" }) do
+			local b = CreateFrame("Button", nil, gb)
+			b:SetSize(110, 22)
+			b:SetPoint("BOTTOM", gb, "BOTTOM", 0, 8)
+			b:SetNormalTexture("magic-button-up")
+			local t = b:CreateFontString(nil, "OVERLAY")
+			t:SetText(key)
+			b.__fs = t
+			function b:GetFontString() return self.__fs end
+			gb[key] = b
+		end
+		gb.BuyInfo = CreateFrame("Frame", nil, gb)
+		gb.BuyInfo.PurchaseButton = CreateFrame("Button", nil, gb.BuyInfo)
+		gb.BuyInfo.PurchaseButton:SetNormalTexture("magic-button-up")
+
+		local search = CreateFrame("EditBox", "GuildItemSearchBox", gb)
+		search:CreateTexture(nil, "BACKGROUND"):SetTexture("editbox-stone")
+
+		for _, n in ipairs({ "GuildBankInfoScrollFrame",
+			"GuildBankTransactionsScrollFrame" }) do
+			local sf = CreateFrame("Frame", n, gb)
+			sf:CreateTexture(nil, "BACKGROUND"):SetTexture("scroll-stone")
+			local sb = CreateFrame("Slider", n .. "ScrollBar", sf)
+			sb.Track = CreateFrame("Frame", nil, sb)
+			sb.Track.Thumb = CreateFrame("Frame", nil, sb.Track)
+			sb.Track.__rail = sb.Track:CreateTexture(nil, "BACKGROUND")
+			sb.Track.__rail:SetTexture("scroll-rail-stone")
+		end
+
+		-- AN ANONYMOUS CLOSE BUTTON, which ElvUI finds by walking the children
+		-- for one with a PushedTexture and NO NAME. Nothing can ask for it.
+		local shut = CreateFrame("Button", nil, gb)
+		shut:SetSize(32, 32)
+		shut:SetNormalTexture("close-up")
+		shut:SetPushedTexture("close-down")
+		gb.__shut = shut
+	end
+
 	function _G.__loadPanelAddon(name)
 		buildPanel(name)
 		if name == "PlayerTalentFrame" then _G.__buildTalentInsides() end
 		if name == "CommunitiesFrame" then _G.__buildCommunities() end
 		if name == "ClassTrainerFrame" then _G.__buildTrainer() end
+		if name == "GuildBankFrame" then _G.__buildGuildBank() end
 		if name == "WorldMapFrame" and _G.__mists then
 			buildWorldMapQuestLog(_G.WorldMapFrame)
 		end
@@ -37141,6 +37247,80 @@ do
 		.. regions(first.icon) .. " against " .. was .. ")")
 
 	ach:Hide()
+end
+
+print("== panels: the guild bank, checks written before the dresser ==")
+do
+	local PN = A:GetModule("panels")
+	_G.__loadPanelAddon("GuildBankFrame")
+	fire("ADDON_LOADED", "Blizzard_GuildBankUI")
+	local gb = _G.GuildBankFrame
+	gb:Show()
+	PN.Dress(gb)
+
+	check(gb.__aetherPanel ~= nil, "GuildBankFrame is dressed")
+
+	-- NINETY-EIGHT SLOTS, seven columns of fourteen, and each is a bag slot by
+	-- another name: a plate, a picture and a quality rim. Same division as
+	-- every other slot in this interface - the picture is the information.
+	local celled, stony = 0, 0
+	for c = 1, 7 do
+		local col = gb["Column" .. c]
+		for i = 1, 14 do
+			local b = col["Button" .. i]
+			if b.icon:GetTexture() ~= 0 then celled = celled + 1 end
+			if b:GetNormalTexture():GetTexture() ~= 0 then stony = stony + 1 end
+		end
+	end
+	check(celled == 98,
+		"every slot keeps its picture (" .. celled .. " of 98)")
+	check(stony == 0,
+		"and loses the client's plate behind it (" .. stony .. " left)")
+
+	-- SIX TABS DOWN THE RIGHT, whose picture is IconTexture rather than the
+	-- normal texture - the normal one is the plate, and a dresser that guesses
+	-- keeps the stone and throws the picture away.
+	local kept = 0
+	for i = 1, 6 do
+		local btn = _G["GuildBankTab" .. i].Button
+		if btn.IconTexture:GetTexture() ~= 0
+			and btn:GetNormalTexture():GetTexture() == 0 then
+			kept = kept + 1
+		end
+	end
+	check(kept == 6,
+		"each vault tab keeps its picture and loses its plate (" .. kept
+		.. " of 6)")
+
+	check(gb.Emblem.__aetherKilled ~= nil,
+		"the guild emblem is killed - ElvUI kills it outright and it is the"
+		.. " one piece of this window that is pure ornament")
+
+	-- ITS ACTIONS STAND IN A STRIP, not at the foot of the frame.
+	check(PN.ENTRY.GuildBankFrame.footer
+		and PN.ENTRY.GuildBankFrame.footer > 0,
+		"the window has a footer strip for Deposit and Withdraw")
+	do
+		local _, rel = gb.DepositButton:GetPoint(1)
+		check(rel ~= gb,
+			"and they are moved into it rather than left where the client"
+			.. " put them")
+	end
+
+	-- BOTH LISTS SCROLL IN OUR RAIL.
+	local bars = 0
+	for _, n in ipairs({ "GuildBankInfoScrollFrameScrollBar",
+		"GuildBankTransactionsScrollFrameScrollBar" }) do
+		if _G[n].Track.__rail:GetTexture() == 0 then bars = bars + 1 end
+	end
+	check(bars == 2, "both lists scroll in our rail (" .. bars .. " of 2)")
+
+	-- AND THE X HAS NO NAME. ElvUI finds it by walking the children for a
+	-- button with a PushedTexture and no name; nothing can ask for it.
+	check(gb.__shut:GetNormalTexture():GetTexture() == 0,
+		"the window's X is ours, though the client gave it no name to ask for")
+
+	gb:Hide()
 end
 
 print("== panels: the group finder Mists actually opens ==")

@@ -99,6 +99,9 @@ local PVE_TAB_DROP     = 30
 -- The achievement book's three, which hang off its BOTTOMLEFT the same way.
 local ACH_TAB_DROP     = 30
 
+-- And the guild bank's four, off its BOTTOMLEFT at -32 in ElvUI's HandleTabs.
+local GB_TAB_DROP      = 32
+
 -- The rank switch's row at the top of the spellbook's well: the switch, and
 -- the gap to the first spell under it. The well's own padding is not in here -
 -- LayoutBody puts every window's content inside that already.
@@ -313,6 +316,23 @@ local PANELS = {
 	-- PORTRAIT FRAME, SO TIGHT, and its three tabs hang 30 below the bottom
 	-- edge outside its own art - the character sheet's case exactly, so the
 	-- glass reaches past the frame to carry them rather than stopping at it.
+	-- THE GUILD BANK, which Mists has and Era does not - Blizzard_GuildBankUI
+	-- is gated `mists`, so this entry never fires on the other client.
+	--
+	-- WRITTEN AGAINST CHECKS THAT ALREADY FAILED. Every window before this was
+	-- mocked after its code, to prove something already shipped; the guild
+	-- window ended with a change whose own mutations said the checks could not
+	-- see two thirds of it. So this one was built the other way round.
+	{ frame = "GuildBankFrame", addon = "Blizzard_GuildBankUI",
+		insets = { 0, 0, 0, -GB_TAB_DROP },
+		tabs = "GuildBankFrameTab",
+		footer = W.PANEL_FOOT_H,
+		-- PARENT KEYS, and named as such from the start rather than after a
+		-- readout says NOT FOUND.
+		actions = { mid = { "GuildBankFrame.DepositButton",
+			"GuildBankFrame.WithdrawButton",
+			"GuildBankFrame.BuyInfo.PurchaseButton" } } },
+
 	-- THE ACHIEVEMENT BOOK, which Mists has and Era does not: the addon is
 	-- gated `mists` outright, so this entry never fires on the other client.
 	--
