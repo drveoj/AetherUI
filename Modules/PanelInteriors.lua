@@ -2354,6 +2354,70 @@ local function DressCommunities(frame, store)
 	-- the hook changes nothing that any check can see. So it goes: a theory
 	-- that survived only because a real bug was sitting underneath it.
 
+	-- THE SIDEBAR'S ROWS, which nothing here has ever dressed.
+	--
+	-- Straight off ElvUI's HandleCommunitiesButton: Background, CircleMask,
+	-- IconRing and IconBorder off; a backing of ours behind the row; the icon
+	-- pinned where they pin it; and the highlight and the selection redrawn as
+	-- flat washes rather than the client's atlases.
+	--
+	-- HOOKED ON THE MIXIN, not swept once. CommunitiesListEntryMixin builds
+	-- these on demand - SetAddCommunity, SetFindCommunity, SetGuildFinder - so
+	-- a row scrolled into view later is Blizzard's until the mixin makes it.
+	local function CommunityRow(btn)
+		if not btn or Reskin.Forbidden(btn) then return end
+		for _, k in ipairs({ "Background", "CircleMask", "IconRing",
+			"IconBorder" }) do
+			local art = Reskin.Element(btn, k)
+			if art then Reskin.Kill(art, store) end
+		end
+
+		if btn.Icon then Reskin.IconButton(btn, store, { icon = btn.Icon }) end
+		if btn.Name then Roled(btn.Name, "pnBody") end
+
+		if not btn.__aetherRowBack then
+			local back = btn:CreateTexture(nil, "BACKGROUND")
+			back:SetTexture(Media.texture.flat)
+			back:SetPoint("TOPLEFT", btn, "TOPLEFT", 4, -13)
+			back:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -8, 8)
+			btn.__aetherRowBack = back
+		end
+		W.Tint(btn.__aetherRowBack, Palette:Track())
+
+		local hi = btn.GetHighlightTexture and btn:GetHighlightTexture()
+		if hi then
+			hi:SetTexture(Media.texture.flat)
+			hi:SetAllPoints(btn.__aetherRowBack)
+			hi:SetVertexColor(1, 1, 1, 0.10)
+		end
+		if btn.Selection then
+			pcall(btn.Selection.SetAtlas, btn.Selection, nil)
+			btn.Selection:SetTexture(Media.texture.flat)
+			btn.Selection:SetAllPoints(btn.__aetherRowBack)
+			local a = Palette.c.accent
+			btn.Selection:SetVertexColor(a[1], a[2], a[3], 0.20)
+		end
+	end
+
+	if not PN.__commRowHook and hooksecurefunc
+		and type(_G.CommunitiesListEntryMixin) == "table" then
+		PN.__commRowHook = true
+		for _, fn in ipairs({ "SetAddCommunity", "SetFindCommunity",
+			"SetGuildFinder", "SetClubInfo" }) do
+			if type(_G.CommunitiesListEntryMixin[fn]) == "function" then
+				hooksecurefunc(_G.CommunitiesListEntryMixin, fn, function(b)
+					if PN.enabled then pcall(CommunityRow, b) end
+				end)
+			end
+		end
+	end
+	do
+		local clist = Reskin.Element(frame, "CommunitiesList")
+		local sbox = clist and Reskin.Element(clist, "ScrollBox")
+		for _, b in ipairs((sbox and sbox.buttons) or {}) do CommunityRow(b) end
+	end
+
+
 	for _, key in ipairs(COMM_TABS) do
 		local tab = Reskin.Element(frame, key)
 		if tab then

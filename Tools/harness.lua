@@ -8445,6 +8445,40 @@ do
 		-- resolve to nothing here while being right for the client.
 		cf.CommunitiesControlFrame = cf.CommunitiesControlFrame
 			or CreateFrame("Frame", nil, cf)
+
+		-- THE SIDEBAR'S ROWS AND THE MIXIN THAT MINTS THEM. Nothing here has
+		-- ever had these, so the sweep that dresses them could be deleted with
+		-- nothing noticed - the left column has been in Blizzard's green all
+		-- along and no check said so.
+		_G.CommunitiesListEntryMixin = {}
+		-- REUSING the scroll box the pane loop already made. Replacing it threw
+		-- away the `__rows` an older check reads - the second time in this file
+		-- that a fresh frame under an existing key has broken something else.
+		local clist = cf.CommunitiesList
+		clist.ScrollBox = clist.ScrollBox or CreateFrame("Frame", nil, clist)
+		clist.ScrollBox.buttons = clist.ScrollBox.buttons or {}
+		function _G.__makeCommunityRow()
+			local b = CreateFrame("Button", nil, clist.ScrollBox)
+			b:SetSize(160, 50)
+			b.Background = b:CreateTexture(nil, "BACKGROUND")
+			b.Background:SetAtlas("communities-nav-button-green-normal")
+			b.CircleMask = CreateFrame("Frame", nil, b)
+			b.IconRing = b:CreateTexture(nil, "OVERLAY")
+			b.IconRing:SetTexture("communities-ring")
+			b.Icon = b:CreateTexture(nil, "ARTWORK")
+			b.Icon:SetTexture("Interface\\Icons\\Achievement_Guild")
+			b.Name = b:CreateFontString(nil, "OVERLAY")
+			b.Name:SetText("BEFORE I SELF DESTRUCT")
+			b.Selection = b:CreateTexture(nil, "ARTWORK")
+			b.Selection:SetAtlas("communities-nav-button-selected")
+			b:SetHighlightTexture("communities-nav-highlight")
+			clist.ScrollBox.buttons[#clist.ScrollBox.buttons + 1] = b
+			return b
+		end
+		function _G.CommunitiesListEntryMixin.SetClubInfo(btn)
+			return btn
+		end
+		_G.__makeCommunityRow()
 		WideButton(cf.CommunitiesControlFrame, "GuildControlButton", "Guild Settings")
 		WideButton(cf, "InviteButton", "Invite Member")
 		WideButton(cf, "GuildLogButton", "View Log")
@@ -36874,6 +36908,18 @@ do
 		end
 		check(orn == 0,
 			"with the filigree gone from all three (" .. orn .. " left)")
+
+		-- AND THE SIDEBAR'S ROWS ARE DRESSED, which nothing here ever did. The
+		-- left column has been in Blizzard's green the whole time and no check
+		-- said a word, because the mock had no rows and no mixin to mint them.
+		local row = cf.CommunitiesList.ScrollBox.buttons[1]
+		check(row.Background.__aetherKilled and row.IconRing.__aetherKilled,
+			"a community row loses its green plate and its ring")
+		check(row.Icon:GetTexture() ~= 0 and row.Name._aetherStyle == "pnBody",
+			"and keeps the picture while taking our lettering")
+		check(row.Selection:GetAtlas() == nil,
+			"with the selection redrawn as a wash rather than the client's"
+			.. " atlas")
 	end
 
 	do
