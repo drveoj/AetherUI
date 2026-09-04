@@ -2389,47 +2389,50 @@ local function DressCommunities(frame, store)
 			-- carrying `wells = false`: where the client has already drawn a
 			-- box round its content, that box becomes ours rather than getting
 			-- a second one round the outside.
-			-- THE WELL GOES ON THE PANE, NOT ON THE CLIENT'S INSET.
+			-- ELVUI'S APPROACH, AFTER THREE OF MY OWN DID NOT WORK.
 			--
-			-- Dressing the inset drew a well the wrong size and the content
-			-- ignored it: the chat's box came out smaller than the column it
-			-- lives in, and the messages - which are anchored to the PANE -
-			-- ran straight over the edges. The inset is the client's own idea
-			-- of a margin and nothing inside is anchored to it.
+			-- I have drawn these wells on the inset, then on the pane, then on
+			-- the pane with corrected padding, and Joe has told me each time
+			-- that they are wrong. So: their skin, followed rather than
+			-- adapted.
 			--
-			-- ElvUI HIDES these rather than dressing them, which is the same
-			-- conclusion from the other direction: the inset is not the box
-			-- the content is in, so it is not the box to draw.
+			-- S:HandleInsetFrame DRAWS NOTHING. It hides nine InsetBorder
+			-- pieces and a Bg, and that is the whole of it. Then their
+			-- Communities skin hides MemberList.InsetFrame outright and gives a
+			-- backdrop to ONE thing on this window - Chat.InsetFrame - at the
+			-- CLIENT'S OWN BOUNDS, with no padding computed anywhere.
+			--
+			-- So there is no well per column here. The roster and the community
+			-- list carry none, the chat's own recess is the only box, and every
+			-- number comes from the client. Nothing here measures anything,
+			-- which is the point: three attempts failed because they all
+			-- computed geometry this window had already decided.
 			local inset = Reskin.Element(pane, "InsetFrame")
 			if inset then
 				inset.__aetherStore = inset.__aetherStore or {}
 				Reskin.Strip(inset, inset.__aetherStore)
-				Reskin.Kill(inset, store)
-			end
 
-			-- ONE WELL PER COLUMN, drawn to the PANE with our own padding, and
-			-- stopping a strip's height clear of the floor - the client draws
-			-- each column to the floor because in its layout there is no strip
-			-- down there.
-			if not pane.__aetherPill then
-				-- NEGATIVE, BECAUSE `inset` IS AN OUTSET.
-				--
-				-- Reskin.Well anchors its panel at `-(pad[1])` from the left
-				-- and `pad[2]` from the top, so a POSITIVE number pushes the
-				-- well OUTSIDE the frame - the default {2,0,2,0} widens a pill
-				-- by two either side, which is what it is for.
-				--
-				-- Passing our padding straight in drew every column's well 18
-				-- units outside it and 70 below, which the readout showed
-				-- plainly: chat pane l267 w416, chat well l249 w452. That is
-				-- why the wells looked wrong at every size I tried and why the
-				-- roster's crossed the footer rule - it reached 70 past the
-				-- bottom of its own column.
-				local pad = -W.PANEL_PAD
-				Reskin.Well(pane, { corner = W.WELL_CORNER,
-					inset = { pad, pad, pad,
-						-(W.PANEL_PAD + W.PANEL_FOOT_H) },
-					fill = "wellFill", edge = "wellEdge" })
+				-- The nine pieces HandleInsetFrame names, which are regions of
+				-- the inset and so already gone above - listed because the next
+				-- reader will look for them.
+				for _, k in ipairs({ "InsetBorderTop", "InsetBorderTopLeft",
+					"InsetBorderTopRight", "InsetBorderBottom",
+					"InsetBorderBottomLeft", "InsetBorderBottomRight",
+					"InsetBorderLeft", "InsetBorderRight", "Bg" }) do
+					local piece = Reskin.Element(inset, k)
+					if piece then Reskin.Kill(piece, store) end
+				end
+
+				if key == "Chat" then
+					-- THE ONE BOX ON THIS WINDOW, at the client's own bounds.
+					if not inset.__aetherPill then
+						Reskin.Well(inset, { corner = W.WELL_CORNER,
+							inset = { 0, 0, 0, 0 },
+							fill = "wellFill", edge = "wellEdge" })
+					end
+				else
+					Reskin.Kill(inset, store)
+				end
 			end
 
 			-- AND THE FILIGREE WITH IT. The community list carries four pieces

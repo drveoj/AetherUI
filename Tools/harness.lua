@@ -36830,94 +36830,52 @@ do
 	-- is its own NORMAL TEXTURE, which is not a region of anything the pane
 	-- sweep walks.
 	local stony, glyphless = {}, {}
-	-- THE THREE COLUMNS SIT IN WELLS, AND THE WELL IS ON THE PANE.
+	-- ONE BOX ON THIS WINDOW, AND THE CLIENT DECIDES WHERE IT IS.
 	--
-	-- The first attempt dressed the client's InsetFrame and it was the wrong
-	-- box: the chat's well came out smaller than the column it lives in and the
-	-- messages ran over the edges, because everything inside is anchored to the
-	-- PANE and nothing to the inset. The inset is the client's own idea of a
-	-- margin, not the box the content is in.
+	-- Three designs of mine failed here in a row - a well on the inset, then on
+	-- the pane, then on the pane with corrected padding - and every one of them
+	-- computed geometry this window had already decided. ElvUI's answer is
+	-- smaller than all three: S:HandleInsetFrame DRAWS NOTHING (it hides nine
+	-- InsetBorder pieces and a Bg), the roster's inset is hidden outright, and
+	-- exactly one thing gets a backdrop - Chat.InsetFrame, at the client's own
+	-- bounds.
 	--
-	-- ElvUI hides those insets rather than dressing them, which is the same
-	-- conclusion reached from the other side.
+	-- So this checks that we do LESS, not more: no well on the panes, no well
+	-- on the roster or the list, one on the chat's own recess, and nothing
+	-- measured anywhere.
 	do
-		local welled, killed, orn = 0, 0, 0
+		local stray = 0
 		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
-			local pane = cf[key]
-			if pane and pane.__aetherPill then welled = welled + 1 end
-			if pane and pane.InsetFrame and pane.InsetFrame.__aetherKilled then
-				killed = killed + 1
-			end
+			if cf[key] and cf[key].__aetherPill then stray = stray + 1 end
+		end
+		check(stray == 0,
+			"no column carries a well of its own - three designs that drew one"
+			.. " each were wrong (" .. stray .. " still drawing)")
+
+		check(cf.Chat.InsetFrame.__aetherPill ~= nil,
+			"the chat's own recess is the ONE box on this window, at the"
+			.. " client's bounds rather than at any number of ours")
+
+		local killed = 0
+		for _, key in ipairs({ "CommunitiesList", "MemberList" }) do
+			if cf[key].InsetFrame.__aetherKilled then killed = killed + 1 end
+		end
+		check(killed == 2,
+			"and the roster's and the list's recesses are hidden outright, as"
+			.. " ElvUI hides them (" .. killed .. " of 2)")
+
+		local orn = 0
+		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
 			for _, k2 in ipairs({ "FilligreeOverlay", "TopFiligree",
 				"BottomFiligree", "WatermarkFrame" }) do
-				local f2 = pane and pane[k2]
+				local f2 = cf[key] and cf[key][k2]
 				if f2 and not f2.__aetherKilled then orn = orn + 1 end
 			end
 		end
-		check(welled == 3,
-			"each column's well is drawn on the PANE, which is what its content"
-			.. " is anchored to (" .. welled .. " of 3)")
-
-		-- AND IT IS INSIDE THE COLUMN, NOT ROUND IT. Reskin.Well's `inset` is
-		-- an OUTSET - it anchors at `-(pad[1])` from the left - so passing our
-		-- padding straight in drew every well 18 units outside its column and
-		-- 70 below. The live readout showed it plainly: chat pane l267 w416,
-		-- chat well l249 w452. That is why the wells looked wrong at every size
-		-- and why the roster's crossed the footer rule.
-		local outset = 0
-		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
-			local pane, well = cf[key], cf[key] and cf[key].__aetherPill
-			if pane and well then
-				if (well:GetLeft() or 0) < (pane:GetLeft() or 0) - 0.5
-					or (well:GetTop() or 0) > (pane:GetTop() or 0) + 0.5 then
-					outset = outset + 1
-				end
-			end
-		end
-		check(outset == 0,
-			"and it sits INSIDE the column rather than round it - `inset` on"
-			.. " Reskin.Well is an outset, so our padding has to go in negative"
-			.. " (" .. outset .. " drawn outside)")
-		check(killed == 3,
-			"and the client's own inset is killed rather than dressed - it is a"
-			.. " margin, not the box anything sits in (" .. killed .. " of 3)")
 		check(orn == 0,
-			"and the filigree that hangs off the PANE rather than its recess"
-			.. " goes with it (" .. orn .. " left)")
+			"with the filigree gone from all three (" .. orn .. " left)")
 	end
 
-	-- AND THE WELL STOPS A STRIP'S HEIGHT CLEAR OF THE FLOOR. The client draws
-	-- each column to the floor because in ITS layout there is no footer strip
-	-- down there. Ours has one, so the chat's well ran into it and the strip's
-	-- rule crossed the roster's - which is why the separator looked as though
-	-- it did not stop at the right sidebar. It was the column, not the rule.
-	do
-		local floored = 0
-		for _, key in ipairs({ "CommunitiesList", "MemberList", "Chat" }) do
-			local well = cf[key] and cf[key].__aetherPill
-			if well then
-				local _, _, _, _, by = well:GetPoint(2)
-				if math.abs(by or 0) >= A.Widgets.PANEL_FOOT_H then
-					floored = floored + 1
-				end
-			end
-		end
-		check(floored == 3,
-			"every column's well stops clear of the strip (" .. floored
-			.. " of 3)")
-	end
-
-	-- AND BOTH ARE FOUND BY THE STRIP, which neither was. The readout said it
-	-- outright - "act mid GuildRecruitmentButton: NOT FOUND" - because both
-	-- names were read off CommunitiesFrame.xml as parentKey="..." and then used
-	-- as globals. A name that resolves to nothing is skipped in silence, so the
-	-- two buttons sat where the client put them and nothing said why.
-	--
-	-- FOUND IS NOT YET PLACED. One of the two still comes back with no points
-	-- at all, which is the same fault that defeated the tool row on this
-	-- window: ChromeRow clears a widget and then does not anchor it. That is a
-	-- second bug behind this one, not fixed here, and this check deliberately
-	-- claims only what is true.
 	do
 		-- SHOWN FIRST, because every row is laid out from what is VISIBLE and
 		-- this window is dressed while it is DOWN: the addon loads on demand
