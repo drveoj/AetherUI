@@ -5521,7 +5521,11 @@ local function DressGuildBank(frame, store)
 
 	-- THE SIX VAULT TABS. The picture is IconTexture and is named rather than
 	-- guessed, for the reason above.
-	for i = 1, 6 do
+	-- EIGHT, NOT SIX. ElvUI loops to MAX_GUILDBANK_TABS and I wrote 6 from its
+	-- own local list; the readout shows GuildBankTab7 and GuildBankTab8 still
+	-- in Blizzard's art, so this client makes eight of them whatever a guild
+	-- has purchased.
+	for i = 1, (_G.MAX_GUILDBANK_TABS or 8) do
 		local tab = _G["GuildBankTab" .. i]
 		if tab then
 			tab.__aetherStore = tab.__aetherStore or {}

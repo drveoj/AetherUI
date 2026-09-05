@@ -341,7 +341,19 @@ local PANELS = {
 		-- client hangs it off the window's top-right where our close button now
 		-- is, near enough to be clicked by mistake.
 		row = { right = { "GuildItemSearchBox" } },
-		-- NO `body`, AND SEVEN COLUMNS IS EXACTLY WHY.
+		-- ONE COLUMN IN `body`, AND THE CHAIN DOES THE REST.
+		--
+		-- The readout put a number on the fault that four looks could not:
+		--
+		--     body    t795 ... h350    the well's top edge
+		--     Column1 t808            the content, THIRTEEN ABOVE IT
+		--
+		-- Listing all seven staircased them, because each is anchored to the
+		-- one before. Listing ONE uses that: move Column1 and the other six
+		-- follow, exactly once, which is what a chain is for.
+		body = { "GuildBankFrame.Column1" },
+
+		-- SEVEN WOULD STAIRCASE THEM.
 		--
 		-- I listed Column1..7 there to have the slots moved down under the band.
 		-- They are CHAINED: Column2 hangs off Column1, Column3 off Column2, and

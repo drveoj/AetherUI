@@ -9457,7 +9457,7 @@ do
 
 		-- SIX TAB BUTTONS DOWN THE RIGHT, each a frame holding a Button whose
 		-- picture is IconTexture - not the normal texture, which is the plate.
-		for i = 1, 6 do
+		for i = 1, 8 do
 			local tab = CreateFrame("Frame", "GuildBankTab" .. i, gb)
 			tab:CreateTexture(nil, "BACKGROUND"):SetTexture("tab-stone")
 			tab.Button = CreateFrame("Button", nil, tab)
@@ -37312,9 +37312,14 @@ do
 	--
 	-- `body` is for panes that are independent. This check exists so the next
 	-- reader does not add these back.
-	check(PN.ENTRY.GuildBankFrame.body == nil,
-		"the guild bank lists no body panes - its seven columns are chained to"
-		.. " each other, and moving one moves the rest twice")
+	-- ONE COLUMN, NEVER SEVEN. They are chained - Column2 hangs off Column1,
+	-- along the row - so listing all seven had LayoutBody shift each and every
+	-- shift carry everything after it: ninety-eight slots down a staircase.
+	-- Listing ONE uses the chain instead, and the other six follow it.
+	check(#(PN.ENTRY.GuildBankFrame.body or {}) == 1,
+		"the guild bank lists exactly one body pane - its columns are chained,"
+		.. " so moving the first moves them all, and moving all seven moves"
+		.. " each of them seven times")
 	do
 		local drift = 0
 		for c = 2, 7 do
@@ -37332,16 +37337,16 @@ do
 	-- normal texture - the normal one is the plate, and a dresser that guesses
 	-- keeps the stone and throws the picture away.
 	local kept = 0
-	for i = 1, 6 do
+	for i = 1, 8 do
 		local btn = _G["GuildBankTab" .. i].Button
 		if btn.IconTexture:GetTexture() ~= 0
 			and btn:GetNormalTexture():GetTexture() == 0 then
 			kept = kept + 1
 		end
 	end
-	check(kept == 6,
-		"each vault tab keeps its picture and loses its plate (" .. kept
-		.. " of 6)")
+	check(kept == 8,
+		"each vault tab keeps its picture and loses its plate - EIGHT of them,"
+		.. " not the six I first wrote (" .. kept .. " of 8)")
 
 	check(gb.Emblem.__aetherKilled ~= nil,
 		"the guild emblem is killed - ElvUI kills it outright and it is the"
