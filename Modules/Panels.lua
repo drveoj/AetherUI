@@ -316,6 +316,47 @@ local PANELS = {
 	-- PORTRAIT FRAME, SO TIGHT, and its three tabs hang 30 below the bottom
 	-- edge outside its own art - the character sheet's case exactly, so the
 	-- glass reaches past the frame to carry them rather than stopping at it.
+	--
+	-- THE THREE GEAR WINDOWS - reforge, upgrade, socket. One shape three times
+	-- over: a slot you drop an item into, a set of choices about it, a confirm
+	-- button and a price. All three are Mists-only.
+	--
+	-- THREE SPELLINGS OF THE SAME PART, and that is the whole difficulty.
+	-- Reforging names everything globally after the frame; item upgrade
+	-- carries the same parts as PARENT KEYS; and its rows are a parentArray,
+	-- which is a numbered TABLE rather than a numbered NAME. Named here, per
+	-- window, rather than guessed at three times in the dresser.
+	{ frame = "ReforgingFrame", addon = "Blizzard_ReforgingUI",
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "ReforgingFrameRestoreButton",
+			"ReforgingFrameReforgeButton" },
+			under = { "ReforgingFrameMoneyFrame" } },
+		-- EVERYTHING IS HUNG OFF THE FRAME at the client's own offsets - there
+		-- is no container to move - so `together` shifts the lot by the
+		-- deepest and the layout the client drew survives intact.
+		together = true,
+		body = { "ReforgingFrameItemButton",
+			"ReforgingFrameTitleTextLeft", "ReforgingFrameTitleTextRight",
+			"ReforgingFrameHorzBar",
+			"ReforgingFrameLeftStat1", "ReforgingFrameRightStat1" } },
+	{ frame = "ItemUpgradeFrame", addon = "Blizzard_ItemUpgradeUI",
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = { "ItemUpgradeFrameUpgradeButton" },
+			under = { "ItemUpgradeFrameMoneyFrame" } },
+		together = true,
+		body = { "ItemUpgradeFrame.ItemButton",
+			"ItemUpgradeFrame.TitleTextLeft", "ItemUpgradeFrame.TitleTextRight",
+			"ItemUpgradeFrame.HorzBar" } },
+	{ frame = "ItemSocketingFrame", addon = "Blizzard_ItemSocketingUI",
+		footer = W.PANEL_FOOT_H,
+		actions = { mid = {
+			"ItemSocketingFrame.SocketingContainer.ApplySocketsButton" } },
+		-- ALREADY A WELL. The description is in a client scroll frame and gets
+		-- a recess of its own in the dresser, so the window does not get a
+		-- second one round the outside.
+		wells = false,
+		body = { "ItemSocketingScrollFrame",
+			"ItemSocketingFrame.SocketingContainer" } },
 	-- THE GUILD BANK, which Mists has and Era does not - Blizzard_GuildBankUI
 	-- is gated `mists`, so this entry never fires on the other client.
 	--

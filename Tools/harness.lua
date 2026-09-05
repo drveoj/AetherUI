@@ -9608,8 +9608,305 @@ do
 		gb.WithdrawButton:SetPushedTexture("magic-button-down")
 	end
 
+	--  THE THREE GEAR WINDOWS - reforge, upgrade, socket.
+	--
+	--  One shape three times over: a slot you drop an item into, a set of
+	--  choices about it, a confirm button and a price. Two of them are built on
+	--  EtherealFrameTemplate, which is PortraitFrameTemplate plus eight pieces
+	--  of Transmogrify edging; the third is an ordinary ButtonFrameTemplate.
+	--
+	--  Two naming conventions again, and on purpose: reforging names everything
+	--  globally after the frame and item upgrade carries the same parts as
+	--  parent keys, so a dresser that knows only one spelling does half a
+	--  window. That is not a hypothetical - it is what happened to the dialogs.
+	local function etherealArt(f)
+		-- The template's own edging, all direct regions of the frame - which is
+		-- what makes the plain strip enough for them.
+		for _, key in ipairs({ "CornerTL", "CornerTR", "CornerBL", "CornerBR",
+			"LeftEdge", "RightEdge", "TopEdge", "BottomEdge" }) do
+			local t = f:CreateTexture(nil, "BACKGROUND")
+			t:SetTexture("Interface\\Transmogrify\\Textures.png")
+			f[key] = t
+		end
+		f.MarbleBg = f:CreateTexture(nil, "BACKGROUND")
+		f.MarbleBg:SetTexture("Interface\\FrameGeneral\\UI-Background-Marble")
+		f.Lines = f:CreateTexture(nil, "BACKGROUND")
+		f.Lines:SetTexture("Interface\\Transmogrify\\EtherealLines.png")
+		f.ReceiptBG = f:CreateTexture(nil, "BACKGROUND")
+		f.ReceiptBG:SetTexture("Interface\\Reforging\\Reforge-Partchment")
+		f.HorzBar = f:CreateTexture(nil, "ARTWORK")
+		f.HorzBar:SetTexture("horz-bar")
+	end
+
+	-- The slot you drop the item into. Its picture is IconTexture and the rest
+	-- of it is four slices of Reforge-Texture - so a dresser left to guess
+	-- keeps the stone and throws the item away, which is the vault tab's
+	-- mistake under another name.
+	local function gearSlot(parent, name)
+		local b = CreateFrame("Button", name, parent)
+		b:SetSize(48, 48)
+		b:SetPoint("TOPLEFT", parent, "TOPLEFT", 24, -60)
+		b:SetNormalTexture("slot-stone")
+		local icon = b:CreateTexture(name and (name .. "IconTexture") or nil,
+			"ARTWORK")
+		icon:SetTexture("Interface\\Icons\\INV_Sword_04")
+		b.IconTexture = icon
+		if name then _G[name .. "IconTexture"] = icon end
+		for _, key in ipairs({ "Frame", "Grabber", "TextFrame",
+			"TextGrabber" }) do
+			local t = b:CreateTexture(nil, "OVERLAY")
+			t:SetTexture("Interface\\Reforging\\Reforge-Texture")
+			b[key] = t
+		end
+		return b
+	end
+
+	function _G.__buildReforging()
+		local f = _G.ReforgingFrame
+		if not f or f.__built then return end
+		f.__built = true
+		f:SetSize(428, 430)
+		etherealArt(f)
+
+		-- The two column headings, which are NOT the window's title: the title
+		-- is on the portrait band and these are "Current" and "Reforge" over
+		-- the two stat lists.
+		for _, key in ipairs({ "TitleTextLeft", "TitleTextRight" }) do
+			local fs = f:CreateFontString("ReforgingFrame" .. key, "OVERLAY")
+			fs:SetText(key)
+			fs:SetSize(130, 12)
+			fs:SetPoint("TOPLEFT", f, "TOPLEFT",
+				key == "TitleTextLeft" and 26 or 215, -135)
+			_G["ReforgingFrame" .. key] = fs
+		end
+
+		-- PURE ORNAMENT AND ANIMATED, which is why it is killed rather than
+		-- hidden: hiding loses to the next run of the animation.
+		local glow = CreateFrame("Frame", "ReforgingFrameFinishedGlow", f)
+		glow.__flare = glow:CreateTexture(nil, "OVERLAY")
+		glow.__flare:SetTexture("Interface\\Reforging\\Reforge-Flare")
+
+		local bf = CreateFrame("Frame", "ReforgingFrameButtonFrame", f)
+		bf:SetSize(428, 20)
+		bf:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+		bf:CreateTexture(nil, "BORDER"):SetTexture("button-frame-stone")
+
+		gearSlot(f, "ReforgingFrameItemButton")
+
+		-- THE STAT ROWS ARE CHAINED and MADE ON DEMAND. Row 1 is in the XML;
+		-- everything after it is created the first time the client wants it,
+		-- which is after we have dressed the window.
+		_G.REFORGE_MAX_STATS_SHOWN = 6
+		local function statRow(side, index)
+			local s = CreateFrame("CheckButton",
+				"ReforgingFrame" .. side .. "Stat" .. index, f)
+			s:SetSize(170, 20)
+			if index == 1 then
+				s:SetPoint("TOPLEFT", f, "TOPLEFT",
+					side == "Left" and 27 or 216, -160)
+			else
+				s:SetPoint("TOP",
+					_G["ReforgingFrame" .. side .. "Stat" .. (index - 1)],
+					"BOTTOM", 0, -1)
+			end
+			s.text = s:CreateFontString(nil, "OVERLAY")
+			s.text:SetText(side .. " stat " .. index)
+			s.Bg = s:CreateTexture(nil, "BACKGROUND")
+			s.Bg:SetTexture("stat-row-stone")
+			s.button = CreateFrame("Frame", nil, s)
+			for _, key in ipairs({ "normalTex", "checkedTex", "disableTex",
+				"highlightTex" }) do
+				local t = s.button:CreateTexture(nil, "ARTWORK")
+				t:SetTexture("Interface\\Reforging\\Reforge-Texture")
+				s.button[key] = t
+			end
+			return s
+		end
+		for i = 1, 2 do statRow("Left", i) statRow("Right", i) end
+
+		-- The client's own maker, hooked rather than guessed at: rows three and
+		-- up do not exist until it runs.
+		function _G.ReforgingFrame_GetStatRow(index, tryAdd)
+			local l = _G["ReforgingFrameLeftStat" .. index]
+			if tryAdd and not l and index <= _G.REFORGE_MAX_STATS_SHOWN then
+				l = statRow("Left", index)
+				statRow("Right", index)
+			end
+			return l, _G["ReforgingFrameRightStat" .. index]
+		end
+
+		for _, key in ipairs({ "RestoreButton", "ReforgeButton" }) do
+			local b = CreateFrame("Button", "ReforgingFrame" .. key, bf)
+			b:SetSize(110, 22)
+			b:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+			b:SetNormalTexture("magic-button-up")
+			local t = b:CreateFontString(nil, "OVERLAY")
+			t:SetText(key)
+			b.__fs = t
+			function b:GetFontString() return self.__fs end
+		end
+		local money = CreateFrame("Frame", "ReforgingFrameMoneyFrame", bf)
+		money:SetSize(260, 20)
+		money:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 2, 5)
+		money:CreateTexture(nil, "BORDER"):SetTexture("money-stone")
+	end
+
+	function _G.__buildItemUpgrade()
+		local f = _G.ItemUpgradeFrame
+		if not f or f.__built then return end
+		f.__built = true
+		f:SetSize(428, 430)
+		etherealArt(f)
+
+		-- PARENT KEYS THROUGHOUT, where reforging spells the same parts
+		-- globally. Same window, two conventions, and a dresser that knows one
+		-- of them does half the job.
+		for _, key in ipairs({ "TitleTextLeft", "TitleTextRight" }) do
+			local fs = f:CreateFontString(nil, "OVERLAY")
+			fs:SetText(key)
+			fs:SetPoint("TOPLEFT", f, "TOPLEFT",
+				key == "TitleTextLeft" and 26 or 215, -135)
+			f[key] = fs
+		end
+		f.MissingDescription = f:CreateFontString(nil, "ARTWORK")
+		f.MissingDescription:SetText("Drop an item here")
+
+		f.ButtonFrame = CreateFrame("Frame", nil, f)
+		f.ButtonFrame:SetSize(428, 20)
+		f.ButtonFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+		f.ButtonFrame:CreateTexture(nil, "BORDER")
+			:SetTexture("button-frame-stone")
+
+		f.ItemButton = gearSlot(f, nil)
+		f.ItemButton.IconTexture:SetTexture("Interface\\Icons\\INV_Axe_01")
+
+		-- PARENT ARRAYS, which is a third spelling again: a numbered TABLE on
+		-- the frame rather than a numbered NAME.
+		f.LeftStat, f.RightStat, f.EffectRow = {}, {}, {}
+		for i = 1, 2 do
+			for _, side in ipairs({ "LeftStat", "RightStat" }) do
+				local s = CreateFrame("Frame", nil, f)
+				s:SetSize(170, 20)
+				s:SetPoint("TOPLEFT", f, "TOPLEFT",
+					side == "LeftStat" and 27 or 216, -160 - (i - 1) * 21)
+				s.BG = s:CreateTexture(nil, "BACKGROUND")
+				s.BG:SetTexture("stat-row-stone")
+				s.ItemText = s:CreateFontString(nil, "OVERLAY")
+				s.ItemText:SetText(side .. i)
+				s.ItemLevelText = s:CreateFontString(nil, "OVERLAY")
+				s.ItemLevelText:SetText("463")
+				f[side][i] = s
+			end
+			local row = CreateFrame("Frame", nil, f)
+			row:SetSize(360, 20)
+			row:SetPoint("TOPLEFT", f, "TOPLEFT", 27, -220 - (i - 1) * 21)
+			row.LeftBg = row:CreateTexture(nil, "BACKGROUND")
+			row.LeftBg:SetTexture("effect-row-stone")
+			row.RightBg = row:CreateTexture(nil, "BACKGROUND")
+			row.RightBg:SetTexture("effect-row-stone")
+			row.LeftText = row:CreateFontString(nil, "OVERLAY")
+			row.LeftText:SetText("effect " .. i)
+			f.EffectRow[i] = row
+		end
+
+		local up = CreateFrame("Button", "ItemUpgradeFrameUpgradeButton",
+			f.ButtonFrame)
+		up:SetSize(160, 22)
+		up:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 4)
+		up:SetNormalTexture("magic-button-up")
+		local ut = up:CreateFontString(nil, "OVERLAY")
+		ut:SetText("Upgrade")
+		up.__fs = ut
+		function up:GetFontString() return self.__fs end
+
+		local money = CreateFrame("Frame", "ItemUpgradeFrameMoneyFrame",
+			f.ButtonFrame)
+		money:SetSize(260, 20)
+		money:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 2, 5)
+		money:CreateTexture(nil, "BORDER"):SetTexture("money-stone")
+	end
+
+	function _G.__buildItemSocketing()
+		local f = _G.ItemSocketingFrame
+		if not f or f.__built then return end
+		f.__built = true
+		f:SetSize(340, 400)
+
+		-- A ButtonFrameTemplate rather than an ethereal one, and its art is
+		-- fourteen named regions of parchment and gold border.
+		for _, key in ipairs({ "ParchmentFrame-Top", "ParchmentFrame-Bottom",
+			"ParchmentFrame-Left", "ParchmentFrame-Right",
+			"SocketFrame-Left", "SocketFrame-Right",
+			"ButtonFrame-Left", "ButtonFrame-Right", "ButtonBorder-Mid",
+			"GoldBorder-Top", "GoldBorder-Bottom", "GoldBorder-Left",
+			"GoldBorder-Right", "BackgroundColor" }) do
+			local t = f:CreateTexture(nil, "BORDER")
+			t:SetTexture("Interface\\ItemSocketingFrame\\UI-ItemSocketingFrame")
+			f[key] = t
+		end
+
+		local sf = CreateFrame("Frame", "ItemSocketingScrollFrame", f)
+		sf:SetSize(280, 200)
+		sf:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -60)
+		sf:CreateTexture(nil, "BACKGROUND"):SetTexture("scroll-stone")
+		local sb = CreateFrame("Slider", "ItemSocketingScrollFrameScrollBar", sf)
+		sb:SetSize(16, 180)
+		sb:SetPoint("TOPRIGHT", sf, "TOPRIGHT", -25, -16)
+		sb.Track = CreateFrame("Frame", nil, sb)
+		sb.Track.Thumb = CreateFrame("Frame", nil, sb.Track)
+		sb.Track.__rail = sb.Track:CreateTexture(nil, "BACKGROUND")
+		sb.Track.__rail:SetTexture("scroll-rail-stone")
+		sf.ScrollBar = sb
+		f.ScrollFrame = sf
+
+		_G.ItemSocketingDescription = CreateFrame("Frame",
+			"ItemSocketingDescription", sf)
+		_G.ItemSocketingDescription:CreateTexture(nil, "BORDER")
+			:SetTexture("tooltip-stone")
+
+		-- THREE SOCKETS, in a parentArray AND under parent keys - the client
+		-- writes both, so either spelling finds them and neither is a guess.
+		f.SocketingContainer = CreateFrame("Frame", nil, f)
+		f.SocketingContainer:SetSize(280, 60)
+		f.SocketingContainer:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -280)
+		f.SocketingContainer.SocketFrames = {}
+		for i = 1, 3 do
+			local b = CreateFrame("Button", nil, f.SocketingContainer)
+			b:SetSize(40, 40)
+			b:SetPoint("LEFT", f.SocketingContainer, "LEFT", (i - 1) * 46, 0)
+			b:SetNormalTexture("socket-stone")
+			b.Icon = b:CreateTexture(nil, "ARTWORK")
+			b.Icon:SetTexture("Interface\\Icons\\INV_Jewelcrafting_Gem")
+			b.Background = b:CreateTexture(nil, "BACKGROUND")
+			b.Background:SetTexture("socket-background")
+			b.LeftFiligree = b:CreateTexture(nil, "OVERLAY")
+			b.LeftFiligree:SetTexture("Interface\\ItemSocketingFrame\\UI-ItemSockets")
+			b.RightFiligree = b:CreateTexture(nil, "OVERLAY")
+			b.RightFiligree:SetTexture("Interface\\ItemSocketingFrame\\UI-ItemSockets")
+			-- ANIMATED, and a frame rather than a texture: hidden, it comes
+			-- back with the next run of its own animation.
+			b.Shine = CreateFrame("Frame", nil, b)
+			b.BracketFrame = CreateFrame("Frame", nil, b)
+			f.SocketingContainer.SocketFrames[i] = b
+			f.SocketingContainer["Socket" .. i] = b
+		end
+
+		local apply = CreateFrame("Button", nil, f.SocketingContainer)
+		apply:SetSize(100, 22)
+		apply:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -5, 5)
+		apply:SetNormalTexture("magic-button-up")
+		local at = apply:CreateFontString(nil, "OVERLAY")
+		at:SetText("Apply")
+		apply.__fs = at
+		function apply:GetFontString() return self.__fs end
+		f.SocketingContainer.ApplySocketsButton = apply
+	end
+
 	function _G.__loadPanelAddon(name)
 		buildPanel(name)
+		if name == "ReforgingFrame" then _G.__buildReforging() end
+		if name == "ItemUpgradeFrame" then _G.__buildItemUpgrade() end
+		if name == "ItemSocketingFrame" then _G.__buildItemSocketing() end
 		if name == "PlayerTalentFrame" then _G.__buildTalentInsides() end
 		if name == "CommunitiesFrame" then _G.__buildCommunities() end
 		if name == "ClassTrainerFrame" then _G.__buildTrainer() end
@@ -37611,6 +37908,284 @@ do
 		"the window's X is ours, though the client gave it no name to ask for")
 
 	gb:Hide()
+end
+
+-- ---------------------------------------------------------------------------
+--  THE THREE GEAR WINDOWS, written before their dressers.
+--
+--  Reforge, upgrade and socket are one shape three times: a slot you drop an
+--  item into, a set of choices about it, a confirm button and a price. Two are
+--  EtherealFrameTemplate - PortraitFrameTemplate plus eight pieces of
+--  Transmogrify edging - and the third is an ordinary ButtonFrameTemplate.
+--
+--  THREE SPELLINGS OF THE SAME PART, which is the trap here. Reforging names
+--  everything globally after the frame; item upgrade carries the same parts as
+--  parent keys; and its stat rows are a parentArray, which is a numbered TABLE
+--  rather than a numbered NAME. A dresser that knows one convention does a
+--  third of the work and looks like it has done all of it.
+-- ---------------------------------------------------------------------------
+print("== panels: reforging, written before its dresser ==")
+if _G.__mists then
+	local PN = A:GetModule("panels")
+	_G.__loadPanelAddon("ReforgingFrame")
+	fire("ADDON_LOADED", "Blizzard_ReforgingUI")
+	local rf = _G.ReforgingFrame
+	rf:Show()
+	PN.Dress(rf)
+
+	check(rf.__aetherPanel ~= nil, "ReforgingFrame is dressed")
+
+	-- THE ETHEREAL EDGING, which is the template's and not the window's -
+	-- eight corners and edges of Transmogrify art plus the marble, the lines
+	-- and the receipt parchment. All of them are DIRECT REGIONS of the frame,
+	-- which is exactly why the ordinary strip is enough and why a dresser that
+	-- went hunting for a container would have found nothing.
+	do
+		local left = {}
+		for _, key in ipairs({ "CornerTL", "CornerTR", "CornerBL", "CornerBR",
+			"LeftEdge", "RightEdge", "TopEdge", "BottomEdge",
+			"MarbleBg", "Lines", "ReceiptBG", "HorzBar" }) do
+			if (rf[key]:GetTexture() or 0) ~= 0 then left[#left + 1] = key end
+		end
+		check(#left == 0, "the marble, the lines and the ethereal edging all"
+			.. " come off - twelve regions of the frame itself (" ..
+			(#left > 0 and table.concat(left, ",") or "all of it") .. ")")
+	end
+
+	check(_G.ReforgingFrameFinishedGlow.__aetherKilled ~= nil,
+		"the finish flare is KILLED rather than hidden - it is a frame and it"
+		.. " is animated, so hiding loses to the next run of the animation")
+
+	-- THE SLOT KEEPS THE ITEM AND LOSES THE STONE, which is the vault tab's
+	-- mistake under another name: the picture is IconTexture and the plate is
+	-- the normal texture, so a dresser left to guess keeps the wrong one.
+	check(_G.ReforgingFrameItemButtonIconTexture:GetTexture() ~= 0
+		and _G.ReforgingFrameItemButton:GetNormalTexture():GetTexture() == 0,
+		"the item slot keeps its picture and loses its plate")
+	do
+		local art = 0
+		for _, key in ipairs({ "Frame", "Grabber", "TextFrame",
+			"TextGrabber" }) do
+			if (_G.ReforgingFrameItemButton[key]:GetTexture() or 0) ~= 0 then
+				art = art + 1
+			end
+		end
+		check(art == 0,
+			"and the four slices of Reforge-Texture round it (" .. art .. ")")
+	end
+
+	-- THE STAT ROWS. Two lists side by side, each row a check button with a
+	-- striped plate behind it and four state textures in a child frame.
+	do
+		local stony = 0
+		for _, side in ipairs({ "Left", "Right" }) do
+			for i = 1, 2 do
+				local s = _G["ReforgingFrame" .. side .. "Stat" .. i]
+				if (s.Bg:GetTexture() or 0) ~= 0 then stony = stony + 1 end
+				for _, key in ipairs({ "normalTex", "checkedTex", "disableTex",
+					"highlightTex" }) do
+					if (s.button[key]:GetTexture() or 0) ~= 0 then
+						stony = stony + 1
+					end
+				end
+			end
+		end
+		check(stony == 0,
+			"every stat row loses its stripe and its four state slices (" ..
+			stony .. " left)")
+	end
+
+	-- AND A ROW THE CLIENT MAKES LATER IS DRESSED TOO. Only row one is in the
+	-- XML; ReforgingFrame_GetStatRow builds the rest the first time the client
+	-- wants them, which is after we have been past.
+	do
+		local made = _G.ReforgingFrame_GetStatRow(4, true)
+		check(made ~= nil, "a stat row can be minted after the dress")
+		check((made.Bg:GetTexture() or 0) == 0,
+			"and a row minted AFTER the window was dressed is dressed too -"
+			.. " the client builds these on demand, so anything the player"
+			.. " scrolls to would otherwise stay Blizzard's")
+	end
+
+	-- ITS ACTIONS STAND IN A STRIP, skinned as well as placed.
+	do
+		local red = 0
+		for _, n in ipairs({ "ReforgingFrameRestoreButton",
+			"ReforgingFrameReforgeButton" }) do
+			if _G[n]:GetNormalTexture():GetTexture() ~= 0 then red = red + 1 end
+		end
+		check(red == 0, "Restore and Reforge are ours (" .. red .. ")")
+		local _, rel = _G.ReforgingFrameReforgeButton:GetPoint(1)
+		check(rel ~= rf,
+			"and they are moved into the footer rather than left in the"
+			.. " client's corner")
+	end
+	check((_G.ReforgingFrameButtonFrame.__aetherStore or {})[_G.ReforgingFrameButtonFrame] ~= nil,
+		"the strip of stone they stood on is stripped")
+
+	-- THE PRICE RIDES THE SECOND ROW, the guild bank's arrangement exactly.
+	do
+		local under = (PN.ENTRY.ReforgingFrame.actions or {}).under or {}
+		check(#under == 1, "the price rides the footer's second row")
+		local host = rf.__aetherPanel
+		local mid = (host:GetLeft() + host:GetRight()) / 2
+		local m = _G.ReforgingFrameMoneyFrame
+		check(math.abs(((m:GetLeft() or 0) + (m:GetRight() or 0)) / 2 - mid)
+			< 1.5, "and is centred there rather than pinned to a corner")
+	end
+
+	-- THE COLUMN HEADINGS ARE NOT THE TITLE. "Current" and "Reforge" sit over
+	-- the two stat lists; the window's title is on the portrait band. A
+	-- dresser that took the first font string it found would put one of these
+	-- in the band and leave the heading missing from the page.
+	check(rf.__aetherTitle ~= _G.ReforgingFrameTitleTextLeft
+		and rf.__aetherTitle ~= _G.ReforgingFrameTitleTextRight,
+		"neither column heading is mistaken for the window's title")
+
+	rf:Hide()
+end
+
+print("== panels: item upgrade, the same window spelled differently ==")
+if _G.__mists then
+	local PN = A:GetModule("panels")
+	_G.__loadPanelAddon("ItemUpgradeFrame")
+	fire("ADDON_LOADED", "Blizzard_ItemUpgradeUI")
+	local iu = _G.ItemUpgradeFrame
+	iu:Show()
+	PN.Dress(iu)
+
+	check(iu.__aetherPanel ~= nil, "ItemUpgradeFrame is dressed")
+
+	do
+		local left = {}
+		for _, key in ipairs({ "CornerTL", "CornerTR", "CornerBL", "CornerBR",
+			"LeftEdge", "RightEdge", "TopEdge", "BottomEdge",
+			"MarbleBg", "Lines", "ReceiptBG", "HorzBar" }) do
+			if (iu[key]:GetTexture() or 0) ~= 0 then left[#left + 1] = key end
+		end
+		check(#left == 0, "the same twelve regions come off here (" ..
+			(#left > 0 and table.concat(left, ",") or "all of it") .. ")")
+	end
+
+	-- THE SLOT IS A PARENT KEY HERE and a global on the reforging window - the
+	-- same button, two spellings, and a dresser that knows one of them dresses
+	-- one of the two windows.
+	check(iu.ItemButton.IconTexture:GetTexture() ~= 0
+		and iu.ItemButton:GetNormalTexture():GetTexture() == 0,
+		"the item slot keeps its picture and loses its plate, under a parent"
+		.. " key rather than a global name")
+
+	-- AND ITS ROWS ARE A parentArray, which is a third spelling again: a
+	-- numbered TABLE on the frame rather than a numbered NAME beside it.
+	do
+		local stony = 0
+		for _, key in ipairs({ "LeftStat", "RightStat" }) do
+			for i = 1, 2 do
+				if (iu[key][i].BG:GetTexture() or 0) ~= 0 then
+					stony = stony + 1
+				end
+			end
+		end
+		for i = 1, 2 do
+			for _, side in ipairs({ "LeftBg", "RightBg" }) do
+				if (iu.EffectRow[i][side]:GetTexture() or 0) ~= 0 then
+					stony = stony + 1
+				end
+			end
+		end
+		check(stony == 0,
+			"every stat row and every effect row loses its stripe - four of"
+			.. " each, in parentArrays (" .. stony .. " left)")
+	end
+
+	check((iu.ButtonFrame.__aetherStore or {})[iu.ButtonFrame] ~= nil,
+		"the strip of stone along the bottom is stripped")
+	check(_G.ItemUpgradeFrameUpgradeButton:GetNormalTexture():GetTexture() == 0,
+		"Upgrade is ours")
+	do
+		local _, rel = _G.ItemUpgradeFrameUpgradeButton:GetPoint(1)
+		check(rel ~= iu, "and stands in the footer strip")
+		local under = (PN.ENTRY.ItemUpgradeFrame.actions or {}).under or {}
+		check(#under == 1, "with the price on the row under it")
+	end
+
+	iu:Hide()
+end
+
+print("== panels: item socketing ==")
+if _G.__mists then
+	local PN = A:GetModule("panels")
+	_G.__loadPanelAddon("ItemSocketingFrame")
+	fire("ADDON_LOADED", "Blizzard_ItemSocketingUI")
+	local sk = _G.ItemSocketingFrame
+	sk:Show()
+	PN.Dress(sk)
+
+	check(sk.__aetherPanel ~= nil, "ItemSocketingFrame is dressed")
+
+	do
+		local left = 0
+		for _, key in ipairs({ "ParchmentFrame-Top", "ParchmentFrame-Bottom",
+			"ParchmentFrame-Left", "ParchmentFrame-Right",
+			"SocketFrame-Left", "SocketFrame-Right",
+			"ButtonFrame-Left", "ButtonFrame-Right", "ButtonBorder-Mid",
+			"GoldBorder-Top", "GoldBorder-Bottom", "GoldBorder-Left",
+			"GoldBorder-Right", "BackgroundColor" }) do
+			if (sk[key]:GetTexture() or 0) ~= 0 then left = left + 1 end
+		end
+		check(left == 0,
+			"the parchment and the gold border come off - fourteen regions (" ..
+			left .. " left)")
+	end
+
+	-- THREE SOCKETS. The gem is the picture and everything else round it is
+	-- somebody's brasswork; the shine and the bracket are FRAMES and animated,
+	-- so they are killed rather than hidden.
+	do
+		local kept, stony, alive = 0, 0, 0
+		for _, b in ipairs(sk.SocketingContainer.SocketFrames) do
+			if b.Icon:GetTexture() ~= 0 then kept = kept + 1 end
+			if b:GetNormalTexture():GetTexture() ~= 0 then stony = stony + 1 end
+			if (b.LeftFiligree:GetTexture() or 0) ~= 0
+				or (b.RightFiligree:GetTexture() or 0) ~= 0
+				or (b.Background:GetTexture() or 0) ~= 0 then
+				stony = stony + 1
+			end
+			if not b.Shine.__aetherKilled then alive = alive + 1 end
+			if not b.BracketFrame.__aetherKilled then alive = alive + 1 end
+		end
+		check(kept == 3 and stony == 0,
+			"each socket keeps its gem and loses its brasswork (" .. kept ..
+			" of 3, " .. stony .. " stony)")
+		check(alive == 0,
+			"and its shine and its bracket are KILLED - both are frames and"
+			.. " the shine is animated (" .. alive .. " left)")
+	end
+
+	-- THE LIST SCROLLS IN OUR RAIL, and the bar is pinned to the list rather
+	-- than left in the stone gutter the template drew for it.
+	check(_G.ItemSocketingScrollFrameScrollBar.Track.__rail:GetTexture() == 0,
+		"the description scrolls in our rail")
+	do
+		local sf = _G.ItemSocketingScrollFrame
+		local gap = (sf:GetRight() or 0)
+			- (_G.ItemSocketingScrollFrameScrollBar:GetRight() or 0)
+		check(math.abs(gap) < 0.5,
+			"and its bar is pinned to the list, not to a gutter that is no"
+			.. " longer there (" .. string.format("%.0f", gap) .. ")")
+	end
+
+	-- APPLY IS AN ACTION and stands in the strip. It is a parent key on the
+	-- CONTAINER rather than on the window, which is a fourth spelling.
+	do
+		local apply = sk.SocketingContainer.ApplySocketsButton
+		check(apply:GetNormalTexture():GetTexture() == 0, "Apply is ours")
+		local _, rel = apply:GetPoint(1)
+		check(rel ~= sk,
+			"and stands in the footer rather than in the client's corner")
+	end
+
+	sk:Hide()
 end
 
 print("== panels: the group finder Mists actually opens ==")

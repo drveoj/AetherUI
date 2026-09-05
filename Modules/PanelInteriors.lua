@@ -5624,8 +5624,181 @@ local function DressGuildBank(frame, store)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+--  THE THREE GEAR WINDOWS - reforge, upgrade, socket.
+--
+--  One shape three times over: a slot you drop an item into, a set of choices
+--  about it, a confirm button and a price. Read off ElvUI's Reforge.lua,
+--  ItemUpgrade.lua and Socket.lua before a line of this was written, and
+--  checked against this client's own XML afterwards - which is where two of
+--  ElvUI's names turned out to be retail's.
+--
+--  THREE SPELLINGS OF THE SAME PART. Reforging names everything globally after
+--  the frame; item upgrade carries the same parts as parent keys; and its rows
+--  are a parentArray, a numbered TABLE rather than a numbered NAME. A dresser
+--  that knows one convention does a third of the job and looks like it has
+--  done all of it, which is the dialogs' fault under a new name.
+-- ---------------------------------------------------------------------------
+
+--- Art off a frame, into a store of its own so the module can put it back.
+local function Bare(f)
+	if not f or Reskin.Forbidden(f) then return end
+	f.__aetherStore = f.__aetherStore or {}
+	Reskin.Strip(f, f.__aetherStore)
+end
+
+--- The slot you drop an item into, on any of the three windows.
+--
+--  The picture is IconTexture and the PLATE is the normal texture, so a
+--  dresser left to guess keeps the stone and throws the item away - the vault
+--  tab's mistake under another name. Named, therefore, and not guessed.
+local function GearSlot(btn, store, icon)
+	if not btn then return end
+	Reskin.IconButton(btn, store,
+		{ icon = icon or Reskin.Element(btn, "IconTexture")
+			or Reskin.Element(btn, "Icon") })
+end
+
+--- The ethereal frames' own furniture, which both of them carry identically.
+--
+--  Twelve regions - eight of Transmogrify edging from the template, plus the
+--  marble, the lines and the receipt parchment - and every one is a DIRECT
+--  REGION of the window, which is why the shell's strip already has them and
+--  there is nothing to hunt for. Kept as a note rather than as code.
+local function DressReforge(frame, store)
+	-- PURE ORNAMENT AND ANIMATED. ElvUI kills it; hiding it would lose to the
+	-- next run of its own animation, which is rule zero.
+	if _G.ReforgingFrameFinishedGlow then
+		Reskin.Kill(_G.ReforgingFrameFinishedGlow, store)
+	end
+	Bare(_G.ReforgingFrameButtonFrame)
+	Bare(_G.ReforgingFrameMoneyFrame)
+
+	GearSlot(_G.ReforgingFrameItemButton, store,
+		_G.ReforgingFrameItemButtonIconTexture)
+
+	-- THE STAT ROWS, and they are MADE ON DEMAND: row one is in the XML and
+	-- everything after it is built by ReforgingFrame_GetStatRow the first time
+	-- the client wants it, which is after we have been past. So the rows that
+	-- exist are dressed here and the maker is hooked for the rest - the
+	-- achievement book's lesson, and the guild roster's before it.
+	local function statRow(side, index)
+		local s = _G["ReforgingFrame" .. side .. "Stat" .. index]
+		if not s then return end
+		Bare(s)
+		Bare(s.button)
+		if s.text then Roled(s.text, "pnBody") end
+	end
+	local function statRows()
+		for i = 1, (_G.REFORGE_MAX_STATS_SHOWN or 12) do
+			statRow("Left", i)
+			statRow("Right", i)
+		end
+	end
+	statRows()
+	if _G.ReforgingFrame_GetStatRow and not frame.__aetherStatHook then
+		frame.__aetherStatHook = true
+		hooksecurefunc("ReforgingFrame_GetStatRow", function() statRows() end)
+	end
+
+	for _, n in ipairs({ "ReforgingFrameRestoreButton",
+		"ReforgingFrameReforgeButton" }) do
+		if _G[n] then Reskin.Button(_G[n], "pnBody") end
+	end
+
+	-- THE COLUMN HEADINGS, which are content and not the title: "Current" and
+	-- "Reforge" stand over the two stat lists while the window's own title is
+	-- on the portrait band above them.
+	for _, n in ipairs({ "ReforgingFrameTitleTextLeft",
+		"ReforgingFrameTitleTextRight" }) do
+		if _G[n] then Roled(_G[n], "pnHead") end
+	end
+	for _, n in ipairs({ "ReforgingFrameRestoreMessage" }) do
+		if _G[n] then Roled(_G[n], "pnSub") end
+	end
+	if frame.missingDescription then Roled(frame.missingDescription, "pnSub") end
+end
+
+--- The upgrade window: the same furniture under parent keys.
+local function DressItemUpgrade(frame, store)
+	Bare(frame.ButtonFrame)
+	Bare(_G.ItemUpgradeFrameMoneyFrame)
+	GearSlot(frame.ItemButton, store)
+
+	-- parentArrays - a numbered TABLE on the frame. The reforging window's
+	-- equivalent rows are numbered NAMES beside it, and nothing that reads one
+	-- finds the other.
+	for _, key in ipairs({ "LeftStat", "RightStat", "EffectRow" }) do
+		for _, row in ipairs(frame[key] or {}) do
+			Bare(row)
+			for _, word in ipairs({ "ItemText", "ItemLevelText", "ItemIncText",
+				"LeftText", "RightText" }) do
+				if row[word] then Roled(row[word], "pnBody") end
+			end
+		end
+	end
+	for _, key in ipairs({ "LeftItemLevel", "RightItemLevel" }) do
+		Bare(frame[key])
+	end
+
+	if _G.ItemUpgradeFrameUpgradeButton then
+		Reskin.Button(_G.ItemUpgradeFrameUpgradeButton, "pnBody")
+	end
+	for _, key in ipairs({ "TitleTextLeft", "TitleTextRight" }) do
+		if frame[key] then Roled(frame[key], "pnHead") end
+	end
+	for _, key in ipairs({ "MissingDescription", "NoMoreUpgrades",
+		"UpgradeStatus", "ItemUpgradedNotification" }) do
+		if frame[key] then Roled(frame[key], "pnSub") end
+	end
+end
+
+--- The socketing window: three sockets, a description and Apply.
+local function DressItemSocketing(frame, store)
+	local sf = _G.ItemSocketingScrollFrame
+	if sf then
+		Bare(sf)
+		Reskin.Well(sf, { corner = W.WELL_CORNER, inset = { 0, 0, 0, 0 },
+			fill = "wellFill", edge = "wellEdge" })
+		local bar = _G.ItemSocketingScrollFrameScrollBar
+			or Reskin.Element(sf, "ScrollBar")
+		if bar then
+			Reskin.ScrollBar(bar, store)
+			-- PINNED TO THE LIST IT SCROLLS, which is the guild bank's fix and
+			-- ElvUI's: the template offsets it to land in a stone gutter, and
+			-- the gutter went with the first strip.
+			if bar.ClearAllPoints and not bar.__aetherRailed then
+				bar.__aetherRailed = true
+				bar:ClearAllPoints()
+				bar:SetPoint("TOPRIGHT", sf, "TOPRIGHT", 0, 0)
+				bar:SetPoint("BOTTOMRIGHT", sf, "BOTTOMRIGHT", 0, 0)
+			end
+		end
+	end
+	Bare(_G.ItemSocketingDescription)
+
+	local box = frame.SocketingContainer
+	if not box then return end
+	Bare(box)
+	for _, socket in ipairs(box.SocketFrames or {}) do
+		-- THE GEM IS THE PICTURE and everything else is somebody's brasswork.
+		GearSlot(socket, store, socket.Icon)
+		-- BOTH ARE FRAMES AND THE SHINE IS ANIMATED, so both are killed. This
+		-- is the one thing on this window that hiding could not hold down.
+		for _, key in ipairs({ "Shine", "BracketFrame" }) do
+			if socket[key] then Reskin.Kill(socket[key], store) end
+		end
+	end
+	if box.ApplySocketsButton then
+		Reskin.Button(box.ApplySocketsButton, "pnBody")
+	end
+end
+
 local INTERIORS = {
 	CharacterFrame    = DressCharacter,
+	ReforgingFrame       = DressReforge,
+	ItemUpgradeFrame     = DressItemUpgrade,
+	ItemSocketingFrame   = DressItemSocketing,
 	GuildBankFrame    = DressGuildBank,
 	PVEFrame          = DressPVE,
 	AchievementFrame  = DressAchievements,
