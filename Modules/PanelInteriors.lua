@@ -5553,7 +5553,20 @@ local function DressGuildBank(frame, store)
 			sf.__aetherStore = sf.__aetherStore or {}
 			Reskin.Strip(sf, sf.__aetherStore)
 			local bar = _G[n .. "ScrollBar"]
-			if bar then Reskin.ScrollBar(bar, store) end
+			if bar then
+				Reskin.ScrollBar(bar, store)
+				-- AND PINNED TO THE FRAME IT SCROLLS, which is ElvUI's fix
+				-- and the reason theirs sits where it should. Both templates
+				-- offset the bar to land in a stone gutter drawn beside the
+				-- list; the gutter is gone, so the bar stood inside the list
+				-- with a strip of empty glass to its right.
+				if bar.ClearAllPoints and not bar.__aetherRailed then
+					bar.__aetherRailed = true
+					bar:ClearAllPoints()
+					bar:SetPoint("TOPRIGHT", sf, "TOPRIGHT", 0, 0)
+					bar:SetPoint("BOTTOMRIGHT", sf, "BOTTOMRIGHT", 0, 0)
+				end
+			end
 		end
 	end
 	-- THE ACTIONS ARE PLACED BY THE STRIP AND SKINNED HERE. `actions` moves

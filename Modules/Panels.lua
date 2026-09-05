@@ -337,7 +337,8 @@ local PANELS = {
 		-- postbox already uses for exactly this and it centres what is in it.
 		actions = { mid = { "GuildBankFrame.DepositButton",
 			"GuildBankFrame.WithdrawButton",
-			"GuildBankFrame.BuyInfo.PurchaseButton" },
+			"GuildBankFrame.BuyInfo.PurchaseButton",
+			"GuildBankInfoSaveButton" },
 			under = { "GuildBankMoneyLimitLabel",
 				"GuildBankWithdrawMoneyFrame",
 				"GuildBankMoneyFrame" } },
@@ -360,7 +361,19 @@ local PANELS = {
 		-- Listing all seven staircased them, because each is anchored to the
 		-- one before. Listing ONE uses that: move Column1 and the other six
 		-- follow, exactly once, which is what a chain is for.
-		body = { "GuildBankFrame.Column1" },
+		-- ...AND THE OTHER THREE TABS, which are not columns and not chained to
+		-- anything. Log, Money Log and Info each hang their own scroll frame
+		-- off the WINDOW at the client's own -64, so nothing had ever moved
+		-- them: every line of the log printed from the top of the well upwards,
+		-- through the tool row and under the search box.
+		body = { "GuildBankFrame.Column1",
+			"GuildBankMessageFrame",
+			"GuildBankTransactionsScrollFrame",
+			"GuildBankInfoScrollFrame" },
+		-- AND THE INFO PAGE IS STRETCHED as well as moved. Its scroll frame is
+		-- a fixed 691 wide and its bar hangs off that edge, so the bar sat a
+		-- hand's breadth inside the recess with empty glass beyond it.
+		stretch = { "GuildBankInfoScrollFrame", "GuildBankTabInfoEditBox" },
 		-- ...AND COLUMN SEVEN FOR THE FAR EDGE, measured and not moved. One
 		-- pane starts the chain and a different one ends it; without this the
 		-- widest thing the layout can see is Column1, six columns clear of the
@@ -2559,6 +2572,36 @@ function PN.LayoutBody(frame, entry)
 	frame.__aetherBodyInset = wide
 	frame.__aetherBodyGrow = grow
 	if frame.GetWidth then frame.__aetherBodyWidth = frame:GetWidth() end
+
+	-- AND A PANE THAT IS SIMPLY TOO NARROW IS STRETCHED, not moved.
+	--
+	-- Everything above answers "this content starts in the wrong place". The
+	-- guild bank's Info page asks the other question: the client gave its
+	-- scroll frame a FIXED 691 for a window it had decided was 800, and the
+	-- bar hangs off that frame's right edge - so on a window of any other
+	-- width the bar floats a hand's breadth inside the recess with empty glass
+	-- beyond it. Moving a frame cannot fix a frame that is short.
+	--
+	-- ElvUI's answer is `GuildBankInfoScrollFrame:Width(685)`, which works
+	-- because their window is a fixed 770. Ours is measured, so the same fix
+	-- is the same call with the number worked out: reach the well's inside
+	-- edge, whatever the window turned out to be.
+	--
+	-- WIDTH AND NOT A SECOND ANCHOR. A right-hand point would be dropped by
+	-- the shift pass above, which rewrites every point a pane has from its own
+	-- record - so it would survive exactly one layout.
+	--
+	-- AND LAST OF ALL, after the window has finished growing. Measured before
+	-- that, every pane reaches an edge the window no longer has.
+	for _, name in ipairs(entry and entry.stretch or {}) do
+		local pane = Part(name)
+		local far = host.GetRight and host:GetRight()
+		local near = pane and pane.GetLeft and pane:GetLeft()
+		if pane and pane.SetWidth and far and near then
+			local room = far - inner - near
+			if room > 0 then pane:SetWidth(room) end
+		end
+	end
 
 	-- A WINDOW THAT LAYS ITSELF OUT gets told the padding instead of having
 	-- its children moved. The game menu is a VerticalLayoutFrame: its buttons

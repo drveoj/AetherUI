@@ -9534,16 +9534,63 @@ do
 		gb.WithdrawMoneyFrame:SetSize(90, 22)
 		gb.WithdrawMoneyFrame:SetPoint("LEFT", lim, "RIGHT", 13, 0)
 
-		for _, n in ipairs({ "GuildBankInfoScrollFrame",
-			"GuildBankTransactionsScrollFrame" }) do
-			local sf = CreateFrame("Frame", n, gb)
+		-- THE OTHER THREE TABS, sized and anchored as the XML has them - which
+		-- is the whole point of them being here. A scroll frame with no rect
+		-- cannot show content printed from the top of the well upwards, and a
+		-- bar with no anchor cannot show a bar standing inside its own list.
+		--
+		-- All three hang off the WINDOW at the client's -64, so nothing had
+		-- ever moved them clear of the band and the tool row.
+		gb.Log = CreateFrame("Frame", nil, gb)
+		gb.Log:SetSize(10, 10)
+		gb.Log:SetPoint("TOPLEFT", gb, "TOPLEFT", 0, 0)
+		gb.MessageFrame = CreateFrame("Frame", "GuildBankMessageFrame", gb.Log)
+		gb.MessageFrame:SetSize(300, 304)
+		gb.MessageFrame:SetPoint("TOPLEFT", gb, "TOPLEFT", 28, -64)
+		gb.MessageFrame:CreateTexture(nil, "BACKGROUND")
+			:SetTexture("scroll-stone")
+
+		_G.GuildBankInfo = CreateFrame("Frame", "GuildBankInfo", gb)
+		_G.GuildBankInfo:SetSize(10, 10)
+		_G.GuildBankInfo:SetPoint("TOPLEFT", gb, "TOPLEFT", 32, -74)
+
+		for _, spec in ipairs({
+			{ n = "GuildBankTransactionsScrollFrame", parent = gb.Log,
+				at = "TOPRIGHT", rel = gb, relAt = "TOPRIGHT",
+				x = -43, y = -64 },
+			{ n = "GuildBankInfoScrollFrame", parent = _G.GuildBankInfo,
+				at = "TOPLEFT", rel = _G.GuildBankInfo, relAt = "TOPLEFT",
+				x = -16, y = 12 },
+		}) do
+			local sf = CreateFrame("Frame", spec.n, spec.parent)
+			-- A FIXED WIDTH FOR A WINDOW THE CLIENT DECIDED WAS 800. On a
+			-- 384-wide mock that leaves the Info page's right edge 68 short of
+			-- the frame - twice the padding it is owed - which is the fault
+			-- the game showed with the bar floating inside the recess.
+			sf:SetSize(300, 304)
+			sf:SetPoint(spec.at, spec.rel, spec.relAt, spec.x, spec.y)
 			sf:CreateTexture(nil, "BACKGROUND"):SetTexture("scroll-stone")
-			local sb = CreateFrame("Slider", n .. "ScrollBar", sf)
+			local sb = CreateFrame("Slider", spec.n .. "ScrollBar", sf)
+			sb:SetSize(16, 280)
+			-- IN THE STONE GUTTER, where both templates put it and where the
+			-- gutter no longer is.
+			sb:SetPoint("TOPRIGHT", sf, "TOPRIGHT", -25, -16)
 			sb.Track = CreateFrame("Frame", nil, sb)
 			sb.Track.Thumb = CreateFrame("Frame", nil, sb.Track)
 			sb.Track.__rail = sb.Track:CreateTexture(nil, "BACKGROUND")
 			sb.Track.__rail:SetTexture("scroll-rail-stone")
 		end
+
+		local body = CreateFrame("EditBox", "GuildBankTabInfoEditBox",
+			_G.GuildBankInfoScrollFrame)
+		body:SetSize(300, 306)
+		body:SetPoint("TOPLEFT", _G.GuildBankInfoScrollFrame, "TOPLEFT", 0, 0)
+
+		local save = CreateFrame("Button", "GuildBankInfoSaveButton",
+			_G.GuildBankInfo)
+		save:SetSize(100, 22)
+		save:SetPoint("BOTTOMLEFT", gb, "BOTTOMLEFT", 20, 31)
+		save:SetNormalTexture("magic-button-up")
 
 		-- AN ANONYMOUS CLOSE BUTTON, which ElvUI finds by walking the children
 		-- for one with a PushedTexture and NO NAME. Nothing can ask for it.
@@ -37365,10 +37412,55 @@ do
 	-- along the row - so listing all seven had LayoutBody shift each and every
 	-- shift carry everything after it: ninety-eight slots down a staircase.
 	-- Listing ONE uses the chain instead, and the other six follow it.
-	check(#(PN.ENTRY.GuildBankFrame.body or {}) == 1,
-		"the guild bank lists exactly one body pane - its columns are chained,"
-		.. " so moving the first moves them all, and moving all seven moves"
-		.. " each of them seven times")
+	do
+		local cols = 0
+		for _, n in ipairs(PN.ENTRY.GuildBankFrame.body or {}) do
+			if n:find("Column") then cols = cols + 1 end
+		end
+		check(cols == 1,
+			"the guild bank lists exactly ONE COLUMN in `body` - they are"
+			.. " chained, so moving the first moves them all, and moving all"
+			.. " seven moves each of them seven times (" .. cols .. ")")
+	end
+
+	-- AND THE OTHER THREE TABS ARE IN THERE TOO, which they were not: Log,
+	-- Money Log and Info each hang their scroll frame off the WINDOW at the
+	-- client's own -64, so every line of the log printed from the top of the
+	-- well upwards, through the tool row and under the search box.
+	do
+		local host = gb.__aetherPanel
+		local floor = (host:GetTop() or 0)
+			- (gb.__aetherHeadH or A.Widgets.PANEL_HEAD_H)
+			- A.Widgets.PANEL_PAD - A.Widgets.WELL_PAD
+		for _, n in ipairs({ "GuildBankMessageFrame",
+			"GuildBankTransactionsScrollFrame",
+			"GuildBankInfoScrollFrame" }) do
+			check((_G[n]:GetTop() or 0) <= floor + 0.5,
+				n .. " starts below the band and the row over it (" ..
+				string.format("%.0f", (_G[n]:GetTop() or 0) - floor) .. ")")
+		end
+	end
+
+	-- THE INFO PAGE IS STRETCHED as well as moved, and this is the one fault
+	-- moving cannot fix. Its scroll frame is a FIXED width - the client sized
+	-- it for a window it had decided was 800 - and its bar hangs off that
+	-- frame's right edge, so on a window of any other width the bar floats
+	-- inside the recess with empty glass beyond it.
+	do
+		local host = gb.__aetherPanel
+		local want = A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD
+		local gap = (host:GetRight() or 0)
+			- (_G.GuildBankInfoScrollFrame:GetRight() or 0)
+		check(math.abs(gap - want) < 0.5,
+			"the Info page reaches the well's inside edge (" ..
+			string.format("%.0f", gap) .. " of " .. want .. ")")
+		local bgap = (_G.GuildBankInfoScrollFrame:GetRight() or 0)
+			- (_G.GuildBankInfoScrollFrameScrollBar:GetRight() or 0)
+		check(math.abs(bgap) < 0.5,
+			"and its bar is pinned to the list it scrolls, not left in the"
+			.. " stone gutter that is no longer there (" ..
+			string.format("%.0f", bgap) .. ")")
+	end
 	do
 		local drift = 0
 		for c = 2, 7 do
