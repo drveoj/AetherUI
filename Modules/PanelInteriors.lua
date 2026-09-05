@@ -5577,15 +5577,11 @@ local function DressGuildBank(frame, store)
 		if art then Reskin.Kill(art, store) end
 	end
 
-	-- AND THE PURSE ALONG THE FOOT, which the client puts where our tab rail
-	-- now is. Lifted into the footer strip's own row.
-	local purse = Reskin.Element(frame, "MoneyFrame")
-	if purse and purse.ClearAllPoints and not purse.__aetherLifted then
-		purse.__aetherLifted = true
-		purse:ClearAllPoints()
-		purse:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",
-			-W.PANEL_PAD, W.TAB_RAIL_H + W.PANEL_PAD)
-	end
+	-- THE PURSE AND ITS LABEL GO IN THE FOOTER'S SECOND ROW, placed by
+	-- `actions.under` on the entry - not by six lines here pinning the purse to
+	-- a corner. This dresser used to do the first and leave the second where
+	-- the client had it, which is how the money ended up above the footer rule
+	-- and "Available Amount" ended up in the tab rail.
 	local limit = _G.GuildBankMoneyLimitLabel
 	if limit then Roled(limit, "pnSub") end
 

@@ -329,9 +329,18 @@ local PANELS = {
 		footer = W.PANEL_FOOT_H,
 		-- PARENT KEYS, and named as such from the start rather than after a
 		-- readout says NOT FOUND.
+		-- AND THE MONEY ON THE ROW UNDER THEM, through the strip's own second
+		-- row rather than by hand. The purse used to be pinned to the window's
+		-- bottom-right corner by six lines in the dresser, and the label the
+		-- client draws beside it - "Available Amount: 0" - was left where the
+		-- client put it, down in the tab rail. `under` is the mechanism the
+		-- postbox already uses for exactly this and it centres what is in it.
 		actions = { mid = { "GuildBankFrame.DepositButton",
 			"GuildBankFrame.WithdrawButton",
-			"GuildBankFrame.BuyInfo.PurchaseButton" } },
+			"GuildBankFrame.BuyInfo.PurchaseButton" },
+			under = { "GuildBankMoneyLimitLabel",
+				"GuildBankWithdrawMoneyFrame",
+				"GuildBankMoneyFrame" } },
 		-- ITS TITLE IS THE TAB'S NAME, which the client draws in its own green
 		-- across the top of the window - "Tab 2 (Full Access)" - on a stone
 		-- plate of three pieces. That IS this window's title: it changes with
@@ -352,6 +361,12 @@ local PANELS = {
 		-- one before. Listing ONE uses that: move Column1 and the other six
 		-- follow, exactly once, which is what a chain is for.
 		body = { "GuildBankFrame.Column1" },
+		-- ...AND COLUMN SEVEN FOR THE FAR EDGE, measured and not moved. One
+		-- pane starts the chain and a different one ends it; without this the
+		-- widest thing the layout can see is Column1, six columns clear of the
+		-- right rim, so the window never grew and the last column of slots sat
+		-- hard against the recess.
+		edge = { "GuildBankFrame.Column7" },
 
 		-- SEVEN WOULD STAIRCASE THEM.
 		--
@@ -1654,8 +1669,16 @@ end
 --
 --  `edge` is TOP or BOTTOM, `y` is from that edge, and `gap` is what goes
 --  between two things in the row.
-local function ChromeRow(frame, spec, anchor, edge, y, gap)
+local function ChromeRow(frame, spec, anchor, edge, y, gap, inset)
 	if not spec then return end
+
+	-- HOW FAR IN THE ENDS SIT. The footer spans the WINDOW, so its purse and
+	-- its buttons stand at the window's own padding. The tool row stands over
+	-- the WELL, and a filter lined up with the well's rim is a filter out of
+	-- line with everything it filters - the guild bank's search box ended up
+	-- level with the last column of slots and both looked flush against the
+	-- recess. So the caller says which, and the default is the window's.
+	inset = inset or W.PANEL_PAD
 
 	-- WHAT A THING TAKES UP in a row. A font string's declared width is the
 	-- BOX the client reserved for it and not the words in it - the page count
@@ -1691,7 +1714,7 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 			if prev then
 				w:SetPoint("LEFT", prev, "RIGHT", gap, 0)
 			else
-				w:SetPoint("LEFT", anchor, edge .. "LEFT", W.PANEL_PAD, y)
+				w:SetPoint("LEFT", anchor, edge .. "LEFT", inset, y)
 			end
 			prev = w
 		end
@@ -1705,7 +1728,7 @@ local function ChromeRow(frame, spec, anchor, edge, y, gap)
 			if prev then
 				w:SetPoint("RIGHT", prev, "LEFT", -gap, 0)
 			else
-				w:SetPoint("RIGHT", anchor, edge .. "RIGHT", -W.PANEL_PAD, y)
+				w:SetPoint("RIGHT", anchor, edge .. "RIGHT", -inset, y)
 			end
 			prev = w
 		end
@@ -1816,8 +1839,12 @@ function PN.DressHeader(frame, entry, title, sub)
 	-- a band is one line of type wide and they do not fit beside a title
 	-- either. The trade skill proved it: its rank bar is three hundred across
 	-- and its two filters were laid over the top of it.
+	-- IN AS FAR AS THE WELL'S INSIDES, not as far as its rim. Same number
+	-- LayoutBody moves the content by, and for the same reason.
 	ChromeRow(frame, entry and entry.row, layer, "TOP",
-		-(h + W.PANEL_PAD + TOOL_ROW / 2), W.PANEL_GAP)
+		-(h + W.PANEL_PAD + TOOL_ROW / 2), W.PANEL_GAP,
+		W.PANEL_PAD + ((entry and entry.wells == false)
+			and W.WELL_OUTSET or W.WELL_PAD))
 	-- CENTRED IN THE BAND, and centred across the window. Every one of these
 	-- put its title where its own art wanted it - the spellbook's six pixels
 	-- right of centre, because the page it was printed on was not centred in
@@ -2379,6 +2406,25 @@ function PN.LayoutBody(frame, entry)
 			if over > wide then wide = over end
 			if back > tail then tail = back end
 			shifts[#shifts + 1] = { pane, down, over }
+		end
+	end
+
+	-- MEASURED FOR THE FAR EDGE AND NEVER MOVED.
+	--
+	-- The guild bank is seven columns CHAINED to one another, so `body` names
+	-- Column1 alone: move it and the other six follow. But that also means the
+	-- only right-hand edge the loop above can see is Column1's, which has six
+	-- columns' worth of room to its right - so the window is never widened and
+	-- the LAST column sits hard against the recess.
+	--
+	-- The pane that starts the chain and the pane that ends it are two
+	-- different frames. `edge` names the second, for its right margin only.
+	for _, name in ipairs(entry and entry.edge or {}) do
+		local pane = Part(name)
+		if pane then
+			local _, _, right = MeasureTop(frame, pane)
+			local back = right and math.max(0, inner - right) or 0
+			if back > tail then tail = back end
 		end
 	end
 

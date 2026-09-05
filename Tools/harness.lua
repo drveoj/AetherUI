@@ -9432,9 +9432,18 @@ do
 		-- CHAINED, as the client has them: each column hangs off the one before
 		-- it, so anything that moves one moves every column after it too. A
 		-- mock with seven independent columns cannot show a staircase.
+		-- SIZED AND STACKED, not just created. A column with no width and slots
+		-- with no anchors reports the mock's fallback for every edge, so the
+		-- seventh column measures the same as the first - and the one fault
+		-- this window has left, content flush against the right rim, cannot be
+		-- seen at all. Seven columns of 45 spaced 4 from x=24 puts the last
+		-- one's right edge at 363 in a 384-wide window - twenty-one clear of
+		-- the frame, which is LESS than the padding the content is owed. So a
+		-- window that is never widened fails the check, which is the point.
 		local prevCol
 		for c = 1, 7 do
 			local col = CreateFrame("Frame", nil, gb)
+			col:SetSize(45, 14 * 41)
 			if prevCol then
 				col:SetPoint("TOPLEFT", prevCol, "TOPRIGHT", 4, 0)
 			else
@@ -9442,9 +9451,16 @@ do
 			end
 			prevCol = col
 			col:CreateTexture(nil, "BACKGROUND"):SetTexture("column-stone")
+			local prevSlot
 			for i = 1, 14 do
 				local b = CreateFrame("Button", nil, col)
 				b:SetSize(37, 37)
+				if prevSlot then
+					b:SetPoint("TOPLEFT", prevSlot, "BOTTOMLEFT", 0, -4)
+				else
+					b:SetPoint("TOPLEFT", col, "TOPLEFT", 0, 0)
+				end
+				prevSlot = b
 				b:SetNormalTexture("slot-stone")
 				b.icon = b:CreateTexture(nil, "ARTWORK")
 				b.icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
@@ -9496,7 +9512,27 @@ do
 		gb.BuyInfo.PurchaseButton:SetNormalTexture("magic-button-up")
 
 		local search = CreateFrame("EditBox", "GuildItemSearchBox", gb)
+		search:SetSize(120, 22)
 		search:CreateTexture(nil, "BACKGROUND"):SetTexture("editbox-stone")
+
+		-- THE PURSE AND THE WORDS BESIDE IT, both where the client leaves them
+		-- and neither where they belong: the purse above the footer rule, the
+		-- label down in the tab rail.
+		gb.MoneyFrame = CreateFrame("Frame", "GuildBankMoneyFrame", gb)
+		gb.MoneyFrame:SetSize(140, 22)
+		gb.MoneyFrame:SetPoint("BOTTOMRIGHT", gb, "BOTTOMRIGHT", -2, 6)
+		-- A FONT STRING ON THE MONEY STRIP, as the XML has it, and pinned to
+		-- the WINDOW's bottom-left corner - which is the tab rail now.
+		local lim = gb.MoneyFrameBG:CreateFontString("GuildBankMoneyLimitLabel",
+			"OVERLAY")
+		lim:SetText("Available Amount:")
+		lim:SetSize(120, 13)
+		lim:SetPoint("BOTTOMLEFT", gb, "BOTTOMLEFT", 8, 6)
+		_G.GuildBankMoneyLimitLabel = lim
+		gb.WithdrawMoneyFrame = CreateFrame("Frame",
+			"GuildBankWithdrawMoneyFrame", gb)
+		gb.WithdrawMoneyFrame:SetSize(90, 22)
+		gb.WithdrawMoneyFrame:SetPoint("LEFT", lim, "RIGHT", 13, 0)
 
 		for _, n in ipairs({ "GuildBankInfoScrollFrame",
 			"GuildBankTransactionsScrollFrame" }) do
@@ -16663,7 +16699,7 @@ section("panels: the postbox, the book and the trade skills", function()
 	-- AND THE LISTS CLEAR IT. A row nothing made room for is a row drawn on
 	-- top of the first recipe.
 	local sf = _G.TradeSkillListScrollFrame
-	local floor = W.PANEL_HEAD_H + W.PANEL_PAD + W.WELL_PAD + 28 + W.PANEL_GAP
+	local floor = W.PANEL_HEAD_H + A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD + 28 + W.PANEL_GAP
 	check(-(select(5, sf:GetPoint(1)) or 0) + (sf.__aetherTop or 0) >= floor,
 		"the lists are moved down past the row rather than under it (" ..
 		string.format("%.0f", -(select(5, sf:GetPoint(1)) or 0)
@@ -16707,7 +16743,7 @@ section("panels: the postbox, the book and the trade skills", function()
 	-- needed - and hangs a turn off each TOP corner of the window, 41 down,
 	-- with the book's title between them and the count under it. 15c: a page
 	-- turn is chrome and it lives in the footer, as a group.
-	local itInner = W.PANEL_PAD + W.WELL_PAD
+	local itInner = A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD
 	local itSF = _G.ItemTextScrollFrame
 	local _, _, _, itx, ity = itSF:GetPoint(1)
 	check(-ity == W.PANEL_HEAD_H + itInner,
@@ -32467,7 +32503,7 @@ do
 		-- ...AND THE SPELLS MOVE DOWN TO MAKE ROOM FOR IT. Putting the switch in
 		-- the well without that lands it on top of the first spell in the list.
 		local lead = 22 + W.PANEL_GAP
-		local wantShift = W.PANEL_HEAD_H + W.PANEL_PAD + W.WELL_PAD + lead
+		local wantShift = W.PANEL_HEAD_H + A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD + lead
 			- _G.SpellBookSpellIconsFrame.__aetherTop
 		check(sb.__aetherBodyShift == wantShift and wantShift > 0,
 			"and the page is moved down by the room it takes (" ..
@@ -32637,7 +32673,7 @@ do
 	-- layoutIndex and re-placed on every show, so moving one is undone before
 	-- you see it - which is why its first button sat across the hairline.
 	local gm = _G.GameMenuFrame
-	check(gm.topPadding == gm.__aetherHeadH + W.PANEL_PAD + W.WELL_PAD,
+	check(gm.topPadding == gm.__aetherHeadH + A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD,
 		"it is handed a top padding that clears the band and the body (" ..
 		tostring(gm.topPadding) .. ")")
 	-- AND LAYING THE WINDOW OUT IS WHAT RUNS IT. A VerticalLayoutFrame reads
@@ -35235,6 +35271,19 @@ do
 			tostring(railY) .. ")")
 	end
 
+	-- HOW FAR IN THE TOOL ROW STANDS, worked out rather than written down.
+	--
+	-- It used to be the window's own padding, which is exactly where the
+	-- well's RIM is - so every filter in the interface stood sixteen units
+	-- outside the content it filters. Five checks here had the old number
+	-- typed into them; deriving it means the next change to the rule moves
+	-- them with it instead of against it.
+	function _G.__rowInset(name)
+		local entry = PN.ENTRY and PN.ENTRY[name]
+		return A.Widgets.PANEL_PAD + ((entry and entry.wells == false)
+			and A.Widgets.WELL_OUTSET or A.Widgets.WELL_PAD)
+	end
+
 	do
 		-- WHO YOU ARE ON BATTLE.NET IS AT THE TOP OF THE CONTENT, not in the
 		-- band. The client hangs the status dropdown, your tag and the
@@ -35243,7 +35292,7 @@ do
 		-- window's own title.
 		local dAt, _, dRelP, dX = _G.FriendsFrameStatusDropdown:GetPoint(1)
 		check(dAt == "LEFT" and dRelP == "TOPLEFT"
-			and dX == A.Widgets.PANEL_PAD,
+			and dX == _G.__rowInset("FriendsFrame"),
 			"your status dropdown starts the tool row under the band (" ..
 			tostring(dAt) .. "/" .. tostring(dRelP) .. "/" .. tostring(dX)
 			.. ")")
@@ -35395,7 +35444,7 @@ do
 	-- the window's BOTTOM edge, which is where the footer strip now is - so
 	-- left alone it sat under Refresh and Add Friend.
 	local qAt, qRel, qRelP, qX, qY = _G.WhoFrameEditBox:GetPoint(1)
-	check(qAt == "LEFT" and qRelP == "TOPLEFT" and qX == A.Widgets.PANEL_PAD,
+	check(qAt == "LEFT" and qRelP == "TOPLEFT" and qX == _G.__rowInset("FriendsFrame"),
 		"the who query is in the tool row under the band, not in the footer ("
 		.. tostring(qAt) .. "/" .. tostring(qRelP) .. "/" .. tostring(qX) .. ")")
 	check(_G.WhoFrameEditBox.searchIcon:IsShown()
@@ -35448,7 +35497,7 @@ do
 		"and its blurb is below the band rather than printed across it (" ..
 		tostring(blurbY) .. ")")
 	local aAt, aRel, aRelP, aX = _G.RaidFrameAllAssistCheckButton:GetPoint(1)
-	check(aAt == "LEFT" and aX == A.Widgets.PANEL_PAD,
+	check(aAt == "LEFT" and aX == _G.__rowInset("FriendsFrame"),
 		"on the raid tab the raid's own switch starts the tool row (" ..
 		tostring(aAt) .. " at " .. tostring(aX) .. ")")
 
@@ -35764,7 +35813,7 @@ do
 		-- client hangs them 94 down from the window's top, which is our header
 		-- band and a line under it.
 		local dAt, _, dRelP, dX = _G.LFGBrowseFrameCategoryDropdown:GetPoint(1)
-		check(dAt == "LEFT" and dRelP == "TOPLEFT" and dX == A.Widgets.PANEL_PAD,
+		check(dAt == "LEFT" and dRelP == "TOPLEFT" and dX == _G.__rowInset("LFGBrowseFrame"),
 			"the category filter starts the tool row under the band (" ..
 			tostring(dAt) .. "/" .. tostring(dRelP) .. "/" .. tostring(dX) .. ")")
 		local oAt, _, oRelP = _G.LFGBrowseFrameOptionsButton:GetPoint(1)
@@ -36355,7 +36404,7 @@ do
 	local fp, frel2, frelP2, fx2, fy2 =
 		_G.GossipFrame.FriendshipStatusBar:GetPoint(1)
 	check(fp == "LEFT" and frel2 == _G.GossipFrame.__aetherChrome
-		and frelP2 == "TOPLEFT" and fx2 == A.Widgets.PANEL_PAD
+		and frelP2 == "TOPLEFT" and fx2 == _G.__rowInset("GossipFrame")
 		and fy2 == -(A.Widgets.PANEL_HEAD_H + A.Widgets.PANEL_PAD + 28 / 2),
 		"and the bar itself starts that row (" .. tostring(fx2) .. ", " ..
 		tostring(fy2) .. ")")
@@ -37347,6 +37396,68 @@ do
 	check(kept == 8,
 		"each vault tab keeps its picture and loses its plate - EIGHT of them,"
 		.. " not the six I first wrote (" .. kept .. " of 8)")
+
+	-- THE FAR EDGE IS COLUMN SEVEN'S, and nothing in `body` can see it.
+	--
+	-- `body` names Column1 alone, on purpose - the seven are chained, so
+	-- moving the first moves the lot. But that leaves the layout measuring
+	-- Column1's right edge, six columns clear of the rim, so the window is
+	-- never widened and the LAST column stands hard against the recess. Which
+	-- is what the game showed: slots and search box both flush.
+	do
+		local host = gb.__aetherPanel
+		local gap = (host:GetRight() or 0) - (gb.Column7:GetRight() or 0)
+		check(gap >= A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD - 0.5,
+			"the last column stands clear of the well's right rim (" ..
+			string.format("%.0f", gap) .. " of " ..
+			(A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD) .. ")")
+		local hunt = false
+		for _, n in ipairs(PN.ENTRY.GuildBankFrame.edge or {}) do
+			if n == "GuildBankFrame.Column7" then hunt = true end
+		end
+		check(hunt,
+			"and it is `edge` that says so - the pane that STARTS the chain"
+			.. " and the pane that ENDS it are two different frames")
+	end
+
+	-- THE SEARCH BOX LINES UP WITH THE SLOTS, not with the recess it sits
+	-- over. The tool row used to stand at the window's own padding, which is
+	-- exactly where the well's RIM is - so a filter and the content it filters
+	-- were sixteen units out of line with one another.
+	do
+		local host = gb.__aetherPanel
+		local gap = (host:GetRight() or 0)
+			- (_G.GuildItemSearchBox:GetRight() or 0)
+		check(gap >= A.Widgets.PANEL_PAD + A.Widgets.WELL_PAD - 0.5,
+			"the search box stands at the well's inside edge, level with the"
+			.. " slots under it (" .. string.format("%.0f", gap) .. ")")
+	end
+
+	-- THE MONEY GOES IN THE FOOTER'S SECOND ROW, centred - both halves of it.
+	-- The dresser used to pin the purse to a corner by hand and leave the
+	-- label where the client had it, which put the total above the footer rule
+	-- and "Available Amount" down in the tab rail.
+	do
+		local under = (PN.ENTRY.GuildBankFrame.actions or {}).under or {}
+		check(#under == 3,
+			"the purse, the withdrawal and their label all ride the footer's"
+			.. " second row (" .. #under .. " of 3)")
+		local host = gb.__aetherPanel
+		local mid = (host:GetLeft() + host:GetRight()) / 2
+		local l = _G.GuildBankMoneyLimitLabel:GetLeft()
+		local r = _G.GuildBankMoneyFrame:GetRight()
+		check(l and r and math.abs((l + r) / 2 - mid) < 1.5,
+			"and the group is centred on the window rather than pinned to a"
+			.. " corner")
+		-- NOT "is it inside the frame" - it always was. The client anchors it
+		-- BOTTOMLEFT of GuildBankFrame at y=6, and our tab rail hangs BELOW
+		-- the frame, so a label that never moved passes that test and still
+		-- prints across the tabs. What matters is that something MOVED it.
+		local _, lrel = _G.GuildBankMoneyLimitLabel:GetPoint(1)
+		check(lrel ~= gb,
+			"and the label is re-anchored off the strip rather than left in"
+			.. " the client's corner, which is where the tab rail now is")
+	end
 
 	check(gb.Emblem.__aetherKilled ~= nil,
 		"the guild emblem is killed - ElvUI kills it outright and it is the"
