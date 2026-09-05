@@ -9411,6 +9411,18 @@ do
 
 		-- The emblem ElvUI kills outright, and the money strip behind the
 		-- deposit controls.
+		-- THE TAB'S NAME AND THE STONE PLATE BEHIND IT, three pieces of
+		-- UI-TabNameBorder. The words are this window's title - they change
+		-- with the tab and nothing else sits up there.
+		gb.TabTitle = gb:CreateFontString(nil, "OVERLAY")
+		gb.TabTitle:SetText("Tab 2 (Full Access)")
+		for _, key in ipairs({ "TabTitleBG", "TabTitleBGLeft",
+			"TabTitleBGRight" }) do
+			local t = gb:CreateTexture(nil, "BORDER")
+			t:SetTexture("Interface\\GuildBankFrame\\UI-TabNameBorder")
+			gb[key] = t
+		end
+
 		gb.Emblem = gb:CreateTexture(nil, "ARTWORK")
 		gb.Emblem:SetTexture("Interface\\GuildBankFrame\\Emblem")
 		gb.MoneyFrameBG = CreateFrame("Frame", nil, gb)
@@ -9494,6 +9506,13 @@ do
 		shut:SetNormalTexture("close-up")
 		shut:SetPushedTexture("close-down")
 		gb.__shut = shut
+
+		-- AND THE DEPOSIT BUTTON ANSWERS THE SAME DESCRIPTION. It is a parent
+		-- key, so GetName is nil, and UIPanelButtonTemplate gives it a pushed
+		-- texture - so "a button with a pushed texture and no name" finds it
+		-- too, and the first version of the X-walk moved Deposit to the corner.
+		gb.DepositButton:SetPushedTexture("magic-button-down")
+		gb.WithdrawButton:SetPushedTexture("magic-button-down")
 	end
 
 	function _G.__loadPanelAddon(name)
@@ -37305,6 +37324,37 @@ do
 		check(rel ~= gb,
 			"and they are moved into it rather than left where the client"
 			.. " put them")
+	end
+
+	-- AND THEY ARE SKINNED, not merely moved. `actions` PLACES a button and
+	-- nothing else - every dresser skins its own - so Deposit and Withdraw sat
+	-- centred in the strip in Blizzard's red and grey, which is exactly how
+	-- they looked in game.
+	do
+		local red = 0
+		for _, key in ipairs({ "DepositButton", "WithdrawButton" }) do
+			if gb[key]:GetNormalTexture():GetTexture() ~= 0 then
+				red = red + 1
+			end
+		end
+		check(red == 0,
+			"Deposit and Withdraw are skinned as well as placed (" .. red
+			.. " still in the client's art)")
+	end
+
+	-- ITS TITLE IS THE TAB'S NAME, which the client draws in green across the
+	-- top on a stone plate of three pieces. That IS the title here: it changes
+	-- with the tab and there is nothing else up there.
+	check(gb.__aetherTitle == gb.TabTitle,
+		"the band is handed the tab's name, which is this window's title")
+	do
+		local plate = 0
+		for _, key in ipairs({ "TabTitleBG", "TabTitleBGLeft",
+			"TabTitleBGRight" }) do
+			if gb[key] and not gb[key].__aetherKilled then plate = plate + 1 end
+		end
+		check(plate == 0,
+			"and the stone plate behind it goes (" .. plate .. " left)")
 	end
 
 	-- BOTH LISTS SCROLL IN OUR RAIL.

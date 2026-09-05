@@ -331,7 +331,24 @@ local PANELS = {
 		-- readout says NOT FOUND.
 		actions = { mid = { "GuildBankFrame.DepositButton",
 			"GuildBankFrame.WithdrawButton",
-			"GuildBankFrame.BuyInfo.PurchaseButton" } } },
+			"GuildBankFrame.BuyInfo.PurchaseButton" } },
+		-- ITS TITLE IS THE TAB'S NAME, which the client draws in its own green
+		-- across the top of the window - "Tab 2 (Full Access)" - on a stone
+		-- plate of three pieces. That IS this window's title: it changes with
+		-- the tab and there is nothing else up there.
+		title = "GuildBankFrame.TabTitle",
+		-- THE SEARCH BOX BELONGS IN THE TOOL ROW, not floating by the X. The
+		-- client hangs it off the window's top-right where our close button now
+		-- is, near enough to be clicked by mistake.
+		row = { right = { "GuildItemSearchBox" } },
+		-- AND THE CURRENCY STRIP ALONG THE FOOT: the label, the purse and the
+		-- limit, which the client puts at the very bottom where our tab rail
+		-- now is. `under` is the second row of the strip, which is what that
+		-- key exists for - the postbox's Open All uses it.
+		body = { "GuildBankFrame.Column1", "GuildBankFrame.Column2",
+			"GuildBankFrame.Column3", "GuildBankFrame.Column4",
+			"GuildBankFrame.Column5", "GuildBankFrame.Column6",
+			"GuildBankFrame.Column7" } },
 
 	-- THE ACHIEVEMENT BOOK, which Mists has and Era does not: the addon is
 	-- gated `mists` outright, so this entry never fires on the other client.

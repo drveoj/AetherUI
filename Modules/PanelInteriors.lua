@@ -5552,19 +5552,61 @@ local function DressGuildBank(frame, store)
 			if bar then Reskin.ScrollBar(bar, store) end
 		end
 	end
+	-- THE ACTIONS ARE PLACED BY THE STRIP AND SKINNED HERE. `actions` moves
+	-- them and nothing else - every dresser skins its own - so Deposit and
+	-- Withdraw sat centred in the footer in Blizzard's red and grey.
+	for _, path in ipairs({ "GuildBankFrame.DepositButton",
+		"GuildBankFrame.WithdrawButton",
+		"GuildBankFrame.BuyInfo.PurchaseButton" }) do
+		local btn = Part(path)
+		if btn then Reskin.Button(btn, "pnBody") end
+	end
 	if _G.GuildBankInfoSaveButton then
 		Reskin.Button(_G.GuildBankInfoSaveButton, "pnBody")
 	end
+
+	-- THE TAB NAME'S STONE PLATE, three pieces of UI-TabNameBorder behind the
+	-- words. The words are this window's title and go in the band; the plate
+	-- goes entirely.
+	for _, key in ipairs({ "TabTitleBG", "TabTitleBGLeft", "TabTitleBGRight" }) do
+		local art = Reskin.Element(frame, key)
+		if art then Reskin.Kill(art, store) end
+	end
+
+	-- AND THE PURSE ALONG THE FOOT, which the client puts where our tab rail
+	-- now is. Lifted into the footer strip's own row.
+	local purse = Reskin.Element(frame, "MoneyFrame")
+	if purse and purse.ClearAllPoints and not purse.__aetherLifted then
+		purse.__aetherLifted = true
+		purse:ClearAllPoints()
+		purse:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",
+			-W.PANEL_PAD, W.TAB_RAIL_H + W.PANEL_PAD)
+	end
+	local limit = _G.GuildBankMoneyLimitLabel
+	if limit then Roled(limit, "pnSub") end
 
 	-- AND ITS X HAS NO NAME, so nothing can ask for it. ElvUI walks the
 	-- children for a button that has a PUSHED texture and no name, which is
 	-- what an anonymous UIPanelCloseButton looks like from the outside - the
 	-- Era group finder has the same trick and the same answer.
+	-- AND IT HAS NO WORDS ON IT, which is the half of the test ElvUI leaves
+	-- out and the half that matters here. "A button with a pushed texture and
+	-- no name" is also a perfect description of DepositButton and
+	-- WithdrawButton - both are parent keys, so GetName is nil, and both come
+	-- from UIPanelButtonTemplate, so both have a pushed texture. The first
+	-- version of this loop took Deposit for the X and moved it to the corner.
+	--
+	-- A close button is a picture; these are words. That is the difference,
+	-- and it is cheap to ask.
 	for _, kid in ipairs({ frame:GetChildren() }) do
+		local label = kid.GetFontString and kid:GetFontString()
+		local words = label and label.GetText and (label:GetText() or "") ~= ""
 		if not Reskin.Forbidden(kid) and kid.GetPushedTexture
 			and kid:GetPushedTexture()
-			and not (kid.GetName and kid:GetName()) then
+			and not (kid.GetName and kid:GetName())
+			and not words then
 			PN.DressClose(frame, store, kid)
+			break
 		end
 	end
 end
