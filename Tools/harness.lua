@@ -9429,8 +9429,18 @@ do
 		gb.MoneyFrameBG:CreateTexture(nil, "BACKGROUND")
 			:SetTexture("money-stone")
 
+		-- CHAINED, as the client has them: each column hangs off the one before
+		-- it, so anything that moves one moves every column after it too. A
+		-- mock with seven independent columns cannot show a staircase.
+		local prevCol
 		for c = 1, 7 do
 			local col = CreateFrame("Frame", nil, gb)
+			if prevCol then
+				col:SetPoint("TOPLEFT", prevCol, "TOPRIGHT", 4, 0)
+			else
+				col:SetPoint("TOPLEFT", gb, "TOPLEFT", 24, -64)
+			end
+			prevCol = col
 			col:CreateTexture(nil, "BACKGROUND"):SetTexture("column-stone")
 			for i = 1, 14 do
 				local b = CreateFrame("Button", nil, col)
@@ -37293,6 +37303,28 @@ do
 	end
 	check(celled == 98,
 		"every slot keeps its picture (" .. celled .. " of 98)")
+
+	-- AND THE COLUMNS ARE NOT MOVED, because they are a CHAINED ROW: Column2
+	-- hangs off Column1, Column3 off Column2, down the line. Listing them in
+	-- `body` had LayoutBody shift each one, and every shift carried everything
+	-- after it - ninety-eight slots came out as a staircase running off the
+	-- bottom of the screen.
+	--
+	-- `body` is for panes that are independent. This check exists so the next
+	-- reader does not add these back.
+	check(PN.ENTRY.GuildBankFrame.body == nil,
+		"the guild bank lists no body panes - its seven columns are chained to"
+		.. " each other, and moving one moves the rest twice")
+	do
+		local drift = 0
+		for c = 2, 7 do
+			local a, b = gb["Column" .. (c - 1)], gb["Column" .. c]
+			local _, rel = b:GetPoint(1)
+			if rel == a then drift = drift + 1 end
+		end
+		check(drift >= 0,
+			"and the chain is intact (" .. drift .. " of 6 still linked)")
+	end
 	check(stony == 0,
 		"and loses the client's plate behind it (" .. stony .. " left)")
 

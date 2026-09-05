@@ -341,14 +341,18 @@ local PANELS = {
 		-- client hangs it off the window's top-right where our close button now
 		-- is, near enough to be clicked by mistake.
 		row = { right = { "GuildItemSearchBox" } },
-		-- AND THE CURRENCY STRIP ALONG THE FOOT: the label, the purse and the
-		-- limit, which the client puts at the very bottom where our tab rail
-		-- now is. `under` is the second row of the strip, which is what that
-		-- key exists for - the postbox's Open All uses it.
-		body = { "GuildBankFrame.Column1", "GuildBankFrame.Column2",
-			"GuildBankFrame.Column3", "GuildBankFrame.Column4",
-			"GuildBankFrame.Column5", "GuildBankFrame.Column6",
-			"GuildBankFrame.Column7" } },
+		-- NO `body`, AND SEVEN COLUMNS IS EXACTLY WHY.
+		--
+		-- I listed Column1..7 there to have the slots moved down under the band.
+		-- They are CHAINED: Column2 hangs off Column1, Column3 off Column2, and
+		-- so on down the row - so LayoutBody shifted each one and every shift
+		-- carried everything after it. Ninety-eight slots came out as a
+		-- staircase running off the bottom of the screen.
+		--
+		-- `body` is for panes that are setAllPoints or otherwise independent,
+		-- which is what every other window in this table lists. A chained row is
+		-- not that, and moving one member of one moves the rest twice.
+	},
 
 	-- THE ACHIEVEMENT BOOK, which Mists has and Era does not: the addon is
 	-- gated `mists` outright, so this entry never fires on the other client.
