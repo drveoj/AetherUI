@@ -20216,7 +20216,6 @@ do
 		A.Launchers:Scan()
 		TBm:RefreshAddons()
 
-		_G.__probeMicro = true
 		TBm:SetDock("LEFT")
 		_G.__mail, _G.__mailFrom = false, nil
 		fire("UPDATE_PENDING_MAIL")
