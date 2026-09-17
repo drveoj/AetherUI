@@ -697,6 +697,19 @@ handlers.skin = function(arg)
 end
 
 handlers.scale = function(arg)
+	-- FIT IS THE ONE THE ADDON WOULD HAVE PICKED. Every size here is a screen
+	-- pixel measured off a real display, and A:FittedScale is what turns those
+	-- into the client's virtual units - so a player who has moved the slider
+	-- and wants the drawn sizes back has a way to ask for them rather than a
+	-- number to guess at. It is also the only route back: a scale once saved is
+	-- never fitted again on its own.
+	if arg and arg:lower() == "fit" then
+		A.db.profile.scale = A:FittedScale()
+		A:Reconfigure()
+		A:Print(A.F(L.cmd.scale.scale_2f, A.db.profile.scale))
+		return
+	end
+
 	local v = tonumber(arg)
 	if not v or v < 0.6 or v > 1.6 then
 		A:Print(A.F(L.cmd.scale.scale_takes_0_6,

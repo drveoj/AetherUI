@@ -2103,7 +2103,8 @@ function C_ChatInfo.PerformEmote(token)
 	return true
 end
 
-local bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "SHIFT-BUTTON4", ACTIONBUTTON3 = "NUMPAD7" }
+local bindings = { ACTIONBUTTON1 = "1", ACTIONBUTTON2 = "SHIFT-BUTTON4",
+	ACTIONBUTTON3 = "NUMPAD7", ACTIONBUTTON4 = "NUMPADPLUS" }
 _G.__bindingSet = bindings
 function GetBindingKey(name) return bindings[name] end
 function GetBindingText(k) return k end
@@ -15625,6 +15626,43 @@ check(_G.__overrides["1"] == "AetherUIBar1Button1"
 	"override bindings point Blizzard's keys at our buttons")
 check(bar.buttons[2].hotkey:GetText() == "SM4", "keybind text abbreviated")
 check(bar.buttons[3].hotkey:GetText() == "N7", "numpad keybind abbreviated")
+-- ...AND THE NUMPAD'S NAMED KEYS TOO. The prefix was shortened and the word was
+-- left whole, so this read NPLUS - five letters in a table whose whole purpose
+-- is two.
+check(bar.buttons[4].hotkey:GetText() == "N+",
+	"and its named keys become the symbol they are, rather than keeping the"
+	.. " word after a shortened prefix (got "
+	.. tostring(bar.buttons[4].hotkey:GetText()) .. ")")
+
+print("== the 62px slot, and only where nobody chose it ==")
+do
+	-- IT SHIPPED IN 1.0.0 AND IT IS 1.7x THE BUTTON THE GAME DRAWS BESIDE IT.
+	-- Every profile carrying 62/9/10 has it because it was handed over, so the
+	-- migration takes it back to Blizzard's own 36/8.
+	local db = { profile = { modules = { actionbars =
+		{ size = 62, spacing = 9, padding = 10, fontDelta = 4 } } } }
+	A.Config.Migrate(db)
+	local ab = db.profile.modules.actionbars
+	check(ab.size == 36 and ab.spacing == 8 and ab.padding == 6
+		and ab.fontDelta == 2,
+		"the shipped defaults migrate to the game's own numbers (" .. ab.size
+		.. "/" .. ab.spacing .. "/" .. ab.padding .. ", +" .. ab.fontDelta .. ")")
+
+	-- AND NOT A CHOICE. A player who typed /aether bar size 62 keeps it - which
+	-- is the difference between a migration and helping yourself to somebody's
+	-- settings. One field off the old set is enough to say they touched it.
+	local chosen = { profile = { modules = { actionbars =
+		{ size = 62, spacing = 4, padding = 10, fontDelta = 4 } } } }
+	A.Config.Migrate(chosen)
+	check(chosen.profile.modules.actionbars.size == 62,
+		"a bar the player has tuned is left alone, even at the old size")
+
+	-- AND IT DOES NOT RUN TWICE. 36/8/6 is not the old set, so a second pass
+	-- has nothing to match and nothing to rewrite.
+	A.Config.Migrate(db)
+	check(db.profile.modules.actionbars.size == 36,
+		"and a migrated profile is not migrated again")
+end
 
 print("== dock sizing ==")
 do

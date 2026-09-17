@@ -83,6 +83,30 @@ function A:UpdatePixelScale()
 	A.pixel = p
 end
 
+--- The profile scale at which one design unit is one screen pixel.
+--
+--  EVERY NUMBER IN THIS ADDON IS A SCREEN PIXEL. The inset, the slot sizes, the
+--  textures - all authored against a real display and measured off it. What
+--  turns those into virtual units is profile.scale, and the value that draws
+--  them at the size they were drawn is not a taste: it is 768 / screen height /
+--  the client's own UI scale, which is exactly A.pixel.
+--
+--  NOT THE DEFAULT, and that is the point of it being a function rather than a
+--  number in Config. 1.0 is "the game's own units" - a 36-unit slot of ours the
+--  same size on screen as the game's 36-unit one - and that is the right thing
+--  to ship. This is the other thing somebody might want, reachable through
+--  /aether scale fit, and it is also the only route back once the slider has
+--  been moved.
+--
+--  Clamped to the slider's own range so a peculiar display cannot produce a
+--  number the player then cannot move.
+function A:FittedScale()
+	A:UpdatePixelScale()
+	local s = A.pixel
+	if s ~= s or s <= 0 then return 1 end
+	return math.max(0.4, math.min(2.0, math.floor(s * 100 + 0.5) / 100))
+end
+
 --- Snap a virtual-unit value onto the physical pixel grid.
 function A:Snap(v)
 	local p = A.pixel
