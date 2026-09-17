@@ -371,6 +371,9 @@ L["core.misc.label4"] = "Bar 4"
 L["core.misc.label5"] = "Bar 5"
 L["core.misc.label6"] = "Bar 6"
 
+L["core.pump.event"] = "event '%s':"
+L["core.pump.ticker"] = "ticker:"
+
 -- errors ------------------------------------------------------------------
 
 L["errors.build.errors"] = "Errors"

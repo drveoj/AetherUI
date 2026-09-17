@@ -269,15 +269,35 @@ A.pump = pump
 
 local listeners = {}   -- event -> { [module or table] = handlerName or function }
 
+-- ONE LISTENER THROWING MUST NOT TAKE THE OTHERS WITH IT.
+--
+-- This loop called each handler directly, so an error in any one of them
+-- aborted the whole loop and every listener after it never ran - and which
+-- ones those were depended on `pairs` order, so the same fault presented
+-- differently on different sessions.
+--
+-- The failure that found it: PLAYER_REGEN_ENABLED carries the quest tracker's
+-- "unfold now the fight is over" alongside other modules' restores. A throw in
+-- one left the others silently unrun, and what the player saw was a tracker
+-- that had closed itself and would not come back - with no error, because
+-- nothing was watching this loop.
+--
+-- Recorded rather than swallowed: A.lastFailure is what /aether errors diag
+-- reads and what the suite fails on, which is the difference between a pcall
+-- and a pcall worth having.
 pump:SetScript("OnEvent", function(_, event, ...)
 	local bucket = listeners[event]
 	if not bucket then return end
 	for owner, handler in pairs(bucket) do
-		if type(handler) == "function" then
-			handler(owner, event, ...)
-		else
-			local fn = owner[handler]
-			if fn then fn(owner, event, ...) end
+		local fn = handler
+		if type(handler) ~= "function" then fn = owner[handler] end
+		if fn then
+			local ok, err = pcall(fn, owner, event, ...)
+			if not ok then
+				A.lastFailure = "event '" .. tostring(event) .. "': " .. tostring(err)
+				if type(owner) == "table" then owner.lastError = tostring(err) end
+				A:Print(A.Bad(A.F(L.core.pump.event, tostring(event))) .. " " .. tostring(err))
+			end
 		end
 	end
 end)
@@ -338,8 +358,29 @@ pump:SetScript("OnUpdate", function(_, elapsed)
 	if tickAccum < TICK then return end
 	local dt = tickAccum
 	tickAccum = 0
+	-- ONE TICKER THROWING DOES NOT TAKE THE OTHERS WITH IT.
+	--
+	-- The SAME fault the event dispatcher above was given isolation for, and
+	-- the ticker loop never got it: a throw here aborted the loop, so every
+	-- module registered after the thrower stopped animating for that frame -
+	-- and which ones those were came down to `pairs` order over a table keyed
+	-- by the module itself, so the same fault presented differently from one
+	-- run to the next.
+	--
+	-- That is what the suite's threat check has been catching about once in
+	-- twenty: the alarm is cleared from TH:Pulse, which runs on this loop, so
+	-- a throw upstream of it left the warning on screen for ever. It looked
+	-- like a flake because the ORDER was the random part, not the fault.
+	--
+	-- Recorded rather than swallowed, for the same reason as above: silence
+	-- here is a module that has quietly stopped animating.
 	for owner, fn in pairs(tickers) do
-		fn(owner, dt)
+		local ok, err = pcall(fn, owner, dt)
+		if not ok then
+			A.lastFailure = "ticker: " .. tostring(err)
+			if type(owner) == "table" then owner.lastError = tostring(err) end
+			A:Print(A.Bad(L.core.pump.ticker) .. " " .. tostring(err))
+		end
 	end
 end)
 
