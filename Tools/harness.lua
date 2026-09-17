@@ -23,6 +23,58 @@ _G.__UNIVERSAL_SCRIPTS = {
 
 local FAIL = {}
 
+-- How many checks actually ran, and whether the run reached its own ending.
+--
+-- SO THAT AN ABORT CANNOT LOOK LIKE A PASS. The summary at the foot of this
+-- file is the run's verdict, and it is the LAST statement in a forty-thousand
+-- line chunk - so an error anywhere above it skips the verdict entirely. What
+-- comes out is a wall of `ok` lines that simply stops, which is the one shape
+-- a green run also has if you are reading the tail.
+--
+-- That is not hypothetical: adding Modules/PanelInteriors.lua to the .toc and
+-- not to FILES did exactly this. The addon loaded without its dressers, the
+-- check that exists to catch precisely that recorded its failure, and the run
+-- then died five thousand checks later - so the failure never reached the
+-- summary where anybody would look for it.
+-- GLOBALS, and not for convenience. This chunk's local count peaks INSIDE its
+-- deepest nested block, not at the end - top-level names stay live through
+-- every block below them - and it was already at 200 there. Two more locals
+-- here, harmless-looking at the top of the file, made it refuse to load with
+-- "main function has more than 200 local variables" pointing at a check five
+-- thousand lines away that had not changed. Same reason __UNIVERSAL_SCRIPTS
+-- above is a global.
+_G.__ran, _G.__done = 0, false
+
+-- THE VERDICT, PRINTED EVEN WHEN THE CHUNK DOES NOT REACH IT.
+--
+-- Lua 5.1 has no atexit. It does close the state on an abnormal exit and run
+-- finalisers while doing it, so a userdata with a __gc is the one hook that
+-- fires on the way out however we leave - verified against LuaJIT, which is
+-- what runs this.
+--
+-- `newproxy` is a 5.1/LuaJIT builtin and the only way to get a userdata with a
+-- metatable from pure Lua. Guarded, because a client that ever runs this under
+-- 5.4 would not have it and a missing finaliser is not worth refusing to run
+-- over.
+if newproxy then
+	local sentinel = newproxy(true)
+	getmetatable(sentinel).__gc = function()
+		if _G.__done then return end
+		print("")
+		print("RUN ABORTED after " .. _G.__ran .. " checks - the verdict below was"
+			.. " never reached, so this is NOT a pass.")
+		if #FAIL > 0 then
+			print(#FAIL .. " FAILURE(S) had already been recorded:")
+			for _, m in ipairs(FAIL) do print("  - " .. m) end
+		else
+			print("No check had failed yet; the error is above, on stderr.")
+		end
+	end
+	-- Kept alive until the state closes. A local would be collected the moment
+	-- the chunk is done with it, which is every bit as wrong as not having one.
+	_G.__abortSentinel = sentinel
+end
+
 -- Refusals counted separately as well as failed. A blocked call already
 -- fails the suite, but a check that wants to say "this path blocks
 -- NOTHING" needs a number it can read before and after rather than a
@@ -9799,6 +9851,7 @@ fire("PLAYER_ENTERING_WORLD")
 print("== assertions ==")
 
 local function check(cond, msg)
+	_G.__ran = _G.__ran + 1
 	if cond then
 		print("  ok  " .. msg)
 	else
@@ -40387,10 +40440,14 @@ end
 
 
 print("")
+-- BEFORE EITHER BRANCH, and before the os.exit below. This is what tells the
+-- finaliser the run reached its own ending; without it the abort notice would
+-- print underneath every ordinary failing run as well.
+_G.__done = true
 if #FAIL == 0 then
-	print("ALL CHECKS PASSED")
+	print(_G.__ran .. " checks, ALL CHECKS PASSED")
 else
-	print(#FAIL .. " FAILURE(S):")
+	print(#FAIL .. " FAILURE(S) of " .. _G.__ran .. " checks:")
 	for _, m in ipairs(FAIL) do print("  - " .. m) end
 	os.exit(1)
 end
