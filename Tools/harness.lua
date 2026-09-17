@@ -2919,9 +2919,13 @@ Minimap:SetParent(MinimapCluster)
 -- MinimapBackdrop is the parent of the round-edge buttons on this client, not
 -- the cluster - which is why the sweep has to recurse rather than stop at the
 -- top.
-MinimapBackdrop = CreateFrame("Frame", "MinimapBackdrop", MinimapCluster)
+-- AND ITS PARENT IS Minimap, NOT THE CLUSTER, which is the whole reason the
+-- cluster sweep cannot reach it: Minimap is excluded from that walk by
+-- identity, so the recursion stops one frame short. The mock hung it off the
+-- cluster and made the sweep look like it arrived.
+MinimapBackdrop = CreateFrame("Frame", "MinimapBackdrop", Minimap)
 for _, n in ipairs({
-	"MinimapZoomIn", "MinimapZoomOut", "MiniMapTracking",
+	"MinimapZoomIn", "MinimapZoomOut",
 	"MiniMapBattlefieldFrame", "GameTimeFrame", "MiniMapMailFrame",
 }) do
 	CreateFrame("Frame", n, MinimapBackdrop)
@@ -2940,12 +2944,27 @@ end
 _G.__clusterArt = MinimapCluster:CreateTexture(nil, "OVERLAY")
 CreateFrame("Frame", "SomeAddonOnTheCluster", MinimapCluster)
 
--- TRACKING IS A DropdownButton ON THIS CLIENT, not a dropdown frame. Same
--- fabrication as the unit menus: the mock invented MiniMapTrackingDropDown
--- because we asked for it, and right-clicking the map did nothing in the game.
-MiniMapTrackingButton = CreateFrame("Button", "MiniMapTrackingButton")
-MiniMapTrackingButton.menuGenerator = function() end
-function MiniMapTrackingButton:OpenMenu() _G.__trackingMenu = "button" end
+-- TRACKING IS TWO DIFFERENT THINGS, AND ERA'S IS NOT A MENU.
+--
+-- The toc: MinimapTracking_Simple is [AllowLoadGameType vanilla] and
+-- MinimapTracking_Dropdown is [ExcludeLoadGameType vanilla]. So Era gets the
+-- simple one - a bare Frame with an icon, NO button inside it, and a
+-- right-click that calls CancelTrackingBuff, because on vanilla tracking is a
+-- BUFF YOU CAST and there is no list to choose from.
+--
+-- This mock built MiniMapTrackingButton anyway. That is the SECOND fabrication
+-- in the same three lines of the module: the first invented
+-- MiniMapTrackingDropDown, was found in the game, and was replaced by a reach
+-- for a button this client has not got either. The suite was green both times,
+-- for the same reason both times.
+--
+-- Its host differs too. The later clients' MiniMapTracking is
+-- parent="MinimapBackdrop"; the simple one declares no parent at all, so here
+-- it is a child of UIParent and the cluster sweep can never reach it. The
+-- named list is the only thing that takes it there, which is worth the mock
+-- being able to prove.
+CreateFrame("Frame", "MiniMapTracking", UIParent)
+function CancelTrackingBuff() _G.__trackingCancelled = true end
 
 MenuUtil = MenuUtil or {}
 function MenuUtil.CreateContextMenu(owner, generator)
@@ -18873,15 +18892,22 @@ do  -- the furniture
 	check(Minimap:GetZoom() == 1, "the wheel zooms in")
 	Minimap:GetScript("OnMouseWheel")(Minimap, -1)
 	check(Minimap:GetZoom() == 0, "and out")
-	-- THROUGH THE CLIENT'S OWN MENU. The dropdown frame this used to reach for
-	-- has not existed for years; the mock invented it because we asked, so the
-	-- suite was green while right-clicking the map did nothing at all. Opened
-	-- as a CONTEXT menu, which puts it at the cursor: the button's own OpenMenu
-	-- anchors to the button, and the button is hidden furniture in a corner.
+	-- THERE IS NO MENU ON THIS CLIENT, and this has now been checked twice
+	-- against a frame the client had not got.
+	--
+	-- First MiniMapTrackingDropDown, invented by the mock because the module
+	-- asked for it; then MiniMapTrackingButton, built by the mock when the toc
+	-- gives it only to clients past vanilla. Both times the suite was green
+	-- while right-clicking the map did nothing in the game.
+	--
+	-- Era's tracking is a BUFF YOU CAST, so there is no list to choose from and
+	-- nothing to open. The right-click does what the frame we hid did, which is
+	-- cancel it.
+	_G.__trackingCancelled = nil
 	Minimap:GetScript("OnMouseUp")(Minimap, "RightButton")
-	check(_G.__trackingMenu == Minimap,
-		"right-click opens the tracking menu at the map, not at the hidden"
-		.. " button that used to own it")
+	check(_G.__trackingCancelled == true,
+		"right-click cancels the tracking buff - this client has no menu, and"
+		.. " that is the whole of what the frame we hid did")
 	Minimap:GetScript("OnMouseUp")(Minimap, "LeftButton")
 	check(_G.__minimapPinged, "and left-click still pings")
 end
