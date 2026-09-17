@@ -24103,15 +24103,21 @@ print("== quest log: collapsed zones, and whose state that is ==")
 do
 	local QT2 = A:GetModule("questtracker")
 
-	-- Closing the window puts the player's collapsed zones back. That state is
-	-- shared with Blizzard's log and with Questie; leaving every zone expanded
-	-- would be reaching into someone else's UI and changing it for good.
+	-- OPENING EXPANDS, AND CLOSING NO LONGER PUTS IT BACK. The restore used to
+	-- be here on the grounds that the collapse is shared with Blizzard's log and
+	-- with Questie and is not ours to keep. With Blizzard's log banished there
+	-- is nowhere left in this interface to collapse or un-collapse a zone, so
+	-- the state can only arrive from outside, can never be seen, and can never
+	-- be undone - while its cost is a tracker that silently empties. One policy
+	-- in both modules now: this addon keeps headers expanded.
 	QLog:Hide()
 	CollapseQuestHeader(4)
 	QLog:Show()
 	check(_G.__questLog[4].collapsed == false, "opening expands the player's zones")
 	QLog:Hide()
-	check(_G.__questLog[4].collapsed == true, "and closing puts them back")
+	check(_G.__questLog[4].collapsed == false,
+		"and closing leaves them expanded - a fold nothing in this interface can"
+		.. " undo is a fold that only ever costs us quests")
 
 	-- ...but re-collapsing fires QUEST_LOG_UPDATE, and a collapsed header's quests
 	-- are not in the log at all. The tracker prunes its saved sets against what it

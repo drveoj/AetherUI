@@ -186,10 +186,21 @@ end
 --  runs *from* a QUEST_LOG_UPDATE handler: only when something is actually
 --  collapsed, never re-entrantly, and iterating downward because expanding a
 --  header renumbers everything below it.
---  The player's own collapsed zones are remembered and put back when the window
---  closes. That state is shared with Blizzard's log and with Questie, so leaving
---  every zone expanded would be reaching into someone else's UI and changing it
---  permanently for the sake of ours.
+--  THEY ARE NOT PUT BACK, AND THAT CHANGED. The first version remembered the
+--  player's collapsed zones and re-collapsed them on close, on the grounds that
+--  the state is shared with Blizzard's log and with Questie and is not ours to
+--  keep. That was the wrong trade, and it took a report to see why: with
+--  Blizzard's log banished there is nowhere left in this interface to collapse
+--  or un-collapse a zone. So the state can only arrive from outside, can never
+--  be seen, and can never be undone - while its cost is a QUEST TRACKER THAT
+--  SILENTLY EMPTIES, because a collapsed header removes its quests from
+--  GetQuestLogTitle entirely.
+--
+--  One policy now, in both modules: this addon keeps headers expanded. Neither
+--  of our windows has a collapsed-zone concept - both group by zone themselves
+--  and always show everything - so the only thing collapse does here is hide
+--  quests from us. Questie reads the log the same way and has the same
+--  blindness, so expanding helps it rather than trampling it.
 local expanding = false
 
 local function ExpandAll()
@@ -220,6 +231,8 @@ local function ExpandAll()
 	return true
 end
 
+--- Kept, unused by the window, because the state it restores is still the
+--  player's and a future setting may want to hand it back. Nothing calls it.
 local function RestoreHeaders()
 	local zones = QL._collapsedZones
 	-- Cleared *after* the guard, not before: a re-entrant call that bailed out
@@ -1047,13 +1060,12 @@ local function Build()
 	-- own, so both the expansion and the refresh live here rather than in
 	-- QL:Show.
 	--
-	-- ExpandAll and RestoreHeaders MUST be on the same pair of scripts. With
-	-- expand on the function and restore on the frame they stop alternating, and
-	-- two things break: a window opened by Questie or a /run draws a log that
-	-- still has collapsed headers, so whole zones are missing; and hiding UIParent
-	-- for a cinematic fires OnHide - which re-collapses - while IsShown() stays
-	-- true, so the rebuild that follows renders against the collapsed log and the
-	-- zones do not come back.
+	-- THE RESTORE THAT USED TO SIT ON OnHide IS GONE. It re-collapsed the
+	-- player's zones on close, and paired with the expand on OnShow it had to
+	-- alternate exactly or whole zones went missing - hiding UIParent for a
+	-- cinematic fires OnHide while IsShown() stays true, which was one of the
+	-- two ways it stopped alternating. None of that is load-bearing any more:
+	-- see the note above ExpandAll for why the collapse is not put back.
 	win:SetScript("OnShow", function()
 		SetMicroButtonState(true)
 		if QL.dirty or not QL.entries then QL:Refresh() end
@@ -1061,7 +1073,6 @@ local function Build()
 	win:SetScript("OnHide", function()
 		SetMicroButtonState(false)
 		win.head.search.box:ClearFocus()
-		RestoreHeaders()
 		-- A confirmation left floating over a closed window is a click waiting to
 		-- abandon something the player has stopped looking at.
 		QL:CloseConfirm()
