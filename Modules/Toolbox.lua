@@ -1030,6 +1030,20 @@ function TB:OnEnable()
 	-- something to say for the rest of the time - see TB:ReadInbox.
 	A:RegisterEvent(self, "MAIL_INBOX_UPDATE", function() TB:ReadInbox() end)
 
+	-- THE MENU ROW IS NOT FIXED FOR THE SESSION any more, and until now it was
+	-- treated as though it were: MicroList was worked out at build and again on
+	-- a config change, which is fine while every door is a global that either
+	-- exists or does not. The Talents door asks a question whose answer changes
+	-- while you play, and a character who dings 10 with the drawer open would
+	-- have gone on not having it until they opened the settings.
+	--
+	-- PLAYER_ENTERING_WORLD as well as the level-up, because a character who
+	-- was already past it logs in with no level-up to fire, and the row is
+	-- first laid out before the client will answer the question at all.
+	for _, ev in ipairs({ "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" }) do
+		A:RegisterEvent(self, ev, function() TB:RefreshMicro() TB:Layout() end)
+	end
+
 	self:RefreshMail()
 
 	-- The HUD breathes and this was the one thing that did not.
@@ -3093,6 +3107,34 @@ end
 
 local MICRO_SIZE, MICRO_GAP = 26, 6
 
+--- Whether this character can open the talent window at all.
+--
+--  THE DOOR WAS ALWAYS DRAWN AND DID NOTHING BELOW LEVEL 10. Blizzard's own
+--  ToggleTalentFrame opens with a guard and returns silently when it fails, so
+--  the button was lit, clickable, and inert, with nothing on screen to say why.
+--  Blizzard's own talent button does not have this problem because it HIDES
+--  itself on the same test - MainMenuBarMicroButtons does it in one line - and
+--  ours is the one that got left out.
+--
+--  CanPlayerUseTalentUI is this client's question. Later flavours ask
+--  CanPlayerUseTalentSpecUI instead, and both names are documented on both - so
+--  calling the wrong one is not an error that shows up, it is a wrong answer
+--  that looks like a right one. This client has no specialisations at all, so
+--  asking it the spec question would hide the door here for good.
+--
+--  A CLIENT THAT WILL NOT ANSWER GETS THE DOOR. Failing open is the right way
+--  round: a door that is offered and does nothing is the bug being fixed, but a
+--  door silently missing for everyone because a lookup moved is worse - nobody
+--  would report it, because there is nothing there to report.
+local function CanUseTalents()
+	local S = _G.C_SpecializationInfo
+	local fn = S and S.CanPlayerUseTalentUI
+	if type(fn) ~= "function" then return true end
+	local ok, can = pcall(fn)
+	if not ok then return true end
+	return can and true or false
+end
+
 TB.MICRO = {
 	{ key = "character", label = "Character",
 	  fn = function() ToggleCharacter("PaperDollFrame") end,
@@ -3102,7 +3144,10 @@ TB.MICRO = {
 	  probe = function() return ToggleSpellBook ~= nil end },
 	{ key = "talents",   label = "Talents",
 	  fn = function() ToggleTalentFrame() end,
-	  probe = function() return ToggleTalentFrame ~= nil end },
+	  -- Level is what moves this in practice, but the question asked is the
+	  -- client's own rather than a number of our own - see RefreshMicro's
+	  -- callers for what makes the door appear when it changes.
+	  probe = function() return ToggleTalentFrame ~= nil and CanUseTalents() end },
 	{ key = "quests",    label = L.toolbox.refresh_addons.quest_log,
 	  fn = function() ToggleQuestLog() end,
 	  probe = function() return ToggleQuestLog ~= nil end },
@@ -3283,7 +3328,34 @@ local NEWS_H     = 100
 local SECTION_H  = 20      -- a section label and the gap under it
 local SECTION_GAP = 14     -- between one section's last row and the next label
 local MICRO_CELL_H = 46
-local MICRO_PER_ROW = 5
+
+-- The narrowest a cell may be before the row wraps instead of shrinking.
+--
+-- The glyph is 20 and it is drawn CENTRED, so at anything under about 22 the
+-- glyphs start touching and then overlapping - and the row was shrinking
+-- without limit. Ten entries across a flat dock's identity column were already
+-- eleven pixels each: a smear rather than a menu, and nothing said so because
+-- the check counted buttons rather than measuring them.
+local MICRO_MIN_CELL = 24
+
+-- ...and on a FLAT dock, ONE ROW, whatever there is to put in it.
+--
+-- MEASURED, not preferred. That dock is a strip 210 units tall and its identity
+-- column already spends a header and a hundred-unit news card; one row of micro
+-- lands at 180 and a SECOND row lands at 240, through a floor the other five
+-- columns share. So a wrap is not available here and the glyph gives way
+-- instead - see MicroGlyph. Every entry stays present, which was the original
+-- trade and is still the right one; what was wrong was letting the glyph keep
+-- its 20 units while its cell shrank under it.
+local MICRO_FLAT_MAX_ROWS = 1
+
+-- ...and TWO in the drawer, for the same kind of reason and a different number.
+--
+-- Three rows of glyphs down a panel whose foot is the mini-player and whose
+-- middle is the widget cards and the addon list reads as a keypad rather than
+-- as a menu. The drawer stops at two and the glyph gives way below that, which
+-- is the trade the flat dock already makes one row earlier.
+local MICRO_DRAWER_MAX_ROWS = 2
 
 -- Flat, the row is glyphs ONLY and the cell shrinks to fit them.
 --
@@ -3293,6 +3365,19 @@ local MICRO_PER_ROW = 5
 -- and the names are on the tooltips where a name that does not fit belongs.
 local MICRO_CELL_H_FLAT = 30
 
+--- How big the glyph in a cell that wide may be.
+--
+--  IT USED TO BE 20 WHATEVER THE CELL WAS. Ten entries across a flat dock's
+--  identity column are eleven units each, so the glyphs overlapped their
+--  neighbours by nine - every entry present, none of them readable, and the
+--  check watching this counted buttons rather than measuring them.
+local function MicroGlyph(cellW)
+	-- The cell is the hard ceiling: eight is the smallest worth drawing, but a
+	-- cell narrower than eight gets a glyph narrower than eight rather than one
+	-- lapping over the entry beside it.
+	return math.min(cellW, math.max(8, math.min(20, cellW - 6)))
+end
+
 local function Cols(key, fallback)
 	return math.max(1, tonumber(A.Config:Module("toolbox")[key]) or fallback)
 end
@@ -3300,6 +3385,32 @@ end
 --- Rows of `n` items at `per` per row.
 local function RowsFor(n, per)
 	return math.ceil(math.max(0, n) / math.max(1, per))
+end
+
+--- How the micro row divides: rows, entries per row, and the cell that gives.
+--
+--  FEWEST ROWS THAT KEEP THE CELL AT ITS FLOOR, then an even split across them.
+--
+--  The flat dock worked this out for itself and the vertical drawer did not: it
+--  was laid out at a fixed five per row, which is a guess about how many entries
+--  there will be, and the client is what decides that. Ten across the drawer's
+--  352 units is a 35-unit cell with room for the full glyph, so they go on one
+--  row and the second row's thirty units go back to the lists below.
+--
+--  Both halves are needed. Wrapping at the floor alone gives a full row and an
+--  orphan, which reads as a mistake rather than as a layout. So the ROW COUNT
+--  comes from the floor and the PER-ROW comes from dividing evenly into it.
+--
+--  `maxRows` is a CEILING, and both callers pass one. Clamped there the cell can
+--  fall under MICRO_MIN_CELL, and MicroGlyph gives way instead - every entry
+--  present and the drawing smaller, which is the right trade in both docks.
+local function MicroFit(n, avail, maxRows)
+	if n <= 0 then return 0, 1, avail end
+	local fits = math.max(1, math.min(n, math.floor(avail / MICRO_MIN_CELL)))
+	local rows = RowsFor(n, fits)
+	if maxRows then rows = math.min(maxRows, rows) end
+	local per  = math.ceil(n / rows)
+	return rows, per, avail / per
 end
 
 --- Place the i-th frame of a grid whose top-left corner is (x, y) in content
@@ -3587,10 +3698,9 @@ function TB:LayoutHorizontal()
 		local micro = self._microList or {}
 		if content.microHead then content.microHead:Hide() end
 		if #micro > 0 then
-			local per   = #micro
-			local cellW = cw / per
+			local rows, per, cellW = MicroFit(#micro, cw, MICRO_FLAT_MAX_ROWS)
 			for i, b in ipairs(micros) do
-				if i <= per then
+				if i <= #micro then
 					b:SetSize(cellW, MICRO_CELL_H_FLAT)
 					GridPlace(content, b, i, x, y, per, cellW, MICRO_CELL_H_FLAT, 0, 0)
 					-- Glyph only. The name goes with the label's own row: eight
@@ -3598,12 +3708,16 @@ function TB:LayoutHorizontal()
 					-- and "Character" came out as "Ch...". It is still on the
 					-- tooltip, which is where a name that does not fit belongs.
 					if b.name then b.name:Hide() end
+					-- ...and the glyph gives way where the cell is narrow,
+					-- rather than drawing over its neighbours.
+					local g = MicroGlyph(cellW)
+					if b.glyph then b.glyph:SetSize(g, g) end
 					b:Show()
 				else
 					b:Hide()
 				end
 			end
-			y = y + MICRO_CELL_H_FLAT
+			y = y + rows * MICRO_CELL_H_FLAT
 		end
 		used(y)
 	end
@@ -3837,19 +3951,25 @@ function TB:LayoutVertical()
 		-- costing sixteen pixels a row for words the tooltip says better, and the
 		-- drawer needed them for the mini-player at its foot. Nothing was lost
 		-- that the flat panel had not already decided it could do without.
-		local cellW = avail / MICRO_PER_ROW
+		local rows, per, cellW = MicroFit(#micro, avail, MICRO_DRAWER_MAX_ROWS)
 		for i, b in ipairs(micros) do
 			if i <= #micro then
 				b:SetSize(cellW, MICRO_CELL_H_FLAT)
-				GridPlace(content, b, i, PAD, y, MICRO_PER_ROW, cellW,
+				GridPlace(content, b, i, PAD, y, per, cellW,
 					MICRO_CELL_H_FLAT, 0, 0)
 				if b.name then b.name:Hide() end
+				-- The glyph gives way here too. It never had to at five a row,
+				-- because five across 352 is a 70-unit cell - but the count is
+				-- the client's now, and a rule that only holds at the widths we
+				-- happen to ship is not a rule.
+				local g = MicroGlyph(cellW)
+				if b.glyph then b.glyph:SetSize(g, g) end
 				b:Show()
 			else
 				b:Hide()
 			end
 		end
-		y = y + RowsFor(#micro, MICRO_PER_ROW) * MICRO_CELL_H_FLAT + SECTION_GAP
+		y = y + rows * MICRO_CELL_H_FLAT + SECTION_GAP
 	end
 
 	-- WIDGETS ----------------------------------------------------------------

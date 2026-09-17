@@ -7349,7 +7349,26 @@ end
 _G.__toggled = {}
 function ToggleCharacter(which) _G.__toggled.character = which end
 function ToggleSpellBook(which) _G.__toggled.spellbook = which end
-function ToggleTalentFrame() _G.__toggled.talents = true end
+-- THE TALENT DOOR IS LEVEL-GATED, AND THE MOCK LET IT THROUGH. Blizzard's
+-- ToggleTalentFrame opens with a guard and returns SILENTLY when it fails, so a
+-- mock that just records the toggle makes a dead button look like one that
+-- worked - which is how the Toolbox shipped a lit, clickable, inert Talents
+-- entry on every character below level 10.
+--
+-- CanPlayerUseTalentUI is this client's question: the plain "may I open the
+-- talent window", which here is a level question. Later flavours guard on
+-- CanPlayerUseTalentSpecUI instead, and both names are DOCUMENTED on both -
+-- which is why asking the wrong one is a wrong answer rather than an error.
+_G.__talentLevel = 10
+C_SpecializationInfo = _G.C_SpecializationInfo or {}
+C_SpecializationInfo.CanPlayerUseTalentUI = function()
+	return (_G.__units.player.level or 1) >= _G.__talentLevel
+end
+
+function ToggleTalentFrame()
+	if not C_SpecializationInfo.CanPlayerUseTalentUI() then return end
+	_G.__toggled.talents = true
+end
 function ToggleFriendsFrame() _G.__toggled.social = true end
 function ToggleGuildFrame() _G.__toggled.guild = true end
 function ToggleWorldMap() _G.__toggled.map = true end
@@ -20132,26 +20151,34 @@ do
 	-- ...and on a screen where it does NOT all fit, which is the only place the
 	-- arithmetic that hands out the room can be observed at all.
 	--
-	-- 1365x620 was found by sweeping 560 to 800 in tens: below 590 the tiles are
-	-- cut whatever the mail is doing and above 640 they fit either way, so both
-	-- ends are blind to whether the mail block was subtracted from what is left.
-	-- In the band between, three named senders cost exactly two settings tiles
-	-- against an empty box, and a version that forgot to subtract them lays
-	-- those tiles out past the bottom of the panel where nobody can reach them.
+	-- 1365x560 was found by sweeping 520 to 700 in fives: below 540 the tiles
+	-- are cut whatever the mail is doing and above 590 they fit either way, so
+	-- both ends are blind to whether the mail block was subtracted from what is
+	-- left. In the band between, three named senders cost exactly two settings
+	-- tiles against an empty box, and a version that forgot to subtract them
+	-- lays those tiles out past the bottom of the panel where nobody can reach
+	-- them.
 	--
 	-- It was 780 when the section came and went with the mail and the whole
-	-- block was the difference. Now the section is always there, so the
-	-- difference is only the two extra ROWS - a smaller step, which moves the
-	-- band.
+	-- block was the difference. Then 620, once the section became permanent and
+	-- the difference was only the two extra ROWS. Now 560, because the micro row
+	-- divides itself by what fits rather than at a fixed five, and this client's
+	-- ten doors go on ONE row of 35-unit cells instead of two of 70 - so the
+	-- drawer gives thirty units back to the lists below it and the whole band
+	-- moves down by exactly that.
+	--
+	-- Re-sweep this when anything above the lists changes height. The number is
+	-- a property of the layout, not of the check.
 	do
 		local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-		UIParent:SetSize(1365, 620)
+		UIParent:SetSize(1365, 560)
 
 		-- A long addon list too, so the OTHER list that gives way is not empty.
 		for i = 1, 10 do _G.__makeLDB("RoomTest" .. i, "launcher") end
 		A.Launchers:Scan()
 		TBm:RefreshAddons()
 
+		_G.__probeMicro = true
 		TBm:SetDock("LEFT")
 		_G.__mail, _G.__mailFrom = false, nil
 		fire("UPDATE_PENDING_MAIL")
@@ -21784,6 +21811,64 @@ do
 		_G.ToggleTalentFrame = was
 	end
 
+	-- AND A GLOBAL THAT IS THERE AND WILL NOT WORK, which is the harder half and
+	-- the one that shipped. ToggleTalentFrame exists at every level and returns
+	-- silently below ten: the door was drawn, lit, clickable and inert, and
+	-- nothing on screen said why. Blizzard's own talent button hides itself on
+	-- exactly this test.
+	do
+		local wasLevel = _G.__units.player.level
+		local wasCount = #TBm:MicroList()
+
+		_G.__units.player.level = 9
+		TBm:RefreshMicro()
+
+		local has9 = false
+		for _, m in ipairs(TBm:MicroList()) do
+			if m.key == "talents" then has9 = true end
+		end
+		check(not has9,
+			"below the level the client will open it at, the Talents door is not"
+			.. " offered - a door that does nothing is worse than no door,"
+			.. " because there is nothing to report")
+
+		-- IT IS THE DOOR THAT GOES, NOT THE ROW. Everything else is still there
+		-- and the count moves by exactly one; a probe that threw would take the
+		-- whole menu with it and this is what says it did not.
+		check(#TBm:MicroList() == wasCount - 1,
+			"and only that one - " .. (wasCount - 1) .. " left (" ..
+			#TBm:MicroList() .. ")")
+
+		-- THE ROW IS NOT FIXED FOR THE SESSION, which is what MicroList was
+		-- being treated as. It was worked out at build and on a config change,
+		-- so a character who dinged 10 with the drawer open went on not having
+		-- the door until they opened the settings and closed them again.
+		_G.__units.player.level = 10
+		fire("PLAYER_LEVEL_UP", 10)
+		local backAgain = false
+		for _, m in ipairs(TBm:MicroList()) do
+			if m.key == "talents" then backAgain = true end
+		end
+		check(backAgain,
+			"and at ten the client will open it again, so the door belongs in"
+			.. " the row")
+
+		-- WHICH THE CHECK ABOVE DOES NOT PROVE IS ON SCREEN, and the difference
+		-- matters: MicroList builds a fresh table every call, so it answers
+		-- correctly whether or not anything has redrawn. Deleting the level-up
+		-- registration leaves that check passing and only this one fails.
+		local drawn = 0
+		for _, b in ipairs(TBm.content.micro or {}) do
+			if b:IsShown() then drawn = drawn + 1 end
+		end
+		check(drawn == #TBm:MicroList(),
+			"and the buttons on screen match it (" .. drawn .. " of " ..
+			#TBm:MicroList() .. ")")
+
+		_G.__units.player.level = wasLevel
+		TBm:RefreshMicro()
+	end
+
 	-- The actions are Blizzard's own, read off their handlers rather than
 	-- guessed - guessing gets one of nine subtly wrong and nobody notices until
 	-- they click it.
@@ -22962,6 +23047,45 @@ do
 	-- layout hides, the other has to agree about.
 	check(not c.micro[1].name:IsShown(),
 		"and the micro row is glyphs on every dock, not names on one of them")
+
+	-- AND THEY ARE MEASURED, NOT COUNTED. Every check on this row so far asked
+	-- whether the buttons were PRESENT, and they always were - so a flat dock
+	-- that shrank its cells to eleven units while the glyphs stayed at twenty
+	-- passed all of them, with ten drawings lapping nine units over their
+	-- neighbours. "Every entry is there" and "you can see any of them" are
+	-- different questions and only one of them was being asked.
+	--
+	-- Measured on the FLAT dock at a narrow screen, which is where the cells
+	-- actually get small: the identity column is a fifth of the panel, and ten
+	-- entries across it on a 1024-wide display is where the overhang was.
+	do
+		local keepW, keepH = UIParent:GetWidth(), UIParent:GetHeight()
+		UIParent:SetSize(1024, 768)
+		TBm:SetDock("BOTTOM")
+		TBm:SetOpen(true, true)
+		TBm:RefreshMicro()
+
+		local worst, worstCell, n = 0, 0, 0
+		for i = 1, #(TBm._microList or {}) do
+			local b = c.micro[i]
+			if b and b:IsShown() and b.glyph then
+				n = n + 1
+				local cw, gw = b:GetWidth() or 0, b.glyph:GetWidth() or 0
+				if gw - cw > worst then worst, worstCell = gw - cw, cw end
+			end
+		end
+		check(n > 0, "the flat dock draws its micro row at 1024 wide (" .. n .. ")")
+		check(worst <= 0,
+			"and no glyph is wider than the cell holding it - it gives way with"
+			.. " the cell rather than drawing over the entry beside it (worst"
+			.. " overhang " .. string.format("%.1f", worst) .. " in a "
+			.. string.format("%.1f", worstCell) .. " cell)")
+
+		UIParent:SetSize(keepW, keepH)
+		TBm:SetDock("LEFT")
+		TBm:SetOpen(true, true)
+		TBm:RefreshMicro()
+	end
 	check(topOf(c.widgetsHead) > topOf(c.title)
 		and math.abs(leftOf(c.widgetsHead) - leftOf(c.title)) < 0.5,
 		"and the sections stack again, in one column at one x")
