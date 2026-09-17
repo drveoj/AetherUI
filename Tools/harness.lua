@@ -10,6 +10,17 @@
 	Run:  lua5.1 Tools/harness.lua
 ----------------------------------------------------------------------------]]
 
+-- Scripts EVERY frame has, whatever type it is. A global rather than a local
+-- because this chunk is near Lua's 200-local ceiling, and one table per widget
+-- would be thousands of copies of the same fifteen names.
+_G.__UNIVERSAL_SCRIPTS = {
+	OnShow = true, OnHide = true, OnUpdate = true, OnEvent = true,
+	OnSizeChanged = true, OnEnter = true, OnLeave = true, OnLoad = true,
+	OnMouseDown = true, OnMouseUp = true, OnMouseWheel = true,
+	OnDragStart = true, OnDragStop = true, OnAttributeChanged = true,
+	OnKeyDown = true, OnKeyUp = true, OnReceiveDrag = true,
+}
+
 local FAIL = {}
 
 -- Refusals counted separately as well as failed. A blocked call already
@@ -1096,6 +1107,22 @@ function CreateFrame(kind, name, parent, template)
 	--  Modules/Tooltips.lua has to be correct under both - and why the suite
 	--  below drives it both ways round.
 	function f:HookScript(s, fn)
+		-- AND IT VALIDATES, exactly as SetScript above does.
+		--
+		-- SetScript was taught this and HookScript was not, and the gap shipped
+		-- a bug in 1.0.0: Reskin.CheckBox hooks OnClick, Panels called it on
+		-- ReputationBarNAtWarCheck - which is a plain <Frame> in Blizzard's
+		-- ReputationBarTemplate, not a control - and the client threw
+		--
+		--   ReputationBar15AtWarCheck:HookScript(): Doesn't have a "OnClick" script
+		--
+		-- on every character sheet with that many factions on it. The guard in
+		-- Toggle asked `if box.HookScript`, which every widget answers yes to;
+		-- the question that matters is whether the widget has the SCRIPT.
+		if not self:HasScript(s) then
+			error(("%s:HookScript(): Doesn't have a \"%s\" script")
+				:format(self.__kind or "Frame", tostring(s)), 2)
+		end
 		local prev = self.__scripts[s]
 		if not prev then
 			self.__scripts[s] = fn
@@ -1116,7 +1143,18 @@ function CreateFrame(kind, name, parent, template)
 	--  Frame, for CLEARING one as much as for setting one - which is how a
 	--  tidy-up loop that nils OnClick on everything it holds went out.
 	function f:HasScript(s)
-		if self.__hasScript then return self.__hasScript[s] and true or false end
+		-- THE UNIVERSAL ONES FIRST, and before any override.
+		--
+		-- `__hasScript` was written as a REPLACEMENT set, listing what a
+		-- GameTooltip has. That was harmless while only SetScript consulted it
+		-- and only OnTooltipSet* was ever asked. The moment HookScript began
+		-- validating too, an empty override - `anon.__hasScript = {}`, meaning
+		-- "no tooltip scripts" - started claiming a frame had no OnShow either,
+		-- which no frame in the game is true of.
+		--
+		-- So the override governs the SPECIAL scripts only. Every frame has
+		-- these, whatever it is.
+		if _G.__UNIVERSAL_SCRIPTS[s] then return true end
 		if s == "OnClick" then
 			-- CASE-INSENSITIVE, and templates count. CreateFrame takes the kind
 			-- in whatever case the caller typed it - AceGUI says "BUTTON" - and
@@ -1127,6 +1165,7 @@ function CreateFrame(kind, name, parent, template)
 			local t = tostring(self.__template or "")
 			return t:lower():find("button", 1, true) ~= nil
 		end
+		if self.__hasScript then return self.__hasScript[s] and true or false end
 		return true
 	end
 
@@ -5453,8 +5492,22 @@ do
 
 		for i = 1, _G.NUM_FACTIONS_DISPLAYED do
 			local bar = CreateFrame("StatusBar", "ReputationBar" .. i, cf)
-			CreateFrame("CheckButton", "ReputationBar" .. i .. "AtWarCheck", bar)
-				:SetNormalTexture("checkbox-up")
+			-- A PLAIN FRAME, WHICH IS WHAT BLIZZARD DECLARES. The mock built a
+			-- CheckButton here, and that was the whole reason this bug could
+			-- ship green: ReputationBarTemplate says
+			--
+			--   <Frame name="$parentAtWarCheck" hidden="true">
+			--
+			-- a 24x22 frame holding the crossed swords. A thing called
+			-- AtWarCheck reads like a check box, Panels reskinned it as one,
+			-- and the mock agreed with the mistake. On the live client the
+			-- OnClick hook inside Reskin.CheckBox threw and took the character
+			-- sheet's dressing with it.
+			local war = CreateFrame("Frame", "ReputationBar" .. i .. "AtWarCheck", bar)
+			war:Hide()
+			war.__swords = war:CreateTexture(nil, "OVERLAY")
+			war.__swords:SetTexture(
+				[[Interface\PVPFrame\UI-Character-PVP-Highlight]])
 		end
 
 		for i = 1, _G.SKILLS_TO_DISPLAY do

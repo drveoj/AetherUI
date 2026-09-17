@@ -58,6 +58,19 @@ local ART_CHILDREN = {
 	-- the last thing left drawing on it, and every other part of that frame had
 	-- come off - which is how a bar with nothing above or below it survives.
 	"TitleContainer",
+	-- FROM ELVUI'S OWN LIST, which is the same idea arrived at independently
+	-- and a few names longer. `StripTexturesBlizzFrames` in its Toolkit.lua
+	-- carries 23 keys against our 20, and these are the ones we did not have.
+	-- Consulting it first would have been cheaper than finding them one
+	-- screenshot at a time.
+	"FilligreeOverlay", "PortraitOverlay", "ArtOverlayFrame",
+	"Portrait", "portrait",
+	"ScrollFrameBorder", "ScrollUpBorder", "ScrollDownBorder",
+	-- AND ONE NEITHER OF US LISTS. PVEFrame keeps two shadow covers and the
+	-- rule down its seam on a nameless `shadows` child; ElvUI handles it in
+	-- that window's own skin with a comment saying why. It is a general enough
+	-- name to be worth having here.
+	"shadows", "Shadows",
 }
 
 -- The four a Button draws itself.
@@ -152,7 +165,15 @@ local function ClearRegions(frame, store, keep)
 	for _, entry in ipairs(known) do
 		local region = entry[1]
 		if region.SetTexture then region:SetTexture(0) end
-		if region.SetAtlas then pcall(region.SetAtlas, region, "") end
+		-- NIL, NOT AN EMPTY STRING. `SetAtlas("")` leaves the region carrying an
+		-- atlas NAMED "" rather than none, and the client reads that name back:
+		-- MinimalScrollBar's own Update calls C_Texture.GetAtlasInfo on it and
+		-- throws "bad argument #1", every time a list is scrolled.
+		--
+		-- ElvUI passes '' here and gets away with it because it does not strip
+		-- that bar; we do, so we have to clear the atlas the way the API means
+		-- it to be cleared.
+		if region.SetAtlas then pcall(region.SetAtlas, region, nil) end
 		if region.Hide then region:Hide() end
 	end
 end
@@ -236,13 +257,45 @@ function Reskin.StripExcept(frame, store, names)
 end
 
 --- Everything in a store, back the way it was found.
+--- Marks that make a SECOND dress do nothing, and the surface each stands for.
+--
+--  Reskin.StatusBar and Reskin.ScrollBar both open with `if bar.__aetherX then
+--  return end` and only strip AFTER it. That is right while a module stays on
+--  and wrong the moment one is turned off: Restore hands the client its art
+--  back, the mark stays behind, and the re-dress returns at the first line
+--  without stripping the art that just came back. The bar then draws Blizzard's
+--  panelling with our fill still sitting under it.
+--
+--  Found on the pet's XP bar, whose two UI-MainMenuBar-Dwarf textures came
+--  back after `/aether panels off` and `on` and could not be swept again. It
+--  was never about that bar: every status bar and scroll bar in the interface
+--  did it, which is why the fix is here rather than in either function.
+--
+--  That mistake has now been made three times in this module, so the rule is:
+--  any "already done" mark belongs in this list the moment it is written. The
+--  names not yet used here are listed anyway - a mark that is absent costs one
+--  nil lookup, and a mark that is added later and forgotten costs a bug.
+local REDRESS_MARKS = { "__aetherFill", "__aetherScroll", "__aetherCell",
+	"__aetherLifted", "__aetherFloored", "__aetherRailed" }
+
 function Reskin.Restore(store)
 	if type(store) ~= "table" then return end
-	for _, known in pairs(store) do
+	for frame, known in pairs(store) do
 		for _, entry in ipairs(known) do
 			local region, wasShown, path = entry[1], entry[2], entry[3]
 			if path and region.SetTexture then region:SetTexture(path) end
 			if wasShown and region.Show then region:Show() end
+		end
+
+		-- OUR SURFACE GOES WITH IT. The fill was created after the strip, so it
+		-- is not in the store and Restore above cannot reach it - it would go on
+		-- drawing over the client's returned art.
+		if type(frame) == "table" then
+			for _, mark in ipairs(REDRESS_MARKS) do
+				local ours = frame[mark]
+				if type(ours) == "table" and ours.Hide then ours:Hide() end
+				frame[mark] = nil
+			end
 		end
 	end
 	wipe(store)
@@ -973,17 +1026,27 @@ function Reskin.ScrollBar(bar, store)
 		if thumb.SetWidth then thumb:SetWidth(A:Px(6)) end
 	end
 
-	if bar.Thumb then
-		bar.Thumb.__aetherStore = bar.Thumb.__aetherStore or {}
-		Reskin.Strip(bar.Thumb, bar.Thumb.__aetherStore)
-		if not bar.Thumb.__aetherFill then
-			local fill = bar.Thumb:CreateTexture(nil, "ARTWORK")
+	-- ...AND ON THE NEW ONE THE THUMB IS NOT THE BAR'S CHILD. MinimalScrollBar
+	-- puts Thumb inside TRACK, so `bar.Thumb` is nil on every one of them and
+	-- this dressed nothing at all - the Options window and the sidebar's panes
+	-- kept Blizzard's grey thumb sliding down our rail. Both spellings, first
+	-- one the bar has.
+	local grip = bar.Thumb or (bar.Track and bar.Track.Thumb)
+	if grip then
+		grip.__aetherStore = grip.__aetherStore or {}
+		Reskin.Strip(grip, grip.__aetherStore)
+		if not grip.__aetherFill then
+			-- OVERLAY, NOT ARTWORK, which is where the client draws its own
+			-- three slices. MinimalScrollBarThumbScriptsMixin paints them again
+			-- from its KeyValues on every enter, leave and press, so a fill in
+			-- the same layer is covered the first time the pointer touches it.
+			local fill = grip:CreateTexture(nil, "OVERLAY")
 			fill:SetTexture(A.Media.texture.flat)
-			fill:SetPoint("TOPLEFT", bar.Thumb, "TOPLEFT", 1, -1)
-			fill:SetPoint("BOTTOMRIGHT", bar.Thumb, "BOTTOMRIGHT", -1, 1)
-			bar.Thumb.__aetherFill = fill
+			fill:SetPoint("TOPLEFT", grip, "TOPLEFT", 1, -1)
+			fill:SetPoint("BOTTOMRIGHT", grip, "BOTTOMRIGHT", -1, 1)
+			grip.__aetherFill = fill
 		end
-		A.Widgets.Tint(bar.Thumb.__aetherFill, A.Palette.c.text, 0.45)
+		A.Widgets.Tint(grip.__aetherFill, A.Palette.c.text, 0.45)
 	end
 
 	bar.__aetherScroll = true
@@ -1023,14 +1086,30 @@ local function Toggle(box, store, round)
 	-- AND IT ANSWERS THE CLIENT. A check box is toggled by Blizzard's own
 	-- OnClick as often as by ours, and a mark drawn once at dress time is a
 	-- mark that is right until the first press.
-	if box.HookScript and not box.__aetherCheckHook then
-		box.__aetherCheckHook = true
+	-- `HasScript`, NOT `HookScript`. Every widget in the game has a HookScript
+	-- METHOD; only a button has an OnClick SCRIPT, and hooking one a widget has
+	-- not got is an error rather than a no-op:
+	--
+	--   ReputationBar15AtWarCheck:HookScript(): Doesn't have a "OnClick" script
+	--
+	-- That shipped in 1.0.0, from a caller that reskinned an at-war INDICATOR
+	-- as a check box because it was called AtWarCheck. A helper handed
+	-- something that is not a control should decline rather than take the
+	-- window down with it.
+	--
+	-- AND THE FLAG IS SET LAST. It used to be set first, so a throw left it
+	-- true and the next dress skipped that box and died on the following one -
+	-- which turned one bad frame into one failure per frame, spread over as
+	-- many opens, and made the fault transient enough to look like nothing.
+	local clickable = box.HasScript and box:HasScript("OnClick")
+	if clickable and not box.__aetherCheckHook then
 		box:HookScript("OnClick", function(self)
 			A.Widgets.CheckState(self, self.GetChecked and self:GetChecked())
 		end)
 		box:HookScript("OnShow", function(self)
 			A.Widgets.CheckState(self, self.GetChecked and self:GetChecked())
 		end)
+		box.__aetherCheckHook = true
 	end
 
 	-- AND ITS LABEL OFF THE EDGE OF THE MARK, not off the edge of the button.
@@ -1068,12 +1147,47 @@ function Reskin.Radio(box, store) return Toggle(box, store, true) end
 -- that has lost something.
 local GLYPH_PLUS, GLYPH_MINUS = "+", "\226\136\146"
 
+--- Which way one of those marks points, from whichever flag the client set.
+--
+--  There is no single flag. The skill tree writes isExpanded on the control
+--  itself; the reputation tree writes isCollapsed, the opposite sense - and
+--  some lists write it on the ROW that owns the control rather than on the
+--  control. Reading isExpanded alone found nothing on the reputation list, so
+--  every faction header drew a plus whether it was open or shut.
+--
+--  Both spellings, in the order the client is most likely to mean them, and
+--  the owning frame consulted only when the control itself carries none.
+local COLLAPSE_FLAGS = {
+	{ "isExpanded",  false },
+	{ "isCollapsed", true },
+}
+
+local function Expanded(btn)
+	for _, f in ipairs({ btn, btn.GetParent and btn:GetParent() or false }) do
+		if f then
+			for _, flag in ipairs(COLLAPSE_FLAGS) do
+				local v = f[flag[1]]
+				if v ~= nil then
+					if flag[2] then return not v end
+					return v and true or false
+				end
+			end
+		end
+	end
+	return false
+end
+
 --- One collapse control: its stone plus or minus off, ours on.
 --
 --  Safe to call repeatedly, and it HAS to be: the client re-sets the button's
 --  normal texture every time it refreshes the list, so a mark applied once at
 --  dress time is a mark you see until the first click.
-function Reskin.Collapse(btn, style)
+--
+--  A caller that KNOWS may say so. Some lists carry the flag only while they
+--  are shut - an open one has no flag at all, which is indistinguishable from
+--  a control that reports its state some fourth way - so those windows tell us
+--  rather than being read.
+function Reskin.Collapse(btn, style, expanded)
 	if not btn or not btn.SetNormalTexture then return end
 
 	Reskin.ClearButton(btn)
@@ -1098,7 +1212,8 @@ function Reskin.Collapse(btn, style)
 		btn.__aetherGlyph = glyph
 	end
 
-	glyph:SetText(btn.isExpanded and GLYPH_MINUS or GLYPH_PLUS)
+	if expanded == nil then expanded = Expanded(btn) end
+	glyph:SetText(expanded and GLYPH_MINUS or GLYPH_PLUS)
 	A.Widgets.Color(glyph, A.Palette.c.textDim)
 	return glyph
 end
