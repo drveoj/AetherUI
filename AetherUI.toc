@@ -79,6 +79,9 @@ Modules\Menus.lua
 Modules\OptionsSkin.lua
 Modules\Conveniences.lua
 Modules\Panels.lua
+# The shell above, the insides here. Must load after it: this file takes the
+# shell's published helpers into locals at load time, not at call time.
+Modules\PanelInteriors.lua
 Modules\Threat.lua
 Modules\Timers.lua
 Modules\Zen.lua

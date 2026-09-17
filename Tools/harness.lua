@@ -9735,7 +9735,7 @@ local FILES = {
 	"Modules/Fonts.lua",
 	"Modules/Menus.lua", "Modules/OptionsSkin.lua",
 	"Modules/Conveniences.lua",
-	"Modules/Panels.lua",
+	"Modules/Panels.lua", "Modules/PanelInteriors.lua",
 	"Modules/Threat.lua",
 	"Modules/Timers.lua",
 	"Modules/Zen.lua",
