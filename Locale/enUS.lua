@@ -1225,6 +1225,10 @@ L["questlog.refresh_detail.reward_s"] = "Reward: %s"
 L["questlog.reward_card_click.reward_still_loading_try"] =
 	"that reward is still loading - try again in a moment."
 
+-- questtracker -------------------------------------------------------------
+
+L["questtracker.behind_fold_d"] = "%d hidden by a folded zone in the quest log"
+
 -- toolbox -----------------------------------------------------------------
 
 L["toolbox.build.aetherui_settings"] = "AetherUI settings"

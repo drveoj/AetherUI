@@ -3256,10 +3256,16 @@ function _G.__visibleLog()
 	return out
 end
 
+--- AND THE SECOND COUNT IS NOT AFFECTED BY A FOLD. Only the ENTRY count moves
+--  when a header collapses; the client goes on admitting to the quests it will
+--  not name. That disagreement is the one free signal there is that a fold is
+--  hiding something, and a mock that folded both counts together made it
+--  impossible to see - which is how a tracker that silently emptied itself
+--  stayed green.
 function GetNumQuestLogEntries()
 	local vis = _G.__visibleLog()
 	local quests = 0
-	for _, q in ipairs(vis) do
+	for _, q in ipairs(_G.__questLog) do
 		if not q.header then quests = quests + 1 end
 	end
 	return #vis, quests
@@ -23760,6 +23766,92 @@ do
 		"but opening the window expands it first, so the zone is not silently"
 		.. " missing")
 	check(_G.__questLog[4].collapsed == false, "and the header is left expanded")
+end
+
+print("== quest tracker: a folded zone must not empty it silently ==")
+do
+	local QTf = A:GetModule("questtracker")
+
+	-- THE REPORT. The tracker closing itself and not opening again when clicked,
+	-- with the count chip reading a number over an empty body. A folded zone
+	-- header does not fold its quests on screen - it removes them from
+	-- GetQuestLogTitle entirely - so the scan saw a header and nothing else,
+	-- drew no rows, and the body collapsed to nothing. Clicking the header then
+	-- toggled a fold state over an empty list, which is why it looked dead.
+	--
+	-- Nothing in this suite could have caught it: every quest-log check either
+	-- opened our window first, which expands, or asserted the tracker's saved
+	-- sets rather than what it DREW.
+	A.db.char.tracked, A.db.char.untracked = {}, {}
+	ExpandQuestHeader(0)
+	QTf:Refresh()
+	local wasRows = 0
+	for _, r in ipairs(QTf.panel.rows) do if r:IsShown() then wasRows = wasRows + 1 end end
+	check(wasRows > 0, "with nothing folded the tracker draws rows (" .. wasRows .. ")")
+
+	-- Fold every zone, the way a player would, and the way an earlier session
+	-- can leave it.
+	for i = GetNumQuestLogEntries(), 1, -1 do
+		local _, _, _, isHeader = GetQuestLogTitle(i)
+		if isHeader then CollapseQuestHeader(i) end
+	end
+	QTf:Refresh()
+
+	local rows = 0
+	for _, r in ipairs(QTf.panel.rows) do if r:IsShown() then rows = rows + 1 end end
+	local _, numQuests = GetNumQuestLogEntries()
+
+	-- THE CLIENT STILL ADMITS TO THE QUESTS. Only the entry count moves when a
+	-- header folds, which is what makes the difference readable at all - and it
+	-- is the difference the header chip was already showing while the body
+	-- showed nothing.
+	check(numQuests > 0,
+		"the client still counts the quests (" .. numQuests .. ") even folded")
+	check(QTf.behindFold ~= nil and QTf.behindFold > 0,
+		"and the tracker knows how many it was not allowed to name ("
+		.. tostring(QTf.behindFold) .. ")")
+
+	-- THE POINT. Empty is fine; empty WITHOUT SAYING WHY is what looked broken.
+	if rows == 0 then
+		check(QTf.panel.more:IsShown(),
+			"an empty tracker with quests behind a fold says so, in the line the"
+			.. " overflow count already uses - rather than drawing nothing and"
+			.. " looking like a window that has stopped working")
+		check(QTf.panel.more:GetText():find("fold", 1, true) ~= nil,
+			"and says WHAT is hiding them (" ..
+			tostring(QTf.panel.more:GetText()) .. ")")
+	end
+
+	-- AND IT DOES NOT UNDO THE PLAYER'S FOLD ON THE WAY PAST. The first fix
+	-- expanded from the scan itself, so folding a zone anywhere was reversed in
+	-- the same frame - ExpandQuestHeader fires QUEST_LOG_UPDATE and the scan
+	-- runs from that. That is not a policy, it is a fight.
+	local stillFolded = false
+	for i = 1, #_G.__questLog do
+		if _G.__questLog[i].header and _G.__questLog[i].collapsed then stillFolded = true end
+	end
+	check(stillFolded,
+		"a fold the player just made is still there after a refresh - the sweep"
+		.. " is once at login, not once per scan")
+
+	-- AND THE SWEEP THAT CLEARS AN INHERITED ONE. The fold that caused the
+	-- report came from an earlier session - before this addon, or from Questie -
+	-- and could not be undone anywhere in this interface, because both of our
+	-- quest windows group by zone themselves and neither has a fold to click.
+	-- So the tracker clears it once on the way in.
+	A:SetModuleEnabled("questtracker", false)
+	A:SetModuleEnabled("questtracker", true)
+	local inherited = false
+	for i = 1, #_G.__questLog do
+		if _G.__questLog[i].header and _G.__questLog[i].collapsed then inherited = true end
+	end
+	check(not inherited,
+		"starting the tracker clears a fold it inherited - the one state that"
+		.. " empties this window and that nothing in this interface can undo")
+
+	ExpandQuestHeader(0)
+	QTf:Refresh()
+	A.db.char.tracked, A.db.char.untracked = {}, {}
 end
 
 print("== quest log: difficulty bands and the tri-state complete flag ==")
