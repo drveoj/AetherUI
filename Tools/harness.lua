@@ -2980,6 +2980,88 @@ end
 -- The real Minimap is a widget type the client draws into and cannot be
 -- recreated, so the module reshapes Blizzard's. Everything it touches on that
 -- object is modelled here, plus the furniture it banishes.
+--
+-- TWO COMPLETELY DIFFERENT TREES, which is why this is a branch and not a few
+-- extra names. Era hangs a dozen globally-named frames off the cluster and the
+-- backdrop. Camelot takes Mainline\Minimap.xml, where the cluster inherits
+-- EditModeMinimapSystemTemplate and almost every child is an ANONYMOUS
+-- parentKey - Tracking, IndicatorFrame, ZoneTextButton, MinimapContainer. Nine
+-- of the twelve names the module banishes do not exist there at all.
+--
+-- The nesting matters as much as the names: Minimap is inside
+-- MinimapCluster.MinimapContainer rather than being a direct child of the
+-- cluster, and MinimapBackdrop is still a child of Minimap.
+if _G.__flavour == "camelot" then
+
+	MinimapCluster = CreateFrame("Frame", "MinimapCluster")
+	function MinimapCluster:EnableMouse(v) self.__mouse = v end
+
+	-- Anonymous parentKeys, every one of them. GetName() returns nil, which is
+	-- the whole point: SweepCluster filters children with issecurevariable(name)
+	-- and a frame with no name cannot be sorted that way.
+	MinimapCluster.BorderTop      = CreateFrame("Frame", nil, MinimapCluster)
+	MinimapCluster.ZoneTextButton = CreateFrame("Button", nil, MinimapCluster)
+	MinimapCluster.Tracking       = CreateFrame("Frame", nil, MinimapCluster)
+	-- A DropdownButton, and it has NO menuGenerator. MiniMapTrackingButtonMixin
+	-- builds its list with SetupMenu inside OnLoad, so the only handle an addon
+	-- gets is OpenMenu - which is the one thing EllesmereUI guards on before
+	-- touching it. Modelling a menuGenerator here would be the mock inventing
+	-- the field our module happens to reach for first, which is the exact
+	-- fabrication that put MiniMapTrackingDropDown and then
+	-- MiniMapTrackingButton into the Era mock.
+	MinimapCluster.Tracking.Button = CreateFrame("Button", nil, MinimapCluster.Tracking)
+	function MinimapCluster.Tracking.Button:OpenMenu()
+		_G.__trackingMenu = self
+	end
+	MinimapCluster.IndicatorFrame = CreateFrame("Frame", nil, MinimapCluster)
+	MinimapCluster.IndicatorFrame.MailFrame =
+		CreateFrame("Frame", nil, MinimapCluster.IndicatorFrame)
+	MinimapCluster.IndicatorFrame.CraftingOrderFrame =
+		CreateFrame("Frame", nil, MinimapCluster.IndicatorFrame)
+	MinimapCluster.InstanceDifficulty = CreateFrame("Frame", nil, MinimapCluster)
+
+	-- The zone text IS globally named even though its button is not.
+	MinimapZoneText = MinimapCluster.ZoneTextButton:CreateFontString(
+		"MinimapZoneText", "ARTWORK")
+
+	-- Minimap is a grandchild here, not a child.
+	MinimapCluster.MinimapContainer = CreateFrame("Frame", nil, MinimapCluster)
+	Minimap = CreateFrame("Frame", "Minimap", MinimapCluster.MinimapContainer)
+	Minimap:SetSize(140, 140)
+	function Minimap:SetMaskTexture(t) self.__mask = t end
+	function Minimap:GetZoom() return self.__zoom or 0 end
+	function Minimap:SetZoom(z) self.__zoom = z end
+
+	-- Zoom is a pair of parentKey children of Minimap, not two globals, and
+	-- there are no Minimap_ZoomInClick / Minimap_ZoomOutClick / Minimap_OnClick
+	-- functions to fall back on. Deliberately absent: a module reaching for one
+	-- here is reaching for it in the game.
+	Minimap.ZoomHitArea = CreateFrame("Frame", nil, Minimap)
+	Minimap.ZoomIn      = CreateFrame("Button", nil, Minimap)
+	Minimap.ZoomOut     = CreateFrame("Button", nil, Minimap)
+	Minimap.PlayerCoords = CreateFrame("Frame", nil, Minimap)
+
+	_G.__minimapPin = CreateFrame("Frame", "HarnessMinimapPin", Minimap)
+	_G.__minimapPin:SetAlpha(0.5)
+
+	-- Still globally named, still a child of Minimap - so the module's separate
+	-- by-name sweep of it is one of the few things that carries straight over.
+	MinimapBackdrop = CreateFrame("Frame", "MinimapBackdrop", Minimap)
+	MinimapCompassTexture = MinimapBackdrop:CreateTexture(
+		"MinimapCompassTexture", "OVERLAY")
+	CreateFrame("Button", "ExpansionLandingPageMinimapButton", MinimapBackdrop)
+
+	-- GameTimeFrame survives the move; MiniMapMailIcon is a global texture
+	-- inside the anonymous MailFrame.
+	CreateFrame("Button", "GameTimeFrame", MinimapCluster)
+	MiniMapMailIcon = MinimapCluster.IndicatorFrame.MailFrame:CreateTexture(
+		"MiniMapMailIcon", "OVERLAY")
+
+	_G.__clusterArt = MinimapCluster:CreateTexture(nil, "OVERLAY")
+	CreateFrame("Frame", "SomeAddonOnTheCluster", MinimapCluster)
+
+else  -- Classic Era
+
 Minimap = CreateFrame("Frame", "Minimap")
 -- A third-party pin, hung on the minimap the way Questie and TomTom hang one.
 -- It carries a deliberately non-default alpha, because "put it back to 1" and
@@ -3047,6 +3129,8 @@ CreateFrame("Frame", "SomeAddonOnTheCluster", MinimapCluster)
 -- being able to prove.
 CreateFrame("Frame", "MiniMapTracking", UIParent)
 function CancelTrackingBuff() _G.__trackingCancelled = true end
+
+end  -- flavour
 
 MenuUtil = MenuUtil or {}
 function MenuUtil.CreateContextMenu(owner, generator)
@@ -3122,7 +3206,16 @@ _G.__mapArt = true
 -- Blizzard's globals are secure and an addon's are not; the module leans on that
 -- to sort furniture from arrivals without a hardcoded list.
 _G.__secureNames = {}
-for _, n in ipairs({
+for _, n in ipairs(_G.__flavour == "camelot" and {
+	-- Camelot's cluster is nearly all anonymous parentKeys, so this list is
+	-- short for a real reason rather than because it is unfinished. A name that
+	-- does not exist on the client must not appear here: the point of the list
+	-- is to be the set issecurevariable can sort, and padding it with Era names
+	-- would let the module pass by banishing frames the client has not got.
+	"Minimap", "MinimapCluster", "MinimapBackdrop", "MinimapZoneText",
+	"MinimapCompassTexture", "MiniMapMailIcon", "GameTimeFrame",
+	"ExpansionLandingPageMinimapButton",
+} or {
 	"Minimap", "MinimapCluster", "MinimapBorder", "MinimapBorderTop",
 	"MinimapNorthTag", "MinimapZoomIn", "MinimapZoomOut", "MinimapToggleButton",
 	"MinimapZoneTextButton", "MiniMapTracking", "MiniMapBattlefieldFrame",
@@ -19087,7 +19180,68 @@ do  -- Blizzard's Minimap is reshaped, not replaced: it cannot be recreated
 		.. " and it swallows clicks meant for what is behind it")
 end
 
-do  -- the furniture
+if _G.__flavour == "camelot" then do  -- the furniture, camelot
+	-- THE NAMED LIST BUYS ALMOST NOTHING HERE. Nine of the twelve names in
+	-- MM.blizzardFrames do not exist on this client, and the three that do
+	-- (GameTimeFrame, MinimapCompassTexture, MinimapBackdrop) are not where the
+	-- furniture went. Everything else moved onto the cluster as an ANONYMOUS
+	-- parentKey, which is the part that breaks the sweep: SweepCluster sorts
+	-- children with issecurevariable(name), and a frame whose GetName() is nil
+	-- cannot be sorted that way at all - it is simply skipped.
+	--
+	-- So the sweep has to learn the parentKey shape. These check the end state,
+	-- not the route: whatever way the module gets there, none of this furniture
+	-- may be left drawing over the glass.
+	local r = MMm.hideReport
+	check(not MinimapCluster.Tracking:IsShown(),
+		"the tracking button is banished, though nothing globally names it")
+	check(not MinimapCluster.IndicatorFrame.MailFrame:IsShown(),
+		"and the mail indicator, which is two parentKeys deep")
+	check(not MinimapCluster.BorderTop:IsShown(), "and the cluster's border bar")
+	check(not MinimapCluster.ZoneTextButton:IsShown(), "and the zone text button")
+	check(not MinimapCluster.InstanceDifficulty:IsShown(),
+		"and the instance difficulty badge")
+	check(not Minimap.ZoomIn:IsShown() and not Minimap.ZoomOut:IsShown(),
+		"the zoom buttons go too - they are children of Minimap here, not globals")
+
+	-- The three names that DO survive the move still have to work by name.
+	check(r.GameTimeFrame == "hidden", "the day/night dial is still banished by name")
+	check(r.MinimapBackdrop == "swept",
+		"and the backdrop is still recursed into, not carried off")
+
+	-- NOT A FRAME THE CLIENT HAS NOT GOT. A report claiming to have hidden
+	-- MinimapBorder on camelot is the mock being kind in a new way.
+	check(r.MinimapBorder == "absent" or r.MinimapBorder == nil,
+		"a name this client does not have is reported absent, never hidden")
+	check(r.MiniMapTracking == "absent" or r.MiniMapTracking == nil,
+		"and so is Era's tracking frame")
+
+	check(not _G.__clusterArt:IsShown() and _G.__clusterArt:GetAlpha() == 0,
+		"an unnamed region of the cluster is swept, the same as on Era")
+	check(_G.SomeAddonOnTheCluster:IsShown(),
+		"but an addon's own frame on the cluster is still left where it is")
+	-- No pin-alpha check here. Zen's blocks run thousands of checks earlier and
+	-- drive __minimapPin's alpha on purpose, so anything asserted about it down
+	-- here is asserting the leftovers of an unrelated test. It is covered where
+	-- it belongs, in the two zen blocks.
+
+	-- The wheel, with no Minimap_ZoomInClick to fall back on: the module has to
+	-- drive SetZoom itself here.
+	Minimap:GetScript("OnMouseWheel")(Minimap, 1)
+	check(Minimap:GetZoom() == 1, "the wheel zooms in without Minimap_ZoomInClick")
+	Minimap:GetScript("OnMouseWheel")(Minimap, -1)
+	check(Minimap:GetZoom() == 0, "and out")
+
+	-- AND THERE IS A REAL MENU HERE, unlike Era. Tracking is a dropdown on the
+	-- cluster, so the right-click opens it rather than cancelling a buff -
+	-- CancelTrackingBuff does not exist on this client.
+	_G.__trackingMenu = nil
+	Minimap:GetScript("OnMouseUp")(Minimap, "RightButton")
+	check(_G.__trackingMenu ~= nil,
+		"right-click opens the tracking menu off MinimapCluster.Tracking.Button")
+	check(_G.CancelTrackingBuff == nil,
+		"and never reaches for CancelTrackingBuff, which this client has not got")
+end else do  -- the furniture
 	local r = MMm.hideReport
 	check(r.MinimapBorder == "hidden" and r.MinimapZoomIn == "hidden"
 		and r.MiniMapTracking == "hidden" and r.GameTimeFrame == "hidden",
@@ -19137,7 +19291,7 @@ do  -- the furniture
 		.. " that is the whole of what the frame we hid did")
 	Minimap:GetScript("OnMouseUp")(Minimap, "LeftButton")
 	check(_G.__minimapPinged, "and left-click still pings")
-end
+end end
 
 print("== the zone pill ==")
 do
