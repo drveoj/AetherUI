@@ -71,26 +71,24 @@ local BAR_GAP   = 5
 -- quest log adapter
 -- ---------------------------------------------------------------------------
 
-local function NumEntries()
-	if not GetNumQuestLogEntries then return 0, 0 end
-	local entries, quests = GetNumQuestLogEntries()
-	return entries or 0, quests or 0
-end
+-- THROUGH A.Quest, which is where both of these live now.
+--
+-- This file carried its own copies of the same three readers the quest log had,
+-- and WoW Forever is what made that cost real: it keeps NONE of the old
+-- quest-log API, so each copy would have needed the same second client taught
+-- to it separately. One shim in Core\Core.lua, used by both windows - which is
+-- also why it is in Core rather than in QuestLog.lua, since this file loads
+-- first.
+local NumEntries = A.Quest.NumEntries
 
 --- title, level, isHeader, isComplete, questID
+--
+--  A.Quest.Title hands back the questTag as its third value, which this window
+--  has no use for - the level chip carries difficulty here. Dropped on the way
+--  through rather than by giving the shim a second shape.
 local function LogTitle(index)
-	if not GetQuestLogTitle then return nil end
-	local title, level, _, isHeader, _, isComplete, _, questID = GetQuestLogTitle(index)
+	local title, level, _, isHeader, _, isComplete, questID = A.Quest.Title(index)
 	if not title then return nil end
-
-	-- questID is the eighth return here, but GetQuestIDFromLogIndex exists too
-	-- and is what Blizzard's own Classic tracker uses. Either will do; take
-	-- whichever answers, so a client that reorders the tuple still tracks.
-	if not questID and GetQuestIDFromLogIndex then
-		local ok, id = pcall(GetQuestIDFromLogIndex, index)
-		if ok then questID = id end
-	end
-
 	return title, level, isHeader, isComplete, questID
 end
 
@@ -119,20 +117,25 @@ end
 --  The fraction prefers the numbers inside the objective text ("Empty Keg: 3/5")
 --  over a simple finished/total count, because a kill quest that wants ten
 --  boars should not sit at 0% until the tenth one dies.
+--  The numbers come from the API where it has them: WoW Forever returns
+--  numFulfilled/numRequired outright, and matching them back out of display
+--  text is only the fallback the old client leaves us.
 local function Objectives(index)
 	local lines, done, total = {}, 0, 0
 
-	local n = GetNumQuestLeaderBoards and GetNumQuestLeaderBoards(index) or 0
-	for j = 1, n do
-		local text, _, finished = GetQuestLogLeaderBoard(j, index)
-		if text then
-			lines[#lines + 1] = { text = text, finished = finished and true or false }
-			local cur, max = string.match(text, "(%d+)%s*/%s*(%d+)")
-			if cur and max and tonumber(max) > 0 then
-				done, total = done + math.min(tonumber(cur), tonumber(max)), total + tonumber(max)
-			else
-				done, total = done + (finished and 1 or 0), total + 1
-			end
+	for _, line in ipairs(A.Quest.Objectives(index)) do
+		local finished = line.finished
+		lines[#lines + 1] = { text = line.text, finished = finished }
+
+		local cur, max = line.fulfilled, line.required
+		if not (cur and max) then
+			cur, max = string.match(line.text, "(%d+)%s*/%s*(%d+)")
+			cur, max = tonumber(cur), tonumber(max)
+		end
+		if cur and max and max > 0 then
+			done, total = done + math.min(cur, max), total + max
+		else
+			done, total = done + (finished and 1 or 0), total + 1
 		end
 	end
 
@@ -248,7 +251,7 @@ local function ExpandCollapsedZones()
 	local entries = NumEntries()
 	local found = false
 	for index = 1, entries do
-		local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(index)
+		local _, _, _, isHeader, isCollapsed = A.Quest.Title(index)
 		if isHeader and isCollapsed then found = true break end
 	end
 	if not found then return false end
@@ -256,7 +259,7 @@ local function ExpandCollapsedZones()
 	expanding = true
 	pcall(function()
 		for index = entries, 1, -1 do
-			local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(index)
+			local _, _, _, isHeader, isCollapsed = A.Quest.Title(index)
 			if isHeader and isCollapsed then pcall(ExpandQuestHeader, index) end
 		end
 	end)
@@ -318,7 +321,7 @@ local function Collect()
 	-- Blizzard's log is enough to trigger it.
 	local anyCollapsed = false
 	for index = 1, entries do
-		local _, _, _, isHeader, isCollapsed = GetQuestLogTitle(index)
+		local _, _, _, isHeader, isCollapsed = A.Quest.Title(index)
 		if isHeader and isCollapsed then anyCollapsed = true break end
 	end
 
@@ -407,7 +410,7 @@ local function OpenLog(index, questID)
 	-- Blizzard's, for a client where our own log is switched off. The update is
 	-- forced BEFORE the show for the ordering reason above: on a frame that has
 	-- never been drawn, selecting first is the crash.
-	if SelectQuestLogEntry then pcall(SelectQuestLogEntry, index) end
+	A.Quest.Select(index)
 	if _G.QuestLogFrame and QuestLog_Update then pcall(QuestLog_Update) end
 	if QuestLog_OpenToQuest then
 		if pcall(QuestLog_OpenToQuest, index) then return end
@@ -420,7 +423,7 @@ local function OpenLog(index, questID)
 end
 
 local function ShareQuest(index)
-	if SelectQuestLogEntry then pcall(SelectQuestLogEntry, index) end
+	A.Quest.Select(index)
 	if QuestLogPushQuest then pcall(QuestLogPushQuest) end
 end
 
@@ -428,11 +431,13 @@ end
 --  AbandonQuest. Losing a quest chain to a stray click in a tracker is not a
 --  thing this addon is going to be responsible for.
 local function AbandonQuestAt(index, title)
-	if not SelectQuestLogEntry or not StaticPopup_Show then
+	-- The SELECTION is what has to work here, not one named global: WoW Forever
+	-- takes a questID through C_QuestLog.SetSelectedQuest where the old client
+	-- took the index. A.Quest.Select answers whether it landed.
+	if not StaticPopup_Show or not A.Quest.Select(index) then
 		A:Print(L.common.can_t_abandon_here)
 		return
 	end
-	pcall(SelectQuestLogEntry, index)
 	if SetAbandonQuest then pcall(SetAbandonQuest) end
 	if not pcall(StaticPopup_Show, "ABANDON_QUEST", title) then
 		A:Print(L.common.can_t_abandon_here)

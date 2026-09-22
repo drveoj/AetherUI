@@ -3571,6 +3571,118 @@ function GetQuestLogQuestText()
     return q.description, q.summary
 end
 
+-- THE MODERN QUEST LOG, on camelot, and the legacy globals GO.
+--
+-- WoW Forever keeps none of the old API: GetQuestLogTitle, SelectQuestLogEntry,
+-- GetNumQuestLeaderBoards and GetQuestLogLeaderBoard are undocumented there and
+-- are called only from the client's own Vanilla\ and Cata\ files, which camelot
+-- does not load. Leaving them defined here would let the shim take the old path
+-- on a client that has not got it - the suite green, both windows empty in the
+-- game, which is exactly what was reported.
+--
+-- GetQuestLogQuestText SURVIVES, but is called differently: Blizzard's own
+-- GameTooltip.lua:713 passes a questLogIndex where the old client read whatever
+-- the selection pointed at. Modelled with the index, so the shim's two calling
+-- conventions are both exercised for real.
+if _G.__flavour == "camelot" then
+	C_QuestLog = C_QuestLog or {}
+
+	-- CAPTURED BEFORE THEY ARE REMOVED. The fixture below these is the same
+	-- one either way - only the API in front of it changes - so the modern
+	-- functions read through the old ones. Nilling the globals first left them
+	-- calling something that no longer existed, which the suite caught at once.
+	local eraNumBoards  = GetNumQuestLeaderBoards
+	local eraBoard      = GetQuestLogLeaderBoard
+
+	function C_QuestLog.GetNumQuestLogEntries() return GetNumQuestLogEntries() end
+
+	function C_QuestLog.GetInfo(index)
+		local q = _G.__visibleLog()[index]
+		if not q then return nil end
+		return {
+			title = q.title, level = q.level, questID = q.id,
+			isHeader = q.header or false, isCollapsed = q.collapsed or false,
+			questLogIndex = index,
+		}
+	end
+
+	--- `== 1`, NOT truthiness. The old API's isComplete is tri-state: 1 is
+	--  complete, **-1 is FAILED**, nil is in progress. Written as
+	--  `q.complete and true or false` this answered true for a failed quest,
+	--  because -1 is truthy in Lua - and a failed quest would have drawn a full
+	--  progress bar reading "Complete". The fixture carries a -1 quest on
+	--  purpose and it is what caught this.
+	function C_QuestLog.IsComplete(questID)
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID then return q.complete == 1 end
+		end
+		return false
+	end
+
+	--- The other half of the old tri-state. Blizzard's own objective tracker
+	--  pairs these two the same way (Blizzard_QuestObjectiveTracker.lua:310).
+	function C_QuestLog.IsFailed(questID)
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID then return q.complete == -1 end
+		end
+		return false
+	end
+
+	function C_QuestLog.GetQuestTagInfo(questID)
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID and q.tag then return { tagName = q.tag } end
+		end
+		return nil
+	end
+
+	--- Takes a questID where the old call took a log index, so it resolves back
+	--  to the same __questSelected the rest of the suite reads. The cursor is
+	--  one thing whichever door you come through.
+	function C_QuestLog.SetSelectedQuest(questID)
+		for i, q in ipairs(_G.__visibleLog()) do
+			if q.id == questID then _G.__questSelected = i return end
+		end
+	end
+
+	function C_QuestLog.GetNumQuestObjectives(questID)
+		for i, q in ipairs(_G.__visibleLog()) do
+			if q.id == questID then return eraNumBoards(i) end
+		end
+		return 0
+	end
+
+	--- text, type, finished, numFulfilled, numRequired. The last two are the
+	--  real gain: the old client left those numbers only inside display text.
+	function GetQuestObjectiveInfo(questID, j, displayComplete)
+		for i, q in ipairs(_G.__visibleLog()) do
+			if q.id == questID then
+				local text, kind, finished = eraBoard(j, i)
+				if not text then return nil end
+				local cur, max = string.match(text, "(%d+)%s*/%s*(%d+)")
+				return text, kind, finished, tonumber(cur), tonumber(max)
+			end
+		end
+		return nil
+	end
+
+	local eraQuestText = GetQuestLogQuestText
+	function GetQuestLogQuestText(index)
+		local q = index and _G.__visibleLog()[index]
+		if not q then return nil, nil end
+		_G.__questTextReads = (_G.__questTextReads or 0) + 1
+		return q.description, q.summary
+	end
+
+	-- Gone, exactly as they are gone on the client. SelectQuestLogEntry is NOT
+	-- removed here: it is defined again further down this file, so nilling it
+	-- at this point would be quietly undone. It goes at the end of the quest
+	-- mocks instead.
+	GetQuestLogTitle          = nil
+	GetNumQuestLeaderBoards   = nil
+	GetQuestLogLeaderBoard    = nil
+	GetQuestIDFromLogIndex    = nil
+end
+
 function GetNumQuestWatches() return #_G.__watches end
 function GetQuestIndexForWatch(i) return _G.__watches[i] end
 function AddQuestWatch(index) _G.__watches[#_G.__watches + 1] = index end
@@ -3583,6 +3695,10 @@ end
 _G.__questLogOpenedTo, _G.__questSelected, _G.__questShared, _G.__abandonPopup = nil, nil, nil, nil
 function QuestLog_OpenToQuest(index) _G.__questLogOpenedTo = index end
 function SelectQuestLogEntry(index) _G.__questSelected = index end
+-- ...and taken straight back off on camelot, which has not got it. Defined and
+-- then removed rather than skipped, so the Era definition above stays the one
+-- readable statement of what the old call did.
+if _G.__flavour == "camelot" then SelectQuestLogEntry = nil end
 function QuestLogPushQuest() _G.__questShared = _G.__questSelected end
 function SetAbandonQuest() _G.__abandonLatch = _G.__questSelected end
 function StaticPopup_Show(which) _G.__abandonPopup = which end
@@ -10237,6 +10353,21 @@ section("which client the addon thinks it is on", function()
 	check(A.FlavourFor(nil) == nil, "an absent interface number is not a flavour")
 	check(A.FlavourFor("11509") == nil, "and neither is a string that looks like one")
 	check(A.FlavourFor(50504) == nil, "Mists is not claimed by any band")
+
+	-- THE OLD QUEST LOG API IS GONE HERE, and the mock must keep it gone.
+	-- WoW Forever documents none of these and calls them only from its Vanilla\
+	-- and Cata\ files, which camelot does not load. Putting one back in the mock
+	-- would let the shim take the old path on a client that has not got it -
+	-- suite green, both quest windows empty in the game, which is what was
+	-- reported.
+	if _G.__flavour == "camelot" then
+		for _, n in ipairs({ "GetQuestLogTitle", "GetNumQuestLeaderBoards",
+			"GetQuestLogLeaderBoard", "SelectQuestLogEntry" }) do
+			check(_G[n] == nil, n .. " does not exist on this client")
+		end
+		check(C_QuestLog and C_QuestLog.GetInfo ~= nil,
+			"and C_QuestLog is what answers instead")
+	end
 
 	-- THE TOC AND THE GATE HAVE TO AGREE. Two places state which clients this
 	-- addon supports and nothing keeps them in step; the same argument the icon
@@ -24621,8 +24752,11 @@ do
 
 	-- Fold every zone, the way a player would, and the way an earlier session
 	-- can leave it.
+	-- Through A.Quest like the modules do: GetQuestLogTitle does not exist on
+	-- camelot, so the suite reaching for it directly would test the addon
+	-- against an API the client has not got.
 	for i = GetNumQuestLogEntries(), 1, -1 do
-		local _, _, _, isHeader = GetQuestLogTitle(i)
+		local _, _, _, isHeader = A.Quest.Title(i)
 		if isHeader then CollapseQuestHeader(i) end
 	end
 	QTf:Refresh()
@@ -25478,7 +25612,7 @@ do
 	table.insert(_G.__questLog, 2, { id = 99, title = "A New Quest", level = 12,
 		description = "d", summary = "s", objectives = {} })
 	fire("QUEST_ACCEPTED", 2, 99)
-	local sitting, _, _, sittingIsHeader = GetQuestLogTitle(target.index)
+	local sitting, _, _, sittingIsHeader = A.Quest.Title(target.index)
 	check(sitting and not sittingIsHeader and sitting ~= "Prowlers of the Barrens",
 		"the stale index now names a different REAL quest ('" .. tostring(sitting)
 		.. "'), not a header the guard would reject for free")

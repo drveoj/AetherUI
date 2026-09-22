@@ -120,6 +120,171 @@ function A.IsSecret(...)
 end
 
 -- ---------------------------------------------------------------------------
+-- reading the quest log
+--
+-- TWO ENTIRELY DIFFERENT APIs, and WoW Forever kept NONE of the old one.
+-- `GetQuestLogTitle`, `SelectQuestLogEntry`, `GetNumQuestLeaderBoards` and
+-- `GetQuestLogLeaderBoard` are undocumented there and are called only from the
+-- client's own `Vanilla\` and `Cata\` files, which camelot does not load. That
+-- is why both the quest log and the tracker came up empty rather than wrong:
+-- every read answered nil and the windows drew nothing.
+--
+-- HERE RATHER THAN IN A MODULE, for two reasons. Modules\QuestTracker.lua loads
+-- BEFORE Modules\QuestLog.lua, so the log cannot own it. And both had grown
+-- their own private copies of these three readers, which is exactly the
+-- duplication that drifts - one shim, used by both.
+--
+-- The modern API is better in one respect worth keeping: objectives come back
+-- with `numFulfilled`/`numRequired` as real numbers, where the old one left us
+-- pattern-matching "0/6" out of display text.
+-- ---------------------------------------------------------------------------
+
+A.Quest = {}
+
+--- Does this client have the modern quest log?
+local function ModernQuests()
+	return (C_QuestLog and C_QuestLog.GetInfo) and true or false
+end
+A.Quest.IsModern = ModernQuests
+
+--- numEntries, numQuests. Same shape on both.
+function A.Quest.NumEntries()
+	local fn = ModernQuests() and C_QuestLog.GetNumQuestLogEntries
+		or _G.GetNumQuestLogEntries
+	if not fn then return 0, 0 end
+	local entries, quests = fn()
+	return entries or 0, quests or 0
+end
+
+--- title, level, questTag, isHeader, isCollapsed, isComplete, questID
+--
+--  The old call returned all seven positionally. `C_QuestLog.GetInfo` returns a
+--  table and does not carry completion at all, so that is asked separately -
+--  `IsComplete` for "objectives done", which is what the old `isComplete` meant.
+function A.Quest.Title(index)
+	if ModernQuests() then
+		local info = C_QuestLog.GetInfo(index)
+		if not info then return nil end
+
+		-- THE TRI-STATE IS PRESERVED, and it has to be. The old API's isComplete
+		-- is 1 for complete, **-1 for FAILED** and nil for in progress, and both
+		-- windows read all three - a failed quest is drawn as failed, not as
+		-- "not finished yet". C_QuestLog splits that across two calls, so put it
+		-- back together rather than handing callers a boolean and quietly losing
+		-- the failure state.
+		local complete
+		if info.questID and not info.isHeader then
+			if C_QuestLog.IsFailed then
+				local ok, failed = pcall(C_QuestLog.IsFailed, info.questID)
+				if ok and failed then complete = -1 end
+			end
+			if complete == nil and C_QuestLog.IsComplete then
+				local ok, done = pcall(C_QuestLog.IsComplete, info.questID)
+				if ok and done then complete = 1 end
+			end
+		end
+
+		local tag
+		if info.questID and C_QuestLog.GetQuestTagInfo then
+			local ok, t = pcall(C_QuestLog.GetQuestTagInfo, info.questID)
+			if ok and t then tag = t.tagName end
+		end
+
+		return info.title, info.level, tag, info.isHeader, info.isCollapsed,
+			complete, info.questID
+	end
+
+	if not _G.GetQuestLogTitle then return nil end
+	local title, level, questTag, isHeader, isCollapsed, isComplete, _, questID =
+		GetQuestLogTitle(index)
+	if not title then return nil end
+	if not questID and _G.GetQuestIDFromLogIndex then
+		local ok, id = pcall(GetQuestIDFromLogIndex, index)
+		if ok then questID = id end
+	end
+	return title, level, questTag, isHeader, isCollapsed, isComplete, questID
+end
+
+--- A list of { text, kind, finished, fulfilled, required } for one quest.
+--
+--  `fulfilled`/`required` are nil on the old API, where the numbers exist only
+--  inside the display string. Callers that want a fraction should prefer them
+--  and fall back to matching the text.
+function A.Quest.Objectives(index)
+	local out = {}
+
+	if ModernQuests() then
+		local info = C_QuestLog.GetInfo(index)
+		local questID = info and info.questID
+		if not questID or not C_QuestLog.GetNumQuestObjectives then return out end
+		if not _G.GetQuestObjectiveInfo then return out end
+
+		local n = C_QuestLog.GetNumQuestObjectives(questID) or 0
+		for j = 1, n do
+			-- `false` is displayComplete: we want the live text, not the
+			-- finished-state wording.
+			local text, objType, finished, fulfilled, required =
+				GetQuestObjectiveInfo(questID, j, false)
+			if text and text ~= "" then
+				out[#out + 1] = { text = text, kind = objType,
+					finished = finished and true or false,
+					fulfilled = fulfilled, required = required }
+			end
+		end
+		return out
+	end
+
+	if not _G.GetNumQuestLeaderBoards or not _G.GetQuestLogLeaderBoard then
+		return out
+	end
+	local n = GetNumQuestLeaderBoards(index) or 0
+	for j = 1, n do
+		local text, objType, finished = GetQuestLogLeaderBoard(j, index)
+		if text and text ~= "" then
+			out[#out + 1] = { text = text, kind = objType,
+				finished = finished and true or false }
+		end
+	end
+	return out
+end
+
+--- Put the client's own selection cursor on a quest, by LOG INDEX.
+--
+--  The old client takes the index; WoW Forever takes a questID
+--  (`C_QuestLog.SetSelectedQuest`), so the index has to be resolved first. Both
+--  windows need this for the things that act on "the selected quest" - sharing,
+--  abandoning - which are the client's own flows and read that cursor.
+function A.Quest.Select(index)
+	if not index then return false end
+
+	if ModernQuests() then
+		if not C_QuestLog.SetSelectedQuest then return false end
+		local info = C_QuestLog.GetInfo(index)
+		if not info or not info.questID then return false end
+		return (pcall(C_QuestLog.SetSelectedQuest, info.questID))
+	end
+
+	if not _G.SelectQuestLogEntry then return false end
+	return (pcall(SelectQuestLogEntry, index))
+end
+
+--- description, objectives text for one quest.
+--
+--  The same global on both clients, called two different ways: the old one reads
+--  whatever `SelectQuestLogEntry` last pointed at, the new one takes the index
+--  outright (Blizzard's own GameTooltip.lua:713 passes one). Selecting is the
+--  part worth avoiding where we can - it moves a cursor Blizzard's own windows
+--  are reading.
+function A.Quest.Text(index)
+	if not _G.GetQuestLogQuestText then return nil, nil end
+	if ModernQuests() then
+		return GetQuestLogQuestText(index)
+	end
+	if _G.SelectQuestLogEntry then pcall(SelectQuestLogEntry, index) end
+	return GetQuestLogQuestText()
+end
+
+-- ---------------------------------------------------------------------------
 -- chat output
 -- ---------------------------------------------------------------------------
 
