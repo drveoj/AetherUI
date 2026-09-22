@@ -241,6 +241,38 @@ function Chat:SkinTab(tab)
 	if _G.UIFrameFadeRemoveFrame then pcall(_G.UIFrameFadeRemoveFrame, tab) end
 	tab:SetAlpha(1)
 
+	-- EVERY TEXTURE ON THE TAB, not a list of the ones we know the names of.
+	--
+	-- The named sweep below this covered Era's two spellings - global
+	-- `<tab>SelectedLeft` and parentKey `selectedLeftTexture` - and reached
+	-- nothing at all on WoW Forever, where the art is parentKeys spelled
+	-- `Left`, `ActiveLeft`, `HighlightLeft` (ChatTabArtTemplate, and a second
+	-- `-min` set for the minimised tab). Blizzard's tabs simply stayed on
+	-- screen, which is what Joe reported: our pill drawn on top of theirs.
+	--
+	-- This is the same inversion the edit box already needed. Matching by name
+	-- can never cover "whatever this template happens to ship", and a client
+	-- that renames a texture should cost us nothing.
+	--
+	-- OUR OWN THREE ARE SKIPPED BY IDENTITY. SkinTab is idempotent and runs on
+	-- every dock update, so a blanket sweep that did not know its own work
+	-- would erase the mark, its glow and the wash on the second call - the tab
+	-- would light once and never again.
+	if tab.GetRegions then
+		local ok, regions = pcall(function() return { tab:GetRegions() } end)
+		if ok then
+			for _, r in ipairs(regions) do
+				if r and r ~= tab.__aetherMark and r ~= tab.__aetherMarkGlow
+					and r ~= tab.__aetherWash
+					and r.GetObjectType and r:GetObjectType() == "Texture" then
+					Kill(r)
+				end
+			end
+		end
+	end
+
+	-- The named pass stays as well, for anything that is a texture on a CHILD
+	-- rather than a region of the tab itself.
 	for _, set in ipairs(TAB_SETS) do
 		for _, piece in ipairs(TAB_PIECES) do
 			Kill(Region(tab, set .. piece, string.lower(piece)

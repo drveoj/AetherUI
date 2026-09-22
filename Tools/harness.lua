@@ -8992,9 +8992,25 @@ local function MakeChatFrame(id)
 	tab:SetHeight(32)
 	tab.__id = id
 	function tab:GetID() return self.__id end
-	for _, set in ipairs({ "", "Selected", "Highlight" }) do
-		for _, piece in ipairs({ "Left", "Middle", "Right" }) do
-			_G[name .. "Tab" .. set .. piece] = tab:CreateTexture()
+	-- THE TAB ART IS SPELLED DIFFERENTLY PER CLIENT, and that is the whole bug
+	-- Joe reported: Blizzard's tabs still on screen underneath ours.
+	--
+	-- Era names each piece globally, `ChatFrame1TabSelectedLeft` and friends.
+	-- WoW Forever's ChatTabArtTemplate gives them parentKeys only, spelled
+	-- `Left`, `ActiveLeft`, `HighlightLeft` - no globals at all, and "Active"
+	-- where Era says "Selected". A sweep that matches by name reaches none of
+	-- them, which is why the skin now sweeps every texture by shape instead.
+	if _G.__flavour == "camelot" then
+		for _, set in ipairs({ "", "Active", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				tab[set .. piece] = tab:CreateTexture()
+			end
+		end
+	else
+		for _, set in ipairs({ "", "Selected", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				_G[name .. "Tab" .. set .. piece] = tab:CreateTexture()
+			end
 		end
 	end
 	_G[name .. "TabGlow"] = tab:CreateTexture()
@@ -12224,15 +12240,35 @@ do
 		"every backdrop region is hidden rather than blanked"
 		.. (#stillShown > 0 and ("  -- still shown: " .. table.concat(stillShown, ", ")) or ""))
 
+	-- EVERY PIECE, WHICHEVER WAY THIS CLIENT SPELLS IT. Era names them globally
+	-- (`ChatFrame1TabSelectedLeft`); WoW Forever gives them parentKeys only and
+	-- calls the selected set "Active". Checking only Era's spelling is what let
+	-- Blizzard's tabs sit on screen under ours with the suite green.
 	local tabArt = {}
-	for _, set in ipairs({ "", "Selected", "Highlight" }) do
-		for _, piece in ipairs({ "Left", "Middle", "Right" }) do
-			local r = _G["ChatFrame1Tab" .. set .. piece]
-			if r and r:IsShown() then tabArt[#tabArt + 1] = set .. piece end
+	if _G.__flavour == "camelot" then
+		for _, set in ipairs({ "", "Active", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				local r = _G.ChatFrame1Tab[set .. piece]
+				if r and r:IsShown() then tabArt[#tabArt + 1] = set .. piece end
+			end
+		end
+	else
+		for _, set in ipairs({ "", "Selected", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				local r = _G["ChatFrame1Tab" .. set .. piece]
+				if r and r:IsShown() then tabArt[#tabArt + 1] = set .. piece end
+			end
 		end
 	end
 	check(#tabArt == 0, "and so is every piece of tab artwork"
 		.. (#tabArt > 0 and ("  -- " .. table.concat(tabArt, ", ")) or ""))
+
+	-- AND OURS SURVIVED THE SWEEP. The skin now hides every texture on the tab
+	-- by shape rather than by name, and it runs again on every dock update - so
+	-- a sweep that did not skip its own work would erase the mark on the second
+	-- call and the tab would light once and never again.
+	check(_G.ChatFrame1Tab.__aetherMark ~= nil,
+		"our own mark survives the blanket sweep, which runs on every dock update")
 
 	local tab1, tab2 = _G.ChatFrame1Tab, _G.ChatFrame2Tab
 
