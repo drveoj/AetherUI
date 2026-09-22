@@ -27,6 +27,64 @@ A.modules  = {}
 A.moduleOrder = {}
 
 -- ---------------------------------------------------------------------------
+-- which client is this
+--
+-- The interface number, NOT `WOW_PROJECT_ID`. Every classic-family flavour
+-- including camelot reports `WOW_PROJECT_CLASSIC`, so that constant cannot tell
+-- Era and WoW Forever apart at all.
+--
+-- BANDS, not equality. A beta build bump moves camelot's exact number - it is
+-- 16001 today - and the bands cannot meet: Era is 115xx, camelot 16xxx, retail
+-- 12xxxx. Mists sat at 50504, which is why 20000 is a safe upper edge for the
+-- camelot band rather than an arbitrary one.
+--
+-- NO FALLBACK. An unreadable interface number leaves `A.flavour` nil and both
+-- booleans false; it never quietly becomes Era. A default here would make a
+-- client we failed to recognise look exactly like one we recognised correctly,
+-- which is the bug the Mists gate avoided by refusing an `or 2` behind the
+-- project constants - and the suite could not see the difference either.
+--
+-- PREFER A FEATURE TEST TO THIS FLAG. Most of what differs between the clients
+-- is whether a frame or a function exists, and asking that directly survives
+-- Blizzard moving things in the next build. Spend `A.isCamelot` only where
+-- nothing can be detected: a choice between two mutually exclusive layouts, or
+-- a client bug with no signature to probe for.
+-- ---------------------------------------------------------------------------
+
+A.IFACE_BANDS = {
+	{ flavour = "era",     min =  11500, max =  12000 },
+	{ flavour = "camelot", min =  16000, max =  20000 },
+	{ flavour = "retail",  min = 120000, max = math.huge },
+}
+
+--- Which client an interface number belongs to, or nil for one we do not know.
+--
+--  A FUNCTION rather than the straight-line code this started as, so the band
+--  EDGES can be tested. A range check is exactly the sort of thing that is
+--  wrong by one at a boundary and right everywhere a casual test would look,
+--  and a gate executed once at load offers nothing to aim a test at.
+function A.FlavourFor(iface)
+	if type(iface) ~= "number" then return nil end
+	for _, band in ipairs(A.IFACE_BANDS) do
+		if iface >= band.min and iface < band.max then return band.flavour end
+	end
+	return nil
+end
+
+A.iface = nil
+if GetBuildInfo then
+	-- Fourth return, and it has to be taken positionally: `local a = f and f()`
+	-- keeps only the first value, which is how the interface number came to be
+	-- missing from every bug report for months (see Errors:Header).
+	local n = select(4, GetBuildInfo())
+	if type(n) == "number" then A.iface = n end
+end
+
+A.flavour   = A.FlavourFor(A.iface)
+A.isEra     = A.flavour == "era"
+A.isCamelot = A.flavour == "camelot"
+
+-- ---------------------------------------------------------------------------
 -- chat output
 -- ---------------------------------------------------------------------------
 

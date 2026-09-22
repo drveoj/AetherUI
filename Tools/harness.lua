@@ -7,8 +7,37 @@
 	widget type you used, ordering problems between files, anchors referencing
 	regions that were not built yet.
 
-	Run:  lua5.1 Tools/harness.lua
+	Run:  lua5.1 Tools/harness.lua            Classic Era
+	      lua5.1 Tools/harness.lua camelot    WoW Forever
 ----------------------------------------------------------------------------]]
+
+-- WHICH CLIENT THIS RUN IS PRETENDING TO BE, and it is the FIRST thing in the
+-- file on purpose.
+--
+-- Everything below can branch on it - a mock frame that only one client ships,
+-- a method that changed shape - so it has to be decided before a single mock is
+-- built. The Mists version of this started down beside the libraries and moving
+-- it up was not cosmetic: a mock that reads the flavour is a mock that reads it
+-- too late if the flavour is set after the mock.
+--
+-- Globals, not locals. This chunk is near Lua's 200-local ceiling and top-level
+-- names stay live through every block below them, so two innocent locals here
+-- can make a check five thousand lines away refuse to load.
+_G.__flavour = (... == "camelot") and "camelot" or "era"
+
+-- What GetBuildInfo answers. The addon's flavour gate reads the fourth return
+-- and nothing else, but the version string is real too, because Ellesmere's
+-- gate cross-checks it and ours may want to.
+--
+-- THE MOCK HAD NO GetBuildInfo AT ALL until 2026-09-22. Core/Errors.lua guards
+-- it and prints "?" offline, so nothing noticed - and it meant anything gating
+-- on the interface number was untestable here. That is exactly the shape of
+-- kindness the mock keeps having to have taken off it.
+_G.__iface = (_G.__flavour == "camelot") and 16001 or 11509
+_G.__build = (_G.__flavour == "camelot") and "1.60.1" or "1.15.9"
+function GetBuildInfo()
+	return _G.__build, "69913", "Sep 22 2026", _G.__iface
+end
 
 -- Scripts EVERY frame has, whatever type it is. A global rather than a local
 -- because this chunk is near Lua's 200-local ceiling, and one table per widget
@@ -9909,6 +9938,68 @@ local function section(name, fn)
 		fail(name .. " -- the block itself errored: " .. tostring(err))
 	end
 end
+
+section("which client the addon thinks it is on", function()
+	-- The gate reads the interface number and nothing else. WOW_PROJECT_ID
+	-- cannot answer this: every classic-family flavour including camelot reports
+	-- WOW_PROJECT_CLASSIC, which is why the mock sets it to 2 for both runs.
+	check(A.iface == _G.__iface,
+		("the interface number comes from the client: %s"):format(tostring(A.iface)))
+	check(A.flavour == _G.__flavour,
+		("and names the flavour: %s"):format(tostring(A.flavour)))
+	check(A.isEra == (_G.__flavour == "era"), "A.isEra agrees with it")
+	check(A.isCamelot == (_G.__flavour == "camelot"), "A.isCamelot agrees with it")
+	check(not (A.isEra and A.isCamelot), "and never both at once")
+
+	-- THE BAND EDGES, which is the whole reason FlavourFor is a function.
+	-- Each band is half-open: min is inside, max is not. A range check is wrong
+	-- by one at a boundary far more often than it is wrong in the middle, and
+	-- the middle is all a live run ever exercises.
+	for _, band in ipairs(A.IFACE_BANDS) do
+		check(A.FlavourFor(band.min) == band.flavour,
+			("%d is %s"):format(band.min, band.flavour))
+		check(A.FlavourFor(band.min - 1) ~= band.flavour,
+			("%d is not"):format(band.min - 1))
+		if band.max ~= math.huge then
+			check(A.FlavourFor(band.max - 1) == band.flavour,
+				("%d is still %s"):format(band.max - 1, band.flavour))
+			check(A.FlavourFor(band.max) ~= band.flavour,
+				("%d is not"):format(band.max))
+		end
+	end
+
+	-- The live numbers, named rather than derived, so a band edited to the wrong
+	-- place fails here even if it stays self-consistent.
+	check(A.FlavourFor(11509) == "era", "11509 is Era")
+	check(A.FlavourFor(16001) == "camelot", "16001 is camelot")
+
+	-- NO FALLBACK. A client we cannot read must not look like one we read
+	-- correctly - the Mists gate refused an `or 2` behind the project constants
+	-- for exactly this reason, and the suite could not tell the two apart.
+	check(A.FlavourFor(nil) == nil, "an absent interface number is not a flavour")
+	check(A.FlavourFor("11509") == nil, "and neither is a string that looks like one")
+	check(A.FlavourFor(50504) == nil, "Mists is not claimed by any band")
+
+	-- THE TOC AND THE GATE HAVE TO AGREE. Two places state which clients this
+	-- addon supports and nothing keeps them in step; the same argument the icon
+	-- path check already makes about the .toc naming a texture twice.
+	do
+		local fh = io.open("AetherUI.toc", "rb")
+		local line = fh and fh:read("*l") or ""
+		if fh then fh:close() end
+		local declared, unknown = 0, {}
+		for n in line:gmatch("%d+") do
+			declared = declared + 1
+			if not A.FlavourFor(tonumber(n)) then unknown[#unknown + 1] = n end
+		end
+		check(declared >= 2,
+			("the .toc declares %d interface numbers"):format(declared))
+		check(#unknown == 0, #unknown == 0
+			and "and the gate recognises every one of them"
+			or ("the .toc declares an interface no band covers: "
+				.. table.concat(unknown, " ")))
+	end
+end)
 
 section("the source itself: nothing under space that should not be", function()
 	-- NO STRAY CONTROL BYTES IN OUR OWN SOURCE.
