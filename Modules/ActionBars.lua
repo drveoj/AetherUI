@@ -231,18 +231,30 @@ local function UpdateCooldown(b)
 
 	local start, duration, enable = GetActionCooldown(action)
 
-	-- A SECRET COOLDOWN DRAWS BUT DOES NOT READ. On WoW Forever an action's
-	-- cooldown can come back secret, and `duration > 0` below throws - reported
-	-- from the game on SPELL_UPDATE_COOLDOWN. The swipe itself is fine:
-	-- SetCooldown takes both values happily, so the button still animates
-	-- correctly and only our own countdown TEXT has to go, because that needs
-	-- `duration > 2` to decide whether the cooldown is worth a number.
+	-- A SECRET COOLDOWN CANNOT BE DRAWN AT ALL, and this is the one place so far
+	-- where "a secret may be written even though it cannot be read" does NOT
+	-- hold.
 	--
-	-- Nothing is cached for the watcher either - a stored secret poisons the
-	-- next comparison too. See A.IsSecret.
+	-- Two reports, in order. First `duration > 0` below threw on
+	-- SPELL_UPDATE_COOLDOWN, so the comparison was guarded and the values handed
+	-- straight to SetCooldown instead - which threw in its turn:
+	--
+	--     bad argument #1 to 'SetCooldown' ... Secret values are only allowed
+	--     during untainted execution for this argument
+	--
+	-- THE DOCUMENTATION IS THE AUTHORITY AND IT IS PER FUNCTION. Every API
+	-- carries a `SecretArguments` annotation: "AllowedWhenTainted" means an
+	-- addon may pass one, "AllowedWhenUntainted" means Blizzard's code only.
+	-- StatusBar's SetValue and SetMinMaxValues are the first - which is exactly
+	-- why the health and power bars CAN still be drawn from secrets - and
+	-- Cooldown's SetCooldown is the second. Check the annotation rather than
+	-- assuming a setter will take one.
+	--
+	-- So the swipe goes, the text goes, and nothing is cached. The button still
+	-- shows its spell; it simply cannot say how long is left, which is the
+	-- honest answer when the client will not tell us.
 	if A.IsSecret(start, duration, enable) then
-		b.cooldown:SetCooldown(start, duration)
-		b.cooldown:Show()
+		b.cooldown:Hide()
 		cooldownWatch[b] = nil
 		b.cdText:SetText("")
 		return

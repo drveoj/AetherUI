@@ -1369,7 +1369,28 @@ function CreateFrame(kind, name, parent, template)
 	function f:RegisterUnitEvent(e) self:RegisterEvent(e) end
 
 	if kind == "Cooldown" then
-		function f:SetCooldown(start, duration) self.__cd = { start, duration } end
+		--- REFUSES A SECRET, because the real one does.
+		--
+		--  Every API carries a `SecretArguments` annotation in Blizzard's
+		--  documentation. StatusBar's SetValue and SetMinMaxValues are
+		--  "AllowedWhenTainted", so an addon may hand them a secret and draw a
+		--  correct bar without ever reading the number - that is what the health
+		--  bars rely on. Cooldown's SetCooldown is "AllowedWhenUntainted":
+		--  Blizzard's own code only.
+		--
+		--  A mock that took one regardless is how "a secret can be written even
+		--  though it cannot be read" got over-generalised into a rule and
+		--  shipped a second error on top of the first.
+		function f:SetCooldown(start, duration)
+			if _G.__flavour == "camelot" and issecretvalue
+				and (issecretvalue(start) or issecretvalue(duration)) then
+				error("bad argument #1 to 'SetCooldown' (Usage:"
+					.. " self:SetCooldown(start, duration [, modRate])."
+					.. " Secret values are only allowed during untainted"
+					.. " execution for this argument.)", 2)
+			end
+			self.__cd = { start, duration }
+		end
 		function f:GetCooldownTimes() return 0, 0 end
 		function f:SetSwipeTexture(t) self.__swipe = t end
 		function f:SetSwipeColor() end
@@ -16597,6 +16618,13 @@ if _G.__flavour == "camelot" then
 	check((bar.buttons[3].cdText:GetText() or "") == "",
 		"and drops our countdown text, because deciding to draw it needs"
 		.. " `duration > 2`")
+	-- AND THE SWIPE GOES TOO. SetCooldown is "AllowedWhenUntainted", so unlike
+	-- StatusBar:SetValue it refuses a secret from an addon - handing the values
+	-- to it "because a secret can be written" was a second error on top of the
+	-- first.
+	check(not bar.buttons[3].cooldown:IsShown(),
+		"and the swipe is hidden rather than fed a secret - SetCooldown refuses"
+		.. " one from addon code, where the bar setters accept it")
 	_G.__actions[3].cd = { time, 30 }
 	fire("SPELL_UPDATE_COOLDOWN")
 	tick(0.1)
