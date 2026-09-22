@@ -8239,8 +8239,44 @@ _G.__isHunterPet  = true
 -- a mock that made the first imply the second would make the second unreachable.
 -- GetPetHappiness is about the PLAYER's pet, not about which pet it is; whether
 -- this one HAS moods is what HasPetUI's second return says.
-function GetPetHappiness() return _G.__petHappiness, 100, 0 end
+-- WHERE PET HAPPINESS LIVES DIFFERS, and only one of these exists per client.
+--
+-- Era has the bare global. Camelot moved it into C_PetInfo and kept nothing
+-- behind: Blizzard's own PetHappiness.lua calls C_PetInfo.GetPetHappiness and
+-- there is no global left in the whole source tree. Defining both here would
+-- let a module read the one it prefers and pass on a client that has not got
+-- it, which is the fabrication this mock keeps having to have taken off it.
+--
+-- HasPetUI stays a plain global on both - Blizzard's own Camelot
+-- PaperDollFrame still calls it that way.
+if _G.__flavour == "camelot" then
+	C_PetInfo = C_PetInfo or {}
+	function C_PetInfo.GetPetHappiness() return _G.__petHappiness, 100, 0 end
+else
+	function GetPetHappiness() return _G.__petHappiness, 100, 0 end
+end
 function HasPetUI() return true, _G.__isHunterPet end
+
+-- BLIZZARD'S OWN UNIT FRAMES, which this mock simply did not have.
+--
+-- UF:HideBlizzard banishes six of them and nothing here existed to banish, so
+-- A:Banish took its `if not frame then return false end` exit every time and
+-- the whole path was green without ever running. Kind by omission rather than
+-- by fabrication, and just as invisible.
+--
+-- CastingBarFrame is Era's and is GONE on camelot - Mainline declares
+-- PlayerCastingBarFrame instead. TargetFrameToT exists on both, though on
+-- camelot it is built at runtime as self:GetName().."ToT" rather than declared.
+_G.__blizzUnitFrames = {}
+for _, n in ipairs(_G.__flavour == "camelot" and {
+	"PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame", "TargetFrameToT",
+	"PlayerCastingBarFrame",
+} or {
+	"PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame", "TargetFrameToT",
+	"CastingBarFrame",
+}) do
+	_G.__blizzUnitFrames[n] = CreateFrame("Frame", n, UIParent)
+end
 
 function UnitExists(u) return units[u] and units[u].exists or false end
 function UnitName(u) return units[u] and units[u].name end
@@ -16380,6 +16416,35 @@ do
 	cfg.perRow = 0
 	AU:OnConfigChanged()
 	check(PB.opts.perRow == before, "and 0 goes back to whatever fits")
+end
+
+print("== Blizzard's own unit frames are taken off screen ==")
+do
+	-- NEVER RUN BEFORE 2026-09-22. The mock had none of these frames, so
+	-- A:Banish took its `if not frame then return false end` exit six times and
+	-- the suite went green having tested nothing at all. That is the omission
+	-- version of the same bug the fabricated dropdowns were.
+	for _, n in ipairs({ "PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame",
+		"TargetFrameToT" }) do
+		local f = _G[n]
+		check(f and not f:IsShown(), n .. " is hidden")
+		check(f and f:GetParent() ~= UIParent,
+			"and reparented off UIParent, so another addon calling Show() on it"
+			.. " cannot put " .. n .. " back")
+	end
+
+	-- THE CAST BAR IS NAMED DIFFERENTLY PER CLIENT, and the module banishes both
+	-- names for that reason. Whichever one this client has must be gone;
+	-- whichever it has not must not have been conjured up to be banished.
+	local castName = _G.__flavour == "camelot" and "PlayerCastingBarFrame"
+		or "CastingBarFrame"
+	local absentName = _G.__flavour == "camelot" and "CastingBarFrame"
+		or "PlayerCastingBarFrame"
+	check(_G[castName] and not _G[castName]:IsShown(),
+		castName .. " is hidden - it is the one this client declares")
+	check(_G[absentName] == nil,
+		absentName .. " does not exist here, and banishing a name the client has"
+		.. " not got has to be a no-op rather than a mock frame to aim at")
 end
 
 print("== the capsules never resize ==")

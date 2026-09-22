@@ -534,12 +534,26 @@ end
 --  GATED ON isHunterPet, which is the client's own test. A warlock's imp
 --  reports no happiness at all, and a rim tinted from a nil is a rim tinted
 --  from whatever the last hunter left behind.
+--  THE NAMESPACED CALL FIRST. WoW Forever moved this to
+--  `C_PetInfo.GetPetHappiness` and left NO global behind - Blizzard's own
+--  PetHappiness.lua calls the namespaced one, and there is no bare
+--  GetPetHappiness anywhere in that client's source. Reading only the global
+--  cost nothing louder than a pet rim that silently never coloured, which is
+--  the quietest way for a port to be wrong.
+local function PetHappiness()
+	local fn = (C_PetInfo and C_PetInfo.GetPetHappiness) or _G.GetPetHappiness
+	if not fn then return nil end
+	local ok, happiness = pcall(fn)
+	if not ok then return nil end
+	return happiness
+end
+
 local function HappinessColor()
-	if not GetPetHappiness or not HasPetUI then return nil end
+	if not HasPetUI then return nil end
 	local _, isHunterPet = HasPetUI()
 	if not isHunterPet then return nil end
 
-	local happiness = GetPetHappiness()
+	local happiness = PetHappiness()
 	local c = Palette.c
 	if happiness == 3 then return c.petHappy end
 	if happiness == 2 then return c.petContent end
