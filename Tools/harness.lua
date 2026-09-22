@@ -9850,7 +9850,27 @@ fire("PLAYER_ENTERING_WORLD")
 
 print("== assertions ==")
 
+--- Failures the addon recorded instead of raising, kept until somebody looks.
+--
+--  Panels, Zen and OptionsSkin all dress inside a pcall and record the error in
+--  A.lastFailure rather than raising - which is right, because one bad window
+--  must not take the other twenty-two down with it. The cost is that a broken
+--  window is SILENT here, and 1.0.0 shipped a character sheet that threw on
+--  first open because of it.
+--
+--  Sampling A.lastFailure at a chosen moment does not work: the failure is
+--  TRANSIENT. Reskin.CheckBox used to set its hooked flag before it hooked, so
+--  the first dress threw and every dress after it skipped the hook and
+--  succeeded - and the next module enable set lastFailure back to nil. By the
+--  time anything looked, there was nothing to see.
+--
+--  So it is drained on every check() call and kept. A test that provokes a
+--  failure on purpose acknowledges it by clearing __swallowed alongside
+--  A.lastFailure; anything left at the end is a real one nobody looked at.
+_G.__swallowed = {}
+
 local function check(cond, msg)
+	if A and A.lastFailure then _G.__swallowed[A.lastFailure] = true end
 	_G.__ran = _G.__ran + 1
 	if cond then
 		print("  ok  " .. msg)
@@ -40438,6 +40458,29 @@ do
 	OB:Teardown()
 end
 
+
+-- ---------------------------------------------------------------------------
+-- anything the addon swallowed and nobody looked at
+-- ---------------------------------------------------------------------------
+
+print("== nothing was swallowed ==")
+do
+	local left = {}
+	for msg in pairs(_G.__swallowed) do
+		-- The skin-listener test registers a listener that raises "deliberate"
+		-- to prove one bad listener does not stop the ones behind it, and there
+		-- is no way to unregister a listener - so it fires on every Restyle for
+		-- the rest of the run. Named rather than counted: a whitelist of one
+		-- string is honest; a tolerance of "up to N failures" is not.
+		if not tostring(msg):find("deliberate", 1, true) then
+			left[#left + 1] = msg
+		end
+	end
+	table.sort(left)
+	check(#left == 0, #left == 0
+		and "no module or window recorded a failure that went unexamined"
+		or ("a failure was recorded and never looked at: " .. table.concat(left, " | ")))
+end
 
 print("")
 -- BEFORE EITHER BRANCH, and before the os.exit below. This is what tells the
