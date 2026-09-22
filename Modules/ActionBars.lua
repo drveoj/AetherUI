@@ -78,6 +78,52 @@ local BINDING_FOR_KIND = {
 	pet    = "BONUSACTIONBUTTON",
 }
 
+-- ---------------------------------------------------------------------------
+-- Blizzard's widget sets, which is what a bar IS now
+--
+-- WE ADOPT BLIZZARD'S BUTTONS RATHER THAN BUILDING OUR OWN. The reason is
+-- cooldowns: an action's cooldown goes SECRET whenever combat, encounter,
+-- challenge-mode or PvP restrictions are in effect, and `Cooldown:SetCooldown`
+-- is annotated "AllowedWhenUntainted" - Blizzard's code only. An addon that
+-- builds its own buttons therefore loses the swipe and the countdown exactly
+-- when they are being looked at. Adopting leaves Blizzard's own untainted code
+-- driving the cooldown, which is why Bartender4 and EllesmereUI both work this
+-- way.
+--
+-- AND THAT FORCES A MODEL CHANGE. Our bars used to be PAGES - bar N showed
+-- action page N. Blizzard's are WIDGET SETS, and the two do not line up.
+-- ActionButton1-12 ARE the paged main bar: they follow whatever page you are
+-- on rather than being page 1. Each MultiBar is pinned to a fixed page.
+--
+-- Read from the client's own constants rather than inferred:
+-- CURRENT_ACTIONBAR_PAGE 1, RIGHT_ACTIONBAR_PAGE 3, LEFT_ACTIONBAR_PAGE 4,
+-- BOTTOMRIGHT_ACTIONBAR_PAGE 5, BOTTOMLEFT_ACTIONBAR_PAGE 6.
+--
+-- PAGE 2 HAS NO WIDGET SET AT ALL. Actions 13-24 are reachable only by paging
+-- the main bar - which is exactly why this file already declares its own
+-- AETHERUI_BAR2BUTTON binding above, Blizzard having never named one either. A
+-- bar on page 2 cannot be adopted, and stops existing as a separate bar.
+local WIDGET_SET_FOR_PAGE = {
+	[1] = { prefix = "ActionButton",              frame = "MainActionBar",        paged = true },
+	[3] = { prefix = "MultiBarRightButton",       frame = "MultiBarRight" },
+	[4] = { prefix = "MultiBarLeftButton",        frame = "MultiBarLeft" },
+	[5] = { prefix = "MultiBarBottomRightButton", frame = "MultiBarBottomRight" },
+	[6] = { prefix = "MultiBarBottomLeftButton",  frame = "MultiBarBottomLeft" },
+}
+
+local WIDGET_SET_FOR_KIND = {
+	stance = { prefix = "StanceButton",    frame = "StanceBar" },
+	pet    = { prefix = "PetActionButton", frame = "PetActionBar" },
+}
+
+--- Which Blizzard widget set backs this bar, or nil where none can.
+local function WidgetSetFor(barCfg)
+	if barCfg.kind ~= "action" then return WIDGET_SET_FOR_KIND[barCfg.kind] end
+	return WIDGET_SET_FOR_PAGE[barCfg.page or 1]
+end
+
+AB.WidgetSetFor = WidgetSetFor
+
 -- Labels for Blizzard's key binding panel. Harmless if it never opens.
 _G.BINDING_HEADER_AETHERUI = "Aether" .. A.Hi("UI")
 for i = 1, NUM_ACTIONS_PER_PAGE do

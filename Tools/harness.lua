@@ -16285,6 +16285,34 @@ check(AB.hideReport.PossessBarFrame ~= nil or AB.hideReport.PossessBarFrame == n
 	"possess keeps Blizzard's bar - rare, temporary, and no vehicle UI here")
 check(_G.MainMenuBar:GetParent() ~= UIParent, "banished frames are reparented off UIParent")
 
+do  -- a bar is a Blizzard WIDGET SET now, not a page
+	-- Adopting Blizzard's buttons is what keeps cooldowns working once they go
+	-- secret in combat, and it forces this: ActionButton1-12 ARE the paged main
+	-- bar rather than page 1, and each MultiBar is pinned to a fixed page.
+	-- Taken from the client's own constants, so a client that renumbered them
+	-- fails here rather than silently driving the wrong bar.
+	local function setFor(page) return AB.WidgetSetFor({ kind = "action", page = page }) end
+	check(setFor(1) and setFor(1).prefix == "ActionButton" and setFor(1).paged,
+		"bar page 1 is the paged main bar, not a fixed set")
+	check(setFor(6) and setFor(6).prefix == "MultiBarBottomLeftButton",
+		"page 6 is MultiBarBottomLeft (BOTTOMLEFT_ACTIONBAR_PAGE)")
+	check(setFor(5) and setFor(5).prefix == "MultiBarBottomRightButton",
+		"page 5 is MultiBarBottomRight")
+	check(setFor(3) and setFor(3).prefix == "MultiBarRightButton", "page 3 is MultiBarRight")
+	check(setFor(4) and setFor(4).prefix == "MultiBarLeftButton", "page 4 is MultiBarLeft")
+
+	-- THE ONE THAT DECIDES THE MODEL. Actions 13-24 are reachable only by
+	-- paging the main bar, so a bar on page 2 has nothing to adopt - which is
+	-- why this file already declares its own AETHERUI_BAR2BUTTON binding.
+	check(setFor(2) == nil,
+		"page 2 has NO widget set - it is why bar 2 cannot survive the remap")
+
+	check(AB.WidgetSetFor({ kind = "pet" }).prefix == "PetActionButton",
+		"and the pet bar has one of its own")
+	check(AB.WidgetSetFor({ kind = "stance" }).prefix == "StanceButton",
+		"as does the stance bar")
+end
+
 -- ...BUT NOT THE STATUS TRACKING CONTAINER, whose parent Blizzard calls methods
 -- on. Reported by Joe from the WoW Forever client on 2026-09-22: every
 -- OverrideActionBar event threw "attempt to call a nil value" out of
