@@ -3090,6 +3090,10 @@ if _G.__flavour == "camelot" then
 		CreateFrame("Frame", nil, MinimapCluster.IndicatorFrame)
 	MinimapCluster.InstanceDifficulty = CreateFrame("Frame", nil, MinimapCluster)
 
+	-- WoW Forever's own day/night dial, built by Camelot\Diel.lua at file load
+	-- and hung on the cluster with no global name. The sun off the map's corner.
+	MinimapCluster.DielFrame = CreateFrame("Frame", nil, MinimapCluster)
+
 	-- The zone text IS globally named even though its button is not.
 	MinimapZoneText = MinimapCluster.ZoneTextButton:CreateFontString(
 		"MinimapZoneText", "ARTWORK")
@@ -3109,6 +3113,9 @@ if _G.__flavour == "camelot" then
 	Minimap.ZoomHitArea = CreateFrame("Frame", nil, Minimap)
 	Minimap.ZoomIn      = CreateFrame("Button", nil, Minimap)
 	Minimap.ZoomOut     = CreateFrame("Button", nil, Minimap)
+	-- Blizzard's OWN coordinate readout, new on this client. Anchored BOTTOM of
+	-- Minimap at y = -18, which puts it under the map and behind our zone pill -
+	-- so on screen it read as our coordinates printed twice at two sizes.
 	Minimap.PlayerCoords = CreateFrame("Frame", nil, Minimap)
 
 	_G.__minimapPin = CreateFrame("Frame", "HarnessMinimapPin", Minimap)
@@ -19538,6 +19545,15 @@ if _G.__flavour == "camelot" then do  -- the furniture, camelot
 		"and the instance difficulty badge")
 	check(not Minimap.ZoomIn:IsShown() and not Minimap.ZoomOut:IsShown(),
 		"the zoom buttons go too - they are children of Minimap here, not globals")
+
+	-- Both reported from the game on 2026-09-22, and both reachable ONLY by
+	-- parentKey: one is built at runtime by a file that exists on no other
+	-- client, the other is a frame Blizzard did not used to draw at all.
+	check(not MinimapCluster.DielFrame:IsShown(),
+		"WoW Forever's day/night dial is banished - the sun off the map's corner")
+	check(not Minimap.PlayerCoords:IsShown(),
+		"and Blizzard's own coordinates, which sat under the map behind our pill"
+		.. " and read as ours printed twice")
 
 	-- The three names that DO survive the move still have to work by name.
 	check(r.GameTimeFrame == "hidden", "the day/night dial is still banished by name")

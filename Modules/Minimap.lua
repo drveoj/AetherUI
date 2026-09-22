@@ -98,6 +98,18 @@ MM.blizzardKeys = {
 	{ "MinimapCluster", "InstanceDifficulty" },
 	{ "Minimap", "ZoomIn" },
 	{ "Minimap", "ZoomOut" },
+
+	-- THE DAY/NIGHT DIAL, which is WoW Forever's alone. `Camelot\Diel.lua`
+	-- builds it at file load - "diel" as in diurnal - and hangs it on the
+	-- cluster with NO global name, so only this path reaches it. It is the sun
+	-- that was sitting off the map's top-right corner.
+	{ "MinimapCluster", "DielFrame" },
+
+	-- AND THE COORDINATES BLIZZARD NOW DRAWS ITSELF. New here, anchored
+	-- BOTTOM of Minimap at y = -18, which is underneath the map and behind our
+	-- own zone pill - so it read as our readout printed twice at two sizes.
+	-- Ours stays; this one goes.
+	{ "Minimap", "PlayerCoords" },
 }
 
 --- Walk a parentKey path from a global, or nil if any step is missing.
