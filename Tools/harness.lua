@@ -7671,6 +7671,59 @@ function GetQuestLogRewardMoney()
 	local q = selectedQuest()
 	return (q and q.money) or 0
 end
+-- ...AND ON CAMELOT EVERY ONE OF THEM TAKES THE questID, as a trailing
+-- argument on the per-item getters and as the only one on the counts. Calling
+-- them the old way is not a missing function, it is a **Usage error** raised
+-- from C:
+--
+--     Usage: GetNumQuestLogChoices(questID, [includeCurrencies])
+--
+-- which is exactly why it slipped through: the module's `if GetNumQuestLogChoices
+-- then` existence guard passed, and the call one line later threw. A mock that
+-- merely ignored the extra argument would have kept the suite green while the
+-- quest detail pane died on every click, so these RAISE instead.
+if _G.__flavour == "camelot" then
+	local function byID(questID)
+		if type(questID) ~= "number" then return nil end
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID then return q end
+		end
+		return nil
+	end
+	local function demand(questID, usage)
+		local q = byID(questID)
+		if not q then error("Usage: " .. usage, 3) end
+		return q
+	end
+
+	function GetNumQuestLogChoices(questID)
+		local q = demand(questID, "GetNumQuestLogChoices(questID, [includeCurrencies])")
+		return (q.choices) and #q.choices or 0
+	end
+	function GetQuestLogChoiceInfo(i, questID)
+		local q = demand(questID, "GetQuestLogChoiceInfo(index, questID)")
+		local r = q.choices and q.choices[i]
+		if not r then return nil end
+		return r[1], r[2], r[3] or 1, r[4] or 1, r[5] ~= false
+	end
+	function GetNumQuestLogRewards(questID)
+		local q = demand(questID, "GetNumQuestLogRewards(questID)")
+		return (q.rewards) and #q.rewards or 0
+	end
+	function GetQuestLogRewardInfo(i, questID)
+		local q = demand(questID, "GetQuestLogRewardInfo(index, questID)")
+		local r = q.rewards and q.rewards[i]
+		if not r then return nil end
+		return r[1], r[2], r[3] or 1, r[4] or 1, r[5] ~= false
+	end
+	function GetQuestLogRewardMoney(questID)
+		local q = demand(questID, "GetQuestLogRewardMoney(questID)")
+		return q.money or 0
+	end
+	-- GetQuestLogRequiredMoney keeps the no-argument form on this client: the
+	-- questID variant does not appear anywhere in its source.
+end
+
 function GetQuestLogRequiredMoney()
 	local q = selectedQuest()
 	return (q and q.required) or 0

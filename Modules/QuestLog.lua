@@ -404,12 +404,29 @@ local SelectQuest = A.Quest.Select
 local function Rewards(questID)
 	local r = { choices = {}, rewards = {}, money = 0, required = 0, spell = nil }
 
+	-- EVERY REWARD GETTER TAKES THE questID ON WoW FOREVER, where the old ones
+	-- take nothing at all and read whatever the selection points at. Reported
+	-- from the game as:
+	--
+	--     Usage: GetNumQuestLogChoices(questID, [includeCurrencies])
+	--
+	-- Same split as GetQuestLogQuestText, and it is a *Usage* error rather than
+	-- a missing function, so the `if GetNumQuestLogChoices then` guards below
+	-- all passed and then threw one line later.
+	--
+	-- The questID is a TRAILING argument on the per-item getters
+	-- (`GetQuestLogChoiceInfo(index, questID)`) and the only one on the counts.
+	-- Held as `qid`, nil on Era, so each call site reads as the client's own
+	-- signature rather than as a branch.
+	local qid = A.Quest.IsModern() and questID or nil
+	if A.Quest.IsModern() and not questID then return r end
+
 	local function readInto(list, count, getter, kind)
 		if not count or not getter then return end
 		for i = 1, count do
 			-- numItems is pre-seeded to 1 by Blizzard before the call, because the
 			-- client leaves it alone for a single item rather than returning 1.
-			local ok, name, texture, numItems, quality, isUsable = pcall(getter, i)
+			local ok, name, texture, numItems, quality, isUsable = pcall(getter, i, qid)
 			if ok and (name or texture) then
 				list[#list + 1] = {
 					index   = i,
@@ -424,15 +441,20 @@ local function Rewards(questID)
 		end
 	end
 
+	-- pcall on the COUNTS as well, not only on the per-item reads. These are
+	-- the calls that raised the Usage error, and a bare call here takes the
+	-- whole detail pane down with it.
 	if GetNumQuestLogChoices then
-		readInto(r.choices, GetNumQuestLogChoices() or 0, GetQuestLogChoiceInfo, "choice")
+		local ok, n = pcall(GetNumQuestLogChoices, qid)
+		readInto(r.choices, (ok and n) or 0, GetQuestLogChoiceInfo, "choice")
 	end
 	if GetNumQuestLogRewards then
-		readInto(r.rewards, GetNumQuestLogRewards() or 0, GetQuestLogRewardInfo, "reward")
+		local ok, n = pcall(GetNumQuestLogRewards, qid)
+		readInto(r.rewards, (ok and n) or 0, GetQuestLogRewardInfo, "reward")
 	end
 
 	if GetQuestLogRewardMoney then
-		local ok, m = pcall(GetQuestLogRewardMoney)
+		local ok, m = pcall(GetQuestLogRewardMoney, qid)
 		if ok and type(m) == "number" then r.money = m end
 	end
 	if GetQuestLogRequiredMoney then
