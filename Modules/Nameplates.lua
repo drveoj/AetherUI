@@ -233,7 +233,12 @@ local function WantsBar(unit)
 	-- is the only one you wanted to see.
 	if IsNameForm(unit) then
 		local max = UnitHealthMax(unit) or 0
-		return max > 0 and (UnitHealth(unit) or 0) < max
+		local cur = UnitHealth(unit) or 0
+		-- "Is this one hurt" cannot be asked of a secret - see A.IsSecret. Show
+		-- the bar rather than hide it: a bar that should not be there is noise,
+		-- a missing one on the thing actually attacking you is worse.
+		if A.IsSecret(cur, max) then return true end
+		return max > 0 and cur < max
 	end
 
 	local reaction = UnitReaction and UnitReaction(unit, "player")
@@ -458,8 +463,16 @@ local function UpdateHealth(f)
 	if not unit then return end
 
 	local max = UnitHealthMax(unit) or 0
-	f.bar:SetMinMaxValues(0, max > 0 and max or 1)
-	f.bar:SetValue(UnitHealth(unit) or 0)
+	local cur = UnitHealth(unit) or 0
+	-- `max > 0` is a comparison and throws on a secret; the bar itself takes both
+	-- values happily, so it still draws correctly. See A.IsSecret.
+	if A.IsSecret(cur, max) then
+		f.bar:SetMinMaxValues(0, max)
+		f.bar:SetValue(cur)
+	else
+		f.bar:SetMinMaxValues(0, max > 0 and max or 1)
+		f.bar:SetValue(cur)
+	end
 
 	-- Flat, one colour. SetColors takes a pair for a gradient and a single
 	-- triple for a flat fill, and HealthColor hands back the triple: two stops

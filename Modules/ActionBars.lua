@@ -1249,6 +1249,36 @@ local function Forbidden(f)
 	return (not ok) or forbidden
 end
 
+--- Frames that are hidden but NEVER reparented, because Blizzard's own code
+--  reads their parent as a typed object rather than as somewhere to hang them.
+--
+--  `MainStatusTrackingBarContainer` is the one that taught us this, on WoW
+--  Forever, 2026-09-22:
+--
+--      function StatusTrackingBarContainerMixin:GetStatusTrackingManager()
+--          return self:GetParent();
+--      end
+--      function StatusTrackingBarContainerMixin:UpdateShownState()
+--          self:SetShown(...)
+--          self:GetStatusTrackingManager():CheckForLayoutChange();   -- :228
+--
+--  The parent IS the manager. Reparenting the container to our hider hands
+--  Blizzard a plain Frame with no `CheckForLayoutChange` on it, and every
+--  OverrideActionBar event then threw "attempt to call a nil value" from inside
+--  Blizzard's own file - a stack that looks nothing like our bug.
+--
+--  Hide alone is enough here: the OnShow hook below is what actually keeps it
+--  down, and the reparent was only ever belt to that braces. EllesmereUI lands
+--  on the same answer from the other side - UnregisterAllEvents and Hide on
+--  `StatusTrackingBarManager`, and it reparents neither.
+--
+--  ADD TO THIS LIST rather than dropping the reparent everywhere: the reparent
+--  is what stops another addon's Show() putting a bar back, and that is still
+--  worth having for every frame Blizzard does not treat this way.
+local KEEP_PARENT = {
+	MainStatusTrackingBarContainer = true,
+}
+
 local function Banish(frameName)
 	local f = _G[frameName]
 	if not f then return "absent" end
@@ -1259,7 +1289,9 @@ local function Banish(frameName)
 	-- ends up still on screen with no error to show for it.
 	pcall(f.UnregisterAllEvents, f)
 	pcall(f.Hide, f)
-	pcall(f.SetParent, f, GetHider())
+	if not KEEP_PARENT[frameName] then
+		pcall(f.SetParent, f, GetHider())
+	end
 
 	-- Belt and braces. Blizzard's bar code re-shows these from handlers we can't
 	-- unregister (they fire on a parent, or run out of UIParent_ManageFramePositions),
@@ -1273,7 +1305,10 @@ local function Banish(frameName)
 	end
 
 	local shown = f.IsShown and f:IsShown()
-	return shown and "STILL SHOWN" or "hidden"
+	if shown then return "STILL SHOWN" end
+	-- Say which of the two it got. A report that calls both "hidden" hides the
+	-- one fact a future reader of this list would need.
+	return KEEP_PARENT[frameName] and "hidden (parent kept)" or "hidden"
 end
 
 --- Take a Blizzard action button out of service.

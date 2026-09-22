@@ -85,6 +85,41 @@ A.isEra     = A.flavour == "era"
 A.isCamelot = A.flavour == "camelot"
 
 -- ---------------------------------------------------------------------------
+-- secret values
+--
+-- WoW Forever inherits Midnight's secret-value system: some numbers the client
+-- hands back - a unit's max health, an aura, a cast - come wrapped so that an
+-- addon can PASS THEM ON but never look at them. Comparing one, or doing
+-- arithmetic on it, throws:
+--
+--     attempt to compare local 'max' (a secret number value, while execution
+--     tainted by 'AetherUI')
+--
+-- Which is how this arrived: 260 of them off one tooltip.
+--
+-- THE RULE, and it is not obvious: a secret can be WRITTEN - SetValue,
+-- SetMinMaxValues, SetVertexColor all take one happily - it just cannot be
+-- read, compared or CACHED. Caching matters because a cached secret poisons
+-- the next comparison as well, so the cheap fix of "store it and compare next
+-- time" fails a second time in a place further from the cause. EllesmereUI hit
+-- this and says the same thing in its own words.
+--
+-- `issecretvalue` is a real global on that client (FrameScriptDocumentation
+-- names it, alongside issecrettable, hasanysecretvalues, canaccesssecrets and
+-- dropsecretaccess). It does not exist on Era, so the guard answers false there
+-- and every caller keeps its old behaviour exactly.
+-- ---------------------------------------------------------------------------
+
+--- True if ANY argument is a value this client will not let us inspect.
+function A.IsSecret(...)
+	if not issecretvalue then return false end
+	for i = 1, select("#", ...) do
+		if issecretvalue((select(i, ...))) then return true end
+	end
+	return false
+end
+
+-- ---------------------------------------------------------------------------
 -- chat output
 -- ---------------------------------------------------------------------------
 

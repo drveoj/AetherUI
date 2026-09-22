@@ -877,6 +877,11 @@ function Zen:UpdateText()
 end
 
 local function Fraction(cur, max)
+	-- A SECRET CANNOT BE DIVIDED, and both the clamp and the division below
+	-- would throw. Zen's bars are a fraction of a capsule rather than a number,
+	-- so there is no readout to drop: a FULL bar is the least wrong answer,
+	-- because an empty one reads as "you are about to die". See A.IsSecret.
+	if A.IsSecret(cur, max) then return 1 end
 	if not max or max <= 0 then return 0 end
 	return math.max(0, math.min(1, (cur or 0) / max))
 end
@@ -889,7 +894,11 @@ function Zen:UpdateBars()
 	f.hp:SetValue(Fraction(UnitHealth("player"), UnitHealthMax("player")))
 
 	local pwMax = UnitPowerMax("player")
-	local hasPower = pwMax and pwMax > 0
+	-- `pwMax > 0` is its own comparison, outside Fraction's guard - so a secret
+	-- power pool throws here even though the division below is covered. A class
+	-- with no pool is the thing this is looking for; a pool we are not allowed
+	-- to read is not that, so treat it as having one.
+	local hasPower = A.IsSecret(pwMax) or (pwMax and pwMax > 0)
 	f.pw:SetMinMaxValues(0, 1)
 	f.pw:SetValue(hasPower and Fraction(UnitPower("player"), pwMax) or 0)
 	-- A class with no power pool at all (a level-one warrior out of combat) would

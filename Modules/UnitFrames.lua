@@ -465,6 +465,26 @@ local function UpdateHealth(f)
 	if not UnitExists(unit) then return end
 
 	local cur, max = UnitHealth(unit), UnitHealthMax(unit)
+
+	-- SECRET HEALTH: write it, never read it. On WoW Forever these come back
+	-- wrapped so an addon can pass them to SetMinMaxValues and SetValue - which
+	-- is enough to draw a correct bar - but cannot compare them, do arithmetic
+	-- on them, or CACHE them. Caching is the trap: a stored secret poisons the
+	-- next comparison too, so Reconcile below must not keep one either.
+	--
+	-- So the bar is still right and only the READOUT goes quiet, which is the
+	-- most of this we are allowed to keep. See A.IsSecret.
+	if A.IsSecret(cur, max) then
+		f.health:SetMinMaxValues(0, max)
+		f.health:SetValue(cur)
+		f.health:SetColors(Palette:HealthColor(unit))
+		f.hpText:SetText("")
+		f._lastHealth = nil
+		f._healthSecret = true
+		return
+	end
+	f._healthSecret = nil
+
 	if not max or max <= 0 then max = 1 end
 
 	-- Killing something does not reliably deliver a final UNIT_HEALTH of zero on
@@ -499,6 +519,20 @@ local function UpdatePower(f)
 	if not cfg.showPower or not UnitExists(unit) then return end
 
 	local cur, max = UnitPower(unit), UnitPowerMax(unit)
+
+	-- Same rule as health: drawable, not readable, never cached.
+	if A.IsSecret(cur, max) then
+		f.power:Show()
+		f.power:SetMinMaxValues(0, max)
+		f.power:SetValue(cur)
+		f.power:SetColors(Palette:PowerColor(unit))
+		f.mpText:SetText("")
+		f._lastPower = nil
+		f._powerSecret = true
+		return
+	end
+	f._powerSecret = nil
+
 	if not max or max <= 0 then
 		f.power:Hide()
 		f.mpText:SetText("")
@@ -643,12 +677,27 @@ local function Reconcile()
 	for _, f in ipairs(UF.frames) do
 		local unit = f.unit
 		if f:IsShown() and UnitExists(unit) then
+			-- A SECRET CANNOT BE COMPARED, and this runs ten times a second - so
+			-- an unguarded `~=` here is not one error, it is a wall of them.
+			--
+			-- When the value is secret there is nothing to reconcile: the whole
+			-- point of this pass is spotting that the bar disagrees with the API,
+			-- and we are not allowed to know. Refresh unconditionally instead,
+			-- which is what the event path would have done anyway.
 			local want = IsDead(unit) and 0 or (UnitHealth(unit) or 0)
-			if f._lastHealth ~= want then UpdateHealth(f) end
+			if f._healthSecret or A.IsSecret(want) then
+				UpdateHealth(f)
+			elseif f._lastHealth ~= want then
+				UpdateHealth(f)
+			end
 
 			if f.power:IsShown() then
 				local wantPower = IsDead(unit) and 0 or (UnitPower(unit) or 0)
-				if f._lastPower ~= wantPower then UpdatePower(f) end
+				if f._powerSecret or A.IsSecret(wantPower) then
+					UpdatePower(f)
+				elseif f._lastPower ~= wantPower then
+					UpdatePower(f)
+				end
 			end
 		end
 	end

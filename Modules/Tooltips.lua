@@ -693,6 +693,20 @@ function TT:UpdateStatusBar(bar)
 		max = m or 0
 	end
 
+	-- A SECRET NUMBER CANNOT BE COMPARED, and on WoW Forever a unit's max health
+	-- often is one: `max <= 0` below threw 260 times off a single tooltip. The
+	-- `or 0` above is fine, which is the tell - truthiness does not read the
+	-- value, `<=` does.
+	--
+	-- Nothing to fall back on here. This row exists to print the two numbers and
+	-- we are not allowed to look at them, so it goes quiet rather than wrong,
+	-- and every line the client drew itself is untouched. See A.IsSecret.
+	if A.IsSecret(cur, max) then
+		bar.aetherValue:SetText("")
+		bar.aetherLabel:SetText("")
+		return
+	end
+
 	if max <= 0 then
 		bar.aetherValue:SetText("")
 		return

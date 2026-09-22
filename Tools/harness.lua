@@ -2830,6 +2830,38 @@ end
 uiChild("MainActionBar")
 uiChild("MicroMenu")
 uiChild("PetActionBar")
+
+-- THE STATUS TRACKING BAR, AND ITS PARENT IS A TYPED OBJECT.
+--
+-- Neither of these was mocked, so the module banished two frames that did not
+-- exist and the whole path was green without running - the same omission that
+-- left UF:HideBlizzard untested.
+--
+-- The relationship is the point. `MainStatusTrackingBarContainer` is a CHILD of
+-- `StatusTrackingBarManager`, and Blizzard's own StatusTrackingBarContainerMixin
+-- does:
+--
+--     function ...:GetStatusTrackingManager() return self:GetParent() end
+--     function ...:UpdateShownState()
+--         self:GetStatusTrackingManager():CheckForLayoutChange()   -- :228
+--
+-- so reparenting the container hands Blizzard a frame with no
+-- CheckForLayoutChange on it and the client throws from inside its own file.
+-- Modelling the method on the manager is what makes that reproducible here
+-- rather than only in the game.
+StatusTrackingBarManager = uiChild("StatusTrackingBarManager")
+function StatusTrackingBarManager:CheckForLayoutChange()
+	_G.__layoutChecked = (_G.__layoutChecked or 0) + 1
+end
+MainStatusTrackingBarContainer =
+	CreateFrame("Frame", "MainStatusTrackingBarContainer", StatusTrackingBarManager)
+--- Blizzard's own call path, cut down to the step that broke.
+function MainStatusTrackingBarContainer:UpdateShownState()
+	self:GetStatusTrackingManager():CheckForLayoutChange()
+end
+function MainStatusTrackingBarContainer:GetStatusTrackingManager()
+	return self:GetParent()
+end
 --- A FRAME THE CLIENT HAS PUT OUT OF REACH, and its whole subtree with it.
 --
 --  SetForbidden is real and this game uses it on ordinary windows, not only on
@@ -8256,6 +8288,33 @@ else
 	function GetPetHappiness() return _G.__petHappiness, 100, 0 end
 end
 function HasPetUI() return true, _G.__isHunterPet end
+
+-- SECRET VALUES, on camelot only.
+--
+-- WoW Forever inherits Midnight's secret-value system: some numbers come back
+-- wrapped so an addon can pass them on but never read, compare or cache them.
+-- `issecretvalue` is the client's own test for one (FrameScriptDocumentation
+-- names it alongside issecrettable, hasanysecretvalues, canaccesssecrets and
+-- dropsecretaccess). Era has no such global, which is exactly why A.IsSecret
+-- answers false there and every caller keeps its old behaviour.
+--
+-- A REAL SECRET CANNOT BE MODELLED HERE. The client's version throws inside the
+-- Lua VM on comparison; Lua has no such type, and building a metatable that
+-- errors on __lt would be a mock inventing its own semantics. So this models
+-- the one thing the module actually asks - "is this value one I must not look
+-- at" - via a registry the tests write to. That is enough to prove every guard
+-- takes its secret branch, which is the part that was wrong in the game.
+if _G.__flavour == "camelot" then
+	_G.__secretValues = setmetatable({}, { __mode = "k" })
+	function issecretvalue(v)
+		return _G.__secretValues[v] == true
+	end
+	--- Mark a number secret for the duration of a check.
+	function _G.__MakeSecret(v)
+		_G.__secretValues[v] = true
+		return v
+	end
+end
 
 -- BLIZZARD'S OWN UNIT FRAMES, which this mock simply did not have.
 --
@@ -15903,6 +15962,27 @@ check(AB.hideReport.MainMenuBarVehicleLeaveButton == nil,
 check(AB.hideReport.PossessBarFrame ~= nil or AB.hideReport.PossessBarFrame == nil,
 	"possess keeps Blizzard's bar - rare, temporary, and no vehicle UI here")
 check(_G.MainMenuBar:GetParent() ~= UIParent, "banished frames are reparented off UIParent")
+
+-- ...BUT NOT THE STATUS TRACKING CONTAINER, whose parent Blizzard calls methods
+-- on. Reported by Joe from the WoW Forever client on 2026-09-22: every
+-- OverrideActionBar event threw "attempt to call a nil value" out of
+-- StatusTrackingManager.lua:228, because GetStatusTrackingManager() is just
+-- GetParent() and we had made that our hider.
+check(_G.MainStatusTrackingBarContainer:GetParent() == _G.StatusTrackingBarManager,
+	"the status tracking container keeps its real parent - Blizzard calls"
+	.. " CheckForLayoutChange on it, so a plain hider frame breaks the client")
+check(not _G.MainStatusTrackingBarContainer:IsShown(),
+	"and is still hidden, which is all we actually wanted from it")
+check(AB.hideReport.MainStatusTrackingBarContainer == "hidden (parent kept)",
+	"and the report says which of the two it got, rather than calling both hidden")
+do
+	-- The exact call that threw in the game, run here.
+	local ok, err = pcall(_G.MainStatusTrackingBarContainer.UpdateShownState,
+		_G.MainStatusTrackingBarContainer)
+	check(ok, "Blizzard's own UpdateShownState still runs after we banish it"
+		.. (ok and "" or (" -- " .. tostring(err))))
+end
+
 SlashCmdList["AETHERUI"]("diag")   -- must not error with a live report
 
 check(bar.buttons[1].icon:GetTexture() == 130001, "action icon painted")
@@ -16416,6 +16496,49 @@ do
 	cfg.perRow = 0
 	AU:OnConfigChanged()
 	check(PB.opts.perRow == before, "and 0 goes back to whatever fits")
+end
+
+if _G.__flavour == "camelot" then
+section("secret values are drawn, never read", function()
+	-- THE BUG THIS EXISTS FOR: 260 errors off one tooltip, all
+	-- "attempt to compare local 'max' (a secret number value)". On WoW Forever
+	-- a unit's max health can come back wrapped so it may be passed to a bar but
+	-- never compared, divided or cached.
+	check(A.IsSecret(1) == false, "an ordinary number is not secret")
+	check(A.IsSecret(_G.__MakeSecret(4242)) == true, "a marked one is")
+	check(A.IsSecret(1, 2, _G.__MakeSecret(4243)) == true,
+		"and any one of several arguments is enough")
+	check(A.IsSecret() == false, "no arguments is not secret")
+	check(A.IsSecret(nil) == false, "and neither is nil")
+
+	local f = UF.player
+	local saved, savedMax = units.player.hp, units.player.hpMax
+
+	-- The bar still gets both values - that is the whole point of the rule, and
+	-- a frame that simply stopped drawing would be a worse answer than one that
+	-- drops the readout.
+	units.player.hp, units.player.hpMax =
+		_G.__MakeSecret(4244), _G.__MakeSecret(4245)
+	UF.UpdateAll(f)
+	check(f.hpText:GetText() == "",
+		"a secret health drops the readout rather than throwing")
+	check(f._lastHealth == nil,
+		"and is NEVER cached - a stored secret poisons the next comparison too,"
+		.. " which is how this fails a second time somewhere else")
+	check(f._healthSecret == true, "the frame remembers only that it was secret")
+
+	-- Reconcile runs at 10Hz, so an unguarded comparison here is not one error,
+	-- it is a wall of them.
+	local ok = pcall(UF.Reconcile)
+	check(ok, "the 10Hz reconcile pass survives a secret instead of erroring"
+		.. " ten times a second")
+
+	units.player.hp, units.player.hpMax = saved, savedMax
+	UF.UpdateAll(f)
+	check(f._healthSecret == nil and f.hpText:GetText() ~= "",
+		"and an ordinary value afterwards reads out again, so the secret branch"
+		.. " does not latch")
+end)
 end
 
 print("== Blizzard's own unit frames are taken off screen ==")
