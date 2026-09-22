@@ -109,7 +109,14 @@ MM.blizzardKeys = {
 	-- BOTTOM of Minimap at y = -18, which is underneath the map and behind our
 	-- own zone pill - so it read as our readout printed twice at two sizes.
 	-- Ours stays; this one goes.
-	{ "Minimap", "PlayerCoords" },
+	--
+	-- A SIBLING OF Minimap, NOT A CHILD OF IT. This was first written as
+	-- { "Minimap", "PlayerCoords" } because the anchor says
+	-- relativeTo="Minimap" - but the XML closes </Minimap> and THEN opens the
+	-- coords frame, so both hang off MinimapContainer. It resolved to nil,
+	-- reported "absent", and the coordinates stayed on screen. An anchor says
+	-- where a frame is drawn, never whose child it is.
+	{ "MinimapCluster", "MinimapContainer", "PlayerCoords" },
 }
 
 --- Walk a parentKey path from a global, or nil if any step is missing.

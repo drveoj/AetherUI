@@ -3113,10 +3113,16 @@ if _G.__flavour == "camelot" then
 	Minimap.ZoomHitArea = CreateFrame("Frame", nil, Minimap)
 	Minimap.ZoomIn      = CreateFrame("Button", nil, Minimap)
 	Minimap.ZoomOut     = CreateFrame("Button", nil, Minimap)
-	-- Blizzard's OWN coordinate readout, new on this client. Anchored BOTTOM of
-	-- Minimap at y = -18, which puts it under the map and behind our zone pill -
-	-- so on screen it read as our coordinates printed twice at two sizes.
-	Minimap.PlayerCoords = CreateFrame("Frame", nil, Minimap)
+
+	-- BLIZZARD'S OWN COORDINATE READOUT, and its parent is the thing that
+	-- matters. It is anchored `relativeTo="Minimap"`, which is why the first
+	-- attempt banished `Minimap.PlayerCoords` and reached nothing - the XML
+	-- closes </Minimap> and THEN opens this frame, so it is a SIBLING of the map
+	-- inside MinimapContainer. The mock had it wrong the same way, which is how
+	-- the check passed while the coordinates stayed on screen in the game. An
+	-- anchor says where a frame draws, never whose child it is.
+	MinimapCluster.MinimapContainer.PlayerCoords =
+		CreateFrame("Frame", nil, MinimapCluster.MinimapContainer)
 
 	_G.__minimapPin = CreateFrame("Frame", "HarnessMinimapPin", Minimap)
 	_G.__minimapPin:SetAlpha(0.5)
@@ -8673,6 +8679,11 @@ function UnitChannelInfo(u)
 	if u ~= "player" or not castState or not castState.channel then return nil end
 	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
 end
+
+--- castState is a file-local, and the blocks that drive a cast sit right beside
+--  it. The secret-value section is thousands of lines away and needs the same
+--  handle, so it gets one rather than a second copy of the mock.
+function _G.__setCast(t) castState = t end
 
 -- The addon list is a SUPERSET of the actionable one: most addons offer neither
 -- an LDB launcher nor a minimap button. Only about half declare ## IconTexture
@@ -16796,6 +16807,26 @@ section("secret values are drawn, never read", function()
 	check(f._healthSecret == nil and f.hpText:GetText() ~= "",
 		"and an ordinary value afterwards reads out again, so the secret branch"
 		.. " does not latch")
+
+	-- A SECRET CAST CANNOT BE ANIMATED. Reported from the game as
+	-- "UNIT_SPELLCAST_START: attempt to perform numeric conversion on a secret
+	-- number value" - CastTick divides the elapsed time by the total.
+	if UF.cast then
+		local cast = UF.cast
+		_G.__setCast({ name = "Secret Bolt", icon = 135846, channel = false,
+			startTime = _G.__MakeSecret(4270), endTime = _G.__MakeSecret(4271) })
+		local ok = pcall(UF.CastStart, cast, false)
+		check(ok, "a secret cast does not throw")
+		check(cast.state.active == false,
+			"and never starts the per-frame tick, which is the thing doing the"
+			.. " arithmetic")
+		check(cast.spellName:GetText() == "Secret Bolt",
+			"the capsule still says WHAT is being cast, which we are allowed to know")
+		check(cast.time:GetText() == "" and not cast.bar:IsShown(),
+			"but the bar and the timer go rather than showing a number we invented")
+		_G.__setCast(nil)
+		UF.CastStop(cast)
+	end
 end)
 
 section("a restricted aura read is refused, not merely secret", function()
@@ -19718,9 +19749,10 @@ if _G.__flavour == "camelot" then do  -- the furniture, camelot
 	-- client, the other is a frame Blizzard did not used to draw at all.
 	check(not MinimapCluster.DielFrame:IsShown(),
 		"WoW Forever's day/night dial is banished - the sun off the map's corner")
-	check(not Minimap.PlayerCoords:IsShown(),
+	check(not MinimapCluster.MinimapContainer.PlayerCoords:IsShown(),
 		"and Blizzard's own coordinates, which sat under the map behind our pill"
-		.. " and read as ours printed twice")
+		.. " and read as ours printed twice - a SIBLING of Minimap, not a child,"
+		.. " which is what the first fix got wrong")
 
 	-- The three names that DO survive the move still have to work by name.
 	check(r.GameTimeFrame == "hidden", "the day/night dial is still banished by name")

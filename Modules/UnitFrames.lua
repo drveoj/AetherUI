@@ -851,6 +851,33 @@ local function CastStart(f, channel)
 	st.active, st.channel = true, channel
 	st.startTime, st.endTime = startTime, endTime
 
+	-- SECRET CAST TIMES CANNOT BE ANIMATED. WoW Forever can hand back a cast's
+	-- start and end as secrets - that is the point of the system, hiding what
+	-- somebody else is doing - and CastTick divides one by the other:
+	--
+	--     UNIT_SPELLCAST_START: attempt to perform numeric conversion on a
+	--     secret number value
+	--
+	-- There is no honest progress to draw. The capsule still says WHAT is being
+	-- cast, which is the part we are allowed to know, and the bar and the timer
+	-- go rather than showing a number we invented. `st.active` stays false so
+	-- the per-frame tick never starts - it is the thing doing the arithmetic.
+	st.secret = A.IsSecret(startTime, endTime) or nil
+	if st.secret then
+		st.active = false
+		f.spellName:SetText(name)
+		W.Color(f.spellName, Palette.c.text)
+		f.icon:SetIcon(texture)
+		f.bar:Hide()
+		f.glow:Hide()
+		f.time:SetText("")
+		f:Show()
+		f:SetScript("OnUpdate", nil)
+		return
+	end
+	f.bar:Show()
+	f.glow:Show()
+
 	local c = Palette.c
 	-- Whose bar is this? Yours stays blue; anyone else's takes their reaction, so
 	-- the two stacked capsules are answerable at a glance instead of by reading
