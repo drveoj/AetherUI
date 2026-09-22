@@ -2960,6 +2960,44 @@ function CancelUnitBuff(unit, index, filter)
 end
 function CancelSpellByName(name) _G.__cancelled = { name = name } end
 
+-- THE MODERN AURA API, on camelot only, and it THROWS when restricted.
+--
+-- Two things were being modelled kindly at once. `C_UnitAuras` was not mocked
+-- at all, so every run took the legacy `UnitAura` branch and the modern path
+-- our code prefers was never exercised on any client. And a restricted read is
+-- a hard error rather than a nil return - Blizzard made it one deliberately -
+-- so a mock that answered nil would let our code sail past while the game
+-- filled the log with:
+--
+--     GetAuraDataByIndex(): Auras cannot be accessed when secret while tainted
+--
+-- Era never refuses the read, which is why this is camelot-only rather than a
+-- flag on a shared mock.
+if _G.__flavour == "camelot" then
+	C_UnitAuras = C_UnitAuras or {}
+	_G.__auraReads = 0
+	function C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
+		-- COUNTED, because "did it throw" is not the question. A pcall around
+		-- the call already stops a throw reaching the log, so a test that only
+		-- checks for errors passes with the guard removed - it did, first time.
+		-- What the guard is actually for is not CALLING a throwing API over and
+		-- over, several times a second, per aura, per unit.
+		_G.__auraReads = _G.__auraReads + 1
+		if _G.__aurasRestricted then
+			error("GetAuraDataByIndex(): Auras cannot be accessed when secret"
+				.. " while tainted by 'AetherUI'", 2)
+		end
+		local name, icon, count, auraType, duration, expiration, _,
+			_, _, _, _, _, castByPlayer = UnitAura(unit, index, filter)
+		if not name then return nil end
+		return {
+			name = name, icon = icon, applications = count,
+			dispelName = auraType, duration = duration,
+			expirationTime = expiration, isFromPlayerOrPlayerPet = castByPlayer,
+		}
+	end
+end
+
 -- The client FILTERS. This was a lookup on the exact filter string, so a module
 -- that asked for "HARMFUL" when it meant "HARMFUL|PLAYER" got whatever the test
 -- had put in the list and looked correct. PLAYER is applied here instead, over
@@ -8314,6 +8352,17 @@ if _G.__flavour == "camelot" then
 		_G.__secretValues[v] = true
 		return v
 	end
+
+	-- AURAS ARE A DIFFERENT PROBLEM, and the mock has to model the difference.
+	-- A secret NUMBER comes back and may be passed on; a restricted aura read
+	-- THROWS. Blizzard made it a hard-error API rather than a nil return, so a
+	-- mock that answered nil would let our code pass while the game errored -
+	-- which is the whole family of bug this file keeps having designed out of it.
+	_G.__aurasRestricted = false
+	C_Secrets = C_Secrets or {}
+	function C_Secrets.ShouldAurasBeSecret()
+		return _G.__aurasRestricted == true
+	end
 end
 
 -- BLIZZARD'S OWN UNIT FRAMES, which this mock simply did not have.
@@ -8335,6 +8384,20 @@ for _, n in ipairs(_G.__flavour == "camelot" and {
 	"CastingBarFrame",
 }) do
 	_G.__blizzUnitFrames[n] = CreateFrame("Frame", n, UIParent)
+end
+
+-- BLIZZARD'S ALT POWER BARS, and the reason they are built AFTER PlayerFrame:
+-- they are its descendants, which is exactly what made them look harmless.
+--
+-- Reparenting PlayerFrame carries them along so they cannot DRAW - and that is
+-- the wrong question, which this mock now exists to stop anyone answering
+-- twice. They register their OWN events, those handlers keep running while
+-- invisible, and on camelot they reach the aura API and hard-error. Each gets a
+-- real registration so that clearing it is observable rather than assumed.
+for _, n in ipairs({ "AlternatePowerBar", "MonkStaggerBar",
+	"EvokerEbonMightBar", "DemonHunterSoulFragmentsBar" }) do
+	local f = CreateFrame("Frame", n, _G.PlayerFrame)
+	f:RegisterEvent("UNIT_POWER_UPDATE")
 end
 
 function UnitExists(u) return units[u] and units[u].exists or false end
@@ -16283,6 +16346,27 @@ check(bar.buttons[3].cdText:GetText() ~= "" and bar.buttons[3].cdText:GetText() 
 	"real cooldown draws a countdown (" .. tostring(bar.buttons[3].cdText:GetText()) .. ")")
 check((bar.buttons[5].cdText:GetText() or "") == "",
 	"1.5s global does not paint a countdown")
+-- A SECRET COOLDOWN. Reported from the game on SPELL_UPDATE_COOLDOWN:
+-- "ActionBars.lua:233: attempt to compare local 'duration' (a secret number
+-- value)". The swipe takes both values happily; only our own countdown text
+-- needs to read them, because `duration > 2` is what decides whether to draw
+-- one at all.
+if _G.__flavour == "camelot" then
+	_G.__actions[3].cd = { _G.__MakeSecret(4260), _G.__MakeSecret(4261) }
+	local ok = pcall(fire, "SPELL_UPDATE_COOLDOWN")
+	check(ok, "a secret cooldown does not throw on SPELL_UPDATE_COOLDOWN")
+	tick(0.1)
+	check((bar.buttons[3].cdText:GetText() or "") == "",
+		"and drops our countdown text, because deciding to draw it needs"
+		.. " `duration > 2`")
+	_G.__actions[3].cd = { time, 30 }
+	fire("SPELL_UPDATE_COOLDOWN")
+	tick(0.1)
+	check((bar.buttons[3].cdText:GetText() or "") ~= "",
+		"an ordinary cooldown afterwards draws again - the secret branch does"
+		.. " not latch")
+end
+
 _G.__actions[3].cd = nil
 fire("SPELL_UPDATE_COOLDOWN")
 tick(0.1)
@@ -16539,6 +16623,51 @@ section("secret values are drawn, never read", function()
 		"and an ordinary value afterwards reads out again, so the secret branch"
 		.. " does not latch")
 end)
+
+section("a restricted aura read is refused, not merely secret", function()
+	-- A DIFFERENT FAILURE FROM A SECRET NUMBER. A secret value comes back and
+	-- can be handed to a setter; a restricted aura read THROWS. Reported from
+	-- the game as "GetAuraDataByIndex(): Auras cannot be accessed when secret
+	-- while tainted by 'AetherUI'", repeatedly, off both a ticker and UNIT_AURA.
+	local Aur = A:GetModule("auras")
+
+	check(Aur.AurasRestricted() == false, "auras read normally to begin with")
+	check(Aur.GetAura("player", 1, "HELPFUL") ~= nil, "and an aura comes back")
+
+	_G.__aurasRestricted = true
+	check(Aur.AurasRestricted() == true,
+		"the client's own ShouldAurasBeSecret is asked first, and answers")
+
+	local ok, err = pcall(Aur.GetAura, "player", 1, "HELPFUL")
+	check(ok, "the read does not throw once restricted"
+		.. (ok and "" or (" -- " .. tostring(err))))
+	check(ok and err == nil,
+		"it answers 'no aura here', so every caller's existing end-of-list"
+		.. " handling does the rest rather than learning a third state")
+
+	-- The whole point of a hard-error API: if the guard is missed, the client
+	-- errors rather than returning nil. Prove the mock really does that.
+	local threw = not pcall(C_UnitAuras.GetAuraDataByIndex, "player", 1, "HELPFUL")
+	check(threw, "and the underlying API really does throw, so this is a guard"
+		.. " rather than a nil check dressed up as one")
+
+	-- AND THE GUARD'S REAL JOB: not calling it at all. The pcall inside GetAura
+	-- already stops a throw reaching the log, so "does it error" passes with the
+	-- guard deleted. What would be left is a throwing C call made several times
+	-- a second, per aura, per unit, for as long as the restriction lasts.
+	_G.__auraReads = 0
+	for i = 1, 20 do Aur.GetAura("player", i, "HELPFUL") end
+	check(_G.__auraReads == 0,
+		"twenty scans while restricted make ZERO calls to the API - the pcall is"
+		.. " the net, this is the thing that stops us needing it ("
+		.. tostring(_G.__auraReads) .. ")")
+
+	_G.__aurasRestricted = false
+	check(Aur.AurasRestricted() == false and Aur.GetAura("player", 1, "HELPFUL") ~= nil,
+		"lifting the restriction restores the scan - it must not latch, or a"
+		.. " zone edge would empty the tray for the rest of the session")
+end)
+
 end
 
 print("== Blizzard's own unit frames are taken off screen ==")
@@ -16568,6 +16697,24 @@ do
 	check(_G[absentName] == nil,
 		absentName .. " does not exist here, and banishing a name the client has"
 		.. " not got has to be a no-op rather than a mock frame to aim at")
+
+	-- THE ALT POWER BARS: SILENCED, NOT MOVED.
+	--
+	-- I checked these once and cleared them on the grounds that they are
+	-- PlayerFrame descendants, so reparenting carries them along and they cannot
+	-- draw. That was the wrong question. They self-register, their handlers keep
+	-- running while invisible, and on camelot those handlers reach the aura API
+	-- and hard-error. EllesmereUI had already written this down.
+	for _, n in ipairs({ "AlternatePowerBar", "MonkStaggerBar",
+		"EvokerEbonMightBar", "DemonHunterSoulFragmentsBar" }) do
+		local f = _G[n]
+		check(f and not f:IsEventRegistered("UNIT_POWER_UPDATE"),
+			n .. " has had its OWN events unregistered - hiding its parent does"
+			.. " not stop it running")
+		check(f and f:GetParent() == _G.PlayerFrame,
+			"and it is NOT reparented: it is Edit Mode managed, the same class"
+			.. " of mistake as moving MainStatusTrackingBarContainer")
+	end
 end
 
 print("== the capsules never resize ==")

@@ -230,6 +230,24 @@ local function UpdateCooldown(b)
 	end
 
 	local start, duration, enable = GetActionCooldown(action)
+
+	-- A SECRET COOLDOWN DRAWS BUT DOES NOT READ. On WoW Forever an action's
+	-- cooldown can come back secret, and `duration > 0` below throws - reported
+	-- from the game on SPELL_UPDATE_COOLDOWN. The swipe itself is fine:
+	-- SetCooldown takes both values happily, so the button still animates
+	-- correctly and only our own countdown TEXT has to go, because that needs
+	-- `duration > 2` to decide whether the cooldown is worth a number.
+	--
+	-- Nothing is cached for the watcher either - a stored secret poisons the
+	-- next comparison too. See A.IsSecret.
+	if A.IsSecret(start, duration, enable) then
+		b.cooldown:SetCooldown(start, duration)
+		b.cooldown:Show()
+		cooldownWatch[b] = nil
+		b.cdText:SetText("")
+		return
+	end
+
 	if start and duration and duration > 0 and enable and enable ~= 0 then
 		b.cooldown:SetCooldown(start, duration)
 		b.cooldown:Show()

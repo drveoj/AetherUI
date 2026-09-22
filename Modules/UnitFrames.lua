@@ -57,6 +57,34 @@ function UF:HideBlizzard()
 		Banish(_G.CastingBarFrame)
 		Banish(_G.PlayerCastingBarFrame)
 	end
+
+	-- THE ALT POWER BARS, AND EVENTS ONLY - NEVER A REPARENT.
+	--
+	-- I got this wrong first time round. These live under
+	-- PlayerFrameAlternatePowerBarArea, a PlayerFrame descendant, so reparenting
+	-- PlayerFrame carries them along and they cannot DRAW - which is what I
+	-- checked, and it is the wrong question. They register their own power, spec
+	-- and PLAYER_ENTERING_WORLD events, independently of PlayerFrame's now-dead
+	-- ones, and those handlers still run: they reach
+	-- PlayerFrame_OnAlternatePowerBarEnabled -> PlayerFrame_ToPlayerArt ->
+	-- BuffFrame:Update() -> the aura API, which on WoW Forever is a hard error
+	-- when auras are restricted. Invisible and still throwing.
+	--
+	-- So: unregister, do not reparent. They are Edit Mode managed, and moving
+	-- one is the same class of mistake as moving
+	-- MainStatusTrackingBarContainer. EllesmereUI reached this before we did and
+	-- says the same thing in its own comment.
+	--
+	-- All four are mainline frames the vanilla ruleset never populates, but they
+	-- are DECLARED on camelot - and a name that is absent is simply skipped, so
+	-- this costs Era nothing.
+	for _, n in ipairs({ "AlternatePowerBar", "MonkStaggerBar",
+		"EvokerEbonMightBar", "DemonHunterSoulFragmentsBar" }) do
+		local f = _G[n]
+		if f and f.UnregisterAllEvents and not InCombatLockdown() then
+			pcall(f.UnregisterAllEvents, f)
+		end
+	end
 end
 
 -- ---------------------------------------------------------------------------

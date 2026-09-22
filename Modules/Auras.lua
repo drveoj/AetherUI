@@ -68,6 +68,63 @@ local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 -- aura source
 -- ---------------------------------------------------------------------------
 
+--- Are auras readable at all this frame?
+--
+--  A DIFFERENT PROBLEM FROM A SECRET NUMBER, and it needs a different answer.
+--  A secret value can be handed straight to a setter - see A.IsSecret. An aura
+--  cannot: on WoW Forever the READ ITSELF is refused, and it is a hard error
+--  rather than a nil return:
+--
+--      GetAuraDataByIndex(): Auras cannot be accessed when secret while
+--      tainted by 'AetherUI'
+--
+--  "Tainted by AetherUI" is not a leak of ours to go hunting. Addon code is
+--  insecure by definition; the API simply refuses an insecure caller while the
+--  data is restricted, and names whoever is on the stack.
+--
+--  Ask first, probe second, and cache for the frame:
+--
+--  1. `C_Secrets.ShouldAurasBeSecret()` is the client's own question and costs
+--     nothing.
+--  2. Where it cannot answer, a pcall on one known-cheap read says whether the
+--     door is open. Restriction can engage between frames, so a stale "open"
+--     is possible - hence only ever caching within the same GetTime().
+--  3. Failure means restricted, never "no auras": the difference is a tray
+--     that goes blank for a moment versus one that lies about what is on you.
+--
+--  Same shape EllesmereUI arrived at, and for the same reason. Era has no
+--  C_Secrets and never refuses the read, so this answers false there and the
+--  scan below is untouched.
+local aurasRestrictedAt = -1
+function Aur.AurasRestricted()
+	local now = (GetTime and GetTime()) or 0
+
+	-- WHEN THE CLIENT WILL ANSWER, TAKE ITS ANSWER AND CLEAR THE STAMP. The
+	-- frame cache below exists for the probe path only, and left in place it can
+	-- LATCH: a "no" that never expires empties the tray for the rest of the
+	-- session. Caught by the test that lifts the restriction and looks again.
+	if C_Secrets and C_Secrets.ShouldAurasBeSecret then
+		if C_Secrets.ShouldAurasBeSecret() then
+			aurasRestrictedAt = now
+			return true
+		end
+		aurasRestrictedAt = -1
+		return false
+	end
+
+	if now == aurasRestrictedAt then return true end
+
+	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+		if pcall(C_UnitAuras.GetAuraDataByIndex, "player", 1, "HELPFUL") then
+			return false
+		end
+		aurasRestrictedAt = now
+		return true
+	end
+
+	return false
+end
+
 --- Returns: name, texture, count, auraType, duration, expirationTime, isMine
 --
 --  "Is this mine" comes from isFromPlayerOrPlayerPet / castByPlayer rather than
@@ -75,8 +132,19 @@ local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 --  auras and the comparison then quietly reports every one of them as someone
 --  else's. Falls back to the comparison only when the flag is absent.
 local function GetAura(unit, index, filter)
+	-- The read is REFUSED, not merely secret - see Aur.AurasRestricted. Answer
+	-- "no aura here" and let every caller's existing end-of-list handling do the
+	-- rest, rather than teaching all of them about a third state.
+	if Aur.AurasRestricted() then return nil end
+
 	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-		local d = C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
+		-- pcall even so: the frame-scoped cache above can go stale between the
+		-- probe and this call, and one throw here is a whole tray of them.
+		local ok, d = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
+		if not ok then
+			aurasRestrictedAt = (GetTime and GetTime()) or 0
+			return nil
+		end
 		if not d then return nil end
 		local mine = d.isFromPlayerOrPlayerPet
 		if mine == nil then mine = (d.sourceUnit == "player" or d.sourceUnit == "pet") end
