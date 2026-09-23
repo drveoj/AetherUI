@@ -2427,6 +2427,14 @@ function GameTooltip:SetQuestLogItem(kind, i)
 	self.__shows = { "item", kind, i, _G.__questSelected }
 end
 function GameTooltip:SetSpellByID(id) self.__shows = { "spell", id } end
+--- Counted, because on the beta a call made while auras are restricted is an
+--  error even when our own pcall survives it: Blizzard's PTR feedback addon
+--  hooks this and reads the aura again after us. Missing until 2026-09-23, so
+--  the buff tooltip's pcall had been calling nothing and passing.
+function GameTooltip:SetUnitAura(unit, index, filter)
+	_G.__unitAuraTips = (_G.__unitAuraTips or 0) + 1
+	self.__shows = { "aura", unit, index, filter }
+end
 
 --- The container path. Correct for a real bag and for a bank BAG; it answers
 --  nothing for the generic bank container, which is why Blizzard's own bank
@@ -9957,12 +9965,23 @@ local function ThreatRows(mob)
 		or nil
 end
 
+-- THREAT RESTRICTED, camelot only. The client hides all five values together
+-- (SecretWhenUnitThreatValuesRestricted), and `tanking and true` threw in the
+-- game on 2026-09-23. Stand-ins, so any sum or comparison throws as it does
+-- there. (A truth test on one cannot be made to throw here - a table is simply
+-- true - so the checks lean on the sums downstream.)
+_G.__threatRestricted = false
+
 function UnitDetailedThreatSituation(unit, mob)
 	if not (unit and mob) then return end
 	if not UnitAffectingCombat("player") then return end
 	local row = ThreatRows(mob)
 	row = row and row[unit]
 	if not row then return end
+	if _G.__flavour == "camelot" and _G.__threatRestricted then
+		local s = _G.__SecretStandIn
+		return s(), s(), s(), s(), s()
+	end
 	return row[1], row[2], row[3], row[4], row[5]
 end
 
@@ -9982,6 +10001,9 @@ end
 function UnitThreatPercentageOfLead(unit, mob)
 	local tanking = UnitDetailedThreatSituation(unit, mob)
 	if not tanking then return end
+	if _G.__flavour == "camelot" and _G.__threatRestricted then
+		return _G.__SecretStandIn()
+	end
 	local rows = ThreatRows(mob)
 	if not rows then return end
 	local mine, best = 0, 0
@@ -17097,6 +17119,26 @@ section("a restricted aura read is refused, not merely secret", function()
 	check(Aur.AurasRestricted() == false and Aur.GetAura("player", 1, "HELPFUL") ~= nil,
 		"lifting the restriction restores the scan - it must not latch, or a"
 		.. " zone edge would empty the tray for the rest of the session")
+
+	-- THE TOOLTIP, hovered on a tile still up as the restriction lands - the
+	-- race Joe hit on 2026-09-23. Blizzard_PTRFeedback hooks SetUnitAura and
+	-- reads the aura after us, which the client refuses from our call, so the
+	-- guard's job is not making the call at all.
+	Aur.playerBuffs:Update()
+	local tile = Aur.playerBuffs.tiles[1]
+	local enter = tile and tile:GetScript("OnEnter")
+	_G.__unitAuraTips = 0
+	if enter then enter(tile) end
+	check(_G.__unitAuraTips == 1 and GameTooltip.__shows and GameTooltip.__shows[1] == "aura",
+		"hovering a buff shows its tooltip (" .. tostring(_G.__unitAuraTips) .. " call)")
+	_G.__aurasRestricted = true
+	_G.__unitAuraTips = 0
+	if enter then enter(tile) end
+	check(_G.__unitAuraTips == 0,
+		"but not while auras are restricted - no SetUnitAura for the hook to"
+		.. " trip over (" .. tostring(_G.__unitAuraTips) .. ")")
+	_G.__aurasRestricted = false
+	GameTooltip:Hide()
 end)
 
 end
@@ -38775,6 +38817,17 @@ section("threat: the probe reads the client rather than the plan", function()
 	check(shown and shown:find("assigned role:", 1, true),
 		"and it prints what the client says the player's role is")
 
+	-- A SECRET TABLE IS SAID OUT LOUD, rather than compared and thrown on.
+	if _G.__flavour == "camelot" then
+		_G.__threatRestricted = true
+		shown = nil
+		local ok, err = pcall(run, "threat probe")
+		check(ok and shown and shown:find("SECRET - the client is hiding threat here", 1, true),
+			"with threat secret, the probe says the client is hiding it"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		_G.__threatRestricted = false
+	end
+
 	-- IT MUST NOT THROW ON A CLIENT WITHOUT THE API. This is the branch the
 	-- whole plan is hedging: if the call is missing, the module needs
 	-- combat-log inference instead, and the probe is how we would find out.
@@ -38860,6 +38913,22 @@ section("threat: one place decides which tier a unit is in", function()
 		.. tostring(why0) .. ")")
 	check(r0 and math.abs(r0.fill - 0.40) < 0.01,
 		"filled to where they actually are (" .. tostring(r0 and r0.fill) .. ")")
+
+	-- SECRET THREAT IS NO READING. Joe's diag, 2026-09-23: "Threat.lua:363:
+	-- attempt to perform boolean test on local 'tanking' (a secret boolean
+	-- value)". Polled directly, because the ticker would swallow the throw.
+	if _G.__flavour == "camelot" then
+		_G.__threatRestricted = true
+		local ok, err = pcall(TH.Poll, TH)
+		check(ok, "a poll with every threat value secret does not throw"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(select(1, tier("player")) == TIER.NONE,
+			"and there is no ring - nothing honest to show, so nothing is shown")
+		_G.__threatRestricted = false
+		TH:Poll()
+		check(select(1, tier("player")) == TIER.RING,
+			"lifting the restriction brings the ring back - it does not latch")
+	end
 
 	-- AND NOBODY ELSE'S IS. 16b's quiet rule holds for the rest of the party:
 	-- four rings climbing is a wall of arithmetic and none of it is yours to

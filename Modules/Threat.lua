@@ -346,7 +346,8 @@ local function Reads(unit, mob)
 		return false
 	end
 	local ok, _, _, scaled = pcall(UnitDetailedThreatSituation, unit, mob)
-	return (ok and scaled ~= nil) and true or false
+	if not ok or A.IsSecret(scaled) then return false end
+	return scaled ~= nil
 end
 
 --- One unit against one mob, or nothing.
@@ -359,7 +360,14 @@ local function Read(unit, mob)
 	end
 	local ok, tanking, status, scaled, raw, threat =
 		pcall(UnitDetailedThreatSituation, unit, mob)
-	if not ok or scaled == nil then return nil end
+	if not ok then return nil end
+	-- SECRET THREAT IS NO READING. WoW Forever hides all five values together
+	-- (SecretWhenUnitThreatValuesRestricted), and `tanking and true` threw at
+	-- this line on 2026-09-23. Everything this module does with them is a test
+	-- or a sum, so there is nothing honest to show: answer "nothing", which
+	-- every caller already handles. Asked before anything else touches them.
+	if A.IsSecret(tanking, status, scaled, raw, threat) then return nil end
+	if scaled == nil then return nil end
 	return (tanking and true or false), status, scaled, raw, threat
 end
 
@@ -473,7 +481,7 @@ end
 local function Lead(unit, mob)
 	if type(UnitThreatPercentageOfLead) ~= "function" then return nil end
 	local ok, pct = pcall(UnitThreatPercentageOfLead, unit, mob)
-	if not ok then return nil end
+	if not ok or A.IsSecret(pct) then return nil end
 	return pct
 end
 

@@ -296,6 +296,12 @@ local function TileEnter(self)
 	-- here, in Lua, where nothing can refuse it.
 	if p._parked then return end
 	if not p.unit or not p.index then return end
+	-- Not while auras are restricted. The tray is emptying itself anyway, and
+	-- on the beta Blizzard's own PTR feedback addon hooks SetUnitAura and reads
+	-- the aura by index after us - which the client refuses from our call, so
+	-- the tooltip turned into an error (Blizzard_PTRFeedback_Tooltips.lua:24,
+	-- 2026-09-23).
+	if Aur.AurasRestricted() then return end
 	GameTooltip:SetOwner(p, "ANCHOR_BOTTOM")
 	pcall(GameTooltip.SetUnitAura, GameTooltip, p.unit, p.index, p.filter)
 	GameTooltip:Show()
