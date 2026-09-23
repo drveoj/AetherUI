@@ -1391,13 +1391,34 @@ function CreateFrame(kind, name, parent, template)
 			end
 			self.__cd = { start, duration }
 		end
+		--- THE ROUTE A SECRET CAN TAKE. The duration object carries the timing
+		--  from the client to the Cooldown without an addon holding a number, so
+		--  it takes nothing else: a bare number here is a caller that has read
+		--  one, and the real API would not accept it either.
+		function f:SetCooldownFromDurationObject(d)
+			if type(d) ~= "table" or not d.__durationObject then
+				error("bad argument #1 to 'SetCooldownFromDurationObject' (Usage:"
+					.. " self:SetCooldownFromDurationObject(duration [, clearIfZero]))", 2)
+			end
+			self.__cd = { d.start, d.duration }
+		end
+		function f:Clear() self.__cd = nil end
 		function f:GetCooldownTimes() return 0, 0 end
 		function f:SetSwipeTexture(t) self.__swipe = t end
 		function f:SetSwipeColor() end
 		function f:SetDrawEdge() end
 		function f:SetDrawBling() end
 		function f:SetEdgeTexture() end
-		function f:SetHideCountdownNumbers() end
+		function f:SetHideCountdownNumbers(h) self.__hideNumbers = h and true or false end
+		function f:GetHideCountdownNumbers() return self.__hideNumbers or false end
+		function f:SetMinimumCountdownDuration(ms) self.__minCountdown = ms end
+		function f:GetMinimumCountdownDuration() return self.__minCountdown or 0 end
+		-- The number the Cooldown draws itself. One string per frame, as the real
+		-- one has, so a font set on it is still there when it is asked again.
+		function f:GetCountdownFontString()
+			self.__countdown = self.__countdown or newFontString(self, "OVERLAY")
+			return self.__countdown
+		end
 		function f:SetReverse() end
 	end
 
@@ -1757,14 +1778,70 @@ function GetActionTexture(s) return actions[s] and actions[s].texture end
 -- whatever the departed stack last counted. Slot 11 is empty and models exactly
 -- that, which is the whole reason the button reads HasAction first.
 _G.__staleCounts = { [11] = 20 }
+-- COOLDOWNS RESTRICTED, camelot only. The client's own annotation for the
+-- action values that go secret is `SecretWhenCooldownsRestricted`, and it is
+-- not only in instances: Joe hit a secret count in the open world, 2026-09-23.
+-- While this is on, every such value comes back as a secret stand-in.
+--
+-- Globals rather than locals: this chunk sits at Lua's 200-local cap.
+_G.__cooldownsRestricted = false
+function _G.__CooldownsRestricted()
+	return _G.__flavour == "camelot" and _G.__cooldownsRestricted
+end
+
 function GetActionCount(s)
+	if _G.__CooldownsRestricted() then return _G.__SecretStandIn() end
 	if actions[s] then return actions[s].count or 0 end
 	return _G.__staleCounts[s] or 0
 end
+
+--- The raw timing, before the client decides what the caller may see.
+function _G.__ActionCooldownTimes(s)
+	local a = actions[s]
+	if not (a and a.cd and a.cd[2] and a.cd[2] > 0) then return 0, 0 end
+	if a.cd[1] + a.cd[2] <= time then return 0, 0 end
+	return a.cd[1], a.cd[2]
+end
+
 function GetActionCooldown(s)
+	if _G.__CooldownsRestricted() then
+		return _G.__SecretStandIn(), _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
 	local a = actions[s]
 	if a and a.cd then return a.cd[1], a.cd[2], 1 end
 	return 0, 0, 0
+end
+
+-- C_ActionBar, as both clients document it (ActionBarFrameDocumentation.lua).
+C_ActionBar = C_ActionBar or {}
+
+--- A SpellCooldownInfo. isActive and isEnabled are NeverSecret; the timing is
+--  not, and comes back as a stand-in while cooldowns are restricted.
+function C_ActionBar.GetActionCooldown(s)
+	local start, duration = _G.__ActionCooldownTimes(s)
+	local active = duration > 0
+	if _G.__CooldownsRestricted() then
+		start, duration = _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
+	return { startTime = start, duration = duration, isEnabled = true,
+		isActive = active, modRate = 1 }
+end
+
+--- An opaque duration object. Only the Cooldown mock looks inside it, which is
+--  the client's side of the line, never the addon's.
+function C_ActionBar.GetActionCooldownDuration(s)
+	local start, duration = _G.__ActionCooldownTimes(s)
+	return { __durationObject = true, start = start, duration = duration }
+end
+
+--- What Blizzard's own button puts in its Count, as a string. A stack shows its
+--  number; a plain spell shows nothing.
+function C_ActionBar.GetActionDisplayCount(s, maxDisplayCount, replacement)
+	local a = actions[s]
+	local n = a and a.count or 0
+	if n <= 0 then return "" end
+	if n > (maxDisplayCount or 9999) then return replacement or "*" end
+	return tostring(n)
 end
 function IsUsableAction(s)
 	local a = actions[s]
@@ -8552,6 +8629,17 @@ if _G.__flavour == "camelot" then
 	end
 	--- Mark a number secret for the duration of a check.
 	function _G.__MakeSecret(v)
+		_G.__secretValues[v] = true
+		return v
+	end
+	--- A secret that REFUSES to be read, rather than one that only says so.
+	--
+	--  A marked number still compares fine in here, so code that compares a
+	--  secret passes. An empty table cannot be compared or added to - Lua
+	--  itself throws - which is the same failure the client raises, with no
+	--  semantics of ours invented to get it.
+	function _G.__SecretStandIn()
+		local v = {}
 		_G.__secretValues[v] = true
 		return v
 	end
@@ -16308,7 +16396,8 @@ end
 SlashCmdList["AETHERUI"]("diag")   -- must not error with a live report
 
 check(bar.buttons[1].icon:GetTexture() == 130001, "action icon painted")
-check(bar.buttons[8].count:GetText() == 20, "stack count shown")
+check(bar.buttons[8].count:GetText() == "20", "stack count shown")
+check(bar.buttons[1].count:GetText() == "", "a plain spell shows no count")
 check(bar.buttons[11].icon:IsShown() == false, "empty slot hides its icon")
 check(bar.buttons[11].count:GetText() == "",
 	"an emptied slot shows no count - the game keeps answering GetActionCount"
@@ -16597,46 +16686,60 @@ end
 print("== cooldowns ==")
 -- Anchor the mock cooldowns to *now*: the session has been running for a while
 -- by this point and anything set at load time has long since expired.
-_G.__actions[3].cd = { time, 30 }
-_G.__actions[5].cd = { time, 1.5 }
-fire("SPELL_UPDATE_COOLDOWN")
-tick(0.1)
-check(bar.buttons[3].cdText:GetText() ~= "" and bar.buttons[3].cdText:GetText() ~= nil,
-	"real cooldown draws a countdown (" .. tostring(bar.buttons[3].cdText:GetText()) .. ")")
-check((bar.buttons[5].cdText:GetText() or "") == "",
-	"1.5s global does not paint a countdown")
--- A SECRET COOLDOWN. Reported from the game on SPELL_UPDATE_COOLDOWN:
--- "ActionBars.lua:233: attempt to compare local 'duration' (a secret number
--- value)". The swipe takes both values happily; only our own countdown text
--- needs to read them, because `duration > 2` is what decides whether to draw
--- one at all.
-if _G.__flavour == "camelot" then
-	_G.__actions[3].cd = { _G.__MakeSecret(4260), _G.__MakeSecret(4261) }
-	local ok = pcall(fire, "SPELL_UPDATE_COOLDOWN")
-	check(ok, "a secret cooldown does not throw on SPELL_UPDATE_COOLDOWN")
-	tick(0.1)
-	check((bar.buttons[3].cdText:GetText() or "") == "",
-		"and drops our countdown text, because deciding to draw it needs"
-		.. " `duration > 2`")
-	-- AND THE SWIPE GOES TOO. SetCooldown is "AllowedWhenUntainted", so unlike
-	-- StatusBar:SetValue it refuses a secret from an addon - handing the values
-	-- to it "because a secret can be written" was a second error on top of the
-	-- first.
-	check(not bar.buttons[3].cooldown:IsShown(),
-		"and the swipe is hidden rather than fed a secret - SetCooldown refuses"
-		.. " one from addon code, where the bar setters accept it")
+do
+	local cd3, cd5 = bar.buttons[3].cooldown, bar.buttons[5].cooldown
 	_G.__actions[3].cd = { time, 30 }
+	_G.__actions[5].cd = { time, 1.5 }
 	fire("SPELL_UPDATE_COOLDOWN")
 	tick(0.1)
-	check((bar.buttons[3].cdText:GetText() or "") ~= "",
-		"an ordinary cooldown afterwards draws again - the secret branch does"
-		.. " not latch")
-end
+	check(cd3:IsShown() and cd3.__cd and cd3.__cd[2] == 30,
+		"a real cooldown draws its swipe, from the duration object")
+	check(cd5:IsShown() and cd5.__cd and cd5.__cd[2] == 1.5, "and so does a global")
 
-_G.__actions[3].cd = nil
-fire("SPELL_UPDATE_COOLDOWN")
-tick(0.1)
-check((bar.buttons[3].cdText:GetText() or "") == "", "countdown clears when the cooldown ends")
+	-- THE NUMBERS ARE THE COOLDOWN'S OWN, because ours would have to read the
+	-- time left. The old "no number for a 1.5s global" rule is the client's to
+	-- apply now, against the total duration, so nothing of ours compares.
+	check(cd3:GetHideCountdownNumbers() == false,
+		"the cooldown draws its own countdown numbers")
+	check(cd3:GetMinimumCountdownDuration() == 2000,
+		"but none for a cooldown of two seconds or less - a global gets no number")
+	check((cd3:GetCountdownFontString():GetFont()) == A.Media.font.bold,
+		"and they are in Outfit, the stack role's face, not the game font ("
+		.. tostring((cd3:GetCountdownFontString():GetFont())) .. ")")
+	check(bar.buttons[3].cdText == nil,
+		"an action button carries no countdown text of its own any more")
+
+	-- RESTRICTED. Two reports from the game, both a secret read by us: first
+	-- `duration > 0` in UpdateCooldown, then SetCooldown refusing the numbers
+	-- outright; and on 2026-09-23, in the open world, `count > 1` at
+	-- ActionBars.lua:161. The stand-ins throw on any comparison, as the client
+	-- does, so this runs the repaint directly to see the error rather than have
+	-- the event pump swallow it.
+	if _G.__flavour == "camelot" then
+		_G.__cooldownsRestricted = true
+		_G.__actions[3].cd = { time, 30 }
+		-- Wiped first, so a swipe left over from the check above cannot pass
+		-- for one this repaint drew.
+		cd3:Clear()
+		cd3:Hide()
+		local ok, err = pcall(AB.RefreshAll, AB)
+		check(ok, "a restricted cooldown and count repaint without throwing"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(cd3:IsShown() and cd3.__cd and cd3.__cd[2] == 30,
+			"AND THE SWIPE STILL DRAWS - the duration object carries it, where"
+			.. " SetCooldown refused the numbers")
+		check(bar.buttons[8].count:GetText() == "20",
+			"and the stack count still shows, handed to SetText unread")
+		_G.__cooldownsRestricted = false
+	end
+
+	_G.__actions[3].cd = nil
+	fire("SPELL_UPDATE_COOLDOWN")
+	tick(0.1)
+	check(not cd3:IsShown() and cd3.__cd == nil, "the swipe clears when the cooldown ends")
+	_G.__actions[5].cd = nil
+	fire("SPELL_UPDATE_COOLDOWN")
+end
 
 print("== drag and drop ==")
 local b = bar.buttons[4]
