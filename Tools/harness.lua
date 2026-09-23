@@ -824,6 +824,9 @@ local function newFontString(owner, layer)
 	end
 
 	function f:GetStringWidth()
+		-- A secret string has a secret width (SecretWhenAnchoringSecret), and
+		-- the stand-in throws on any sum, as the client's does.
+		if issecretvalue and issecretvalue(self.__text) then return _G.__SecretStandIn() end
 		local size = (self.__font and self.__font[2]) or 11
 		local text, textures = MEASURE(self.__text or "")
 		local full = textures + #text * size * 0.52
@@ -1491,6 +1494,17 @@ function CreateFrame(kind, name, parent, template)
 		function f:GetValue() return self.__value end
 		function f:SetReverseFill() end
 		function f:SetOrientation() end
+		--- The client animates the bar from a duration object, so the addon
+		--  never holds the times. Only an object is accepted, as with the
+		--  Cooldown's SetCooldownFromDurationObject.
+		function f:SetTimerDuration(d, interpolation, direction)
+			if type(d) ~= "table" or not d.__durationObject then
+				error("bad argument #1 to 'SetTimerDuration' (Usage:"
+					.. " self:SetTimerDuration(duration [, interpolation, direction]))", 2)
+			end
+			self.__timer = { duration = d, direction = direction or 0 }
+		end
+		function f:GetTimerDuration() return self.__timer and self.__timer.duration end
 	end
 
 	-- SetText fires OnTextChanged, exactly as the client does. Modelled rather
@@ -8108,6 +8122,7 @@ ITEM_INVENTORY_BANK_BAG_OFFSET = 4
 
 Enum = _G.Enum or {}
 Enum.BagIndex = { Backpack = 0, Bank = -1, Keyring = -2, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4 }
+Enum.StatusBarTimerDirection = { ElapsedTime = 0, RemainingTime = 1 }
 Enum.ItemClass = {
 	Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5,
 	Projectile = 6, Tradegoods = 7, ItemEnhancement = 8, Recipe = 9,
@@ -8833,14 +8848,41 @@ function UnitInParty(u) return units[u] ~= nil and units[u].exists or false end
 function UnitIsDND(u) return units[u] and units[u].dnd or false end
 
 local castState
+-- Native casts for units other than the player. Era reports none, which is why
+-- the nameplates lean on LibClassicCasterino there; WoW Forever reports them
+-- ("casts for others native 142" in Joe's diag, 2026-09-23). A cast with
+-- `restricted` set answers its times - and, if asked, its name - as secrets.
+_G.__nativeCasts = {}
+function _G.__castFor(u)
+	if u == "player" then return castState end
+	return _G.__nativeCasts[u]
+end
 function UnitCastingInfo(u)
-	if u ~= "player" or not castState or castState.channel then return nil end
-	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
+	local c = _G.__castFor(u)
+	if not c or c.channel then return nil end
+	if c.restricted then
+		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
+	return c.name, c.name, c.icon, c.startTime, c.endTime
 end
 function UnitChannelInfo(u)
-	if u ~= "player" or not castState or not castState.channel then return nil end
-	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
+	local c = _G.__castFor(u)
+	if not c or not c.channel then return nil end
+	if c.restricted then
+		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
+	return c.name, c.name, c.icon, c.startTime, c.endTime
 end
+--- A duration object for a NATIVE cast only. A library cast has none, which is
+--  the whole reason the nameplate keeps its own tick for those. Set
+--  `noDuration` on a cast to model a client that offers no object.
+function _G.__castDuration(u, channel)
+	local c = _G.__castFor(u)
+	if not c or c.noDuration or (c.channel and true or false) ~= channel then return nil end
+	return { __durationObject = true, start = c.startTime, duration = c.endTime - c.startTime }
+end
+function UnitCastingDuration(u) return _G.__castDuration(u, false) end
+function UnitChannelDuration(u) return _G.__castDuration(u, true) end
 
 --- castState is a file-local, and the blocks that drive a cast sit right beside
 --  it. The secret-value section is thousands of lines away and needs the same
@@ -28000,6 +28042,74 @@ do
 	_G.__ccCasts.nameplate1 = nil
 	_G.__auras.target = savedAuras
 	_G.__units.target = nil
+end
+
+print("== nameplates: a native cast, and a secret one ==")
+do
+	local mob = { exists = true, name = "Kolkar Wrangler", level = 17, reaction = 2,
+		hp = 900, hpMax = 1000 }
+	local base = __spawnPlate("nameplate1", mob)
+	local f = NPm.plateFor(base)
+	local dir = Enum.StatusBarTimerDirection
+
+	-- A NATIVE cast carries a duration object, and the client animates the bar
+	-- from it. WoW Forever reports other units' casts; Era does not, which is
+	-- what the library block above is for.
+	_G.__nativeCasts.nameplate1 = { name = "Frostbolt", icon = 135846, channel = false,
+		startTime = time * 1000, endTime = (time + 3) * 1000 }
+	NPm.castStart(f, false)
+	check(f.cast:IsShown() and f.cast.bar:IsShown(), "a native cast opens the capsule with its bar")
+	check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.ElapsedTime,
+		"and the client animates the bar from a duration object, filling")
+	check(f.cast:GetScript("OnUpdate") == nil, "so nothing of ours ticks for it")
+
+	_G.__nativeCasts.nameplate1 = { name = "Arcane Missiles", icon = 136096, channel = true,
+		startTime = time * 1000, endTime = (time + 5) * 1000 }
+	NPm.castStart(f, true)
+	check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.RemainingTime,
+		"a native channel drains, as the library's does")
+
+	-- RESTRICTED. Joe's diag, 2026-09-23: "attempt to perform numeric conversion
+	-- on a secret number value" from nameplates. The stand-ins throw on any sum,
+	-- so the cast is started directly - the event pump would swallow the error.
+	if _G.__flavour == "camelot" then
+		_G.__nativeCasts.nameplate1 = { name = "Frostbolt", icon = 135846, channel = false,
+			startTime = time * 1000, endTime = (time + 3) * 1000, restricted = true }
+		f.cast.bar.__timer = nil
+		local ok, err = pcall(NPm.castStart, f, false)
+		check(ok, "a cast with secret times starts without throwing"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(f.cast.bar:IsShown() and f.cast.bar.__timer ~= nil,
+			"and its bar still animates - the duration object carries the times past us")
+
+		_G.__nativeCasts.nameplate1.noDuration = true
+		ok, err = pcall(NPm.castStart, f, false)
+		check(ok, "with no duration object either, still no throw - CastTick's sums"
+			.. " never run" .. (ok and "" or (" -- " .. tostring(err))))
+		check(not f.cast.bar:IsShown() and f.cast:GetScript("OnUpdate") == nil,
+			"the bar goes rather than being guessed, and nothing ticks")
+		check(f.cast:IsShown() and f.cast.text:GetText() == "Frostbolt",
+			"but the capsule still names the spell")
+
+		-- A secret NAME has a secret width, and the capsule used to sum it.
+		local secretName = _G.__MakeSecret("Secret Frostbolt")
+		_G.__nativeCasts.nameplate1 = { name = secretName, icon = 135846, channel = false,
+			startTime = time * 1000, endTime = (time + 3) * 1000, restricted = true }
+		ok, err = pcall(NPm.castStart, f, false)
+		check(ok, "a secret spell name starts without throwing"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(f.cast:IsShown() and f.cast.text:GetText() == secretName,
+			"and is handed to the capsule unread")
+		-- 5 + 16 + 4 + 90 + 4 + 64 + 5: padding, icon, gap, the fixed name, gap,
+		-- bar, padding.
+		check(f.cast:GetWidth() == 188,
+			"the capsule takes a fixed width for a name it may not measure ("
+			.. tostring(f.cast:GetWidth()) .. ")")
+		_G.__secretValues[secretName] = nil
+	end
+
+	_G.__nativeCasts.nameplate1 = nil
+	__despawnPlate("nameplate1")
 end
 
 print("== nameplates: a friendly is a name, not a plate ==")

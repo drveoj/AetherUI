@@ -752,6 +752,8 @@ NP.UpdateAll = UpdateAll
 
 local CAST_H, CAST_ICON, CAST_BAR_W, CAST_BAR_H = 20, 16, 64, 4
 local CAST_PAD, CAST_GAP = 5, 4
+-- The name's width when the client will not let us measure it. See CastStart.
+local CAST_NAME_W = 90
 
 local function BuildCast(f)
 	local cap = Glass.CreatePill(f, { fill = "glassStrong", edge = "castEdge" })
@@ -792,7 +794,7 @@ end
 --  reads as stutter next to Blizzard's. Same reasoning as the HUD's own.
 local function CastTick(cap, _)
 	local st = cap.state
-	if not st then return end
+	if not st or not st.finish then return end
 
 	local now = GetTime() * 1000
 	local span = (st.finish or 0) - (st.start or 0)
@@ -809,24 +811,60 @@ local function CastStart(f, channel)
 	local info = UF and UF.CastInfo
 	if not info then return end
 
+	-- SECRET CASTS. On WoW Forever the name, icon and both times can come back
+	-- secret together (SecretWhenUnitSpellCastRestricted), and three things
+	-- here used to read them: the sums in CastTick, the width sum below, and
+	-- this very test. A secret cannot even be tested for truth, so it is asked
+	-- its type instead (EllesmereUI does the same, EllesmereUI_Glows.lua:133).
 	local name, _, icon, startMs, finishMs = info(f.unit, channel)
-	if not name or not startMs or not finishMs then return CastStop(f) end
+	if type(name) == "nil" then return CastStop(f) end
 
 	local cap = f.cast or BuildCast(f)
-	cap.state = { channel = channel, start = startMs, finish = finishMs }
+	cap:SetScript("OnUpdate", nil)
+	cap.state = { channel = channel }
 	cap.icon:SetTexture(icon)
+	-- Width 0 first, so a name clamped last time is measured whole this time.
+	cap.text:SetWidth(0)
 	cap.text:SetText(name)
 	W.Color(cap.text, Palette.c.npChipInk)
 	cap.bar:SetColors(Palette.c.cast)
 
-	-- Sized to the name, so a long one is not cropped and a short one does not
-	-- leave the capsule rattling.
-	cap:SetWidth(CAST_PAD * 2 + CAST_ICON + CAST_GAP
-		+ math.ceil(cap.text:GetStringWidth() or 0) + CAST_GAP + CAST_BAR_W)
+	-- THE BAR, by the best route the client offers. A duration object animates
+	-- it without the times ever reaching us, which is how EllesmereUI draws an
+	-- enemy cast (EUI_MythicTimer_TargetFocusBars.lua:618). Library casts carry
+	-- no such object, only numbers, so those keep our own tick; secret numbers
+	-- with no object leave nothing honest to draw, and the bar goes.
+	local durationOf = channel and UnitChannelDuration or UnitCastingDuration
+	local duration = durationOf and durationOf(f.unit)
+	if type(duration) ~= "nil" then
+		local dir = Enum.StatusBarTimerDirection
+		cap.bar:SetTimerDuration(duration, nil, channel and dir.RemainingTime or dir.ElapsedTime)
+		cap.bar:Show()
+	elseif type(startMs) == "nil" or type(finishMs) == "nil" then
+		return CastStop(f)
+	elseif A.IsSecret(startMs, finishMs) then
+		cap.bar:Hide()
+	else
+		cap.state.start, cap.state.finish = startMs, finishMs
+		cap.bar:Show()
+		CastTick(cap, 0)
+		cap:SetScript("OnUpdate", CastTick)
+	end
 
-	CastTick(cap, 0)
+	-- Sized to the name, so a long one is not cropped and a short one does not
+	-- leave the capsule rattling. A secret name has a secret width, so it gets
+	-- a fixed one and is cut to fit. No `or 0`: that tests the width for truth,
+	-- which a secret refuses, and the client never answers nil here.
+	local nameW = cap.text:GetStringWidth()
+	if A.IsSecret(nameW) then
+		nameW = CAST_NAME_W
+		cap.text:SetWordWrap(false)
+		cap.text:SetWidth(CAST_NAME_W)
+	end
+	cap:SetWidth(CAST_PAD * 2 + CAST_ICON + CAST_GAP + math.ceil(nameW)
+		+ (cap.bar:IsShown() and (CAST_GAP + CAST_BAR_W) or 0))
+
 	cap:Show()
-	cap:SetScript("OnUpdate", CastTick)
 	UpdateChips(f)
 end
 
