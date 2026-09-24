@@ -135,8 +135,6 @@ end
 -- button state
 -- ---------------------------------------------------------------------------
 
-local cooldownWatch = {}   -- button -> true, for the countdown text ticker
-
 local function ButtonAction(b)
 	return tonumber(b:GetAttribute("action")) or 0
 end
@@ -155,11 +153,16 @@ local function UpdateIcon(b)
 	end
 
 	-- Ask for the count only when there is something there to count. An emptied
-	-- slot can still answer GetActionCount with the number the departed stack
-	-- had, which is how a moved item left its "5" behind on the button.
-	local count = HasAction(action) and GetActionCount(action) or 0
-	if count and count > 1 then
-		b.count:SetText(count)
+	-- slot can still answer with the number the departed stack had, which is how
+	-- a moved item left its "5" behind on the button.
+	--
+	-- The client decides what to show, and we never look at it. The count can
+	-- be SECRET - on WoW Forever, in the open world, 2026-09-23 - and `count > 1`
+	-- threw. SetText takes a secret ("AllowedWhenTainted"), and this one line is
+	-- exactly what Blizzard's own button does on both clients
+	-- (Blizzard_ActionBar/Shared/ActionButton.lua, UpdateCount).
+	if HasAction(action) then
+		b.count:SetText(C_ActionBar.GetActionDisplayCount(action))
 	else
 		b.count:SetText("")
 	end
@@ -220,31 +223,30 @@ local function UpdateState(b)
 	b:SetActive(active and true or false, Palette.c.cast[1])
 end
 
+--- The swipe and the countdown, drawn without ever reading a number.
+--
+--  An action's cooldown can be SECRET on WoW Forever, in the open world as well
+--  as in instances, and SetCooldown refuses a secret from addon code
+--  ("AllowedWhenUntainted"). Two reports of ours came from treating those
+--  numbers as ours to read or pass.
+--
+--  So we never hold them. `isActive` is annotated NeverSecret, and the DURATION
+--  OBJECT carries the timing into the Cooldown without passing through our
+--  hands. EllesmereUI (EllesmereUIActionBars.lua:4128) and LibActionButton
+--  (:2021) draw on their own buttons this way; both clients have the calls, so
+--  there is one path and no flavour check.
+--
+--  The countdown numbers are the Cooldown's own for the same reason: our text
+--  would have to read the time left. BuildButton styles them in Outfit.
 local function UpdateCooldown(b)
 	local action = ButtonAction(b)
-	if not HasAction(action) then
-		b.cooldown:Hide()
-		cooldownWatch[b] = nil
-		b.cdText:SetText("")
-		return
-	end
-
-	local start, duration, enable = GetActionCooldown(action)
-	if start and duration and duration > 0 and enable and enable ~= 0 then
-		b.cooldown:SetCooldown(start, duration)
+	local info = HasAction(action) and C_ActionBar.GetActionCooldown(action)
+	if info and info.isActive then
+		b.cooldown:SetCooldownFromDurationObject(C_ActionBar.GetActionCooldownDuration(action))
 		b.cooldown:Show()
-		-- Only draw our own countdown for real cooldowns. Painting a number for
-		-- every 1.5s global would strobe the whole dock on every cast.
-		if duration > 2 then
-			cooldownWatch[b] = { start = start, duration = duration }
-		else
-			cooldownWatch[b] = nil
-			b.cdText:SetText("")
-		end
 	else
+		b.cooldown:Clear()
 		b.cooldown:Hide()
-		cooldownWatch[b] = nil
-		b.cdText:SetText("")
 	end
 end
 
@@ -262,7 +264,7 @@ local function UpdateAllOn(b)
 end
 
 -- ---------------------------------------------------------------------------
--- countdown text + range polling, on the shared ticker
+-- range polling, on the shared ticker
 -- ---------------------------------------------------------------------------
 
 local rangeAccum = 0
@@ -270,17 +272,6 @@ local rangeAccum = 0
 local function Tick(_, dt)
 	-- Defined further down the file, so reached through the module table.
 	if AB.UpdateExtraBars then AB.UpdateExtraBars() end
-	local now = GetTime()
-
-	for b, cd in pairs(cooldownWatch) do
-		local remain = cd.start + cd.duration - now
-		if remain <= 0 then
-			b.cdText:SetText("")
-			cooldownWatch[b] = nil
-		else
-			b.cdText:SetText(W.Duration(remain))
-		end
-	end
 
 	-- Range is polled, not evented: there is no "unit moved" event, and this is
 	-- what every action bar addon does. 0.2s is imperceptible and cheap.
@@ -319,8 +310,12 @@ local function ApplyButtonFonts(b, size)
 	Media:SetFont(b.hotkey, "keybind", math.max(6, Media:Size("keybind") + d))
 	Media:SetFont(b.count,  "stack",   math.max(6, Media:Size("stack") + d))
 	-- The cooldown number is sized off the button rather than the role, so it
-	-- keeps filling the slot as the slot changes size.
-	Media:SetFont(b.cdText, "stack",   math.max(10, size * 0.24 + d))
+	-- keeps filling the slot as the slot changes size. An action button's is the
+	-- Cooldown's own (see UpdateCooldown); stance and pet still carry ours.
+	local cdSize = math.max(10, size * 0.24 + d)
+	if b.cdText then Media:SetFont(b.cdText, "stack", cdSize) end
+	local countdown = b.cooldown and b.cooldown:GetCountdownFontString()
+	if countdown then Media:SetFont(countdown, "stack", cdSize) end
 end
 
 --- Stop the pickup modifier from casting.
@@ -387,14 +382,15 @@ local function BuildButton(bar, index)
 	pcall(cd.SetSwipeColor, cd, 0.02, 0.01, 0.06, 0.72)
 	pcall(cd.SetDrawEdge, cd, false)
 	pcall(cd.SetDrawBling, cd, false)
-	-- We draw our own countdown in Outfit; Blizzard's would be in the game font.
-	pcall(cd.SetHideCountdownNumbers, cd, true)
+	-- The Cooldown draws the countdown, because ours would have to read a secret.
+	-- Two seconds is the old "no number for a 1.5s global" rule; the client
+	-- applies it to the total duration, so we never compare anything (ElvUI
+	-- sets the same knob, Game/Shared/General/Cooldowns.lua:63).
+	cd:SetHideCountdownNumbers(false)
+	cd:SetMinimumCountdownDuration(2000)
 	b.cooldown = cd
-
-	local cdText = W.Text(b, "stack", "CENTER")
-	cdText:SetPoint("CENTER", b, "CENTER", 0, 0)
-	W.Color(cdText, Palette.c.text)
-	b.cdText = cdText
+	local countdown = cd:GetCountdownFontString()
+	if countdown then W.Color(countdown, Palette.c.text) end
 
 	ApplyButtonFonts(b, cfg.size)
 
@@ -1249,6 +1245,36 @@ local function Forbidden(f)
 	return (not ok) or forbidden
 end
 
+--- Frames that are hidden but NEVER reparented, because Blizzard's own code
+--  reads their parent as a typed object rather than as somewhere to hang them.
+--
+--  `MainStatusTrackingBarContainer` is the one that taught us this, on WoW
+--  Forever, 2026-09-22:
+--
+--      function StatusTrackingBarContainerMixin:GetStatusTrackingManager()
+--          return self:GetParent();
+--      end
+--      function StatusTrackingBarContainerMixin:UpdateShownState()
+--          self:SetShown(...)
+--          self:GetStatusTrackingManager():CheckForLayoutChange();   -- :228
+--
+--  The parent IS the manager. Reparenting the container to our hider hands
+--  Blizzard a plain Frame with no `CheckForLayoutChange` on it, and every
+--  OverrideActionBar event then threw "attempt to call a nil value" from inside
+--  Blizzard's own file - a stack that looks nothing like our bug.
+--
+--  Hide alone is enough here: the OnShow hook below is what actually keeps it
+--  down, and the reparent was only ever belt to that braces. EllesmereUI lands
+--  on the same answer from the other side - UnregisterAllEvents and Hide on
+--  `StatusTrackingBarManager`, and it reparents neither.
+--
+--  ADD TO THIS LIST rather than dropping the reparent everywhere: the reparent
+--  is what stops another addon's Show() putting a bar back, and that is still
+--  worth having for every frame Blizzard does not treat this way.
+local KEEP_PARENT = {
+	MainStatusTrackingBarContainer = true,
+}
+
 local function Banish(frameName)
 	local f = _G[frameName]
 	if not f then return "absent" end
@@ -1259,7 +1285,9 @@ local function Banish(frameName)
 	-- ends up still on screen with no error to show for it.
 	pcall(f.UnregisterAllEvents, f)
 	pcall(f.Hide, f)
-	pcall(f.SetParent, f, GetHider())
+	if not KEEP_PARENT[frameName] then
+		pcall(f.SetParent, f, GetHider())
+	end
 
 	-- Belt and braces. Blizzard's bar code re-shows these from handlers we can't
 	-- unregister (they fire on a parent, or run out of UIParent_ManageFramePositions),
@@ -1273,7 +1301,10 @@ local function Banish(frameName)
 	end
 
 	local shown = f.IsShown and f:IsShown()
-	return shown and "STILL SHOWN" or "hidden"
+	if shown then return "STILL SHOWN" end
+	-- Say which of the two it got. A report that calls both "hidden" hides the
+	-- one fact a future reader of this list would need.
+	return KEEP_PARENT[frameName] and "hidden (parent kept)" or "hidden"
 end
 
 --- Take a Blizzard action button out of service.
@@ -1702,7 +1733,6 @@ function AB:OnDisable()
 		A.Fader:Unregister(bar.dock)
 		A.Movers:Unregister("bar" .. bar.id)
 	end
-	wipe(cooldownWatch)
 end
 
 --- The dock's own surface, honouring a bar that asked for no backdrop.
@@ -1728,7 +1758,9 @@ function AB:OnSkinChanged()
 			-- one config toggle into a restyle error.
 			if not b.__aetherAdopted then
 				W.Color(b.hotkey, Palette.c.text)
-				W.Color(b.cdText, Palette.c.text)
+				if b.cdText then W.Color(b.cdText, Palette.c.text) end
+				local countdown = b.cooldown and b.cooldown:GetCountdownFontString()
+				if countdown then W.Color(countdown, Palette.c.text) end
 				W.Color(b.count, Palette.c.text)
 				Repaint(b)
 			end

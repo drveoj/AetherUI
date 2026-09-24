@@ -218,8 +218,16 @@ local function SoftAwake(cfg)
 
 	if cfg.keepOnHurt then
 		local hp, hpMax = UnitHealth("player"), UnitHealthMax("player")
+		-- SECRET VALUES CANNOT BE COMPARED, and this runs on the fade ticker -
+		-- an unguarded `<` here is a continuous stream of errors rather than one.
+		-- "Are you hurt" is unanswerable when the client will not show us the
+		-- numbers, and the safe answer is AWAKE: a HUD that stays up costs a
+		-- little screen, one that fades out while you are being hit costs the
+		-- fight. See A.IsSecret.
+		if A.IsSecret(hp, hpMax) then return true end
 		if hpMax and hpMax > 0 and hp < hpMax then return true end
 		local pw, pwMax = UnitPower("player"), UnitPowerMax("player")
+		if A.IsSecret(pw, pwMax) then return true end
 		-- Rage and energy sitting below max is normal idle state, not activity;
 		-- only mana-style pools imply "you just did something".
 		local _, token = UnitPowerType("player")

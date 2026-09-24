@@ -27,6 +27,264 @@ A.modules  = {}
 A.moduleOrder = {}
 
 -- ---------------------------------------------------------------------------
+-- which client is this
+--
+-- The interface number, NOT `WOW_PROJECT_ID`. Every classic-family flavour
+-- including camelot reports `WOW_PROJECT_CLASSIC`, so that constant cannot tell
+-- Era and WoW Forever apart at all.
+--
+-- BANDS, not equality. A beta build bump moves camelot's exact number - it is
+-- 16001 today - and the bands cannot meet: Era is 115xx, camelot 16xxx, retail
+-- 12xxxx. Mists sat at 50504, which is why 20000 is a safe upper edge for the
+-- camelot band rather than an arbitrary one.
+--
+-- NO FALLBACK. An unreadable interface number leaves `A.flavour` nil and both
+-- booleans false; it never quietly becomes Era. A default here would make a
+-- client we failed to recognise look exactly like one we recognised correctly,
+-- which is the bug the Mists gate avoided by refusing an `or 2` behind the
+-- project constants - and the suite could not see the difference either.
+--
+-- PREFER A FEATURE TEST TO THIS FLAG. Most of what differs between the clients
+-- is whether a frame or a function exists, and asking that directly survives
+-- Blizzard moving things in the next build. Spend `A.isCamelot` only where
+-- nothing can be detected: a choice between two mutually exclusive layouts, or
+-- a client bug with no signature to probe for.
+-- ---------------------------------------------------------------------------
+
+A.IFACE_BANDS = {
+	{ flavour = "era",     min =  11500, max =  12000 },
+	{ flavour = "camelot", min =  16000, max =  20000 },
+	{ flavour = "retail",  min = 120000, max = math.huge },
+}
+
+--- Which client an interface number belongs to, or nil for one we do not know.
+--
+--  A FUNCTION rather than the straight-line code this started as, so the band
+--  EDGES can be tested. A range check is exactly the sort of thing that is
+--  wrong by one at a boundary and right everywhere a casual test would look,
+--  and a gate executed once at load offers nothing to aim a test at.
+function A.FlavourFor(iface)
+	if type(iface) ~= "number" then return nil end
+	for _, band in ipairs(A.IFACE_BANDS) do
+		if iface >= band.min and iface < band.max then return band.flavour end
+	end
+	return nil
+end
+
+A.iface = nil
+if GetBuildInfo then
+	-- Fourth return, and it has to be taken positionally: `local a = f and f()`
+	-- keeps only the first value, which is how the interface number came to be
+	-- missing from every bug report for months (see Errors:Header).
+	local n = select(4, GetBuildInfo())
+	if type(n) == "number" then A.iface = n end
+end
+
+A.flavour   = A.FlavourFor(A.iface)
+A.isEra     = A.flavour == "era"
+A.isCamelot = A.flavour == "camelot"
+
+-- ---------------------------------------------------------------------------
+-- secret values
+--
+-- WoW Forever inherits Midnight's secret-value system: some numbers the client
+-- hands back - a unit's max health, an aura, a cast - come wrapped so that an
+-- addon can PASS THEM ON but never look at them. Comparing one, or doing
+-- arithmetic on it, throws:
+--
+--     attempt to compare local 'max' (a secret number value, while execution
+--     tainted by 'AetherUI')
+--
+-- Which is how this arrived: 260 of them off one tooltip.
+--
+-- THE RULE, and it is not obvious: a secret can be WRITTEN - SetValue,
+-- SetMinMaxValues, SetVertexColor all take one happily - it just cannot be
+-- read, compared or CACHED. Caching matters because a cached secret poisons
+-- the next comparison as well, so the cheap fix of "store it and compare next
+-- time" fails a second time in a place further from the cause. EllesmereUI hit
+-- this and says the same thing in its own words.
+--
+-- `issecretvalue` is a real global on that client (FrameScriptDocumentation
+-- names it, alongside issecrettable, hasanysecretvalues, canaccesssecrets and
+-- dropsecretaccess). It does not exist on Era, so the guard answers false there
+-- and every caller keeps its old behaviour exactly.
+-- ---------------------------------------------------------------------------
+
+--- True if ANY argument is a value this client will not let us inspect.
+function A.IsSecret(...)
+	if not issecretvalue then return false end
+	for i = 1, select("#", ...) do
+		if issecretvalue((select(i, ...))) then return true end
+	end
+	return false
+end
+
+-- ---------------------------------------------------------------------------
+-- reading the quest log
+--
+-- TWO ENTIRELY DIFFERENT APIs, and WoW Forever kept NONE of the old one.
+-- `GetQuestLogTitle`, `SelectQuestLogEntry`, `GetNumQuestLeaderBoards` and
+-- `GetQuestLogLeaderBoard` are undocumented there and are called only from the
+-- client's own `Vanilla\` and `Cata\` files, which camelot does not load. That
+-- is why both the quest log and the tracker came up empty rather than wrong:
+-- every read answered nil and the windows drew nothing.
+--
+-- HERE RATHER THAN IN A MODULE, for two reasons. Modules\QuestTracker.lua loads
+-- BEFORE Modules\QuestLog.lua, so the log cannot own it. And both had grown
+-- their own private copies of these three readers, which is exactly the
+-- duplication that drifts - one shim, used by both.
+--
+-- The modern API is better in one respect worth keeping: objectives come back
+-- with `numFulfilled`/`numRequired` as real numbers, where the old one left us
+-- pattern-matching "0/6" out of display text.
+-- ---------------------------------------------------------------------------
+
+A.Quest = {}
+
+--- Does this client have the modern quest log?
+local function ModernQuests()
+	return (C_QuestLog and C_QuestLog.GetInfo) and true or false
+end
+A.Quest.IsModern = ModernQuests
+
+--- numEntries, numQuests. Same shape on both.
+function A.Quest.NumEntries()
+	local fn = ModernQuests() and C_QuestLog.GetNumQuestLogEntries
+		or _G.GetNumQuestLogEntries
+	if not fn then return 0, 0 end
+	local entries, quests = fn()
+	return entries or 0, quests or 0
+end
+
+--- title, level, questTag, isHeader, isCollapsed, isComplete, questID
+--
+--  The old call returned all seven positionally. `C_QuestLog.GetInfo` returns a
+--  table and does not carry completion at all, so that is asked separately -
+--  `IsComplete` for "objectives done", which is what the old `isComplete` meant.
+function A.Quest.Title(index)
+	if ModernQuests() then
+		local info = C_QuestLog.GetInfo(index)
+		if not info then return nil end
+
+		-- THE TRI-STATE IS PRESERVED, and it has to be. The old API's isComplete
+		-- is 1 for complete, **-1 for FAILED** and nil for in progress, and both
+		-- windows read all three - a failed quest is drawn as failed, not as
+		-- "not finished yet". C_QuestLog splits that across two calls, so put it
+		-- back together rather than handing callers a boolean and quietly losing
+		-- the failure state.
+		local complete
+		if info.questID and not info.isHeader then
+			if C_QuestLog.IsFailed then
+				local ok, failed = pcall(C_QuestLog.IsFailed, info.questID)
+				if ok and failed then complete = -1 end
+			end
+			if complete == nil and C_QuestLog.IsComplete then
+				local ok, done = pcall(C_QuestLog.IsComplete, info.questID)
+				if ok and done then complete = 1 end
+			end
+		end
+
+		local tag
+		if info.questID and C_QuestLog.GetQuestTagInfo then
+			local ok, t = pcall(C_QuestLog.GetQuestTagInfo, info.questID)
+			if ok and t then tag = t.tagName end
+		end
+
+		return info.title, info.level, tag, info.isHeader, info.isCollapsed,
+			complete, info.questID
+	end
+
+	if not _G.GetQuestLogTitle then return nil end
+	local title, level, questTag, isHeader, isCollapsed, isComplete, _, questID =
+		GetQuestLogTitle(index)
+	if not title then return nil end
+	if not questID and _G.GetQuestIDFromLogIndex then
+		local ok, id = pcall(GetQuestIDFromLogIndex, index)
+		if ok then questID = id end
+	end
+	return title, level, questTag, isHeader, isCollapsed, isComplete, questID
+end
+
+--- A list of { text, kind, finished, fulfilled, required } for one quest.
+--
+--  `fulfilled`/`required` are nil on the old API, where the numbers exist only
+--  inside the display string. Callers that want a fraction should prefer them
+--  and fall back to matching the text.
+function A.Quest.Objectives(index)
+	local out = {}
+
+	if ModernQuests() then
+		local info = C_QuestLog.GetInfo(index)
+		local questID = info and info.questID
+		if not questID or not C_QuestLog.GetNumQuestObjectives then return out end
+		if not _G.GetQuestObjectiveInfo then return out end
+
+		local n = C_QuestLog.GetNumQuestObjectives(questID) or 0
+		for j = 1, n do
+			-- `false` is displayComplete: we want the live text, not the
+			-- finished-state wording.
+			local text, objType, finished, fulfilled, required =
+				GetQuestObjectiveInfo(questID, j, false)
+			if text and text ~= "" then
+				out[#out + 1] = { text = text, kind = objType,
+					finished = finished and true or false,
+					fulfilled = fulfilled, required = required }
+			end
+		end
+		return out
+	end
+
+	if not _G.GetNumQuestLeaderBoards or not _G.GetQuestLogLeaderBoard then
+		return out
+	end
+	local n = GetNumQuestLeaderBoards(index) or 0
+	for j = 1, n do
+		local text, objType, finished = GetQuestLogLeaderBoard(j, index)
+		if text and text ~= "" then
+			out[#out + 1] = { text = text, kind = objType,
+				finished = finished and true or false }
+		end
+	end
+	return out
+end
+
+--- Put the client's own selection cursor on a quest, by LOG INDEX.
+--
+--  The old client takes the index; WoW Forever takes a questID
+--  (`C_QuestLog.SetSelectedQuest`), so the index has to be resolved first. Both
+--  windows need this for the things that act on "the selected quest" - sharing,
+--  abandoning - which are the client's own flows and read that cursor.
+function A.Quest.Select(index)
+	if not index then return false end
+
+	if ModernQuests() then
+		if not C_QuestLog.SetSelectedQuest then return false end
+		local info = C_QuestLog.GetInfo(index)
+		if not info or not info.questID then return false end
+		return (pcall(C_QuestLog.SetSelectedQuest, info.questID))
+	end
+
+	if not _G.SelectQuestLogEntry then return false end
+	return (pcall(SelectQuestLogEntry, index))
+end
+
+--- description, objectives text for one quest.
+--
+--  The same global on both clients, called two different ways: the old one reads
+--  whatever `SelectQuestLogEntry` last pointed at, the new one takes the index
+--  outright (Blizzard's own GameTooltip.lua:713 passes one). Selecting is the
+--  part worth avoiding where we can - it moves a cursor Blizzard's own windows
+--  are reading.
+function A.Quest.Text(index)
+	if not _G.GetQuestLogQuestText then return nil, nil end
+	if ModernQuests() then
+		return GetQuestLogQuestText(index)
+	end
+	if _G.SelectQuestLogEntry then pcall(SelectQuestLogEntry, index) end
+	return GetQuestLogQuestText()
+end
+
+-- ---------------------------------------------------------------------------
 -- chat output
 -- ---------------------------------------------------------------------------
 

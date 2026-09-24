@@ -57,6 +57,34 @@ function UF:HideBlizzard()
 		Banish(_G.CastingBarFrame)
 		Banish(_G.PlayerCastingBarFrame)
 	end
+
+	-- THE ALT POWER BARS, AND EVENTS ONLY - NEVER A REPARENT.
+	--
+	-- I got this wrong first time round. These live under
+	-- PlayerFrameAlternatePowerBarArea, a PlayerFrame descendant, so reparenting
+	-- PlayerFrame carries them along and they cannot DRAW - which is what I
+	-- checked, and it is the wrong question. They register their own power, spec
+	-- and PLAYER_ENTERING_WORLD events, independently of PlayerFrame's now-dead
+	-- ones, and those handlers still run: they reach
+	-- PlayerFrame_OnAlternatePowerBarEnabled -> PlayerFrame_ToPlayerArt ->
+	-- BuffFrame:Update() -> the aura API, which on WoW Forever is a hard error
+	-- when auras are restricted. Invisible and still throwing.
+	--
+	-- So: unregister, do not reparent. They are Edit Mode managed, and moving
+	-- one is the same class of mistake as moving
+	-- MainStatusTrackingBarContainer. EllesmereUI reached this before we did and
+	-- says the same thing in its own comment.
+	--
+	-- All four are mainline frames the vanilla ruleset never populates, but they
+	-- are DECLARED on camelot - and a name that is absent is simply skipped, so
+	-- this costs Era nothing.
+	for _, n in ipairs({ "AlternatePowerBar", "MonkStaggerBar",
+		"EvokerEbonMightBar", "DemonHunterSoulFragmentsBar" }) do
+		local f = _G[n]
+		if f and f.UnregisterAllEvents and not InCombatLockdown() then
+			pcall(f.UnregisterAllEvents, f)
+		end
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -465,6 +493,26 @@ local function UpdateHealth(f)
 	if not UnitExists(unit) then return end
 
 	local cur, max = UnitHealth(unit), UnitHealthMax(unit)
+
+	-- SECRET HEALTH: write it, never read it. On WoW Forever these come back
+	-- wrapped so an addon can pass them to SetMinMaxValues and SetValue - which
+	-- is enough to draw a correct bar - but cannot compare them, do arithmetic
+	-- on them, or CACHE them. Caching is the trap: a stored secret poisons the
+	-- next comparison too, so Reconcile below must not keep one either.
+	--
+	-- So the bar is still right and only the READOUT goes quiet, which is the
+	-- most of this we are allowed to keep. See A.IsSecret.
+	if A.IsSecret(cur, max) then
+		f.health:SetMinMaxValues(0, max)
+		f.health:SetValue(cur)
+		f.health:SetColors(Palette:HealthColor(unit))
+		f.hpText:SetText("")
+		f._lastHealth = nil
+		f._healthSecret = true
+		return
+	end
+	f._healthSecret = nil
+
 	if not max or max <= 0 then max = 1 end
 
 	-- Killing something does not reliably deliver a final UNIT_HEALTH of zero on
@@ -499,6 +547,20 @@ local function UpdatePower(f)
 	if not cfg.showPower or not UnitExists(unit) then return end
 
 	local cur, max = UnitPower(unit), UnitPowerMax(unit)
+
+	-- Same rule as health: drawable, not readable, never cached.
+	if A.IsSecret(cur, max) then
+		f.power:Show()
+		f.power:SetMinMaxValues(0, max)
+		f.power:SetValue(cur)
+		f.power:SetColors(Palette:PowerColor(unit))
+		f.mpText:SetText("")
+		f._lastPower = nil
+		f._powerSecret = true
+		return
+	end
+	f._powerSecret = nil
+
 	if not max or max <= 0 then
 		f.power:Hide()
 		f.mpText:SetText("")
@@ -534,12 +596,26 @@ end
 --  GATED ON isHunterPet, which is the client's own test. A warlock's imp
 --  reports no happiness at all, and a rim tinted from a nil is a rim tinted
 --  from whatever the last hunter left behind.
+--  THE NAMESPACED CALL FIRST. WoW Forever moved this to
+--  `C_PetInfo.GetPetHappiness` and left NO global behind - Blizzard's own
+--  PetHappiness.lua calls the namespaced one, and there is no bare
+--  GetPetHappiness anywhere in that client's source. Reading only the global
+--  cost nothing louder than a pet rim that silently never coloured, which is
+--  the quietest way for a port to be wrong.
+local function PetHappiness()
+	local fn = (C_PetInfo and C_PetInfo.GetPetHappiness) or _G.GetPetHappiness
+	if not fn then return nil end
+	local ok, happiness = pcall(fn)
+	if not ok then return nil end
+	return happiness
+end
+
 local function HappinessColor()
-	if not GetPetHappiness or not HasPetUI then return nil end
+	if not HasPetUI then return nil end
 	local _, isHunterPet = HasPetUI()
 	if not isHunterPet then return nil end
 
-	local happiness = GetPetHappiness()
+	local happiness = PetHappiness()
 	local c = Palette.c
 	if happiness == 3 then return c.petHappy end
 	if happiness == 2 then return c.petContent end
@@ -629,12 +705,27 @@ local function Reconcile()
 	for _, f in ipairs(UF.frames) do
 		local unit = f.unit
 		if f:IsShown() and UnitExists(unit) then
+			-- A SECRET CANNOT BE COMPARED, and this runs ten times a second - so
+			-- an unguarded `~=` here is not one error, it is a wall of them.
+			--
+			-- When the value is secret there is nothing to reconcile: the whole
+			-- point of this pass is spotting that the bar disagrees with the API,
+			-- and we are not allowed to know. Refresh unconditionally instead,
+			-- which is what the event path would have done anyway.
 			local want = IsDead(unit) and 0 or (UnitHealth(unit) or 0)
-			if f._lastHealth ~= want then UpdateHealth(f) end
+			if f._healthSecret or A.IsSecret(want) then
+				UpdateHealth(f)
+			elseif f._lastHealth ~= want then
+				UpdateHealth(f)
+			end
 
 			if f.power:IsShown() then
 				local wantPower = IsDead(unit) and 0 or (UnitPower(unit) or 0)
-				if f._lastPower ~= wantPower then UpdatePower(f) end
+				if f._powerSecret or A.IsSecret(wantPower) then
+					UpdatePower(f)
+				elseif f._lastPower ~= wantPower then
+					UpdatePower(f)
+				end
 			end
 		end
 	end
@@ -759,6 +850,33 @@ local function CastStart(f, channel)
 	local st = f.state
 	st.active, st.channel = true, channel
 	st.startTime, st.endTime = startTime, endTime
+
+	-- SECRET CAST TIMES CANNOT BE ANIMATED. WoW Forever can hand back a cast's
+	-- start and end as secrets - that is the point of the system, hiding what
+	-- somebody else is doing - and CastTick divides one by the other:
+	--
+	--     UNIT_SPELLCAST_START: attempt to perform numeric conversion on a
+	--     secret number value
+	--
+	-- There is no honest progress to draw. The capsule still says WHAT is being
+	-- cast, which is the part we are allowed to know, and the bar and the timer
+	-- go rather than showing a number we invented. `st.active` stays false so
+	-- the per-frame tick never starts - it is the thing doing the arithmetic.
+	st.secret = A.IsSecret(startTime, endTime) or nil
+	if st.secret then
+		st.active = false
+		f.spellName:SetText(name)
+		W.Color(f.spellName, Palette.c.text)
+		f.icon:SetIcon(texture)
+		f.bar:Hide()
+		f.glow:Hide()
+		f.time:SetText("")
+		f:Show()
+		f:SetScript("OnUpdate", nil)
+		return
+	end
+	f.bar:Show()
+	f.glow:Show()
 
 	local c = Palette.c
 	-- Whose bar is this? Yours stays blue; anyone else's takes their reaction, so

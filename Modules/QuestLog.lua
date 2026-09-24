@@ -111,26 +111,15 @@ local BTN_GAP = 10
 -- quest log adapter
 -- ---------------------------------------------------------------------------
 
-local function NumEntries()
-	if not GetNumQuestLogEntries then return 0, 0 end
-	local entries, quests = GetNumQuestLogEntries()
-	return entries or 0, quests or 0
-end
+-- BOTH OF THESE NOW LIVE IN A.Quest, and that is not merely tidying. WoW
+-- Forever kept none of the old quest-log API, so each had to learn a second
+-- client - and Modules\QuestTracker.lua carried its own copy of the same three
+-- readers, which is one place for the two to drift apart. One shim in Core,
+-- used by both. See A.Quest in Core\Core.lua.
+local NumEntries = A.Quest.NumEntries
 
 --- title, level, questTag, isHeader, isCollapsed, isComplete, questID
-local function LogTitle(index)
-	if not GetQuestLogTitle then return nil end
-	local title, level, questTag, isHeader, isCollapsed, isComplete, _, questID =
-		GetQuestLogTitle(index)
-	if not title then return nil end
-
-	if not questID and GetQuestIDFromLogIndex then
-		local ok, id = pcall(GetQuestIDFromLogIndex, index)
-		if ok then questID = id end
-	end
-
-	return title, level, questTag, isHeader, isCollapsed, isComplete, questID
-end
+local LogTitle = A.Quest.Title
 
 --- Which of Blizzard's five difficulty bands a quest level falls in.
 --
@@ -150,28 +139,24 @@ QL.DifficultyBand = DifficultyBand
 --  Blizzard guards both returns for nil and so do we: during a zone transition
 --  the client hands back empty text and a nil `finished` for objectives that are
 --  perfectly fine a second later.
+--  THE NUMBERS COME FROM THE API WHERE THE API HAS THEM. WoW Forever's
+--  `GetQuestObjectiveInfo` returns numFulfilled/numRequired outright; the old
+--  client left them only inside the display string, which is why this used to
+--  pattern-match "0/6" out of text meant for a human. The match stays as the
+--  fallback, because on Era it is still the only source.
 local function Objectives(index)
-	local lines, done, total = {}, 0, 0
-	if not GetNumQuestLeaderBoards or not GetQuestLogLeaderBoard then
-		return lines, nil
-	end
+	local lines, done, total = A.Quest.Objectives(index), 0, 0
 
-	local n = GetNumQuestLeaderBoards(index) or 0
-	for j = 1, n do
-		local text, objType, finished = GetQuestLogLeaderBoard(j, index)
-		if text and text ~= "" then
-			lines[#lines + 1] = {
-				text = text,
-				kind = objType,
-				finished = finished and true or false,
-			}
-			local cur, max = string.match(text, "(%d+)%s*/%s*(%d+)")
+	for _, line in ipairs(lines) do
+		local cur, max = line.fulfilled, line.required
+		if not (cur and max) then
+			cur, max = string.match(line.text, "(%d+)%s*/%s*(%d+)")
 			cur, max = tonumber(cur), tonumber(max)
-			if cur and max and max > 0 then
-				done, total = done + math.min(cur, max), total + max
-			else
-				done, total = done + (finished and 1 or 0), total + 1
-			end
+		end
+		if cur and max and max > 0 then
+			done, total = done + math.min(cur, max), total + max
+		else
+			done, total = done + (line.finished and 1 or 0), total + 1
 		end
 	end
 
@@ -345,8 +330,11 @@ local function DetailText(index, key)
 
 	-- The caller has already put the cursor on this quest. Selecting again here
 	-- would move it a second time for a cache hit that needs no cursor at all.
-	if not GetQuestLogQuestText then return nil, nil end
-	local ok, description, summary = pcall(GetQuestLogQuestText)
+	-- THROUGH A.Quest.Text, because the same global is called two different ways:
+	-- the old client reads whatever the selection points at, WoW Forever takes
+	-- the index outright (Blizzard's own GameTooltip.lua:713 passes one).
+	-- Selecting is the part worth avoiding where the client lets us.
+	local ok, description, summary = pcall(A.Quest.Text, index)
 	if not ok then return nil, nil end
 
 	-- Only a real answer is cached. A successful call can still return nil for
@@ -396,10 +384,7 @@ end
 --- Move the client's cursor onto a quest. Everything in the reward block below
 --  reads the selection and none of it takes an index, so this has to happen
 --  first and nothing may run between it and the reads.
-local function SelectQuest(index)
-	if not SelectQuestLogEntry or not index then return false end
-	return (pcall(SelectQuestLogEntry, index))
-end
+local SelectQuest = A.Quest.Select
 
 --- Everything the quest gives, read from the SELECTED quest.
 --
@@ -419,12 +404,29 @@ end
 local function Rewards(questID)
 	local r = { choices = {}, rewards = {}, money = 0, required = 0, spell = nil }
 
+	-- EVERY REWARD GETTER TAKES THE questID ON WoW FOREVER, where the old ones
+	-- take nothing at all and read whatever the selection points at. Reported
+	-- from the game as:
+	--
+	--     Usage: GetNumQuestLogChoices(questID, [includeCurrencies])
+	--
+	-- Same split as GetQuestLogQuestText, and it is a *Usage* error rather than
+	-- a missing function, so the `if GetNumQuestLogChoices then` guards below
+	-- all passed and then threw one line later.
+	--
+	-- The questID is a TRAILING argument on the per-item getters
+	-- (`GetQuestLogChoiceInfo(index, questID)`) and the only one on the counts.
+	-- Held as `qid`, nil on Era, so each call site reads as the client's own
+	-- signature rather than as a branch.
+	local qid = A.Quest.IsModern() and questID or nil
+	if A.Quest.IsModern() and not questID then return r end
+
 	local function readInto(list, count, getter, kind)
 		if not count or not getter then return end
 		for i = 1, count do
 			-- numItems is pre-seeded to 1 by Blizzard before the call, because the
 			-- client leaves it alone for a single item rather than returning 1.
-			local ok, name, texture, numItems, quality, isUsable = pcall(getter, i)
+			local ok, name, texture, numItems, quality, isUsable = pcall(getter, i, qid)
 			if ok and (name or texture) then
 				list[#list + 1] = {
 					index   = i,
@@ -439,15 +441,20 @@ local function Rewards(questID)
 		end
 	end
 
+	-- pcall on the COUNTS as well, not only on the per-item reads. These are
+	-- the calls that raised the Usage error, and a bare call here takes the
+	-- whole detail pane down with it.
 	if GetNumQuestLogChoices then
-		readInto(r.choices, GetNumQuestLogChoices() or 0, GetQuestLogChoiceInfo, "choice")
+		local ok, n = pcall(GetNumQuestLogChoices, qid)
+		readInto(r.choices, (ok and n) or 0, GetQuestLogChoiceInfo, "choice")
 	end
 	if GetNumQuestLogRewards then
-		readInto(r.rewards, GetNumQuestLogRewards() or 0, GetQuestLogRewardInfo, "reward")
+		local ok, n = pcall(GetNumQuestLogRewards, qid)
+		readInto(r.rewards, (ok and n) or 0, GetQuestLogRewardInfo, "reward")
 	end
 
 	if GetQuestLogRewardMoney then
-		local ok, m = pcall(GetQuestLogRewardMoney)
+		local ok, m = pcall(GetQuestLogRewardMoney, qid)
 		if ok and type(m) == "number" then r.money = m end
 	end
 	if GetQuestLogRequiredMoney then

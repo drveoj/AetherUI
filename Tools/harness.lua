@@ -7,8 +7,37 @@
 	widget type you used, ordering problems between files, anchors referencing
 	regions that were not built yet.
 
-	Run:  lua5.1 Tools/harness.lua
+	Run:  lua5.1 Tools/harness.lua            Classic Era
+	      lua5.1 Tools/harness.lua camelot    WoW Forever
 ----------------------------------------------------------------------------]]
+
+-- WHICH CLIENT THIS RUN IS PRETENDING TO BE, and it is the FIRST thing in the
+-- file on purpose.
+--
+-- Everything below can branch on it - a mock frame that only one client ships,
+-- a method that changed shape - so it has to be decided before a single mock is
+-- built. The Mists version of this started down beside the libraries and moving
+-- it up was not cosmetic: a mock that reads the flavour is a mock that reads it
+-- too late if the flavour is set after the mock.
+--
+-- Globals, not locals. This chunk is near Lua's 200-local ceiling and top-level
+-- names stay live through every block below them, so two innocent locals here
+-- can make a check five thousand lines away refuse to load.
+_G.__flavour = (... == "camelot") and "camelot" or "era"
+
+-- What GetBuildInfo answers. The addon's flavour gate reads the fourth return
+-- and nothing else, but the version string is real too, because Ellesmere's
+-- gate cross-checks it and ours may want to.
+--
+-- THE MOCK HAD NO GetBuildInfo AT ALL until 2026-09-22. Core/Errors.lua guards
+-- it and prints "?" offline, so nothing noticed - and it meant anything gating
+-- on the interface number was untestable here. That is exactly the shape of
+-- kindness the mock keeps having to have taken off it.
+_G.__iface = (_G.__flavour == "camelot") and 16001 or 11509
+_G.__build = (_G.__flavour == "camelot") and "1.60.1" or "1.15.9"
+function GetBuildInfo()
+	return _G.__build, "69913", "Sep 22 2026", _G.__iface
+end
 
 -- Scripts EVERY frame has, whatever type it is. A global rather than a local
 -- because this chunk is near Lua's 200-local ceiling, and one table per widget
@@ -795,6 +824,9 @@ local function newFontString(owner, layer)
 	end
 
 	function f:GetStringWidth()
+		-- A secret string has a secret width (SecretWhenAnchoringSecret), and
+		-- the stand-in throws on any sum, as the client's does.
+		if issecretvalue and issecretvalue(self.__text) then return _G.__SecretStandIn() end
 		local size = (self.__font and self.__font[2]) or 11
 		local text, textures = MEASURE(self.__text or "")
 		local full = textures + #text * size * 0.52
@@ -1340,14 +1372,56 @@ function CreateFrame(kind, name, parent, template)
 	function f:RegisterUnitEvent(e) self:RegisterEvent(e) end
 
 	if kind == "Cooldown" then
-		function f:SetCooldown(start, duration) self.__cd = { start, duration } end
+		--- REFUSES A SECRET, because the real one does.
+		--
+		--  Every API carries a `SecretArguments` annotation in Blizzard's
+		--  documentation. StatusBar's SetValue and SetMinMaxValues are
+		--  "AllowedWhenTainted", so an addon may hand them a secret and draw a
+		--  correct bar without ever reading the number - that is what the health
+		--  bars rely on. Cooldown's SetCooldown is "AllowedWhenUntainted":
+		--  Blizzard's own code only.
+		--
+		--  A mock that took one regardless is how "a secret can be written even
+		--  though it cannot be read" got over-generalised into a rule and
+		--  shipped a second error on top of the first.
+		function f:SetCooldown(start, duration)
+			if _G.__flavour == "camelot" and issecretvalue
+				and (issecretvalue(start) or issecretvalue(duration)) then
+				error("bad argument #1 to 'SetCooldown' (Usage:"
+					.. " self:SetCooldown(start, duration [, modRate])."
+					.. " Secret values are only allowed during untainted"
+					.. " execution for this argument.)", 2)
+			end
+			self.__cd = { start, duration }
+		end
+		--- THE ROUTE A SECRET CAN TAKE. The duration object carries the timing
+		--  from the client to the Cooldown without an addon holding a number, so
+		--  it takes nothing else: a bare number here is a caller that has read
+		--  one, and the real API would not accept it either.
+		function f:SetCooldownFromDurationObject(d)
+			if type(d) ~= "table" or not d.__durationObject then
+				error("bad argument #1 to 'SetCooldownFromDurationObject' (Usage:"
+					.. " self:SetCooldownFromDurationObject(duration [, clearIfZero]))", 2)
+			end
+			self.__cd = { d.start, d.duration }
+		end
+		function f:Clear() self.__cd = nil end
 		function f:GetCooldownTimes() return 0, 0 end
 		function f:SetSwipeTexture(t) self.__swipe = t end
 		function f:SetSwipeColor() end
 		function f:SetDrawEdge() end
 		function f:SetDrawBling() end
 		function f:SetEdgeTexture() end
-		function f:SetHideCountdownNumbers() end
+		function f:SetHideCountdownNumbers(h) self.__hideNumbers = h and true or false end
+		function f:GetHideCountdownNumbers() return self.__hideNumbers or false end
+		function f:SetMinimumCountdownDuration(ms) self.__minCountdown = ms end
+		function f:GetMinimumCountdownDuration() return self.__minCountdown or 0 end
+		-- The number the Cooldown draws itself. One string per frame, as the real
+		-- one has, so a font set on it is still there when it is asked again.
+		function f:GetCountdownFontString()
+			self.__countdown = self.__countdown or newFontString(self, "OVERLAY")
+			return self.__countdown
+		end
 		function f:SetReverse() end
 	end
 
@@ -1420,6 +1494,17 @@ function CreateFrame(kind, name, parent, template)
 		function f:GetValue() return self.__value end
 		function f:SetReverseFill() end
 		function f:SetOrientation() end
+		--- The client animates the bar from a duration object, so the addon
+		--  never holds the times. Only an object is accepted, as with the
+		--  Cooldown's SetCooldownFromDurationObject.
+		function f:SetTimerDuration(d, interpolation, direction)
+			if type(d) ~= "table" or not d.__durationObject then
+				error("bad argument #1 to 'SetTimerDuration' (Usage:"
+					.. " self:SetTimerDuration(duration [, interpolation, direction]))", 2)
+			end
+			self.__timer = { duration = d, direction = direction or 0 }
+		end
+		function f:GetTimerDuration() return self.__timer and self.__timer.duration end
 	end
 
 	-- SetText fires OnTextChanged, exactly as the client does. Modelled rather
@@ -1707,14 +1792,70 @@ function GetActionTexture(s) return actions[s] and actions[s].texture end
 -- whatever the departed stack last counted. Slot 11 is empty and models exactly
 -- that, which is the whole reason the button reads HasAction first.
 _G.__staleCounts = { [11] = 20 }
+-- COOLDOWNS RESTRICTED, camelot only. The client's own annotation for the
+-- action values that go secret is `SecretWhenCooldownsRestricted`, and it is
+-- not only in instances: Joe hit a secret count in the open world, 2026-09-23.
+-- While this is on, every such value comes back as a secret stand-in.
+--
+-- Globals rather than locals: this chunk sits at Lua's 200-local cap.
+_G.__cooldownsRestricted = false
+function _G.__CooldownsRestricted()
+	return _G.__flavour == "camelot" and _G.__cooldownsRestricted
+end
+
 function GetActionCount(s)
+	if _G.__CooldownsRestricted() then return _G.__SecretStandIn() end
 	if actions[s] then return actions[s].count or 0 end
 	return _G.__staleCounts[s] or 0
 end
+
+--- The raw timing, before the client decides what the caller may see.
+function _G.__ActionCooldownTimes(s)
+	local a = actions[s]
+	if not (a and a.cd and a.cd[2] and a.cd[2] > 0) then return 0, 0 end
+	if a.cd[1] + a.cd[2] <= time then return 0, 0 end
+	return a.cd[1], a.cd[2]
+end
+
 function GetActionCooldown(s)
+	if _G.__CooldownsRestricted() then
+		return _G.__SecretStandIn(), _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
 	local a = actions[s]
 	if a and a.cd then return a.cd[1], a.cd[2], 1 end
 	return 0, 0, 0
+end
+
+-- C_ActionBar, as both clients document it (ActionBarFrameDocumentation.lua).
+C_ActionBar = C_ActionBar or {}
+
+--- A SpellCooldownInfo. isActive and isEnabled are NeverSecret; the timing is
+--  not, and comes back as a stand-in while cooldowns are restricted.
+function C_ActionBar.GetActionCooldown(s)
+	local start, duration = _G.__ActionCooldownTimes(s)
+	local active = duration > 0
+	if _G.__CooldownsRestricted() then
+		start, duration = _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
+	return { startTime = start, duration = duration, isEnabled = true,
+		isActive = active, modRate = 1 }
+end
+
+--- An opaque duration object. Only the Cooldown mock looks inside it, which is
+--  the client's side of the line, never the addon's.
+function C_ActionBar.GetActionCooldownDuration(s)
+	local start, duration = _G.__ActionCooldownTimes(s)
+	return { __durationObject = true, start = start, duration = duration }
+end
+
+--- What Blizzard's own button puts in its Count, as a string. A stack shows its
+--  number; a plain spell shows nothing.
+function C_ActionBar.GetActionDisplayCount(s, maxDisplayCount, replacement)
+	local a = actions[s]
+	local n = a and a.count or 0
+	if n <= 0 then return "" end
+	if n > (maxDisplayCount or 9999) then return replacement or "*" end
+	return tostring(n)
 end
 function IsUsableAction(s)
 	local a = actions[s]
@@ -2286,6 +2427,14 @@ function GameTooltip:SetQuestLogItem(kind, i)
 	self.__shows = { "item", kind, i, _G.__questSelected }
 end
 function GameTooltip:SetSpellByID(id) self.__shows = { "spell", id } end
+--- Counted, because on the beta a call made while auras are restricted is an
+--  error even when our own pcall survives it: Blizzard's PTR feedback addon
+--  hooks this and reads the aura again after us. Missing until 2026-09-23, so
+--  the buff tooltip's pcall had been calling nothing and passing.
+function GameTooltip:SetUnitAura(unit, index, filter)
+	_G.__unitAuraTips = (_G.__unitAuraTips or 0) + 1
+	self.__shows = { "aura", unit, index, filter }
+end
 
 --- The container path. Correct for a real bag and for a bank BAG; it answers
 --  nothing for the generic bank container, which is why Blizzard's own bank
@@ -2801,6 +2950,38 @@ end
 uiChild("MainActionBar")
 uiChild("MicroMenu")
 uiChild("PetActionBar")
+
+-- THE STATUS TRACKING BAR, AND ITS PARENT IS A TYPED OBJECT.
+--
+-- Neither of these was mocked, so the module banished two frames that did not
+-- exist and the whole path was green without running - the same omission that
+-- left UF:HideBlizzard untested.
+--
+-- The relationship is the point. `MainStatusTrackingBarContainer` is a CHILD of
+-- `StatusTrackingBarManager`, and Blizzard's own StatusTrackingBarContainerMixin
+-- does:
+--
+--     function ...:GetStatusTrackingManager() return self:GetParent() end
+--     function ...:UpdateShownState()
+--         self:GetStatusTrackingManager():CheckForLayoutChange()   -- :228
+--
+-- so reparenting the container hands Blizzard a frame with no
+-- CheckForLayoutChange on it and the client throws from inside its own file.
+-- Modelling the method on the manager is what makes that reproducible here
+-- rather than only in the game.
+StatusTrackingBarManager = uiChild("StatusTrackingBarManager")
+function StatusTrackingBarManager:CheckForLayoutChange()
+	_G.__layoutChecked = (_G.__layoutChecked or 0) + 1
+end
+MainStatusTrackingBarContainer =
+	CreateFrame("Frame", "MainStatusTrackingBarContainer", StatusTrackingBarManager)
+--- Blizzard's own call path, cut down to the step that broke.
+function MainStatusTrackingBarContainer:UpdateShownState()
+	self:GetStatusTrackingManager():CheckForLayoutChange()
+end
+function MainStatusTrackingBarContainer:GetStatusTrackingManager()
+	return self:GetParent()
+end
 --- A FRAME THE CLIENT HAS PUT OUT OF REACH, and its whole subtree with it.
 --
 --  SetForbidden is real and this game uses it on ordinary windows, not only on
@@ -2899,6 +3080,44 @@ function CancelUnitBuff(unit, index, filter)
 end
 function CancelSpellByName(name) _G.__cancelled = { name = name } end
 
+-- THE MODERN AURA API, on camelot only, and it THROWS when restricted.
+--
+-- Two things were being modelled kindly at once. `C_UnitAuras` was not mocked
+-- at all, so every run took the legacy `UnitAura` branch and the modern path
+-- our code prefers was never exercised on any client. And a restricted read is
+-- a hard error rather than a nil return - Blizzard made it one deliberately -
+-- so a mock that answered nil would let our code sail past while the game
+-- filled the log with:
+--
+--     GetAuraDataByIndex(): Auras cannot be accessed when secret while tainted
+--
+-- Era never refuses the read, which is why this is camelot-only rather than a
+-- flag on a shared mock.
+if _G.__flavour == "camelot" then
+	C_UnitAuras = C_UnitAuras or {}
+	_G.__auraReads = 0
+	function C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
+		-- COUNTED, because "did it throw" is not the question. A pcall around
+		-- the call already stops a throw reaching the log, so a test that only
+		-- checks for errors passes with the guard removed - it did, first time.
+		-- What the guard is actually for is not CALLING a throwing API over and
+		-- over, several times a second, per aura, per unit.
+		_G.__auraReads = _G.__auraReads + 1
+		if _G.__aurasRestricted then
+			error("GetAuraDataByIndex(): Auras cannot be accessed when secret"
+				.. " while tainted by 'AetherUI'", 2)
+		end
+		local name, icon, count, auraType, duration, expiration, _,
+			_, _, _, _, _, castByPlayer = UnitAura(unit, index, filter)
+		if not name then return nil end
+		return {
+			name = name, icon = icon, applications = count,
+			dispelName = auraType, duration = duration,
+			expirationTime = expiration, isFromPlayerOrPlayerPet = castByPlayer,
+		}
+	end
+end
+
 -- The client FILTERS. This was a lookup on the exact filter string, so a module
 -- that asked for "HARMFUL" when it meant "HARMFUL|PLAYER" got whatever the test
 -- had put in the list and looked correct. PLAYER is applied here instead, over
@@ -2951,6 +3170,101 @@ end
 -- The real Minimap is a widget type the client draws into and cannot be
 -- recreated, so the module reshapes Blizzard's. Everything it touches on that
 -- object is modelled here, plus the furniture it banishes.
+--
+-- TWO COMPLETELY DIFFERENT TREES, which is why this is a branch and not a few
+-- extra names. Era hangs a dozen globally-named frames off the cluster and the
+-- backdrop. Camelot takes Mainline\Minimap.xml, where the cluster inherits
+-- EditModeMinimapSystemTemplate and almost every child is an ANONYMOUS
+-- parentKey - Tracking, IndicatorFrame, ZoneTextButton, MinimapContainer. Nine
+-- of the twelve names the module banishes do not exist there at all.
+--
+-- The nesting matters as much as the names: Minimap is inside
+-- MinimapCluster.MinimapContainer rather than being a direct child of the
+-- cluster, and MinimapBackdrop is still a child of Minimap.
+if _G.__flavour == "camelot" then
+
+	MinimapCluster = CreateFrame("Frame", "MinimapCluster")
+	function MinimapCluster:EnableMouse(v) self.__mouse = v end
+
+	-- Anonymous parentKeys, every one of them. GetName() returns nil, which is
+	-- the whole point: SweepCluster filters children with issecurevariable(name)
+	-- and a frame with no name cannot be sorted that way.
+	MinimapCluster.BorderTop      = CreateFrame("Frame", nil, MinimapCluster)
+	MinimapCluster.ZoneTextButton = CreateFrame("Button", nil, MinimapCluster)
+	MinimapCluster.Tracking       = CreateFrame("Frame", nil, MinimapCluster)
+	-- A DropdownButton, and it has NO menuGenerator. MiniMapTrackingButtonMixin
+	-- builds its list with SetupMenu inside OnLoad, so the only handle an addon
+	-- gets is OpenMenu - which is the one thing EllesmereUI guards on before
+	-- touching it. Modelling a menuGenerator here would be the mock inventing
+	-- the field our module happens to reach for first, which is the exact
+	-- fabrication that put MiniMapTrackingDropDown and then
+	-- MiniMapTrackingButton into the Era mock.
+	MinimapCluster.Tracking.Button = CreateFrame("Button", nil, MinimapCluster.Tracking)
+	function MinimapCluster.Tracking.Button:OpenMenu()
+		_G.__trackingMenu = self
+	end
+	MinimapCluster.IndicatorFrame = CreateFrame("Frame", nil, MinimapCluster)
+	MinimapCluster.IndicatorFrame.MailFrame =
+		CreateFrame("Frame", nil, MinimapCluster.IndicatorFrame)
+	MinimapCluster.IndicatorFrame.CraftingOrderFrame =
+		CreateFrame("Frame", nil, MinimapCluster.IndicatorFrame)
+	MinimapCluster.InstanceDifficulty = CreateFrame("Frame", nil, MinimapCluster)
+
+	-- WoW Forever's own day/night dial, built by Camelot\Diel.lua at file load
+	-- and hung on the cluster with no global name. The sun off the map's corner.
+	MinimapCluster.DielFrame = CreateFrame("Frame", nil, MinimapCluster)
+
+	-- The zone text IS globally named even though its button is not.
+	MinimapZoneText = MinimapCluster.ZoneTextButton:CreateFontString(
+		"MinimapZoneText", "ARTWORK")
+
+	-- Minimap is a grandchild here, not a child.
+	MinimapCluster.MinimapContainer = CreateFrame("Frame", nil, MinimapCluster)
+	Minimap = CreateFrame("Frame", "Minimap", MinimapCluster.MinimapContainer)
+	Minimap:SetSize(140, 140)
+	function Minimap:SetMaskTexture(t) self.__mask = t end
+	function Minimap:GetZoom() return self.__zoom or 0 end
+	function Minimap:SetZoom(z) self.__zoom = z end
+
+	-- Zoom is a pair of parentKey children of Minimap, not two globals, and
+	-- there are no Minimap_ZoomInClick / Minimap_ZoomOutClick / Minimap_OnClick
+	-- functions to fall back on. Deliberately absent: a module reaching for one
+	-- here is reaching for it in the game.
+	Minimap.ZoomHitArea = CreateFrame("Frame", nil, Minimap)
+	Minimap.ZoomIn      = CreateFrame("Button", nil, Minimap)
+	Minimap.ZoomOut     = CreateFrame("Button", nil, Minimap)
+
+	-- BLIZZARD'S OWN COORDINATE READOUT, and its parent is the thing that
+	-- matters. It is anchored `relativeTo="Minimap"`, which is why the first
+	-- attempt banished `Minimap.PlayerCoords` and reached nothing - the XML
+	-- closes </Minimap> and THEN opens this frame, so it is a SIBLING of the map
+	-- inside MinimapContainer. The mock had it wrong the same way, which is how
+	-- the check passed while the coordinates stayed on screen in the game. An
+	-- anchor says where a frame draws, never whose child it is.
+	MinimapCluster.MinimapContainer.PlayerCoords =
+		CreateFrame("Frame", nil, MinimapCluster.MinimapContainer)
+
+	_G.__minimapPin = CreateFrame("Frame", "HarnessMinimapPin", Minimap)
+	_G.__minimapPin:SetAlpha(0.5)
+
+	-- Still globally named, still a child of Minimap - so the module's separate
+	-- by-name sweep of it is one of the few things that carries straight over.
+	MinimapBackdrop = CreateFrame("Frame", "MinimapBackdrop", Minimap)
+	MinimapCompassTexture = MinimapBackdrop:CreateTexture(
+		"MinimapCompassTexture", "OVERLAY")
+	CreateFrame("Button", "ExpansionLandingPageMinimapButton", MinimapBackdrop)
+
+	-- GameTimeFrame survives the move; MiniMapMailIcon is a global texture
+	-- inside the anonymous MailFrame.
+	CreateFrame("Button", "GameTimeFrame", MinimapCluster)
+	MiniMapMailIcon = MinimapCluster.IndicatorFrame.MailFrame:CreateTexture(
+		"MiniMapMailIcon", "OVERLAY")
+
+	_G.__clusterArt = MinimapCluster:CreateTexture(nil, "OVERLAY")
+	CreateFrame("Frame", "SomeAddonOnTheCluster", MinimapCluster)
+
+else  -- Classic Era
+
 Minimap = CreateFrame("Frame", "Minimap")
 -- A third-party pin, hung on the minimap the way Questie and TomTom hang one.
 -- It carries a deliberately non-default alpha, because "put it back to 1" and
@@ -3018,6 +3332,8 @@ CreateFrame("Frame", "SomeAddonOnTheCluster", MinimapCluster)
 -- being able to prove.
 CreateFrame("Frame", "MiniMapTracking", UIParent)
 function CancelTrackingBuff() _G.__trackingCancelled = true end
+
+end  -- flavour
 
 MenuUtil = MenuUtil or {}
 function MenuUtil.CreateContextMenu(owner, generator)
@@ -3093,7 +3409,16 @@ _G.__mapArt = true
 -- Blizzard's globals are secure and an addon's are not; the module leans on that
 -- to sort furniture from arrivals without a hardcoded list.
 _G.__secureNames = {}
-for _, n in ipairs({
+for _, n in ipairs(_G.__flavour == "camelot" and {
+	-- Camelot's cluster is nearly all anonymous parentKeys, so this list is
+	-- short for a real reason rather than because it is unfinished. A name that
+	-- does not exist on the client must not appear here: the point of the list
+	-- is to be the set issecurevariable can sort, and padding it with Era names
+	-- would let the module pass by banishing frames the client has not got.
+	"Minimap", "MinimapCluster", "MinimapBackdrop", "MinimapZoneText",
+	"MinimapCompassTexture", "MiniMapMailIcon", "GameTimeFrame",
+	"ExpansionLandingPageMinimapButton",
+} or {
 	"Minimap", "MinimapCluster", "MinimapBorder", "MinimapBorderTop",
 	"MinimapNorthTag", "MinimapZoomIn", "MinimapZoomOut", "MinimapToggleButton",
 	"MinimapZoneTextButton", "MiniMapTracking", "MiniMapBattlefieldFrame",
@@ -3372,6 +3697,118 @@ function GetQuestLogQuestText()
     return q.description, q.summary
 end
 
+-- THE MODERN QUEST LOG, on camelot, and the legacy globals GO.
+--
+-- WoW Forever keeps none of the old API: GetQuestLogTitle, SelectQuestLogEntry,
+-- GetNumQuestLeaderBoards and GetQuestLogLeaderBoard are undocumented there and
+-- are called only from the client's own Vanilla\ and Cata\ files, which camelot
+-- does not load. Leaving them defined here would let the shim take the old path
+-- on a client that has not got it - the suite green, both windows empty in the
+-- game, which is exactly what was reported.
+--
+-- GetQuestLogQuestText SURVIVES, but is called differently: Blizzard's own
+-- GameTooltip.lua:713 passes a questLogIndex where the old client read whatever
+-- the selection pointed at. Modelled with the index, so the shim's two calling
+-- conventions are both exercised for real.
+if _G.__flavour == "camelot" then
+	C_QuestLog = C_QuestLog or {}
+
+	-- CAPTURED BEFORE THEY ARE REMOVED. The fixture below these is the same
+	-- one either way - only the API in front of it changes - so the modern
+	-- functions read through the old ones. Nilling the globals first left them
+	-- calling something that no longer existed, which the suite caught at once.
+	local eraNumBoards  = GetNumQuestLeaderBoards
+	local eraBoard      = GetQuestLogLeaderBoard
+
+	function C_QuestLog.GetNumQuestLogEntries() return GetNumQuestLogEntries() end
+
+	function C_QuestLog.GetInfo(index)
+		local q = _G.__visibleLog()[index]
+		if not q then return nil end
+		return {
+			title = q.title, level = q.level, questID = q.id,
+			isHeader = q.header or false, isCollapsed = q.collapsed or false,
+			questLogIndex = index,
+		}
+	end
+
+	--- `== 1`, NOT truthiness. The old API's isComplete is tri-state: 1 is
+	--  complete, **-1 is FAILED**, nil is in progress. Written as
+	--  `q.complete and true or false` this answered true for a failed quest,
+	--  because -1 is truthy in Lua - and a failed quest would have drawn a full
+	--  progress bar reading "Complete". The fixture carries a -1 quest on
+	--  purpose and it is what caught this.
+	function C_QuestLog.IsComplete(questID)
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID then return q.complete == 1 end
+		end
+		return false
+	end
+
+	--- The other half of the old tri-state. Blizzard's own objective tracker
+	--  pairs these two the same way (Blizzard_QuestObjectiveTracker.lua:310).
+	function C_QuestLog.IsFailed(questID)
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID then return q.complete == -1 end
+		end
+		return false
+	end
+
+	function C_QuestLog.GetQuestTagInfo(questID)
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID and q.tag then return { tagName = q.tag } end
+		end
+		return nil
+	end
+
+	--- Takes a questID where the old call took a log index, so it resolves back
+	--  to the same __questSelected the rest of the suite reads. The cursor is
+	--  one thing whichever door you come through.
+	function C_QuestLog.SetSelectedQuest(questID)
+		for i, q in ipairs(_G.__visibleLog()) do
+			if q.id == questID then _G.__questSelected = i return end
+		end
+	end
+
+	function C_QuestLog.GetNumQuestObjectives(questID)
+		for i, q in ipairs(_G.__visibleLog()) do
+			if q.id == questID then return eraNumBoards(i) end
+		end
+		return 0
+	end
+
+	--- text, type, finished, numFulfilled, numRequired. The last two are the
+	--  real gain: the old client left those numbers only inside display text.
+	function GetQuestObjectiveInfo(questID, j, displayComplete)
+		for i, q in ipairs(_G.__visibleLog()) do
+			if q.id == questID then
+				local text, kind, finished = eraBoard(j, i)
+				if not text then return nil end
+				local cur, max = string.match(text, "(%d+)%s*/%s*(%d+)")
+				return text, kind, finished, tonumber(cur), tonumber(max)
+			end
+		end
+		return nil
+	end
+
+	local eraQuestText = GetQuestLogQuestText
+	function GetQuestLogQuestText(index)
+		local q = index and _G.__visibleLog()[index]
+		if not q then return nil, nil end
+		_G.__questTextReads = (_G.__questTextReads or 0) + 1
+		return q.description, q.summary
+	end
+
+	-- Gone, exactly as they are gone on the client. SelectQuestLogEntry is NOT
+	-- removed here: it is defined again further down this file, so nilling it
+	-- at this point would be quietly undone. It goes at the end of the quest
+	-- mocks instead.
+	GetQuestLogTitle          = nil
+	GetNumQuestLeaderBoards   = nil
+	GetQuestLogLeaderBoard    = nil
+	GetQuestIDFromLogIndex    = nil
+end
+
 function GetNumQuestWatches() return #_G.__watches end
 function GetQuestIndexForWatch(i) return _G.__watches[i] end
 function AddQuestWatch(index) _G.__watches[#_G.__watches + 1] = index end
@@ -3384,6 +3821,10 @@ end
 _G.__questLogOpenedTo, _G.__questSelected, _G.__questShared, _G.__abandonPopup = nil, nil, nil, nil
 function QuestLog_OpenToQuest(index) _G.__questLogOpenedTo = index end
 function SelectQuestLogEntry(index) _G.__questSelected = index end
+-- ...and taken straight back off on camelot, which has not got it. Defined and
+-- then removed rather than skipped, so the Era definition above stays the one
+-- readable statement of what the old call did.
+if _G.__flavour == "camelot" then SelectQuestLogEntry = nil end
 function QuestLogPushQuest() _G.__questShared = _G.__questSelected end
 function SetAbandonQuest() _G.__abandonLatch = _G.__questSelected end
 function StaticPopup_Show(which) _G.__abandonPopup = which end
@@ -3553,6 +3994,59 @@ function GetQuestLogRewardMoney()
 	local q = selectedQuest()
 	return (q and q.money) or 0
 end
+-- ...AND ON CAMELOT EVERY ONE OF THEM TAKES THE questID, as a trailing
+-- argument on the per-item getters and as the only one on the counts. Calling
+-- them the old way is not a missing function, it is a **Usage error** raised
+-- from C:
+--
+--     Usage: GetNumQuestLogChoices(questID, [includeCurrencies])
+--
+-- which is exactly why it slipped through: the module's `if GetNumQuestLogChoices
+-- then` existence guard passed, and the call one line later threw. A mock that
+-- merely ignored the extra argument would have kept the suite green while the
+-- quest detail pane died on every click, so these RAISE instead.
+if _G.__flavour == "camelot" then
+	local function byID(questID)
+		if type(questID) ~= "number" then return nil end
+		for _, q in ipairs(_G.__questLog) do
+			if q.id == questID then return q end
+		end
+		return nil
+	end
+	local function demand(questID, usage)
+		local q = byID(questID)
+		if not q then error("Usage: " .. usage, 3) end
+		return q
+	end
+
+	function GetNumQuestLogChoices(questID)
+		local q = demand(questID, "GetNumQuestLogChoices(questID, [includeCurrencies])")
+		return (q.choices) and #q.choices or 0
+	end
+	function GetQuestLogChoiceInfo(i, questID)
+		local q = demand(questID, "GetQuestLogChoiceInfo(index, questID)")
+		local r = q.choices and q.choices[i]
+		if not r then return nil end
+		return r[1], r[2], r[3] or 1, r[4] or 1, r[5] ~= false
+	end
+	function GetNumQuestLogRewards(questID)
+		local q = demand(questID, "GetNumQuestLogRewards(questID)")
+		return (q.rewards) and #q.rewards or 0
+	end
+	function GetQuestLogRewardInfo(i, questID)
+		local q = demand(questID, "GetQuestLogRewardInfo(index, questID)")
+		local r = q.rewards and q.rewards[i]
+		if not r then return nil end
+		return r[1], r[2], r[3] or 1, r[4] or 1, r[5] ~= false
+	end
+	function GetQuestLogRewardMoney(questID)
+		local q = demand(questID, "GetQuestLogRewardMoney(questID)")
+		return q.money or 0
+	end
+	-- GetQuestLogRequiredMoney keeps the no-argument form on this client: the
+	-- questID variant does not appear anywhere in its source.
+end
+
 function GetQuestLogRequiredMoney()
 	local q = selectedQuest()
 	return (q and q.required) or 0
@@ -3797,6 +4291,7 @@ ITEM_INVENTORY_BANK_BAG_OFFSET = 4
 
 Enum = _G.Enum or {}
 Enum.BagIndex = { Backpack = 0, Bank = -1, Keyring = -2, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4 }
+Enum.StatusBarTimerDirection = { ElapsedTime = 0, RemainingTime = 1 }
 Enum.ItemClass = {
 	Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5,
 	Projectile = 6, Tradegoods = 7, ItemEnhancement = 8, Recipe = 9,
@@ -4278,8 +4773,107 @@ _G.__isHunterPet  = true
 -- a mock that made the first imply the second would make the second unreachable.
 -- GetPetHappiness is about the PLAYER's pet, not about which pet it is; whether
 -- this one HAS moods is what HasPetUI's second return says.
-function GetPetHappiness() return _G.__petHappiness, 100, 0 end
+-- WHERE PET HAPPINESS LIVES DIFFERS, and only one of these exists per client.
+--
+-- Era has the bare global. Camelot moved it into C_PetInfo and kept nothing
+-- behind: Blizzard's own PetHappiness.lua calls C_PetInfo.GetPetHappiness and
+-- there is no global left in the whole source tree. Defining both here would
+-- let a module read the one it prefers and pass on a client that has not got
+-- it, which is the fabrication this mock keeps having to have taken off it.
+--
+-- HasPetUI stays a plain global on both - Blizzard's own Camelot
+-- PaperDollFrame still calls it that way.
+if _G.__flavour == "camelot" then
+	C_PetInfo = C_PetInfo or {}
+	function C_PetInfo.GetPetHappiness() return _G.__petHappiness, 100, 0 end
+else
+	function GetPetHappiness() return _G.__petHappiness, 100, 0 end
+end
 function HasPetUI() return true, _G.__isHunterPet end
+
+-- SECRET VALUES, on camelot only.
+--
+-- WoW Forever inherits Midnight's secret-value system: some numbers come back
+-- wrapped so an addon can pass them on but never read, compare or cache them.
+-- `issecretvalue` is the client's own test for one (FrameScriptDocumentation
+-- names it alongside issecrettable, hasanysecretvalues, canaccesssecrets and
+-- dropsecretaccess). Era has no such global, which is exactly why A.IsSecret
+-- answers false there and every caller keeps its old behaviour.
+--
+-- A REAL SECRET CANNOT BE MODELLED HERE. The client's version throws inside the
+-- Lua VM on comparison; Lua has no such type, and building a metatable that
+-- errors on __lt would be a mock inventing its own semantics. So this models
+-- the one thing the module actually asks - "is this value one I must not look
+-- at" - via a registry the tests write to. That is enough to prove every guard
+-- takes its secret branch, which is the part that was wrong in the game.
+if _G.__flavour == "camelot" then
+	_G.__secretValues = setmetatable({}, { __mode = "k" })
+	function issecretvalue(v)
+		return _G.__secretValues[v] == true
+	end
+	--- Mark a number secret for the duration of a check.
+	function _G.__MakeSecret(v)
+		_G.__secretValues[v] = true
+		return v
+	end
+	--- A secret that REFUSES to be read, rather than one that only says so.
+	--
+	--  A marked number still compares fine in here, so code that compares a
+	--  secret passes. An empty table cannot be compared or added to - Lua
+	--  itself throws - which is the same failure the client raises, with no
+	--  semantics of ours invented to get it.
+	function _G.__SecretStandIn()
+		local v = {}
+		_G.__secretValues[v] = true
+		return v
+	end
+
+	-- AURAS ARE A DIFFERENT PROBLEM, and the mock has to model the difference.
+	-- A secret NUMBER comes back and may be passed on; a restricted aura read
+	-- THROWS. Blizzard made it a hard-error API rather than a nil return, so a
+	-- mock that answered nil would let our code pass while the game errored -
+	-- which is the whole family of bug this file keeps having designed out of it.
+	_G.__aurasRestricted = false
+	C_Secrets = C_Secrets or {}
+	function C_Secrets.ShouldAurasBeSecret()
+		return _G.__aurasRestricted == true
+	end
+end
+
+-- BLIZZARD'S OWN UNIT FRAMES, which this mock simply did not have.
+--
+-- UF:HideBlizzard banishes six of them and nothing here existed to banish, so
+-- A:Banish took its `if not frame then return false end` exit every time and
+-- the whole path was green without ever running. Kind by omission rather than
+-- by fabrication, and just as invisible.
+--
+-- CastingBarFrame is Era's and is GONE on camelot - Mainline declares
+-- PlayerCastingBarFrame instead. TargetFrameToT exists on both, though on
+-- camelot it is built at runtime as self:GetName().."ToT" rather than declared.
+_G.__blizzUnitFrames = {}
+for _, n in ipairs(_G.__flavour == "camelot" and {
+	"PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame", "TargetFrameToT",
+	"PlayerCastingBarFrame",
+} or {
+	"PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame", "TargetFrameToT",
+	"CastingBarFrame",
+}) do
+	_G.__blizzUnitFrames[n] = CreateFrame("Frame", n, UIParent)
+end
+
+-- BLIZZARD'S ALT POWER BARS, and the reason they are built AFTER PlayerFrame:
+-- they are its descendants, which is exactly what made them look harmless.
+--
+-- Reparenting PlayerFrame carries them along so they cannot DRAW - and that is
+-- the wrong question, which this mock now exists to stop anyone answering
+-- twice. They register their OWN events, those handlers keep running while
+-- invisible, and on camelot they reach the aura API and hard-error. Each gets a
+-- real registration so that clearing it is observable rather than assumed.
+for _, n in ipairs({ "AlternatePowerBar", "MonkStaggerBar",
+	"EvokerEbonMightBar", "DemonHunterSoulFragmentsBar" }) do
+	local f = CreateFrame("Frame", n, _G.PlayerFrame)
+	f:RegisterEvent("UNIT_POWER_UPDATE")
+end
 
 function UnitExists(u) return units[u] and units[u].exists or false end
 function UnitName(u) return units[u] and units[u].name end
@@ -4423,14 +5017,46 @@ function UnitInParty(u) return units[u] ~= nil and units[u].exists or false end
 function UnitIsDND(u) return units[u] and units[u].dnd or false end
 
 local castState
+-- Native casts for units other than the player. Era reports none, which is why
+-- the nameplates lean on LibClassicCasterino there; WoW Forever reports them
+-- ("casts for others native 142" in Joe's diag, 2026-09-23). A cast with
+-- `restricted` set answers its times - and, if asked, its name - as secrets.
+_G.__nativeCasts = {}
+function _G.__castFor(u)
+	if u == "player" then return castState end
+	return _G.__nativeCasts[u]
+end
 function UnitCastingInfo(u)
-	if u ~= "player" or not castState or castState.channel then return nil end
-	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
+	local c = _G.__castFor(u)
+	if not c or c.channel then return nil end
+	if c.restricted then
+		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
+	return c.name, c.name, c.icon, c.startTime, c.endTime
 end
 function UnitChannelInfo(u)
-	if u ~= "player" or not castState or not castState.channel then return nil end
-	return castState.name, castState.name, castState.icon, castState.startTime, castState.endTime
+	local c = _G.__castFor(u)
+	if not c or not c.channel then return nil end
+	if c.restricted then
+		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
+	return c.name, c.name, c.icon, c.startTime, c.endTime
 end
+--- A duration object for a NATIVE cast only. A library cast has none, which is
+--  the whole reason the nameplate keeps its own tick for those. Set
+--  `noDuration` on a cast to model a client that offers no object.
+function _G.__castDuration(u, channel)
+	local c = _G.__castFor(u)
+	if not c or c.noDuration or (c.channel and true or false) ~= channel then return nil end
+	return { __durationObject = true, start = c.startTime, duration = c.endTime - c.startTime }
+end
+function UnitCastingDuration(u) return _G.__castDuration(u, false) end
+function UnitChannelDuration(u) return _G.__castDuration(u, true) end
+
+--- castState is a file-local, and the blocks that drive a cast sit right beside
+--  it. The secret-value section is thousands of lines away and needs the same
+--  handle, so it gets one rather than a second copy of the mock.
+function _G.__setCast(t) castState = t end
 
 -- The addon list is a SUPERSET of the actionable one: most addons offer neither
 -- an LDB launcher nor a minimap button. Only about half declare ## IconTexture
@@ -4750,9 +5376,25 @@ local function MakeChatFrame(id)
 	tab:SetHeight(32)
 	tab.__id = id
 	function tab:GetID() return self.__id end
-	for _, set in ipairs({ "", "Selected", "Highlight" }) do
-		for _, piece in ipairs({ "Left", "Middle", "Right" }) do
-			_G[name .. "Tab" .. set .. piece] = tab:CreateTexture()
+	-- THE TAB ART IS SPELLED DIFFERENTLY PER CLIENT, and that is the whole bug
+	-- Joe reported: Blizzard's tabs still on screen underneath ours.
+	--
+	-- Era names each piece globally, `ChatFrame1TabSelectedLeft` and friends.
+	-- WoW Forever's ChatTabArtTemplate gives them parentKeys only, spelled
+	-- `Left`, `ActiveLeft`, `HighlightLeft` - no globals at all, and "Active"
+	-- where Era says "Selected". A sweep that matches by name reaches none of
+	-- them, which is why the skin now sweeps every texture by shape instead.
+	if _G.__flavour == "camelot" then
+		for _, set in ipairs({ "", "Active", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				tab[set .. piece] = tab:CreateTexture()
+			end
+		end
+	else
+		for _, set in ipairs({ "", "Selected", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				_G[name .. "Tab" .. set .. piece] = tab:CreateTexture()
+			end
 		end
 	end
 	_G[name .. "TabGlow"] = tab:CreateTexture()
@@ -5484,12 +6126,23 @@ local function ThreatRows(mob)
 		or nil
 end
 
+-- THREAT RESTRICTED, camelot only. The client hides all five values together
+-- (SecretWhenUnitThreatValuesRestricted), and `tanking and true` threw in the
+-- game on 2026-09-23. Stand-ins, so any sum or comparison throws as it does
+-- there. (A truth test on one cannot be made to throw here - a table is simply
+-- true - so the checks lean on the sums downstream.)
+_G.__threatRestricted = false
+
 function UnitDetailedThreatSituation(unit, mob)
 	if not (unit and mob) then return end
 	if not UnitAffectingCombat("player") then return end
 	local row = ThreatRows(mob)
 	row = row and row[unit]
 	if not row then return end
+	if _G.__flavour == "camelot" and _G.__threatRestricted then
+		local s = _G.__SecretStandIn
+		return s(), s(), s(), s(), s()
+	end
 	return row[1], row[2], row[3], row[4], row[5]
 end
 
@@ -5509,6 +6162,9 @@ end
 function UnitThreatPercentageOfLead(unit, mob)
 	local tanking = UnitDetailedThreatSituation(unit, mob)
 	if not tanking then return end
+	if _G.__flavour == "camelot" and _G.__threatRestricted then
+		return _G.__SecretStandIn()
+	end
 	local rows = ThreatRows(mob)
 	if not rows then return end
 	local mine, best = 0, 0
@@ -6069,6 +6725,83 @@ local function section(name, fn)
 		fail(name .. " -- the block itself errored: " .. tostring(err))
 	end
 end
+
+section("which client the addon thinks it is on", function()
+	-- The gate reads the interface number and nothing else. WOW_PROJECT_ID
+	-- cannot answer this: every classic-family flavour including camelot reports
+	-- WOW_PROJECT_CLASSIC, which is why the mock sets it to 2 for both runs.
+	check(A.iface == _G.__iface,
+		("the interface number comes from the client: %s"):format(tostring(A.iface)))
+	check(A.flavour == _G.__flavour,
+		("and names the flavour: %s"):format(tostring(A.flavour)))
+	check(A.isEra == (_G.__flavour == "era"), "A.isEra agrees with it")
+	check(A.isCamelot == (_G.__flavour == "camelot"), "A.isCamelot agrees with it")
+	check(not (A.isEra and A.isCamelot), "and never both at once")
+
+	-- THE BAND EDGES, which is the whole reason FlavourFor is a function.
+	-- Each band is half-open: min is inside, max is not. A range check is wrong
+	-- by one at a boundary far more often than it is wrong in the middle, and
+	-- the middle is all a live run ever exercises.
+	for _, band in ipairs(A.IFACE_BANDS) do
+		check(A.FlavourFor(band.min) == band.flavour,
+			("%d is %s"):format(band.min, band.flavour))
+		check(A.FlavourFor(band.min - 1) ~= band.flavour,
+			("%d is not"):format(band.min - 1))
+		if band.max ~= math.huge then
+			check(A.FlavourFor(band.max - 1) == band.flavour,
+				("%d is still %s"):format(band.max - 1, band.flavour))
+			check(A.FlavourFor(band.max) ~= band.flavour,
+				("%d is not"):format(band.max))
+		end
+	end
+
+	-- The live numbers, named rather than derived, so a band edited to the wrong
+	-- place fails here even if it stays self-consistent.
+	check(A.FlavourFor(11509) == "era", "11509 is Era")
+	check(A.FlavourFor(16001) == "camelot", "16001 is camelot")
+
+	-- NO FALLBACK. A client we cannot read must not look like one we read
+	-- correctly - the Mists gate refused an `or 2` behind the project constants
+	-- for exactly this reason, and the suite could not tell the two apart.
+	check(A.FlavourFor(nil) == nil, "an absent interface number is not a flavour")
+	check(A.FlavourFor("11509") == nil, "and neither is a string that looks like one")
+	check(A.FlavourFor(50504) == nil, "Mists is not claimed by any band")
+
+	-- THE OLD QUEST LOG API IS GONE HERE, and the mock must keep it gone.
+	-- WoW Forever documents none of these and calls them only from its Vanilla\
+	-- and Cata\ files, which camelot does not load. Putting one back in the mock
+	-- would let the shim take the old path on a client that has not got it -
+	-- suite green, both quest windows empty in the game, which is what was
+	-- reported.
+	if _G.__flavour == "camelot" then
+		for _, n in ipairs({ "GetQuestLogTitle", "GetNumQuestLeaderBoards",
+			"GetQuestLogLeaderBoard", "SelectQuestLogEntry" }) do
+			check(_G[n] == nil, n .. " does not exist on this client")
+		end
+		check(C_QuestLog and C_QuestLog.GetInfo ~= nil,
+			"and C_QuestLog is what answers instead")
+	end
+
+	-- THE TOC AND THE GATE HAVE TO AGREE. Two places state which clients this
+	-- addon supports and nothing keeps them in step; the same argument the icon
+	-- path check already makes about the .toc naming a texture twice.
+	do
+		local fh = io.open("AetherUI.toc", "rb")
+		local line = fh and fh:read("*l") or ""
+		if fh then fh:close() end
+		local declared, unknown = 0, {}
+		for n in line:gmatch("%d+") do
+			declared = declared + 1
+			if not A.FlavourFor(tonumber(n)) then unknown[#unknown + 1] = n end
+		end
+		check(declared >= 2,
+			("the .toc declares %d interface numbers"):format(declared))
+		check(#unknown == 0, #unknown == 0
+			and "and the gate recognises every one of them"
+			or ("the .toc declares an interface no band covers: "
+				.. table.concat(unknown, " ")))
+	end
+end)
 
 section("the source itself: nothing under space that should not be", function()
 	-- NO STRAY CONTROL BYTES IN OUR OWN SOURCE.
@@ -7904,15 +8637,35 @@ do
 		"every backdrop region is hidden rather than blanked"
 		.. (#stillShown > 0 and ("  -- still shown: " .. table.concat(stillShown, ", ")) or ""))
 
+	-- EVERY PIECE, WHICHEVER WAY THIS CLIENT SPELLS IT. Era names them globally
+	-- (`ChatFrame1TabSelectedLeft`); WoW Forever gives them parentKeys only and
+	-- calls the selected set "Active". Checking only Era's spelling is what let
+	-- Blizzard's tabs sit on screen under ours with the suite green.
 	local tabArt = {}
-	for _, set in ipairs({ "", "Selected", "Highlight" }) do
-		for _, piece in ipairs({ "Left", "Middle", "Right" }) do
-			local r = _G["ChatFrame1Tab" .. set .. piece]
-			if r and r:IsShown() then tabArt[#tabArt + 1] = set .. piece end
+	if _G.__flavour == "camelot" then
+		for _, set in ipairs({ "", "Active", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				local r = _G.ChatFrame1Tab[set .. piece]
+				if r and r:IsShown() then tabArt[#tabArt + 1] = set .. piece end
+			end
+		end
+	else
+		for _, set in ipairs({ "", "Selected", "Highlight" }) do
+			for _, piece in ipairs({ "Left", "Middle", "Right" }) do
+				local r = _G["ChatFrame1Tab" .. set .. piece]
+				if r and r:IsShown() then tabArt[#tabArt + 1] = set .. piece end
+			end
 		end
 	end
 	check(#tabArt == 0, "and so is every piece of tab artwork"
 		.. (#tabArt > 0 and ("  -- " .. table.concat(tabArt, ", ")) or ""))
+
+	-- AND OURS SURVIVED THE SWEEP. The skin now hides every texture on the tab
+	-- by shape rather than by name, and it runs again on every dock update - so
+	-- a sweep that did not skip its own work would erase the mark on the second
+	-- call and the tab would light once and never again.
+	check(_G.ChatFrame1Tab.__aetherMark ~= nil,
+		"our own mark survives the blanket sweep, which runs on every dock update")
 
 	local tab1, tab2 = _G.ChatFrame1Tab, _G.ChatFrame2Tab
 
@@ -10293,10 +11046,32 @@ check(AB.hideReport.MainMenuBarVehicleLeaveButton == nil,
 check(AB.hideReport.PossessBarFrame ~= nil or AB.hideReport.PossessBarFrame == nil,
 	"possess keeps Blizzard's bar - rare, temporary, and no vehicle UI here")
 check(_G.MainMenuBar:GetParent() ~= UIParent, "banished frames are reparented off UIParent")
+
+-- ...BUT NOT THE STATUS TRACKING CONTAINER, whose parent Blizzard calls methods
+-- on. Reported by Joe from the WoW Forever client on 2026-09-22: every
+-- OverrideActionBar event threw "attempt to call a nil value" out of
+-- StatusTrackingManager.lua:228, because GetStatusTrackingManager() is just
+-- GetParent() and we had made that our hider.
+check(_G.MainStatusTrackingBarContainer:GetParent() == _G.StatusTrackingBarManager,
+	"the status tracking container keeps its real parent - Blizzard calls"
+	.. " CheckForLayoutChange on it, so a plain hider frame breaks the client")
+check(not _G.MainStatusTrackingBarContainer:IsShown(),
+	"and is still hidden, which is all we actually wanted from it")
+check(AB.hideReport.MainStatusTrackingBarContainer == "hidden (parent kept)",
+	"and the report says which of the two it got, rather than calling both hidden")
+do
+	-- The exact call that threw in the game, run here.
+	local ok, err = pcall(_G.MainStatusTrackingBarContainer.UpdateShownState,
+		_G.MainStatusTrackingBarContainer)
+	check(ok, "Blizzard's own UpdateShownState still runs after we banish it"
+		.. (ok and "" or (" -- " .. tostring(err))))
+end
+
 SlashCmdList["AETHERUI"]("diag")   -- must not error with a live report
 
 check(bar.buttons[1].icon:GetTexture() == 130001, "action icon painted")
-check(bar.buttons[8].count:GetText() == 20, "stack count shown")
+check(bar.buttons[8].count:GetText() == "20", "stack count shown")
+check(bar.buttons[1].count:GetText() == "", "a plain spell shows no count")
 check(bar.buttons[11].icon:IsShown() == false, "empty slot hides its icon")
 check(bar.buttons[11].count:GetText() == "",
 	"an emptied slot shows no count - the game keeps answering GetActionCount"
@@ -10585,18 +11360,60 @@ end
 print("== cooldowns ==")
 -- Anchor the mock cooldowns to *now*: the session has been running for a while
 -- by this point and anything set at load time has long since expired.
-_G.__actions[3].cd = { time, 30 }
-_G.__actions[5].cd = { time, 1.5 }
-fire("SPELL_UPDATE_COOLDOWN")
-tick(0.1)
-check(bar.buttons[3].cdText:GetText() ~= "" and bar.buttons[3].cdText:GetText() ~= nil,
-	"real cooldown draws a countdown (" .. tostring(bar.buttons[3].cdText:GetText()) .. ")")
-check((bar.buttons[5].cdText:GetText() or "") == "",
-	"1.5s global does not paint a countdown")
-_G.__actions[3].cd = nil
-fire("SPELL_UPDATE_COOLDOWN")
-tick(0.1)
-check((bar.buttons[3].cdText:GetText() or "") == "", "countdown clears when the cooldown ends")
+do
+	local cd3, cd5 = bar.buttons[3].cooldown, bar.buttons[5].cooldown
+	_G.__actions[3].cd = { time, 30 }
+	_G.__actions[5].cd = { time, 1.5 }
+	fire("SPELL_UPDATE_COOLDOWN")
+	tick(0.1)
+	check(cd3:IsShown() and cd3.__cd and cd3.__cd[2] == 30,
+		"a real cooldown draws its swipe, from the duration object")
+	check(cd5:IsShown() and cd5.__cd and cd5.__cd[2] == 1.5, "and so does a global")
+
+	-- THE NUMBERS ARE THE COOLDOWN'S OWN, because ours would have to read the
+	-- time left. The old "no number for a 1.5s global" rule is the client's to
+	-- apply now, against the total duration, so nothing of ours compares.
+	check(cd3:GetHideCountdownNumbers() == false,
+		"the cooldown draws its own countdown numbers")
+	check(cd3:GetMinimumCountdownDuration() == 2000,
+		"but none for a cooldown of two seconds or less - a global gets no number")
+	check((cd3:GetCountdownFontString():GetFont()) == A.Media.font.bold,
+		"and they are in Outfit, the stack role's face, not the game font ("
+		.. tostring((cd3:GetCountdownFontString():GetFont())) .. ")")
+	check(bar.buttons[3].cdText == nil,
+		"an action button carries no countdown text of its own any more")
+
+	-- RESTRICTED. Two reports from the game, both a secret read by us: first
+	-- `duration > 0` in UpdateCooldown, then SetCooldown refusing the numbers
+	-- outright; and on 2026-09-23, in the open world, `count > 1` at
+	-- ActionBars.lua:161. The stand-ins throw on any comparison, as the client
+	-- does, so this runs the repaint directly to see the error rather than have
+	-- the event pump swallow it.
+	if _G.__flavour == "camelot" then
+		_G.__cooldownsRestricted = true
+		_G.__actions[3].cd = { time, 30 }
+		-- Wiped first, so a swipe left over from the check above cannot pass
+		-- for one this repaint drew.
+		cd3:Clear()
+		cd3:Hide()
+		local ok, err = pcall(AB.RefreshAll, AB)
+		check(ok, "a restricted cooldown and count repaint without throwing"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(cd3:IsShown() and cd3.__cd and cd3.__cd[2] == 30,
+			"AND THE SWIPE STILL DRAWS - the duration object carries it, where"
+			.. " SetCooldown refused the numbers")
+		check(bar.buttons[8].count:GetText() == "20",
+			"and the stack count still shows, handed to SetText unread")
+		_G.__cooldownsRestricted = false
+	end
+
+	_G.__actions[3].cd = nil
+	fire("SPELL_UPDATE_COOLDOWN")
+	tick(0.1)
+	check(not cd3:IsShown() and cd3.__cd == nil, "the swipe clears when the cooldown ends")
+	_G.__actions[5].cd = nil
+	fire("SPELL_UPDATE_COOLDOWN")
+end
 
 print("== drag and drop ==")
 local b = bar.buttons[4]
@@ -10806,6 +11623,181 @@ do
 	cfg.perRow = 0
 	AU:OnConfigChanged()
 	check(PB.opts.perRow == before, "and 0 goes back to whatever fits")
+end
+
+if _G.__flavour == "camelot" then
+section("secret values are drawn, never read", function()
+	-- THE BUG THIS EXISTS FOR: 260 errors off one tooltip, all
+	-- "attempt to compare local 'max' (a secret number value)". On WoW Forever
+	-- a unit's max health can come back wrapped so it may be passed to a bar but
+	-- never compared, divided or cached.
+	check(A.IsSecret(1) == false, "an ordinary number is not secret")
+	check(A.IsSecret(_G.__MakeSecret(4242)) == true, "a marked one is")
+	check(A.IsSecret(1, 2, _G.__MakeSecret(4243)) == true,
+		"and any one of several arguments is enough")
+	check(A.IsSecret() == false, "no arguments is not secret")
+	check(A.IsSecret(nil) == false, "and neither is nil")
+
+	local f = UF.player
+	local saved, savedMax = units.player.hp, units.player.hpMax
+
+	-- The bar still gets both values - that is the whole point of the rule, and
+	-- a frame that simply stopped drawing would be a worse answer than one that
+	-- drops the readout.
+	units.player.hp, units.player.hpMax =
+		_G.__MakeSecret(4244), _G.__MakeSecret(4245)
+	UF.UpdateAll(f)
+	check(f.hpText:GetText() == "",
+		"a secret health drops the readout rather than throwing")
+	check(f._lastHealth == nil,
+		"and is NEVER cached - a stored secret poisons the next comparison too,"
+		.. " which is how this fails a second time somewhere else")
+	check(f._healthSecret == true, "the frame remembers only that it was secret")
+
+	-- Reconcile runs at 10Hz, so an unguarded comparison here is not one error,
+	-- it is a wall of them.
+	local ok = pcall(UF.Reconcile)
+	check(ok, "the 10Hz reconcile pass survives a secret instead of erroring"
+		.. " ten times a second")
+
+	units.player.hp, units.player.hpMax = saved, savedMax
+	UF.UpdateAll(f)
+	check(f._healthSecret == nil and f.hpText:GetText() ~= "",
+		"and an ordinary value afterwards reads out again, so the secret branch"
+		.. " does not latch")
+
+	-- A SECRET CAST CANNOT BE ANIMATED. Reported from the game as
+	-- "UNIT_SPELLCAST_START: attempt to perform numeric conversion on a secret
+	-- number value" - CastTick divides the elapsed time by the total.
+	if UF.cast then
+		local cast = UF.cast
+		_G.__setCast({ name = "Secret Bolt", icon = 135846, channel = false,
+			startTime = _G.__MakeSecret(4270), endTime = _G.__MakeSecret(4271) })
+		local ok = pcall(UF.CastStart, cast, false)
+		check(ok, "a secret cast does not throw")
+		check(cast.state.active == false,
+			"and never starts the per-frame tick, which is the thing doing the"
+			.. " arithmetic")
+		check(cast.spellName:GetText() == "Secret Bolt",
+			"the capsule still says WHAT is being cast, which we are allowed to know")
+		check(cast.time:GetText() == "" and not cast.bar:IsShown(),
+			"but the bar and the timer go rather than showing a number we invented")
+		_G.__setCast(nil)
+		UF.CastStop(cast)
+	end
+end)
+
+section("a restricted aura read is refused, not merely secret", function()
+	-- A DIFFERENT FAILURE FROM A SECRET NUMBER. A secret value comes back and
+	-- can be handed to a setter; a restricted aura read THROWS. Reported from
+	-- the game as "GetAuraDataByIndex(): Auras cannot be accessed when secret
+	-- while tainted by 'AetherUI'", repeatedly, off both a ticker and UNIT_AURA.
+	local Aur = A:GetModule("auras")
+
+	check(Aur.AurasRestricted() == false, "auras read normally to begin with")
+	check(Aur.GetAura("player", 1, "HELPFUL") ~= nil, "and an aura comes back")
+
+	_G.__aurasRestricted = true
+	check(Aur.AurasRestricted() == true,
+		"the client's own ShouldAurasBeSecret is asked first, and answers")
+
+	local ok, err = pcall(Aur.GetAura, "player", 1, "HELPFUL")
+	check(ok, "the read does not throw once restricted"
+		.. (ok and "" or (" -- " .. tostring(err))))
+	check(ok and err == nil,
+		"it answers 'no aura here', so every caller's existing end-of-list"
+		.. " handling does the rest rather than learning a third state")
+
+	-- The whole point of a hard-error API: if the guard is missed, the client
+	-- errors rather than returning nil. Prove the mock really does that.
+	local threw = not pcall(C_UnitAuras.GetAuraDataByIndex, "player", 1, "HELPFUL")
+	check(threw, "and the underlying API really does throw, so this is a guard"
+		.. " rather than a nil check dressed up as one")
+
+	-- AND THE GUARD'S REAL JOB: not calling it at all. The pcall inside GetAura
+	-- already stops a throw reaching the log, so "does it error" passes with the
+	-- guard deleted. What would be left is a throwing C call made several times
+	-- a second, per aura, per unit, for as long as the restriction lasts.
+	_G.__auraReads = 0
+	for i = 1, 20 do Aur.GetAura("player", i, "HELPFUL") end
+	check(_G.__auraReads == 0,
+		"twenty scans while restricted make ZERO calls to the API - the pcall is"
+		.. " the net, this is the thing that stops us needing it ("
+		.. tostring(_G.__auraReads) .. ")")
+
+	_G.__aurasRestricted = false
+	check(Aur.AurasRestricted() == false and Aur.GetAura("player", 1, "HELPFUL") ~= nil,
+		"lifting the restriction restores the scan - it must not latch, or a"
+		.. " zone edge would empty the tray for the rest of the session")
+
+	-- THE TOOLTIP, hovered on a tile still up as the restriction lands - the
+	-- race Joe hit on 2026-09-23. Blizzard_PTRFeedback hooks SetUnitAura and
+	-- reads the aura after us, which the client refuses from our call, so the
+	-- guard's job is not making the call at all.
+	Aur.playerBuffs:Update()
+	local tile = Aur.playerBuffs.tiles[1]
+	local enter = tile and tile:GetScript("OnEnter")
+	_G.__unitAuraTips = 0
+	if enter then enter(tile) end
+	check(_G.__unitAuraTips == 1 and GameTooltip.__shows and GameTooltip.__shows[1] == "aura",
+		"hovering a buff shows its tooltip (" .. tostring(_G.__unitAuraTips) .. " call)")
+	_G.__aurasRestricted = true
+	_G.__unitAuraTips = 0
+	if enter then enter(tile) end
+	check(_G.__unitAuraTips == 0,
+		"but not while auras are restricted - no SetUnitAura for the hook to"
+		.. " trip over (" .. tostring(_G.__unitAuraTips) .. ")")
+	_G.__aurasRestricted = false
+	GameTooltip:Hide()
+end)
+
+end
+
+print("== Blizzard's own unit frames are taken off screen ==")
+do
+	-- NEVER RUN BEFORE 2026-09-22. The mock had none of these frames, so
+	-- A:Banish took its `if not frame then return false end` exit six times and
+	-- the suite went green having tested nothing at all. That is the omission
+	-- version of the same bug the fabricated dropdowns were.
+	for _, n in ipairs({ "PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame",
+		"TargetFrameToT" }) do
+		local f = _G[n]
+		check(f and not f:IsShown(), n .. " is hidden")
+		check(f and f:GetParent() ~= UIParent,
+			"and reparented off UIParent, so another addon calling Show() on it"
+			.. " cannot put " .. n .. " back")
+	end
+
+	-- THE CAST BAR IS NAMED DIFFERENTLY PER CLIENT, and the module banishes both
+	-- names for that reason. Whichever one this client has must be gone;
+	-- whichever it has not must not have been conjured up to be banished.
+	local castName = _G.__flavour == "camelot" and "PlayerCastingBarFrame"
+		or "CastingBarFrame"
+	local absentName = _G.__flavour == "camelot" and "CastingBarFrame"
+		or "PlayerCastingBarFrame"
+	check(_G[castName] and not _G[castName]:IsShown(),
+		castName .. " is hidden - it is the one this client declares")
+	check(_G[absentName] == nil,
+		absentName .. " does not exist here, and banishing a name the client has"
+		.. " not got has to be a no-op rather than a mock frame to aim at")
+
+	-- THE ALT POWER BARS: SILENCED, NOT MOVED.
+	--
+	-- I checked these once and cleared them on the grounds that they are
+	-- PlayerFrame descendants, so reparenting carries them along and they cannot
+	-- draw. That was the wrong question. They self-register, their handlers keep
+	-- running while invisible, and on camelot those handlers reach the aura API
+	-- and hard-error. EllesmereUI had already written this down.
+	for _, n in ipairs({ "AlternatePowerBar", "MonkStaggerBar",
+		"EvokerEbonMightBar", "DemonHunterSoulFragmentsBar" }) do
+		local f = _G[n]
+		check(f and not f:IsEventRegistered("UNIT_POWER_UPDATE"),
+			n .. " has had its OWN events unregistered - hiding its parent does"
+			.. " not stop it running")
+		check(f and f:GetParent() == _G.PlayerFrame,
+			"and it is NOT reparented: it is Edit Mode managed, the same class"
+			.. " of mistake as moving MainStatusTrackingBarContainer")
+	end
 end
 
 print("== the capsules never resize ==")
@@ -13602,7 +14594,78 @@ do  -- Blizzard's Minimap is reshaped, not replaced: it cannot be recreated
 		.. " and it swallows clicks meant for what is behind it")
 end
 
-do  -- the furniture
+if _G.__flavour == "camelot" then do  -- the furniture, camelot
+	-- THE NAMED LIST BUYS ALMOST NOTHING HERE. Nine of the twelve names in
+	-- MM.blizzardFrames do not exist on this client, and the three that do
+	-- (GameTimeFrame, MinimapCompassTexture, MinimapBackdrop) are not where the
+	-- furniture went. Everything else moved onto the cluster as an ANONYMOUS
+	-- parentKey, which is the part that breaks the sweep: SweepCluster sorts
+	-- children with issecurevariable(name), and a frame whose GetName() is nil
+	-- cannot be sorted that way at all - it is simply skipped.
+	--
+	-- So the sweep has to learn the parentKey shape. These check the end state,
+	-- not the route: whatever way the module gets there, none of this furniture
+	-- may be left drawing over the glass.
+	local r = MMm.hideReport
+	check(not MinimapCluster.Tracking:IsShown(),
+		"the tracking button is banished, though nothing globally names it")
+	check(not MinimapCluster.IndicatorFrame.MailFrame:IsShown(),
+		"and the mail indicator, which is two parentKeys deep")
+	check(not MinimapCluster.BorderTop:IsShown(), "and the cluster's border bar")
+	check(not MinimapCluster.ZoneTextButton:IsShown(), "and the zone text button")
+	check(not MinimapCluster.InstanceDifficulty:IsShown(),
+		"and the instance difficulty badge")
+	check(not Minimap.ZoomIn:IsShown() and not Minimap.ZoomOut:IsShown(),
+		"the zoom buttons go too - they are children of Minimap here, not globals")
+
+	-- Both reported from the game on 2026-09-22, and both reachable ONLY by
+	-- parentKey: one is built at runtime by a file that exists on no other
+	-- client, the other is a frame Blizzard did not used to draw at all.
+	check(not MinimapCluster.DielFrame:IsShown(),
+		"WoW Forever's day/night dial is banished - the sun off the map's corner")
+	check(not MinimapCluster.MinimapContainer.PlayerCoords:IsShown(),
+		"and Blizzard's own coordinates, which sat under the map behind our pill"
+		.. " and read as ours printed twice - a SIBLING of Minimap, not a child,"
+		.. " which is what the first fix got wrong")
+
+	-- The three names that DO survive the move still have to work by name.
+	check(r.GameTimeFrame == "hidden", "the day/night dial is still banished by name")
+	check(r.MinimapBackdrop == "swept",
+		"and the backdrop is still recursed into, not carried off")
+
+	-- NOT A FRAME THE CLIENT HAS NOT GOT. A report claiming to have hidden
+	-- MinimapBorder on camelot is the mock being kind in a new way.
+	check(r.MinimapBorder == "absent" or r.MinimapBorder == nil,
+		"a name this client does not have is reported absent, never hidden")
+	check(r.MiniMapTracking == "absent" or r.MiniMapTracking == nil,
+		"and so is Era's tracking frame")
+
+	check(not _G.__clusterArt:IsShown() and _G.__clusterArt:GetAlpha() == 0,
+		"an unnamed region of the cluster is swept, the same as on Era")
+	check(_G.SomeAddonOnTheCluster:IsShown(),
+		"but an addon's own frame on the cluster is still left where it is")
+	-- No pin-alpha check here. Zen's blocks run thousands of checks earlier and
+	-- drive __minimapPin's alpha on purpose, so anything asserted about it down
+	-- here is asserting the leftovers of an unrelated test. It is covered where
+	-- it belongs, in the two zen blocks.
+
+	-- The wheel, with no Minimap_ZoomInClick to fall back on: the module has to
+	-- drive SetZoom itself here.
+	Minimap:GetScript("OnMouseWheel")(Minimap, 1)
+	check(Minimap:GetZoom() == 1, "the wheel zooms in without Minimap_ZoomInClick")
+	Minimap:GetScript("OnMouseWheel")(Minimap, -1)
+	check(Minimap:GetZoom() == 0, "and out")
+
+	-- AND THERE IS A REAL MENU HERE, unlike Era. Tracking is a dropdown on the
+	-- cluster, so the right-click opens it rather than cancelling a buff -
+	-- CancelTrackingBuff does not exist on this client.
+	_G.__trackingMenu = nil
+	Minimap:GetScript("OnMouseUp")(Minimap, "RightButton")
+	check(_G.__trackingMenu ~= nil,
+		"right-click opens the tracking menu off MinimapCluster.Tracking.Button")
+	check(_G.CancelTrackingBuff == nil,
+		"and never reaches for CancelTrackingBuff, which this client has not got")
+end else do  -- the furniture
 	local r = MMm.hideReport
 	check(r.MinimapBorder == "hidden" and r.MinimapZoomIn == "hidden"
 		and r.MiniMapTracking == "hidden" and r.GameTimeFrame == "hidden",
@@ -13652,7 +14715,7 @@ do  -- the furniture
 		.. " that is the whole of what the frame we hid did")
 	Minimap:GetScript("OnMouseUp")(Minimap, "LeftButton")
 	check(_G.__minimapPinged, "and left-click still pings")
-end
+end end
 
 print("== the zone pill ==")
 do
@@ -18619,8 +19682,11 @@ do
 
 	-- Fold every zone, the way a player would, and the way an earlier session
 	-- can leave it.
+	-- Through A.Quest like the modules do: GetQuestLogTitle does not exist on
+	-- camelot, so the suite reaching for it directly would test the addon
+	-- against an API the client has not got.
 	for i = GetNumQuestLogEntries(), 1, -1 do
-		local _, _, _, isHeader = GetQuestLogTitle(i)
+		local _, _, _, isHeader = A.Quest.Title(i)
 		if isHeader then CollapseQuestHeader(i) end
 	end
 	QTf:Refresh()
@@ -19476,7 +20542,7 @@ do
 	table.insert(_G.__questLog, 2, { id = 99, title = "A New Quest", level = 12,
 		description = "d", summary = "s", objectives = {} })
 	fire("QUEST_ACCEPTED", 2, 99)
-	local sitting, _, _, sittingIsHeader = GetQuestLogTitle(target.index)
+	local sitting, _, _, sittingIsHeader = A.Quest.Title(target.index)
 	check(sitting and not sittingIsHeader and sitting ~= "Prowlers of the Barrens",
 		"the stale index now names a different REAL quest ('" .. tostring(sitting)
 		.. "'), not a header the guard would reject for free")
@@ -21612,6 +22678,74 @@ do
 	_G.__ccCasts.nameplate1 = nil
 	_G.__auras.target = savedAuras
 	_G.__units.target = nil
+end
+
+print("== nameplates: a native cast, and a secret one ==")
+do
+	local mob = { exists = true, name = "Kolkar Wrangler", level = 17, reaction = 2,
+		hp = 900, hpMax = 1000 }
+	local base = __spawnPlate("nameplate1", mob)
+	local f = NPm.plateFor(base)
+	local dir = Enum.StatusBarTimerDirection
+
+	-- A NATIVE cast carries a duration object, and the client animates the bar
+	-- from it. WoW Forever reports other units' casts; Era does not, which is
+	-- what the library block above is for.
+	_G.__nativeCasts.nameplate1 = { name = "Frostbolt", icon = 135846, channel = false,
+		startTime = time * 1000, endTime = (time + 3) * 1000 }
+	NPm.castStart(f, false)
+	check(f.cast:IsShown() and f.cast.bar:IsShown(), "a native cast opens the capsule with its bar")
+	check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.ElapsedTime,
+		"and the client animates the bar from a duration object, filling")
+	check(f.cast:GetScript("OnUpdate") == nil, "so nothing of ours ticks for it")
+
+	_G.__nativeCasts.nameplate1 = { name = "Arcane Missiles", icon = 136096, channel = true,
+		startTime = time * 1000, endTime = (time + 5) * 1000 }
+	NPm.castStart(f, true)
+	check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.RemainingTime,
+		"a native channel drains, as the library's does")
+
+	-- RESTRICTED. Joe's diag, 2026-09-23: "attempt to perform numeric conversion
+	-- on a secret number value" from nameplates. The stand-ins throw on any sum,
+	-- so the cast is started directly - the event pump would swallow the error.
+	if _G.__flavour == "camelot" then
+		_G.__nativeCasts.nameplate1 = { name = "Frostbolt", icon = 135846, channel = false,
+			startTime = time * 1000, endTime = (time + 3) * 1000, restricted = true }
+		f.cast.bar.__timer = nil
+		local ok, err = pcall(NPm.castStart, f, false)
+		check(ok, "a cast with secret times starts without throwing"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(f.cast.bar:IsShown() and f.cast.bar.__timer ~= nil,
+			"and its bar still animates - the duration object carries the times past us")
+
+		_G.__nativeCasts.nameplate1.noDuration = true
+		ok, err = pcall(NPm.castStart, f, false)
+		check(ok, "with no duration object either, still no throw - CastTick's sums"
+			.. " never run" .. (ok and "" or (" -- " .. tostring(err))))
+		check(not f.cast.bar:IsShown() and f.cast:GetScript("OnUpdate") == nil,
+			"the bar goes rather than being guessed, and nothing ticks")
+		check(f.cast:IsShown() and f.cast.text:GetText() == "Frostbolt",
+			"but the capsule still names the spell")
+
+		-- A secret NAME has a secret width, and the capsule used to sum it.
+		local secretName = _G.__MakeSecret("Secret Frostbolt")
+		_G.__nativeCasts.nameplate1 = { name = secretName, icon = 135846, channel = false,
+			startTime = time * 1000, endTime = (time + 3) * 1000, restricted = true }
+		ok, err = pcall(NPm.castStart, f, false)
+		check(ok, "a secret spell name starts without throwing"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(f.cast:IsShown() and f.cast.text:GetText() == secretName,
+			"and is handed to the capsule unread")
+		-- 5 + 16 + 4 + 90 + 4 + 64 + 5: padding, icon, gap, the fixed name, gap,
+		-- bar, padding.
+		check(f.cast:GetWidth() == 188,
+			"the capsule takes a fixed width for a name it may not measure ("
+			.. tostring(f.cast:GetWidth()) .. ")")
+		_G.__secretValues[secretName] = nil
+	end
+
+	_G.__nativeCasts.nameplate1 = nil
+	__despawnPlate("nameplate1")
 end
 
 print("== nameplates: a friendly is a name, not a plate ==")
@@ -28606,6 +29740,17 @@ section("threat: the probe reads the client rather than the plan", function()
 	check(shown and shown:find("assigned role:", 1, true),
 		"and it prints what the client says the player's role is")
 
+	-- A SECRET TABLE IS SAID OUT LOUD, rather than compared and thrown on.
+	if _G.__flavour == "camelot" then
+		_G.__threatRestricted = true
+		shown = nil
+		local ok, err = pcall(run, "threat probe")
+		check(ok and shown and shown:find("SECRET - the client is hiding threat here", 1, true),
+			"with threat secret, the probe says the client is hiding it"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		_G.__threatRestricted = false
+	end
+
 	-- IT MUST NOT THROW ON A CLIENT WITHOUT THE API. This is the branch the
 	-- whole plan is hedging: if the call is missing, the module needs
 	-- combat-log inference instead, and the probe is how we would find out.
@@ -28691,6 +29836,22 @@ section("threat: one place decides which tier a unit is in", function()
 		.. tostring(why0) .. ")")
 	check(r0 and math.abs(r0.fill - 0.40) < 0.01,
 		"filled to where they actually are (" .. tostring(r0 and r0.fill) .. ")")
+
+	-- SECRET THREAT IS NO READING. Joe's diag, 2026-09-23: "Threat.lua:363:
+	-- attempt to perform boolean test on local 'tanking' (a secret boolean
+	-- value)". Polled directly, because the ticker would swallow the throw.
+	if _G.__flavour == "camelot" then
+		_G.__threatRestricted = true
+		local ok, err = pcall(TH.Poll, TH)
+		check(ok, "a poll with every threat value secret does not throw"
+			.. (ok and "" or (" -- " .. tostring(err))))
+		check(select(1, tier("player")) == TIER.NONE,
+			"and there is no ring - nothing honest to show, so nothing is shown")
+		_G.__threatRestricted = false
+		TH:Poll()
+		check(select(1, tier("player")) == TIER.RING,
+			"lifting the restriction brings the ring back - it does not latch")
+	end
 
 	-- AND NOBODY ELSE'S IS. 16b's quiet rule holds for the rest of the party:
 	-- four rings climbing is a wall of arithmetic and none of it is yours to

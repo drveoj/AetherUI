@@ -1599,11 +1599,17 @@ local function ThreatProbe()
 			-- entry points onto the same data; one answering while the other
 			-- does not would say precisely where the wiring stops.
 			local oks, simple = pcall(UnitThreatSituation, u.token, mob.token)
-			local plain = "  simple=" .. tostring(oks and simple)
+			local plain = "  simple=" .. ((oks and A.IsSecret(simple)) and "SECRET"
+				or tostring(oks and simple))
 
 			if not ok then
 				say("  " .. u.why .. " (" .. u.token .. "): THREW " ..
 					tostring(tanking))
+			-- Before any comparison: a secret cannot be compared, formatted or
+			-- even tested for truth, and the client hides all five together.
+			elseif A.IsSecret(tanking, status, scaled, raw, value) then
+				say("  " .. u.why .. " (" .. u.token .. "): SECRET - the client is"
+					.. " hiding threat here" .. plain)
 			elseif scaled == nil and status == nil then
 				say("  " .. u.why .. " (" .. u.token .. "): nothing back  rets=" ..
 					tostring(rets) .. plain ..

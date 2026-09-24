@@ -290,6 +290,19 @@ local function UpdateHealth(f)
 	if not UnitExists(unit) then return end
 
 	local cur, max = UnitHealth(unit), UnitHealthMax(unit)
+
+	-- Secret health draws but does not read - see A.IsSecret. Two comparisons
+	-- below would throw: the `max <= 0` clamp, and the `cur / max <= 0.2` colour
+	-- test. The bar takes both values happily, so it stays correct and only the
+	-- number beside it goes quiet.
+	if A.IsSecret(cur, max) then
+		f.health:SetMinMaxValues(0, max)
+		f.health:SetValue(cur)
+		f.health:SetColors(Palette:HealthColor(unit))
+		f.hpText:SetText("")
+		return
+	end
+
 	if not max or max <= 0 then max = 1 end
 
 	local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)
@@ -322,6 +335,16 @@ local function UpdatePower(f)
 	if not UnitExists(unit) or not cfg().showPower then return end
 
 	local cur, max = UnitPower(unit), UnitPowerMax(unit)
+
+	-- `cur > 0` on the readout line is a comparison too, so the same guard.
+	if A.IsSecret(cur, max) then
+		f.power:SetMinMaxValues(0, max)
+		f.power:SetValue(cur)
+		f.power:SetColors(Palette:PowerColor(unit))
+		f.mpText:SetText("")
+		return
+	end
+
 	if not max or max <= 0 then max = 1 end
 
 	f.power:SetMinMaxValues(0, max)

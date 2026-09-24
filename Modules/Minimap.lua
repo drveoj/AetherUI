@@ -69,6 +69,66 @@ MM.blizzardFrames = {
 	"GameTimeFrame", "MinimapCompassTexture", "MiniMapMailFrame",
 }
 
+-- THE THIRD HALF OF THE JOB, and on WoW Forever it is most of it.
+--
+-- Era hangs its furniture off the cluster and the backdrop under global names,
+-- so the list above reaches it and SweepCluster mops up the rest. Camelot takes
+-- Mainline\Minimap.xml, where the cluster is an Edit Mode system and nearly
+-- every child is an anonymous `parentKey` - Tracking, IndicatorFrame,
+-- ZoneTextButton, BorderTop, InstanceDifficulty, and the zoom buttons, which
+-- moved onto Minimap itself. Nine of the twelve names above simply do not exist
+-- there.
+--
+-- SweepCluster cannot reach any of it either, and that is the part worth
+-- spelling out: it sorts children with `issecurevariable(name)`, and a frame
+-- whose GetName() is nil has no name to sort. It is skipped, silently, which is
+-- precisely the shape of failure that list was written to avoid.
+--
+-- PATHS, NOT A FLAVOUR CHECK. Each entry is resolved against the globals at
+-- call time and banished if it is there; a client without it reports `absent`
+-- and nothing else happens. So this is one list for every client rather than an
+-- `isCamelot` branch, it keeps working if Blizzard moves a key, and Era runs it
+-- to no effect. See A.FlavourFor in Core for why the flag is a last resort.
+MM.blizzardKeys = {
+	{ "MinimapCluster", "Tracking" },
+	{ "MinimapCluster", "IndicatorFrame", "MailFrame" },
+	{ "MinimapCluster", "IndicatorFrame", "CraftingOrderFrame" },
+	{ "MinimapCluster", "BorderTop" },
+	{ "MinimapCluster", "ZoneTextButton" },
+	{ "MinimapCluster", "InstanceDifficulty" },
+	{ "Minimap", "ZoomIn" },
+	{ "Minimap", "ZoomOut" },
+
+	-- THE DAY/NIGHT DIAL, which is WoW Forever's alone. `Camelot\Diel.lua`
+	-- builds it at file load - "diel" as in diurnal - and hangs it on the
+	-- cluster with NO global name, so only this path reaches it. It is the sun
+	-- that was sitting off the map's top-right corner.
+	{ "MinimapCluster", "DielFrame" },
+
+	-- AND THE COORDINATES BLIZZARD NOW DRAWS ITSELF. New here, anchored
+	-- BOTTOM of Minimap at y = -18, which is underneath the map and behind our
+	-- own zone pill - so it read as our readout printed twice at two sizes.
+	-- Ours stays; this one goes.
+	--
+	-- A SIBLING OF Minimap, NOT A CHILD OF IT. This was first written as
+	-- { "Minimap", "PlayerCoords" } because the anchor says
+	-- relativeTo="Minimap" - but the XML closes </Minimap> and THEN opens the
+	-- coords frame, so both hang off MinimapContainer. It resolved to nil,
+	-- reported "absent", and the coordinates stayed on screen. An anchor says
+	-- where a frame is drawn, never whose child it is.
+	{ "MinimapCluster", "MinimapContainer", "PlayerCoords" },
+}
+
+--- Walk a parentKey path from a global, or nil if any step is missing.
+local function Resolve(path)
+	local obj = _G[path[1]]
+	for i = 2, #path do
+		if type(obj) ~= "table" then return nil end
+		obj = obj[path[i]]
+	end
+	return obj
+end
+
 local hider
 local function GetHider()
 	if not hider then
@@ -179,6 +239,12 @@ function MM:HideBlizzard()
 	self.hideReport = self.hideReport or {}
 	for _, name in ipairs(MM.blizzardFrames) do
 		Banish(name, self.hideReport)
+	end
+
+	-- Then the ones only a parentKey names. Reported under the path so a report
+	-- can be read without knowing which client produced it.
+	for _, path in ipairs(MM.blizzardKeys) do
+		BanishObject(Resolve(path), table.concat(path, "."), self.hideReport)
 	end
 
 	-- Then everything the list could not name.
@@ -630,7 +696,24 @@ function MM:OnEnable()
 			-- and the button is hidden furniture parked off in a corner.
 			_G.Minimap:SetScript("OnMouseUp", function(self_, button)
 				if button == "RightButton" then
-					local b = _G.MiniMapTrackingButton
+					-- THE PARENTKEY FIRST, because on WoW Forever there is no
+					-- MiniMapTrackingButton global at all - tracking is
+					-- MinimapCluster.Tracking.Button, a DropdownButton whose list
+					-- is built by SetupMenu in its own OnLoad. It carries NO
+					-- menuGenerator, so the borrow-the-generator branch below
+					-- cannot fire there and OpenMenu is the only handle; that is
+					-- the same one EllesmereUI guards on before touching it.
+					local b = Resolve({ "MinimapCluster", "Tracking", "Button" })
+						or _G.MiniMapTrackingButton
+					-- OpenMenu anchors the menu to the BUTTON, and we have just
+					-- banished the button to a hidden frame - so the list would
+					-- open somewhere nobody can see. Park it on the map first.
+					-- Position only: it stays hidden and mouse-off, we are
+					-- borrowing where it is, not putting it back on screen.
+					if b and not b.menuGenerator and b.OpenMenu and not InCombatLockdown() then
+						pcall(b.ClearAllPoints, b)
+						pcall(b.SetPoint, b, "CENTER", _G.Minimap, "CENTER", 0, 0)
+					end
 					if b and b.menuGenerator and MenuUtil and MenuUtil.CreateContextMenu then
 						pcall(MenuUtil.CreateContextMenu, _G.Minimap, b.menuGenerator)
 					elseif b and b.OpenMenu then
