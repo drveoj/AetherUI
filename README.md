@@ -1,9 +1,11 @@
 # AetherUI
 
-![A Glass user interface for World of Warcraft - Classic Era](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/brand/AetherUI-Logo.png)
+![A Glass user interface for World of Warcraft - Classic/Forever](https://raw.githubusercontent.com/drveoj/AetherUI/main/docs/brand/AetherUI-Logo.png)
 
-A complete interface replacement for **WoW Classic Era**. Frosted glass, four
-palettes, and a HUD that gets out of your way when nothing is happening.
+A glass HUD for **WoW Classic Era & WoW: Forever**. Unit frames, action bars,
+chat, minimap, quests and bags in frosted glass, four palettes, and an
+interface that gets out of your way when nothing is happening. The game's own
+windows are left as Blizzard made them.
 
 One addon, no modules to install, no profile to import. It sets itself up the
 first time you log in.
@@ -114,6 +116,7 @@ you're unlocked so you can put them somewhere.
 
 `/aether` opens the options panel. Every setting has an explanation next to it; if
 something isn't behaving the way you expect, the description usually says why.
+You can also find it under Options → AddOns → AetherUI.
 
 The most useful ones from chat:
 
