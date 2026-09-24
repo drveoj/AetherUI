@@ -90,6 +90,6 @@ body:
       label: Anything else
       description: >
         If you already know this needs a protected or restricted API, say so.
-        Classic Era says no to a lot of things in combat.
+        Classic Era and WoW Forever both say no to a lot of things in combat.
     validations:
       required: false

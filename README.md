@@ -17,11 +17,13 @@ character, quest tracker, minimap, chat and the action bars](https://raw.githubu
 
 ## Install
 
-Drop the `AetherUI` folder into:
+Drop the `AetherUI` folder into your game's AddOns folder:
 
 ```
-World of Warcraft\_classic_era_\Interface\AddOns\
+World of Warcraft\<your game's folder>\Interface\AddOns\
 ```
+
+The game's folder is `_classic_era_` for Classic Era.
 
 Then start the game.
 
@@ -139,9 +141,9 @@ out of. Paste that into a bug report and I'll have what I need.
 
 ## Compatibility
 
-Classic Era only (interface 11509). It replaces some of Blizzard's interface
-rather than skinning it, so it may argue with other addons that do the same
-thing to the same frames. It gets along fine with the ones that don't — Questie,
+Classic Era (interface 11509) and WoW: Forever (16001). It replaces some of
+Blizzard's interface rather than skinning it, so it may argue with other addons
+that do the same thing to the same frames. It gets along fine with the ones that don't — Questie,
 Leatrix, SmartBuff and the rest are all welcome, and anything with a minimap
 button gets collected into the Toolbox automatically.
 
