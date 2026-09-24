@@ -73,7 +73,6 @@ AREA = {
     "Modules/Auras.lua": "auras",
     "Modules/Threat.lua": "threat",
     "Modules/Zen.lua": "zen",
-    "Modules/Panels.lua": "panels",
     "Modules/Conveniences.lua": "conveniences",
     "Modules/Timers.lua": "timers",
     "Modules/XPBar.lua": "xp",

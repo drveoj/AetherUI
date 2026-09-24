@@ -858,9 +858,6 @@ local function GameOwnGroup()
 		lettering = toggle(L.options.game_own.lettering.name, L.options.game_own.lettering.desc,
 			at("fonts")),
 
-		windows = toggle(L.options.game_own.windows.name, L.options.game_own.windows.desc,
-			at("panels")),
-
 		dialogs = toggle(L.options.game_own.dialogs.name, L.options.game_own.dialogs.desc, at("popups")),
 
 		menus = toggle(L.options.game_own.menus.name, L.options.game_own.menus.desc, at("menus")),
@@ -1133,11 +1130,51 @@ Options.PAGE_ORDER = PAGE_ORDER
 -- registration
 -- ---------------------------------------------------------------------------
 
+--- The entry in the game's own Options > AddOns list: a line and a button that
+--  opens our window. The settings themselves live only there - the client's
+--  frame has been rewritten twice in recent memory, and a button is all it is
+--  asked to hold.
+--
+--  The method is EllesmereUI's (EllesmereUI.lua:12612) and DialogueUI's
+--  (Settings.lua:2318): a plain frame registered as a canvas category. Like
+--  Ellesmere, the client's window is closed first and ours opened a frame
+--  later, so ours is not opened from inside the client's own click.
+function Options:RegisterStub()
+	if self.stub then return true end
+	if not (Settings and Settings.RegisterCanvasLayoutCategory
+		and Settings.RegisterAddOnCategory) then return false end
+
+	local page = CreateFrame("Frame")
+	local line = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	line:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -16)
+	line:SetText(L.options.stub.line)
+
+	local open = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+	open:SetSize(220, 26)
+	open:SetPoint("TOPLEFT", line, "BOTTOMLEFT", 0, -12)
+	open:SetText(L.options.stub.open)
+	open:SetScript("OnClick", function()
+		if SettingsPanel and SettingsPanel:IsShown() then
+			HideUIPanel(SettingsPanel)
+		end
+		C_Timer.After(0, function() Options:Open() end)
+	end)
+
+	Settings.RegisterAddOnCategory(
+		Settings.RegisterCanvasLayoutCategory(page, "AetherUI"))
+	self.stub, self.stubButton = page, open
+	return true
+end
+
 --- Everything here is optional. If the Ace libraries are missing the addon still
 --  runs and the slash commands still work - the panel is the thing you lose, not
 --  the HUD.
 function Options:Register()
 	if self.registered then return true end
+
+	-- Ahead of the Ace check: the stub needs only the client, and its button
+	-- says why when there is no window to open.
+	pcall(self.RegisterStub, self)
 
 	local Config = LibStub and LibStub("AceConfig-3.0", true)
 	local Registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
@@ -1158,13 +1195,6 @@ function Options:Register()
 	Config:RegisterOptionsTable(APP, tree)
 	self.dialog = Dialog
 	self.registry = Registry
-
-	-- A standalone window rather than a page buried in Blizzard's settings. The
-	-- Blizzard registration is attempted too, but it is the one that has been
-	-- rewritten twice in recent memory, so it is not allowed to be load-bearing.
-	pcall(function()
-		self.blizPanel = Dialog:AddToBlizOptions(APP, "AetherUI")
-	end)
 
 	Dialog:SetDefaultSize(APP, 760, 560)
 	self.registered = true

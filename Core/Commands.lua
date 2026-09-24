@@ -38,7 +38,7 @@ local function usage()
 		A.Hi("/aether bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		A.Hi("/aether tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		A.Hi("/aether toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
-		A.Hi("/aether panels") .. " <dump NAME|measure [NAME]|diag>  ·  what a window is made of",
+		A.Hi("/aether dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
 		A.Hi("/aether threat") .. " probe  ·  what the threat API answers, in a box you can copy",
 		A.Hi("/aether ifec") .. " [reset]  ·  content packs, what is playing, forget history",
 		A.Hi("/aether errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
@@ -115,16 +115,12 @@ function A:ChatWhere()
 end
 
 -- ---------------------------------------------------------------------------
--- what is this window made of
+-- what is this frame made of
 --
--- Every panel so far was built by reading Blizzard's own source for this
--- flavour, which is the only way to know what a frame's parts are called and
--- which of them carry the picture rather than the chrome.
---
--- That runs out when the source is not to hand: Blizzard_Communities is not in
--- the reference tree, and the guild window on this client is Communities and not
--- the FriendsFrame pane the old XML still defines. Guessing frame names is
--- exactly what this addon does not do, so it asks the client instead.
+-- Blizzard's own source says what a frame's parts are called and which of
+-- them carry the picture. When the source is not to hand, or the client has
+-- moved on from it, guessing frame names is exactly what this addon does not
+-- do, so it asks the client instead.
 -- ---------------------------------------------------------------------------
 
 local DUMP_DEPTH = 2
@@ -250,72 +246,11 @@ local function FindFrame(want)
 	return nil, nil, near
 end
 
---- What the panel layout can SEE of a window's rows, and what it makes of it.
---
---  The tree above says what the client built. This says what our own layout
---  thinks of it, which is a different question and the one that goes wrong:
---  a row is laid out from what is VISIBLE and OURS, and both of those can be
---  true of something you cannot see anywhere on the window.
---
---  The friends window is why it exists. Add Friend and Send Message came out
---  a button's width too far apart, one hanging off each side of the glass,
---  and a dump of the tree said nothing at all about it - because the widget
---  taking the room between them was RaidFrameConvertToRaidButton, whose pane
---  has no parent, is never drawn, and answers yes to IsVisible.
-local function DumpRows(frame, name)
-	local PN = A.GetModule and A:GetModule("panels")
-	local entry = PN and PN.ENTRY and PN.ENTRY[name]
-	if not entry then return end
-
-	--- The first ancestor with a name, and whether the window is among them.
-	local function lineage(w)
-		local f, hops, ours = w, 0, false
-		while f and hops < 8 do
-			if f == frame then ours = true break end
-			f = f.GetParent and f:GetParent()
-			hops = hops + 1
-		end
-		local up = w.GetParent and w:GetParent()
-		return ours, (up and up.GetName and up:GetName()) or "none"
-	end
-
-	local function row(tag, list)
-		for _, key in ipairs(list or {}) do
-			local w = type(key) == "string" and PN.Part(key) or nil
-			if not w then
-				say("   %-5s %-34s %s", tag, tostring(key), A.Dim("not found"))
-			else
-				local ours, up = lineage(w)
-				local shown = w.IsShown and w:IsShown()
-				local vis = w.IsVisible and w:IsVisible()
-				say("   %-5s %-34s %.0fx%.0f  %s %s %s", tag, tostring(key),
-					(w.GetWidth and w:GetWidth()) or 0,
-					(w.GetHeight and w:GetHeight()) or 0,
-					shown and "shown" or A.Dim("hidden"),
-					vis and "visible" or A.Dim("unseen"),
-					ours and L.cmd.dump_rows.ours or A.Bad(A.F(L.cmd.dump_rows.ours_parent_s, up)))
-			end
-		end
-	end
-
-	say(" ")
-	say("what the layout can see  ·  a row takes only what is VISIBLE and OURS")
-	for _, side in ipairs({ "left", "right", "mid" }) do
-		row("row", entry.row and entry.row[side])
-	end
-	for _, side in ipairs({ "left", "right", "mid", "under" }) do
-		row("strip", entry.actions and entry.actions[side])
-	end
-end
-
---- `/aether panels dump <FrameName>`, into the box you can copy out of.
-function A:DumpPanel(name)
+--- `/aether dump <FrameName>`, into the box you can copy out of.
+function A:DumpFrame(name)
 	name = (name or ""):gsub("%s", "")
-	-- Recorded so the suite can prove a frame name reaches here with its
-	-- capitals intact; the dispatcher used to fold the whole tail.
-	A.__lastDumpName = name
 	if name == "" then
-		A:Print(A.Hi("/aether panels dump <FrameName>") .. "  ·  part of a name"
+		A:Print(A.Hi("/aether dump <FrameName>") .. "  ·  part of a name"
 			.. " will do, and it will list what it could have meant.")
 		return
 	end
@@ -323,7 +258,7 @@ function A:DumpPanel(name)
 	local frame, found, near = FindFrame(name)
 
 	if not frame then
-		A:Print(A.F(L.cmd.dump_panel.frame_called_s_open,
+		A:Print(A.F(L.cmd.dump_frame.frame_called_s_open,
 			A.Val(name)))
 		for i = 1, math.min(#(near or {}), 15) do
 			say("   " .. A.Val("%s"), near[i])
@@ -346,7 +281,6 @@ function A:DumpPanel(name)
 			date and date("%Y-%m-%d %H:%M") or "")
 		say("a leading dot is a parentKey, which is what Reskin.Element takes")
 		DumpFrame(frame, "", DUMP_DEPTH, frame.GetParent and frame:GetParent())
-		DumpRows(frame, name)
 	end)
 	A.Errors:ShowText(text)
 end
@@ -550,49 +484,6 @@ local function partyDiag(say)
 end
 
 A.PartyDiag = partyDiag
---- Every window this addon claims to skin, and what became of it.
---
---  Written for the same reason /aether party was: a window that comes up in
---  the client's own stone tells you nothing about WHY. It may not exist yet, it
---  may exist under another name on this game version, it may have been dressed
---  and had its art put back. Those are three different bugs and they look
---  identical on screen.
-local function panelsDiag(say)
-	local PN = A:GetModule("panels")
-	if not PN then
-		say("   " .. A.Bad(L.cmd.panels_diag.panels_module))
-		return
-	end
-	say("   enabled: %s", PN.enabled and A.Good("yes") or A.Bad("no"))
-	say("   %-22s %-8s %-8s %s", "window", "present", "glass", "interior")
-
-	for _, entry in ipairs(PN.PANELS or {}) do
-		local f = _G[entry.frame]
-		local present = f and A.Good("yes") or A.Dim("no")
-		local glass = f and (f.__aetherPanel and A.Good("yes") or A.Bad("NO"))
-			or A.Dim("-")
-		local interior = (PN.INTERIORS and PN.INTERIORS[entry.frame])
-			and "yes" or "-"
-		-- The addon it arrives with, when it is one of the on-demand ones -
-		-- because "not present" and "present and not dressed" are answers to
-		-- completely different questions.
-		local note = ""
-		if entry.addon then
-			local loaded = C_AddOns and C_AddOns.IsAddOnLoaded
-				and C_AddOns.IsAddOnLoaded(entry.addon)
-				or (IsAddOnLoaded and IsAddOnLoaded(entry.addon))
-			note = "  " .. (loaded and A.Dim(entry.addon)
-				or A.Bad(entry.addon .. " not loaded"))
-		end
-		say("   %-22s %-8s %-8s %s%s", entry.frame, present, glass, interior, note)
-		-- WHY, when a dresser threw. A window in our glass with untouched
-		-- insides looks exactly like one nobody has written a dresser for.
-		local why = PN.failures and PN.failures[entry.frame]
-		if why then say("      " .. A.Bad(why)) end
-	end
-end
-
-A.PanelsDiag = panelsDiag
 local handlers = {}
 
 handlers.diag = diag
@@ -1399,228 +1290,9 @@ handlers.toolbox = function(arg, rest)
 		tostring(GetCVarBool and GetCVarBool("useClassicGuildUI")))
 end
 
---- What a dressed panel's header and body actually measured, in game.
---
---  The harness can say a hairline exists, is parented where we meant and is
---  anchored where we meant. It cannot say the window it is on came up 40
---  units taller than the glass you can see, which is the difference between
---  a band with a foot and a band without one - and four rounds of reading
---  screenshots did not settle which of those the vendor window was.
---- Where a window's parts actually are, in a box you can copy out of.
---
---  INTO THE ERROR BOX, not the chat frame. This is a wall of numbers whose
---  whole purpose is to be sent to somebody, and the chat frame is the one
---  place in the interface that cannot be selected - so every reading of it so
---  far has come back as a photograph of a screen.
-local function MeasurePanels(arg)
-	local PN = A:GetModule("panels")
-	if not PN then A:Print(L.cmd.measure_panels.panels_module_loaded) return end
-
-	-- Printed through a local rather than A:Print so the whole readout can be
-	-- captured; falls back to the chat frame if the catcher is not loaded.
-	local out = {}
-	local function A_Print(line) out[#out + 1] = tostring(line) end
-
-	local names = {}
-	if arg and arg ~= "" then
-		names[1] = arg
-	else
-		for name, f in pairs(PN.ENTRY or {}) do
-			local frame = _G[name]
-			if frame and frame.__aetherPanel and frame:IsShown() then
-				names[#names + 1] = name
-			end
-			local _ = f
-		end
-		table.sort(names)
-	end
-	if #names == 0 then
-		A:Print(L.cmd.measure_panels.dressed_panel_open_open)
-		return
-	end
-
--- WHAT A PANE MEASURES NOW, against what it measured when the window was
--- dressed. A pane that answers now and did not then was measured before it
--- had a rect to measure, which is the difference between a window laid out
--- wrongly and one laid out too early.
---
--- The cache is put back afterwards: a readout that changes what it is reading
--- is not a readout.
-	local function remeasure(frame, pane)
-		local PN2 = A:GetModule("panels")
-		if not (PN2 and PN2.MeasureTop) then return "?" end
-		local top, left, right =
-			pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight
-		pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight = nil, nil, nil
-		local ok, got = pcall(PN2.MeasureTop, frame, pane)
-		pane.__aetherTop, pane.__aetherLeft, pane.__aetherRight = top, left, right
-		if not ok then return "threw: " .. tostring(got) end
-		return got
-	end
-
-	local function box(f)
-		if not (f and f.GetTop and f:GetTop()) then return "-" end
-		return string.format("t%.0f l%.0f w%.0f h%.0f",
-			f:GetTop(), f:GetLeft(), f:GetWidth(), f:GetHeight())
-	end
-
-	for _, name in ipairs(names) do
-		local f = _G[name]
-		if not f then
-			A_Print(name .. ": no such frame")
-		else
-			local glass, rule = f.__aetherPanel, f.__aetherHeadRule
-			A_Print(name .. "  head=" .. tostring(f.__aetherHeadH) ..
-				"  shift=" .. tostring(f.__aetherBodyShift) ..
-				-- HOW MANY TIMES the body has been laid out, and what the window
-				-- could tell us the last time. One run, at login, against a window
-				-- with no rect, looks on screen exactly like a run that got the
-				-- wrong answer - and the two want opposite fixes.
-				"  runs=" .. tostring(f.__aetherRuns) ..
-				"  seen=" .. tostring(f.__aetherSeen))
-			A_Print("  frame " .. box(f) .. "   glass " .. box(glass))
-			A_Print("  chrome " .. box(f.__aetherChrome) ..
-				"  lvl " .. tostring(f.__aetherChrome
-				and f.__aetherChrome:GetFrameLevel()) ..
-				" vs frame " .. tostring(f:GetFrameLevel()))
-			-- IDENTITY, so an anchor printed below as "on table: ..." can be told
-			-- apart from these two. The glass and the chrome layer have the same
-			-- rect by construction, so a rect cannot tell them apart.
-			A_Print("  glass=" .. tostring(glass) ..
-				"  chrome=" .. tostring(f.__aetherChrome) ..
-				"  strata " .. tostring(f.GetFrameStrata and f:GetFrameStrata()) ..
-				"/" .. tostring(f.__aetherChrome and f.__aetherChrome.GetFrameStrata
-				and f.__aetherChrome:GetFrameStrata()))
-
-			-- ANYTHING OF THE CLIENT'S DRAWN OVER OUR CHROME. A child at a higher
-			-- STRATA beats any frame level, and one that covers only the band would
-			-- hide the band's hairline and leave the footer's alone - which is the
-			-- exact shape of the complaint.
-			local ORDER = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4,
-				DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
-			local layer = f.__aetherChrome
-			if layer and f.GetChildren then
-				local mine = (ORDER[layer:GetFrameStrata()] or 0) * 1000
-					+ (layer:GetFrameLevel() or 0)
-				local over = {}
-				for _, kid in ipairs({ f:GetChildren() }) do
-					if kid ~= layer and kid ~= glass and kid.IsShown and kid:IsShown() then
-						local rank = (ORDER[kid:GetFrameStrata()] or 0) * 1000
-							+ (kid:GetFrameLevel() or 0)
-						if rank > mine then
-							over[#over + 1] = (kid.GetName and kid:GetName() or tostring(kid))
-								.. " " .. tostring(kid:GetFrameStrata()) .. ":" ..
-								tostring(kid:GetFrameLevel()) .. " " .. box(kid)
-						end
-					end
-				end
-				if #over == 0 then
-					A_Print("  over chrome: nothing")
-				else
-					for _, line in ipairs(over) do
-						A_Print("  OVER CHROME " .. line)
-					end
-				end
-			end
-			if rule then
-				local pt, rel, relP, x, y = rule:GetPoint(1)
-				A_Print("  rule " .. box(rule) .. "  shown=" ..
-					tostring(rule:IsShown()) .. " a=" ..
-					string.format("%.2f", select(4, rule:GetVertexColor())) ..
-					"  " .. tostring(pt) .. "->" .. tostring(relP) .. " " ..
-					tostring(x) .. "," .. tostring(y) .. " on " ..
-					tostring(rel and rel.GetName and rel:GetName() or rel))
-			else
-				A_Print("  rule MISSING")
-			end
-			A_Print("  body " .. box(f.__aetherBody))
-
-			-- THE FOOT RULE AND THE STRIP, which is half of what goes wrong on a
-			-- window now: the band and the strip are drawn by the same component
-			-- and one of them turning up without the other says where to look.
-			local foot = f.__aetherFootRule
-			if foot then
-				local fp, frel, frelP, fx, fy = foot:GetPoint(1)
-				A_Print("  foot " .. box(foot) .. "  shown=" ..
-					tostring(foot:IsShown()) .. "  " .. tostring(fp) .. "->" ..
-					tostring(frelP) .. " " .. tostring(fx) .. "," .. tostring(fy) ..
-					" on " .. tostring(frel and frel.GetName and frel:GetName() or frel))
-			else
-			A_Print("  foot none")
-			end
-
-			-- WHAT THE WINDOW SAYS ITS CONTENT IS, and where that content actually
-			-- is. A pane measuring as nothing is a pane the walk could not reach.
-			local entry = PN.ENTRY and PN.ENTRY[name]
-			for _, part in ipairs(entry and entry.body or {}) do
-				local pane = PN.Part and PN.Part(part)
-				if not pane then
-					A_Print("  body " .. part .. ": NOT FOUND")
-				else
-					local pt, rel, relP, x, y = pane:GetPoint(1)
-					A_Print("  body " .. part .. " " .. box(pane) ..
-						"  pts=" .. tostring(pane.GetNumPoints and pane:GetNumPoints()) ..
-						-- Recorded by the mover the first time it touches a pane. Nil here
-						-- says the pane never reached it - which is a lookup that failed
-						-- when the window was dressed, not a measurement that went wrong.
-						" saved=" .. tostring(pane.__aetherPts ~= nil) ..
-						"  top=" .. tostring(pane.__aetherTop) ..
-						" now=" .. tostring(remeasure(f, pane)) ..
-						" l=" .. tostring(pane.__aetherLeft) ..
-						" r=" .. tostring(pane.__aetherRight) ..
-						"  " .. tostring(pt) .. "->" .. tostring(relP) .. " " ..
-						tostring(x) .. "," .. tostring(y) .. " on " ..
-						tostring(rel and rel.GetName and rel:GetName() or rel))
-				end
-			end
-
-			-- AND WHAT IT SAYS IT DOES. An action that is shown but not VISIBLE is
-			-- one whose pane is down, and the strip is laid out for what is up.
-			for _, side in ipairs({ "left", "right", "mid" }) do
-				for _, part in ipairs(entry and entry.actions
-					and entry.actions[side] or {}) do
-					local w = PN.Part and PN.Part(part)
-					if not w then
-						A_Print("  act " .. side .. " " .. part .. ": NOT FOUND")
-					else
-						local pt, rel, relP, x, y = w:GetPoint(1)
-						A_Print("  act " .. side .. " " .. part .. " " .. box(w) ..
-							"  shown=" .. tostring(w.IsShown and w:IsShown()) ..
-							" vis=" .. tostring(w.IsVisible and w:IsVisible()) ..
-							"  " .. tostring(pt) .. "->" .. tostring(relP) .. " " ..
-							tostring(x) .. "," .. tostring(y) .. " on " ..
-							tostring(rel and rel.GetName and rel:GetName() or rel))
-					end
-				end
-			end
-
-			local why = PN.failures and PN.failures[name]
-			if why then A_Print("  interior FAILED: " .. why) end
-		end
-	end
-
-	local text = table.concat(out, string.char(10))
-	if A.Errors and A.Errors.ShowText then
-		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "") .. text)
-	else
-		for _, line in ipairs(out) do A:Print(line) end
-	end
-end
-
-handlers.panels = function(arg, rest)
-	if arg == "dump" then A:DumpPanel(rest) return end
-	if arg == "measure" then MeasurePanels(rest) return end
-	if arg == "diag" then
-		A:Print(L.cmd.panels.panels)
-		A.PanelsDiag(function(fmt, ...) A:Print(string.format(fmt, ...)) end)
-		return
-	end
-
-	local P = A:GetModule("panels")
-	A:Print(A.F(L.cmd.panels.panels_s_s_reads,
-		A.Val((P and P.enabled) and L.common.on or L.common.off),
-		A.Hi(L.cmd.panels.dump_framename), A.Hi("measure"), A.Hi("diag")))
-end
+--- `/aether dump <FrameName>`. The dispatcher lowers the first word, which
+--  costs nothing here: FindFrame matches a name whatever its case.
+handlers.dump = function(arg) A:DumpFrame(arg) end
 
 handlers.tooltips = function(arg)
 	local T = A:GetModule("tooltips")
@@ -1736,9 +1408,9 @@ end
 -- roles imply - then a tank gets the DPS treatment, and the DPS treatment for a
 -- tank holding aggro is a red screen and an alarm for doing their job.
 --
--- INTO THE ERROR BOX. Same reason /aether panels measure goes there: this is a
--- wall of numbers whose purpose is to come back to me, and the chat frame is
--- the one part of the interface that cannot be selected.
+-- INTO THE ERROR BOX. This is a wall of numbers whose purpose is to come back
+-- to me, and the chat frame is the one part of the interface that cannot be
+-- selected.
 -- ---------------------------------------------------------------------------
 
 -- HAS THE SERVER EVER SENT A THREAT TABLE. This is the decisive signal and a
@@ -2017,7 +1689,7 @@ SlashCmdList["AETHERUI"] = function(msg)
 		-- safely; what follows it is often a NAME - a frame, a music track, an
 		-- addon - and a global in this client is case sensitive. Folded, every
 		-- one of those came back "no such frame" for a frame that was on screen
-		-- at the time, which is what happened to /aether panels dump.
+		-- at the time.
 		--
 		-- Handlers that compare the tail to a keyword lower it themselves.
 		fn(arg ~= "" and arg:lower() or nil, rest ~= "" and rest or nil)

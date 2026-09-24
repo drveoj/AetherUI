@@ -125,12 +125,9 @@ L["cmd.diag.diagnostics_s_s"] = "diagnostics  (%s, %s)"
 L["cmd.diag.green_hidden"] = "green = hidden"
 L["cmd.diag.red_shown"] = "red = shown"
 
-L["cmd.dump_panel.frame_called_s_open"] =
+L["cmd.dump_frame.frame_called_s_open"] =
 	"no frame called %s. Open the window first - half of these arrive "
 		.. "with their own addon the first time you use them."
-
-L["cmd.dump_rows.ours"] = "ours"
-L["cmd.dump_rows.ours_parent_s"] = "NOT OURS, parent %s"
 
 L["cmd.errors.errors_catcher_loaded"] = "errors: the catcher is not loaded"
 L["cmd.errors.errors_cleared"] = "errors: cleared"
@@ -162,22 +159,9 @@ L["cmd.ifec.playback_s"] = "  playback: %s"
 L["cmd.ifec.playback_s_s_seg"] = "  playback: %s  ·  %s seg %s of %s"
 L["cmd.ifec.queue_d_items_s"] = "  queue: %d items  ·  at %s  ·  region %s"
 
-L["cmd.measure_panels.dressed_panel_open_open"] =
-	"no dressed panel is open - open one, or name it"
-L["cmd.measure_panels.panels_module_loaded"] = "panels module not loaded"
-
 L["cmd.module.module_s_s"] = "module %s -> %s"
 L["cmd.module.modules_s"] = "modules: %s"
 L["cmd.module.unknown_command_s"] = "unknown command '%s'"
-
-L["cmd.panels.dump_framename"] = "dump <FrameName>"
-L["cmd.panels.panels"] = "panels"
-L["cmd.panels.panels_s_s_reads"] =
-	"panels is %s.  %s reads a window's parts into a box you can copy "
-		.. "out of, %s reports what its header and body actually came out as, "
-		.. "%s says why one is still wearing its own art."
-
-L["cmd.panels_diag.panels_module"] = "no panels module"
 
 L["cmd.party.closed"] = "closed"
 L["cmd.party.party"] = "party"
@@ -834,11 +818,6 @@ L["options.game_own.timers.desc"] =
 		.. "in the colour - blue for breath, yellow for fatigue, orange for "
 		.. "death - in this interface's colours."
 L["options.game_own.timers.name"] = "Timers"
-L["options.game_own.windows.desc"] =
-	"The game's windows - character, spellbook, talents, guild, map, "
-		.. "menu and help. What is inside them is left alone: item slots, "
-		.. "spell buttons and map pins are still the default."
-L["options.game_own.windows.name"] = "Windows"
 
 L["options.general.class_color_health.name"] = "Class-coloured health"
 L["options.general.corner.name"] = "Panel corner radius"
@@ -1040,6 +1019,9 @@ L["options.quest.whatever_does_fit_reported"] =
 		.. "silently dropped."
 L["options.quest.whitelist_mode_only_blizzard"] =
 	"Whitelist mode only. Blizzard caps its list at five."
+
+L["options.stub.line"] = "AetherUI's settings have a window of their own."
+L["options.stub.open"] = "Open AetherUI settings"
 
 L["options.threat.alarms.desc"] =
 	"On your own state only, and never more than once every six "

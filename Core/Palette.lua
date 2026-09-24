@@ -226,8 +226,6 @@ local SEMANTIC = {
 	-- Dawn would be reading as a warning.
 	money = F(0.90, 0.76, 0.42),
 
-	talentOpen = C(159, 232, 180),
-	talentFull = C(255, 226, 150),
 	junkTint   = C(150, 150, 150, 0.42),
 
 	-- the in-flight console: three channels and a brass rim. Its landing
