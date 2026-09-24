@@ -625,21 +625,6 @@ Config.defaults = {
 				enabled = true,
 			},
 
-			-- The client's own windows - character, spellbook, talents, guild,
-			-- map, menu, help - reskinned in place. Same switch, same promise:
-			-- off hands Blizzard's back.
-			panels = {
-				enabled = true,
-
-				-- ON TOP OF profile.scale, and 1 by default - which is to say a
-				-- panel is the size the rest of the interface is, less the panel
-				-- package's own tenth. This is here for somebody who wants the
-				-- client's windows a shade bigger than their HUD because the
-				-- furniture inside them is Blizzard's fixed pixel art; it is not
-				-- a second scale slider for panels in general.
-				scale   = 1.0,
-			},
-
 			-- The client's mirror timers: breath underwater, fatigue at sea,
 			-- the seconds left feigning death. Reskinned in place like the rest,
 			-- and switchable for the same reason.

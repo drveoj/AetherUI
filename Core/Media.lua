@@ -508,20 +508,10 @@ Media.style = {
 	thChip       = { "bold",     10, "" },   -- LOSING AGGRO
 	ttBarLabel   = { "medium",   11, "" },   -- "Health" / "1,240 / 1,240"
 
-	-- The client's own windows (Panels.lua).
+	-- Our panels' own roles.
 	--
-	-- NOT OUTLINED, and they used to be. The argument was that these labels sit
-	-- over whatever the window is showing - a paper doll, a talent tree's
-	-- artwork - rather than over an even fill of ours, so an unoutlined word
-	-- would read as smudged. That was true of the stone windows and stopped
-	-- being true the moment the art came off: what they sit over now is our own
-	-- glass, the same as every other string in this interface, and nothing else
-	-- here is outlined. On a filled tab it was worse than useless - a black
-	-- stroke around dark type on a light fill, which reads as a sticker.
-	pnTab        = { "semibold", 12, "" },
 	-- 16 AND NEVER LARGER, which is the panel package's one hard number for
-	-- type: one title size for every panel in the interface. It was 18, and
-	-- the client windows added a point on top of that for 19.
+	-- type: one title size for every panel in the interface.
 	pnTitle      = { "semibold", 16, "" },
 	-- The way out. Its own role because the cross is drawn at one size
 	-- everywhere, and hanging it off the title role made it grow and shrink
@@ -532,10 +522,9 @@ Media.style = {
 	-- is a number for a browser at 1:1; everything here is drawn at the
 	-- profile's scale, so 14 lands at ten physical pixels of thin type.
 	pnClose      = { "semibold", 16, "" },
-	pnSub        = { "medium",   13, "" },
-	-- Everything else inside one: stat rows, resistances, faction names. Drawn
-	-- at whatever size the client already gave the string, so its own layout
-	-- still measures out - only the family and the outline are ours.
+	-- Body type inside one. Reskin.Font draws at whatever size the client
+	-- already gave a string, so its own layout still measures out - only the
+	-- family and the outline are ours.
 	pnBody       = { "medium",   12, "" },
 
 	-- Nameplates (concept 7a / 7b). Their own roles rather than the tooltip's,
