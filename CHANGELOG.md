@@ -1,8 +1,10 @@
 # AetherUI
 
-## 1.1.0 - 2026-09-17
+## 1.1.0 - 2026-10-05
 
+- AetherUI now runs on the WoW Forever beta as well as Classic Era, and will support the full release when it launches on November 4th.
 - AetherUI no longer restyles the game's own windows. The character sheet, spellbook, talents, vendors, mail and the rest are back to Blizzard's look. The work now goes into the HUD, bags, quest log, Toolbox, Zen and the flight console.
+- The flight console isn't available on WoW Forever yet.
 - Settings have a window of their own. Options > AddOns > AetherUI has a button that opens it.
 - Action bars now use the game's own button size. If you never picked a slot size yourself, yours moves with it; one you chose is kept.
 - The quest tracker no longer empties itself when a zone is folded in the quest log, and says so when quests are hidden behind one.
