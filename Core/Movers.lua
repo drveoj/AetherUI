@@ -712,7 +712,7 @@ function Movers:Unlock()
 	end
 	Announce()
 	A:Print(A.F(L.movers.unlock.frames_unlocked_drag_move,
-		A.Hi(L.common.lock_frames), A.Hi("/aether lock")))
+		A.Hi(L.common.lock_frames), A.Hi("/lattice lock")))
 	A:Print(A.Dim("Edges snap to the grid and to other frames; hold alt while dragging"
 		.. " to place freely. Frames that only appear when the game says so - the pet"
 		.. " bar, the taxi button - are held up so you can place them."))

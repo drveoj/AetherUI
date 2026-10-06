@@ -135,7 +135,7 @@ function Content:DormantReason()
 	-- rather than a state, and the only one with somewhere to go and read more.
 	local failed = Registry:Failures() or {}
 	if #failed > 0 then
-		return "A content pack was refused  ·  /aether ifec"
+		return "A content pack was refused  ·  /lattice ifec"
 	end
 
 	if #Registry:Catalogue() == 0 then return "No content installed" end

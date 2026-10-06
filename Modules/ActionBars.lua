@@ -79,7 +79,9 @@ local BINDING_FOR_KIND = {
 }
 
 -- Labels for Blizzard's key binding panel. Harmless if it never opens.
-_G.BINDING_HEADER_AETHERUI = "Aether" .. A.Hi("UI")
+-- The binding NAMES keep AETHERUI: players' keys are saved against them, so
+-- renaming them would unbind Bar 2 for everybody. Only the heading changed.
+_G.BINDING_HEADER_AETHERUI = A.Hi("Lattice")
 for i = 1, NUM_ACTIONS_PER_PAGE do
 	_G["BINDING_NAME_AETHERUI_BAR2BUTTON" .. i] = "Bar 2 Button " .. i
 end

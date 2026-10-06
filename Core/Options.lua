@@ -518,7 +518,7 @@ local function UnitFramesGroup()
 		showTargetCastBar = toggle(L.options.unit_frames.show_target_cast_bar.name,
 			L.options.unit_frames.classic_era_does_report,
 			at("showTargetCastBar")),
-		castNote = note(A.F(L.options.unit_frames.cast_note, A.Hi("/aether unlock"))),
+		castNote = note(A.F(L.options.unit_frames.cast_note, A.Hi("/lattice unlock"))),
 		castWidth = range(L.options.unit_frames.cast_width.name, nil, at("castWidth"), 160, 520, 1),
 		reactionTint = toggle(L.options.unit_frames.reaction_tint.name,
 			L.options.unit_frames.target_s_capsule_rim,
@@ -827,7 +827,7 @@ local function ChatGroup()
 		whisperTab = toggle(L.options.chat.whisper_tab.name,
 			A.Bad(L.options.chat.one_outlives_addon) .. " It opens a real Blizzard"
 			.. " chat window and moves the whisper message groups onto it, and"
-			.. " Blizzard saves all of that - including with AetherUI turned off."
+			.. " Blizzard saves all of that - including with Lattice turned off."
 			.. "\n\nIt is also the only answer to the concept's \"whispers stay"
 			.. " bright\" while the rest dims: a chat frame has one alpha for the"
 			.. " whole frame, so a different frame is the only way to give them a"
@@ -926,7 +926,7 @@ local function IFECGroup()
 		hideUI = toggle(L.options.i_f_e_c.hide_u_i.name,
 			L.options.i_f_e_c.passenger_console_stays, at("hideUI")),
 		scale = range(L.common.size, L.options.i_f_e_c.scale.desc, at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
-		note = note(A.F(L.options.i_f_e_c.note, A.Hi("/aether unlock"))),
+		note = note(A.F(L.options.i_f_e_c.note, A.Hi("/lattice unlock"))),
 	})
 end
 
@@ -1005,7 +1005,7 @@ local function TooltipsGroup()
 				"MobInfo2 finds a mob's extra info by looking for the level NUMBER in"
 				.. " the tooltip line. Move it into the badge and it finds nothing."
 				.. " Leave this on and the badge stands down while MobInfo2 is"
-				.. " running; /aether tooltips will tell you it has.",
+				.. " running; /lattice tooltips will tell you it has.",
 				at("deferToLevelReaders"), { defaultTrue = true }),
 			eliteChip = toggle(L.options.tooltips.elite_chip.name, nil, at("eliteChip")),
 			reactionWord = toggle(L.options.tooltips.reaction_word.name, L.options.tooltips.reaction_word.desc, at("reactionWord")),
@@ -1040,7 +1040,7 @@ local function PartyFramesGroup()
 		showPower = toggle(L.common.show_power_bar, nil, at("showPower")),
 
 		placement = note(A.F(L.options.party_frames.placement,
-			A.Hi("/aether unlock"))
+			A.Hi("/lattice unlock"))
 			.. "\n\n"
 			.. L.options.party_frames.slot_whose_member_has),
 	})
@@ -1120,7 +1120,7 @@ function Options:Build()
 	order = 0
 	local tree = {
 		type = "group",
-		name = "Aether" .. A.Hi("UI"),
+		name = A.Hi("Lattice"),
 		args = {
 			general = GeneralGroup(),
 			unitframes = UnitFramesGroup(),
@@ -1187,7 +1187,7 @@ function Options:RegisterStub()
 	end)
 
 	Settings.RegisterAddOnCategory(
-		Settings.RegisterCanvasLayoutCategory(page, "AetherUI"))
+		Settings.RegisterCanvasLayoutCategory(page, "Lattice"))
 	self.stub, self.stubButton = page, open
 	return true
 end
@@ -1239,7 +1239,7 @@ end
 function Options:Open(section)
 	if not self:Register() then
 		A:Print(A.F(L.options.open.options_panel_needs_ace3,
-			A.Dim("/aether help")))
+			A.Dim("/lattice help")))
 		return false
 	end
 	if section then

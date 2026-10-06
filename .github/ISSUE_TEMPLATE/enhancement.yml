@@ -1,5 +1,5 @@
 name: Enhancement
-description: Something AetherUI already does, but it should do it differently.
+description: Something Lattice already does, but it should do it differently.
 title: "[enhancement] "
 labels: ["enhancement"]
 
@@ -87,8 +87,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: AetherUI version
-      description: Top line of `/aether errors diag`, or the Options panel.
+      label: Lattice version
+      description: Top line of `/lattice errors diag`, or the Options panel.
       placeholder: "0.13.0"
     validations:
       required: true

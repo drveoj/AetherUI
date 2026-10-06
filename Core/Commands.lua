@@ -11,37 +11,37 @@ local ADDON, A = ...
 
 local L = A.L
 local function usage()
-	A:Print(A.Hi("/aether") .. " on its own opens the options panel. Everything below"
+	A:Print(A.Hi("/lattice") .. " on its own opens the options panel. Everything below"
 		.. " still works and is quicker for one number.")
 	local lines = {
-		A.Hi("/aether config") .. "  ·  the options panel (or just " .. A.Hi("/aether") .. ")",
-		A.Hi("/aether bind") .. "  ·  hover a button, press a key",
-		A.Hi("/aether unlock") .. "  ·  drag frames into place",
-		A.Hi("/aether lock"),
-		A.Hi("/aether reset") .. "  ·  forget all frame positions",
-		A.Hi("/aether skin") .. " <midnight|dawn|noon|dusk>",
-		A.Hi("/aether scale") .. " <0.6-1.6>  ·  0.71 = the concept deck's proportions",
-		A.Hi("/aether fade") .. " <on|off|delay N|idle 0-1>  ·  stage one, the dim",
-		A.Hi("/aether zen") .. " <on|off|delay N|afk on/off|test>  ·  stage two",
-		A.Hi("/aether zen") .. " <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
-		A.Hi("/aether zen zoom") .. " N  ·  the shot, live",
-		A.Hi("/aether zen") .. " <track NAME|preview>  ·  the music",
-		A.Hi("/aether shadow") .. " <0-1>  ·  ambient shadow opacity",
-		A.Hi("/aether health") .. " <class|deck>  ·  bar colour for players",
-		A.Hi("/aether bar") .. " <list · N on/off · N buttons/rows/page/scale V · size/spacing/font N>",
-		A.Hi("/aether quests") .. " <fold|auto|objectives|clear>  ·  the quest tracker",
-		A.Hi("/aether module") .. " <name> <on|off>",
-		A.Hi("/aether status"),
-		A.Hi("/aether diag") .. "  ·  why is a Blizzard frame still on screen",
-		A.Hi("/aether auras") .. " <refresh>  ·  what the aura API is actually saying",
-		A.Hi("/aether chat") .. " <reskin · where · lines/badges on|off · whispers on|off>",
-		A.Hi("/aether bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
-		A.Hi("/aether tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
-		A.Hi("/aether toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
-		A.Hi("/aether dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
-		A.Hi("/aether threat") .. " probe  ·  what the threat API answers, in a box you can copy",
-		A.Hi("/aether ifec") .. " [reset]  ·  content packs, what is playing, forget history",
-		A.Hi("/aether errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
+		A.Hi("/lattice config") .. "  ·  the options panel (or just " .. A.Hi("/lattice") .. ")",
+		A.Hi("/lattice bind") .. "  ·  hover a button, press a key",
+		A.Hi("/lattice unlock") .. "  ·  drag frames into place",
+		A.Hi("/lattice lock"),
+		A.Hi("/lattice reset") .. "  ·  forget all frame positions",
+		A.Hi("/lattice skin") .. " <midnight|dawn|noon|dusk>",
+		A.Hi("/lattice scale") .. " <0.6-1.6>  ·  0.71 = the concept deck's proportions",
+		A.Hi("/lattice fade") .. " <on|off|delay N|idle 0-1>  ·  stage one, the dim",
+		A.Hi("/lattice zen") .. " <on|off|delay N|afk on/off|test>  ·  stage two",
+		A.Hi("/lattice zen") .. " <frost|plates|audio|sit|camera> on/off  ·  the mode itself",
+		A.Hi("/lattice zen zoom") .. " N  ·  the shot, live",
+		A.Hi("/lattice zen") .. " <track NAME|preview>  ·  the music",
+		A.Hi("/lattice shadow") .. " <0-1>  ·  ambient shadow opacity",
+		A.Hi("/lattice health") .. " <class|deck>  ·  bar colour for players",
+		A.Hi("/lattice bar") .. " <list · N on/off · N buttons/rows/page/scale V · size/spacing/font N>",
+		A.Hi("/lattice quests") .. " <fold|auto|objectives|clear>  ·  the quest tracker",
+		A.Hi("/lattice module") .. " <name> <on|off>",
+		A.Hi("/lattice status"),
+		A.Hi("/lattice diag") .. "  ·  why is a Blizzard frame still on screen",
+		A.Hi("/lattice auras") .. " <refresh>  ·  what the aura API is actually saying",
+		A.Hi("/lattice chat") .. " <reskin · where · lines/badges on|off · whispers on|off>",
+		A.Hi("/lattice bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
+		A.Hi("/lattice tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
+		A.Hi("/lattice toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
+		A.Hi("/lattice dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
+		A.Hi("/lattice threat") .. " probe  ·  what the threat API answers, in a box you can copy",
+		A.Hi("/lattice ifec") .. " [reset]  ·  content packs, what is playing, forget history",
+		A.Hi("/lattice errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
 	for _, l in ipairs(lines) do DEFAULT_CHAT_FRAME:AddMessage("   " .. l) end
 end
@@ -250,7 +250,7 @@ end
 function A:DumpFrame(name)
 	name = (name or ""):gsub("%s", "")
 	if name == "" then
-		A:Print(A.Hi("/aether dump <FrameName>") .. "  ·  part of a name"
+		A:Print(A.Hi("/lattice dump <FrameName>") .. "  ·  part of a name"
 			.. " will do, and it will list what it could have meant.")
 		return
 	end
@@ -277,7 +277,7 @@ function A:DumpFrame(name)
 		-- parentKeys read as "the client does not have them" rather than "you
 		-- have not reloaded". Lua loads at reload; a file on disk is not a build
 		-- that is running.
-		say("%s  ·  AetherUI %s  ·  %s", name, tostring(A.version or "?"),
+		say("%s  ·  Lattice %s  ·  %s", name, tostring(A.version or "?"),
 			date and date("%Y-%m-%d %H:%M") or "")
 		say("a leading dot is a parentKey, which is what Reskin.Element takes")
 		DumpFrame(frame, "", DUMP_DEPTH, frame.GetParent and frame:GetParent())
@@ -559,8 +559,8 @@ handlers.preset = function(arg, rest)
 
 	-- No argument, or one nobody recognises: say what there is and which is on.
 	local now = P:Current()
-	A:Print(A.Hi("/aether preset <name>") .. "  ·  or "
-		.. A.Hi("/aether preset capture <name>") .. " to record the one you have"
+	A:Print(A.Hi("/lattice preset <name>") .. "  ·  or "
+		.. A.Hi("/lattice preset capture <name>") .. " to record the one you have"
 		.. " made")
 	for _, key in ipairs(P.order) do
 		local one = P.list[key]
@@ -913,7 +913,7 @@ handlers.zen = function(arg, rest)
 		local Z = A:GetModule("zen")
 		if not Z or not Z.enabled then A:Print(L.common.zen_module_enabled) return end
 		if not A.db.profile.fader.enabled then
-			A:Print(A.F(L.cmd.zen.idle_fade_off_so, A.Hi("/aether fade on")))
+			A:Print(A.F(L.cmd.zen.idle_fade_off_so, A.Hi("/lattice fade on")))
 			return
 		end
 		A.Fader:ForceZen()
@@ -1037,7 +1037,7 @@ handlers.health = function(arg, rest)
 		A:Print(A.F(L.cmd.health.health_bar_colour_s,
 			A.Val(A.db.profile.classColorHealth and "class" or "deck")))
 		A:Print(A.F(L.cmd.health.s_s_tune_two,
-			A.Dim("/aether health lift N"), A.Dim("depth N")))
+			A.Dim("/lattice health lift N"), A.Dim("depth N")))
 		return
 	end
 	A.db.profile.classColorHealth = (arg == "class")
@@ -1072,7 +1072,7 @@ local function BarList()
 			string.format(" · %d row%s", b.rows or 1, (b.rows or 1) == 1 and "" or "s"),
 			string.format(" · scale %.2f", b.scale or 1))
 	end
-	say("   " .. A.Dim("/aether bar <id> on/off/buttons N/rows N/page N/scale N/backdrop"))
+	say("   " .. A.Dim("/lattice bar <id> on/off/buttons N/rows N/page N/scale N/backdrop"))
 end
 
 handlers.bar = function(arg, rest)
@@ -1134,7 +1134,7 @@ handlers.bar = function(arg, rest)
 
 	local prop = BAR_PROPS[what]
 	if not prop then
-		A:Print("usage: /aether bar " .. tostring(barCfg.id)
+		A:Print("usage: /lattice bar " .. tostring(barCfg.id)
 			.. " on|off|buttons N|rows N|page N|scale N|backdrop")
 		return
 	end
@@ -1214,7 +1214,7 @@ handlers.toolbox = function(arg, rest)
 			end
 		end
 		if not key or not TB:TogglePin(key) then
-			A:Print(A.F(L.cmd.toolbox.nothing_called_s_offers, A.Val(rest), A.Hi("/aether toolbox")))
+			A:Print(A.F(L.cmd.toolbox.nothing_called_s_offers, A.Val(rest), A.Hi("/lattice toolbox")))
 			return
 		end
 		A:Print(A.F(L.cmd.toolbox.pin_s_s, key,
@@ -1320,7 +1320,7 @@ handlers.tooltips = function(arg)
 			:format(n, n == 1 and "" or "s"))
 	else
 		T:Diagnose()
-		A:Print("usage: /aether tooltips cursor|anchor|badge|sweep")
+		A:Print("usage: /lattice tooltips cursor|anchor|badge|sweep")
 	end
 end
 
@@ -1354,7 +1354,7 @@ handlers.quests = function(arg)
 	else
 		local n = QT.quests and #QT.quests or 0
 		A:Print(string.format(
-			"%s mode · showing %d quest%s%s  (usage: /aether quests fold|auto|objectives|clear)",
+			"%s mode · showing %d quest%s%s  (usage: /lattice quests fold|auto|objectives|clear)",
 			(cfg.autoTrack ~= false) and "auto" or "manual", n, n == 1 and "" or "s",
 			(QT.hidden or 0) > 0 and (" · " .. QT.hidden .. " did not fit") or ""))
 	end
@@ -1382,7 +1382,7 @@ handlers.party = function(arg)
 		local open = PF:TogglePanel()
 		A:Print(A.F(L.cmd.party.party_controls_s_s,
 			open and A.Good(L.common.open) or A.Dim(L.cmd.party.closed),
-			A.Hi("/aether party diag")))
+			A.Hi("/lattice party diag")))
 		return
 	end
 	
@@ -1647,7 +1647,7 @@ handlers.threat = function(arg)
 		ThreatProbe()
 		return
 	end
-	A:Print(A.Hi("/aether threat probe") .. "  ·  what the threat API answers")
+	A:Print(A.Hi("/lattice threat probe") .. "  ·  what the threat API answers")
 end
 
 handlers.module = function(arg, rest)
@@ -1660,15 +1660,18 @@ handlers.module = function(arg, rest)
 		return
 	end
 	if key ~= "on" and key ~= "off" then
-		A:Print("usage: /aether module " .. arg .. " on|off")
+		A:Print("usage: /lattice module " .. arg .. " on|off")
 		return
 	end
 	A:SetModuleEnabled(arg, key == "on")
 	A:Print(A.F(L.cmd.module.module_s_s, arg, rest))
 end
 
-SLASH_AETHERUI1 = "/aether"
-SLASH_AETHERUI2 = "/aetherui"
+-- /lattice since the rename. /aether and /aetherui stay for one release so
+-- muscle memory and old macros keep working; drop them in the one after.
+SLASH_AETHERUI1 = "/lattice"
+SLASH_AETHERUI2 = "/aether"
+SLASH_AETHERUI3 = "/aetherui"
 
 SlashCmdList["AETHERUI"] = function(msg)
 	msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")

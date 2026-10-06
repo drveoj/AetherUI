@@ -2255,7 +2255,7 @@ function OB:ShowFinish()
 		-- that reason (Media.texture.chevron); a line of recap text is not
 		-- worth a texture, so it is worded without one.
 		"Fine-tune anytime: unlock frames from the Toolbox and drag any of them",
-		"Re-run this tour: /aether tour",
+		"Re-run this tour: /lattice tour",
 	})
 
 	c.go.label:SetText(L.tour.show_finish.done)

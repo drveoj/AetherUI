@@ -1500,7 +1500,7 @@ function TT:Diagnose()
 	if cfg().levelBadge and reader and cfg().deferToLevelReaders ~= false then
 		A:Print(("level badge " .. A.Dim("stood down") .. " - " .. A.Val("%s") .. " reads the level"
 			.. " out of that line, and moving it into the badge would blind it."
-			.. " " .. A.Hi("/aether config") .. ", Tooltips, to override."):format(reader))
+			.. " " .. A.Hi("/lattice config") .. ", Tooltips, to override."):format(reader))
 	elseif cfg().levelBadge then
 		A:Print(reader
 			and A.F(L.tooltips.diagnose.level_badge_s_override, A.Good(L.common.on), A.Val(reader))

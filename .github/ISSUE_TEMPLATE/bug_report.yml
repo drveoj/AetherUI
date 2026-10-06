@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in AetherUI does the wrong thing.
+description: Something in Lattice does the wrong thing.
 title: "[bug] "
 labels: ["bug"]
 
@@ -10,7 +10,7 @@ body:
         One report, one problem. A report with three bugs in it gets one of them
         fixed and then closed.
 
-        Before you start: `/reload` with **only AetherUI enabled** and see if it
+        Before you start: `/reload` with **only Lattice enabled** and see if it
         still happens. That single answer decides whether this is our bug or an
         interaction, and it is the first thing we would have to ask you.
 
@@ -103,7 +103,7 @@ body:
     attributes:
       label: Diagnostics
       description: >
-        Run `/aether errors diag`, then Ctrl+A, Ctrl+C in the box that opens,
+        Run `/lattice errors diag`, then Ctrl+A, Ctrl+C in the box that opens,
         and paste it here. That box is selectable; the chat frame is not. It
         carries the addon version, skin, scale, client build and which modules
         are on - all of the environment questions, answered at once.
@@ -126,7 +126,7 @@ body:
   - type: dropdown
     id: isolated
     attributes:
-      label: With only AetherUI enabled
+      label: With only Lattice enabled
       options:
         - Still happens
         - Goes away (other addons are involved)

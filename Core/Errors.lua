@@ -98,7 +98,7 @@ function Errors:Header()
 	local scale = A.db and A.db.profile and A.db.profile.scale or 1
 
 	return table.concat({
-		("AetherUI %s  ·  skin %s  ·  scale %.2f"):format(A.version or "?", skin, scale),
+		("Lattice %s  ·  skin %s  ·  scale %.2f"):format(A.version or "?", skin, scale),
 		("client %s (interface %s)  ·  %s"):format(
 			tostring(build), tostring(iface),
 			(date and date("%Y-%m-%d %H:%M")) or "?"),
@@ -192,7 +192,8 @@ local function Build()
 
 	local hint = W.Text(f, "tbCardSub", "CENTER")
 	hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-	hint:SetText(L.errors.build.export_writes_savedvariables_aetherui)
+	-- The file is named after the addon's folder, so ask rather than spell it.
+	hint:SetText(A.F(L.errors.build.export_writes_savedvariables_aetherui, A.name))
 	W.Color(hint, Palette.c.textDim)
 
 	-- A SCROLL FRAME AROUND IT, because a diag runs to eighty lines.
@@ -361,7 +362,7 @@ function Errors:Export(key, text)
 	A:Print(("exported %d characters as %s - /reload, then open"):format(
 		#tostring(text or ""), A.Val(key or "last"))
 		.. " " .. A.Hi("WTF\\Account\\<account>\\SavedVariables\\"
-			.. "AetherUI.lua") .. " and look under " .. A.Val("export"))
+			.. A.name .. ".lua") .. " and look under " .. A.Val("export"))
 	return true
 end
 

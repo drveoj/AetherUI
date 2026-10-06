@@ -673,7 +673,9 @@ local function Culprit()
 
 	for line in s:gmatch("[^\r\n]+") do
 		local trimmed = line:gsub("^%s+", "")
-		if not trimmed:find("AetherUI", 1, true)
+		-- By folder name, not a literal: the folder is renamed with the addon,
+		-- and a stale literal would name our own code as the culprit.
+		if not trimmed:find(A.name, 1, true)
 			and not trimmed:find("^%[C%]:") then
 			return trimmed:sub(1, 110)
 		end

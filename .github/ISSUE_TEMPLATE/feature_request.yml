@@ -1,5 +1,5 @@
 name: Feature request
-description: Something AetherUI doesn't do at all yet.
+description: Something Lattice doesn't do at all yet.
 title: "[feature] "
 labels: ["feature"]
 
@@ -17,7 +17,7 @@ body:
     attributes:
       label: The problem
       description: >
-        What are you trying to do that AetherUI makes hard or impossible?
+        What are you trying to do that Lattice makes hard or impossible?
         Try to write this without naming the feature you want.
     validations:
       required: true

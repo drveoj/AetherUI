@@ -53,7 +53,7 @@ L["bags.start_sort.while_combat"] = "not while you are in combat."
 
 L["bars.set_bind_mode.can_t_rebind_combat"] = "can't rebind in combat."
 L["bars.set_bind_mode.escape_clears_right_click"] =
-	"Escape clears, right-click or /aether bind again to finish."
+	"Escape clears, right-click or /lattice bind again to finish."
 L["bars.set_bind_mode.keybind_mode_off"] = "keybind mode off."
 L["bars.set_bind_mode.keybind_mode_s_hover"] =
 	"keybind mode %s - hover a button and press a key."
@@ -220,7 +220,7 @@ L["cmd.tooltips.stay_where_whatever_opened"] =
 	"stay where whatever opened them put them"
 L["cmd.tooltips.tooltips_module_enabled"] = "tooltips module is not enabled."
 L["cmd.tooltips.unit_tooltips_anchored_their"] =
-	"unit tooltips anchored to their corner - /aether unlock to move "
+	"unit tooltips anchored to their corner - /lattice unlock to move "
 		.. "it."
 L["cmd.tooltips.unit_tooltips_back_blizzard"] =
 	"unit tooltips back on Blizzard's default anchor."
@@ -256,7 +256,7 @@ L["cmd.zen.zen_track_takes_one"] = "zen track takes one of: %s"
 
 L["common.actionbars_module_enabled"] = "actionbars module is not enabled."
 
-L["common.aether_ui_s"] = "Aether UI %s"
+L["common.aether_ui_s"] = "Lattice %s"
 
 L["common.banish_report_hideblizzard_never"] =
 	"no banish report - HideBlizzard never ran"
@@ -358,12 +358,23 @@ L["core.misc.label6"] = "Bar 6"
 L["core.pump.event"] = "event '%s':"
 L["core.pump.ticker"] = "ticker:"
 
+L["core.rename.keep"] = "Keep both"
+L["core.rename.notice"] =
+	"Lattice was called AetherUI until 2.0. If you used it under the old "
+		.. "name, your settings start fresh - %s sets it up again in about a "
+		.. "minute."
+L["core.rename.old_running"] =
+	"AetherUI is still installed and running. It is the old copy of Lattice, "
+		.. "and the two will fight over the same frames.\n\nSwitch AetherUI off "
+		.. "and reload?"
+L["core.rename.switch_off"] = "Switch it off"
+
 -- errors ------------------------------------------------------------------
 
 L["errors.build.errors"] = "Errors"
 L["errors.build.export"] = "Export"
 L["errors.build.export_writes_savedvariables_aetherui"] =
-	"Export writes it to SavedVariables\\\\AetherUI.lua. Escape closes."
+	"Export writes it to SavedVariables\\\\%s.lua. Escape closes."
 
 -- library -----------------------------------------------------------------
 
@@ -634,7 +645,7 @@ L["options.fader.fade_out.name"] = "Fade out time"
 L["options.fader.fades_uiparent_which_everything"] =
 	"Fades UIParent, which is everything: the minimap, the chat frame, "
 		.. "the XP hairline, nameplates, and anything any other addon has put "
-		.. "on screen. Off leaves only AetherUI's own frames fading, which "
+		.. "on screen. Off leaves only Lattice's own frames fading, which "
 		.. "means everything else stays up."
 L["options.fader.fractions_own_settings"] = "fractions of your own settings"
 L["options.fader.how_far_skin_s"] =
@@ -1020,8 +1031,8 @@ L["options.quest.whatever_does_fit_reported"] =
 L["options.quest.whitelist_mode_only_blizzard"] =
 	"Whitelist mode only. Blizzard caps its list at five."
 
-L["options.stub.line"] = "AetherUI's settings have a window of their own."
-L["options.stub.open"] = "Open AetherUI settings"
+L["options.stub.line"] = "Lattice's settings have a window of their own."
+L["options.stub.open"] = "Open Lattice settings"
 
 L["options.threat.alarms.desc"] =
 	"On your own state only, and never more than once every six "
@@ -1074,7 +1085,7 @@ L["options.toolbox.widgets_header"] = "Widgets"
 L["options.toolbox.widgets_note"] =
 	"The six widgets are published as %s rather than drawn straight "
 		.. "onto the panel. Two consequences: anything that displays LDB - "
-		.. "Titan, Bazooka, ChocolateBar - shows AetherUI's numbers without "
+		.. "Titan, Bazooka, ChocolateBar - shows Lattice's numbers without "
 		.. "being told, and anyone can write a widget in about ten lines."
 
 L["options.tooltips.anchoring"] = "Anchoring"
@@ -1110,7 +1121,7 @@ L["options.tooltips.reaction_word.name"] = "Append the reaction"
 L["options.tooltips.restyle_fonts.desc"] =
 	"Restyles the client's tooltip fonts, so every line - including "
 		.. "lines other addons add - comes out in Outfit."
-L["options.tooltips.restyle_fonts.name"] = "Aether typography"
+L["options.tooltips.restyle_fonts.name"] = "Lattice typography"
 L["options.tooltips.unit_anchor.desc"] =
 	"World mouseovers go to the corner instead of following the mouse. "
 		.. "Drag it in unlock mode. Only affects tooltips that took the "
@@ -1220,7 +1231,7 @@ L["questtracker.behind_fold_d"] = "%d hidden by a folded zone in the quest log"
 
 -- toolbox -----------------------------------------------------------------
 
-L["toolbox.build.aetherui_settings"] = "AetherUI settings"
+L["toolbox.build.aetherui_settings"] = "Lattice settings"
 
 L["toolbox.build_content.notes"] = "Notes"
 

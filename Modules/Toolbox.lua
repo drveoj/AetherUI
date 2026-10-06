@@ -2069,7 +2069,7 @@ TB.TILES = {
 	  end,
 	  tip = "Drag any part of the interface to move it, or scroll to nudge it a"
 	     .. " pixel at a time - hold shift to nudge sideways. Locked again from"
-	     .. " here or with /aether lock." },
+	     .. " here or with /lattice lock." },
 
 	{ kind = "mode", key = "keybinds", label = L.toolbox.refresh_widgets.keybind_mode,
 	  get = function()

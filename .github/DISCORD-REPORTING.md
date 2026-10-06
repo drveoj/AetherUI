@@ -9,16 +9,16 @@ the message; it is under Discord's 2,000-character limit as one message.
 
 Short version: tell us what happened, what you expected instead, and how to make it happen again.
 
-If you remember one thing, make it this — type `/aether errors diag`, then Ctrl+A and Ctrl+C in the box that opens, and paste that in. It answers most of what we'd otherwise have to ask you: addon version, skin, UI scale, game build, and which modules you have on.
+If you remember one thing, make it this — type `/lattice errors diag`, then Ctrl+A and Ctrl+C in the box that opens, and paste that in. It answers most of what we'd otherwise have to ask you: addon version, skin, UI scale, game build, and which modules you have on.
 
 **For a bug**
 
 • What happened, and what you expected instead
 • Steps to make it happen again, starting from a `/reload`
 • Whether it's every time, once per session, or just the once — that tells us a surprising amount
-• The `/aether errors diag` paste
+• The `/lattice errors diag` paste
 • If a Lua error appeared, paste the actual text, stack and all. Not a screenshot — we need to be able to search it
-• Try it with only AetherUI enabled. If the problem goes away, tell us which other addons were running **and their version numbers**
+• Try it with only Lattice enabled. If the problem goes away, tell us which other addons were running **and their version numbers**
 
 **Want something changed**
 
@@ -28,7 +28,7 @@ If you remember one thing, make it this — type `/aether errors diag`, then Ctr
 
 **Want something new**
 
-• What you're trying to do that AetherUI makes hard — describe the problem, not the solution you have in mind
+• What you're trying to do that Lattice makes hard — describe the problem, not the solution you have in mind
 • One sentence on what "done" would look like
 • If another addon already does it, name it. That explains it faster than a paragraph will
 

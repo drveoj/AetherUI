@@ -66,7 +66,7 @@ def write_markdown() -> None:
         r'\s*lines\s*=\s*\{(.*?)\n\t\t\},',
         data, re.S)
 
-    out = ["# AetherUI", ""]
+    out = ["# Lattice", ""]
     for version, date, body in entries:
         out += ["## %s - %s" % (version, date), ""]
         for line in re.findall(r'"((?:[^"\\]|\\.)*)"', body):

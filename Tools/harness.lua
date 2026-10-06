@@ -14632,10 +14632,10 @@ do
 	do
 		local mine = {}
 		for _, cat in ipairs(_G.__settingsPages) do
-			if cat.name == "AetherUI" then mine[#mine + 1] = cat end
+			if cat.name == "Lattice" then mine[#mine + 1] = cat end
 		end
 		check(#mine == 1,
-			"one AetherUI page in the game's AddOns list (" .. #mine .. ")")
+			"one Lattice page in the game's AddOns list (" .. #mine .. ")")
 		check(mine[1] and mine[1].frame == A.Options.stub,
 			"and it is the stub, not the settings tree")
 
@@ -26272,8 +26272,8 @@ do
 	check(said:find(A.version, 1, true) ~= nil,
 		"login says which build this is (" .. A.version .. ") - the point is a"
 		.. " player can report it without being asked first")
-	check(said:find("/aether help", 1, true) ~= nil,
-		"and points at /aether HELP for the command list - bare /aether opens"
+	check(said:find("/lattice help", 1, true) ~= nil,
+		"and points at /lattice HELP for the command list - bare /lattice opens"
 		.. " the settings panel, so sending people there 'for commands' sends"
 		.. " them somewhere that lists none")
 	-- And it is a real command. A greeting that names one which does nothing is
@@ -26281,8 +26281,8 @@ do
 	local helped = A.Errors:Capture(function()
 		SlashCmdList["AETHERUI"]("help")
 	end)
-	check(helped:find("/aether", 1, true) ~= nil,
-		"and /aether help actually lists the commands")
+	check(helped:find("/lattice", 1, true) ~= nil,
+		"and /lattice help actually lists the commands")
 
 	local lines = 0
 	for _ in said:gmatch("[^\n]+") do lines = lines + 1 end
@@ -26332,6 +26332,62 @@ do
 	end)
 	check(quiet == "", "off means silent")
 	A.db.profile.greet = was
+end
+
+print("== rename: AetherUI is now Lattice, said once ==")
+do
+	local realName, realNoticed = A.name, A.db.global.renameNoticed
+	local realLoaded, realDisable, realSave = C_AddOns.IsAddOnLoaded,
+		C_AddOns.DisableAddOn, C_AddOns.SaveAddOns
+	local realShow, realDialogs, realReload = _G.StaticPopup_Show,
+		_G.StaticPopupDialogs, _G.ReloadUI
+
+	local shown, disabled, saved, reloaded = nil, nil, false, false
+	_G.StaticPopupDialogs = {}
+	_G.StaticPopup_Show = function(which) shown = which end
+	C_AddOns.DisableAddOn = function(name, character) disabled = { name, character } end
+	C_AddOns.SaveAddOns = function() saved = true end
+	_G.ReloadUI = function() reloaded = true end
+
+	-- Still the AetherUI folder: nothing at all, even with an AetherUI loaded,
+	-- because that AetherUI is us.
+	A.name = "AetherUI"
+	A.db.global.renameNoticed = nil
+	C_AddOns.IsAddOnLoaded = function(which) return which == "AetherUI" end
+	local said = A.Errors:Capture(function() A:RenameNotice() end)
+	check(said == "" and shown == nil,
+		"while the folder is still AetherUI it says nothing and offers nothing")
+
+	-- Renamed, and the old copy not running: the one line, once.
+	A.name = "Lattice"
+	C_AddOns.IsAddOnLoaded = function() return false end
+	said = A.Errors:Capture(function() A:RenameNotice() end)
+	check(said:find("called AetherUI", 1, true) ~= nil,
+		"renamed, it says once that this used to be AetherUI")
+	check(said:find("/lattice tour", 1, true) ~= nil,
+		"and points at the tour, which sets it all up again")
+	check(shown == nil, "and offers nothing when the old copy is not running")
+	said = A.Errors:Capture(function() A:RenameNotice() end)
+	check(said == "", "and only once per account")
+
+	-- The old copy running beside it: the offer, and what yes does.
+	C_AddOns.IsAddOnLoaded = function(which) return which == "AetherUI" end
+	A:RenameNotice()
+	check(shown == "LATTICE_RETIRE_AETHERUI",
+		"with AetherUI still running beside it, it offers to switch it off")
+	local dialog = _G.StaticPopupDialogs.LATTICE_RETIRE_AETHERUI
+	check(dialog and dialog.button1 and dialog.button2,
+		"as a yes/no, so keeping both is a choice")
+	if dialog then dialog.OnAccept() end
+	check(disabled and disabled[1] == "AetherUI" and disabled[2] == nil,
+		"yes switches AetherUI off for every character, as Blizzard's own list does")
+	check(saved and reloaded, "then saves the addon list and reloads")
+
+	A.name, A.db.global.renameNoticed = realName, realNoticed
+	C_AddOns.IsAddOnLoaded, C_AddOns.DisableAddOn, C_AddOns.SaveAddOns =
+		realLoaded, realDisable, realSave
+	_G.StaticPopup_Show, _G.StaticPopupDialogs, _G.ReloadUI =
+		realShow, realDialogs, realReload
 end
 
 print("== errors: an error you cannot copy is an error you cannot send anybody ==")

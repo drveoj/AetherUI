@@ -294,7 +294,7 @@ end
 --  helpers are not there yet, and a prefix frozen at load carries the skin you
 --  started on for the rest of the session.
 local function prefix()
-	return A.Hi("Aether") .. A.Val("UI") .. ": "
+	return A.Hi("Lattice") .. ": "
 end
 
 function A:Print(...)
@@ -693,7 +693,7 @@ local function EnableModule(name, module)
 			module.lastError = tostring(err)
 			A:Print(A.Bad(A.F(L.core.enable_module.module_s_failed_enable, name))
 				.. " " .. tostring(err))
-			A:Print(A.Bad("run") .. " /aether diag " .. A.Bad(L.core.enable_module.full_picture))
+			A:Print(A.Bad("run") .. " /lattice diag " .. A.Bad(L.core.enable_module.full_picture))
 		end
 	end
 end
@@ -911,8 +911,8 @@ function A:Greet()
 		.. A.Val((A.Palette and A.Palette.current) or "?"))
 	-- Bare /aether opens the settings panel, so pointing at it "for commands"
 	-- sends people somewhere that does not list any.
-	A:Print(A.Hi("/aether") .. " settings  ·  " .. A.Hi("/aether help") .. " commands"
-		.. "  ·  " .. A.Hi("/aether errors") .. " bug report"
+	A:Print(A.Hi("/lattice") .. " settings  ·  " .. A.Hi("/lattice help") .. " commands"
+		.. "  ·  " .. A.Hi("/lattice errors") .. " bug report"
 		.. "  ·  Please join discord at " .. A.Gold("discord.gg/drveoj")
 		.. " for support")
 	-- WHERE TO ASK, on the same line rather than a third. Two lines is the
@@ -922,6 +922,48 @@ function A:Greet()
 	-- THE ADDRESS IS GOLD, and the three commands beside it are the accent.
 	-- It was the accent too, which made it read as a fourth command rather
 	-- than as the one thing on the line you are meant to copy.
+end
+
+--- AetherUI is now Lattice: said once, and the old copy offered a way out.
+--
+--  Saved settings belong to the addon's folder, and the folder was renamed, so
+--  everybody coming from AetherUI starts fresh. One line, once per account,
+--  rather than letting them find out by looking for their layout. Shown to
+--  newcomers too: it is worded so it reads fine to someone who never had it.
+--
+--  If the old AetherUI folder is still installed and running, the two are the
+--  same code under two names fighting over the same frames, so offer to switch
+--  it off. Both skipped while this copy IS the AetherUI folder, which is how
+--  the renamed code runs until the folder itself is renamed. A.name rather than
+--  ADDON, so the suite can run it as the renamed folder.
+function A:RenameNotice()
+	if A.name == "AetherUI" or not (A.db and A.db.global) then return end
+
+	if not A.db.global.renameNoticed then
+		A.db.global.renameNoticed = true
+		A:Print(A.F(L.core.rename.notice, A.Hi("/lattice tour")))
+	end
+
+	local loaded = C_AddOns and C_AddOns.IsAddOnLoaded
+		and C_AddOns.IsAddOnLoaded("AetherUI")
+	if not loaded or not (_G.StaticPopup_Show and _G.StaticPopupDialogs) then return end
+
+	_G.StaticPopupDialogs.LATTICE_RETIRE_AETHERUI = {
+		text = L.core.rename.old_running,
+		button1 = L.core.rename.switch_off,
+		button2 = L.core.rename.keep,
+		OnAccept = function()
+			-- No character: every character, which is what Blizzard's own
+			-- AddonList_DisableOutOfDate does. Then saved, as it does.
+			C_AddOns.DisableAddOn("AetherUI")
+			if C_AddOns.SaveAddOns then C_AddOns.SaveAddOns() end
+			ReloadUI()
+		end,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+	}
+	_G.StaticPopup_Show("LATTICE_RETIRE_AETHERUI")
 end
 
 A:RegisterEvent(A, "ADDON_LOADED", function(_, _, addon)
@@ -939,6 +981,7 @@ A:RegisterEvent(A, "PLAYER_LOGIN", function()
 	if A.Errors then A.Errors:Install() end
 
 	A:Greet()
+	A:RenameNotice()
 end)
 
 A:RegisterEvent(A, "UI_SCALE_CHANGED", function()
