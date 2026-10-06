@@ -285,6 +285,143 @@ function A.Quest.Text(index)
 end
 
 -- ---------------------------------------------------------------------------
+-- acting on the quest log: abandon and share
+--
+-- Same split as the readers above, and found the same way - the windows looked
+-- fine and the buttons did nothing. On WoW Forever every one of these lives in
+-- C_QuestLog (its own QuestMapFrame.lua:1162, 1474-1485 and
+-- GameDialogDefs.lua:836); the globals the old client uses are not there, so a
+-- guard on the global quietly turned Abandon into a no-op and left Share
+-- greyed for good. Decided per call by what exists, never by flavour.
+-- ---------------------------------------------------------------------------
+
+local function QuestIDAt(index)
+	if not index then return nil end
+	local _, _, _, isHeader, _, _, questID = A.Quest.Title(index)
+	if isHeader then return nil end
+	return questID
+end
+
+--- Latch a quest for abandoning, by LOG INDEX. True if it took.
+--
+--  The latch is what the client's AbandonQuest acts on, and it is set from the
+--  selection - so the Select and the latch stay adjacent, here, every time.
+function A.Quest.SetAbandon(index)
+	if C_QuestLog and C_QuestLog.SetAbandonQuest then
+		if not A.Quest.Select(index) then return false end
+		return (pcall(C_QuestLog.SetAbandonQuest))
+	end
+	if not _G.SetAbandonQuest then return false end
+	if not A.Quest.Select(index) then return false end
+	return (pcall(SetAbandonQuest))
+end
+
+--- The latched quest's name, as the client has it.
+function A.Quest.AbandonName()
+	if C_QuestLog and C_QuestLog.GetAbandonQuest then
+		local ok, questID = pcall(C_QuestLog.GetAbandonQuest)
+		if not ok or not questID or questID == 0 then return nil end
+		if C_QuestLog.GetTitleForQuestID then
+			local okT, title = pcall(C_QuestLog.GetTitleForQuestID, questID)
+			if okT and title and title ~= "" then return title end
+		end
+		return nil
+	end
+	if not _G.GetAbandonQuestName then return nil end
+	local ok, name = pcall(GetAbandonQuestName)
+	return (ok and name ~= "") and name or nil
+end
+
+--- What abandoning the latched quest takes away, as display text, or nil.
+--
+--  The old client answers a ready-made string. Forever answers item IDs
+--  (C_QuestLog.GetAbandonQuestItems), named here the way its own
+--  BuildItemNames does - an id with no name yet is left out rather than shown
+--  as a number.
+function A.Quest.AbandonItems()
+	if C_QuestLog and C_QuestLog.GetAbandonQuestItems then
+		local ok, ids = pcall(C_QuestLog.GetAbandonQuestItems)
+		if not ok or type(ids) ~= "table" or #ids == 0 then return nil end
+		local nameOf = C_Item and C_Item.GetItemNameByID
+		local names = {}
+		for _, id in ipairs(ids) do
+			local okN, name = pcall(nameOf or function() end, id)
+			if okN and name and name ~= "" then names[#names + 1] = name end
+		end
+		return #names > 0 and table.concat(names, ", ") or nil
+	end
+	if not _G.GetAbandonQuestItems then return nil end
+	local ok, items = pcall(GetAbandonQuestItems)
+	return (ok and items ~= "") and items or nil
+end
+
+--- Abandon whatever is latched. Only ever called straight after a fresh
+--  SetAbandon - the latch is the client's, and it is not ours to trust.
+function A.Quest.Abandon()
+	local fn = (C_QuestLog and C_QuestLog.AbandonQuest) or _G.AbandonQuest
+	if not fn then return false end
+	return (pcall(fn))
+end
+
+--- Can this quest be shared at all? (Being in a group is the caller's half.)
+--
+--  By questID on Forever, which is why it needs no selection there; by the
+--  selection on the old client, which is why it moves the cursor.
+function A.Quest.IsPushable(index)
+	if C_QuestLog and C_QuestLog.IsPushableQuest then
+		local questID = QuestIDAt(index)
+		if not questID then return false end
+		local ok, v = pcall(C_QuestLog.IsPushableQuest, questID)
+		return (ok and v) and true or false
+	end
+	if not _G.GetQuestLogPushable or not A.Quest.Select(index) then return false end
+	local ok, v = pcall(GetQuestLogPushable)
+	return (ok and v) and true or false
+end
+
+--- Share a quest with the party. Forever's QuestLogPushQuest takes the log
+--  index (QuestMapFrame.lua:1448); the old one shares the selection.
+function A.Quest.Push(index)
+	if not _G.QuestLogPushQuest or not index then return false end
+	if C_QuestLog and C_QuestLog.IsPushableQuest then
+		return (pcall(QuestLogPushQuest, index))
+	end
+	if not A.Quest.Select(index) then return false end
+	return (pcall(QuestLogPushQuest))
+end
+
+-- ---------------------------------------------------------------------------
+-- focus: WoW Forever's super-tracking
+--
+-- Focusing a quest makes the client itself show the way to what is left of it:
+-- the objective area on the map and minimap, and the on-screen guide. It is
+-- per QUEST, not per objective line - the client works out which part is next.
+-- Blizzard's own tracker offers it from its row menu
+-- (Blizzard_QuestObjectiveTracker.lua:77-86). The old client has no such
+-- thing, so on Classic Era every one of these answers "no" and the callers
+-- show nothing; Questie and TomTom remain the route there (Core/Nav.lua).
+-- ---------------------------------------------------------------------------
+
+function A.Quest.CanFocus()
+	return (C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
+		and C_SuperTrack.GetSuperTrackedQuestID) and true or false
+end
+
+--- The focused quest's ID, or nil. The client answers 0 for none.
+function A.Quest.FocusedID()
+	if not A.Quest.CanFocus() then return nil end
+	local ok, id = pcall(C_SuperTrack.GetSuperTrackedQuestID)
+	if ok and type(id) == "number" and id ~= 0 then return id end
+	return nil
+end
+
+--- Focus a quest by ID; nil or 0 stops focusing. True if the client took it.
+function A.Quest.Focus(questID)
+	if not A.Quest.CanFocus() then return false end
+	return (pcall(C_SuperTrack.SetSuperTrackedQuestID, questID or 0))
+end
+
+-- ---------------------------------------------------------------------------
 -- chat output
 -- ---------------------------------------------------------------------------
 

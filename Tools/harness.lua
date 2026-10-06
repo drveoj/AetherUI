@@ -706,6 +706,9 @@ local function newFontString(owner, layer)
 	-- legitimate call into a nil-index at draw time.
 	function f:SetDrawLayer(l, sub) self.__layer, self.__sub = l, sub end
 	function f:GetDrawLayer() return self.__layer, self.__sub end
+	-- A region, so it answers this too: Forever's own CurrencyTemplateMixin asks
+	-- it of a FontString (UIPanelTemplatesShared.lua:257). Tests set __mouseOver.
+	function f:IsMouseOver() return self.__mouseOver or false end
 	--- RETURNS NOTHING, deliberately, and neither does the font-object mock.
 	--
 	--  A real FontString does answer isValid. The mock refuses to, because
@@ -4242,6 +4245,75 @@ function AbandonQuest()
 	_G.__abandoned = q and q.id
 end
 
+-- ABANDON AND SHARE ON WOW FOREVER: C_QuestLog, and the old globals GO.
+--
+-- Until 2026-10-06 these globals were left defined on camelot too, so the
+-- suite passed an Abandon button that did nothing in game and a Share button
+-- that never enabled. Forever documents none of them as globals and calls them
+-- only from Vanilla\ and Cata\ files it does not load; its own quest map uses
+-- C_QuestLog.SetAbandonQuest / AbandonQuest / GetAbandonQuest /
+-- GetAbandonQuestItems / IsPushableQuest (QuestMapFrame.lua:1162, 1474-1485,
+-- GameDialogDefs.lua:836) and QuestLogPushQuest(questLogIndex)
+-- (QuestMapFrame.lua:1448). Same fixture underneath, same latch.
+if _G.__flavour == "camelot" then
+	local eraItems, eraAbandon = GetAbandonQuestItems, AbandonQuest
+	GetQuestLogPushable, GetAbandonQuestName, GetAbandonQuestItems = nil, nil, nil
+	SetAbandonQuest, AbandonQuest = nil, nil
+
+	local function indexOf(questID)
+		for i, q in ipairs(_G.__visibleLog()) do
+			if q.id == questID then return i end
+		end
+	end
+
+	-- The latch is set from the SELECTION, as the global was.
+	function C_QuestLog.SetAbandonQuest() _G.__abandonLatch = _G.__questSelected end
+	function C_QuestLog.AbandonQuest() eraAbandon() end
+
+	function C_QuestLog.GetAbandonQuest()
+		local q = _G.__visibleLog()[_G.__abandonLatch or 0]
+		return q and q.id or 0
+	end
+
+	function C_QuestLog.GetTitleForQuestID(questID)
+		local i = indexOf(questID)
+		return i and _G.__visibleLog()[i].title or nil
+	end
+
+	-- ITEM IDS, not the display string the old global answered. The fixture's
+	-- "you will lose" text is split into names and each gets a stand-in id that
+	-- C_Item.GetItemNameByID maps back, so a module that shows the raw table
+	-- (or nothing) fails here instead of in game.
+	_G.__abandonItemNames = {}
+	local nextItemID = 900000
+	function C_QuestLog.GetAbandonQuestItems()
+		local text = eraItems()
+		local ids = {}
+		if type(text) == "string" then
+			for name in text:gmatch("[^,]+") do
+				name = name:match("^%s*(.-)%s*$")
+				if name ~= "" then
+					nextItemID = nextItemID + 1
+					_G.__abandonItemNames[nextItemID] = name
+					ids[#ids + 1] = nextItemID
+				end
+			end
+		end
+		return ids
+	end
+
+	--- By questID, and NOT selection-scoped: that is the whole difference.
+	function C_QuestLog.IsPushableQuest(questID)
+		local i = indexOf(questID)
+		local q = i and _G.__visibleLog()[i]
+		return (q and q.pushable ~= false) and true or false
+	end
+
+	--- Takes the log index. With no argument it shares nothing, so a module
+	--  still calling it the old way fails here.
+	function QuestLogPushQuest(index) _G.__questShared = index end
+end
+
 function DressUpItemLink(link) _G.__dressedUp = link end
 function GetSpellLink(id) return "|cff71d5ff|Hspell:" .. tostring(id) .. "|h[Spell]|h|r" end
 function ChatEdit_InsertLink(link) _G.__insertedLink = link return true end
@@ -4489,6 +4561,15 @@ function C_Item.GetItemInfo(id)
 		"type", "subtype", it[5], "", it[7], it[6], it[2], it[3], 0
 end
 function C_Item.GetItemFamily() return 0 end
+--- Both clients document this (ItemDocumentation.lua). Answers the quest
+--  abandon stand-ins as well as the item fixture.
+function C_Item.GetItemNameByID(id)
+	if _G.__abandonItemNames and _G.__abandonItemNames[id] then
+		return _G.__abandonItemNames[id]
+	end
+	local it = _G.__items and _G.__items[id]
+	return it and it[1] or nil
+end
 GetItemInfo, GetItemInfoInstant = C_Item.GetItemInfo, C_Item.GetItemInfoInstant
 
 --- Blizzard's own quality colours, at their real values rather than as six
@@ -6655,6 +6736,19 @@ fire = function(event, ...)
 	if fn then
 		local ok, err = pcall(fn, pump, event, ...)
 		if not ok then fail("event " .. event .. ": " .. tostring(err)) end
+	end
+end
+
+-- SUPER-TRACKING, WoW Forever only (SuperTrackManagerDocumentation.lua). The
+-- client answers 0 for "nothing focused" and fires SUPER_TRACKING_CHANGED on
+-- every change, whoever made it - so the mock does both. Classic Era has none
+-- of it, and leaving it undefined there is the check that Era shows no focus.
+if _G.__flavour == "camelot" then
+	C_SuperTrack = { __id = 0 }
+	function C_SuperTrack.GetSuperTrackedQuestID() return C_SuperTrack.__id end
+	function C_SuperTrack.SetSuperTrackedQuestID(questID)
+		C_SuperTrack.__id = questID or 0
+		fire("SUPER_TRACKING_CHANGED")
 	end
 end
 
@@ -12519,6 +12613,96 @@ do
 		.. " the rows that replaced it")
 end
 
+print("== quest focus: WoW Forever's super-tracking ==")
+do
+	local QL = A:GetModule("questlog")
+	local row = QT.panel.rows[1]
+	local line = row.lines[1]
+	check(row and line and line:IsShown(), "the first tracked quest has an objective line to click")
+
+	if _G.__flavour == "camelot" then
+		C_SuperTrack.__id = 0
+		QT:Refresh()
+
+		-- An objective line focuses its quest; the title still opens the log.
+		QL:Hide()
+		line.__mouseOver = true
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+		line.__mouseOver = false
+		check(C_SuperTrack.__id == row.questID,
+			"clicking an objective line focuses that quest (" .. tostring(C_SuperTrack.__id) .. ")")
+		check(not (QL.win and QL.win:IsShown()), "and does not open the log")
+		check(QT.panel.rows[1].focus:IsShown(), "the focused quest wears the accent strip")
+
+		-- The menu offers to stop, and stopping clears it everywhere.
+		local r = QT.panel.rows[1]
+		r:GetScript("OnMouseUp")(r, "RightButton")
+		local items, stop = A.Widgets.MenuFrame().items, nil
+		for _, it in ipairs(items) do
+			if it.text:GetText() == "Stop focusing" then stop = it end
+		end
+		check(stop ~= nil, "the menu offers Stop focusing on the focused quest")
+		if stop then stop:GetScript("OnClick")(stop) end
+		check(C_SuperTrack.__id == 0, "and it stops")
+		check(not QT.panel.rows[1].focus:IsShown(), "and the strip goes")
+
+		-- Focus set from elsewhere (Blizzard's map) is followed through the event.
+		C_SuperTrack.SetSuperTrackedQuestID(QT.panel.rows[1].questID)
+		check(QT.panel.rows[1].focus:IsShown(),
+			"focus set from anywhere else is shown too - SUPER_TRACKING_CHANGED")
+
+		-- The log's Focus button: present, worded by state, and it toggles.
+		-- Opening the log selects its first QUEST by itself (EnsureSelection);
+		-- entry 1 is a zone heading, which shows nothing.
+		QL:Show()
+		local foot = QL.win.detail.foot
+		check(foot.focus:IsShown(), "the quest log has a Focus button")
+		local shownID = QL.shown and QL.shown.questID
+		check(shownID ~= nil, "with a quest showing to focus")
+		C_SuperTrack.SetSuperTrackedQuestID(0)
+		QL:ToggleFocus()
+		check(C_SuperTrack.__id == shownID, "Focus focuses the shown quest")
+		check(foot.focus.label:GetText() == "Unfocus", "and the button then offers Unfocus")
+		QL:ToggleFocus()
+		check(C_SuperTrack.__id == 0, "and Unfocus stops")
+		QL:Hide()
+	else
+		-- Classic Era: no super-tracking, so nothing anywhere offers it, and an
+		-- objective click falls through to opening the log as it always did.
+		check(not A.Quest.CanFocus(), "Classic Era cannot focus")
+		local QLog = A:GetModule("questlog")
+		QLog:Hide()
+		line.__mouseOver = true
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+		line.__mouseOver = false
+		check(QLog.win and QLog.win:IsShown(), "an objective click still opens the log")
+		QLog:Hide()
+
+		local r = QT.panel.rows[1]
+		r:GetScript("OnMouseUp")(r, "RightButton")
+		local offered = false
+		for _, it in ipairs(A.Widgets.MenuFrame().items) do
+			local t = it.text:GetText()
+			if t == "Focus this quest" or t == "Stop focusing" then offered = true end
+		end
+		check(not offered, "and the menu offers no focus")
+		QLog:Show()
+		check(not QLog.win.detail.foot.focus:IsShown(), "and the log shows no Focus button")
+		QLog:Hide()
+	end
+end
+
+--- The tracker menu's shown item with this text. By NAME, not by position:
+--  WoW Forever adds Focus near the top, so "item 3 is Share" was true on one
+--  client only.
+local function TrackerMenuItem(text)
+	for _, it in ipairs(A.Widgets.MenuFrame().items) do
+		if it:IsShown() and it.text:GetText() == text then return it end
+	end
+end
+-- Open / (Focus) / Stop tracking / Share / Abandon, before any Navigate item.
+local TRACKER_MENU_BASE = A.Quest.CanFocus() and 5 or 4
+
 print("== quest tracker: clicks ==")
 do
 	local row = QT.panel.rows[1]
@@ -12628,13 +12812,15 @@ do
 	A:Restyle()
 
 	_G.__questShared = nil
-	A.Widgets.MenuFrame().items[3]:GetScript("OnClick")(A.Widgets.MenuFrame().items[3])
+	local share = TrackerMenuItem("Share quest")
+	share:GetScript("OnClick")(share)
 	check(_G.__questShared == r.index, "share quest routes through SelectQuestLogEntry")
 	check(not A.Widgets.MenuFrame():IsShown(), "and the menu closes behind it")
 
 	_G.__abandonPopup = nil
 	r:GetScript("OnMouseUp")(r, "RightButton")
-	A.Widgets.MenuFrame().items[4]:GetScript("OnClick")(A.Widgets.MenuFrame().items[4])
+	local abandon = TrackerMenuItem("Abandon quest")
+	abandon:GetScript("OnClick")(abandon)
 	check(_G.__abandonPopup == "ABANDON_QUEST",
 		"abandon goes through Blizzard's confirmation, never straight to AbandonQuest")
 end
@@ -12861,7 +13047,7 @@ do
 	for _, item in ipairs(A.Widgets.MenuFrame().items) do
 		if item:IsShown() then texts[#texts + 1] = item.text:GetText() end
 	end
-	check(#texts == 4 and texts[4] == "Abandon quest",
+	check(#texts == TRACKER_MENU_BASE and texts[#texts] == "Abandon quest",
 		"and the menu carries no Navigate item at all - a line that exists to"
 		.. " advertise an addon you do not have is not a feature (" .. #texts .. ")")
 	A.Widgets.MenuFrame():Hide()
@@ -13078,8 +13264,8 @@ do
 			if item.text:GetText() == "Navigate with TomTom" then navItem = item end
 		end
 	end
-	check(#texts == 5 and navItem, "the item appears once both addons are there")
-	check(texts[5] == "Abandon quest",
+	check(#texts == TRACKER_MENU_BASE + 1 and navItem, "the item appears once both addons are there")
+	check(texts[#texts] == "Abandon quest",
 		"and it goes ABOVE Abandon - the destructive one stays last, where the"
 		.. " muscle memory for it already is")
 
@@ -13145,7 +13331,7 @@ do
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	local n = 0
 	for _, item in ipairs(A.Widgets.MenuFrame().items) do if item:IsShown() then n = n + 1 end end
-	check(n == 4, "the menu goes back to four items rather than raising on click")
+	check(n == TRACKER_MENU_BASE, "the menu goes back to its base items rather than raising on click")
 	A.Widgets.MenuFrame():Hide()
 	dist.GetNearestSpawnForQuest = was
 

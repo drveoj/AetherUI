@@ -1225,6 +1225,9 @@ L["questlog.ask_abandon.will_lose_s"] = "You will lose: %s"
 
 L["questlog.build_header.quest_log"] = "Quest Log"
 
+L["questlog.foot.focus"] = "Focus"
+L["questlog.foot.unfocus"] = "Unfocus"
+
 L["questlog.build_panes.quest_selected"] = "No quest selected."
 
 L["questlog.confirm_abandon.quest_longer_log_nothing"] =
@@ -1239,6 +1242,9 @@ L["questlog.reward_card_click.reward_still_loading_try"] =
 -- questtracker -------------------------------------------------------------
 
 L["questtracker.behind_fold_d"] = "%d hidden by a folded zone in the quest log"
+
+L["questtracker.menu.focus"] = "Focus this quest"
+L["questtracker.menu.stop_focus"] = "Stop focusing"
 
 -- toolbox -----------------------------------------------------------------
 

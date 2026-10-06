@@ -1025,6 +1025,13 @@ local function BuildPanes(win)
 	foot.share:SetPoint("LEFT", foot.track, "RIGHT", BTN_GAP, 0)
 	foot.share:SetAction(function() QL:ShareQuest() end)
 
+	-- FOCUS, only where the client super-tracks (WoW Forever). Built either way
+	-- and hidden on Classic Era, so the footer's other three never move.
+	foot.focus = BuildButton(foot, "outline", L.questlog.foot.focus)
+	foot.focus:SetPoint("LEFT", foot.share, "RIGHT", BTN_GAP, 0)
+	foot.focus:SetAction(function() QL:ToggleFocus() end)
+	if not A.Quest.CanFocus() then foot.focus:Hide() end
+
 	foot.abandon = BuildButton(foot, "danger", "Abandon")
 	foot.abandon:SetPoint("RIGHT", foot, "RIGHT", 0, 0)
 	foot.abandon:SetAction(function() QL:AskAbandon() end)
@@ -1204,13 +1211,21 @@ function QL:ToggleTracked()
 	self:RefreshFooter()
 end
 
+--- Focus the shown quest, or stop focusing it if it already is.
+function QL:ToggleFocus()
+	local quest = self.shown
+	if not quest or not quest.questID then return end
+	local focused = A.Quest.FocusedID() == quest.questID
+	A.Quest.Focus(focused and 0 or quest.questID)
+	self:RefreshFooter()
+end
+
 function QL:ShareQuest()
-	if not QuestLogPushQuest then return end
 	local index = self:ShownIndex()
 	if not index then return end
-	-- Selection-scoped, like everything else in the action set.
-	if not SelectQuest(index) then return end
-	pcall(QuestLogPushQuest)
+	-- By index on Forever, by the selection on the old client: A.Quest.Push
+	-- knows which, and selects first where that is what the call reads.
+	A.Quest.Push(index)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1323,27 +1338,19 @@ end
 
 function QL:AskAbandon()
 	local quest = self.shown
-	if not quest or not SetAbandonQuest then return end
+	if not quest then return end
 
 	local index = self:ShownIndex()
 	if not index then
 		A:Print(L.questlog.ask_abandon.quest_longer_log)
 		return
 	end
-	if not SelectQuest(index) then return end
-	pcall(SetAbandonQuest)                       -- adjacent to the Select, always
+	-- Select and latch together, in the shim - C_QuestLog on Forever, the old
+	-- globals elsewhere. A client with neither is a refusal, not a guess.
+	if not A.Quest.SetAbandon(index) then return end
 
-	local name = quest.title
-	if GetAbandonQuestName then
-		local ok, n = pcall(GetAbandonQuestName)
-		if ok and n and n ~= "" then name = n end
-	end
-
-	local items
-	if GetAbandonQuestItems then
-		local ok, i = pcall(GetAbandonQuestItems)
-		if ok then items = i end
-	end
+	local name = A.Quest.AbandonName() or quest.title
+	local items = A.Quest.AbandonItems()
 
 	self.abandonID = quest.questID
 	self.abandonIndex = index
@@ -1393,7 +1400,7 @@ end
 function QL:ConfirmAbandon()
 	local questID, index, title = self.abandonID, self.abandonIndex, self.abandonTitle
 	self:CloseConfirm()
-	if not AbandonQuest or not index then return end
+	if not index then return end
 
 	-- Re-latch from the stored questID rather than trusting the one set when the
 	-- dialog opened. The log can renumber while the dialog is up - a quest turned
@@ -1408,9 +1415,8 @@ function QL:ConfirmAbandon()
 		return
 	end
 
-	if not SelectQuest(fresh) then return end
-	if SetAbandonQuest then pcall(SetAbandonQuest) end
-	pcall(AbandonQuest)
+	if not A.Quest.SetAbandon(fresh) then return end
+	if not A.Quest.Abandon() then return end
 
 	if PlaySound and _G.SOUNDKIT and _G.SOUNDKIT.IG_QUEST_LOG_ABANDON_QUEST then
 		pcall(PlaySound, _G.SOUNDKIT.IG_QUEST_LOG_ABANDON_QUEST)
@@ -1825,8 +1831,18 @@ function QL:RefreshFooter()
 		-- claiming an action it cannot carry out.
 		d.foot.track:SetDisabled(true)
 		d.foot.share:SetDisabled(true)
+		d.foot.focus:SetDisabled(true)
 		d.foot.abandon:SetDisabled(true)
 		return
+	end
+
+	if A.Quest.CanFocus() then
+		local focused = quest.questID and A.Quest.FocusedID() == quest.questID
+		d.foot.focus:SetLabel(focused and L.questlog.foot.unfocus or L.questlog.foot.focus)
+		d.foot.focus:SetDisabled(not quest.questID)
+		d.foot.focus:Show()
+	else
+		d.foot.focus:Hide()
 	end
 
 	local QT = A:GetModule("questtracker")
@@ -1835,20 +1851,17 @@ function QL:RefreshFooter()
 	d.foot.track:SetLabel(tracked and "Untrack" or "Track quest")
 	d.foot.track:SetDisabled(false)
 
-	-- GetQuestLogPushable is selection-scoped, and this runs from GROUP_ROSTER_UPDATE
-	-- as well as from a redraw - by which time the snapshot's index may address
-	-- something else entirely - which is why the index above is re-resolved
-	-- rather than remembered, and why the cursor only moves after it validates.
+	-- The old client's pushable check is selection-scoped, and this runs from
+	-- GROUP_ROSTER_UPDATE as well as from a redraw - by which time the snapshot's
+	-- index may address something else entirely - which is why the index above
+	-- is re-resolved rather than remembered, and why the cursor only moves after
+	-- it validates. (Forever asks by questID and needs no cursor at all.)
 	SelectQuest(index)
 
 	-- Blizzard's own gate is pushable AND in a group - the call answers "can this
 	-- quest ever be shared", not "can it be shared right now". Without the group
 	-- half the button looks live while solo and silently does nothing.
-	local pushable = false
-	if GetQuestLogPushable then
-		local ok, v = pcall(GetQuestLogPushable)
-		pushable = ok and v and true or false
-	end
+	local pushable = A.Quest.IsPushable(index)
 	local grouped = IsInGroup and IsInGroup() or false
 	d.foot.share:SetDisabled(not (pushable and grouped))
 
@@ -2028,6 +2041,9 @@ function QL:OnEnable()
 	A:RegisterEvent(self, "UNIT_QUEST_LOG_CHANGED", function(_, _, unit)
 		if unit == "player" then QL:Invalidate() end
 	end)
+	-- The Focus button's word follows focus changed anywhere else - the tracker,
+	-- Blizzard's map. Refused quietly on a client without super-tracking.
+	A:RegisterEvent(self, "SUPER_TRACKING_CHANGED", function() QL:RefreshFooter() end)
 
 	-- For several seconds after a loading screen the client hands back nil
 	-- completion flags and zero objective counts for quests that are perfectly
@@ -2075,7 +2091,7 @@ function QL:OnSkinChanged()
 	W.RepaintClose(win.head.close)
 	W.Color(win.head.search.placeholder, c.textFaint)
 	for _, b in pairs({ win.detail.foot.track, win.detail.foot.share,
-		win.detail.foot.abandon }) do b:Restyle() end
+		win.detail.foot.focus, win.detail.foot.abandon }) do b:Restyle() end
 	win.head.mark:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 	ColorHairline(win.head.rule)
 	ColorHairline(win.list.rule)

@@ -423,22 +423,23 @@ local function OpenLog(index, questID)
 end
 
 local function ShareQuest(index)
-	A.Quest.Select(index)
-	if QuestLogPushQuest then pcall(QuestLogPushQuest) end
+	A.Quest.Push(index)
 end
 
 --- Abandon goes through Blizzard's own confirmation, never straight to
 --  AbandonQuest. Losing a quest chain to a stray click in a tracker is not a
 --  thing this addon is going to be responsible for.
 local function AbandonQuestAt(index, title)
-	-- The SELECTION is what has to work here, not one named global: WoW Forever
-	-- takes a questID through C_QuestLog.SetSelectedQuest where the old client
-	-- took the index. A.Quest.Select answers whether it landed.
-	if not StaticPopup_Show or not A.Quest.Select(index) then
+	-- THE LATCH is what has to work here: Blizzard's popup abandons whatever is
+	-- latched, so showing it without one asks "abandon?" and then does nothing,
+	-- or abandons a quest latched earlier. That is exactly what happened on WoW
+	-- Forever, where the latch is C_QuestLog.SetAbandonQuest and the global this
+	-- checked for does not exist. A.Quest.SetAbandon selects and latches on
+	-- either client, and refuses rather than guessing.
+	if not StaticPopup_Show or not A.Quest.SetAbandon(index) then
 		A:Print(L.common.can_t_abandon_here)
 		return
 	end
-	if SetAbandonQuest then pcall(SetAbandonQuest) end
 	if not pcall(StaticPopup_Show, "ABANDON_QUEST", title) then
 		A:Print(L.common.can_t_abandon_here)
 	end
@@ -465,9 +466,23 @@ local function RowClicked(row, button)
 	if button == "RightButton" then
 		local entries = {
 			{ text = "Open quest log", action = function() OpenLog(row.index, row.questID) end },
-			{ text = "Stop tracking",  action = function() Untrack(row.questID) end },
-			{ text = "Share quest",    action = function() ShareQuest(row.index) end },
 		}
+
+		-- FOCUS, where the client has it (WoW Forever), worded and placed the
+		-- way Blizzard's own tracker menu has it. Absent on Classic Era rather
+		-- than greyed: there is nothing there it could ever do.
+		if A.Quest.CanFocus() then
+			local questID = row.questID
+			local focused = A.Quest.FocusedID() == questID
+			entries[#entries + 1] = {
+				text = focused and L.questtracker.menu.stop_focus
+					or L.questtracker.menu.focus,
+				action = function() A.Quest.Focus(focused and 0 or questID) end,
+			}
+		end
+
+		entries[#entries + 1] = { text = "Stop tracking", action = function() Untrack(row.questID) end }
+		entries[#entries + 1] = { text = "Share quest",   action = function() ShareQuest(row.index) end }
 
 		-- Only when BOTH addons are actually there. A menu item that exists to
 		-- tell you an addon is missing is an advert, not a feature - and this
@@ -494,6 +509,19 @@ local function RowClicked(row, button)
 		return
 	end
 
+	-- AN OBJECTIVE LINE FOCUSES THE QUEST; the title still opens the log. The
+	-- line is text on the row rather than a button of its own, so the row asks
+	-- which of its lines is under the cursor. Focus only - a second click on a
+	-- focused quest leaves it focused; stopping is the menu's job.
+	if A.Quest.CanFocus() then
+		for _, fs in ipairs(row.lines) do
+			if fs:IsShown() and fs.IsMouseOver and fs:IsMouseOver() then
+				A.Quest.Focus(row.questID)
+				return
+			end
+		end
+	end
+
 	OpenLog(row.index, row.questID)
 end
 
@@ -517,6 +545,16 @@ local function BuildRow(parent)
 
 	row:SetScript("OnEnter", function(self) self.hl:Show() end)
 	row:SetScript("OnLeave", function(self) self.hl:Hide() end)
+
+	-- THE FOCUSED QUEST: a strip of accent down the left edge. The quiet mark
+	-- for now; the Lattice right trunk draws this as the "active" node.
+	local focus = row:CreateTexture(nil, "ARTWORK")
+	focus:SetTexture(Media.texture.flat)
+	focus:SetPoint("TOPLEFT", row, "TOPLEFT", -6, 2)
+	focus:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", -6, -2)
+	focus:SetWidth(2)
+	focus:Hide()
+	row.focus = focus
 
 	-- The level chip. Fixed width, so a column of them lines up and the titles
 	-- start on one edge rather than stepping in and out with the digit count -
@@ -684,6 +722,7 @@ function QT:Refresh()
 		shown, bodyH = i, bodyH + h
 	end
 	local hidden = #quests - shown
+	local focusedID = A.Quest.FocusedID()
 
 	for i = 1, shown do
 		local q = quests[i]
@@ -720,6 +759,12 @@ function QT:Refresh()
 		row.title:SetText(q.title)
 		W.Color(row.title, c.text)
 		row.hl:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 0.10)
+		if focusedID and q.questID == focusedID then
+			row.focus:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
+			row.focus:Show()
+		else
+			row.focus:Hide()
+		end
 
 		local y = TITLE_H
 		for j = 1, #q.lines do
@@ -851,6 +896,10 @@ function QT:OnEnable()
 	A:RegisterEvent(self, "QUEST_LOG_UPDATE", refresh)
 	A:RegisterEvent(self, "QUEST_WATCH_UPDATE", refresh)
 	A:RegisterEvent(self, "UNIT_QUEST_LOG_CHANGED", refresh)
+	-- Focus changes from anywhere - our menu, an objective click, Blizzard's own
+	-- map - and the strip has to follow. An unknown event on Classic Era is
+	-- refused quietly by A:RegisterEvent.
+	A:RegisterEvent(self, "SUPER_TRACKING_CHANGED", refresh)
 	A:RegisterEvent(self, "QUEST_ACCEPTED", refresh)
 	A:RegisterEvent(self, "ZONE_CHANGED_NEW_AREA", refresh)
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
