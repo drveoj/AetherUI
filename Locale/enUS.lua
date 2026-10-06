@@ -1117,6 +1117,8 @@ L["options.tooltips.unit_anchor.desc"] =
 		.. "default anchor."
 L["options.tooltips.unit_anchor.name"] = "Anchor unit tooltips"
 
+L["options.unit_frames.absorb_color.name"] = "Shield colour"
+L["options.unit_frames.absorb_header"] = "Shields"
 L["options.unit_frames.capsule_pet_own_place"] =
 	"A capsule for your pet, with its own place on screen. A hunter's "
 		.. "pet also wears its mood on the orb's rim."
@@ -1136,6 +1138,11 @@ L["options.unit_frames.pet_scale.desc"] =
 		.. "nameplates have their own."
 L["options.unit_frames.pet_scale.name"] = "Pet frame size"
 L["options.unit_frames.reaction_tint.name"] = "Colour the target by reaction"
+L["options.unit_frames.show_absorb.desc"] =
+	"Absorbs such as Power Word: Shield, drawn on the unit and party "
+		.. "health bars. A shield bigger than the health you are missing runs "
+		.. "back over the bar from the far end."
+L["options.unit_frames.show_absorb.name"] = "Show shields"
 L["options.unit_frames.show_cast_bar.name"] = "Player cast bar"
 L["options.unit_frames.show_pet.name"] = "Pet frame"
 L["options.unit_frames.show_portrait.name"] = "Portrait in the orb"

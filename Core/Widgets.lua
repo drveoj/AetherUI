@@ -508,6 +508,111 @@ function Bar:_Step(dt)
 	self:SetValue(cur + diff * math.min(1, dt * 9))
 end
 
+-- The client's own shield stripes, laid over the fill so a shield reads as a
+-- shield whatever colour it is.
+local SHIELD_STRIPES = [[Interface\RaidFrame\Shield-Overlay]]
+
+--- One half of a shield: a StatusBar the bar's full width, cut down by `clip`.
+local function AbsorbHalf(bar, clip, reverse)
+	local half = CreateFrame("StatusBar", nil, clip)
+	half:SetStatusBarTexture(Media.texture.bar)
+	half:SetReverseFill(reverse)
+	half:SetMinMaxValues(0, 1)
+	half:SetValue(0)
+
+	local fill = half:GetStatusBarTexture()
+	local stripes = half:CreateTexture(nil, "OVERLAY")
+	stripes:SetTexture(SHIELD_STRIPES, "REPEAT", "REPEAT")
+	stripes:SetHorizTile(true)
+	stripes:SetVertTile(true)
+	stripes:SetAllPoints(fill)
+	stripes:SetVertexColor(1, 1, 1, 0.5)
+	half.stripes = stripes
+
+	-- The health bar's rounded ends, so a shield stops where the track does.
+	if bar._mask then
+		AddMask(fill, half, Media.texture.barMask, bar)
+		AddMask(stripes, half, Media.texture.barMask, bar)
+	end
+	return half
+end
+
+--- Give the bar a shield, drawn in two halves so the client does every sum.
+--
+--  On WoW Forever the absorb is secret: it can go to SetValue and nowhere else.
+--  So nothing here measures it. One half starts at the health fill's edge and
+--  is clipped to the missing health; the other fills back from the bar's far
+--  end and is clipped to the health itself, which is where a shield bigger
+--  than the gap shows. Method from EllesmereUIUnitFrames.lua:5810-5826.
+--
+--  `reverse` is the bar's own fill direction.
+function Bar:AddAbsorb(reverse)
+	if self.absorb then return self.absorb end
+	local fill = self:GetStatusBarTexture()
+	local lead = reverse and "LEFT" or "RIGHT"     -- where the health ends
+	local start = reverse and "RIGHT" or "LEFT"    -- where the health starts
+
+	local a = CreateFrame("Frame", nil, self)
+	a:SetAllPoints(self)
+
+	local gap = CreateFrame("Frame", nil, a)
+	gap:SetPoint("TOP" .. start, fill, "TOP" .. lead)
+	gap:SetPoint("BOTTOM" .. lead, self, "BOTTOM" .. lead)
+	gap:SetClipsChildren(true)
+	local past = AbsorbHalf(self, gap, reverse)
+	past:SetPoint("TOP" .. start, fill, "TOP" .. lead)
+	past:SetPoint("BOTTOM" .. start, fill, "BOTTOM" .. lead)
+
+	local over = CreateFrame("Frame", nil, a)
+	over:SetPoint("TOP" .. start, self, "TOP" .. start)
+	over:SetPoint("BOTTOM" .. lead, fill, "BOTTOM" .. lead)
+	over:SetClipsChildren(true)
+	local back = AbsorbHalf(self, over, not reverse)
+	back:SetPoint("TOP" .. lead, self, "TOP" .. lead)
+	back:SetPoint("BOTTOM" .. lead, self, "BOTTOM" .. lead)
+
+	a.past, a.back, a.halves = past, back, { past, back }
+	a:Hide()
+	self.absorb = a
+	return a
+end
+
+--- `value` may be secret, and nothing here reads it. nil hides the shield.
+function Bar:SetAbsorb(value, max)
+	local a = self.absorb
+	if not a then return end
+	if type(value) == "nil" then
+		a:Hide()
+		return
+	end
+	local width = self:GetWidth()
+	for _, half in ipairs(a.halves) do
+		half:SetWidth(width)
+		half:SetMinMaxValues(0, max)
+		half:SetValue(value)
+	end
+	a:Show()
+end
+
+function Bar:SetAbsorbColor(c)
+	if not self.absorb then return end
+	for _, half in ipairs(self.absorb.halves) do
+		half:GetStatusBarTexture():SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+	end
+end
+
+--- The unit's shield, in the player's colour. Hidden when switched off, and on
+--  a client without the API.
+function Bar:UpdateAbsorb(unit)
+	if not self.absorb then return end
+	if not A.db.profile.showAbsorb or not UnitGetTotalAbsorbs or not UnitExists(unit) then
+		self:SetAbsorb(nil)
+		return
+	end
+	self:SetAbsorbColor(A.Palette:AbsorbColor())
+	self:SetAbsorb(UnitGetTotalAbsorbs(unit), UnitHealthMax(unit))
+end
+
 --- opts: { height, rounded = true, smooth = true, bgAlpha = 0.14 }
 function W.CreateBar(parent, opts)
 	opts = opts or {}

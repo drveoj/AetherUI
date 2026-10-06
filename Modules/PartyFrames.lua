@@ -212,6 +212,7 @@ local function BuildCapsule(unit)
 	local health = W.CreateBar(block, { height = 6 })
 	health:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
 	health:SetWidth(c.barWidth)
+	health:AddAbsorb(false)
 	f.health = health
 
 	local power = W.CreateBar(block, { height = 4 })
@@ -416,6 +417,7 @@ local function UpdateAll(f)
 	f.glass:Show()
 	UpdateName(f)
 	UpdateHealth(f)
+	f.health:UpdateAbsorb(f.unit)
 	UpdatePower(f)
 	UpdateStatus(f)
 end

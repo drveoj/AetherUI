@@ -458,6 +458,24 @@ local function DressHeading(widget)
 	end
 end
 
+--- A colour swatch. Blizzard's is a bordered square on a checkerboard; ours is
+--  the check box's disc, in the colour it holds. SetColor only tints the
+--  swatch, so the colour survives the new texture.
+local function DressColorPicker(widget)
+	local swatch = widget.colorSwatch
+	if swatch and not swatch.__aetherOrig then
+		swatch.__aetherOrig = swatch:GetTexture()
+		swatch:SetTexture(A.Media.texture.chipDisc)
+		swatch:SetSize(14, 14)
+		if swatch.background then swatch.background:Hide() end
+		if swatch.checkers then swatch.checkers:Hide() end
+	end
+	if widget.text then
+		Reskin.Font(widget.text, "qlRow")
+		W.Color(widget.text, Palette.c.text)
+	end
+end
+
 local function DressLabel(widget)
 	if widget.label then W.Color(widget.label, Palette.c.textDim) end
 end
@@ -493,6 +511,7 @@ local BY_TYPE = {
 	InteractiveLabel = DressLabel,
 	Dropdown       = DressDropdown,
 	LSM30_Font     = DressDropdown,
+	ColorPicker    = DressColorPicker,
 }
 
 local function Dress(widget)
@@ -560,6 +579,14 @@ function OS:OnDisable()
 			if part and part.__aetherPill then part.__aetherPill:Hide() end
 		end
 		if widget.frame then Reskin.ReleaseButton(widget.frame) end
+		local swatch = widget.colorSwatch
+		if swatch and swatch.__aetherOrig then
+			swatch:SetTexture(swatch.__aetherOrig)
+			swatch:SetSize(19, 19)
+			if swatch.background then swatch.background:Show() end
+			if swatch.checkers then swatch.checkers:Show() end
+			swatch.__aetherOrig = nil
+		end
 	end
 	dressed = {}
 end

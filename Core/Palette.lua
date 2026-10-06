@@ -160,6 +160,9 @@ local SEMANTIC = {
 	hostileBar = { C(255, 154, 118), C(240, 110,  90) },
 	cast   = { C(142, 200, 255), C(212, 236, 255) },
 	xp     = { C(138, 106, 224), C(185, 154, 245) },
+	-- A shield on a health bar. Gold, because the bar under it can be any class
+	-- colour - a priest's is white - and the power bar beside it is blue.
+	absorb = C(255, 210, 110),
 
 	-- reactions
 	hostile  = C(255, 138, 138),
@@ -723,6 +726,13 @@ function Palette:HealthColor(unit)
 		if reaction == 4 then return c.neutral end
 	end
 	return c.health[1]
+end
+
+--- The shield on a health bar: the player's own colour if they picked one.
+function Palette:AbsorbColor()
+	local own = A.db and A.db.profile.absorbColor
+	if type(own) == "table" then return own end
+	return Palette.c.absorb
 end
 
 --- Which of the five difficulty bands a level falls in.

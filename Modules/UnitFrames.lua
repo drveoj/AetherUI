@@ -197,6 +197,7 @@ local function BuildCapsule(unit, mirror)
 	health:SetPoint(mirror and "TOPRIGHT" or "TOPLEFT", name, mirror and "BOTTOMRIGHT" or "BOTTOMLEFT", 0, -4)
 	health:SetWidth(cfg.barWidth)
 	health:SetReverseFill(mirror and true or false)
+	health:AddAbsorb(mirror and true or false)
 	f.health = health
 
 	local power = W.CreateBar(block, { height = 5 })
@@ -687,6 +688,7 @@ local function UpdateAll(f)
 	SetVisible(f, true)
 	UpdateName(f)
 	UpdateHealth(f)
+	f.health:UpdateAbsorb(f.unit)
 	UpdatePower(f)
 	UpdateOrb(f)
 	UpdateSkin(f)
@@ -718,6 +720,10 @@ local function Reconcile()
 			elseif f._lastHealth ~= want then
 				UpdateHealth(f)
 			end
+
+			-- A shield can run out on its timer with no event to say so, and
+			-- on Forever there is nothing to compare, so it is simply redrawn.
+			f.health:UpdateAbsorb(unit)
 
 			if f.power:IsShown() then
 				local wantPower = IsDead(unit) and 0 or (UnitPower(unit) or 0)
@@ -967,7 +973,13 @@ function UF:RegisterEvents()
 	end
 
 	A:RegisterEvent(self, "UNIT_HEALTH",       unitEvent(UpdateHealth))
-	A:RegisterEvent(self, "UNIT_MAXHEALTH",    unitEvent(UpdateHealth))
+	A:RegisterEvent(self, "UNIT_MAXHEALTH",    unitEvent(function(f)
+		UpdateHealth(f)
+		f.health:UpdateAbsorb(f.unit)
+	end))
+	A:RegisterEvent(self, "UNIT_ABSORB_AMOUNT_CHANGED", unitEvent(function(f)
+		f.health:UpdateAbsorb(f.unit)
+	end))
 	A:RegisterEvent(self, "UNIT_POWER_UPDATE", unitEvent(UpdatePower))
 	A:RegisterEvent(self, "UNIT_MAXPOWER",     unitEvent(UpdatePower))
 	A:RegisterEvent(self, "UNIT_DISPLAYPOWER", unitEvent(UpdatePower))

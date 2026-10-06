@@ -99,6 +99,12 @@ Config.defaults = {
 		-- it lives at profile level because nameplates will want the same answer.
 		classColorHealth = true,
 
+		-- Shields drawn on the health bars, unit and party frames both.
+		-- absorbColor stays false until the player picks one, so the palette's
+		-- colour answers until then.
+		showAbsorb  = true,
+		absorbColor = false,
+
 		-- shared surface treatment
 		glass = {
 			-- Opacity 0..1, not a distance: the shadow's geometry is derived from

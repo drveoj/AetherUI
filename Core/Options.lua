@@ -68,6 +68,12 @@ local function Get(info)
 	local t, k = Resolve(info.arg and info.arg.path)
 	if not t then return nil end
 	local v = t[k]
+	-- A colour goes back as four numbers. Until the player picks one the stored
+	-- value is false and the fallback - the palette's own - answers.
+	if info.type == "color" then
+		local c = type(v) == "table" and v or info.arg.fallback()
+		return c[1], c[2], c[3], c[4] or 1
+	end
 	-- AceConfig wants a real boolean from a toggle, and a few of ours default to
 	-- nil-means-true.
 	if info.type == "toggle" and info.arg.defaultTrue then return v ~= false end
@@ -80,9 +86,11 @@ local function Get(info)
 	return v
 end
 
-local function Set(info, value)
+local function Set(info, value, ...)
 	local t, k = Resolve(info.arg and info.arg.path)
 	if not t then return end
+	-- A colour arrives as four numbers, not one.
+	if info.type == "color" then value = { value, ... } end
 	-- Back into the units the rest of the addon reads. See the note in Get.
 	local s = info.arg and info.arg.scale
 	if s and type(value) == "number" then value = value * s end
@@ -151,6 +159,17 @@ local function choice(name, desc, path, values, opts)
 		-- differently; everything else about the option stays put.
 		dialogControl = opts.control,
 		arg = { path = path, after = opts.after },
+	}
+end
+
+--- Stored as {r,g,b,a}. `fallback` returns the colour shown while nothing has
+--  been picked, so the default can be false and the palette keeps it.
+local function colour(name, desc, path, fallback, opts)
+	opts = opts or {}
+	return {
+		type = "color", name = name, desc = desc, order = next_(),
+		hasAlpha = opts.alpha, width = opts.width, get = Get, set = Set,
+		arg = { path = path, after = opts.after, fallback = fallback },
 	}
 end
 
@@ -504,6 +523,13 @@ local function UnitFramesGroup()
 		reactionTint = toggle(L.options.unit_frames.reaction_tint.name,
 			L.options.unit_frames.target_s_capsule_rim,
 			at("reactionTint"), { defaultTrue = true, after = "restyle" }),
+
+		-- Profile-level, because the party frames draw the same shield.
+		absorbHeader = header(L.options.unit_frames.absorb_header),
+		showAbsorb = toggle(L.options.unit_frames.show_absorb.name,
+			L.options.unit_frames.show_absorb.desc, { "showAbsorb" }),
+		absorbColor = colour(L.options.unit_frames.absorb_color.name, nil,
+			{ "absorbColor" }, function() return A.Palette.c.absorb end),
 	})
 end
 

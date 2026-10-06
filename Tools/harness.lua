@@ -651,6 +651,9 @@ local function newTexture(owner, layer, sub)
 	-- unaskable - the module can record its intent and never reach the texture.
 	function t:SetRotation(r) self.__rotation = r end
 	function t:GetRotation() return self.__rotation or 0 end
+	-- Tiling, recorded: the shield's stripes repeat rather than stretch.
+	function t:SetHorizTile(v) self.__htile = v and true or false end
+	function t:SetVertTile(v) self.__vtile = v and true or false end
 	function t:SetSnapToPixelGrid(v) self.__snap = v end
 	function t:SetTexelSnappingBias(v) self.__bias = v end
 	function t:SetVertexColor(r, g, b, a)
@@ -1485,14 +1488,18 @@ function CreateFrame(kind, name, parent, template)
 		--  tooltip health bar has: nothing in Lua shows or fills GameTooltipStatusBar
 		--  - the C tooltip code drives it when SetUnit runs - so a readout that
 		--  updates from anywhere else is updating from nowhere.
+		--  A secret is accepted, as the client accepts one (SetValue is
+		--  AllowedWhenTainted); anything else that is not a number is refused.
 		function f:SetValue(v)
-			if type(v) ~= "number" then fail("StatusBar:SetValue got " .. tostring(v)) return end
+			local secret = issecretvalue and issecretvalue(v)
+			if type(v) ~= "number" and not secret then fail("StatusBar:SetValue got " .. tostring(v)) return end
 			self.__value = v
 			local fn = self.__scripts and self.__scripts.OnValueChanged
 			if fn then fn(self, v) end
 		end
 		function f:GetValue() return self.__value end
-		function f:SetReverseFill() end
+		function f:SetReverseFill(v) self.__reverse = v and true or false end
+		function f:GetReverseFill() return self.__reverse or false end
 		function f:SetOrientation() end
 		--- The client animates the bar from a duration object, so the addon
 		--  never holds the times. Only an object is accepted, as with the
@@ -4885,6 +4892,17 @@ function UnitClass(u) local d = units[u]; return d and d.class, d and d.classTok
 function UnitCreatureType(u) return units[u] and units[u].creature end
 function UnitHealth(u) return units[u] and units[u].hp or 0 end
 function UnitHealthMax(u) return units[u] and units[u].hpMax or 0 end
+-- SecretReturns on camelot, always, so there the mock never hands back anything
+-- that can be read: a fresh stand-in per call, kept so a test can see it reached
+-- the bar untouched. Era answers a plain number.
+if _G.__flavour == "camelot" then
+	function UnitGetTotalAbsorbs(u)
+		_G.__lastAbsorb = _G.__SecretStandIn()
+		return _G.__lastAbsorb
+	end
+else
+	function UnitGetTotalAbsorbs(u) return units[u] and units[u].absorb or 0 end
+end
 function UnitPower(u) return units[u] and units[u].power or 0 end
 function UnitPowerMax(u) return units[u] and units[u].powerMax or 0 end
 function UnitPowerType(u) local d = units[u]; return d and d.powerType or 0, d and d.powerToken or "MANA" end
@@ -5165,7 +5183,7 @@ load("Libs/AceGUI-3.0/AceGUI-3.0.lua")
 for _, w in ipairs({
 	"Widget-Button", "Widget-CheckBox", "Widget-Slider", "Widget-EditBox",
 	"Widget-Heading", "Widget-Label", "Widget-DropDown-Items", "Widget-DropDown",
-	"Container-SimpleGroup", "Container-InlineGroup", "Container-TreeGroup",
+	"Widget-ColorPicker", "Container-SimpleGroup", "Container-InlineGroup", "Container-TreeGroup",
 	"Container-Frame", "Container-ScrollFrame",
 }) do
 	load("Libs/AceGUI-3.0/widgets/AceGUI" .. w .. ".lua")
@@ -7343,6 +7361,100 @@ do
 	check(UF.target.hpText:GetText():find("%%") ~= nil,
 		"and it comes back when the next thing is targeted")
 end
+
+section("shields on the health bars", function()
+	-- A Priest on CurseForge could not see Power Word: Shield at all - we drew
+	-- no absorb. Two clipped halves, so the client does every sum.
+	local hp, a = UF.player.health, UF.player.health.absorb
+	check(a and #a.halves == 2, "the player's health bar has a shield, in two halves")
+	check(a:GetParent() == hp,
+		"a child of the health bar, so it takes the capsule's scale with it")
+	check(a.past:GetParent():DoesClipChildren() and a.back:GetParent():DoesClipChildren(),
+		"and each half is cut down by a clip frame, never by a measurement")
+
+	local fill = hp:GetStatusBarTexture()
+	local p, rel, relP = a.past:GetPoint(1)
+	check(rel == fill and p == "TOPLEFT" and relP == "TOPRIGHT",
+		"the player's shield starts where the health fill ends (" .. tostring(p)
+		.. " to " .. tostring(relP) .. ")")
+	check(not a.past:GetReverseFill() and a.back:GetReverseFill(),
+		"and runs on to the right, while the overflow fills back from the far end")
+
+	local t = UF.target.health.absorb
+	p, rel, relP = t.past:GetPoint(1)
+	check(rel == UF.target.health:GetStatusBarTexture() and p == "TOPRIGHT" and relP == "TOPLEFT",
+		"the target's runs the other way, because its bar fills right to left")
+	check(t.past:GetReverseFill() and not t.back:GetReverseFill(),
+		"and its overflow fills back from the left")
+
+	local PF = A:GetModule("partyframes")
+	check(PF.frames and PF.frames[1] and PF.frames[1].health.absorb ~= nil,
+		"the party frames draw the same shield, from the same widget")
+
+	if _G.__flavour == "camelot" then
+		-- On this client the amount is secret, and the mock never returns one
+		-- that can be read: a compare, a sum or a `> 0` anywhere throws.
+		local ok = pcall(UF.UpdateAll, UF.player)
+		check(ok, "a secret shield draws without being read")
+		check(rawequal(a.past:GetValue(), _G.__lastAbsorb)
+			and rawequal(a.back:GetValue(), _G.__lastAbsorb),
+			"and both halves get the client's value untouched")
+		check(pcall(UF.Reconcile), "the 10Hz pass redraws it without reading it either")
+		return
+	end
+
+	units.player.absorb = 150
+	fire("UNIT_ABSORB_AMOUNT_CHANGED", "player")
+	check(a:IsShown() and a.past:GetValue() == 150 and a.back:GetValue() == 150,
+		"a shield goes to both halves as it is")
+	local _, max = a.past:GetMinMaxValues()
+	check(max == units.player.hpMax, "against the unit's max health, the same scale as the bar")
+	check(a.past:GetWidth() == hp:GetWidth() and a.back:GetWidth() == hp:GetWidth(),
+		"each half is the bar's full width, so the client's fill matches the health's")
+
+	-- Shields run out on a timer and nothing says so.
+	units.player.absorb = 0
+	for i = 1, 2 do tick(0.1) end
+	check(a.past:GetValue() == 0, "one that expires with no event is gone by the next pass")
+	units.player.absorb = 150
+	fire("UNIT_ABSORB_AMOUNT_CHANGED", "player")
+
+	local c = A.Palette.c.absorb
+	local r, g, b = a.past:GetStatusBarTexture():GetVertexColor()
+	check(r == c[1] and g == c[2] and b == c[3], "drawn in the palette's shield colour")
+
+	local tree = A.Options:Build()
+	local opt = tree.args.unitframes.args.absorbColor
+	local info = { arg = opt.arg, type = "color" }
+	local gr, gg, gb = opt.get(info)
+	check(gr == c[1] and gg == c[2] and gb == c[3],
+		"the colour picker shows the palette's colour until one is picked")
+	opt.set(info, 0.1, 0.2, 0.3, 1)
+	r, g, b = a.past:GetStatusBarTexture():GetVertexColor()
+	check(r == 0.1 and g == 0.2 and b == 0.3,
+		"and a picked colour is saved and drawn straight away")
+	A.db.profile.absorbColor = false
+	A:Reconfigure()
+
+	local sopt = tree.args.unitframes.args.showAbsorb
+	sopt.set({ arg = sopt.arg, type = "toggle" }, false)
+	check(not a:IsShown(), "switched off, the shield goes")
+	sopt.set({ arg = sopt.arg, type = "toggle" }, true)
+	check(a:IsShown(), "and comes back when switched on")
+
+	-- Every frame honours the scale: the shield is drawn at the bar's.
+	local scale = A.db.profile.scale
+	A.db.profile.scale = 1.3
+	A:Reconfigure()
+	check(math.abs(a.past:GetEffectiveScale() - hp:GetEffectiveScale()) < 1e-6
+		and math.abs(hp:GetEffectiveScale() - UF.player:GetEffectiveScale()) < 1e-6,
+		"at another scale the shield is drawn at the bar's, which is the capsule's")
+	A.db.profile.scale = scale
+	A:Reconfigure()
+
+	units.player.absorb = nil
+	fire("UNIT_ABSORB_AMOUNT_CHANGED", "player")
+end)
 
 print("== target switching ==")
 check(UF.target.unitWatched and _G.__unitWatched[UF.target.click],
@@ -14081,6 +14193,16 @@ section("options: our own settings, in our own interface", function()
 	check(math.abs(r - A.Palette.c.accent[1]) < 0.001,
 		"a check box keeps its tick, in the accent (" ..
 		string.format("%.2f", r) .. ")")
+
+	-- The colour swatch becomes our disc and keeps the colour it holds.
+	A.lastFailure = nil
+	local cp = gui:Create("ColorPicker")
+	cp:SetColor(0.1, 0.2, 0.3, 1)
+	check(A.lastFailure == nil and cp.colorSwatch:GetTexture() == A.Media.texture.chipDisc,
+		"a colour picker's swatch is our disc (" .. tostring(A.lastFailure) .. ")")
+	local sr, sg, sb = cp.colorSwatch:GetVertexColor()
+	check(sr == 0.1 and sg == 0.2 and sb == 0.3, "and still shows the colour it holds")
+	check(not cp.colorSwatch.checkers:IsShown(), "with Blizzard's checkerboard gone from behind it")
 
 	-- THE STANDALONE WINDOW has three parts a plain container does not, and all
 	-- three are anchored to art we have just taken off.
