@@ -1,5 +1,15 @@
 # Lattice
 
+## 2.0.0 - 2026-10-06
+
+- AetherUI is now called Lattice. Same addon, new name. Your settings start fresh, and /lattice tour sets everything up again in about a minute.
+- Full support for WoW Forever as it launches on November 4th, alongside Classic Era.
+- Shields such as Power Word: Shield now show on your unit and party health bars, with a switch and a colour picker under Unit frames.
+- The settings window opens on a new Home page: the tour, what's new, unlock frames and keybind mode, all in one place.
+- /lattice is the command now. /aether still works for this version.
+- Fixed: with the game's chat timestamps on, "Keep Blizzard's [1. General]" switched off did nothing. The channel name now comes off as it should.
+- Fixed: several settings descriptions showed a stray "\n\n" instead of a paragraph break.
+
 ## 1.1.0 - 2026-10-05
 
 - AetherUI now runs on the WoW Forever beta as well as Classic Era, and will support the full release when it launches on November 4th.

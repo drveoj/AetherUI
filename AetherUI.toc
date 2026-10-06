@@ -2,7 +2,7 @@
 ## Title: Lattice
 ## Notes: A frosted-glass HUD for Classic Era and WoW Forever. Core skin engine + modules.
 ## Author: DrVeoj
-## Version: 1.1.0
+## Version: 2.0.0
 ## SavedVariables: AetherUIDB
 ## X-Category: Interface Enhancements
 # THE ICON IN THE ADDON LIST. Blizzard_AddOnList reads this and prepends it to
