@@ -400,6 +400,9 @@ Media.style = {
 	-- Aura timers sit under the icon on open background rather than on glass,
 	-- so this one is outlined where `tiny` is not.
 	auraTime     = { "medium",   10, "OUTLINE" },
+	-- The tags on a WoW Forever aura square, timer and stack alike: the
+	-- handoff's 9/700, on a chip of their own, so no outline.
+	auraTag      = { "bold",      9, "" },
 	-- The hairline's readout. Its own role rather than borrowing `tiny`: that one
 	-- is Light, which at this size on a bright background comes out wispy and
 	-- half-legible, and it was a couple of points larger than the line wants.

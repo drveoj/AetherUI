@@ -54,6 +54,13 @@
 	Right-click cancels a buff, in combat as well as out of it, and it cancels by
 	*name*. See AddCancel for why that is possible here and is not, generally,
 	elsewhere.
+
+	WoW Forever
+	-----------
+	Everything above is the Classic Era path. WoW Forever refuses the aura read
+	in combat, encounters and PvP, so these tiles would go blank in every fight.
+	There the trays are the client's own aura containers instead, drawn to the
+	Lattice handoff - see "WoW Forever: trays the client fills" below.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -852,7 +859,424 @@ function Aur:HideBlizzard()
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- WoW Forever: trays the client fills
+-- ---------------------------------------------------------------------------
+
+--[[
+	Blizzard_AuraContainer (12.1) is the client's answer to auras we may not
+	read: it picks the auras, makes the buttons and fills them, secret or not.
+	We say what a button looks like, once, when the client builds it.
+
+	Drawn to the Lattice handoff (Auras): 24px squares with a hairline edge,
+	buffs above the capsule and debuffs below, each row starting where the bars
+	start and growing toward the other capsule. Your debuffs on the target are
+	edged in the accent with a glow and come first, nearest the portrait;
+	everyone else's are dimmed. A debuff you can dispel off yourself is edged
+	red. A dark timer tag under thirty seconds, a gold stack tag. Three per row
+	at rest, up to eight in a fight, never a second row.
+
+	What the engine decides, not us:
+	  - Style is per GROUP. We never see an aura, so "mine" and "theirs" are two
+	    groups with two looks, not one group coloured per aura.
+	  - A button is ours inside initializeFrame and nowhere else. Afterwards a
+	    write to it is refused while auras are secret, so nothing here makes one.
+	  - Groups cannot be removed, only switched off, so all are declared once.
+	  - Nothing may be anchored TO a container. It sizes itself.
+	  - It never says how many auras did not fit, so the handoff's "+n" is not
+	    drawn.
+
+	Method learned from Blizzard's own source (Blizzard_CustomAuraContainer.lua,
+	Blizzard_CustomAuraButton.lua) and from how EllesmereUI_AuraKit.lua uses it.
+]]
+
+local SQ, SQ_GAP = 24, 4
+local SQ_STEP = SQ + SQ_GAP
+local REST, COMBAT = 3, 8
+-- Above this many seconds left, the timer says nothing.
+local TIMER_UNDER = 30
+-- The timer tag hangs this far below its square, so a row above the capsule
+-- stands that much further off it.
+local TAG_DROP = 6
+-- Room round a row for the glow (drawn at twice the square) and the tags. The
+-- host clips to it, and that is what makes a line size a cap: whatever does
+-- not fit wraps onto a second line outside the host and is not drawn.
+local CLIP_PAD = SQ / 2
+local WRAP_GAP = CLIP_PAD * 2
+
+local LOOKS = {
+	plain  = { edge = "auraEdge",      width = 1 },
+	faint  = { edge = "auraEdgeFaint", width = 1 },
+	theirs = { edge = "auraEdgeOther", width = 1, alpha = 0.5 },
+	mine   = { edge = "accent",        width = 1.5, glow = 0.6 },
+	dispel = { edge = "auraDispel",    width = 1.5 },
+}
+
+-- Groups in the order they lay out. RAID on a debuff means one YOU can
+-- dispel; PLAYER means you (or your pet) cast it.
+local FOREVER_TRAYS = {
+	{ key = "playerBuffs", unit = "player", above = true, cancel = true,
+	  groups = { { key = "buffs", filter = "HELPFUL", look = "plain" } } },
+	{ key = "playerDebuffs", unit = "player", debuff = true,
+	  groups = { { key = "dispel", filter = "HARMFUL|RAID", look = "dispel" },
+	             { key = "debuffs", filter = "HARMFUL|!RAID", look = "plain" } } },
+	{ key = "targetBuffs", unit = "target", above = true, alpha = 0.6,
+	  groups = { { key = "buffs", filter = "HELPFUL", look = "faint" } } },
+	{ key = "targetDebuffs", unit = "target", debuff = true,
+	  groups = { { key = "mine", filter = "HARMFUL|PLAYER", look = "mine" },
+	             { key = "theirs", filter = "HARMFUL|!PLAYER", look = "theirs",
+	               theirs = true } } },
+}
+Aur.FOREVER_TRAYS = FOREVER_TRAYS
+
+--- Does this client fill aura trays for us? Asked of the client, not the
+--  flavour: Classic Era ships no Blizzard_AuraContainer, so the load fails.
+function Aur.ContainersAvailable()
+	if Aur._containers == nil then
+		local AO, ok = C_AddOns, false
+		if AO and AO.LoadAddOn and AO.IsAddOnLoaded then
+			if not AO.IsAddOnLoaded("Blizzard_AuraContainer") then
+				pcall(AO.LoadAddOn, "Blizzard_AuraContainer")
+			end
+			ok = AO.IsAddOnLoaded("Blizzard_AuraContainer") and AuraContainerSortMethod ~= nil
+		end
+		Aur._containers = ok and true or false
+	end
+	return Aur._containers
+end
+
+--- A rule formatter the client runs on the remaining time or stack count,
+--  secret or not. Nil if this client will not take the rules.
+local function RuleFormatter(points)
+	if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then return nil end
+	local f = C_StringUtil.CreateNumericRuleFormatter()
+	if not pcall(f.SetBreakpoints, f, points) then return nil end
+	return f
+end
+
+local words
+--- The tags' words, built once. Padded a space each side so the chip behind
+--  has a margin, and empty where the tag should not show: a timer from
+--  TIMER_UNDER up, a stack of one. Seconds round up, so a timer never reads 0
+--  with time left.
+local function Words()
+	if words then return words end
+	local R = Enum and Enum.NumericRuleFormatRounding
+	words = {
+		timer = RuleFormatter({
+			{ threshold = 0, format = " %d ", step = 1, rounding = R and R.Up },
+			{ threshold = TIMER_UNDER, format = "" },
+		}),
+		stack = RuleFormatter({
+			{ threshold = 0, format = "" },
+			{ threshold = 2, format = " %d ", step = 1, rounding = R and R.Down },
+		}),
+	}
+	-- A permanent aura and one that has just run out say nothing either. The
+	-- client copies the binding into every button it is handed to.
+	if words.timer and C_DurationUtil and C_DurationUtil.CreateDurationTextBinding then
+		local b = C_DurationUtil.CreateDurationTextBinding()
+		b:SetFormatter(words.timer)
+		b:SetZeroDurationText("")
+		b:SetExpiredText("")
+		words.timerOpts = { binding = b }
+	elseif words.timer then
+		words.timerOpts = { textFormatter = words.timer }
+	end
+	return words
+end
+
+--- A tag: text on a chip exactly as wide as the text. The chip hangs off the
+--  string's own ends, so when the client writes "" there is nothing to draw -
+--  which is how a long timer and a single stack show no chip without us
+--  reading either number. On a frame of its own, above the square's art.
+local function Tag(button, ink, fill)
+	local carrier = CreateFrame("Frame", nil, button)
+	carrier:SetAllPoints(button)
+	carrier:SetFrameLevel(button:GetFrameLevel() + 3)
+	carrier:EnableMouse(false)
+
+	-- Lettered BEFORE the client is given it: registering writes to it at once,
+	-- and a string with no font is a hard error inside the engine.
+	local fs = carrier:CreateFontString(nil, "OVERLAY")
+	Media:SetFont(fs, "auraTag")
+	fs:SetTextColor(ink[1], ink[2], ink[3], ink[4] or 1)
+	fs:SetText("")
+
+	local chip = carrier:CreateTexture(nil, "ARTWORK")
+	chip:SetColorTexture(fill[1], fill[2], fill[3], fill[4] or 1)
+	-- Pulled in a pixel at each end. Hung flush on an empty string, the game
+	-- still rounded the chip up to a one-pixel tick beside every square (seen
+	-- 2026-10-06); inset, an empty string leaves it less than nothing wide and
+	-- it is not drawn. The spaces padding each number keep the margin.
+	chip:SetPoint("TOPLEFT", fs, "TOPLEFT", 1, 1)
+	chip:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", -1, -1)
+	W.AddMask(chip, carrier, Media.texture.slotMask, chip)
+
+	carrier.text, carrier.chip = fs, chip
+	return carrier
+end
+
+--- What the client calls on every button it builds for one group: our only
+--  chance to touch it.
+--
+--  An error in here kills the whole batch, so the body is caught and the
+--  error kept for /lattice auras.
+--- Tint a region by token and remember it, so a skin change can tint it again.
+local function Paint(F, tex, token, alpha)
+	local p = { tex = tex, token = token, alpha = alpha }
+	F.paint[#F.paint + 1] = p
+	local col = Palette.c[token]
+	tex:SetVertexColor(col[1], col[2], col[3], alpha or col[4] or 1)
+end
+
+local function Initializer(lookKey, tray, F)
+	local look = LOOKS[lookKey]
+	return function(button)
+		local ok, err = pcall(function()
+			local c = Palette.c
+			button:SetSize(SQ, SQ)
+			if look.alpha then button:SetAlpha(look.alpha) end
+
+			-- The edge is the square itself in the edge colour, with the icon on
+			-- it inset by the edge's width. A one-texel ring drawn at 24px loses
+			-- its hairline to resampling; a filled shape keeps it.
+			local plate = button:CreateTexture(nil, "BACKGROUND")
+			plate:SetTexture(Media.texture.slotMask)
+			plate:SetAllPoints(button)
+			Paint(F, plate, look.edge)
+
+			if look.glow then
+				local glow = button:CreateTexture(nil, "BACKGROUND", nil, -1)
+				glow:SetTexture(Media.texture.slotGlow)
+				glow:SetBlendMode("ADD")
+				glow:SetPoint("CENTER", button, "CENTER")
+				glow:SetSize(SQ * 2, SQ * 2)
+				Paint(F, glow, look.edge, look.glow)
+			end
+
+			local w = look.width
+			local icon = button:CreateTexture(nil, "ARTWORK")
+			icon:SetPoint("TOPLEFT", button, "TOPLEFT", w, -w)
+			icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -w, w)
+			icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+			W.AddMask(icon, button, Media.texture.slotMask, icon)
+
+			-- The handoff's corners: the timer chip out past the bottom right,
+			-- the stack chip out past the top right.
+			local timer = Tag(button, c.auraTimer, c.auraChip)
+			timer.text:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 3, 1 - TAG_DROP)
+			local stack = Tag(button, c.auraStackInk, c.auraStack)
+			stack.text:SetPoint("TOPRIGHT", button, "TOPRIGHT", 4, TAG_DROP - 1)
+			F.tags[#F.tags + 1] = { timer = timer, stack = stack }
+
+			local cfg = A.Config:Module("auras")
+			timer:SetShown(cfg.showTime ~= false)
+			stack:SetShown(cfg.showCount ~= false)
+
+			-- Handed over. From here on the client writes these, not us.
+			button:SetIcon(icon)
+			local say = Words()
+			if not (say.timerOpts
+				and pcall(button.SetDurationText, button, timer.text, say.timerOpts)) then
+				-- The client's own words, always on, if it would not take ours.
+				button:SetDurationText(timer.text, {})
+				F.timerRule = false
+			end
+			button:SetApplicationCount(stack.text, say.stack and { formatter = say.stack } or {})
+
+			if tray.cancel then
+				button:SetCancelAuraButtons("RightButtonUp")
+			else
+				-- Clicks off, motion kept for the tooltip: a click on a square
+				-- that cannot do anything should reach whatever is under it.
+				pcall(button.SetMouseClickEnabled, button, false)
+			end
+			-- Away from the capsule, so the tooltip never covers it.
+			pcall(button.SetTooltipAnchorPoint, button,
+				tray.above and "ANCHOR_TOP" or "ANCHOR_BOTTOM")
+		end)
+		if not ok then F.initError = tostring(err) end
+	end
+end
+
+--- One tray: a clipping host we own, and in it the client's container.
+local function BuildTray(def, F)
+	local t = { key = def.key, unit = def.unit, above = def.above,
+		debuff = def.debuff, cancel = def.cancel, groups = def.groups,
+		mirror = (def.unit == "target"), failed = {} }
+	t.corner = (t.above and "BOTTOM" or "TOP") .. (t.mirror and "RIGHT" or "LEFT")
+
+	local host = CreateFrame("Frame", nil, UIParent)
+	host:SetClipsChildren(true)
+	-- Sized for a fight and left there: a rest row is a shorter line in the
+	-- same host, so nothing here is resized in combat.
+	host:SetSize(CLIP_PAD * 2 + COMBAT * SQ_STEP - SQ_GAP, CLIP_PAD * 2 + SQ)
+	t.host = host
+
+	local ok, c = pcall(CreateFrame, "AuraContainer", nil, host, "CustomAuraContainerTemplate")
+	if not ok or not c then
+		t.failed[#t.failed + 1] = "container: " .. tostring(c)
+		return t
+	end
+	t.container = c
+
+	-- The tray's own strength goes here, not on the host: the host's alpha
+	-- belongs to the fader when the unit frames are off.
+	c:SetAlpha(def.alpha or 1)
+	c:SetSize(1, 1)
+	c:SetPoint(t.corner, host, t.corner,
+		t.mirror and -CLIP_PAD or CLIP_PAD, t.above and CLIP_PAD or -CLIP_PAD)
+	local FD = AnchorUtil.FlowDirection
+	c:SetFlowLayoutAnchorPoint(t.corner)
+	c:SetFlowLayoutGrowthDirection(t.mirror and FD.Left or FD.Right,
+		t.above and FD.Up or FD.Down)
+	c:SetFlowLayoutMaximumLineSize(REST * SQ_STEP - SQ_GAP)
+
+	for i, g in ipairs(def.groups) do
+		local okG, err = pcall(c.AddAuraGroup, c, g.key, g.filter, {
+			maxFrameCount = REST,
+			initializeFrame = Initializer(g.look, t, F),
+			layout = { elementSpacing = SQ_GAP, lineSpacing = WRAP_GAP,
+				groupLineSpacing = WRAP_GAP, layoutIndex = i },
+		})
+		if not okG then t.failed[#t.failed + 1] = g.key .. ": " .. tostring(err) end
+	end
+
+	-- The unit LAST: it is what registers UNIT_AURA, for the groups there are.
+	c:SetUnit(def.unit)
+	c:UpdateAllAuras()
+	return t
+end
+
+function Aur:BuildForever()
+	local F = { trays = {}, paint = {}, tags = {}, timerRule = true }
+	self.forever = F
+	for _, def in ipairs(FOREVER_TRAYS) do
+		local t = BuildTray(def, F)
+		F.trays[#F.trays + 1] = t
+		F[t.key] = t
+	end
+	if not Words().timerOpts then F.timerRule = false end
+end
+
+--- Hang each host off its capsule, and switch trays and groups on and off.
+function Aur:AnchorForever()
+	local cfg = A.Config:Module("auras")
+	local off = cfg.offset or 6
+	local UFm = A:GetModule("unitframes")
+	local inset = (UFm and UFm.BarsInset) and UFm:BarsInset() or 0
+
+	for _, t in ipairs(self.forever.trays) do
+		local host = t.host
+		t.enabled = TrayEnabled(cfg, t)
+
+		local capsule = CapsuleFor(t.unit)
+		host:ClearAllPoints()
+		if capsule then
+			if host:GetParent() ~= capsule then
+				host:SetParent(capsule)
+				host:SetFrameLevel(capsule:GetFrameLevel() + 6)
+			end
+			host:SetScale(1)
+			-- The row's first square sits at the bars' start; the host is
+			-- CLIP_PAD bigger all round.
+			local edge = t.mirror and "RIGHT" or "LEFT"
+			local x = (inset - CLIP_PAD) * (t.mirror and -1 or 1)
+			local y = t.above and (off + TAG_DROP - CLIP_PAD) or -(off - CLIP_PAD)
+			host:SetPoint(t.corner, capsule, (t.above and "TOP" or "BOTTOM") .. edge, x, y)
+			A.Fader:Unregister(host)
+		else
+			-- Unit frames off: a free-standing row, where the Era trays go.
+			if host:GetParent() ~= UIParent then host:SetParent(UIParent) end
+			host:SetScale(A.db.profile.scale)
+			host:SetPoint(t.above and "BOTTOM" or "TOP", UIParent, "BOTTOM",
+				t.unit == "target" and 200 or -200, t.above and 300 or 180)
+			A.Fader:Register(host, {})
+		end
+
+		-- A hidden container stops listening, which is what off should cost.
+		host:SetShown(t.enabled)
+		local c = t.container
+		if c then
+			for _, g in ipairs(t.groups) do
+				if g.theirs then
+					pcall(c.SetAuraGroupEnabled, c, g.key,
+						not (SideFor(cfg, t).onlyMine == true))
+				end
+			end
+		end
+	end
+end
+
+--- Rest or combat: three squares a row, or eight. Only the container's own
+--  numbers change - no frame of ours moves or resizes in a fight.
+function Aur:SetEnergy(combat)
+	local F = self.forever
+	if not F then return end
+	F.combat = combat and true or false
+	local n = combat and COMBAT or REST
+	for _, t in ipairs(F.trays) do
+		local c = t.container
+		if c then
+			pcall(c.SetFlowLayoutMaximumLineSize, c, n * SQ_STEP - SQ_GAP)
+			for _, g in ipairs(t.groups) do
+				pcall(c.SetAuraGroupMaxFrameCount, c, g.key, n)
+			end
+		end
+	end
+end
+
+--- Repaint the edges and show or hide the tags. These are our own regions on
+--  the client's buttons; while auras are secret that can be refused, so it
+--  waits for the fight to end rather than half happening.
+function Aur:RestyleForever()
+	local F = self.forever
+	if not F then return end
+	if Aur.AurasRestricted() then F.restylePending = true return end
+	F.restylePending = nil
+
+	local c = Palette.c
+	for _, p in ipairs(F.paint) do
+		local col = c[p.token]
+		if col then
+			pcall(p.tex.SetVertexColor, p.tex, col[1], col[2], col[3], p.alpha or col[4] or 1)
+		end
+	end
+	local cfg = A.Config:Module("auras")
+	for _, tag in ipairs(F.tags) do
+		pcall(tag.timer.SetShown, tag.timer, cfg.showTime ~= false)
+		pcall(tag.stack.SetShown, tag.stack, cfg.showCount ~= false)
+	end
+end
+
+function Aur:EnableForever()
+	if not self.forever then self:BuildForever() end
+
+	-- The containers follow UNIT_AURA themselves. A new target is not an aura
+	-- event, so that one is ours to pass on.
+	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
+		Aur:UpdateUnit("target")
+	end)
+	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
+		Aur:HideBlizzard()
+		Aur:UpdateAll()
+	end)
+	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function()
+		Aur:SetEnergy(true)
+	end)
+	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
+		Aur:SetEnergy(false)
+		if Aur.forever.restylePending then Aur:RestyleForever() end
+	end)
+
+	self:HideBlizzard()
+	self:OnConfigChanged()
+end
+
 function Aur:OnEnable()
+	if Aur.ContainersAvailable() then return self:EnableForever() end
+
 	local cfg = A.Config:Module("auras")
 
 	-- One spec table shared by all four displays, mutated in place on a config
@@ -973,6 +1397,21 @@ end
 --  a screenshot and reasoning about a plausible mechanism; every one that held
 --  came from printing the numbers. This prints the numbers.
 function Aur:Diagnose()
+	local F = self.forever
+	if F then
+		A:Print(A.F(L.auras.diagnose.forever, F.combat and "combat" or "rest"))
+		DEFAULT_CHAT_FRAME:AddMessage(string.format(
+			"   timer under %ds: %s   init error: %s", TIMER_UNDER,
+			F.timerRule and "yes" or "no, the client's own words", tostring(F.initError)))
+		for _, t in ipairs(F.trays) do
+			DEFAULT_CHAT_FRAME:AddMessage(string.format(
+				"   " .. A.Hi("%s") .. "  enabled=%s  container=%s  groups=%d  failed=%s",
+				t.key, tostring(t.enabled), tostring(t.container ~= nil), #t.groups,
+				#t.failed > 0 and table.concat(t.failed, "; ") or "none"))
+		end
+		return
+	end
+
 	local now = GetTime()
 	A:Print(A.F(L.auras.diagnose.aura_diagnostic_gettime_1f, now,
 		(C_UnitAuras and C_UnitAuras.GetAuraDataByIndex)
@@ -1005,12 +1444,24 @@ function Aur:Diagnose()
 end
 
 function Aur:UpdateUnit(unit)
+	if self.forever then
+		for _, t in ipairs(self.forever.trays) do
+			if t.unit == unit and t.container then pcall(t.container.UpdateAllAuras, t.container) end
+		end
+		return
+	end
 	for _, t in ipairs(self.trays or {}) do
 		if t.unit == unit and t.enabled then t.display:Update() end
 	end
 end
 
 function Aur:UpdateAll()
+	if self.forever then
+		for _, t in ipairs(self.forever.trays) do
+			if t.container then pcall(t.container.UpdateAllAuras, t.container) end
+		end
+		return
+	end
 	for _, t in ipairs(self.trays or {}) do
 		if t.enabled then t.display:Update() end
 	end
@@ -1107,6 +1558,13 @@ function Aur:AnchorTrays()
 end
 
 function Aur:OnDisable()
+	if self.forever then
+		for _, t in ipairs(self.forever.trays) do
+			t.host:Hide()
+			A.Fader:Unregister(t.host)
+		end
+		return
+	end
 	if self._settle then self._settle:Cancel(); self._settle = nil end
 	for _, t in ipairs(self.trays or {}) do
 		t.display:Clear()
@@ -1115,6 +1573,7 @@ function Aur:OnDisable()
 end
 
 function Aur:OnSkinChanged()
+	if self.forever then self:RestyleForever() return end
 	for _, t in ipairs(self.trays or {}) do t.display:ApplySkin() end
 	-- The tiles need nothing here. A buff tile is dressed by token and a debuff
 	-- tile by its school, which is semantic and the same in all four skins - so
@@ -1123,6 +1582,15 @@ function Aur:OnSkinChanged()
 end
 
 function Aur:OnConfigChanged()
+	if self.forever then
+		self:AnchorForever()
+		self:RestyleForever()
+		self:SetEnergy(InCombatLockdown and InCombatLockdown())
+		self:UpdateAll()
+		A.Fader:Refresh()
+		return
+	end
+
 	local cfg = A.Config:Module("auras")
 
 	self.spec.size      = cfg.size or 24

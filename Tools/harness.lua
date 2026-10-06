@@ -1049,6 +1049,12 @@ function CreateFrame(kind, name, parent, template)
 	function f:SetPoint(point, rel, ...)
 		local host = rel
 		if type(host) == "string" then host = _G[host] end
+		-- NOTHING ANCHORS TO AN AURA CONTAINER. It sizes itself from secret
+		-- layout, and the client forbids untrusted layout off it
+		-- (Blizzard_CustomAuraContainer.lua:317-324).
+		if type(host) == "table" and host.__noAnchorTo then
+			error("SetPoint: cannot anchor to an AuraContainer", 2)
+		end
 		-- SetPoint("CENTER") with no host anchors to the parent.
 		if host == nil and type(rel) ~= "string" then host = self.__parent end
 		if type(host) == "table" and host ~= self and host.__anchoredKids then
@@ -5251,8 +5257,285 @@ C_AddOns = {
 		if not a then return nil end
 		return a.name, a.title
 	end,
-	IsAddOnLoaded = function(i) return _G.__addons[i] ~= nil end,
+	IsAddOnLoaded = function(i)
+		return _G.__addons[i] ~= nil or (_G.__loadedAddOns or {})[i] == true
+	end,
 }
+
+-- ---------------------------------------------------------------------------
+-- aura containers (Blizzard_AuraContainer, 12.1), camelot only
+--
+-- Era ships no such addon: LoadAddOn fails and CreateFrame does not know the
+-- type, which is what keeps Era on the tile path. On camelot the stand-in is
+-- held to what the client's own source enforces, file and line cited, because
+-- every one of those rules is one our code could break and still look fine:
+--
+--   - filters are checked token by token (AuraUtil.lua:298-320)
+--   - a group key is new and non-empty; maxFrameCount a whole number
+--     (Blizzard_CustomAuraContainer.lua:34-36, 286-289)
+--   - every group builds a batch of TEN buttons up front through the
+--     initializer (Blizzard_AuraContainerShared.lua:105)
+--   - what is registered on a button must be of the right type and inside it
+--     (Blizzard_AuraContainerUtil.lua:318-341)
+--   - a font string is written the moment it is registered, so one with no
+--     font fails (EllesmereUI_AuraKit.lua:1211-1214 found that the hard way)
+--   - after the initializer, writes to the button and everything on it are
+--     refused while auras are secret (DenyTaintedAccessWhenAurasAreSecret,
+--     Blizzard_AuraContainerShared.lua:108)
+--   - nothing anchors to a container (in the frame mock's SetPoint)
+-- ---------------------------------------------------------------------------
+
+_G.__loadedAddOns = {}
+C_AddOns.LoadAddOn = function(name)
+	if _G.__flavour == "camelot" and name == "Blizzard_AuraContainer" then
+		_G.__loadedAddOns[name] = true
+		AuraContainerSortMethod = { Default = 0, BigDefensive = 1, UnitFrameDebuff = 2,
+			ImportantOnly = 3, Expiration = 4, ExpirationOnly = 5, Name = 6,
+			NameOnly = 7, AuraInstanceIDOnly = 8 }
+		AuraContainerSortDirection = { Normal = 0, Reverse = 1 }
+		return true
+	end
+	return false, "MISSING"
+end
+
+if _G.__flavour == "camelot" then
+	AnchorUtil = AnchorUtil or {}
+	AnchorUtil.FlowDirection = { Left = -1, Right = 1, Up = 1, Down = -1 }
+	Enum.NumericRuleFormatRounding = { Nearest = 0, Up = 1, Down = 2 }
+
+	-- A real enough rule formatter to ask what a tag will say: the highest
+	-- breakpoint at or under the value wins, step and rounding apply, and a
+	-- format may hold at most one specifier
+	-- (NumericRuleFormatterSharedDocumentation.lua:23-29).
+	C_StringUtil = C_StringUtil or {}
+	function C_StringUtil.CreateNumericRuleFormatter()
+		local f = { points = {} }
+		function f:SetBreakpoints(points)
+			for _, p in ipairs(points) do
+				if type(p.threshold) ~= "number" then error("threshold must be a number", 2) end
+				if type(p.format) ~= "string" then error("format must be a string", 2) end
+				local _, specs = p.format:gsub("%%[%d%.]*[dfs]", "")
+				if not p.components and specs > 1 then
+					error("at most one numeric format specifier", 2)
+				end
+			end
+			self.points = points
+		end
+		function f:FormatNumber(n)
+			local pick
+			for _, p in ipairs(self.points) do
+				if n >= p.threshold and (not pick or p.threshold >= pick.threshold) then pick = p end
+			end
+			if not pick then return "" end
+			local v = n
+			if pick.step then
+				local r, s = pick.rounding, pick.step
+				if r == 1 then v = math.ceil(v / s) * s
+				elseif r == 2 then v = math.floor(v / s) * s
+				else v = math.floor(v / s + 0.5) * s end
+			end
+			if pick.components and pick.components[1] and pick.components[1].div then
+				v = v / pick.components[1].div
+			end
+			if pick.format:find("%%") then return string.format(pick.format, v) end
+			return pick.format
+		end
+		return f
+	end
+
+	C_DurationUtil = C_DurationUtil or {}
+	function C_DurationUtil.CreateDurationTextBinding()
+		local b = {}
+		function b:SetFormatter(f) self.formatter = f end
+		function b:SetZeroDurationText(s) self.zeroText = s end
+		function b:SetExpiredText(s) self.expiredText = s end
+		function b:SetUpdateInterval(s) self.interval = s end
+		return b
+	end
+
+	local AURA_FILTERS = {}
+	for _, k in ipairs({ "HELPFUL", "HARMFUL", "PLAYER", "RAID", "CANCELABLE",
+		"INCLUDE_NAME_PLATE_ONLY", "MAW", "EXTERNAL_DEFENSIVE", "CROWD_CONTROL",
+		"RAID_IN_COMBAT", "RAID_PLAYER_DISPELLABLE", "BIG_DEFENSIVE", "IMPORTANT",
+		"DISPELLABLE" }) do AURA_FILTERS[k] = true end
+	local function ValidFilter(s)
+		if type(s) ~= "string" then return false end
+		for part in s:gmatch("[^| ]+") do
+			local bare = part:gsub("^!", "")
+			if bare == "" or not AURA_FILTERS[bare] then return false end
+		end
+		return true
+	end
+
+	local TIP_ANCHORS = {}
+	for _, k in ipairs({ "ANCHOR_LEFT", "ANCHOR_RIGHT", "ANCHOR_BOTTOMLEFT",
+		"ANCHOR_BOTTOM", "ANCHOR_BOTTOMRIGHT", "ANCHOR_TOPLEFT", "ANCHOR_TOP",
+		"ANCHOR_TOPRIGHT", "ANCHOR_CURSOR", "ANCHOR_NONE", "ANCHOR_PRESERVE",
+		"ANCHOR_CURSOR_LEFT", "ANCHOR_CURSOR_RIGHT" }) do TIP_ANCHORS[k] = true end
+
+	local function Inside(o, owner)
+		local p = o.GetParent and o:GetParent()
+		for _ = 1, 32 do
+			if not p then return false end
+			if p == owner then return true end
+			p = p.GetParent and p:GetParent()
+		end
+		return false
+	end
+
+	local function AuraButton(container, group)
+		local b = CreateFrame("Button", nil, container)
+		b.__auraGroup = group
+		local function inbound(o, kind)
+			if type(o) ~= "table" or o.__kind ~= kind then
+				error("bad object in function call (expected object type '" .. kind .. "')", 3)
+			end
+			if not Inside(o, b) then
+				error("bad object in function call (must be the owner or a"
+					.. " descendant of owner)", 3)
+			end
+		end
+		local function written(fs)
+			if not fs:GetFont() then error("FontString:SetText(): Font not set", 3) end
+			fs:SetText("")
+		end
+		function b:SetIcon(t) inbound(t, "Texture") self.__icon = t end
+		function b:SetDurationText(fs, opts)
+			inbound(fs, "FontString") written(fs)
+			self.__timer, self.__timerOpts = fs, opts
+		end
+		function b:SetApplicationCount(fs, opts)
+			inbound(fs, "FontString") written(fs)
+			self.__stack, self.__stackOpts = fs, opts
+		end
+		function b:SetDurationCooldown(cd) inbound(cd, "Cooldown") self.__cooldown = cd end
+		function b:AddDispelTypeTexture(t) inbound(t, "Texture") end
+		function b:SetCancelAuraButtons(s)
+			if s ~= nil and type(s) ~= "string" then
+				error("cancelAuraButtons must be a string or nil.", 2)
+			end
+			self.__cancel = s
+		end
+		function b:SetTooltipAnchorPoint(p)
+			if not TIP_ANCHORS[p] then error("point must be a valid tooltip anchor point name", 2) end
+			self.__tipAnchor = p
+		end
+		function b:SetMouseClickEnabled(v) self.__clicksOn = v and true or false end
+		function b:SetHideTooltipInCombat(v) self.__tipHiddenInCombat = v and true or false end
+		return b
+	end
+
+	-- After the initializer, the button and everything under it refuse writes
+	-- while auras are secret.
+	local DENIED = { "SetSize", "SetWidth", "SetHeight", "SetAlpha", "SetPoint",
+		"ClearAllPoints", "Show", "Hide", "SetShown", "SetVertexColor", "SetTextColor",
+		"SetTexture", "SetColorTexture", "SetIcon", "SetDurationText",
+		"SetApplicationCount", "SetCancelAuraButtons", "SetTooltipAnchorPoint",
+		"SetMouseClickEnabled", "CreateTexture", "CreateFontString" }
+	local function Restrict(o)
+		for _, m in ipairs(DENIED) do
+			local orig = rawget(o, m) or o[m]
+			if type(orig) == "function" then
+				o[m] = function(self, ...)
+					if _G.__aurasRestricted then
+						error(m .. "(): access denied while auras are secret", 2)
+					end
+					return orig(self, ...)
+				end
+			end
+		end
+		for _, r in ipairs(o.__regions or {}) do Restrict(r) end
+		for _, c in ipairs(o.__children or {}) do Restrict(c) end
+	end
+
+	_G.__auraContainers = {}
+	local plain = CreateFrame
+	function CreateFrame(kind, name, parent, template)
+		if kind ~= "AuraContainer" then return plain(kind, name, parent, template) end
+		if not _G.__loadedAddOns.Blizzard_AuraContainer then
+			error("CreateFrame: Unknown frame type 'AuraContainer'", 2)
+		end
+		if template ~= "CustomAuraContainerTemplate" then
+			error("CreateFrame: Couldn't find inherited node '" .. tostring(template) .. "'", 2)
+		end
+		local c = plain("Frame", name, parent, template)
+		c.__kind = "AuraContainer"
+		c.__noAnchorTo = true
+		c.__groups, c.__groupOrder = {}, {}
+		c.__refreshes = 0
+		c.__flow = { anchor = "TOPLEFT", h = 1, v = -1, lineSize = math.huge }
+
+		function c:SetFlowLayoutAnchorPoint(p)
+			if type(p) ~= "string" then error("anchorPoint must be a string.", 2) end
+			self.__flow.anchor = p
+		end
+		function c:SetFlowLayoutGrowthDirection(h, v)
+			if (h ~= 1 and h ~= -1) or (v ~= 1 and v ~= -1) then
+				error("direction must be valid.", 2)
+			end
+			self.__flow.h, self.__flow.v = h, v
+		end
+		function c:SetFlowLayoutMaximumLineSize(n)
+			if n ~= nil and type(n) ~= "number" then error("maximumLineSize must be a number or nil.", 2) end
+			self.__flow.lineSize = n or math.huge
+		end
+		function c:SetFlowLayoutPadding(l, r, t, b) self.__flow.pad = { l, r, t, b } end
+
+		local function count(n)
+			if not (n == math.huge or (type(n) == "number" and n >= 0 and n == math.floor(n))) then
+				error("maxFrameCount must be a non-negative integer or infinity.", 3)
+			end
+		end
+		local function group(self, key)
+			local g = self.__groups[key]
+			if not g then error("aura group '" .. tostring(key) .. "' was not found with this key.", 3) end
+			return g
+		end
+
+		function c:AddAuraGroup(key, filter, opts)
+			if type(key) ~= "string" or key == "" then error("groupKey must be a non-empty string.", 2) end
+			if not ValidFilter(filter) then error("Unknown aura filter component in '" .. tostring(filter) .. "'", 2) end
+			if self.__groups[key] then error("aura group '" .. key .. "' already exists with this key.", 2) end
+			opts = opts or {}
+			if opts.maxFrameCount ~= nil then count(opts.maxFrameCount) end
+			for k, v in pairs(opts.layout or {}) do
+				if k ~= "forceNewLine" and type(v) ~= "number" then error(k .. " must be a number.", 2) end
+			end
+			local g = { key = key, filter = filter, opts = opts,
+				max = opts.maxFrameCount or math.huge, enabled = true, buttons = {} }
+			self.__groups[key] = g
+			self.__groupOrder[#self.__groupOrder + 1] = g
+			if self.__unit then self.__unitBeforeGroups = true end
+			for i = 1, 10 do
+				local b = AuraButton(self, g)
+				if opts.initializeFrame then opts.initializeFrame(b) end
+				Restrict(b)
+				g.buttons[i] = b
+			end
+		end
+		function c:SetAuraGroupMaxFrameCount(key, n) count(n) group(self, key).max = n end
+		function c:SetAuraGroupEnabled(key, on)
+			if type(on) ~= "boolean" then error("enabled must be a boolean.", 2) end
+			group(self, key).enabled = on
+		end
+		function c:SetUnit(u)
+			if type(u) ~= "string" then error("bad unit", 2) end
+			self.__unit = u
+		end
+		function c:UpdateAllAuras() self.__refreshes = self.__refreshes + 1 end
+
+		_G.__auraContainers[#_G.__auraContainers + 1] = c
+		return c
+	end
+else
+	local plain = CreateFrame
+	function CreateFrame(kind, ...)
+		if kind == "AuraContainer" then
+			error("CreateFrame: Unknown frame type 'AuraContainer'", 2)
+		end
+		return plain(kind, ...)
+	end
+end
 
 -- ---------------------------------------------------------------------------
 -- loading
@@ -11799,18 +12082,28 @@ fire("PLAYER_TARGET_CHANGED")
 local AU = A:GetModule("auras")
 check(AU and AU.enabled, "auras module enabled"
 	.. (AU and AU.lastError and ("  -- " .. AU.lastError) or ""))
-check(#AU.trays == 4, "four trays: buffs and debuffs, player and target")
+
+-- THE TILES ARE CLASSIC ERA'S. WoW Forever's trays are the game's own aura
+-- containers, tested in their own section; the tile checks from here to the
+-- right-click block run only where tiles exist.
+local TILES = (_G.__flavour ~= "camelot")
+check(AU.ContainersAvailable() == not TILES and (AU.trays ~= nil) == TILES,
+	TILES and "Era has no aura containers, so it builds tiles"
+		or "Forever uses the game's aura containers and builds no tiles")
 
 local PB, PD = AU.playerBuffs, AU.playerDebuffs
 local TB, TD = AU.targetBuffs, AU.targetDebuffs
 
+if TILES then
+check(#AU.trays == 4, "four trays: buffs and debuffs, player and target")
 check(PB.active == 4, "four player buffs (got " .. PB.active .. ")")
 check(PD.active == 2, "two player debuffs (got " .. PD.active .. ")")
 check(TB.active == 2, "target buffs are shown at all now (got " .. TB.active .. ")")
 check(TD.active == 3,
 	"and only the player's own target debuffs (got " .. TD.active .. ")")
+end
 
-do  -- the ring says WHAT KIND of thing is on you
+if TILES then  -- the ring says WHAT KIND of thing is on you
 	-- The name is gone from a tile, so the school colour is the only thing
 	-- left carrying it - and it has to be the client's own, or a curse reads
 	-- as one thing here and another on Blizzard's own frames. Nothing checked
@@ -11852,7 +12145,7 @@ do  -- the ring says WHAT KIND of thing is on you
 		string.format("%.2f", pr) .. ")")
 end
 
-do  -- a tile is an icon and a timer, and nothing else
+if TILES then  -- a tile is an icon and a timer, and nothing else
 	local t = PB.tiles[1]
 	check(t.name == nil, "no name field on a tile - the name is on the tooltip")
 	check(t.art.icon:GetTexture() == 135843, "the icon is painted")
@@ -11897,7 +12190,7 @@ do  -- a tile is an icon and a timer, and nothing else
 end
 
 print("== no tray exceeds the frame it belongs to ==")
-do
+if TILES then
 	local cfg = A.db.profile.modules.auras
 	local ufcfg = A.db.profile.modules.unitframes
 
@@ -12035,28 +12328,190 @@ section("a restricted aura read is refused, not merely secret", function()
 	check(Aur.AurasRestricted() == false and Aur.GetAura("player", 1, "HELPFUL") ~= nil,
 		"lifting the restriction restores the scan - it must not latch, or a"
 		.. " zone edge would empty the tray for the rest of the session")
-
-	-- THE TOOLTIP, hovered on a tile still up as the restriction lands - the
-	-- race Joe hit on 2026-09-23. Blizzard_PTRFeedback hooks SetUnitAura and
-	-- reads the aura after us, which the client refuses from our call, so the
-	-- guard's job is not making the call at all.
-	Aur.playerBuffs:Update()
-	local tile = Aur.playerBuffs.tiles[1]
-	local enter = tile and tile:GetScript("OnEnter")
-	_G.__unitAuraTips = 0
-	if enter then enter(tile) end
-	check(_G.__unitAuraTips == 1 and GameTooltip.__shows and GameTooltip.__shows[1] == "aura",
-		"hovering a buff shows its tooltip (" .. tostring(_G.__unitAuraTips) .. " call)")
-	_G.__aurasRestricted = true
-	_G.__unitAuraTips = 0
-	if enter then enter(tile) end
-	check(_G.__unitAuraTips == 0,
-		"but not while auras are restricted - no SetUnitAura for the hook to"
-		.. " trip over (" .. tostring(_G.__unitAuraTips) .. ")")
-	_G.__aurasRestricted = false
-	GameTooltip:Hide()
+	-- The tile tooltip guard (the PTR feedback race, 2026-09-23) is gone from
+	-- here with the tiles: on Forever the game's own buttons show the tooltip.
 end)
 
+section("WoW Forever: aura trays the game fills", function()
+	-- THE BUG: target debuffs blank on Forever, reported 2026-10-06. The read
+	-- above is refused in every fight, so trays built on it show nothing when
+	-- it matters. The game's aura containers fill the trays instead.
+	local Aur = A:GetModule("auras")
+	local F = Aur.forever
+	check(F ~= nil and Aur.trays == nil,
+		"the trays are the game's containers, and no tiles are built")
+	if not F then return end
+	local cfg = A.db.profile.modules.auras
+	local P = A.Palette.c
+
+	check(#F.trays == 4 and F.initError == nil,
+		"four trays, and no square's setup failed (" .. tostring(F.initError) .. ")")
+	for _, t in ipairs(F.trays) do
+		check(t.container and #t.failed == 0,
+			t.key .. " has its container and every group (" .. table.concat(t.failed, "; ") .. ")")
+	end
+	local PBt, PDt, TBt, TDt = F.playerBuffs, F.playerDebuffs, F.targetBuffs, F.targetDebuffs
+
+	-- where they hang (the handoff: buffs above, debuffs below, rows from the
+	-- bars' outer end toward the other capsule)
+	local inset, pad = UF:BarsInset(), 12
+	local p, rel, relP, x = PBt.host:GetPoint(1)
+	check(p == "BOTTOMLEFT" and rel == UF.player and relP == "TOPLEFT" and x == inset - pad,
+		"player buffs sit above the player capsule, starting where the bars start (got "
+		.. tostring(p) .. " -> " .. tostring(relP) .. " at " .. tostring(x) .. ")")
+	p, rel, relP, x = TDt.host:GetPoint(1)
+	check(p == "TOPRIGHT" and rel == UF.target and relP == "BOTTOMRIGHT" and x == -(inset - pad),
+		"target debuffs sit below the target, measured back from its right end")
+	check(PBt.host:GetParent() == UF.player, "a tray is a child of its capsule, so it fades with it")
+
+	local c, tc = PBt.container, TDt.container
+	check(c:GetParent() == PBt.host and PBt.host:DoesClipChildren(),
+		"each container sits in a clipping host of ours")
+	check(c.__flow.anchor == "BOTTOMLEFT" and c.__flow.h == 1 and c.__flow.v == 1,
+		"player buffs grow right and up")
+	check(tc.__flow.anchor == "TOPRIGHT" and tc.__flow.h == -1 and tc.__flow.v == -1,
+		"target debuffs grow left, toward the player, and down")
+
+	-- groups: style is per group, so mine and theirs are two
+	local tg, pg = tc.__groupOrder, PDt.container.__groupOrder
+	check(tg[1].key == "mine" and tg[1].filter == "HARMFUL|PLAYER"
+		and tg[1].opts.layout.layoutIndex == 1,
+		"your debuffs on the target are their own group, laid out first - nearest the portrait")
+	check(tg[2].filter == "HARMFUL|!PLAYER", "everyone else's come after")
+	check(pg[1].filter == "HARMFUL|RAID" and pg[2].filter == "HARMFUL|!RAID",
+		"on you, debuffs you can dispel are their own group, first")
+	for _, t in ipairs(F.trays) do
+		check(t.container.__unit == t.unit and not t.container.__unitBeforeGroups,
+			t.key .. ": the unit is set after the groups, which is what registers UNIT_AURA for them")
+	end
+
+	-- the squares, built once each by the game through our initializer
+	local function plate(b)
+		for _, r in ipairs(b.__regions) do
+			if r.__layer == "BACKGROUND" and r.__tex == A.Media.texture.slotMask then return r end
+		end
+	end
+	local function near(tex, col, a)
+		local r, g, b, al = tex:GetVertexColor()
+		return math.abs(r - col[1]) < 0.001 and math.abs(g - col[2]) < 0.001
+			and math.abs(b - col[3]) < 0.001 and math.abs(al - (a or col[4] or 1)) < 0.001
+	end
+	local mine, theirs = tg[1].buttons[1], tg[2].buttons[1]
+	local dispel, buff = pg[1].buttons[1], PBt.container.__groupOrder[1].buttons[1]
+	check(#tg[1].buttons == 10, "the game builds ten squares a group, up front")
+	check(mine:GetWidth() == 24 and mine:GetHeight() == 24, "a square is 24 across")
+	check(mine.__icon and mine.__icon:GetNumMaskTextures() == 1,
+		"its icon is registered with the game and cut to the rounded square")
+	check(plate(mine) and near(plate(mine), P.accent),
+		"your debuffs are edged in the accent")
+	check(plate(theirs) and near(plate(theirs), P.auraEdgeOther) and theirs:GetAlpha() == 0.5,
+		"everyone else's are a faint edge at half strength")
+	check(plate(dispel) and near(plate(dispel), P.auraDispel),
+		"a debuff you can dispel off yourself is edged red")
+	check(plate(buff) and near(plate(buff), P.auraEdge), "a buff has the plain hairline")
+	check(TBt.container:GetAlpha() == 0.6, "the target's buffs are drawn at 60%")
+
+	-- the tags: the game writes them, our formatter decides what they say
+	local opts = mine.__timerOpts
+	local fmt = opts and ((opts.binding and opts.binding.formatter) or opts.textFormatter)
+	check(fmt and fmt:FormatNumber(12) == " 12 " and fmt:FormatNumber(45) == "",
+		"the timer shows under thirty seconds and says nothing above it")
+	check(fmt and fmt:FormatNumber(0.4) == " 1 ", "and rounds up, so it never reads 0 with time left")
+	check(opts and opts.binding and opts.binding.zeroText == "" and opts.binding.expiredText == "",
+		"a permanent aura says nothing either")
+	local sfmt = mine.__stackOpts and mine.__stackOpts.formatter
+	check(sfmt and sfmt:FormatNumber(1) == "" and sfmt:FormatNumber(3) == " 3 ",
+		"a stack of one says nothing, more shows the count")
+	local _, chipTo = (function()
+		for _, r in ipairs(mine.__timer:GetParent().__regions) do
+			if r.__tex == "SOLID" then return r, select(2, r:GetPoint(1)) end
+		end
+	end)()
+	check(chipTo == mine.__timer,
+		"the chip behind the timer hangs off the text itself, so no text means no chip")
+
+	check(buff.__cancel == "RightButtonUp", "right-click cancels your own buffs")
+	check(mine.__cancel == nil and mine.__clicksOn == false,
+		"other squares take no clicks, so they never swallow one meant for the world")
+	check(buff.__tipAnchor == "ANCHOR_TOP" and mine.__tipAnchor == "ANCHOR_BOTTOM",
+		"tooltips open away from the capsule")
+
+	-- rest and combat: a shorter line in the same host; nothing of ours moves
+	local function cap(t) return t.container.__flow.lineSize end
+	local hostW = PBt.host:GetWidth()
+	check(cap(PBt) == 3 * 28 - 4 and tg[1].max == 3, "three to a row at rest")
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	check(cap(PBt) == 8 * 28 - 4 and tg[1].max == 8, "up to eight in a fight")
+	check(PBt.host:GetWidth() == hostW, "and the host did not resize to do it")
+
+	-- the skin changes mid-fight while auras are secret: wait, do not fight it
+	_G.__aurasRestricted = true
+	A.db.profile.skin = OTHER A:Restyle()
+	check(F.restylePending == true, "a restyle while auras are secret waits")
+	_G.__aurasRestricted = false
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(not F.restylePending and near(plate(mine), A.Palette.c.accent),
+		"and lands when the fight ends, in the new skin's accent")
+	check(cap(PBt) == 3 * 28 - 4, "and the rows go back to three")
+	A.db.profile.skin = "midnight" A:Restyle()
+
+	-- a new target is not an aura event, so the trays are told
+	local before, mineBefore = tc.__refreshes, c.__refreshes
+	fire("PLAYER_TARGET_CHANGED")
+	check(tc.__refreshes > before and c.__refreshes == mineBefore,
+		"a new target refreshes the target's trays and only those")
+
+	-- the settings that still mean something here
+	cfg.debuffs.onlyMine = true
+	Aur:OnConfigChanged()
+	check(tg[2].enabled == false and tg[1].enabled == true,
+		"only mine switches everyone else's group off")
+	cfg.debuffs.onlyMine = false
+	Aur:OnConfigChanged()
+	check(tg[2].enabled == true, "and back on")
+	cfg.buffs.target = false
+	Aur:OnConfigChanged()
+	check(not TBt.host:IsShown() and TDt.host:IsShown(), "a tray turned off is hidden, alone")
+	cfg.buffs.target = true
+	Aur:OnConfigChanged()
+	cfg.showTime = false
+	Aur:OnConfigChanged()
+	check(not mine.__timer:GetParent():IsShown(), "timers off hides the timer tags")
+	cfg.showTime = true
+	Aur:OnConfigChanged()
+	check(mine.__timer:GetParent():IsShown(), "and back")
+
+	-- the diagnostic has something to say here too
+	local ok, err = pcall(function() SlashCmdList["AETHERUI"]("auras") end)
+	check(ok, "the aura diagnostic runs on Forever: " .. tostring(err))
+
+	-- THE STAND-IN HAS TEETH. Each of these is a rule our code could break and
+	-- still look fine in a kinder mock.
+	check(not pcall(c.AddAuraGroup, c, "bad", "HARMFUL|NOT_A_FILTER", {}),
+		"an unknown filter is refused")
+	check(not pcall(c.SetAuraGroupEnabled, c, "nope", true), "so is an unknown group")
+	_G.__aurasRestricted = true
+	check(not pcall(mine.SetAlpha, mine, 1), "a square refuses writes while auras are secret")
+	check(not pcall(plate(mine).SetVertexColor, plate(mine), 1, 1, 1, 1),
+		"and so does the art on it")
+	_G.__aurasRestricted = false
+	local probe = CreateFrame("Frame", nil, UIParent)
+	check(not pcall(probe.SetPoint, probe, "TOP", c, "BOTTOM"), "nothing may anchor to a container")
+	local bare = mine:CreateFontString(nil, "OVERLAY")
+	check(not pcall(mine.SetDurationText, mine, bare, {}),
+		"a string with no font cannot be handed over")
+end)
+
+end
+
+if _G.__flavour ~= "camelot" then
+section("Classic Era has no aura containers", function()
+	check(not pcall(CreateFrame, "AuraContainer", nil, UIParent, "CustomAuraContainerTemplate"),
+		"the frame type does not exist on Era, so the stand-in cannot hand Era a"
+		.. " container it would never get")
+end)
 end
 
 print("== Blizzard's own unit frames are taken off screen ==")
@@ -12122,19 +12577,21 @@ do
 
 	-- The complaint that started this: one unit with a debuff and one without
 	-- used to be two frames of different heights side by side.
-	local savedP = _G.__auras.player.HARMFUL
-	_G.__auras.player.HARMFUL = {}
-	fire("UNIT_AURA", "player")
-	check(PD.active == 0 and TD.active > 0, "player clean, target debuffed")
-	check(UF.player.glass:GetHeight() == UF.target.glass:GetHeight(),
-		"the two capsules are still exactly the same height - which is the whole"
-		.. " point of taking the auras out of them")
-	_G.__auras.player.HARMFUL = savedP
-	fire("UNIT_AURA", "player")
+	if TILES then
+		local savedP = _G.__auras.player.HARMFUL
+		_G.__auras.player.HARMFUL = {}
+		fire("UNIT_AURA", "player")
+		check(PD.active == 0 and TD.active > 0, "player clean, target debuffed")
+		check(UF.player.glass:GetHeight() == UF.target.glass:GetHeight(),
+			"the two capsules are still exactly the same height - which is the whole"
+			.. " point of taking the auras out of them")
+		_G.__auras.player.HARMFUL = savedP
+		fire("UNIT_AURA", "player")
+	end
 end
 
 print("== tray placement ==")
-do
+if TILES then
 	local cfg = A.db.profile.modules.auras
 
 	local bp, brel, brelP = PB.frame:GetPoint(1)
@@ -12201,7 +12658,7 @@ do
 end
 
 print("== timers ==")
-do
+if TILES then
 	local before = PB.tiles[1]:GetWidth()
 	time = time + 120
 	PB:Tick()
@@ -12229,7 +12686,7 @@ end
 
 
 print("== auras: a timer that has not arrived yet is never a blank field ==")
-do
+if TILES then
 	local saved = _G.__auras.player.HELPFUL
 
 	-- Case one, as the client actually reports it for the first few seconds
@@ -12340,7 +12797,7 @@ do
 end
 
 print("== an empty tray takes up no room ==")
-do
+if TILES then
 	local tall = PB.frame:GetHeight()
 	local saved = _G.__auras.player.HELPFUL
 	_G.__auras.player.HELPFUL = {}
@@ -12362,7 +12819,7 @@ do
 end
 
 print("== turning a tray off ==")
-do
+if TILES then
 	local cfg = A.db.profile.modules.auras
 	cfg.buffs.target = false
 	AU:OnConfigChanged()
@@ -12375,7 +12832,7 @@ do
 end
 
 print("== right-click to cancel ==")
-do
+if TILES then
 	local cfg = A.db.profile.modules.auras.buffs
 
 	check(AU.playerBuffs.tiles[PB.opts.max] ~= nil,
@@ -24901,9 +25358,10 @@ section("skins: what a live switch actually looks like on the HUD", function()
 	end
 
 	-- A buff tile, which is plain glass and had to say so BY TOKEN to be swept.
+	-- Era's tiles; Forever's squares are repainted in their own section.
 	local AU2 = A:GetModule("auras")
 	local tile = AU2.playerBuffs and AU2.playerBuffs.tiles[1]
-	check(tile ~= nil, "and a buff tile to look at")
+	check(tile ~= nil or AU2.forever ~= nil, "and a buff tile to look at")
 	if tile then
 		check(tile._fillToken == "glass",
 			"a buff tile is dressed from the glass token rather than handed the"

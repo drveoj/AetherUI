@@ -373,6 +373,11 @@ local function diag()
 	end
 
 	local AU = A:GetModule("auras")
+	if AU and AU.forever then
+		for _, t in ipairs(AU.forever.trays) do
+			say("   %s: %s, drawn by the game", t.key, t.enabled and "on" or A.Dim("off"))
+		end
+	end
 	if AU and AU.trays then
 		for _, t in ipairs(AU.trays) do
 			local d = t.display

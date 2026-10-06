@@ -605,6 +605,10 @@ end
 
 local function AurasGroup()
 	local function at(...) return { "modules", "auras", ... } end
+	-- WoW Forever's trays are the game's own, drawn at the handoff's fixed size
+	-- and counts (Modules/Auras.lua), so the tile geometry is Era's alone.
+	local era = not A:GetModule("auras").ContainersAvailable()
+	local function eraOnly(o) return era and o or nil end
 	return group(L.options.auras.auras, {
 		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		hideBlizzard = toggle(L.options.auras.hide_blizzard.name,
@@ -614,25 +618,25 @@ local function AurasGroup()
 		desc = note(L.options.auras.desc),
 
 		tileHeader = header(L.options.auras.tile_header),
-		tileNote = note(L.options.auras.tile_note),
-		size = range(L.options.auras.size.name, nil, at("size"), 12, 48, 1),
-		spacing = range(L.common.spacing, nil, at("spacing"), 0, 16, 1),
+		tileNote = note(era and L.options.auras.tile_note or L.options.auras.square_note),
+		size = eraOnly(range(L.options.auras.size.name, nil, at("size"), 12, 48, 1)),
+		spacing = eraOnly(range(L.common.spacing, nil, at("spacing"), 0, 16, 1)),
 		offset = range(L.options.auras.offset.name, nil, at("offset"), 0, 40, 1),
 		showTime = toggle(L.options.auras.show_time.name, nil, at("showTime"), { defaultTrue = true }),
 		showCount = toggle(L.options.auras.show_count.name, nil, at("showCount"), { defaultTrue = true }),
-		align = choice(L.options.auras.align.name,
+		align = eraOnly(choice(L.options.auras.align.name,
 			L.options.auras.centred_splits_slack_row,
-			at("align"), { CENTER = "Centred", MIRROR = "Mirrored" }),
-		perRow = range(L.options.auras.per_row.name,
+			at("align"), { CENTER = "Centred", MIRROR = "Mirrored" })),
+		perRow = eraOnly(range(L.options.auras.per_row.name,
 			L.options.auras.n0_fits_many_frame,
-			at("perRow"), 0, 16, 1),
+			at("perRow"), 0, 16, 1)),
 
 		buffs = group(L.options.auras.buffs, {
 			enabled = toggle(L.common.enabled, nil, at("buffs", "enabled")),
 			player = toggle(L.common.player, nil, at("buffs", "player")),
 			target = toggle(L.common.target, nil, at("buffs", "target")),
-			max = range(L.common.most_show, nil, at("buffs", "max"), 1, 40, 1),
-			maxRows = range(L.common.rows_most, nil, at("buffs", "maxRows"), 1, 4, 1),
+			max = eraOnly(range(L.common.most_show, nil, at("buffs", "max"), 1, 40, 1)),
+			maxRows = eraOnly(range(L.common.rows_most, nil, at("buffs", "maxRows"), 1, 4, 1)),
 		}, { inline = true }),
 
 		debuffs = group(L.options.auras.debuffs, {
@@ -642,8 +646,8 @@ local function AurasGroup()
 			onlyMine = toggle(L.options.auras.only_mine.name,
 				L.options.auras.yourself_every_debuff_matters,
 				at("debuffs", "onlyMine")),
-			max = range(L.common.most_show, nil, at("debuffs", "max"), 1, 40, 1),
-			maxRows = range(L.common.rows_most, nil, at("debuffs", "maxRows"), 1, 4, 1),
+			max = eraOnly(range(L.common.most_show, nil, at("debuffs", "max"), 1, 40, 1)),
+			maxRows = eraOnly(range(L.common.rows_most, nil, at("debuffs", "maxRows"), 1, 4, 1)),
 		}, { inline = true }),
 	})
 end

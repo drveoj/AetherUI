@@ -91,10 +91,17 @@ end
 -- capsule construction
 -- ---------------------------------------------------------------------------
 
+--- How far in from the orb's end of a capsule its bars begin: the orb's
+--  padding, the orb, and the gap after it. Mirrors the anchor chain in
+--  BuildCapsule; keep the two in step. WoW Forever's aura rows start here.
+local function BarsInset(cfg)
+	return 10 + cfg.orbSize + 13
+end
+function UF:BarsInset() return BarsInset(A.Config:Module("unitframes")) end
+
 --- Narrowest capsule that still fits orb + bars + readout without collisions.
---  Mirrors the anchor chain in BuildCapsule; keep the two in step.
 local function MinWidth(cfg)
-	return 10 + cfg.orbSize + 13 + cfg.barWidth + 12 + 40 + 24
+	return BarsInset(cfg) + cfg.barWidth + 12 + 40 + 24
 end
 
 

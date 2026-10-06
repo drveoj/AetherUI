@@ -27,6 +27,8 @@ local L = A.Phrases("enUS")
 
 L["auras.diagnose.aura_diagnostic_gettime_1f"] =
 	"aura diagnostic  ·  GetTime %.1f  ·  source %s"
+L["auras.diagnose.forever"] =
+	"aura diagnostic  ·  trays drawn by the game  ·  %s"
 
 -- bags --------------------------------------------------------------------
 
@@ -444,6 +446,11 @@ L["options.auras.per_row.name"] = "Cap the columns"
 L["options.auras.show_count.name"] = "Show stack counts"
 L["options.auras.show_time.name"] = "Show timers"
 L["options.auras.size.name"] = "Icon size"
+L["options.auras.square_note"] =
+	"Squares, filled in by the game itself so they keep working in a fight. "
+		.. "Three to a row at rest, up to eight in combat. Your debuffs on the "
+		.. "target are edged and come first; everyone else's are dimmed. "
+		.. "Right-click one of your own buffs to cancel it."
 L["options.auras.takes_weapon_enchant_icons"] =
 	"Takes the weapon-enchant icons with it, and nothing replaces those "
 		.. "yet."

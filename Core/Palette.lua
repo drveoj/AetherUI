@@ -187,6 +187,20 @@ local SEMANTIC = {
 	mirrorFeign   = C(220, 214, 250, 0.60),
 	mirrorRail    = C(205, 188, 255, 0.25),
 
+	-- AURA SQUARES on WoW Forever, the handoff's own values (Auras): a white
+	-- hairline round each square, fainter on the target's buffs and fainter
+	-- again on other people's debuffs, red round one you can dispel, a dark
+	-- chip under the timer and a gold one under a stack count. Your own debuffs
+	-- on the target take the accent, so those follow the skin.
+	auraEdge      = C(255, 255, 255, 0.50),
+	auraEdgeFaint = C(255, 255, 255, 0.35),
+	auraEdgeOther = C(255, 255, 255, 0.30),
+	auraDispel    = C(240, 138, 122),
+	auraChip      = C( 14,  11,  32),
+	auraTimer     = C(255, 255, 255),
+	auraStack     = C(240, 217, 168),
+	auraStackInk  = C( 16,  16,  20),
+
 	-- messages
 	info     = C(164, 216, 245),
 	infoBg   = C(140, 200, 255, 0.13),
