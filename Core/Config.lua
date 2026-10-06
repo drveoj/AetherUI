@@ -217,16 +217,13 @@ Config.defaults = {
 				-- catches the rest, and the rest is the majority. See
 				-- /aether diag, which counts all three numbers.
 				showTargetCastBar = true,
-				-- Both cast bars float free on their own movers, well above the
-				-- cluster. Every edge of a capsule now belongs to an aura tray,
-				-- and a bar that is only on screen mid-cast costs nothing by
-				-- sitting where you are already looking.
-				castWidth     = 300,
+				-- Both are cast LANES on the bond between the two capsules, as
+				-- long as the gap between them - there is no width to set.
 				hideBlizzard  = true,
 				clickTarget   = true,
-				-- The target's capsule rim, orb ring and cast bar follow their
-				-- reaction. Two identically blue cast bars stacked one above the
-				-- other are unreadable in a fight.
+				-- The target's capsule rim and orb ring follow their reaction.
+				-- (Cast lanes do not: theirs is gold or grey by whether it can
+				-- be interrupted, which is the handoff's question to answer.)
 				reactionTint  = true,
 			},
 

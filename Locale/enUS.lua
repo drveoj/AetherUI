@@ -1154,8 +1154,9 @@ L["options.unit_frames.capsule_pet_own_place"] =
 		.. "pet also wears its mood on the orb's rim."
 L["options.unit_frames.cast_header"] = "Cast bars"
 L["options.unit_frames.cast_note"] =
-	"Both cast bars float free on their own movers."
-L["options.unit_frames.cast_width.name"] = "Cast bar width"
+	"Casts run along the two lines between your frame and the target's: yours "
+		.. "on the upper line, theirs on the lower - gold if you can interrupt "
+		.. "it, grey if not. They are as long as the gap between the two frames."
 L["options.unit_frames.classic_era_does_report"] =
 	"Classic Era now reports other units' casts natively."
 L["options.unit_frames.gap.name"] = "Gap between player and target"
@@ -1178,8 +1179,8 @@ L["options.unit_frames.show_pet.name"] = "Pet frame"
 L["options.unit_frames.show_portrait.name"] = "Portrait in the orb"
 L["options.unit_frames.show_target_cast_bar.name"] = "Target cast bar"
 L["options.unit_frames.target_s_capsule_rim"] =
-	"The target's capsule rim, orb ring and cast bar take their "
-		.. "reaction - red for hostile, amber for neutral, green for friendly."
+	"The target's capsule rim and orb ring take their reaction - red for "
+		.. "hostile, amber for neutral, green for friendly."
 L["options.unit_frames.unit_frames"] = "Unit frames"
 
 L["options.x_p.show_text.name"] = "Show the readout"

@@ -187,6 +187,16 @@ local SEMANTIC = {
 	mirrorFeign   = C(220, 214, 250, 0.60),
 	mirrorRail    = C(205, 188, 255, 0.25),
 
+	-- THE BOND AND ITS CAST LANES (Cast lanes, 3a): two lavender hairlines
+	-- between the capsules, your lane blue on the upper one, the target's on
+	-- the lower - gold if it can be interrupted, grey if not - and red for the
+	-- flash when a cast is interrupted. Semantic, so the same in every skin.
+	bond       = C(205, 188, 255, 0.30),
+	laneCast   = C(154, 216, 255),
+	laneTarget = C(240, 217, 168),
+	laneLocked = C(220, 214, 250, 0.45),
+	laneFlash  = C(240, 138, 122),
+
 	-- AURA SQUARES on WoW Forever, the handoff's own values (Auras): a white
 	-- hairline round each square, fainter on the target's buffs and fainter
 	-- again on other people's debuffs, red round one you can dispel, a dark
@@ -870,31 +880,3 @@ function Palette:NameReaction(unit)
 	return c.ttFriendlyNPC
 end
 
---- What a cast bar should be coloured for whoever is casting.
---
---  Your own casts keep the concept's blue. Anyone else's take their reaction.
---  The question you actually have to answer mid-fight is "is that bar mine or
---  theirs", and two identically blue capsules stacked one above the other do not
---  answer it - which is the whole reason this exists.
-function Palette:CastColor(unit)
-	local c = Palette.c
-	if not unit or unit == "player" or not UnitExists(unit) then return c.cast end
-	local reaction = UnitReaction(unit, "player")
-	if reaction then
-		if reaction <= 3 then return c.hostileBar end
-		if reaction == 4 then return { c.neutral, c.neutral } end
-	end
-	return c.cast
-end
-
---- The rim and the icon ring that go with it.
-function Palette:CastEdge(unit)
-	local c = Palette.c
-	if not unit or unit == "player" or not UnitExists(unit) then return c.castEdge end
-	local reaction = UnitReaction(unit, "player")
-	if reaction then
-		if reaction <= 3 then return { c.hostile[1], c.hostile[2], c.hostile[3], 0.60 } end
-		if reaction == 4 then return { c.neutral[1], c.neutral[2], c.neutral[3], 0.55 } end
-	end
-	return { c.friendly[1], c.friendly[2], c.friendly[3], 0.50 }
-end

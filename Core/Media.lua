@@ -400,6 +400,9 @@ Media.style = {
 	-- Aura timers sit under the icon on open background rather than on glass,
 	-- so this one is outlined where `tiny` is not.
 	auraTime     = { "medium",   10, "OUTLINE" },
+	-- A lane's label, cast and mirror alike: the handoff's 11/600, set at the
+	-- lane's origin - "FROSTBOLT 1.6", "BREATH 0:38".
+	laneLabel    = { "semibold", 11, "" },
 	-- The tags on a WoW Forever aura square, timer and stack alike: the
 	-- handoff's 9/700, on a chip of their own, so no outline.
 	auraTag      = { "bold",      9, "" },

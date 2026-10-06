@@ -127,7 +127,7 @@ local function BuildLane(parent)
 	lane.fill:SetPoint("RIGHT", lane, "RIGHT", 0, 0)
 	lane.fill:SetHeight(LANE_H)
 
-	lane.label = W.Text(lane, "castTime", "RIGHT")
+	lane.label = W.Text(lane, "laneLabel", "RIGHT")
 	lane:Hide()
 	return lane
 end

@@ -293,58 +293,154 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- cast bar
+-- the bond and its cast lanes
 -- ---------------------------------------------------------------------------
 
-local function BuildCastBar(unit)
-	local cfg = A.Config:Module("unitframes")
+--[[
+	The Lattice handoff's player-target axis (3a, 3b). Two hairlines run
+	between the capsules' facing edges - the bond - and each carries a cast
+	lane. What you do leaves your right edge on the upper line; what the target
+	does comes back from its left edge on the lower one, gold if it can be
+	interrupted and grey if not. Labels sit where a lane starts. A channel
+	drains back toward its origin, an interrupt flashes red, and with no target
+	the bond goes dotted while your lane fills it exactly as before.
 
-	local f = Glass.CreatePill(UIParent, {
-		fill   = "glassStrong",
-		edge   = "castEdge",
-		shadow = A.db.profile.glass.shadow,
-	})
-	f:SetSize(cfg.castWidth + 130, 44)
-	f:Hide()
+	These replace the floating cast bars. Every other edge of a capsule belongs
+	to an aura tray; the bond is the one place that belongs to both.
+
+	ON WOW FOREVER A CAST'S TIMES, NAME AND INTERRUPTIBILITY CAN ALL BE SECRET,
+	and nothing here reads them. The bar takes the game's duration object
+	(UnitCastingDuration -> SetTimerDuration), the countdown is written by a
+	duration text binding, and gold-or-grey is two layers whose alpha the flag
+	sets itself (SetAlphaFromBoolean). Method from EllesmereUI:
+	EUI_UnitFrames_Engine.lua:187-239, EUI_UnitFrames_Castbar.lua:604. With no
+	duration object - Classic Era, or a cast only LibClassicCasterino saw - the
+	numbers are plain and a per-frame tick draws the lane.
+]]
+
+local LANE_H    = 4      -- the lane's stroke
+local BOND_OFF  = 4      -- each hairline from the capsules' centre line
+local LABEL_GAP = 3
+local BOND_MIN  = 40     -- however the movers left the capsules
+local DASH, DASH_GAP = 2, 6   -- the bond with no target: "2 6"
+local FLASH     = 0.2    -- seconds an interrupted cast shows red
+
+local function Hairline(bond, y)
+	local t = bond:CreateTexture(nil, "BACKGROUND")
+	t:SetTexture(Media.texture.flat)
+	t:SetPoint("LEFT", bond, "LEFT", 0, y)
+	t:SetPoint("RIGHT", bond, "RIGHT", 0, y)
+	t:SetHeight(A:PxIn(bond))
+	W.Tint(t, Palette.c.bond)
+	return t
+end
+
+--- The bond hangs off the player capsule's right edge, on its centre line;
+--  its length is measured to the target (UF:MeasureBond).
+local function BuildBond(player)
+	local bond = CreateFrame("Frame", nil, player)
+	bond:SetPoint("LEFT", player, "RIGHT", 0, 0)
+	bond:SetSize(BOND_MIN, (BOND_OFF + LANE_H) * 2)
+	bond.lines = { Hairline(bond, BOND_OFF), Hairline(bond, -BOND_OFF) }
+	bond.dots = {}
+	bond.dotted = false
+	return bond
+end
+
+--- Lay the dashes along both lines for the bond's current length. Built as
+--  they are needed and kept, so a longer bond reuses the shorter one's.
+local function LayDots(bond)
+	local w = bond:GetWidth() or BOND_MIN
+	local n = math.floor((w + DASH_GAP) / (DASH + DASH_GAP))
+	local i = 0
+	for line, y in ipairs({ BOND_OFF, -BOND_OFF }) do
+		for k = 0, n - 1 do
+			i = i + 1
+			local d = bond.dots[i]
+			if not d then
+				d = bond:CreateTexture(nil, "BACKGROUND")
+				d:SetTexture(Media.texture.flat)
+				W.Tint(d, Palette.c.bond)
+				bond.dots[i] = d
+			end
+			d:ClearAllPoints()
+			d:SetPoint("LEFT", bond, "LEFT", k * (DASH + DASH_GAP), y)
+			d:SetSize(DASH, A:PxIn(bond))
+			d:SetShown(bond.dotted)
+		end
+	end
+	for j = i + 1, #bond.dots do bond.dots[j]:Hide() end
+	bond.dotCount = i
+end
+
+--- Solid with a target, dotted without one.
+local function SetBondDotted(bond, dotted)
+	bond.dotted = dotted and true or false
+	for _, l in ipairs(bond.lines) do l:SetShown(not bond.dotted) end
+	for i = 1, bond.dotCount or 0 do bond.dots[i]:SetShown(bond.dotted) end
+end
+
+--- One lane. `f.unit`, `f.state`, `f.bar`, `f.spellName` and `f.time` are the
+--  names the cast events and the rest of the module already use.
+local function BuildLane(bond, unit)
+	local mine = (unit == "player")
+	local f = CreateFrame("Frame", nil, bond)
 	f.unit = unit
 	f.state = { active = false }
+	local y = mine and BOND_OFF or -BOND_OFF
+	f:SetPoint("LEFT", bond, "LEFT", 0, y)
+	f:SetPoint("RIGHT", bond, "RIGHT", 0, y)
+	f:SetHeight(LANE_H)
 
-	local icon = W.CreateSlot(f, { size = 30 })
-	icon:SetPoint("LEFT", f, "LEFT", 7, 0)
-	-- The concept shows the cast icon as a circle, not a rounded square.
-	if icon.icon.AddMaskTexture then
-		W.AddMask(icon.icon, icon, Media.texture.circleMask, icon)
-	end
-	icon.edge:SetTexture(Media.texture.ring)
-	icon.shade:Hide()
-	icon.gloss:Hide()
-	f.icon = icon
-
-	local name = W.Text(f, "castName", "LEFT")
-	name:SetPoint("LEFT", icon, "RIGHT", 12, 0)
-	name:SetWidth(110)
-	name:SetWordWrap(false)
-	f.spellName = name
-
-	local time = W.Text(f, "castTime", "RIGHT")
-	time:SetPoint("RIGHT", f, "RIGHT", -20, 0)
-	W.Color(time, Palette.c.textDim)
-	f.time = time
-
-	local bar = W.CreateBar(f, { height = 7, smooth = false })
-	bar:SetPoint("LEFT", name, "RIGHT", 12, 0)
-	bar:SetPoint("RIGHT", time, "LEFT", -12, 0)
+	-- The hairline under it is the rail, so the bar draws no track of its own.
+	local bar = W.CreateBar(f, { height = LANE_H, smooth = false })
+	bar:SetAllPoints(f)
+	bar.bg:Hide()
+	-- Filling away from its origin: your edge on the left, the target's on the
+	-- right.
+	bar:SetReverseFill(not mine)
 	f.bar = bar
+	local fill = bar:GetStatusBarTexture()
 
-	-- The bloom under the fill is what makes it read as "channelled magic"
-	-- rather than "progress bar".
 	local glow = f:CreateTexture(nil, "OVERLAY")
 	glow:SetTexture(Media.texture.barGlow)
 	glow:SetBlendMode("ADD")
-	glow:SetPoint("TOPLEFT", bar:GetStatusBarTexture(), "TOPLEFT")
-	glow:SetPoint("BOTTOMRIGHT", bar:GetStatusBarTexture(), "BOTTOMRIGHT")
+	glow:SetPoint("TOPLEFT", fill, "TOPLEFT")
+	glow:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
 	f.glow = glow
 
+	if not mine then
+		-- Grey over the same span as the gold, for a cast that cannot be
+		-- interrupted. Which of the two shows is the flag's to say.
+		local locked = bar:CreateTexture(nil, "ARTWORK", nil, 1)
+		locked:SetTexture(Media.texture.flat)
+		locked:SetAllPoints(fill)
+		if bar._mask then pcall(locked.AddMaskTexture, locked, bar._mask) end
+		f.locked = locked
+	end
+
+	local flash = f:CreateTexture(nil, "OVERLAY", nil, 2)
+	flash:SetTexture(Media.texture.flat)
+	flash:SetAllPoints(f)
+	flash:Hide()
+	f.flash = flash
+
+	-- The label, at the origin, reading in the fill direction: above your lane
+	-- from the left, below the target's from the right.
+	local label = CreateFrame("Frame", nil, f)
+	label:SetAllPoints(f)
+	f.label = label
+	f.spellName = W.Text(label, "laneLabel", mine and "LEFT" or "RIGHT")
+	f.time = W.Text(label, "laneLabel", mine and "LEFT" or "RIGHT")
+	if mine then
+		f.spellName:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, LABEL_GAP)
+		f.time:SetPoint("BOTTOMLEFT", f.spellName, "BOTTOMRIGHT", 4, 0)
+	else
+		f.time:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 0, -LABEL_GAP)
+		f.spellName:SetPoint("TOPRIGHT", f.time, "TOPLEFT", -4, 0)
+	end
+
+	f:Hide()
 	return f
 end
 
@@ -742,6 +838,7 @@ local function Reconcile()
 			end
 		end
 	end
+	if UF.bond then UF:MeasureBond() end
 end
 
 UF.Reconcile = Reconcile
@@ -754,18 +851,27 @@ UF.Reconcile = Reconcile
 --  alongside the unit-taking versions, and both ShadowedUnitFrames and Gnosis
 --  use the old pair for the player on this client. Try the modern call first and
 --  fall back, rather than betting on either.
+--
+--  EVERY RETURN, NOT THE FIRST FIVE: the lanes want notInterruptible, which is
+--  eighth for a cast and seventh for a channel. And a cast is present when its
+--  name is not nil, asked by TYPE: on Forever the name can be secret, and a
+--  secret cannot be tested for truth.
+local function Present(t)
+	if type(t[1]) ~= "nil" then return unpack(t, 1, 11) end
+end
+
 local function PlayerCastingInfo()
 	if UnitCastingInfo then
-		local a, b, c, d, e = UnitCastingInfo("player")
-		if a then return a, b, c, d, e end
+		local t = { UnitCastingInfo("player") }
+		if type(t[1]) ~= "nil" then return Present(t) end
 	end
 	if CastingInfo then return CastingInfo() end
 end
 
 local function PlayerChannelInfo()
 	if UnitChannelInfo then
-		local a, b, c, d, e = UnitChannelInfo("player")
-		if a then return a, b, c, d, e end
+		local t = { UnitChannelInfo("player") }
+		if type(t[1]) ~= "nil" then return Present(t) end
 	end
 	if ChannelInfo then return ChannelInfo() end
 end
@@ -795,20 +901,20 @@ local function CastInfo(unit, channel)
 
 	local fn = channel and UnitChannelInfo or UnitCastingInfo
 	if fn then
-		local a, b, c, d, e = fn(unit)
-		if a then return a, b, c, d, e end
+		local t = { fn(unit) }
+		if type(t[1]) ~= "nil" then return Present(t) end
 	end
 	if LibCC then
 		-- Spelt out rather than `channel and X() or Y()`: an and/or expression
 		-- truncates to a single value, so that form silently returned the spell
 		-- name and dropped the start/end times, and the bar never started.
+		local t
 		if channel then
-			local a, b, c, d, e = LibCC:UnitChannelInfo(unit)
-			if a then return a, b, c, d, e end
+			t = { LibCC:UnitChannelInfo(unit) }
 		else
-			local a, b, c, d, e = LibCC:UnitCastingInfo(unit)
-			if a then return a, b, c, d, e end
+			t = { LibCC:UnitCastingInfo(unit) }
 		end
+		if type(t[1]) ~= "nil" then return Present(t) end
 	end
 end
 
@@ -819,155 +925,175 @@ UF.CastInfo = CastInfo
 local function CastStop(f)
 	if not f then return end
 	f.state.active = false
-	f:Hide()
 	f:SetScript("OnUpdate", nil)
+	if f.binding then f.binding:SetEnabled(false) end
+	-- An interrupt's red outlives the STOP that follows it; it hides itself.
+	if not f.flashing then f:Hide() end
 end
 
---- Runs per frame, not on the shared 0.1s ticker.
---
---  Everything else in the suite is happy at 10Hz - health ticks are discrete,
---  cooldown text only needs whole seconds. A cast bar is the exception: it is a
---  continuously moving object, and at 10Hz a 2.5s cast advances in 25 visible
---  steps. That reads as stutter next to Blizzard's, which updates every frame.
+--- Runs per frame, not on the shared 0.1s ticker: a lane is a continuously
+--  moving object, and at 10Hz a 2.5s cast advances in 25 visible steps. Only
+--  for plain numbers - Classic Era, or a library cast - never a secret.
 local function CastTick(f)
 	local st = f.state
 	if not st.active then return end
-
 	local now = GetTime() * 1000
-	local pct
-	if st.channel then
-		pct = (st.endTime - now) / (st.endTime - st.startTime)
+	local span = st.endTime - st.startTime
+	if span <= 0 or now >= st.endTime then return CastStop(f) end
+	local done = (now - st.startTime) / span
+	f.bar:SetValue(st.channel and (1 - done) or done)
+	f.time:SetText(string.format("%.1f", (st.endTime - now) / 1000))
+end
+
+--- The handoff's 200ms of red when a cast is interrupted.
+local function CastFlash(f)
+	if not f or not f:IsShown() then return end
+	local c = Palette.c.laneFlash
+	f.flash:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+	f.flash:Show()
+	f.bar:Hide()
+	f.glow:Hide()
+	f.flashing = true
+	C_Timer.After(FLASH, function()
+		f.flashing = nil
+		f.flash:Hide()
+		if not f.state.active then f:Hide() end
+	end)
+end
+
+--- Alpha by a flag that may be secret. On Forever the client takes the flag
+--  and decides; we never test it. Era has no such call and no secret flags.
+local function AlphaByFlag(region, flag, ifTrue, ifFalse)
+	if type(flag) == "nil" then flag = false end
+	if region.SetAlphaFromBoolean then
+		region:SetAlphaFromBoolean(flag, ifTrue, ifFalse)
 	else
-		pct = (now - st.startTime) / (st.endTime - st.startTime)
+		region:SetAlpha(flag and ifTrue or ifFalse)
 	end
-	pct = math.max(0, math.min(1, pct))
+end
 
-	f.bar:SetValue(pct)
-
-	local elapsed = (now - st.startTime) / 1000
-	local total   = (st.endTime - st.startTime) / 1000
-	f.time:SetText(string.format("%.1f / %.1fs", math.max(0, math.min(elapsed, total)), total))
-
-	if now >= st.endTime then CastStop(f) end
+--- The countdown, written by the client from the duration object: one
+--  decimal, nothing once it has run out.
+local function Countdown(f, duration)
+	if not (C_DurationUtil and C_DurationUtil.CreateDurationTextBinding) then
+		f.time:SetText("")
+		return
+	end
+	if not f.binding then
+		local b = C_DurationUtil.CreateDurationTextBinding()
+		local fmt = C_StringUtil and C_StringUtil.CreateNumericRuleFormatter
+			and C_StringUtil.CreateNumericRuleFormatter()
+		if fmt and pcall(fmt.SetBreakpoints, fmt, { { threshold = 0, format = "%.1f" } }) then
+			b:SetFormatter(fmt)
+		end
+		b:SetZeroDurationText("")
+		b:SetExpiredText("")
+		b:SetFontString(f.time)
+		f.binding = b
+	end
+	f.binding:SetDuration(duration)
+	f.binding:SetEnabled(true)
 end
 
 local function CastStart(f, channel)
 	if not f then return end
 
-	local name, _, texture, startTime, endTime = CastInfo(f.unit, channel)
-	if not name or not startTime or not endTime then
-		CastStop(f)
-		return
-	end
+	-- notInterruptible is the eighth return of a cast, the seventh of a channel.
+	local name, _, _, startTime, endTime, _, r7, r8 = CastInfo(f.unit, channel)
+	if type(name) == "nil" then return CastStop(f) end
+	local locked
+	if channel then locked = r7 else locked = r8 end
 
 	local st = f.state
 	st.active, st.channel = true, channel
-	st.startTime, st.endTime = startTime, endTime
+	f.flashing = nil
+	f.flash:Hide()
+	if UF.bond then UF:MeasureBond() end
 
-	-- SECRET CAST TIMES CANNOT BE ANIMATED. WoW Forever can hand back a cast's
-	-- start and end as secrets - that is the point of the system, hiding what
-	-- somebody else is doing - and CastTick divides one by the other:
-	--
-	--     UNIT_SPELLCAST_START: attempt to perform numeric conversion on a
-	--     secret number value
-	--
-	-- There is no honest progress to draw. The capsule still says WHAT is being
-	-- cast, which is the part we are allowed to know, and the bar and the timer
-	-- go rather than showing a number we invented. `st.active` stays false so
-	-- the per-frame tick never starts - it is the thing doing the arithmetic.
-	st.secret = A.IsSecret(startTime, endTime) or nil
-	if st.secret then
-		st.active = false
-		f.spellName:SetText(name)
-		W.Color(f.spellName, Palette.c.text)
-		f.icon:SetIcon(texture)
+	local c = Palette.c
+	local mine = (f.unit == "player")
+	local col = mine and c.laneCast or c.laneTarget
+	-- In capitals, as the handoff sets it - unless the name is secret, which
+	-- cannot be changed, only shown.
+	f.spellName:SetText(A.IsSecret(name) and name or string.upper(name))
+	W.Color(f.spellName, col)
+	W.Color(f.time, col)
+	f.bar:SetColors(col)
+	f.glow:SetVertexColor(col[1], col[2], col[3], 0.55)
+
+	-- Gold or grey, by the flag itself.
+	if f.locked then
+		local g = c.laneLocked
+		f.locked:SetVertexColor(g[1], g[2], g[3], g[4] or 1)
+		AlphaByFlag(f.bar:GetStatusBarTexture(), locked, 0, 1)
+		AlphaByFlag(f.glow, locked, 0, 1)
+		AlphaByFlag(f.locked, locked, 1, 0)
+		AlphaByFlag(f.label, locked, 0.55, 1)
+	end
+
+	-- THE LANE, by the best route the client offers. A duration object animates
+	-- it without the times ever reaching us. Plain numbers get our own tick.
+	-- Secret numbers with no object leave nothing honest to draw: the label
+	-- stays, the lane goes.
+	f:SetScript("OnUpdate", nil)
+	if f.binding then f.binding:SetEnabled(false) end
+	local durationOf = channel and UnitChannelDuration or UnitCastingDuration
+	local duration = durationOf and durationOf(f.unit)
+	if type(duration) ~= "nil" and f.bar.SetTimerDuration then
+		local dir = Enum.StatusBarTimerDirection
+		f.bar:SetTimerDuration(duration, nil, channel and dir.RemainingTime or dir.ElapsedTime)
+		f.bar:Show()
+		f.glow:Show()
+		Countdown(f, duration)
+	elseif type(startTime) == "nil" or type(endTime) == "nil" then
+		return CastStop(f)
+	elseif A.IsSecret(startTime, endTime) then
 		f.bar:Hide()
 		f.glow:Hide()
 		f.time:SetText("")
-		f:Show()
-		f:SetScript("OnUpdate", nil)
-		return
+	else
+		st.startTime, st.endTime = startTime, endTime
+		f.bar:SetMinMaxValues(0, 1)
+		f.bar:Show()
+		f.glow:Show()
+		f:SetScript("OnUpdate", CastTick)
+		CastTick(f)
+		if not st.active then return end
 	end
-	f.bar:Show()
-	f.glow:Show()
-
-	local c = Palette.c
-	-- Whose bar is this? Yours stays blue; anyone else's takes their reaction, so
-	-- the two stacked capsules are answerable at a glance instead of by reading
-	-- the spell name.
-	local tint = A.Config:Module("unitframes").reactionTint ~= false
-	local barColor = tint and Palette:CastColor(f.unit) or c.cast
-	local edge     = tint and Palette:CastEdge(f.unit) or c.castEdge
-	-- The glow takes the bar's head, whatever that turned out to be. Leaving it
-	-- on castGlow would have put a blue halo around a red bar.
-	local head = (type(barColor[1]) == "table") and barColor[1] or barColor
-
-	f.spellName:SetText(name)
-	W.Color(f.spellName, c.text)
-	f.icon:SetIcon(texture)
-	f.icon:SetEdgeColor(edge)
-	f.bar:SetMinMaxValues(0, 1)
-	f.bar:SetColors(barColor)
-	f.glow:SetVertexColor(head[1], head[2], head[3], c.castGlow[4] or 0.5)
-	f:SetEdgeColor(edge)
-
 	f:Show()
-	f:SetScript("OnUpdate", CastTick)
-	CastTick(f)
 end
 
-UF.CastStart, UF.CastStop = CastStart, CastStop
+UF.CastStart, UF.CastStop, UF.CastFlash = CastStart, CastStop, CastFlash
 
 -- ---------------------------------------------------------------------------
 -- events
 -- ---------------------------------------------------------------------------
 
---- Both cast bars float free, well above the cluster, each on its own mover.
---
---  Neither one can be attached to a capsule any more, and the reason is that
---  every edge of a capsule is now spoken for: buffs grow upward off the top,
---  debuffs downward off the bottom, on both units. A bar tied to either edge
---  would be shoved around by whatever auras happened to be up.
---
---  Floating is not a compromise here. A cast bar is on screen only while you are
---  casting, so the space it occupies costs nothing the rest of the time, and
---  putting it up near where you are actually looking is where it wants to be
---  anyway. The target's sits above the player's, because that is the order the
---  two things are happening in front of you.
---
---  Both are ordinary movers, so `/aether unlock` and they go wherever you like.
---  Unlock previews them, since a bar you can only see mid-cast is a bar you
---  could never place.
-function UF:AnchorCastBar()
-	local function preview(bar, label)
-		return function(show)
-			local casting = bar.state and bar.state.active
-			if not show then
-				if not casting then bar:Hide() end
-				return
-			end
-			if casting then return end
-			-- Something to aim at: an empty pill with no bar in it is hard to
-			-- judge a position by.
-			bar.spellName:SetText(label)
-			bar.bar:SetMinMaxValues(0, 1)
-			bar.bar:SetValue(0.55)
-			bar.time:SetText("")
-			bar:Show()
-		end
+--- The bond's length: from the player capsule's right edge to the target's
+--  left. The two are separate movers, so it is measured rather than assumed -
+--  on a config change, on load, at every cast and on the 10Hz pass, which is
+--  what keeps it attached while a capsule is dragged in unlock. Level with the
+--  player whatever height the target sits at.
+function UF:MeasureBond()
+	local bond = self.bond
+	if not bond then return end
+	local w = A.Config:Module("unitframes").gap or BOND_MIN
+	local pr, tl = self.player:GetRight(), self.target:GetLeft()
+	if pr and tl then
+		local ps = self.player:GetEffectiveScale()
+		w = (tl * self.target:GetEffectiveScale() - pr * ps) / ps
 	end
+	w = math.max(BOND_MIN, w)
+	if w ~= bond._w then
+		bond._w = w
+		bond:SetWidth(w)
+		LayDots(bond)
+	end
+end
 
-	if self.cast then
-		A.Movers:Register("cast", self.cast,
-			{ point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 360 }, "Cast bar",
-			{ preview = preview(self.cast, "Cast bar") })
-	end
-
-	if self.targetCast then
-		A.Movers:Register("targetcast", self.targetCast,
-			{ point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 412 }, "Target cast bar",
-			{ preview = preview(self.targetCast, "Target cast bar") })
-	end
+--- Dotted with no target, solid with one.
+function UF:BondTarget()
+	if self.bond then SetBondDotted(self.bond, not UnitExists("target")) end
 end
 
 function UF:RegisterEvents()
@@ -1020,12 +1146,14 @@ function UF:RegisterEvents()
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
 		UpdateAll(UF.target)
 		if UF.tot then UpdateAll(UF.tot) end
+		UF:BondTarget()
 		if UF.targetCast then
 			CastStop(UF.targetCast)
 			-- a target may already be mid-cast when you click it
 			if UnitExists("target") then
-				if CastInfo("target", false) then CastStart(UF.targetCast, false)
-				elseif CastInfo("target", true) then CastStart(UF.targetCast, true) end
+				-- By type: the name may be secret, and a secret has no truth.
+				if type((CastInfo("target", false))) ~= "nil" then CastStart(UF.targetCast, false)
+				elseif type((CastInfo("target", true))) ~= "nil" then CastStart(UF.targetCast, true) end
 			end
 		end
 	end)
@@ -1050,6 +1178,8 @@ function UF:RegisterEvents()
 		UF:HideBlizzard()
 		UpdateAll(UF.player)
 		UpdateAll(UF.target)
+		UF:MeasureBond()
+		UF:BondTarget()
 	end)
 
 	-- Cast events. The native UNIT_SPELLCAST_* events only fire for the player on
@@ -1077,6 +1207,11 @@ function UF:RegisterEvents()
 		local function onStop(_, _, unit)
 			CastStop(barFor(unit))
 		end
+		local function onInterrupted(_, _, unit)
+			local f = barFor(unit)
+			CastFlash(f)
+			CastStop(f)
+		end
 
 		A:RegisterEvent(self, "UNIT_SPELLCAST_START", onStart)
 		A:RegisterEvent(self, "UNIT_SPELLCAST_DELAYED", onDelayed)
@@ -1084,7 +1219,7 @@ function UF:RegisterEvents()
 		A:RegisterEvent(self, "UNIT_SPELLCAST_CHANNEL_UPDATE", onDelayed)
 		A:RegisterEvent(self, "UNIT_SPELLCAST_STOP", onStop)
 		A:RegisterEvent(self, "UNIT_SPELLCAST_FAILED", onStop)
-		A:RegisterEvent(self, "UNIT_SPELLCAST_INTERRUPTED", onStop)
+		A:RegisterEvent(self, "UNIT_SPELLCAST_INTERRUPTED", onInterrupted)
 		A:RegisterEvent(self, "UNIT_SPELLCAST_CHANNEL_STOP", onStop)
 
 		if self.targetCast and LibCC and not self._ccHooked then
@@ -1099,6 +1234,9 @@ function UF:RegisterEvents()
 					if UF.targetCast.state.active then
 						CastStart(UF.targetCast, UF.targetCast.state.channel)
 					end
+				elseif event == "UNIT_SPELLCAST_INTERRUPTED" then
+					CastFlash(UF.targetCast)
+					CastStop(UF.targetCast)
 				else
 					CastStop(UF.targetCast)
 				end
@@ -1144,7 +1282,6 @@ function UF:RegisterMovers()
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 140 },
 			"Target of Target")
 	end
-	self:AnchorCastBar()
 end
 
 function UF:OnEnable()
@@ -1156,6 +1293,7 @@ function UF:OnEnable()
 	if self.player then
 		for _, f in ipairs(self.frames) do SetVisible(f, true) end
 		if self.cast then self.cast:Hide() end
+		if self.bond then self.bond:Show() end
 		self:OnConfigChanged()
 		-- OnDisable took these away, so coming back has to put them back. This
 		-- used to live only in the first-build path below, which meant the very
@@ -1201,10 +1339,12 @@ function UF:OnEnable()
 		self.frames[#self.frames + 1] = self.tot
 	end
 
+	-- The bond between the two capsules, and a cast lane on each of its lines.
+	self.bond = BuildBond(self.player)
 	if cfg.showCastBar then
-		self.cast = BuildCastBar("player")
+		self.cast = BuildLane(self.bond, "player")
 		if cfg.showTargetCastBar then
-			self.targetCast = BuildCastBar("target")
+			self.targetCast = BuildLane(self.bond, "target")
 		end
 	end
 
@@ -1242,14 +1382,13 @@ function UF:OnDisable()
 		-- is unusual but perfectly possible from the options panel.
 		SetVisible(f, false)
 	end
-	if self.cast then self.cast:Hide() end
-	if self.targetCast then self.targetCast:Hide() end
+	if self.cast then CastStop(self.cast) end
+	if self.targetCast then CastStop(self.targetCast) end
+	if self.bond then self.bond:Hide() end
 	A.Movers:Unregister("player")
 	A.Movers:Unregister("target")
 	A.Movers:Unregister("pet")
 	A.Movers:Unregister("targettarget")
-	A.Movers:Unregister("cast")
-	A.Movers:Unregister("targetcast")
 end
 
 function UF:OnSkinChanged()
@@ -1260,7 +1399,8 @@ function UF:OnSkinChanged()
 		UpdatePower(f)
 		UpdateOrb(f)
 	end
-	if self.cast then self.cast:ApplySkin("glassStrong", "castEdge") end
+	-- The bond's hairlines are tinted by token and swept with everything else;
+	-- the lanes' colours are semantic, the same in every skin.
 end
 
 function UF:OnConfigChanged()
@@ -1295,17 +1435,8 @@ function UF:OnConfigChanged()
 		UpdateAll(f)
 	end
 
-	if self.cast then
-		self.cast:SetScale(scale)
-		self.cast:SetSize(cfg.castWidth + 130, 44)
-		self.cast:SetShadow(A.db.profile.glass.shadow)
-	end
-	if self.targetCast then
-		self.targetCast:SetScale(scale)
-		self.targetCast:SetSize(cfg.castWidth + 130, 44)
-		self.targetCast:SetShadow(A.db.profile.glass.shadow)
-	end
-	self:AnchorCastBar()
+	self:MeasureBond()
+	self:BondTarget()
 
 	A.Fader:Refresh()
 end

@@ -490,6 +490,17 @@ local function widgetBase(kind)
 
 	function o:SetAlpha(a) self.__alpha = a end
 	function o:GetAlpha() return self.__alpha end
+	--- WoW Forever's way to set alpha from a flag that may be secret: the
+	--  client decides, the addon never tests it (SimpleRegionAPIDocumentation
+	--  .lua:134, AllowedWhenTainted). The flag is kept so a test can ask what
+	--  was handed over; a secret one leaves the alpha unknowable, as it is.
+	if _G.__flavour == "camelot" then
+		function o:SetAlphaFromBoolean(v, ifTrue, ifFalse)
+			self.__alphaFlag = v
+			if issecretvalue and issecretvalue(v) then return end
+			self.__alpha = v and (ifTrue or 1) or (ifFalse or 0)
+		end
+	end
 	-- Counted, so a test can tell "set it to the right value" from "wrote to it
 	-- again for no reason". SetScale re-lays out everything anchored to a frame.
 	function o:SetScale(s)
@@ -1512,15 +1523,19 @@ function CreateFrame(kind, name, parent, template)
 		function f:SetOrientation() end
 		--- The client animates the bar from a duration object, so the addon
 		--  never holds the times. Only an object is accepted, as with the
-		--  Cooldown's SetCooldownFromDurationObject.
-		function f:SetTimerDuration(d, interpolation, direction)
-			if type(d) ~= "table" or not d.__durationObject then
-				error("bad argument #1 to 'SetTimerDuration' (Usage:"
-					.. " self:SetTimerDuration(duration [, interpolation, direction]))", 2)
+		--  Cooldown's SetCooldownFromDurationObject. WoW Forever only: Classic
+		--  Era's StatusBar has no such method, and until the cast lanes (2026-
+		--  10-06) the mock gave it one anyway.
+		if _G.__flavour == "camelot" then
+			function f:SetTimerDuration(d, interpolation, direction)
+				if type(d) ~= "table" or not d.__durationObject then
+					error("bad argument #1 to 'SetTimerDuration' (Usage:"
+						.. " self:SetTimerDuration(duration [, interpolation, direction]))", 2)
+				end
+				self.__timer = { duration = d, direction = direction or 0 }
 			end
-			self.__timer = { duration = d, direction = direction or 0 }
+			function f:GetTimerDuration() return self.__timer and self.__timer.duration end
 		end
-		function f:GetTimerDuration() return self.__timer and self.__timer.duration end
 	end
 
 	-- SetText fires OnTextChanged, exactly as the client does. Modelled rather
@@ -5178,32 +5193,42 @@ function _G.__castFor(u)
 	if u == "player" then return castState end
 	return _G.__nativeCasts[u]
 end
+-- The real signatures: notInterruptible is the EIGHTH return of a cast and the
+-- SEVENTH of a channel (UnitDocumentation.lua:828-893). Restricted, it is
+-- secret along with the times.
 function UnitCastingInfo(u)
 	local c = _G.__castFor(u)
 	if not c or c.channel then return nil end
 	if c.restricted then
-		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn()
+		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn(),
+			false, "cast-guid", _G.__SecretStandIn()
 	end
-	return c.name, c.name, c.icon, c.startTime, c.endTime
+	return c.name, c.name, c.icon, c.startTime, c.endTime, false, "cast-guid",
+		c.notInterruptible
 end
 function UnitChannelInfo(u)
 	local c = _G.__castFor(u)
 	if not c or not c.channel then return nil end
 	if c.restricted then
-		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn()
+		return c.name, c.name, c.icon, _G.__SecretStandIn(), _G.__SecretStandIn(),
+			false, _G.__SecretStandIn()
 	end
-	return c.name, c.name, c.icon, c.startTime, c.endTime
+	return c.name, c.name, c.icon, c.startTime, c.endTime, false, c.notInterruptible
 end
 --- A duration object for a NATIVE cast only. A library cast has none, which is
 --  the whole reason the nameplate keeps its own tick for those. Set
---  `noDuration` on a cast to model a client that offers no object.
+--  `noDuration` on a cast to model a client that offers no object. WoW Forever
+--  only: Classic Era has neither function, and the mock gave it both until the
+--  cast lanes (2026-10-06).
 function _G.__castDuration(u, channel)
 	local c = _G.__castFor(u)
 	if not c or c.noDuration or (c.channel and true or false) ~= channel then return nil end
 	return { __durationObject = true, start = c.startTime, duration = c.endTime - c.startTime }
 end
-function UnitCastingDuration(u) return _G.__castDuration(u, false) end
-function UnitChannelDuration(u) return _G.__castDuration(u, true) end
+if _G.__flavour == "camelot" then
+	function UnitCastingDuration(u) return _G.__castDuration(u, false) end
+	function UnitChannelDuration(u) return _G.__castDuration(u, true) end
+end
 
 --- castState is a file-local, and the blocks that drive a cast sit right beside
 --  it. The secret-value section is thousands of lines away and needs the same
@@ -5350,6 +5375,14 @@ if _G.__flavour == "camelot" then
 		function b:SetZeroDurationText(s) self.zeroText = s end
 		function b:SetExpiredText(s) self.expiredText = s end
 		function b:SetUpdateInterval(s) self.interval = s end
+		function b:SetFontString(fs) self.fontString = fs end
+		function b:SetDuration(d)
+			if type(d) ~= "table" or not d.__durationObject then
+				error("SetDuration: a duration object is required", 2)
+			end
+			self.duration = d
+		end
+		function b:SetEnabled(on) self.enabled = on and true or false end
 		return b
 	end
 
@@ -7962,49 +7995,126 @@ fire("PLAYER_TARGET_CHANGED")
 check(UF.target:IsShown() and UF.target.name:GetText() == "Savannah Prowler",
 	"target capsule repopulates after retargeting")
 
-print("== casting ==")
+print("== casting: the bond and its lanes ==")
 do
-	-- Both cast bars float free now. Every edge of a capsule belongs to an aura
-	-- tray - buffs above, debuffs below - so a bar tied to one would be shoved
-	-- around by whatever auras happened to be up.
-	local entry = A.Movers.registry.cast
-	check(entry ~= nil, "the player cast bar is a mover of its own")
-	check(select(2, UF.cast:GetPoint(1)) == UIParent,
-		"anchored to the screen, not to a capsule")
-	check(entry.preview ~= nil,
-		"and unlock previews it - a bar you only ever see mid-cast is a bar you"
-		.. " could never aim at")
-	entry.preview(true)
-	check(UF.cast:IsShown() and UF.cast.spellName:GetText() == "Cast bar",
-		"the preview puts something in it to aim at")
-	entry.preview(false)
-	check(not UF.cast:IsShown(), "and takes it away again on lock")
+	-- The Lattice handoff's player-target axis (3a, 3b): two hairlines between
+	-- the capsules, a cast lane on each. They replace the floating cast bars.
+	check(UF.bond and UF.bond:GetParent() == UF.player, "the bond hangs off the player capsule")
+	local p, rel, relP = UF.bond:GetPoint(1)
+	check(p == "LEFT" and rel == UF.player and relP == "RIGHT", "from its right edge")
+	check(#UF.bond.lines == 2, "two hairlines")
+	check(A.Movers.registry.cast == nil and A.Movers.registry.targetcast == nil,
+		"the floating cast bars and their movers are gone")
+	check(UF.cast:GetParent() == UF.bond and UF.targetCast:GetParent() == UF.bond,
+		"both lanes ride the bond")
+	local _, _, _, _, py = UF.cast:GetPoint(1)
+	local _, _, _, _, ty = UF.targetCast:GetPoint(1)
+	check(py == 4 and ty == -4, "yours on the upper line, the target's on the lower")
+	check(not UF.cast.bar:GetReverseFill() and UF.targetCast.bar:GetReverseFill(),
+		"yours fills from your edge, the target's from its own")
+	check(not UF.cast.bar.bg:IsShown(), "a lane draws no track: the hairline is its rail")
+
+	-- The length is measured, because the two capsules move separately.
+	UF.player:SetGeom({ left = 100, right = 400, top = 300, bottom = 240 })
+	UF.target:SetGeom({ left = 520, right = 820, top = 300, bottom = 240 })
+	UF:MeasureBond()
+	check(UF.bond:GetWidth() == 120,
+		"the bond runs from one capsule's edge to the other's ("
+		.. tostring(UF.bond:GetWidth()) .. ")")
+	UF.target:SetGeom({ left = 380, right = 680, top = 300, bottom = 240 })
+	UF:MeasureBond()
+	check(UF.bond:GetWidth() == 40, "and never collapses, however the capsules are dragged")
+	UF.player:SetGeom(nil)
+	UF.target:SetGeom(nil)
+	UF:MeasureBond()
+
+	-- With no target the bond goes dotted: "2 6".
+	_G.__units.target.exists = false
+	fire("PLAYER_TARGET_CHANGED")
+	check(not UF.bond.lines[1]:IsShown() and UF.bond.dotCount > 0
+		and UF.bond.dots[1]:IsShown() and UF.bond.dots[1]:GetWidth() == 2,
+		"with no target the bond is dotted")
+	_G.__units.target.exists = true
+	fire("PLAYER_TARGET_CHANGED")
+	check(UF.bond.lines[1]:IsShown() and not UF.bond.dots[1]:IsShown(),
+		"and solid again with one")
 end
+
 castState = { name = "Frostbolt", icon = 135846, channel = false,
 	startTime = time * 1000, endTime = (time + 2.5) * 1000 }
 fire("UNIT_SPELLCAST_START", "player")
-check(UF.cast:IsShown(), "cast bar shows on cast start")
-check(UF.cast:GetScript("OnUpdate") ~= nil,
-	"cast bar drives itself per frame, not off the 10Hz shared ticker")
+check(UF.cast:IsShown(), "your lane shows on cast start")
+check(UF.cast.spellName:GetText() == "FROSTBOLT", "labelled at its origin, in capitals")
+local laneBlue = A.Palette.c.laneCast
+check(UF.cast.bar:GetStatusBarTexture():GetVertexColor() == laneBlue[1],
+	"in the lane blue")
 
--- advance it the way the client would: many small frames, via its own OnUpdate
-local function castFrames(n, dt)
-	for _ = 1, n do
-		time = time + dt
-		UF.cast:GetScript("OnUpdate")(UF.cast, dt)
+if _G.__flavour == "camelot" then
+	-- FOREVER: the game animates it, and writes the countdown, from the duration
+	-- object. Nothing of ours does the arithmetic.
+	local tm = UF.cast.bar.__timer
+	check(tm and tm.direction == Enum.StatusBarTimerDirection.ElapsedTime,
+		"the game fills it from the duration object, away from you")
+	check(UF.cast:GetScript("OnUpdate") == nil, "and no tick of ours runs")
+	local b = UF.cast.binding
+	check(b and b.enabled and b.fontString == UF.cast.time
+		and b.formatter and b.formatter:FormatNumber(1.64) == "1.6",
+		"the countdown is the game's, to one decimal")
+else
+	check(UF.cast:GetScript("OnUpdate") ~= nil,
+		"Era: the lane drives itself per frame, not off the 10Hz shared ticker")
+	-- advance it the way the client would: many small frames, via its own OnUpdate
+	local function castFrames(n, dt)
+		for _ = 1, n do
+			time = time + dt
+			UF.cast:GetScript("OnUpdate")(UF.cast, dt)
+		end
 	end
+	castFrames(60, 1 / 60)
+	check(UF.cast.bar:GetValue() > 0, "the lane fills")
+	check(UF.cast.time:GetText() == "1.5", "and counts down (" .. tostring(UF.cast.time:GetText()) .. ")")
+	local midway = UF.cast.bar:GetValue()
+	castFrames(1, 1 / 60)
+	check(UF.cast.bar:GetValue() > midway,
+		"a single 60fps frame advances it (smooth, not stepped)")
 end
-castFrames(60, 1 / 60)
-check(UF.cast.spellName:GetText() == "Frostbolt", "cast bar names the spell")
-check(UF.cast.bar:GetValue() > 0, "cast bar progresses")
-local midway = UF.cast.bar:GetValue()
-castFrames(1, 1 / 60)
-check(UF.cast.bar:GetValue() > midway,
-	"a single 60fps frame advances the bar (smooth, not stepped)")
 castState = nil
 fire("UNIT_SPELLCAST_STOP", "player")
-check(not UF.cast:IsShown(), "cast bar hides on stop")
-check(UF.cast:GetScript("OnUpdate") == nil, "cast bar stops updating when hidden")
+check(not UF.cast:IsShown(), "your lane goes on stop")
+check(UF.cast:GetScript("OnUpdate") == nil, "and stops updating")
+
+do  -- a channel drains back toward its origin
+	castState = { name = "Arcane Missiles", icon = 1, channel = true,
+		startTime = time * 1000, endTime = (time + 3) * 1000 }
+	fire("UNIT_SPELLCAST_CHANNEL_START", "player")
+	if _G.__flavour == "camelot" then
+		check(UF.cast.bar.__timer.direction == Enum.StatusBarTimerDirection.RemainingTime,
+			"a channel drains: the game shows what is left")
+	else
+		time = time + 1
+		UF.cast:GetScript("OnUpdate")(UF.cast, 1)
+		local v = UF.cast.bar:GetValue()
+		check(v > 0.6 and v < 0.7, "a channel drains: two thirds left after a third ("
+			.. string.format("%.2f", v) .. ")")
+	end
+	castState = nil
+	fire("UNIT_SPELLCAST_CHANNEL_STOP", "player")
+end
+
+do  -- an interrupt flashes red for 200ms, then goes
+	castState = { name = "Fireball", icon = 1, channel = false,
+		startTime = time * 1000, endTime = (time + 3) * 1000 }
+	fire("UNIT_SPELLCAST_START", "player")
+	castState = nil
+	fire("UNIT_SPELLCAST_INTERRUPTED", "player")
+	fire("UNIT_SPELLCAST_STOP", "player")
+	local red = A.Palette.c.laneFlash
+	local r = UF.cast.flash:GetVertexColor()
+	check(UF.cast:IsShown() and UF.cast.flash:IsShown() and r == red[1],
+		"an interrupted cast flashes red, and the STOP after it does not cut that short")
+	_G.__drainTimers()
+	check(not UF.cast:IsShown() and not UF.cast.flash:IsShown(), "then the lane goes")
+end
 
 print("== casts: which source delivered somebody else's ==")
 do
@@ -8043,39 +8153,57 @@ do
 	A.castSource.native, A.castSource.lib = was.native, was.lib
 end
 
-print("== target cast bar (LibClassicCasterino) ==")
-check(UF.targetCast ~= nil, "target cast bar built")
+print("== the target's lane (LibClassicCasterino) ==")
+check(UF.targetCast ~= nil, "target lane built")
 do
-	check(A.Movers.registry.targetcast ~= nil,
-		"the target cast bar has its own mover too")
-	check(select(2, UF.targetCast:GetPoint(1)) == UIParent,
-		"also anchored to the screen")
-	check(A.db.profile.anchors.targetcast == nil
-		and A.Movers.registry.targetcast.default.y > A.Movers.registry.cast.default.y,
-		"and defaults above the player's, which is the order the two things are"
-		.. " happening in front of you")
-
+	-- A library cast carries plain numbers and no duration object, on either
+	-- client, so it is our own tick that draws it.
 	_G.__ccCasts.target = { name = "Shadow Bolt", icon = 136197, channel = false,
 		start = time * 1000, finish = (time + 3) * 1000 }
 	_G.__ccFire("UNIT_SPELLCAST_START", "target")
-	check(UF.targetCast:IsShown(), "library callback starts the target cast bar")
-	check(UF.targetCast.spellName:GetText() == "Shadow Bolt", "target spell named")
+	check(UF.targetCast:IsShown(), "library callback starts the target's lane")
+	check(UF.targetCast.spellName:GetText() == "SHADOW BOLT", "the spell named, in capitals")
+	local p, _, relP = UF.targetCast.time:GetPoint(1)
+	check(p == "TOPRIGHT" and relP == "BOTTOMRIGHT",
+		"its label hangs below the lane at the target's end")
 
 	time = time + 1
 	UF.targetCast:GetScript("OnUpdate")(UF.targetCast, 1)
-	check(UF.targetCast.bar:GetValue() > 0.2, "target cast progresses")
+	check(UF.targetCast.bar:GetValue() > 0.2, "the target's cast progresses")
+
+	-- Interruptible (the library says nothing, so it is): gold, not grey.
+	local gold = A.Palette.c.laneTarget
+	check(UF.targetCast.bar:GetStatusBarTexture():GetVertexColor() == gold[1]
+		and UF.targetCast.bar:GetStatusBarTexture():GetAlpha() == 1
+		and UF.targetCast.locked:GetAlpha() == 0,
+		"a cast you can interrupt is gold")
 
 	_G.__ccCasts.target = nil
 	_G.__ccFire("UNIT_SPELLCAST_STOP", "target")
 	check(not UF.targetCast:IsShown(), "library callback stops it")
 
-	-- a player-unit event must never drive the target's bar and vice versa
+	-- a player-unit event must never drive the target's lane and vice versa
 	_G.__ccCasts.target = { name = "Fear", icon = 1, channel = false,
 		start = time * 1000, finish = (time + 3) * 1000 }
 	_G.__ccFire("UNIT_SPELLCAST_START", "target")
-	check(not UF.cast:IsShown(), "target cast does not leak onto the player bar")
+	check(not UF.cast:IsShown(), "a target cast does not leak onto your lane")
 	_G.__ccCasts.target = nil
 	_G.__ccFire("UNIT_SPELLCAST_STOP", "target")
+
+	-- A cast that CANNOT be interrupted, natively reported: grey, gold hidden.
+	_G.__nativeCasts.target = { name = "Shield Wall", icon = 1, channel = false,
+		startTime = time * 1000, endTime = (time + 2) * 1000, notInterruptible = true }
+	fire("UNIT_SPELLCAST_START", "target")
+	check(UF.targetCast.locked:GetAlpha() == 1
+		and UF.targetCast.bar:GetStatusBarTexture():GetAlpha() == 0
+		and UF.targetCast.label:GetAlpha() == 0.55,
+		"a cast you cannot interrupt is grey, its label dimmed")
+	if _G.__flavour == "camelot" then
+		check(UF.targetCast.locked.__alphaFlag == true,
+			"handed over as a flag for the game to decide, never tested by us")
+	end
+	_G.__nativeCasts.target = nil
+	fire("UNIT_SPELLCAST_STOP", "target")
 end
 
 print("== idle fader ==")
@@ -12012,11 +12140,11 @@ b:GetScript("OnReceiveDrag")(b)
 check(_G.__placed == 4, "dropping places into the right action")
 
 
-print("== the target's cast bar is not your cast bar ==")
+print("== the target's lane is not your lane ==")
 do
-	-- Two capsules stacked one above the other, both the concept's blue, was
-	-- unreadable mid-fight: the only thing distinguishing them was the spell
-	-- name, which is the slowest thing on either bar to read.
+	-- The lanes are told apart by WHERE they are - yours on the upper line from
+	-- your edge, theirs on the lower from theirs - and by colour that answers
+	-- the handoff's question, "can I interrupt it", not the target's reaction.
 	local UFm = A:GetModule("unitframes")
 	_G.__units.target.exists = true
 	_G.__units.target.reaction = 2          -- hostile
@@ -12026,44 +12154,26 @@ do
 		start = time * 1000, finish = (time + 3) * 1000 }
 	_G.__ccFire("UNIT_SPELLCAST_START", "target")
 	local theirs = UFm.targetCast.bar._colors
-	check(theirs == A.Palette.c.hostileBar,
-		"a hostile caster's bar takes the hostile colours")
+	check(theirs == A.Palette.c.laneTarget, "a hostile caster's lane is gold, not red")
+	_G.__units.target.reaction = 5
+	_G.__ccFire("UNIT_SPELLCAST_START", "target")
+	check(UFm.targetCast.bar._colors == A.Palette.c.laneTarget, "and so is a friendly one's")
 
 	castState = { name = "Fireball", icon = 135812, channel = false,
 		startTime = time * 1000, endTime = (time + 2.5) * 1000 }
 	fire("UNIT_SPELLCAST_START", "player")
-	local yours = UFm.cast.bar._colors
-	check(yours == A.Palette.c.cast, "and yours stays the concept's blue")
-	check(yours ~= theirs, "so the two stacked bars are tellable apart at a glance")
+	check(UFm.cast.bar._colors == A.Palette.c.laneCast, "and yours is the lane blue")
 
-	-- the glow follows the bar rather than staying blue around a red capsule
-	local head = theirs[1]
+	-- the glow follows the lane rather than staying blue round a gold one
 	local gr, gg, gb = UFm.targetCast.glow:GetVertexColor()
-	check(math.abs(gr - head[1]) < 0.01 and math.abs(gg - head[2]) < 0.01
-		and math.abs(gb - head[3]) < 0.01,
-		"and the glow takes the bar's head, not a blue halo round a red bar")
-
-	-- friendly and neutral are their own answers, not just "not hostile"
-	_G.__units.target.reaction = 4
-	check(A.Palette:CastColor("target") ~= A.Palette.c.hostileBar, "neutral differs")
-	_G.__units.target.reaction = 5
-	check(A.Palette:CastColor("target") == A.Palette.c.cast,
-		"a friendly caster is not painted as a threat")
+	check(math.abs(gr - theirs[1]) < 0.01 and math.abs(gg - theirs[2]) < 0.01
+		and math.abs(gb - theirs[3]) < 0.01,
+		"the glow takes its own lane's colour")
 
 	-- your own frame is never a reaction
 	check(A.Palette:ReactionEdge("player") == A.Palette.c.glassEdge,
 		"and the player's own rim never picks up friendly green off"
 		.. " UnitReaction('player', 'player')")
-
-	-- the toggle really turns it off
-	A.db.profile.modules.unitframes.reactionTint = false
-	_G.__units.target.reaction = 2
-	_G.__ccCasts.target = { name = "Lightning Bolt", icon = 1, channel = false,
-		start = time * 1000, finish = (time + 3) * 1000 }
-	_G.__ccFire("UNIT_SPELLCAST_START", "target")
-	check(UFm.targetCast.bar._colors == A.Palette.c.cast,
-		"turning the tint off puts both bars back to blue")
-	A.db.profile.modules.unitframes.reactionTint = true
 
 	_G.__ccCasts.target = nil
 	_G.__ccFire("UNIT_SPELLCAST_STOP", "target")
@@ -12265,24 +12375,30 @@ section("secret values are drawn, never read", function()
 		"and an ordinary value afterwards reads out again, so the secret branch"
 		.. " does not latch")
 
-	-- A SECRET CAST CANNOT BE ANIMATED. Reported from the game as
-	-- "UNIT_SPELLCAST_START: attempt to perform numeric conversion on a secret
-	-- number value" - CastTick divides the elapsed time by the total.
-	if UF.cast then
-		local cast = UF.cast
-		_G.__setCast({ name = "Secret Bolt", icon = 135846, channel = false,
-			startTime = _G.__MakeSecret(4270), endTime = _G.__MakeSecret(4271) })
-		local ok = pcall(UF.CastStart, cast, false)
-		check(ok, "a secret cast does not throw")
-		check(cast.state.active == false,
-			"and never starts the per-frame tick, which is the thing doing the"
-			.. " arithmetic")
-		check(cast.spellName:GetText() == "Secret Bolt",
-			"the capsule still says WHAT is being cast, which we are allowed to know")
-		check(cast.time:GetText() == "" and not cast.bar:IsShown(),
-			"but the bar and the timer go rather than showing a number we invented")
-		_G.__setCast(nil)
-		UF.CastStop(cast)
+	-- A SECRET CAST IS DRAWN BY THE GAME. Reported from the game, before the
+	-- lanes, as "UNIT_SPELLCAST_START: attempt to perform numeric conversion on
+	-- a secret number value" - the old tick divided one secret by another.
+	if UF.targetCast then
+		local lane = UF.targetCast
+		_G.__nativeCasts.target = { name = "Secret Bolt", icon = 135846, channel = false,
+			startTime = time * 1000, endTime = (time + 2) * 1000, restricted = true }
+		local ok, err = pcall(UF.CastStart, lane, false)
+		check(ok, "a secret cast does not throw: " .. tostring(err))
+		check(lane:GetScript("OnUpdate") == nil,
+			"no tick of ours runs - it is the thing that would do the arithmetic")
+		check(lane.bar:IsShown() and lane.bar.__timer ~= nil,
+			"the lane still fills: the game animates it from the duration object")
+		check(lane.locked.__alphaFlag ~= nil and issecretvalue(lane.locked.__alphaFlag),
+			"and gold-or-grey is the secret flag handed straight to the game")
+
+		-- No duration object and secret times: nothing honest to draw.
+		_G.__nativeCasts.target.noDuration = true
+		UF.CastStart(lane, false)
+		check(not lane.bar:IsShown() and lane.time:GetText() == ""
+			and lane.spellName:GetText() == "SECRET BOLT",
+			"with no duration object the lane goes and the label stays")
+		_G.__nativeCasts.target = nil
+		UF.CastStop(lane)
 	end
 end)
 
@@ -23612,15 +23728,24 @@ do
 		startTime = time * 1000, endTime = (time + 3) * 1000 }
 	NPm.castStart(f, false)
 	check(f.cast:IsShown() and f.cast.bar:IsShown(), "a native cast opens the capsule with its bar")
-	check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.ElapsedTime,
-		"and the client animates the bar from a duration object, filling")
-	check(f.cast:GetScript("OnUpdate") == nil, "so nothing of ours ticks for it")
+	-- Only Forever has duration objects; until the cast lanes (2026-10-06) the
+	-- mock handed Era them too, and these passed on a client that has none.
+	if _G.__flavour == "camelot" then
+		check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.ElapsedTime,
+			"and the client animates the bar from a duration object, filling")
+		check(f.cast:GetScript("OnUpdate") == nil, "so nothing of ours ticks for it")
+	else
+		check(f.cast:GetScript("OnUpdate") ~= nil,
+			"Era has no duration object, so its plain numbers drive our own tick")
+	end
 
 	_G.__nativeCasts.nameplate1 = { name = "Arcane Missiles", icon = 136096, channel = true,
 		startTime = time * 1000, endTime = (time + 5) * 1000 }
 	NPm.castStart(f, true)
-	check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.RemainingTime,
-		"a native channel drains, as the library's does")
+	if _G.__flavour == "camelot" then
+		check(f.cast.bar.__timer and f.cast.bar.__timer.direction == dir.RemainingTime,
+			"a native channel drains, as the library's does")
+	end
 
 	-- RESTRICTED. Joe's diag, 2026-09-23: "attempt to perform numeric conversion
 	-- on a secret number value" from nameplates. The stand-ins throw on any sum,
