@@ -5943,6 +5943,12 @@ function DeliverChatMessage(frame, event, ...)
 			out = "|Hchannel:channel:" .. tostring(a8) .. "|h["
 				.. ChatFrameUtil.ResolvePrefixedChannelName(a4) .. "]|h " .. out
 		end
+		-- THE TIMESTAMP GOES ON LAST, in front of the channel link, when the
+		-- game's Chat Timestamps setting is on (Era ChatFrameOverrides.lua:496,
+		-- Forever :656). Without it the mock always handed over a line that
+		-- began with the link, and the strip anchored there passed here and
+		-- did nothing in game for anybody with timestamps on.
+		if _G.__chatTimestamp then out = _G.__chatTimestamp .. out end
 	end
 
 	frame:AddMessage(out, info.r, info.g, info.b, info.id)
@@ -9320,6 +9326,20 @@ do
 		"the channel bracket is off the front of the line (got '" .. ch .. "')")
 	check(ch:find("|Hplayer:Turdinand", 1, true) ~= nil,
 		"while the player link in the same line is untouched")
+	-- WITH THE GAME'S CHAT TIMESTAMPS ON, which put the time in front of the
+	-- channel link. Reported from WoW Forever 2026-10-06 as the setting being
+	-- ignored; it was every client, for anybody with timestamps switched on.
+	_G.__chatTimestamp = "11:13 "
+	local stamped = DeliverChatMessage(f, "CHAT_MSG_CHANNEL",
+		"elf shaman", "Turdinand", "", "1. General - Zephras Isle", "", "", 0, 1,
+		"General", 0, 85, "Player-4700-0000B2")
+	_G.__chatTimestamp = nil
+	check(not stamped:find("|Hchannel:", 1, true),
+		"with a timestamp in front, the channel bracket still comes off (got '"
+		.. stamped .. "')")
+	check(stamped:sub(1, 6) == "11:13 ",
+		"and the timestamp stays where the client put it")
+
 	local chTop = ch:match("|T[^|]-:%d+:%d+:%-?%d+:%-?%d+:%d+:%d+:%d+:%d+:(%d+):")
 	check(tonumber(chTop) == A.Media.badges.index.GENERAL * A.Media.badges.row,
 		"and General got its own pill rather than the generic one")
@@ -9390,6 +9410,13 @@ do
 	check(noBadge:find("|Hchannel:", 1, true) ~= nil,
 		"with badges off the channel bracket stays, because nothing replaced it"
 		.. " (got '" .. noBadge .. "')")
+	_G.__chatTimestamp = "11:14 "
+	local noBadgeStamped = DeliverChatMessage(f, "CHAT_MSG_CHANNEL",
+		"still here", "Turdinand", "", "2. Trade - City", "", "", 0, 2, "Trade",
+		0, 86, "Player-4700-0000B2")
+	_G.__chatTimestamp = nil
+	check(noBadgeStamped:find("|Hchannel:", 1, true) ~= nil,
+		"and with a timestamp too - the wider pattern did not loosen the handshake")
 	A.db.profile.modules.chat.badges = true
 	A:Reconfigure()
 
@@ -14613,7 +14640,13 @@ do
 	for key, opt in pairs(tree.args) do
 		if opt.type == "group" and opt.order then tops[key] = opt.order end
 	end
-	check(tops.general == 1, "General is the first page")
+	local first, firstOrder = nil, math.huge
+	for key, n in pairs(tops) do
+		if n < firstOrder then first, firstOrder = key, n end
+	end
+	check(first == "home", "Home is the first page (" .. tostring(first) .. ")")
+	check(tops.general and tops.general < (tops.unitframes or 0),
+		"and General comes straight after it")
 	local maxOther = 0
 	for key, n in pairs(tops) do
 		if key ~= "profiles" then maxOther = math.max(maxOther, n) end
@@ -14653,6 +14686,52 @@ do
 		_G.__drainTimers(1)
 		check(opened == 1, "but on the next frame (" .. opened .. ")")
 		A.Options.Open = realOpen
+
+		-- AND IT SAYS WHOSE IT IS: the mark above the line, cropped to its ink.
+		local marked = false
+		for _, r in ipairs({ A.Options.stub:GetRegions() }) do
+			if r.GetTexture and r:GetTexture() == A.Media.texture.logo then marked = true end
+		end
+		check(marked, "the stub wears the logo above its button")
+	end
+
+	-- HOME: the brand and the four things a player reaches for first.
+	do
+		local home = tree.args.home and tree.args.home.args
+		check(home ~= nil, "there is a Home page")
+		check(home and home.logo and home.logo.image == A.Media.texture.lockup
+			and home.logo.imageCoords == A.Media.lockupCoord,
+			"it opens with the full lockup - tagline and all - cropped to its ink")
+		check(home and home.logo and math.abs(home.logo.imageWidth / home.logo.imageHeight
+			- A.Media.lockupAspect) < 0.05,
+			"at the lockup's own aspect, so it is not squashed")
+		check(home and home.logo and home.logo.order > home.top.order
+			and home.afterLogo and home.afterLogo.order > home.logo.order,
+			"with air above and below it - Ace stacks controls flush otherwise")
+		local current = A:Notes()
+		check(home and home.newsBody and current and current.lines[1]
+			and home.newsBody.name:find(current.lines[1], 1, true),
+			"and what this version changed, from the changelog rather than written twice")
+		check(home and home.tour and home.news and home.unlock and home.bind,
+			"with the tour, what's new, unlock and keybind mode on it")
+		check(home and home.support and home.support.name:find("discord.gg/drveoj", 1, true),
+			"and where to get help")
+
+		-- The window opens there every time, unless a page was asked for. No
+		-- Ace in the suite, so a stand-in dialog records what it was told.
+		local O = A.Options
+		local was = { O.registered, O.dialog, O.Register }
+		local picked
+		O.registered = true
+		O.Register = function() return true end
+		O.dialog = { SelectGroup = function(_, _, g) picked = g end, Open = function() end }
+		O:Open()
+		check(picked == "home", "the window opens on Home (" .. tostring(picked) .. ")")
+		O:Open("changelog")
+		check(picked == "changelog", "unless a page was asked for, as the Notes link does")
+		home.news.func()
+		check(picked == "changelog", "and What's new on Home goes to the changelog page")
+		O.registered, O.dialog, O.Register = was[1], was[2], was[3]
 	end
 	SlashCmdList["AETHERUI"]("")
 	check(true, "and bare /aether falls back to the command list")
@@ -31302,6 +31381,23 @@ do
 		check(#empty == 0,
 			"and none of them is empty (" .. (#empty > 0 and
 			table.concat(empty, ", ", 1, math.min(#empty, 4)) or "none") .. ")")
+	end
+
+	-- AND NONE CARRIES A LITERAL BACKSLASH-N. That is a line break escaped
+	-- twice: Lua reads `\\n` as the two characters, and the option panel
+	-- printed "\n\n" in seventeen descriptions for exactly that reason until
+	-- 2026-10-06 (i18n.unescape knew only the quote).
+	do
+		local escaped = {}
+		for key, text in pairs(A.Phrases("enUS")) do
+			if type(text) == "string" and text:find("\\n", 1, true) then
+				escaped[#escaped + 1] = key
+			end
+		end
+		table.sort(escaped)
+		check(#escaped == 0,
+			"and none has a backslash-n where a line break belongs (" .. (#escaped > 0
+			and table.concat(escaped, ", ", 1, math.min(#escaped, 4)) or "none") .. ")")
 	end
 
 	-- AND NOTHING IN THE LIST IS DEAD WEIGHT. A phrase nobody asks for is a

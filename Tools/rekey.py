@@ -394,7 +394,10 @@ def write_english(english):
             out.append("\n")
         last_group = group
 
-        text = english[key].replace("\\", "\\\\").replace('"', '\\"')
+        # A real line break goes back out as `\n`; written raw it would end the
+        # Lua string mid-sentence. See i18n.unescape for the other half.
+        text = (english[key].replace("\\", "\\\\").replace("\n", "\\n")
+                .replace("\t", "\\t").replace('"', '\\"'))
         line = 'L["%s"] = "%s"\n' % (key, text)
         if len(line) <= 80:
             out.append(line)

@@ -1651,8 +1651,15 @@ local FORMAT_TYPES = {
 --  finished line.
 local DIM_TYPES = { "SYSTEM" }
 
---- Anchored, and it matches exactly the hyperlink Blizzard prepends above.
-local CHANNEL_PREFIX = "^|Hchannel:channel:%d+|h%[.-%]|h "
+--- Anchored, and it matches exactly the hyperlink Blizzard prepends above -
+--  AFTER whatever plain text sits in front of it, which is captured and put
+--  back. That text is the TIMESTAMP: the client adds the channel link and THEN
+--  prepends the time (Era ChatFrameOverrides.lua:490-499, Forever :650-659),
+--  so with the game's Chat Timestamps on, a line starts "11:13 |Hchannel:" and
+--  a pattern anchored at the link itself never matched - the setting looked
+--  like it did nothing. A timestamp has no `|` in it, so `[^|]*` cannot reach
+--  past it into another link.
+local CHANNEL_PREFIX = "^([^|]*)|Hchannel:channel:%d+|h%[.-%]|h "
 
 --- The square brackets Blizzard puts round a player link's *display text*.
 --
@@ -2060,7 +2067,7 @@ function Chat:RewriteLine(text, id)
 	if cfg.channelPrefix == false then
 		local tag = self._tag
 		if tag and text:find(tag, 1, true) then
-			local stripped, n = text:gsub(CHANNEL_PREFIX, "", 1)
+			local stripped, n = text:gsub(CHANNEL_PREFIX, "%1", 1)
 			if n > 0 then text = stripped end
 		end
 	end

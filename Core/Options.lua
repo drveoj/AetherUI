@@ -228,6 +228,101 @@ local function TrackValues()
 	return out
 end
 
+-- BOTH of these name what pressing them will DO, not what they did the first
+-- time. They are toggles wearing a button's clothes: each one closes this panel
+-- and leaves a mode running, so the next time anybody opens the window the mode
+-- is already on and a button still offering to turn it on is a button lying
+-- about the state of the screen.
+--
+-- Ace calls a `name` that is a function (AceConfigDialog-3.0.lua:187, via
+-- GetOptionsMemberValue), and it calls it when the page is BUILT - which is the
+-- moment that matters, because the panel is shut for the whole time the mode is
+-- on.
+--
+-- Builders rather than tables, because the same two buttons sit on Home and on
+-- General, and each copy needs its own order.
+local function BindAction()
+	return action(function()
+			local AB = A:GetModule("actionbars")
+			return (AB and AB.enabled and AB.bindMode)
+				and "Leave keybind mode" or "Keybind mode"
+		end,
+		"Hover a button and press a key. Keys go into Blizzard's own binding"
+		.. " set, so they survive this addon being disabled and show up in the"
+		.. " keybinding panel.",
+		function()
+			local AB = A:GetModule("actionbars")
+			if AB and AB.enabled then A.Options:Close(); AB:ToggleBindMode() end
+		end)
+end
+
+local function UnlockAction()
+	return action(function()
+			return A.Movers.unlocked and "Lock frames" or "Unlock frames"
+		end,
+		"Drag to move, scroll to nudge. Also on a tile in the Toolbox.",
+		function() A.Options:Close(); A.Movers:Toggle() end)
+end
+
+--- Blank lines, as a description. AceConfig lays a page out top to bottom with
+--  no spacing of its own, so air is the one thing a page has to ask for.
+local function gap(lines)
+	return { type = "description", name = string.rep("\n", lines or 1),
+		order = next_(), width = "full", fontSize = "medium" }
+end
+
+--- The page the window opens on: the mark, what this is, the four things a
+--  player reaches for first, and what this version changed. Everything else is
+--  one click down the tree.
+--
+--  THE LOCKUP, NOT THE LOGO. The tour card's logo has no tagline, because at
+--  300 wide it would be a smear; this page draws the mark across most of the
+--  window, so it gets the 1024 lockup that carries "Chrome for Azeroth" as real
+--  type. Both come out of the one generator, so they cannot disagree.
+--
+--  And SPACED, because Ace stacks every control flush against the one above:
+--  the first version of this page had the mark, a paragraph, a header and a
+--  row of buttons inside the top third and nothing under them.
+local function HomeGroup()
+	local Media = A.Media
+	local w = 520
+	local notes = A.Notes and A:Notes() or nil
+	local lines = {}
+	for i, line in ipairs((notes and notes.lines) or {}) do
+		lines[i] = "\194\183 " .. line
+	end
+
+	return group(L.options.home.home, {
+		top = gap(1),
+		logo = {
+			type = "description", name = "", order = next_(), width = "full",
+			image = Media.texture.lockup, imageCoords = Media.lockupCoord,
+			imageWidth = w, imageHeight = math.floor(w / Media.lockupAspect + 0.5),
+		},
+		afterLogo = gap(2),
+		about = note(A.F(L.options.home.about, A.Hi(A.version or "?"))),
+		afterAbout = gap(1),
+
+		startHeader = header(L.options.home.start_header),
+		tour = action(L.common.take_tour, L.options.home.tour_desc, function()
+			local OB = A.GetModule and A:GetModule("onboard")
+			if OB then A.Options:Close(); OB:Start() end
+		end),
+		news = action(L.common.what_s_new, nil, function()
+			if A.Options.dialog then A.Options.dialog:SelectGroup(APP, "changelog") end
+		end),
+		unlock = UnlockAction(),
+		bind = BindAction(),
+		afterStart = gap(1),
+
+		newsHeader = header(L.options.home.news_header),
+		newsBody = note(#lines > 0 and table.concat(lines, "\n") or "No notes."),
+		afterNews = gap(1),
+
+		support = note(A.F(L.options.home.support, A.Gold("discord.gg/drveoj"))),
+	})
+end
+
 local function GeneralGroup()
 	return group(L.options.general.general, {
 		-- FOUR CHIPS, NOT A DROPDOWN. Each shows its own accent on its own
@@ -253,33 +348,8 @@ local function GeneralGroup()
 			{ after = "restyle", percent = true }),
 
 		posHeader = header(L.options.general.pos_header),
-		-- BOTH of these name what pressing them will DO, not what they did the
-		-- first time. They are toggles wearing a button's clothes: each one
-		-- closes this panel and leaves a mode running, so the next time anybody
-		-- opens this page the mode is already on and a button still offering to
-		-- turn it on is a button lying about the state of the screen.
-		--
-		-- Ace calls a `name` that is a function (AceConfigDialog-3.0.lua:187,
-		-- via GetOptionsMemberValue), and it calls it when the page is BUILT -
-		-- which is the moment that matters, because the panel is shut for the
-		-- whole time the mode is on.
-		bind = action(function()
-				local AB = A:GetModule("actionbars")
-				return (AB and AB.enabled and AB.bindMode)
-					and "Leave keybind mode" or "Keybind mode"
-			end,
-			"Hover a button and press a key. Keys go into Blizzard's own binding"
-			.. " set, so they survive this addon being disabled and show up in the"
-			.. " keybinding panel.",
-			function()
-				local AB = A:GetModule("actionbars")
-				if AB and AB.enabled then A.Options:Close(); AB:ToggleBindMode() end
-			end),
-		unlock = action(function()
-				return A.Movers.unlocked and "Lock frames" or "Unlock frames"
-			end,
-			"Drag to move, scroll to nudge. Also on a tile in the Toolbox.",
-			function() A.Options:Close(); A.Movers:Toggle() end),
+		bind = BindAction(),
+		unlock = UnlockAction(),
 		reset = action(L.options.general.reset.name, L.options.general.reset.desc,
 			function() A.Movers:ResetAll() end),
 
@@ -1069,6 +1139,7 @@ local function ThreatGroup()
 	})
 end
 local PAGE_ORDER = {
+	home = 0.5,        -- first, and where the window opens
 	general = 1, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
 	minimap = 6, quests = 7, bags = 8, chat = 9, tooltips = 10,
 	toolbox = 11, fader = 12, xpbar = 13, nameplates = 14, ifec = 15,
@@ -1122,6 +1193,7 @@ function Options:Build()
 		type = "group",
 		name = A.Hi("Lattice"),
 		args = {
+			home = HomeGroup(),
 			general = GeneralGroup(),
 			unitframes = UnitFramesGroup(),
 			partyframes = PartyFramesGroup(),
@@ -1171,8 +1243,18 @@ function Options:RegisterStub()
 		and Settings.RegisterAddOnCategory) then return false end
 
 	local page = CreateFrame("Frame")
+
+	-- The mark first, so the one page of ours in the client's own window says
+	-- whose it is before it says anything else.
+	local Media = A.Media
+	local logo = page:CreateTexture(nil, "ARTWORK")
+	logo:SetTexture(Media.texture.logo)
+	logo:SetTexCoord(unpack(Media.logoCoord))
+	logo:SetSize(280, math.floor(280 / Media.logoAspect + 0.5))
+	logo:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -16)
+
 	local line = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	line:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -16)
+	line:SetPoint("TOPLEFT", logo, "BOTTOMLEFT", 0, -16)
 	line:SetText(L.options.stub.line)
 
 	local open = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
@@ -1242,9 +1324,10 @@ function Options:Open(section)
 			A.Dim("/lattice help")))
 		return false
 	end
-	if section then
-		self.dialog:SelectGroup(APP, section)
-	end
+	-- Home unless somebody asked for a page. Every opening, not just the first:
+	-- the window is the front door, and a door that opens onto wherever you
+	-- last wandered is not one.
+	self.dialog:SelectGroup(APP, section or "home")
 	self.dialog:Open(APP)
 	return true
 end

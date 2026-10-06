@@ -90,16 +90,19 @@ Media.texture = {
 	badges      = TEX .. "Chat-Badges",      -- the chat line pills, one per row
 
 	-- THE BRAND. Not drawn by generate_textures.py like everything above it -
-	-- these two are artwork, and they come in from docs/brand via
-	-- Tools/generate_brand_textures.py, which strips the logo's dark plate so
-	-- the mark sits on whichever palette is loaded rather than on Midnight's
-	-- navy wherever it is put.
+	-- Tools/generate_brand_textures.py draws these from the Lattice handoff's
+	-- geometry, with no plate, so the mark sits on whichever palette is loaded
+	-- rather than on Midnight's navy wherever it is put.
 	--
 	-- 512x256, holding a 3.3:1 lockup: the mark, then the wordmark. The nearest
 	-- power of two that holds it leaves a fifth of the height empty at each end,
 	-- so the band below is the ink. Draw with it and the size you ask for is the
 	-- size you get; draw without it and a fifth of your height is air.
 	logo        = TEX .. "Logo",
+	-- 1024x512, the same lockup WITH its tagline, for the options window's Home
+	-- page, which draws it near a thousand physical pixels wide. The tagline is
+	-- only legible at that size, which is why the tour card keeps the logo.
+	lockup      = TEX .. "Lockup",
 	-- 64x64, the mark on its own, transparent to the edge of its glow. Sixty-four
 	-- rather than 128 for the reason the icon atlas above is: this is drawn near
 	-- 35 physical pixels on the rail and in the addon list, and a texture minified
@@ -119,6 +122,10 @@ Media.logoCoord = { 0, 1, 53 / 256, 205 / 256 }
 --  one dimension and takes the other from here, so the mark is never squashed
 --  by somebody guessing the second number.
 Media.logoAspect = 512 / 152
+
+--- The lockup's band and aspect, under the same contract as the logo's.
+Media.lockupCoord = { 0, 1, 105 / 512, 407 / 512 }
+Media.lockupAspect = 1024 / 302
 
 --- The chat badge atlas: thirteen pills, one per row, three characters each.
 --

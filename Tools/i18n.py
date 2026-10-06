@@ -249,8 +249,15 @@ JOIN = re.compile(r'\s*(?:--[^\n]*\n\s*)*\.\.\s*(?:--[^\n]*\n\s*)*')
 
 
 def unescape(text):
-    """What the string actually says, for the phrase list."""
-    return text.replace('\\"', '"')
+    """What the string actually says, for the phrase list.
+
+    EVERY ESCAPE, not just the quote. This used to undo `\\"` alone, so a
+    `\\n` in the source reached rekey.py as a backslash and an n, and rekey -
+    which escapes backslashes on the way out, correctly - wrote `\\\\n`. Lua
+    reads that back as the two characters, and seventeen options descriptions
+    printed "\\n\\n" where a paragraph break belonged until 2026-10-06.
+    """
+    return re.sub(r'\\(.)', lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), text)
 
 
 def chain(body, at):
