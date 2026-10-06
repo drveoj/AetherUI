@@ -2499,13 +2499,63 @@ end
 --   * NineSlice exists and is a child FRAME, not a backdrop
 -- ---------------------------------------------------------------------------
 
+-- WOW FOREVER'S TOOLTIP IS DATA-DRIVEN. Its GameTooltip is built on
+-- GameTooltipDataMixin (Mainline/GameTooltip.xml:4): a fill goes through
+-- ProcessInfo and on to TooltipDataProcessor's post-calls, and there is no
+-- OnTooltipSetUnit/Item/Spell anywhere in its own code. Classic Era's is the
+-- Classic GameTooltipMixin with those three scripts (Classic/GameTooltip.xml:22).
+-- Until 2026-10-06 the mock gave camelot the scripts too, so the suite passed
+-- tooltip content that never ran on Forever.
+local FOREVER_TOOLTIPS = _G.__flavour == "camelot"
+if FOREVER_TOOLTIPS then
+	Enum = Enum or {}
+	Enum.TooltipDataType = { Item = 0, Spell = 1, Unit = 2 }
+	TooltipDataProcessor = { AllTypes = "ALL", __post = {} }
+	function TooltipDataProcessor.AddTooltipPostCall(kind, fn)
+		local list = TooltipDataProcessor.__post[kind] or {}
+		list[#list + 1] = fn
+		TooltipDataProcessor.__post[kind] = list
+	end
+end
+
+--- Tell whatever is listening that a fill is complete, the way THIS client does:
+--  the script on Classic Era, the post-calls on WoW Forever.
+local function tooltipFilled(tip, script, kind)
+	if FOREVER_TOOLTIPS then
+		local data = { type = Enum.TooltipDataType[kind] }
+		for _, fn in ipairs(TooltipDataProcessor.__post[data.type] or {}) do fn(tip, data) end
+		for _, fn in ipairs(TooltipDataProcessor.__post.ALL or {}) do fn(tip, data) end
+		return
+	end
+	local h = tip.__scripts and tip.__scripts[script]
+	if h then h(tip) end
+end
+
+--- Hook a unit fill on one tooltip the way ANOTHER addon would on this client:
+--  HookScript on Classic Era, a Unit post-call on WoW Forever. For the tests
+--  that stand in for MobInfo2 and friends.
+function _G.__onUnitFilled(tip, fn)
+	if FOREVER_TOOLTIPS then
+		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(t)
+			if t == tip then fn(t) end
+		end)
+	else
+		tip:HookScript("OnTooltipSetUnit", fn)
+	end
+end
+
 local function tooltipLines(tip)
 	tip.__lines = {}
 	tip.__hasScript = {
-		OnTooltipSetUnit = true, OnTooltipSetItem = true,
-		OnTooltipSetSpell = true, OnTooltipCleared = true,
+		OnTooltipSetUnit = not FOREVER_TOOLTIPS, OnTooltipSetItem = not FOREVER_TOOLTIPS,
+		OnTooltipSetSpell = not FOREVER_TOOLTIPS, OnTooltipCleared = true,
 		OnShow = true, OnHide = true, OnSizeChanged = true, OnUpdate = true,
 	}
+	if FOREVER_TOOLTIPS then
+		-- GameTooltipDataMixin's, and the only thing a module needs from it is
+		-- that it is there - it is how a data-driven tooltip is told apart.
+		function tip:ProcessInfo() return true end
+	end
 
 	-- The NineSlice border. A child frame with a Center texture, exactly as
 	-- TooltipBackdropTemplate builds it - NOT a backdrop, which GameTooltip has
@@ -2666,8 +2716,7 @@ local function tooltipLines(tip)
 			sb:Show()
 		end
 
-		local h = self.__scripts and self.__scripts.OnTooltipSetUnit
-		if h then h(self) end
+		tooltipFilled(self, "OnTooltipSetUnit", "Unit")
 	end
 
 	function tip:SetItemByID(id, name, quality)
@@ -2677,8 +2726,7 @@ local function tooltipLines(tip)
 		self.__itemQuality = quality or 3
 		local qc = ITEM_QUALITY_COLORS[self.__itemQuality] or { r = 1, g = 1, b = 1 }
 		self:AddLine(self.__itemName, qc.r, qc.g, qc.b)
-		local h = self.__scripts and self.__scripts.OnTooltipSetItem
-		if h then h(self) end
+		tooltipFilled(self, "OnTooltipSetItem", "Item")
 	end
 
 	function tip:SetSpell(id, name, body)
@@ -2686,8 +2734,7 @@ local function tooltipLines(tip)
 		self.__spellID, self.__spellName = id, name or "Conjure Water"
 		self:AddLine(self.__spellName)
 		self:AddLine(body or "Conjures 14 bottles of fresh water.")
-		local h = self.__scripts and self.__scripts.OnTooltipSetSpell
-		if h then h(self) end
+		tooltipFilled(self, "OnTooltipSetSpell", "Spell")
 	end
 
 	return tip
@@ -25857,7 +25904,7 @@ do
 	-- of the suite and quietly becomes part of every later assertion's fixture.
 	local appended = false
 	_G.__mi2Active = true
-	GameTooltip:HookScript("OnTooltipSetUnit", function(self)
+	_G.__onUnitFilled(GameTooltip, function(self)
 		if not _G.__mi2Active then return end
 		local fs = _G.GameTooltipTextLeft2
 		if fs and fs:GetText() then
@@ -25880,7 +25927,7 @@ do
 	-- The other load order, done honestly rather than argued: a fresh tooltip
 	-- that the simulated MobInfo2 hooked BEFORE we did.
 	local other = _G.__makeTooltip("HarnessOrderTooltip")
-	other:HookScript("OnTooltipSetUnit", function(self)
+	_G.__onUnitFilled(other, function(self)
 		local fs = _G.HarnessOrderTooltipTextLeft2
 		if fs and fs:GetText() then fs:SetText(fs:GetText() .. " MI2-first") end
 	end)
@@ -25891,6 +25938,40 @@ do
 		"and it works with the hooks installed the other way round too")
 
 	_G.__mi2Active = nil
+end
+
+print("== tooltips: one route per client, and a secret line is skipped ==")
+do
+	local T = A:GetModule("tooltips")
+
+	-- Exactly once per fill. Two routes both answering would run OnUnit twice,
+	-- which the strip survives but every future handler might not.
+	local runs, real = 0, T.OnUnit
+	T.OnUnit = function(self, tip) runs = runs + 1 return real(self, tip) end
+	GameTooltip:SetUnit("mouseover")
+	T.OnUnit = real
+	check(runs == 1, "a unit fill is handled exactly once (" .. runs .. ")")
+
+	if _G.__flavour == "camelot" then
+		check(T.dataHooked == true, "WoW Forever reaches tooltip content through TooltipDataProcessor")
+
+		-- A line built from restricted data comes back secret, and matching in
+		-- one throws. A guilded PLAYER, because the guild read is the one that
+		-- matches whatever it is handed - the level parser already ignores a
+		-- non-string, so an NPC here would pass with the guard removed (it did).
+		local was = _G.__units.mouseover
+		_G.__units.mouseover = { exists = true, name = "Kindarhazan", level = 19,
+			reaction = 5, isPlayer = true, class = "Shaman", classToken = "SHAMAN",
+			guild = "Samophlange", hp = 800, hpMax = 800 }
+		GameTooltip:SetUnit("mouseover")
+		_G.GameTooltipTextLeft2:SetText(_G.__SecretStandIn())
+		local ok, err = pcall(T.OnUnit, T, GameTooltip)
+		check(ok, "a secret tooltip line is skipped, not matched (" .. tostring(err) .. ")")
+		_G.__units.mouseover = was
+		GameTooltip:SetUnit("mouseover")
+	else
+		check(not T.dataHooked, "Classic Era registers no data post-calls - the scripts are its route")
+	end
 end
 
 print("== tooltips: the strip is idempotent, and declines what it cannot parse ==")

@@ -224,6 +224,30 @@ end
 --  Used to decide whether a line is the client's own prose or something another
 --  addon deliberately coloured. Recolouring only the white ones is what keeps
 --  the lore-gold treatment from painting over Pawn's green score line.
+--- Does this tooltip run on DATA rather than on the OnTooltipSet* scripts?
+--
+--  WoW Forever's GameTooltip is built on GameTooltipDataMixin
+--  (Mainline/GameTooltip.xml:4): every fill goes through ProcessInfo and on to
+--  TooltipDataProcessor's post-calls, and no OnTooltipSetUnit/Item/Spell runs
+--  anywhere in its own code. Classic Era's is the Classic GameTooltipMixin with
+--  those three scripts (Classic/GameTooltip.xml:22). ProcessInfo is the
+--  difference you can ask the tooltip about, and exactly one route is used per
+--  tooltip, so nothing is handled twice.
+local function DataDriven(tip)
+	return tip and tip.ProcessInfo ~= nil
+		and _G.TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall
+		and _G.Enum and Enum.TooltipDataType and true or false
+end
+
+--- A tooltip line's text, or nil if there is none - OR IF IT IS SECRET. On WoW
+--  Forever a line built from restricted data can be a secret string, and
+--  matching or finding in one throws. Nothing here needs a line it cannot read.
+local function LineText(fs)
+	local text = fs and fs.GetText and fs:GetText()
+	if text == nil or A.IsSecret(text) or type(text) ~= "string" then return nil end
+	return text
+end
+
 local function IsPlainWhite(fs)
 	if not fs or not fs.GetTextColor then return false end
 	local r, g, b = fs:GetTextColor()
@@ -571,20 +595,26 @@ function TT:Register(tip)
 		end)
 	end
 
-	if tip.HasScript and tip:HasScript("OnTooltipSetUnit") then
-		tip:HookScript("OnTooltipSetUnit", function(self)
-			if TT.enabled then TT:OnUnit(self) end
-		end)
-	end
-	if tip.HasScript and tip:HasScript("OnTooltipSetItem") then
-		tip:HookScript("OnTooltipSetItem", function(self)
-			if TT.enabled then TT:OnItem(self) end
-		end)
-	end
-	if tip.HasScript and tip:HasScript("OnTooltipSetSpell") then
-		tip:HookScript("OnTooltipSetSpell", function(self)
-			if TT.enabled then TT:OnSpell(self) end
-		end)
+	-- THE SCRIPTS ARE CLASSIC ERA'S ROUTE ONLY. A data-driven tooltip (WoW
+	-- Forever) is reached through TT:HookDataTooltips instead - one post-call
+	-- per kind for every tooltip - so it is left alone here even if it still
+	-- answers HasScript for a script its client never fires.
+	if not DataDriven(tip) then
+		if tip.HasScript and tip:HasScript("OnTooltipSetUnit") then
+			tip:HookScript("OnTooltipSetUnit", function(self)
+				if TT.enabled then TT:OnUnit(self) end
+			end)
+		end
+		if tip.HasScript and tip:HasScript("OnTooltipSetItem") then
+			tip:HookScript("OnTooltipSetItem", function(self)
+				if TT.enabled then TT:OnItem(self) end
+			end)
+		end
+		if tip.HasScript and tip:HasScript("OnTooltipSetSpell") then
+			tip:HookScript("OnTooltipSetSpell", function(self)
+				if TT.enabled then TT:OnSpell(self) end
+			end)
+		end
 	end
 
 	TT:AdoptStatusBar(tip)
@@ -832,7 +862,7 @@ local function StripLevel(tip, dropClassWord)
 	local limit = math.min(tip.NumLines and tip:NumLines() or 0, 4)
 	for i = 2, limit do
 		local fs = Left(tip, i)
-		local text = fs and fs.GetText and fs:GetText()
+		local text = LineText(fs)
 		local lvl, rest = ParseLevelLine(text, dropClassWord)
 		if lvl then return i, fs, lvl, rest end
 	end
@@ -866,8 +896,8 @@ function TT:OnUnit(tip)
 	if UnitIsPlayer(unit) then
 		for i = 2, math.min(tip.NumLines and tip:NumLines() or 0, 3) do
 			local fs = Left(tip, i)
-			local text = fs and fs.GetText and fs:GetText()
-			if type(text) == "string" and text:match("^<.+>$") then
+			local text = LineText(fs)
+			if text and text:match("^<.+>$") then
 				Ink(fs, c.ttGuild)
 				break
 			end
@@ -1319,12 +1349,15 @@ function TT:InstallHooks()
 			if TT.enabled then FollowCursor(self) end
 		end)
 		-- The follow flag is decided once per tooltip rather than per frame, so
-		-- WantsCursor's owner lookup is not on the hot path.
-		for _, script in ipairs({ "OnTooltipSetItem", "OnTooltipSetSpell" }) do
-			if gt:HasScript(script) then
-				gt:HookScript(script, function(self)
-					self.aetherFollow = TT.enabled and WantsCursor(self) or nil
-				end)
+		-- WantsCursor's owner lookup is not on the hot path. Scripts on Classic
+		-- Era; on a data-driven tooltip the post-calls below set it instead.
+		if not DataDriven(gt) then
+			for _, script in ipairs({ "OnTooltipSetItem", "OnTooltipSetSpell" }) do
+				if gt:HasScript(script) then
+					gt:HookScript(script, function(self)
+						self.aetherFollow = TT.enabled and WantsCursor(self) or nil
+					end)
+				end
 			end
 		end
 		if gt:HasScript("OnTooltipCleared") then
@@ -1333,6 +1366,44 @@ function TT:InstallHooks()
 			end)
 		end
 	end
+
+	self:HookDataTooltips()
+end
+
+--- WoW Forever's route to tooltip content: one post-call per kind.
+--
+--  The same switch Blizzard's own PTR-feedback addon makes on that client
+--  (Blizzard_PTRFeedback_Tooltips.lua:50, 92, 120). A post-call runs for EVERY
+--  tooltip the client fills, ours or not, so each one acts only on a tooltip we
+--  dressed and that is itself data-driven; and like a HookScript it can never
+--  be taken off again, so the module's enabled flag is checked inside rather
+--  than trusted to have unregistered it. Installed only where GameTooltip itself
+--  is data-driven - on Classic Era the scripts above do this job.
+function TT:HookDataTooltips()
+	if self.dataHooked or not DataDriven(_G.GameTooltip) then return end
+	self.dataHooked = true
+
+	local kinds = Enum.TooltipDataType
+	local function ours(tip)
+		return TT.enabled and tip and tip.aetherCard and DataDriven(tip)
+	end
+	local function follow(tip)
+		if tip == _G.GameTooltip then
+			tip.aetherFollow = TT.enabled and WantsCursor(tip) or nil
+		end
+	end
+
+	TooltipDataProcessor.AddTooltipPostCall(kinds.Unit, function(tip)
+		if ours(tip) then TT:OnUnit(tip) end
+	end)
+	TooltipDataProcessor.AddTooltipPostCall(kinds.Item, function(tip)
+		if ours(tip) then TT:OnItem(tip) end
+		follow(tip)
+	end)
+	TooltipDataProcessor.AddTooltipPostCall(kinds.Spell, function(tip)
+		if ours(tip) then TT:OnSpell(tip) end
+		follow(tip)
+	end)
 end
 
 -- ---------------------------------------------------------------------------
