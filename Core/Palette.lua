@@ -178,6 +178,15 @@ local SEMANTIC = {
 	castEdge = C(150, 200, 255, 0.45),
 	castGlow = C(140, 200, 255, 0.55),
 
+	-- MIRROR LANES: what the world is doing to you, on the lane that leaves the
+	-- player capsule's left edge. The Lattice handoff's own values (Cast lanes,
+	-- "Mirror bars"): breath #9ad8ff, fatigue #f08a7a, feign death a pale grey.
+	-- The rail they run along is the bond hairline.
+	mirrorBreath  = C(154, 216, 255),
+	mirrorFatigue = C(240, 138, 122),
+	mirrorFeign   = C(220, 214, 250, 0.60),
+	mirrorRail    = C(205, 188, 255, 0.25),
+
 	-- messages
 	info     = C(164, 216, 245),
 	infoBg   = C(140, 200, 255, 0.13),

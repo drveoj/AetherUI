@@ -825,9 +825,10 @@ L["options.game_own.settings.desc"] =
 		.. "the options panel looking like Blizzard's."
 L["options.game_own.settings.name"] = "This panel"
 L["options.game_own.timers.desc"] =
-	"The breath, fatigue and feign-death bars. Which timer it is stays "
-		.. "in the colour - blue for breath, yellow for fatigue, orange for "
-		.. "death - in this interface's colours."
+	"Breath, fatigue and feign death, as lanes running out from the left "
+		.. "of your own frame - what the world is doing to you arrives on "
+		.. "that side. Blue for breath, red for fatigue, grey for feign death; "
+		.. "under ten seconds the lane pulses. Off gives you Blizzard's bars back."
 L["options.game_own.timers.name"] = "Timers"
 
 L["options.general.class_color_health.name"] = "Class-coloured health"

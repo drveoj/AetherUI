@@ -5651,6 +5651,31 @@ end
 -- MirrorTimer_Show re-colours the bar from MirrorTimerColors on every single
 -- start, which is what makes a colour set once at login a colour you see until
 -- the first time you go underwater.
+-- THE DATA, on both clients (MirrorTimerDocumentation.lua): progress is the
+-- milliseconds left, read by timer name; GetMirrorTimerInfo by slot. A test
+-- sets _G.__mirror[kind] = ms to move the clock.
+_G.__mirror = {}
+function GetMirrorTimerProgress(kind) return _G.__mirror[kind] end
+function GetMirrorTimerInfo(i) return "UNKNOWN", 0, 0, 1, 0, "" end
+
+-- THE FRAMES DIFFER. Classic Era has MirrorTimer1-3 and MirrorTimer_Show
+-- (Classic/MirrorTimer.lua). WoW Forever has neither - one pooled Edit Mode
+-- MirrorTimerContainer (Mainline/MirrorTimer.xml:57). Until 2026-10-06 the mock
+-- gave camelot Era's frames, so a module that only reskinned those passed here
+-- and did nothing at all in game.
+if _G.__flavour == "camelot" then
+	local box = CreateFrame("Frame", "MirrorTimerContainer", UIParent)
+	box:Hide()
+	box.__timers = {}
+	function box:ShouldShow() return next(self.__timers) ~= nil end
+	--- What Blizzard's own MIRROR_TIMER_START does with it: SetShown(ShouldShow()).
+	function _G.__forever_mirrorStart(kind)
+		box.__timers[kind] = true
+		box:SetShown(box:ShouldShow())
+	end
+end
+
+if _G.__flavour ~= "camelot" then
 _G.MIRRORTIMER_NUMTIMERS = 3
 MirrorTimerColors = {
 	EXHAUSTION = { r = 1.00, g = 0.90, b = 0.00 },
@@ -5713,6 +5738,7 @@ function MirrorTimer_Show(timer, value, maxvalue, scale, paused, label)
 	dialog:Show()
 	return dialog
 end
+end -- Classic Era's frames
 
 MakeChatFrame(1)
 MakeChatFrame(2)
@@ -24317,79 +24343,87 @@ do
 	A.Palette:Apply(wasSkin or "midnight")
 end
 
-print("== timers: breath, fatigue, and the colour that says which ==")
+print("== timers: mirror lanes - what the world does to you, at your left edge ==")
 do
 	local TMm = A:GetModule("timers")
+	local UFm = A:GetModule("unitframes")
 	check(TMm ~= nil and TMm.enabled, "the timers module is on")
+	local era = _G.__flavour ~= "camelot"
 
-	local f = _G.MirrorTimer1
-	check(f.__border:GetTexture() == 0 and f.__plate:GetTexture() == 0,
-		"a timer's stone border and its black plate come off")
-	check(f.__aetherPill ~= nil, "and glass goes behind it")
+	--- The client starting a timer: the event, and what ITS frames then do.
+	local function start(kind, ms, max, label)
+		_G.__mirror[kind] = ms
+		fire("MIRROR_TIMER_START", kind, ms, max, -1, 0, label)
+		if era then MirrorTimer_Show(kind, ms, max, -1, 0, label)
+		else _G.__forever_mirrorStart(kind) end
+	end
+	local function blizzardShown()
+		if era then return _G.MirrorTimer1:IsShown() end
+		return _G.MirrorTimerContainer:IsShown()
+	end
 
-	-- THE CAPSULE IS THE FRAME. Behind the bar alone it is a sliver two pixels
-	-- taller than the fill, which is a rim rather than a capsule.
-	local bar = _G.MirrorTimer1StatusBar
-	check(f.__aetherPill:GetParent() == f
-		and f.__aetherPill:GetWidth() == f:GetWidth(),
-		"the capsule covers the frame, the way the cast bar's does ("
-		.. tostring(f.__aetherPill:GetWidth()) .. " of " .. tostring(f:GetWidth())
-		.. ") - behind the fill alone it is a rim two pixels taller than the bar")
+	-- Leaves the capsule's LEFT edge: what is done to you arrives on that side.
+	local _, rel, relPt = TMm.holder:GetPoint(1)
+	check(rel == UFm.player and relPt == "LEFT",
+		"the lanes hang off the player capsule's left edge (" .. tostring(relPt) .. ")")
 
-	-- ABOVE THE GLASS. The template lowers this bar's frame level in its own
-	-- OnLoad, so a capsule put behind the frame draws over the fill - which is
-	-- the bar coming back as a pale block with no capsule anywhere.
-	check(bar:GetFrameLevel() > f.__aetherPill:GetFrameLevel(),
-		"and the fill sits above it (" .. bar:GetFrameLevel() .. " vs "
-		.. f.__aetherPill:GetFrameLevel() .. ") - the template LOWERS this bar,"
-		.. " so left alone the glass is drawn over the top of it")
+	start("BREATH", 38000, 60000, "Breath")
+	local lane = TMm.lanes[1]
+	check(lane:IsShown(), "a breath timer draws a lane - on both clients, from the events")
+	check(lane.label:GetText() == "BREATH 0:38",
+		"labelled the handoff's way (" .. tostring(lane.label:GetText()) .. ")")
+	local r, g, b = lane.fill:GetVertexColor()
+	local want = A.Palette.c.mirrorBreath
+	check(r == want[1] and g == want[2] and b == want[3], "in breath blue")
+	local w = lane.fill:GetWidth()
+	check(math.abs(w - 170 * 38 / 60) < 0.5,
+		"the fill is the share of time left (" .. string.format("%.1f", w) .. ")")
+	check(not blizzardShown(), "and Blizzard's own timer is kept out of sight")
 
-	-- The cast bar's layout: the word on the left, the fill beside it.
-	local tPt, tRel, tRelPt = _G.MirrorTimer1Text:GetPoint(1)
-	check(tPt == "LEFT" and tRel == f and tRelPt == "LEFT",
-		"the word sits at the left of the capsule (" .. tostring(tPt) .. ")")
-	check(_G.MirrorTimer1Text._aetherStyle == "castName",
-		"in the cast bar's own lettering, because this is the same object")
+	-- It drains from the client's reading, not from a clock of ours.
+	_G.__mirror.BREATH = 9000
+	TMm:Tick()
+	check(lane.label:GetText() == "BREATH 0:09", "it counts down from the client's progress")
+	check(lane.fill:GetWidth() < w, "and the lane drains")
 
-	local bPt, bRel = bar:GetPoint(1)
-	check(bPt == "LEFT" and bRel == _G.MirrorTimer1Text,
-		"and the fill starts where the word ends rather than at a fixed offset -"
-		.. " 'Feign Death' is half again the width of 'Breath', so the bar gives"
-		.. " way rather than the word being clipped")
-	check(bar:GetHeight() == 7,
-		"at the cast bar's own height (" .. bar:GetHeight() .. ")")
+	-- Under ten seconds it pulses; above, it holds.
+	local lo = 1
+	for _ = 1, 8 do tick(0.15) TMm:Paint() lo = math.min(lo, lane:GetAlpha()) end
+	check(lo < 0.9, "under ten seconds the lane pulses (" .. string.format("%.2f", lo) .. ")")
 
-	-- WHICH TIMER IT IS, IN THE COLOUR - and re-applied, because the client
-	-- sets its own from MirrorTimerColors every time a timer starts. A colour
-	-- set once at login is a colour you see until the first time you dive.
-	MirrorTimer_Show("BREATH", 30000, 60000, 1, 0, "Breath")
-	local br, bg, bb = bar:GetStatusBarTexture():GetVertexColor()
-	-- POWER rather than CAST. Both are blue and the cast blue is the paler, so
-	-- over bright water it came back reading as a white bar with a grey end.
-	local breath = A.Palette.c.power[1]
-	check(br == breath[1] and bg == breath[2] and bb == breath[3],
-		"breath is our blue rather than Blizzard's (" ..
-		string.format("%.2f,%.2f,%.2f", br, bg, bb) .. ")")
+	-- A second timer takes the second lane, 8 below.
+	start("EXHAUSTION", 50000, 60000, "Fatigue")
+	local lane2 = TMm.lanes[2]
+	check(lane2:IsShown() and lane2.label:GetText():find("^FATIGUE"), "a second timer stacks")
+	local fr = lane2.fill:GetVertexColor()
+	check(fr == A.Palette.c.mirrorFatigue[1], "in fatigue red")
+	local _, _, _, _, y2 = lane2:GetPoint(1)
+	check(y2 == -(4 + 8), "8 below the first (" .. tostring(y2) .. ")")
 
-	-- A DIFFERENT TIMER TAKES A DIFFERENT FRAME. The client picks whichever of
-	-- the three is free, so all three have to have been dressed - and the
-	-- colour has to follow the KIND, not the frame.
-	MirrorTimer_Show("EXHAUSTION", 30000, 60000, 1, 0, "Fatigue")
-	local bar2 = _G.MirrorTimer2StatusBar
-	local er, eg = bar2:GetStatusBarTexture():GetVertexColor()
-	local tired = A.Palette.c.energy[1]
-	check(er == tired[1] and eg == tired[2],
-		"and fatigue is our yellow, on whichever of the three frames was free")
+	-- Paused: holds still.
+	fire("MIRROR_TIMER_PAUSE", "BREATH", 1)
+	_G.__mirror.BREATH = 1000
+	TMm:Tick()
+	check(lane.label:GetText() == "BREATH 0:09", "a paused timer holds its time")
+	check(lane:GetAlpha() == 1, "and stops pulsing")
 
-	-- Off hands the client its own back.
+	-- Stopping one closes the gap.
+	fire("MIRROR_TIMER_STOP", "BREATH")
+	check(TMm.lanes[1].label:GetText():find("^FATIGUE") and not TMm.lanes[2]:IsShown(),
+		"stopping one moves the other up rather than leaving a gap")
+	fire("MIRROR_TIMER_STOP", "EXHAUSTION")
+	check(not TMm.lanes[1]:IsShown(), "and with none running there are no lanes")
+
+	-- Off gives the client its own back; on takes it away again.
+	start("BREATH", 30000, 60000, "Breath")
 	A:SetModuleEnabled("timers", false)
-	check(f.__border:GetTexture() == "Interface\\CastingBar\\UI-CastingBar-Border"
-		and f.__aetherPill == nil,
-		"switching it off returns the border the client drew")
+	check(blizzardShown(), "switching it off shows Blizzard's timer for the one that is running")
 	A:SetModuleEnabled("timers", true)
-	check(_G.MirrorTimer1.__aetherPill ~= nil, "and on again re-dresses it")
-
-	for i = 1, 3 do _G["MirrorTimer" .. i]:Hide() end
+	start("BREATH", 30000, 60000, "Breath")
+	check(not blizzardShown() and TMm.lanes[1]:IsShown(), "and on again it is lanes")
+	fire("MIRROR_TIMER_STOP", "BREATH")
+	if era then for i = 1, 3 do _G["MirrorTimer" .. i]:Hide() end
+	else _G.MirrorTimerContainer.__timers = {} _G.MirrorTimerContainer:Hide() end
 end
 
 print("== palette: difficulty has one owner ==")
