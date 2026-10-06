@@ -12375,6 +12375,39 @@ section("secret values are drawn, never read", function()
 		"and an ordinary value afterwards reads out again, so the secret branch"
 		.. " does not latch")
 
+	-- A VALUE TURNING SECRET MID-GLIDE. The glide ran on, read the secret back
+	-- out of the bar and subtracted - or landed on top of it with the stale
+	-- target it had been heading for (Lattice Prune Audit, Forever item 8).
+	do
+		local bar = f.health
+		units.player.hp, units.player.hpMax = 1000, 1000
+		UF.UpdateAll(f)
+		bar:SetValueNow(1000)
+		units.player.hp = 400
+		UF.UpdateAll(f)
+		check(bar._animating == true, "a plain change glides")
+
+		local secret = _G.__MakeSecret(4290)
+		units.player.hp = secret
+		UF.UpdateAll(f)
+		check(not bar._animating and bar:GetValue() == secret,
+			"turning secret mid-glide ends the glide and keeps the secret")
+		local ok, err = pcall(bar._Step, bar, 0.1)
+		check(ok and bar:GetValue() == secret,
+			"and a stray step leaves it alone rather than throwing: " .. tostring(err))
+
+		-- ...and back: the first plain value lands at once, with nothing read
+		-- from the secret still held in the bar.
+		units.player.hp = 800
+		UF.UpdateAll(f)
+		ok, err = pcall(bar._Step, bar, 0.1)
+		check(ok and bar:GetValue() == 800 and not bar._animating,
+			"the first plain value after a secret one snaps into place: " .. tostring(err))
+
+		units.player.hp, units.player.hpMax = saved, savedMax
+		UF.UpdateAll(f)
+	end
+
 	-- A SECRET CAST IS DRAWN BY THE GAME. Reported from the game, before the
 	-- lanes, as "UNIT_SPELLCAST_START: attempt to perform numeric conversion on
 	-- a secret number value" - the old tick divided one secret by another.

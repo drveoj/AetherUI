@@ -298,7 +298,7 @@ local function UpdateHealth(f)
 	-- number beside it goes quiet.
 	if A.IsSecret(cur, max) then
 		f.health:SetMinMaxValues(0, max)
-		f.health:SetValue(cur)
+		f.health:SetValueNow(cur)
 		f.health:SetColors(Palette:HealthColor(unit))
 		f.hpText:SetText("")
 		return
@@ -340,7 +340,7 @@ local function UpdatePower(f)
 	-- `cur > 0` on the readout line is a comparison too, so the same guard.
 	if A.IsSecret(cur, max) then
 		f.power:SetMinMaxValues(0, max)
-		f.power:SetValue(cur)
+		f.power:SetValueNow(cur)
 		f.power:SetColors(Palette:PowerColor(unit))
 		f.mpText:SetText("")
 		return

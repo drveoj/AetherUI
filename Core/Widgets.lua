@@ -493,11 +493,34 @@ function Bar:SetSmoothValue(v)
 	end
 end
 
+--- Set a value at once, ending any glide in flight. The way to write a SECRET:
+--  a glide left running would read the secret back and subtract, or land on
+--  top of it with the stale target it was heading for.
+function Bar:SetValueNow(v)
+	self._target = nil
+	if self._animating then
+		self._animating = false
+		A:UnregisterTicker(self)
+	end
+	self:SetValue(v)
+end
+
 function Bar:_Step(dt)
 	local cur = self:GetValue() or 0
 	local target = self._target or cur
-	local diff = target - cur
 	local _, max = self:GetMinMaxValues()
+	-- NOTHING SECRET IS GLIDED. On WoW Forever a value can turn secret mid-glide,
+	-- and a bar that has held one reads it back the next time it is asked. The
+	-- sums below would throw. A plain target lands at once; a secret one is the
+	-- caller's, already written.
+	if A.IsSecret(cur, max, target) then
+		self._animating = false
+		A:UnregisterTicker(self)
+		if not A.IsSecret(target) then self:SetValue(target) end
+		self._target = nil
+		return
+	end
+	local diff = target - cur
 	local epsilon = math.max((max or 1) * 0.002, 0.0001)
 	if math.abs(diff) <= epsilon then
 		self:SetValue(target)

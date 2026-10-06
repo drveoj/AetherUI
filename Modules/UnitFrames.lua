@@ -608,7 +608,7 @@ local function UpdateHealth(f)
 	-- most of this we are allowed to keep. See A.IsSecret.
 	if A.IsSecret(cur, max) then
 		f.health:SetMinMaxValues(0, max)
-		f.health:SetValue(cur)
+		f.health:SetValueNow(cur)
 		f.health:SetColors(Palette:HealthColor(unit))
 		f.hpText:SetText("")
 		f._lastHealth = nil
@@ -656,7 +656,7 @@ local function UpdatePower(f)
 	if A.IsSecret(cur, max) then
 		f.power:Show()
 		f.power:SetMinMaxValues(0, max)
-		f.power:SetValue(cur)
+		f.power:SetValueNow(cur)
 		f.power:SetColors(Palette:PowerColor(unit))
 		f.mpText:SetText("")
 		f._lastPower = nil
