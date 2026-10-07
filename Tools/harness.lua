@@ -8014,6 +8014,20 @@ do
 		"yours fills from your edge, the target's from its own")
 	check(not UF.cast.bar.bg:IsShown(), "a lane draws no track: the hairline is its rail")
 
+	-- Round at the LEADING edge, not at the ends of the bar (Joe, 2026-10-07):
+	-- no mask on the lane, and a cap riding the fill's moving edge.
+	check(UF.cast.bar._mask == nil and UF.targetCast.bar._mask == nil,
+		"a lane's bar is not masked round at its two ends")
+	local function capOn(lane, cap, edge)
+		local p, rel, rp = cap:GetPoint(1)
+		return p == "CENTER" and rel == lane.bar:GetStatusBarTexture() and rp == edge
+	end
+	check(capOn(UF.cast, UF.cast.cap, "RIGHT"),
+		"your lane's round cap rides the right end of its fill")
+	check(capOn(UF.targetCast, UF.targetCast.cap, "LEFT")
+		and capOn(UF.targetCast, UF.targetCast.lockedCap, "LEFT"),
+		"the target's, gold and grey alike, ride the left end of its fill")
+
 	-- The length is measured, because the two capsules move separately.
 	UF.player:SetGeom({ left = 100, right = 400, top = 300, bottom = 240 })
 	UF.target:SetGeom({ left = 520, right = 820, top = 300, bottom = 240 })

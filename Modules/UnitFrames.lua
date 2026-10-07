@@ -366,7 +366,10 @@ local function BuildLane(bond, unit)
 	f:SetHeight(LANE_H)
 
 	-- The hairline under it is the rail, so the bar draws no track of its own.
-	local bar = W.CreateBar(f, { height = LANE_H, smooth = false })
+	-- UNROUNDED: the shared mask rounds a bar's two ends, which on a lane are the
+	-- origin it is joined at and a far end the fill has not reached (Joe,
+	-- 2026-10-07). The round belongs on the leading edge - see the cap below.
+	local bar = W.CreateBar(f, { height = LANE_H, smooth = false, rounded = false })
 	bar:SetAllPoints(f)
 	bar.bg:Hide()
 	-- Filling away from its origin: your edge on the left, the target's on the
@@ -374,6 +377,21 @@ local function BuildLane(bond, unit)
 	bar:SetReverseFill(not mine)
 	f.bar = bar
 	local fill = bar:GetStatusBarTexture()
+
+	-- THE CAP: a disc the lane's height, centred on the fill's leading edge, so
+	-- the tip is a half-round and travels with the fill - the client's included,
+	-- when a duration object animates it. Not a mask on the fill: a mask is a
+	-- stretched texture, and its ends would change shape as the lane grew.
+	local lead = mine and "RIGHT" or "LEFT"
+	local function Cap(sub)
+		local t = bar:CreateTexture(nil, "ARTWORK", nil, sub)
+		t:SetTexture(Media.texture.bar)
+		t:SetSize(LANE_H, LANE_H)
+		t:SetPoint("CENTER", fill, lead, 0, 0)
+		W.AddMask(t, bar, Media.texture.circleMask, t)
+		return t
+	end
+	f.cap = Cap(0)
 
 	local glow = f:CreateTexture(nil, "OVERLAY")
 	glow:SetTexture(Media.texture.barGlow)
@@ -388,8 +406,8 @@ local function BuildLane(bond, unit)
 		local locked = bar:CreateTexture(nil, "ARTWORK", nil, 1)
 		locked:SetTexture(Media.texture.flat)
 		locked:SetAllPoints(fill)
-		if bar._mask then pcall(locked.AddMaskTexture, locked, bar._mask) end
 		f.locked = locked
+		f.lockedCap = Cap(1)
 	end
 
 	local flash = f:CreateTexture(nil, "OVERLAY", nil, 2)
@@ -992,15 +1010,19 @@ local function CastStart(f, channel)
 	W.Color(f.spellName, col)
 	W.Color(f.time, col)
 	f.bar:SetColors(col)
+	f.cap:SetVertexColor(col[1], col[2], col[3], col[4] or 1)
 	f.glow:SetVertexColor(col[1], col[2], col[3], 0.55)
 
-	-- Gold or grey, by the flag itself.
+	-- Gold or grey, by the flag itself - to the tip.
 	if f.locked then
 		local g = c.laneLocked
 		f.locked:SetVertexColor(g[1], g[2], g[3], g[4] or 1)
+		f.lockedCap:SetVertexColor(g[1], g[2], g[3], g[4] or 1)
 		AlphaByFlag(f.bar:GetStatusBarTexture(), locked, 0, 1)
+		AlphaByFlag(f.cap, locked, 0, 1)
 		AlphaByFlag(f.glow, locked, 0, 1)
 		AlphaByFlag(f.locked, locked, 1, 0)
+		AlphaByFlag(f.lockedCap, locked, 1, 0)
 		AlphaByFlag(f.label, locked, 0.55, 1)
 	end
 
