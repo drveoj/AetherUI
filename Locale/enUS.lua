@@ -386,6 +386,24 @@ L["errors.build.export"] = "Export"
 L["errors.build.export_writes_savedvariables_aetherui"] =
 	"Export writes it to SavedVariables\\%s.lua. Escape closes."
 
+-- layout ------------------------------------------------------------------
+-- The layout string and its window (Core/Layout.lua).
+
+L["layout.err.bad"] = "That layout string has a part Lattice can't read: %s"
+L["layout.err.combat"] = "Can't change the layout in combat."
+L["layout.err.empty"] = "There's no layout string to read."
+L["layout.err.loop"] = "That layout hangs %s from something that hangs from it."
+L["layout.err.unknown"] = "That layout names \"%s\", which isn't a frame Lattice has."
+L["layout.err.version"] = "That isn't a layout string this version reads (it starts \"%s\")."
+
+L["layout.window.applied"] = "Layout applied."
+L["layout.window.apply"] = "Apply"
+L["layout.window.close"] = "Close"
+L["layout.window.export"] = "Export to file"
+L["layout.window.hint"] =
+	"Your arrangement as one line. Paste someone else's in and press Apply."
+L["layout.window.title"] = "Layout"
+
 -- library -----------------------------------------------------------------
 
 L["library.build.library"] = "LIBRARY"
@@ -900,6 +918,10 @@ L["options.general.off_uses_concept_s"] =
 	"Off uses green and reserves colour for reaction."
 L["options.general.pos_header"] = "Positions and keys"
 L["options.general.read_opacity.name"] = "Reading panel opacity"
+L["options.general.layout.desc"] =
+	"Your whole arrangement as one line of text, to keep or share, and the "
+		.. "place to paste somebody else's."
+L["options.general.layout.name"] = "Layout string"
 L["options.general.reset.desc"] = "Forget every saved anchor."
 L["options.general.reset.name"] = "Reset positions"
 L["options.general.scale.desc"] =

@@ -350,6 +350,8 @@ local function GeneralGroup()
 		posHeader = header(L.options.general.pos_header),
 		bind = BindAction(),
 		unlock = UnlockAction(),
+		layout = action(L.options.general.layout.name, L.options.general.layout.desc,
+			function() A.Layout:Show() end),
 		reset = action(L.options.general.reset.name, L.options.general.reset.desc,
 			function() A.Movers:ResetAll() end),
 

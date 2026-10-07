@@ -7353,7 +7353,7 @@ local FILES = {
 	"Locale/zhTW.lua",
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
-	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Presets.lua", "Core/Fader.lua",
+	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
@@ -17333,9 +17333,19 @@ do
 	for i = 1, #P.order do
 		for j = i + 1, #P.order do
 			local a, b = P.order[i], P.order[j]
-			check(not P:Matches(P.list[a].anchors, P.list[b].anchors),
+			check(P.list[a].layout ~= P.list[b].layout,
 				"\"" .. a .. "\" and \"" .. b .. "\" are different arrangements")
 		end
+	end
+
+	-- A probe arrangement, as a string, through the same decode the shipped
+	-- ones take.
+	local function probe(key, text)
+		local decoded, err = A.Layout:Decode(text)
+		check(decoded ~= nil, "the probe \"" .. key .. "\" decodes (" .. tostring(err) .. ")")
+		P.order[#P.order + 1] = key
+		P.list[key] = { label = key, blurb = "", layout = text, decoded = decoded,
+			scale = decoded and decoded.scale }
 	end
 
 	-- NOTHING CHOSEN YET reads as nothing chosen. Every shipped arrangement now
@@ -17403,21 +17413,21 @@ do
 	-- editor gives a layout that is plausible in every dimension and right in
 	-- none.
 	check(type(lines) == "table" and #lines > 1,
-		"a capture comes back as lines, one per row of the table (" ..
+		"a capture comes back as lines, ready to paste (" ..
 		tostring(type(lines)) .. ", " .. tostring(#lines) .. ")")
-	check(count > 6 and text:find('%["player"%]') ~= nil,
+	check(count > 6 and text:find(";player=", 1, true) ~= nil,
 		"naming every frame in it (" .. tostring(count) .. ")")
 	check(text:find("	", 1, true) == nil,
 		"and indented with spaces - a tab is not reliably carried through a "
 		.. "chat frame and out through the clipboard, and this text exists to "
 		.. "be pasted")
-	check(text:find("scale", 1, true) ~= nil,
+	check(text:find(";s=0.71;", 1, true) ~= nil,
 		"with the scale in it, because that is part of an arrangement")
 
 	-- SORTED, so two captures of the same layout are the same text and a diff
 	-- shows the line that really changed.
 	local order = {}
-	for name in text:gmatch('%["([%w_]+)"%]') do order[#order + 1] = name end
+	for name in text:gmatch(";([%w_]+)=[SB],") do order[#order + 1] = name end
 	local sorted = true
 	for i = 2, #order do
 		if order[i] < order[i - 1] then sorted = false end
@@ -17437,15 +17447,10 @@ do
 	-- screen and nearly half way across another, and a "bottom corners"
 	-- layout quietly becomes "bottom middle".
 	do
-		P.order[#P.order + 1] = "__probe"
-		P.list.__probe = {
-			label = "probe", blurb = "", scale = 0.71,
-			anchors = {
-				player = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT",
-					fx = 0.25, fy = 0.10 },
-				target = { point = "CENTER", relPoint = "CENTER", fx = -0.20, fy = 0 },
-			},
-		}
+		-- Bars 1 and 2, as the last preset applied left them, so the probe
+		-- moves no bar the checks after this block depend on.
+		probe("__probe", "LAT1;s=0.71;b=1,2;player=S,BOTTOMLEFT,BOTTOMLEFT,0.25,0.10;"
+			.. "target=S,CENTER,CENTER,-0.20,0")
 
 		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
 		local function at(width)
@@ -17497,7 +17502,7 @@ do
 		-- A CAPTURE COMES BACK IN FRACTIONS, which is what makes the next one
 		-- portable. A capture in units is a capture of one monitor.
 		local text = table.concat((P:Capture("__probe")), "\n")
-		check(text:find("fx = ", 1, true) ~= nil and text:find("x = %-?%d+,") == nil,
+		check(text:find("player=S,BOTTOMLEFT,BOTTOMLEFT,0%.2") ~= nil,
 			"and a capture writes fractions rather than the units it read")
 		check(text:find("captured on a", 1, true) ~= nil,
 			"saying what size screen it was made on, because whether a layout still "
@@ -17522,15 +17527,7 @@ do
 			was[id] = AB:BarConfig(id).enabled
 		end
 
-		P.order[#P.order + 1] = "__bars"
-		P.list.__bars = {
-			label = "bars", blurb = "", scale = 0.71,
-			bars = { ["1"] = true, ["2"] = true, ["3"] = false,
-				["4"] = false, ["5"] = true, ["6"] = false },
-			anchors = {
-				player = { point = "CENTER", relPoint = "CENTER", fx = 0, fy = 0 },
-			},
-		}
+		probe("__bars", "LAT1;s=0.71;b=1,2,5;player=S,CENTER,CENTER,0,0")
 
 		-- Switched the other way round to start with, so both directions are
 		-- actually exercised rather than one of them happening to be right.
@@ -17594,21 +17591,18 @@ do
 		local stance = AB:BarConfig("stance")
 		if stance then
 			stance.enabled = true
-			P.list.__bars.bars.stance = false
+			check(A.Layout:Decode("LAT1;s=0.71;b=1,stance") == nil,
+				"a layout cannot even name the stance bar in its bars")
 			P:Apply("__bars")
-			check(stance.enabled,
-				"a preset cannot switch off the stance bar even when it says to")
-			P.list.__bars.bars.stance = nil
+			check(stance.enabled, "and applying one leaves the stance bar alone")
 		end
 
 		-- AND A CAPTURE RECORDS THEM, which is what makes the next arrangement
-		-- reproducible at all.
+		-- reproducible at all: the ones on, and by leaving them out, the ones off.
 		local text = table.concat((P:Capture("__bars")), "\n")
-		check(text:find("bars = {", 1, true) ~= nil
-			and text:find('%["5"%] = true') ~= nil
-			and text:find('%["3"%] = false') ~= nil,
-			"a capture writes which bars are on AND which are off, because a preset "
-			.. "that only names what it wants cannot switch anything off")
+		check(text:find(";b=1,2,5;", 1, true) ~= nil,
+			"a capture writes which bars are on, and every one it leaves out is off"
+			.. " when it is applied")
 
 		for _, id in ipairs({ "1", "2", "3", "4", "5", "6" }) do
 			AB:SetBarEnabled(id, was[id])
@@ -17622,6 +17616,105 @@ do
 	A.db.profile.scale = wasScale
 	A:Reconfigure()
 end
+-- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole
+-- arrangement as one line, read back, refused whole when it is wrong.
+print("== layout string ==")
+do
+	local LY, M = A.Layout, A.Movers
+	local anchors = A.db.profile.anchors
+	local wasScale = A.db.profile.scale
+	local AB = A:GetModule("actionbars")
+	local wasBar2 = AB:BarConfig("2").enabled
+
+	-- Bar 8 is a name this addon knows and, switched off, nothing re-measures:
+	-- its bond is exactly what the string said.
+	local TEXT = "LAT1;s=0.71;b=1;barextra=B,player,CENTER,CENTER,0,40;"
+		.. "bar8=B,bar1,BOTTOM,CENTER,0,-60;"
+		.. "chat=S,BOTTOMLEFT,BOTTOMLEFT,0.01000,0.05000;"
+		.. "quests=S,TOPRIGHT,TOPRIGHT,-0.01000,-0.20000,F"
+	local layout, err = LY:Decode(TEXT)
+	check(layout ~= nil, "a layout string decodes (" .. tostring(err) .. ")")
+	anchors.__lockButton = { point = "CENTER", relPoint = "CENTER", x = 2, y = 164 }
+	check(LY:Apply(layout), "and applies")
+
+	local lat = anchors.bar8 and anchors.bar8.lat
+	check(lat and lat.parent == "bar1" and lat.point == "BOTTOM" and lat.y == -60,
+		"a bonded node is written as its bond, in its own units")
+	check(anchors.quests and anchors.quests.free == true,
+		"a node set free stays free")
+	check(M:ParentOf("barextra") == "player",
+		"and a node the string bonds elsewhere hangs from that parent now ("
+		.. tostring(M:ParentOf("barextra")) .. ")")
+	check(anchors.__lockButton and anchors.__lockButton.y == 164,
+		"the lock pill's spot is not part of a layout and survives one")
+	check(LY:Matches(layout), "and it reads back as the layout on screen")
+
+	local out = LY:Encode()
+	check(out:find("bar8=B,bar1,BOTTOM,CENTER,0,-60", 1, true)
+		and out:find(",F", 1, true) and not out:find("__lockButton", 1, true),
+		"exported again, the bond, the free flag and nothing else ride along")
+	local names = {}
+	for n in out:gmatch(";([%w_]+)=[SB],") do names[#names + 1] = n end
+	local sorted = #names > 1
+	for i = 2, #names do if names[i] < names[i - 1] then sorted = false end end
+	check(sorted, "in a fixed order, so one arrangement is always one string")
+
+	-- ANOTHER SCREEN: the bond in units does not move, the screen node does.
+	local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
+	local chatX = anchors.chat.x
+	UIParent:SetSize(wasW * 1.5, wasH)
+	LY:Apply(layout)
+	check(anchors.bar8.lat.y == -60 and anchors.chat.x > chatX,
+		"on a wider screen the bond is the same and the screen node keeps its"
+		.. " fraction (" .. chatX .. " then " .. anchors.chat.x .. ")")
+	UIParent:SetSize(wasW, wasH)
+
+	-- REFUSED, WHOLE.
+	local function refused(text, what)
+		local l, e = LY:Decode(text)
+		check(l == nil and type(e) == "string" and e ~= "",
+			what .. " is refused, saying why (" .. tostring(e) .. ")")
+	end
+	refused("LAT2;s=0.71;b=1", "another version")
+	refused("LAT1;s=0.71;b=1;nonsense=S,CENTER,CENTER,0,0", "a node this addon never had")
+	refused("LAT1;s=0.71;b=1;bar8=B,nonsense,CENTER,CENTER,0,0", "a parent this addon never had")
+	refused("LAT1;s=0.71;b=1;bar8=B,bar9,CENTER,CENTER,0,0;bar9=B,bar8,CENTER,CENTER,0,0",
+		"a loop")
+	refused("LAT1;s=0.71;b=1;player=B,bar1,CENTER,CENTER,0,0;bar1=B,spine,CENTER,CENTER,0,0",
+		"a loop through the spine, which belongs to the player")
+	refused("LAT1;s=0.71;b=1;chat=S,BOTTOMLEFT,BOTTOMLEFT,nan,0", "a number that is not one")
+	refused("LAT1;s=0.71;b=1;chat=S,MIDDLE,BOTTOMLEFT,0,0", "a point the client has not got")
+	refused("LAT1;b=1", "a layout with no scale")
+	refused("", "nothing at all")
+
+	_G.__inCombat = true
+	local before = anchors.chat.x
+	local ok, why = LY:Apply(layout)
+	_G.__inCombat = false
+	check(not ok and why == A.L.layout.err.combat and anchors.chat.x == before,
+		"and nothing is applied in combat")
+
+	-- THE WINDOW: the string in the box, the reason when one is refused.
+	SlashCmdList["AETHERUI"]("layout")
+	local f = LY.frame
+	check(f and f:IsShown() and f.box:GetText() == LY:Encode(),
+		"/lattice layout opens the window with the arrangement in it")
+	LY:ApplyText("LAT9;nope")
+	check(f.status:GetText() and f.status:GetText():find("LAT9", 1, true),
+		"a refused paste says why, in the window")
+	LY:ApplyText(TEXT)
+	check(f.status:GetText() == A.L.layout.window.applied, "and a good one is applied")
+	f:Hide()
+
+	-- Everything back the way the suite had it.
+	wipe(anchors)
+	for _, e in pairs(M.registry) do e.parent, e.free = e.defaultParent, nil end
+	A.db.profile.scale = wasScale
+	AB:SetBarEnabled("2", wasBar2)
+	A:Reconfigure()
+	M:RestoreAll()
+end
+
 print("== zen: it eases out rather than snapping ==")
 do
 	local Z = A:GetModule("zen")
@@ -21861,7 +21954,10 @@ do
 	local _, _, _, pillX = player.handle.tag:GetPoint(1)
 	check(pillX >= player.handle:GetHeight() / 2 - 1e-6,
 		"and a pill's tag starts past its rounded end (" .. tostring(pillX) .. ")")
-	check(player.handle.junction:GetTexture() == A.Media.texture.diamond
+	-- Filled or hollow by where it stands - that is B2's question, checked on a
+	-- controlled screen below; here the junction only has to be there.
+	local jt = player.handle.junction:GetTexture()
+	check((jt == A.Media.texture.diamond or jt == A.Media.texture.diamondRim)
 		and player.handle.junction:IsShown(), "and a junction diamond at its centre")
 
 	-- Bonds: child to parent, none for the pair, none for a free node.

@@ -63,6 +63,7 @@ local VALID_POINTS = {
 	LEFT = true, CENTER = true, RIGHT = true,
 	BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true,
 }
+Movers.VALID_POINTS = VALID_POINTS
 
 local function round(v) return math.floor((v or 0) + 0.5) end
 
@@ -1420,6 +1421,26 @@ end
 --    shape = "pill"        a unit: its unlock outline is a pill, as the unit
 --                          is (board 4a). Anything else is a rounded rectangle.
 
+--- Which node an entry hangs from, from its saved record.
+--
+--  THE SAVED PARENT WINS over the module's default: a node somebody hung
+--  elsewhere - or set free onto the screen - stays where they put it when its
+--  module registers it again on the next config change, and a layout string
+--  that bonds it elsewhere is obeyed.
+local function ResolveParent(entry)
+	local saved = A.db.profile.anchors[entry.name]
+	local parent = entry.defaultParent
+	entry.free = (saved and saved.free) and true or nil
+	if entry.free then
+		parent = nil
+	elseif saved and type(saved.lat) == "table" and saved.lat.parent then
+		parent = saved.lat.parent
+	end
+	-- A parent that hangs from this node would be an anchor loop.
+	if parent and Descends(parent, entry.name) then parent = nil end
+	entry.parent = parent
+end
+
 --- Everything waiting on `name` as its parent is placed again: a node that
 --  registered before its parent sat on the screen, and is bonded now.
 local function Adopt(name)
@@ -1443,21 +1464,8 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.pairMin = opts and opts.pairMin or nil
 	entry.shape = opts and opts.shape or entry.shape
 
-	-- THE SAVED PARENT WINS over the module's default: a node somebody hung
-	-- elsewhere - or set free onto the screen - stays where they put it when
-	-- its module registers it again on the next config change.
 	entry.defaultParent = opts and opts.parent or nil
-	local saved = A.db.profile.anchors[name]
-	local parent = entry.defaultParent
-	entry.free = (saved and saved.free) and true or nil
-	if entry.free then
-		parent = nil
-	elseif saved and type(saved.lat) == "table" and saved.lat.parent then
-		parent = saved.lat.parent
-	end
-	-- A parent that hangs from this node would be an anchor loop.
-	if parent and Descends(parent, name) then parent = nil end
-	entry.parent = parent
+	ResolveParent(entry)
 
 	frame:SetClampedToScreen(true)
 	RestorePosition(entry)
@@ -1522,6 +1530,47 @@ end
 
 function Movers:RestoreAll()
 	for _, entry in pairs(Movers.registry) do RestorePosition(entry) end
+end
+
+--- Every registered node takes its parent from the store again.
+--
+--  BEFORE ANYTHING IS PLACED, when a whole layout has been written. A node
+--  still carrying its old parent is re-placed by its old parent's
+--  registration - bar 1 coming back puts every child of bar 1 back - and a
+--  record bonded to a different parent than the live one reads as an old
+--  record and is measured again, against the wrong parent, over the layout's
+--  own bond. Seen in the suite, 2026-10-07.
+function Movers:ResolveParents()
+	for _, entry in pairs(Movers.registry) do ResolveParent(entry) end
+end
+
+--- A whole layout has just been written into the store (Core/Layout.lua).
+--  Every node takes its parent from its record again - or its module's
+--  default where the record has none - and is placed again.
+--
+--  A record that arrived as a BOND has no screen half yet, and 1.1 reads
+--  nothing else; it is measured and written back once its node is placed. A
+--  record that arrived on the SCREEN is left exactly as written, so the layout
+--  it came from still recognises it.
+function Movers:AdoptLayout()
+	Movers:ResolveParents()
+	Movers:RestoreAll()
+	-- THE SCREEN HALF ONLY. The bond is what the layout said, exactly; measuring
+	-- it again would hand back a rounding of it.
+	local anchors = A.db.profile.anchors
+	for name, entry in pairs(Movers.registry) do
+		local saved = anchors[name]
+		if saved and not saved.point and ParentFrame(entry) then
+			local sp, sx, sy = ScreenAnchor(entry.frame, entry.growsDown)
+			if sp then
+				saved.point, saved.relPoint, saved.x, saved.y = sp, sp, round(sx), round(sy)
+			end
+		end
+	end
+	if Movers.unlocked then
+		DrawBonds()
+		RefreshJunctions()
+	end
 end
 
 -- Replay anything RestorePosition had to skip because it landed mid-fight.

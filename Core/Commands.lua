@@ -18,6 +18,7 @@ local function usage()
 		A.Hi("/lattice bind") .. "  ·  hover a button, press a key",
 		A.Hi("/lattice unlock") .. "  ·  drag frames into place",
 		A.Hi("/lattice lock"),
+		A.Hi("/lattice layout") .. "  ·  your arrangement as one line, to keep, share or paste in",
 		A.Hi("/lattice reset") .. "  ·  forget all frame positions",
 		A.Hi("/lattice skin") .. " <midnight|dawn|noon|dusk>",
 		A.Hi("/lattice scale") .. " <0.6-1.6>  ·  0.71 = the concept deck's proportions",
@@ -526,6 +527,11 @@ handlers.tour = function()
 	OB:Start()
 end
 
+--- `/lattice layout` - the layout string's window (Core/Layout.lua).
+handlers.layout = function()
+	if A.Layout then A.Layout:Show() end
+end
+
 handlers.preset = function(arg, rest)
 	local P = A.Presets
 	if not P then A:Print(L.cmd.preset.presets_loaded) return end
@@ -546,9 +552,9 @@ handlers.preset = function(arg, rest)
 		-- that carries the text intact. The box above is for reading.
 		A.Errors:Export("preset_" .. key, text)
 		A:Print(A.F(count == 1
-			and "captured %d frame position as %s - the lines above are the"
+			and "captured %d frame position as %s - the layout string above is the"
 				.. " thing to paste into Core\\Presets.lua"
-			or "captured %d frame positions as %s - the lines above are the"
+			or "captured %d frame positions as %s - the layout string above is the"
 				.. " thing to paste into Core\\Presets.lua",
 			count, A.Val(key)))
 		return
