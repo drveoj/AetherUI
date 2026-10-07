@@ -275,11 +275,12 @@ Config.defaults = {
 				emptyAlpha   = 0.25,
 				hideBlizzard = true,
 				-- Every bar is its own thing with a fixed source. Bars 1-6 map onto
-				-- the six action pages (bar N owns actions (N-1)*12+1 upward), and 7-10
-				-- are the bonus bars a druid, rogue or warrior gets in a form or
-				-- stance. Bar 1 alone follows the form (stancePaging), the way the
-				-- game's main bar does - and only the form, never the game's global
-				-- page. Every other bar keeps its source.
+				-- the six action pages (bar N owns actions (N-1)*12+1 upward), and
+				-- pages 7-10 are the bonus bars a druid, rogue or warrior gets in a
+				-- form or stance. Bar 1 alone follows the form (stancePaging), the
+				-- way the game's main bar does - and only the form, never the game's
+				-- global page. Every other bar keeps its source. WoW Forever adds
+				-- bars 7-9 on pages 13-15; see the end of this table.
 				--
 				-- rows is the control and columns fall out of it. binding is derived
 				-- from the page unless you name one, so bar 6 picks up the
@@ -997,6 +998,26 @@ Config.defaults = {
 		},
 	},
 }
+
+-- WOW FOREVER'S THREE EXTRA BARS. The client has MultiBar5-7 on action pages
+-- 13-15 (Blizzard_ActionBar/Shared/MultiActionBars.lua:6-8), so its own UI
+-- draws eight bars where Classic Era draws six. Era has no pages past 10.
+--
+-- APPENDED, NOT SLOTTED IN AFTER BAR 6. AceDB saves a profile as differences
+-- from these defaults, and a list's differences are saved by position - so a
+-- bar inserted at position 7 would inherit whatever the player had saved for
+-- the stance bar, which sits there now. At the end, nothing moves.
+if A.isCamelot then
+	local bars = Config.defaults.profile.modules.actionbars.bars
+	local labels = { L.core.misc.label7, L.core.misc.label8, L.core.misc.label9 }
+	for n, page in ipairs({ 13, 14, 15 }) do
+		bars[#bars + 1] = {
+			id = tostring(6 + n), kind = "action", page = page, enabled = false,
+			buttons = 12, rows = 1, scale = 0.85, backdrop = true,
+			label = labels[n], point = "BOTTOM", x = 0, y = 250 + n * 60,
+		}
+	end
+end
 
 --- One-shot migrations for profiles written by an older layout.
 --

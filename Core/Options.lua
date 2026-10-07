@@ -734,7 +734,9 @@ local function BarPages()
 			args.buttons = range(L.options.bar_pages.buttons, nil, at("buttons"), 1, 12, 1)
 			args.page = range(L.options.bar_pages.page,
 				L.options.bar_pages.bar_n_owns_page,
-				at("page"), 1, 10, 1)
+				-- 15 on WoW Forever, whose MultiBar5-7 are pages 13-15. The
+				-- module's own number, so the two cannot drift.
+				at("page"), 1, A:GetModule("actionbars").MAX_ACTION_PAGE or 10, 1)
 			-- Bar 1 only: the main bar follows your form, as the game's own does.
 			if id == "1" then
 				args.stancePaging = toggle(L.options.bar_pages.stance_paging.name,

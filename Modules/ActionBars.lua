@@ -56,7 +56,10 @@ local NUM_ACTIONS_PER_PAGE = 12
 -- never of the global page. See ApplyPaging. Any other bar can still be pointed
 -- at pages 7-10 to keep a form's abilities in view all the time.
 
-local MAX_ACTION_PAGE = 10   -- 10 x 12 = the 120 action slots Classic Era has
+-- 10 x 12 = the 120 action slots Classic Era has. WoW Forever goes on to 180:
+-- pages 13-15 are its MultiBar5-7 (Blizzard_ActionBar/Shared/MultiActionBars.lua:6-8).
+local MAX_ACTION_PAGE = A.isCamelot and 15 or 10
+AB.MAX_ACTION_PAGE    = MAX_ACTION_PAGE
 local PET_SLOTS       = 10
 local STANCE_SLOTS    = 10
 
@@ -71,6 +74,10 @@ local BINDING_FOR_PAGE = {
 	[4] = "MULTIACTIONBAR4BUTTON",    -- MultiBarLeft
 	[5] = "MULTIACTIONBAR2BUTTON",    -- MultiBarBottomRight
 	[6] = "MULTIACTIONBAR1BUTTON",    -- MultiBarBottomLeft
+	-- WoW Forever only; Era has neither the pages nor the bindings.
+	[13] = "MULTIACTIONBAR5BUTTON",   -- MultiBar5
+	[14] = "MULTIACTIONBAR6BUTTON",   -- MultiBar6
+	[15] = "MULTIACTIONBAR7BUTTON",   -- MultiBar7
 }
 local BINDING_FOR_KIND = {
 	stance = "SHAPESHIFTBUTTON",
@@ -986,7 +993,11 @@ function AB:ApplyBindings()
 	for _, bar in ipairs(AB.bars) do
 		ClearOverrideBindings(bar.header)
 
-		local prefix = BindingPrefix(bar.cfg)
+		-- A SWITCHED-OFF BAR GIVES ITS KEYS BACK. It is still built - frames
+		-- cannot be destroyed - and its hidden buttons still click, so binding
+		-- them left bar 3's keys casting bar 3's spells, unseen, after it was
+		-- turned off and until the next reload. Bind mode already skipped it.
+		local prefix = bar.cfg.enabled ~= false and BindingPrefix(bar.cfg) or nil
 		for i, b in ipairs(bar.buttons) do
 			if not prefix then break end
 			local bindingName = prefix .. i
@@ -1279,8 +1290,9 @@ AB.blizzardFrames = {
 	-- TaxiRequestEarlyLanding is protected - so there is no recreating it. It is
 	-- adopted onto the "extra" bar instead. Hiding it cost you the only way off
 	-- a flight path early.
-	-- multibars (same names either way)
+	-- multibars (same names either way), and WoW Forever's three more
 	"MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarLeft", "MultiBarRight",
+	"MultiBar5", "MultiBar6", "MultiBar7",
 	-- stance and pet. Both have replacements now, so both go. Possess (mind
 	-- control) keeps Blizzard's bar: it is rare, it is temporary, and there is
 	-- no vehicle UI on this client for it to share code with.
@@ -1306,13 +1318,15 @@ AB.blizzardFrames = {
 local BLIZZARD_BUTTON_PREFIXES = {
 	"ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton",
 	"MultiBarLeftButton", "MultiBarRightButton",
+	"MultiBar5Button", "MultiBar6Button", "MultiBar7Button",
 	"PetActionButton", "StanceButton", "ShapeshiftButton",
 }
 
 --- Frames whose override bindings must be cleared, not merely hidden.
 local BLIZZARD_BINDING_OWNERS = {
 	"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight",
-	"MultiBarLeft", "MultiBarRight", "OverrideActionBar",
+	"MultiBarLeft", "MultiBarRight", "MultiBar5", "MultiBar6", "MultiBar7",
+	"OverrideActionBar",
 }
 
 --- Blizzard marks some frames "forbidden"; *any* method call on one raises
@@ -1665,6 +1679,26 @@ AB.RebuildDynamicBars = RebuildDynamicBars
 -- lifecycle
 -- ---------------------------------------------------------------------------
 
+--- Put the pet bar's secure visibility driver on, or take it off.
+--
+--  WHILE IT IS ON, THE DRIVER ALONE DECIDES. The client re-applies it every
+--  0.2s (SecureStateDriver.lua:63, 95-128), so a Show() from us is a flash
+--  until the next pass, and a Hide() is undone the moment a pet is out. That
+--  was both halves of one report (Joe, 2026-10-07): the bar flashed up for a
+--  pet-less character whenever any bar was switched on, and a pet bar switched
+--  off came back with the pet. So switching off takes the driver off first,
+--  and switching on puts it back, which shows or hides the bar at once.
+local function DriveVisibility(bar, on)
+	if bar.kind ~= "pet" or not RegisterStateDriver or InCombatLockdown() then return end
+	if on and not bar.visibilityDriven then
+		pcall(RegisterStateDriver, bar.dock, "visibility", "[pet] show; hide")
+		bar.visibilityDriven = true
+	elseif not on and bar.visibilityDriven then
+		pcall(UnregisterStateDriver, bar.dock, "visibility")
+		bar.visibilityDriven = false
+	end
+end
+
 --- Hold a conditionally-visible bar up while its position is being set.
 --
 --  The pet bar is hidden by a secure driver when you have no pet; the extra bar
@@ -1678,10 +1712,7 @@ local function BarPreview(bar)
 		if show then
 			-- The pet bar's visibility belongs to a secure driver, so previewing
 			-- means taking the driver off rather than arguing with it.
-			if bar.visibilityDriven and UnregisterStateDriver and not InCombatLockdown() then
-				pcall(UnregisterStateDriver, bar.dock, "visibility")
-				bar.visibilityDriven = false
-			end
+			DriveVisibility(bar, false)
 			LayoutBar(bar)
 			bar.dock:Show()
 			bar.__shown = true
@@ -1689,11 +1720,9 @@ local function BarPreview(bar)
 		end
 
 		bar.__shown = nil
-		if bar.kind == "pet" and not bar.visibilityDriven and RegisterStateDriver
-			and not InCombatLockdown() then
-			pcall(RegisterStateDriver, bar.dock, "visibility", "[pet] show; hide")
-			bar.visibilityDriven = true
-		end
+		-- Only a pet bar that is switched on gets its driver back; one that is
+		-- off would be put back on screen by it.
+		if bar.cfg.enabled ~= false then DriveVisibility(bar, true) end
 		if bar.kind == "stance" then RebuildDynamicBars() end
 		if bar.kind == "extra" and AB.UpdateExtraBars then AB.UpdateExtraBars() end
 	end
@@ -1767,12 +1796,12 @@ function AB:OnEnable()
 		if bar.kind == "extra" then
 			bar.dock:Hide()
 			bar.__shown = nil    -- nil, so the first tick always decides
+		elseif bar.kind == "pet" and RegisterStateDriver and not bar.__preview then
+			-- The driver decides, not us: a Show() here put the pet bar up at
+			-- login for anybody without a pet until its next pass.
+			DriveVisibility(bar, true)
 		else
 			bar.dock:Show()
-		end
-		if bar.kind == "pet" and bar.visibilityDriven == nil and RegisterStateDriver then
-			pcall(RegisterStateDriver, bar.dock, "visibility", "[pet] show; hide")
-			bar.visibilityDriven = true
 		end
 		A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
 			bar.cfg.label or ("Bar " .. bar.id),
@@ -2012,9 +2041,18 @@ local function SyncBars()
 					built[id] = bar
 				end
 			end
-			-- An extra bar decides its own visibility; everything else is simply on.
-			if bar and bar.kind ~= "extra" then bar.dock:Show() end
+			-- An extra bar decides its own visibility, and so does the pet bar's
+			-- driver unless a preview is holding it up; everything else is
+			-- simply on. See DriveVisibility.
+			if bar and bar.kind ~= "extra" then
+				if bar.kind == "pet" and RegisterStateDriver and not bar.__preview then
+					DriveVisibility(bar, true)
+				else
+					bar.dock:Show()
+				end
+			end
 		elseif bar then
+			DriveVisibility(bar, false)
 			bar.dock:Hide()
 			A.Movers:Unregister("bar" .. id)
 		end

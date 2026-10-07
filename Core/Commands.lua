@@ -1056,7 +1056,9 @@ end
 local BAR_PROPS = {
 	buttons = { min = 1,   max = 12,  int = true },
 	rows    = { min = 1,   max = 12,  int = true },
-	page    = { min = 1,   max = 10,  int = true, actionOnly = true },
+	-- 15 on WoW Forever (MultiBar5-7 are pages 13-15), as MAX_ACTION_PAGE in
+	-- Modules/ActionBars.lua; this table is built before that module loads.
+	page    = { min = 1,   max = A.isCamelot and 15 or 10,  int = true, actionOnly = true },
 	scale   = { min = 0.4, max = 2.0 },
 }
 

@@ -2417,8 +2417,40 @@ function GetBindingAction(key, checkOverride)
     return _G.__bindings and _G.__bindings[key] or ""
 end
 _G.__stateDrivers = {}
-function RegisterStateDriver(frame, state, values) _G.__stateDrivers[state] = values end
-function UnregisterStateDriver(frame, state) _G.__stateDrivers[state] = nil end
+-- A VISIBILITY DRIVER IS APPLIED, NOT JUST RECORDED. The client shows or hides
+-- the frame the moment the driver is set, and again on every pass of its
+-- manager, every 0.2s (SecureStateDriver.lua:63, 95-128) - whatever anybody
+-- else did to the frame in between. The first version of this mock only wrote
+-- the driver down, which is how a pet bar flashing on for anyone without a
+-- pet passed the suite. Only the conditions this addon uses are understood.
+_G.__visDrivers = {}
+local function resolveVisibility(frame, values)
+	for clause in (values .. ";"):gmatch("([^;]*);") do
+		local cond, verb = clause:match("^%s*%[(.-)%]%s*(%S+)")
+		if not cond then verb = clause:match("^%s*(%S+)") end
+		local hit = (cond == nil)
+			or (cond == "pet" and UnitExists("pet"))
+			or (cond == "nopet" and not UnitExists("pet"))
+		if verb and hit then
+			if verb == "show" then frame:Show() else frame:Hide() end
+			return
+		end
+	end
+end
+function _G.__resolveStateDrivers()
+	for frame, values in pairs(_G.__visDrivers) do resolveVisibility(frame, values) end
+end
+function RegisterStateDriver(frame, state, values)
+	_G.__stateDrivers[state] = values
+	if state == "visibility" then
+		_G.__visDrivers[frame] = values
+		resolveVisibility(frame, values)
+	end
+end
+function UnregisterStateDriver(frame, state)
+	_G.__stateDrivers[state] = nil
+	if state == "visibility" then _G.__visDrivers[frame] = nil end
+end
 
 -- THE CLIENT'S OWN PARTY FRAMES, in the shape this client actually has.
 --
@@ -3127,8 +3159,16 @@ shop.IsForbidden = function() return true end
 for _, n in ipairs(MICRO_BUTTONS) do CreateFrame("Button", n, UIParent) end
 -- Blizzard's own action buttons. They outlive their bars on this client, which
 -- is the whole reason HideBlizzard has to reach them individually.
-for _, prefix in ipairs({ "ActionButton", "MultiBarBottomLeftButton",
-	"MultiBarBottomRightButton", "MultiBarLeftButton", "MultiBarRightButton" }) do
+local blizzardButtonPrefixes = { "ActionButton", "MultiBarBottomLeftButton",
+	"MultiBarBottomRightButton", "MultiBarLeftButton", "MultiBarRightButton" }
+-- WoW Forever's three more (Blizzard_ActionBar/Shared/MultiActionBars.xml).
+if _G.__flavour == "camelot" then
+	for n = 5, 7 do
+		CreateFrame("Frame", "MultiBar" .. n, UIParent)
+		blizzardButtonPrefixes[#blizzardButtonPrefixes + 1] = "MultiBar" .. n .. "Button"
+	end
+end
+for _, prefix in ipairs(blizzardButtonPrefixes) do
 	for i = 1, 12 do
 		local b = CreateFrame("CheckButton", prefix .. i, UIParent)
 		b:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
@@ -7377,6 +7417,9 @@ local function tick(dt)
 	-- drain it, and anything whose correctness is "this stops after N seconds"
 	-- was measured as "this stops whenever somebody looked".
 	_G.__runDueTimers()
+	-- And the client's state driver pass (every 0.2s in the client; every
+	-- tick here, which can only make a wrongly-shown frame vanish sooner).
+	_G.__resolveStateDrivers()
 end
 
 print("== boot ==")
@@ -12233,6 +12276,16 @@ check(AB.hideReport.CharacterMicroButton == "hidden",
 	"micro buttons hidden from Blizzard's own MICRO_BUTTONS list")
 check(AB.hideReport.MainActionBar == "hidden",
 	"MainActionBar (the real 1.15 container) hidden")
+-- WOW FOREVER'S MultiBar5-7, and their buttons, go the way bars 3-6 went.
+if _G.__flavour == "camelot" then
+	for n = 5, 7 do
+		local b = _G["MultiBar" .. n .. "Button1"]
+		check(AB.hideReport["MultiBar" .. n] == "hidden"
+			and not b:IsShown() and b:GetAttribute("statehidden") == true,
+			"Forever's MultiBar" .. n .. " and its buttons are hidden and silenced ("
+			.. tostring(AB.hideReport["MultiBar" .. n]) .. ")")
+	end
+end
 
 -- THE DISPATCHER, which would keep calling the hidden buttons anyway: on WoW
 -- Forever ActionButton1 then threw on a secret cooldown on entering Stealth
@@ -12491,6 +12544,17 @@ do
 	check(bar3.buttons[1]:GetAttribute("action") == 73,
 		"a bar can point at a bonus page (7-10), which is how a druid sees their"
 		.. " form abilities without anything swapping under them")
+	-- PAGES 13-15 ARE WOW FOREVER'S MultiBar5-7. Era has 120 slots and no more.
+	SlashCmdList["AETHERUI"]("bar 3 page 13")
+	if _G.__flavour == "camelot" then
+		check(bar3.buttons[1]:GetAttribute("action") == 145,
+			"on Forever a bar can point at page 13, actions 145-156 ("
+			.. tostring(bar3.buttons[1]:GetAttribute("action")) .. ")")
+	else
+		check(bar3.buttons[1]:GetAttribute("action") == 73,
+			"on Era page 13 is refused - there are only 10 pages ("
+			.. tostring(bar3.buttons[1]:GetAttribute("action")) .. ")")
+	end
 	SlashCmdList["AETHERUI"]("bar 3 page 3")
 
 	-- per-bar scale
@@ -12499,8 +12563,71 @@ do
 	check(bar3.dock:GetScale() < other,
 		"scale is per bar, so a side bar can shrink without dragging bar 1 with it")
 
+	-- A SWITCHED-OFF BAR GIVES ITS KEYS BACK. Its hidden buttons still click,
+	-- so a key left pointing at them cast bar 3's spells unseen until a reload.
+	_G.__bindingSet.MULTIACTIONBAR3BUTTON1 = "F3"
+	AB:ApplyBindings()
+	check(_G.__overrides["F3"] == "AetherUIBar3Button1",
+		"bar 3 on: Blizzard's MULTIACTIONBAR3 key presses it")
+
 	AB:SetBarEnabled("3", false)
 	check(not bar3.dock:IsShown(), "and off again")
+	check(_G.__overrides["F3"] == nil,
+		"and switched off, its key no longer reaches its hidden buttons ("
+		.. tostring(_G.__overrides["F3"]) .. ")")
+	_G.__bindingSet.MULTIACTIONBAR3BUTTON1 = nil
+end
+
+-- WOW FOREVER'S THREE EXTRA BARS (2026-10-07). The client has MultiBar5-7 on
+-- pages 13-15; Era has neither the pages nor the bars.
+print("== Forever's bars 7-9 ==")
+do
+	local defaults = A.Config.defaults.profile.modules.actionbars.bars
+	local ids = {}
+	for i, b in ipairs(defaults) do ids[i] = tostring(b.id) end
+	local list = table.concat(ids, ",")
+
+	-- APPENDED: AceDB saves a list's differences by position, so the stance,
+	-- pet and extra bars must stay where saved profiles expect them.
+	check(ids[7] == "stance" and ids[8] == "pet" and ids[9] == "extra",
+		"stance, pet and extra keep positions 7-9 in the defaults (" .. list .. ")")
+
+	if _G.__flavour == "camelot" then
+		local ok = #defaults == 12
+		for n = 1, 3 do
+			local b = defaults[9 + n]
+			ok = ok and b and b.id == tostring(6 + n) and b.page == 12 + n
+				and b.kind == "action" and b.enabled == false
+		end
+		check(ok, "bars 7-9 come after them, on pages 13-15, off by default (" .. list .. ")")
+
+		-- Blizzard's own keys for those bars reach ours.
+		_G.__bindingSet.MULTIACTIONBAR5BUTTON1 = "F7"
+		_G.__bindingSet.MULTIACTIONBAR7BUTTON12 = "F9"
+		AB:SetBarEnabled("7", true)
+		AB:SetBarEnabled("9", true)
+		local byId = {}
+		for _, b in ipairs(AB.bars) do byId[b.id] = b end
+		check(byId["7"] and byId["7"].dock:IsShown()
+			and byId["7"].buttons[1]:GetAttribute("action") == 145
+			and byId["9"] and byId["9"].buttons[12]:GetAttribute("action") == 180,
+			"bar 7 switches on owning actions 145-156, bar 9 ends at 180")
+		check(_G.__overrides["F7"] == "AetherUIBar7Button1"
+			and _G.__overrides["F9"] == "AetherUIBar9Button12",
+			"and Blizzard's MULTIACTIONBAR5 and 7 keys press them ("
+			.. tostring(_G.__overrides["F7"]) .. ", " .. tostring(_G.__overrides["F9"]) .. ")")
+		check(AB.ParentFor(byId["7"]) == nil,
+			"bar 7 stands on the screen, like bars 3-6, until the trunks exist")
+
+		AB:SetBarEnabled("7", false)
+		AB:SetBarEnabled("9", false)
+		_G.__bindingSet.MULTIACTIONBAR5BUTTON1 = nil
+		_G.__bindingSet.MULTIACTIONBAR7BUTTON12 = nil
+		AB:ApplyBindings()
+		check(not byId["7"].dock:IsShown(), "and off again")
+	else
+		check(#defaults == 9, "Era has no bars 7-9 (" .. list .. ")")
+	end
 end
 
 print("== stance and pet bars ==")
@@ -12556,6 +12683,36 @@ do
 	-- the pet bar's visibility is secure, because a pet can be dismissed in combat
 	check(_G.__stateDrivers.visibility and _G.__stateDrivers.visibility:find("%[pet%]"),
 		"pet bar visibility is a secure driver - a pet comes and goes mid-fight")
+
+	-- THE DRIVER OWNS IT, and nothing else may show it (Joe, 2026-10-07: "when
+	-- enabling bars on a character which doesn't have pet, the pet bar flashes
+	-- on for a second"). Checked straight after the change, before any driver
+	-- pass could cover for it.
+	local savedPet = _G.__units.pet.exists
+	_G.__units.pet.exists = false
+	tick(0.2)
+	check(not pet.dock:IsShown(), "no pet out: the pet bar is down")
+	AB:SetBarEnabled("3", true)
+	check(not pet.dock:IsShown(),
+		"and switching another bar on does not flash it up")
+	AB:SetBarEnabled("3", false)
+	-- Nor does the module coming up, which is every login and every reload.
+	AB:OnDisable()
+	AB:OnEnable()
+	check(not pet.dock:IsShown(), "and the module enabling does not flash it up either")
+
+	-- SWITCHED OFF IS OFF, pet or no pet. Hiding the dock alone left the
+	-- driver to put it back on the next pass.
+	_G.__units.pet.exists = true
+	AB:SetBarEnabled("pet", false)
+	tick(0.2)
+	check(not pet.dock:IsShown(),
+		"the pet bar switched off stays down with a pet out, through a driver pass")
+	AB:SetBarEnabled("pet", true)
+	check(pet.dock:IsShown() and pet.visibilityDriven == true,
+		"and switched back on it is up with the pet, driver restored")
+	_G.__units.pet.exists = savedPet
+	tick(0.2)
 end
 
 print("== adopted buttons ==")
