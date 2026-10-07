@@ -181,17 +181,17 @@ local SEMANTIC = {
 	-- MIRROR LANES: what the world is doing to you, on the lane that leaves the
 	-- player capsule's left edge. The Lattice handoff's own values (Cast lanes,
 	-- "Mirror bars"): breath #9ad8ff, fatigue #f08a7a, feign death a pale grey.
-	-- The rail they run along is the bond hairline.
+	-- The rail they run along is the spine's hairline.
 	mirrorBreath  = C(154, 216, 255),
 	mirrorFatigue = C(240, 138, 122),
 	mirrorFeign   = C(220, 214, 250, 0.60),
 	mirrorRail    = C(205, 188, 255, 0.25),
 
-	-- THE BOND AND ITS CAST LANES (Cast lanes, 3a): two lavender hairlines
+	-- THE SPINE AND ITS CAST LANES (Cast lanes, 3a): two lavender hairlines
 	-- between the capsules, your lane blue on the upper one, the target's on
 	-- the lower - gold if it can be interrupted, grey if not - and red for the
 	-- flash when a cast is interrupted. Semantic, so the same in every skin.
-	bond       = C(205, 188, 255, 0.30),
+	spine      = C(205, 188, 255, 0.30),
 	laneCast   = C(154, 216, 255),
 	laneTarget = C(240, 217, 168),
 	laneLocked = C(220, 214, 250, 0.45),

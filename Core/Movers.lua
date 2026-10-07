@@ -8,6 +8,30 @@
 	the real frames will eventually include secure action buttons, which cannot
 	be moved in combat and should not be given mouse scripts at all. A dumb
 	overlay that repositions its target sidesteps that whole class of problem.
+
+	THE PARENT MODEL (Lattice). A node can hang from another node - its PARENT
+	- rather than from the screen, and a node that moves carries everything
+	bonded to it: the pet and focus capsules hang from the player, the ToT from
+	the target, bars 1 and 2 from the spine's centre, and the stance, pet and
+	extra-action bars from bar 1 ("actions are bonded to actions" - Joe). A
+	parent is another node's name, or nothing for the screen.
+
+	One record per node, in db.profile.anchors[name]:
+	  point, relPoint, x, y   where it sits on the SCREEN - the record 1.x
+	                          reads, kept current so a rollback still lands
+	                          everything where it was
+	  lat                     { parent, point, relPoint, x, y }: the bond, the
+	                          offset from the parent, which is what places it
+
+	A record with no `lat` is a 1.x record, or one a preset wrote. It is placed
+	on the screen exactly as 1.x placed it and then MEASURED against its parent
+	and bonded there, so the upgrade moves nothing.
+
+	THE SPINE'S PAIR. The target is not a child of the player: the two are one
+	piece, level, with the spine between them (Joe, 2026-10-07). Dragging
+	either moves both; Ctrl-dragging either stretches the spine about its own
+	centre, never below its minimum. Recorded as the target bonded LEFT to the
+	player's RIGHT at the spine's length, with no height of its own.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -28,22 +52,170 @@ Movers.unlocked = false
 -- cannot be placed while everything else can.
 Movers.watchers = {}
 
+-- Nodes that can be a parent but are not dragged themselves: the spine. Each
+-- remembers the node it belongs to, so a bond that would loop back through it
+-- is still seen as a loop.
+Movers.nodes = {}
+Movers.nodeOwner = {}
+
 local VALID_POINTS = {
 	TOPLEFT = true, TOP = true, TOPRIGHT = true,
 	LEFT = true, CENTER = true, RIGHT = true,
 	BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true,
 }
 
+local function round(v) return math.floor((v or 0) + 0.5) end
+
+local function UIScale() return UIParent:GetEffectiveScale() or 1 end
+
 -- ---------------------------------------------------------------------------
+-- bonds
+-- ---------------------------------------------------------------------------
+
+--- The frame a node hangs from, or nil for the screen. A parent that has not
+--  registered yet answers nil too: the node waits on the screen, and is bonded
+--  when its parent arrives (see Adopt).
+local function ParentFrame(entry)
+	local p = entry.parent
+	if not p or p == "screen" then return nil end
+	local e = Movers.registry[p]
+	if e then return e.frame end
+	return Movers.nodes[p]
+end
+
+--- Whether `parent` is `name`, or hangs from it somewhere up the chain. A node
+--  bonded to its own descendant is an anchor loop, which the client refuses.
+local function Descends(parent, name)
+	local p, hops = parent, 0
+	while p and p ~= "screen" and hops < 16 do
+		if p == name then return true end
+		local e = Movers.registry[p]
+		p = (e and e.parent) or Movers.nodeOwner[p]
+		hops = hops + 1
+	end
+	return false
+end
+
+--- One of a frame's nine points, in UIParent units. Measured from its edges,
+--  so it answers whatever the frame is anchored by and whatever its scale.
+local function PointAt(f, point)
+	local l, r, b, t = f:GetLeft(), f:GetRight(), f:GetBottom(), f:GetTop()
+	if not (l and r and b and t) then return nil end
+	local s = (f:GetEffectiveScale() or 1) / UIScale()
+	local x = (point:find("LEFT") and l) or (point:find("RIGHT") and r) or (l + r) / 2
+	local y = (point:find("TOP") and t) or (point:find("BOTTOM") and b) or (b + t) / 2
+	return x * s, y * s
+end
+
+--- The bond that holds a node where it is NOW: its own anchor point against
+--  its parent's centre, measured rather than assumed, so it is right whatever
+--  put the frame there - a 1.x record, a preset, a drag.
+--
+--  The node's own point is whichever it is anchored by, because that point
+--  stays put while the frame changes size: a bar measured by its CENTER before
+--  its buttons were laid out would be bonded half a bar out.
+local function MeasureBond(entry, pf)
+	local f = entry.frame
+	local us = UIScale()
+	local fs = f:GetEffectiveScale() or us
+	if fs <= 0 or us <= 0 then return nil end
+
+	if entry.pairLead then
+		local x1 = PointAt(pf, "RIGHT")
+		local x2 = PointAt(f, "LEFT")
+		if not (x1 and x2) then return nil end
+		local len = math.max(entry.pairMin or 0, round((x2 - x1) * us / fs))
+		return { parent = entry.parent, point = "LEFT", relPoint = "RIGHT", x = len, y = 0 }
+	end
+
+	local point = f:GetPoint(1)
+	if not VALID_POINTS[point] then point = "CENTER" end
+	local cx, cy = PointAt(f, point)
+	local px, py = PointAt(pf, "CENTER")
+	if not (cx and px) then return nil end
+	return { parent = entry.parent, point = point, relPoint = "CENTER",
+		x = round((cx - px) * us / fs), y = round((cy - py) * us / fs) }
+end
+
+--- Through the widget's own methods where Edit Mode has replaced them - see
+--  PlaceOnScreen for why.
+local function Place(f, point, rel, relPoint, x, y)
+	local clear = f.ClearAllPointsBase or f.ClearAllPoints
+	local place = f.SetPointBase or f.SetPoint
+	clear(f)
+	place(f, point, rel, relPoint, x, y)
+end
+
+--- Where a frame sits, re-expressed against whichever screen corner it is
+--  nearest. Anchoring a bottom-centre HUD element by TOPLEFT makes it drift the
+--  moment the resolution changes. Returns point, x, y in the frame's own units.
+--
+--  Every measurement crosses a scale boundary, and getting that wrong is what
+--  made frames leap to a corner the moment you let go of them. GetLeft, GetTop
+--  and GetCenter report in the FRAME's own coordinate space, UIParent:GetWidth()
+--  in UIParent's, and SetPoint's offsets are read back in the frame's space
+--  again. Our frames run at profile.scale (0.71 by default), so mixing the two
+--  overshot by ~40%, and SetClampedToScreen then pinned the wreckage to an edge.
+local function ScreenAnchor(f, growsDown)
+	local fs = f:GetEffectiveScale() or 1
+	local us = UIScale()
+	if fs <= 0 or us <= 0 then return nil end
+
+	local function toUI(v) return v * fs / us end
+	local function toFrame(v) return v * us / fs end
+
+	local cx, cy = f:GetCenter()
+	if not cx then return nil end
+	cx, cy = toUI(cx), toUI(cy)
+
+	local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
+	local hx = cx < sw / 3 and "LEFT" or cx > sw * 2 / 3 and "RIGHT" or ""
+	local vy = cy < sh / 3 and "BOTTOM" or cy > sh * 2 / 3 and "TOP" or ""
+
+	-- A frame that grows downward has to be pinned by its top edge, or every
+	-- row it gains shoves the whole thing upward off its own anchor.
+	if growsDown then vy = "TOP" end
+
+	local point = (vy .. hx)
+	if point == "" then point = "CENTER" end
+
+	local left, right = toUI(f:GetLeft()), toUI(f:GetRight())
+	local bottom, top = toUI(f:GetBottom()), toUI(f:GetTop())
+
+	local x = (hx == "LEFT") and left
+		or (hx == "RIGHT") and (right - sw)
+		or (cx - sw / 2)
+	local y = (vy == "BOTTOM") and bottom
+		or (vy == "TOP") and (top - sh)
+		or (cy - sh / 2)
+
+	return point, toFrame(x), toFrame(y)
+end
 
 local function SavePosition(entry)
 	local f = entry.frame
 	local point, _, relPoint, x, y = f:GetPoint(1)
 	if not point then return end
-	A.db.profile.anchors[entry.name] = {
-		point = point, relPoint = relPoint,
-		x = math.floor(x + 0.5), y = math.floor(y + 0.5),
-	}
+
+	local pf = ParentFrame(entry)
+	if pf then
+		-- The screen half for 1.x and for presets, the bond for us.
+		local sp, sx, sy = ScreenAnchor(f, entry.growsDown)
+		A.db.profile.anchors[entry.name] = {
+			point = sp or point, relPoint = sp or relPoint,
+			x = round(sx or x), y = round(sy or y),
+			lat = MeasureBond(entry, pf),
+		}
+	else
+		A.db.profile.anchors[entry.name] = {
+			point = point, relPoint = relPoint,
+			x = round(x), y = round(y),
+			-- Set free of the parent its module gives it, and kept free. Only by
+			-- choice (SetParent): a node dragged while its parent's module is
+			-- off is not a node anybody meant to set free.
+			free = entry.free or nil,
+		}
+	end
 
 	-- Some frames are not ours, and the system that owns them keeps its OWN
 	-- record of where they go. Writing our answer down and stopping there
@@ -62,8 +234,8 @@ local function SavePosition(entry)
 	if entry.onPlaced then pcall(entry.onPlaced, f) end
 end
 
-local function RestorePosition(entry)
-	local saved = A.db.profile.anchors[entry.name]
+--- Where 1.x put a node: its screen record, or its default.
+local function PlaceOnScreen(entry, saved)
 	local d = entry.default
 	local point, relPoint, x, y
 
@@ -91,13 +263,6 @@ local function RestorePosition(entry)
 	end
 	if not VALID_POINTS[relPoint] then relPoint = point end
 
-	if InCombatLockdown() then
-		-- Re-anchoring a frame with secure descendants is protected. Defer.
-		Movers._pending = Movers._pending or {}
-		Movers._pending[entry.name] = true
-		return
-	end
-
 	-- THROUGH THE WIDGET'S OWN METHODS where something has replaced them.
 	--
 	-- Edit Mode is the case, and it turned out to be what had been moving the
@@ -112,11 +277,44 @@ local function RestorePosition(entry)
 	-- keeps precisely so that it can place a frame without telling itself the
 	-- layout changed. A frame with no override has neither and gets the ordinary
 	-- pair, which is every other frame in this registry.
-	local f = entry.frame
-	local clear = f.ClearAllPointsBase or f.ClearAllPoints
-	local place = f.SetPointBase or f.SetPoint
-	clear(f)
-	place(f, point, UIParent, relPoint, x, y)
+	Place(entry.frame, point, UIParent, relPoint, x, y)
+end
+
+local function RestorePosition(entry, depth)
+	if InCombatLockdown() then
+		-- Re-anchoring a frame with secure descendants is protected. Defer.
+		Movers._pending = Movers._pending or {}
+		Movers._pending[entry.name] = true
+		return
+	end
+
+	depth = depth or 0
+	local saved = A.db.profile.anchors[entry.name]
+	local pf = depth < 8 and ParentFrame(entry) or nil
+
+	if pf then
+		-- The parent first: a bond is measured against where it IS.
+		local pe = Movers.registry[entry.parent]
+		if pe then RestorePosition(pe, depth + 1) end
+
+		local lat = saved and saved.lat
+		if type(lat) == "table" and lat.parent == entry.parent
+			and VALID_POINTS[lat.point] and VALID_POINTS[lat.relPoint] then
+			Place(entry.frame, lat.point, pf, lat.relPoint, lat.x or 0, lat.y or 0)
+		else
+			-- A 1.x record, a preset's, or none: put it where 1.x would, then bond
+			-- it right there. Nothing moves. A real record keeps its bond; a
+			-- default is measured again each time, so a reset leaves no record.
+			PlaceOnScreen(entry, saved)
+			local bond = MeasureBond(entry, pf)
+			if bond then
+				if saved then saved.lat = bond end
+				Place(entry.frame, bond.point, pf, bond.relPoint, bond.x, bond.y)
+			end
+		end
+	else
+		PlaceOnScreen(entry, saved)
+	end
 
 	-- AND THE OWNER IS TOLD ON THIS PATH TOO, not only when the player drags.
 	--
@@ -137,6 +335,87 @@ local function RestorePosition(entry)
 	-- the owner what we did means its answer is already ours, and the paths we
 	-- never find give the right result anyway.
 	if entry.onPlaced then pcall(entry.onPlaced, entry.frame) end
+end
+
+--- After a node moves, everything hanging from it has moved too - carried by
+--  its anchor - so each one's record is written again. Without this a child
+--  still on its default would be re-measured from that default next session,
+--  and would stay behind on the screen while its parent went somewhere else.
+local function SaveDescendants(name, depth)
+	depth = depth or 0
+	if depth > 8 then return end
+	for _, e in pairs(Movers.registry) do
+		if e.parent == name then
+			SavePosition(e)
+			SaveDescendants(e.name, depth + 1)
+		end
+	end
+	for node, owner in pairs(Movers.nodeOwner) do
+		if owner == name then SaveDescendants(node, depth + 1) end
+	end
+end
+
+--- The node a drag actually moves. The target hands its drag to the player:
+--  the two are one piece.
+local function Lead(entry)
+	return (entry.pairLead and Movers.registry[entry.pairLead]) or entry
+end
+
+--- The other half of a pair, from either half.
+local function Partner(entry)
+	if entry.pairLead then return entry end
+	for _, e in pairs(Movers.registry) do
+		if e.pairLead == entry.name then return e end
+	end
+end
+
+--- Stretch the spine to `len` (in the partner's own units) about its own
+--  centre: the lead gives way by half to the left, the partner goes out by
+--  half to the right, so whatever hangs from the spine's centre stays put.
+--  `from` is where the lead was when the stretch began, so a drag sets an
+--  absolute length rather than accumulating rounding on every frame.
+local function StretchPair(lead, partner, len, from)
+	local lf, pfr = lead.frame, partner.frame
+	local min = partner.pairMin or 0
+	len = math.max(min, round(len))
+
+	local us = UIScale()
+	local ls = lf:GetEffectiveScale() or us
+	local ps = pfr:GetEffectiveScale() or us
+	local was = from.len
+	local shift = (len - was) * ps / us / 2          -- UIParent units
+	Place(lf, from.point, from.rel, from.relPoint, from.x - shift * us / ls, from.y)
+	Place(pfr, "LEFT", lf, "RIGHT", len, 0)
+	return len
+end
+
+--- Where a pair stands right now, for StretchPair.
+local function PairState(lead, partner)
+	local point, rel, relPoint, x, y = lead.frame:GetPoint(1)
+	if not point then return nil end
+	local saved = A.db.profile.anchors[partner.name]
+	local len = (saved and saved.lat and saved.lat.x)
+	if not len then
+		local bond = MeasureBond(partner, lead.frame)
+		len = bond and bond.x or (partner.pairMin or 0)
+	end
+	return { point = point, rel = rel or UIParent, relPoint = relPoint or point,
+		x = x or 0, y = y or 0, len = len }
+end
+
+--- Stretch the spine to a length, about its centre, and keep it. The inspector
+--  and the tests use this; the drag uses the same pieces.
+function Movers:StretchPair(name, len)
+	local entry = Movers.registry[name]
+	if not entry or InCombatLockdown() then return nil end
+	local lead, partner = Lead(entry), Partner(entry)
+	if not (lead and partner) or lead == partner then return nil end
+	local from = PairState(lead, partner)
+	if not from then return nil end
+	len = StretchPair(lead, partner, len, from)
+	SavePosition(lead)
+	SaveDescendants(lead.name)
+	return len
 end
 
 -- ---------------------------------------------------------------------------
@@ -308,9 +587,33 @@ end
 
 Movers.__drawGuide = DrawGuide
 
+--- Everything that moves when `entry` is dragged: the node itself, the other
+--  half of its pair, and everything bonded to either, however deep. None of
+--  them can be a snap target for that drag - they move with it, so snapping to
+--  them chases the frame's own children and it judders between two answers
+--  every frame (seen in game, 2026-10-07).
+function Movers:SnapFamily(entry)
+	-- From the lead, so either half of the pair answers for both.
+	entry = Lead(entry)
+	local skip = { [entry.frame] = true }
+	local roots = { entry.name }
+	local partner = Partner(entry)
+	if partner and partner ~= entry then
+		skip[partner.frame] = true
+		roots[#roots + 1] = partner.name
+	end
+	for _, e in pairs(Movers.registry) do
+		for _, root in ipairs(roots) do
+			if e.parent and Descends(e.parent, root) then skip[e.frame] = true end
+		end
+	end
+	return skip
+end
+
 --- Candidate lines to snap to, in UIParent units: the screen's own edges and
---  centre, and every other registered frame's edges and centre.
-local function SnapTargets(exclude)
+--  centre, and every registered frame's that is not in `skip`.
+local function SnapTargets(skip)
+	skip = skip or {}
 	local xs, ys = {}, {}
 	local w, h = UIParent:GetWidth(), UIParent:GetHeight()
 
@@ -319,7 +622,7 @@ local function SnapTargets(exclude)
 
 	for _, entry in pairs(Movers.registry) do
 		local f = entry.frame
-		if f ~= exclude and f:IsShown() and f:GetLeft() then
+		if not skip[f] and f:IsShown() and f:GetLeft() then
 			local s = f:GetEffectiveScale() / (UIParent:GetEffectiveScale() or 1)
 			local l, r = f:GetLeft() * s, f:GetRight() * s
 			local b, t = f:GetBottom() * s, f:GetTop() * s
@@ -329,6 +632,8 @@ local function SnapTargets(exclude)
 	end
 	return xs, ys
 end
+
+Movers.__snapTargets = SnapTargets
 
 --- Move `lo` (one edge of the frame) so that one of ours lands on a target.
 --  Returns the adjusted low edge and the line it caught, or nil.
@@ -395,13 +700,23 @@ local function CreateHandle(entry)
 			return
 		end
 
-		local f = entry.frame
-		local fs = f:GetEffectiveScale() or 1
 		local us = UIParent:GetEffectiveScale() or 1
-		if fs <= 0 or us <= 0 then return end
-
 		local mx, my = GetCursorPosition()
 		mx, my = mx / us, my / us
+
+		-- STRETCHING THE SPINE: the cursor carries the edge it grabbed, and the
+		-- other capsule gives way by the same amount, so the centre stays put.
+		local st = self._stretch
+		if st then
+			local d = (mx - self._grabX) * st.sign * 2
+			local ps = st.partner.frame:GetEffectiveScale() or us
+			StretchPair(st.lead, st.partner, st.from.len + d * us / ps, st.from)
+			return
+		end
+
+		local f = self._mover.frame
+		local fs = f:GetEffectiveScale() or 1
+		if fs <= 0 or us <= 0 then return end
 
 		local x = self._origX + (mx - self._grabX)
 		local y = self._origY + (my - self._grabY)
@@ -413,7 +728,7 @@ local function CreateHandle(entry)
 		-- Alt is the escape hatch: sometimes the place you want is a pixel off
 		-- the line, and fighting a snap you cannot switch off is miserable.
 		if cfg.snap ~= false and not IsAltKeyDown() then
-			local xs, ys = SnapTargets(f)
+			local xs, ys = SnapTargets(self._skip or { [f] = true })
 			local step = (cfg.grid ~= false) and math.max(4, cfg.gridSize or 16) or nil
 			local dist = cfg.snapDistance or 12
 			x, gx = SnapAxis(x, w, xs, step, dist)
@@ -435,13 +750,34 @@ local function CreateHandle(entry)
 			A:Print(A.Bad(L.movers.create_handle.can_t_move_frames))
 			return
 		end
-		local f = entry.frame
-		local fs = f:GetEffectiveScale() or 1
 		local us = UIParent:GetEffectiveScale() or 1
-		if fs <= 0 or us <= 0 or not f:GetLeft() then return end
-
 		local mx, my = GetCursorPosition()
 		self._grabX, self._grabY = mx / us, my / us
+		self._stretch = nil
+
+		-- Ctrl on either half of the pair stretches the spine instead.
+		local partner = Partner(entry)
+		if partner and IsControlKeyDown and IsControlKeyDown() then
+			local lead = Lead(partner)
+			local from = lead ~= partner and PairState(lead, partner)
+			if from then
+				self._stretch = { lead = lead, partner = partner, from = from,
+					sign = (entry == partner) and 1 or -1 }
+				self._dragging = true
+				self:SetScript("OnUpdate", Drag)
+				return
+			end
+		end
+
+		-- The target's handle drags the player: they are one piece.
+		local mover = Lead(entry)
+		local f = mover.frame
+		local fs = f:GetEffectiveScale() or 1
+		if fs <= 0 or us <= 0 or not f:GetLeft() then return end
+		self._mover = mover
+		-- Worked out once per drag: nothing in it changes while the button is
+		-- down, and it is a walk of the whole registry.
+		self._skip = Movers:SnapFamily(mover)
 		self._origX = f:GetLeft() * fs / us
 		self._origY = f:GetBottom() * fs / us
 
@@ -455,64 +791,42 @@ local function CreateHandle(entry)
 		self._dragging = false
 		ClearGuides()
 
-		-- Re-express the position relative to whichever screen corner the frame
-		-- ended up nearest. Anchoring a bottom-centre HUD element by TOPLEFT
-		-- makes it drift the moment the resolution changes.
-		--
-		-- Every measurement below has to cross a scale boundary, and getting that
-		-- wrong is what made frames leap to a corner the moment you let go of
-		-- them. GetLeft/GetTop/GetCenter report in the FRAME's own coordinate
-		-- space, UIParent:GetWidth() reports in UIParent's, and SetPoint's
-		-- offsets are read back in the frame's space again. Our frames run at
-		-- profile.scale (0.71 by default), so mixing the two overshot by ~40%,
-		-- and SetClampedToScreen then pinned the wreckage to an edge.
-		local f = entry.frame
-		local fs = f:GetEffectiveScale() or 1
-		local us = UIParent:GetEffectiveScale() or 1
-		if fs <= 0 or us <= 0 then return end
+		local st = self._stretch
+		self._stretch = nil
+		if st then
+			SavePosition(st.lead)
+			SaveDescendants(st.lead.name)
+			return
+		end
 
-		local function toUI(v) return v * fs / us end     -- frame space -> UIParent
-		local function toFrame(v) return v * us / fs end  -- and back again
+		local mover = self._mover or entry
+		local f = mover.frame
+		local point, x, y = ScreenAnchor(f, mover.growsDown)
+		if not point then return end
+		Place(f, point, UIParent, point, x, y)
 
-		local cx, cy = f:GetCenter()
-		if not cx then return end
-		cx, cy = toUI(cx), toUI(cy)
-
-		local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
-		local hx = cx < sw / 3 and "LEFT" or cx > sw * 2 / 3 and "RIGHT" or ""
-		local vy = cy < sh / 3 and "BOTTOM" or cy > sh * 2 / 3 and "TOP" or ""
-
-		-- A frame that grows downward has to be pinned by its top edge, or every
-		-- row it gains shoves the whole thing upward off its own anchor.
-		if entry.growsDown then vy = "TOP" end
-
-		local point = (vy .. hx)
-		if point == "" then point = "CENTER" end
-
-		local left, right = toUI(f:GetLeft()), toUI(f:GetRight())
-		local bottom, top = toUI(f:GetBottom()), toUI(f:GetTop())
-
-		local x = (hx == "LEFT") and left
-			or (hx == "RIGHT") and (right - sw)
-			or (cx - sw / 2)
-		local y = (vy == "BOTTOM") and bottom
-			or (vy == "TOP") and (top - sh)
-			or (cy - sh / 2)
-
-		f:ClearAllPoints()
-		f:SetPoint(point, UIParent, point, toFrame(x), toFrame(y))
-		SavePosition(entry)
+		-- And back onto its parent, at wherever it was dropped.
+		local pf = ParentFrame(mover)
+		if pf then
+			local bond = MeasureBond(mover, pf)
+			if bond then Place(f, bond.point, pf, bond.relPoint, bond.x, bond.y) end
+		end
+		SavePosition(mover)
+		SaveDescendants(mover.name)
 	end)
 
-	-- Nudge with the arrow keys for the last few pixels.
+	-- Nudge with the wheel for the last few pixels, in the node's own anchor -
+	-- against its parent where it has one. The target nudges the pair.
 	h:EnableKeyboard(false)
 	h:SetScript("OnMouseWheel", function(_, delta)
-		local point, _, relPoint, x, y = entry.frame:GetPoint(1)
+		if InCombatLockdown() then return end
+		local mover = Lead(entry)
+		local point, rel, relPoint, x, y = mover.frame:GetPoint(1)
 		if not point then return end
 		if IsShiftKeyDown() then x = x + delta else y = y + delta end
-		entry.frame:ClearAllPoints()
-		entry.frame:SetPoint(point, UIParent, relPoint, x, y)
-		SavePosition(entry)
+		Place(mover.frame, point, rel or UIParent, relPoint, x, y)
+		SavePosition(mover)
+		SaveDescendants(mover.name)
 	end)
 	h:EnableMouseWheel(true)
 
@@ -540,6 +854,21 @@ end
 --                          pet out, the taxi button off a flight path - and you
 --                          cannot drag a frame you can never see. This is how a
 --                          module says "hold it up while I place it".
+--    parent = "player"     the node this one hangs from (see the top of the
+--                          file). Nil is the screen.
+--    pairLead = "player"   this node is the other half of a PAIR with that
+--                          one: bonded level to its right edge, dragged with
+--                          it, stretched apart with Ctrl. The target.
+--    pairMin = 40          the shortest the pair may be stretched.
+
+--- Everything waiting on `name` as its parent is placed again: a node that
+--  registered before its parent sat on the screen, and is bonded now.
+local function Adopt(name)
+	for _, e in pairs(Movers.registry) do
+		if e.parent == name then RestorePosition(e) end
+	end
+end
+
 function Movers:Register(name, frame, default, label, opts)
 	local entry = Movers.registry[name]
 	if entry then
@@ -551,15 +880,69 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.growsDown = opts and opts.growsDown or nil
 	entry.preview = opts and opts.preview or entry.preview
 	entry.onPlaced = opts and opts.onPlaced or entry.onPlaced
+	entry.pairLead = opts and opts.pairLead or nil
+	entry.pairMin = opts and opts.pairMin or nil
+
+	-- THE SAVED PARENT WINS over the module's default: a node somebody hung
+	-- elsewhere - or set free onto the screen - stays where they put it when
+	-- its module registers it again on the next config change.
+	entry.defaultParent = opts and opts.parent or nil
+	local saved = A.db.profile.anchors[name]
+	local parent = entry.defaultParent
+	entry.free = (saved and saved.free) and true or nil
+	if entry.free then
+		parent = nil
+	elseif saved and type(saved.lat) == "table" and saved.lat.parent then
+		parent = saved.lat.parent
+	end
+	-- A parent that hangs from this node would be an anchor loop.
+	if parent and Descends(parent, name) then parent = nil end
+	entry.parent = parent
 
 	frame:SetClampedToScreen(true)
 	RestorePosition(entry)
+	Adopt(name)
 
 	if Movers.unlocked then
 		if not entry.handle then CreateHandle(entry) end
 		entry.handle:Show()
 	end
 	return entry
+end
+
+--- A node that can be a parent but is not dragged itself - the spine, which
+--  is part of the player capsule (`owner`) and moves with it.
+function Movers:RegisterNode(name, frame, owner)
+	Movers.nodes[name] = frame
+	Movers.nodeOwner[name] = owner
+	Adopt(name)
+end
+
+--- Hang a node from a different parent, where it stands. Refused for a loop,
+--  and in combat. Returns true when it took.
+function Movers:SetParent(name, parent)
+	local entry = Movers.registry[name]
+	if not entry or InCombatLockdown() then return false end
+	if parent == "screen" then parent = nil end
+	if parent and (parent == name or Descends(parent, name)) then return false end
+	entry.parent = parent
+	entry.free = (not parent and entry.defaultParent) and true or nil
+	local pf = ParentFrame(entry)
+	if pf then
+		local bond = MeasureBond(entry, pf)
+		if bond then Place(entry.frame, bond.point, pf, bond.relPoint, bond.x, bond.y) end
+	else
+		local point, x, y = ScreenAnchor(entry.frame, entry.growsDown)
+		if point then Place(entry.frame, point, UIParent, point, x, y) end
+	end
+	SavePosition(entry)
+	return true
+end
+
+--- What a node hangs from, for the inspector and the tests.
+function Movers:ParentOf(name)
+	local entry = Movers.registry[name]
+	return entry and entry.parent or nil
 end
 
 function Movers:Unregister(name)
@@ -744,6 +1127,10 @@ end
 
 function Movers:ResetAll()
 	wipe(A.db.profile.anchors)
+	-- Every node back on the parent its module gives it.
+	for _, entry in pairs(Movers.registry) do
+		entry.parent, entry.free = entry.defaultParent, nil
+	end
 	Movers:RestoreAll()
 	A:Print(L.movers.reset_all.frame_positions_reset)
 end

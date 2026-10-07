@@ -1593,6 +1593,20 @@ end
 
 AB.DefaultAnchor = DefaultAnchor
 
+--- What a bar hangs from. Bars 1 and 2 hang from the spine's centre (the
+--  strands handoff); the stance, pet and extra-action bars from bar 1, because
+--  "actions are bonded to actions" (Joe, 2026-10-07). The rest wait on the
+--  screen until the trunks exist.
+local function ParentFor(bar)
+	if bar.id == "1" or bar.id == "2" then return "spine" end
+	if bar.kind == "stance" or bar.kind == "pet" or bar.kind == "extra" then
+		return "bar1"
+	end
+	return nil
+end
+
+AB.ParentFor = ParentFor
+
 function AB:OnEnable()
 	local cfg = A.Config:Module("actionbars")
 
@@ -1619,7 +1633,8 @@ function AB:OnEnable()
 			bar.visibilityDriven = true
 		end
 		A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
-			bar.cfg.label or ("Bar " .. bar.id), { preview = BarPreview(bar) })
+			bar.cfg.label or ("Bar " .. bar.id),
+			{ preview = BarPreview(bar), parent = ParentFor(bar) })
 		A.Fader:Register(bar.dock, {})
 	end
 
@@ -1897,7 +1912,8 @@ function AB:OnConfigChanged()
 			LayoutBar(bar)
 
 			A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
-				bar.cfg.label or ("Bar " .. bar.id), { preview = BarPreview(bar) })
+				bar.cfg.label or ("Bar " .. bar.id),
+				{ preview = BarPreview(bar), parent = ParentFor(bar) })
 		end
 	end
 

@@ -387,6 +387,15 @@ local function widgetBase(kind)
 		-- not been placed yet from one that had.
 		if not base then return nil end
 
+		-- ACROSS A SCALE, as the client does it: each frame reports its edges in
+		-- its OWN scale, and an anchor's offset is in the anchored frame's units.
+		-- Adding the host's edge to the offset raw put a 0.85-scale pet bonded to
+		-- the player 60 units from where the client draws it (2026-10-07). Frames
+		-- that share a scale - nearly every one - are untouched.
+		local rs = rel.GetEffectiveScale and rel:GetEffectiveScale() or 1
+		local ss = self.GetEffectiveScale and self:GetEffectiveScale() or 1
+		if ss > 0 and rs ~= ss then base = base * rs / ss end
+
 		x = x or 0
 		if pt:find("LEFT") then return base + x end
 		local w = (self.GetWidth and self:GetWidth()) or 0
@@ -437,6 +446,11 @@ local function widgetBase(kind)
 			base = rt and (rt - ((rel.GetHeight and rel:GetHeight()) or 0) / 2)
 		end
 		if not base then return nil end
+
+		-- Across a scale, the same as GetLeft.
+		local rs = rel.GetEffectiveScale and rel:GetEffectiveScale() or 1
+		local ss = self.GetEffectiveScale and self:GetEffectiveScale() or 1
+		if ss > 0 and rs ~= ss then base = base * rs / ss end
 
 		y = y or 0
 		if pt:find("TOP") then return base + y end
@@ -8070,18 +8084,18 @@ fire("PLAYER_TARGET_CHANGED")
 check(UF.target:IsShown() and UF.target.name:GetText() == "Savannah Prowler",
 	"target capsule repopulates after retargeting")
 
-print("== casting: the bond and its lanes ==")
+print("== casting: the spine and its lanes ==")
 do
 	-- The Lattice handoff's player-target axis (3a, 3b): two hairlines between
 	-- the capsules, a cast lane on each. They replace the floating cast bars.
-	check(UF.bond and UF.bond:GetParent() == UF.player, "the bond hangs off the player capsule")
-	local p, rel, relP = UF.bond:GetPoint(1)
+	check(UF.spine and UF.spine:GetParent() == UF.player, "the spine hangs off the player capsule")
+	local p, rel, relP = UF.spine:GetPoint(1)
 	check(p == "LEFT" and rel == UF.player and relP == "RIGHT", "from its right edge")
-	check(#UF.bond.lines == 2, "two hairlines")
+	check(#UF.spine.lines == 2, "two hairlines")
 	check(A.Movers.registry.cast == nil and A.Movers.registry.targetcast == nil,
 		"the floating cast bars and their movers are gone")
-	check(UF.cast:GetParent() == UF.bond and UF.targetCast:GetParent() == UF.bond,
-		"both lanes ride the bond")
+	check(UF.cast:GetParent() == UF.spine and UF.targetCast:GetParent() == UF.spine,
+		"both lanes ride the spine")
 	local _, _, _, _, py = UF.cast:GetPoint(1)
 	local _, _, _, _, ty = UF.targetCast:GetPoint(1)
 	check(py == 4 and ty == -4, "yours on the upper line, the target's on the lower")
@@ -8106,27 +8120,27 @@ do
 	-- The length is measured, because the two capsules move separately.
 	UF.player:SetGeom({ left = 100, right = 400, top = 300, bottom = 240 })
 	UF.target:SetGeom({ left = 520, right = 820, top = 300, bottom = 240 })
-	UF:MeasureBond()
-	check(UF.bond:GetWidth() == 120,
-		"the bond runs from one capsule's edge to the other's ("
-		.. tostring(UF.bond:GetWidth()) .. ")")
+	UF:MeasureSpine()
+	check(UF.spine:GetWidth() == 120,
+		"the spine runs from one capsule's edge to the other's ("
+		.. tostring(UF.spine:GetWidth()) .. ")")
 	UF.target:SetGeom({ left = 380, right = 680, top = 300, bottom = 240 })
-	UF:MeasureBond()
-	check(UF.bond:GetWidth() == 40, "and never collapses, however the capsules are dragged")
+	UF:MeasureSpine()
+	check(UF.spine:GetWidth() == 40, "and never collapses, however the capsules are dragged")
 	UF.player:SetGeom(nil)
 	UF.target:SetGeom(nil)
-	UF:MeasureBond()
+	UF:MeasureSpine()
 
-	-- With no target there is no bond: no lines, and no dashes in their place.
+	-- With no target there is no spine: no lines, and no dashes in their place.
 	_G.__units.target.exists = false
 	fire("PLAYER_TARGET_CHANGED")
-	check(not UF.bond.lines[1]:IsShown() and not UF.bond.lines[2]:IsShown()
-		and UF.bond.dots == nil,
-		"with no target the bond draws nothing")
-	check(UF.bond:IsShown(), "but stays up, so your lane still has somewhere to draw")
+	check(not UF.spine.lines[1]:IsShown() and not UF.spine.lines[2]:IsShown()
+		and UF.spine.dots == nil,
+		"with no target the spine draws nothing")
+	check(UF.spine:IsShown(), "but stays up, so your lane still has somewhere to draw")
 	_G.__units.target.exists = true
 	fire("PLAYER_TARGET_CHANGED")
-	check(UF.bond.lines[1]:IsShown() and UF.bond.lines[2]:IsShown(),
+	check(UF.spine.lines[1]:IsShown() and UF.spine.lines[2]:IsShown(),
 		"and both lines are back with one")
 end
 
@@ -11577,6 +11591,209 @@ SlashCmdList["AETHERUI"]("lock")
 check(not A.Movers.unlocked, "movers locked")
 SlashCmdList["AETHERUI"]("reset")
 check(next(A.db.profile.anchors) == nil, "reset cleared saved anchors")
+
+print("== movers: the parent model ==")
+-- Lattice: a node hangs from its parent and goes where it goes. The pet from
+-- the player, the ToT from the target, bars 1 and 2 from the spine's centre,
+-- stance / pet / extra from bar 1; player and target one level PAIR.
+do
+	local M = A.Movers
+	local UFm = A:GetModule("unitframes")
+	local reg = M.registry
+	local us = UIParent:GetEffectiveScale() or 1
+
+	--- A frame's point in UIParent units, measured the way the client would.
+	local function at(f, which)
+		local l, r, b, t = f:GetLeft(), f:GetRight(), f:GetBottom(), f:GetTop()
+		if not (l and r and b and t) then return nil end
+		local s = (f:GetEffectiveScale() or 1) / us
+		local x = (which:find("LEFT") and l) or (which:find("RIGHT") and r) or (l + r) / 2
+		local y = (which:find("TOP") and t) or (which:find("BOTTOM") and b) or (b + t) / 2
+		return x * s, y * s
+	end
+	local function near(a, b) return a and b and math.abs(a - b) < 0.6 end
+
+	-- THE BONDS, as registered.
+	local tp, trel, trp, tx, ty = UFm.target:GetPoint(1)
+	check(tp == "LEFT" and trel == UFm.player and trp == "RIGHT" and ty == 0,
+		"the target is the player's pair: level, off its right edge ("
+		.. tostring(tp) .. " " .. tostring(trp) .. " y " .. tostring(ty) .. ")")
+	check(tx and tx >= 40, "at the spine's length, never under its minimum ("
+		.. tostring(tx) .. ")")
+	if UFm.pet then
+		check(select(2, UFm.pet:GetPoint(1)) == UFm.player, "the pet hangs from the player")
+	end
+	if UFm.tot then
+		check(select(2, UFm.tot:GetPoint(1)) == UFm.target, "the ToT hangs from the target")
+	end
+	check(M.nodes.spine == UFm.spine, "the spine is a node things can hang from")
+	local bar1 = reg.bar1 and reg.bar1.frame
+	check(bar1 and select(2, bar1:GetPoint(1)) == UFm.spine
+		and select(3, bar1:GetPoint(1)) == "CENTER",
+		"bar 1 hangs from the spine's centre")
+	for _, k in ipairs({ "barstance", "barpet", "barextra" }) do
+		if reg[k] then
+			check(select(2, reg[k].frame:GetPoint(1)) == bar1,
+				k .. " hangs from bar 1 - actions are bonded to actions")
+		end
+	end
+
+	-- THE UPGRADE MOVES NOTHING. A 1.x record - screen only, no bond - lands
+	-- exactly where 1.x put it, and gains its bond right there.
+	if UFm.pet then
+		local legacy = { point = "BOTTOM", relPoint = "BOTTOM", x = -333, y = 147 }
+		UFm.pet:ClearAllPoints()
+		UFm.pet:SetPoint(legacy.point, UIParent, legacy.relPoint, legacy.x, legacy.y)
+		local x0, y0 = at(UFm.pet, "BOTTOM")
+		A.db.profile.anchors.pet = { point = legacy.point, relPoint = legacy.relPoint,
+			x = legacy.x, y = legacy.y }
+		M:Restore("pet")
+		local x1, y1 = at(UFm.pet, "BOTTOM")
+		check(near(x0, x1) and near(y0, y1),
+			"a 1.x record lands on the same spot (" .. string.format("%.1f,%.1f -> %.1f,%.1f",
+				x0 or -1, y0 or -1, x1 or -1, y1 or -1) .. ")")
+		local rec = A.db.profile.anchors.pet
+		check(rec.lat and rec.lat.parent == "player" and select(2, UFm.pet:GetPoint(1)) == UFm.player,
+			"and is bonded to the player where it stands")
+		check(rec.point == "BOTTOM" and rec.x == -333,
+			"with the 1.x half of the record untouched, so a rollback still finds it")
+	end
+
+	-- MOVING A PARENT CARRIES EVERYTHING ON IT.
+	do
+		local px0 = at(UFm.player, "CENTER")
+		local tx0 = at(UFm.target, "CENTER")
+		local bx0 = bar1 and at(bar1, "CENTER")
+		local sx0 = reg.barstance and at(reg.barstance.frame, "CENTER")
+		local p, rel, rp, x, y = UFm.player:GetPoint(1)
+		UFm.player:ClearAllPoints()
+		UFm.player:SetPoint(p, rel, rp, x + 50, y)
+		local d = at(UFm.player, "CENTER") - px0
+		check(d > 1, "the player moved (" .. string.format("%.1f", d) .. ")")
+		check(near(at(UFm.target, "CENTER") - tx0, d), "and took the target with it")
+		if bar1 then check(near(at(bar1, "CENTER") - bx0, d), "and bar 1, off the spine") end
+		if sx0 then
+			check(near(at(reg.barstance.frame, "CENTER") - sx0, d),
+				"and the stance bar, off bar 1 - two bonds away")
+		end
+		UFm.player:ClearAllPoints()
+		UFm.player:SetPoint(p, rel, rp, x, y)
+	end
+
+	-- THE SPINE STRETCHES ABOUT ITS CENTRE, and no shorter than its minimum.
+	do
+		local function centre()
+			return ((at(UFm.player, "RIGHT")) + (at(UFm.target, "LEFT"))) / 2
+		end
+		local c0 = centre()
+		local len0 = select(4, UFm.target:GetPoint(1))
+		local got = M:StretchPair("target", len0 + 60)
+		check(got == len0 + 60 and select(4, UFm.target:GetPoint(1)) == len0 + 60,
+			"Ctrl-drag's stretch sets the spine's length (" .. tostring(got) .. ")")
+		check(near(centre(), c0), "about its centre - what hangs from it stays put ("
+			.. string.format("%.1f -> %.1f", c0, centre()) .. ")")
+		check(A.db.profile.anchors.target and A.db.profile.anchors.target.lat
+			and A.db.profile.anchors.target.lat.x == len0 + 60, "and is kept")
+		check(M:StretchPair("player", 10) == 40, "never shorter than 40, from either half")
+		select(2, UFm.target:GetPoint(1))
+		local _, _, _, _, yy = UFm.target:GetPoint(1)
+		check(yy == 0, "and the two never go out of level")
+		M:StretchPair("target", len0)
+	end
+
+	-- A DRAG ON THE TARGET MOVES THE PAIR.
+	do
+		M:Unlock()
+		local h = reg.target.handle
+		local px0 = at(UFm.player, "CENTER")
+		__setCursor(500 * us, 300 * us)
+		h:GetScript("OnDragStart")(h)
+		__setCursor(530 * us, 300 * us)
+		local up = h:GetScript("OnUpdate")
+		if up then up(h, 0) end
+		h:GetScript("OnDragStop")(h)
+		check(at(UFm.player, "CENTER") - px0 > 1,
+			"dragging the target's handle moves the player too - they are one piece")
+		check(select(2, UFm.target:GetPoint(1)) == UFm.player,
+			"and the target is still bonded to it afterwards")
+
+		-- Ctrl on the handle stretches instead.
+		local len0 = select(4, UFm.target:GetPoint(1))
+		_G.__ctrl = true
+		__setCursor(500 * us, 300 * us)
+		h:GetScript("OnDragStart")(h)
+		__setCursor(520 * us, 300 * us)
+		up = h:GetScript("OnUpdate")
+		if up then up(h, 0) end
+		h:GetScript("OnDragStop")(h)
+		_G.__ctrl = nil
+		check(select(4, UFm.target:GetPoint(1)) > len0,
+			"Ctrl-dragging the target stretches the spine instead ("
+			.. tostring(len0) .. " -> " .. tostring(select(4, UFm.target:GetPoint(1))) .. ")")
+		M:Lock()
+		M:StretchPair("target", len0)
+	end
+
+	-- NO SNAPPING TO WHAT MOVES WITH YOU. Seen in game as judder (2026-10-07):
+	-- dragging the player carried its children, snapping chased their edges,
+	-- and the frame flipped between two answers every frame.
+	do
+		local fam = M:SnapFamily(reg.player)
+		local members = { UFm.player, UFm.target, UFm.pet, UFm.tot, bar1,
+			reg.barstance and reg.barstance.frame }
+		local all = true
+		for _, f in pairs(members) do
+			if f and not fam[f] then all = false end
+		end
+		check(all, "a drag of the player leaves the target, pet, ToT, bar 1 and the"
+			.. " stance bar out of its snap targets - they move with it")
+		check(not (reg.chat and fam[reg.chat.frame]),
+			"while an unrelated frame stays in - it is still something to line up with")
+		local famT = M:SnapFamily(reg.target)
+		check(famT[UFm.player] and famT[UFm.target] and (not bar1 or famT[bar1]),
+			"and the same from the target's handle, which drags the pair")
+
+		-- The targets themselves: none of the player's edges or centre is on
+		-- the list for its own drag.
+		local xs = M.__snapTargets(fam)
+		local s = (UFm.player:GetEffectiveScale() or 1) / us
+		local pl = UFm.player:GetLeft() * s
+		local hit = false
+		for _, x in ipairs(xs) do if math.abs(x - pl) < 0.01 then hit = true end end
+		check(not hit, "so the dragged frame's own edge is never a line it snaps to")
+	end
+
+	-- NO LOOPS. A node cannot hang from anything that hangs from it.
+	check(not M:SetParent("player", "pet"), "the player cannot hang from its own pet")
+	check(not M:SetParent("player", "spine"),
+		"nor from the spine, which is part of the player")
+	if reg.barstance then
+		check(not M:SetParent("bar1", "barstance"), "nor bar 1 from the stance bar on it")
+	end
+
+	-- A NODE SET FREE STAYS FREE, through its module registering it again.
+	if UFm.pet then
+		check(M:SetParent("pet", nil), "the pet can be set free onto the screen")
+		UFm:RegisterMovers()
+		check(M:ParentOf("pet") == nil and select(2, UFm.pet:GetPoint(1)) == UIParent,
+			"and stays free when its module registers it again")
+		check(M:SetParent("pet", "player") and M:ParentOf("pet") == "player",
+			"and can be hung back on the player")
+	end
+
+	-- NOTHING MOVES IN COMBAT: it waits for the fight to end.
+	_G.__inCombat = true
+	A.db.profile.anchors.pet = nil
+	M:RestoreAll()
+	check(M._pending and M._pending.pet, "a restore in combat is deferred, not attempted")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(M._pending == nil, "and done once the fight is over")
+
+	SlashCmdList["AETHERUI"]("reset")
+	check(next(A.db.profile.anchors) == nil and M:ParentOf("pet") == (UFm.pet and "player" or nil),
+		"reset puts every node back on its module's parent, with nothing saved")
+end
 
 print("== commands: reading a frame there is no source for ==")
 do

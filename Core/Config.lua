@@ -217,7 +217,7 @@ Config.defaults = {
 				-- catches the rest, and the rest is the majority. See
 				-- /aether diag, which counts all three numbers.
 				showTargetCastBar = true,
-				-- Both are cast LANES on the bond between the two capsules, as
+				-- Both are cast LANES on the spine between the two capsules, as
 				-- long as the gap between them - there is no width to set.
 				hideBlizzard  = true,
 				clickTarget   = true,

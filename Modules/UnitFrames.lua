@@ -293,23 +293,23 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- the bond and its cast lanes
+-- the spine and its cast lanes
 -- ---------------------------------------------------------------------------
 
 --[[
 	The Lattice handoff's player-target axis (3a, 3b). Two hairlines run
-	between the capsules' facing edges - the bond - and each carries a cast
+	between the capsules' facing edges - the spine - and each carries a cast
 	lane. What you do leaves your right edge on the upper line; what the target
 	does comes back from its left edge on the lower one, gold if it can be
 	interrupted and grey if not. Labels sit where a lane starts. A channel
 	drains back toward its origin and an interrupt flashes red.
 
-	WITH NO TARGET THERE IS NO BOND. The handoff draws it dotted, and on screen
+	WITH NO TARGET THERE IS NO SPINE. The handoff draws it dotted, and on screen
 	a dashed line running out to an empty space read as clutter (Joe,
 	2026-10-07), so the hairlines go and only your lane draws, when you cast.
 
 	These replace the floating cast bars. Every other edge of a capsule belongs
-	to an aura tray; the bond is the one place that belongs to both.
+	to an aura tray; the spine is the one place that belongs to both.
 
 	ON WOW FOREVER A CAST'S TIMES, NAME AND INTERRUPTIBILITY CAN ALL BE SECRET,
 	and nothing here reads them. The bar takes the game's duration object
@@ -322,48 +322,48 @@ end
 ]]
 
 local LANE_H    = 4      -- the lane's stroke
-local BOND_OFF  = 4      -- each hairline from the capsules' centre line
+local SPINE_OFF  = 4      -- each hairline from the capsules' centre line
 local LABEL_GAP = 3
-local BOND_MIN  = 40     -- however the movers left the capsules
+local SPINE_MIN  = 40     -- however the movers left the capsules
 local FLASH    = 0.2    -- seconds an interrupted cast shows red
 local RERASTER_AFTER = 0.1   -- the cold-start second pass on a lane's name
 
-local function Hairline(bond, y)
-	local t = bond:CreateTexture(nil, "BACKGROUND")
+local function Hairline(spine, y)
+	local t = spine:CreateTexture(nil, "BACKGROUND")
 	t:SetTexture(Media.texture.flat)
-	t:SetPoint("LEFT", bond, "LEFT", 0, y)
-	t:SetPoint("RIGHT", bond, "RIGHT", 0, y)
-	t:SetHeight(A:PxIn(bond))
-	W.Tint(t, Palette.c.bond)
+	t:SetPoint("LEFT", spine, "LEFT", 0, y)
+	t:SetPoint("RIGHT", spine, "RIGHT", 0, y)
+	t:SetHeight(A:PxIn(spine))
+	W.Tint(t, Palette.c.spine)
 	return t
 end
 
---- The bond hangs off the player capsule's right edge, on its centre line;
---  its length is measured to the target (UF:MeasureBond).
-local function BuildBond(player)
-	local bond = CreateFrame("Frame", nil, player)
-	bond:SetPoint("LEFT", player, "RIGHT", 0, 0)
-	bond:SetSize(BOND_MIN, (BOND_OFF + LANE_H) * 2)
-	bond.lines = { Hairline(bond, BOND_OFF), Hairline(bond, -BOND_OFF) }
-	return bond
+--- The spine hangs off the player capsule's right edge, on its centre line;
+--  its length is measured to the target (UF:MeasureSpine).
+local function BuildSpine(player)
+	local spine = CreateFrame("Frame", nil, player)
+	spine:SetPoint("LEFT", player, "RIGHT", 0, 0)
+	spine:SetSize(SPINE_MIN, (SPINE_OFF + LANE_H) * 2)
+	spine.lines = { Hairline(spine, SPINE_OFF), Hairline(spine, -SPINE_OFF) }
+	return spine
 end
 
---- The hairlines with a target, nothing without one. Only the lines: the bond
+--- The hairlines with a target, nothing without one. Only the lines: the spine
 --  frame stays, because your lane hangs off it whether there is a target or not.
-local function SetBondLines(bond, on)
-	for _, l in ipairs(bond.lines) do l:SetShown(on and true or false) end
+local function SetSpineLines(spine, on)
+	for _, l in ipairs(spine.lines) do l:SetShown(on and true or false) end
 end
 
 --- One lane. `f.unit`, `f.state`, `f.bar`, `f.spellName` and `f.time` are the
 --  names the cast events and the rest of the module already use.
-local function BuildLane(bond, unit)
+local function BuildLane(spine, unit)
 	local mine = (unit == "player")
-	local f = CreateFrame("Frame", nil, bond)
+	local f = CreateFrame("Frame", nil, spine)
 	f.unit = unit
 	f.state = { active = false }
-	local y = mine and BOND_OFF or -BOND_OFF
-	f:SetPoint("LEFT", bond, "LEFT", 0, y)
-	f:SetPoint("RIGHT", bond, "RIGHT", 0, y)
+	local y = mine and SPINE_OFF or -SPINE_OFF
+	f:SetPoint("LEFT", spine, "LEFT", 0, y)
+	f:SetPoint("RIGHT", spine, "RIGHT", 0, y)
 	f:SetHeight(LANE_H)
 
 	-- The hairline under it is the rail, so the bar draws no track of its own.
@@ -830,7 +830,7 @@ local function Reconcile()
 			end
 		end
 	end
-	if UF.bond then UF:MeasureBond() end
+	if UF.spine then UF:MeasureSpine() end
 end
 
 UF.Reconcile = Reconcile
@@ -1000,7 +1000,7 @@ local function CastStart(f, channel)
 	st.active, st.channel = true, channel
 	f.flashing = nil
 	f.flash:Hide()
-	if UF.bond then UF:MeasureBond() end
+	if UF.spine then UF:MeasureSpine() end
 
 	local c = Palette.c
 	local mine = (f.unit == "player")
@@ -1074,30 +1074,30 @@ UF.CastStart, UF.CastStop, UF.CastFlash = CastStart, CastStop, CastFlash
 -- events
 -- ---------------------------------------------------------------------------
 
---- The bond's length: from the player capsule's right edge to the target's
+--- The spine's length: from the player capsule's right edge to the target's
 --  left. The two are separate movers, so it is measured rather than assumed -
 --  on a config change, on load, at every cast and on the 10Hz pass, which is
 --  what keeps it attached while a capsule is dragged in unlock. Level with the
 --  player whatever height the target sits at.
-function UF:MeasureBond()
-	local bond = self.bond
-	if not bond then return end
-	local w = A.Config:Module("unitframes").gap or BOND_MIN
+function UF:MeasureSpine()
+	local spine = self.spine
+	if not spine then return end
+	local w = A.Config:Module("unitframes").gap or SPINE_MIN
 	local pr, tl = self.player:GetRight(), self.target:GetLeft()
 	if pr and tl then
 		local ps = self.player:GetEffectiveScale()
 		w = (tl * self.target:GetEffectiveScale() - pr * ps) / ps
 	end
-	w = math.max(BOND_MIN, w)
-	if w ~= bond._w then
-		bond._w = w
-		bond:SetWidth(w)
+	w = math.max(SPINE_MIN, w)
+	if w ~= spine._w then
+		spine._w = w
+		spine:SetWidth(w)
 	end
 end
 
 --- The lines with a target, none without one.
-function UF:BondTarget()
-	if self.bond then SetBondLines(self.bond, UnitExists("target")) end
+function UF:SpineTarget()
+	if self.spine then SetSpineLines(self.spine, UnitExists("target")) end
 end
 
 function UF:RegisterEvents()
@@ -1150,7 +1150,7 @@ function UF:RegisterEvents()
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
 		UpdateAll(UF.target)
 		if UF.tot then UpdateAll(UF.tot) end
-		UF:BondTarget()
+		UF:SpineTarget()
 		if UF.targetCast then
 			CastStop(UF.targetCast)
 			-- a target may already be mid-cast when you click it
@@ -1182,8 +1182,8 @@ function UF:RegisterEvents()
 		UF:HideBlizzard()
 		UpdateAll(UF.player)
 		UpdateAll(UF.target)
-		UF:MeasureBond()
-		UF:BondTarget()
+		UF:MeasureSpine()
+		UF:SpineTarget()
 	end)
 
 	-- Cast events. The native UNIT_SPELLCAST_* events only fire for the player on
@@ -1269,22 +1269,32 @@ function UF:RegisterMovers()
 	local half = (math.max(cfg.width, MinWidth(cfg)) + cfg.gap) / 2
 	A.Movers:Register("player", self.player,
 		{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 190 }, "Player")
+	-- THE PAIR. The target is the player's other half, level with it and the
+	-- spine between them: dragged with it, stretched apart with Ctrl, never
+	-- shorter than the spine's minimum (Joe, 2026-10-07).
 	A.Movers:Register("target", self.target,
-		{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 190 }, "Target")
+		{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 190 }, "Target",
+		{ parent = "player", pairLead = "player", pairMin = SPINE_MIN })
+	-- The spine is a node in its own right - the bars hang from its centre -
+	-- measured first, so what hangs from it is bonded to where it really is.
+	self:MeasureSpine()
+	if self.spine then A.Movers:RegisterNode("spine", self.spine, "player") end
 	if self.pet then
 		-- Under the player by default, which is where one is looked for - but
 		-- its OWN entry, so it can be put anywhere. A pet frame you cannot move
-		-- is one you end up turning off.
+		-- is one you end up turning off. Bonded to the player: it goes where
+		-- the player goes.
 		A.Movers:Register("pet", self.pet,
-			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, "Pet")
+			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, "Pet",
+			{ parent = "player" })
 	end
 	if self.tot then
 		-- Under the TARGET, which is the mirror of where the pet sits and
 		-- where this one is looked for: it answers a question about the
-		-- thing above it.
+		-- thing above it. Bonded to the target.
 		A.Movers:Register("targettarget", self.tot,
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 140 },
-			"Target of Target")
+			"Target of Target", { parent = "target" })
 	end
 end
 
@@ -1297,7 +1307,7 @@ function UF:OnEnable()
 	if self.player then
 		for _, f in ipairs(self.frames) do SetVisible(f, true) end
 		if self.cast then self.cast:Hide() end
-		if self.bond then self.bond:Show() end
+		if self.spine then self.spine:Show() end
 		self:OnConfigChanged()
 		-- OnDisable took these away, so coming back has to put them back. This
 		-- used to live only in the first-build path below, which meant the very
@@ -1343,12 +1353,12 @@ function UF:OnEnable()
 		self.frames[#self.frames + 1] = self.tot
 	end
 
-	-- The bond between the two capsules, and a cast lane on each of its lines.
-	self.bond = BuildBond(self.player)
+	-- The spine between the two capsules, and a cast lane on each of its lines.
+	self.spine = BuildSpine(self.player)
 	if cfg.showCastBar then
-		self.cast = BuildLane(self.bond, "player")
+		self.cast = BuildLane(self.spine, "player")
 		if cfg.showTargetCastBar then
-			self.targetCast = BuildLane(self.bond, "target")
+			self.targetCast = BuildLane(self.spine, "target")
 		end
 	end
 
@@ -1388,7 +1398,7 @@ function UF:OnDisable()
 	end
 	if self.cast then CastStop(self.cast) end
 	if self.targetCast then CastStop(self.targetCast) end
-	if self.bond then self.bond:Hide() end
+	if self.spine then self.spine:Hide() end
 	A.Movers:Unregister("player")
 	A.Movers:Unregister("target")
 	A.Movers:Unregister("pet")
@@ -1403,7 +1413,7 @@ function UF:OnSkinChanged()
 		UpdatePower(f)
 		UpdateOrb(f)
 	end
-	-- The bond's hairlines are tinted by token and swept with everything else;
+	-- The spine's hairlines are tinted by token and swept with everything else;
 	-- the lanes' colours are semantic, the same in every skin.
 end
 
@@ -1439,8 +1449,8 @@ function UF:OnConfigChanged()
 		UpdateAll(f)
 	end
 
-	self:MeasureBond()
-	self:BondTarget()
+	self:MeasureSpine()
+	self:SpineTarget()
 
 	A.Fader:Refresh()
 end

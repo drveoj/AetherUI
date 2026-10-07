@@ -112,7 +112,7 @@ local function BuildLane(parent)
 	local lane = CreateFrame("Frame", nil, parent)
 	lane:SetSize(LANE_W, LANE_H)
 
-	-- The rail: the bond hairline, the whole length, so the eye can see how
+	-- The rail: the spine's hairline, the whole length, so the eye can see how
 	-- much is left against how much there was.
 	lane.rail = lane:CreateTexture(nil, "BACKGROUND")
 	lane.rail:SetTexture(A.Media.texture.flat)
