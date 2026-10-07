@@ -735,6 +735,12 @@ local function BarPages()
 			args.page = range(L.options.bar_pages.page,
 				L.options.bar_pages.bar_n_owns_page,
 				at("page"), 1, 10, 1)
+			-- Bar 1 only: the main bar follows your form, as the game's own does.
+			if id == "1" then
+				args.stancePaging = toggle(L.options.bar_pages.stance_paging.name,
+					L.options.bar_pages.stance_paging.desc, at("stancePaging"),
+					{ defaultTrue = true })
+			end
 		end
 
 		pages[id] = group(barCfg.label or ("Bar " .. id), args)
@@ -748,7 +754,8 @@ local function ActionBarsGroup()
 
 	local shared = {
 		enabled = toggle(L.common.enabled, nil, at("enabled")),
-		hideBlizzard = toggle(L.options.action_bars.hide_blizzard.name, nil, at("hideBlizzard")),
+		hideBlizzard = toggle(L.options.action_bars.hide_blizzard.name,
+			L.options.action_bars.hide_blizzard.desc, at("hideBlizzard")),
 		scale = range(L.options.action_bars.scale.name, nil, at("scale"), 0.4, 1.5, 0.05),
 		size = range(L.options.action_bars.size.name, L.options.action_bars.size.desc, at("size"), 24, 80, 1),
 		spacing = range(L.common.spacing, nil, at("spacing"), 0, 30, 1),

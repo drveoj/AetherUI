@@ -418,6 +418,8 @@ L["options.action_bars.action_bars"] = "Action bars"
 L["options.action_bars.empty_alpha.name"] = "Empty slot opacity"
 L["options.action_bars.font_delta.name"] = "Text size offset"
 L["options.action_bars.hide_blizzard.name"] = "Hide Blizzard's bars"
+L["options.action_bars.hide_blizzard.desc"] =
+	"Switching this back off brings Blizzard's bars back fully after a /reload."
 L["options.action_bars.lock_buttons.name"] = "Lock buttons"
 L["options.action_bars.padding.name"] = "Panel padding"
 L["options.action_bars.paging_note"] = "There is no paging."
@@ -516,13 +518,17 @@ L["options.bags.window_wide_grid_eight"] =
 L["options.bar_pages.backdrop.desc"] = "Off leaves the buttons bare."
 L["options.bar_pages.backdrop.name"] = "Glass panel"
 L["options.bar_pages.bar_n_owns_page"] =
-	"Bar N owns page N. Pages 7-10 are the bonus bars a druid or rogue "
-		.. "gets in a form - point a bar at one and you simply see those "
-		.. "abilities rather than having a bar swap under you."
+	"Bar N owns page N. Pages 7-10 are the bonus bars a druid, rogue or "
+		.. "warrior gets in a form or stance. Bar 1 can swap to them by itself; "
+		.. "any other bar can be pointed at one to keep those abilities in view."
 L["options.bar_pages.buttons"] = "Buttons"
 L["options.bar_pages.page"] = "Page"
 L["options.bar_pages.rows.desc"] = "Columns fall out of this."
 L["options.bar_pages.rows.name"] = "Rows"
+L["options.bar_pages.stance_paging.name"] = "Swap with stance, stealth and forms"
+L["options.bar_pages.stance_paging.desc"] =
+	"Stealth, a druid form or a warrior stance swaps this bar to that form's "
+		.. "own buttons, as the game's main bar does. Off keeps it on its page."
 
 L["options.changelog.major_minor_build"] = "major.minor.build"
 L["options.changelog.numbering_s_major_release"] =

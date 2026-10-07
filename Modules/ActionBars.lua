@@ -10,11 +10,12 @@
 	out-of-combat SetAttribute or a restricted snippet. Three consequences shape
 	the whole file:
 
-	  1. Bar paging (stances, druid forms, the 1-6 page keys) cannot be done in
-	     Lua, because the page can change mid-combat. It runs as a secure state
-	     driver on a SecureHandlerStateTemplate header, which pushes the new page
-	     down to every child button via control:ChildUpdate. Lua only *reads* the
-	     resulting action id back to refresh the artwork.
+	  1. Bar 1 following your form (stealth, druid forms, warrior stances) cannot
+	     be done in Lua, because the form can change mid-combat. It runs as a
+	     secure state driver on a SecureHandlerStateTemplate header, which pushes
+	     the new page down to every child button via control:ChildUpdate. Lua only
+	     *reads* the resulting action id back to refresh the artwork. The 1-6
+	     page keys do not page anything - see below.
 
 	  2. Keybinds are override bindings pointed at our buttons rather than a
 	     reliance on Blizzard's, because we hide Blizzard's bars and its binding
@@ -41,21 +42,19 @@ AB.bars = {}
 
 local NUM_ACTIONS_PER_PAGE = 12
 
--- Bars are independent. There is no paging anywhere in this module and that is
--- the point of the design, not an omission.
+-- Bars are independent, and none follows the game's GLOBAL page.
 --
--- Paging meant one dock whose twelve buttons pointed at a different block of
--- actions depending on GetActionBarPage() - a number this addon does not own and
--- cannot keep still. Anything can write it, an unfilled page shows an empty
+-- That paging meant one dock whose twelve buttons pointed at a different block
+-- of actions depending on GetActionBarPage() - a number this addon does not own
+-- and cannot keep still. Anything can write it, an unfilled page shows an empty
 -- dock, and when it moved there was no way to tell whether the bar or the page
--- was at fault. Every bar now names its own source once, at build time, and
--- never changes it. A button's `action` attribute is written when it is created
--- and never written again, which also means nothing here needs the restricted
--- environment or a state driver to survive combat.
+-- was at fault. So every bar names its own source once, at build time.
 --
--- Form and stance bars are not lost by this: pages 7-10 *are* the bonus bars, so
--- a druid points a bar at page 7 and simply sees their Bear abilities all the
--- time rather than having a bar swap under them.
+-- THE ONE EXCEPTION IS YOUR FORM (2026-10-07, after a rogue's report). Bar 1
+-- swaps to the bonus bar the game puts you on in Stealth, a druid form or a
+-- warrior stance - asked of `[bonusbar:N]`, the game's own report of your form,
+-- never of the global page. See ApplyPaging. Any other bar can still be pointed
+-- at pages 7-10 to keep a form's abilities in view all the time.
 
 local MAX_ACTION_PAGE = 10   -- 10 x 12 = the 120 action slots Classic Era has
 local PET_SLOTS       = 10
@@ -398,10 +397,15 @@ local function BuildButton(bar, index)
 
 	b:SetAttribute("type", "action")
 	b:SetAttribute("aetherIndex", index)
-	-- Written once, here, and never again. That is the whole design: no state
-	-- driver, no restricted snippet, nothing to go wrong mid-combat, and the
-	-- attribute Lua reads to paint the icon is the same one the click uses.
+	-- The bar's own page. Bar 1 may be moved off it by your form (ApplyPaging),
+	-- inside the restricted environment; the attribute Lua reads to paint the
+	-- icon is the same one the click uses, so the two cannot disagree.
 	b:SetAttribute("action", (bar.page - 1) * NUM_ACTIONS_PER_PAGE + index)
+	-- And repainted whenever it moves, which is the only way Lua hears of a
+	-- form change made in the secure environment.
+	b:HookScript("OnAttributeChanged", function(self, key)
+		if key == "action" then UpdateAllOn(self) end
+	end)
 	ApplyPickupModifier(b)
 
 	-- Non-secure scripts are fine on a secure button as long as they do not try
@@ -771,6 +775,78 @@ local function AdoptButton(bar, spec)
 	return f
 end
 
+-- ---------------------------------------------------------------------------
+-- stance, stealth and forms
+--
+-- BAR 1 FOLLOWS YOUR FORM, AND ONLY YOUR FORM (2026-10-07, a rogue's report:
+-- "can't get stealth to swap actionbar"). Stealth, a druid form or a warrior
+-- stance puts the game on one of its bonus bars, and the main bar shows that
+-- bar's buttons - which is what every player of those classes expects.
+--
+-- WHAT WENT WRONG LAST TIME, and is kept out: paging used to follow the game's
+-- GLOBAL action bar page, a number shift+1-6 and anybody else can write, so the
+-- dock went empty with no way to tell whether the bar or the page was at fault.
+-- This follows `[bonusbar:N]` alone - the game's own report of your form - and
+-- never `[actionbar]`. Shift+1-6 still moves nothing of ours.
+--
+-- SECURE, because forms change mid-fight. The driver sets the header's state,
+-- the header hands it down (control:ChildUpdate), and each button rewrites its
+-- own `action` inside the restricted environment. Lua only repaints afterwards.
+-- Which bonus bar a form uses is the game's answer, not a table here.
+-- ---------------------------------------------------------------------------
+
+local PAGE_SNIPPET  = [[ control:ChildUpdate("actionpage", newstate) ]]
+local CHILD_SNIPPET = [[
+	local page = tonumber(message)
+	if page then
+		self:SetAttribute("action", (page - 1) * 12 + self:GetAttribute("aetherIndex"))
+	end
+]]
+
+AB.PAGE_SNIPPET, AB.CHILD_SNIPPET = PAGE_SNIPPET, CHILD_SNIPPET
+
+--- The driver: a bonus bar while the game is on one, the bar's own page otherwise.
+local function PagingDriver(bar)
+	return ("[bonusbar:1] 7; [bonusbar:2] 8; [bonusbar:3] 9; [bonusbar:4] 10; %d")
+		:format(bar.page)
+end
+
+AB.PagingDriver = PagingDriver
+
+--- Does this bar follow the form? Bar 1, unless switched off.
+local function FollowsForm(bar)
+	return bar.kind == "action" and bar.id == "1" and bar.cfg.stancePaging ~= false
+end
+
+--- Put the driver on, or take it off and give the bar its own page back.
+--  Out of combat only: registering a driver and writing secure attributes are
+--  both refused in a fight, and OnConfigChanged runs again after one.
+local function ApplyPaging(bar)
+	if bar.kind ~= "action" or not RegisterStateDriver then return end
+	if InCombatLockdown() then return end
+
+	if FollowsForm(bar) then
+		bar.header:SetAttribute("_onstate-page", PAGE_SNIPPET)
+		for _, b in ipairs(bar.buttons) do
+			b:SetAttribute("_childupdate-actionpage", CHILD_SNIPPET)
+		end
+		-- Registered afresh each time, because the fallback page is in the
+		-- driver and a repage changes it.
+		pcall(RegisterStateDriver, bar.header, "page", PagingDriver(bar))
+		bar.paged = true
+	elseif bar.paged then
+		pcall(UnregisterStateDriver, bar.header, "page")
+		bar.header:SetAttribute("_onstate-page", nil)
+		for i, b in ipairs(bar.buttons) do
+			b:SetAttribute("_childupdate-actionpage", nil)
+			b:SetAttribute("action", (bar.page - 1) * NUM_ACTIONS_PER_PAGE + i)
+		end
+		bar.paged = nil
+	end
+end
+
+AB.ApplyPaging = ApplyPaging
+
 local function BuildBar(barCfg)
 	local bar = {
 		id = tostring(barCfg.id),
@@ -785,8 +861,8 @@ local function BuildBar(barCfg)
 		shadow = A.db.profile.glass.shadow,
 	})
 
-	-- Still a secure handler frame, but now only as the owner of the override
-	-- bindings and, for the pet bar, a visibility driver. Nothing pages.
+	-- A secure handler frame: the owner of the override bindings, of the pet
+	-- bar's visibility driver, and of bar 1's form driver (see ApplyPaging).
 	bar.header = CreateFrame("Frame", ("AetherUIBar%sHeader"):format(bar.id),
 		bar.dock, "SecureHandlerStateTemplate")
 
@@ -827,6 +903,7 @@ local function BuildBar(barCfg)
 	end
 
 	LayoutBar(bar)
+	ApplyPaging(bar)
 	return bar
 end
 
@@ -1323,6 +1400,69 @@ local function BanishButton(b)
 	end
 end
 
+--- Blizzard's two action-button dispatchers, quietened.
+--
+--  BOTH CLIENTS DRIVE THEIR BUTTONS FROM ONE PLACE. ActionBarButtonEventsFrame
+--  hands every event to every registered button by calling its OnEvent
+--  directly (Blizzard_ActionBar/Shared/ActionButton.lua:220-225), so a hidden
+--  ActionButton1 with its own events unregistered still hears every one - and
+--  on WoW Forever it then redrew a cooldown from a secret value on a tainted
+--  path and threw (seen in game, 2026-10-07, on entering Stealth).
+--
+--  ElvUI's answer on the modern client (ActionBars.lua, UnloadController and
+--  ButtonEventsRegisterFrame), taken whole: keep only the extra-action buttons
+--  in the list - we adopt those, and they still need it - keep it that way when
+--  Blizzard registers another, and cut both dispatchers down to the two events
+--  the extra-action button needs. Undoing it takes a reload, as it does there.
+local function KeepOnlyExtras(added)
+	local events = _G.ActionBarButtonEventsFrame
+	local frames = events and events.frames
+	if type(frames) ~= "table" then return end
+	for i = #frames, 1, -1 do
+		local f = frames[i]
+		local wasAdded = (f == added)
+		if not added or wasAdded then
+			local okName, name = pcall(f.GetName, f)
+			if not (okName and name and name:match("^ExtraActionButton%d")) then
+				table.remove(frames, i)
+			end
+			if wasAdded then break end
+		end
+	end
+end
+
+local function QuietBlizzardDispatchers()
+	-- AND THE CONTROLLER ABOVE THEM, which is ElvUI's third line. It drives
+	-- Blizzard's stance bar, its paging and its layout - all hidden and replaced
+	-- here - and left listening it ran Edit Mode's layout pass from
+	-- StanceBar:Update on entering combat, through frames we had re-parented,
+	-- and tried to move MainActionBar in a fight (ADDON_ACTION_BLOCKED,
+	-- MainActionBar:SetPointBase, seen in game 2026-10-07). It keeps the two
+	-- events ElvUI keeps: the page controller needs SETTINGS_LOADED to spawn,
+	-- and UPDATE_EXTRA_ACTIONBAR is what shows the extra-action bar we adopt.
+	local controller = _G.ActionBarController
+	if controller and not Forbidden(controller) then
+		pcall(controller.UnregisterAllEvents, controller)
+		pcall(controller.RegisterEvent, controller, "SETTINGS_LOADED")
+		pcall(controller.RegisterEvent, controller, "UPDATE_EXTRA_ACTIONBAR")
+	end
+
+	local actions, buttons = _G.ActionBarActionEventsFrame, _G.ActionBarButtonEventsFrame
+	if actions and not Forbidden(actions) then pcall(actions.UnregisterAllEvents, actions) end
+	if buttons and not Forbidden(buttons) then
+		pcall(buttons.UnregisterAllEvents, buttons)
+		pcall(buttons.RegisterEvent, buttons, "ACTIONBAR_SLOT_CHANGED")
+		pcall(buttons.RegisterEvent, buttons, "ACTIONBAR_UPDATE_COOLDOWN")
+		if not AB._extrasHooked and buttons.RegisterFrame and hooksecurefunc then
+			AB._extrasHooked = true
+			hooksecurefunc(buttons, "RegisterFrame", function(_, f) KeepOnlyExtras(f) end)
+		end
+		KeepOnlyExtras()
+	end
+end
+
+AB.QuietBlizzardDispatchers = QuietBlizzardDispatchers
+
 --- Drop any override bindings Blizzard's bars own, so the ACTIONBUTTON keys are
 --  ours alone. Doing this before we set our own is what makes the order
 --  deterministic instead of a race.
@@ -1373,6 +1513,8 @@ function AB:HideBlizzard()
 		end
 	end
 	report["<blizzard buttons>"] = buttons .. " silenced"
+	-- And the dispatcher that would keep calling them anyway.
+	QuietBlizzardDispatchers()
 	report["<blizzard bindings>"] = ClearBlizzardBindings() .. " owners cleared"
 
 	-- 2. the micro menu, from Blizzard's own list rather than ours. MICRO_BUTTONS
@@ -1683,8 +1825,13 @@ function AB:RegisterEvents()
 		ForEachAction(ApplyPickupModifier)
 	end)
 
-	-- No ACTIONBAR_PAGE_CHANGED handler, deliberately. Nothing here follows the
-	-- page any more, so the event is not ours to care about.
+	-- No ACTIONBAR_PAGE_CHANGED handler, deliberately: nothing here follows the
+	-- game's global page. Bar 1 follows the FORM, and a form change repaints
+	-- each button as its action moves (OnAttributeChanged); this is the belt to
+	-- that, for a bonus bar whose contents changed while you were in it.
+	A:RegisterEvent(self, "UPDATE_BONUS_ACTIONBAR", function()
+		ForEachAction(UpdateAllOn)
+	end)
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function() ForEachAction(UpdateUsable) end)
 	A:RegisterEvent(self, "UNIT_INVENTORY_CHANGED", refresh)
 	A:RegisterEvent(self, "BAG_UPDATE", refresh)
@@ -1910,6 +2057,9 @@ function AB:OnConfigChanged()
 			ResizeBar(bar)
 			RepageBar(bar)
 			LayoutBar(bar)
+			-- After both: a new button needs the form snippet, and a new page
+			-- is the fallback in the form driver.
+			ApplyPaging(bar)
 
 			A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
 				bar.cfg.label or ("Bar " .. bar.id),

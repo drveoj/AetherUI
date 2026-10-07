@@ -3135,6 +3135,30 @@ for _, prefix in ipairs({ "ActionButton", "MultiBarBottomLeftButton",
 		b:Show()
 	end
 end
+-- AND THE DISPATCHERS THAT DRIVE THEM. Both clients hand every action-button
+-- event to every registered button from one frame (Blizzard_ActionBar/Shared/
+-- ActionButton.lua:220-225), so a hidden button with its own events gone still
+-- hears them all. ExtraActionButton2 stands in for the extra-action buttons
+-- the list must keep; it is not one this addon adopts.
+_G.__extraInDispatch = CreateFrame("CheckButton", "ExtraActionButton2", UIParent)
+ActionBarButtonEventsFrame = CreateFrame("Frame", "ActionBarButtonEventsFrame", UIParent)
+ActionBarButtonEventsFrame.frames = {}
+function ActionBarButtonEventsFrame:RegisterFrame(f) table.insert(self.frames, f) end
+for i = 1, 12 do ActionBarButtonEventsFrame:RegisterFrame(_G["ActionButton" .. i]) end
+ActionBarButtonEventsFrame:RegisterFrame(_G.MultiBarBottomLeftButton1)
+ActionBarButtonEventsFrame:RegisterFrame(_G.__extraInDispatch)
+for _, e in ipairs({ "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_UPDATE_COOLDOWN",
+	"UPDATE_BONUS_ACTIONBAR", "ACTIONBAR_UPDATE_STATE" }) do
+	ActionBarButtonEventsFrame:RegisterEvent(e)
+end
+ActionBarActionEventsFrame = CreateFrame("Frame", "ActionBarActionEventsFrame", UIParent)
+ActionBarActionEventsFrame:RegisterEvent("UNIT_SPELLCAST_START")
+-- The controller above both, which drives Blizzard's stance bar and layout.
+ActionBarController = CreateFrame("Frame", "ActionBarController", UIParent)
+for _, e in ipairs({ "UPDATE_SHAPESHIFT_FORM", "UPDATE_BONUS_ACTIONBAR",
+	"PLAYER_REGEN_DISABLED", "SETTINGS_LOADED", "UPDATE_EXTRA_ACTIONBAR" }) do
+	ActionBarController:RegisterEvent(e)
+end
 for _, n in ipairs({ "MainMenuBarBackpackButton", "CharacterBag0Slot", "MainMenuBar",
 	"MultiBarBottomLeft", "MultiBarRight", "PetActionBar", "StanceBar" }) do
 	CreateFrame("Frame", n, UIParent)
@@ -12190,8 +12214,17 @@ for _, snippet in ipairs({
 	check(type(snippet) == "string" and loadstring(snippet) ~= nil,
 		"secure snippet is syntactically valid Lua")
 end
-check(_G.__stateDrivers.page == nil,
-	"no page driver: bars name their own source once and never change it")
+-- BAR 1 FOLLOWS THE FORM, AND ONLY THE FORM (2026-10-07). The old paging
+-- followed the game's global page and was removed for it; this follows
+-- `[bonusbar:N]` alone.
+do
+	local driver = _G.__stateDrivers.page
+	check(type(driver) == "string" and driver:find("%[bonusbar:1%] 7")
+		and driver:find("%[bonusbar:4%] 10"),
+		"bar 1 has a form driver, bonus bars 7-10 (" .. tostring(driver) .. ")")
+	check(driver and not driver:find("actionbar"),
+		"and it never asks for the game's global page - that is what was removed")
+end
 
 check(AB.hideReport ~= nil, "HideBlizzard produced a per-frame report")
 check(AB.hideReport.MainMenuBar == "hidden", "MainMenuBar reported hidden")
@@ -12200,6 +12233,35 @@ check(AB.hideReport.CharacterMicroButton == "hidden",
 	"micro buttons hidden from Blizzard's own MICRO_BUTTONS list")
 check(AB.hideReport.MainActionBar == "hidden",
 	"MainActionBar (the real 1.15 container) hidden")
+
+-- THE DISPATCHER, which would keep calling the hidden buttons anyway: on WoW
+-- Forever ActionButton1 then threw on a secret cooldown on entering Stealth
+-- (seen in game, 2026-10-07). ElvUI's method.
+do
+	local list = ActionBarButtonEventsFrame.frames
+	check(#list == 1 and list[1] == _G.__extraInDispatch,
+		"Blizzard's dispatcher keeps only the extra-action buttons (" .. #list .. " left)")
+	ActionBarButtonEventsFrame:RegisterFrame(_G.ActionButton3)
+	check(#list == 1 and list[1] == _G.__extraInDispatch,
+		"and a button Blizzard registers later is taken straight back out")
+	local kept = ActionBarButtonEventsFrame:IsEventRegistered("ACTIONBAR_UPDATE_COOLDOWN")
+		and ActionBarButtonEventsFrame:IsEventRegistered("ACTIONBAR_SLOT_CHANGED")
+	check(kept and not ActionBarButtonEventsFrame:IsEventRegistered("UPDATE_BONUS_ACTIONBAR")
+		and not ActionBarButtonEventsFrame:IsEventRegistered("ACTIONBAR_UPDATE_STATE"),
+		"and it listens only for the two the extra-action button needs")
+	check(not ActionBarActionEventsFrame:IsEventRegistered("UNIT_SPELLCAST_START"),
+		"while the other dispatcher listens for nothing")
+
+	-- And the controller: left listening, it ran Blizzard's bar layout on
+	-- entering combat and tried to move MainActionBar in a fight.
+	check(not ActionBarController:IsEventRegistered("UPDATE_SHAPESHIFT_FORM")
+		and not ActionBarController:IsEventRegistered("UPDATE_BONUS_ACTIONBAR")
+		and not ActionBarController:IsEventRegistered("PLAYER_REGEN_DISABLED"),
+		"Blizzard's bar controller no longer hears forms or combat")
+	check(ActionBarController:IsEventRegistered("SETTINGS_LOADED")
+		and ActionBarController:IsEventRegistered("UPDATE_EXTRA_ACTIONBAR"),
+		"and keeps the two it needs: spawning, and showing the extra-action bar")
+end
 check(AB.hideReport.MicroMenu == "hidden", "MicroMenu hidden")
 check(AB.hideReport.CatalogShopFrame == nil,
 	"forbidden frames are skipped, not touched")
@@ -12330,11 +12392,55 @@ do
 	check(byId["1"] and byId["stance"] and byId["pet"] and byId["extra"],
 		"and they are the ones expected")
 
-	-- no paging anywhere, which is the entire point
-	check(_G.__stateDrivers.page == nil,
-		"no page state driver exists at all - a bar's source is fixed at build time")
-	check(byId["1"].buttons[1]:GetAttribute("_childupdate-actionpage") == nil,
-		"and no restricted snippet rewrites a button's action behind our back")
+	-- BAR 1 FOLLOWS THE FORM; NO OTHER BAR PAGES AT ALL.
+	check(byId["1"].paged and byId["1"].header:GetAttribute("_onstate-page") ~= nil,
+		"bar 1 follows the form")
+	for _, b in ipairs(AB.bars) do
+		if b.kind == "action" and b.id ~= "1" then
+			check(not b.paged and b.buttons[1]:GetAttribute("_childupdate-actionpage") == nil,
+				"bar " .. b.id .. " keeps its own source - only bar 1 follows the form")
+		end
+	end
+
+	-- THE BUTTON'S OWN SNIPPET, run against a stand-in for the restricted
+	-- environment: what it writes is what the client would.
+	do
+		local bar1 = byId["1"]
+		local function runChild(button, message)
+			local fn = loadstring(AB.CHILD_SNIPPET)
+			setfenv(fn, { self = button, message = message, tonumber = tonumber })
+			fn()
+		end
+		runChild(bar1.buttons[1], 7)
+		runChild(bar1.buttons[12], 7)
+		check(bar1.buttons[1]:GetAttribute("action") == 73
+			and bar1.buttons[12]:GetAttribute("action") == 84,
+			"in Stealth (bonus bar 7) bar 1 shows actions 73-84 ("
+			.. tostring(bar1.buttons[1]:GetAttribute("action")) .. "-"
+			.. tostring(bar1.buttons[12]:GetAttribute("action")) .. ")")
+		runChild(bar1.buttons[1], 1)
+		runChild(bar1.buttons[12], 1)
+		check(bar1.buttons[1]:GetAttribute("action") == 1
+			and bar1.buttons[12]:GetAttribute("action") == 12,
+			"and back to 1-12 out of it")
+
+		-- AND IT CAN BE SWITCHED OFF, giving the bar its own page back.
+		local cfg1 = bar1.cfg
+		runChild(bar1.buttons[1], 7)
+		cfg1.stancePaging = false
+		AB.ApplyPaging(bar1)
+		check(not bar1.paged and _G.__stateDrivers.page == nil
+			and bar1.header:GetAttribute("_onstate-page") == nil
+			and bar1.buttons[1]:GetAttribute("_childupdate-actionpage") == nil,
+			"switched off, the driver and both snippets are gone")
+		check(bar1.buttons[1]:GetAttribute("action") == 1,
+			"and bar 1 is back on its own page, whatever form it was showing")
+		cfg1.stancePaging = nil
+		AB.ApplyPaging(bar1)
+		check(bar1.paged and _G.__stateDrivers.page ~= nil,
+			"and on again - an old profile with no setting counts as on")
+		cfg1.stancePaging = true
+	end
 
 	-- each bar owns a fixed block of actions
 	check(byId["1"].buttons[1]:GetAttribute("action") == 1

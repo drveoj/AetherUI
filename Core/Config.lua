@@ -276,15 +276,17 @@ Config.defaults = {
 				hideBlizzard = true,
 				-- Every bar is its own thing with a fixed source. Bars 1-6 map onto
 				-- the six action pages (bar N owns actions (N-1)*12+1 upward), and 7-10
-				-- are the bonus bars a druid or rogue gets in a form - point a bar at
-				-- page 7 and you simply *see* your Bear abilities instead of having a
-				-- bar swap under you. Nothing pages, ever.
+				-- are the bonus bars a druid, rogue or warrior gets in a form or
+				-- stance. Bar 1 alone follows the form (stancePaging), the way the
+				-- game's main bar does - and only the form, never the game's global
+				-- page. Every other bar keeps its source.
 				--
 				-- rows is the control and columns fall out of it. binding is derived
 				-- from the page unless you name one, so bar 6 picks up the
 				-- MULTIACTIONBAR1 keys you have always used for it.
 				bars = {
 					{ id = "1", kind = "action", page = 1, enabled = true,
+					  stancePaging = true,
 					  buttons = 12, rows = 1, scale = 1.0, backdrop = true,
 					  label = L.core.misc.label, point = "BOTTOM", x = 0, y = 26 },
 					{ id = "2", kind = "action", page = 2, enabled = false,
