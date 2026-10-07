@@ -2298,6 +2298,9 @@ end
 --
 --  AND COMBAT, which was already here. Same answer, same door: a scrim over the
 --  world is the last thing anybody wants while something is happening.
+--
+--  AND THE CLIENT'S OWN ANSWER where it has one. A film that has begun can be
+--  a moment ahead of its frame being shown, and InCinematic says so either way.
 local function NotNow()
 	if InCombatLockdown() then return true end
 	if MovieFrame and MovieFrame.IsShown and MovieFrame:IsShown() then
@@ -2305,6 +2308,10 @@ local function NotNow()
 	end
 	if CinematicFrame and CinematicFrame.IsShown and CinematicFrame:IsShown() then
 		return true
+	end
+	if _G.InCinematic then
+		local ok, yes = pcall(_G.InCinematic)
+		if ok and yes then return true end
 	end
 	return false
 end
@@ -2355,6 +2362,34 @@ function OB:Retry()
 	end
 end
 
+--- A film has STARTED with the tour up - which is how a new character's intro
+--  arrives on WoW Forever: the game starts the cinematic a moment after we
+--  arrive, after the first check has already let the welcome card through
+--  (reported from the game, 2026-10-07). Step aside the way a fight makes us:
+--  a stop is remembered, and a welcome card not yet answered is owed again.
+function OB:OnFilm()
+	if self:Completed() then return end
+	if self.index then
+		self.resumeAt = self.index
+		self:Teardown()
+	elseif self.card and self.card:IsShown() then
+		self:Teardown()
+		self.__pendingLogin = true
+	end
+end
+
+--- And the film is over. Whatever was held comes back - unless something else
+--  is still in the way, a fight say, whose own end will deliver it instead.
+function OB:OnFilmOver()
+	if NotNow() then return end
+	if self.__pendingLogin then return self:Retry() end
+	if not self.resumeAt then return end
+	local at = self.resumeAt
+	self.resumeAt = nil
+	if self:Completed() then return end
+	self:Go(at)
+end
+
 function OB:OnCombatOver()
 	if self.__pendingLogin then return self:Retry() end
 	if not self.resumeAt then return end
@@ -2401,7 +2436,14 @@ function OB:OnEnable()
 	-- Both stops, and the skip goes down the same road: skipping a movie IS
 	-- STOP_MOVIE, so there is nothing extra to listen for.
 	for _, event in ipairs({ "STOP_MOVIE", "CINEMATIC_STOP" }) do
-		A:RegisterEvent(self, event, function() OB:Retry() end)
+		A:RegisterEvent(self, event, function() OB:OnFilmOver() end)
+	end
+
+	-- AND WHEN ONE STARTS, which on WoW Forever is after we have arrived: the
+	-- intro begins a moment after the first check, so the tour was already up
+	-- underneath it.
+	for _, event in ipairs({ "PLAY_MOVIE", "CINEMATIC_START" }) do
+		A:RegisterEvent(self, event, function() OB:OnFilm() end)
 	end
 end
 
