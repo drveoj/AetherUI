@@ -58,6 +58,24 @@ local UpdateChips
 
 local function cfg() return A.Config:Module("nameplates") end
 
+--- The lowest thing on the plate, for the cast capsule and the chips to hang
+--  under. The plate form's bar is inside its capsule, so that is the frame. The
+--  name form's bar hangs BELOW the frame, under the guild line - and a cast
+--  capsule anchored to the frame landed on top of both.
+local function Floor(f)
+	if f._nameForm and f.bar and f.bar:IsShown() then return f.bar end
+	return f
+end
+
+--- Hang the cast capsule under the plate's floor.
+local CAST_GAP = 4
+local function AnchorCast(f)
+	local cap = f.cast
+	if not cap then return end
+	cap:ClearAllPoints()
+	cap:SetPoint("TOP", Floor(f), "BOTTOM", 0, -CAST_GAP)
+end
+
 --- Every other module is drawn at profile.scale and a plate is no different.
 --  Left at 1 the capsule is enormous against a HUD at 0.71, which is what the
 --  first pass shipped looking like.
@@ -392,7 +410,7 @@ local function LayoutNameForm(f)
 	local nameW = math.ceil(f.name:GetStringWidth() or 0)
 	local w = nameW + (pip and (PIP + GAP_PIP) or 0)
 	local h = math.ceil(f.name:GetStringHeight() or 12)
-	if guild then h = h + GAP_GUILD + math.ceil(f.guild:GetStringHeight() or 10) end
+	if sub then h = h + GAP_GUILD + math.ceil(f.guild:GetStringHeight() or 10) end
 	f:SetSize(math.max(w, PIP), math.max(h, PIP))
 
 	f.chip:Hide()
@@ -555,14 +573,20 @@ local function UpdateBar(f)
 			"BOTTOM", 0, -GAP_ROW)
 		f.bar:SetWidth(math.max(40, f:GetWidth() or 40))
 		if wants then f.bar:Show() UpdateHealth(f) else f.bar:Hide() end
-		return
-	end
-	LayoutRow(f, wants)
-	if wants then
-		f.bar:Show()
-		UpdateHealth(f)
 	else
-		f.bar:Hide()
+		LayoutRow(f, wants)
+		if wants then
+			f.bar:Show()
+			UpdateHealth(f)
+		else
+			f.bar:Hide()
+		end
+	end
+	-- The floor may have moved - the name form's bar came or went, or the form
+	-- itself changed - so a cast already up follows it, and so do the chips.
+	if f.cast and f.cast:IsShown() then
+		AnchorCast(f)
+		UpdateChips(f)
 	end
 end
 
@@ -751,14 +775,13 @@ NP.UpdateAll = UpdateAll
 -- is deliberately NOT built rather than built and left permanently false.
 
 local CAST_H, CAST_ICON, CAST_BAR_W, CAST_BAR_H = 20, 16, 64, 4
-local CAST_PAD, CAST_GAP = 5, 4
+local CAST_PAD = 5          -- CAST_GAP is with AnchorCast, near the top
 -- The name's width when the client will not let us measure it. See CastStart.
 local CAST_NAME_W = 90
 
 local function BuildCast(f)
 	local cap = Glass.CreatePill(f, { fill = "glassStrong", edge = "castEdge" })
 	cap:SetHeight(CAST_H)
-	cap:SetPoint("TOP", f, "BOTTOM", 0, -CAST_GAP)
 	cap:Hide()
 
 	local icon = cap:CreateTexture(nil, "ARTWORK")
@@ -820,6 +843,7 @@ local function CastStart(f, channel)
 	if type(name) == "nil" then return CastStop(f) end
 
 	local cap = f.cast or BuildCast(f)
+	AnchorCast(f)
 	cap:SetScript("OnUpdate", nil)
 	cap.state = { channel = channel }
 	cap.icon:SetTexture(icon)
@@ -972,7 +996,7 @@ function UpdateChips(f)
 
 	-- Under the cast capsule when there is one. Both want the space beneath the
 	-- plate, and a row of chips through the middle of a cast bar is neither.
-	local below = (f.cast and f.cast:IsShown()) and f.cast or f
+	local below = (f.cast and f.cast:IsShown()) and f.cast or Floor(f)
 
 	local x = -total / 2
 	for i = 1, shown do

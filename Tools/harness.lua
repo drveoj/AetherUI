@@ -8028,16 +8028,17 @@ do
 	UF.target:SetGeom(nil)
 	UF:MeasureBond()
 
-	-- With no target the bond goes dotted: "2 6".
+	-- With no target there is no bond: no lines, and no dashes in their place.
 	_G.__units.target.exists = false
 	fire("PLAYER_TARGET_CHANGED")
-	check(not UF.bond.lines[1]:IsShown() and UF.bond.dotCount > 0
-		and UF.bond.dots[1]:IsShown() and UF.bond.dots[1]:GetWidth() == 2,
-		"with no target the bond is dotted")
+	check(not UF.bond.lines[1]:IsShown() and not UF.bond.lines[2]:IsShown()
+		and UF.bond.dots == nil,
+		"with no target the bond draws nothing")
+	check(UF.bond:IsShown(), "but stays up, so your lane still has somewhere to draw")
 	_G.__units.target.exists = true
 	fire("PLAYER_TARGET_CHANGED")
-	check(UF.bond.lines[1]:IsShown() and not UF.bond.dots[1]:IsShown(),
-		"and solid again with one")
+	check(UF.bond.lines[1]:IsShown() and UF.bond.lines[2]:IsShown(),
+		"and both lines are back with one")
 end
 
 castState = { name = "Frostbolt", icon = 135846, channel = false,
@@ -8438,8 +8439,8 @@ do
 	local zcfg = A.db.profile.modules.zen
 	check(Z and Z.enabled, "zen module enabled")
 	check(Z.frame and Z.frame:GetAlpha() == 0, "the readout starts parked at nothing")
-	check(Z.frame:IsShown(), "and parked rather than hidden - it can still be on"
-		.. " screen when combat starts, and Hide is refused then")
+	check(not Z.frame:IsShown(), "and hidden, not just at alpha 0 - on Forever a bar"
+		.. " drew at full inside it at 0 (2026-10-07)")
 
 	zcfg.delay, zcfg.fadeOut, zcfg.fadeIn = 3, 0.1, 0.1
 	A.db.profile.fader.delay = 1
@@ -8461,7 +8462,7 @@ do
 	check(math.abs(UF.player:GetAlpha() - A.db.profile.fader.idleAlpha) < 0.02,
 		"our frames rest at the stage-one dim and let the interface fade carry"
 		.. " them (alpha " .. string.format("%.2f", UF.player:GetAlpha()) .. ")")
-	check(Z.frame:GetAlpha() > 0.9, "and the readout has taken its place")
+	check(Z.frame:IsShown() and Z.frame:GetAlpha() > 0.9, "and the readout has taken its place")
 	check(math.abs(Z.frame.hp:GetValue() - 0.5) < 0.02,
 		"the health bar reads half, not none and not all of it")
 	check(Z.frame.corner.zone:GetText() == "The Barrens"
@@ -8561,6 +8562,7 @@ do
 	-- two checks measure the wrong transition.
 	for i = 1, 12 do tick(0.1) end
 	check(Z.frame:GetAlpha() < 0.05, "and the readout goes away again")
+	check(not Z.frame:IsShown(), "and is hidden once it has gone, not left at alpha 0")
 	check(UIParent:GetAlpha() == 1 and Minimap:GetAlpha() == 1,
 		"with the interface, and the minimap, put back")
 	check(not k:IsKeyboardEnabled(),
@@ -23861,6 +23863,32 @@ do
 	_G.__units.nameplate1.hp = 300
 	fire("UNIT_HEALTH", "nameplate1")
 	check(f.bar:IsShown(), "a bar appears when they are hurt, and only then")
+
+	-- Seen in game 2026-10-07: a hurt guildie casting had the cast capsule drawn
+	-- over his guild line and his bar. The frame left the guild line out of its
+	-- height (it tested a `guild` that does not exist there), and the capsule
+	-- hung off the frame while the name form's bar hangs below it.
+	-- Name, the 1px gap and the guild line. Not just "taller than the name": the
+	-- frame never goes under the 20px pip, so that passed with the bug in.
+	local bothH = math.ceil(f.name:GetStringHeight() or 12) + 1
+		+ math.ceil(f.guild:GetStringHeight() or 10)
+	check(f:GetHeight() >= bothH,
+		"a name with a guild line is sized to both, not to the name alone ("
+		.. tostring(f:GetHeight()) .. " vs " .. tostring(bothH) .. ")")
+	_G.__nativeCasts.nameplate1 = { name = "Spiced Wolf Meat", icon = 133974, channel = false,
+		startTime = time * 1000, endTime = (time + 3) * 1000 }
+	NPm.castStart(f, false)
+	check(f.cast:IsShown() and select(2, f.cast:GetPoint()) == f.bar,
+		"a cast hangs under the name form's bar, not over it and the guild line")
+	_G.__units.nameplate1.hp = 800
+	fire("UNIT_HEALTH", "nameplate1")
+	check(not f.bar:IsShown() and select(2, f.cast:GetPoint()) == f,
+		"and moves back up under the name when the bar goes, mid-cast")
+	_G.__nativeCasts.nameplate1 = nil
+	NPm.castStart(f, false)
+	check(not f.cast:IsShown(), "and closes when the cast is gone")
+	_G.__units.nameplate1.hp = 300
+	fire("UNIT_HEALTH", "nameplate1")
 
 	-- The skull rule. Seen in game at 0.3.19: a friendly player showed one.
 	_G.__units.nameplate1.level = -1

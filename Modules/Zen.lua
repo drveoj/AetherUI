@@ -1636,6 +1636,7 @@ local function TickBody(self, dt)
 	-- going to tell us.
 	if not UIParent:IsShown() then
 		f:SetAlpha(0)
+		f:Hide()
 		self:RestoreUI()
 		self:SetFrost(0)
 		self:RestoreWorldText()
@@ -1649,10 +1650,19 @@ local function TickBody(self, dt)
 	local want = self.want or 0
 	local diff = want - cur
 
+	-- HIDDEN WHILE PARKED, NOT JUST AT ALPHA 0. On WoW Forever the health bar
+	-- drew at full brightness inside a frame whose effective alpha was 0
+	-- (2026-10-07, measured in game: frame and bar both reported 0), and Hide
+	-- was the only thing that took it away. This is a plain frame with nothing
+	-- protected in it - the key catcher is its own frame under UIParent - so
+	-- Hide and Show are allowed in combat.
+	if want > 0 and not f:IsShown() then f:Show() end
+
 	if math.abs(diff) < 0.005 then
 		f:SetAlpha(want)
 		self._out = nil
 		if want <= 0 then
+			f:Hide()
 			-- Parked. Put everything back first, then stop costing anything until
 			-- the fader asks for us again. The music and the plates are released
 			-- here rather than the moment the fader says "wake", so the track fades
@@ -1743,7 +1753,10 @@ local function Tick(self, dt)
 	pcall(self.RestoreCamera, self)
 	pcall(self.StandUp, self)
 	self.want = 0
-	if self.frame then self.frame:SetAlpha(0) end
+	if self.frame then
+		self.frame:SetAlpha(0)
+		self.frame:Hide()
+	end
 	self:SetKeysEnabled(false)
 	A:UnregisterTicker(self)
 	A.lastFailure = "zen: " .. tostring(err)
@@ -1776,7 +1789,8 @@ end
 function Zen:OnEnable()
 	if not self.frame then self.frame = Build() end
 	if not self.frost then self.frost = BuildFrost() end
-	self.frame:Show()
+	-- Parked means hidden: see TickBody. The first tick that wants it shows it.
+	self.frame:Hide()
 	self.want = 0
 	self.frame:SetAlpha(0)
 	self:RestoreUI()
@@ -1803,7 +1817,10 @@ end
 function Zen:OnDisable()
 	self:SetKeysEnabled(false)
 	self.want = 0
-	if self.frame then self.frame:SetAlpha(0) end
+	if self.frame then
+		self.frame:SetAlpha(0)
+		self.frame:Hide()
+	end
 	self:RestoreUI()
 	-- Switching the module off mid-zen has to hand back everything it borrowed,
 	-- and this is the only place that runs. The ticker is unregistered two lines

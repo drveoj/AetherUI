@@ -302,8 +302,11 @@ end
 	lane. What you do leaves your right edge on the upper line; what the target
 	does comes back from its left edge on the lower one, gold if it can be
 	interrupted and grey if not. Labels sit where a lane starts. A channel
-	drains back toward its origin, an interrupt flashes red, and with no target
-	the bond goes dotted while your lane fills it exactly as before.
+	drains back toward its origin and an interrupt flashes red.
+
+	WITH NO TARGET THERE IS NO BOND. The handoff draws it dotted, and on screen
+	a dashed line running out to an empty space read as clutter (Joe,
+	2026-10-07), so the hairlines go and only your lane draws, when you cast.
 
 	These replace the floating cast bars. Every other edge of a capsule belongs
 	to an aura tray; the bond is the one place that belongs to both.
@@ -322,8 +325,7 @@ local LANE_H    = 4      -- the lane's stroke
 local BOND_OFF  = 4      -- each hairline from the capsules' centre line
 local LABEL_GAP = 3
 local BOND_MIN  = 40     -- however the movers left the capsules
-local DASH, DASH_GAP = 2, 6   -- the bond with no target: "2 6"
-local FLASH     = 0.2    -- seconds an interrupted cast shows red
+local FLASH    = 0.2    -- seconds an interrupted cast shows red
 
 local function Hairline(bond, y)
 	local t = bond:CreateTexture(nil, "BACKGROUND")
@@ -342,42 +344,13 @@ local function BuildBond(player)
 	bond:SetPoint("LEFT", player, "RIGHT", 0, 0)
 	bond:SetSize(BOND_MIN, (BOND_OFF + LANE_H) * 2)
 	bond.lines = { Hairline(bond, BOND_OFF), Hairline(bond, -BOND_OFF) }
-	bond.dots = {}
-	bond.dotted = false
 	return bond
 end
 
---- Lay the dashes along both lines for the bond's current length. Built as
---  they are needed and kept, so a longer bond reuses the shorter one's.
-local function LayDots(bond)
-	local w = bond:GetWidth() or BOND_MIN
-	local n = math.floor((w + DASH_GAP) / (DASH + DASH_GAP))
-	local i = 0
-	for line, y in ipairs({ BOND_OFF, -BOND_OFF }) do
-		for k = 0, n - 1 do
-			i = i + 1
-			local d = bond.dots[i]
-			if not d then
-				d = bond:CreateTexture(nil, "BACKGROUND")
-				d:SetTexture(Media.texture.flat)
-				W.Tint(d, Palette.c.bond)
-				bond.dots[i] = d
-			end
-			d:ClearAllPoints()
-			d:SetPoint("LEFT", bond, "LEFT", k * (DASH + DASH_GAP), y)
-			d:SetSize(DASH, A:PxIn(bond))
-			d:SetShown(bond.dotted)
-		end
-	end
-	for j = i + 1, #bond.dots do bond.dots[j]:Hide() end
-	bond.dotCount = i
-end
-
---- Solid with a target, dotted without one.
-local function SetBondDotted(bond, dotted)
-	bond.dotted = dotted and true or false
-	for _, l in ipairs(bond.lines) do l:SetShown(not bond.dotted) end
-	for i = 1, bond.dotCount or 0 do bond.dots[i]:SetShown(bond.dotted) end
+--- The hairlines with a target, nothing without one. Only the lines: the bond
+--  frame stays, because your lane hangs off it whether there is a target or not.
+local function SetBondLines(bond, on)
+	for _, l in ipairs(bond.lines) do l:SetShown(on and true or false) end
 end
 
 --- One lane. `f.unit`, `f.state`, `f.bar`, `f.spellName` and `f.time` are the
@@ -1087,13 +1060,12 @@ function UF:MeasureBond()
 	if w ~= bond._w then
 		bond._w = w
 		bond:SetWidth(w)
-		LayDots(bond)
 	end
 end
 
---- Dotted with no target, solid with one.
+--- The lines with a target, none without one.
 function UF:BondTarget()
-	if self.bond then SetBondDotted(self.bond, not UnitExists("target")) end
+	if self.bond then SetBondLines(self.bond, UnitExists("target")) end
 end
 
 function UF:RegisterEvents()
