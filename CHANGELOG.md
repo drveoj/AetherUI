@@ -7,6 +7,7 @@
 - Shields such as Power Word: Shield now show on your unit and party health bars, with a switch and a colour picker under Unit frames.
 - The settings window opens on a new Home page: the tour, what's new, unlock frames and keybind mode, all in one place.
 - /lattice is the command now. /aether still works for this version.
+- The game's own dialogs, like Release Spirit or "destroy this item?", are Blizzard's again. Right-click menus keep the Lattice look.
 - Fixed: with the game's chat timestamps on, "Keep Blizzard's [1. General]" switched off did nothing. The channel name now comes off as it should.
 - Fixed: several settings descriptions showed a stray "\n\n" instead of a paragraph break.
 

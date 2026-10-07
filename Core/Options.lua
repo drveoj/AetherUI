@@ -957,8 +957,6 @@ local function GameOwnGroup()
 		lettering = toggle(L.options.game_own.lettering.name, L.options.game_own.lettering.desc,
 			at("fonts")),
 
-		dialogs = toggle(L.options.game_own.dialogs.name, L.options.game_own.dialogs.desc, at("popups")),
-
 		menus = toggle(L.options.game_own.menus.name, L.options.game_own.menus.desc, at("menus")),
 
 		timers = toggle(L.options.game_own.timers.name, L.options.game_own.timers.desc,

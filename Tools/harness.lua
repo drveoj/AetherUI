@@ -7183,7 +7183,6 @@ local FILES = {
 	"Modules/Chat.lua",
 	"Modules/Tooltips.lua",
 	"Modules/Nameplates.lua",
-	"Modules/Popups.lua",
 	"Modules/Fonts.lua",
 	"Modules/Menus.lua", "Modules/OptionsSkin.lua",
 	"Modules/Conveniences.lua",
@@ -24681,101 +24680,16 @@ do
 		"and a Shaman is pink, because this is Vanilla - blue is TBC's answer")
 end
 
-print("== popups: the client's dialogs in our glass ==")
+print("== the client's dialogs are its own ==")
+-- Dropped in 2.0.0 (Joe, 2026-10-07): Release Spirit, "destroy this item?"
+-- and the rest are Blizzard's again. Right-click menus keep our look.
 do
-	local PPm = A:GetModule("popups")
-
-	-- SCALE. A dialog left at the client's size is enormous beside the
-	-- interface that raised it, and it is the one window that turns up without
-	-- being asked for.
-	local popScale = A.db.profile.scale
-	A.db.profile.scale = 0.8
-	PPm:Skin()
-	check(_G.StaticPopup1:GetScale() == 0.8,
-		"a dialog is drawn at the profile's scale like everything else of ours")
-	A.db.profile.scale = popScale
-	PPm:Skin()
-
-	-- BOTH conventions. Half the mock's dialogs carry their parts as fields and
-	-- half name them globally, because both are live on this client - and a
-	-- module that knows one convention skins half the dialogs in the game while
-	-- looking perfectly correct on whichever half it was written against.
+	check(A:GetModule("popups") == nil, "there is no dialog module")
 	for i = 1, 4 do
 		local p = _G["StaticPopup" .. i]
-		check(p.__aetherPanel ~= nil,
-			"dialog " .. i .. " has a glass panel behind it")
-		check(p.__border:IsShown() == false and p.__bg:IsShown() == false,
-			"and the stone frame it came with is hidden, not covered over")
-		check(p.__nine.__fill:GetTexture() == 0,
-			"including the background hanging off it in a CHILD FRAME - that is"
-			.. " not one of the dialog's own regions, so a strip that only walks"
-			.. " GetRegions leaves the thing you actually see through")
-
-		local alert = PPm.Element(p, "AlertIcon")
-		check(alert and not alert:IsShown(),
-			"the warning triangle goes with the stone it was drawn for - what the"
-			.. " dialog asks is in the words")
-
-		local text = PPm.Element(p, "Text")
-		check(text and text._aetherStyle == "qlObjName",
-			"the question is re-roled into our type")
-
-		local b1 = PPm.Element(p, "Button1")
-		check(b1 and b1.__aetherSkin ~= nil, "and each button gets a pill behind it")
-				check(b1:GetFontString()._aetherStyle == "tbCardTitle", "with our lettering on it")
-
-		-- THE ONE THAT SHIPPED WRONG. A button's pushed art is hidden until you
-		-- press it, so hiding "everything currently shown" left it in place and
-		-- Blizzard's button flashed back the instant you clicked.
-		local pushed = b1:GetPushedTexture()
-		check(pushed and pushed:GetTexture() == 0,
-			"the PUSHED art is cleared through the setter, not merely hidden -"
-			.. " the client shows it on mousedown and there is no moment of ours"
-			.. " in between")
-		local normal = b1:GetNormalTexture()
-		check(normal and normal:GetTexture() == 0, "and so is the normal art")
-		local hi = b1:GetHighlightTexture()
-		check(hi and hi:GetTexture() == 0, "and the highlight")
+		check(p.__aetherPanel == nil and p.__border:IsShown(),
+			"dialog " .. i .. " is left as the client drew it")
 	end
-
-	-- The client can put art BACK. A button's pushed texture is hidden until it
-	-- is pressed, and once shown it stayed shown for every dialog after.
-	do
-		local p2 = _G.StaticPopup2
-		p2.__later:Show()
-		p2:GetScript("OnShow")(p2)
-		check(not p2.__later:IsShown(),
-			"art the client reveals later is taken down on the next show, rather"
-			.. " than being left because it was not up when we first looked -"
-			.. " which is how a texture appears once and then stays for good")
-	end
-
-	-- The buttons are DRESSED, not rebuilt: what you click is still the
-	-- client's, because several of these dialogs run protected actions.
-	local p1 = _G.StaticPopup1
-	local b1 = PPm.Element(p1, "Button1")
-	check(b1:GetParent() == p1 and b1.__aetherSkin:GetParent() == b1,
-		"the button is still the client's own, in the client's own place - the"
-		.. " pill hangs off it rather than the other way round")
-
-	-- Off gives Blizzard's back, whole. Every module here is a reskin.
-	A:SetModuleEnabled("popups", false)
-	check(p1.__aetherPanel == nil and p1.__border:IsShown()
-		and b1.__aetherSkin == nil,
-		"switching it off returns the dialog the client drew, art and all")
-	A:SetModuleEnabled("popups", true)
-	check(_G.StaticPopup1.__aetherPanel ~= nil, "and on again re-dresses it")
-
-	-- ...and off puts the button's own art back, not just our pill.
-	A:SetModuleEnabled("popups", false)
-	local restored = PPm.Element(_G.StaticPopup1, "Button1"):GetNormalTexture()
-	check(restored and restored:GetTexture() == "dialog-button-up",
-		"switching off gives the button its own art back, by name - clearing a"
-		.. " texture is not undone by hiding a region")
-	check(_G.StaticPopup1.__nine.__fill:GetTexture() == "dialog-background",
-		"and the dialog's own background comes back with it, out of the child"
-		.. " frame it lives in")
-	A:SetModuleEnabled("popups", true)
 end
 
 print("== reskin: taking a client frame apart, reversibly ==")

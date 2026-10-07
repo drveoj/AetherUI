@@ -72,7 +72,6 @@ Modules\XPBar.lua
 Modules\Chat.lua
 Modules\Tooltips.lua
 Modules\Nameplates.lua
-Modules\Popups.lua
 Modules\PartyFrames.lua
 Modules\Fonts.lua
 Modules\Menus.lua

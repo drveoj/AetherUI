@@ -806,10 +806,6 @@ L["options.fader.zen_track.name"] = "Track"
 L["options.fader.zen_width.name"] = "Capsule width"
 L["options.fader.zen_y.name"] = "Height above the bottom edge"
 
-L["options.game_own.dialogs.desc"] =
-	"The confirmation boxes - \"do you want to destroy this?\" and the "
-		.. "like."
-L["options.game_own.dialogs.name"] = "Dialogs"
 L["options.game_own.game_s_own"] = "Game panels"
 L["options.game_own.lettering.desc"] =
 	"The game's own type in this interface's letters - every panel, "

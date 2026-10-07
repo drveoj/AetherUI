@@ -3,9 +3,10 @@
 
 	Taking a frame the client built and dressing it in ours, reversibly.
 
-	This is Modules\Popups.lua's engine, lifted out because the timers and our
-	own options panel want exactly the same thing and none of them should have
-	to learn the same three lessons again. Every one of those three cost a
+	This was the client dialogs' engine (Modules\Popups.lua, dropped in 2.0.0
+	- the dialogs are Blizzard's own again), lifted out because the timers and
+	our own options panel want exactly the same thing and none of them should
+	have to learn the same three lessons again. Every one of those three cost a
 	shipped build:
 
 	  1. A FRAME IS NOT ITS OWN REGIONS. Its backdrop hangs off it as a CHILD

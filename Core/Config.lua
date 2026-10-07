@@ -590,13 +590,6 @@ Config.defaults = {
 				whisperTabName  = "Whispers",
 			},
 
-			-- The client's own StaticPopup dialogs, reskinned in place. A
-			-- switch, because every module here is a reskin rather than a
-			-- replacement and turning one off has to give Blizzard's back.
-			popups = {
-				enabled = true,
-			},
-
 			-- Two small things the game makes you wait for. BOTH OFF by
 			-- default: one overrides a setting the client already has, and the
 			-- other spends your money.
