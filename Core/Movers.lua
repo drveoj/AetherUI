@@ -794,6 +794,333 @@ local function SnapAxis(lo, size, targets, step, threshold, origin)
 end
 
 -- ---------------------------------------------------------------------------
+-- the drag's own signals (board 4a)
+--
+-- SNAP: while a child is dragged its parent's centre lines are the strongest
+-- pull, and when one catches, the drag says so - a green diamond on the
+-- child's centre, a dashed green bond to the parent, and SNAP · PLAYER with a
+-- chevron and the distance in field units (24 to a dot).
+--
+-- BOND: the junction under the cursor that a drop would hang the node from,
+-- lit green - or red, with the reason, where the bond would be refused.
+--
+-- THE INSPECTOR: Parent, Offset, Grows and Scale beside the dragged node, and
+-- the spine's length while it is being stretched.
+--
+-- All of it on frames of our own over the handles; none of it is saved.
+-- ---------------------------------------------------------------------------
+
+-- Chevron.tga points down, and SetRotation turns counter-clockwise.
+local ARROW = { down = 0, right = math.pi / 2, up = math.pi, left = -math.pi / 2 }
+
+local feedback
+
+local function Feedback()
+	if feedback then return feedback end
+	local f = CreateFrame("Frame", ADDON .. "MoverSnap", UIParent)
+	f:SetAllPoints(UIParent)
+	f:SetFrameStrata("FULLSCREEN")
+	f.dashes = {}
+	f.glow = f:CreateTexture(nil, "ARTWORK")
+	f.glow:SetTexture(A.Media.texture.glow)
+	f.snap = f:CreateTexture(nil, "OVERLAY")
+	f.snap:SetTexture(A.Media.texture.diamond)
+	f.snapText = A.Widgets.Text(f, "label", "LEFT")
+	f.snapArrow = f:CreateTexture(nil, "OVERLAY")
+	f.snapArrow:SetTexture(A.Media.texture.chevron)
+	f.snapDist = A.Widgets.Text(f, "label", "LEFT")
+	f.bond = f:CreateTexture(nil, "OVERLAY")
+	f.bond:SetTexture(A.Media.texture.diamond)
+	f.bondText = A.Widgets.Text(f, "label", "LEFT")
+	feedback = f
+	return f
+end
+
+Movers.__feedback = function() return feedback end
+
+--- A dashed line between two points in UIParent units, out of short Lines:
+--  a Line cannot be dashed itself. Called with no points it clears.
+local function DashedLine(x1, y1, x2, y2, c)
+	local f = Feedback()
+	local n = 0
+	local dx, dy = (x2 or 0) - (x1 or 0), (y2 or 0) - (y1 or 0)
+	local len = math.sqrt(dx * dx + dy * dy)
+	if x1 and len > 0 then
+		local ux, uy = dx / len, dy / len
+		local dash, gap, t = Px(4), Px(6), 0
+		while t < len and n < 400 do
+			n = n + 1
+			local l = f.dashes[n] or f:CreateLine(nil, "ARTWORK")
+			f.dashes[n] = l
+			local e = math.min(t + dash, len)
+			l:SetStartPoint("BOTTOMLEFT", UIParent, x1 + ux * t, y1 + uy * t)
+			l:SetEndPoint("BOTTOMLEFT", UIParent, x1 + ux * e, y1 + uy * e)
+			l:SetThickness(Px(2))
+			l:SetColorTexture(c[1], c[2], c[3], 1)
+			l:Show()
+			t = e + gap
+		end
+	end
+	for i = n + 1, #f.dashes do f.dashes[i]:Hide() end
+end
+
+--- The green snap: s = { x, y = the child's centre, px, py = the parent's,
+--  name, dir, dist, labelX }, or nil to take it away.
+local function ShowSnap(s)
+	local f = Feedback()
+	f.snapInfo = s
+	local parts = { f.glow, f.snap, f.snapText, f.snapArrow, f.snapDist }
+	if not s then
+		for _, r in ipairs(parts) do r:Hide() end
+		DashedLine()
+		return
+	end
+	local g = A.Palette.c.friendly
+	f.snap:SetSize(Px(14), Px(14))
+	f.snap:ClearAllPoints()
+	f.snap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", s.x, s.y)
+	Tint(f.snap, g, 1)
+	f.glow:SetSize(Px(44), Px(44))
+	f.glow:ClearAllPoints()
+	f.glow:SetPoint("CENTER", f.snap, "CENTER", 0, 0)
+	Tint(f.glow, g, 0.55)
+	DashedLine(s.x, s.y, s.px, s.py, g)
+
+	f.snapText:SetText(("%s · %s"):format(L.movers.snap.snap, s.name))
+	f.snapText:ClearAllPoints()
+	f.snapText:SetPoint("LEFT", UIParent, "BOTTOMLEFT", s.labelX, s.y)
+	A.Widgets.Color(f.snapText, g)
+	f.snapArrow:SetSize(Px(10), Px(10))
+	f.snapArrow:SetRotation(ARROW[s.dir] or 0)
+	f.snapArrow:ClearAllPoints()
+	f.snapArrow:SetPoint("LEFT", f.snapText, "RIGHT", Px(6), 0)
+	Tint(f.snapArrow, g, 1)
+	f.snapDist:SetText(tostring(s.dist))
+	f.snapDist:ClearAllPoints()
+	f.snapDist:SetPoint("LEFT", f.snapArrow, "RIGHT", Px(4), 0)
+	A.Widgets.Color(f.snapDist, g)
+	for _, r in ipairs(parts) do r:Show() end
+end
+
+--- The junction a drop would bond to: t = { x, y, label, refused }, or nil.
+local function ShowBondTarget(t)
+	local f = Feedback()
+	f.bondInfo = t
+	if not t then
+		f.bond:Hide()
+		f.bondText:Hide()
+		return
+	end
+	local c = t.refused and A.Palette.c.danger or A.Palette.c.friendly
+	f.bond:SetSize(Px(14), Px(14))
+	f.bond:ClearAllPoints()
+	f.bond:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x, t.y)
+	Tint(f.bond, c, 1)
+	f.bondText:SetText(("%s · %s"):format(
+		t.refused and L.movers.snap.no_bond or L.movers.snap.bond, t.label))
+	f.bondText:ClearAllPoints()
+	f.bondText:SetPoint("LEFT", f.bond, "RIGHT", Px(8), 0)
+	A.Widgets.Color(f.bondText, c)
+	f.bond:Show()
+	f.bondText:Show()
+end
+
+--- What a node is called on screen: the name its module gave it.
+local function NodeLabel(name)
+	local e = Movers.registry[name]
+	return tostring((e and e.label) or name):upper()
+end
+
+--- Why `mover` may not hang from `parent`, or nil if it may.
+local function BondRefusal(mover, parent)
+	if mover.pairLead or Partner(mover) then return L.movers.bond.pair end
+	if Descends(parent, mover.name) then
+		return A.F(L.movers.bond.loop, NodeLabel(mover.name), NodeLabel(parent), NodeLabel(parent))
+	end
+	return nil
+end
+
+--- The junction under the cursor that a drop would hang `mover` from: another
+--  node's centre within 14 of it. Not its own, not its pair's, and not the
+--  one it already hangs from - dropping there changes nothing.
+local function JunctionUnder(mover, mx, my)
+	local reach = Px(14)
+	local partner = Partner(mover)
+	local best, bestD
+	local function consider(name, frame)
+		if name == mover.name or (partner and name == partner.name) then return end
+		local x, y = PointAt(frame, "CENTER")
+		if not x then return end
+		local d = math.sqrt((x - mx) ^ 2 + (y - my) ^ 2)
+		if d <= reach and (not bestD or d < bestD) then
+			best, bestD = { name = name, x = x, y = y }, d
+		end
+	end
+	for name, e in pairs(Movers.registry) do
+		if e.handle and e.handle:IsShown() then consider(name, e.frame) end
+	end
+	for name, nf in pairs(Movers.nodes) do
+		if Movers.registry[Movers.nodeOwner[name]] then consider(name, nf) end
+	end
+	if not best or best.name == mover.parent then return nil end
+	best.label = NodeLabel(best.name)
+	best.refused = BondRefusal(mover, best.name)
+	return best
+end
+
+Movers.__junctionUnder = JunctionUnder
+
+-- the inspector ---------------------------------------------------------------
+
+local INSPECTOR_W, ROW_H = 230, 20
+local inspector
+
+local function Inspector()
+	if inspector then return inspector end
+	local p = A.Glass.CreatePanel(UIParent, { corner = 12 })
+	p:SetFrameStrata("FULLSCREEN")
+	p:SetSize(INSPECTOR_W, 40)
+	p:EnableMouse(false)
+	p:Hide()
+	p.title = A.Widgets.Text(p, "label", "LEFT")
+	p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12)
+	p.rows = {}
+	for i = 1, 4 do
+		local k = A.Widgets.Text(p, "label", "LEFT")
+		k:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12 - i * ROW_H)
+		local v = A.Widgets.Text(p, "label", "RIGHT")
+		v:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, -12 - i * ROW_H)
+		p.rows[i] = { k = k, v = v }
+	end
+	inspector = p
+	return p
+end
+
+Movers.__inspector = function() return inspector end
+
+--- Which way a node grows, from the edge it is pinned by: pinned by its top it
+--  grows down, by its left it grows right, by its centre both ways.
+local function GrowsText(point)
+	point = point or "CENTER"
+	local v = (point:find("TOP") and L.movers.inspector.down)
+		or (point:find("BOTTOM") and L.movers.inspector.up)
+	local h = (point:find("LEFT") and L.movers.inspector.right)
+		or (point:find("RIGHT") and L.movers.inspector.left)
+	if v and h then return A.F(L.movers.inspector.two_ways, v, tostring(h):lower()) end
+	return v or h or L.movers.inspector.both
+end
+
+--- Show the inspector beside `frame` with `rows` ({ label, value } pairs), on
+--  whichever side has room; nil hides it.
+local function ShowInspector(title, rows, frame)
+	local p = Inspector()
+	if not title then p:Hide() return end
+	local c = A.Palette.c
+	local g = c.friendly
+	local scale = A.db.profile.scale or 1
+	p:SetScale(scale)
+	p:SetFillColor({ 14 / 255, 11 / 255, 32 / 255, 0.9 })
+	p:SetEdgeColor({ g[1], g[2], g[3], 0.4 })
+	p.title:SetText(title)
+	A.Widgets.Color(p.title, g)
+	for i, r in ipairs(p.rows) do
+		local row = rows[i]
+		if row then
+			r.k:SetText(row[1])
+			r.v:SetText(row[2])
+			A.Widgets.Color(r.k, c.textDim)
+			A.Widgets.Color(r.v, c.text)
+			r.k:Show()
+			r.v:Show()
+		else
+			r.k:Hide()
+			r.v:Hide()
+		end
+	end
+	p:SetHeight(24 + ROW_H * (#rows + 1))
+
+	local l, b = PointAt(frame, "BOTTOMLEFT")
+	local r, t = PointAt(frame, "TOPRIGHT")
+	if not l then p:Hide() return end
+	local w, sw, sh = INSPECTOR_W * scale, UIParent:GetWidth(), UIParent:GetHeight()
+	local x = (r + Px(16) + w <= sw) and (r + Px(16)) or math.max(0, l - Px(16) - w)
+	local top = math.max(p:GetHeight() * scale, math.min(t, sh - Px(8)))
+	p:ClearAllPoints()
+	p:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, top / scale)
+	p:Show()
+end
+
+--- The inspector's rows for a node being dragged: its parent, its centre's
+--  offset from the parent's (up is positive) in field units, which way it
+--  grows from where it would be pinned, and its scale against the HUD's.
+local function NodeRows(entry)
+	local f = entry.frame
+	local pf = not entry.pairLead and ParentFrame(entry)
+	local cx, cy = PointAt(f, "CENTER")
+	local px, py
+	if pf then px, py = PointAt(pf, "CENTER")
+	else px, py = UIParent:GetWidth() / 2, UIParent:GetHeight() / 2 end
+	local unit = Px(1)
+	local point = ScreenAnchor(f, entry.growsDown)
+	local scale = (f:GetEffectiveScale() or 1) / UIScale() / (A.db.profile.scale or 1)
+	return {
+		{ L.movers.inspector.parent, pf and NodeLabel(entry.parent) or L.movers.inspector.screen },
+		{ L.movers.inspector.offset, ("%d, %d"):format(round(((cx or 0) - (px or 0)) / unit),
+			round(((cy or 0) - (py or 0)) / unit)) },
+		{ L.movers.inspector.grows, GrowsText(point) },
+		{ L.movers.inspector.scale, ("%d%%"):format(round(scale * 100)) },
+	}
+end
+
+-- hollow junctions -------------------------------------------------------------
+
+--- Whether a node is on the lattice: on each axis one of its edges or its
+--  centre lies on a dot of the field, on another frame's line, or on its
+--  parent's centre line. A node placed with Shift usually is not, and its
+--  junction is drawn hollow to say so (board 4a). Worked out, never saved.
+local function OnLattice(entry)
+	local f = entry.frame
+	local l, b = PointAt(f, "BOTTOMLEFT")
+	local r, t = PointAt(f, "TOPRIGHT")
+	if not (l and r) then return true end
+	local xs, ys = SnapTargets(Movers:SnapFamily(entry))
+	local pf = not entry.pairLead and ParentFrame(entry)
+	if pf then
+		local px, py = PointAt(pf, "CENTER")
+		if px then xs[#xs + 1], ys[#ys + 1] = px, py end
+	end
+	local step = (GridConfig().grid ~= false) and FieldStep() or nil
+	local function on(lo, hi, targets, origin)
+		for _, m in ipairs({ lo, (lo + hi) / 2, hi }) do
+			for _, tg in ipairs(targets) do
+				if math.abs(m - tg) <= 1 then return true end
+			end
+			if step then
+				local k = (m - origin) / step
+				if math.abs(k - math.floor(k + 0.5)) * step <= 1 then return true end
+			end
+		end
+		return false
+	end
+	return on(l, r, xs, UIParent:GetWidth() / 2) and on(b, t, ys, UIParent:GetHeight() / 2)
+end
+
+Movers.__onLattice = OnLattice
+
+local function SetJunction(entry, on)
+	if not entry.handle then return end
+	entry.handle.junction:SetTexture(on and A.Media.texture.diamond or A.Media.texture.diamondRim)
+	entry.handle.onLattice = on and true or false
+end
+
+--- Every shown node's junction, filled or hollow, after anything has moved.
+local function RefreshJunctions()
+	for _, e in pairs(Movers.registry) do
+		if e.handle and e.handle:IsShown() then SetJunction(e, OnLattice(e)) end
+	end
+end
+
+-- ---------------------------------------------------------------------------
 
 --- The wire outline a node wears while unlocked (board 4a): a pill for a
 --  unit, a rounded rectangle for anything else, its junction - a diamond - at
@@ -864,6 +1191,9 @@ local function CreateHandle(entry)
 		if InCombatLockdown() or not Movers.unlocked then
 			self:SetScript("OnUpdate", nil)
 			ClearGuides()
+			ShowSnap(nil)
+			ShowBondTarget(nil)
+			ShowInspector(nil)
 			return
 		end
 
@@ -877,11 +1207,15 @@ local function CreateHandle(entry)
 		if st then
 			local d = (mx - self._grabX) * st.sign * 2
 			local ps = st.partner.frame:GetEffectiveScale() or us
-			StretchPair(st.lead, st.partner, st.from.len + d * us / ps, st.from)
+			local len = StretchPair(st.lead, st.partner, st.from.len + d * us / ps, st.from)
+			ShowInspector(L.movers.inspector.spine:upper(), {
+				{ L.movers.inspector.length, tostring(round(len * ps / us / Px(1))) },
+			}, st.partner.frame)
 			return
 		end
 
-		local f = self._mover.frame
+		local mover = self._mover
+		local f = mover.frame
 		local fs = f:GetEffectiveScale() or 1
 		if fs <= 0 or us <= 0 then return end
 
@@ -890,24 +1224,59 @@ local function CreateHandle(entry)
 
 		local cfg = GridConfig()
 		local w, h2 = f:GetWidth() * fs / us, f:GetHeight() * fs / us
-		local gx, gy
+		local gx, gy, snap
 
-		-- Alt is the escape hatch: sometimes the place you want is a pixel off
-		-- the line, and fighting a snap you cannot switch off is miserable.
-		if cfg.snap ~= false and not IsAltKeyDown() then
+		-- Shift is the escape hatch (board 4a; Alt until 2026-10-07): sometimes
+		-- the place you want is a pixel off the line, and fighting a snap you
+		-- cannot switch off is miserable.
+		if cfg.snap ~= false and not IsShiftKeyDown() then
+			local dist = cfg.snapDistance or 12
+
+			-- THE PARENT'S CENTRE LINES FIRST, before any other frame or the
+			-- field: a child lined up on its parent is what the lattice is.
+			local onX, onY, px, py
+			local pf = self._parentFrame
+			if pf then
+				px, py = PointAt(pf, "CENTER")
+				if px then
+					if math.abs(x + w / 2 - px) < dist then x = px - w / 2; onX = true end
+					if math.abs(y + h2 / 2 - py) < dist then y = py - h2 / 2; onY = true end
+				end
+			end
+
 			local xs, ys = SnapTargets(self._skip or { [f] = true })
 			local step = (cfg.grid ~= false) and FieldStep() or nil
-			local dist = cfg.snapDistance or 12
-			x, gx = SnapAxis(x, w, xs, step, dist, UIParent:GetWidth() / 2)
-			y, gy = SnapAxis(y, h2, ys, step, dist, UIParent:GetHeight() / 2)
+			if not onX then x, gx = SnapAxis(x, w, xs, step, dist, UIParent:GetWidth() / 2) end
+			if not onY then y, gy = SnapAxis(y, h2, ys, step, dist, UIParent:GetHeight() / 2) end
+
+			-- One axis lined up says where the child is from its parent. Both
+			-- means it is sitting on top of it, which has no direction to name.
+			local cx, cy = x + w / 2, y + h2 / 2
+			if onX ~= onY then
+				local d = onX and (cy - py) or (cx - px)
+				snap = {
+					x = cx, y = cy, px = px, py = py,
+					name = NodeLabel(mover.parent),
+					dir = onX and (d >= 0 and "up" or "down") or (d >= 0 and "right" or "left"),
+					dist = round(math.abs(d) / Px(1)),
+					labelX = x + w + Px(14),
+				}
+			end
 		end
 
 		ClearGuides()
 		if gx then DrawGuide(1, true, gx) end
 		if gy then DrawGuide(2, false, gy) end
+		ShowSnap(snap)
 
 		f:ClearAllPoints()
 		f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x * us / fs, y * us / fs)
+
+		-- Where a drop would bond it, and what the inspector reads now.
+		self._bondTo = JunctionUnder(mover, mx, my)
+		ShowBondTarget(self._bondTo)
+		SetJunction(mover, OnLattice(mover))
+		ShowInspector(NodeLabel(mover.name), NodeRows(mover), f)
 	end
 
 	h:SetScript("OnDragStart", function(self)
@@ -942,6 +1311,9 @@ local function CreateHandle(entry)
 		local fs = f:GetEffectiveScale() or 1
 		if fs <= 0 or us <= 0 or not f:GetLeft() then return end
 		self._mover = mover
+		self._bondTo = nil
+		-- The pair has no parent of its own to line up on; the spine is theirs.
+		self._parentFrame = (not mover.pairLead) and ParentFrame(mover) or nil
 		-- Worked out once per drag: nothing in it changes while the button is
 		-- down, and it is a walk of the whole registry.
 		self._skip = Movers:SnapFamily(mover)
@@ -957,12 +1329,16 @@ local function CreateHandle(entry)
 		self:SetScript("OnUpdate", nil)
 		self._dragging = false
 		ClearGuides()
+		ShowSnap(nil)
+		ShowBondTarget(nil)
+		ShowInspector(nil)
 
 		local st = self._stretch
 		self._stretch = nil
 		if st then
 			SavePosition(st.lead)
 			SaveDescendants(st.lead.name)
+			RefreshJunctions()
 			return
 		end
 
@@ -978,8 +1354,20 @@ local function CreateHandle(entry)
 			local bond = MeasureBond(mover, pf)
 			if bond then Place(f, bond.point, pf, bond.relPoint, bond.x, bond.y) end
 		end
+
+		-- DROPPED ON ANOTHER NODE'S JUNCTION: hang it from that one, where it
+		-- lies. SetParent measures the new bond from here and saves it.
+		local to = self._bondTo
+		self._bondTo = nil
+		if to and to.refused then
+			A:Print(A.Bad(to.refused))
+		elseif to and Movers:SetParent(mover.name, to.name) then
+			A:Print(A.F(L.movers.bond.done, NodeLabel(mover.name), to.label))
+		end
+
 		SavePosition(mover)
 		SaveDescendants(mover.name)
+		RefreshJunctions()
 	end)
 
 	-- Nudge with the wheel for the last few pixels, in the node's own anchor -
@@ -994,6 +1382,7 @@ local function CreateHandle(entry)
 		Place(mover.frame, point, rel or UIParent, relPoint, x, y)
 		SavePosition(mover)
 		SaveDescendants(mover.name)
+		RefreshJunctions()
 	end)
 	h:EnableMouseWheel(true)
 
@@ -1300,12 +1689,15 @@ function Movers:Unlock()
 	end
 	-- After the previews, so a bond is drawn to a frame that is up.
 	DrawBonds()
+	RefreshJunctions()
 	Announce()
 	A:Print(A.F(L.movers.unlock.frames_unlocked_drag_move,
 		A.Hi(L.movers.pill.lock), A.Hi("/lattice lock")))
-	A:Print(A.Dim("Edges snap to the field's dots and to other frames; hold alt while"
-		.. " dragging to place freely. Frames that only appear when the game says so -"
-		.. " the pet bar, the taxi button - are held up so you can place them."))
+	A:Print(A.Dim("A child snaps to its parent's centre lines first, then to other frames"
+		.. " and the field's dots; hold Shift while dragging to place freely. Drop a node"
+		.. " on another's junction to hang it from that one. Frames that only appear"
+		.. " when the game says so - the pet bar, the taxi button - are held up so you"
+		.. " can place them."))
 end
 
 function Movers:Lock()
@@ -1313,6 +1705,9 @@ function Movers:Lock()
 	ShowGrid(false)
 	ClearGuides()
 	HideBonds()
+	ShowSnap(nil)
+	ShowBondTarget(nil)
+	ShowInspector(nil)
 	ShowLockButton(false)
 	for _, entry in pairs(Movers.registry) do
 		if entry.handle then entry.handle:Hide() end

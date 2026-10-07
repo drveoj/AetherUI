@@ -21737,13 +21737,21 @@ do
 	check(math.abs(droppedX() - 300) < 0.01,
 		("the frame's own right edge counts too (%.1f)"):format(droppedX()))
 
+	-- SHIFT is free placement (board 4a); Alt was, until B2.
+	place(405, 100)
+	h:GetScript("OnDragStart")(h)
+	_G.__shift = true
+	h:GetScript("OnUpdate")(h)
+	_G.__shift = false
+	check(math.abs(droppedX() - 405) < 0.01,
+		("holding shift places it exactly where the cursor says (%.1f)"):format(droppedX()))
 	place(405, 100)
 	h:GetScript("OnDragStart")(h)
 	_G.__alt = true
 	h:GetScript("OnUpdate")(h)
 	_G.__alt = false
-	check(math.abs(droppedX() - 405) < 0.01,
-		("holding alt places it exactly where the cursor says (%.1f)"):format(droppedX()))
+	check(math.abs(droppedX() - 400) < 0.01,
+		("and alt no longer does (%.1f)"):format(droppedX()))
 
 	-- Far from anything, the field is what is left - its dots, counted from
 	-- the centre: 500 + 13 x 24 = 812.
@@ -21882,6 +21890,140 @@ do
 	M:Lock()
 	check(not M.__bonds():IsShown() and not g:IsShown() and not pill:IsShown(),
 		"locking takes the field, the bonds and the pill away")
+	UIParent:SetSize(1024, 768)
+	A:Reconfigure()
+
+	-- THE BEHAVIOUR (B2). A controlled screen again: a parent, a child being
+	-- dragged (the quest tracker's handle, hung from it for the test), one
+	-- other frame whose edge is nearer than the parent's centre, and a third
+	-- node to drop onto. 1080 tall, so a field unit is one UIParent unit.
+	print("== lattice unlock: the behaviour ==")
+	UIParent:SetSize(1000, 1080)
+	UIParent.__scale = 1
+	M:Unlock()
+	local entry = M.registry.quests
+	local f, h = entry.frame, entry.handle
+	f.__scale = 1
+	local P = CreateFrame("Frame", "AetherUILatticeParent", UIParent)
+	P:SetGeom({ cx = 500, cy = 540, left = 450, right = 550, bottom = 520, top = 560 })
+	local T = CreateFrame("Frame", "AetherUILatticeEdge", UIParent)
+	T:SetGeom({ cx = 557.5, cy = 325, left = 457.5, right = 657.5, bottom = 300, top = 350 })
+	local Q = CreateFrame("Frame", "AetherUILatticeOther", UIParent)
+	Q:SetGeom({ cx = 800, cy = 300, left = 780, right = 820, bottom = 290, top = 310 })
+	local savedRegistry, savedParent = M.registry, entry.parent
+	local savedAnchors = A.db.profile.anchors
+	A.db.profile.anchors = {}
+	M.registry = {
+		quests = entry,
+		__p = { name = "__p", frame = P, label = "Anchor" },
+		__t = { name = "__t", frame = T, label = "Edge" },
+		__q = { name = "__q", frame = Q, label = "Other" },
+	}
+	entry.parent = "__p"
+	-- Unlocked again over this registry, so every node has its handle - a
+	-- drop only ever lands on a junction that is on screen.
+	M:Unlock()
+	f:SetSize(100, 40)
+	local function childAt(left, bottom)
+		f:SetGeom({ cx = left + 50, cy = bottom + 20, left = left, right = left + 100,
+			bottom = bottom, top = bottom + 40 })
+	end
+	local function dragOnce()
+		h:GetScript("OnDragStart")(h)
+		h:GetScript("OnUpdate")(h)
+	end
+	local function droppedLeft() local _, _, _, x = f:GetPoint(1) return x end
+	cursorX, cursorY = 505, 728
+
+	-- 1. The parent's centre line wins over a nearer frame edge and a dot.
+	-- The bottom edge sits on a dot (540 + 7 x 24 = 708), so the other axis
+	-- stays put and the distance is the child's centre, 728, less 540.
+	childAt(455, 708)
+	dragOnce()
+	check(math.abs(droppedLeft() - 450) < 0.01,
+		("the parent's centre line catches first, over a nearer frame edge"
+		.. " (455 -> %.1f, wanted 450)"):format(droppedLeft()))
+	local fb = M.__feedback()
+	check(fb.snap:IsShown() and fb.snapText:GetText() == "SNAP · ANCHOR"
+		and fb.snapDist:GetText() == "188" and fb.snapArrow:GetRotation() == math.pi,
+		"and says so: SNAP · ANCHOR, a chevron pointing up, 188 ("
+		.. tostring(fb.snapText:GetText()) .. " " .. tostring(fb.snapDist:GetText()) .. ")")
+	check(fb.dashes[1] and fb.dashes[1]:IsShown(), "with a dashed bond to the parent")
+	local insp = M.__inspector()
+	check(insp:IsShown() and insp.title:GetText() == "QUESTS"
+		and insp.rows[1].v:GetText() == "ANCHOR" and insp.rows[3].v:GetText() == "Down"
+		and tostring(insp.rows[4].v:GetText()):match("^%d+%%$"),
+		"the inspector shows the node's parent, how it grows and its scale ("
+		.. tostring(insp.rows[1].v:GetText()) .. ", " .. tostring(insp.rows[3].v:GetText())
+		.. ", " .. tostring(insp.rows[4].v:GetText()) .. ")")
+	check(insp.rows[2].v:GetText() == "5, 188",
+		"and its offset from the parent, up positive (" .. tostring(insp.rows[2].v:GetText()) .. ")")
+	h:GetScript("OnDragStop")(h)
+	check(not fb.snap:IsShown() and not insp:IsShown(), "all of it goes on drop")
+
+	-- 2. Shift: no snapping, no SNAP, and a node off the lattice is hollow
+	-- (455 to 555 across and 700 to 740 up touch no dot, edge or centre line).
+	childAt(455, 700)
+	h:GetScript("OnDragStart")(h)
+	_G.__shift = true
+	h:GetScript("OnUpdate")(h)
+	_G.__shift = false
+	check(math.abs(droppedLeft() - 455) < 0.01 and not fb.snap:IsShown(),
+		"shift places it where it is, with no snap shown")
+	check(h.junction:GetTexture() == A.Media.texture.diamondRim and h.onLattice == false,
+		"and its junction turns hollow - it is off the lattice")
+	h:GetScript("OnDragStop")(h)
+	childAt(450, 708)
+	check(M.__onLattice(entry), "lined up on its parent's centre, it is on the lattice again")
+
+	-- 3. Dropped on another node's junction: hung from that one.
+	childAt(455, 708)
+	cursorX, cursorY = 800, 300
+	dragOnce()
+	check(fb.bond:IsShown() and fb.bondText:GetText() == "BOND · OTHER",
+		"the junction under the cursor lights: BOND · OTHER ("
+		.. tostring(fb.bondText:GetText()) .. ")")
+	h:GetScript("OnDragStop")(h)
+	check(M:ParentOf("quests") == "__q", "and the drop hangs it from that node ("
+		.. tostring(M:ParentOf("quests")) .. ")")
+
+	-- 4. Refused: onto one of its own children, and anything of the pair.
+	M.registry.__q.parent = "quests"
+	entry.parent = "__p"
+	dragOnce()
+	check(fb.bondText:GetText() == "NO BOND · OTHER", "a node's own child lights red: NO BOND")
+	h:GetScript("OnDragStop")(h)
+	check(M:ParentOf("quests") == "__p", "and the drop is refused - that bond would loop")
+	M.registry.__q.parent = nil
+	local pairTry = M.__junctionUnder({ name = "__x", pairLead = "player" }, 800, 300)
+	check(pairTry and pairTry.refused == A.L.movers.bond.pair,
+		"the player and target never hang from another node")
+
+	M.registry, entry.parent = savedRegistry, savedParent
+	A.db.profile.anchors = savedAnchors
+	f.__geom, f.__scale = nil, 1
+	M:Lock()
+	check(not fb.bond:IsShown() and not M.__inspector():IsShown(), "and locking clears it all")
+
+	-- 5. Stretching the spine: the inspector reads its length.
+	UF.player:SetGeom({ left = 100, right = 400, top = 300, bottom = 240 })
+	UF.target:SetGeom({ left = 520, right = 820, top = 300, bottom = 240 })
+	M:Unlock()
+	local th = M.registry.target.handle
+	_G.__ctrl = true
+	cursorX, cursorY = 600, 270
+	th:GetScript("OnDragStart")(th)
+	cursorX = 640
+	th:GetScript("OnUpdate")(th)
+	_G.__ctrl = false
+	insp = M.__inspector()
+	check(insp:IsShown() and insp.title:GetText() == "SPINE"
+		and insp.rows[1].k:GetText() == "Length" and tonumber(insp.rows[1].v:GetText()),
+		"stretching the spine, the inspector reads its length ("
+		.. tostring(insp.rows[1].v:GetText()) .. ")")
+	th:GetScript("OnDragStop")(th)
+	UF.player.__geom, UF.target.__geom = nil, nil
+	M:Lock()
 	UIParent:SetSize(1024, 768)
 	A:Reconfigure()
 

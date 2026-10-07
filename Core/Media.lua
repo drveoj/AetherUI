@@ -53,6 +53,8 @@ Media.texture = {
 	-- 64x64, a square on its corner filling the cell: the Lattice junction.
 	-- Drawn rather than rotated, because SetRotation clips a square's corners.
 	diamond     = TEX .. "Diamond",
+	-- Its outline: the hollow junction of a node that is off the field.
+	diamondRim  = TEX .. "Diamond-Rim",
 
 	-- ability / aura slots
 	slotMask    = TEX .. "Slot-Mask",

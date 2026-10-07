@@ -403,16 +403,42 @@ L["mini.paint.nothing_playing"] = "Nothing playing"
 
 -- movers ------------------------------------------------------------------
 
+-- Dropping a node on another's junction (Lattice board 4a).
+L["movers.bond.done"] = "%s now hangs from %s."
+L["movers.bond.loop"] = "%s can't hang from %s: %s already hangs from it."
+L["movers.bond.pair"] =
+	"The player and target are the spine's pair, so they don't hang from other nodes."
+
 L["movers.create_handle.can_t_move_frames"] = "can't move frames in combat."
+
+-- The inspector beside a node being dragged.
+L["movers.inspector.both"] = "Both ways"
+L["movers.inspector.down"] = "Down"
+L["movers.inspector.grows"] = "Grows"
+L["movers.inspector.left"] = "Left"
+L["movers.inspector.length"] = "Length"
+L["movers.inspector.offset"] = "Offset"
+L["movers.inspector.parent"] = "Parent"
+L["movers.inspector.right"] = "Right"
+L["movers.inspector.scale"] = "Scale"
+L["movers.inspector.screen"] = "Screen"
+L["movers.inspector.spine"] = "Spine"
+L["movers.inspector.two_ways"] = "%s and %s"
+L["movers.inspector.up"] = "Up"
 
 L["movers.lock.frames_locked"] = "frames locked."
 
 -- The mode pill at the top of the screen while unlocked (Lattice board 4a).
 L["movers.pill.unlocked"] = "Lattice unlocked"
-L["movers.pill.hint"] = "· drag a node · hold Alt for free placement"
+L["movers.pill.hint"] = "· drag a node · hold Shift for free placement"
 L["movers.pill.lock"] = "LOCK"
 
 L["movers.reset_all.frame_positions_reset"] = "frame positions reset."
+
+-- The labels on a drag's green signals.
+L["movers.snap.bond"] = "BOND"
+L["movers.snap.no_bond"] = "NO BOND"
+L["movers.snap.snap"] = "SNAP"
 
 L["movers.unlock.frames_unlocked_drag_move"] =
 	"frames unlocked - drag to move, scroll to nudge (hold shift for "
@@ -860,10 +886,11 @@ L["options.general.glass_header"] = "Glass"
 L["options.general.grid.name"] = "Show the field"
 L["options.general.grid_header"] = "While frames are unlocked"
 L["options.general.grid_note"] =
-	"Edges and centres snap to the field's dots and to the other frames "
-		.. "on screen, which is what actually gets two bars lined up. Another "
-		.. "frame always wins over the field, and holding alt while you drag "
-		.. "turns the whole thing off for that one placement."
+	"A frame snaps to its parent's centre lines first, then to the other "
+		.. "frames on screen and the field's dots, which is what actually gets "
+		.. "two bars lined up. Another frame always wins over the field, and "
+		.. "holding Shift while you drag turns the whole thing off for that one "
+		.. "placement."
 L["options.general.how_much_deeper_chat"] =
 	"How much deeper chat, the quest log and other readable frames sit "
 		.. "than the rest of the UI. 0% matches the action bars and capsules; "

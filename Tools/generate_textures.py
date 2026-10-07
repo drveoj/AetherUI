@@ -611,6 +611,25 @@ def diamond():
         fill=255)))
 
 
+def diamond_rim():
+    """The hollow junction: Diamond's outline, for a node that is off the field.
+
+    The same corner-to-corner square, less a smaller one inside it. The rim
+    is 7 texels measured across it, so on a 10-unit junction it draws about a
+    unit wide, the hairline the board's hollow diamonds are.
+    """
+    n = 64
+    c = n / 2
+    inner = c - 0.5 - 7 * 2 ** 0.5        # half-diagonal less the rim, measured square to the edge
+
+    def draw(d, s):
+        d.polygon([(c * s, 0.5 * s), ((n - 0.5) * s, c * s),
+                   (c * s, (n - 0.5) * s), (0.5 * s, c * s)], fill=255)
+        d.polygon([(c * s, (c - inner) * s), ((c + inner) * s, c * s),
+                   (c * s, (c + inner) * s), ((c - inner) * s, c * s)], fill=0)
+    return rgba(1.0, _draw((n, n), draw))
+
+
 def slot_mask():
     """Alpha mask for icon corners. Rounded square, 64px, radius 18."""
     return rgba_lum(1.0, rrect_mask((64, 64), 18))
@@ -1727,6 +1746,7 @@ ASSETS = {
     "Frost": frost_tile,
     "Field-Dot": field_dot,
     "Diamond": diamond,
+    "Diamond-Rim": diamond_rim,
     "Slot-Mask": slot_mask,
     "Slot-Shade": slot_shade,
     "Slot-Gloss": slot_gloss,
