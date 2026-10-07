@@ -419,7 +419,16 @@ function Movers:StretchPair(name, len)
 end
 
 -- ---------------------------------------------------------------------------
--- grid and snapping
+-- the field, and snapping
+--
+-- THE LATTICE UNLOCK LOOK (board 4a). Unlocking dims the world and lays the
+-- FIELD over it: a dot every 24, a faint strand every 96, a dashed line down
+-- the middle, and the spine drawn solid across the whole screen at the
+-- capsules' centre line. Frames snap to the dots.
+--
+-- The handoff draws at 1920x1080, so its lengths are a fraction of the screen
+-- height (Px). The world cannot be desaturated from an addon - only darkened -
+-- so the dimming is a black veil under every frame of ours.
 --
 -- Everything below works in *screen pixels*, converts once at each boundary, and
 -- never mixes the two. That is deliberate: the last bug in this file came from
@@ -431,14 +440,39 @@ local grid
 
 local function GridConfig()
 	local c = A.db and A.db.profile.movers
-	return c or { grid = true, gridSize = 16, snap = true, snapDistance = 10 }
+	return c or { grid = true, snap = true, snapDistance = 10 }
 end
+
+--- A length from the handoff, in UIParent units on this screen.
+local REF_H = 1080
+local function Px(v) return v * (UIParent:GetHeight() or 768) / REF_H end
+Movers.Px = Px
+
+--- The field's spacing: a dot every 24, a strand every fourth dot.
+local function FieldStep() return Px(24) end
+Movers.FieldStep = FieldStep
 
 local function BuildGrid()
 	local f = CreateFrame("Frame", ADDON .. "MoverGrid", UIParent)
 	f:SetAllPoints(UIParent)
 	f:SetFrameStrata("BACKGROUND")
-	f.lines = {}
+	f.lines, f.dashes = {}, {}
+
+	-- The world, dimmed. Under every frame of ours: BACKGROUND, level 0.
+	f.veil = f:CreateTexture(nil, "BACKGROUND")
+	f.veil:SetAllPoints(f)
+	f.veil:SetColorTexture(0, 0, 0, 0.45)
+
+	-- One texture for every dot: REPEAT turns its texcoords into a count of
+	-- cells, which LayGrid sets from the step and the screen.
+	f.dots = f:CreateTexture(nil, "ARTWORK")
+	f.dots:SetAllPoints(f)
+	f.dots:SetTexture(A.Media.texture.fieldDot, "REPEAT", "REPEAT")
+
+	-- The spine, across the whole screen. Hung from the spine node itself, so
+	-- it goes where the capsules go while they are dragged.
+	f.spine = f:CreateLine(nil, "OVERLAY")
+
 	f:Hide()
 	return f
 end
@@ -460,58 +494,87 @@ end
 --  also what puts the grid and the guides on the skin-change sweep.
 local Tint = A.Widgets.Tint
 
---- Lay the grid out at the current resolution. Every fourth line is brighter,
---  which is what makes a grid readable rather than a grey haze.
+--- Lay the field out at the current resolution, out from the centre so the
+--  middle of the screen is always on a dot and a strand. "Show grid" off takes
+--  the dots, strands and centre line away and leaves the dimming and the
+--  spine, which are what say the frames are unlocked.
 local function LayGrid()
 	local cfg = GridConfig()
 	grid = grid or BuildGrid()
 
 	local w, h = UIParent:GetWidth(), UIParent:GetHeight()
-	local step = math.max(4, cfg.gridSize or 16)
+	local step = FieldStep()
 	local c = A.Palette.c.accent
-	local n = 0
-
 	local cx, cy = w / 2, h / 2
+	local field = cfg.grid ~= false
 
-	-- Out from the centre in both directions, so the centre line is always a
-	-- line. Placing a bar "in the middle" is the single most common thing anyone
-	-- does with this.
-	local x = 0
-	while x <= cx do
-		for _, px in ipairs(x == 0 and { cx } or { cx - x, cx + x }) do
-			n = n + 1
-			local t = GridLine(grid, n)
-			local major = (x % (step * 4) == 0)
-			Tint(t, c, major and 0.28 or 0.10)
-			t:ClearAllPoints()
-			t:SetPoint("TOP", grid, "TOPLEFT", px, 0)
-			t:SetPoint("BOTTOM", grid, "BOTTOMLEFT", px, 0)
-			t:SetWidth(x == 0 and 2 or 1)
+	-- The dots: the tile's dot is at its centre, so the offset that puts one
+	-- on the screen's centre is half a cell less the distance to it.
+	local u0, v0 = 0.5 - cx / step, 0.5 - cy / step
+	grid.dots:SetTexCoord(u0, u0 + w / step, v0, v0 + h / step)
+	Tint(grid.dots, c, 0.25)
+	grid.dots:SetShown(field)
+
+	-- A strand every fourth dot. The vertical centre is the dashed line below.
+	local n = 0
+	local function strand(vertical, at)
+		n = n + 1
+		local t = GridLine(grid, n)
+		Tint(t, c, 0.16)
+		t:ClearAllPoints()
+		if vertical then
+			t:SetPoint("TOP", grid, "TOPLEFT", at, 0)
+			t:SetPoint("BOTTOM", grid, "BOTTOMLEFT", at, 0)
+			t:SetWidth(1)
+		else
+			t:SetPoint("LEFT", grid, "BOTTOMLEFT", 0, at)
+			t:SetPoint("RIGHT", grid, "BOTTOMRIGHT", 0, at)
+			t:SetHeight(1)
 		end
-		x = x + step
 	end
-
-	local y = 0
-	while y <= cy do
-		for _, py in ipairs(y == 0 and { cy } or { cy - y, cy + y }) do
-			n = n + 1
-			local t = GridLine(grid, n)
-			local major = (y % (step * 4) == 0)
-			Tint(t, c, major and 0.28 or 0.10)
-			t:ClearAllPoints()
-			t:SetPoint("LEFT", grid, "BOTTOMLEFT", 0, py)
-			t:SetPoint("RIGHT", grid, "BOTTOMRIGHT", 0, py)
-			t:SetHeight(y == 0 and 2 or 1)
-		end
-		y = y + step
+	local major = step * 4
+	if field then
+		for k = major, cx, major do strand(true, cx - k); strand(true, cx + k) end
+		strand(false, cy)
+		for k = major, cy, major do strand(false, cy - k); strand(false, cy + k) end
 	end
-
 	for i = n + 1, #grid.lines do grid.lines[i]:Hide() end
+
+	-- The centre, dashed 6 on 8 off.
+	local d, y, dash, gap = 0, h, Px(6), Px(8)
+	while field and y > 0 do
+		d = d + 1
+		local t = grid.dashes[d]
+		if not t then
+			t = grid:CreateTexture(nil, "ARTWORK")
+			t:SetTexture(A.Media.texture.flat)
+			grid.dashes[d] = t
+		end
+		Tint(t, c, 0.3)
+		t:ClearAllPoints()
+		t:SetPoint("TOP", grid, "BOTTOMLEFT", cx, y)
+		t:SetSize(1, math.min(dash, y))
+		t:Show()
+		y = y - dash - gap
+	end
+	for i = d + 1, #grid.dashes do grid.dashes[i]:Hide() end
+
+	-- The spine, solid, across the screen - only while its capsules are here.
+	local spine = Movers.nodes.spine
+	if spine and Movers.registry[Movers.nodeOwner.spine] then
+		local l = grid.spine
+		l:SetStartPoint("CENTER", spine, -10000, 0)
+		l:SetEndPoint("CENTER", spine, 10000, 0)
+		l:SetThickness(Px(1.5))
+		l:SetColorTexture(c[1], c[2], c[3], 0.55)
+		l:Show()
+	else
+		grid.spine:Hide()
+	end
 end
 
 local function ShowGrid(show)
-	local cfg = GridConfig()
-	if show and cfg.grid ~= false then
+	if show then
 		LayGrid()
 		grid:Show()
 	elseif grid then
@@ -587,6 +650,70 @@ end
 
 Movers.__drawGuide = DrawGuide
 
+-- bonds ----------------------------------------------------------------------
+-- A line from each child's centre to its parent's, drawn only while unlocked
+-- (board 4a), and a junction on the nodes that are parents but have no handle
+-- of their own - the spine. The two halves of the pair get no bond: the spine
+-- is what joins them, and the field draws it.
+--
+-- LINES ANCHORED TO THE FRAMES THEMSELVES, so a drag carries its bonds with
+-- it and nothing has to be redrawn every frame. Above the field, below the
+-- handles.
+
+local bonds
+
+local function DrawBonds()
+	if not bonds then
+		bonds = CreateFrame("Frame", ADDON .. "MoverBonds", UIParent)
+		bonds:SetAllPoints(UIParent)
+		bonds:SetFrameStrata("HIGH")
+		bonds.lines, bonds.nodes = {}, {}
+	end
+	local c = A.Palette.c.accent
+
+	local n = 0
+	for _, e in pairs(Movers.registry) do
+		local pf = not e.pairLead and ParentFrame(e)
+		if pf then
+			n = n + 1
+			local l = bonds.lines[n] or bonds:CreateLine(nil, "ARTWORK")
+			bonds.lines[n] = l
+			l:SetStartPoint("CENTER", e.frame, 0, 0)
+			l:SetEndPoint("CENTER", pf, 0, 0)
+			l:SetThickness(Px(1.5))
+			l:SetColorTexture(c[1], c[2], c[3], 0.6)
+			l.child, l.parent = e.name, e.parent
+			l:Show()
+		end
+	end
+	for i = n + 1, #bonds.lines do bonds.lines[i]:Hide(); bonds.lines[i].child = nil end
+
+	local k = 0
+	for name, nf in pairs(Movers.nodes) do
+		if Movers.registry[Movers.nodeOwner[name]] then
+			k = k + 1
+			local t = bonds.nodes[k] or bonds:CreateTexture(nil, "OVERLAY")
+			bonds.nodes[k] = t
+			t:SetTexture(A.Media.texture.diamond)
+			t:SetSize(Px(10), Px(10))
+			t:ClearAllPoints()
+			t:SetPoint("CENTER", nf, "CENTER", 0, 0)
+			Tint(t, c, 1)
+			t.node = name
+			t:Show()
+		end
+	end
+	for i = k + 1, #bonds.nodes do bonds.nodes[i]:Hide(); bonds.nodes[i].node = nil end
+
+	bonds:Show()
+end
+
+Movers.__bonds = function() return bonds end
+
+local function HideBonds()
+	if bonds then bonds:Hide() end
+end
+
 --- Everything that moves when `entry` is dragged: the node itself, the other
 --  half of its pair, and everything bonded to either, however deep. None of
 --  them can be a snap target for that drag - they move with it, so snapping to
@@ -636,8 +763,10 @@ end
 Movers.__snapTargets = SnapTargets
 
 --- Move `lo` (one edge of the frame) so that one of ours lands on a target.
---  Returns the adjusted low edge and the line it caught, or nil.
-local function SnapAxis(lo, size, targets, step, threshold)
+--  Returns the adjusted low edge and the line it caught, or nil. `origin` is
+--  where the field's dots start on this axis - the screen's centre, which is
+--  where LayGrid lays them out from.
+local function SnapAxis(lo, size, targets, step, threshold, origin)
 	local best, bestAt, bestDist = nil, nil, threshold
 
 	-- our three interesting positions: low edge, centre, high edge
@@ -653,10 +782,11 @@ local function SnapAxis(lo, size, targets, step, threshold)
 		end
 	end
 
-	-- the grid is a weaker pull than another frame, so it only applies if
+	-- the field is a weaker pull than another frame, so it only applies if
 	-- nothing better caught
 	if not best and step and step > 0 then
-		local snapped = math.floor(lo / step + 0.5) * step
+		origin = origin or 0
+		local snapped = origin + math.floor((lo - origin) / step + 0.5) * step
 		if math.abs(snapped - lo) < threshold then return snapped, nil end
 	end
 
@@ -665,8 +795,43 @@ end
 
 -- ---------------------------------------------------------------------------
 
+--- The wire outline a node wears while unlocked (board 4a): a pill for a
+--  unit, a rounded rectangle for anything else, its junction - a diamond - at
+--  its centre, and its name in capitals on a tag in the top-left corner.
+--  Dressed again on every unlock, so a skin, a resolution or a size changed
+--  since the last one is picked up.
+--
+--  THE NAME IS NOT IN THE MIDDLE (Joe, 2026-10-07, in game). The middle is
+--  where the junction is and where the bonds and the dashed centre line meet,
+--  so a centred name had a diamond on it and lines through it. The tag is a
+--  frame of its own over the handle, with a dark backing, so whatever passes
+--  under it goes behind it instead of through the letters.
+local function DressHandle(entry)
+	local h = entry.handle
+	local c = A.Palette.c.accent
+	h:SetFillColor({ c[1], c[2], c[3], 0.06 })
+	h:SetEdgeColor({ c[1], c[2], c[3], 0.8 })
+	h.junction:SetSize(Px(10), Px(10))
+	Tint(h.junction, c, 1)
+
+	h.label:SetText(tostring(entry.label or entry.name):upper())
+	A.Widgets.Color(h.label, c)
+	local tag = h.tag
+	tag:SetFillColor({ 14 / 255, 11 / 255, 32 / 255, 0.9 })
+	tag:SetEdgeColor({ c[1], c[2], c[3], 0.35 })
+	local th = math.ceil((h.label:GetStringHeight() or 10) + 6)
+	tag:SetSize(math.ceil((h.label:GetStringWidth() or 0) + 12), th)
+	A.Glass.SetPanelCorner(tag, th / 2)
+	-- Inside the corner. A pill has no corner - its end is a half circle - so
+	-- its tag starts where the straight top edge does.
+	local inset = (entry.shape == "pill") and math.max(6, (h:GetHeight() or 0) / 2) or 6
+	tag:ClearAllPoints()
+	tag:SetPoint("TOPLEFT", h, "TOPLEFT", inset, -4)
+end
+
 local function CreateHandle(entry)
-	local h = A.Glass.CreatePanel(UIParent, { corner = 8, shadow = 8})
+	local h = (entry.shape == "pill") and A.Glass.CreatePill(UIParent, {})
+		or A.Glass.CreatePanel(UIParent, { corner = 8 })
 	h:SetFrameStrata("DIALOG")
 	h:SetAllPoints(entry.frame)
 	h:EnableMouse(true)
@@ -674,14 +839,16 @@ local function CreateHandle(entry)
 	h:RegisterForDrag("LeftButton")
 	h:Hide()
 
-	local c = A.Palette.c
-	h:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], 0.22 })
-	h:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.85 })
+	-- A child frame, so it draws over the handle's own junction; deaf to the
+	-- mouse, so a drag that starts on it still moves the node.
+	h.tag = A.Glass.CreatePanel(h, { corner = 8 })
+	h.tag:EnableMouse(false)
+	h.label = A.Widgets.Text(h.tag, "label", "CENTER")
+	h.label:SetPoint("CENTER", h.tag, "CENTER", 0, 0)
 
-	local label = A.Widgets.Text(h, "label", "CENTER")
-	label:SetPoint("CENTER")
-	label:SetText(entry.label or entry.name)
-	A.Widgets.Color(label, c.text)
+	h.junction = h:CreateTexture(nil, "OVERLAY")
+	h.junction:SetTexture(A.Media.texture.diamond)
+	h.junction:SetPoint("CENTER", h, "CENTER", 0, 0)
 
 	-- Dragging is tracked by hand rather than handed to StartMoving, because
 	-- StartMoving owns the frame's position for the length of the drag and there
@@ -729,10 +896,10 @@ local function CreateHandle(entry)
 		-- the line, and fighting a snap you cannot switch off is miserable.
 		if cfg.snap ~= false and not IsAltKeyDown() then
 			local xs, ys = SnapTargets(self._skip or { [f] = true })
-			local step = (cfg.grid ~= false) and math.max(4, cfg.gridSize or 16) or nil
+			local step = (cfg.grid ~= false) and FieldStep() or nil
 			local dist = cfg.snapDistance or 12
-			x, gx = SnapAxis(x, w, xs, step, dist)
-			y, gy = SnapAxis(y, h2, ys, step, dist)
+			x, gx = SnapAxis(x, w, xs, step, dist, UIParent:GetWidth() / 2)
+			y, gy = SnapAxis(y, h2, ys, step, dist, UIParent:GetHeight() / 2)
 		end
 
 		ClearGuides()
@@ -831,6 +998,7 @@ local function CreateHandle(entry)
 	h:EnableMouseWheel(true)
 
 	entry.handle = h
+	DressHandle(entry)
 	return h
 end
 
@@ -860,6 +1028,8 @@ end
 --                          one: bonded level to its right edge, dragged with
 --                          it, stretched apart with Ctrl. The target.
 --    pairMin = 40          the shortest the pair may be stretched.
+--    shape = "pill"        a unit: its unlock outline is a pill, as the unit
+--                          is (board 4a). Anything else is a rounded rectangle.
 
 --- Everything waiting on `name` as its parent is placed again: a node that
 --  registered before its parent sat on the screen, and is bonded now.
@@ -882,6 +1052,7 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.onPlaced = opts and opts.onPlaced or entry.onPlaced
 	entry.pairLead = opts and opts.pairLead or nil
 	entry.pairMin = opts and opts.pairMin or nil
+	entry.shape = opts and opts.shape or entry.shape
 
 	-- THE SAVED PARENT WINS over the module's default: a node somebody hung
 	-- elsewhere - or set free onto the screen - stays where they put it when
@@ -906,6 +1077,7 @@ function Movers:Register(name, frame, default, label, opts)
 	if Movers.unlocked then
 		if not entry.handle then CreateHandle(entry) end
 		entry.handle:Show()
+		DrawBonds()
 	end
 	return entry
 end
@@ -936,6 +1108,7 @@ function Movers:SetParent(name, parent)
 		if point then Place(entry.frame, point, UIParent, point, x, y) end
 	end
 	SavePosition(entry)
+	if Movers.unlocked then DrawBonds() end
 	return true
 end
 
@@ -950,6 +1123,7 @@ function Movers:Unregister(name)
 	if not entry then return end
 	if entry.handle then entry.handle:Hide() end
 	Movers.registry[name] = nil
+	if Movers.unlocked then DrawBonds() end
 end
 
 function Movers:Restore(name)
@@ -1001,18 +1175,39 @@ end
 -- are trying to arrange - and the one place it must never be is on top of the
 -- frame you are dragging. Not a mover entry: a mover entry is moved by its
 -- handle, and a handle over the button that hides the handles is a circle.
+--
+-- THE MODE PILL (board 4a): a diamond, "Lattice unlocked", the hint, and a
+-- LOCK chip, at the top of the screen. The whole pill locks when pressed.
 -- ---------------------------------------------------------------------------
 
-local LOCK_W, LOCK_H = 132, 34
+local LOCK_H = 34
 
 local function LockSpot()
 	A.db.profile.anchors = A.db.profile.anchors or {}
 	return A.db.profile.anchors.__lockButton
 end
 
+--- Lay the pill out round its words, which are only measurable once set.
+local function LayLockButton(b)
+	local c = A.Palette.c
+	b:SetFillColor({ 14 / 255, 11 / 255, 32 / 255, 0.85 })
+	b:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.45 })
+	Tint(b.glyph, c.accent, 1)
+	A.Widgets.Color(b.label, c.text)
+	A.Widgets.Color(b.hint, c.textDim)
+	b.chip:SetFillColor(c.btnFill)
+	A.Widgets.Color(b.chipText, c.btnFillText)
+
+	local chipW = math.ceil(b.chipText:GetStringWidth() or 0) + 24
+	b.chip:SetSize(chipW, LOCK_H - 10)
+	local w = 16 + 9 + 10 + (b.label:GetStringWidth() or 0) + 6
+		+ (b.hint:GetStringWidth() or 0) + 14 + chipW + 5
+	b:SetSize(math.ceil(w), LOCK_H)
+end
+
 local function BuildLockButton()
-	local b = A.Widgets.CreateButton(UIParent, { corner = 10 })
-	b:SetSize(LOCK_W, LOCK_H)
+	local b = A.Glass.CreatePanel(UIParent, { frameType = "Button", corner = LOCK_H / 2 })
+	b:SetSize(LOCK_H * 8, LOCK_H)
 	b:SetFrameStrata("FULLSCREEN_DIALOG")
 	b:SetToplevel(true)
 	b:EnableMouse(true)
@@ -1021,17 +1216,25 @@ local function BuildLockButton()
 	b:RegisterForDrag("LeftButton")
 	b:Hide()
 
-	local c = A.Palette.c
-	b.label = A.Widgets.Text(b, "label", "CENTER")
-	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
-	b.label:SetText(L.common.lock_frames)
-	A.Widgets.Color(b.label, c.text)
-	b.__aetherLabel = b.label
-
 	b.glyph = b:CreateTexture(nil, "OVERLAY")
-	b.glyph:SetSize(12, 12)
-	b.glyph:SetPoint("LEFT", b, "LEFT", 12, 0)
-	A.Media:SetIcon(b.glyph, "lock")
+	b.glyph:SetTexture(A.Media.texture.diamond)
+	b.glyph:SetSize(9, 9)
+	b.glyph:SetPoint("LEFT", b, "LEFT", 16, 0)
+
+	b.label = A.Widgets.Text(b, "label", "LEFT")
+	b.label:SetPoint("LEFT", b.glyph, "RIGHT", 10, 0)
+	b.label:SetText(L.movers.pill.unlocked)
+
+	b.hint = A.Widgets.Text(b, "label", "LEFT")
+	b.hint:SetPoint("LEFT", b.label, "RIGHT", 6, 0)
+	b.hint:SetText(L.movers.pill.hint)
+
+	b.chip = A.Glass.CreatePanel(b, { corner = (LOCK_H - 10) / 2 })
+	b.chip:SetPoint("RIGHT", b, "RIGHT", -5, 0)
+	b.chip:EnableMouse(false)
+	b.chipText = A.Widgets.Text(b.chip, "label", "CENTER")
+	b.chipText:SetPoint("CENTER", b.chip, "CENTER", 0, 0)
+	b.chipText:SetText(L.movers.pill.lock)
 
 	-- DRAG AND CLICK ON ONE BUTTON. RegisterForDrag takes the button that
 	-- starts a drag out of the click path only once the drag actually starts,
@@ -1066,16 +1269,17 @@ local function ShowLockButton(show)
 	-- PLACED EVERY TIME, from clear. Anchors set again without clearing leave a
 	-- frame spanned between where it was and where it is being put.
 	local spot = LockSpot()
+	local scale = A.db.profile.scale or 1
 	b:ClearAllPoints()
 	if spot then
 		b:SetPoint(spot.point, UIParent, spot.relPoint, spot.x, spot.y)
 	else
-		-- Above the middle rather than in it: the middle of the screen is where
-		-- the frames you have come to move mostly are.
-		b:SetPoint("CENTER", UIParent, "CENTER", 0, 170)
+		-- Top centre, 22 down, as the board has it: clear of the frames you
+		-- have come to move, which are mostly lower down.
+		b:SetPoint("TOP", UIParent, "TOP", 0, -Px(22) / scale)
 	end
-	b:SetScale(A.db.profile.scale or 1)
-	A.Widgets.SetButtonState(b, true, false)
+	b:SetScale(scale)
+	LayLockButton(b)
 	b:Show()
 	b:Raise()
 end
@@ -1091,20 +1295,24 @@ function Movers:Unlock()
 		-- that is still collapsed gets a handle nobody can grab.
 		if entry.preview then pcall(entry.preview, true) end
 		if not entry.handle then CreateHandle(entry) end
+		DressHandle(entry)
 		entry.handle:Show()
 	end
+	-- After the previews, so a bond is drawn to a frame that is up.
+	DrawBonds()
 	Announce()
 	A:Print(A.F(L.movers.unlock.frames_unlocked_drag_move,
-		A.Hi(L.common.lock_frames), A.Hi("/lattice lock")))
-	A:Print(A.Dim("Edges snap to the grid and to other frames; hold alt while dragging"
-		.. " to place freely. Frames that only appear when the game says so - the pet"
-		.. " bar, the taxi button - are held up so you can place them."))
+		A.Hi(L.movers.pill.lock), A.Hi("/lattice lock")))
+	A:Print(A.Dim("Edges snap to the field's dots and to other frames; hold alt while"
+		.. " dragging to place freely. Frames that only appear when the game says so -"
+		.. " the pet bar, the taxi button - are held up so you can place them."))
 end
 
 function Movers:Lock()
 	Movers.unlocked = false
 	ShowGrid(false)
 	ClearGuides()
+	HideBonds()
 	ShowLockButton(false)
 	for _, entry in pairs(Movers.registry) do
 		if entry.handle then entry.handle:Hide() end
@@ -1114,8 +1322,8 @@ function Movers:Lock()
 	A:Print(L.movers.lock.frames_locked)
 end
 
---- Re-lay the grid after a settings change, so turning it off or changing the
---  spacing is visible without locking and unlocking again.
+--- Re-lay the field after a settings change, so turning it off is visible
+--  without locking and unlocking again.
 function Movers:RefreshGrid()
 	if Movers.unlocked then ShowGrid(true) end
 	if not Movers.unlocked and grid then grid:Hide() end
@@ -1132,5 +1340,6 @@ function Movers:ResetAll()
 		entry.parent, entry.free = entry.defaultParent, nil
 	end
 	Movers:RestoreAll()
+	if Movers.unlocked then DrawBonds() end
 	A:Print(L.movers.reset_all.frame_positions_reset)
 end

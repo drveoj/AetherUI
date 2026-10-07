@@ -1267,14 +1267,17 @@ end
 function UF:RegisterMovers()
 	local cfg = A.Config:Module("unitframes")
 	local half = (math.max(cfg.width, MinWidth(cfg)) + cfg.gap) / 2
+	-- `shape = "pill"` on every unit: unlocked, a unit is drawn as the pill
+	-- it is (Lattice board 4a).
 	A.Movers:Register("player", self.player,
-		{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 190 }, "Player")
+		{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 190 }, "Player",
+		{ shape = "pill" })
 	-- THE PAIR. The target is the player's other half, level with it and the
 	-- spine between them: dragged with it, stretched apart with Ctrl, never
 	-- shorter than the spine's minimum (Joe, 2026-10-07).
 	A.Movers:Register("target", self.target,
 		{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 190 }, "Target",
-		{ parent = "player", pairLead = "player", pairMin = SPINE_MIN })
+		{ parent = "player", pairLead = "player", pairMin = SPINE_MIN, shape = "pill" })
 	-- The spine is a node in its own right - the bars hang from its centre -
 	-- measured first, so what hangs from it is bonded to where it really is.
 	self:MeasureSpine()
@@ -1286,7 +1289,7 @@ function UF:RegisterMovers()
 		-- the player goes.
 		A.Movers:Register("pet", self.pet,
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, "Pet",
-			{ parent = "player" })
+			{ parent = "player", shape = "pill" })
 	end
 	if self.tot then
 		-- Under the TARGET, which is the mirror of where the pet sits and
@@ -1294,7 +1297,7 @@ function UF:RegisterMovers()
 		-- thing above it. Bonded to the target.
 		A.Movers:Register("targettarget", self.tot,
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 140 },
-			"Target of Target", { parent = "target" })
+			"Target of Target", { parent = "target", shape = "pill" })
 	end
 end
 

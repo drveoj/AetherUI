@@ -577,6 +577,40 @@ def frost_tile():
     return rgba_lum(1.0, field)
 
 
+def field_dot():
+    """One cell of the Lattice unlock field: a single dot in the middle of it.
+
+    Tiled with REPEAT across the whole screen, so the field is one texture
+    rather than three thousand. The texcoords set the spacing (24 at a 1080
+    screen, the handoff's number) and put a dot on the screen's centre; see
+    LayField in Core/Movers.lua. Centred at u = v = 0.5, which is what that
+    arithmetic assumes.
+
+    32 texels across one cell, which is about 24 physical pixels at 1080, so a
+    1.4-texel radius draws the handoff's one-pixel dot with a soft edge.
+    """
+    n = 32
+    mask = _draw((n, n), lambda d, s: d.ellipse(
+        [(n / 2 - 1.4) * s, (n / 2 - 1.4) * s, (n / 2 + 1.4) * s, (n / 2 + 1.4) * s],
+        fill=255))
+    return rgba(1.0, mask)
+
+
+def diamond():
+    """The Lattice junction: a square stood on its corner, filling the cell.
+
+    Drawn, not rotated at runtime. Texture:SetRotation turns the texcoords
+    inside a rect that stays square, so a rotated square has its corners cut
+    off by its own frame. Corner to corner here, so a 10-unit junction is a
+    10-unit texture.
+    """
+    n = 64
+    c = n / 2
+    return rgba(1.0, _draw((n, n), lambda d, s: d.polygon(
+        [(c * s, 0.5 * s), ((n - 0.5) * s, c * s), (c * s, (n - 0.5) * s), (0.5 * s, c * s)],
+        fill=255)))
+
+
 def slot_mask():
     """Alpha mask for icon corners. Rounded square, 64px, radius 18."""
     return rgba_lum(1.0, rrect_mask((64, 64), 18))
@@ -1691,6 +1725,8 @@ ASSETS = {
     "Glass-Pill-Shadow": glass_pill_shadow,
     "Noise": noise_tile,
     "Frost": frost_tile,
+    "Field-Dot": field_dot,
+    "Diamond": diamond,
     "Slot-Mask": slot_mask,
     "Slot-Shade": slot_shade,
     "Slot-Gloss": slot_gloss,
@@ -1718,7 +1754,7 @@ ASSETS = {
     "Toolbox-Icons": toolbox_icons,
 }
 
-NO_BLEED = {"Noise", "Frost", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette", "Threat-Edge",
+NO_BLEED = {"Noise", "Frost", "Field-Dot", "Bar-Flat", "Bar-Smooth", "Bar-Glow", "Vignette", "Threat-Edge",
             "Glass-Shadow", "Glass-Pill-Shadow", "Minimap-Border",
             # Its rows are neighbours. Bleeding would pull each word's ink into
             # the pill above and below it; it fills RGB itself instead.

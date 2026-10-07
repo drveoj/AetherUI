@@ -47,6 +47,12 @@ Media.texture = {
 	-- and it is authored at a scale you can see - tiled ~3x across a screen, not
 	-- ~20x. See frost_tile() in Tools/generate_textures.py.
 	frost       = TEX .. "Frost",
+	-- 32x32, one dot centred in the cell. The Lattice unlock field, tiled with
+	-- REPEAT; the texcoords set the spacing. See LayField in Core/Movers.lua.
+	fieldDot    = TEX .. "Field-Dot",
+	-- 64x64, a square on its corner filling the cell: the Lattice junction.
+	-- Drawn rather than rotated, because SetRotation clips a square's corners.
+	diamond     = TEX .. "Diamond",
 
 	-- ability / aura slots
 	slotMask    = TEX .. "Slot-Mask",

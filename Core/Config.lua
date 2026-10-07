@@ -142,14 +142,12 @@ Config.defaults = {
 
 		anchors = {},
 
-		-- Unlock-mode placement aids. gridSize is in UIParent units, the same
-		-- space anchors are saved in, so "16" means the same thing at any
-		-- resolution. snapDistance is how near an edge has to come before it is
-		-- caught; much above ~20 and you can no longer put a frame where you
-		-- actually meant to.
+		-- Unlock-mode placement aids. `grid` shows the Lattice field, whose
+		-- spacing is fixed (Movers.FieldStep). snapDistance is how near an
+		-- edge has to come before it is caught; much above ~20 and you can no
+		-- longer put a frame where you actually meant to.
 		movers = {
 			grid         = true,
-			gridSize     = 16,
 			snap         = true,
 			snapDistance = 12,
 		},
@@ -1024,6 +1022,10 @@ end
 --  Kept deliberately small and deliberately loud in the code: a config that
 --  silently half-applies is worse than one that resets.
 local function Migrate(db)
+	-- The grid's spacing slider went with the Lattice field, whose spacing is
+	-- fixed. A saved value would sit in the profile meaning nothing.
+	if db.profile.movers then db.profile.movers.gridSize = nil end
+
 	local m = db.profile.modules
 	if not m then return end
 

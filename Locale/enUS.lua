@@ -298,8 +298,6 @@ L["common.item_spell_tooltips_s"] = "item and spell tooltips %s."
 L["common.left_click_targets_right"] =
 	"Left-click targets, right-click opens the unit menu."
 
-L["common.lock_frames"] = "Lock frames"
-
 L["common.look"] = "Look"
 
 L["common.most_show"] = "Most to show"
@@ -408,6 +406,11 @@ L["mini.paint.nothing_playing"] = "Nothing playing"
 L["movers.create_handle.can_t_move_frames"] = "can't move frames in combat."
 
 L["movers.lock.frames_locked"] = "frames locked."
+
+-- The mode pill at the top of the screen while unlocked (Lattice board 4a).
+L["movers.pill.unlocked"] = "Lattice unlocked"
+L["movers.pill.hint"] = "· drag a node · hold Alt for free placement"
+L["movers.pill.lock"] = "LOCK"
 
 L["movers.reset_all.frame_positions_reset"] = "frame positions reset."
 
@@ -854,15 +857,13 @@ L["options.general.class_color_health.name"] = "Class-coloured health"
 L["options.general.corner.name"] = "Panel corner radius"
 L["options.general.general"] = "General"
 L["options.general.glass_header"] = "Glass"
-L["options.general.grid.name"] = "Show grid"
+L["options.general.grid.name"] = "Show the field"
 L["options.general.grid_header"] = "While frames are unlocked"
 L["options.general.grid_note"] =
-	"Edges and centres snap to the grid and to the other frames on "
-		.. "screen, which is what actually gets two bars lined up. Another "
-		.. "frame always wins over the grid, and holding alt while you drag "
+	"Edges and centres snap to the field's dots and to the other frames "
+		.. "on screen, which is what actually gets two bars lined up. Another "
+		.. "frame always wins over the field, and holding alt while you drag "
 		.. "turns the whole thing off for that one placement."
-L["options.general.grid_size.desc"] = "Every fourth line is drawn brighter."
-L["options.general.grid_size.name"] = "Grid spacing"
 L["options.general.how_much_deeper_chat"] =
 	"How much deeper chat, the quest log and other readable frames sit "
 		.. "than the rest of the UI. 0% matches the action bars and capsules; "

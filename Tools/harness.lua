@@ -640,7 +640,8 @@ local function newTexture(owner, layer, sub)
 	function t:GetParent() return self.__owner end
 	function t:SetDrawLayer(l, s2) self.__layer, self.__sub = l, s2 end
 	function t:GetDrawLayer() return self.__layer, self.__sub end
-	function t:SetTexture(path) self.__tex = path end
+	-- The wrap modes recorded: "REPEAT" is what turns texcoords into a tile count.
+	function t:SetTexture(path, wrapH, wrapV) self.__tex = path; self.__wrap = { wrapH, wrapV } end
 	function t:GetTexture() return self.__tex end
 	--- Real, and missing until now - so every SetDesaturated in this addon was
 	--  a pcall onto nothing and the junk drain had never once been checked.
@@ -1123,6 +1124,19 @@ function CreateFrame(kind, name, parent, template)
 		end
 		self.__regions[#self.__regions + 1] = t
 		return t
+	end
+	-- A LINE IS A TEXTURE WITH TWO ENDS (SimpleLineAPIDocumentation.lua, both
+	-- clients). Its ends are anchored to frames and recorded, so a test can ask
+	-- what a bond joins rather than where it was drawn.
+	function f:CreateLine(n, layer, tmpl, sub)
+		local l = self:CreateTexture(n, layer, tmpl, sub)
+		function l:SetStartPoint(point, rel, x, y) self.__start = { point, rel, x or 0, y or 0 } end
+		function l:SetEndPoint(point, rel, x, y) self.__end = { point, rel, x or 0, y or 0 } end
+		function l:GetStartPoint() local s = self.__start or {} return s[1], s[2], s[3], s[4] end
+		function l:GetEndPoint() local e = self.__end or {} return e[1], e[2], e[3], e[4] end
+		function l:SetThickness(v) self.__thickness = v end
+		function l:GetThickness() return self.__thickness or 1 end
+		return l
 	end
 	function f:GetRegions() return unpack(self.__regions or {}) end
 	function f:CreateFontString(n, layer)
@@ -21655,17 +21669,23 @@ do
 	check(g ~= nil and g:IsShown(), "the grid appears with the handles")
 	check(#g.lines > 0, "and has lines in it")
 
+	-- OFF TAKES THE FIELD, NOT THE MODE. The dimming and the spine are what
+	-- say the frames are unlocked; the dots, strands and centre line go.
 	A.db.profile.movers.grid = false
 	M:RefreshGrid()
-	check(not g:IsShown(), "turning it off hides it without locking first")
+	check(g:IsShown() and g.veil:IsShown() and not g.dots:IsShown()
+		and not (g.lines[1] and g.lines[1]:IsShown()),
+		"turning the field off takes the dots and strands without locking first,"
+		.. " and leaves the dimming")
 	A.db.profile.movers.grid = true
 	M:RefreshGrid()
-	check(g:IsShown(), "and back on again")
+	check(g.dots:IsShown() and g.lines[1]:IsShown(), "and back on again")
 
 	-- A controlled screen: one frame being dragged, one frame to catch on. The
 	-- real registry has a dozen entries whose edges would make "did it snap to
-	-- the thing I meant" unanswerable.
-	UIParent:SetSize(1000, 600)
+	-- the thing I meant" unanswerable. 1080 tall, the handoff's own screen, so
+	-- the field's step is exactly 24 and its dots run out from x = 500.
+	UIParent:SetSize(1000, 1080)
 	UIParent.__scale = 1
 
 	local entry = M.registry.quests
@@ -21680,7 +21700,8 @@ do
 
 	local saved = M.registry
 	M.registry = { quests = entry, __t = { name = "__t", frame = target } }
-	A.db.profile.movers.gridSize = 20
+	check(math.abs(M.FieldStep() - 24) < 1e-6,
+		"on a 1080 screen the field's step is the handoff's 24 (" .. M.FieldStep() .. ")")
 	A.db.profile.movers.snapDistance = 12
 
 	-- Everything below is expressed in UIParent units and converted at the
@@ -21724,23 +21745,22 @@ do
 	check(math.abs(droppedX() - 405) < 0.01,
 		("holding alt places it exactly where the cursor says (%.1f)"):format(droppedX()))
 
-	-- Far from anything, the grid is what is left.
+	-- Far from anything, the field is what is left - its dots, counted from
+	-- the centre: 500 + 13 x 24 = 812.
 	place(803, 100)
 	h:GetScript("OnDragStart")(h)
 	h:GetScript("OnUpdate")(h)
-	check(math.abs(droppedX() - 800) < 0.01,
-		("with nothing near, the grid catches it (803 -> %.1f)"):format(droppedX()))
+	check(math.abs(droppedX() - 812) < 0.01,
+		("with nothing near, a dot of the field catches it, counted from the"
+		.. " centre (803 -> %.1f, wanted 812)"):format(droppedX()))
 
-	-- ...but another frame always outranks it: 405 is 5 from the frame edge and
-	-- 5 from the grid line at 400 too, so this only proves the order if the grid
-	-- is somewhere else entirely.
-	A.db.profile.movers.gridSize = 26
+	-- ...but another frame always outranks it: from 405 the dot at 404 is one
+	-- away and the frame's edge at 400 is five.
 	place(405, 100)
 	h:GetScript("OnDragStart")(h)
 	h:GetScript("OnUpdate")(h)
 	check(math.abs(droppedX() - 400) < 0.01,
-		("a frame edge beats a nearer grid line (%.1f)"):format(droppedX()))
-	A.db.profile.movers.gridSize = 20
+		("a frame edge beats a nearer dot (%.1f)"):format(droppedX()))
 
 	A.db.profile.movers.snap = false
 	place(803, 100)
@@ -21769,7 +21789,107 @@ do
 	check(not A.Movers.__test_guideShown(2),
 		"and it is cleared on lock even though no vertical guide was ever made -"
 		.. " the case ipairs skipped")
+	UIParent:SetSize(1024, 768)
 	A:Reconfigure()
+end
+
+-- THE LATTICE UNLOCK LOOK (board 4a): the dimmed world and the field, the
+-- spine across the screen, the mode pill, wire outlines with junctions, and a
+-- bond from each child to its parent.
+print("== lattice unlock: the look ==")
+do
+	local M = A.Movers
+	UIParent:SetSize(1000, 1080)
+	A.db.profile.anchors.__lockButton = nil
+	M:Unlock()
+	local g = _G.AetherUIMoverGrid
+
+	check(g.veil:IsShown() and select(4, unpack(g.veil.__color or {})) == 0.45,
+		"the world is dimmed under everything of ours")
+	local u0, u1, v0 = g.dots:GetTexCoord()
+	check(g.dots:GetTexture() == A.Media.texture.fieldDot and g.dots.__wrap[1] == "REPEAT"
+		and math.abs(u0 - (0.5 - 500 / 24)) < 1e-6 and math.abs(u1 - u0 - 1000 / 24) < 1e-6
+		and math.abs(v0 - (0.5 - 540 / 24)) < 1e-6,
+		"the dots are one repeating texture, a dot every 24, one on the centre ("
+		.. tostring(u0) .. ", " .. tostring(u1) .. ", " .. tostring(v0) .. ")")
+	local strandAt96 = false
+	for _, t in ipairs(g.lines) do
+		local _, _, _, x = t:GetPoint(1)
+		if t:IsShown() and x and math.abs(x - (500 + 96)) < 1e-6 then strandAt96 = true end
+	end
+	check(strandAt96, "a strand every fourth dot, 96 out from the centre")
+	check(#g.dashes > 10 and g.dashes[1]:IsShown(), "and the centre is dashed")
+	local _, rel = g.spine:GetStartPoint()
+	check(g.spine:IsShown() and rel == M.nodes.spine,
+		"the spine is drawn across the screen, hung from the spine itself")
+
+	-- The mode pill, top centre, and it still locks.
+	local pill = M.lockButton
+	check(pill:IsShown() and pill.label:GetText() == "Lattice unlocked"
+		and pill.chipText:GetText() == "LOCK" and pill:GetPoint(1) == "TOP",
+		"the mode pill says Lattice unlocked with a LOCK chip, at the top centre")
+
+	-- Wire outlines: a unit is a pill, anything else a rounded rectangle.
+	local player, bar1 = M.registry.player, M.registry.bar1
+	check(player.handle._kind == "pill" and bar1.handle._kind == "panel",
+		"a unit's outline is a pill, a bar's a rounded rectangle")
+	check(player.handle.label:GetText() == "PLAYER",
+		"its name in capitals (" .. tostring(player.handle.label:GetText()) .. ")")
+	-- ON A TAG IN THE TOP-LEFT, not in the middle where the junction and the
+	-- bonds are (Joe, in game, 2026-10-07): a frame over the handle, so lines
+	-- pass behind it, and deaf to the mouse so a drag from it still works.
+	local function tagAt(handle)
+		local tag = handle.tag
+		if not tag then return "no tag" end
+		local point, rel = tag:GetPoint(1)
+		if handle.label:GetParent() ~= tag then return "label not on the tag" end
+		if rel ~= handle or point ~= "TOPLEFT" then return "tag at " .. tostring(point) end
+		if tag:IsMouseEnabled() then return "tag takes the mouse" end
+		return "ok"
+	end
+	check(tagAt(player.handle) == "ok" and tagAt(bar1.handle) == "ok",
+		"the name is on a tag in the top-left corner, off the junction ("
+		.. tagAt(player.handle) .. ", " .. tagAt(bar1.handle) .. ")")
+	local _, _, _, pillX = player.handle.tag:GetPoint(1)
+	check(pillX >= player.handle:GetHeight() / 2 - 1e-6,
+		"and a pill's tag starts past its rounded end (" .. tostring(pillX) .. ")")
+	check(player.handle.junction:GetTexture() == A.Media.texture.diamond
+		and player.handle.junction:IsShown(), "and a junction diamond at its centre")
+
+	-- Bonds: child to parent, none for the pair, none for a free node.
+	local lines = {}
+	for _, l in ipairs(M.__bonds().lines) do
+		if l:IsShown() and l.child then lines[l.child] = l end
+	end
+	local function joins(child, parentFrame)
+		local l = lines[child]
+		if not l then return false end
+		local _, a = l:GetStartPoint()
+		local _, b = l:GetEndPoint()
+		return a == M.registry[child].frame and b == parentFrame
+	end
+	check(joins("pet", player.frame), "a bond joins the pet to the player")
+	check(joins("targettarget", M.registry.target.frame), "and the ToT to the target")
+	check(joins("bar1", M.nodes.spine), "bar 1 is bonded to the spine")
+	check(lines.target == nil, "the target has no bond - the spine joins the pair")
+	check(lines.chat == nil, "and a node on the screen has none")
+	local spineJunction = false
+	for _, t in ipairs(M.__bonds().nodes) do
+		if t:IsShown() and t.node == "spine" then spineJunction = true end
+	end
+	check(spineJunction, "the spine has a junction of its own")
+
+	M:Lock()
+	check(not M.__bonds():IsShown() and not g:IsShown() and not pill:IsShown(),
+		"locking takes the field, the bonds and the pill away")
+	UIParent:SetSize(1024, 768)
+	A:Reconfigure()
+
+	-- The spacing slider went with the fixed field, and so does its setting.
+	local db = { profile = { movers = { grid = true, gridSize = 20 } } }
+	A.Config.Migrate(db)
+	check(db.profile.movers.gridSize == nil and db.profile.movers.grid == true,
+		"an old grid spacing is dropped from the profile")
 end
 
 -- ---------------------------------------------------------------------------

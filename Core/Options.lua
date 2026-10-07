@@ -355,9 +355,9 @@ local function GeneralGroup()
 
 		gridHeader = header(L.options.general.grid_header),
 		gridNote = note(L.options.general.grid_note),
+		-- No spacing slider: the field is the handoff's 24 at a 1080 screen,
+		-- the same lattice for everybody (Lattice board 4a).
 		grid = toggle(L.options.general.grid.name, nil, { "movers", "grid" }, { after = "grid" }),
-		gridSize = range(L.options.general.grid_size.name, L.options.general.grid_size.desc,
-			{ "movers", "gridSize" }, 4, 64, 2, { after = "grid" }),
 		snap = toggle(L.options.general.snap.name, nil, { "movers", "snap" }, { after = "grid" }),
 		snapDistance = range(L.options.general.snap_distance.name, L.options.general.snap_distance.desc,
 			{ "movers", "snapDistance" }, 2, 30, 1, { after = "grid" }),
