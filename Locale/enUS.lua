@@ -189,6 +189,10 @@ L["cmd.quests.questtracker_module_enabled"] =
 	"questtracker module is not enabled."
 L["cmd.quests.tracking_reset"] = "tracking reset."
 
+L["cmd.resources.no_tray"] = "this build has no resource tray"
+L["cmd.resources.none_s"] = "no class resource on this character - %s"
+L["cmd.resources.no_maximum"] = "nothing reports a maximum"
+
 L["cmd.scale.scale_2f"] = "scale -> %.2f"
 L["cmd.scale.scale_takes_0_6"] =
 	"scale takes 0.6 - 1.6 (currently %.2f). 1.0 is the default; 0.71 "
@@ -1049,6 +1053,17 @@ L["options.quest.whatever_does_fit_reported"] =
 L["options.quest.whitelist_mode_only_blizzard"] =
 	"Whitelist mode only. Blizzard caps its list at five."
 
+L["options.resources.header"] = "Class resources"
+L["options.resources.display.name"] = "Show the resource tray"
+L["options.resources.display.desc"] =
+	"The shelf under your own frame carrying combo points and the like. In"
+	.. " combat only drops the three-second grace after a change and the"
+	.. " dimmed full-bar state with it."
+L["options.resources.enabled.name"] = "Class resources"
+L["options.resources.enabled.desc"] =
+	"Off removes the tray entirely. Characters with no secondary resource"
+	.. " never have one either way."
+
 L["options.stub.line"] = "Lattice's settings have a window of their own."
 L["options.stub.open"] = "Open Lattice settings"
 
@@ -1223,6 +1238,22 @@ L["presets.set_bars.blurb3"] =
 L["presets.set_bars.label"] = "Classic Corner"
 L["presets.set_bars.label2"] = "Centre focus"
 L["presets.set_bars.label3"] = "Bottom Corners"
+
+-- resources ---------------------------------------------------------------
+--
+-- The preview's labels: the name of one board in a walkthrough, one key each,
+-- so a translator can put the class and the resource in their own order.
+L["resources.demo.combo"] = "Rogue · combo points"
+L["resources.demo.shards"] = "Warlock · soul shards"
+L["resources.demo.embers"] = "Warlock · burning embers"
+L["resources.demo.fury"] = "Warlock · demonic fury"
+L["resources.demo.runes"] = "Death Knight · runes and runic power"
+L["resources.demo.chi"] = "Monk · chi"
+L["resources.demo.holy"] = "Paladin · holy power"
+L["resources.demo.orbs"] = "Priest · shadow orbs"
+L["resources.demo.eclipse"] = "Druid · eclipse"
+L["resources.demo.showing_s"] = "resource preview: %s"
+L["resources.demo.off"] = "resource preview off"
 
 -- questlog ----------------------------------------------------------------
 

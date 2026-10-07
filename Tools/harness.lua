@@ -697,9 +697,22 @@ local function newTexture(owner, layer, sub)
 	-- and no check could tell the difference.
 	function t:SetDesaturated(on) self.__desaturated = on and true or false end
 	function t:IsDesaturated() return self.__desaturated == true end
+	-- RECORDED, not merely validated. A gradient is where a colour ends up on
+	-- anything drawn as a lit face - the level disc, and every resource pip -
+	-- and a mock that threw the stops away left GetVertexColor as the only
+	-- colour a test could read, which is white on a lit face.
 	function t:SetGradient(orient, c1, c2)
 		if type(orient) ~= "string" then fail("SetGradient orientation " .. tostring(orient)) end
 		if type(c1) ~= "table" then fail("SetGradient c1 not a colour object") end
+		if type(c2) ~= "table" then fail("SetGradient c2 not a colour object") end
+		self.__gradient = { orient,
+			{ c1.r, c1.g, c1.b, c1.a }, { c2.r, c2.g, c2.b, c2.a } }
+	end
+	--- The two stops, top first, or nil if this texture is not drawn as one.
+	function t:GetGradient()
+		local g = self.__gradient
+		if not g then return nil end
+		return g[1], g[2], g[3]
 	end
 	--- Recorded, not just validated.
 	--
@@ -1133,8 +1146,10 @@ function CreateFrame(kind, name, parent, template)
 	f.__events = {}
 	function f:RegisterEvent(e)
 		if type(e) ~= "string" then error("bad event") end
-		-- pretend a couple of retail-only events do not exist here
-		if e == "UNIT_POWER_FREQUENT" then error("unknown event") end
+		-- UNIT_POWER_FREQUENT used to be refused here as "retail-only". It is
+		-- not: both clients document it (UnitDocumentation.lua - Era :2997,
+		-- Forever :4514), and the resource tray's own power events depend on
+		-- reaching it (2026-10-07).
 		self.__events[e] = true
 	end
 	function f:UnregisterEvent(e) self.__events[e] = nil end
@@ -1367,6 +1382,9 @@ function CreateFrame(kind, name, parent, template)
 	-- a no-op here would agree with a drawer that was merely put on a lower
 	-- frame level - which is the bug, drawn at the same coordinates.
 	function f:SetClipsChildren(v) self.__clips = v and true or false end
+	-- Readable: the resource tray and the bags drawer meet their neighbours
+	-- by clipping, so "is this clipped?" is a real question for a check.
+	function f:GetClipsChildren() return self.__clips == true end
 	function f:DoesClipChildren() return self.__clips or false end
 	-- Strata and level are modelled rather than swallowed: the last minimap bug
 	-- was purely an ordering one, and a mock that forgets both cannot see it.
@@ -1514,6 +1532,7 @@ function CreateFrame(kind, name, parent, template)
 		end
 		function f:GetStatusBarTexture() return self.__barTex end
 		function f:SetStatusBarColor(r, g, b, a) self.__barTex:SetVertexColor(r, g, b, a) end
+		function f:GetStatusBarColor() return self.__barTex:GetVertexColor() end
 		function f:SetMinMaxValues(a, b) self.__min, self.__max = a, b end
 		function f:GetMinMaxValues() return self.__min, self.__max end
 		--- SetValue fires OnValueChanged, exactly as the client does.
@@ -4206,6 +4225,11 @@ C_SpecializationInfo = _G.C_SpecializationInfo or {}
 C_SpecializationInfo.CanPlayerUseTalentUI = function()
 	return (_G.__units.player.level or 1) >= _G.__talentLevel
 end
+-- The spec index, nil unless a test sets one. The SPEC_WARLOCK_* constants
+-- that gate the Mists warlock rows are deliberately NOT defined: neither
+-- client this suite runs as has them.
+_G.__spec = nil
+C_SpecializationInfo.GetSpecialization = function() return _G.__spec end
 
 function ToggleTalentFrame()
 	if not C_SpecializationInfo.CanPlayerUseTalentUI() then return end
@@ -4459,6 +4483,20 @@ Enum.ItemClass = {
 	Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15,
 }
 Enum.ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 }
+
+-- THE CLIENT'S POWER NUMBERING, the same on both flavours - the enum is
+-- generated from one source. Read off PowerTypeConstantsDocumentation rather
+-- than remembered: a resource drawn from the wrong number reads as
+-- permanently empty and never errors.
+Enum.PowerType = {
+	Mana = 0, Rage = 1, Focus = 2, Energy = 3, ComboPoints = 4,
+	Runes = 5, RunicPower = 6, SoulShards = 7, LunarPower = 8, HolyPower = 9,
+	Alternate = 10, Maelstrom = 11, Chi = 12, Insanity = 13,
+	BurningEmbers = 14, DemonicFury = 15, ArcaneCharges = 16, Fury = 17,
+	Pain = 18, Essence = 19, RuneBlood = 20, RuneFrost = 21, RuneUnholy = 22,
+	AlternateQuest = 23, AlternateEncounter = 24, AlternateMount = 25,
+	Balance = 26, Happiness = 27, ShadowOrbs = 28, RuneChromatic = 29,
+}
 
 -- itemID -> { name, classID, subclassID, quality, maxStack, sellPrice, icon }
 _G.__items = {
@@ -5141,9 +5179,73 @@ if _G.__flavour == "camelot" then
 else
 	function UnitGetTotalAbsorbs(u) return units[u] and units[u].absorb or 0 end
 end
-function UnitPower(u) return units[u] and units[u].power or 0 end
-function UnitPowerMax(u) return units[u] and units[u].powerMax or 0 end
+-- SECONDARY POWERS, WHICH THESE TWO USED TO IGNORE ENTIRELY (ported with the
+-- resource tray from archive/mop). UnitPower(u) answered the display power
+-- whatever second argument it was handed, so every read of a combo point or a
+-- shard came back as the player's mana - and a tray built against that would
+-- have drawn perfectly against a mock that could not tell one power from
+-- another.
+--
+-- `secondary` is keyed by the Enum.PowerType NUMBER, as the client is. A power
+-- this character has not got is ABSENT rather than zero. The third argument is
+-- real: burning embers count in tenths only when asked with `unmodified`.
+function _G.__powerSlot(u, t, unmodified)
+	local d = units[u]
+	if not d then return nil end
+	local tbl = unmodified and d.secondaryFine or d.secondary
+	if not tbl then return nil end
+	return tbl[t]
+end
+
+function UnitPower(u, powerType, unmodified)
+	if powerType ~= nil then
+		local slot = _G.__powerSlot(u, powerType, unmodified)
+		return slot and slot.cur or 0
+	end
+	return units[u] and units[u].power or 0
+end
+
+function UnitPowerMax(u, powerType, unmodified)
+	if powerType ~= nil then
+		local slot = _G.__powerSlot(u, powerType, unmodified)
+		return slot and slot.max or 0
+	end
+	return units[u] and units[u].powerMax or 0
+end
 function UnitPowerType(u) local d = units[u]; return d and d.powerType or 0, d and d.powerToken or "MANA" end
+
+-- COMBO POINTS: the TARGET'S on Era, gone with it; the player's own power on
+-- WoW Forever, as on the modern client it is built on - where GetComboPoints
+-- is not where a tray should be reading, and this answers zero to prove the
+-- tray does not.
+_G.__comboPoints = 0
+function GetComboPoints(unit, target)
+	if _G.__flavour == "camelot" then return 0 end
+	if not units[target or ""] or not units[target].exists then return 0 end
+	return _G.__comboPoints
+end
+
+-- RUNES. Six of them, each with a type and its own recharge, and neither
+-- readable through the power API.
+MAX_RUNES = 6
+_G.__runes = {}
+for i = 1, MAX_RUNES do
+	_G.__runes[i] = { type = math.ceil(i / 2), start = 0, duration = 0, ready = true }
+end
+function GetRuneType(i) local r = _G.__runes[i]; return r and r.type end
+function GetRuneCooldown(i)
+	local r = _G.__runes[i]
+	if not r then return nil end
+	return r.start, r.duration, r.ready
+end
+
+-- ECLIPSE. The direction is its own call, and it is not the sign of the power.
+_G.__eclipseDirection = "sun"
+function GetEclipseDirection() return _G.__eclipseDirection end
+
+-- A DRUID'S FORM: 1 is Cat on both clients. Nil is caster form.
+_G.__shapeshiftForm = nil
+function GetShapeshiftFormID() return _G.__shapeshiftForm end
 function UnitReaction(u) return units[u] and units[u].reaction end
 -- PLAYER_FLAGS_CHANGED carries the unit whose flags moved, and the client
 -- sets this by itself after five minutes without input.
@@ -7176,7 +7278,7 @@ local FILES = {
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Presets.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
-	"Modules/UnitFrames.lua", "Modules/PartyFrames.lua",
+	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
@@ -13457,6 +13559,444 @@ if TILES then
 
 	_G.__auras.player.HELPFUL = savedBuffs
 	fire("UNIT_AURA", "player")
+end
+
+-- ---------------------------------------------------------------------------
+-- class resources (round 17, ported from archive/mop 2026-10-07)
+--
+-- A tray under the player capsule and nowhere else. Almost everything that can
+-- go wrong here is silent on screen: a resource read through the wrong power
+-- number draws as permanently empty, so most of what follows is about WHAT WAS
+-- READ rather than about what was placed. Ported for a rogue who reported the
+-- combo points missing on both clients.
+-- ---------------------------------------------------------------------------
+
+-- WRAPPED IN A BLOCK: the main chunk sits at LuaJIT's ceiling of 200 locals.
+do
+
+local RSm = A:GetModule("resources")
+local PT = Enum.PowerType
+local camelot = _G.__flavour == "camelot"
+
+--- Give the player a class and whatever powers go with it, then rebuild.
+local function beResource(class, secondary, fine, form)
+	_G.__units.player.classToken = class
+	_G.__units.player.secondary = secondary
+	_G.__units.player.secondaryFine = fine
+	_G.__shapeshiftForm = form
+	RSm:Refresh()
+	RSm:Reserve()
+end
+
+local function rowKeys()
+	local out = {}
+	for _, r in ipairs(RSm:Rows()) do out[#out + 1] = r.key end
+	return table.concat(out, ",")
+end
+
+local function litPips()
+	local n = 0
+	for _, pip in ipairs(RSm.tray and RSm.tray.pips or {}) do
+		if pip:IsShown() and pip.orb:IsShown() then n = n + 1 end
+	end
+	return n
+end
+
+local function shownPips()
+	local n = 0
+	for _, pip in ipairs(RSm.tray and RSm.tray.pips or {}) do
+		if pip:IsShown() then n = n + 1 end
+	end
+	return n
+end
+
+print("== class resources: which row is live ==")
+do
+	check(RSm and RSm.enabled, "the resources module is enabled")
+	check(RSm.tray ~= nil, "and a tray was built")
+
+	-- NOBODY GETS A TRAY BY DEFAULT. An empty tray is permanent furniture that
+	-- says nothing.
+	beResource("WARRIOR", nil, nil)
+	check(rowKeys() == "", "a class with no secondary resource has no rows")
+	check(not RSm.tray:IsShown(), "and no tray at all, rather than an empty one")
+
+	-- THE MAXIMUM IS WHAT SAYS YOU HAVE IT, and the count is the client's.
+	beResource("PALADIN", { [PT.HolyPower] = { cur = 2, max = 3 } })
+	check(rowKeys() == "holy", "a paladin's row is holy power (" .. rowKeys() .. ")")
+	check(shownPips() == 3 and litPips() == 2,
+		"three sockets and two lit - the EMPTY ones are drawn too ("
+		.. shownPips() .. " / " .. litPips() .. ")")
+	_G.__units.player.secondary[PT.HolyPower].max = 5
+	RSm:Refresh()
+	check(shownPips() == 5,
+		"raising the client's maximum adds sockets without touching the table ("
+		.. shownPips() .. ")")
+end
+
+print("== class resources: combo points, where each client keeps them ==")
+do
+	local wasTarget = _G.__units.target.exists
+	_G.__units.target.exists = true
+
+	if camelot then
+		-- WOW FOREVER: the player's own power, as on the modern client. The
+		-- mock's GetComboPoints answers zero here, so a tray still reading the
+		-- target would light nothing.
+		beResource("ROGUE", { [PT.ComboPoints] = { cur = 3, max = 5 } })
+		check(rowKeys() == "combo", "a rogue's row is combo points")
+		check(shownPips() == 5 and litPips() == 3,
+			"five sockets and three lit, read from the player's own power ("
+			.. litPips() .. ")")
+
+		-- A SECRET READING draws empty sockets rather than erroring.
+		_G.__units.player.secondary[PT.ComboPoints].cur = _G.__SecretStandIn()
+		A.lastFailure = nil
+		local ok = pcall(RSm.Refresh, RSm)
+		check(ok and litPips() == 0 and shownPips() == 5,
+			"a hidden (secret) count draws the sockets empty and does not throw")
+		_G.__units.player.secondary[PT.ComboPoints].cur = 0
+	else
+		-- CLASSIC ERA: the TARGET'S, gone with it.
+		beResource("ROGUE", { [PT.ComboPoints] = { cur = 0, max = 5 } })
+		check(rowKeys() == "combo", "a rogue's row is combo points")
+		_G.__comboPoints = 3
+		RSm:Refresh()
+		check(shownPips() == 5 and litPips() == 3,
+			"five sockets and three lit, read from GetComboPoints - the target's ("
+			.. litPips() .. ")")
+		_G.__units.target.exists = false
+		RSm:Refresh()
+		check(shownPips() == 5 and litPips() == 0,
+			"losing the target empties the row and KEEPS the sockets - the points"
+			.. " are gone rather than stale (" .. litPips() .. ")")
+		_G.__comboPoints = 0
+	end
+
+	-- A DRUID'S ARE A CAT FORM THING, asked of the form.
+	beResource("DRUID", { [PT.ComboPoints] = { cur = 0, max = 5 } }, nil, nil)
+	check(rowKeys() == "", "a druid out of Cat Form has no combo row (" .. rowKeys() .. ")")
+	beResource("DRUID", { [PT.ComboPoints] = { cur = 0, max = 5 } }, nil, 1)
+	check(rowKeys() == "combo", "and has one in Cat Form (" .. rowKeys() .. ")")
+
+	_G.__units.target.exists = wasTarget
+end
+
+print("== class resources: the spec gate, where a client has specs ==")
+do
+	-- NEITHER CLIENT DEFINES THE MISTS SPEC CONSTANTS. With no spec the warlock
+	-- rows drop; with one, the maximum decides, as it does for everybody else.
+	local lock = { [PT.BurningEmbers] = { cur = 2, max = 4 } }
+	local fine = { [PT.BurningEmbers] = { cur = 25, max = 40 } }
+	_G.__spec = nil
+	beResource("WARLOCK", lock, fine)
+	check(rowKeys() == "", "with no spec, the spec-named rows drop (" .. rowKeys() .. ")")
+
+	_G.__spec = 3
+	beResource("WARLOCK", lock, fine)
+	check(rowKeys() == "embers", "with one, the maximum decides (" .. rowKeys() .. ")")
+
+	-- THE UNMODIFIED FLAG: 25 tenths is two embers and half of a third.
+	check(shownPips() == 4 and litPips() == 2, "four ember sockets, two full")
+	local third = RSm.tray.pips[3]
+	check(third and third.fill:IsShown() and not third.orb:IsShown(),
+		"and the third part filled and NOT lit - only readable through"
+		.. " UnitPower's unmodified flag")
+	check(third and math.abs(third.fill:GetHeight() - 13 * 0.5) < 0.51,
+		"filled to half its height (" .. tostring(third and third.fill:GetHeight()) .. " of 13)")
+	_G.__spec = nil
+end
+
+print("== class resources: the death knight, the one stacked case ==")
+do
+	beResource("DEATHKNIGHT", { [PT.RunicPower] = { cur = 45, max = 100 } })
+	check(rowKeys() == "runes,runicPower", "two rows, pips above the bar (" .. rowKeys() .. ")")
+	check(shownPips() == 6, "six runes (" .. shownPips() .. ")")
+
+	-- HUED BY TYPE, per socket, read off the gradient a lit pip is drawn with.
+	local blood = A.Palette.c.resource.runeBlood
+	local frost = A.Palette.c.resource.runeFrost
+	local _, p1top = RSm.tray.pips[1].orb:GetGradient()
+	local _, p3top = RSm.tray.pips[3].orb:GetGradient()
+	check(p1top and math.abs(p1top[1] - blood[1][1]) < 0.01, "the first rune is blood-hued")
+	check(p3top and math.abs(p3top[1] - frost[1][1]) < 0.01,
+		"and the third is frost - the hue is the socket's, not the row's")
+
+	-- RECHARGING IS A LIQUID LEVEL AND NOT A SWEEP.
+	_G.__runes[2] = { type = 1, start = GetTime() - 5, duration = 10, ready = false }
+	RSm:Refresh()
+	local r2 = RSm.tray.pips[2]
+	check(not r2.orb:IsShown() and r2.fill:IsShown(),
+		"a spent rune is a filling socket rather than a lit orb")
+	_G.__runes[2] = { type = 1, start = 0, duration = 0, ready = true }
+	RSm:Refresh()
+	check(RSm.tray.pips[2].orb:IsShown(), "and a rune that was never spent is simply ready")
+
+	local flow = RSm.tray.flows[1]
+	check(flow and flow:IsShown() and flow.readout:GetText() == "45",
+		"and the runic power bar is drawn with its value")
+	check(flow.tick:IsShown(), "and a threshold tick")
+end
+
+print("== class resources: only the player, flush under the capsule ==")
+do
+	beResource("ROGUE", { [PT.ComboPoints] = { cur = 0, max = 5 } })
+	local UFm = A:GetModule("unitframes")
+	check(RSm.tray:GetParent() == UFm.player, "the tray hangs off the player capsule")
+	check(RSm.tray:GetWidth() <= UFm.player:GetWidth() + 0.01,
+		"and never exceeds it (" .. RSm.tray:GetWidth() .. " of " .. UFm.player:GetWidth() .. ")")
+
+	-- CLIPPED, NEVER TUCKED BEHIND: a translucent capsule hides nothing.
+	check(RSm.tray:GetClipsChildren() == true, "the tray clips its children")
+	local pt, _, rel, _, yoff = RSm.tray:GetPoint(1)
+	local px = A:PxIn(RSm.tray)
+	check(pt == "TOP" and rel == "BOTTOM" and (yoff or 0) >= 0 and (yoff or 0) <= px + 0.001,
+		"its top edge is the capsule's foot, overlapping by one physical pixel and no more")
+	local _, _, _, _, gy = RSm.tray.glass:GetPoint(1)
+	check((gy or 0) > 0, "the glass reaches above that line so its top corners are cut square")
+	check(RSm.tray:GetFrameLevel() > UFm.player:GetFrameLevel(),
+		"and it draws above the capsule, clear of the shadow that edge casts")
+	local highest
+	for _, pip in ipairs(RSm.tray.pips) do
+		if pip:IsShown() then
+			local _, _, _, _, py = pip:GetPoint(1)
+			local top = -(py or 0) - 13 / 2
+			if not highest or top < highest then highest = top end
+		end
+	end
+	check(highest ~= nil and highest >= 0,
+		"every pip sits below the capsule's lower edge (" .. tostring(highest) .. ")")
+end
+
+print("== class resources: the player's debuffs make room ==")
+-- The debuff row hangs from the same lower edge, so a character who can have
+-- a tray has its debuffs hung one tray lower - ALWAYS, because the tray comes
+-- and goes in a fight and the debuff row cannot be moved in one.
+do
+	local Aur = A:GetModule("auras")
+	local function debuffY()
+		local f
+		if Aur.forever then
+			for _, t in ipairs(Aur.forever.trays) do
+				if t.key == "playerDebuffs" then f = t.host end
+			end
+		else
+			for _, t in ipairs(Aur.trays or {}) do
+				if t.key == "playerDebuffs" then f = t.display.frame end
+			end
+		end
+		return f and select(5, f:GetPoint(1))
+	end
+
+	beResource("WARRIOR", nil, nil)
+	check(RSm:ReserveHeight() == 0, "a warrior leaves no room - there is never a tray")
+	local yNone = debuffY()
+
+	beResource("ROGUE", { [PT.ComboPoints] = { cur = 0, max = 5 } })
+	local room = RSm:ReserveHeight()
+	check(room == 7 * 2 + 13, "a rogue's room is one row of pips and its padding (" .. room .. ")")
+	local yRogue = debuffY()
+	check(yNone and yRogue and math.abs((yNone - yRogue) - room) < 0.01,
+		"and the player's debuffs hang exactly that much lower ("
+		.. tostring(yNone) .. " -> " .. tostring(yRogue) .. ")")
+
+	-- WHETHER THE TRAY IS UP OR NOT.
+	RSm.tray:Hide()
+	Aur:Reanchor()
+	check(debuffY() == yRogue, "and stay there with the tray hidden - they do not follow it")
+
+	-- A DRUID KEEPS THE ROOM IN EVERY FORM: shifting to Cat in a fight cannot
+	-- move the debuffs.
+	beResource("DRUID", { [PT.ComboPoints] = { cur = 0, max = 5 } }, nil, nil)
+	check(rowKeys() == "" and RSm:ReserveHeight() == room,
+		"a druid in caster form has no row but keeps the room for one")
+
+	-- AND NEVER SHOWN MEANS NO ROOM.
+	local was = A.db.profile.modules.resources.display
+	A.db.profile.modules.resources.display = "off"
+	RSm:Reserve()
+	check(RSm:ReserveHeight() == 0 and debuffY() == yNone,
+		"set never to show, the room goes back to the debuffs")
+	A.db.profile.modules.resources.display = was
+	beResource("WARRIOR", nil, nil)
+	check(debuffY() == yNone, "and a class with no tray puts them back under the capsule")
+end
+
+print("== class resources: when it is on screen ==")
+do
+	beResource("PALADIN", { [PT.HolyPower] = { cur = 1, max = 3 } })
+	local was = A.db.profile.modules.resources.display
+	local wasTarget = _G.__units.target.exists
+
+	_G.__units.target.exists = false
+	_G.__inCombat = true
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() == 1, "in combat it is up, at full strength")
+
+	_G.__inCombat = false
+	_G.__units.target.exists = true
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown(), "a target keeps it up out of combat")
+
+	_G.__units.target.exists = false
+	RSm._changed = GetTime() - 1
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown(), "and a change keeps it up for three seconds")
+
+	-- The tray EASES out: run its fade to the end before asking.
+	local function settle()
+		local up = RSm.tray:GetScript("OnUpdate")
+		if up then up(RSm.tray, 1) end
+	end
+
+	RSm._changed = GetTime() - 10
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown() and RSm.tray.__fading,
+		"past that, with nothing happening, it starts to fade rather than blinking out")
+	local up = RSm.tray:GetScript("OnUpdate")
+	if up then up(RSm.tray, 0.15) end
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() > 0 and RSm.tray:GetAlpha() < 1,
+		"half way through it is half there (" .. RSm.tray:GetAlpha() .. ")")
+	settle()
+	check(not RSm.tray:IsShown() and RSm.tray:GetAlpha() == 1,
+		"and then it goes, ready to come back at full strength")
+
+	_G.__units.player.secondary[PT.HolyPower].cur = 3
+	RSm:Refresh()
+	RSm._changed = GetTime() - 10
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() < 1,
+		"but a FULL one fades to a dim rather than going")
+
+	A.db.profile.modules.resources.display = "combat"
+	RSm._changed = GetTime()
+	RSm:UpdateVisibility()
+	settle()
+	check(not RSm.tray:IsShown(), "combat only means combat only")
+	_G.__inCombat = true
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown(), "and a fight brings it straight back")
+	_G.__inCombat = false
+
+	A.db.profile.modules.resources.display = "off"
+	RSm:UpdateVisibility()
+	check(not RSm.tray:IsShown(), "off is off, in combat or out")
+
+	A.db.profile.modules.resources.display = was
+	_G.__units.target.exists = wasTarget
+end
+
+print("== class resources: only its own resource holds it up ==")
+-- Seen on WoW Forever (2026-10-07): an empty rogue's tray, no target, out of
+-- combat, staying up. Energy ticking restarted the grace period on every tick,
+-- and nothing looked again once the grace period ran out.
+do
+	local wasTarget = _G.__units.target.exists
+	_G.__units.target.exists = false
+	_G.__inCombat = false
+	_G.__pending, _G.__pendingDelay, _G.__pendingDue = {}, {}, {}
+	beResource("ROGUE", { [PT.ComboPoints] = { cur = 0, max = 5 } })
+	RSm._changed = GetTime() - 10
+	RSm._graceMark = nil
+	RSm:UpdateVisibility()
+	local up = RSm.tray:GetScript("OnUpdate")
+	if up then up(RSm.tray, 1) end
+	check(not RSm.tray:IsShown(), "an empty rogue with no target, out of combat, has no tray")
+
+	-- ENERGY IS NOT OURS.
+	fire("UNIT_POWER_FREQUENT", "player", "ENERGY")
+	check(not RSm.tray:IsShown(),
+		"energy ticking does not bring it back - it is not this tray's resource")
+
+	-- A COMBO POINT IS, and holds it up for the grace period...
+	check(RSm:Owns("COMBO_POINTS") and not RSm:Owns("ENERGY"),
+		"the tray knows combo points as its own and energy as not")
+	fire("UNIT_POWER_FREQUENT", "player", "COMBO_POINTS")
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() == 1,
+		"a combo point changing brings it up")
+
+	-- ...and only for that. The look-again is what was missing.
+	time = time + 3.1
+	_G.__drainTimers(1)
+	check(RSm.tray.__fading == true,
+		"when the grace period runs out it looks again on its own, and starts to"
+		.. " go - rather than waiting for an event that may never come")
+	up = RSm.tray:GetScript("OnUpdate")
+	if up then up(RSm.tray, 1) end
+	check(not RSm.tray:IsShown(), "and is gone")
+
+	-- A fade interrupted by something worth showing is cancelled, not finished.
+	fire("UNIT_POWER_FREQUENT", "player", "COMBO_POINTS")
+	RSm._changed = GetTime() - 10
+	RSm:UpdateVisibility()
+	check(RSm.tray.__fading == true, "fading again")
+	_G.__units.target.exists = true
+	RSm:UpdateVisibility()
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() == 1 and not RSm.tray.__fading
+		and RSm.tray:GetScript("OnUpdate") == nil,
+		"and a target arriving mid-fade puts it straight back, fade cancelled")
+
+	_G.__units.target.exists = wasTarget
+	beResource("WARRIOR", nil, nil)
+end
+
+print("== class resources: the preview ==")
+do
+	-- A WARRIOR, deliberately: the preview has to work on a character with no
+	-- resource of their own.
+	beResource("WARRIOR", nil, nil)
+	RSm:Demo()
+	check(RSm.tray:IsShown() and RSm.tray:GetAlpha() == 1,
+		"the preview shows the tray on a character who has no resource at all")
+
+	local seen = {}
+	for _ = 1, 40 do
+		for _, r in ipairs(RSm:Rows()) do seen[r.key] = true end
+		RSm:Demo("next")
+		if RSm._demo.at == 1 then break end
+	end
+	for _, key in ipairs({ "combo", "shards", "embers", "fury", "runes", "runicPower",
+		"chi", "holy", "orbs", "eclipse" }) do
+		check(seen[key] == true, "the preview reaches " .. key)
+	end
+
+	RSm:Demo("off")
+	check(RSm._demo == nil, "switching it off clears the scripted rows")
+	check(A.db.profile.modules.resources.display == "on", "and nothing in the profile moved")
+
+	for _, tail in ipairs({ "", " demo", " next", " off" }) do
+		local ok = pcall(SlashCmdList["AETHERUI"], "resources" .. tail)
+		check(ok, "/lattice resources" .. tail .. " runs")
+	end
+	RSm:Demo("off")
+end
+
+print("== class resources: the hues are not the skin's ==")
+do
+	beResource("ROGUE", { [PT.ComboPoints] = { cur = 5, max = 5 } })
+	_G.__comboPoints = 5
+	local wasTarget = _G.__units.target.exists
+	_G.__units.target.exists = true
+	RSm:Refresh()
+	local wasSkin = A.db.profile.skin
+	local before = select(2, RSm.tray.pips[1].orb:GetGradient())
+	check(before ~= nil, "a lit combo point has a colour to compare")
+	for _, skin in ipairs({ "dawn", "noon", "dusk", "midnight" }) do
+		A.db.profile.skin = skin
+		A:Restyle()
+		RSm:Refresh()
+		local now = select(2, RSm.tray.pips[1].orb:GetGradient())
+		check(before and now and math.abs(now[1] - before[1]) < 0.001
+			and math.abs(now[2] - before[2]) < 0.001 and math.abs(now[3] - before[3]) < 0.001,
+			"a combo point is the same colour on " .. skin)
+	end
+	A.db.profile.skin = wasSkin
+	A:Restyle()
+	_G.__comboPoints = 0
+	_G.__units.target.exists = wasTarget
+	beResource("WARRIOR", nil, nil)
+end
+
 end
 
 print("== quest tracker ==")
@@ -34046,6 +34586,39 @@ do
 	_G.__drainTimers(2)
 	check(OB.card:IsShown(),
 		"and the last gate to lift is the one that delivers it")
+
+	-- A FILM THAT STARTS AFTER WE ARRIVE. WoW Forever starts a new character's
+	-- intro a moment after the first check has let the welcome card through,
+	-- so the card was up underneath the film (reported, 2026-10-07).
+	for _, film in ipairs({ { "PLAY_MOVIE", "STOP_MOVIE" },
+		{ "CINEMATIC_START", "CINEMATIC_STOP" } }) do
+		local start, stop = film[1], film[2]
+		fresh()
+		fire("PLAYER_ENTERING_WORLD")
+		_G.__drainTimers(2)
+		check(OB.card:IsShown(), "the welcome card is up before " .. start)
+		fire(start)
+		check(not OB.card:IsShown() and OB.__pendingLogin == true,
+			start .. " takes it down, and it is still owed")
+		fire(stop)
+		_G.__drainTimers(2)
+		check(OB.card:IsShown(), "and " .. stop .. " brings it back")
+	end
+
+	-- MID-TOUR, the film takes the tour down and its end returns to the stop.
+	do
+		fresh()
+		fire("PLAYER_ENTERING_WORLD")
+		_G.__drainTimers(2)
+		OB:Go(2)
+		check(OB.index == 2, "the tour is at stop 2")
+		fire("CINEMATIC_START")
+		check(OB.index == nil and OB.resumeAt == 2,
+			"a cinematic starting takes the tour down and remembers stop 2")
+		fire("CINEMATIC_STOP")
+		check(OB.index == 2, "and its end brings the tour back to stop 2")
+		OB:Teardown()
+	end
 
 	-- THE ALT OFFER.
 	--

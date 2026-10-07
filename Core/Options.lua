@@ -599,6 +599,22 @@ local function UnitFramesGroup()
 			L.options.unit_frames.show_absorb.desc, { "showAbsorb" }),
 		absorbColor = colour(L.options.unit_frames.absorb_color.name, nil,
 			{ "absorbColor" }, function() return A.Palette.c.absorb end),
+
+		-- CLASS RESOURCES LIVE HERE rather than on a page of their own. The
+		-- tray hangs off the player capsule and appears nowhere else, so this
+		-- is where somebody goes looking for it. Two controls and no more: the
+		-- hues are what a combo point IS, and are not a setting.
+		resourceHeader = header(L.options.resources.header),
+		resourceDisplay = choice(L.options.resources.display.name,
+			L.options.resources.display.desc,
+			{ "modules", "resources", "display" }, {
+				on     = "Always",
+				combat = "In combat only",
+				off    = "Never",
+			}),
+		resourceEnabled = toggle(L.options.resources.enabled.name,
+			L.options.resources.enabled.desc,
+			{ "modules", "resources", "enabled" }),
 	})
 end
 

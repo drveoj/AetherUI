@@ -169,6 +169,20 @@ Config.defaults = {
 				clickTarget = true,
 			},
 
+			-- The class resource tray under the player capsule: combo points
+			-- on Era and Forever, the rest of the Mists table where a client
+			-- reports it.
+			resources = {
+				enabled = true,
+				-- on | combat | off.
+				--
+				--  "combat" is the whole rule and not a shade of it: no three
+				--  second grace after a change, and no forty-percent idle state
+				--  for a full builder. Both of those ARE the tray being visible
+				--  out of combat, which is the thing being switched off.
+				display = "on",
+			},
+
 			-- Threat: the ring round the pip, the escalation on the capsule and
 			-- the disposition colour on a hostile plate. The 70 and 90 thresholds
 			-- are the handoff's and are deliberately not here - see

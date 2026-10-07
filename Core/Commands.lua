@@ -40,6 +40,7 @@ local function usage()
 		A.Hi("/lattice toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
 		A.Hi("/lattice dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
 		A.Hi("/lattice threat") .. " probe  ·  what the threat API answers, in a box you can copy",
+		A.Hi("/lattice resources") .. " demo  ·  step the class resource tray through every class",
 		A.Hi("/lattice ifec") .. " [reset]  ·  content packs, what is playing, forget history",
 		A.Hi("/lattice errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
 	}
@@ -1653,6 +1654,35 @@ handlers.threat = function(arg)
 		return
 	end
 	A:Print(A.Hi("/lattice threat probe") .. "  ·  what the threat API answers")
+end
+
+--- The class resource tray, and the preview that lets one character check all
+--  of it. The preview drives the REAL drawing from a script - the module's Rows
+--  returns the scripted set and nothing downstream knows - so what is on screen
+--  is the tray, not a picture of it.
+handlers.resources = function(arg)
+	local RSm = A:GetModule("resources")
+	if not RSm then A:Print(L.cmd.resources.no_tray) return end
+
+	if arg == "demo" or arg == "preview" then RSm:Demo() return end
+	if arg == "off" then RSm:Demo("off") return end
+	if arg == "next" then RSm:Demo("next") return end
+
+	-- WHAT THE CLIENT SAYS THIS CHARACTER HAS, which answers "why is there no
+	-- tray": every row is a power the client either reports a maximum for or
+	-- does not.
+	local rows = RSm:Rows()
+	if #rows == 0 then
+		A:Print(A.F(L.cmd.resources.none_s, A.Dim(L.cmd.resources.no_maximum)))
+	else
+		for _, row in ipairs(rows) do
+			A:Print(("   %s  %s · %d socket%s"):format(
+				A.Hi(row.key), row.kind,
+				math.floor(row.max() or 0),
+				math.floor(row.max() or 0) == 1 and "" or "s"))
+		end
+	end
+	A:Print("   " .. A.Dim("/lattice resources demo|next|off"))
 end
 
 handlers.module = function(arg, rest)

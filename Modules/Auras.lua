@@ -1160,6 +1160,22 @@ function Aur:BuildForever()
 	if not Words().timerOpts then F.timerRule = false end
 end
 
+--- Room left under the PLAYER capsule for the class resource tray, which
+--  hangs from the same lower edge the player's debuffs do. Fixed for the
+--  character rather than following the tray, which comes and goes in a fight
+--  that these rows cannot move in - see Modules/Resources.lua.
+local function TrayRoom(t)
+	if t.unit ~= "player" or t.above then return 0 end
+	local RS = A:GetModule("resources")
+	return (RS and RS.ReserveHeight) and RS:ReserveHeight() or 0
+end
+
+--- Place every tray again, on whichever path this client draws them with.
+--  The resource tray calls this when the room it needs changes.
+function Aur:Reanchor()
+	if self.forever then self:AnchorForever() else self:AnchorTrays() end
+end
+
 --- Hang each host off its capsule, and switch trays and groups on and off.
 function Aur:AnchorForever()
 	local cfg = A.Config:Module("auras")
@@ -1183,7 +1199,8 @@ function Aur:AnchorForever()
 			-- CLIP_PAD bigger all round.
 			local edge = t.mirror and "RIGHT" or "LEFT"
 			local x = (inset - CLIP_PAD) * (t.mirror and -1 or 1)
-			local y = t.above and (off + TAG_DROP - CLIP_PAD) or -(off - CLIP_PAD)
+			local y = t.above and (off + TAG_DROP - CLIP_PAD)
+				or -(off + TrayRoom(t) - CLIP_PAD)
 			host:SetPoint(t.corner, capsule, (t.above and "TOP" or "BOTTOM") .. edge, x, y)
 			A.Fader:Unregister(host)
 		else
@@ -1513,8 +1530,9 @@ function Aur:AnchorTrays()
 					f:SetPoint("BOTTOMLEFT",  capsule, "TOPLEFT",  0, offset)
 					f:SetPoint("BOTTOMRIGHT", capsule, "TOPRIGHT", 0, offset)
 				else
-					f:SetPoint("TOPLEFT",  capsule, "BOTTOMLEFT",  0, -offset)
-					f:SetPoint("TOPRIGHT", capsule, "BOTTOMRIGHT", 0, -offset)
+					local below = offset + TrayRoom(t)
+					f:SetPoint("TOPLEFT",  capsule, "BOTTOMLEFT",  0, -below)
+					f:SetPoint("TOPRIGHT", capsule, "BOTTOMRIGHT", 0, -below)
 				end
 			end
 
