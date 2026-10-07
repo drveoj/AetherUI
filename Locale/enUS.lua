@@ -51,6 +51,9 @@ L["bags.sort_pass.stopped_compacting_after_40"] =
 
 L["bags.start_sort.while_combat"] = "not while you are in combat."
 
+L["bags.tab_footer.buy_tab"] = "Buy a bank tab"
+L["bags.rebuild.no_tabs"] = "No bank tabs yet. Buy your first one below."
+
 -- bars --------------------------------------------------------------------
 
 L["bars.set_bind_mode.can_t_rebind_combat"] = "can't rebind in combat."

@@ -4510,6 +4510,12 @@ _G.__pickups = {}
 _G.__used = {}
 
 local function bagOpen(bag)
+	-- Forever: -1 is the keyring and 5 the reagent bag, both always there; the
+	-- bank is the tabs, 6 and up.
+	if _G.__flavour == "camelot" then
+		if bag >= 6 then return _G.__atBank end
+		return true
+	end
 	if bag == -1 or bag >= NUM_BAG_SLOTS + 1 then return _G.__atBank end
 	return true
 end
@@ -4655,7 +4661,7 @@ ITEM_QUALITY_COLORS = {
 }
 
 function HasKey() return true end
-function GetKeyRingSize() return _G.__bags[-2].size end
+function GetKeyRingSize() return _G.__bags[KEYRING_CONTAINER].size end
 function KeyRingButtonIDToInvSlotID(slot) return 80 + slot end
 function BankButtonIDToInvSlotID(id) return 60 + id end
 
@@ -4665,6 +4671,75 @@ _G.__purchased = 0
 function PurchaseSlot() _G.__purchased = _G.__purchased + 1 end
 _G.__bankClosed = 0
 function CloseBankFrame() _G.__bankClosed = _G.__bankClosed + 1 _G.__atBank = false end
+
+-- WOW FOREVER'S BANK IS TABS, and none of Era's numbers survive it. As measured
+-- at a banker on 2026-10-07 and read in the client's own source:
+--   * -1 is the KEYRING and 5 the player's reagent bag (Enum.BagIndex,
+--     BagIndexConstantsDocumentation.lua:25-51); the character's tabs are 6-14
+--   * BANK_CONTAINER, GetNumBankSlots, PurchaseSlot and CloseBankFrame are nil
+--   * the bank is C_Bank, and PurchaseBankTab is restricted - Blizzard buys
+--     through its own dialog (Camelot/BankFrame.lua:1-22)
+if _G.__flavour == "camelot" then
+	BANK_CONTAINER, NUM_BANKBAGSLOTS, NUM_BANKGENERIC_SLOTS = nil, nil, nil
+	KEYRING_CONTAINER = -1
+	NUM_REAGENTBAG_SLOTS = 1
+	Enum.BagIndex = { Accountbanktab = -3, Characterbanktab = -2, Keyring = -1,
+		Backpack = 0, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4, ReagentBag = 5,
+		CharacterBankTab_1 = 6, CharacterBankTab_2 = 7 }
+	Enum.BankType = { Character = 0, Guild = 1, Account = 2 }
+
+	-- The keyring moves to -1. The reagent bag starts empty and sizeless, so
+	-- the inventory checks count what they always did; the Forever bank block
+	-- gives it slots.
+	_G.__bags[-1] = _G.__bags[-2]
+	_G.__bags[-2] = nil
+	_G.__bags[5] = { size = 0, slots = {} }
+	-- Tab one holds what Era's -1 held.
+	_G.__bags[6] = { size = 6, slots = {
+		[1] = { 4306, 20 }, [2] = { 2251, 4 }, [3] = { 5976, 1 }, [4] = { 1266, 1 },
+		[5] = { 159, 12 },
+	} }
+	_G.__bags[7] = { size = 0, slots = {} }
+
+	GetNumBankSlots, GetBankSlotCost, PurchaseSlot = nil, nil, nil
+	CloseBankFrame, BankButtonIDToInvSlotID = nil, nil
+
+	_G.__bankTabs = { { ID = 6, bankType = 0, name = "Tab One", icon = "tab1.tga" } }
+	_G.__tabsMax = 9
+	_G.__nextTabCost = 250000
+
+	C_Bank = {}
+	local function mine(bt) return bt == Enum.BankType.Character end
+	function C_Bank.FetchPurchasedBankTabIDs(bt)
+		local t = {}
+		if mine(bt) then for i, d in ipairs(_G.__bankTabs) do t[i] = d.ID end end
+		return t
+	end
+	function C_Bank.FetchPurchasedBankTabData(bt)
+		local t = {}
+		if mine(bt) then
+			for i, d in ipairs(_G.__bankTabs) do
+				t[i] = { ID = d.ID, bankType = d.bankType, name = d.name, icon = d.icon }
+			end
+		end
+		return t
+	end
+	function C_Bank.FetchNumPurchasedBankTabs(bt) return mine(bt) and #_G.__bankTabs or 0 end
+	function C_Bank.FetchMaxNumBankTabs() return _G.__tabsMax end
+	function C_Bank.HasMaxBankTabs(bt) return mine(bt) and #_G.__bankTabs >= _G.__tabsMax end
+	function C_Bank.FetchNextPurchasableBankTabData(bt)
+		if not mine(bt) or C_Bank.HasMaxBankTabs(bt) then return nil end
+		return { tabCost = _G.__nextTabCost, canAfford = true }
+	end
+	function C_Bank.CloseBankFrame()
+		_G.__bankClosed = _G.__bankClosed + 1
+		_G.__atBank = false
+	end
+	function C_Bank.PurchaseBankTab()
+		fail("ADDON BLOCKED: C_Bank.PurchaseBankTab is restricted - buy through"
+			.. " Blizzard's BankPanelPurchaseButtonScriptTemplate")
+	end
+end
 
 function GetInventoryItemTexture(_, slot) return "bag" .. tostring(slot) .. ".tga" end
 function GetInventoryItemLink(_, slot) return "|Hitem:1|h[Traveler's Pack]|h" end
@@ -8055,11 +8130,46 @@ do
 		"and both lines are back with one")
 end
 
+-- The sizes a string's font is set to, in order. After a cold client start the
+-- player's lane name was laid out and never drawn until its font really
+-- changed (2026-10-07), so every cast steps it through another size and back.
+function _G.__fontSteps(fs)
+	local steps, set = {}, fs.SetFont
+	fs.SetFont = function(self, p, s, fl)
+		steps[#steps + 1] = s
+		return set(self, p, s, fl)
+	end
+	return steps, function() fs.SetFont = set end
+end
+local function rerastered(steps, fs)
+	local final = fs.__font and fs.__font[2]
+	local other = false
+	for _, s in ipairs(steps) do if s ~= final then other = true end end
+	return other and final == A.Media:Size("laneLabel"), final
+end
+
 castState = { name = "Frostbolt", icon = 135846, channel = false,
 	startTime = time * 1000, endTime = (time + 2.5) * 1000 }
+local laneSteps, laneUnwrap = _G.__fontSteps(UF.cast.spellName)
 fire("UNIT_SPELLCAST_START", "player")
+laneUnwrap()
 check(UF.cast:IsShown(), "your lane shows on cast start")
 check(UF.cast.spellName:GetText() == "FROSTBOLT", "labelled at its origin, in capitals")
+do
+	local ok, final = rerastered(laneSteps, UF.cast.spellName)
+	check(ok, "and its font is stepped through another size and back, so a cold"
+		.. " start's undrawn name is drawn (" .. table.concat(laneSteps, ",")
+		.. " -> " .. tostring(final) .. ")")
+
+	-- And once more after a moment: on the FIRST cast after a cold start the
+	-- pass above is too early, because the draw is what asks for the font.
+	local later, unwrap = _G.__fontSteps(UF.cast.spellName)
+	_G.__drainTimers(1)
+	unwrap()
+	check((rerastered(later, UF.cast.spellName)),
+		"and again a moment later, for the first cast after a cold start ("
+		.. table.concat(later, ",") .. ")")
+end
 local laneBlue = A.Palette.c.laneCast
 check(UF.cast.bar:GetStatusBarTexture():GetVertexColor() == laneBlue[1],
 	"in the lane blue")
@@ -8175,9 +8285,13 @@ do
 	-- client, so it is our own tick that draws it.
 	_G.__ccCasts.target = { name = "Shadow Bolt", icon = 136197, channel = false,
 		start = time * 1000, finish = (time + 3) * 1000 }
+	local tSteps, tUnwrap = _G.__fontSteps(UF.targetCast.spellName)
 	_G.__ccFire("UNIT_SPELLCAST_START", "target")
+	tUnwrap()
 	check(UF.targetCast:IsShown(), "library callback starts the target's lane")
 	check(UF.targetCast.spellName:GetText() == "SHADOW BOLT", "the spell named, in capitals")
+	check((rerastered(tSteps, UF.targetCast.spellName)),
+		"and re-rastered the same way as yours (" .. table.concat(tSteps, ",") .. ")")
 	local p, _, relP = UF.targetCast.time:GetPoint(1)
 	check(p == "TOPRIGHT" and relP == "BOTTOMRIGHT",
 		"its label hangs below the lane at the target's end")
@@ -22243,13 +22357,15 @@ do
 		"reopening the window brings the drawer straight back out rather than"
 		.. " playing the slide again")
 
-	-- The contents are still the contents.
-	check(#f.flyout.rows == 5,
+	-- The contents are still the contents. Forever adds its reagent bag slot to
+	-- the four and the backpack.
+	local nBags = (_G.__flavour == "camelot") and 6 or 5
+	check(#f.flyout.rows == nBags,
 		"it lists every equipped bag, backpack included (" .. #f.flyout.rows .. ")")
 	check(f.flyout.keyButtons and f.flyout.keyButtons[1]
 		and f.flyout.keyButtons[1]:IsShown(),
 		"and the keyring sits open under them")
-	check(f.flyout.keyButtons[1]:GetParent():GetID() == -2,
+	check(f.flyout.keyButtons[1]:GetParent():GetID() == KEYRING_CONTAINER,
 		"with its buttons parented to a KEYRING proxy, which is what makes"
 		.. " Blizzard's own OnEnter take the SetInventoryItem branch for them")
 
@@ -22267,7 +22383,7 @@ do
 	check(bl ~= kl or bt ~= kt,
 		"from DIFFERENT cells of it - two names resolving to one drawing is"
 		.. " how the keybinds tile shipped as a bare blob")
-	check(rail.bags.count:GetText() == "5"
+	check(rail.bags.count:GetText() == tostring(nBags)
 		and rail.keys.count:GetText() == "2",
 		"with the number of each under it (" ..
 		tostring(rail.bags.count:GetText()) .. " bags, " ..
@@ -22275,12 +22391,12 @@ do
 
 	-- AND THE NUMBERS FOLLOW THE CONTENTS. A count written once at build
 	-- time is a count that is right until the first key you pick up.
-	_G.__bags[-2].size = 4
+	_G.__bags[KEYRING_CONTAINER].size = 4
 	Bg:Rebuild(f)
 	check(rail.keys.count:GetText() == "4",
 		"picking up a key moves the number on the handle (" ..
 		tostring(rail.keys.count:GetText()) .. ")")
-	_G.__bags[-2].size = 2
+	_G.__bags[KEYRING_CONTAINER].size = 2
 	Bg:Rebuild(f)
 
 	-- THE TAB IS AS LONG AS WHAT IT HOLDS, not a number written down. The
@@ -22333,7 +22449,8 @@ do
 end
 
 print("== bags: a bank tooltip survives the tooltip's own refresh ==")
-do
+-- Era's: container -1 is the bank there, and the keyring on Forever.
+if _G.__flavour ~= "camelot" then
 	_G.__atBank = true
 	fire("BANKFRAME_OPENED")
 	local bank = Bg.frames.bank
@@ -22653,7 +22770,8 @@ do
 end
 
 print("== bags: the bank only exists while you are at it ==")
-do
+-- Era's numbers; Forever's bank has its own block below.
+if _G.__flavour ~= "camelot" then
 	check(C_Container.GetContainerNumSlots(-1) == 0,
 		"away from the banker the bank answers with nothing at all - 'the items"
 		.. " are still in my table' is how you draw a bank you cannot see")
@@ -22702,7 +22820,7 @@ do
 end
 
 print("== bags: an item's category does not depend on which panel it is in ==")
-do
+if _G.__flavour ~= "camelot" then   -- reads Era's container -1
 	_G.__atBank = true
 	fire("BANKFRAME_OPENED")
 	local bank, bags = Bg.frames.bank, Bg.frames.bags
@@ -22767,6 +22885,10 @@ end
 
 print("== bags: closing the bank tells the server ==")
 do
+	-- Opened here rather than inherited from the blocks above, which are Era's
+	-- alone: this one is both clients' - Forever's close is C_Bank's.
+	_G.__atBank = true
+	fire("BANKFRAME_OPENED")
 	_G.__bankClosed = 0
 	Bg:Hide()
 	check(not Bg.frames.bank:IsShown(), "closing the bags closes the bank with it")
@@ -22789,8 +22911,84 @@ do
 	_G.__atBank = false
 end
 
+print("== bags: WoW Forever's bank is its tabs ==")
+-- Measured at a banker 2026-10-07: -1 is the keyring there, 5 the player's
+-- reagent bag, and the bank is the tabs from 6 - so the window used to show a
+-- keyring, a reagent bag and five tabs, and its footer priced bank bags with
+-- Era globals that are nil.
+if _G.__flavour == "camelot" then
+	_G.__atBank = true
+	fire("BANKFRAME_OPENED")
+	local bank, bags = Bg.frames.bank, Bg.frames.bags
+
+	check(bank:IsShown() and bank.total == 6 and bank.used == 5,
+		"the bank is the tab you own, and only that (" .. tostring(bank.total)
+		.. " slots, " .. tostring(bank.used) .. " used)")
+	check(bank.buttons[-1] == nil and bank.buttons[5] == nil,
+		"no keyring and no reagent bag in it - -1 and 5 are the player's on Forever")
+
+	local foot = bank.foot
+	check((foot.label:GetText() or ""):gsub("%s+", "") == "BANKTABS",
+		"its footer is BANK TABS")
+	check(foot.tiles[1] and foot.tiles[1]:IsShown() and foot.tiles[1].tab
+		and foot.tiles[1].tab.name == "Tab One",
+		"with a tile for the tab you own")
+	check(foot.buy and foot.buy:IsShown() and foot.buy.price:GetText() == "25g",
+		"and the next one at its real price (" .. tostring(foot.buy
+		and foot.buy.price:GetText()) .. ")")
+	check(foot.buy.hit and foot.buy.hit.__template == "BankPanelPurchaseButtonScriptTemplate"
+		and foot.buy.hit:GetAttribute("overrideBankType") == Enum.BankType.Character,
+		"bought through Blizzard's own template, set to the character bank - the"
+		.. " buying call is restricted, so the click has to be the client's")
+
+	-- A tab bought: the window follows it.
+	_G.__bankTabs[2] = { ID = 7, bankType = 0, name = "Tab Two", icon = "tab2.tga" }
+	_G.__bags[7] = { size = 4, slots = { [1] = { 2592, 3 } } }
+	fire("BANK_TABS_CHANGED", Enum.BankType.Character)
+	Bg:Flush()
+	check(bank.total == 10 and foot.tiles[2]:IsShown(),
+		"a tab bought is drawn the moment the client says so (" .. tostring(bank.total) .. ")")
+
+	-- Every tab bought: nothing left to sell.
+	_G.__tabsMax = 2
+	Bg:Rebuild(bank)
+	check(not foot.buy:IsShown(), "with all of them owned there is no buy tile")
+	_G.__tabsMax = 9
+
+	-- A new character owns none, and says so rather than drawing 0 / 0.
+	local saved = _G.__bankTabs
+	_G.__bankTabs = {}
+	Bg:Rebuild(bank)
+	check(bank.total == 0 and bank.noTabs and bank.noTabs:IsShown(),
+		"no tabs yet is said in words, not left as an empty well")
+	check(not foot.tiles[1]:IsShown() and foot.buy:IsShown(),
+		"with only the buy tile in the footer")
+	_G.__bankTabs = saved
+	_G.__bags[7] = { size = 0, slots = {} }
+	table.remove(_G.__bankTabs, 2)
+	Bg:Rebuild(bank)
+	check(bank.noTabs and not bank.noTabs:IsShown(), "and the words go once there is one")
+
+	-- The reagent bag is the PLAYER'S, in the bags window.
+	_G.__bags[5] = { size = 4, slots = { [1] = { 2589, 7 } } }
+	Bg:Rebuild(bags)
+	check(bags.buttons[5] and bags.buttons[5][1] and bags.buttons[5][1].info
+		and bags.buttons[5][1].info.itemID == 2589,
+		"your reagent bag is in your bags")
+	_G.__bags[5] = { size = 0, slots = {} }
+	Bg:Rebuild(bags)
+
+	-- Leaving: C_Bank's close, the only one there is.
+	_G.__bankClosed = 0
+	Bg:Hide()
+	check(_G.__bankClosed == 1, "closing tells the server through C_Bank ("
+		.. _G.__bankClosed .. ")")
+	_G.__atBank = false
+end
+
 print("== bags: buying a bank slot re-reads the price at the click ==")
-do
+-- Era's bank-bag purchase. Forever buys tabs through Blizzard's own dialog.
+if _G.__flavour ~= "camelot" then
 	_G.__atBank = true
 	_G.__bankSlotsBought = 1
 	_G.__purchased = 0
@@ -22818,7 +23016,7 @@ do
 end
 
 print("== bags: only the next bank slot is buyable ==")
-do
+if _G.__flavour ~= "camelot" then   -- Era's bank bag slots
 	_G.__atBank = true
 	_G.__bankSlotsBought = 1
 	fire("BANKFRAME_OPENED")

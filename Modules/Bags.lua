@@ -174,22 +174,60 @@ local ItemInfoInstant = CI.GetItemInfoInstant or _G.GetItemInfoInstant
 -- Bag ids. Read from the client, never hardcoded -- Enum.BagIndex is the shared
 -- modern enum and its BankBag_1 is 6, which is wrong here: it assumes a reagent
 -- bag at 5 that Era does not have, and Era's bank bags start at 5.
+--
+-- TWO BANKS. Classic Era's is a 24-slot container at -1 plus bag slots 5-10.
+-- WoW Forever's is TABS (C_Bank): the character's are bags 6-14, bought one at
+-- a time, and none of Era's numbers mean the same thing there - -1 is the
+-- KEYRING, 5 is the player's own reagent bag, and BANK_CONTAINER, GetNumBankSlots,
+-- PurchaseSlot and CloseBankFrame are all nil (measured at a banker 2026-10-07;
+-- Enum.BagIndex in BagIndexConstantsDocumentation.lua). So which bank this is
+-- is asked once, of the API, and the two never share a number.
+local CB = _G.C_Bank
+local TABS = (CB and CB.FetchPurchasedBankTabIDs and _G.Enum and _G.Enum.BankType) and true or false
+local CHAR_BANK = TABS and _G.Enum.BankType.Character or nil
+
 local BACKPACK = _G.BACKPACK_CONTAINER or 0
-local BANK     = _G.BANK_CONTAINER or -1
+local BANK     = (not TABS) and (_G.BANK_CONTAINER or -1) or nil
 local KEYRING  = _G.KEYRING_CONTAINER or -2
 local NUM_BAGS = _G.NUM_BAG_SLOTS or 4
 local NUM_BANK_BAGS = _G.NUM_BANKBAGSLOTS or 6
 
+-- Forever's reagent bag: an equipped bag of the player's own, straight after
+-- the four. Era has none.
+local REAGENT = _G.Enum and _G.Enum.BagIndex and _G.Enum.BagIndex.ReagentBag
+local NUM_REAGENT = (REAGENT and tonumber(_G.NUM_REAGENTBAG_SLOTS)) or 0
+
 local function InventoryBags()
 	local t = {}
 	for i = BACKPACK, NUM_BAGS do t[#t + 1] = i end
+	for i = 1, NUM_REAGENT do t[#t + 1] = REAGENT + i - 1 end
 	return t
 end
 
+--- The tabs this character owns, in the client's order. Empty, not nil, for a
+--  character who has bought none - which is where every new one starts.
+local function OwnedTabs()
+	if not TABS then return {} end
+	local ok, ids = pcall(CB.FetchPurchasedBankTabIDs, CHAR_BANK)
+	return (ok and type(ids) == "table") and ids or {}
+end
+
 local function BankBags()
+	if TABS then
+		local t = {}
+		for _, id in ipairs(OwnedTabs()) do t[#t + 1] = id end
+		return t
+	end
 	local t = { BANK }
 	for i = NUM_BAGS + 1, NUM_BAGS + NUM_BANK_BAGS do t[#t + 1] = i end
 	return t
+end
+
+--- Tell the server we have left the banker. Forever's is C_Bank's; Era's is
+--  the global, and Forever has no global.
+local function CloseBankSession()
+	local close = (CB and CB.CloseBankFrame) or _G.CloseBankFrame
+	if close then pcall(close) end
 end
 
 local function HasKeyring()
@@ -928,7 +966,7 @@ local function BuildFooter(frame)
 		-- there are depends on what has been bought.
 		foot.label = W.Text(foot, "bagLabel", "LEFT")
 		foot.label:SetPoint("LEFT", foot, "LEFT", SEARCH_PAD_X, 0)
-		foot.label:SetText(Media:Track("BANK BAGS", 1))
+		foot.label:SetText(Media:Track(TABS and "BANK TABS" or "BANK BAGS", 1))
 		foot.tiles = {}
 		return foot
 	end
@@ -1063,7 +1101,16 @@ function WireBagTile(tile)
 	end)
 
 	tile:SetScript("OnEnter", function(self)
-		if not self.invSlot or not self:GetRight() then return end
+		if not self:GetRight() then return end
+		-- A Forever bank tab is not an item in a slot: it has a name and nothing
+		-- to drag.
+		if self.tab then
+			_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			_G.GameTooltip:SetText(self.tab.name or "")
+			_G.GameTooltip:Show()
+			return
+		end
+		if not self.invSlot then return end
 		_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		pcall(_G.GameTooltip.SetInventoryItem, _G.GameTooltip, "player", self.invSlot)
 		_G.GameTooltip:Show()
@@ -1075,6 +1122,7 @@ end
 --- Point an already-wired tile at a bag.
 local function BindBagTile(tile, bag, invSlot)
 	tile.bag, tile.invSlot = bag, invSlot
+	tile.tab = nil
 	-- A tile pointed at a bag is not a shop. THIS is the fix: the tile is
 	-- recycled, so the bank footer's "buy" state has to be cleared by whatever
 	-- gives it a bag, rather than by whatever set it.
@@ -1693,6 +1741,24 @@ function Bags:Rebuild(frame)
 
 	frame.labels:HideFrom(labelN + 1)
 
+	-- A Forever bank with no tabs has nothing to draw, and an empty well over
+	-- "0 / 0" reads as a bank that failed to load. Every new character starts
+	-- here, so it says what is going on.
+	local noTabs = TABS and frame.kind == "bank" and #BankBags() == 0
+	if noTabs and not frame.noTabs then
+		frame.noTabs = W.Text(child, "bagFoot", "LEFT")
+		frame.noTabs:SetText(L.bags.rebuild.no_tabs)
+	end
+	if frame.noTabs then
+		frame.noTabs:SetShown(noTabs)
+		if noTabs then
+			frame.noTabs:ClearAllPoints()
+			frame.noTabs:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -y)
+			W.Color(frame.noTabs, c.textDim)
+			y = y + SEC_LABEL_H
+		end
+	end
+
 	y = y + GRID_BOTTOM
 	child:SetSize(gridW, math.max(1, y))
 	frame.scroll:Clamp()
@@ -1791,6 +1857,8 @@ function Bags:RefreshFooter(frame)
 	-- without a word of explanation.
 	W.Color(foot.label, c.textDim)
 	ColorHairline(foot.rule)
+
+	if TABS then return self:RefreshTabFooter(frame) end
 
 	local owned = (_G.GetNumBankSlots and _G.GetNumBankSlots()) or 0
 	local last = math.min(NUM_BANK_BAGS, owned + 2)
@@ -1899,12 +1967,112 @@ function Bags:SlotPriceText(index)
 			if ok2 then cost = v2 end
 		end
 	end
+	return Bags:CostText(cost)
+end
+
+--- A price on a tile: its largest coin only, "10g".
+function Bags:CostText(cost)
 	cost = tonumber(cost) or 0
 	local g = math.floor(cost / 10000)
 	if g > 0 then return g .. "g" end
 	local s = math.floor((cost % 10000) / 100)
 	if s > 0 then return s .. "s" end
 	return (cost % 100) .. "c"
+end
+
+--- WoW Forever's footer: BANK TABS. One tile per tab owned, then the next one
+--  carrying its price.
+--
+--  BUYING IS THE CLIENT'S. C_Bank.PurchaseBankTab is a restricted call
+--  (BankDocumentation.lua, HasRestrictions), so the buy tile is Blizzard's own
+--  BankPanelPurchaseButtonScriptTemplate laid over our tile - "for use by
+--  addons", BankFrameTemplates.xml:513-521 - and a click opens Blizzard's
+--  CONFIRM_BUY_BANK_TAB dialog, which does the buying. Our glass confirm is
+--  Era's; there is no route from it to a restricted call.
+function Bags:RefreshTabFooter(frame)
+	local c = Palette.c
+	local foot = frame.foot
+	local ok, tabs = pcall(CB.FetchPurchasedBankTabData, CHAR_BANK)
+	if not ok or type(tabs) ~= "table" then tabs = {} end
+
+	local prev = nil
+	local function Place(tile)
+		tile:ClearAllPoints()
+		if prev then
+			tile:SetPoint("RIGHT", prev, "LEFT", -6, 0)
+		else
+			tile:SetPoint("RIGHT", foot, "RIGHT", -SEARCH_PAD_X, 0)
+		end
+		prev = tile
+	end
+
+	for i, data in ipairs(tabs) do
+		local tile = foot.tiles[i]
+		if not tile then
+			tile = BuildBagTile(foot, TILE, 9)
+			foot.tiles[i] = tile
+		end
+		BindBagTile(tile, nil, nil)
+		tile.tab = data
+		Place(tile)
+
+		local icon = data.icon
+		tile.icon:SetTexture(icon)
+		tile.icon:SetShown(icon and true or false)
+		tile.glyph:SetShown(not icon)
+		tile.glyph:SetText(GlyphFor(data.name))
+		W.Color(tile.glyph, c.text)
+		tile.price:Hide()
+		tile:SetFillColor(c.glass)
+		tile:SetEdgeShown(true)
+		tile:SetEdgeColor(c.glassEdge)
+		tile:SetAlpha(1)
+		tile:Show()
+	end
+	for i = #tabs + 1, #foot.tiles do foot.tiles[i]:Hide() end
+
+	-- The next tab, while there is one to buy.
+	local maxed = CB.HasMaxBankTabs and CB.HasMaxBankTabs(CHAR_BANK)
+	local nextTab = (not maxed) and CB.FetchNextPurchasableBankTabData
+		and CB.FetchNextPurchasableBankTabData(CHAR_BANK) or nil
+	local buy = foot.buy
+	if not nextTab then
+		if buy then buy:Hide() end
+		return
+	end
+
+	if not buy then
+		buy = BuildBagTile(foot, TILE, 9)
+		buy:EnableMouse(false)
+		-- The click is the template's. Without it there is no honest way to buy,
+		-- so the tile is drawn and does nothing rather than pretending.
+		local okB, hit = pcall(CreateFrame, "Button", nil, buy,
+			"BankPanelPurchaseButtonScriptTemplate")
+		if okB and hit then
+			hit:SetAllPoints(buy)
+			hit:SetFrameLevel(buy:GetFrameLevel() + 2)
+			hit:SetAttribute("overrideBankType", CHAR_BANK)
+			hit:HookScript("OnEnter", function(self)
+				_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+				_G.GameTooltip:SetText(L.bags.tab_footer.buy_tab)
+				_G.GameTooltip:Show()
+			end)
+			hit:HookScript("OnLeave", function() _G.GameTooltip:Hide() end)
+			buy.hit = hit
+		end
+		foot.buy = buy
+	end
+	Place(buy)
+	buy.icon:Hide()
+	buy.glyph:Hide()
+	buy.price:Show()
+	buy.price:SetText(self:CostText(nextTab.tabCost))
+	W.Color(buy.price, c.textDim)
+	buy:SetFillColor({ 0, 0, 0, 0 })
+	buy:SetEdgeShown(true)
+	buy:SetEdgeColor(c.bankEdge or c.glassEdge)
+	buy:SetAlpha(1)
+	buy:Show()
 end
 
 -- ---------------------------------------------------------------------------
@@ -2189,8 +2357,9 @@ function Bags:HookGlobals()
 	-- The bag id is not thrown away. Blizzard's bank calls ToggleBag(5..10) for
 	-- its own bag slots, and answering that by toggling the INVENTORY window is
 	-- how clicking a bank bag closes your bags.
+	-- Past the reagent bag, on Forever: bag 5 is the player's own there.
 	local function forBag(id)
-		return type(id) == "number" and id > NUM_BAGS and "bank" or "bags"
+		return type(id) == "number" and id > NUM_BAGS + NUM_REAGENT and "bank" or "bags"
 	end
 
 	_G.ToggleAllBags  = function() Bags:Toggle() end
@@ -2313,7 +2482,7 @@ function Bags:HideBank()
 	-- as being at the banker and the next BANKFRAME_OPENED does not arrive.
 	if self.atBank then
 		self.atBank = false
-		if _G.CloseBankFrame then pcall(_G.CloseBankFrame) end
+		CloseBankSession()
 	end
 end
 
@@ -2926,9 +3095,10 @@ function Bags:Diagnose()
 		A:Print(("  keyring  " .. A.Val("%d") .. " slots"):format(KeyringSize()))
 	end
 	A:Print(("  " .. A.Val("%d") .. " / " .. A.Val("%d") .. " used"):format(used, total))
-	A:Print(("  at bank: " .. A.Val("%s") .. "  bank slots bought: " .. A.Val("%d"))
+	A:Print(("  at bank: " .. A.Val("%s") .. "  " .. (TABS and "bank tabs" or "bank slots")
+		.. " bought: " .. A.Val("%d"))
 		:format(self.atBank and "yes" or "no",
-			(_G.GetNumBankSlots and _G.GetNumBankSlots()) or 0))
+			TABS and #OwnedTabs() or ((_G.GetNumBankSlots and _G.GetNumBankSlots()) or 0)))
 
 	for name, state in pairs(self.hideReport or {}) do
 		local ink = (state == "STILL SHOWN") and A.Bad or A.Dim
@@ -2975,12 +3145,21 @@ function Bags:OnEnable()
 		Bags.atBank = false
 		if Bags.frames and Bags.frames.bank then Bags.frames.bank:Hide() end
 	end)
+	-- Forever's tabs: one bought, or one renamed or re-iconed.
+	if TABS then
+		A:RegisterEvent(self, "BANK_TABS_CHANGED", function() Bags:Invalidate("bank") end)
+		A:RegisterEvent(self, "BANK_TAB_SETTINGS_UPDATED", function() Bags:Invalidate("bank") end)
+	end
 
-	-- Money moves the footer and nothing else. A full grid rebuild on every
+	-- Money moves the footers and nothing else. A full grid rebuild on every
 	-- copper picked up would redraw eighty buttons for a two-character string.
+	-- The bank's is in it for Forever: whether the next tab is affordable is
+	-- read off the price, and the price is redrawn with it.
 	A:RegisterEvent(self, "PLAYER_MONEY", function()
-		local f = Bags.frames and Bags.frames.bags
-		if f and f:IsShown() then Bags:RefreshFooter(f) end
+		for _, kind in ipairs({ "bags", "bank" }) do
+			local f = Bags.frames and Bags.frames[kind]
+			if f and f:IsShown() then Bags:RefreshFooter(f) end
+		end
 	end)
 
 	-- Deferred by a frame. SellJunk returns immediately unless MerchantFrame is
@@ -3023,7 +3202,7 @@ function Bags:OnDisable()
 	end
 	if self.atBank then
 		self.atBank = false
-		if _G.CloseBankFrame then pcall(_G.CloseBankFrame) end
+		CloseBankSession()
 	end
 
 	self:RestoreGlobals()
