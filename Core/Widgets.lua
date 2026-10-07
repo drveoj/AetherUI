@@ -142,6 +142,25 @@ function W.Restyle(fs, style)
 	Media:SetFont(fs, style or fs._aetherStyle, fs._aetherSize)
 end
 
+--- Make the client draw a string's glyphs again.
+--
+--  ON A COLD CLIENT START a string can be laid out at its full width and never
+--  drawn: the player's cast-lane name did exactly that (2026-10-07), with the
+--  right text, font, colour and alpha, until a /reload. Setting the SAME font
+--  again changed nothing - the client treats it as a no-op - and only a real
+--  change of size and back, with the text cleared and put back, brought it up,
+--  measured in game. Which half did it was not separated, so this does both.
+function W.Reraster(fs)
+	if not fs or not fs.GetFont then return end
+	local path, size, flags = fs:GetFont()
+	if not path or not size then return end
+	fs:SetFont(path, size + 1, flags)
+	fs:SetFont(path, size, flags)
+	local text = fs:GetText()
+	fs:SetText("")
+	fs:SetText(text)
+end
+
 --- Every string this has coloured FROM A TOKEN, so a skin change can reach
 --  them. Same reasoning as the glass registry: frames are never destroyed,
 --  and a string coloured with a computed value is not in here at all.

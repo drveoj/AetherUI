@@ -326,6 +326,7 @@ local BOND_OFF  = 4      -- each hairline from the capsules' centre line
 local LABEL_GAP = 3
 local BOND_MIN  = 40     -- however the movers left the capsules
 local FLASH    = 0.2    -- seconds an interrupted cast shows red
+local RERASTER_AFTER = 0.1   -- the cold-start second pass on a lane's name
 
 local function Hairline(bond, y)
 	local t = bond:CreateTexture(nil, "BACKGROUND")
@@ -1005,8 +1006,17 @@ local function CastStart(f, channel)
 	local mine = (f.unit == "player")
 	local col = mine and c.laneCast or c.laneTarget
 	-- In capitals, as the handoff sets it - unless the name is secret, which
-	-- cannot be changed, only shown.
+	-- cannot be changed, only shown. Re-rastered first: after a cold client
+	-- start your lane's name was laid out and never drawn. See W.Reraster.
+	W.Reraster(f.spellName)
 	f.spellName:SetText(A.IsSecret(name) and name or string.upper(name))
+	-- AND AGAIN A MOMENT LATER. On the very first cast after a cold start the
+	-- first pass is too early - the draw is what asks for the font - so the
+	-- name stayed blank for that one cast (Joe, 2026-10-07). By 0.1s the
+	-- client has it.
+	if C_Timer and C_Timer.After then
+		C_Timer.After(RERASTER_AFTER, function() W.Reraster(f.spellName) end)
+	end
 	W.Color(f.spellName, col)
 	W.Color(f.time, col)
 	f.bar:SetColors(col)
