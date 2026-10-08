@@ -17743,6 +17743,28 @@ do
 	check(f.status:GetText() == A.L.layout.window.applied, "and a good one is applied")
 	f:Hide()
 
+	-- A PROFILE FROM BEFORE THE LANES. The floating cast bars left `cast` and
+	-- `targetcast` in every profile that ever moved them, and exporting wrote
+	-- them out - so Joe's own string came back "names cast, which isn't a
+	-- frame Lattice has" (2026-10-08). This suite's profile had never held one.
+	anchors.cast = { point = "CENTER", relPoint = "CENTER", x = -430, y = -31 }
+	anchors.targetcast = { point = "CENTER", relPoint = "CENTER", x = 429, y = -34 }
+	local legacy = LY:Encode()
+	check(not legacy:find("cast=", 1, true),
+		"a position left behind by a frame that is gone is not exported")
+	local back, why2 = LY:Decode(legacy)
+	check(back ~= nil and LY:Apply(back),
+		"so what Export writes, Apply takes back (" .. tostring(why2) .. ")")
+
+	-- And the empty layout still matches a profile whose only positions are
+	-- leftovers: they move nothing.
+	wipe(anchors)
+	anchors.cast = { point = "CENTER", relPoint = "CENTER", x = -430, y = -31 }
+	local bareBars = {}
+	for id, on in pairs(LY.BarsNow() or {}) do bareBars[id] = on or nil end
+	check(LY:Matches({ bars = bareBars, records = {} }),
+		"and a leftover position does not make an untouched profile look moved")
+
 	-- Everything back the way the suite had it.
 	wipe(anchors)
 	for _, e in pairs(M.registry) do e.parent, e.free = e.defaultParent, nil end

@@ -147,11 +147,13 @@ function Layout:Encode()
 	end
 	parts[#parts + 1] = "b=" .. table.concat(on, ",")
 
-	-- `__` entries are not positions - the lock pill's spot is one - and no
-	-- arrangement has an opinion about them.
+	-- Only nodes this addon has. `__` entries are not positions - the lock
+	-- pill's spot is one - and a profile can still hold one for a frame that is
+	-- gone: the floating cast bars left `cast` and `targetcast` behind when the
+	-- lanes replaced them. Written out, those made a string Decode refuses.
 	local names = {}
 	for name in pairs(anchors) do
-		if not tostring(name):find("^__") then names[#names + 1] = name end
+		if KNOWN[name] then names[#names + 1] = name end
 	end
 	table.sort(names)
 
@@ -330,9 +332,11 @@ function Layout:Matches(layout)
 	end
 
 	-- The empty layout is "untouched", so it matches only an untouched profile.
+	-- Untouched as far as nodes go: a leftover position for a frame that is
+	-- gone moves nothing, so it does not count.
 	if named == 0 then
 		for name in pairs(anchors) do
-			if not tostring(name):find("^__") then return false end
+			if KNOWN[name] then return false end
 		end
 	end
 	return true
