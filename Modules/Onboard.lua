@@ -979,8 +979,13 @@ local function Wireframe(box, preset)
 	local bw, bh = box:GetWidth(), box:GetHeight()
 	if not bw or bw <= 0 or not bh or bh <= 0 then return end
 
+	-- Where each node would land on this screen, walked down from the screen
+	-- through its parents - the string itself holds only bonds now.
+	local at, sw, sh = A.Layout:Resolve(preset.decoded)
+	if sw <= 0 or sh <= 0 then return end
+
 	local n = 0
-	local function mark(a, wide, strong)
+	local function mark(p, wide, strong)
 		n = n + 1
 		local m = box.marks[n]
 		if not m then
@@ -989,26 +994,20 @@ local function Wireframe(box, preset)
 			box.marks[n] = m
 		end
 
-		-- The fraction is an offset from the anchor point, so it becomes a
-		-- position on the box the same way Presets turns it into a position on
-		-- the screen: from the corner it is measured from.
 		m:SetSize(bw * (wide and 0.30 or 0.20), math.max(2, bh * 0.11))
 		m:ClearAllPoints()
-		m:SetPoint("CENTER", box, a.point or "CENTER",
-			(a.fx or 0) * bw, (a.fy or 0) * bh)
+		m:SetPoint("CENTER", box, "CENTER", p.x / sw * bw, p.y / sh * bh)
 		W.Tint(m, Palette.c.accent, strong and 0.75 or 0.4)
 		m:Show()
 	end
 
 	for name in pairs(SHOWN) do
-		local a = preset.anchors and preset.anchors[name]
-		if a then mark(a, false, true) end
+		if at[name] then mark(at[name], false, true) end
 	end
 
 	for id in pairs(preset.bars or {}) do
-		local a = preset.bars[id] and preset.anchors
-			and preset.anchors["bar" .. id]
-		if a then mark(a, true, false) end
+		local p = at["bar" .. id]
+		if p then mark(p, true, false) end
 	end
 end
 

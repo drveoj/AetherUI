@@ -8,8 +8,8 @@
 	one line a player shares, so there is one format for an arrangement and one
 	path that puts it on screen - Layout:Apply - whether it came from here or
 	from somebody's paste. The string carries the HUD scale, which numbered bars
-	are on (every other is switched off), and each node's place: on the screen
-	as fractions of it, or bonded to its parent in its own units.
+	are on (every other is switched off), and each node's place: hung from its
+	parent, or from the screen, in units.
 
 	THE NUMBERS ARE NOT WRITTEN BY HAND. An arrangement is a design decision made
 	by eye, in the game, at a real resolution - so each of these was laid out in
@@ -17,8 +17,11 @@
 	string ready to paste in here. Guessing coordinates in a text editor is how
 	you get a layout that is plausible in every dimension and right in none.
 
-	THE THREE BELOW ARE 1.x's, converted to strings as they were. They predate
-	the player-target spine, and two of them stretch it across the screen. Three
+	THE THREE BELOW ARE 1.x's, converted to strings as they were - and then to
+	the relative form (2026-10-08) by applying each with the code of the day on
+	its capture screen and reading back the bonds it measured, so each still
+	lands where it did. They predate the player-target spine, and two of them
+	stretch it across the screen. Three
 	arrangements designed for the spine replace them (decision 5): low and
 	centred, hugging the character, and raised above the bars.
 
@@ -47,27 +50,27 @@ Presets.list = {
 		label = L.presets.set_bars.label,
 		blurb = L.presets.set_bars.blurb,
 		-- captured on a 2885 x 1202 screen
-		layout = "LAT1;s=0.71;b=1;bar1=S,BOTTOM,BOTTOM,0.00000,0.01664;bar2=S,BOTTOM,BOTTOM,0.15323,0.01414;bar3=S,BOTTOMRIGHT,BOTTOMRIGHT,-0.00451,0.05491;bar4=S,BOTTOM,BOTTOM,0.15393,0.10567;bar5=S,RIGHT,RIGHT,-0.00139,-0.05575;bar6=S,RIGHT,RIGHT,-0.19171,-0.18221;barextra=S,BOTTOM,BOTTOM,0.16329,0.01414;chat=S,BOTTOMLEFT,BOTTOMLEFT,0.00555,0.04493;party=S,LEFT,LEFT,0.02288,0.06323;pet=S,TOPLEFT,TOPLEFT,0.00936,-0.26958;player=S,TOPLEFT,TOPLEFT,0.04403,-0.06656;quests=S,TOPRIGHT,TOPRIGHT,-0.00277,-0.27457;target=S,TOPLEFT,TOPLEFT,0.18755,-0.06656;targettarget=S,TOPLEFT,TOPLEFT,0.29086,-0.26958;tooltip=S,TOPRIGHT,TOPRIGHT,-0.06691,-0.01414",
+		layout = "LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,-16,-452;bar2=screen,BOTTOM,BOTTOM,442,17;bar3=screen,BOTTOMRIGHT,BOTTOMRIGHT,-13,66;bar4=screen,BOTTOM,BOTTOM,444,127;bar5=screen,RIGHT,RIGHT,-4,-67;bar6=screen,RIGHT,RIGHT,-553,-219;barextra=bar1,BOTTOM,CENTER,470,-40;chat=screen,BOTTOMLEFT,BOTTOMLEFT,16,54;party=screen,LEFT,LEFT,66,76;pet=player,TOPLEFT,CENTER,-325,-192;player=screen,TOPLEFT,TOPLEFT,127,-80;quests=screen,TOPRIGHT,TOPRIGHT,-8,-330;target=player,LEFT,RIGHT,69,0;targettarget=target,TOPLEFT,CENTER,0,-192;tooltip=screen,TOPRIGHT,TOPRIGHT,-193,-17",
 	},
 	centre = {
 		label = L.presets.set_bars.label2,
 		blurb = L.presets.set_bars.blurb2,
 		-- captured on a 2885 x 1202 screen
-		layout = "LAT1;s=0.71;b=1,2;bar1=S,BOTTOM,BOTTOM,-0.15289,0.01414;bar2=S,BOTTOM,BOTTOM,0.15323,0.01414;bar3=S,BOTTOMRIGHT,BOTTOMRIGHT,-0.00451,0.05491;bar4=S,BOTTOM,BOTTOM,0.15393,0.10567;bar5=S,RIGHT,RIGHT,-0.00139,-0.05575;bar6=S,RIGHT,RIGHT,-0.19171,-0.18221;barextra=S,BOTTOMRIGHT,BOTTOMRIGHT,-0.23990,0.01414;chat=S,BOTTOMLEFT,BOTTOMLEFT,0.00555,0.04493;pet=S,BOTTOMLEFT,BOTTOMLEFT,0.29086,0.36360;player=S,CENTER,CENTER,-0.09152,-0.11898;quests=S,TOPRIGHT,TOPRIGHT,-0.00277,-0.27457;target=S,CENTER,CENTER,0.09118,-0.11898;targettarget=S,BOTTOMRIGHT,BOTTOMRIGHT,-0.29086,0.36360;tooltip=S,TOPRIGHT,TOPRIGHT,-0.06691,-0.01414",
+		layout = "LAT1;s=0.71;b=1,2;bar1=spine,BOTTOM,CENTER,495,-1073;bar2=spine,BOTTOM,CENTER,1378,-1073;bar3=screen,BOTTOMRIGHT,BOTTOMRIGHT,-13,66;bar4=screen,BOTTOM,BOTTOM,444,127;bar5=screen,RIGHT,RIGHT,-4,-67;bar6=screen,RIGHT,RIGHT,-553,-219;barextra=bar1,BOTTOMRIGHT,CENTER,1192,-37;chat=screen,BOTTOMLEFT,BOTTOMLEFT,16,54;pet=player,BOTTOMLEFT,CENTER,-547,-102;player=screen,CENTER,CENTER,-264,-143;quests=screen,TOPRIGHT,TOPRIGHT,-8,-330;target=player,LEFT,RIGHT,182,0;targettarget=target,BOTTOMRIGHT,CENTER,549,-102;tooltip=screen,TOPRIGHT,TOPRIGHT,-193,-17",
 	},
 	bottom = {
 		label = L.presets.set_bars.label3,
 		blurb = L.presets.set_bars.blurb3,
 		-- captured on a 2885 x 1202 screen. The only one that places the music
 		-- deck, which is why it is the only one naming `ifec`.
-		layout = "LAT1;s=0.71;b=1,2;bar1=S,BOTTOM,BOTTOM,0.00000,0.01664;bar2=S,BOTTOM,BOTTOM,0.00000,0.08903;bar3=S,BOTTOMRIGHT,BOTTOMRIGHT,-0.00451,0.05491;bar4=S,BOTTOM,BOTTOM,0.15393,0.10567;bar5=S,RIGHT,RIGHT,-0.00139,-0.05575;bar6=S,RIGHT,RIGHT,-0.19171,-0.18221;barextra=S,BOTTOM,BOTTOM,0.00000,0.20634;barpet=S,BOTTOM,BOTTOM,0.00000,0.17223;chat=S,TOPLEFT,TOPLEFT,0.00901,-0.04327;ifec=S,BOTTOM,BOTTOM,0.00000,0.32782;party=S,LEFT,LEFT,0.02288,0.06323;pet=S,BOTTOMLEFT,BOTTOMLEFT,0.16883,0.08820;player=S,BOTTOMLEFT,BOTTOMLEFT,0.25550,0.07155;quests=S,TOPRIGHT,TOPRIGHT,-0.00277,-0.27457;target=S,BOTTOMRIGHT,BOTTOMRIGHT,-0.25550,0.07155;targettarget=S,BOTTOMRIGHT,BOTTOMRIGHT,-0.15670,0.08820;tooltip=S,TOPRIGHT,TOPRIGHT,-0.06691,-0.01414",
+		layout = "LAT1;s=0.71;b=1,2;bar1=spine,BOTTOM,CENTER,1,-438;bar2=spine,BOTTOM,CENTER,1,-351;bar3=screen,BOTTOMRIGHT,BOTTOMRIGHT,-13,66;bar4=screen,BOTTOM,BOTTOM,444,127;bar5=screen,RIGHT,RIGHT,-4,-67;bar6=screen,RIGHT,RIGHT,-553,-219;barextra=bar1,BOTTOM,CENTER,-1,191;barpet=bar1,BOTTOM,CENTER,-1,136;chat=screen,TOPLEFT,TOPLEFT,26,-52;ifec=screen,BOTTOM,BOTTOM,0,394;party=screen,LEFT,LEFT,66,76;pet=player,BOTTOMLEFT,CENTER,-583,-33;player=screen,BOTTOMLEFT,BOTTOMLEFT,737,86;quests=screen,TOPRIGHT,TOPRIGHT,-8,-330;target=player,LEFT,RIGHT,721,0;targettarget=target,BOTTOMRIGHT,CENTER,618,-33;tooltip=screen,TOPRIGHT,TOPRIGHT,-193,-17",
 	},
 }
 
 -- DECODED ONCE, here, and a shipped string that does not decode is a bug in
 -- this file - so it is said, not swallowed. The tour's cards draw a thumbnail
--- from `anchors` and `bars`, which are read off the decoded string so there is
--- still only the one source.
+-- from Layout:Resolve on the decoded string, so there is still only the one
+-- source.
 for key, preset in pairs(Presets.list) do
 	local layout, err = A.Layout:Decode(preset.layout)
 	if not layout then
@@ -75,12 +78,7 @@ for key, preset in pairs(Presets.list) do
 	end
 	preset.decoded = layout
 	preset.scale = layout.scale
-	preset.anchors, preset.bars = {}, {}
-	for name, r in pairs(layout.records) do
-		if r.kind == "S" then
-			preset.anchors[name] = { point = r.point, relPoint = r.relPoint, fx = r.fx, fy = r.fy }
-		end
-	end
+	preset.bars = {}
 	for id in pairs(layout.bars) do preset.bars[id] = true end
 end
 
@@ -113,10 +111,10 @@ end
 function Presets:Capture(key)
 	local text = A.Layout:Encode()
 	local count = 0
-	for _ in text:gmatch(";[%w_]+=[SB],") do count = count + 1 end
+	for _ in text:gmatch(";[%w_]+=[%w_]+,") do count = count + 1 end
 	-- WHAT IT WAS MADE ON, written down. An arrangement is a judgement made by
-	-- eye at one aspect ratio, and the fractions say where things went but not
-	-- whether they still compose at 16:9.
+	-- eye at one aspect ratio, and a block laid out across an ultrawide is wider
+	-- in units than a 16:9 screen, however it is anchored.
 	local sw, sh = A.Layout.ScreenIn(A.db.profile.scale)
 	local out = {
 		("    %s = {"):format(key or "PRESET"),

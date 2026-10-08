@@ -17287,7 +17287,7 @@ do
 
 		local named = {}
 		for _, key in ipairs(A.Presets.order) do
-			for name in pairs(A.Presets.list[key].anchors or {}) do
+			for name in pairs(A.Presets.list[key].decoded.records) do
 				named[name] = true
 			end
 		end
@@ -17339,7 +17339,9 @@ do
 	for _, key in ipairs(P.order) do
 		local preset = P.list[key]
 		local named = 0
-		for _ in pairs(preset and preset.anchors or {}) do named = named + 1 end
+		for _ in pairs(preset and preset.decoded and preset.decoded.records or {}) do
+			named = named + 1
+		end
 		check(named > 6,
 			"\"" .. key .. "\" is a real arrangement rather than an empty table ("
 			.. named .. " frames)")
@@ -17354,7 +17356,7 @@ do
 	-- only when they are switched on, and this profile has one.
 	for _, key in ipairs(P.order) do
 		local bad = {}
-		for name in pairs(P.list[key].anchors) do
+		for name in pairs(P.list[key].decoded.records) do
 			if not A.Movers.registry[name] and not tostring(name):find("^bar%d$") then
 				bad[#bad + 1] = name
 			end
@@ -17464,7 +17466,7 @@ do
 	-- SORTED, so two captures of the same layout are the same text and a diff
 	-- shows the line that really changed.
 	local order = {}
-	for name in text:gmatch(";([%w_]+)=[SB],") do order[#order + 1] = name end
+	for name in text:gmatch(";([%w_]+)=[%w_]+,[A-Z]+,") do order[#order + 1] = name end
 	local sorted = true
 	for i = 2, #order do
 		if order[i] < order[i - 1] then sorted = false end
@@ -17473,77 +17475,69 @@ do
 		"and in a fixed order rather than whatever pairs() felt like (" ..
 		#order .. " frames)")
 
-	-- AND THE NUMBERS ARE FRACTIONS OF THE SCREEN, not pixels.
+	-- EVERY NODE HANGS FROM ITS PARENT, AND THE TOP OF EACH TREE FROM THE
+	-- SCREEN, IN UNITS (Joe, 2026-10-08). Not fractions of the screen.
 	--
-	-- An arrangement made on a 3840x1600 monitor and shipped in pixels is an
-	-- arrangement for that monitor. How many UI units UIParent measures
-	-- depends on BOTH the aspect ratio and the player's UI Scale slider - the
-	-- capture the shipped three came from reports 2885 x 1202, where 768-tall
-	-- is what the default scale gives you - so neither axis can be assumed. A
-	-- frame 596 units in from the left edge is a third of the way across one
-	-- screen and nearly half way across another, and a "bottom corners"
-	-- layout quietly becomes "bottom middle".
+	-- The first version put a screen node at a fraction of the screen and its
+	-- children in units. On a narrower screen the player slid in towards the
+	-- centre by its fraction while the target, bonded to it, stayed the same
+	-- units to its right - so a centred block went lopsided, and further the
+	-- narrower the screen. In units the block is rigid; its anchor is what ties
+	-- it to the screen's centre, or an edge to its edge.
 	do
+		-- A SYMMETRIC block, worked out from the frames' own widths: the player
+		-- left of centre and the target bonded to it, the same distance right.
+		local UFm = A:GetModule("unitframes")
+		local pw, tw = UFm.player:GetWidth(), UFm.target:GetWidth()
+		local GAP = 300
+		local px = -(GAP / 2 + pw / 2)
 		-- Bars 1 and 2, as the last preset applied left them, so the probe
 		-- moves no bar the checks after this block depend on.
-		probe("__probe", "LAT1;s=0.71;b=1,2;player=S,BOTTOMLEFT,BOTTOMLEFT,0.25,0.10;"
-			.. "target=S,CENTER,CENTER,-0.20,0")
+		probe("__probe", ("LAT1;s=0.71;b=1,2;player=screen,CENTER,CENTER,%d,0;"
+			.. "target=player,LEFT,RIGHT,%d,0;chat=screen,BOTTOMLEFT,BOTTOMLEFT,16,54"):format(
+			math.floor(px + 0.5), GAP))
 
 		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
-		local function at(width)
-			UIParent:SetSize(width, 768)
+		local function at(width, height)
+			UIParent:SetSize(width, height)
 			P:Apply("__probe")
-			return anchors.player.x, anchors.target.x, anchors.player.y
+			local where = A.Layout:Resolve(P.list.__probe.decoded)
+			return where.player, where.target
 		end
 
-		-- The two shapes that matter, in the units the client draws in.
-		local wideX, wideC, wideY = at(1843)
-		local narrowX, narrowC, narrowY = at(1365)
+		-- 3840x1600 and 1920x1080, in the units the client draws in at the
+		-- default scale: the same height, 2.4 and 1.78 times as wide.
+		local wideP, wideT = at(1843, 768)
+		local narrowP, narrowT = at(1365, 768)
 
-		check(wideX > narrowX and math.abs(narrowX / wideX - 1365 / 1843) < 0.01,
-			"a frame placed a quarter of the way across stays a quarter of the way "
-			.. "across on a narrower screen (" .. string.format("%.0f then %.0f",
-			wideX, narrowX) .. ")")
-
-		-- BOTH DIRECTIONS FROM CENTRE. A negative offset that grew instead of
-		-- shrinking would put the left-hand frame off the left edge, which is the
-		-- one failure of this that is not merely untidy.
-		check(wideC < 0 and narrowC < 0 and narrowC > wideC,
-			"and one placed left of centre moves in rather than out (" ..
-			string.format("%.0f then %.0f", wideC, narrowC) .. ")")
-
-		-- AND THE OTHER AXIS ON ITS OWN TERMS. Both screens here are the same
-		-- height, so nothing should move vertically - but that is a property of
-		-- these two screens, not of the client. UIParent's height follows the
-		-- player's UI Scale slider as well as the display, which is why `fy` is
-		-- a fraction rather than carried across untouched.
-		check(wideY == narrowY,
-			"and nothing moves vertically between two screens of the same height "
-			.. "(" .. wideY .. ", " .. narrowY .. ")")
-
-		local _, _, shortY = at(1365)
-		UIParent:SetSize(1365, 384)
-		P:Apply("__probe")
-		check(anchors.player.y < shortY,
-			"and a shorter screen moves it proportionally too, because UIParent's "
-			.. "height follows the UI Scale slider and is not a constant (" ..
-			anchors.player.y .. " against " .. shortY .. ")")
-
-		-- AND THE ARRANGEMENT STILL READS BACK AS ITSELF once resolved. Comparing
-		-- a preset's fractions against the units the movers wrote makes every
-		-- preset answer "not this one" on every display.
+		check(wideP and narrowP and wideP.x == narrowP.x and wideT.x == narrowT.x,
+			"the main block sits the same units from the centre on an ultrawide and"
+			.. " on 16:9 - a fraction of the screen would have slid the player in and"
+			.. " left the target where its bond put it (" .. string.format(
+			"player %.0f then %.0f, target %.0f then %.0f", wideP and wideP.x or 0,
+			narrowP and narrowP.x or 0, wideT and wideT.x or 0, narrowT and narrowT.x or 0) .. ")")
+		check(narrowP and narrowT and math.abs(narrowP.x + narrowT.x) <= 1
+			and math.abs(narrowP.x) > 0,
+			"and stays centred: player and target the same distance either side of"
+			.. " the middle (" .. string.format("%.0f, %.0f",
+			narrowP and narrowP.x or 0, narrowT and narrowT.x or 0) .. ")")
+		check(anchors.chat.x == 16 and anchors.chat.y == 54,
+			"a node on an edge stays the same units in from that edge, whatever"
+			.. " the screen (" .. anchors.chat.x .. ", " .. anchors.chat.y .. ")")
 		check(P:Current() == "__probe",
 			"and it is still recognised as the arrangement on screen (" ..
 			tostring(P:Current()) .. ")")
 
-		-- A CAPTURE COMES BACK IN FRACTIONS, which is what makes the next one
-		-- portable. A capture in units is a capture of one monitor.
+		-- A CAPTURE IS IN THE SAME FORM: every record names its parent.
 		local text = table.concat((P:Capture("__probe")), "\n")
-		check(text:find("player=S,BOTTOMLEFT,BOTTOMLEFT,0%.2") ~= nil,
-			"and a capture writes fractions rather than the units it read")
+		check(text:find("player=screen,CENTER,CENTER,", 1, true) ~= nil
+			and text:find("target=player,LEFT,RIGHT,300,0", 1, true) ~= nil,
+			"a capture names each node's parent, the screen at the top")
+		check(not text:find("=S,", 1, true) and not text:find("=B,", 1, true),
+			"and holds no canvas position")
 		check(text:find("captured on a", 1, true) ~= nil,
-			"saying what size screen it was made on, because whether a layout still "
-			.. "composes at 16:9 is a question the numbers cannot answer")
+			"saying what size screen it was made on, because a block laid out across"
+			.. " an ultrawide is wider than a 16:9 screen however it is anchored")
 
 		UIParent:SetSize(wasW, wasH)
 		P.list.__probe = nil
@@ -17564,7 +17558,7 @@ do
 			was[id] = AB:BarConfig(id).enabled
 		end
 
-		probe("__bars", "LAT1;s=0.71;b=1,2,5;player=S,CENTER,CENTER,0,0")
+		probe("__bars", "LAT1;s=0.71;b=1,2,5;player=screen,CENTER,CENTER,0,0")
 
 		-- Switched the other way round to start with, so both directions are
 		-- actually exercised rather than one of them happening to be right.
@@ -17665,10 +17659,12 @@ do
 
 	-- Bar 8 is a name this addon knows and, switched off, nothing re-measures:
 	-- its bond is exactly what the string said.
-	local TEXT = "LAT1;s=0.71;b=1;barextra=B,player,CENTER,CENTER,0,40;"
-		.. "bar8=B,bar1,BOTTOM,CENTER,0,-60;"
-		.. "chat=S,BOTTOMLEFT,BOTTOMLEFT,0.01000,0.05000;"
-		.. "quests=S,TOPRIGHT,TOPRIGHT,-0.01000,-0.20000,F"
+	-- The pet is set free by naming the screen: its module hangs it from the
+	-- player, and there is no separate flag for that any more.
+	local TEXT = "LAT1;s=0.71;b=1;barextra=player,CENTER,CENTER,0,40;"
+		.. "bar8=bar1,BOTTOM,CENTER,0,-60;"
+		.. "chat=screen,BOTTOMLEFT,BOTTOMLEFT,14,38;"
+		.. "pet=screen,TOPRIGHT,TOPRIGHT,-20,-150"
 	local layout, err = LY:Decode(TEXT)
 	check(layout ~= nil, "a layout string decodes (" .. tostring(err) .. ")")
 	anchors.__lockButton = { point = "CENTER", relPoint = "CENTER", x = 2, y = 164 }
@@ -17677,8 +17673,11 @@ do
 	local lat = anchors.bar8 and anchors.bar8.lat
 	check(lat and lat.parent == "bar1" and lat.point == "BOTTOM" and lat.y == -60,
 		"a bonded node is written as its bond, in its own units")
-	check(anchors.quests and anchors.quests.free == true,
-		"a node set free stays free")
+	check(anchors.pet and anchors.pet.free == true and M:ParentOf("pet") == nil,
+		"a node its module hangs from another, named on the screen, is set free"
+		.. " of it (" .. tostring(M:ParentOf("pet")) .. ")")
+	check(anchors.chat and anchors.chat.x == 14 and anchors.chat.y == 38,
+		"and a node on the screen is placed in units from its anchor, as written")
 	check(M:ParentOf("barextra") == "player",
 		"and a node the string bonds elsewhere hangs from that parent now ("
 		.. tostring(M:ParentOf("barextra")) .. ")")
@@ -17687,23 +17686,25 @@ do
 	check(LY:Matches(layout), "and it reads back as the layout on screen")
 
 	local out = LY:Encode()
-	check(out:find("bar8=B,bar1,BOTTOM,CENTER,0,-60", 1, true)
-		and out:find(",F", 1, true) and not out:find("__lockButton", 1, true),
-		"exported again, the bond, the free flag and nothing else ride along")
+	check(out:find("bar8=bar1,BOTTOM,CENTER,0,-60", 1, true)
+		and out:find("pet=screen,TOPRIGHT,TOPRIGHT,-20,-150", 1, true)
+		and not out:find("__lockButton", 1, true),
+		"exported again, the bond, the freed node on the screen and nothing else"
+		.. " ride along")
 	local names = {}
-	for n in out:gmatch(";([%w_]+)=[SB],") do names[#names + 1] = n end
+	for n in out:gmatch(";([%w_]+)=[%w_]+,[A-Z]+,") do names[#names + 1] = n end
 	local sorted = #names > 1
 	for i = 2, #names do if names[i] < names[i - 1] then sorted = false end end
 	check(sorted, "in a fixed order, so one arrangement is always one string")
 
-	-- ANOTHER SCREEN: the bond in units does not move, the screen node does.
+	-- ANOTHER SCREEN: nothing in the string depends on its size.
 	local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
 	local chatX = anchors.chat.x
 	UIParent:SetSize(wasW * 1.5, wasH)
 	LY:Apply(layout)
-	check(anchors.bar8.lat.y == -60 and anchors.chat.x > chatX,
-		"on a wider screen the bond is the same and the screen node keeps its"
-		.. " fraction (" .. chatX .. " then " .. anchors.chat.x .. ")")
+	check(anchors.bar8.lat.y == -60 and anchors.chat.x == chatX,
+		"on a wider screen the bond is the same and the screen node is the same"
+		.. " units from its edge (" .. chatX .. " then " .. anchors.chat.x .. ")")
 	UIParent:SetSize(wasW, wasH)
 
 	-- REFUSED, WHOLE.
@@ -17713,14 +17714,20 @@ do
 			what .. " is refused, saying why (" .. tostring(e) .. ")")
 	end
 	refused("LAT2;s=0.71;b=1", "another version")
-	refused("LAT1;s=0.71;b=1;nonsense=S,CENTER,CENTER,0,0", "a node this addon never had")
-	refused("LAT1;s=0.71;b=1;bar8=B,nonsense,CENTER,CENTER,0,0", "a parent this addon never had")
-	refused("LAT1;s=0.71;b=1;bar8=B,bar9,CENTER,CENTER,0,0;bar9=B,bar8,CENTER,CENTER,0,0",
+	refused("LAT1;s=0.71;b=1;nonsense=screen,CENTER,CENTER,0,0", "a node this addon never had")
+	refused("LAT1;s=0.71;b=1;bar8=nonsense,CENTER,CENTER,0,0", "a parent this addon never had")
+	refused("LAT1;s=0.71;b=1;bar8=bar9,CENTER,CENTER,0,0;bar9=bar8,CENTER,CENTER,0,0",
 		"a loop")
-	refused("LAT1;s=0.71;b=1;player=B,bar1,CENTER,CENTER,0,0;bar1=B,spine,CENTER,CENTER,0,0",
+	refused("LAT1;s=0.71;b=1;player=bar1,CENTER,CENTER,0,0;bar1=spine,CENTER,CENTER,0,0",
 		"a loop through the spine, which belongs to the player")
-	refused("LAT1;s=0.71;b=1;chat=S,BOTTOMLEFT,BOTTOMLEFT,nan,0", "a number that is not one")
-	refused("LAT1;s=0.71;b=1;chat=S,MIDDLE,BOTTOMLEFT,0,0", "a point the client has not got")
+	refused("LAT1;s=0.71;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,nan,0", "a number that is not one")
+	refused("LAT1;s=0.71;b=1;chat=screen,MIDDLE,BOTTOMLEFT,0,0", "a point the client has not got")
+	refused("LAT1;s=0.71;b=1;chat=S,BOTTOMLEFT,BOTTOMLEFT,0.01000,0.05000",
+		"a canvas position, as the first version wrote one")
+	refused("LAT1;s=0.71;b=1;bar8=B,bar1,BOTTOM,CENTER,0,-60",
+		"and the first version's bond, with its marker")
+	refused("LAT1;s=0.71;b=1;target=screen,CENTER,CENTER,0,0",
+		"the target hung from anything but the player, which it is one piece with")
 	refused("LAT1;b=1", "a layout with no scale")
 	refused("", "nothing at all")
 
@@ -34594,9 +34601,10 @@ do
 			"stop 2 offers every shipped arrangement (" .. #cards .. ")")
 
 		-- A WIREFRAME DRAWN FROM THE ARRANGEMENT ITSELF, not three hand-drawn
-		-- thumbnails. The anchors are already fractions of the screen - that is
-		-- what makes them portable - so a thumbnail cannot drift away from what
-		-- the card actually does.
+		-- thumbnails. Layout:Resolve walks each node down from the screen
+		-- through its parents, so a thumbnail cannot drift away from what the
+		-- card actually does - and a bonded target or bar is drawn too, though
+		-- the string holds no screen position for it.
 		--
 		-- AND FOUR MARKS AT MOST, NOT ELEVEN. The first version drew every
 		-- anchor a preset names - six bars, the party frame, the pet, the
@@ -34612,11 +34620,12 @@ do
 			-- The player, the target, and the bars this preset SWITCHES ON. A
 			-- preset that leaves bar 5 off has no business drawing it, and the
 			-- anchors table carries a position for it either way.
+			local records = preset.decoded.records
 			local want = 0
-			if preset.anchors.player then want = want + 1 end
-			if preset.anchors.target then want = want + 1 end
+			if records.player then want = want + 1 end
+			if records.target then want = want + 1 end
 			for id, on in pairs(preset.bars or {}) do
-				if on and preset.anchors["bar" .. id] then want = want + 1 end
+				if on and records["bar" .. id] then want = want + 1 end
 			end
 
 			check(shown == want and shown > 1 and shown <= 4,

@@ -4,7 +4,7 @@
 	THE LAYOUT STRING: a whole arrangement of the HUD as one line of text, to
 	share, keep, or ship as a preset (parent model phase C; Joe's decision 5).
 
-	    LAT1;s=0.71;b=1,2;bar1=B,spine,BOTTOM,CENTER,0,-96;chat=S,BOTTOMLEFT,...
+	    LAT1;s=0.71;b=1,2;bar1=spine,BOTTOM,CENTER,0,-96;chat=screen,BOTTOMLEFT,...
 
 	  LAT1      the version. Anything else is refused, not guessed at.
 	  s=        the HUD scale, which travels with the layout.
@@ -12,21 +12,27 @@
 	            layout made around two bars has nothing to say about a third,
 	            and leaving one on where the last layout put it is two layouts
 	            at once.
-	  name=S,point,relPoint,fx,fy[,F]
-	            a node on the SCREEN, as fractions of it, because a screen
-	            position in units is a position for one monitor. F: set free of
-	            the parent its module would give it.
-	  name=B,parent,point,relPoint,x,y
-	            a node BONDED to another, as its offset in its own units.
-	            Those do not depend on the screen at all, which is what lets
-	            a layout travel.
+	  name=parent,point,relPoint,x,y
+	            EVERY node, the same way: its `point` at x,y units from its
+	            parent's `relPoint`. The top of every tree hangs from `screen` -
+	            the main block from its centre, chat and the trunks from their
+	            edge - so nothing is a position on the canvas.
+
+	WHY UNITS AND NOT FRACTIONS (Joe, 2026-10-08). The first version stored a
+	screen node as fractions of the screen and its children in units. On a
+	narrower screen the player then slid in towards the centre by its fraction
+	while the target stayed the same 349 units to its right, and the whole
+	block went lopsided. One unit throughout keeps a block rigid; the anchor is
+	what ties it to the right part of the screen. Being set free of the parent
+	a module would give a node is just naming `screen`.
 
 	Records come out sorted, so the same arrangement is always the same text.
 
 	REFUSED, WHOLE: a string of another version, one naming a node this addon
-	has never had, one whose bonds would loop, and anything during combat -
-	re-anchoring frames with secure children is protected. Nothing is half
-	applied.
+	has never had, one whose bonds would loop, one hanging the target off
+	anything but the player - the two are one piece - and anything during
+	combat, where re-anchoring frames with secure children is protected.
+	Nothing is half applied.
 
 	GETTING IT OUT. This client cannot copy reliably: the multi-line copy box
 	hands over what it LAID OUT rather than the string, and CopyToClipboard is
@@ -61,6 +67,12 @@ Layout.KNOWN = KNOWN
 --  each belongs to - which is where a loop through one really goes.
 local OWNED = { spine = "player" }
 
+--- The top of every tree. Not a node: nothing hangs it anywhere.
+local SCREEN = "screen"
+
+--- Nodes that are one piece with another and can only hang from it.
+local PAIRED = { target = "player" }
+
 local function round(v) return math.floor((v or 0) + 0.5) end
 
 --- A number, and a finite one. "nan" and "inf" parse; neither is a position.
@@ -70,10 +82,9 @@ local function Num(v)
 	return nil
 end
 
---- UIParent's size in the units a screen record is written in. An offset is
---  in the frame's own space, and the HUD's frames are at `scale`, so the screen
---  is divided by it - and a layout carries its scale, so the fraction captured
---  on one machine is the fraction applied on the next.
+--- UIParent's size in the units a record is written in. An offset is in the
+--  frame's own space, and the HUD's frames are at `scale`, so the screen is
+--  divided by it. Only Resolve and the capture note need it now.
 local function ScreenIn(scale)
 	scale = (type(scale) == "number" and scale > 0) and scale or 1
 	local w = (UIParent and UIParent:GetWidth()) or 0
@@ -138,7 +149,6 @@ function Layout:Encode()
 	local profile = A.db.profile
 	local anchors = profile.anchors or {}
 	local scale = profile.scale or 1
-	local sw, sh = ScreenIn(scale)
 
 	local parts = { Layout.VERSION, ("s=%.2f"):format(scale) }
 	local on, bars = {}, BarsNow() or {}
@@ -157,17 +167,17 @@ function Layout:Encode()
 	end
 	table.sort(names)
 
+	-- The bond where there is one; otherwise the node hangs from the screen,
+	-- and its saved point and offset are already that, in units.
 	for _, name in ipairs(names) do
 		local a = anchors[name]
 		local lat = type(a.lat) == "table" and a.lat
 		if lat and lat.parent and not a.free then
-			parts[#parts + 1] = ("%s=B,%s,%s,%s,%d,%d"):format(name, lat.parent,
+			parts[#parts + 1] = ("%s=%s,%s,%s,%d,%d"):format(name, lat.parent,
 				tostring(lat.point), tostring(lat.relPoint), round(lat.x), round(lat.y))
 		elseif a.point then
-			parts[#parts + 1] = ("%s=S,%s,%s,%.5f,%.5f%s"):format(name,
-				a.point, a.relPoint or a.point,
-				sw > 0 and (a.x or 0) / sw or 0, sh > 0 and (a.y or 0) / sh or 0,
-				a.free and ",F" or "")
+			parts[#parts + 1] = ("%s=%s,%s,%s,%d,%d"):format(name, SCREEN,
+				a.point, a.relPoint or a.point, round(a.x), round(a.y))
 		end
 	end
 	return table.concat(parts, ";")
@@ -210,22 +220,17 @@ function Layout:Decode(text)
 				local p = {}
 				for x in (v .. ","):gmatch("([^,]*),") do p[#p + 1] = x end
 
-				if p[1] == "S" and (#p == 5 or (#p == 6 and p[6] == "F")) then
-					local fx, fy = Num(p[4]), Num(p[5])
-					if not (valid[p[2]] and valid[p[3]] and fx and fy) then return bad(f) end
-					out.records[k] = { kind = "S", point = p[2], relPoint = p[3],
-						fx = fx, fy = fy, free = (p[6] == "F") or nil }
-				elseif p[1] == "B" and #p == 6 then
-					local parent, x, y = p[2], Num(p[5]), Num(p[6])
-					if not (KNOWN[parent] or OWNED[parent]) then
-						return nil, A.F(L.layout.err.unknown, parent)
-					end
-					if not (valid[p[3]] and valid[p[4]] and x and y) then return bad(f) end
-					out.records[k] = { kind = "B", parent = parent, point = p[3],
-						relPoint = p[4], x = round(x), y = round(y) }
-				else
-					return bad(f)
+				-- parent,point,relPoint,x,y and nothing else. A canvas position
+				-- from the first version (S or B in front) is refused here too.
+				if #p ~= 5 then return bad(f) end
+				local parent, x, y = p[1], Num(p[4]), Num(p[5])
+				if not (parent == SCREEN or KNOWN[parent] or OWNED[parent]) then
+					return nil, A.F(L.layout.err.unknown, parent)
 				end
+				if not (valid[p[2]] and valid[p[3]] and x and y) then return bad(f) end
+				if PAIRED[k] and parent ~= PAIRED[k] then return bad(f) end
+				out.records[k] = { parent = parent, point = p[2], relPoint = p[3],
+					x = round(x), y = round(y) }
 			end
 		end
 	end
@@ -235,7 +240,7 @@ function Layout:Decode(text)
 	-- the client refuses - and through the spine, which belongs to the player.
 	for name in pairs(out.records) do
 		local p, hops = out.records[name].parent, 0
-		while p and hops < 24 do
+		while p and p ~= SCREEN and hops < 24 do
 			if p == name then return nil, A.F(L.layout.err.loop, name) end
 			if OWNED[p] then
 				p = OWNED[p]
@@ -272,20 +277,21 @@ function Layout:Apply(layout)
 	wipe(anchors)
 	for name, a in pairs(keep) do anchors[name] = a end
 
-	-- The layout's own scale: it is about to be the profile's, and resolving
-	-- the fractions against the old one puts everything out by the ratio.
-	local scale = layout.scale or profile.scale
-	local sw, sh = ScreenIn(scale)
+	-- On the screen, a node its module would hang from another one is set free
+	-- of it - that is what naming `screen` means. One it would not is simply
+	-- placed; a node whose module is off now is taken at its word as well.
+	local registry = A.Movers.registry
 	for name, r in pairs(layout.records) do
-		if r.kind == "S" then
-			anchors[name] = { point = r.point, relPoint = r.relPoint,
-				x = round(r.fx * sw), y = round(r.fy * sh), free = r.free }
+		if r.parent == SCREEN then
+			local e = registry[name]
+			anchors[name] = { point = r.point, relPoint = r.relPoint, x = r.x, y = r.y,
+				free = (not e or e.defaultParent) and true or nil }
 		else
 			anchors[name] = { lat = { parent = r.parent, point = r.point,
 				relPoint = r.relPoint, x = r.x, y = r.y } }
 		end
 	end
-	profile.scale = scale
+	profile.scale = layout.scale or profile.scale
 
 	-- Every node on its new parent BEFORE anything is re-registered: a module
 	-- re-registering a parent re-places its children, and one still on its old
@@ -298,8 +304,8 @@ function Layout:Apply(layout)
 end
 
 --- Is the layout on screen now this one? The tour and the preset list ask.
---  Within a unit, because a fraction resolved on one screen and saved on it
---  comes back a rounding away.
+--  Within a unit, because a bond measured back after placing can come back a
+--  rounding away.
 function Layout:Matches(layout)
 	if not layout or not A.db then return false end
 	local now = BarsNow()
@@ -310,24 +316,20 @@ function Layout:Matches(layout)
 	end
 
 	local anchors = A.db.profile.anchors or {}
-	local sw, sh = ScreenIn(layout.scale or A.db.profile.scale)
 	local named = 0
 	for name, r in pairs(layout.records) do
 		named = named + 1
 		local b = anchors[name]
 		if not b then return false end
-		if r.kind == "S" then
-			if b.point ~= r.point or b.relPoint ~= r.relPoint then return false end
-			if math.abs(r.fx * sw - (b.x or 0)) > 1 or math.abs(r.fy * sh - (b.y or 0)) > 1 then
-				return false
-			end
-		else
-			local lat = b.lat
-			if type(lat) ~= "table" or lat.parent ~= r.parent or lat.point ~= r.point
-				or lat.relPoint ~= r.relPoint then return false end
-			if math.abs((lat.x or 0) - r.x) > 1 or math.abs((lat.y or 0) - r.y) > 1 then
-				return false
-			end
+		-- The record as the string would write it: its bond, or the screen.
+		local lat = type(b.lat) == "table" and b.lat.parent and not b.free and b.lat
+		local parent = lat and lat.parent or SCREEN
+		local h = lat or b
+		if parent ~= r.parent or h.point ~= r.point or (h.relPoint or h.point) ~= r.relPoint then
+			return false
+		end
+		if math.abs((h.x or 0) - r.x) > 1 or math.abs((h.y or 0) - r.y) > 1 then
+			return false
 		end
 	end
 
@@ -340,6 +342,79 @@ function Layout:Matches(layout)
 		end
 	end
 	return true
+end
+
+--- -1, 0 or 1 on each axis for one of the nine points.
+local function Sides(point)
+	local hx = point:find("LEFT") and -1 or point:find("RIGHT") and 1 or 0
+	local vy = point:find("BOTTOM") and -1 or point:find("TOP") and 1 or 0
+	return hx, vy
+end
+
+--- Where each node of a layout would sit on THIS screen, without placing
+--  anything: its centre as x, y units from the screen's centre, and the
+--  screen's size in the same units. For the tour's thumbnails, which used to
+--  read the fractions straight off the string and have nothing to read now.
+--
+--  Sizes come from the live frames, so a node whose module is off counts as
+--  a point. The spine runs from the player's right edge to the target's left.
+function Layout:Resolve(layout)
+	if not layout then return {}, 0, 0 end
+	local sw, sh = ScreenIn(layout.scale or (A.db and A.db.profile.scale))
+	local registry, nodes = A.Movers.registry, A.Movers.nodes or {}
+	local function Size(name)
+		local e = registry[name]
+		local f = (e and e.frame) or nodes[name]
+		if not f then return 0, 0 end
+		return f:GetWidth() or 0, f:GetHeight() or 0
+	end
+
+	local at, busy = {}, {}
+	local function Place(name)
+		if at[name] then return at[name] end
+		if busy[name] then return nil end
+		busy[name] = true
+
+		local pos
+		if OWNED[name] then
+			-- Only the spine is owned, and it starts at the player's right edge.
+			local p = Place(OWNED[name])
+			if p then
+				local pw = Size(OWNED[name])
+				local t = layout.records.target
+				local len = (t and t.parent == OWNED[name] and t.x) or Size(name)
+				pos = { x = p.x + pw / 2 + len / 2, y = p.y }
+			end
+		else
+			local r = layout.records[name]
+			if r then
+				local ax, ay
+				if r.parent == SCREEN then
+					local hx, vy = Sides(r.relPoint)
+					ax, ay = hx * sw / 2, vy * sh / 2
+				else
+					local p = Place(r.parent)
+					if p then
+						local pw, ph = Size(r.parent)
+						local hx, vy = Sides(r.relPoint)
+						ax, ay = p.x + hx * pw / 2, p.y + vy * ph / 2
+					end
+				end
+				if ax then
+					local w, h = Size(name)
+					local hx, vy = Sides(r.point)
+					pos = { x = ax + r.x - hx * w / 2, y = ay + r.y - vy * h / 2 }
+				end
+			end
+		end
+
+		busy[name] = nil
+		at[name] = pos
+		return pos
+	end
+
+	for name in pairs(layout.records) do Place(name) end
+	return at, sw, sh
 end
 
 -- ---------------------------------------------------------------------------
