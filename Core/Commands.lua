@@ -533,31 +533,32 @@ handlers.preset = function(arg, rest)
 		-- The key is a NAME and keeps its case, like every other tail here.
 		local key = (rest or ""):gsub("%s", "")
 		if key == "" then key = P:Current() or "PRESET" end
-		local lines, count = P:Capture(key)
+		local text, count, screen = P:Capture()
 
 		-- INTO THE COPY BOX, which is the only thing in this client whose text
 		-- can be selected - chat cannot be copied from at all, which is why
-		-- that box exists.
-		local text = table.concat(lines, "\n")
+		-- that box exists. The bare string, so it pastes into the layout box.
 		A.Errors:ShowText(text)
 
 		-- AND OUT TO THE DISK, which is the only route out of this client
 		-- that carries the text intact. The box above is for reading.
 		A.Errors:Export("preset_" .. key, text)
 		A:Print(A.F(count == 1
-			and "captured %d frame position as %s - the layout string above is the"
-				.. " thing to paste into Core\\Presets.lua"
-			or "captured %d frame positions as %s - the layout string above is the"
-				.. " thing to paste into Core\\Presets.lua",
-			count, A.Val(key)))
+			and "captured %d frame position as %s on a %s screen - the string above"
+				.. " pastes into /lattice layout"
+			or "captured %d frame positions as %s on a %s screen - the string above"
+				.. " pastes into /lattice layout",
+			count, A.Val(key), screen))
 		return
 	end
 
-	if arg and P.list[arg] then
-		if P:Apply(arg) then
-			A:Print(A.F(L.cmd.preset.layout_s, A.Hi(P.list[arg].label)))
+	-- Either spelling of centre, any case: Presets:Find folds both.
+	local key = P:Find(arg)
+	if key then
+		if P:Apply(key) then
+			A:Print(A.F(L.cmd.preset.layout_s, A.Hi(P.list[key].label)))
 		else
-			A:Print(A.F(L.cmd.preset.could_apply_s, A.Val(arg)))
+			A:Print(A.F(L.cmd.preset.could_apply_s, A.Val(key)))
 		end
 		return
 	end

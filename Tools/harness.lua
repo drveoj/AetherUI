@@ -5922,6 +5922,67 @@ load("Libs/AceDB-3.0/AceDB-3.0.lua")
 -- then never be caught here. Ninety lines; loading it costs nothing.
 load("Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua")
 
+-- C_EncodingUtil, which both clients ship (EncodingUtilDocumentation.lua), for
+-- the layout string's share form. REAL DEFLATE, not a pass-through: a mock that
+-- handed text back unchanged would let a string that never compressed - or one
+-- cut short in a paste - look like it round-trips. LibDeflate is in Tools only
+-- and never ships; its raw DEFLATE is the client's Enum.CompressionMethod.Deflate.
+-- Base64 is the RFC 4648 standard alphabet the client defaults to, and like the
+-- client it answers nothing for input it cannot read.
+do
+	local Deflate = dofile("Tools/LibDeflate/LibDeflate.lua")
+	local ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	local index = {}
+	for i = 1, 64 do index[ABC:sub(i, i)] = i - 1 end
+
+	Enum = Enum or {}
+	Enum.CompressionMethod = { Deflate = 0, Zlib = 1, Gzip = 2 }
+	Enum.CompressionLevel = { Default = 0, OptimizeForSpeed = 1, OptimizeForSize = 2 }
+
+	C_EncodingUtil = {}
+	function C_EncodingUtil.CompressString(s, method)
+		if (method or 0) ~= 0 then return nil end
+		return Deflate:CompressDeflate(s)
+	end
+	function C_EncodingUtil.DecompressString(s, method)
+		if (method or 0) ~= 0 then return nil end
+		local out, left = Deflate:DecompressDeflate(s)
+		if not out or (left and left > 0) then return nil end
+		return out
+	end
+	function C_EncodingUtil.EncodeBase64(s)
+		local out = {}
+		for i = 1, #s, 3 do
+			local a, b, c = s:byte(i, i + 2)
+			local n = a * 65536 + (b or 0) * 256 + (c or 0)
+			local q = {}
+			for k = 3, 0, -1 do
+				local v = math.floor(n / 64 ^ k) % 64
+				q[#q + 1] = ABC:sub(v + 1, v + 1)
+			end
+			if not b then q[3], q[4] = "=", "=" elseif not c then q[4] = "=" end
+			out[#out + 1] = table.concat(q)
+		end
+		return table.concat(out)
+	end
+	function C_EncodingUtil.DecodeBase64(s)
+		if #s % 4 ~= 0 or s:find("[^%w%+/=]") or s:find("=[^=]") then return nil end
+		local out = {}
+		for i = 1, #s, 4 do
+			local n, pad = 0, 0
+			for k = 0, 3 do
+				local ch = s:sub(i + k, i + k)
+				if ch == "=" then pad = pad + 1; n = n * 64
+				else n = n * 64 + index[ch] end
+			end
+			local bytes = string.char(math.floor(n / 65536) % 256,
+				math.floor(n / 256) % 256, n % 256)
+			out[#out + 1] = bytes:sub(1, 3 - pad)
+		end
+		return table.concat(out)
+	end
+end
+
 -- The REAL AceGUI core, for the same reason: the skin picker is registered as
 -- an AceGUI widget, and a stand-in would let it meet an interface we invented
 -- rather than the one AceConfigDialog actually calls. Only the core file - the
@@ -17194,10 +17255,25 @@ do
 	local box = _G.AetherUIErrorBox
 	check(box ~= nil, "the copy box was opened")
 	local text = box and box:GetText() or ""
-	check(text:find("centre = {", 1, true) ~= nil
-		and text:find("player", 1, true) ~= nil,
-		"the whole table is in the box, which is the only thing in this client "
-		.. "whose text can be selected")
+	check(text:match("^LAT%d+;") ~= nil and text:find("player=", 1, true) ~= nil,
+		"the layout string is in the box, which is the only thing in this client "
+		.. "whose text can be selected (" .. text:sub(1, 24) .. ")")
+	-- THE BARE STRING, NOTHING AROUND IT. Joe captured, copied the box and
+	-- pasted it into /lattice layout - and it was the `centre = { ... }` table
+	-- this used to print, which the layout box refused.
+	check(text:find("{", 1, true) == nil and text:find("\"", 1, true) == nil
+		and text:find("\n", 1, true) == nil,
+		"and nothing wrapped round it: no table, no quotes, one line")
+	check(A.Layout:Decode(text) ~= nil,
+		"so what capture puts in the box pastes straight into the layout box")
+	local named = false
+	for _, line in ipairs(said) do
+		if line:find("screen", 1, true) and line:find("/lattice layout", 1, true) then
+			named = true
+		end
+	end
+	check(named,
+		"and chat says what size screen it was made on, and where it pastes")
 
 	-- AND OUT TO THE DISK, WHICH IS THE ONLY ROUTE THAT WORKS.
 	--
@@ -17442,8 +17518,7 @@ do
 	-- AND IT IS NEVER CAPTURED. Shipping it would send one player's idea of
 	-- where that button goes to everybody - and would stop Current() 
 	-- recognising its own arrangement the moment somebody dragged it.
-	local lines, count = P:Capture("bottom")
-	local text = table.concat(lines, "\n")
+	local text, count = P:Capture()
 	check(text:find("__lockButton", 1, true) == nil,
 		"and never goes into a capture")
 
@@ -17451,15 +17526,15 @@ do
 	-- eye, in the game, at a real resolution. Guessing coordinates in a text
 	-- editor gives a layout that is plausible in every dimension and right in
 	-- none.
-	check(type(lines) == "table" and #lines > 1,
-		"a capture comes back as lines, ready to paste (" ..
-		tostring(type(lines)) .. ", " .. tostring(#lines) .. ")")
+	check(type(text) == "string" and text:match("^LAT%d+;") ~= nil,
+		"a capture comes back as the bare layout string, ready to paste (" ..
+		tostring(type(text)) .. ")")
 	check(count > 6 and text:find(";player=", 1, true) ~= nil,
 		"naming every frame in it (" .. tostring(count) .. ")")
-	check(text:find("	", 1, true) == nil,
-		"and indented with spaces - a tab is not reliably carried through a "
-		.. "chat frame and out through the clipboard, and this text exists to "
-		.. "be pasted")
+	check(not text:find("%s"),
+		"and holds no whitespace at all - a tab is not reliably carried through"
+		.. " a chat frame and out through the clipboard, and this text exists to"
+		.. " be pasted")
 	check(text:find(";s=0.71;", 1, true) ~= nil,
 		"with the scale in it, because that is part of an arrangement")
 
@@ -17529,15 +17604,16 @@ do
 			tostring(P:Current()) .. ")")
 
 		-- A CAPTURE IS IN THE SAME FORM: every record names its parent.
-		local text = table.concat((P:Capture("__probe")), "\n")
+		local text, _, screen = P:Capture()
 		check(text:find("player=screen,CENTER,CENTER,", 1, true) ~= nil
 			and text:find("target=player,LEFT,RIGHT,300,0", 1, true) ~= nil,
 			"a capture names each node's parent, the screen at the top")
 		check(not text:find("=S,", 1, true) and not text:find("=B,", 1, true),
 			"and holds no canvas position")
-		check(text:find("captured on a", 1, true) ~= nil,
+		check(type(screen) == "string" and screen:match("^%d+ x %d+$") ~= nil,
 			"saying what size screen it was made on, because a block laid out across"
-			.. " an ultrawide is wider than a 16:9 screen however it is anchored")
+			.. " an ultrawide is wider than a 16:9 screen however it is anchored ("
+			.. tostring(screen) .. ")")
 
 		UIParent:SetSize(wasW, wasH)
 		P.list.__probe = nil
@@ -17630,7 +17706,7 @@ do
 
 		-- AND A CAPTURE RECORDS THEM, which is what makes the next arrangement
 		-- reproducible at all: the ones on, and by leaving them out, the ones off.
-		local text = table.concat((P:Capture("__bars")), "\n")
+		local text = P:Capture()
 		check(text:find(";b=1,2,5;", 1, true) ~= nil,
 			"a capture writes which bars are on, and every one it leaves out is off"
 			.. " when it is applied")
@@ -17647,6 +17723,35 @@ do
 	A.db.profile.scale = wasScale
 	A:Reconfigure()
 end
+-- CENTRE OR CENTER (Joe, 2026-10-08): the same word to whoever types it.
+-- Through the real slash command, which is where a player meets the name.
+print("== presets: either spelling of centre ==")
+do
+	local P = A.Presets
+	local wasScale = A.db.profile.scale
+	-- A key with the word in it, whatever C2 calls the shipped ones.
+	P.list.__centreProbe = P.list.centre or P.list[P.order[1]]
+	local slash = SlashCmdList["AETHERUI"]
+
+	check(P:Find("__CENTERprobe") == "__centreProbe"
+		and P:Find("__centreprobe") == "__centreProbe",
+		"either spelling of centre finds the same preset, in any case")
+	check(P:Find("__nowhere") == nil and P:Find("") == nil and P:Find(nil) == nil,
+		"and a name that is not a preset finds nothing")
+
+	wipe(A.db.profile.anchors)
+	slash("preset __CenterProbe")
+	check(A.Layout:Matches(P.list.__centreProbe.decoded),
+		"/lattice preset with the American spelling and odd capitals applies it")
+
+	P.list.__centreProbe = nil
+	wipe(A.db.profile.anchors)
+	for _, e in pairs(A.Movers.registry) do e.parent, e.free = e.defaultParent, nil end
+	A.db.profile.scale = wasScale
+	A:Reconfigure()
+	A.Movers:RestoreAll()
+end
+
 -- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole
 -- arrangement as one line, read back, refused whole when it is wrong.
 print("== layout string ==")
@@ -17741,8 +17846,10 @@ do
 	-- THE WINDOW: the string in the box, the reason when one is refused.
 	SlashCmdList["AETHERUI"]("layout")
 	local f = LY.frame
-	check(f and f:IsShown() and f.box:GetText() == LY:Encode(),
-		"/lattice layout opens the window with the arrangement in it")
+	check(f and f:IsShown() and f.box:GetText() == LY:Pack(LY:Encode())
+		and f.box:GetText():find("^!LAT1!") ~= nil,
+		"/lattice layout opens the window with the arrangement in it, in the"
+		.. " share form")
 	LY:ApplyText("LAT9;nope")
 	check(f.status:GetText() and f.status:GetText():find("LAT9", 1, true),
 		"a refused paste says why, in the window")
@@ -17771,6 +17878,96 @@ do
 	for id, on in pairs(LY.BarsNow() or {}) do bareBars[id] = on or nil end
 	check(LY:Matches({ bars = bareBars, records = {} }),
 		"and a leftover position does not make an untouched profile look moved")
+
+	-- A BAR CARRIES ITS SHAPE AND SIZE (the strands brief's seeds are parents
+	-- and shapes). Rows is what a bar stores; size is the button as drawn.
+	local AB1 = AB:BarConfig("1")
+	local wasRows, wasBarScale = AB1.rows, AB1.scale
+	wipe(anchors)
+	A:Reconfigure()
+	M:RestoreAll()
+	local untouched = LY:Encode()
+	check(untouched:find(";bar1=[%w_]+,[A-Z]+,[A-Z]+,%-?%d+,%-?%d+,12x1,%d+") ~= nil,
+		"a bar nobody has moved is still written, with its shape - a seed of"
+		.. " untouched bars would otherwise say nothing (" .. untouched:sub(1, 120) .. ")")
+
+	local SHAPED = "LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,0,-96,3x4,28"
+	local shaped, whyShaped = LY:Decode(SHAPED)
+	check(shaped and shaped.records.bar1.rows == 4 and shaped.records.bar1.px == 28,
+		"a bar record reads its shape and size (" .. tostring(whyShaped) .. ")")
+	LY:Apply(shaped)
+	local c1, r1, px1 = LY.BarShape("1")
+	check(AB1.rows == 4 and c1 == 3 and r1 == 4 and px1 == 28,
+		"and applying it draws the bar 3 x 4 at 28 px (" .. tostring(c1) .. "x"
+		.. tostring(r1) .. " at " .. tostring(px1) .. ")")
+	check(LY:Encode():find("bar1=spine,BOTTOM,CENTER,0,-96,3x4,28", 1, true) ~= nil,
+		"and writes it back exactly")
+	check(LY:Matches(shaped), "and reads back as the layout on screen")
+	AB1.rows = 1
+	check(not LY:Matches(shaped),
+		"but a bar in another shape is another arrangement, wherever it sits")
+
+	refused("LAT1;s=0.71;b=1;barextra=bar1,BOTTOM,CENTER,0,0,1x1,30",
+		"a shape on the extra-action button, which is one button")
+	refused("LAT1;s=0.71;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,14,38,12x1,36",
+		"a shape on something that is not a bar")
+	refused("LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,0,-96,0x12,36", "a shape of nothing")
+	refused("LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,0,-96,12x1,200", "a button 200 px across")
+
+	-- AND NOTHING OPTIONS CAN SET IS REFUSED: the extremes of the base size and
+	-- the bar scale both export and import. A limit tighter than options would
+	-- be the cast-bar bug again - a string Export writes that Apply refuses.
+	for _, ext in ipairs({ { 24, 0.4 }, { 80, 2.0 } }) do
+		local wasSize = AB1.size
+		AB1.size, AB1.scale = ext[1], ext[2]
+		local text = LY:Encode()
+		local back, whyBack = LY:Decode(text)
+		check(back ~= nil, ("a bar at size %d and scale %.1f exports and imports (%s)"):format(
+			ext[1], ext[2], tostring(whyBack)))
+		AB1.size = wasSize
+	end
+
+	-- THE SHARE FORM: the readable text, Deflated and Base64'd behind its
+	-- version, through C_EncodingUtil - real Deflate in this mock.
+	local plain = LY:Encode()
+	local packed = LY:Pack(plain)
+	check(packed:find("^!LAT1![%w%+/=]+$") ~= nil and #packed < #plain,
+		"the share form is the version, then Base64, and shorter than the text ("
+		.. #packed .. " against " .. #plain .. ")")
+	check(LY:Unpack(packed) == plain, "and unpacks to exactly the text it was made from")
+	local viaPacked = LY:Decode(packed)
+	check(viaPacked and LY:Matches(viaPacked),
+		"and a packed string imports like the plain one")
+	check(LY:Decode(plain) ~= nil, "the readable form still imports as it is")
+
+	refused(packed:sub(1, math.floor(#packed / 2)), "a share string cut short in a paste")
+	refused(packed:sub(1, -6) .. "QUJD" .. packed:sub(-1),
+		"a share string with characters changed in it")
+	refused("!LAT2!" .. packed:sub(7), "a share string of another version")
+	check(select(2, LY:Decode(packed:sub(1, 30))) == A.L.layout.err.packed,
+		"and the cut-short one says so in words, rather than naming a part")
+
+	-- WHATEVER COMES WITH IT IS LEFT BEHIND. Joe pasted the whole table the old
+	-- capture printed - `test = {`, the screen comment, `layout = "..."` - and
+	-- the box refused it. A string off a forum or out of Discord arrives the
+	-- same way: in quotes, after a label, with a line ending on it.
+	local wrapped = {
+		{ "    test = {\n        -- captured on a 4056 x 1690 screen\n        layout = \""
+			.. plain .. "\",\n    },", "the table capture used to print" },
+		{ "\"" .. plain .. "\"", "the readable string in quotes" },
+		{ "layout: " .. plain .. "\r\n", "the readable string after a label" },
+		{ "  " .. packed .. "  \n", "the share string with space round it" },
+		{ "'" .. packed .. "'.", "the share string in quotes, with a full stop" },
+	}
+	for _, w in ipairs(wrapped) do
+		local got, whyGot = LY:Decode(w[1])
+		check(got ~= nil and LY:Matches(got),
+			"a layout pasted as " .. w[2] .. " imports as the string alone ("
+			.. tostring(whyGot) .. ")")
+	end
+	refused("test = { layout = \"hello\" }", "text with no layout string in it")
+
+	AB1.rows, AB1.scale = wasRows, wasBarScale
 
 	-- Everything back the way the suite had it.
 	wipe(anchors)

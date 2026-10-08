@@ -1509,6 +1509,24 @@ function Movers:SetParent(name, parent)
 	return true
 end
 
+--- Where a node sits NOW, as a layout record would put it: its bond to its
+--  parent, or its place on the screen. Measured, never saved. For a node with
+--  no saved record that a layout still has to describe - a bar nobody has
+--  moved carries its shape in the string, so it needs a position there too.
+function Movers:Measure(name)
+	local entry = Movers.registry[name]
+	if not entry or not entry.frame then return nil end
+	local pf = ParentFrame(entry)
+	if pf then
+		local b = MeasureBond(entry, pf)
+		if b then return b.parent, b.point, b.relPoint, b.x, b.y end
+		return nil
+	end
+	local point, x, y = ScreenAnchor(entry.frame, entry.growsDown)
+	if point then return "screen", point, point, round(x), round(y) end
+	return nil
+end
+
 --- What a node hangs from, for the inspector and the tests.
 function Movers:ParentOf(name)
 	local entry = Movers.registry[name]

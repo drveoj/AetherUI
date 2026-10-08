@@ -393,6 +393,7 @@ L["layout.err.bad"] = "That layout string has a part Lattice can't read: %s"
 L["layout.err.combat"] = "Can't change the layout in combat."
 L["layout.err.empty"] = "There's no layout string to read."
 L["layout.err.loop"] = "That layout hangs %s from something that hangs from it."
+L["layout.err.packed"] = "That layout string won't open. It may be cut short: copy the whole thing and paste it again."
 L["layout.err.unknown"] = "That layout names \"%s\", which isn't a frame Lattice has."
 L["layout.err.version"] = "That isn't a layout string this version reads (it starts \"%s\")."
 

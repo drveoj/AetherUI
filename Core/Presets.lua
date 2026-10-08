@@ -95,6 +95,25 @@ function Presets:Current()
 	return nil
 end
 
+--- The preset a player typed, whatever case and whichever spelling of centre.
+--
+--  "center" and "centre" are the same word to whoever is typing it (Joe,
+--  2026-10-08), so both are folded to one before comparing, anywhere in the
+--  name, along with case.
+local function Fold(s)
+	return (tostring(s):lower():gsub("center", "centre"))
+end
+
+function Presets:Find(name)
+	if type(name) ~= "string" or name == "" then return nil end
+	if self.list[name] then return name end
+	local want = Fold(name)
+	for key in pairs(self.list) do
+		if Fold(key) == want then return key end
+	end
+	return nil
+end
+
 --- Put an arrangement on screen, through the one path a pasted string takes.
 function Presets:Apply(key)
 	local preset = self.list[key]
@@ -102,25 +121,18 @@ function Presets:Apply(key)
 	return (A.Layout:Apply(preset.decoded))
 end
 
---- The current arrangement, as the line to paste into this file.
+--- The current arrangement, as the bare readable string: the same thing the
+--  layout box takes, so a capture can be pasted straight back in. Wrapping it
+--  into a table here is for whoever puts it in this file.
 --
---  A LIST OF LINES, because the copy box is fed through Errors:Capture, which
---  collects what goes to the chat frame - the same path the panel dump uses.
---  AND INDENTED WITH SPACES: a tab is not reliably carried through a chat frame
---  and out through the clipboard, and this text exists to be pasted.
-function Presets:Capture(key)
+--  Returns the string, how many nodes it places, and the screen it was made
+--  on - an arrangement is a judgement made by eye at one aspect ratio, and a
+--  block laid out across an ultrawide is wider in units than a 16:9 screen,
+--  however it is anchored.
+function Presets:Capture()
 	local text = A.Layout:Encode()
 	local count = 0
 	for _ in text:gmatch(";[%w_]+=[%w_]+,") do count = count + 1 end
-	-- WHAT IT WAS MADE ON, written down. An arrangement is a judgement made by
-	-- eye at one aspect ratio, and a block laid out across an ultrawide is wider
-	-- in units than a 16:9 screen, however it is anchored.
 	local sw, sh = A.Layout.ScreenIn(A.db.profile.scale)
-	local out = {
-		("    %s = {"):format(key or "PRESET"),
-		("        -- captured on a %d x %d screen"):format(math.floor(sw + 0.5), math.floor(sh + 0.5)),
-		("        layout = %q,"):format(text),
-		"    },",
-	}
-	return out, count
+	return text, count, ("%d x %d"):format(math.floor(sw + 0.5), math.floor(sh + 0.5))
 end

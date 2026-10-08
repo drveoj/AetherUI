@@ -17,6 +17,20 @@
 	            parent's `relPoint`. The top of every tree hangs from `screen` -
 	            the main block from its centre, chat and the trunks from their
 	            edge - so nothing is a position on the canvas.
+	  barN=parent,point,relPoint,x,y,CxR,px
+	            a bar adds its SHAPE (columns x rows over its buttons) and its
+	            button SIZE in px, as it is drawn - the strands brief's seeds are
+	            parents and shapes, and a string without them cannot say one.
+	            Not the extra-action button: it is one button.
+
+	TWO FORMS OF ONE STRING (Joe, 2026-10-08). The readable one above is the
+	truth - Decode, Matches and the presets in Core/Presets.lua are written in
+	it, so a preset can be read and diffed. What a player SHARES is the same
+	text Deflated and Base64'd behind `!LAT1!`, through the client's own
+	C_EncodingUtil - the pipeline Blizzard's Cooldown Viewer share string and
+	ElvUI's `!E2!` use, without the CBOR step: our own text is already compact,
+	and it is what gets validated. Import takes either form; the version in
+	the prefix refuses another one before anything is unpacked.
 
 	WHY UNITS AND NOT FRACTIONS (Joe, 2026-10-08). The first version stored a
 	screen node as fractions of the screen and its children in units. On a
@@ -141,6 +155,108 @@ local function SetBars(on)
 end
 
 -- ---------------------------------------------------------------------------
+-- a bar's shape and size
+--
+-- ROWS IS WHAT A BAR STORES and columns fall out of it (ActionBars LayoutBar),
+-- so a shape is written C x R from the bar's button count and applied as R.
+--
+-- SIZE IS THE BUTTON AS DRAWN: the bar's base size times its scale, and the
+-- scale is the dock's - buttons, gap and pad together. So Apply sets the
+-- SCALE that gives the stated px and leaves the base size alone; setting the
+-- size and a scale of 1 would draw the same buttons with different gaps.
+-- ---------------------------------------------------------------------------
+
+local function BarId(name)
+	local id = type(name) == "string" and name:match("^bar(%w+)$")
+	if id and id ~= "extra" then return id end
+	return nil
+end
+
+--- The bar's config, its live button count, and the base size its scale
+--  multiplies. Nil when the bars module has no such bar.
+local function BarParts(id)
+	local AB = A.GetModule and A:GetModule("actionbars")
+	local cfg = AB and AB.BarConfig and AB:BarConfig(id)
+	if not cfg then return nil end
+	local n
+	for _, bar in ipairs(AB.bars or {}) do
+		if tostring(bar.id) == tostring(id) and bar.buttons and #bar.buttons > 0 then
+			n = #bar.buttons
+		end
+	end
+	n = n or cfg.buttons or 12
+	local base = cfg.size or A.Config:Module("actionbars").size or 36
+	return cfg, n, base
+end
+
+--- The shape a bar is drawn in, and its button px, now.
+local function BarShape(id)
+	local cfg, n, base = BarParts(id)
+	if not cfg then return nil end
+	local rows = math.max(1, math.min(cfg.rows or 1, n))
+	local cols = math.ceil(n / rows)
+	rows = math.ceil(n / cols)
+	return cols, rows, round(base * (cfg.scale or 1))
+end
+Layout.BarShape = BarShape
+
+-- ---------------------------------------------------------------------------
+-- the share form
+-- ---------------------------------------------------------------------------
+
+local SHARE = "^!(LAT%d+)!(.*)$"
+
+--- The string out of whatever came with it. A layout copied from a forum post,
+--  a Discord message or a preset table arrives in quotes, after `layout =`,
+--  under a comment - and the player cannot see that as a different thing from
+--  the string. Packed first: its Base64 holds no `;`, the readable form no `!`.
+--  Nothing that looks like either comes back as it was, to be refused as such.
+local function Lift(text)
+	return text:match("!LAT%d+![%w+/=]*")
+		or text:match("LAT%d+;[%w;=,%._%-]*")
+		or text
+end
+
+--- The readable string, Deflated and Base64'd behind its version. Plain text
+--  back on a client without the encoder - every one this ships for has it.
+function Layout:Pack(text)
+	local E = C_EncodingUtil
+	if type(text) ~= "string" or not (E and E.CompressString and E.EncodeBase64) then
+		return text
+	end
+	local method = Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate or 0
+	local ok, packed = pcall(function()
+		return E.EncodeBase64(E.CompressString(text, method))
+	end)
+	if not ok or type(packed) ~= "string" or packed == "" then return text end
+	return "!" .. Layout.VERSION .. "!" .. packed
+end
+
+--- Back to the readable form. A string that is not packed comes back as it
+--  is; one that is packed and will not open is refused, saying why.
+function Layout:Unpack(text)
+	if type(text) ~= "string" then return text end
+	local version, body = text:match(SHARE)
+	if not version then return text end
+	if version ~= Layout.VERSION then
+		return nil, A.F(L.layout.err.version, ("!" .. version .. "!"):sub(1, 12))
+	end
+	local E = C_EncodingUtil
+	if not (E and E.DecodeBase64 and E.DecompressString) then
+		return nil, L.layout.err.packed
+	end
+	local method = Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate or 0
+	local ok, plain = pcall(function()
+		local raw = E.DecodeBase64(body)
+		return raw and E.DecompressString(raw, method)
+	end)
+	if not ok or type(plain) ~= "string" or plain == "" then
+		return nil, L.layout.err.packed
+	end
+	return plain
+end
+
+-- ---------------------------------------------------------------------------
 -- the string
 -- ---------------------------------------------------------------------------
 
@@ -161,33 +277,58 @@ function Layout:Encode()
 	-- pill's spot is one - and a profile can still hold one for a frame that is
 	-- gone: the floating cast bars left `cast` and `targetcast` behind when the
 	-- lanes replaced them. Written out, those made a string Decode refuses.
-	local names = {}
+	local names, seen = {}, {}
 	for name in pairs(anchors) do
-		if KNOWN[name] then names[#names + 1] = name end
+		if KNOWN[name] then names[#names + 1] = name; seen[name] = true end
+	end
+	-- AND EVERY BAR ON SCREEN, moved or not. A bar nobody has dragged has no
+	-- record, and leaving it out would leave its shape out - a seed made of
+	-- untouched bars would say nothing at all.
+	for name in pairs(A.Movers.registry) do
+		if not seen[name] and KNOWN[name] and BarId(name) then names[#names + 1] = name end
 	end
 	table.sort(names)
 
 	-- The bond where there is one; otherwise the node hangs from the screen,
-	-- and its saved point and offset are already that, in units.
+	-- and its saved point and offset are already that, in units. A bar adds its
+	-- shape and button size.
 	for _, name in ipairs(names) do
 		local a = anchors[name]
-		local lat = type(a.lat) == "table" and a.lat
+		local lat = a and type(a.lat) == "table" and a.lat
+		local rec
 		if lat and lat.parent and not a.free then
-			parts[#parts + 1] = ("%s=%s,%s,%s,%d,%d"):format(name, lat.parent,
+			rec = ("%s=%s,%s,%s,%d,%d"):format(name, lat.parent,
 				tostring(lat.point), tostring(lat.relPoint), round(lat.x), round(lat.y))
-		elseif a.point then
-			parts[#parts + 1] = ("%s=%s,%s,%s,%d,%d"):format(name, SCREEN,
+		elseif a and a.point then
+			rec = ("%s=%s,%s,%s,%d,%d"):format(name, SCREEN,
 				a.point, a.relPoint or a.point, round(a.x), round(a.y))
+		elseif not a then
+			local parent, point, relPoint, x, y = A.Movers:Measure(name)
+			if parent then
+				rec = ("%s=%s,%s,%s,%d,%d"):format(name, parent, point, relPoint, round(x), round(y))
+			end
+		end
+		if rec then
+			local id = BarId(name)
+			if id then
+				local cols, rows, px = BarShape(id)
+				if cols then rec = rec .. (",%dx%d,%d"):format(cols, rows, px) end
+			end
+			parts[#parts + 1] = rec
 		end
 	end
 	return table.concat(parts, ";")
 end
 
---- Read a string back. Returns the layout, or nil and the reason in words.
+--- Read a string back, in either form. Returns the layout, or nil and the
+--  reason in words.
 function Layout:Decode(text)
 	if type(text) ~= "string" then return nil, L.layout.err.empty end
 	text = text:gsub("^%s+", ""):gsub("%s+$", "")
 	if text == "" then return nil, L.layout.err.empty end
+	local why
+	text, why = Layout:Unpack(Lift(text))
+	if not text then return nil, why end
 
 	local fields = {}
 	for f in (text .. ";"):gmatch("([^;]*);") do fields[#fields + 1] = f end
@@ -220,17 +361,33 @@ function Layout:Decode(text)
 				local p = {}
 				for x in (v .. ","):gmatch("([^,]*),") do p[#p + 1] = x end
 
-				-- parent,point,relPoint,x,y and nothing else. A canvas position
-				-- from the first version (S or B in front) is refused here too.
-				if #p ~= 5 then return bad(f) end
+				-- parent,point,relPoint,x,y - and for a bar, CxR,px after it -
+				-- and nothing else. A canvas position from the first version (S or
+				-- B in front) is refused here too.
+				local isBar = BarId(k) ~= nil
+				if not (#p == 5 or (isBar and #p == 7)) then return bad(f) end
 				local parent, x, y = p[1], Num(p[4]), Num(p[5])
 				if not (parent == SCREEN or KNOWN[parent] or OWNED[parent]) then
 					return nil, A.F(L.layout.err.unknown, parent)
 				end
 				if not (valid[p[2]] and valid[p[3]] and x and y) then return bad(f) end
 				if PAIRED[k] and parent ~= PAIRED[k] then return bad(f) end
-				out.records[k] = { parent = parent, point = p[2], relPoint = p[3],
+				local rec = { parent = parent, point = p[2], relPoint = p[3],
 					x = round(x), y = round(y) }
+				if #p == 7 then
+					-- THE LIMITS ARE OPTIONS', so nothing Export writes is refused
+					-- here: up to twelve buttons a bar, and a base size of 24-80 at
+					-- a bar scale of 0.4-2.0 draws a button 10 to 160 px across.
+					local cols, rows = p[6]:match("^(%d+)x(%d+)$")
+					cols, rows = tonumber(cols), tonumber(rows)
+					local px = Num(p[7])
+					if not (cols and rows and cols >= 1 and rows >= 1 and cols <= 12
+						and rows <= 12 and px and px >= 9 and px <= 160) then
+						return bad(f)
+					end
+					rec.cols, rec.rows, rec.px = cols, rows, round(px)
+				end
+				out.records[k] = rec
 			end
 		end
 	end
@@ -259,6 +416,19 @@ end
 function Layout:Apply(layout)
 	if not layout or not A.db then return false, L.layout.err.empty end
 	if InCombatLockdown() then return false, L.layout.err.combat end
+
+	-- SHAPES BEFORE THE BARS GO ON, so the one rebuild lays them out once. The
+	-- scale is the one that draws the stated px over the bar's own base size.
+	for name, r in pairs(layout.records) do
+		local id = r.rows and BarId(name)
+		if id then
+			local cfg, _, base = BarParts(id)
+			if cfg and base and base > 0 then
+				cfg.rows = r.rows
+				cfg.scale = r.px / base
+			end
+		end
+	end
 
 	-- THE BARS FIRST: a bar that is off has no frame and no mover, so a record
 	-- written for it before it is on is a record for nothing.
@@ -320,16 +490,28 @@ function Layout:Matches(layout)
 	for name, r in pairs(layout.records) do
 		named = named + 1
 		local b = anchors[name]
-		if not b then return false end
-		-- The record as the string would write it: its bond, or the screen.
-		local lat = type(b.lat) == "table" and b.lat.parent and not b.free and b.lat
-		local parent = lat and lat.parent or SCREEN
-		local h = lat or b
+		-- The record as the string would write it: its bond, or the screen - or,
+		-- for a node with nothing saved, where it is measured to sit, the way
+		-- Encode writes an untouched bar.
+		local parent, h
+		if b then
+			local lat = type(b.lat) == "table" and b.lat.parent and not b.free and b.lat
+			parent, h = lat and lat.parent or SCREEN, lat or b
+		else
+			local p, point, relPoint, x, y = A.Movers:Measure(name)
+			if not p then return false end
+			parent, h = p, { point = point, relPoint = relPoint, x = x, y = y }
+		end
 		if parent ~= r.parent or h.point ~= r.point or (h.relPoint or h.point) ~= r.relPoint then
 			return false
 		end
 		if math.abs((h.x or 0) - r.x) > 1 or math.abs((h.y or 0) - r.y) > 1 then
 			return false
+		end
+		-- A bar in another shape or size is another arrangement, wherever it is.
+		if r.rows then
+			local _, rows, px = BarShape(BarId(name))
+			if rows ~= r.rows or math.abs((px or 0) - r.px) > 1 then return false end
 		end
 	end
 
@@ -494,7 +676,7 @@ local function Build()
 	f.export = Button(f, L.layout.window.export, 140)
 	f.export:SetPoint("RIGHT", f.apply, "LEFT", -8, 0)
 	f.export:SetScript("OnClick", function()
-		A.Errors:Export("layout", Layout:Encode())
+		A.Errors:Export("layout", Layout:Pack(Layout:Encode()))
 	end)
 
 	f.close = Button(f, L.layout.window.close, 90)
@@ -519,7 +701,7 @@ function Layout:ApplyText(text)
 	if not layout then Say(err) return false end
 	local ok, why = Layout:Apply(layout)
 	if not ok then Say(why) return false end
-	if Layout.frame then Layout.frame.box:SetText(Layout:Encode()) end
+	if Layout.frame then Layout.frame.box:SetText(Layout:Pack(Layout:Encode())) end
 	Say(L.layout.window.applied, true)
 	return true
 end
@@ -528,7 +710,8 @@ end
 function Layout:Show()
 	local f = Build()
 	f:SetScale(A.db.profile.scale or 1)
-	f.box:SetText(Layout:Encode())
+	-- The share form: this box is what a player copies to give to somebody.
+	f.box:SetText(Layout:Pack(Layout:Encode()))
 	Say("")
 	f:Show()
 	f:Raise()
