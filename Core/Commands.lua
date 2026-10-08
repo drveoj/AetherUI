@@ -502,7 +502,7 @@ end
 
 handlers.config  = function(arg) A.Options:Open(arg) end
 handlers.options = handlers.config
---- `/aether preset` - the three shipped arrangements of the HUD.
+--- `/aether preset` - the shipped arrangements of the HUD.
 --
 --  `capture` is the half that matters during development: an arrangement is a
 --  design decision made by eye, in the game, at a real resolution - so the

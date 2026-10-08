@@ -965,7 +965,7 @@ end
 --  party frame, the pet, the tooltip and the rest - eleven smears in a box the
 --  size of a postage stamp, overlapping into a texture rather than a layout.
 --  A thumbnail is not a map; it has one job, which is to let somebody tell
---  three arrangements apart at a glance.
+--  arrangements apart at a glance.
 --
 --  So: the player frame, the target frame, and the bars this preset actually
 --  SWITCHES ON. A preset that leaves bar 5 off has no business drawing it, and

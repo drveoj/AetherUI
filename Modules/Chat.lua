@@ -176,6 +176,19 @@ function Chat:AnchorPanel()
 	self:UpdateZone()
 end
 
+--- How far the glass reaches past ChatFrame1 - left, bottom, right, top - in
+--  the frame's own units: what a layout's chat record measures to, since the
+--  glass is what a player sees (Core/Layout.lua). The sides and the bottom are
+--  this file's own numbers; the top rides the tab dock, so it is measured.
+function Chat:Insets()
+	local cf, dock = _G.ChatFrame1, _G.GeneralDockManager
+	local top = TAB_H
+	if dock and cf and dock:GetTop() and cf:GetTop() then
+		top = dock:GetTop() * dock:GetEffectiveScale() / cf:GetEffectiveScale() - cf:GetTop()
+	end
+	return PAD, EDIT_H + EDIT_GAP + PAD, PAD, top + PAD
+end
+
 function Chat:UpdateZone()
 	local p = self.panel
 	if not p then return end

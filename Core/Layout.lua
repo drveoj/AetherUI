@@ -4,10 +4,9 @@
 	THE LAYOUT STRING: a whole arrangement of the HUD as one line of text, to
 	share, keep, or ship as a preset (parent model phase C; Joe's decision 5).
 
-	    LAT1;s=0.71;b=1,2;bar1=spine,BOTTOM,CENTER,0,-96;chat=screen,BOTTOMLEFT,...
+	    LAT1;b=1,2;bar1=spine,BOTTOM,CENTER,0,-96;chat=screen,BOTTOMLEFT,...
 
 	  LAT1      the version. Anything else is refused, not guessed at.
-	  s=        the HUD scale, which travels with the layout.
 	  b=        the numbered action bars that are on. Every other is OFF: a
 	            layout made around two bars has nothing to say about a third,
 	            and leaving one on where the last layout put it is two layouts
@@ -17,11 +16,34 @@
 	            parent's `relPoint`. The top of every tree hangs from `screen` -
 	            the main block from its centre, chat and the trunks from their
 	            edge - so nothing is a position on the canvas.
+	            HUD UNITS, every one: units at the player's own HUD scale,
+	            whatever the node's own scale (Joe, 2026-10-08). At the scale
+	            fitted to the monitor (A:FittedScale) a HUD unit is a pixel, on
+	            any screen. A node's own units carry settings the string does
+	            not - a bar's base size, the pet's scale, chat at UIParent's - so
+	            in those the same string landed differently on two profiles.
+
+	            NO SCALE IN THE STRING. The HUD scale is the player's: the
+	            monitor's arithmetic, or their own slider, and never overwritten
+	            (54d8cab). The first version carried it and set 0.71 on everyone,
+	            which on a 1690-tall screen drew the whole HUD half as big again
+	            (Joe, 2026-10-08).
 	  barN=parent,point,relPoint,x,y,CxR,px
 	            a bar adds its SHAPE (columns x rows over its buttons) and its
 	            button SIZE in px, as it is drawn - the strands brief's seeds are
 	            parents and shapes, and a string without them cannot say one.
 	            Not the extra-action button: it is one button.
+	  chat=parent,point,relPoint,x,y,WxH
+	            the chat window adds its SIZE. It is the one node whose size is
+	            the player's to set, and a layout that placed it without its size
+	            promised nothing about the corner it sits in: a wide window ran
+	            under the capsule block (Joe, 2026-10-08).
+	            Its size is in ITS OWN units, not HUD units: its text, its edit
+	            box and its smallest size are all in UIParent's, so the same
+	            numbers show the same lines on any screen. And its position is
+	            the GLASS you see, not ChatFrame1 inside it - the panel and the
+	            edit box hang below the frame, and 24 from the bottom put them
+	            off the screen.
 
 	TWO FORMS OF ONE STRING (Joe, 2026-10-08). The readable one above is the
 	truth - Decode, Matches and the presets in Core/Presets.lua are written in
@@ -96,9 +118,25 @@ local function Num(v)
 	return nil
 end
 
---- UIParent's size in the units a record is written in. An offset is in the
---  frame's own space, and the HUD's frames are at `scale`, so the screen is
---  divided by it. Only Resolve and the capture note need it now.
+--- How big one of a node's own units is against a HUD unit - a unit at the
+--  HUD scale, which is what the string is written in. The store and SetPoint
+--  work in the node's own units, which carry every scale the string does not:
+--  the bars' base size and their module's scale, the pet's and the ToT's own,
+--  chat at UIParent's. Written in those, one string landed differently for two
+--  players with different sliders. 1 for a node with no frame to ask.
+local function Ratio(name)
+	local e = A.Movers.registry[name]
+	local f = (e and e.frame) or (A.Movers.nodes and A.Movers.nodes[name])
+	local fe = f and f:GetEffectiveScale()
+	local ue = UIParent and UIParent:GetEffectiveScale()
+	local s = A.db and A.db.profile.scale or 1
+	if not (fe and ue and fe > 0 and ue > 0 and s > 0) then return 1 end
+	return fe / (ue * s)
+end
+Layout.Ratio = Ratio
+
+--- UIParent's size in HUD units: the HUD's frames are at `scale`, so the
+--  screen is divided by it. Only Resolve and the capture note need it now.
 local function ScreenIn(scale)
 	scale = (type(scale) == "number" and scale > 0) and scale or 1
 	local w = (UIParent and UIParent:GetWidth()) or 0
@@ -179,9 +217,11 @@ local function BarParts(id)
 	local cfg = AB and AB.BarConfig and AB:BarConfig(id)
 	if not cfg then return nil end
 	local n
+	-- The buttons SHOWING, as LayoutBar counts them: a bar keeps surplus
+	-- buttons hidden when it is asked for fewer.
 	for _, bar in ipairs(AB.bars or {}) do
 		if tostring(bar.id) == tostring(id) and bar.buttons and #bar.buttons > 0 then
-			n = #bar.buttons
+			n = math.min(#bar.buttons, bar.shown or #bar.buttons)
 		end
 	end
 	n = n or cfg.buttons or 12
@@ -189,13 +229,50 @@ local function BarParts(id)
 	return cfg, n, base
 end
 
+--- The cols and rows n buttons are drawn in when asked for `rows` - the way
+--  LayoutBar fits them, so a stored rows of 12 on three forms is a column of 3.
+local function Fit(n, rows)
+	-- A bar with nothing showing - a class with no forms - is drawn as one
+	-- button's worth to aim at (LayoutBar), so it has a shape of one.
+	n = math.max(1, n or 1)
+	rows = math.max(1, math.min(rows or 1, n))
+	local cols = math.ceil(n / rows)
+	return cols, math.ceil(n / cols)
+end
+
+--- Nodes whose record carries a size, WxH in the node's OWN units: the chat
+--  window, whose text and smallest size are in UIParent's.
+local SIZED = { chat = true }
+
+--- A sized node's size now, in its own units, or nil.
+local function NodeSize(name)
+	local e = SIZED[name] and A.Movers.registry[name]
+	local f = e and e.frame
+	local w, h = f and f:GetWidth(), f and f:GetHeight()
+	if not (w and h and w > 0 and h > 0) then return nil end
+	return round(w), round(h)
+end
+
+--- How far the glass a player sees reaches past a node's frame, as the
+--  offset from the frame's `point` to the glass's, in the node's own units.
+--  The chat's panel and edit box hang off ChatFrame1 - ten either side and
+--  forty-two below - and a record places what is seen. 0, 0 for any other
+--  node, or a chat with no panel to measure.
+local function Glass(name, point)
+	if name ~= "chat" then return 0, 0 end
+	local CM = A.GetModule and A:GetModule("chat")
+	if not (CM and CM.panel and CM.Insets) then return 0, 0 end
+	local l, b, r, t = CM:Insets()
+	local dx = point:find("LEFT") and -l or point:find("RIGHT") and r or (r - l) / 2
+	local dy = point:find("BOTTOM") and -b or point:find("TOP") and t or (t - b) / 2
+	return dx, dy
+end
+
 --- The shape a bar is drawn in, and its button px, now.
 local function BarShape(id)
 	local cfg, n, base = BarParts(id)
 	if not cfg then return nil end
-	local rows = math.max(1, math.min(cfg.rows or 1, n))
-	local cols = math.ceil(n / rows)
-	rows = math.ceil(n / cols)
+	local cols, rows = Fit(n, cfg.rows)
 	return cols, rows, round(base * (cfg.scale or 1))
 end
 Layout.BarShape = BarShape
@@ -264,9 +341,8 @@ end
 function Layout:Encode()
 	local profile = A.db.profile
 	local anchors = profile.anchors or {}
-	local scale = profile.scale or 1
 
-	local parts = { Layout.VERSION, ("s=%.2f"):format(scale) }
+	local parts = { Layout.VERSION }
 	local on, bars = {}, BarsNow() or {}
 	for _, id in ipairs(Bars()) do
 		if bars[id] then on[#on + 1] = id end
@@ -290,23 +366,26 @@ function Layout:Encode()
 	table.sort(names)
 
 	-- The bond where there is one; otherwise the node hangs from the screen,
-	-- and its saved point and offset are already that, in units. A bar adds its
-	-- shape and button size.
+	-- and its saved point and offset are already that. Offsets out of the
+	-- node's own units into HUD units, from the glass a player sees. A bar
+	-- adds its shape and button size.
 	for _, name in ipairs(names) do
 		local a = anchors[name]
 		local lat = a and type(a.lat) == "table" and a.lat
+		local r = Ratio(name)
+		local function Out(parent, point, relPoint, x, y)
+			local gx, gy = Glass(name, point)
+			return ("%s=%s,%s,%s,%d,%d"):format(name, parent, point, relPoint,
+				round((x + gx) * r), round((y + gy) * r))
+		end
 		local rec
 		if lat and lat.parent and not a.free then
-			rec = ("%s=%s,%s,%s,%d,%d"):format(name, lat.parent,
-				tostring(lat.point), tostring(lat.relPoint), round(lat.x), round(lat.y))
+			rec = Out(lat.parent, tostring(lat.point), tostring(lat.relPoint), lat.x, lat.y)
 		elseif a and a.point then
-			rec = ("%s=%s,%s,%s,%d,%d"):format(name, SCREEN,
-				a.point, a.relPoint or a.point, round(a.x), round(a.y))
+			rec = Out(SCREEN, a.point, a.relPoint or a.point, a.x, a.y)
 		elseif not a then
 			local parent, point, relPoint, x, y = A.Movers:Measure(name)
-			if parent then
-				rec = ("%s=%s,%s,%s,%d,%d"):format(name, parent, point, relPoint, round(x), round(y))
-			end
+			if parent then rec = Out(parent, point, relPoint, x, y) end
 		end
 		if rec then
 			local id = BarId(name)
@@ -314,6 +393,8 @@ function Layout:Encode()
 				local cols, rows, px = BarShape(id)
 				if cols then rec = rec .. (",%dx%d,%d"):format(cols, rows, px) end
 			end
+			local w, h = NodeSize(name)
+			if w then rec = rec .. (",%dx%d"):format(w, h) end
 			parts[#parts + 1] = rec
 		end
 	end
@@ -346,11 +427,7 @@ function Layout:Decode(text)
 			local k, v = f:match("^([%w_]+)=(.*)$")
 			if not k then return bad(f) end
 
-			if k == "s" then
-				local s = Num(v)
-				if not s or s < 0.3 or s > 2 then return bad(f) end
-				out.scale = s
-			elseif k == "b" then
+			if k == "b" then
 				for id in v:gmatch("[^,]+") do
 					if not id:match("^%d$") then return bad(f) end
 					out.bars[id] = true
@@ -365,7 +442,9 @@ function Layout:Decode(text)
 				-- and nothing else. A canvas position from the first version (S or
 				-- B in front) is refused here too.
 				local isBar = BarId(k) ~= nil
-				if not (#p == 5 or (isBar and #p == 7)) then return bad(f) end
+				if not (#p == 5 or (isBar and #p == 7) or (SIZED[k] and #p == 6)) then
+					return bad(f)
+				end
 				local parent, x, y = p[1], Num(p[4]), Num(p[5])
 				if not (parent == SCREEN or KNOWN[parent] or OWNED[parent]) then
 					return nil, A.F(L.layout.err.unknown, parent)
@@ -386,12 +465,20 @@ function Layout:Decode(text)
 						return bad(f)
 					end
 					rec.cols, rec.rows, rec.px = cols, rows, round(px)
+				elseif #p == 6 then
+					-- A window's size, in its own units. Bounded only by sense:
+					-- the chat module clamps it to the smallest it can draw.
+					local w, h = p[6]:match("^(%d+)x(%d+)$")
+					w, h = tonumber(w), tonumber(h)
+					if not (w and h and w >= 1 and h >= 1 and w <= 4000 and h <= 4000) then
+						return bad(f)
+					end
+					rec.w, rec.h = w, h
 				end
 				out.records[k] = rec
 			end
 		end
 	end
-	if not out.scale then return bad("s=") end
 
 	-- NO LOOPS. A node bonded to its own descendant is an anchor loop, which
 	-- the client refuses - and through the spine, which belongs to the player.
@@ -461,14 +548,36 @@ function Layout:Apply(layout)
 				relPoint = r.relPoint, x = r.x, y = r.y } }
 		end
 	end
-	profile.scale = layout.scale or profile.scale
 
 	-- Every node on its new parent BEFORE anything is re-registered: a module
 	-- re-registering a parent re-places its children, and one still on its old
 	-- parent would be measured against that and lose the layout's bond. Then
-	-- the scale onto the frames, then every node to its record.
+	-- the bar scales onto the frames, then every node to its record. The HUD
+	-- scale is the player's, and a layout leaves it alone.
 	A.Movers:ResolveParents()
 	A:Reconfigure()
+	-- The chat window's size, through the chat module's own record of it, in
+	-- the window's own units - before its glass is measured below.
+	local rc = layout.records.chat
+	local CM = rc and rc.w and A.GetModule and A:GetModule("chat")
+	if CM and CM.RestoreSize and A.db.char then
+		A.db.char.chat = A.db.char.chat or {}
+		A.db.char.chat.w, A.db.char.chat.h = rc.w, rc.h
+		CM:RestoreSize()
+	end
+	-- INTO EACH NODE'S OWN UNITS, now Reconfigure has put every scale on its
+	-- frame, and from the glass a player sees to the frame inside it - before
+	-- AdoptLayout places anything by them. Not rounded: a whole number of a
+	-- node's own units reads back as another whole number of HUD units (160 of
+	-- chat's is 113.6; 114 is 161).
+	for name in pairs(layout.records) do
+		local a, r = anchors[name], Ratio(name)
+		local h = a and (a.lat or a)
+		if h then
+			local gx, gy = Glass(name, h.point)
+			h.x, h.y = h.x / r - gx, h.y / r - gy
+		end
+	end
 	A.Movers:AdoptLayout()
 	return true
 end
@@ -505,13 +614,27 @@ function Layout:Matches(layout)
 		if parent ~= r.parent or h.point ~= r.point or (h.relPoint or h.point) ~= r.relPoint then
 			return false
 		end
-		if math.abs((h.x or 0) - r.x) > 1 or math.abs((h.y or 0) - r.y) > 1 then
+		-- In HUD units, from the glass a player sees, as the string has it.
+		local k = Ratio(name)
+		local gx, gy = Glass(name, h.point)
+		if math.abs(((h.x or 0) + gx) * k - r.x) > 1 or math.abs(((h.y or 0) + gy) * k - r.y) > 1 then
 			return false
 		end
 		-- A bar in another shape or size is another arrangement, wherever it is.
+		-- The written shape fitted to the buttons the bar has NOW: a stance bar
+		-- written as a column of 12 is a column of 3 for a warrior, and of 6
+		-- for a druid, and is still the same arrangement.
 		if r.rows then
-			local _, rows, px = BarShape(BarId(name))
-			if rows ~= r.rows or math.abs((px or 0) - r.px) > 1 then return false end
+			local id = BarId(name)
+			local _, rows, px = BarShape(id)
+			local _, n = BarParts(id)
+			local _, want = Fit(n or r.rows, r.rows)
+			if rows ~= want or math.abs((px or 0) - r.px) > 1 then return false end
+		end
+		-- A window of another size is another arrangement too.
+		if r.w then
+			local w, h = NodeSize(name)
+			if not w or math.abs(w - r.w) > 2 or math.abs(h - r.h) > 2 then return false end
 		end
 	end
 
@@ -542,13 +665,19 @@ end
 --  a point. The spine runs from the player's right edge to the target's left.
 function Layout:Resolve(layout)
 	if not layout then return {}, 0, 0 end
-	local sw, sh = ScreenIn(layout.scale or (A.db and A.db.profile.scale))
+	local sw, sh = ScreenIn(A.db and A.db.profile.scale)
 	local registry, nodes = A.Movers.registry, A.Movers.nodes or {}
+	-- In HUD units, like the offsets: a pet at 0.85 is 0.85 of its own width.
+	-- A sized node's record is in its own units. (Chat's glass is not added:
+	-- the thumbnails draw the capsules and the bars, not chat.)
 	local function Size(name)
+		local rec = layout.records[name]
+		local k = Ratio(name)
+		if rec and rec.w then return rec.w * k, rec.h * k end
 		local e = registry[name]
 		local f = (e and e.frame) or nodes[name]
 		if not f then return 0, 0 end
-		return f:GetWidth() or 0, f:GetHeight() or 0
+		return (f:GetWidth() or 0) * k, (f:GetHeight() or 0) * k
 	end
 
 	local at, busy = {}, {}

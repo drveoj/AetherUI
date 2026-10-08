@@ -656,7 +656,12 @@ end
 --  but makes you do the arithmetic first.
 local function LayoutBar(bar)
 	local cfg = A.Config:Module("actionbars")
+	-- THE BUTTONS SHOWING, not every one ever built. Frames cannot be destroyed,
+	-- so a bar asked for fewer - a form unlearned, a button count lowered in
+	-- options - keeps the surplus hidden; counting those sized the pad for
+	-- buttons that were not there, a blank where the last one had been.
 	local n = #bar.buttons
+	if bar.shown and bar.shown < n then n = bar.shown end
 	if n == 0 then
 		-- A bar with nothing in it still needs a body while you are placing it -
 		-- the mover handle takes its size from the frame, and you cannot grab a
@@ -674,7 +679,8 @@ local function LayoutBar(bar)
 	local size = math.max(16, math.floor((bar.cfg.size or cfg.size) + 0.5))
 	local gap, pad = cfg.spacing, cfg.padding
 
-	for i, b in ipairs(bar.buttons) do
+	for i = 1, n do
+		local b = bar.buttons[i]
 		local col = (i - 1) % cols
 		local row = math.floor((i - 1) / cols)
 		-- An adopted Blizzard button is protected; moving it mid-fight is not

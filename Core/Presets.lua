@@ -1,32 +1,32 @@
 --[[--------------------------------------------------------------------------
 	AetherUI :: Presets
 
-	Three arrangements of the HUD, shipped, and the two things you do with one:
+	The shipped arrangements of the HUD, and the two things you do with one:
 	apply it, or capture the one you have made into a form that can be shipped.
 
 	A PRESET IS A LAYOUT STRING (Core/Layout.lua; Joe's decision 5). The same
 	one line a player shares, so there is one format for an arrangement and one
 	path that puts it on screen - Layout:Apply - whether it came from here or
-	from somebody's paste. The string carries the HUD scale, which numbered bars
-	are on (every other is switched off), and each node's place: hung from its
-	parent, or from the screen, in units.
+	from somebody's paste. The string carries which numbered bars are on (every
+	other is switched off) and each node's place: hung from its parent, or from
+	the screen, in HUD units. Never the HUD scale, which is the player's.
 
-	THE NUMBERS ARE NOT WRITTEN BY HAND. An arrangement is a design decision made
-	by eye, in the game, at a real resolution - so each of these was laid out in
-	the game and read back with `/lattice preset capture`, which prints the
-	string ready to paste in here. Guessing coordinates in a text editor is how
-	you get a layout that is plausible in every dimension and right in none.
+	THE NUMBERS COME FROM A DESIGN OR A CAPTURE, NEVER A GUESS. An arrangement
+	laid out by eye in the game is read back with `/lattice preset capture`,
+	which gives the string ready to paste in here. One taken from the design is
+	worked out from the board's own pixels and then applied in the harness at
+	the board's resolution, and every frame read back against the board.
+	Coordinates typed in a text editor give a layout that is plausible in every
+	dimension and right in none.
 
-	THE THREE BELOW ARE 1.x's, converted to strings as they were - and then to
-	the relative form (2026-10-08) by applying each with the code of the day on
-	its capture screen and reading back the bonds it measured, so each still
-	lands where it did. They predate the player-target spine, and two of them
-	stretch it across the screen. Three
-	arrangements designed for the spine replace them (decision 5): low and
-	centred, hugging the character, and raised above the bars.
+	THE DESIGN'S WAY (Joe, 2026-10-08): no whole-HUD presets to choose between,
+	but the one reference layout of the Lattice handoff and the bar seeds of
+	onboarding stop 3 - Rows, Block, Split. The reference IS the Rows seed: the
+	strands brief makes the handoff's bar positions the defaults of Rows. The
+	three 1.x arrangements (corner, centre, bottom) are gone.
 
-	WHAT A PRESET STILL DOES NOT TOUCH: any other module, colours, fonts, or
-	anything else a player has chosen about behaviour.
+	WHAT A PRESET STILL DOES NOT TOUCH: the HUD scale, any other module,
+	colours, fonts, or anything else a player has chosen about behaviour.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -36,34 +36,46 @@ local L = A.L
 local Presets = {}
 A.Presets = Presets
 
-Presets.order = { "corner", "centre", "bottom" }
+Presets.order = { "rows" }
 
--- CAPTURED, NOT WRITTEN. Each of these was laid out by eye in the game and read
--- back with a capture - never typed. `label` is what a player reads; `blurb`
--- is the line under the wireframe on the tour's card.
+-- `label` is what a player reads; `blurb` is the line under the wireframe on
+-- the tour's card.
 Presets.list = {
-	corner = {
-		-- OFFERED FIRST, and deliberately the one that surprises least:
-		-- somebody who has played this game before knows where to look, and a
-		-- first run that moves their health bar somewhere new has spent its
-		-- first decision making them hunt for it.
-		label = L.presets.set_bars.label,
-		blurb = L.presets.set_bars.blurb,
-		-- captured on a 2885 x 1202 screen
-		layout = "LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,-16,-452;bar2=screen,BOTTOM,BOTTOM,442,17;bar3=screen,BOTTOMRIGHT,BOTTOMRIGHT,-13,66;bar4=screen,BOTTOM,BOTTOM,444,127;bar5=screen,RIGHT,RIGHT,-4,-67;bar6=screen,RIGHT,RIGHT,-553,-219;barextra=bar1,BOTTOM,CENTER,470,-40;chat=screen,BOTTOMLEFT,BOTTOMLEFT,16,54;party=screen,LEFT,LEFT,66,76;pet=player,TOPLEFT,CENTER,-325,-192;player=screen,TOPLEFT,TOPLEFT,127,-80;quests=screen,TOPRIGHT,TOPRIGHT,-8,-330;target=player,LEFT,RIGHT,69,0;targettarget=target,TOPLEFT,CENTER,0,-192;tooltip=screen,TOPRIGHT,TOPRIGHT,-193,-17",
-	},
-	centre = {
-		label = L.presets.set_bars.label2,
-		blurb = L.presets.set_bars.blurb2,
-		-- captured on a 2885 x 1202 screen
-		layout = "LAT1;s=0.71;b=1,2;bar1=spine,BOTTOM,CENTER,495,-1073;bar2=spine,BOTTOM,CENTER,1378,-1073;bar3=screen,BOTTOMRIGHT,BOTTOMRIGHT,-13,66;bar4=screen,BOTTOM,BOTTOM,444,127;bar5=screen,RIGHT,RIGHT,-4,-67;bar6=screen,RIGHT,RIGHT,-553,-219;barextra=bar1,BOTTOMRIGHT,CENTER,1192,-37;chat=screen,BOTTOMLEFT,BOTTOMLEFT,16,54;pet=player,BOTTOMLEFT,CENTER,-547,-102;player=screen,CENTER,CENTER,-264,-143;quests=screen,TOPRIGHT,TOPRIGHT,-8,-330;target=player,LEFT,RIGHT,182,0;targettarget=target,BOTTOMRIGHT,CENTER,549,-102;tooltip=screen,TOPRIGHT,TOPRIGHT,-193,-17",
-	},
-	bottom = {
-		label = L.presets.set_bars.label3,
-		blurb = L.presets.set_bars.blurb3,
-		-- captured on a 2885 x 1202 screen. The only one that places the music
-		-- deck, which is why it is the only one naming `ifec`.
-		layout = "LAT1;s=0.71;b=1,2;bar1=spine,BOTTOM,CENTER,1,-438;bar2=spine,BOTTOM,CENTER,1,-351;bar3=screen,BOTTOMRIGHT,BOTTOMRIGHT,-13,66;bar4=screen,BOTTOM,BOTTOM,444,127;bar5=screen,RIGHT,RIGHT,-4,-67;bar6=screen,RIGHT,RIGHT,-553,-219;barextra=bar1,BOTTOM,CENTER,-1,191;barpet=bar1,BOTTOM,CENTER,-1,136;chat=screen,TOPLEFT,TOPLEFT,26,-52;ifec=screen,BOTTOM,BOTTOM,0,394;party=screen,LEFT,LEFT,66,76;pet=player,BOTTOMLEFT,CENTER,-583,-33;player=screen,BOTTOMLEFT,BOTTOMLEFT,737,86;quests=screen,TOPRIGHT,TOPRIGHT,-8,-330;target=player,LEFT,RIGHT,721,0;targettarget=target,BOTTOMRIGHT,CENTER,618,-33;tooltip=screen,TOPRIGHT,TOPRIGHT,-193,-17",
+	rows = {
+		label = L.presets.rows.label,
+		blurb = L.presets.rows.blurb,
+		-- FROM THE BOARD: Lattice handoff 3a at 1920 x 1080. Every offset in HUD
+		-- units, which at the scale fitted to the monitor is a pixel on any
+		-- screen, whatever the player's bar size or pet and ToT scales. No
+		-- scale: that is the player's. The spine on the screen's centre line,
+		-- bond 216; bar 1 12 x 44 with its top at y 968, bar 2 12 x 34 at
+		-- y 1032, both hung from the spine's middle; ToT over the target's
+		-- right edge at y 760; party 60, 420; chat's glass 24 / 24 from the
+		-- bottom left.
+		-- Chat's size is in its own units, which its text and its smallest
+		-- size are in: 210 x 120, so its glass clears the stance bar at 1080.
+		-- Its size travels with it, or a wider window runs under the stance bar
+		-- and the player.
+		-- NOT the board's minimap and tracker (6a): they sit where they do
+		-- around the world trunk, which is not built - without it they were
+		-- just shoved in from the corner (Joe, 2026-10-08). Their own defaults
+		-- until it is.
+		-- Where the board and this addon differ:
+		--   the capsules are 345 x 64, not 332 x 60, so the bond and the
+		--   centre line are kept rather than the board's x;
+		--   there is no focus frame, and the pet capsule is too tall for the
+		--   strip under the player, so the pet takes the focus slot above it,
+		--   mirroring the ToT;
+		--   the stance, pet and extra bars hang from BAR 1, not from the player
+		--   and the pet as the strands brief has it: actions are bonded to
+		--   actions (Joe, 2026-10-07, held over the brief). Stance is a row of
+		--   30 off bar 1's left end, written 12 x 1 so it is one row whatever
+		--   the class has; the extra button sits over its right end; the pet
+		--   bar is a row of 30 off bar 1's right end. Hung from bar 1's EDGES,
+		--   not its centre, so they stay 8 off its ends whatever its width.
+		-- Bars 3 and 4 are off: the Rows seed is bars 1 and 2. The tooltip and
+		-- the music deck are not on the board and keep their own defaults.
+		layout = "LAT1;b=1,2;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=spine,TOP,CENTER,0,-162,12x1,34;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;party=screen,TOPLEFT,TOPLEFT,60,-420;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
 	},
 }
 
@@ -77,7 +89,6 @@ for key, preset in pairs(Presets.list) do
 		error(("preset %s does not decode: %s"):format(key, tostring(err)))
 	end
 	preset.decoded = layout
-	preset.scale = layout.scale
 	preset.bars = {}
 	for id in pairs(layout.bars) do preset.bars[id] = true end
 end

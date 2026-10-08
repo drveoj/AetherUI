@@ -1288,16 +1288,9 @@ L["player.paint_up_next.queued"] = "queued by you"
 
 -- presets -----------------------------------------------------------------
 
-L["presets.set_bars.blurb"] =
-	"Unitframes in the top left corner as they're laid out in the "
-		.. "classic UI."
-L["presets.set_bars.blurb2"] =
-	"Unitframes in the center where most of the action is."
-L["presets.set_bars.blurb3"] =
-	"Unitframes positioned towards the bottom and out to the corners."
-L["presets.set_bars.label"] = "Classic Corner"
-L["presets.set_bars.label2"] = "Centre focus"
-L["presets.set_bars.label3"] = "Bottom Corners"
+L["presets.rows.blurb"] =
+	"Bars 1 and 2 in two rows under you and your target."
+L["presets.rows.label"] = "Rows"
 
 -- resources ---------------------------------------------------------------
 --
@@ -1392,7 +1385,7 @@ L["tour.adopt_from.body"] =
 	"One palette colours your interface — tap to try each live; "
 		.. "everything recolours at once."
 L["tour.adopt_from.body2"] =
-	"Three starting layouts — watch the unit frames move as you tap. "
+	"A starting layout — tap it and watch the frames move into place. "
 		.. "You can fine-tune every frame later."
 L["tour.adopt_from.body3"] =
 	"Addons, settings and N.I.F.E.C. — all present from the Toolbox. "

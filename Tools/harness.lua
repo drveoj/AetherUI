@@ -6427,6 +6427,13 @@ MakeChatFrame(1)
 MakeChatFrame(2)
 
 GeneralDockManager.selected = _G.ChatFrame1
+-- THE DOCK RIDES ON CHATFRAME1, left edge to left edge, the tabs sitting on its
+-- top. Not read from Blizzard's XML, which is not on this machine: inferred
+-- from the game, where Chat.lua hangs its glass from the dock's top left and
+-- the glass has always sat true round the window. Left floating here, the dock
+-- stayed put while the window moved, and the glass with it - so nothing
+-- measuring the glass could be trusted.
+GeneralDockManager:SetPoint("BOTTOMLEFT", _G.ChatFrame1, "TOPLEFT", 0, 0)
 
 -- CHATFRAME1 IS AN EDIT MODE SYSTEM, and Edit Mode is what has been moving it.
 --
@@ -12757,12 +12764,43 @@ do
 	check(stance.buttons[2].glow:IsShown(), "the active form is lit")
 
 	-- learning a form has to grow the bar
+	local twoW, twoH = stance.dock:GetWidth(), stance.dock:GetHeight()
 	_G.__forms[3] = { texture = "Icons\\Travel", active = false, castable = true }
 	fire("UPDATE_SHAPESHIFT_FORMS")
 	check(#stance.buttons == 3, "learning a form grows the bar")
+	check(stance.dock:GetWidth() > twoW, "and its pad with it")
 	_G.__forms[3] = nil
 	fire("UPDATE_SHAPESHIFT_FORMS")
 	check(stance.shown == 2, "and unlearning shrinks it back")
+	-- THE PAD TOO. The third button is kept, hidden - frames cannot be
+	-- destroyed - and LayoutBar counted it, so the pad stayed three wide with
+	-- a blank where the unlearned form had been.
+	check(math.abs(stance.dock:GetWidth() - twoW) < 0.5 and math.abs(stance.dock:GetHeight() - twoH) < 0.5,
+		"and its pad is two buttons wide again, not three with a blank (" ..
+		("%.0f against %.0f"):format(stance.dock:GetWidth(), twoW) .. ")")
+	local scols, srows = A.Layout.BarShape("stance")
+	check(scols * srows == 2,
+		"and a layout string writes its shape over the two showing (" .. scols .. "x" .. srows .. ")")
+
+	-- AND AN ACTION BAR ASKED FOR FEWER BUTTONS, the same way: the surplus
+	-- is hidden, and the pad is the buttons showing.
+	do
+		local one = byId["1"]
+		local cfg1 = one.cfg
+		local wasButtons, wasRows = cfg1.buttons, cfg1.rows
+		cfg1.rows = 1
+		A:GetModule("actionbars"):OnConfigChanged()
+		local fullW = one.dock:GetWidth()
+		cfg1.buttons = 8
+		A:GetModule("actionbars"):OnConfigChanged()
+		local ab = A.Config:Module("actionbars")
+		local size, gap = one.cfg.size or ab.size, ab.spacing
+		check(math.abs((fullW - one.dock:GetWidth()) - 4 * (size + gap)) < 0.5,
+			"a bar asked for 8 of its 12 buttons is 4 buttons narrower, not 12 wide"
+			.. " with four blanks (" .. ("%.0f, then %.0f"):format(fullW, one.dock:GetWidth()) .. ")")
+		cfg1.buttons, cfg1.rows = wasButtons, wasRows
+		A:GetModule("actionbars"):OnConfigChanged()
+	end
 
 	local pet = byId["pet"]
 	check(#pet.buttons == 10, "the pet bar always has its ten slots")
@@ -17336,7 +17374,28 @@ do
 
 	A.db.profile.anchors.player = nil
 end
-print("== presets: three arrangements of the HUD ==")
+-- Where the chat's GLASS sits, in HUD units from the screen's bottom left:
+-- what a layout's chat record places (the panel and the edit box hang off
+-- ChatFrame1, and the frame's own position is not what a player sees). Also
+-- its left, right, top and bottom edges in UIParent units, for the board.
+--
+-- ChatFrame1 widened by Chat:Insets(), because the panel itself is pinned
+-- between two DIFFERENT frames - the tab dock and ChatFrame1 - which this mock
+-- does not resolve (see fromAnchors). That Insets() is what the panel really
+-- does is checked against the panel's own anchors, in the chat block below.
+function _G.__chatGlass()
+	local CM = A:GetModule("chat")
+	local f = _G.ChatFrame1
+	if not (CM.Insets and f and f:GetLeft()) then return nil end
+	local l, b, r, t = CM:Insets()
+	local s = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	local edges = { l = (f:GetLeft() - l) * s, r = (f:GetRight() + r) * s,
+		b = (f:GetBottom() - b) * s, t = (f:GetTop() + t) * s }
+	local hud = A.db.profile.scale or 1
+	return (edges.l - UIParent:GetLeft()) / hud, (edges.b - UIParent:GetBottom()) / hud, edges
+end
+
+print("== presets: the shipped arrangements of the HUD ==")
 do
 	-- WHAT NO ARRANGEMENT NAMES, AND WHY.
 	--
@@ -17351,14 +17410,18 @@ do
 	-- the whole point of writing them down. Anything else appearing here fails
 	-- this and somebody has to say which of the two it is.
 	do
+		-- The reference layout (rows) places what the Lattice board places. The
+		-- rest it leaves on their own defaults, on purpose (Joe, 2026-10-08):
 		local UNNAMED = {
-			-- Parks itself beside bar 1, computed from bar 1's real width, so it
-			-- lands correctly in every arrangement without any of them naming
-			-- it. Which is just as well: only some classes have a stance bar, so
-			-- nobody capturing an arrangement has one on screen to place.
-			barstance = true,
-			-- Twenty-four in from the top right, and no arrangement moves it.
+			-- The board's minimap and tracker sit around the world trunk, which
+			-- is not built; without it they were shoved in from the corner (Joe,
+			-- 2026-10-08). Their own defaults until it is.
 			minimap = true,
+			quests = true,
+			-- Not on the board. Its own default is the bottom right corner.
+			tooltip = true,
+			-- The music deck: not on the board either.
+			ifec = true,
 		}
 
 		local named = {}
@@ -17380,10 +17443,9 @@ do
 			.. "that is not (" .. (#surprises > 0 and
 			table.concat(surprises, ", ") or "no surprises") .. ")")
 
-		-- AND THE STANCE BAR'S OWN DEFAULT IS THE COMPUTED ONE. The list above
-		-- excuses it on the grounds that it parks itself beside bar 1; this is
-		-- the half that checks it actually does, so the excuse cannot outlive
-		-- the reason for it.
+		-- AND THE STANCE BAR'S OWN DEFAULT IS THE COMPUTED ONE. The reference
+		-- layout places it, but a pasted string that does not name it puts it
+		-- back on this default - which was once on top of the chat window.
 		local stance
 		for _, bar in ipairs(A:GetModule("actionbars").bars or {}) do
 			if bar.id == "stance" then stance = bar end
@@ -17402,7 +17464,13 @@ do
 	-- and every anchor in it, and the checks after this one are laid out
 	-- against the scale the suite started at.
 	local wasScale = A.db.profile.scale
-	check(#P.order == 3, "there are three of them (" .. #P.order .. ")")
+	-- THE DESIGN'S WAY (Joe, 2026-10-08): the reference layout, which is the
+	-- Rows seed, and none of 1.x's three. Split and Block join it as seeds.
+	check(#P.order == 1 and P.order[1] == "rows" and P.list.rows ~= nil,
+		"the reference layout is the one shipped arrangement (" ..
+		table.concat(P.order, ", ") .. ")")
+	check(P.list.corner == nil and P.list.centre == nil and P.list.bottom == nil,
+		"and 1.x's corner, centre and bottom are gone")
 
 	-- AND EVERY ONE OF THEM HAS COORDINATES IN IT.
 	--
@@ -17421,9 +17489,12 @@ do
 		check(named > 6,
 			"\"" .. key .. "\" is a real arrangement rather than an empty table ("
 			.. named .. " frames)")
-		check((preset.scale or 0) > 0,
-			"and the scale travels with it, because frames hugging the character "
-			.. "want to be smaller than frames along the bottom of an ultrawide")
+		-- AND NO SCALE. The HUD scale is the player's - the monitor's
+		-- arithmetic or their own slider (54d8cab) - and the first strings
+		-- carried 0.71 and set it on everyone, which on a 1690-tall screen drew
+		-- the whole HUD half as big again (Joe, 2026-10-08).
+		check(preset.layout:find("s=", 1, true) == nil and preset.scale == nil,
+			"and no scale in it, because the scale is the player's")
 	end
 
 	-- NO NAME IN THEM THAT IS NOT A FRAME. These tables are pasted in by hand
@@ -17481,25 +17552,28 @@ do
 		return realRestore(self)
 	end
 
-	-- EACH OF THE THREE, there and back. Reading the arrangement off the
-	-- anchors rather than off a note somebody wrote down is the whole point:
-	-- a stored answer goes stale the first time a frame is dragged.
+	-- EACH ONE, there and back. Reading the arrangement off the anchors rather
+	-- than off a note somebody wrote down is the whole point: a stored answer
+	-- goes stale the first time a frame is dragged.
 	for _, key in ipairs(P.order) do
+		-- A scale no arrangement would pick, so one that set its own shows.
+		A.db.profile.scale = 0.45
 		check(P:Apply(key), "\"" .. key .. "\" applies")
 		check(P:Current() == key,
 			"and reads back as itself off the anchors (" ..
 			tostring(P:Current()) .. ")")
-		check(A.db.profile.scale == P.list[key].scale,
-			"at its own scale (" .. tostring(A.db.profile.scale) .. ")")
+		check(A.db.profile.scale == 0.45,
+			"and leaves the player's scale as it was (" .. tostring(A.db.profile.scale) .. ")")
 	end
+	A.db.profile.scale = wasScale
 	check(moved == #P.order,
 		"and every frame is told to look again each time (" .. moved .. ")")
 
 	-- WIPED, NOT MERGED. What the last arrangement moved and this one does not
 	-- mention is two layouts at once and belongs to neither.
-	anchors.minimap = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -9, y = -9 }
-	P:Apply("centre")
-	check(anchors.minimap == nil,
+	anchors.tooltip = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -9, y = -9 }
+	P:Apply("rows")
+	check(anchors.tooltip == nil,
 		"applying a preset takes away what the last one moved and this one does "
 		.. "not mention")
 
@@ -17510,7 +17584,7 @@ do
 	-- that button back in the middle of the screen every time somebody tries a
 	-- preset on.
 	anchors.__lockButton = { point = "CENTER", relPoint = "CENTER", x = 2, y = 164 }
-	P:Apply("bottom")
+	P:Apply("rows")
 	check(anchors.__lockButton ~= nil and anchors.__lockButton.y == 164,
 		"where the player parked the lock button survives a preset being applied "
 		.. "over it")
@@ -17535,8 +17609,8 @@ do
 		"and holds no whitespace at all - a tab is not reliably carried through"
 		.. " a chat frame and out through the clipboard, and this text exists to"
 		.. " be pasted")
-	check(text:find(";s=0.71;", 1, true) ~= nil,
-		"with the scale in it, because that is part of an arrangement")
+	check(text:find("s=", 1, true) == nil,
+		"with no scale in it, because the scale is the player's, not the arrangement's")
 
 	-- SORTED, so two captures of the same layout are the same text and a diff
 	-- shows the line that really changed.
@@ -17568,7 +17642,7 @@ do
 		local px = -(GAP / 2 + pw / 2)
 		-- Bars 1 and 2, as the last preset applied left them, so the probe
 		-- moves no bar the checks after this block depend on.
-		probe("__probe", ("LAT1;s=0.71;b=1,2;player=screen,CENTER,CENTER,%d,0;"
+		probe("__probe", ("LAT1;b=1,2;player=screen,CENTER,CENTER,%d,0;"
 			.. "target=player,LEFT,RIGHT,%d,0;chat=screen,BOTTOMLEFT,BOTTOMLEFT,16,54"):format(
 			math.floor(px + 0.5), GAP))
 
@@ -17596,9 +17670,11 @@ do
 			"and stays centred: player and target the same distance either side of"
 			.. " the middle (" .. string.format("%.0f, %.0f",
 			narrowP and narrowP.x or 0, narrowT and narrowT.x or 0) .. ")")
-		check(anchors.chat.x == 16 and anchors.chat.y == 54,
+		-- In HUD units, as the string has it, and to the glass a player sees.
+		local gx, gy = _G.__chatGlass()
+		check(gx and math.abs(gx - 16) <= 1 and math.abs(gy - 54) <= 1,
 			"a node on an edge stays the same units in from that edge, whatever"
-			.. " the screen (" .. anchors.chat.x .. ", " .. anchors.chat.y .. ")")
+			.. " the screen (" .. tostring(gx) .. ", " .. tostring(gy) .. ")")
 		check(P:Current() == "__probe",
 			"and it is still recognised as the arrangement on screen (" ..
 			tostring(P:Current()) .. ")")
@@ -17634,7 +17710,7 @@ do
 			was[id] = AB:BarConfig(id).enabled
 		end
 
-		probe("__bars", "LAT1;s=0.71;b=1,2,5;player=screen,CENTER,CENTER,0,0")
+		probe("__bars", "LAT1;b=1,2,5;player=screen,CENTER,CENTER,0,0")
 
 		-- Switched the other way round to start with, so both directions are
 		-- actually exercised rather than one of them happening to be right.
@@ -17698,7 +17774,7 @@ do
 		local stance = AB:BarConfig("stance")
 		if stance then
 			stance.enabled = true
-			check(A.Layout:Decode("LAT1;s=0.71;b=1,stance") == nil,
+			check(A.Layout:Decode("LAT1;b=1,stance") == nil,
 				"a layout cannot even name the stance bar in its bars")
 			P:Apply("__bars")
 			check(stance.enabled, "and applying one leaves the stance bar alone")
@@ -17752,6 +17828,203 @@ do
 	A.Movers:RestoreAll()
 end
 
+-- THE REFERENCE LAYOUT LANDS WHERE THE BOARD PUTS IT (Joe, 2026-10-08: go the
+-- design's way). Lattice handoff 3a with 6a's minimap and tracker, at the
+-- board's own 1920 x 1080, read back in the board's pixels: from the screen's
+-- top left, through UIParent's own edges.
+print("== presets: the reference layout, against the board ==")
+do
+	local P, M, UFm = A.Presets, A.Movers, A:GetModule("unitframes")
+	local wasScale = A.db.profile.scale
+	local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
+	UIParent:SetSize(768 * 1920 / 1080, 768)
+	local ABc, UFc = A.Config:Module("actionbars"), A.Config:Module("unitframes")
+	local was = { size = ABc.size, spacing = ABc.spacing, padding = ABc.padding,
+		scale = ABc.scale, petScale = UFc.petScale, totScale = UFc.totScale }
+
+	-- TWICE: at the settings the addon ships, and at settings a player might
+	-- have - the bars' base size at 62, as an earlier block in this suite leaves
+	-- it, the bars module at 0.8, the pet bigger and the ToT smaller. The string
+	-- carries none of those, so it has to land on the board through all of
+	-- them. It did not: its offsets were in each node's own units, and at a
+	-- base size of 62 bar 1 sat 42 px closer to the spine.
+	-- A frame's edges in the board's pixels, from the screen's top left -
+	-- through UIParent's own edges, since the mock's screen has an origin.
+	local function rect(f)
+		if not (f and f:GetLeft()) then return nil end
+		local k = 1080 / UIParent:GetHeight()
+		local UL, UT = UIParent:GetLeft(), UIParent:GetTop()
+		local fs = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+		return { l = (f:GetLeft() * fs - UL) * k, r = (f:GetRight() * fs - UL) * k,
+			t = (UT - f:GetTop() * fs) * k, b = (UT - f:GetBottom() * fs) * k }
+	end
+	local function frame(name) return M.registry[name] and M.registry[name].frame end
+	local function near(a, b) return a and b and math.abs(a - b) <= 2 end
+	local function cx(r) return r and (r.l + r.r) / 2 end
+	local function cy(r) return r and (r.t + r.b) / 2 end
+	local function say(...)
+		local out = {}
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			out[#out + 1] = type(v) == "number" and ("%.1f"):format(v) or tostring(v)
+		end
+		return " (" .. table.concat(out, ", ") .. ")"
+	end
+
+	local function Board(tag, s)
+		local check = function(ok, msg) return check(ok, "[" .. tag .. "] " .. msg) end
+		ABc.size, ABc.spacing, ABc.padding, ABc.scale = s.size, 8, 6, s.bars
+		UFc.petScale, UFc.totScale = s.pet, s.tot
+		-- The player's own scale, fitted to this screen: what makes a HUD unit
+		-- a pixel. The layout does not set it, and must not.
+		A.db.profile.scale = 768 / 1080
+		A:Reconfigure()
+		check(P.list.rows ~= nil and P:Apply("rows"), "the reference layout applies")
+		check(A.db.profile.scale == 768 / 1080, "and leaves the player's scale alone")
+		if UFm.MeasureSpine then UFm:MeasureSpine() end
+
+		local R = {}
+		for _, n in ipairs({ "player", "target", "targettarget", "pet", "party",
+			"bar1", "bar2", "barpet", "barstance", "barextra" }) do
+			R[n] = rect(frame(n))
+		end
+		R.spine = rect(UFm.spine)
+		-- THE CHAT IS ITS GLASS: the panel and the edit box hang off
+		-- ChatFrame1, and measuring the frame let a chat whose edit box was off
+		-- the bottom of the screen pass (Joe, 2026-10-08).
+		local _, _, ge = _G.__chatGlass()
+		if ge then
+			local k = 1080 / UIParent:GetHeight()
+			local UL, UT = UIParent:GetLeft(), UIParent:GetTop()
+			R.chat = { l = (ge.l - UL) * k, r = (ge.r - UL) * k,
+				t = (UT - ge.t) * k, b = (UT - ge.b) * k }
+		end
+
+		check(near(cx(R.spine), 960) and near(cy(R.spine), 870),
+			"the spine runs on the screen's centre line at y 870" .. say(cx(R.spine), cy(R.spine)))
+		check(R.player and R.target and near(R.target.l - R.player.r, 216),
+			"the bond is 216 long" .. say(R.target and R.player and R.target.l - R.player.r))
+		for _, b in ipairs({ { "bar1", "1", 968, 44 }, { "bar2", "2", 1032, 34 } }) do
+			local r = R[b[1]]
+			local _, rows, px = A.Layout.BarShape(b[2])
+			check(r and near(cx(r), 960) and near(r.t, b[3]) and rows == 1 and px == b[4],
+				b[1] .. " is a 12 x 1 row of " .. b[4] .. " px hung from the spine's middle,"
+				.. " its top at y " .. b[3] .. say(cx(r), r and r.t, rows, px))
+		end
+		check(R.targettarget and near(R.targettarget.r, R.target.r) and near(R.targettarget.t, 760),
+			"the ToT sits over the target's right edge at y 760"
+			.. say(R.targettarget and R.targettarget.r, R.target and R.target.r,
+			R.targettarget and R.targettarget.t))
+		check(R.pet and near(R.pet.l, R.player.l) and near(R.pet.t, 760),
+			"the pet takes the focus slot over the player, mirroring the ToT"
+			.. say(R.pet and R.pet.l, R.player and R.player.l, R.pet and R.pet.t))
+		check(R.party and near(R.party.l, 60) and near(R.party.t, 420),
+			"the party column starts at 60, 420" .. say(R.party and R.party.l, R.party and R.party.t))
+		check(R.chat and near(R.chat.l, 24) and near(R.chat.b, 1080 - 24),
+			"the chat's glass sits 24 in from the bottom left, all of it on the screen"
+			.. say(R.chat and R.chat.l, R.chat and R.chat.b))
+		-- AND THE GLASS IS WHAT THE PANEL DOES: Insets() against the panel's
+		-- own anchors, so a change to one cannot leave the other measuring air.
+		do
+			local CM = A:GetModule("chat")
+			local l, b, r = CM:Insets()
+			local tl, br
+			for i = 1, (CM.panel:GetNumPoints() or 0) do
+				local pt, rel, _, x, y = CM.panel:GetPoint(i)
+				if pt == "TOPLEFT" then tl = { rel = rel, x = x } end
+				if pt == "BOTTOMRIGHT" then br = { rel = rel, x = x, y = y } end
+			end
+			check(tl and br and br.rel == _G.ChatFrame1 and br.x == r and br.y == -b
+				and tl.x == -l,
+				"and the glass measured is the panel's own anchoring: " .. l .. " either side, "
+				.. b .. " below" .. say(tl and tl.x, br and br.x, br and br.y))
+		end
+		local CF = frame("chat")
+		check(CF and math.abs(CF:GetWidth() - 210) < 1 and math.abs(CF:GetHeight() - 120) < 1,
+			"at 210 x 120 of its own units, whatever size the window was - the size"
+			.. " travels with the layout" .. say(CF and CF:GetWidth(), CF and CF:GetHeight()))
+		-- ACTIONS ARE BONDED TO ACTIONS (Joe, 2026-10-07, held over the strands
+		-- brief, which hangs stance off the player and the pet bar off the pet):
+		-- all three hang from bar 1.
+		for _, n in ipairs({ "barstance", "barpet", "barextra" }) do
+			check(M:ParentOf(n) == "bar1", n .. " hangs from bar 1" .. say(M:ParentOf(n)))
+		end
+		-- From bar 1's EDGES, not its centre: at the bars module's 0.8 bar 1
+		-- is 478 wide rather than 650, and hung from its centre they stood 93
+		-- off its ends.
+		check(R.barstance and near(R.bar1.l - R.barstance.r, 8)
+			and near(cy(R.barstance), cy(R.bar1)),
+			"the stance bar is a row 8 off bar 1's left end, whatever its width"
+			.. say(R.barstance and R.barstance.r, R.bar1 and R.bar1.l))
+		check(R.barpet and near(R.barpet.l - R.bar1.r, 8)
+			and near(cy(R.barpet), cy(R.bar1)),
+			"the pet bar is a row off bar 1's right end"
+			.. say(R.barpet and R.barpet.l, R.bar1 and R.bar1.r))
+		check(R.barextra and near(R.barextra.r, R.barstance.r) and R.barextra.b <= R.barstance.t
+			and R.barextra.t > R.player.b,
+			"and the extra button sits over the stance row's right end, under the player"
+			.. say(R.barextra and R.barextra.r, R.barextra and R.barextra.t, R.barextra and R.barextra.b))
+
+		-- AND NOTHING SITS ON ANYTHING ELSE. The pet and stance bars once had
+		-- only their coded defaults here, measured beside a 36 px bar 1, and
+		-- both landed on this layout's 44 px one.
+		local names = {}
+		for n in pairs(R) do if n ~= "spine" then names[#names + 1] = n end end
+		table.sort(names)
+		local hits = {}
+		for i = 1, #names do
+			for j = i + 1, #names do
+				local a, b = R[names[i]], R[names[j]]
+				if a and b and a.l < b.r - 1 and b.l < a.r - 1 and a.t < b.b - 1 and b.t < a.b - 1 then
+					hits[#hits + 1] = names[i] .. "/" .. names[j]
+				end
+			end
+		end
+		check(#hits == 0, "and no two frames overlap" .. say(#hits > 0 and table.concat(hits, " ") or "none"))
+	end
+
+	Board("shipped settings", { size = 36, bars = 1, pet = 0.85, tot = 0.85 })
+	Board("a player's settings", { size = 62, bars = 0.8, pet = 1.0, tot = 0.7 })
+
+	-- THE STANCE BAR IS ONE ROW FOR EVERY CLASS. It is written 12 x 1, which on
+	-- a druid's forms is a row of however many there are - and the layout is
+	-- still the one on screen.
+	check(P:Current() == "rows", "and it reads back as itself" .. say(P:Current()))
+	local wasForms = #_G.__forms
+	for i = wasForms + 1, 4 do
+		_G.__forms[i] = { texture = "Icons\\Form" .. i, active = false, castable = true }
+	end
+	fire("UPDATE_SHAPESHIFT_FORMS")
+	local cols, rows = A.Layout.BarShape("stance")
+	check(cols >= 4 and rows == 1, "four forms stand in one row" .. say(cols, rows))
+	check(P:Current() == "rows",
+		"and the layout still reads back as itself, whatever the class has"
+		.. say(P:Current()))
+
+	-- AND A SHAPE WRITTEN LONGER THAN THE BAR IS FITTED TO IT. A column written
+	-- 1 x 12 is a column of four on four forms. Matches compared the written 12
+	-- with the 4 drawn, so it said otherwise the moment it was applied.
+	local column = A.Layout:Decode((P.list.rows.layout:gsub(
+		"(barstance=[^;]*),12x1,30", "%1,1x12,30")))
+	check(column and column.records.barstance.rows == 12 and A.Layout:Apply(column),
+		"a stance bar written as a column of 12 applies")
+	cols, rows = A.Layout.BarShape("stance")
+	check(cols == 1 and rows >= 4, "and four forms stand in one column" .. say(cols, rows))
+	check(column and A.Layout:Matches(column),
+		"and it reads back as itself though the bar has 4, not 12")
+	for i = #_G.__forms, wasForms + 1, -1 do _G.__forms[i] = nil end
+	fire("UPDATE_SHAPESHIFT_FORMS")
+
+	ABc.size, ABc.spacing, ABc.padding, ABc.scale = was.size, was.spacing, was.padding, was.scale
+	UFc.petScale, UFc.totScale = was.petScale, was.totScale
+	UIParent:SetSize(wasW, wasH)
+	wipe(A.db.profile.anchors)
+	for _, e in pairs(M.registry) do e.parent, e.free = e.defaultParent, nil end
+	A.db.profile.scale = wasScale
+	A:Reconfigure()
+	M:RestoreAll()
+end
+
 -- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole
 -- arrangement as one line, read back, refused whole when it is wrong.
 print("== layout string ==")
@@ -17766,12 +18039,16 @@ do
 	-- its bond is exactly what the string said.
 	-- The pet is set free by naming the screen: its module hangs it from the
 	-- player, and there is no separate flag for that any more.
-	local TEXT = "LAT1;s=0.71;b=1;barextra=player,CENTER,CENTER,0,40;"
+	local TEXT = "LAT1;b=1;barextra=player,CENTER,CENTER,0,40;"
 		.. "bar8=bar1,BOTTOM,CENTER,0,-60;"
 		.. "chat=screen,BOTTOMLEFT,BOTTOMLEFT,14,38;"
 		.. "pet=screen,TOPRIGHT,TOPRIGHT,-20,-150"
 	local layout, err = LY:Decode(TEXT)
 	check(layout ~= nil, "a layout string decodes (" .. tostring(err) .. ")")
+	-- The player's scale, fitted to a 1080 screen. The string does not carry
+	-- one, so it is whatever the player has; this one makes chat's units -
+	-- UIParent's - differ from the HUD's, which the chat check below is about.
+	A.db.profile.scale = 768 / 1080
 	anchors.__lockButton = { point = "CENTER", relPoint = "CENTER", x = 2, y = 164 }
 	check(LY:Apply(layout), "and applies")
 
@@ -17781,8 +18058,14 @@ do
 	check(anchors.pet and anchors.pet.free == true and M:ParentOf("pet") == nil,
 		"a node its module hangs from another, named on the screen, is set free"
 		.. " of it (" .. tostring(M:ParentOf("pet")) .. ")")
-	check(anchors.chat and anchors.chat.x == 14 and anchors.chat.y == 38,
-		"and a node on the screen is placed in units from its anchor, as written")
+	-- The store is in the node's own units, of the frame; the string in HUD
+	-- units, of the glass. Chat is at UIParent's scale, not the HUD's, and its
+	-- glass reaches past its frame, so the two differ for it twice over - which
+	-- is what this checks: the 14 and 38 written are where the glass is.
+	local gx, gy = _G.__chatGlass()
+	check(gx and LY.Ratio("chat") > 1.1 and math.abs(gx - 14) <= 1 and math.abs(gy - 38) <= 1,
+		"and a node on the screen is placed in HUD units from its anchor, as written ("
+		.. tostring(gx) .. ", " .. tostring(gy) .. ")")
 	check(M:ParentOf("barextra") == "player",
 		"and a node the string bonds elsewhere hangs from that parent now ("
 		.. tostring(M:ParentOf("barextra")) .. ")")
@@ -17818,22 +18101,24 @@ do
 		check(l == nil and type(e) == "string" and e ~= "",
 			what .. " is refused, saying why (" .. tostring(e) .. ")")
 	end
-	refused("LAT2;s=0.71;b=1", "another version")
-	refused("LAT1;s=0.71;b=1;nonsense=screen,CENTER,CENTER,0,0", "a node this addon never had")
-	refused("LAT1;s=0.71;b=1;bar8=nonsense,CENTER,CENTER,0,0", "a parent this addon never had")
-	refused("LAT1;s=0.71;b=1;bar8=bar9,CENTER,CENTER,0,0;bar9=bar8,CENTER,CENTER,0,0",
+	refused("LAT2;b=1", "another version")
+	-- THE SCALE IS THE PLAYER'S. A string carrying one is from before that was
+	-- settled, and its offsets are in units nothing reads any more.
+	refused("LAT1;s=0.71;b=1", "a scale, which is the player's to set")
+	refused("LAT1;b=1;nonsense=screen,CENTER,CENTER,0,0", "a node this addon never had")
+	refused("LAT1;b=1;bar8=nonsense,CENTER,CENTER,0,0", "a parent this addon never had")
+	refused("LAT1;b=1;bar8=bar9,CENTER,CENTER,0,0;bar9=bar8,CENTER,CENTER,0,0",
 		"a loop")
-	refused("LAT1;s=0.71;b=1;player=bar1,CENTER,CENTER,0,0;bar1=spine,CENTER,CENTER,0,0",
+	refused("LAT1;b=1;player=bar1,CENTER,CENTER,0,0;bar1=spine,CENTER,CENTER,0,0",
 		"a loop through the spine, which belongs to the player")
-	refused("LAT1;s=0.71;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,nan,0", "a number that is not one")
-	refused("LAT1;s=0.71;b=1;chat=screen,MIDDLE,BOTTOMLEFT,0,0", "a point the client has not got")
-	refused("LAT1;s=0.71;b=1;chat=S,BOTTOMLEFT,BOTTOMLEFT,0.01000,0.05000",
+	refused("LAT1;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,nan,0", "a number that is not one")
+	refused("LAT1;b=1;chat=screen,MIDDLE,BOTTOMLEFT,0,0", "a point the client has not got")
+	refused("LAT1;b=1;chat=S,BOTTOMLEFT,BOTTOMLEFT,0.01000,0.05000",
 		"a canvas position, as the first version wrote one")
-	refused("LAT1;s=0.71;b=1;bar8=B,bar1,BOTTOM,CENTER,0,-60",
+	refused("LAT1;b=1;bar8=B,bar1,BOTTOM,CENTER,0,-60",
 		"and the first version's bond, with its marker")
-	refused("LAT1;s=0.71;b=1;target=screen,CENTER,CENTER,0,0",
+	refused("LAT1;b=1;target=screen,CENTER,CENTER,0,0",
 		"the target hung from anything but the player, which it is one piece with")
-	refused("LAT1;b=1", "a layout with no scale")
 	refused("", "nothing at all")
 
 	_G.__inCombat = true
@@ -17891,7 +18176,7 @@ do
 		"a bar nobody has moved is still written, with its shape - a seed of"
 		.. " untouched bars would otherwise say nothing (" .. untouched:sub(1, 120) .. ")")
 
-	local SHAPED = "LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,0,-96,3x4,28"
+	local SHAPED = "LAT1;b=1;bar1=spine,BOTTOM,CENTER,0,-96,3x4,28"
 	local shaped, whyShaped = LY:Decode(SHAPED)
 	check(shaped and shaped.records.bar1.rows == 4 and shaped.records.bar1.px == 28,
 		"a bar record reads its shape and size (" .. tostring(whyShaped) .. ")")
@@ -17907,12 +18192,38 @@ do
 	check(not LY:Matches(shaped),
 		"but a bar in another shape is another arrangement, wherever it sits")
 
-	refused("LAT1;s=0.71;b=1;barextra=bar1,BOTTOM,CENTER,0,0,1x1,30",
+	refused("LAT1;b=1;barextra=bar1,BOTTOM,CENTER,0,0,1x1,30",
 		"a shape on the extra-action button, which is one button")
-	refused("LAT1;s=0.71;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,14,38,12x1,36",
+	refused("LAT1;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,14,38,12x1,36",
 		"a shape on something that is not a bar")
-	refused("LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,0,-96,0x12,36", "a shape of nothing")
-	refused("LAT1;s=0.71;b=1;bar1=spine,BOTTOM,CENTER,0,-96,12x1,200", "a button 200 px across")
+	refused("LAT1;b=1;bar1=spine,BOTTOM,CENTER,0,-96,0x12,36", "a shape of nothing")
+	refused("LAT1;b=1;bar1=spine,BOTTOM,CENTER,0,-96,12x1,200", "a button 200 px across")
+
+	-- THE CHAT WINDOW CARRIES ITS SIZE (Joe, 2026-10-08), in its own units -
+	-- its text and its smallest size are in UIParent's - and nothing else does.
+	do
+		local CF = _G.ChatFrame1
+		local cw, ch = CF:GetWidth(), CF:GetHeight()
+		local saved = A.db.char.chat or {}
+		local sw0, sh0 = saved.w, saved.h
+		local sized, whySized = LY:Decode("LAT1;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,320x160")
+		check(sized and sized.records.chat.w == 320 and sized.records.chat.h == 160,
+			"a chat record with a size decodes (" .. tostring(whySized) .. ")")
+		check(sized and LY:Apply(sized), "and applies")
+		check(math.abs(CF:GetWidth() - 320) < 1 and math.abs(CF:GetHeight() - 160) < 1,
+			"and the window takes that size, in its own units (" .. ("%.1f x %.1f"):format(
+			CF:GetWidth(), CF:GetHeight()) .. ")")
+		check(LY:Encode():find("chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,320x160", 1, true) ~= nil,
+			"and is written back with it (" .. tostring(LY:Encode():match("chat=[^;]*")) .. ")")
+		check(LY:Matches(sized), "and reads back as the layout on screen")
+		CF:SetSize(cw + 40, ch)
+		check(not LY:Matches(sized), "but a window of another size is another arrangement")
+		CF:SetSize(cw, ch)
+		if A.db.char.chat then A.db.char.chat.w, A.db.char.chat.h = sw0, sh0 end
+	end
+	refused("LAT1;b=1;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,0x150", "a window of no width")
+	refused("LAT1;b=1;player=screen,CENTER,CENTER,0,0,300x150",
+		"a size on something that is not the chat window")
 
 	-- AND NOTHING OPTIONS CAN SET IS REFUSED: the extremes of the base size and
 	-- the bar scale both export and import. A limit tighter than options would
@@ -34831,8 +35142,15 @@ do
 				")")
 		end
 
-		cards[2]:GetScript("OnClick")(cards[2])
-		check(A.Presets:Current() == A.Presets.order[2],
+		-- From nothing chosen, so the card is what puts it there.
+		wipe(A.db.profile.anchors)
+		for _, e in pairs(A.Movers.registry) do e.parent, e.free = e.defaultParent, nil end
+		A:Reconfigure()
+		A.Movers:RestoreAll()
+		check(A.Presets:Current() == nil, "nothing is chosen before the card is tapped ("
+			.. tostring(A.Presets:Current()) .. ")")
+		cards[1]:GetScript("OnClick")(cards[1])
+		check(A.Presets:Current() == A.Presets.order[1],
 			"and tapping one moves the real frames on the spot (" ..
 			tostring(A.Presets:Current()) .. ")")
 
