@@ -997,10 +997,9 @@ local function Escapees(out)
 	out[#out + 1] = mm
 
 	if not mm.GetChildren then return out end
-	local kids = { pcall(mm.GetChildren, mm) }
-	if not kids[1] then return out end
-	for i = 2, #kids do
-		local k = kids[i]
+	-- A.Children, never a bare pcall: Questie's pins make this list hundreds
+	-- long, and that crashed the Forever client (Core.lua has the detail).
+	for _, k in ipairs(A.Children(mm)) do
 		-- IsForbidden first, and a failed call counts as forbidden: any method
 		-- on a forbidden frame raises, including GetName.
 		local ok, forbidden = true, false

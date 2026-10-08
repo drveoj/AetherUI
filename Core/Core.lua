@@ -120,6 +120,38 @@ function A.IsSecret(...)
 end
 
 -- ---------------------------------------------------------------------------
+-- a frame's children and regions, as a table
+--
+-- NEVER `{ pcall(frame.GetChildren, frame) }`. The client's pcall is Lua 5.1's
+-- own: after the protected call it pushes its true/false without checking for
+-- room, and a C frame only has LUA_MINSTACK (20) slots past its arguments. A
+-- call answering that many values or more leaves no slot for the boolean. Era
+-- and retail are built without the check and get away with it; the Forever
+-- beta is built with it, and the client dies on an assertion in lapi.c
+-- (`L->top < L->ci->top`). Questie's map pins put hundreds of children on the
+-- minimap, so the button scan took the client down nine seconds into the world.
+--
+-- The table is built INSIDE the protected function, so pcall only ever hands
+-- back one value however many children there are, and a forbidden frame still
+-- costs the caller nothing but an empty answer. The error comes back second,
+-- for a caller that reports it.
+-- ---------------------------------------------------------------------------
+
+local function Collect(frame, method)
+	if type(frame) ~= "table" or type(frame[method]) ~= "function" then return {} end
+	local ok, list = pcall(function() return { frame[method](frame) } end)
+	if ok then return list end
+	return {}, list
+end
+
+--- Every child frame, in a table: empty if there are none, and empty plus the
+--  error if asking failed.
+function A.Children(frame) return Collect(frame, "GetChildren") end
+
+--- Every region (textures, font strings), in a table. Same contract.
+function A.Regions(frame) return Collect(frame, "GetRegions") end
+
+-- ---------------------------------------------------------------------------
 -- reading the quest log
 --
 -- TWO ENTIRELY DIFFERENT APIs, and WoW Forever kept NONE of the old one.

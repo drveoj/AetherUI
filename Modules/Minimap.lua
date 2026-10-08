@@ -196,24 +196,16 @@ local function SweepCluster(root, report, keep, depth)
 	if not root or Forbidden(root) or (depth or 0) > 2 then return end
 
 	if root.GetRegions then
-		local regions = { pcall(root.GetRegions, root) }
-		if regions[1] then
-			for i = 2, #regions do
-				local r = regions[i]
-				if r and not keep[r] and r.Hide then
-					pcall(r.Hide, r)
-					if r.SetAlpha then pcall(r.SetAlpha, r, 0) end
-				end
+		for _, r in ipairs(A.Regions(root)) do
+			if r and not keep[r] and r.Hide then
+				pcall(r.Hide, r)
+				if r.SetAlpha then pcall(r.SetAlpha, r, 0) end
 			end
 		end
 	end
 
 	if not root.GetChildren then return end
-	local kids = { pcall(root.GetChildren, root) }
-	if not kids[1] then return end
-
-	for i = 2, #kids do
-		local child = kids[i]
+	for _, child in ipairs(A.Children(root)) do
 		if child and not keep[child] and not Forbidden(child) then
 			local ok, name = pcall(child.GetName, child)
 			local mine = ok and name and issecurevariable and issecurevariable(name)

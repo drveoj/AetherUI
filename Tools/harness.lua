@@ -39,6 +39,43 @@ function GetBuildInfo()
 	return _G.__build, "69913", "Sep 22 2026", _G.__iface
 end
 
+-- THE CLIENT'S PCALL HAS A CEILING, AND STOCK LUA'S DOES NOT.
+--
+-- Lua 5.1's pcall pushes its true/false after the protected call without
+-- checking for room, and a C frame only has LUA_MINSTACK (20) slots past its
+-- arguments. So a call answering `arguments + 20` values or more leaves no slot
+-- for the boolean. A stock interpreter, this one included, is built without the
+-- check and carries on. The WoW Forever beta is built WITH it and dies on an
+-- assertion in lapi.c (`L->top < L->ci->top`) - which is what
+-- `{ pcall(Minimap.GetChildren, Minimap) }` did the moment Questie hung its
+-- three hundred map pins on the minimap (2026-10-08). xpcall pushes the same
+-- way, one slot sooner, because its handler sits under the results.
+--
+-- So both are wrapped to RECORD every call that would have crashed the client,
+-- with where it came from, and the suite fails at the end if anything did. Not
+-- raised on the spot: the overflow usually happens inside somebody's own pcall,
+-- which would swallow the error and hide the one thing this exists to show.
+_G.__pcallOverflow = {}
+do
+	local rawPcall, rawXpcall = pcall, xpcall
+	local function settle(limit, what, ...)
+		local nres = select("#", ...) - 1
+		if nres >= limit then
+			_G.__pcallOverflow[#_G.__pcallOverflow + 1] = debug.traceback(
+				("%s returned %d values; the Forever client asserts at %d"):format(what, nres, limit), 3)
+		end
+		return ...
+	end
+	function pcall(...)
+		return settle(select("#", ...) + 20, "pcall", rawPcall(...))
+	end
+	-- Arguments after the handler are passed on, as the client's xpcall does
+	-- and AceGUI relies on; the handler sits under the results, so one fewer.
+	function xpcall(...)
+		return settle(select("#", ...) + 19, "xpcall", rawXpcall(...))
+	end
+end
+
 -- Scripts EVERY frame has, whatever type it is. A global rather than a local
 -- because this chunk is near Lua's 200-local ceiling, and one table per widget
 -- would be thousands of copies of the same fifteen names.
@@ -35298,6 +35335,58 @@ do
 	OB:Teardown()
 end
 
+
+print("== a pin addon's minimap: three hundred children, and the client lives ==")
+do
+	-- Questie's shape, from the crash log of 2026-10-08: QuestieFrame2 up to
+	-- QuestieFrame288 and beyond, every one a child of the minimap. The button
+	-- scan and zen's escapee sweep both take that whole list.
+	local mm = _G.Minimap
+	local pins = {}
+	for i = 1, 300 do pins[i] = CreateFrame("Frame", "QuestieFrame" .. i, mm) end
+	local before = #_G.__pcallOverflow
+
+	A.Launchers:ScanMinimap()
+	check(#_G.__pcallOverflow == before,
+		"the launcher scan takes three hundred minimap children without a pcall"
+		.. " answering past the client's stack - a bare pcall on GetChildren"
+		.. " killed the Forever client nine seconds into the world")
+	check(A.Launchers.scanError == nil, "and the scan itself did not fail")
+	local collected
+	for e in A.Launchers:Iterate() do
+		if tostring(e.key):find("^QuestieFrame") then collected = e.key break end
+	end
+	check(collected == nil,
+		"and not one pin was collected as a launcher (" .. tostring(collected) .. ")")
+
+	local Z = A:GetModule("zen")
+	local zcfg = A.db.profile.modules.zen
+	local was = zcfg.keepMinimap
+	zcfg.keepMinimap = false
+	before = #_G.__pcallOverflow
+	Z:DimUI(1)
+	check(#_G.__pcallOverflow == before,
+		"and zen's escapee sweep takes the same list safely")
+	check(pins[300]:GetAlpha() < 0.05,
+		"with the last pin dimmed, so the whole list was really walked")
+	Z:RestoreUI()
+	zcfg.keepMinimap = was
+
+	for i, p in ipairs(pins) do
+		p:SetParent(nil)
+		_G["QuestieFrame" .. i] = nil
+	end
+end
+
+print("== no pcall answered past the client's stack ==")
+do
+	local first = _G.__pcallOverflow[1]
+	check(first == nil, first == nil
+		and "no pcall or xpcall anywhere in the run returned enough values to"
+			.. " trip the Forever client's assertion"
+		or (#_G.__pcallOverflow .. " pcall(s) would have crashed the Forever"
+			.. " client; the first: " .. first))
+end
 
 -- ---------------------------------------------------------------------------
 -- anything the addon swallowed and nobody looked at

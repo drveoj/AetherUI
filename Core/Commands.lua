@@ -157,11 +157,7 @@ end
 --- One line about a region: what it is, which layer, and what it is drawing.
 local function DumpRegions(frame, pad)
 	if not frame.GetRegions then return end
-	local got = { pcall(frame.GetRegions, frame) }
-	if not got[1] then return end
-
-	for i = 2, #got do
-		local r = got[i]
+	for _, r in ipairs(A.Regions(frame)) do
 		local kind = r.GetObjectType and r:GetObjectType() or "?"
 		local who = Handle(frame, r, r.GetName and r:GetName())
 
@@ -195,11 +191,8 @@ local function DumpFrame(frame, pad, depth, parent)
 	DumpRegions(frame, pad)
 
 	if depth <= 0 or not frame.GetChildren then return end
-	local kids = { pcall(frame.GetChildren, frame) }
-	if not kids[1] then return end
-
-	for i = 2, #kids do
-		DumpFrame(kids[i], pad .. "   ", depth - 1, frame)
+	for _, kid in ipairs(A.Children(frame)) do
+		DumpFrame(kid, pad .. "   ", depth - 1, frame)
 	end
 end
 

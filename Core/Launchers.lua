@@ -292,10 +292,8 @@ end
 function L.SkinButton(b)
 	if b.__aetherSkinned then return end
 
-	local got = { pcall(b.GetRegions, b) }
-	if not got[1] then return end
-	local regions = {}
-	for i = 2, #got do regions[#regions + 1] = got[i] end
+	local regions, err = A.Regions(b)
+	if err then return end
 
 	local icon = FindIcon(b, regions)
 	b.__aetherHidden = 0
@@ -673,17 +671,15 @@ function L:ScanMinimap(own)
 	if not _G.Minimap or not _G.Minimap.GetChildren then return 0 end
 
 	local found = 0
-	-- With a pin addon running this vararg is enormous, and expanding it into a
-	-- table has been known to throw outright. Nobody's day should end here.
-	local results = { pcall(_G.Minimap.GetChildren, _G.Minimap) }
-	if not results[1] then
-		self.scanError = results[2]
-		return 0
-	end
-	self.scanError = nil
+	-- With a pin addon running this list is enormous - Questie alone puts
+	-- hundreds of pins here - and A.Children is the only safe way to take it.
+	-- A bare pcall on GetChildren crashed the Forever client outright; Core.lua
+	-- says why.
+	local children, err = A.Children(_G.Minimap)
+	self.scanError = err
+	if err then return 0 end
 
-	for i = 2, #results do
-		local child = results[i]
+	for _, child in ipairs(children) do
 		if IsAddonButton(child, own) then
 			local okName, name = pcall(RawGetName, child)
 			local key = (okName and name) or tostring(child)
