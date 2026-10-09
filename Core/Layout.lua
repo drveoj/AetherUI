@@ -11,6 +11,10 @@
 	            layout made around two bars has nothing to say about a third,
 	            and leaving one on where the last layout put it is two layouts
 	            at once.
+	  k=        of the bars b= switches on, the ones showing key chips; the
+	            rest show none. Left out, a layout says nothing about chips
+	            and leaves them as they are. The Block seed says so (strands
+	            brief 9c).
 	  name=parent,point,relPoint,x,y
 	            EVERY node, the same way: its `point` at x,y units from its
 	            parent's `relPoint`. The top of every tree hangs from `screen` -
@@ -196,6 +200,18 @@ local function SetBars(on)
 	if changed and AB.OnConfigChanged then AB:OnConfigChanged() end
 end
 
+--- Of the bars that are on, which show their key chips, as the profile has
+--  it now.
+local function KeysNow()
+	local AB = A.GetModule and A:GetModule("actionbars")
+	if not AB or not AB.KeysShown then return {} end
+	local out, on = {}, BarsNow() or {}
+	for _, id in ipairs(Bars()) do
+		if on[id] then out[id] = AB:KeysShown(id) end
+	end
+	return out
+end
+
 -- ---------------------------------------------------------------------------
 -- a bar's shape and size
 --
@@ -355,6 +371,11 @@ function Layout:Encode()
 		if bars[id] then on[#on + 1] = id end
 	end
 	parts[#parts + 1] = "b=" .. table.concat(on, ",")
+	local keys, chips = {}, KeysNow()
+	for _, id in ipairs(on) do
+		if chips[id] then keys[#keys + 1] = id end
+	end
+	parts[#parts + 1] = "k=" .. table.concat(keys, ",")
 
 	-- Only nodes this addon has. `__` entries are not positions - the lock
 	-- pill's spot is one - and a profile can still hold one for a frame that is
@@ -444,6 +465,13 @@ function Layout:Decode(text)
 					if not id:match("^%d$") then return bad(f) end
 					out.bars[id] = true
 				end
+			elseif k == "k" then
+				if out.keys then return bad(f) end
+				out.keys = {}
+				for id in v:gmatch("[^,]+") do
+					if not id:match("^%d$") then return bad(f) end
+					out.keys[id] = true
+				end
 			else
 				if not KNOWN[k] then return nil, A.F(L.layout.err.unknown, k) end
 				if out.records[k] then return bad(f) end
@@ -501,6 +529,12 @@ function Layout:Decode(text)
 		end
 	end
 
+	-- Chips only on a bar the string switches on: a chip on a bar it leaves
+	-- off says nothing anyone would see.
+	for id in pairs(out.keys or {}) do
+		if not out.bars[id] then return bad("k=" .. id) end
+	end
+
 	-- NO LOOPS. A node bonded to its own descendant is an anchor loop, which
 	-- the client refuses - and through the spine, which belongs to the player.
 	for name in pairs(out.records) do
@@ -535,6 +569,16 @@ function Layout:Apply(layout)
 				cfg.rows = r.rows
 				cfg.scale = r.px / base
 			end
+		end
+	end
+
+	-- Key chips, where the string says: on for the bars it names, off for the
+	-- other bars it switches on. Painted by the rebuild below.
+	if layout.keys then
+		local AB = A.GetModule and A:GetModule("actionbars")
+		for id in pairs(layout.bars) do
+			local cfg = AB and AB.BarConfig and AB:BarConfig(id)
+			if cfg then cfg.keys = layout.keys[id] and true or false end
 		end
 	end
 
@@ -615,6 +659,11 @@ function Layout:Matches(layout)
 	if now then
 		for id, on in pairs(now) do
 			if on ~= (layout.bars[id] and true or false) then return false end
+		end
+	end
+	if layout.keys then
+		for id, shown in pairs(KeysNow()) do
+			if shown ~= (layout.keys[id] and true or false) then return false end
 		end
 	end
 

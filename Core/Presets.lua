@@ -36,7 +36,7 @@ local L = A.L
 local Presets = {}
 A.Presets = Presets
 
-Presets.order = { "rows", "split" }
+Presets.order = { "rows", "block", "split" }
 
 -- `label` is what a player reads; `blurb` is the line under the wireframe on
 -- the tour's card.
@@ -76,6 +76,21 @@ Presets.list = {
 		-- Bars 3 and 4 are off: the Rows seed is bars 1 and 2. The tooltip and
 		-- the music deck are not on the board and keep their own defaults.
 		layout = "LAT1;b=1,2;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=spine,TOP,CENTER,0,-162,12x1,34;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;party=screen,TOPLEFT,TOPLEFT,60,-420;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
+	},
+	block = {
+		label = L.presets.block.label,
+		blurb = L.presets.block.blurb,
+		-- The Block seed (strands brief 9a, 9c): bars 1 and 2 as 3 x 4 of 44,
+		-- bar 2 braided onto bar 1's right edge into one 6 x 4 block, key chips
+		-- on. From board 9a: the spine raised to y 810 to make room (the player
+		-- 60 higher than rows), the block's top at 852. Bar 1 hangs by its top
+		-- right, 2 right of the spine's centre: half the braid's seam overlap
+		-- (pad - gap / 2), which puts the block's centre on the spine's.
+		-- Stance off bar 1's left end as in rows. The pet bar off BAR 2's right
+		-- end: off bar 1's it would sit on bar 2 - still bonded to an action
+		-- strand. The extra button over the stance row's right end, under the
+		-- player. Everything else is rows'.
+		layout = "LAT1;b=1,2;k=1,2;bar1=spine,TOPRIGHT,CENTER,2,-42,3x4,44;bar2=bar1,TOPLEFT,TOPRIGHT,-5,0,3x4,44,braid;barextra=barstance,BOTTOMRIGHT,TOPRIGHT,0,8;barpet=bar2,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;party=screen,TOPLEFT,TOPLEFT,60,-420;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-270;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
 	},
 	split = {
 		label = L.presets.split.label,

@@ -258,9 +258,14 @@ local function UpdateCooldown(b)
 	end
 end
 
+--- Does this strand show its key chips? Each strand's own switch (strands
+--  brief), on until it is turned off.
+local function KeysShown(bar)
+	return not (bar and bar.cfg and bar.cfg.keys == false)
+end
+
 local function UpdateBinding(b)
-	local cfg = A.Config:Module("actionbars")
-	b.hotkey:SetText(cfg.showKeybinds and ShortKey(b._keyText) or "")
+	b.hotkey:SetText(KeysShown(b.__aetherBar) and ShortKey(b._keyText) or "")
 end
 
 local function UpdateAllOn(b)
@@ -310,12 +315,22 @@ local function UseKeyDown()
 	return false
 end
 
+--- The key chip: the binding at the button's top left (3, 2), on a solid
+--  dark shadow (strands brief).
+local function KeyChip(b)
+	local hk = W.Text(b, "keyChip", "LEFT")
+	hk:SetPoint("TOPLEFT", b, "TOPLEFT", 3, -2)
+	hk:SetShadowColor(0, 0, 0, 1)
+	W.Color(hk, Palette.c.text)
+	return hk
+end
+
 --- Keybind, stack count and cooldown text, all offset by cfg.fontDelta. Called
 --  on build and again on every relayout so the knob takes effect live.
 local function ApplyButtonFonts(b, size)
 	local cfg = A.Config:Module("actionbars")
 	local d = cfg.fontDelta or 0
-	Media:SetFont(b.hotkey, "keybind", math.max(6, Media:Size("keybind") + d))
+	Media:SetFont(b.hotkey, "keyChip", math.max(6, Media:Size("keyChip") + d))
 	Media:SetFont(b.count,  "stack",   math.max(6, Media:Size("stack") + d))
 	-- The cooldown number is sized off the button rather than the role, so it
 	-- keeps filling the slot as the slot changes size. An action button's is the
@@ -377,10 +392,8 @@ local function BuildButton(bar, index)
 		end
 	end
 
-	local hotkey = W.Text(b, "keybind", "RIGHT")
-	hotkey:SetPoint("TOPRIGHT", b, "TOPRIGHT", -4, -4)
-	W.Color(hotkey, Palette.c.text)
-	b.hotkey = hotkey
+	b.hotkey = KeyChip(b)
+	b.__aetherBar = bar
 
 	-- Cooldown sweep. SetSwipeTexture with our rounded-square mask is what keeps
 	-- the sweep inside the slot silhouette instead of clipping it into a square.
@@ -500,8 +513,8 @@ local function BuildSpecialButton(bar, index, template)
 	W.Color(cdText, Palette.c.text)
 	b.cdText = cdText
 
-	b.hotkey = W.Text(b, "keybind", "RIGHT")
-	b.hotkey:SetPoint("TOPRIGHT", b, "TOPRIGHT", -3, -3)
+	b.hotkey = KeyChip(b)
+	b.__aetherBar = bar
 
 	ApplyButtonFonts(b, cfg.size)
 
@@ -2191,4 +2204,9 @@ function AB:BarConfig(id)
 	for _, barCfg in ipairs(A.Config:Module("actionbars").bars) do
 		if tostring(barCfg.id) == tostring(id) then return barCfg end
 	end
+end
+
+--- Whether a strand shows its key chips.
+function AB:KeysShown(id)
+	return KeysShown({ cfg = AB:BarConfig(id) })
 end

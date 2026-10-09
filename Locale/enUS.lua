@@ -486,7 +486,6 @@ L["options.action_bars.require_modified_click_pick"] =
 	"Require a modified click to pick an action up."
 L["options.action_bars.scale.name"] = "Scale (all bars)"
 L["options.action_bars.shared"] = "Shared"
-L["options.action_bars.show_keybinds.name"] = "Show keybinds"
 L["options.action_bars.size.desc"] = "The size of the button slots."
 L["options.action_bars.size.name"] = "Button size"
 
@@ -579,6 +578,8 @@ L["options.bar_pages.bar_n_owns_page"] =
 		.. "warrior gets in a form or stance. Bar 1 can swap to them by itself; "
 		.. "any other bar can be pointed at one to keep those abilities in view."
 L["options.bar_pages.buttons"] = "Buttons"
+L["options.bar_pages.keys.desc"] = "The key bound to each button, at its top left."
+L["options.bar_pages.keys.name"] = "Key chips"
 L["options.bar_pages.page"] = "Page"
 L["options.bar_pages.rows.desc"] = "Columns fall out of this."
 L["options.bar_pages.rows.name"] = "Rows"
@@ -1294,6 +1295,9 @@ L["player.paint_up_next.queued"] = "queued by you"
 
 -- presets -----------------------------------------------------------------
 
+L["presets.block.blurb"] =
+	"Bars 1 and 2 braided into one block under you and your target, keys shown."
+L["presets.block.label"] = "Block"
 L["presets.rows.blurb"] =
 	"Bars 1 and 2 in two rows under you and your target."
 L["presets.rows.label"] = "Rows"

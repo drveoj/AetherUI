@@ -985,7 +985,7 @@ local function Wireframe(box, preset)
 	if sw <= 0 or sh <= 0 then return end
 
 	local n = 0
-	local function mark(p, wide, strong, tall)
+	local function mark(p, wide, strong, tall, block)
 		n = n + 1
 		local m = box.marks[n]
 		if not m then
@@ -994,7 +994,9 @@ local function Wireframe(box, preset)
 			box.marks[n] = m
 		end
 
-		if tall then
+		if block then
+			m:SetSize(bh * 0.3 * block, bh * 0.3)
+		elseif tall then
 			m:SetSize(math.max(2, bh * 0.11), bh * 0.45)
 		else
 			m:SetSize(bw * (wide and 0.30 or 0.20), math.max(2, bh * 0.11))
@@ -1009,11 +1011,14 @@ local function Wireframe(box, preset)
 		if at[name] then mark(at[name], false, true) end
 	end
 
-	-- A bar written as a column is drawn as one, or Split reads as Rows.
+	-- A bar written as a column is drawn as one, or Split reads as Rows; one
+	-- of several rows and columns as a block in its proportions, or Block's
+	-- braided pair reads as Split.
 	for id in pairs(preset.bars or {}) do
 		local p = at["bar" .. id]
 		local r = preset.decoded.records["bar" .. id]
-		if p then mark(p, true, false, r and r.rows and r.rows > r.cols) end
+		local block = r and r.rows and r.rows > 1 and r.cols > 1 and r.cols / r.rows
+		if p then mark(p, true, false, r and r.rows and r.rows > r.cols, block) end
 	end
 end
 

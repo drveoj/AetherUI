@@ -12569,6 +12569,79 @@ check(bar.buttons[4].hotkey:GetText() == "N+",
 	.. " word after a shortened prefix (got "
 	.. tostring(bar.buttons[4].hotkey:GetText()) .. ")")
 
+print("== key chips ==")
+do
+	-- THE STRANDS BRIEF'S CHIP: the binding at the button's top left (3, 2),
+	-- 9 px bold, white with a dark text-shadow rather than an outline.
+	local hk = bar.buttons[1].hotkey
+	local pt, rel, relPt, x, y = hk:GetPoint(1)
+	check(pt == "TOPLEFT" and rel == bar.buttons[1] and relPt == "TOPLEFT" and x == 3 and y == -2,
+		"the key chip sits at the button's top left, 3 in and 2 down ("
+		.. tostring(pt) .. " " .. tostring(x) .. "," .. tostring(y) .. ")")
+	check(hk:GetJustifyH() == "LEFT", "and reads from the left")
+	local path, size, flags = hk:GetFont()
+	local d = A.Config:Module("actionbars").fontDelta or 0
+	check(tostring(path):find("Outfit%-Bold") and size == 9 + d and (flags or "") == "",
+		"in Outfit Bold at 9 (plus the bar font offset), with no outline ("
+		.. tostring(path) .. ", " .. tostring(size) .. ", " .. tostring(flags) .. ")")
+	local _, _, _, sa = hk:GetShadowColor()
+	check(sa == 1, "and a solid dark shadow under it (" .. tostring(sa) .. ")")
+	-- The bind-mode overlay keeps the keybind role; only the chip changed.
+	check(A.Media.style.keybind[1] == "semibold" and A.Media.style.keyChip ~= nil,
+		"the chip has its own font role, leaving the keybind one to the overlay")
+
+	-- PER STRAND (strands brief: every strand's page has Key chips on/off).
+	-- Bar 2 on, with a key of its own, to show one strand's switch is its own.
+	local ABm = A:GetModule("actionbars")
+	local b2cfg = ABm:BarConfig("2")
+	local wasOn = b2cfg.enabled
+	_G.__bindingSet.AETHERUI_BAR2BUTTON1 = "CTRL-1"
+	ABm:SetBarEnabled("2", true)
+	local bar2
+	for _, b in ipairs(ABm.bars) do if tostring(b.id) == "2" then bar2 = b end end
+	check(bar2 and bar2.buttons[1].hotkey:GetText() == "C1",
+		"bar 2 shows its own chip (" .. tostring(bar2 and bar2.buttons[1].hotkey:GetText()) .. ")")
+	ABm:BarConfig("1").keys = false
+	ABm:OnConfigChanged()
+	check(bar.buttons[1].hotkey:GetText() == "" and bar2.buttons[1].hotkey:GetText() == "C1",
+		"key chips off on bar 1 empty bar 1's and leave bar 2's")
+	check(ABm:KeysShown("1") == false and ABm:KeysShown("2") == true,
+		"and the module says which strands show them")
+	ABm:BarConfig("1").keys = nil
+	ABm:OnConfigChanged()
+	check(bar.buttons[1].hotkey:GetText() == "1", "a strand never set shows its chips")
+	ABm:BarConfig("1").keys = true
+	_G.__bindingSet.AETHERUI_BAR2BUTTON1 = nil
+	ABm:SetBarEnabled("2", wasOn)
+
+	-- ONE SWITCH PER STRAND, and the old global one gone from the options.
+	local abg = A.Options:Build().args.actionbars
+	check(abg.args.shared.args.showKeybinds == nil,
+		"the one global Show keybinds switch is gone from the options")
+	check(abg.args.bar1 and abg.args.bar1.args.keys ~= nil
+		and abg.args.barpet and abg.args.barpet.args.keys ~= nil
+		and abg.args.barextra and abg.args.barextra.args.keys == nil,
+		"and every strand's page has Key chips, the pet bar's too, but not the"
+		.. " extra button, which is Blizzard's")
+
+	-- AND NOBODY LOSES WHAT THEY HAD: a profile with keybinds switched off
+	-- has every strand's chips off, and the global key goes.
+	local db = { profile = { modules = { actionbars = { showKeybinds = false,
+		bars = { { id = "1" }, { id = "2" }, { id = "pet", keys = true } } } } } }
+	A.Config.Migrate(db)
+	local ab = db.profile.modules.actionbars
+	check(ab.bars[1].keys == false and ab.bars[2].keys == false and ab.bars[3].keys == true
+		and ab.showKeybinds == nil,
+		"a profile that hid keybinds hides every strand's chips, keeps one already set,"
+		.. " and drops the old switch")
+	local on = { profile = { modules = { actionbars = { showKeybinds = true,
+		bars = { { id = "1" } } } } } }
+	A.Config.Migrate(on)
+	check(on.profile.modules.actionbars.bars[1].keys == nil
+		and on.profile.modules.actionbars.showKeybinds == nil,
+		"one that showed them is left showing, with nothing written")
+end
+
 print("== the 62px slot, and only where nobody chose it ==")
 do
 	-- IT SHIPPED IN 1.0.0 AND IT IS 1.7x THE BUTTON THE GAME DRAWS BESIDE IT.
@@ -17543,10 +17616,12 @@ do
 	-- against the scale the suite started at.
 	local wasScale = A.db.profile.scale
 	-- THE DESIGN'S WAY (Joe, 2026-10-08): the reference layout, which is the
-	-- Rows seed, and none of 1.x's three. Split and Block join it as seeds.
-	check(#P.order == 2 and P.order[1] == "rows" and P.order[2] == "split"
-		and P.list.rows ~= nil and P.list.split ~= nil,
-		"the reference layout comes first, then the Split seed (" ..
+	-- Rows seed, and none of 1.x's three. Block and Split join it as seeds, in
+	-- the brief's order (9c).
+	check(#P.order == 3 and P.order[1] == "rows" and P.order[2] == "block"
+		and P.order[3] == "split" and P.list.rows ~= nil and P.list.block ~= nil
+		and P.list.split ~= nil,
+		"the reference layout comes first, then the Block and Split seeds (" ..
 		table.concat(P.order, ", ") .. ")")
 	check(P.list.corner == nil and P.list.centre == nil and P.list.bottom == nil,
 		"and 1.x's corner, centre and bottom are gone")
@@ -18170,6 +18245,83 @@ do
 	Split("shipped settings", { size = 36, bars = 1, pet = 0.85, tot = 0.85 })
 	Split("a player's settings", { size = 62, bars = 0.8, pet = 1.0, tot = 0.7 })
 
+	-- THE BLOCK SEED (strands brief 9a and 9c): bars 1 and 2 as 3 x 4 of 44,
+	-- braided side by side into one 6 x 4 block centred under the spine, key
+	-- chips on. From board 9a: the spine raised to y 810 to make room, the
+	-- block's top at 852. Stance off bar 1's left end, the pet bar off bar 2's
+	-- right, the extra button over the stance row.
+	local function Block(tag, s)
+		local check = function(ok, msg) return check(ok, "[block, " .. tag .. "] " .. msg) end
+		ABc.size, ABc.spacing, ABc.padding, ABc.scale = s.size, 8, 6, s.bars
+		UFc.petScale, UFc.totScale = s.pet, s.tot
+		A.db.profile.scale = 768 / 1080
+		A:Reconfigure()
+		check(P:Apply("block"), "the Block seed applies")		check(A.db.profile.scale == 768 / 1080, "and leaves the player's scale alone")
+		if UFm.MeasureSpine then UFm:MeasureSpine() end
+		local R = Measure({ "bar2" })
+
+		check(near(cx(R.spine), 960) and near(cy(R.spine), 810),
+			"the spine is raised to y 810, on the centre line" .. say(cx(R.spine), cy(R.spine)))
+		for _, id in ipairs({ "1", "2" }) do
+			local cols, rows, px = A.Layout.BarShape(id)
+			check(cols == 3 and rows == 4 and px == 44,
+				"bar " .. id .. " is a 3 x 4 of 44 px" .. say(cols, rows, px))
+		end
+		check(A.Braids:HostOf("bar2") == "bar1" and A.Braids:Root("bar2") == "bar1",
+			"bar 2 is braided onto bar 1" .. say(A.Braids:HostOf("bar2")))
+		local l, r = R.bar1 and R.bar1.l, R.bar2 and R.bar2.r
+		check(l and r and near((l + r) / 2, 960) and near(R.bar1.t, 852) and near(R.bar2.t, 852)
+			and R.bar2.l > R.bar1.l,
+			"side by side into one block centred under the spine, its top at y 852"
+			.. say(l and r and (l + r) / 2, R.bar1 and R.bar1.t, R.bar2 and R.bar2.t))
+		-- One gap across the seam, the strands' own: their buttons line up.
+		local AB = A:GetModule("actionbars")
+		local function barOf(id)
+			for _, b in ipairs(AB.bars) do if tostring(b.id) == id then return b end end
+		end
+		local s2, g1 = rect(barOf("1").buttons[2]), rect(barOf("1").buttons[3])
+		local g2 = rect(barOf("2").buttons[1])
+		local gap = s2 and g1 and g1.l - s2.r
+		check(g1 and g2 and gap and near(g2.l - g1.r, gap) and near(g2.t, g1.t),
+			"one gap across the seam, the strand's own, and the rows level"
+			.. say(g1 and g2 and g2.l - g1.r, gap))
+		check(AB:KeysShown("1") and AB:KeysShown("2"), "with key chips on for both")
+
+		check(R.barstance and near(R.bar1.l - R.barstance.r, 8) and near(cy(R.barstance), cy(R.bar1)),
+			"the stance bar is a row 8 off bar 1's left end"
+			.. say(R.barstance and R.bar1.l - R.barstance.r))
+		check(R.barpet and near(R.barpet.l - R.bar2.r, 8) and near(cy(R.barpet), cy(R.bar2))
+			and M:ParentOf("barpet") == "bar2",
+			"the pet bar is a row 8 off bar 2's right end, bonded to it"
+			.. say(R.barpet and R.barpet.l - R.bar2.r, M:ParentOf("barpet")))
+		check(R.barextra and near(R.barextra.r, R.barstance.r) and R.barextra.b <= R.barstance.t
+			and R.barextra.t > R.player.b,
+			"and the extra button sits over the stance row's right end, under the player"
+			.. say(R.barextra and R.barextra.r, R.barextra and R.barextra.t, R.player and R.player.b))
+
+		local off = {}
+		for n, f in pairs(R) do
+			if n ~= "spine" and (f.l < -1 or f.t < -1 or f.r > 1921 or f.b > 1081) then
+				off[#off + 1] = n .. " " .. ("%.0f,%.0f-%.0f,%.0f"):format(f.l, f.t, f.r, f.b)
+			end
+		end
+		table.sort(off)
+		check(#off == 0, "everything is on a 1080 screen" .. say(#off > 0 and table.concat(off, " ") or "all"))
+		-- The braid's two docks overlap at the seam by design; nothing else may.
+		local hits = {}
+		for _, h in ipairs(Overlaps(R)) do
+			if h ~= "bar1/bar2" then hits[#hits + 1] = h end
+		end
+		check(#hits == 0, "and no two frames overlap" .. say(#hits > 0 and table.concat(hits, " ") or "none"))
+		check(P:Current() == "block", "and it reads back as itself" .. say(P:Current()))
+	end
+	Block("shipped settings", { size = 36, bars = 1, pet = 0.85, tot = 0.85 })
+	Block("a player's settings", { size = 62, bars = 0.8, pet = 1.0, tot = 0.7 })
+
+	wipe(A.db.profile.anchors)
+	SlashCmdList["AETHERUI"]("preset block")
+	check(P:Current() == "block", "/lattice preset block applies it" .. say(P:Current()))
+
 	wipe(A.db.profile.anchors)
 	SlashCmdList["AETHERUI"]("preset split")
 	check(P:Current() == "split", "/lattice preset split applies it" .. say(P:Current()))
@@ -18516,6 +18668,28 @@ do
 	refused("LAT1;b=1;target=screen,CENTER,CENTER,0,0",
 		"the target hung from anything but the player, which it is one piece with")
 	refused("", "nothing at all")
+
+	-- KEY CHIPS RIDE ALONG: k= names the bars, of those b= switches on, that
+	-- show them. The Block seed is the one that says so (strands brief 9c).
+	check(out:find("^LAT1;b=1;k=1;") ~= nil,
+		"exported, the bars showing key chips follow the bars that are on ("
+		.. out:sub(1, 20) .. ")")
+	local chips, cerr = LY:Decode("LAT1;b=1,2;k=2")
+	check(chips and chips.keys and chips.keys["2"] and not chips.keys["1"],
+		"k= decodes to the strands that show chips (" .. tostring(cerr) .. ")")
+	check(chips and LY:Apply(chips) and AB:KeysShown("1") == false and AB:KeysShown("2") == true,
+		"and applied, bar 1's chips go and bar 2's show")
+	check(LY:Matches(chips), "and it reads back as itself")
+	AB:BarConfig("2").keys = false
+	check(not LY:Matches(chips), "a strand whose chips differ is another arrangement")
+	local plain = LY:Decode("LAT1;b=1,2")
+	check(plain and plain.keys == nil and LY:Matches(plain) and LY:Apply(plain)
+		and AB:KeysShown("2") == false,
+		"a string without k= says nothing about chips, and leaves them as they are")
+	refused("LAT1;b=1;k=2", "chips on a bar the string leaves off")
+	refused("LAT1;b=1;k=x", "chips on a bar that is not a number")
+	AB:BarConfig("1").keys, AB:BarConfig("2").keys = true, true
+	LY:Apply(layout)
 
 	_G.__inCombat = true
 	local before = anchors.chat.x
@@ -35551,6 +35725,20 @@ do
 			check(tall == wantTall,
 				"\"" .. key .. "\" draws its columns standing up (" .. tall
 				.. " of a wanted " .. wantTall .. ")")
+			-- And a block as one: Block's bars are 3 x 4, neither a row nor a
+			-- column, and drawn as a thin column they read as Split.
+			local blocks, wantBlocks = 0, 0
+			for id in pairs(preset.bars or {}) do
+				local r = records["bar" .. id]
+				if r and r.rows and r.rows > 1 and r.cols > 1 then wantBlocks = wantBlocks + 1 end
+			end
+			for _, m in ipairs(cards[i].box.marks or {}) do
+				local ratio = m:IsShown() and m:GetWidth() / m:GetHeight()
+				if ratio and ratio > 0.5 and ratio < 2 then blocks = blocks + 1 end
+			end
+			check(blocks == wantBlocks,
+				"\"" .. key .. "\" draws its blocks as blocks (" .. blocks
+				.. " of a wanted " .. wantBlocks .. ")")
 		end
 
 		-- From nothing chosen, so the card is what puts it there.

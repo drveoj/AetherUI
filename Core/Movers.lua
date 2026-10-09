@@ -195,7 +195,7 @@ local function ScreenAnchor(f, growsDown)
 	return point, toFrame(x), toFrame(y)
 end
 
-local function SavePosition(entry)
+local function SavePosition(entry, carried)
 	local f = entry.frame
 	local point, _, relPoint, x, y = f:GetPoint(1)
 	if not point then return end
@@ -204,14 +204,18 @@ local function SavePosition(entry)
 	if pf then
 		-- The screen half for 1.x and for presets, the bond for us. A braid
 		-- keeps its seat: it is an edge and a slot, not where it was measured.
+		-- So does a node CARRIED by its parent: it hangs from that frame, so its
+		-- bond still holds, and measuring it again turned an edge bond into a
+		-- centre one - the Block seed's pet bar, off bar 2's right end, stopped
+		-- reading as the seed when bar 2 was re-seated.
 		local sp, sx, sy = ScreenAnchor(f, entry.growsDown)
 		local old = A.db.profile.anchors[entry.name]
-		local braided = old and old.braid ~= nil and type(old.lat) == "table"
-			and old.lat.parent == entry.parent
+		local same = old and type(old.lat) == "table" and old.lat.parent == entry.parent
+		local braided = same and old.braid ~= nil
 		A.db.profile.anchors[entry.name] = {
 			point = sp or point, relPoint = sp or relPoint,
 			x = round(sx or x), y = round(sy or y),
-			lat = braided and old.lat or MeasureBond(entry, pf),
+			lat = (braided or (carried and same)) and old.lat or MeasureBond(entry, pf),
 			braid = braided and old.braid or nil,
 		}
 	else
@@ -354,7 +358,7 @@ local function SaveDescendants(name, depth)
 	if depth > 8 then return end
 	for _, e in pairs(Movers.registry) do
 		if e.parent == name then
-			SavePosition(e)
+			SavePosition(e, true)
 			SaveDescendants(e.name, depth + 1)
 		end
 	end

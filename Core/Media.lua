@@ -402,6 +402,9 @@ Media.style = {
 	castName     = { "semibold", 13, "" },
 	castTime     = { "medium",   11, "" },
 	keybind      = { "semibold",  9, "OUTLINE" },
+	-- The key chip at a button's top left: the strands brief's 9/700, white,
+	-- on a dark text-shadow rather than an outline.
+	keyChip      = { "bold",      9, "" },
 	stack        = { "bold",      11, "OUTLINE" },
 	label        = { "semibold", 11, "" },   -- letter-spaced section headings
 	tiny         = { "light",    10, "" },

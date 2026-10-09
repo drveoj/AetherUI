@@ -731,6 +731,11 @@ local function BarPages()
 			backdrop = toggle(L.options.bar_pages.backdrop.name, L.options.bar_pages.backdrop.desc,
 				at("backdrop"), { defaultTrue = true }),
 		}
+		-- Not on the extra button: it is Blizzard's, and draws its own.
+		if kind ~= "extra" then
+			args.keys = toggle(L.options.bar_pages.keys.name, L.options.bar_pages.keys.desc,
+				at("keys"), { defaultTrue = true })
+		end
 
 		if kind == "action" then
 			args.buttons = range(L.options.bar_pages.buttons, nil, at("buttons"), 1, 12, 1)
@@ -767,7 +772,6 @@ local function ActionBarsGroup()
 		fontDelta = range(L.options.action_bars.font_delta.name,
 			L.options.action_bars.points_added_keybind_count,
 			at("fontDelta"), -4, 8, 1),
-		showKeybinds = toggle(L.options.action_bars.show_keybinds.name, nil, at("showKeybinds")),
 		tooltips = toggle(L.common.tooltips, nil, at("tooltips")),
 		lockButtons = toggle(L.options.action_bars.lock_buttons.name,
 			L.options.action_bars.require_modified_click_pick, at("lockButtons")),
