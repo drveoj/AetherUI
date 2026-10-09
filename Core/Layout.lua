@@ -33,6 +33,10 @@
 	            button SIZE in px, as it is drawn - the strands brief's seeds are
 	            parents and shapes, and a string without them cannot say one.
 	            Not the extra-action button: it is one button.
+	  barN=...,CxR,px,braidS
+	            a bar braided onto the bar it hangs from, S buttons along its
+	            edge (left off for 0). Its x, y are written but not obeyed: the
+	            seat follows from the sizes (Core/Braids.lua).
 	  chat=parent,point,relPoint,x,y,WxH
 	            the chat window adds its SIZE. It is the one node whose size is
 	            the player's to set, and a layout that placed it without its size
@@ -268,12 +272,15 @@ local function Glass(name, point)
 	return dx, dy
 end
 
---- The shape a bar is drawn in, and its button px, now.
+--- The shape a bar is drawn in, and its button px, now. A braided bar is
+--  drawn at its braid root's size, so that is its px.
 local function BarShape(id)
 	local cfg, n, base = BarParts(id)
 	if not cfg then return nil end
 	local cols, rows = Fit(n, cfg.rows)
-	return cols, rows, round(base * (cfg.scale or 1))
+	local AB = A.GetModule and A:GetModule("actionbars")
+	local px = AB and AB.ButtonPx and AB:ButtonPx(id) or base * (cfg.scale or 1)
+	return cols, rows, round(px)
 end
 Layout.BarShape = BarShape
 
@@ -391,7 +398,12 @@ function Layout:Encode()
 			local id = BarId(name)
 			if id then
 				local cols, rows, px = BarShape(id)
-				if cols then rec = rec .. (",%dx%d,%d"):format(cols, rows, px) end
+				if cols then
+					rec = rec .. (",%dx%d,%d"):format(cols, rows, px)
+					-- A braid: the slot along its host's edge, left off when 0.
+					local slot = a and lat and not a.free and a.braid
+					if slot then rec = rec .. ",braid" .. (slot ~= 0 and tostring(slot) or "") end
+				end
 			end
 			local w, h = NodeSize(name)
 			if w then rec = rec .. (",%dx%d"):format(w, h) end
@@ -442,7 +454,7 @@ function Layout:Decode(text)
 				-- and nothing else. A canvas position from the first version (S or
 				-- B in front) is refused here too.
 				local isBar = BarId(k) ~= nil
-				if not (#p == 5 or (isBar and #p == 7) or (SIZED[k] and #p == 6)) then
+				if not (#p == 5 or (isBar and (#p == 7 or #p == 8)) or (SIZED[k] and #p == 6)) then
 					return bad(f)
 				end
 				local parent, x, y = p[1], Num(p[4]), Num(p[5])
@@ -453,7 +465,16 @@ function Layout:Decode(text)
 				if PAIRED[k] and parent ~= PAIRED[k] then return bad(f) end
 				local rec = { parent = parent, point = p[2], relPoint = p[3],
 					x = round(x), y = round(y) }
-				if #p == 7 then
+				if #p == 8 then
+					-- A BRAID: onto another strand, on one of the four seats.
+					local slot = p[8]:match("^braid(%-?%d*)$")
+					local host = BarId(parent)
+					if not (slot and host and A.Braids and A.Braids.EdgeOf(p[2], p[3])) then
+						return bad(f)
+					end
+					rec.braid = tonumber(slot) or 0
+				end
+				if #p >= 7 then
 					-- THE LIMITS ARE OPTIONS', so nothing Export writes is refused
 					-- here: up to twelve buttons a bar, and a base size of 24-80 at
 					-- a bar scale of 0.4-2.0 draws a button 10 to 160 px across.
@@ -545,7 +566,7 @@ function Layout:Apply(layout)
 				free = (not e or e.defaultParent) and true or nil }
 		else
 			anchors[name] = { lat = { parent = r.parent, point = r.point,
-				relPoint = r.relPoint, x = r.x, y = r.y } }
+				relPoint = r.relPoint, x = r.x, y = r.y }, braid = r.braid }
 		end
 	end
 
@@ -579,6 +600,9 @@ function Layout:Apply(layout)
 		end
 	end
 	A.Movers:AdoptLayout()
+	-- Last: a braid's seat comes from its host's size, not the string's x, y,
+	-- and only now is every bar its size and on its parent.
+	if A.Braids then A.Braids:Refresh() end
 	return true
 end
 
@@ -614,10 +638,14 @@ function Layout:Matches(layout)
 		if parent ~= r.parent or h.point ~= r.point or (h.relPoint or h.point) ~= r.relPoint then
 			return false
 		end
+		-- A braid is its edge and slot; its offset follows from the sizes.
+		local braid = b and b.braid
+		if braid ~= r.braid then return false end
 		-- In HUD units, from the glass a player sees, as the string has it.
 		local k = Ratio(name)
 		local gx, gy = Glass(name, h.point)
-		if math.abs(((h.x or 0) + gx) * k - r.x) > 1 or math.abs(((h.y or 0) + gy) * k - r.y) > 1 then
+		if not braid and (math.abs(((h.x or 0) + gx) * k - r.x) > 1
+			or math.abs(((h.y or 0) + gy) * k - r.y) > 1) then
 			return false
 		end
 		-- A bar in another shape or size is another arrangement, wherever it is.

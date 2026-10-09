@@ -51,6 +51,8 @@ Core\Errors.lua
 Core\Reskin.lua
 Core\Config.lua
 Core\Movers.lua
+# Strands fused into one block. After Movers, whose bonds a braid is.
+Core\Braids.lua
 # The layout string: a whole arrangement as one line. After Movers, which
 # places what it describes; before Presets, which are shipped strings.
 Core\Layout.lua

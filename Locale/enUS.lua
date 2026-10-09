@@ -428,10 +428,15 @@ L["movers.bond.loop"] = "%s can't hang from %s: %s already hangs from it."
 L["movers.bond.pair"] =
 	"The player and target are the spine's pair, so they don't hang from other nodes."
 
+-- Dropping a strand's edge on another's (strands brief, Braid).
+L["movers.braid.done"] = "%s is braided onto %s."
+L["movers.braid.left"] = "%s is out of its braid, still hanging from %s."
+
 L["movers.create_handle.can_t_move_frames"] = "can't move frames in combat."
 
 -- The inspector beside a node being dragged.
 L["movers.inspector.both"] = "Both ways"
+L["movers.inspector.braided"] = "Braided with"
 L["movers.inspector.down"] = "Down"
 L["movers.inspector.grows"] = "Grows"
 L["movers.inspector.left"] = "Left"
@@ -456,6 +461,7 @@ L["movers.reset_all.frame_positions_reset"] = "frame positions reset."
 
 -- The labels on a drag's green signals.
 L["movers.snap.bond"] = "BOND"
+L["movers.snap.braid"] = "BRAID"
 L["movers.snap.no_bond"] = "NO BOND"
 L["movers.snap.snap"] = "SNAP"
 

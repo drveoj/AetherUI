@@ -651,6 +651,21 @@ end
 -- bar construction
 -- ---------------------------------------------------------------------------
 
+--- The bar a mover name belongs to ("bar2", "barpet").
+local function BarNamed(name)
+	for _, bar in ipairs(AB.bars) do
+		if "bar" .. bar.id == name then return bar end
+	end
+end
+
+--- The config a bar takes its button size and scale from: its braid root's,
+--  so a braid is one size. A bar's own setting is kept for when it unbraids.
+local function DrawCfg(bar)
+	local root = A.Braids and A.Braids:Root("bar" .. bar.id)
+	local rb = root and BarNamed(root)
+	return (rb or bar).cfg
+end
+
 --- Rows is the honest control and columns fall out of it. "Three rows of ten"
 --  giving 4/4/2 is what people mean; "four columns of ten" gives the same shape
 --  but makes you do the arithmetic first.
@@ -666,7 +681,7 @@ local function LayoutBar(bar)
 		-- A bar with nothing in it still needs a body while you are placing it -
 		-- the mover handle takes its size from the frame, and you cannot grab a
 		-- 1x1 square. One button's worth is enough to aim at.
-		local size = math.max(16, math.floor((bar.cfg.size or cfg.size) + 0.5))
+		local size = math.max(16, math.floor((DrawCfg(bar).size or cfg.size) + 0.5))
 		bar.dock:SetSize(size + cfg.padding * 2, size + cfg.padding * 2)
 		bar.rows, bar.cols = 0, 0
 		return
@@ -676,7 +691,7 @@ local function LayoutBar(bar)
 	local cols = math.ceil(n / rows)
 	rows = math.ceil(n / cols)
 
-	local size = math.max(16, math.floor((bar.cfg.size or cfg.size) + 0.5))
+	local size = math.max(16, math.floor((DrawCfg(bar).size or cfg.size) + 0.5))
 	local gap, pad = cfg.spacing, cfg.padding
 
 	for i = 1, n do
@@ -1678,6 +1693,8 @@ local function RebuildDynamicBars()
 			LayoutBar(bar)
 		end
 	end
+	-- A stance bar in a braid changed size, so its seat and pad did too.
+	if A.Braids then A.Braids:Refresh() end
 end
 AB.RebuildDynamicBars = RebuildDynamicBars
 
@@ -1811,7 +1828,7 @@ function AB:OnEnable()
 		end
 		A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
 			bar.cfg.label or ("Bar " .. bar.id),
-			{ preview = BarPreview(bar), parent = ParentFor(bar) })
+			{ preview = BarPreview(bar), parent = ParentFor(bar), braid = bar.kind ~= "extra" })
 		A.Fader:Register(bar.dock, {})
 	end
 
@@ -1934,9 +1951,10 @@ function AB:OnDisable()
 	end
 end
 
---- The dock's own surface, honouring a bar that asked for no backdrop.
+--- The dock's own surface, honouring a bar that asked for no backdrop. Bare
+--  inside a braid as well: the braid's pad is drawn round it instead.
 local function ApplyDockSkin(bar)
-	if bar.cfg.backdrop == false then
+	if bar.cfg.backdrop == false or (A.Braids and A.Braids:Bare("bar" .. bar.id)) then
 		bar.dock:SetFillColor({ 0, 0, 0, 0 })
 		bar.dock:SetEdgeShown(false)
 		bar.dock:SetShadow(0)
@@ -1947,7 +1965,33 @@ local function ApplyDockSkin(bar)
 	end
 end
 
+function AB:ApplyDockSkins()
+	for _, bar in ipairs(AB.bars) do ApplyDockSkin(bar) end
+end
+
+--- What a braid needs to know of a bar, by mover name: its config, and the
+--  button size its root draws at (in the dock's own units).
+function AB:ConfigOf(name)
+	local bar = BarNamed(name)
+	return bar and bar.cfg
+end
+
+function AB:DrawSize(name)
+	local bar = BarNamed(name)
+	return (bar and DrawCfg(bar).size) or A.Config:Module("actionbars").size
+end
+
+--- A bar's button as drawn, base size times its scale - its braid root's when
+--  it is braided. Nil for a bar that is not built.
+function AB:ButtonPx(id)
+	local bar = BarNamed("bar" .. tostring(id))
+	if not bar then return nil end
+	local d = DrawCfg(bar)
+	return (d.size or A.Config:Module("actionbars").size or 36) * (d.scale or 1)
+end
+
 function AB:OnSkinChanged()
+	if A.Braids then A.Braids:Refresh() end
 	for _, bar in ipairs(AB.bars) do
 		ApplyDockSkin(bar)
 		for _, b in ipairs(bar.buttons) do
@@ -2093,8 +2137,8 @@ function AB:OnConfigChanged()
 	for _, bar in ipairs(AB.bars) do
 		if bar.cfg.enabled ~= false then
 			-- Per-bar scale on top of the global one, so a pet bar can be small
-			-- without dragging the main dock down with it.
-			bar.dock:SetScale(A.db.profile.scale * (cfg.scale or 1) * (bar.cfg.scale or 1))
+			-- without dragging the main dock down with it. A braid's root's.
+			bar.dock:SetScale(A.db.profile.scale * (cfg.scale or 1) * (DrawCfg(bar).scale or 1))
 			ApplyDockSkin(bar)
 			Glass.SetPanelCorner(bar.dock, A.db.profile.glass.corner + 2)
 
@@ -2107,11 +2151,13 @@ function AB:OnConfigChanged()
 
 			A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
 				bar.cfg.label or ("Bar " .. bar.id),
-				{ preview = BarPreview(bar), parent = ParentFor(bar) })
+				{ preview = BarPreview(bar), parent = ParentFor(bar), braid = bar.kind ~= "extra" })
 		end
 	end
 
 	RebuildDynamicBars()
+	-- After every bar is its size: each braid is seated against its host's.
+	if A.Braids then A.Braids:Refresh() end
 	AB:ApplyBindings()
 	AB:RefreshAll()
 	A.Fader:Refresh()

@@ -96,6 +96,7 @@ local function Descends(parent, name)
 	end
 	return false
 end
+Movers.Descends = Descends
 
 --- One of a frame's nine points, in UIParent units. Measured from its edges,
 --  so it answers whatever the frame is anchored by and whatever its scale.
@@ -107,6 +108,7 @@ local function PointAt(f, point)
 	local y = (point:find("TOP") and t) or (point:find("BOTTOM") and b) or (b + t) / 2
 	return x * s, y * s
 end
+Movers.PointAt = PointAt
 
 --- The bond that holds a node where it is NOW: its own anchor point against
 --  its parent's centre, measured rather than assumed, so it is right whatever
@@ -200,12 +202,17 @@ local function SavePosition(entry)
 
 	local pf = ParentFrame(entry)
 	if pf then
-		-- The screen half for 1.x and for presets, the bond for us.
+		-- The screen half for 1.x and for presets, the bond for us. A braid
+		-- keeps its seat: it is an edge and a slot, not where it was measured.
 		local sp, sx, sy = ScreenAnchor(f, entry.growsDown)
+		local old = A.db.profile.anchors[entry.name]
+		local braided = old and old.braid ~= nil and type(old.lat) == "table"
+			and old.lat.parent == entry.parent
 		A.db.profile.anchors[entry.name] = {
 			point = sp or point, relPoint = sp or relPoint,
 			x = round(sx or x), y = round(sy or y),
-			lat = MeasureBond(entry, pf),
+			lat = braided and old.lat or MeasureBond(entry, pf),
+			braid = braided and old.braid or nil,
 		}
 	else
 		A.db.profile.anchors[entry.name] = {
@@ -354,6 +361,14 @@ local function SaveDescendants(name, depth)
 	for node, owner in pairs(Movers.nodeOwner) do
 		if owner == name then SaveDescendants(node, depth + 1) end
 	end
+end
+
+--- A node and everything hanging from it written again where they stand.
+function Movers:SaveTree(name)
+	local entry = Movers.registry[name]
+	if not entry then return end
+	SavePosition(entry)
+	SaveDescendants(name)
 end
 
 --- The node a drag actually moves. The target hands its drag to the player:
@@ -986,7 +1001,7 @@ local function Inspector()
 	p.title = A.Widgets.Text(p, "label", "LEFT")
 	p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12)
 	p.rows = {}
-	for i = 1, 4 do
+	for i = 1, 5 do
 		local k = A.Widgets.Text(p, "label", "LEFT")
 		k:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12 - i * ROW_H)
 		local v = A.Widgets.Text(p, "label", "RIGHT")
@@ -1064,13 +1079,16 @@ local function NodeRows(entry)
 	local unit = Px(1)
 	local point = ScreenAnchor(f, entry.growsDown)
 	local scale = (f:GetEffectiveScale() or 1) / UIScale() / (A.db.profile.scale or 1)
-	return {
+	local rows = {
 		{ L.movers.inspector.parent, pf and NodeLabel(entry.parent) or L.movers.inspector.screen },
 		{ L.movers.inspector.offset, ("%d, %d"):format(round(((cx or 0) - (px or 0)) / unit),
 			round(((cy or 0) - (py or 0)) / unit)) },
 		{ L.movers.inspector.grows, GrowsText(point) },
 		{ L.movers.inspector.scale, ("%d%%"):format(round(scale * 100)) },
 	}
+	local host = A.Braids and A.Braids:HostOf(entry.name)
+	if host then rows[#rows + 1] = { L.movers.inspector.braided, NodeLabel(host) } end
+	return rows
 end
 
 -- hollow junctions -------------------------------------------------------------
@@ -1195,6 +1213,7 @@ local function CreateHandle(entry)
 			ShowSnap(nil)
 			ShowBondTarget(nil)
 			ShowInspector(nil)
+			if A.Braids then A.Braids:ShowEdge(nil) end
 			return
 		end
 
@@ -1276,6 +1295,13 @@ local function CreateHandle(entry)
 		-- Where a drop would bond it, and what the inspector reads now.
 		self._bondTo = JunctionUnder(mover, mx, my)
 		ShowBondTarget(self._bondTo)
+		-- A strand edge within 8 of another's lights: a drop braids it there.
+		-- A junction under the cursor is the stronger signal.
+		self._braid = nil
+		if A.Braids and mover.braid and not self._bondTo then
+			self._braid = A.Braids:Probe(mover, self._skip)
+		end
+		if A.Braids then A.Braids:ShowEdge(self._braid) end
 		SetJunction(mover, OnLattice(mover))
 		ShowInspector(NodeLabel(mover.name), NodeRows(mover), f)
 	end
@@ -1333,6 +1359,7 @@ local function CreateHandle(entry)
 		ShowSnap(nil)
 		ShowBondTarget(nil)
 		ShowInspector(nil)
+		if A.Braids then A.Braids:ShowEdge(nil) end
 
 		local st = self._stretch
 		self._stretch = nil
@@ -1360,10 +1387,21 @@ local function CreateHandle(entry)
 		-- lies. SetParent measures the new bond from here and saves it.
 		local to = self._bondTo
 		self._bondTo = nil
+		local braid = self._braid
+		self._braid = nil
 		if to and to.refused then
 			A:Print(A.Bad(to.refused))
 		elseif to and Movers:SetParent(mover.name, to.name) then
 			A:Print(A.F(L.movers.bond.done, NodeLabel(mover.name), to.label))
+		elseif braid and A.Braids:Join(mover.name, braid.host, braid.edge, braid.slot) then
+			A:Print(A.F(L.movers.braid.done, NodeLabel(mover.name), braid.label))
+		elseif not braid and A.Braids and A.Braids:HostOf(mover.name) then
+			-- Dragged more than 8 off every edge: out of the braid, still bonded
+			-- to its host where it was dropped.
+			local host = A.Braids:HostOf(mover.name)
+			if A.Braids:Leave(mover.name) then
+				A:Print(A.F(L.movers.braid.left, NodeLabel(mover.name), NodeLabel(host)))
+			end
 		end
 
 		SavePosition(mover)
@@ -1420,6 +1458,8 @@ end
 --    pairMin = 40          the shortest the pair may be stretched.
 --    shape = "pill"        a unit: its unlock outline is a pill, as the unit
 --                          is (board 4a). Anything else is a rounded rectangle.
+--    braid = true          a strand: it can be braided onto another strand's
+--                          edge, and another onto its own (Core/Braids.lua).
 
 --- Which node an entry hangs from, from its saved record.
 --
@@ -1463,6 +1503,7 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.pairLead = opts and opts.pairLead or nil
 	entry.pairMin = opts and opts.pairMin or nil
 	entry.shape = opts and opts.shape or entry.shape
+	entry.braid = opts and opts.braid or nil
 
 	entry.defaultParent = opts and opts.parent or nil
 	ResolveParent(entry)
@@ -1775,6 +1816,7 @@ function Movers:Lock()
 	ShowSnap(nil)
 	ShowBondTarget(nil)
 	ShowInspector(nil)
+	if A.Braids then A.Braids:ShowEdge(nil) end
 	ShowLockButton(false)
 	for _, entry in pairs(Movers.registry) do
 		if entry.handle then entry.handle:Hide() end
@@ -1802,6 +1844,8 @@ function Movers:ResetAll()
 		entry.parent, entry.free = entry.defaultParent, nil
 	end
 	Movers:RestoreAll()
+	-- Braids went with the records: every strand back to its own size and dock.
+	if A.Braids then A.Braids:Relayout() end
 	if Movers.unlocked then DrawBonds() end
 	A:Print(L.movers.reset_all.frame_positions_reset)
 end

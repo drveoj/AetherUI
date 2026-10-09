@@ -7458,7 +7458,7 @@ local FILES = {
 	"Locale/zhTW.lua",
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
-	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
+	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Braids.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
 	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
@@ -18109,6 +18109,238 @@ do
 	A.db.profile.scale = wasScale
 	A:Reconfigure()
 	M:RestoreAll()
+end
+
+-- BRAIDS (strands brief, Core/Braids.lua): strands fused edge to edge into
+-- one block, with one pad, one gap and one button size.
+print("== braids ==")
+do
+	local M, B, LY = A.Movers, A.Braids, A.Layout
+	local AB = A:GetModule("actionbars")
+	local ABc = A.Config:Module("actionbars")
+	local T = {
+		was = { size = ABc.size, spacing = ABc.spacing, padding = ABc.padding, scale = ABc.scale,
+			w = UIParent:GetWidth(), h = UIParent:GetHeight(), ui = A.db.profile.scale },
+		cfg = {}, on = {},
+	}
+	for _, id in ipairs({ "1", "2", "3" }) do
+		local c = AB:BarConfig(id)
+		T.cfg[id] = { rows = c.rows, size = c.size, scale = c.scale }
+		T.on[id] = c.enabled
+	end
+	-- In UIParent units, at whatever scale the frame is drawn.
+	function T.R(f)
+		local s = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+		return { l = f:GetLeft() * s, r = f:GetRight() * s, t = f:GetTop() * s, b = f:GetBottom() * s }
+	end
+	function T.near(a, b) return a and b and math.abs(a - b) <= 0.5 end
+	function T.say(...)
+		local out = {}
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			out[#out + 1] = type(v) == "number" and ("%.2f"):format(v) or tostring(v)
+		end
+		return " (" .. table.concat(out, ", ") .. ")"
+	end
+	function T.bar(id)
+		for _, bar in ipairs(AB.bars) do if bar.id == id then return bar end end
+	end
+	function T.btn(id, i) return T.R(T.bar(id).buttons[i]) end
+	-- The gap the strand draws between its own buttons, in UIParent units.
+	function T.gap(id)
+		return ABc.spacing * T.bar(id).dock:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	end
+	function T.fresh()
+		wipe(A.db.profile.anchors)
+		for _, e in pairs(M.registry) do e.parent, e.free = e.defaultParent, nil end
+		A:Reconfigure()
+	end
+
+	UIParent:SetSize(1920, 1080)
+	A.db.profile.scale = 1
+	ABc.size, ABc.spacing, ABc.padding, ABc.scale = 36, 8, 6, 1
+	local c1, c2, c3 = AB:BarConfig("1"), AB:BarConfig("2"), AB:BarConfig("3")
+	-- Three 3 x 4 strands. Bar 2 has a size of its own, which a braid overrides.
+	c1.rows, c2.rows, c3.rows = 4, 4, 4
+	c1.size, c1.scale, c2.scale, c3.scale, c3.size = nil, 1, 1, 1, nil
+	c2.size = 50
+	c2.enabled, c3.enabled = true, true
+	T.fresh()
+	local k = T.gap("1") / 8
+	check(math.abs(T.btn("2", 1).r - T.btn("2", 1).l - 50 * k) < 0.5,
+		"bar 2 starts at its own 50" .. T.say(T.btn("2", 1).r - T.btn("2", 1).l))
+
+	-- 1. Side by side: bar 2 onto bar 1's right edge.
+	check(B:Join("bar2", "bar1", "RIGHT", 0), "bar 2 braids onto bar 1's right edge")
+	check(B:HostOf("bar2") == "bar1" and M:ParentOf("bar2") == "bar1",
+		"and hangs from bar 1" .. T.say(B:HostOf("bar2"), M:ParentOf("bar2")))
+	local a, b = T.btn("1", 3), T.btn("2", 1)
+	check(T.near(b.l - a.r, T.gap("1")) and T.near(a.t, b.t),
+		"the gap across the seam is the strand's own, and the rows line up"
+		.. T.say(b.l - a.r, T.gap("1"), a.t, b.t))
+	check(T.near(b.r - b.l, a.r - a.l) and c2.size == 50,
+		"bar 2 draws at bar 1's size, and keeps its own setting"
+		.. T.say(b.r - b.l, a.r - a.l, c2.size))
+	check(select(3, LY.BarShape("2")) == 36, "and its shape reads at that size"
+		.. T.say(select(3, LY.BarShape("2"))))
+	local pad, d1, d2 = B.pads.bar1, T.R(T.bar("1").dock), T.R(T.bar("2").dock)
+	local p = pad and pad:IsShown() and T.R(pad)
+	check(p and T.near(p.l, d1.l) and T.near(p.r, d2.r) and T.near(p.t, math.max(d1.t, d2.t))
+		and T.near(p.b, math.min(d1.b, d2.b)),
+		"one pad covers both" .. T.say(p and p.l, d1.l, p and p.r, d2.r))
+	check(T.bar("1").dock._edgeHidden and T.bar("2").dock._edgeHidden and B:Bare("bar1"),
+		"and both docks are drawn bare inside it")
+
+	-- 2. The pad and the member follow the host.
+	T.bar("1").dock:ClearAllPoints()
+	T.bar("1").dock:SetPoint("CENTER", UIParent, "CENTER", -300, 100)
+	a, b, p = T.btn("1", 3), T.btn("2", 1), T.R(pad)
+	d1, d2 = T.R(T.bar("1").dock), T.R(T.bar("2").dock)
+	check(T.near(b.l - a.r, T.gap("1")) and T.near(p.l, d1.l) and T.near(p.r, d2.r),
+		"moving bar 1 carries bar 2 and the pad with it" .. T.say(b.l - a.r, p.l, d1.l))
+	T.fresh()
+
+	-- 3. Stacked, and a slot along the edge.
+	check(B:Join("bar2", "bar1", "BOTTOM", 0), "bar 2 braids under bar 1")
+	a, b = T.btn("1", 10), T.btn("2", 1)
+	check(T.near(a.b - b.t, T.gap("1")) and T.near(a.l, b.l),
+		"stacked, the seam is one gap and the columns line up" .. T.say(a.b - b.t, a.l, b.l))
+	check(B:Join("bar2", "bar1", "RIGHT", 1), "a slot down the edge")
+	check(T.near(T.btn("2", 1).t, T.btn("1", 4).t),
+		"bar 2's first row sits beside bar 1's second" .. T.say(T.btn("2", 1).t, T.btn("1", 4).t))
+
+	-- 4. A chain: bar 3 onto bar 2, which is on bar 1.
+	B:Join("bar2", "bar1", "RIGHT", 0)
+	check(B:Join("bar3", "bar2", "RIGHT", 0) and B:Root("bar3") == "bar1",
+		"bar 3 braids onto bar 2, and the braid is bar 1's" .. T.say(B:Root("bar3")))
+	a, b = T.btn("2", 3), T.btn("3", 1)
+	p, d1 = T.R(pad), T.R(T.bar("3").dock)
+	check(T.near(b.l - a.r, T.gap("1")) and T.near(b.r - b.l, T.btn("1", 1).r - T.btn("1", 1).l),
+		"one gap and one size down the chain" .. T.say(b.l - a.r, b.r - b.l))
+	check(T.near(p.r, d1.r) and not (B.pads.bar2 and B.pads.bar2:IsShown()),
+		"and one pad, bar 1's, reaches bar 3" .. T.say(p.r, d1.r))
+
+	-- 5. Refused: a loop, a bar onto itself, the extra button, and combat.
+	check(not B:Join("bar1", "bar2", "LEFT", 0), "bar 1 can't braid onto bar 2, which hangs from it")
+	check(not B:Join("bar2", "bar2", "LEFT", 0), "nor a strand onto itself")
+	check(not B:Join("barextra", "bar1", "LEFT", 0) and not M.registry.barextra.braid,
+		"the extra-action button is not a strand")
+	_G.__inCombat = true
+	check(not B:Join("bar3", "bar1", "BOTTOM", 0) and not B:Leave("bar3"), "nothing braids in combat")
+	_G.__inCombat = false
+
+	-- 6. A member switched off takes the pad down with it if it was the last.
+	B:Leave("bar3")
+	AB:SetBarEnabled("2", false)
+	check(not pad:IsShown() and not T.bar("1").dock._edgeHidden,
+		"with bar 2 off, bar 1 has no pad and its own dock back")
+	AB:SetBarEnabled("2", true)
+	check(pad:IsShown() and B:HostOf("bar2") == "bar1", "and bar 2 back on is braided again")
+
+	-- 7. Leaving: its own size back, still bonded to bar 1.
+	check(B:Leave("bar2") and B:HostOf("bar2") == nil and M:ParentOf("bar2") == "bar1",
+		"bar 2 leaves the braid and still hangs from bar 1")
+	b = T.btn("2", 1)
+	check(T.near(b.r - b.l, 50 * k) and not pad:IsShown() and not T.bar("2").dock._edgeHidden,
+		"at its own size, with its own dock and no pad" .. T.say(b.r - b.l))
+
+	-- 8. The string: written, read back, and refused when it is not a braid.
+	T.fresh()
+	B:Join("bar2", "bar1", "RIGHT", 0)
+	B:Join("bar3", "bar1", "BOTTOM", 1)
+	local text = LY:Encode()
+	check(text:find("bar2=bar1,TOPLEFT,TOPRIGHT,[^;]*,3x4,36,braid;")
+		and text:find("bar3=bar1,TOPLEFT,BOTTOMLEFT,[^;]*,3x4,36,braid1"),
+		"the string says which edge, and the slot past 0" .. T.say(text))
+	T.fresh()
+	local lay = LY:Decode(text)
+	check(lay and LY:Apply(lay) and B:HostOf("bar2") == "bar1" and B:HostOf("bar3") == "bar1",
+		"and applied, the braids come back")
+	a, b = T.btn("1", 3), T.btn("2", 1)
+	check(T.near(b.l - a.r, T.gap("1")) and LY:Matches(lay),
+		"seated one gap off, and it reads back as itself" .. T.say(b.l - a.r))
+	check(LY:Matches(LY:Decode(LY:Pack(text))), "the packed form too")
+	B:Leave("bar2")
+	check(not LY:Matches(lay), "and out of the braid it is another layout")
+	for _, bad in ipairs({
+		"bar2=player,TOPLEFT,TOPRIGHT,0,0,3x4,36,braid",
+		"bar2=bar1,CENTER,CENTER,0,0,3x4,36,braid",
+		"bar2=bar1,TOPLEFT,TOPRIGHT,0,0,3x4,36,woven",
+		"bar2=barextra,TOPLEFT,TOPRIGHT,0,0,3x4,36,braid",
+		"chat=bar1,TOPLEFT,TOPRIGHT,0,0,3x4,braid",
+	}) do
+		check(LY:Decode("LAT1;b=1,2;" .. bad) == nil, "refused: " .. bad)
+	end
+
+	-- 9. In unlock: a strand dropped within 8 of an edge braids, the edge
+	-- lights first, and dragged away it leaves. A drag places by UIParent's
+	-- bottom-left, which the client has at 0, 0 - so the screen gets a rect.
+	UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+	T.fresh()
+	local h2
+	M:Unlock()
+	h2 = M.registry.bar2.handle
+	local d = T.bar("2").dock
+	d:ClearAllPoints()
+	-- 5 off the seat on bar 1's right: the docks overlap by 2 x 6 - 8 at it.
+	d:SetPoint("TOPLEFT", T.bar("1").dock, "TOPRIGHT", -4 + 5, -3)
+	cursorX, cursorY = 900, 500
+	_G.__shift = true
+	h2:GetScript("OnDragStart")(h2)
+	h2:GetScript("OnUpdate")(h2)
+	local fb = B.__feedback()
+	check(fb and fb:IsShown() and fb.text:GetText() == "BRAID · BAR 1",
+		"within 8 of bar 1's right edge, it lights: BRAID · BAR 1"
+		.. T.say(fb and fb.text:GetText()))
+	h2:GetScript("OnDragStop")(h2)
+	_G.__shift = false
+	a, b = T.btn("1", 3), T.btn("2", 1)
+	check(B:HostOf("bar2") == "bar1" and T.near(b.l - a.r, T.gap("1")) and T.near(a.t, b.t)
+		and not fb:IsShown(),
+		"and the drop braids it, seated on the seam" .. T.say(B:HostOf("bar2"), b.l - a.r, b.t - a.t))
+	h2:GetScript("OnDragStart")(h2)
+	h2:GetScript("OnUpdate")(h2)
+	local insp = M.__inspector()
+	check(insp:IsShown() and insp.rows[5].k:GetText() == "Braided with"
+		and insp.rows[5].v:GetText() == "BAR 1",
+		"the inspector says what it is braided with" .. T.say(insp.rows[5].v:GetText()))
+	h2:GetScript("OnDragStop")(h2)
+	check(B:HostOf("bar2") == "bar1", "let go where it sits, it stays in the braid")
+	-- With a pad of 10 the docks overlap by 12 at the seat, more than the 8 a
+	-- braid reaches: measured from the edge, letting go would unbraid it.
+	ABc.padding = 10
+	A:Reconfigure()
+	h2:GetScript("OnDragStart")(h2)
+	h2:GetScript("OnUpdate")(h2)
+	h2:GetScript("OnDragStop")(h2)
+	check(B:HostOf("bar2") == "bar1", "and still does with the docks overlapping by more than 8")
+	ABc.padding = 6
+	A:Reconfigure()
+	_G.__shift = true
+	h2:GetScript("OnDragStart")(h2)
+	cursorX = 1000
+	h2:GetScript("OnUpdate")(h2)
+	check(fb and not fb:IsShown(), "dragged 100 away, nothing lights")
+	h2:GetScript("OnDragStop")(h2)
+	_G.__shift = false
+	check(B:HostOf("bar2") == nil and M:ParentOf("bar2") == "bar1"
+		and T.R(T.bar("2").dock).l - T.R(T.bar("1").dock).r > 50,
+		"and the drop takes it out of the braid, still bonded to bar 1, where it was dropped"
+		.. T.say(B:HostOf("bar2"), M:ParentOf("bar2")))
+	M:Lock()
+	UIParent.__geom = nil
+
+	-- Back as it was.
+	for id, c in pairs(T.cfg) do
+		local cfg = AB:BarConfig(id)
+		cfg.rows, cfg.size, cfg.scale = c.rows, c.size, c.scale
+	end
+	ABc.size, ABc.spacing, ABc.padding, ABc.scale = T.was.size, T.was.spacing, T.was.padding, T.was.scale
+	for id, on in pairs(T.on) do AB:BarConfig(id).enabled = on end
+	UIParent:SetSize(T.was.w, T.was.h)
+	A.db.profile.scale = T.was.ui
+	T.fresh()
+	check(not (pad and pad:IsShown()), "and with the braids gone, so is the pad")
 end
 
 -- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole
