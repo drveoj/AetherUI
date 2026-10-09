@@ -1444,27 +1444,42 @@ end
 --  on WoW Forever it then redrew a cooldown from a secret value on a tainted
 --  path and threw (seen in game, 2026-10-07, on entering Stealth).
 --
---  ElvUI's answer on the modern client (ActionBars.lua, UnloadController and
---  ButtonEventsRegisterFrame), taken whole: keep only the extra-action buttons
---  in the list - we adopt those, and they still need it - keep it that way when
---  Blizzard registers another, and cut both dispatchers down to the two events
---  the extra-action button needs. Undoing it takes a reload, as it does there.
-local function KeepOnlyExtras(added)
+--  So the buttons we hide come out of its list, and nothing else does: the
+--  gamepad bar's buttons, the override bar and the extra-action button we adopt
+--  all join it at load and still need it. Forever's gamepad pet button gets its
+--  popup only from the update entering the world dispatches, and without it its
+--  attack flash threw on a ticker (PetActionFlyout.lua:156, seen in game,
+--  2026-10-09). Each slot is emptied in place, never table.remove'd: shifting
+--  would rewrite Blizzard's later entries from our code, and taint them
+--  (EllesmereUI's method, EllesmereUIActionBars.lua:2140-2158). Its OnEvent
+--  walks the list with pairs, so a hole is skipped. Undoing it takes a reload.
+local function IsHiddenButton(f)
+	local okName, name = pcall(f.GetName, f)
+	if not (okName and type(name) == "string") then return false end
+	for _, prefix in ipairs(BLIZZARD_BUTTON_PREFIXES) do
+		if name:match("^" .. prefix .. "%d+$") then return true end
+	end
+	return false
+end
+
+local function DropHiddenButtons(added)
 	local events = _G.ActionBarButtonEventsFrame
 	local frames = events and events.frames
 	if type(frames) ~= "table" then return end
-	for i = #frames, 1, -1 do
-		local f = frames[i]
-		local wasAdded = (f == added)
-		if not added or wasAdded then
-			local okName, name = pcall(f.GetName, f)
-			if not (okName and name and name:match("^ExtraActionButton%d")) then
-				table.remove(frames, i)
-			end
-			if wasAdded then break end
-		end
+	for k, f in pairs(frames) do
+		if (not added or f == added) and IsHiddenButton(f) then frames[k] = nil end
 	end
 end
+
+-- Blizzard registers ten events on it (ActionButton.lua:213-224, both clients).
+-- Three stay its own registrations, so they run untainted: entering the world,
+-- slot changes and cooldowns, which the extra-action and gamepad buttons need.
+-- Never UnregisterAllEvents here - nothing of ours can put those three back
+-- untainted (EllesmereUIActionBars.lua:1079-1083).
+local DISPATCH_DROPPED = {
+	"UPDATE_BINDINGS", "GAME_PAD_ACTIVE_CHANGED", "UPDATE_SHAPESHIFT_FORM",
+	"PET_BAR_UPDATE", "UNIT_FLAGS", "UNIT_AURA", "PLAYER_MOUNT_DISPLAY_CHANGED",
+}
 
 local function QuietBlizzardDispatchers()
 	-- AND THE CONTROLLER ABOVE THEM, which is ElvUI's third line. It drives
@@ -1485,14 +1500,12 @@ local function QuietBlizzardDispatchers()
 	local actions, buttons = _G.ActionBarActionEventsFrame, _G.ActionBarButtonEventsFrame
 	if actions and not Forbidden(actions) then pcall(actions.UnregisterAllEvents, actions) end
 	if buttons and not Forbidden(buttons) then
-		pcall(buttons.UnregisterAllEvents, buttons)
-		pcall(buttons.RegisterEvent, buttons, "ACTIONBAR_SLOT_CHANGED")
-		pcall(buttons.RegisterEvent, buttons, "ACTIONBAR_UPDATE_COOLDOWN")
-		if not AB._extrasHooked and buttons.RegisterFrame and hooksecurefunc then
-			AB._extrasHooked = true
-			hooksecurefunc(buttons, "RegisterFrame", function(_, f) KeepOnlyExtras(f) end)
+		for _, e in ipairs(DISPATCH_DROPPED) do pcall(buttons.UnregisterEvent, buttons, e) end
+		if not AB._dispatchHooked and buttons.RegisterFrame and hooksecurefunc then
+			AB._dispatchHooked = true
+			hooksecurefunc(buttons, "RegisterFrame", function(_, f) DropHiddenButtons(f) end)
 		end
-		KeepOnlyExtras()
+		DropHiddenButtons()
 	end
 end
 

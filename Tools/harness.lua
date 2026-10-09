@@ -3232,16 +3232,50 @@ end
 -- hears them all. ExtraActionButton2 stands in for the extra-action buttons
 -- the list must keep; it is not one this addon adopts.
 _G.__extraInDispatch = CreateFrame("CheckButton", "ExtraActionButton2", UIParent)
+function _G.__extraInDispatch:OnEvent(e) self.__heard = e end
 ActionBarButtonEventsFrame = CreateFrame("Frame", "ActionBarButtonEventsFrame", UIParent)
 ActionBarButtonEventsFrame.frames = {}
 function ActionBarButtonEventsFrame:RegisterFrame(f) table.insert(self.frames, f) end
+-- Its OnEvent, as Blizzard wrote it (ActionButton.lua:230-235): pairs, so a
+-- slot left empty in place is simply skipped.
+function ActionBarButtonEventsFrame:Dispatch(e, ...)
+	if not self:IsEventRegistered(e) then return end
+	for _, f in pairs(self.frames) do f:OnEvent(e, ...) end
+end
 for i = 1, 12 do ActionBarButtonEventsFrame:RegisterFrame(_G["ActionButton" .. i]) end
 ActionBarButtonEventsFrame:RegisterFrame(_G.MultiBarBottomLeftButton1)
 ActionBarButtonEventsFrame:RegisterFrame(_G.__extraInDispatch)
-for _, e in ipairs({ "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_UPDATE_COOLDOWN",
-	"UPDATE_BONUS_ACTIONBAR", "ACTIONBAR_UPDATE_STATE" }) do
+-- WOW FOREVER'S GAMEPAD PET BUTTON. Built on Blizzard's action button template,
+-- so it joins the dispatcher at load (ActionButton.lua:469); a hunter's is made
+-- a pet button at login (Camelot/PetActionFlyout.lua:172-178). Its popup is set
+-- only by the Update that entering the world dispatches, and its flash reads
+-- that popup on a ticker (:156) - 175 errors in game, 2026-10-09, while ours
+-- kept it from the dispatcher.
+if _G.__flavour == "camelot" then
+	local fly = CreateFrame("Frame", "GamepadPetActionFlyout", UIParent)
+	fly.AttackButton = CreateFrame("CheckButton", nil, fly)
+	fly.AttackButton.Flash = fly.AttackButton:CreateTexture()
+	local b = CreateFrame("CheckButton", "GamepadMainActionBarFramePageUnitLeftClassAction", UIParent)
+	b.Flash = b:CreateTexture()
+	function b:OnEvent(e)
+		if e == "PLAYER_ENTERING_WORLD" then self.popup = _G.GamepadPetActionFlyout end
+	end
+	function b:ToggleFlash(show)
+		self.popup.AttackButton.Flash:SetShown(show)
+		self.Flash:SetShown(show)
+	end
+	ActionBarButtonEventsFrame:RegisterFrame(b)
+	_G.__gamepadPet = b
+end
+-- Every event it registers in its own OnLoad (ActionButton.lua:213-224, the
+-- same on both clients).
+for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "UPDATE_BINDINGS",
+	"GAME_PAD_ACTIVE_CHANGED", "UPDATE_SHAPESHIFT_FORM", "ACTIONBAR_UPDATE_COOLDOWN",
+	"PET_BAR_UPDATE", "UNIT_FLAGS", "UNIT_AURA", "PLAYER_MOUNT_DISPLAY_CHANGED" }) do
 	ActionBarButtonEventsFrame:RegisterEvent(e)
 end
+_G.__dispatchSlots = {}
+for k, f in pairs(ActionBarButtonEventsFrame.frames) do _G.__dispatchSlots[f] = k end
 ActionBarActionEventsFrame = CreateFrame("Frame", "ActionBarActionEventsFrame", UIParent)
 ActionBarActionEventsFrame:RegisterEvent("UNIT_SPELLCAST_START")
 -- The controller above both, which drives Blizzard's stance bar and layout.
@@ -12408,21 +12442,65 @@ end
 
 -- THE DISPATCHER, which would keep calling the hidden buttons anyway: on WoW
 -- Forever ActionButton1 then threw on a secret cooldown on entering Stealth
--- (seen in game, 2026-10-07). ElvUI's method.
+-- (seen in game, 2026-10-07). Only the buttons we hide come out, and the rest
+-- stays Blizzard's: EllesmereUI's method (EllesmereUIActionBars.lua:1060-1092).
 do
-	local list = ActionBarButtonEventsFrame.frames
-	check(#list == 1 and list[1] == _G.__extraInDispatch,
-		"Blizzard's dispatcher keeps only the extra-action buttons (" .. #list .. " left)")
-	ActionBarButtonEventsFrame:RegisterFrame(_G.ActionButton3)
-	check(#list == 1 and list[1] == _G.__extraInDispatch,
-		"and a button Blizzard registers later is taken straight back out")
-	local kept = ActionBarButtonEventsFrame:IsEventRegistered("ACTIONBAR_UPDATE_COOLDOWN")
-		and ActionBarButtonEventsFrame:IsEventRegistered("ACTIONBAR_SLOT_CHANGED")
-	check(kept and not ActionBarButtonEventsFrame:IsEventRegistered("UPDATE_BONUS_ACTIONBAR")
-		and not ActionBarButtonEventsFrame:IsEventRegistered("ACTIONBAR_UPDATE_STATE"),
-		"and it listens only for the two the extra-action button needs")
+	local abef = ActionBarButtonEventsFrame
+	local list = abef.frames
+	local function listed(f)
+		for _, g in pairs(list) do if g == f then return true end end
+		return false
+	end
+	local hidden = 0
+	for i = 1, 12 do if listed(_G["ActionButton" .. i]) then hidden = hidden + 1 end end
+	if listed(_G.MultiBarBottomLeftButton1) then hidden = hidden + 1 end
+	check(hidden == 0, "the buttons we hide are out of Blizzard's dispatcher ("
+		.. hidden .. " left)")
+	check(list[_G.__dispatchSlots[_G.__extraInDispatch]] == _G.__extraInDispatch,
+		"and the extra-action button stays in, in the slot it had: emptied in"
+		.. " place, never shifted, so no entry of Blizzard's is rewritten by us")
+	abef:RegisterFrame(_G.ActionButton3)
+	check(not listed(_G.ActionButton3),
+		"and a button of ours Blizzard registers later is taken straight back out")
+	local late = CreateFrame("CheckButton", "OverrideActionBarButton1", UIParent)
+	abef:RegisterFrame(late)
+	check(listed(late), "while one we do not hide stays")
+	for k, f in pairs(list) do if f == late then list[k] = nil end end
+	_G.OverrideActionBarButton1 = nil
+
+	-- Three events stay Blizzard's own registrations, so they run untainted;
+	-- the rest are dropped. Wiping and re-registering them made them ours.
+	local mine, register = {}, abef.RegisterEvent
+	abef.RegisterEvent = function(self, e) mine[e] = true; register(self, e) end
+	AB.QuietBlizzardDispatchers()
+	abef.RegisterEvent = register
+	check(next(mine) == nil, "and it registers nothing of its own there ("
+		.. tostring(next(mine)) .. ")")
+	check(abef:IsEventRegistered("PLAYER_ENTERING_WORLD")
+		and abef:IsEventRegistered("ACTIONBAR_SLOT_CHANGED")
+		and abef:IsEventRegistered("ACTIONBAR_UPDATE_COOLDOWN"),
+		"Blizzard's dispatcher keeps entering the world, slot changes and cooldowns")
+	local dropped = true
+	for _, e in ipairs({ "UPDATE_BINDINGS", "GAME_PAD_ACTIVE_CHANGED", "UPDATE_SHAPESHIFT_FORM",
+		"PET_BAR_UPDATE", "UNIT_FLAGS", "UNIT_AURA", "PLAYER_MOUNT_DISPLAY_CHANGED" }) do
+		if abef:IsEventRegistered(e) then dropped = false end
+	end
+	check(dropped, "and drops the seven others, shapeshift (Stealth) among them")
 	check(not ActionBarActionEventsFrame:IsEventRegistered("UNIT_SPELLCAST_START"),
 		"while the other dispatcher listens for nothing")
+
+	-- The gamepad pet button gets its popup the way Blizzard gives it.
+	if _G.__gamepadPet then
+		local b = _G.__gamepadPet
+		check(listed(b), "Forever's gamepad pet button stays in Blizzard's dispatcher")
+		abef:Dispatch("PLAYER_ENTERING_WORLD")
+		check(b.popup == _G.GamepadPetActionFlyout,
+			"so entering the world gives it its popup")
+		local ok, err = pcall(b.ToggleFlash, b, true)
+		check(ok, "and a pet attack flashes it without error (" .. tostring(err) .. ")")
+		check(_G.__extraInDispatch.__heard == "PLAYER_ENTERING_WORLD",
+			"and the extra-action button heard it too")
+	end
 
 	-- And the controller: left listening, it ran Blizzard's bar layout on
 	-- entering combat and tried to move MainActionBar in a fight.
