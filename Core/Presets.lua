@@ -36,7 +36,7 @@ local L = A.L
 local Presets = {}
 A.Presets = Presets
 
-Presets.order = { "rows" }
+Presets.order = { "rows", "split" }
 
 -- `label` is what a player reads; `blurb` is the line under the wireframe on
 -- the tour's card.
@@ -76,6 +76,20 @@ Presets.list = {
 		-- Bars 3 and 4 are off: the Rows seed is bars 1 and 2. The tooltip and
 		-- the music deck are not on the board and keep their own defaults.
 		layout = "LAT1;b=1,2;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=spine,TOP,CENTER,0,-162,12x1,34;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;party=screen,TOPLEFT,TOPLEFT,60,-420;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
+	},
+	split = {
+		label = L.presets.split.label,
+		blurb = L.presets.split.blurb,
+		-- The Split seed (strands brief 9c): bar 1 as in rows; bar 2 a 1 x 12
+		-- column off the player's left edge, bar 3 its mirror off the target's
+		-- right, 28 px, 18 off the capsule as on board 9a. Centred on it, because
+		-- 9a's top-aligned column runs off a 1080 screen under our lower spine;
+		-- at 34 px even a centred one did (Joe, 2026-10-08).
+		-- Stance and pet go UNDER bar 1, in the row bar 2 left empty: off its
+		-- ends they ran into the columns. Still bonded to bar 1.
+		-- The party starts at 300, not 420, to clear bar 2's column.
+		-- Everything else is rows'.
+		layout = "LAT1;b=1,2,3;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=player,RIGHT,LEFT,-18,0,1x12,28;bar3=target,LEFT,RIGHT,18,0,1x12,28;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,TOPRIGHT,BOTTOMRIGHT,0,-8,10x1,30;barstance=bar1,TOPLEFT,BOTTOMLEFT,0,-8,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;party=screen,TOPLEFT,TOPLEFT,60,-300;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
 	},
 }
 

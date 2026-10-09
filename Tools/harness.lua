@@ -17466,8 +17466,9 @@ do
 	local wasScale = A.db.profile.scale
 	-- THE DESIGN'S WAY (Joe, 2026-10-08): the reference layout, which is the
 	-- Rows seed, and none of 1.x's three. Split and Block join it as seeds.
-	check(#P.order == 1 and P.order[1] == "rows" and P.list.rows ~= nil,
-		"the reference layout is the one shipped arrangement (" ..
+	check(#P.order == 2 and P.order[1] == "rows" and P.order[2] == "split"
+		and P.list.rows ~= nil and P.list.split ~= nil,
+		"the reference layout comes first, then the Split seed (" ..
 		table.concat(P.order, ", ") .. ")")
 	check(P.list.corner == nil and P.list.centre == nil and P.list.bottom == nil,
 		"and 1.x's corner, centre and bottom are gone")
@@ -17870,6 +17871,43 @@ do
 		end
 		return " (" .. table.concat(out, ", ") .. ")"
 	end
+	-- The frames every arrangement places, plus `bars`, in board pixels.
+	local function Measure(bars)
+		local R = {}
+		for _, n in ipairs({ "player", "target", "targettarget", "pet", "party",
+			"bar1", "barpet", "barstance", "barextra" }) do
+			R[n] = rect(frame(n))
+		end
+		for _, n in ipairs(bars) do R[n] = rect(frame(n)) end
+		R.spine = rect(UFm.spine)
+		-- THE CHAT IS ITS GLASS: the panel and the edit box hang off
+		-- ChatFrame1, and measuring the frame let a chat whose edit box was off
+		-- the bottom of the screen pass (Joe, 2026-10-08).
+		local _, _, ge = _G.__chatGlass()
+		if ge then
+			local k = 1080 / UIParent:GetHeight()
+			local UL, UT = UIParent:GetLeft(), UIParent:GetTop()
+			R.chat = { l = (ge.l - UL) * k, r = (ge.r - UL) * k,
+				t = (UT - ge.t) * k, b = (UT - ge.b) * k }
+		end
+		return R
+	end
+	-- Every pair of measured frames that overlaps by more than a pixel.
+	local function Overlaps(R)
+		local names = {}
+		for n in pairs(R) do if n ~= "spine" then names[#names + 1] = n end end
+		table.sort(names)
+		local hits = {}
+		for i = 1, #names do
+			for j = i + 1, #names do
+				local a, b = R[names[i]], R[names[j]]
+				if a and b and a.l < b.r - 1 and b.l < a.r - 1 and a.t < b.b - 1 and b.t < a.b - 1 then
+					hits[#hits + 1] = names[i] .. "/" .. names[j]
+				end
+			end
+		end
+		return hits
+	end
 
 	local function Board(tag, s)
 		local check = function(ok, msg) return check(ok, "[" .. tag .. "] " .. msg) end
@@ -17883,22 +17921,7 @@ do
 		check(A.db.profile.scale == 768 / 1080, "and leaves the player's scale alone")
 		if UFm.MeasureSpine then UFm:MeasureSpine() end
 
-		local R = {}
-		for _, n in ipairs({ "player", "target", "targettarget", "pet", "party",
-			"bar1", "bar2", "barpet", "barstance", "barextra" }) do
-			R[n] = rect(frame(n))
-		end
-		R.spine = rect(UFm.spine)
-		-- THE CHAT IS ITS GLASS: the panel and the edit box hang off
-		-- ChatFrame1, and measuring the frame let a chat whose edit box was off
-		-- the bottom of the screen pass (Joe, 2026-10-08).
-		local _, _, ge = _G.__chatGlass()
-		if ge then
-			local k = 1080 / UIParent:GetHeight()
-			local UL, UT = UIParent:GetLeft(), UIParent:GetTop()
-			R.chat = { l = (ge.l - UL) * k, r = (ge.r - UL) * k,
-				t = (UT - ge.t) * k, b = (UT - ge.b) * k }
-		end
+		local R = Measure({ "bar2" })
 
 		check(near(cx(R.spine), 960) and near(cy(R.spine), 870),
 			"the spine runs on the screen's centre line at y 870" .. say(cx(R.spine), cy(R.spine)))
@@ -17968,18 +17991,7 @@ do
 		-- AND NOTHING SITS ON ANYTHING ELSE. The pet and stance bars once had
 		-- only their coded defaults here, measured beside a 36 px bar 1, and
 		-- both landed on this layout's 44 px one.
-		local names = {}
-		for n in pairs(R) do if n ~= "spine" then names[#names + 1] = n end end
-		table.sort(names)
-		local hits = {}
-		for i = 1, #names do
-			for j = i + 1, #names do
-				local a, b = R[names[i]], R[names[j]]
-				if a and b and a.l < b.r - 1 and b.l < a.r - 1 and a.t < b.b - 1 and b.t < a.b - 1 then
-					hits[#hits + 1] = names[i] .. "/" .. names[j]
-				end
-			end
-		end
+		local hits = Overlaps(R)
 		check(#hits == 0, "and no two frames overlap" .. say(#hits > 0 and table.concat(hits, " ") or "none"))
 	end
 
@@ -18012,6 +18024,80 @@ do
 	check(cols == 1 and rows >= 4, "and four forms stand in one column" .. say(cols, rows))
 	check(column and A.Layout:Matches(column),
 		"and it reads back as itself though the bar has 4, not 12")
+	for i = #_G.__forms, wasForms + 1, -1 do _G.__forms[i] = nil end
+	fire("UPDATE_SHAPESHIFT_FORMS")
+
+	-- THE SPLIT SEED (strands brief 9c; Joe, 2026-10-08): bar 1 as in rows,
+	-- bars 2 and 3 as 28 px columns 18 off the player's left and the target's
+	-- right, centred on them (34 px ran off the screen). Stance and pet move
+	-- under bar 1, because off its ends they ran into the columns, and the
+	-- party moves up to clear bar 2's. Measured with a druid's six forms and
+	-- the whole pet bar, the widest each gets.
+	for i = wasForms + 1, 6 do
+		_G.__forms[i] = { texture = "Icons\\Form" .. i, active = false, castable = true }
+	end
+	fire("UPDATE_SHAPESHIFT_FORMS")
+	local function Split(tag, s)
+		local check = function(ok, msg) return check(ok, "[split, " .. tag .. "] " .. msg) end
+		ABc.size, ABc.spacing, ABc.padding, ABc.scale = s.size, 8, 6, s.bars
+		UFc.petScale, UFc.totScale = s.pet, s.tot
+		A.db.profile.scale = 768 / 1080
+		A:Reconfigure()
+		check(P:Apply("split"), "the Split seed applies")
+		check(A.db.profile.scale == 768 / 1080, "and leaves the player's scale alone")
+		if UFm.MeasureSpine then UFm:MeasureSpine() end
+		local R = Measure({ "bar2", "bar3" })
+
+		local _, rows1, px1 = A.Layout.BarShape("1")
+		check(R.bar1 and near(cx(R.bar1), 960) and near(R.bar1.t, 968) and rows1 == 1 and px1 == 44,
+			"bar 1 is the same 12 x 1 row of 44 as in rows" .. say(cx(R.bar1), R.bar1 and R.bar1.t, rows1, px1))
+		for _, b in ipairs({ { "bar2", "2", "player", "left" }, { "bar3", "3", "target", "right" } }) do
+			local r, u = R[b[1]], R[b[3]]
+			local cols, rows, px = A.Layout.BarShape(b[2])
+			local gap = r and u and (b[4] == "left" and u.l - r.r or r.l - u.r)
+			check(r and cols == 1 and rows == 12 and px == 28,
+				b[1] .. " is a 1 x 12 column of 28 px" .. say(cols, rows, px))
+			check(M:ParentOf(b[1]) == b[3] and near(gap, 18) and near(cy(r), cy(u)),
+				"hung 18 off the " .. b[3] .. "'s " .. b[4] .. " edge, centred on it"
+				.. say(M:ParentOf(b[1]), gap, cy(r), cy(u)))
+		end
+		local scols, srows = A.Layout.BarShape("stance")
+		check(R.barstance and near(R.barstance.t - R.bar1.b, 8) and near(R.barstance.l, R.bar1.l)
+			and scols == 6 and srows == 1,
+			"six forms stand in a row 8 under bar 1's left end"
+			.. say(R.barstance and R.barstance.t - R.bar1.b, R.barstance and R.barstance.l, R.bar1.l, scols))
+		local pcols = A.Layout.BarShape("pet")
+		check(R.barpet and near(R.barpet.t - R.bar1.b, 8) and near(R.barpet.r, R.bar1.r) and pcols == 10,
+			"the whole pet bar is a row 8 under bar 1's right end"
+			.. say(R.barpet and R.barpet.t - R.bar1.b, R.barpet and R.barpet.r, R.bar1.r, pcols))
+		for _, n in ipairs({ "barstance", "barpet", "barextra" }) do
+			check(M:ParentOf(n) == "bar1", n .. " still hangs from bar 1" .. say(M:ParentOf(n)))
+		end
+
+		local off = {}
+		for n, r in pairs(R) do
+			if n ~= "spine" and (r.l < -1 or r.t < -1 or r.r > 1921 or r.b > 1081) then
+				off[#off + 1] = n .. " " .. ("%.0f,%.0f-%.0f,%.0f"):format(r.l, r.t, r.r, r.b)
+			end
+		end
+		table.sort(off)
+		check(#off == 0, "everything is on a 1080 screen" .. say(#off > 0 and table.concat(off, " ") or "all"))
+		local hits = Overlaps(R)
+		check(#hits == 0, "and no two frames overlap" .. say(#hits > 0 and table.concat(hits, " ") or "none"))
+		check(R.party and near(R.party.l, 60) and near(R.party.t, 300) and R.party.b < R.bar2.t,
+			"the party starts at 60, 300, clear above bar 2's column"
+			.. say(R.party and R.party.t, R.party and R.party.b, R.bar2 and R.bar2.t))
+		check(P:Current() == "split", "and it reads back as itself" .. say(P:Current()))
+	end
+	Split("shipped settings", { size = 36, bars = 1, pet = 0.85, tot = 0.85 })
+	Split("a player's settings", { size = 62, bars = 0.8, pet = 1.0, tot = 0.7 })
+
+	wipe(A.db.profile.anchors)
+	SlashCmdList["AETHERUI"]("preset split")
+	check(P:Current() == "split", "/lattice preset split applies it" .. say(P:Current()))
+	-- Back to the bars rows leaves on, as the blocks after this expect.
+	P:Apply("rows")
+
 	for i = #_G.__forms, wasForms + 1, -1 do _G.__forms[i] = nil end
 	fire("UPDATE_SHAPESHIFT_FORMS")
 
@@ -35136,10 +35222,25 @@ do
 				if on and records["bar" .. id] then want = want + 1 end
 			end
 
-			check(shown == want and shown > 1 and shown <= 4,
+			local named = 0
+			for _ in pairs(records) do named = named + 1 end
+			check(shown == want and shown > 1 and shown < named,
 				"\"" .. key .. "\" draws its unit frames and the bars it switches "
 				.. "on, and nothing else (" .. shown .. " of a wanted " .. want ..
-				")")
+				", of " .. named .. " named)")
+
+			-- A column is drawn as one: Split's bars 2 and 3 are 1 x 12.
+			local tall, wantTall = 0, 0
+			for id in pairs(preset.bars or {}) do
+				local r = records["bar" .. id]
+				if r and r.rows and r.rows > r.cols then wantTall = wantTall + 1 end
+			end
+			for _, m in ipairs(cards[i].box.marks or {}) do
+				if m:IsShown() and m:GetHeight() > m:GetWidth() then tall = tall + 1 end
+			end
+			check(tall == wantTall,
+				"\"" .. key .. "\" draws its columns standing up (" .. tall
+				.. " of a wanted " .. wantTall .. ")")
 		end
 
 		-- From nothing chosen, so the card is what puts it there.

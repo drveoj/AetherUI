@@ -959,7 +959,7 @@ end
 --  portable - so a thumbnail is those fractions on a small rectangle, and it
 --  cannot drift away from what the card actually does.
 --
---  FOUR MARKS AT MOST, AND NOT ELEVEN.
+--  A FEW MARKS, AND NOT ELEVEN.
 --
 --  The first version drew every anchor a preset names, which is six bars, the
 --  party frame, the pet, the tooltip and the rest - eleven smears in a box the
@@ -985,7 +985,7 @@ local function Wireframe(box, preset)
 	if sw <= 0 or sh <= 0 then return end
 
 	local n = 0
-	local function mark(p, wide, strong)
+	local function mark(p, wide, strong, tall)
 		n = n + 1
 		local m = box.marks[n]
 		if not m then
@@ -994,7 +994,11 @@ local function Wireframe(box, preset)
 			box.marks[n] = m
 		end
 
-		m:SetSize(bw * (wide and 0.30 or 0.20), math.max(2, bh * 0.11))
+		if tall then
+			m:SetSize(math.max(2, bh * 0.11), bh * 0.45)
+		else
+			m:SetSize(bw * (wide and 0.30 or 0.20), math.max(2, bh * 0.11))
+		end
 		m:ClearAllPoints()
 		m:SetPoint("CENTER", box, "CENTER", p.x / sw * bw, p.y / sh * bh)
 		W.Tint(m, Palette.c.accent, strong and 0.75 or 0.4)
@@ -1005,9 +1009,11 @@ local function Wireframe(box, preset)
 		if at[name] then mark(at[name], false, true) end
 	end
 
+	-- A bar written as a column is drawn as one, or Split reads as Rows.
 	for id in pairs(preset.bars or {}) do
 		local p = at["bar" .. id]
-		if p then mark(p, true, false) end
+		local r = preset.decoded.records["bar" .. id]
+		if p then mark(p, true, false, r and r.rows and r.rows > r.cols) end
 	end
 end
 

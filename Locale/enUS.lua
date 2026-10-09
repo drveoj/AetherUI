@@ -1291,6 +1291,9 @@ L["player.paint_up_next.queued"] = "queued by you"
 L["presets.rows.blurb"] =
 	"Bars 1 and 2 in two rows under you and your target."
 L["presets.rows.label"] = "Rows"
+L["presets.split.blurb"] =
+	"Bar 1 under you and your target, bars 2 and 3 as columns either side."
+L["presets.split.label"] = "Split"
 
 -- resources ---------------------------------------------------------------
 --
