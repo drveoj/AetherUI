@@ -889,16 +889,62 @@ end
 --  A palette applied any other way is a palette that half the interface has
 --  not heard about - and the one thing this stop must not do is show somebody
 --  a preview that is not what they will get.
+--
+--  A ROW PER FAMILY, four to a row, each under its spaced name - the same rows
+--  the options picker draws (skins v2). Twelve across one row would be cards
+--  too narrow for their own names.
+local FAMILY_HEAD = 14
+local FAMILY_NAME = {
+	sky     = L.options.general.skin.sky,
+	gem     = L.options.general.skin.gem,
+	seasons = L.options.general.skin.seasons,
+}
+
 local function PaletteControl(slot)
 	local list = Palette:List()
 	local gap = 7
-	local w = (slot:GetWidth() - gap * (#list - 1)) / #list
+	local perRow = 4
+	local w = (slot:GetWidth() - gap * (perRow - 1)) / perRow
+	local rowH = FAMILY_HEAD + CHIP_H + gap
+
+	-- The families in the order the palette offers them, and where each skin
+	-- sits in its own.
+	local famAt, col, heads = {}, {}, {}
+	for f, fam in ipairs(Palette.families) do
+		for c, key in ipairs(fam.skins) do famAt[key], col[key] = f, c end
+		heads[f] = fam.key
+	end
+
+	for f, key in ipairs(heads) do
+		local head = Kid(slot, "paletteHead", f, function(parent)
+			local h = CreateFrame("Frame", nil, parent)
+			h.text = W.Text(h, "opSub", "LEFT")
+			h.text:SetPoint("LEFT", h, "LEFT", 0, 0)
+			h.line = h:CreateTexture(nil, "ARTWORK")
+			h.line:SetTexture(A.Media.texture.flat)
+			h.line:SetHeight(1)
+			h.line:SetPoint("LEFT", h.text, "RIGHT", 8, 0)
+			h.line:SetPoint("RIGHT", h, "RIGHT", 0, 0)
+			return h
+		end)
+		head:SetSize(slot:GetWidth(), FAMILY_HEAD)
+		head:ClearAllPoints()
+		head:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -(f - 1) * rowH)
+		head.text:SetText(A.Trunk.Spaced(FAMILY_NAME[key] or key))
+		W.Color(head.text, Palette.c.textDim)
+		local a = Palette.c.accent
+		head.line:SetVertexColor(a[1], a[2], a[3], 0.22)
+	end
 
 	for i, entry in ipairs(list) do
 		local card = Kid(slot, "palette", i, function(parent)
 			local f = Glass.CreatePanel(parent, {
 				frameType = "Button", corner = 11,
 			})
+			f.glow = f:CreateTexture(nil, "ARTWORK")
+			f.glow:SetTexture(A.Media.texture.glow)
+			f.glow:SetSize(36, 36)
+			f.glow:SetBlendMode("ADD")
 			f.dot = f:CreateTexture(nil, "OVERLAY")
 			f.dot:SetSize(19, 19)
 			-- chipDisc, not circleMask: the same circle authored at 64 for
@@ -909,18 +955,28 @@ local function PaletteControl(slot)
 			f.dot:SetPoint("TOP", f, "TOP", 0, -8)
 			f.label = W.Text(f, "tbLabel", "CENTER")
 			f.label:SetPoint("BOTTOM", f, "BOTTOM", 0, 7)
+			f.glow:SetPoint("CENTER", f.dot, "CENTER", 0, 0)
 			return f
 		end)
 
+		local row, at = famAt[entry.key] or #heads + 1, (col[entry.key] or i) - 1
 		card:SetSize(w, CHIP_H)
 		card:ClearAllPoints()
-		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
+		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (at % perRow) * (w + gap),
+			-(row - 1) * rowH - FAMILY_HEAD)
 
 		-- THE SWATCH IS THAT PALETTE'S OWN ACCENT, not the one in use. The
-		-- point of four cards is to show four colours; drawing them all in the
-		-- current skin's accent would make the choice invisible.
+		-- point of the cards is to show the colours; drawing them all in the
+		-- current skin's accent would make the choice invisible. A gem's
+		-- glows, as it does in the options picker.
 		local skin = Palette.skins[entry.key]
 		W.Tint(card.dot, skin and skin.accent or Palette.c.accent, 1)
+		if skin and skin.family == "gem" then
+			W.Tint(card.glow, skin.accent, 0.7)
+			card.glow:Show()
+		else
+			card.glow:Hide()
+		end
 		card.label:SetText(entry.label or entry.key)
 		Chosen(card, Palette.current == entry.key)
 
@@ -935,7 +991,7 @@ local function PaletteControl(slot)
 		end)
 	end
 
-	slot:SetHeight(CHIP_H)
+	slot:SetHeight(#heads * rowH - gap)
 end
 
 -- ---------------------------------------------------------------------------

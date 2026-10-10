@@ -7669,7 +7669,13 @@ end
 --  became an "on all four" one when Daylight was replaced, and a check that
 --  walks a hand-written pair is a check that will quietly stop covering the
 --  skin somebody adds next.
-local SKINS = { "midnight", "dawn", "noon", "dusk" }
+--
+--  Twelve now, in three families (skins v2): Sky, Gem and Seasons.
+local SKINS = {
+	"midnight", "dawn", "noon", "dusk",
+	"amethyst", "sapphire", "emerald", "ruby",
+	"winter", "spring", "summer", "autumn",
+}
 
 --- A skin that is NOT the default, for the checks that only need one of those.
 local OTHER = "dusk"
@@ -11355,15 +11361,23 @@ section("palette: semantic gold, one shade deeper in Dusk", function()
 	-- THE ONE SKIN-CONDITIONAL COLOUR. It carries meaning rather than chrome -
 	-- leader crown, dock arrow, Convert to Raid, the console's landing warning -
 	-- so it sits with the meanings and not with the six a skin remaps. Dusk is
-	-- the exception, and only Dusk: its accent IS this colour, #f0d9a8 both and
-	-- exactly, so on that skin the warning was the frame's own rim.
-	for _, name in ipairs({ "midnight", "dawn", "noon" }) do
-		check(hex(P.skins[name].semanticGold) == "#f0d9a8",
-			name .. " leaves it alone (" .. hex(P.skins[name].semanticGold) .. ")")
+	-- the exception: its accent IS this colour, #f0d9a8 both and exactly, so on
+	-- that skin the warning was the frame's own rim. Summer's sun-cream sits on
+	-- the same hue, and skins v2 gives it the same flip. Nobody else.
+	local moved = {}
+	for _, name in ipairs(SKINS) do
+		local g = hex(P.skins[name].semanticGold)
+		if (name == "dusk" or name == "summer") ~= (g == "#ffcf66") or (g ~= "#ffcf66" and g ~= "#f0d9a8") then
+			moved[#moved + 1] = name .. " " .. g
+		end
 	end
+	check(#moved == 0, "every skin leaves it alone but Dusk and Summer ("
+		.. table.concat(moved, ", ") .. ")")
 	check(hex(P.skins.dusk.semanticGold) == "#ffcf66",
 		"and Dusk takes it one shade deeper (" ..
 		hex(P.skins.dusk.semanticGold) .. ")")
+	check(hex(P.skins.summer.semanticGold) == "#ffcf66" and hex(P.skins.summer.semanticGoldDim) == "#ffcf66",
+		"and so does Summer, both weights (" .. hex(P.skins.summer.semanticGold) .. ")")
 
 	-- Which is the whole point, so it is worth saying on its own.
 	check(hex(P.skins.dusk.semanticGold) ~= hex(P.skins.dusk.accent),
@@ -11439,6 +11453,86 @@ section("palette: semantic gold, one shade deeper in Dusk", function()
 	P:Apply("midnight")
 	check(hex(A.Palette.c.semanticGold) == "#f0d9a8",
 		"and switching back brings the other one home")
+end)
+
+section("palette: the trouble reds move one step in Ruby, and only Ruby", function()
+	local P = A.Palette
+	local function hex(c)
+		return ("#%02x%02x%02x"):format(c[1] * 255 + 0.5, c[2] * 255 + 0.5,
+			c[3] * 255 + 0.5)
+	end
+	-- THE SECOND CONDITIONAL (skins v2). Ruby's accent is in the same family
+	-- as error coral and the alarm red, and threat is drawn as rims and glows,
+	-- where chrome lives. So in Ruby those move to orange-coral.
+	local ERR = { "danger", "dangerText", "dangerEdge", "dangerHover",
+		"laneFlash", "auraDispel", "mirrorFatigue" }
+	local ruby, mid = P.skins.ruby, P.skins.midnight
+	local wrong = {}
+	for _, t in ipairs(ERR) do
+		if hex(ruby[t]) ~= "#ff8a4a" or ruby[t][4] ~= mid[t][4] then wrong[#wrong + 1] = t end
+	end
+	check(#wrong == 0, "Ruby's error reds are #ff8a4a, each at its own weight ("
+		.. table.concat(wrong, ", ") .. ")")
+	check(hex(ruby.alarm) == "#e8602a", "and its alarm red is #e8602a (" .. hex(ruby.alarm) .. ")")
+
+	-- Reaction is not trouble: it says what a unit IS, and stays put.
+	check(hex(ruby.hostile) == hex(mid.hostile) and hex(ruby.ttHostile) == hex(mid.ttHostile),
+		"reaction red stays where it is")
+
+	-- Nobody else moves, and their alarm is the error red taken 35% down, which
+	-- is what the threat chip drew before the token existed.
+	local moved = {}
+	for _, name in ipairs(SKINS) do
+		if name ~= "ruby" then
+			local sk = P.skins[name]
+			for _, t in ipairs(ERR) do
+				if sk[t] ~= mid[t] then moved[#moved + 1] = name .. "." .. t end
+			end
+			local d = sk.danger
+			if math.abs(sk.alarm[1] - d[1] * 0.65) > 0.0001 or math.abs(sk.alarm[3] - d[3] * 0.65) > 0.0001 then
+				moved[#moved + 1] = name .. ".alarm"
+			end
+		end
+	end
+	check(#moved == 0, "and no other skin moves them (" .. table.concat(moved, ", ") .. ")")
+
+	P:Apply("ruby")
+	check(hex(P.c.danger) == "#ff8a4a", "switching to Ruby carries them with it")
+	P:Apply("midnight")
+	check(hex(P.c.danger) == hex(mid.danger), "and switching back brings them home")
+end)
+
+section("palette: the gem and seasons skins are the brief's values", function()
+	local P = A.Palette
+	local function hex(c)
+		return ("#%02x%02x%02x"):format(c[1] * 255 + 0.5, c[2] * 255 + 0.5,
+			c[3] * 255 + 0.5)
+	end
+	-- Accent, deep, glass, rim, type, and the dial's disc, as skins v2 writes
+	-- them. A typo in one byte is a skin nobody would notice was wrong.
+	local BRIEF = {
+		amethyst = { "#b56cff", "#8f45e8", "#140a26", "#aa6eff", "#f4ecff", "#180c2c" },
+		sapphire = { "#4d8cff", "#2f66e0", "#081028", "#5a8cff", "#edf3ff", "#0a1230" },
+		emerald  = { "#3fe0a6", "#1fb882", "#061e18", "#3cd2a0", "#eefff7", "#081d16" },
+		ruby     = { "#ff5c8a", "#e0366a", "#260814", "#ff6496", "#fff0f4", "#2a0a16" },
+		winter   = { "#e8f4ff", "#b8d4f4", "#0a142a", "#8cb4f0", "#f4f9ff", "#0a1430" },
+		spring   = { "#dcf2b4", "#b4dc84", "#0c1e10", "#78c878", "#f4fff0", "#0a1e10" },
+		summer   = { "#ffe9b8", "#f0cf8a", "#061c26", "#50b4c8", "#fffaf0", "#061c26" },
+		autumn   = { "#f5c0a0", "#e09870", "#2a1008", "#dc8250", "#fff4ec", "#2a1008" },
+	}
+	local wrong = {}
+	for name, want in pairs(BRIEF) do
+		local s = P.skins[name]
+		local got = { hex(s.accent), hex(s.accentDeep), hex(s.nodeFill), hex(s.glassEdge),
+			hex(s.text), hex(s.ifecDisc) }
+		if table.concat(got, " ") ~= table.concat(want, " ") then
+			wrong[#wrong + 1] = name .. " " .. table.concat(got, " ")
+		end
+	end
+	check(#wrong == 0, "every new skin is the brief's six and its disc (" .. table.concat(wrong, "; ") .. ")")
+	check(math.abs(P.skins.winter.glassStrong[4] - 0.72) < 0.0001
+		and math.abs(P.skins.amethyst.glassStrong[4] - 0.68) < 0.0001,
+		"a season's glass is .72 and a gem's stays .68")
 end)
 
 section("party: four capsules in fixed slots", function()
@@ -16806,15 +16900,29 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	end
 	check(gameown, "with the game's own panels as a section on it")
 	local sw = RowAt("skin")
-	check(sw and #sw.chips == 4, "the skin is four chips")
+	check(sw and #sw.chips == #SKINS, "the skin is twelve chips")
 	local order = {}
 	for i, c in ipairs(sw.chips) do order[i] = c.key end
-	check(table.concat(order, ",") == table.concat(A.Palette.order, ","), "in the day's order, not the alphabet's")
+	check(table.concat(order, ",") == table.concat(A.Palette.order, ","), "in the palette's order, not the alphabet's")
+	-- THREE LABELLED ROWS (skins v2): S K Y, G E M, S E A S O N S, each over a
+	-- hairline, four chips under each.
+	local famText = {}
+	for i, fam in ipairs(sw.families) do famText[i] = fam.label:GetText() end
+	check(table.concat(famText, "|") == A.Trunk.Spaced("Sky") .. "|" .. A.Trunk.Spaced("Gem")
+		.. "|" .. A.Trunk.Spaced("Seasons"), "in three labelled rows (" .. table.concat(famText, "|") .. ")")
+	local function topOf(b) return select(5, b:GetPoint(1)) end
+	check(topOf(sw.chips[1]) == topOf(sw.chips[4]) and topOf(sw.chips[4]) > topOf(sw.chips[5])
+		and topOf(sw.chips[5]) == topOf(sw.chips[8]) and topOf(sw.chips[8]) > topOf(sw.chips[9]),
+		"four to a row")
 	local wrong = 0
 	for _, c in ipairs(sw.chips) do
-		if c._fillColor ~= A.Palette.skins[c.key].glass then wrong = wrong + 1 end
+		local g, got = A.Palette.skins[c.key].nodeFill, c._fillColor
+		if got[1] ~= g[1] or got[2] ~= g[2] or got[3] ~= g[3] or got[4] ~= 0.88 then wrong = wrong + 1 end
 	end
-	check(wrong == 0, "each chip on its OWN glass, whichever skin is live")
+	check(wrong == 0, "each chip on its OWN glass, near solid, whichever skin is live")
+	local glows = {}
+	for i, c in ipairs(sw.chips) do glows[i] = c.glow:IsShown() and "1" or "0" end
+	check(table.concat(glows) == "000011110000", "and only the gems' diamonds glow (" .. table.concat(glows) .. ")")
 	Click(sw.chips[4])
 	check(A.db.profile.skin == sw.chips[4].key and sw.chips[4].on and not sw.chips[1].on,
 		"clicking one is the skin, live, and the mark moves")
@@ -28254,7 +28362,15 @@ print("== skins: the family is offered in the order it is named for ==")
 do
 	local P = A.Palette
 	local list = P:List()
-	check(#list == #SKINS, "four skins are offered (" .. #list .. ")")
+	check(#list == #SKINS, "twelve skins are offered (" .. #list .. ")")
+
+	-- IN THREE ROWS OF FOUR, and `family` is what draws them (skins v2).
+	local fams = {}
+	for i, f in ipairs(P.families) do fams[i] = f.key .. ":" .. table.concat(f.skins, "/") end
+	check(table.concat(fams, " ") == "sky:midnight/dawn/noon/dusk "
+		.. "gem:amethyst/sapphire/emerald/ruby "
+		.. "seasons:winter/spring/summer/autumn",
+		"in three families of four, Sky, Gem and Seasons (" .. table.concat(fams, " ") .. ")")
 
 	-- The order is the day, not the alphabet - which sorts to dawn, dusk,
 	-- midnight, noon and reads as four unrelated words.
@@ -28301,13 +28417,20 @@ do
 		end
 		return out
 	end
+	--
+	-- ONE EXCEPTION, AND THE BRIEF NAMES IT. The Seasons family's colour is its
+	-- glass, and skins v2 lifts that glass a step (.68 to .72) so the tint
+	-- reads. The three glass weights, by exactly that step, on those four only.
+	local LIFTED = { glass = true, glassSoft = true, glassStrong = true }
 	local base = alphas(A.Palette.skins.midnight, "", {})
 	local moved, hues = {}, 0
 	for _, name in ipairs(SKINS) do
 		if name ~= "midnight" then
 			local other = alphas(A.Palette.skins[name], "", {})
+			local seasons = A.Palette.skins[name].family == "seasons"
 			for token, a in pairs(base) do
-				if math.abs((other[token] or -1) - a) > 0.0001 then
+				local want = a + ((seasons and LIFTED[token]) and 0.04 or 0)
+				if math.abs((other[token] or -1) - want) > 0.0001 then
 					moved[#moved + 1] = name .. "." .. token
 				end
 			end
@@ -34053,6 +34176,10 @@ section("threat: one place decides which tier a unit is in", function()
 			check(al.spec.period == A.Widgets.PULSE_FAIL,
 				"and the failure tier pulses faster (" ..
 				tostring(al.spec.period) .. ")")
+			-- ITS CHIP IS THE PALETTE'S ALARM RED, read rather than derived
+			-- here, so Ruby's one-step shift reaches it (skins v2).
+			check(al.spec.chipBg == A.Palette.c.alarm,
+				"on the palette's alarm red, the one Ruby moves")
 
 			-- THE LIVE FIGURE, ON YOUR OWN FRAME ONLY. 16c puts it on the
 			-- player's warning chip; four of them across a party is a row of
@@ -35246,13 +35373,26 @@ do
 	do
 		local slot = OB.callout.slot
 
-		-- Stop 1: four swatches, and tapping one recolours the whole interface.
+		-- Stop 1: twelve swatches in three labelled rows, and tapping one
+		-- recolours the whole interface.
 		A.db.profile.skin = "midnight"
 		A:Restyle()
 		OB:Go(1)
 		local swatches = slot.__aetherKids and slot.__aetherKids.palette or {}
-		check(#swatches == 4,
-			"stop 1 offers the four palettes (" .. #swatches .. ")")
+		check(#swatches == #SKINS,
+			"stop 1 offers every palette (" .. #swatches .. ")")
+		local heads = slot.__aetherKids and slot.__aetherKids.paletteHead or {}
+		check(#heads == 3 and heads[2].text:GetText() == A.Trunk.Spaced("Gem"),
+			"under three family heads, the same rows the options picker draws")
+		local s1, s5, s9 = swatches[1], swatches[5], swatches[9]
+		local _, _, _, x1, y1 = s1:GetPoint(1)
+		local _, _, _, x5, y5 = s5:GetPoint(1)
+		local _, _, _, x9, y9 = s9:GetPoint(1)
+		check(x1 == x5 and x5 == x9 and y1 > y5 and y5 > y9,
+			"four to a row: Midnight, Amethyst and Winter each start one")
+		check(swatches[5].glow:IsShown() and not swatches[1].glow:IsShown()
+			and not swatches[9].glow:IsShown(),
+			"and only a gem's swatch glows")
 
 		-- THE SWATCH IS THAT PALETTE'S OWN ACCENT, not the one in use. Four
 		-- cards drawn in the current skin's accent would make the choice
@@ -35264,7 +35404,7 @@ do
 		end
 		local shades = 0
 		for _ in pairs(seen) do shades = shades + 1 end
-		check(shades == 4,
+		check(shades == #SKINS,
 			"each drawn in its OWN accent rather than the one in use (" ..
 			shades .. " colours)")
 

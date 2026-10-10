@@ -741,7 +741,7 @@ function TH:For(unit) return self.state[unit] end
 --- been decided already: the tier IS the role reading.
 --
 --  Resolved per call rather than cached, so a skin change reaches it - accent
---  and semantic gold both move between skins, and red is invariant.
+--  and semantic gold both move between skins, and Ruby moves the red.
 local function TierColour(tier)
 	local c = A.Palette.c
 	if tier == TIER.RING then return c.accent end
@@ -777,16 +777,6 @@ local function ChipText(unit, r, role)
 	return say
 end
 
---- How deep to take a colour before white type will sit on it.
---
---  16c gives the failure chip a deeper red than its border - #d9584a against
---  #f08a7a - so the white on it reads. We keep ONE red token (see the plan's
---  colour decision) and deepen it here rather than adding a ninth red to a
---  palette that has eight.
-local function Deepen(c, t)
-	return { c[1] * (1 - t), c[2] * (1 - t), c[3] * (1 - t), c[4] or 1 }
-end
-
 --- The alarm's whole appearance for a tier, or nil for the tiers that have none.
 local function AlarmSpec(unit, r, role)
 	if r.tier ~= TIER.WARN and r.tier ~= TIER.FAIL then return nil end
@@ -803,8 +793,10 @@ local function AlarmSpec(unit, r, role)
 		colour  = colour,
 		period  = warn and A.Widgets.PULSE_WARN or A.Widgets.PULSE_FAIL,
 		label   = label,
-		-- Gold takes dark ink; red is deepened so white will sit on it.
-		chipBg  = warn and colour or Deepen(colour, 0.35),
+		-- Gold takes dark ink. 16c fills the failure chip a deeper red than
+		-- its border so white reads on it: the palette's `alarm`, which is the
+		-- error red taken 35% down everywhere but Ruby, where both move.
+		chipBg  = warn and colour or c.alarm,
 		chipInk = warn and (c.btnFillText or c.bg or c.text) or { 1, 1, 1, 1 },
 	}
 end

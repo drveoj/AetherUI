@@ -494,20 +494,75 @@ local function SegmentRow(parent, node, w, choices)
 	return r
 end
 
--- select: the four skins as chips ------------------------------------------
+-- select: the skins as chips, a labelled row per family ---------------------
 
 local CHIP = 46
+local CHIP_STEP = CHIP + 22
+-- A family's row: its spaced name over a hairline, then its chips and their
+-- names under them.
+local FAMILY_HEAD = 14
+local FAMILY_ROW = FAMILY_HEAD + 6 + CHIP + 22
+
+-- Spelled out so the harness can see every one is used.
+local FAMILY_NAME = {
+	sky     = L.options.general.skin.sky,
+	gem     = L.options.general.skin.gem,
+	seasons = L.options.general.skin.seasons,
+}
+
+--- A skin chip's own look: its glass, nearly solid, its rim, its diamond.
+--
+--  THE TILE IS THE SKIN'S, not the live one's: the point is to show what
+--  picking it would give. Its glass is raised to .88 (skins v2) so a Seasons
+--  tile reads as the colour it is, and a gem's diamond glows where the other
+--  two families' do not - the picker itself says which family is loud.
+local function PaintChip(b, skin, on)
+	local g, e, a = skin.nodeFill, skin.glassEdge, skin.accent
+	b:SetFillColor({ g[1], g[2], g[3], 0.88 })
+	b:SetEdgeColor(on and { a[1], a[2], a[3], 1 } or { e[1], e[2], e[3], 0.5 })
+	b.dot:SetVertexColor(a[1], a[2], a[3], 1)
+	if skin.family == "gem" then
+		b.glow:SetVertexColor(a[1], a[2], a[3], 0.7)
+		b.glow:Show()
+	else
+		b.glow:Hide()
+	end
+end
+C.PaintChip = PaintChip
 
 local function SwatchRow(parent, node, w, choices)
 	local r = Base(parent, node, w)
-	r:SetHeight(22 + CHIP + 22)
 	r.label = W.Text(r, "opControl", "LEFT")
 	r.label:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0)
-	r.chips = {}
+	r.chips, r.families = {}, {}
+
+	-- Which row each chip goes in, from the palette's own families. A key the
+	-- palette does not group goes in a last row of its own rather than nowhere.
+	local rowOf, rows = {}, {}
+	for i, fam in ipairs(Palette.families or {}) do
+		for _, key in ipairs(fam.skins) do rowOf[key] = i end
+		rows[i] = { key = fam.key, n = 0 }
+	end
 	for i, ch in ipairs(choices) do
+		local at = rowOf[ch.key]
+		if not at then
+			at = #rows + 1
+			rows[at] = { n = 0 }
+			rowOf[ch.key] = at
+		end
+		local row = rows[at]
+		row.used = true
+		local top = -22 - (at - 1) * FAMILY_ROW
 		local b = A.Glass.CreatePanel(r, { frameType = "Button", corner = 12 })
 		b:SetSize(CHIP, CHIP)
-		b:SetPoint("TOPLEFT", r, "TOPLEFT", (i - 1) * (CHIP + 22), -22)
+		b:SetPoint("TOPLEFT", r, "TOPLEFT", row.n * CHIP_STEP, top - FAMILY_HEAD - 6)
+		row.n = row.n + 1
+		b.glow = b:CreateTexture(nil, "ARTWORK")
+		b.glow:SetTexture(Media.texture.glow)
+		b.glow:SetSize(34, 34)
+		b.glow:SetPoint("CENTER", b, "CENTER", 0, 0)
+		b.glow:SetBlendMode("ADD")
+		b.glow:Hide()
 		b.dot = b:CreateTexture(nil, "OVERLAY")
 		b.dot:SetTexture(Media.texture.diamond)
 		b.dot:SetSize(16, 16)
@@ -522,6 +577,24 @@ local function SwatchRow(parent, node, w, choices)
 		end)
 		r.chips[i] = b
 	end
+
+	-- The heads: S K Y over a hairline that runs to the end of the row.
+	local used = 0
+	for i, row in ipairs(rows) do
+		if row.used then
+			used = i
+			local top = -22 - (i - 1) * FAMILY_ROW
+			local h = W.Text(r, "opSub", "LEFT")
+			h:SetPoint("TOPLEFT", r, "TOPLEFT", 0, top)
+			h:SetText(A.Trunk.Spaced(FAMILY_NAME[row.key] or ""))
+			local line = Strand(r, 0.22)
+			line:SetPoint("LEFT", h, "RIGHT", 8, 0)
+			line:SetPoint("RIGHT", r, "RIGHT", 0, 0)
+			r.families[#r.families + 1] = { key = row.key, label = h, line = line }
+		end
+	end
+	r:SetHeight(22 + used * FAMILY_ROW)
+
 	Tip(r, node, true)
 	r:EnableMouse(true)
 	function r:Refresh()
@@ -529,17 +602,15 @@ local function SwatchRow(parent, node, w, choices)
 		local c = Palette.c
 		self.label:SetText(C.Name(node))
 		W.Color(self.label, c.text)
+		for _, fam in ipairs(self.families) do
+			W.Color(fam.label, c.textDim)
+			PaintStrand(fam.line)
+		end
 		local v = C.Value(node)
 		for _, b in ipairs(self.chips) do
-			-- EACH CHIP WEARS ITS OWN SKIN: the point is to show what picking it
-			-- would give, so the colours are that skin's, not the live one's.
 			local skin = Palette.skins and Palette.skins[b.key]
 			local on = (b.key == v)
-			if skin then
-				b:SetFillColor(skin.glass)
-				b:SetEdgeColor(on and { skin.accent[1], skin.accent[2], skin.accent[3], 1 } or skin.glassEdge)
-				b.dot:SetVertexColor(skin.accent[1], skin.accent[2], skin.accent[3], 1)
-			end
+			if skin then PaintChip(b, skin, on) end
 			W.Restyle(b.text, on and "opHelpOn" or "opHelp")
 			W.Color(b.text, on and c.text or c.textDim)
 			b.on = on

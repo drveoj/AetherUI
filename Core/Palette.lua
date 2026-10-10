@@ -1,7 +1,9 @@
 --[[--------------------------------------------------------------------------
 	AetherUI :: Palette
 
-	Colour tokens for the skin family: Midnight, Dawn, Noon and Dusk.
+	Colour tokens for the twelve skins, in three families of four: Sky
+	(Midnight, Dawn, Noon, Dusk), Gem (Amethyst, Sapphire, Emerald, Ruby) and
+	Seasons (Winter, Spring, Summer, Autumn).
 
 	Because every texture in Media\Textures is neutral greyscale, a skin is just a
 	table of colours. Adding one costs no art - and now costs eight values, not
@@ -76,9 +78,18 @@ end
 --  hue that the dial sits on, and the tinted white its secondary type is drawn
 --  in. Deriving either by mixing looked close and was not, and a colour that is
 --  nearly right is worse than one that is written down.
+--
+--  THE GEM AND SEASONS BRIEF (skins v2) gives six and the disc, not `soft`, and
+--  says the derived values follow the Sky ones mechanically. Sky's soft sits
+--  halfway from its type white to its accent in all four, within a few steps,
+--  so a skin that does not write one down gets exactly that.
+--
+--  `family` is for the picker and nothing else: everything that draws reads
+--  tokens, never which family a skin is in.
 local CHROME = {
 	midnight = {
 		label  = "Midnight",
+		family = "sky",
 		accent = C(205, 188, 255),   -- #cdbcff
 		deep   = C(185, 164, 245),   -- #b9a4f5
 		bg     = C( 14,  11,  32),   -- #0e0b20
@@ -91,6 +102,7 @@ local CHROME = {
 
 	dawn = {
 		label  = "Dawn",
+		family = "sky",
 		accent = C(245, 203, 170),   -- #f5cbaa
 		deep   = C(232, 164, 130),   -- #e8a482
 		bg     = C( 34,  18,  16),
@@ -103,6 +115,7 @@ local CHROME = {
 
 	noon = {
 		label  = "Noon",
+		family = "sky",
 		accent = C(207, 234, 250),   -- #cfeafa
 		deep   = C(142, 196, 232),   -- #8ec4e8
 		bg     = C( 14,  24,  34),
@@ -115,6 +128,7 @@ local CHROME = {
 
 	dusk = {
 		label  = "Dusk",
+		family = "sky",
 		accent = C(240, 217, 168),   -- #f0d9a8
 		-- #cf9a3a, and DEEPER THAN THE BRIEF ASKS FOR on purpose.
 		--
@@ -135,6 +149,114 @@ local CHROME = {
 		track  = C(255, 244, 220),
 		disc   = C( 33,  24,   9),   -- #211809
 		soft   = C(250, 232, 200),
+	},
+
+	-- GEM: Sky's rules with the saturation turned up. Accents at mid value and
+	-- fully saturated, the glass one step deeper and tinted toward the gem.
+	amethyst = {
+		label  = "Amethyst",
+		family = "gem",
+		accent = C(181, 108, 255),   -- #b56cff
+		deep   = C(143,  69, 232),   -- #8f45e8
+		bg     = C( 20,  10,  38),
+		border = C(170, 110, 255),
+		bright = C(244, 236, 255),   -- #f4ecff
+		track  = C(240, 228, 255),
+		disc   = C( 24,  12,  44),   -- #180c2c
+	},
+
+	sapphire = {
+		label  = "Sapphire",
+		family = "gem",
+		accent = C( 77, 140, 255),   -- #4d8cff
+		deep   = C( 47, 102, 224),   -- #2f66e0
+		bg     = C(  8,  16,  40),
+		border = C( 90, 140, 255),
+		bright = C(237, 243, 255),   -- #edf3ff
+		track  = C(220, 232, 255),
+		disc   = C( 10,  18,  48),   -- #0a1230
+	},
+
+	emerald = {
+		label  = "Emerald",
+		family = "gem",
+		accent = C( 63, 224, 166),   -- #3fe0a6
+		deep   = C( 31, 184, 130),   -- #1fb882
+		bg     = C(  6,  30,  24),
+		border = C( 60, 210, 160),
+		bright = C(238, 255, 247),   -- #eefff7
+		track  = C(216, 255, 238),
+		disc   = C(  8,  29,  22),   -- #081d16
+	},
+
+	-- Pushed to pink, away from the reds that mean trouble, and the one skin
+	-- that moves them: see Alarm below.
+	ruby = {
+		label  = "Ruby",
+		family = "gem",
+		accent = C(255,  92, 138),   -- #ff5c8a
+		deep   = C(224,  54, 106),   -- #e0366a
+		bg     = C( 38,   8,  20),
+		border = C(255, 100, 150),
+		bright = C(255, 240, 244),   -- #fff0f4
+		track  = C(255, 224, 234),
+		disc   = C( 42,  10,  22),   -- #2a0a16
+	},
+
+	-- SEASONS: the mechanism inverted. The glass carries the colour and is a
+	-- shade more solid for it (`lift`), the accent is a soft near-white, and
+	-- the rim takes the glass's hue rather than the accent's.
+	winter = {
+		label  = "Winter",
+		family = "seasons",
+		lift   = 0.04,
+		accent = C(232, 244, 255),   -- #e8f4ff
+		deep   = C(184, 212, 244),   -- #b8d4f4
+		bg     = C( 10,  20,  42),
+		border = C(140, 180, 240),
+		bright = C(244, 249, 255),   -- #f4f9ff
+		track  = C(220, 235, 255),
+		disc   = C( 10,  20,  48),   -- #0a1430
+	},
+
+	spring = {
+		label  = "Spring",
+		family = "seasons",
+		lift   = 0.04,
+		accent = C(220, 242, 180),   -- #dcf2b4
+		deep   = C(180, 220, 132),   -- #b4dc84
+		bg     = C( 12,  30,  16),
+		border = C(120, 200, 120),
+		bright = C(244, 255, 240),   -- #f4fff0
+		track  = C(228, 255, 220),
+		disc   = C( 10,  30,  16),   -- #0a1e10
+	},
+
+	-- Sun-cream, on the reserved gold's hue: takes Dusk's gold.
+	summer = {
+		label  = "Summer",
+		family = "seasons",
+		lift   = 0.04,
+		accent = C(255, 233, 184),   -- #ffe9b8
+		deep   = C(240, 207, 138),   -- #f0cf8a
+		bg     = C(  6,  28,  38),
+		border = C( 80, 180, 200),
+		bright = C(255, 250, 240),   -- #fffaf0
+		track  = C(224, 248, 255),
+		disc   = C(  6,  28,  38),   -- #061c26
+	},
+
+	autumn = {
+		label  = "Autumn",
+		family = "seasons",
+		lift   = 0.04,
+		accent = C(245, 192, 160),   -- #f5c0a0
+		deep   = C(224, 152, 112),   -- #e09870
+		bg     = C( 42,  16,   8),
+		border = C(220, 130,  80),
+		bright = C(255, 244, 236),   -- #fff4ec
+		track  = C(255, 230, 214),
+		disc   = C( 42,  16,   8),   -- #2a1008
 	},
 }
 
@@ -354,14 +476,15 @@ local SEMANTIC = {
 --  alpha, and that is the whole reason four skins cost four rows rather than
 --  four files: there is nothing in this function that can be got wrong for one
 --  skin and right for the others.
---- The reserved gold, and THE ONE PLACE A SKIN NAME IS TESTED.
+--- The reserved gold, and ONE OF THE TWO PLACES A SKIN NAME IS TESTED.
 --
 --  It carries meaning rather than chrome - the leader crown, the dock arrow,
 --  Convert to Raid, the console's landing warning - so it belongs with the
 --  other meanings and not with the six a skin remaps. Dusk is the exception,
---  and only Dusk: its own accent is #f0d9a8, which is this colour exactly, so
---  on that skin alone the warning was the frame's own rim. One shade deeper
---  and the two are told apart again.
+--  and Summer with it: Dusk's own accent is #f0d9a8, which is this colour
+--  exactly, and Summer's sun-cream sits on the same hue, so on those two the
+--  warning was the frame's own rim. One shade deeper and the two are told
+--  apart again.
 --
 --  Every read goes through Palette.c.semanticGold. Spell the hex at a call
 --  site and this test is somewhere else as well, which is the whole thing it
@@ -371,18 +494,52 @@ local GOLD_DIM  = C(232, 200, 106)   -- #e8c86a, its companion tint
 local DUSK_GOLD = C(255, 207, 102)   -- #ffcf66
 
 local function Gold(skin)
-	if skin == "dusk" then return DUSK_GOLD, DUSK_GOLD end
+	if skin == "dusk" or skin == "summer" then return DUSK_GOLD, DUSK_GOLD end
 	return GOLD, GOLD_DIM
 end
+
+--- The trouble reds, and THE OTHER PLACE A SKIN NAME IS TESTED.
+--
+--  Ruby, and only Ruby. Error coral and the alarm red share its family, and
+--  threat is drawn as rims and glows - exactly where a skin's chrome lives. In
+--  Ruby they move one step to orange-coral (skins v2), the same pattern as the
+--  gold above. Reaction red is not one of them: it says what a unit IS, and
+--  always rides a capsule rather than the frame's own rim.
+--
+--  `alarm` is the deep red a failure chip is filled with so white type sits
+--  on it. Everywhere but Ruby it is the error red taken 35% darker, which is
+--  what the threat alarm drew before the token existed.
+local ERROR_RED = C(255, 138,  74)   -- #ff8a4a
+local ALARM_RED = C(232,  96,  42)   -- #e8602a
+local ERROR_TOKENS = {
+	"danger", "dangerText", "dangerEdge", "dangerHover",
+	"laneFlash", "auraDispel", "mirrorFatigue",
+}
+
+local function Alarm(skin)
+	if skin == "ruby" then return ERROR_RED, ALARM_RED end
+end
+
+--- What a skin does not write down, from what it does.
+local function Soft(k)
+	if k.soft then return k.soft end
+	local b, a = k.bright, k.accent
+	return { (b[1] + a[1]) / 2, (b[2] + a[2]) / 2, (b[3] + a[3]) / 2, 1 }
+end
+
 local function Compose(name, k)
 	local gold, goldDim = Gold(name)
+	local lift = k.lift or 0
+	k.soft = Soft(k)
 	local c = {
-		label = k.label,
+		label  = k.label,
+		family = k.family,
 
-		-- the frosted surface, at the three weights it is used at
-		glass       = A_(k.bg, 0.55),
-		glassSoft   = A_(k.bg, 0.40),
-		glassStrong = A_(k.bg, 0.68),
+		-- the frosted surface, at the three weights it is used at. A Seasons
+		-- skin lifts all three a step, because its colour IS the glass.
+		glass       = A_(k.bg, 0.55 + lift),
+		glassSoft   = A_(k.bg, 0.40 + lift),
+		glassStrong = A_(k.bg, 0.68 + lift),
 		dialogFill  = A_(k.bg, 0.97),
 
 		-- its rim, bright and ordinary
@@ -423,7 +580,7 @@ local function Compose(name, k)
 		btnEdge     = A_(k.border, 0.32),
 		btnHover    = A_(k.border, 0.14),
 
-		-- the reserved gold, which Dusk and only Dusk moves
+		-- the reserved gold, which only Dusk and Summer move
 		semanticGold    = A_(gold, 1),
 		semanticGoldDim = A_(goldDim, 1),
 
@@ -458,13 +615,40 @@ local function Compose(name, k)
 	}
 
 	for token, v in pairs(SEMANTIC) do c[token] = v end
+
+	local err, alarm = Alarm(name)
+	if err then
+		for _, token in ipairs(ERROR_TOKENS) do
+			c[token] = A_(err, SEMANTIC[token][4])
+		end
+	end
+	local d = c.danger
+	c.alarm = alarm and A_(alarm, 1)
+		or { d[1] * (1 - 0.35), d[2] * (1 - 0.35), d[3] * (1 - 0.35), 1 }
 	return c
 end
 
---- The family in the order it is offered, which is the day it is named for and
---  not the alphabet. Four swatches reading dawn, dusk, midnight, noon say
---  nothing; Midnight, Dawn, Noon, Dusk says what the set IS.
-Palette.order = { "midnight", "dawn", "noon", "dusk" }
+--- The skins in the order they are offered: family by family, and each family
+--  in its own order rather than the alphabet's. Four swatches reading dawn,
+--  dusk, midnight, noon say nothing; Midnight, Dawn, Noon, Dusk says what the
+--  set IS, and Winter to Autumn is the year.
+Palette.order = {
+	"midnight", "dawn", "noon", "dusk",
+	"amethyst", "sapphire", "emerald", "ruby",
+	"winter", "spring", "summer", "autumn",
+}
+
+--- The three rows the picker draws, in order, each with its skins.
+Palette.families = {}
+for _, name in ipairs(Palette.order) do
+	local fam = CHROME[name].family
+	local last = Palette.families[#Palette.families]
+	if not last or last.key ~= fam then
+		last = { key = fam, skins = {} }
+		Palette.families[#Palette.families + 1] = last
+	end
+	last.skins[#last.skins + 1] = name
+end
 
 Palette.skins = {}
 for _, name in ipairs(Palette.order) do
@@ -505,7 +689,7 @@ end
 function Palette:List()
 	local out = {}
 	for _, k in ipairs(Palette.order) do
-		out[#out + 1] = { key = k, label = Palette.skins[k].label }
+		out[#out + 1] = { key = k, label = Palette.skins[k].label, family = Palette.skins[k].family }
 	end
 	return out
 end

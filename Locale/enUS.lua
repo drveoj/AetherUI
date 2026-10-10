@@ -987,7 +987,10 @@ L["options.general.shadow.name"] = "Shadow opacity"
 L["options.general.skin.desc"] =
 	"Each one is its own accent on its own glass. The change is live - "
 		.. "no reload."
+L["options.general.skin.gem"] = "Gem"
 L["options.general.skin.name"] = "Skin"
+L["options.general.skin.seasons"] = "Seasons"
+L["options.general.skin.sky"] = "Sky"
 L["options.general.snap.name"] = "Snap to edges"
 L["options.general.snap_distance.desc"] =
 	"How close an edge has to come before it is caught. Much above 20 "
