@@ -11,7 +11,7 @@
 
 	THE PARENT MODEL (Lattice). A node can hang from another node - its PARENT
 	- rather than from the screen, and a node that moves carries everything
-	bonded to it: the pet and focus capsules hang from the player, the ToT from
+	bonded to it: the pet capsule hangs from the player, the ToT from
 	the target, bars 1 and 2 from the spine's centre, and the stance, pet and
 	extra-action bars from bar 1 ("actions are bonded to actions" - Joe). A
 	parent is another node's name, or nothing for the screen.
