@@ -461,15 +461,17 @@ function PF:Layout()
 end
 
 -- ---------------------------------------------------------------------------
--- the controls panel
+-- the controls: the Toolbox trunk's Party branch
 --
 -- What the client's own Party Members flyout does - assign a target mark, call
 -- a ready check, start a countdown, poll for roles, turn the party into a raid
--- - in this interface's glass.
+-- - as a branch off the Toolbox trunk (Joe, 2026-10-07, decision 1 of the
+-- prune audit). The edge handle and its slide went with the drawer era. The
+-- node is there while you are in a group: with nobody to command it is a door
+-- to nothing.
 --
--- NOT SECURE, and it does not need to be: none of these four is a protected
--- call on this game version. That is worth saying because every other frame
--- near a unit in this addon is secure and the habit is catching.
+-- NOT SECURE, and it does not need to be: none of these is a protected call
+-- on this game version, and the party stack no longer hangs from it.
 -- ---------------------------------------------------------------------------
 
 local PANEL_W   = 320
@@ -477,6 +479,7 @@ local WELL      = 34
 local WELL_GAP  = 6
 local ROW_H     = 30
 local MARKERS   = 8
+local PANEL_PAD, HEAD_H = 16, 26
 
 --- How long a countdown runs, and the choices offered.
 --
@@ -484,256 +487,55 @@ local MARKERS   = 8
 --  C_PartyInfo.DoCountdown refuses anything longer and says nothing about it.
 local COUNTDOWNS = { 5, 10, 15, 30 }
 
---- Which screen edge the panel comes off.
---
---  A PANEL FLOATING IN THE MIDDLE IS NOT A DOCK. The brief has this sliding
---  out of a handle flush to a screen edge, and half of that shape is the
---  panel being AT the edge - it reads as drawn out of the side of the
---  screen rather than dropped on top of the game.
---
---  In db.char, like the Toolbox drawer's edge and for the same reason: a
---  drawer edge is a per-character habit rather than a look, and one
---  character's is not another's.
-local EDGES = { LEFT = true, RIGHT = true, TOP = true, BOTTOM = true }
+local function Trunk() return A.Trunk:Get("toolbox") end
 
---- Which way a dock runs. Up here with the edges rather than down with the
---- handle that reads it: AnchorPanel is written above the handle and needs
---- it, and a `local function` used before its declaration resolves to a
---- GLOBAL - which is nil, and errors on every event that touches the panel.
-local function IsVertical(edge)
-	return edge == "LEFT" or edge == "RIGHT"
-end
--- The handle's measurements, up here for the same reason: AnchorPanel bites
--- the panel into the handle by HANDLE_BITE, and it is written above the code
--- that draws one.
---- Where along its edge the handle sits.
---
---  NOT THE MIDDLE. The Toolbox rail lives at the middle of its edge, and
---  both default to LEFT, so a handle centred on that edge lands on top of
---  it. The client puts its own party dock about a quarter of the way down,
---  which is where a player already looks for it and is clear of the rail by
---  construction rather than by collision-detection.
---
---  Two slots per edge - a quarter along and three quarters - so a second
---  thing can share an edge without either of them hunting for space.
-local SLOT_FRACTION = { [1] = 0.25, [2] = 0.75 }
-
--- 300ms, per the brief, as a rate so the slide reverses rather than queues.
--- The same number the bags drawer uses, and the same step: W.StepTravel's.
-local SLIDE_RATE = 1 / 0.30
-
-local HANDLE_THICK  = 34
-local HANDLE_LONG   = 68
-local HANDLE_CORNER = 8
-local HANDLE_BITE   = HANDLE_CORNER
-local HANDLE_GLYPH  = 18
-local HANDLE_CHEV   = 11
-
-function PF:PanelEdge()
-	local c = A.db and A.db.char
-	local e = c and c.partyDock
-	return (e and EDGES[e]) and e or "LEFT"
+local function InGroup()
+	return (GetNumGroupMembers and GetNumGroupMembers() or 0) > 0
 end
 
-function PF:PanelSlot()
-	local c = A.db and A.db.char
-	local n = c and c.partyDockSlot
-	return SLOT_FRACTION[n] and n or 1
-end
-
-function PF:SetPanelSlot(n)
-	if not SLOT_FRACTION[n] then return false end
-	A.db.char.partyDockSlot = n
-	self:LayoutHandle()
-	self:AnchorPanel()
-	return true
-end
-
-function PF:SetPanelEdge(edge)
-	if not EDGES[edge] then return false end
-	A.db.char.partyDock = edge
-	self:AnchorPanel()
-	return true
-end
-
---- Where the stack sits, when you have not said.
---
---  ATTACHED TO THE DOCK UNTIL YOU MOVE IT. The client's own party frames
---  come off the left edge with the controls, and somebody installing this
---  should find their party where they left it rather than somewhere new
---  they now have to tidy up. Drag the stack once and it is yours - Movers
---  has written an anchor and that is the answer from then on.
---
---  /aether party reset drops the anchor and hands it back to the dock.
---
---  ANCHORED TO THE PANEL EVEN WHILE IT IS SHUT, which is the point rather
---  than an oversight: a hidden frame still has a position, so the stack
---  stays exactly where it is whether the controls are open or not. Tying it
---  to whether the panel is showing is how a party frame moves every time
---  you glance at the controls.
-local DOCK_GAP = 8
-
-local ATTACH = {
-	LEFT   = { "TOPLEFT",     "TOPRIGHT",     DOCK_GAP,  0 },
-	RIGHT  = { "TOPRIGHT",    "TOPLEFT",     -DOCK_GAP,  0 },
-	TOP    = { "TOP",         "BOTTOM",       0, -DOCK_GAP },
-	BOTTOM = { "BOTTOM",      "TOP",          0,  DOCK_GAP },
-}
-
-function PF:StackIsPlaced()
-	local a = A.db and A.db.profile and A.db.profile.anchors
-	return (a and a.party) ~= nil
-end
-
---- Whether the dock's own furniture can be moved right now.
---
---  THE PANEL AND THE HANDLE ARE PROTECTED FRAMES, which is not something you
---  can see by looking at them: both are plain frames on UIParent, neither
---  carries a secure template, and nothing in this file marks them. AnchorStack
---  is what does it. It hangs the stack - whose capsules hold secure buttons -
---  off whichever of the two is showing, and a frame a protected frame is
---  anchored to is in that frame's anchor family and restricted with it.
---
---  AnchorStack already knew this about ITSELF and said so in as many words.
---  What nobody noticed is that the same line makes the HOST protected too, so
---  every SetPoint, SetSize, SetScale and SetShown on the panel and the handle
---  is refused for the whole fight. Reported from the game: five blocked calls
---  on PLAYER_TARGET_CHANGED, which fires constantly in combat because the
---  panel's marker grid follows your target.
---
---  Nothing is lost by waiting. Everything that lays this dock out runs off the
---  roster sweep, and the sweep is registered on PLAYER_REGEN_ENABLED.
-function PF:Locked()
-	return (InCombatLockdown and InCombatLockdown()) and true or false
-end
-
-function PF:AnchorStack()
-	if not self.stack or not self.panel then return false end
-	if self:StackIsPlaced() then return false end
-	
-	-- NOT IN A FIGHT. The stack carries secure children, so re-anchoring it
-	-- is a protected call - and this runs from the roster sweep, which is
-	-- exactly what fires when somebody in your party dies mid-pull. The
-	-- suite caught this the moment the handle started calling it: eleven
-	-- refused calls on one event.
-	--
-	-- And this line is also why PF:Locked exists at all - see it.
-	if self:Locked() then return false end
-	-- IT SHIFTS WITH THE DRAWER, the way the client's own party frames do:
-	-- off the panel while the controls are open, off the handle while they
-	-- are shut. Opening the controls pushes the party out of the way rather
-	-- than drawing over it.
-	--
-	-- An earlier version anchored to the panel either way, on the argument
-	-- that a frame should not move when you glance at something. That is a
-	-- fine argument and it is not what the default UI does, which is what
-	-- somebody installing this has in their hands already.
-	local host = (self:PanelOpen() and self.panel) or self.handle or self.panel
-	local a = ATTACH[self:PanelEdge()] or ATTACH.LEFT
-	self.stack:ClearAllPoints()
-	self.stack:SetPoint(a[1], host, a[2], a[3], a[4])
-	return true
-end
-
---- Hand the stack back to the dock.
+--- Hand the stack back to its default place: a fixed spot clear of the
+--  Toolbox trunk, until it is dragged.
 function PF:ResetStack()
 	if A.db and A.db.profile and A.db.profile.anchors then
 		A.db.profile.anchors.party = nil
 	end
-	self:BuildPanel()
-	return self:AnchorStack()
+	if A.Movers and not InCombatLockdown() then A.Movers:Restore("party") end
+	return true
 end
 
---- Whether the controls are out. The INTENT, not where the slide has got to,
---- so the arrow turns over the moment you click rather than halfway back.
 function PF:PanelOpen()
-	return (self._want or 0) > 0.5
+	return self.panel and self.panel:IsShown() and true or false
 end
 
---- Where the panel and its handle sit, from the travel.
---
---  THE HANDLE RIDES THE PANEL'S OUTER EDGE rather than staying put on the
---  screen. Blizzard's own party dock leaves its tab where it is and reveals
---  the panel beside it, and this copied that - but the Toolbox drawer and the
---  bags drawer both carry their handle out with them, and three docks in one
---  interface disagreeing about whether the handle moves is the kind of thing
---  you notice without being able to name.
---
---  CLAMPED AT THE SCREEN EDGE, which is what the Toolbox's rail does and for
---  the same reason: shut, the panel is a full width off screen, so a handle
---  simply hung off it would go with it and sit a bite's worth past the edge
---  with its icons cut off. The bite is a JOIN with the panel, and there is
---  nothing to join to once the panel has gone.
-function PF:AnchorPanel(moving)
-	local p = self.panel
-	if not p then return end
-
-	-- Every line below this is a protected call on a frame the stack is
-	-- anchored to. See PF:Locked.
-	if self:Locked() then return end
-
-	local h = self.handle
-	if h then self:LayoutHandle() end
-
-	-- BOTH AT THE PROFILE'S SCALE, set here rather than only where the panel
-	-- is filled in. Everything below is measured in the anchored frame's own
-	-- units, and one conversion serves the two of them only while the two
-	-- agree - so a scale change that reached the handle and not the panel put
-	-- the handle a third of the way down the screen and the panel a quarter.
-	p:SetScale(A.db.profile.scale or 1)
-
-	local edge = self:PanelEdge()
-	local t = self._travel or 0
-	local w, ph = p:GetWidth() or 0, p:GetHeight() or 0
-
-	-- ALONG the edge, at its slot, and in the PANEL's own units. SetPoint
-	-- measures in the anchored frame's coordinate space and this frame runs at
-	-- the profile scale, so a quarter of the screen expressed in UIParent
-	-- pixels lands at a third of it at 0.71. The handle is at the same scale,
-	-- which is why one conversion serves both.
-	local ps = p:GetEffectiveScale() or 1
-	local us = UIParent:GetEffectiveScale() or 1
-	local k = (ps > 0 and us > 0) and (us / ps) or 1
-	local frac = SLOT_FRACTION[self:PanelSlot()] or 0.25
-
-	local ox, oy = W.ClosedOffset(edge, w, ph)
-	local dx, dy = ox * (1 - t), oy * (1 - t)
-
-	p:ClearAllPoints()
-	if h then h:ClearAllPoints() end
-
-	if IsVertical(edge) then
-		-- 0.25 is a quarter down from the TOP, so the offset is positive.
-		local da = (0.5 - frac) * (UIParent:GetHeight() or 768) * k
-		p:SetPoint(edge, UIParent, edge, dx, da)
-		if h then
-			local hx = (edge == "LEFT") and math.max(0, dx + w - HANDLE_BITE)
-				or math.min(0, dx - w + HANDLE_BITE)
-			h:SetPoint(edge, UIParent, edge, hx, da)
-		end
-	else
-		local da = (frac - 0.5) * (UIParent:GetWidth() or 1024) * k
-		p:SetPoint(edge, UIParent, edge, da, dy)
-		if h then
-			local hy = (edge == "TOP") and math.min(0, dy - ph + HANDLE_BITE)
-				or math.max(0, dy + ph - HANDLE_BITE)
-			h:SetPoint(edge, UIParent, edge, da, hy)
-		end
-	end
-
-	-- OFF SCREEN IS NOT ENOUGH. A panel parked past the edge is out of sight
-	-- and still a live frame under the cursor at the map's corner, so it goes
-	-- properly away once it has ARRIVED there - not the moment it is asked to
-	-- close, which would take the slide with it.
-	p:SetShown(t > 0 or self:PanelOpen())
-
-	-- The stack rides with it, unless it has been placed by hand. NOT on the
-	-- animation frame: re-anchoring it moves secure children and is refused in
-	-- combat, so once per open is one chance to be refused and sixty times a
-	-- second is sixty. It shifts on the INTENT, at the start, so the party
-	-- moves out of the way as the panel comes out rather than after it.
-	if not moving then self:AnchorStack() end
+--- Open or shut the Party branch, one branch at a time like the rest.
+function PF:SetPanelOpen(open)
+	if (open and true or false) ~= self:PanelOpen() then Trunk():Toggle("party") end
+	return self:PanelOpen()
 end
+
+function PF:TogglePanel()
+	Trunk():Toggle("party")
+	return self:PanelOpen()
+end
+
+function PF:OpenPanel()
+	local p = self:BuildPanel()
+	self:RefreshPanel()
+	if Trunk():Place("party", p) then p:Show() end
+end
+
+function PF:AttachNode()
+	Trunk():AddNode("party", {
+		icon = "party", label = _G.PARTY or "Party", order = 450,
+		transient = true,
+		available = function() return PF.enabled and InGroup() end,
+		isOpen = function() return PF:PanelOpen() end,
+		open = function() PF:OpenPanel() end,
+		close = function() if PF.panel then PF.panel:Hide() end end,
+	})
+	self._inGroup = InGroup()
+end
+
 local function MaxCountdown()
 	local k = _G.Constants and _G.Constants.PartyCountdownConstants
 	return (k and k.MaxCountdownSeconds) or 60
@@ -893,270 +695,23 @@ local function BuildRow(panel, spec)
 	return b
 end
 
--- ---------------------------------------------------------------------------
--- the dock handle
---
--- A slim glass tab flush to a screen edge: the party glyph, how many of you
--- there are, and an arrow. Click it and the controls come out.
---
--- SAME SHAPE AS THE TOOLBOX RAIL, and by the same trick rather than by the
--- same code. A tab beside a panel is two capsules with a gap of shadow
--- between them; overlapped INTO the panel by its own corner radius, the inner
--- curve is hidden behind the panel and it reads as a tab growing out of the
--- drawer's edge. Shut, the same overlap puts that curve off the screen edge,
--- so it hugs there too.
--- ---------------------------------------------------------------------------
-
-function PF:BuildHandle()
-	if self.handle then return self.handle end
-
-	local h = Glass.CreatePanel(UIParent, {
-		frameType = "Button",
-		corner = HANDLE_CORNER,
-		shadow = A.db.profile.glass.shadow,
-	})
-	-- Above the panel it opens, and above the party capsules, because it is
-	-- the thing you press to reach both.
-	h:SetFrameStrata("HIGH")
-	self.handle = h
-
-	local glyph = h:CreateTexture(nil, "OVERLAY")
-	glyph:SetSize(HANDLE_GLYPH, HANDLE_GLYPH)
-	-- "party" is an alias of the social glyph in Core/Media.lua - the same
-	-- pair of figures, not a second drawing of them.
-	A.Media:SetIcon(glyph, "party")
-	W.Tint(glyph, A.Palette.c.text)
-	h.glyph = glyph
-
-	local count = W.Text(h, "tiny", "CENTER")
-	h.count = count
-
-	-- THE ARROW IS THE RESERVED GOLD, which is the brief's one conditional
-	-- colour - so it reads through W.Tint and follows a skin change on its
-	-- own, and on Dusk it is the deeper gold rather than the chrome.
-	local chev = h:CreateTexture(nil, "OVERLAY")
-	chev:SetSize(HANDLE_CHEV, HANDLE_CHEV)
-	chev:SetTexture(A.Media.texture.chevron)
-	-- WHITE, NOT GOLD. The brief tints this arrow with the reserved gold and
-	-- the Toolbox rail's chevron - the same control on the same screen edge
-	-- doing the same job - is plain text at 75%. Two docks whose arrows
-	-- disagree is a detail nobody can name and everybody sees.
-	W.Tint(chev, A.Palette.c.text, 0.75)
-	h.chev = chev
-
-	-- WHAT IT IS, while you are placing things. Beside the handle rather
-	-- than on it: this tab is 34 units across and a word laid over it is a
-	-- word laid across a strip narrower than itself. The Toolbox rail's
-	-- placement label does the same.
-	--
-	-- A child even though it is anchored outside the frame: a region may be
-	-- positioned beyond its parent's bounds and still draws, and being a
-	-- child is what makes it vanish with the handle.
-	local tag = W.Text(h, "tbSection", "CENTER")
-	tag:Hide()
-	h.tag = tag
-
-	-- DRAGGABLE WHILE THE FRAMES ARE UNLOCKED, which is how the Toolbox rail
-	-- re-docks and how everything else in this interface is moved. No second
-	-- gesture to learn: /aether unlock, drag it, lock again.
-	--
-	-- The preview is the handle ITSELF, moving to whichever of the eight
-	-- points the cursor is nearest as you drag. The Toolbox draws ghost
-	-- rectangles because its drawer is a quarter of the screen and you cannot
-	-- see where it would land; this is a tab the size of a postage stamp, and
-	-- watching it go there is a clearer answer than a rectangle saying it
-	-- will.
-	h:EnableMouse(true)
-	h:RegisterForDrag("LeftButton")
-
-	local function Stop()
-		h:SetScript("OnUpdate", nil)
-		PF._dragging = nil
-		if GameTooltip then GameTooltip:Hide() end
-	end
-
-	h:SetScript("OnDragStart", function()
-		-- Locked frames are locked. The same gate the rail uses, and the same
-		-- one that stops a stray click on a crowded screen re-docking it.
-		if not (A.Movers and A.Movers.unlocked) then return end
-		if InCombatLockdown and InCombatLockdown() then return end
-		PF._dragging = true
-		h:SetScript("OnUpdate", function()
-			-- The fight can start with the button still down, and re-docking
-			-- moves the party stack, which carries secure children. Drop the
-			-- drag rather than find out.
-			if InCombatLockdown and InCombatLockdown() then return Stop() end
-			local us = UIParent:GetEffectiveScale() or 1
-			if us <= 0 then return end
-			local mx, my = GetCursorPosition()
-			local x, y = mx / us, my / us
-			local edge = W.NearestEdge(x, y)
-			if not edge then return end
-			local slot = W.EdgeSlot(edge, x, y)
-			if edge ~= PF:PanelEdge() then PF:SetPanelEdge(edge) end
-			if slot ~= PF:PanelSlot() then PF:SetPanelSlot(slot) end
-		end)
-	end)
-	h:SetScript("OnDragStop", function()
-		if not PF._dragging then return end
-		Stop()
-		A:Print(A.F(L.party.build_handle.party_dock_s, A.Val(PF:PanelEdge():lower()))
-			.. "  " .. A.Dim(A.F(L.party.build_handle.slot_s, PF:PanelSlot())))
-	end)
-	h:SetScript("OnClick", function() PF:TogglePanel() end)
-	h:SetScript("OnEnter", function(self2)
-		W.SetButtonState(self2, false, true)
-		if not GameTooltip then return end
-		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
-		GameTooltip:SetText(_G.PARTY or "Party")
-		-- Only while it CAN be dragged. A line telling you to do something
-		-- the interface will refuse is worse than no line.
-		if A.Movers and A.Movers.unlocked then
-			local c = A.Palette.c
-			GameTooltip:AddLine("Drag to another screen edge.",
-				c.textDim[1], c.textDim[2], c.textDim[3])
-		end
-		GameTooltip:Show()
-	end)
-	h:SetScript("OnLeave", function(self2)
-		W.SetButtonState(self2, false, false)
-		if GameTooltip then GameTooltip:Hide() end
-	end)
-
-	-- Called once immediately with the current state, so enabling the module
-	-- while the frames are already unlocked does not leave this the one
-	-- thing on screen that looks fixed.
-	A.Movers:OnLockChanged("partydock", function(unlocked)
-		PF:SetHandleMovable(unlocked)
-	end)
-
-	self:LayoutHandle()
-	return h
-end
-
---- Where the handle sits, which way its arrow points, and what it says.
---- What the handle looks like while the frames are unlocked.
---
---  THE SAME ACCENT WASH every other movable thing wears. This one is not a
---  Movers frame - it docks to an edge rather than sitting at a point - so
---  it gets no handle of its own, and without this it was the one thing on an
---  unlocked screen that gave no sign it could be moved.
-function PF:SetHandleMovable(on)
-	local h = self.handle
-	if not h then return end
-	local c = A.Palette.c
-	if on then
-		h:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], 0.22 })
-		h:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.85 })
-	else
-		-- Back to the skin's own, by token, so a restyle while locked still
-		-- reaches it.
-		h:ApplySkin()
-	end
-	if h.tag then
-		h.tag:SetText(_G.PARTY and _G.PARTY:upper() or "PARTY")
-		W.Color(h.tag, c.text)
-		h.tag:SetShown(on and true or false)
-	end
-	self._movable = on and true or false
-end
-
-function PF:LayoutHandle()
-	local h = self.handle
-	if not h then return end
-
-	-- ALL OF IT, not just the three calls on the button. The size and the
-	-- visibility below are protected (see PF:Locked) and the glyph positions
-	-- that sit between them are not - but a handle laid out for an edge it has
-	-- not been resized for is a worse state than a handle left alone, and the
-	-- sweep on PLAYER_REGEN_ENABLED does the whole thing again a moment later.
-	if self:Locked() then return end
-
-	local edge = self:PanelEdge()
-	local vertical = IsVertical(edge)
-
-	h:SetScale(A.db.profile.scale or 1)
-	-- WHERE it goes is AnchorPanel's, not this function's: the handle rides
-	-- the panel's outer edge now, so its position falls out of the travel
-	-- rather than out of the slot alone.
-	if vertical then
-		h:SetSize(HANDLE_THICK, HANDLE_LONG)
-	else
-		h:SetSize(HANDLE_LONG, HANDLE_THICK)
-	end
-
-	-- Laid out ALONG the edge it is docked on, so the three things read in a
-	-- line rather than stacked into a tab that is the wrong way round.
-	h.glyph:ClearAllPoints()
-	h.count:ClearAllPoints()
-	h.chev:ClearAllPoints()
-	if vertical then
-		h.glyph:SetPoint("TOP", h, "TOP", 0, -7)
-		h.count:SetPoint("TOP", h.glyph, "BOTTOM", 0, -3)
-		h.chev:SetPoint("BOTTOM", h, "BOTTOM", 0, 6)
-	else
-		h.glyph:SetPoint("LEFT", h, "LEFT", 7, 0)
-		h.count:SetPoint("LEFT", h.glyph, "RIGHT", 4, 0)
-		h.chev:SetPoint("RIGHT", h, "RIGHT", -6, 0)
-	end
-
-	-- The label goes INBOARD, on the side with screen to spare - a word
-	-- outboard of a handle hard against the edge is off the screen.
-	if h.tag then
-		h.tag:ClearAllPoints()
-		if edge == "LEFT" then
-			h.tag:SetPoint("LEFT", h, "RIGHT", 10, 0)
-		elseif edge == "RIGHT" then
-			h.tag:SetPoint("RIGHT", h, "LEFT", -10, 0)
-		elseif edge == "TOP" then
-			h.tag:SetPoint("TOP", h, "BOTTOM", 0, -8)
-		else
-			h.tag:SetPoint("BOTTOM", h, "TOP", 0, 8)
-		end
-	end
-
-	W.PointChevron(h.chev, edge, self:PanelOpen())
-
-	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-	h.count:SetText(n > 0 and (n .. "/" .. n) or "")
-	W.Color(h.count, A.Palette.c.textDim)
-
-	-- NOT IN A GROUP, NOT ON SCREEN. A dock to party controls with nobody in
-	-- the party is a tab that does nothing, permanently, on the edge of every
-	-- screen - and this addon already has one thing living there.
-	h:SetShown(n > 0)
-end
 function PF:BuildPanel()
 	if self.panel then return self.panel end
-	-- Before the panel, because the panel hangs off it.
-	self:BuildHandle()
 
-	local p = Glass.CreatePanel(UIParent, {
-		corner = W.PANEL_CORNER, fill = "dialogFill", edge = "glassEdgeHi",
-		shadow = A.db.profile.glass.shadow,
-	})
-	p:SetWidth(PANEL_W)
-	p:Hide()
+	local p = Trunk():Branch("ToolboxParty", PANEL_W)
 	self.panel = p
 
-	-- header
-	local title = W.Text(p, "qlHeading", "LEFT")
-	title:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -14)
-	title:SetText(_G.PARTY or "Party")
-	p.title = title
+	-- Junction-and-strand headings (the panel vocabulary): the party with its
+	-- count on the strand's end, then the marks.
+	p.head = A.Trunk.Head(p)
+	p.head:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD, -PANEL_PAD)
+	p.head:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PANEL_PAD, -PANEL_PAD)
+	p.count = p.head.hint
 
-	local count = W.Text(p, "tiny", "LEFT")
-	count:SetPoint("LEFT", title, "RIGHT", 8, 0)
-	p.count = count
-
-	local rule = W.Divider(p)
-	rule:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -40)
-	rule:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, -40)
-
-	local label = W.Text(p, "tiny", "LEFT")
-	label:SetPoint("TOPLEFT", p, "TOPLEFT", 16, -50)
-	label:SetText((_G.RAID_TARGET_ICON or "Target markers"):upper())
-	W.Color(label, A.Palette.c.textDim)
+	p.marks = A.Trunk.Head(p)
+	p.marks:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD, -(PANEL_PAD + HEAD_H))
+	p.marks:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PANEL_PAD, -(PANEL_PAD + HEAD_H))
+	p.marks:Set(_G.RAID_TARGET_ICON or "Target markers", "")
 
 	-- FIVE ACROSS, TWO DOWN: eight marks and a Clear spanning the last two
 	-- cells, which is the brief's grid and also the one that fits 320 wide.
@@ -1164,10 +719,8 @@ function PF:BuildPanel()
 	-- circle, star. That is not an arrangement, it is THE arrangement -
 	-- Blizzard's own grid has read that way since the marks existed, and
 	-- everybody reaches for the skull in the top-left without looking.
-	-- Laying them out 1 to 8 puts the star there instead and every mark you
-	-- set is the wrong one until you slow down and read the grid.
 	p.wells = {}
-	local x0, y0 = 16, -70
+	local x0, y0 = PANEL_PAD, -(PANEL_PAD + HEAD_H * 2)
 	for slot = 1, MARKERS do
 		local index = MARKERS + 1 - slot
 		local b = BuildWell(p, index)
@@ -1182,17 +735,13 @@ function PF:BuildPanel()
 	clear:SetPoint("TOPLEFT", p, "TOPLEFT",
 		x0 + 3 * (WELL + WELL_GAP), y0 - (WELL + WELL_GAP))
 	p.clear = clear
-
-	local rule2 = W.Divider(p)
-	rule2:SetPoint("TOPLEFT", p, "TOPLEFT", 14, y0 - 2 * (WELL + WELL_GAP) - 8)
-	rule2:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, y0 - 2 * (WELL + WELL_GAP) - 8)
-	p.rule2 = rule2
+	p.rowsTop = -y0 + 2 * (WELL + WELL_GAP) + 8
 
 	p.rows = {}
 	for i, spec in ipairs(ACTIONS) do
 		local b = BuildRow(p, spec)
-		b:SetPoint("LEFT", p, "LEFT", 14, 0)
-		b:SetPoint("RIGHT", p, "RIGHT", -14, 0)
+		b:SetPoint("LEFT", p, "LEFT", PANEL_PAD, 0)
+		b:SetPoint("RIGHT", p, "RIGHT", -PANEL_PAD, 0)
 		p.rows[i] = b
 	end
 
@@ -1210,23 +759,8 @@ function PF:RefreshPanel()
 	if not p then return end
 	local c = A.Palette.c
 
-	-- At the profile's scale, like every frame this addon draws. Here
-	-- rather than at build, because a scale change has to reach a panel
-	-- that was built before it.
-	--
-	-- THE GEOMETRY GOES, THE DRESSING STAYS. Both of these are protected calls
-	-- on the panel (see PF:Locked) and everything below them is not - and this
-	-- function's busiest caller is PLAYER_TARGET_CHANGED, whose whole reason
-	-- for being here is the marker grid. Skipping the lot would leave that grid
-	-- pointing at the wrong target for the length of a fight.
-	if not self:Locked() then
-		p:SetScale(A.db.profile.scale or 1)
-		self:AnchorPanel()
-	end
-
 	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-	p.count:SetText(n > 0 and (n .. "/" .. n) or "")
-	W.Color(p.count, c.textDim)
+	p.head:Set(_G.PARTY or "Party", n > 0 and (n .. "/" .. n) or "")
 
 	-- THE WELLS FOLLOW YOUR TARGET, not the party. Inert with nothing
 	-- targeted, because SetRaidTarget has no unit to act on - and a well that
@@ -1251,7 +785,7 @@ function PF:RefreshPanel()
 	-- HIDDEN, NOT DIMMED, and then the panel shortens. A greyed row is a row
 	-- you keep trying; a row that is not there is a question you do not ask.
 	local leader = IsLeader()
-	local y = -160
+	local y = -p.rowsTop
 	local shown = 0
 	for _, b in ipairs(p.rows) do
 		if b.spec.leader and not leader then
@@ -1267,81 +801,20 @@ function PF:RefreshPanel()
 			end
 		end
 	end
-	-- THE PANEL'S OWN HEIGHT IS PROTECTED and the rows above it are not, which
-	-- is why they are on opposite sides of this line. See PF:Locked. A row
-	-- appearing or going in a fight leaves the panel the size it was until the
-	-- sweep on PLAYER_REGEN_ENABLED, which is a little air at the foot of a
-	-- drawer rather than a refused call in the player's error log.
-	if not self:Locked() then
-		p:SetHeight(160 + shown * (ROW_H + 6) + 10)
-	end
+	p:SetHeight(p.rowsTop + shown * (ROW_H + 6) - 6 + PANEL_PAD)
+	-- Its height changed, so it is placed again beside its node.
+	if p:IsShown() then Trunk():Place("party", p) end
 end
 
---- Open or shut the controls, sliding unless told otherwise.
-function PF:SetPanelOpen(open, instant)
-	local p = self:BuildPanel()
-	self._want = open and 1 or 0
-
-	-- SHOWN BEFORE THE SLIDE STARTS, because a hidden frame gets no
-	-- OnUpdate and the driver hangs off the panel itself - opening one that
-	-- is still hidden would install a script nothing ever calls.
-	--
-	-- RefreshPanel re-anchors on its own account: it changes the panel's
-	-- HEIGHT, and where the handle sits on the edge comes out of that.
-	if open then
-		self:RefreshPanel()
-		p:Show()
-	end
-
-	if instant then
-		self._travel = self._want
-		W.StopSlide(p)
-		self:AnchorPanel()
-		return self:PanelOpen()
-	end
-
-	W.DriveSlide(p, self, SLIDE_RATE, function(o) o:AnchorPanel(true) end)
-	-- ONLY ON THE WAY IN. Closing does not go through RefreshPanel, so this
-	-- is where the arrow turns over and the party stack comes back to the
-	-- handle on that path - and doing it on both would move the stack twice
-	-- for one press, which is two protected calls where one will do.
-	if not open then self:AnchorPanel() end
-	return self:PanelOpen()
-end
-
-function PF:TogglePanel()
-	return self:SetPanelOpen(not self:PanelOpen())
-end
-
---- No group, no controls.
---
---  LayoutHandle takes the handle off screen the moment the group empties, and
---  the handle is the only thing that shuts the panel - so a panel that was open
---  when the last person left is a window with nothing to close it, sitting in
---  the middle of the screen for the rest of the session. Reported from the game:
---  uninvite the last member with the controls up and they stay up.
---
---  HERE RATHER THAN IN LayoutHandle, which is where the handle is hidden and
---  looks like the obvious home for it. AnchorPanel calls LayoutHandle, and
---  closing the panel calls AnchorPanel: the recursion terminates, because
---  `_want` is cleared first and the second pass finds the panel already shut,
---  but a rule that depends on the order of two assignments in another function
---  is a rule waiting to be broken. This is a fact about the ROSTER, so it lives
---  with the roster.
+--- No group, no controls, and no node: the branch shuts when the last person
+--  leaves, and the node comes and goes with the group.
 function PF:HideWithGroup()
-	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-	if n > 0 then return end
-	if not self.panel or not self:PanelOpen() then return end
-
-	-- Instant: it would otherwise slide back toward a handle that has just
-	-- gone, which is an animation to nowhere.
-	--
-	-- And nothing else. A `panel:Hide()` beside this looked like the belt to
-	-- that braces and was doing nothing: AnchorPanel already ends on
-	-- `SetShown(travel > 0 or open)`, so a shut panel at rest hides itself. A
-	-- line that repeats what the call it follows already did reads as a caller
-	-- that does not trust it.
-	self:SetPanelOpen(false, true)
+	local inGroup = InGroup()
+	if not inGroup and self:PanelOpen() then self.panel:Hide() end
+	if inGroup ~= self._inGroup then
+		self._inGroup = inGroup
+		Trunk():Refresh()
+	end
 end
 -- ---------------------------------------------------------------------------
 -- lifecycle
@@ -1369,10 +842,7 @@ function PF:RegisterEvents()
 	-- through the same sweep rather than through four handlers that would
 	-- drift apart.
 	local function sweep()
-		PF:LayoutHandle()
 		PF:RefreshPanel()
-		-- After both, because it asks whether the panel is open and the two
-		-- above are what decide where it is.
 		PF:HideWithGroup()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end
@@ -1403,13 +873,10 @@ function PF:RegisterEvents()
 end
 
 function PF:RegisterMovers()
-	-- onPlaced is what keeps this to ONE owner. Movers positions the stack
-	-- from the saved anchor or from the default, and then hands it back -
-	-- at which point the dock takes it if nobody has placed it. Without the
-	-- hook, unlocking the frames would snap it away from the dock.
+	-- 210 in from the left: clear of the Toolbox trunk's stubs and labels,
+	-- which run out to about 170 on that edge.
 	A.Movers:Register("party", self.stack,
-		{ point = "LEFT", relPoint = "LEFT", x = 140, y = 120 }, "Party",
-		{ onPlaced = function() PF:AnchorStack() end })
+		{ point = "LEFT", relPoint = "LEFT", x = 210, y = 120 }, "Party")
 end
 
 function PF:OnEnable()
@@ -1421,6 +888,7 @@ function PF:OnEnable()
 		self:Layout()
 		self:RegisterMovers()
 		self:RegisterEvents()
+		self:AttachNode()
 		for _, f in ipairs(self.frames) do
 			if f.unitWatched and RegisterUnitWatch then RegisterUnitWatch(f.click) end
 			UpdateAll(f)
@@ -1445,7 +913,7 @@ function PF:OnEnable()
 	self:RegisterMovers()
 	self:RegisterEvents()
 	self:HideBlizzard()
-	self:BuildPanel()
+	self:AttachNode()
 	A:RegisterTicker(self, function()
 		for _, f in ipairs(PF.frames) do UpdateAll(f) end
 	end)
@@ -1466,19 +934,17 @@ function PF:OnDisable()
 		end
 	end
 	self.stack:Hide()
-	if self.handle then self.handle:Hide() end
-	if self.panel then
-		W.StopSlide(self.panel)
-		self._want, self._travel = 0, 0
-		self.panel:Hide()
-	end
+	if self.panel then self.panel:Hide() end
+	-- The node goes with the module.
+	Trunk():Refresh()
 end
 
 function PF:OnSkinChanged()
 	if not self.stack then return end
-	if self.handle then self:SetHandleMovable(self._movable) end
 	if self.panel then
-		self.panel:ApplySkin("dialogFill", "glassEdgeHi")
+		A.Trunk.SkinBranch(self.panel)
+		self.panel.head:Paint()
+		self.panel.marks:Paint()
 		self:RefreshPanel()
 	end
 	for _, f in ipairs(self.frames) do UpdateAll(f) end

@@ -1422,9 +1422,8 @@ end
 handlers.party = function(arg)
 	local PF = A:GetModule("partyframes")
 	
-	-- Bare /aether party opens the controls, because that is the thing a
-	-- player wants; the report is scaffolding and takes the sub-command.
-	-- Until the dock handle exists this is the only way in.
+	-- Bare /lattice party toggles the controls, the Toolbox trunk's Party
+	-- branch; the report is scaffolding and takes the sub-command.
 	if arg == "reset" then
 		if not PF then return end
 		PF:ResetStack()

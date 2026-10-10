@@ -177,8 +177,8 @@ L["cmd.party.closed"] = "closed"
 L["cmd.party.party"] = "party"
 L["cmd.party.party_controls_s_s"] = "party controls %s  ·  %s for the report"
 L["cmd.party.party_frames_back_dock"] =
-	"party frames back on the dock. Drag them again to place them where "
-		.. "you want."
+	"party frames back in their default place. Drag them again to place "
+		.. "them where you want."
 L["cmd.party.party_frames_switched_off"] = "party frames are switched off."
 
 L["cmd.party_diag.party_module"] = "no party module"
@@ -1312,9 +1312,6 @@ L["options.x_p.which_end_hairline_readout"] =
 L["options.x_p.xp_hairline"] = "XP hairline"
 
 -- party -------------------------------------------------------------------
-
-L["party.build_handle.party_dock_s"] = "party dock -> %s"
-L["party.build_handle.slot_s"] = "slot %s"
 
 L["party.is_leader.key"] = "Role Check"
 

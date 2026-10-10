@@ -50,8 +50,10 @@ Presets.list = {
 		-- scale: that is the player's. The spine on the screen's centre line,
 		-- bond 216; bar 1 12 x 44 with its top at y 968, bar 2 12 x 34 at
 		-- y 1032, both hung from the spine's middle; ToT over the target's
-		-- right edge at y 760; party 60, 420; chat's glass 24 / 24 from the
-		-- bottom left.
+		-- right edge at y 760; chat's glass 24 / 24 from the bottom left. The
+		-- party at 210, 400, not the board's 60, 420: at 60 it sat under the
+		-- Toolbox trunk's stubs and labels (6a draws the trunk and no party),
+		-- and 20 higher it clears the pet's slot over the player.
 		-- Chat's size is in its own units, which its text and its smallest
 		-- size are in: 210 x 120, so its glass clears the stance bar at 1080.
 		-- Its size travels with it, or a wider window runs under the stance bar
@@ -76,7 +78,7 @@ Presets.list = {
 		--   not its centre, so they stay 8 off its ends whatever its width.
 		-- Bars 3 and 4 are off: the Rows seed is bars 1 and 2. The tooltip and
 		-- the music deck are not on the board and keep their own defaults.
-		layout = "LAT1;b=1,2;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=spine,TOP,CENTER,0,-162,12x1,34;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;minimap=screen,CENTER,TOPRIGHT,-110,-230;party=screen,TOPLEFT,TOPLEFT,60,-420;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
+		layout = "LAT1;b=1,2;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=spine,TOP,CENTER,0,-162,12x1,34;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;minimap=screen,CENTER,TOPRIGHT,-110,-230;party=screen,TOPLEFT,TOPLEFT,210,-400;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
 	},
 	block = {
 		label = L.presets.block.label,
@@ -91,7 +93,7 @@ Presets.list = {
 		-- end: off bar 1's it would sit on bar 2 - still bonded to an action
 		-- strand. The extra button over the stance row's right end, under the
 		-- player. Everything else is rows'.
-		layout = "LAT1;b=1,2;k=1,2;bar1=spine,TOPRIGHT,CENTER,2,-42,3x4,44;bar2=bar1,TOPLEFT,TOPRIGHT,-5,0,3x4,44,braid;barextra=barstance,BOTTOMRIGHT,TOPRIGHT,0,8;barpet=bar2,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;minimap=screen,CENTER,TOPRIGHT,-110,-230;party=screen,TOPLEFT,TOPLEFT,60,-420;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-270;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
+		layout = "LAT1;b=1,2;k=1,2;bar1=spine,TOPRIGHT,CENTER,2,-42,3x4,44;bar2=bar1,TOPLEFT,TOPRIGHT,-5,0,3x4,44,braid;barextra=barstance,BOTTOMRIGHT,TOPRIGHT,0,8;barpet=bar2,LEFT,RIGHT,8,0,10x1,30;barstance=bar1,RIGHT,LEFT,-8,0,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;minimap=screen,CENTER,TOPRIGHT,-110,-230;party=screen,TOPLEFT,TOPLEFT,210,-340;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-270;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
 	},
 	split = {
 		label = L.presets.split.label,
@@ -105,7 +107,7 @@ Presets.list = {
 		-- ends they ran into the columns. Still bonded to bar 1.
 		-- The party starts at 300, not 420, to clear bar 2's column.
 		-- Everything else is rows'.
-		layout = "LAT1;b=1,2,3;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=player,RIGHT,LEFT,-18,0,1x12,28;bar3=target,LEFT,RIGHT,18,0,1x12,28;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,TOPRIGHT,BOTTOMRIGHT,0,-8,10x1,30;barstance=bar1,TOPLEFT,BOTTOMLEFT,0,-8,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;minimap=screen,CENTER,TOPRIGHT,-110,-230;party=screen,TOPLEFT,TOPLEFT,60,-300;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
+		layout = "LAT1;b=1,2,3;bar1=spine,TOP,CENTER,0,-98,12x1,44;bar2=player,RIGHT,LEFT,-18,0,1x12,28;bar3=target,LEFT,RIGHT,18,0,1x12,28;barextra=bar1,BOTTOMRIGHT,TOPLEFT,-8,0;barpet=bar1,TOPRIGHT,BOTTOMRIGHT,0,-8,10x1,30;barstance=bar1,TOPLEFT,BOTTOMLEFT,0,-8,12x1,30;chat=screen,BOTTOMLEFT,BOTTOMLEFT,24,24,210x120;minimap=screen,CENTER,TOPRIGHT,-110,-230;party=screen,TOPLEFT,TOPLEFT,210,-300;pet=player,TOPLEFT,CENTER,-172,110;player=screen,CENTER,CENTER,-280,-330;target=player,LEFT,RIGHT,216,0;targettarget=target,TOPRIGHT,CENTER,172,110",
 	},
 }
 
