@@ -18,6 +18,12 @@
 	    t:AddNode("questlog", { icon = "quests", label = L.trunk.questlog,
 	        order = 100, open = fn(node), close = fn(node), isOpen = fn(),
 	        available = fn() })
+
+	An ITEM node (kind = "item") is the other kind: an 18 px diamond with no
+	icon and no stub, one per tracked quest. Its owner draws the text beside it
+	and its state (decorate), handles its clicks (onClick) and says how much
+	of the strand it needs below it (step), which is how a quest showing its
+	objectives gets the room for them.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -28,6 +34,13 @@ A.Trunk = Trunk
 
 -- The handoff's numbers, in HUD units (a pixel at the fitted scale).
 local NODE, ICON, STEP, STUB = 24, 14, 72, 80
+local ITEM = 18
+-- A branch node's room when a quest hangs straight under it: 72 left the
+-- first quest adrift of its Quest Log node (Joe, in game).
+local LEAD = 36
+-- Kept clear under the trunk's last node: the screen's bottom edge, where the
+-- chat and the bars live.
+local FLOOR = 24
 local CAP, CAP_GAP, FIRST, LAST = 10, 30, 40, 36
 local JUNCTION = 11
 -- A label ends this far short of its node, over the stub.
@@ -35,6 +48,15 @@ local LABEL_GAP = 8
 
 local Proto = {}
 Proto.__index = Proto
+
+local function ByOrder(x, y) return (x.order or 0) < (y.order or 0) end
+
+--- The room a node takes below it: an item node what its owner asks for, a
+--  branch node 72, or LEAD when the node under it is an item.
+local function StepOf(node, below)
+	if node.step then return node.step end
+	return (below and below.kind == "item") and LEAD or STEP
+end
 
 --- The trunk called `name`, made on first ask.
 function Trunk:Get(name)
@@ -66,7 +88,33 @@ local function Build(t)
 	return f
 end
 
+--- An item node: the diamond only. Its owner paints it and takes its clicks.
+local function BuildItem(t, node)
+	local b = CreateFrame("Button", nil, t.frame)
+	b:SetSize(ITEM, ITEM)
+	b:RegisterForClicks("AnyUp")
+	b.glow = b:CreateTexture(nil, "BACKGROUND")
+	b.glow:SetTexture(Media.texture.glow)
+	b.glow:SetPoint("CENTER")
+	b.glow:SetSize(ITEM * 2.4, ITEM * 2.4)
+	b.glow:Hide()
+	b.fill = b:CreateTexture(nil, "ARTWORK")
+	b.fill:SetTexture(Media.texture.diamond)
+	b.fill:SetAllPoints(b)
+	b.rim = b:CreateTexture(nil, "ARTWORK", nil, 1)
+	b.rim:SetTexture(Media.texture.diamondRim)
+	b.rim:SetAllPoints(b)
+	b:SetScript("OnClick", function(_, button)
+		if node.onClick then node.onClick(node, button) end
+	end)
+	b:SetScript("OnEnter", function() if node.onEnter then node.onEnter(node) end end)
+	b:SetScript("OnLeave", function() if node.onLeave then node.onLeave(node) end end)
+	node.button = b
+	return b
+end
+
 local function BuildNode(t, node)
+	if node.kind == "item" then return BuildItem(t, node) end
 	local f = t.frame
 	local b = CreateFrame("Button", nil, f)
 	b:SetSize(NODE, NODE)
@@ -106,7 +154,9 @@ function Proto:Paint()
 	W.Tint(f.capBottom, a, 0.4)
 	for _, node in ipairs(self.nodes) do
 		local b = node.button
-		if b then
+		if b and node.kind == "item" then
+			if node.decorate then node.decorate(node) end
+		elseif b then
 			local lit = node.isOpen and node.isOpen() and true or false
 			node.lit = lit
 			if lit then
@@ -145,12 +195,17 @@ function Proto:Side()
 end
 
 --- Lay the trunk out again: the nodes that are available, in order, 72 apart
---  under the root, the strand between its two end-caps.
+--  (36 above a quest) under the root, the strand between its two end-caps.
 function Proto:Refresh()
 	local f = self.frame or Build(self)
 	local r = self.root
 	if not (r and r:IsShown()) then
 		f:Hide()
+		-- Item owners may have hung things beside their nodes that are not
+		-- the trunk's children; they hear of it too.
+		for _, node in ipairs(self.nodes) do
+			if node.kind == "item" and node.decorate and node.button then node.decorate(node) end
+		end
 		return
 	end
 	f:SetScale(A.db.profile.scale or 1)
@@ -159,19 +214,34 @@ function Proto:Refresh()
 
 	local side = self:Side()
 	self.side = side
-	table.sort(self.nodes, function(x, y) return (x.order or 0) < (y.order or 0) end)
-	local y, shown = -CAP / 2 - FIRST, 0
-	for _, node in ipairs(self.nodes) do
+	table.sort(self.nodes, ByOrder)
+	-- Which are up first: a node's room below it depends on the next one up.
+	local up, below, after = {}, {}, nil
+	for i, node in ipairs(self.nodes) do
+		up[i] = not node.available or node.available()
+	end
+	for i = #self.nodes, 1, -1 do
+		below[i] = after
+		if up[i] then after = self.nodes[i] end
+	end
+	local y, shown, lastY = -CAP / 2 - FIRST, 0, nil
+	for i, node in ipairs(self.nodes) do
 		local b = node.button or BuildNode(self, node)
-		local on = not node.available or node.available()
+		local on = up[i]
 		b:SetShown(on)
-		b.stub:SetShown(on)
-		b.label:SetShown(on)
 		if on then
-			shown = shown + 1
-			Media:SetIcon(b.icon, node.icon)
+			shown, lastY = shown + 1, y
 			b:ClearAllPoints()
 			b:SetPoint("CENTER", f, "TOP", 0, y)
+			node.y = y
+			y = y - StepOf(node, below[i])
+		end
+		if node.kind ~= "item" then
+			b.stub:SetShown(on)
+			b.label:SetShown(on)
+		end
+		if on and node.kind ~= "item" then
+			Media:SetIcon(b.icon, node.icon)
 			b.stub:ClearAllPoints()
 			b.stub:SetWidth(STUB)
 			if side < 0 then
@@ -190,13 +260,11 @@ function Proto:Refresh()
 				b.label:SetPoint("BOTTOMLEFT", b.stub, "TOPLEFT", LABEL_GAP, 4)
 			end
 			b.label:SetText(tostring(type(node.label) == "function" and node.label() or node.label or ""):upper())
-			node.y = y
-			y = y - STEP
-		else
+		elseif node.kind ~= "item" then
 			b.junction:Hide()
 		end
 	end
-	local bottom = (shown > 0) and (y + STEP - LAST) or (-CAP / 2 - FIRST)
+	local bottom = lastY and (lastY - LAST) or (-CAP / 2 - FIRST)
 	f.capTop:SetSize(CAP, CAP)
 	f.capTop:ClearAllPoints()
 	f.capTop:SetPoint("CENTER", f, "TOP", 0, -CAP / 2)
@@ -215,6 +283,40 @@ end
 -- ---------------------------------------------------------------------------
 -- nodes and branches
 -- ---------------------------------------------------------------------------
+
+--- The trunk's own frame, made if it is not yet: owners parent what they
+--  draw beside their nodes to it, so it scales and fades with the trunk.
+function Proto:Frame()
+	return self.frame or Build(self)
+end
+
+--- How much strand is left for item nodes, in the trunk's units: from its
+--  first node to FLOOR above the screen's bottom, less the room every shown
+--  branch node takes. Nil while the trunk is not up.
+--
+--  Asked before the items are placed, so a branch node counts LEAD when an
+--  item node is next in order at all: the room only matters when one shows.
+function Proto:Room()
+	local f = self.frame
+	if not (f and self.root and self.root:IsShown()) then return nil end
+	local _, top = A.Movers.PointAt(self.root, "BOTTOM")
+	if not top then return nil end
+	local k = (UIParent:GetEffectiveScale() or 1) / (f:GetEffectiveScale() or 1)
+	local room = (top * k) - CAP_GAP - CAP / 2 - FIRST - LAST - FLOOR * k
+	table.sort(self.nodes, ByOrder)
+	local nodes = self.nodes
+	for i, node in ipairs(nodes) do
+		if node.kind ~= "item" and (not node.available or node.available()) then
+			local nxt
+			for j = i + 1, #nodes do
+				local n = nodes[j]
+				if n.kind == "item" or not n.available or n.available() then nxt = n break end
+			end
+			room = room - StepOf(node, nxt)
+		end
+	end
+	return room
+end
 
 --- The frame the trunk hangs from, or nil to take it down.
 function Proto:SetRoot(frame)

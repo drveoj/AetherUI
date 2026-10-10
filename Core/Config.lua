@@ -433,27 +433,20 @@ Config.defaults = {
 
 			questtracker = {
 				enabled        = true,
-				width          = 268,     -- the deck's panel width
 				-- Show every quest in the log and let you dismiss the ones you do
 				-- not want, rather than making you opt each one in. This is
 				-- Questie's model, and it is the only one that is uncapped by
 				-- construction instead of by working around Blizzard's cap.
 				-- Turn it off for a whitelist you build by shift-clicking.
 				autoTrack      = true,
-				-- Cut the list to a height budget, not a row count, and say how
-				-- many did not fit. 20 quests would be most of the screen.
-				maxHeight      = 420,
-				max            = 20,
+				-- Quests on the World trunk: the design's ten at most, fewer where
+				-- the screen is too short; the rest fold into one "+n" node.
+				max            = 10,
+				-- The active quest's objectives under its title (compact, Joe).
 				showObjectives = true,
-				-- The level rides in a difficulty-tinted chip in front of the
-				-- title, exactly as it does in the quest log: grey-means-stop and
-				-- red-means-later is the fastest read on a list, and putting it in
-				-- the chip leaves the titles themselves white and readable. Off,
-				-- the difficulty is not shown at all - it has nowhere else to go.
-				showLevel      = true,
-				-- Fold to just the heading when a fight starts, per concept 2a,
-				-- and unfold again after - unless you folded it yourself mid-fight,
-				-- in which case that decision wins.
+				-- Only the Quest Log node left on the trunk during a fight, and
+				-- the quests back after - unless you folded them yourself
+				-- mid-fight, in which case that decision wins.
 				combatCollapse = true,
 				-- Whitelist mode only. Blizzard caps its watch list at five, so
 				-- taking the entries and handing the slots straight back is what

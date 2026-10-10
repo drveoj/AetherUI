@@ -264,12 +264,12 @@ OB.stops = {
 		head  = L.tour.adopt_from.head6,
 		body  = L.tour.adopt_from.body6,
 		kind  = "show",
-		-- THE PANEL, which is what the tracker calls its own frame. This asked
-		-- for QT.frame and got nil, which is the third of three: see the
-		-- harness note under "what each stop points at".
+		-- THE WORLD TRUNK, where the quests are now nodes. This once asked for
+		-- QT.frame and got nil, the third of three: see the harness note under
+		-- "what each stop points at".
 		target = function()
-			local QT = A.GetModule and A:GetModule("questtracker")
-			return QT and QT.panel
+			local f = A.Trunk and A.Trunk:Get("world").frame
+			return f and f:IsShown() and f or nil
 		end,
 	},
 	{

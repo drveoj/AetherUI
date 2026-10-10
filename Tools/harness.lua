@@ -2779,7 +2779,11 @@ local function tooltipLines(tip)
 	--  its lines out, which is why every addon that reads a title uses this.
 		function tip:SetHyperlink(link)
 		local guid = type(link) == "string" and link:match("^unit:(.+)$")
-		if not guid then return end
+		-- Any other link (an item's) shows that link, as GameTooltip's own does.
+		if not guid then
+			self.__shows = link and { "link", link } or nil
+			return
+		end
 		-- COUNTED. The title cache exists so that every Beverage Merchant
 		-- in the world is scanned once rather than once per plate, and a
 		-- cache that never hits looks identical on screen to one that
@@ -4836,6 +4840,22 @@ function C_Item.GetItemInfo(id)
 		"type", "subtype", it[5], "", it[7], it[6], it[2], it[3], 0
 end
 function C_Item.GetItemFamily() return 0 end
+--- What a quest item button asks: how many are in the bags, whether using one
+--  does anything, its icon and its cooldown. Both clients document all of
+--  these (ItemDocumentation.lua, ContainerDocumentation.lua).
+_G.__itemCounts, _G.__itemUse, _G.__itemCooldowns = {}, {}, {}
+function C_Item.GetItemCount(id) return _G.__itemCounts[id] or 0 end
+function C_Item.GetItemSpell(id)
+	if _G.__itemUse[id] == "spell" then return "Use", 1 end
+	return nil
+end
+function C_Item.IsEquippableItem(id) return _G.__itemUse[id] == "equip" end
+function C_Item.GetItemIconByID(id) return "icon" .. tostring(id) end
+function C_Container.GetItemCooldown(id)
+	local c = _G.__itemCooldowns[id]
+	if c then return c[1], c[2], 1 end
+	return 0, 0, 1
+end
 --- Both clients document this (ItemDocumentation.lua). Answers the quest
 --  abandon stand-ins as well as the item fixture.
 function C_Item.GetItemNameByID(id)
@@ -10779,6 +10799,23 @@ do
 	check(A.lastFailure == nil, "and the suite is left in a working state")
 end
 
+--- A parentless panel that grows downward, registered as a mover for the
+--  tests that need one. The quest tracker's panel was that frame until it
+--  became nodes on the World trunk; these tests are about the movers, not
+--  about it. Unregistered after each use, so it never leaks into the HUD's
+--  own registry for the tests after.
+function _G.__testMover()
+	local e = A.Movers.registry.__testpanel
+	if not e then
+		local f = _G.AetherUITestPanel or CreateFrame("Frame", "AetherUITestPanel", UIParent)
+		f:SetSize(268, 120)
+		e = A.Movers:Register("__testpanel", f,
+			{ point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -24, y = -140 }, "Test panel",
+			{ growsDown = true })
+	end
+	return e
+end
+
 print("== movers: scale ==")
 do
 	-- Our frames run at profile.scale (0.71), and every getter here reports in a
@@ -10789,8 +10826,8 @@ do
 	UIParent.__scale = 1
 
 	SlashCmdList["AETHERUI"]("unlock")
-	local entry = A.Movers.registry.quests
-	check(entry ~= nil, "the quest tracker registers a mover")
+	local entry = _G.__testMover()
+	check(entry ~= nil and entry.handle ~= nil, "a panel registered as a mover has a handle")
 
 	local f = entry.frame
 	f.__scale = 0.5
@@ -10820,6 +10857,7 @@ do
 	f.__geom = nil
 	f.__scale = 1
 	SlashCmdList["AETHERUI"]("lock")
+	A.Movers:Unregister("__testpanel")
 end
 
 print("== movers: a borrowed frame's real owner gets told too ==")
@@ -14568,7 +14606,65 @@ print("== quest tracker ==")
 local QT = A:GetModule("questtracker")
 check(QT and QT.enabled, "questtracker module enabled"
 	.. (QT and QT.lastError and ("  -- " .. QT.lastError) or ""))
-check(QT.panel and QT.panel.header, "glass panel with a header built")
+
+--- The text beside the i-th quest node on the World trunk, while it holds a
+--  quest: what a row of the old floating panel was, and carrying the same
+--  fields - questTitle, index, questID, lines, the mouse script. Globals: the
+--  file is at the local cap.
+function _G.TRow(i)
+	local n = QT.nodes and QT.nodes[i]
+	return n and n.quest and n.holder or nil
+end
+--- Whether the i-th quest node wears the active look: an accent outline lit.
+function _G.TActive(i)
+	local n = QT.nodes and QT.nodes[i]
+	if not (n and n.quest and n.quest.active and n.button:IsShown() and n.button.glow:IsShown()) then
+		return false
+	end
+	local r, g, b = n.button.rim:GetVertexColor()
+	local a = A.Palette.c.accent
+	return math.abs(r - a[1]) < 0.001 and math.abs(g - a[2]) < 0.001 and math.abs(b - a[3]) < 0.001
+end
+--- The reference screen (1920 x 1080, the minimap at its default) on, and
+--  the screen that was there put back off. How many quests the trunk can hold
+--  depends on both.
+function _G.__refScreen(on)
+	if on then
+		_G.__refSaved = { w = UIParent:GetWidth(), h = UIParent:GetHeight(), geom = UIParent.__geom,
+			anchors = A.db.profile.anchors }
+		UIParent:SetSize(1920, 1080)
+		UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+		A.db.profile.anchors = {}
+	elseif _G.__refSaved then
+		local s = _G.__refSaved
+		UIParent:SetSize(s.w, s.h)
+		UIParent.__geom = s.geom
+		A.db.profile.anchors = s.anchors
+		_G.__refSaved = nil
+	end
+	A:Reconfigure()
+end
+--- How many quest nodes are on the trunk now.
+function _G.TShown()
+	local k = 0
+	for _, n in ipairs(QT.nodes or {}) do
+		if n.quest and n.button:IsShown() then k = k + 1 end
+	end
+	return k
+end
+check(QT.nodes and QT.nodes[1] and QT.nodes[1].button and A.Trunk:Get("world").frame:IsShown(),
+	"the tracked quests are nodes on the World trunk")
+
+-- THE REFERENCE SCREEN for every tracker section: the quests are nodes on the
+-- World trunk, and how many fit depends on where the minimap sits and how tall
+-- the screen is. Put back after the last tracker section.
+_G.__trackerScreen = { w = UIParent:GetWidth(), h = UIParent:GetHeight(), anchors = A.db.profile.anchors,
+	geom = UIParent.__geom }
+UIParent:SetSize(1920, 1080)
+-- A rect as well as a size: the mock answers UIParent's top as a flat 400 without one.
+UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+A.db.profile.anchors = {}
+A:Reconfigure()
 
 do
 	-- The fader section above entered combat and never left it, so the tracker
@@ -14585,9 +14681,25 @@ do
 		.. #QT.quests .. ")")
 	check(GetNumQuestWatches() == 0 and #_G.__watches == 0,
 		"and never touches Blizzard's watch list to do it")
-	check(QT.panel.header.count:GetText() == "4 / 20",
-		"the heading counts quests in the log, not headers in it (got "
-		.. tostring(QT.panel.header.count:GetText()) .. ")")
+	check(TShown() == 4, "each one a node on the trunk (" .. TShown() .. ", room "
+		.. tostring(A.Trunk:Get("world"):Room()) .. ", screen " .. UIParent:GetWidth() .. "x"
+		.. UIParent:GetHeight() .. ", pill bottom "
+		.. tostring(select(2, A.Movers.PointAt(A:GetModule("minimap").pill, "BOTTOM"))) .. ")")
+	-- 6a's geometry: under the Quest Log node, 32 apart (compact), each
+	-- quest's text ending 8 short of its node, its title level with it. Both
+	-- tightened in game (Joe): the first quest 36 under the Quest Log node,
+	-- not a branch node's 72.
+	local n1, n2 = QT.nodes[1], QT.nodes[2]
+	local ql = A.Trunk:Get("world"):Node("questlog")
+	check(n1.y < ql.y and math.abs(n1.y - n2.y - 32) < 0.5,
+		"quest nodes hang under the Quest Log node, 32 apart (" .. (n1.y - n2.y) .. ")")
+	check(math.abs(ql.y - n1.y - 36) < 0.5,
+		"the first one 36 under the Quest Log node (" .. (ql.y - n1.y) .. ")")
+	local cx, cy = A.Movers.PointAt(n1.button, "CENTER")
+	local tr = A.Movers.PointAt(n1.holder.title, "RIGHT")
+	local ty = select(2, A.Movers.PointAt(n1.holder.title, "CENTER"))
+	check(math.abs(cx - tr - 17) < 0.5 and math.abs(ty - cy) < 0.5,
+		"its text ends 8 short of the node, level with it (" .. (cx - tr) .. ", " .. (ty - cy) .. ")")
 
 	-- dismissing one is a blacklist entry, and it has to stick across a refresh
 	QT.SetTracked(1069, false)
@@ -14626,8 +14738,8 @@ do
 	A.db.profile.modules.questtracker.autoTrack = false
 	A.db.char.tracked, A.db.char.untracked = {}, {}
 	QT:Refresh()
-	check(#QT.quests == 0, "manual mode starts empty - it is a whitelist")
-	local bare = QT.panel:GetHeight()
+	check(#QT.quests == 0 and TShown() == 0, "manual mode starts empty - it is a whitelist")
+	local bare = A.Trunk:Get("world").frame:GetHeight()
 
 	-- shift-clicking in Blizzard's quest log puts an index in ITS watch list;
 	-- we adopt it and hand the slot straight back, which is the only way that
@@ -14639,14 +14751,23 @@ do
 		"Blizzard's watch list is emptied again, so its five-slot cap never bites")
 	check(A.db.char.tracked[861] and A.db.char.tracked[1069],
 		"and both quests landed in our own set, keyed by questID")
-	check(#QT.quests == 2, "two rows now (got " .. #QT.quests .. ")")
-	check(QT.panel:GetHeight() > bare, "the panel grew to fit them")
+	check(#QT.quests == 2 and TShown() == 2, "two quest nodes now (got " .. #QT.quests .. ")")
+	check(A.Trunk:Get("world").frame:GetHeight() > bare, "the trunk grew to hold them")
 end
 
 do
-	local row = QT.panel.rows[1]
-	check(row.questTitle == "Chen's Empty Keg", "row 1 is the first tracked quest in log order")
-	check(row.lines[1]:GetText() == "Empty Keg: 0/1", "objective text rendered")
+	local row = TRow(1)
+	check(row.questTitle == "Chen's Empty Keg", "node 1 is the first tracked quest in log order")
+	check(row.title:GetText() == "Chen's Empty Keg", "its title beside it")
+	-- COMPACT (Joe): not the active quest, so its objectives are not under it -
+	-- they pop out with the cursor on it.
+	check(not (row.lines[1] and row.lines[1]:IsShown()), "no objective lines under a quest that is not active")
+	row:GetScript("OnEnter")(row)
+	check(GameTooltip:IsShown() and GameTooltip.__lines[1] == "Chen's Empty Keg"
+		and GameTooltip.__lines[2] == "Empty Keg: 0/1",
+		"hovered, its objectives pop out beside it (" .. tostring(GameTooltip.__lines[2]) .. ")")
+	row:GetScript("OnLeave")(row)
+	check(not GameTooltip:IsShown(), "and go when the cursor leaves")
 	check(math.abs(QT.quests[1].pct - 0) < 0.01,
 		"progress comes from the numbers in the objective text")
 	check(QT.quests[2].complete and math.abs(QT.quests[2].pct - 1) < 0.01,
@@ -14656,7 +14777,7 @@ end
 do  -- indices shift when the log changes; the tracker must not hold one
 	table.insert(_G.__questLog, 2, { id = 99, title = "A New Quest", level = 12, objectives = {} })
 	QT:Refresh()
-	local row = QT.panel.rows[1]
+	local row = TRow(1)
 	check(row.questTitle == "Chen's Empty Keg" and row.index == 3,
 		"the same quest is still row 1, now at log index " .. tostring(row.index)
 		.. " - tracking is by questID, not by index")
@@ -14674,7 +14795,7 @@ do  -- partial progress across two objectives: 3/8 and 1/4 is 4/12
 	check(q and math.abs(q.pct - (4 / 12)) < 0.001,
 		"progress sums the counters across every objective (got "
 		.. string.format("%.3f", q and q.pct or -1) .. ")")
-	check(#QT.panel.rows[3].lines >= 2, "both objective lines drawn")
+	check(q and #q.lines >= 2, "both objective lines read")
 end
 
 do  -- a quest with no objectives falls back to isComplete rather than showing 0%
@@ -14688,97 +14809,118 @@ do  -- a quest with no objectives falls back to isComplete rather than showing 0
 		"an objective-less quest gets no bar at all, rather than one pinned at zero")
 end
 
-print("== quest tracker: height budget ==")
+print("== quest tracker: the room on the trunk ==")
 do
+	-- Ten at most (the design's number), and fewer where the screen is too
+	-- short: 6a's own spacing ran ten quests off a 1080 screen. What does not
+	-- fit is one "+n" node, never silently dropped.
 	local cfg = A.db.profile.modules.questtracker
-	local saved = cfg.maxHeight
-	cfg.maxHeight = 80
+	local saved = cfg.max
+	cfg.max = 1
 	QT:Refresh()
-	check(QT.hidden > 0, "a tight height budget drops rows (" .. QT.hidden .. " of them)")
-	check(QT.panel.more:IsShown() and QT.panel.more:GetText() == "+" .. QT.hidden .. " more",
-		"and the panel says so rather than silently truncating (got "
-		.. tostring(QT.panel.more:GetText()) .. ")")
+	local more = QT.more
+	check(QT.hidden > 0 and TShown() == 1, "a max of one shows one quest node (" .. QT.hidden .. " hidden)")
+	check(more and more.button:IsShown() and more.holder.title:GetText() == "+" .. QT.hidden,
+		"and the rest are one +n node rather than silently dropped (got "
+		.. tostring(more and more.holder.title:GetText()) .. ")")
 
-	-- AND IT OPENS THE LOG. That line was the one thing in this panel naming
-	-- something you could not get to: it says the tracker ran out of room, and
-	-- the place the rest of them live is one click away.
-	check(QT.panel.moreHit and QT.panel.moreHit:IsShown(),
-		"the line is clickable")
-	check(QT.panel.moreQuest ~= nil,
-		"and knows which quest it is standing in for")
-
+	-- AND IT OPENS THE LOG, at the FIRST of the hidden ones - not the first
+	-- tracked one, which is already on the trunk. Those are the same quest
+	-- whenever nothing is hidden, so the difference only shows here.
 	do
-		-- AT THE FIRST OF THE HIDDEN ONES, which is what somebody reading that
-		-- line is asking about - not at whatever the log picks for itself.
-		local want = QT.panel.moreQuest
-
-		-- THE FIRST HIDDEN ONE, not the first tracked one. Those are the same
-		-- quest whenever nothing is hidden, so the difference only shows on a
-		-- panel that has actually run out of room - which is this one.
-		local firstShown = QT.panel.rows[1] and QT.panel.rows[1].questID
-		check(firstShown ~= nil and want.questID ~= firstShown,
-			"and it is one of the HIDDEN quests rather than the first row that"
-			.. " is already on screen (" .. tostring(want.questID) .. " vs "
-			.. tostring(firstShown) .. ")")
-
+		local want = more.moreQuest
+		local firstShown = TRow(1) and TRow(1).questID
+		check(want and firstShown ~= nil and want.questID ~= firstShown,
+			"it stands for one of the HIDDEN quests (" .. tostring(want and want.questID)
+			.. " vs " .. tostring(firstShown) .. ")")
 		local QLg = A:GetModule("questlog")
 		QLg:Hide()
-		QT.panel.moreHit:GetScript("OnClick")(QT.panel.moreHit)
+		more.button:GetScript("OnClick")(more.button, "LeftButton")
 		check(QLg.win and QLg.win:IsShown(), "clicking it opens our log")
-		check(QLg.selectedID == (want.questID or ("i" .. tostring(want.index))),
-			"at the first quest it was standing in for (got "
-			.. tostring(QLg.selectedID) .. ", want "
-			.. tostring(want.questID or ("i" .. tostring(want.index))) .. ")")
+		check(want and QLg.selectedID == (want.questID or ("i" .. tostring(want.index))),
+			"at the first quest it was standing in for (got " .. tostring(QLg.selectedID) .. ")")
 		QLg:Hide()
 	end
-
-	local tight = QT.panel:GetHeight()
-	cfg.maxHeight = saved
+	cfg.max = saved
 	QT:Refresh()
-	check(not QT.panel.more:IsShown() and QT.panel:GetHeight() > tight,
-		"restoring the budget brings them back")
-	check(not QT.panel.moreHit:IsShown(),
-		"and the click target goes with the line rather than being left over"
-		.. " the rows that replaced it")
+	check(not more.button:IsShown() and QT.hidden == 0, "the max restored, every quest is back and the +n goes")
+
+	-- The screen's own height: a short screen holds fewer.
+	local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+	UIParent:SetSize(w, 480)
+	UIParent:SetGeom({ cx = w / 2, cy = 240, left = 0, right = w, bottom = 0, top = 480 })
+	A:Reconfigure()
+	check(QT.hidden > 0 and more.button:IsShown(),
+		"on a short screen the quests that do not fit fold into +n (" .. QT.hidden .. " hidden)")
+	local lastY = select(2, A.Movers.PointAt(more.button, "BOTTOM"))
+	for _, n in ipairs(QT.nodes) do
+		if n.quest and n.button:IsShown() then
+			lastY = math.min(lastY, select(2, A.Movers.PointAt(n.button, "BOTTOM")))
+		end
+	end
+	check(lastY and lastY > 24, "and nothing on the trunk runs off its bottom (lowest at "
+		.. tostring(lastY) .. ", " .. TShown() .. " quests shown)")
+	-- The Quest Log node over the quests takes 36 of the room, as it does on
+	-- the strand, not a branch node's 72 and not nothing.
+	local withLog = A.Trunk:Get("world"):Room()
+	A:SetModuleEnabled("questlog", false)
+	local noLog = A.Trunk:Get("world"):Room()
+	A:SetModuleEnabled("questlog", true)
+	check(withLog and noLog and math.abs(noLog - withLog - 36) < 0.5,
+		"the Quest Log node above the quests counts 36 of the room (" .. tostring(noLog and withLog and noLog - withLog) .. ")")
+	UIParent:SetSize(w, h)
+	UIParent:SetGeom({ cx = w / 2, cy = h / 2, left = 0, right = w, bottom = 0, top = h })
+	A:Reconfigure()
 end
 
 print("== quest focus: WoW Forever's super-tracking ==")
 do
 	local QL = A:GetModule("questlog")
-	local row = QT.panel.rows[1]
-	local line = row.lines[1]
-	check(row and line and line:IsShown(), "the first tracked quest has an objective line to click")
+	local function menuItem(text)
+		for _, it in ipairs(A.Widgets.MenuFrame().items) do
+			if it:IsShown() and it.text:GetText() == text then return it end
+		end
+	end
 
 	if _G.__flavour == "camelot" then
+		-- THE FOCUSED QUEST IS THE ACTIVE ONE (Lattice 6a), and compact shows
+		-- objectives under the active quest only (Joe).
 		C_SuperTrack.__id = 0
 		QT:Refresh()
+		local row = TRow(1)
+		check(not TActive(1) and not (row.lines[1] and row.lines[1]:IsShown()),
+			"nothing focused: no active quest, no objective lines on the trunk")
 
-		-- An objective line focuses its quest; the title still opens the log.
+		row:GetScript("OnMouseUp")(row, "RightButton")
+		local focus = menuItem("Focus this quest")
+		check(focus ~= nil, "the menu offers to focus it")
+		if focus then focus:GetScript("OnClick")(focus) end
+		row = TRow(1)
+		check(C_SuperTrack.__id == row.questID and TActive(1),
+			"focused, it is the active node - a lit accent outline (" .. tostring(C_SuperTrack.__id) .. ")")
+		local line = row.lines[1]
+		check(line and line:IsShown() and line:GetText() == "Empty Keg: 0/1",
+			"with its objectives under its title (" .. tostring(line and line:GetText()) .. ")")
+
+		-- An objective line keeps its quest focused; it does not open the log.
 		QL:Hide()
 		line.__mouseOver = true
 		row:GetScript("OnMouseUp")(row, "LeftButton")
 		line.__mouseOver = false
-		check(C_SuperTrack.__id == row.questID,
-			"clicking an objective line focuses that quest (" .. tostring(C_SuperTrack.__id) .. ")")
-		check(not (QL.win and QL.win:IsShown()), "and does not open the log")
-		check(QT.panel.rows[1].focus:IsShown(), "the focused quest wears the accent strip")
+		check(C_SuperTrack.__id == row.questID and not (QL.win and QL.win:IsShown()),
+			"clicking an objective line keeps it focused and does not open the log")
 
 		-- The menu offers to stop, and stopping clears it everywhere.
-		local r = QT.panel.rows[1]
-		r:GetScript("OnMouseUp")(r, "RightButton")
-		local items, stop = A.Widgets.MenuFrame().items, nil
-		for _, it in ipairs(items) do
-			if it.text:GetText() == "Stop focusing" then stop = it end
-		end
+		row:GetScript("OnMouseUp")(row, "RightButton")
+		local stop = menuItem("Stop focusing")
 		check(stop ~= nil, "the menu offers Stop focusing on the focused quest")
 		if stop then stop:GetScript("OnClick")(stop) end
-		check(C_SuperTrack.__id == 0, "and it stops")
-		check(not QT.panel.rows[1].focus:IsShown(), "and the strip goes")
+		check(C_SuperTrack.__id == 0 and not TActive(1) and not TRow(1).lines[1]:IsShown(),
+			"and it stops: the node goes back to plain, its lines with it")
 
 		-- Focus set from elsewhere (Blizzard's map) is followed through the event.
-		C_SuperTrack.SetSuperTrackedQuestID(QT.panel.rows[1].questID)
-		check(QT.panel.rows[1].focus:IsShown(),
-			"focus set from anywhere else is shown too - SUPER_TRACKING_CHANGED")
+		C_SuperTrack.SetSuperTrackedQuestID(TRow(1).questID)
+		check(TActive(1), "focus set from anywhere else is shown too - SUPER_TRACKING_CHANGED")
 
 		-- The log's Focus button: present, worded by state, and it toggles.
 		-- Opening the log selects its first QUEST by itself (EnsureSelection);
@@ -14796,18 +14938,19 @@ do
 		check(C_SuperTrack.__id == 0, "and Unfocus stops")
 		QL:Hide()
 	else
-		-- Classic Era: no super-tracking, so nothing anywhere offers it, and an
-		-- objective click falls through to opening the log as it always did.
+		-- Classic Era: no super-tracking, so nothing anywhere offers it, and with
+		-- no TomTom route nothing is active: titles only, objectives on hover.
 		check(not A.Quest.CanFocus(), "Classic Era cannot focus")
+		check(not TActive(1) and not (TRow(1).lines[1] and TRow(1).lines[1]:IsShown()),
+			"and with no route, no quest is active and none shows its lines")
 		local QLog = A:GetModule("questlog")
 		QLog:Hide()
-		line.__mouseOver = true
+		local row = TRow(1)
 		row:GetScript("OnMouseUp")(row, "LeftButton")
-		line.__mouseOver = false
-		check(QLog.win and QLog.win:IsShown(), "an objective click still opens the log")
+		check(QLog.win and QLog.win:IsShown(), "a click on a quest opens the log")
 		QLog:Hide()
 
-		local r = QT.panel.rows[1]
+		local r = TRow(1)
 		r:GetScript("OnMouseUp")(r, "RightButton")
 		local offered = false
 		for _, it in ipairs(A.Widgets.MenuFrame().items) do
@@ -14834,7 +14977,7 @@ local TRACKER_MENU_BASE = A.Quest.CanFocus() and 5 or 4
 
 print("== quest tracker: clicks ==")
 do
-	local row = QT.panel.rows[1]
+	local row = TRow(1)
 
 	-- This check used to read `__questLogOpenedTo == row.index`, which asserted
 	-- that Blizzard's QuestLog_OpenToQuest had been called - and that WAS the
@@ -14862,7 +15005,7 @@ do
 	QT:Refresh()
 
 	-- right-click menu
-	local r = QT.panel.rows[1]
+	local r = TRow(1)
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	check(A.Widgets.MenuFrame() and A.Widgets.MenuFrame():IsShown(), "right-click opens the menu")
 	check(#A.Widgets.MenuFrame().items >= 4, "menu has open / untrack / share / abandon")
@@ -14879,7 +15022,7 @@ do
 		QL:Hide()
 		_G.__questLogOpenedTo = nil
 
-		local row = QT.panel.rows[1]
+		local row = TRow(1)
 		row:GetScript("OnMouseUp")(row, "LeftButton")
 
 		check(QL.win and QL.win:IsShown(),
@@ -14900,9 +15043,9 @@ do
 		QL:Hide()
 
 		local other
-		for i = 1, #QT.panel.rows do
-			local r2 = QT.panel.rows[i]
-			if r2:IsShown() and r2.questID and r2.questID ~= default_ then other = r2 break end
+		for i = 1, #QT.nodes do
+			local r2 = TRow(i)
+			if r2 and r2:IsShown() and r2.questID and r2.questID ~= default_ then other = r2 break end
 		end
 		check(other ~= nil,
 			"there is a tracked row the log would not select on its own, or the"
@@ -15170,7 +15313,7 @@ do
 	check(ok == false and type(why) == "string",
 		"routing fails with a reason rather than raising")
 
-	local r = QT.panel.rows[1]
+	local r = TRow(1)
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	local texts = {}
 	for _, item in ipairs(A.Widgets.MenuFrame().items) do
@@ -15378,7 +15521,7 @@ end
 
 print("== nav: the menu item ==")
 do
-	local r = QT.panel.rows[1]
+	local r = TRow(1)
 	questieQuests[r.questID] = questieQuest(r.questID, {
 		objectives = { { spawnList = { {
 			Name = "Savannah Prowler", Spawns = { [17] = { { 45.0, 62.0 } } },
@@ -15456,7 +15599,7 @@ do
 	local was = dist.GetNearestSpawnForQuest
 	dist.GetNearestSpawnForQuest = nil
 
-	local r = QT.panel.rows[1]
+	local r = TRow(1)
 	r:GetScript("OnMouseUp")(r, "RightButton")
 	local n = 0
 	for _, item in ipairs(A.Widgets.MenuFrame().items) do if item:IsShown() then n = n + 1 end end
@@ -15572,12 +15715,26 @@ end
 
 print("== nav: a waypoint does not outlive its quest ==")
 do
-	local r = QT.panel.rows[1]
+	local r = TRow(1)
 	questieQuests[r.questID] = questieQuest(r.questID, {
 		objectiveData = { { Type = "monster", Id = 3271, Text = "Prowlers" } },
 	})
 	A.Nav:Route(r.questID, r.questTitle)
 	check(A.Nav:Routed() == r.questID, "the waypoint knows which quest it is for")
+
+	-- ON CLASSIC ERA THE ROUTED QUEST IS THE ACTIVE ONE: there is no focus, and
+	-- the TomTom arrow is the only thing there that says "this one". On WoW
+	-- Forever the focus says it, so a route alone changes nothing there.
+	if not A.Quest.CanFocus() then
+		local QTa = A:GetModule("questtracker")
+		QTa:Refresh()
+		check(TActive(1) and TRow(1).lines[1] and TRow(1).lines[1]:IsShown(),
+			"on Classic Era the quest TomTom is routing to is the active node, its objectives shown")
+		-- An expanded quest takes the room for its lines: the next node moves down.
+		local gap = QTa.nodes[1].y - QTa.nodes[2].y
+		check(math.abs(gap - (32 + #QTa.nodes[1].quest.lines * 14)) < 0.5,
+			"and the node after it sits lower by its lines (" .. gap .. ")")
+	end
 
 	-- One click, one trip through Questie: the menu already resolved the
 	-- location to decide whether to grey the item, and asking again is both
@@ -15602,6 +15759,140 @@ do
 	check(not A.Nav:Available(), "teardown leaves the rest of the run as it was")
 end
 
+print("== quest tracker: quest items ==")
+do
+	-- A quest with an item to use gets it as a secure button beside its node,
+	-- on the side away from the text (Joe: the lazy peons' blackjack).
+	local I = { QT = A:GetModule("questtracker") }
+	function I.node(id)
+		for _, n in ipairs(I.QT.nodes) do
+			if n.quest and n.quest.questID == id then return n end
+		end
+	end
+	function I.btn(id)
+		local n = I.node(id)
+		return n and n.itemButton
+	end
+	function I.up(id)
+		local b = I.btn(id)
+		return b ~= nil and b:IsShown() and b.itemID ~= nil
+	end
+	-- Manual mode here, and the nav sections left the keg untracked.
+	I.wasTracked = I.QT.IsTracked(861)
+	I.QT.SetTracked(861, true)
+	I.QT:Refresh()
+	check(I.node(861) and not I.up(861), "a quest with no item has no button")
+
+	-- Questie's database, as Questie's own tracker reads it on Classic Era.
+	InstallQuestie()
+	questieQuests[861] = questieQuest(861)
+	questieQuests[861].sourceItemId = 5000
+	_G.__itemUse[5000] = "spell"
+	I.QT:Refresh()
+	check(not I.up(861), "an item that is not in the bags is not offered")
+	_G.__itemCounts[5000] = 3
+	fire("BAG_UPDATE_DELAYED")
+	I.b = I.btn(861)
+	check(I.up(861) and I.b:GetAttribute("type1") == "item" and I.b:GetAttribute("item1") == "item:5000",
+		"in the bags and usable, it is a button that uses it (" .. tostring(I.b and I.b:GetAttribute("item1")) .. ")")
+	check(I.b.icon:GetTexture() == "icon5000" and I.b.count:GetText() == "3",
+		"with its icon and how many there are")
+	check(I.b:IsProtected() and I.b.__template == "SecureActionButtonTemplate",
+		"a secure button: using an item is protected")
+	I.clicks = table.concat(I.b.__clicks or {}, ",")
+	check(I.clicks:find("AnyDown", 1, true) and I.clicks:find("AnyUp", 1, true),
+		"registered for both phases, or cast-on-key-down players get nothing (" .. I.clicks .. ")")
+	check(not A.Trunk:Get("world").frame:IsProtected(),
+		"hung off the screen, not the trunk: the trunk is not locked in a fight by it")
+	I.n = I.node(861)
+	I.nx, I.ny = A.Movers.PointAt(I.n.button, "CENTER")
+	I.bx, I.by = A.Movers.PointAt(I.b, "CENTER")
+	I.s = A.Trunk:Get("world").frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	check(math.abs((I.bx - I.nx) - 26 * I.s) < 0.5 and math.abs(I.by - I.ny) < 0.5,
+		"beside its node on the side away from the text, level with it ("
+		.. (I.bx - I.nx) .. ", " .. (I.by - I.ny) .. ")")
+
+	-- Hover: the item's own tooltip.
+	I.b:GetScript("OnEnter")(I.b)
+	check(GameTooltip:IsShown() and GameTooltip.__shows and GameTooltip.__shows[2] == "item:5000",
+		"hovered, it shows the item (" .. tostring(GameTooltip.__shows and GameTooltip.__shows[2]) .. ")")
+	check(GameTooltip:GetOwner() == I.b, "owned by the button")
+	I.b:GetScript("OnLeave")(I.b)
+
+	-- The cooldown, which changes in a fight and is not protected.
+	_G.__itemCooldowns[5000] = { 100, 30 }
+	fire("BAG_UPDATE_COOLDOWN")
+	check(I.b.cooldown:IsShown() and I.b.cooldown.__cd and I.b.cooldown.__cd[2] == 30,
+		"its cooldown shows on it")
+	_G.__itemCooldowns[5000] = nil
+	fire("BAG_UPDATE_COOLDOWN")
+	check(not I.b.cooldown:IsShown(), "and goes when it is over")
+
+	-- Not usable, or the quest done: no button.
+	_G.__itemUse[5000] = nil
+	I.QT:Refresh()
+	check(not I.up(861), "an item with no use is not offered")
+	_G.__itemUse[5000] = "equip"
+	I.QT:Refresh()
+	check(I.up(861), "one you can put on is")
+	questieQuests[1069] = questieQuest(1069)
+	questieQuests[1069].requiredSourceItems = { 5000 }
+	I.QT:Refresh()
+	check(not I.up(1069), "a quest ready to hand in has no item from the database")
+
+	-- IN A FIGHT IT IS LEFT ALONE: no ADDON BLOCKED (the mock fails the run on
+	-- one), and it stays usable where it was even as the trunk folds.
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	check(I.QT.collapsed and I.b:IsShown() and I.b:GetAttribute("item1") == "item:5000",
+		"in a fight the trunk folds and the item stays, usable, where it was")
+	_G.__itemCounts[5000] = 0
+	fire("BAG_UPDATE_DELAYED")
+	check(I.b:IsShown() and I.QT.Items.dirty, "used up mid-fight, it waits for the fight to end")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(not I.QT.collapsed and not I.up(861) and not I.b:IsShown() and not I.QT.Items.dirty,
+		"and goes once it is over")
+	_G.__itemCounts[5000] = 3
+	I.QT:Refresh()
+	check(I.up(861), "back in the bags, back on the trunk")
+
+	-- No trunk, no button.
+	A:SetModuleEnabled("minimap", false)
+	check(not I.b:IsShown(), "the trunk taken down takes the item with it")
+	A:SetModuleEnabled("minimap", true)
+	check(I.up(861), "and brings it back")
+
+	-- WOW FOREVER: the client names the quest's item itself, which Blizzard's
+	-- tracker reads (Blizzard_ObjectiveTrackerShared.lua:53). No database needed.
+	if _G.__flavour == "camelot" then
+		UninstallQuestieAndTomTom()
+		_G.GetQuestLogSpecialItemInfo = function(index)
+			local q = _G.__visibleLog()[index]
+			if q and q.id == 4901 then return "|Hitem:6000|h[Prowler Lure]|h", "lure.tga", 1, false end
+			return nil
+		end
+		_G.__itemCounts[6000] = 1
+		I.QT:Refresh()
+		I.p = I.btn(4901)
+		check(I.up(4901) and I.p:GetAttribute("item1") == "item:6000" and I.p.icon:GetTexture() == "lure.tga",
+			"on WoW Forever the client's own quest item, with its own icon")
+		check(not I.up(861), "and without Questie nothing from a database")
+		_G.GetQuestLogSpecialItemInfo = nil
+		_G.__itemCounts[6000] = nil
+		I.QT:Refresh()
+		check(not I.up(4901), "gone when the client stops naming it")
+	else
+		UninstallQuestieAndTomTom()
+		I.QT:Refresh()
+		check(not I.up(861), "on Classic Era without Questie there is nothing to name the item")
+	end
+	questieQuests[861], questieQuests[1069] = nil, nil
+	_G.__itemCounts[5000], _G.__itemUse[5000] = nil, nil
+	I.QT.SetTracked(861, I.wasTracked)
+	I.QT:Refresh()
+end
+
 print("== quest tracker: combat fold ==")
 do
 	-- Start from what a fresh load actually looks like. `collapsed` is nil until
@@ -15620,14 +15911,16 @@ do
 		.. " a state, not the absence of one")
 
 	QT:SetCollapsed(false)
-	local open = QT.panel:GetHeight()
-	check(QT.panel.body:IsShown(), "body visible out of combat")
+	local trunk = A.Trunk:Get("world").frame
+	local open = trunk:GetHeight()
+	check(TShown() > 0, "quest nodes on the trunk out of combat")
 
 	_G.__inCombat = true
 	fire("PLAYER_REGEN_DISABLED")
-	check(QT.collapsed and not QT.panel.body:IsShown(), "folds to the heading in combat")
-	local folded = QT.panel:GetHeight()
-	check(folded < open, "and the panel is shorter for it ("
+	check(QT.collapsed and TShown() == 0 and A.Trunk:Get("world"):Node("questlog").button:IsShown(),
+		"folds to the Quest Log node in combat")
+	local folded = trunk:GetHeight()
+	check(folded < open, "and the trunk is shorter for it ("
 		.. math.floor(folded) .. " < " .. math.floor(open) .. ")")
 
 	-- unfolding by hand mid-fight has to survive the end of the fight
@@ -15687,93 +15980,47 @@ do
 	_G.__units.player.level = 15
 	QT:Refresh()
 
-	-- The row wears a level CHIP, like a quest log row, rather than a "[15]"
-	-- prefix - and the difficulty is on the chip, never on the title.
-	local row = QT.panel.rows[1]
-	check(row.chip:IsShown() and row.chip.text:GetText() == "15",
-		"the level is shown in a chip in front of the title (got "
-		.. tostring(row.chip.text:GetText()) .. ")")
-	local band = A.Palette.c.questDiff[QT.quests[1].band]
-	check(row.chip._fillColor == band.bg, "tinted with its difficulty band's fill")
-	-- The chip is a label on the title, so it must not be drawn louder than the
-	-- title. The qlChip role's own 12 was picked against the log's 14pt rows.
-	local _, chipPt = row.chip.text:GetFont()
-	local _, titlePt = row.title:GetFont()
-	check(chipPt and titlePt and chipPt < titlePt,
-		"the chip's digits are smaller than the title beside them ("
-		.. tostring(chipPt) .. " vs " .. tostring(titlePt) .. ")")
-	-- All three components. On the neutral band the ink and the fill both start
-	-- at 255, so comparing only the red channel passes with the digits painted
-	-- in the background colour.
-	local ink = row.chip.text.__color
-	check(ink and ink[1] == band.text[1] and ink[2] == band.text[2]
-		and ink[3] == band.text[3], "and the digits take the band's ink")
-	check(row.title.__color and row.title.__color[1] == A.Palette.c.text[1]
-		and row.title.__color[2] == A.Palette.c.text[2]
-		and row.title.__color[3] == A.Palette.c.text[3],
+	-- THE NODE'S OUTLINE carries the difficulty, as the quest log's chip does
+	-- (Lattice 6a) - never the title, which stays plain body text.
+	local function rgb(tex) local r, g, b = tex:GetVertexColor() return { r, g, b } end
+	local function same(a, b)
+		return a and b and math.abs(a[1] - b[1]) < 0.001 and math.abs(a[2] - b[2]) < 0.001
+			and math.abs(a[3] - b[3]) < 0.001
+	end
+	local nodeOf = {}
+	for i = 1, #QT.nodes do
+		local n = QT.nodes[i]
+		if n.quest then nodeOf[n.quest.questID] = n end
+	end
+	local keg = nodeOf[861]
+	local band = A.Palette.c.questDiff[keg.quest.band]
+	check(same(rgb(keg.button.rim), band.bg),
+		"an in-progress quest's outline is its difficulty band's colour")
+	check(keg.holder.title.__color and same(keg.holder.title.__color, A.Palette.c.text),
 		"while the title itself stays plain body text, whatever the difficulty")
-
-	-- The chip has to fit the title's own line. It is anchored at the top of the
-	-- row and RowHeight() budgets TITLE_H for that line, so a chip taller than
-	-- the title draws straight through the first objective and the bar.
-	check(row.chip:GetHeight() <= row.title:GetHeight(),
-		"the chip fits inside the title line rather than overrunning the objectives ("
-		.. row.chip:GetHeight() .. " vs " .. row.title:GetHeight() .. ")")
-	-- PINNED, not just non-zero: the chip is a fixed width so that a two-digit
-	-- level and a one-digit level start their titles on the same edge. Sized to
-	-- its text instead, the column steps in and out as you read down it.
-	check(row.chip:GetWidth() == 28,
-		"and a pinned width, so the titles line up down the column (got "
-		.. row.chip:GetWidth() .. ")")
-
-	local titleLeft, gap, titleRight
-	for i = 1, 4 do
-		local p, rel, _, x = row.title:GetPoint(i)
-		if p == "TOPLEFT" then titleLeft, gap = rel, x end
-		if p == "TOPRIGHT" then titleRight = rel end
-	end
-	check(titleLeft == row.chip and (gap or 0) > 0,
-		"and the title hangs off the chip's right edge, not off the row")
-	-- TOPRIGHT rather than RIGHT, and it matters. RIGHT plus TOPLEFT pins the
-	-- top edge and the vertical centre at once, so on a row with three objective
-	-- lines under it the title's box stretches to the whole row and the text,
-	-- being MIDDLE-justified, drifts down among its own objectives.
-	check(titleRight == row, "with its right edge pinned by the TOP corner, not the middle")
-
-	-- The band -> palette step, checked on a quest whose band is NOT the neutral
-	-- fallback. Every assertion above rides on quests[1], a level-15 quest for a
-	-- level-15 player, which lands on exactly the band the `or` degrades to - so
-	-- a tracker that painted every chip one colour would satisfy all of them.
-	local hard, hardRow
-	for i, q in ipairs(QT.quests) do
-		if q.questID == 5041 then hard, hardRow = q, QT.panel.rows[i] end
-	end
-	local hardBand = A.Palette.c.questDiff[hard and hard.band]
-	check(hard and hard.band == "verydifficult" and hardRow.chip.text:GetText() == "18",
-		"the level-18 quest has its own row and its own band")
-	check(hardRow.chip._fillColor == hardBand.bg
-		and hardRow.chip._fillColor ~= band.bg,
-		"and a chip in a different colour from the level-15 one beside it")
-	local hardInk = hardRow.chip.text.__color
-	check(hardInk[1] == hardBand.text[1] and hardInk[2] == hardBand.text[2]
-		and hardInk[3] == hardBand.text[3], "with the matching ink")
-
-	-- Turning the level off must move the title back to the row's edge. An
-	-- anchor to a hidden region still resolves, so a stale one would indent
-	-- every title by the width of a chip that is not on screen.
-	local cfgQT = A.db.profile.modules.questtracker
-	cfgQT.showLevel = false
+	-- And it follows the band: levelled past it, the same quest goes grey.
+	_G.__units.player.level = 40
 	QT:Refresh()
-	local row1 = QT.panel.rows[1]
-	check(not row1.chip:IsShown(), "with the level off the chip goes away")
-	local anchored
-	for i = 1, 4 do
-		local p, rel = row1.title:GetPoint(i)
-		if p == "TOPLEFT" then anchored = rel end
-	end
-	check(anchored == row1, "and the title re-anchors to the row, not to the hidden chip")
-	cfgQT.showLevel = true
+	local trivial = A.Palette.c.questDiff.trivial
+	check(same(rgb(nodeOf[861].button.rim), trivial.bg) and not same(trivial.bg, band.bg),
+		"and levelling past it turns the outline to the trivial band's colour")
+	_G.__units.player.level = 15
 	QT:Refresh()
+
+	-- THE STATES, one quest of each in the mock log (6a, and failed is ours).
+	local harpy, prowl, lost = nodeOf[1069], nodeOf[4901], nodeOf[5041]
+	check(harpy.quest.complete and same(rgb(harpy.button.fill), A.Palette.c.friendly)
+		and harpy.button.glow:IsShown() and harpy.holder.tag:IsShown()
+		and harpy.holder.tag:GetText() == "TURN IN",
+		"complete: filled green, glowing, and TURN IN beside the title")
+	check(lost.quest.failed and not lost.quest.complete and same(rgb(lost.button.rim), A.Palette.c.danger)
+		and lost.holder.tag:GetText() == "FAILED" and not same(rgb(lost.button.fill), A.Palette.c.friendly),
+		"failed (isComplete -1): a red hollow node and FAILED - no longer drawn as in progress")
+	check(prowl.quest.elsewhere and not keg.quest.elsewhere
+		and (prowl.holder.title.__color[4] or 1) < 0.6 and select(4, prowl.button.rim:GetVertexColor()) < 0.4,
+		"listed under another zone: faint outline and faint title; here in the Barrens: not")
+	check(not keg.holder.tag:IsShown() and not keg.button.glow:IsShown(),
+		"in progress: an outline, no tag, no glow")
 
 	-- a complete quest says so in words, not only in colour
 	local complete
@@ -15783,6 +16030,12 @@ do
 	check(complete and complete.lines[#complete.lines].text == "Complete",
 		"a complete quest gets a Complete line, so an objective-less one is not silent")
 end
+
+-- The screen the sections before the tracker's left behind.
+UIParent:SetSize(_G.__trackerScreen.w, _G.__trackerScreen.h)
+UIParent.__geom = _G.__trackerScreen.geom
+A.db.profile.anchors = _G.__trackerScreen.anchors
+A:Reconfigure()
 
 print("== widgets: pill defaults ==")
 do
@@ -23738,8 +23991,8 @@ do
 	UIParent:SetSize(1000, 1080)
 	UIParent.__scale = 1
 
-	local entry = M.registry.quests
-	check(entry ~= nil, "the quest tracker registers a mover")
+	local entry = _G.__testMover()
+	check(entry ~= nil and entry.handle ~= nil, "a panel registered as a mover has a handle")
 	local f, h = entry.frame, entry.handle
 	f.__scale = 0.5                      -- so frame space is 2x UIParent's
 	f:SetSize(200, 100)                  -- 100 x 50 in UIParent units
@@ -23749,7 +24002,7 @@ do
 	target:SetGeom({ cx = 550, cy = 275, left = 400, right = 700, bottom = 200, top = 350 })
 
 	local saved = M.registry
-	M.registry = { quests = entry, __t = { name = "__t", frame = target } }
+	M.registry = { __testpanel = entry, __t = { name = "__t", frame = target } }
 	check(math.abs(M.FieldStep() - 24) < 1e-6,
 		"on a 1080 screen the field's step is the handoff's 24 (" .. M.FieldStep() .. ")")
 	A.db.profile.movers.snapDistance = 12
@@ -23834,6 +24087,7 @@ do
 	M.registry = saved
 	f.__geom, f.__scale = nil, 1
 	M:Lock()
+	M:Unregister("__testpanel")
 	check(not g:IsShown(), "the grid goes away with the handles")
 
 	-- A snap on one axis only leaves the other guide's slot nil, and `ipairs`
@@ -23947,14 +24201,14 @@ do
 	A:Reconfigure()
 
 	-- THE BEHAVIOUR (B2). A controlled screen again: a parent, a child being
-	-- dragged (the quest tracker's handle, hung from it for the test), one
+	-- dragged (the test panel's handle, hung from it for the test), one
 	-- other frame whose edge is nearer than the parent's centre, and a third
 	-- node to drop onto. 1080 tall, so a field unit is one UIParent unit.
 	print("== lattice unlock: the behaviour ==")
 	UIParent:SetSize(1000, 1080)
 	UIParent.__scale = 1
 	M:Unlock()
-	local entry = M.registry.quests
+	local entry = _G.__testMover()
 	local f, h = entry.frame, entry.handle
 	f.__scale = 1
 	local P = CreateFrame("Frame", "AetherUILatticeParent", UIParent)
@@ -23967,7 +24221,7 @@ do
 	local savedAnchors = A.db.profile.anchors
 	A.db.profile.anchors = {}
 	M.registry = {
-		quests = entry,
+		__testpanel = entry,
 		__p = { name = "__p", frame = P, label = "Anchor" },
 		__t = { name = "__t", frame = T, label = "Edge" },
 		__q = { name = "__q", frame = Q, label = "Other" },
@@ -24003,7 +24257,7 @@ do
 		.. tostring(fb.snapText:GetText()) .. " " .. tostring(fb.snapDist:GetText()) .. ")")
 	check(fb.dashes[1] and fb.dashes[1]:IsShown(), "with a dashed bond to the parent")
 	local insp = M.__inspector()
-	check(insp:IsShown() and insp.title:GetText() == "QUESTS"
+	check(insp:IsShown() and insp.title:GetText() == "TEST PANEL"
 		and insp.rows[1].v:GetText() == "ANCHOR" and insp.rows[3].v:GetText() == "Down"
 		and tostring(insp.rows[4].v:GetText()):match("^%d+%%$"),
 		"the inspector shows the node's parent, how it grows and its scale ("
@@ -24037,16 +24291,16 @@ do
 		"the junction under the cursor lights: BOND · OTHER ("
 		.. tostring(fb.bondText:GetText()) .. ")")
 	h:GetScript("OnDragStop")(h)
-	check(M:ParentOf("quests") == "__q", "and the drop hangs it from that node ("
-		.. tostring(M:ParentOf("quests")) .. ")")
+	check(M:ParentOf("__testpanel") == "__q", "and the drop hangs it from that node ("
+		.. tostring(M:ParentOf("__testpanel")) .. ")")
 
 	-- 4. Refused: onto one of its own children, and anything of the pair.
-	M.registry.__q.parent = "quests"
+	M.registry.__q.parent = "__testpanel"
 	entry.parent = "__p"
 	dragOnce()
 	check(fb.bondText:GetText() == "NO BOND · OTHER", "a node's own child lights red: NO BOND")
 	h:GetScript("OnDragStop")(h)
-	check(M:ParentOf("quests") == "__p", "and the drop is refused - that bond would loop")
+	check(M:ParentOf("__testpanel") == "__p", "and the drop is refused - that bond would loop")
 	M.registry.__q.parent = nil
 	local pairTry = M.__junctionUnder({ name = "__x", pairLead = "player" }, 800, 300)
 	check(pairTry and pairTry.refused == A.L.movers.bond.pair,
@@ -24056,6 +24310,7 @@ do
 	A.db.profile.anchors = savedAnchors
 	f.__geom, f.__scale = nil, 1
 	M:Lock()
+	M:Unregister("__testpanel")
 	check(not fb.bond:IsShown() and not M.__inspector():IsShown(), "and locking clears it all")
 
 	-- 5. Stretching the spine: the inspector reads its length.
@@ -24203,12 +24458,19 @@ do
 	-- Nothing in this suite could have caught it: every quest-log check either
 	-- opened our window first, which expands, or asserted the tracker's saved
 	-- sets rather than what it DREW.
+	-- On the reference screen, where the trunk has room for quests at all.
+	local screen = { w = UIParent:GetWidth(), h = UIParent:GetHeight(), geom = UIParent.__geom,
+		anchors = A.db.profile.anchors }
+	UIParent:SetSize(1920, 1080)
+	UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+	A.db.profile.anchors = {}
+	A:Reconfigure()
+
 	A.db.char.tracked, A.db.char.untracked = {}, {}
 	ExpandQuestHeader(0)
 	QTf:Refresh()
-	local wasRows = 0
-	for _, r in ipairs(QTf.panel.rows) do if r:IsShown() then wasRows = wasRows + 1 end end
-	check(wasRows > 0, "with nothing folded the tracker draws rows (" .. wasRows .. ")")
+	local wasRows = TShown()
+	check(wasRows > 0, "with nothing folded the trunk carries quest nodes (" .. wasRows .. ")")
 
 	-- Fold every zone, the way a player would, and the way an earlier session
 	-- can leave it.
@@ -24221,8 +24483,7 @@ do
 	end
 	QTf:Refresh()
 
-	local rows = 0
-	for _, r in ipairs(QTf.panel.rows) do if r:IsShown() then rows = rows + 1 end end
+	local rows = TShown()
 	local _, numQuests = GetNumQuestLogEntries()
 
 	-- THE CLIENT STILL ADMITS TO THE QUESTS. Only the entry count moves when a
@@ -24236,15 +24497,12 @@ do
 		.. tostring(QTf.behindFold) .. ")")
 
 	-- THE POINT. Empty is fine; empty WITHOUT SAYING WHY is what looked broken.
-	if rows == 0 then
-		check(QTf.panel.more:IsShown(),
-			"an empty tracker with quests behind a fold says so, in the line the"
-			.. " overflow count already uses - rather than drawing nothing and"
-			.. " looking like a window that has stopped working")
-		check(QTf.panel.more:GetText():find("fold", 1, true) ~= nil,
-			"and says WHAT is hiding them (" ..
-			tostring(QTf.panel.more:GetText()) .. ")")
-	end
+	check(rows == 0, "folded, the trunk has no quest nodes to show (" .. rows .. ")")
+	check(QTf.more and QTf.more.button:IsShown(),
+		"and says so, on the node the overflow count already uses - rather than"
+		.. " showing nothing and looking like it has stopped working")
+	check(QTf.more and tostring(QTf.more.holder.title:GetText()):find("fold", 1, true) ~= nil,
+		"and says WHAT is hiding them (" .. tostring(QTf.more and QTf.more.holder.title:GetText()) .. ")")
 
 	-- AND IT DOES NOT UNDO THE PLAYER'S FOLD ON THE WAY PAST. The first fix
 	-- expanded from the scan itself, so folding a zone anywhere was reversed in
@@ -24276,6 +24534,11 @@ do
 	ExpandQuestHeader(0)
 	QTf:Refresh()
 	A.db.char.tracked, A.db.char.untracked = {}, {}
+
+	UIParent:SetSize(screen.w, screen.h)
+	UIParent.__geom = screen.geom
+	A.db.profile.anchors = screen.anchors
+	A:Reconfigure()
 end
 
 print("== quest log: difficulty bands and the tri-state complete flag ==")
@@ -25296,23 +25559,29 @@ do
 	_G.__units.player.level = wasLevel
 	QLog:Refresh()
 
-	-- The tracker wears the same chip, and the point of checking it here is that
-	-- it is a SECOND module reading the same table - the chip that follows the
-	-- skin in the log and stays midnight in the tracker is the bug, and it is
-	-- invisible unless both are asked at once.
+	-- The tracker's quest nodes carry the same bands, and the point of checking
+	-- them here is that it is a SECOND module reading the same table - colours
+	-- that follow the skin in the log and stay midnight on the trunk are the
+	-- bug, and it is invisible unless both are asked at once.
+	__refScreen(true)
 	local QTd = A:GetModule("questtracker")
-	local trow = QTd.panel.rows[1]
-	local tband = QTd.quests[1] and A.Palette.c.questDiff[QTd.quests[1].band]
-	check(trow and tband and trow.chip._fillColor == tband.bg,
-		"the tracker's chip follows the skin too, rather than staying midnight")
-	check((trow.chip.text.__shadow or {})[4] == 0.55,
-		"and its digits keep their shadow - the band ink is semantic, so it is"
-		.. " light type on every skin and needs the shadow on all of them")
-
+	local tn
+	for _, n in ipairs(QTd.nodes or {}) do
+		if n.quest and not n.quest.complete and not n.quest.failed and not tn then tn = n end
+	end
+	local tband = tn and A.Palette.c.questDiff[tn.quest.band]
+	local r, g, b = 0, 0, 0
+	if tn then r, g, b = tn.button.rim:GetVertexColor() end
+	check(tn and tband and math.abs(r - tband.bg[1]) < 0.001 and math.abs(g - tband.bg[2]) < 0.001
+		and math.abs(b - tband.bg[3]) < 0.001,
+		"the tracker's quest node follows the skin too, rather than staying midnight")
 	A.db.profile.skin = "midnight"
 	A:Restyle()
-	check((trow.chip.text.__shadow or {})[4] == 0.55,
-		"and midnight is no different, which is the whole claim")
+	tband = tn and A.Palette.c.questDiff[tn.quest.band]
+	if tn then r, g, b = tn.button.rim:GetVertexColor() end
+	check(tn and math.abs(r - tband.bg[1]) < 0.001 and math.abs(g - tband.bg[2]) < 0.001,
+		"and back on midnight it is midnight's band")
+	__refScreen(false)
 	QLog:Hide()
 end
 
@@ -35331,9 +35600,14 @@ section("threat: one place decides which tier a unit is in", function()
 
 			-- AND THEN IT GOES.
 			tick(4)
+			-- Fails about once in forty runs; what it says when it does is the
+			-- way to the cause.
 			check(al.spec == nil and (al.wash.__aetherWant or 0) == 0
 				and (al.chip.__aetherWant or 0) == 0,
-				"and off once it has had its time")
+				"and off once it has had its time (spec " .. tostring(al.spec and al.spec.label)
+				.. ", pending " .. tostring(al.pending) .. ", up " .. tostring(al.up)
+				.. ", wash " .. tostring(al.wash.__aetherWant) .. ", chip " .. tostring(al.chip.__aetherWant)
+				.. ", last " .. tostring(A.lastFailure) .. ")")
 
 			-- A STATE THAT COMES BACK DURING THE WAIT KEEPS IT UP, rather than
 			-- clearing on the old timer and flashing up again a moment later.

@@ -852,16 +852,11 @@ local function QuestGroup()
 			L.options.quest.tracker_shows_every_quest, at("autoTrack"), { defaultTrue = true }),
 		combatCollapse = toggle(L.options.quest.combat_collapse.name,
 			L.options.quest.shrinks_heading_when_fight, at("combatCollapse")),
-		showObjectives = toggle(L.options.quest.show_objectives.name, nil, at("showObjectives")),
-		showLevel = toggle(L.options.quest.show_level.name,
-			L.options.quest.tinted_chip_front_each,
-			at("showLevel")),
-
-		sizeHeader = header(L.common.size),
-		width = range(L.common.width, nil, at("width"), 180, 420, 1),
-		maxHeight = range(L.common.height_budget,
-			L.options.quest.whatever_does_fit_reported, at("maxHeight"), 120, 900, 10),
-		max = range(L.options.quest.max.name, nil, at("max"), 1, 20, 1),
+		showObjectives = toggle(L.options.quest.show_objectives.name,
+			L.options.quest.show_objectives.desc, at("showObjectives")),
+		-- On the World trunk: how many before the rest fold into "+n". The
+		-- screen's own height cuts it shorter where it must.
+		max = range(L.options.quest.max.name, L.options.quest.max.desc, at("max"), 1, 20, 1),
 
 		trackHeader = header(L.options.quest.track_header),
 		adoptWatches = toggle(L.options.quest.adopt_watches.name,

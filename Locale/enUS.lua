@@ -1130,28 +1130,26 @@ L["options.quest.clear.desc"] = "Forget every dismissed and tracked quest."
 L["options.quest.clear.name"] = "Reset tracking"
 L["options.quest.combat_collapse.name"] = "Fold in combat"
 L["options.quest.hide_blizzard.name"] = "Hide Blizzard's tracker"
+L["options.quest.max.desc"] =
+	"On the World trunk. The rest fold into one +n node, and fewer show if the "
+		.. "screen is too short for them."
 L["options.quest.max.name"] = "Most quests to show"
 L["options.quest.quest_tracker"] = "Quest tracker"
 L["options.quest.questlog.name"] = "Our quest log"
 L["options.quest.replaces_game_s_own"] =
 	"Replaces the game's quest log window. Off gives you Blizzard's "
 		.. "back."
-L["options.quest.show_level.name"] = "Show quest level"
+L["options.quest.show_objectives.desc"] =
+	"Under the active quest's title. Every quest's objectives also show while "
+		.. "the cursor is on it."
 L["options.quest.show_objectives.name"] = "Show objective lines"
 L["options.quest.shrinks_heading_when_fight"] =
-	"Shrinks to the heading when a fight starts."
-L["options.quest.tinted_chip_front_each"] =
-	"A tinted chip in front of each title, coloured by difficulty the "
-		.. "same way the quest log colours it. Off, the titles start at the "
-		.. "edge."
+	"Leaves only the Quest Log node on the trunk while you are in a fight."
 L["options.quest.track_header"] = "Tracking"
 L["options.quest.tracker_shows_every_quest"] =
 	"On, the tracker shows every quest in your log and you dismiss the "
 		.. "ones you do not want. Off, it shows nothing until you shift-click "
 		.. "a quest in the log."
-L["options.quest.whatever_does_fit_reported"] =
-	"Whatever does not fit is reported as '+N more' rather than "
-		.. "silently dropped."
 L["options.quest.whitelist_mode_only_blizzard"] =
 	"Whitelist mode only. Blizzard caps its list at five."
 
@@ -1509,15 +1507,16 @@ L["tour.threat_demo.trouble_coming"] = "trouble coming"
 
 L["tour.toolbox_control.tap_edge"] = "tap an edge"
 
--- tracker -----------------------------------------------------------------
-
-L["tracker.build.q_u_e_s"] = "Q U E S T S"
-
 -- trunks ------------------------------------------------------------------
 
 L["trunk.calendar"] = "Calendar"
 L["trunk.calendar_combat"] = "the calendar can't be opened for the first time in combat."
+L["trunk.failed"] = "Failed"
+L["trunk.more_d"] = "+%d"
 L["trunk.questlog"] = "Quest Log"
+L["trunk.turn_in"] = "Turn in"
+
+-- tracker -----------------------------------------------------------------
 
 L["tracker.navigate.can_t_route_quest"] = "can't route to that quest."
 L["tracker.navigate.quest"] = "the quest"

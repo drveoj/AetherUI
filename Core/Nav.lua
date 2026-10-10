@@ -258,6 +258,45 @@ function Nav:Locate(questID)
 end
 
 -- ---------------------------------------------------------------------------
+-- a quest's items
+-- ---------------------------------------------------------------------------
+
+--- The items a quest gives you or asks for, by id, from Questie's database:
+--  its source item, its required source items and its item objectives -
+--  what Questie's own tracker picks its item button from on Classic Era
+--  (TrackerUtils.AddQuestItemButtons). Empty without Questie.
+--
+--  Only QuestieDB is asked for, not the routing modules: an item button needs
+--  neither TomTom nor a map.
+function Nav:SourceItems(questID)
+	local out = {}
+	if not questID or not QuestieLoader or type(QuestieLoader.ImportModule) ~= "function" then return out end
+	if not _G.Questie or not _G.Questie.API or not _G.Questie.API.isReady then return out end
+	local db = QuestieLoader:ImportModule("QuestieDB")
+	if type(db.GetQuest) ~= "function" then return out end
+	local ok, quest = pcall(db.GetQuest, questID)
+	if not ok or type(quest) ~= "table" then return out end
+
+	local seen = {}
+	local function Add(id)
+		if type(id) == "number" and not seen[id] then
+			seen[id] = true
+			out[#out + 1] = id
+		end
+	end
+	Add(quest.sourceItemId)
+	if type(quest.requiredSourceItems) == "table" then
+		for _, id in ipairs(quest.requiredSourceItems) do Add(id) end
+	end
+	if type(quest.ObjectiveData) == "table" then
+		for _, o in ipairs(quest.ObjectiveData) do
+			if type(o) == "table" and o.Type == "item" then Add(o.Id) end
+		end
+	end
+	return out
+end
+
+-- ---------------------------------------------------------------------------
 -- the waypoint
 -- ---------------------------------------------------------------------------
 
