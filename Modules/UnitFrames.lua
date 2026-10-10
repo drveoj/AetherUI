@@ -771,12 +771,14 @@ end
 --  already driven by RegisterUnitWatch, which is secure and works in combat; the
 --  aura trays collapse themselves when their unit stops existing; and the glass
 --  - which is everything you can see - has no protected descendants at all.
+--  A capsule switched off (`off`, see UF:SetSatellite) stays down whatever
+--  the unit is doing.
 local function SetVisible(f, shown)
-	if shown then f.glass:Show() else f.glass:Hide() end
+	if shown and not f.off then f.glass:Show() else f.glass:Hide() end
 end
 
 local function UpdateAll(f)
-	if not UnitExists(f.unit) then
+	if f.off or not UnitExists(f.unit) then
 		SetVisible(f, false)
 		return
 	end
@@ -1070,6 +1072,44 @@ end
 
 UF.CastStart, UF.CastStop, UF.CastFlash = CastStart, CastStop, CastFlash
 
+--- A made-up cast on a lane, for the first-run tour's fight: plain numbers on
+--  our own tick, nothing asked of the client. `which` is "player" or "target".
+function UF:DemoCast(which, name, secs)
+	local f = (which == "target") and self.targetCast or self.cast
+	if not f then return false end
+	local c = Palette.c
+	local col = (which == "target") and c.laneTarget or c.laneCast
+	local st = f.state
+	st.active, st.channel = true, false
+	f.flashing = nil
+	f.flash:Hide()
+	if self.spine then self:MeasureSpine() end
+	f.spellName:SetText(string.upper(name or ""))
+	W.Color(f.spellName, col)
+	W.Color(f.time, col)
+	f.bar:SetColors(col)
+	f.cap:SetVertexColor(col[1], col[2], col[3], col[4] or 1)
+	f.glow:SetVertexColor(col[1], col[2], col[3], 0.55)
+	if f.locked then
+		f.bar:GetStatusBarTexture():SetAlpha(1)
+		f.cap:SetAlpha(1)
+		f.glow:SetAlpha(1)
+		f.locked:SetAlpha(0)
+		f.lockedCap:SetAlpha(0)
+		f.label:SetAlpha(1)
+	end
+	if f.binding then f.binding:SetEnabled(false) end
+	local now = GetTime() * 1000
+	st.startTime, st.endTime = now, now + (secs or 1) * 1000
+	f.bar:SetMinMaxValues(0, 1)
+	f.bar:Show()
+	f.glow:Show()
+	f:SetScript("OnUpdate", CastTick)
+	CastTick(f)
+	f:Show()
+	return true
+end
+
 -- ---------------------------------------------------------------------------
 -- events
 -- ---------------------------------------------------------------------------
@@ -1282,7 +1322,7 @@ function UF:RegisterMovers()
 	-- measured first, so what hangs from it is bonded to where it really is.
 	self:MeasureSpine()
 	if self.spine then A.Movers:RegisterNode("spine", self.spine, "player") end
-	if self.pet then
+	if self.pet and not self.pet.off then
 		-- Under the player by default, which is where one is looked for - but
 		-- its OWN entry, so it can be put anywhere. A pet frame you cannot move
 		-- is one you end up turning off. Bonded to the player: it goes where
@@ -1291,7 +1331,7 @@ function UF:RegisterMovers()
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, "Pet",
 			{ parent = "player", shape = "pill" })
 	end
-	if self.tot then
+	if self.tot and not self.tot.off then
 		-- Under the TARGET, which is the mirror of where the pet sits and
 		-- where this one is looked for: it answers a question about the
 		-- thing above it. Bonded to the target.
@@ -1299,6 +1339,54 @@ function UF:RegisterMovers()
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 140 },
 			"Target of Target", { parent = "target", shape = "pill" })
 	end
+end
+
+--- The pet's capsule or the target's target's (`which` "pet" or
+--  "targettarget"), on or off, live - the first-run tour's switches, and the
+--  setting with them. Built if it never was; switched off, its glass goes,
+--  its unit watch is let go and it leaves the movers and the fader. Out of
+--  combat only: the unit watch is secure.
+function UF:SetSatellite(which, on)
+	if InCombatLockdown() or not self.player then return false end
+	local cfg = A.Config:Module("unitframes")
+	local isPet = (which == "pet")
+	cfg[isPet and "showPet" or "showToT"] = on and true or false
+	local f = isPet and self.pet or self.tot
+	if on then
+		if not f then
+			f = BuildCapsule(isPet and "pet" or "targettarget", not isPet)
+			if isPet then self.pet = f else self.tot = f end
+			self.frames[#self.frames + 1] = f
+			self:OnConfigChanged()
+		else
+			f.off = nil
+			if not f.unitWatched and RegisterUnitWatch and f.click then
+				RegisterUnitWatch(f.click)
+				f.unitWatched = true
+			end
+		end
+		self:RegisterMovers()
+		A.Fader:Register(f, {})
+		A.Fader:Refresh()
+		UpdateAll(f)
+	elseif f then
+		f.off = true
+		if f.unitWatched and UnregisterUnitWatch then
+			UnregisterUnitWatch(f.click)
+			f.unitWatched = nil
+		end
+		if f.click then f.click:Hide() end
+		SetVisible(f, false)
+		A.Fader:Unregister(f)
+		A.Movers:Unregister(isPet and "pet" or "targettarget")
+	end
+	return true
+end
+
+--- Whether that capsule is on.
+function UF:SatelliteOn(which)
+	local f = (which == "pet") and self.pet or self.tot
+	return (f ~= nil and not f.off) and true or false
 end
 
 function UF:OnEnable()

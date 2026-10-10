@@ -2093,6 +2093,10 @@ function OW:Open(section)
 		return false
 	end
 	local f = self:Build()
+	-- A close still running is called off: its animation is replaced below,
+	-- and the flag left standing made a window that had just opened report
+	-- itself shut.
+	self.closing = nil
 	self.tree, self.index, self.results = nil, nil, nil
 	-- Hidden before they are forgotten: a page drawn last time and dropped
 	-- from the cache still showed under the new one (Joe, in game).

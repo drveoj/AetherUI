@@ -160,6 +160,22 @@ function Fader:Unregister(frame)
 	end
 end
 
+--- Hold a watched frame at a share of what it would be, or nil to let it go.
+--  The tour's growth: a piece not grown yet is held at 0, and let go it
+--  fades in at the frame's own speed. Returns false for a frame the fader
+--  does not watch, which its caller then sets by hand.
+function Fader:Hold(frame, share)
+	local entry = frame and Fader.watched[frame]
+	if not entry then return false end
+	entry.hold = share
+	if share == 0 then
+		entry.target, entry.animating = 0, false
+		frame:SetAlpha(0)
+	end
+	Fader:Update()
+	return true
+end
+
 function Fader:Touch()
 	lastActivity = GetTime()
 end
@@ -311,6 +327,9 @@ function Fader:Update()
 			t = t * (e or 1)
 			if hot then entry.fadeIn = HOVER_IN end
 		end
+		-- HELD BACK by the first-run tour, which grows the HUD a piece at a
+		-- time: a frame not grown yet is at nothing whatever the state says.
+		if entry.hold then t = t * entry.hold end
 		if entry.target ~= t then
 			entry.target = t
 			entry.animating = true

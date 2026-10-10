@@ -7618,6 +7618,12 @@ print("== boot ==")
 AetherUIDB = nil
 fire("ADDON_LOADED", ADDON)
 fire("PLAYER_LOGIN")
+-- A CHARACTER THAT HAS BEEN THROUGH THE TOUR. The first run holds the whole HUD
+-- back and grows it a piece at a time, so a suite booted as a brand new
+-- character would be testing every other module behind a welcome card. The
+-- first-run sections make their own fresh character, which is the only place
+-- that question is asked.
+A.db.char.onboard = { completed = true }
 fire("PLAYER_ENTERING_WORLD")
 
 print("== assertions ==")
@@ -34976,145 +34982,365 @@ do
 end
 
 
-print("== onboarding: the tour IS the setup ==")
+print("== onboarding: the growth ==")
 do
 	local OB = A:GetModule("onboard")
-	-- BY KEY, NOT BY NUMBER. Everything below used to address its stop by
-	-- index, and inserting the zen stop at four moved five of them - which
-	-- showed up as ten failures in three unrelated features. A stop's key is
-	-- the thing that does not move when the running order changes.
+	local UF = A:GetModule("unitframes")
+	local AB = A:GetModule("actionbars")
+	local QT = A:GetModule("questtracker")
+	local TB = A:GetModule("toolbox")
+	local MM = A:GetModule("minimap")
 	local function At(key)
 		for i, stop in ipairs(OB.stops) do
 			if stop.key == key then return i end
 		end
 		error("no stop keyed " .. tostring(key), 2)
 	end
-	check(OB ~= nil, "the tour loaded")
-	A.db.char.onboard = {}
-
-	-- EIGHT STOPS, THREE THAT SET AND FIVE THAT SHOW. A first run that asked
-	-- eight questions would be a form and one that asked none would be a
-	-- slideshow; the split is the design.
-	check(#OB.stops == 9, "there are nine stops (" .. #OB.stops .. ")")
-	local sets, shows = 0, 0
-	for _, stop in ipairs(OB.stops) do
-		if stop.kind == "set" then sets = sets + 1 else shows = shows + 1 end
-		check(stop.name and stop.head and stop.body and stop.target,
-			"\"" .. tostring(stop.key) .. "\" has a name, a headline, a body and "
-			.. "something to point at")
-	end
-	-- FOUR THAT SET AND FIVE THAT SHOW. The deck drew eight and did not have
-	-- zen in it; the split is the design, and zen belongs on the setting side
-	-- because the one real decision about it is whether you want it at all.
-	check(sets == 4 and shows == 5,
-		"four of them set something and five show something (" .. sets .. ", "
-		.. shows .. ")")
-
-	-- THE WELCOME CARD COMES FIRST, not stop 1. Somebody who has just
-	-- installed this has no idea what it is, and dropping them straight into
-	-- "pick a palette" answers a question they have not been asked.
-	OB:Start()
-	check(OB.card and OB.card:IsShown(),
-		"starting shows the welcome card")
-	check(not (OB.callout and OB.callout:IsShown()),
-		"and not a stop yet")
-	check(OB.scrim and OB.scrim:IsShown(),
-		"over a dimmed world")
-
-	-- AND IT INTRODUCES ITSELF BY NAME. The kicker line said "AETHER UI" in
-	-- small caps, which is the wordmark spelled out by a font that is not the
-	-- wordmark. The mark goes here and the kicker goes away - both, or the card
-	-- carries the same three syllables twice, once as art and once as type.
-	check(OB.card.logo and OB.card.logo:IsShown()
-		and OB.card.logo:GetTexture() == A.Media.texture.logo,
-		"the welcome card wears the mark")
-	check(not OB.card.kicker:IsShown(),
-		"instead of the kicker line, not as well as it")
-
-	-- AT THE ART'S OWN ASPECT, and the art is a band inside a bigger canvas -
-	-- so the crop and the shape have to agree. Sized from the canvas instead,
-	-- the box is a fifth taller than the ink and the headline sits adrift.
-	local _, _, top, bottom = OB.card.logo:GetTexCoord()
-	check(top and bottom and math.abs((bottom - top)
-		- (A.Media.logoCoord[4] - A.Media.logoCoord[3])) < 0.001,
-		"cropped to the ink rather than the whole canvas")
-	check(math.abs(OB.card.logo:GetWidth() / OB.card.logo:GetHeight()
-		- A.Media.logoAspect) < 0.02,
-		"and drawn at the ink's aspect, not squashed to fit ("
-		.. string.format("%.2f vs %.2f",
-			OB.card.logo:GetWidth() / OB.card.logo:GetHeight(),
-			A.Media.logoAspect) .. ")")
-
-	-- THE HEADLINE HANGS OFF WHICHEVER TOP IS SHOWING. Anchored to the kicker
-	-- at build time it would hang off a hidden font string on this card, which
-	-- keeps the geometry it would have had - an empty line's worth of hole
-	-- between the mark and the words.
-	do
-		local rel = select(2, OB.card.head:GetPoint(1))
-		check(rel == OB.card.logo,
-			"and the headline hangs off the mark, not off the hidden kicker")
-	end
-
-	-- SKIP IS ON THE CARD AND ON EVERY STOP. The deck pins it to the bottom
-	-- of the screen throughout, because a tour you cannot leave is a modal
-	-- dialog with better manners.
-	OB.card.go:GetScript("OnClick")(OB.card.go)
-	check(OB.index == 1 and OB.callout:IsShown(),
-		"taking the tour opens stop 1 (" .. tostring(OB.index) .. ")")
-	check(OB.skip and OB.skip:IsShown(),
-		"with the way out pinned to the screen, not buried in the callout")
-	check(not OB.card:IsShown(),
-		"and the welcome card gone - never both at once")
-
-	-- WRITTEN THE MOMENT IT IS REACHED. A player who alt-F4s on stop 5 comes
-	-- back to stop 5, which is only true if the number is on disk before they
-	-- do it rather than at the end.
-	OB:Next()
-	OB:Next()
-	check(A.db.char.onboard.stopIndex == 3,
-		"the stop reached is written down as it is reached (" ..
-		tostring(A.db.char.onboard.stopIndex) .. ")")
-
-	-- BACK ALWAYS WORKS, and never off the front. Back restores nothing -
-	-- every value was written the moment it was touched - so it only re-shows
-	-- the callout you were looking at.
-	OB:Back()
-	check(OB.index == 2, "back goes back (" .. tostring(OB.index) .. ")")
-	OB:Back()
-	OB:Back()
-	check(OB.index == 1,
-		"and stops at the first stop rather than walking off the front (" ..
-		tostring(OB.index) .. ")")
-
-	-- WHAT IS LIFTED IS PUT BACK.
-	--
-	-- The spotlight raises a real frame's strata so it stands out of the
-	-- scrim. Half of what this tour points at is secure and cannot be
-	-- reparented at all, which is why it is done by strata - and a frame whose
-	-- strata was raised and never restored draws over the player's dialogs for
-	-- the rest of the session.
-	do
-		local pf = _G.AetherUIPlayerFrame
-		if pf then
-			-- Sampled with the tour DOWN. Stop 1 points at this very frame, so
-			-- reading its strata part way through the tour reads the lift.
-			OB:Teardown()
-			local was = pf:GetFrameStrata()
-			OB:Go(1)
-			check(pf:GetFrameStrata() == "FULLSCREEN",
-				"the stop lifts its element out of the dim (" ..
-				tostring(pf:GetFrameStrata()) .. ")")
-			OB:Go(2)
-			check(pf:GetFrameStrata() == was,
-				"and the next stop puts it back where it found it (" ..
-				tostring(pf:GetFrameStrata()) .. " against " .. tostring(was) .. ")")
-			OB:Go(1)
-			OB:Teardown()
-			check(pf:GetFrameStrata() == was,
-				"and so does leaving - a frame left raised draws over every dialog "
-				.. "the player opens for the rest of the session")
+	-- The growth fades pieces in on the tour's own OnUpdate, and `tick` drives
+	-- the shared pump and nothing else - so the suite steps it by hand.
+	local function grow()
+		local g = OB.grower
+		for _ = 1, 100 do
+			if not (g and g:IsShown()) then return end
+			g:GetScript("OnUpdate")(g, 0.05)
 		end
 	end
+	local function drive(slot, ticks)
+		for _ = 1, (ticks or 100) do
+			local step = slot:GetScript("OnUpdate")
+			if not step then return end
+			step(slot, 0.1)
+		end
+	end
+	local bar1
+	for _, bar in ipairs(AB.bars or {}) do if bar.id == "1" then bar1 = bar.dock end end
+	local world = A.Trunk:Get("world").frame
+
+	A.db.char.onboard = {}
+	A.db.profile.skin = "midnight"
+	A:Restyle()
+
+	-- EIGHT STOPS, IN THE LATTICE'S OWN ORDER (onboarding v2, as Joe amended
+	-- it): the spine, what hangs off it, the bars, the trunks, the skin, a
+	-- fight, the map, and the layout as one line to share.
+	do
+		local keys = {}
+		for i, stop in ipairs(OB.stops) do
+			keys[i] = stop.key
+			check(stop.name and stop.head and stop.body,
+				"\"" .. tostring(stop.key) .. "\" has a name, a headline and a body")
+		end
+		check(table.concat(keys, ",") == "spine,hangers,bars,trunks,skin,fight,map,share",
+			"eight stops in the lattice's order (" .. table.concat(keys, ",") .. ")")
+	end
+
+	-- THE WELCOME: A DARK SCREEN AND ONLY YOUR OWN FRAME. Everything else on the
+	-- HUD is held back, to be grown a piece at a time.
+	OB:Start()
+	grow()
+	check(OB.card and OB.card:IsShown() and not (OB.callout and OB.callout:IsShown()),
+		"starting shows the welcome card, not a stop")
+	check(OB.card.logo:IsShown() and not OB.card.kicker:IsShown()
+		and OB.card.logo:GetTexture() == A.Media.texture.logo,
+		"wearing the mark, instead of a kicker line")
+	-- AT THE ART'S OWN ASPECT, cropped to the ink: sized from the canvas, the
+	-- box is a fifth taller than the mark and the headline sits adrift.
+	do
+		local _, _, top, bottom = OB.card.logo:GetTexCoord()
+		check(top and bottom and math.abs((bottom - top)
+			- (A.Media.logoCoord[4] - A.Media.logoCoord[3])) < 0.001
+			and math.abs(OB.card.logo:GetWidth() / OB.card.logo:GetHeight()
+			- A.Media.logoAspect) < 0.02,
+			"cropped to the ink and drawn at its aspect")
+		check(select(2, OB.card.head:GetPoint(1)) == OB.card.logo,
+			"and the headline hangs off the mark, not off the hidden kicker")
+	end
+	check(OB.card.go.label:GetText() == A.L.tour.welcome.go
+		and OB.card.alt.label:GetText() == A.L.tour.skip,
+		"with Configure it, and Skip beside it (" .. tostring(OB.card.go.label:GetText()) .. ")")
+	check(OB.scrim:IsShown() and OB.scrim:GetFrameStrata() == "BACKGROUND"
+		and math.abs((OB.scrim.dim or 0) - 0.78) < 0.001,
+		"over a world dimmed to .78, under every frame of ours (" ..
+		tostring(OB.scrim:GetFrameStrata()) .. ")")
+	-- Not held, which is the tour's say; how bright is the fader's.
+	check(not OB:Held(UF.player) and A.Fader.watched[UF.player].hold == nil,
+		"your own frame is there")
+	check(OB:Held(UF.target) and OB:Held(bar1) and OB:Held(world),
+		"and the target, the bars and the trunks are not yet")
+	-- THROUGH THE FADER, for a frame it watches: held at nothing whatever the
+	-- fader's own state says, rather than set behind its back and faded
+	-- straight back in on the next tick.
+	check(A.Fader.watched[bar1] and A.Fader.watched[bar1].hold == 0 and bar1:GetAlpha() == 0,
+		"a bar is held at nothing through the fader (" .. tostring(bar1:GetAlpha()) .. ")")
+	for _ = 1, 10 do tick(0.1) end
+	check(bar1:GetAlpha() == 0, "and stays there while the fader ticks")
+
+	-- STOP 1, THE SPINE: the target grows, and only the two of them unlock -
+	-- quietly, with no LOCK pill to end the stop under you.
+	OB.card.go:GetScript("OnClick")(OB.card.go)
+	grow()
+	check(OB.index == 1 and OB.callout:IsShown() and OB.skip:IsShown() and not OB.card:IsShown(),
+		"Configure it opens stop 1, with the way out pinned to the screen")
+	check(OB.callout.kicker:GetText() == "STOP 1 OF 8 · THE SPINE",
+		"called what it is (" .. tostring(OB.callout.kicker:GetText()) .. ")")
+	check(not OB:Held(UF.target) and OB:Held(bar1),
+		"the target has grown, and the bars have not")
+	check(A.Movers.unlocked and A.Movers.only and A.Movers.only.player
+		and A.Movers.only.target and not A.Movers.only.bar1,
+		"the spine's pair is unlocked to drag, and nothing else")
+	check(not (A.Movers.lockButton and A.Movers.lockButton:IsShown()),
+		"with no LOCK pill")
+	check(OB.scrim.dim < 0.78, "and the world a step lighter (" .. tostring(OB.scrim.dim) .. ")")
+	check(A.db.char.onboard.stopIndex == 1, "the stop reached is written down as it is reached")
+
+	-- STOP 2, HANGERS-ON: the lesson is that children follow their parent.
+	OB:Next()
+	grow()
+	check(OB.index == 2 and A.Movers.only.pet and A.Movers.only.targettarget,
+		"stop 2 unlocks the pet and target of target with the pair")
+	do
+		local slot = OB.callout.slot
+		local step = slot:GetScript("OnUpdate")
+		check(step ~= nil, "and watches for the spine being dragged")
+		-- THE DRAG IS NOTICED: the callout says so.
+		UF.player:SetGeom({ cx = 700, cy = 300 })
+		step(slot, 0.1)
+		check(OB.callout.head:GetText() == A.L.tour.hangers.head_dragged,
+			"drag the spine and the callout notices (" .. tostring(OB.callout.head:GetText()) .. ")")
+		UF.player:SetGeom(nil)
+
+		-- LEFT ALONE FOUR SECONDS, THE HANGERS LEAN ONCE toward their parents,
+		-- 300 ms out and back.
+		OB:Go(2)
+		local pet = A.Movers.registry.pet
+		if pet and pet.handle then
+			step = slot:GetScript("OnUpdate")
+			for _ = 1, 41 do step(slot, 0.1) end
+			local n = select("#", pet.handle:GetPoint(1))
+			local _, _, _, _, oy = pet.handle:GetPoint(1)
+			check(n >= 5 and oy and oy ~= 0, "left alone, the pet leans toward you once ("
+				.. tostring(oy) .. ")")
+			for _ = 1, 5 do step(slot, 0.1) end
+			local _, _, _, sx, sy = pet.handle:GetPoint(1)
+			check((sx or 0) == 0 and (sy or 0) == 0, "and settles back on its frame ("
+				.. tostring(sx) .. ", " .. tostring(sy) .. ")")
+		end
+
+		-- THE TWO SWITCHES WRITE THE CAPSULES LIVE.
+		local rows = slot.__aetherKids.hangers
+		check(rows and #rows == 2 and rows[1].key == "targettarget" and rows[2].key == "pet",
+			"two switches: Target of target, then Pet")
+		rows[1]:GetScript("OnClick")(rows[1])
+		check(UF.tot and UF.tot.off and A.Config:Module("unitframes").showToT == false
+			and not A.Movers.registry.targettarget,
+			"switching target of target off takes the capsule away, now")
+		rows = OB.callout.slot.__aetherKids.hangers
+		rows[1]:GetScript("OnClick")(rows[1])
+		check(UF.tot and not UF.tot.off and A.Config:Module("unitframes").showToT == true
+			and A.Movers.registry.targettarget ~= nil,
+			"and on again brings it back")
+	end
+
+	-- STOP 3, BARS: every bar the shape places grows, and the shapes are the
+	-- seeds, live.
+	OB:Next()
+	grow()
+	check(OB.index == 3 and not A.Movers.unlocked, "stop 3 locks again")
+	check(not OB:Held(bar1) and OB:Held(world), "the bars have grown, the trunks not yet")
+	do
+		local cards = OB.callout.slot.__aetherKids.layout or {}
+		check(#cards == #A.Presets.order, "a card per shape (" .. #cards .. ")")
+		cards[2]:GetScript("OnClick")(cards[2])
+		check(A.Presets:Current() == A.Presets.order[2],
+			"and tapping one moves the real bars (" .. tostring(A.Presets:Current()) .. ")")
+		cards = OB.callout.slot.__aetherKids.layout
+		cards[1]:GetScript("OnClick")(cards[1])
+	end
+
+	-- STOP 4, TRUNKS: shown, not chosen (Joe). A node opened as a preview
+	-- closes on Next.
+	OB:Next()
+	grow()
+	check(OB.index == 4 and not OB:Held(world), "stop 4 grows the trunks")
+	check(OB.callout.body:GetText() == A.L.tour.trunks.body_left,
+		"and says which side is which, as they are docked")
+	TB:SetDock("RIGHT")
+	OB:Go(4)
+	check(OB.callout.body:GetText() == A.L.tour.trunks.body_right,
+		"the other way round with the Toolbox on the right")
+	TB:SetDock("LEFT")
+	OB:Go(4)
+	do
+		local shown = 0
+		for _, pool in pairs(OB.callout.slot.__aetherKids or {}) do
+			for _, f in ipairs(pool) do if f:IsShown() then shown = shown + 1 end end
+		end
+		check(shown == 0, "with nothing to choose (" .. shown .. " controls)")
+	end
+	TB:SetOpen(true, true)
+	OB:Next()
+	check(not TB:IsOpen(), "a branch opened to look at is shut on Next")
+
+	-- STOP 5, SKIN: hover tries one on, a click keeps it.
+	grow()
+	check(OB.index == 5, "stop 5 is the skin")
+	do
+		local tiles = OB.callout.slot.__aetherKids.skin or {}
+		check(#tiles == #SKINS, "a tile per skin (" .. #tiles .. ")")
+		local glows = {}
+		for i, t in ipairs(tiles) do glows[i] = t.glow:IsShown() and "1" or "0" end
+		check(table.concat(glows) == "000011110000", "and only the gems glow")
+		tiles[5]:GetScript("OnEnter")(tiles[5])
+		_G.__drainTimers(1)
+		check(A.Palette.current == "amethyst" and A.db.profile.skin == "midnight",
+			"hovering a tile wears it without choosing it (" .. A.Palette.current .. ")")
+		tiles[5]:GetScript("OnLeave")(tiles[5])
+		_G.__drainTimers(1)
+		check(A.Palette.current == "midnight", "and leaving it puts the chosen one back")
+		tiles[2]:GetScript("OnClick")(tiles[2])
+		check(A.db.profile.skin == "dawn" and A.Palette.current == "dawn",
+			"a click keeps it, in the profile")
+		local r = OB.callout.kicker:GetTextColor()
+		check(math.abs(r - A.Palette.c.accent[1]) < 0.02, "and the callout wears it too")
+		-- A HOVER LEFT HANGING IS PUT BACK on the way out.
+		tiles = OB.callout.slot.__aetherKids.skin
+		tiles[9]:GetScript("OnEnter")(tiles[9])
+		_G.__drainTimers(1)
+		OB:Go(4)
+		check(A.Palette.current == "dawn", "leaving the stop mid-hover puts the chosen skin back")
+		A.db.profile.skin = "midnight"
+		A:Restyle()
+	end
+
+	-- STOP 6, A FIGHT: three seconds on the real frames, then it all lets go.
+	OB:Go(At("fight"))
+	do
+		local slot = OB.callout.slot
+		QT:SetCollapsed(false)
+		OB:Go(At("fight"))
+		check(AB.demoFight == true, "the bars wake as in a fight")
+		check(UF.cast and UF.cast:IsShown() and UF.cast.state.active,
+			"a cast runs along the spine")
+		check(QT.collapsed == true, "the quests tuck into the pill")
+		check(MM.pill and MM.pill.zone:GetText() == A.L.tour.fight.in_combat,
+			"which says In combat (" .. tostring(MM.pill and MM.pill.zone:GetText()) .. ")")
+		drive(slot)
+		check(slot:GetScript("OnUpdate") == nil, "it plays once and stops")
+		check(not AB.demoFight and QT.collapsed == false and not UF.cast.state.active,
+			"and everything lets go after")
+		check(MM.pill.zone:GetText() ~= A.L.tour.fight.in_combat, "the pill included")
+		-- LEFT MID-FIGHT, IT LETS GO TOO.
+		OB:Go(At("fight"))
+		OB:Go(At("skin"))
+		check(not AB.demoFight and QT.collapsed == false,
+			"leaving mid-demo puts it all back")
+	end
+
+	-- STOP 7, THE MAP: the real options window, shut on the way out.
+	OB:Go(At("map"))
+	A.OptionsWindow:Finish()
+	check(A.OptionsWindow:IsOpen(), "stop 7 opens the real options window")
+	OB:Go(At("share"))
+	check(not A.OptionsWindow:IsOpen(), "and shuts it on the way out")
+
+	-- STOP 8, SHARE IT: the layout window with this layout in it.
+	check(A.Layout.frame and A.Layout.frame:IsShown()
+		and A.Layout.frame.box:GetText() == A.Layout:Pack(A.Layout:Encode()),
+		"stop 8 opens the layout window with your layout in it")
+	check(OB.callout.nav.next.label:GetText() == A.L.tour.nav.finish,
+		"and Next says Finish")
+
+	-- THE FINISH: the whole lattice, in colour, and a recap read back out of
+	-- the systems that own it.
+	OB:Next()
+	grow()
+	check(not A.Layout.frame:IsShown(), "the layout window shuts")
+	check(OB.card:IsShown() and not OB.callout:IsShown()
+		and OB.card.head:GetText() == A.L.tour.finish.thanks,
+		"past the last stop is the finish card")
+	check(OB.scrim.dim == 0, "with the world undimmed")
+	do
+		local held = 0
+		for _, f in ipairs(OB:HudFrames()) do if OB:Held(f) then held = held + 1 end end
+		check(held == 0, "and nothing on the HUD still held (" .. held .. ")")
+		local recap = OB.card.lines[1]:GetText() or ""
+		local preset = A.Presets.list[A.Presets:Current() or ""]
+		check(recap:find(A.Palette.skins[A.Palette.current].label, 1, true)
+			and (not preset or recap:find(preset.label, 1, true)),
+			"the recap names the shape and the skin you have (" .. recap .. ")")
+	end
+	OB.card.go:GetScript("OnClick")(OB.card.go)
+	check(OB:Completed() and not OB.scrim:IsShown(), "Done marks the character done")
+	do
+		local stuck = 0
+		for _, entry in pairs(A.Fader.watched) do if entry.hold then stuck = stuck + 1 end end
+		check(stuck == 0, "and the fader is holding nothing back (" .. stuck .. ")")
+	end
+
+	-- BACK RE-SHOWS, and never off the front.
+	OB:Start()
+	OB:Go(3)
+	OB:Back()
+	check(OB.index == 2, "back goes back")
+	OB:Back()
+	OB:Back()
+	check(OB.index == 1, "and stops at the first stop")
+
+	-- A FIGHT TAKES IT DOWN, AND THE WHOLE HUD COMES BACK WITH IT: every piece
+	-- is a real frame, and a fight is no time for one to be missing.
+	OB:Go(At("bars"))
+	grow()
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	check(not OB.scrim:IsShown() and not OB.callout:IsShown(),
+		"combat drops the scrim and the callout on the spot")
+	for _ = 1, 5 do tick(0.1) end
+	check(not OB:Held(world) and world:GetAlpha() > 0.9,
+		"and lets go of everything it was holding back (" ..
+		string.format("%.2f", world:GetAlpha()) .. ")")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	grow()
+	check(OB.index == At("bars") and OB.callout:IsShown(),
+		"it comes back to the stop it was on")
+	check(not OB:Held(bar1) and OB:Held(world),
+		"with what that stop had grown, and no more")
+
+	-- STARTING IT TAKES DOWN WHATEVER IT WOULD OPEN BEHIND.
+	do
+		A.Options:Open("onboard")
+		A.OptionsWindow:Finish()
+		local was = A.OptionsWindow:IsOpen()
+		TB:SetOpen(true, true)
+		OB:Teardown()
+		OB:Start()
+		check(was and not A.OptionsWindow:IsOpen() and not TB:IsOpen(),
+			"starting the tour closes the options window and the Toolbox branch ("
+			.. tostring(was) .. ", " .. tostring(A.OptionsWindow:IsOpen()) .. ", "
+			.. tostring(TB:IsOpen()) .. ")")
+		OB:Teardown()
+	end
+
+	-- AND IT WILL NOT START MID-FIGHT.
+	_G.__inCombat = true
+	check(OB:Start() == false and not OB.scrim:IsShown(), "the tour refuses to start in combat")
+	_G.__inCombat = false
+
+	-- SKIPPING IS FINISHING, and lets the whole HUD go.
+	OB:Start()
+	OB.card.alt:GetScript("OnClick")(OB.card.alt)
+	check(OB:Completed() and not OB.scrim:IsShown() and A.db.char.onboard.stopIndex == nil,
+		"Skip on the welcome marks the character done")
+	check(not OB:Held(bar1) and A.Fader.watched[bar1].hold == nil,
+		"and holds nothing back")
+
+	A.db.char.onboard = { completed = true }
+end
+
+print("== onboarding: where the callout goes ==")
+do
+	local OB = A:GetModule("onboard")
+	A.db.char.onboard = {}
 
 	-- THE CALLOUT STAYS ON THE SCREEN.
 	--
@@ -35371,106 +35597,17 @@ do
 		OB.stops[1].target = was
 	end
 
-	-- AND A CONTROL THAT IS NOT A BUTTON IS NOT ASKED TO FORGET A CLICK.
+	-- A WIREFRAME DRAWN FROM THE ARRANGEMENT ITSELF, on the bars stop's cards,
+	-- not three hand-drawn thumbnails. Layout:Resolve walks each node down from
+	-- the screen through its parents, so a thumbnail cannot drift away from what
+	-- the card actually does.
 	--
-	-- The client throws on SetScript for a script the widget type has not got,
-	-- for CLEARING one as much as for setting one - and stop 3's box is a plain
-	-- Frame with four tabs on it. The tidy-up between stops nilled OnClick on
-	-- everything it was holding, and every check in this file passed.
+	-- AND FOUR MARKS AT MOST, NOT ELEVEN. The first version drew every anchor a
+	-- preset names - six bars, the party frame, the pet, the tooltip - which in
+	-- a box the size of a postage stamp is a texture rather than a layout.
 	do
 		OB:Go(3)
-		local ok, err = pcall(function() OB:Go(1) end)
-		check(ok,
-			"leaving stop 3 does not throw on the way out (" ..
-			tostring(err) .. ")")
-	end
-
-	-- THE THREE CONTROLS WRITE STRAIGHT INTO THE SYSTEM THAT OWNS THEM.
-	--
-	-- No staging and no Apply at the end: the palette into the profile, the
-	-- layout into the anchors, the edge into the character's Toolbox record.
-	-- Which is the whole reason quitting half way through costs nothing - and
-	-- a tour that held its answers until the last card would lose every one of
-	-- them to a disconnect.
-	do
-		local slot = OB.callout.slot
-
-		-- Stop 1: twelve swatches in three labelled rows, and tapping one
-		-- recolours the whole interface.
-		A.db.profile.skin = "midnight"
-		A:Restyle()
-		OB:Go(1)
-		local swatches = slot.__aetherKids and slot.__aetherKids.palette or {}
-		check(#swatches == #SKINS,
-			"stop 1 offers every palette (" .. #swatches .. ")")
-		local heads = slot.__aetherKids and slot.__aetherKids.paletteHead or {}
-		check(#heads == 3 and heads[2].text:GetText() == A.Trunk.Spaced("Gem"),
-			"under three family heads, the same rows the options picker draws")
-		local s1, s5, s9 = swatches[1], swatches[5], swatches[9]
-		local _, _, _, x1, y1 = s1:GetPoint(1)
-		local _, _, _, x5, y5 = s5:GetPoint(1)
-		local _, _, _, x9, y9 = s9:GetPoint(1)
-		check(x1 == x5 and x5 == x9 and y1 > y5 and y5 > y9,
-			"four to a row: Midnight, Amethyst and Winter each start one")
-		check(swatches[5].glow:IsShown() and not swatches[1].glow:IsShown()
-			and not swatches[9].glow:IsShown(),
-			"and only a gem's swatch glows")
-
-		-- THE SWATCH IS THAT PALETTE'S OWN ACCENT, not the one in use. Four
-		-- cards drawn in the current skin's accent would make the choice
-		-- invisible, which is the one thing this stop cannot do.
-		local seen = {}
-		for _, card in ipairs(swatches) do
-			local r, g, b = card.dot:GetVertexColor()
-			seen[string.format("%.2f %.2f %.2f", r or 0, g or 0, b or 0)] = true
-		end
-		local shades = 0
-		for _ in pairs(seen) do shades = shades + 1 end
-		check(shades == #SKINS,
-			"each drawn in its OWN accent rather than the one in use (" ..
-			shades .. " colours)")
-
-		-- AND TAPPING ONE GOES THROUGH THE SAME DOOR the options panel uses. A
-		-- palette applied any other way is one half the interface has not heard
-		-- about, and this stop must not preview something the player will not get.
-		swatches[2]:GetScript("OnClick")(swatches[2])
-		check(A.Palette.current == A.Palette.order[2],
-			"tapping a swatch recolours the whole interface on the spot (" ..
-			tostring(A.Palette.current) .. ")")
-		check(A.db.profile.skin == A.Palette.order[2],
-			"and writes it into the profile, not into the tour")
-
-		-- THE TOUR REPAINTS WITH EVERYTHING ELSE. The callout, the ring and the
-		-- dots are drawn in the accent that just changed; a tour left Midnight
-		-- while the HUD went Dawn would be the one thing on screen contradicting
-		-- its own copy.
-		do
-			local r, g, b = OB.callout.kicker:GetTextColor()
-			local a = A.Palette.c.accent
-			check(math.abs((r or 0) - a[1]) < 0.02
-				and math.abs((g or 0) - a[2]) < 0.02,
-				"and the callout is repainted with it (" ..
-				string.format("%.2f %.2f %.2f", r or 0, g or 0, b or 0) .. ")")
-		end
-		A.db.profile.skin = "midnight"
-		A:Restyle()
-
-		-- Stop 2: three arrangements, and tapping one moves the real frames.
-		OB:Go(2)
-		local cards = slot.__aetherKids and slot.__aetherKids.layout or {}
-		check(#cards == #A.Presets.order,
-			"stop 2 offers every shipped arrangement (" .. #cards .. ")")
-
-		-- A WIREFRAME DRAWN FROM THE ARRANGEMENT ITSELF, not three hand-drawn
-		-- thumbnails. Layout:Resolve walks each node down from the screen
-		-- through its parents, so a thumbnail cannot drift away from what the
-		-- card actually does - and a bonded target or bar is drawn too, though
-		-- the string holds no screen position for it.
-		--
-		-- AND FOUR MARKS AT MOST, NOT ELEVEN. The first version drew every
-		-- anchor a preset names - six bars, the party frame, the pet, the
-		-- tooltip - which in a box the size of a postage stamp is a texture
-		-- rather than a layout. Reported as "this image is a mess".
+		local cards = OB.callout.slot.__aetherKids.layout or {}
 		for i, key in ipairs(A.Presets.order) do
 			local preset = A.Presets.list[key]
 			local shown = 0
@@ -35536,485 +35673,46 @@ do
 			"and tapping one moves the real frames on the spot (" ..
 			tostring(A.Presets:Current()) .. ")")
 
-		-- Stop 3: two sides (decision 4c), and tapping one docks the trunk.
+		-- AND EACH CONTROL HAS ITS OWN FRAMES, and nothing from the last stop is
+		-- still live. The controls share one slot and their frames are not
+		-- interchangeable: with one pool by index a skin tile and a shape card
+		-- would be the same frame - and a control left over still works.
+		local slot = OB.callout.slot
+		OB:Go(5)
 		OB:Go(3)
-		local edges = slot.__aetherKids and slot.__aetherKids.toolbox or {}
-		check(#edges == 3,
-			"stop 3 offers a box with a target on each side (" .. #edges .. ")")
-		edges[3]:GetScript("OnClick")(edges[3])
-		check(A.db.char.toolbox.docked == "RIGHT",
-			"and tapping one docks the trunk there (" ..
-			tostring(A.db.char.toolbox.docked) .. ")")
-		local TB = A:GetModule("toolbox")
-		if TB.SetDock then TB:SetDock("LEFT") end
-
-		-- AND EACH CONTROL HAS ITS OWN FRAMES.
-		--
-		-- The three share one slot, and their frames are not interchangeable: with
-		-- one pool by index the fourth palette swatch and the first layout card
-		-- are the same frame, and the layout card looks for a wireframe box a
-		-- swatch has not got. Which is how this failed the first time it was run.
-		check(slot.__aetherKids.palette[1] ~= slot.__aetherKids.layout[1],
-			"a swatch and a layout card are never the same frame")
-
-		-- AND NOTHING FROM THE LAST STOP IS STILL LIVE. A control left over is a
-		-- control that still works - and stop 3's box would still be recolouring
-		-- the interface.
+		check(slot.__aetherKids.skin[1] ~= slot.__aetherKids.layout[1],
+			"a skin tile and a shape card are never the same frame")
 		local live = 0
-		for _, card in ipairs(slot.__aetherKids.palette) do
-			if card:IsShown() then live = live + 1 end
+		for _, tile in ipairs(slot.__aetherKids.skin) do
+			if tile:IsShown() then live = live + 1 end
 		end
-		check(live == 0,
-			"and stop 1's swatches are down while stop 3 is up (" .. live .. ")")
-	end
-
-	-- STOP 4 SETS HOW LONG BEFORE THE HUD GOES QUIET.
-	--
-	-- The fourth thing you decide, and the only real decision about zen is
-	-- whether you want it at all - which is why "never" is on the same row as
-	-- the three timings rather than hidden in the options tree.
-	do
-		OB:Go(At("zen"))
-		local cards = OB.callout.slot.__aetherKids.zen or {}
-		check(#cards == 4,
-			"the zen stop offers three timings and never (" .. #cards .. ")")
-
-		-- STRAIGHT INTO THE PROFILE, and the fader with it: zen is stage two of
-		-- one feature, so a delay chosen with the idle fade switched off is a
-		-- delay for something that can never happen.
-		A.db.profile.fader.enabled = false
-		cards[3]:GetScript("OnClick")(cards[3])
-		check(A.db.profile.modules.zen.delay == 300,
-			"tapping 5 min writes the delay (" ..
-			tostring(A.db.profile.modules.zen.delay) .. ")")
-		check(A.db.profile.fader.enabled == true,
-			"and switches the idle fade back on, or nothing would ever fade OUT")
-		check((A:GetModule("zen") or {}).enabled == true,
-			"and the module is on")
-
-		-- NEVER IS THE MODULE BEING OFF rather than a fourth delay. A timer that
-		-- never elapses is a ticker running for ever to do nothing.
-		cards[4]:GetScript("OnClick")(cards[4])
-		check((A:GetModule("zen") or {}).enabled == false,
-			"never switches the whole thing off")
-
-		-- AND THE CHOSEN CARD IS READ BACK OUT OF THE SYSTEM rather than out of
-		-- anything the tour remembered. If the card and the HUD ever disagree,
-		-- the card is the one that is wrong.
-		OB:Go(At("zen"))
-		local litLabel
-		for _, card in ipairs(OB.callout.slot.__aetherKids.zen) do
-			local r = select(1, card.label:GetTextColor())
-			local lit = math.abs(r - A.Palette.c.text[1]) < 0.01
-			if lit then litLabel = card.label:GetText() end
-		end
-		check(litLabel == "never",
-			"with the module off, never is the one lit (" ..
-			tostring(litLabel) .. ")")
-
-		-- Back the way it was found, or six later checks are looking at a HUD
-		-- with no idle fade in it.
-		A:SetModuleEnabled("zen", true)
-		A.db.profile.modules.zen.delay = 60
+		check(live == 0, "and the skin tiles are down while the bars stop is up (" .. live .. ")")
 	end
 
 	-- AND WHAT EACH STOP POINTS AT, IT CAN ACTUALLY FIND.
 	--
-	-- The stop table check above asks whether `target` EXISTS, which is a
-	-- different and much easier question than whether it returns a frame - and
-	-- THREE of the eight were returning nil. Stop 4 called an AB:Bar(id) that
-	-- has never existed, stop 5 asked the tracker for a QT.frame it calls
-	-- QT.panel, and stop 8 looked for the console's mini on the module rather
-	-- than on A.IFEC. All three shipped, and all three lit nothing at all.
+	-- Whether `target` exists is a much easier question than whether it returns
+	-- a frame, and three stops of the old tour shipped pointing at nil.
 	--
-	-- TWO STOPS ARE ALLOWED NIL, and they are named here rather than shrugged
-	-- at. Both have the same reason: their subject is the whole HUD, so the
-	-- scrim stays down and a ring round any single frame would be pointing at
-	-- the wrong thing. Layout moves everything; zen makes everything go away.
-	--
-	-- A NEW NAME ON THIS LIST IS A DECISION, which is the point of listing them:
-	-- a stop that quietly resolves to nil is a stop that lights nothing, and
-	-- three of them shipped that way.
-	local MAY_POINT_AT_NOTHING = { layout = true, zen = true }
+	-- FOUR STOPS POINT AT NOTHING, and they are named here rather than shrugged
+	-- at: the trunks are both edges of the screen at once, and the map and the
+	-- layout windows are the subject themselves, with the callout under them.
+	-- A NEW NAME ON THIS LIST IS A DECISION.
+	local MAY_POINT_AT_NOTHING = { trunks = true, map = true, share = true }
 	for i, stop in ipairs(OB.stops) do
 		OB:Go(i)
 		local at = stop.target()
 		if MAY_POINT_AT_NOTHING[stop.key] then
 			check(at == nil,
-				"\"" .. stop.key .. "\" deliberately points at nothing - its "
-				.. "subject is the whole HUD")
+				"\"" .. stop.key .. "\" deliberately points at nothing")
 		else
 			check(at ~= nil and at.GetObjectType ~= nil,
 				"\"" .. stop.key .. "\" finds the thing it points at (" ..
 				tostring(at) .. ")")
 		end
 	end
-
-	-- THE FIVE THAT SHOW.
-	--
-	-- A SHOW stop asks for nothing and carries one behaviour instead. The two
-	-- rules that make that a demonstration rather than decoration are that it
-	-- actually draws, and that it plays ONCE - and the third, which is the one
-	-- that costs the player something when it is wrong, is that whatever it
-	-- changed out in the world goes back.
-	local function drive(slot, ticks)
-		-- Ten seconds in tenths by default, which is longer than the longest of
-		-- the five. Stops the moment the demo takes its own script off, so a
-		-- demo that never finishes is a loop that runs out rather than one that
-		-- passes.
-		for _ = 1, (ticks or 100) do
-			local step = slot:GetScript("OnUpdate")
-			if not step then return end
-			step(slot, 0.1)
-		end
-	end
-
-	for i, stop in ipairs(OB.stops) do
-		if stop.kind == "show" then
-			OB:Go(i)
-			local slot = OB.callout.slot
-			local live = 0
-			for _, pool in pairs(slot.__aetherKids or {}) do
-				for _, f in ipairs(pool) do
-					if f:IsShown() then live = live + 1 end
-				end
-			end
-			check(live > 0 and (slot:GetHeight() or 0) > 1,
-				"\"" .. stop.key .. "\" draws a demo rather than an empty slot (" ..
-				live .. " parts, " .. math.floor(slot:GetHeight() or 0) .. " tall)")
-
-			drive(slot)
-			check(slot:GetScript("OnUpdate") == nil,
-				"\"" .. stop.key .. "\" plays once and stops")
-		end
-	end
-
-	-- THE PLAYER'S OWN SPELLS, on the bars stop. The sentence beside it reads
-	-- "your spells, undecorated", and a row of invented squares would be
-	-- decorating them.
-	do
-		OB:Go(At("bars"))
-		local tiles = OB.callout.slot.__aetherKids["bars.tile"] or {}
-		check(#tiles == 4, "the bars stop draws four slots (" .. #tiles .. ")")
-		local mine = GetActionTexture and GetActionTexture(1)
-		check(mine ~= nil and tiles[1] and tiles[1].icon:GetTexture() == mine,
-			"carrying the icon that is actually in the player's first slot (" ..
-			tostring(mine) .. ")")
-
-		-- AND A REAL Cooldown FRAME ON THE SECOND ONE, swiping a real duration.
-		-- The whole claim being made is that the cooldown draws ON the icon, so a
-		-- rectangle drawn to look like one would be arguing the opposite.
-		local cd = tiles[2] and tiles[2].cd
-		check(cd ~= nil and cd:IsShown() and cd.__cd ~= nil and cd.__cd[2] > 0,
-			"the second is on cooldown, through a Cooldown frame (" ..
-			tostring(cd and cd.__cd and cd.__cd[2]) .. "s)")
-		check((tiles[2].cdText:GetText() or "") ~= "",
-			"with the countdown drawn on the icon (" ..
-			tostring(tiles[2].cdText:GetText()) .. ")")
-	end
-
-	-- AND THE CONSOLE STOP SHOWS THE CONTENT THAT IS ACTUALLY INSTALLED.
-	--
-	-- The first version of this demo drew a made-up flight from Booty Bay to
-	-- Ironforge with three invented legs on it. It was a picture of the feature
-	-- rather than the feature, which is what Joe said the moment he saw it - and
-	-- the check beside it counted ONE part and passed, because the pill was
-	-- drawn. What is on the pill is the whole question here.
-	--
-	-- ITS OWN PACK, registered here and taken away again. The demo reads the
-	-- real library, so a check that hoped the suite had left something in the
-	-- registry is a check that passes or fails on the order of the file.
-	do
-		local R = A.IFEC.Registry
-		local was = { packs = R.packs, order = R.order,
-			failed = R.failed, dirty = R.dirty }
-		R.packs, R.order, R.failed, R.dirty = {}, {}, {}, true
-
-		-- ONE OF EACH CHANNEL, because the three colours on the bar are the
-		-- claim: a programme is music AND stories AND the rag, not a playlist.
-		check(R:Register({
-			packId = "TourPack", apiVersion = 1, seasonIndex = 1,
-			items = {
-				{ id = "m", type = "music", title = "Big Drum Deep Water",
-					artist = "The Mudfoot Kings", totalDuration = 210,
-					segments = { { file = "a.ogg", duration = 210 } } },
-				{ id = "p", type = "podcast", title = "The Gadgeteer",
-					totalDuration = 600,
-					segments = { { file = "b.ogg", duration = 600 } } },
-				{ id = "g", type = "gossip", masthead = "ogler",
-					title = "The Orgrimmar Ogler", pages = { "p1" } },
-			},
-		}) == true, "the tour's own content pack registers")
-
-		OB:Go(At("ifec"))
-		local pill = (OB.callout.slot.__aetherKids["ifec.pill"] or {})[1]
-		check(pill ~= nil and (pill.bar:GetWidth() or 0) > 40,
-			"the programme bar has a width to fill (" ..
-			tostring(pill and math.floor(pill.bar:GetWidth() or 0)) .. ")")
-
-		-- THE FIRST THING A FLIGHT WOULD REALLY GET, named on the pill. Not the
-		-- first thing the registry happens to hold - the programme builder's own
-		-- first pick, which is the one the console would play.
-		local want = A.IFEC.Content:Everything()[1]
-		check(want ~= nil and pill.title:GetText() == want.title,
-			"and names the first thing the console would really play (" ..
-			tostring(pill.title:GetText()) .. ")")
-
-		-- AND COUNTS WHAT IS ABOARD in the library's own three words, because a
-		-- filter tab reading Stories beside a count reading podcasts is the same
-		-- thing under two names.
-		local said = pill.sub:GetText() or ""
-		for _, word in ipairs({ "Stories", "Music", "Gossip" }) do
-			check(said:find(word, 1, true) ~= nil,
-				"and counts the " .. word .. " that are aboard (" .. said .. ")")
-		end
-
-		-- THE BAR IS THE PROGRAMME, and the programme is what will PLAY. The
-		-- first version of this check asked for all three channels on it and was
-		-- wrong about the feature rather than about the code: a programme is built
-		-- to COVER a flight, so it is assembled out of things that take time, and
-		-- the rag takes none - it is read, not played. It is counted on the line
-		-- above and it is not on the bar, which is the distinction the console
-		-- itself makes.
-		drive(OB.callout.slot)
-		local playable = 0
-		for _, item in ipairs(A.IFEC.Content:Everything()) do
-			if A.IFEC.Content:Length(item) > 0 then playable = playable + 1 end
-		end
-		local lit = 0
-		for _, part in ipairs(pill.bar.parts or {}) do
-			if part:IsShown() then lit = lit + 1 end
-		end
-		check(playable >= 2 and lit == playable,
-			"and fills with one leg per playable item by the end (" .. lit ..
-			" of " .. playable .. ")")
-
-		-- AND THE RAG IS COUNTED WITHOUT BEING PLAYED, which is the whole of the
-		-- distinction above and the part a reader would otherwise get wrong.
-		local aboard, played = 0, 0
-		for _, item in ipairs(A.IFEC.Content:Available()) do
-			if item.type == "gossip" then aboard = aboard + 1 end
-		end
-		for _, item in ipairs(A.IFEC.Content:Everything()) do
-			if item.type == "gossip" then played = played + 1 end
-		end
-		check(aboard > 0 and played == 0
-			and (pill.sub:GetText() or ""):find("Gossip", 1, true) ~= nil,
-			"the rag is aboard and counted, and not on the programme (" ..
-			aboard .. " aboard, " .. played .. " playing)")
-
-		-- AND WITH NOTHING INSTALLED IT SAYS SO, rather than drawing an empty
-		-- groove and a blank line. A clone of this repository is exactly this
-		-- case: the cut music is derived and untracked, so it has the magazines
-		-- and silence.
-		R.packs, R.order, R.dirty = {}, {}, true
-		OB:Go(At("threat"))
-		OB:Go(At("ifec"))
-		check((pill.title:GetText() or ""):find("Nothing", 1, true) ~= nil,
-			"nothing installed is a state the pill has words for (" ..
-			tostring(pill.title:GetText()) .. ")")
-		check(pill.sub:GetText() == A.IFEC.Content:DormantReason(),
-			"and says WHICH kind of nothing - refused, absent or out of season (" ..
-			tostring(pill.sub:GetText()) .. ")")
-
-		R.packs, R.order, R.failed, R.dirty =
-			was.packs, was.order, was.failed, was.dirty
-	end
-
-	-- AND WHAT A DEMO CHANGES OUT IN THE WORLD, IT PUTS BACK.
-	--
-	-- Three of the five touch something real - the tracker folds, the bag panel
-	-- opens, the player's frame wears a warning - and each of those is a change
-	-- the player did not ask for. A tour that folded somebody's tracker and then
-	-- took a disconnect is a tour that cost them their tracker.
-	do
-		local QT = A:GetModule("questtracker")
-		local BG = A:GetModule("bags")
-
-		QT:SetCollapsed(false)
-		OB:Go(At("quests"))
-		-- To the end, because the fold is the second half of the demo.
-		drive(OB.callout.slot)
-		check(QT.collapsed == true,
-			"the quest tracker stop folds the REAL tracker")
-		OB:Go(At("bags"))
-		check(QT.collapsed == false,
-			"and unfolds it on the way out")
-
-		-- TO WHAT IT WAS, not to open. Somebody who keeps their tracker folded
-		-- should get it back folded.
-		QT:SetCollapsed(true)
-		OB:Go(At("quests"))
-		drive(OB.callout.slot)
-		OB:Go(At("bags"))
-		check(QT.collapsed == true,
-			"restored to what it was, rather than to open")
-
-		-- THE BAG PANEL OPENS FOR REAL, and the spotlight lifts the panel itself
-		-- - which is the reason it is opened BEFORE the target is resolved. Opened
-		-- after, it would sit under the scrim with no ring on it, and the one
-		-- thing on screen you could not see would be the thing being described.
-		local bags = BG.frames and BG.frames.bags
-		check(bags ~= nil and bags:IsShown(),
-			"the bags stop opens the REAL bag panel")
-		check(OB.lifted ~= nil and OB.lifted.frame == bags,
-			"and the spotlight lifts that panel out of the scrim")
-		OB:Go(At("threat"))
-		check(not bags:IsShown(),
-			"and shuts it again on the way out")
-
-		-- UNLESS IT WAS ALREADY OPEN, in which case it is the player's window and
-		-- stays theirs.
-		BG:Show()
-		OB:Go(At("bags"))
-		OB:Go(At("threat"))
-		check(bags:IsShown(),
-			"a panel that was already open is left open")
-		BG:Hide()
-	end
-
-	-- AND THE THREAT STOP PUTS A REAL WARNING ON THE REAL FRAME.
-	--
-	-- Through Threat's own Preview, which builds the record: Draw is public and
-	-- so is TIER, so onboarding COULD assemble one itself - and then two files
-	-- would know what a threat record is, one of them by copy.
-	do
-		local uf3 = A:GetModule("unitframes")
-		local pdisc
-		for _, f in ipairs((uf3 and uf3.frames) or {}) do
-			if f.unit == "player" then pdisc = f.orb or f.pip end
-		end
-		if pdisc then
-			OB:Go(At("threat"))
-			local ring = pdisc.__aetherThreatRing
-			check(ring ~= nil and ring:IsShown() and (ring.fill or 0) > 0.5,
-				"the threat stop warns on the player's own frame (" ..
-				tostring(ring and ring.fill) .. ")")
-			local gold = A.Palette.c.semanticGold
-			local rr = ring and select(1, ring.arc:GetVertexColor())
-			check(rr ~= nil and math.abs(rr - gold[1]) < 0.01,
-				"in the gold that means act now (" .. tostring(rr) .. ")")
-
-			-- AND IT COMES OFF. Left standing, a gold ring on a frame that is not
-			-- in a fight is a warning about nothing for the rest of the session.
-			OB:Go(At("ifec"))
-			check((ring.fill or 0) == 0 or not ring:IsShown(),
-				"and comes off the frame on the way out (" ..
-				tostring(ring.fill) .. ")")
-		end
-	end
-
-	-- AND A FIGHT MID-DEMO PUTS IT BACK TOO. Every other way out of a stop
-	-- goes through Teardown, and combat is the one that arrives unasked.
-	--
-	-- ON THE BAG PANEL RATHER THAN THE TRACKER, and the first draft had it the
-	-- other way round: the tracker has a combat rule OF ITS OWN, so the same
-	-- event that tells the tour to put the fold back tells the tracker to fold.
-	-- Both are right and the check was a race between two handlers - it passed
-	-- and failed on alternate runs, which is worse than either.
-	do
-		local BG = A:GetModule("bags")
-		OB:Go(At("bags"))
-		local bags = BG.frames and BG.frames.bags
-		check(bags ~= nil and bags:IsShown(), "stop 6 has the panel open")
-		_G.__inCombat = true
-		fire("PLAYER_REGEN_DISABLED")
-		check(bags ~= nil and not bags:IsShown(),
-			"a fight starting mid-demo shuts the panel with everything else")
-		_G.__inCombat = false
-		fire("PLAYER_REGEN_ENABLED")
-		-- The resume reopens it, because it is stop 6 that it resumes to.
-		OB:Teardown()
-		BG:Hide()
-	end
-
-	-- A FIGHT TAKES IT DOWN INSTANTLY, and puts it back afterwards.
-	--
-	-- Not paused - dropped. A scrim over the world and a panel over your
-	-- action bars are the two things you least want when a mob opens on you.
-	OB:Go(At("bars"))
-	_G.__inCombat = true
-	fire("PLAYER_REGEN_DISABLED")
-	check(not OB.scrim:IsShown() and not OB.callout:IsShown(),
-		"combat drops the scrim and the callout on the spot")
-	check(OB.lifted == nil,
-		"and leaves nothing raised")
-
-	_G.__inCombat = false
-	fire("PLAYER_REGEN_ENABLED")
-	check(OB.index == At("bars") and OB.callout:IsShown(),
-		"and it comes back to the stop it was on when the fight ended (" ..
-		tostring(OB.index) .. ")")
-
-	-- AND STARTING IT TAKES DOWN WHATEVER IT WOULD OPEN BEHIND.
-	--
-	-- The tour dims the world and points at real frames, so a window still
-	-- open over the top is a window over the thing being pointed at - and it
-	-- is most often started FROM one, by the button on the options panel's own
-	-- First run page. Reported from the game: the panel stayed up and the tour
-	-- opened behind it.
-	--
-	-- The real window, opened on the page the tour is started from.
-	do
-		A.Options:Open("onboard")
-		A.OptionsWindow:Finish()
-		local was = A.OptionsWindow:IsOpen()
-
-		local TB = A:GetModule("toolbox")
-		TB:SetOpen(true, true)
-		OB:Teardown()
-		OB:Start()
-
-		check(was and not A.OptionsWindow:IsOpen(),
-			"starting the tour closes the options window it was started from")
-		check(not TB:IsOpen(),
-			"and the Toolbox drawer, which would otherwise cover the HUD the "
-			.. "tour is describing")
-		check(OB.card and OB.card:IsShown(),
-			"and the welcome card is up, in front of nothing")
-
-		OB:Teardown()
-	end
-
-	-- AND IT WILL NOT START MID-FIGHT. Everything above is why.
 	OB:Teardown()
-	_G.__inCombat = true
-	check(OB:Start() == false, "the tour refuses to start in combat")
-	check(not OB.scrim:IsShown(),
-		"and nothing goes up when it refuses")
-	_G.__inCombat = false
-
-	-- SKIPPING IS FINISHING. It keeps the defaults, marks the character, and
-	-- never asks again - an addon that keeps asking is one you uninstall.
-	OB:Start()
-	OB.card.go:GetScript("OnClick")(OB.card.go)
-	OB:Skip()
-	check(OB:Completed(), "skipping marks the character done")
-	check(not OB.scrim:IsShown() and not OB.callout:IsShown()
-		and not OB.skip:IsShown(),
-		"and takes the whole thing down with it")
-	check(A.db.char.onboard.stopIndex == nil,
-		"with nothing left to resume (" ..
-		tostring(A.db.char.onboard.stopIndex) .. ")")
-
-	-- AND THE FINISH CARD RECAPS WHAT YOU ACTUALLY CHOSE, read back out of the
-	-- systems that own it rather than out of anything the tour remembered. If
-	-- the recap and the HUD ever disagree, the recap is the one that is wrong.
-	OB:Start()
-	OB:Go(At("ifec"))
-	OB:Next()
-	check(OB.card:IsShown() and not OB.callout:IsShown(),
-		"past the last stop is the finish card")
-	do
-		local said = OB.card.lines[1]:GetText() or ""
-		local skin = A.Palette.skins[A.Palette.current]
-		check(said:find(skin.label, 1, true) ~= nil,
-			"which names the palette that is actually on (" .. said .. ")")
-	end
-	OB.card.go:GetScript("OnClick")(OB.card.go)
-	check(OB:Completed(), "and Done marks the character done")
-
-	A.db.char.onboard = {}
+	A.db.char.onboard = { completed = true }
 end
 
 print("== onboarding: the first run, the resume and the alt ==")
@@ -36069,13 +35767,13 @@ do
 	-- HALF WAY THROUGH IS ONE QUIET TOAST, not the tour reopening over
 	-- whatever they logged in to do.
 	fresh()
-	A.db.char.onboard.stopIndex = At("bags")
+	A.db.char.onboard.stopIndex = At("skin")
 	fire("PLAYER_ENTERING_WORLD")
 	_G.__drainTimers(2)
 	check(OB.toast and OB.toast:IsShown() and not OB.card:IsShown(),
 		"a half-finished character gets a toast rather than the tour")
 	do
-		local left = OB.COUNT - At("bags") + 1
+		local left = OB.COUNT - At("skin") + 1
 		check(OB.toast.label:GetText() ==
 			("Finish setup? %d stops left"):format(left),
 			"which counts what is left, including the one they were on (" ..
@@ -36084,7 +35782,7 @@ do
 
 	-- AND IT RESUMES WHERE THEY WERE.
 	OB.toast:GetScript("OnClick")(OB.toast)
-	check(OB.index == At("bags") and OB.callout:IsShown()
+	check(OB.index == At("skin") and OB.callout:IsShown()
 		and not OB.toast:IsShown(),
 		"clicking it picks the tour up on the stop they left (" ..
 		tostring(OB.index) .. ")")
@@ -36200,13 +35898,11 @@ do
 		OB:Teardown()
 	end
 
-	-- THE ALT OFFER.
+	-- THE ALT WELCOME (Joe, 2026-10-10).
 	--
-	-- A fresh character on an account already set up is being asked four
-	-- questions it has answered. What there is to COPY is one thing and that
-	-- is not a shortcoming: the palette, the layout and the scale live in the
-	-- profile and this addon opens on the shared one, so an alt already has
-	-- them - which is the whole reason the offer makes sense at all.
+	-- The layout, the bars and the skin live in the shared profile, so a tour
+	-- run on an alt rewrites the main's layout. Once any character on the
+	-- account has finished or skipped, the welcome leads with keeping it.
 	do
 		fresh()
 		A.db.sv.char["Padreamuerto - Nek'Rosh"] = {
@@ -36215,42 +35911,47 @@ do
 		}
 		A.db.sv.char["Olderalt - Nek'Rosh"] = {
 			onboard = { completed = true, completedAt = 50 },
-			toolbox = { docked = "TOP" },
+			toolbox = { docked = "LEFT" },
 		}
 
 		local key, who = OB:Others()
 		check(who == "Padreamuerto",
-			"the offer names the character who finished MOST recently, not the "
-			.. "one that sorts first (" .. tostring(who) .. ")")
+			"the character who finished MOST recently is the one that counts, not "
+			.. "the one that sorts first (" .. tostring(who) .. ")")
 
-		OB:Go(1)
-		check(OB.callout.offer:IsShown()
-			and OB.callout.offer.label:GetText() == "Use Padreamuerto's setup",
-			"and stop 1 carries it (" ..
-			tostring(OB.callout.offer.label:GetText()) .. ")")
+		OB:Start()
+		check(OB.card.go.label:GetText() == A.L.tour.welcome.keep
+			and OB.card.alt.label:GetText() == A.L.tour.welcome.go
+			and OB.card.lines[1]:IsShown()
+			and OB.card.lines[1]:GetText() == A.L.tour.welcome.shared,
+			"an alt's welcome leads with Keep my layout, says the profile is "
+			.. "shared, and still offers Configure it")
 
-		-- PAST THE QUESTIONS, computed rather than written down. The deck says
-		-- "jumps to stop 4", which was true while three stops set something and
-		-- stopped being true the moment zen made it four.
+		-- KEEPING IT copies the one thing that IS per character - the Toolbox's
+		-- side - and asks nothing more.
 		local TB = A:GetModule("toolbox")
 		TB:SetDock("LEFT")
-		OB.callout.offer:GetScript("OnClick")(OB.callout.offer)
-		check(A.db.char.toolbox.docked == "RIGHT",
-			"taking it copies the one thing that IS per character - the Toolbox "
-			.. "edge (" .. tostring(A.db.char.toolbox.docked) .. ")")
-		check(OB.index == OB:FirstShow() and OB.stops[OB.index].kind == "show",
-			"and lands on the first stop that only shows something, past every "
-			.. "question (" .. tostring(OB.index) .. ")")
+		OB.card.go:GetScript("OnClick")(OB.card.go)
+		check(OB:Completed() and not OB.card:IsShown()
+			and A.db.char.toolbox.docked == "RIGHT",
+			"Keep my layout marks this character done and takes the Toolbox's "
+			.. "side (" .. tostring(A.db.char.toolbox.docked) .. ")")
+		TB:SetDock("LEFT")
 
-		-- AND ON THE FIRST CHARACTER OF ALL, THERE IS NO OFFER. Nobody to
-		-- borrow from is not an empty button, it is no button.
+		-- CONFIGURE IT on an alt is the ordinary growth.
+		OB:Start()
+		OB.card.alt:GetScript("OnClick")(OB.card.alt)
+		check(OB.index == 1, "and Configure it starts the growth")
+		OB:Teardown()
+
+		-- ON THE FIRST CHARACTER OF ALL, the plain welcome.
 		A.db.sv.char["Padreamuerto - Nek'Rosh"] = nil
 		A.db.sv.char["Olderalt - Nek'Rosh"] = nil
-		OB:Go(1)
-		check(not OB.callout.offer:IsShown(),
-			"with nobody to borrow from there is no offer at all")
-		check(OB:Others() == nil,
-			"and nothing to name")
+		OB:Start()
+		check(OB.card.go.label:GetText() == A.L.tour.welcome.go
+			and not OB.card.lines[1]:IsShown() and OB:Others() == nil,
+			"with nobody else set up, the plain welcome")
+		OB:Teardown()
 	end
 
 	fresh()

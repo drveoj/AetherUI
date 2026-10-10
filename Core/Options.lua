@@ -527,8 +527,19 @@ local function UnitFramesGroup()
 			at("showPortrait")),
 
 		castHeader = header(L.options.unit_frames.cast_header),
+		-- LIVE, through the same switch the first-run tour uses. Written to the
+		-- profile alone it did nothing until a reload: the capsule is built once.
 		showPet = toggle(L.options.unit_frames.show_pet.name,
-			L.options.unit_frames.capsule_pet_own_place, at("showPet")),
+			L.options.unit_frames.capsule_pet_own_place, at("showPet"),
+			{ onSet = function(v)
+				local UF = A:GetModule("unitframes")
+				return UF and UF.SetSatellite and UF:SetSatellite("pet", v) or false
+			end, after = "none" }),
+		showToT = toggle(L.options.unit_frames.show_tot.name, nil, at("showToT"),
+			{ onSet = function(v)
+				local UF = A:GetModule("unitframes")
+				return UF and UF.SetSatellite and UF:SetSatellite("targettarget", v) or false
+			end, after = "none" }),
 		petScale = range(L.options.unit_frames.pet_scale.name, L.options.unit_frames.pet_scale.desc,
 			at("petScale"), 0.6, 1.2, 0.05, { after = "both" }),
 

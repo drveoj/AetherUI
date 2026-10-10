@@ -289,7 +289,9 @@ local function Energy(bar)
 	if bar.dock:IsMouseOver() then return 1, true end
 	if bar.cfg.hoverOnly then return 0 end
 	local rest, combat = EnergyOf(bar)
-	return InCombatLockdown() and combat or rest
+	-- `demoFight` is the first-run tour's made-up fight: the bars wake as they
+	-- would in a real one, with nothing asked of the client.
+	return (InCombatLockdown() or AB.demoFight) and combat or rest
 end
 
 local function UpdateBinding(b)

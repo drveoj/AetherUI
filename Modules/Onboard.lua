@@ -1,30 +1,29 @@
 --[[--------------------------------------------------------------------------
-	AetherUI :: Onboard
+	Lattice :: Onboard
 
-	The first run. Eight stops over the real HUD, and the tour IS the setup.
+	The first run, as a GROWTH (onboarding v2, as Joe amended it). The screen
+	starts dark with only your own frame on it, and each stop grows the next
+	piece of the lattice out of the last, asks one thing about it, and applies
+	the answer live: the spine, what hangs off it, the bars, the two trunks,
+	the skin, a fight, the map, and the layout as one line to share.
 
-	NOT A WIZARD. There is no full-screen settings window with a Finish button
-	at the end of it, and the difference is the whole design: the world dims,
-	one REAL element of the interface is lifted out of the dim, and a glass
-	callout beside it carries that stop's control. What you are looking at while
-	you choose is the thing you are choosing about. The game is the preview.
+	THE PIECES ARE THE REAL FRAMES. Nothing here is a drawing of the HUD. A
+	piece not grown yet is held at nothing - through the fader for the frames
+	it watches, by its own alpha for the rest - and growing it lets it back.
+	Alpha only, never Hide and never a move: half of these frames are secure,
+	and alpha is the one thing about them that is not protected.
 
-	THREE STOPS THAT SET, FIVE THAT SHOW. Palette, layout and the Toolbox edge
-	each carry a live control; action bars, the quest tracker, bags, threat and
-	the flight console each play one behaviour once and ask for nothing. The
-	split is deliberate - a first run that asked eight questions would be a
-	form, and a first run that asked none would be a slideshow.
+	THE SCRIM DIMS THE WORLD, NOT THE HUD. It sits under every frame of ours, so
+	what has grown is lit and usable - the spine really drags, the trunks' nodes
+	really open - and what has not is simply not there yet. It lifts a step at
+	every stop and is gone at the finish.
 
 	NOTHING IS STAGED. Every control writes straight into the system that owns
-	it the moment it is touched: the palette into the profile, the layout into
-	the anchors, the edge into the character's Toolbox record. There is no
-	pending state here and no Apply at the end, which is what makes quitting
-	half way through cost nothing.
+	it the moment it is touched, so quitting half way through costs nothing.
 
 	PER CHARACTER, AND ONCE. `db.char.onboard` holds `completed` and the stop
 	you reached. Finishing sets completed; so does skipping, and so does
-	dismissing the resume toast - because a player who has said no twice has
-	said no, and an addon that keeps asking is one you uninstall.
+	dismissing the resume toast - a player who has said no twice has said no.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -35,61 +34,44 @@ local OB = A:NewModule("onboard")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 
--- The design deck's own numbers, drawn at profile.scale like everything else.
+-- The design's own numbers, drawn at profile.scale like everything else.
 local CALLOUT_W      = 330
 local CALLOUT_PAD    = 20
-local CALLOUT_GAP    = 22      -- from the spotlit element to the callout
+local CALLOUT_GAP    = 22      -- from the element to the callout
 local CARD_W         = 520     -- welcome and finish
 -- THE MARK, on the welcome card. Width chosen, height taken from the art so
 -- nobody squashes it: Media.logoAspect is the ink inside Logo.tga, and
--- Media.logoCoord is where that ink is, which is what makes the height honest.
--- Without the coord a fifth of this box would be the canvas's empty top and
--- bottom and the headline would sit adrift under it.
+-- Media.logoCoord is where that ink is.
 local LOGO_W         = 300
 local ARROW          = 14      -- the rotated square pointing at the element
-local RING_PAD       = 6       -- how far the accent ring stands off the element
 local DOT            = 5
-local OFFER_H        = 28      -- the alt offer's own row
 local TOAST_H        = 34      -- the resume toast
 
--- THE SKIP LINE'S OWN STRIP, ACROSS THE TOP.
---
--- The deck pins it to the bottom of the screen, and the deck's callouts are
--- always beside something. Ours is clamped back onto the screen when its
--- element is near an edge, so a stop pointing at anything low put the callout's
--- footer straight through this line - Back, the dots and "Skip tour" all in the
--- same twenty pixels. Reported from the game against 0.34.1.
---
--- MOVED TO THE TOP, which is where Joe asked for it and is also the emptier
--- half of a dimmed screen: the HUD everything points at lives below the middle.
---
--- AND THE CALLOUT MAY NOT ENTER IT. Moving the line without this only moves the
--- collision, because the callout clamps to the top edge just as readily as to
--- the bottom. The band is the line's own row plus a gap, and the vertical clamp
--- below subtracts it.
-local SKIP_TOP       = 44      -- from the top of the screen to the line's top
+-- THE SKIP LINE'S OWN STRIP, ACROSS THE TOP, and the callout may not enter it:
+-- the band is the line's own row plus a gap, and the vertical clamp in
+-- PlaceCallout subtracts it.
+local SKIP_TOP       = 44
 local SKIP_H         = 24
--- Long enough for the movers to have put every frame back. The tour places
--- its callout against real frames, and a frame that has not been restored
--- yet is a frame in the wrong place.
+-- Long enough for the movers to have put every frame back. The growth works
+-- on real frames, and a frame not restored yet is in the wrong place.
 local FIRST_RUN_DELAY = 2
 local DOT_GAP        = 7
 
--- Timings, in seconds. The deck asks for 200ms on the scrim and 160ms on the
--- callout, and the pulse is a single 300ms beat rather than a loop.
-local SCRIM_FADE     = 0.20
+-- Timings, in seconds.
 local CALLOUT_FADE   = 0.16
-local PULSE          = 0.30
+local GROW           = 0.16    -- one piece fading in
+local STAGGER        = 0.04    -- between one frame of a piece and the next
+local REDUCED        = 0.12    -- reduced motion: no stagger, this long
 
--- How dark the world goes: rgba(6,5,14,.62).
+-- How dark the world goes: rgba(6,5,14,.78) at the welcome, a step of .08
+-- lighter at each stop, and gone at the finish.
 local SCRIM_RGB      = { 6 / 255, 5 / 255, 14 / 255 }
-local SCRIM_ALPHA    = 0.62
+local SCRIM_TOP      = 0.78
+local SCRIM_STEP     = 0.08
 
---- Fade a frame to an alpha over a number of seconds.
---
---  W.StepFade and W.DriveFade are the interface's one fade, driven on the
---  frame's own OnUpdate rather than the shared ticker - which runs at a tenth
---  of a second, three steps across a 300ms fade, and reads as a stutter.
+--- Fade one of the tour's OWN frames. Never a HUD frame: W.DriveFade takes the
+--  frame's OnUpdate and hides it at nothing, which on a frame of somebody
+--  else's would take its script and its visibility with it.
 local function FadeTo(f, want, secs)
 	if not f then return end
 	f.__aetherWant = want
@@ -98,12 +80,15 @@ local function FadeTo(f, want, secs)
 	W.DriveFade(f)
 end
 
+local function Reduced()
+	return A.db and A.db.profile and A.db.profile.reducedMotion and true or false
+end
+
 -- ---------------------------------------------------------------------------
 -- state
 -- ---------------------------------------------------------------------------
 
---- The character's record. Created on demand: AceDB hands us db.char whether
---  or not anybody has written to it, but the table inside it is ours.
+--- The character's record. Created on demand.
 local function Store()
 	if not A.db or not A.db.char then return nil end
 	A.db.char.onboard = A.db.char.onboard or {}
@@ -117,28 +102,24 @@ function OB:Completed()
 end
 
 --- Nothing more, ever. Set by finishing, by skipping, and by dismissing the
---  resume toast - a player who has said no twice has said no.
+--  resume toast.
 function OB:Finish()
 	local s = Store()
 	if s then
 		s.completed = true
-		-- AND WHEN, for the alt offer: with two characters done, the one worth
-		-- naming is the one you were just playing.
+		-- AND WHEN, for the alt welcome: with two characters done, the one
+		-- worth naming is the one you were just playing.
 		s.completedAt = (time and time()) or 0
 		s.stopIndex = nil
 	end
 	self:Teardown()
 end
 
---- Somebody else who has already been through this, or nothing.
+--- Another character on this account that has finished or skipped, or nil.
 --
 --  OFF db.sv.char, WHICH IS THE WHOLE SAVED FILE rather than this character's
---  slice of it. `A.db.char` is the current character and nothing else; the
---  other records are there beside it and AceDB does not hide them.
---
---  THE MOST RECENT ONE, because with two alts done the one worth naming is the
---  one you were just playing. A record written before completedAt existed reads
---  as zero, which is "long ago" and is the right answer for it.
+--  slice of it. The most recent one, by completedAt; a record written before
+--  that existed reads as zero, which is "long ago".
 function OB:Others()
 	local sv = A.db and A.db.sv and A.db.sv.char
 	local me = A.db and A.db.keys and A.db.keys.char
@@ -156,24 +137,17 @@ function OB:Others()
 		end
 	end
 	if not bestKey then return nil end
-
-	-- AceDB builds the key as "Name - Realm"; the name is the half worth
-	-- saying, and a realm nobody has to read is a longer button.
+	-- AceDB builds the key as "Name - Realm"; the name is the half worth saying.
 	return bestKey, (bestKey:match("^(.-) %- ") or bestKey)
 end
 
---- Take that character's setup, and skip the questions.
---
---  ONE THING TO COPY, AND THAT IS NOT A SHORTCOMING. The palette, the layout
---  and the scale live in the PROFILE, and this addon opens on the shared
---  Default profile - so an alt already HAS them, which is the whole reason the
---  offer makes sense. The Toolbox edge is the only choice the tour makes that
---  is stored per character, so it is the only one there is to carry over.
+--- "Keep my layout" on an alt: the layout, the bars and the skin are in the
+--  shared profile already, so the one thing to carry over is the Toolbox's
+--  side, which is stored per character.
 function OB:AdoptFrom(key)
 	local sv = A.db and A.db.sv and A.db.sv.char
 	local them = key and sv and sv[key]
 	if not them then return false end
-
 	local edge = them.toolbox and them.toolbox.docked
 	local TB = A.GetModule and A:GetModule("toolbox")
 	if edge and TB and TB.SetDock then TB:SetDock(edge) end
@@ -181,183 +155,275 @@ function OB:AdoptFrom(key)
 end
 
 -- ---------------------------------------------------------------------------
+-- the pieces
+--
+-- Each is a list of real frames, resolved late: on a fresh character some of
+-- them do not exist yet, and a module switched off has none at all.
+-- ---------------------------------------------------------------------------
+
+local function Mod(name) return A.GetModule and A:GetModule(name) end
+
+local function Trunk(name)
+	return A.Trunk and A.Trunk:Get(name)
+end
+
+local PIECE = {}
+
+function PIECE.you()
+	local UF = Mod("unitframes")
+	return { UF and UF.player }
+end
+
+function PIECE.spine()
+	local UF = Mod("unitframes")
+	return { UF and UF.target, UF and UF.spine }
+end
+
+function PIECE.hangers()
+	local UF = Mod("unitframes")
+	return { UF and UF.pet, UF and UF.tot }
+end
+
+function PIECE.bars()
+	local AB, out = Mod("actionbars"), {}
+	for _, bar in ipairs((AB and AB.bars) or {}) do out[#out + 1] = bar.dock end
+	return out
+end
+
+function PIECE.trunks()
+	local TB, MM = Mod("toolbox"), Mod("minimap")
+	local tb, wt = Trunk("toolbox"), Trunk("world")
+	return { TB and TB.root, tb and tb.frame, MM and MM.frame, MM and MM.pill,
+		wt and wt.frame }
+end
+
+--- Every frame of the HUD the growth holds back: everything the movers place,
+--  everything the fader dims, the trunks, the XP hairline and the resource
+--  tray. Nameplates are the world's, and the tour's own frames are not here.
+function OB:HudFrames()
+	local set, list = {}, {}
+	local function add(f)
+		if f and f.SetAlpha and not set[f] then set[f] = true list[#list + 1] = f end
+	end
+	for _, entry in pairs((A.Movers and A.Movers.registry) or {}) do add(entry.frame) end
+	for f in pairs((A.Fader and A.Fader.watched) or {}) do add(f) end
+	for _, f in ipairs(PIECE.trunks()) do add(f) end
+	local XP, RS = Mod("xpbar"), Mod("resources")
+	add(XP and XP.frame)
+	add(RS and RS.tray)
+	return list
+end
+
+-- What grows when: the welcome (0) grows you, each of the first four stops
+-- grows its piece, and the finish grows everything still held.
+local GROWS = { [0] = { "you" }, { "spine" }, { "hangers" }, { "bars" }, { "trunks" } }
+
+-- ---------------------------------------------------------------------------
+-- holding back, and growing
+-- ---------------------------------------------------------------------------
+
+--- Hold one frame at nothing, remembering how to let it go.
+local function Veil(f)
+	if not f or OB.veil[f] then return end
+	local rec = { alpha = f:GetAlpha() or 1 }
+	if A.Fader and A.Fader:Hold(f, 0) then
+		rec.fader = true
+	else
+		f:SetAlpha(0)
+	end
+	OB.veil[f] = rec
+end
+
+--- Let one held frame go, now.
+local function Release(f, rec)
+	if rec.fader then
+		if not (A.Fader and A.Fader:Hold(f, nil)) then f:SetAlpha(rec.alpha) end
+	else
+		f:SetAlpha(rec.alpha)
+	end
+end
+
+--- The driver for growing pieces: the tour's own frame, its own OnUpdate.
+local function Grower()
+	if OB.grower then return OB.grower end
+	local g = CreateFrame("Frame")
+	g:Hide()
+	g:SetScript("OnUpdate", function(self, dt)
+		self.at = (self.at or 0) + (dt or 0)
+		for i = #OB.jobs, 1, -1 do
+			local j = OB.jobs[i]
+			local t = self.at - j.delay
+			if t >= 0 then
+				if j.rec.fader then
+					Release(j.frame, j.rec)
+					table.remove(OB.jobs, i)
+				else
+					local p = math.min(1, t / j.dur)
+					j.frame:SetAlpha(j.rec.alpha * p)
+					if p >= 1 then table.remove(OB.jobs, i) end
+				end
+			end
+		end
+		if #OB.jobs == 0 then self:Hide() end
+	end)
+	OB.grower = g
+	return g
+end
+
+--- Every growth in flight, finished now. Leaving the tour and a fight both
+--  come through here, and so does the harness, which has no frames to tick.
+function OB:FinishGrowth()
+	for _, j in ipairs(self.jobs or {}) do Release(j.frame, j.rec) end
+	self.jobs = {}
+	if self.grower then self.grower:Hide() end
+end
+
+--- Grow one piece: its frames come back one after another, 40 ms apart.
+function OB:GrowPiece(key)
+	if self.grown[key] then return end
+	self.grown[key] = true
+	local frames
+	if key == "rest" then
+		frames = {}
+		for f in pairs(self.veil) do frames[#frames + 1] = f end
+	else
+		frames = PIECE[key] and PIECE[key]() or {}
+	end
+	local reduced = Reduced()
+	local g = Grower()
+	-- From now on the driver's own clock, so a piece grown while another is
+	-- still coming in waits its turn rather than arriving already late.
+	if not g:IsShown() then g.at = 0 end
+	local base, n = g.at or 0, 0
+	for _, f in ipairs(frames) do
+		local rec = f and self.veil[f]
+		if rec then
+			self.veil[f] = nil
+			self.jobs[#self.jobs + 1] = {
+				frame = f, rec = rec,
+				delay = base + (reduced and 0 or n * STAGGER),
+				dur = reduced and REDUCED or GROW,
+			}
+			n = n + 1
+		end
+	end
+	if #self.jobs > 0 then g:Show() end
+end
+
+--- Hold the whole HUD back, once per run of the tour.
+function OB:Hold()
+	if self.holding then return end
+	self.holding = true
+	self.veil, self.jobs, self.grown = {}, {}, {}
+	for _, f in ipairs(self:HudFrames()) do Veil(f) end
+end
+
+--- Everything the tour has grown so far, through stop `index` (0 is the
+--  welcome).
+function OB:GrowTo(index)
+	self:Hold()
+	for s = 0, math.min(index, #GROWS) do
+		for _, key in ipairs(GROWS[s] or {}) do self:GrowPiece(key) end
+	end
+end
+
+--- The whole HUD back, at once. Every way out of the tour comes through here.
+function OB:LetGo()
+	self:FinishGrowth()
+	for f, rec in pairs(self.veil or {}) do Release(f, rec) end
+	self.veil, self.jobs, self.grown = {}, {}, {}
+	self.holding = nil
+end
+
+--- Is this frame held back right now?
+function OB:Held(f)
+	return (self.veil and self.veil[f]) and true or false
+end
+
+-- ---------------------------------------------------------------------------
 -- the stops
 -- ---------------------------------------------------------------------------
 
---- Every stop, in order.
---
---  `target` names what the spotlight lifts, resolved late: a stop's element may
---  not exist yet when this file loads, and on a fresh character some of them do
---  not exist at all (no pet bar, no flight console until a flight). A stop
---  whose target cannot be found still runs - it just has nothing to lift, which
---  is better than a tour with a hole in it.
---
---  `kind` is "set" or "show", and is the only difference in how a stop is
---  built: a SET stop calls `control` to fill the callout's middle, a SHOW stop
---  calls `demo` once on entry.
+--- Every stop, in order. A SET stop carries a control; a SHOW stop plays or
+--  opens something. `unlock` is the set of frames a stop unlocks for
+--  dragging; `target` what the callout points at, or nothing; `anchor` a
+--  fixed place for the callout instead.
 OB.stops = {
 	{
-		key   = "palette",
-		name  = L.tour.adopt_from.name,
-		head  = L.tour.adopt_from.head,
-		body  = L.tour.adopt_from.body,
-		kind  = "set",
-		target = function() return _G[ADDON .. "PlayerFrame"] end,
+		key = "spine", name = L.tour.spine.name, head = L.tour.spine.head,
+		body = L.tour.spine.body, kind = "set",
+		unlock = { player = true, target = true },
+		target = function() local UF = Mod("unitframes") return UF and UF.target end,
 	},
 	{
-		key   = "layout",
-		name  = L.tour.adopt_from.name2,
-		head  = L.tour.adopt_from.head2,
-		body  = L.tour.adopt_from.body2,
-		kind  = "set",
-		-- No spotlight: the whole HUD is the subject, so the scrim stays down
-		-- and nothing is lifted out of it. A ring around one frame here would
-		-- be pointing at the wrong thing.
-		target = function() return nil end,
+		key = "hangers", name = L.tour.hangers.name, head = L.tour.hangers.head,
+		body = L.tour.hangers.body, kind = "set",
+		unlock = { player = true, target = true, pet = true, targettarget = true },
+		target = function() local UF = Mod("unitframes") return UF and UF.target end,
 	},
 	{
-		key   = "toolbox",
-		name  = L.tour.adopt_from.name3,
-		head  = L.tour.adopt_from.head3,
-		body  = L.tour.adopt_from.body3,
-		kind  = "set",
+		key = "bars", name = L.tour.bars.name, head = L.tour.bars.head,
+		body = L.tour.bars.body, kind = "set",
 		target = function()
-			local TB = A.GetModule and A:GetModule("toolbox")
-			return TB and TB.root
-		end,
-	},
-	{
-		key   = "zen",
-		name  = L.tour.adopt_from.name4,
-		head  = L.tour.adopt_from.head4,
-		body  = L.tour.adopt_from.body4,
-		kind  = "set",
-		-- NO SPOTLIGHT, for the same reason the layout stop has none: the
-		-- subject is EVERYTHING going away, and a ring round any one frame
-		-- would be saying that frame is the thing that fades.
-		target = function() return nil end,
-	},
-	{
-		key   = "bars",
-		name  = L.tour.adopt_from.name5,
-		head  = L.tour.adopt_from.head5,
-		body  = L.tour.adopt_from.body5,
-		kind  = "show",
-		-- THE DOCK, which is the glass the bar is drawn on - the header above
-		-- it is a secure state driver with no art of its own.
-		--
-		-- And found by walking AB.bars, because there is no AB:Bar(id) and
-		-- there never was: this asked for one and got nil, so stop 4 lit
-		-- nothing for two builds. `stop.target` being a function is not the
-		-- same as it finding anything, which is the check that was missing.
-		target = function()
-			local AB = A.GetModule and A:GetModule("actionbars")
+			local AB = Mod("actionbars")
 			for _, bar in ipairs((AB and AB.bars) or {}) do
 				if bar.id == "1" then return bar.dock end
 			end
-			return nil
 		end,
 	},
 	{
-		key   = "quests",
-		name  = L.tour.adopt_from.name6,
-		head  = L.tour.adopt_from.head6,
-		body  = L.tour.adopt_from.body6,
-		kind  = "show",
-		-- THE WORLD TRUNK, where the quests are now nodes. This once asked for
-		-- QT.frame and got nil, the third of three: see the harness note under
-		-- "what each stop points at".
-		target = function()
-			local f = A.Trunk and A.Trunk:Get("world").frame
-			return f and f:IsShown() and f or nil
+		key = "trunks", name = L.tour.trunks.name, head = L.tour.trunks.head,
+		-- The sides as they are: the Toolbox can be docked right, and then the
+		-- world is on the left.
+		body = function()
+			local docked = A.db and A.db.char and A.db.char.toolbox
+				and A.db.char.toolbox.docked
+			return docked == "RIGHT" and L.tour.trunks.body_right or L.tour.trunks.body_left
 		end,
+		kind = "show",
+		target = function() return nil end,
 	},
 	{
-		key   = "bags",
-		name  = "BAGS",
-		head  = L.tour.adopt_from.head7,
-		body  = L.tour.adopt_from.body7,
-		kind  = "show",
-		-- THE PANEL IS THE DEMO, so it opens before the spotlight looks for it
-		-- and closes on the way out - unless it was already open, in which case
-		-- it was the player's and stays theirs.
+		key = "skin", name = L.tour.skin.name, head = L.tour.skin.head,
+		body = L.tour.skin.body, kind = "set",
+		target = function() local UF = Mod("unitframes") return UF and UF.player end,
+	},
+	{
+		key = "fight", name = L.tour.fight.name, head = L.tour.fight.head,
+		body = L.tour.fight.body, kind = "show",
+		target = function() local UF = Mod("unitframes") return UF and UF.player end,
+	},
+	{
+		key = "map", name = L.tour.map.name, head = L.tour.map.head,
+		body = L.tour.map.body, kind = "show",
+		-- THE REAL WINDOW, over the HUD that was just built - and shut again on
+		-- the way out, whoever leaves.
 		before = function()
-			local BG = A.GetModule and A:GetModule("bags")
-			if not BG or not BG.Show then return end
-			local f = BG.frames and BG.frames.bags
-			if f and f:IsShown() then return end
-			BG:Show()
-			OB:OnLeave(function() if BG.Hide then BG:Hide() end end)
+			if not (A.Options and A.Options.Open) then return end
+			A.Options:Open()
+			OB:OnLeave(function() if A.Options.Close then A.Options:Close() end end)
 		end,
-		target = function()
-			local BG = A.GetModule and A:GetModule("bags")
-			return BG and BG.frames and BG.frames.bags
-		end,
+		target = function() return nil end,
+		-- Under the window, which sits near the top: beside it there is no room.
+		anchor = { "BOTTOM", "BOTTOM", 0, 90 },
 	},
 	{
-		key   = "threat",
-		name  = "THREAT",
-		head  = L.tour.adopt_from.head8,
-		body  = L.tour.adopt_from.body8,
-		kind  = "show",
-		target = function() return _G[ADDON .. "PlayerFrame"] end,
-	},
-	{
-		key   = "ifec",
-		name  = L.common.i_f_e_c,
-		head  = L.tour.adopt_from.head9,
-		-- AND WHERE IT IS ON THE GROUND, which the first version left out
-		-- entirely: it said "boards on your next flight" and stopped, so the
-		-- honest reading was that there is nothing to look at until then. There
-		-- is - the same programme, in the World trunk's Now Playing branch,
-		-- under its own bad joke of a name. Reported from the game against 0.31.0.
-		body  = L.tour.adopt_from.body9,
-		kind  = "show",
-		-- THE BRANCH OPENS, the same way the bags stop opens the bag panel,
-		-- and for the same reason: the thing being described lives inside it.
-		-- Shut again on the way out unless it was already open, in which case
-		-- it was the player's and stays theirs.
+		key = "share", name = L.tour.share.name, head = L.tour.share.head,
+		body = L.tour.share.body, kind = "show",
 		before = function()
-			local N = A.IFEC and A.IFEC.Node
-			if not (N and N.attached and N:Available()) or N:IsOpen() then return end
-			N:Open()
-			OB:OnLeave(function() N:Close() end)
+			local LY = A.Layout
+			if not (LY and LY.Show) then return end
+			LY:Show()
+			OB:OnLeave(function() if LY.frame then LY.frame:Hide() end end)
 		end,
-		-- N.I.F.E.C. ITSELF in its branch; with no content installed there is no
-		-- node, so the trunk it would hang on.
-		--
-		-- And off A.IFEC rather than off the module: the console's module is
-		-- "ifec" and the mini is not on it. This asked for `M.mini` and got nil.
-		target = function()
-			local M = A.IFEC and A.IFEC.Mini
-			local f = M and M.frame
-			if f and f.IsVisible and f:IsVisible() then return f end
-			local t = A.Trunk and A.Trunk:Get("world")
-			return t and t.frame
-		end,
+		target = function() return nil end,
+		anchor = { "BOTTOM", "BOTTOM", 0, 90 },
 	},
 }
 
 OB.COUNT = #OB.stops
 
---- The first stop that only shows something, which is where the alt offer
---- lands: everything before it is a question this character has answered.
---
---  COMPUTED RATHER THAN WRITTEN DOWN. The deck says "jumps to stop 4", which
---  was true while three stops set something and stopped being true the moment
---  zen made it four. A number here is a number that goes wrong the next time a
---  stop is added, silently, by landing in the middle of the questions.
-function OB:FirstShow()
-	for i, stop in ipairs(self.stops) do
-		if stop.kind == "show" then return i end
-	end
-	return 1
-end
-
 --- Put a frame at the scale the rest of the HUD is drawn at.
---
---  One place, because a scale applied in the builder and not on a config change
---  is a scale that is right until somebody moves the slider.
 local function Rescale(f)
 	if not f or not f.SetScale then return end
 	local scale = (A.db and A.db.profile and A.db.profile.scale) or 1
@@ -371,171 +437,62 @@ end
 
 --- The dim over the world.
 --
---  ANCHORED TO WorldFrame, not UIParent, for the same reason Zen's frosted pane
---  is: WorldFrame is the physical screen at scale 1 whatever the player's UI
---  Scale slider says, and a dim that stops short of the edge of the monitor is
---  worse than no dim at all.
+--  ANCHORED TO WorldFrame, the physical screen whatever the UI Scale says.
 --
---  STRATA `FULLSCREEN`: above the HUD, which is the point - everything the
---  interface draws goes under it, and the one element this stop is about is
---  lifted back out. Below FULLSCREEN_DIALOG, so the callout and the client's
---  own error dialogs still land on top.
+--  STRATA `BACKGROUND`, under every frame of ours: it dims the world and
+--  nothing else. A piece of the HUD that has grown is lit and works; one that
+--  has not is held at nothing, so there is nothing under here to hide.
+--
+--  The tour's own frames are its children - at the profile's scale through
+--  this one SetScale - with strata of their own above everything.
 local function BuildScrim()
 	if OB.scrim then return OB.scrim end
 
 	local f = CreateFrame("Frame", ADDON .. "OnboardScrim")
-	f:SetFrameStrata("FULLSCREEN")
+	f:SetFrameStrata("BACKGROUND")
 	f:SetFrameLevel(0)
 	f:SetAllPoints(WorldFrame or UIParent)
-
-	-- AT THE PROFILE'S SCALE, LIKE EVERYTHING ELSE THIS ADDON DRAWS.
-	--
-	-- Parentless, this frame has nothing to inherit a scale from, so the whole
-	-- tour sat at 1.0 while the HUD it was pointing at sat at 0.71 - a callout
-	-- half again the size of the unit frame it was describing. The header of
-	-- this file has claimed otherwise since the day it was written.
-	--
-	-- ON THE SCRIM AND NOWHERE ELSE, because everything the tour draws is a
-	-- child of it: one SetScale sizes the callout, the cards, the ring and the
-	-- skip line together. The resume toast is the exception and sets its own,
-	-- because it hangs off UIParent rather than off this.
-	--
-	-- The cost is that PlaceCallout can no longer treat its own numbers as
-	-- pixels. See the note there.
 	Rescale(f)
+	-- The world's clicks stop here while the tour is up: a camera swung by a
+	-- stray click is a scene that moved under the callout.
 	f:EnableMouse(true)
 	f:Hide()
 
 	local tint = f:CreateTexture(nil, "BACKGROUND")
 	tint:SetAllPoints(f)
 	tint:SetTexture(A.Media.texture.flat)
-	tint:SetVertexColor(SCRIM_RGB[1], SCRIM_RGB[2], SCRIM_RGB[3], SCRIM_ALPHA)
 	f.tint = tint
 
 	OB.scrim = f
 	return f
 end
 
--- ---------------------------------------------------------------------------
--- the spotlight
--- ---------------------------------------------------------------------------
-
---- Lift one real element out of the dim.
---
---  BY STRATA, NOT BY REPARENTING. The obvious way to put a frame above the
---  scrim is to reparent it, and half the things this tour points at are secure:
---  an action bar's parent cannot be changed from insecure code at all, and the
---  attempt is a taint error rather than a no-op. Raising the strata is not a
---  protected operation, so it works on every frame the same way - and putting
---  it back is one call rather than an unwinding.
---
---  WHAT IT WAS, REMEMBERED. A frame whose strata we raised and never restored
---  is a frame that draws over the player's dialogs for the rest of the session.
-local function Lift(frame)
-	if not frame or not frame.SetFrameStrata then return end
-	if OB.lifted then return end
-	OB.lifted = {
-		frame  = frame,
-		strata = frame:GetFrameStrata(),
-		level  = frame:GetFrameLevel(),
-	}
-	frame:SetFrameStrata("FULLSCREEN")
-	frame:SetFrameLevel(20)
-end
-
-local function Drop()
-	local was = OB.lifted
-	OB.lifted = nil
-	if not was or not was.frame then return end
-	if was.strata then was.frame:SetFrameStrata(was.strata) end
-	if was.level then was.frame:SetFrameLevel(was.level) end
-end
-
---- The accent ring around the lifted element.
---
---  FOUR HAIRLINES, NOT A PANEL. A Glass panel is a fill AND an edge, and this
---  wants only the edge - the element it wraps is the thing you are meant to be
---  looking at, and a wash of glass over it is the opposite of a spotlight.
---  Glass has no transparent fill token, and giving it one for a single caller
---  would put a colour nobody uses into all four palettes.
---
---  RE-TINTED ON ENTRY rather than skinned once, because stop 1 IS the palette:
---  a ring drawn in Midnight and left there while the player tries Dawn is the
---  one place in the interface where a stale colour is the actual subject.
-local function BuildRing()
-	if OB.ring then return OB.ring end
-
-	local r = CreateFrame("Frame", nil, BuildScrim())
-	r:SetFrameStrata("FULLSCREEN")
-	r:SetFrameLevel(18)
-	r:Hide()
-
-	r.edges = {}
-	for i = 1, 4 do
-		local t = r:CreateTexture(nil, "OVERLAY")
-		t:SetTexture(A.Media.texture.flat)
-		r.edges[i] = t
-	end
-
-	local px = A:Px(2)
-	r.edges[1]:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0)
-	r.edges[1]:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 0)
-	r.edges[1]:SetHeight(px)
-	r.edges[2]:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
-	r.edges[2]:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 0)
-	r.edges[2]:SetHeight(px)
-	r.edges[3]:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0)
-	r.edges[3]:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
-	r.edges[3]:SetWidth(px)
-	r.edges[4]:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 0)
-	r.edges[4]:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 0)
-	r.edges[4]:SetWidth(px)
-
-	OB.ring = r
-	return r
-end
-
-local function RingAround(frame)
-	local r = BuildRing()
-	if not frame or not frame.GetWidth then r:Hide() return end
-
-	r:ClearAllPoints()
-	r:SetPoint("TOPLEFT", frame, "TOPLEFT", -RING_PAD, RING_PAD)
-	r:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", RING_PAD, -RING_PAD)
-	for _, t in ipairs(r.edges) do W.Tint(t, Palette.c.accent, 0.55) end
-	r:Show()
-
-	-- ONE BEAT, NOT A LOOP. A ring that pulses forever is a ring you stop
-	-- seeing; one that pulses as the stop arrives is a ring that says "here".
-	r:SetAlpha(0)
-	FadeTo(r, 1, PULSE)
+--- The scrim's weight for a stop (0 the welcome); `false` takes it away.
+local function Dim(index)
+	local f = BuildScrim()
+	local a = 0
+	if index then a = math.max(0, SCRIM_TOP - SCRIM_STEP * index) end
+	f.tint:SetVertexColor(SCRIM_RGB[1], SCRIM_RGB[2], SCRIM_RGB[3], a)
+	f.dim = a
+	f:Show()
 end
 
 -- ---------------------------------------------------------------------------
 -- the callout
 -- ---------------------------------------------------------------------------
 
---- The glass panel that carries a stop.
---
---  BUILT ONCE AND REFILLED. Eight panels built and thrown away is eight frames
---  the client can never reclaim - frames are not garbage collected - and the
---  tour can be re-run from the Toolbox as many times as somebody likes.
+--- The glass panel that carries a stop. Built once and refilled.
 local function BuildCallout()
 	if OB.callout then return OB.callout end
 
 	local c = Glass.CreatePanel(BuildScrim(), {
-		-- The deck's own drop: 0 16px 50px rgba(0,0,0,.6). `shadow` is an
-	-- OPACITY here, not a flag - passing true reaches math.min and takes
-	-- the panel down with it.
-	corner = 20, fill = "dialogFill", edge = "glassEdgeHi", shadow = 0.6,
+		corner = 20, fill = "dialogFill", edge = "glassEdgeHi", shadow = 0.6,
 	})
 	c:SetFrameStrata("FULLSCREEN_DIALOG")
 	c:SetWidth(CALLOUT_W)
 	c:EnableMouse(true)
 	c:Hide()
 
-	-- The arrow tab: a rotated square, half of it under the panel's rim, which
-	-- is how the deck draws it. Hidden on a stop with nothing to point at.
 	local arrow = c:CreateTexture(nil, "BACKGROUND")
 	arrow:SetSize(ARROW, ARROW)
 	arrow:SetTexture(A.Media.texture.flat)
@@ -555,24 +512,12 @@ local function BuildCallout()
 	c.body:SetWidth(CALLOUT_W - CALLOUT_PAD * 2)
 	c.body:SetWordWrap(true)
 
-	-- WHERE A STOP'S OWN THING GOES. Swatches, preset cards, an edge picker,
-	-- or a demo's caption - the callout does not know which, and every stop
-	-- anchors its content to this and reports a height.
+	-- WHERE A STOP'S OWN THING GOES. Every stop anchors its content to this and
+	-- reports a height.
 	c.slot = CreateFrame("Frame", nil, c)
 	c.slot:SetPoint("TOPLEFT", c.body, "BOTTOMLEFT", 0, -12)
 	c.slot:SetWidth(CALLOUT_W - CALLOUT_PAD * 2)
 	c.slot:SetHeight(1)
-
-	-- THE ALT OFFER, under the control and above the footer. Its own row rather
-	-- than a fifth swatch in the slot: it is not another palette, it is a way
-	-- of not being asked about palettes at all.
-	c.offer = W.CreateButton(c, { corner = 11 })
-	c.offer:SetHeight(OFFER_H)
-	c.offer:SetPoint("TOPLEFT", c.slot, "BOTTOMLEFT", 0, -10)
-	c.offer:SetPoint("RIGHT", c.slot, "RIGHT", 0, 0)
-	c.offer.label = W.Text(c.offer, "tbLabel", "CENTER")
-	c.offer.label:SetPoint("CENTER")
-	c.offer:Hide()
 
 	OB.callout = c
 	return c
@@ -588,18 +533,14 @@ local function BuildNav(c)
 	nav:SetHeight(28)
 	c.nav = nav
 
-	-- BACK IS QUIET, and it is always there. The deck greys it on stop 1
-	-- rather than removing it: a control that appears and disappears makes the
-	-- footer jump, and the tour is eight of these in a row.
-	-- A WORD, NOT A BUTTON. Glass has no transparent fill or edge token -
-	-- an unknown name falls back to `glass` and `glassEdge` - so "quiet"
-	-- here means a plain Button with a label on it and no surface at all.
+	-- BACK IS QUIET, and it is always there - greyed on stop 1 rather than
+	-- removed, so the footer never jumps. A word, not a glass button.
 	local back = CreateFrame("Button", nil, nav)
 	back:SetSize(52, 24)
 	back:SetPoint("LEFT", nav, "LEFT", 0, 0)
 	back.label = W.Text(back, "tbLabel", "CENTER")
 	back.label:SetPoint("CENTER")
-	back.label:SetText(L.tour.build_nav.back)
+	back.label:SetText(L.tour.nav.back)
 	back:SetScript("OnClick", function() OB:Back() end)
 	nav.back = back
 
@@ -608,16 +549,15 @@ local function BuildNav(c)
 	next_:SetPoint("RIGHT", nav, "RIGHT", 0, 0)
 	next_.label = W.Text(next_, "tbLabel", "CENTER")
 	next_.label:SetPoint("CENTER")
-	next_.label:SetText(L.tour.build_nav.next)
+	next_.label:SetText(L.tour.nav.next)
 	next_:SetScript("OnClick", function() OB:Next() end)
 	nav.next = next_
 
-	-- The dots. One per stop, the current one in the accent.
 	nav.dots = {}
 	for i = 1, OB.COUNT do
 		local d = nav:CreateTexture(nil, "ARTWORK")
 		d:SetSize(DOT, DOT)
-		d:SetTexture(A.Media.texture.flat)
+		d:SetTexture(A.Media.texture.chipDisc)
 		nav.dots[i] = d
 	end
 	local span = OB.COUNT * DOT + (OB.COUNT - 1) * DOT_GAP
@@ -629,58 +569,44 @@ local function BuildNav(c)
 	return nav
 end
 
---- Paint the footer for a stop.
+--- Paint the footer for a stop: done 40 %, this one in the accent, to come 25 %.
 local function PaintNav(nav, index)
 	local c = Palette.c
 	for i, d in ipairs(nav.dots) do
-		W.Tint(d, i == index and c.accent or c.textFaint,
-			i == index and 1 or 0.35)
+		local a = (i == index) and 1 or (i < index and 0.4 or 0.25)
+		W.Tint(d, c.accent, a)
 	end
-
-	-- Nothing behind stop 1, so Back says so rather than lying about it.
 	local first = index <= 1
 	W.Color(nav.back.label, first and c.textFaint or c.textDim)
 	nav.back:EnableMouse(not first)
-
-	nav.next.label:SetText(index >= OB.COUNT and "Finish" or "Next")
+	nav.next.label:SetText(index >= OB.COUNT and L.tour.nav.finish or L.tour.nav.next)
 end
 
 -- ---------------------------------------------------------------------------
 -- placing the callout
 -- ---------------------------------------------------------------------------
 
---- Beside the element, and never off the screen.
+--- Beside the element, and never off the screen - or at a stop's fixed place.
 --
---  MEASURED AGAINST THE SCREEN, not chosen by the stop. Which side of a frame
---  has room depends on where the player has dragged that frame, and a callout
---  anchored "to the right of the player frame" by somebody looking at their own
---  layout is a callout half off the screen on anybody else's.
---
---  AND CLAMPED, WHICH IS THE HALF THAT WAS MISSING. Anchoring the callout's
---  LEFT to the element's RIGHT centres it vertically on the element - so a
---  target near the top of the screen puts most of the callout above the top of
---  the screen, and the first build showed nothing but its footer. Reported in
---  game against 0.30.0.
---
---  MEASURED IN SCREEN PIXELS, WRITTEN BACK IN THE CALLOUT'S OWN UNITS, and the
---  two are not the same number. Every frame here is drawn at the profile's
---  scale, so the callout's width is not its width on screen and a SetPoint
---  offset is not a count of pixels: an offset written straight in from a pixel
---  figure lands 1/scale too far from the corner it was measured from.
---
---  So `cs` is taken once, everything below is pixels, and the division happens
---  at the two anchors and nowhere else. Doing the clamping in anchor points
---  instead means clamping something whose position you have not got a number
---  for.
-local function PlaceCallout(c, frame)
+--  MEASURED IN SCREEN PIXELS, WRITTEN BACK IN THE CALLOUT'S OWN UNITS: every
+--  frame here is drawn at the profile's scale, so `cs` is taken once,
+--  everything below is pixels, and the division happens at the anchors.
+local function PlaceCallout(c, frame, anchor)
 	c:ClearAllPoints()
 	c.arrow:Hide()
-
-	local sw = (UIParent:GetWidth() or 0) * (UIParent:GetEffectiveScale() or 1)
-	local sh = (UIParent:GetHeight() or 0) * (UIParent:GetEffectiveScale() or 1)
+	c.__aetherAt = nil
 
 	local cs = c:GetEffectiveScale() or 1
 	if cs <= 0 then cs = 1 end
+
+	if anchor then
+		local us = UIParent:GetEffectiveScale() or 1
+		c:SetPoint(anchor[1], UIParent, anchor[2], anchor[3] * us / cs, anchor[4] * us / cs)
+		return
+	end
+
+	local sw = (UIParent:GetWidth() or 0) * (UIParent:GetEffectiveScale() or 1)
+	local sh = (UIParent:GetHeight() or 0) * (UIParent:GetEffectiveScale() or 1)
 	local cw, ch = (c:GetWidth() or 0) * cs, (c:GetHeight() or 0) * cs
 
 	if not frame or not frame.GetCenter or not frame:GetCenter()
@@ -694,62 +620,30 @@ local function PlaceCallout(c, frame)
 	fx, fy = fx * fs, fy * fs
 	local halfW = ((frame:GetWidth() or 0) * fs) / 2
 
-	-- The side with room, then the position on it. The gap is a design number
-	-- in the callout's own units, so it becomes pixels the same way its width
-	-- does.
 	local onRight = fx < sw / 2
 	local gap = CALLOUT_GAP * cs
 	local x = onRight and (fx + halfW + gap + cw / 2)
 		or (fx - halfW - gap - cw / 2)
 	local y = fy
 
-	-- INSIDE THE SCREEN, both ways. A margin rather than flush, because a panel
-	-- touching the edge of the monitor reads as one that has been cut off.
+	-- INSIDE THE SCREEN, both ways, and under the skip line's band.
 	local m = 16 * cs
 	local wantX = x
-	-- The skip line owns the top of the screen, and this is what keeps the two
-	-- apart by construction rather than by hoping they never meet. It is a
-	-- child of the same scrim, so its own numbers scale with ours.
 	local ceiling = sh - ch / 2 - m - (SKIP_TOP + SKIP_H) * cs
 	x = math.max(cw / 2 + m, math.min(sw - cw / 2 - m, x))
 	y = math.max(ch / 2 + m, math.min(ceiling, y))
 
 	c:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / cs, y / cs)
 
-	-- WHERE IT WENT, IN NUMBERS, kept on the frame.
-	--
-	-- Not for the addon - nothing reads this - but because the arithmetic
-	-- above IS the thing that went wrong, and it cannot be checked from the
-	-- outside: asking a frame where it ended up means resolving an anchor
-	-- chain, which the harness models as a fixed answer. So the sum shows
-	-- its working.
-	-- All of it in pixels, including the scale it took to get there: a check
-	-- comparing this against a frame's own numbers has to know which space it
-	-- is reading.
+	-- WHERE IT WENT, IN NUMBERS, kept on the frame: the arithmetic above is the
+	-- thing that has gone wrong before, and the harness reads the sum.
 	c.__aetherAt = { x = x, y = y, w = cw, h = ch,
 		sw = sw, sh = sh, onRight = onRight, wantX = wantX, scale = cs }
 
-	-- THE ARROW FOLLOWS THE ELEMENT, not the callout's middle. Once the callout
-	-- has been shoved back onto the screen the two are no longer level, and an
-	-- arrow left in the centre points at nothing.
-	--
-	-- Only when the callout is still on the side it asked for: pushed past the
-	-- element entirely there is nothing sensible for it to point at, and an
-	-- arrow on the wrong edge is worse than none.
-	local slid = math.abs(x - wantX) > cw / 2
-	if slid then return end
-
-	-- AND THE SAME RULE VERTICALLY, which was missing until the skip line moved.
-	--
-	-- The arrow can only travel as far as its own edge, so an element pushed
-	-- further above the callout than half the callout's height leaves it parked
-	-- at the top corner pointing at nothing in particular. That is the failure
-	-- the horizontal guard above exists to prevent, arrived at down the other
-	-- axis - and it only started happening because the ceiling now pushes
-	-- callouts further down the screen than the screen edge alone did.
+	-- THE ARROW FOLLOWS THE ELEMENT, and only while it can reach it.
+	if math.abs(x - wantX) > cw / 2 then return end
 	local dy = fy - y
-	local limit = ch / 2 - ARROW * cs
-	if math.abs(dy) > limit then return end
+	if math.abs(dy) > ch / 2 - ARROW * cs then return end
 
 	local edge = onRight and "LEFT" or "RIGHT"
 	c.arrow:ClearAllPoints()
@@ -761,14 +655,11 @@ end
 
 --- Tall enough for what is in it, and no taller.
 local function SizeCallout(c)
-	-- The offer's row only when there is one. Left in the sum unconditionally,
-	-- a stop with no offer gets a strip of empty glass above its footer.
-	local offer = (c.offer and c.offer:IsShown()) and (OFFER_H + 10) or 0
 	local h = CALLOUT_PAD
 		+ (c.kicker:GetStringHeight() or 0) + 8
 		+ (c.head:GetStringHeight() or 0) + 8
 		+ (c.body:GetStringHeight() or 0) + 12
-		+ (c.slot:GetHeight() or 0) + offer + 14
+		+ (c.slot:GetHeight() or 0) + 14
 		+ 28 + CALLOUT_PAD
 	c:SetHeight(h)
 	c.nav:ClearAllPoints()
@@ -781,10 +672,7 @@ end
 -- the skip line
 -- ---------------------------------------------------------------------------
 
---- "Skip tour — keep defaults", pinned across the top of the screen at every
---  stop. Its own frame rather than part of the callout, because the callout
---  moves with the element and this must not - which is also why the callout is
---  clamped out of its strip: two frames that move independently will meet.
+--- "Skip — use the defaults", across the top of the screen at every stop.
 local function BuildSkip()
 	if OB.skip then return OB.skip end
 
@@ -795,7 +683,7 @@ local function BuildSkip()
 
 	b.label = W.Text(b, "tbLabel", "CENTER")
 	b.label:SetPoint("CENTER")
-	b.label:SetText(L.tour.build_skip.skip_tour_keep_defaults)
+	b.label:SetText(L.tour.skip)
 	W.Color(b.label, Palette.c.textFaint)
 
 	b:SetScript("OnEnter", function() W.Color(b.label, Palette.c.textDim) end)
@@ -808,50 +696,64 @@ local function BuildSkip()
 end
 
 -- ---------------------------------------------------------------------------
--- the controls
---
--- Three stops carry one, and every one of them writes STRAIGHT INTO THE SYSTEM
--- THAT OWNS IT the moment it is touched. No staging, no Apply at the end - the
--- palette goes into the profile, the layout into the anchors, the edge into the
--- character's Toolbox record, and each of those systems repaints itself the way
--- it would if the change had come from the options panel. Which is the whole
--- reason quitting half way through costs nothing.
+-- leaving a stop
 -- ---------------------------------------------------------------------------
 
-local CHIP_H     = 58      -- a swatch card
-local CARD_H     = 62      -- a layout card, wireframe and all
-local EDGE_H     = 74      -- the edge picker
-local ZEN_H      = 34      -- a delay card
+--- Anything a stop changed out in the world, put back: ONE LIST, POPPED IN
+--  REVERSE, and every route out of a stop goes through it - Go on the way to
+--  the next stop, and Teardown for finishing, skipping, a fight starting and
+--  the module being switched off.
+function OB:Undo()
+	local list = self.__undo
+	self.__undo = nil
+	for i = #(list or {}), 1, -1 do pcall(list[i]) end
+end
 
---- Everything a stop put in the slot, gone.
---
---  POOLED BY THE SLOT rather than destroyed, because frames cannot be
---  destroyed - and the tour can be re-run as many times as somebody likes.
---  A control left over from the last stop is a control that still works.
+--- Do this when the stop is left, whatever leaves it.
+function OB:OnLeave(fn)
+	if type(fn) ~= "function" then return end
+	self.__undo = self.__undo or {}
+	self.__undo[#self.__undo + 1] = fn
+end
+
+--- Run `step(at)` on the slot's own OnUpdate until it returns false or the
+--  stop is left. The opening frame now, not a frame late.
+local function Play(slot, step)
+	if step(0) == false then return end
+	local at = 0
+	slot:SetScript("OnUpdate", function(self, dt)
+		at = at + (dt or 0)
+		if step(at) == false then self:SetScript("OnUpdate", nil) end
+	end)
+	OB:OnLeave(function() slot:SetScript("OnUpdate", nil) end)
+end
+
+-- ---------------------------------------------------------------------------
+-- the slot's frames
+-- ---------------------------------------------------------------------------
+
+--- Everything a stop put in the slot, gone. Pooled, because frames cannot be
+--  destroyed and the tour can be run as often as somebody likes.
 function OB:ClearSlot(slot)
 	slot.__aetherKids = slot.__aetherKids or {}
+	slot:SetScript("OnUpdate", nil)
 	for _, pool in pairs(slot.__aetherKids) do
 		for _, f in ipairs(pool) do
 			f:Hide()
 			f:ClearAllPoints()
-			-- ASKED FIRST. Not everything in a slot is a Button - stop 3's box
-			-- is a plain Frame with four tabs on it - and the client throws on
-			-- SetScript for a script the type has not got, CLEARING one as
-			-- much as setting one. Reported in game against 0.30.0.
-			if f.HasScript and f:HasScript("OnClick") then
-				f:SetScript("OnClick", nil)
+			-- ASKED FIRST: the client throws on SetScript for a script the type
+			-- has not got, clearing one as much as setting one.
+			if f.HasScript and f:HasScript("OnClick") then f:SetScript("OnClick", nil) end
+			if f.HasScript and f:HasScript("OnEnter") then
+				f:SetScript("OnEnter", nil)
+				f:SetScript("OnLeave", nil)
 			end
 		end
 	end
 end
 
---- One frame out of the slot's pool, built by `make` the first time.
---
---  A POOL PER CONTROL, not one list by index. The three controls share this
---  slot and their frames are not interchangeable - the fourth palette swatch
---  and the first layout card would be the same frame, and the layout card
---  would be looking for a wireframe box a swatch has not got. Which is exactly
---  how this failed the first time it was run.
+--- One frame out of the slot's pool, built by `make` the first time. A pool
+--  per kind: the controls' frames are not interchangeable.
 local function Kid(slot, kind, i, make)
 	slot.__aetherKids = slot.__aetherKids or {}
 	slot.__aetherKids[kind] = slot.__aetherKids[kind] or {}
@@ -865,11 +767,7 @@ local function Kid(slot, kind, i, make)
 	return f
 end
 
---- The look of a card that is either the chosen one or not.
---
---  THE ACCENT RIM IS THE WHOLE SIGNAL. There is no tick and no radio dot in
---  the deck: the chosen card is lit and the others are not, which is the same
---  language the Toolbox tiles and the chat tabs already speak.
+--- A card lit or not: the accent rim is the whole signal.
 local function Chosen(card, on)
 	local c = Palette.c
 	if card.SetFillColor then
@@ -880,142 +778,147 @@ local function Chosen(card, on)
 end
 
 -- ---------------------------------------------------------------------------
--- stop 1: the palette
+-- stops 1 and 2: unlocked
 -- ---------------------------------------------------------------------------
 
---- Four swatch cards. Tapping one recolours the ENTIRE interface, live.
---
---  THROUGH A:Restyle, the same door the options panel and /aether skin use.
---  A palette applied any other way is a palette that half the interface has
---  not heard about - and the one thing this stop must not do is show somebody
---  a preview that is not what they will get.
---
---  A ROW PER FAMILY, four to a row, each under its spaced name - the same rows
---  the options picker draws (skins v2). Twelve across one row would be cards
---  too narrow for their own names.
-local FAMILY_HEAD = 14
-local FAMILY_NAME = {
-	sky     = L.options.general.skin.sky,
-	gem     = L.options.general.skin.gem,
-	seasons = L.options.general.skin.seasons,
-}
+--- Unlock what a stop teaches - quietly, with no chat lines and no LOCK pill -
+--  and lock again on the way out.
+local function Unlocked(stop)
+	local MV = A.Movers
+	if not (stop.unlock and MV and MV.Unlock) then return end
+	MV:Unlock(stop.unlock, true)
+	OB:OnLeave(function() if MV.unlocked then MV:Lock(true) end end)
+end
 
-local function PaletteControl(slot)
-	local list = Palette:List()
-	local gap = 7
-	local perRow = 4
-	local w = (slot:GetWidth() - gap * (perRow - 1)) / perRow
-	local rowH = FAMILY_HEAD + CHIP_H + gap
+local NUDGE, NUDGE_AT, NUDGE_FOR = 12, 4, 0.3
 
-	-- The families in the order the palette offers them, and where each skin
-	-- sits in its own.
-	local famAt, col, heads = {}, {}, {}
-	for f, fam in ipairs(Palette.families) do
-		for c, key in ipairs(fam.skins) do famAt[key], col[key] = f, c end
-		heads[f] = fam.key
+--- The player's centre now, to tell a drag from stillness.
+local function Where()
+	local UF = Mod("unitframes")
+	local f = UF and UF.player
+	if not (f and f.GetCenter) then return nil end
+	return f:GetCenter()
+end
+
+--- One handle offset toward its parent by `d`, or put back on its frame.
+local function Lean(name, d)
+	local MV = A.Movers
+	local entry = MV and MV.registry[name]
+	local h = entry and entry.handle
+	if not (h and entry.frame) then return end
+	h:ClearAllPoints()
+	if not d or d == 0 then
+		h:SetAllPoints(entry.frame)
+		return
 	end
-
-	for f, key in ipairs(heads) do
-		local head = Kid(slot, "paletteHead", f, function(parent)
-			local h = CreateFrame("Frame", nil, parent)
-			h.text = W.Text(h, "opSub", "LEFT")
-			h.text:SetPoint("LEFT", h, "LEFT", 0, 0)
-			h.line = h:CreateTexture(nil, "ARTWORK")
-			h.line:SetTexture(A.Media.texture.flat)
-			h.line:SetHeight(1)
-			h.line:SetPoint("LEFT", h.text, "RIGHT", 8, 0)
-			h.line:SetPoint("RIGHT", h, "RIGHT", 0, 0)
-			return h
-		end)
-		head:SetSize(slot:GetWidth(), FAMILY_HEAD)
-		head:ClearAllPoints()
-		head:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -(f - 1) * rowH)
-		head.text:SetText(A.Trunk.Spaced(FAMILY_NAME[key] or key))
-		W.Color(head.text, Palette.c.textDim)
-		local a = Palette.c.accent
-		head.line:SetVertexColor(a[1], a[2], a[3], 0.22)
+	local parent = MV.registry[entry.parent or ""]
+	local px, py
+	if parent and parent.frame then px, py = parent.frame:GetCenter() end
+	local cx, cy = entry.frame:GetCenter()
+	local dx, dy = 0, 1
+	if px and cx then
+		local len = math.sqrt((px - cx) ^ 2 + (py - cy) ^ 2)
+		if len > 0 then dx, dy = (px - cx) / len, (py - cy) / len end
 	end
+	h:SetPoint("TOPLEFT", entry.frame, "TOPLEFT", dx * d, dy * d)
+	h:SetPoint("BOTTOMRIGHT", entry.frame, "BOTTOMRIGHT", dx * d, dy * d)
+end
 
-	for i, entry in ipairs(list) do
-		local card = Kid(slot, "palette", i, function(parent)
-			local f = Glass.CreatePanel(parent, {
-				frameType = "Button", corner = 11,
-			})
-			f.glow = f:CreateTexture(nil, "ARTWORK")
-			f.glow:SetTexture(A.Media.texture.glow)
-			f.glow:SetSize(36, 36)
-			f.glow:SetBlendMode("ADD")
-			f.dot = f:CreateTexture(nil, "OVERLAY")
-			f.dot:SetSize(19, 19)
-			-- chipDisc, not circleMask: the same circle authored at 64 for
-			-- things drawn near that size. The 256px one minified to 19 is
-			-- eight times down with no mipmap behind it, which is the crunch
-			-- the chip rim, the check box and the tooltip badge all record.
-			f.dot:SetTexture(A.Media.texture.chipDisc)
-			f.dot:SetPoint("TOP", f, "TOP", 0, -8)
-			f.label = W.Text(f, "tbLabel", "CENTER")
-			f.label:SetPoint("BOTTOM", f, "BOTTOM", 0, 7)
-			f.glow:SetPoint("CENTER", f.dot, "CENTER", 0, 0)
+local TOGGLE_H = 24
+
+--- Two switches, Target of target and Pet, writing the capsules live - and
+--  the lesson: drag the spine and the callout notices; leave it four seconds
+--  and the two hangers lean toward their parents once.
+local function HangersControl(slot)
+	local UF = Mod("unitframes")
+	local rows = {
+		{ key = "targettarget", label = L.tour.hangers.tot },
+		{ key = "pet", label = L.tour.hangers.pet, note = L.tour.hangers.pet_note },
+	}
+	for i, row in ipairs(rows) do
+		local b = Kid(slot, "hangers", i, function(parent)
+			local f = CreateFrame("Button", nil, parent)
+			f:SetHeight(TOGGLE_H)
+			f.d = f:CreateTexture(nil, "ARTWORK")
+			f.d:SetTexture(Media.texture.diamond)
+			f.d:SetSize(14, 14)
+			f.d:SetPoint("LEFT", f, "LEFT", 2, 0)
+			f.label = W.Text(f, "tbCardBody", "LEFT")
+			f.label:SetPoint("LEFT", f.d, "RIGHT", 10, 0)
+			f.note = W.Text(f, "tbLabel", "LEFT")
+			f.note:SetPoint("LEFT", f.label, "RIGHT", 6, 0)
+			f.state = W.Text(f, "tbLabel", "RIGHT")
+			f.state:SetPoint("RIGHT", f, "RIGHT", 0, 0)
 			return f
 		end)
-
-		local row, at = famAt[entry.key] or #heads + 1, (col[entry.key] or i) - 1
-		card:SetSize(w, CHIP_H)
-		card:ClearAllPoints()
-		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (at % perRow) * (w + gap),
-			-(row - 1) * rowH - FAMILY_HEAD)
-
-		-- THE SWATCH IS THAT PALETTE'S OWN ACCENT, not the one in use. The
-		-- point of the cards is to show the colours; drawing them all in the
-		-- current skin's accent would make the choice invisible. A gem's
-		-- glows, as it does in the options picker.
-		local skin = Palette.skins[entry.key]
-		W.Tint(card.dot, skin and skin.accent or Palette.c.accent, 1)
-		if skin and skin.family == "gem" then
-			W.Tint(card.glow, skin.accent, 0.7)
-			card.glow:Show()
-		else
-			card.glow:Hide()
-		end
-		card.label:SetText(entry.label or entry.key)
-		Chosen(card, Palette.current == entry.key)
-
-		card:SetScript("OnClick", function()
-			A.db.profile.skin = entry.key
-			A:Restyle()
-			-- AND THE TOUR REPAINTS ITSELF WITH EVERYTHING ELSE. The callout,
-			-- the ring and the dots are all drawn in the accent that just
-			-- changed, and a tour that stayed Midnight while the HUD went Dawn
-			-- would be the one thing on screen contradicting its own copy.
-			OB:Go(OB.index or 1)
+		b:ClearAllPoints()
+		b:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -(i - 1) * (TOGGLE_H + 6))
+		b:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+		local on = UF and UF.SatelliteOn and UF:SatelliteOn(row.key) or false
+		local c = Palette.c
+		W.Tint(b.d, c.accent, on and 1 or 0.3)
+		b.label:SetText(row.label)
+		W.Color(b.label, on and c.text or c.textDim)
+		b.note:SetText(row.note or "")
+		W.Color(b.note, c.textFaint)
+		b.state:SetText(on and L.tour.hangers.on or L.tour.hangers.off)
+		W.Color(b.state, on and c.accent or c.textFaint)
+		b.key, b.on = row.key, on
+		b:SetScript("OnClick", function()
+			if UF and UF.SetSatellite and UF:SetSatellite(row.key, not on) then
+				-- Part of what this stop has grown: a capsule switched on here
+				-- arrives lit, not held.
+				local f = (row.key == "pet") and UF.pet or UF.tot
+				if f and OB.veil and OB.veil[f] then
+					Release(f, OB.veil[f])
+					OB.veil[f] = nil
+				end
+				OB:Go(OB.index or 2)
+			end
 		end)
 	end
+	slot:SetHeight(#rows * TOGGLE_H + (#rows - 1) * 6)
 
-	slot:SetHeight(#heads * rowH - gap)
+	-- THE LESSON. A drag is the player's centre moving; the callout says so.
+	local x0, y0 = Where()
+	local dragged, leaned = false, false
+	OB:OnLeave(function() Lean("pet", 0) Lean("targettarget", 0) end)
+	Play(slot, function(at)
+		if not dragged then
+			local x, y = Where()
+			if x0 and x and (math.abs(x - x0) > 1 or math.abs(y - y0) > 1) then
+				dragged = true
+				OB.callout.head:SetText(L.tour.hangers.head_dragged)
+				Lean("pet", 0)
+				Lean("targettarget", 0)
+			end
+		end
+		if not dragged and not leaned and at >= NUDGE_AT then
+			-- One beat, out and back: 12 toward the parent over 300 ms.
+			local t = at - NUDGE_AT
+			if t >= NUDGE_FOR then
+				leaned = true
+				Lean("pet", 0)
+				Lean("targettarget", 0)
+			else
+				local d = NUDGE * math.sin(math.pi * t / NUDGE_FOR)
+				Lean("pet", d)
+				Lean("targettarget", d)
+			end
+		end
+		return true
+	end)
 end
 
 -- ---------------------------------------------------------------------------
--- stop 2: the layout
+-- stop 3: the bars' shape
 -- ---------------------------------------------------------------------------
 
---- A wireframe of an arrangement, drawn from the arrangement itself.
---
---  FROM THE PRESET'S OWN NUMBERS, not from three hand-drawn thumbnails. The
---  anchors are already fractions of the screen - that is what makes them
---  portable - so a thumbnail is those fractions on a small rectangle, and it
---  cannot drift away from what the card actually does.
---
---  A FEW MARKS, AND NOT ELEVEN.
---
---  The first version drew every anchor a preset names, which is six bars, the
---  party frame, the pet, the tooltip and the rest - eleven smears in a box the
---  size of a postage stamp, overlapping into a texture rather than a layout.
---  A thumbnail is not a map; it has one job, which is to let somebody tell
---  arrangements apart at a glance.
---
---  So: the player frame, the target frame, and the bars this preset actually
---  SWITCHES ON. A preset that leaves bar 5 off has no business drawing it, and
---  the anchors table still carries a position for it either way.
+local CARD_H = 62
+
+--- A wireframe of an arrangement, drawn from the arrangement itself: the
+--  player, the target, and the bars this preset switches on. A thumbnail has
+--  one job, which is telling arrangements apart at a glance.
 local SHOWN = { player = true, target = true }
 
 local function Wireframe(box, preset)
@@ -1025,8 +928,6 @@ local function Wireframe(box, preset)
 	local bw, bh = box:GetWidth(), box:GetHeight()
 	if not bw or bw <= 0 or not bh or bh <= 0 then return end
 
-	-- Where each node would land on this screen, walked down from the screen
-	-- through its parents - the string itself holds only bonds now.
 	local at, sw, sh = A.Layout:Resolve(preset.decoded)
 	if sw <= 0 or sh <= 0 then return end
 
@@ -1039,7 +940,6 @@ local function Wireframe(box, preset)
 			m:SetTexture(A.Media.texture.flat)
 			box.marks[n] = m
 		end
-
 		if block then
 			m:SetSize(bh * 0.3 * block, bh * 0.3)
 		elseif tall then
@@ -1056,10 +956,6 @@ local function Wireframe(box, preset)
 	for name in pairs(SHOWN) do
 		if at[name] then mark(at[name], false, true) end
 	end
-
-	-- A bar written as a column is drawn as one, or Split reads as Rows; one
-	-- of several rows and columns as a block in its proportions, or Block's
-	-- braided pair reads as Split.
 	for id in pairs(preset.bars or {}) do
 		local p = at["bar" .. id]
 		local r = preset.decoded.records["bar" .. id]
@@ -1068,8 +964,9 @@ local function Wireframe(box, preset)
 	end
 end
 
---- Three cards. Tapping one moves the real frames, live.
-local function LayoutControl(slot)
+--- Three shapes - Rows, Block, Split - and tapping one moves every bar the
+--  shape places, live.
+local function BarsControl(slot)
 	local P = A.Presets
 	if not P then slot:SetHeight(1) return end
 
@@ -1081,9 +978,7 @@ local function LayoutControl(slot)
 	for i, key in ipairs(keys) do
 		local preset = P.list[key]
 		local card = Kid(slot, "layout", i, function(parent)
-			local f = Glass.CreatePanel(parent, {
-				frameType = "Button", corner = 11,
-			})
+			local f = Glass.CreatePanel(parent, { frameType = "Button", corner = 11 })
 			f.box = CreateFrame("Frame", nil, f)
 			f.box:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -6)
 			f.box:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
@@ -1092,7 +987,6 @@ local function LayoutControl(slot)
 			f.label:SetPoint("BOTTOM", f, "BOTTOM", 0, 5)
 			return f
 		end)
-
 		card:SetSize(w, CARD_H)
 		card:ClearAllPoints()
 		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
@@ -1100,764 +994,264 @@ local function LayoutControl(slot)
 		Wireframe(card.box, preset)
 		card.label:SetText(preset.label or key)
 		Chosen(card, now == key)
-
 		card:SetScript("OnClick", function()
 			P:Apply(key)
-			OB:Go(OB.index or 2)
+			OB:Go(OB.index or 3)
 		end)
 	end
-
 	slot:SetHeight(CARD_H)
 end
 
 -- ---------------------------------------------------------------------------
--- stop 4: how long before the HUD goes quiet
+-- stop 4: the trunks
 -- ---------------------------------------------------------------------------
 
--- The three timings worth offering, and off. In the words somebody thinks in
--- rather than in seconds, and topped out by the client: it flags you away at
--- five minutes and zen follows it there regardless, so nothing longer than that
--- could ever fire.
-local ZEN_DELAYS = {
-	{ label = "30s",   secs = 30 },
-	{ label = L.tour.layout_control.n1_min, secs = 60 },
-	{ label = L.tour.layout_control.n5_min, secs = 300 },
-	{ label = "never" },
+--- Every branch shut, on both trunks: a node opened as a preview closes on
+--  Next.
+local function ShutBranches()
+	local TB = Mod("toolbox")
+	if TB and TB.IsOpen and TB:IsOpen() and TB.SetOpen then TB:SetOpen(false, true) end
+	local wt = Trunk("world")
+	for _, node in ipairs((wt and wt.nodes) or {}) do
+		if node.isOpen and node.isOpen() and node.close then node.close(node) end
+	end
+	if wt and wt.frame then wt:Paint() end
+end
+
+local function TrunksDemo(slot)
+	OB:OnLeave(ShutBranches)
+	slot:SetHeight(1)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 5: the skin
+-- ---------------------------------------------------------------------------
+
+local TILE, TILE_GAP, ROW_GAP, FAMILY_W = 22, 6, 6, 58
+local PREVIEW_IN, PREVIEW_OUT = 0.12, 0.2
+
+local FAMILY_NAME = {
+	sky     = L.options.general.skin.sky,
+	gem     = L.options.general.skin.gem,
+	seasons = L.options.general.skin.seasons,
 }
 
---- Four cards. Tapping one sets the timer, or switches the whole thing off.
---
---  STRAIGHT INTO THE PROFILE, the same door /aether zen delay uses - and the
---  fader with it. Zen is stage TWO of one feature: with the idle fade switched
---  off there is no stage one to fade out of, so a delay chosen here would be a
---  delay for something that can never happen. Picking a time is asking for the
---  breathing HUD, and this is what asking for it means.
-local function ZenControl(slot)
-	local zcfg = A.db.profile.modules.zen or {}
-	local live = (A:GetModule("zen") or {}).enabled and true or false
-	local gap = 7
-	local w = (slot:GetWidth() - gap * (#ZEN_DELAYS - 1)) / #ZEN_DELAYS
+--- The skin worn now by preview, or nil.
+OB.preview = nil
 
-	for i, opt in ipairs(ZEN_DELAYS) do
-		local card = Kid(slot, "zen", i, function(parent)
-			local f = Glass.CreatePanel(parent, {
-				frameType = "Button", corner = 11,
-			})
-			f.label = W.Text(f, "tbLabel", "CENTER")
-			f.label:SetPoint("CENTER")
-			return f
-		end)
+--- Try a skin on, or nil to put the chosen one back.
+function OB:Preview(key)
+	if key == self.preview then return end
+	self.preview = key
+	A:Restyle(key)
+	local foot = self.callout and self.callout.slot.__aetherFoot
+	if foot then
+		local skin = Palette.skins[key or Palette.current]
+		foot:SetText((skin and skin.label) or "")
+	end
+end
 
-		card:SetSize(w, ZEN_H)
-		card:ClearAllPoints()
-		card:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
-		card.label:SetText(opt.label)
+--- Three rows - Sky, Gem, Seasons - of the picker's tile at 22 px. Hover tries
+--  one on (120 ms in, back 200 ms after leaving); a click keeps it.
+local function SkinControl(slot)
+	local fams = Palette.families or {}
+	local want
 
-		-- "never" IS THE MODULE BEING OFF rather than a fourth delay. A timer
-		-- that never elapses is a ticker running for ever to do nothing.
-		local on
-		if opt.secs then
-			on = live and (zcfg.delay or 60) == opt.secs
-		else
-			on = not live
+	local function hover(key)
+		want = key
+		local function go()
+			if want == key then OB:Preview(key) end
 		end
-		Chosen(card, on)
+		if C_Timer and C_Timer.After then C_Timer.After(PREVIEW_IN, go) else go() end
+	end
+	local function leave()
+		want = nil
+		local function back()
+			if want == nil and OB.preview then OB:Preview(nil) end
+		end
+		if C_Timer and C_Timer.After then C_Timer.After(PREVIEW_OUT, back) else back() end
+	end
+	OB:OnLeave(function() want = nil if OB.preview then OB:Preview(nil) end end)
 
-		card:SetScript("OnClick", function()
-			if not opt.secs then
-				A:SetModuleEnabled("zen", false)
-			else
-				A.db.profile.modules.zen = A.db.profile.modules.zen or {}
-				A.db.profile.modules.zen.delay = opt.secs
-				A.db.profile.fader.enabled = true
-				if not (A:GetModule("zen") or {}).enabled then
-					A:SetModuleEnabled("zen", true)
+	local n = 0
+	for r, fam in ipairs(fams) do
+		local head = Kid(slot, "skinHead", r, function(parent)
+			local t = CreateFrame("Frame", nil, parent)
+			t:SetSize(FAMILY_W, TILE)
+			t.text = W.Text(t, "opSub", "LEFT")
+			t.text:SetPoint("LEFT", t, "LEFT", 0, 0)
+			return t
+		end)
+		head:ClearAllPoints()
+		head:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -(r - 1) * (TILE + ROW_GAP))
+		head.text:SetText(A.Trunk.Spaced(FAMILY_NAME[fam.key] or fam.key))
+		W.Color(head.text, Palette.c.textDim)
+
+		for col, key in ipairs(fam.skins) do
+			n = n + 1
+			local tile = Kid(slot, "skin", n, function(parent)
+				local f = Glass.CreatePanel(parent, { frameType = "Button", corner = 6 })
+				f:SetSize(TILE, TILE)
+				f.glow = f:CreateTexture(nil, "ARTWORK")
+				f.glow:SetTexture(Media.texture.glow)
+				f.glow:SetSize(18, 18)
+				f.glow:SetPoint("CENTER")
+				f.glow:SetBlendMode("ADD")
+				f.dot = f:CreateTexture(nil, "OVERLAY")
+				f.dot:SetTexture(Media.texture.diamond)
+				f.dot:SetSize(8, 8)
+				f.dot:SetPoint("CENTER")
+				return f
+			end)
+			tile:ClearAllPoints()
+			tile:SetPoint("TOPLEFT", slot, "TOPLEFT", FAMILY_W + (col - 1) * (TILE + TILE_GAP),
+				-(r - 1) * (TILE + ROW_GAP))
+			tile.key = key
+			-- ITS OWN SKIN, as the options picker draws it: the tile shows what
+			-- picking it would give.
+			local skin = Palette.skins[key]
+			local on = (A.db.profile.skin or "midnight") == key
+			if skin then
+				local g, e, a = skin.nodeFill, skin.glassEdge, skin.accent
+				tile:SetFillColor({ g[1], g[2], g[3], 0.88 })
+				tile:SetEdgeColor(on and { a[1], a[2], a[3], 1 } or { e[1], e[2], e[3], 0.5 })
+				tile.dot:SetVertexColor(a[1], a[2], a[3], 1)
+				if skin.family == "gem" then
+					tile.glow:SetVertexColor(a[1], a[2], a[3], 0.7)
+					tile.glow:Show()
+				else
+					tile.glow:Hide()
 				end
 			end
-			OB:Go(OB.index or 4)
-		end)
-	end
-
-	slot:SetHeight(ZEN_H)
-end
-
--- ---------------------------------------------------------------------------
--- stop 3: the Toolbox edge
--- ---------------------------------------------------------------------------
-
--- The trunk docks left or right, and the World trunk takes the other side
--- (decision 4c).
-local EDGES = { "LEFT", "RIGHT" }
-
---- Tap a side: a rectangle with a target on each side.
-local function ToolboxControl(slot)
-	local TB = A.GetModule and A:GetModule("toolbox")
-	local now = (A.db and A.db.char and A.db.char.toolbox
-		and A.db.char.toolbox.docked) or "LEFT"
-
-	local box = Kid(slot, "toolbox", 1, function(parent)
-		local f = Glass.CreatePanel(parent, { corner = 11 })
-		f.hint = W.Text(f, "tbLabel", "CENTER")
-		f.hint:SetPoint("CENTER")
-		f.hint:SetText(L.tour.toolbox_control.tap_edge)
-		return f
-	end)
-	box:SetSize(slot:GetWidth(), EDGE_H)
-	box:ClearAllPoints()
-	box:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
-	W.Color(box.hint, Palette.c.textFaint)
-
-	for i, edge in ipairs(EDGES) do
-		local tab = Kid(slot, "toolbox", i + 1, function(parent)
-			local f = CreateFrame("Button", nil, parent)
-			f.fill = f:CreateTexture(nil, "OVERLAY")
-			f.fill:SetAllPoints(f)
-			f.fill:SetTexture(A.Media.texture.flat)
-			return f
-		end)
-		tab:SetParent(box)
-		tab:ClearAllPoints()
-
-		tab:SetSize(9, 32)
-		tab:SetPoint(edge, box, edge, 0, 0)
-
-		W.Tint(tab.fill, Palette.c.accent, now == edge and 1 or 0.25)
-		tab:SetScript("OnClick", function()
-			if TB and TB.SetDock then TB:SetDock(edge) end
-			OB:Go(OB.index or 3)
-		end)
-	end
-
-	slot:SetHeight(EDGE_H)
-end
-
---- Which control a SET stop carries.
-local CONTROLS = {
-	palette = PaletteControl,
-	layout  = LayoutControl,
-	toolbox = ToolboxControl,
-	zen     = ZenControl,
-}
-
-function OB:Control(stop, slot)
-	local fn = CONTROLS[stop.key]
-	if fn then fn(slot) end
-end
-
--- ---------------------------------------------------------------------------
--- stops 4-8: the demos
---
--- A SHOW stop carries no control. What it carries is one behaviour, played
--- ONCE - the deck's own note under each of these five reads "SHOWS ... once" -
--- and once is the whole discipline. A demo that loops is a screensaver: the eye
--- reads it twice and then stops seeing it, and the callout beside it goes
--- unread with it.
---
--- AND THE REAL THING DOES IT WHERE THE REAL THING CAN. Three of the five cost
--- the player nothing to show for real - the tracker really folds, the bag panel
--- really opens, the player's own frame really wears the warning - so those are
--- not demonstrations of a behaviour, they ARE the behaviour, with the tour
--- pointing at it. The other two have nowhere real to happen without a spell on
--- cooldown or a flight to be on, so their demo is drawn in the callout. Even
--- there it is drawn with the SAME widgets the real one uses: the bar tiles are
--- W.DecorateSlot carrying the player's own spell icons under a real Cooldown
--- frame, and the console's programme bar is the console's programme bar. A demo
--- built out of its own rectangles is a demo that goes stale the first time the
--- real one is restyled.
---
--- WHAT A DEMO CHANGES OUT THERE, IT PUTS BACK. See OB:Undo - a tour that folded
--- somebody's tracker and then took a disconnect is a tour that cost them their
--- tracker.
--- ---------------------------------------------------------------------------
-
-local TILE     = 34       -- an icon square in the bars demo
-local CD_SECS  = 4.2      -- the deck's own number on the sweeping tile
-local SWAP_AT  = 2.4      -- when a before-and-after demo turns over
-local STAGGER  = 0.14     -- between one category chip and the next
-local STATE_H  = 24       -- a dot-and-a-line pill
-local CAT_H    = 22       -- a category chip
-local BAR_H    = 7        -- the console's programme bar
-
---- The same colour, softer.
---
---  There is no token for a 14%-alpha accent and there should not be: it is the
---  fill under a chip's own label, wanted in one place, and a token exists so
---  that four palettes can disagree about a colour. This one cannot.
-local function Soft(c, a)
-	return { c[1], c[2], c[3], a }
-end
-
---- Anything a stop changed out in the world, put back.
---
---  ONE LIST, POPPED IN REVERSE, and every route out of a stop goes through it:
---  Go on the way to the next stop, and Teardown for finishing, skipping, a
---  fight starting and the module being switched off. A demo's undo is not
---  optional tidying - the tracker being folded and the bag panel being open are
---  states the player did not ask for and must not be left holding.
-function OB:Undo()
-	local list = self.__undo
-	self.__undo = nil
-	for i = #(list or {}), 1, -1 do pcall(list[i]) end
-end
-
---- Do this when the stop is left, whatever leaves it.
-function OB:OnLeave(fn)
-	if type(fn) ~= "function" then return end
-	self.__undo = self.__undo or {}
-	self.__undo[#self.__undo + 1] = fn
-end
-
---- Play one demo, once. `step(at)` gets seconds since entry, and returns false
---- when it has finished.
---
---  ON THE SLOT'S OWN OnUpdate rather than a chain of C_Timer.After. A timer
---  that fires after the player has moved on is a timer writing into the NEXT
---  stop's frames: the pools are shared by design, so the frame is still there
---  and still takes the write. This stops when the stop does, because leaving
---  the stop takes the script off.
---
---  THE OPENING FRAME NOW, not on the first tick. A demo whose first state
---  arrives a frame late shows an empty callout for that frame, which reads as
---  the thing having failed to load.
-local function Play(slot, step)
-	if step(0) == false then return end
-	local at = 0
-	slot:SetScript("OnUpdate", function(self, dt)
-		at = at + (dt or 0)
-		if step(at) == false then self:SetScript("OnUpdate", nil) end
-	end)
-	OB:OnLeave(function() slot:SetScript("OnUpdate", nil) end)
-end
-
---- The little arrow between a before and an after.
---
---  A TEXTURE, because this font has no arrows. A real arrow character comes out
---  of it as a hollow box, which is exactly how one shipped on the finish card
---  and a second sat in a tooltip diagnostic for months. Every arrow this addon
---  draws is Media.texture.chevron.
-local function Chev(slot, key)
-	local f = Kid(slot, key, 1, function(parent)
-		local c = CreateFrame("Frame", nil, parent)
-		c:SetSize(13, 13)
-		c.tex = c:CreateTexture(nil, "OVERLAY")
-		c.tex:SetAllPoints(c)
-		c.tex:SetTexture(Media.texture.chevron)
-		return c
-	end)
-	W.FaceChevron(f.tex, "RIGHT")
-	W.Tint(f.tex, Palette.c.accent, 0.6)
-	return f
-end
-
---- A dot and a line of words: "tracking", "in combat - folded".
---
---  Not W.Pill, and this is the one place in here it is not. A pill centres its
---  label by design and this has a dot in front of the label, so the text is
---  off-centre by half the dot for ever - the two cannot be reconciled without
---  giving W.Pill an asymmetric padding that only this caller would ever pass.
-local function StatePill(slot, key)
-	local p = Kid(slot, key, 1, function(parent)
-		local f = Glass.CreatePill(parent, {
-			fill = "glass", edge = "glassEdge" })
-		f:SetHeight(STATE_H)
-		f.dot = f:CreateTexture(nil, "OVERLAY")
-		f.dot:SetSize(7, 7)
-		f.dot:SetTexture(Media.texture.chipDisc)
-		f.dot:SetPoint("LEFT", f, "LEFT", 11, 0)
-		f.label = W.Text(f, "tbLabel", "LEFT")
-		f.label:SetPoint("LEFT", f.dot, "RIGHT", 7, 0)
-
-		--- One state, said in one call: the words, and the colour that means
-		--  them. The dot, the ink and the rim all move together or the pill
-		--  says two things.
-		function f:Say(text, colour)
-			colour = colour or Palette.c.textDim
-			self.label:SetText(text or "")
-			W.Color(self.label, colour)
-			W.Tint(self.dot, colour, 1)
-			self:SetEdgeColor(Soft(colour, 0.35))
-			self:SetWidth(11 + 7 + 7
-				+ math.ceil(self.label:GetStringWidth() or 0) + 13)
-		end
-		return f
-	end)
-	return p
-end
-
--- ---------------------------------------------------------------------------
--- stop 4: the action bars
--- ---------------------------------------------------------------------------
-
---- Four slots, and the second one goes on cooldown.
---
---  THE PLAYER'S OWN SPELLS, read straight off action slots 1 to 4. The sentence
---  beside this says "your spells, undecorated" and a row of invented squares
---  would be decorating them. An empty slot draws empty, which is the honest
---  answer on a level-one character with two things on the bar and is the same
---  silhouette either way.
---
---  A REAL Cooldown FRAME, swiping a real duration with the real swipe texture
---  and the real countdown formatter. Nothing in here is a drawing of a
---  cooldown - which matters because the whole claim being made is that the
---  cooldown draws ON the icon.
-local function BarsDemo(slot)
-	local gap = 6
-	local tiles = {}
-
-	for i = 1, 4 do
-		local tile = Kid(slot, "bars.tile", i, function(parent)
-			local f = CreateFrame("Frame", nil, parent)
-			f:SetSize(TILE, TILE)
-			-- No count: there is no stack to show and the string would sit
-			-- over the countdown.
-			W.DecorateSlot(f, TILE, { count = false })
-
-			local cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
-			cd:SetAllPoints(f)
-			pcall(cd.SetSwipeTexture, cd, Media.texture.slotMask)
-			pcall(cd.SetSwipeColor, cd, 0.02, 0.01, 0.06, 0.72)
-			pcall(cd.SetDrawEdge, cd, false)
-			pcall(cd.SetDrawBling, cd, false)
-			pcall(cd.SetHideCountdownNumbers, cd, true)
-			cd:Hide()
-			f.cd = cd
-
-			f.cdText = W.Text(f, "stack", "CENTER")
-			f.cdText:SetPoint("CENTER", f, "CENTER", 0, 0)
-			-- Sized off the tile the way the real button's is sized off the
-			-- button, rather than off the role: a number that fits a 44px slot
-			-- does not fit a 34px one.
-			Media:SetFont(f.cdText, "stack", math.max(10, TILE * 0.24))
-			W.Color(f.cdText, Palette.c.text)
-			return f
-		end)
-
-		tile:ClearAllPoints()
-		tile:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (TILE + gap), 0)
-
-		local tex = GetActionTexture and GetActionTexture(i)
-		tile.icon:SetTexture(tex or Media.texture.flat)
-		tile.icon:SetAlpha(tex and 1 or 0.10)
-		tile.cdText:SetText("")
-		tile.cd:Hide()
-
-		-- THE FOURTH WEARS THE READY RIM, which is the other half of the claim:
-		-- range and readiness are the slot's own edge, not a widget beside it.
-		W.Tint(tile.edge, i == 4 and Palette.c.accent or Palette.c.glassEdge,
-			i == 4 and 0.9 or 1)
-
-		tiles[i] = tile
-	end
-
-	slot:SetHeight(TILE)
-
-	local hot = tiles[2]
-	hot.cd:Show()
-	hot.cd:SetCooldown((GetTime and GetTime()) or 0, CD_SECS)
-
-	Play(slot, function(at)
-		local left = CD_SECS - at
-		if left <= 0 then
-			hot.cdText:SetText("")
-			hot.cd:Hide()
-			return false
-		end
-		-- W.Duration, the same formatter the real button uses - which is why
-		-- this reads 4.2 and then 4.1 rather than 4 and then 4.
-		hot.cdText:SetText(W.Duration(left))
-	end)
-end
-
--- ---------------------------------------------------------------------------
--- stop 5: the quest tracker
--- ---------------------------------------------------------------------------
-
---- A quest, and then the World trunk retracts - the real one included.
-local function QuestsDemo(slot)
-	-- THE REAL TRUNK REALLY RETRACTS, through the same call the combat handler
-	-- makes. Restored on the way out, and restored to what it WAS rather than
-	-- to out: somebody who keeps it retracted should get it back retracted.
-	local QT = A.GetModule and A:GetModule("questtracker")
-	if QT and QT.SetCollapsed then
-		local was = QT.collapsed and true or false
-		OB:OnLeave(function() QT:SetCollapsed(was) end)
-	else
-		QT = nil
-	end
-
-	local card = Kid(slot, "quests.card", 1, function(parent)
-		local f = Glass.CreatePanel(parent, { corner = 10 })
-		f.title = W.Text(f, "tbLabel", "LEFT")
-		f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 11, -9)
-		f.line = W.Text(f, "tbLabel", "LEFT")
-		f.line:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -3)
-		return f
-	end)
-
-	-- The deck's own quest, and the gag is in the content rather than the
-	-- chrome - which is the copy rule for this whole addon.
-	card.title:SetText(L.tour.quests_demo.wanted_hogger)
-	card.line:SetText("0/1 slain")
-	W.Color(card.title, Palette.c.text)
-	W.Color(card.line, Palette.c.textDim)
-	card:SetWidth(math.max(card.title:GetStringWidth() or 0,
-		card.line:GetStringWidth() or 0) + 24)
-
-	local chev = Chev(slot, "quests.chev")
-	local pill = StatePill(slot, "quests.pill")
-
-	local OPEN, FOLDED = 44, 28
-	card:ClearAllPoints()
-	card:SetPoint("LEFT", slot, "LEFT", 0, 0)
-	chev:ClearAllPoints()
-	chev:SetPoint("LEFT", card, "RIGHT", 9, 0)
-	pill:ClearAllPoints()
-	pill:SetPoint("LEFT", chev, "RIGHT", 9, 0)
-
-	-- THE SLOT'S HEIGHT DOES NOT MOVE with the card's. The callout is sized
-	-- from the slot, and a callout that changed height half way through a demo
-	-- would jump - and it is anchored beside the element, so it would jump
-	-- sideways as well.
-	slot:SetHeight(OPEN)
-
-	-- TWO STATES, WRITTEN ON THE CHANGE. A before-and-after demo has nothing
-	-- to animate between its two halves, so it is a latch rather than a curve -
-	-- and without the latch the pill re-measures its own label a hundred and
-	-- forty times to say the same word.
-	local state = nil
-	Play(slot, function(at)
-		local want = (at < SWAP_AT) and "open" or "folded"
-		if want == state then return want == "open" end
-		state = want
-
-		if want == "open" then
-			card:SetHeight(OPEN)
-			card.line:Show()
-			pill:Say(L.tour.quests_demo.tracking, Palette.c.textFaint)
-			chev:SetAlpha(0.25)
-			return true
-		end
-
-		card:SetHeight(FOLDED)
-		card.line:Hide()
-		pill:Say(L.tour.quests_demo.combat_folded, Palette.c.danger)
-		chev:SetAlpha(1)
-		if QT then QT:SetCollapsed(true) end
-		return false
-	end)
-end
-
--- ---------------------------------------------------------------------------
--- stop 6: the bags
--- ---------------------------------------------------------------------------
-
--- The headings the panel actually sorts into, in the order it sorts them.
--- Junk is last and is dimmed in the deck, and it is dimmed for a reason: it is
--- the one heading you are being invited to sell rather than to keep.
-local CATEGORIES = { "Gear", "Consumables", "Trade goods", "Quest", "Junk" }
-
---- The headings, arriving one at a time.
-local function BagsDemo(slot)
-	local gap, chips = 6, {}
-	local avail = slot:GetWidth() or CALLOUT_W
-	local x, y, rows = 0, 0, 1
-
-	for i, name in ipairs(CATEGORIES) do
-		local chip = Kid(slot, "bags.chip", i, function(parent)
-			return W.Pill(parent, "tbLabel",
-				{ height = CAT_H, padX = 10, edge = true })
-		end)
-		chip:SetLabel(name)
-
-		local lit = (name ~= "Junk")
-		chip:SetColors(lit and Soft(Palette.c.accent, 0.12) or Palette.c.glass,
-			lit and Palette.c.accent or Palette.c.textFaint)
-		chip:SetEdgeColor(lit and Soft(Palette.c.accent, 0.28)
-			or Palette.c.glassEdge)
-
-		-- WRAPPED, because five headings do not fit across a 330 callout and
-		-- the fifth one running off the edge is the one that says "Junk".
-		local w = chip:GetWidth() or 0
-		if x > 0 and x + w > avail then
-			x, y, rows = 0, y - (CAT_H + gap), rows + 1
-		end
-		chip:ClearAllPoints()
-		chip:SetPoint("TOPLEFT", slot, "TOPLEFT", x, y)
-		x = x + w + gap
-
-		chips[i] = chip
-	end
-
-	slot:SetHeight(rows * CAT_H + (rows - 1) * gap)
-
-	local shown = nil
-	Play(slot, function(at)
-		local n = math.floor(at / STAGGER) + 1
-		if n == shown then return n < #chips end
-		shown = n
-		for i, chip in ipairs(chips) do
-			chip:SetAlpha(i <= n and 1 or 0)
-		end
-		return n < #chips
-	end)
-end
-
--- ---------------------------------------------------------------------------
--- stop 7: threat
--- ---------------------------------------------------------------------------
-
---- The warning goes on the real frame, and the callout says it goes away again.
-local function ThreatDemo(slot)
-	-- THE REAL FRAME REALLY WEARS IT. Threat owns what a threat record is, so
-	-- this asks for a preview rather than assembling one - and the preview
-	-- clears itself the way a real warning does, when its dwell runs out
-	-- against a live state of nothing. The undo is here for the case where it
-	-- does not get that far, which is somebody pressing Next after one second.
-	local TH = A.GetModule and A:GetModule("threat")
-	if TH and TH.Preview then
-		TH:Preview("player")
-		OB:OnLeave(function()
-			-- ClearPreview rather than Draw(nil): the alarm holds itself up so
-			-- that it can be read, and Draw honours the hold. Handed nothing,
-			-- it redraws the held record - so the ring stayed gold on a frame
-			-- that was not in a fight.
-			if TH.ClearPreview then TH:ClearPreview("player") end
-		end)
-	end
-
-	-- AND THE CALLOUT NARRATES rather than drawing a second capsule.
-	--
-	-- The deck puts a miniature of the warned capsule in here and was right to:
-	-- the deck had nothing else to show it on. We have - this stop's spotlight
-	-- IS the player frame, and it is wearing the warning a few inches away
-	-- while you read this. Two of the same capsule side by side is the reader
-	-- working out which one is the real one.
-	--
-	-- What the callout adds is the half the frame cannot say: that it stops.
-	-- And it says it WITHOUT the chip's own words, deliberately - those are
-	-- role-dependent and they live in Threat's own table. Spelling "HIGH
-	-- THREAT" here would be a copy of that table which is wrong for a tank.
-	local warn = StatePill(slot, "threat.warn")
-	local chev = Chev(slot, "threat.chev")
-	local calm = StatePill(slot, "threat.calm")
-
-	warn:ClearAllPoints()
-	warn:SetPoint("LEFT", slot, "LEFT", 0, 0)
-	chev:ClearAllPoints()
-	chev:SetPoint("LEFT", warn, "RIGHT", 9, 0)
-	calm:ClearAllPoints()
-	calm:SetPoint("LEFT", chev, "RIGHT", 9, 0)
-
-	warn:Say(L.tour.threat_demo.trouble_coming, Palette.c.semanticGold)
-	calm:Say(L.tour.threat_demo.eased_off_quiet_again, Palette.c.friendly)
-	slot:SetHeight(STATE_H)
-
-	local state = nil
-	Play(slot, function(at)
-		local want = (at < SWAP_AT) and "warned" or "eased"
-		if want == state then return want == "warned" end
-		state = want
-
-		if want == "warned" then
-			-- Set here rather than once before the play, so a second visit to
-			-- this stop starts where the first one did.
-			warn:SetAlpha(1)
-			chev:SetAlpha(0.25)
-			calm:SetAlpha(0.18)
-			return true
-		end
-
-		chev:SetAlpha(1)
-		calm:SetAlpha(1)
-		-- The gold has had its moment. Both left lit says both are true.
-		warn:SetAlpha(0.35)
-		return false
-	end)
-end
-
--- ---------------------------------------------------------------------------
--- stop 8: the flight console
--- ---------------------------------------------------------------------------
-
---- What is actually aboard, and the programme it would make.
---
---  READ OFF THE REAL LIBRARY. The first version drew a made-up flight from
---  Booty Bay to Ironforge with three invented legs on it, and it was a picture
---  of the feature rather than the feature - which is exactly what Joe said when
---  he saw it: it does not show us the console.
---
---  This does. The title is the first thing the console would really play, the
---  bar is the console's own segmented bar filled from the real durations in the
---  three channel colours, and the line under it counts what is installed in the
---  library's own three words. On a clone with no audio in it, it says so.
-local function IfecDemo(slot)
-	local Content = A.IFEC and A.IFEC.Content
-
-	-- IN THE ORDER THE CONSOLE WOULD REACH FOR THEM. Everything() is the
-	-- programme builder run over the whole library, so the first item here is
-	-- the first item a flight would actually get - not the first one the
-	-- registry happens to hold.
-	local queue = (Content and Content:Everything()) or {}
-	local all = (Content and Content:Available()) or {}
-
-	-- The three channels in the library's order and its own words, because a
-	-- filter tab reading "Stories" and a count reading "podcasts" are the same
-	-- thing under two names.
-	local CHANNELS = {
-		{ key = "podcast", word = "Stories" },
-		{ key = "music",   word = "Music" },
-		{ key = "gossip",  word = "Gossip" },
-	}
-	local TINT = {
-		podcast = Palette.c.ifecPodcast,
-		music   = Palette.c.ifecMusic,
-		gossip  = Palette.c.ifecGossip,
-	}
-
-	local count = {}
-	for _, item in ipairs(all) do
-		count[item.type] = (count[item.type] or 0) + 1
-	end
-
-	local pill = Kid(slot, "ifec.pill", 1, function(parent)
-		-- A PANEL, not a pill. The deck draws this as a capsule and the deck's
-		-- is one line tall; three rows in a capsule is a balloon - see the note
-		-- on Glass.CreatePill, which clamps rather than draws one.
-		local f = Glass.CreatePanel(parent, { corner = 12 })
-
-		f.glyph = f:CreateTexture(nil, "OVERLAY")
-		f.glyph:SetSize(13, 13)
-		f.glyph:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -11)
-
-		f.title = W.Text(f, "ifecTitle", "LEFT")
-		f.title:SetPoint("LEFT", f.glyph, "RIGHT", 8, 0)
-		f.title:SetPoint("RIGHT", f, "RIGHT", -12, 0)
-
-		f.bar = W.CreateSegmentedBar(f, { height = BAR_H })
-		f.bar:SetPoint("TOPLEFT", f.glyph, "BOTTOMLEFT", 0, -9)
-
-		f.sub = W.Text(f, "ifecSub", "LEFT")
-		f.sub:SetPoint("TOPLEFT", f.bar, "BOTTOMLEFT", 0, -6)
-		return f
-	end)
-
-	pill:ClearAllPoints()
-	pill:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
-	pill:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
-
-	local first = queue[1]
-	if first then
-		Media:SetIcon(pill.glyph, first.type)
-		local tint = TINT[first.type] or Palette.c.accent
-		W.Tint(pill.glyph, tint, 1)
-		pill.title:SetText(first.title or "")
-		W.Color(pill.title, Palette.c.text)
-
-		local said = {}
-		for _, ch in ipairs(CHANNELS) do
-			local n = count[ch.key]
-			if n then said[#said + 1] = n .. " " .. ch.word end
-		end
-		-- A middle dot, which this font has. See the glyph guard in the harness
-		-- for the one it has not.
-		pill.sub:SetText(table.concat(said, "  ·  "))
-		W.Color(pill.sub, Palette.c.textFaint)
-	else
-		-- NOTHING INSTALLED IS A STATE, not a failure to load - a clone of this
-		-- repository has the magazines and no audio, because the cut music is
-		-- derived and untracked. The console still boards; it has nothing to
-		-- play, and saying so is more use than an empty row.
-		Media:SetIcon(pill.glyph, "music")
-		W.Tint(pill.glyph, Palette.c.textFaint, 0.8)
-		pill.title:SetText(L.tour.ifec_demo.nothing_installed_yet)
-		W.Color(pill.title, Palette.c.textDim)
-		-- FROM THE CONSOLE, because there are three reasons for this and only
-		-- one of them is "you have not installed it".
-		pill.sub:SetText((Content and Content:DormantReason())
-			or "No content installed")
-		W.Color(pill.sub, Palette.c.textFaint)
-	end
-
-	-- The bar has one anchor, so its width is said here - and it is known by
-	-- now, because the callout sized the slot before it asked for the demo.
-	pill.bar:SetWidth(math.max(40, (slot:GetWidth() or CALLOUT_W) - 24))
-
-	local h = 11 + math.max(13, pill.title:GetStringHeight() or 13) + 9 + BAR_H
-		+ 6 + (pill.sub:GetStringHeight() or 12) + 11
-	pill:SetHeight(h)
-	slot:SetHeight(h)
-
-	-- THE FIRST FEW LEGS, at their real lengths in their real colours. Four,
-	-- because a whole library on a 300px bar is a row of hairlines - and the
-	-- programme a flight gets is a handful of items, not all of them.
-	--
-	-- THE RAG IS NOT ON THE BAR, and that is not an omission. A programme is
-	-- built to COVER a flight, so it is assembled out of things that take time;
-	-- gossip is read rather than played and occupies none, so the builder never
-	-- reaches for it. The bar says what will PLAY and the line above says what
-	-- is ABOARD, which is a real distinction and the one the console makes.
-	--
-	-- A nominal slice was given to it here at first, to get its colour onto the
-	-- bar. It was dead code from the moment it was written: nothing with no
-	-- length ever arrives in this queue to be given one.
-	local LEGS, TOTAL = {}, 0
-	for i = 1, math.min(4, #queue) do
-		local item = queue[i]
-		local secs = (Content and Content:Length(item)) or 0
-		if secs > 0 then
-			LEGS[#LEGS + 1] = { secs, TINT[item.type] or Palette.c.accent }
-			TOTAL = TOTAL + secs
+			tile.on = on
+			tile:SetScript("OnEnter", function() hover(key) end)
+			tile:SetScript("OnLeave", leave)
+			tile:SetScript("OnClick", function()
+				want = nil
+				OB.preview = nil
+				A.db.profile.skin = key
+				A:Restyle()
+				OB:Go(OB.index or 5)
+			end)
 		end
 	end
 
-	if TOTAL <= 0 then
-		pill.bar:SetPieces({}, 1)
-		slot:SetScript("OnUpdate", nil)
-		return
+	local rows = #fams
+	local foot = Kid(slot, "skinFoot", 1, function(parent)
+		local t = CreateFrame("Frame", nil, parent)
+		t:SetHeight(14)
+		t.text = W.Text(t, "tbLabel", "LEFT")
+		t.text:SetPoint("LEFT")
+		return t
+	end)
+	foot:ClearAllPoints()
+	foot:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -rows * (TILE + ROW_GAP) - 2)
+	foot:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+	local skin = Palette.skins[Palette.current]
+	foot.text:SetText((skin and skin.label) or "")
+	W.Color(foot.text, Palette.c.textDim)
+	slot.__aetherFoot = foot.text
+	slot:SetHeight(rows * (TILE + ROW_GAP) + 16)
+end
+
+-- ---------------------------------------------------------------------------
+-- stop 6: a fight
+-- ---------------------------------------------------------------------------
+
+local FIGHT = 3        -- the whole demo, then everything relaxes
+local TARGET_CAST_AT = 0.5
+
+--- Everything the demo changed, back.
+local function Relax(state)
+	if state.done then return end
+	state.done = true
+	local AB, TH, QT, MM, UF = Mod("actionbars"), Mod("threat"), Mod("questtracker"),
+		Mod("minimap"), Mod("unitframes")
+	if AB then AB.demoFight = nil end
+	if A.Fader then A.Fader:Update() end
+	if TH and TH.ClearPreview then TH:ClearPreview("player") end
+	if QT and QT.SetCollapsed and state.collapsed ~= nil then QT:SetCollapsed(state.collapsed) end
+	if MM and MM.UpdateZone then MM:UpdateZone() end
+	if UF and UF.CastStop then
+		UF.CastStop(UF.cast)
+		UF.CastStop(UF.targetCast)
 	end
+end
 
-	local FILL = 1.6      -- seconds to fill the whole programme
-
-	Play(slot, function(at)
-		local through = math.min(1, at / FILL) * TOTAL
-		local pieces, used = {}, 0
-		for _, leg in ipairs(LEGS) do
-			local secs = math.max(0, math.min(leg[1], through - used))
-			if secs > 0 then
-				pieces[#pieces + 1] =
-					{ seconds = secs, colour = leg[2], filled = true }
+--- Three seconds of a made-up fight on the real frames, played once: a cast
+--  runs along the spine and the target's comes back, the bars wake, the
+--  quests tuck into the pill and it says In combat, your frame wears the
+--  warning gold - and then it all lets go.
+local function FightDemo(slot)
+	local state
+	local function run()
+		if state then Relax(state) end
+		state = {}
+		local AB, TH, QT, MM, UF = Mod("actionbars"), Mod("threat"), Mod("questtracker"),
+			Mod("minimap"), Mod("unitframes")
+		if AB then AB.demoFight = true end
+		if A.Fader then A.Fader:Update() end
+		if UF and UF.DemoCast then UF:DemoCast("player", L.tour.fight.my_cast, 2) end
+		if TH and TH.Preview then TH:Preview("player") end
+		if QT and QT.SetCollapsed then
+			state.collapsed = QT.collapsed and true or false
+			QT:SetCollapsed(true)
+		end
+		if MM and MM.SetPillState then MM:SetPillState(L.tour.fight.in_combat, Palette.c.danger) end
+		local s = state
+		Play(slot, function(at)
+			if at >= TARGET_CAST_AT and not s.theirs then
+				s.theirs = true
+				if UF and UF.DemoCast then UF:DemoCast("target", L.tour.fight.their_cast, 1.8) end
 			end
-			used = used + leg[1]
-		end
-		pill.bar:SetPieces(pieces, TOTAL)
-		return at < FILL
+			if at >= FIGHT then
+				Relax(s)
+				return false
+			end
+			return true
+		end)
+	end
+	OB:OnLeave(function() if state then Relax(state) end end)
+
+	local replay = Kid(slot, "fight.replay", 1, function(parent)
+		local b = CreateFrame("Button", nil, parent)
+		b:SetSize(80, 20)
+		b.label = W.Text(b, "tbLabel", "LEFT")
+		b.label:SetPoint("LEFT")
+		return b
 	end)
+	replay:ClearAllPoints()
+	replay:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
+	replay.label:SetText(L.tour.fight.replay)
+	W.Color(replay.label, Palette.c.accent)
+	replay:SetScript("OnClick", run)
+	slot:SetHeight(20)
+	run()
 end
 
---- Which demo a SHOW stop plays.
-local DEMOS = {
-	bars   = BarsDemo,
-	quests = QuestsDemo,
-	bags   = BagsDemo,
-	threat = ThreatDemo,
-	ifec   = IfecDemo,
+--- Which control or demo a stop carries.
+local FILL = {
+	hangers = HangersControl,
+	bars    = BarsControl,
+	trunks  = TrunksDemo,
+	skin    = SkinControl,
+	fight   = FightDemo,
 }
-
-function OB:Demo(stop, slot)
-	local fn = DEMOS[stop.key]
-	if fn then fn(slot) end
-end
 
 -- ---------------------------------------------------------------------------
 -- running
 -- ---------------------------------------------------------------------------
 
+local function Text(v)
+	if type(v) == "function" then return v() end
+	return v
+end
+
 --- Show one stop.
 function OB:Go(index)
 	if index < 1 then index = 1 end
 	-- WHATEVER THE LAST STOP CHANGED, PUT BACK - before anything about this one
-	-- is decided. Run after the new stop had set itself up, an undo would be
-	-- closing the panel this stop had just opened.
+	-- is decided.
 	self:Undo()
 	if index > OB.COUNT then return self:ShowFinish() end
 
@@ -1865,75 +1259,41 @@ function OB:Go(index)
 	if not stop then return end
 	self.index = index
 
-	-- WRITTEN THE MOMENT IT IS REACHED, not at the end. A player who alt-F4s
-	-- on stop 5 comes back to stop 5.
+	-- WRITTEN THE MOMENT IT IS REACHED: a player who leaves on stop 5 comes
+	-- back to stop 5.
 	local s = Store()
 	if s then s.stopIndex = index end
 
-	BuildScrim():Show()
-	FadeTo(self.scrim, 1, SCRIM_FADE)
+	if self.card then self.card:Hide() end
+	Dim(index)
 	BuildSkip():Show()
+	-- The growth so far: every piece up to and including this stop's.
+	self:GrowTo(index)
 
 	local c = BuildCallout()
 	BuildNav(c)
 
-	Drop()
-	-- WHAT THIS STOP NEEDS ON SCREEN BEFORE THE SPOTLIGHT GOES LOOKING FOR IT.
-	-- The bags stop points at the bag panel and the bag panel is shut: opened
-	-- after the target had been resolved it would sit UNDER the scrim with no
-	-- ring on it, which is the one place in the tour where the thing being
-	-- described would be the only thing you could not see.
 	if stop.before then stop.before() end
-	local target = stop.target and stop.target()
-	if target and target.IsVisible and target:IsVisible() then
-		Lift(target)
-		RingAround(target)
-	else
-		target = nil
-		BuildRing():Hide()
-	end
+	Unlocked(stop)
 
-	c.kicker:SetText(("STEP %d OF %d · %s"):format(index, OB.COUNT, stop.name))
-	c.head:SetText(stop.head)
-	c.body:SetText(stop.body)
+	c.kicker:SetText(L.tour.kicker:format(index, OB.COUNT, stop.name))
+	c.head:SetText(Text(stop.head))
+	c.body:SetText(Text(stop.body))
 	W.Color(c.kicker, Palette.c.accent)
 	W.Color(c.head, Palette.c.text)
 	W.Color(c.body, Palette.c.textDim)
 
-	-- The stop's own middle. Cleared first: the slot is shared, and a control
-	-- left over from the last stop is a control that still works.
-	if self.ClearSlot then self:ClearSlot(c.slot) end
+	self:ClearSlot(c.slot)
 	c.slot:SetHeight(1)
-	if stop.kind == "set" and self.Control then
-		self:Control(stop, c.slot)
-	elseif stop.kind == "show" and self.Demo then
-		self:Demo(stop, c.slot)
-	end
-
-	-- THE ALT OFFER, ON THE FIRST STOP AND NOWHERE ELSE.
-	--
-	-- A fresh character on an account that has already been set up is being
-	-- asked four questions it has answered. The offer is the way out of them,
-	-- and it belongs on the first one rather than on the welcome card: the card
-	-- is where you decide whether to do this at all, and this is a shortcut
-	-- through the doing.
-	c.offer:Hide()
-	if index == 1 then
-		local key, who = self:Others()
-		if key then
-			c.offer.label:SetText(("Use %s's setup"):format(who))
-			W.Color(c.offer.label, Palette.c.text)
-			c.offer:SetScript("OnClick", function()
-				OB:AdoptFrom(key)
-				OB:Go(OB:FirstShow())
-			end)
-			c.offer:Show()
-		end
-	end
+	c.slot.__aetherFoot = nil
+	local fill = FILL[stop.key]
+	if fill then fill(c.slot) end
 
 	PaintNav(c.nav, index)
 	SizeCallout(c)
-	PlaceCallout(c, target)
+	local target = stop.target and stop.target()
+	if target and not (target.IsVisible and target:IsVisible()) then target = nil end
+	PlaceCallout(c, target, stop.anchor)
 
 	c:Show()
 	c:SetAlpha(0)
@@ -1944,11 +1304,9 @@ function OB:Next()
 	self:Go((self.index or 0) + 1)
 end
 
+--- BACK RESTORES NOTHING: every value was written the moment it was touched,
+--  so Back only re-shows the callout you were looking at.
 function OB:Back()
-	-- BACK RESTORES NOTHING. Every value was written the moment it was
-	-- touched, so there is nothing to undo - Back only re-shows the callout
-	-- you were looking at. Which is the honest behaviour: a Back that silently
-	-- reverted a palette you had chosen and moved on from would be a surprise.
 	if (self.index or 1) <= 1 then return end
 	self:Go(self.index - 1)
 end
@@ -1957,15 +1315,10 @@ function OB:Skip()
 	self:Finish()
 end
 
---- Everything down, nothing left raised.
+--- Everything down, the whole HUD back, nothing left changed.
 function OB:Teardown()
-	-- EVERY OTHER WAY OUT comes through here: finishing, skipping, a fight
-	-- starting, the module being switched off. Go handles stop-to-stop; this
-	-- handles the rest, and between them there is no exit that leaves a demo's
-	-- change standing.
 	self:Undo()
-	Drop()
-	if self.ring then self.ring:Hide() end
+	self:LetGo()
 	if self.callout then self.callout:Hide() end
 	if self.skip then self.skip:Hide() end
 	if self.card then self.card:Hide() end
@@ -1974,30 +1327,18 @@ function OB:Teardown()
 	self.index = nil
 end
 
---- Start at the top, from a fresh character or from the Toolbox.
+--- Start at the top, from a fresh character or from "Take the tour".
 function OB:Start()
 	if InCombatLockdown() then
 		A:Print(L.tour.start.during_fight_try_again)
 		return false
 	end
-
-	-- AND NOTHING LEFT IN FRONT OF IT.
-	--
-	-- The tour dims the world and points at real frames, so a window still
-	-- open over the top is a window over the thing being pointed at. This is
-	-- most often started FROM one - the button on the options panel's own First
-	-- run page - and that panel stayed up with the tour behind it. Reported
-	-- from the game.
-	--
-	-- HERE RATHER THAN AT THE BUTTON, because every door in has the same
-	-- problem: `/aether tour` typed with the options open, or with a Toolbox
-	-- branch out, lands in exactly the same place. So the branch goes too.
+	-- AND NOTHING LEFT IN FRONT OF IT: the options window it is most often
+	-- started from, and an open Toolbox branch.
 	if A.Options and A.Options.Close then A.Options:Close() end
 	do
-		local TB = A.GetModule and A:GetModule("toolbox")
-		if TB and TB.IsOpen and TB:IsOpen() and TB.SetOpen then
-			TB:SetOpen(false, true)
-		end
+		local TB = Mod("toolbox")
+		if TB and TB.IsOpen and TB:IsOpen() and TB.SetOpen then TB:SetOpen(false, true) end
 	end
 
 	local s = Store()
@@ -2009,16 +1350,9 @@ end
 -- ---------------------------------------------------------------------------
 -- the resume toast
 --
--- ONE QUIET LINE, AND ONLY ONE. Somebody who left half way through has already
--- shown you what they think of being interrupted, so this is not the tour
--- coming back - it is a door being held open, once, with a handle on it for
--- shutting it for good. Dismissing counts as skipping, which is the design's
--- own rule and the reason there is never a second toast.
---
--- PARENTED TO UIParent AND AT THE PROFILE'S SCALE, unlike the tour itself. The
--- tour hangs off a parentless scrim because it has to draw OVER a faded world;
--- this is a notice sitting on the HUD with everything else, so it is the size
--- of everything else.
+-- ONE QUIET LINE, AND ONLY ONE. Dismissing counts as skipping, which is the
+-- reason there is never a second toast. On UIParent at the profile's scale: a
+-- notice on the HUD with everything else.
 -- ---------------------------------------------------------------------------
 
 local function BuildToast()
@@ -2039,14 +1373,8 @@ local function BuildToast()
 	t.go = W.Text(t, "tbLabel", "RIGHT")
 	t.go:SetText(L.tour.build_toast.resume)
 
-	-- The shared close, which is also the shared HIT SIZE: a dismiss smaller
-	-- than the thing it dismisses is a dismiss people miss and click through.
 	t.close = W.CloseButton(t)
 	t.close:SetScript("OnClick", function()
-		-- DISMISSING IS SKIPPING. The design says so, and it is the only
-		-- reading that makes this a single toast rather than a nag: a dismiss
-		-- that only closed the window would be answered with another one at
-		-- the next login.
 		OB:Hush()
 		OB:Finish()
 	end)
@@ -2061,8 +1389,7 @@ local function BuildToast()
 	return t
 end
 
---- Take the toast down without answering it, which the two answers both do
---- first: one goes on to resume and the other to mark the character done.
+--- Take the toast down without answering it.
 function OB:Hush()
 	if self.toast then self.toast:Hide() end
 end
@@ -2074,13 +1401,11 @@ function OB:ShowResume(at)
 
 	local t = BuildToast()
 	t:SetScale((A.db and A.db.profile and A.db.profile.scale) or 1)
-	t.label:SetText(("Finish setup? %d stop%s left")
-		:format(left, left == 1 and "" or "s"))
+	t.label:SetText(left == 1 and L.tour.build_toast.one_left
+		or L.tour.build_toast.n_left:format(left))
 	W.Color(t.label, Palette.c.text)
 	W.Color(t.go, Palette.c.accent)
 
-	-- Sized to what it says, because a fixed width is either too wide for one
-	-- stop left or too narrow for nine.
 	W.PlaceClose(t.close, t)
 	t.go:ClearAllPoints()
 	t.go:SetPoint("RIGHT", t.close, "LEFT", -4, 0)
@@ -2097,8 +1422,7 @@ end
 -- the two cards
 -- ---------------------------------------------------------------------------
 
---- Welcome and Finish share one panel: same family in the deck, same shape
---  here, and the alternative is two nearly identical builders drifting apart.
+--- Welcome and Finish share one panel.
 local function BuildCard()
 	if OB.card then return OB.card end
 
@@ -2114,13 +1438,8 @@ local function BuildCard()
 	c.kicker = W.Text(c, "tbSection", "LEFT")
 	c.kicker:SetPoint("TOPLEFT", c, "TOPLEFT", 28, -26)
 
-	-- THE MARK, where the kicker line goes, and only on the welcome card. The
-	-- kicker there read "AETHER UI" in small caps, which is the wordmark spelled
-	-- out by a font that is not the wordmark - and this is the one screen in the
-	-- addon that is introducing itself rather than getting on with something.
-	--
-	-- The finish card keeps its kicker: by then you know what this is, and "ALL
-	-- SET" is doing work the mark cannot.
+	-- THE MARK, on the welcome card: the one screen in the addon that is
+	-- introducing itself.
 	c.logo = c:CreateTexture(nil, "ARTWORK")
 	c.logo:SetTexture(Media.texture.logo)
 	c.logo:SetTexCoord(unpack(Media.logoCoord))
@@ -2138,7 +1457,7 @@ local function BuildCard()
 	c.body:SetWordWrap(true)
 
 	c.lines = {}
-	for i = 1, 4 do
+	for i = 1, 3 do
 		local t = W.Text(c, "tbCardBody", "LEFT")
 		t:SetWidth(CARD_W - 56)
 		t:SetWordWrap(true)
@@ -2151,23 +1470,13 @@ local function BuildCard()
 	c.go.label = W.Text(c.go, "tbLabel", "CENTER")
 	c.go.label:SetPoint("CENTER")
 
-	-- A PLAIN BUTTON, NOT A GLASS ONE. This is the quiet half of the pair and
-	-- the deck draws it as bare text beside the filled pill - so it was built
-	-- with `fill = "none"`, which is not a token: Glass has no transparent
-	-- fill, the lookup misses, and the surface keeps whatever colour it was
-	-- born with for the rest of the session. It went unnoticed because nothing
-	-- built this card before the skin checks ran.
-	--
-	-- The skip line at the foot of the screen is the same shape and was already
-	-- written this way; this is that, on a card.
+	-- THE QUIET HALF OF THE PAIR: a plain Button with a label, no surface.
 	c.alt = CreateFrame("Button", nil, c)
-	c.alt:SetSize(120, 28)
-	c.alt.label = W.Text(c.alt, "tbLabel", "CENTER")
-	c.alt.label:SetPoint("CENTER")
+	c.alt:SetSize(180, 28)
+	c.alt.label = W.Text(c.alt, "tbLabel", "LEFT")
+	c.alt.label:SetPoint("LEFT")
 	c.alt:SetScript("OnEnter", function(b) W.Color(b.label, Palette.c.text) end)
 	c.alt:SetScript("OnLeave", function(b) W.Color(b.label, Palette.c.textDim) end)
-
-	c.note = W.Text(c, "tbLabel", "RIGHT")
 
 	OB.card = c
 	return c
@@ -2175,12 +1484,8 @@ end
 
 --- Stack the card's parts and size it to them.
 local function LayCard(c, lines)
-	-- Whichever of the two tops is showing is what the headline hangs off. The
-	-- welcome card wears the mark, the finish card wears the kicker line, and
-	-- one of them is always hidden - so the anchor is set HERE rather than at
-	-- build time, where it would have to guess which card this was going to be.
-	local top   = c.logo:IsShown() and c.logo or c.kicker
-	local topH  = c.logo:IsShown() and (c.logo:GetHeight() or 0)
+	local top  = c.logo:IsShown() and c.logo or c.kicker
+	local topH = c.logo:IsShown() and (c.logo:GetHeight() or 0)
 		or (c.kicker:GetStringHeight() or 0)
 	c.head:ClearAllPoints()
 	c.head:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, -10)
@@ -2209,102 +1514,102 @@ local function LayCard(c, lines)
 	c.go:ClearAllPoints()
 	c.go:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -20)
 	c.alt:ClearAllPoints()
-	c.alt:SetPoint("LEFT", c.go, "RIGHT", 12, 0)
-	c.note:ClearAllPoints()
-	c.note:SetPoint("RIGHT", c, "RIGHT", -28, 0)
-	c.note:SetPoint("TOP", c.go, "TOP", 0, 0)
-	c.note:SetHeight(28)
+	c.alt:SetPoint("LEFT", c.go, "RIGHT", 14, 0)
 
 	c:SetHeight(-y + 20 + 28 + 26)
 end
 
+--- The welcome: only your own frame on a dark screen, and the card. On a
+--  character whose account has already been set up, it leads with keeping
+--  that layout - the layout lives in the shared profile, and growing a new
+--  one here would rewrite it for every character on it.
 function OB:ShowWelcome()
-	BuildScrim():Show()
-	self.scrim:SetAlpha(0)
-	FadeTo(self.scrim, 1, SCRIM_FADE)
+	self:Undo()
+	self.index = nil
 	if self.callout then self.callout:Hide() end
 	if self.skip then self.skip:Hide() end
+	Dim(0)
+	self:GrowTo(0)
 
 	local c = BuildCard()
 	c.kicker:Hide()
 	c.logo:Show()
-	c.head:SetText(L.tour.show_welcome.quieter_glassier_way_play)
-	c.body:SetText(L.tour.show_welcome.whole_interface_rebuilt_calm)
+	c.head:SetText(L.tour.welcome.head)
+	c.body:SetText(L.tour.welcome.body)
 	W.Color(c.head, Palette.c.text)
 	W.Color(c.body, Palette.c.textDim)
 
-	LayCard(c, {
-		"Four carefully curated palettes — Midnight, Dawn, Noon, Dusk; one tap "
-		.. "recolours the whole UI",
-		"Everything movable — unit frames and panels float free, snap to a "
-		.. "grid, saved per character",
-		"A UI that knows the moment — the quest tracker ducks in combat, "
-		.. "flights get in-flight entertainment",
-		"Smarter everyday tools — auto-sorted bags, one Toolbox for every "
-		.. "panel and addon",
-	})
-
-	c.go.label:SetText(L.common.take_tour)
-	W.Color(c.go.label, Palette.c.text)
-	c.go:SetScript("OnClick", function() c:Hide() OB:Go(1) end)
-
+	local key = self:Others()
 	c.alt:Show()
-	c.alt.label:SetText(L.tour.show_welcome.skip_tour)
 	W.Color(c.alt.label, Palette.c.textDim)
-	c.alt:SetScript("OnClick", function() OB:Skip() end)
-
-	-- HONEST, and the deck says so in as many words. A tour that claims to be
-	-- quick and is not is one nobody finishes.
-	c.note:SetText(L.tour.show_welcome.n1_minute)
-	W.Color(c.note, Palette.c.textFaint)
+	if key then
+		LayCard(c, { L.tour.welcome.shared })
+		c.go.label:SetText(L.tour.welcome.keep)
+		c.go:SetScript("OnClick", function()
+			OB:AdoptFrom(key)
+			OB:Finish()
+		end)
+		c.alt.label:SetText(L.tour.welcome.go)
+		c.alt:SetScript("OnClick", function() OB:Go(1) end)
+	else
+		LayCard(c, nil)
+		c.go.label:SetText(L.tour.welcome.go)
+		c.go:SetScript("OnClick", function() OB:Go(1) end)
+		c.alt.label:SetText(L.tour.skip)
+		c.alt:SetScript("OnClick", function() OB:Skip() end)
+	end
+	W.Color(c.go.label, Palette.c.text)
+	c.alt.label:SetWidth(0)
+	c.alt:SetWidth(math.ceil(c.alt.label:GetStringWidth() or 0) + 4)
 
 	c:Show()
 end
 
+--- What you set up, read back out of the systems that own it rather than out
+--  of anything the tour remembered: the shape, what hangs off the spine, the
+--  skin.
+function OB:Recap()
+	local P = A.Presets
+	local preset = P and P:Current()
+	local shape = (preset and P.list[preset] and P.list[preset].label)
+		or L.tour.finish.own_shape
+	local UF = Mod("unitframes")
+	local hangers = {}
+	if UF and UF.SatelliteOn then
+		if UF:SatelliteOn("targettarget") then hangers[#hangers + 1] = L.tour.finish.tot end
+		if UF:SatelliteOn("pet") then hangers[#hangers + 1] = L.tour.finish.pet end
+	end
+	local skin = Palette.skins[Palette.current]
+	return table.concat({
+		shape,
+		#hangers > 0 and table.concat(hangers, ", ") or L.tour.finish.no_hangers,
+		(skin and skin.label) or "",
+	}, "  \194\183  ")
+end
+
 function OB:ShowFinish()
-	Drop()
-	if self.ring then self.ring:Hide() end
+	self:Undo()
 	if self.callout then self.callout:Hide() end
 	if self.skip then self.skip:Hide() end
+	self.index = nil
+	-- THE WHOLE LATTICE, in colour: everything still held grows, and the scrim
+	-- is gone.
+	self:GrowPiece("rest")
+	Dim(false)
 
 	local c = BuildCard()
 	c.logo:Hide()
-	c.kicker:Show()
-	c.kicker:SetText(L.tour.show_finish.all_set)
-	c.head:SetText(L.tour.show_finish.hud_way_go_break)
-	c.body:SetText("")
-	W.Color(c.kicker, Palette.c.accent)
+	c.kicker:Hide()
+	c.head:SetText(L.tour.finish.thanks)
+	c.body:SetText(L.tour.finish.setup)
 	W.Color(c.head, Palette.c.text)
+	W.Color(c.body, Palette.c.textDim)
+	LayCard(c, { self:Recap(), L.tour.finish.hint })
 
-	-- WHAT YOU ACTUALLY CHOSE, read back out of the systems that own it rather
-	-- than out of anything the tour remembered. If the recap and the HUD ever
-	-- disagree, the recap is the one that is wrong.
-	local skin = Palette.skins[Palette.current]
-	local preset = A.Presets and A.Presets:Current()
-	local presetName = preset and A.Presets.list[preset]
-		and A.Presets.list[preset].label or "a layout of your own"
-	local edge = A.db and A.db.char and A.db.char.toolbox
-		and A.db.char.toolbox.docked or "LEFT"
-
-	LayCard(c, {
-		("%s palette · %s · Toolbox %s"):format(
-			(skin and skin.label) or "Midnight", presetName, edge:lower()),
-		-- NO ARROW. The deck writes this with a rightwards arrow between
-		-- "Toolbox" and "Layout", and the
-		-- interface font has not got that character - it came out as a hollow
-		-- box in game. Every arrow this addon draws is a TEXTURE for exactly
-		-- that reason (Media.texture.chevron); a line of recap text is not
-		-- worth a texture, so it is worded without one.
-		"Fine-tune anytime: unlock frames from the Toolbox and drag any of them",
-		"Re-run this tour: /lattice tour",
-	})
-
-	c.go.label:SetText(L.tour.show_finish.done)
+	c.go.label:SetText(L.tour.finish.done)
 	W.Color(c.go.label, Palette.c.text)
 	c.go:SetScript("OnClick", function() OB:Finish() end)
 	c.alt:Hide()
-	c.note:SetText("")
-
 	c:Show()
 end
 
@@ -2312,36 +1617,16 @@ end
 -- combat, and coming back
 -- ---------------------------------------------------------------------------
 
---- A fight takes the tour down instantly.
---
---  NOT PAUSED, DROPPED. Whatever else is true when a mob opens on you, a scrim
---  over the world and a panel over your action bars are the two things you
---  least want - and half of what the tour lifts is secure, which cannot be put
---  back where it belongs until the fight is over anyway.
+--- A fight takes the tour down instantly - and the whole HUD comes back with
+--  it: every piece is a real frame, and a fight is no time for one to be
+--  missing.
 function OB:OnCombat()
 	if not self.index and not (self.card and self.card:IsShown()) then return end
 	self.resumeAt = self.index
 	self:Teardown()
 end
 
---- Everything that means "not yet", in one place.
---
---  A CINEMATIC IS THE ONE THAT ACTUALLY HAPPENS. A brand new character watches
---  the intro movie before it can do anything at all, and the tour opened
---  underneath it - reported from the game. MovieFrame hides WorldFrame for the
---  duration, so the scrim was dimming a world that was not being drawn and the
---  welcome card was behind a full-screen video.
---
---  BOTH KINDS, because they are different frames and only one of them is the
---  intro: MovieFrame plays the pre-rendered films, CinematicFrame plays the
---  ones acted out by the engine. A tour that waited for one would open over the
---  other.
---
---  AND COMBAT, which was already here. Same answer, same door: a scrim over the
---  world is the last thing anybody wants while something is happening.
---
---  AND THE CLIENT'S OWN ANSWER where it has one. A film that has begun can be
---  a moment ahead of its frame being shown, and InCinematic says so either way.
+--- Everything that means "not yet": a fight, and a film of either kind.
 local function NotNow()
 	if InCombatLockdown() then return true end
 	if MovieFrame and MovieFrame.IsShown and MovieFrame:IsShown() then
@@ -2357,23 +1642,17 @@ local function NotNow()
 	return false
 end
 
---- What this character sees when it arrives.
---
---  THREE ANSWERS, AND THE FIRST ONE IS NOTHING. A character that has finished
---  or skipped is never asked again, by anything, ever - which is the promise
---  that makes a first-run tour tolerable at all.
---
---  Then a stop index, which means somebody was half way through when they
---  logged out: one quiet toast rather than the tour reopening over whatever
---  they logged in to do.
---
---  And otherwise the welcome card, which is the first run.
+--- What this character sees when it arrives: nothing if it has answered, the
+--  toast if it was half way through, and otherwise the welcome.
 function OB:OnLogin()
-	if self:Completed() then return end
-
-	-- HELD RATHER THAN DROPPED, whatever is in the way. The flag means "this
-	-- character is still owed its first run", and whichever gate lifts last
-	-- delivers it.
+	-- Answered: nothing is owed, and the flag that said so goes too - left up,
+	-- a tour re-run later and interrupted by a fight came back as the resume
+	-- toast rather than at its stop, the fight's end taking it for a login.
+	if self:Completed() then
+		self.__pendingLogin = nil
+		return
+	end
+	-- HELD RATHER THAN DROPPED, whatever is in the way.
 	if NotNow() then
 		self.__pendingLogin = true
 		return
@@ -2389,11 +1668,7 @@ function OB:OnLogin()
 	end
 end
 
---- Try the first run again, if one is still owed.
---
---  A BEAT LATER, for the same reason the first attempt is one: the frame that
---  was in the way is hidden by the very handler that fires this, and the world
---  has to be back before there is anything to hang a spotlight on.
+--- Try the first run again, if one is still owed - a beat later.
 function OB:Retry()
 	if not self.__pendingLogin then return end
 	if _G.C_Timer and _G.C_Timer.After then
@@ -2403,11 +1678,7 @@ function OB:Retry()
 	end
 end
 
---- A film has STARTED with the tour up - which is how a new character's intro
---  arrives on WoW Forever: the game starts the cinematic a moment after we
---  arrive, after the first check has already let the welcome card through
---  (reported from the game, 2026-10-07). Step aside the way a fight makes us:
---  a stop is remembered, and a welcome card not yet answered is owed again.
+--- A film has STARTED with the tour up: step aside the way a fight makes us.
 function OB:OnFilm()
 	if self:Completed() then return end
 	if self.index then
@@ -2419,8 +1690,7 @@ function OB:OnFilm()
 	end
 end
 
---- And the film is over. Whatever was held comes back - unless something else
---  is still in the way, a fight say, whose own end will deliver it instead.
+--- And the film is over.
 function OB:OnFilmOver()
 	if NotNow() then return end
 	if self.__pendingLogin then return self:Retry() end
@@ -2445,24 +1715,11 @@ end
 -- ---------------------------------------------------------------------------
 
 function OB:OnEnable()
-	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function()
-		OB:OnCombat()
-	end)
-	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
-		OB:OnCombatOver()
-	end)
+	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function() OB:OnCombat() end)
+	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function() OB:OnCombatOver() end)
 
-	-- THE FIRST RUN, ONCE.
-	--
-	-- PLAYER_ENTERING_WORLD rather than login, because it is the one that also
-	-- arrives after a loading screen - and once, because it arrives after EVERY
-	-- loading screen. A tour that reopened on the far side of a zone line would
-	-- be the thing this whole file is written to avoid.
-	--
-	-- AND A BEAT LATER. The tour spotlights real frames and places its callout
-	-- against them, and at the moment this fires the unit frames have been
-	-- built but not yet had their saved positions restored - so a callout
-	-- placed now is placed beside where a frame was going to be.
+	-- THE FIRST RUN, ONCE, and a beat after arriving: the frames are built by
+	-- then but not yet put back where they were saved.
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
 		if OB.__arrived then return end
 		OB.__arrived = true
@@ -2470,36 +1727,20 @@ function OB:OnEnable()
 		OB:Retry()
 	end)
 
-	-- AND WHEN THE FILM ENDS. On a brand new character the intro movie is
-	-- playing at the moment we arrive, so the first attempt is always going to
-	-- be turned away - these are how it gets asked again.
-	--
-	-- Both stops, and the skip goes down the same road: skipping a movie IS
-	-- STOP_MOVIE, so there is nothing extra to listen for.
+	-- A film ending - watched or skipped, it is the same event - and one
+	-- starting, which on WoW Forever is a moment after we arrive.
 	for _, event in ipairs({ "STOP_MOVIE", "CINEMATIC_STOP" }) do
 		A:RegisterEvent(self, event, function() OB:OnFilmOver() end)
 	end
-
-	-- AND WHEN ONE STARTS, which on WoW Forever is after we have arrived: the
-	-- intro begins a moment after the first check, so the tour was already up
-	-- underneath it.
 	for _, event in ipairs({ "PLAY_MOVIE", "CINEMATIC_START" }) do
 		A:RegisterEvent(self, event, function() OB:OnFilm() end)
 	end
 end
 
 --- The scale is a setting, and a setting can move while the tour is up.
---
---  APPLIED IN THE BUILDER AND AGAIN HERE, which is the pattern every other
---  module in this addon follows for the same reason: a scale set once at build
---  time is a scale that is right until somebody touches the slider, and the
---  tour is the one surface a player is most likely to be looking at while they
---  do - the layout stop changes it under them.
 function OB:OnConfigChanged()
 	if not self.scrim then return end
 	Rescale(self.scrim)
-	-- And the callout is placed from pixel arithmetic that has just changed
-	-- under it, so it has to be placed again.
 	if self.index then self:Go(self.index) end
 end
 

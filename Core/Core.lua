@@ -940,9 +940,12 @@ local function FireSkinChanged()
 	end
 end
 
-function A:Restyle()
+--- Repaint everything in the profile's skin - or, given `preview`, in that
+--  skin for now without choosing it: the tour's hover. The next plain
+--  Restyle puts the chosen one back.
+function A:Restyle(preview)
 	A:UpdatePixelScale()
-	A.Palette:Apply(A.db.profile.skin)
+	A.Palette:Apply(preview or A.db.profile.skin)
 	-- Every glass surface still dressed by token, in one sweep, BEFORE the
 	-- modules get their say. A surface knows which palette entries it was built
 	-- from; its owner should not have to remember on its behalf, and eighteen

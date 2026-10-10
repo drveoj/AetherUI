@@ -1389,6 +1389,7 @@ L["options.unit_frames.show_absorb.name"] = "Show shields"
 L["options.unit_frames.show_cast_bar.name"] = "Player cast bar"
 L["options.unit_frames.show_pet.name"] = "Pet frame"
 L["options.unit_frames.show_portrait.name"] = "Portrait in the orb"
+L["options.unit_frames.show_tot.name"] = "Target of target frame"
 L["options.unit_frames.show_target_cast_bar.name"] = "Target cast bar"
 L["options.unit_frames.target_s_capsule_rim"] =
 	"The target's capsule rim and orb ring take their reaction - red for "
@@ -1531,85 +1532,96 @@ L["tooltips.diagnose.level_badge_s_override"] =
 
 -- tour --------------------------------------------------------------------
 
-L["tour.adopt_from.body"] =
-	"One palette colours your interface — tap to try each live; "
-		.. "everything recolours at once."
-L["tour.adopt_from.body2"] =
-	"A starting layout — tap it and watch the frames move into place. "
-		.. "You can fine-tune every frame later."
-L["tour.adopt_from.body3"] =
-	"Menu, widgets, addons and settings, each a branch off the Toolbox "
-		.. "trunk. Pick which side it lives on; the World trunk takes the other."
-L["tour.adopt_from.body4"] =
-	"After a while of quiet the HUD fades to a calm Zen state,Leaving "
-		.. "only a clock and the zone you are in. Pick how long before it "
-		.. "starts — or never."
-L["tour.adopt_from.body5"] =
-	"Cooldowns, charges and range all draw ON the bar icons."
-L["tour.adopt_from.body6"] =
-	"The tracker folds itself away the moment combat starts and returns "
-		.. "when it ends — like this."
-L["tour.adopt_from.body7"] =
-	"All your bags pour into one organised panel — gear, potions, trade "
-		.. "goods, junk, each under its own heading."
-L["tour.adopt_from.body8"] =
-	"Manage your threat BEFORE trouble: gold means act now, red means "
-		.. "you've pulled. What counts as trouble flips with your role.(i.e "
-		.. "Tank vs DPS & Healer.)"
-L["tour.adopt_from.body9"] =
-	"Music, podcasts and some truly disreputable gossip rags, timed to "
-		.. "your route. Boards at takeoff — and N.I.F.E.C. plays it on the "
-		.. "ground, from Now Playing under the minimap."
-L["tour.adopt_from.head"] = "Choose the colour scheme you like."
-L["tour.adopt_from.head2"] = "Where should everything live?"
-L["tour.adopt_from.head3"] = "A useful place to keep tools."
-L["tour.adopt_from.head4"] = "Take a moment of meditation."
-L["tour.adopt_from.head5"] = "Your bars tell you what you need."
-L["tour.adopt_from.head6"] = "Tracking quests when you need them."
-L["tour.adopt_from.head7"] = "One organised and tidy bag."
-L["tour.adopt_from.head8"] = "Manage your threat."
-L["tour.adopt_from.head9"] = "Long flight? We've got you."
-L["tour.adopt_from.name"] = "YOUR PALETTE"
-L["tour.adopt_from.name2"] = "YOUR LAYOUT"
-L["tour.adopt_from.name3"] = "THE TOOLBOX"
-L["tour.adopt_from.name4"] = "ZEN MODE"
-L["tour.adopt_from.name5"] = "ACTION BARS"
-L["tour.adopt_from.name6"] = "QUEST TRACKER"
+-- The growth (onboarding v2). Copy is Joe's, edited 2026-10-10.
 
-L["tour.build_nav.back"] = "Back"
-L["tour.build_nav.next"] = "Next"
+L["tour.bars.body"] =
+	"Pick a shape to start with. You can reshape any bar later in Unlock."
+L["tour.bars.head"] = "Your bars hang under the spine."
+L["tour.bars.name"] = "BARS"
 
-L["tour.build_skip.skip_tour_keep_defaults"] = "Skip tour — keep defaults"
-
+L["tour.build_toast.n_left"] = "Finish setup? %d stops left"
+L["tour.build_toast.one_left"] = "Finish setup? 1 stop left"
 L["tour.build_toast.resume"] = "Resume"
 
-L["tour.ifec_demo.nothing_installed_yet"] = "Nothing installed yet"
+L["tour.fight.body"] =
+	"Casts run along the spine, your bars light up and the quests tuck away. "
+		.. "Everything stays where your hands expect it."
+L["tour.fight.head"] = "In a fight, nothing moves."
+L["tour.fight.in_combat"] = "In combat"
+L["tour.fight.my_cast"] = "Frostbolt"
+L["tour.fight.name"] = "IN A FIGHT"
+L["tour.fight.replay"] = "Replay"
+L["tour.fight.their_cast"] = "Shadow Bolt"
 
-L["tour.layout_control.n1_min"] = "1 min"
-L["tour.layout_control.n5_min"] = "5 min"
+L["tour.finish.done"] = "Done"
+L["tour.finish.hint"] =
+	"Fine-tune anything in Unlock. Run this again from Settings > Take the tour."
+L["tour.finish.no_hangers"] = "no hangers-on"
+L["tour.finish.own_shape"] = "your own shape"
+L["tour.finish.pet"] = "pet"
+L["tour.finish.setup"] = "Here's your lattice setup:"
+L["tour.finish.thanks"] = "Thank you for taking the tour."
+L["tour.finish.tot"] = "target of target"
 
-L["tour.quests_demo.combat_folded"] = "in combat — retracted"
-L["tour.quests_demo.tracking"] = "tracking"
-L["tour.quests_demo.wanted_hogger"] = "Wanted: Hogger"
+L["tour.hangers.body"] =
+	"Your pet hangs off you, target of target off your target. Drag the spine "
+		.. "again and watch."
+L["tour.hangers.head"] = "Some frames hang off others."
+L["tour.hangers.head_dragged"] = "See? They came with you."
+L["tour.hangers.name"] = "HANGERS-ON"
+L["tour.hangers.off"] = "OFF"
+L["tour.hangers.on"] = "ON"
+L["tour.hangers.pet"] = "Pet"
+L["tour.hangers.pet_note"] = "(when you have one)"
+L["tour.hangers.tot"] = "Target of target"
 
-L["tour.show_finish.all_set"] = "ALL SET"
-L["tour.show_finish.done"] = "Done"
-L["tour.show_finish.hud_way_go_break"] = "Your UI is ready. Go try it out."
+L["tour.kicker"] = "STOP %d OF %d · %s"
 
-L["tour.show_welcome.n1_minute"] = "~1 minute"
-L["tour.show_welcome.quieter_glassier_way_play"] =
-	"A modern UI for Classic WoW"
-L["tour.show_welcome.skip_tour"] = "Skip the tour"
-L["tour.show_welcome.whole_interface_rebuilt_calm"] =
-	"A modern UI rebuilt as calm dark glass."
+L["tour.map.body"] =
+	"Every setting is owned by the component. /lattice or clicking the Settings "
+		.. "option in the Toolbox opens it."
+L["tour.map.head"] = "This is what you just built."
+L["tour.map.name"] = "THE MAP"
+
+L["tour.nav.back"] = "Back"
+L["tour.nav.finish"] = "Finish"
+L["tour.nav.next"] = "Next"
+
+L["tour.share.body"] =
+	"Copy it to share with a friend. Paste theirs in to try it. /lattice layout "
+		.. "opens this any time."
+L["tour.share.head"] = "Your layout is one line of text."
+L["tour.share.name"] = "SHARE IT"
+
+L["tour.skin.body"] = "Hover to try one, click to keep it."
+L["tour.skin.head"] = "Pick a skin."
+L["tour.skin.name"] = "SKIN"
+
+L["tour.skip"] = "Skip — use the defaults"
+
+L["tour.spine.body"] =
+	"Drag the spine to where you want it. The two always sit level: your casts "
+		.. "run along it, and your bars (initially) hang from the middle."
+L["tour.spine.head"] = "You and your target."
+L["tour.spine.name"] = "THE SPINE"
 
 L["tour.start.during_fight_try_again"] =
 	"not during a fight - try again when it is over."
 
-L["tour.threat_demo.eased_off_quiet_again"] = "eased off — quiet again"
-L["tour.threat_demo.trouble_coming"] = "trouble coming"
+L["tour.trunks.body_left"] =
+	"Menus, addons and settings on the left. Minimap, quests and mail on the "
+		.. "right. Click a node to look inside."
+L["tour.trunks.body_right"] =
+	"Menus, addons and settings on the right. Minimap, quests and mail on the "
+		.. "left. Click a node to look inside."
+L["tour.trunks.head"] = "Tools on one side, the world on the other."
+L["tour.trunks.name"] = "TRUNKS"
 
-L["tour.toolbox_control.tap_edge"] = "tap a side"
+L["tour.welcome.body"] = "A few quick stops, and you build it as you go."
+L["tour.welcome.go"] = "Configure it"
+L["tour.welcome.head"] = "Your UI adapts to you."
+L["tour.welcome.keep"] = "Keep my layout"
+L["tour.welcome.shared"] = "Changes here apply to every character on this profile."
 
 -- trunks ------------------------------------------------------------------
 

@@ -43,6 +43,7 @@ A.CHANGELOG = {
 		lines   = {
 			"AetherUI is now called Lattice. Same addon, new name. Your settings start fresh, and /lattice tour sets everything up again in about a minute.",
 			"Full support for WoW Forever as it launches on November 4th, alongside Classic Era.",
+			"A new first-run tour. Your screen starts with just your own frame, and each stop adds the next piece and asks one thing about it. Run it again from Settings > Take the tour.",
 			"The settings window is a map of your own screen: point at the thing you want to change, or search with /.",
 			"Frames hang from each other now: the target from the player, your bars from the line between you and your target. Move one and what hangs from it comes too.",
 			"Unlock mode shows how things connect: a dot field to snap to, the lines between frames, and an inspector. Drop a frame on another's junction to hang it from that one.",

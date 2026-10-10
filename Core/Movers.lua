@@ -2009,11 +2009,13 @@ Movers.ShowLockButton = ShowLockButton
 
 --- Placement mode. `only`, a set of node names, unlocks just those (the
 --  options map's Shift-click: "unlock just this"); nil unlocks everything.
-function Movers:Unlock(only)
+--  `quiet` is the first-run tour's: no chat lines, and no pill - the tour
+--  carries its own way on, and a LOCK there would end its stop under it.
+function Movers:Unlock(only, quiet)
 	Movers.unlocked = true
 	Movers.only = only
 	ShowGrid(true)
-	ShowLockButton(true)
+	ShowLockButton(not quiet)
 	for name, entry in pairs(Movers.registry) do
 		if not only or only[name] then
 			-- Preview first: the handle takes its size from the frame, so a frame
@@ -2030,6 +2032,7 @@ function Movers:Unlock(only)
 	DrawBonds()
 	RefreshJunctions()
 	Announce()
+	if quiet then return end
 	A:Print(A.F(L.movers.unlock.frames_unlocked_drag_move,
 		A.Hi(L.movers.pill.lock), A.Hi("/lattice lock")))
 	A:Print(A.Dim("A child snaps to its parent's centre lines first, then to other frames"
@@ -2039,7 +2042,7 @@ function Movers:Unlock(only)
 		.. " can place them."))
 end
 
-function Movers:Lock()
+function Movers:Lock(quiet)
 	Movers.unlocked = false
 	Movers.only = nil
 	ShowGrid(false)
@@ -2056,7 +2059,7 @@ function Movers:Lock()
 		if entry.preview then pcall(entry.preview, false) end
 	end
 	Announce()
-	A:Print(L.movers.lock.frames_locked)
+	if not quiet then A:Print(L.movers.lock.frames_locked) end
 end
 
 --- Re-lay the field after a settings change, so turning it off is visible
