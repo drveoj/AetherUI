@@ -30,6 +30,7 @@ local function Mini() return A.IFEC.Mini end
 local function Playback() return A.IFEC.Playback end
 
 function Node:Available()
+	if A.db.profile.world.nifec == false then return false end
 	local M = Mini()
 	return (M ~= nil and M:HasContent()) and true or false
 end
@@ -41,6 +42,7 @@ end
 
 --- The track, playing or paused; nil with nothing on.
 local function Current()
+	if A.db.profile.world.nifecTrack == false then return nil end
 	local P = Playback()
 	if not P or not (P.state == "playing" or P.state == "paused") then return nil end
 	return P.item, P

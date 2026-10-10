@@ -273,9 +273,12 @@ end
 
 --- Put the Mail node on the World trunk. Called by the minimap, which owns it.
 function Mail:Attach()
+	-- Each switchable on its own page of the options map.
+	local function On(key) return A.db.profile.world[key] ~= false end
 	Trunk():AddNode("mail", {
 		icon = function() return Mail:Has() and "mailfull" or "mail" end,
-		badge = function() return Mail:Has() end,
+		badge = function() return On("mailDot") and Mail:Has() end,
+		available = function() return On("mail") end,
 		label = L.trunk.mail, order = 400,
 		-- Goes when the trunk retracts: a branch beside nothing.
 		transient = true,

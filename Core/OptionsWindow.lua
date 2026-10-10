@@ -43,7 +43,8 @@ local SYS_Y, SYS_L, SYS_R = 712, 60, 1140
 local FIELD_STEP = 48
 local PAD_T, PAD_R, PAD_B, PAD_L = 22, 32, 26, 28
 local PREVIEW_H = 130
-local NAV_TOP, NAV_STEP = 96, 36
+-- 28 apart: sixteen module pages and five System ones down a 760 window.
+local NAV_TOP, NAV_STEP = 96, 28
 local CARD_W = 220
 
 -- Timing (7c), in seconds.
@@ -91,13 +92,26 @@ OW.PAGES = {
 	{ key = "minimap", form = "circle", module = "minimap", groups = { "minimap" },
 		unlock = { "minimap" },
 		title = L.options.map.minimap.title, desc = L.options.map.minimap.desc },
-	{ key = "quests", form = "diamond", module = "questtracker", groups = { "quests", "ifec" },
+	-- THE WORLD TRUNK, a node each, as it is on the trunk (Joe, 2026-10-10).
+	{ key = "quests", form = "diamond", module = "questtracker", groups = { "quests" },
 		unlock = { "minimap" },
 		title = L.options.map.quests.title, desc = L.options.map.quests.desc },
+	{ key = "mail", form = "diamond", groups = { "mail" }, world = "mail",
+		title = L.options.map.mail.title, desc = L.options.map.mail.desc },
+	{ key = "tracking", form = "diamond", groups = { "tracking" }, world = "tracking",
+		title = L.options.map.tracking.title, desc = L.options.map.tracking.desc },
+	{ key = "calendar", form = "diamond", groups = { "calendar" }, world = "calendar",
+		title = L.options.map.calendar.title, desc = L.options.map.calendar.desc },
+	{ key = "nifec", form = "diamond", groups = { "nifec" }, world = "nifec",
+		title = L.options.map.nifec.title, desc = L.options.map.nifec.desc },
+	-- The flight console, where it shows in flight.
+	{ key = "ifec", form = "square", module = "ifec", groups = { "ifec" }, unlock = { "ifec" },
+		title = L.options.map.ifec.title, desc = L.options.map.ifec.desc },
 
 	{ key = "general", system = true, groups = { "general", "xpbar", "onboard" },
 		title = L.options.map.general.title, desc = L.options.map.general.desc },
-	{ key = "skins", system = true, groups = { "skins", "gameown" },
+	-- ONE PAGE: the game's own panels are a section of it, not a tab (Joe).
+	{ key = "skins", system = true, groups = { "skins", "gameown" }, merge = true,
 		title = L.options.map.skins.title, desc = L.options.map.skins.desc },
 	{ key = "profiles", system = true, groups = { "profiles" },
 		title = L.options.map.profiles.title, desc = L.options.map.profiles.desc },
@@ -149,6 +163,27 @@ end
 --  (the bars) after it.
 function OW:Subs(page)
 	local tree, out = self:Tree(), {}
+	-- A merged page draws its later groups as sections of the first.
+	if page.merge then
+		local first = tree.args[page.groups[1]]
+		if not first then return out end
+		local args = {}
+		for k, v in pairs(first.args or {}) do args[k] = v end
+		for i = 2, #page.groups do
+			local g = tree.args[page.groups[i]]
+			if g then
+				local copy = {}
+				for k, v in pairs(g) do copy[k] = v end
+				copy.inline, copy.order = true, 1000 + i
+				args["__" .. page.groups[i]] = copy
+			end
+		end
+		local merged = {}
+		for k, v in pairs(first) do merged[k] = v end
+		merged.args = args
+		out[1] = { label = C.Name(first), group = merged, groupKey = page.groups[1], first = true }
+		return out
+	end
 	for _, key in ipairs(page.groups or {}) do
 		local g = tree.args[key]
 		if g then
@@ -171,6 +206,7 @@ function OW:Leaves(page)
 end
 
 local function ModuleOn(page)
+	if page.world then return A.db.profile.world[page.world] ~= false end
 	if not page.module then return true end
 	local cfg = A.Config:Module(page.module)
 	return not (cfg and cfg.enabled == false)
@@ -258,8 +294,27 @@ function OW:Spec()
 		trunk = true })
 	add({ key = "minimap", page = "minimap", label = L.options.map.minimap.title,
 		form = "circle", w = 60, h = 60, hop = 3, mover = "minimap", at = { 0.94, 0.79 } })
-	add({ key = "quests", page = "quests", label = L.options.map.quests.title,
-		form = "diamond", w = 24, h = 24, hop = 3, near = "minimap", dx = 0, dy = 84, trunk = true })
+	-- The World trunk's nodes, measured from their own buttons on the trunk;
+	-- stacked under the map where the trunk is not up.
+	local world = A.Trunk.list.world
+	local function WorldNode(trunkKey)
+		local n = world and world:Node(trunkKey)
+		return n and n.button and n.button:IsShown() and n.button or nil
+	end
+	for i, e in ipairs({
+		{ "quests", "questlog", L.options.map.quests.title },
+		{ "mail", "mail", L.options.map.mail.title },
+		{ "tracking", "tracking", L.options.map.tracking.title },
+		{ "calendar", "calendar", L.options.map.calendar.title },
+		{ "nifec", "nowplaying", L.options.map.nifec.title },
+	}) do
+		local real = WorldNode(e[2])
+		add({ key = e[1], page = e[1], label = e[3], form = "diamond",
+			w = i == 1 and 24 or 18, h = i == 1 and 24 or 18, hop = 3, trunk = true,
+			frame = real, near = not real and "minimap" or nil, dx = 0, dy = 60 + 34 * i })
+	end
+	add({ key = "ifec", page = "ifec", label = L.options.map.ifec.title,
+		form = "square", w = 100, h = 26, hop = 3, mover = "ifec", at = { 0.5, 0.82 } })
 
 	local byKey = {}
 	for _, n in ipairs(list) do byKey[n.key] = n end
@@ -1142,32 +1197,43 @@ function OW:ShowPage(page, i)
 	pg.title:SetText(page.title)
 	pg.desc:SetText(page.desc or "")
 
-	-- Sub-pages: chips beside the description. Only when there are several.
+	-- SUB-PAGES AS NODES ON A STRAND, not tabs (Joe: tabs are not Lattice):
+	-- a diamond each, its name beside it, the strand through them all. Only
+	-- when there are several.
 	local subs = self:Subs(page)
 	for _, t in ipairs(pg.tabs) do t:Hide() end
-	local prev
+	pg.subLinks = pg.subLinks or {}
+	for _, l in ipairs(pg.subLinks) do l:Hide() end
+	local x, y = PAD_L + 6, PAD_T + 44
 	if #subs > 1 then
 		for k, s in ipairs(subs) do
 			local t = pg.tabs[k]
 			if not t then
-				t = A.Glass.CreatePanel(pg, { frameType = "Button", corner = 12 })
-				t:SetHeight(24)
-				t.text = W.Text(t, "opHelp", "CENTER")
-				t.text:SetPoint("CENTER", t, "CENTER", 0, 0)
+				t = CreateFrame("Button", nil, pg)
+				t:SetHeight(20)
+				t.d = C.Diamond(t, 11)
+				t.d.fill:SetPoint("LEFT", t, "LEFT", 0, 0)
+				t.text = W.Text(t, "opHelp", "LEFT")
+				t.text:SetPoint("LEFT", t, "LEFT", 19, 0)
 				pg.tabs[k] = t
 			end
 			t.text:SetText(s.label)
-			t:SetWidth(math.ceil(t.text:GetStringWidth() or 40) + 22)
+			local w = 19 + math.ceil(t.text:GetStringWidth() or 40)
+			t:SetWidth(w)
 			t:ClearAllPoints()
-			if prev then
-				t:SetPoint("LEFT", prev, "RIGHT", 6, 0)
-			else
-				t:SetPoint("TOPLEFT", pg, "TOPLEFT", PAD_L, -(PAD_T + 32))
-			end
+			t:SetPoint("LEFT", pg, "TOPLEFT", x - 5.5, -y)
 			t:SetScript("OnClick", function() OW:ShowPage(page, k) end)
 			t.index = k
 			t:Show()
-			prev = t
+			-- The strand from the last name's end to this node.
+			if k > 1 then
+				local l = pg.subLinks[k - 1] or Line(pg)
+				pg.subLinks[k - 1] = l
+				SetLine(l, pg, pg.subEnd + 6, y, x - 9, y, 1, 0.3)
+				l:Show()
+			end
+			pg.subEnd = x - 5.5 + w
+			x = x + w + 30
 		end
 	end
 	local top = PAD_T + 34 + (#subs > 1 and 34 or 0)
@@ -1233,9 +1299,12 @@ function OW:PaintPage()
 	for _, t in ipairs(pg.tabs) do
 		if t:IsShown() then
 			local on = t.index == self.sub
-			t:SetFillColor(on and { a[1], a[2], a[3], 0.16 } or { 1, 1, 1, 0.03 })
-			t:SetEdgeColor({ a[1], a[2], a[3], on and 0.6 or 0.2 })
+			C.PaintDiamond(t.d, on, 0.5)
+			local l = pg.subLinks and pg.subLinks[t.index]
+			if l and l:IsShown() then l:SetColorTexture(a[1], a[2], a[3], 0.3) end
+			W.Restyle(t.text, on and "opHelpOn" or "opHelp")
 			W.Color(t.text, on and c.text or c.textDim)
+			t.on = on
 		end
 	end
 	for _, b in ipairs({ pg.unlock, pg.reset }) do

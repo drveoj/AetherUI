@@ -850,12 +850,17 @@ function MM:OnEnable()
 	A.Trunk:Get("world"):AddNode("tracking", {
 		icon = "tracking", label = L.trunk.tracking, order = 500,
 		menu = true,
-		available = TrackingAvailable,
+		-- The client's ability, and the player's switch (options map).
+		available = function()
+			return A.db.profile.world.tracking ~= false and TrackingAvailable()
+		end,
 		open = function(node) MM:OpenTracking(node.button) end,
 	})
 	A.Trunk:Get("world"):AddNode("calendar", {
 		icon = "calendar", label = L.trunk.calendar, order = 900,
-		available = CalendarAvailable,
+		available = function()
+			return A.db.profile.world.calendar ~= false and CalendarAvailable()
+		end,
 		isOpen = CalendarShown,
 		open = OpenCalendar,
 		close = CloseCalendar,

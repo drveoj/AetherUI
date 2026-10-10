@@ -16818,11 +16818,23 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	check(long.field and long.text:GetText() == "Three", "five choices make a dropdown showing the chosen one")
 
 	-- SUB-PAGES: Nameplates holds Threat and Tooltips.
-	check(#f.pageFrame.tabs >= 3 and f.pageFrame.tabs[3]:IsShown(), "Nameplates has its sub-pages as chips")
+	do
+		local tabs = f.pageFrame.tabs
+		check(#tabs >= 3 and tabs[3]:IsShown() and tabs[3].d and tabs[2].on and not tabs[1].on,
+			"Nameplates' sub-pages are nodes on a strand, the one in view lit (Joe: not tabs)")
+		check(f.pageFrame.subLinks[1]:IsShown(), "joined by the strand")
+	end
 
-	-- THE SKINS: four chips, each its own skin.
+	-- THE THEME: one page, the game's own panels a section of it (Joe).
 	OW:Go("skins")
 	OW:Finish()
+	check(OW.page.title == "Theme" and #OW:Subs(OW.page) == 1 and not f.pageFrame.tabs[1]:IsShown(),
+		"Theme is one page, no sub-pages")
+	local gameown = false
+	for _, h in ipairs(OW.view.heads) do
+		if h.label:GetText():find("G A M E", 1, true) then gameown = true end
+	end
+	check(gameown, "with the game's own panels as a section on it")
 	local sw = RowAt("skin")
 	check(sw and #sw.chips == 4, "the skin is four chips")
 	local order = {}
@@ -16867,6 +16879,59 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 		"Reset page puts the page's settings back to their defaults (" .. tostring(cc.fontDelta) .. ")")
 	cc.fontDelta = fd
 	A:Reconfigure()
+	A.Options:Close()
+end)
+
+section("options window: the World trunk, a node each", function()
+	-- Joe: not "quest" for the whole trunk, and no pseudo-tabs - each element
+	-- a node of its own on the map, with its own page.
+	local OW, f = OpenMap()
+	for _, key in ipairs({ "quests", "mail", "tracking", "calendar", "nifec", "ifec" }) do
+		local n = MapNode(key)
+		check(n and n.pageDef and n.pageDef.key == key, key .. " is a node with its own page")
+	end
+	OW:Go("quests")
+	OW:Finish()
+	check(#OW:Subs(OW.page) == 1 and OW.page.title == "Quests",
+		"Quests is one page, the flight console no longer a tab under it")
+
+	-- WHICH QUESTS is one choice, and the game's tracked list only means
+	-- anything with Tracked only.
+	local cfg = A.Config:Module("questtracker")
+	local was = cfg.autoTrack
+	local which, adopt, max
+	for _, r in ipairs(OW.view.rows) do
+		local p = r.node.arg and r.node.arg.path
+		if p and p[3] == "autoTrack" then which = r end
+		if p and p[3] == "adoptWatches" then adopt = r end
+		if p and p[3] == "max" then max = r end
+	end
+	check(max and max.label:GetText() == "Max quests to show", "Max quests to show, not Most")
+	check(which and which.opts and #which.opts == 2, "Show: Every quest or Tracked only")
+	cfg.autoTrack = true
+	OW:AfterWrite()
+	check(adopt.disabled, "taking in the game's tracked quests is dimmed while every quest shows")
+	for _, o in ipairs(which.opts) do if o.key == "tracked" then Click(o) end end
+	check(cfg.autoTrack == false and not adopt.disabled, "Tracked only lights it")
+	cfg.autoTrack = was
+	A:Reconfigure()
+
+	-- EACH NODE CAN BE TAKEN OFF THE TRUNK, and shows hollow on the map.
+	OW:Go("mail")
+	OW:Finish()
+	local show = OW.view.rows[1]
+	check(show.node.arg.path[2] == "mail", "Mail's page starts with its switch")
+	Click(show)
+	local wt = A.Trunk:Get("world")
+	check(not wt:Node("mail").button:IsShown(), "off, the Mail node leaves the trunk")
+	OpenMap()
+	check(MapNode("mail").off, "and is hollow on the map")
+	A.db.profile.world.mail = true
+	wt:Refresh()
+	check(wt:Node("mail").button:IsShown(), "and back")
+	A.db.profile.world.nifecTrack = false
+	check(A.IFEC.Node:Title() == nil, "with what's playing switched off, the N.I.F.E.C. carries no title")
+	A.db.profile.world.nifecTrack = true
 	A.Options:Close()
 end)
 

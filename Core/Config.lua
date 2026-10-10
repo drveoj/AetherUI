@@ -97,6 +97,17 @@ Config.defaults = {
 		-- node arrives at once and every move takes 120 ms.
 		reducedMotion = false,
 
+		-- The World trunk's own nodes, each one's page in the options map
+		-- (Joe, 2026-10-10). The quests are the tracker's.
+		world = {
+			mail       = true,   -- the Mail node
+			mailDot    = true,   -- and its dot when mail arrives
+			tracking   = true,
+			calendar   = true,
+			nifec      = true,   -- the N.I.F.E.C. node
+			nifecTrack = true,   -- the track's title and lane under its stub
+		},
+
 		-- The concept deck draws player health green and reserves colour for
 		-- reaction. Class colouring is the common preference and reads faster in
 		-- a group, so it wins by default - but it is one switch either way, and

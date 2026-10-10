@@ -810,7 +810,7 @@ end
 
 local function QuestGroup()
 	local function at(k) return { "modules", "questtracker", k } end
-	return group(L.options.quest.quest_tracker, {
+	local g = group(L.options.quest.quest_tracker, {
 		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		hideBlizzard = toggle(L.options.quest.hide_blizzard.name, nil, at("hideBlizzard")),
 		-- The LOG, which is a different module and a different window, but
@@ -819,8 +819,6 @@ local function QuestGroup()
 		questlog = toggle(L.options.quest.questlog.name,
 			L.options.quest.replaces_game_s_own,
 			{ "modules", "questlog", "enabled" }),
-		autoTrack = toggle(L.options.quest.auto_track.name,
-			L.options.quest.tracker_shows_every_quest, at("autoTrack"), { defaultTrue = true }),
 		combatCollapse = toggle(L.options.quest.combat_collapse.name,
 			L.options.quest.shrinks_heading_when_fight, at("combatCollapse")),
 		showObjectives = toggle(L.options.quest.show_objectives.name,
@@ -832,9 +830,14 @@ local function QuestGroup()
 			L.options.trunk.labels_on_hover.desc, at("labelsOnHover"),
 			{ after = "none", onSet = function() A.Trunk:Get("world"):Extend() end }),
 
+		-- WHICH QUESTS, as one choice rather than a switch whose meaning the
+		-- next switch depended on (Joe: "follow Blizzard's tracked quests" did
+		-- nothing, because it only ever applied with the first one off).
 		trackHeader = header(L.options.quest.track_header),
+		autoTrack = choice(L.options.quest.which.name, L.options.quest.which.desc,
+			at("autoTrack"), { all = L.options.quest.which.all, tracked = L.options.quest.which.tracked }),
 		adoptWatches = toggle(L.options.quest.adopt_watches.name,
-			L.options.quest.whitelist_mode_only_blizzard, at("adoptWatches")),
+			L.options.quest.adopt_watches.desc, at("adoptWatches")),
 		clear = action(L.options.quest.clear.name, L.options.quest.clear.desc,
 			function()
 				if A.db.char then
@@ -843,6 +846,56 @@ local function QuestGroup()
 				local QT = A:GetModule("questtracker")
 				if QT and QT.Refresh then QT:Refresh() end
 			end),
+	})
+	local args = g.args
+	-- Stored as autoTrack, a boolean, as it always was.
+	args.autoTrack.get = function()
+		return A.Config:Module("questtracker").autoTrack ~= false and "all" or "tracked"
+	end
+	args.autoTrack.set = function(_, v)
+		A.Config:Module("questtracker").autoTrack = (v == "all")
+		A:Reconfigure()
+	end
+	-- The game's tracked quests only mean anything when only tracked ones show.
+	args.adoptWatches.disabled = function()
+		return A.Config:Module("questtracker").autoTrack ~= false
+	end
+	return g
+end
+
+--- The World trunk's other nodes, each a page of its own on the options map
+--  (Joe, 2026-10-10): a switch to show it, and what it carries.
+local function WorldToggle(name, desc, key)
+	return toggle(name, desc, { "world", key },
+		{ after = "none", onSet = function() A.Trunk:Get("world"):Refresh() end })
+end
+
+local function MailGroup()
+	return group(L.trunk.mail, {
+		show = WorldToggle(L.options.world.show.name, L.options.world.show.desc, "mail"),
+		dot = WorldToggle(L.options.world.mail_dot.name, L.options.world.mail_dot.desc, "mailDot"),
+	})
+end
+
+local function TrackingGroup()
+	return group(L.trunk.tracking, {
+		show = WorldToggle(L.options.world.show.name, L.options.world.show.desc, "tracking"),
+		note = note(L.options.world.tracking_note),
+	})
+end
+
+local function CalendarGroup()
+	return group(L.trunk.calendar, {
+		show = WorldToggle(L.options.world.show.name, L.options.world.show.desc, "calendar"),
+	})
+end
+
+local function NIFECGroup()
+	return group(L.trunk.nifec, {
+		show = WorldToggle(L.options.world.show.name, L.options.world.show.desc, "nifec"),
+		track = WorldToggle(L.options.world.nifec_track.name, L.options.world.nifec_track.desc,
+			"nifecTrack"),
+		note = note(L.options.world.nifec_note),
 	})
 end
 
@@ -1182,7 +1235,8 @@ local function ThreatGroup()
 end
 local PAGE_ORDER = {
 	general = 1, skins = 1.5, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
-	minimap = 6, quests = 7, bags = 8, chat = 9, tooltips = 10,
+	minimap = 6, quests = 7, mail = 7.1, tracking = 7.2, calendar = 7.3, nifec = 7.4,
+	bags = 8, chat = 9, tooltips = 10,
 	toolbox = 11, fader = 12, xpbar = 13, nameplates = 14, ifec = 15,
 	threat = 15.5,
 	conveniences = 16, gameown = 17,
@@ -1307,6 +1361,10 @@ function Options:Build()
 			minimap = MinimapGroup(),
 			actionbars = ActionBarsGroup(),
 			quests = QuestGroup(),
+			mail = MailGroup(),
+			tracking = TrackingGroup(),
+			calendar = CalendarGroup(),
+			nifec = NIFECGroup(),
 			bags = BagsGroup(),
 			chat = ChatGroup(),
 			tooltips = TooltipsGroup(),
