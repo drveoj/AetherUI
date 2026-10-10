@@ -14856,10 +14856,13 @@ do
 	QT:Refresh()
 	check(not more.button:IsShown() and QT.hidden == 0, "the max restored, every quest is back and the +n goes")
 
-	-- The screen's own height: a short screen holds fewer.
+	-- The screen's own height: a short screen holds fewer. 700, near the
+	-- shortest UIParent the client gives (768 at the largest UI scale is about
+	-- 668): at 480 the minimap at 6a's place and the four world tools under
+	-- the quests leave no room for even the +n node.
 	local w, h = UIParent:GetWidth(), UIParent:GetHeight()
-	UIParent:SetSize(w, 480)
-	UIParent:SetGeom({ cx = w / 2, cy = 240, left = 0, right = w, bottom = 0, top = 480 })
+	UIParent:SetSize(w, 700)
+	UIParent:SetGeom({ cx = w / 2, cy = 350, left = 0, right = w, bottom = 0, top = 700 })
 	A:Reconfigure()
 	check(QT.hidden > 0 and more.button:IsShown(),
 		"on a short screen the quests that do not fit fold into +n (" .. QT.hidden .. " hidden)")
@@ -17956,10 +17959,8 @@ do
 		-- The reference layout (rows) places what the Lattice board places. The
 		-- rest it leaves on their own defaults, on purpose (Joe, 2026-10-08):
 		local UNNAMED = {
-			-- The board's minimap and tracker sit around the world trunk, which
-			-- is not built; without it they were shoved in from the corner (Joe,
-			-- 2026-10-08). Their own defaults until it is.
-			minimap = true,
+			-- The floating tracker is gone (the World trunk took it); the name
+			-- stays known so old strings load, and places nothing.
 			quests = true,
 			-- Not on the board. Its own default is the bottom right corner.
 			tooltip = true,
@@ -18420,7 +18421,7 @@ do
 	local function Measure(bars)
 		local R = {}
 		for _, n in ipairs({ "player", "target", "targettarget", "pet", "party",
-			"bar1", "barpet", "barstance", "barextra" }) do
+			"bar1", "barpet", "barstance", "barextra", "minimap" }) do
 			R[n] = rect(frame(n))
 		end
 		for _, n in ipairs(bars) do R[n] = rect(frame(n)) end
@@ -18507,6 +18508,16 @@ do
 				"and the glass measured is the panel's own anchoring: " .. l .. " either side, "
 				.. b .. " below" .. say(tl and tl.x, br and br.x, br and br.y))
 		end
+		-- 6a's minimap: the disc centred 110 in from the right and 230 down,
+		-- with the World trunk under its pill and every node on the screen.
+		check(R.minimap and near(cx(R.minimap), 1810) and near(cy(R.minimap), 230),
+			"the minimap's centre is at 1810, 230 (6a)" .. say(cx(R.minimap), cy(R.minimap)))
+		do
+			local t = A.Trunk:Get("world")
+			local low = rect(t.frame)
+			check(low and low.b <= 1080 - 24 and t.frame:IsShown(),
+				"and the World trunk hangs under it, its end above the floor" .. say(low and low.b))
+		end
 		local CF = frame("chat")
 		check(CF and math.abs(CF:GetWidth() - 210) < 1 and math.abs(CF:GetHeight() - 120) < 1,
 			"at 210 x 120 of its own units, whatever size the window was - the size"
@@ -18542,6 +18553,15 @@ do
 
 	Board("shipped settings", { size = 36, bars = 1, pet = 0.85, tot = 0.85 })
 	Board("a player's settings", { size = 62, bars = 0.8, pet = 1.0, tot = 0.7 })
+
+	-- AN OLD STRING NAMING THE FLOATING TRACKER STILL APPLIES (World trunk step
+	-- 5): `quests` is still a known name, and places nothing.
+	do
+		local old = A.Layout:Decode(P.list.rows.layout .. ";quests=screen,TOPRIGHT,TOPRIGHT,-24,-300")
+		check(old and old.records.quests and A.Layout:Apply(old),
+			"a layout string from before the trunk, naming quests, still applies")
+		check(P:Apply("rows"), "and the reference layout goes back on")
+	end
 
 	-- THE STANCE BAR IS ONE ROW FOR EVERY CLASS. It is written 12 x 1, which on
 	-- a druid's forms is a row of however many there are - and the layout is
