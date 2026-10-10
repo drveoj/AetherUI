@@ -172,6 +172,11 @@ local function BuildNode(t, node)
 	b.sub = W.Text(f, "opSub", "RIGHT")
 	b.sub:SetWordWrap(false)
 	b.sub:Hide()
+	b.label:SetWordWrap(false)
+	-- A small mark before a title in place of the name: the N.I.F.E.C.'s pause.
+	b.mark = f:CreateTexture(nil, "ARTWORK")
+	b.mark:SetSize(10, 10)
+	b.mark:Hide()
 	b.lane = f:CreateTexture(nil, "ARTWORK")
 	b.lane:SetTexture(Media.texture.flat)
 	b.lane:SetHeight(1.5)
@@ -193,14 +198,32 @@ end
 -- The subtitle's widest, as a quest's text block is.
 local SUB_W = 170
 
---- A node's subtitle and lane, from its owner's subtitle() and progress():
---  text or nil, 0 to 1 or nil. Cheap enough for the owner to call on a tick.
+--- A node's own news, from its owner: title() in place of its name above the
+--  stub, in the title's own case, with mark() - an icon name - before it;
+--  subtitle() under the stub; progress(), 0 to 1, filling the stub. Each nil
+--  for none. Cheap enough for the owner to call on a tick.
 function Proto:Decorate(key)
 	local node = self:Node(key)
 	local b = node and node.button
 	if not (b and b.sub and b:IsShown()) then
-		if b and b.sub then b.sub:Hide() b.lane:Hide() end
+		if b and b.sub then b.sub:Hide() b.lane:Hide() b.mark:Hide() end
 		return
+	end
+	local title = node.title and node.title() or nil
+	b.titled = title ~= nil
+	b.label:SetWidth(0)
+	if title then
+		b.label:SetText(title)
+		b.label:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.label:GetStringWidth() or 0))))
+	else
+		b.label:SetText(tostring(type(node.label) == "function" and node.label() or node.label or ""):upper())
+	end
+	local mark = title and node.mark and node.mark() or nil
+	b.mark:SetShown(mark ~= nil and Media:SetIcon(b.mark, mark) and true or false)
+	if b.mark:IsShown() then
+		b.mark:ClearAllPoints()
+		b.mark:SetPoint("RIGHT", b.label, "LEFT", -4, 0)
+		W.Tint(b.mark, Palette.c.textDim, 1)
 	end
 	local text = node.subtitle and node.subtitle() or nil
 	local p = node.progress and node.progress() or nil
@@ -262,7 +285,7 @@ function Proto:Paint()
 			else
 				-- Through W.Tint too, which drops the accent token the lit look
 				-- left on it: otherwise a skin change repaints an idle node lit.
-				W.Tint(b.fill, { 14 / 255, 11 / 255, 32 / 255 }, 0.85)
+				W.Tint(b.fill, c.nodeFill, 0.85)
 				W.Tint(b.rim, a, 0.6)
 				b.icon:SetVertexColor(1, 1, 1, 0.8)
 				b.glow:Hide()
@@ -420,7 +443,9 @@ function Proto:Extend()
 				-- the cursor, or while its branch is open - the stub is what joins
 				-- the branch to its node (Joe).
 				local tucked = onHover and not (node.hover or node.branchOpen)
-				b.label:SetAlpha((self.quiet or tucked) and 0 or a)
+				-- A title in place of the name is news, and stays out.
+				b.label:SetAlpha((self.quiet or (tucked and not b.titled)) and 0 or a)
+				b.mark:SetAlpha((self.quiet and 0) or a)
 				b.stub:SetAlpha(tucked and 0 or a)
 				b.junction:SetAlpha(tucked and 0 or a)
 				-- A subtitle and lane are news, not names: they stay out when
@@ -489,6 +514,15 @@ A:RegisterTicker(Trunk, function()
 	Trunk:SetFlying(UnitOnTaxi and UnitOnTaxi("player") or false)
 end)
 
+-- A SKIN CHANGE REPAINTS EVERY TRUNK: its strand, stubs, nodes and labels are
+-- the skin's accent and node glass (Joe: the trunks follow the theme).
+A:OnSkinChanged(function()
+	for _, t in pairs(Trunk.list) do
+		-- Refresh, not Paint: the subtitles and lanes are drawn in it too.
+		if t.frame then t:Refresh() end
+	end
+end)
+
 --- The other combat energy (README "Two energies for trunks", the left
 --  trunk): the nodes stay, the labels go and an open transient branch closes.
 function Proto:SetQuiet(on)
@@ -539,7 +573,7 @@ function Proto:PaintTail()
 	if not t then return end
 	local a = Palette.c.accent
 	for _, d in ipairs(t.dashes) do d:SetVertexColor(a[1], a[2], a[3], 0.55) end
-	W.Tint(t.node.fill, { 14 / 255, 11 / 255, 32 / 255 }, 0.9)
+	W.Tint(t.node.fill, Palette.c.nodeFill, 0.9)
 	W.Tint(t.node.rim, a, 1)
 end
 

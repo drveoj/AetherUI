@@ -1085,7 +1085,8 @@ local function ShowInspector(title, rows, frame)
 	local g = c.friendly
 	local scale = A.db.profile.scale or 1
 	p:SetScale(scale)
-	p:SetFillColor({ 14 / 255, 11 / 255, 32 / 255, 0.9 })
+	local nf = c.nodeFill
+	p:SetFillColor({ nf[1], nf[2], nf[3], 0.9 })
 	p:SetEdgeColor({ g[1], g[2], g[3], 0.4 })
 	p.title:SetText(title)
 	A.Widgets.Color(p.title, g)
@@ -1219,7 +1220,8 @@ local function DressHandle(entry)
 	h.label:SetText(tostring(entry.label or entry.name):upper())
 	A.Widgets.Color(h.label, c)
 	local tag = h.tag
-	tag:SetFillColor({ 14 / 255, 11 / 255, 32 / 255, 0.9 })
+	local nf = A.Palette.c.nodeFill
+	tag:SetFillColor({ nf[1], nf[2], nf[3], 0.9 })
 	tag:SetEdgeColor({ c[1], c[2], c[3], 0.35 })
 	local th = math.ceil((h.label:GetStringHeight() or 10) + 6)
 	tag:SetSize(math.ceil((h.label:GetStringWidth() or 0) + 12), th)
@@ -1909,7 +1911,7 @@ end
 --- Lay the pill out round its words, which are only measurable once set.
 local function LayLockButton(b)
 	local c = A.Palette.c
-	b:SetFillColor({ 14 / 255, 11 / 255, 32 / 255, 0.85 })
+	b:SetFillColor({ c.nodeFill[1], c.nodeFill[2], c.nodeFill[3], 0.85 })
 	b:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.45 })
 	Tint(b.glyph, c.accent, 1)
 	A.Widgets.Color(b.label, c.text)

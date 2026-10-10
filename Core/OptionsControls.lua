@@ -36,9 +36,10 @@ C.GAP = 18
 C.HEAD_GAP = 14
 C.SECTION_GAP = 26
 
--- The node glass of the handoff (rgba(14,11,32,.9)): the idle fill of every
--- diamond and swatch in the window, as on the trunks.
-C.NODE_FILL = { 14 / 255, 11 / 255, 32 / 255 }
+-- The node glass of the handoff (rgba(14,11,32,.9) on Midnight): the idle fill
+-- of every diamond and swatch in the window, as on the trunks. Read through to
+-- the live skin's nodeFill, so every use follows a skin change (Joe).
+C.NODE_FILL = setmetatable({}, { __index = function(_, k) return Palette.c.nodeFill[k] end })
 
 local TOGGLE, THUMB, SEG = 22, 13, 15
 -- A desc longer than this goes in a tooltip rather than under the label: the

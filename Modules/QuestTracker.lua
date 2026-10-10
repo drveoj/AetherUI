@@ -952,7 +952,7 @@ local function Decorate(node)
 	-- The node's state (6a): outline in progress, bright outline active, green
 	-- complete, faint elsewhere; failed is ours - red, hollow. The outline takes
 	-- the quest's difficulty colour, as the quest log's chip does.
-	local glass = { 14 / 255, 11 / 255, 32 / 255 }
+	local glass = c.nodeFill
 	local band = q and (c.questDiff[q.band] or c.questDiff.difficult)
 	local diff = band and band.bg or c.textFaint
 	b.glow:Hide()

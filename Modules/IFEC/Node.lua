@@ -53,6 +53,17 @@ function Node:Title()
 	return item and item.title or nil
 end
 
+function Node:Artist()
+	local item = Current()
+	local a = item and item.artist
+	return (a and a ~= "") and a or nil
+end
+
+function Node:Paused()
+	local item, P = Current()
+	return item ~= nil and P.state == "paused"
+end
+
 --- How far through the track, 0 to 1; nil with nothing on.
 function Node:Progress()
 	local item, P = Current()
@@ -160,9 +171,13 @@ function Node:Attach()
 		open = function() Node:Open() end,
 		close = function() Node:Close() end,
 		onRightClick = function(node) Node:Menu(node.button) end,
-		-- What is playing, under the stub, and the stub filling as it plays
-		-- (Joe's option D). Paused counts: it is still where you are.
-		subtitle = function() return Node:Title() end,
+		-- What is playing (Joe): its title above the stub in place of the
+		-- name, the artist under it, and the stub filling as it plays.
+		-- Paused counts - it is still where you are - with a pause mark
+		-- before the title.
+		title = function() return Node:Title() end,
+		subtitle = function() return Node:Artist() end,
+		mark = function() return Node:Paused() and "pause" or nil end,
 		progress = function() return Node:Progress() end,
 	})
 	self.attached = true

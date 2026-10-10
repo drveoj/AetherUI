@@ -159,7 +159,6 @@ local SEMANTIC = {
 	focus  = { C(255, 180, 130), C(232, 140,  90) },
 	hostileBar = { C(255, 154, 118), C(240, 110,  90) },
 	cast   = { C(142, 200, 255), C(212, 236, 255) },
-	xp     = { C(138, 106, 224), C(185, 154, 245) },
 	-- A shield on a health bar. Gold, because the bar under it can be any class
 	-- colour - a priest's is white - and the power bar beside it is blue.
 	absorb = C(255, 210, 110),
@@ -433,6 +432,15 @@ local function Compose(name, k)
 		ifecDial  = A_(k.accent, 1),
 		ifecDisc  = A_(k.disc, 1),
 		ifecTrack = A_(k.track, 0.13),
+
+		-- THE XP HAIRLINE, the skin's rim colour a shade down to its deep accent
+		-- (Joe: it follows the theme). Midnight's lands within a few steps of
+		-- the fixed purple it had.
+		xp = { { k.border[1] * 0.92, k.border[2] * 0.92, k.border[3] * 0.92, 1 }, A_(k.deep, 1) },
+
+		-- THE NODE GLASS: a trunk's idle diamond and the options map's nodes,
+		-- the skin's own near-black. It was Midnight's on every skin.
+		nodeFill = A_(k.bg, 1),
 
 		-- The wash behind a bar, and the plate a stack count sits on. The
 		-- track white is one of the brief's six, so both follow the skin.

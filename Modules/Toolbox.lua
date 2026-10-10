@@ -906,7 +906,7 @@ FILL.settings = function(self, p)
 			row.state:SetText(L.common.on:upper())
 			W.Color(row.state, a)
 		else
-			W.Tint(row.fill, { 14 / 255, 11 / 255, 32 / 255 }, 0.85)
+			W.Tint(row.fill, c.nodeFill, 0.85)
 			W.Tint(row.rim, a, 0.45)
 			row.glow:Hide()
 			if row.icon:IsShown() and t.kind ~= "launcher" then

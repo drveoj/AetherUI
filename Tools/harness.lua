@@ -11273,9 +11273,11 @@ local MIDNIGHT_FROZEN = {
 		[5] = { 1, 0.658824, 0.360784, 1 },
 	},
 	ttTitle = { 0.941176, 0.92549, 1, 1 },
+	-- Moved on purpose, 2026-10-10: the XP hairline follows the skin now (Joe),
+	-- Midnight's rim a shade down to its deep accent. It was a fixed purple.
 	xp = {
-		[1] = { 0.541176, 0.415686, 0.878431, 1 },
-		[2] = { 0.72549, 0.603922, 0.960784, 1 },
+		[1] = { 0.541176, 0.469020, 0.847843, 1 },
+		[2] = { 0.72549, 0.643137, 0.960784, 1 },
 	},
 }
 
@@ -16822,6 +16824,23 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	cc.fontDelta = fd
 	A:Reconfigure()
 	A.Options:Close()
+end)
+
+section("theme: the trunks and the XP hairline follow the skin", function()
+	-- Joe: they should honour the theme. The idle nodes were Midnight's
+	-- near-black on every skin, and the XP purple was fixed.
+	local P = A.Palette
+	local was = A.db.profile.skin
+	A.db.profile.skin = "dawn"
+	A:Restyle()
+	local node = A.Trunk:Get("toolbox"):Node("menu")
+	local r = node and node.button.fill:GetVertexColor()
+	check(r and math.abs(r - P.skins.dawn.nodeFill[1]) < 0.001,
+		"a trunk's idle node is Dawn's own near-black on Dawn")
+	check(P.c.xp[2][1] == P.skins.dawn.accentDeep[1] and P.skins.dawn.xp[2] ~= P.skins.midnight.xp[2],
+		"and the XP hairline's colours are Dawn's, not a fixed purple")
+	A.db.profile.skin = was
+	A:Restyle()
 end)
 
 section("theme: the corner radius scales every corner but the round ones", function()
@@ -32004,13 +32023,21 @@ section("nifec: the mini-player, on the ground", function()
 	check(node.lit, "the node is lit while something plays")
 	node.button:GetScript("OnClick")(node.button, "LeftButton")
 	check(not NPn:IsOpen() and node.lit, "closed, it stays lit while the music plays")
-	check(node.button.label:GetText() == "N.I.F.E.C.", "called N.I.F.E.C. on the trunk (Joe)")
 
-	-- WHAT IS PLAYING, ON THE TRUNK (Joe's option D): the title under the
-	-- stub, and the stub filling from the node out as the track goes.
+	-- WHAT IS PLAYING, ON THE TRUNK (Joe): the title above the stub in place of
+	-- the name, the artist under it, the stub filling from the node out.
+	P.item.artist = P.item.artist or "Warlords Axe"
 	wt:Decorate("nowplaying")
-	check(node.button.sub:IsShown() and node.button.sub:GetText() == P.item.title,
-		"the track's title sits under the stub (" .. tostring(node.button.sub:GetText()) .. ")")
+	check(node.button.label:GetText() == P.item.title and not node.button.mark:IsShown(),
+		"the track's title is above the stub, in place of the name (" .. tostring(node.button.label:GetText()) .. ")")
+	check(node.button.sub:IsShown() and node.button.sub:GetText() == P.item.artist,
+		"and the artist under it (" .. tostring(node.button.sub:GetText()) .. ")")
+	P:Pause()
+	wt:Decorate("nowplaying")
+	check(node.button.label:GetText() == P.item.title and node.button.mark:IsShown(),
+		"paused, the title stays with a pause mark before it")
+	P:Resume()
+	wt:Decorate("nowplaying")
 	local frac = (P:Elapsed() or 0) / P.item.duration
 	check(node.button.lane:IsShown()
 		and math.abs(node.button.lane:GetWidth() - math.max(0.01, 80 * frac)) < 0.5,
@@ -32021,8 +32048,8 @@ section("nifec: the mini-player, on the ground", function()
 	check(node.button.lane:GetWidth() > lw, "and moves on its own as it plays")
 	A.Config:Module("questtracker").labelsOnHover = true
 	wt:Extend()
-	check(node.button.label:GetAlpha() == 0 and node.button.sub:GetAlpha() > 0.99,
-		"with labels on hover the name tucks away and the track stays")
+	check(node.button.label:GetAlpha() > 0.99 and node.button.sub:GetAlpha() > 0.99,
+		"with labels on hover the track's title and artist still show: news, not a name")
 	A.Config:Module("questtracker").labelsOnHover = false
 	wt:Extend()
 
@@ -32038,6 +32065,8 @@ section("nifec: the mini-player, on the ground", function()
 	wt:Decorate("nowplaying")
 	check(not node.button.sub:IsShown() and not node.button.lane:IsShown(),
 		"stopped, the title and the lane go")
+	check(node.button.label:GetText() == "N.I.F.E.C." and not node.button.mark:IsShown(),
+		"and the node is called N.I.F.E.C. again (Joe)")
 	P:PlayOrShuffle()
 
 	-- No content, no node, and the branch goes with it.
