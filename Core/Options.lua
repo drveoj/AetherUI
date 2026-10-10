@@ -1198,33 +1198,36 @@ local PAGE_ORDER = {
 --  lines of the newest entry, and this is the rest of it plus everything
 --  before. A history nobody can reach is a history nobody keeps.
 local function ChangelogGroup()
-	local args = {
-		-- TWO SENTENCES, TWO PHRASES, and the second one whole. Split at the
-		-- placeholder it would leave a translator holding "Numbering is %s - a
-		-- major for a" with the rest of the paragraph glued on outside, which
-		-- is the fragment this whole pass exists to stop making.
-		running = note(A.F(L.options.changelog.running,
-				A.Hi(A.F(L.common.aether_ui_s, A.version or "?")))
-			.. "\n\n"
-			.. A.F(L.options.changelog.numbering_s_major_release,
-				A.Val(L.options.changelog.major_minor_build))),
-	}
+	local args = {}
 
+	-- NEWEST FIRST, top left, in one column (Joe): history reads down.
 	local history = A.NotesHistory and A:NotesHistory() or {}
 	for i, entry in ipairs(history) do
 		local body = {}
 		for j, line in ipairs(entry.lines or {}) do
 			body[j] = "\194\183 " .. line
 		end
-		-- Keyed by index rather than by version: a version string carries dots,
-		-- and AceConfig treats the key as a path segment.
-		args["rel" .. i] = group(
-			(entry.version or "?") .. (entry.date and ("   " .. A.Dim(entry.date)) or ""),
+		-- Keyed by index rather than by version: a version string carries dots.
+		-- The date is the heading's hint, on the end of its strand.
+		args["rel" .. i] = group(entry.version or "?",
 			{ body = note(#body > 0 and table.concat(body, "\n") or "No notes.") },
 			{ inline = true })
+		args["rel" .. i].hint = entry.date
 	end
 
-	return group(L.common.what_s_new, args)
+	-- TWO SENTENCES, TWO PHRASES, and the second one whole. Split at the
+	-- placeholder it would leave a translator holding "Numbering is %s - a
+	-- major for a" with the rest of the paragraph glued on outside, which is
+	-- the fragment this whole pass exists to stop making. After the releases.
+	args.running = note(A.F(L.options.changelog.running,
+			A.Hi(A.F(L.common.aether_ui_s, A.version or "?")))
+		.. "\n\n"
+		.. A.F(L.options.changelog.numbering_s_major_release,
+			A.Val(L.options.changelog.major_minor_build)))
+
+	local g = group(L.common.what_s_new, args)
+	g.columns = 1
+	return g
 end
 
 --- Profiles, from AceDB's own calls. The choice of which to delete is held

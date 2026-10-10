@@ -133,8 +133,8 @@ end
 --  first one) and the leaves under it.
 function C.Sections(group)
 	local sections, cur = {}, nil
-	local function open(title)
-		cur = { title = title, items = {} }
+	local function open(title, hint)
+		cur = { title = title, hint = hint, items = {} }
 		sections[#sections + 1] = cur
 	end
 	local function walk(g)
@@ -144,7 +144,7 @@ function C.Sections(group)
 				open(C.Name(n))
 			elseif n.type == "group" then
 				if n.inline then
-					open(C.Name(n))
+					open(C.Name(n), n.hint)
 					walk(n)
 					cur = nil
 				end
@@ -803,7 +803,9 @@ function C.View(host, group, width)
 	local f = CreateFrame("Frame", nil, host)
 	f:SetWidth(width)
 	view.frame = f
-	local colW = math.floor((width - C.COL_GAP) / 2)
+	-- Two columns, or one where the page reads down (What's new).
+	local one = group.columns == 1
+	local colW = one and width or math.floor((width - C.COL_GAP) / 2)
 	view.colW = colW
 
 	local cols = { 0, 0 }
@@ -813,7 +815,7 @@ function C.View(host, group, width)
 		if s.title then
 			local head = A.Trunk.Head(f)
 			head:SetWidth(colW)
-			head:Set(s.title, "")
+			head:Set(s.title, s.hint or "")
 			parts[#parts + 1] = { frame = head, h = 14, gap = C.HEAD_GAP }
 			view.heads[#view.heads + 1] = head
 		end
@@ -826,7 +828,7 @@ function C.View(host, group, width)
 			end
 		end
 		for i, p in ipairs(parts) do h = h + p.h + (i < #parts and p.gap or 0) end
-		local col = (cols[2] < cols[1]) and 2 or 1
+		local col = (not one and cols[2] < cols[1]) and 2 or 1
 		local y = cols[col] > 0 and (cols[col] + C.SECTION_GAP) or 0
 		local x = (col - 1) * (colW + C.COL_GAP)
 		for _, p in ipairs(parts) do

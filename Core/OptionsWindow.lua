@@ -1244,8 +1244,47 @@ function OW:PaintPage()
 	end
 	W.Color(pg.unlock.text, c.text)
 	W.Color(pg.reset.text, { c.text[1], c.text[2], c.text[3], 0.6 })
+	-- Live only when there is something to put back.
+	local dirty = self:PageDirty()
+	pg.reset:SetAlpha(dirty and 1 or 0.35)
+	pg.reset:EnableMouse(dirty)
 	W.Tint(pg.unlock.icon, a, 1)
 	if self.page.preview then self:PaintPreview() end
+end
+
+--- A setting's default, from the config's own defaults.
+local function Default(path)
+	local d = A.Config.defaults and A.Config.defaults.profile
+	-- Not `and ... or nil`: a default of false would come out nil.
+	for i = 1, #path do
+		if type(d) == "table" then d = d[path[i]] else return nil end
+	end
+	return d
+end
+
+local function Same(a, b)
+	if type(a) == "table" and type(b) == "table" then
+		for k, v in pairs(a) do if b[k] ~= v then return false end end
+		for k, v in pairs(b) do if a[k] ~= v then return false end end
+		return true
+	end
+	return a == b
+end
+
+--- Whether anything on the sub-page in view is off its default: what Reset
+--  page has to do. Nothing, and it is dimmed (Joe: What's new has nothing
+--  to reset).
+function OW:PageDirty()
+	local v = self.view
+	if not v then return false end
+	for _, n in ipairs(C.Leaves(v.sub.group)) do
+		local path = n.arg and n.arg.path
+		if path then
+			local t, k = A.Options.Resolve(path)
+			if t and k ~= nil and not Same(t[k], Default(path)) then return true end
+		end
+	end
+	return false
 end
 
 --- Back to the module's defaults, for every setting on the page's sub-page in
@@ -1261,11 +1300,7 @@ function OW:ResetPage()
 		local path = n.arg and n.arg.path
 		if path and defaults then
 			local t, k = A.Options.Resolve(path)
-			local d = defaults
-			-- Not `and ... or nil`: a default of false would come out nil.
-			for i = 1, #path do
-				if type(d) == "table" then d = d[path[i]] else d = nil end
-			end
+			local d = Default(path)
 			if t and k ~= nil then
 				if type(d) == "table" then
 					local copy = {}
@@ -1959,7 +1994,11 @@ function OW:Open(section)
 	end
 	local f = self:Build()
 	self.tree, self.index, self.results = nil, nil, nil
+	-- Hidden before they are forgotten: a page drawn last time and dropped
+	-- from the cache still showed under the new one (Joe, in game).
+	for _, v in pairs(self.views) do v.frame:Hide() end
 	wipe(self.views)
+	self.view = nil
 	self:Place()
 	f:Show()
 	f:SetAlpha(1)

@@ -1,10 +1,11 @@
 --[[--------------------------------------------------------------------------
-	Lattice :: the Now Playing node
+	Lattice :: the N.I.F.E.C. node
 
 	The N.I.F.E.C. on the World trunk (Joe, 2026-10-07, decision 2 of the prune
 	audit): a node with the world tools, lit while something plays, whose branch
 	holds the mini-player. It took over from the Toolbox's rail chip and the
-	drawer's NOW PLAYING section.
+	drawer's NOW PLAYING section. While a track is on, its title sits under the
+	stub and the stub fills as a lane does (Joe's option D, 2026-10-10).
 
 	Right-click the node for Stop, Previous and Next. The trunk retracts in a
 	fight, so pausing mid-fight is the "Play / pause" key binding.
@@ -36,6 +37,27 @@ end
 function Node:Playing()
 	local P = Playback()
 	return (P ~= nil and P:IsPlaying()) and true or false
+end
+
+--- The track, playing or paused; nil with nothing on.
+local function Current()
+	local P = Playback()
+	if not P or not (P.state == "playing" or P.state == "paused") then return nil end
+	return P.item, P
+end
+
+function Node:Title()
+	local item = Current()
+	return item and item.title or nil
+end
+
+--- How far through the track, 0 to 1; nil with nothing on.
+function Node:Progress()
+	local item, P = Current()
+	if not item then return nil end
+	local total = item.duration or 0
+	if total <= 0 then return 0 end
+	return math.max(0, math.min(1, (P:Elapsed() or 0) / total))
 end
 
 function Node:Build()
@@ -136,8 +158,20 @@ function Node:Attach()
 		open = function() Node:Open() end,
 		close = function() Node:Close() end,
 		onRightClick = function(node) Node:Menu(node.button) end,
+		-- What is playing, under the stub, and the stub filling as it plays
+		-- (Joe's option D). Paused counts: it is still where you are.
+		subtitle = function() return Node:Title() end,
+		progress = function() return Node:Progress() end,
 	})
 	self.attached = true
+	-- The lane moves on its own, ten times a second, only while there is a
+	-- track to follow.
+	A:RegisterTicker(self, function()
+		if not Node.attached then return end
+		local live = Node:Title() ~= nil
+		if live or Node.wasLive then Trunk():Decorate("nowplaying") end
+		Node.wasLive = live
+	end)
 	self.wasUp = self:Available()
 	if not self.listening then
 		self.listening = true
@@ -151,6 +185,7 @@ end
 function Node:Detach()
 	self.attached = false
 	self:Close()
+	A:UnregisterTicker(self)
 end
 
 -- The key binding, for pausing when the trunk is retracted in a fight.

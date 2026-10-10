@@ -167,6 +167,15 @@ local function BuildNode(t, node)
 	b.junction:SetTexture(Media.texture.diamond)
 	b.junction:SetSize(JUNCTION, JUNCTION)
 	b.label = W.Text(f, "label", "RIGHT")
+	-- A node's own news under its stub, and its stub filling as a lane does:
+	-- the N.I.F.E.C.'s track and how far through it (Joe's option D).
+	b.sub = W.Text(f, "opSub", "RIGHT")
+	b.sub:SetWordWrap(false)
+	b.sub:Hide()
+	b.lane = f:CreateTexture(nil, "ARTWORK")
+	b.lane:SetTexture(Media.texture.flat)
+	b.lane:SetHeight(1.5)
+	b.lane:Hide()
 	b:SetScript("OnClick", function(_, button)
 		if button == "RightButton" then
 			if node.onRightClick then node.onRightClick(node) end
@@ -179,6 +188,30 @@ local function BuildNode(t, node)
 	b:SetScript("OnLeave", function() node.hover = nil t:Extend() end)
 	node.button = b
 	return b
+end
+
+-- The subtitle's widest, as a quest's text block is.
+local SUB_W = 170
+
+--- A node's subtitle and lane, from its owner's subtitle() and progress():
+--  text or nil, 0 to 1 or nil. Cheap enough for the owner to call on a tick.
+function Proto:Decorate(key)
+	local node = self:Node(key)
+	local b = node and node.button
+	if not (b and b.sub and b:IsShown()) then
+		if b and b.sub then b.sub:Hide() b.lane:Hide() end
+		return
+	end
+	local text = node.subtitle and node.subtitle() or nil
+	local p = node.progress and node.progress() or nil
+	local a = Palette.c.accent
+	b.sub:SetText(text or "")
+	b.sub:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.sub:GetStringWidth() or 0))))
+	W.Color(b.sub, Palette.c.textDim)
+	b.sub:SetShown(text ~= nil and text ~= "")
+	b.lane:SetVertexColor(a[1], a[2], a[3], 1)
+	b.lane:SetWidth(math.max(0.01, STUB * math.max(0, math.min(1, p or 0))))
+	b.lane:SetShown(p ~= nil)
 end
 
 --- Labels shown only over their node, or always (the default).
@@ -206,6 +239,8 @@ function Proto:Paint()
 			local lit = (node.isOpen and node.isOpen()) or (node.active and node.active())
 			lit = lit and true or false
 			node.lit = lit
+			-- Open, not merely active: a playing node's name still tucks away.
+			node.branchOpen = (node.isOpen and node.isOpen()) and true or false
 			Media:SetIcon(b.icon, type(node.icon) == "function" and node.icon() or node.icon)
 			local dot = node.badge and node.badge() and true or false
 			b.dot:SetShown(dot)
@@ -307,16 +342,29 @@ function Proto:Refresh()
 				-- Close to its node, not out at the stub's far end as the board
 				-- has it: there it read as detached from the trunk (Joe, in game).
 				b.label:SetPoint("BOTTOMRIGHT", b.stub, "TOPRIGHT", -LABEL_GAP, 4)
+				b.sub:SetJustifyH("RIGHT")
+				b.sub:ClearAllPoints()
+				b.sub:SetPoint("TOPRIGHT", b.stub, "BOTTOMRIGHT", -LABEL_GAP, -4)
+				b.lane:ClearAllPoints()
+				b.lane:SetPoint("RIGHT", b.stub, "RIGHT", 0, 0)
 			else
 				b.stub:SetPoint("LEFT", b, "RIGHT", 0, 0)
 				b.junction:SetPoint("CENTER", b.stub, "RIGHT", 0, 0)
 				b.label:SetJustifyH("LEFT")
 				b.label:ClearAllPoints()
 				b.label:SetPoint("BOTTOMLEFT", b.stub, "TOPLEFT", LABEL_GAP, 4)
+				b.sub:SetJustifyH("LEFT")
+				b.sub:ClearAllPoints()
+				b.sub:SetPoint("TOPLEFT", b.stub, "BOTTOMLEFT", LABEL_GAP, -4)
+				b.lane:ClearAllPoints()
+				b.lane:SetPoint("LEFT", b.stub, "LEFT", 0, 0)
 			end
 			b.label:SetText(tostring(type(node.label) == "function" and node.label() or node.label or ""):upper())
+			self:Decorate(node.key)
 		elseif node.kind ~= "item" then
 			b.junction:Hide()
+			b.sub:Hide()
+			b.lane:Hide()
 		end
 	end
 	local bottom = lastY and (lastY - LAST) or (-CAP / 2 - FIRST)
@@ -368,10 +416,14 @@ function Proto:Extend()
 				-- On hover only: a label and its stub show while the node is under
 				-- the cursor, or while its branch is open - the stub is what joins
 				-- the branch to its node (Joe).
-				local tucked = onHover and not (node.hover or node.lit)
+				local tucked = onHover and not (node.hover or node.branchOpen)
 				b.label:SetAlpha((self.quiet or tucked) and 0 or a)
 				b.stub:SetAlpha(tucked and 0 or a)
 				b.junction:SetAlpha(tucked and 0 or a)
+				-- A subtitle and lane are news, not names: they stay out when
+				-- the labels are tucked (Joe: what's playing, without a hover).
+				b.sub:SetAlpha(self.quiet and 0 or a)
+				b.lane:SetAlpha(a)
 			elseif node.setAlpha then
 				node.setAlpha(node, a)
 			end
@@ -647,11 +699,31 @@ end
 local Head = {}
 
 --- Its label and the hint on the strand's end ("" for none).
+--- Upper case and letter-spaced, a whole UTF-8 character at a time, with any
+--  colour escape (|cAARRGGBB, |r) passed through whole: spaced or upper-cased
+--  it stops being one and prints as text (Joe, on What's new).
+local function Spaced(s)
+	local out, i, chars = {}, 1, 0
+	while i <= #s do
+		local esc = s:match("^|c%x%x%x%x%x%x%x%x", i) or s:match("^|r", i)
+		if esc then
+			out[#out + 1] = esc
+			i = i + #esc
+		else
+			local ch = s:match("^[%z\1-\127\194-\244][\128-\191]*", i) or s:sub(i, i)
+			-- A space between characters, never beside an escape's edge.
+			out[#out + 1] = (chars > 0 and " " or "") .. ch:upper()
+			chars = chars + 1
+			i = i + #ch
+		end
+	end
+	return table.concat(out)
+end
+Trunk.Spaced = Spaced
+
 function Head:Set(label, hint)
-	-- Letter-spaced in the string: the client has no letter-spacing. A whole
-	-- UTF-8 character at a time, or a translated label breaks in half.
-	self.label:SetText((tostring(label or ""):upper()
-		:gsub("([%z\1-\127\194-\244][\128-\191]*)", "%1 "):gsub(" $", "")))
+	-- Letter-spaced in the string: the client has no letter-spacing.
+	self.label:SetText(Spaced(tostring(label or "")))
 	self.hint:SetText(hint or "")
 	self.strand:ClearAllPoints()
 	self.strand:SetPoint("LEFT", self.label, "RIGHT", 8, 0)

@@ -16870,6 +16870,46 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	A.Options:Close()
 end)
 
+section("options window: one page in view at a time", function()
+	-- Joe, in game: reopened on another page, the last session's page was
+	-- still drawn underneath it.
+	local OW, f = OpenMap("changelog")
+	A.Options:Close()
+	OpenMap("unitframes")
+	OW:Go("chat")
+	OW:Finish()
+	local shown = 0
+	for _, child in ipairs({ f.pageFrame.scroll.child:GetChildren() }) do
+		if child:IsShown() then shown = shown + 1 end
+	end
+	check(shown == 1, "only the page in view is drawn (" .. shown .. ")")
+
+	-- What's new: newest first, top left, one column; the date is the
+	-- heading's hint and its colour code survives the letter-spacing.
+	OW:Go("changelog")
+	OW:Finish()
+	local first = OW.view.heads[1]
+	check(first and first.label:GetText():find("2 . 0 . 0", 1, true) == 1,
+		"the newest release heads the page (" .. tostring(first and first.label:GetText()) .. ")")
+	check(first.hint:GetText() == A.CHANGELOG[1].date, "dated on its strand's end")
+	local xs = {}
+	for _, h in ipairs(OW.view.heads) do xs[select(4, h:GetPoint(1))] = true end
+	check(xs[0] and not xs[OW.view.colW + 36], "in one column")
+	check(A.Trunk.Spaced("a|cff112233b|r") == "A|cff112233 B|r",
+		"a colour code passes through the letter-spacing whole")
+	check(not f.pageFrame.reset:IsMouseEnabled(), "Reset page is dimmed: nothing here to reset")
+	OW:Go("chat")
+	OW:Finish()
+	local cc = A.Config:Module("chat")
+	check(not f.pageFrame.reset:IsMouseEnabled(), "and on a page at its defaults")
+	local fd = cc.fontDelta
+	cc.fontDelta = (fd or 0) + 2
+	OW:AfterWrite()
+	check(f.pageFrame.reset:IsMouseEnabled(), "and lit once something on it has changed")
+	cc.fontDelta = fd
+	A.Options:Close()
+end)
+
 section("options window: a strand's page has Size and Unbraid", function()
 	local OW, f = OpenMap()
 	Click(MapNode("bar2").button)
@@ -31925,6 +31965,27 @@ section("nifec: the mini-player, on the ground", function()
 	check(node.lit, "the node is lit while something plays")
 	node.button:GetScript("OnClick")(node.button, "LeftButton")
 	check(not NPn:IsOpen() and node.lit, "closed, it stays lit while the music plays")
+	check(node.button.label:GetText() == "N.I.F.E.C.", "called N.I.F.E.C. on the trunk (Joe)")
+
+	-- WHAT IS PLAYING, ON THE TRUNK (Joe's option D): the title under the
+	-- stub, and the stub filling from the node out as the track goes.
+	wt:Decorate("nowplaying")
+	check(node.button.sub:IsShown() and node.button.sub:GetText() == P.item.title,
+		"the track's title sits under the stub (" .. tostring(node.button.sub:GetText()) .. ")")
+	local frac = (P:Elapsed() or 0) / P.item.duration
+	check(node.button.lane:IsShown()
+		and math.abs(node.button.lane:GetWidth() - math.max(0.01, 80 * frac)) < 0.5,
+		"and the stub fills as far as the track has got (" .. string.format("%.1f", node.button.lane:GetWidth()) .. ")")
+	local lw = node.button.lane:GetWidth()
+	P.segStart = (P.segStart or GetTime()) - 30
+	wt:Decorate("nowplaying")
+	check(node.button.lane:GetWidth() > lw, "and moves on its own as it plays")
+	A.Config:Module("questtracker").labelsOnHover = true
+	wt:Extend()
+	check(node.button.label:GetAlpha() == 0 and node.button.sub:GetAlpha() > 0.99,
+		"with labels on hover the name tucks away and the track stays")
+	A.Config:Module("questtracker").labelsOnHover = false
+	wt:Extend()
 
 	-- THE KEY BINDING, for pausing while the trunk is retracted in a fight.
 	check(BINDING_NAME_LATTICE_PLAYPAUSE == "Play / pause the N.I.F.E.C.",
@@ -31933,6 +31994,12 @@ section("nifec: the mini-player, on the ground", function()
 	check(P.state == "paused" and not node.lit, "it pauses, and the node goes idle (" .. P.state .. ")")
 	Lattice_PlayPause()
 	check(P.state == "playing" and node.lit, "and starts it again")
+
+	P:Stop(true)
+	wt:Decorate("nowplaying")
+	check(not node.button.sub:IsShown() and not node.button.lane:IsShown(),
+		"stopped, the title and the lane go")
+	P:PlayOrShuffle()
 
 	-- No content, no node, and the branch goes with it.
 	node.button:GetScript("OnClick")(node.button, "LeftButton")
