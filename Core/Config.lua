@@ -425,6 +425,8 @@ Config.defaults = {
 				-- and two addons a row, as the design draws them.
 				widgetColumns = 3,
 				addonColumns  = 2,
+				-- The trunk's labels only while the cursor is over their node.
+				labelsOnHover = false,
 			},
 
 			questtracker = {
@@ -451,6 +453,9 @@ Config.defaults = {
 				-- addon's state for no reason is how you break someone's day.
 				adoptWatches   = true,
 				hideBlizzard   = true,
+				-- The World trunk's labels (Quest Log, Mail, ...) only while the
+				-- cursor is over their node.
+				labelsOnHover  = false,
 			},
 
 			-- The full log window from concept 3b, which REPLACES Blizzard's

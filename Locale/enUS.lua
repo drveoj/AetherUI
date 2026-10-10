@@ -1331,6 +1331,11 @@ L["options.tooltips.unit_anchor.desc"] =
 		.. "default anchor."
 L["options.tooltips.unit_anchor.name"] = "Anchor unit tooltips"
 
+L["options.trunk.labels_on_hover.desc"] =
+	"The trunk's node names stay hidden, and each shows while the cursor "
+		.. "is over its node."
+L["options.trunk.labels_on_hover.name"] = "Labels only on hover"
+
 L["options.unit_frames.absorb_color.name"] = "Shield colour"
 L["options.unit_frames.absorb_header"] = "Shields"
 L["options.unit_frames.capsule_pet_own_place"] =

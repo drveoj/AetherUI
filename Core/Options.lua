@@ -340,6 +340,9 @@ local function ToolboxGroup()
 			A.Hi(L.options.toolbox.unlock_frames), A.Hi(L.common.character))),
 		enabled = toggle(L.common.enabled, nil, { "modules", "toolbox", "enabled" },
 			{ defaultTrue = true }),
+		labelsOnHover = toggle(L.options.trunk.labels_on_hover.name,
+			L.options.trunk.labels_on_hover.desc, { "modules", "toolbox", "labelsOnHover" },
+			{ after = "none", onSet = function() A.Trunk:Get("toolbox"):Extend() end }),
 
 		widgetsHeader = header(L.options.toolbox.widgets_header),
 		widgetsNote = note(A.F(L.options.toolbox.widgets_note, A.Hi(L.options.toolbox.libdatabroker_data_sources))
@@ -800,6 +803,9 @@ local function QuestGroup()
 		-- On the World trunk: how many before the rest fold into "+n". The
 		-- screen's own height cuts it shorter where it must.
 		max = range(L.options.quest.max.name, L.options.quest.max.desc, at("max"), 1, 20, 1),
+		labelsOnHover = toggle(L.options.trunk.labels_on_hover.name,
+			L.options.trunk.labels_on_hover.desc, at("labelsOnHover"),
+			{ after = "none", onSet = function() A.Trunk:Get("world"):Extend() end }),
 
 		trackHeader = header(L.options.quest.track_header),
 		adoptWatches = toggle(L.options.quest.adopt_watches.name,

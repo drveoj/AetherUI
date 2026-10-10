@@ -20723,6 +20723,24 @@ do
 	fire("PLAYER_REGEN_ENABLED")
 	check(B.menu.label:GetAlpha() > 0.99, "and the labels come back after it")
 
+	-- LABELS ONLY ON HOVER (Joe, 2026-10-10): hidden, each popping out over its
+	-- node. Through the option, so the setter's own refresh is what is tested.
+	B.opt = A.Options:Build().args.toolbox.args.labelsOnHover
+	B.opt.set({ arg = B.opt.arg, type = "toggle" }, true)
+	check(B.menu.label:GetAlpha() == 0 and B.menu:GetAlpha() > 0.99,
+		"labels on hover: the nodes stay and their names go")
+	B.menu:GetScript("OnEnter")(B.menu)
+	check(B.menu.label:GetAlpha() > 0.99 and B.t:Node("widgets").button.label:GetAlpha() == 0,
+		"the cursor over a node shows its name, and only its")
+	B.menu:GetScript("OnLeave")(B.menu)
+	check(B.menu.label:GetAlpha() == 0, "and it goes with the cursor")
+	A.Trunk:Get("world"):Extend()
+	B.wq = A.Trunk:Get("world"):Node("questlog")
+	check(B.wq and B.wq.button.label:GetAlpha() > 0.99,
+		"the World trunk keeps its own setting (" .. tostring(B.wq and B.wq.button.label:GetAlpha()) .. ")")
+	B.opt.set({ arg = B.opt.arg, type = "toggle" }, false)
+	check(B.menu.label:GetAlpha() > 0.99, "and off, they are always there")
+
 	-- WHAT'S NEW: a dot at the node's top-right in the info blue while this
 	-- version's notes are unread, gone once its branch has been opened.
 	A.db.char.toolbox.newsSeen = nil

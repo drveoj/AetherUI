@@ -60,6 +60,11 @@ local FADE = 24
 local Proto = {}
 Proto.__index = Proto
 
+-- Whose settings hold a trunk's label choice (Joe, 2026-10-10: an option for
+-- the labels to hide, each popping out while the cursor is over its node).
+-- The World trunk is the quest tracker's page in the options map.
+local LABEL_OWNER = { world = "questtracker", toolbox = "toolbox" }
+
 local function ByOrder(x, y) return (x.order or 0) < (y.order or 0) end
 
 --- The room a node takes below it: an item node what its owner asks for, a
@@ -169,8 +174,18 @@ local function BuildNode(t, node)
 		end
 		t:Toggle(node.key)
 	end)
+	-- Over its node, a hidden label pops out.
+	b:SetScript("OnEnter", function() node.hover = true t:Extend() end)
+	b:SetScript("OnLeave", function() node.hover = nil t:Extend() end)
 	node.button = b
 	return b
+end
+
+--- Labels shown only over their node, or always (the default).
+function Proto:LabelsOnHover()
+	local owner = LABEL_OWNER[self.name]
+	local cfg = owner and A.Config:Module(owner)
+	return cfg and cfg.labelsOnHover and true or false
 end
 
 --- Every node's lit or idle look, from its owner's isOpen.
@@ -330,6 +345,7 @@ function Proto:Extend()
 	local e = self._travel or 1
 	local top = -CAP / 2
 	local endY = top + (self.bottom - top) * e
+	local onHover = self:LabelsOnHover()
 	f.capBottom:ClearAllPoints()
 	f.capBottom:SetPoint("CENTER", f, "TOP", 0, endY)
 	f.capBottom:SetShown(e > 0)
@@ -348,7 +364,9 @@ function Proto:Extend()
 			if node.kind ~= "item" then
 				b.stub:SetAlpha(a)
 				-- Quiet (the Toolbox trunk in a fight): nodes only, no labels.
-				b.label:SetAlpha(self.quiet and 0 or a)
+				-- On hover only: a label shows while its node is under the cursor.
+				local hidden = self.quiet or (onHover and not node.hover)
+				b.label:SetAlpha(hidden and 0 or a)
 				b.junction:SetAlpha(a)
 			elseif node.setAlpha then
 				node.setAlpha(node, a)
