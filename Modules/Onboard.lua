@@ -346,8 +346,8 @@ end
 
 --- Every stop, in order. A SET stop carries a control; a SHOW stop plays or
 --  opens something. `unlock` is the set of frames a stop unlocks for
---  dragging; `target` what the callout points at, or nothing; `anchor` a
---  fixed place for the callout instead.
+--  dragging; `target` what the callout points at, or nothing; `spot` the
+--  place on the screen to try first when there is nothing to point at.
 OB.stops = {
 	{
 		key = "spine", name = L.tour.spine.name, head = L.tour.spine.head,
@@ -405,7 +405,7 @@ OB.stops = {
 		end,
 		target = function() return nil end,
 		-- Under the window, which sits near the top: beside it there is no room.
-		anchor = { "BOTTOM", "BOTTOM", 0, 90 },
+		spot = "bottom",
 	},
 	{
 		key = "share", name = L.tour.share.name, head = L.tour.share.head,
@@ -417,18 +417,25 @@ OB.stops = {
 			OB:OnLeave(function() if LY.frame then LY.frame:Hide() end end)
 		end,
 		target = function() return nil end,
-		anchor = { "BOTTOM", "BOTTOM", 0, 90 },
+		spot = "bottom",
 	},
 }
 
 OB.COUNT = #OB.stops
 
---- Put a frame at the scale the rest of the HUD is drawn at.
+--- Put the parentless scrim at the scale the rest of the HUD is drawn at.
+--
+--  THE HUD IS UIParent's SCALE TIMES THE PROFILE'S. A frame with no parent
+--  inherits neither, so the profile's alone left out the client's UI Scale -
+--  and the whole tour drew half again too big wherever that is below one,
+--  which is most screens (Joe, 2026-10-10: "the fonts are huge").
 local function Rescale(f)
 	if not f or not f.SetScale then return end
 	local scale = (A.db and A.db.profile and A.db.profile.scale) or 1
 	if type(scale) ~= "number" or scale <= 0 then scale = 1 end
-	f:SetScale(scale)
+	local us = UIParent and UIParent:GetEffectiveScale() or 1
+	if type(us) ~= "number" or us <= 0 then us = 1 end
+	f:SetScale(scale * us)
 end
 
 -- ---------------------------------------------------------------------------
@@ -470,6 +477,8 @@ end
 --- The scrim's weight for a stop (0 the welcome); `false` takes it away.
 local function Dim(index)
 	local f = BuildScrim()
+	-- Every stop, so a UI Scale changed since the scrim was built is honoured.
+	Rescale(f)
 	local a = 0
 	if index then a = math.max(0, SCRIM_TOP - SCRIM_STEP * index) end
 	f.tint:SetVertexColor(SCRIM_RGB[1], SCRIM_RGB[2], SCRIM_RGB[3], a)
@@ -586,71 +595,181 @@ end
 -- placing the callout
 -- ---------------------------------------------------------------------------
 
---- Beside the element, and never off the screen - or at a stop's fixed place.
+--- Where a frame is on the screen, in pixels, or nil if it is not there.
+local function PixelRect(f)
+	if not (f and f.GetCenter and f.IsVisible and f:IsVisible()) then return nil end
+	local x, y = f:GetCenter()
+	if not x or not y then return nil end
+	local s = f:GetEffectiveScale() or 1
+	local w, h = (f:GetWidth() or 0) * s, (f:GetHeight() or 0) * s
+	if w <= 0 or h <= 0 then return nil end
+	x, y = x * s, y * s
+	return { l = x - w / 2, r = x + w / 2, b = y - h / 2, t = y + h / 2 }
+end
+
+--- Everything lit on the screen right now: the pieces grown so far, and the
+--  windows a stop opens. What the tour's own panels may not cover.
 --
---  MEASURED IN SCREEN PIXELS, WRITTEN BACK IN THE CALLOUT'S OWN UNITS: every
---  frame here is drawn at the profile's scale, so `cs` is taken once,
---  everything below is pixels, and the division happens at the anchors.
-local function PlaceCallout(c, frame, anchor)
-	c:ClearAllPoints()
+--  HELD IS THE TEST, NOT ALPHA: a piece grown this stop is still fading in
+--  when its callout is placed, at nothing and about to be everything.
+function OB:Lit()
+	local out = {}
+	for _, f in ipairs(self:HudFrames()) do
+		if not self:Held(f) then out[#out + 1] = PixelRect(f) end
+	end
+	local OW, LY = A.OptionsWindow, A.Layout
+	out[#out + 1] = PixelRect(OW and OW.frame)
+	out[#out + 1] = PixelRect(LY and LY.frame)
+	return out
+end
+
+--- How much of a panel centred at x, y would sit over what is lit.
+local function Covered(x, y, w, h, lit, pad)
+	local l, r, b, t = x - w / 2 - pad, x + w / 2 + pad, y - h / 2 - pad, y + h / 2 + pad
+	local area = 0
+	for _, q in ipairs(lit) do
+		local ow = math.min(r, q.r) - math.max(l, q.l)
+		local oh = math.min(t, q.t) - math.max(b, q.b)
+		if ow > 0 and oh > 0 then area = area + ow * oh end
+	end
+	return area
+end
+
+--- Places on the screen worth trying, as panel centres in pixels.
+local function Spots(sw, sh, ch, us)
+	return {
+		middle = { x = sw / 2, y = sh / 2 },
+		top    = { x = sw / 2, y = sh },
+		bottom = { x = sw / 2, y = 90 * us + ch / 2 },
+		left   = { x = 0, y = sh / 2 },
+		right  = { x = sw, y = sh / 2 },
+		topleft = { x = 0, y = sh }, topright = { x = sw, y = sh },
+		bottomleft = { x = 0, y = 0 }, bottomright = { x = sw, y = 0 },
+	}
+end
+
+--- Put a panel at the first of `cands` that covers nothing lit - or, failing
+--  that, the one that covers least. Every candidate is pulled inside the
+--  screen and under the skip line's band first, then judged where it landed.
+--
+--  MEASURED IN SCREEN PIXELS, WRITTEN BACK IN THE PANEL'S OWN UNITS: every
+--  frame here is drawn at the HUD's scale, so `cs` is taken once, everything
+--  below is pixels, and the division happens at the anchor.
+local function Settle(p, cands, lit)
+	local cs = p:GetEffectiveScale() or 1
+	if cs <= 0 then cs = 1 end
+	local sw = (UIParent:GetWidth() or 0) * (UIParent:GetEffectiveScale() or 1)
+	local sh = (UIParent:GetHeight() or 0) * (UIParent:GetEffectiveScale() or 1)
+	local pw, ph = (p:GetWidth() or 0) * cs, (p:GetHeight() or 0) * cs
+
+	p:ClearAllPoints()
+	if sw <= 0 or sh <= 0 or #cands == 0 then
+		p:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+		return nil
+	end
+
+	local m = 16 * cs
+	local ceiling = sh - ph / 2 - m - (SKIP_TOP + SKIP_H) * cs
+	local best, bestArea
+	for _, cand in ipairs(cands) do
+		local x = math.max(pw / 2 + m, math.min(sw - pw / 2 - m, cand.x))
+		local y = math.max(ph / 2 + m, math.min(ceiling, cand.y))
+		local area = Covered(x, y, pw, ph, lit, 8 * cs)
+		if not bestArea or area < bestArea then
+			best, bestArea = { cand = cand, x = x, y = y }, area
+			if area <= 0 then break end
+		end
+	end
+
+	p:SetPoint("CENTER", UIParent, "BOTTOMLEFT", best.x / cs, best.y / cs)
+	return { x = best.x, y = best.y, w = pw, h = ph, sw = sw, sh = sh,
+		scale = cs, side = best.cand.side, covered = bestArea,
+		wantX = best.cand.x, wantY = best.cand.y }
+end
+
+--- Beside the element if that covers nothing, else wherever on the screen is
+--  clear - never over the HUD it is talking about.
+--
+--  THE SIDE AWAY FROM THE MIDDLE WAS THE WHOLE RULE ONCE, and on the spine it
+--  put the callout for the target square on the player frame (Joe, 2026-10-10:
+--  "completely occluding the things behind it"). Now each side is tried in
+--  turn and the first one clear of everything lit wins.
+local function PlaceCallout(c, frame, spot)
 	c.arrow:Hide()
 	c.__aetherAt = nil
 
 	local cs = c:GetEffectiveScale() or 1
 	if cs <= 0 then cs = 1 end
-
-	if anchor then
-		local us = UIParent:GetEffectiveScale() or 1
-		c:SetPoint(anchor[1], UIParent, anchor[2], anchor[3] * us / cs, anchor[4] * us / cs)
-		return
-	end
-
-	local sw = (UIParent:GetWidth() or 0) * (UIParent:GetEffectiveScale() or 1)
-	local sh = (UIParent:GetHeight() or 0) * (UIParent:GetEffectiveScale() or 1)
+	local us = UIParent:GetEffectiveScale() or 1
+	local sw = (UIParent:GetWidth() or 0) * us
+	local sh = (UIParent:GetHeight() or 0) * us
 	local cw, ch = (c:GetWidth() or 0) * cs, (c:GetHeight() or 0) * cs
+	local spots = Spots(sw, sh, ch, us)
 
-	if not frame or not frame.GetCenter or not frame:GetCenter()
-		or sw <= 0 or sh <= 0 then
-		c:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-		return
+	local cands = {}
+	local fr = frame and PixelRect(frame)
+	local fx, fy
+	if fr then
+		fx, fy = (fr.l + fr.r) / 2, (fr.b + fr.t) / 2
+		local gap = CALLOUT_GAP * cs
+		local right = { side = "right", x = fr.r + gap + cw / 2, y = fy }
+		local left  = { side = "left",  x = fr.l - gap - cw / 2, y = fy }
+		local above = { side = "above", x = fx, y = fr.t + gap + ch / 2 }
+		local below = { side = "below", x = fx, y = fr.b - gap - ch / 2 }
+		-- Toward the open middle first, both ways.
+		if fx < sw / 2 then cands[1], cands[2] = right, left
+		else cands[1], cands[2] = left, right end
+		if fy < sh / 2 then cands[3], cands[4] = above, below
+		else cands[3], cands[4] = below, above end
+	end
+	if spot and spots[spot] then cands[#cands + 1] = spots[spot] end
+	for _, k in ipairs({ "top", "bottom", "topleft", "topright", "left", "right",
+		"bottomleft", "bottomright", "middle" }) do
+		cands[#cands + 1] = spots[k]
 	end
 
-	local fs = frame:GetEffectiveScale() or 1
-	local fx, fy = frame:GetCenter()
-	fx, fy = fx * fs, fy * fs
-	local halfW = ((frame:GetWidth() or 0) * fs) / 2
+	local at = Settle(c, cands, OB:Lit())
+	-- WHERE IT WENT, IN NUMBERS, kept on the frame: the arithmetic is the thing
+	-- that has gone wrong before, and the harness reads the sum.
+	c.__aetherAt = at
+	if not at then return end
+	at.onRight = at.side == "right"
 
-	local onRight = fx < sw / 2
-	local gap = CALLOUT_GAP * cs
-	local x = onRight and (fx + halfW + gap + cw / 2)
-		or (fx - halfW - gap - cw / 2)
-	local y = fy
-
-	-- INSIDE THE SCREEN, both ways, and under the skip line's band.
-	local m = 16 * cs
-	local wantX = x
-	local ceiling = sh - ch / 2 - m - (SKIP_TOP + SKIP_H) * cs
-	x = math.max(cw / 2 + m, math.min(sw - cw / 2 - m, x))
-	y = math.max(ch / 2 + m, math.min(ceiling, y))
-
-	c:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / cs, y / cs)
-
-	-- WHERE IT WENT, IN NUMBERS, kept on the frame: the arithmetic above is the
-	-- thing that has gone wrong before, and the harness reads the sum.
-	c.__aetherAt = { x = x, y = y, w = cw, h = ch,
-		sw = sw, sh = sh, onRight = onRight, wantX = wantX, scale = cs }
-
-	-- THE ARROW FOLLOWS THE ELEMENT, and only while it can reach it.
-	if math.abs(x - wantX) > cw / 2 then return end
-	local dy = fy - y
-	if math.abs(dy) > ch / 2 - ARROW * cs then return end
-
-	local edge = onRight and "LEFT" or "RIGHT"
+	-- THE ARROW FOLLOWS THE ELEMENT, and only while it can reach it: on the
+	-- side facing it, slid along that edge to stay level, and not at all once
+	-- the screen's edge has pushed the callout off it.
+	if not (fr and at.side) then return end
+	local edge, ox, oy
+	if at.side == "right" or at.side == "left" then
+		if math.abs(at.x - at.wantX) > cw / 2 then return end
+		oy = fy - at.y
+		if math.abs(oy) > ch / 2 - ARROW * cs then return end
+		edge, ox = at.side == "right" and "LEFT" or "RIGHT", 0
+	else
+		if math.abs(at.y - at.wantY) > ch / 2 then return end
+		ox = fx - at.x
+		if math.abs(ox) > cw / 2 - (ARROW + 20) * cs then return end
+		edge, oy = at.side == "above" and "BOTTOM" or "TOP", 0
+	end
 	c.arrow:ClearAllPoints()
-	c.arrow:SetPoint("CENTER", c, edge, 0, dy / cs)
-	c.__aetherAt.edge, c.__aetherAt.dy = edge, dy
+	c.arrow:SetPoint("CENTER", c, edge, ox / cs, oy / cs)
+	at.edge, at.dx, at.dy = edge, ox, oy
 	W.Tint(c.arrow, Palette.c.dialogFill, 1)
 	c.arrow:Show()
+end
+
+--- The welcome and finish card: in the middle unless that covers the HUD.
+local function PlaceCard(c)
+	local cs = c:GetEffectiveScale() or 1
+	if cs <= 0 then cs = 1 end
+	local us = UIParent:GetEffectiveScale() or 1
+	local spots = Spots((UIParent:GetWidth() or 0) * us, (UIParent:GetHeight() or 0) * us,
+		(c:GetHeight() or 0) * cs, us)
+	local cands = {}
+	for _, k in ipairs({ "middle", "top", "bottom", "left", "right" }) do
+		cands[#cands + 1] = spots[k]
+	end
+	c.__aetherAt = Settle(c, cands, OB:Lit())
 end
 
 --- Tall enough for what is in it, and no taller.
@@ -1293,7 +1412,7 @@ function OB:Go(index)
 	SizeCallout(c)
 	local target = stop.target and stop.target()
 	if target and not (target.IsVisible and target:IsVisible()) then target = nil end
-	PlaceCallout(c, target, stop.anchor)
+	PlaceCallout(c, target, stop.spot)
 
 	c:Show()
 	c:SetAlpha(0)
@@ -1562,6 +1681,7 @@ function OB:ShowWelcome()
 	c.alt.label:SetWidth(0)
 	c.alt:SetWidth(math.ceil(c.alt.label:GetStringWidth() or 0) + 4)
 
+	PlaceCard(c)
 	c:Show()
 end
 
@@ -1610,6 +1730,7 @@ function OB:ShowFinish()
 	W.Color(c.go.label, Palette.c.text)
 	c.go:SetScript("OnClick", function() OB:Finish() end)
 	c.alt:Hide()
+	PlaceCard(c)
 	c:Show()
 end
 

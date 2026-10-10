@@ -2104,7 +2104,10 @@ end
 --- The parked row, laid again: after any config change and on every unlock.
 function AB:RefreshParked()
 	local park = AB.park
-	local list = A.Movers.unlocked and Hidden() or {}
+	-- A FULL UNLOCK ONLY: one that frees a chosen few (the tour's spine stops,
+	-- the map's Shift-click) is not placing bars, and the strip was a row of
+	-- bars on a screen the tour had not grown any onto yet.
+	local list = (A.Movers.unlocked and not A.Movers.only) and Hidden() or {}
 	if #list == 0 and not AB.parking then
 		if park then park:Hide() end
 		return

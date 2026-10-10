@@ -691,9 +691,13 @@ local function DrawBonds()
 	end
 	local c = A.Palette.c.accent
 
+	-- ONLY THE UNLOCKED FEW'S, when it is a few: a bond from a frame nobody can
+	-- drag is a line to something the tour has not even grown yet (Joe's
+	-- screenshot, 2026-10-10: the bars' bonds hanging under a bare spine).
+	local only = Movers.only
 	local n = 0
 	for _, e in pairs(Movers.registry) do
-		local pf = not e.pairLead and ParentFrame(e)
+		local pf = not e.pairLead and not (only and not only[e.name]) and ParentFrame(e)
 		if pf then
 			n = n + 1
 			local l = bonds.lines[n] or bonds:CreateLine(nil, "ARTWORK")
@@ -710,7 +714,8 @@ local function DrawBonds()
 
 	local k = 0
 	for name, nf in pairs(Movers.nodes) do
-		if Movers.registry[Movers.nodeOwner[name]] then
+		local owner = Movers.nodeOwner[name]
+		if Movers.registry[owner] and not (only and not only[owner]) then
 			k = k + 1
 			local t = bonds.nodes[k] or bonds:CreateTexture(nil, "OVERLAY")
 			bonds.nodes[k] = t

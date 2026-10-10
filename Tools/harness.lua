@@ -35090,6 +35090,32 @@ do
 		"the spine's pair is unlocked to drag, and nothing else")
 	check(not (A.Movers.lockButton and A.Movers.lockButton:IsShown()),
 		"with no LOCK pill")
+	-- AND NO BONDS TO WHAT HAS NOT GROWN. Seen in game: the bars' bond lines
+	-- hanging under a bare spine, and the parked strip with them.
+	do
+		local function stray(only)
+			local n = 0
+			local bonds = A.Movers.__bonds()
+			for _, l in ipairs((bonds and bonds.lines) or {}) do
+				if l:IsShown() and l.child and not (only and only[l.child]) then n = n + 1 end
+			end
+			for _, t in ipairs((bonds and bonds.nodes) or {}) do
+				local owner = t.node and A.Movers.nodeOwner[t.node]
+				if t:IsShown() and owner and not (only and only[owner]) then n = n + 1 end
+			end
+			return n
+		end
+		local ABm = A:GetModule("actionbars")
+		check(stray(A.Movers.only) == 0 and not (ABm.park and ABm.park:IsShown()),
+			"and no bond line, junction or parked strip for anything not unlocked ("
+			.. stray(A.Movers.only) .. ")")
+		-- The yardstick: a full unlock does draw those.
+		A.Movers:Unlock(nil, true)
+		check(stray({ player = true, target = true }) > 0,
+			"which a full unlock does draw (" .. stray({ player = true, target = true }) .. ")")
+		OB:Go(1)
+		grow()
+	end
 	check(OB.scrim.dim < 0.78, "and the world a step lighter (" .. tostring(OB.scrim.dim) .. ")")
 	check(A.db.char.onboard.stopIndex == 1, "the stop reached is written down as it is reached")
 
@@ -35552,6 +35578,76 @@ do
 		end
 		A.db.profile.scale = wasScale
 		OB:OnConfigChanged()
+	end
+
+	-- AND THE CLIENT'S UI SCALE IS IN IT TOO. The HUD is UIParent's scale
+	-- times the profile's; the parentless scrim took only the profile's, so on
+	-- a screen at a UI Scale of .64 the tour drew half again the size of the
+	-- frames it was describing (Joe, 2026-10-10: "the fonts are huge"). Every
+	-- check above runs with UIParent at one, where the two are the same.
+	do
+		local uiWas = UIParent:GetScale()
+		UIParent:SetScale(0.64)
+		OB:Go(1)
+		local UFm = A:GetModule("unitframes")
+		check(math.abs((OB.callout:GetEffectiveScale() or 0)
+			- (UFm.player:GetEffectiveScale() or 0)) < 0.001,
+			"at a UI Scale of .64 the callout is drawn at the player frame's scale (" ..
+			string.format("%.3f vs %.3f", OB.callout:GetEffectiveScale() or 0,
+			UFm.player:GetEffectiveScale() or 0) .. ")")
+		UIParent:SetScale(uiWas)
+		OB:Go(1)
+	end
+
+	-- AND IT NEVER SITS ON WHAT IS LIT.
+	--
+	-- Reported from the game: the target is right of centre, so the callout
+	-- went to its left - squarely over the player frame on the other end of
+	-- the spine. Here the probe is the target and a second frame is the
+	-- player, exactly where that rule put the callout.
+	do
+		local player = CreateFrame("Frame", nil, UIParent)
+		player:SetSize(390, 70)
+		probe:SetSize(390, 70)
+		probe:SetGeom({ cx = 1200, cy = 600 })
+		player:SetGeom({ cx = 700, cy = 600 })
+		local wasHud = OB.HudFrames
+		OB.HudFrames = function() return { probe, player } end
+
+		OB:Go(1)
+		local at = OB.callout.__aetherAt
+		check(at and at.covered == 0,
+			"a callout for the target does not cover the player frame beside it (" ..
+			tostring(at and at.side) .. ", " .. tostring(at and at.covered) .. " px covered)")
+		check(at and at.side == "right" and OB.callout.arrow:IsShown(),
+			"and it goes to the target's free side, still pointing at it (" ..
+			tostring(at and at.side) .. ")")
+
+		-- NOWHERE BESIDE IT FREE: the spine across the whole width. It goes
+		-- above or below, and the arrow turns to face it.
+		player:SetSize(1900, 70)
+		player:SetGeom({ cx = 960, cy = 600 })
+		OB:Go(1)
+		at = OB.callout.__aetherAt
+		check(at and at.covered == 0 and (at.side == "above" or at.side == "below"),
+			"with the spine across the screen it goes above or below it (" ..
+			tostring(at and at.side) .. ", " .. tostring(at and at.covered) .. ")")
+		check(OB.callout.arrow:IsShown() and (at.edge == "TOP" or at.edge == "BOTTOM"),
+			"and the arrow points up or down at it (" .. tostring(at and at.edge) .. ")")
+
+		-- AND THE WELCOME CARD moves off a frame in the middle of the screen.
+		player:SetSize(390, 70)
+		player:SetGeom({ cx = 960, cy = 540 })
+		OB:ShowWelcome()
+		local card = OB.card.__aetherAt
+		check(card and card.covered == 0,
+			"the welcome card does not sit on your frame either (" ..
+			tostring(card and card.covered) .. " px covered)")
+
+		OB.HudFrames = wasHud
+		probe:SetSize(200, 60)
+		player:Hide()
+		OB:Go(1)
 	end
 
 	-- AND THE SKIP LINE IS NEVER UNDER THE CALLOUT.
