@@ -14733,6 +14733,28 @@ do
 	QT:Refresh()
 	check(not more.button:IsShown() and QT.hidden == 0, "the max restored, every quest is back and the +n goes")
 
+	-- A TITLE IS NOT STUCK AT A LENGTH IT ONCE HAD. Joe, in game: titles cut to
+	-- "Samo..." and "The W...". A width set by one paint clamped what the next
+	-- paint measured, so a short measurement stuck.
+	do
+		local node
+		for _, n in ipairs(QT.nodes or {}) do
+			if n.quest and n.holder and n.button:IsShown() then node = n break end
+		end
+		local was = node.quest.title
+		node.quest.title = "Sa"
+		A.Trunk:Get("world"):Paint()
+		node.quest.title = "Samophlange Manual Page"
+		A.Trunk:Get("world"):Paint()
+		local full = node.holder.title:GetWidth()
+		node.holder.title:SetWidth(0)
+		local want = math.min(node.holder.title:GetStringWidth(), 240)
+		check(math.abs(full - want) < 1,
+			"a long title after a short one gets its own width (" .. string.format("%.0f of %.0f", full, want) .. ")")
+		node.quest.title = was
+		A.Trunk:Get("world"):Paint()
+	end
+
 	-- The screen's own height: a short screen holds fewer. 560: with the map in
 	-- the corner the trunk has room for every quest at 700, and at 480 the
 	-- four world tools under the quests leave no room for even the +n node.

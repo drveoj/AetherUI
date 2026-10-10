@@ -205,6 +205,9 @@ function Proto:Decorate(key)
 	local text = node.subtitle and node.subtitle() or nil
 	local p = node.progress and node.progress() or nil
 	local a = Palette.c.accent
+	-- Unclamped before it is measured: a width left by the last track clamps
+	-- what the next one measures.
+	b.sub:SetWidth(0)
 	b.sub:SetText(text or "")
 	b.sub:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.sub:GetStringWidth() or 0))))
 	W.Color(b.sub, Palette.c.textDim)

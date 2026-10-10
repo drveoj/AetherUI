@@ -853,6 +853,7 @@ function Tail.Draw()
 	t.count:SetText(Tail.Count(q, f and f.line) or "")
 	t.count:SetAlpha(1)
 	W.Color(t.count, c.accent)
+	t.title:SetWidth(0)   -- unclamped before it is measured; see Decorate
 	t.title:SetText(q.title or "")
 	W.Color(t.title, c.text)
 	t.title:SetWidth(math.max(1, math.min(math.ceil(t.title:GetStringWidth() or 0), TEXT_W)))
@@ -898,7 +899,10 @@ local function Decorate(node)
 	local left = (Trunk().side or -1) < 0
 	local just = left and "RIGHT" or "LEFT"
 
-	-- The words first, so they can be measured.
+	-- The words first, so they can be measured - with the last width taken off
+	-- first: a width set by the last paint clamps what the string measures,
+	-- so a title once measured short stayed cut to a few letters (Joe).
+	h.title:SetWidth(0)
 	h.title:SetText(q and q.title or node.text or "")
 	local tag
 	if q and q.complete then tag = L.trunk.turn_in
@@ -913,6 +917,7 @@ local function Decorate(node)
 	local lines = Expanded(q) and q.lines or {}
 	for i, line in ipairs(lines) do
 		local fs = HolderLine(h, i)
+		fs:SetWidth(0)
 		fs:SetText(line.text)
 		W.Color(fs, line.done and c.health[1] or (line.finished and c.textFaint or c.textDim))
 		local lw = math.min(math.ceil(fs:GetStringWidth() or 0), TEXT_W)
