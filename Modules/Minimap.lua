@@ -836,10 +836,11 @@ function MM:OnEnable()
 	self:HideBlizzard()
 	self:AnchorAll()
 
-	-- 6a's place: the disc's centre 110 in from the right edge and 230 down,
-	-- whatever its size, with the World trunk under its pill.
+	-- The top-right corner: the disc's centre 124 in and 124 down, one field
+	-- unit clear of both edges past its rim (Joe, over 6a's 110, 230), with
+	-- the World trunk under its pill.
 	A.Movers:Register("minimap", self.frame,
-		{ point = "CENTER", relPoint = "TOPRIGHT", x = -110, y = -230 }, "Minimap",
+		{ point = "CENTER", relPoint = "TOPRIGHT", x = -124, y = -124 }, "Minimap",
 		-- Dropped on the other half of the screen, the trunk's stubs turn round.
 		{ onPlaced = function() A.Trunk:Get("world"):Refresh() end })
 	A.Fader:Register(self.frame, {})

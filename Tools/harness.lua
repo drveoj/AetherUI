@@ -14813,13 +14813,12 @@ do
 	QT:Refresh()
 	check(not more.button:IsShown() and QT.hidden == 0, "the max restored, every quest is back and the +n goes")
 
-	-- The screen's own height: a short screen holds fewer. 700, near the
-	-- shortest UIParent the client gives (768 at the largest UI scale is about
-	-- 668): at 480 the minimap at 6a's place and the four world tools under
-	-- the quests leave no room for even the +n node.
+	-- The screen's own height: a short screen holds fewer. 560: with the map in
+	-- the corner the trunk has room for every quest at 700, and at 480 the
+	-- four world tools under the quests leave no room for even the +n node.
 	local w, h = UIParent:GetWidth(), UIParent:GetHeight()
-	UIParent:SetSize(w, 700)
-	UIParent:SetGeom({ cx = w / 2, cy = 350, left = 0, right = w, bottom = 0, top = 700 })
+	UIParent:SetSize(w, 560)
+	UIParent:SetGeom({ cx = w / 2, cy = 280, left = 0, right = w, bottom = 0, top = 560 })
 	A:Reconfigure()
 	check(QT.hidden > 0 and more.button:IsShown(),
 		"on a short screen the quests that do not fit fold into +n (" .. QT.hidden .. " hidden)")
@@ -18353,10 +18352,11 @@ do
 				"and the glass measured is the panel's own anchoring: " .. l .. " either side, "
 				.. b .. " below" .. say(tl and tl.x, br and br.x, br and br.y))
 		end
-		-- 6a's minimap: the disc centred 110 in from the right and 230 down,
-		-- with the World trunk under its pill and every node on the screen.
-		check(R.minimap and near(cx(R.minimap), 1810) and near(cy(R.minimap), 230),
-			"the minimap's centre is at 1810, 230 (6a)" .. say(cx(R.minimap), cy(R.minimap)))
+		-- The minimap in the corner: the disc centred 124 in from the right and
+		-- 124 down (Joe, over 6a's 110, 230), with the World trunk under its
+		-- pill and every node on the screen.
+		check(R.minimap and near(cx(R.minimap), 1796) and near(cy(R.minimap), 124),
+			"the minimap's centre is at 1796, 124" .. say(cx(R.minimap), cy(R.minimap)))
 		do
 			local t = A.Trunk:Get("world")
 			local low = rect(t.frame)
@@ -19444,9 +19444,13 @@ do
 	T.win = T.QL.win
 	T.wr, T.wy = T.M.PointAt(T.win, "RIGHT")
 	T.ny = select(2, T.M.PointAt(T.q.button, "CENTER"))
-	check(T.win:IsShown() and T.near(T.wr, T.sx - 5.5) and T.near(T.wy, T.ny),
-		"clicked, the log opens with its edge at the stub's end, level with the node"
-		.. T.say(T.wr, T.sx - 5.5, T.wy, T.ny))
+	-- Level with the node, unless that would put its top off the screen: the
+	-- node is high now the map sits in the corner, and a branch is kept on.
+	T.wt = select(2, T.M.PointAt(T.win, "TOP"))
+	check(T.win:IsShown() and T.near(T.wr, T.sx - 5.5)
+		and (T.near(T.wy, T.ny) or T.near(T.wt, UIParent:GetHeight() - 8)),
+		"clicked, the log opens with its edge at the stub's end, level with the node or held on the screen"
+		.. T.say(T.wr, T.sx - 5.5, T.wy, T.ny, T.wt))
 	check(T.q.lit and T.q.button.glow:IsShown() and T.q.button.junction:IsShown(),
 		"and the node is lit, a junction at the stub's end")
 	T.q.button:GetScript("OnClick")(T.q.button)
