@@ -7542,7 +7542,7 @@ local FILES = {
 	"Modules/IFEC/Registry.lua", "Modules/IFEC/Content.lua",
 	"Modules/IFEC/Playback.lua", "Modules/IFEC/Player.lua",
 	"Modules/IFEC/Library.lua", "Modules/IFEC/Mini.lua",
-	"Modules/IFEC/Reader.lua",
+	"Modules/IFEC/Node.lua", "Modules/IFEC/Reader.lua",
 }
 for _, f in ipairs(FILES) do
 	load(f)
@@ -32984,17 +32984,18 @@ section("nifec: the mini-player, on the ground", function()
 
 	UIParent:SetSize(1365, 768)
 	A.db.profile.scale = 0.71
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
+	-- THE WORLD TRUNK'S NOW PLAYING NODE (decision 2 of the prune audit). It
+	-- took over from the Toolbox's rail chip and drawer section.
+	local NPn = A.IFEC.Node
+	local wt = A.Trunk:Get("world")
+	local node = wt:Node("nowplaying")
 
 	-- DORMANT IS ABSENT, not empty - the same answer the console gives, because
-	-- it is the same question. A NOW PLAYING heading over a player with nothing
-	-- to play is a section you go looking for and find broken.
-	TBm:LayoutContent()
-	check(not TBm:HasPlayer(), "with no content installed there is no player")
-	check(not TBm.rail.play:IsShown(), "and no transport on the rail")
-	check(not (TBm.content.now and TBm.content.now:IsShown()),
-		"and no section at the foot of the drawer")
+	-- it is the same question.
+	check(node ~= nil and not node.button:IsShown(),
+		"with no content installed there is no Now Playing node on the trunk")
+	check(TBm.rail.play == nil and TBm.content.now == nil,
+		"and the Toolbox carries no player: no rail chip, no drawer section")
 
 	local season = { packId = "S01", apiVersion = 1, seasonIndex = 1,
 		displayName = "Season One", items = {
@@ -33012,45 +33013,27 @@ section("nifec: the mini-player, on the ground", function()
 		} }
 	R:Register(season)
 
-	TBm:Layout()
-	TBm:LayoutContent()
-	check(TBm:HasPlayer(), "installing a season gives the Toolbox a player")
-	check(TBm.rail.play:IsShown(), "with a transport on the rail, reachable"
-		.. " with the drawer shut")
-	local mini = TBm.content.now
-	check(mini ~= nil and mini:IsShown(), "and a section at the foot of the drawer")
-
-	-- IT FITS. The drawer cuts its lists to fit rather than growing, and a new
-	-- fixed-cost section at the bottom is exactly the thing that pushes them
-	-- through the floor - which is the one failure this file keeps having.
-	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
-		"and the whole drawer still fits inside the panel ("
-		.. string.format("%.0f", TBm._contentHeight) .. " of "
-		.. string.format("%.0f", TBm.panel:GetHeight()) .. ")")
-
-	-- AND IT FITS AT EVERY SCALE AND EVERY DOCK. The vertical panel clamps to a
-	-- proportion of the screen, so at scale 1.0 it is a third shorter than at
-	-- the design's 0.71 - and a fixed-cost section added at the bottom is
-	-- exactly what pushes the lists that give way through the floor. The flat
-	-- panel is the other shape: a sixth column, on a drawer whose short axis is
-	-- the one the section has to fit in.
-	for _, sc in ipairs({ 0.71, 1 }) do
-		for _, edge in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
-			A.db.profile.scale = sc
-			TBm:SetDock(edge)
-			TBm:SetOpen(true, true)
-			TBm:RefreshWidgets(); TBm:RefreshTiles()
-			TBm:RefreshAddons(); TBm:RefreshMicro()
-			check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
-				("at scale %s docked %s the drawer with a player still fits (%.0f of %.0f)")
-				:format(sc, edge, TBm._contentHeight, TBm.panel:GetHeight()))
+	check(node.button:IsShown(), "installing a season puts the Now Playing node on the trunk")
+	check(node.order > wt:Node("calendar").order, "below Calendar, with the world tools")
+	check(not node.lit, "unlit with nothing playing")
+	node.button:GetScript("OnClick")(node.button, "LeftButton")
+	local mini = M.frame
+	check(NPn:IsOpen() and mini ~= nil and mini:GetParent() == NPn.panel and mini:IsShown(),
+		"clicked, its branch opens holding the mini-player")
+	do
+		-- 5.5 of the trunk's own units, which are at the HUD scale.
+		local gap = 5.5 * wt.frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+		local edge, want
+		if wt.side < 0 then
+			edge, want = A.Movers.PointAt(NPn.panel, "RIGHT"), A.Movers.PointAt(node.button.stub, "LEFT") - gap
+		else
+			edge, want = A.Movers.PointAt(NPn.panel, "LEFT"), A.Movers.PointAt(node.button.stub, "RIGHT") + gap
 		end
+		check(edge and want and math.abs(edge - want) < 0.5,
+			"beside the stub like every branch (" .. tostring(edge) .. " vs " .. tostring(want) .. ")")
 	end
-	A.db.profile.scale = 0.71
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-	TBm:LayoutContent()
-	mini = TBm.content.now
+	check(NPn.panel:GetHeight() >= M.HEIGHT, "and tall enough to hold it ("
+		.. tostring(NPn.panel:GetHeight()) .. ")")
 
 	-- SILENCE HAS SOMETHING TO SAY. A blank line where a title goes reads as a
 	-- player that failed rather than one that is waiting to be told.
@@ -33081,28 +33064,29 @@ section("nifec: the mini-player, on the ground", function()
 			"with the artist on it (" .. tostring(mini.meta:GetText()) .. ")")
 	end
 
-	-- THE RAIL CHIP IS THE SAME TRANSPORT, and the only thing on screen saying
-	-- anything is playing at all with the drawer shut.
-	TBm.rail.play:GetScript("OnClick")(TBm.rail.play)
-	check(P.state == "paused", "the rail chip pauses it (" .. P.state .. ")")
-	TBm.rail.play:GetScript("OnClick")(TBm.rail.play)
-	check(P.state == "playing", "and starts it again")
+	-- LIT WHILE IT PLAYS, open or not: the only thing on screen saying anything
+	-- is playing with the branch shut.
+	check(node.lit, "the node is lit while something plays")
+	node.button:GetScript("OnClick")(node.button, "LeftButton")
+	check(not NPn:IsOpen() and node.lit, "closed, it stays lit while the music plays")
 
-	-- THE RAIL, IN ORDER. The two settled controls sit at the far end together:
-	-- the way to the options, and the way to stop the music.
-	do
-		-- CHECKED ON THE ANCHORS, which is what the layout actually decides.
-		local _, playRel = TBm.rail.play:GetPoint()
-		check(playRel == TBm.rail.gear,
-			"the transport sits immediately above the gear")
+	-- THE KEY BINDING, for pausing while the trunk is retracted in a fight.
+	check(BINDING_NAME_LATTICE_PLAYPAUSE == "Play / pause the N.I.F.E.C.",
+		"there is a Play / pause binding")
+	Lattice_PlayPause()
+	check(P.state == "paused" and not node.lit, "it pauses, and the node goes idle (" .. P.state .. ")")
+	Lattice_PlayPause()
+	check(P.state == "playing" and node.lit, "and starts it again")
 
-		R:Reset()
-		TBm:Layout()
-		check(not TBm.rail.play:IsShown(), "and with no content there is no transport on the rail")
-		R:Register(season)
-		TBm:Layout()
-		TBm:LayoutContent()
-	end
+	-- No content, no node, and the branch goes with it.
+	node.button:GetScript("OnClick")(node.button, "LeftButton")
+	R:Reset()
+	check(not node.button:IsShown() and not NPn:IsOpen(),
+		"content gone, the node and its branch go")
+	R:Register(season)
+	check(node.button:IsShown(), "and come back with it")
+	node.button:GetScript("OnClick")(node.button, "LeftButton")
+	mini = M.frame
 
 	-- GOSSIP IS READ, NOT PLAYED. It has no audio and no duration, so it has no
 	-- place in a running order - it used to be queued and stepped straight past,
@@ -33135,54 +33119,39 @@ section("nifec: the mini-player, on the ground", function()
 
 	-- AND THE TOOLTIP COMES UP IN FRONT. It is a shared object anything can
 	-- reparent and this addon does exactly that - the console moves it out of
-	-- UIParent for a flight so it can be read over a hidden interface. Left
-	-- somewhere else it draws under the chat log, which is where it was found.
+	-- UIParent for a flight. Left somewhere else it draws under the chat log.
 	do
-		local chip = TBm.rail.play
 		GameTooltip:Hide()
 		GameTooltip:SetFrameStrata("BACKGROUND")     -- as something else left it
-		chip:GetScript("OnEnter")(chip)
-		check(GameTooltip:IsShown(), "hovering the chip raises a tooltip")
+		mini.library:GetScript("OnEnter")(mini.library)
+		check(GameTooltip:IsShown(), "hovering the player's library button raises a tooltip")
 		check(GameTooltip:GetFrameStrata() == "TOOLTIP",
 			"in front of everything, whatever it was left at ("
 			.. tostring(GameTooltip:GetFrameStrata()) .. ")")
-		chip:GetScript("OnLeave")(chip)
+		mini.library:GetScript("OnLeave")(mini.library)
 		check(not GameTooltip:IsShown(), "and goes again")
 	end
 
-	-- THE REST OF THE TRANSPORT, ON A RIGHT-CLICK. The chip is one icon wide and
-	-- the whole point of it is not opening the drawer, so the three controls
-	-- that do not fit go on a menu rather than nowhere.
+	-- THE REST OF THE TRANSPORT, ON A RIGHT-CLICK on the node.
 	do
-		local chip = TBm.rail.play
 		A.Widgets.CloseMenu()
-		chip:GetScript("OnClick")(chip, "RightButton")
+		node.button:GetScript("OnClick")(node.button, "RightButton")
 		local menu = A.Widgets.MenuFrame()
-		check(menu and menu:IsShown(), "right-clicking the chip opens a menu")
+		check(menu and menu:IsShown(), "right-clicking the node opens a menu")
 		local words = {}
 		for i = 1, 3 do words[i] = menu.items[i].text:GetText() end
 		check(table.concat(words, ",") == "Stop,Previous,Next",
 			"with stop, previous and next on it (" .. table.concat(words, ",") .. ")")
-
-		-- AND LEFT-CLICK STILL PLAYS. A button that grew a menu and lost its
-		-- press is a worse button.
-		A.Widgets.CloseMenu()
-		local was = P.state
-		chip:GetScript("OnClick")(chip, "LeftButton")
-		check(P.state ~= was, "and left-clicking still works the transport ("
-			.. was .. " -> " .. P.state .. ")")
-		if not P:IsPlaying() then chip:GetScript("OnClick")(chip, "LeftButton") end
+		check(NPn:IsOpen(), "and leaves the branch as it was")
 
 		-- STOP STOPS.
-		chip:GetScript("OnClick")(chip, "RightButton")
-		menu = A.Widgets.MenuFrame()
 		menu.items[1]:GetScript("OnClick")(menu.items[1])
 		check(P.state == "stopped", "stop stops it (" .. P.state .. ")")
 		check(_G.__soundsPlaying() == 0, "and silences the channel")
 
 		-- DISABLED RATHER THAN ABSENT with nothing to do: a menu that changes
 		-- shape between openings is one you cannot learn.
-		chip:GetScript("OnClick")(chip, "RightButton")
+		node.button:GetScript("OnClick")(node.button, "RightButton")
 		menu = A.Widgets.MenuFrame()
 		check(menu.items[1].action == nil, "with nothing playing, stop is dead")
 		check(menu.items[1]:IsShown(), "and still on the menu, not missing from it")
@@ -33191,47 +33160,22 @@ section("nifec: the mini-player, on the ground", function()
 		mini.toggle:GetScript("OnClick")(mini.toggle)
 	end
 
-	-- AND IT OPENS AWAY FROM THE DRAWER'S OWN BODY. "Beside the host" is only
-	-- right while the host sits at a screen edge with open screen next to it.
-	-- Docked ACROSS THE TOP the mini-player is one column of a wide strip, and
-	-- beside it is the middle of that strip - the list opened over the settings
-	-- tiles it had just come out from under.
+	-- AND IT OPENS AWAY FROM THE TRUNK, beside the branch rather than over it.
 	do
-		local want = { LEFT = "BOTTOMLEFT", RIGHT = "BOTTOMRIGHT",
-		               TOP = "TOPRIGHT", BOTTOM = "BOTTOMRIGHT" }
-		local rel  = { LEFT = "BOTTOMRIGHT", RIGHT = "BOTTOMLEFT",
-		               TOP = "BOTTOMRIGHT", BOTTOM = "TOPRIGHT" }
-		for _, edge in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
-			TBm:SetDock(edge)
-			TBm:SetOpen(true, true)
-			TBm:LayoutContent()
-			LB:SetOpen(true, TBm.content.now)
-
-			local p1, relTo, p2 = LB.frame:GetPoint(1)
-			check(p1 == want[edge] and p2 == rel[edge] and relTo == TBm.content.now,
-				("docked %s the list opens %s of the player (%s to %s)")
-				:format(edge, edge == "TOP" and "below" or
-					(edge == "BOTTOM" and "above" or "beside"), p1, p2))
-			check(LB.frame:GetNumPoints() == 1,
-				"anchored once, not left spanned between the last corner and this one")
-		end
-
-		TBm:SetDock("LEFT")
-		TBm:SetOpen(true, true)
-		TBm:LayoutContent()
-		mini = TBm.content.now
 		LB:SetOpen(true, mini)
+		local p1, relTo, p2 = LB.frame:GetPoint(1)
+		local left = wt.side < 0
+		check(relTo == mini and p1 == (left and "BOTTOMRIGHT" or "BOTTOMLEFT")
+			and p2 == (left and "BOTTOMLEFT" or "BOTTOMRIGHT"),
+			"the list opens away from the trunk (" .. tostring(p1) .. " to " .. tostring(p2) .. ")")
 	end
 
-	-- THE LIBRARY GOES WITH THE DRAWER. It hangs off the mini-player at the foot
-	-- of the panel and slides away with it - but off the RIGHT of that, so a
-	-- panel a full width off screen left the list sitting just inside the edge
-	-- with nothing behind it.
+	-- THE LIBRARY GOES WITH THE BRANCH, rather than left floating beside nothing.
 	do
 		check(LB:IsOpen(), "the library is open")
-		TBm:SetOpen(false, true)
-		check(not LB:IsOpen(), "closing the drawer shuts the list with it")
-		TBm:SetOpen(true, true)
+		NPn:Close()
+		check(not LB:IsOpen(), "closing the branch shuts the list with it")
+		NPn:Open()
 		LB:SetOpen(true, mini)
 	end
 
@@ -33615,13 +33559,12 @@ section("nifec: the mini-player, on the ground", function()
 	-- AND THE MINI-PLAYER IS NOT IN FLIGHT, so the setting is none of its
 	-- business: it is the one surface that has nothing to do with a griffin.
 	cfg.player = false
-	TBm:LayoutContent()
-	check(TBm:HasPlayer(), "the mini-player is unaffected - it is not in flight")
+	check(NPn:Available(), "the mini-player is unaffected - it is not in flight")
 	cfg.player = true
 
 	A.IFEC.Taxi:Stop()
 	P:Stop()
-	TBm:SetOpen(false, true)
+	NPn:Close()
 	R:Reset()
 	cfg.progress = {}
 end)
@@ -36057,7 +36000,7 @@ do
 		table.concat(offenders, ", ") or "clean") .. ")")
 end
 
-print("== ifec: the row says what is true when you open the drawer ==")
+print("== ifec: the row says what is true when you open its branch ==")
 do
 	-- THE ROW WAS PAINTED ONCE AND NEVER AGAIN.
 	--
@@ -36068,10 +36011,8 @@ do
 	-- us. It then read "No content installed" for the whole session, over a
 	-- season that was installed and played the moment you pressed the button.
 	local M, R, P = A.IFEC.Mini, A.IFEC.Registry, A.IFEC.Playback
-	local TB = A:GetModule("toolbox")
 	local was = { packs = R.packs, order = R.order,
 		failed = R.failed, dirty = R.dirty }
-	local wasOpen = TB:IsOpen()
 
 	-- PAINTED EMPTY FIRST, which is the state the bug was frozen in.
 	R.packs, R.order, R.failed, R.dirty = {}, {}, {}, true
@@ -36094,18 +36035,18 @@ do
 	check((M.frame.meta:GetText() or ""):find("installed", 1, true) ~= nil,
 		"and registering a pack does not repaint it by itself")
 
-	-- OPENING THE DRAWER DOES. Here rather than on a login event, because
-	-- here has no ordering to get wrong: it runs on every layout, so the row
-	-- is right the moment anybody can see it.
-	TB:SetOpen(true, true)
+	-- OPENING THE BRANCH DOES. Here rather than on a login event, because
+	-- here has no ordering to get wrong: the row is right the moment anybody
+	-- can see it.
+	A.IFEC.Node:Open()
 	check(M.frame.meta:GetText() == "Press play for the season's music",
-		"opening the drawer repaints it against what is actually installed (" ..
+		"opening the Now Playing branch repaints it against what is actually installed (" ..
 		tostring(M.frame.meta:GetText()) .. ")")
 	check(M.frame.title:GetText() == "Nothing playing",
 		"and nothing playing is what it says, because that is what is true (" ..
 		tostring(M.frame.title:GetText()) .. ")")
 
-	TB:SetOpen(wasOpen, true)
+	A.IFEC.Node:Close()
 	R.packs, R.order, R.failed, R.dirty =
 		was.packs, was.order, was.failed, was.dirty
 end

@@ -309,41 +309,31 @@ OB.stops = {
 		-- AND WHERE IT IS ON THE GROUND, which the first version left out
 		-- entirely: it said "boards on your next flight" and stopped, so the
 		-- honest reading was that there is nothing to look at until then. There
-		-- is - the same programme, in the Toolbox, under its own bad joke of a
-		-- name. Reported from the game against 0.31.0.
+		-- is - the same programme, in the World trunk's Now Playing branch,
+		-- under its own bad joke of a name. Reported from the game against 0.31.0.
 		body  = L.tour.adopt_from.body9,
 		kind  = "show",
-		-- THE DRAWER OPENS, the same way the bags stop opens the bag panel,
+		-- THE BRANCH OPENS, the same way the bags stop opens the bag panel,
 		-- and for the same reason: the thing being described lives inside it.
-		-- A stop that says "it is in the Toolbox" over a shut Toolbox is a stop
-		-- that has told you where to look and then not let you.
-		--
 		-- Shut again on the way out unless it was already open, in which case
 		-- it was the player's and stays theirs.
 		before = function()
-			local TB = A.GetModule and A:GetModule("toolbox")
-			if not TB or not TB.SetOpen then return end
-			if TB:IsOpen() then return end
-			-- Instant, because the callout is placed against the region inside
-			-- it on this same frame - mid-slide, the drawer is off the edge of
-			-- the screen and the callout goes with it.
-			TB:SetOpen(true, true)
-			OB:OnLeave(function() TB:SetOpen(false, true) end)
+			local N = A.IFEC and A.IFEC.Node
+			if not (N and N.attached and N:Available()) or N:IsOpen() then return end
+			N:Open()
+			OB:OnLeave(function() N:Close() end)
 		end,
-		-- N.I.F.E.C. ITSELF, at the foot of the drawer, with the rail's
-		-- transport chip as the fallback: with no content installed the region
-		-- is ABSENT rather than empty - the Toolbox lays out as though it were
-		-- never there - and then there is genuinely nothing to point at.
+		-- N.I.F.E.C. ITSELF in its branch; with no content installed there is no
+		-- node, so the trunk it would hang on.
 		--
 		-- And off A.IFEC rather than off the module: the console's module is
 		-- "ifec" and the mini is not on it. This asked for `M.mini` and got nil.
 		target = function()
 			local M = A.IFEC and A.IFEC.Mini
-			if not M then return nil end
-			local f = M.frame
+			local f = M and M.frame
 			if f and f.IsVisible and f:IsVisible() then return f end
-			local TB = A.GetModule and A:GetModule("toolbox")
-			return TB and TB.rail and TB.rail.play
+			local t = A.Trunk and A.Trunk:Get("world")
+			return t and t.frame
 		end,
 	},
 }

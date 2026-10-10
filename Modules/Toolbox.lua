@@ -82,18 +82,6 @@ local RAIL_CHEV  = 14
 -- are 32 of the 40 and the ends read as semicircles - which is a pill, which is
 -- exactly what it looked like. 8 leaves a flat run down the middle of each end
 -- and the shape reads as a handle on the side of a drawer.
--- How big the rail's OWN glyphs are drawn.
---
--- These are bare line glyphs on the rail itself - no chip, no rim - and that is
--- deliberate: they are part of the rail, and the launchers look different
--- because they ARE different, being other addons' art in their own circles.
--- What was wrong was the size. At RAIL_ICON - 8 they were 18px of thin line
--- beside 26px filled discs and read as an afterthought.
---
--- Two off the icon size rather than flush with it: a line glyph needs a little
--- air inside a 26 slot where a filled disc does not.
-local RAIL_GLYPH = RAIL_ICON - 2
-
 local RAIL_CORNER = 8
 
 -- How far the rail sits INTO the panel. Without this it is a separate capsule
@@ -223,11 +211,6 @@ function TB:Build()
 	-- (Not a unicode gear either, then or now: Outfit is a text face with no
 	-- geometric shapes in it, so U+2699 came out as the three bytes of its own
 	-- UTF-8 rendered as latin - "]lk" on the rail.)
-	--
-	-- FLUSH WITH THE SLOT rather than at RAIL_GLYPH like its neighbours. The two
-	-- off the icon size is air for a line glyph, which needs room inside its
-	-- box; this is a filled disc that brings its own margin of glow, so the same
-	-- inset twice would leave it visibly the smallest thing on the rail.
 	local gg = gear:CreateTexture(nil, "ARTWORK")
 	gg:SetPoint("CENTER", gear, "CENTER", 0, 0)
 	gg:SetSize(RAIL_ICON, RAIL_ICON)
@@ -245,25 +228,8 @@ function TB:Build()
 	gear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	rail.gear = gear
 
-	-- Mail is not here: it is the World trunk's Mail node (Core/Mail.lua).
-
-	-- The mini-player's transport. On the rail because "stop this" is the one
-	-- thing about the player you need with the drawer SHUT, and everything else
-	-- about it can wait for the drawer to open. It is also the only thing on
-	-- screen saying something is playing at all.
-	--
-	-- Dressed by the IFEC's own mini-player rather than scripted here, so the
-	-- Toolbox owns where it sits and how big it is and knows nothing else about
-	-- it. With that half of the addon absent the chip simply never appears.
-	local play = CreateFrame("Button", nil, rail)
-	play:SetSize(RAIL_ICON, RAIL_ICON)
-	local pg = play:CreateTexture(nil, "ARTWORK")
-	pg:SetPoint("CENTER", play, "CENTER", 0, 0)
-	pg:SetSize(RAIL_GLYPH - 8, RAIL_GLYPH - 8)
-	Media:SetIcon(pg, "play")
-	play.glyph = pg
-	play:Hide()
-	rail.play = play
+	-- Mail and Now Playing are not here: they are World trunk nodes
+	-- (Core/Mail.lua, Modules/IFEC/Node.lua).
 
 	self._travel = self:IsOpen() and 1 or 0
 	self._want   = self._travel
@@ -435,20 +401,13 @@ function TB:Layout()
 	local vertical = IsVertical(edge)
 	self.rail.chev:ClearAllPoints()
 	self.rail.gear:ClearAllPoints()
-	self.rail.play:ClearAllPoints()
-	-- Whether there is a transport at all is decided by RefreshPlayer.
-	self:RefreshPlayer()
 
 	if vertical then
 		self.rail.chev:SetPoint("TOP", self.rail, "TOP", 0, -RAIL_PAD)
 		self.rail.gear:SetPoint("BOTTOM", self.rail, "BOTTOM", 0, RAIL_PAD)
-		-- IMMEDIATELY ABOVE THE GEAR. The two settled controls sit at the far
-		-- end together: the way to the options and the way to stop the music.
-		self.rail.play:SetPoint("BOTTOM", self.rail.gear, "TOP", 0, RAIL_PAD)
 	else
 		self.rail.chev:SetPoint("LEFT", self.rail, "LEFT", RAIL_PAD, 0)
 		self.rail.gear:SetPoint("RIGHT", self.rail, "RIGHT", -RAIL_PAD, 0)
-		self.rail.play:SetPoint("RIGHT", self.rail.gear, "LEFT", -RAIL_PAD, 0)
 	end
 
 	-- The scrim covers exactly the strip the panel is over, so it travels with
@@ -579,17 +538,6 @@ function TB:SetOpen(open, instant)
 	self:PointChevron()
 	self:SetPolling(open and true or false)
 
-	-- THE LIBRARY GOES WITH THE DRAWER. It hangs off the mini-player at the foot
-	-- of the panel and slides away with it - but it hangs off the RIGHT of that,
-	-- so a panel a full width off screen leaves the drawer it opened sitting
-	-- just inside the edge with nothing behind it. Shut, rather than left
-	-- floating over the world attached to something that is not there.
-	--
-	-- CloseFor, so the console's drawer at ten thousand feet is not shut by
-	-- somebody closing the Toolbox on the ground.
-	if not open and self.content and A.IFEC and A.IFEC.Library then
-		A.IFEC.Library:CloseFor(self.content.now)
-	end
 	if open then
 		-- Re-read EVERYTHING first, then draw. Opening the drawer is the moment
 		-- somebody looks at these, and it costs six function calls.
@@ -1603,7 +1551,6 @@ function TB:BuildContent()
 	content.widgetsHead = head
 
 	content.cards = {}
-	self:BuildNowPlaying()
 	self:RefreshWidgets()
 	self:BuildTiles()
 	self:BuildAddons()
@@ -1613,98 +1560,6 @@ function TB:BuildContent()
 	self:RefreshNews()
 end
 
---- Is there a mini-player to draw?
---
---  Content decides, which is the same question the in-flight console asks: with
---  nothing installed the section is ABSENT rather than empty, and the drawer
---  lays out as though it were never there.
---
---  Nothing here needs the IFEC to exist. That half of the addon can be missing,
---  broken or switched off and the Toolbox lays out exactly as it did before it
---  was written.
-function TB:HasPlayer()
-	local M = A.IFEC and A.IFEC.Mini
-	return (M ~= nil and M:HasContent()) and true or false
-end
-
---- How tall the mini-player wants to be. ASKED FOR rather than repeated here:
---  the two numbers disagreeing is a section with a gap under it, or one drawn
---  through the panel's floor.
-local function NowHeight()
-	local M = A.IFEC and A.IFEC.Mini
-	return M and M.HEIGHT or 0
-end
-
---- NOW PLAYING: the mini-player, at the foot of the drawer.
---
---  The region belongs to the IFEC and this only finds it a home - the same
---  boundary the in-flight console draws around its own content half, pointing
---  the same way: the Toolbox calls the player, and the player has never heard
---  of the Toolbox.
-function TB:BuildNowPlaying()
-	if not self.content or self.content.now then return end
-	local M = A.IFEC and A.IFEC.Mini
-	if not M then return end
-
-	local head = W.Text(self.content, "tbSection", "LEFT")
-	head:SetText(Spaced("NOW PLAYING"))
-	self.content.nowHead = head
-	self.content.now = M:Build(self.content)
-end
-
---- The rail's transport chip, in whichever state it is in.
-function TB:RefreshPlayer()
-	local play = self.rail and self.rail.play
-	if not play then return end
-
-	local M = A.IFEC and A.IFEC.Mini
-	play:SetShown(self:HasPlayer())
-	if not M or not play:IsShown() then return end
-
-	-- WHERE THE MENU OPENS is ours, because only we know which edge the rail is
-	-- docked to. It goes AWAY from that edge: hung downwards on a rail docked at
-	-- the bottom it ran off the screen, and the chip sits at the far end of the
-	-- rail where there is least room in that direction.
-	local edge = self:Dock()
-	if edge == "LEFT" then
-		M.railMenuOpts = { point = "BOTTOMLEFT", relPoint = "BOTTOMRIGHT", x = 6, y = 0 }
-	elseif edge == "RIGHT" then
-		M.railMenuOpts = { point = "BOTTOMRIGHT", relPoint = "BOTTOMLEFT", x = -6, y = 0 }
-	elseif edge == "TOP" then
-		M.railMenuOpts = { point = "TOPRIGHT", relPoint = "BOTTOMRIGHT", x = 0, y = -4 }
-	else
-		M.railMenuOpts = { point = "BOTTOMRIGHT", relPoint = "TOPRIGHT", x = 0, y = 4 }
-	end
-
-	-- AND WHICH WAY THE LIBRARY OPENS, for the same reason: only we know which
-	-- edge we are docked to. Away from the drawer's own body - out to the side
-	-- of a column, and DOWN from a strip across the top, where beside it is the
-	-- middle of the strip and the list opened over the settings tiles.
-	if M.frame then
-		local away = {
-			LEFT = "RIGHT", RIGHT = "LEFT", TOP = "BELOW", BOTTOM = "ABOVE",
-		}
-		M.frame.__aetherLibraryFrom = away[edge]
-	end
-
-	M:AdoptRailChip(play)
-	M:PaintRailChip(play)
-
-	-- AND THE REGION'S OWN WORDS, which nothing else was repainting.
-	--
-	-- The mini paints itself from a playback event and from its own ticker, and
-	-- the ticker only runs while something is playing - so with nothing ever
-	-- played the row kept whatever it said the first time it was drawn. That is
-	-- at login, which can be BEFORE the registry has drained the packs that
-	-- loaded before us: the row then read "No content installed" for the rest of
-	-- the session, over a season that was installed and would play the moment
-	-- you pressed the button. Reported from the game against 0.31.0.
-	--
-	-- Here rather than on a login event, because here has no ordering to get
-	-- wrong: this runs on every layout, so the row is right the moment anybody
-	-- can see it.
-	M:Paint()
-end
 
 --- One card per chosen data source. Frames are POOLED by index, because WoW has
 --  no way to destroy one and a list that shrinks must not leak a second set.
@@ -2451,11 +2306,6 @@ function TB:LayoutRail()
 	-- here found that out.
 	local len = RAIL_PAD + RAIL_CHEV + RAIL_PAD + n * (RAIL_ICON + RAIL_PAD)
 		+ RAIL_ICON + RAIL_PAD        -- gear
-	-- The transport chip anchors off the gear, which anchors off the far end -
-	-- so it is counted here for the same reason.
-	if self.rail.play and self.rail.play:IsShown() then
-		len = len + RAIL_ICON + RAIL_PAD
-	end
 	if vertical then
 		self.rail:SetSize(RAIL_W, math.max(len, RAIL_CHEV + RAIL_PAD * 2))
 	else
@@ -3140,9 +2990,9 @@ end
 -- proportions. The addon list is the column with the longest strings in it -
 -- "Auc-Util-AutoMagic" is a real registry name - and at 22 it was truncating
 -- every second one to "Auc-Util-A...". The settings tiles are fixed-size chips,
--- so they give some back. (Mail had a column too; it is the World trunk's now.)
-local H_WEIGHTS = { identity = 20, widgets = 19, addons = 27, settings = 20,
-	nowplaying = 17 }
+-- so they give some back. (Mail and Now Playing had columns too; they are the
+-- World trunk's now.)
+local H_WEIGHTS = { identity = 20, widgets = 19, addons = 27, settings = 20 }
 local H_COL_GAP = 18
 
 --- The shortest the flat panel can usefully be, in panel units.
@@ -3163,11 +3013,6 @@ end
 --  column that came and went with its content reflowed every other one.
 function TB:HorizontalColumns()
 	local order = { "identity", "widgets", "addons", "settings" }
-	-- NOW PLAYING is the one column that can be absent, and it is absent on the
-	-- same question the console asks: no content installed, no player. That is a
-	-- reload-scale fact rather than something that changes while you are looking
-	-- at the drawer, so the column cannot appear under you and reflow the rest.
-	if self:HasPlayer() then order[#order + 1] = "nowplaying" end
 	return order, H_WEIGHTS
 end
 
@@ -3380,30 +3225,6 @@ function TB:LayoutHorizontal()
 		used(y)
 	end
 
-	-- NOW PLAYING ------------------------------------------------------------
-	--
-	-- The last column, which is the right-hand end of a flat drawer - the same
-	-- place the foot of the vertical one is. It is the only column that can be
-	-- absent, and HorizontalColumns is where that is decided.
-	do
-		local showNow = colX.nowplaying ~= nil and content.now ~= nil
-		if showNow then
-			local x, cw = colX.nowplaying, colW.nowplaying
-			local y = top
-			place(content.nowHead, x, y)
-			content.nowHead:Show()
-			y = y + SECTION_H
-			place(content.now, x, y, cw)
-			content.now:SetHeight(NowHeight())
-			content.now:Show()
-			y = y + NowHeight()
-			used(y)
-		else
-			if content.nowHead then content.nowHead:Hide() end
-			if content.now then content.now:Hide() end
-		end
-	end
-
 	self._contentHeight = tallest + PAD
 end
 
@@ -3526,13 +3347,6 @@ function TB:LayoutVertical()
 	-- zero addon rows the column still wanted 614 of a 506 panel. So the tiles
 	-- are cut too, and both say what they dropped.
 
-	-- NOW PLAYING is fixed cost, and is drawn BELOW everything - so it has to be
-	-- measured before the two lists that give way are told how much room they
-	-- have. Reserved after the fact, it would be drawn through the floor of the
-	-- panel by exactly its own height.
-	local showNow = self:HasPlayer() and content.now ~= nil
-	local nowBlock = showNow and (SECTION_H + NowHeight() + SECTION_GAP) or 0
-
 	-- The addon section's own HEADER is fixed cost too, and it was missing from
 	-- this sum. Its ROWS give way to nothing, which is what "the addon list
 	-- gives way" means - but the heading and the gap under it are drawn whether
@@ -3542,7 +3356,7 @@ function TB:LayoutVertical()
 	local addonFixed = (#(self._addonRows or {}) > 0 and content.addonsHead)
 		and (SECTION_H + SECTION_GAP) or 0
 
-	local roomLeft = h - y - PAD - addonFixed - nowBlock
+	local roomLeft = h - y - PAD - addonFixed
 
 	local maxTileRows = math.max(0, math.floor((roomLeft - SECTION_H) / (TILE_H + TILE_GAP)))
 	if tileRows > maxTileRows then tileRows = maxTileRows end
@@ -3566,7 +3380,7 @@ function TB:LayoutVertical()
 		-- is reachable by the wheel and said so - the quest tracker's rule, for
 		-- the same reason: a list that silently drops the row you were looking
 		-- for is worse than one that admits it ran out of room.
-		local room = h - y - PAD - tileBlock - nowBlock - SECTION_GAP
+		local room = h - y - PAD - tileBlock - SECTION_GAP
 		local maxRows = math.max(0, math.floor(room / (ROW_H + ROW_GAP)))
 		shown = self:PlaceAddonRows(PAD, y, avail, addonCols,
 			maxRows * addonCols, w - PAD, headY)
@@ -3597,21 +3411,6 @@ function TB:LayoutVertical()
 		for _, tile in ipairs(tilesF) do tile:Hide() end
 	end
 	if content.tilesHead then content.tilesHead:SetShown(shownTiles > 0) end
-
-	-- NOW PLAYING ------------------------------------------------------------
-	if showNow then
-		y = y + SECTION_GAP
-		place(content.nowHead, PAD, y)
-		content.nowHead:Show()
-		y = y + SECTION_H
-		place(content.now, PAD, y, avail)
-		content.now:SetHeight(NowHeight())
-		content.now:Show()
-		y = y + NowHeight()
-	else
-		if content.nowHead then content.nowHead:Hide() end
-		if content.now then content.now:Hide() end
-	end
 
 	self._contentHeight = y + PAD
 end

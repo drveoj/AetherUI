@@ -5,8 +5,9 @@
 	carrying the zone, your coordinates and the time. In a fight the pill's
 	contents swap for a red dot and "In combat".
 
-	Mail, tracking and the calendar are nodes on the World trunk, which hangs
-	from the pill (Lattice 6a). Mail's own code is Core/Mail.lua.
+	Mail, tracking, the calendar and Now Playing are nodes on the World trunk,
+	which hangs from the pill (Lattice 6a). Mail's own code is Core/Mail.lua;
+	Now Playing's is Modules/IFEC/Node.lua.
 
 	Everything else Blizzard hangs off the minimap - zoom, tracking, the
 	day/night dial, the battleground eye, the border art, the toggle tab - is
@@ -856,6 +857,8 @@ function MM:OnEnable()
 		open = OpenCalendar,
 		close = CloseCalendar,
 	})
+	-- Now Playing is the IFEC's own node, there when that half of the addon is.
+	if A.IFEC and A.IFEC.Node then A.IFEC.Node:Attach() end
 	A.Trunk:Get("world"):SetRoot(self.pill)
 
 	for _, e in ipairs({
@@ -897,6 +900,7 @@ function MM:OnDisable()
 	if self._ticker then self._ticker:Cancel(); self._ticker = nil end
 	A.Movers:Unregister("minimap")
 	A.Mail:Detach()
+	if A.IFEC and A.IFEC.Node then A.IFEC.Node:Detach() end
 	A.Trunk:Get("world"):SetRoot(nil)
 	if self.frame then
 		A.Fader:Unregister(self.frame)
@@ -921,6 +925,7 @@ function MM:OnSkinChanged()
 	self:UpdateZone()
 	A.Trunk:Get("world"):Paint()
 	A.Mail:Skin()
+	if A.IFEC and A.IFEC.Node then A.IFEC.Node:Skin() end
 end
 
 function MM:OnConfigChanged()

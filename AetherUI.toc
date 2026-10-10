@@ -109,4 +109,5 @@ Modules\IFEC\Playback.lua
 Modules\IFEC\Player.lua
 Modules\IFEC\Library.lua
 Modules\IFEC\Mini.lua
+Modules\IFEC\Node.lua
 Modules\IFEC\Reader.lua

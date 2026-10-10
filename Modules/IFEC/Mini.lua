@@ -1,9 +1,8 @@
 --[[--------------------------------------------------------------------------
 	AetherUI :: N.I.F.E.C - the Not-In-Flight Entertainment Console
 
-	The same programme, on the ground. A compact region the Toolbox hangs at the
-	foot of its drawer, plus a transport chip on the rail so the thing can be
-	paused without opening anything.
+	The same programme, on the ground. A compact region hung in the World
+	trunk's Now Playing branch (Modules/IFEC/Node.lua).
 
 	ONE QUEUE, TWO SURFACES. Everything about what is playing lives on Playback;
 	this and the in-flight player region are both views onto it, and neither owns
@@ -15,8 +14,8 @@
 	hands it back. Both call the same Playback, so nothing has to be handed over
 	- there is only ever one thing playing.
 
-	Not on the timer path, and the Toolbox works with this file absent: it asks
-	for a region and lays out without one if it does not get it.
+	Not on the timer path, and the trunk works with this file absent: the node
+	is only added when there is a player to hold.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -248,58 +247,15 @@ function Mini:Restyle()
 end
 
 -- ---------------------------------------------------------------------------
--- the rail chip
---
--- The one control that has to be reachable with the drawer SHUT, which is the
--- same argument that put the mail envelope on the rail. Everything else about
--- the player can wait for the drawer to open; "stop this" cannot.
+-- the transport menu (right-click on the Now Playing node)
 -- ---------------------------------------------------------------------------
 
---- Dress a button the Toolbox built for its rail. The Toolbox owns where it
---  goes and how big it is; this owns what it says and what it does.
-function Mini:AdoptRailChip(button)
-	if not button or button.__ifec then return button end
-	button.__ifec = true
-
-	-- LEFT PLAYS, RIGHT OPENS THE REST. The chip is one icon wide and the whole
-	-- point of it is not having to open the drawer, so the three controls that
-	-- do not fit go on the menu rather than nowhere.
-	if button.RegisterForClicks then
-		button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-	end
-	button:SetScript("OnClick", function(self, mouse)
-		if not Playback then return end
-		if mouse == "RightButton" then
-			Mini:ShowRailMenu(self)
-			return
-		end
-		Playback:PlayOrShuffle()
-		Mini:PaintRailChip(self)
-		Mini:Paint()
-	end)
-	button:SetScript("OnEnter", function(self)
-		local item = Playback and Playback.item
-		W.Tooltip(self, "ANCHOR_RIGHT",
-			item and (item.title or "Playing") or "Play",
-			item and item.artist ~= "" and item.artist or nil)
-	end)
-	button:SetScript("OnLeave", W.HideTooltip)
-
-	self.railChip = button
-	self:PaintRailChip(button)
-	return button
-end
-
---- The transport, for a chip with room for one glyph.
+--- Stop, Previous and Next.
 --
 --  DISABLED RATHER THAN ABSENT when there is nothing to do: a menu that changes
 --  shape between openings is one you cannot learn, and "Stop" greyed says more
 --  than "Stop" missing.
---
---  Placement is the Toolbox's, because the rail can be docked on any of four
---  edges and only the Toolbox knows which - a menu that always hung downwards
---  ran off the bottom on a rail docked there.
-function Mini:RailEntries()
+function Mini:TransportEntries()
 	local playing = Playback and (Playback.state == "playing"
 		or Playback.state == "paused")
 	local queue = (Playback and Playback.queue) or {}
@@ -309,7 +265,6 @@ function Mini:RailEntries()
 		  action = function()
 			if Playback then Playback:Stop(true) end
 			Mini:Paint()
-			Mini:PaintRailChip()
 		  end },
 		{ text = "Previous", disabled = (Playback and (Playback.at or 1) or 1) <= 1,
 		  action = function()
@@ -320,27 +275,6 @@ function Mini:RailEntries()
 			if Playback then Playback:Next() end
 		  end },
 	}
-end
-
-function Mini:ShowRailMenu(button, opts)
-	if not W.Menu then return false end
-	W.Menu(button, self:RailEntries(), opts or self.railMenuOpts)
-	return true
-end
-
-function Mini:PaintRailChip(button)
-	button = button or self.railChip
-	if not button or not Playback then return end
-
-	local playing = Playback:IsPlaying()
-	Media:SetIcon(button.glyph, playing and "pause" or "play")
-
-	-- LIT WHILE SOMETHING IS SOUNDING. This is the only thing on screen saying
-	-- so with the drawer shut, so the colour is doing the work the title would.
-	local c = Palette.c
-	local item = Playback.item
-	local tint = playing and (item and tintFor(item.type) or c.accent) or c.textDim
-	button.glyph:SetVertexColor(tint[1], tint[2], tint[3], playing and 1 or 0.7)
 end
 
 -- ---------------------------------------------------------------------------
@@ -366,18 +300,16 @@ end
 --  event happens once a track at best - which is the same trap the console's
 --  region fell into and sat frozen on the last boundary for four minutes.
 --
---  Nothing to paint is nothing to tick for. Neither surface exists until the
---  Toolbox asks for one, and a ticker running against no frames is work done
---  for a screen nobody is looking at.
+--  It ticks while something plays EVEN WITH NO REGION BUILT: the region only
+--  exists once the Now Playing branch has opened, and the tick is also the
+--  poll that recovers a lost timer. Paint does nothing without a frame.
 function Mini:SetTicking(on)
-	if on and not (self.frame or self.railChip) then on = false end
 
 	if on and not self._ticking then
 		self._ticking = true
 		A:RegisterTicker(self, function()
 			if Playback and ours() then Playback:Poll() end
 			Mini:Paint()
-			Mini:PaintRailChip()
 		end)
 	elseif not on and self._ticking then
 		self._ticking = nil
@@ -388,7 +320,6 @@ end
 if Playback then
 	Playback:AddListener(function(event)
 		Mini:Paint()
-		Mini:PaintRailChip()
 		Mini:SetTicking(Playback:IsPlaying())
 
 		-- The library is a list of what is queued as much as what exists, so it

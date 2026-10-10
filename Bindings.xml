@@ -23,4 +23,9 @@
 	<Binding name="AETHERUI_BAR2BUTTON10" />
 	<Binding name="AETHERUI_BAR2BUTTON11" />
 	<Binding name="AETHERUI_BAR2BUTTON12" />
+	<!--
+		Play or pause the N.I.F.E.C. The World trunk retracts in a fight, taking
+		the Now Playing node with it, so this is the way to pause mid-fight.
+	-->
+	<Binding name="LATTICE_PLAYPAUSE">Lattice_PlayPause()</Binding>
 </Bindings>

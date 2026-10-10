@@ -162,6 +162,8 @@ function Registry:Register(manifest)
 		items       = items,
 	}
 	self.dirty = true
+	-- The World trunk's Now Playing node appears with the first season.
+	if self.onChange then self.onChange() end
 	return true
 end
 
@@ -266,6 +268,7 @@ end
 
 function Registry:Reset()
 	self.packs, self.order, self.failed, self.dirty = {}, {}, {}, true
+	if self.onChange then self.onChange() end
 end
 
 -- SELF-STARTING, because the console may not reference this file. The handshake

@@ -437,6 +437,11 @@ L["mail.unread_last_visit_d"] = "%d unread · last visit"
 
 L["mini.paint.nothing_playing"] = "Nothing playing"
 
+-- now playing -------------------------------------------------------------
+
+L["nowplaying.binding"] = "Play / pause the N.I.F.E.C."
+L["nowplaying.heading"] = "NOW PLAYING"
+
 -- movers ------------------------------------------------------------------
 
 -- Dropping a node on another's junction (Lattice board 4a).
@@ -1464,7 +1469,7 @@ L["tour.adopt_from.body8"] =
 L["tour.adopt_from.body9"] =
 	"Music, podcasts and some truly disreputable gossip rags, timed to "
 		.. "your route. Boards at takeoff — and N.I.F.E.C. plays it on the "
-		.. "ground, from the Toolbox."
+		.. "ground, from Now Playing under the minimap."
 L["tour.adopt_from.head"] = "Choose the colour scheme you like."
 L["tour.adopt_from.head2"] = "Where should everything live?"
 L["tour.adopt_from.head3"] = "A useful place to keep tools."
@@ -1523,6 +1528,7 @@ L["trunk.calendar_combat"] = "the calendar can't be opened for the first time in
 L["trunk.failed"] = "Failed"
 L["trunk.mail"] = "Mail"
 L["trunk.more_d"] = "+%d"
+L["trunk.now_playing"] = "Now Playing"
 L["trunk.questlog"] = "Quest Log"
 L["trunk.tracking"] = "Tracking"
 L["trunk.turn_in"] = "Turn in"

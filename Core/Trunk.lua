@@ -129,7 +129,7 @@ local function BuildNode(t, node)
 	local f = t.frame
 	local b = CreateFrame("Button", nil, f)
 	b:SetSize(NODE, NODE)
-	b:RegisterForClicks("LeftButtonUp")
+	b:RegisterForClicks(node.onRightClick and "AnyUp" or "LeftButtonUp")
 	b.glow = b:CreateTexture(nil, "BACKGROUND")
 	b.glow:SetTexture(Media.texture.glow)
 	b.glow:SetPoint("CENTER")
@@ -155,7 +155,13 @@ local function BuildNode(t, node)
 	b.junction:SetTexture(Media.texture.diamond)
 	b.junction:SetSize(JUNCTION, JUNCTION)
 	b.label = W.Text(f, "label", "RIGHT")
-	b:SetScript("OnClick", function() t:Toggle(node.key) end)
+	b:SetScript("OnClick", function(_, button)
+		if button == "RightButton" then
+			if node.onRightClick then node.onRightClick(node) end
+			return
+		end
+		t:Toggle(node.key)
+	end)
 	node.button = b
 	return b
 end
@@ -174,7 +180,9 @@ function Proto:Paint()
 		if b and node.kind == "item" then
 			if node.decorate then node.decorate(node) end
 		elseif b then
-			local lit = node.isOpen and node.isOpen() and true or false
+			-- Lit while its branch is open, or while it is active (music playing).
+			local lit = (node.isOpen and node.isOpen()) or (node.active and node.active())
+			lit = lit and true or false
 			node.lit = lit
 			Media:SetIcon(b.icon, type(node.icon) == "function" and node.icon() or node.icon)
 			local dot = node.badge and node.badge() and true or false
@@ -450,7 +458,8 @@ end
 --- Add, or replace, a node. opts: icon (name or function), label (text or
 --  function), order, open(node), close(node), isOpen(), available(); badge()
 --  for a dot on the node, menu for a node that opens a menu rather than a
---  branch, transient for a branch that closes when the trunk retracts.
+--  branch, transient for a branch that closes when the trunk retracts,
+--  active() to light it with no branch open, onRightClick(node).
 function Proto:AddNode(key, opts)
 	local node
 	for _, n in ipairs(self.nodes) do
