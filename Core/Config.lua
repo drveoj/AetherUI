@@ -517,9 +517,8 @@ Config.defaults = {
 
 			-- A round map with a frosted rim and a glass pill under it carrying
 			-- the zone, your coordinates and the time. Everything Blizzard hangs off
-			-- the minimap goes, except mail: zoom moves to the wheel and tracking to
-			-- right-click, so the two that were doing real work survive without any
-			-- chrome to show for it.
+			-- the minimap goes: zoom moves to the wheel, and mail, tracking and the
+			-- calendar to the World trunk (tracking to right-click too).
 			minimap = {
 				enabled      = true,
 				size         = 190,

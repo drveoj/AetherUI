@@ -1133,6 +1133,8 @@ ICON_ORDER = [
     "rotate",
     # the World trunk's calendar node
     "calendar",
+    # the World trunk's tracking node
+    "tracking",
 ]
 
 
@@ -1541,6 +1543,15 @@ def _glyph(name, cell):
         day = box(54, 68, 74, 88) + ICON_STROKE / 2
         return U(rect(24, 32, 104, 104), seg(24, 52, 104, 52),
                  seg(46, 20, 46, 40), seg(82, 20, 82, 40), day)
+
+    if name == "tracking":
+        # A sight: a ring, four ticks crossing it toward the centre, and a dot.
+        # Four ticks that cross the ring keep it apart from the gear's eight
+        # that stand off it.
+        return U(circ(64, 64, 32),
+                 seg(64, 14, 64, 46), seg(64, 82, 64, 114),
+                 seg(14, 64, 46, 64), seg(82, 64, 114, 64),
+                 disc(64, 64, 5.0))
 
     return INF
 

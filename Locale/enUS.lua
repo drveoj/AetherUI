@@ -423,6 +423,16 @@ L["library.paint.playing"] = "playing"
 L["library.paint.queued"] = "queued"
 L["library.paint.read"] = "read"
 
+-- mail --------------------------------------------------------------------
+
+L["mail.after_mailbox"] = "Senders show after a mailbox visit"
+L["mail.heading"] = "MAIL"
+L["mail.new_d"] = "%d new"
+L["mail.new_more_d"] = "%d+ new"
+L["mail.none"] = "No unread mail"
+L["mail.only_three"] = "The game names only three senders."
+L["mail.unread_last_visit_d"] = "%d unread · last visit"
+
 -- mini --------------------------------------------------------------------
 
 L["mini.paint.nothing_playing"] = "Nothing playing"
@@ -1401,10 +1411,6 @@ L["toolbox.on_config_changed.bag_space"] = "Bag space"
 
 L["toolbox.refresh_addons.quest_log"] = "Quest log"
 
-L["toolbox.refresh_mail_rows.senders_show_after_mailbox"] =
-	"Senders show after a mailbox visit"
-L["toolbox.refresh_mail_rows.unread_mail"] = "No unread mail"
-
 L["toolbox.refresh_widgets.keybind_mode"] = "Keybind mode"
 L["toolbox.refresh_widgets.tip"] =
 	"Fades the interface away when you stand still, and brings it back "
@@ -1515,8 +1521,10 @@ L["tour.toolbox_control.tap_edge"] = "tap an edge"
 L["trunk.calendar"] = "Calendar"
 L["trunk.calendar_combat"] = "the calendar can't be opened for the first time in combat."
 L["trunk.failed"] = "Failed"
+L["trunk.mail"] = "Mail"
 L["trunk.more_d"] = "+%d"
 L["trunk.questlog"] = "Quest Log"
+L["trunk.tracking"] = "Tracking"
 L["trunk.turn_in"] = "Turn in"
 
 -- tracker -----------------------------------------------------------------

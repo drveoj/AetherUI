@@ -63,6 +63,8 @@ Core\Fader.lua
 # The trunks: a strand down a screen edge with branch nodes on it. After
 # Fader, which fades it with the HUD.
 Core\Trunk.lua
+# The World trunk's Mail node, and what the client will say about mail.
+Core\Mail.lua
 Core\Nav.lua
 Core\Launchers.lua
 Core\SkinSwatches.lua

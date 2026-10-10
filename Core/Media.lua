@@ -188,6 +188,8 @@ Media.icons = {
 		"rotate",
 		-- The World trunk's calendar node.
 		"calendar",
+		-- The World trunk's tracking node.
+		"tracking",
 	},
 
 	--- One drawing, more than one name for it.

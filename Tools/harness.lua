@@ -3608,6 +3608,7 @@ end  -- flavour
 MenuUtil = MenuUtil or {}
 function MenuUtil.CreateContextMenu(owner, generator)
 	_G.__trackingMenu = owner
+	_G.__menuGenerator = generator
 	return generator
 end
 
@@ -7519,7 +7520,7 @@ local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Braids.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
-	"Core/Trunk.lua", "Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
+	"Core/Trunk.lua", "Core/Mail.lua", "Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
@@ -19620,6 +19621,48 @@ do
 	check(_G.CalendarFrame == nil, "the calendar is not loaded in combat")
 	_G.ToggleCalendar = nil
 
+	-- 4b. Tracking is a menu, not a branch: the client's own where it has one,
+	-- and on Era the right-click's cancel (Joe's Era character lists none).
+	T.tr = T.t:Node("tracking")
+	check(T.tr and T.tr.button:IsShown() and T.tr.button.label:GetText() == "TRACKING",
+		"a Tracking node on the trunk")
+	check(select(1, T.tr.button.icon:GetTexCoord()) == select(2, A.Media:Icon("tracking")),
+		"wearing the tracking icon")
+	T.q.button:GetScript("OnClick")(T.q.button)
+	_G.__trackingMenu, _G.__trackingCancelled = nil, nil
+	T.tr.button:GetScript("OnClick")(T.tr.button)
+	check(T.win:IsShown() and T.q.lit, "opening it leaves the open branch alone")
+	if _G.__flavour == "camelot" then
+		check(_G.__trackingMenu ~= nil and _G.__trackingCancelled == nil,
+			"on Forever it opens the client's tracking menu")
+		check(select(2, MinimapCluster.Tracking.Button:GetPoint(1)) == T.tr.button,
+			"parked on the node first, so the menu opens there and not off in a corner")
+	else
+		check(_G.__trackingCancelled == true and _G.__trackingMenu == nil,
+			"on Era, with no tracking list, it cancels the tracking buff")
+		-- With a list, a menu of the list.
+		T.on = { false, true }
+		_G.C_Minimap = {
+			GetNumTrackingTypes = function() return 2 end,
+			GetTrackingInfo = function(i) return { name = ({ "Find Herbs", "Find Minerals" })[i], active = T.on[i] } end,
+			SetTracking = function(i, v) T.on[i] = v end,
+		}
+		_G.__trackingCancelled = nil
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		check(_G.__trackingMenu == T.tr.button and not _G.__trackingCancelled,
+			"on Era with a tracking list, a menu at the node instead of a cancel")
+		T.boxes = {}
+		_G.__menuGenerator(nil, { CreateCheckbox = function(_, name, get, set)
+			T.boxes[#T.boxes + 1] = { name = name, get = get, set = set }
+		end })
+		check(#T.boxes == 2 and T.boxes[1].name == "Find Herbs" and not T.boxes[1].get()
+			and T.boxes[2].get(), "a checkbox per type, ticked when on")
+		T.boxes[1].set()
+		check(T.on[1] == true, "and ticking one turns it on")
+		_G.C_Minimap = nil
+	end
+	T.q.button:GetScript("OnClick")(T.q.button)
+
 	-- 5. Dropped on the left half, the stubs turn round.
 	T.MM.frame:ClearAllPoints()
 	T.MM.frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 24, -24)
@@ -20205,11 +20248,11 @@ do
 	local LN = A.Launchers
 	TBm:SetDock("LEFT")
 
-	-- The envelope anchors above the gear, and the gear anchors to the FAR END
-	-- of the rail. So anything anchored from that end which is missing from the
-	-- rail's length does not get clipped - it walks backwards into the list and
-	-- lands on the last pin, where it reads as simply not being drawn. That is
-	-- what happened the day the envelope was added.
+	-- The gear anchors to the FAR END of the rail. So anything anchored from
+	-- that end which is missing from the rail's length does not get clipped -
+	-- it walks backwards into the list and lands on the last pin, where it
+	-- reads as simply not being drawn. That is what happened the day the
+	-- envelope (since moved to the World trunk) was added.
 	--
 	-- Measured off the frames rather than by restating the formula: a test that
 	-- recomputes the same sum agrees with the bug.
@@ -20225,14 +20268,12 @@ do
 	local rail = TBm.rail
 	local railLen = rail:GetHeight()
 
-	-- Distance from the rail's TOP down to the top edge of each fixed control.
-	-- The gear is anchored BOTTOM-to-BOTTOM with a pad; the envelope sits a pad
-	-- above it.
+	-- Distance from the rail's TOP down to the top edge of the gear, which is
+	-- anchored BOTTOM-to-BOTTOM with a pad.
 	local gearTop = railLen - select(5, rail.gear:GetPoint(1)) - rail.gear:GetHeight()
-	local mailTop = gearTop - select(5, rail.mail:GetPoint(1)) - rail.mail:GetHeight()
 
-	check(rail.mail:GetHeight() > 0 and rail.gear:GetHeight() > 0,
-		"the envelope and the gear are both real sizes")
+	check(rail.gear:GetHeight() > 0, "the gear is a real size")
+	check(rail.mail == nil, "and there is no envelope on the rail: mail is the World trunk's")
 
 	-- The rail's OWN controls are bare glyphs - no chip, no rim - because they
 	-- are part of the rail. A launcher looks different because it IS different:
@@ -20243,7 +20284,7 @@ do
 	-- A ratio rather than the number itself. The number is a taste decision and
 	-- restating it here would test nothing; "not visibly smaller than the
 	-- launchers, and still inside its slot" is the rule that was broken.
-	for _, part in ipairs({ { "envelope", rail.mail }, { "gear", rail.gear } }) do
+	for _, part in ipairs({ { "gear", rail.gear } }) do
 		local g = part[2].glyph
 		local slot = part[2]:GetHeight()
 		check(g:GetHeight() <= slot,
@@ -20268,14 +20309,11 @@ do
 	check(lowest > 0, "and there are pins on the rail to collide with ("
 		.. tostring(lowest) .. ")")
 
-	check(lowest <= mailTop,
-		"the last pin ends ABOVE the envelope rather than underneath it - a"
-		.. " rail one icon too short does not clip what is anchored from its far"
+	check(lowest <= gearTop,
+		"the last pin ends ABOVE the gear rather than underneath it - a rail"
+		.. " one icon too short does not clip what is anchored from its far"
 		.. " end, it stacks it on the list (pin ends " .. tostring(lowest)
-		.. ", envelope starts " .. tostring(mailTop) .. ")")
-	check(mailTop + rail.mail:GetHeight() <= gearTop,
-		"and the envelope ends above the gear (" .. tostring(mailTop) .. " + "
-		.. tostring(rail.mail:GetHeight()) .. " vs " .. tostring(gearTop) .. ")")
+		.. ", gear starts " .. tostring(gearTop) .. ")")
 
 	-- Adding a pin must lengthen the rail, or the next one collides instead.
 	local before = rail:GetHeight()
@@ -20289,403 +20327,149 @@ do
 	TBm:LayoutRail()
 end
 
-print("== toolbox: mail, and what the client will not tell us ==")
+print("== world trunk: mail, and what the client will not tell us ==")
 do
-	local TBm = A:GetModule("toolbox")
-	-- The REAL geometry, not the mock's 1024x768 default. That default clamps
-	-- the drawer to about 506 tall, which is short enough that the panel is
-	-- already cutting both lists to nothing - and an EMPTY mail section is the
-	-- one thing that gives way at that extreme. Testing the section's ordinary
-	-- behaviour on a panel that is busy dropping it reads as the section being
-	-- broken.
-	local mailOldW, mailOldH = UIParent:GetWidth(), UIParent:GetHeight()
-	local mailOldScale = A.db.profile.scale
-	UIParent:SetSize(1365, 768)
-	A.db.profile.scale = 0.71
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-
-	-- The minimap used to carry this and no longer does. Nothing in Minimap.lua
-	-- should mention mail, and the module must not have kept a frame for it - a
-	-- leftover pill at alpha 0 is invisible until somebody re-enables it.
-	check(MMm.mail == nil,
-		"the minimap has no mail pill any more - it lives on the toolbox rail,"
-		.. " which is reachable with the drawer shut")
+	-- The Mail node (Core/Mail.lua), which took over from the Toolbox's rail
+	-- envelope and drawer section (Lattice 6a).
+	local M = { t = A.Trunk:Get("world"), TB = A:GetModule("toolbox"), QL = A:GetModule("questlog") }
+	M.node = M.t:Node("mail")
+	M.b = M.node and M.node.button
+	check(M.b and M.b:IsShown(), "the World trunk carries a Mail node")
+	check(M.TB.rail.mail == nil and M.TB.content and M.TB.content.mailHead == nil,
+		"and the Toolbox carries no mail: no envelope on the rail, no MAIL section in the drawer")
+	check(MMm.mail == nil, "nor does the minimap keep a mail frame of its own")
+	check(M.node.order > M.t:Node("questlog").order and M.node.order < M.t:Node("tracking").order
+		and M.t:Node("tracking").order < M.t:Node("calendar").order,
+		"down the trunk: Quest Log, the quests, Mail, Tracking, Calendar")
 
 	_G.__mail, _G.__mailFrom = false, nil
 	fire("UPDATE_PENDING_MAIL")
+	M.empty = select(2, A.Media:Icon("mail"))
+	M.full = select(2, A.Media:Icon("mailfull"))
+	check(M.empty ~= M.full, "empty and full are different cells of the sheet")
+	check(select(1, M.b.icon:GetTexCoord()) == M.empty and not M.b.dot:IsShown(),
+		"no mail: the empty envelope and no dot")
 
-	local mailBtn = TBm.rail.mail
-	check(mailBtn ~= nil, "the rail carries an envelope")
-	check(select(2, mailBtn:GetPoint(1)) == TBm.rail.gear,
-		"anchored off the gear, so the two travel together whichever edge the"
-		.. " drawer is docked to")
+	-- The branch, beside the stub like every other.
+	M.b:GetScript("OnClick")(M.b)
+	M.p = A.Mail.panel
+	check(M.p and M.p:IsShown() and M.node.lit, "clicked, the Mail branch opens and the node is lit")
+	if M.t.side < 0 then
+		M.edge, M.want = A.Movers.PointAt(M.p, "RIGHT"), A.Movers.PointAt(M.b.stub, "LEFT") - 5.5
+	else
+		M.edge, M.want = A.Movers.PointAt(M.p, "LEFT"), A.Movers.PointAt(M.b.stub, "RIGHT") + 5.5
+	end
+	check(M.edge and M.want and math.abs(M.edge - M.want) < 0.5,
+		"its edge at the stub's end (" .. tostring(M.edge) .. " vs " .. tostring(M.want) .. ")")
+	check(M.p.rows[1]:IsShown() and M.p.rows[1].name:GetText() == "No unread mail"
+		and M.p.rows[1].chip.label:GetText() == "0",
+		"an empty box is one quiet line (got " .. tostring(M.p.rows[1].name:GetText()) .. ")")
+	check(not M.p.rows[2]:IsShown() and M.p.hint:GetText() == "",
+		"only the one, and no hint saying it again")
 
-	local empty = select(2, A.Media:Icon("mail"))
-	local full  = select(2, A.Media:Icon("mailfull"))
-	check(empty ~= full, "empty and full are different cells of the sheet")
-	check(select(1, mailBtn.glyph:GetTexCoord()) == empty,
-		"no mail draws the outline envelope")
-	-- The section is there with an EMPTY box too. It used to vanish, on the
-	-- reasoning that a section reporting nothing is furniture; what that missed
-	-- is that a section which comes and goes is one you go looking for and
-	-- cannot find, and that the panel below it shifting every time the postman
-	-- calls is worse than one quiet line.
-	check(TBm.content.mailHead ~= nil and TBm.content.mailHead:IsShown(),
-		"the drawer still shows a MAIL section with an empty box")
-	check(TBm.content.mail[1]:IsShown()
-		and TBm.content.mail[1].name:GetText() == "No unread mail",
-		"carrying one quiet line saying so (got "
-		.. tostring(TBm.content.mail[1] and TBm.content.mail[1].name:GetText())
-		.. ")")
-	check(not TBm.content.mail[2]:IsShown(),
-		"and only the one - an empty box is not three empty rows")
-	check(TBm.content.mailHint:GetText() == "",
-		"with nothing in the hint, or the section says the same thing twice at"
-		.. " both ends of one line")
-
-	-- Mail arrives.
+	-- Mail arrives with the branch open.
 	_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas" }
 	fire("UPDATE_PENDING_MAIL")
-
-	check(select(1, mailBtn.glyph:GetTexCoord()) == full,
-		"mail swaps the glyph for the filled one")
-	local r, g, b = mailBtn.glyph:GetVertexColor()
-	local ac = A.Palette.c.accent
-	check(ac and math.abs(r - ac[1]) < 0.01 and math.abs(g - ac[2]) < 0.01
-		and math.abs(b - ac[3]) < 0.01,
-		"in the accent, which is what makes it readable at 26px without a badge")
-
-	check(TBm.content.mailHead:IsShown(), "and the MAIL section appears")
-	check(TBm.content.mail[1]:IsShown() and TBm.content.mail[1].name:GetText() == "Thrall",
-		"listing the senders the client named")
-	check(TBm.content.mail[2].name:GetText() == "Sylvanas", "in order")
-	check(not TBm.content.mail[3]:IsShown(),
-		"and no row for a sender that does not exist")
-	check(TBm.content.mailHint:GetText() == "2 new",
-		"the count is EXACT below the client's cap (got "
-		.. tostring(TBm.content.mailHint:GetText()) .. ")")
+	check(select(1, M.b.icon:GetTexCoord()) == M.full and M.b.dot:IsShown(),
+		"mail: the full envelope, and the dot")
+	check(M.b.dot:GetWidth() == 7, "a 7 px dot (" .. tostring(M.b.dot:GetWidth()) .. ")")
+	check(M.p.rows[1].name:GetText() == "Thrall" and M.p.rows[2].name:GetText() == "Sylvanas"
+		and not M.p.rows[3]:IsShown(), "the branch lists the senders the client named, in order")
+	check(M.p.rows[1].chip.label:GetText() == "T" and M.p.rows[2].chip.label:GetText() == "S",
+		"each with its initial")
+	check(M.p.hint:GetText() == "2 new", "the count is exact below the client's cap ("
+		.. tostring(M.p.hint:GetText()) .. ")")
+	check(not M.p.note:IsShown(), "with no note under two")
+	M.h = M.p:GetHeight()
 
 	-- At the cap the number stops being a total.
 	_G.__mailFrom = { "Thrall", "Sylvanas", "Jaina" }
 	fire("UPDATE_PENDING_MAIL")
-	check(TBm.content.mailHint:GetText() == "3+ new",
-		"at three it reads 3+, because three is the CLIENT's cap and not"
-		.. " necessarily the total - GetLatestThreeSenders is named for what it"
-		.. " does, and there is no call that counts (got "
-		.. tostring(TBm.content.mailHint:GetText()) .. ")")
-	check(TBm.content.mail[3]:IsShown(), "and the third row is used")
+	check(M.p.hint:GetText() == "3+ new" and M.p.rows[3]:IsShown(),
+		"at three it reads 3+: three is the client's cap, not the total ("
+		.. tostring(M.p.hint:GetText()) .. ")")
+	check(M.p.note:IsShown() and M.p.note:GetText() == "The game names only three senders.",
+		"and says the game names only three")
+	check(M.p:GetHeight() > M.h, "the branch grows to hold them ("
+		.. tostring(M.h) .. " -> " .. tostring(M.p:GetHeight()) .. ")")
 
-	-- Mail with nobody's name on it. Real, and not a broken mock: this is what
-	-- auction house and NPC mail looks like from outside a mailbox.
+	-- Mail with nobody's name on it: auction house and NPC mail.
 	_G.__mailFrom = nil
 	fire("UPDATE_PENDING_MAIL")
-	check(TBm.content.mailHead:IsShown(),
-		"mail with no sender still shows the section - HasNewMail is true and"
-		.. " saying nothing would be a lie")
-	-- ONE row, and it is not a sender. This state was reading as a bug because
-	-- the section said "you have mail" and stopped; the answer is something the
-	-- player can actually do, so it says that instead.
-	check(TBm.content.mail[1]:IsShown()
-		and TBm.content.mail[1].chip.label:GetText() == "?",
-		"one row saying it does not know, rather than a heading over nothing")
-	check(not TBm.content.mail[2]:IsShown(), "and only the one")
-	check(TBm.content.mailHint:GetText() == HAVE_MAIL,
-		"and the client's own wording instead of a number (got "
-		.. tostring(TBm.content.mailHint:GetText()) .. ")")
+	check(M.b.dot:IsShown() and M.p.rows[1].chip.label:GetText() == "?"
+		and M.p.rows[1].name:GetText() == "Senders show after a mailbox visit"
+		and not M.p.rows[2]:IsShown(),
+		"mail with no sender: one row saying where the names are")
+	check(M.p.hint:GetText() == HAVE_MAIL and not M.p.note:IsShown(),
+		"and the client's own wording for the hint")
 
-	-- An empty section is the ONE thing that gives way, and only at an extreme
-	-- nobody sees. "Mail is never cut" is right about mail you HAVE - a list
-	-- that drops the sender you were looking for to make room for a toggle has
-	-- its priorities backwards - and wrong about a line reading "No unread
-	-- mail", which is the least informative thing on the panel.
-	--
-	-- Swept rather than asserted at one size, because a rule that quietly fired
-	-- on an ordinary screen would look exactly like the section not having been
-	-- made permanent at all.
-	do
-		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
-		local wasScale = A.db.profile.scale
-		_G.__mail, _G.__mailFrom = false, nil
+	-- WHAT THE MAILBOX KNOWS.
+	_G.__inbox = {
+		{ sender = "Thrall",   subject = "Warchief business", read = false },
+		{ sender = "Thrall",   subject = "Again",             read = false },
+		{ sender = "Vol'jin",  subject = "Darkspear",         read = false },
+		{ sender = "Cairne",   subject = "Read already",      read = true  },
+		{ sender = "Sylvanas", subject = "Forsaken",          read = false },
+	}
+	fire("MAIL_INBOX_UPDATE")
+	M.has, M.senders, M.unread, M.stale = A.Mail:State()
+	check(M.unread == 4, "a true unread count at a mailbox, the read one left out ("
+		.. tostring(M.unread) .. ")")
+	check(#M.senders == 3 and M.senders[1] == "Thrall" and M.senders[2] == "Vol'jin",
+		"senders once each, in the box's order")
+	check(M.stale == true, "and flagged as remembered rather than current")
+	check(A.db.char.toolbox.mail and A.db.char.toolbox.mail.unread == 4,
+		"kept where the Toolbox kept it, so nothing saved is lost")
+	check(M.p.hint:GetText() == "4 unread \194\183 last visit" and M.p.rows[1].chip.label:GetText() == "T",
+		"the branch marks them as the last visit (" .. tostring(M.p.hint:GetText()) .. ")")
+	check(not M.p.note:IsShown(), "no cap note: the box's own list is not capped")
 
-		local kept = {}
-		for _, case in ipairs({ { 1365, 768, 0.71 }, { 1365, 768, 1.0 },
-			{ 1024, 768, 0.71 }, { 2560, 1440, 0.71 }, { 1365, 768, 0.85 } }) do
-			UIParent:SetSize(case[1], case[2])
-			A.db.profile.scale = case[3]
-			TBm:SetDock("LEFT")
-			fire("UPDATE_PENDING_MAIL")
-			if not TBm.content.mailHead:IsShown() then
-				kept[#kept + 1] = string.format("%dx%d@%.2f", case[1], case[2], case[3])
-			end
-		end
-		check(#kept == 0, "an empty MAIL section survives every ordinary screen"
-			.. (#kept > 0 and (" - dropped at " .. table.concat(kept, ", ")) or ""))
+	-- Walk away: the record outlives the mailbox.
+	_G.__inbox = nil
+	fire("UPDATE_PENDING_MAIL")
+	check(select(3, A.Mail:State()) == 4, "and it survives leaving the mailbox")
+	-- The client's answer wins when it has one.
+	_G.__mailFrom = { "Jaina" }
+	fire("UPDATE_PENDING_MAIL")
+	M.has, M.senders, M.unread, M.stale = A.Mail:State()
+	check(M.senders[1] == "Jaina" and #M.senders == 1 and not M.stale and not M.unread,
+		"mail that arrives now is named by the client and takes precedence")
+	-- An empty box clears the record, rather than leaving zeroes.
+	_G.__mailFrom = nil
+	_G.__inbox = { { sender = "Thrall", read = true } }
+	fire("MAIL_INBOX_UPDATE")
+	check(select(3, A.Mail:State()) == nil and A.Mail:Record() == nil,
+		"an empty box clears the record, and nothing is left in saved variables")
+	_G.__inbox = nil
 
-		-- ...and it really can give way, or the rule is dead code and the panel
-		-- overflows on the one screen that needed it.
-		UIParent:SetSize(1000, 600)
-		A.db.profile.scale = 1.0
-		TBm:SetDock("LEFT")
-		fire("UPDATE_PENDING_MAIL")
-		check(not TBm.content.mailHead:IsShown(),
-			"and gives way on a 506px panel, where keeping it would not leave"
-			.. " room for a single row of settings tiles")
-		check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
-			"which is what keeps that panel fitting ("
-			.. string.format("%.0f of %.0f", TBm._contentHeight,
-				TBm.panel:GetHeight()) .. ")")
+	-- A name that starts with a multi-byte character gives a whole one.
+	_G.__mail, _G.__mailFrom = true, { "\195\150lrun", "Thrall" }
+	fire("UPDATE_PENDING_MAIL")
+	check(M.p.rows[1].chip.label:GetText() == "\195\150",
+		"a multi-byte initial is a whole character (" .. tostring(M.p.rows[1].chip.label:GetText()) .. ")")
 
-		UIParent:SetSize(wasW, wasH)
-		A.db.profile.scale = wasScale
-		TBm:SetDock("LEFT")
-		fire("UPDATE_PENDING_MAIL")
-	end
-
-	-- The section takes part in the ONE top-down accumulator rather than being
-	-- drawn over whatever was already there.
-	--
-	-- Measured on the accumulator itself, not on the settings tiles: the panel
-	-- in here is 505 units tall and every tile is already cut, so a tile's
-	-- position is stale rather than informative. The first version of this
-	-- check read one anyway and passed a stale -430 against itself.
-	do
-		_G.__mail, _G.__mailFrom = false, nil
-		fire("UPDATE_PENDING_MAIL")
-		local dry = TBm._contentHeight
-
-		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
-		fire("UPDATE_PENDING_MAIL")
-		local wet = TBm._contentHeight
-
-		check(dry and wet and wet > dry,
-			"the content grows by the mail block rather than the section landing"
-			.. " on top of what was already laid out (" .. tostring(dry)
-			.. " -> " .. tostring(wet) .. ")")
-
-		-- Mail with nobody's name on it costs ONE row, the same as an empty box:
-		-- both are a line that is not a sender, and the section reserves height
-		-- for rows it draws rather than for senders it has.
-		--
-		-- This used to compare against the section being ABSENT, which is no
-		-- longer a state - it is always there now. What is left to check is that
-		-- the two one-row cases really are one row, and that three senders costs
-		-- more than one line rather than the header simply being drawn over
-		-- whatever was under it.
-		_G.__mail, _G.__mailFrom = true, nil
-		fire("UPDATE_PENDING_MAIL")
-		local nameless = TBm._contentHeight
-		check(TBm._mailRowCount == 1,
-			"a nameless mail section is one row - the 'we cannot say who from'"
-			.. " line (got " .. tostring(TBm._mailRowCount) .. ")")
-		check(nameless == dry,
-			"and costs exactly what the empty box did, because both are one line"
-			.. " (" .. tostring(dry) .. " vs " .. tostring(nameless) .. ")")
-		check(wet > nameless,
-			"while three named senders costs two rows more, so the accumulator"
-			.. " really is being advanced by what is drawn rather than the"
-			.. " header being laid over what was under it (" .. tostring(nameless)
-			.. " -> " .. tostring(wet) .. ")")
-
-		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
-		fire("UPDATE_PENDING_MAIL")
-
-		local mailY = select(5, TBm.content.mailHead:GetPoint(1))
-		local newsY = select(5, TBm.content.news:GetPoint(1))
-		check(mailY < newsY,
-			"and it lands BELOW the fixed sections above it rather than at the"
-			.. " top of the panel")
-	end
-
-	-- On a TALL screen, where the settings tiles actually fit.
-	--
-	-- At the harness's default 1024x768 the panel clamps to 505 units and every
-	-- tile is cut, so nothing below the mail section is laid out and the
-	-- arithmetic that gives it room is never run. The first version of this
-	-- test read a cut tile's stale position and passed a value against itself.
-	do
-		local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-		UIParent:SetSize(1365, 1600)
-
-		_G.__mail, _G.__mailFrom = false, nil
-		TBm:SetDock("LEFT")           -- re-measures the panel against the screen
-		fire("UPDATE_PENDING_MAIL")
-		check(TBm.content.tiles[1]:IsShown(),
-			"the settings tiles fit on a tall screen (cut " ..
-			tostring(TBm._tilesCut) .. ")")
-		local dryTile = select(5, TBm.content.tiles[1]:GetPoint(1))
-
-		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
-		fire("UPDATE_PENDING_MAIL")
-		local wetTile = select(5, TBm.content.tiles[1]:GetPoint(1))
-		check(wetTile < dryTile,
-			"and they move DOWN when the mail section appears above them rather"
-			.. " than being drawn under it - y is negative here, so lower is"
-			.. " smaller (" .. tostring(dryTile) .. " -> " .. tostring(wetTile)
-			.. ")")
-
-		UIParent:SetSize(oldW, oldH)
-		TBm:SetDock("LEFT")
-	end
-
-	-- WHAT THE MAILBOX KNOWS, which is everything the notification does not.
-	do
-		_G.__mail, _G.__mailFrom = true, nil
-		fire("UPDATE_PENDING_MAIL")
-		check(TBm.content.mail[1].chip.label:GetText() == "?",
-			"before a mailbox visit the section admits it does not know")
-
-		-- Standing at a mailbox: the inbox arrives and MAIL_INBOX_UPDATE fires.
-		_G.__inbox = {
-			{ sender = "Thrall",   subject = "Warchief business", read = false },
-			{ sender = "Thrall",   subject = "Again",             read = false },
-			{ sender = "Vol'jin",  subject = "Darkspear",         read = false },
-			{ sender = "Cairne",   subject = "Read already",      read = true  },
-			{ sender = "Sylvanas", subject = "Forsaken",          read = false },
-		}
-		fire("MAIL_INBOX_UPDATE")
-
-		local _, senders, unread, stale = TBm:MailState()
-		check(unread == 4,
-			"a TRUE unread count, which exists at a mailbox and nowhere else -"
-			.. " the read one is not in it (got " .. tostring(unread) .. ")")
-		check(#senders == 3,
-			"senders deduplicated - two from Thrall is one name in a list of"
-			.. " who has written to you (got " .. #senders .. ")")
-		check(senders[1] == "Thrall" and senders[2] == "Vol'jin",
-			"in the order the box holds them")
-		check(stale == true,
-			"and flagged as REMEMBERED rather than current - mail read on"
-			.. " another character is not in this and the section has to say so")
-
-		check(TBm.content.mailHint:GetText() == "4 unread \194\183 last visit",
-			"the hint says which claim it is making (got "
-			.. tostring(TBm.content.mailHint:GetText()) .. ")")
-		check(TBm.content.mail[1].chip.label:GetText() == "T",
-			"and the rows are senders again rather than a question mark")
-
-		-- Walk away, come back later. The record outlives the mailbox, which is
-		-- the entire point of writing it down.
-		_G.__inbox = nil
-		fire("UPDATE_PENDING_MAIL")
-		check(select(3, TBm:MailState()) == 4,
-			"and it survives leaving the mailbox (got "
-			.. tostring(select(3, TBm:MailState())) .. ")")
-
-		-- The client's own answer WINS when it has one: it is about now, and
-		-- the record is about the last time anybody looked.
-		_G.__mailFrom = { "Jaina" }
-		fire("UPDATE_PENDING_MAIL")
-		local _, live, count, wasStale = TBm:MailState()
-		check(live[1] == "Jaina" and #live == 1 and not wasStale and not count,
-			"mail that arrives NOW is named by the client and takes precedence"
-			.. " over the record")
-
-		-- Reading it all clears the record rather than leaving a number that
-		-- describes mail that is no longer there.
-		_G.__mailFrom = nil
-		_G.__inbox = { { sender = "Thrall", read = true } }
-		fire("MAIL_INBOX_UPDATE")
-		check(select(3, TBm:MailState()) == nil,
-			"an empty box clears the record - a remembered count that outlives"
-			.. " its mail is worse than no count")
-
-		-- ...and the record is REMOVED, not left holding zeroes. MailState
-		-- reads the same either way, so this is the only place the difference
-		-- shows: an empty table in saved variables is a thing that gets read
-		-- back next session and reasoned about by somebody who did not write it.
-		check(TBm:MailRecord() == nil,
-			"and nothing is left behind in saved variables")
-	end
-
-	-- ...and on a screen where it does NOT all fit, which is the only place the
-	-- arithmetic that hands out the room can be observed at all.
-	--
-	-- 1365x560 was found by sweeping 520 to 700 in fives: below 540 the tiles
-	-- are cut whatever the mail is doing and above 590 they fit either way, so
-	-- both ends are blind to whether the mail block was subtracted from what is
-	-- left. In the band between, three named senders cost exactly two settings
-	-- tiles against an empty box, and a version that forgot to subtract them
-	-- lays those tiles out past the bottom of the panel where nobody can reach
-	-- them.
-	--
-	-- It was 780 when the section came and went with the mail and the whole
-	-- block was the difference. Then 620, once the section became permanent and
-	-- the difference was only the two extra ROWS. Now 560, because the micro row
-	-- divides itself by what fits rather than at a fixed five, and this client's
-	-- ten doors go on ONE row of 35-unit cells instead of two of 70 - so the
-	-- drawer gives thirty units back to the lists below it and the whole band
-	-- moves down by exactly that.
-	--
-	-- Re-sweep this when anything above the lists changes height. The number is
-	-- a property of the layout, not of the check.
-	do
-		local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-		UIParent:SetSize(1365, 560)
-
-		-- A long addon list too, so the OTHER list that gives way is not empty.
-		for i = 1, 10 do _G.__makeLDB("RoomTest" .. i, "launcher") end
-		A.Launchers:Scan()
-		TBm:RefreshAddons()
-
-		TBm:SetDock("LEFT")
-		_G.__mail, _G.__mailFrom = false, nil
-		fire("UPDATE_PENDING_MAIL")
-		local panelH = TBm.panel:GetHeight()
-		check(TBm._contentHeight <= panelH + 1,
-			"with no mail, everything laid out fits the panel ("
-			.. string.format("%.0f of %.0f", TBm._contentHeight, panelH) .. ")")
-
-		_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
-		fire("UPDATE_PENDING_MAIL")
-		check(TBm._contentHeight <= panelH + 1,
-			"and WITH mail it still does - the lists below give way by exactly"
-			.. " the mail block rather than being laid out past the bottom edge"
-			.. " ("  .. string.format("%.0f of %.0f", TBm._contentHeight, panelH)
-			.. ")")
-		check(TBm._tilesCut > 0,
-			"which cost something real here rather than fitting anyway - the"
-			.. " check above is blind on a screen with room to spare")
-
-		-- The sender's own initial, not a third copy of the envelope the
-		-- heading already carries. The only thing that varied down that column
-		-- was the name, which is what made it read as flat as it was.
-		check(TBm.content.mail[1].chip ~= nil
-			and TBm.content.mail[1].chip.label:GetText() == "T",
-			"each row carries its sender's initial (got "
-			.. tostring(TBm.content.mail[1].chip
-				and TBm.content.mail[1].chip.label:GetText()) .. ")")
-		check(TBm.content.mail[2].chip.label:GetText() == "S",
-			"and they differ down the column, which is the job of a list")
-
-		UIParent:SetSize(oldW, oldH)
-		TBm:SetDock("LEFT")
-	end
-
-	-- A name that starts with a multi-byte character. Lua has no unicode, so
-	-- who:sub(1,1) takes one BYTE and half a character draws as a box.
-	do
-		_G.__mail, _G.__mailFrom = true, { "\195\150lrun", "Thrall" }
-		fire("UPDATE_PENDING_MAIL")
-		check(TBm.content.mail[1].chip.label:GetText() == "\195\150",
-			"a name beginning with a multi-byte character gives a whole one -"
-			.. " sub(1,1) would hand the font half a codepoint (got "
-			.. tostring(TBm.content.mail[1].chip.label:GetText()) .. ")")
-	end
-
-	-- Reading it at a mailbox clears the flag without UPDATE_PENDING_MAIL
-	-- necessarily firing, which is why MAIL_INBOX_UPDATE is registered too.
+	-- Emptied at a mailbox: MAIL_INBOX_UPDATE alone puts the envelope back.
 	_G.__mail, _G.__mailFrom = false, nil
 	fire("MAIL_INBOX_UPDATE")
-	check(select(1, mailBtn.glyph:GetTexCoord()) == empty,
-		"emptying the box at a mailbox puts the envelope back - an indicator"
-		.. " still glowing after you have read your mail is the version of this"
-		.. " anybody would notice")
+	check(select(1, M.b.icon:GetTexCoord()) == M.empty and not M.b.dot:IsShown(),
+		"emptying the box at a mailbox puts the empty envelope back")
 
-	UIParent:SetSize(mailOldW, mailOldH)
-	A.db.profile.scale = mailOldScale
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(false, true)
+	-- One branch at a time, Escape, the retract, and its own node again.
+	M.q = M.t:Node("questlog")
+	M.q.button:GetScript("OnClick")(M.q.button)
+	check(not M.p:IsShown() and M.QL.win:IsShown() and not M.node.lit,
+		"opening the Quest Log closes the Mail branch")
+	M.q.button:GetScript("OnClick")(M.q.button)
+	M.found = false
+	for _, n in ipairs(UISpecialFrames or {}) do if n == M.p:GetName() then M.found = true end end
+	check(M.found, "Escape closes it: the branch is in UISpecialFrames")
+	M.b:GetScript("OnClick")(M.b)
+	M.t:SetRetracted(true, true)
+	check(not M.p:IsShown(), "the trunk retracting takes the branch with it")
+	M.t:SetRetracted(false, true)
+	M.b:GetScript("OnClick")(M.b)
+	M.b:GetScript("OnClick")(M.b)
+	check(not M.p:IsShown() and not M.node.lit, "and clicking its node again closes it")
 end
 
 print("== launchers: what counts as somebody's button ==")
@@ -23108,7 +22892,6 @@ do
 	local TBm = A:GetModule("toolbox")
 	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
 	local oldScale = A.db.profile.scale
-	local oldMail, oldFrom = _G.__mail, _G.__mailFrom
 	UIParent:SetSize(1365, 768)
 	A.db.profile.scale = 0.71
 
@@ -23125,8 +22908,6 @@ do
 		return xOff or 0
 	end
 
-	_G.__mail, _G.__mailFrom = false, nil
-	fire("UPDATE_PENDING_MAIL")
 	TBm:SetDock("BOTTOM")
 	TBm:SetOpen(true, true)
 	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
@@ -23185,7 +22966,7 @@ do
 			end
 		end
 		scan(c.micro, #(TBm._microList or {}))
-		scan(c.cards); scan(c.addons); scan(c.mail); scan(c.tiles)
+		scan(c.cards); scan(c.addons); scan(c.tiles)
 		return low
 	end
 
@@ -23209,17 +22990,8 @@ do
 
 	do
 		local order = TBm:HorizontalColumns()
-		check(#order == 5 and order[4] == "mail" and order[5] == "settings",
-			"there are five columns with an EMPTY box too - a mail column that"
-			.. " came and went would change every other column's width the"
-			.. " moment anything arrived, reflowing the whole drawer to report"
-			.. " one more thing")
-		check(c.mailHead:IsShown() and topOf(c.mailHead) == topRow,
-			"and its heading is on the top row like the rest")
-		check(c.mail[1]:IsShown()
-			and c.mail[1].name:GetText() == "No unread mail",
-			"carrying the same quiet line the tall panel shows, so the two"
-			.. " layouts agree")
+		check(#order == 4 and order[3] == "addons" and order[4] == "settings",
+			"four fixed columns, with no mail column: mail is the World trunk's")
 	end
 
 	-- Every column has to FIT its share, not merely start inside the panel: one
@@ -23299,40 +23071,6 @@ do
 			.. " column a third the width gives six cards too narrow to read"
 			.. " (got " .. widest .. ")")
 	end
-
-	-- Mail takes a column of its own rather than eating the addon list.
-	local addonsWithoutMail = 0
-	for _, row in ipairs(c.addons) do if row:IsShown() then addonsWithoutMail = addonsWithoutMail + 1 end end
-	check(addonsWithoutMail > 0, "the addon list has rows to lose")
-
-	_G.__mail, _G.__mailFrom = true, { "Thrall", "Sylvanas", "Jaina" }
-	fire("UPDATE_PENDING_MAIL")
-	TBm:LayoutContent()
-
-	do
-		local order = TBm:HorizontalColumns()
-		check(#order == 5 and order[4] == "mail",
-			"mail arriving adds a fifth column between the addons and the"
-			.. " settings")
-	end
-	check(c.mailHead:IsShown() and topOf(c.mailHead) == topRow,
-		"the MAIL heading joins the top row like every other section")
-	check(leftOf(c.mailHead) > leftOf(c.addonsHead)
-		and leftOf(c.tilesHead) > leftOf(c.mailHead),
-		"sitting between the addon list and the settings tiles")
-
-	local addonsWithMail = 0
-	for _, row in ipairs(c.addons) do if row:IsShown() then addonsWithMail = addonsWithMail + 1 end end
-	check(addonsWithMail == addonsWithoutMail,
-		"and the addon list keeps every row it had - stacked under the addons"
-		.. " the way the vertical panel does it, mail costs the list half its"
-		.. " rows every time the postman calls, and the addon list is already the"
-		.. " section that gives way (" .. addonsWithMail .. " vs "
-		.. addonsWithoutMail .. ")")
-	check(TBm._contentHeight <= panelH + 0.5,
-		"and the taller drawer still fits ("
-		.. string.format("%.0f", TBm._contentHeight) .. " of "
-		.. string.format("%.0f", panelH) .. ")")
 
 	-- Squeezed. The columns cut on their own account rather than in one order.
 	UIParent:SetSize(1000, 600)
@@ -23527,8 +23265,6 @@ do
 		and math.abs(leftOf(c.widgetsHead) - leftOf(c.title)) < 0.5,
 		"and the sections stack again, in one column at one x")
 
-	_G.__mail, _G.__mailFrom = oldMail, oldFrom
-	fire("UPDATE_PENDING_MAIL")
 	UIParent:SetSize(oldW, oldH)
 	A.db.profile.scale = oldScale
 	TBm:SetDock("LEFT")
@@ -33355,22 +33091,14 @@ section("nifec: the mini-player, on the ground", function()
 	-- THE RAIL, IN ORDER. The two settled controls sit at the far end together:
 	-- the way to the options, and the way to stop the music.
 	do
-		-- CHECKED ON THE ANCHORS, which is what the layout actually decides. The
-		-- chain has to be built from what is SHOWING: anchored to a hidden frame
-		-- the envelope keeps the geometry that frame would have had, so a season
-		-- nobody installed leaves an icon's worth of hole in the rail.
+		-- CHECKED ON THE ANCHORS, which is what the layout actually decides.
 		local _, playRel = TBm.rail.play:GetPoint()
-		local _, mailRel = TBm.rail.mail:GetPoint()
 		check(playRel == TBm.rail.gear,
 			"the transport sits immediately above the gear")
-		check(mailRel == TBm.rail.play, "with the envelope above it")
 
 		R:Reset()
 		TBm:Layout()
-		local _, bare = TBm.rail.mail:GetPoint()
-		check(not TBm.rail.play:IsShown() and bare == TBm.rail.gear,
-			"and with no content the envelope closes the gap rather than"
-			.. " anchoring to a chip that is not there")
+		check(not TBm.rail.play:IsShown(), "and with no content there is no transport on the rail")
 		R:Register(season)
 		TBm:Layout()
 		TBm:LayoutContent()

@@ -5,15 +5,12 @@
 	carrying the zone, your coordinates and the time. In a fight the pill's
 	contents swap for a red dot and "In combat".
 
-	No mail indicator. It lived here because the minimap is where Blizzard put
-	one, and it moved to the Toolbox rail with everything else you have to be
-	able to reach with the drawer shut - see Modules/Toolbox.lua, which is also
-	where the client's very short list of mail APIs is written down.
+	Mail, tracking and the calendar are nodes on the World trunk, which hangs
+	from the pill (Lattice 6a). Mail's own code is Core/Mail.lua.
 
 	Everything else Blizzard hangs off the minimap - zoom, tracking, the
 	day/night dial, the battleground eye, the border art, the toggle tab - is
-	banished. Zoom is on the wheel and tracking is on right-click, so the two
-	that were actually load-bearing survive without any chrome to show for it.
+	banished. Zoom is on the wheel and tracking is on right-click too.
 
 	Blizzard's Minimap cannot be rebuilt
 	------------------------------------
@@ -707,6 +704,96 @@ local function CloseCalendar()
 	if _G.Calendar_Hide then pcall(_G.Calendar_Hide) else f:Hide() end
 end
 
+-- ---------------------------------------------------------------------------
+-- tracking (right-click on the map, and the World trunk's Tracking node)
+--
+-- THROUGH THE CLIENT'S OWN MENU, not a dropdown frame. There is no
+-- MiniMapTrackingDropDown on 1.15.9: tracking is a DropdownButton that builds
+-- its list in a generator, and reaching for the old frame did nothing at all,
+-- silently, exactly like the unit frames' menu once did.
+-- ---------------------------------------------------------------------------
+
+--- The tracking button, on a client that has one.
+--
+--  THE PARENTKEY FIRST, because on WoW Forever there is no
+--  MiniMapTrackingButton global at all - tracking is
+--  MinimapCluster.Tracking.Button, a DropdownButton whose list is built by
+--  SetupMenu in its own OnLoad. It carries NO menuGenerator, so OpenMenu is the
+--  only handle; that is the same one EllesmereUI guards on before touching it.
+local function TrackingButton()
+	return Resolve({ "MinimapCluster", "Tracking", "Button" }) or _G.MiniMapTrackingButton
+end
+
+--- How many tracking types C_Minimap lists, or nil for none. On Era this has
+--  answered 0 (Joe, in game), but a list may be there for a character with
+--  more than one way to track, so it is asked at the click.
+local function TrackingCount()
+	local CM = _G.C_Minimap
+	if not (CM and CM.GetNumTrackingTypes and CM.GetTrackingInfo and CM.SetTracking) then return nil end
+	local ok, n = pcall(CM.GetNumTrackingTypes)
+	if ok and type(n) == "number" and n > 0 then return n end
+	return nil
+end
+
+--- A tracking type's name and whether it is on. The table form, or the older
+--  name, texture, active returns.
+local function TrackingInfo(i)
+	local ok, a, _, c = pcall(_G.C_Minimap.GetTrackingInfo, i)
+	if not ok then return nil end
+	if type(a) == "table" then return a.name, a.active end
+	return a, c
+end
+
+--- The tracking list as a menu of our own, one checkbox per type.
+local function TrackingMenu(_, root)
+	for i = 1, TrackingCount() or 0 do
+		local name = TrackingInfo(i)
+		if name then
+			root:CreateCheckbox(name,
+				function() return select(2, TrackingInfo(i)) and true or false end,
+				function()
+					local _, on = TrackingInfo(i)
+					pcall(_G.C_Minimap.SetTracking, i, not on)
+				end)
+		end
+	end
+end
+
+--- Whether there is any tracking to reach on this client.
+local function TrackingAvailable()
+	local b = TrackingButton()
+	return (b and (b.menuGenerator or b.OpenMenu)) and true
+		or TrackingCount() ~= nil or _G.CancelTrackingBuff ~= nil
+end
+
+--- Open the tracking menu at `anchor`: the client's own where it has one, ours
+--  from C_Minimap's list where that has entries, and otherwise what Era's
+--  hidden frame did on a right-click - cancel the tracking buff.
+function MM:OpenTracking(anchor)
+	local menu = _G.MenuUtil and _G.MenuUtil.CreateContextMenu
+	local b = TrackingButton()
+	-- OpenMenu anchors the menu to the BUTTON, which is banished to a hidden
+	-- frame - so the list would open where nobody can see it. Park it on the
+	-- anchor first; position only, it stays hidden and mouse-off.
+	if b and not b.menuGenerator and b.OpenMenu and not InCombatLockdown() then
+		pcall(b.ClearAllPoints, b)
+		pcall(b.SetPoint, b, "CENTER", anchor, "CENTER", 0, 0)
+	end
+	if b and b.menuGenerator and menu then
+		-- Borrowed, not copied, so the list stays whatever Blizzard says.
+		pcall(menu, anchor, b.menuGenerator)
+	elseif b and b.OpenMenu then
+		pcall(b.OpenMenu, b)
+	elseif menu and TrackingCount() then
+		pcall(menu, anchor, TrackingMenu)
+	-- ERA HAS NO MENU AT ALL. The toc gates MinimapTracking_Simple to vanilla:
+	-- a bare frame with an icon and NO button, because tracking there is a buff
+	-- you cast. Cancelling it is the whole of what that frame did.
+	elseif _G.CancelTrackingBuff then
+		pcall(_G.CancelTrackingBuff)
+	end
+end
+
 function MM:OnEnable()
 	local cfg = A.Config:Module("minimap")
 
@@ -727,61 +814,11 @@ function MM:OnEnable()
 					else _G.Minimap:SetZoom(math.max(0, _G.Minimap:GetZoom() - 1)) end
 				end
 			end)
-			-- Tracking has no button any more, so it lives here. This is the one
-			-- piece of hidden furniture that was doing real work.
-			--
-			-- THROUGH THE CLIENT'S OWN MENU, not a dropdown frame. There is no
-			-- MiniMapTrackingDropDown on 1.15.9 and there is no
-			-- ToggleDropDownMenu worth the name: tracking is a DropdownButton
-			-- that builds its list in a generator, and what we were reaching
-			-- for had not existed for years. Right-clicking the map did nothing
-			-- at all, silently, exactly like the unit frames' menu.
-			--
-			-- The generator is borrowed rather than copied, so the list stays
-			-- whatever Blizzard says it is - and opened as a CONTEXT menu, which
-			-- puts it at the cursor. Its own OpenMenu would anchor to the button,
-			-- and the button is hidden furniture parked off in a corner.
+			-- Tracking has no button any more: right-click here, or the World
+			-- trunk's Tracking node. Both go through MM:OpenTracking.
 			_G.Minimap:SetScript("OnMouseUp", function(self_, button)
 				if button == "RightButton" then
-					-- THE PARENTKEY FIRST, because on WoW Forever there is no
-					-- MiniMapTrackingButton global at all - tracking is
-					-- MinimapCluster.Tracking.Button, a DropdownButton whose list
-					-- is built by SetupMenu in its own OnLoad. It carries NO
-					-- menuGenerator, so the borrow-the-generator branch below
-					-- cannot fire there and OpenMenu is the only handle; that is
-					-- the same one EllesmereUI guards on before touching it.
-					local b = Resolve({ "MinimapCluster", "Tracking", "Button" })
-						or _G.MiniMapTrackingButton
-					-- OpenMenu anchors the menu to the BUTTON, and we have just
-					-- banished the button to a hidden frame - so the list would
-					-- open somewhere nobody can see. Park it on the map first.
-					-- Position only: it stays hidden and mouse-off, we are
-					-- borrowing where it is, not putting it back on screen.
-					if b and not b.menuGenerator and b.OpenMenu and not InCombatLockdown() then
-						pcall(b.ClearAllPoints, b)
-						pcall(b.SetPoint, b, "CENTER", _G.Minimap, "CENTER", 0, 0)
-					end
-					if b and b.menuGenerator and MenuUtil and MenuUtil.CreateContextMenu then
-						pcall(MenuUtil.CreateContextMenu, _G.Minimap, b.menuGenerator)
-					elseif b and b.OpenMenu then
-						pcall(b.OpenMenu, b)
-					-- AND ON ERA THERE IS NO MENU AT ALL, which both earlier
-					-- versions of this got wrong the same way. The toc gates
-					-- MinimapTracking_Simple to vanilla: Era's tracking is a
-					-- bare frame with an icon and NO button inside it, because
-					-- on vanilla tracking is a buff you cast and there is no
-					-- list to choose from. MiniMapTrackingButton belongs to
-					-- later clients, and reaching for it here was reaching for
-					-- MiniMapTrackingDropDown all over again.
-					--
-					-- So: the menu where there is a menu, and otherwise the
-					-- thing the hidden frame itself did on a right-click -
-					-- cancel the tracking buff. That is the whole of the
-					-- function we took off the screen, and it is why this
-					-- handler exists.
-					elseif _G.CancelTrackingBuff then
-						pcall(_G.CancelTrackingBuff)
-					end
+					MM:OpenTracking(_G.Minimap)
 					return
 				end
 				if _G.Minimap_OnClick then pcall(_G.Minimap_OnClick, self_, button) end
@@ -805,6 +842,13 @@ function MM:OnEnable()
 	A.Fader:Register(self.frame, {})
 	A.Fader:Register(self.pill, {})
 
+	A.Mail:Attach()
+	A.Trunk:Get("world"):AddNode("tracking", {
+		icon = "tracking", label = L.trunk.tracking, order = 500,
+		menu = true,
+		available = TrackingAvailable,
+		open = function(node) MM:OpenTracking(node.button) end,
+	})
 	A.Trunk:Get("world"):AddNode("calendar", {
 		icon = "calendar", label = L.trunk.calendar, order = 900,
 		available = CalendarAvailable,
@@ -852,6 +896,7 @@ function MM:OnDisable()
 	A:UnregisterTicker(self)
 	if self._ticker then self._ticker:Cancel(); self._ticker = nil end
 	A.Movers:Unregister("minimap")
+	A.Mail:Detach()
 	A.Trunk:Get("world"):SetRoot(nil)
 	if self.frame then
 		A.Fader:Unregister(self.frame)
@@ -875,6 +920,7 @@ function MM:OnSkinChanged()
 	self.pill.clockW = FieldWidth(self.pill.clock, CLOCK_SAMPLE)
 	self:UpdateZone()
 	A.Trunk:Get("world"):Paint()
+	A.Mail:Skin()
 end
 
 function MM:OnConfigChanged()

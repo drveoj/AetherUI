@@ -39,6 +39,7 @@ A.Trunk = Trunk
 -- The handoff's numbers, in HUD units (a pixel at the fitted scale).
 local NODE, ICON, STEP, STUB = 24, 14, 72, 80
 local ITEM = 18
+local BADGE = 7
 -- A branch node's room when a quest hangs straight under it: 72 left the
 -- first quest adrift of its Quest Log node (Joe, in game).
 local LEAD = 36
@@ -142,6 +143,12 @@ local function BuildNode(t, node)
 	b.icon = b:CreateTexture(nil, "OVERLAY")
 	b.icon:SetPoint("CENTER")
 	b.icon:SetSize(ICON, ICON)
+	-- The node's own news, such as mail waiting: a dot off its top corner.
+	b.dot = b:CreateTexture(nil, "OVERLAY", nil, 2)
+	b.dot:SetTexture(Media.texture.chipDisc)
+	b.dot:SetSize(BADGE, BADGE)
+	b.dot:SetPoint("CENTER", b, "TOPRIGHT", -4, -4)
+	b.dot:Hide()
 	b.stub = f:CreateTexture(nil, "BACKGROUND")
 	b.stub:SetTexture(Media.texture.flat)
 	b.junction = f:CreateTexture(nil, "ARTWORK")
@@ -169,6 +176,11 @@ function Proto:Paint()
 		elseif b then
 			local lit = node.isOpen and node.isOpen() and true or false
 			node.lit = lit
+			Media:SetIcon(b.icon, type(node.icon) == "function" and node.icon() or node.icon)
+			local dot = node.badge and node.badge() and true or false
+			b.dot:SetShown(dot)
+			-- In the text colour on a lit node, which is accent all over.
+			if dot then W.Tint(b.dot, lit and c.text or a, 1) end
 			if lit then
 				W.Tint(b.fill, a, 1)
 				W.Tint(b.rim, a, 1)
@@ -252,7 +264,6 @@ function Proto:Refresh()
 			b.label:SetShown(on)
 		end
 		if on and node.kind ~= "item" then
-			Media:SetIcon(b.icon, node.icon)
 			b.stub:ClearAllPoints()
 			b.stub:SetWidth(STUB)
 			if side < 0 then
@@ -334,6 +345,12 @@ end
 function Proto:SetRetracted(on, instant)
 	self.retracted = on and true or false
 	self._want = on and 0 or 1
+	-- A transient branch goes with its node rather than float beside nothing.
+	if on then
+		for _, node in ipairs(self.nodes) do
+			if node.transient and node.close and node.isOpen and node.isOpen() then node.close(node) end
+		end
+	end
 	local f = self.frame
 	if instant or not (f and f:IsShown()) then
 		W.StopSlide(f)
@@ -430,8 +447,10 @@ function Proto:SetRoot(frame)
 	self:Refresh()
 end
 
---- Add, or replace, a node. opts: icon, label (text or function), order,
---  open(node), close(node), isOpen(), available().
+--- Add, or replace, a node. opts: icon (name or function), label (text or
+--  function), order, open(node), close(node), isOpen(), available(); badge()
+--  for a dot on the node, menu for a node that opens a menu rather than a
+--  branch, transient for a branch that closes when the trunk retracts.
 function Proto:AddNode(key, opts)
 	local node
 	for _, n in ipairs(self.nodes) do
@@ -457,6 +476,11 @@ end
 function Proto:Toggle(key)
 	local node = self:Node(key)
 	if not node then return end
+	-- A menu is not a branch: it leaves the open one alone.
+	if node.menu then
+		if node.open then node.open(node) end
+		return
+	end
 	if node.isOpen and node.isOpen() then
 		if node.close then node.close(node) end
 	else
