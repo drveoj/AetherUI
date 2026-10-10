@@ -962,7 +962,10 @@ L["options.game_own.timers.desc"] =
 L["options.game_own.timers.name"] = "Timers"
 
 L["options.general.class_color_health.name"] = "Class-coloured health"
-L["options.general.corner.name"] = "Panel corner radius"
+L["options.general.corner.desc"] =
+	"Every corner in the interface scales from this. 12 is as designed; 4 is "
+		.. "squarer, 24 rounder. Round shapes stay round."
+L["options.general.corner.name"] = "Corner radius"
 L["options.general.general"] = "General"
 L["options.general.glass_header"] = "Glass"
 L["options.general.grid.name"] = "Show the field"

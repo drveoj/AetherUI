@@ -198,6 +198,30 @@ local function SnapIn(frame, v)
 	return math.floor(v / step + 0.5) * step
 end
 
+--- EVERY CORNER'S MULTIPLIER: the Theme page's corner radius over its
+--  default 12 (Joe, 2026-10-10). The design's radii - 28 for the options
+--  window, 20 for a panel, 22 for a branch - keep their proportions to each
+--  other and scale together.
+function Glass.CornerScale()
+	local g = A.db and A.db.profile and A.db.profile.glass
+	return (tonumber(g and g.corner) or 12) / 12
+end
+
+--- A surface's corner as drawn: its own, scaled - EXCEPT A ROUND ONE, whose
+--  corner is half its short side (a capsule drawn as a panel, a chip, a
+--  disc). Scaled, it would stop being round; it keeps its corner. And never
+--  more than half the short side, or the arcs cross.
+local function CornerOf(self)
+	local c = self._corner or 12
+	local w, h = self:GetWidth() or 0, self:GetHeight() or 0
+	local half = math.min(w, h) / 2
+	if half > 0 and c >= half - 0.5 then return math.min(c, half) end
+	c = c * Glass.CornerScale()
+	if half > 0 and c > half then c = half end
+	return c
+end
+Glass.CornerOf = CornerOf
+
 local PL, PC, PR = 1, 2, 3
 
 --- The three slices' texture coordinates, out on their own.
@@ -355,7 +379,7 @@ end
 
 function Surface:_LayoutPanelShadow()
 	if not self._shadow then return end
-	local c = SnapIn(self, self._corner or 12)
+	local c = SnapIn(self, CornerOf(self))
 	Layout9(self._shadow, self, c * 2, c / 2)
 end
 
@@ -401,7 +425,7 @@ end
 
 function Surface:_LayoutRimGlow()
 	if not self._rim then return end
-	local c = SnapIn(self, self._corner or 12)
+	local c = SnapIn(self, CornerOf(self))
 	Layout9(self._rim, self, c * 2, c / 2)
 end
 
@@ -486,6 +510,15 @@ function Glass.RestyleAll()
 		end
 		if (fill or edge) and s._shadowOpacity then s:SetShadow(s._shadowOpacity) end
 	end
+	-- The corner scale moved: every panel's corners laid out again.
+	local scale = Glass.CornerScale()
+	if scale ~= Glass._cornerScale then
+		Glass._cornerScale = scale
+		for i = 1, #Glass.surfaces do
+			local s = Glass.surfaces[i]
+			if s._Relayout then s:_Relayout() end
+		end
+	end
 	return n
 end
 
@@ -537,7 +570,7 @@ function Glass.MakePanel(f, opts)
 	--
 	--  Re-run on size AND scale changes, because the snap depends on both.
 	local function layout(self)
-		local c = SnapIn(self, self._corner or 12)
+		local c = SnapIn(self, CornerOf(self))
 		if c <= 0 then return end
 		Layout9(self._fill, self, c, 0)
 		Layout9(self._edge, self, c, 0)

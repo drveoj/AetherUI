@@ -990,7 +990,8 @@ local function BuildBar(barCfg)
 	}
 
 	bar.dock = Glass.CreatePanel(UIParent, {
-		corner = A.db.profile.glass.corner + 2,
+		-- The strand pad's own 14; the Theme's corner scales it with the rest.
+		corner = 14,
 		shadow = A.db.profile.glass.shadow,
 	})
 
@@ -2577,7 +2578,7 @@ function AB:OnConfigChanged()
 			-- without dragging the main dock down with it. A braid's root's.
 			bar.dock:SetScale(A.db.profile.scale * (cfg.scale or 1) * (DrawCfg(bar).scale or 1))
 			ApplyDockSkin(bar)
-			Glass.SetPanelCorner(bar.dock, A.db.profile.glass.corner + 2)
+			Glass.SetPanelCorner(bar.dock, 14)
 
 			ResizeBar(bar)
 			RepageBar(bar)

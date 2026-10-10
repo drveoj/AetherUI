@@ -100,7 +100,8 @@ local STYLES = { "MenuStyle1Mixin", "MenuStyle2Mixin" }
 --  is not a skin.
 local function Generate(self)
 	A.Glass.MakePanel(self, {
-		corner = A.db.profile.glass.corner,
+		-- 12; the Theme's corner scales it with the rest.
+		corner = 12,
 		shadow = A.db.profile.glass.shadow,
 	})
 	self:ApplySkin("dialogFill", "glassEdgeHi")
@@ -168,7 +169,7 @@ function MN:OnConfigChanged()
 	if not self.enabled or self.absent then return end
 	for menu in pairs(menus) do
 		if menu._kind then
-			Glass.SetPanelCorner(menu, A.db.profile.glass.corner)
+			Glass.SetPanelCorner(menu, 12)
 			menu:SetShadow(A.db.profile.glass.shadow)
 		end
 	end

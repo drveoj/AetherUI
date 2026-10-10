@@ -16882,6 +16882,51 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	A.Options:Close()
 end)
 
+section("theme: the corner radius scales every corner but the round ones", function()
+	local G, g = A.Glass, A.db.profile.glass
+	local was = g.corner
+	local panel = G.CreatePanel(UIParent, { corner = 20 })
+	panel:SetSize(300, 200)
+	local pill = G.CreatePanel(UIParent, { corner = 15 })
+	pill:SetSize(120, 30)
+	g.corner = 12
+	A:Restyle()
+	check(G.CornerOf(panel) == 20, "at the default 12 a panel keeps the design's 20")
+	g.corner = 24
+	A:Restyle()
+	check(G.CornerOf(panel) == 40, "at 24 every corner doubles (" .. G.CornerOf(panel) .. ")")
+	check(math.abs(panel._fill[1]:GetWidth() - 40) < 1.5,
+		"and the glass is drawn again at it, without waiting for a resize ("
+		.. string.format("%.1f", panel._fill[1]:GetWidth()) .. ")")
+	check(G.CornerOf(pill) == 15, "a capsule drawn as a panel stays round")
+	g.corner = 4
+	A:Restyle()
+	check(math.abs(G.CornerOf(panel) - 20 / 3) < 0.01 and G.CornerOf(pill) == 15,
+		"at 4 a third, and the capsule still round")
+	local small = G.CreatePanel(UIParent, { corner = 20 })
+	small:SetSize(30, 30)
+	g.corner = 24
+	A:Restyle()
+	check(G.CornerOf(small) == 15, "never past half the short side, or the arcs cross")
+
+	-- IN THE LAYOUT STRING (Joe): r=, written, read, applied and matched.
+	local text = A.Layout:Encode()
+	check(text:find(";r=24;", 1, true), "the layout string carries r=24")
+	g.corner = 12
+	A:Restyle()
+	local lay = A.Layout:Decode(text)
+	check(lay and lay.corner == 24, "it reads back")
+	check(not A.Layout:Matches(lay), "a layout with other corners is not the one on screen")
+	A.Layout:Apply(lay)
+	check(g.corner == 24 and G.CornerOf(panel) == 40, "and applying it sets the corners")
+	check(A.Layout:Decode("LAT1;b=1;r=30") == nil, "a radius outside 4 to 24 is refused")
+	check(A.Layout:Decode("LAT1;b=1") and A.Layout:Decode("LAT1;b=1").corner == nil,
+		"and a string without one says nothing about corners")
+	g.corner = was
+	A:Restyle()
+	panel:Hide() pill:Hide() small:Hide()
+end)
+
 section("options window: the World trunk, a node each", function()
 	-- Joe: not "quest" for the whole trunk, and no pseudo-tabs - each element
 	-- a node of its own on the map, with its own page.

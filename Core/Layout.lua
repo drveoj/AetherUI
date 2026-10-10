@@ -15,6 +15,9 @@
 	            rest show none. Left out, a layout says nothing about chips
 	            and leaves them as they are. The Block seed says so (strands
 	            brief 9c).
+	  r=        the corner radius, 4 to 24, which every corner on screen
+	            scales by (Joe, 2026-10-10: part of the string). Left out, a
+	            layout leaves the corners as they are - the presets do.
 	  name=parent,point,relPoint,x,y
 	            EVERY node, the same way: its `point` at x,y units from its
 	            parent's `relPoint`. The top of every tree hangs from `screen` -
@@ -392,6 +395,9 @@ function Layout:Encode()
 		if chips[id] then keys[#keys + 1] = id end
 	end
 	parts[#parts + 1] = "k=" .. table.concat(keys, ",")
+	-- The corner radius, which every corner on screen scales by (Joe: part of
+	-- the string).
+	parts[#parts + 1] = "r=" .. round((profile.glass and profile.glass.corner) or 12)
 
 	-- Only nodes this addon has. `__` entries are not positions - the lock
 	-- pill's spot is one - and a profile can still hold one for a frame that is
@@ -490,6 +496,11 @@ function Layout:Decode(text)
 					if not id:match("^%d$") then return bad(f) end
 					out.keys[id] = true
 				end
+			elseif k == "r" then
+				-- The corner radius, inside the Theme page's own range.
+				local n = Num(v)
+				if out.corner or not (n and n >= 4 and n <= 24) then return bad(f) end
+				out.corner = round(n)
 			else
 				if not KNOWN[k] then return nil, A.F(L.layout.err.unknown, k) end
 				if out.records[k] then return bad(f) end
@@ -606,6 +617,13 @@ function Layout:Apply(layout)
 		end
 	end
 
+	-- The corner radius, where the string says; the restyle redraws every corner.
+	local cornerChanged = false
+	if layout.corner and A.db.profile.glass then
+		cornerChanged = A.db.profile.glass.corner ~= layout.corner
+		A.db.profile.glass.corner = layout.corner
+	end
+
 	-- THE BARS FIRST: a bar that is off has no frame and no mover, so a record
 	-- written for it before it is on is a record for nothing.
 	SetBars(layout.bars)
@@ -671,6 +689,7 @@ function Layout:Apply(layout)
 	-- Last: a braid's seat comes from its host's size, not the string's x, y,
 	-- and only now is every bar its size and on its parent.
 	if A.Braids then A.Braids:Refresh() end
+	if cornerChanged then A:Restyle() end
 	return true
 end
 
@@ -689,6 +708,9 @@ function Layout:Matches(layout)
 		for id, shown in pairs(KeysNow()) do
 			if shown ~= (layout.keys[id] and true or false) then return false end
 		end
+	end
+	if layout.corner and layout.corner ~= ((A.db.profile.glass or {}).corner or 12) then
+		return false
 	end
 
 	local anchors = A.db.profile.anchors or {}

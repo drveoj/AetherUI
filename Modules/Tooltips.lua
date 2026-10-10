@@ -558,7 +558,7 @@ function TT:Register(tip)
 
 	local profile = A.db and A.db.profile
 	local card = Glass.CreatePanel(tip, {
-		corner = (profile and profile.glass.corner) or 12,
+		corner = 12,
 		shadow = (profile and profile.glass.shadow) or 1,
 	})
 	-- A tooltip is a reading surface: small type over whatever the world happens

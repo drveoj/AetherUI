@@ -189,7 +189,8 @@ end
 local function Pad(root)
 	local p = Braids.pads[root]
 	if p then return p end
-	p = A.Glass.CreatePanel(UIParent, { corner = A.db.profile.glass.corner + 2,
+	-- 14, the strand pad's own; the Theme's corner scales it with the rest.
+	p = A.Glass.CreatePanel(UIParent, { corner = 14,
 		shadow = A.db.profile.glass.shadow })
 	p:EnableMouse(false)
 	p:Hide()
@@ -282,7 +283,7 @@ local function LayPad(root)
 		p:SetEdgeShown(true)
 		p:SetShadow(A.db.profile.glass.shadow)
 	end
-	A.Glass.SetPanelCorner(p, A.db.profile.glass.corner + 2)
+	A.Glass.SetPanelCorner(p, 14)
 	p:Show()
 	return shown
 end

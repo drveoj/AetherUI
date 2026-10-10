@@ -960,7 +960,7 @@ function PF:OnConfigChanged()
 
 	self:Layout()
 	for _, f in ipairs(self.frames) do
-		Glass.SetPanelCorner(f.glass, A.db.profile.glass.corner)
+		Glass.SetPanelCorner(f.glass, 12)
 		f.glass:SetShadow(A.db.profile.glass.shadow)
 		UpdateAll(f)
 	end
