@@ -211,7 +211,7 @@ L["cmd.shadow.shadow_takes_0_1"] =
 L["cmd.skin.skin_s"] = "skin -> %s"
 L["cmd.skin.skins_s"] = "skins: %s"
 
-L["cmd.toolbox.dock_takes_s_s"] = "dock takes %s, %s, %s or %s."
+L["cmd.toolbox.dock_takes_s_s"] = "dock takes %s or %s."
 L["cmd.toolbox.libdatabroker"] = "(no LibDataBroker!)"
 L["cmd.toolbox.minimap_scan_failed_s"] = "minimap scan failed: %s"
 L["cmd.toolbox.nothing"] = "nothing"
@@ -221,7 +221,7 @@ L["cmd.toolbox.pin_s_s"] = "pin %s -> %s"
 L["cmd.toolbox.pinned_s"] = "pinned: %s"
 L["cmd.toolbox.shut"] = "shut"
 L["cmd.toolbox.toolbox_docked_s_s"] =
-	"toolbox  ·  docked %s  ·  %s  ·  scrim %.2f"
+	"toolbox  ·  docked %s  ·  %s"
 L["cmd.toolbox.toolbox_module_enabled"] = "toolbox module is not enabled."
 
 L["cmd.tooltips.follow_cursor"] = "follow the cursor"
@@ -1209,27 +1209,17 @@ L["options.threat.threat"] = "Threat"
 
 L["options.toolbox.addon_columns.name"] = "Addon list columns"
 L["options.toolbox.desc"] =
-	"A drawer that docks to the centre of any screen edge, with a rail "
-		.. "that stays on screen when the drawer is shut.\n\nTo move it, %s "
-		.. "and drag the rail: four targets appear, one per edge, and the one "
-		.. "nearest the cursor is the one you get. It has four legal places "
-		.. "rather than a position, because each edge is a different "
-		.. "layout.\n\nThe edge it is docked to and whether it is open are "
-		.. "remembered per %s rather than per profile - a drawer edge is a "
-		.. "habit somebody forms on one character."
+	"A trunk down one edge of the screen: a node for each of Menu, "
+		.. "Widgets, Addons, Settings and What's new, each opening its own "
+		.. "branch, with your pinned addons hanging below.\n\nIt docks left or "
+		.. "right, and the World trunk under the minimap takes the other side. "
+		.. "To swap them, %s and drag the Lattice glyph at the top of the trunk "
+		.. "to the other half of the screen. The side is remembered per %s."
 L["options.toolbox.grid_header"] = "Grids"
 L["options.toolbox.libdatabroker_data_sources"] = "LibDataBroker data sources"
-L["options.toolbox.look_header"] = "The overlay"
-L["options.toolbox.look_note"] =
-	"The drawer slides out %s the HUD. Nothing underneath moves or "
-		.. "resizes; the covered strip is dimmed instead, so it reads as being "
-		.. "behind rather than merely dark."
 L["options.toolbox.only_latency_fps_polled"] =
-	"Only latency and FPS are polled, and only while the drawer is "
-		.. "open; the rest follow their own events."
-L["options.toolbox.over"] = "over"
-L["options.toolbox.scrim.name"] = "Dim the covered strip"
-L["options.toolbox.tile_columns.name"] = "Setting tile columns"
+	"Only latency and FPS are polled, and only while the Widgets branch "
+		.. "is open; the rest follow their own events."
 L["options.toolbox.unlock_frames"] = "unlock frames"
 L["options.toolbox.widget_columns.name"] = "Widget columns"
 L["options.toolbox.widgets_header"] = "Widgets"
@@ -1408,9 +1398,15 @@ L["toolbox.build.aetherui_settings"] = "Lattice settings"
 
 L["toolbox.build_content.notes"] = "Notes"
 
-L["toolbox.build_dock_handle.can_t_re_dock"] =
-	"can't re-dock the toolbox in combat."
-L["toolbox.build_dock_handle.toolbox"] = "TOOLBOX"
+L["toolbox.head.addons"] = "Addons · pin to trunk"
+L["toolbox.head.addons_scroll_d"] = "%d · scroll"
+
+L["toolbox.news.none"] = "No notes for this build."
+
+L["toolbox.node.addons"] = "Addons"
+L["toolbox.node.menu"] = "Menu"
+L["toolbox.node.settings"] = "Settings"
+L["toolbox.node.widgets"] = "Widgets"
 
 L["toolbox.on_config_changed.bag_space"] = "Bag space"
 
@@ -1419,8 +1415,8 @@ L["toolbox.refresh_addons.quest_log"] = "Quest log"
 L["toolbox.refresh_widgets.keybind_mode"] = "Keybind mode"
 L["toolbox.refresh_widgets.tip"] =
 	"Fades the interface away when you stand still, and brings it back "
-		.. "the when something happens. Your character sits down and the "
-		.. "camera pulls back for the a Zen moment."
+		.. "when something happens. Your character sits down and the "
+		.. "camera pulls back for a Zen moment."
 L["toolbox.refresh_widgets.tip2"] =
 	"Plays your installed packs' music and stories while you are a "
 		.. "passenger. "
@@ -1431,6 +1427,11 @@ L["toolbox.refresh_widgets.tip3"] =
 		.. "Blizzard's own binding set, so they survive this addon being "
 		.. "disabled and show up in the keybinding panel."
 L["toolbox.refresh_widgets.unlock_frames"] = "Unlock frames"
+
+L["toolbox.root.combat"] = "can't swap the trunks in combat."
+L["toolbox.root.swap"] =
+	"Drag to the other side of the screen: the Toolbox and the World trunk "
+		.. "swap sides."
 
 -- tooltips ----------------------------------------------------------------
 
@@ -1448,8 +1449,8 @@ L["tour.adopt_from.body2"] =
 	"A starting layout — tap it and watch the frames move into place. "
 		.. "You can fine-tune every frame later."
 L["tour.adopt_from.body3"] =
-	"Addons, settings and N.I.F.E.C. — all present from the Toolbox. "
-		.. "Pick which edge it lives on."
+	"Menu, widgets, addons and settings, each a branch off the Toolbox "
+		.. "trunk. Pick which side it lives on; the World trunk takes the other."
 L["tour.adopt_from.body4"] =
 	"After a while of quiet the HUD fades to a calm Zen state,Leaving "
 		.. "only a clock and the zone you are in. Pick how long before it "
@@ -1519,7 +1520,7 @@ L["tour.start.during_fight_try_again"] =
 L["tour.threat_demo.eased_off_quiet_again"] = "eased off — quiet again"
 L["tour.threat_demo.trouble_coming"] = "trouble coming"
 
-L["tour.toolbox_control.tap_edge"] = "tap an edge"
+L["tour.toolbox_control.tap_edge"] = "tap a side"
 
 -- trunks ------------------------------------------------------------------
 

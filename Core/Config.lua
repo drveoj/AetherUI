@@ -417,17 +417,9 @@ Config.defaults = {
 			toolbox = {
 				enabled = true,
 
-				-- How dark the covered strip goes. The deck's own 0.28. Zero
-				-- turns it off entirely for anyone who would rather read what
-				-- is behind the drawer than have it dimmed.
-				scrim   = 0.28,
-
-				-- Columns in the two grids. The deck draws three widget cards
-				-- and two of everything else, and the numbers are here rather
-				-- than in the module because a wide dock at a low UI scale has
-				-- room for more.
+				-- Columns in the Widgets and Addons branches: three readings
+				-- and two addons a row, as the design draws them.
 				widgetColumns = 3,
-				tileColumns   = 2,
 				addonColumns  = 2,
 			},
 

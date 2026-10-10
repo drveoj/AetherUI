@@ -398,16 +398,8 @@ local function ToolboxGroup()
 			{ "modules", "toolbox", "widgetColumns" }, 1, 6, 1, { after = "reconfigure" }),
 
 		gridHeader = header(L.options.toolbox.grid_header),
-		tileColumns = range(L.options.toolbox.tile_columns.name, nil,
-			{ "modules", "toolbox", "tileColumns" }, 1, 4, 1, { after = "reconfigure" }),
 		addonColumns = range(L.options.toolbox.addon_columns.name, nil,
 			{ "modules", "toolbox", "addonColumns" }, 1, 4, 1, { after = "reconfigure" }),
-
-		lookHeader = header(L.options.toolbox.look_header),
-		lookNote = note(A.F(L.options.toolbox.look_note,
-			A.Hi(L.options.toolbox.over))),
-		scrim = range(L.options.toolbox.scrim.name, nil,
-			{ "modules", "toolbox", "scrim" }, 0, 1, 0.02, { after = "reconfigure" }),
 	})
 	-- No order argument: group()'s third parameter is `opts`, and the page order
 	-- is applied to the whole tree from PAGE_ORDER afterwards. Passing a number

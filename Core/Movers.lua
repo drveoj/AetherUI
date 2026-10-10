@@ -1785,6 +1785,30 @@ function Movers:Restore(name)
 	if entry then RestorePosition(entry) end
 end
 
+--- Put a node hung from the screen in the mirror of its place, across the
+--  screen's centre line: the trunks swapping sides (decision 4c - they dock
+--  left or right, and swap together). Refused in combat or for a node with a
+--  parent. Returns true when it moved.
+function Movers:Mirror(name)
+	local entry = Movers.registry[name]
+	if not entry or entry.parent or InCombatLockdown() then return false end
+	local saved = A.db.profile.anchors[name]
+	local src = (saved and VALID_POINTS[saved.point]) and saved or entry.default
+	local function flip(p)
+		p = p or "CENTER"
+		if p:find("LEFT") then return (p:gsub("LEFT", "RIGHT")) end
+		if p:find("RIGHT") then return (p:gsub("RIGHT", "LEFT")) end
+		return p
+	end
+	A.db.profile.anchors[name] = {
+		point = flip(src.point), relPoint = flip(src.relPoint or src.point),
+		x = -(src.x or 0), y = src.y or 0,
+		free = saved and saved.free or nil,
+	}
+	RestorePosition(entry)
+	return true
+end
+
 function Movers:RestoreAll()
 	for _, entry in pairs(Movers.registry) do RestorePosition(entry) end
 end

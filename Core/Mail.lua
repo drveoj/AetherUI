@@ -25,16 +25,15 @@
 
 local ADDON, A = ...
 
-local W, Palette, Glass = A.Widgets, A.Palette, A.Glass
+local W, Palette = A.Widgets, A.Palette
 local L = A.L
 
 local Mail = { ROWS = 3 }
 A.Mail = Mail
 
 -- The branch, in HUD units.
-local WIDTH, PAD, HEAD_H, NOTE_H = 230, 14, 22, 18
+local WIDTH, PAD, HEAD_H, NOTE_H = 250, 16, 24, 18
 local ROW_H, ROW_GAP, CHIP = 30, 5, 24
-local CORNER = 12
 
 local function Char()
 	if not (A.db and A.db.char) then return nil end
@@ -43,12 +42,6 @@ local function Char()
 end
 
 local function Trunk() return A.Trunk:Get("world") end
-
---- The section headings are letter-spaced, baked into the string: the client
---  has no letter-spacing.
-local function Spaced(s)
-	return (s:gsub("(.)", "%1 "):gsub(" $", ""))
-end
 
 -- ---------------------------------------------------------------------------
 -- what the client knows
@@ -151,20 +144,12 @@ end
 
 function Mail:Build()
 	if self.panel then return self.panel end
-	local t = Trunk()
-	local p = Glass.CreatePanel(t:Frame(), {
-		corner = CORNER, shadow = A.db.profile.glass.shadow, name = ADDON .. "MailBranch",
-	})
-	p:SetFrameLevel(t:Frame():GetFrameLevel() + 20)
-	p:SetWidth(WIDTH)
-	p:EnableMouse(true)
-	p:Hide()
+	local p = Trunk():Branch("MailBranch", WIDTH)
 
-	p.head = W.Text(p, "tbSection", "LEFT")
+	p.head = A.Trunk.Head(p)
 	p.head:SetPoint("TOPLEFT", p, "TOPLEFT", PAD, -PAD)
-	p.head:SetText(Spaced(L.mail.heading))
-	p.hint = W.Text(p, "tbLabel", "RIGHT")
-	p.hint:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PAD, -PAD)
+	p.head:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PAD, -PAD)
+	p.hint = p.head.hint
 
 	p.rows = {}
 	for i = 1, self.ROWS do
@@ -183,11 +168,6 @@ function Mail:Build()
 	p.note = W.Text(p, "tbLabel", "LEFT")
 	p.note:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", PAD, PAD)
 
-	-- However it shuts - its node, another branch, Escape - the node follows.
-	p:SetScript("OnShow", function() Trunk():Paint() end)
-	p:SetScript("OnHide", function() Trunk():Paint() end)
-	if _G.UISpecialFrames then table.insert(_G.UISpecialFrames, p:GetName()) end
-
 	self.panel = p
 	self:Skin()
 	return p
@@ -197,9 +177,7 @@ end
 function Mail:Skin()
 	local p = self.panel
 	if not p then return end
-	p:ApplySkin()
-	p:SetFillColor(Palette:ReadingFill())
-	W.Color(p.head, Palette.c.text)
+	A.Trunk.SkinBranch(p)
 	W.Color(p.note, Palette.c.textDim)
 	self:Fill()
 end
@@ -245,16 +223,14 @@ function Mail:Fill()
 	-- three, so three reads "3+"), a true count from the last mailbox visit,
 	-- or only "you have mail".
 	if not has then
-		p.hint:SetText("")
+		p.head:Set(L.mail.heading, "")
 	elseif explain then
-		p.hint:SetText(_G.HAVE_MAIL or "")
-		W.Color(p.hint, c.textDim)
+		p.head:Set(L.mail.heading, _G.HAVE_MAIL or "")
 	elseif unread then
-		p.hint:SetText(A.F(L.mail.unread_last_visit_d, unread))
-		W.Color(p.hint, c.textDim)
+		p.head:Set(L.mail.heading, A.F(L.mail.unread_last_visit_d, unread))
 	else
 		local capped = #senders >= self.ROWS
-		p.hint:SetText(A.F(capped and L.mail.new_more_d or L.mail.new_d, #senders))
+		p.head:Set(L.mail.heading, A.F(capped and L.mail.new_more_d or L.mail.new_d, #senders))
 		W.Color(p.hint, c.accent or c.text)
 	end
 

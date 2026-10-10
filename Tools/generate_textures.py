@@ -1135,6 +1135,8 @@ ICON_ORDER = [
     "calendar",
     # the World trunk's tracking node
     "tracking",
+    # the Toolbox trunk's Widgets and Addons nodes
+    "widgets", "addons",
 ]
 
 
@@ -1552,6 +1554,17 @@ def _glyph(name, cell):
                  seg(64, 14, 64, 46), seg(64, 82, 64, 114),
                  seg(14, 64, 46, 64), seg(82, 64, 114, 64),
                  disc(64, 64, 5.0))
+
+    if name == "widgets":
+        # Readings: three bars standing on a base line (board 5b). The base is
+        # what keeps it apart from `music`, whose bars float about the middle.
+        return U(seg(26, 104, 26, 58), seg(58, 104, 58, 26), seg(90, 104, 90, 68),
+                 seg(12, 104, 116, 104))
+
+    if name == "addons":
+        # Four tiles in a square (board 5b's Addons node).
+        return U(rect(20, 20, 58, 58), rect(70, 20, 108, 58),
+                 rect(20, 70, 58, 108), rect(70, 70, 108, 108))
 
     return INF
 

@@ -223,7 +223,7 @@ OB.stops = {
 		kind  = "set",
 		target = function()
 			local TB = A.GetModule and A:GetModule("toolbox")
-			return TB and TB.rail
+			return TB and TB.root
 		end,
 	},
 	{
@@ -1129,11 +1129,11 @@ end
 -- stop 3: the Toolbox edge
 -- ---------------------------------------------------------------------------
 
-local EDGES = { "LEFT", "TOP", "RIGHT", "BOTTOM" }
+-- The trunk docks left or right, and the World trunk takes the other side
+-- (decision 4c).
+local EDGES = { "LEFT", "RIGHT" }
 
---- Tap an edge. A rectangle with four targets on it, which is the picker the
---  movers already use when you drag the rail - the same gesture in a smaller
---  box, so the one you learn here is the one that works later.
+--- Tap a side: a rectangle with a target on each side.
 local function ToolboxControl(slot)
 	local TB = A.GetModule and A:GetModule("toolbox")
 	local now = (A.db and A.db.char and A.db.char.toolbox
@@ -1162,19 +1162,8 @@ local function ToolboxControl(slot)
 		tab:SetParent(box)
 		tab:ClearAllPoints()
 
-		if edge == "LEFT" then
-			tab:SetSize(9, 32)
-			tab:SetPoint("LEFT", box, "LEFT", 0, 0)
-		elseif edge == "RIGHT" then
-			tab:SetSize(9, 32)
-			tab:SetPoint("RIGHT", box, "RIGHT", 0, 0)
-		elseif edge == "TOP" then
-			tab:SetSize(32, 9)
-			tab:SetPoint("TOP", box, "TOP", 0, 0)
-		else
-			tab:SetSize(32, 9)
-			tab:SetPoint("BOTTOM", box, "BOTTOM", 0, 0)
-		end
+		tab:SetSize(9, 32)
+		tab:SetPoint(edge, box, edge, 0, 0)
 
 		W.Tint(tab.fill, Palette.c.accent, now == edge and 1 or 0.25)
 		tab:SetScript("OnClick", function()
@@ -1945,11 +1934,8 @@ function OB:Start()
 	-- from the game.
 	--
 	-- HERE RATHER THAN AT THE BUTTON, because every door in has the same
-	-- problem: `/aether tour` typed with the options open, or with the drawer
-	-- out, lands in exactly the same place.
-	--
-	-- The drawer goes too, and comes back on its own: the console stop opens it
-	-- again when it needs it.
+	-- problem: `/aether tour` typed with the options open, or with a Toolbox
+	-- branch out, lands in exactly the same place. So the branch goes too.
 	if A.Options and A.Options.Close then A.Options:Close() end
 	do
 		local TB = A.GetModule and A:GetModule("toolbox")

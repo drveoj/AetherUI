@@ -100,14 +100,17 @@ local function Build(t)
 end
 
 --- An item node: the diamond only. Its owner paints it and takes its clicks.
+--  `size` for another size; `bare` for no diamond at all, when the owner hangs
+--  something of its own there (the Toolbox's pinned addons).
 local function BuildItem(t, node)
+	local size = node.size or ITEM
 	local b = CreateFrame("Button", nil, t.frame)
-	b:SetSize(ITEM, ITEM)
+	b:SetSize(size, size)
 	b:RegisterForClicks("AnyUp")
 	b.glow = b:CreateTexture(nil, "BACKGROUND")
 	b.glow:SetTexture(Media.texture.glow)
 	b.glow:SetPoint("CENTER")
-	b.glow:SetSize(ITEM * 2.4, ITEM * 2.4)
+	b.glow:SetSize(size * 2.4, size * 2.4)
 	b.glow:Hide()
 	b.fill = b:CreateTexture(nil, "ARTWORK")
 	b.fill:SetTexture(Media.texture.diamond)
@@ -115,6 +118,10 @@ local function BuildItem(t, node)
 	b.rim = b:CreateTexture(nil, "ARTWORK", nil, 1)
 	b.rim:SetTexture(Media.texture.diamondRim)
 	b.rim:SetAllPoints(b)
+	if node.bare then
+		b.fill:Hide()
+		b.rim:Hide()
+	end
 	b:SetScript("OnClick", function(_, button)
 		if node.onClick then node.onClick(node, button) end
 	end)
@@ -187,8 +194,9 @@ function Proto:Paint()
 			Media:SetIcon(b.icon, type(node.icon) == "function" and node.icon() or node.icon)
 			local dot = node.badge and node.badge() and true or false
 			b.dot:SetShown(dot)
-			-- In the text colour on a lit node, which is accent all over.
-			if dot then W.Tint(b.dot, lit and c.text or a, 1) end
+			-- The design's info blue (README: Mail's and What's new's dots); in
+			-- the text colour on a lit node, which is accent all over.
+			if dot then W.Tint(b.dot, lit and c.text or (c.info or a), 1) end
 			if lit then
 				W.Tint(b.fill, a, 1)
 				W.Tint(b.rim, a, 1)
@@ -241,7 +249,7 @@ function Proto:Refresh()
 	end
 	f:SetScale(A.db.profile.scale or 1)
 	f:ClearAllPoints()
-	f:SetPoint("TOP", r, "BOTTOM", 0, -CAP_GAP)
+	f:SetPoint("TOP", r, "BOTTOM", 0, -(self.capGap or CAP_GAP))
 
 	local side = self:Side()
 	self.side = side
@@ -339,7 +347,8 @@ function Proto:Extend()
 			b:EnableMouse(a > 0.5)
 			if node.kind ~= "item" then
 				b.stub:SetAlpha(a)
-				b.label:SetAlpha(a)
+				-- Quiet (the Toolbox trunk in a fight): nodes only, no labels.
+				b.label:SetAlpha(self.quiet and 0 or a)
 				b.junction:SetAlpha(a)
 			elseif node.setAlpha then
 				node.setAlpha(node, a)
@@ -367,6 +376,18 @@ function Proto:SetRetracted(on, instant)
 		return
 	end
 	W.DriveSlide(f, self, 1 / RETRACT, function(t) t:Extend() end)
+end
+
+--- The other combat energy (README "Two energies for trunks", the left
+--  trunk): the nodes stay, the labels go and an open transient branch closes.
+function Proto:SetQuiet(on)
+	self.quiet = on and true or false
+	if on then
+		for _, node in ipairs(self.nodes) do
+			if node.transient and node.close and node.isOpen and node.isOpen() then node.close(node) end
+		end
+	end
+	self:Extend()
 end
 
 --- The tail: what stays out while retracted, a dotted stub under the top
@@ -433,7 +454,7 @@ function Proto:Room()
 	local _, top = A.Movers.PointAt(self.root, "BOTTOM")
 	if not top then return nil end
 	local k = (UIParent:GetEffectiveScale() or 1) / (f:GetEffectiveScale() or 1)
-	local room = (top * k) - CAP_GAP - CAP / 2 - FIRST - LAST - FLOOR * k
+	local room = (top * k) - (self.capGap or CAP_GAP) - CAP / 2 - FIRST - LAST - FLOOR * k
 	table.sort(self.nodes, ByOrder)
 	local nodes = self.nodes
 	for i, node in ipairs(nodes) do
@@ -479,7 +500,6 @@ function Proto:Node(key)
 		if n.key == key then return n end
 	end
 end
-
 --- Open a node's branch, closing whichever other one is open; or close it
 --  if it is the open one.
 function Proto:Toggle(key)
@@ -509,12 +529,112 @@ function Proto:Place(key, panel)
 	local node = self:Node(key)
 	local b = node and node.button
 	if not (b and b:IsShown() and panel) then return false end
+	-- Kept on the screen by working it out, not by the client's clamp: a
+	-- branch off a low node at a big HUD scale would hang off the bottom.
+	local dy = 0
+	local _, ny = A.Movers.PointAt(b, "CENTER")
+	if ny then
+		local k = (panel:GetEffectiveScale() or 1) / (UIParent:GetEffectiveScale() or 1)
+		local half, h = (panel:GetHeight() or 0) * k / 2, UIParent:GetHeight() or 0
+		local MARGIN = 8
+		if ny - half < MARGIN then
+			dy = MARGIN - (ny - half)
+		elseif ny + half > h - MARGIN then
+			dy = (h - MARGIN) - (ny + half)
+		end
+		dy = dy / k
+	end
 	panel:ClearAllPoints()
 	if (self.side or -1) < 0 then
-		panel:SetPoint("RIGHT", b.stub, "LEFT", -JUNCTION / 2, 0)
+		panel:SetPoint("RIGHT", b.stub, "LEFT", -JUNCTION / 2, dy)
 	else
-		panel:SetPoint("LEFT", b.stub, "RIGHT", JUNCTION / 2, 0)
+		panel:SetPoint("LEFT", b.stub, "RIGHT", JUNCTION / 2, dy)
 	end
 	if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
 	return true
+end
+
+-- ---------------------------------------------------------------------------
+-- branch panels, and the panel vocabulary's heading
+-- ---------------------------------------------------------------------------
+
+-- README "Trunks": a branch panel is glass at r 22 with a shadow.
+local BRANCH_CORNER = 22
+
+--- A branch panel for this trunk, `width` wide and hidden. A child of the
+--  trunk's frame, so it scales and fades with it. Escape closes it, and its
+--  node repaints however it opens or shuts; an owner adding its own OnShow or
+--  OnHide hooks them rather than setting them.
+function Proto:Branch(name, width)
+	local f = self:Frame()
+	local p = A.Glass.CreatePanel(f, {
+		corner = BRANCH_CORNER, shadow = A.db.profile.glass.shadow, name = ADDON .. name,
+	})
+	p:SetFrameLevel(f:GetFrameLevel() + 20)
+	p:SetWidth(width)
+	p:EnableMouse(true)
+	p:Hide()
+	local t = self
+	p:SetScript("OnShow", function() t:Paint() end)
+	p:SetScript("OnHide", function() t:Paint() end)
+	if _G.UISpecialFrames then table.insert(_G.UISpecialFrames, p:GetName()) end
+	Trunk.SkinBranch(p)
+	return p
+end
+
+--- The reading fill, again after anything that puts the glass tint back.
+function Trunk.SkinBranch(p)
+	p:ApplySkin()
+	p:SetFillColor(Palette:ReadingFill())
+end
+
+local Head = {}
+
+--- Its label and the hint on the strand's end ("" for none).
+function Head:Set(label, hint)
+	-- Letter-spaced in the string: the client has no letter-spacing. A whole
+	-- UTF-8 character at a time, or a translated label breaks in half.
+	self.label:SetText((tostring(label or ""):upper()
+		:gsub("([%z\1-\127\194-\244][\128-\191]*)", "%1 "):gsub(" $", "")))
+	self.hint:SetText(hint or "")
+	self.strand:ClearAllPoints()
+	self.strand:SetPoint("LEFT", self.label, "RIGHT", 8, 0)
+	if (hint or "") ~= "" then
+		self.strand:SetPoint("RIGHT", self.hint, "LEFT", -8, 0)
+	else
+		self.strand:SetPoint("RIGHT", self, "RIGHT", 0, 0)
+	end
+	self:Paint()
+end
+
+--- Filled junction, or hollow for a section played down (README: Junk).
+function Head:Paint(hollow)
+	if hollow ~= nil then self.hollow = hollow end
+	local a = Palette.c.accent
+	self.dot:SetTexture(self.hollow and Media.texture.diamondRim or Media.texture.diamond)
+	self.dot:SetVertexColor(a[1], a[2], a[3], self.hollow and 0.5 or 1)
+	W.Color(self.label, { a[1], a[2], a[3], self.hollow and 0.5 or 0.7 })
+	self.strand:SetVertexColor(a[1], a[2], a[3], self.hollow and 0.15 or 0.25)
+	W.Color(self.hint, Palette.c.textDim)
+end
+
+--- A section heading in the panel vocabulary (README "Panel vocabulary"): a
+--  7 px junction, the label, and a 1 px strand out to the right edge with a
+--  count or hint on its end. Anchor its LEFT and RIGHT; it is 14 tall.
+function Trunk.Head(parent)
+	local h = CreateFrame("Frame", nil, parent)
+	h:SetHeight(14)
+	h.dot = h:CreateTexture(nil, "ARTWORK")
+	h.dot:SetSize(7, 7)
+	h.dot:SetPoint("LEFT", h, "LEFT", 0, 0)
+	h.label = W.Text(h, "tbSection", "LEFT")
+	h.label:SetPoint("LEFT", h.dot, "RIGHT", 8, 0)
+	h.hint = W.Text(h, "tbLabel", "RIGHT")
+	h.hint:SetPoint("RIGHT", h, "RIGHT", 0, 0)
+	h.strand = h:CreateTexture(nil, "ARTWORK")
+	h.strand:SetTexture(Media.texture.flat)
+	h.strand:SetHeight(1)
+	for k, v in pairs(Head) do h[k] = v end
+	h:Set("", "")
+	return h
 end

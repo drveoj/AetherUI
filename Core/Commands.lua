@@ -38,7 +38,7 @@ local function usage()
 		A.Hi("/lattice chat") .. " <reskin · where · lines/badges on|off · whispers on|off>",
 		A.Hi("/lattice bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		A.Hi("/lattice tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
-		A.Hi("/lattice toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
+		A.Hi("/lattice toolbox") .. " <dock left/right · open [menu/widgets/addons/settings/news] · close · pin NAME>",
 		A.Hi("/lattice world") .. " retract  ·  the World trunk up into the pill, or back down",
 		A.Hi("/lattice dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
 		A.Hi("/lattice threat") .. " probe  ·  what the threat API answers, in a box you can copy",
@@ -1225,25 +1225,30 @@ handlers.toolbox = function(arg, rest)
 		A:Print(L.cmd.toolbox.toolbox_module_enabled)
 		return
 	end
-	local cfg = A.Config:Module("toolbox")
+	-- A branch by name: menu, widgets, addons, settings or news.
+	local function Branch(name)
+		name = name and tostring(name):lower() or ""
+		for _, b in ipairs(TB.BRANCHES) do
+			if b.key == name then return b.key end
+		end
+		return nil
+	end
 
 	if arg == "dock" then
 		if not TB:SetDock(rest or "") then
-			A:Print(A.F(L.cmd.toolbox.dock_takes_s_s,
-				A.Val("left"), A.Val("right"),
-				A.Val("top"), A.Val("bottom")))
+			A:Print(A.F(L.cmd.toolbox.dock_takes_s_s, A.Val("left"), A.Val("right")))
 			return
 		end
 		A:Print(A.F(L.common.toolbox_docked_s, A.Val(TB:Dock():lower())))
 		return
 	elseif arg == "open" then
-		TB:SetOpen(true)
+		TB:SetOpen(true, nil, Branch(rest))
 		return
 	elseif arg == "close" then
 		TB:SetOpen(false)
 		return
 	elseif arg == "toggle" then
-		TB:Toggle()
+		TB:Toggle(Branch(rest))
 		return
 	elseif arg == "pin" then
 		if not rest or rest == "" then
@@ -1275,14 +1280,7 @@ handlers.toolbox = function(arg, rest)
 	-- the diagnostic
 	A:Print(A.F(L.cmd.toolbox.toolbox_docked_s_s,
 		A.Val(TB:Dock():lower()),
-		TB:IsOpen() and L.common.open or L.cmd.toolbox.shut,
-		tonumber(cfg.scrim) or 0.28))
-
-	local w, h = TB:PanelSize(TB:Dock())
-	local sc = A.db.profile.scale
-	say("   panel %.0fx%.0f at scale %.2f = %.0fx%.0f on a %.0fx%.0f screen",
-		w, h, sc, w * sc, h * sc,
-		UIParent:GetWidth() or 0, UIParent:GetHeight() or 0)
+		TB:OpenKey() and A.Val(TB:OpenKey()) or L.cmd.toolbox.shut))
 
 	-- widgets: ours are LDB data sources like anybody else's, so this reports
 	-- what the GRID is showing rather than what the module happens to compute.
@@ -1318,8 +1316,8 @@ handlers.toolbox = function(arg, rest)
 		for e in LA:Iterate() do
 			local owner = LA:OwnerOf(e)
 			say("      %-26s %-8s %s%s", tostring(e.key), tostring(e.source),
-				owner == TB and A.Good("rail")
-					or owner and A.Dim("drawer") or A.Dim("unclaimed"),
+				owner == TB and A.Good("trunk")
+					or owner and A.Dim("other") or A.Dim("unclaimed"),
 				TB:IsPinned(e.key) and "  " .. A.Hi("pinned") or "")
 		end
 	end

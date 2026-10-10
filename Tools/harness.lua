@@ -17734,10 +17734,11 @@ do
 			(#missing > 0 and table.concat(missing, ", ") or "all of them") .. ")")
 	end
 
-	-- ...and the general version: opening the drawer re-reads the lot, so a
-	-- value that was not available at login is right by the time it is seen.
+	-- ...and the general version: opening the Widgets branch re-reads the lot,
+	-- so a value that was not available at login is right by the time it is
+	-- seen.
 	do
-		TBm:SetOpen(false, true)
+		TBm:SetOpen(false)
 		_G.__money = 0
 		TBm:RefreshProviders("Gold")
 		local zero = TBm._published.Gold.value
@@ -17747,74 +17748,36 @@ do
 		check(TBm._published.Gold.value == zero,
 			"a value that changed with no event still reads stale while shut")
 
-		TBm:SetOpen(true, true)
+		TBm:SetOpen(true, nil, "widgets")
 		check(TBm._published.Gold.value ~= zero,
-			"and opening the drawer re-reads it (was " .. tostring(zero)
+			"and opening the Widgets branch re-reads it (was " .. tostring(zero)
 			.. ", now " .. tostring(TBm._published.Gold.value) .. ")")
 	end
 
 	-- The two that cannot be event-driven answer on the FIRST tick after the
-	-- drawer opens rather than a second later - and on the first open of a
-	-- session, a second later is the difference between a number and nothing.
+	-- branch opens rather than a second later, and stop when it shuts.
 	do
-		TBm:SetOpen(false, true)
-		TBm:SetOpen(true, true)
-		check(TBm._pollAccum ~= nil and TBm._pollAccum >= 1.0,
+		TBm:SetOpen(false)
+		check(not TBm._polling, "nothing is polled with the Widgets branch shut")
+		TBm:SetOpen(true, nil, "widgets")
+		check(TBm._polling and TBm._pollAccum ~= nil and TBm._pollAccum >= 1.0,
 			"the poll is due immediately on opening rather than after a full"
 			.. " period (got " .. tostring(TBm._pollAccum) .. ")")
 	end
 
-	TBm:SetOpen(false, true)
-
-	-- THE DRAWER IS TRANSIENT: Escape shuts it, and so does a click anywhere
-	-- else on the screen.
-	--
-	-- TWO FRAMES, because the drawer never hides - it SLIDES, travelling off
-	-- the edge and staying shown the whole time. So neither of the usual
-	-- mechanisms can be pointed at the panel itself.
+	-- ESCAPE CLOSES A BRANCH: every branch panel is in UISpecialFrames, and
+	-- the client hides what it finds shown there.
 	do
-		TBm:SetOpen(true, true)
-		local esc = TBm._escape
-		check(esc ~= nil and esc.IsShown and esc:IsShown(),
-			"with the drawer out there is a proxy frame up for Escape to close")
-
-		-- IN UISpecialFrames BY NAME, which is how the client closes a window on
-		-- Escape: it walks that list and HIDES what it finds shown. Given the
-		-- panel it would stop the slide dead and leave the travel bookkeeping
-		-- believing the drawer was still out.
+		local p = TBm.panels.widgets
 		local listed = false
 		for _, n in ipairs(_G.UISpecialFrames or {}) do
-			if esc and n == esc:GetName() then listed = true end
+			if p and n == p:GetName() then listed = true end
 		end
-		check(listed, "and it is in UISpecialFrames, which is what Escape reads")
-		check(TBm.panel and TBm.panel:IsShown(),
-			"while the panel itself stays shown, because it travels rather than "
-			.. "hiding")
-
-		-- ESCAPE, as the client performs it.
-		if esc then esc:Hide() end
-		check(not TBm:IsOpen(), "hiding that proxy - which is Escape - shuts the "
-			.. "drawer")
-
-		-- A CLICK ANYWHERE ELSE. The catcher is under everything the drawer draws
-		-- - the panel is at frame level 10 and the rail at 20 - so both stay
-		-- clickable and everything outside them is not.
-		TBm:SetOpen(true, true)
-		local catch = TBm._catch
-		check(catch and catch:GetPropagateMouseClicks(),
-			"the catcher passes the click on to whatever is underneath - closing "
-			.. "is a side effect of the click, not the whole of it")
-		check(catch ~= nil and catch:IsShown() and catch:GetFrameLevel() == 0,
-			"and a catcher across the screen, under the panel and the rail (level "
-			.. tostring(catch and catch:GetFrameLevel()) .. ")")
-		local onDown = catch and catch:GetScript("OnMouseDown")
-		if onDown then onDown(catch) end
-		check(not TBm:IsOpen(),
-			"and clicking it puts the drawer away")
-		check(catch and esc and not catch:IsShown() and not esc:IsShown(),
-			"after which neither is left up eating clicks or answering Escape")
+		check(listed, "the branch is in UISpecialFrames, which is what Escape reads")
+		p:Hide()
+		check(not TBm:IsOpen() and not TBm._polling,
+			"and hiding it - which is Escape - shuts it and stops the poll")
 	end
-
 end
 
 print("== the copy box ==")
@@ -20228,123 +20191,122 @@ do
 	f:SetAlpha(0)
 	Z._out = nil
 end
-print("== toolbox: the drawer breathes with everything else ==")
+print("== toolbox: the trunk breathes with everything else ==")
 do
 	local TBm = A:GetModule("toolbox")
-
-	-- The HUD dims when you stand still and the rail did not, which is the one
-	-- place a missing fader registration is actually visible: it sits on screen
-	-- at all times, next to things that ARE dimming.
-	check(A.Fader.watched[TBm.rail] ~= nil,
-		"the rail is registered with the fader")
-	check(A.Fader.watched[TBm.panel] ~= nil, "and so is the drawer")
-
-	-- ...but NOT the scrim. Its alpha is written on every Layout from the slide
-	-- position, so a second writer fights it once per frame while the drawer
-	-- moves. One owner per alpha, the same rule the aura trays follow.
-	check(A.Fader.watched[TBm.scrim] == nil,
-		"the scrim is NOT - its alpha is written by Layout from the slide"
-		.. " position, and two writers on one alpha is a fight per frame")
-
-	-- Every fadeable thing this module draws, so a new surface added later has
-	-- to make the same decision rather than default to being forgotten.
-	do
-		local unregistered = {}
-		for _, part in ipairs({ { "rail", TBm.rail }, { "panel", TBm.panel } }) do
-			if part[2] and not A.Fader.watched[part[2]] then
-				unregistered[#unregistered + 1] = part[1]
-			end
-		end
-		check(#unregistered == 0,
-			"nothing the module draws is left out of the breathing ("
-			.. (#unregistered > 0 and table.concat(unregistered, ", ")
-				or "all registered") .. ")")
-	end
+	-- The glyph and the trunk sit on screen at all times, next to things that
+	-- dim when you stand still; the branches and pins hang off the trunk.
+	check(A.Fader.watched[TBm.root] ~= nil, "the glyph is registered with the fader")
+	check(A.Fader.watched[A.Trunk:Get("toolbox").frame] ~= nil, "and so is the trunk")
+	check(TBm.rail == nil and TBm.panel == nil and TBm.scrim == nil,
+		"and the drawer, its rail and its scrim are gone")
 end
 
-print("== toolbox: nothing on the rail sits on anything else ==")
+print("== toolbox: the trunk, on the board ==")
 do
-	local TBm = A:GetModule("toolbox")
-	local LN = A.Launchers
+	-- LATTICE 5b and 6a at 1920 x 1080: the Cell glyph at (40, 300), the first
+	-- node 72 under it and the rest 72 apart, stubs toward the centre, the
+	-- pinned addons hanging below the last node.
+	local TBm, LN = A:GetModule("toolbox"), A.Launchers
+	local K = { t = A.Trunk:Get("toolbox"), M = A.Movers,
+		was = { ui = A.db.profile.scale, w = UIParent:GetWidth(), h = UIParent:GetHeight() } }
+	function K.near(a, b) return a and b and math.abs(a - b) <= 0.5 end
+	function K.at(f, p)
+		local x, y = K.M.PointAt(f, p or "CENTER")
+		return x, y and (UIParent:GetHeight() - y)
+	end
+	UIParent:SetSize(1920, 1080)
+	UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+	A.db.profile.scale = 1
+	A:Reconfigure()
 	TBm:SetDock("LEFT")
 
-	-- The gear anchors to the FAR END of the rail. So anything anchored from
-	-- that end which is missing from the rail's length does not get clipped -
-	-- it walks backwards into the list and lands on the last pin, where it
-	-- reads as simply not being drawn. That is what happened the day the
-	-- envelope (since moved to the World trunk) was added.
-	--
-	-- Measured off the frames rather than by restating the formula: a test that
-	-- recomputes the same sum agrees with the bug.
+	K.rx, K.ry = K.at(TBm.root)
+	check(TBm.root:IsShown() and K.near(K.rx, 40) and K.near(K.ry, 300),
+		"the Cell glyph sits at 40, 300" .. " (" .. tostring(K.rx) .. ", " .. tostring(K.ry) .. ")")
+	check(TBm.root.glyph:GetTexture() == A.Media.texture.icon, "wearing the addon's mark")
+	K.ys, K.order = {}, { "menu", "widgets", "addons", "settings", "news" }
+	for i, key in ipairs(K.order) do
+		local n = K.t:Node(key)
+		local x, y = K.at(n.button)
+		K.ys[i] = y
+		check(n.button:IsShown() and K.near(x, 40) and K.near(y, 300 + 72 * i),
+			key .. " is node " .. i .. ", at 40, " .. (300 + 72 * i) .. " (" .. tostring(x) .. ", " .. tostring(y) .. ")")
+	end
+	check(K.t.side == 1, "its stubs run right, toward the centre")
+	check(K.t:Node("menu").button.label:GetText() == "MENU"
+		and K.t:Node("news").button.label:GetText() == "WHAT'S NEW", "labelled in capitals")
+
+	-- Pins: three launchers pinned hang below What's new, 32 apart, each the
+	-- addon's own button on a bare node of the trunk.
 	for i = 1, 3 do
 		_G.__makeLDB("RailFit" .. i, "launcher")
-		local b = _G.__makeDBIcon("RailFit" .. i)
+		_G.__makeDBIcon("RailFit" .. i)
 	end
 	LN:Scan()
 	TBm:ClaimPins()
 	for i = 1, 3 do TBm:SetPinned("RailFit" .. i, true) end
-	TBm:LayoutRail()
-
-	local rail = TBm.rail
-	local railLen = rail:GetHeight()
-
-	-- Distance from the rail's TOP down to the top edge of the gear, which is
-	-- anchored BOTTOM-to-BOTTOM with a pad.
-	local gearTop = railLen - select(5, rail.gear:GetPoint(1)) - rail.gear:GetHeight()
-
-	check(rail.gear:GetHeight() > 0, "the gear is a real size")
-	check(rail.mail == nil, "and there is no envelope on the rail: mail is the World trunk's")
-
-	-- The rail's OWN controls are bare glyphs - no chip, no rim - because they
-	-- are part of the rail. A launcher looks different because it IS different:
-	-- somebody else's art in its own circle. That only works if the bare glyphs
-	-- carry comparable weight; at 18 against 26 they read as an afterthought
-	-- rather than as a deliberately quieter treatment.
-	--
-	-- A ratio rather than the number itself. The number is a taste decision and
-	-- restating it here would test nothing; "not visibly smaller than the
-	-- launchers, and still inside its slot" is the rule that was broken.
-	for _, part in ipairs({ { "gear", rail.gear } }) do
-		local g = part[2].glyph
-		local slot = part[2]:GetHeight()
-		check(g:GetHeight() <= slot,
-			part[1] .. "'s glyph fits its slot (" .. tostring(g:GetHeight())
-			.. " in " .. tostring(slot) .. ")")
-		check(g:GetHeight() >= slot * 0.8,
-			"and fills enough of it to sit beside a launcher rather than under"
-			.. " it (" .. tostring(g:GetHeight()) .. " of " .. tostring(slot)
-			.. ", want >= " .. tostring(slot * 0.8) .. ")")
+	K.bottom = K.t.frame:GetHeight()
+	for i = 1, 3 do
+		local e = LN.byKey["RailFit" .. i]
+		local node = TBm.pinNodes[i]
+		local x, y = K.at(e.button)
+		check(e.button:GetParent() == node.button and node.button:IsShown()
+			and K.near(x, 40) and K.near(y, K.ys[5] + 36 + 32 * (i - 1))
+			and math.abs(e.button:GetWidth() - 24) < 0.5,
+			"pin " .. i .. " hangs on the trunk below the last node, 24 across ("
+			.. tostring(x) .. ", " .. tostring(y) .. ")")
 	end
-
-	-- The lowest pinned button, from its own anchor.
-	local lowest = 0
-	for _, key in ipairs(TBm:Pinned()) do
-		local e = LN.byKey[key]
-		local b = e and e.button
-		if b and LN:OwnerOf(e) == TBm then
-			local bottom = -select(5, b:GetPoint(1)) + b:GetHeight()
-			if bottom > lowest then lowest = bottom end
-		end
-	end
-	check(lowest > 0, "and there are pins on the rail to collide with ("
-		.. tostring(lowest) .. ")")
-
-	check(lowest <= gearTop,
-		"the last pin ends ABOVE the gear rather than underneath it - a rail"
-		.. " one icon too short does not clip what is anchored from its far"
-		.. " end, it stacks it on the list (pin ends " .. tostring(lowest)
-		.. ", gear starts " .. tostring(gearTop) .. ")")
-
-	-- Adding a pin must lengthen the rail, or the next one collides instead.
-	local before = rail:GetHeight()
+	check(not TBm.pinNodes[1].button.fill:IsShown(), "on a bare node: no diamond of its own")
 	_G.__makeLDB("RailFit4", "launcher"); _G.__makeDBIcon("RailFit4")
-	LN:Scan(); TBm:ClaimPins(); TBm:SetPinned("RailFit4", true); TBm:LayoutRail()
-	check(rail:GetHeight() > before,
-		"and one more pin makes the rail longer rather than tighter ("
-		.. tostring(before) .. " -> " .. tostring(rail:GetHeight()) .. ")")
+	LN:Scan(); TBm:ClaimPins(); TBm:SetPinned("RailFit4", true)
+	check(K.t.frame:GetHeight() > K.bottom, "one more pin makes the strand longer ("
+		.. tostring(K.bottom) .. " -> " .. tostring(K.t.frame:GetHeight()) .. ")")
+	TBm:SetPinned("RailFit4", false)
+	check(not TBm.pinNodes[4].button:IsShown() and LN:OwnerOf(LN.byKey.RailFit4) == TBm,
+		"unpinned, its node goes and the button is still ours, parked")
+
+	-- Swapped: the trunk on the right, the minimap mirrored to the left.
+	K.MM = A:GetModule("minimap")
+	K.mx = K.at(K.MM.frame)
+	check(K.mx and K.mx > 960, "the minimap starts on the right")
+	check(TBm:SetDock("RIGHT"), "docked right")
+	K.rx = K.at(TBm.root)
+	check(K.near(K.rx, 1880) and K.t.side == -1, "the glyph is 40 in from the right edge, stubs left ("
+		.. tostring(K.rx) .. ")")
+	K.mx2 = K.at(K.MM.frame)
+	check(K.near(K.mx2, 1920 - K.mx), "and the minimap is mirrored to the left ("
+		.. tostring(K.mx) .. " -> " .. tostring(K.mx2) .. ")")
+	check(A.Trunk:Get("world").side == 1, "its trunk's stubs turned round")
+	check(not TBm:SetDock("TOP"), "top is refused: left or right only")
+	TBm:SetDock("LEFT")
+	check(K.near(K.at(K.MM.frame), K.mx), "back left, the minimap goes home")
+
+	-- In unlock, a drag of the glyph to the other half swaps the trunks.
+	K.open, K.opened = A.Options.Open, 0
+	A.Options.Open = function() K.opened = K.opened + 1 return true end
+	A.Movers:Unlock()
+	TBm.root:GetScript("OnDragStart")(TBm.root)
+	__setCursor(1500 * UIParent:GetEffectiveScale(), 500)
+	TBm.root:GetScript("OnDragStop")(TBm.root)
+	check(TBm:Dock() == "RIGHT", "dragging the glyph to the right half docks it right")
+	TBm.root:GetScript("OnClick")(TBm.root)
+	check(K.opened == 0, "and the release is not taken for a click")
+	A.Movers:Lock()
+	TBm.root:GetScript("OnDragStart")(TBm.root)
+	__setCursor(200 * UIParent:GetEffectiveScale(), 500)
+	TBm.root:GetScript("OnDragStop")(TBm.root)
+	check(TBm:Dock() == "RIGHT", "locked, the glyph does not drag")
+	TBm.root:GetScript("OnClick")(TBm.root)
+	check(K.opened == 1, "and a click on it opens the settings")
+	A.Options.Open = K.open
+	TBm:SetDock("LEFT")
 
 	for i = 1, 4 do TBm:SetPinned("RailFit" .. i, false) end
-	TBm:LayoutRail()
+	UIParent:SetSize(K.was.w, K.was.h)
+	UIParent.__geom = nil
+	A.db.profile.scale = K.was.ui
+	A:Reconfigure()
 end
 
 print("== world trunk: mail, and what the client will not tell us ==")
@@ -20355,8 +20317,8 @@ do
 	M.node = M.t:Node("mail")
 	M.b = M.node and M.node.button
 	check(M.b and M.b:IsShown(), "the World trunk carries a Mail node")
-	check(M.TB.rail.mail == nil and M.TB.content and M.TB.content.mailHead == nil,
-		"and the Toolbox carries no mail: no envelope on the rail, no MAIL section in the drawer")
+	check(M.TB.rail == nil and M.TB.content == nil,
+		"and the Toolbox carries no mail: no rail and no drawer for it to be in")
 	check(MMm.mail == nil, "nor does the minimap keep a mail frame of its own")
 	check(M.node.order > M.t:Node("questlog").order and M.node.order < M.t:Node("tracking").order
 		and M.t:Node("tracking").order < M.t:Node("calendar").order,
@@ -20786,13 +20748,16 @@ do
 	plain:SetFillColor(A.Palette.c.glass)
 	check(plain._backing == nil, "a surface nobody asked to be solid never grows one")
 
-	-- THE TOOLBOX IS A READING SURFACE TOO. It slides out OVER whatever is
-	-- behind it carrying five columns of small text.
+	-- THE TRUNKS' BRANCHES ARE READING SURFACES TOO: small text over whatever
+	-- is behind them, and re-tinted on a restyle.
+	local TBm = A:GetModule("toolbox")
+	TBm:SetOpen(true, nil, "menu")
 	cfg.readOpacity = 0.6
 	A:Restyle()
 	local want = A.Palette:ReadingFill()[4]
-	check(math.abs((A:GetModule("toolbox").panel._fillColor[4] or 0) - want) < 0.001,
-		"the Toolbox drawer is at the readable opacity too")
+	check(math.abs((TBm.panels.menu._fillColor[4] or 0) - want) < 0.001,
+		"a Toolbox branch is at the readable opacity too")
+	TBm:SetOpen(false)
 
 	cfg.readOpacity = was
 	A:Restyle()
@@ -20854,326 +20819,89 @@ check(not XPm.frame:IsShown(), "xp bar hides at max level")
 _G.__units.player.level = 15
 fire("PLAYER_LEVEL_UP")
 
-print("== toolbox: the drawer, at every dock and every scale ==")
+print("== toolbox: the branches ==")
 do
 	local TBm = A:GetModule("toolbox")
-	check(TBm and TBm.enabled and TBm.panel, "toolbox module built")
-	check(TBm.panel:GetFrameStrata() == "FULLSCREEN_DIALOG",
-		"the drawer sits above the HUD - it overlays, and nothing beneath it"
-		.. " moves or resizes")
-
-	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-	local oldScale   = A.db.profile.scale
+	local B = { t = A.Trunk:Get("toolbox"), M = A.Movers,
+		was = { ui = A.db.profile.scale, w = UIParent:GetWidth(), h = UIParent:GetHeight() } }
+	check(TBm and TBm.enabled and TBm.root, "toolbox module built")
 	UIParent:SetSize(1365, 768)          -- the real virtual screen at 16:9
+	UIParent:SetGeom({ cx = 682.5, cy = 384, left = 0, right = 1365, bottom = 0, top = 768 })
+	TBm:SetDock("LEFT")
 
-	-- THE check this layer exists to pass. The deck's vertical panel is 910px
-	-- against a 1080 canvas; at scale 1.0 that is 910 against a 768-unit screen,
-	-- which hangs off both ends. A panel that fits at the design scale and
-	-- overflows at 1.0 is a panel nobody running a full UI scale can use.
+	-- Each node opens its own branch beside its stub, lit, one at a time, and
+	-- the branch is on the screen at the design's scale and at 1.0.
 	for _, sc in ipairs({ 0.71, 1.0 }) do
 		A.db.profile.scale = sc
-		for _, edge in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
-			TBm:SetDock(edge)
-			TBm:SetOpen(true, true)
-			local w, h = TBm.panel:GetWidth(), TBm.panel:GetHeight()
-			check(w * sc <= 1365 + 0.5 and h * sc <= 768 + 0.5,
-				"at scale " .. sc .. " docked " .. edge .. " the drawer fits on"
-				.. " screen (" .. string.format("%.0fx%.0f", w * sc, h * sc)
-				.. " of 1365x768)")
+		A:Reconfigure()
+		for _, b in ipairs(TBm.BRANCHES) do
+			local n = B.t:Node(b.key)
+			n.button:GetScript("OnClick")(n.button, "LeftButton")
+			local p = TBm.panels[b.key]
+			local l, r = B.M.PointAt(p, "LEFT"), B.M.PointAt(p, "RIGHT")
+			local _, top = B.M.PointAt(p, "TOP")
+			local _, bot = B.M.PointAt(p, "BOTTOM")
+			local sl = B.M.PointAt(n.button.stub, "RIGHT")
+			local gap = 5.5 * B.t.frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+			check(p:IsShown() and n.lit and TBm:OpenKey() == b.key,
+				"at " .. sc .. " the " .. b.key .. " node opens its branch, lit, and only it")
+			check(l and math.abs(l - sl - gap) < 0.5,
+				"beside its stub (" .. tostring(l) .. " vs " .. tostring(sl + gap) .. ")")
+			check(l >= -0.5 and r <= 1365.5 and bot >= -0.5 and top <= 768.5,
+				"and all of it on the screen (" .. string.format("%.0f..%.0f x %.0f..%.0f", l, r, bot, top) .. ")")
 		end
+		B.t:Node("news").button:GetScript("OnClick")(B.t:Node("news").button, "LeftButton")
+		check(not TBm:IsOpen(), "clicked again, the open one closes")
 	end
-
-	-- ...and the cap must not be doing nothing. At 0.71 the deck's own number
-	-- has to survive untouched, or the clamp is quietly redesigning the drawer
-	-- for everybody rather than rescuing the one case that needed it.
 	A.db.profile.scale = 0.71
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-	check(math.abs(TBm.panel:GetHeight() - 910) < 1,
-		"and at the DESIGN scale the deck's 910 is untouched, so the clamp"
-		.. " rescues scale 1.0 without redesigning the drawer for anybody else"
-		.. " (got " .. string.format("%.0f", TBm.panel:GetHeight()) .. ")")
-	A.db.profile.scale = 1.0
-	TBm:Layout()
-	check(TBm.panel:GetHeight() < 910,
-		"while at 1.0 it really does clamp, or the check above proves nothing"
-		.. " (got " .. string.format("%.0f", TBm.panel:GetHeight()) .. ")")
-	A.db.profile.scale = 0.71
+	A:Reconfigure()
 
-	-- Open and closed. Closed means fully off screen on the docking axis, with
-	-- the rail still on screen - that is the whole point of the rail.
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-	local openPt = select(4, TBm.panel:GetPoint(1))
-	TBm:SetOpen(false, true)
-	local shutPt = select(4, TBm.panel:GetPoint(1))
-	check(math.abs(openPt) < 0.5, "open, the drawer is flush to its edge")
-	check(shutPt <= -TBm.panel:GetWidth() + 0.5,
-		"closed, it is off screen by its own width rather than merely hidden -"
-		.. " it slides, so there is nothing to hide (" .. string.format("%.0f", shutPt)
-		.. " vs -" .. string.format("%.0f", TBm.panel:GetWidth()) .. ")")
-	check(TBm.rail:IsShown(), "and the rail stays, which is what it is for")
+	-- The side persists per character; the drawer's top and bottom come back
+	-- on the left (decision 4c).
+	check(A.db.char.toolbox.docked == "LEFT", "the side is the character's")
+	A.db.char.toolbox.docked = "BOTTOM"
+	check(TBm:Dock() == "LEFT" and A.db.char.toolbox.docked == "LEFT",
+		"a character docked at the bottom under the drawer comes back on the left")
+	check(not TBm:SetDock("SIDEWAYS") and TBm:Dock() == "LEFT", "an edge that is not a side is refused")
+	_G.__inCombat = true
+	check(not TBm:SetDock("RIGHT") and TBm:Dock() == "LEFT",
+		"and the sides do not swap in combat, where the minimap is not ours to move")
+	_G.__inCombat = false
 
-	-- The scrim travels with the panel and fades with it.
-	check(not TBm.scrim:IsShown(), "shut, there is no scrim")
-	TBm:SetOpen(true, true)
-	-- The scrim is SHAPED like the panel. A rectangle sized to the panel's
-	-- bounds leaves a hard black notch at each of the four corners, where the
-	-- panel curves away and the scrim's own square corner carries on.
-	TBm.scrim._corner = 0                       -- as a square would leave it
-	TBm:Layout()
-	check(TBm.scrim._kind == "panel" and TBm.scrim._corner == TBm.panel._corner,
-		"the scrim is a rounded panel at the drawer's own radius rather than a"
-		.. " rectangle, or it shows as four black corners outside the rounding"
-		.. " (kind " .. tostring(TBm.scrim._kind) .. ", corner "
-		.. tostring(TBm.scrim._corner) .. " vs " .. tostring(TBm.panel._corner) .. ")")
+	-- THE OTHER ENERGY: in a fight the nodes stay, the labels go and the open
+	-- branch closes (README "Two energies for trunks").
+	TBm:SetOpen(true, nil, "addons")
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	B.menu = B.t:Node("menu").button
+	check(not TBm:IsOpen() and B.menu:IsShown() and B.menu:GetAlpha() > 0.99
+		and B.menu.label:GetAlpha() == 0,
+		"in a fight: nodes only, labels off, the open branch shut")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(B.menu.label:GetAlpha() > 0.99, "and the labels come back after it")
+
+	-- WHAT'S NEW: a dot at the node's top-right in the info blue while this
+	-- version's notes are unread, gone once its branch has been opened.
+	A.db.char.toolbox.newsSeen = nil
+	B.t:Paint()
+	B.news = B.t:Node("news").button
+	check(B.news.dot:IsShown(), "unread notes put a dot on What's new")
 	do
-		local e = TBm.scrim._edgeColor
-		check(e and (e[4] or 1) == 0,
-			"and carries no rim - a scrim with an edge is a second outline a"
-			.. " finger-width outside the first")
+		local r, g, b = B.news.dot:GetVertexColor()
+		local i = A.Palette.c.info
+		check(math.abs(r - i[1]) < 0.01 and math.abs(g - i[2]) < 0.01 and math.abs(b - i[3]) < 0.01,
+			"in the info blue")
 	end
+	TBm:SetOpen(true, nil, "news")
+	check(not B.news.dot:IsShown() and A.db.char.toolbox.newsSeen == TBm:NewsVersion(),
+		"and opening the branch reads them")
+	TBm:SetOpen(false)
 
-	check(TBm.scrim:IsShown() and math.abs(TBm.scrim:GetAlpha() - 0.28) < 0.01,
-		"open, the covered strip is dimmed rather than left at full brightness"
-		.. " under a translucent panel")
-
-	-- Interruptible. Clicking the chevron twice quickly must REVERSE, not queue
-	-- a second animation behind the first.
-	--
-	-- DRIVEN OFF THE PANEL, per frame. It rode the shared 0.1s ticker until
-	-- the bags drawer was written, which is three steps across a 340ms slide -
-	-- a snap with two stops in it. Both drawers walk the same travel now, and
-	-- the driver is the panel's own OnUpdate.
-	TBm:SetOpen(false, true)
-	TBm:SetOpen(true)                    -- start opening, no instant
-	local drive = TBm.panel:GetScript("OnUpdate")
-	check(drive ~= nil, "opening installs a per-frame driver on the panel")
-	drive(TBm.panel, 0.05)
-	drive(TBm.panel, 0.05)               -- two frames, so the reversal below
-	local mid = TBm._travel              -- has somewhere to land that is not 0
-	check(mid > 0 and mid < 1, "mid-slide, the drawer is part way (" ..
-		string.format("%.2f", mid) .. ")")
-	TBm:SetOpen(false)                   -- reverse before it arrives
-	TBm.panel:GetScript("OnUpdate")(TBm.panel, 0.05)
-	check(TBm._travel < mid and TBm._travel > 0,
-		"reversing mid-slide carries on from where it had got to rather than"
-		.. " snapping back to the start or queueing behind the first move. It"
-		.. " has to land BETWEEN, or a drawer that simply snapped shut would"
-		.. " pass this too (" .. string.format("%.2f", mid) .. " -> "
-		.. string.format("%.2f", TBm._travel) .. ")")
-	-- Frames, not settle(): settle drains C_Timer, and the slide runs off the
-	-- panel's OnUpdate. Draining timers advances this by exactly nothing.
-	for _ = 1, 20 do
-		local fn = TBm.panel:GetScript("OnUpdate")
-		if not fn then break end
-		fn(TBm.panel, 0.05)
-	end
-	check(TBm._travel == 0, "and it arrives, exactly, rather than creeping"
-		.. " toward zero for ever (" .. tostring(TBm._travel) .. ")")
-	check(TBm.panel:GetScript("OnUpdate") == nil,
-		"and the driver comes off, so nothing polls while it sits still")
-
-	-- Persistence, per character.
-	TBm:SetDock("BOTTOM")
-	TBm:SetOpen(true, true)
-	check(A.db.char.toolbox.docked == "BOTTOM" and A.db.char.toolbox.open == true,
-		"the edge and the open state persist in the CHARACTER scope - a drawer"
-		.. " edge is a habit somebody forms on one character")
-	check(not TBm:SetDock("SIDEWAYS"), "and an edge that is not an edge is refused")
-	check(TBm:Dock() == "BOTTOM", "leaving the last good one in place")
-
-	-- The horizontal dock really is the other layout, not the same panel turned.
-	TBm:SetDock("BOTTOM")
-	TBm:Layout()
-	local hw = TBm.panel:GetWidth()
-	TBm:SetDock("LEFT")
-	TBm:Layout()
-	check(hw > TBm.panel:GetWidth(),
-		"top and bottom use the WIDE layout and left and right the narrow one -"
-		.. " two layouts, not one panel rotated (" .. string.format("%.0f", hw)
-		.. " vs " .. string.format("%.0f", TBm.panel:GetWidth()) .. ")")
-
-	UIParent:SetSize(oldW, oldH)
-	A.db.profile.scale = oldScale
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(false, true)
-end
-
-print("== toolbox: dragging the rail to another edge ==")
-do
-	local TBm = A:GetModule("toolbox")
-	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-	local oldX, oldY = cursorX, cursorY
-
-	A.Movers:Lock()
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(false, true)
-
-	-- Which edge a point belongs to, and the reason it is a FRACTION of each
-	-- axis rather than a distance in pixels.
-	--
-	-- 2560x1440 with the cursor at (1000, 720): the left edge is 1000 away and
-	-- top and bottom are 720 each, so plain pixel distance hands the entire
-	-- middle band of a wide screen to top or bottom and the side docks become
-	-- unreachable from anywhere near the centre. In fractions the left edge is
-	-- 0.39 of the way across against 0.5 either way vertically, so it wins - and
-	-- each edge ends up owning a wedge, which is what the gesture looks like it
-	-- ought to do.
-	check(TBm:NearestEdge(1000, 720, 2560, 1440) == "LEFT",
-		"the middle-left of a wide screen belongs to LEFT, though it is nearer"
-		.. " the top and bottom edges in raw pixels (1000 across vs 720 up) -"
-		.. " each edge owns a fraction of the screen, not a band of pixels (got "
-		.. tostring(TBm:NearestEdge(1000, 720, 2560, 1440)) .. ")")
-	check(TBm:NearestEdge(100,  720,  2560, 1440) == "LEFT",   "hard left is LEFT")
-	check(TBm:NearestEdge(2500, 720,  2560, 1440) == "RIGHT",  "hard right is RIGHT")
-	check(TBm:NearestEdge(1280, 60,   2560, 1440) == "BOTTOM", "the floor is BOTTOM")
-	check(TBm:NearestEdge(1280, 1400, 2560, 1440) == "TOP",    "the ceiling is TOP")
-	check(TBm:NearestEdge(500, 500, 0, 0) == TBm:Dock(),
-		"and a screen with no size leaves the dock alone rather than dividing by"
-		.. " it")
-
-	-- The handle arrives with everybody else's.
-	check(TBm._dockHandle == nil or not TBm._dockHandle:IsShown(),
-		"locked, the drawer carries no handle")
-	A.Movers:Unlock()
-	local h = TBm._dockHandle
-	check(h ~= nil and h:IsShown(),
-		"unlocking gives the drawer a handle of its own - it is NOT in the mover"
-		.. " registry, because it has four legal answers rather than a position,"
-		.. " but 'unlock frames' still has to be the moment it can be placed")
-	check(A.Movers.watchers.toolbox ~= nil,
-		"and it is keyed by module name, so enabling twice replaces the watcher"
-		.. " rather than stacking a second one")
-
-	if h then
-		-- The lesson the chat resize grip taught, applied before it could be
-		-- learned twice: DIALOG is BELOW FULLSCREEN_DIALOG in the strata order,
-		-- so a handle put there is painted under the very frame it is a handle
-		-- for and never sees a click.
-		check(h:GetFrameStrata() == "FULLSCREEN_DIALOG"
-			and h:GetFrameLevel() > TBm.rail:GetFrameLevel(),
-			"the handle sits above the rail rather than at DIALOG, which is"
-			.. " BELOW FULLSCREEN_DIALOG and would put it under the thing it"
-			.. " moves (" .. tostring(h:GetFrameStrata()) .. " "
-			.. tostring(h:GetFrameLevel()) .. " vs rail "
-			.. tostring(TBm.rail:GetFrameLevel()) .. ")")
-
-		UIParent:SetSize(1365, 768)
-		UIParent.__scale = 1
-
-		h:GetScript("OnDragStart")(h)
-		local g = TBm._ghosts
-		check(g ~= nil and g.LEFT:IsShown() and g.RIGHT:IsShown()
-			and g.TOP:IsShown() and g.BOTTOM:IsShown(),
-			"grabbing it puts all four targets up at once - the point of the"
-			.. " gesture is that there are exactly four places it can go")
-		check(TBm._litGhost == "LEFT",
-			"with the edge it is already on lit, so the starting state is a"
-			.. " target rather than nothing")
-
-		-- Each target is the drawer's OWN footprint on that edge. A uniform
-		-- strip down each side is cheaper and lies about two of the four: top
-		-- and bottom are a different layout, not the same panel turned.
-		if g then
-			check(g.LEFT:GetWidth() < g.TOP:GetWidth()
-				and g.LEFT:GetHeight() > g.TOP:GetHeight(),
-				"the side targets are the narrow layout and the top and bottom"
-				.. " ones the wide layout, so each shows the shape you would"
-				.. " actually get (" .. string.format("%.0fx%.0f",
-					g.LEFT:GetWidth(), g.LEFT:GetHeight()) .. " vs "
-				.. string.format("%.0fx%.0f", g.TOP:GetWidth(), g.TOP:GetHeight())
-				.. ")")
-			check(select(1, g.LEFT:GetPoint(1)) == "LEFT"
-				and select(1, g.BOTTOM:GetPoint(1)) == "BOTTOM",
-				"and each is anchored to the edge it stands for")
-		end
-
-		cursorX, cursorY = 680, 30           -- along the bottom
-		h:GetScript("OnUpdate")(h)
-		check(TBm._litGhost == "BOTTOM" and TBm._dockTarget == "BOTTOM",
-			"moving toward the floor lights the floor - the lit one is the one"
-			.. " you will get (" .. tostring(TBm._litGhost) .. ")")
-
-		h:GetScript("OnDragStop")(h)
-		check(TBm:Dock() == "BOTTOM", "and letting go docks it there")
-		check(A.db.char.toolbox.docked == "BOTTOM",
-			"written down per character, the same as picking the edge from the"
-			.. " slash command")
-		check(TBm._ghosts.LEFT:IsShown() == false,
-			"the targets go when the gesture does")
-		check(h:GetScript("OnUpdate") == nil, "and the tracker stops")
-
-		-- The label reads OUT into the screen, never off the edge of it.
-		TBm:SetDock("LEFT")
-		local lp, _, lrel = h.label:GetPoint(1)
-		check(lp == "LEFT" and lrel == "RIGHT",
-			"docked left the handle's label hangs off the rail's inboard side")
-		TBm:SetDock("RIGHT")
-		lp, _, lrel = h.label:GetPoint(1)
-		check(lp == "RIGHT" and lrel == "LEFT",
-			"and docked right it swaps sides - the rail is hard against the"
-			.. " screen edge, so a label on the outboard side is a word nobody"
-			.. " can read")
-		TBm:SetDock("LEFT")
-
-		-- Combat. Re-docking moves the rail, and the rail is the PARENT of other
-		-- addons' launcher buttons, some of which carry secure templates.
-		_G.__inCombat = true
-		h:GetScript("OnDragStart")(h)
-		check(h:GetScript("OnUpdate") == nil and TBm._ghosts.LEFT:IsShown() == false,
-			"in combat the gesture is refused outright rather than started and"
-			.. " then failed at the drop")
-		_G.__inCombat = false
-
-		-- Locked with the button still down. Nothing has been committed, so the
-		-- move is abandoned rather than applied to whatever was last lit.
-		h:GetScript("OnDragStart")(h)
-		cursorX, cursorY = 680, 30
-		h:GetScript("OnUpdate")(h)
-		check(TBm._dockTarget == "BOTTOM", "mid-drag, the bottom is armed")
-		A.Movers:Lock()
-		check(TBm:Dock() == "LEFT",
-			"locking mid-drag abandons the move rather than committing whatever"
-			.. " happened to be lit (" .. TBm:Dock() .. ")")
-		check(not h:IsShown(), "the handle goes")
-		check(TBm._ghosts.LEFT:IsShown() == false, "the targets go")
-		check(h:GetScript("OnUpdate") == nil,
-			"and so does the tracker - a hidden frame gets no OnUpdate, so one"
-			.. " left attached fires the moment the handle is shown again")
-
-		-- Combat that starts mid-drag is the same abandonment by another route,
-		-- and it is the one the player does not choose.
-		--
-		-- ARMED FIRST, with a clean update, and only then does the fight start.
-		-- Turning combat on before the cursor has moved makes this pass on a
-		-- version that drops straight into the drop path and commits - the armed
-		-- target is still the edge it started on, so committing it changes
-		-- nothing and looks like a refusal. It is the drop path doing a
-		-- protected re-anchor of the rail in combat, and the rail is the parent
-		-- of other addons' secure buttons.
-		A.Movers:Unlock()
-		h:GetScript("OnDragStart")(h)
-		cursorX, cursorY = 680, 30
-		h:GetScript("OnUpdate")(h)
-		check(TBm._dockTarget == "BOTTOM", "armed on the bottom, out of combat")
-		_G.__inCombat = true
-		h:GetScript("OnUpdate")(h)
-		_G.__inCombat = false
-		check(TBm:Dock() == "LEFT" and h:GetScript("OnUpdate") == nil,
-			"and a fight starting mid-drag drops the move rather than committing"
-			.. " the armed edge - the drop re-anchors the rail, which is a"
-			.. " protected action while other addons' secure buttons are its"
-			.. " children (" .. TBm:Dock() .. ")")
-
-		A.Movers:Lock()
-		check(not h:IsShown(), "locking takes the handle away again")
-	end
-
-	UIParent:SetSize(oldW, oldH)
-	cursorX, cursorY = oldX, oldY
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(false, true)
+	UIParent:SetSize(B.was.w, B.was.h)
+	UIParent.__geom = nil
+	A.db.profile.scale = B.was.ui
+	A:Reconfigure()
 end
 
 print("== toolbox: widgets are published, not drawn ==")
@@ -21181,7 +20909,8 @@ do
 	local TBm = A:GetModule("toolbox")
 	local ldb = LibStub("LibDataBroker-1.1")
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
+	TBm:SetOpen(true, nil, "widgets")
+	local WP = TBm.panels.widgets
 
 	-- Published, so anybody displaying LDB gets them. That is the point: a
 	-- player running Titan sees AetherUI's XP/hr without us doing anything.
@@ -21202,10 +20931,20 @@ do
 		"and as `data source`, not `launcher` - they are readouts, and a"
 		.. " launcher is a thing you click")
 
-	-- One card each, and the value/label mapping the deck draws.
-	check(#TBm.content.cards >= 6, "the grid draws a card per source")
-	check(TBm.content.cards[1].label:GetText() == "Gold",
+	-- One reading each (README "Panel vocabulary": the value over a 7 px
+	-- hollow diamond on a strand, the label under it), three to a row.
+	check(#WP.cells >= 6 and WP.cells[6]:IsShown(), "the Widgets branch draws a reading per source")
+	check(WP.cells[1].label:GetText() == "Gold",
 		"with the object's own label under the value, not a name we invented")
+	check(WP.cells[1].node:GetTexture() == A.Media.texture.diamondRim and WP.cells[1].strand:IsShown(),
+		"on a hollow diamond and a strand")
+	check(select(5, WP.cells[4]:GetPoint(1)) < select(5, WP.cells[3]:GetPoint(1)),
+		"three to a row: the fourth starts the second")
+	do
+		local _, _, _, _, y = WP.cells[6]:GetPoint(1)
+		check(-y + WP.cells[6]:GetHeight() <= WP:GetHeight() + 0.5,
+			"and the branch is tall enough to hold them all")
+	end
 
 	-- THE mapping test. A third-party source that writes only `text` - which is
 	-- what almost all of them do - must render, and must fall back to its
@@ -21242,12 +20981,12 @@ do
 		local was = c.widgets
 		c.widgets = { "AetherUI_Gold", "ThirdParty_Widget" }
 		TBm:RefreshWidgets()
-		check(TBm.content.cards[2].label:GetText() == "Theirs"
-			and TBm.content.cards[2].value:GetText() == "99",
-			"somebody else's data source draws in the grid with no wiring at"
-			.. " all - the grid is a list of names, not a layout of six")
-		check(not TBm.content.cards[3]:IsShown(),
-			"and a shorter list hides the surplus cards rather than leaving"
+		check(WP.cells[2].label:GetText() == "Theirs"
+			and WP.cells[2].value:GetText() == "99",
+			"somebody else's data source draws in the branch with no wiring at"
+			.. " all - it is a list of names, not a layout of six")
+		check(not WP.cells[3]:IsShown(),
+			"and a shorter list hides the surplus readings rather than leaving"
 			.. " stale ones on screen - frames cannot be destroyed, so the pool"
 			.. " is by index and the tail is hidden")
 		c.widgets = was
@@ -21276,13 +21015,16 @@ do
 		_G.__xp, _G.__xpMax = wasXP, wasMax
 	end
 
-	-- Polling follows the drawer. A closed drawer shows no numbers.
-	TBm:SetOpen(false, true)
+	-- Polling follows the Widgets branch, and only that branch.
+	TBm:SetOpen(false)
 	check(not TBm._polling,
-		"a shut drawer polls nothing - the two widgets that cannot be"
+		"a shut branch polls nothing - the two widgets that cannot be"
 		.. " event-driven are the only pollers, and nobody is looking at them")
-	TBm:SetOpen(true, true)
-	check(TBm._polling, "and it starts again when the drawer opens")
+	TBm:SetOpen(true, nil, "menu")
+	check(not TBm._polling, "nor does another branch")
+	TBm:SetOpen(true, nil, "widgets")
+	check(TBm._polling, "and it starts again when the Widgets branch opens")
+	TBm:SetOpen(false)
 
 	-- The unread dot needs a notion of read, or it is always lit or never.
 	A.db.char.toolbox.newsSeen = nil
@@ -21299,160 +21041,8 @@ do
 		.. " checked that either had been (" .. tostring(TBm:NewsVersion())
 		.. " vs " .. tostring(A.version) .. ")")
 
-	-- The card's text comes from the changelog too, and this is the check that
-	-- it is not a second copy: the first line of the current entry has to appear
-	-- in the body verbatim.
-	do
-		local entry = A:Notes()
-		local body  = TBm.content.news.body:GetText() or ""
-		local full  = TBm:NewsText()
-		-- A PREFIX, not the whole line: the body is trimmed to whatever the
-		-- card is at the moment, so on a narrow card it ends in "...".
-		local shown = body:gsub("%.%.%.$", "")
-		check(entry and entry.lines[1] and #shown > 0
-			and full:sub(1, #shown) == shown,
-			"the card's body is the start of the current entry's own line rather"
-			.. " than a paragraph kept beside it (" .. body .. ")")
-		check(full:find(entry.lines[1], 1, true) ~= nil,
-			"and the untrimmed text really is that line, so the trimming is the"
-			.. " only thing between the changelog and the card")
-		check(TBm.content.chip.text:GetText():find(A.version, 1, true) ~= nil,
-			"and the chip carries the running version ("
-			.. tostring(TBm.content.chip.text:GetText()) .. ")")
-
-		-- ...and it is RE-READ, not just correct because it was built correct.
-		-- The chip is written once at build time from the same expression, so a
-		-- refresh that never touches it looks right until the version moves.
-		local realVersion, wasW = A.version, TBm.content.chip:GetWidth()
-		A.version = "9.9.9"
-		TBm:RefreshNews()
-		check(TBm.content.chip.text:GetText():find("9.9.9", 1, true) ~= nil,
-			"and re-reads it rather than keeping what it was built with ("
-			.. tostring(TBm.content.chip.text:GetText()) .. ")")
-		check(math.abs(TBm.content.chip:GetWidth()
-				- (TBm.content.chip.text:GetStringWidth() + 14)) < 0.5,
-			"re-measuring the pill around it as it goes - a chip sized once is a"
-			.. " chip with its own text hanging out of it the day a number goes"
-			.. " double-digit (" .. string.format("%.0f", TBm.content.chip:GetWidth())
-			.. " for a string of " .. string.format("%.0f",
-				TBm.content.chip.text:GetStringWidth()) .. ", was "
-			.. string.format("%.0f", wasW) .. ")")
-		A.version = realVersion
-		TBm:RefreshNews()
-	end
-
-	-- Everything on the card fits INSIDE the card.
-	--
-	-- The Notes link is anchored to the card's bottom-left and the body grows
-	-- down from the title, so the two meet in the middle if the body is allowed
-	-- to run long. It was: two changelog lines joined into a paragraph wrapped
-	-- to three rendered lines, filled the card to its bottom edge, and drew
-	-- straight through the link. Measured rather than eyeballed, because the
-	-- collision is between two frames that are each exactly where their own
-	-- SetPoint says.
-	do
-		local card = TBm.content.news
-		-- GetStringHeight, not GetHeight. GetHeight is whatever the frame was
-		-- sized to; the WRAPPED height is the number that decides whether the
-		-- body runs into the link, and it needs a width that was set rather
-		-- than one the client worked out from two anchors - which is why the
-		-- body carries an explicit one now.
-		check((card.body:GetWidth() or 0) > 20,
-			"the card's body has a real width to wrap against ("
-			.. string.format("%.0f", card.body:GetWidth() or 0) .. ")")
-		local need = 14                                   -- top padding
-			+ (card.titleText:GetStringHeight() or 0)
-			+ 6                                           -- title to body
-			+ (card.body:GetStringHeight() or 0)
-			+ 4                                           -- body to link
-			+ (card.notes:GetHeight() or 0)
-			+ 12                                          -- bottom padding
-		check(need <= card:GetHeight() + 0.5,
-			"the title, the body and the Notes link all fit inside the What's"
-			.. " new card rather than the last two overlapping ("
-			.. string.format("%.0f needed of %.0f", need, card:GetHeight())
-			.. ")")
-		check(TBm.NEWS_LINES == 1,
-			"which the card gets by showing ONE changelog line - it is a"
-			.. " headline, not a release summary, and the rest is what Notes is"
-			.. " for")
-
-		-- ...and it fits because the body is TRIMMED, not because the line
-		-- happened to be short. A changelog line is prose somebody writes months
-		-- from now, and the card is about 170px wide in the flat layout's
-		-- identity column against about 300 in the tall panel - the same
-		-- sentence at four lines and at two.
-		local realLog = A.CHANGELOG
-		local wasW, wasH = UIParent:GetWidth(), UIParent:GetHeight()
-		local wasScale = A.db.profile.scale
-		UIParent:SetSize(1365, 768)
-		A.db.profile.scale = 0.71
-		TBm:SetDock("LEFT")
-		TBm:SetOpen(true, true)
-
-		local function noteIs(line)
-			A.CHANGELOG = { { version = A.version, date = "2026-01-01",
-				lines = { line } } }
-			TBm:LayoutContent()
-			return card.body:GetText() or ""
-		end
-		local function fits()
-			return 14 + (card.titleText:GetStringHeight() or 0) + 6
-				+ (card.body:GetStringHeight() or 0) + 4
-				+ (card.notes:GetHeight() or 0) + 12 <= card:GetHeight() + 0.5
-		end
-
-		-- An ORDINARY release note, the length people actually write, has to
-		-- survive untouched on the tall panel. This is what says the card is big
-		-- enough rather than merely self-consistent: everything below fits by
-		-- construction once the trimming works, so a card shrunk back to its old
-		-- height would pass every other check here by cutting more.
-		local ordinary = "Drag the Toolbox rail to any screen edge to re-dock it."
-		local shown = noteIs(ordinary)
-		check(shown == ordinary,
-			"an ordinary release note is shown in full on the tall panel - the"
-			.. " card is sized for one, not merely consistent with whatever it"
-			.. " has to cut (got " .. shown .. ")")
-		check(fits(), "and fits")
-
-		-- A long one is cut, and says so.
-		local long = "A quite unreasonably long release note that goes on and on"
-			.. " about something nobody needed this much detail on, and then"
-			.. " keeps going for a while after that as well."
-		shown = noteIs(long)
-		check(fits(),
-			"a note twice that length is cut to the card rather than drawn"
-			.. " through the link under it")
-		check(shown:sub(-3) == "..." and #shown < #long,
-			"and says it was cut (" .. shown:sub(-30) .. ")")
-		check(long:sub(1, #shown - 3) == shown:sub(1, -4),
-			"keeping the start of it rather than some other part")
-
-		-- The same note on the FLAT panel, where the column is narrower, has to
-		-- be cut harder rather than overflowing.
-		TBm:SetDock("BOTTOM")
-		local flatShown = card.body:GetText() or ""
-		check(fits(), "and on the flat panel's narrower column it still fits")
-		check(#flatShown <= #shown,
-			"cut at least as hard there, the column being narrower (" .. #flatShown
-			.. " vs " .. #shown .. " characters)")
-		TBm:SetDock("LEFT")
-
-		A.CHANGELOG = realLog
-		UIParent:SetSize(wasW, wasH)
-		A.db.profile.scale = wasScale
-		TBm:LayoutContent()
-	end
-
-	-- Notes, for what the card has not got room for.
-	--
-	-- ON A FIXTURE, not on the shipped changelog. This read the real one and
-	-- asserted the link was there, which was true for a hundred and nineteen
-	-- versions and false the moment 1.0.0 cleared the history: one release with
-	-- one line has nothing more to offer, the link correctly went, and a check
-	-- about whether the link WORKS failed because of what happened to be in a
-	-- data file. The block below already builds its own history for exactly
-	-- this reason; this is that, applied one paragraph earlier.
+	-- The What's new branch's text comes from the changelog: the current
+	-- entry's own lines, verbatim, up to three, each on a small node.
 	do
 		local realLog = A.CHANGELOG
 		A.CHANGELOG = {
@@ -21460,131 +21050,81 @@ do
 			  lines = { "One.", "Two.", "Three.", "Four." } },
 			{ version = "0.0.1", date = "2025-12-01", lines = { "Older." } },
 		}
-		TBm:RefreshNews()
+		TBm:SetOpen(true, nil, "news")
+		local NP = TBm.panels.news
+		check(NP.lines[1].text:GetText() == "One." and NP.lines[3].text:GetText() == "Three."
+			and not (NP.lines[4] and NP.lines[4].text:IsShown()),
+			"the branch shows the entry's first three lines, verbatim")
+		check(NP.head.hint:GetText():find(A.version, 1, true) ~= nil,
+			"with the running version on its heading (" .. tostring(NP.head.hint:GetText()) .. ")")
 
-		local notes = TBm.content.news.notes
-		check(notes ~= nil and notes:IsShown(),
-			"the card offers a Notes link, because there is more than two lines"
-			.. " of it and more than one release behind it")
+		-- Re-read, not just right because it was built right.
+		local realVersion = A.version
+		A.version = "9.9.9"
+		A.CHANGELOG[1].version = "9.9.9"
+		TBm:RefreshNews()
+		check(NP.head.hint:GetText():find("9.9.9", 1, true) ~= nil,
+			"and re-reads it rather than keeping what it was built with")
+		A.version = realVersion
+		A.CHANGELOG[1].version = realVersion
+
+		-- Notes, for the rest: offered because there is a fourth line and an
+		-- older release, and following it counts as reading them.
+		TBm:RefreshNews()
+		check(NP.notes:IsShown(), "a Notes link is offered when there is more")
+		do
+			local _, _, _, _, y = NP.notes:GetPoint(1)
+			check(-y + NP.notes:GetHeight() <= NP:GetHeight() + 0.5,
+				"inside the branch, under the last line rather than through it")
+			local _, _, _, _, ly = NP.lines[3].text:GetPoint(1)
+			check(-ly + NP.lines[3].text:GetStringHeight() <= -y + 0.5,
+				"and below the text")
+		end
 		A.db.char.toolbox.newsSeen = nil
-		notes:GetScript("OnClick")(notes)
-		check(not TBm:NewsUnread(),
-			"and following it counts as reading them - a link that leaves the"
-			.. " dot lit means the dot is about the card rather than the news")
+		NP.notes:GetScript("OnClick")(NP.notes)
+		check(not TBm:NewsUnread() and not TBm:IsOpen(),
+			"and following it reads them and puts the branch away for the window")
 
-		A.CHANGELOG = realLog
-		TBm:RefreshNews()
-	end
-
-	-- One entry, fully shown, with nothing behind it: no link. The link is an
-	-- offer of MORE, and offering more when there is none is a dead end.
-	do
-		local realLog = A.CHANGELOG
+		-- One entry, fully shown, with nothing behind it: no link.
+		A.CHANGELOG = { { version = A.version, date = "2026-01-01", lines = { "One line." } } }
+		check(not TBm:NewsHasMore(), "a release with one line and no history has nothing more")
 		A.CHANGELOG = { { version = A.version, date = "2026-01-01",
-			lines = { "One line." } } }
-		check(not TBm:NewsHasMore(),
-			"a release with one line and no history behind it has nothing more"
-			.. " to show")
-		A.CHANGELOG = { { version = A.version, date = "2026-01-01",
-			lines = { "One.", "Two.", "Three." } } }
-		check(TBm:NewsHasMore(),
-			"but a third line it has no room for counts as more, even with no"
-			.. " history")
+			lines = { "One.", "Two.", "Three.", "Four." } } }
+		check(TBm:NewsHasMore(), "but a fourth line the branch has no room for counts as more")
 		A.CHANGELOG = realLog
 	end
 
-	TBm:SetOpen(false, true)
+	TBm:SetOpen(false)
 end
 
 print("== toolbox: settings tiles, three kinds of thing ==")
 do
 	local TBm = A:GetModule("toolbox")
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
+	TBm:SetOpen(true, nil, "settings")
+	local SP = TBm.panels.settings
+	local function Row(key)
+		for _, r in ipairs(SP.rows) do
+			if r:IsShown() and r.__tile and r.__tile.key == key then return r end
+		end
+	end
 
-	check(TBm.content.tiles and #TBm.content.tiles >= 4, "the tile grid is built")
+	check(SP and #SP.rows >= 4, "the Settings branch is built, a row per setting")
 
-	-- A tile is a ROW when there is room for one: icon, then the label, then the
-	-- state at the far end. It was always stacked - label directly under the
-	-- icon, with the whole middle-right of the tile empty - and that empty band
-	-- is the first thing anybody notices about it.
+	-- README "Panel vocabulary": a toggle is a 24 px diamond on a strand, lit
+	-- (accent fill and glow, a dark icon, ON) or not (glass, a 45 % rim, OFF).
 	do
-		local tile = TBm.content.tiles[1]
-		check(tile._row == true,
-			"a tile in the tall panel is laid out as a row - there is room"
-			.. " beside the icon and the label goes in it (tile is "
-			.. string.format("%.0f", tile:GetWidth()) .. " wide)")
-
-		local function topOf(r)
-			local _, _, _, _, y = r:GetPoint(1)
-			return -(y or 0)
-		end
-		local function leftOf(r)
-			local _, _, _, x = r:GetPoint(1)
-			return x or 0
-		end
-		check(select(2, tile.name:GetPoint(1)) == tile.chip,
-			"with the label hung off the icon rather than off the tile's bottom")
-		check(select(2, tile.name:GetPoint(2)) == tile.state,
-			"and stopped at the state, so a long one cannot run through the"
-			.. " On/Off at the far end")
-		-- Read off the module's own record, not off the region: the label's two
-		-- anchors are to two DIFFERENT frames here, which is the one case the
-		-- mock deliberately will not resolve a width for - doing so needs their
-		-- absolute positions, and that is a layout engine rather than a mock.
-		check((tile._nameRoom or 0) > 40,
-			"leaving it a real amount of room ("
-			.. string.format("%.0f", tile._nameRoom or -1) .. " of "
-			.. string.format("%.0f", tile:GetWidth()) .. ")")
-
-		-- ...and it WRAPS into that room rather than being cut. Stacked there is
-		-- a chip directly above the label and a second line lands on it; in a row
-		-- the whole height of the tile is the label's.
-		check(tile.name.__wordWrap ~= false,
-			"and wraps rather than truncating - a two-word setting reads as two"
-			.. " lines, which is what the space beside the icon is for")
-
-		-- Narrow enough and it goes back to the stack, because a row needs more
-		-- than an icon's width of label to be worth having.
-		TBm:ArrangeTile(tile, 90)
-		check(tile._row == false,
-			"a tile too narrow for that stacks instead, rather than squeezing"
-			.. " the label into nothing")
-		check(tile.name.__wordWrap == false,
-			"and stops wrapping, because stacked the line above it is the chip")
-
-		-- AND IT SITS IN THE SPACE UNDER THE CHIP rather than hanging off the
-		-- tile's bottom edge. Given only a bottom anchor the string has no
-		-- height of its own to justify inside, so BOTTOM put its descenders on
-		-- the rim - the words read as falling out of the tile with the chip
-		-- floating in air above them, which is how it was reported.
-		local stackTop, stackBot = nil, nil
-		for i = 1, (tile.name:GetNumPoints() or 0) do
-			local at = select(1, tile.name:GetPoint(i))
-			if at == "TOPLEFT" then stackTop = true end
-			if at == "BOTTOMRIGHT" then stackBot = true end
-		end
-		check(stackTop and stackBot,
-			"the stacked label is given BOTH vertical anchors, so it has a box "
-			.. "to sit in rather than one it defines by falling out of")
-		check(tile.name.__justifyV == "MIDDLE",
-			"and is centred between them (" ..
-			tostring(tile.name.__justifyV) .. ")")
-
-		-- ITS BOX CLEARS THE CHIP ABOVE AND THE RIM BELOW. Measured, because
-		-- the numbers are what was wrong: 62 tall, a 30 chip and 10 of air at
-		-- each end leaves no line height at all.
-		local underChip = tile.chip:GetBottom() - tile.name:GetTop()
-		local overRim = tile.name:GetBottom() - tile:GetBottom()
-		check(underChip >= 0 and overRim >= 6,
-			"and clears the chip above it and the tile's rim below (" ..
-			string.format("%.0f under the chip, %.0f over the rim", underChip,
-				overRim) .. ")")
-		check(tile.name:GetHeight() >= 12,
-			"with a line's worth of height to be centred in (" ..
-			string.format("%.0f", tile.name:GetHeight()) .. ")")
-		TBm:ArrangeTile(tile, tile:GetWidth())
-		check(tile._row == true, "and back again when the room returns")
+		local r = SP.rows[1]
+		check(r.fill:GetWidth() == 24 and r.fill:GetTexture() == A.Media.texture.diamond
+			and r.rim:GetTexture() == A.Media.texture.diamondRim,
+			"each setting is a 24 px diamond")
+		check(r.strand:IsShown() and select(2, r.strand:GetPoint(1)) == r.fill,
+			"on a strand out to its label")
+		check(select(2, r.name:GetPoint(1)) == r.strand, "with the label at the strand's end")
+		local _, _, _, _, y1 = SP.rows[1]:GetPoint(1)
+		local _, _, _, _, y4 = SP.rows[4]:GetPoint(1)
+		check(-y4 + SP.rows[4]:GetHeight() <= SP:GetHeight(), "every row inside the branch")
+		check(y4 < y1, "one under another")
 	end
 
 	-- A config path, written the way the options panel writes it.
@@ -21638,39 +21178,32 @@ do
 	-- nobody had asked for. Every route through Movers announces itself now, so
 	-- this is the check that the announcement is wired to the paint.
 	do
-		local idx
-		for i, t in ipairs(TBm._tileList or {}) do
-			if t.key == "lock" then idx = i end
-		end
-		check(idx ~= nil, "the lock tile is on the grid")
-		if idx and TBm.content.tiles[idx] then
-			local frame = TBm.content.tiles[idx]
+		TBm:SetOpen(true, nil, "settings")
+		local frame = Row("lock")
+		check(frame ~= nil, "the lock setting is in the branch")
+		if frame then
 			A.Movers:Unlock()
-			check(frame.state:GetText() == "On",
-				"unlocking repaints the tile without anybody asking (got "
+			check(frame.state:GetText() == "ON" and frame.glow:IsShown(),
+				"unlocking repaints it without anybody asking (got "
 				.. tostring(frame.state:GetText()) .. ")")
 			A.Movers:Lock()
-			check(frame.state:GetText() == "Off",
-				"and locking again repaints it back - the tile was reading live"
-				.. " and being painted never (got "
+			check(frame.state:GetText() == "OFF" and not frame.glow:IsShown(),
+				"and locking again repaints it back (got "
 				.. tostring(frame.state:GetText()) .. ")")
 		end
 	end
 
-	-- Switching a mode ON gets the drawer out of the way. You cannot drag a
+	-- Switching a mode ON gets the branch out of the way. You cannot drag a
 	-- frame that is underneath the panel you used to unlock it.
-	TBm:SetOpen(true, true)
+	TBm:SetOpen(true, nil, "settings")
+	Row("lock"):GetScript("OnClick")(Row("lock"))
+	check(A.Movers.unlocked and not TBm:IsOpen(),
+		"turning a mode on from its row closes the branch - both of these are"
+		.. " things you do TO the screen")
+	TBm:SetOpen(true, nil, "settings")
+	check(TBm:IsOpen(), "...and the branch reopens")
 	TBm:ToggleTile(lock)
-	check(not TBm:IsOpen(),
-		"turning a mode on closes the drawer - both of these are things you do"
-		.. " TO the screen, and the drawer is over half of it")
-	A.Movers:Lock()
-
-	TBm:SetOpen(true, true)
-	check(TBm:IsOpen(), "...and the drawer reopens")
-	A.Movers:Unlock()
-	TBm:ToggleTile(lock)
-	check(TBm:IsOpen(),
+	check(TBm:IsOpen() and not A.Movers.unlocked,
 		"but switching one OFF leaves it open - then you are finished rather"
 		.. " than starting")
 	A.Movers:Lock()
@@ -21690,13 +21223,14 @@ do
 		-- These frames are reused - a launcher the player adds takes whichever
 		-- slot is next - so a closed-over tile describes what the frame used to
 		-- be.
-		local f = TBm.content.tiles[1]
+		local f = SP.rows[1]
 		f.__tile = TBm.TILES[2]
-		TBm:TileTooltip(f)
+		f:GetScript("OnEnter")(f)
 		local shown = _G.GameTooltipTextLeft1:GetText()
 		check(shown == TBm.TILES[2].label,
-			"and the tooltip describes whatever the frame is showing NOW (got "
+			"and the tooltip describes whatever the row is showing NOW (got "
 			.. tostring(shown) .. ")")
+		f:GetScript("OnLeave")(f)
 		f.__tile = TBm.TILES[1]
 	end
 
@@ -21734,27 +21268,22 @@ do
 			.. " still has to keep working")
 	end
 
-	-- The chip carries state, and it has to carry it VISIBLY. ApplySkin falls
-	-- back to plain glass for a token it does not recognise, so an invented
-	-- name would leave On and Off identical while every other check still
-	-- passed - which is exactly what the first version of this did.
+	-- The diamond carries the state, visibly: the accent all over when on, and
+	-- not merely "different" from off.
 	do
+		TBm:SetOpen(true, nil, "settings")
 		A.db.profile.modules.zen.enabled = true
 		TBm:RefreshTiles()
-		local onFill = TBm.content.tiles[1].chip._fillColor
+		local a = A.Palette.c.accent
+		local r, g, b = Row("zen").fill:GetVertexColor()
+		check(math.abs(r - a[1]) < 0.01 and math.abs(g - a[2]) < 0.01 and math.abs(b - a[3]) < 0.01
+			and Row("zen").state:GetText() == "ON",
+			"on, the diamond is filled with the accent and says ON")
 		A.db.profile.modules.zen.enabled = false
 		TBm:RefreshTiles()
-		local offFill = TBm.content.tiles[1].chip._fillColor
-		-- Not merely "they differ": an invented token falls back to plain glass,
-		-- which ALSO differs from the off colour, so a difference check passes
-		-- against a chip that is saying nothing. It has to be the ACCENT.
-		check(onFill == A.Palette.c.btnFill,
-			"the chip's On fill is the deck's opaque accent, by its real token"
-			.. " name - ApplySkin falls back to plain glass for a name it does"
-			.. " not know, so a typo would leave a chip that merely differs from"
-			.. " Off while carrying no meaning")
-		check(offFill == A.Palette.c.cardBg and onFill ~= offFill,
-			"and Off is the quiet one")
+		r, g, b = Row("zen").fill:GetVertexColor()
+		check(math.abs(r - a[1]) > 0.1 and Row("zen").state:GetText() == "OFF",
+			"and off it is the quiet glass and says OFF")
 		A.db.profile.modules.zen.enabled = wasZen
 		TBm:RefreshTiles()
 	end
@@ -21780,19 +21309,20 @@ do
 			"and has NO state - an LDB launcher is a button, not a toggle, and"
 			.. " nothing in the protocol can answer 'are you on'")
 
-		local frame = TBm.content.tiles[#list]
+		TBm:SetOpen(true, nil, "settings")
+		local frame = Row("TileLauncher")
 		check(frame and frame.state:GetText() == "",
-			"so the tile draws no On/Off chip. Inventing one would be a control"
+			"so its row draws no ON or OFF. Inventing one would be a control"
 			.. " saying something it cannot know")
 
-		TBm:ToggleTile(lt)
+		frame:GetScript("OnClick")(frame)
 		check(clicked, "and clicking it runs the launcher instead of toggling")
 
 		c.tiles = nil
 		TBm:RefreshTiles()
 	end
 
-	TBm:SetOpen(false, true)
+	TBm:SetOpen(false)
 end
 
 print("== toolbox: the addon list is a superset of the useful one ==")
@@ -21801,7 +21331,7 @@ do
 	local MMx = A:GetModule("minimap")
 	local LN  = A.Launchers
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
+	TBm:SetOpen(true, nil, "addons")
 
 	-- A launcher for one of the mocked addons, and one addon with nothing.
 	local ran = false
@@ -21853,8 +21383,8 @@ do
 
 		local qi, ni
 		for i, r in ipairs(rows2) do
-			if r.name == "Questie" then qi = TBm.content.addons[i] end
-			if r.name == "Naked" then ni = TBm.content.addons[i] end
+			if r.name == "Questie" then qi = TBm.panels.addons.rows[i] end
+			if r.name == "Naked" then ni = TBm.panels.addons.rows[i] end
 		end
 		check(qi and qi.icon:IsShown(), "an addon that declares an icon gets it")
 		check(ni and not ni.icon:IsShown() and ni.initial:GetText() == "N",
@@ -21876,14 +21406,22 @@ do
 			.. " positions and a LibDBIcon button nobody positions is still"
 			.. " sitting on the minimap ring (" .. tostring(firstOwner) .. ")")
 
-		TBm:TogglePin("Questie")
-		check(TBm:IsPinned("Questie"), "pinning records it")
+		-- The row's own pin: a 7 px diamond, hollow until pinned.
+		local qrow
+		for _, r in ipairs(TBm.panels.addons.rows) do
+			if r:IsShown() and r.__row and r.__row.name == "Questie" then qrow = r end
+		end
+		check(qrow and qrow.pin.glyph:GetTexture() == A.Media.texture.diamondRim
+			and qrow.pin.glyph:GetWidth() == 7, "each row carries a hollow 7 px diamond to pin it")
+		qrow.pin:GetScript("OnClick")(qrow.pin)
+		check(TBm:IsPinned("Questie"), "clicking it pins the addon")
+		check(qrow.pin.glyph:GetTexture() == A.Media.texture.diamond, "and the diamond fills")
 		check(LN:OwnerOf(entry) == TBm,
-			"and TAKES the entry from the drawer - a pin is an instruction to"
-			.. " put it on the rail, so it overrides rather than being refused")
-		check(entry.button:GetParent() == TBm.rail,
-			"the button moves onto the rail, where it is reachable with the"
-			.. " drawer shut")
+			"and TAKES the entry - a pin is an instruction to put it on the trunk,"
+			.. " so it overrides rather than being refused")
+		check(entry.button:GetParent() == TBm.pinNodes[1].button,
+			"the button moves onto the trunk, where it is reachable with no"
+			.. " branch open")
 
 		-- ...and it STAYS visible after the library refreshes itself.
 		--
@@ -21918,31 +21456,27 @@ do
 			check(rb:GetFrameStrata() == "MEDIUM",
 				"the library really has dragged it back down first")
 
-			TBm:LayoutRail()
-			check(rb:GetFrameStrata() == TBm.rail:GetFrameStrata(),
+			TBm:LayoutPins()
+			local host = TBm.pinNodes[2].button
+			check(rb:GetFrameStrata() == host:GetFrameStrata(),
 				"a library that re-pins its button between layouts does not"
-				.. " strand it behind the rail - Prepare runs on EVERY layout,"
+				.. " strand it behind the trunk - Prepare runs on EVERY layout,"
 				.. " not just when the entry is claimed (got "
 				.. rb:GetFrameStrata() .. ")")
-			check(rb:GetFrameLevel() > TBm.rail:GetFrameLevel(),
-				"and it sits above the rail's own art rather than under it")
+			check(rb:GetFrameLevel() > host:GetFrameLevel(),
+				"and it sits above the trunk's own art rather than under it")
 
 			TBm:SetPinned("RefreshMe", false)
 		end
 
-		-- ...and UNPINNING has to take it off again. It used to only stop being
-		-- laid out: the drawer filters on ownership too, so an unowned button
-		-- was laid out by neither surface and simply stayed on the rail, sitting
-		-- on top of the settings gear.
+		-- ...and UNPINNING has to take it off again, rather than leave it
+		-- where the trunk put it.
 		do
-			local railX = select(4, entry.button:GetPoint(1))
+			local host = TBm.pinNodes[1].button
 			TBm:TogglePin("Questie")
 			check(not TBm:IsPinned("Questie"), "unpinning drops the pin")
-			local _, rel, _, x = entry.button:GetPoint(1)
-			check(rel ~= TBm.rail or x ~= railX,
-				"and the button LEAVES the rail rather than staying where the"
-				.. " rail put it - which is what left an unpinned icon sitting"
-				.. " on top of the settings gear")
+			local _, rel = entry.button:GetPoint(1)
+			check(rel ~= host, "and the button LEAVES the trunk")
 			check(entry._parked and entry.button:GetAlpha() == 0,
 				"parked rather than hidden - it may carry a secure template, and"
 				.. " hiding a frame with a protected descendant is refused in"
@@ -21950,50 +21484,39 @@ do
 			TBm:TogglePin("Questie")
 		end
 
-		-- ...and the drawer must stop laying it out the same moment, or both
-		-- surfaces anchor one frame and the answer is whichever ran last.
-		-- Checking the PARENT proves nothing: LayoutDrawer only sets points, it
-		-- never reparents, so a drawer that ignored ownership entirely would
-		-- still leave the parent alone. What it would do is re-ANCHOR the
-		-- button to its own tray, which is the thing that actually fights.
 		local _, anchoredTo = entry.button:GetPoint(1)
-		check(anchoredTo == TBm.rail,
-			"and the drawer does not re-anchor it - it lays out only what it"
-			.. " still owns, or both surfaces SetPoint the same borrowed frame"
-			.. " and the answer is whichever ran last (anchored to "
-			.. tostring(anchoredTo == TBm.rail and "the rail"
-				or anchoredTo == MMx.drawer.tray and "the drawer tray"
-				or tostring(anchoredTo)) .. ")")
+		check(anchoredTo == TBm.pinNodes[1].button,
+			"pinned again, it is anchored on its node and nowhere else")
 
 		TBm:TogglePin("Questie")
 		check(not TBm:IsPinned("Questie"), "unpinning removes it")
 	end
 
-	-- Never Hide a collected button, even to close the rail. It may carry a
-	-- secure template, and hiding a frame with a protected descendant is refused
-	-- in combat - which is exactly when somebody opens a drawer.
+	-- Never Hide a collected button. It may carry a secure template, and
+	-- hiding a frame with a protected descendant is refused in combat.
 	do
 		TBm:TogglePin("Questie")
 		local entry = LN.byKey["Questie"]
 		_G.__inCombat = true
-		TBm:SetOpen(false, true)
-		TBm:SetOpen(true, true)
+		fire("PLAYER_REGEN_DISABLED")
+		TBm:SetOpen(false)
+		TBm:SetOpen(true, nil, "addons")
 		check(entry.button:IsShown(),
-			"opening and closing in combat never hides a pinned button - alpha"
-			.. " and mouse only, the same rule the aura trays and the minimap"
-			.. " drawer follow")
+			"a fight, and branches opening and closing, never hide a pinned button")
 		_G.__inCombat = false
+		fire("PLAYER_REGEN_ENABLED")
 		TBm:TogglePin("Questie")
 	end
 
-	TBm:SetOpen(false, true)
+	TBm:SetOpen(false)
 end
 
 print("== toolbox: the micro menu, rebuilt rather than adopted ==")
 do
 	local TBm = A:GetModule("toolbox")
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
+	TBm:SetOpen(true, nil, "menu")
+	local MP = TBm.panels.menu
 
 	-- Blizzard's own frames are left exactly where the action bar sweep put
 	-- them. Adopting them would start a three-way argument over ownership with
@@ -22111,7 +21634,7 @@ do
 		-- correctly whether or not anything has redrawn. Deleting the level-up
 		-- registration leaves that check passing and only this one fails.
 		local drawn = 0
-		for _, b in ipairs(TBm.content.micro or {}) do
+		for _, b in ipairs(MP.cells or {}) do
 			if b:IsShown() then drawn = drawn + 1 end
 		end
 		check(drawn == #TBm:MicroList(),
@@ -22140,7 +21663,7 @@ do
 		end
 
 		for i, m in ipairs(TBm._microList) do
-			local btn = TBm.content.micro[i]
+			local btn = MP.cells[i]
 			if btn and names[m.key] then btn:GetScript("OnClick")(btn) end
 		end
 
@@ -22163,11 +21686,11 @@ do
 	-- line reads as something having gone wrong rather than as a menu.
 	do
 		TBm:SetDock("LEFT")
-		TBm:SetOpen(true, true)
+		TBm:SetOpen(true, nil, "menu")
 		TBm:RefreshMicro()
 		local rows = {}
 		for i = 1, #TBm._microList do
-			local btn = TBm.content.micro[i]
+			local btn = MP.cells[i]
 			local _, _, _, _, y = btn:GetPoint(1)
 			local key = string.format("%.0f", y or 0)
 			rows[key] = (rows[key] or 0) + 1
@@ -22176,8 +21699,29 @@ do
 		for _, count in pairs(rows) do n = n + 1; sizes[#sizes + 1] = count end
 		table.sort(sizes)
 		check(n == 2 and sizes[1] == 5 and sizes[2] == 5,
-			"the drawer lays the ten out five and five (" .. n .. " rows of " ..
+			"the Menu branch lays the ten out five and five (decision 4b; " .. n .. " rows of " ..
 			table.concat(sizes, "+") .. ")")
+		local last = MP.cells[#TBm._microList]
+		local _, _, _, x, y = last:GetPoint(1)
+		check(x + last:GetWidth() <= MP:GetWidth() + 0.5 and -y + last:GetHeight() <= MP:GetHeight() + 0.5,
+			"all of them inside the branch")
+	end
+
+	-- THE DOOR WHOSE WINDOW IS OPEN IS LIT (board 6a), however it was opened.
+	do
+		local function cell(key)
+			for i, m in ipairs(TBm._microList) do if m.key == key then return MP.cells[i] end end
+		end
+		_G.WorldMapFrame = _G.WorldMapFrame or CreateFrame("Frame", "WorldMapFrame", UIParent)
+		_G.WorldMapFrame:Hide()
+		TBm:PaintMenu()
+		check(not cell("map").__lit, "the Map door is idle with the map shut")
+		_G.WorldMapFrame:Show()
+		TBm:PaintMenu()
+		check(cell("map").__lit and cell("map").__aetherSkin._fillColor == A.Palette.c.accent,
+			"and lit, filled with the accent, with it open")
+		_G.WorldMapFrame:Hide()
+		check(MP:GetScript("OnShow") ~= nil, "a ticker follows windows opened any other way while the branch is up")
 	end
 
 	-- AND THE TWO THAT DO NOT GO THROUGH A Toggle GLOBAL.
@@ -22186,7 +21730,7 @@ do
 		local function press(key)
 			for i, m in ipairs(TBm._microList) do
 				if m.key == key then
-					local btn = TBm.content.micro[i]
+					local btn = MP.cells[i]
 					btn:GetScript("OnClick")(btn)
 					return true
 				end
@@ -22226,7 +21770,7 @@ do
 			"and closes it again on a second press")
 	end
 
-	TBm:SetOpen(false, true)
+	TBm:SetOpen(false)
 end
 
 print("== toolbox: the options page and the diagnostic ==")
@@ -22249,41 +21793,42 @@ do
 	do
 		local cfg = A.db.profile.modules.toolbox
 		TBm:SetDock("LEFT")
-		TBm:SetOpen(true, true)
+		TBm:SetOpen(true, nil, "widgets")
 
 		local was = cfg.widgetColumns
 		cfg.widgetColumns = 3
 		A:Reconfigure()
-		local w3 = TBm.content.cards[1]:GetWidth()
+		local w3 = TBm.panels.widgets.cells[1]:GetWidth()
 		cfg.widgetColumns = 2
 		A:Reconfigure()
-		local w2 = TBm.content.cards[1]:GetWidth()
+		local w2 = TBm.panels.widgets.cells[1]:GetWidth()
 		check(w2 > w3,
-			"the widget column slider actually re-lays the grid - two columns"
-			.. " make wider cards than three (" .. string.format("%.0f", w2)
+			"the widget column slider actually re-lays the branch - two columns"
+			.. " make wider readings than three (" .. string.format("%.0f", w2)
 			.. " vs " .. string.format("%.0f", w3) .. ")")
 		cfg.widgetColumns = was
-
-		local wasS = cfg.scrim
-		cfg.scrim = 0.5
 		A:Reconfigure()
-		check(math.abs(TBm.scrim:GetAlpha() - 0.5) < 0.01,
-			"and the scrim slider reaches the scrim (" ..
-			string.format("%.2f", TBm.scrim:GetAlpha()) .. ")")
-		cfg.scrim = wasS
-		A:Reconfigure()
+		check(cfg.scrim == nil and cfg.tileColumns == nil and tree.args.toolbox.args.scrim == nil,
+			"and the drawer's scrim and tile settings are gone with it")
+		TBm:SetOpen(false)
 	end
 
 	-- The command.
+	run("toolbox dock right")
+	check(TBm:Dock() == "RIGHT", "/lattice toolbox dock moves it")
 	run("toolbox dock bottom")
-	check(TBm:Dock() == "BOTTOM", "/aether toolbox dock moves it")
-	run("toolbox dock sideways")
-	check(TBm:Dock() == "BOTTOM", "and an edge that is not one is refused")
+	check(TBm:Dock() == "RIGHT", "and top or bottom is refused: left or right only")
 	run("toolbox dock left")
 	run("toolbox open")
-	check(TBm:IsOpen(), "/aether toolbox open opens it")
+	check(TBm:OpenKey() == "menu", "/lattice toolbox open opens the Menu branch")
+	run("toolbox open addons")
+	check(TBm:OpenKey() == "addons", "or the one named")
 	run("toolbox close")
 	check(not TBm:IsOpen(), "and close shuts it")
+	run("toolbox toggle settings")
+	check(TBm:OpenKey() == "settings", "toggle opens a named branch")
+	run("toolbox toggle settings")
+	check(not TBm:IsOpen(), "and shuts it")
 
 	do
 		_G.__makeLDB("CmdLauncher", "launcher", { label = "Cmd Launcher" })
@@ -22315,219 +21860,31 @@ do
 		.. " is the one thing worse than no diagnostic")
 end
 
-print("== toolbox: the sections do not overlap ==")
+print("== toolbox: menu names, and a pill asked to be tall ==")
 do
 	local TBm = A:GetModule("toolbox")
-	-- The REAL geometry: a 16:9 virtual screen at the design scale. The mock's
-	-- default 1000x600 clamps the panel to about 500 tall, which is an extreme
-	-- worth handling but not the case anybody sees.
-	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-	local oldScale = A.db.profile.scale
-	UIParent:SetSize(1365, 768)
-	A.db.profile.scale = 0.71
-
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
-
-	-- This is the check the first version of the layout did not have, and the
-	-- reason it shipped drawing every section on top of every other. Anchoring
-	-- each block to the one above it and measuring the room left with
-	-- GetBottom() looked right in source and produced a pile on screen; nothing
-	-- in the suite could tell, because every individual frame was where its own
-	-- SetPoint said.
-	--
-	-- Offsets are read back from the anchors rather than from GetTop/GetBottom,
-	-- which is the same trap: those answer in screen coordinates and only after
-	-- a frame has been positioned AND shown.
-	local function topOf(region)
-		local _, _, _, _, yOff = region:GetPoint(1)
-		return -(yOff or 0)
-	end
-
-	local order = {
-		{ "header",   TBm.content.title,       0 },
-		{ "whatsnew", TBm.content.news,        84 },
-		{ "menu",     TBm.content.microHead,   0 },
-		{ "widgets",  TBm.content.widgetsHead, 0 },
-		{ "addons",   TBm.content.addonsHead,  0 },
-		{ "settings", TBm.content.tilesHead,   0 },
-	}
-
-	local prev, prevName, ok = nil, nil, true
-	for _, sec in ipairs(order) do
-		local name, region = sec[1], sec[2]
-		-- Hidden sections are skipped: one cut to nothing keeps whatever anchor
-		-- it had last, and comparing against a stale offset reports an overlap
-		-- that is not on screen.
-		if region and region:IsShown() then
-			local top = topOf(region)
-			if prev and top <= prev then
-				ok = false
-				check(false, "section '" .. name .. "' starts at " .. string.format("%.0f", top)
-					.. " which is not below '" .. prevName .. "' at "
-					.. string.format("%.0f", prev))
-			end
-			prev, prevName = top, name
-		end
-	end
-	check(ok, "every section starts below the one before it, top to bottom")
-
-	-- ...and the whole thing has to fit the panel it is in, or the bottom
-	-- section is drawn off the end of the drawer where nobody can reach it.
-	check(TBm._contentHeight and TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
-		"and the whole column fits inside the panel ("
-		.. string.format("%.0f", TBm._contentHeight or -1) .. " of "
-		.. string.format("%.0f", TBm.panel:GetHeight()) .. ") - the addon list"
-		.. " gives way rather than the drawer growing")
-
-	-- The addon list is the section that yields, and it says so - and now says
-	-- that the rest is reachable rather than merely counting what went.
+	-- MENU buttons carry a readable name, not only a glyph and a tooltip.
+	TBm:SetOpen(true, nil, "menu")
 	do
-		local rows = TBm:AddonRows()
-		if (TBm._addonsCut or 0) > 0 then
-			check(TBm.content.addonsHint:GetText():find("scroll", 1, true)
-				and TBm.content.addonsArrow:IsShown(),
-				"a list cut for room says it scrolls, with an arrow beside it -"
-				.. " '+5 more' named a number nobody could reach (got "
-				.. tostring(TBm.content.addonsHint:GetText()) .. ")")
-		else
-			check(#rows >= 0, "nothing needed cutting at this size")
-		end
-	end
-
-	-- The rail: a hint, not the biggest thing on it, and it bites into the panel
-	-- rather than floating beside it as a second capsule.
-	do
-		-- Anchored to the SCREEN, not to the panel, and clamped there. Hung off
-		-- the panel the rail travelled with it: shut, the panel is a full width
-		-- off screen and the rail went too, sitting a bite past the edge with
-		-- its icons cut off. The bite is a join with the panel, and there is
-		-- nothing to join to once the panel has gone.
-		TBm:SetDock("LEFT")
-		TBm:SetOpen(true, true)
-		local _, relOpen, _, xOpen = TBm.rail:GetPoint(1)
-		check(relOpen == UIParent, "the rail is anchored to the screen")
-		check(math.abs(xOpen - (TBm.panel:GetWidth() - 14)) < 0.5,
-			"open, it sits INSIDE the panel's edge by the bite, so the curve on"
-			.. " that side hides behind the drawer and the two read as one shape"
-			.. " (" .. string.format("%.0f", xOpen) .. " against a "
-			.. string.format("%.0f", TBm.panel:GetWidth()) .. "-wide panel)")
-
-		TBm:SetOpen(false, true)
-		local _, _, _, xShut = TBm.rail:GetPoint(1)
-		check(xShut >= -0.5,
-			"and SHUT it stops flush at the screen edge rather than following"
-			.. " the panel off it - which is what cut the left side off the"
-			.. " handle and everything on it (" .. string.format("%.0f", xShut)
-			.. ")")
-		TBm:SetOpen(true, true)
-		check(TBm.rail.chev:GetWidth() < TBm.rail.gear:GetWidth(),
-			"the chevron is smaller than a rail icon - it is a hint, not the"
-			.. " largest thing on the rail (" .. TBm.rail.chev:GetWidth()
-			.. " vs " .. TBm.rail.gear:GetWidth() .. ")")
-		check(TBm.rail.gear ~= nil, "and there is a gear")
-
-		-- The chevron points along the axis the drawer MOVES on: < and > for the
-		-- side docks, ^ and v for the top and bottom. An arrow across that axis
-		-- points at nothing.
-		--
-		-- Chevron.tga is a V - it points DOWN - and the first version of this
-		-- assumed it pointed right, which put every dock ninety degrees out.
-		-- Rotation is counter-clockwise, so down (0,-1) becomes right at +pi/2.
-		do
-			local DOWN, UP    = 0, math.pi
-			local RIGHT, LEFT = math.pi / 2, -math.pi / 2
-			local want = {
-				LEFT   = { open = LEFT,  shut = RIGHT },
-				RIGHT  = { open = RIGHT, shut = LEFT },
-				TOP    = { open = UP,    shut = DOWN },
-				BOTTOM = { open = DOWN,  shut = UP },
-			}
-			local bad = {}
-			for _, e in ipairs({ "LEFT", "RIGHT", "TOP", "BOTTOM" }) do
-				TBm:SetDock(e)
-				TBm:SetOpen(true, true)
-				if math.abs(TBm._chevronFacing - want[e].open) > 0.01 then
-					bad[#bad + 1] = e .. " open"
-				end
-				TBm:SetOpen(false, true)
-				if math.abs(TBm._chevronFacing - want[e].shut) > 0.01 then
-					bad[#bad + 1] = e .. " shut"
-				end
-			end
-			check(#bad == 0,
-				"the chevron faces the way the drawer will go, at every dock and"
-				.. " both ways - side docks get < and >, top and bottom get ^ and"
-				.. " v (" .. (#bad > 0 and table.concat(bad, ", ") or "all eight")
-				.. ")")
-
-			-- ...and it really is rotating the art, not just recording a number.
-			TBm:SetDock("LEFT"); TBm:SetOpen(false, true)
-			check(TBm.rail.chev.glyph.__rotation ~= nil,
-				"and the rotation reaches the texture")
-			TBm:SetOpen(true, true)
-		end
-
-		-- A PILL is a horizontal capsule: its caps sit left and right and take
-		-- their width from the HEIGHT, so the ends stay circular however wide it
-		-- gets. Four times taller than wide, those two caps are each half the
-		-- height, anchored to opposite edges of a narrower frame - they overlap
-		-- through the middle and the rail renders as one enormous circle. It
-		-- did, on screen, and nothing in here noticed.
-		check(TBm.rail._kind == "panel",
-			"the rail is a 9-slice PANEL, which is the same rounded shape at any"
-			.. " aspect - a pill is only a capsule while it is wider than it is"
-			.. " tall (kind = " .. tostring(TBm.rail._kind) .. ")")
-
-		-- ...and a pill misused that way now degrades instead of exploding.
-		do
-			local tall = A.Glass.CreatePill(UIParent, {})
-			tall:SetSize(40, 200)
-			local cap = tall._fill[1]:GetWidth()
-			check(cap <= 20 + 0.5,
-				"and a pill asked for a tall shape clamps its caps to half the"
-				.. " WIDTH rather than half the height, so it can never draw"
-				.. " outside its own bounds - the degraded shape is a rounded"
-				.. " rectangle, which is what anybody asking for a tall capsule"
-				.. " meant anyway (cap " .. string.format("%.0f", cap)
-				.. " of a 40-wide frame)")
-			tall:Hide()
-		end
-
-		local opened = false
-		local wasOpen = A.Options.Open
-		A.Options.Open = function() opened = true return true end
-		TBm.rail.gear:GetScript("OnClick")(TBm.rail.gear)
-		A.Options.Open = wasOpen
-		check(opened, "which opens the AetherUI config")
-	end
-
-	-- MENU buttons carry a readable name, not only a letter on a tooltip.
-	do
-		local first = TBm.content.micro[1]
+		local first = TBm.panels.menu.cells[1]
 		check(first and first.name and first.name:GetText() ~= "",
-			"each MENU button shows its name under the glyph - a label you can"
-			.. " read beats a letter you have to decode (" ..
+			"each Menu door shows its name under the glyph - a label you can"
+			.. " read beats a glyph you have to decode (" ..
 			tostring(first and first.name and first.name:GetText()) .. ")")
 	end
+	TBm:SetOpen(false)
 
-	-- ...and the extreme still has to be safe rather than pretty: a drawer
-	-- clamped small enough that the fixed sections alone fill it must CUT
-	-- rather than draw past the bottom edge.
-	UIParent:SetSize(1000, 600)
-	A.db.profile.scale = 1.0
-	TBm:Layout(); TBm:RefreshTiles(); TBm:RefreshAddons()
-	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
-		"even squeezed to a " .. string.format("%.0f", TBm.panel:GetHeight())
-		.. "px panel the column still fits ("
-		.. string.format("%.0f", TBm._contentHeight) .. ") - both lists give"
-		.. " way, the addons first and the settings tiles after, rather than the"
-		.. " overflow being drawn off the end where nobody can reach it")
-
-	UIParent:SetSize(oldW, oldH)
-	A.db.profile.scale = oldScale
-	TBm:SetOpen(false, true)
+	-- A PILL is a horizontal capsule; asked for a tall shape it clamps its
+	-- caps to half the WIDTH, so it can never draw outside its own bounds.
+	do
+		local tall = A.Glass.CreatePill(UIParent, {})
+		tall:SetSize(40, 200)
+		local cap = tall._fill[1]:GetWidth()
+		check(cap <= 20 + 0.5,
+			"a pill asked for a tall shape clamps its caps to half its width (cap "
+			.. string.format("%.0f", cap) .. " of a 40-wide frame)")
+		tall:Hide()
+	end
 end
 
 print("== the changelog, and the version it belongs to ==")
@@ -22712,16 +22069,17 @@ do
 	UIParent:SetSize(1365, 768)
 	A.db.profile.scale = 0.71
 
-	-- Enough launchers that the list cannot fit whatever the panel does.
+	-- Enough launchers that the list cannot fit in ten rows.
 	for i = 1, 30 do _G.__makeLDB("ScrollTest" .. i, "launcher") end
 	A.Launchers:Scan()
 
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
+	TBm:SetOpen(true, nil, "addons")
 	TBm._addonOffset = 0
 	TBm:RefreshAddons()
 
-	local c = TBm.content
+	local AP = TBm.panels.addons
+	local c = { addons = AP.rows, addonsHint = AP.head.hint, addonsArrow = AP.arrow }
 	local function firstShown()
 		for i, row in ipairs(c.addons) do if row:IsShown() then return i end end
 	end
@@ -22734,47 +22092,33 @@ do
 	check((TBm._addonsCut or 0) > 0,
 		"with " .. #(TBm._addonRows or {}) .. " addons the list is cut ("
 		.. tostring(TBm._addonsCut) .. " off the end)")
-
-	-- The hint sits on the HEADING's line, not on the first row's.
-	--
-	-- It went out at the rows' y for a while and was drawn straight through the
-	-- first row of the list - which is what a screenshot shows and what nothing
-	-- here noticed, every check having been about which rows were visible rather
-	-- than about where the label saying so had landed.
 	do
-		local function topOf(r)
-			local _, _, _, _, yOff = r:GetPoint(1)
-			return -(yOff or 0)
-		end
-		check(math.abs(topOf(c.addonsHint) - topOf(c.addonsHead)) < 0.5,
-			"the count sits on the ADDONS heading's own line rather than on the"
-			.. " first row of the list (" .. string.format("%.0f vs %.0f",
-				topOf(c.addonsHint), topOf(c.addonsHead)) .. ")")
-		check(topOf(c.addons[1]) > topOf(c.addonsHead),
-			"and the rows start below both")
-		check(math.abs(topOf(c.addonsArrow) - topOf(c.addonsHead)) < 8,
-			"with the arrow beside it on the same line ("
-			.. string.format("%.0f", topOf(c.addonsArrow)) .. ")")
+		local _, _, _, _, y = c.addons[1]:GetPoint(1)
+		check(-y >= 16 + 14, "the rows start below the heading")
+		local last
+		for _, row in ipairs(c.addons) do if row:IsShown() then last = row end end
+		local _, _, _, _, ly = last:GetPoint(1)
+		check(-ly + last:GetHeight() <= AP:GetHeight() + 0.5,
+			"and the branch is tall enough for what it shows")
 	end
 	check(firstShown() == 1, "and starts at the top")
 	local window = shownCount()
-	check(window > 0, "showing " .. window .. " of them")
+	check(window == 20, "showing ten rows of two (" .. window .. ")")
 
-	-- The hint says it MOVES rather than counting what went. "+5 more" named a
-	-- number nobody could do anything about.
+	-- The hint says it MOVES rather than counting what went.
 	check(c.addonsHint:GetText():find("scroll", 1, true) ~= nil,
 		"the heading says the list scrolls (" .. tostring(c.addonsHint:GetText())
 		.. ")")
 	check(c.addonsArrow:IsShown(), "with an arrow beside it")
-	check(math.abs((TBm.content.addonsArrow.__rotation or 0) - 0) < 0.01,
+	check(math.abs((c.addonsArrow.__rotation or 0) - 0) < 0.01,
 		"pointing DOWN at the top of the list, which is where the rest of it is"
 		.. " - Chevron.tga is a V, so down is rotation zero and up is pi")
 
-	-- Wheel down.
-	local catch = c.addonsCatch
-	check(catch ~= nil and catch:IsShown(),
-		"there is a frame over the block to catch the wheel, so it works"
-		.. " anywhere over the list rather than only over a row")
+	-- Wheel down, anywhere over the branch.
+	local catch = AP
+	check(catch:GetScript("OnMouseWheel") ~= nil,
+		"the branch takes the wheel, so it works anywhere over the list rather"
+		.. " than only over a row")
 	catch:GetScript("OnMouseWheel")(catch, -1)
 	local cols = 2
 	check(firstShown() == 1 + cols,
@@ -22824,17 +22168,13 @@ do
 
 	-- Scrolled down, then given room: the list must not stay parked below its
 	-- own last row, showing nothing.
-	--
-	-- Driven by shrinking the LIST rather than growing the panel, because the
-	-- panel cannot grow enough - the drawer is capped at the deck's 910 and
-	-- there are far more launchers loaded by this point than that will hold.
 	for _ = 1, 50 do catch:GetScript("OnMouseWheel")(catch, -1) end
 	check(TBm._addonOffset > 0, "scrolled to the end ("
 		.. TBm._addonOffset .. ")")
 	do
 		local realRows = TBm._addonRows
 		TBm._addonRows = { realRows[1], realRows[2] }
-		TBm:LayoutContent()
+		TBm:Fill("addons")
 		check(TBm._addonOffset == 0 and firstShown() == 1,
 			"a list that shrinks until it fits pulls the offset back to the top"
 			.. " rather than leaving it scrolled past rows it is now showing")
@@ -22843,14 +22183,12 @@ do
 		check(c.addonsHint:GetText():find("scroll", 1, true) == nil,
 			"as does the word (" .. tostring(c.addonsHint:GetText()) .. ")")
 		TBm._addonRows = realRows
-		TBm:LayoutContent()
+		TBm:Fill("addons")
 	end
 
-	-- An offset written from nowhere near the list is clamped by the layout too,
-	-- which is where it belongs: only the layout knows how many rows fit, and
-	-- that is a function of the panel, the dock and everything drawn above.
+	-- An offset written from nowhere near the list is clamped by the layout too.
 	TBm._addonOffset = 9999
-	TBm:LayoutContent()
+	TBm:Fill("addons")
 	check(shownCount() > 0 and TBm._addonsMore == 0,
 		"and an offset past the end of the list is clamped by the layout rather"
 		.. " than believed (" .. tostring(TBm._addonOffset) .. ", showing "
@@ -22867,10 +22205,10 @@ do
 	do
 		local realRows = TBm._addonRows
 		local odd = {}
-		for i = 1, 15 do odd[i] = realRows[i] end
+		for i = 1, 25 do odd[i] = realRows[i] end
 		TBm._addonRows = odd
 		TBm._addonOffset = 9999
-		TBm:LayoutContent()
+		TBm:Fill("addons")
 		check(TBm._addonOffset % 2 == 0,
 			"clamping an odd-length list still lands on a row boundary (offset "
 			.. tostring(TBm._addonOffset) .. " of " .. #odd .. " addons)")
@@ -22884,414 +22222,18 @@ do
 			.. " then " .. tostring(nextX) .. ")")
 		TBm._addonRows = realRows
 		TBm._addonOffset = 0
-		TBm:LayoutContent()
+		TBm:Fill("addons")
 	end
-
-	-- The flat dock scrolls too, through the same code.
-	UIParent:SetSize(1365, 768)
-	TBm:SetDock("BOTTOM")
-	TBm:RefreshAddons()
-	check((TBm._addonsCut or 0) > 0 and c.addonsArrow:IsShown(),
-		"docked flat the column cuts and scrolls the same way - one placement"
-		.. " routine serves both, because which slice of the list is showing is"
-		.. " not something the two layouts should have separate opinions about")
-	local flatFirst = firstShown()
-	c.addonsCatch:GetScript("OnMouseWheel")(c.addonsCatch, -1)
-	check(firstShown() > flatFirst, "and the wheel moves it")
 
 	TBm._addonOffset = 0
 	UIParent:SetSize(oldW, oldH)
 	A.db.profile.scale = oldScale
 	TBm:SetDock("LEFT")
 	TBm:RefreshAddons()
-	TBm:SetOpen(false, true)
+	TBm:SetOpen(false)
 end
 
-print("== toolbox: docked flat, the sections are columns ==")
-do
-	local TBm = A:GetModule("toolbox")
-	local oldW, oldH = UIParent:GetWidth(), UIParent:GetHeight()
-	local oldScale = A.db.profile.scale
-	UIParent:SetSize(1365, 768)
-	A.db.profile.scale = 0.71
-
-	-- Offsets are read back off the anchors, never from GetLeft/GetTop: those
-	-- answer in screen coordinates and only once a frame has been positioned AND
-	-- shown, which is the trap that let the first vertical layout draw every
-	-- section on top of every other and pass anyway.
-	local function topOf(r)
-		local _, _, _, _, yOff = r:GetPoint(1)
-		return -(yOff or 0)
-	end
-	local function leftOf(r)
-		local _, _, _, xOff = r:GetPoint(1)
-		return xOff or 0
-	end
-
-	TBm:SetDock("BOTTOM")
-	TBm:SetOpen(true, true)
-	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
-
-	local c = TBm.content
-	local panelW, panelH = TBm.panel:GetWidth(), TBm.panel:GetHeight()
-
-	-- THE check this layout exists to pass. Vertically the sections run down the
-	-- page and each starts below the last; here they run ACROSS it, so every
-	-- heading shares a top and the x offsets increase left to right. Reusing the
-	-- vertical pass on a 1280x240 panel drew a column down the left fifth of it
-	-- with the last three sections off the bottom.
-	local heads = {
-		{ "identity", c.title },
-		{ "widgets",  c.widgetsHead },
-		{ "addons",   c.addonsHead },
-		{ "settings", c.tilesHead },
-	}
-	local sameTop, increasing, prevX, prevName = true, true, nil, nil
-	local topRow = topOf(c.title)
-	for _, sec in ipairs(heads) do
-		local name, region = sec[1], sec[2]
-		if region and region:IsShown() then
-			if math.abs(topOf(region) - topRow) > 0.5 then
-				sameTop = false
-				check(false, "section '" .. name .. "' starts at y "
-					.. string.format("%.0f", topOf(region)) .. " rather than on the"
-					.. " top row at " .. string.format("%.0f", topRow))
-			end
-			local x = leftOf(region)
-			if prevX and x <= prevX then
-				increasing = false
-				check(false, "section '" .. name .. "' starts at x "
-					.. string.format("%.0f", x) .. " which is not right of '"
-					.. prevName .. "' at " .. string.format("%.0f", prevX) .. "")
-			end
-			prevX, prevName = x, name
-		end
-	end
-	check(sameTop, "every section heading shares the top row - flat, the drawer"
-		.. " is four columns rather than a stack of six")
-	check(increasing, "and they run left to right in order")
-
-	-- How far down the panel anything is actually drawn. Measured from the
-	-- regions rather than trusted to the module's own running total, because the
-	-- running total is the thing being checked.
-	local function deepest()
-		local low = 0
-		local function scan(list, n)
-			for i = 1, (n or #list) do
-				local f = list[i]
-				if f and f.IsShown and f:IsShown() then
-					local b = topOf(f) + (f:GetHeight() or 0)
-					if b > low then low = b end
-				end
-			end
-		end
-		scan(c.micro, #(TBm._microList or {}))
-		scan(c.cards); scan(c.addons); scan(c.tiles)
-		return low
-	end
-
-	check(TBm._contentHeight and TBm._contentHeight <= panelH + 0.5,
-		"the tallest column fits inside the panel ("
-		.. string.format("%.0f", TBm._contentHeight or -1) .. " of "
-		.. string.format("%.0f", panelH) .. ")")
-	-- ...and it fits because it is SHORT, not because the measurement stopped
-	-- happening. `_contentHeight` is what every "does it fit" check in this file
-	-- reads, so a version that never measured any column would report 22 and
-	-- satisfy all of them.
-	check(deepest() > 0 and TBm._contentHeight >= deepest() + A.Widgets.PANEL_PAD - 0.5,
-		"and the number really is the deepest column plus the bottom padding"
-		.. " rather than a figure nothing was measured into ("
-		.. string.format("%.0f", TBm._contentHeight or -1) .. " against a"
-		.. " deepest region ending at " .. string.format("%.0f", deepest()) .. ")")
-	check(prevX and prevX < panelW,
-		"and the last column starts inside it rather than off the right-hand"
-		.. " edge (" .. string.format("%.0f", prevX or -1) .. " of "
-		.. string.format("%.0f", panelW) .. ")")
-
-	do
-		local order = TBm:HorizontalColumns()
-		check(#order == 4 and order[3] == "addons" and order[4] == "settings",
-			"four fixed columns, with no mail column: mail is the World trunk's")
-	end
-
-	-- Every column has to FIT its share, not merely start inside the panel: one
-	-- that begins at x 1000 and is 400 wide passes the check above and still
-	-- hangs off the end.
-	--
-	-- Measured off a region that has been given a real width, never recomputed
-	-- from the module's own weights - a test that redoes the arithmetic under
-	-- test agrees with it by construction, including when both are wrong. Drop
-	-- the gaps out of the width available and this is what notices.
-	do
-		local far, farName = 0, nil
-		local function edge(list, name)
-			for _, f in ipairs(list) do
-				if f:IsShown() then
-					local r = leftOf(f) + (f:GetWidth() or 0)
-					if r > far then far, farName = r, name end
-				end
-			end
-		end
-		edge(c.tiles, "a settings tile")
-		edge(c.addons, "an addon row")
-		edge(c.cards, "a widget card")
-		check(far > 0 and far <= panelW - A.Widgets.PANEL_PAD + 0.5,
-			"and the right-hand edge of the last thing drawn stays inside the"
-			.. " panel's padding - " .. tostring(farName) .. " ends at "
-			.. string.format("%.0f", far) .. " of "
-			.. string.format("%.0f", panelW - 22))
-	end
-
-	check(not c.close:IsShown(),
-		"no close button - the vertical drawer has one because it covers a"
-		.. " screen edge end to end; this one is a strip with the chevron an inch"
-		.. " away on the rail")
-	check(not c.microHead:IsShown(),
-		"and no MENU heading over the micro row - the 20px it costs is the 20px"
-		.. " that decides whether the row clears the panel's floor")
-
-	-- The micro row is ONE row here. Four per row is right for a narrow panel
-	-- and puts a second row through the floor of a 240px one.
-	do
-		local micro = TBm._microList or {}
-		local oneRow, shownMicro, seen = true, 0, {}
-		for i = 1, #micro do
-			local b = c.micro[i]
-			if b and b:IsShown() then
-				shownMicro = shownMicro + 1
-				if math.abs(topOf(b) - topOf(c.micro[1])) > 0.5 then oneRow = false end
-				seen[leftOf(b)] = (seen[leftOf(b)] or 0) + 1
-			end
-		end
-		local stacked = false
-		for _, n in pairs(seen) do if n > 1 then stacked = true end end
-		-- The COUNT is half the check. Wrapping at four the way the tall panel
-		-- does hides entries five to eight rather than stacking them, so a test
-		-- that only looks at what is on screen finds one tidy row of four and
-		-- passes.
-		check(#micro > 0 and shownMicro == #micro,
-			"every entry the client offers is on screen (" .. shownMicro .. " of "
-			.. #micro .. ")")
-		check(oneRow and not stacked,
-			"and all of them on a single row at its own x - at most eight are"
-			.. " ever present, because social and guild are mutually exclusive")
-	end
-
-	-- Two widget columns, not the three the setting says. That number is a count
-	-- of columns in a panel a third of this one's width.
-	do
-		local rowTops = {}
-		for i, card in ipairs(c.cards) do
-			if card:IsShown() and i <= 6 then rowTops[topOf(card)] = (rowTops[topOf(card)] or 0) + 1 end
-		end
-		local widest = 0
-		for _, n in pairs(rowTops) do if n > widest then widest = n end end
-		check(widest == 2, "the widget grid is two cards wide here rather than"
-			.. " the three the vertical panel defaults to - the same setting in a"
-			.. " column a third the width gives six cards too narrow to read"
-			.. " (got " .. widest .. ")")
-	end
-
-	-- Squeezed. The columns cut on their own account rather than in one order.
-	UIParent:SetSize(1000, 600)
-	A.db.profile.scale = 1.0
-	TBm:Layout(); TBm:RefreshTiles(); TBm:RefreshAddons()
-	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
-		"squeezed to a " .. string.format("%.0f", TBm.panel:GetHeight())
-		.. "px panel every column still fits ("
-		.. string.format("%.0f", TBm._contentHeight) .. ")")
-
-	-- ...and it fits because the PANEL has a floor, not because the columns
-	-- gave way. The vertical panel is clamped to the deck's proportion of the
-	-- screen, which is right when height is the long axis and rows come off a
-	-- list. Flat, height is the short axis and the identity column is a title, a
-	-- card and a row of glyphs - all fixed - so the proportion asked for 133
-	-- against something that cannot be built in less than 218.
-	do
-		local floorH = TBm:HorizontalFloor()
-		check(math.abs(TBm.panel:GetHeight() - floorH) < 0.5,
-			"the flat panel stops at its floor rather than at the deck's"
-			.. " proportion of a short screen (" .. string.format("%.0f",
-				TBm.panel:GetHeight()) .. " vs a proportion of "
-			.. string.format("%.0f", 600 * (240 / 1080)) .. ")")
-		check(TBm.panel:GetHeight() <= 600 + 0.5,
-			"and the floor is still capped by the screen - it is a fifth of the"
-			.. " deck's canvas, so this only bites on something extraordinary")
-
-		-- The floor is COMPUTED from the constants it is made of, and this is
-		-- the check that keeps it that way: a literal 218 two hundred lines from
-		-- the numbers it is a sum of goes stale the first time the news card
-		-- changes height, and the symptom is a column drawn through the floor
-		-- on one screen size that nobody has.
-		local topOfTitle = topOf(c.title)
-		local lowest = 0
-		for i = 1, #(TBm._microList or {}) do
-			local b = c.micro[i]
-			if b and b:IsShown() then
-				local bot = topOf(b) + b:GetHeight()
-				if bot > lowest then lowest = bot end
-			end
-		end
-		check(lowest > 0 and lowest + A.Widgets.PANEL_PAD <= floorH + 0.5,
-			"and the identity column really does fit inside it, glyph row and"
-			.. " bottom padding included (" .. string.format("%.0f", lowest + 22)
-			.. " of " .. string.format("%.0f", floorH) .. ", from a top row at "
-			.. string.format("%.0f", topOfTitle) .. ")")
-	end
-
-	-- SetDock ALONE re-lays the content, with no Refresh* behind it.
-	--
-	-- This is the path the player uses - drag the rail, let go, look - and it
-	-- was the one path nothing tested. Layout moves and resizes the panel and
-	-- LayoutRail moves the rail; neither touches what is drawn inside it. So
-	-- re-docking from a side to the top put a 1280x240 panel at the top of the
-	-- screen with the tall panel's column of sections still running down the
-	-- left of it, most of them below the panel's own bottom edge. Every flat
-	-- test called Refresh* afterwards, and those call LayoutContent, so the
-	-- suite agreed the layout was fine.
-	UIParent:SetSize(1365, 768)
-	A.db.profile.scale = 0.71
-	TBm:SetDock("LEFT")
-	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
-	check(topOf(c.widgetsHead) > topOf(c.title), "stacked on a side dock")
-
-	TBm:SetDock("BOTTOM")                       -- and nothing else
-	check(math.abs(topOf(c.widgetsHead) - topOf(c.title)) < 0.5,
-		"re-docking flat re-lays the content on its own, with no Refresh call"
-		.. " behind it - dragging the rail is exactly this and nothing more")
-	check(TBm._contentHeight <= TBm.panel:GetHeight() + 0.5,
-		"and what it lays out fits the panel it just resized ("
-		.. string.format("%.0f of %.0f", TBm._contentHeight,
-			TBm.panel:GetHeight()) .. ")")
-
-	TBm:SetDock("LEFT")                         -- and back, still on its own
-	check(topOf(c.widgetsHead) > topOf(c.title),
-		"and back again, the same way")
-
-	TBm:SetDock("BOTTOM")
-	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
-
-	-- The micro row is GLYPHS here. Eight labelled cells across a column a
-	-- fifth of the panel wide is about thirty pixels each, and "Character" came
-	-- out as "Ch...".
-	check(c.micro[1].name ~= nil and not c.micro[1].name:IsShown(),
-		"the micro buttons drop their labels flat - the name is on the tooltip,"
-		.. " which is where a name that does not fit belongs")
-
-	-- A settings tile's label stays INSIDE its tile.
-	--
-	-- It was anchored bottom-left and nowhere else, so it had no width at all
-	-- and simply kept drawing: "Combat collapse" ran out of its own tile and
-	-- into the column beside it. A right edge gives it one, and word wrap is
-	-- off - the tile is 62 tall with a 30px chip in the top of it, so a second
-	-- line lands on the chip.
-	do
-		local widest, longest = 0, nil
-		for _, t in ipairs(TBm._tileList or {}) do
-			local n = #(t.label or t.key or "")
-			if n > widest then widest, longest = n, t.label end
-		end
-		local tile = c.tiles[1]
-		local w = tile.name:GetWidth() or 0
-		check(w > 0 and w < tile:GetWidth(),
-			"a settings tile's label has a width, and it is inside the tile with"
-			.. " padding either side - without a right anchor it has no width at"
-			.. " all and simply keeps drawing (" .. string.format("%.0f of %.0f",
-				w, tile:GetWidth()) .. ", longest label here is "
-			.. tostring(longest) .. ")")
-
-		-- Flat, the settings column is narrow enough that the label goes UNDER
-		-- the icon: there is no room for two words beside a 30px chip and an
-		-- On/Off.
-		check(tile._row == false,
-			"and in the flat drawer's narrow column it stacks under the icon"
-			.. " rather than being squeezed beside it (tile is "
-			.. string.format("%.0f", tile:GetWidth()) .. " wide)")
-	end
-
-	-- The addon column is the widest, because it holds the longest strings on
-	-- the panel. "Auc-Util-AutoMagic" is a real registry name.
-	do
-		local order, weights = TBm:HorizontalColumns()
-		local widest, widestKey = 0, nil
-		for _, k in ipairs(order) do
-			if weights[k] > widest then widest, widestKey = weights[k], k end
-		end
-		check(widestKey == "addons",
-			"and the addon list gets the widest column, having the longest"
-			.. " strings on the panel to put in it (got " .. tostring(widestKey)
-			.. ")")
-	end
-
-	-- And going back is really going back. A layout that leaves regions where
-	-- the other one put them is a drawer that looks broken on the dock you
-	-- return to, which is the failure nobody thinks to test for.
-	UIParent:SetSize(1365, 768)
-	A.db.profile.scale = 0.71
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-	TBm:RefreshWidgets(); TBm:RefreshTiles(); TBm:RefreshAddons(); TBm:RefreshMicro()
-	check(c.microHead:IsShown() and c.close:IsShown(),
-		"docking back to a side brings the MENU heading and the close button"
-		.. " back rather than leaving the flat layout's choices behind")
-	-- THE MICRO LABELS ARE GONE FROM BOTH LAYOUTS. They used to be a vertical-
-	-- only thing and this check was the guard on putting them back; the drawer
-	-- now spends that sixteen pixels a row on the mini-player at its foot, and
-	-- the name a glyph loses is on its tooltip, where a name that does not fit
-	-- belongs. The guard still matters in the other direction: whatever one
-	-- layout hides, the other has to agree about.
-	check(not c.micro[1].name:IsShown(),
-		"and the micro row is glyphs on every dock, not names on one of them")
-
-	-- AND THEY ARE MEASURED, NOT COUNTED. Every check on this row so far asked
-	-- whether the buttons were PRESENT, and they always were - so a flat dock
-	-- that shrank its cells to eleven units while the glyphs stayed at twenty
-	-- passed all of them, with ten drawings lapping nine units over their
-	-- neighbours. "Every entry is there" and "you can see any of them" are
-	-- different questions and only one of them was being asked.
-	--
-	-- Measured on the FLAT dock at a narrow screen, which is where the cells
-	-- actually get small: the identity column is a fifth of the panel, and ten
-	-- entries across it on a 1024-wide display is where the overhang was.
-	do
-		local keepW, keepH = UIParent:GetWidth(), UIParent:GetHeight()
-		UIParent:SetSize(1024, 768)
-		TBm:SetDock("BOTTOM")
-		TBm:SetOpen(true, true)
-		TBm:RefreshMicro()
-
-		local worst, worstCell, n = 0, 0, 0
-		for i = 1, #(TBm._microList or {}) do
-			local b = c.micro[i]
-			if b and b:IsShown() and b.glyph then
-				n = n + 1
-				local cw, gw = b:GetWidth() or 0, b.glyph:GetWidth() or 0
-				if gw - cw > worst then worst, worstCell = gw - cw, cw end
-			end
-		end
-		check(n > 0, "the flat dock draws its micro row at 1024 wide (" .. n .. ")")
-		check(worst <= 0,
-			"and no glyph is wider than the cell holding it - it gives way with"
-			.. " the cell rather than drawing over the entry beside it (worst"
-			.. " overhang " .. string.format("%.1f", worst) .. " in a "
-			.. string.format("%.1f", worstCell) .. " cell)")
-
-		UIParent:SetSize(keepW, keepH)
-		TBm:SetDock("LEFT")
-		TBm:SetOpen(true, true)
-		TBm:RefreshMicro()
-	end
-	check(topOf(c.widgetsHead) > topOf(c.title)
-		and math.abs(leftOf(c.widgetsHead) - leftOf(c.title)) < 0.5,
-		"and the sections stack again, in one column at one x")
-
-	UIParent:SetSize(oldW, oldH)
-	A.db.profile.scale = oldScale
-	TBm:SetDock("LEFT")
-	TBm:SetOpen(false, true)
-end
-
-print("== toolbox: the rail owns the launchers now ==")
+print("== toolbox: the trunk owns the launchers ==")
 do
 	local TBm = A:GetModule("toolbox")
 	local LN  = A.Launchers
@@ -23300,16 +22242,13 @@ do
 	mcfg.drawer = false
 
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-	-- The drawer has to be told, or it keeps what it already collected.
 	A.Launchers:Scan()
 	TBm:ClaimPins()
-	TBm:LayoutRail()
+	TBm:LayoutPins()
 
-	-- With the drawer retired, an unclaimed launcher is one NOBODY positions -
-	-- and a LibDBIcon button nobody positions is still sitting on the minimap
-	-- ring, which is the thing the drawer existed to clear. So the rail adopts
-	-- the lot.
+	-- An unclaimed launcher is one NOBODY positions - and a LibDBIcon button
+	-- nobody positions is still sitting on the minimap ring. So the Toolbox
+	-- adopts the lot.
 	local orphan
 	for e in LN:Iterate() do
 		if not LN:OwnerOf(e) then orphan = e.key break end
@@ -23355,7 +22294,6 @@ do
 	local TBm = A:GetModule("toolbox")
 	local LN  = A.Launchers
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
 
 	-- Pin something, then simulate the shape of a reload: the saved list is
 	-- still there, but the launcher registry starts empty and refills over the
@@ -23381,7 +22319,7 @@ do
 	LN.entries, LN.byKey, LN.seen, LN.owners = {}, {}, {}, {}
 
 	TBm:ClaimPins()
-	TBm:LayoutRail()
+	TBm:LayoutPins()
 	check(TBm:IsPinned("SlowAddon"),
 		"straight after the reload the pin is still recorded, even though the"
 		.. " addon it names has not loaded yet")
@@ -23398,12 +22336,11 @@ do
 		"and when it finally arrives the pin CLAIMS it - re-claimed on every"
 		.. " launcher change rather than once at enable, or a slow addon is a"
 		.. " pin that silently never draws")
-	check(entry.button:GetParent() == TBm.rail,
-		"so it lands on the rail without anybody touching the pin again")
+	check(entry.button:GetParent() == TBm.pinNodes[1].button,
+		"so it lands on the trunk without anybody touching the pin again")
 
 	LN.entries, LN.byKey, LN.seen, LN.owners = keptEntries, keptByKey, keptSeen, keptOwners
 	TBm:SetPinned("SlowAddon", false)
-	TBm:SetOpen(false, true)
 end
 
 print("== zen: the corner glyph is small-circle art ==")
@@ -23465,8 +22402,7 @@ print("== toolbox: the icon sheet ==")
 do
 	local TBm = A:GetModule("toolbox")
 	TBm:SetDock("LEFT")
-	TBm:SetOpen(true, true)
-	TBm:RefreshMicro(); TBm:RefreshTiles(); TBm:RefreshAddons()
+	TBm:SetOpen(true, nil, "menu")
 
 	-- THE ORDER HAS TO AGREE WITH THE GENERATOR. Media indexes the atlas by
 	-- position, so one name inserted in Tools/generate_textures.py and not here
@@ -23548,8 +22484,8 @@ do
 			for _, m in ipairs(TBm.MICRO) do
 				if not A.Media:Icon(m.key) then missing[#missing + 1] = "menu:" .. m.key end
 			end
-			for _, extra in ipairs({ "gear", "pin", "pinned", "whatsnew" }) do
-				if not A.Media:Icon(extra) then missing[#missing + 1] = extra end
+			for _, b in ipairs(TBm.BRANCHES) do
+				if not A.Media:Icon(b.icon) then missing[#missing + 1] = "node:" .. b.icon end
 			end
 			check(#missing == 0,
 				"every key the module asks the sheet for is IN the sheet ("
@@ -23565,77 +22501,22 @@ do
 
 	-- The module actually uses them: a real glyph, cropped to one cell.
 	do
-		local b = TBm.content.micro[1]
+		local b = TBm.panels.menu.cells[1]
 		check(b and b.glyph and b.glyph:GetTexture() == A.Media.icons.file,
-			"a MENU button draws from the sheet")
+			"a Menu door draws from the sheet")
 		local l, r = b.glyph:GetTexCoord()
 		check(r - l < 0.9,
 			"cropped to ONE cell rather than the whole sheet (" ..
 			string.format("%.2f..%.2f", l, r) .. ")")
+		local n = A.Trunk:Get("toolbox"):Node("widgets").button
+		check(n.icon:GetTexture() == A.Media.icons.file
+			and select(1, n.icon:GetTexCoord()) == select(2, A.Media:Icon("widgets")),
+			"and each trunk node wears its own cell")
 
-		-- THE BRAND MARK, not the sheet. It was the sheet's gear, which at this
-		-- size is a ring with eight radial stubs on it - which is an asterisk.
-		-- The whole point of the check is that this button is never a character
-		-- the bundled font has not got; a texture from a file the addon ships
-		-- satisfies that as well as an atlas cell does.
-		check(TBm.rail.gear.glyph:GetTexture() == A.Media.texture.icon,
-			"the rail's settings button wears the addon's own mark")
-		check(TBm.rail.gear.glyph:GetWidth() == TBm.rail.gear:GetWidth(),
-			"flush with its slot, not inset like the line glyphs beside it")
-
-		local tile = TBm.content.tiles[1]
-		check(tile and tile.icon:IsShown()
-			and tile.icon:GetTexture() == A.Media.icons.file,
-			"and a settings tile carries its own mark rather than a bare chip")
-
-		-- The chip is the BADGE widget, not a pill. A 30x30 pill draws the
-		-- 512-wide pill art with its rim minified past half a pixel, which is
-		-- the speckled circle that got reported; the badge laps its rim one
-		-- physical pixel proud of a masked disc and snaps the diameter.
-		-- A filled chip carries no rim. A bright ring lapped one pixel proud of
-		-- a bright disc doubles the coverage in the outer pixel, so the edge
-		-- becomes a two-pixel gradient - which is why these read as smudges
-		-- rather than circles. The rim is for the quiet state.
-		do
-			A.db.profile.modules.zen.enabled = true
-			TBm:RefreshTiles()
-			check(not TBm.content.tiles[1].chip.ring:IsShown(),
-				"an ON chip draws no rim - its own filled edge is the edge")
-			A.db.profile.modules.zen.enabled = false
-			TBm:RefreshTiles()
-			check(TBm.content.tiles[1].chip.ring:IsShown(),
-				"and an OFF one does, because a disc at nearly the panel colour"
-				.. " has nothing else to define it")
-			A.db.profile.modules.zen.enabled = true
-			TBm:RefreshTiles()
-		end
-
-		check(tile.chip.disc ~= nil and tile.chip.ring ~= nil,
-			"the chip is a badge - masked disc plus a rim lapped proud - rather"
-			.. " than a pill whose caps are minified eight times")
-		check(tile.chip.disc:GetTexture() == A.Media.texture.chipDisc
-			and tile.chip.ring:GetTexture() == A.Media.texture.chipRim,
-			"and it draws the 64px chip art rather than the 256px minimap art -"
-			.. " the client does not mipmap UI textures, so a 256 circle drawn"
-			.. " at 30 is sampled out of an image eight times too big and its"
-			.. " anti-aliasing ramp compresses under a texel")
-		do
-			local _, _, _, proudL = tile.chip.ring:GetPoint(1)
-			check(proudL and proudL < 0,
-				"and the rim really does lap OVER the disc rather than sitting"
-				.. " flush on its anti-aliased edge, which is what leaves the"
-				.. " mask's own stair-stepping showing outside it ("
-				.. string.format("%.2f", proudL or 0) .. ")")
-		end
-
-		-- The version chip is the deck's one filled pill: dark ink on accent.
-		check(TBm.content.chip._fillColor == A.Palette.c.btnFill,
-			"the version chip carries the accent fill rather than glass - it is"
-			.. " the one place the deck asks for a filled pill")
-		local tc = { TBm.content.chip.text:GetTextColor() }
-		check(math.abs(tc[1] - A.Palette.c.btnFillText[1]) < 0.01,
-			"with DARK ink on it, which is why btnFillText is its own token -"
-			.. " `text` on `accent` is unreadable")
+		TBm:SetOpen(true, nil, "settings")
+		local row = TBm.panels.settings.rows[1]
+		check(row and row.icon:IsShown() and row.icon:GetTexture() == A.Media.icons.file,
+			"and a setting's diamond carries its own mark rather than a bare node")
 
 		-- Type: one PHYSICAL pixel of shadow, and whole-point sizes.
 		do
@@ -23661,33 +22542,9 @@ do
 				.. ")")
 			host:Hide()
 		end
-
-		-- ...and the What's-new card has a mark of its own.
-		check(TBm.content.news.tile.spark ~= nil
-			and TBm.content.news.tile.spark:GetTexture() == A.Media.icons.file,
-			"and the What's-new card carries the spark rather than an empty tile")
 	end
 
-	-- Pinned and unpinned are two different marks, not one tinted twice.
-	do
-		local rows = TBm:AddonRows()
-		if rows[1] and rows[1].entry then
-			local key = rows[1].entry.key
-			TBm:SetPinned(key, false); TBm:RefreshAddons()
-			local l0 = select(1, TBm.content.addons[1].pin.glyph:GetTexCoord())
-			local t0 = select(3, TBm.content.addons[1].pin.glyph:GetTexCoord())
-			TBm:SetPinned(key, true); TBm:RefreshAddons()
-			local l1 = select(1, TBm.content.addons[1].pin.glyph:GetTexCoord())
-			local t1 = select(3, TBm.content.addons[1].pin.glyph:GetTexCoord())
-			check(l0 ~= l1 or t0 ~= t1,
-				"pinned and unpinned are different CELLS - an outline and a"
-				.. " filled pin - rather than the same mark at two alphas, which"
-				.. " reads as a dimmed control instead of a state")
-			TBm:SetPinned(key, false); TBm:RefreshAddons()
-		end
-	end
-
-	TBm:SetOpen(false, true)
+	TBm:SetOpen(false)
 end
 
 print("== combat gating ==")
@@ -33014,7 +31871,7 @@ section("nifec: the mini-player, on the ground", function()
 	-- it is the same question.
 	check(node ~= nil and not node.button:IsShown(),
 		"with no content installed there is no Now Playing node on the trunk")
-	check(TBm.rail.play == nil and TBm.content.now == nil,
+	check(TBm.rail == nil and TBm.content == nil,
 		"and the Toolbox carries no player: no rail chip, no drawer section")
 
 	local season = { packId = "S01", apiVersion = 1, seasonIndex = 1,
@@ -36670,14 +35527,14 @@ do
 			"and tapping one moves the real frames on the spot (" ..
 			tostring(A.Presets:Current()) .. ")")
 
-		-- Stop 3: four edges, and tapping one docks the drawer.
+		-- Stop 3: two sides (decision 4c), and tapping one docks the trunk.
 		OB:Go(3)
 		local edges = slot.__aetherKids and slot.__aetherKids.toolbox or {}
-		check(#edges == 5,
-			"stop 3 offers a box with four edges on it (" .. #edges .. ")")
-		edges[4]:GetScript("OnClick")(edges[4])
+		check(#edges == 3,
+			"stop 3 offers a box with a target on each side (" .. #edges .. ")")
+		edges[3]:GetScript("OnClick")(edges[3])
 		check(A.db.char.toolbox.docked == "RIGHT",
-			"and tapping one docks the drawer there (" ..
+			"and tapping one docks the trunk there (" ..
 			tostring(A.db.char.toolbox.docked) .. ")")
 		local TB = A:GetModule("toolbox")
 		if TB.SetDock then TB:SetDock("LEFT") end

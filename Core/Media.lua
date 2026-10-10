@@ -190,6 +190,8 @@ Media.icons = {
 		"calendar",
 		-- The World trunk's tracking node.
 		"tracking",
+		-- The Toolbox trunk's Widgets and Addons nodes.
+		"widgets", "addons",
 	},
 
 	--- One drawing, more than one name for it.

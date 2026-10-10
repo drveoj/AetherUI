@@ -1,112 +1,49 @@
 --[[--------------------------------------------------------------------------
-	AetherUI :: Toolbox
+	Lattice :: Toolbox
 
-	Concept 4: a drawer docked to the centre of a screen edge, with a slim rail
-	that stays on screen when the drawer is closed.
+	The left trunk (Lattice 5b and 6a): a strand down the screen edge from a
+	Cell glyph, a node per section - Menu, Widgets, Addons, Settings, What's
+	new - each opening its own branch panel beside it, and the pinned addons
+	hanging below the last node. It replaced the drawer and its rail; what was
+	in the drawer carries over a branch at a time, with the contents, scroll
+	rules and settings it had (README "Supersedes").
 
-	This file is layer 1 of docs/PLAN-Toolbox.md - the frame, the dock, the
-	slide and the scrim. Nothing goes inside it yet, deliberately: the panel has
-	two layouts and two sizes and both have to be right before anything is laid
-	out within them.
+	THE GLYPH AT THE TOP is the way to the settings, as the rail's mark was.
 
-	Overlay, never reflow
-	---------------------
-	The drawer slides out OVER the HUD. Nothing beneath moves, which in WoW is
-	free - there is no layout to disturb - so the only work is strata. It sits at
-	FULLSCREEN_DIALOG, above the HUD and below tooltips, and a scrim dims the
-	strip it covers so the covered UI reads as behind rather than merely dark.
+	IT DOCKS LEFT OR RIGHT, and the World trunk takes the other side (Joe,
+	2026-10-07, decision 4c): docked right, the minimap is mirrored to the
+	left. A character docked top or bottom under the drawer comes back on the
+	left. In unlock, drag the glyph to the other half of the screen to swap.
+	Per character, as the drawer's edge was.
 
-	Two layouts, and the numbers are the deck's
-	-------------------------------------------
-	Left and right docks use the vertical panel (388x910 deck px); top and bottom
-	use the horizontal one (1280 wide). Everything is drawn at profile.scale like
-	the quest log and the bags window, so at the default 0.71 the vertical panel
-	is 276x646 against a 768-unit screen and the horizontal is 909 of 1365. Both
-	fit, and the harness checks that at 0.71 AND at 1.0 - a panel that fits at
-	the deck's own scale and overflows at 1.0 is a panel nobody with a big UI
-	scale can use.
+	IN A FIGHT the trunk keeps its nodes, drops its labels and closes the open
+	branch (README "Two energies for trunks").
 
-	The rail's width is DERIVED from the icon size rather than written down. The
-	deck draws it about 52px wide, which is a 34px icon with 9 either side; write
-	52 and the day somebody changes the icon size the rail stops fitting it.
-
-	Sliding
-	-------
-	There is no transition system, so the slide is an OnUpdate lerp. It must be
-	INTERRUPTIBLE: clicking the chevron twice quickly should reverse, not queue.
-	That is why there is a single `_travel` in 0..1 driven toward `_want` rather
-	than a start time and a duration - reversing is then just changing `_want`,
-	and the frame carries on from wherever it had got to.
-
-	Docking is not a Mover
-	----------------------
-	Every other placeable frame here uses Core/Movers.lua. This one does not, and
-	the reason is worth stating so nobody wires it in later: a mover means
-	"anywhere, remembered against the nearest corner", and this drawer has
-	exactly four legal positions, each of which changes the panel's LAYOUT rather
-	than its offset.
-
-	So dragging the rail to re-dock is its OWN gesture, further down this file.
-	It borrows one thing from Movers and nothing else: the moment placement mode
-	turns on, via Movers:OnLockChanged. That matters because the drawer was the
-	only thing on screen you could not place after `/aether unlock` - every other
-	frame grew a handle and this one silently did not, which reads as the drawer
-	being fixed rather than as it having a different gesture.
-
-	`docked` and `open` live in db.char. A drawer edge is a per-character habit
-	the way tracked quests are.
+	WHAT IS NOT HERE ANY MORE: mail and the music player, which are World
+	trunk nodes (Core/Mail.lua, Modules/IFEC/Node.lua).
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
-
 
 local L = A.L
 local TB = A:NewModule("toolbox")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 
--- The deck's own pixels. Drawn at profile.scale, like the quest log and bags.
-local PANEL_V_W, PANEL_V_H = 388, 910
-local PANEL_H_W, PANEL_H_H = 1280, 240
+-- Board 5b and 6a at 1920 x 1080, in HUD units: the glyph's centre 40 in
+-- from the dock edge and 300 down, 30 across.
+local EDGE_X, TOP_Y, ROOT = 40, 300, 30
+-- The board's first node is 72 under the glyph's centre: the strand starts
+-- 12 under the glyph rather than the World trunk's 30 under its pill.
+local CAP_GAP = 12
+-- Pinned addons: 24 px tiles, 8 apart, under the last node.
+local PIN, PIN_STEP = 24, 32
+-- Inside a branch panel.
+local PAD, HEAD_H = 16, 26
 
--- The rail. Width comes from the icon it has to hold, not from the 52 the deck
--- happens to measure.
-local RAIL_ICON  = 26
-local RAIL_PAD   = 7
-local RAIL_W     = RAIL_ICON + RAIL_PAD * 2
--- The chevron is a HINT, not a button you hunt for: it was 26 against a 34 icon
--- and read as the largest thing on the rail. Half that, and the rail reads as a
--- seam with a handle rather than a column of controls.
-local RAIL_CHEV  = 14
--- A DRAWER-PULL, not a capsule. At 16 on a 40-wide rail the two corner slices
--- are 32 of the 40 and the ends read as semicircles - which is a pill, which is
--- exactly what it looked like. 8 leaves a flat run down the middle of each end
--- and the shape reads as a handle on the side of a drawer.
-local RAIL_CORNER = 8
+local SIDES = { LEFT = true, RIGHT = true }
 
--- How far the rail sits INTO the panel. Without this it is a separate capsule
--- floating beside the drawer with its own rounded inner edge - two shapes with
--- a gap of shadow between them. Overlapped by its corner radius, the inner
--- curve is hidden behind the panel and the rail reads as a tab growing out of
--- the drawer's edge. When the drawer is shut the same overlap puts that curve
--- off the screen edge, so it hugs there too.
-local RAIL_BITE  = 14
-
-local PANEL_CORNER = W.PANEL_CORNER   -- shared; see Core/Widgets.lua
-
--- 300-400ms, per the handoff. Expressed as a rate so the lerp is reversible.
-local SLIDE_RATE = 1 / 0.34
-
-local EDGES = { LEFT = true, RIGHT = true, TOP = true, BOTTOM = true }
-
--- The same four, in an order. `pairs` over EDGES is fine for asking "is this an
--- edge" and useless for building four ghosts, which have to come out the same
--- way every time or the harness is testing a coin toss.
-local EDGE_ORDER = { "LEFT", "RIGHT", "TOP", "BOTTOM" }
-
-local function IsVertical(edge)
-	return edge == "LEFT" or edge == "RIGHT"
-end
+local function Trunk() return A.Trunk:Get("toolbox") end
 
 -- ---------------------------------------------------------------------------
 -- state
@@ -116,8 +53,8 @@ local function Char()
 	if not A.db or not A.db.char then return nil end
 	A.db.char.toolbox = A.db.char.toolbox or {}
 	local t = A.db.char.toolbox
-	if t.docked == nil or not EDGES[t.docked] then t.docked = "LEFT" end
-	if t.open == nil then t.open = false end
+	-- Top and bottom were the drawer's; the trunk docks left or right.
+	if not SIDES[t.docked] then t.docked = "LEFT" end
 	return t
 end
 
@@ -126,751 +63,249 @@ function TB:Dock()
 	return (c and c.docked) or "LEFT"
 end
 
-function TB:IsOpen()
-	local c = Char()
-	return (c and c.open) or false
+local function Cols(key, fallback)
+	return math.max(1, tonumber(A.Config:Module("toolbox")[key]) or fallback)
+end
+
+local function RowsFor(n, per)
+	return math.ceil(math.max(0, n) / math.max(1, per))
+end
+
+--- Place the i-th frame of a grid whose top-left is (x, y) in `parent`, y down.
+local function GridPlace(parent, frame, i, x, y, cols, cellW, cellH, gapX, gapY)
+	local r, c = math.floor((i - 1) / cols), (i - 1) % cols
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", parent, "TOPLEFT",
+		x + c * (cellW + (gapX or 0)), -(y + r * (cellH + (gapY or 0))))
 end
 
 -- ---------------------------------------------------------------------------
--- construction
+-- the glyph and the trunk
 -- ---------------------------------------------------------------------------
 
-function TB:Build()
-	if self.panel then return end
-
-	-- The scrim, underneath everything the drawer draws.
-	--
-	-- SHAPED LIKE THE PANEL, not a rectangle. It was a plain SetColorTexture
-	-- sized to the panel's bounds, which is square - so at each of the four
-	-- corners, where the panel curves away, the scrim's own corner carried on
-	-- and showed as a hard black notch outside the rounding. Four of them, one
-	-- per corner, which is exactly what got reported.
-	--
-	-- A Glass panel at the same radius is the same rounded shape by
-	-- construction, and it costs nothing extra: the 9-slice is already loaded.
-	-- Tinted black, with its rim taken off - a scrim with an edge is a second
-	-- outline a finger-width outside the first.
-	local scrim = Glass.CreatePanel(UIParent, { corner = PANEL_CORNER })
-	scrim:SetFrameStrata("FULLSCREEN_DIALOG")
-	scrim:SetFrameLevel(1)
-	scrim:SetFillColor({ 0, 0, 0, 1 })
-	scrim:SetEdgeColor({ 0, 0, 0, 0 })
-	scrim:Hide()
-	self.scrim = scrim
-
-	local panel = Glass.CreatePanel(UIParent, {
-		corner = PANEL_CORNER,
-		shadow = A.db.profile.glass.shadow,
-	})
-	panel:SetFrameStrata("FULLSCREEN_DIALOG")
-	panel:SetFrameLevel(10)
-	-- A READING FILL, like the quest log and the chat. This is a drawer that
-	-- slides out OVER whatever is behind it - a quest window, the world, another
-	-- addon's panel - carrying five columns of small text. At the opacity a
-	-- button uses, all of that shows through every line of it.
-	self.panel = panel
-
-	-- The rail is a surface of its own rather than a region of the panel: it
-	-- stays on screen when the drawer is shut, so it cannot be part of the thing
-	-- that slides away.
-	--
-	-- A PANEL, not a pill. A pill's caps sit left and right and take their width
-	-- from the height, which is right for the version chip and wrong for a rail
-	-- that is four times taller than it is wide: the caps overlap through the
-	-- middle and it renders as one huge circle. A 9-slice panel is the same
-	-- rounded shape at any aspect.
-	local rail = Glass.CreatePanel(UIParent, {
-		corner = RAIL_CORNER,
-		shadow = A.db.profile.glass.shadow,
-	})
-	rail:SetFrameStrata("FULLSCREEN_DIALOG")
-	rail:SetFrameLevel(20)
-	self.rail = rail
-
-	local chev = CreateFrame("Button", nil, rail)
-	chev:SetSize(RAIL_CHEV, RAIL_CHEV)
-	local glyph = chev:CreateTexture(nil, "ARTWORK")
-	glyph:SetAllPoints(chev)
-	glyph:SetTexture(Media.texture.chevron)
-	chev.glyph = glyph
-	chev:SetScript("OnClick", function() TB:Toggle() end)
-	rail.chev = chev
-
-	-- THE MARK, at the far end of the rail. The drawer carries the settings the
-	-- deck asks for; this is the way to the rest of them, and it belongs on the
-	-- rail because it has to be reachable with the drawer shut.
-	local gear = CreateFrame("Button", nil, rail)
-	gear:SetSize(RAIL_ICON, RAIL_ICON)
-	-- IT WAS A GEAR, drawn as a ring with eight radial stubs, and at this size
-	-- eight stubs on a ring is an asterisk. The note it replaced said a ring was
-	-- standing in "until there is real art" and that the concept wanted a gear
-	-- or the star; there is real art now, and it is neither - it is the addon's
-	-- own mark, which is what the one button on the rail that opens the addon's
-	-- own settings should be wearing.
-	--
-	-- (Not a unicode gear either, then or now: Outfit is a text face with no
-	-- geometric shapes in it, so U+2699 came out as the three bytes of its own
-	-- UTF-8 rendered as latin - "]lk" on the rail.)
-	local gg = gear:CreateTexture(nil, "ARTWORK")
-	gg:SetPoint("CENTER", gear, "CENTER", 0, 0)
-	gg:SetSize(RAIL_ICON, RAIL_ICON)
-	gg:SetTexture(Media.texture.icon)
-	gear.glyph = gg
-	gear:SetScript("OnClick", function()
+function TB:BuildRoot()
+	if self.root then return self.root end
+	local r = CreateFrame("Button", ADDON .. "ToolboxRoot", UIParent)
+	r:SetSize(ROOT, ROOT)
+	r:SetFrameStrata("MEDIUM")
+	r:SetClampedToScreen(true)
+	r.glyph = r:CreateTexture(nil, "ARTWORK")
+	r.glyph:SetAllPoints(r)
+	r.glyph:SetTexture(Media.texture.icon)
+	r:RegisterForClicks("LeftButtonUp")
+	r:RegisterForDrag("LeftButton")
+	r:SetScript("OnClick", function(self2)
+		if self2.__dragged then self2.__dragged = nil return end
 		if A.Options and A.Options.Open then A.Options:Open() end
 	end)
-	gear:SetScript("OnEnter", function(self2)
+	r:SetScript("OnEnter", function(self2)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
 		GameTooltip:SetText(L.toolbox.build.aetherui_settings)
+		if A.Movers and A.Movers.unlocked then
+			GameTooltip:AddLine(L.toolbox.root.swap, 0.8, 0.8, 0.85, true)
+		end
 		GameTooltip:Show()
 	end)
-	gear:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-	rail.gear = gear
-
-	-- Mail and Now Playing are not here: they are World trunk nodes
-	-- (Core/Mail.lua, Modules/IFEC/Node.lua).
-
-	self._travel = self:IsOpen() and 1 or 0
-	self._want   = self._travel
-
-	self:Layout()
-	self:ApplySkin()
-end
-
-function TB:ApplySkin()
-	if not self.panel then return end
-	self.panel:ApplySkin()
-	-- Re-asserted after ApplySkin, which puts the token fill back. Here and
-	-- nowhere else: Build calls this, so setting it at construction as well
-	-- would be a second owner for one fact.
-	self.panel:SetFillColor(Palette:ReadingFill())
-	self.rail:ApplySkin()
-	local c = Palette.c
-	if self.rail.chev and c.text then
-		self.rail.chev.glyph:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.75)
-	end
-	if self.scrim then
-		-- Re-asserted on a skin change, because ApplySkin is what a restyle calls
-		-- and it would otherwise put the glass tint back on a frame that is
-		-- meant to be black.
-		self.scrim:SetFillColor({ 0, 0, 0, 1 })
-		self.scrim:SetEdgeColor({ 0, 0, 0, 0 })
-	end
-	-- The placement furniture is accent-coloured, and a restyle changes what the
-	-- accent IS. Only worth doing if it has been built - which it has not, for
-	-- anyone who has never unlocked their frames.
-	if self._dockHandle then
-		self._dockHandle:ApplySkin()
-		self._dockHandle:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], 0.22 })
-		self._dockHandle:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.85 })
-		W.Color(self._dockHandle.label, c.text)
-	end
-	if self._ghosts then
-		for _, e in ipairs(EDGE_ORDER) do self._ghosts[e]:ApplySkin() end
-		self:HighlightGhost(self._litGhost)
-	end
-end
-
--- ---------------------------------------------------------------------------
--- geometry
--- ---------------------------------------------------------------------------
-
---- Panel size for a dock, in the panel's own units.
---
---  The deck's numbers, capped at the deck's own PROPORTION of the screen, and
---  the cap is not decoration - it is the first thing that had to be checked and
---  it failed. 910 deck px is 84% of the deck's 1080-tall canvas, which at
---  profile.scale 0.71 is 646 of a 768-unit screen and fits with room to spare.
---  At scale 1.0 the same 910 is 910 of 768: eighteen per cent taller than the
---  screen, hanging off both ends, on any UI running at full scale.
---
---  So the size is the deck value or the deck's fraction of the screen,
---  whichever is smaller. At 0.71 the screen is 1082 panel units tall and the
---  cap lands at 912, so the deck's 910 wins untouched and nothing changes for
---  anyone using the design scale. At 1.0 it clamps to 647 and the drawer keeps
---  the same share of the screen the deck drew it with, which is what the
---  proportion was expressing in the first place.
---
---  The handoff's "fixed panel size" is about not resizing with CONTENT. It is
---  not a claim that the panel can be bigger than the screen.
-local DECK_W, DECK_H = 1920, 1080
-
-function TB:PanelSize(edge)
-	local scale = A.db.profile.scale or 1
-	if scale <= 0 then scale = 1 end
-
-	local sw = ((UIParent:GetWidth()  or 1365) / scale)
-	local sh = ((UIParent:GetHeight() or 768)  / scale)
-
-	if IsVertical(edge) then
-		return math.min(PANEL_V_W, sw * (PANEL_V_W / DECK_W)),
-		       math.min(PANEL_V_H, sh * (PANEL_V_H / DECK_H))
-	end
-
-	-- The flat panel has a FLOOR as well as a cap, and the vertical one does not.
-	--
-	-- The proportional clamp is the right rule for a panel whose height is the
-	-- long axis: shrink it and you lose rows off a list, which is what the addon
-	-- list gives way for. On the flat panel height is the SHORT axis and nothing
-	-- on it is a list - the identity column is a title, a card and a row of
-	-- glyphs, all fixed - so shrinking it does not drop rows, it draws them
-	-- through the floor. On a 600-unit screen at scale 1.0 the proportion asks
-	-- for 133 against a column that cannot be built in less than 218.
-	--
-	-- So: no smaller than the tallest fixed column, and still never taller than
-	-- the screen. The floor is a fifth of a 1080 canvas, so the second clamp only
-	-- bites on something extraordinary.
-	local floorH = math.min(self:HorizontalFloor(), sh)
-	return math.min(PANEL_H_W, sw * (PANEL_H_W / DECK_W)),
-	       math.min(PANEL_H_H, math.max(floorH, sh * (PANEL_H_H / DECK_H)))
-end
-
---- How far off screen the panel sits when closed: its own depth on the docking
---  axis, so the whole thing clears the edge.
-local ClosedOffset = W.ClosedOffset
-
-function TB:Layout()
-	if not self.panel then return end
-
-	local edge  = self:Dock()
-	local scale = A.db.profile.scale
-	local w, h  = self:PanelSize(edge)
-
-	self.panel:SetScale(scale)
-	self.rail:SetScale(scale)
-	self.scrim:SetScale(scale)
-
-	self.panel:SetSize(w, h)
-	Glass.SetPanelCorner(self.panel, PANEL_CORNER)
-
-	-- The rail runs the panel's full extent on the cross axis in the deck, but
-	-- only as far as its contents need; layer 1 has one chevron in it, so it is
-	-- sized to that plus padding and grows later.
-	-- Sized in LayoutRail, which knows how many pins there are. This is the
-	-- floor: the chevron and the gear, which are always both there.
-	local railLen = RAIL_PAD + RAIL_CHEV + RAIL_PAD + RAIL_ICON + RAIL_PAD
-	if IsVertical(edge) then
-		self.rail:SetSize(RAIL_W, math.max(self.rail:GetHeight() or 0, railLen))
-	else
-		self.rail:SetSize(math.max(self.rail:GetWidth() or 0, railLen), RAIL_W)
-	end
-
-	local ox, oy = ClosedOffset(edge, w, h)
-	local t = self._travel or 0
-	-- t = 0 closed (fully off screen), t = 1 open (flush to the edge)
-	local dx, dy = ox * (1 - t), oy * (1 - t)
-
-	self.panel:ClearAllPoints()
-	self.rail:ClearAllPoints()
-	self.scrim:ClearAllPoints()
-
-	-- The rail bites INTO the panel so the curve on that side disappears behind
-	-- the drawer and the two read as one shape - but it is anchored to the
-	-- SCREEN and clamped, not hung off the panel.
-	--
-	-- Hung off the panel it travelled with it: shut, the panel is a full width
-	-- off screen, so the rail went with it and sat a bite's worth past the
-	-- screen edge with its left side - and the icons on it - cut off. The bite
-	-- is a join with the panel, and there is nothing to join to once the panel
-	-- has gone.
-	--
-	-- So the offset is computed and clamped at the edge. Open it lands inside
-	-- the panel by RAIL_BITE; shut it stops flush against the screen, whole.
-	if edge == "LEFT" then
-		self.panel:SetPoint("LEFT", UIParent, "LEFT", dx, 0)
-		self.rail:SetPoint("LEFT", UIParent, "LEFT",
-			math.max(0, dx + w - RAIL_BITE), 0)
-	elseif edge == "RIGHT" then
-		self.panel:SetPoint("RIGHT", UIParent, "RIGHT", dx, 0)
-		self.rail:SetPoint("RIGHT", UIParent, "RIGHT",
-			math.min(0, dx - w + RAIL_BITE), 0)
-	elseif edge == "TOP" then
-		self.panel:SetPoint("TOP", UIParent, "TOP", 0, dy)
-		self.rail:SetPoint("TOP", UIParent, "TOP", 0,
-			math.min(0, dy - h + RAIL_BITE))
-	else
-		self.panel:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, dy)
-		self.rail:SetPoint("BOTTOM", UIParent, "BOTTOM", 0,
-			math.max(0, dy + h - RAIL_BITE))
-	end
-
-	-- Chevron at the inboard end, gear at the far one, pins between. The rail
-	-- is read from the drawer outwards, so the control that closes it comes
-	-- first.
-	local vertical = IsVertical(edge)
-	self.rail.chev:ClearAllPoints()
-	self.rail.gear:ClearAllPoints()
-
-	if vertical then
-		self.rail.chev:SetPoint("TOP", self.rail, "TOP", 0, -RAIL_PAD)
-		self.rail.gear:SetPoint("BOTTOM", self.rail, "BOTTOM", 0, RAIL_PAD)
-	else
-		self.rail.chev:SetPoint("LEFT", self.rail, "LEFT", RAIL_PAD, 0)
-		self.rail.gear:SetPoint("RIGHT", self.rail, "RIGHT", -RAIL_PAD, 0)
-	end
-
-	-- The scrim covers exactly the strip the panel is over, so it travels with
-	-- it rather than sitting still and being revealed.
-	self.scrim:SetSize(w, h)
-	self.scrim:SetPoint("CENTER", self.panel, "CENTER", 0, 0)
-	Glass.SetPanelCorner(self.scrim, PANEL_CORNER)
-	self.scrim:SetAlpha((tonumber(A.Config:Module('toolbox').scrim) or 0.28) * t)
-	self.scrim:SetShown(t > 0.001)
-
-	self:PointChevron()
-end
-
--- Which way the chevron points, as a rotation of the art.
---
--- `Chevron.tga` IS A V - it points DOWN. The generator says so in as many
--- words ("A small V, for 'there is something folded away under here'"), and the
--- first version of this file assumed it pointed RIGHT and built its rotations
--- from there. Every dock was ninety degrees out: docked left, closed, it drew a
--- downward V on a drawer that opens sideways.
---
--- Rotation is counter-clockwise, so a down-pointing arrow (0, -1) becomes
--- (1, 0) - right - at +pi/2.
-local CHEV_DOWN, CHEV_UP    = 0, math.pi
-local CHEV_RIGHT, CHEV_LEFT = math.pi / 2, -math.pi / 2
-
---- The chevron points the way the drawer will go if you click it.
---
---  Left and right docks get < and >; top and bottom get ^ and v. The drawer
---  moves along the axis it is docked on, so an arrow across that axis would be
---  pointing at nothing.
-function TB:PointChevron()
-	local edge = self:Dock()
-	local open = (self._want or 0) > 0.5
-	local g = self.rail and self.rail.chev and self.rail.chev.glyph
-	if not g then return end
-
-	-- Open, the click RETREATS the drawer to its own edge; shut, it emerges
-	-- away from it.
-	-- W.PointChevron, which the party dock handle uses too. Eight cases and
-	-- one of them backwards is an arrow pointing at nothing.
-	self._chevronFacing = W.PointChevron(g, edge, open)
-end
-
--- ---------------------------------------------------------------------------
--- opening and closing
--- ---------------------------------------------------------------------------
-
-
---- The drawer is TRANSIENT: Escape shuts it, and so does a click anywhere
---- else on the screen.
---
---  TWO FRAMES, because the drawer never hides. It SLIDES - it travels off
---  the edge of the screen and stays shown the whole time - so neither of the
---  two usual mechanisms can be pointed at the panel itself.
---
---  ESCAPE is UISpecialFrames, which works by HIDING the frame it is given.
---  Given the panel that would stop the slide dead and leave the travel
---  bookkeeping believing it was still out. So it is given a proxy: an empty
---  frame that is shown exactly while the drawer is out, and whose OnHide -
---  which is Escape, or CloseSpecialWindows, or anything else the client
---  closes windows with - shuts the drawer properly.
---
---  A CLICK ELSEWHERE is a catcher across the whole screen, under everything
---  the drawer draws: the panel is at frame level 10 and the rail at 20, so
---  both stay clickable and everything outside them is not. The click is
---  eaten, which is what transient means - the first click puts the drawer
---  away rather than doing two things at once.
-function TB:Transient()
-	if self._escape then return end
-	if not CreateFrame then return end
-
-	local esc = CreateFrame("Frame", ADDON .. "ToolboxEscape", UIParent)
-	esc:Hide()
-	esc:SetScript("OnHide", function()
-		-- OURS, or the client's? Only the client's should close anything.
-		if TB._closing then return end
-		if TB.enabled and TB:IsOpen() then TB:SetOpen(false) end
+	r:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	-- In unlock, a drag to the other half of the screen swaps the trunks.
+	r:SetScript("OnDragStart", function(self2)
+		if not (A.Movers and A.Movers.unlocked) then return end
+		if InCombatLockdown() then
+			A:Print(A.Bad(L.toolbox.root.combat))
+			return
+		end
+		self2.__dragging = true
 	end)
-	self._escape = esc
-	if UISpecialFrames then
-		UISpecialFrames[#UISpecialFrames + 1] = esc:GetName()
-	end
-
-	local catch = CreateFrame("Frame", nil, UIParent)
-	catch:SetAllPoints(UIParent)
-	catch:SetFrameStrata("FULLSCREEN_DIALOG")
-	catch:SetFrameLevel(0)
-	catch:EnableMouse(true)
-	-- AND THE CLICK GOES THROUGH. A mouse-enabled frame eats what it catches,
-	-- so the first click anywhere else only shut the drawer - and the thing
-	-- the player was actually clicking on, which might be anything, never
-	-- heard about it. SetPropagateMouseClicks hands it on to whatever is
-	-- underneath after we have seen it, which is the behaviour a transient
-	-- wants: closing is a side effect of the click rather than the whole of
-	-- it.
-	if catch.SetPropagateMouseClicks then
-		pcall(catch.SetPropagateMouseClicks, catch, true)
-	end
-	catch:Hide()
-	catch:SetScript("OnMouseDown", function()
-		if TB.enabled and TB:IsOpen() then TB:SetOpen(false) end
+	r:SetScript("OnDragStop", function(self2)
+		if not self2.__dragging then return end
+		self2.__dragging = nil
+		self2.__dragged = true
+		local us = UIParent:GetEffectiveScale() or 1
+		local mx = GetCursorPosition()
+		TB:DropAt((mx or 0) / us)
 	end)
-	self._catch = catch
+	self.root = r
+	return r
 end
 
---- Both of them following the drawer, which is the only state they have.
-function TB:Watch(open)
-	self:Transient()
-	if not self._escape then return end
-
-	-- FLAGGED WHILE WE DO IT. Hiding the proxy ourselves fires the same
-	-- OnHide Escape does, and without this closing the drawer closed it a
-	-- second time - harmless today and a loop the moment anything is added
-	-- to the close path.
-	self._closing = true
-	self._escape:SetShown(open and true or false)
-	self._catch:SetShown(open and true or false)
-	self._closing = nil
+--- A drag let go at `x` (UIParent units): the side of the screen it is on.
+function TB:DropAt(x)
+	local side = (x > (UIParent:GetWidth() or 0) / 2) and "RIGHT" or "LEFT"
+	if side == self:Dock() then return false end
+	if not self:SetDock(side) then return false end
+	A:Print(A.F(L.common.toolbox_docked_s, A.Val(side:lower())))
+	return true
 end
 
-function TB:SetOpen(open, instant)
-	local c = Char()
-	self:Watch(open)
-	if c then c.open = open and true or false end
-
-	self._want = open and 1 or 0
-	self:PointChevron()
-	self:SetPolling(open and true or false)
-
-	if open then
-		-- Re-read EVERYTHING first, then draw. Opening the drawer is the moment
-		-- somebody looks at these, and it costs six function calls.
-		--
-		-- The specific bug was Gold, and it is fixed above by giving it the
-		-- login event the others had. This is the general version: any provider
-		-- whose value was not available yet at login, or whose event we have
-		-- not thought of, is correct by the time it is seen rather than correct
-		-- only after the thing it measures happens to change.
-		self:RefreshProviders()
-		self:RefreshWidgets()
-	end
-
-	if instant or not self.panel then
-		self._travel = self._want
-		W.StopSlide(self.panel)
-		self:Layout()
-		return
-	end
-
-	-- PER FRAME, off the panel itself. This used to ride the shared 0.1s
-	-- ticker, which is three steps across a 340ms slide - a snap with two
-	-- stops in it rather than a drawer being drawn out. Reversing is still
-	-- only changing `_want`, because the step clamps rather than queues.
-	--
-	-- The panel is the host because it is on screen for the whole slide: it
-	-- travels off the edge rather than being hidden, so it always gets its
-	-- OnUpdate.
-	W.DriveSlide(self.panel, self, SLIDE_RATE, TB.Layout)
+function TB:PlaceRoot()
+	local r = self:BuildRoot()
+	r:SetScale(A.db.profile.scale or 1)
+	r:ClearAllPoints()
+	local left = self:Dock() == "LEFT"
+	r:SetPoint("CENTER", UIParent, left and "TOPLEFT" or "TOPRIGHT",
+		left and EDGE_X or -EDGE_X, -TOP_Y)
+	r:Show()
+	local t = Trunk()
+	t.capGap = CAP_GAP
+	t:SetRoot(r)
 end
 
-function TB:Toggle()
-	self:SetOpen(not self:IsOpen())
-end
-
+--- Dock to LEFT or RIGHT. The World trunk takes the other side: a minimap on
+--  this side is mirrored across. Refused in combat, where the minimap's place
+--  is not ours to change.
 function TB:SetDock(edge)
-	edge = edge and edge:upper()
-	if not EDGES[edge] then return false end
+	edge = edge and tostring(edge):upper()
+	if not SIDES[edge] or InCombatLockdown() then return false end
 	local c = Char()
 	if c then c.docked = edge end
-	self:Layout()
-
-	-- ...and the CONTENT, which is the whole of what changes.
-	--
-	-- This was missing, and it is the bug you see rather than the one you
-	-- reason about: Layout moves and resizes the panel, LayoutRail moves the
-	-- rail, and neither of them touches what is drawn inside. Re-docking from a
-	-- side to the top therefore put a 1280x240 panel at the top of the screen
-	-- with the tall panel's column of sections still laid out down the left of
-	-- it, most of them below the panel's own bottom edge.
-	--
-	-- Nothing caught it because every test that looks at the flat layout calls
-	-- Refresh* afterwards, and those call LayoutContent. The one path nobody
-	-- had was the one the player uses: drag, let go, look.
-	self:LayoutContent()
-	self:LayoutRail()
-	self:AnchorDockHandle()
+	self:CloseAll()
+	self:PlaceRoot()
+	local MMm = A:GetModule("minimap")
+	if MMm and MMm.enabled and MMm.frame and A.Movers and A.Movers.PointAt then
+		local x = A.Movers.PointAt(MMm.frame, "CENTER")
+		local onLeft = x and x < (UIParent:GetWidth() or 0) / 2
+		if x and ((edge == "LEFT") == onLeft) then A.Movers:Mirror("minimap") end
+	end
+	self:LayoutPins()
 	return true
 end
 
 -- ---------------------------------------------------------------------------
--- drag to re-dock
---
--- Four targets, not a position. Grab the rail while frames are unlocked, four
--- ghosts appear where the drawer could go, the one nearest the cursor lights
--- up, and letting go docks it there. That is the Windows-snap idiom rather than
--- the Movers one, and it is the honest shape for something with four legal
--- answers: dragging the drawer itself would imply it could be left in the
--- middle, which it cannot.
+-- branches
 -- ---------------------------------------------------------------------------
 
---- Which edge a screen point is nearest, as a FRACTION of each axis rather than
---  in pixels.
---
---  Pixels are the obvious version and the wrong one: on a 2560x1440 screen the
---  centre is 1280 from either side and 720 from top or bottom, so a plain
---  distance says "top" for the entire middle third of the screen and the two
---  side docks are unreachable from anywhere near the middle. Fractions make
---  each edge own its own quarter, wedge-shaped, which is what the gesture looks
---  like it should do.
---
---  Ties resolve to whichever comes first in EDGE_ORDER, because a comparison
---  that has to be strict somewhere is better than one that is arbitrary.
--- W.NearestEdge, which the party dock handle uses too. It answers nil on a
--- screen with no size rather than guessing; this dock falls back to the one
--- it is already on, which is the answer that changes nothing.
-function TB:NearestEdge(x, y, w, h)
-	return W.NearestEdge(x, y, w, h) or self:Dock()
+TB.BRANCHES = {
+	{ key = "menu",     icon = "menu",     order = 100, width = 300 },
+	{ key = "widgets",  icon = "widgets",  order = 200, width = 360 },
+	{ key = "addons",   icon = "addons",   order = 300, width = 360 },
+	{ key = "settings", icon = "gear",     order = 400, width = 300 },
+	{ key = "news",     icon = "whatsnew", order = 500, width = 320 },
+}
+
+local BUILD = {}   -- key -> function(panel), filled in below
+local FILL = {}    -- key -> function(panel), lays the branch out and sizes it
+
+-- Spelled out, so the phrase check can see every key asked for.
+local LABELS = {
+	menu = L.toolbox.node.menu, widgets = L.toolbox.node.widgets,
+	addons = L.toolbox.node.addons, settings = L.toolbox.node.settings,
+	news = L.common.what_s_new,
+}
+
+local function Label(key) return LABELS[key] end
+
+function TB:Panel(key)
+	self.panels = self.panels or {}
+	local p = self.panels[key]
+	if p then return p end
+	local spec
+	for _, b in ipairs(self.BRANCHES) do if b.key == key then spec = b end end
+	if not spec then return nil end
+	p = Trunk():Branch("Toolbox" .. key:gsub("^%l", string.upper), spec.width)
+	p.key = key
+	p.head = A.Trunk.Head(p)
+	p.head:SetPoint("TOPLEFT", p, "TOPLEFT", PAD, -PAD)
+	p.head:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PAD, -PAD)
+	p.head:Set(Label(key), "")
+	if BUILD[key] then BUILD[key](self, p) end
+	self.panels[key] = p
+	return p
 end
 
-function TB:BuildGhosts()
-	if self._ghosts then return self._ghosts end
-	local ghosts = {}
-	for _, edge in ipairs(EDGE_ORDER) do
-		local g = Glass.CreatePanel(UIParent, { corner = PANEL_CORNER })
-		g:SetFrameStrata("FULLSCREEN_DIALOG")
-		-- Above the panel (10) and the rail (20) so a ghost on the edge the
-		-- drawer is ALREADY on is still visible, and below the handle (70) so it
-		-- never eats the drag.
-		g:SetFrameLevel(30)
-		g.tag = W.Text(g, "tbSection", "CENTER")
-		g.tag:SetPoint("CENTER", g, "CENTER", 0, 0)
-		g.tag:SetText(edge)
-		g:Hide()
-		ghosts[edge] = g
-	end
-	self._ghosts = ghosts
-	return ghosts
+function TB:IsBranchOpen(key)
+	local p = self.panels and self.panels[key]
+	return p and p:IsShown() and true or false
 end
 
---- Each ghost is the drawer's own footprint on that edge - the size the panel
---  WOULD be there, at the panel's scale. A uniform strip on each side would be
---  cheaper and would lie about the top and bottom docks, which are a different
---  shape entirely.
-function TB:LayoutGhosts()
-	local ghosts = self:BuildGhosts()
-	local scale = A.db.profile.scale
-	for _, edge in ipairs(EDGE_ORDER) do
-		local g = ghosts[edge]
-		local w, h = self:PanelSize(edge)
-		g:SetScale(scale)
-		g:SetSize(w, h)
-		g:ClearAllPoints()
-		g:SetPoint(edge, UIParent, edge, 0, 0)
-		Glass.SetPanelCorner(g, PANEL_CORNER)
+--- The branch that is open, or nil.
+function TB:OpenKey()
+	for _, b in ipairs(self.BRANCHES) do
+		if self:IsBranchOpen(b.key) then return b.key end
 	end
+	return nil
 end
 
---- The lit one is the one you would get. Everything else is a hint that it is
---  also available, which is the difference between four targets and one.
-function TB:HighlightGhost(edge)
-	local ghosts = self._ghosts
-	if not ghosts then return end
-	local c = Palette.c
-	for _, e in ipairs(EDGE_ORDER) do
-		local g = ghosts[e]
-		local on = (e == edge)
-		g:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], on and 0.30 or 0.07 })
-		g:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], on and 0.95 or 0.28 })
-		if g.tag then W.Color(g.tag, on and c.text or c.textFaint) end
-	end
-	self._litGhost = edge
+function TB:IsOpen() return self:OpenKey() ~= nil end
+
+function TB:Fill(key)
+	local p = self.panels and self.panels[key]
+	if p and FILL[key] then FILL[key](self, p) end
 end
 
-function TB:ShowGhosts(show)
-	if not show then
-		if self._ghosts then
-			for _, e in ipairs(EDGE_ORDER) do self._ghosts[e]:Hide() end
-		end
-		self._litGhost = nil
-		return
-	end
-	local ghosts = self:BuildGhosts()
-	self:LayoutGhosts()
-	self:HighlightGhost(self:Dock())
-	for _, e in ipairs(EDGE_ORDER) do ghosts[e]:Show() end
+function TB:OpenBranch(key)
+	local p = self:Panel(key)
+	if not p then return false end
+	-- Every value read again on opening: one not available at login, or whose
+	-- event we have not thought of, is right by the time it is seen.
+	if key == "widgets" then self:RefreshProviders() end
+	if key == "addons" then self._addonRows = self:AddonRows() end
+	self:Fill(key)
+	if not Trunk():Place(key, p) then return false end
+	p:Show()
+	if key == "news" then self:MarkNewsRead() end
+	if key == "widgets" then self:SetPolling(true) end
+	return true
 end
 
---- The handle sits ON the rail, because the rail is the part of the drawer that
---  is always on screen - there is no grabbing a panel that is currently a
---  screen's width off to the left.
---
---  FULLSCREEN_DIALOG at a level above the rail's, not DIALOG. DIALOG is BELOW
---  FULLSCREEN_DIALOG in the strata order, so a handle there would be painted
---  under the very frame it is meant to be a handle for and would never see a
---  click. That is the same mistake the chat resize grip made.
-function TB:BuildDockHandle()
-	if self._dockHandle or not self.rail then return self._dockHandle end
-
-	local h = Glass.CreatePanel(UIParent, { corner = RAIL_CORNER, shadow = 8 })
-	h:SetFrameStrata("FULLSCREEN_DIALOG")
-	h:SetFrameLevel((self.rail:GetFrameLevel() or 20) + 50)
-	h:SetAllPoints(self.rail)
-	h:EnableMouse(true)
-	h:RegisterForDrag("LeftButton")
-	h:Hide()
-
-	local c = Palette.c
-	h:SetFillColor({ c.accent[1], c.accent[2], c.accent[3], 0.22 })
-	h:SetEdgeColor({ c.accent[1], c.accent[2], c.accent[3], 0.85 })
-
-	-- Beside the rail, never on it. The rail is RAIL_W wide - forty-odd pixels -
-	-- and a label centred on it is a word laid across a strip narrower than
-	-- itself. AnchorDockHandle puts it on whichever side has screen to spare.
-	--
-	-- A child of the handle even though it is anchored OUTSIDE it: a region may
-	-- be positioned beyond its parent's bounds and still draws, and being a
-	-- child is what makes it inherit the handle's strata - which is the only
-	-- level above the drawer - and vanish with it.
-	local label = W.Text(h, "tbSection", "CENTER")
-	W.Color(label, c.text)
-	label:SetText(L.toolbox.build_dock_handle.toolbox)
-	h.label = label
-
-	local function Stop(self2)
-		self2:SetScript("OnUpdate", nil)
-		self._dragging = nil
-		self:ShowGhosts(false)
-
-		local edge = self._dockTarget
-		self._dockTarget = nil
-		if edge and EDGES[edge] and edge ~= self:Dock() then
-			self:SetDock(edge)
-			A:Print(A.F(L.common.toolbox_docked_s, A.Val(edge:lower())))
-		end
-		self:AnchorDockHandle()
-	end
-
-	local function Drag(self2)
-		-- The fight can start, or the frames can be locked from the options
-		-- panel, while the button is still down. Re-docking moves the rail, and
-		-- the rail is the parent of other addons' launcher buttons - some of
-		-- which carry secure templates - so finishing the gesture mid-combat is
-		-- a protected action. Drop the drag rather than find out.
-		--
-		-- DISARMED first. Stop is the drop path and commits whatever is armed,
-		-- so falling into it with a target still set does in combat exactly the
-		-- thing this guard exists to prevent - and it would have looked fine in
-		-- a test that turned combat on before the cursor had armed anything.
-		if InCombatLockdown() or not (A.Movers and A.Movers.unlocked) then
-			self._dockTarget = nil
-			return Stop(self2)
-		end
-
-		local us = UIParent:GetEffectiveScale() or 1
-		if us <= 0 then return end
-		local mx, my = GetCursorPosition()
-		local edge = self:NearestEdge(mx / us, my / us)
-		if edge ~= self._litGhost then self:HighlightGhost(edge) end
-		self._dockTarget = edge
-	end
-
-	h:SetScript("OnDragStart", function(self2)
-		if InCombatLockdown() then
-			A:Print(A.Bad(L.toolbox.build_dock_handle.can_t_re_dock))
-			return
-		end
-		self._dragging = true
-		self._dockTarget = self:Dock()
-		self:ShowGhosts(true)
-		self2:SetScript("OnUpdate", Drag)
-	end)
-
-	h:SetScript("OnDragStop", Stop)
-
-	-- The label says WHAT, the tooltip says HOW. Every other handle on screen
-	-- means "drag me anywhere"; this one means "drag me to one of four", and
-	-- there is nothing about a purple slab that distinguishes the two.
-	h:SetScript("OnEnter", function(self2)
-		if not GameTooltip then return end
-		GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
-		GameTooltip:SetText(L.common.toolbox)
-		GameTooltip:AddLine("Drag to any screen edge. The drawer docks to one of"
-			.. " four, and each edge has its own layout.", 0.8, 0.8, 0.85, true)
-		GameTooltip:Show()
-	end)
-	h:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-
-	self._dockHandle = h
-	self:AnchorDockHandle()
-	return h
+function TB:CloseBranch(key)
+	local p = self.panels and self.panels[key]
+	if p then p:Hide() end
 end
 
---- Which side of the rail the label goes on, and it is always the side the
---  SCREEN is on. Docked left the rail is hard against the left edge, so a label
---  to its left is a label off the screen.
-function TB:AnchorDockHandle()
-	local h = self._dockHandle
-	if not h or not h.label then return end
-	local edge = self:Dock()
-	h.label:ClearAllPoints()
-	if edge == "LEFT" then
-		h.label:SetPoint("LEFT", h, "RIGHT", 10, 0)
-	elseif edge == "RIGHT" then
-		h.label:SetPoint("RIGHT", h, "LEFT", -10, 0)
-	elseif edge == "TOP" then
-		h.label:SetPoint("TOP", h, "BOTTOM", 0, -10)
-	else
-		h.label:SetPoint("BOTTOM", h, "TOP", 0, 10)
-	end
+function TB:CloseAll()
+	for _, b in ipairs(self.BRANCHES) do self:CloseBranch(b.key) end
 end
 
---- Driven from Movers, so the drawer's gesture appears and goes away with
---  everything else's rather than needing its own command to find.
-function TB:ShowDockHandle(show)
-	if show then
-		self:BuildDockHandle()
-	elseif self._dragging then
-		-- Locked mid-drag. Nothing has been committed, so the ghosts go and the
-		-- dock stays where it was.
-		--
-		-- The tracker has to go with it. A hidden frame gets no OnUpdate, so one
-		-- left attached is not harmless - it is a script that fires the instant
-		-- the handle is shown again, with a stale target still armed.
-		self._dragging, self._dockTarget = nil, nil
-		if self._dockHandle then self._dockHandle:SetScript("OnUpdate", nil) end
-		self:ShowGhosts(false)
+--- Open a branch (Menu if none is named), or close them all. One at a time.
+function TB:SetOpen(open, _, key)
+	if not open then return self:CloseAll() end
+	key = key or "menu"
+	if self:IsBranchOpen(key) then return end
+	Trunk():Toggle(key)
+end
+
+function TB:Toggle(key)
+	Trunk():Toggle(key or self:OpenKey() or "menu")
+end
+
+function TB:AddNodes()
+	local t = Trunk()
+	for _, b in ipairs(self.BRANCHES) do
+		local key = b.key
+		t:AddNode(key, {
+			icon = b.icon, label = Label(key), order = b.order,
+			transient = true,
+			available = function() return TB.enabled and true or false end,
+			isOpen = function() return TB:IsBranchOpen(key) end,
+			open = function() TB:OpenBranch(key) end,
+			close = function() TB:CloseBranch(key) end,
+			badge = key == "news" and function() return TB:NewsUnread() end or nil,
+		})
 	end
-	local h = self._dockHandle
-	if not h then return end
-	h:SetShown(show and true or false)
-	if show then self:AnchorDockHandle() end
 end
 
 -- ---------------------------------------------------------------------------
 -- lifecycle
 -- ---------------------------------------------------------------------------
 
---- Only the two that cannot be event-driven, and only while the drawer is on
---  screen. A closed drawer shows no numbers, so polling for them is work for
---  nobody - and latency is refreshed by the client about every 30s anyway, so
---  asking faster than that is a lie dressed as precision.
+--- Latency and framerate cannot be event-driven: polled while the Widgets
+--  branch is open, and only then.
 local POLL_EVERY = 1.0
-
-local function PollTick(self, dt)
-	self._pollAccum = (self._pollAccum or 0) + dt
-	if self._pollAccum < POLL_EVERY then return end
-	self._pollAccum = 0
-	self:RefreshProviders("Latency")
-	self:RefreshProviders("FPS")
-	self:RefreshWidgets()
-end
 
 function TB:SetPolling(on)
 	if on and not self._polling then
 		self._polling = true
-		-- Due IMMEDIATELY, not in a second's time. Latency and framerate are the
-		-- two that cannot be event-driven, so a fresh accumulator means the
-		-- first thing you see on opening the drawer is up to a second old - and
-		-- on the very first open of a session it is whatever GetNetStats said
-		-- before the client had pinged anything, which is nothing.
+		-- Due at once, so the first numbers seen are fresh.
 		self._pollAccum = POLL_EVERY
-		A:RegisterTicker(self._pollToken, function(_, dt) PollTick(TB, dt) end)
+		A:RegisterTicker(self._pollToken, function(_, dt)
+			TB._pollAccum = (TB._pollAccum or 0) + dt
+			if TB._pollAccum < POLL_EVERY then return end
+			TB._pollAccum = 0
+			TB:RefreshProviders("Latency")
+			TB:RefreshProviders("FPS")
+			TB:RefreshWidgets()
+		end)
 	elseif not on and self._polling then
 		self._polling = nil
 		A:UnregisterTicker(self._pollToken)
@@ -879,12 +314,15 @@ end
 
 function TB:OnEnable()
 	self._pollToken = self._pollToken or {}
-	self:Build()
-	self:BuildContent()
+	self._menuToken = self._menuToken or {}
+	self:BuildRoot()
+	-- The glyph breathes with the HUD; the trunk's frame, and the branches and
+	-- pins on it, are registered by the trunk.
+	if A.Fader then A.Fader:Register(self.root, {}) end
+	self:AddNodes()
+	self:PlaceRoot()
 	self:PublishWidgets()
 
-	-- The event-driven four. Each names the events that can change it, so a
-	-- widget nobody is looking at still costs nothing between them.
 	for _, prov in ipairs(self.PROVIDERS) do
 		for _, ev in ipairs(prov.events or {}) do
 			A:RegisterEvent(self, ev, function(_, event)
@@ -896,174 +334,92 @@ function TB:OnEnable()
 			end)
 		end
 	end
-
 	self:XPTick(false)
 	self:RefreshProviders()
 
-	-- Ours is a display too, so it listens the same way any other would. A third
-	-- party writing to its own object updates our grid with no wiring at all.
+	-- Ours is a display too: a third party writing to its own object updates
+	-- the Widgets branch with no wiring at all.
 	local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
 	if ldb and ldb.RegisterCallback and not self._ldbHooked then
 		self._ldbHooked = true
-		-- The registering object first, not the library.
 		pcall(ldb.RegisterCallback, self, "LibDataBroker_AttributeChanged",
-			function() if TB:IsOpen() then TB:RefreshWidgets() end end)
+			function() TB:RefreshWidgets() end)
 	end
 
-	self:SetOpen(self:IsOpen(), true)
-	self:SetPolling(self:IsOpen())
-
-	-- Discovery starts HERE now. It used to be kicked off by the minimap module
-	-- on PLAYER_LOGIN, and when the drawer went so did the only caller - so the
-	-- registry callbacks were never subscribed and the fifteen-second retry
-	-- never ran. Every launcher that finished loading after us was invisible.
-	A.Launchers:StartScanning({ [self.panel] = true, [self.rail] = true })
-
+	A.Launchers:StartScanning({ [self.root] = true, [Trunk():Frame()] = true })
 	self:ClaimPins()
-	self:LayoutRail()
+	self:LayoutPins()
 
-	-- THE MENU ROW IS NOT FIXED FOR THE SESSION any more, and until now it was
-	-- treated as though it were: MicroList was worked out at build and again on
-	-- a config change, which is fine while every door is a global that either
-	-- exists or does not. The Talents door asks a question whose answer changes
-	-- while you play, and a character who dings 10 with the drawer open would
-	-- have gone on not having it until they opened the settings.
-	--
-	-- PLAYER_ENTERING_WORLD as well as the level-up, because a character who
-	-- was already past it logs in with no level-up to fire, and the row is
-	-- first laid out before the client will answer the question at all.
+	-- The Talents door appears at level 10, and a character past it logs in
+	-- with no level-up to fire.
 	for _, ev in ipairs({ "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" }) do
-		A:RegisterEvent(self, ev, function() TB:RefreshMicro() TB:Layout() end)
+		A:RegisterEvent(self, ev, function() TB:RefreshMicro() end)
 	end
 
-	-- The HUD breathes and this was the one thing that did not.
-	--
-	-- Every other module registers what it draws, and the Toolbox registered
-	-- nothing at all - so the rail sat at full brightness against a dimmed
-	-- interface, which is the one place a missing registration is visible.
-	--
-	-- The rail and the panel, NOT the scrim: the scrim's alpha is ours, written
-	-- on every Layout from the slide position, and a second writer would fight
-	-- it once per frame while the drawer moves. That is the rule the aura trays
-	-- already follow - one owner per alpha.
-	A.Fader:Register(self.rail, {})
-	A.Fader:Register(self.panel, {})
+	-- The other energy: nodes only in a fight.
+	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function() Trunk():SetQuiet(true) end)
+	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function() Trunk():SetQuiet(false) end)
 
-	-- The drawer's own placement gesture, on the same switch as everyone else's.
-	-- Keyed by module name so a disable/enable cycle replaces the watcher rather
-	-- than stacking a second one.
+	-- "Unlock frames" reads the movers live, so it is redrawn when they change.
 	if A.Movers then
-		A.Movers:OnLockChanged("toolbox", function(unlocked)
-			TB:ShowDockHandle(unlocked)
-			-- ...and the SETTINGS TILE that reports the same fact.
-			--
-			-- "Unlock frames" is a mode tile: it has no stored value and reads
-			-- A.Movers.unlocked live, which is right - but only when something
-			-- asks. Nothing did. The tile was drawn when the drawer was built
-			-- and then only when a widget changed, so unlocking from the
-			-- options panel or `/aether lock`, or unlocking and locking again
-			-- with the drawer shut, left it reporting whatever it had said
-			-- last. Every other way of changing this already went through here.
-			TB:RefreshTiles()
-		end)
+		A.Movers:OnLockChanged("toolbox", function() TB:RefreshTiles() end)
 	end
 
 	A.Launchers:OnChanged("toolbox", function()
-		-- Re-claim on every change, not only at enable. A pin restored from
-		-- saved variables names an addon whose button may not exist yet: the
-		-- launcher sweep runs for fifteen seconds after login and LibDBIcon
-		-- announces buttons as their addons finish loading. Claiming once at
-		-- enable caught only whatever had already arrived, so a pinned addon
-		-- that loaded a moment later stayed in the saved list and never
-		-- appeared on the rail - which reads exactly like the pin not being
-		-- saved at all.
+		-- Re-claimed on every change: a pinned addon's button may arrive after
+		-- login, and claiming once would forget the pin.
 		TB:ClaimPins()
 		TB:RefreshAddons()
-		TB:LayoutRail()
+		TB:LayoutPins()
 	end)
 end
 
 function TB:OnDisable()
-	if A.Fader then
-		-- Unregister puts the alpha back to 1. A module switched off mid-fade
-		-- would otherwise leave its frames parked at whatever the fade had
-		-- reached, and nothing left running to bring them up.
-		if self.rail then A.Fader:Unregister(self.rail) end
-		if self.panel then A.Fader:Unregister(self.panel) end
-	end
+	self:CloseAll()
 	self:SetPolling(false)
-
-	-- The handle and the ghosts belong to the drawer, so a disabled drawer must
-	-- not leave a purple slab and four targets on screen for a frame that is no
-	-- longer there. The watcher goes too, or locking later puts them back.
 	if A.Movers and A.Movers.watchers then A.Movers.watchers.toolbox = nil end
-	self:ShowDockHandle(false)
-	self:ShowGhosts(false)
-
-	if self.panel then
-		self._want, self._travel = 0, 0
-		W.StopSlide(self.panel)
-		self:Layout()
-		self.panel:Hide()
-		self.rail:Hide()
-		self.scrim:Hide()
+	if self.root then
+		if A.Fader then A.Fader:Unregister(self.root) end
+		self.root:Hide()
 	end
+	Trunk():SetRoot(nil)
 end
 
 function TB:OnSkinChanged()
-	self:ApplySkin()
+	for _, p in pairs(self.panels or {}) do
+		A.Trunk.SkinBranch(p)
+		p.head:Paint()
+	end
+	local key = self:OpenKey()
+	if key then self:Fill(key) end
+	Trunk():Paint()
 end
 
 function TB:OnConfigChanged()
-	if not self.panel then return end
-	self.panel:Show()
-	self.rail:Show()
-	self:Layout()
-	-- The grids too. A column slider that writes a number nothing re-reads is
-	-- the same silent no-op as a mistyped option path, and the options walker
-	-- only proves the path RESOLVES.
-	self:RefreshWidgets()
-	self:RefreshTiles()
-	self:RefreshAddons()
-	self:RefreshMicro()
-	self:RefreshNews()
-	self:LayoutRail()
+	if not self.enabled then return end
+	self:PlaceRoot()
+	local key = self:OpenKey()
+	if key then
+		self:Fill(key)
+		Trunk():Place(key, self.panels[key])
+	end
+	self:LayoutPins()
 end
 
 -- ---------------------------------------------------------------------------
 -- the widgets, published rather than drawn
 --
--- The handoff draws six fixed cards. They are registered as LDB `data source`
--- objects instead, and the grid renders whatever data sources the player has
--- chosen - ours first, because ours are the six that ship.
---
--- Three things fall out of that, and the third is the reason:
---   * somebody else can write a widget in ten lines and no knowledge of this
---     addon, which is the entire point of the protocol;
---   * the grid is a LIST rather than a layout, the same shape as the settings
---     tiles and the pinned addons;
---   * our numbers appear in Titan, Bazooka and ChocolateBar for free, because
---     publishing is publishing.
---
--- The card has a big value and a small label. LDB offers `text`, or `value` +
--- `suffix`, plus `label`. Ours write value+suffix+label, which is the shape the
--- deck draws. Third-party sources overwhelmingly use `text`, often with colour
--- escapes already in it - so the card RENDERS a text it is given and does not
--- try to parse it.
+-- Ours are LDB `data source` objects, and the Widgets branch draws whatever
+-- data sources the player has chosen - ours first. So anyone can write a
+-- widget in ten lines, and our numbers show in Titan, Bazooka and
+-- ChocolateBar for free.
 -- ---------------------------------------------------------------------------
 
 local PREFIX = "AetherUI_"
 
---- Our six. `poll` marks the two that genuinely cannot be event-driven.
+--- Our six. Latency and FPS are polled; the rest follow their events, and
+--  every one has PLAYER_ENTERING_WORLD so it is right at login.
 TB.PROVIDERS = {
-	-- PLAYER_ENTERING_WORLD on every event-driven one, INCLUDING Gold.
-	--
-	-- Gold had only PLAYER_MONEY, which fires when your money CHANGES. At login
-	-- GetMoney answers 0 before the client has been told otherwise, so the one
-	-- read at enable wrote "0s" and nothing looked again until you earned or
-	-- spent something. Bag space and durability were right on the same screen
-	-- because they carry this event and Gold did not - which is exactly the
-	-- kind of difference that reads as "sometimes it works".
 	{ key = "Gold",       label = "Gold",
 	  events = { "PLAYER_MONEY", "PLAYER_ENTERING_WORLD" } },
 	{ key = "BagSpace",   label = L.toolbox.on_config_changed.bag_space,  events = { "BAG_UPDATE", "PLAYER_ENTERING_WORLD" } },
@@ -1095,8 +451,7 @@ local function BagSpace()
 	return (total - free) .. " / " .. total
 end
 
---- The WORST slot, not the mean. A mean says "94%" while the one item that is
---  about to break says 3, and the number exists to tell you to go to a vendor.
+--- The WORST slot, not the mean: the number exists to send you to a vendor.
 local function Durability()
 	if not GetInventoryItemDurability then return nil end
 	local worst
@@ -1111,13 +466,10 @@ local function Durability()
 	return math.floor(worst * 100 + 0.5) .. "%"
 end
 
--- XP/hr has no API. Session-tracked, and three ways to be confidently wrong.
+-- XP/hr has no API: tracked over the session.
 TB._xp = { gained = 0, from = nil, last = nil }
 
---- A LEVEL-UP resets the numerator, not the session. UnitXP drops to near zero
---  and UnitXPMax changes, so the delta across the boundary is
---  (max - before) + after rather than after - before. Getting this wrong loses
---  a whole level's XP from the rate every time somebody dings.
+--- A level-up resets the bar, so the gain across it is (max - before) + after.
 function TB:XPTick(levelled)
 	local now  = UnitXP and UnitXP("player") or 0
 	local last = self._xp.last
@@ -1134,9 +486,7 @@ function TB:XPTick(levelled)
 	if not self._xp.from then self._xp.from = GetTime and GetTime() or 0 end
 end
 
---- Under a minute of session there is no rate, only a two-second window with a
---  big number extrapolated out of it. The aura tiles refuse to print a timer
---  they do not have; this refuses for the same reason.
+-- Under a minute there is no rate, only a big number from a short window.
 local XP_MIN_SESSION = 60
 
 function TB:XPRate()
@@ -1173,33 +523,26 @@ TB.VALUES = {
 	FPS        = Framerate,
 }
 
---- Register the six. Names are prefixed and permanent for the session: once
---  published, the name is a contract with whoever is displaying it.
+--- Register the six. A published name is a contract with whoever displays it.
 function TB:PublishWidgets()
 	local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
 	if not ldb or self._published then return end
 	self._published = {}
-
 	for _, p in ipairs(self.PROVIDERS) do
 		local name = PREFIX .. p.key
 		local obj  = ldb:GetDataObjectByName(name)
 		if not obj then
 			obj = ldb:NewDataObject(name, {
-				type   = "data source",
-				label  = p.label,
-				text   = "—",
-				value  = "—",
+				type = "data source", label = p.label, text = "—", value = "—",
 			})
 		end
 		self._published[p.key] = obj
 	end
-
 	self:RefreshProviders()
 end
 
---- Recompute ours and write them back onto the objects. Writing an attribute
---  fires the library's callback, which is what a display - including our own
---  grid - listens to, so there is no separate "tell the grid" step.
+--- Recompute ours and write them back, only on a change: each assignment
+--  fires the library's callback and a display redraws on it.
 function TB:RefreshProviders(only)
 	if not self._published then return end
 	for _, p in ipairs(self.PROVIDERS) do
@@ -1209,9 +552,6 @@ function TB:RefreshProviders(only)
 			if obj and fn then
 				local ok, v = pcall(fn)
 				local text = (ok and v) or "—"
-				-- Only write on a CHANGE. The library fires a callback per
-				-- assignment and the grid redraws on it; rewriting the same
-				-- string ten times a second is work nobody can see.
 				if obj.value ~= text then
 					obj.value = text
 					obj.text  = text
@@ -1221,24 +561,12 @@ function TB:RefreshProviders(only)
 	end
 end
 
--- ---------------------------------------------------------------------------
--- reading a data source onto a card
---
--- The card has a big value and a small label. LDB gives `text`, or
--- `value` + `suffix`, plus `label`. Ours write the first shape because that is
--- what the deck draws; third-party sources overwhelmingly write the second,
--- often with colour escapes already baked into `text`.
---
--- So: RENDER what is given, do not interpret it. A source handing us
--- "|cff00ff0042|r" gets that drawn, colour and all, and nothing here tries to
--- pull the number back out of it.
--- ---------------------------------------------------------------------------
-
 local EMDASH = "\226\128\148"
 
+--- A data source as a value and a label. Render what is given - a third
+--  party's `text` with colour escapes in it is drawn as it is.
 function TB:CardText(name, obj)
 	if not obj then return EMDASH, name end
-
 	local big
 	if obj.value ~= nil and obj.value ~= "" then
 		big = tostring(obj.value) .. (obj.suffix and tostring(obj.suffix) or "")
@@ -1247,17 +575,13 @@ function TB:CardText(name, obj)
 	else
 		big = EMDASH
 	end
-
-	-- The label, or failing that the registered name - which is at least a true
-	-- statement about where the number came from.
 	local small = obj.label
 	if small == nil or small == "" then small = name end
-
 	return big, tostring(small)
 end
 
---- Which data sources the grid shows. Ours by default; a LIST rather than a
---  layout, so a third party's can be added and the order is the player's.
+--- Which data sources the Widgets branch shows: ours by default, a list so a
+--  third party's can be added and the order is the player's.
 function TB:WidgetList()
 	local c = Char()
 	if c and type(c.widgets) == "table" and #c.widgets > 0 then return c.widgets end
@@ -1267,411 +591,97 @@ function TB:WidgetList()
 end
 
 -- ---------------------------------------------------------------------------
--- content
+-- the Widgets branch: readings on strands
+--
+-- README "Panel vocabulary": a reading is a 7 px hollow diamond on a 1 px
+-- strand, the value above it and the label below.
 -- ---------------------------------------------------------------------------
 
-local CARD_H, CARD_GAP = 46, 8
--- THE SHARED NUMBERS. 15a gives one header height and one body padding
--- for every panel in the interface, and a window of ours is a panel like
--- any other - the only reason these were local was that they were written
--- before there was anywhere to put them.
-local PAD = W.PANEL_PAD
+local READ_H, READ_GAP_X, READ_GAP_Y = 50, 14, 10
 
---- The deck letter-spaces its section headings. The client has no
---  letter-spacing, so the spacing is baked into the string - which is why these
---  read oddly in source and correctly on screen.
-local function Spaced(s)
-	return (s:gsub("(.)", "%1 "):gsub(" $", ""))
+BUILD.widgets = function(self, p)
+	p.cells = {}
+	p:HookScript("OnHide", function() TB:SetPolling(false) end)
 end
 
--- What's new: read from Core/Changelog.lua rather than written here.
---
--- These were two literals in this file, and the pair had to be edited together
--- every release: the paragraph, and the version it was marked read against.
--- Nothing checked that either one had been touched, so the failure mode was a
--- drawer confidently showing the previous release's news with no dot on it.
---
--- The changelog is the one place now, the .toc is the version, and the harness
--- refuses a build where the two disagree.
-
---- How many lines of the entry fit on the card.
---
---  ONE. It was two, and two changelog lines joined into a paragraph wrapped to
---  three rendered lines, which filled the card to its bottom edge and drew
---  straight through the Notes link sitting there. A card is a headline, not a
---  release summary; the rest is what Notes is for.
-TB.NEWS_LINES = 1
-
--- Where the type on the card starts, and where it stops. The tile is 38 wide at
--- 14 in from the edge with 12 of gap after it; everything else on the card -
--- the title, the body, the Notes link - lines up past that.
-local NEWS_TEXT_X   = 14 + 38 + 12
-local NEWS_TEXT_PAD = 14        -- and the gap at the right-hand end
-
---- Fit the body to the card: give it a width, then trim it to the height.
---
---  Called from both layouts once the card has been sized, because the card is
---  what changes between them - the tall panel gives the body about 300px to
---  wrap in and the flat one's identity column about 170, which is the same
---  sentence at two and at four lines.
---
---  Trimmed rather than trusted to be short. A changelog line is prose somebody
---  writes months from now, and the failure when it is too long is not a clipped
---  word: the body grows downward, the Notes link is anchored to the card's
---  bottom, and they are drawn through each other. Trimming is the only version
---  of this that cannot go wrong later.
---
---  Word at a time from the end, with "..." to say so. Not the unicode ellipsis:
---  Outfit is a text face and probably has one, but "probably" is how the gear
---  ended up rendering as three bytes of its own UTF-8, and three dots cost
---  nothing.
-function TB:SizeNewsBody()
-	local card = self.content and self.content.news
-	if not card or not card.body then return end
-
-	card.body:SetWidth(math.max(20,
-		(card:GetWidth() or 0) - NEWS_TEXT_X - NEWS_TEXT_PAD))
-
-	local avail = (card:GetHeight() or NEWS_H)
-		- 14                                                -- top padding
-		- (card.titleText:GetStringHeight() or 0)
-		- 6                                                 -- title to body
-		- 4                                                 -- body to link
-		- ((card.notes and card.notes:GetHeight()) or 0)
-		- 12                                                -- bottom padding
-	if avail <= 0 then card.body:SetText("") return end
-
-	local full = self:NewsText()
-	card.body:SetText(full)
-	if (card.body:GetStringHeight() or 0) <= avail then return end
-
-	-- Guarded by a counter as well as by the text running out. This loop shrinks
-	-- a string every pass so it does terminate, but a mock or a client that
-	-- reports a constant height would spin it forever, and a frozen client is a
-	-- worse bug than a long line.
-	local text = full
-	for _ = 1, 64 do
-		local shorter = text:gsub("%s*%S+$", "")
-		if shorter == "" or shorter == text then break end
-		text = shorter
-		card.body:SetText(text .. "...")
-		if (card.body:GetStringHeight() or 0) <= avail then return end
-	end
-	-- Nothing fit. One line beats an overlap.
-	card.body:SetText("...")
-end
-
---- The version the card is currently reporting on.
-function TB:NewsVersion()
-	local entry = A.Notes and A:Notes()
-	return (entry and entry.version) or A.version or "0.0.0"
-end
-
---- The card's body: the first couple of lines of the current entry, joined.
-function TB:NewsText()
-	local entry = A.Notes and A:Notes()
-	if not entry or not entry.lines or #entry.lines == 0 then
-		return "No notes for this build."
-	end
-	local out = {}
-	for i = 1, math.min(#entry.lines, self.NEWS_LINES) do out[i] = entry.lines[i] end
-	return table.concat(out, " ")
-end
-
---- Whether there is more than the card is showing, which is what decides
---  whether the Notes link is worth offering.
-function TB:NewsHasMore()
-	local entry = A.Notes and A:Notes()
-	if not entry or not entry.lines then return false end
-	if #entry.lines > self.NEWS_LINES then return true end
-	return #(A.CHANGELOG or {}) > 1
-end
-
-function TB:NewsUnread()
-	local c = Char()
-	return not (c and c.newsSeen == self:NewsVersion())
-end
-
-function TB:MarkNewsRead()
-	local c = Char()
-	if c then c.newsSeen = self:NewsVersion() end
-	if self.content and self.content.news then
-		self.content.news.dot:SetShown(self:NewsUnread())
-	end
-end
-
---- Refresh the card from the changelog. Called on build and on config change,
---  so a reload after a bump redraws rather than keeping the text it was built
---  with.
-function TB:RefreshNews()
-	local card = self.content and self.content.news
-	if not card then return end
-	-- The body's TEXT is set by SizeNewsBody, not here: it has to be trimmed to
-	-- whatever the card is at the moment, and only the layout knows that. Two
-	-- writers on one string means the untrimmed one wins whenever it runs last.
-	self:SizeNewsBody()
-	card.dot:SetShown(self:NewsUnread())
-	if card.notes then card.notes:SetShown(self:NewsHasMore()) end
-
-	-- The chip carries the running version, and it is re-measured rather than
-	-- left at whatever width it was built with: 0.2.0 is wider than 0.1.0 the
-	-- moment a number goes double-digit, and a pill sized once is a pill with
-	-- its own text hanging out of it.
-	local chip = self.content.chip
-	if chip and chip.text then
-		chip.text:SetText(A.F(L.common.aether_ui_s, A.version or "?"))
-		chip:SetWidth((chip.text:GetStringWidth() or 40) + 14)
-	end
-end
-
-function TB:BuildContent()
-	if self.content then return end
-	local panel = self.panel
-	if not panel then return end
-
-	local content = CreateFrame("Frame", nil, panel)
-	self.content = content
-
-	local title = W.Text(content, "tbTitle", "LEFT")
-	title:SetText(L.common.toolbox)
-	content.title = title
-
-	-- The version pill: DARK TEXT ON THE ACCENT, which is the one place the
-	-- deck asks for a filled chip rather than a glass one. `btnFill` and
-	-- `btnFillText` exist as their own tokens for exactly this - `accent` at
-	-- full alpha is not the same colour, and text at `text` on top of it is
-	-- unreadable.
-	-- Small, and beside the title rather than competing with it. The first cut
-	-- was an 18-tall lozenge carrying "Aether UI 0.1.0" at 11pt, which next to
-	-- an 18pt "Toolbox" is two headings - and the version is the least
-	-- interesting thing on the panel. Just the number, at 10, in a pill only as
-	-- tall as the text needs.
-	local chip = Glass.CreatePill(content, {})
-	chip:SetHeight(15)
-	chip:ApplySkin("btnFill", "btnFill")
-	local chipText = W.Text(chip, "tbChip", "CENTER", nil, 10)
-	chipText:SetPoint("CENTER", chip, "CENTER", 0, 0)
-	chipText:SetText(A.F(L.common.aether_ui_s, A.version or "0.1.0"))
-	W.Color(chipText, Palette.c.btnFillText)
-	chipText:SetShadowColor(0, 0, 0, 0)
-	chip:SetWidth((chipText:GetStringWidth() or 40) + 14)
-	chip.text = chipText
-	content.chip = chip
-
-	local close = CreateFrame("Button", nil, content)
-	close:SetSize(18, 18)
-	local x = W.Text(close, "tbCardTitle", "CENTER")
-	x:SetPoint("CENTER", close, "CENTER", 0, 0)
-	x:SetText("\195\151")
-	close.glyph = x
-	close:SetScript("OnClick", function() TB:SetOpen(false) end)
-	content.close = close
-
-	local card = Glass.CreatePanel(content, { corner = 18 })
-	card:SetHeight(84)
-	local tile = Glass.CreatePanel(card, { corner = 11 })
-	tile:SetSize(38, 38)
-	tile:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -14)
-	tile:ApplySkin("btnFill", "cardEdgeHi")
-	local spark = tile:CreateTexture(nil, "OVERLAY")
-	spark:SetPoint("CENTER", tile, "CENTER", 0, 0)
-	spark:SetSize(20, 20)
-	if Media:SetIcon(spark, "whatsnew") then
-		W.Tint(spark, Palette.c.btnFillText)
-	end
-	tile.spark = spark
-	card.tile = tile
-
-	local ct = W.Text(card, "tbCardTitle", "LEFT")
-	ct:SetPoint("TOPLEFT", tile, "TOPRIGHT", 12, -2)
-	ct:SetText(L.common.what_s_new)
-	card.titleText = ct
-
-	-- The unread dot needs a notion of READ, or it is either always lit or never
-	-- - so the last version whose notes were seen is persisted and the dot is
-	-- the comparison against the running one.
-	local dot = card:CreateTexture(nil, "OVERLAY")
-	dot:SetSize(7, 7)
-	dot:SetPoint("LEFT", ct, "RIGHT", 6, 0)
-	dot:SetTexture(Media.texture.circleMask or Media.texture.ring)
-	card.dot = dot
-
-	local body = W.Text(card, "tbCardBody", "LEFT")
-	body:SetPoint("TOPLEFT", ct, "BOTTOMLEFT", 0, -6)
-	-- One anchor and an explicit WIDTH, rather than being stretched between a
-	-- left and a right anchor. A stretched FontString has a width the client
-	-- knows and nothing else does - GetStringHeight, which is the only way to
-	-- ask how many lines this is going to be, needs a width that was SET. The
-	-- card cannot be checked for overflow without that number.
-	body:SetJustifyV("TOP")
-	card.body = body
-
-	-- Notes: the way to the rest of it. The card is a fixed 84px and shows the
-	-- first couple of lines of the current entry; everything else, and every
-	-- release before this one, is behind here.
-	--
-	-- A button rather than a hyperlink in the body text. SetHyperlinksEnabled on
-	-- a plain FontString needs a link type the client knows, and inventing one
-	-- means hooking the global hyperlink handler to catch it - a lot of surface
-	-- for a word that opens a panel we already have.
-	local notes = CreateFrame("Button", nil, card)
-	notes:SetSize(46, 16)
-	-- Lined up with the title and the body, all three of which start just past
-	-- the tile: 14 of padding, a 38 tile, 12 of gap.
-	notes:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", NEWS_TEXT_X, 12)
-	local nt = W.Text(notes, "tbLabel", "LEFT")
-	nt:SetPoint("LEFT", notes, "LEFT", 0, 0)
-	nt:SetText(L.toolbox.build_content.notes)
-	W.Color(nt, Palette.c.accent)
-	notes.text = nt
-	-- An underline, because "Notes" in the accent beside body text at the same
-	-- size reads as an emphasised word rather than as somewhere to click.
-	local rule = notes:CreateTexture(nil, "OVERLAY")
-	rule:SetTexture(Media.texture.flat)
-	rule:SetHeight(1)
-	rule:SetPoint("TOPLEFT", nt, "BOTTOMLEFT", 0, -1)
-	rule:SetPoint("TOPRIGHT", nt, "BOTTOMRIGHT", 0, -1)
-	do
-		local c = Palette.c.accent
-		rule:SetVertexColor(c[1], c[2], c[3], 0.55)
-	end
-	notes.rule = rule
-	notes:SetScript("OnClick", function()
-		TB:MarkNewsRead()
-		if A.Options and A.Options.Open then A.Options:Open("changelog") end
-	end)
-	card.notes = notes
-
-	card:EnableMouse(true)
-	card:SetScript("OnMouseUp", function() TB:MarkNewsRead() end)
-	content.news = card
-
-	local head = W.Text(content, "tbSection", "LEFT")
-	head:SetText(Spaced("WIDGETS"))
-	content.widgetsHead = head
-
-	content.cards = {}
-	self:RefreshWidgets()
-	self:BuildTiles()
-	self:BuildAddons()
-	self:BuildMicro()
-	-- Last, because it writes into the card AND re-measures the version chip,
-	-- and both want the whole header to exist first.
-	self:RefreshNews()
-end
-
-
---- One card per chosen data source. Frames are POOLED by index, because WoW has
---  no way to destroy one and a list that shrinks must not leak a second set.
-function TB:RefreshWidgets()
-	if not self.content then return end
+FILL.widgets = function(self, p)
 	local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
 	local list = self:WidgetList()
-
+	local cols = Cols("widgetColumns", 3)
+	local avail = p:GetWidth() - PAD * 2
+	local cw = (avail - READ_GAP_X * (cols - 1)) / cols
+	local a = Palette.c.accent
 	for i, name in ipairs(list) do
-		local card = self.content.cards[i]
-		if not card then
-			card = Glass.CreatePanel(self.content, { corner = 14 })
-			card:SetHeight(CARD_H)
-			card.value = W.Text(card, "tbValue", "LEFT")
-			card.value:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -9)
-			card.label = W.Text(card, "tbLabel", "LEFT")
-			card.label:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 12, 9)
-			W.Color(card.label, Palette.c.textDim)
-			self.content.cards[i] = card
+		local cell = p.cells[i]
+		if not cell then
+			cell = CreateFrame("Frame", nil, p)
+			cell:SetHeight(READ_H)
+			cell.value = W.Text(cell, "tbValue", "LEFT")
+			cell.value:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
+			cell.value:SetPoint("TOPRIGHT", cell, "TOPRIGHT", 0, 0)
+			cell.value:SetWordWrap(false)
+			cell.node = cell:CreateTexture(nil, "ARTWORK")
+			cell.node:SetTexture(Media.texture.diamondRim)
+			cell.node:SetSize(7, 7)
+			cell.node:SetPoint("LEFT", cell, "TOPLEFT", 0, -27)
+			cell.strand = cell:CreateTexture(nil, "BACKGROUND")
+			cell.strand:SetTexture(Media.texture.flat)
+			cell.strand:SetHeight(1)
+			cell.strand:SetPoint("LEFT", cell.node, "RIGHT", 0, 0)
+			cell.strand:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
+			cell.label = W.Text(cell, "tbLabel", "LEFT")
+			cell.label:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, -34)
+			cell.label:SetPoint("TOPRIGHT", cell, "TOPRIGHT", 0, -34)
+			cell.label:SetWordWrap(false)
+			p.cells[i] = cell
 		end
-
 		local obj = ldb and ldb:GetDataObjectByName(name)
 		local big, small = self:CardText(name, obj)
-		card.value:SetText(big)
-		card.label:SetText(small)
-		card.__source = name
-		card:Show()
+		cell.value:SetText(big)
+		cell.label:SetText(small)
+		W.Color(cell.value, Palette.c.text)
+		W.Color(cell.label, { Palette.c.text[1], Palette.c.text[2], Palette.c.text[3], 0.55 })
+		cell.node:SetVertexColor(a[1], a[2], a[3], 0.8)
+		cell.strand:SetVertexColor(a[1], a[2], a[3], 0.3)
+		cell.__source = name
+		cell:SetWidth(cw)
+		GridPlace(p, cell, i, PAD, PAD + HEAD_H, cols, cw, READ_H, READ_GAP_X, READ_GAP_Y)
+		cell:Show()
 	end
-
-	-- Surplus cards are hidden, not destroyed. These are OURS, so hiding is free
-	-- - the rule about never hiding a collected button does not reach them.
-	for i = #list + 1, #self.content.cards do
-		self.content.cards[i]:Hide()
-	end
-
-	self:LayoutContent()
+	for i = #list + 1, #p.cells do p.cells[i]:Hide() end
+	p.head:Set(Label("widgets"), ldb and "" or L.cmd.toolbox.libdatabroker)
+	local rows = RowsFor(#list, cols)
+	p:SetHeight(PAD + HEAD_H + rows * READ_H + math.max(0, rows - 1) * READ_GAP_Y + PAD)
 end
 
+function TB:RefreshWidgets()
+	if self:IsBranchOpen("widgets") then self:Fill("widgets") end
+end
 
 -- ---------------------------------------------------------------------------
--- UI settings - a list of tiles, not a layout of six
+-- the Settings branch: toggles as diamonds on strands
 --
--- The handoff names six settings and draws six tiles. Four of the six are not
--- the same KIND of thing, which is the finding: two are config paths, one is a
--- client CVar, one is not a setting at all, and one is deferred.
+-- Joe, 2026-10-07 (decision 4a): today's four - Zen, I.F.E.C., Unlock frames,
+-- Keybind mode - drawn as Lattice toggles. Three kinds of thing:
 --
---   setting   a path into the profile, written exactly the way the options
---             panel writes it - including the `modules.<name>.enabled` rule,
---             or a module could be switched off in here and carry on running
---   cvar      a client setting; ours to write, NOT ours to keep (see below)
---   launcher  an addon, from Core/Launchers.lua. Not a toggle at all
---
--- "Daylight skin" is deliberately absent: the skin pass is deferred, so the
--- tile is not built rather than built and hidden.
---
--- A LAUNCHER TILE HAS NO STATE TO SHOW. LDB launchers are buttons, not
--- toggles - there is no attribute that answers "are you on", and a `data
--- source` can carry text but a launcher cannot. So launcher tiles draw their
--- icon and name with no On/Off chip, and the chip stays reserved for entries
--- that genuinely have two states. Drawing a fake one would be the chat badge
--- mistake in different clothes: a control that says something it cannot know.
+--   setting   a path into the profile, written the way the options panel
+--             writes it, `modules.<name>.enabled` included
+--   mode      runtime state with nothing saved, read off the module that
+--             owns it every time
+--   launcher  an addon the player added from Core/Launchers.lua: no state,
+--             so no ON or OFF, because it cannot know
 -- ---------------------------------------------------------------------------
-
--- The four the deck asks for, and they are three different KINDS of thing:
---
---   setting   a path into the profile, written exactly the way the options
---             panel writes it - including the `modules.<name>.enabled` rule,
---             or a module could be switched off in here and carry on running
---   mode      a RUNTIME state with nothing saved behind it. Unlocked frames
---             and keybind mode are both like this: they are off at every
---             login by definition, they are read off the module that owns
---             them, and there is no default to configure because there is no
---             stored value to default.
---   launcher  an addon, from Core/Launchers.lua. Not a toggle at all
---
--- `cvar` was a fourth and is gone with the damage-numbers tile it existed for.
--- The mechanism is worth remembering rather than the tile: a client setting is
--- ours to write and NOT ours to keep, so it was never restored on disable -
--- unlike zen, which borrows CVars and gives them back because zen is temporary
--- and the player never asked for it.
---
--- Every tile carries a `tip`. A two-word label on a chip is a reminder for
--- somebody who already knows what it does; the tooltip is for everybody else,
--- and two of these four do something drastic enough to the screen that finding
--- out by pressing it is not reasonable.
---
--- A LAUNCHER TILE HAS NO STATE TO SHOW. LDB launchers are buttons, not
--- toggles - there is no attribute that answers "are you on", and a `data
--- source` can carry text but a launcher cannot. So launcher tiles draw their
--- icon and name with no On/Off chip, and the chip stays reserved for entries
--- that genuinely have two states. Drawing a fake one would be the chat badge
--- mistake in different clothes: a control that says something it cannot know.
 
 TB.TILES = {
 	{ kind = "setting", key = "zen", label = "Zen",
 	  path = { "modules", "zen", "enabled" },
 	  tip = L.toolbox.refresh_widgets.tip },
 
-	-- The in-flight player, NOT the flight timer. Combat collapse had this slot
-	-- and has gone to the options panel, where it already lived: four tiles is
-	-- what the deck draws and the one thing that had no home anywhere else was
-	-- this. A player who never wants a programme on a griffin still wants to
-	-- know when the griffin lands.
+	-- The in-flight player, not the flight timer.
 	{ kind = "setting", key = "ifec", label = L.common.i_f_e_c,
 	  path = { "modules", "ifec", "player" },
 	  tip = L.toolbox.refresh_widgets.tip2 },
 
-	-- Both of the below are MODES. They are read from the module that owns the
-	-- state rather than from the profile, because that is where the truth is:
-	-- /aether lock, the options panel and this tile all move the same flag, and
-	-- a copy of it in the profile would be a second answer that goes stale the
-	-- first time somebody uses the slash command.
 	{ kind = "mode", key = "lock", label = L.toolbox.refresh_widgets.unlock_frames,
 	  get = function() return A.Movers and A.Movers.unlocked or false end,
 	  set = function(want)
@@ -1700,57 +710,36 @@ TB.TILES = {
 local function Resolve(path)
 	if not path or #path == 0 then return nil end
 	local t = A.db.profile
-	for i = 1, #path - 1 do
-		t = t and t[path[i]]
-	end
+	for i = 1, #path - 1 do t = t and t[path[i]] end
 	return t, path[#path]
 end
 
---- true, false, or nil for "this has no state" - which is a launcher.
+--- true, false, or nil for "no state", which is a launcher.
 function TB:TileState(tile)
 	if not tile then return nil end
-
 	if tile.kind == "setting" then
 		local t, k = Resolve(tile.path)
 		if not t then return false end
-		-- Several of ours default to nil-meaning-true, the same convention the
-		-- options panel's `defaultTrue` covers.
 		return t[k] ~= false
 	end
-
-	-- Asked of the module that owns it, every time. A mode has no stored value
-	-- to read and three different ways to be changed - this tile, the options
-	-- panel and a slash command - so anything cached here is a second answer
-	-- waiting to disagree with the first.
 	if tile.kind == "mode" then
 		local ok, v = pcall(tile.get)
 		return ok and v and true or false
 	end
-
 	return nil
 end
 
---- What a settings tile says when you hover it.
---
---  The state goes in the tooltip as well as on the chip, because On/Off in
---  eleven point beside a coloured disc is the sort of thing you read wrong once
---  and then distrust - and one of these four unlocks every frame on the screen.
 function TB:TileTooltip(frame)
 	local t = frame and frame.__tile
 	if not t or not GameTooltip then return end
-
 	GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
 	GameTooltip:SetText(t.label or t.key, 1, 1, 1)
-
 	local on = self:TileState(t)
 	if on ~= nil then
 		local c = on and Palette.c.accent or Palette.c.textDim
-		GameTooltip:AddLine(on and "On" or "Off", c[1], c[2], c[3])
+		GameTooltip:AddLine(on and L.common.on or L.common.off, c[1], c[2], c[3])
 	end
-
 	if t.tip then
-		-- Wrapped. These run to three lines and an unwrapped AddLine draws one
-		-- that reaches the far side of the screen.
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddLine(t.tip, 0.8, 0.8, 0.85, true)
 	end
@@ -1759,24 +748,17 @@ end
 
 function TB:ToggleTile(tile)
 	if not tile then return false end
-
 	if tile.kind == "launcher" then
 		local entry = tile.entry or (A.Launchers and A.Launchers.byKey[tile.key])
 		if entry then return A.Launchers:Click(entry, "LeftButton") end
 		return false
 	end
-
 	local want = not self:TileState(tile)
-
 	if tile.kind == "setting" then
 		local t, k = Resolve(tile.path)
 		if not t then return false end
 		t[k] = want
-
-		-- The same three-element rule the options panel uses. A module being
-		-- switched off has to be told to tear itself down and one switched on
-		-- has to be built; writing the flag and stopping there leaves a module
-		-- running with its own setting saying it is off.
+		-- A module switched off has to be torn down, and one switched on built.
 		local p = tile.path
 		if #p == 3 and p[1] == "modules" and p[3] == "enabled" and A.modules[p[2]] then
 			A:SetModuleEnabled(p[2], want)
@@ -1786,302 +768,148 @@ function TB:ToggleTile(tile)
 		self:RefreshTiles()
 		return true
 	end
-
 	if tile.kind == "mode" then
 		local ok, done = pcall(tile.set, want)
 		if not ok or done == false then return false end
-
-		-- The drawer gets out of the way when a mode is switched ON. Both of
-		-- these are things you do TO the screen - drag a frame, hover a button
-		-- and press a key - and neither is possible with a panel over half of
-		-- it. Switching one off does not close anything, because then you are
-		-- finished rather than starting.
-		if want then self:SetOpen(false) end
-
+		-- Both modes are things you do to the screen, so the branch gets out
+		-- of the way when one is switched on.
+		if want then self:CloseAll() end
 		self:RefreshTiles()
 		return true
 	end
-
 	return false
 end
 
---- Ours, then whatever launchers the player has put in the grid. A list, so the
---  order is theirs and a third party's launcher sits alongside our settings.
+--- Ours, then the launchers the player put here.
 function TB:TileList()
 	local out = {}
 	for _, t in ipairs(self.TILES) do out[#out + 1] = t end
-
 	local c = Char()
 	local chosen = c and c.tiles
 	if type(chosen) == "table" and A.Launchers then
 		for _, key in ipairs(chosen) do
 			local entry = A.Launchers.byKey[key]
 			if entry then
-				out[#out + 1] = {
-					kind = "launcher", key = key,
-					label = entry.label or key, entry = entry,
-				}
+				out[#out + 1] = { kind = "launcher", key = key,
+					label = entry.label or key, entry = entry }
 			end
 		end
 	end
-
 	return out
 end
 
--- ---------------------------------------------------------------------------
+-- README: a 24 px diamond; on = accent fill, glow, dark icon and ON; off =
+-- glass, a 45 % rim, the icon at 50 % and OFF.
+local SET_H, SET_NODE, SET_ICON = 36, 24, 14
 
-local TILE_H, TILE_GAP = 62, 8
-
--- A settings tile has two arrangements, and the width decides which.
---
---   ROW      [icon]  Combat collapse            On
---   STACKED  [icon]                             On
---            Combat collapse
---
--- The row is the one to want. Stacked, the label sits directly under the icon
--- with the whole middle-right of the tile empty, which is what got reported -
--- and it is the arrangement a 62px tile forces when there is no room beside the
--- icon for two words.
---
--- The numbers below are what a row costs: padding, the chip, the gap after it,
--- the gap before the state, the state itself, and padding again. Anything left
--- over is the label's, and below about sixty pixels of that a two-word setting
--- cannot wrap into it - so the flat drawer's narrow settings column keeps the
--- stack and the tall panel gets the row.
-local TILE_PAD    = 12
-local TILE_CHIP   = 30
-local TILE_GAP_X  = 10     -- chip to label
-local TILE_STATE  = 30     -- room reserved for "On" / "Off"
-local TILE_NAME_MIN = 60   -- below this a row is not worth having
--- The stacked form's own three numbers. Air over the chip, air under the
--- label, and the gap between them - and the label is given BOTH vertical
--- anchors rather than being hung off the bottom edge. Hung off it, a string
--- with no height of its own justifies BOTTOM inside a box it is defining,
--- so its descenders sit on the tile's rim and the whole tile reads
--- bottom-heavy: chip floating with air under it, words falling out.
-local TILE_STACK_TOP = 8
-local TILE_STACK_BOT = 8
-local TILE_STACK_GAP = 2
-
---- Lay a tile's three pieces out for the width it has been given.
---
---  Called from the layout rather than from the constructor, because the width
---  is the input and only the layout knows it. Both arrangements are set fully -
---  every anchor cleared and re-made - so a tile that changes width when the
---  drawer is re-docked cannot keep half of the other one.
-function TB:ArrangeTile(tile, width)
-	if not tile or not tile.chip then return end
-	local room = (width or 0) - TILE_PAD * 2 - TILE_CHIP - TILE_GAP_X - TILE_STATE
-	local row  = room >= TILE_NAME_MIN
-
-	tile.chip:ClearAllPoints()
-	tile.state:ClearAllPoints()
-	tile.name:ClearAllPoints()
-
-	if row then
-		-- Everything on one line, vertically centred. The label takes the space
-		-- between the icon and the state, and WRAPS into it rather than being
-		-- cut: there are two lines' worth of height going spare in a 62px tile
-		-- once nothing is stacked under the icon.
-		tile.chip:SetPoint("LEFT", tile, "LEFT", TILE_PAD, 0)
-		tile.state:SetPoint("RIGHT", tile, "RIGHT", -TILE_PAD, 0)
-		tile.name:SetPoint("LEFT", tile.chip, "RIGHT", TILE_GAP_X, 0)
-		tile.name:SetPoint("RIGHT", tile.state, "LEFT", -8, 0)
-		tile.name:SetWordWrap(true)
-		tile.name:SetJustifyV("MIDDLE")
-	else
-		-- Not enough width beside the icon, so the label goes under it. No
-		-- wrapping here: the chip is in the top of a 62px tile and a second line
-		-- lands on it.
-		--
-		-- BOTH VERTICAL ANCHORS, and centred between them. Hung off the tile's
-		-- bottom edge alone the string has no height of its own to justify
-		-- inside, so BOTTOM put its descenders on the rim - the words read as
-		-- falling out of the tile, with the chip floating in air above them.
-		-- Given the whole space under the chip, one line sits in the middle of
-		-- it and the tile is balanced whatever the label turns out to be.
-		tile.chip:SetPoint("TOPLEFT", tile, "TOPLEFT", TILE_PAD, -TILE_STACK_TOP)
-		tile.state:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -TILE_PAD,
-			-(TILE_STACK_TOP + 6))
-		tile.name:SetPoint("TOPLEFT", tile, "TOPLEFT", TILE_PAD,
-			-(TILE_STACK_TOP + TILE_CHIP + TILE_STACK_GAP))
-		tile.name:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -TILE_PAD,
-			TILE_STACK_BOT)
-		tile.name:SetWordWrap(false)
-		tile.name:SetJustifyV("MIDDLE")
-	end
-	-- Written down rather than recomputed by anyone who wants it. The label's
-	-- two anchors are to two DIFFERENT frames in the row form, so its width
-	-- cannot be read back off the region - not by the harness, and not by a
-	-- diagnostic either. This is the number that decided the arrangement, so it
-	-- is the honest one to keep.
-	tile._nameRoom = row and room or nil
-	tile._row = row
-	return row
+BUILD.settings = function(self, p)
+	p.rows = {}
 end
 
-function TB:BuildTiles()
-	if not self.content or self.content.tiles then return end
-	local head = W.Text(self.content, "tbSection", "LEFT")
-	head:SetText(Spaced("UI SETTINGS"))
-	self.content.tilesHead = head
-	self.content.tiles = {}
-	self:RefreshTiles()
+FILL.settings = function(self, p)
+	local list = self:TileList()
+	self._tileList = list
+	local c = Palette.c
+	local a = c.accent
+	for i, t in ipairs(list) do
+		local row = p.rows[i]
+		if not row then
+			row = CreateFrame("Button", nil, p)
+			row:SetHeight(SET_H)
+			row.glow = row:CreateTexture(nil, "BACKGROUND")
+			row.glow:SetTexture(Media.texture.glow)
+			row.glow:SetSize(SET_NODE * 2.2, SET_NODE * 2.2)
+			row.fill = row:CreateTexture(nil, "ARTWORK")
+			row.fill:SetTexture(Media.texture.diamond)
+			row.fill:SetSize(SET_NODE, SET_NODE)
+			row.fill:SetPoint("LEFT", row, "LEFT", 0, 0)
+			row.glow:SetPoint("CENTER", row.fill, "CENTER")
+			row.rim = row:CreateTexture(nil, "ARTWORK", nil, 1)
+			row.rim:SetTexture(Media.texture.diamondRim)
+			row.rim:SetAllPoints(row.fill)
+			row.icon = row:CreateTexture(nil, "OVERLAY")
+			row.icon:SetSize(SET_ICON, SET_ICON)
+			row.icon:SetPoint("CENTER", row.fill, "CENTER")
+			-- The node's strand, out to the label.
+			row.strand = row:CreateTexture(nil, "BACKGROUND")
+			row.strand:SetTexture(Media.texture.flat)
+			row.strand:SetHeight(1)
+			row.strand:SetPoint("LEFT", row.fill, "RIGHT", 0, 0)
+			row.strand:SetWidth(12)
+			row.name = W.Text(row, "tbCardBody", "LEFT")
+			row.name:SetPoint("LEFT", row.strand, "RIGHT", 8, 0)
+			row.name:SetPoint("RIGHT", row, "RIGHT", -40, 0)
+			row.name:SetWordWrap(false)
+			row.state = W.Text(row, "tbChip", "RIGHT")
+			row.state:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+			row:SetScript("OnClick", function(self2)
+				if self2.__tile then TB:ToggleTile(self2.__tile) end
+			end)
+			-- Read off __tile at hover time: rows are reused.
+			row:SetScript("OnEnter", function(self2) TB:TileTooltip(self2) end)
+			row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+			p.rows[i] = row
+		end
+		row.__tile = t
+		row.name:SetText(t.label or t.key)
+		W.Color(row.name, c.text)
+
+		local on = self:TileState(t)
+		if t.kind == "launcher" then
+			local ic = t.entry and t.entry.obj and t.entry.obj.icon
+			if ic then row.icon:SetTexture(ic); row.icon:SetTexCoord(0, 1, 0, 1) end
+			row.icon:SetShown(ic ~= nil)
+		else
+			row.icon:SetShown(Media:SetIcon(row.icon, t.key) and true or false)
+		end
+		if on then
+			W.Tint(row.fill, a, 1)
+			W.Tint(row.rim, a, 1)
+			W.Tint(row.glow, a, 0.7)
+			row.glow:Show()
+			if row.icon:IsShown() and t.kind ~= "launcher" then
+				row.icon:SetVertexColor(20 / 255, 16 / 255, 31 / 255, 1)
+			end
+			row.state:SetText(L.common.on:upper())
+			W.Color(row.state, a)
+		else
+			W.Tint(row.fill, { 14 / 255, 11 / 255, 32 / 255 }, 0.85)
+			W.Tint(row.rim, a, 0.45)
+			row.glow:Hide()
+			if row.icon:IsShown() and t.kind ~= "launcher" then
+				row.icon:SetVertexColor(1, 1, 1, 0.5)
+			end
+			row.state:SetText(on == nil and "" or L.common.off:upper())
+			W.Color(row.state, c.textDim)
+		end
+		row.strand:SetVertexColor(a[1], a[2], a[3], on and 0.8 or 0.3)
+		row.__on = on
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", p, "TOPLEFT", PAD, -(PAD + HEAD_H + (i - 1) * SET_H))
+		row:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PAD, -(PAD + HEAD_H + (i - 1) * SET_H))
+		row:Show()
+	end
+	for i = #list + 1, #p.rows do p.rows[i]:Hide() end
+	p:SetHeight(PAD + HEAD_H + #list * SET_H + PAD - 6)
 end
 
 function TB:RefreshTiles()
-	if not self.content or not self.content.tiles then return end
-	local list = self:TileList()
-	self._tileList = list
-
-	for i, t in ipairs(list) do
-		local tile = self.content.tiles[i]
-		if not tile then
-			tile = Glass.CreatePanel(self.content, { corner = 16 })
-			tile:SetHeight(TILE_H)
-
-			-- The chip carries the state, which is what the deck says state is
-			-- carried by: an accent fill when on, a dim one when off. The
-			-- per-setting glyph inside it is not drawn yet - there is no such
-			-- art, and a new .tga needs a client restart rather than a reload -
-			-- so the chip reads its state by fill alone for now, which is the
-			-- half of it the deck leans on anyway.
-			-- W.CreateBadge, not a pill. A 30x30 pill draws the 512-wide pill
-			-- art with its caps minified eight times, and its rim - three
-			-- texels there - lands under half a pixel here, which is the
-			-- speckled circle that got reported. The badge is the solved
-			-- version of exactly this shape: a masked disc, a rim lapped one
-			-- PHYSICAL pixel proud of it, and a diameter snapped in the badge's
-			-- own units so the ring does not sit across a pixel boundary all
-			-- the way round.
-			local chip = W.CreateBadge(tile, { size = 30 })
-			chip.label:Hide()
-			tile.chip = chip
-
-			local icon = chip:CreateTexture(nil, "OVERLAY")
-			icon:SetPoint("CENTER", chip, "CENTER", 0, 0)
-			icon:SetSize(17, 17)
-			tile.icon = icon
-
-			tile.state = W.Text(tile, "tbLabel", "RIGHT")
-			tile.name  = W.Text(tile, "tbCardBody", "LEFT")
-			-- Anchored by ArrangeTile, which needs the tile's WIDTH and
-			-- therefore cannot run until the layout has set one.
-			self:ArrangeTile(tile, 0)
-
-			tile:EnableMouse(true)
-			tile:SetScript("OnMouseUp", function(self2)
-				if self2.__tile then TB:ToggleTile(self2.__tile) end
-			end)
-
-			-- Read off __tile at hover time rather than captured when the frame
-			-- was made. These tiles are REUSED - RefreshTiles hands frame 3 to
-			-- whichever entry is third now, and a launcher the player added can
-			-- put a different one there - so a closed-over tile would describe
-			-- whatever this frame used to be.
-			tile:SetScript("OnEnter", function(self2)
-				TB:TileTooltip(self2)
-			end)
-			tile:SetScript("OnLeave", function()
-				if GameTooltip then GameTooltip:Hide() end
-			end)
-			self.content.tiles[i] = tile
-		end
-
-		tile.__tile = t
-		tile.name:SetText(t.label or t.key)
-
-		-- The chip's glyph. Settings tiles name their own; a launcher tile uses
-		-- the addon's own icon, which it has and we do not.
-		if t.kind ~= "launcher" then
-			if Media:SetIcon(tile.icon, t.key) then
-				tile.icon:Show()
-			else
-				tile.icon:Hide()
-			end
-		end
-
-		local on = self:TileState(t)
-		if on == nil then
-			-- A launcher. No state, so no chip label - and its own icon, which
-			-- is the one thing it does have that our settings do not.
-			tile.state:SetText("")
-			local ic = t.entry and t.entry.obj and t.entry.obj.icon
-			if ic then tile.icon:SetTexture(ic) end
-			tile.icon:SetShown(ic ~= nil)
-			W.Color(tile.chip.text or tile.name, Palette.c.text)
-		else
-			tile.state:SetText(on and "On" or "Off")
-			W.Color(tile.state, on and Palette.c.accent or Palette.c.textDim)
-			-- Dark ink on the accent chip, dim ink on the quiet one. The deck
-			-- carries the state in the CHIP, and a light glyph on a light fill
-			-- is the one combination that says nothing.
-			if tile.icon:IsShown() then
-				local c = on and Palette.c.btnFillText or Palette.c.textDim
-				tile.icon:SetVertexColor(c[1], c[2], c[3], on and 1 or 0.55)
-			end
-		end
-		-- `btnFill` is the deck's opaque accent - already its own token because
-		-- the deck asks for dark text on it, which is exactly the chip's "on".
-		-- NOT an invented name: ApplySkin falls back to plain glass for a token
-		-- it does not know, so a typo here would make On and Off identical and
-		-- say nothing at all.
-		-- The chip carries the state: the deck's opaque accent when on, the
-		-- quiet fill when off. Vertex colours rather than ApplySkin, because a
-		-- badge is two plain textures rather than a Glass surface.
-		local fill = on and Palette.c.btnFill or Palette.c.cardBg
-		tile.chip.disc:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1)
-
-		-- A FILLED chip needs no rim, and putting one on it is what made these
-		-- read as smudges rather than circles: a bright ring lapped one pixel
-		-- proud of a bright disc doubles the coverage in the outer pixel, so the
-		-- edge stops being an edge and becomes a two-pixel gradient. The rim is
-		-- for the QUIET state, where the disc is nearly the panel colour and has
-		-- nothing else to define it.
-		tile.chip.ring:SetShown(not on)
-		if not on then
-			local edge = Palette.c.cardEdge
-			tile.chip.ring:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1)
-		end
-		tile.chip._fillColor = fill
-		tile:Show()
-	end
-
-	for i = #list + 1, #self.content.tiles do
-		self.content.tiles[i]:Hide()
-	end
-
-	self:LayoutTiles()
+	self._tileList = self:TileList()
+	if self:IsBranchOpen("settings") then self:Fill("settings") end
 end
 
-
 -- ---------------------------------------------------------------------------
--- the addon list
+-- the Addons branch: the launchers, two columns, pins
 --
--- Every loaded addon, which is a SUPERSET of the ones you can do anything with.
--- Core/Launchers.lua finds the actionable half - an LDB launcher, a LibDBIcon
--- button, or a hand-rolled one - and plenty of addons offer none of those.
---
--- A row with nothing behind it is still worth listing: you want to know what is
--- loaded. But it must LOOK inert rather than silently doing nothing when
--- clicked, which is the most common case and therefore the one designed first.
+-- Only addons with a launcher: what you can reach from here. A 7 px diamond
+-- on each row pins it to the trunk, filled when pinned (board 5b).
 -- ---------------------------------------------------------------------------
 
-local ROW_H, ROW_GAP = 26, 4
+local ROW_H, ROW_GAP = 28, 4
+-- Rows shown before the list scrolls, which keeps the branch on the screen.
+local ADDON_ROWS = 10
 
---- Loaded addons, by title, with their launcher entry where there is one.
---
---  Titles carry colour escapes surprisingly often - addons put their own name in
---  their TOC with |cff codes - so the title is used as given and the NAME is
---  what the launcher is matched on.
---- A registry key, made readable.
---
---  An LDB name is whatever the addon picked and a LibDBIcon one is often worse:
---  "LeaPlusCustomIcon_SmartBuffMiniMapButton" is a real entry on this machine.
---  The addon's own title is preferred wherever one matches; this is the
---  fallback, and it only trims the furniture rather than trying to be clever -
---  a name we cannot improve is left exactly as the addon wrote it, because a
---  half-mangled name is worse than a long one.
+--- A registry key, made readable where the addon's own title does not match.
 local function PrettyName(key)
 	local s = tostring(key or "?")
 	s = s:gsub("^LibDBIcon10_", "")
@@ -2095,22 +923,9 @@ end
 
 function TB:AddonRows()
 	local rows = {}
-	-- `LA`, NOT `L`. In this file `L` is the phrase table, and it is the phrase
-	-- table in every file that has one - so a second thing called L, however
-	-- local, is a trap: the next phrase written inside one of these functions
-	-- would silently read a launcher record instead. Core/Launchers.lua keeps
-	-- its own `L` because it has no phrases in it.
+	-- `LA`, not `L`: L is the phrase table.
 	local LA = A.Launchers
 	if not LA then return rows end
-
-	-- ONLY addons with a launcher. The first version listed every loaded addon
-	-- on the theory that you want to know what is installed - and on screen that
-	-- was twenty-five rows of which fifteen did nothing, which buried the ten
-	-- that worked. What you want to know is what you can REACH from here; the
-	-- rest is what the Blizzard addon list is for.
-	--
-	-- The count of the rest is still worth one line, so the header says how many
-	-- of the loaded addons have a launcher at all.
 	local titles = {}
 	local api = C_AddOns or _G
 	local count = (api.GetNumAddOns and api.GetNumAddOns()) or 0
@@ -2119,29 +934,157 @@ function TB:AddonRows()
 		if name then titles[name:lower()] = (title ~= "" and title) or name end
 	end
 	self._addonsLoaded = count
-
 	for entry in LA:Iterate() do
 		rows[#rows + 1] = {
 			name  = entry.key,
-			-- see PrettyName below
-			-- The addon's own title where the launcher's name matches one, since
-			-- an LDB object is often named for the addon but not always titled
-			-- like it.
-			label = entry.label or titles[tostring(entry.key):lower()]
-				or PrettyName(entry.key),
+			label = entry.label or titles[tostring(entry.key):lower()] or PrettyName(entry.key),
 			entry = entry,
 		}
 	end
-
 	table.sort(rows, function(x, y)
 		return tostring(x.label):lower() < tostring(y.label):lower()
 	end)
-
 	return rows
 end
 
+--- Move the list by whole rows, so the two columns never swap over.
+function TB:ScrollAddons(delta)
+	if not delta or delta == 0 then return end
+	local cols = Cols("addonColumns", 2)
+	self._addonOffset = math.max(0, (self._addonOffset or 0) - delta * cols)
+	if self:IsBranchOpen("addons") then self:Fill("addons") end
+end
+
+BUILD.addons = function(self, p)
+	p.rows = {}
+	-- A chevron, not an arrow character: the font has none.
+	p.arrow = p:CreateTexture(nil, "OVERLAY")
+	p.arrow:SetSize(9, 9)
+	p.arrow:SetTexture(Media.texture.chevron)
+	p.arrow:Hide()
+	-- The wheel over the whole block, not only over a row.
+	p:EnableMouseWheel(true)
+	p:SetScript("OnMouseWheel", function(_, delta) TB:ScrollAddons(delta) end)
+end
+
+FILL.addons = function(self, p)
+	local rows = self._addonRows or self:AddonRows()
+	self._addonRows = rows
+	local cols = Cols("addonColumns", 2)
+	local avail = p:GetWidth() - PAD * 2
+	local rw = (avail - ROW_GAP * (cols - 1)) / cols
+	local total = #rows
+	local maxShown = ADDON_ROWS * cols
+
+	-- The last page starts on a row boundary at or past where the final entry
+	-- fits, or an odd count leaves its last entry under the fold.
+	local maxOffset = math.max(0, total - maxShown)
+	if maxOffset % cols ~= 0 then maxOffset = maxOffset + cols - (maxOffset % cols) end
+	local offset = math.min(math.max(0, self._addonOffset or 0), maxOffset)
+	offset = offset - (offset % cols)
+	self._addonOffset = offset
+
+	local c = Palette.c
+	local shown = 0
+	for i, r in ipairs(rows) do
+		local row = p.rows[i]
+		if not row then
+			row = CreateFrame("Button", nil, p)
+			row:SetHeight(ROW_H)
+			row:EnableMouseWheel(true)
+			row:SetScript("OnMouseWheel", function(_, delta) TB:ScrollAddons(delta) end)
+			row.tile = Glass.CreatePanel(row, { corner = 8 })
+			row.tile:SetSize(25, 25)
+			row.tile:SetPoint("LEFT", row, "LEFT", 0, 0)
+			row.icon = row.tile:CreateTexture(nil, "ARTWORK")
+			row.icon:SetPoint("CENTER", row.tile, "CENTER", 0, 0)
+			row.icon:SetSize(17, 17)
+			row.initial = W.Text(row.tile, "tbLabel", "CENTER")
+			row.initial:SetPoint("CENTER", row.tile, "CENTER", 0, 0)
+			row.name = W.Text(row, "tbCardBody", "LEFT")
+			row.name:SetPoint("LEFT", row.tile, "RIGHT", 9, 0)
+			row.name:SetPoint("RIGHT", row, "RIGHT", -18, 0)
+			row.name:SetWordWrap(false)
+			row.pin = CreateFrame("Button", nil, row)
+			row.pin:SetSize(15, 15)
+			row.pin:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+			row.pin.glyph = row.pin:CreateTexture(nil, "ARTWORK")
+			row.pin.glyph:SetSize(7, 7)
+			row.pin.glyph:SetPoint("CENTER")
+			row.pin:SetScript("OnClick", function(self2)
+				local rr = self2:GetParent().__row
+				if rr and rr.entry then TB:TogglePin(rr.entry.key) end
+			end)
+			row:SetScript("OnClick", function(self2)
+				local rr = self2.__row
+				if rr and rr.entry then A.Launchers:Click(rr.entry, "LeftButton") end
+			end)
+			p.rows[i] = row
+		end
+		row.__row = r
+		row.name:SetText(r.label)
+		W.Color(row.name, c.text)
+		-- The icon, or the initial: about half of all addons offer no icon, so
+		-- the letter is the ordinary case.
+		local icon = r.entry and r.entry.obj and r.entry.obj.icon
+		if not icon and C_AddOns and C_AddOns.GetAddOnMetadata then
+			local ok, v = pcall(C_AddOns.GetAddOnMetadata, r.name, "IconTexture")
+			if ok then icon = v end
+		end
+		if icon then
+			row.icon:SetTexture(icon)
+			row.icon:Show()
+			row.initial:SetText("")
+		else
+			row.icon:Hide()
+			row.initial:SetText((r.label or "?"):sub(1, 1):upper())
+		end
+		local pinned = self:IsPinned(r.entry.key)
+		row.pin.glyph:SetTexture(pinned and Media.texture.diamond or Media.texture.diamondRim)
+		row.pin.glyph:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], pinned and 1 or 0.4)
+		row.__pinned = pinned
+
+		local slot = i - offset
+		if slot >= 1 and slot <= maxShown then
+			row:SetWidth(rw)
+			GridPlace(p, row, slot, PAD, PAD + HEAD_H, cols, rw, ROW_H, ROW_GAP, ROW_GAP)
+			row:Show()
+			shown = shown + 1
+		else
+			row:Hide()
+		end
+	end
+	for i = total + 1, #p.rows do p.rows[i]:Hide() end
+
+	self._addonsCut = math.max(0, total - shown)
+	self._addonsMore = math.max(0, total - offset - shown)
+	local scrollable = self._addonsCut > 0 or offset > 0
+	p.head:Set(L.toolbox.head.addons,
+		scrollable and A.F(L.toolbox.head.addons_scroll_d, total) or tostring(total))
+	-- One arrow, the way there is more: down until the end, then up.
+	p.arrow:SetShown(scrollable)
+	if scrollable then
+		p.arrow:ClearAllPoints()
+		p.arrow:SetPoint("RIGHT", p.head.hint, "LEFT", -4, 0)
+		if p.arrow.SetRotation then
+			pcall(p.arrow.SetRotation, p.arrow, self._addonsMore > 0 and 0 or math.pi)
+		end
+		p.arrow:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.55)
+		p.head.strand:ClearAllPoints()
+		p.head.strand:SetPoint("LEFT", p.head.label, "RIGHT", 8, 0)
+		p.head.strand:SetPoint("RIGHT", p.arrow, "LEFT", -6, 0)
+	end
+	local lines = math.max(1, RowsFor(shown, cols))
+	p:SetHeight(PAD + HEAD_H + lines * (ROW_H + ROW_GAP) - ROW_GAP + PAD)
+end
+
+function TB:RefreshAddons()
+	self._addonRows = self:AddonRows()
+	if self:IsBranchOpen("addons") then self:Fill("addons") end
+end
+
 -- ---------------------------------------------------------------------------
--- pinning
+-- pinning, and the pins on the trunk
 -- ---------------------------------------------------------------------------
 
 function TB:Pinned()
@@ -2158,15 +1101,12 @@ function TB:IsPinned(key)
 	return false
 end
 
---- Pinning is an explicit instruction to put this addon on the rail, so it
---  CLAIMS the entry even if the minimap drawer already had it. Unpinning
---  releases, and the drawer takes it back on its next layout.
+--- Pinning claims the entry for the trunk, whoever had it.
 function TB:SetPinned(key, on)
 	local pinned = self:Pinned()
 	local LA = A.Launchers
 	local entry = LA and LA.byKey[key]
 	if not entry then return false end
-
 	if on and not self:IsPinned(key) then
 		pinned[#pinned + 1] = key
 		LA:Claim(entry, self, true)
@@ -2175,25 +1115,25 @@ function TB:SetPinned(key, on)
 			if pinned[i] == key then table.remove(pinned, i) end
 		end
 		LA:Release(entry, self)
+		-- Still ours, so it is parked rather than left on the minimap ring.
+		LA:Claim(entry, self)
 	end
-
-	self:LayoutRail()
+	self:LayoutPins()
 	self:RefreshAddons()
 	return true
 end
 
---- Take ownership of every pinned entry that exists right now.
---
---  Idempotent and cheap, so it can run on every launcher change rather than
---  only at enable - which is the difference between a pin surviving a reload
---  and appearing to have been forgotten.
+function TB:TogglePin(key)
+	return self:SetPinned(key, not self:IsPinned(key))
+end
+
+--- Take every launcher: pins first and forced, then everything else, because
+--  a launcher nobody positions is one still sitting on the minimap ring.
+--  Idempotent, so it runs on every launcher change.
 function TB:ClaimPins()
 	local LA = A.Launchers
 	if not LA then return 0 end
 	local n = 0
-
-	-- Pins first, and forced: a pin is an explicit instruction to put this
-	-- addon on the rail, so it overrides whoever holds it.
 	for _, key in ipairs(self:Pinned()) do
 		local e = LA.byKey[key]
 		if e and LA:OwnerOf(e) ~= self then
@@ -2201,348 +1141,74 @@ function TB:ClaimPins()
 			n = n + 1
 		end
 	end
-
-	-- ...and with the drawer retired, EVERYTHING ELSE too.
-	--
-	-- Not greed: an unclaimed launcher button is one nobody positions, and a
-	-- LibDBIcon button that nobody positions is one still sitting on the minimap
-	-- ring. Clearing the ring is what the drawer was for, so somebody has to
-	-- keep doing it - and the entries that are not pinned get parked by
-	-- LayoutRail rather than drawn anywhere.
-	--
-	-- Unconditionally. This was gated on the minimap drawer being switched off,
-	-- back when the drawer was still a setting; the key is gone now and the gate
-	-- read nil rather than false, so it never fired and every launcher went
-	-- unowned. There is one surface, so there is nothing to defer to.
 	for e in LA:Iterate() do
 		if not LA:OwnerOf(e) then
 			LA:Claim(e, self)
 			n = n + 1
 		end
 	end
-
 	return n
 end
 
-function TB:TogglePin(key)
-	return self:SetPinned(key, not self:IsPinned(key))
-end
-
--- ---------------------------------------------------------------------------
--- the rail
--- ---------------------------------------------------------------------------
-
---- Pinned buttons live ON the rail, so they are there when the drawer is shut -
---  which is the whole reason the rail is a separate surface.
---
---  Never Hide()n. A collected button belongs to another addon and may carry a
---  secure template; hiding a frame with a protected descendant is refused in
---  combat, and opening a drawer mid-fight is exactly the sort of thing people
---  do. Alpha and EnableMouse, the same rule the minimap drawer follows.
-function TB:LayoutRail()
-	if not self.rail then return end
+--- The pinned addons, hung below the last node (board 5b): one bare item
+--  node each, the addon's own button on it. Never Hide()n - another addon's
+--  button may carry a secure template - so the rest are parked.
+function TB:LayoutPins()
 	local LA = A.Launchers
 	if not LA then return end
-
-	local edge = self:Dock()
-	local vertical = IsVertical(edge)
-	local n = 0
-
+	local list = {}
 	for _, key in ipairs(self:Pinned()) do
-		local entry = LA.byKey[key]
-		local b = entry and entry.button
-		if b and LA:OwnerOf(entry) == self then
-			n = n + 1
+		local e = LA.byKey[key]
+		if e and e.button and LA:OwnerOf(e) == self then list[#list + 1] = e end
+	end
+	self._pins = list
+	self.pinNodes = self.pinNodes or {}
+	local t = Trunk()
+	for i = #self.pinNodes + 1, #list do
+		self.pinNodes[i] = t:AddNode("pin" .. i, {
+			kind = "item", bare = true, size = PIN, step = PIN_STEP, order = 1000 + i,
+			available = function() return TB.enabled and TB._pins and TB._pins[i] ~= nil or false end,
+		})
+	end
+	t:Refresh()
 
-			-- RE-PREPARED on every layout, not just when claimed. LibDBIcon pins
-			-- both strata and level with SetFixedFrameStrata/SetFixedFrameLevel
-			-- so reparenting cannot shuffle its buttons behind things, and it
-			-- re-applies that on its own Refresh and Show. Once it does, our
-			-- SetFrameStrata below is quietly REFUSED: the button stays at
-			-- MEDIUM level 8 while the rail sits at FULLSCREEN_DIALOG, the
-			-- rail's own panel art is painted over the top of it, and the pin
-			-- looks like it vanished. A reload brought them back because nothing
-			-- had refreshed yet.
-			--
-			-- The drawer did exactly this on every layout and said why; that
-			-- line went with the drawer and did not come to the rail.
-			entry._prepared = nil
-			LA:Prepare(entry)
-
-			pcall(LA.RawSetParent, b, self.rail)
+	for i, e in ipairs(list) do
+		local host = self.pinNodes[i] and self.pinNodes[i].button
+		local b = e.button
+		if host then
+			-- Prepared again every time: LibDBIcon re-pins its own strata and
+			-- level, and a button left at MEDIUM 8 draws behind the trunk.
+			e._prepared = nil
+			LA:Prepare(e)
+			pcall(LA.RawSetParent, b, host)
 			pcall(LA.RawClearAllPoints, b)
-			local off = RAIL_PAD + RAIL_CHEV + RAIL_PAD + (n - 1) * (RAIL_ICON + RAIL_PAD)
-			-- chevron, then pins, then the gear at the far end
-			if vertical then
-				pcall(LA.RawSetPoint, b, "TOP", self.rail, "TOP", 0, -off)
-			else
-				pcall(LA.RawSetPoint, b, "LEFT", self.rail, "LEFT", off, 0)
-			end
-			pcall(LA.RawSetSize, b, RAIL_ICON, RAIL_ICON)
-			if b.SetFrameStrata then pcall(b.SetFrameStrata, b, self.rail:GetFrameStrata()) end
-			if b.SetFrameLevel then pcall(b.SetFrameLevel, b, self.rail:GetFrameLevel() + 5) end
+			pcall(LA.RawSetPoint, b, "CENTER", host, "CENTER", 0, 0)
+			pcall(LA.RawSetSize, b, PIN, PIN)
+			if b.SetFrameStrata then pcall(b.SetFrameStrata, b, host:GetFrameStrata()) end
+			if b.SetFrameLevel then pcall(b.SetFrameLevel, b, host:GetFrameLevel() + 5) end
 			if b.SetAlpha then pcall(b.SetAlpha, b, 1) end
 			if b.EnableMouse then pcall(b.EnableMouse, b, true) end
 		end
 	end
-
-	-- Everything we own that is NOT pinned goes off screen. Parked, never
-	-- hidden: these belong to other addons and may carry secure templates, and
-	-- hiding a frame with a protected descendant is refused in combat.
 	for e in LA:Iterate() do
-		if LA:OwnerOf(e) == self and not self:IsPinned(e.key) then
-			LA:Park(e)
-		end
+		if LA:OwnerOf(e) == self and not self:IsPinned(e.key) then LA:Park(e) end
 	end
-
-	self._railCount = n
-
-	-- The rail grows to fit EVERYTHING on it: the chevron, one slot per pin,
-	-- then the gear at the far end.
-	--
-	-- Anything anchored from the far end has to be counted here. A rail one icon
-	-- too short does not clip it - it puts it exactly on top of the LAST PIN,
-	-- where it reads as simply not being there; the envelope that used to sit
-	-- here found that out.
-	local len = RAIL_PAD + RAIL_CHEV + RAIL_PAD + n * (RAIL_ICON + RAIL_PAD)
-		+ RAIL_ICON + RAIL_PAD        -- gear
-	if vertical then
-		self.rail:SetSize(RAIL_W, math.max(len, RAIL_CHEV + RAIL_PAD * 2))
-	else
-		self.rail:SetSize(math.max(len, RAIL_CHEV + RAIL_PAD * 2), RAIL_W)
-	end
+	self._railCount = #list
 end
 
 -- ---------------------------------------------------------------------------
--- rows
+-- the Menu branch
+--
+-- Our own buttons, not Blizzard's micro buttons. Every action is probed
+-- first: a global that is not there is a door that is not drawn. Ten, as a
+-- 5 x 2 grid (decision 4b), and the one whose window is open is lit (board
+-- 6a). Social and Guild are both here, whichever way the client's CVar
+-- shows them; Bags is ours, through the global our bags module hooks.
 -- ---------------------------------------------------------------------------
 
-function TB:BuildAddons()
-	if not self.content or self.content.addons then return end
-	local head = W.Text(self.content, "tbSection", "LEFT")
-	head:SetText(Spaced("ADDONS"))
-	self.content.addonsHead = head
-
-	local hint = W.Text(self.content, "tbLabel", "RIGHT")
-	self.content.addonsHint = hint
-
-	-- The arrow that says the list moves.
-	--
-	-- A CHEVRON TEXTURE, not an arrow character. Outfit is a text face with no
-	-- geometric shapes in it - the gear had to become a drawn ring for exactly
-	-- this reason, having rendered as the three bytes of its own UTF-8 - and
-	-- U+2193 is no safer a bet than U+2699 was. The chevron is already loaded,
-	-- already the drawer's own vocabulary, and rotates.
-	local arrow = self.content:CreateTexture(nil, "OVERLAY")
-	arrow:SetSize(9, 9)
-	arrow:SetTexture(Media.texture.chevron)
-	arrow:Hide()
-	self.content.addonsArrow = arrow
-
-	-- What the wheel lands on. A frame BEHIND the rows rather than the rows
-	-- themselves: the wheel goes to the topmost frame under the cursor that has
-	-- EnableMouseWheel set, and the rows do not, so they are transparent to it
-	-- and this catches everything over the block. The rows get it too, further
-	-- down, for the client that disagrees.
-	local catch = CreateFrame("Frame", nil, self.content)
-	catch:EnableMouseWheel(true)
-	catch:SetScript("OnMouseWheel", function(_, delta) TB:ScrollAddons(delta) end)
-	catch:Hide()
-	self.content.addonsCatch = catch
-
-	self.content.addons = {}
-	self:RefreshAddons()
-end
-
-function TB:RefreshAddons()
-	if not self.content or not self.content.addons then return end
-	local rows = self:AddonRows()
-	self._addonRows = rows
-
-	local actionable = 0
-	for _, r in ipairs(rows) do if r.entry then actionable = actionable + 1 end end
-	self.content.addonsHint:SetText(#rows .. " installed \194\183 " .. actionable .. " with a launcher")
-
-	for i, r in ipairs(rows) do
-		local row = self.content.addons[i]
-		if not row then
-			row = CreateFrame("Button", nil, self.content)
-			row:SetHeight(ROW_H)
-
-			-- The rows take the wheel too, not only the frame behind them. The
-			-- client sends it to the topmost frame under the cursor with the
-			-- wheel enabled and a Button does not have it - so in theory the
-			-- catcher behind is enough. In practice the cursor is over a row
-			-- most of the time somebody wants to scroll, and this is one line
-			-- against finding out that theory was wrong on somebody's client.
-			row:EnableMouseWheel(true)
-			row:SetScript("OnMouseWheel", function(_, delta) TB:ScrollAddons(delta) end)
-
-			row.tile = Glass.CreatePanel(row, { corner = 8 })
-			row.tile:SetSize(25, 25)
-			row.tile:SetPoint("LEFT", row, "LEFT", 0, 0)
-			row.icon = row.tile:CreateTexture(nil, "ARTWORK")
-			row.icon:SetPoint("CENTER", row.tile, "CENTER", 0, 0)
-			row.icon:SetSize(17, 17)
-			-- The letter, for the many addons with no icon to offer.
-			row.initial = W.Text(row.tile, "tbLabel", "CENTER")
-			row.initial:SetPoint("CENTER", row.tile, "CENTER", 0, 0)
-
-			-- Truncated, not wrapped. LibDBIcon registry names are whatever the
-			-- addon chose - "LeaPlusCustomIcon_SmartBuffMiniMapButton" is a real
-			-- one - and at two columns a name that long ran straight across the
-			-- row beside it and the two overprinted.
-			row.name = W.Text(row, "tbCardBody", "LEFT")
-			row.name:SetPoint("LEFT", row.tile, "RIGHT", 8, 0)
-			row.name:SetPoint("RIGHT", row.pinAnchor or row, "RIGHT", -18, 0)
-			row.name:SetWordWrap(false)
-
-			row.pin = CreateFrame("Button", nil, row)
-			row.pin:SetSize(13, 13)
-			row.pin:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-			row.pin.glyph = row.pin:CreateTexture(nil, "ARTWORK")
-			row.pin.glyph:SetAllPoints(row.pin)
-			Media:SetIcon(row.pin.glyph, "pin")
-			row.pin:SetScript("OnClick", function(self2)
-				local rr = self2:GetParent().__row
-				if rr and rr.entry then TB:TogglePin(rr.entry.key) end
-			end)
-
-			row:SetScript("OnClick", function(self2)
-				local rr = self2.__row
-				if rr and rr.entry then A.Launchers:Click(rr.entry, "LeftButton") end
-			end)
-
-			self.content.addons[i] = row
-		end
-
-		row.__row = r
-		row.name:SetText(r.label)
-
-		-- The icon, or the initial. Only about half the addons on a machine
-		-- declare one, so the letter tile is the BASE CASE rather than a
-		-- placeholder - a grid where half the tiles are a question mark looks
-		-- broken, and the handoff's "use real addon icons" cannot be followed
-		-- for the other half.
-		local icon = r.entry and r.entry.obj and r.entry.obj.icon
-		if not icon and C_AddOns and C_AddOns.GetAddOnMetadata then
-			local ok, v = pcall(C_AddOns.GetAddOnMetadata, r.name, "IconTexture")
-			if ok then icon = v end
-		end
-		if icon then
-			row.icon:SetTexture(icon)
-			row.icon:Show()
-			row.initial:SetText("")
-		else
-			row.icon:Hide()
-			row.initial:SetText((r.label or "?"):sub(1, 1):upper())
-		end
-
-		-- A row with nothing behind it is listed and INERT, and looks it. The
-		-- alternative - a row that accepts a click and does nothing - is the
-		-- one thing worse than not listing it.
-		if r.entry then
-			row:EnableMouse(true)
-			row.pin:Show()
-			W.Color(row.name, Palette.c.text)
-			local pinned = self:IsPinned(r.entry.key)
-			Media:SetIcon(row.pin.glyph, pinned and "pinned" or "pin")
-			row.pin.glyph:SetVertexColor(
-				pinned and Palette.c.accent[1] or Palette.c.textDim[1],
-				pinned and Palette.c.accent[2] or Palette.c.textDim[2],
-				pinned and Palette.c.accent[3] or Palette.c.textDim[3],
-				pinned and 1 or 0.45)
-		else
-			row:EnableMouse(false)
-			row.pin:Hide()
-			W.Color(row.name, Palette.c.textDim)
-		end
-
-		row:Show()
-	end
-
-	for i = #rows + 1, #self.content.addons do
-		self.content.addons[i]:Hide()
-	end
-
-	self:LayoutAddons()
-end
-
-
--- ---------------------------------------------------------------------------
--- the micro menu
---
--- Not in the design handoff; added because hiding MainMenuBar takes the micro
--- menu with it and the README has owed it a home ever since.
---
--- OUR buttons, not Blizzard's. The first plan adopted the real frames -
--- reparenting them is legal, they are plain <Button>s with no Secure inherit
--- and Blizzard's own container does exactly that - but adopting them buys a
--- three-way argument over who owns them: ActionBars banishes them, QuestLog
--- hooks UpdateMicroButtons for the quest button's lit state, and this module
--- would want their position. Building nine of our own costs a table of
--- functions and ends the argument. The originals stay hidden, exactly as the
--- action bar sweep already leaves them.
---
--- The ACTIONS are read off Blizzard's own handlers rather than guessed, because
--- guessing gets one of nine subtly wrong and nobody notices until they click it:
---
---   Character  ToggleCharacter("PaperDollFrame")   XML OnClick
---   Spellbook  ToggleSpellBook(BOOKTYPE_SPELL)     XML OnClick
---   Talents    ToggleTalentFrame()                 XML OnClick
---   Quest log  ToggleQuestLog()                    XML OnClick - and OURS, the
---                                                  quest log module replaces it
---   Social     ToggleFriendsFrame()                SocialsMicroButtonMixin
---   Guild      ToggleGuildFrame()                  GuildMicroButtonMixin
---   Map        ToggleWorldMap()                    XML OnClick
---   Menu       ToggleGameMenu()                    bound in Bindings_Vanilla
---   Help       ToggleHelpFrame()                   XML OnClick
---
--- SOCIAL AND GUILD ARE MUTUALLY EXCLUSIVE IN BLIZZARD'S ROW. BOTH ARE IN OURS.
---
--- Their two mixins each read the `useClassicGuildUI` CVar and show only when
--- the other does not, so the client's own strip carries eight of the nine it
--- declares. That is a constraint on a fixed row of nine slots. This row is
--- neither fixed nor nine, and both destinations exist and work whichever way
--- the CVar is set: Social opens the Friends frame, Guild opens the guild frame
--- or Communities depending on it. Picking one left the other unreachable from
--- the drawer for no reason, and the pick itself was a piece of CVar archaeology
--- that had already got it wrong once.
---
--- BAGS IS OURS RATHER THAN BLIZZARD'S. There is no bag micro button - the
--- backpack lives on a bar of its own - but "open my bags" belongs in a menu of
--- places to go, and ToggleAllBags is the door our own bags module already
--- hooks. So the entry works with that module on, off, or absent.
---
--- TEN, IN TWO FIVES. Five things about your character and five about the world
--- and the game - which is also what makes the block square rather than nine
--- across an even grid.
---
--- Every action is probed before its button is built. A global that is not there
--- is a button that is not drawn, rather than a button that errors on click.
--- ---------------------------------------------------------------------------
-
-local MICRO_SIZE, MICRO_GAP = 26, 6
-
---- Whether this character can open the talent window at all.
---
---  THE DOOR WAS ALWAYS DRAWN AND DID NOTHING BELOW LEVEL 10. Blizzard's own
---  ToggleTalentFrame opens with a guard and returns silently when it fails, so
---  the button was lit, clickable, and inert, with nothing on screen to say why.
---  Blizzard's own talent button does not have this problem because it HIDES
---  itself on the same test - MainMenuBarMicroButtons does it in one line - and
---  ours is the one that got left out.
---
---  CanPlayerUseTalentUI is this client's question. Later flavours ask
---  CanPlayerUseTalentSpecUI instead, and both names are documented on both - so
---  calling the wrong one is not an error that shows up, it is a wrong answer
---  that looks like a right one. This client has no specialisations at all, so
---  asking it the spec question would hide the door here for good.
---
---  A CLIENT THAT WILL NOT ANSWER GETS THE DOOR. Failing open is the right way
---  round: a door that is offered and does nothing is the bug being fixed, but a
---  door silently missing for everyone because a lookup moved is worse - nobody
---  would report it, because there is nothing there to report.
+--- Whether this character can open the talent window at all: below level 10
+--  the client's own toggle silently does nothing. A client that will not
+--  answer gets the door.
 local function CanUseTalents()
 	local S = _G.C_SpecializationInfo
 	local fn = S and S.CanPlayerUseTalentUI
@@ -2552,51 +1218,58 @@ local function CanUseTalents()
 	return can and true or false
 end
 
+local function Shown(...)
+	for i = 1, select("#", ...) do
+		local f = select(i, ...)
+		if type(f) == "string" then f = _G[f] end
+		if f and f.IsShown and f:IsShown() then return true end
+	end
+	return false
+end
+
 TB.MICRO = {
 	{ key = "character", label = "Character",
 	  fn = function() ToggleCharacter("PaperDollFrame") end,
-	  probe = function() return ToggleCharacter ~= nil end },
+	  probe = function() return ToggleCharacter ~= nil end,
+	  open = function() return Shown("CharacterFrame") end },
 	{ key = "spellbook", label = "Spellbook",
 	  fn = function() ToggleSpellBook(BOOKTYPE_SPELL or "spell") end,
-	  probe = function() return ToggleSpellBook ~= nil end },
+	  probe = function() return ToggleSpellBook ~= nil end,
+	  open = function() return Shown("SpellBookFrame") end },
 	{ key = "talents",   label = "Talents",
 	  fn = function() ToggleTalentFrame() end,
-	  -- Level is what moves this in practice, but the question asked is the
-	  -- client's own rather than a number of our own - see RefreshMicro's
-	  -- callers for what makes the door appear when it changes.
-	  probe = function() return ToggleTalentFrame ~= nil and CanUseTalents() end },
+	  probe = function() return ToggleTalentFrame ~= nil and CanUseTalents() end,
+	  open = function() return Shown("TalentFrame", "PlayerTalentFrame") end },
 	{ key = "quests",    label = L.toolbox.refresh_addons.quest_log,
 	  fn = function() ToggleQuestLog() end,
-	  probe = function() return ToggleQuestLog ~= nil end },
+	  probe = function() return ToggleQuestLog ~= nil end,
+	  open = function()
+		local QL = A:GetModule("questlog")
+		return Shown(QL and QL.win, "QuestLogFrame")
+	  end },
 	{ key = "bags",      label = "Bags",
-	  -- Through the global rather than through our own module, because the
-	  -- global is what our own module hooks: the entry then behaves the same
-	  -- with the bags module on, off, or never loaded.
 	  fn = function() ToggleAllBags() end,
-	  probe = function() return ToggleAllBags ~= nil end },
-
+	  probe = function() return ToggleAllBags ~= nil end,
+	  open = function()
+		local BG = A:GetModule("bags")
+		return Shown(BG and BG.frames and BG.frames.bags, "ContainerFrame1")
+	  end },
 	{ key = "social",    label = "Social",
 	  fn = function() ToggleFriendsFrame() end,
-	  probe = function() return ToggleFriendsFrame ~= nil end },
+	  probe = function() return ToggleFriendsFrame ~= nil end,
+	  open = function() return Shown("FriendsFrame") end },
 	{ key = "guild",     label = "Guild",
 	  fn = function() ToggleGuildFrame() end,
-	  probe = function() return ToggleGuildFrame ~= nil end },
+	  probe = function() return ToggleGuildFrame ~= nil end,
+	  open = function() return Shown("GuildFrame", "CommunitiesFrame") end },
 	{ key = "map",       label = "Map",
 	  fn = function() ToggleWorldMap() end,
-	  probe = function() return ToggleWorldMap ~= nil end },
+	  probe = function() return ToggleWorldMap ~= nil end,
+	  open = function() return Shown("WorldMapFrame") end },
 	{ key = "menu",      label = "Menu",
-	  -- NOT ToggleGameMenu, WHICH IS THE ESCAPE HANDLER RATHER THAN THE BUTTON.
-	  --
-	  -- It walks a long chain of "is there anything to close first" and reaches
-	  -- the menu only at the end of it, and `securecall("CloseAllWindows")` is
-	  -- one of the links. Pressed with any window open - which, from a drawer
-	  -- full of buttons, is most of the time - it closed something instead and
-	  -- the menu never appeared. Reported from the game as the Menu button
-	  -- doing nothing at all.
-	  --
-	  -- This is what MainMenuMicroButtonMixin:OnMouseUp does, which is the
-	  -- honest model for a button labelled Menu: shut the windows, then open
-	  -- the menu. Blizzard's own button does not run the escape chain either.
+	  -- NOT ToggleGameMenu, which is the Escape handler: it closes a window
+	  -- first and never reaches the menu. Shut the windows, then open the
+	  -- menu, as Blizzard's own button does.
 	  fn = function()
 		  if GameMenuFrame and GameMenuFrame:IsShown() then
 			  if HideUIPanel then HideUIPanel(GameMenuFrame) end
@@ -2606,13 +1279,14 @@ TB.MICRO = {
 		  if CloseAllWindows then pcall(CloseAllWindows) end
 		  if GameMenuFrame and ShowUIPanel then ShowUIPanel(GameMenuFrame) end
 	  end,
-	  probe = function() return GameMenuFrame ~= nil and ShowUIPanel ~= nil end },
+	  probe = function() return GameMenuFrame ~= nil and ShowUIPanel ~= nil end,
+	  open = function() return Shown("GameMenuFrame") end },
 	{ key = "help",      label = "Help",
 	  fn = function() ToggleHelpFrame() end,
-	  probe = function() return ToggleHelpFrame ~= nil end },
+	  probe = function() return ToggleHelpFrame ~= nil end,
+	  open = function() return Shown("HelpFrame") end },
 }
 
---- Which of the ten this client actually offers.
 function TB:MicroList()
 	local out = {}
 	for _, m in ipairs(self.MICRO) do
@@ -2622,802 +1296,206 @@ function TB:MicroList()
 	return out
 end
 
-function TB:BuildMicro()
-	if not self.content or self.content.micro then return end
-	local head = W.Text(self.content, "tbSection", "LEFT")
-	head:SetText(Spaced("MENU"))
-	self.content.microHead = head
-	self.content.micro = {}
-	self:RefreshMicro()
+local MENU_PER, MENU_H, MENU_GAP = 5, 50, 6
+
+BUILD.menu = function(self, p)
+	p.cells = {}
+	-- The lit door follows windows opened and shut any other way.
+	p:HookScript("OnShow", function()
+		A:RegisterTicker(TB._menuToken, function() TB:PaintMenu() end)
+	end)
+	p:HookScript("OnHide", function() A:UnregisterTicker(TB._menuToken) end)
+end
+
+FILL.menu = function(self, p)
+	local list = self:MicroList()
+	self._microList = list
+	local avail = p:GetWidth() - PAD * 2
+	local cw = (avail - MENU_GAP * (MENU_PER - 1)) / MENU_PER
+	for i, m in ipairs(list) do
+		local b = p.cells[i]
+		if not b then
+			b = W.CreateButton(p, { corner = 10 })
+			b.glyph = b:CreateTexture(nil, "OVERLAY")
+			b.glyph:SetSize(20, 20)
+			b.glyph:SetPoint("TOP", b, "TOP", 0, -8)
+			b.name = W.Text(b, "tbLabel", "CENTER")
+			b.name:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 2, 7)
+			b.name:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 7)
+			b.name:SetWordWrap(false)
+			b.__aetherLabel = b.name
+			b:SetScript("OnClick", function(self2)
+				if self2.__micro then pcall(self2.__micro.fn) end
+				TB:PaintMenu()
+			end)
+			b:SetScript("OnEnter", function(self2)
+				self2.__hover = true
+				TB:PaintMenu()
+				if GameTooltip and self2.__micro then
+					GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
+					GameTooltip:SetText(self2.__micro.label)
+					GameTooltip:Show()
+				end
+			end)
+			b:SetScript("OnLeave", function(self2)
+				self2.__hover = nil
+				TB:PaintMenu()
+				if GameTooltip then GameTooltip:Hide() end
+			end)
+			p.cells[i] = b
+		end
+		b.__micro = m
+		b.glyph:SetShown(Media:SetIcon(b.glyph, m.key) and true or false)
+		b.name:SetText(m.label or "")
+		b:SetSize(cw, MENU_H)
+		GridPlace(p, b, i, PAD, PAD + HEAD_H, MENU_PER, cw, MENU_H, MENU_GAP, MENU_GAP)
+		b:Show()
+	end
+	for i = #list + 1, #p.cells do p.cells[i]:Hide() end
+	local rows = RowsFor(#list, MENU_PER)
+	p:SetHeight(PAD + HEAD_H + rows * MENU_H + math.max(0, rows - 1) * MENU_GAP + PAD)
+	self:PaintMenu()
+end
+
+--- Lit for the door whose window is open.
+function TB:PaintMenu()
+	local p = self.panels and self.panels.menu
+	if not p then return end
+	local c = Palette.c
+	for _, b in ipairs(p.cells) do
+		if b:IsShown() and b.__micro then
+			local ok, lit = pcall(b.__micro.open or function() return false end)
+			lit = ok and lit and true or false
+			b.__lit = lit
+			W.SetButtonState(b, lit, b.__hover)
+			local g = lit and c.btnFillText or c.text
+			b.glyph:SetVertexColor(g[1], g[2], g[3], lit and 1 or 0.85)
+		end
+	end
 end
 
 function TB:RefreshMicro()
-	if not self.content or not self.content.micro then return end
-	local list = self:MicroList()
-	self._microList = list
-
-	for i, m in ipairs(list) do
-		local b = self.content.micro[i]
-		if not b then
-			b = CreateFrame("Button", nil, self.content)
-			b:SetSize(MICRO_SIZE, MICRO_SIZE)
-
-			-- Glyph above, name below, the way the deck draws the MENU row.
-			-- A chip behind every one made eight filled circles in a block that
-			-- read as heavier than the widget cards under it; the glyph carries
-			-- itself and the row stays quiet.
-			--
-			-- No glyph ART yet. The concept's icon language is lucide-style
-			-- strokes, there is no such .tga in Media/Textures, and a new
-			-- texture file needs a client RESTART rather than a reload - so it
-			-- is a generator pass of its own. The initial stands in, with the
-			-- name UNDER it rather than only on a tooltip: a label you can read
-			-- is worth more than a letter you have to decode.
-			b.glyph = b:CreateTexture(nil, "ARTWORK")
-			b.glyph:SetPoint("TOP", b, "TOP", 0, -5)
-			b.glyph:SetSize(20, 20)
-
-			b.name = W.Text(b, "tbLabel", "CENTER")
-			b.name:SetPoint("TOP", b.glyph, "BOTTOM", 0, -4)
-			b.name:SetPoint("LEFT", b, "LEFT", 2, 0)
-			b.name:SetPoint("RIGHT", b, "RIGHT", -2, 0)
-
-			b:SetScript("OnClick", function(self2)
-				local mm = self2.__micro
-				if mm then pcall(mm.fn) end
-			end)
-			b:SetScript("OnEnter", function(self2)
-				if not GameTooltip or not self2.__micro then return end
-				GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
-				GameTooltip:SetText(self2.__micro.label)
-				GameTooltip:Show()
-			end)
-			b:SetScript("OnLeave", function()
-				if GameTooltip then GameTooltip:Hide() end
-			end)
-
-			self.content.micro[i] = b
-		end
-
-		b.__micro = m
-		-- The icon, and the initial only if the sheet has nothing for it. A
-		-- missing name draws the WHOLE atlas without a SetTexCoord, which is
-		-- unmistakable rather than subtle - but the fallback means a key added
-		-- here before its glyph is drawn degrades to a letter instead.
-		if Media:SetIcon(b.glyph, m.key) then
-			b.glyph:Show()
-			if b.initial then b.initial:SetText("") end
-		else
-			b.glyph:Hide()
-			if not b.initial then
-				b.initial = W.Text(b, "tbCardTitle", "CENTER")
-				b.initial:SetPoint("TOP", b, "TOP", 0, -4)
-			end
-			b.initial:SetText((m.label or "?"):sub(1, 1):upper())
-		end
-		W.Color(b.glyph and b.name or b.name, Palette.c.textDim)
-		if b.glyph.SetVertexColor then
-			local c = Palette.c.text
-			b.glyph:SetVertexColor(c[1], c[2], c[3], 0.9)
-		end
-		b.name:SetText(m.label or "")
-		W.Color(b.name, Palette.c.textDim)
-		b:Show()
-	end
-
-	for i = #list + 1, #self.content.micro do
-		self.content.micro[i]:Hide()
-	end
-
-	self:LayoutMicro()
+	self._microList = self:MicroList()
+	if self:IsBranchOpen("menu") then self:Fill("menu") end
 end
 
 -- ---------------------------------------------------------------------------
--- layout: ONE top-down pass, in Lua arithmetic
+-- the What's new branch
 --
--- The first version anchored each section to the one above it - the tiles to
--- the last widget card, the addon list to the last tile - and measured the room
--- left with GetBottom(). Both were wrong, and together they drew every section
--- on top of every other:
---
---   * A region given SetPoint("TOPLEFT", content, ...) AND
---     SetPoint("TOP", other, "BOTTOM", ...) has two anchors on the same axis.
---     The second does not replace the first; the frame is stretched between
---     them, and where it lands is not what either line says.
---   * GetBottom() answers in screen coordinates and only once a frame has been
---     positioned AND shown. Called during the very pass that positions things,
---     it returns whatever was true last frame - or nil on the first one, which
---     the `or 0` then quietly turned into "the bottom of the screen".
---
--- So there is no chaining and no measuring. A running `y` accumulates down the
--- panel and every region is anchored TOPLEFT to the content frame at an offset
--- this function computed. It is arithmetic; it cannot disagree with itself, and
--- it produces the same answer on the first pass as on the hundredth.
+-- Read from Core/Changelog.lua; the .toc is the version, and the harness
+-- refuses a build where the two disagree. The node's dot is lit until the
+-- branch is opened on this version.
 -- ---------------------------------------------------------------------------
 
-local HEADER_H   = 30
--- The What's new card. 84 was the height of a card with a title and a body on
--- it, before the Notes link was added underneath - so the body ran to the
--- bottom edge and Notes was drawn through the last line of it. This is the
--- title, two rendered lines of body (one changelog line usually wraps to two at
--- the vertical panel's width), the link, and the padding round the lot.
-local NEWS_H     = 100
-local SECTION_H  = 20      -- a section label and the gap under it
-local SECTION_GAP = 14     -- between one section's last row and the next label
-local MICRO_CELL_H = 46
+--- Lines of the current entry the branch shows; Notes has the rest.
+TB.NEWS_LINES = 3
 
--- The narrowest a cell may be before the row wraps instead of shrinking.
---
--- The glyph is 20 and it is drawn CENTRED, so at anything under about 22 the
--- glyphs start touching and then overlapping - and the row was shrinking
--- without limit. Ten entries across a flat dock's identity column were already
--- eleven pixels each: a smear rather than a menu, and nothing said so because
--- the check counted buttons rather than measuring them.
-local MICRO_MIN_CELL = 24
-
--- ...and on a FLAT dock, ONE ROW, whatever there is to put in it.
---
--- MEASURED, not preferred. That dock is a strip 210 units tall and its identity
--- column already spends a header and a hundred-unit news card; one row of micro
--- lands at 180 and a SECOND row lands at 240, through a floor the other five
--- columns share. So a wrap is not available here and the glyph gives way
--- instead - see MicroGlyph. Every entry stays present, which was the original
--- trade and is still the right one; what was wrong was letting the glyph keep
--- its 20 units while its cell shrank under it.
-local MICRO_FLAT_MAX_ROWS = 1
-
--- ...and TWO in the drawer, for the same kind of reason and a different number.
---
--- Three rows of glyphs down a panel whose foot is the mini-player and whose
--- middle is the widget cards and the addon list reads as a keypad rather than
--- as a menu. The drawer stops at two and the glyph gives way below that, which
--- is the trade the flat dock already makes one row earlier.
-local MICRO_DRAWER_MAX_ROWS = 2
-
--- Flat, the row is glyphs ONLY and the cell shrinks to fit them.
---
--- Eight cells across a column a fifth of the panel's width is about thirty
--- pixels each, and "Character" does not go in thirty pixels - it came out as
--- "Ch...". The concept draws this row as bare glyphs for exactly that reason,
--- and the names are on the tooltips where a name that does not fit belongs.
-local MICRO_CELL_H_FLAT = 30
-
---- How big the glyph in a cell that wide may be.
---
---  IT USED TO BE 20 WHATEVER THE CELL WAS. Ten entries across a flat dock's
---  identity column are eleven units each, so the glyphs overlapped their
---  neighbours by nine - every entry present, none of them readable, and the
---  check watching this counted buttons rather than measuring them.
-local function MicroGlyph(cellW)
-	-- The cell is the hard ceiling: eight is the smallest worth drawing, but a
-	-- cell narrower than eight gets a glyph narrower than eight rather than one
-	-- lapping over the entry beside it.
-	return math.min(cellW, math.max(8, math.min(20, cellW - 6)))
+function TB:NewsVersion()
+	local entry = A.Notes and A:Notes()
+	return (entry and entry.version) or A.version or "0.0.0"
 end
 
-local function Cols(key, fallback)
-	return math.max(1, tonumber(A.Config:Module("toolbox")[key]) or fallback)
-end
-
---- Rows of `n` items at `per` per row.
-local function RowsFor(n, per)
-	return math.ceil(math.max(0, n) / math.max(1, per))
-end
-
---- How the micro row divides: rows, entries per row, and the cell that gives.
---
---  FEWEST ROWS THAT KEEP THE CELL AT ITS FLOOR, then an even split across them.
---
---  The flat dock worked this out for itself and the vertical drawer did not: it
---  was laid out at a fixed five per row, which is a guess about how many entries
---  there will be, and the client is what decides that. Ten across the drawer's
---  352 units is a 35-unit cell with room for the full glyph, so they go on one
---  row and the second row's thirty units go back to the lists below.
---
---  Both halves are needed. Wrapping at the floor alone gives a full row and an
---  orphan, which reads as a mistake rather than as a layout. So the ROW COUNT
---  comes from the floor and the PER-ROW comes from dividing evenly into it.
---
---  `maxRows` is a CEILING, and both callers pass one. Clamped there the cell can
---  fall under MICRO_MIN_CELL, and MicroGlyph gives way instead - every entry
---  present and the drawing smaller, which is the right trade in both docks.
-local function MicroFit(n, avail, maxRows)
-	if n <= 0 then return 0, 1, avail end
-	local fits = math.max(1, math.min(n, math.floor(avail / MICRO_MIN_CELL)))
-	local rows = RowsFor(n, fits)
-	if maxRows then rows = math.min(maxRows, rows) end
-	local per  = math.ceil(n / rows)
-	return rows, per, avail / per
-end
-
---- Place the i-th frame of a grid whose top-left corner is (x, y) in content
---  space, y measured DOWN.
---
---  Three lines, and it is a function because it was four copies of three lines:
---  the vertical panel does this for the micro row, the widget cards, the addon
---  rows and the settings tiles, and the horizontal panel would have made it
---  eight. The arithmetic is the thing most worth having exactly one of - an
---  off-by-one in the row index is a section drawn on top of the one above it.
-local function GridPlace(content, frame, i, x, y, cols, cellW, cellH, gapX, gapY)
-	local r, c = math.floor((i - 1) / cols), (i - 1) % cols
-	frame:ClearAllPoints()
-	frame:SetPoint("TOPLEFT", content, "TOPLEFT",
-		x + c * (cellW + (gapX or 0)), -(y + r * (cellH + (gapY or 0))))
-end
-
---- Move the addon list by whole ROWS.
---
---  Rows, not entries: the list is two columns wide, so stepping by one would
---  swap which column every name is in and the list would appear to shuffle
---  rather than scroll.
---
---  The offset is clamped by the LAYOUT rather than here, because only the layout
---  knows how many rows fit - that is a function of the panel, the dock, and
---  everything above the list. This just moves the number and asks for a redraw.
-function TB:ScrollAddons(delta)
-	if not delta or delta == 0 then return end
-	local cols = Cols("addonColumns", 2)
-	self._addonOffset = math.max(0, (self._addonOffset or 0) - delta * cols)
-	self:LayoutContent()
-end
-
---- Place the rows for one addon list, cutting to `maxShown` and honouring the
---  scroll offset, and write the hint that says what is off the end.
---
---  Shared by both layouts. The two differ in where the block goes and how much
---  room it has; what they do with it - which slice of the list, in which slots,
---  with which arrow on the heading - is the same in both, and was the obvious
---  next thing to drift apart.
---
---  Returns the number of rows placed.
---- `headY` is the HEADING's line, not the rows'.
---
---  Passed separately rather than derived, because the hint and the arrow belong
---  on the heading and everything else here belongs below it. Deriving it from
---  `y - SECTION_H` would work today and be wrong the moment a layout puts a gap
---  between the two. It was neither for a while: the hint went out at the rows'
---  y and was drawn straight through the first row of the list, which is the
---  version of this you can see in a screenshot.
-function TB:PlaceAddonRows(x, y, width, cols, maxShown, hintRight, headY)
-	headY = headY or y
-	local content = self.content
-	local frames  = content.addons or {}
-	local rows    = self._addonRows or {}
-	local total   = #rows
-
-	-- Clamped HERE, where maxShown is known. Scrolling past the end and then
-	-- widening the drawer would otherwise leave the list parked below its own
-	-- last row, showing nothing.
-	--
-	-- ROUNDED UP TO A ROW BOUNDARY, not down. The offset moves a row at a time -
-	-- it has to, or the two columns swap over as you scroll - so the last page
-	-- has to start on a boundary at or PAST the point where the window's last
-	-- slot reaches the final entry. Taking the boundary below it instead leaves
-	-- that entry one slot under the fold with nowhere left to scroll, and it
-	-- only shows up on an ODD number of launchers: an even one lands on the
-	-- boundary exactly and loses nothing, which is why 56 of them were fine and
-	-- the fifty-seventh could not be reached.
-	local maxOffset = math.max(0, total - maxShown)
-	if maxOffset % cols ~= 0 then
-		maxOffset = maxOffset + cols - (maxOffset % cols)
+--- The lines the branch shows.
+function TB:NewsLines()
+	local entry = A.Notes and A:Notes()
+	if not entry or not entry.lines or #entry.lines == 0 then
+		return { L.toolbox.news.none }
 	end
+	local out = {}
+	for i = 1, math.min(#entry.lines, self.NEWS_LINES) do out[i] = entry.lines[i] end
+	return out
+end
 
-	local offset = math.min(math.max(0, self._addonOffset or 0), maxOffset)
-	offset = offset - (offset % cols)
-	self._addonOffset = offset
+--- Whether there is more than the branch shows, which is when Notes is offered.
+function TB:NewsHasMore()
+	local entry = A.Notes and A:Notes()
+	if not entry or not entry.lines then return false end
+	if #entry.lines > self.NEWS_LINES then return true end
+	return #(A.CHANGELOG or {}) > 1
+end
 
-	local rw = (width - ROW_GAP * (cols - 1)) / cols
-	local shown = 0
-	for i, row in ipairs(frames) do
-		local slot = i - offset
-		if i <= total and slot >= 1 and slot <= maxShown then
-			row:SetWidth(rw)
-			GridPlace(content, row, slot, x, y, cols, rw, ROW_H, ROW_GAP, ROW_GAP)
-			row:Show()
-			shown = shown + 1
-		else
-			row:Hide()
+function TB:NewsUnread()
+	local c = Char()
+	return not (c and c.newsSeen == self:NewsVersion())
+end
+
+function TB:MarkNewsRead()
+	local c = Char()
+	if c then c.newsSeen = self:NewsVersion() end
+	Trunk():Paint()
+end
+
+local NEWS_GAP, NOTES_H = 8, 22
+
+BUILD.news = function(self, p)
+	p.lines = {}
+	local notes = CreateFrame("Button", nil, p)
+	notes:SetSize(46, 16)
+	notes.text = W.Text(notes, "tbLabel", "LEFT")
+	notes.text:SetPoint("LEFT", notes, "LEFT", 0, 0)
+	notes.text:SetText(L.toolbox.build_content.notes)
+	-- Underlined: "Notes" in the accent beside body text reads as emphasis,
+	-- not as somewhere to click.
+	notes.rule = notes:CreateTexture(nil, "OVERLAY")
+	notes.rule:SetTexture(Media.texture.flat)
+	notes.rule:SetHeight(1)
+	notes.rule:SetPoint("TOPLEFT", notes.text, "BOTTOMLEFT", 0, -1)
+	notes.rule:SetPoint("TOPRIGHT", notes.text, "BOTTOMRIGHT", 0, -1)
+	notes:SetScript("OnClick", function()
+		TB:MarkNewsRead()
+		TB:CloseAll()
+		if A.Options and A.Options.Open then A.Options:Open("changelog") end
+	end)
+	p.notes = notes
+end
+
+FILL.news = function(self, p)
+	local c = Palette.c
+	local a = c.accent
+	local text = self:NewsLines()
+	local width = p:GetWidth() - PAD * 2 - 14
+	local y = PAD + HEAD_H
+	for i, s in ipairs(text) do
+		local ln = p.lines[i]
+		if not ln then
+			ln = {}
+			ln.node = p:CreateTexture(nil, "ARTWORK")
+			ln.node:SetTexture(Media.texture.diamond)
+			ln.node:SetSize(5, 5)
+			ln.text = W.Text(p, "tbCardBody", "LEFT")
+			ln.text:SetJustifyV("TOP")
+			p.lines[i] = ln
 		end
+		ln.text:SetWidth(width)
+		ln.text:SetText(s)
+		ln.text:ClearAllPoints()
+		ln.text:SetPoint("TOPLEFT", p, "TOPLEFT", PAD + 14, -y)
+		ln.node:ClearAllPoints()
+		ln.node:SetPoint("CENTER", p, "TOPLEFT", PAD + 3, -(y + 7))
+		ln.node:SetVertexColor(a[1], a[2], a[3], 0.6)
+		W.Color(ln.text, c.text)
+		ln.text:Show()
+		ln.node:Show()
+		y = y + math.max(14, ln.text:GetStringHeight() or 14) + NEWS_GAP
 	end
-
-	self._addonsCut = math.max(0, total - shown)
-	self._addonsMore = math.max(0, total - offset - shown)   -- below the fold
-
-	-- The hint, and the arrow beside it.
-	--
-	-- One arrow, not two: it points the way there is MORE, which is down until
-	-- you reach the end and up once you have. Two would need two textures and a
-	-- rule for what to do when only one direction is live, and the answer to
-	-- "can I go back" is obvious once you have been somewhere.
-	local hint, arrow = content.addonsHint, content.addonsArrow
-	if hint then
-		hint:ClearAllPoints()
-		local scrollable = self._addonsCut > 0 or offset > 0
-		if arrow then
-			arrow:ClearAllPoints()
-			arrow:SetShown(scrollable)
-			-- Chevron.tga is a V - it points DOWN at rotation 0, which is what
-			-- the rail's chevron had to learn the hard way. Up is pi.
-			if arrow.SetRotation then
-				pcall(arrow.SetRotation, arrow, self._addonsMore > 0 and 0 or math.pi)
-			end
-			local c = Palette.c
-			arrow:SetVertexColor(c.text[1], c.text[2], c.text[3], 0.55)
-			arrow:SetPoint("TOPRIGHT", content, "TOPLEFT", hintRight, -(headY + 5))
-		end
-		hint:SetPoint("TOPRIGHT", content, "TOPLEFT",
-			hintRight - (scrollable and 14 or 0), -headY)
-		hint:SetText(scrollable
-			and (total .. " \194\183 scroll")
-			or (total .. " with a launcher"))
+	for i = #text + 1, #p.lines do
+		p.lines[i].text:Hide()
+		p.lines[i].node:Hide()
 	end
-
-	-- The wheel catcher covers the block, so the wheel works anywhere over the
-	-- list rather than only over a row.
-	local catch = content.addonsCatch
-	if catch then
-		local rowsShown = RowsFor(shown, cols)
-		catch:ClearAllPoints()
-		catch:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
-		catch:SetSize(math.max(1, width),
-			math.max(1, rowsShown * (ROW_H + ROW_GAP)))
-		catch:SetShown(shown > 0)
+	p.head:Set(L.common.what_s_new, A.F(L.common.aether_ui_s, A.version or "?"))
+	local more = self:NewsHasMore()
+	p.notes:SetShown(more)
+	W.Color(p.notes.text, a)
+	p.notes.rule:SetVertexColor(a[1], a[2], a[3], 0.55)
+	if more then
+		p.notes:ClearAllPoints()
+		p.notes:SetPoint("TOPLEFT", p, "TOPLEFT", PAD + 14, -y)
+		y = y + NOTES_H
 	end
-
-	return shown
+	p:SetHeight(y - NEWS_GAP + PAD)
 end
 
--- ---------------------------------------------------------------------------
--- the horizontal drawer
---
--- Top and bottom dock to a panel 1280x240 in deck units - more than five times
--- wider than it is tall. The vertical layout's single running `y` draws a column
--- of sections down the left fifth of that, with the last three off the bottom
--- and most of the panel empty. It was written for the tall narrow panel and says
--- so; this is the other one.
---
--- So the sections become COLUMNS. Each lays out exactly as it does in the
--- vertical panel - a heading, then a grid - from its own origin, and each cuts
--- to the panel's height on its own account rather than the whole drawer giving
--- way in one fixed order. There is no order to give way in when the sections are
--- side by side.
--- ---------------------------------------------------------------------------
-
--- The deck's own proportions rather than equal shares. Identity and widgets take
--- about a quarter each, the addon list a little less, and the settings tiles
--- are fixed-size chips where everything else is text that wants room.
--- Rebalanced against a real screenshot rather than against the concept's
--- proportions. The addon list is the column with the longest strings in it -
--- "Auc-Util-AutoMagic" is a real registry name - and at 22 it was truncating
--- every second one to "Auc-Util-A...". The settings tiles are fixed-size chips,
--- so they give some back. (Mail and Now Playing had columns too; they are the
--- World trunk's now.)
-local H_WEIGHTS = { identity = 20, widgets = 19, addons = 27, settings = 20 }
-local H_COL_GAP = 18
-
---- The shortest the flat panel can usefully be, in panel units.
---
---  The identity column is the one that cannot give way: a title, the What's new
---  card and one row of glyphs, every one of them a fixed height. Everything else
---  here is a grid that cuts to fit and says what it dropped. So this is the
---  number, computed rather than written down - the constants are two hundred
---  lines from PanelSize, which is exactly the distance over which a literal 218
---  goes stale without anybody noticing.
-function TB:HorizontalFloor()
-	return PAD * 2 + HEADER_H + NEWS_H + SECTION_GAP + MICRO_CELL_H_FLAT
+function TB:RefreshNews()
+	if self:IsBranchOpen("news") then self:Fill("news") end
+	Trunk():Paint()
 end
-
---- Which columns there are, left to right.
---
---  Fixed, so no column changes width while you are looking at the drawer: a
---  column that came and went with its content reflowed every other one.
-function TB:HorizontalColumns()
-	local order = { "identity", "widgets", "addons", "settings" }
-	return order, H_WEIGHTS
-end
-
-function TB:LayoutContent()
-	if IsVertical(self:Dock()) then return self:LayoutVertical() end
-	return self:LayoutHorizontal()
-end
-
-function TB:LayoutHorizontal()
-	if not self.content or not self.panel then return end
-	local content = self.content
-	local w, h    = self.panel:GetWidth(), self.panel:GetHeight()
-
-	content:ClearAllPoints()
-	content:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 0, 0)
-	content:SetPoint("BOTTOMRIGHT", self.panel, "BOTTOMRIGHT", 0, 0)
-
-	-- Same guard as the vertical pass, for the same reason: the first layout of
-	-- the first login runs before three of the six sections have been built.
-	local micros = content.micro  or {}
-	local cards  = content.cards  or {}
-	local addons = content.addons or {}
-	local tilesF = content.tiles  or {}
-
-	local order, weights = self:HorizontalColumns()
-	local total = 0
-	for _, k in ipairs(order) do total = total + weights[k] end
-
-	local avail = w - PAD * 2 - H_COL_GAP * (#order - 1)
-	local colX, colW = {}, {}
-	do
-		local x = PAD
-		for _, k in ipairs(order) do
-			colW[k] = avail * (weights[k] / total)
-			colX[k] = x
-			x = x + colW[k] + H_COL_GAP
-		end
-	end
-
-	-- Every column starts here and every one has the same floor, so "what fits"
-	-- is one number rather than five.
-	local top     = PAD
-	local bottom  = h - PAD
-	local tallest = 0
-	local function used(y) if y > tallest then tallest = y end end
-
-	local function place(region, x, y, width)
-		region:ClearAllPoints()
-		region:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
-		if width then region:SetWidth(width) end
-	end
-
-	-- identity ---------------------------------------------------------------
-	do
-		local x, cw = colX.identity, colW.identity
-		local y = top
-
-		place(content.title, x, y)
-		content.chip:ClearAllPoints()
-		content.chip:SetPoint("LEFT", content.title, "RIGHT", 10, 0)
-		-- No close button. The vertical drawer has one because it covers a
-		-- quarter of the screen edge-to-edge; this one is a strip along the
-		-- bottom with the chevron on the rail an inch away.
-		content.close:SetShown(false)
-		y = y + HEADER_H
-
-		place(content.news, x, y, cw)
-		content.news:SetHeight(NEWS_H)
-		self:SizeNewsBody()
-		content.news.dot:SetShown(self:NewsUnread())
-		y = y + NEWS_H + SECTION_GAP
-
-		-- The micro row, and NO heading over it. The concept draws these as a
-		-- single strip under the card, and the 20px a "MENU" label costs is the
-		-- 20px that decides whether the strip fits above the panel's floor.
-		--
-		-- One row of however many the client offers, rather than a fixed five
-		-- per row: wrapping to a second row in a 240px panel would put it
-		-- through the floor. Ten entries make the cells narrower, which is
-		-- visible, rather than hiding one, which is not - and that trade was
-		-- written down here before the tenth arrived, so this is it being taken
-		-- rather than rediscovered.
-		local micro = self._microList or {}
-		if content.microHead then content.microHead:Hide() end
-		if #micro > 0 then
-			local rows, per, cellW = MicroFit(#micro, cw, MICRO_FLAT_MAX_ROWS)
-			for i, b in ipairs(micros) do
-				if i <= #micro then
-					b:SetSize(cellW, MICRO_CELL_H_FLAT)
-					GridPlace(content, b, i, x, y, per, cellW, MICRO_CELL_H_FLAT, 0, 0)
-					-- Glyph only. The name goes with the label's own row: eight
-					-- of them across this column is about thirty pixels each,
-					-- and "Character" came out as "Ch...". It is still on the
-					-- tooltip, which is where a name that does not fit belongs.
-					if b.name then b.name:Hide() end
-					-- ...and the glyph gives way where the cell is narrow,
-					-- rather than drawing over its neighbours.
-					local g = MicroGlyph(cellW)
-					if b.glyph then b.glyph:SetSize(g, g) end
-					b:Show()
-				else
-					b:Hide()
-				end
-			end
-			y = y + rows * MICRO_CELL_H_FLAT
-		end
-		used(y)
-	end
-
-	-- WIDGETS ----------------------------------------------------------------
-	do
-		local x, cw = colX.widgets, colW.widgets
-		local y = top
-		local shownCards = 0
-		for _, c in ipairs(cards) do if c:IsShown() then shownCards = shownCards + 1 end end
-
-		if shownCards > 0 and content.widgetsHead then
-			place(content.widgetsHead, x, y)
-			y = y + SECTION_H
-			-- TWO columns here, not the three the vertical panel defaults to.
-			-- The setting is a count of columns in a panel a third of this one's
-			-- width, and carrying it across gives six cards 100px wide with
-			-- "14g 32s" wrapped in them.
-			local cols = math.min(Cols("widgetColumns", 3), 2)
-			local cardW = (cw - CARD_GAP * (cols - 1)) / cols
-
-			-- Cut to the column's floor like every other grid here. The panel's
-			-- own minimum height is built to fit all six, so this never bites
-			-- today - but "never bites today" is how the vertical layout came to
-			-- draw a section off the bottom of the drawer, and a grid that
-			-- silently overflows is the one failure mode this file keeps having.
-			local maxRows = math.max(0, math.floor((bottom - y + CARD_GAP) / (CARD_H + CARD_GAP)))
-			local fit = math.min(shownCards, maxRows * cols)
-			for i, card in ipairs(cards) do
-				if i <= fit then
-					card:SetWidth(cardW)
-					GridPlace(content, card, i, x, y, cols, cardW, CARD_H, CARD_GAP, CARD_GAP)
-					card:Show()
-				elseif i <= shownCards then
-					card:Hide()
-				end
-			end
-			self._widgetsCut = shownCards - fit
-			content.widgetsHead:SetText(Spaced("WIDGETS")
-				.. (self._widgetsCut > 0 and ("   +" .. self._widgetsCut) or ""))
-			if fit > 0 then y = y + RowsFor(fit, cols) * (CARD_H + CARD_GAP) - CARD_GAP end
-		end
-		used(y)
-	end
-
-	-- ADDONS -----------------------------------------------------------------
-	do
-		local x, cw = colX.addons, colW.addons
-		local y = top
-		local rows = self._addonRows or {}
-		local cols = Cols("addonColumns", 2)
-		local shown = 0
-
-		if #rows > 0 and content.addonsHead then
-			local headY = y
-			place(content.addonsHead, x, y)
-			y = y + SECTION_H
-
-			-- Cut to the column's own floor, and scrollable for the rest, which
-			-- is the vertical panel's rule and the quest tracker's before it.
-			local maxRows  = math.max(0, math.floor((bottom - y + ROW_GAP) / (ROW_H + ROW_GAP)))
-			shown = self:PlaceAddonRows(x, y, cw, cols, maxRows * cols, x + cw, headY)
-			y = y + RowsFor(shown, cols) * (ROW_H + ROW_GAP) - ROW_GAP
-		end
-		used(y)
-	end
-
-	-- UI SETTINGS ------------------------------------------------------------
-	do
-		local x, cw = colX.settings, colW.settings
-		local y = top
-		local tiles = self._tileList or {}
-		local cols  = Cols("tileColumns", 2)
-		local shownTiles = 0
-
-		if #tiles > 0 and content.tilesHead then
-			place(content.tilesHead, x, y)
-			y = y + SECTION_H
-			local maxRows = math.max(0, math.floor((bottom - y + TILE_GAP) / (TILE_H + TILE_GAP)))
-			local rowsFit = math.min(RowsFor(#tiles, cols), maxRows)
-			shownTiles = math.min(#tiles, rowsFit * cols)
-
-			local tw = (cw - TILE_GAP * (cols - 1)) / cols
-			for i, tile in ipairs(tilesF) do
-				if i <= shownTiles then
-					tile:SetWidth(tw)
-					self:ArrangeTile(tile, tw)
-					GridPlace(content, tile, i, x, y, cols, tw, TILE_H, TILE_GAP, TILE_GAP)
-					tile:Show()
-				else
-					tile:Hide()
-				end
-			end
-			if rowsFit > 0 then y = y + rowsFit * (TILE_H + TILE_GAP) - TILE_GAP end
-		else
-			for _, tile in ipairs(tilesF) do tile:Hide() end
-		end
-
-		self._tilesCut = #tiles - shownTiles
-		if content.tilesHead then
-			content.tilesHead:SetText(Spaced("UI SETTINGS")
-				.. (self._tilesCut > 0 and ("   +" .. self._tilesCut) or ""))
-			content.tilesHead:SetShown(shownTiles > 0)
-		end
-		used(y)
-	end
-
-	self._contentHeight = tallest + PAD
-end
-
-function TB:LayoutVertical()
-	if not self.content or not self.panel then return end
-	local content = self.content
-	local w, h    = self.panel:GetWidth(), self.panel:GetHeight()
-	local avail   = w - PAD * 2
-
-	content:ClearAllPoints()
-	content:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 0, 0)
-	content:SetPoint("BOTTOMRIGHT", self.panel, "BOTTOMRIGHT", 0, 0)
-
-	-- Every section is optional at this point. LayoutContent runs from
-	-- RefreshWidgets, which BuildContent calls before BuildTiles, BuildAddons
-	-- and BuildMicro exist - so the first pass of the very first layout has
-	-- three of the six sections still unbuilt. Guarded here rather than at each
-	-- use, because "the table is not there yet" is one fact about when this runs
-	-- and not six separate special cases.
-	local micros = content.micro  or {}
-	local cards  = content.cards  or {}
-	local addons = content.addons or {}
-	local tilesF = content.tiles  or {}
-
-	local function place(region, x, y, width)
-		region:ClearAllPoints()
-		region:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
-		if width then region:SetWidth(width) end
-	end
-
-	local y = PAD
-
-	-- header ----------------------------------------------------------------
-	place(content.title, PAD, y)
-	content.chip:ClearAllPoints()
-	content.chip:SetPoint("LEFT", content.title, "RIGHT", 10, 0)
-	content.close:ClearAllPoints()
-	content.close:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -y)
-	content.close:SetShown(IsVertical(self:Dock()))
-	y = y + HEADER_H
-
-	-- what's new ------------------------------------------------------------
-	place(content.news, PAD, y, avail)
-	content.news:SetHeight(NEWS_H)
-	self:SizeNewsBody()
-	content.news.dot:SetShown(self:NewsUnread())
-	y = y + NEWS_H + SECTION_GAP
-
-	-- MENU (the micro row) ---------------------------------------------------
-	local micro = self._microList or {}
-	if #micro > 0 and content.microHead then
-		place(content.microHead, PAD, y)
-		-- Shown explicitly, because the FLAT layout hides it - the heading is
-		-- 20px it has not got. Placing a region says nothing about whether it is
-		-- visible, so a drawer dragged from the bottom back to a side came home
-		-- with a nameless row of glyphs under the card.
-		content.microHead:Show()
-		y = y + SECTION_H
-		-- GLYPH ONLY, the way the flat layout already draws them. The names were
-		-- costing sixteen pixels a row for words the tooltip says better, and the
-		-- drawer needed them for the mini-player at its foot. Nothing was lost
-		-- that the flat panel had not already decided it could do without.
-		local rows, per, cellW = MicroFit(#micro, avail, MICRO_DRAWER_MAX_ROWS)
-		for i, b in ipairs(micros) do
-			if i <= #micro then
-				b:SetSize(cellW, MICRO_CELL_H_FLAT)
-				GridPlace(content, b, i, PAD, y, per, cellW,
-					MICRO_CELL_H_FLAT, 0, 0)
-				if b.name then b.name:Hide() end
-				-- The glyph gives way here too. It never had to at five a row,
-				-- because five across 352 is a 70-unit cell - but the count is
-				-- the client's now, and a rule that only holds at the widths we
-				-- happen to ship is not a rule.
-				local g = MicroGlyph(cellW)
-				if b.glyph then b.glyph:SetSize(g, g) end
-				b:Show()
-			else
-				b:Hide()
-			end
-		end
-		y = y + rows * MICRO_CELL_H_FLAT + SECTION_GAP
-	end
-
-	-- WIDGETS ----------------------------------------------------------------
-	local shownCards = 0
-	for _, c in ipairs(cards) do if c:IsShown() then shownCards = shownCards + 1 end end
-	if shownCards > 0 and content.widgetsHead then
-		place(content.widgetsHead, PAD, y)
-		-- Re-asserted, not left alone. The flat layout appends "+N" to this when
-		-- it has to cut cards, and a heading is a piece of state like any other:
-		-- docking back to a side with the count still on it reports a cut that
-		-- the tall panel did not make.
-		self._widgetsCut = 0
-		content.widgetsHead:SetText(Spaced("WIDGETS"))
-		y = y + SECTION_H
-		local cols = Cols("widgetColumns", 3)
-		local cw = (avail - CARD_GAP * (cols - 1)) / cols
-		for i, card in ipairs(cards) do
-			if i <= shownCards then
-				card:SetWidth(cw)
-				GridPlace(content, card, i, PAD, y, cols, cw, CARD_H, CARD_GAP, CARD_GAP)
-			end
-		end
-		y = y + RowsFor(shownCards, cols) * (CARD_H + CARD_GAP) - CARD_GAP + SECTION_GAP
-	end
-
-	-- UI SETTINGS is laid out BEFORE the addon list even though it is drawn
-	-- below it, because the addon list is the one section that gives way. Its
-	-- height has to be known first or there is nothing to subtract.
-	local tiles = self._tileList or {}
-	local tileCols = Cols("tileColumns", 2)
-	local tileRows = RowsFor(#tiles, tileCols)
-
-	-- Both lists give way, and in this order: the addon list first, the settings
-	-- tiles second. A drawer clamped small enough - a low screen at scale 1.0 -
-	-- cannot fit the fixed sections plus every tile, and the first version drew
-	-- the overflow off the bottom of the panel where nobody could reach it.
-	--
-	-- Cutting the addon list to nothing and stopping there was not enough: with
-	-- zero addon rows the column still wanted 614 of a 506 panel. So the tiles
-	-- are cut too, and both say what they dropped.
-
-	-- The addon section's own HEADER is fixed cost too, and it was missing from
-	-- this sum. Its ROWS give way to nothing, which is what "the addon list
-	-- gives way" means - but the heading and the gap under it are drawn whether
-	-- there is one row or twenty, so the tiles were being handed room that the
-	-- heading was always going to take. It overflowed by exactly SECTION_H the
-	-- moment anything above got taller.
-	local addonFixed = (#(self._addonRows or {}) > 0 and content.addonsHead)
-		and (SECTION_H + SECTION_GAP) or 0
-
-	local roomLeft = h - y - PAD - addonFixed
-
-	local maxTileRows = math.max(0, math.floor((roomLeft - SECTION_H) / (TILE_H + TILE_GAP)))
-	if tileRows > maxTileRows then tileRows = maxTileRows end
-	local shownTiles = math.min(#tiles, tileRows * tileCols)
-	self._tilesCut = #tiles - shownTiles
-
-	local tileBlock = (shownTiles > 0)
-		and (SECTION_H + tileRows * (TILE_H + TILE_GAP) - TILE_GAP) or 0
-
-	-- ADDONS -----------------------------------------------------------------
-	local rows = self._addonRows or {}
-	local addonCols = Cols("addonColumns", 2)
-	local shown = 0
-	if #rows > 0 and content.addonsHead then
-		local headY = y
-		place(content.addonsHead, PAD, y)
-		y = y + SECTION_H
-
-		-- What is left after the settings block and the bottom padding. The list
-		-- is CUT to fit rather than the panel being grown, and what did not fit
-		-- is reachable by the wheel and said so - the quest tracker's rule, for
-		-- the same reason: a list that silently drops the row you were looking
-		-- for is worse than one that admits it ran out of room.
-		local room = h - y - PAD - tileBlock - SECTION_GAP
-		local maxRows = math.max(0, math.floor(room / (ROW_H + ROW_GAP)))
-		shown = self:PlaceAddonRows(PAD, y, avail, addonCols,
-			maxRows * addonCols, w - PAD, headY)
-
-		y = y + RowsFor(shown, addonCols) * (ROW_H + ROW_GAP) - ROW_GAP + SECTION_GAP
-	end
-
-	-- UI SETTINGS ------------------------------------------------------------
-	if shownTiles > 0 then
-		if not content.tilesHead then return end
-		place(content.tilesHead, PAD, y)
-		content.tilesHead:SetText(Spaced("UI SETTINGS")
-			.. (self._tilesCut > 0 and ("   +" .. self._tilesCut) or ""))
-		y = y + SECTION_H
-		local tw = (avail - TILE_GAP * (tileCols - 1)) / tileCols
-		for i, tile in ipairs(tilesF) do
-			if i <= shownTiles then
-				tile:SetWidth(tw)
-				self:ArrangeTile(tile, tw)
-				GridPlace(content, tile, i, PAD, y, tileCols, tw, TILE_H, TILE_GAP, TILE_GAP)
-				tile:Show()
-			else
-				tile:Hide()
-			end
-		end
-		y = y + tileRows * (TILE_H + TILE_GAP) - TILE_GAP
-	else
-		for _, tile in ipairs(tilesF) do tile:Hide() end
-	end
-	if content.tilesHead then content.tilesHead:SetShown(shownTiles > 0) end
-
-	self._contentHeight = y + PAD
-end
-
--- The four old per-section layout passes are gone. They are kept as no-ops
--- because Refresh* calls them, and because a reader looking for LayoutTiles
--- should find out where it went rather than find nothing.
-function TB:LayoutTiles()  self:LayoutContent() end
-function TB:LayoutAddons() self:LayoutContent() end
-function TB:LayoutMicro()  self:LayoutContent() end

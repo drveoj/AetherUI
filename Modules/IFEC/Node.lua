@@ -16,21 +16,17 @@
 local ADDON, A = ...
 
 local L = A.L
-local W, Palette, Glass = A.Widgets, A.Palette, A.Glass
+local W = A.Widgets
 
 A.IFEC = A.IFEC or {}
 local Node = {}
 A.IFEC.Node = Node
 
-local WIDTH, PAD, HEAD_H, CORNER = 270, 12, 18, 12
+local WIDTH, PAD, HEAD_H = 280, 16, 20
 
 local function Trunk() return A.Trunk:Get("world") end
 local function Mini() return A.IFEC.Mini end
 local function Playback() return A.IFEC.Playback end
-
-local function Spaced(s)
-	return (s:gsub("(.)", "%1 "):gsub(" $", ""))
-end
 
 function Node:Available()
 	local M = Mini()
@@ -44,27 +40,18 @@ end
 
 function Node:Build()
 	if self.panel then return self.panel end
-	local t = Trunk()
-	local p = Glass.CreatePanel(t:Frame(), {
-		corner = CORNER, shadow = A.db.profile.glass.shadow, name = ADDON .. "NowPlayingBranch",
-	})
-	p:SetFrameLevel(t:Frame():GetFrameLevel() + 20)
-	p:SetWidth(WIDTH)
-	p:EnableMouse(true)
-	p:Hide()
+	local p = Trunk():Branch("NowPlayingBranch", WIDTH)
 
-	p.head = W.Text(p, "tbSection", "LEFT")
+	p.head = A.Trunk.Head(p)
 	p.head:SetPoint("TOPLEFT", p, "TOPLEFT", PAD, -PAD)
-	p.head:SetText(Spaced(L.nowplaying.heading))
+	p.head:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PAD, -PAD)
+	p.head:Set(L.nowplaying.heading, "")
 
-	p:SetScript("OnShow", function() Trunk():Paint() end)
-	p:SetScript("OnHide", function()
+	p:HookScript("OnHide", function()
 		-- The library hangs off the mini-player; it goes with the branch.
 		local M, LB = Mini(), A.IFEC.Library
 		if LB and M and M.frame then LB:CloseFor(M.frame) end
-		Trunk():Paint()
 	end)
-	if _G.UISpecialFrames then table.insert(_G.UISpecialFrames, p:GetName()) end
 
 	self.panel = p
 	self:Skin()
@@ -74,9 +61,8 @@ end
 function Node:Skin()
 	local p = self.panel
 	if not p then return end
-	p:ApplySkin()
-	p:SetFillColor(Palette:ReadingFill())
-	W.Color(p.head, Palette.c.text)
+	A.Trunk.SkinBranch(p)
+	p.head:Paint()
 	local M = Mini()
 	if M and M.frame then M:Restyle() end
 end
