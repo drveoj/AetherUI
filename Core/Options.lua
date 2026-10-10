@@ -716,7 +716,10 @@ local function BarPages()
 		local function at(k) return { "modules", "actionbars", "bars", i, k } end
 
 		local args = {
-			enabled = toggle(L.common.enabled, nil, at("enabled")),
+			-- "Visible" on a strand (strands brief): off, it is a hidden strand,
+			-- parked in unlock and one click from back.
+			enabled = toggle(kind == "extra" and L.common.enabled or L.options.bar_pages.visible.name,
+				kind ~= "extra" and L.options.bar_pages.visible.desc or nil, at("enabled")),
 			source = note(kind == "action"
 				and ("Actions " .. (((barCfg.page or 1) - 1) * 12 + 1) .. "-"
 					.. ((barCfg.page or 1) * 12) .. ".")

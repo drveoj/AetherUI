@@ -18929,6 +18929,209 @@ do
 	A:Reconfigure()
 end
 
+print("== hidden strands ==")
+do
+	-- STRANDS BRIEF: a strand switched off still exists - a hollow outline
+	-- parked along the bottom edge in unlock, one click to show, then drag.
+	local H = { AB = A:GetModule("actionbars"), M = A.Movers }
+	H.c = A.Config:Module("actionbars")
+	H.was = { ui = A.db.profile.scale, w = UIParent:GetWidth(), h = UIParent:GetHeight(), on = {} }
+	for _, c in ipairs(H.c.bars) do H.was.on[tostring(c.id)] = c.enabled end
+	function H.nodes()
+		local out = {}
+		for _, n in ipairs(H.AB.park and H.AB.park.nodes or {}) do
+			if n:IsShown() then out[#out + 1] = n end
+		end
+		return out
+	end
+	function H.node(id)
+		for _, n in ipairs(H.nodes()) do if n.id == id then return n end end
+	end
+	function H.ids()
+		local out = {}
+		for _, n in ipairs(H.nodes()) do out[#out + 1] = n.id end
+		return table.concat(out, " ")
+	end
+	function H.say(...)
+		local out = {}
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			out[#out + 1] = type(v) == "number" and ("%.1f"):format(v) or tostring(v)
+		end
+		return " (" .. table.concat(out, ", ") .. ")"
+	end
+
+	UIParent:SetSize(1920, 1080)
+	UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+	A.db.profile.scale = 1
+	wipe(A.db.profile.anchors)
+	-- Bars 1 and 2 on, every other numbered bar off; stance and pet on.
+	for _, c in ipairs(H.c.bars) do
+		if c.kind == "action" then c.enabled = (c.id == "1" or c.id == "2") end
+	end
+	H.c.bars[#H.c.bars].enabled = true
+	A:Reconfigure()
+	H.want = {}
+	for _, c in ipairs(H.c.bars) do
+		if c.kind ~= "extra" and not c.enabled then H.want[#H.want + 1] = tostring(c.id) end
+	end
+	H.want = table.concat(H.want, " ")
+
+	check(not (H.AB.park and H.AB.park:IsShown()), "locked, nothing is parked on screen")
+	H.M:Unlock()
+	check(H.AB.park and H.AB.park:IsShown() and H.ids() == H.want,
+		"unlocked, every hidden strand is parked, in order" .. H.say(H.ids(), H.want))
+	H.n3 = H.node("3")
+	H.sc, H.sr = H.AB:ShapeOf("3")
+	check(H.n3 and H.n3.cols == H.sc and H.n3.rows == H.sr and H.n3.count == 12 and H.n3.dashes[1]:IsShown(),
+		"each drawn hollow, in its own shape, a cell a button"
+		.. H.say(H.n3 and H.n3.cols, H.n3 and H.n3.rows, H.n3 and H.n3.count))
+	check(H.n3 and H.n3.label:GetText() == "BAR 3", "and named" .. H.say(H.n3 and H.n3.label:GetText()))
+	H.l, H.r, H.b = 1e9, -1e9, 1e9
+	for _, n in ipairs(H.nodes()) do
+		local l, b = H.M.PointAt(n, "BOTTOMLEFT")
+		local r = H.M.PointAt(n, "TOPRIGHT")
+		H.l, H.r, H.b = math.min(H.l, l), math.max(H.r, r), math.min(H.b, b)
+	end
+	check(math.abs((H.l + H.r) / 2 - 960) < 1 and math.abs(H.b - H.M.Px(24)) < 1,
+		"in a row centred along the bottom, 24 up" .. H.say(H.l, H.r, H.b))
+
+	-- The extra button is never a strand, on or off.
+	H.ex = H.AB:BarConfig("extra")
+	H.ex.enabled = false
+	H.AB:OnConfigChanged()
+	check(H.ids() == H.want, "the extra button is never parked" .. H.say(H.ids()))
+	H.ex.enabled = true
+	H.AB:OnConfigChanged()
+
+	-- A strand switched off while unlocked is parked at once.
+	H.AB:SetBarEnabled("2", false)
+	check(H.node("2") ~= nil, "bar 2 switched off while unlocked is parked at once" .. H.say(H.ids()))
+	H.AB:SetBarEnabled("2", true)
+
+	-- 2. One never placed: shown where its node was, still on its parent.
+	H.cx, H.cy = H.M.PointAt(H.n3, "CENTER")
+	check(A.db.profile.anchors.bar3 == nil, "bar 3 has never been placed")
+	H.n3:GetScript("OnClick")(H.n3)
+	H.dx, H.dy = H.M.PointAt(H.M.registry.bar3.frame, "CENTER")
+	check(H.AB:BarConfig("3").enabled and H.node("3") == nil,
+		"one click shows bar 3, and its node is gone" .. H.say(H.ids()))
+	check(math.abs(H.dx - H.cx) < 1 and math.abs(H.dy - H.cy) < 1 and A.db.profile.anchors.bar3 ~= nil,
+		"where its node was, and kept there" .. H.say(H.dx, H.cx, H.dy, H.cy))
+
+	-- 3. One placed before goes back where it was, not to its node.
+	H.d2 = H.M.registry.bar2.frame
+	H.d2:ClearAllPoints()
+	H.d2:SetPoint("CENTER", UIParent, "BOTTOMLEFT", 400, 700)
+	H.M:SaveTree("bar2")
+	H.ax, H.ay = H.M.PointAt(H.d2, "CENTER")
+	H.AB:SetBarEnabled("2", false)
+	H.n2 = H.node("2")
+	H.n2:GetScript("OnClick")(H.n2)
+	H.bx, H.by = H.M.PointAt(H.M.registry.bar2.frame, "CENTER")
+	check(math.abs(H.bx - H.ax) < 1 and math.abs(H.by - H.ay) < 1,
+		"bar 2, placed before, goes back where it was" .. H.say(H.bx, H.ax, H.by, H.ay))
+
+	-- 4. Not in a fight: showing one builds secure buttons.
+	H.n4 = H.node("4")
+	_G.__inCombat = true
+	H.n4:GetScript("OnClick")(H.n4)
+	_G.__inCombat = false
+	check(not H.AB:BarConfig("4").enabled and H.node("4") ~= nil, "a click in combat shows nothing")
+
+	-- 5. Dragged back to the row, a strand is hidden (Joe, 2026-10-10).
+	function H.drag(name, x, y, stop)
+		local h = H.M.registry[name].handle
+		local f = H.M.registry[name].frame
+		local cx, cy = H.M.PointAt(f, "CENTER")
+		cursorX, cursorY = cx, cy
+		h:GetScript("OnDragStart")(h)
+		cursorX, cursorY = x, y
+		h:GetScript("OnUpdate")(h)
+		if stop ~= false then h:GetScript("OnDragStop")(h) end
+		return h
+	end
+	-- Its record as a string: the bond if it has one, else its screen place.
+	function H.rec(name)
+		local r = A.db.profile.anchors[name]
+		local h = r and (r.lat or r)
+		return h and ("%s %s %s %d %d"):format(tostring(h.parent), tostring(h.point), tostring(h.relPoint),
+			h.x or 0, h.y or 0) or "none"
+	end
+	H.was3 = H.rec("bar3")
+	H.h3 = H.drag("bar3", 960, 600, false)
+	H.s = H.AB.park.strip
+	check(H.s.rect and H.s.text:IsShown() and H.s.text:GetText() == "DROP HERE TO HIDE · SHIFT TO PLACE",
+		"dragging a strand shows the drop strip round the row" .. H.say(H.s.text:GetText()))
+	H.mx, H.my = (H.s.rect.l + H.s.rect.r) / 2, (H.s.rect.b + H.s.rect.t) / 2
+	cursorX, cursorY = H.mx, H.my
+	H.h3:GetScript("OnUpdate")(H.h3)
+	check(H.s.text:GetText() == "HIDE · BAR 3" and not (H.M.__feedback() and H.M.__feedback().bondInfo),
+		"on it, it lights - HIDE · BAR 3 - and offers no bond" .. H.say(H.s.text:GetText()))
+	H.h3:GetScript("OnDragStop")(H.h3)
+	check(not H.AB:BarConfig("3").enabled and H.node("3") ~= nil and not H.s.rect,
+		"let go there, bar 3 is hidden and parked, and the strip goes" .. H.say(H.ids()))
+	check(H.was3 ~= "none" and H.rec("bar3") == H.was3,
+		"its place kept as it was before the drag, not where it was dropped" .. H.say(H.was3, H.rec("bar3")))
+	-- With Shift held, on the strip is just a place to put it (Joe, 2026-10-10).
+	H.h2 = H.drag("bar2", 960, 600, false)
+	H.s = H.AB.park.strip
+	_G.__shift = true
+	cursorX, cursorY = (H.s.rect.l + H.s.rect.r) / 2, (H.s.rect.b + H.s.rect.t) / 2
+	H.h2:GetScript("OnUpdate")(H.h2)
+	check(H.s.text:GetText() == "DROP HERE TO HIDE · SHIFT TO PLACE",
+		"with Shift held the strip does not light" .. H.say(H.s.text:GetText()))
+	H.top = H.s.rect.t
+	H.h2:GetScript("OnDragStop")(H.h2)
+	_G.__shift = false
+	H.px, H.py = -1e9, -1e9
+	if H.M.registry.bar2 then H.px, H.py = H.M.PointAt(H.M.registry.bar2.frame, "CENTER") end
+	check(H.AB:BarConfig("2").enabled and math.abs(H.px - cursorX) < 40 and H.py < H.top + 40,
+		"and the drop places bar 2 there, shown" .. H.say(H.px, cursorX, H.py))
+	-- Off the strip it is an ordinary drop.
+	H.drag("bar2", 700, 500)
+	check(H.AB:BarConfig("2").enabled and H.node("2") == nil, "dropped anywhere else, a strand stays shown")
+	-- Whatever hangs from a hidden strand stays where it was: bar 1 is put
+	-- back before it goes, and comes back there.
+	H.st = H.M.registry.barstance
+	H.sx, H.sy = H.M.PointAt(H.st.frame, "CENTER")
+	H.b1x, H.b1y = H.M.PointAt(H.M.registry.bar1.frame, "CENTER")
+	H.s = H.AB.park.strip
+	H.drag("bar1", 960, 30)
+	H.tx, H.ty = H.M.PointAt(H.st.frame, "CENTER")
+	check(not H.AB:BarConfig("1").enabled and math.abs(H.tx - H.sx) < 1 and math.abs(H.ty - H.sy) < 1,
+		"hiding bar 1 leaves its stance bar where it was" .. H.say(H.tx, H.sx, H.ty, H.sy))
+	H.n1 = H.node("1")
+	H.n1:GetScript("OnClick")(H.n1)
+	H.cx, H.cy = H.M.PointAt(H.M.registry.bar1.frame, "CENTER")
+	check(math.abs(H.cx - H.b1x) < 1 and math.abs(H.cy - H.b1y) < 1,
+		"and shown again, bar 1 is back where it was" .. H.say(H.cx, H.b1x, H.cy, H.b1y))
+	check(H.M.registry.barextra.park == nil, "the extra button cannot be dragged into hiding")
+	-- With nothing hidden there is still somewhere to drop.
+	for _, c in ipairs(H.c.bars) do c.enabled = true end
+	H.AB:OnConfigChanged()
+	check(not H.AB.park:IsShown(), "with every strand shown and nothing dragged, no row")
+	H.hd = H.drag("bar2", 960, 600, false)
+	check(H.AB.park:IsShown() and H.AB.park.strip.rect ~= nil, "but drag one and the strip is there")
+	H.hd:GetScript("OnDragStop")(H.hd)
+	check(not H.AB.park:IsShown(), "and gone again when it is let go elsewhere")
+
+	-- 6. Locking takes the row away; the options call it Visible.
+	H.M:Lock()
+	check(not H.AB.park:IsShown(), "and locking takes the parked row away")
+	H.opt = A.Options:Build().args.actionbars.args
+	check(H.opt.bar3.args.enabled.name == "Visible" and H.opt.barextra.args.enabled.name == "Enabled",
+		"a strand's switch is Visible; the extra button's is still Enabled")
+
+	-- Back as it was.
+	for _, c in ipairs(H.c.bars) do c.enabled = H.was.on[tostring(c.id)] end
+	UIParent:SetSize(H.was.w, H.was.h)
+	UIParent.__geom = nil
+	A.db.profile.scale = H.was.ui
+	wipe(A.db.profile.anchors)
+	A:Reconfigure()
+end
+
 -- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole
 -- arrangement as one line, read back, refused whole when it is wrong.
 print("== energy ==")

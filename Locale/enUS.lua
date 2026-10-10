@@ -63,6 +63,11 @@ L["bars.set_bind_mode.keybind_mode_off"] = "keybind mode off."
 L["bars.set_bind_mode.keybind_mode_s_hover"] =
 	"keybind mode %s - hover a button and press a key."
 
+L["bars.parked.drop"] = "DROP HERE TO HIDE · SHIFT TO PLACE"
+L["bars.parked.hidden"] = "%s hidden. Its outline waits at the bottom while unlocked."
+L["bars.parked.park"] = "HIDE · %s"
+L["bars.parked.shown"] = "%s shown. Drag it into place."
+
 L["bars.set_binding_to.key_can_t_bound"] = "that key can't be bound."
 
 -- chat --------------------------------------------------------------------
@@ -607,6 +612,10 @@ L["options.bar_pages.stance_paging.name"] = "Swap with stance, stealth and forms
 L["options.bar_pages.stance_paging.desc"] =
 	"Stealth, a druid form or a warrior stance swaps this bar to that form's "
 		.. "own buttons, as the game's main bar does. Off keeps it on its page."
+L["options.bar_pages.visible.desc"] =
+	"Off hides it. In unlock it waits as an outline along the bottom of the "
+		.. "screen: click it to bring it back."
+L["options.bar_pages.visible.name"] = "Visible"
 L["options.bar_pages.wrap.across"] = "Across"
 L["options.bar_pages.wrap.desc"] =
 	"Which way the buttons run: along each row, or down each column. Keys follow "

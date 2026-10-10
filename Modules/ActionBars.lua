@@ -1964,11 +1964,256 @@ end
 
 local function MoverOpts(bar)
 	return { preview = BarPreview(bar), parent = ParentFor(bar), braid = bar.kind ~= "extra",
+		park = AB.ParkOpts and AB.ParkOpts(bar) or nil,
 		rows = function(cols, rows) return StrandRows(bar, cols, rows) end,
 		reshape = bar.kind ~= "extra" and {
 			shapes = function() return Shapes(bar) end,
 			apply = function(cols, rows) return AB:SetShape(bar.id, cols, rows) end,
 		} or nil }
+end
+
+-- ---------------------------------------------------------------------------
+-- hidden strands, parked (strands brief: "hollow outlines parked along the
+-- bottom edge; click to show, then drag")
+--
+-- A hidden strand is one switched off. In unlock each is a small hollow node
+-- in a row along the bottom: its shape drawn in 4 px squares with 1 px gaps
+-- (the options map's own spec) and its name. One click shows it.
+-- ---------------------------------------------------------------------------
+
+local PARK_CELL, PARK_GAP, PARK_PAD = 4, 1, 8
+
+--- The strands switched off, in config order. Never the extra button.
+local function Hidden()
+	local out = {}
+	for _, c in ipairs(A.Config:Module("actionbars").bars or {}) do
+		if c.kind ~= "extra" and not c.enabled then out[#out + 1] = c end
+	end
+	return out
+end
+
+local function ParkedNode(park, i)
+	local n = park.nodes[i]
+	if n then return n end
+	n = CreateFrame("Button", nil, park)
+	n:RegisterForClicks("LeftButtonUp")
+	n.cells, n.dashes = {}, {}
+	n.label = W.Text(n, "label", "LEFT")
+	n:SetScript("OnEnter", function(self) self.hot = true; AB:RefreshParked() end)
+	n:SetScript("OnLeave", function(self) self.hot = nil; AB:RefreshParked() end)
+	n:SetScript("OnClick", function(self) AB:ShowParked(self.id) end)
+	park.nodes[i] = n
+	return n
+end
+
+--- Lay one parked node out for strand config `c`; returns its width, height.
+local function DressParked(n, c)
+	local id = tostring(c.id)
+	local cols, rows = AB:ShapeOf(id)
+	cols, rows = cols or 1, rows or 1
+	-- One cell per button; a stance bar with no forms still has one to show.
+	local count = math.min(cols * rows, math.max(1, SlotCount(c)))
+	local col = n.hot and Palette.c.friendly or Palette.c.accent
+	n.id, n.cols, n.rows = id, cols, rows
+
+	local gw = cols * PARK_CELL + (cols - 1) * PARK_GAP
+	local gh = rows * PARK_CELL + (rows - 1) * PARK_GAP
+	n.label:SetText(tostring(c.label or ("Bar " .. id)):upper())
+	W.Color(n.label, col)
+	local lw, lh = math.ceil(n.label:GetStringWidth() or 0), math.ceil(n.label:GetStringHeight() or 10)
+	local w = PARK_PAD * 3 + gw + lw
+	local h = PARK_PAD * 2 + math.max(gh, lh)
+	n:SetSize(w, h)
+
+	-- Its shape, cell by cell, in the order its buttons run.
+	local shown = 0
+	for i = 0, count - 1 do
+		local x, y
+		if c.wrap == "down" then x, y = math.floor(i / rows), i % rows
+		else x, y = i % cols, math.floor(i / cols) end
+		shown = shown + 1
+		local t = n.cells[shown] or n:CreateTexture(nil, "ARTWORK")
+		n.cells[shown] = t
+		t:SetColorTexture(col[1], col[2], col[3], 0.6)
+		t:ClearAllPoints()
+		t:SetPoint("TOPLEFT", n, "TOPLEFT", PARK_PAD + x * (PARK_CELL + PARK_GAP),
+			-(h - gh) / 2 - y * (PARK_CELL + PARK_GAP))
+		t:SetSize(PARK_CELL, PARK_CELL)
+		t:Show()
+	end
+	for i = shown + 1, #n.cells do n.cells[i]:Hide() end
+	n.count = shown
+	n.label:ClearAllPoints()
+	n.label:SetPoint("LEFT", n, "LEFT", PARK_PAD * 2 + gw, 0)
+
+	-- Hollow: a dashed rim and nothing inside it.
+	local d = 0
+	for _, e in ipairs({ { 0, h, w, h }, { w, h, w, 0 }, { w, 0, 0, 0 }, { 0, 0, 0, h } }) do
+		d = A.Movers.Dash(n, n.dashes, d, e[1], e[2], e[3], e[4], col, 1,
+			{ rel = n, alpha = 0.7, dash = 4, gap = 3 })
+	end
+	for i = d + 1, #n.dashes do n.dashes[i]:Hide() end
+	return w, h
+end
+
+--- The drop strip round the parked row, shown while a strand is dragged:
+--  dropped on it, the strand is hidden (Joe, 2026-10-10). Lit while the cursor
+--  is on it. Its rect is kept in UIParent units for the drag to test.
+local function LayStrip(park, cx, base, w, top)
+	local s = park.strip
+	if not s then
+		s = { dashes = {} }
+		s.fill = park:CreateTexture(nil, "BACKGROUND")
+		s.text = W.Text(park, "label", "LEFT")
+		park.strip = s
+	end
+	if not AB.parking then
+		s.fill:Hide()
+		s.text:Hide()
+		for _, l in ipairs(s.dashes) do l:Hide() end
+		s.rect = nil
+		return
+	end
+	local lit = AB.parkLit
+	local c = lit and Palette.c.friendly or Palette.c.accent
+	local sw = math.max(w, 320) + 24
+	local l, r, b, t = cx - sw / 2, cx + sw / 2, base - 12, math.max(top, base + 40)
+	s.fill:SetColorTexture(c[1], c[2], c[3], lit and 0.12 or 0.04)
+	s.fill:ClearAllPoints()
+	s.fill:SetPoint("BOTTOMLEFT", park, "BOTTOMLEFT", l, b)
+	s.fill:SetSize(r - l, t - b)
+	s.fill:Show()
+	local d = 0
+	for _, e in ipairs({ { l, t, r, t }, { r, t, r, b }, { r, b, l, b }, { l, b, l, t } }) do
+		d = A.Movers.Dash(park, s.dashes, d, e[1], e[2], e[3], e[4], c, lit and 2 or 1,
+			{ rel = park, alpha = 0.8, dash = 6, gap = 4 })
+	end
+	for i = d + 1, #s.dashes do s.dashes[i]:Hide() end
+	s.text:SetText(lit and A.F(L.bars.parked.park, AB.parkLabel or "") or L.bars.parked.drop)
+	W.Color(s.text, c)
+	s.text:ClearAllPoints()
+	s.text:SetPoint("BOTTOMLEFT", park, "BOTTOMLEFT", l + 4, t + 6)
+	s.text:Show()
+	local k = park:GetScale() or 1
+	s.rect = { l = l * k, r = r * k, b = b * k, t = t * k }
+end
+
+--- The parked row, laid again: after any config change and on every unlock.
+function AB:RefreshParked()
+	local park = AB.park
+	local list = A.Movers.unlocked and Hidden() or {}
+	if #list == 0 and not AB.parking then
+		if park then park:Hide() end
+		return
+	end
+	if not park then
+		park = CreateFrame("Frame", ADDON .. "ParkedStrands", UIParent)
+		park:SetFrameStrata("FULLSCREEN")
+		park.nodes = {}
+		AB.park = park
+	end
+	local scale = A.db.profile.scale or 1
+	park:SetScale(scale)
+	-- Centred rows, 24 above the bottom edge, wrapping short of the sides.
+	local maxW = UIParent:GetWidth() / scale - 96
+	local space = 8
+	local rowsOf, cur, curW = {}, {}, 0
+	for i, c in ipairs(list) do
+		local n = ParkedNode(park, i)
+		local w, h = DressParked(n, c)
+		if #cur > 0 and curW + space + w > maxW then
+			rowsOf[#rowsOf + 1] = { nodes = cur, w = curW }
+			cur, curW = {}, 0
+		end
+		cur[#cur + 1] = { n = n, w = w, h = h }
+		curW = curW + (#cur > 1 and space or 0) + w
+		n:Show()
+	end
+	rowsOf[#rowsOf + 1] = { nodes = cur, w = curW }
+	for i = #list + 1, #park.nodes do park.nodes[i]:Hide() end
+
+	local base = A.Movers.Px(24) / scale
+	local y, widest = base, 0
+	for r = #rowsOf, 1, -1 do
+		local row, x, tall = rowsOf[r], -rowsOf[r].w / 2, 0
+		for _, it in ipairs(row.nodes) do
+			it.n:ClearAllPoints()
+			it.n:SetPoint("BOTTOMLEFT", park, "BOTTOM", x, y)
+			x = x + it.w + space
+			tall = math.max(tall, it.h)
+		end
+		widest = math.max(widest, row.w)
+		y = y + tall + space
+	end
+	local pw = UIParent:GetWidth() / scale
+	park:ClearAllPoints()
+	park:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 0)
+	park:SetSize(pw, math.max(y, base + 64))
+	LayStrip(park, pw / 2, base, widest, y)
+	park:Show()
+end
+
+--- What a strand's drag asks of the parked row (Movers' `park` option).
+local function ParkOpts(bar)
+	if bar.kind == "extra" then return nil end
+	return {
+		start = function()
+			AB.parking, AB.parkLit = "bar" .. bar.id, nil
+			AB.parkLabel = tostring(bar.cfg.label or ("Bar " .. bar.id)):upper()
+			AB:RefreshParked()
+		end,
+		over = function(mx, my)
+			local r = AB.park and AB.park.strip and AB.park.strip.rect
+			-- Shift places it there instead: the bottom centre is somewhere a
+			-- bar can want to go (Joe, 2026-10-10), and Shift is already the
+			-- unlock's "place freely".
+			local on = not IsShiftKeyDown() and r and mx >= r.l and mx <= r.r
+				and my >= r.b and my <= r.t or false
+			if on ~= (AB.parkLit or false) then
+				AB.parkLit = on
+				AB:RefreshParked()
+			end
+			return on
+		end,
+		finish = function(parked)
+			AB.parking, AB.parkLit = nil, nil
+			if parked and not InCombatLockdown() and AB:SetBarEnabled(bar.id, false) then
+				A:Print(A.F(L.bars.parked.hidden, AB.parkLabel or ""))
+			else
+				AB:RefreshParked()
+			end
+		end,
+	}
+end
+AB.ParkOpts = ParkOpts
+
+--- Show a hidden strand from its parked node. One with a saved record goes
+--  back where it was - switching off keeps it, braid and all. One never
+--  placed appears where its node was, on its usual parent, to be dragged.
+function AB:ShowParked(id)
+	if InCombatLockdown() then
+		A:Print(A.Bad(L.movers.create_handle.can_t_move_frames))
+		return false
+	end
+	local cfg = AB:BarConfig(id)
+	if not cfg or cfg.enabled or cfg.kind == "extra" then return false end
+	local name = "bar" .. tostring(id)
+	local placed = A.db.profile.anchors[name] ~= nil
+	local cx, cy
+	for _, n in ipairs(AB.park and AB.park.nodes or {}) do
+		if n:IsShown() and n.id == tostring(id) then cx, cy = A.Movers.PointAt(n, "CENTER") end
+	end
+	AB:SetBarEnabled(id, true)
+	local e = A.Movers.registry[name]
+	if not placed and e and cx then
+		local f = e.frame
+		local k = (UIParent:GetEffectiveScale() or 1) / (f:GetEffectiveScale() or 1)
+		f:ClearAllPoints()
+		f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx * k, cy * k)
+		A.Movers:SetParent(name, e.parent)
+	end
+	A:Print(A.F(L.bars.parked.shown, tostring(cfg.label or ("Bar " .. id)):upper()))
+	return true
 end
 
 --- Faded with the HUD, by its energy.
@@ -2019,11 +2264,13 @@ function AB:OnEnable()
 	self:OnConfigChanged()
 	self:RegisterEvents()
 	A:RegisterTicker(self, Tick)
-	-- The blanks show the shape while it is being placed, and only then.
+	-- The blanks and the parked strands show while things are being placed,
+	-- and only then.
 	A.Movers:OnLockChanged("actionbars.blanks", function(on)
 		for _, bar in ipairs(AB.bars) do
 			if bar.blanks then bar.blanks:SetShown(on and (bar.blanks.count or 0) > 0) end
 		end
+		AB:RefreshParked()
 	end)
 
 	self:HideBlizzard()
@@ -2353,6 +2600,8 @@ function AB:OnConfigChanged()
 	AB:ApplyBindings()
 	AB:RefreshAll()
 	A.Fader:Refresh()
+	-- A strand switched off while unlocked is parked at once.
+	AB:RefreshParked()
 end
 
 

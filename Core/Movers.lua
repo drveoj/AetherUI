@@ -1373,6 +1373,8 @@ local function CreateHandle(entry)
 			ShowBondTarget(nil)
 			ShowInspector(nil)
 			if A.Braids then A.Braids:ShowEdge(nil) end
+			if self._mover and self._mover.park then self._mover.park.finish(false) end
+			self._park = nil
 			return
 		end
 
@@ -1451,13 +1453,15 @@ local function CreateHandle(entry)
 		f:ClearAllPoints()
 		f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x * us / fs, y * us / fs)
 
+		-- Over the parked row, a drop hides it; nothing else is offered.
+		self._park = mover.park and mover.park.over(mx, my) or nil
 		-- Where a drop would bond it, and what the inspector reads now.
-		self._bondTo = JunctionUnder(mover, mx, my)
+		self._bondTo = not self._park and JunctionUnder(mover, mx, my) or nil
 		ShowBondTarget(self._bondTo)
 		-- A strand edge within 8 of another's lights: a drop braids it there.
 		-- A junction under the cursor is the stronger signal.
 		self._braid = nil
-		if A.Braids and mover.braid and not self._bondTo then
+		if A.Braids and mover.braid and not self._bondTo and not self._park then
 			self._braid = A.Braids:Probe(mover, self._skip)
 		end
 		if A.Braids then A.Braids:ShowEdge(self._braid) end
@@ -1508,6 +1512,8 @@ local function CreateHandle(entry)
 
 		f:SetMovable(true)
 		self._dragging = true
+		self._park = nil
+		if mover.park then mover.park.start() end
 		self:SetScript("OnUpdate", Drag)
 	end)
 
@@ -1530,6 +1536,23 @@ local function CreateHandle(entry)
 		end
 
 		local mover = self._mover or entry
+		-- DROPPED ON THE PARKED ROW: hidden. Put back where it was first, so
+		-- whatever hangs from it goes back too and it returns there when shown.
+		local parked = self._park
+		self._park = nil
+		if mover.park then
+			if parked then
+				RestorePosition(mover)
+				-- Written down where it stands, so a strand still on its default
+				-- comes back here rather than to its parked outline. A bond it
+				-- has is kept exactly (carried).
+				SavePosition(mover, true)
+				mover.park.finish(true)
+				return
+			end
+			mover.park.finish(false)
+		end
+
 		local f = mover.frame
 		local point, x, y = ScreenAnchor(f, mover.growsDown)
 		if not point then return end
@@ -1625,6 +1648,11 @@ end
 --    reshape = { shapes = fn, apply = fn(cols, rows) }
 --                          a strand with a shape handle. shapes() lists
 --                          { cols, rows, w, h } in UIParent units.
+--    park = { start = fn, over = fn(mx, my), finish = fn(parked) }
+--                          a node that can be hidden by dropping it on a
+--                          row of its module's: start when a drag begins,
+--                          over says whether the cursor (UIParent units) is
+--                          on it, finish(true) hides it.
 
 --- Which node an entry hangs from, from its saved record.
 --
@@ -1671,6 +1699,7 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.braid = opts and opts.braid or nil
 	entry.rows = opts and opts.rows or nil
 	entry.reshape = opts and opts.reshape or nil
+	entry.park = opts and opts.park or nil
 
 	entry.defaultParent = opts and opts.parent or nil
 	ResolveParent(entry)
