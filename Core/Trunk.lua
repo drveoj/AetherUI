@@ -236,6 +236,8 @@ function Proto:Paint()
 		end
 	end
 	self:PaintTail()
+	-- A branch opening or shutting shows or tucks its stub (labels on hover).
+	if self:LabelsOnHover() then self:Extend() end
 end
 
 --- Which way the stubs point: toward the middle of the screen, from wherever
@@ -362,12 +364,14 @@ function Proto:Extend()
 			-- Nothing to click while it is gone.
 			b:EnableMouse(a > 0.5)
 			if node.kind ~= "item" then
-				b.stub:SetAlpha(a)
 				-- Quiet (the Toolbox trunk in a fight): nodes only, no labels.
-				-- On hover only: a label shows while its node is under the cursor.
-				local hidden = self.quiet or (onHover and not node.hover)
-				b.label:SetAlpha(hidden and 0 or a)
-				b.junction:SetAlpha(a)
+				-- On hover only: a label and its stub show while the node is under
+				-- the cursor, or while its branch is open - the stub is what joins
+				-- the branch to its node (Joe).
+				local tucked = onHover and not (node.hover or node.lit)
+				b.label:SetAlpha((self.quiet or tucked) and 0 or a)
+				b.stub:SetAlpha(tucked and 0 or a)
+				b.junction:SetAlpha(tucked and 0 or a)
 			elseif node.setAlpha then
 				node.setAlpha(node, a)
 			end
@@ -376,8 +380,11 @@ function Proto:Extend()
 end
 
 --- Up into the end-cap (true) or back down (false), over 300 ms; `instant`
---  for no slide.
+--  for no slide. In flight it stays up whatever its owner asks, and comes
+--  back to what was asked on landing.
 function Proto:SetRetracted(on, instant)
+	self.asked = on and true or false
+	on = self.asked or Trunk.flying
 	self.retracted = on and true or false
 	self._want = on and 0 or 1
 	-- A transient branch goes with its node rather than float beside nothing.
@@ -395,6 +402,37 @@ function Proto:SetRetracted(on, instant)
 	end
 	W.DriveSlide(f, self, 1 / RETRACT, function(t) t:Extend() end)
 end
+
+-- ---------------------------------------------------------------------------
+-- in flight
+--
+-- On a taxi every trunk goes up out of the way, as the World trunk does in a
+-- fight - and with no tail: the active quest is no use on a griffin (Joe,
+-- 2026-10-10). Watched here rather than through the I.F.E.C.'s flight
+-- detection, which runs only while that module is on: UnitOnTaxi on the shared
+-- tick, so both edges are caught, a disconnect mid-flight included.
+-- ---------------------------------------------------------------------------
+
+Trunk.flying = false
+Trunk.flightListeners = {}
+
+--- Told (true / false) when a flight starts or ends, keyed by owner.
+function Trunk:OnFlight(key, fn)
+	if type(fn) == "function" then Trunk.flightListeners[key] = fn end
+end
+
+function Trunk:SetFlying(on)
+	on = on and true or false
+	if on == Trunk.flying then return false end
+	Trunk.flying = on
+	for _, t in pairs(Trunk.list) do t:SetRetracted(t.asked or false) end
+	for _, fn in pairs(Trunk.flightListeners) do pcall(fn, on) end
+	return true
+end
+
+A:RegisterTicker(Trunk, function()
+	Trunk:SetFlying(UnitOnTaxi and UnitOnTaxi("player") or false)
+end)
 
 --- The other combat energy (README "Two energies for trunks", the left
 --  trunk): the nodes stay, the labels go and an open transient branch closes.

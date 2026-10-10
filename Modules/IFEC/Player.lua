@@ -500,6 +500,17 @@ function Player:Paint()
 	f.landing:SetPoint("TOP", f.flight, "TOPLEFT", f.flight:XFor(total), 6)
 	f.landing:SetPoint("BOTTOM", f.programme, "BOTTOMLEFT", f.flight:XFor(total), -2)
 	f.landingLabel:SetText(A.F(L.player.paint.landing_s, clock(total - elapsed)))
+	-- ON WHICHEVER SIDE OF THE LINE HAS ROOM. Hung to its left, a landing early
+	-- on the axis ran the label out of the console's edge (Joe, in game).
+	local lx = f.flight:XFor(total)
+	f.landingLabel:ClearAllPoints()
+	if lx - 3 < (f.landingLabel:GetStringWidth() or 0) then
+		f.landingLabel:SetJustifyH("LEFT")
+		f.landingLabel:SetPoint("BOTTOMLEFT", f.landing, "TOPLEFT", 3, 1)
+	else
+		f.landingLabel:SetJustifyH("RIGHT")
+		f.landingLabel:SetPoint("BOTTOMRIGHT", f.landing, "TOPRIGHT", -3, 1)
+	end
 
 	self:PaintLegs(flight)
 

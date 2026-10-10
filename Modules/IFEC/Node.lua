@@ -127,7 +127,7 @@ end
 
 function Node:Attach()
 	Trunk():AddNode("nowplaying", {
-		icon = "music", label = L.trunk.now_playing, order = 950,
+		icon = "music", label = L.trunk.nifec, order = 950,
 		transient = true,
 		available = function() return Node:Available() end,
 		isOpen = function() return Node:IsOpen() end,

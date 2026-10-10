@@ -20107,6 +20107,13 @@ do
 	check(TBm.root:IsShown() and K.near(K.rx, 40) and K.near(K.ry, 300),
 		"the Cell glyph sits at 40, 300" .. " (" .. tostring(K.rx) .. ", " .. tostring(K.ry) .. ")")
 	check(TBm.root.glyph:GetTexture() == A.Media.texture.icon, "wearing the addon's mark")
+	-- Locked it is the trunk's anchor and nothing to see (Joe: it hung over the
+	-- strand unconnected); in unlock it is the handle that swaps sides.
+	check(not TBm.root.glyph:IsShown() and not TBm.root:IsMouseEnabled(),
+		"locked, the glyph is not drawn and takes no clicks")
+	A.Movers:Unlock()
+	check(TBm.root.glyph:IsShown() and TBm.root:IsMouseEnabled(), "unlocked, it is the handle")
+	A.Movers:Lock()
 	K.ys, K.order = {}, { "menu", "widgets", "addons", "settings", "news" }
 	for i, key in ipairs(K.order) do
 		local n = K.t:Node(key)
@@ -20119,8 +20126,9 @@ do
 	check(K.t:Node("menu").button.label:GetText() == "MENU"
 		and K.t:Node("news").button.label:GetText() == "WHAT'S NEW", "labelled in capitals")
 
-	-- Pins: three launchers pinned hang below What's new, 32 apart, each the
-	-- addon's own button on a bare node of the trunk.
+	-- Pins: three launchers pinned hang straight under Addons (Joe, over the
+	-- board's below What's new), 32 apart, each the addon's own button on a
+	-- bare node of the trunk; Settings 48 under the last.
 	for i = 1, 3 do
 		_G.__makeLDB("RailFit" .. i, "launcher")
 		_G.__makeDBIcon("RailFit" .. i)
@@ -20134,10 +20142,15 @@ do
 		local node = TBm.pinNodes[i]
 		local x, y = K.at(e.button)
 		check(e.button:GetParent() == node.button and node.button:IsShown()
-			and K.near(x, 40) and K.near(y, K.ys[5] + 36 + 32 * (i - 1))
+			and K.near(x, 40) and K.near(y, K.ys[3] + 36 + 32 * (i - 1))
 			and math.abs(e.button:GetWidth() - 24) < 0.5,
-			"pin " .. i .. " hangs on the trunk below the last node, 24 across ("
+			"pin " .. i .. " hangs on the trunk under Addons, 24 across ("
 			.. tostring(x) .. ", " .. tostring(y) .. ")")
+	end
+	do
+		local _, sy = K.at(K.t:Node("settings").button)
+		check(K.near(sy, K.ys[3] + 36 + 64 + 48),
+			"and Settings comes 48 under the last pin (" .. tostring(sy) .. ")")
 	end
 	check(not TBm.pinNodes[1].button.fill:IsShown(), "on a bare node: no diamond of its own")
 	_G.__makeLDB("RailFit4", "launcher"); _G.__makeDBIcon("RailFit4")
@@ -20179,8 +20192,9 @@ do
 	__setCursor(200 * UIParent:GetEffectiveScale(), 500)
 	TBm.root:GetScript("OnDragStop")(TBm.root)
 	check(TBm:Dock() == "RIGHT", "locked, the glyph does not drag")
-	TBm.root:GetScript("OnClick")(TBm.root)
-	check(K.opened == 1, "and a click on it opens the settings")
+	-- The way to the settings is the Settings branch's last row.
+	check(TBm:ToggleTile(TBm.ALL_OPTIONS) and K.opened == 1 and not TBm:IsOpen(),
+		"All Lattice options opens the settings and shuts the branch")
 	A.Options.Open = K.open
 	TBm:SetDock("LEFT")
 
@@ -20190,6 +20204,36 @@ do
 	A.db.profile.scale = K.was.ui
 	A:Reconfigure()
 end
+
+section("trunks: out of the way in flight", function()
+	local QTm, T = A:GetModule("questtracker"), A.Trunk
+	local w, tb = T:Get("world"), T:Get("toolbox")
+	QTm:SetCollapsed(false)
+	w:SetRetracted(false, true)
+	tb:SetRetracted(false, true)
+	_G.__onTaxi = true
+	T:SetFlying(UnitOnTaxi("player"))
+	check(T.flying and w.retracted and tb.retracted,
+		"on a taxi both trunks go up out of the way (Joe)")
+	-- A fight in the air retracts as a fight does, and still shows no tail.
+	QTm:SetCollapsed(true)
+	check(not w:Tail():IsShown(), "and the active quest's tail is not drawn: no use on a griffin")
+	QTm:SetCollapsed(false)
+	check(w.retracted, "and the trunk stays up while the flight lasts, whatever its owner asks")
+	_G.__onTaxi = false
+	T:SetFlying(UnitOnTaxi("player"))
+	check(not T.flying and not w.retracted and not tb.retracted,
+		"landed, both come back down as they were")
+	_G.__onTaxi = true
+	T:SetFlying(true)
+	QTm:SetCollapsed(true)
+	_G.__onTaxi = false
+	T:SetFlying(false)
+	check(w.retracted and tb.retracted == false,
+		"and a trunk its owner wants up stays up after landing")
+	QTm:SetCollapsed(false)
+	w:SetRetracted(false, true)
+end)
 
 print("== world trunk: mail, and what the client will not tell us ==")
 do
@@ -20769,11 +20813,20 @@ do
 	B.opt.set({ arg = B.opt.arg, type = "toggle" }, true)
 	check(B.menu.label:GetAlpha() == 0 and B.menu:GetAlpha() > 0.99,
 		"labels on hover: the nodes stay and their names go")
+	check(B.menu.stub:GetAlpha() == 0 and B.menu.junction:GetAlpha() == 0,
+		"and the stubs under them go too (Joe)")
 	B.menu:GetScript("OnEnter")(B.menu)
-	check(B.menu.label:GetAlpha() > 0.99 and B.t:Node("widgets").button.label:GetAlpha() == 0,
-		"the cursor over a node shows its name, and only its")
+	check(B.menu.label:GetAlpha() > 0.99 and B.menu.stub:GetAlpha() > 0.99
+		and B.t:Node("widgets").button.label:GetAlpha() == 0
+		and B.t:Node("widgets").button.stub:GetAlpha() == 0,
+		"the cursor over a node shows its name and stub, and only its")
 	B.menu:GetScript("OnLeave")(B.menu)
-	check(B.menu.label:GetAlpha() == 0, "and it goes with the cursor")
+	check(B.menu.label:GetAlpha() == 0 and B.menu.stub:GetAlpha() == 0, "and they go with the cursor")
+	TBm:SetOpen(true, nil, "widgets")
+	check(B.t:Node("widgets").button.stub:GetAlpha() > 0.99,
+		"an open branch keeps its stub, which joins it to its node")
+	TBm:SetOpen(false)
+	check(B.t:Node("widgets").button.stub:GetAlpha() == 0, "and tucks it when it shuts")
 	A.Trunk:Get("world"):Extend()
 	B.wq = A.Trunk:Get("world"):Node("questlog")
 	check(B.wq and B.wq.button.label:GetAlpha() > 0.99,
@@ -21203,8 +21256,9 @@ do
 		TBm:RefreshTiles()
 
 		local list = TBm:TileList()
-		local lt = list[#list]
+		local lt = list[#list - 1]
 		check(lt and lt.kind == "launcher", "a launcher joins the tile grid")
+		check(list[#list] == TBm.ALL_OPTIONS, "with All Lattice options last of all")
 		check(TBm:TileState(lt) == nil,
 			"and has NO state - an LDB launcher is a button, not a toggle, and"
 			.. " nothing in the protocol can answer 'are you on'")
@@ -31408,6 +31462,15 @@ section("ifec: the player region, on the flight's own axis", function()
 	-- LANDING IS AN INSTANT ON BOTH BARS, drawn once.
 	local _, _, _, lx = f.landing:GetPoint()
 	check(lx ~= nil, "the landing line is placed along the axis")
+	-- ITS LABEL STAYS IN THE WINDOW: to the line's left where there is room,
+	-- to its right where there is not (Joe: LANDING 0:42 ran out of the edge).
+	do
+		local w = f.landingLabel:GetStringWidth()
+		local at = f.landingLabel:GetPoint()
+		check((lx - 3 >= w and at == "BOTTOMRIGHT") or (lx - 3 < w and at == "BOTTOMLEFT"),
+			"the landing label hangs on the side of its line with room (" .. tostring(at)
+			.. " at " .. string.format("%.0f", lx) .. ", " .. string.format("%.0f", w) .. " wide)")
+	end
 
 	-- AND ABOVE THEM. A bar is a child frame and each piece is a child of that,
 	-- so a mark drawn on the region itself sorts underneath all of it however

@@ -36,8 +36,9 @@ local EDGE_X, TOP_Y, ROOT = 40, 300, 30
 -- The board's first node is 72 under the glyph's centre: the strand starts
 -- 12 under the glyph rather than the World trunk's 30 under its pill.
 local CAP_GAP = 12
--- Pinned addons: 24 px tiles, 8 apart, under the last node.
-local PIN, PIN_STEP = 24, 32
+-- Pinned addons: 24 px tiles, 8 apart, under the Addons node; the last one
+-- 48 above the next branch node.
+local PIN, PIN_STEP, PIN_LAST = 24, 32, 48
 -- Inside a branch panel.
 local PAD, HEAD_H = 16, 26
 
@@ -138,6 +139,19 @@ function TB:DropAt(x)
 	return true
 end
 
+--- The glyph is the trunk's anchor, always there, and only SEEN in unlock,
+--  where it is the handle you drag to swap sides. Locked, it floated over the
+--  strand's top unconnected to anything (Joe); the way to the settings is the
+--  last row of the Settings branch instead.
+function TB:PaintRoot()
+	local r = self.root
+	if not r then return end
+	local on = A.Movers and A.Movers.unlocked and true or false
+	-- The texture, not the frame: the frame's alpha is the fader's.
+	r.glyph:SetShown(on)
+	r:EnableMouse(on)
+end
+
 function TB:PlaceRoot()
 	local r = self:BuildRoot()
 	r:SetScale(A.db.profile.scale or 1)
@@ -146,6 +160,7 @@ function TB:PlaceRoot()
 	r:SetPoint("CENTER", UIParent, left and "TOPLEFT" or "TOPRIGHT",
 		left and EDGE_X or -EDGE_X, -TOP_Y)
 	r:Show()
+	self:PaintRoot()
 	local t = Trunk()
 	t.capGap = CAP_GAP
 	t:SetRoot(r)
@@ -362,7 +377,10 @@ function TB:OnEnable()
 
 	-- "Unlock frames" reads the movers live, so it is redrawn when they change.
 	if A.Movers then
-		A.Movers:OnLockChanged("toolbox", function() TB:RefreshTiles() end)
+		A.Movers:OnLockChanged("toolbox", function()
+			TB:RefreshTiles()
+			TB:PaintRoot()
+		end)
 	end
 
 	A.Launchers:OnChanged("toolbox", function()
@@ -753,6 +771,11 @@ function TB:ToggleTile(tile)
 		if entry then return A.Launchers:Click(entry, "LeftButton") end
 		return false
 	end
+	if tile.kind == "action" then
+		self:CloseAll()
+		tile.run()
+		return true
+	end
 	local want = not self:TileState(tile)
 	if tile.kind == "setting" then
 		local t, k = Resolve(tile.path)
@@ -795,8 +818,14 @@ function TB:TileList()
 			end
 		end
 	end
+	-- Last: the way to every setting, which was the glyph over the trunk (Joe).
+	out[#out + 1] = TB.ALL_OPTIONS
 	return out
 end
+
+TB.ALL_OPTIONS = { kind = "action", key = "options", label = L.toolbox.node.all_options,
+	texture = Media.texture.icon, tip = L.toolbox.node.all_options_tip,
+	run = function() if A.Options and A.Options.Open then A.Options:Open() end end }
 
 -- README: a 24 px diamond; on = accent fill, glow, dark icon and ON; off =
 -- glass, a 45 % rim, the icon at 50 % and OFF.
@@ -859,6 +888,10 @@ FILL.settings = function(self, p)
 			local ic = t.entry and t.entry.obj and t.entry.obj.icon
 			if ic then row.icon:SetTexture(ic); row.icon:SetTexCoord(0, 1, 0, 1) end
 			row.icon:SetShown(ic ~= nil)
+		elseif t.texture then
+			row.icon:SetTexture(t.texture)
+			row.icon:SetTexCoord(0, 1, 0, 1)
+			row.icon:Show()
 		else
 			row.icon:SetShown(Media:SetIcon(row.icon, t.key) and true or false)
 		end
@@ -1164,11 +1197,17 @@ function TB:LayoutPins()
 	self._pins = list
 	self.pinNodes = self.pinNodes or {}
 	local t = Trunk()
+	-- RIGHT UNDER ADDONS, where they came from, not under What's new as the
+	-- board has them (Joe, 2026-10-10). The last takes the room a branch node
+	-- leaves above itself, so Settings is not crowded onto the pins.
 	for i = #self.pinNodes + 1, #list do
 		self.pinNodes[i] = t:AddNode("pin" .. i, {
-			kind = "item", bare = true, size = PIN, step = PIN_STEP, order = 1000 + i,
+			kind = "item", bare = true, size = PIN, step = PIN_STEP, order = 300 + i / 100,
 			available = function() return TB.enabled and TB._pins and TB._pins[i] ~= nil or false end,
 		})
+	end
+	for i, node in ipairs(self.pinNodes) do
+		node.step = (i == #list) and PIN_LAST or PIN_STEP
 	end
 	t:Refresh()
 

@@ -721,7 +721,9 @@ end
 function Items.Place(node)
 	local q = node.quest
 	local anchor, id = node.button, nil
-	if QT.collapsed then
+	if A.Trunk.flying then
+		-- In flight: no item, not even the active quest's (Joe).
+	elseif QT.collapsed then
 		local tq = QT.Tail.active
 		if q and tq and q.questID == tq.questID then anchor, id = Trunk():Tail().node, q.itemID end
 	elseif q and node.button and node.button:IsVisible() then
@@ -837,7 +839,8 @@ function Tail.Draw()
 	local t = Trunk():Tail()
 	local f = Tail.flash
 	local q = f and f.q or Tail.active
-	t:SetShown(QT.enabled and QT.collapsed and q ~= nil or false)
+	-- No tail in flight: the active quest is no use on a griffin (Joe).
+	t:SetShown(QT.enabled and QT.collapsed and q ~= nil and not A.Trunk.flying or false)
 	if not t:IsShown() then return end
 	if not t.title then
 		t.title = W.Text(t, "questTitle", "RIGHT")
@@ -1158,6 +1161,8 @@ function QT:OnEnable()
 	-- and the name is ignored (Core/Layout.lua keeps it known).
 
 	local function refresh() QT:Refresh() end
+	-- Taking off and landing: the tail and the item buttons go and come back.
+	A.Trunk:OnFlight("questtracker", function() if QT.enabled then QT:Refresh() end end)
 	A:RegisterEvent(self, "QUEST_LOG_UPDATE", refresh)
 	A:RegisterEvent(self, "QUEST_WATCH_UPDATE", refresh)
 	A:RegisterEvent(self, "UNIT_QUEST_LOG_CHANGED", refresh)
