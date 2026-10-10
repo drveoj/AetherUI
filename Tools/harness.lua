@@ -16531,8 +16531,8 @@ section("options window: the map is your own screen", function()
 	do
 		local cx, cy = A.Movers.PointAt(A.Movers.registry.minimap.frame, "CENTER")
 		local wantX = 62 + cx / UIParent:GetWidth() * 1076
-		local wantY = 84 + (1 - cy / UIParent:GetHeight()) * 556
-		check(mm and mm.x > 600 and math.abs(mm.y - math.max(114, math.min(610, wantY))) < 0.5
+		local wantY = 84 + (1 - cy / UIParent:GetHeight()) * 500
+		check(mm and mm.x > 600 and math.abs(mm.y - math.max(114, math.min(554, wantY))) < 0.5
 			and math.abs(mm.x - math.min(1148, wantX)) < 0.5,
 			"the minimap's node is where the minimap is, on the right (" ..
 			string.format("%.0f, %.0f for %.0f, %.0f", mm.x, mm.y, wantX, wantY) .. ")")
@@ -16540,10 +16540,23 @@ section("options window: the map is your own screen", function()
 	check(tb and tb.x < 300, "and the Toolbox on the left trunk (" .. string.format("%.0f", tb.x) .. ")")
 	local np = MapNode("nameplates")
 	check(np and np.y < p.y, "the nameplates above the axis")
-	local bars = 0
-	for _, n in ipairs(OW.nodes) do if n.form == "strand" then bars = bars + 1 end end
+	local bars, lastX, apart = 0, nil, true
+	local rowY
+	for _, n in ipairs(OW.nodes) do
+		if n.form == "strand" then
+			bars = bars + 1
+			if lastX and n.x - lastX < 64 then apart = false end
+			if rowY and n.y ~= rowY then apart = false end
+			lastX, rowY = n.x, n.y
+		end
+	end
 	check(bars == #A.Config:Module("actionbars").bars,
 		"one node per strand, every bar the client has (" .. bars .. ")")
+	-- Joe: at their real places they piled up under the axis. They sit in a
+	-- row of their own, side by side, as unlock parks hidden ones.
+	check(apart and rowY and rowY > 584 and rowY < 690,
+		"in a row of their own above the System strand, none on another (" .. tostring(rowY) .. ")")
+	check(p.label and MapNode("target").label == "Target", "the target's node says Target")
 
 	-- MEASURED, NOT REMEMBERED: a frame moved is a node moved, on the next open.
 	local mf = A.Movers.registry.minimap.frame
@@ -16650,6 +16663,19 @@ section("options window: a click unfolds, the strand folds back", function()
 	OW:Finish()
 	check(OW.mode == "map" and chat.button:IsShown() and chat.button:GetAlpha() == 1,
 		"the root folds the page back into the map")
+	-- THE SYSTEM STRAND AFTER A PAGE IS SHUT, not folded (Joe: its nodes
+	-- vanished): closed on a page and opened again, the map has to put them
+	-- back itself.
+	do
+		Click(MapNode("chat").button)
+		OW:Finish()
+		A.Options:Close()
+		OpenMap()
+		local up = 0
+		for _, n in ipairs(f.map.system) do if n.button:IsShown() then up = up + 1 end end
+		check(up == #f.map.system, "closed on a page and reopened, the System strand is all there ("
+			.. up .. " of " .. #f.map.system .. ")")
+	end
 	Click(MapNode("minimap").button)
 	OW:Finish()
 	f:GetScript("OnKeyDown")(f, "ESCAPE")

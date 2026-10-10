@@ -38,7 +38,11 @@ local WIN_W, WIN_H, HEAD_H = 1200, 760, 64
 local NAV_W, NAV_X = 100, 36
 -- The map's field: the HUD scaled into it (x 62 to 1138, as 7a's x 0.56 from
 -- 62), the System strand under it.
-local MAP_L, MAP_R, MAP_T, MAP_B = 62, 1138, 84, 640
+local MAP_L, MAP_R, MAP_T, MAP_B = 62, 1138, 84, 584
+-- The strands' own row, above the System strand: every bar side by side as a
+-- small drawing of its shape, its name under it - as unlock parks hidden ones
+-- (Joe: at their real places they piled up under the axis).
+local BARS_Y, BAR_BOX_W, BAR_BOX_H, BAR_GAP = 622, 64, 28, 18
 local SYS_Y, SYS_L, SYS_R = 712, 60, 1140
 local FIELD_STEP = 48
 local PAD_T, PAD_R, PAD_B, PAD_L = 22, 32, 26, 28
@@ -257,7 +261,7 @@ function OW:Spec()
 	local function add(t) list[#list + 1] = t return t end
 	add({ key = "player", page = "unitframes", label = L.options.map.unitframes.title,
 		form = "pill", w = 108, h = 32, hop = 0, mover = "player", big = true, at = { 0.36, 0.19 } })
-	add({ key = "target", page = "unitframes", label = L.common.target,
+	add({ key = "target", page = "unitframes", label = L.options.map.target,
 		form = "pill", w = 108, h = 32, hop = 1, mover = "target", big = true, at = { 0.64, 0.19 } })
 	add({ key = "targettarget", page = "unitframes", label = L.options.map.tot,
 		form = "pill", w = 86, h = 26, hop = 1, mover = "targettarget", at = { 0.72, 0.28 } })
@@ -270,15 +274,27 @@ function OW:Spec()
 	-- hollow - one click from their page.
 	local AB = A:GetModule("actionbars")
 	local cfg = A.Config:Module("actionbars")
+	local strands = {}
 	for _, bar in ipairs(cfg.bars or {}) do
 		local id = tostring(bar.id)
 		local cols, rows = 12, 1
 		if AB and AB.ShapeOf then cols, rows = AB:ShapeOf(id) end
 		cols, rows = math.max(1, math.min(12, cols or 12)), math.max(1, math.min(12, rows or 1))
-		add({ key = "bar" .. id, page = "actionbars", subKey = "bar" .. id,
-			label = bar.label or ("Bar " .. id), form = "strand", cols = cols, rows = rows,
-			w = cols * 5 + 9, h = rows * 5 + 9, hop = 2, mover = "bar" .. id,
-			hollow = bar.enabled == false, at = { 0.5, 0.06 } })
+		-- Cells as big as fit the drawing's box, up to 4 px, a pixel apart.
+		local cell = math.max(1, math.min(4, math.floor((BAR_BOX_W - 8) / cols) - 1,
+			math.floor((BAR_BOX_H - 8) / rows) - 1))
+		strands[#strands + 1] = add({ key = "bar" .. id, page = "actionbars", subKey = "bar" .. id,
+			label = (bar.label or ("Bar " .. id)):upper(), form = "strand",
+			cols = cols, rows = rows, cell = cell,
+			w = cols * (cell + 1) + 7, h = rows * (cell + 1) + 7, hop = 2, mover = "bar" .. id,
+			hollow = bar.enabled == false, row = true })
+	end
+	-- Their row: side by side, centred on the map.
+	local total = #strands * BAR_BOX_W + math.max(0, #strands - 1) * BAR_GAP
+	local x = (MAP_L + MAP_R) / 2 - total / 2 + BAR_BOX_W / 2
+	for _, n in ipairs(strands) do
+		n.x, n.y = x, BARS_Y
+		x = x + BAR_BOX_W + BAR_GAP
 	end
 
 	add({ key = "nameplates", page = "nameplates", label = L.options.map.nameplates.title,
@@ -320,7 +336,10 @@ function OW:Spec()
 	for _, n in ipairs(list) do byKey[n.key] = n end
 	for _, n in ipairs(list) do
 		local x, y
-		if n.near then
+		if n.row then
+			-- In the strands' row already; the real bar is still what lights.
+			n.real = n.mover and MoverFrame(n.mover)
+		elseif n.near then
 			local o = byKey[n.near]
 			if o and o.x then x, y = o.x + (n.dx or 0), o.y + (n.dy or 0) end
 		else
@@ -328,8 +347,10 @@ function OW:Spec()
 			n.real = f
 			x, y = OnMap(f)
 		end
-		if not x then x, y = FromFraction(n.at and n.at[1] or 0.5, n.at and n.at[2] or 0.5) end
-		n.x, n.y = Clamp(x, y, n.w, n.h)
+		if not n.row then
+			if not x then x, y = FromFraction(n.at and n.at[1] or 0.5, n.at and n.at[2] or 0.5) end
+			n.x, n.y = Clamp(x, y, n.w, n.h)
+		end
 		n.pageDef = self:Page(n.page)
 		n.off = n.hollow or not ModuleOn(n.pageDef)
 	end
@@ -339,7 +360,8 @@ function OW:Spec()
 	end
 	-- Parents, for the bonds: the spine is the middle of the axis.
 	for _, n in ipairs(list) do
-		local parent = n.mover and A.Movers:ParentOf(n.mover)
+		-- Not the row's: it is not where the bars are, so a bond would lie.
+		local parent = n.mover and not n.row and A.Movers:ParentOf(n.mover)
 		n.parent = parent and (parent == "spine" and "spine" or byKey[parent] and parent) or nil
 	end
 	if byKey.pet and not byKey.pet.parent then byKey.pet.parent = "player" end
@@ -572,14 +594,16 @@ local function BuildNode(parent, n)
 		b.d.fill:SetPoint("CENTER", b, "CENTER", 0, 0)
 	end
 	if form == "strand" then
-		-- The strand's shape: 4 px cells, 1 px apart.
+		-- The strand's shape: cells up to 4 px, 1 px apart, as unlock's
+		-- parked outline draws it.
+		local cell = n.cell or 4
 		b.cells = {}
 		for row = 1, n.rows do
 			for col = 1, n.cols do
 				local t = b:CreateTexture(nil, "OVERLAY")
 				t:SetTexture(Media.texture.flat)
-				t:SetSize(4, 4)
-				t:SetPoint("TOPLEFT", b, "TOPLEFT", 5 + (col - 1) * 5, -5 - (row - 1) * 5)
+				t:SetSize(cell, cell)
+				t:SetPoint("TOPLEFT", b, "TOPLEFT", 4 + (col - 1) * (cell + 1), -4 - (row - 1) * (cell + 1))
 				b.cells[#b.cells + 1] = t
 			end
 		end
@@ -599,7 +623,7 @@ local function BuildNode(parent, n)
 	local left = (n.side or 1) < 0
 	local just = "CENTER"
 	if form == "diamond" then just = left and "RIGHT" or "LEFT"
-	elseif form == "strand" or form == "auras" then just = "LEFT" end
+	elseif form == "auras" then just = "LEFT" end
 	local style = (form == "strand" or form == "auras") and "opSub"
 		or (n.big and "opNodeBig" or "opNode")
 	b.label = W.Text(b, style, just)
@@ -610,7 +634,8 @@ local function BuildNode(parent, n)
 			b.label:SetPoint("LEFT", b, "RIGHT", 10, 4)
 		end
 	elseif form == "strand" then
-		b.label:SetPoint("LEFT", b, "RIGHT", 6, 0)
+		-- Its name under it, in the row (the parked outline's way).
+		b.label:SetPoint("TOP", b, "BOTTOM", 0, -4)
 	elseif form == "auras" then
 		b.label:SetPoint("LEFT", b, "LEFT", 49, 0)
 	else
@@ -787,7 +812,8 @@ function OW:LayMap()
 	-- again, everything else is reused.
 	self.pool = self.pool or {}
 	for _, n in ipairs(self.nodes) do
-		local sig = n.key .. ":" .. (n.cols or 0) .. "x" .. (n.rows or 0) .. ":" .. (n.side or 0)
+		local sig = n.key .. ":" .. (n.cols or 0) .. "x" .. (n.rows or 0) .. ":" .. (n.cell or 0)
+			.. ":" .. (n.side or 0)
 		local b = self.pool[sig]
 		if b then
 			n.button = b
@@ -1681,7 +1707,12 @@ function OW:PoseOpen(t)
 	local sys = at(4)
 	m.sysLine:SetAlpha(sys)
 	m.sysLabel:SetAlpha(sys)
-	for _, n in ipairs(m.system) do n.button:SetAlpha(sys) end
+	-- Shown as well as faded in: the unfold hides them, and an alpha alone
+	-- left the System strand empty after folding back (Joe).
+	for _, n in ipairs(m.system) do
+		n.button:SetAlpha(sys)
+		n.button:SetShown(sys > 0.01)
+	end
 	local field = at(0)
 	for _, d in ipairs(m.dots) do d:SetAlpha(field) end
 	return t >= (reduced and REDUCED or (4 * HOP + NODE_IN))
