@@ -307,8 +307,6 @@ L["common.left_click_targets_right"] =
 
 L["common.look"] = "Look"
 
-L["common.most_show"] = "Most to show"
-
 L["common.off"] = "off"
 
 L["common.on"] = "on"
@@ -317,7 +315,6 @@ L["common.open"] = "open"
 
 L["common.player"] = "On the player"
 
-L["common.rows_most"] = "Rows at most"
 
 L["common.scale"] = "Scale"
 
@@ -520,41 +517,26 @@ L["options.action_bars.shared"] = "Shared"
 L["options.action_bars.size.desc"] = "The size of the button slots."
 L["options.action_bars.size.name"] = "Button size"
 
-L["options.auras.align.name"] = "Row alignment"
 L["options.auras.auras"] = "Auras"
 L["options.auras.buffs"] = "Buffs"
-L["options.auras.centred_splits_slack_row"] =
-	"Centred splits the slack a row cannot fill into two margins. "
-		.. "Mirrored follows the unit's own name and readout - left on the "
-		.. "player, right on the target - which puts all of it on one side."
 L["options.auras.debuffs"] = "Debuffs"
 L["options.auras.desc"] =
 	"Buffs above each capsule, debuffs below, on the player and the "
 		.. "target alike."
 L["options.auras.hide_blizzard.name"] = "Hide Blizzard's buff row"
-L["options.auras.n0_fits_many_frame"] =
-	"0 fits as many as the frame is wide enough for, which is what "
-		.. "keeps a tray inside the unit it belongs to. Set a number to use "
-		.. "fewer."
 L["options.auras.offset.name"] = "Gap from the capsule"
 L["options.auras.only_mine.name"] = "Only mine, on the target"
-L["options.auras.per_row.name"] = "Cap the columns"
 L["options.auras.show_count.name"] = "Show stack counts"
 L["options.auras.show_time.name"] = "Show timers"
-L["options.auras.size.name"] = "Icon size"
 L["options.auras.square_note"] =
-	"Squares, filled in by the game itself so they keep working in a fight. "
-		.. "Three to a row at rest, up to eight in combat. Your debuffs on the "
-		.. "target are edged and come first; everyone else's are dimmed. "
-		.. "Right-click one of your own buffs to cancel it."
+	"Squares, three to a row at rest and up to eight in a fight, starting "
+		.. "where the bars start. Your debuffs on the target are edged and come "
+		.. "first; everyone else's are dimmed. A debuff you can dispel off "
+		.. "yourself is edged red. Right-click one of your own buffs to cancel it."
 L["options.auras.takes_weapon_enchant_icons"] =
 	"Takes the weapon-enchant icons with it, and nothing replaces those "
 		.. "yet."
 L["options.auras.tile_header"] = "Tiles"
-L["options.auras.tile_note"] =
-	"A tile is an icon and a timer, with no name - the name is on the "
-		.. "tooltip. Right-click one of your own buffs to cancel it, in combat "
-		.. "as well as out of it."
 L["options.auras.yourself_every_debuff_matters"] =
 	"On yourself every debuff matters whoever cast it."
 

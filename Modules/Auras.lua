@@ -8,9 +8,13 @@
 	  target buffs     above the target capsule
 	  target debuffs   below it
 
-	A tile is the deck's buff pill with the name taken out of the middle: a
-	frosted capsule holding a circular icon on the left, a stack count on its
-	corner and the time remaining on the right.
+	A tile is the Lattice handoff's square, on both clients: 24 px with a
+	hairline edge, a timer tag under thirty seconds and a gold stack tag. A
+	row starts where the capsule's bars start and grows toward the other
+	capsule; three at rest, eight in a fight, never a second row. Your
+	debuffs on the target come first, lit; everyone else's are dimmed; a
+	debuff you can dispel off yourself is edged red. (Era drew the deck's
+	buff pill until 2026-10-10; Joe: Era as the brief, like Forever.)
 
 	Why it looks like this
 	----------------------
@@ -22,20 +26,13 @@
 	two capsules are always the same shape, and the trays extend into empty space
 	above and below where a changing height costs nothing.
 
-	Dropping the aura *name* falls out of the same decision. A named pill is
-	~100px wide and three of them already overflow a capsule; without the name
-	the same pill is ~70 and four fit. The name is on the tooltip, which is where
-	you go when you do not already recognise the icon - and if you do recognise
-	it, the name was only ever taking up room the timer wanted.
+	The aura's name is on the tooltip, which is where you go when you do not
+	already recognise the icon.
 
 	Nothing here is ever Hidden. See ParkTile: the player's buff tiles carry
 	secure cancel buttons, and hiding a frame with a protected descendant is
-	refused in combat, which is exactly when auras come and go.
-
-	Every tray is capped to its own frame's width. Columns are derived from how
-	wide the capsule actually is rather than configured, so widening the frames
-	widens the trays and nothing ever hangs off the side of the unit it belongs
-	to.
+	refused in combat, which is exactly when auras come and go. Every slot a
+	fight can show is placed before one starts; a fight only shows more.
 
 	Aura API
 	--------
@@ -173,64 +170,111 @@ end
 -- rather than growing a second copy of it that drifts.
 Aur.GetAura = GetAura
 
--- Debuff schools live in the palette - the ring is the only thing left that
--- says what kind of thing is on you, and the nameplate chips read the same
--- table. Resolved per call rather than cached, so a skin change reaches it.
+-- ---------------------------------------------------------------------------
+-- the square: one drawing for both clients (Lattice handoff, Auras)
+--
+-- 24 px squares with a hairline edge, a timer tag under thirty seconds and a
+-- gold stack tag. Classic Era draws its own; WoW Forever's are the client's
+-- buttons, dressed the same way (see "WoW Forever" below). Era once drew the
+-- deck's buff pill instead; Joe, 2026-10-10: the two clients look alike.
+-- ---------------------------------------------------------------------------
 
--- Seconds left at which the timer turns red. Long enough to react to, short
--- enough that it is not on most of the time.
-local URGENT = 5
+local SQ, SQ_GAP = 24, 4
+local SQ_STEP = SQ + SQ_GAP
+-- Three a row at rest, up to eight in a fight, never a second row.
+local REST, COMBAT = 3, 8
+-- Above this many seconds left, the timer says nothing.
+local TIMER_UNDER = 30
+-- The timer tag hangs this far below its square, so a row above the capsule
+-- stands that much further off it.
+local TAG_DROP = 6
 
--- What goes in the timer field of an aura that has no timer - a mount, a Well
--- Fed, most things a player is walking around with. The field is fixed width so
--- the pill keeps its size either way, and leaving it blank made the pill look
--- like it had failed to load rather than like it had nothing to say.
-local NO_TIMER = "n/a"
+-- Per aura on Era, per group on Forever. `mine` is your debuff on the target,
+-- edged in the accent with a glow; `theirs` everyone else's, dimmed; `dispel`
+-- a debuff you can take off yourself.
+local LOOKS = {
+	plain  = { edge = "auraEdge",      width = 1 },
+	faint  = { edge = "auraEdgeFaint", width = 1 },
+	theirs = { edge = "auraEdgeOther", width = 1, alpha = 0.5 },
+	mine   = { edge = "accent",        width = 1.5, glow = 0.6 },
+	dispel = { edge = "auraDispel",    width = 1.5 },
+}
+
+--- A tag: text on a chip exactly as wide as the text. The chip hangs off the
+--  string's own ends, so when the text is "" there is nothing to draw - which
+--  is how a long timer and a single stack show no chip. On a frame of its own,
+--  above the square's art.
+local function Tag(button, ink, fill)
+	local carrier = CreateFrame("Frame", nil, button)
+	carrier:SetAllPoints(button)
+	carrier:SetFrameLevel(button:GetFrameLevel() + 3)
+	carrier:EnableMouse(false)
+
+	-- Lettered BEFORE the client is given it: registering writes to it at once,
+	-- and a string with no font is a hard error inside the engine.
+	local fs = carrier:CreateFontString(nil, "OVERLAY")
+	Media:SetFont(fs, "auraTag")
+	fs:SetTextColor(ink[1], ink[2], ink[3], ink[4] or 1)
+	fs:SetText("")
+
+	local chip = carrier:CreateTexture(nil, "ARTWORK")
+	chip:SetColorTexture(fill[1], fill[2], fill[3], fill[4] or 1)
+	-- Pulled in a pixel at each end. Hung flush on an empty string, the game
+	-- still rounded the chip up to a one-pixel tick beside every square (seen
+	-- 2026-10-06); inset, an empty string leaves it less than nothing wide and
+	-- it is not drawn. The spaces padding each number keep the margin.
+	chip:SetPoint("TOPLEFT", fs, "TOPLEFT", 1, 1)
+	chip:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", -1, -1)
+	W.AddMask(chip, carrier, Media.texture.slotMask, chip)
+
+	carrier.text, carrier.chip = fs, chip
+	return carrier
+end
 
 -- How often a tile that claims to have no timer asks again. One API call for one
 -- index, so a player walking around with five permanent buffs costs five calls a
 -- second - nothing - and in exchange no tile can be wrong for ever.
 local RECHECK = 1.0
 
---- Write a tile's timer field, and record whether what we wrote can be trusted.
+--- A timer tag's words: whole seconds, rounded up so it never reads 0 with time
+--  left, padded a space each side for the chip's margin; nothing from thirty
+--  seconds up, or with no time at all.
+local function TimerWords(exp)
+	local left = (exp or 0) - GetTime()
+	if left <= 0 or left >= TIMER_UNDER then return "" end
+	return (" %d "):format(math.ceil(left))
+end
+Aur.TimerWords = TimerWords
+
+--- Write a tile's timer, and record whether the numbers behind it can be
+--  trusted.
 --
 --  There are three states here, not two, and collapsing them to two is what made
---  buff timers go missing after a login.
+--  buff timers go missing after a login:
 --
---    a real time            -> print it
---    duration 0             -> a permanent aura. "n/a", and believed.
+--    a real time            -> believed; the tag shows under thirty seconds
+--    duration 0             -> a permanent aura, believed
 --    duration, no future    -> neither. The server has not finished telling us
 --    expiry                    about this aura yet, which lasts for several
 --                              seconds after a login or a zone change.
 --
---  That third case used to fall out of W.AuraTime as an empty string, which was
---  then written to the field and left there: the tile was not flagged timeless,
---  so the ticker kept running, and the ticker kept writing the same empty string
---  for the rest of the session. An empty field on a fixed-width pill is exactly
---  what "the timer never showed up" looks like.
---
---  Both of the last two set a flag that puts the tile on the re-poll list below.
---  A permanent aura is re-checked too, because "duration 0" and "the server has
---  not said yet" are the same value.
-local function SetTimerText(t, c)
+--  The last two put the tile on the re-poll list below. A permanent aura is
+--  re-checked too, because "duration 0" and "the server has not said yet" are
+--  the same value.
+local function SetTimerText(t)
 	if t._noTime then
 		t.time:SetText("")
 		t._timeless, t._stale = false, false
 		return
 	end
-
 	local dur, exp = t._duration or 0, t._expiration or 0
-	local text = (dur > 0 and exp > 0) and W.AuraTime(exp, dur) or ""
-
-	if text == "" then
-		t.time:SetText(NO_TIMER)
+	if dur > 0 and exp > GetTime() then
+		t.time:SetText(TimerWords(exp))
+		t._timeless, t._stale = false, false
+	else
+		t.time:SetText("")
 		t._timeless = (dur <= 0)
 		t._stale    = (dur > 0)
-		W.Color(t.time, c.textFaint)
-	else
-		t.time:SetText(text)
-		t._timeless, t._stale = false, false
-		W.Color(t.time, c.textDim)
 	end
 end
 
@@ -240,59 +284,21 @@ end
 --  duration yet" and a pill that reads n/a for the rest of the session, and it
 --  costs one call for one index. It never rewrites anything but the clock: the
 --  icon, the count and the tint all belong to Update.
-local function Repoll(t, c)
+local function Repoll(t)
 	if not t.unit or not t.index then return end
 	local name, _, _, _, duration, expiration = GetAura(t.unit, t.index, t.filter)
 	if not name or name ~= t._name then return end
 	if duration == t._duration and expiration == t._expiration then return end
-	t._duration, t._expiration, t._urgent = duration, expiration, nil
-	SetTimerText(t, c)
+	t._duration, t._expiration = duration, expiration
+	SetTimerText(t)
 end
 
 -- ---------------------------------------------------------------------------
 -- the tile
 -- ---------------------------------------------------------------------------
 
--- The deck's own buff pill, with the name taken out of the middle: icon on the
--- left, timer on the right, and the glass capsule around both. A timer *under*
--- the icon was the first attempt and it read badly - the pills stopped looking
--- like pills, and the number sat far enough from the icon that a row of them
--- scanned as two separate rows of things.
-local PAD    = 4     -- pill edge -> icon
-local GAP    = 7     -- icon -> timer field
-local TAIL   = 8     -- timer field -> pill edge, past the rounded cap
-local TIME_W = 30    -- fixed: a ticking timer must not resize the pill
-
---- Every pill is the same width whatever its timer says, so the grid stays a
---  grid and a permanent aura does not come out narrower than the rest.
-local function TileWidth(spec)
-	if not spec.showTime then return PAD + spec.size + TAIL end
-	return PAD + spec.size + GAP + TIME_W + TAIL
-end
-
---- The capsule is a little taller than the icon it wraps - the deck draws a 20px
---  icon in a 28px pill.
-local function TileHeight(spec)
-	return spec.size + 8
-end
-
-local function MakeIcon(parent, size)
-	local f = CreateFrame("Frame", nil, parent)
-	f:SetSize(size, size)
-
-	local icon = f:CreateTexture(nil, "ARTWORK")
-	icon:SetAllPoints(f)
-	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	W.AddMask(icon, f, Media.texture.circleMask, f)
-	f.icon = icon
-
-	local ring = f:CreateTexture(nil, "OVERLAY")
-	ring:SetTexture(Media.texture.ring)
-	ring:SetAllPoints(f)
-	f.ring = ring
-
-	return f
-end
+local function TileWidth() return SQ end
+local function TileHeight() return SQ end
 
 --- Tooltip scripts live on whichever frame is actually on top: the tile itself,
 --  or the secure cancel button covering it on the player's buff tray.
@@ -374,22 +380,36 @@ local function SetCancelName(p, name)
 	click:SetAttribute("macrotext2", "/cancelaura " .. name)
 end
 
-local function CreateTile(parent, spec)
-	local t = Glass.CreatePill(parent, { shadow = A.db.profile.glass.shadow })
+--- One square: the edge is the square itself in the edge colour, with the icon
+--  on it inset by the edge's width - a one-texel ring drawn at 24px loses its
+--  hairline to resampling, and a filled shape keeps it. The glow for your own
+--  debuff behind; the timer tag out past the bottom right, the stack tag past
+--  the top right. The same drawing Forever's buttons are given.
+local function CreateTile(parent)
+	local t = CreateFrame("Frame", nil, parent)
+	t:SetSize(SQ, SQ)
 
-	t.art = MakeIcon(t, spec.size)
-	t.art:SetPoint("LEFT", t, "LEFT", PAD, 0)
+	t.glow = t:CreateTexture(nil, "BACKGROUND", nil, -1)
+	t.glow:SetTexture(Media.texture.slotGlow)
+	t.glow:SetBlendMode("ADD")
+	t.glow:SetPoint("CENTER", t, "CENTER")
+	t.glow:SetSize(SQ * 2, SQ * 2)
+	t.glow:Hide()
 
-	-- Right-aligned against the pill's own edge rather than hung off the icon, so
-	-- the timers line up in a column down the tray whatever they say.
-	t.time = W.Text(t, "auraTime", "RIGHT")
-	t.time:SetPoint("RIGHT", t, "RIGHT", -TAIL, 0)
-	t.time:SetWidth(TIME_W)
+	t.plate = t:CreateTexture(nil, "BACKGROUND")
+	t.plate:SetTexture(Media.texture.slotMask)
+	t.plate:SetAllPoints(t)
 
-	-- Overhanging the icon slightly is deliberate: a two-digit stack on a small
-	-- circle has nowhere else to go, and the pill's padding is empty there.
-	t.count = W.Text(t, "stack", "RIGHT")
-	t.count:SetPoint("BOTTOMRIGHT", t.art, "BOTTOMRIGHT", 3, -1)
+	t.art = { icon = t:CreateTexture(nil, "ARTWORK") }
+	t.art.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	W.AddMask(t.art.icon, t, Media.texture.slotMask, t.art.icon)
+
+	local c = Palette.c
+	t.timer = Tag(t, c.auraTimer, c.auraChip)
+	t.timer.text:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", 3, 1 - TAG_DROP)
+	t.stack = Tag(t, c.auraStackInk, c.auraStack)
+	t.stack.text:SetPoint("TOPRIGHT", t, "TOPRIGHT", 4, TAG_DROP - 1)
+	t.time, t.count = t.timer.text, t.stack.text
 
 	t:EnableMouse(true)
 	t:SetScript("OnEnter", TileEnter)
@@ -401,13 +421,28 @@ local function CreateTile(parent, spec)
 	return t
 end
 
---- Size is re-applied on every update rather than only at creation, so changing
---  the icon size in the options takes effect without rebuilding anything.
+--- The tags on or off, from the options.
 local function SizeTile(t, spec)
-	t:SetSize(TileWidth(spec), TileHeight(spec))
-	t.art:SetSize(spec.size, spec.size)
-	if spec.showTime then t.time:Show() else t.time:Hide() end
-	if spec.showCount then t.count:Show() else t.count:Hide() end
+	t.timer:SetShown(spec.showTime)
+	t.stack:SetShown(spec.showCount)
+end
+
+--- A square's look, by its LOOKS key: the edge colour and width, the glow,
+--  the strength. Repainted from the palette each time, so a skin change
+--  reaches it.
+local function Look(t, key, trayAlpha)
+	local look = LOOKS[key] or LOOKS.plain
+	local col = Palette.c[look.edge] or Palette.c.accent
+	t.plate:SetVertexColor(col[1], col[2], col[3], col[4] or 1)
+	local w = look.width
+	t.art.icon:ClearAllPoints()
+	t.art.icon:SetPoint("TOPLEFT", t, "TOPLEFT", w, -w)
+	t.art.icon:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -w, w)
+	t.glow:SetShown(look.glow ~= nil)
+	if look.glow then t.glow:SetVertexColor(col[1], col[2], col[3], look.glow) end
+	t._look, t._trayAlpha = key, trayAlpha
+	t._lookAlpha = (look.alpha or 1) * (trayAlpha or 1)
+	if not t._parked then t:SetAlpha(t._lookAlpha) end
 end
 
 --- Take a tile out of play.
@@ -442,7 +477,7 @@ end
 local function UnparkTile(t)
 	if not t._parked then return end
 	t._parked = nil
-	t:SetAlpha(1)
+	t:SetAlpha(t._lookAlpha or 1)
 end
 
 local function AddCancel(p)
@@ -485,7 +520,7 @@ local function NewDisplay(name, spec, opts)
 	d.name, d.spec, d.opts = name, spec, opts
 	d.tiles = {}
 	d.frame = CreateFrame("Frame", nil, UIParent)
-	d.frame:SetSize(spec.size, spec.size)
+	d.frame:SetSize(SQ, SQ)
 	d.active = 0
 	return d
 end
@@ -564,21 +599,17 @@ function Display:Prime()
 	self._primePending = nil
 end
 
---- A plain grid. Every tile is the same width now, which is what made this
---  simple: the old flow layout existed to pack pills of different widths, and
---  a row of identical squares needs nothing but multiplication.
---
---  Rows fill away from the capsule, so the row nearest the frame stays put as
---  auras come and go. Columns fill away from the unit's own leading edge - left
---  to right on the player, right to left on the mirrored target - so a half-full
---  row sits under the bars it belongs to rather than drifting under the orb.
---- Place the tiles.
+--- One row of squares, from where the capsule's bars start, growing toward
+--  the other capsule: left to right off the player, right to left off the
+--  mirrored target (Lattice handoff, Auras). Never a second row.
 --
 --  `count` is how many slots to lay out and defaults to what is on screen. Prime
 --  passes the display's maximum instead, so that every tile has a home before
 --  combat starts and a buff gained mid-fight lands somewhere sensible rather
 --  than nowhere at all - a frame that has never been given a point does not
 --  draw, so without that pass a frozen tray would simply swallow anything new.
+--  One row means every slot's place is the same at rest and in a fight: a fight
+--  only shows more of them.
 function Display:Arrange(count)
 	if self:Locked() then
 		-- Replayed on PLAYER_REGEN_ENABLED. Until then the tray keeps the layout
@@ -587,73 +618,71 @@ function Display:Arrange(count)
 		return
 	end
 
-	local spec, opts = self.spec, self.opts
+	local opts = self.opts
 	local slots = count or self.active
-	local gap = opts.spacing or 4
-	local cols = math.max(1, opts.perRow or 1)
-	local tw, th = TileWidth(spec), TileHeight(spec)
-	local step = th + gap
-
 	local vp = opts.growUp and "BOTTOM" or "TOP"
-	local align = opts.align or "CENTER"
-
-	local rows = math.ceil(slots / cols)
+	local side = opts.mirror and "RIGHT" or "LEFT"
+	local dir = opts.mirror and -1 or 1
+	local inset = opts.inset or 0
 	for i = 1, slots do
-		local r = math.ceil(i / cols)
-		local c = (i - 1) % cols
-		local y = opts.growUp and ((r - 1) * step) or (-(r - 1) * step)
 		local t = self.tiles[i]
 		if not t then break end
 		t:ClearAllPoints()
-
-		if align == "LEFT" then
-			t:SetPoint(vp .. "LEFT", self.frame, vp .. "LEFT", c * (tw + gap), y)
-		elseif align == "RIGHT" then
-			t:SetPoint(vp .. "RIGHT", self.frame, vp .. "RIGHT", -c * (tw + gap), y)
-		else
-			-- Centred, and centred *per row* rather than as a block.
-			--
-			-- Mirroring the unit's own name and readout was the first answer and
-			-- it looked wrong for a reason worth writing down: a row of pills
-			-- almost never divides evenly into a capsule. Four pills across a
-			-- 345px frame leave ~49px over, and pushed entirely onto one side
-			-- that gap reads as a fifth pill that failed to load. Split in two it
-			-- reads as margin.
-			local n = math.min(cols, slots - (r - 1) * cols)
-			local rowW = n * tw + (n - 1) * gap
-			t:SetPoint(vp, self.frame, vp, -rowW / 2 + c * (tw + gap) + tw / 2, y)
-		end
+		t:SetPoint(vp .. side, self.frame, vp .. side, dir * (inset + (i - 1) * SQ_STEP), 0)
 	end
-
-	local h = math.max(1, rows * step - gap)
 	if opts.fillWidth then
-		-- Width comes from the capsule it spans, or LEFT and RIGHT alignment
-		-- would both mean the same thing.
-		self.frame:SetHeight(h)
+		self.frame:SetHeight(SQ)
 	else
-		self.frame:SetSize(math.max(1, math.min(slots, cols) * (tw + gap) - gap), h)
+		self.frame:SetSize(math.max(1, slots * SQ_STEP - SQ_GAP), SQ)
 	end
 end
 
---- The colour of one tile. Buffs are quiet; debuffs are the thing you are meant
---  to notice, so they take the school colour at full strength.
-local function TintTile(t, debuff, auraType)
-	local c = Palette.c
-	local tint = auraType and c.debuffSchool[auraType]
-	if debuff then
-		tint = tint or { c.danger[1], c.danger[2], c.danger[3] }
-		t:SetFillColor({ tint[1] * 0.35, tint[2] * 0.35, tint[3] * 0.35, 0.5 })
-		t:SetEdgeColor({ tint[1], tint[2], tint[3], 0.45 })
-		W.Tint(t.art.ring, tint, 0.95)
-	else
-		-- BY TOKEN, not by colour. A buff tile is plain glass, and saying so in
-		-- the palette's own words is what puts it on the skin-change sweep -
-		-- including the tiles currently out of play, which are parked off screen
-		-- rather than hidden and come back the moment an aura lands.
-		t:ApplySkin("glass", "glassEdge")
-		tint = tint or c.accent
-		W.Tint(t.art.ring, tint, 0.55)
+--- This tray's auras in the order they are drawn, each with its look. Your
+--  debuffs on the target come first and lit, everyone else's after and
+--  dimmed; on yourself, what you can dispel first, edged red.
+function Display:Collect()
+	local opts = self.opts
+	local unit = opts.unit
+	local first, rest = {}, {}
+	local dispel
+	if opts.dispelFirst then
+		dispel = {}
+		for i = 1, 40 do
+			local name = GetAura(unit, i, "HARMFUL|RAID")
+			if not name then break end
+			dispel[name] = true
+		end
 	end
+	for index = 1, 40 do
+		local name, texture, count, auraType, duration, expiration, mine =
+			GetAura(unit, index, opts.filter)
+		if not name then break end
+		local e = { index = index, name = name, texture = texture, count = count,
+			duration = duration, expiration = expiration }
+		if opts.mineFirst then
+			if mine then
+				e.look = "mine"
+				first[#first + 1] = e
+			elseif not opts.onlyMine then
+				e.look = "theirs"
+				rest[#rest + 1] = e
+			end
+		elseif dispel and dispel[name] then
+			e.look = "dispel"
+			first[#first + 1] = e
+		else
+			e.look = opts.look or "plain"
+			rest[#rest + 1] = e
+		end
+	end
+	for _, e in ipairs(rest) do first[#first + 1] = e end
+	return first
+end
+
+--- How many show: three at rest, eight in a fight.
+function Display:Limit()
+	local n = (Aur.fighting or (InCombatLockdown and InCombatLockdown())) and COMBAT or REST
+	return math.min(n, self.opts.max or n)
 end
 
 function Display:Update()
@@ -664,39 +693,32 @@ function Display:Update()
 		return
 	end
 
-	local c = Palette.c
 	local shown = 0
+	local limit = self:Limit()
 
-	for index = 1, 40 do
-		if shown >= (opts.max or 0) then break end
+	for _, e in ipairs(self:Collect()) do
+		if shown >= limit then break end
+		shown = shown + 1
+		local t = self:Acquire(shown)
 
-		local name, texture, count, auraType, duration, expiration, mine =
-			GetAura(unit, index, opts.filter)
-		if not name then break end
+		t.unit, t.index, t.filter = unit, e.index, opts.filter
+		t.art.icon:SetTexture(e.texture)
+		if opts.cancel then SetCancelName(t, e.name) end
 
-		if not opts.onlyMine or mine then
-			shown = shown + 1
-			local t = self:Acquire(shown)
+		SizeTile(t, spec)
+		local count = e.count
+		t.count:SetText((spec.showCount and count and count > 1) and (" %d "):format(count) or "")
 
-			t.unit, t.index, t.filter = unit, index, opts.filter
-			t.art.icon:SetTexture(texture)
-			if opts.cancel then SetCancelName(t, name) end
+		-- The name is kept so a re-poll can prove it is still reading the same
+		-- aura: indices shift as auras come and go, and pulling a neighbour's
+		-- duration onto this tile would be worse than showing nothing.
+		t._name = e.name
+		t._expiration, t._duration = e.expiration, e.duration
+		t._noTime = (spec.showTime == false)
+		t._nextPoll = GetTime() + RECHECK
+		SetTimerText(t)
 
-			if not self:Locked() then SizeTile(t, spec) end
-			t.count:SetText((spec.showCount and count and count > 1) and count or "")
-			W.Color(t.count, c.text)
-
-			-- The name is kept so a re-poll can prove it is still reading the same
-			-- aura: indices shift as auras come and go, and pulling a neighbour's
-			-- duration onto this tile would be worse than showing nothing.
-			t._name = name
-			t._expiration, t._duration, t._urgent = expiration, duration, nil
-			t._noTime = (spec.showTime == false)
-			t._nextPoll = GetTime() + RECHECK
-			SetTimerText(t, c)
-
-			TintTile(t, opts.debuff, auraType)
-		end
+		Look(t, e.look, opts.alpha)
 	end
 
 	for i = shown + 1, #self.tiles do ParkTile(self.tiles[i]) end
@@ -730,7 +752,6 @@ end
 --  size whatever its timer says, so nothing here can reflow anything.
 function Display:Tick()
 	if self.active == 0 then return end
-	local c = Palette.c
 	local now = GetTime()
 	for i = 1, self.active do
 		local t = self.tiles[i]
@@ -742,37 +763,33 @@ function Display:Tick()
 			-- the belief is worth re-testing at a rate nobody can feel.
 			if now >= (t._nextPoll or 0) then
 				t._nextPoll = now + RECHECK
-				Repoll(t, c)
+				Repoll(t)
 			end
 
 		elseif t._expiration then
-			local text = W.AuraTime(t._expiration, t._duration)
-			if text == "" then
+			if t._expiration <= now then
 				-- Ran out from under us, or the expiry we were given has gone
-				-- stale. Never leave the field blank; re-classify, then go back
-				-- and ask. Nothing else in this branch applies once that has
-				-- happened - in particular the urgent recolour would undo the
-				-- colour SetTimerText just chose.
-				SetTimerText(t, c)
+				-- stale: re-classify, then go back and ask.
+				SetTimerText(t)
 				t._nextPoll = now + RECHECK
 			else
+				local text = TimerWords(t._expiration)
 				if text ~= t.time:GetText() then t.time:SetText(text) end
-
-				-- Recoloured only on the crossing, not every tick: this runs ten
-				-- times a second across four trays.
-				local urgent = (t._expiration - now) <= URGENT
-				if urgent ~= t._urgent then
-					t._urgent = urgent
-					W.Color(t.time, urgent and c.danger or c.textDim)
-				end
 			end
 		end
 	end
 end
 
+--- A skin change: the tags' inks and every square's edge, again.
 function Display:ApplySkin()
-	local shadow = A.db.profile.glass.shadow
-	for _, t in ipairs(self.tiles) do t:SetShadow(shadow) end
+	local c = Palette.c
+	for _, t in ipairs(self.tiles) do
+		t.timer.text:SetTextColor(c.auraTimer[1], c.auraTimer[2], c.auraTimer[3], c.auraTimer[4] or 1)
+		t.timer.chip:SetColorTexture(c.auraChip[1], c.auraChip[2], c.auraChip[3], c.auraChip[4] or 1)
+		t.stack.text:SetTextColor(c.auraStackInk[1], c.auraStackInk[2], c.auraStackInk[3], c.auraStackInk[4] or 1)
+		t.stack.chip:SetColorTexture(c.auraStack[1], c.auraStack[2], c.auraStack[3], c.auraStack[4] or 1)
+		if t._look then Look(t, t._look, t._trayAlpha) end
+	end
 	self:Update()
 end
 
@@ -794,10 +811,10 @@ local TRAYS = {
 }
 Aur.TRAYS = TRAYS
 
---- Exposed so the harness can assert a full row fits inside its capsule without
---  re-deriving the pill geometry and getting to agree with itself by accident.
-function Aur:TileWidth() return TileWidth(self.spec) end
-function Aur:TileHeight() return TileHeight(self.spec) end
+--- The square, and the rest and fight counts, for the harness.
+function Aur:TileWidth() return TileWidth() end
+function Aur:TileHeight() return TileHeight() end
+Aur.REST, Aur.COMBAT, Aur.SQ_STEP = REST, COMBAT, SQ_STEP
 
 --- The capsule a tray belongs to, or nil if unit frames are off.
 local function CapsuleFor(unit)
@@ -890,27 +907,11 @@ end
 	Blizzard_CustomAuraButton.lua) and from how EllesmereUI_AuraKit.lua uses it.
 ]]
 
-local SQ, SQ_GAP = 24, 4
-local SQ_STEP = SQ + SQ_GAP
-local REST, COMBAT = 3, 8
--- Above this many seconds left, the timer says nothing.
-local TIMER_UNDER = 30
--- The timer tag hangs this far below its square, so a row above the capsule
--- stands that much further off it.
-local TAG_DROP = 6
 -- Room round a row for the glow (drawn at twice the square) and the tags. The
 -- host clips to it, and that is what makes a line size a cap: whatever does
 -- not fit wraps onto a second line outside the host and is not drawn.
 local CLIP_PAD = SQ / 2
 local WRAP_GAP = CLIP_PAD * 2
-
-local LOOKS = {
-	plain  = { edge = "auraEdge",      width = 1 },
-	faint  = { edge = "auraEdgeFaint", width = 1 },
-	theirs = { edge = "auraEdgeOther", width = 1, alpha = 0.5 },
-	mine   = { edge = "accent",        width = 1.5, glow = 0.6 },
-	dispel = { edge = "auraDispel",    width = 1.5 },
-}
 
 -- Groups in the order they lay out. RAID on a debuff means one YOU can
 -- dispel; PLAYER means you (or your pet) cast it.
@@ -984,37 +985,6 @@ local function Words()
 		words.timerOpts = { textFormatter = words.timer }
 	end
 	return words
-end
-
---- A tag: text on a chip exactly as wide as the text. The chip hangs off the
---  string's own ends, so when the client writes "" there is nothing to draw -
---  which is how a long timer and a single stack show no chip without us
---  reading either number. On a frame of its own, above the square's art.
-local function Tag(button, ink, fill)
-	local carrier = CreateFrame("Frame", nil, button)
-	carrier:SetAllPoints(button)
-	carrier:SetFrameLevel(button:GetFrameLevel() + 3)
-	carrier:EnableMouse(false)
-
-	-- Lettered BEFORE the client is given it: registering writes to it at once,
-	-- and a string with no font is a hard error inside the engine.
-	local fs = carrier:CreateFontString(nil, "OVERLAY")
-	Media:SetFont(fs, "auraTag")
-	fs:SetTextColor(ink[1], ink[2], ink[3], ink[4] or 1)
-	fs:SetText("")
-
-	local chip = carrier:CreateTexture(nil, "ARTWORK")
-	chip:SetColorTexture(fill[1], fill[2], fill[3], fill[4] or 1)
-	-- Pulled in a pixel at each end. Hung flush on an empty string, the game
-	-- still rounded the chip up to a one-pixel tick beside every square (seen
-	-- 2026-10-06); inset, an empty string leaves it less than nothing wide and
-	-- it is not drawn. The spaces padding each number keep the margin.
-	chip:SetPoint("TOPLEFT", fs, "TOPLEFT", 1, 1)
-	chip:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", -1, -1)
-	W.AddMask(chip, carrier, Media.texture.slotMask, chip)
-
-	carrier.text, carrier.chip = fs, chip
-	return carrier
 end
 
 --- What the client calls on every button it builds for one group: our only
@@ -1300,7 +1270,6 @@ function Aur:OnEnable()
 	-- change. Four trays that could disagree about icon size is four trays that
 	-- eventually do.
 	self.spec = self.spec or {}
-	self.spec.size      = cfg.size or 24
 	self.spec.showTime  = cfg.showTime ~= false
 	self.spec.showCount = cfg.showCount ~= false
 
@@ -1309,12 +1278,22 @@ function Aur:OnEnable()
 		for i, t in ipairs(TRAYS) do
 			local d = NewDisplay(t.key, self.spec, {
 				unit = t.unit, filter = t.filter, debuff = t.debuff,
-				growUp = t.above, spacing = cfg.spacing,
+				growUp = t.above, mirror = (t.unit == "target"),
+				-- The handoff's looks: the target's buffs faint, your debuffs on
+				-- the target first and lit, what you can dispel off yourself
+				-- first and red.
+				look = (t.unit == "target" and not t.debuff) and "faint" or "plain",
+				-- And at 60 %, as Forever's tray is. On the squares: the tray's
+				-- own alpha is the fader's when the unit frames are off.
+				alpha = (t.unit == "target" and not t.debuff) and 0.6 or nil,
+				mineFirst = (t.unit == "target" and t.debuff) or nil,
+				dispelFirst = (t.unit == "player" and t.debuff) or nil,
 				-- Right-click cancels, and only on your own buffs. Safe here
 				-- because this display shows every helpful aura in order, so
 				-- tile N is always aura index N.
 				cancel = t.cancel,
-				max = 1,
+				-- Every slot a fight can show, built and placed up front.
+				max = COMBAT,
 			})
 			self.trays[i] = { key = t.key, unit = t.unit, above = t.above,
 				debuff = t.debuff, display = d }
@@ -1334,7 +1313,17 @@ function Aur:OnEnable()
 		Aur:Resettle()
 	end)
 
+	-- Three a row at rest, eight in a fight: the slots are placed already, so
+	-- a fight only shows more of them.
+	-- Our own flag: the event runs before the client's lockdown starts, so
+	-- InCombatLockdown would still say rest inside it.
+	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function()
+		Aur.fighting = true
+		Aur:UpdateAll()
+	end)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
+		Aur.fighting = false
+		Aur:UpdateAll()
 		if Aur._anchorPending then
 			Aur._anchorPending = nil
 			Aur:AnchorTrays()
@@ -1484,19 +1473,14 @@ function Aur:UpdateAll()
 	end
 end
 
---- Hang each tray off its capsule: buffs above, debuffs below.
---
---  Columns are derived, not configured. The tray spans the capsule exactly, so
---  "how many fit" is arithmetic on the frame's real width - which means the
---  answer is right after a resolution change, a scale change or a wider capsule
---  without anybody having to remember to update a number. It is also the whole
---  of "never wider than the frame it belongs to": there is no width to exceed,
---  because the width is where the column count came from.
+--- Hang each tray off its capsule: buffs above, debuffs below, the row
+--  starting where the capsule's bars start (the handoff's, as on Forever).
 function Aur:AnchorTrays()
 	local cfg = A.Config:Module("auras")
 	local scale = A.db.profile.scale
-	local gap = cfg.spacing or 4
 	local offset = cfg.offset or 6
+	local UFm = A:GetModule("unitframes")
+	local inset = (UFm and UFm.BarsInset) and UFm:BarsInset() or 0
 
 	for _, t in ipairs(self.trays or {}) do
 		local d = t.display
@@ -1506,7 +1490,6 @@ function Aur:AnchorTrays()
 
 		t.enabled = TrayEnabled(cfg, t)
 
-		d.opts.spacing  = gap
 		d.opts.growUp   = t.above
 		d.opts.onlyMine = (t.debuff and t.unit == "target") and side.onlyMine or false
 
@@ -1527,8 +1510,10 @@ function Aur:AnchorTrays()
 				f:SetScale(1)
 				f:ClearAllPoints()
 				if t.above then
-					f:SetPoint("BOTTOMLEFT",  capsule, "TOPLEFT",  0, offset)
-					f:SetPoint("BOTTOMRIGHT", capsule, "TOPRIGHT", 0, offset)
+					-- The timer tag hangs under its square: a row above the
+					-- capsule stands that much further off it.
+					f:SetPoint("BOTTOMLEFT",  capsule, "TOPLEFT",  0, offset + TAG_DROP)
+					f:SetPoint("BOTTOMRIGHT", capsule, "TOPRIGHT", 0, offset + TAG_DROP)
 				else
 					local below = offset + TrayRoom(t)
 					f:SetPoint("TOPLEFT",  capsule, "BOTTOMLEFT",  0, -below)
@@ -1536,19 +1521,8 @@ function Aur:AnchorTrays()
 				end
 			end
 
-			-- The pill, not the icon: a tile is icon + timer + padding, and
-			-- sizing the grid off the icon alone is how this first came out at
-			-- thirteen columns in a frame with room for four.
-			local tw = TileWidth(self.spec)
-			local avail = math.max(tw, capsule:GetWidth() or tw)
-			local cols = math.max(1, math.floor((avail + gap) / (tw + gap)))
-			if (cfg.perRow or 0) > 0 then cols = math.min(cols, cfg.perRow) end
-
 			d.opts.fillWidth = true
-			d.opts.align   = (cfg.align == "MIRROR")
-				and (capsule.mirror and "RIGHT" or "LEFT") or "CENTER"
-			d.opts.perRow  = cols
-			d.opts.max     = math.min(side.max or 16, cols * (side.maxRows or 2))
+			d.opts.inset = inset
 
 			A.Fader:Unregister(f)
 		else
@@ -1564,9 +1538,7 @@ function Aur:AnchorTrays()
 					t.unit == "target" and 200 or -200, t.above and 300 or 180)
 			end
 			d.opts.fillWidth = nil
-			d.opts.align   = "CENTER"
-			d.opts.perRow  = cfg.perRow and cfg.perRow > 0 and cfg.perRow or 8
-			d.opts.max     = side.max or 16
+			d.opts.inset = 0
 			-- Detached, so it no longer inherits the capsule's fade.
 			A.Fader:Register(f, {})
 		end
@@ -1611,7 +1583,6 @@ function Aur:OnConfigChanged()
 
 	local cfg = A.Config:Module("auras")
 
-	self.spec.size      = cfg.size or 24
 	self.spec.showTime  = cfg.showTime ~= false
 	self.spec.showCount = cfg.showCount ~= false
 

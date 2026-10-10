@@ -3422,6 +3422,14 @@ function UnitAura(unit, index, filter)
             if all[i][8] then list[#list + 1] = all[i] end
         end
     end
+    -- RAID on a debuff: one the player can dispel, marked by a[10].
+    if filter:find("RAID") then
+        local only = {}
+        for i = 1, #list do
+            if list[i][10] then only[#only + 1] = list[i] end
+        end
+        list = only
+    end
 
     local a = list[index]
     if not a then return nil end
@@ -13224,65 +13232,56 @@ local TB, TD = AU.targetBuffs, AU.targetDebuffs
 
 if TILES then
 check(#AU.trays == 4, "four trays: buffs and debuffs, player and target")
-check(PB.active == 4, "four player buffs (got " .. PB.active .. ")")
+check(PB.active == 3, "three of the four player buffs at rest (got " .. PB.active .. ")")
 check(PD.active == 2, "two player debuffs (got " .. PD.active .. ")")
 check(TB.active == 2, "target buffs are shown at all now (got " .. TB.active .. ")")
 check(TD.active == 3,
 	"and only the player's own target debuffs (got " .. TD.active .. ")")
 end
 
-if TILES then  -- the ring says WHAT KIND of thing is on you
-	-- The name is gone from a tile, so the school colour is the only thing
-	-- left carrying it - and it has to be the client's own, or a curse reads
-	-- as one thing here and another on Blizzard's own frames. Nothing checked
-	-- this at all until the table moved into the palette.
-	local school = A.Palette.c.debuffSchool
-	local missing = {}
-	for _, kind in ipairs({ "Magic", "Curse", "Disease", "Poison" }) do
-		local c = school[kind]
-		if type(c) ~= "table" or type(c[3]) ~= "number" then
-			missing[#missing + 1] = kind
-		end
-	end
-	check(#missing == 0,
-		"all four schools are named (" .. table.concat(missing, ", ") .. ")")
-
-	-- The player's second debuff is a Curse, the target's first is Magic.
-	local curse = PD.tiles[2]
-	local cr, cg, cb = curse.art.ring:GetVertexColor()
-	check(math.abs(cr - school.Curse[1]) < 0.001
-		and math.abs(cg - school.Curse[2]) < 0.001
-		and math.abs(cb - school.Curse[3]) < 0.001,
-		"a curse wears the curse purple (" ..
-		string.format("%.2f %.2f %.2f", cr, cg, cb) .. ")")
-
-	local magic = TD.tiles[1]
-	local mr, mg, mb = magic.art.ring:GetVertexColor()
-	check(math.abs(mr - school.Magic[1]) < 0.001
-		and math.abs(mg - school.Magic[2]) < 0.001
-		and math.abs(mb - school.Magic[3]) < 0.001,
-		"and a magic debuff the magic blue, which is a DIFFERENT colour - one"
-		.. " lookup returning the same tint for both would pass either alone")
-
-	-- An untyped debuff has no school to show, and falls back to danger
-	-- rather than to the last colour the ring happened to be wearing.
-	local plain = PD.tiles[1]
-	local pr = plain.art.ring:GetVertexColor()
-	check(math.abs(pr - A.Palette.c.danger[1]) < 0.001,
-		"an untyped debuff falls back to danger (" ..
-		string.format("%.2f", pr) .. ")")
+if TILES then  -- the handoff's looks, per aura (Joe: Era as Forever)
+	local c = A.Palette.c
+	local function edge(t) return select(1, t.plate:GetVertexColor()) end
+	-- Your debuffs on the target: first, accent-edged, with a glow.
+	check(TD.tiles[1]._look == "mine" and TD.tiles[1].glow:IsShown()
+		and math.abs(edge(TD.tiles[1]) - c.accent[1]) < 0.001,
+		"your debuff on the target is edged in the accent with a glow")
+	-- Everyone else's after, dimmed, when shown at all.
+	local cfg = A.db.profile.modules.auras.debuffs
+	cfg.onlyMine = false
+	AU:OnConfigChanged()
+	fire("PLAYER_REGEN_DISABLED")
+	check(TD.active == 4 and TD.tiles[4]._look == "theirs"
+		and math.abs(TD.tiles[4]:GetAlpha() - 0.5) < 0.01 and not TD.tiles[4].glow:IsShown(),
+		"someone else's comes after yours, dimmed and unlit (" .. TD.active .. ")")
+	fire("PLAYER_REGEN_ENABLED")
+	cfg.onlyMine = true
+	AU:OnConfigChanged()
+	-- A debuff you can dispel off yourself: first, edged red.
+	local saved = _G.__auras.player.HARMFUL
+	_G.__auras.player.HARMFUL = {
+		{ "Rend",           132155, 0, nil,     12, nil, "boss1", false },
+		{ "Curse of Agony", 136139, 0, "Curse", 24, nil, "boss1", false, nil, true },
+	}
+	fire("UNIT_AURA", "player")
+	check(PD.tiles[1]._name == "Curse of Agony" and PD.tiles[1]._look == "dispel"
+		and math.abs(edge(PD.tiles[1]) - c.auraDispel[1]) < 0.001,
+		"what you can dispel comes first, edged red")
+	check(PD.tiles[2]._look == "plain", "and the rest plain")
+	_G.__auras.player.HARMFUL = saved
+	fire("UNIT_AURA", "player")
+	-- The target's buffs, faint and at 60 %.
+	check(TB.tiles[1]._look == "faint" and math.abs(TB.tiles[1]:GetAlpha() - 0.6) < 0.01,
+		"the target's buffs are faint, at 60 %")
 end
 
-if TILES then  -- a tile is an icon and a timer, and nothing else
+if TILES then  -- a square: the icon, a timer tag under thirty seconds, a stack tag
 	local t = PB.tiles[1]
-	check(t.name == nil, "no name field on a tile - the name is on the tooltip")
+	check(t:GetWidth() == 24 and t:GetHeight() == 24, "a 24 px square, as the handoff draws it")
 	check(t.art.icon:GetTexture() == 135843, "the icon is painted")
-	check(t.time:GetText() == "30m", "the timer reads in minutes at this range")
-	-- A mount, a Well Fed, most things a player walks around with. The field is
-	-- fixed width either way, so an empty one read as a pill that had failed to
-	-- load rather than one with nothing to say.
-	check(PB.tiles[4].time:GetText() == "n/a",
-		"a permanent aura says so rather than leaving the timer field blank")
+	check(t.time:GetText() == "", "half an hour left: no timer tag, nothing to say yet")
+	check(PB.tiles[3].count:GetText() == " 3 ", "a stack shows its count on its tag")
+	check(PB.tiles[1].count:GetText() == "", "and a single application shows none")
 	do
 		-- On login the server has not finished sending aura data and everything
 		-- comes back with a zero duration, which is indistinguishable from a
@@ -13293,63 +13292,23 @@ if TILES then  -- a tile is an icon and a timer, and nothing else
 			{ "Frost Armor", 135843, 0, nil, 0, nil, "player", true },
 		}
 		fire("PLAYER_ENTERING_WORLD")
-		check(PB.tiles[1].time:GetText() == "n/a", "a zero duration reads as timeless")
+		check(PB.tiles[1]._timeless, "a zero duration reads as timeless")
 		_G.__auras.player.HELPFUL = saved
 		_G.__tick()                       -- the settle pass the load kicked off
-		check(PB.tiles[1].time:GetText() ~= "n/a",
+		check(not PB.tiles[1]._timeless and PB.tiles[1]._duration == 1800,
 			"and the settle pass picks up the real numbers when they arrive,"
 			.. " without needing a UNIT_AURA to happen along")
 	end
-	check(PB.tiles[4]:GetWidth() == PB.tiles[1]:GetWidth(),
-		"and keeps the same width as a timed one")
-	check(PB.tiles[3].count:GetText() == 3, "a stack shows its count")
-	check(PB.tiles[1].count:GetText() == "", "and a single application does not")
-
-	local spec = AU.spec
-	check(t:GetWidth() > spec.size * 2,
-		"the pill is wide enough for the icon and a timer beside it")
-	check(t:GetHeight() == spec.size + 8,
-		"and only a little taller than the icon it wraps, the way the deck draws it")
-	check(t.time:GetWidth() == 30,
-		"the timer field is fixed width, so a ticking timer cannot resize the pill")
-	check(PB.tiles[1]:GetWidth() == PB.tiles[4]:GetWidth(),
-		"a permanent aura's pill is the same width as a timed one - the grid has"
-		.. " to stay a grid")
 end
 
-print("== no tray exceeds the frame it belongs to ==")
+print("== a row of squares, from the bars' start ==")
 if TILES then
-	local cfg = A.db.profile.modules.auras
-	local ufcfg = A.db.profile.modules.unitframes
-
-	for _, t in ipairs(AU.trays) do
-		local d = t.display
-		local rowW = d.opts.perRow * (AU:TileWidth() + cfg.spacing) - cfg.spacing
-		check(rowW <= UF.player:GetWidth(),
-			("%s: a full row is %d wide, the capsule is %d")
-				:format(t.key, rowW, UF.player:GetWidth()))
-	end
-
-	-- Columns are derived, not configured: widen the capsule and every tray gets
-	-- wider on its own.
-	local before = PB.opts.perRow
-	local savedW, savedBar = ufcfg.width, ufcfg.barWidth
-	ufcfg.width, ufcfg.barWidth = 500, 340
-	A:Reconfigure()
-	check(PB.opts.perRow > before,
-		("a wider capsule gets more columns without touching the config (%d -> %d)")
-			:format(before, PB.opts.perRow))
-	ufcfg.width, ufcfg.barWidth = savedW, savedBar
-	A:Reconfigure()
-	check(PB.opts.perRow == before, "and loses them again when it narrows")
-
-	-- perRow is a cap, not the source
-	cfg.perRow = 3
-	AU:OnConfigChanged()
-	check(PB.opts.perRow == 3, "setting a column cap uses it")
-	cfg.perRow = 0
-	AU:OnConfigChanged()
-	check(PB.opts.perRow == before, "and 0 goes back to whatever fits")
+	-- Eight in a fight, which is the most a row ever holds, fits the capsule.
+	local inset = UF.BarsInset and UF:BarsInset() or 0
+	local rowW = inset + AU.COMBAT * AU.SQ_STEP - 4
+	check(rowW <= UF.player:GetWidth(),
+		("eight squares from the bars' start fit the capsule (%d of %d)")
+			:format(rowW, UF.player:GetWidth()))
 end
 
 if _G.__flavour == "camelot" then
@@ -13779,76 +13738,56 @@ if TILES then
 	check(PB.frame:GetScale() == 1,
 		"and takes no scale of its own - the capsule is already scaled")
 
-	-- Centred, because a row of pills almost never divides evenly into a capsule
-	-- and the slack pushed onto one side reads as a pill that failed to load.
-	check(PB.opts.align == "CENTER" and TD.opts.align == "CENTER",
-		"rows are centred on their frame by default")
+	-- ONE ROW, FROM WHERE THE BARS START, toward the other capsule: left to
+	-- right off the player, right to left off the target (the handoff).
 	do
-		local n, tw, gap = PB.active, AU:TileWidth(), cfg.spacing
-		local rowW = n * tw + (n - 1) * gap
+		local inset = UF.BarsInset and UF:BarsInset() or 0
 		local p, rel, relP, x = PB.tiles[1]:GetPoint(1)
-		check(p == "BOTTOM" and relP == "BOTTOM" and rel == PB.frame,
-			"a centred tile is anchored on the frame's centre line")
-		check(math.abs(x - (-rowW / 2 + tw / 2)) < 0.01,
-			("the first pill sits half a row left of centre (%.1f)"):format(x))
-		-- and the row is symmetric about it
-		local _, _, _, xn = PB.tiles[n]:GetPoint(1)
-		check(math.abs(x + xn) < 0.01,
-			("the last pill mirrors it (%.1f vs %.1f)"):format(x, xn))
+		check(p == "BOTTOMLEFT" and relP == "BOTTOMLEFT" and rel == PB.frame and x == inset,
+			"the player's first square sits where the bars start (" .. tostring(x) .. ")")
+		local _, _, _, x2 = PB.tiles[2]:GetPoint(1)
+		check(x2 - x == AU.SQ_STEP, "the next 28 on, to the right")
+		local tp, _, _, tx = TD.tiles[1]:GetPoint(1)
+		check(tp == "TOPRIGHT" and tx == -inset, "the target's from its right, growing left")
 	end
+	local _, _, _, _, fy = PB.frame:GetPoint(1)
+	check(fy == cfg.offset + 6, "a row above stands clear of its timer tags (" .. tostring(fy) .. ")")
 
-	-- ...and mirrored is still there for anyone who wants it
-	cfg.align = "MIRROR"
-	AU:OnConfigChanged()
-	check(PB.opts.align == "LEFT" and TD.opts.align == "RIGHT",
-		"mirrored follows the unit's own name and readout - left on the player,"
-		.. " right on the target")
-	check(select(1, TD.tiles[1]:GetPoint(1)) == "TOPRIGHT",
-		"so a half-full target row is measured back from the right edge")
-	cfg.align = "CENTER"
-	AU:OnConfigChanged()
-
-	-- second row
+	-- THREE AT REST, EIGHT IN A FIGHT, NEVER A SECOND ROW.
 	local savedB = _G.__auras.player.HELPFUL
 	local many = {}
-	for i = 1, PB.opts.perRow + 2 do
-		many[i] = { "Buff " .. i, 130000 + i, 0, nil, 60, nil, "player", true }
-	end
+	for i = 1, 10 do many[i] = { "Buff " .. i, 130000 + i, 0, nil, 600, nil, "player", true } end
 	_G.__auras.player.HELPFUL = many
 	fire("UNIT_AURA", "player")
-	check(PB.active == PB.opts.perRow + 2, "a full row plus two")
+	check(PB.active == AU.REST, "ten buffs, three shown at rest (" .. PB.active .. ")")
+	fire("PLAYER_REGEN_DISABLED")
+	check(PB.active == AU.COMBAT, "eight in a fight (" .. PB.active .. ")")
 	local _, _, _, _, y1 = PB.tiles[1]:GetPoint(1)
-	local _, _, _, _, y2 = PB.tiles[PB.opts.perRow + 1]:GetPoint(1)
-	check(y2 > y1, "the second row stacks upward, away from the capsule")
+	local _, _, _, _, y8 = PB.tiles[8]:GetPoint(1)
+	check(y1 == y8, "in one row")
+	fire("PLAYER_REGEN_ENABLED")
+	check(PB.active == AU.REST, "and three again after")
 	_G.__auras.player.HELPFUL = savedB
 	fire("UNIT_AURA", "player")
 end
 
 print("== timers ==")
 if TILES then
-	local before = PB.tiles[1]:GetWidth()
-	time = time + 120
-	PB:Tick()
-	check(PB.tiles[1].time:GetText() == "28m", "the timer ticks down")
-	check(PB.tiles[1]:GetWidth() == before,
-		"and cannot reflow anything - every tile is the same size whatever its"
-		.. " timer says")
-
-	-- an aura about to fall off says so
+	-- A timer tag only under thirty seconds: whole seconds, rounded up.
 	local saved = _G.__auras.player.HELPFUL
 	_G.__auras.player.HELPFUL = {
-		{ "Ice Barrier", 135988, 0, nil, 30, nil, "player", true },
+		{ "Ice Barrier", 135988, 0, nil, 60, nil, "player", true },
 	}
 	fire("UNIT_AURA", "player")
+	check(PB.tiles[1].time:GetText() == "", "a minute left says nothing")
+	time = time + 35
 	PB:Tick()
-	check(PB.tiles[1]._urgent == false, "a healthy timer is not urgent")
-	time = time + 27
+	check(PB.tiles[1].time:GetText() == " 25 ", "under thirty it counts (" .. PB.tiles[1].time:GetText() .. ")")
+	time = time + 24.5
 	PB:Tick()
-	check(PB.tiles[1]._urgent == true, "under five seconds it turns urgent")
+	check(PB.tiles[1].time:GetText() == " 1 ", "and never reads 0 with time left")
 	_G.__auras.player.HELPFUL = saved
 	fire("UNIT_AURA", "player")
-	PB:Tick()
-	check(PB.tiles[1]._urgent ~= true, "and back again when it is replaced")
 end
 
 
@@ -13866,21 +13805,17 @@ if TILES then
 	}
 	fire("UNIT_AURA", "player")
 	local t = PB.tiles[1]
-	check(t.time:GetText() == "n/a",
-		"a duration with no expiry reads n/a rather than going blank (got '"
-		.. tostring(t.time:GetText()) .. "')")
 	check(t._stale == true and t._timeless == false,
-		"and is marked stale, not permanent - the difference is whether we ever"
-		.. " ask again")
+		"a duration with no expiry is marked stale, not permanent - the difference"
+		.. " is whether we ever ask again")
 
 	-- the server catches up. No UNIT_AURA fires, because nothing changed as far
 	-- as the client is concerned - the re-poll is the only thing that can notice.
 	_G.__auras.player.HELPFUL[1][9] = nil
 	for i = 1, 15 do tick(0.1) end
-	check(t.time:GetText() == "30m",
+	check(t._stale == false and (t._expiration or 0) > GetTime() + 1700,
 		"and the tile picks the real timer up on its own, with no UNIT_AURA to"
-		.. " prompt it (got '" .. tostring(t.time:GetText()) .. "')")
-	check(t._stale == false, "and stops asking")
+		.. " prompt it, and stops asking")
 
 	-- Case two: duration zero, which is what a permanent aura and an aura the
 	-- server has not described yet both look like.
@@ -13889,14 +13824,14 @@ if TILES then
 	}
 	fire("UNIT_AURA", "player")
 	t = PB.tiles[1]
-	check(t.time:GetText() == "n/a" and t._timeless == true,
-		"duration zero reads n/a and is believed permanent")
+	check(t.time:GetText() == "" and t._timeless == true,
+		"duration zero says nothing and is believed permanent")
 
 	_G.__auras.player.HELPFUL[1][5] = 1800
 	for i = 1, 15 do tick(0.1) end
-	check(t.time:GetText() == "30m",
+	check(t._timeless == false and t._duration == 1800,
 		"but the belief is re-tested, so a buff that turns out to have a timer"
-		.. " gets one (got '" .. tostring(t.time:GetText()) .. "')")
+		.. " gets one")
 
 	-- and a re-poll must not read a neighbour's clock when indices shift
 	_G.__auras.player.HELPFUL = {
@@ -13909,7 +13844,7 @@ if TILES then
 		{ "Ice Barrier", 135988, 0, nil, 60, nil, "player", true },
 	}
 	for i = 1, 15 do tick(0.1) end   -- no UNIT_AURA: the tile still thinks it is Well Fed
-	check(t.time:GetText() == "n/a",
+	check(t._timeless == true and (t._duration or 0) == 0,
 		"whose tile refuses to take a duration from whatever now sits at its"
 		.. " index, because the name no longer matches")
 
@@ -13925,18 +13860,16 @@ if TILES then
 	}
 	fire("UNIT_AURA", "player")
 	t = PB.tiles[1]
-	check(t.time:GetText() == "3s", "a bad expiry from the server counts down")
+	check(t.time:GetText() == " 3 ", "a bad expiry from the server counts down")
 	for i = 1, 40 do tick(0.1) end
-	check(t.time:GetText() ~= "",
-		"and when it runs out the field never goes blank (got '"
-		.. tostring(t.time:GetText()) .. "')")
+	check(t._stale == true,
+		"and when it runs out the tile knows its numbers are wrong, and asks again")
 
 	_G.__auras.player.HELPFUL[1][9] = nil   -- the client finally has it right
 	for i = 1, 15 do tick(0.1) end
-	check(t.time:GetText() == "30m",
+	check(t._stale == false and (t._expiration or 0) > GetTime() + 1700,
 		"the tile re-reads and picks up the real remaining time, with no"
-		.. " UNIT_AURA and long after Resettle has given up (got '"
-		.. tostring(t.time:GetText()) .. "')")
+		.. " UNIT_AURA and long after Resettle has given up")
 
 	-- the diagnostic has to survive whatever state the trays are in, because the
 	-- one time anybody runs it is when something is wrong
@@ -14061,33 +13994,20 @@ if TILES then
 			.. " secure button on top of it")
 	end
 
-	-- raising the cap mid-fight has to defer, then land
-	-- The cap is min(configured max, columns x rows), so raising it means
-	-- raising the row count, not the number - which is itself worth asserting.
-	local cols, wasMax, wasRows = PB.opts.perRow, PB.opts.max, cfg.maxRows
-	-- Tiles are never destroyed, only parked, and an earlier section ran with the
-	-- unit frames off - where a tray has no capsule to size itself against and
-	-- takes the configured max instead. Start this one from an empty display so
-	-- "was it built during the fight" means what it says.
+	-- A TILE BUILT IN A FIGHT gets its cancel wiring after it: secure attributes
+	-- cannot be written while locked.
 	for i = #PB.tiles, 1, -1 do PB.tiles[i] = nil end
 	PB.active = 0
 	_G.__inCombat = true
-	cfg.maxRows = wasRows + 2
-	AU:OnConfigChanged()
-	local want = math.min(cfg.max, cols * cfg.maxRows)
-	check(PB.opts.max == want and want > wasMax,
-		("the cap is columns x rows, capped by the configured max (%d)"):format(want))
-	check(PB._primePending, "raising the buff cap in combat defers the wiring")
-	check(PB.tiles[want] == nil or PB.tiles[want].click == nil,
-		"and writes no secure attribute while locked")
+	PB:Prime()
+	check(PB._primePending and PB.tiles[AU.COMBAT] == nil,
+		"in combat the wiring is deferred, and nothing secure is written")
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
-	check(PB.tiles[want] and PB.tiles[want].click
-		and PB.tiles[want].click:GetAttribute("type2") == "macro",
+	check(PB.tiles[AU.COMBAT] and PB.tiles[AU.COMBAT].click
+		and PB.tiles[AU.COMBAT].click:GetAttribute("type2") == "macro",
 		"the deferred wiring lands when the fight ends")
 	check(not PB._primePending, "and the pending flag clears")
-	cfg.maxRows = wasRows
-	AU:OnConfigChanged()
 
 	-- The one this whole section was missing. The tray's tiles carry secure
 	-- buttons, so the tray *and every tile in it* is off limits for geometry in
@@ -28144,30 +28064,17 @@ section("skins: what a live switch actually looks like on the HUD", function()
 		AB2:RefreshAll()
 	end
 
-	-- A buff tile, which is plain glass and had to say so BY TOKEN to be swept.
-	-- Era's tiles; Forever's squares are repainted in their own section.
+	-- An aura square's edge is a palette token, painted again on a switch.
+	-- Era's squares; Forever's are repainted in their own section.
 	local AU2 = A:GetModule("auras")
 	local tile = AU2.playerBuffs and AU2.playerBuffs.tiles[1]
-	check(tile ~= nil or AU2.forever ~= nil, "and a buff tile to look at")
+	check(tile ~= nil or AU2.forever ~= nil, "and a buff square to look at")
 	if tile then
-		check(tile._fillToken == "glass",
-			"a buff tile is dressed from the glass token rather than handed the"
-			.. " colour, which is what puts it on the sweep at all")
-		check(tile._fillColor == P.c.glass,
-			"so it is wearing the live skin's glass after the switch")
-	end
-
-	-- A debuff tile is the other way round on purpose: its colour is its school,
-	-- which is semantic, so it must NOT move when the skin does.
-	local dtile = AU2.playerDebuffs and AU2.playerDebuffs.tiles[2]
-	if dtile then
-		local r, g, b = rgb(dtile.art.ring:GetVertexColor())
-		local curse = P.c.debuffSchool.Curse
-		check(math.abs(r - curse[1]) < 0.001 and math.abs(g - curse[2]) < 0.001
-			and math.abs(b - curse[3]) < 0.001,
-			"while a debuff tile keeps its school colour, which is semantic and the"
-			.. " same in all four (" ..
-			string.format("%.2f %.2f %.2f", r, g, b) .. ")")
+		local r, g, b = rgb(tile.plate:GetVertexColor())
+		local e = P.c.auraEdge
+		check(math.abs(r - e[1]) < 0.001 and math.abs(g - e[2]) < 0.001
+			and math.abs(b - e[3]) < 0.001,
+			"a buff square wears the live skin's aura edge after the switch")
 	end
 
 	A.db.profile.skin = "midnight" A:Restyle()

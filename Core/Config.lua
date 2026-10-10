@@ -377,42 +377,21 @@ Config.defaults = {
 				-- a second time above ours.
 				hideBlizzard = true,
 
-				-- Tile geometry is shared by all four trays. Identical trays are
-				-- most of what makes the player and the target read as a pair.
-				--
-				-- A tile is the deck's buff pill without the name in the middle:
-				-- icon left, timer right. `size` is the icon; the pill is 8 taller
-				-- and wide enough for a fixed timer field. Columns are not
-				-- configured at all - they are derived from how wide the capsule
-				-- is, which is the whole of "a tray never exceeds the frame it
-				-- belongs to".
-				size      = 22,
-				spacing   = 4,
-				offset    = 6,     -- capsule edge -> first row
+				-- The handoff's squares, on both clients: their size and counts
+				-- are the design's (Modules/Auras.lua), not settings.
+				offset    = 6,     -- capsule edge -> the row
 				showTime  = true,
 				showCount = true,
-				perRow    = 0,     -- 0 = as many as the frame is wide enough for
-				-- CENTER or MIRROR. A row of pills almost never divides evenly
-				-- into a capsule - four across a 345px frame leave ~49 over - and
-				-- pushed onto one side that slack reads as a fifth pill that
-				-- failed to load. Centred per row, it reads as margin.
-				align     = "CENTER",
 
 				buffs = {
 					enabled = true,
 					player  = true,
 					target  = true,
-					max     = 24,
-					-- Three rows rather than two: at four pills across, two rows
-					-- is eight buffs, and a raid-buffed character has more.
-					maxRows = 3,
 				},
 				debuffs = {
 					enabled = true,
 					player  = true,
 					target  = true,
-					max     = 16,
-					maxRows = 2,
 					-- Target only. On yourself every debuff matters whoever cast it;
 					-- on the target, yours are the ones you act on.
 					onlyMine = true,
