@@ -188,8 +188,6 @@ L["cmd.preset.layout_s"] = "layout: %s"
 L["cmd.preset.presets_loaded"] = "presets are not loaded."
 
 L["cmd.quests.objective_lines_s"] = "objective lines %s."
-L["cmd.quests.quest_tracker_folded"] = "quest tracker folded."
-L["cmd.quests.quest_tracker_unfolded"] = "quest tracker unfolded."
 L["cmd.quests.questtracker_module_enabled"] =
 	"questtracker module is not enabled."
 L["cmd.quests.tracking_reset"] = "tracking reset."
@@ -240,6 +238,10 @@ L["cmd.tooltips.unit_tooltips_back_blizzard"] =
 	"unit tooltips back on Blizzard's default anchor."
 
 L["cmd.tour.tour_loaded"] = "the tour is not loaded."
+
+L["cmd.world.back_down"] = "World trunk back down."
+L["cmd.world.retracted"] = "World trunk retracted."
+L["cmd.world.usage"] = "usage: /lattice world retract"
 
 L["cmd.zen.frosted_pane_s_s"] = "the frosted pane -> %s %s"
 L["cmd.zen.idle_fade_off_so"] =
@@ -1128,7 +1130,7 @@ L["options.quest.adopt_watches.name"] = "Adopt Blizzard's watch list"
 L["options.quest.auto_track.name"] = "Track everything automatically"
 L["options.quest.clear.desc"] = "Forget every dismissed and tracked quest."
 L["options.quest.clear.name"] = "Reset tracking"
-L["options.quest.combat_collapse.name"] = "Fold in combat"
+L["options.quest.combat_collapse.name"] = "Retract in combat"
 L["options.quest.hide_blizzard.name"] = "Hide Blizzard's tracker"
 L["options.quest.max.desc"] =
 	"On the World trunk. The rest fold into one +n node, and fewer show if the "
@@ -1144,7 +1146,8 @@ L["options.quest.show_objectives.desc"] =
 		.. "the cursor is on it."
 L["options.quest.show_objectives.name"] = "Show objective lines"
 L["options.quest.shrinks_heading_when_fight"] =
-	"Leaves only the Quest Log node on the trunk while you are in a fight."
+	"Pulls the World trunk up into the minimap's pill while you are in a fight, "
+		.. "leaving only your active quest and its count showing."
 L["options.quest.track_header"] = "Tracking"
 L["options.quest.tracker_shows_every_quest"] =
 	"On, the tracker shows every quest in your log and you dismiss the "
@@ -1484,7 +1487,7 @@ L["tour.ifec_demo.nothing_installed_yet"] = "Nothing installed yet"
 L["tour.layout_control.n1_min"] = "1 min"
 L["tour.layout_control.n5_min"] = "5 min"
 
-L["tour.quests_demo.combat_folded"] = "in combat — folded"
+L["tour.quests_demo.combat_folded"] = "in combat — retracted"
 L["tour.quests_demo.tracking"] = "tracking"
 L["tour.quests_demo.wanted_hogger"] = "Wanted: Hogger"
 

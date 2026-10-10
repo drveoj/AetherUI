@@ -1437,12 +1437,11 @@ end
 -- stop 5: the quest tracker
 -- ---------------------------------------------------------------------------
 
---- A quest, and then the tracker folds - the real one included.
+--- A quest, and then the World trunk retracts - the real one included.
 local function QuestsDemo(slot)
-	-- THE REAL TRACKER REALLY FOLDS, through the same call the combat handler
+	-- THE REAL TRUNK REALLY RETRACTS, through the same call the combat handler
 	-- makes. Restored on the way out, and restored to what it WAS rather than
-	-- to open: somebody who keeps their tracker folded should get it back
-	-- folded.
+	-- to out: somebody who keeps it retracted should get it back retracted.
 	local QT = A.GetModule and A:GetModule("questtracker")
 	if QT and QT.SetCollapsed then
 		local was = QT.collapsed and true or false

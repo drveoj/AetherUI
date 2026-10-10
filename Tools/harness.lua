@@ -998,6 +998,12 @@ function _G.__frameCount() return #frames end
 --- showing - so both of those, two ordinary frames on UIParent with no template
 --- between them, are protected the whole time you are in a group. Five refused
 --- calls per target change, reported from a fight, with a suite that was green.
+--- Whether protected frames are locked now: in a fight, except while the
+--  fight's first event is being handled. Secure frames still move there -
+--  HazeBuffBars relies on it on Classic Era (Bars.lua:25), EllesmereUI on WoW
+--  Forever, where InCombatLockdown already answers true (PartyMode.lua:726).
+function _G.__locked() return (_G.__inCombat and not _G.__regenWindow) and true or false end
+
 local function ProtectedInFamily(f, seen)
 	if f.__protected then return f end
 	seen = seen or {}
@@ -1047,7 +1053,7 @@ function CreateFrame(kind, name, parent, template)
 	local baseShow, baseHide = f.Show, f.Hide
 
 	function f:Hide()
-		if _G.__inCombat then
+		if _G.__locked() then
 			local p = ProtectedInFamily(self)
 			if p then
 				fail(("ADDON BLOCKED: Hide() on %s, which a protected frame"
@@ -1059,7 +1065,7 @@ function CreateFrame(kind, name, parent, template)
 		baseHide(self)
 	end
 	function f:Show()
-		if _G.__inCombat then
+		if _G.__locked() then
 			local p = ProtectedInFamily(self)
 			if p and not self.__shown then
 				fail(("ADDON BLOCKED: Show() on %s, which a protected frame"
@@ -1095,7 +1101,7 @@ function CreateFrame(kind, name, parent, template)
 	-- which is exactly how a tray of secure buff tiles shipped calling SetPoint
 	-- on itself four times per aura change in a fight.
 	local function blocked(self, method)
-		if not _G.__inCombat then return false end
+		if not _G.__locked() then return false end
 		local p = ProtectedInFamily(self)
 		if not p then return false end
 		fail(("ADDON BLOCKED: %s() on %s, which a protected frame hangs off"
@@ -7550,7 +7556,11 @@ local pump = A.pump
 fire = function(event, ...)
 	local fn = pump:GetScript("OnEvent")
 	if fn then
+		-- The fight's first event: protected frames still move while it is
+		-- handled, and not after (see __locked).
+		_G.__regenWindow = (event == "PLAYER_REGEN_DISABLED") or nil
 		local ok, err = pcall(fn, pump, event, ...)
+		_G.__regenWindow = nil
 		if not ok then fail("event " .. event .. ": " .. tostring(err)) end
 	end
 end
@@ -15840,12 +15850,30 @@ do
 	I.QT:Refresh()
 	check(not I.up(1069), "a quest ready to hand in has no item from the database")
 
-	-- IN A FIGHT IT IS LEFT ALONE: no ADDON BLOCKED (the mock fails the run on
-	-- one), and it stays usable where it was even as the trunk folds.
+	-- IN A FIGHT (Joe's option 1): the active quest's item goes beside the
+	-- tail's diamond as the fight starts - the one moment a secure frame can
+	-- still move - and every other item goes. After that nothing secure moves
+	-- (the mock fails the run on a protected call in a fight).
+	questieQuests[4901] = questieQuest(4901)
+	questieQuests[4901].sourceItemId = 5001
+	_G.__itemUse[5001], _G.__itemCounts[5001] = "spell", 1
+	I.focus = A.Quest.FocusedID
+	A.Quest.FocusedID = function() return 861 end
+	I.QT:Refresh()
+	I.b2 = I.btn(4901)
+	check(I.up(861) and I.b2 and I.up(4901), "two quests with items, each beside its node")
 	_G.__inCombat = true
 	fire("PLAYER_REGEN_DISABLED")
-	check(I.QT.collapsed and I.b:IsShown() and I.b:GetAttribute("item1") == "item:5000",
-		"in a fight the trunk folds and the item stays, usable, where it was")
+	I.tail = A.Trunk:Get("world"):Tail()
+	I.tx, I.ty = A.Movers.PointAt(I.tail.node, "CENTER")
+	I.bx, I.by = A.Movers.PointAt(I.b, "CENTER")
+	check(I.QT.collapsed and I.tail:IsShown() and I.b:IsShown() and I.b.anchor == I.tail.node
+		and I.b:GetAttribute("item1") == "item:5000",
+		"the fight starts: the active quest's item goes to the tail, still usable")
+	check(math.abs((I.bx - I.tx) - 24 * I.s) < 0.5 and math.abs(I.by - I.ty) < 0.5,
+		"beside the tail's diamond, on the side away from the text ("
+		.. (I.bx - I.tx) .. ", " .. (I.by - I.ty) .. ")")
+	check(not I.b2:IsShown(), "and the other quest's item goes")
 	_G.__itemCounts[5000] = 0
 	fire("BAG_UPDATE_DELAYED")
 	check(I.b:IsShown() and I.QT.Items.dirty, "used up mid-fight, it waits for the fight to end")
@@ -15853,9 +15881,25 @@ do
 	fire("PLAYER_REGEN_ENABLED")
 	check(not I.QT.collapsed and not I.up(861) and not I.b:IsShown() and not I.QT.Items.dirty,
 		"and goes once it is over")
+	check(I.up(4901) and I.b2.anchor == I.node(4901).button, "the other back beside its quest")
 	_G.__itemCounts[5000] = 3
 	I.QT:Refresh()
 	check(I.up(861), "back in the bags, back on the trunk")
+
+	-- With no active quest the fight leaves no item out at all.
+	A.Quest.FocusedID = function() return nil end
+	I.QT:Refresh()
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	check(not I.b:IsShown() and not I.b2:IsShown() and not I.tail:IsShown(),
+		"no active quest: no tail and no item in the fight")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(I.up(861) and I.up(4901), "both back after it")
+	A.Quest.FocusedID = I.focus
+	questieQuests[4901] = nil
+	_G.__itemUse[5001], _G.__itemCounts[5001] = nil, nil
+	I.QT:Refresh()
 
 	-- No trunk, no button.
 	A:SetModuleEnabled("minimap", false)
@@ -15911,30 +15955,124 @@ do
 		.. " a state, not the absence of one")
 
 	QT:SetCollapsed(false)
-	local trunk = A.Trunk:Get("world").frame
-	local open = trunk:GetHeight()
 	check(TShown() > 0, "quest nodes on the trunk out of combat")
 
+	-- 6b: IN COMBAT THE TRUNK RETRACTS into its top end-cap over 300 ms, each
+	-- node fading as the strand's end passes it.
+	local R = { t = A.Trunk:Get("world") }
+	R.f, R.ql = R.t.frame, R.t:Node("questlog")
+	function R.slide(dt)
+		local fn = R.f:GetScript("OnUpdate")
+		if fn then fn(R.f, dt) end
+	end
+	R.focus = A.Quest.FocusedID
+	A.Quest.FocusedID = function() return 861 end
+	R.keg = QT.IsTracked(861)
+	QT.SetTracked(861, true)
+	QT:Refresh()
+	R.capOpen = select(2, A.Movers.PointAt(R.f.capBottom, "CENTER"))
 	_G.__inCombat = true
 	fire("PLAYER_REGEN_DISABLED")
-	check(QT.collapsed and TShown() == 0 and A.Trunk:Get("world"):Node("questlog").button:IsShown(),
-		"folds to the Quest Log node in combat")
-	local folded = trunk:GetHeight()
-	check(folded < open, "and the trunk is shorter for it ("
-		.. math.floor(folded) .. " < " .. math.floor(open) .. ")")
+	check(QT.collapsed and R.t.retracted and R.ql.button:GetAlpha() == 1,
+		"a fight starts the retract, from where it was")
+	R.slide(0.15)
+	R.capMid = select(2, A.Movers.PointAt(R.f.capBottom, "CENTER"))
+	check(R.capMid > R.capOpen and math.abs(R.t._travel - 0.5) < 0.01,
+		"halfway through, the strand's end is halfway up (" .. R.t._travel .. ")")
+	R.slide(0.2)
+	check(R.t._travel == 0 and not R.f:GetScript("OnUpdate"),
+		"and at 300 ms it is up, and nothing is left polling")
+	R.gone = R.ql.button:GetAlpha() == 0 and not R.ql.button:IsMouseEnabled()
+		and R.ql.button.label:GetAlpha() == 0 and not R.f.strand:IsShown()
+	for _, n in ipairs(QT.nodes) do
+		if n.quest and (n.button:GetAlpha() > 0 or n.holder:GetAlpha() > 0 or n.holder:IsMouseEnabled()) then
+			R.gone = false
+		end
+	end
+	check(R.gone, "every node, label, line and the strand gone, and none of them clickable")
+	check(R.f:IsShown() and R.f.capTop:IsShown(), "the end-cap under the pill stays")
 
-	-- unfolding by hand mid-fight has to survive the end of the fight
+	-- ONE THING STAYS: the active quest on the tail, with its count.
+	R.tail = R.t:Tail()
+	check(R.tail:IsShown() and R.tail.title:GetText() == "Chen's Empty Keg" and R.tail.count:GetText() == "0/1",
+		"the active quest stays out on a dotted stub, title and count ("
+		.. tostring(R.tail.title:GetText()) .. ", " .. tostring(R.tail.count:GetText()) .. ")")
+	R.nx =A.Movers.PointAt(R.tail.node, "LEFT")
+	R.cr = A.Movers.PointAt(R.tail.count, "RIGHT")
+	check(math.abs(R.nx - R.cr - 8) < 0.5, "its text 8 short of the diamond (" .. (R.nx - R.cr) .. ")")
+	R.ty = select(2, A.Movers.PointAt(R.tail.node, "CENTER"))
+	R.cy = select(2, A.Movers.PointAt(R.f.capTop, "BOTTOM"))
+	check(math.abs(R.cy - R.ty - 37) < 0.5, "the diamond 30 below the end-cap, plus its half (" .. (R.cy - R.ty) .. ")")
+
+	-- AN OBJECTIVE THAT MOVES IN THE FIGHT takes the tail for 2 s.
+	for _, e in ipairs(_G.__questLog) do
+		if e.id == 4901 then R.prowl = e end
+	end
+	R.was = R.prowl.objectives[1][1]
+	R.prowl.objectives[1][1] = "Savannah Prowler slain: 4/8"
+	fire("QUEST_LOG_UPDATE")
+	check(R.tail.title:GetText() == "Prowlers of the Barrens" and R.tail.count:GetText() == "4/8"
+		and R.tail:GetScript("OnUpdate"),
+		"a kill on another quest shows that quest for a moment, its count flashing ("
+		.. tostring(R.tail.title:GetText()) .. ", " .. tostring(R.tail.count:GetText()) .. ")")
+	R.tail:GetScript("OnUpdate")(R.tail, 0.5)
+	check(R.tail.count:GetAlpha() < 1, "the count pulses")
+	R.tail:GetScript("OnUpdate")(R.tail, 1.6)
+	check(R.tail.title:GetText() == "Chen's Empty Keg" and not R.tail:GetScript("OnUpdate")
+		and R.tail.count:GetAlpha() == 1,
+		"after 2 s the active quest has the tail back")
+
+	-- A loading screen is the client catching up, not a kill.
+	fire("LOADING_SCREEN_ENABLED")
+	R.prowl.objectives[1][1] = "Savannah Prowler slain: 5/8"
+	fire("QUEST_LOG_UPDATE")
+	fire("LOADING_SCREEN_DISABLED")
+	check(R.tail.title:GetText() == "Chen's Empty Keg" and not QT.Tail.flash,
+		"changes across a loading screen do not flash")
+	R.prowl.objectives[1][1] = R.was
+
+	-- bringing it down by hand mid-fight has to survive the end of the fight
 	QT:ToggleCollapsed()
-	check(not QT.collapsed, "you can unfold it by hand during the fight")
+	R.slide(0.35)
+	check(not QT.collapsed and R.t._travel == 1 and R.ql.button:GetAlpha() == 1
+		and R.ql.button:IsMouseEnabled() and not R.tail:IsShown(),
+		"you can bring it back down by hand during the fight, all of it")
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
-	check(not QT.collapsed, "and leaving combat does not fold it back on you")
+	check(not QT.collapsed, "and leaving combat does not retract it again on you")
 
 	_G.__inCombat = true
 	fire("PLAYER_REGEN_DISABLED")
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
-	check(not QT.collapsed, "an untouched fight restores whatever state it found")
+	R.slide(0.35)
+	R.back = R.t._travel == 1 and not R.tail:IsShown()
+	for _, n in ipairs(QT.nodes) do
+		if n.quest and (n.button:GetAlpha() < 1 or n.holder:GetAlpha() < 1) then R.back = false end
+	end
+	check(not QT.collapsed and R.back, "a fight ends and the trunk comes back down, every node with it")
+
+	-- The setting off: a fight leaves it alone.
+	A.db.profile.modules.questtracker.combatCollapse = false
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	check(not QT.collapsed and not R.t.retracted, "with Retract in combat off, a fight leaves the trunk out")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	A.db.profile.modules.questtracker.combatCollapse = true
+
+	-- `/lattice world retract` is the same retract, by hand: the whole trunk,
+	-- so it is the World trunk's command, not the quests' (Joe).
+	SlashCmdList["AETHERUI"]("world retract")
+	check(QT.collapsed and R.t.retracted, "/lattice world retract retracts it")
+	SlashCmdList["AETHERUI"]("world retract")
+	R.slide(0.35)
+	check(not QT.collapsed and R.t._travel == 1, "and brings it back")
+	SlashCmdList["AETHERUI"]("quests fold")
+	check(not QT.collapsed and not R.t.retracted, "the old quests fold is gone")
+	A.Quest.FocusedID = R.focus
+	QT.SetTracked(861, R.keg)
+	QT:Refresh()
 end
 
 do  -- turning a quest in should drop it from the tracked set
@@ -35599,12 +35737,15 @@ section("threat: one place decides which tier a unit is in", function()
 				.. " had it gone")
 
 			-- AND THEN IT GOES.
+			local p0 = TH.__pulseAt
 			tick(4)
 			-- Fails about once in forty runs; what it says when it does is the
 			-- way to the cause.
 			check(al.spec == nil and (al.wash.__aetherWant or 0) == 0
 				and (al.chip.__aetherWant or 0) == 0,
-				"and off once it has had its time (spec " .. tostring(al.spec and al.spec.label)
+				"and off once it has had its time (spec " .. tostring(al.spec ~= nil)
+				.. ", same alarm " .. tostring(pframe.__aetherAlarm == al)
+				.. ", pulsed " .. tostring((TH.__pulseAt or 0) - (p0 or 0))
 				.. ", pending " .. tostring(al.pending) .. ", up " .. tostring(al.up)
 				.. ", wash " .. tostring(al.wash.__aetherWant) .. ", chip " .. tostring(al.chip.__aetherWant)
 				.. ", last " .. tostring(A.lastFailure) .. ")")

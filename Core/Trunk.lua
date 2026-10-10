@@ -24,6 +24,10 @@
 	and its state (decorate), handles its clicks (onClick) and says how much
 	of the strand it needs below it (step), which is how a quest showing its
 	objectives gets the room for them.
+
+	In a fight the World trunk retracts into its top end-cap (6b), leaving
+	only a tail - a dotted stub and a small diamond - for its owner to write
+	the active objective beside.
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -45,6 +49,12 @@ local CAP, CAP_GAP, FIRST, LAST = 10, 30, 40, 36
 local JUNCTION = 11
 -- A label ends this far short of its node, over the stub.
 local LABEL_GAP = 8
+-- Retracted (6b): a dotted stub this long under the top end-cap, ending in a
+-- diamond this size; the strand goes up and comes down over RETRACT seconds.
+local TAIL, TAIL_NODE, RETRACT = 30, 14, 0.3
+local DASH, DASH_GAP = 2, 4
+-- How far past a node the strand's end has to be before it is all there.
+local FADE = 24
 
 local Proto = {}
 Proto.__index = Proto
@@ -182,6 +192,7 @@ function Proto:Paint()
 			W.Color(b.label, { a[1], a[2], a[3], 0.5 })
 		end
 	end
+	self:PaintTail()
 end
 
 --- Which way the stubs point: toward the middle of the screen, from wherever
@@ -265,19 +276,114 @@ function Proto:Refresh()
 		end
 	end
 	local bottom = lastY and (lastY - LAST) or (-CAP / 2 - FIRST)
+	self.bottom = bottom
 	f.capTop:SetSize(CAP, CAP)
 	f.capTop:ClearAllPoints()
 	f.capTop:SetPoint("CENTER", f, "TOP", 0, -CAP / 2)
 	f.capBottom:SetSize(CAP, CAP)
-	f.capBottom:ClearAllPoints()
-	f.capBottom:SetPoint("CENTER", f, "TOP", 0, bottom)
-	f.strand:ClearAllPoints()
 	f.strand:SetWidth(1.5)
-	f.strand:SetPoint("TOP", f.capTop, "BOTTOM", 0, 0)
-	f.strand:SetPoint("BOTTOM", f.capBottom, "TOP", 0, 0)
 	f:SetHeight(-bottom + CAP / 2)
 	f:Show()
 	self:Paint()
+	self:Extend()
+end
+
+-- ---------------------------------------------------------------------------
+-- the retract (6b)
+--
+-- In a fight the strand goes up into the top end-cap and each node, label and
+-- line fades as the strand's end passes it; out of it, it comes back down.
+-- Alpha and length on our own plain frames, so it runs in combat.
+-- ---------------------------------------------------------------------------
+
+--- Draw the strand out to how far it is extended now (`_travel`, 0 to 1).
+function Proto:Extend()
+	local f = self.frame
+	if not (f and self.bottom) then return end
+	local e = self._travel or 1
+	local top = -CAP / 2
+	local endY = top + (self.bottom - top) * e
+	f.capBottom:ClearAllPoints()
+	f.capBottom:SetPoint("CENTER", f, "TOP", 0, endY)
+	f.capBottom:SetShown(e > 0)
+	f.strand:ClearAllPoints()
+	f.strand:SetPoint("TOP", f.capTop, "BOTTOM", 0, 0)
+	f.strand:SetPoint("BOTTOM", f.capBottom, "TOP", 0, 0)
+	f.strand:SetShown(e > 0)
+	for _, node in ipairs(self.nodes) do
+		local b = node.button
+		if b and node.y then
+			local a = math.max(0, math.min(1, (node.y - endY) / FADE))
+			node.alpha = a
+			b:SetAlpha(a)
+			-- Nothing to click while it is gone.
+			b:EnableMouse(a > 0.5)
+			if node.kind ~= "item" then
+				b.stub:SetAlpha(a)
+				b.label:SetAlpha(a)
+				b.junction:SetAlpha(a)
+			elseif node.setAlpha then
+				node.setAlpha(node, a)
+			end
+		end
+	end
+end
+
+--- Up into the end-cap (true) or back down (false), over 300 ms; `instant`
+--  for no slide.
+function Proto:SetRetracted(on, instant)
+	self.retracted = on and true or false
+	self._want = on and 0 or 1
+	local f = self.frame
+	if instant or not (f and f:IsShown()) then
+		W.StopSlide(f)
+		self._travel = self._want
+		self:Extend()
+		return
+	end
+	W.DriveSlide(f, self, 1 / RETRACT, function(t) t:Extend() end)
+end
+
+--- The tail: what stays out while retracted, a dotted stub under the top
+--  end-cap ending in a small diamond. Its owner writes beside it and shows it.
+function Proto:Tail()
+	if self.tail then return self.tail end
+	local f = self:Frame()
+	local t = CreateFrame("Frame", nil, f)
+	t:SetSize(TAIL_NODE, CAP + TAIL + TAIL_NODE)
+	t:SetPoint("TOP", f, "TOP", 0, -CAP)
+	t.dashes = {}
+	for i = 0, math.floor(TAIL / (DASH + DASH_GAP)) - 1 do
+		local d = t:CreateTexture(nil, "BACKGROUND")
+		d:SetTexture(Media.texture.flat)
+		d:SetSize(1.5, DASH)
+		d:SetPoint("TOP", t, "TOP", 0, -i * (DASH + DASH_GAP))
+		t.dashes[#t.dashes + 1] = d
+	end
+	local b = CreateFrame("Frame", nil, t)
+	b:SetSize(TAIL_NODE, TAIL_NODE)
+	b:SetPoint("CENTER", t, "TOP", 0, -TAIL - TAIL_NODE / 2)
+	b.fill = b:CreateTexture(nil, "ARTWORK")
+	b.fill:SetTexture(Media.texture.diamond)
+	b.fill:SetAllPoints(b)
+	b.rim = b:CreateTexture(nil, "ARTWORK", nil, 1)
+	b.rim:SetTexture(Media.texture.diamondRim)
+	b.rim:SetAllPoints(b)
+	t.node = b
+	t:Hide()
+	self.tail = t
+	self:PaintTail()
+	return t
+end
+
+--- The tail's ink: dots in the accent, the diamond hollow with an accent rim.
+function Proto:PaintTail()
+	local t = self.tail
+	if not t then return end
+	local a = Palette.c.accent
+	for _, d in ipairs(t.dashes) do d:SetVertexColor(a[1], a[2], a[3], 0.55) end
+	W.Tint(t.node.fill, { 14 / 255, 11 / 255, 32 / 255 }, 0.9)
+	W.Tint(t.node.rim, a, 1)
 end
 
 -- ---------------------------------------------------------------------------

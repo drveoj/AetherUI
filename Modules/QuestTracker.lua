@@ -710,26 +710,38 @@ function Items.Button(node)
 	return b
 end
 
---- Put a quest node's item beside it, or take it away. In a fight it is left
---  as it is and marked, and the fight's end puts it right.
+--- Put a quest node's item beside it, or take it away. Retracted, only the
+--  active quest's item stays, beside the tail's diamond.
+--
+--  In a fight it is left as it is and marked, and the fight's end puts it
+--  right - except inside the fight's first event (Items.window), where a
+--  secure frame can still be moved: HazeBuffBars does it there on Classic Era
+--  (Bars.lua:25), and EllesmereUI on WoW Forever, where InCombatLockdown
+--  already answers true by then (EllesmereUI_PartyMode.lua:726).
 function Items.Place(node)
 	local q = node.quest
-	local id = q and node.button and node.button:IsVisible() and q.itemID or nil
+	local anchor, id = node.button, nil
+	if QT.collapsed then
+		local tq = QT.Tail.active
+		if q and tq and q.questID == tq.questID then anchor, id = Trunk():Tail().node, q.itemID end
+	elseif q and node.button and node.button:IsVisible() then
+		id = q.itemID
+	end
 	local b = node.itemButton
 	if not id and not b then return end
-	if InCombatLockdown and InCombatLockdown() then
-		if not b or b.itemID ~= id then Items.dirty = true end
+	if not Items.window and InCombatLockdown and InCombatLockdown() then
+		if not b or b.itemID ~= id or b.anchor ~= anchor then Items.dirty = true end
 		return
 	end
 	b = b or Items.Button(node)
 
 	local x, y
-	if id then x, y = A.Movers.PointAt(node.button, "CENTER") end
+	if id and anchor:IsVisible() then x, y = A.Movers.PointAt(anchor, "CENTER") end
 	if not (x and y) then
 		b:Hide()
 		b:SetAttribute("type1", nil)
 		b:SetAttribute("item1", nil)
-		b.itemID = nil
+		b.itemID, b.anchor = nil, nil
 		return
 	end
 
@@ -737,7 +749,8 @@ function Items.Place(node)
 	-- units, measured from UIParent's corner.
 	local s = Trunk():Frame():GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local out = -(Trunk().side or -1)
-	local d = (node.button:GetWidth() / 2 + Items.gap + Items.size / 2) * s
+	local d = (anchor:GetWidth() / 2 + Items.gap + Items.size / 2) * s
+	b.anchor = anchor
 	b:SetScale(s)
 	b:ClearAllPoints()
 	b:SetPoint("CENTER", UIParent, "BOTTOMLEFT", (x + out * d) / s, y / s)
@@ -750,6 +763,109 @@ function Items.Place(node)
 end
 
 QT.Items = Items
+
+-- ---------------------------------------------------------------------------
+-- retracted (6b)
+--
+-- In a fight the World trunk goes up into the pill and one thing stays out:
+-- the active quest, on the trunk's tail, its title and count beside it. An
+-- objective that moves in the fight takes the tail for 2 s with its count
+-- flashing, then the active quest has it back.
+-- ---------------------------------------------------------------------------
+
+local Tail = { seen = {}, flashFor = 2 }
+QT.Tail = Tail
+
+--- A quest's objective lines by index, the Complete line left out.
+local function LineTexts(q)
+	local out = {}
+	for i, line in ipairs(q.lines) do
+		if not line.done then out[i] = line.text end
+	end
+	return out
+end
+
+--- The first objective line that moved since the last look, as { q, line },
+--  or nil. Remembers what it saw either way, and forgets quests that went.
+--  Through a loading screen it only remembers: the client hands back stale
+--  and then fresh lines there, which is not progress.
+function Tail.Diff(quests)
+	local moved, seen = nil, {}
+	for _, q in ipairs(quests) do
+		local now, was = LineTexts(q), Tail.seen[q.questID]
+		if was and not Tail.loading and not moved then
+			for i, text in pairs(now) do
+				if was[i] ~= nil and was[i] ~= text then
+					moved = { q = q, line = i }
+					break
+				end
+			end
+		end
+		seen[q.questID] = now
+	end
+	Tail.seen = seen
+	return moved
+end
+
+--- "3/5" from the line that moved, or the first one not yet done.
+function Tail.Count(q, i)
+	local line = i and q.lines[i]
+	if not line then
+		for _, l in ipairs(q.lines) do
+			if not l.finished and not l.done then line = l break end
+		end
+	end
+	return line and line.text:match("(%d+%s*/%s*%d+)") or nil
+end
+
+--- The count pulses while a tick has the tail, then the tail goes back.
+local function TailUpdate(t, dt)
+	local f = Tail.flash
+	if not f then t:SetScript("OnUpdate", nil) return end
+	f.left = f.left - (dt or 0)
+	if f.left <= 0 then
+		Tail.flash = nil
+		t:SetScript("OnUpdate", nil)
+		Tail.Draw()
+		return
+	end
+	t.count:SetAlpha(0.55 + 0.45 * math.abs(math.cos(f.left * math.pi)))
+end
+
+--- Fill the tail and show it, or put it away.
+function Tail.Draw()
+	local t = Trunk():Tail()
+	local f = Tail.flash
+	local q = f and f.q or Tail.active
+	t:SetShown(QT.enabled and QT.collapsed and q ~= nil or false)
+	if not t:IsShown() then return end
+	if not t.title then
+		t.title = W.Text(t, "questTitle", "RIGHT")
+		if t.title.SetWordWrap then t.title:SetWordWrap(false) end
+		t.count = W.Text(t, "label", "RIGHT")
+	end
+	local c = Palette.c
+	local left = (Trunk().side or -1) < 0
+	local just = left and "RIGHT" or "LEFT"
+	t.count:SetText(Tail.Count(q, f and f.line) or "")
+	t.count:SetAlpha(1)
+	W.Color(t.count, c.accent)
+	t.title:SetText(q.title or "")
+	W.Color(t.title, c.text)
+	t.title:SetWidth(math.max(1, math.min(math.ceil(t.title:GetStringWidth() or 0), TEXT_W)))
+	t.title:SetJustifyH(just)
+	t.count:ClearAllPoints()
+	t.title:ClearAllPoints()
+	local gap = (t.count:GetText() ~= "") and TAG_GAP or 0
+	if left then
+		t.count:SetPoint("RIGHT", t.node, "LEFT", -TEXT_GAP, 0)
+		t.title:SetPoint("RIGHT", t.count, "LEFT", -gap, 0)
+	else
+		t.count:SetPoint("LEFT", t.node, "RIGHT", TEXT_GAP, 0)
+		t.title:SetPoint("LEFT", t.count, "RIGHT", gap, 0)
+	end
+	if f then t:SetScript("OnUpdate", TailUpdate) end
+end
 
 -- ---------------------------------------------------------------------------
 -- layout
@@ -878,6 +994,11 @@ local function ItemNode(key, order)
 		decorate = Decorate,
 		onEnter = function(n) ShowObjectives(n.holder) end,
 		onLeave = function(n) HideObjectives(n.holder) end,
+		-- The retract fades the text with its node.
+		setAlpha = function(n, a)
+			n.holder:SetAlpha(a)
+			n.holder:EnableMouse(a > 0.5)
+		end,
 	})
 	node.holder = node.holder or BuildHolder(Trunk():Frame())
 	return node
@@ -917,8 +1038,27 @@ function QT:Refresh()
 		q.elsewhere = (here ~= nil and q.zone ~= nil and q.zone ~= here)
 	end
 
-	-- Folded (by hand, or for a fight), only the Quest Log node is left.
-	local collapsed = self.collapsed
+	-- RETRACTED, the tail carries the active quest, or for 2 s one whose
+	-- objective just moved. The quests stay laid out on the strand underneath,
+	-- so coming back down is the same trunk that went up.
+	local moved = Tail.Diff(quests)
+	Tail.active = nil
+	for _, q in ipairs(quests) do
+		if q.active then Tail.active = q end
+	end
+	if moved and self.collapsed then
+		Tail.flash = { q = moved.q, line = moved.line, left = Tail.flashFor }
+	elseif Tail.flash then
+		-- The same quest, fresh from this scan; gone if it left the list.
+		local id = Tail.flash.q.questID
+		Tail.flash.q = nil
+		for _, q in ipairs(quests) do
+			if q.questID == id then Tail.flash.q = q end
+		end
+		if not Tail.flash.q then Tail.flash = nil end
+	end
+	if not self.collapsed then Tail.flash = nil end
+	Tail.Draw()
 
 	-- THE ROOM ON THE STRAND, not just a count. Ten is the design's most, and
 	-- the screen can be shorter than ten quests (6a's own spacing ran ten off a
@@ -932,17 +1072,15 @@ function QT:Refresh()
 	self.more = more
 	local room = Trunk():Room()
 	local shown, used = 0, 0
-	if not collapsed then
-		for i, q in ipairs(quests) do
-			local s = StepOf(q)
-			local reserve = (i < #quests) and STEP or 0
-			-- Not even the first if it would run off the screen: then the
-			-- "+n" node is all there is, which still opens the log.
-			if i > (cfg.max or 10) or (room and used + s + reserve > room) then break end
-			shown, used = i, used + s
-		end
+	for i, q in ipairs(quests) do
+		local s = StepOf(q)
+		local reserve = (i < #quests) and STEP or 0
+		-- Not even the first if it would run off the screen: then the
+		-- "+n" node is all there is, which still opens the log.
+		if i > (cfg.max or 10) or (room and used + s + reserve > room) then break end
+		shown, used = i, used + s
 	end
-	local hidden = collapsed and 0 or (#quests - shown)
+	local hidden = #quests - shown
 
 	self.nodes = self.nodes or {}
 	self.nodesShown = {}
@@ -973,7 +1111,7 @@ function QT:Refresh()
 	more.onClick = MoreClicked
 	more.quest, more.moreQuest, more.step = nil, nil, STEP
 	more.holder.quest = nil
-	if not collapsed and shown == 0 and (behindFold or 0) > 0 then
+	if shown == 0 and (behindFold or 0) > 0 then
 		more.text = A.F(L.questtracker.behind_fold_d, behindFold)
 		self.nodesShown[MORE] = true
 	elseif hidden > 0 then
@@ -990,14 +1128,18 @@ function QT:Refresh()
 	Trunk():Refresh()
 end
 
+--- Retract the World trunk into the pill (true), or bring it back down. A
+--  fight does this, and so do `/lattice world retract` and the tour.
 function QT:SetCollapsed(v)
 	self.collapsed = v and true or false
+	if not self.collapsed then Tail.flash = nil end
 	self:Refresh()
+	Trunk():SetRetracted(self.collapsed)
 end
 
 function QT:ToggleCollapsed()
-	-- Folding by hand during a fight means you wanted it open; do not let the
-	-- combat restore undo that decision on the way out.
+	-- Bringing it down by hand during a fight means you wanted it out; do not
+	-- let the combat restore undo that decision on the way out.
 	self._preCombat = nil
 	self:SetCollapsed(not self.collapsed)
 end
@@ -1040,7 +1182,19 @@ function QT:OnEnable()
 		local cfg = A.Config:Module("questtracker")
 		if not cfg.combatCollapse then return end
 		QT._preCombat = QT.collapsed and true or false
-		QT:SetCollapsed(true)
+		-- The one moment in a fight a secure frame can still move: the active
+		-- quest's item goes to the tail now or not at all. See Items.Place.
+		Items.window = true
+		local ok, err = pcall(QT.SetCollapsed, QT, true)
+		Items.window = nil
+		if not ok then error(err, 0) end
+	end)
+	-- Changes across a loading screen are the client catching up, not
+	-- objectives moving (the Quest Log keeps the same gate).
+	A:RegisterEvent(self, "LOADING_SCREEN_ENABLED", function() Tail.loading = true end)
+	A:RegisterEvent(self, "LOADING_SCREEN_DISABLED", function()
+		Tail.loading = false
+		QT:Refresh()
 	end)
 	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
 		local cfg = A.Config:Module("questtracker")
@@ -1086,7 +1240,11 @@ function QT:OnDisable()
 	-- `enabled` is already false, so every quest node reads unavailable.
 	for _, node in ipairs(self.nodes or {}) do HideObjectives(node.holder) end
 	W.CloseMenu()
+	-- The rest of the trunk is not ours to leave up in the pill.
+	self.collapsed, self._preCombat, Tail.flash = false, nil, nil
+	Tail.Draw()
 	Trunk():Refresh()
+	Trunk():SetRetracted(false, true)
 end
 
 function QT:OnSkinChanged()

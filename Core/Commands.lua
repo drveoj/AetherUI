@@ -30,7 +30,7 @@ local function usage()
 		A.Hi("/lattice shadow") .. " <0-1>  ·  ambient shadow opacity",
 		A.Hi("/lattice health") .. " <class|deck>  ·  bar colour for players",
 		A.Hi("/lattice bar") .. " <list · N on/off · N buttons/rows/page/scale V · size/spacing/font N>",
-		A.Hi("/lattice quests") .. " <fold|auto|objectives|clear>  ·  the quest tracker",
+		A.Hi("/lattice quests") .. " <auto|objectives|clear>  ·  the quest tracker",
 		A.Hi("/lattice module") .. " <name> <on|off>",
 		A.Hi("/lattice status"),
 		A.Hi("/lattice diag") .. "  ·  why is a Blizzard frame still on screen",
@@ -39,6 +39,7 @@ local function usage()
 		A.Hi("/lattice bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
 		A.Hi("/lattice tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		A.Hi("/lattice toolbox") .. " <dock left/right/top/bottom · open · close · pin NAME>",
+		A.Hi("/lattice world") .. " retract  ·  the World trunk up into the pill, or back down",
 		A.Hi("/lattice dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
 		A.Hi("/lattice threat") .. " probe  ·  what the threat API answers, in a box you can copy",
 		A.Hi("/lattice resources") .. " demo  ·  step the class resource tray through every class",
@@ -1378,11 +1379,7 @@ handlers.quests = function(arg)
 	if not QT or not QT.enabled then A:Print(L.cmd.quests.questtracker_module_enabled) return end
 	local cfg = A.Config:Module("questtracker")
 
-	if arg == "fold" then
-		QT:ToggleCollapsed()
-		A:Print(QT.collapsed and L.cmd.quests.quest_tracker_folded
-			or L.cmd.quests.quest_tracker_unfolded)
-	elseif arg == "objectives" then
+	if arg == "objectives" then
 		cfg.showObjectives = not cfg.showObjectives
 		QT:Refresh()
 		A:Print(A.F(L.cmd.quests.objective_lines_s,
@@ -1403,9 +1400,23 @@ handlers.quests = function(arg)
 	else
 		local n = QT.quests and #QT.quests or 0
 		A:Print(string.format(
-			"%s mode · showing %d quest%s%s  (usage: /lattice quests fold|auto|objectives|clear)",
+			"%s mode · showing %d quest%s%s  (usage: /lattice quests auto|objectives|clear)",
 			(cfg.autoTrack ~= false) and "auto" or "manual", n, n == 1 and "" or "s",
 			(QT.hidden or 0) > 0 and (" · " .. QT.hidden .. " did not fit") or ""))
+	end
+end
+
+--- The World trunk, the minimap's. `retract` is the combat retract by hand:
+--  the whole trunk, not only its quests, which is why it lives here. The
+--  retract is the quest tracker's to run, since it decides what stays out.
+handlers.world = function(arg)
+	if arg == "retract" then
+		local QT = A:GetModule("questtracker")
+		if not QT or not QT.enabled then A:Print(L.cmd.quests.questtracker_module_enabled) return end
+		QT:ToggleCollapsed()
+		A:Print(QT.collapsed and L.cmd.world.retracted or L.cmd.world.back_down)
+	else
+		A:Print(L.cmd.world.usage)
 	end
 end
 
