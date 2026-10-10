@@ -67,9 +67,11 @@ Core\Trunk.lua
 Core\Mail.lua
 Core\Nav.lua
 Core\Launchers.lua
-Core\SkinSwatches.lua
 Core\Commands.lua
 Core\Options.lua
+# The options window: the map, and the controls its pages are drawn with.
+Core\OptionsControls.lua
+Core\OptionsWindow.lua
 
 Modules\UnitFrames.lua
 Modules\Resources.lua
@@ -86,7 +88,6 @@ Modules\Nameplates.lua
 Modules\PartyFrames.lua
 Modules\Fonts.lua
 Modules\Menus.lua
-Modules\OptionsSkin.lua
 Modules\Conveniences.lua
 Modules\Threat.lua
 Modules\Timers.lua

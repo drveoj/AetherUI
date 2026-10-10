@@ -7520,8 +7520,8 @@ local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Braids.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
-	"Core/Trunk.lua", "Core/Mail.lua", "Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
-	"Core/Commands.lua", "Core/Options.lua",
+	"Core/Trunk.lua", "Core/Mail.lua", "Core/Nav.lua", "Core/Launchers.lua",
+	"Core/Commands.lua", "Core/Options.lua", "Core/OptionsControls.lua", "Core/OptionsWindow.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
@@ -7530,7 +7530,7 @@ local FILES = {
 	"Modules/Tooltips.lua",
 	"Modules/Nameplates.lua",
 	"Modules/Fonts.lua",
-	"Modules/Menus.lua", "Modules/OptionsSkin.lua",
+	"Modules/Menus.lua",
 	"Modules/Conveniences.lua",
 	"Modules/Threat.lua",
 	"Modules/Timers.lua",
@@ -16551,489 +16551,394 @@ section("menus: a client without them costs a skin, not the interface", function
 	check(M.absent == nil, "and picks them up again when they are there")
 end)
 
-section("skins: the picker is four chips, not four words", function()
-	local gui = LibStub("AceGUI-3.0", true)
-	local P2 = A.Palette
-	check(gui and gui:GetWidgetVersion("AetherUISkinSwatches") == 1,
-		"the swatch widget is registered with AceGUI")
+-- ---------------------------------------------------------------------------
+-- THE OPTIONS WINDOW: the map (options handoff 7a-7c)
+-- ---------------------------------------------------------------------------
 
-	-- AND THE OPTION ASKS FOR IT. Registering a control nothing names is a
-	-- control nobody sees, and the picker would quietly still be a dropdown.
-	local tree = A.Options:Build()
-	local skinOpt = tree.args.general and tree.args.general.args.skin
-	check(skinOpt and skinOpt.dialogControl == "AetherUISkinSwatches",
-		"and the skin option names it (" ..
-		tostring(skinOpt and skinOpt.dialogControl) .. ")")
-	check(skinOpt.type == "select",
-		"while staying an ordinary select underneath - same profile key, same"
-		.. " setter, same restyle after")
+--- The window, opened on the map and landed.
+local function OpenMap(section)
+	local OW = A.OptionsWindow
+	A.Options:Close()
+	OW:Finish()
+	A.Options:Open(section)
+	OW:Finish()
+	return OW, OW.frame
+end
 
-	-- The values are WRITTEN NAMES. This read midnight/dawn/noon/dusk in lower
-	-- case, because the builder asked List() for `name` and it answers `label`.
-	local values = skinOpt.values
-	if type(values) == "function" then values = values() end
-	check(values.midnight == "Midnight" and values.dusk == "Dusk",
-		"offered under written names rather than table keys (" ..
-		tostring(values.midnight) .. ")")
-
-	local w = gui:Create("AetherUISkinSwatches")
-	w:SetLabel("Skin")
-	w:SetList(values)
-	w:SetValue("midnight")
-
-	check(#w.chips == 4, "four chips (" .. #w.chips .. ")")
-
-	-- ON A ROW OF ITS OWN. AceConfigDialog's Common Init hands a control one
-	-- column's width unless it is already "fill", and the flow layout then puts
-	-- the next control beside it - which put the scale slider across the last
-	-- chip. Asserted on the widget rather than on the option: four chips side by
-	-- side never fit in a column, whatever they are being used to choose.
-	check(w.width == "fill",
-		"and they take a row of their own, so nothing is laid over the last one"
-		.. " (" .. tostring(w.width) .. ")")
-	check(w.frame:GetHeight() > 60,
-		"with height enough for a chip and its caption, or the row below rides"
-		.. " up over them instead (" .. tostring(w.frame:GetHeight()) .. ")")
-
-	-- IN THE DAY'S ORDER, which belongs to the palette. Alphabetical gives dawn,
-	-- dusk, midnight, noon and reads as four unrelated words.
-	local got = {}
-	for i, c in ipairs(w.chips) do got[i] = c.__skinKey end
-	check(table.concat(got, ",") == table.concat(P2.order, ","),
-		"in the palette's order, not the alphabet's (" ..
-		table.concat(got, ", ") .. ")")
-
-	-- EACH CHIP WEARS ITS OWN SKIN. The whole point is to show what choosing it
-	-- would do, so the colours come from Palette.skins[key] - not from
-	-- Palette.c, which is whatever you are running right now. Checked with
-	-- Midnight live, so a chip reading the live palette would make all four the
-	-- same and pass nothing.
-	A.db.profile.skin = "midnight" A:Restyle()
-	w:Refresh()
-	local wrong = {}
-	for _, c in ipairs(w.chips) do
-		local skin = P2.skins[c.__skinKey]
-		if c._fillColor ~= skin.glass then wrong[#wrong + 1] = c.__skinKey end
-		local r = select(1, c.dot:GetVertexColor())
-		if math.abs(r - skin.accent[1]) > 0.001 then
-			wrong[#wrong + 1] = c.__skinKey .. ".accent"
-		end
+local function MapNode(key)
+	for _, n in ipairs(A.OptionsWindow.nodes or {}) do
+		if n.key == key then return n end
 	end
-	check(#wrong == 0,
-		"every chip is its OWN accent on its OWN glass, with Midnight live ("
-		.. table.concat(wrong, ", ") .. ")")
+end
 
-	-- And they really do differ, or the line above passes on four identical ones.
-	local a, b = w.chips[1], w.chips[4]
-	check(select(1, a.dot:GetVertexColor()) ~= select(1, b.dot:GetVertexColor()),
-		"and the first and last are different colours")
+local function Click(b) b:GetScript("OnClick")(b, "LeftButton") end
 
-	-- THE MARK FOLLOWS THE VALUE.
-	check(w.chips[1].tick:IsShown() and not w.chips[4].tick:IsShown(),
-		"the live skin is the marked one")
-	w:SetValue("dusk")
-	check(w.chips[4].tick:IsShown() and not w.chips[1].tick:IsShown(),
-		"and the mark moves with it rather than accumulating")
+section("options window: the map is your own screen", function()
+	local OW, f = OpenMap()
+	check(f and f:IsShown() and OW.mode == "map", "the window opens on the map")
+	check(f:GetWidth() == 1200 and f:GetHeight() == 760, "1200 x 760, as the handoff has it")
+	check(f:GetFrameStrata() == "DIALOG", "over the HUD (" .. tostring(f:GetFrameStrata()) .. ")")
+	check(f:GetScale() <= (A.db.profile.scale or 1) + 1e-6,
+		"at the HUD's scale or smaller, never larger (" .. string.format("%.2f", f:GetScale()) .. ")")
 
-	-- CLICKING SAYS SO. AceConfigDialog listens on OnValueChanged and does the
-	-- rest; a chip that changed the skin itself would be a second owner for a
-	-- fact the option already owns.
-	local fired
-	w:SetCallback("OnValueChanged", function(_, _, key) fired = key end)
-	w.chips[2]:GetScript("OnClick")(w.chips[2])
-	check(fired == "dawn",
-		"clicking a chip fires the option's own callback with that skin (" ..
-		tostring(fired) .. ")")
-
-	-- DISABLED SAYS NOTHING.
-	fired = nil
-	w:SetDisabled(true)
-	w.chips[3]:GetScript("OnClick")(w.chips[3])
-	check(fired == nil, "a disabled picker does not answer a click")
-	w:SetDisabled(false)
-
-	-- CHIPS ARE BUILT ONCE. AceGUI pools its widgets, so a panel opened twenty
-	-- times hands this same widget back - anything built per refresh would
-	-- accumulate for the life of the session.
-	local function kids()
-		local n = 0
-		for _ in ipairs(w.frame.__children or {}) do n = n + 1 end
-		return n
-	end
-	local before = kids()
-	for _ = 1, 10 do w:Refresh() end
-	check(kids() == before,
-		"and are reused rather than rebuilt on every refresh - counted on the"
-		.. " FRAME, because a chip replaced in the list is still parented and"
-		.. " still on screen, stacked under the one that replaced it (" ..
-		kids() .. " after ten, from " .. before .. ")")
-
-	-- A SKIN THE ORDER DOES NOT NAME still appears, appended, rather than
-	-- vanishing from the picker with no way to choose it.
-	local extra = {}
-	for k, v in pairs(values) do extra[k] = v end
-	extra.twilight = "Twilight"
-	w:SetList(extra)
-	check(#w.chips == 5 and w.chips[5].__skinKey == "twilight",
-		"one the order does not name is offered last rather than not at all")
-
-	w:SetList(values)
-	A.db.profile.skin = "midnight" A:Restyle()
-end)
-
-section("options: our own settings, in our own interface", function()
-	local M = A:GetModule("optionsskin")
-	local gui = LibStub("AceGUI-3.0", true)
-	check(M and M.enabled, "options skin enabled"
-		.. (M and M.lastError and ("  -- " .. M.lastError) or ""))
-	check(not M.absent, "and it found the library it dresses")
-
-	-- ONE HOOK, DISPATCHED BY TYPE. Every control in the panel comes out of
-	-- AceGUI:Create, so a widget made right now - after the module enabled -
-	-- arrives dressed without anything naming it.
-	local btn = gui:Create("Button")
-	check(btn.frame.__aetherSkin ~= nil,
-		"a button comes back wearing our glass rather than Blizzard's red")
-
-	local grp = gui:Create("InlineGroup")
-
-	-- THE BOX YOU CAN SEE IS NOT THE WIDGET'S FRAME. An InlineGroup's `frame` is
-	-- invisible chrome; what is drawn is a CHILD carrying a BackdropTemplate,
-	-- and the group's contents are children of THAT. AceGUI keeps it as a local,
-	-- so the one way to it is the content's parent - and dressing `frame`
-	-- instead stripped nothing anybody could see.
-	local box = grp.content:GetParent()
-	check(box ~= grp.frame, "the drawn box is not the widget's own frame")
-	check(box.__aetherPanel ~= nil and box.__aetherStripped ~= nil,
-		"and it is the one that gets stripped and glassed")
-
-	-- AND ITS CONTENTS ABOVE THE GLASS. Reskin.Panel puts a panel a level below
-	-- its frame, which is right for a client window whose insides are REGIONS of
-	-- it. An Ace group keeps its contents in a CHILD frame, and two children at
-	-- the same level draw in creation order - so the panel, made last, went over
-	-- every control in the group and the text was still there behind a sheet of
-	-- 97% glass.
-	-- BEHIND THE FRAME, not inside it. An Ace container keeps its contents in a
-	-- child frame rather than in regions of its own, so glass placed inside is a
-	-- SIBLING of everything in the group - and the draw order then rests on
-	-- level, strata and creation order together, which is three things to keep
-	-- right instead of none.
-	local panel = box.__aetherPanel
-
-	-- A CHILD OF THE BOX, and that is the whole safeguard.
-	--
-	-- Glass as a SIBLING was tried, to sidestep a draw-order problem that turned
-	-- out to be us dressing the wrong frame - and it put two sheets across the
-	-- screen at login, twice. AceGUI parents its widget frames to UIParent, so a
-	-- sibling is parented to UIParent, and glass whose visibility is tracked by
-	-- hand outlives the frame it was drawn for the moment anything hides that
-	-- frame by a path that does not fire OnHide. A child cannot: it is not drawn
-	-- when its parent is not.
-	check(panel:GetParent() == box,
-		"the glass is a CHILD of the box, so it cannot outlive it")
-	check(panel:GetFrameLevel() < box:GetFrameLevel(),
-		"and a level below it (" .. panel:GetFrameLevel() .. " vs "
-		.. box:GetFrameLevel() .. ")")
-	check(grp.content:GetFrameLevel() > panel:GetFrameLevel(),
-		"with the contents above, which is what the box's own children give for"
-		.. " free (" .. grp.content:GetFrameLevel() .. ")")
-
-	-- A BUTTON'S ART IS NOT ALWAYS A STATE TEXTURE. UIPanelButtonTemplate draws
-	-- itself with three BACKGROUND regions - Left, Middle, Right - and clearing
-	-- the normal/pushed/highlight set never touched them, so a button came back
-	-- with our glass behind it and Blizzard's red still on top.
-	local red = 0
-	for _, r in ipairs({ btn.frame:GetRegions() }) do
-		local tex = r.GetTexture and r:GetTexture()
-		if type(tex) == "string" and tex:find("UI%-Panel%-Button") then
-			red = red + 1
-		end
-	end
-	check(red == 0,
-		"and not one piece of the client's button art is left on it (" .. red
-		.. ")")
-	check(btn.text and btn.text:GetText() ~= nil or true,
-		"with its label kept - a plain strip takes the words off with the stone")
-
-
-	-- THE ROWS ARE MADE LATER, and remade whenever the tree is filtered or a
-	-- branch opens - so dressing whatever exists at Create time would cover the
-	-- first page and nothing after it. RefreshTree is what builds and repaints
-	-- them, and it is wrapped.
-	--
-	-- Driven the way the client does: the tree bails out and defers to an
-	-- OnUpdate while its frame is parented to UIParent, so the fixture gives it
-	-- a real parent and a real height first.
-	local tree = gui:Create("TreeGroup")
-	tree.frame:SetParent(CreateFrame("Frame", nil, UIParent))
-	tree.frame:SetSize(400, 300)
-	tree.treeframe:SetSize(160, 300)
-	tree:SetTree({ { value = "a", text = "Alpha" }, { value = "b", text = "Beta" } })
-	tree:SelectByValue("a")
-
-	check(#tree.buttons > 0, "the tree builds rows (" .. #tree.buttons .. ")")
-
-	local chosen, other
-	for _, row in ipairs(tree.buttons) do
-		if row.selected then chosen = chosen or row else other = other or row end
-	end
-	check(chosen ~= nil, "and one of them is the selected one")
-
-	-- A row is an OptionsListButtonTemplate and the selection is Blizzard's blue
-	-- gradient, drawn by LockHighlight on the button's own highlight texture. So
-	-- the art comes off and the selection is drawn by us - which means reading
-	-- `selected` rather than a texture we have just taken away.
-	if chosen then
-		-- The client's own selection is a blue gradient on the row's HIGHLIGHT
-		-- texture, drawn permanently by LockHighlight. It has to come off, or
-		-- ours is simply painted underneath it.
-		local hl = chosen.GetHighlightTexture and chosen:GetHighlightTexture()
-		check(hl == nil or hl:GetTexture() == 0,
-			"the client's blue gradient is off the row (" ..
-			tostring(hl and hl:GetTexture()) .. ")")
-
-		check(chosen.__aetherSel ~= nil and chosen.__aetherSel:IsShown(),
-			"the chosen row wears our selection")
-		local r = select(1, chosen.__aetherSel:GetVertexColor())
-		check(math.abs(r - A.Palette.c.rowSel[1]) < 0.001,
-			"in the palette's row colour rather than the client's blue (" ..
-			string.format("%.2f", r) .. ")")
-	end
-	if other then
-		check(other.__aetherSel ~= nil and not other.__aetherSel:IsShown(),
-			"and an unchosen row wears none - one drawn on every row is a list with"
-			.. " nothing chosen at all")
-	end
-
-	-- AND THE ROWS BUILT ON THE NEXT REFRESH TOO. This is the whole reason the
-	-- method is wrapped rather than the rows dressed once.
-	tree:SetTree({ { value = "a", text = "Alpha" }, { value = "b", text = "Beta" },
-		{ value = "c", text = "Gamma" } })
-	local undressed = 0
-	for _, row in ipairs(tree.buttons) do
-		if not row.__aetherSel then undressed = undressed + 1 end
-	end
-	check(undressed == 0,
-		"a row built by a later refresh is dressed with the rest (" .. undressed
-		.. " bare of " .. #tree.buttons .. ")")
-
-	check(tree.border and tree.border.__aetherPanel ~= nil,
-		"the category list gets glass")
-	check(tree.treeframe and tree.treeframe.__aetherPanel ~= nil,
-		"and so does the list beside it - two frames, and dressing one of them"
-		.. " leaves a stone edge down the middle")
-
-	-- A SLIDER IS THREE PIECES OF ART. The groove, the thumb and the number box
-	-- under it, and leaving any one alone is what makes a control look half done.
-	local sl = gui:Create("Slider")
-	check(sl.slider.__aetherTrack ~= nil, "a slider gets a hairline groove")
-	local thumb = sl.slider:GetThumbTexture()
-	check(tostring(thumb.__tex):find("AetherUI", 1, true),
-		"and our thumb on it (" .. tostring(thumb.__tex) .. ")")
-	check(sl.editbox.__aetherPill ~= nil,
-		"with the number box under it in glass too")
-
-	-- SOMETHING SAYING WHERE YOU ARE IN A FIELD. Reported from the game as a
-	-- box you can type into with no cursor in it - and nothing this addon does
-	-- can hide the engine's own: it is not a region, so no sweep reaches it. So
-	-- the caret is ours instead, where it can be seen, coloured and checked.
+	-- WHERE THINGS ARE: every node from its real frame, so the map is the
+	-- layout.
+	local p, t, mm, tb = MapNode("player"), MapNode("target"), MapNode("minimap"), MapNode("toolbox")
+	check(p and t and p.x < t.x, "the player is left of the target, as on screen")
 	do
-		local box = sl.editbox
-		local caret = box.__aetherCaret
-		check(caret ~= nil, "a dressed field carries a caret of ours")
-		caret = caret or { GetPoint = function() end, GetHeight = function() end,
-			GetWidth = function() end, GetAlpha = function() end,
-			IsShown = function() end }
-		check(not caret:IsShown(),
-			"which is down until the field is the one being typed in")
-
-		local focus = box:GetScript("OnEditFocusGained")
-		if focus then focus(box) end
-		check(caret:IsShown(), "and comes up when the field takes focus")
-
-		-- WHERE THE CLIENT SAYS IT IS. OnCursorChanged hands over x, y and HEIGHT
-		-- in the box's own coordinates, y negative downward - the sign SetPoint
-		-- already wants.
-		local moved = box:GetScript("OnCursorChanged")
-		if moved then moved(box, 37, -4, 1, 15) end
-		local at, rel, relP, cx, cy = caret:GetPoint(1)
-		check(at == "TOPLEFT" and rel == box and relP == "TOPLEFT"
-			and cx == 37 and cy == -4,
-			"and it goes where the client says the cursor is (" .. tostring(cx)
-			.. ", " .. tostring(cy) .. ")")
-		check(caret:GetHeight() == 15,
-			"at the height the client says, rather than a guess at the font (" ..
-			tostring(caret:GetHeight()) .. ")")
-		check(caret:GetWidth() == 1,
-			"and a hairline wide, because a text cursor is a hairline")
-
-		local tick = box:GetScript("OnUpdate")
-		local lit = caret:GetAlpha()
-		if tick then tick(box, 1.0) end
-		check(caret:GetAlpha() ~= lit,
-			"it blinks rather than sitting there being mistaken for a letter (" ..
-			tostring(lit) .. " to " .. tostring(caret:GetAlpha()) .. ")")
-
-		local lost = box:GetScript("OnEditFocusLost")
-		if lost then lost(box) end
-		check(not caret:IsShown(),
-			"and goes away with the focus, so only the field you are in has one")
+		local cx, cy = A.Movers.PointAt(A.Movers.registry.minimap.frame, "CENTER")
+		local wantX = 62 + cx / UIParent:GetWidth() * 1076
+		local wantY = 84 + (1 - cy / UIParent:GetHeight()) * 556
+		check(mm and mm.x > 600 and math.abs(mm.y - math.max(114, math.min(610, wantY))) < 0.5
+			and math.abs(mm.x - math.min(1148, wantX)) < 0.5,
+			"the minimap's node is where the minimap is, on the right (" ..
+			string.format("%.0f, %.0f for %.0f, %.0f", mm.x, mm.y, wantX, wantY) .. ")")
 	end
+	check(tb and tb.x < 300, "and the Toolbox on the left trunk (" .. string.format("%.0f", tb.x) .. ")")
+	local np = MapNode("nameplates")
+	check(np and np.y < p.y, "the nameplates above the axis")
+	local bars = 0
+	for _, n in ipairs(OW.nodes) do if n.form == "strand" then bars = bars + 1 end end
+	check(bars == #A.Config:Module("actionbars").bars,
+		"one node per strand, every bar the client has (" .. bars .. ")")
 
-	-- The check box keeps its TICK and loses its box. A tick taken off with the
-	-- rest never looks checked, whatever the state says.
-	local cb = gui:Create("CheckBox")
-	local r = select(1, cb.check:GetVertexColor())
-	check(math.abs(r - A.Palette.c.accent[1]) < 0.001,
-		"a check box keeps its tick, in the accent (" ..
-		string.format("%.2f", r) .. ")")
+	-- MEASURED, NOT REMEMBERED: a frame moved is a node moved, on the next open.
+	local mf = A.Movers.registry.minimap.frame
+	local saved = A.db.profile.anchors.minimap
+	A.db.profile.anchors.minimap = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 200, y = -200 }
+	A.Movers:Restore("minimap")
+	OpenMap()
+	check(MapNode("minimap").x < 600,
+		"moved to the left, the minimap's node is on the left of the map (" ..
+		string.format("%.0f", MapNode("minimap").x) .. ")")
+	A.db.profile.anchors.minimap = saved
+	A.Movers:Restore("minimap")
+	check(mf ~= nil, "measured from the minimap's own frame")
 
-	-- The colour swatch becomes our disc and keeps the colour it holds.
-	A.lastFailure = nil
-	local cp = gui:Create("ColorPicker")
-	cp:SetColor(0.1, 0.2, 0.3, 1)
-	check(A.lastFailure == nil and cp.colorSwatch:GetTexture() == A.Media.texture.chipDisc,
-		"a colour picker's swatch is our disc (" .. tostring(A.lastFailure) .. ")")
-	local sr, sg, sb = cp.colorSwatch:GetVertexColor()
-	check(sr == 0.1 and sg == 0.2 and sb == 0.3, "and still shows the colour it holds")
-	check(not cp.colorSwatch.checkers:IsShown(), "with Blizzard's checkerboard gone from behind it")
+	-- OFF IS HOLLOW: a module switched off, and a hidden strand.
+	A:SetModuleEnabled("bags", false)
+	local bar2 = A.Config:Module("actionbars").bars[2]
+	local was2 = bar2.enabled
+	bar2.enabled = false
+	OpenMap()
+	local bg = MapNode("bags")
+	check(bg and bg.off and math.abs(bg.button:GetAlpha() - 0.45) < 0.01,
+		"a module switched off is a hollow node at 45 % (" .. string.format("%.2f", bg.button:GetAlpha()) .. ")")
+	check(MapNode("bar" .. bar2.id).off, "and so is a hidden strand - one click from its page")
+	A:SetModuleEnabled("bags", true)
+	bar2.enabled = was2
+	OpenMap()
+	check(not MapNode("bags").off, "and back when it is on")
 
-	-- THE STANDALONE WINDOW has three parts a plain container does not, and all
-	-- three are anchored to art we have just taken off.
-	local win = gui:Create("Frame")
-	A.lastFailure = nil
-	M.Dress(win)
-	check(A.lastFailure == nil,
-		"dressing the window raises nothing (" .. tostring(A.lastFailure) .. ")")
-	check(win.frame.__aetherPanel ~= nil,
-		"and it gets its glass - the LAST thing the dresser does, so this is"
-		.. " what says the whole of it ran rather than the first half")
+	-- THE SYSTEM STRAND: seven, in the handoff's order.
+	local names = {}
+	for _, n in ipairs(f.map.system) do names[#names + 1] = n.pageDef.key end
+	check(table.concat(names, ",") == "general,skins,profiles,conveniences,unlock,tour,changelog",
+		"the System strand carries General to What's new (" .. table.concat(names, ",") .. ")")
 
-	-- The title hung off a header texture anchored ABOVE the frame, so with the
-	-- art gone the words landed on the top border with nothing over them. The
-	-- HEADER is re-anchored rather than the words, because the invisible frame
-	-- you drag the window by is SetAllPoints on it and is not exposed at all.
-	local p, rel, relP, _, y = win.titlebg:GetPoint(1)
-	check(rel == win.frame,
-		"the title bar hangs off the window itself (" .. tostring(rel and "frame")
-		.. ")")
-	check(p == "TOP" and relP == "TOP" and y < 0,
-		"and sits INSIDE its top edge rather than over it (" .. tostring(p) ..
-		" " .. tostring(y) .. ")")
-	check(select(2, win.titletext:GetPoint(1)) == win.titlebg,
-		"with the words on the bar, so the two cannot drift apart")
-
-	-- The status line is a Button with its own backdrop, so stripping the
-	-- window's regions never reached it - it is the wide dark box along the
-	-- bottom.
-	-- Reached through the status TEXT, because AceGUI keeps the bar itself as a
-	-- local and never puts it on the widget. The first pass read widget.statusbg,
-	-- found nil, and did nothing at all - silently, since skipping a part that
-	-- is not there raises nothing.
-	local statusbg = win.statustext:GetParent()
-	check(statusbg:GetBackdrop() == nil,
-		"the status line has lost its backdrop")
-	check(statusbg.__aetherPill ~= nil, "and wears glass instead")
-
-	-- The Close button is the other thing AceGUI keeps to itself, and it was
-	-- the last red thing on the window.
-	local closed
-	for _, child in ipairs({ win.frame:GetChildren() }) do
-		if child ~= statusbg and child.__aetherSkin then closed = child end
-	end
-	check(closed ~= nil, "and the Close button is ours rather than Blizzard's red")
-
-	-- The size grip is three textures out of the tooltip border atlas, children
-	-- of the sizer rather than regions of the window, so they survive the strip
-	-- and read as a scrap of somebody else's art in the corner.
-	local tinted, total = 0, 0
-	for _, r in ipairs({ win.sizer_se:GetRegions() }) do
-		total = total + 1
-		if r._aetherTint then tinted = tinted + 1 end
-	end
-	check(total > 0 and tinted == total,
-		"and every piece of the size grip is re-tinted (" .. tinted .. " of "
-		.. total .. ")")
-
-	-- AND THE SCROLL BAR, which only appears once the window is dragged small
-	-- enough to need one - which is exactly when nobody is looking for it, and
-	-- is where Blizzard's arrows came back.
-	local sf = gui:Create("ScrollFrame")
-	check(sf.scrollbar and sf.scrollbar.__aetherScroll,
-		"a scroll frame's bar is ours before it is ever shown")
-	check(sf.scrollbar.__aetherTrack ~= nil,
-		"with a rail, so a list you can scroll says so even at rest")
-
-	-- A DROPDOWN IS NOT AN EDIT BOX. Handing the whole UIDropDownMenuTemplate
-	-- frame to the edit box dresser wrapped a pill round the ART rather than
-	-- round the control, which is why they came out half again too tall.
-	local dd = gui:Create("Dropdown")
-	check(dd.dropdown.__aetherStripped ~= nil,
-		"a dropdown loses the template's own art")
-	check(dd.dropdown.__aetherPill ~= nil, "and wears a pill instead")
-	check(dd.dropdown.__aetherPill:GetHeight() < 30,
-		"sized to the text row rather than to the frame around it (" ..
-		tostring(dd.dropdown.__aetherPill:GetHeight()) .. ")")
-	check(dd.button and dd.button.__aetherGlyph ~= nil,
-		"and the arrow is our chevron rather than a gold plate")
-
-	local hd = gui:Create("Heading")
-	check(tostring(hd.left.__tex):find("AetherUI", 1, true),
-		"a heading rule is ours (" .. tostring(hd.left.__tex) .. ")")
-
-	-- STRIPPED ONCE. AceGUI pools its widgets, so this same frame comes back for
-	-- the next panel that needs one - and stripping again would record our own
-	-- emptied regions as the originals, which makes switching the module off a
-	-- no-op that looks like it worked.
-	local store = box.__aetherStripped
-	local n = 0
-	for _ in pairs(store) do n = n + 1 end
-	M.Dress(grp)
-	M.Dress(grp)
-	local after = 0
-	for _ in pairs(box.__aetherStripped) do after = after + 1 end
-	check(box.__aetherStripped == store and after == n,
-		"dressing again keeps the first recording rather than re-taking it (" ..
-		after .. " of " .. n .. ")")
-
-	-- A TYPE WE DO NOT DRESS IS LEFT ALONE, not guessed at.
-	A.lastFailure = nil
-	local ok = pcall(M.Dress, { type = "SomethingElse", frame = CreateFrame("Frame") })
-	check(ok and A.lastFailure == nil,
-		"a widget type this does not know is passed over in silence")
-
-	-- AND A DRESSER THAT ERRORS DOES NOT TAKE THE PANEL WITH IT. These are
-	-- somebody else's frames, built by a library that changes shape between
-	-- versions, and a settings panel that errors is worse than one that looks
-	-- like Blizzard's.
-	A.lastFailure = nil
-	ok = pcall(M.Dress, { type = "Slider" })   -- no slider, no editbox, no frame
-	check(ok, "a dresser handed a widget with nothing on it raises nothing")
+	-- THE BONDS: the axis between the player and the target, 1.5 at 90 %.
+	local axis = OW.bonds[1]
+	check(axis and axis.thick == 1.5 and axis.alpha == 0.9
+		and axis.x1 == p.x and axis.x2 == t.x,
+		"the axis joins the player and the target")
+	A.Options:Close()
 end)
 
-section("options: and hands Blizzard's panel back", function()
-	local M = A:GetModule("optionsskin")
-	local gui = LibStub("AceGUI-3.0", true)
+section("options window: a hovered node lights its real frame", function()
+	local OW, f = OpenMap()
+	local p = MapNode("player")
+	p.button:GetScript("OnEnter")(p.button)
+	check(f.card:IsShown(), "hovering a node raises its card")
+	check(f.card.title:GetText() == "Unit frames", "named for its page (" .. tostring(f.card.title:GetText()) .. ")")
+	check(tostring(f.card.body:GetText()):find("settings", 1, true),
+		"with what is in it and how many settings (" .. tostring(f.card.body:GetText()) .. ")")
+	check(tostring(f.card.hint:GetText()):find("Shift", 1, true), "and that Shift-click unlocks just this")
+	local lit = OW.lights and OW.lights[1]
+	local rel
+	if lit then rel = select(2, lit:GetPoint(1)) end
+	check(lit and lit:IsShown() and rel == A.Movers.registry.player.frame,
+		"and the real player capsule lights in the world")
+	check(OW.lights[2] and OW.lights[2]:IsShown(), "with the target beside it, as 7a draws")
+	local fade = lit:GetScript("OnUpdate")
+	if fade then fade(lit, 0.06) end
+	check(math.abs(lit:GetAlpha() - 0.5) < 0.01, "coming up over 120 ms (" .. string.format("%.2f", lit:GetAlpha()) .. ")")
+	if lit:GetScript("OnUpdate") then lit:GetScript("OnUpdate")(lit, 0.1) end
+	check(lit:GetAlpha() == 1 and lit:GetScript("OnUpdate") == nil, "and then still")
+	check(p.hovered and p.button.glow:IsShown(), "the node fills and glows")
+	p.button:GetScript("OnLeave")(p.button)
+	check(not f.card:IsShown(), "the card goes when the cursor does")
+	if lit:GetScript("OnUpdate") then lit:GetScript("OnUpdate")(lit, 0.1) end
+	check(lit:IsShown() and math.abs(lit:GetAlpha() - 0.5) < 0.01, "and the light goes over 200 ms")
+	if lit:GetScript("OnUpdate") then lit:GetScript("OnUpdate")(lit, 0.1) end
+	check(not lit:IsShown(), "then is gone")
 
-	local grp = gui:Create("InlineGroup")
-	local box = grp.content:GetParent()
-	check(box.__aetherStripped ~= nil, "dressed to begin with")
+	local bg = MapNode("bags")
+	bg.button:GetScript("OnEnter")(bg.button)
+	check(not tostring(f.card.hint:GetText()):find("Shift", 1, true),
+		"a module with nothing to unlock does not offer to unlock it")
+	bg.button:GetScript("OnLeave")(bg.button)
+	A.Options:Close()
+end)
 
-	A:SetModuleEnabled("optionsskin", false)
-	check(box.__aetherStripped == nil,
-		"switching off puts the client's own regions back")
+section("options window: a click unfolds, the strand folds back", function()
+	local OW, f = OpenMap()
+	local chat = MapNode("chat")
+	Click(chat.button)
+	check(OW.mode == "page" and OW.page.key == "chat", "clicking Chat unfolds its page")
+	OW:Finish()
+	check(f.pageFrame:IsShown() and f.pageFrame:GetAlpha() == 1, "the page is in")
+	check(f.nav:IsShown() and f.nav:GetAlpha() == 1, "the map has folded into the strand")
+	check(not chat.button:IsShown(), "and the map's nodes have gone into it")
+	check(f.nav.nodes.chat.glow:IsShown() and not f.nav.nodes.bags.glow:IsShown(),
+		"the strand lights the page you are on, and only it")
+	local _, _, _, sy = f.nav.stub:GetStartPoint()
+	check(sy == -OW:NavSlots().chat, "with the branch stub at its node")
 
-	-- And the hook comes off with it: a widget built while the module is off is
-	-- Blizzard's, or "off" only means "off for the ones already made".
-	local after = gui:Create("InlineGroup")
-	local abox = after.content:GetParent()
-	check(abox.__aetherStripped == nil and abox.__aetherPanel == nil,
-		"and one built afterwards is untouched")
+	-- PAGE TO PAGE along the strand: the stub slides, the body cross-fades.
+	Click(f.nav.nodes.bags)
+	check(OW.anim and OW.anim.kind == "switch", "another node on the strand cross-fades to it")
+	OW:Finish()
+	check(OW.page.key == "bags" and f.pageFrame:GetAlpha() == 1, "and lands on Bags")
+	_, _, _, sy = f.nav.stub:GetStartPoint()
+	check(sy == -OW:NavSlots().bags, "the stub has slid to Bags")
 
-	A:SetModuleEnabled("optionsskin", true)
-	local back = gui:Create("InlineGroup")
-	check(back.content:GetParent().__aetherPanel ~= nil,
-		"and ours again on the way back")
+	-- THE ROOT IS THE MAP, and so is Escape.
+	Click(f.nav.root)
+	OW:Finish()
+	check(OW.mode == "map" and chat.button:IsShown() and chat.button:GetAlpha() == 1,
+		"the root folds the page back into the map")
+	Click(MapNode("minimap").button)
+	OW:Finish()
+	f:GetScript("OnKeyDown")(f, "ESCAPE")
+	OW:Finish()
+	check(OW.mode == "map" and f:IsShown(), "Escape on a page steps back to the map")
+	f:GetScript("OnKeyDown")(f, "ESCAPE")
+	OW:Finish()
+	check(not f:IsShown(), "and on the map it closes the window")
+
+	-- A STRAND'S NODE opens the bars page on that strand.
+	OpenMap()
+	local b2 = MapNode("bar2")
+	Click(b2.button)
+	OW:Finish()
+	local sub = OW:Subs(OW.page)[OW.sub]
+	check(OW.page.key == "actionbars" and sub and sub.subKey == "bar2",
+		"a strand's node opens its own bar (" .. tostring(sub and sub.subKey) .. ")")
+	A.Options:Close()
+end)
+
+section("options window: the open grows out from the player", function()
+	local OW = A.OptionsWindow
+	A.Options:Close()
+	A.db.profile.reducedMotion = false
+	A.Options:Open()
+	OW:Step(0.02)
+	local p, t, mm = MapNode("player"), MapNode("target"), MapNode("minimap")
+	check(p.button:GetAlpha() > 0 and not t.button:IsShown(),
+		"20 ms in, the player is arriving and the target has not started (" ..
+		string.format("%.2f", p.button:GetAlpha()) .. ")")
+	OW:Step(0.06)
+	check(t.button:IsShown() and not mm.button:IsShown(),
+		"by 80 ms the target is, and the trunks are still a hop away")
+	local _, _, _, x0 = p.button:GetPoint(1)
+	OW:Finish()
+	local _, _, _, x1 = p.button:GetPoint(1)
+	check(mm.button:GetAlpha() == 1 and OW.anim == nil, "and it settles with everything in")
+	check(math.abs(x1 - p.x) < 0.01, "each node at its own spot")
+
+	-- REDUCED MOTION: no stagger, 120 ms.
+	A.Options:Close()
+	OW:Finish()
+	A.db.profile.reducedMotion = true
+	A.Options:Open()
+	OW:Step(0.06)
+	check(mm.button:IsShown() and mm.button:GetAlpha() > 0,
+		"with reduced motion the far nodes move with the first")
+	OW:Step(0.07)
+	check(OW.anim == nil, "and it is all done in 120 ms")
+	A.db.profile.reducedMotion = false
+	check(x0 ~= nil, "the open moved the player node in")
+	A.Options:Close()
+end)
+
+section("options window: pages are the tree, in the panel vocabulary", function()
+	local OW, f = OpenMap("unitframes")
+	local v = OW.view
+	check(OW.page.key == "unitframes" and v and #v.rows > 10, "the Unit frames page has its settings (" .. #v.rows .. ")")
+	check(f.pageFrame.preview:IsShown(), "under a live preview strip")
+
+	local function RowAt(path)
+		for _, r in ipairs(OW.view.rows) do
+			local p = r.node.arg and r.node.arg.path
+			if p and table.concat(p, ".") == path then return r end
+		end
+	end
+
+	-- TWO COLUMNS, each section whole in one of them.
+	local xs = {}
+	for _, r in ipairs(v.rows) do xs[select(4, r:GetPoint(1))] = true end
+	check(xs[0] and xs[v.colW + 36], "laid out in two columns, 36 apart")
+
+	-- A TOGGLE: a diamond, ON and OFF.
+	local cfg = A.Config:Module("unitframes")
+	local sp = RowAt("modules.unitframes.showPower")
+	check(sp and sp.d and sp.state:GetText() == "ON", "a toggle is a diamond reading ON")
+	Click(sp)
+	check(cfg.showPower == false and sp.state:GetText() == "OFF" and not sp.d.glow:IsShown(),
+		"clicked, it writes the setting at once and reads OFF")
+	check(not f.pageFrame.preview.player.ptrack:IsShown(),
+		"and the preview drops the power bar with it")
+	Click(sp)
+	check(cfg.showPower == true, "and back")
+
+	-- A SLIDER: a strand with a diamond thumb; the arrows step it.
+	local wr = RowAt("modules.unitframes.width")
+	local w0 = cfg.width
+	check(wr and wr.track and wr.value:GetText() == tostring(w0), "a slider reads its value (" .. tostring(wr and wr.value:GetText()) .. ")")
+	wr.hovered = true
+	f:GetScript("OnKeyDown")(f, "RIGHT")
+	check(cfg.width == w0 + 1, "and the right arrow steps a hovered one (" .. tostring(cfg.width) .. ")")
+	wr.hovered = nil
+	cfg.width = w0
+	A:Reconfigure()
+
+	-- NODES ON A STRAND for a short choice; a dropdown for a long one.
+	OW:Go("nameplates", 2)
+	OW:Finish()
+	local seg = RowAt("modules.threat.display")
+	check(seg and seg.opts and #seg.opts == 3, "a three-way choice is three diamonds on a strand")
+	local tc = A.Config:Module("threat")
+	local d0 = tc.display
+	local pick = seg.opts[1].key == d0 and seg.opts[2] or seg.opts[1]
+	Click(pick)
+	check(tc.display == pick.key and pick.on, "clicking one chooses it (" .. tostring(tc.display) .. ")")
+	tc.display = d0
+	local long = A.OptionsControls.Row(f.pageFrame, { type = "select", name = "x", values = {
+		a = "One", b = "Two", c = "Three", d = "Four", e = "Five" }, get = function() return "c" end }, 300)
+	long:Refresh()
+	check(long.field and long.text:GetText() == "Three", "five choices make a dropdown showing the chosen one")
+
+	-- SUB-PAGES: Nameplates holds Threat and Tooltips.
+	check(#f.pageFrame.tabs >= 3 and f.pageFrame.tabs[3]:IsShown(), "Nameplates has its sub-pages as chips")
+
+	-- THE SKINS: four chips, each its own skin.
+	OW:Go("skins")
+	OW:Finish()
+	local sw = RowAt("skin")
+	check(sw and #sw.chips == 4, "the skin is four chips")
+	local order = {}
+	for i, c in ipairs(sw.chips) do order[i] = c.key end
+	check(table.concat(order, ",") == table.concat(A.Palette.order, ","), "in the day's order, not the alphabet's")
+	local wrong = 0
+	for _, c in ipairs(sw.chips) do
+		if c._fillColor ~= A.Palette.skins[c.key].glass then wrong = wrong + 1 end
+	end
+	check(wrong == 0, "each chip on its OWN glass, whichever skin is live")
+	Click(sw.chips[4])
+	check(A.db.profile.skin == sw.chips[4].key and sw.chips[4].on and not sw.chips[1].on,
+		"clicking one is the skin, live, and the mark moves")
+	local acc = A.Palette.c.accent
+	check(math.abs(select(1, unpack(f._edgeColor)) - acc[1]) < 0.001, "and the window itself takes it")
+	Click(sw.chips[1])
+
+	-- A BUTTON THAT CANNOT BE UNDONE ASKS TWICE.
+	OW:Go("profiles")
+	OW:Finish()
+	local reset
+	for _, r in ipairs(OW.view.rows) do
+		if r.button and r.node.confirm and r.node.name == A.L.options.profiles.reset.name then reset = r end
+	end
+	local resets, real = 0, A.db.ResetProfile
+	A.db.ResetProfile = function() resets = resets + 1 end
+	Click(reset.button)
+	check(resets == 0 and reset.button.text:GetText() == A.L.options.map.confirm,
+		"Reset this profile asks again rather than resetting")
+	Click(reset.button)
+	check(resets == 1, "and the second click does it")
+	A.db.ResetProfile = real
+
+	-- RESET PAGE: the module's defaults, for the page in view.
+	OW:Go("chat")
+	OW:Finish()
+	local cc = A.Config:Module("chat")
+	local fd = cc.fontDelta
+	cc.fontDelta = 6
+	OW:ResetPage()
+	check(cc.fontDelta == A.Config.defaults.profile.modules.chat.fontDelta,
+		"Reset page puts the page's settings back to their defaults (" .. tostring(cc.fontDelta) .. ")")
+	cc.fontDelta = fd
+	A:Reconfigure()
+	A.Options:Close()
+end)
+
+section("options window: search lights the nodes and lands on the row", function()
+	local OW, f = OpenMap()
+	local box = f.head.search.box
+	f:GetScript("OnKeyDown")(f, "/")
+	check(box:HasFocus(), "/ puts the cursor in the search")
+	box:SetText("snap distance")
+	box:GetScript("OnTextChanged")(box)
+	check(#OW.results >= 1 and OW.results[1].page.key == "general", "it finds the setting (" .. #OW.results .. ")")
+	check(f.results:IsShown() and f.results.rows[1].name:GetText() == A.L.options.general.snap_distance.name,
+		"and lists it under the field")
+	local general
+	for _, n in ipairs(f.map.system) do if n.page == "general" then general = n end end
+	check(general.found and not MapNode("chat").found, "the node holding it lights, and only it")
+	box:GetScript("OnEnterPressed")(box)
+	check(OW.mode == "page" and OW.page.key == "general", "Enter opens its page")
+	check(OW.pulse and OW.pulse.row.node.arg.path[2] == "snapDistance", "and pulses the row")
+	OW:Finish()
+	check(OW.pulse == nil and OW.pulse == nil, "the pulse dies away")
+	box:SetText("")
+	box:GetScript("OnTextChanged")(box)
+	check(not f.results:IsShown(), "an empty search lists nothing")
+	A.Options:Close()
+end)
+
+section("options window: shift-click unlocks just that module", function()
+	local OW = OpenMap()
+	_G.__shift = true
+	Click(MapNode("party").button)
+	_G.__shift = false
+	check(not OW:IsOpen(), "the window steps out of the way")
+	local reg = A.Movers.registry
+	check(A.Movers.unlocked and reg.party.handle and reg.party.handle:IsShown(), "the party unlocks")
+	check(not (reg.player.handle and reg.player.handle:IsShown()), "and nothing else does")
+	A.Movers:Lock()
+	check(A.Movers.only == nil, "locking forgets the selection")
+end)
+
+section("options window: not in a fight", function()
+	local OW, f = OpenMap("chat")
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	local tick = f:GetScript("OnUpdate")
+	check(tick ~= nil, "a fight starting fades the window")
+	for _ = 1, 10 do if f:GetScript("OnUpdate") then f:GetScript("OnUpdate")(f, 0.05) end end
+	check(not f:IsShown(), "out in 200 ms")
+	A.Options:Open()
+	check(not f:IsShown(), "and asking for it mid-fight does not bring it back")
+	local blocked = _G.__blocked
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(f:IsShown(), "it comes back when the fight is over")
+	check(_G.__blocked == blocked, "having touched nothing protected")
+	A.Options:Close()
+end)
+
+section("options window: What's new reads the Toolbox's record", function()
+	local TB = A:GetModule("toolbox")
+	A.db.char.toolbox = A.db.char.toolbox or {}
+	A.db.char.toolbox.newsSeen = nil
+	local OW, f = OpenMap()
+	check(OW:NewsUnread(), "with this version unread")
+	local news
+	for _, n in ipairs(f.map.system) do if n.page == "changelog" then news = n end end
+	check(news.button.d.glow:IsShown(), "the What's new node glows in the info blue")
+	Click(news.button)
+	OW:Finish()
+	check(not TB:NewsUnread(), "opening it marks it read, for the Toolbox's dot too")
+	A.Options:Close()
 end)
 
 section("conveniences: instant quest text is the client's own setting", function()
@@ -17311,9 +17216,9 @@ do
 	for key, n in pairs(tops) do
 		if n < firstOrder then first, firstOrder = key, n end
 	end
-	check(first == "home", "Home is the first page (" .. tostring(first) .. ")")
-	check(tops.general and tops.general < (tops.unitframes or 0),
-		"and General comes straight after it")
+	check(first == "general", "General is the first page (" .. tostring(first) .. ")")
+	check(tops.skins and tops.skins < (tops.unitframes or 0),
+		"and Skins comes straight after it")
 	local maxOther = 0
 	for key, n in pairs(tops) do
 		if key ~= "profiles" then maxOther = math.max(maxOther, n) end
@@ -17322,9 +17227,10 @@ do
 		"and profiles sorts after every other page (" .. A.Options.PAGE_ORDER.profiles
 		.. " > " .. maxOther .. ")")
 
-	-- registration degrades rather than erroring when Ace3 is absent
-	check(A.Options:Register() == false,
-		"Register reports false without the Ace libraries instead of throwing")
+	-- The window is ours: no Ace library is asked for, so there is nothing to
+	-- be missing.
+	check(A.Options:Register() == true,
+		"Register needs no library of anybody else's")
 
 	-- THE GAME'S OWN OPTIONS LIST CARRIES A DOOR, NOT THE SETTINGS. One page
 	-- under AddOns, registered at login whether or not Ace loaded, holding a
@@ -17362,46 +17268,22 @@ do
 		check(marked, "the stub wears the logo above its button")
 	end
 
-	-- HOME: the brand and the four things a player reaches for first.
+	-- THE MAP IS HOME: the window opens on it, unless a page was asked for.
 	do
-		local home = tree.args.home and tree.args.home.args
-		check(home ~= nil, "there is a Home page")
-		check(home and home.logo and home.logo.image == A.Media.texture.lockup
-			and home.logo.imageCoords == A.Media.lockupCoord,
-			"it opens with the full lockup - tagline and all - cropped to its ink")
-		check(home and home.logo and math.abs(home.logo.imageWidth / home.logo.imageHeight
-			- A.Media.lockupAspect) < 0.05,
-			"at the lockup's own aspect, so it is not squashed")
-		check(home and home.logo and home.logo.order > home.top.order
-			and home.afterLogo and home.afterLogo.order > home.logo.order,
-			"with air above and below it - Ace stacks controls flush otherwise")
-		local current = A:Notes()
-		check(home and home.newsBody and current and current.lines[1]
-			and home.newsBody.name:find(current.lines[1], 1, true),
-			"and what this version changed, from the changelog rather than written twice")
-		check(home and home.tour and home.news and home.unlock and home.bind,
-			"with the tour, what's new, unlock and keybind mode on it")
-		check(home and home.support and home.support.name:find("discord.gg/drveoj", 1, true),
-			"and where to get help")
-
-		-- The window opens there every time, unless a page was asked for. No
-		-- Ace in the suite, so a stand-in dialog records what it was told.
-		local O = A.Options
-		local was = { O.registered, O.dialog, O.Register }
-		local picked
-		O.registered = true
-		O.Register = function() return true end
-		O.dialog = { SelectGroup = function(_, _, g) picked = g end, Open = function() end }
+		local O, OW = A.Options, A.OptionsWindow
 		O:Open()
-		check(picked == "home", "the window opens on Home (" .. tostring(picked) .. ")")
+		check(OW:IsOpen() and OW.mode == "map", "the window opens on the map (" .. tostring(OW.mode) .. ")")
+		O:Close()
 		O:Open("changelog")
-		check(picked == "changelog", "unless a page was asked for, as the Notes link does")
-		home.news.func()
-		check(picked == "changelog", "and What's new on Home goes to the changelog page")
-		O.registered, O.dialog, O.Register = was[1], was[2], was[3]
+		check(OW.mode == "page" and OW.page and OW.page.key == "changelog",
+			"unless a page was asked for, as the Notes link does (" ..
+			tostring(OW.page and OW.page.key) .. ")")
+		O:Close()
+		check(not OW:IsOpen(), "and Close shuts it")
 	end
 	SlashCmdList["AETHERUI"]("")
-	check(true, "and bare /aether falls back to the command list")
+	check(A.OptionsWindow:IsOpen(), "and bare /lattice opens it")
+	A.Options:Close()
 end
 
 print("== minimap ==")
@@ -35624,31 +35506,25 @@ do
 	-- First run page. Reported from the game: the panel stayed up and the tour
 	-- opened behind it.
 	--
-	-- The Ace config libraries are not loaded in here, so Options:Close is a
-	-- no-op and asserting on it would prove nothing. A dialog is stood in its
-	-- place instead: what is being checked is the WIRING - that Start reaches
-	-- for the panel at all - which is the half that was missing.
+	-- The real window, opened on the page the tour is started from.
 	do
-		local wasReg, wasDlg = A.Options.registered, A.Options.dialog
-		local closed = nil
-		A.Options.registered = true
-		A.Options.dialog = { Close = function(_, app) closed = app end }
+		A.Options:Open("onboard")
+		A.OptionsWindow:Finish()
+		local was = A.OptionsWindow:IsOpen()
 
 		local TB = A:GetModule("toolbox")
 		TB:SetOpen(true, true)
 		OB:Teardown()
 		OB:Start()
 
-		check(closed ~= nil,
-			"starting the tour closes the options panel it was started from (" ..
-			tostring(closed) .. ")")
+		check(was and not A.OptionsWindow:IsOpen(),
+			"starting the tour closes the options window it was started from")
 		check(not TB:IsOpen(),
 			"and the Toolbox drawer, which would otherwise cover the HUD the "
 			.. "tour is describing")
 		check(OB.card and OB.card:IsShown(),
 			"and the welcome card is up, in front of nothing")
 
-		A.Options.registered, A.Options.dialog = wasReg, wasDlg
 		OB:Teardown()
 	end
 

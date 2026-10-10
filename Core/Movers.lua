@@ -1712,7 +1712,7 @@ function Movers:Register(name, frame, default, label, opts)
 		-- Dressed again: a strand that gained or lost buttons gains or loses
 		-- its shape handle.
 		if entry.handle then DressHandle(entry) else CreateHandle(entry) end
-		entry.handle:Show()
+		entry.handle:SetShown(not Movers.only or Movers.only[name] or false)
 		DrawBonds()
 	end
 	return entry
@@ -2005,17 +2005,24 @@ end
 
 Movers.ShowLockButton = ShowLockButton
 
-function Movers:Unlock()
+--- Placement mode. `only`, a set of node names, unlocks just those (the
+--  options map's Shift-click: "unlock just this"); nil unlocks everything.
+function Movers:Unlock(only)
 	Movers.unlocked = true
+	Movers.only = only
 	ShowGrid(true)
 	ShowLockButton(true)
-	for _, entry in pairs(Movers.registry) do
-		-- Preview first: the handle takes its size from the frame, so a frame
-		-- that is still collapsed gets a handle nobody can grab.
-		if entry.preview then pcall(entry.preview, true) end
-		if not entry.handle then CreateHandle(entry) end
-		DressHandle(entry)
-		entry.handle:Show()
+	for name, entry in pairs(Movers.registry) do
+		if not only or only[name] then
+			-- Preview first: the handle takes its size from the frame, so a frame
+			-- that is still collapsed gets a handle nobody can grab.
+			if entry.preview then pcall(entry.preview, true) end
+			if not entry.handle then CreateHandle(entry) end
+			DressHandle(entry)
+			entry.handle:Show()
+		elseif entry.handle then
+			entry.handle:Hide()
+		end
 	end
 	-- After the previews, so a bond is drawn to a frame that is up.
 	DrawBonds()
@@ -2032,6 +2039,7 @@ end
 
 function Movers:Lock()
 	Movers.unlocked = false
+	Movers.only = nil
 	ShowGrid(false)
 	ClearGuides()
 	HideBonds()

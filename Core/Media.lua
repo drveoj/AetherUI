@@ -572,6 +572,28 @@ Media.style = {
 	-- world, and the same size there is a size smaller.
 	npFriendly   = { "semibold", 15, "" },
 
+	-- The options window (options handoff). Its sizes rounded, and nothing
+	-- lighter than Regular for the same reason the Toolbox gives: Light at
+	-- these sizes reads as badly drawn rather than quiet.
+	opBrand      = { "regular",  18, "" },   -- L A T T I C E
+	opChip       = { "bold",     11, "" },   -- the version chip, the `/` key
+	opSearch     = { "regular",  13, "" },
+	opProfile    = { "medium",   12, "" },   -- Profiles - Dusk
+	opTitle      = { "semibold", 20, "" },   -- a page's name
+	opDesc       = { "regular",  12, "" },   -- and its line beside it
+	opNode       = { "medium",   11, "" },   -- a map node's label
+	opNodeBig    = { "semibold", 12, "" },   -- Unit frames, Target
+	opSub        = { "regular",  10, "" },   -- Threat - Tooltips, under a node
+	opCardTitle  = { "semibold", 13, "" },
+	opCardBody   = { "regular",  11, "" },
+	opControl    = { "regular",  13, "" },   -- a setting's name
+	opHelp       = { "regular",  11, "" },   -- its help line
+	opHelpOn     = { "semibold", 11, "" },   -- a chosen node's name
+	opTag        = { "semibold", 10, "" },   -- ON / OFF, SYSTEM, MAP
+	opButton     = { "medium",   12, "" },
+	opNote       = { "regular",  12, "" },
+	opFoot       = { "regular",  11, "" },
+
 	-- The in-flight console. The design's 14.5/11.5/10.5 rounded: a font size
 	-- is a request for a pixel grid and half points are not one.
 	ifecRoute    = { "semibold", 15, "" },   -- Booty Bay -> Ironforge

@@ -93,6 +93,10 @@ Config.defaults = {
 		-- that. /aether greet off for anyone who keeps a quiet chat frame.
 		greet       = true,
 
+		-- The options window's own animation (options handoff 7c). On, every
+		-- node arrives at once and every move takes 120 ms.
+		reducedMotion = false,
+
 		-- The concept deck draws player health green and reserves colour for
 		-- reaction. Class colouring is the common preference and reads faster in
 		-- a group, so it wins by default - but it is one switch either way, and
@@ -620,13 +624,6 @@ Config.defaults = {
 			-- The client's own right-click menus. One hook into Blizzard_Menu
 			-- rather than a list of frames, so it covers every menu the game
 			-- opens - including ones added by a later patch.
-			-- Our own settings panel, in our own interface. One hook into
-			-- AceGUI:Create rather than a list of frames, so it covers every
-			-- control the panel is built from.
-			optionsskin = {
-				enabled = true,
-			},
-
 			menus = {
 				enabled = true,
 			},

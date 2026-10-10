@@ -1,10 +1,14 @@
 --[[--------------------------------------------------------------------------
 	AetherUI :: Options
 
-	The AceConfig option tree. `/aether` on its own now opens this; the slash
-	commands in Commands.lua still work and are still the fast way to nudge one
-	number, but they had grown past the point where anyone could hold them in
-	their head.
+	The option tree: every setting, as data. The Lattice window (the map,
+	Core/OptionsWindow.lua) draws its pages from it, through the control set in
+	Core/OptionsControls.lua; the slash commands in Commands.lua still work and
+	are still the fast way to nudge one number.
+
+	The tree keeps AceConfig's shape (type, name, desc, order, args, get, set)
+	because that shape is a good one and the harness walks it. Nothing reads it
+	through AceConfig any more.
 
 	Two things are worth knowing about how this is written.
 
@@ -26,8 +30,6 @@ local ADDON, A = ...
 local L = A.L
 local Options = {}
 A.Options = Options
-
-local APP = "AetherUI"
 
 -- ---------------------------------------------------------------------------
 -- accessors
@@ -122,6 +124,10 @@ local function Set(info, value, ...)
 	Apply(info.arg.after)
 end
 
+-- For the window's controls, which call a leaf's own get and set when it has
+-- them and these when it carries a path, and for Reset page.
+Options.Get, Options.Set, Options.Apply = Get, Set, Apply
+
 -- ---------------------------------------------------------------------------
 -- little constructors, so the tree below reads as a spec rather than as syntax
 -- ---------------------------------------------------------------------------
@@ -154,10 +160,10 @@ local function choice(name, desc, path, values, opts)
 	return {
 		type = "select", name = name, desc = desc, order = next_(),
 		values = values, width = opts.width, get = Get, set = Set,
-		-- AceConfigDialog builds a Dropdown for a select unless it is told
-		-- otherwise. Naming a control here is the whole of drawing one
-		-- differently; everything else about the option stays put.
-		dialogControl = opts.control,
+		-- A select is drawn as nodes on a strand, or a dropdown when the list
+		-- is long. Naming a control here is the whole of drawing one
+		-- differently (the skin swatches); the option itself stays put.
+		control = opts.control,
 		arg = { path = path, after = opts.after },
 	}
 end
@@ -175,13 +181,14 @@ end
 
 --- `name` may be a STRING or a FUNCTION returning one.
 --
---  Ace resolves a function member when the page is built
---  (AceConfigDialog-3.0.lua:187), which is what lets a button that leaves a
---  mode running name what it will do NEXT rather than what it did first. See
---  `unlock` and `bind`.
-local function action(name, desc, fn)
+--  The window resolves a function name each time it draws the page, which is
+--  what lets a button that leaves a mode running name what it will do NEXT
+--  rather than what it did first. See `unlock` and `bind`. `confirm` asks for
+--  a second click before doing it, for the ones that cannot be undone.
+local function action(name, desc, fn, opts)
 	return {
 		type = "execute", name = name, desc = desc, order = next_(), func = fn,
+		confirm = opts and opts.confirm or nil,
 	}
 end
 
@@ -232,15 +239,8 @@ end
 -- time. They are toggles wearing a button's clothes: each one closes this panel
 -- and leaves a mode running, so the next time anybody opens the window the mode
 -- is already on and a button still offering to turn it on is a button lying
--- about the state of the screen.
---
--- Ace calls a `name` that is a function (AceConfigDialog-3.0.lua:187, via
--- GetOptionsMemberValue), and it calls it when the page is BUILT - which is the
--- moment that matters, because the panel is shut for the whole time the mode is
--- on.
---
--- Builders rather than tables, because the same two buttons sit on Home and on
--- General, and each copy needs its own order.
+-- about the state of the screen. The window calls a `name` that is a function
+-- each time it draws the page.
 local function BindAction()
 	return action(function()
 			local AB = A:GetModule("actionbars")
@@ -264,75 +264,17 @@ local function UnlockAction()
 		function() A.Options:Close(); A.Movers:Toggle() end)
 end
 
---- Blank lines, as a description. AceConfig lays a page out top to bottom with
---  no spacing of its own, so air is the one thing a page has to ask for.
-local function gap(lines)
-	return { type = "description", name = string.rep("\n", lines or 1),
-		order = next_(), width = "full", fontSize = "medium" }
-end
-
---- The page the window opens on: the mark, what this is, the four things a
---  player reaches for first, and what this version changed. Everything else is
---  one click down the tree.
---
---  THE LOCKUP, NOT THE LOGO. The tour card's logo has no tagline, because at
---  300 wide it would be a smear; this page draws the mark across most of the
---  window, so it gets the 1024 lockup that carries "Chrome for Azeroth" as real
---  type. Both come out of the one generator, so they cannot disagree.
---
---  And SPACED, because Ace stacks every control flush against the one above:
---  the first version of this page had the mark, a paragraph, a header and a
---  row of buttons inside the top third and nothing under them.
-local function HomeGroup()
-	local Media = A.Media
-	local w = 520
-	local notes = A.Notes and A:Notes() or nil
-	local lines = {}
-	for i, line in ipairs((notes and notes.lines) or {}) do
-		lines[i] = "\194\183 " .. line
-	end
-
-	return group(L.options.home.home, {
-		top = gap(1),
-		logo = {
-			type = "description", name = "", order = next_(), width = "full",
-			image = Media.texture.lockup, imageCoords = Media.lockupCoord,
-			imageWidth = w, imageHeight = math.floor(w / Media.lockupAspect + 0.5),
-		},
-		afterLogo = gap(2),
-		about = note(A.F(L.options.home.about, A.Hi(A.version or "?"))),
-		afterAbout = gap(1),
-
-		startHeader = header(L.options.home.start_header),
-		tour = action(L.common.take_tour, L.options.home.tour_desc, function()
-			local OB = A.GetModule and A:GetModule("onboard")
-			if OB then A.Options:Close(); OB:Start() end
-		end),
-		news = action(L.common.what_s_new, nil, function()
-			if A.Options.dialog then A.Options.dialog:SelectGroup(APP, "changelog") end
-		end),
-		unlock = UnlockAction(),
-		bind = BindAction(),
-		afterStart = gap(1),
-
-		newsHeader = header(L.options.home.news_header),
-		newsBody = note(#lines > 0 and table.concat(lines, "\n") or "No notes."),
-		afterNews = gap(1),
-
-		support = note(A.F(L.options.home.support, A.Gold("discord.gg/drveoj"))),
-	})
-end
-
-local function GeneralGroup()
-	return group(L.options.general.general, {
-		-- FOUR CHIPS, NOT A DROPDOWN. Each shows its own accent on its own
-		-- glass, which is the only thing that tells you what picking it
-		-- would do - a list of four words does not. The option is unchanged
-		-- underneath: same profile key, same setter, same restyle after.
+--- The look of the whole interface: the skin, and the glass every panel is
+--  made of. A page of its own on the System strand (options handoff).
+local function SkinsGroup()
+	return group(L.options.skins.skins, {
+		-- FOUR CHIPS, NOT A LIST. Each shows its own accent on its own glass,
+		-- which is the only thing that tells you what picking it would do - a
+		-- list of four words does not. The option is unchanged underneath:
+		-- same profile key, same setter, same restyle after.
 		skin = choice(L.options.general.skin.name, L.options.general.skin.desc,
 			{ "skin" }, SkinValues,
-			{ after = "restyle", control = "AetherUISkinSwatches" }),
-		scale = range(L.common.scale, L.options.general.scale.desc, { "scale" }, 0.6, 1.6, 0.01),
+			{ after = "restyle", control = "swatches" }),
 		classColorHealth = toggle(L.options.general.class_color_health.name,
 			L.options.general.off_uses_concept_s,
 			{ "classColorHealth" }, { after = "restyle" }),
@@ -346,6 +288,15 @@ local function GeneralGroup()
 			L.options.general.how_much_deeper_chat,
 			{ "glass", "readOpacity" }, 0, 1, 0.05,
 			{ after = "restyle", percent = true }),
+	})
+end
+
+local function GeneralGroup()
+	return group(L.options.general.general, {
+		scale = range(L.common.scale, L.options.general.scale.desc, { "scale" }, 0.6, 1.6, 0.01),
+		-- The window's own animation (options handoff 7c): no stagger, 120 ms.
+		reducedMotion = toggle(L.options.general.reduced_motion.name,
+			L.options.general.reduced_motion.desc, { "reducedMotion" }, { after = "none" }),
 
 		posHeader = header(L.options.general.pos_header),
 		bind = BindAction(),
@@ -1002,11 +953,10 @@ end
 
 --- WHAT THE GAME DRAWS, redressed.
 --
---  Five switches that were five pages, each holding one checkbox and nothing
+--  Switches that were pages of their own, each holding one checkbox and nothing
 --  else. A page per module is the right shape while a module has settings; for
---  the ones that only answer yes or no it puts five clicks between the player
---  and five related decisions, and pads the list they scan to find anything
---  else.
+--  the ones that only answer yes or no it puts a click between the player and
+--  each of several related decisions. On the Skins page, as a sub-page.
 --
 --  They belong together anyway: every one is the same promise in a different
 --  place - the game's own thing, in this interface's clothes, and switching it
@@ -1023,8 +973,6 @@ local function GameOwnGroup()
 
 		timers = toggle(L.options.game_own.timers.name, L.options.game_own.timers.desc,
 			at("timers")),
-
-		settings = toggle(L.options.game_own.settings.name, L.options.game_own.settings.desc, at("optionsskin")),
 	})
 end
 
@@ -1202,8 +1150,7 @@ local function ThreatGroup()
 	})
 end
 local PAGE_ORDER = {
-	home = 0.5,        -- first, and where the window opens
-	general = 1, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
+	general = 1, skins = 1.5, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
 	minimap = 6, quests = 7, bags = 8, chat = 9, tooltips = 10,
 	toolbox = 11, fader = 12, xpbar = 13, nameplates = 14, ifec = 15,
 	threat = 15.5,
@@ -1249,6 +1196,68 @@ local function ChangelogGroup()
 	return group(L.common.what_s_new, args)
 end
 
+--- Profiles, from AceDB's own calls. The choice of which to delete is held
+--  here rather than acted on, and the Delete button under it asks twice:
+--  a profile deleted is gone.
+local doomed
+local function ProfileNames(skipCurrent)
+	local out, db = {}, A.db
+	if not (db and db.GetProfiles) then return out end
+	local current = db:GetCurrentProfile()
+	for _, name in ipairs(db:GetProfiles({})) do
+		if not (skipCurrent and name == current) then out[name] = name end
+	end
+	return out
+end
+
+local function ProfilesGroup()
+	return group(L.options.profiles.profiles, {
+		note = note(L.options.profiles.note),
+		current = {
+			type = "select", name = L.options.profiles.current.name,
+			desc = L.options.profiles.current.desc, order = next_(),
+			values = function() return ProfileNames(false) end,
+			get = function() return A.db:GetCurrentProfile() end,
+			set = function(_, v) A.db:SetProfile(v) end,
+		},
+		new = {
+			type = "input", name = L.options.profiles.new.name,
+			desc = L.options.profiles.new.desc, order = next_(),
+			get = function() return "" end,
+			set = function(_, v)
+				v = tostring(v or ""):gsub("^%s+", ""):gsub("%s+$", "")
+				if v ~= "" then A.db:SetProfile(v) end
+			end,
+		},
+		copy = {
+			type = "select", name = L.options.profiles.copy.name,
+			desc = L.options.profiles.copy.desc, order = next_(),
+			values = function() return ProfileNames(true) end,
+			get = function() return nil end,
+			set = function(_, v) A.db:CopyProfile(v) end,
+		},
+		dangerHeader = header(L.options.profiles.danger_header),
+		pick = {
+			type = "select", name = L.options.profiles.pick.name, order = next_(),
+			values = function() return ProfileNames(true) end,
+			get = function()
+				if doomed and not ProfileNames(true)[doomed] then doomed = nil end
+				return doomed
+			end,
+			set = function(_, v) doomed = v end,
+		},
+		delete = action(function()
+				return doomed and A.F(L.options.profiles.delete_s, doomed)
+					or L.options.profiles.delete
+			end, nil, function()
+				if doomed and ProfileNames(true)[doomed] then A.db:DeleteProfile(doomed) end
+				doomed = nil
+			end, { confirm = true }),
+		reset = action(L.options.profiles.reset.name, L.options.profiles.reset.desc,
+			function() A.db:ResetProfile() end, { confirm = true }),
+	})
+end
+
 --- Build the whole tree. Pure: no libraries, no frames, no side effects.
 function Options:Build()
 	order = 0
@@ -1256,8 +1265,8 @@ function Options:Build()
 		type = "group",
 		name = A.Hi("Lattice"),
 		args = {
-			home = HomeGroup(),
 			general = GeneralGroup(),
+			skins = SkinsGroup(),
 			unitframes = UnitFramesGroup(),
 			partyframes = PartyFramesGroup(),
 			auras = AurasGroup(),
@@ -1277,6 +1286,7 @@ function Options:Build()
 			conveniences = ConveniencesGroup(),
 			gameown = GameOwnGroup(),
 			changelog = ChangelogGroup(),
+			profiles = ProfilesGroup(),
 		},
 	}
 	for key, n in pairs(PAGE_ORDER) do
@@ -1337,73 +1347,36 @@ function Options:RegisterStub()
 	return true
 end
 
---- Everything here is optional. If the Ace libraries are missing the addon still
---  runs and the slash commands still work - the panel is the thing you lose, not
---  the HUD.
+--- At login: the stub in the game's own list. The window itself is built the
+--  first time it opens.
 function Options:Register()
 	if self.registered then return true end
-
-	-- Ahead of the Ace check: the stub needs only the client, and its button
-	-- says why when there is no window to open.
 	pcall(self.RegisterStub, self)
-
-	local Config = LibStub and LibStub("AceConfig-3.0", true)
-	local Registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
-	local Dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
-	if not (Config and Registry and Dialog) then return false end
-
-	local tree = self:Build()
-
-	-- Profiles come free with AceDB, and are the one part of this worth having
-	-- somebody else maintain.
-	local DBO = LibStub("AceDBOptions-3.0", true)
-	if DBO and A.db then
-		local profiles = DBO:GetOptionsTable(A.db)
-		profiles.order = PAGE_ORDER.profiles
-		tree.args.profiles = profiles
-	end
-
-	Config:RegisterOptionsTable(APP, tree)
-	self.dialog = Dialog
-	self.registry = Registry
-
-	Dialog:SetDefaultSize(APP, 760, 560)
 	self.registered = true
 	return true
 end
 
---- Rebuild and tell the dialog. Needed when the *shape* changes rather than a
---  value - a bar being added, say.
+--- The tree's SHAPE changed rather than a value - a bar being added, say. An
+--  open window draws its pages again.
 function Options:Refresh()
-	if not self.registered then return end
-	local Config = LibStub("AceConfig-3.0", true)
-	if Config then Config:RegisterOptionsTable(APP, self:Build()) end
-	if self.registry then pcall(self.registry.NotifyChange, self.registry, APP) end
+	if A.OptionsWindow then A.OptionsWindow:Refresh() end
 end
 
+--- Open the window: on the map, or on the page holding `section` (a tree key
+--  such as "changelog", or a page's own).
 function Options:Open(section)
-	if not self:Register() then
-		A:Print(A.F(L.options.open.options_panel_needs_ace3,
-			A.Dim("/lattice help")))
-		return false
-	end
-	-- Home unless somebody asked for a page. Every opening, not just the first:
-	-- the window is the front door, and a door that opens onto wherever you
-	-- last wandered is not one.
-	self.dialog:SelectGroup(APP, section or "home")
-	self.dialog:Open(APP)
-	return true
+	self:Register()
+	return A.OptionsWindow:Open(section)
 end
 
 function Options:Close()
-	if self.registered and self.dialog then self.dialog:Close(APP) end
+	if A.OptionsWindow then A.OptionsWindow:Close() end
+end
+
+function Options:IsOpen()
+	return A.OptionsWindow and A.OptionsWindow:IsOpen() or false
 end
 
 function Options:Toggle(section)
-	if self.registered and self.dialog
-		and self.dialog.OpenFrames and self.dialog.OpenFrames[APP] then
-		self:Close()
-	else
-		self:Open(section)
-	end
+	if self:IsOpen() then self:Close() else self:Open(section) end
 end

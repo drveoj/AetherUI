@@ -946,10 +946,6 @@ L["options.game_own.note"] =
 	"Everything here is the GAME panels, redressed rather than "
 		.. "replaced. Each switch is the same: off gives you Blizzard's back "
 		.. "whole, art and all."
-L["options.game_own.settings.desc"] =
-	"These settings, in the same glass as the rest of it. Off leaves "
-		.. "the options panel looking like Blizzard's."
-L["options.game_own.settings.name"] = "This panel"
 L["options.game_own.timers.desc"] =
 	"Breath, fatigue and feign death, as lanes running out from the left "
 		.. "of your own frame - what the world is doing to you arrives on "
@@ -978,6 +974,10 @@ L["options.general.off_uses_concept_s"] =
 	"Off uses green and reserves colour for reaction."
 L["options.general.pos_header"] = "Positions and keys"
 L["options.general.read_opacity.name"] = "Reading panel opacity"
+L["options.general.reduced_motion.desc"] =
+	"In this window: every node arrives at once, and every move takes "
+		.. "120 ms."
+L["options.general.reduced_motion.name"] = "Reduced motion"
 L["options.general.layout.desc"] =
 	"Your whole arrangement as one line of text, to keep or share, and the "
 		.. "place to paste somebody else's."
@@ -1000,17 +1000,6 @@ L["options.general.snap_distance.desc"] =
 	"How close an edge has to come before it is caught. Much above 20 "
 		.. "and you can no longer put a frame where you actually meant to."
 L["options.general.snap_distance.name"] = "Snap distance"
-
-L["options.home.about"] =
-	"Version %s. A glass HUD for Classic Era and WoW Forever. Every page in "
-		.. "the list on the left explains its own settings."
-L["options.home.home"] = "Home"
-L["options.home.news_header"] = "In this version"
-L["options.home.start_header"] = "Start here"
-L["options.home.support"] = "Help, bugs and ideas: %s"
-L["options.home.tour_desc"] =
-	"The one-minute tour: your palette, your layout, where the Toolbox lives "
-		.. "and when Zen starts. Changes apply live, so you can stop at any point."
 
 L["options.i_f_e_c.enabled.desc"] =
 	"A flight timer on every taxi, and the I.F.E.C. for content when a "
@@ -1035,6 +1024,60 @@ L["options.i_f_e_c.reader_scale.name"] = "Magazine size"
 L["options.i_f_e_c.scale.desc"] =
 	"On top of the interface scale, like the action bars have their "
 		.. "own."
+
+-- The options window: the map, its nodes and their pages.
+L["options.map.actionbars.desc"] = "Every strand: its shape, size, energy and keys"
+L["options.map.actionbars.title"] = "Action bars"
+L["options.map.after_fight"] = "The settings open when this fight is over."
+L["options.map.all_bars"] = "All bars"
+L["options.map.auras.desc"] = "Buffs and debuffs, over the player and the target"
+L["options.map.auras.title"] = "Auras"
+L["options.map.bags.desc"] = "The grid, its look, and selling junk"
+L["options.map.bags.title"] = "Bags"
+L["options.map.brand"] = "Lattice"
+L["options.map.changelog.desc"] = "What changed in each version"
+L["options.map.changelog.title"] = "What's new"
+L["options.map.chat.desc"] = "The log, its lines and whispers"
+L["options.map.chat.title"] = "Chat"
+L["options.map.confirm"] = "Click again to confirm"
+L["options.map.conveniences.desc"] = "Small things the game makes you wait for"
+L["options.map.conveniences.title"] = "Conveniences"
+L["options.map.general.desc"] = "Scale, motion, placement and the XP hairline"
+L["options.map.general.title"] = "General"
+L["options.map.hint"] = "Click to unfold"
+L["options.map.hint_action"] = "Click to start"
+L["options.map.hint_unlock"] = "Click to unfold \194\183 Shift-click to unlock just this"
+L["options.map.map"] = "Map"
+L["options.map.minimap.desc"] = "The map, its ring and its pill"
+L["options.map.minimap.title"] = "Minimap"
+L["options.map.nameplates.desc"] = "Plates, threat and tooltips"
+L["options.map.nameplates.title"] = "Nameplates"
+L["options.map.no_target"] = "No target"
+L["options.map.partyframes.desc"] = "The party's capsules"
+L["options.map.partyframes.title"] = "Party"
+L["options.map.pet"] = "Pet"
+L["options.map.preview"] = "Live preview \194\183 changes apply at once"
+L["options.map.profile_s"] = "Profiles \194\183 %s"
+L["options.map.profiles.desc"] = "Which set of settings this character uses"
+L["options.map.profiles.title"] = "Profiles"
+L["options.map.quests.desc"] = "Quests on the World trunk, and the flight console"
+L["options.map.quests.title"] = "Quest tracker"
+L["options.map.reset_page"] = "Reset page"
+L["options.map.search"] = "Search any setting\226\128\166"
+L["options.map.settings_n"] = "%d settings"
+L["options.map.skins.desc"] = "The skin, the glass, and the game's own windows"
+L["options.map.skins.title"] = "Skins"
+L["options.map.system"] = "System"
+L["options.map.toolbox.desc"] = "The left trunk, and the idle fade"
+L["options.map.toolbox.title"] = "Toolbox"
+L["options.map.tot"] = "Target of target"
+L["options.map.tour.desc"] = "The first-run tour, again"
+L["options.map.tour.title"] = "Take the tour"
+L["options.map.unitframes.desc"] = "Player, target, satellites, cast lanes"
+L["options.map.unitframes.title"] = "Unit frames"
+L["options.map.unlock.desc"] = "Move anything on the screen"
+L["options.map.unlock.title"] = "Unlock frames"
+L["options.map.unlock_s"] = "Unlock %s"
 
 L["options.minimap.blizz_header"] = "Blizzard's"
 L["options.minimap.border.name"] = "Border strength"
@@ -1123,10 +1166,6 @@ L["options.onboard.run_note"] =
 		.. "welcome card. Your current palette, layout and Toolbox edge are "
 		.. "untouched until you pick something else."
 
-L["options.open.options_panel_needs_ace3"] =
-	"the options panel needs the Ace3 libraries, which are missing from "
-		.. "this install. %s still lists everything."
-
 L["options.party_frames.four_capsules_party_same"] =
 	"Four capsules for your party, in the same glass as your own frame."
 L["options.party_frames.gap.name"] = "Gap between members"
@@ -1140,6 +1179,27 @@ L["options.party_frames.slot_whose_member_has"] =
 		.. "Re-anchoring a frame you can click to target is refused by the "
 		.. "game in combat, which is often when somebody drops group - so the "
 		.. "slots stay where you put them."
+
+L["options.profiles.copy.desc"] =
+	"Copies another profile's settings over the one in use."
+L["options.profiles.copy.name"] = "Copy settings from"
+L["options.profiles.current.desc"] = "Switches this character to another profile."
+L["options.profiles.current.name"] = "Profile in use"
+L["options.profiles.danger_header"] = "Delete and reset"
+L["options.profiles.delete"] = "Delete profile"
+L["options.profiles.delete_s"] = "Delete %s"
+L["options.profiles.new.desc"] =
+	"Type a name and press Enter. It starts from the defaults, and this "
+		.. "character moves to it."
+L["options.profiles.new.name"] = "New profile"
+L["options.profiles.note"] =
+	"A profile is a whole set of these settings. Characters can share one, "
+		.. "or each keep their own."
+L["options.profiles.pick.name"] = "Profile to delete"
+L["options.profiles.profiles"] = "Profiles"
+L["options.profiles.reset.desc"] =
+	"Puts every setting in the profile in use back to its default."
+L["options.profiles.reset.name"] = "Reset this profile"
 
 L["options.quest.adopt_watches.name"] = "Adopt Blizzard's watch list"
 L["options.quest.auto_track.name"] = "Track everything automatically"
@@ -1181,6 +1241,8 @@ L["options.resources.enabled.name"] = "Class resources"
 L["options.resources.enabled.desc"] =
 	"Off removes the tray entirely. Characters with no secondary resource"
 	.. " never have one either way."
+
+L["options.skins.skins"] = "Skins"
 
 L["options.stub.line"] = "Lattice's settings have a window of their own."
 L["options.stub.open"] = "Open Lattice settings"
