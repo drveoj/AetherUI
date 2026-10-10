@@ -193,7 +193,18 @@ local function Pad(root)
 		shadow = A.db.profile.glass.shadow })
 	p:EnableMouse(false)
 	p:Hide()
-	A.Fader:Register(p, {})
+	-- The HIGHEST energy among its strands (strands brief), so the block never
+	-- reads as half-faded. Each strand keeps its own over it.
+	A.Fader:Register(p, { energy = function()
+		local AB, top, hot = Bars(), nil, nil
+		if not (AB and AB.Energy) then return 1 end
+		for _, n in ipairs(Braids:Members(root)) do
+			local e, h = AB:Energy(n)
+			if not top or e > top then top = e end
+			hot = hot or h
+		end
+		return top or 1, hot
+	end })
 	Braids.pads[root] = p
 	return p
 end

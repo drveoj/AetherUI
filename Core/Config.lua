@@ -267,7 +267,8 @@ Config.defaults = {
 				-- source of truth. Halved with the slot: +4 was a bump on a
 				-- 62-unit button and would be a shout on a 36-unit one.
 				fontDelta    = 2,
-				-- Key chips are each strand's own: `keys` on a bar, on unless false.
+				-- Key chips and energy are each strand's own: `keys`, `energyAuto`,
+				-- `rest`, `combat` and `hoverOnly` on a bar (strands brief).
 				tooltips     = true,
 				lockButtons  = true,    -- require a modified click to pick up
 				emptyAlpha   = 0.25,
@@ -287,21 +288,27 @@ Config.defaults = {
 					{ id = "1", kind = "action", page = 1, enabled = true,
 					  stancePaging = true,
 					  buttons = 12, rows = 1, scale = 1.0, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = L.core.misc.label, point = "BOTTOM", x = 0, y = 26 },
 					{ id = "2", kind = "action", page = 2, enabled = false,
 					  buttons = 12, rows = 1, scale = 1.0, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = L.core.misc.label2, point = "BOTTOM", x = 0, y = 118 },
 					{ id = "3", kind = "action", page = 3, enabled = false,
 					  buttons = 12, rows = 12, scale = 0.85, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = L.core.misc.label3, point = "RIGHT", x = -24, y = 0 },
 					{ id = "4", kind = "action", page = 4, enabled = false,
 					  buttons = 12, rows = 12, scale = 0.85, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = L.core.misc.label4, point = "RIGHT", x = -88, y = 0 },
 					{ id = "5", kind = "action", page = 5, enabled = false,
 					  buttons = 12, rows = 1, scale = 0.85, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = L.core.misc.label5, point = "BOTTOM", x = 0, y = 190 },
 					{ id = "6", kind = "action", page = 6, enabled = false,
 					  buttons = 12, rows = 1, scale = 0.85, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = L.core.misc.label6, point = "BOTTOM", x = 0, y = 250 },
 
 					-- Button count comes from the game, not from config: however many
@@ -321,9 +328,11 @@ Config.defaults = {
 					-- game against 0.31.0.
 					{ id = "stance", kind = "stance", enabled = true,
 					  rows = 1, scale = 0.8, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = "Stances", beside = "1", side = "left", y = 26 },
 					{ id = "pet", kind = "pet", enabled = true,
 					  rows = 1, scale = 0.8, backdrop = true, keys = true,
+					  energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 					  label = "Pet", point = "BOTTOM", x = 0, y = 118 },
 
 					-- Blizzard's own taxi "land at the next flight master" button and
@@ -1012,6 +1021,7 @@ if A.isCamelot then
 		bars[#bars + 1] = {
 			id = tostring(6 + n), kind = "action", page = page, enabled = false,
 			buttons = 12, rows = 1, scale = 0.85, backdrop = true, keys = true,
+			energyAuto = true, rest = 1, combat = 1, hoverOnly = false,
 			label = labels[n], point = "BOTTOM", x = 0, y = 250 + n * 60,
 		}
 	end

@@ -264,6 +264,34 @@ local function KeysShown(bar)
 	return not (bar and bar.cfg and bar.cfg.keys == false)
 end
 
+--- Has any button on this strand a key bound to it?
+local function Keybound(bar)
+	for _, b in ipairs(bar and bar.buttons or {}) do
+		if b._keyText and b._keyText ~= "" then return true end
+	end
+	return false
+end
+
+--- A strand's rest and combat alpha as set (strands brief): its own once
+--  `energyAuto` is off; until then 100 / 100 with a key bound and 60 / 100
+--  without.
+local function EnergyOf(bar)
+	local cfg = bar.cfg
+	if cfg.energyAuto ~= false then return Keybound(bar) and 1 or 0.6, 1 end
+	return cfg.rest or 1, cfg.combat or 1
+end
+
+--- What the Fader multiplies a strand by now, and whether it is hovered.
+--  Everything is whole in unlock, so nothing hides while it is placed; the
+--  extra button is Blizzard's and keeps none.
+local function Energy(bar)
+	if bar.kind == "extra" or (A.Movers and A.Movers.unlocked) then return 1 end
+	if bar.dock:IsMouseOver() then return 1, true end
+	if bar.cfg.hoverOnly then return 0 end
+	local rest, combat = EnergyOf(bar)
+	return InCombatLockdown() and combat or rest
+end
+
 local function UpdateBinding(b)
 	b.hotkey:SetText(KeysShown(b.__aetherBar) and ShortKey(b._keyText) or "")
 end
@@ -1827,6 +1855,39 @@ end
 
 AB.ParentFor = ParentFor
 
+--- A strand's rest and combat as the inspector shows them (strands brief 9b).
+local function EnergyRows(bar)
+	if bar.kind == "extra" then return {} end
+	local value
+	if bar.cfg.hoverOnly then
+		value = L.movers.inspector.hover_only
+	else
+		local rest, combat = EnergyOf(bar)
+		value = ("%d %% / %d %%"):format(math.floor(rest * 100 + 0.5), math.floor(combat * 100 + 0.5))
+	end
+	return { { L.movers.inspector.energy, value } }
+end
+
+local function MoverOpts(bar)
+	return { preview = BarPreview(bar), parent = ParentFor(bar), braid = bar.kind ~= "extra",
+		rows = function() return EnergyRows(bar) end }
+end
+
+--- Faded with the HUD, by its energy.
+local function WatchDock(bar)
+	local e = A.Fader.watched[bar.dock]
+	if e and e.energy then return end
+	A.Fader:Register(bar.dock, { energy = function() return Energy(bar) end })
+end
+
+--- A strand's energy now, by mover name: what a braid's pad takes the
+--  highest of.
+function AB:Energy(name)
+	local bar = BarNamed(name)
+	if not bar then return 1 end
+	return Energy(bar)
+end
+
 function AB:OnEnable()
 	local cfg = A.Config:Module("actionbars")
 
@@ -1853,9 +1914,8 @@ function AB:OnEnable()
 			bar.dock:Show()
 		end
 		A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
-			bar.cfg.label or ("Bar " .. bar.id),
-			{ preview = BarPreview(bar), parent = ParentFor(bar), braid = bar.kind ~= "extra" })
-		A.Fader:Register(bar.dock, {})
+			bar.cfg.label or ("Bar " .. bar.id), MoverOpts(bar))
+		WatchDock(bar)
 	end
 
 	self:OnConfigChanged()
@@ -2176,8 +2236,10 @@ function AB:OnConfigChanged()
 			ApplyPaging(bar)
 
 			A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
-				bar.cfg.label or ("Bar " .. bar.id),
-				{ preview = BarPreview(bar), parent = ParentFor(bar), braid = bar.kind ~= "extra" })
+				bar.cfg.label or ("Bar " .. bar.id), MoverOpts(bar))
+			-- Here as well as at login: a bar switched on later is built by
+			-- SyncBars, and was never faded at all.
+			WatchDock(bar)
 		end
 	end
 

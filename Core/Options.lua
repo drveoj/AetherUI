@@ -735,6 +735,24 @@ local function BarPages()
 		if kind ~= "extra" then
 			args.keys = toggle(L.options.bar_pages.keys.name, L.options.bar_pages.keys.desc,
 				at("keys"), { defaultTrue = true })
+
+			-- ENERGY (strands brief): how present the strand is at rest and in a
+			-- fight. Automatic until the player sets their own.
+			local function auto()
+				local t, k = Resolve(at("energyAuto"))
+				return t ~= nil and t[k] ~= false
+			end
+			args.energyHeader = header(L.options.bar_pages.energy_header)
+			args.energyAuto = toggle(L.options.bar_pages.energy_auto.name,
+				L.options.bar_pages.energy_auto.desc, at("energyAuto"), { defaultTrue = true })
+			args.rest = range(L.options.bar_pages.rest.name, nil, at("rest"), 0, 1, 0.05,
+				{ percent = true })
+			args.rest.disabled = auto
+			args.combat = range(L.options.bar_pages.combat.name, nil, at("combat"), 0, 1, 0.05,
+				{ percent = true })
+			args.combat.disabled = auto
+			args.hoverOnly = toggle(L.options.bar_pages.hover_only.name,
+				L.options.bar_pages.hover_only.desc, at("hoverOnly"))
 		end
 
 		if kind == "action" then

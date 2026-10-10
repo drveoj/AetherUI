@@ -1005,7 +1005,7 @@ local function Inspector()
 	p.title = A.Widgets.Text(p, "label", "LEFT")
 	p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12)
 	p.rows = {}
-	for i = 1, 5 do
+	for i = 1, 6 do
 		local k = A.Widgets.Text(p, "label", "LEFT")
 		k:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12 - i * ROW_H)
 		local v = A.Widgets.Text(p, "label", "RIGHT")
@@ -1092,6 +1092,10 @@ local function NodeRows(entry)
 	}
 	local host = A.Braids and A.Braids:HostOf(entry.name)
 	if host then rows[#rows + 1] = { L.movers.inspector.braided, NodeLabel(host) } end
+	-- The node's own: a strand's rest and combat energy.
+	if entry.rows then
+		for _, r in ipairs(entry.rows()) do rows[#rows + 1] = r end
+	end
 	return rows
 end
 
@@ -1508,6 +1512,7 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.pairMin = opts and opts.pairMin or nil
 	entry.shape = opts and opts.shape or entry.shape
 	entry.braid = opts and opts.braid or nil
+	entry.rows = opts and opts.rows or nil
 
 	entry.defaultParent = opts and opts.parent or nil
 	ResolveParent(entry)

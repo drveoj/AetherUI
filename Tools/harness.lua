@@ -18534,6 +18534,10 @@ do
 	check(insp:IsShown() and insp.rows[5].k:GetText() == "Braided with"
 		and insp.rows[5].v:GetText() == "BAR 1",
 		"the inspector says what it is braided with" .. T.say(insp.rows[5].v:GetText()))
+	-- And its energy (strands brief 9b): bar 2 has no key here, so 60 / 100.
+	check(insp.rows[6] and insp.rows[6].k:IsShown() and insp.rows[6].k:GetText() == "Rest / Combat"
+		and insp.rows[6].v:GetText() == "60 % / 100 %",
+		"and its rest and combat energy" .. T.say(insp.rows[6] and insp.rows[6].v:GetText()))
 	h2:GetScript("OnDragStop")(h2)
 	check(B:HostOf("bar2") == "bar1", "let go where it sits, it stays in the braid")
 	-- With a pad of 10 the docks overlap by 12 at the seat, more than the 8 a
@@ -18575,6 +18579,136 @@ end
 
 -- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole
 -- arrangement as one line, read back, refused whole when it is wrong.
+print("== energy ==")
+do
+	-- STRANDS BRIEF: every strand has a rest and a combat alpha and a
+	-- hover-only flag. Defaults 100 / 100 for a strand with any key bound,
+	-- 60 / 100 for one with none; hovering brings it back within 120 ms. A
+	-- braid's pad takes the highest rest among its members.
+	local AB, F, M, B = A:GetModule("actionbars"), A.Fader, A.Movers, A.Braids
+	local fcfg = A.db.profile.fader
+	local was = { enabled = fcfg.enabled, delay = fcfg.delay, target = fcfg.keepOnTarget,
+		hurt = fcfg.keepOnHurt, bar2 = AB:BarConfig("2").enabled }
+	fcfg.enabled, fcfg.keepOnTarget, fcfg.keepOnHurt = true, false, false
+	F:Refresh()
+	local function barOf(id)
+		for _, b in ipairs(AB.bars) do if tostring(b.id) == id then return b end end
+	end
+	AB:SetBarEnabled("2", true)
+	local b1, b2 = barOf("1"), barOf("2")
+	local c1, c2 = AB:BarConfig("1"), AB:BarConfig("2")
+	local function target(f) local e = F.watched[f]; return e and e.target end
+	local function near(a, b) return a and b and math.abs(a - b) < 0.01 end
+	local function say(...)
+		local out = {}
+		for i = 1, select("#", ...) do out[#out + 1] = tostring((select(i, ...))) end
+		return " (" .. table.concat(out, ", ") .. ")"
+	end
+	local function awake() F:Touch(); tick(0.1) end
+
+	-- A BAR FIRST BUILT AFTER LOGIN, by SyncBars: only login registered docks
+	-- with the fader, so one switched on later was never faded at all. Every
+	-- bar here is built by now, so one is taken off the fader, as such a bar
+	-- was, and the next config pass has to put it on.
+	F:Unregister(b2.dock)
+	AB:OnConfigChanged()
+	check(F.watched[b2.dock] and F.watched[b2.dock].energy,
+		"a bar the fader does not know is put on it, by its energy, on the next config pass")
+	awake()
+	check(F.state == "awake" and near(target(b1.dock), 1) and near(target(b2.dock), 0.6),
+		"at rest a keybound strand is at 100 and one with no key at 60"
+		.. say(F.state, target(b1.dock), target(b2.dock)))
+	_G.__inCombat = true
+	awake()
+	check(near(target(b2.dock), 1), "and in a fight both are at 100" .. say(target(b2.dock)))
+	_G.__inCombat = false
+
+	c2.energyAuto, c2.rest, c2.combat = false, 0.3, 0.8
+	awake()
+	check(near(target(b2.dock), 0.3), "a strand's own rest, once set" .. say(target(b2.dock)))
+	_G.__inCombat = true
+	awake()
+	check(near(target(b2.dock), 0.8), "and its own combat" .. say(target(b2.dock)))
+	_G.__inCombat = false
+
+	b2.dock.__mouseOver = true
+	awake()
+	check(near(target(b2.dock), 1) and F.watched[b2.dock].fadeIn <= 0.12,
+		"hovered, it comes back to 100 within 120 ms"
+		.. say(target(b2.dock), F.watched[b2.dock].fadeIn))
+	b2.dock.__mouseOver = nil
+	awake()
+	check(near(target(b2.dock), 0.3) and F.watched[b2.dock].fadeIn > 0.12,
+		"and off it, back to its rest at the usual pace")
+
+	c2.hoverOnly = true
+	awake()
+	check(near(target(b2.dock), 0), "hover-only is nothing until hovered" .. say(target(b2.dock)))
+	b2.dock.__mouseOver = true
+	awake()
+	check(near(target(b2.dock), 1), "and all of it when hovered")
+	b2.dock.__mouseOver = nil
+	c2.hoverOnly = false
+
+	-- The HUD's own idle dim stacks on top: a strand at 30 idles to 30 % of it.
+	fcfg.delay = 1
+	F:Touch()
+	for _ = 1, 15 do tick(0.1) end
+	check(F.state == "idle" and near(target(b2.dock), target(b1.dock) * 0.3)
+		and target(b1.dock) < 1,
+		"idle dims every strand by the same amount, its energy kept"
+		.. say(F.state, target(b1.dock), target(b2.dock)))
+	fcfg.delay = was.delay
+
+	M.unlocked = true
+	awake()
+	check(near(target(b2.dock), 1), "in unlock every strand is at 100, to place it")
+	M.unlocked = false
+
+	-- Energy is the strand's own, not the idle fader's: with that switched off
+	-- a strand still rests where it was set.
+	fcfg.enabled = false
+	F:Refresh()
+	for _ = 1, 10 do tick(0.1) end
+	check(near(target(b2.dock), 0.3) and math.abs(b2.dock:GetAlpha() - 0.3) < 0.05,
+		"with the idle fade off, a strand still rests where it was set"
+		.. say(target(b2.dock), b2.dock:GetAlpha()))
+	fcfg.enabled = true
+	F:Refresh()
+
+	-- A braid's pad takes the highest rest among its members.
+	c1.energyAuto, c1.rest = false, 0.4
+	B:Join("bar2", "bar1", "RIGHT", 0)
+	local pad = B.pads.bar1
+	awake()
+	check(pad and pad:IsShown() and near(target(pad), 0.4),
+		"a braid's pad takes the highest rest among its strands" .. say(pad and target(pad)))
+	c2.rest = 0.5
+	awake()
+	check(near(target(pad), 0.5) and near(target(b1.dock), 0.4) and near(target(b2.dock), 0.5),
+		"whichever strand that is, and each strand keeps its own"
+		.. say(target(pad), target(b1.dock), target(b2.dock)))
+	B:Leave("bar2")
+
+	-- The options: each strand's page, not the extra button's.
+	local abg = A.Options:Build().args.actionbars
+	local e = abg.args.bar2.args
+	check(e.energyAuto and e.rest and e.combat and e.hoverOnly
+		and abg.args.barextra.args.rest == nil,
+		"every strand's page has its energy, and the extra button has none")
+	check(type(e.rest.disabled) == "function" and e.rest.disabled() == false,
+		"its rest and combat are there to set while it is not automatic")
+	c2.energyAuto = true
+	check(e.rest.disabled() == true, "and greyed out while it is")
+
+	-- Back as it was.
+	c1.energyAuto, c1.rest = true, 1
+	c2.energyAuto, c2.rest, c2.combat = true, 1, 1
+	fcfg.enabled, fcfg.keepOnTarget, fcfg.keepOnHurt = was.enabled, was.target, was.hurt
+	AB:SetBarEnabled("2", was.bar2)
+	F:Refresh()
+end
+
 print("== layout string ==")
 do
 	local LY, M = A.Layout, A.Movers

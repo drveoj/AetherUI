@@ -103,6 +103,9 @@ local zenCursorX, zenCursorY
 
 local casting = false
 
+-- How fast a hovered strand comes back to full: the strands brief's 120 ms.
+local HOVER_IN = 0.12
+
 Fader.state = "awake"   -- "awake" | "idle" | "zen"
 
 -- ---------------------------------------------------------------------------
@@ -140,6 +143,9 @@ function Fader:Register(frame, opts)
 		fadeIn     = opts.fadeIn or 0.25,
 		fadeOut    = opts.fadeOut or 0.75,
 		minAlpha   = opts.minAlpha,
+		-- A frame's own share of whatever the HUD is at: a function returning
+		-- 0-1, and true when the cursor is on it - an action bar's energy.
+		energy     = opts.energy,
 		animating  = false,
 	}
 	Fader.watched[frame] = entry
@@ -298,6 +304,13 @@ function Fader:Update()
 		if state ~= "zen" and entry.minAlpha then t = math.max(t, entry.minAlpha) end
 		entry.fadeIn  = entry.optFadeIn  or fadeIn
 		entry.fadeOut = entry.optFadeOut or fadeOut
+		-- ENERGY STACKS ON THE STATE: a strand resting at 60 idles to 60 % of the
+		-- idle dim. Hovered, it is back within the strands brief's 120 ms.
+		if entry.energy then
+			local e, hot = entry.energy()
+			t = t * (e or 1)
+			if hot then entry.fadeIn = HOVER_IN end
+		end
 		if entry.target ~= t then
 			entry.target = t
 			entry.animating = true
@@ -386,7 +399,6 @@ function Fader:Disable()
 	Fader._on = false
 	Fader.state = "awake"
 	Fader._wasZen = false
-	A:UnregisterTicker(Fader)
 	A:UnregisterAllEvents(Fader)
 	local Z = A.modules and A.modules.zen
 	if Z and Z.SetActive then Z:SetActive(false) end
@@ -395,6 +407,11 @@ function Fader:Disable()
 		entry.animating = false
 		frame:SetAlpha(1)
 	end
+	-- THE TICKER STAYS: a strand's energy is its own, not the idle fade's, so
+	-- with that off it still rests where it was set. Switched off, Evaluate
+	-- only ever answers awake.
+	A:RegisterTicker(Fader, Tick)
+	Fader:Update()
 end
 
 --- Drop straight into zen without sitting out the timer.
