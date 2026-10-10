@@ -2030,6 +2030,27 @@ function QL:OnEnable()
 	-- build, or turning the module off and on again would leave it unclaimed.
 	if not _G.ClassicQuestLog then _G.ClassicQuestLog = self.win end
 
+	-- THE QUEST LOG NODE on the World trunk (Lattice 6a): the log opens as its
+	-- branch, beside the node - however it was opened, the L key and Questie
+	-- included, so it is always in the same place and the node always lit.
+	local trunk = A.Trunk:Get("world")
+	trunk:AddNode("questlog", {
+		icon = "quests", label = L.trunk.questlog, order = 100,
+		available = function() return QL.enabled and QL.win ~= nil end,
+		isOpen = function() return QL.win and QL.win:IsShown() and true or false end,
+		open = function() QL:Show() end,
+		close = function() QL:Hide() end,
+	})
+	if not self.win.__latticeTrunk then
+		self.win.__latticeTrunk = true
+		self.win:HookScript("OnShow", function(win)
+			trunk:Place("questlog", win)
+			trunk:Paint()
+		end)
+		self.win:HookScript("OnHide", function() trunk:Paint() end)
+	end
+	trunk:Refresh()
+
 	A:RegisterEvent(self, "QUEST_LOG_UPDATE", function() QL:Invalidate() end)
 	A:RegisterEvent(self, "QUEST_WATCH_UPDATE", function() QL:Invalidate() end)
 	-- These three change *which* quests exist, so the cached descriptions go with
@@ -2076,6 +2097,8 @@ function QL:OnDisable()
 	SetSpecialFrame(false)
 	DropTextCache()
 	if _G.ClassicQuestLog == self.win then _G.ClassicQuestLog = nil end
+	-- Its node goes with it.
+	A.Trunk:Get("world"):Refresh()
 end
 
 function QL:OnSkinChanged()

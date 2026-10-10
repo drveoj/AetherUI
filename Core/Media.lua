@@ -186,6 +186,8 @@ Media.icons = {
 		-- mirrored, which is a swap of two texture coordinates rather than a
 		-- second cell that has to agree about what an arrow looks like.
 		"rotate",
+		-- The World trunk's calendar node.
+		"calendar",
 	},
 
 	--- One drawing, more than one name for it.

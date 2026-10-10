@@ -1513,6 +1513,12 @@ L["tour.toolbox_control.tap_edge"] = "tap an edge"
 
 L["tracker.build.q_u_e_s"] = "Q U E S T S"
 
+-- trunks ------------------------------------------------------------------
+
+L["trunk.calendar"] = "Calendar"
+L["trunk.calendar_combat"] = "the calendar can't be opened for the first time in combat."
+L["trunk.questlog"] = "Quest Log"
+
 L["tracker.navigate.can_t_route_quest"] = "can't route to that quest."
 L["tracker.navigate.quest"] = "the quest"
 L["tracker.navigate.routing_s"] = "routing to %s."

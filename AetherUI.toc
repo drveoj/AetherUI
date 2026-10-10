@@ -60,6 +60,9 @@ Core\Layout.lua
 # After Movers, because that is where a position lives.
 Core\Presets.lua
 Core\Fader.lua
+# The trunks: a strand down a screen edge with branch nodes on it. After
+# Fader, which fades it with the HUD.
+Core\Trunk.lua
 Core\Nav.lua
 Core\Launchers.lua
 Core\SkinSwatches.lua

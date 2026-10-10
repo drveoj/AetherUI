@@ -35,6 +35,7 @@ local ADDON, A = ...
 local MM = A:NewModule("minimap")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
+local L = A.L
 
 -- Widget methods captured unbound, so a collected button that has stomped its
 -- own `SetPoint` (some do, to keep themselves welded to the ring) can still be
@@ -646,10 +647,64 @@ function MM:AnchorAll()
 	self.pill:ClearAllPoints()
 	self.pill:SetPoint("TOP", f, "BOTTOM", 0, -(cfg.pillOffset or 10))
 
-
-
 	f.north:SetShown(cfg.showNorth ~= false)
 	f.border:SetShown(cfg.ring ~= false)
+
+	-- The World trunk hangs from the pill (Lattice 6a), and lays out again with
+	-- it: a new scale, or a drop on the other half of the screen.
+	A.Trunk:Get("world"):SetRoot(self.pill)
+end
+
+-- ---------------------------------------------------------------------------
+-- the calendar node (World trunk)
+--
+-- The calendar had no way in once GameTimeFrame was banished. Its own stock
+-- panel, opened from a node. Load-on-demand on both clients, so it is loaded
+-- the first time it is asked for - never in combat, where loading an addon is
+-- not ours to do.
+-- ---------------------------------------------------------------------------
+
+local function CalendarAvailable()
+	if type(_G.ToggleCalendar) == "function" then return true end
+	local load = (_G.C_AddOns and _G.C_AddOns.LoadAddOn) or _G.LoadAddOn
+	return _G.C_Calendar ~= nil and load ~= nil
+end
+
+local function CalendarShown()
+	local f = _G.CalendarFrame
+	return f and f:IsShown() and true or false
+end
+
+--- Repaint the trunk when the calendar opens or shuts, however it was asked.
+local function WatchCalendar()
+	local f = _G.CalendarFrame
+	if not f or f.__latticeTrunk then return end
+	f.__latticeTrunk = true
+	local function paint() A.Trunk:Get("world"):Paint() end
+	f:HookScript("OnShow", paint)
+	f:HookScript("OnHide", paint)
+end
+
+local function OpenCalendar()
+	if not _G.CalendarFrame and InCombatLockdown() then
+		A:Print(A.Bad(L.trunk.calendar_combat))
+		return
+	end
+	if type(_G.ToggleCalendar) == "function" then
+		pcall(_G.ToggleCalendar)
+	else
+		local load = (_G.C_AddOns and _G.C_AddOns.LoadAddOn) or _G.LoadAddOn
+		if not _G.CalendarFrame and load then pcall(load, "Blizzard_Calendar") end
+		if _G.Calendar_Toggle then pcall(_G.Calendar_Toggle)
+		elseif _G.CalendarFrame then _G.CalendarFrame:Show() end
+	end
+	WatchCalendar()
+end
+
+local function CloseCalendar()
+	local f = _G.CalendarFrame
+	if not f then return end
+	if _G.Calendar_Hide then pcall(_G.Calendar_Hide) else f:Hide() end
 end
 
 function MM:OnEnable()
@@ -744,9 +799,20 @@ function MM:OnEnable()
 	self:AnchorAll()
 
 	A.Movers:Register("minimap", self.frame,
-		{ point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -24, y = -24 }, "Minimap")
+		{ point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -24, y = -24 }, "Minimap",
+		-- Dropped on the other half of the screen, the trunk's stubs turn round.
+		{ onPlaced = function() A.Trunk:Get("world"):Refresh() end })
 	A.Fader:Register(self.frame, {})
 	A.Fader:Register(self.pill, {})
+
+	A.Trunk:Get("world"):AddNode("calendar", {
+		icon = "calendar", label = L.trunk.calendar, order = 900,
+		available = CalendarAvailable,
+		isOpen = CalendarShown,
+		open = OpenCalendar,
+		close = CloseCalendar,
+	})
+	A.Trunk:Get("world"):SetRoot(self.pill)
 
 	for _, e in ipairs({
 		"ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
@@ -786,6 +852,7 @@ function MM:OnDisable()
 	A:UnregisterTicker(self)
 	if self._ticker then self._ticker:Cancel(); self._ticker = nil end
 	A.Movers:Unregister("minimap")
+	A.Trunk:Get("world"):SetRoot(nil)
 	if self.frame then
 		A.Fader:Unregister(self.frame)
 		A.Fader:Unregister(self.pill)
@@ -807,6 +874,7 @@ function MM:OnSkinChanged()
 	self.pill.coordW = FieldWidth(self.pill.coords, COORD_SAMPLE)
 	self.pill.clockW = FieldWidth(self.pill.clock, CLOCK_SAMPLE)
 	self:UpdateZone()
+	A.Trunk:Get("world"):Paint()
 end
 
 function MM:OnConfigChanged()

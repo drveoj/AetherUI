@@ -1,0 +1,279 @@
+--[[--------------------------------------------------------------------------
+	Lattice :: Trunk
+
+	A trunk is a strand down a screen edge with branch nodes on it (Lattice
+	handoff, "Trunks", boards 6a and 5b): the World trunk hangs from the
+	minimap's info pill, and the Toolbox trunk will be the same piece on the
+	other edge. Our own plain frames throughout - nothing on a trunk is
+	protected, so it can open, close and (later) retract in combat.
+
+	A node is a 24 px diamond holding a 14 px icon, with an 80 px stub toward
+	the centre of the screen and a label above the stub. Lit while its branch
+	is open. One branch open at a time per trunk: opening one closes the other.
+	A module adds a node and says how to open, close and tell whether it is
+	open; the trunk draws, lays out and lights.
+
+	    local t = A.Trunk:Get("world")
+	    t:SetRoot(pill)
+	    t:AddNode("questlog", { icon = "quests", label = L.trunk.questlog,
+	        order = 100, open = fn(node), close = fn(node), isOpen = fn(),
+	        available = fn() })
+----------------------------------------------------------------------------]]
+
+local ADDON, A = ...
+
+local W, Media, Palette = A.Widgets, A.Media, A.Palette
+local Trunk = { list = {} }
+A.Trunk = Trunk
+
+-- The handoff's numbers, in HUD units (a pixel at the fitted scale).
+local NODE, ICON, STEP, STUB = 24, 14, 72, 80
+local CAP, CAP_GAP, FIRST, LAST = 10, 30, 40, 36
+local JUNCTION = 11
+-- A label ends this far short of its node, over the stub.
+local LABEL_GAP = 8
+
+local Proto = {}
+Proto.__index = Proto
+
+--- The trunk called `name`, made on first ask.
+function Trunk:Get(name)
+	local t = Trunk.list[name]
+	if not t then
+		t = setmetatable({ name = name, nodes = {} }, Proto)
+		Trunk.list[name] = t
+	end
+	return t
+end
+
+-- ---------------------------------------------------------------------------
+-- drawing
+-- ---------------------------------------------------------------------------
+
+local function Build(t)
+	local f = CreateFrame("Frame", ADDON .. "Trunk" .. t.name, UIParent)
+	f:SetFrameStrata("MEDIUM")
+	f:SetSize(NODE, NODE)
+	f:Hide()
+	f.strand = f:CreateTexture(nil, "BACKGROUND")
+	f.strand:SetTexture(Media.texture.flat)
+	f.capTop = f:CreateTexture(nil, "ARTWORK")
+	f.capTop:SetTexture(Media.texture.diamond)
+	f.capBottom = f:CreateTexture(nil, "ARTWORK")
+	f.capBottom:SetTexture(Media.texture.diamond)
+	t.frame = f
+	if A.Fader then A.Fader:Register(f) end
+	return f
+end
+
+local function BuildNode(t, node)
+	local f = t.frame
+	local b = CreateFrame("Button", nil, f)
+	b:SetSize(NODE, NODE)
+	b:RegisterForClicks("LeftButtonUp")
+	b.glow = b:CreateTexture(nil, "BACKGROUND")
+	b.glow:SetTexture(Media.texture.glow)
+	b.glow:SetPoint("CENTER")
+	b.glow:SetSize(NODE * 2.2, NODE * 2.2)
+	b.fill = b:CreateTexture(nil, "ARTWORK")
+	b.fill:SetTexture(Media.texture.diamond)
+	b.fill:SetAllPoints(b)
+	b.rim = b:CreateTexture(nil, "ARTWORK", nil, 1)
+	b.rim:SetTexture(Media.texture.diamondRim)
+	b.rim:SetAllPoints(b)
+	b.icon = b:CreateTexture(nil, "OVERLAY")
+	b.icon:SetPoint("CENTER")
+	b.icon:SetSize(ICON, ICON)
+	b.stub = f:CreateTexture(nil, "BACKGROUND")
+	b.stub:SetTexture(Media.texture.flat)
+	b.junction = f:CreateTexture(nil, "ARTWORK")
+	b.junction:SetTexture(Media.texture.diamond)
+	b.junction:SetSize(JUNCTION, JUNCTION)
+	b.label = W.Text(f, "label", "RIGHT")
+	b:SetScript("OnClick", function() t:Toggle(node.key) end)
+	node.button = b
+	return b
+end
+
+--- Every node's lit or idle look, from its owner's isOpen.
+function Proto:Paint()
+	local f = self.frame
+	if not f then return end
+	local c = Palette.c
+	local a = c.accent
+	f.strand:SetVertexColor(a[1], a[2], a[3], 0.55)
+	W.Tint(f.capTop, a, 0.4)
+	W.Tint(f.capBottom, a, 0.4)
+	for _, node in ipairs(self.nodes) do
+		local b = node.button
+		if b then
+			local lit = node.isOpen and node.isOpen() and true or false
+			node.lit = lit
+			if lit then
+				W.Tint(b.fill, a, 1)
+				W.Tint(b.rim, a, 1)
+				b.icon:SetVertexColor(20 / 255, 16 / 255, 31 / 255, 1)
+				W.Tint(b.glow, a, 0.8)
+				b.glow:Show()
+				b.stub:SetVertexColor(a[1], a[2], a[3], 1)
+				W.Tint(b.junction, a, 1)
+				b.junction:Show()
+			else
+				-- Through W.Tint too, which drops the accent token the lit look
+				-- left on it: otherwise a skin change repaints an idle node lit.
+				W.Tint(b.fill, { 14 / 255, 11 / 255, 32 / 255 }, 0.85)
+				W.Tint(b.rim, a, 0.6)
+				b.icon:SetVertexColor(1, 1, 1, 0.8)
+				b.glow:Hide()
+				b.stub:SetVertexColor(a[1], a[2], a[3], 0.35)
+				b.junction:Hide()
+			end
+			b.stub:SetHeight(lit and 1.5 or 1)
+			W.Color(b.label, { a[1], a[2], a[3], 0.5 })
+		end
+	end
+end
+
+--- Which way the stubs point: toward the middle of the screen, from wherever
+--  the root is. -1 is left, as on the right-hand edge.
+function Proto:Side()
+	local r = self.root
+	-- From its edges, in UIParent units, as everything placed is measured.
+	local x = r and A.Movers.PointAt(r, "CENTER")
+	if not x then return -1 end
+	return (x > (UIParent:GetWidth() or 0) / 2) and -1 or 1
+end
+
+--- Lay the trunk out again: the nodes that are available, in order, 72 apart
+--  under the root, the strand between its two end-caps.
+function Proto:Refresh()
+	local f = self.frame or Build(self)
+	local r = self.root
+	if not (r and r:IsShown()) then
+		f:Hide()
+		return
+	end
+	f:SetScale(A.db.profile.scale or 1)
+	f:ClearAllPoints()
+	f:SetPoint("TOP", r, "BOTTOM", 0, -CAP_GAP)
+
+	local side = self:Side()
+	self.side = side
+	table.sort(self.nodes, function(x, y) return (x.order or 0) < (y.order or 0) end)
+	local y, shown = -CAP / 2 - FIRST, 0
+	for _, node in ipairs(self.nodes) do
+		local b = node.button or BuildNode(self, node)
+		local on = not node.available or node.available()
+		b:SetShown(on)
+		b.stub:SetShown(on)
+		b.label:SetShown(on)
+		if on then
+			shown = shown + 1
+			Media:SetIcon(b.icon, node.icon)
+			b:ClearAllPoints()
+			b:SetPoint("CENTER", f, "TOP", 0, y)
+			b.stub:ClearAllPoints()
+			b.stub:SetWidth(STUB)
+			if side < 0 then
+				b.stub:SetPoint("RIGHT", b, "LEFT", 0, 0)
+				b.junction:SetPoint("CENTER", b.stub, "LEFT", 0, 0)
+				b.label:SetJustifyH("RIGHT")
+				b.label:ClearAllPoints()
+				-- Close to its node, not out at the stub's far end as the board
+				-- has it: there it read as detached from the trunk (Joe, in game).
+				b.label:SetPoint("BOTTOMRIGHT", b.stub, "TOPRIGHT", -LABEL_GAP, 4)
+			else
+				b.stub:SetPoint("LEFT", b, "RIGHT", 0, 0)
+				b.junction:SetPoint("CENTER", b.stub, "RIGHT", 0, 0)
+				b.label:SetJustifyH("LEFT")
+				b.label:ClearAllPoints()
+				b.label:SetPoint("BOTTOMLEFT", b.stub, "TOPLEFT", LABEL_GAP, 4)
+			end
+			b.label:SetText(tostring(type(node.label) == "function" and node.label() or node.label or ""):upper())
+			node.y = y
+			y = y - STEP
+		else
+			b.junction:Hide()
+		end
+	end
+	local bottom = (shown > 0) and (y + STEP - LAST) or (-CAP / 2 - FIRST)
+	f.capTop:SetSize(CAP, CAP)
+	f.capTop:ClearAllPoints()
+	f.capTop:SetPoint("CENTER", f, "TOP", 0, -CAP / 2)
+	f.capBottom:SetSize(CAP, CAP)
+	f.capBottom:ClearAllPoints()
+	f.capBottom:SetPoint("CENTER", f, "TOP", 0, bottom)
+	f.strand:ClearAllPoints()
+	f.strand:SetWidth(1.5)
+	f.strand:SetPoint("TOP", f.capTop, "BOTTOM", 0, 0)
+	f.strand:SetPoint("BOTTOM", f.capBottom, "TOP", 0, 0)
+	f:SetHeight(-bottom + CAP / 2)
+	f:Show()
+	self:Paint()
+end
+
+-- ---------------------------------------------------------------------------
+-- nodes and branches
+-- ---------------------------------------------------------------------------
+
+--- The frame the trunk hangs from, or nil to take it down.
+function Proto:SetRoot(frame)
+	self.root = frame
+	self:Refresh()
+end
+
+--- Add, or replace, a node. opts: icon, label (text or function), order,
+--  open(node), close(node), isOpen(), available().
+function Proto:AddNode(key, opts)
+	local node
+	for _, n in ipairs(self.nodes) do
+		if n.key == key then node = n end
+	end
+	if not node then
+		node = { key = key }
+		self.nodes[#self.nodes + 1] = node
+	end
+	for k, v in pairs(opts) do node[k] = v end
+	if self.frame then self:Refresh() end
+	return node
+end
+
+function Proto:Node(key)
+	for _, n in ipairs(self.nodes) do
+		if n.key == key then return n end
+	end
+end
+
+--- Open a node's branch, closing whichever other one is open; or close it
+--  if it is the open one.
+function Proto:Toggle(key)
+	local node = self:Node(key)
+	if not node then return end
+	if node.isOpen and node.isOpen() then
+		if node.close then node.close(node) end
+	else
+		for _, other in ipairs(self.nodes) do
+			if other ~= node and other.isOpen and other.isOpen() and other.close then
+				other.close(other)
+			end
+		end
+		if node.open then node.open(node) end
+	end
+	self:Paint()
+end
+
+--- Put a branch panel beside a node: its trunk-side edge at the stub's end,
+--  centred on the node, kept on the screen.
+function Proto:Place(key, panel)
+	local node = self:Node(key)
+	local b = node and node.button
+	if not (b and b:IsShown() and panel) then return false end
+	panel:ClearAllPoints()
+	if (self.side or -1) < 0 then
+		panel:SetPoint("RIGHT", b.stub, "LEFT", -JUNCTION / 2, 0)
+	else
+		panel:SetPoint("LEFT", b.stub, "RIGHT", JUNCTION / 2, 0)
+	end
+	if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
+	return true
+end

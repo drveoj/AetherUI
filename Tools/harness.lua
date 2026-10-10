@@ -7493,7 +7493,7 @@ local FILES = {
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Braids.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
-	"Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
+	"Core/Trunk.lua", "Core/Nav.lua", "Core/Launchers.lua", "Core/SkinSwatches.lua",
 	"Core/Commands.lua", "Core/Options.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
@@ -19128,6 +19128,130 @@ do
 	UIParent:SetSize(H.was.w, H.was.h)
 	UIParent.__geom = nil
 	A.db.profile.scale = H.was.ui
+	wipe(A.db.profile.anchors)
+	A:Reconfigure()
+end
+
+print("== world trunk ==")
+do
+	-- LATTICE 6a: a strand hanging from the minimap's pill, with branch nodes
+	-- on it - 24 px diamonds 72 apart, an 80 px stub toward the screen's centre
+	-- and a label over it; one branch open at a time.
+	local T = { M = A.Movers, MM = A:GetModule("minimap"), QL = A:GetModule("questlog") }
+	T.t = A.Trunk:Get("world")
+	function T.near(a, b, tol) return a and b and math.abs(a - b) <= (tol or 0.5) end
+	function T.say(...)
+		local out = {}
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			out[#out + 1] = type(v) == "number" and ("%.1f"):format(v) or tostring(v)
+		end
+		return " (" .. table.concat(out, ", ") .. ")"
+	end
+	T.was = { ui = A.db.profile.scale, w = UIParent:GetWidth(), h = UIParent:GetHeight() }
+	UIParent:SetSize(1920, 1080)
+	UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+	A.db.profile.scale = 1
+	wipe(A.db.profile.anchors)
+	A:Reconfigure()
+	T.f = T.t.frame
+	T.q = T.t:Node("questlog")
+
+	-- 1. It hangs from the pill, its nodes in order down it.
+	check(T.f and T.f:IsShown() and T.t.root == T.MM.pill, "the World trunk hangs from the minimap's pill")
+	T.pb = select(2, T.M.PointAt(T.MM.pill, "BOTTOM"))
+	T.ft = select(2, T.M.PointAt(T.f, "TOP"))
+	check(T.near(T.pb - T.ft, 30), "its top end-cap 30 under the pill" .. T.say(T.pb - T.ft))
+	check(T.q and T.q.button:IsShown() and T.near(select(2, T.M.PointAt(T.f, "TOP"))
+		- select(2, T.M.PointAt(T.q.button, "CENTER")), 45),
+		"the Quest Log node first, 40 under the cap" .. T.say(T.q and T.q.y))
+	check(T.q.button.label:GetText() == "QUEST LOG", "labelled in capitals" .. T.say(T.q.button.label:GetText()))
+	T.lr = T.M.PointAt(T.q.button.label, "RIGHT")
+	T.nl = T.M.PointAt(T.q.button, "LEFT")
+	check(T.near(T.nl - T.lr, 8), "its label ends 8 short of the node, close to the trunk (Joe)"
+		.. T.say(T.nl - T.lr))
+	T.c = T.t:Node("calendar")
+	check(T.c and not T.c.button:IsShown(), "no calendar node on a client without one")
+	check(T.f:GetScale() == A.db.profile.scale, "at the HUD's scale")
+
+	-- 2. The stub runs toward the centre: left, on the right-hand edge.
+	T.sx = T.M.PointAt(T.q.button.stub, "LEFT")
+	T.bx = T.M.PointAt(T.q.button, "LEFT")
+	T.px = T.M.PointAt(T.MM.pill, "CENTER")
+	check(T.t.side == -1 and T.near(T.bx - T.sx, 80),
+		"on the right-hand edge its stub runs 80 left, toward the centre"
+		.. T.say(T.t.side, T.bx - T.sx, T.px, T.MM.pill:GetCenter()))
+
+	-- 3. The Quest Log opens as its branch, beside the stub, and lights it.
+	T.q.button:GetScript("OnClick")(T.q.button)
+	T.win = T.QL.win
+	T.wr, T.wy = T.M.PointAt(T.win, "RIGHT")
+	T.ny = select(2, T.M.PointAt(T.q.button, "CENTER"))
+	check(T.win:IsShown() and T.near(T.wr, T.sx - 5.5) and T.near(T.wy, T.ny),
+		"clicked, the log opens with its edge at the stub's end, level with the node"
+		.. T.say(T.wr, T.sx - 5.5, T.wy, T.ny))
+	check(T.q.lit and T.q.button.glow:IsShown() and T.q.button.junction:IsShown(),
+		"and the node is lit, a junction at the stub's end")
+	T.q.button:GetScript("OnClick")(T.q.button)
+	check(not T.win:IsShown() and not T.q.lit and not T.q.button.glow:IsShown(),
+		"clicked again, the log closes and the node goes idle")
+	-- However it is opened: the L key goes through QL:Toggle.
+	T.win:ClearAllPoints()
+	T.win:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	T.QL:Toggle()
+	T.wr = T.M.PointAt(T.win, "RIGHT")
+	check(T.win:IsShown() and T.near(T.wr, T.sx - 5.5) and T.q.lit,
+		"opened by the L key it is still the node's branch, lit" .. T.say(T.wr))
+
+	-- 4. One branch at a time: the calendar, on a client that has one.
+	_G.CalendarFrame = CreateFrame("Frame", "CalendarFrame", UIParent)
+	_G.CalendarFrame:Hide()
+	_G.ToggleCalendar = function() _G.CalendarFrame:SetShown(not _G.CalendarFrame:IsShown()) end
+	T.t:Refresh()
+	check(T.c.button:IsShown() and select(2, T.M.PointAt(T.c.button, "CENTER"))
+		< select(2, T.M.PointAt(T.q.button, "CENTER")) - 71,
+		"a client with a calendar gets its node, below the Quest Log")
+	T.c.button:GetScript("OnClick")(T.c.button)
+	check(_G.CalendarFrame:IsShown() and not T.win:IsShown() and T.c.lit and not T.q.lit,
+		"opening the calendar closes the log: one branch at a time")
+	T.c.button:GetScript("OnClick")(T.c.button)
+	check(not _G.CalendarFrame:IsShown() and not T.c.lit, "and clicked again it closes")
+	-- Never loaded for the first time in a fight. ToggleCalendar loads it, as
+	-- the client's does, so only the guard can keep it unloaded.
+	_G.CalendarFrame = nil
+	_G.ToggleCalendar = function()
+		_G.CalendarFrame = _G.CalendarFrame or CreateFrame("Frame", "CalendarFrame", UIParent)
+		_G.CalendarFrame:Show()
+	end
+	_G.__inCombat = true
+	T.c.button:GetScript("OnClick")(T.c.button)
+	_G.__inCombat = false
+	check(_G.CalendarFrame == nil, "the calendar is not loaded in combat")
+	_G.ToggleCalendar = nil
+
+	-- 5. Dropped on the left half, the stubs turn round.
+	T.MM.frame:ClearAllPoints()
+	T.MM.frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 24, -24)
+	T.t:Refresh()
+	T.sx = T.M.PointAt(T.q.button.stub, "RIGHT")
+	T.bx = T.M.PointAt(T.q.button, "RIGHT")
+	check(T.t.side == 1 and T.near(T.sx - T.bx, 80), "on the left half its stubs run right"
+		.. T.say(T.t.side, T.sx - T.bx))
+
+	-- 6. No map, no trunk; the log off, no node.
+	A:SetModuleEnabled("questlog", false)
+	check(not T.q.button:IsShown(), "the quest log switched off takes its node with it")
+	A:SetModuleEnabled("questlog", true)
+	A:SetModuleEnabled("minimap", false)
+	check(not T.f:IsShown(), "and the minimap switched off takes the trunk")
+	A:SetModuleEnabled("minimap", true)
+	check(T.f:IsShown() and T.q.button:IsShown(), "both back, the trunk and its node are back")
+
+	-- Back as it was.
+	T.QL:Hide()
+	UIParent:SetSize(T.was.w, T.was.h)
+	UIParent.__geom = nil
+	A.db.profile.scale = T.was.ui
 	wipe(A.db.profile.anchors)
 	A:Reconfigure()
 end

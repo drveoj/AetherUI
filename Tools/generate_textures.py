@@ -1131,6 +1131,8 @@ ICON_ORDER = [
     # mirrored by its texture coordinates, which is a swap of two numbers
     # rather than a second cell that has to agree about what an arrow is.
     "rotate",
+    # the World trunk's calendar node
+    "calendar",
 ]
 
 
@@ -1531,6 +1533,14 @@ def _glyph(name, cell):
         crease = np.minimum(seg(x0, y0, (x0 + x1) / 2, y0 + 36),
                             seg(x1, y0, (x0 + x1) / 2, y0 + 36))
         return np.maximum(body, CARVE - crease)
+
+    if name == "calendar":
+        # A page with a header band, two binder rings standing proud of it, and
+        # one day filled in: the filled square is what says "a date" rather
+        # than "a form" at 14px.
+        day = box(54, 68, 74, 88) + ICON_STROKE / 2
+        return U(rect(24, 32, 104, 104), seg(24, 52, 104, 52),
+                 seg(46, 20, 46, 40), seg(82, 20, 82, 40), day)
 
     return INF
 
