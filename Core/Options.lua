@@ -701,6 +701,31 @@ local function BarPages()
 				local cols, rows = AB:ShapeOf(id)
 				return (down() and rows or cols) or 1
 			end
+			-- SIZE (strands brief): the button as drawn, as one of three, by the
+			-- strand's scale - base size times scale is the px, and the scale
+			-- carries the gaps with it. A braided strand is drawn at its root's
+			-- size, so it has none of its own to set.
+			local name = "bar" .. id
+			local function base()
+				return barCfg.size or A.Config:Module("actionbars").size or 36
+			end
+			local function braided() return A.Braids and A.Braids:HostOf(name) ~= nil end
+			args.size = choice(L.options.bar_pages.size.name, L.options.bar_pages.size.desc,
+				at("scale"), { [44] = "44 px", [34] = "34 px", [28] = "28 px" })
+			args.size.get = function()
+				local px = base() * (barCfg.scale or 1)
+				for _, v in ipairs({ 44, 34, 28 }) do
+					if math.abs(px - v) < 0.5 then return v end
+				end
+			end
+			args.size.set = function(_, v)
+				barCfg.scale = v / base()
+				A:Reconfigure()
+			end
+			args.size.disabled = braided
+			args.unbraid = action(L.options.bar_pages.unbraid.name, L.options.bar_pages.unbraid.desc,
+				function() A.Braids:Leave(name) end)
+			args.unbraid.disabled = function() return not braided() end
 			args.line.set = function(_, v)
 				if down() then AB:SetShape(id, nil, v) else AB:SetShape(id, v, nil) end
 			end

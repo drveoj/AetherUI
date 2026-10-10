@@ -625,10 +625,18 @@ L["options.bar_pages.line.desc"] =
 		.. "while unlocked."
 L["options.bar_pages.line.per_column"] = "Buttons per column"
 L["options.bar_pages.line.per_row"] = "Buttons per row"
+L["options.bar_pages.size.desc"] =
+	"How big its buttons are drawn. Joined to another strand, it takes "
+		.. "that strand's size."
+L["options.bar_pages.size.name"] = "Size"
 L["options.bar_pages.stance_paging.name"] = "Swap with stance, stealth and forms"
 L["options.bar_pages.stance_paging.desc"] =
 	"Stealth, a druid form or a warrior stance swaps this bar to that form's "
 		.. "own buttons, as the game's main bar does. Off keeps it on its page."
+L["options.bar_pages.unbraid.desc"] =
+	"Takes this strand out of the block it is joined to. It stays where it "
+		.. "is, with its own size and glass again."
+L["options.bar_pages.unbraid.name"] = "Unbraid"
 L["options.bar_pages.visible.desc"] =
 	"Off hides it. In unlock it waits as an outline along the bottom of the "
 		.. "screen: click it to bring it back."

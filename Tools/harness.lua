@@ -16871,6 +16871,46 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	A.Options:Close()
 end)
 
+section("options window: a strand's page has Size and Unbraid", function()
+	local OW, f = OpenMap()
+	Click(MapNode("bar2").button)
+	OW:Finish()
+	local function Row(key)
+		for _, r in ipairs(OW.view.rows) do
+			if r.node == OW:Subs(OW.page)[OW.sub].group.args[key] then return r end
+		end
+	end
+	local cfg = A:GetModule("actionbars"):BarConfig("2")
+	local base = cfg.size or A.Config:Module("actionbars").size or 36
+	local was = cfg.scale
+	local size = Row("size")
+	check(size and size.opts and #size.opts == 3, "Size is three nodes on a strand: 44, 34 and 28")
+	local b34
+	for _, o in ipairs(size.opts) do if o.key == 34 then b34 = o end end
+	Click(b34)
+	check(math.abs(base * cfg.scale - 34) < 0.01 and b34.on,
+		"34 draws the buttons 34 across (" .. string.format("%.2f", base * cfg.scale) .. ")")
+	cfg.scale = was
+
+	local wasOn, host = cfg.enabled, A.Braids:HostOf("bar2")
+	cfg.enabled = true
+	A:Reconfigure()
+	if host then A.Braids:Leave("bar2") end
+	OW:AfterWrite()
+	local unbraid = Row("unbraid")
+	check(unbraid and unbraid.disabled, "Unbraid is dimmed on a strand in no braid")
+	check(A.Braids:Join("bar2", "bar1", "RIGHT", 0), "braided onto bar 1 for the test")
+	OW:AfterWrite()
+	check(not unbraid.disabled and size.disabled,
+		"braided, Unbraid comes up and Size goes: it takes its root's size")
+	Click(unbraid.button)
+	check(A.Braids:HostOf("bar2") == nil, "and Unbraid takes it out of the braid")
+	if host then A.Braids:Join("bar2", host, "RIGHT", 0) end
+	cfg.enabled = wasOn
+	A:Reconfigure()
+	A.Options:Close()
+end)
+
 section("options window: search lights the nodes and lands on the row", function()
 	local OW, f = OpenMap()
 	local box = f.head.search.box
