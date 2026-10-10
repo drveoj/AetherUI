@@ -722,9 +722,63 @@ local function ButtonSize(bar)
 	return math.max(16, math.floor((DrawCfg(bar).size or A.Config:Module("actionbars").size) + 0.5))
 end
 
---- Rows is the honest control and columns fall out of it. "Three rows of ten"
---  giving 4/4/2 is what people mean; "four columns of ten" gives the same shape
---  but makes you do the arithmetic first.
+--- The strand's wrap: "down" or "across".
+local function WrapOf(bar)
+	return bar.cfg.wrap == "down" and "down" or "across"
+end
+
+--- The column and row of cell `i` (from 0) in a cols x rows shape. Down fills
+--  each column before the next, so keys stay in reading order (strands brief).
+local function Cell(i, cols, rows, wrap)
+	if wrap == "down" then return math.floor(i / rows), i % rows end
+	return i % cols, math.floor(i / cols)
+end
+
+--- The cells past the buttons, drawn dashed while unlocked so the shape can be
+--  seen (strands brief 9b; in unlock only, Joe 2026-10-10). On a plain frame
+--  of their own: nothing on it is secure, and it is only placed out of combat.
+local function LayBlanks(bar, cols, rows, n, size, gap, wrap)
+	local f = bar.blanks
+	if not f then
+		f = CreateFrame("Frame", nil, bar.dock)
+		f:SetAllPoints(bar.header)
+		f:SetFrameLevel(bar.header:GetFrameLevel() + 1)
+		f.fills, f.dashes = {}, {}
+		bar.blanks = f
+	end
+	local c = Palette.c.accent
+	local h = rows * size + (rows - 1) * gap
+	local k = 0
+	for i = n, cols * rows - 1 do
+		k = k + 1
+		local col, row = Cell(i, cols, rows, wrap)
+		local l, t = col * (size + gap), h - row * (size + gap)
+		local fill = f.fills[k] or f:CreateTexture(nil, "BACKGROUND")
+		f.fills[k] = fill
+		fill:SetColorTexture(1, 1, 1, 0.05)
+		fill:ClearAllPoints()
+		fill:SetPoint("TOPLEFT", f, "BOTTOMLEFT", l, t)
+		fill:SetSize(size, size)
+		fill:Show()
+	end
+	for i = k + 1, #f.fills do f.fills[i]:Hide() end
+
+	local d = 0
+	for i = n, cols * rows - 1 do
+		local col, row = Cell(i, cols, rows, wrap)
+		local l, t = col * (size + gap), h - row * (size + gap)
+		local r, b = l + size, t - size
+		for _, e in ipairs({ { l, t, r, t }, { r, t, r, b }, { r, b, l, b }, { l, b, l, t } }) do
+			d = A.Movers.Dash(f, f.dashes, d, e[1], e[2], e[3], e[4], c, 1,
+				{ rel = f, alpha = 0.3, dash = 3, gap = 3 })
+		end
+	end
+	for i = d + 1, #f.dashes do f.dashes[i]:Hide() end
+	f.count = k
+	f:SetShown(k > 0 and A.Movers.unlocked)
+end
+
+--- A strand laid out in its shape: cols x rows with a wrap (Layout.Fit).
 local function LayoutBar(bar)
 	local cfg = A.Config:Module("actionbars")
 	local n = ShownCount(bar)
@@ -735,20 +789,19 @@ local function LayoutBar(bar)
 		local size = ButtonSize(bar)
 		bar.dock:SetSize(size + cfg.padding * 2, size + cfg.padding * 2)
 		bar.rows, bar.cols = 0, 0
+		if bar.blanks then bar.blanks:Hide(); bar.blanks.count = 0 end
 		return
 	end
 
-	local rows = math.max(1, math.min(bar.cfg.rows or 1, n))
-	local cols = math.ceil(n / rows)
-	rows = math.ceil(n / cols)
+	local wrap = WrapOf(bar)
+	local cols, rows = A.Layout.Fit(n, bar.cfg.cols, bar.cfg.rows, wrap)
 
 	local size = ButtonSize(bar)
 	local gap, pad = cfg.spacing, cfg.padding
 
 	for i = 1, n do
 		local b = bar.buttons[i]
-		local col = (i - 1) % cols
-		local row = math.floor((i - 1) / cols)
+		local col, row = Cell(i - 1, cols, rows, wrap)
 		-- An adopted Blizzard button is protected; moving it mid-fight is not
 		-- ours to do. It keeps its last position until the fight ends.
 		if not (b.__aetherAdopted and InCombatLockdown()) then
@@ -766,6 +819,7 @@ local function LayoutBar(bar)
 	bar.header:ClearAllPoints()
 	bar.header:SetPoint("CENTER", bar.dock, "CENTER", 0, 0)
 	bar.rows, bar.cols = rows, cols
+	LayBlanks(bar, cols, rows, n, size, gap, wrap)
 end
 
 --- Blizzard buttons we host rather than replace.
@@ -1872,7 +1926,8 @@ local function StrandRows(bar, cols, rows)
 	local out = {}
 	cols, rows = cols or bar.cols, rows or bar.rows
 	if cols and cols > 0 then
-		out[#out + 1] = { L.movers.inspector.shape, A.F(L.movers.inspector.shape_cr, cols, rows) }
+		out[#out + 1] = { L.movers.inspector.shape, A.F(L.movers.inspector.shape_wrap, cols, rows,
+			WrapOf(bar) == "down" and L.movers.inspector.wrap_down or L.movers.inspector.wrap_across) }
 	end
 	out[#out + 1] = { L.movers.inspector.size,
 		A.F(L.movers.inspector.size_px, math.floor((AB:ButtonPx(bar.id) or 0) + 0.5)) }
@@ -1895,15 +1950,14 @@ local function Shapes(bar)
 	local cfg = A.Config:Module("actionbars")
 	local size, gap, pad = ButtonSize(bar), cfg.spacing, cfg.padding
 	local k = (bar.dock:GetEffectiveScale() or 1) / (UIParent:GetEffectiveScale() or 1)
-	local out, seen = {}, {}
-	for r = 1, n do
-		local cols, rows = A.Layout.Fit(n, r)
-		if not seen[cols] then
-			seen[cols] = true
-			out[#out + 1] = { cols = cols, rows = rows,
-				w = (cols * size + (cols - 1) * gap + pad * 2) * k,
-				h = (rows * size + (rows - 1) * gap + pad * 2) * k }
-		end
+	-- Every length of line in the strand's wrap, the uneven ones included: a
+	-- row of 5 over 12 buttons is 5 x 3 with three blanks.
+	local wrap, out = WrapOf(bar), {}
+	for len = 1, n do
+		local cols, rows = A.Layout.Fit(n, len, len, wrap)
+		out[#out + 1] = { cols = cols, rows = rows,
+			w = (cols * size + (cols - 1) * gap + pad * 2) * k,
+			h = (rows * size + (rows - 1) * gap + pad * 2) * k }
 	end
 	return out
 end
@@ -1913,7 +1967,7 @@ local function MoverOpts(bar)
 		rows = function(cols, rows) return StrandRows(bar, cols, rows) end,
 		reshape = bar.kind ~= "extra" and {
 			shapes = function() return Shapes(bar) end,
-			apply = function(rows) return AB:Reshape(bar.id, rows) end,
+			apply = function(cols, rows) return AB:SetShape(bar.id, cols, rows) end,
 		} or nil }
 end
 
@@ -1965,6 +2019,12 @@ function AB:OnEnable()
 	self:OnConfigChanged()
 	self:RegisterEvents()
 	A:RegisterTicker(self, Tick)
+	-- The blanks show the shape while it is being placed, and only then.
+	A.Movers:OnLockChanged("actionbars.blanks", function(on)
+		for _, bar in ipairs(AB.bars) do
+			if bar.blanks then bar.blanks:SetShown(on and (bar.blanks.count or 0) > 0) end
+		end
+	end)
 
 	self:HideBlizzard()
 	self:ApplyBindings()
@@ -2305,14 +2365,40 @@ function AB:SetBarEnabled(id, on)
 	return true
 end
 
---- Lay a strand out in a new number of rows, from the shape handle. Out of
---  combat only: its buttons are secure.
-function AB:Reshape(id, rows)
+--- A strand's config and the buttons it shows: the live bar's, or the
+--  config's own count for a bar that is switched off.
+local function StrandParts(id)
 	local bar = BarNamed("bar" .. tostring(id))
-	if not bar or bar.kind == "extra" or InCombatLockdown() then return false end
-	bar.cfg.rows = rows
+	if bar then return bar.cfg, ShownCount(bar), bar end
+	local cfg = AB:BarConfig(id)
+	if cfg then return cfg, SlotCount(cfg) end
+end
+
+--- A strand's shape now, fitted to the buttons it shows: cols, rows, wrap.
+function AB:ShapeOf(id)
+	local cfg, n = StrandParts(id)
+	if not cfg then return nil end
+	local wrap = cfg.wrap == "down" and "down" or "across"
+	local cols, rows = A.Layout.Fit(n, cfg.cols, cfg.rows, wrap)
+	return cols, rows, wrap
+end
+
+--- Lay a strand out in a new shape: from the shape handle, the options, the
+--  command. The wrap's line length is what counts (Layout.Fit); both are
+--  stored as fitted, so either wrap reads the shape back. `wrap` nil keeps
+--  the strand's. Out of combat only: its buttons are secure.
+function AB:SetShape(id, cols, rows, wrap)
+	local cfg, n = StrandParts(id)
+	if not cfg or cfg.kind == "extra" or InCombatLockdown() then return false end
+	wrap = wrap or (cfg.wrap == "down" and "down" or "across")
+	cols, rows = A.Layout.Fit(n, cols, rows, wrap)
+	-- One whole line is kept as one line however many buttons come: a druid's
+	-- row of two forms stays a row at three, rather than wrapping.
+	if wrap == "across" and cols >= n then cols = 12 end
+	if wrap == "down" and rows >= n then rows = 12 end
+	cfg.cols, cfg.rows, cfg.wrap = cols, rows, wrap
 	AB:OnConfigChanged()
-	-- So an open options window shows the new rows.
+	-- So an open options window shows the new shape.
 	if A.Options and A.Options.Refresh then A.Options:Refresh() end
 	return true
 end

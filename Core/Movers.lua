@@ -863,29 +863,34 @@ end
 
 Movers.__feedback = function() return feedback end
 
---- Dashes from one point to another in UIParent units, out of short Lines
---  taken from `pool` after its first `n`: a Line cannot be dashed itself.
---  Returns how many of the pool are now in use.
-local function Dash(f, pool, n, x1, y1, x2, y2, c, thick)
+--- Dashes from one point to another, out of short Lines on `f` taken from
+--  `pool` after its first `n`: a Line cannot be dashed itself. Points are from
+--  the bottom-left of opts.rel (UIParent unless given), in its units.
+--  opts: rel, alpha (1), dash and gap (4 and 6 field units). Returns how many
+--  of the pool are now in use.
+local function Dash(f, pool, n, x1, y1, x2, y2, c, thick, opts)
+	opts = opts or {}
 	local dx, dy = x2 - x1, y2 - y1
 	local len = math.sqrt(dx * dx + dy * dy)
 	if len <= 0 then return n end
 	local ux, uy = dx / len, dy / len
-	local dash, gap, t, stop = Px(4), Px(6), 0, n + 400
+	local rel, a = opts.rel or UIParent, opts.alpha or 1
+	local dash, gap, t, stop = opts.dash or Px(4), opts.gap or Px(6), 0, n + 400
 	while t < len and n < stop do
 		n = n + 1
 		local l = pool[n] or f:CreateLine(nil, "ARTWORK")
 		pool[n] = l
 		local e = math.min(t + dash, len)
-		l:SetStartPoint("BOTTOMLEFT", UIParent, x1 + ux * t, y1 + uy * t)
-		l:SetEndPoint("BOTTOMLEFT", UIParent, x1 + ux * e, y1 + uy * e)
+		l:SetStartPoint("BOTTOMLEFT", rel, x1 + ux * t, y1 + uy * t)
+		l:SetEndPoint("BOTTOMLEFT", rel, x1 + ux * e, y1 + uy * e)
 		l:SetThickness(thick)
-		l:SetColorTexture(c[1], c[2], c[3], 1)
+		l:SetColorTexture(c[1], c[2], c[3], a)
 		l:Show()
 		t = e + gap
 	end
 	return n
 end
+Movers.Dash = Dash
 
 --- A dashed line between two points in UIParent units. With no points it clears.
 local function DashedLine(x1, y1, x2, y2, c)
@@ -1283,8 +1288,9 @@ local function CreateGrip(entry, h)
 		ShowGhost(nil)
 		ShowInspector(nil)
 		Tint(self.tex, A.Palette.c.accent, 1)
-		if not (commit and rs and rs.pick) or rs.pick.cols == rs.cols then return end
-		if entry.reshape.apply(rs.pick.rows) then
+		if not (commit and rs and rs.pick) then return end
+		if rs.pick.cols == rs.cols and rs.pick.rows == rs.rows then return end
+		if entry.reshape.apply(rs.pick.cols, rs.pick.rows) then
 			-- Its bond is unchanged; only the screen half of the records moves.
 			if A.db.profile.anchors[entry.name] then SavePosition(entry, true) end
 			SaveDescendants(entry.name)
@@ -1316,8 +1322,8 @@ local function CreateGrip(entry, h)
 		local l, b = PointAt(entry.frame, "BOTTOMLEFT")
 		local r, t = PointAt(entry.frame, "TOPRIGHT")
 		if #shapes < 2 or not l then return end
-		self._reshape = { shapes = shapes, l = l, t = t,
-			cols = NearestShape(shapes, r - l, t - b).cols }
+		local now = NearestShape(shapes, r - l, t - b)
+		self._reshape = { shapes = shapes, l = l, t = t, cols = now.cols, rows = now.rows }
 		Tint(self.tex, A.Palette.c.friendly, 1)
 		self:SetScript("OnUpdate", Track)
 	end)
@@ -1616,7 +1622,7 @@ end
 --    rows = function(cols, rows)
 --                          the node's own inspector rows; cols and rows are a
 --                          reshape's preview when one is being dragged.
---    reshape = { shapes = fn, apply = fn(rows) }
+--    reshape = { shapes = fn, apply = fn(cols, rows) }
 --                          a strand with a shape handle. shapes() lists
 --                          { cols, rows, w, h } in UIParent units.
 

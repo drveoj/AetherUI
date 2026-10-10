@@ -450,11 +450,14 @@ L["movers.inspector.scale"] = "Scale"
 L["movers.inspector.screen"] = "Screen"
 L["movers.inspector.shape"] = "Shape"
 L["movers.inspector.shape_cr"] = "%d × %d"
+L["movers.inspector.shape_wrap"] = "%d × %d · %s"
 L["movers.inspector.size"] = "Size"
 L["movers.inspector.size_px"] = "%d px"
 L["movers.inspector.spine"] = "Spine"
 L["movers.inspector.two_ways"] = "%s and %s"
 L["movers.inspector.up"] = "Up"
+L["movers.inspector.wrap_across"] = "across"
+L["movers.inspector.wrap_down"] = "down"
 
 L["movers.lock.frames_locked"] = "frames locked."
 
@@ -595,12 +598,21 @@ L["options.bar_pages.keys.desc"] = "The key bound to each button, at its top lef
 L["options.bar_pages.keys.name"] = "Key chips"
 L["options.bar_pages.page"] = "Page"
 L["options.bar_pages.rest.name"] = "At rest"
-L["options.bar_pages.rows.desc"] = "Columns fall out of this."
-L["options.bar_pages.rows.name"] = "Rows"
+L["options.bar_pages.line.desc"] =
+	"Where the buttons don't fill the last line, the gaps show as dashed squares "
+		.. "while unlocked."
+L["options.bar_pages.line.per_column"] = "Buttons per column"
+L["options.bar_pages.line.per_row"] = "Buttons per row"
 L["options.bar_pages.stance_paging.name"] = "Swap with stance, stealth and forms"
 L["options.bar_pages.stance_paging.desc"] =
 	"Stealth, a druid form or a warrior stance swaps this bar to that form's "
 		.. "own buttons, as the game's main bar does. Off keeps it on its page."
+L["options.bar_pages.wrap.across"] = "Across"
+L["options.bar_pages.wrap.desc"] =
+	"Which way the buttons run: along each row, or down each column. Keys follow "
+		.. "the same order."
+L["options.bar_pages.wrap.down"] = "Down"
+L["options.bar_pages.wrap.name"] = "Wrap"
 
 L["options.changelog.major_minor_build"] = "major.minor.build"
 L["options.changelog.numbering_s_major_release"] =

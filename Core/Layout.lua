@@ -37,10 +37,16 @@
 	            button SIZE in px, as it is drawn - the strands brief's seeds are
 	            parents and shapes, and a string without them cannot say one.
 	            Not the extra-action button: it is one button.
+	  barN=...,CxR,px,down
+	            a bar whose buttons run down its columns rather than across its
+	            rows. Without it, C is the row length; with it, R is the column
+	            length - the line that keeps its length when the button count
+	            changes (Fit). Cells past the button count are blanks.
 	  barN=...,CxR,px,braidS
 	            a bar braided onto the bar it hangs from, S buttons along its
 	            edge (left off for 0). Its x, y are written but not obeyed: the
-	            seat follows from the sizes (Core/Braids.lua).
+	            seat follows from the sizes (Core/Braids.lua). After `down`
+	            where both are written; either order reads.
 	  chat=parent,point,relPoint,x,y,WxH
 	            the chat window adds its SIZE. It is the one node whose size is
 	            the player's to set, and a layout that placed it without its size
@@ -249,14 +255,22 @@ local function BarParts(id)
 	return cfg, n, base
 end
 
---- The cols and rows n buttons are drawn in when asked for `rows` - the way
---  LayoutBar fits them, so a stored rows of 12 on three forms is a column of 3.
-local function Fit(n, rows)
+--- The cols and rows n buttons are drawn in (strands brief: cols x rows with a
+--  wrap). The line in the wrap's direction keeps its length as n changes:
+--  across keeps cols, down keeps rows, and the other falls out, so a stance
+--  bar written as a column of 12 is a column of 3 on three forms. Cells past
+--  n are blanks; a wholly empty row or column is never made. A config from
+--  before cols has only rows, and asks for that many rows.
+local function Fit(n, cols, rows, wrap)
 	-- A bar with nothing showing - a class with no forms - is drawn as one
 	-- button's worth to aim at (LayoutBar), so it has a shape of one.
 	n = math.max(1, n or 1)
-	rows = math.max(1, math.min(rows or 1, n))
-	local cols = math.ceil(n / rows)
+	local function clamp(v) return math.max(1, math.min(v, n)) end
+	if wrap == "down" then
+		rows = clamp(rows or math.ceil(n / clamp(cols or 1)))
+		return math.ceil(n / rows), rows
+	end
+	cols = clamp(cols or math.ceil(n / clamp(rows or 1)))
 	return cols, math.ceil(n / cols)
 end
 Layout.Fit = Fit
@@ -289,15 +303,16 @@ local function Glass(name, point)
 	return dx, dy
 end
 
---- The shape a bar is drawn in, and its button px, now. A braided bar is
---  drawn at its braid root's size, so that is its px.
+--- The shape a bar is drawn in, its button px and its wrap, now. A braided
+--  bar is drawn at its braid root's size, so that is its px.
 local function BarShape(id)
 	local cfg, n, base = BarParts(id)
 	if not cfg then return nil end
-	local cols, rows = Fit(n, cfg.rows)
+	local wrap = cfg.wrap == "down" and "down" or "across"
+	local cols, rows = Fit(n, cfg.cols, cfg.rows, wrap)
 	local AB = A.GetModule and A:GetModule("actionbars")
 	local px = AB and AB.ButtonPx and AB:ButtonPx(id) or base * (cfg.scale or 1)
-	return cols, rows, round(px)
+	return cols, rows, round(px), wrap
 end
 Layout.BarShape = BarShape
 
@@ -419,9 +434,11 @@ function Layout:Encode()
 		if rec then
 			local id = BarId(name)
 			if id then
-				local cols, rows, px = BarShape(id)
+				local cols, rows, px, wrap = BarShape(id)
 				if cols then
 					rec = rec .. (",%dx%d,%d"):format(cols, rows, px)
+					-- Down, said; across is what a shape means without it.
+					if wrap == "down" then rec = rec .. ",down" end
 					-- A braid: the slot along its host's edge, left off when 0.
 					local slot = a and lat and not a.free and a.braid
 					if slot then rec = rec .. ",braid" .. (slot ~= 0 and tostring(slot) or "") end
@@ -479,11 +496,12 @@ function Layout:Decode(text)
 				local p = {}
 				for x in (v .. ","):gmatch("([^,]*),") do p[#p + 1] = x end
 
-				-- parent,point,relPoint,x,y - and for a bar, CxR,px after it -
-				-- and nothing else. A canvas position from the first version (S or
-				-- B in front) is refused here too.
+				-- parent,point,relPoint,x,y - and for a bar, CxR,px after it, then
+				-- `down` and a braid in either order - and nothing else. A canvas
+				-- position from the first version (S or B in front) is refused
+				-- here too.
 				local isBar = BarId(k) ~= nil
-				if not (#p == 5 or (isBar and (#p == 7 or #p == 8)) or (SIZED[k] and #p == 6)) then
+				if not (#p == 5 or (isBar and #p >= 7 and #p <= 9) or (SIZED[k] and #p == 6)) then
 					return bad(f)
 				end
 				local parent, x, y = p[1], Num(p[4]), Num(p[5])
@@ -494,14 +512,19 @@ function Layout:Decode(text)
 				if PAIRED[k] and parent ~= PAIRED[k] then return bad(f) end
 				local rec = { parent = parent, point = p[2], relPoint = p[3],
 					x = round(x), y = round(y) }
-				if #p == 8 then
-					-- A BRAID: onto another strand, on one of the four seats.
-					local slot = p[8]:match("^braid(%-?%d*)$")
-					local host = BarId(parent)
-					if not (slot and host and A.Braids and A.Braids.EdgeOf(p[2], p[3])) then
+				for j = 8, #p do
+					local slot = p[j]:match("^braid(%-?%d*)$")
+					if p[j] == "down" and not rec.wrap then
+						rec.wrap = "down"
+					elseif slot and rec.braid == nil then
+						-- A BRAID: onto another strand, on one of the four seats.
+						if not (BarId(parent) and A.Braids and A.Braids.EdgeOf(p[2], p[3])) then
+							return bad(f)
+						end
+						rec.braid = tonumber(slot) or 0
+					else
 						return bad(f)
 					end
-					rec.braid = tonumber(slot) or 0
 				end
 				if #p >= 7 then
 					-- THE LIMITS ARE OPTIONS', so nothing Export writes is refused
@@ -567,7 +590,7 @@ function Layout:Apply(layout)
 		if id then
 			local cfg, _, base = BarParts(id)
 			if cfg and base and base > 0 then
-				cfg.rows = r.rows
+				cfg.cols, cfg.rows, cfg.wrap = r.cols, r.rows, r.wrap or "across"
 				cfg.scale = r.px / base
 			end
 		end
@@ -704,10 +727,13 @@ function Layout:Matches(layout)
 		-- for a druid, and is still the same arrangement.
 		if r.rows then
 			local id = BarId(name)
-			local _, rows, px = BarShape(id)
+			local cols, rows, px, wrap = BarShape(id)
 			local _, n = BarParts(id)
-			local _, want = Fit(n or r.rows, r.rows)
-			if rows ~= want or math.abs((px or 0) - r.px) > 1 then return false end
+			local wantC, wantR = Fit(n or (r.cols * r.rows), r.cols, r.rows, r.wrap)
+			if cols ~= wantC or rows ~= wantR or wrap ~= (r.wrap or "across")
+				or math.abs((px or 0) - r.px) > 1 then
+				return false
+			end
 		end
 		-- A window of another size is another arrangement too.
 		if r.w then

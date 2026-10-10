@@ -311,13 +311,13 @@ local function diag()
 		-- Nothing follows GetActionBarPage() any more, so there is no page state
 		-- to report and no page drift to explain. Each bar names its own source.
 		for _, bar in ipairs(AB.bars or {}) do
-			say("      %s %-6s %s%d button%s · %d row%s",
+			say("      %s %-6s %s%d button%s · %d × %d %s",
 				(bar.dock:IsShown() and A.Good or A.Dim)(
 					string.format("%-7s", bar.id)), bar.kind,
 				bar.kind == "action" and ("actions " .. ((bar.page - 1) * 12 + 1)
 					.. "-" .. (bar.page * 12) .. " · ") or "",
 				#bar.buttons, #bar.buttons == 1 and "" or "s",
-				bar.rows or 1, (bar.rows or 1) == 1 and "" or "s")
+				bar.cols or 0, bar.rows or 0, bar.cfg.wrap == "down" and "down" or "across")
 		end
 
 		-- Who actually owns the keys. If a row does not say CLICK AetherUI...,
@@ -1056,11 +1056,20 @@ end
 local BAR_PROPS = {
 	buttons = { min = 1,   max = 12,  int = true },
 	rows    = { min = 1,   max = 12,  int = true },
+	cols    = { min = 1,   max = 12,  int = true },
 	-- 15 on WoW Forever (MultiBar5-7 are pages 13-15), as MAX_ACTION_PAGE in
 	-- Modules/ActionBars.lua; this table is built before that module loads.
 	page    = { min = 1,   max = A.isCamelot and 15 or 10,  int = true, actionOnly = true },
 	scale   = { min = 0.4, max = 2.0 },
 }
+
+--- A bar's shape as the bars module fits it: "5 × 3 across".
+local function ShapeText(id)
+	local AB = A:GetModule("actionbars")
+	local cols, rows, wrap
+	if AB and AB.ShapeOf then cols, rows, wrap = AB:ShapeOf(id) end
+	return cols and ("%d × %d %s"):format(cols, rows, wrap) or "-"
+end
 
 local function BarList()
 	local AB = A:GetModule("actionbars")
@@ -1077,10 +1086,10 @@ local function BarList()
 			(b.kind or "action") == "action"
 				and string.format("page %d · %d buttons", b.page or 1, b.buttons or 12)
 				or string.format("%d buttons", live and #live.buttons or 0),
-			string.format(" · %d row%s", b.rows or 1, (b.rows or 1) == 1 and "" or "s"),
+			" · " .. ShapeText(b.id),
 			string.format(" · scale %.2f", b.scale or 1))
 	end
-	say("   " .. A.Dim("/lattice bar <id> on/off/buttons N/rows N/page N/scale N/backdrop"))
+	say("   " .. A.Dim("/lattice bar <id> on/off/buttons N/rows N/cols N/wrap across|down/page N/scale N/backdrop"))
 end
 
 handlers.bar = function(arg, rest)
@@ -1118,10 +1127,29 @@ handlers.bar = function(arg, rest)
 
 	local what, value = tostring(rest or ""):match("^(%S+)%s*(.*)$")
 	if not what or what == "" then
-		A:Print(("bar %s: %s, page %s, %d buttons, %d rows, scale %.2f, %s"):format(
+		A:Print(("bar %s: %s, page %s, %d buttons, %s, scale %.2f, %s"):format(
 			tostring(barCfg.id), barCfg.kind or "action", tostring(barCfg.page or "-"),
-			barCfg.buttons or 0, barCfg.rows or 1, barCfg.scale or 1,
+			barCfg.buttons or 0, ShapeText(barCfg.id), barCfg.scale or 1,
 			barCfg.enabled and "on" or "off"))
+		return
+	end
+
+	-- The shape goes through the bars module, which fits it to the buttons.
+	if (what == "wrap" or what == "rows" or what == "cols") and barCfg.kind == "extra" then
+		A:Print("the extra-action button is Blizzard's, and has no shape to change.")
+		return
+	end
+	if what == "wrap" then
+		if value ~= "across" and value ~= "down" then
+			A:Print(("bar %s wrap takes across or down."):format(tostring(barCfg.id)))
+			return
+		end
+		local cols, rows = AB:ShapeOf(barCfg.id)
+		if not AB:SetShape(barCfg.id, cols, rows, value) then
+			A:Print(A.Bad(L.movers.create_handle.can_t_move_frames))
+			return
+		end
+		A:Print(("bar %s -> %s"):format(tostring(barCfg.id), ShapeText(barCfg.id)))
 		return
 	end
 
@@ -1143,7 +1171,7 @@ handlers.bar = function(arg, rest)
 	local prop = BAR_PROPS[what]
 	if not prop then
 		A:Print("usage: /lattice bar " .. tostring(barCfg.id)
-			.. " on|off|buttons N|rows N|page N|scale N|backdrop")
+			.. " on|off|buttons N|rows N|cols N|wrap across|down|page N|scale N|backdrop")
 		return
 	end
 	if prop.actionOnly and (barCfg.kind or "action") ~= "action" then
@@ -1163,6 +1191,19 @@ handlers.bar = function(arg, rest)
 	if what == "buttons" and (barCfg.kind or "action") ~= "action" then
 		A:Print(("a %s bar sizes itself - the game decides how many there are."):format(
 			barCfg.kind))
+		return
+	end
+
+	-- "rows 3" is three rows, either wrap; "cols 5" five columns.
+	if what == "rows" or what == "cols" then
+		local ok
+		if what == "rows" then ok = AB:SetShape(barCfg.id, nil, v)
+		else ok = AB:SetShape(barCfg.id, v, nil) end
+		if not ok then
+			A:Print(A.Bad(L.movers.create_handle.can_t_move_frames))
+			return
+		end
+		A:Print(("bar %s -> %s"):format(tostring(barCfg.id), ShapeText(barCfg.id)))
 		return
 	end
 

@@ -12938,8 +12938,8 @@ do
 	do
 		local one = byId["1"]
 		local cfg1 = one.cfg
-		local wasButtons, wasRows = cfg1.buttons, cfg1.rows
-		cfg1.rows = 1
+		local wasButtons, wasRows, wasCols = cfg1.buttons, cfg1.rows, cfg1.cols
+		cfg1.cols, cfg1.rows = nil, 1
 		A:GetModule("actionbars"):OnConfigChanged()
 		local fullW = one.dock:GetWidth()
 		cfg1.buttons = 8
@@ -12949,7 +12949,7 @@ do
 		check(math.abs((fullW - one.dock:GetWidth()) - 4 * (size + gap)) < 0.5,
 			"a bar asked for 8 of its 12 buttons is 4 buttons narrower, not 12 wide"
 			.. " with four blanks (" .. ("%.0f, then %.0f"):format(fullW, one.dock:GetWidth()) .. ")")
-		cfg1.buttons, cfg1.rows = wasButtons, wasRows
+		cfg1.buttons, cfg1.rows, cfg1.cols = wasButtons, wasRows, wasCols
 		A:GetModule("actionbars"):OnConfigChanged()
 	end
 
@@ -18355,7 +18355,7 @@ do
 	}
 	for _, id in ipairs({ "1", "2", "3" }) do
 		local c = AB:BarConfig(id)
-		T.cfg[id] = { rows = c.rows, size = c.size, scale = c.scale }
+		T.cfg[id] = { rows = c.rows, cols = c.cols, wrap = c.wrap, size = c.size, scale = c.scale }
 		T.on[id] = c.enabled
 	end
 	-- In UIParent units, at whatever scale the frame is drawn.
@@ -18392,6 +18392,8 @@ do
 	local c1, c2, c3 = AB:BarConfig("1"), AB:BarConfig("2"), AB:BarConfig("3")
 	-- Three 3 x 4 strands. Bar 2 has a size of its own, which a braid overrides.
 	c1.rows, c2.rows, c3.rows = 4, 4, 4
+	c1.cols, c2.cols, c3.cols = nil, nil, nil
+	c1.wrap, c2.wrap, c3.wrap = "across", "across", "across"
 	c1.size, c1.scale, c2.scale, c3.scale, c3.size = nil, 1, 1, 1, nil
 	c2.size = 50
 	c2.enabled, c3.enabled = true, true
@@ -18536,7 +18538,7 @@ do
 		"the inspector says what it is braided with" .. T.say(insp.rows[5].v:GetText()))
 	-- And its shape, size and energy (strands brief 9b): bar 2 has no key
 	-- here, so 60 / 100, and draws at bar 1's 36.
-	check(insp.rows[6].k:GetText() == "Shape" and insp.rows[6].v:GetText() == "3 × 4",
+	check(insp.rows[6].k:GetText() == "Shape" and insp.rows[6].v:GetText() == "3 × 4 · across",
 		"and its shape" .. T.say(insp.rows[6].k:GetText(), insp.rows[6].v:GetText()))
 	check(insp.rows[7].k:GetText() == "Size" and insp.rows[7].v:GetText() == "36 px",
 		"its button size, the braid's" .. T.say(insp.rows[7].v:GetText()))
@@ -18572,7 +18574,7 @@ do
 	-- Back as it was.
 	for id, c in pairs(T.cfg) do
 		local cfg = AB:BarConfig(id)
-		cfg.rows, cfg.size, cfg.scale = c.rows, c.size, c.scale
+		cfg.rows, cfg.cols, cfg.wrap, cfg.size, cfg.scale = c.rows, c.cols, c.wrap, c.size, c.scale
 	end
 	ABc.size, ABc.spacing, ABc.padding, ABc.scale = T.was.size, T.was.spacing, T.was.padding, T.was.scale
 	for id, on in pairs(T.on) do AB:BarConfig(id).enabled = on end
@@ -18593,8 +18595,8 @@ do
 		w = UIParent:GetWidth(), h = UIParent:GetHeight(), ui = A.db.profile.scale, cfg = {} }
 	for _, id in ipairs({ "1", "2" }) do
 		local c = S.AB:BarConfig(id)
-		S.was.cfg[id] = { rows = c.rows, size = c.size, scale = c.scale, buttons = c.buttons,
-			enabled = c.enabled }
+		S.was.cfg[id] = { rows = c.rows, cols = c.cols, wrap = c.wrap, size = c.size, scale = c.scale,
+			buttons = c.buttons, enabled = c.enabled }
 	end
 	function S.bar(id)
 		for _, bar in ipairs(S.AB.bars) do if bar.id == id then return bar end end
@@ -18634,21 +18636,23 @@ do
 	A.db.profile.scale = 1
 	S.c.size, S.c.spacing, S.c.padding, S.c.scale = 36, 8, 6, 1
 	S.c1, S.c2 = S.AB:BarConfig("1"), S.AB:BarConfig("2")
-	S.c1.rows, S.c1.size, S.c1.scale, S.c1.buttons = 1, nil, 1, 12
-	S.c2.rows, S.c2.size, S.c2.scale, S.c2.buttons, S.c2.enabled = 4, nil, 1, 12, true
+	S.c1.cols, S.c1.rows, S.c1.wrap, S.c1.size, S.c1.scale, S.c1.buttons = nil, 1, "across", nil, 1, 12
+	S.c2.cols, S.c2.rows, S.c2.wrap, S.c2.size, S.c2.scale, S.c2.buttons, S.c2.enabled =
+		nil, 4, "across", nil, 1, 12, true
 	S.fresh()
 
-	-- 1. The shapes twelve buttons can take, sized as the bar lays them out.
+	-- 1. The shapes twelve buttons can take across, sized as the bar lays them
+	-- out: every row length, the uneven ones (5 x 3 has three blanks) included.
 	S.shapes = S.M.registry.bar1.reshape.shapes()
 	S.list = {}
 	for _, s in ipairs(S.shapes) do S.list[#S.list + 1] = s.cols .. "x" .. s.rows end
-	check(table.concat(S.list, " ") == "12x1 6x2 4x3 3x4 2x6 1x12",
-		"twelve buttons take the six regular shapes" .. S.say(table.concat(S.list, " ")))
+	check(table.concat(S.list, " ") == "1x12 2x6 3x4 4x3 5x3 6x2 7x2 8x2 9x2 10x2 11x2 12x1",
+		"twelve buttons across take every row length" .. S.say(table.concat(S.list, " ")))
 	S.d = S.R(S.bar("1").dock)
-	check(S.near(S.shapes[1].w, S.d.r - S.d.l) and S.near(S.shapes[1].h, S.d.t - S.d.b),
-		"and the one it is in is the size its dock is" .. S.say(S.shapes[1].w, S.d.r - S.d.l))
-	check(S.near(S.shapes[4].w, 3 * 36 + 2 * 8 + 12) and S.near(S.shapes[4].h, 4 * 36 + 3 * 8 + 12),
-		"3 x 4 at 36 with a gap of 8 and a pad of 6" .. S.say(S.shapes[4].w, S.shapes[4].h))
+	check(S.near(S.shapes[12].w, S.d.r - S.d.l) and S.near(S.shapes[12].h, S.d.t - S.d.b),
+		"and the one it is in is the size its dock is" .. S.say(S.shapes[12].w, S.d.r - S.d.l))
+	check(S.near(S.shapes[3].w, 3 * 36 + 2 * 8 + 12) and S.near(S.shapes[3].h, 4 * 36 + 3 * 8 + 12),
+		"3 x 4 at 36 with a gap of 8 and a pad of 6" .. S.say(S.shapes[3].w, S.shapes[3].h))
 	check(S.M.NearestShape(S.shapes, 140, 175).cols == 3 and S.M.NearestShape(S.shapes, 600, 40).cols == 12,
 		"the nearest shape to an extent wins")
 	check(S.M.registry.barextra.reshape == nil, "the extra button has no shape to change")
@@ -18686,7 +18690,8 @@ do
 	check(S.point ~= "TOPLEFT" and S.near(S.gx, S.px) and S.near(S.gy, S.py),
 		"drawn about the point the bar hangs by, not its top-left" .. S.say(S.point, S.gx, S.px, S.gy, S.py))
 	S.insp = S.M.__inspector()
-	check(S.insp:IsShown() and S.insp.rows[5].k:GetText() == "Shape" and S.insp.rows[5].v:GetText() == "3 × 4",
+	check(S.insp:IsShown() and S.insp.rows[5].k:GetText() == "Shape"
+		and S.insp.rows[5].v:GetText() == "3 × 4 · across",
 		"the inspector reads the shape it would be" .. S.say(S.insp.rows[5].v:GetText()))
 	check(S.c1.rows == 1 and S.bar("1").cols == 12, "and nothing has changed yet")
 	S.g1:GetScript("OnDragStop")(S.g1)
@@ -18710,7 +18715,7 @@ do
 		x = 0, y = -10 } }
 	S.M:ResolveParents()
 	A:Reconfigure()
-	S.drag("2", 300, 90)
+	S.drag("2", 268, 92)
 	S.now = A.db.profile.anchors.bar2.lat
 	S.d1, S.d2 = S.R(S.bar("1").dock), S.R(S.bar("2").dock)
 	check(S.bar("2").cols == 6 and S.now.parent == "bar1" and S.now.point == "TOPLEFT"
@@ -18721,7 +18726,7 @@ do
 		"and still hangs 10 under bar 1's bottom-left" .. S.say(S.d2.l, S.d1.l, S.d1.b - S.d2.t))
 	A.db.profile.anchors.bar2 = nil
 	S.M:ResolveParents()
-	S.c2.rows = 4
+	S.c2.cols, S.c2.rows = nil, 4
 	A:Reconfigure()
 
 	-- 5. Refused in combat, and a fight mid-drag cancels it.
@@ -18741,7 +18746,7 @@ do
 
 	-- 6. In a braid: the member reshapes and the pad is laid round it.
 	S.B:Join("bar2", "bar1", "RIGHT", 0)
-	S.drag("2", 300, 90)
+	S.drag("2", 268, 92)
 	S.pad, S.d1, S.d2 = S.R(S.B.pads.bar1), S.R(S.bar("1").dock), S.R(S.bar("2").dock)
 	check(S.B:HostOf("bar2") == "bar1" and S.bar("2").cols == 6,
 		"a braided strand reshapes in the braid" .. S.say(S.bar("2").cols))
@@ -18754,12 +18759,174 @@ do
 	-- Back as it was.
 	for id, c in pairs(S.was.cfg) do
 		local cfg = S.AB:BarConfig(id)
-		cfg.rows, cfg.size, cfg.scale, cfg.buttons, cfg.enabled = c.rows, c.size, c.scale, c.buttons, c.enabled
+		cfg.rows, cfg.cols, cfg.wrap, cfg.size, cfg.scale, cfg.buttons, cfg.enabled =
+			c.rows, c.cols, c.wrap, c.size, c.scale, c.buttons, c.enabled
 	end
 	S.c.size, S.c.spacing, S.c.padding, S.c.scale = S.was.size, S.was.spacing, S.was.padding, S.was.scale
 	UIParent:SetSize(S.was.w, S.was.h)
 	A.db.profile.scale = S.was.ui
 	S.fresh()
+end
+
+print("== shapes: uneven, blanks, wrap ==")
+do
+	-- STRANDS BRIEF: a shape is cols x rows with a wrap, across or down; uneven
+	-- shapes leave blanks, drawn dashed in unlock only (Joe, 2026-10-10). The
+	-- line in the wrap's direction keeps its length as the button count
+	-- changes (Layout.Fit). One table: the file is near the local cap.
+	local Z = { AB = A:GetModule("actionbars"), LY = A.Layout, M = A.Movers }
+	Z.c = A.Config:Module("actionbars")
+	Z.c1 = Z.AB:BarConfig("1")
+	Z.was = { size = Z.c.size, spacing = Z.c.spacing, padding = Z.c.padding,
+		rows = Z.c1.rows, cols = Z.c1.cols, wrap = Z.c1.wrap, buttons = Z.c1.buttons, bsize = Z.c1.size }
+	function Z.bar()
+		for _, bar in ipairs(Z.AB.bars) do if bar.id == "1" then return bar end end
+	end
+	-- Where button i sits in its grid, in cells: column and row from the top-left.
+	function Z.cell(i)
+		local b = Z.bar().buttons[i]
+		local _, _, _, x, y = b:GetPoint(1)
+		return math.floor(x / 44 + 0.5), math.floor(-y / 44 + 0.5)
+	end
+	-- The blanks' cells, in order, from their fills' anchors.
+	function Z.blanks()
+		local f, out = Z.bar().blanks, {}
+		local h = Z.bar().rows * 44 - 8
+		for _, t in ipairs(f and f.fills or {}) do
+			if t:IsShown() then
+				local _, _, _, x, y = t:GetPoint(1)
+				out[#out + 1] = ("%d,%d"):format(math.floor(x / 44 + 0.5), math.floor((h - y) / 44 + 0.5))
+			end
+		end
+		return table.concat(out, " ")
+	end
+	function Z.say(...)
+		local out = {}
+		for i = 1, select("#", ...) do out[#out + 1] = tostring((select(i, ...))) end
+		return " (" .. table.concat(out, ", ") .. ")"
+	end
+	Z.c.size, Z.c.spacing, Z.c.padding = 36, 8, 6
+	Z.c1.size, Z.c1.buttons = nil, 12
+
+	-- 1. A profile from before cols: rows only, read as that many rows.
+	Z.c1.cols, Z.c1.rows, Z.c1.wrap = nil, 5, "across"
+	Z.AB:OnConfigChanged()
+	check(Z.bar().cols == 3 and Z.bar().rows == 4,
+		"a profile with only rows reads as before: 5 rows of 12 is 3 x 4" .. Z.say(Z.bar().cols, Z.bar().rows))
+	check(Z.LY.Fit(3, nil, 12, "across") == 1 and Z.LY.Fit(6, nil, 12, "across") == 1,
+		"and a stance bar written as a column of 12 is a column of 3, or of 6")
+
+	-- 2. Uneven, across: a row of 5 over 12 is 5 x 3 with three blanks at the end.
+	check(Z.AB:SetShape("1", 5, nil), "bar 1 set to five a row")
+	check(Z.bar().cols == 5 and Z.bar().rows == 3, "is 5 x 3" .. Z.say(Z.bar().cols, Z.bar().rows))
+	Z.x, Z.y = Z.cell(6)
+	Z.x2, Z.y2 = Z.cell(12)
+	check(Z.x == 0 and Z.y == 1 and Z.x2 == 1 and Z.y2 == 2,
+		"its sixth button starts the second row, its twelfth is second on the third"
+		.. Z.say(Z.x, Z.y, Z.x2, Z.y2))
+	check(Z.blanks() == "2,2 3,2 4,2", "three blanks end the last row" .. Z.say(Z.blanks()))
+	check(#(Z.bar().blanks.dashes) >= 12 and Z.bar().blanks.dashes[1]:IsShown(),
+		"each blank has a dashed edge")
+
+	-- 3. Blanks are seen in unlock only.
+	check(not Z.bar().blanks:IsShown(), "locked, the blanks are not drawn")
+	Z.M:Unlock()
+	check(Z.bar().blanks:IsShown(), "unlocked, they are")
+	Z.AB:SetShape("1", 6, nil)
+	check(not Z.bar().blanks:IsShown(), "and a full shape, 6 x 2, has none to show")
+	Z.AB:SetShape("1", 5, nil)
+	check(Z.bar().blanks:IsShown(), "back to 5 x 3, unlocked, they show again")
+	Z.M:Lock()
+	check(not Z.bar().blanks:IsShown(), "and locking takes them away")
+
+	-- 4. Down: each column filled before the next, and keys keep their buttons.
+	check(Z.AB:SetShape("1", nil, 4, "down") and Z.bar().cols == 3 and Z.bar().rows == 4,
+		"four a column, down, is 3 x 4" .. Z.say(Z.bar().cols, Z.bar().rows))
+	Z.x, Z.y = Z.cell(2)
+	Z.x2, Z.y2 = Z.cell(5)
+	check(Z.x == 0 and Z.y == 1 and Z.x2 == 1 and Z.y2 == 0,
+		"its second button is under its first, its fifth tops the second column"
+		.. Z.say(Z.x, Z.y, Z.x2, Z.y2))
+	check(Z.bar().buttons[2]:GetAttribute("action") == 2 and Z.bar().buttons[5]:GetAttribute("action") == 5,
+		"and each button keeps its own action, so a key still casts what it did")
+	Z.AB:SetShape("1", nil, 5, "down")
+	check(Z.bar().cols == 3 and Z.bar().rows == 5 and Z.blanks() == "2,2 2,3 2,4",
+		"five a column is 3 x 5, its blanks at the foot of the last column"
+		.. Z.say(Z.bar().cols, Z.bar().rows, Z.blanks()))
+	Z.list = {}
+	for _, s in ipairs(Z.M.registry.bar1.reshape.shapes()) do Z.list[#Z.list + 1] = s.cols .. "x" .. s.rows end
+	check(table.concat(Z.list, " ") == "12x1 6x2 4x3 3x4 3x5 2x6 2x7 2x8 2x9 2x10 2x11 1x12",
+		"the shape handle offers every column length down" .. Z.say(table.concat(Z.list, " ")))
+	check(select(2, unpack(Z.AB:ShapeOf("1") and { Z.AB:ShapeOf("1") } or {})) == 5,
+		"and ShapeOf reads it back")
+
+	-- 5. One whole line stays one line as buttons come: a druid's row of two
+	-- forms is a row of three at the third, not a 2 x 2.
+	Z.c1.buttons = 8
+	Z.AB:OnConfigChanged()
+	Z.AB:SetShape("1", 8, nil, "across")
+	check(Z.c1.cols == 12, "a whole row is kept as a row, not as eight" .. Z.say(Z.c1.cols))
+	Z.c1.buttons = 10
+	Z.AB:OnConfigChanged()
+	check(Z.bar().cols == 10 and Z.bar().rows == 1, "so at ten buttons it is still one row"
+		.. Z.say(Z.bar().cols, Z.bar().rows))
+	Z.c1.buttons = 12
+
+	-- 6. The string: down written and read back; either order with a braid.
+	Z.AB:SetShape("1", nil, 4, "down")
+	Z.text = Z.LY:Encode()
+	check(Z.text:find("bar1=[^;]*,3x4,%d+,down") ~= nil, "the string says down" .. Z.say(Z.text))
+	Z.lay = Z.LY:Decode(Z.text)
+	check(Z.lay and Z.lay.records.bar1.wrap == "down" and Z.LY:Matches(Z.lay),
+		"reads it back, and matches the bar on screen")
+	Z.AB:SetShape("1", nil, nil, "across")
+	check(not Z.LY:Matches(Z.lay), "the same cells across are another arrangement")
+	check(Z.LY:Apply(Z.lay) and Z.c1.wrap == "down" and Z.bar().cols == 3 and Z.bar().rows == 4,
+		"and applying it puts the bar back down" .. Z.say(Z.c1.wrap, Z.bar().cols, Z.bar().rows))
+	check(Z.LY:Decode("LAT1;b=1,2;bar2=bar1,TOPLEFT,TOPRIGHT,0,0,3x4,36,braid,down")
+		and Z.LY:Decode("LAT1;b=1,2;bar2=bar1,TOPLEFT,TOPRIGHT,0,0,3x4,36,down,braid2"),
+		"down and a braid read in either order")
+	for _, bad in ipairs({
+		"bar1=screen,CENTER,CENTER,0,0,3x4,36,down,down",
+		"bar1=screen,CENTER,CENTER,0,0,3x4,36,sideways",
+		"bar1=screen,CENTER,CENTER,0,0,3x4,36,down,braid,down",
+		"chat=screen,CENTER,CENTER,0,0,down",
+	}) do
+		check(Z.LY:Decode("LAT1;b=1;" .. bad) == nil, "refused: " .. bad)
+	end
+
+	-- 7. The inspector, the options and the command.
+	check(Z.AB:SetShape("1", nil, 4, "down"), "down again")
+	Z.opt = A.Options:Build().args.actionbars.args.bar1.args
+	check(Z.opt.wrap and Z.opt.wrap.get() == "down" and Z.opt.line.get() == 4
+		and Z.opt.line.name() == "Buttons per column",
+		"the options read down, four a column" .. Z.say(Z.opt.wrap and Z.opt.wrap.get(),
+			Z.opt.line and Z.opt.line.get()))
+	Z.opt.wrap.set(nil, "across")
+	Z.opt.line.set(nil, 5)
+	check(Z.c1.wrap == "across" and Z.bar().cols == 5 and Z.opt.line.name() == "Buttons per row",
+		"and set across, five a row" .. Z.say(Z.c1.wrap, Z.bar().cols))
+	check(Z.opt.rows == nil and A.Options:Build().args.actionbars.args.barextra.args.wrap == nil,
+		"the old rows slider is gone, and the extra button has no shape")
+	SlashCmdList["AETHERUI"]("bar 1 cols 4")
+	check(Z.bar().cols == 4 and Z.bar().rows == 3, "/lattice bar 1 cols 4" .. Z.say(Z.bar().cols, Z.bar().rows))
+	SlashCmdList["AETHERUI"]("bar 1 rows 2")
+	check(Z.bar().cols == 6 and Z.bar().rows == 2, "rows 2 is two rows" .. Z.say(Z.bar().cols, Z.bar().rows))
+	SlashCmdList["AETHERUI"]("bar 1 wrap down")
+	check(Z.c1.wrap == "down" and Z.bar().rows == 2, "wrap down keeps the shape it can"
+		.. Z.say(Z.c1.wrap, Z.bar().cols, Z.bar().rows))
+	SlashCmdList["AETHERUI"]("bar 1 wrap sideways")
+	check(Z.c1.wrap == "down", "and an unknown wrap changes nothing")
+	_G.__inCombat = true
+	check(not Z.AB:SetShape("1", 12, nil, "across") and Z.c1.wrap == "down", "nothing reshapes in combat")
+	_G.__inCombat = false
+
+	-- Back as it was.
+	Z.c1.rows, Z.c1.cols, Z.c1.wrap, Z.c1.buttons, Z.c1.size = Z.was.rows, Z.was.cols, Z.was.wrap,
+		Z.was.buttons, Z.was.bsize
+	Z.c.size, Z.c.spacing, Z.c.padding = Z.was.size, Z.was.spacing, Z.was.padding
+	wipe(A.db.profile.anchors)
+	A:Reconfigure()
 end
 
 -- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole
@@ -19077,7 +19244,7 @@ do
 	check(LY:Encode():find("bar1=spine,BOTTOM,CENTER,0,-96,3x4,28", 1, true) ~= nil,
 		"and writes it back exactly")
 	check(LY:Matches(shaped), "and reads back as the layout on screen")
-	AB1.rows = 1
+	AB1.cols = 12
 	check(not LY:Matches(shaped),
 		"but a bar in another shape is another arrangement, wherever it sits")
 

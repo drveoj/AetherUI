@@ -726,13 +726,36 @@ local function BarPages()
 						.. " are the only ones that work."
 					or ("Sized by the game: however many " .. kind
 						.. " slots you have."))),
-			rows = range(L.options.bar_pages.rows.name, L.options.bar_pages.rows.desc, at("rows"), 1, 12, 1),
 			scale = range(L.common.scale, L.common.top_global_scale, at("scale"), 0.4, 2.0, 0.05),
 			backdrop = toggle(L.options.bar_pages.backdrop.name, L.options.bar_pages.backdrop.desc,
 				at("backdrop"), { defaultTrue = true }),
 		}
 		-- Not on the extra button: it is Blizzard's, and draws its own.
 		if kind ~= "extra" then
+			-- THE SHAPE (strands brief): a wrap, and the length of a line in it.
+			-- Through the bars module, which fits it to the buttons showing.
+			local AB = A:GetModule("actionbars")
+			local function down() return barCfg.wrap == "down" end
+			args.wrap = choice(L.options.bar_pages.wrap.name, L.options.bar_pages.wrap.desc,
+				at("wrap"), { across = L.options.bar_pages.wrap.across, down = L.options.bar_pages.wrap.down })
+			args.wrap.get = function() return down() and "down" or "across" end
+			args.wrap.set = function(_, v)
+				local cols, rows = AB:ShapeOf(id)
+				AB:SetShape(id, cols, rows, v)
+			end
+			args.line = range(function()
+				return down() and L.options.bar_pages.line.per_column or L.options.bar_pages.line.per_row
+			-- Its own get and set: across it is cols, down it is rows. The path
+			-- names rows, the one of the two every bar has a default for.
+			end, L.options.bar_pages.line.desc, at("rows"), 1, 12, 1)
+			args.line.get = function()
+				local cols, rows = AB:ShapeOf(id)
+				return (down() and rows or cols) or 1
+			end
+			args.line.set = function(_, v)
+				if down() then AB:SetShape(id, nil, v) else AB:SetShape(id, v, nil) end
+			end
+
 			args.keys = toggle(L.options.bar_pages.keys.name, L.options.bar_pages.keys.desc,
 				at("keys"), { defaultTrue = true })
 
