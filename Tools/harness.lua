@@ -32195,6 +32195,28 @@ section("nifec: the mini-player, on the ground", function()
 	P.segStart = (P.segStart or GetTime()) - 30
 	wt:Decorate("nowplaying")
 	check(node.button.lane:GetWidth() > lw, "and moves on its own as it plays")
+	do
+		-- THE TICK TOUCHES ONLY WHAT CHANGED. Re-setting the same title and
+		-- artist ten times a second, and a relayout putting the name back over
+		-- the title, had the artist flash brighter every three seconds (Joe).
+		local writes, saved = 0, {}
+		for _, fs in ipairs({ node.button.sub, node.button.label }) do
+			for _, m in ipairs({ "SetText", "SetWidth", "SetTextColor" }) do
+				local orig = fs[m]
+				saved[#saved + 1] = { fs, m, rawget(fs, m) }
+				fs[m] = function(...) writes = writes + 1 return orig(...) end
+			end
+		end
+		for i = 1, 30 do
+			tick(0.1)
+			if i == 15 then fire("QUEST_LOG_UPDATE") end
+		end
+		for _, s in ipairs(saved) do s[1][s[2]] = s[3] end
+		check(writes == 0, "three seconds of playing, and a quest update, rewrite neither the title nor the artist ("
+			.. writes .. " writes)")
+		check(node.button.label:GetText() == P.item.title and node.button.sub:GetText() == P.item.artist,
+			"and both still read the track")
+	end
 	A.Config:Module("questtracker").labelsOnHover = true
 	wt:Extend()
 	check(node.button.label:GetAlpha() > 0.99 and node.button.sub:GetAlpha() > 0.99,

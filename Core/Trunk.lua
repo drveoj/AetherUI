@@ -209,14 +209,19 @@ function Proto:Decorate(key)
 		if b and b.sub then b.sub:Hide() b.lane:Hide() b.mark:Hide() end
 		return
 	end
+	-- ONLY WHAT CHANGED IS TOUCHED. This runs ten times a second while a track
+	-- plays, and re-setting the same title and artist every pass - width
+	-- unclamped, text, width again - had the artist flash brighter in game
+	-- (Joe), every three seconds or so.
 	local title = node.title and node.title() or nil
 	b.titled = title ~= nil
-	b.label:SetWidth(0)
-	if title then
-		b.label:SetText(title)
-		b.label:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.label:GetStringWidth() or 0))))
-	else
-		b.label:SetText(tostring(type(node.label) == "function" and node.label() or node.label or ""):upper())
+	local name = title or tostring(type(node.label) == "function" and node.label() or node.label or ""):upper()
+	if b.label:GetText() ~= name then
+		b.label:SetWidth(0)
+		b.label:SetText(name)
+		if title then
+			b.label:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.label:GetStringWidth() or 0))))
+		end
 	end
 	local mark = title and node.mark and node.mark() or nil
 	b.mark:SetShown(mark ~= nil and Media:SetIcon(b.mark, mark) and true or false)
@@ -230,11 +235,17 @@ function Proto:Decorate(key)
 	local a = Palette.c.accent
 	-- Unclamped before it is measured: a width left by the last track clamps
 	-- what the next one measures.
-	b.sub:SetWidth(0)
-	b.sub:SetText(text or "")
-	b.sub:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.sub:GetStringWidth() or 0))))
-	W.Color(b.sub, Palette.c.textDim)
-	b.sub:SetShown(text ~= nil and text ~= "")
+	if b.sub:GetText() ~= (text or "") then
+		b.sub:SetWidth(0)
+		b.sub:SetText(text or "")
+		b.sub:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.sub:GetStringWidth() or 0))))
+	end
+	if b.subInk ~= Palette.c.textDim then
+		b.subInk = Palette.c.textDim
+		W.Color(b.sub, b.subInk)
+	end
+	local has = text ~= nil and text ~= ""
+	if b.sub:IsShown() ~= has then b.sub:SetShown(has) end
 	b.lane:SetVertexColor(a[1], a[2], a[3], 1)
 	b.lane:SetWidth(math.max(0.01, STUB * math.max(0, math.min(1, p or 0))))
 	b.lane:SetShown(p ~= nil)
@@ -293,7 +304,11 @@ function Proto:Paint()
 				b.junction:Hide()
 			end
 			b.stub:SetHeight(lit and 1.5 or 1)
-			W.Color(b.label, { a[1], a[2], a[3], 0.5 })
+			-- Once per skin rather than per paint: see Decorate.
+			if b.labelInk ~= a then
+				b.labelInk = a
+				W.Color(b.label, { a[1], a[2], a[3], 0.5 })
+			end
 		end
 	end
 	self:PaintTail()
@@ -385,7 +400,8 @@ function Proto:Refresh()
 				b.lane:ClearAllPoints()
 				b.lane:SetPoint("LEFT", b.stub, "LEFT", 0, 0)
 			end
-			b.label:SetText(tostring(type(node.label) == "function" and node.label() or node.label or ""):upper())
+			-- The name, or a title in its place: Decorate writes it, so a
+			-- relayout never puts the name back over a playing track's title.
 			self:Decorate(node.key)
 		elseif node.kind ~= "item" then
 			b.junction:Hide()
