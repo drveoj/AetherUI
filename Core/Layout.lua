@@ -259,6 +259,7 @@ local function Fit(n, rows)
 	local cols = math.ceil(n / rows)
 	return cols, math.ceil(n / cols)
 end
+Layout.Fit = Fit
 
 --- Nodes whose record carries a size, WxH in the node's OWN units: the chat
 --  window, whose text and smallest size are in UIParent's.

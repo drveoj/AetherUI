@@ -18534,10 +18534,15 @@ do
 	check(insp:IsShown() and insp.rows[5].k:GetText() == "Braided with"
 		and insp.rows[5].v:GetText() == "BAR 1",
 		"the inspector says what it is braided with" .. T.say(insp.rows[5].v:GetText()))
-	-- And its energy (strands brief 9b): bar 2 has no key here, so 60 / 100.
-	check(insp.rows[6] and insp.rows[6].k:IsShown() and insp.rows[6].k:GetText() == "Rest / Combat"
-		and insp.rows[6].v:GetText() == "60 % / 100 %",
-		"and its rest and combat energy" .. T.say(insp.rows[6] and insp.rows[6].v:GetText()))
+	-- And its shape, size and energy (strands brief 9b): bar 2 has no key
+	-- here, so 60 / 100, and draws at bar 1's 36.
+	check(insp.rows[6].k:GetText() == "Shape" and insp.rows[6].v:GetText() == "3 × 4",
+		"and its shape" .. T.say(insp.rows[6].k:GetText(), insp.rows[6].v:GetText()))
+	check(insp.rows[7].k:GetText() == "Size" and insp.rows[7].v:GetText() == "36 px",
+		"its button size, the braid's" .. T.say(insp.rows[7].v:GetText()))
+	check(insp.rows[8] and insp.rows[8].k:IsShown() and insp.rows[8].k:GetText() == "Rest / Combat"
+		and insp.rows[8].v:GetText() == "60 % / 100 %",
+		"and its rest and combat energy" .. T.say(insp.rows[8] and insp.rows[8].v:GetText()))
 	h2:GetScript("OnDragStop")(h2)
 	check(B:HostOf("bar2") == "bar1", "let go where it sits, it stays in the braid")
 	-- With a pad of 10 the docks overlap by 12 at the seat, more than the 8 a
@@ -18575,6 +18580,186 @@ do
 	A.db.profile.scale = T.was.ui
 	T.fresh()
 	check(not (pad and pad:IsShown()), "and with the braids gone, so is the pad")
+end
+
+print("== shape handle ==")
+do
+	-- STRANDS BRIEF 9b: the bottom-right junction reshapes a strand to the
+	-- nearest cols x rows for the dragged extent, shown as a ghost first.
+	-- Button size never changes. One table: the file is near the local cap.
+	local S = { M = A.Movers, B = A.Braids, AB = A:GetModule("actionbars") }
+	S.c = A.Config:Module("actionbars")
+	S.was = { size = S.c.size, spacing = S.c.spacing, padding = S.c.padding, scale = S.c.scale,
+		w = UIParent:GetWidth(), h = UIParent:GetHeight(), ui = A.db.profile.scale, cfg = {} }
+	for _, id in ipairs({ "1", "2" }) do
+		local c = S.AB:BarConfig(id)
+		S.was.cfg[id] = { rows = c.rows, size = c.size, scale = c.scale, buttons = c.buttons,
+			enabled = c.enabled }
+	end
+	function S.bar(id)
+		for _, bar in ipairs(S.AB.bars) do if bar.id == id then return bar end end
+	end
+	function S.R(f)
+		local k = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+		return { l = f:GetLeft() * k, r = f:GetRight() * k, t = f:GetTop() * k, b = f:GetBottom() * k }
+	end
+	function S.near(a, b) return a and b and math.abs(a - b) <= 0.5 end
+	function S.say(...)
+		local out = {}
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			out[#out + 1] = type(v) == "number" and ("%.2f"):format(v) or tostring(v)
+		end
+		return " (" .. table.concat(out, ", ") .. ")"
+	end
+	function S.fresh()
+		wipe(A.db.profile.anchors)
+		for _, e in pairs(S.M.registry) do e.parent, e.free = e.defaultParent, nil end
+		A:Reconfigure()
+	end
+	-- Drag bar `id`'s grip to `dx` right of and `dy` below its top-left.
+	function S.drag(id, dx, dy, stop)
+		local g = S.M.registry["bar" .. id].handle.grip
+		local r = S.R(S.bar(id).dock)
+		cursorX, cursorY = r.l + dx, r.t - dy
+		g:GetScript("OnDragStart")(g)
+		local up = g:GetScript("OnUpdate")
+		if up then up(g) end
+		if stop ~= false then g:GetScript("OnDragStop")(g) end
+		return g
+	end
+
+	UIParent:SetSize(1920, 1080)
+	UIParent:SetGeom({ cx = 960, cy = 540, left = 0, right = 1920, bottom = 0, top = 1080 })
+	A.db.profile.scale = 1
+	S.c.size, S.c.spacing, S.c.padding, S.c.scale = 36, 8, 6, 1
+	S.c1, S.c2 = S.AB:BarConfig("1"), S.AB:BarConfig("2")
+	S.c1.rows, S.c1.size, S.c1.scale, S.c1.buttons = 1, nil, 1, 12
+	S.c2.rows, S.c2.size, S.c2.scale, S.c2.buttons, S.c2.enabled = 4, nil, 1, 12, true
+	S.fresh()
+
+	-- 1. The shapes twelve buttons can take, sized as the bar lays them out.
+	S.shapes = S.M.registry.bar1.reshape.shapes()
+	S.list = {}
+	for _, s in ipairs(S.shapes) do S.list[#S.list + 1] = s.cols .. "x" .. s.rows end
+	check(table.concat(S.list, " ") == "12x1 6x2 4x3 3x4 2x6 1x12",
+		"twelve buttons take the six regular shapes" .. S.say(table.concat(S.list, " ")))
+	S.d = S.R(S.bar("1").dock)
+	check(S.near(S.shapes[1].w, S.d.r - S.d.l) and S.near(S.shapes[1].h, S.d.t - S.d.b),
+		"and the one it is in is the size its dock is" .. S.say(S.shapes[1].w, S.d.r - S.d.l))
+	check(S.near(S.shapes[4].w, 3 * 36 + 2 * 8 + 12) and S.near(S.shapes[4].h, 4 * 36 + 3 * 8 + 12),
+		"3 x 4 at 36 with a gap of 8 and a pad of 6" .. S.say(S.shapes[4].w, S.shapes[4].h))
+	check(S.M.NearestShape(S.shapes, 140, 175).cols == 3 and S.M.NearestShape(S.shapes, 600, 40).cols == 12,
+		"the nearest shape to an extent wins")
+	check(S.M.registry.barextra.reshape == nil, "the extra button has no shape to change")
+
+	-- 2. In unlock: a grip on each strand with shapes to take.
+	S.M:Unlock()
+	S.g1 = S.M.registry.bar1.handle.grip
+	check(S.g1 and S.g1:IsShown(), "bar 1 has a shape handle in unlock")
+	check(not (S.M.registry.barextra.handle and S.M.registry.barextra.handle.grip),
+		"and the extra button has none")
+	S.c2.buttons = 1
+	S.AB:OnConfigChanged()
+	check(not S.M.registry.bar2.handle.grip:IsShown(),
+		"a strand down to one button has only one shape, and its handle goes")
+	S.c2.buttons = 12
+	S.AB:OnConfigChanged()
+	check(S.M.registry.bar2.handle.grip:IsShown(), "and comes back with its buttons")
+
+	-- 3. Dragging: the ghost, where the bar will actually land, and nothing
+	-- changed until it is let go.
+	S.point = S.bar("1").dock:GetPoint(1)
+	S.px, S.py = S.M.PointAt(S.bar("1").dock, S.point)
+	S.lat = A.db.profile.anchors.bar1 and A.db.profile.anchors.bar1.lat
+	S.drag("1", 140, 175, false)
+	S.fb = S.M.__feedback()
+	S.gh = S.fb and S.fb.ghostInfo
+	check(S.gh and S.fb.ghost:IsShown() and S.fb.ghostText:GetText() == "3 × 4",
+		"dragged to 140 x 175, the ghost reads 3 × 4" .. S.say(S.gh and S.fb.ghostText:GetText()))
+	check(S.gh and S.near(S.gh.r - S.gh.l, 136) and S.near(S.gh.t - S.gh.b, 180),
+		"and is that shape's size" .. S.say(S.gh and S.gh.r - S.gh.l, S.gh and S.gh.t - S.gh.b))
+	S.gx = S.gh and (S.point:find("LEFT") and S.gh.l or S.point:find("RIGHT") and S.gh.r
+		or (S.gh.l + S.gh.r) / 2)
+	S.gy = S.gh and (S.point:find("TOP") and S.gh.t or S.point:find("BOTTOM") and S.gh.b
+		or (S.gh.b + S.gh.t) / 2)
+	check(S.point ~= "TOPLEFT" and S.near(S.gx, S.px) and S.near(S.gy, S.py),
+		"drawn about the point the bar hangs by, not its top-left" .. S.say(S.point, S.gx, S.px, S.gy, S.py))
+	S.insp = S.M.__inspector()
+	check(S.insp:IsShown() and S.insp.rows[5].k:GetText() == "Shape" and S.insp.rows[5].v:GetText() == "3 × 4",
+		"the inspector reads the shape it would be" .. S.say(S.insp.rows[5].v:GetText()))
+	check(S.c1.rows == 1 and S.bar("1").cols == 12, "and nothing has changed yet")
+	S.g1:GetScript("OnDragStop")(S.g1)
+
+	-- 4. Let go: laid out in it, at the same button size, hanging where it did.
+	S.d = S.R(S.bar("1").dock)
+	check(S.c1.rows == 4 and S.bar("1").cols == 3 and S.bar("1").rows == 4,
+		"let go, bar 1 is 3 x 4" .. S.say(S.c1.rows, S.bar("1").cols))
+	check(S.near(S.d.r - S.d.l, 136) and S.near(S.M.PointAt(S.bar("1").buttons[1], "TOPRIGHT")
+		- S.M.PointAt(S.bar("1").buttons[1], "TOPLEFT"), 36),
+		"its buttons the same size" .. S.say(S.d.r - S.d.l))
+	S.qx, S.qy = S.M.PointAt(S.bar("1").dock, S.point)
+	check(S.near(S.qx, S.px) and S.near(S.qy, S.py) and S.near(S.d.l, S.gh.l) and S.near(S.d.t, S.gh.t),
+		"exactly where the ghost was" .. S.say(S.qx, S.px, S.d.l, S.gh.l))
+	check(not S.fb.ghost:IsShown() and not S.fb.ghostText:IsShown() and not S.insp:IsShown(),
+		"and the ghost and inspector gone")
+
+	-- A strand hung from an EDGE keeps that bond through a reshape: measured
+	-- again it would become a centre bond (the Block seed's pet bar, 2026-10-09).
+	A.db.profile.anchors.bar2 = { lat = { parent = "bar1", point = "TOPLEFT", relPoint = "BOTTOMLEFT",
+		x = 0, y = -10 } }
+	S.M:ResolveParents()
+	A:Reconfigure()
+	S.drag("2", 300, 90)
+	S.now = A.db.profile.anchors.bar2.lat
+	S.d1, S.d2 = S.R(S.bar("1").dock), S.R(S.bar("2").dock)
+	check(S.bar("2").cols == 6 and S.now.parent == "bar1" and S.now.point == "TOPLEFT"
+		and S.now.relPoint == "BOTTOMLEFT" and S.now.x == 0 and S.now.y == -10,
+		"a strand hung from bar 1's bottom edge keeps that bond through a reshape"
+		.. S.say(S.bar("2").cols, S.now.point, S.now.relPoint, S.now.x, S.now.y))
+	check(S.near(S.d2.l, S.d1.l) and S.near(S.d1.b - S.d2.t, 10),
+		"and still hangs 10 under bar 1's bottom-left" .. S.say(S.d2.l, S.d1.l, S.d1.b - S.d2.t))
+	A.db.profile.anchors.bar2 = nil
+	S.M:ResolveParents()
+	S.c2.rows = 4
+	A:Reconfigure()
+
+	-- 5. Refused in combat, and a fight mid-drag cancels it.
+	_G.__inCombat = true
+	S.drag("1", 600, 40)
+	check(S.c1.rows == 4 and not S.g1:GetScript("OnUpdate"), "a reshape won't start in combat")
+	_G.__inCombat = false
+	S.drag("1", 600, 40, false)
+	_G.__inCombat = true
+	S.g1:GetScript("OnUpdate")(S.g1)
+	_G.__inCombat = false
+	S.g1:GetScript("OnDragStop")(S.g1)
+	check(S.c1.rows == 4 and not S.fb.ghost:IsShown(),
+		"and a fight starting mid-drag cancels it" .. S.say(S.c1.rows))
+	S.drag("1", 600, 40)
+	check(S.c1.rows == 1 and S.bar("1").cols == 12, "out of the fight, dragged wide it is 12 x 1 again")
+
+	-- 6. In a braid: the member reshapes and the pad is laid round it.
+	S.B:Join("bar2", "bar1", "RIGHT", 0)
+	S.drag("2", 300, 90)
+	S.pad, S.d1, S.d2 = S.R(S.B.pads.bar1), S.R(S.bar("1").dock), S.R(S.bar("2").dock)
+	check(S.B:HostOf("bar2") == "bar1" and S.bar("2").cols == 6,
+		"a braided strand reshapes in the braid" .. S.say(S.bar("2").cols))
+	check(S.near(S.pad.r, S.d2.r) and S.near(S.pad.b, math.min(S.d1.b, S.d2.b)),
+		"and the pad is laid round its new shape" .. S.say(S.pad.r, S.d2.r, S.pad.b))
+	S.B:Leave("bar2")
+	S.M:Lock()
+	UIParent.__geom = nil
+
+	-- Back as it was.
+	for id, c in pairs(S.was.cfg) do
+		local cfg = S.AB:BarConfig(id)
+		cfg.rows, cfg.size, cfg.scale, cfg.buttons, cfg.enabled = c.rows, c.size, c.scale, c.buttons, c.enabled
+	end
+	S.c.size, S.c.spacing, S.c.padding, S.c.scale = S.was.size, S.was.spacing, S.was.padding, S.was.scale
+	UIParent:SetSize(S.was.w, S.was.h)
+	A.db.profile.scale = S.was.ui
+	S.fresh()
 end
 
 -- THE LAYOUT STRING (parent model phase C, Core/Layout.lua): a whole

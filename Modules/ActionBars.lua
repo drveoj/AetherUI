@@ -707,22 +707,32 @@ local function DrawCfg(bar)
 	return (rb or bar).cfg
 end
 
+--- THE BUTTONS SHOWING, not every one ever built. Frames cannot be destroyed,
+--  so a bar asked for fewer - a form unlearned, a button count lowered in
+--  options - keeps the surplus hidden; counting those sized the pad for
+--  buttons that were not there, a blank where the last one had been.
+local function ShownCount(bar)
+	local n = #bar.buttons
+	if bar.shown and bar.shown < n then n = bar.shown end
+	return n
+end
+
+--- A button's side in the dock's own units: the braid root's size if braided.
+local function ButtonSize(bar)
+	return math.max(16, math.floor((DrawCfg(bar).size or A.Config:Module("actionbars").size) + 0.5))
+end
+
 --- Rows is the honest control and columns fall out of it. "Three rows of ten"
 --  giving 4/4/2 is what people mean; "four columns of ten" gives the same shape
 --  but makes you do the arithmetic first.
 local function LayoutBar(bar)
 	local cfg = A.Config:Module("actionbars")
-	-- THE BUTTONS SHOWING, not every one ever built. Frames cannot be destroyed,
-	-- so a bar asked for fewer - a form unlearned, a button count lowered in
-	-- options - keeps the surplus hidden; counting those sized the pad for
-	-- buttons that were not there, a blank where the last one had been.
-	local n = #bar.buttons
-	if bar.shown and bar.shown < n then n = bar.shown end
+	local n = ShownCount(bar)
 	if n == 0 then
 		-- A bar with nothing in it still needs a body while you are placing it -
 		-- the mover handle takes its size from the frame, and you cannot grab a
 		-- 1x1 square. One button's worth is enough to aim at.
-		local size = math.max(16, math.floor((DrawCfg(bar).size or cfg.size) + 0.5))
+		local size = ButtonSize(bar)
 		bar.dock:SetSize(size + cfg.padding * 2, size + cfg.padding * 2)
 		bar.rows, bar.cols = 0, 0
 		return
@@ -732,7 +742,7 @@ local function LayoutBar(bar)
 	local cols = math.ceil(n / rows)
 	rows = math.ceil(n / cols)
 
-	local size = math.max(16, math.floor((DrawCfg(bar).size or cfg.size) + 0.5))
+	local size = ButtonSize(bar)
 	local gap, pad = cfg.spacing, cfg.padding
 
 	for i = 1, n do
@@ -1855,9 +1865,17 @@ end
 
 AB.ParentFor = ParentFor
 
---- A strand's rest and combat as the inspector shows them (strands brief 9b).
-local function EnergyRows(bar)
+--- A strand's rows in the inspector (strands brief 9b): shape, button size,
+--  rest and combat. `cols` and `rows` stand in for its own during a reshape.
+local function StrandRows(bar, cols, rows)
 	if bar.kind == "extra" then return {} end
+	local out = {}
+	cols, rows = cols or bar.cols, rows or bar.rows
+	if cols and cols > 0 then
+		out[#out + 1] = { L.movers.inspector.shape, A.F(L.movers.inspector.shape_cr, cols, rows) }
+	end
+	out[#out + 1] = { L.movers.inspector.size,
+		A.F(L.movers.inspector.size_px, math.floor((AB:ButtonPx(bar.id) or 0) + 0.5)) }
 	local value
 	if bar.cfg.hoverOnly then
 		value = L.movers.inspector.hover_only
@@ -1865,12 +1883,38 @@ local function EnergyRows(bar)
 		local rest, combat = EnergyOf(bar)
 		value = ("%d %% / %d %%"):format(math.floor(rest * 100 + 0.5), math.floor(combat * 100 + 0.5))
 	end
-	return { { L.movers.inspector.energy, value } }
+	out[#out + 1] = { L.movers.inspector.energy, value }
+	return out
+end
+
+--- Every shape the bar can take for the buttons it shows, each with the size
+--  its dock would be in UIParent units. The shape handle picks from these.
+local function Shapes(bar)
+	local n = ShownCount(bar)
+	if bar.kind == "extra" or n < 2 then return {} end
+	local cfg = A.Config:Module("actionbars")
+	local size, gap, pad = ButtonSize(bar), cfg.spacing, cfg.padding
+	local k = (bar.dock:GetEffectiveScale() or 1) / (UIParent:GetEffectiveScale() or 1)
+	local out, seen = {}, {}
+	for r = 1, n do
+		local cols, rows = A.Layout.Fit(n, r)
+		if not seen[cols] then
+			seen[cols] = true
+			out[#out + 1] = { cols = cols, rows = rows,
+				w = (cols * size + (cols - 1) * gap + pad * 2) * k,
+				h = (rows * size + (rows - 1) * gap + pad * 2) * k }
+		end
+	end
+	return out
 end
 
 local function MoverOpts(bar)
 	return { preview = BarPreview(bar), parent = ParentFor(bar), braid = bar.kind ~= "extra",
-		rows = function() return EnergyRows(bar) end }
+		rows = function(cols, rows) return StrandRows(bar, cols, rows) end,
+		reshape = bar.kind ~= "extra" and {
+			shapes = function() return Shapes(bar) end,
+			apply = function(rows) return AB:Reshape(bar.id, rows) end,
+		} or nil }
 end
 
 --- Faded with the HUD, by its energy.
@@ -2258,6 +2302,18 @@ function AB:SetBarEnabled(id, on)
 	if not barCfg then return false end
 	barCfg.enabled = on and true or false
 	AB:OnConfigChanged()
+	return true
+end
+
+--- Lay a strand out in a new number of rows, from the shape handle. Out of
+--  combat only: its buttons are secure.
+function AB:Reshape(id, rows)
+	local bar = BarNamed("bar" .. tostring(id))
+	if not bar or bar.kind == "extra" or InCombatLockdown() then return false end
+	bar.cfg.rows = rows
+	AB:OnConfigChanged()
+	-- So an open options window shows the new rows.
+	if A.Options and A.Options.Refresh then A.Options:Refresh() end
 	return true
 end
 

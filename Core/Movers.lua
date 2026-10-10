@@ -852,36 +852,77 @@ local function Feedback()
 	f.bond = f:CreateTexture(nil, "OVERLAY")
 	f.bond:SetTexture(A.Media.texture.diamond)
 	f.bondText = A.Widgets.Text(f, "label", "LEFT")
+	-- The reshape ghost (strands brief 9b).
+	f.ghost = f:CreateTexture(nil, "BACKGROUND")
+	f.ghost:SetTexture(A.Media.texture.flat)
+	f.ghostDashes = {}
+	f.ghostText = A.Widgets.Text(f, "label", "LEFT")
 	feedback = f
 	return f
 end
 
 Movers.__feedback = function() return feedback end
 
---- A dashed line between two points in UIParent units, out of short Lines:
---  a Line cannot be dashed itself. Called with no points it clears.
+--- Dashes from one point to another in UIParent units, out of short Lines
+--  taken from `pool` after its first `n`: a Line cannot be dashed itself.
+--  Returns how many of the pool are now in use.
+local function Dash(f, pool, n, x1, y1, x2, y2, c, thick)
+	local dx, dy = x2 - x1, y2 - y1
+	local len = math.sqrt(dx * dx + dy * dy)
+	if len <= 0 then return n end
+	local ux, uy = dx / len, dy / len
+	local dash, gap, t, stop = Px(4), Px(6), 0, n + 400
+	while t < len and n < stop do
+		n = n + 1
+		local l = pool[n] or f:CreateLine(nil, "ARTWORK")
+		pool[n] = l
+		local e = math.min(t + dash, len)
+		l:SetStartPoint("BOTTOMLEFT", UIParent, x1 + ux * t, y1 + uy * t)
+		l:SetEndPoint("BOTTOMLEFT", UIParent, x1 + ux * e, y1 + uy * e)
+		l:SetThickness(thick)
+		l:SetColorTexture(c[1], c[2], c[3], 1)
+		l:Show()
+		t = e + gap
+	end
+	return n
+end
+
+--- A dashed line between two points in UIParent units. With no points it clears.
 local function DashedLine(x1, y1, x2, y2, c)
 	local f = Feedback()
-	local n = 0
-	local dx, dy = (x2 or 0) - (x1 or 0), (y2 or 0) - (y1 or 0)
-	local len = math.sqrt(dx * dx + dy * dy)
-	if x1 and len > 0 then
-		local ux, uy = dx / len, dy / len
-		local dash, gap, t = Px(4), Px(6), 0
-		while t < len and n < 400 do
-			n = n + 1
-			local l = f.dashes[n] or f:CreateLine(nil, "ARTWORK")
-			f.dashes[n] = l
-			local e = math.min(t + dash, len)
-			l:SetStartPoint("BOTTOMLEFT", UIParent, x1 + ux * t, y1 + uy * t)
-			l:SetEndPoint("BOTTOMLEFT", UIParent, x1 + ux * e, y1 + uy * e)
-			l:SetThickness(Px(2))
-			l:SetColorTexture(c[1], c[2], c[3], 1)
-			l:Show()
-			t = e + gap
-		end
-	end
+	local n = x1 and Dash(f, f.dashes, 0, x1, y1, x2, y2, c, Px(2)) or 0
 	for i = n + 1, #f.dashes do f.dashes[i]:Hide() end
+end
+
+--- The shape a reshape would give: g = { l, b, r, t, label, x, y } in UIParent
+--  units, the label at the cursor (x, y); nil takes it away. A dashed outline
+--  1.5 thick on a 6% fill, in the snap's green (strands brief tokens).
+local function ShowGhost(g)
+	local f = Feedback()
+	f.ghostInfo = g
+	local n = 0
+	if g then
+		local c = A.Palette.c.friendly
+		f.ghost:ClearAllPoints()
+		f.ghost:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", g.l, g.b)
+		f.ghost:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", g.r, g.t)
+		Tint(f.ghost, c, 0.06)
+		f.ghost:Show()
+		local th = Px(1.5)
+		n = Dash(f, f.ghostDashes, n, g.l, g.t, g.r, g.t, c, th)
+		n = Dash(f, f.ghostDashes, n, g.r, g.t, g.r, g.b, c, th)
+		n = Dash(f, f.ghostDashes, n, g.r, g.b, g.l, g.b, c, th)
+		n = Dash(f, f.ghostDashes, n, g.l, g.b, g.l, g.t, c, th)
+		f.ghostText:SetText(g.label)
+		f.ghostText:ClearAllPoints()
+		f.ghostText:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", g.x + Px(14), g.y - Px(14))
+		A.Widgets.Color(f.ghostText, c)
+		f.ghostText:Show()
+	else
+		f.ghost:Hide()
+		f.ghostText:Hide()
+	end
+	for i = n + 1, #f.ghostDashes do f.ghostDashes[i]:Hide() end
 end
 
 --- The green snap: s = { x, y = the child's centre, px, py = the parent's,
@@ -1005,7 +1046,7 @@ local function Inspector()
 	p.title = A.Widgets.Text(p, "label", "LEFT")
 	p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12)
 	p.rows = {}
-	for i = 1, 6 do
+	for i = 1, 8 do
 		local k = A.Widgets.Text(p, "label", "LEFT")
 		k:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -12 - i * ROW_H)
 		local v = A.Widgets.Text(p, "label", "RIGHT")
@@ -1073,7 +1114,9 @@ end
 --- The inspector's rows for a node being dragged: its parent, its centre's
 --  offset from the parent's (up is positive) in field units, which way it
 --  grows from where it would be pinned, and its scale against the HUD's.
-local function NodeRows(entry)
+--  `cols` and `rows` are the shape a reshape would give, passed to the node's
+--  own rows.
+local function NodeRows(entry, cols, rows)
 	local f = entry.frame
 	local pf = not entry.pairLead and ParentFrame(entry)
 	local cx, cy = PointAt(f, "CENTER")
@@ -1083,7 +1126,7 @@ local function NodeRows(entry)
 	local unit = Px(1)
 	local point = ScreenAnchor(f, entry.growsDown)
 	local scale = (f:GetEffectiveScale() or 1) / UIScale() / (A.db.profile.scale or 1)
-	local rows = {
+	local out = {
 		{ L.movers.inspector.parent, pf and NodeLabel(entry.parent) or L.movers.inspector.screen },
 		{ L.movers.inspector.offset, ("%d, %d"):format(round(((cx or 0) - (px or 0)) / unit),
 			round(((cy or 0) - (py or 0)) / unit)) },
@@ -1091,12 +1134,12 @@ local function NodeRows(entry)
 		{ L.movers.inspector.scale, ("%d%%"):format(round(scale * 100)) },
 	}
 	local host = A.Braids and A.Braids:HostOf(entry.name)
-	if host then rows[#rows + 1] = { L.movers.inspector.braided, NodeLabel(host) } end
-	-- The node's own: a strand's rest and combat energy.
+	if host then out[#out + 1] = { L.movers.inspector.braided, NodeLabel(host) } end
+	-- The node's own: a strand's shape, size and energy.
 	if entry.rows then
-		for _, r in ipairs(entry.rows()) do rows[#rows + 1] = r end
+		for _, r in ipairs(entry.rows(cols, rows)) do out[#out + 1] = r end
 	end
-	return rows
+	return out
 end
 
 -- hollow junctions -------------------------------------------------------------
@@ -1181,6 +1224,106 @@ local function DressHandle(entry)
 	local inset = (entry.shape == "pill") and math.max(6, (h:GetHeight() or 0) / 2) or 6
 	tag:ClearAllPoints()
 	tag:SetPoint("TOPLEFT", h, "TOPLEFT", inset, -4)
+
+	-- The shape handle, on a strand with more than one shape to take.
+	local g = h.grip
+	if g then
+		g:SetSize(Px(16), Px(16))
+		g.tex:SetSize(Px(10), Px(10))
+		Tint(g.tex, c, 1)
+		local shapes = entry.reshape and entry.reshape.shapes()
+		g:SetShown(shapes ~= nil and #shapes >= 2)
+	end
+end
+
+-- reshaping ------------------------------------------------------------------
+-- STRANDS BRIEF 9b: the bottom-right junction is the shape handle. Dragging it
+-- picks the nearest cols x rows for the extent from the strand's top-left to
+-- the cursor, shown as a green ghost; letting go lays the strand out in it.
+-- Button size never changes.
+
+--- The shape in `shapes` whose size is nearest w x h, in UIParent units.
+local function NearestShape(shapes, w, h)
+	local best, bestD
+	for _, s in ipairs(shapes) do
+		local d = (s.w - w) ^ 2 + (s.h - h) ^ 2
+		if not bestD or d < bestD then best, bestD = s, d end
+	end
+	return best
+end
+Movers.NearestShape = NearestShape
+
+--- Where frame `f` would sit at w x h: it keeps the point it is anchored by,
+--  so a bar hung by its top centre reshapes about its centre. l, b, r, t.
+local function LandingRect(f, w, h)
+	local point = f:GetPoint(1)
+	if not VALID_POINTS[point] then point = "CENTER" end
+	local px, py = PointAt(f, point)
+	if not px then return nil end
+	local l = point:find("LEFT") and px or point:find("RIGHT") and (px - w) or (px - w / 2)
+	local t = point:find("TOP") and py or point:find("BOTTOM") and (py + h) or (py + h / 2)
+	return l, t - h, l + w, t
+end
+
+local function CreateGrip(entry, h)
+	local g = CreateFrame("Button", nil, h)
+	g:SetPoint("CENTER", h, "BOTTOMRIGHT", 0, 0)
+	g:SetFrameLevel((h:GetFrameLevel() or 1) + 5)
+	g:EnableMouse(true)
+	g:RegisterForDrag("LeftButton")
+	g.tex = g:CreateTexture(nil, "OVERLAY")
+	g.tex:SetTexture(A.Media.texture.diamond)
+	g.tex:SetPoint("CENTER", g, "CENTER", 0, 0)
+	g:Hide()
+
+	local function Finish(self, commit)
+		self:SetScript("OnUpdate", nil)
+		local rs = self._reshape
+		self._reshape = nil
+		ShowGhost(nil)
+		ShowInspector(nil)
+		Tint(self.tex, A.Palette.c.accent, 1)
+		if not (commit and rs and rs.pick) or rs.pick.cols == rs.cols then return end
+		if entry.reshape.apply(rs.pick.rows) then
+			-- Its bond is unchanged; only the screen half of the records moves.
+			if A.db.profile.anchors[entry.name] then SavePosition(entry, true) end
+			SaveDescendants(entry.name)
+			RefreshJunctions()
+		end
+	end
+
+	local function Track(self)
+		if InCombatLockdown() or not Movers.unlocked then Finish(self, false) return end
+		local rs = self._reshape
+		local us = UIScale()
+		local mx, my = GetCursorPosition()
+		mx, my = mx / us, my / us
+		local s = NearestShape(rs.shapes, mx - rs.l, rs.t - my)
+		rs.pick = s
+		local l, b, r, t = LandingRect(entry.frame, s.w, s.h)
+		if not l then return end
+		ShowGhost({ l = l, b = b, r = r, t = t, x = mx, y = my,
+			label = A.F(L.movers.inspector.shape_cr, s.cols, s.rows) })
+		ShowInspector(NodeLabel(entry.name), NodeRows(entry, s.cols, s.rows), entry.frame)
+	end
+
+	g:SetScript("OnDragStart", function(self)
+		if InCombatLockdown() then
+			A:Print(A.Bad(L.movers.create_handle.can_t_move_frames))
+			return
+		end
+		local shapes = entry.reshape and entry.reshape.shapes() or {}
+		local l, b = PointAt(entry.frame, "BOTTOMLEFT")
+		local r, t = PointAt(entry.frame, "TOPRIGHT")
+		if #shapes < 2 or not l then return end
+		self._reshape = { shapes = shapes, l = l, t = t,
+			cols = NearestShape(shapes, r - l, t - b).cols }
+		Tint(self.tex, A.Palette.c.friendly, 1)
+		self:SetScript("OnUpdate", Track)
+	end)
+	g:SetScript("OnDragStop", function(self) Finish(self, true) end)
+
+	h.grip = g
 end
 
 local function CreateHandle(entry)
@@ -1203,6 +1346,8 @@ local function CreateHandle(entry)
 	h.junction = h:CreateTexture(nil, "OVERLAY")
 	h.junction:SetTexture(A.Media.texture.diamond)
 	h.junction:SetPoint("CENTER", h, "CENTER", 0, 0)
+
+	if entry.reshape then CreateGrip(entry, h) end
 
 	-- Dragging is tracked by hand rather than handed to StartMoving, because
 	-- StartMoving owns the frame's position for the length of the drag and there
@@ -1468,6 +1613,12 @@ end
 --                          is (board 4a). Anything else is a rounded rectangle.
 --    braid = true          a strand: it can be braided onto another strand's
 --                          edge, and another onto its own (Core/Braids.lua).
+--    rows = function(cols, rows)
+--                          the node's own inspector rows; cols and rows are a
+--                          reshape's preview when one is being dragged.
+--    reshape = { shapes = fn, apply = fn(rows) }
+--                          a strand with a shape handle. shapes() lists
+--                          { cols, rows, w, h } in UIParent units.
 
 --- Which node an entry hangs from, from its saved record.
 --
@@ -1513,6 +1664,7 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.shape = opts and opts.shape or entry.shape
 	entry.braid = opts and opts.braid or nil
 	entry.rows = opts and opts.rows or nil
+	entry.reshape = opts and opts.reshape or nil
 
 	entry.defaultParent = opts and opts.parent or nil
 	ResolveParent(entry)
@@ -1522,7 +1674,9 @@ function Movers:Register(name, frame, default, label, opts)
 	Adopt(name)
 
 	if Movers.unlocked then
-		if not entry.handle then CreateHandle(entry) end
+		-- Dressed again: a strand that gained or lost buttons gains or loses
+		-- its shape handle.
+		if entry.handle then DressHandle(entry) else CreateHandle(entry) end
 		entry.handle:Show()
 		DrawBonds()
 	end
@@ -1824,6 +1978,7 @@ function Movers:Lock()
 	HideBonds()
 	ShowSnap(nil)
 	ShowBondTarget(nil)
+	ShowGhost(nil)
 	ShowInspector(nil)
 	if A.Braids then A.Braids:ShowEdge(nil) end
 	ShowLockButton(false)
