@@ -2,12 +2,13 @@
 
 *Formerly AetherUI. Same addon, new name.*
 
-![A Glass user interface for World of Warcraft - Classic/Forever](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/brand/Lattice-Logo.png)
+![A Glass-Lattice user interface for World of Warcraft - Classic/Forever](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/brand/Lattice-Logo.png)
 
-A glass HUD for **WoW Classic Era & WoW: Forever**. Unit frames, action bars,
-chat, minimap, quests and bags in frosted glass, four palettes, and an
-interface that gets out of your way when nothing is happening. The game's own
-windows are left as Blizzard made them.
+A glass HUD for **WoW Classic Era & WoW: Forever** where everything is a node in a lattice.  
+Unit frames, action bars, chat, minimap, quests and bags in frosted glass, twelve skins, 
+and an interface that focuses on what's important in game. 
+
+Our focus is on the "chrome" (the interface you use all the time). The default panels (character sheet, spellbook etc.) are left as Blizzard designed them.
 
 One addon, no modules to install, no profile to import. It sets itself up the
 first time you log in.
@@ -25,31 +26,35 @@ Drop the `Lattice` folder into your game's AddOns folder:
 World of Warcraft\<your game's folder>\Interface\AddOns\
 ```
 
-The game's folder is `_classic_era_` for Classic Era.
+The game's folder is `_classic_era_` for Classic Era, and WoW: Forever has its
+own (`_classic_beta_` for the WoW: Forever Beta - will update when Forever releases).
+
+Coming from AetherUI? Remove the old `AetherUI` folder. Lattice starts with fresh
+settings, and the tour sets you up again in about a minute. If both are
+installed, Lattice offers to switch the old one off.
 
 Then start the game.
 
 ## First time in
 
-A short tour runs on your first character. Nine stops, takes about a minute, and 
-every choice you make applies live on the real interface rather than in a preview.
+A short tour runs on your first character. Your screen starts with just your own
+frame, and each of eight stops adds the next piece and asks one thing about it.
+It takes about a minute, and every choice applies live on the real interface
+rather than in a preview.
 
-![The tour's first stop: four palette swatches in a callout beside the real
-player frame, with the world dimmed behind](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/2-Tour.jpg)
+Along the way you pick:
 
-The tour helps you make 4 choices:
+- **Your pet and target-of-target frames** — on or off.
+- **Your bars** — three starting shapes: Rows, Block or Split.
+- **Your skin** — twelve of them: Midnight, Dawn, Noon and Dusk; Amethyst,
+  Sapphire, Emerald and Ruby; Winter, Spring, Summer and Autumn. Hover one to try
+  it on.
 
-- **Your palette** — Midnight, Dawn, Noon or Dusk. Select one and the whole
-  interface recolours at once.
-- **Your layout** — three starting arrangements: frames in the corner, frames 
-   centred on your character, or frames flanking the action bars.
-- **Where the Toolbox lives** — pick a screen edge.
-- **How long before the interface goes Zen** — or never.
+It also shows you the two trunks, what a fight looks like, the settings map, and
+how to share your layout. On an alt it offers to keep the setup you already
+chose and skip the questions.
 
-Everything after that is a demonstration. On an alt it offers to take the setup
-you already chose and skip the questions.
-
-Run it again any time with `/lattice tour` (or from Config).
+Run it again any time with `/lattice tour`, or from Settings > Take the tour.
 
 ## What you get
 
@@ -59,30 +64,37 @@ with a class-coloured level orb. Buffs above, debuffs below.
 ![The HUD in combat: player, pet, target and its target, with a cast bar
 and the target's debuffs on the frame rather than beside it](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/1-HUD.jpg)
 
-**Party frames** — four capsules in fixed slots that move as one block, with a
-controls drawer for raid marks, ready check, role check and a countdown.
+**Party frames** — four capsules in fixed slots that move as one block. Raid
+marks, ready check, role check and a countdown are on the Party branch of the
+Toolbox, there while you're in a group.
 
-**Action bars** — six of them, independent, plus stance and pet bars. Cooldowns,
-charges and range draw *on* the icons. `/lattice bind` puts you in keybind mode: 
-hover over a button, press a key.
+**Action bars** — six of them (nine on WoW: Forever), independent, plus stance,
+pet and extra bars. Cooldowns, charges and range draw *on* the icons. Reshape any
+bar from its corner in unlock: rows, columns, uneven shapes, wrapping down
+instead of across. Drag one bar's edge against another's to join them into a
+block. Each bar can rest dimmer out of a fight, show only on hover, and show its
+keybinds. `/lattice bind` puts you in keybind mode: hover over a button, press a
+key.
 
 ![An action bar close up, one button counting down under its own icon](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/6-Bar.png)
 
-**The Toolbox** — a drawer that docks to any screen edge. Everything you'd
-otherwise hunt for is in it: UI settings, useful widgets, your addon buttons, and 
-a standard menu. It has a rail that stays on screen when the drawer is shut.
-
-![The Toolbox drawer open on the left edge](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/3-Toolbox.png)
+**The Toolbox** — a trunk down the left of your screen. Everything you'd
+otherwise hunt for branches off it: a menu of the game's windows, useful widgets,
+your addon buttons, quick settings, what's new, and Party while you're in a
+group. Pin an addon's button and it sits on the trunk.
 
 **Bags** — all your bags in one panel, sorted into categories, with a automated
 junk sale and repair (configurable) and your equipped bags in a drawer at the edge.
 
-**Quest tracker and quest log** — the tracker folds itself away when a fight
-starts and comes back when it ends. The log is a reimagined dual pane questlog 
-rather than Blizzard's reskinned.
+**The World trunk** — hangs from the minimap. Your tracked quests sit on it with
+their item buttons, alongside Mail, Tracking, the Calendar and the music player.
+In a fight it draws up out of the way and leaves your active quest showing.
 
-If you have the Questie and TomTom addons installed, you can right-click items in
-the quest tracker to find a menu item saying: "Navigate with TomTom".
+**Quest log** — a reimagined dual pane questlog rather than Blizzard's
+reskinned.
+
+If you have the Questie and TomTom addons installed, you can right-click a quest
+on the World trunk to find a menu item saying: "Navigate with TomTom".
 
 **Threat** — your own unitframe tells you before trouble arrives: a ring that fills,
 gold when you're climbing, red when it's on you. What counts as trouble flips
@@ -102,32 +114,45 @@ thoroughly disreputable gossip rags to amuse yourself while in-flight. It is tim
 to your flight path and will stop automatically when you land unless you configure it 
 to keep going. 
 
-It plays on the ground too, from the Toolbox, where it is called N.I.F.E.C. for 
-reasons I stand behind (note: The "N" stands for "Not").
+It works on Classic Era and WoW: Forever, each with its own flight times.
+
+It plays on the ground too, from its node on the World trunk, where it is called
+N.I.F.E.C. for reasons I stand behind (note: The "N" stands for "Not").
 
 ![The console mid-flight, library open, counting down to landing](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/5-IFEC.jpg)
 
 ## Moving things
 
-`/lattice unlock`, then drag. Scroll a frame to nudge it a pixel at a time; hold
-shift to nudge sideways. Edges snap to a grid and to each other — hold alt to
-place freely. Frames you can't normally see, like the pet bar, are held up while
+Frames hang from each other: the target from you, your bars from the line
+between you and your target. Move one and what hangs from it comes too.
+
+`/lattice unlock`, then drag. Unlock shows how things connect: a dot field to
+snap to, the lines between frames, and an inspector. A frame snaps to its
+parent's centre lines first, then to other frames and the dots; hold shift while
+dragging to place freely. Drop a frame on another's junction to hang it from
+that one. Scroll a frame to nudge it a pixel at a time; hold shift to nudge
+sideways. Frames you can't normally see, like the pet bar, are held up while
 you're unlocked so you can put them somewhere.
 
 `/lattice lock` when you're done, or click the lock button.
 
+Your whole layout can be saved (and shared) as one line of text. `/lattice layout` opens it to copy,
+share or paste someone else's back.
+
 ## Settings
 
-`/lattice` opens the options panel. Every setting has an explanation next to it; if
-something isn't behaving the way you expect, the description usually says why.
-You can also find it under Options → AddOns → Lattice.
+`/lattice` opens the settings: a map of your own screen. Point at the thing you
+want to change, or press `/` and search. Every setting has an explanation next to
+it; if something isn't behaving the way you expect, the description usually says
+why. You can also find it under Options → AddOns → Lattice.
 
 The most useful ones from chat:
 
 ```
-/lattice skin midnight|dawn|noon|dusk
+/lattice skin <name>             midnight, dawn, amethyst, winter... (all twelve)
 /lattice scale 0.6-1.6           size everything, together
 /lattice unlock                  drag frames into place
+/lattice layout                  your layout as one line, to copy or share
 /lattice bind                    keybind mode
 /lattice zen off                 stop the interface fading
 /lattice tour                    run the first-run tour again
@@ -147,9 +172,9 @@ out of. Paste that into a bug report and I'll have what I need.
 
 Classic Era (interface 11509) and WoW: Forever (16001). It replaces some of
 Blizzard's interface rather than skinning it, so it may argue with other addons
-that do the same thing to the same frames. It gets along fine with the ones that don't — Questie,
-Leatrix, SmartBuff and the rest are all welcome, and anything with a minimap
-button gets collected into the Toolbox automatically.
+that do the same thing to the same frames. It gets along fine with the ones that don't. 
+Questie, TomTom, Leatrix and SmartBuff are known to be compatible. 
+Anything with a minimap button gets collected into the Toolbox automatically.
 
 ## Help and bugs
 
