@@ -14,7 +14,7 @@ One addon, no modules to install, no profile to import. It sets itself up the
 first time you log in.
 
 ![A full screen: party frames and their controls, unit frames centred on the
-character, quest tracker, minimap, chat and the action bars](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/7-Layout.jpg)
+character, quest tracker, minimap, chat and the action bars](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/7-Layout.webp)
 
 ---
 
@@ -62,7 +62,7 @@ Run it again any time with `/lattice tour`, or from Settings > Take the tour.
 with a class-coloured level orb. Buffs above, debuffs below.
 
 ![The HUD in combat: player, pet, target and its target, with a cast bar
-and the target's debuffs on the frame rather than beside it](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/1-HUD.jpg)
+and the target's debuffs on the frame rather than beside it](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/1-HUD.webp)
 
 **Party frames** — four capsules in fixed slots that move as one block. Raid
 marks, ready check, role check and a countdown are on the Party branch of the
@@ -119,7 +119,7 @@ It works on Classic Era and WoW: Forever, each with its own flight times.
 It plays on the ground too, from its node on the World trunk, where it is called
 N.I.F.E.C. for reasons I stand behind (note: The "N" stands for "Not").
 
-![The console mid-flight, library open, counting down to landing](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/5-IFEC.jpg)
+![The console mid-flight, library open, counting down to landing](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/5-NIFEC.webp)
 
 ## Moving things
 
