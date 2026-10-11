@@ -9,7 +9,7 @@
 	    remembered to bump;
 	  * the full history behind the card's Notes link, which did not exist.
 
-	The version is NOT written here. `## Version` in AetherUI.toc is the single
+	The version is NOT written here. `## Version` in Lattice.toc is the single
 	source of truth - it is what the client shows in its own addon list, what
 	CurseForge reads, and what A.version already carries - so an entry here
 	claiming a different one would be a second answer to a question that has

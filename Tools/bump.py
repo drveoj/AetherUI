@@ -38,7 +38,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-TOC = ROOT / "AetherUI.toc"
+TOC = ROOT / "Lattice.toc"
 LOG = ROOT / "Core" / "Changelog.lua"
 
 MD = ROOT / "CHANGELOG.md"

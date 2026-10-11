@@ -1137,7 +1137,10 @@ Config.Migrate = Migrate
 
 function Config:Initialize()
 	local AceDB = LibStub("AceDB-3.0")
-	A.db = AceDB:New("AetherUIDB", Config.defaults, true)
+	-- LatticeDB, as the .toc declares: Lattice starts with fresh settings
+	-- (the rename plan, Joe's call) - WoW keeps saved variables per addon
+	-- folder, and the parent model's layout does not map onto 1.x positions.
+	A.db = AceDB:New("LatticeDB", Config.defaults, true)
 	Migrate(A.db)
 
 	-- All three through the one path. A copy and a reset rewrite the tables

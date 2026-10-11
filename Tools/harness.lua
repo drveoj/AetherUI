@@ -5719,7 +5719,7 @@ _G.__addons = {
 	{ name = "OtherPlain",  title = "Other Plain" },
 }
 
---- The version, read from the REAL AetherUI.toc.
+--- The version, read from the REAL Lattice.toc.
 --
 --  This was the literal "0.1.0", and it was a mock telling a different story
 --  from the client: A.version is what GetAddOnMetadata hands back, everything
@@ -5729,7 +5729,7 @@ _G.__addons = {
 --  had chosen for itself. Bump the .toc and the suite would have carried on
 --  agreeing with itself about a version nobody was running.
 local TOC_VERSION = (function()
-	local f = io.open("AetherUI.toc", "r")
+	local f = io.open("Lattice.toc", "r")
 	if not f then return "0.0.0" end
 	for line in f:lines() do
 		local v = line:match("^##%s*Version:%s*(%S+)")
@@ -6047,7 +6047,9 @@ end
 -- loading
 -- ---------------------------------------------------------------------------
 
-local ADDON = "AetherUI"
+-- The folder name, which is the name the client hands the addon: Lattice since
+-- 2.0.0. Media paths are built from it, so the font checks below ask for it.
+local ADDON = "Lattice"
 local A = {}
 
 --- FATAL, not counted.
@@ -7713,7 +7715,7 @@ local function tick(dt)
 end
 
 print("== boot ==")
-AetherUIDB = nil
+LatticeDB = nil
 fire("ADDON_LOADED", ADDON)
 fire("PLAYER_LOGIN")
 -- A CHARACTER THAT HAS BEEN THROUGH THE TOUR. The first run holds the whole HUD
@@ -7852,7 +7854,7 @@ section("which client the addon thinks it is on", function()
 	-- addon supports and nothing keeps them in step; the same argument the icon
 	-- path check already makes about the .toc naming a texture twice.
 	do
-		local fh = io.open("AetherUI.toc", "rb")
+		local fh = io.open("Lattice.toc", "rb")
 		local line = fh and fh:read("*l") or ""
 		if fh then fh:close() end
 		local declared, unknown = 0, {}
@@ -9675,7 +9677,7 @@ do
 	local function num(k) return tonumber(cv[k]) end
 
 	enterZen()
-	check(_G.__music == [[Interface\AddOns\AetherUI\Media\Audio\zen-]]
+	check(_G.__music == [[Interface\AddOns\Lattice\Media\Audio\zen-]]
 		.. (Z._track and Z._track.key or "?") .. ".ogg",
 		"a track is looping on the music channel (" .. tostring(_G.__music) .. ")")
 
@@ -11260,7 +11262,7 @@ do
 	-- true and useless - it names the method we are standing in rather than
 	-- whoever called it.
 	_G.__stack =
-		"Interface/AddOns/AetherUI/Modules/Chat.lua:2210: in function <AetherUI/Chat.lua>\n"
+		"Interface/AddOns/Lattice/Modules/Chat.lua:2210: in function <Lattice/Chat.lua>\n"
 		.. "[C]: in function 'SetPoint'\n"
 		.. "Interface/FrameXML/FloatingChatFrame.lua:1502: in function `FCF_UpdateDockPosition'\n"
 		.. "Interface/FrameXML/UIParent.lua:3300: in function `UIParent_ManageFramePositions'"
@@ -15782,7 +15784,7 @@ do
 	local w = tt.added[1]
 	check(w[1] == 1411 and math.abs(w[2] - 0.45) < 0.0001 and math.abs(w[3] - 0.62) < 0.0001,
 		"at the right place on the right map")
-	check(w.opts.from == "AetherUI", "stamped as ours, so its tooltip says where it came from")
+	check(w.opts.from == ADDON, "stamped as ours, so its tooltip says where it came from")
 	check(w.opts.crazy == true, "with the arrow armed - it is the whole point of asking")
 	-- The trap that costs a phantom minimap pin per reload.
 	check(w.opts.persistent == false,
@@ -16685,12 +16687,12 @@ section("fonts: the game's own lettering, in one pass", function()
 	-- BEFORE the sweep and one made after, because those are different claims:
 	-- the first is inheritance working, the second is why a pooled string the
 	-- client resets on every use is covered at all.
-	check(tostring(select(1, _G.ZoneTextString:GetFont())):find("AetherUI", 1, true),
+	check(tostring(select(1, _G.ZoneTextString:GetFont())):find(ADDON, 1, true),
 		"a string that already existed follows its object (" ..
 		tostring(select(1, _G.ZoneTextString:GetFont())) .. ")")
 	local fresh = UIParent:CreateFontString(nil, "ARTWORK")
 	fresh:SetFontObject("GameFontNormal")
-	check(tostring(select(1, fresh:GetFont())):find("AetherUI", 1, true),
+	check(tostring(select(1, fresh:GetFont())):find(ADDON, 1, true),
 		"and so does one created afterwards, which no per-string pass could have"
 		.. " reached")
 
@@ -16707,7 +16709,7 @@ section("fonts: the game's own lettering, in one pass", function()
 	-- not reach it. "You can't do that yet" was the one thing on screen that
 	-- made the old lettering obvious, and it is why the frame list exists.
 	local path, size = _G.UIErrorsFrame:GetFont()
-	check(tostring(path):find("AetherUI", 1, true),
+	check(tostring(path):find(ADDON, 1, true),
 		"the error frame is ours too, from the frame list rather than from"
 		.. " inheritance (" .. tostring(path) .. ")")
 	check(size == 16, "at its own size (" .. tostring(size) .. ")")
@@ -16715,7 +16717,7 @@ section("fonts: the game's own lettering, in one pass", function()
 	_G.UIErrorsFrame.__messages = {}
 	_G.UIErrorsFrame:AddMessage("You can't do that yet.", 1, 0.1, 0.1)
 	local msg = _G.UIErrorsFrame.__messages[1]
-	check(msg and msg.font and tostring(msg.font[1]):find("AetherUI", 1, true),
+	check(msg and msg.font and tostring(msg.font[1]):find(ADDON, 1, true),
 		"and a message added afterwards carries it, which is the only thing that"
 		.. " proves the font went on the frame rather than beside it")
 end)
@@ -16746,7 +16748,7 @@ section("fonts: and gives the game back when you switch it off", function()
 		"and still the client's after off, on, dress, off")
 
 	A:SetModuleEnabled("fonts", true)
-	check(tostring(select(1, _G.ZoneTextFont:GetFont())):find("AetherUI", 1, true),
+	check(tostring(select(1, _G.ZoneTextFont:GetFont())):find(ADDON, 1, true),
 		"and ours again on the way back")
 end)
 
@@ -16777,14 +16779,14 @@ section("fonts: a face the client cannot load is put back, not left half on", fu
 		.. " of " .. tostring(dressedOk) .. ")")
 
 	-- And the ones that CAN load still did.
-	check(tostring(select(1, _G.GameFontNormal:GetFont())):find("AetherUI", 1, true),
+	check(tostring(select(1, _G.GameFontNormal:GetFont())):find(ADDON, 1, true),
 		"while the rest of the pass carries on - one missing face is not a"
 		.. " reason to leave the interface in two fonts")
 
 	_G.__badFonts = nil
 	A:SetModuleEnabled("fonts", false)
 	A:SetModuleEnabled("fonts", true)
-	check(tostring(select(1, _G.ZoneTextFont:GetFont())):find("AetherUI", 1, true),
+	check(tostring(select(1, _G.ZoneTextFont:GetFont())):find(ADDON, 1, true),
 		"and it takes on a client that can load it")
 end)
 
@@ -16871,7 +16873,7 @@ section("menus: the client's own right-click menus, in our glass", function()
 	-- acquire, and Modules/Fonts.lua remapped that object before any menu
 	-- existed. Nothing in Modules/Menus.lua knows the text is there.
 	local path, size = menu.__line:GetFont()
-	check(tostring(path):find("AetherUI", 1, true),
+	check(tostring(path):find(ADDON, 1, true),
 		"a menu line is in our lettering, from the font object rather than from"
 		.. " anything here (" .. tostring(path) .. ")")
 	check(size == 12,
@@ -16883,7 +16885,7 @@ section("menus: the client's own right-click menus, in our glass", function()
 	-- re-applied is gone by the second menu - which is exactly the bug you would
 	-- never see while testing, because you always look at the first one.
 	local again = _G.__OpenMenu(1)
-	check(tostring(select(1, again.__line:GetFont())):find("AetherUI", 1, true),
+	check(tostring(select(1, again.__line:GetFont())):find(ADDON, 1, true),
 		"and still ours the second time the same pooled frame is handed out")
 
 	-- ONE BACKGROUND, NOT TWO. Blizzard's Generate attaches an atlas and a
@@ -16972,7 +16974,7 @@ section("menus: and gives them back when you switch it off", function()
 		"the client draws its own panel again")
 	-- The LETTERING stays ours, and should: it belongs to the fonts module, and
 	-- somebody switching the menu glass off has said nothing about type.
-	check(tostring(select(1, menu.__line:GetFont())):find("AetherUI", 1, true),
+	check(tostring(select(1, menu.__line:GetFont())):find(ADDON, 1, true),
 		"while the lettering stays ours - that is a different module, and a"
 		.. " different question (" ..
 		tostring(select(1, menu.__line:GetFont())) .. ")")
@@ -18353,7 +18355,7 @@ do
 	SlashCmdList["AETHERUI"]("preset capture centre")
 	chat.AddMessage = realAdd
 
-	local box = _G.AetherUIErrorBox
+	local box = _G[ADDON .. "ErrorBox"]
 	check(box ~= nil, "the copy box was opened")
 	local text = box and box:GetText() or ""
 	check(text:match("^LAT%d+;") ~= nil and text:find("player=", 1, true) ~= nil,
@@ -20317,7 +20319,7 @@ do
 		-- By name when the icons will not match: the client may answer a path
 		-- where the spell's icon is a file ID.
 		_G.__trackTex = [[Interface\Minimap\Tracking\Mining]]
-		T.scan = CreateFrame("GameTooltip", "AetherUITrackingScan", nil, "GameTooltipTemplate")
+		T.scan = CreateFrame("GameTooltip", ADDON .. "TrackingScan", nil, "GameTooltipTemplate")
 		function T.scan:SetTrackingSpell() self:AddLine("Find Minerals") end
 		Track.scan = T.scan
 		T.tr.button:GetScript("OnClick")(T.tr.button)
@@ -22760,7 +22762,7 @@ do
 	-- ship a version with no notes" a fact rather than a hope.
 	local tocVersion
 	do
-		local f = io.open("AetherUI.toc", "r")
+		local f = io.open("Lattice.toc", "r")
 		if f then
 			for line in f:lines() do
 				local v = line:match("^##%s*Version:%s*(%S+)")
@@ -22769,7 +22771,7 @@ do
 			f:close()
 		end
 	end
-	check(tocVersion ~= nil, "AetherUI.toc declares a version (" ..
+	check(tocVersion ~= nil, "Lattice.toc declares a version (" ..
 		tostring(tocVersion) .. ")")
 
 	-- THE ADDON LIST'S ICON, and the second place that texture path is written.
@@ -22781,7 +22783,7 @@ do
 	-- no file is not an error anywhere, it is just a gap.
 	do
 		local tocIcon
-		local f = io.open("AetherUI.toc", "r")
+		local f = io.open("Lattice.toc", "r")
 		if f then
 			for line in f:lines() do
 				local v = line:match("^##%s*IconTexture:%s*(%S+)")
@@ -22790,7 +22792,7 @@ do
 			f:close()
 		end
 		check(tocIcon ~= nil,
-			"AetherUI.toc names an icon for the addon list, rather than taking"
+			"Lattice.toc names an icon for the addon list, rather than taking"
 			.. " the question mark (" .. tostring(tocIcon) .. ")")
 		check(tocIcon == A.Media.texture.icon,
 			"and it is the same path Media.texture.icon resolves to")
@@ -22802,7 +22804,7 @@ do
 	-- addon that did not contain it. A module nobody tests looks perfect.
 	do
 		local inToc, missing = {}, {}
-		local f = io.open("AetherUI.toc", "r")
+		local f = io.open("Lattice.toc", "r")
 		if f then
 			for line in f:lines() do
 				local path = line:match("^(%S+%.lua)%s*$")
@@ -23583,7 +23585,7 @@ do
 	local M = A.Movers
 	M:Unlock()
 
-	local g = _G.AetherUIMoverGrid
+	local g = _G[ADDON .. "MoverGrid"]
 	check(g ~= nil and g:IsShown(), "the grid appears with the handles")
 	check(#g.lines > 0, "and has lines in it")
 
@@ -23729,7 +23731,7 @@ do
 	UIParent:SetSize(1000, 1080)
 	A.db.profile.anchors.__lockButton = nil
 	M:Unlock()
-	local g = _G.AetherUIMoverGrid
+	local g = _G[ADDON .. "MoverGrid"]
 
 	check(g.veil:IsShown() and select(4, unpack(g.veil.__color or {})) == 0.45,
 		"the world is dimmed under everything of ours")
@@ -29825,7 +29827,7 @@ do
 	-- install with its Media folder missing.
 	do
 		local saved = A.Media.font.light
-		A.Media.font.light = [[Interface\AddOns\AetherUI\Media\Fonts\Nope.ttf]]
+		A.Media.font.light = [[Interface\AddOns\Lattice\Media\Fonts\Nope.ttf]]
 		_G.__badFonts = { [A.Media.font.light] = true }
 		T:ApplyFonts()
 		local path = GameTooltipText:GetFont()
