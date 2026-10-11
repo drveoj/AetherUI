@@ -188,9 +188,18 @@ local function BuildNode(t, node)
 		end
 		t:Toggle(node.key)
 	end)
-	-- Over its node, a hidden label pops out.
-	b:SetScript("OnEnter", function() node.hover = true t:Extend() end)
-	b:SetScript("OnLeave", function() node.hover = nil t:Extend() end)
+	-- Over its node, a hidden label pops out; and the owner's own hover, such
+	-- as Tracking's tooltip.
+	b:SetScript("OnEnter", function()
+		node.hover = true
+		t:Extend()
+		if node.onEnter then node.onEnter(node) end
+	end)
+	b:SetScript("OnLeave", function()
+		node.hover = nil
+		t:Extend()
+		if node.onLeave then node.onLeave(node) end
+	end)
 	node.button = b
 	return b
 end
@@ -278,7 +287,15 @@ function Proto:Paint()
 			node.lit = lit
 			-- Open, not merely active: a playing node's name still tucks away.
 			node.branchOpen = (node.isOpen and node.isOpen()) and true or false
-			Media:SetIcon(b.icon, type(node.icon) == "function" and node.icon() or node.icon)
+			-- A game texture in place of our icon - the spell being tracked on
+			-- Era - drawn in its own colours, lit or not.
+			local raw = node.texture and node.texture() or nil
+			if raw then
+				b.icon:SetTexture(raw)
+				b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+			else
+				Media:SetIcon(b.icon, type(node.icon) == "function" and node.icon() or node.icon)
+			end
 			local dot = node.badge and node.badge() and true or false
 			b.dot:SetShown(dot)
 			-- The design's info blue (README: Mail's and What's new's dots); in
@@ -303,6 +320,7 @@ function Proto:Paint()
 				b.stub:SetVertexColor(a[1], a[2], a[3], 0.35)
 				b.junction:Hide()
 			end
+			if raw then b.icon:SetVertexColor(1, 1, 1, 1) end
 			b.stub:SetHeight(lit and 1.5 or 1)
 			-- Once per skin rather than per paint: see Decorate.
 			if b.labelInk ~= a then
@@ -539,6 +557,75 @@ A:OnSkinChanged(function()
 	end
 end)
 
+-- ---------------------------------------------------------------------------
+-- a click elsewhere
+--
+-- A pop-out branch (a transient one) closes on a click anywhere but the trunk
+-- and its branches, as the client's own menus do on GLOBAL_MOUSE_DOWN
+-- (Blizzard_Menu/Menu.lua) - Joe: ours stayed open until Escape, unlike the
+-- tracking menu beside them. Windows are not branches and stay: the Quest Log
+-- and the Calendar, like Blizzard's own windows, survive a click on the world,
+-- which is where a quest-giver is (Joe's yes).
+-- ---------------------------------------------------------------------------
+
+--- Whether `f` or a parent of it is a trunk's frame - every branch panel is a
+--  child of one (Proto:Branch) - or is marked `__trunkOwned`, for what hangs
+--  from UIParent over a branch (Era's tracking rows).
+local function OnTrunk(f)
+	for _ = 1, 64 do
+		if not f then return false end
+		if f.__trunkOwned then return true end
+		for _, t in pairs(Trunk.list) do
+			-- The root too: the Toolbox's toggles a branch, and closing it on
+			-- the press would have the release open it again.
+			if (t.frame and f == t.frame) or (t.root and f == t.root) then return true end
+		end
+		f = f.GetParent and f:GetParent() or nil
+	end
+	return false
+end
+
+--- What the cursor is over: GetMouseFoci on both clients today, the older
+--  single answer where only that exists.
+local function UnderMouse()
+	if _G.GetMouseFoci then
+		local ok, foci = pcall(_G.GetMouseFoci)
+		if ok and type(foci) == "table" then return foci end
+		return {}
+	end
+	if _G.GetMouseFocus then
+		local ok, f = pcall(_G.GetMouseFocus)
+		return { ok and f or nil }
+	end
+	return {}
+end
+
+function Trunk:ClickedAt(button)
+	if button ~= "LeftButton" and button ~= "RightButton" then return end
+	-- One of the client's menus open - a dropdown inside a branch - has this
+	-- click: it closes itself on one outside it, and ours goes on the next.
+	local M = _G.Menu
+	if M and M.GetManager then
+		local ok, open = pcall(function() return M.GetManager():IsAnyMenuOpen() end)
+		if ok and open then return end
+	end
+	for _, f in ipairs(UnderMouse()) do
+		if OnTrunk(f) then return end
+	end
+	for _, t in pairs(Trunk.list) do
+		local closed = false
+		for _, node in ipairs(t.nodes) do
+			if node.transient and node.close and node.isOpen and node.isOpen() then
+				node.close(node)
+				closed = true
+			end
+		end
+		if closed then t:Paint() end
+	end
+end
+
+A:RegisterEvent(Trunk, "GLOBAL_MOUSE_DOWN", function(_, _, button) Trunk:ClickedAt(button) end)
+
 --- The other combat energy (README "Two energies for trunks", the left
 --  trunk): the nodes stay, the labels go and an open transient branch closes.
 function Proto:SetQuiet(on)
@@ -639,9 +726,11 @@ end
 
 --- Add, or replace, a node. opts: icon (name or function), label (text or
 --  function), order, open(node), close(node), isOpen(), available(); badge()
---  for a dot on the node, menu for a node that opens a menu rather than a
---  branch, transient for a branch that closes when the trunk retracts,
---  active() to light it with no branch open, onRightClick(node).
+--  for a dot on the node, menu (or menu(node), asked at the click) for a node
+--  that opens a menu rather than a branch, transient for a branch that closes
+--  when the trunk retracts, active() to light it with no branch open,
+--  onRightClick(node), texture() for a game texture in place of the icon,
+--  onEnter(node) / onLeave(node) for the owner's own hover.
 function Proto:AddNode(key, opts)
 	local node
 	for _, n in ipairs(self.nodes) do
@@ -667,7 +756,9 @@ function Proto:Toggle(key)
 	local node = self:Node(key)
 	if not node then return end
 	-- A menu is not a branch: it leaves the open one alone.
-	if node.menu then
+	local menu = node.menu
+	if type(menu) == "function" then menu = menu(node) end
+	if menu then
 		if node.open then node.open(node) end
 		return
 	end

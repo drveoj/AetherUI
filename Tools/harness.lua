@@ -1376,6 +1376,10 @@ function CreateFrame(kind, name, parent, template)
 	function f:GetPropagateMouseClicks() return self.__passClicks == true end
 	function f:GetAttribute(k) return self.__attrs[k] end
 	function f:GetName() return self.__name end
+	-- A FRAME's, and a frame's only: textures have no GetWindow. Blizzard's
+	-- menu calls it on whatever a menu is anchored to (Menu.lua:2220), so a
+	-- menu anchored to a texture throws in game (Joe, 2026-10-11).
+	function f:GetWindow() return _G.__window end
 
 	function f:RegisterForClicks(...) self.__clicks = { ... } end
 	function f:SetChecked(v) self.__checked = v and true or false end
@@ -3470,14 +3474,20 @@ if _G.__flavour == "camelot" then
 	MinimapCluster.BorderTop      = CreateFrame("Frame", nil, MinimapCluster)
 	MinimapCluster.ZoneTextButton = CreateFrame("Button", nil, MinimapCluster)
 	MinimapCluster.Tracking       = CreateFrame("Frame", nil, MinimapCluster)
-	-- A DropdownButton, and it has NO menuGenerator. MiniMapTrackingButtonMixin
-	-- builds its list with SetupMenu inside OnLoad, so the only handle an addon
-	-- gets is OpenMenu - which is the one thing EllesmereUI guards on before
-	-- touching it. Modelling a menuGenerator here would be the mock inventing
-	-- the field our module happens to reach for first, which is the exact
-	-- fabrication that put MiniMapTrackingDropDown and then
-	-- MiniMapTrackingButton into the Era mock.
+	-- A DropdownButton WITH a menuGenerator. MiniMapTrackingButtonMixin builds
+	-- its list with SetupMenu inside OnLoad, and SetupMenu stores the generator
+	-- as self.menuGenerator (Blizzard_Menu/DropdownButton.lua:239).
+	--
+	-- THIS MOCK SAID THE OPPOSITE until 2026-10-11, on a guess about what
+	-- SetupMenu did, and so the module's "park the button, OpenMenu" path was
+	-- the one tested while the game took the CreateContextMenu path - which
+	-- opens at the cursor. Joe's screenshot of the menu jammed against the
+	-- screen's edge is what it cost. The third fabrication in these lines,
+	-- after MiniMapTrackingDropDown and MiniMapTrackingButton in the Era mock.
 	MinimapCluster.Tracking.Button = CreateFrame("Button", nil, MinimapCluster.Tracking)
+	MinimapCluster.Tracking.Button.menuGenerator = function(_, root)
+		if root and root.CreateCheckbox then root:CreateCheckbox("Flight Master") end
+	end
 	function MinimapCluster.Tracking.Button:OpenMenu()
 		_G.__trackingMenu = self
 	end
@@ -3552,9 +3562,20 @@ _G.__minimapPin:SetAlpha(0.5)
 Minimap:SetSize(140, 140)
 function Minimap:SetMaskTexture(t) self.__mask = t end
 function Minimap:GetZoom() return self.__zoom or 0 end
-function Minimap:SetZoom(z) self.__zoom = z end
-function Minimap_ZoomInClick() Minimap:SetZoom(math.min(5, Minimap:GetZoom() + 1)) end
-function Minimap_ZoomOutClick() Minimap:SetZoom(math.max(0, Minimap:GetZoom() - 1)) end
+function Minimap:GetZoomLevels() return 6 end
+-- THE CLIENT REFUSES A ZOOM OUT OF RANGE, and Blizzard's two click functions
+-- do not guard against one (Classic/Minimap.lua:113-127): their buttons grey
+-- out at the ends instead. This mock clamped inside them until 2026-10-11,
+-- which is how the wheel asking for -1 at full zoom-out passed here and threw
+-- in game (Joe, Era).
+function Minimap:SetZoom(z)
+	if z < 0 or z > self:GetZoomLevels() - 1 then
+		error("bad argument #1 to 'SetZoom' (outside of expected range)")
+	end
+	self.__zoom = z
+end
+function Minimap_ZoomInClick() Minimap:SetZoom(Minimap:GetZoom() + 1) end
+function Minimap_ZoomOutClick() Minimap:SetZoom(Minimap:GetZoom() - 1) end
 function Minimap_OnClick() _G.__minimapPinged = true end
 
 MinimapCluster = CreateFrame("Frame", "MinimapCluster")
@@ -3617,8 +3638,40 @@ MenuUtil = MenuUtil or {}
 function MenuUtil.CreateContextMenu(owner, generator)
 	_G.__trackingMenu = owner
 	_G.__menuGenerator = generator
+	_G.__trackingAnchor = nil       -- at the cursor
 	return generator
 end
+
+-- What a menu opened AT AN ANCHOR goes through, on both clients
+-- (MenuUtil.lua:133 and :151's steps, Menu.lua's OpenMenu): a root
+-- description, the generator run into it, and the manager told where. The
+-- anchor is recorded so a test can ask where the menu went.
+function MenuUtil.CreateRootMenuDescription(mixin) return { mixin = mixin } end
+AnchorUtil = AnchorUtil or {}
+function AnchorUtil.CreateAnchor(point, relativeTo, relativePoint, x, y)
+	return { point = point, relativeTo = relativeTo, relativePoint = relativePoint,
+		x = x or 0, y = y or 0 }
+end
+MenuVariants = { GetDefaultContextMenuMixin = function() return {} end }
+-- What the cursor is over, as a list (both clients have GetMouseFoci). A test
+-- sets __mouseFoci before firing GLOBAL_MOUSE_DOWN.
+function GetMouseFoci() return _G.__mouseFoci or {} end
+Menu = {
+	-- Kept, not run, so a test can run it into a root of its own, as it does
+	-- the context menu's.
+	PopulateDescription = function(generator, _, desc) desc.generator = generator end,
+	GetManager = function()
+		return { IsAnyMenuOpen = function() return _G.__menuOpen == true end,
+		OpenMenu = function(_, owner, desc, anchor)
+			-- As Menu.lua:2220 does: the anchor's relativeTo is asked for its
+			-- window, so it has to be a frame.
+			if anchor then anchor.relativeTo:GetWindow() end
+			_G.__trackingMenu, _G.__trackingAnchor = owner, anchor
+			_G.__menuGenerator = desc and desc.generator
+			return {}
+		end }
+	end,
+}
 
 -- The client's `date` is Lua's, and the sandbox this runs in has os stripped.
 --
@@ -17737,6 +17790,14 @@ end else do  -- the furniture
 	check(Minimap:GetZoom() == 1, "the wheel zooms in")
 	Minimap:GetScript("OnMouseWheel")(Minimap, -1)
 	check(Minimap:GetZoom() == 0, "and out")
+	-- Past either end it does nothing, rather than hand Blizzard's unguarded
+	-- click functions a zoom the client refuses (Joe, Era: SetZoom(-1)).
+	local wheelOk = pcall(Minimap:GetScript("OnMouseWheel"), Minimap, -1)
+	check(wheelOk and Minimap:GetZoom() == 0, "scrolling out at full zoom-out does nothing")
+	Minimap:SetZoom(5)
+	wheelOk = pcall(Minimap:GetScript("OnMouseWheel"), Minimap, 1)
+	check(wheelOk and Minimap:GetZoom() == 5, "and scrolling in at full zoom-in does nothing")
+	Minimap:SetZoom(0)
 	-- THERE IS NO MENU ON THIS CLIENT, and this has now been checked twice
 	-- against a frame the client had not got.
 	--
@@ -19755,8 +19816,36 @@ do
 	if _G.__flavour == "camelot" then
 		check(_G.__trackingMenu ~= nil and _G.__trackingCancelled == nil,
 			"on Forever it opens the client's tracking menu")
-		check(select(2, MinimapCluster.Tracking.Button:GetPoint(1)) == T.tr.button,
-			"parked on the node first, so the menu opens there and not off in a corner")
+		T.at = _G.__trackingAnchor
+		check(_G.__trackingMenu == T.tr.button
+			and _G.__menuGenerator == MinimapCluster.Tracking.Button.menuGenerator,
+			"the client's own list, owned by the node")
+		T.pin = T.at and T.at.relativeTo
+		if T.pin then T.px, T.py = T.M.PointAt(T.pin, "CENTER") end
+		T.sx, T.sy = T.M.PointAt(T.tr.button.stub, "LEFT")
+		check(T.pin and T.at.point == "RIGHT" and T.near(T.px, T.sx, 1) and T.near(T.py, T.sy, 1),
+			"and it opens off the stub's far end, toward the middle of the screen - not"
+			.. " at the cursor, pushed back against the screen's edge (Joe)"
+			.. T.say(T.px, T.sx, T.py, T.sy))
+		check(T.pin and T.pin.GetWindow ~= nil,
+			"anchored to a frame there, not the stub itself: the menu asks its anchor"
+			.. " for a window, and a texture has none (Menu.lua:2220)")
+		T.MM:OpenTracking(_G.Minimap)
+		check(_G.__trackingMenu == _G.Minimap and _G.__trackingAnchor == nil,
+			"right-click on the map still opens it at the cursor")
+		-- The manager refusing is SAID, and the list still opens. A quiet
+		-- fallback to the cursor is what hid this failing in game.
+		T.getManager = Menu.GetManager
+		Menu.GetManager = function() error("refused") end
+		_G.__trackingMenu = nil
+		T.MM:OpenTracking(T.tr.button, T.tr.button.stub)
+		T.failed = A.lastFailure
+		A.lastFailure = nil
+		Menu.GetManager = T.getManager
+		check(type(T.failed) == "string" and T.failed:find("tracking menu", 1, true)
+			and T.failed:find("refused", 1, true),
+			"a menu that cannot open at its node is reported (" .. tostring(T.failed) .. ")")
+		check(_G.__trackingMenu == T.tr.button, "and the list still opens, at the cursor")
 	else
 		check(_G.__trackingCancelled == true and _G.__trackingMenu == nil,
 			"on Era, with no tracking list, it cancels the tracking buff")
@@ -19782,6 +19871,187 @@ do
 		_G.C_Minimap = nil
 	end
 	T.q.button:GetScript("OnClick")(T.q.button)
+
+	-- 4c. ERA'S OWN BRANCH (Joe, 2026-10-11: the node "doesn't appear to do
+	-- anything"). Where the client can say what is tracked but keeps no list,
+	-- the node lists the tracking spells this character knows, each row a
+	-- secure button that casts it, and wears the one that is on.
+	if _G.__flavour ~= "camelot" then
+		local Track = T.MM.Track
+		local HERBS = [[Interface\Icons\INV_Misc_Flower_02]]
+		local ORE = [[Interface\Icons\Spell_Nature_Earthquake]]
+		T.knows, T.spells = {}, {
+			[2580] = { "Find Minerals", ORE },
+			[2383] = { "Find Herbs", HERBS },
+			[5225] = { "Track Humanoids", [[Interface\Icons\Ability_Tracking]] },
+		}
+		T.getSpell, T.cancel = _G.GetSpellInfo, _G.CancelTrackingBuff
+		_G.GetSpellInfo = function(id)
+			local s = T.spells[id]
+			if s then return s[1], nil, s[2] end
+			return T.getSpell(id)
+		end
+		_G.IsPlayerSpell = function(id) return T.knows[id] and true or false end
+		_G.GetTrackingTexture = function() return _G.__trackTex end
+		_G.CancelTrackingBuff = function() T.cancel() _G.__trackTex = nil end
+		GameTooltip.SetTrackingSpell = function(self) self.__shows = { "tracking" } end
+		_G.__trackTex = nil
+
+		T.t:Refresh()
+		check(not T.tr.button:IsShown(),
+			"on Era a character with no tracking spell gets no Tracking node")
+
+		T.knows[2580], T.knows[2383] = true, true
+		fire("SPELLS_CHANGED")
+		check(T.tr.button:IsShown() and not T.tr.lit,
+			"one with Find Minerals and Find Herbs gets it, unlit while nothing is tracked")
+		check(select(1, T.tr.button.icon:GetTexCoord()) == select(2, A.Media:Icon("tracking")),
+			"and wearing the tracking icon then")
+
+		_G.__trackingCancelled = nil
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		T.p = Track.panel
+		check(Track:IsOpen() and T.tr.lit and not _G.__trackingCancelled,
+			"a click opens a branch and lights the node - it no longer cancels")
+		check(Track.count == 2 and Track.rows[1].name:GetText() == "Find Minerals"
+			and Track.rows[2].name:GetText() == "Find Herbs",
+			"one row per tracking spell known, gathering first")
+		check(not Track.rows[1].on:IsShown() and not Track.rows[2].on:IsShown()
+			and not T.p.stop:IsShown(),
+			"nothing marked on, and no Stop tracking, while nothing is tracked")
+		T.b1, T.b2 = Track.buttons[1], Track.buttons[2]
+		check(T.b1 and T.b2 and T.b1:IsShown() and T.b1:GetAttribute("type1") == "spell"
+			and T.b1:GetAttribute("spell1") == "Find Minerals"
+			and T.b2:GetAttribute("spell1") == "Find Herbs",
+			"each row has a secure button that casts its spell")
+		check(T.b1:GetParent() == UIParent,
+			"hung from UIParent, not the panel: a panel with a secure child could"
+			.. " not be hidden in a fight")
+		T.bx, T.by = T.M.PointAt(T.b1, "CENTER")
+		T.rx, T.ry = T.M.PointAt(Track.rows[1], "CENTER")
+		check(T.near(T.bx, T.rx, 1) and T.near(T.by, T.ry, 1),
+			"laid over its row" .. T.say(T.bx, T.rx, T.by, T.ry))
+
+		-- The cast lands, and the client says so.
+		_G.__trackTex = HERBS
+		fire("MINIMAP_UPDATE_TRACKING")
+		check(Track.rows[2].on:IsShown() and not Track.rows[1].on:IsShown(),
+			"the spell now on is marked")
+		check(T.p.head.hint:GetText() == "Find Herbs" and T.p.stop:IsShown(),
+			"named on the heading, with Stop tracking under the list")
+
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		check(not Track:IsOpen() and not T.b1:IsShown() and not T.b2:IsShown(),
+			"clicked again it closes, and the casting buttons go with it")
+		check(T.tr.lit and T.tr.button.icon:GetTexture() == HERBS,
+			"while tracking, the node stays lit and wears the spell's own icon")
+		T.tr.button:GetScript("OnEnter")(T.tr.button)
+		check(GameTooltip.__shows and GameTooltip.__shows[1] == "tracking",
+			"and hovering it shows the client's tooltip for what is tracked")
+		T.tr.button:GetScript("OnLeave")(T.tr.button)
+
+		-- By name when the icons will not match: the client may answer a path
+		-- where the spell's icon is a file ID.
+		_G.__trackTex = [[Interface\Minimap\Tracking\Mining]]
+		T.scan = CreateFrame("GameTooltip", "AetherUITrackingScan", nil, "GameTooltipTemplate")
+		function T.scan:SetTrackingSpell() self:AddLine("Find Minerals") end
+		Track.scan = T.scan
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		check(Track.rows[1].on:IsShown() and not Track.rows[2].on:IsShown(),
+			"matched by name when the icons differ")
+
+		_G.__trackingCancelled = nil
+		T.p.stop:GetScript("OnClick")(T.p.stop)
+		fire("MINIMAP_UPDATE_TRACKING")
+		check(_G.__trackingCancelled == true and not T.p.stop:IsShown()
+			and T.p.head.hint:GetText() == "Off" and not Track.rows[1].on:IsShown(),
+			"Stop tracking cancels it, and the branch says nothing is on")
+
+		-- A fight: gone in its first event, and never opened in one.
+		fire("PLAYER_REGEN_DISABLED")
+		check(not Track:IsOpen() and not T.b1:IsShown(),
+			"a fight closes the branch and its buttons in its first event")
+		_G.__inCombat = true
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		check(not Track:IsOpen() and not T.b1:IsShown(), "and it will not open in one")
+		_G.__inCombat = false
+		fire("PLAYER_REGEN_ENABLED")
+
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		_G.__inCombat = true
+		T.p:Hide()
+		check(Track:IsOpen() == false and T.b1:IsShown(),
+			"shut in lockdown (Escape), a secure button cannot go yet")
+		_G.__inCombat = false
+		fire("PLAYER_REGEN_ENABLED")
+		check(not T.b1:IsShown(), "so it goes when the fight ends")
+
+		-- A druid's Track Humanoids works only in Cat Form.
+		T.knows[5225] = true
+		_G.IsUsableSpell = function(name) return name ~= "Track Humanoids" end
+		fire("SPELLS_CHANGED")
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		check(Track.count == 3 and Track.rows[3].usable == false
+			and Track.rows[3].icon.__desaturated == true,
+			"a spell that will not cast now is listed, greyed")
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+
+		_G.__trackTex, _G.__trackingCancelled = HERBS, nil
+		T.MM:OpenTracking(_G.Minimap)
+		check(_G.__trackingCancelled == true and _G.__trackTex == nil,
+			"right-click on the map still cancels, as Blizzard's own frame does")
+
+		-- A click on a casting row is a click on the branch: it must not shut
+		-- the branch under the row, or the spell would never cast.
+		T.tr.button:GetScript("OnClick")(T.tr.button)
+		_G.__mouseFoci = { Track.buttons[1] }
+		fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+		check(Track:IsOpen() and Track.buttons[1]:IsShown(),
+			"clicking a tracking row does not close the branch it sits on")
+		_G.__mouseFoci = { UIParent }
+		fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+		check(not Track:IsOpen() and not Track.buttons[1]:IsShown(),
+			"a click elsewhere closes it, rows and all")
+		_G.__mouseFoci = nil
+
+		_G.GetSpellInfo, _G.CancelTrackingBuff = T.getSpell, T.cancel
+		_G.IsPlayerSpell, _G.GetTrackingTexture, _G.IsUsableSpell = nil, nil, nil
+		GameTooltip.SetTrackingSpell = nil
+		Track.scan = nil
+		T.t:Refresh()
+	end
+
+	-- 4d. A CLICK ELSEWHERE closes a pop-out branch, as the client's own menus
+	-- close (Joe: ours stayed open until Escape). Windows stay.
+	T.m = T.t:Node("mail")
+	T.m.button:GetScript("OnClick")(T.m.button)
+	check(T.m.isOpen(), "(the Mail branch is open)")
+	_G.__mouseFoci = { A.Mail.panel }
+	fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+	check(T.m.isOpen(), "a click inside the branch leaves it open")
+	_G.__mouseFoci = { T.m.button }
+	fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+	check(T.m.isOpen(), "and so does one on the trunk's own nodes")
+	_G.__mouseFoci = { T.t.root }
+	fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+	check(T.m.isOpen(), "and on its root, which may toggle a branch itself")
+	_G.__mouseFoci = { UIParent }
+	fire("GLOBAL_MOUSE_DOWN", "MiddleButton")
+	check(T.m.isOpen(), "a middle click is not a click away")
+	_G.__menuOpen = true
+	fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+	check(T.m.isOpen(), "nor is one while a client menu is open: that click is the menu's")
+	_G.__menuOpen = nil
+	_G.__mouseFoci = {}
+	fire("GLOBAL_MOUSE_DOWN", "RightButton")
+	check(not T.m.isOpen() and not T.m.lit,
+		"a click on the world closes it, and its node goes out")
+	T.q.button:GetScript("OnClick")(T.q.button)
+	fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+	check(T.win:IsShown() and T.q.lit,
+		"the Quest Log is a window, not a pop-out: it stays, as Blizzard's windows do")
+	T.q.button:GetScript("OnClick")(T.q.button)
+	_G.__mouseFoci = nil
 
 	-- 5. Dropped on the left half, the stubs turn round.
 	T.MM.frame:ClearAllPoints()
@@ -30260,8 +30530,9 @@ end
 section("ifec: the route table, against flights that were actually flown", function()
 	local Route = A.IFEC and A.IFEC.Route
 	check(Route ~= nil, "the route lookup loaded")
-	check(A.IFEC_ROUTE_BUILD == "1.15.9.69109",
-		"the table was generated from the client's own build (" ..
+	local forever = _G.__flavour == "camelot"
+	check(A.IFEC_ROUTE_BUILD == (forever and "1.60.1.70338" or "1.15.9.69109"),
+		"the table was generated from this client's own build (" ..
 		tostring(A.IFEC_ROUTE_BUILD) .. ")")
 
 	local legs = 0
@@ -30269,6 +30540,22 @@ section("ifec: the route table, against flights that were actually flown", funct
 		for _ in pairs(row) do legs = legs + 1 end
 	end
 	check(legs > 250, "and carries the game's legs (" .. legs .. ")")
+
+	-- ONE TABLE PER CLIENT. Forever has nodes Era does not, and some legs the
+	-- two share fly a different path. Era's table on Forever would leave the new
+	-- zones without an estimate and get the moved legs wrong, so check both
+	-- halves of the pick on each client.
+	local rogmar = Route:Leg("Rog'mar, Riverglades", "Kargath, Badlands")
+	if forever then
+		check(rogmar ~= nil, "Forever's own nodes have legs (Rog'mar -> Kargath "
+			.. tostring(rogmar) .. ")")
+	else
+		check(rogmar == nil, "and Era carries none of Forever's nodes")
+	end
+	local moved = Route:Leg("Undercity, Tirisfal", "Kargath, Badlands")
+	check(moved == (forever and 498.8 or 485.7),
+		"a leg the two clients fly differently has this client's figure ("
+		.. tostring(moved) .. ")")
 
 	-- NINE REAL FLIGHTS. Measured on this account and recorded to the second.
 	-- These are the whole justification for the generated table: they are what

@@ -1251,8 +1251,8 @@ L["options.world.nifec_track.name"] = "Show what's playing"
 L["options.world.show.desc"] = "Off takes the node off the World trunk."
 L["options.world.show.name"] = "Show on the trunk"
 L["options.world.tracking_note"] =
-	"Click the node to choose what the minimap tracks. Where the game has no "
-		.. "list of its own, a click cancels the tracking spell."
+	"Click the node to choose what the minimap tracks. On Classic Era it lists "
+		.. "the tracking spells you know, and the node wears the one that's on."
 
 L["options.resources.header"] = "Class resources"
 L["options.resources.display.name"] = "Show the resource tray"
@@ -1633,6 +1633,9 @@ L["trunk.more_d"] = "+%d"
 L["trunk.nifec"] = "N.I.F.E.C."
 L["trunk.questlog"] = "Quest Log"
 L["trunk.tracking"] = "Tracking"
+L["trunk.tracking_menu_failed"] = "The tracking menu couldn't open at its node:"
+L["trunk.tracking_none"] = "Off"
+L["trunk.tracking_stop"] = "Stop tracking"
 L["trunk.turn_in"] = "Turn in"
 
 -- tracker -----------------------------------------------------------------

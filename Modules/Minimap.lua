@@ -760,19 +760,454 @@ local function TrackingMenu(_, root)
 	end
 end
 
---- Whether there is any tracking to reach on this client.
-local function TrackingAvailable()
+--- A list the client itself keeps: its own menu, or C_Minimap's types.
+local function ClientList()
 	local b = TrackingButton()
-	return (b and (b.menuGenerator or b.OpenMenu)) and true
-		or TrackingCount() ~= nil or _G.CancelTrackingBuff ~= nil
+	return (b and (b.menuGenerator or b.OpenMenu)) and true or TrackingCount() ~= nil
+end
+
+-- ---------------------------------------------------------------------------
+-- tracking on Era: a branch of the tracking spells you know
+--
+-- ERA KEEPS NO LIST. Tracking there is a spell you cast, and Blizzard's own
+-- frame (MinimapTracking_Simple.lua) only shows the icon of the one that is
+-- on, names it on hover and cancels it on a right-click. To change it you go
+-- to the spellbook. So the list is ours: every tracking spell, kept to the ones
+-- this character knows, each row a secure button that casts it - SmartBuff's
+-- method on Era (Buffs.lua:577, Cast.lua:269). An ordinary menu cannot cast.
+--
+-- THE BUTTONS ARE NOT IN THE PANEL. A frame with a secure child cannot be
+-- hidden in a fight, and the trunk shuts its branches as a fight starts. So
+-- they hang from UIParent and are laid over the rows, as the quest items are
+-- (QuestTracker Items.Place), and go in the fight's first event, the one
+-- moment the client still lets a secure frame move.
+-- ---------------------------------------------------------------------------
+
+-- By ID, named through the client, so every language gets its own names.
+-- The gathering ones first: most characters have one.
+local TRACK_SPELLS = {
+	2580,  -- Find Minerals (Mining)
+	2383,  -- Find Herbs (Herbalism)
+	2481,  -- Find Treasure (Dwarf)
+	1494,  -- Track Beasts (Hunter)
+	19883, -- Track Humanoids (Hunter)
+	19884, -- Track Undead (Hunter)
+	19885, -- Track Hidden (Hunter)
+	19880, -- Track Elementals (Hunter)
+	19878, -- Track Demons (Hunter)
+	19882, -- Track Giants (Hunter)
+	19879, -- Track Dragonkin (Hunter)
+	5225,  -- Track Humanoids (Druid, Cat Form only)
+	-- Not in SmartBuff's list; the IDs are unchecked against the client.
+	5502,  -- Sense Undead (Paladin)
+	5500,  -- Sense Demons (Warlock)
+}
+MM.TRACK_SPELLS = TRACK_SPELLS
+
+-- The branch, in HUD units.
+local TR_WIDTH, TR_PAD, TR_HEAD, TR_ROW, TR_GAP, TR_ICON = 230, 16, 24, 26, 4, 18
+
+local Track = { rows = {}, buttons = {} }
+MM.Track = Track
+
+local function WorldTrunk() return A.Trunk:Get("world") end
+
+local function SpellInfo(id)
+	if _G.GetSpellInfo then
+		local ok, name, _, icon = pcall(_G.GetSpellInfo, id)
+		if ok and name then return name, icon end
+	end
+	local CS = _G.C_Spell
+	if CS and CS.GetSpellInfo then
+		local ok, t = pcall(CS.GetSpellInfo, id)
+		if ok and type(t) == "table" and t.name then return t.name, t.iconID end
+	end
+	return nil
+end
+
+--- Asked both ways: a profession's spell and a class's are not always known
+--  to the same one, and either may be missing on a client.
+local function Knows(id)
+	for _, key in ipairs({ "IsPlayerSpell", "IsSpellKnown" }) do
+		local f = _G[key]
+		if f then
+			local ok, yes = pcall(f, id)
+			if ok and yes then return true end
+		end
+	end
+	return false
+end
+
+--- This client gets our branch: no list of its own, and tracking it can read.
+function Track:Branched()
+	return not ClientList() and _G.GetTrackingTexture ~= nil
+end
+
+--- The tracking spells this character knows, in TRACK_SPELLS' order.
+function Track:Known()
+	local out = {}
+	for _, id in ipairs(TRACK_SPELLS) do
+		if Knows(id) then
+			local name, icon = SpellInfo(id)
+			if name then out[#out + 1] = { id = id, name = name, icon = icon } end
+		end
+	end
+	return out
+end
+
+--- The icon of what is tracked now, or nil. Some builds answer the "None"
+--  placeholder rather than nil (SmartBuff's Cast.lua:25 tests for it).
+function Track:Texture()
+	if not _G.GetTrackingTexture then return nil end
+	local ok, tex = pcall(_G.GetTrackingTexture)
+	if not ok or tex == nil or tex == "" or tex == 0 then return nil end
+	if type(tex) == "string" and tex:lower():find("tracking\\none", 1, true) then return nil end
+	return tex
+end
+
+--- The name of what is tracked now, read off the client's own tooltip for it:
+--  the texture alone may come back as a path where the spell's is a file ID.
+function Track:Name()
+	if not self:Texture() then return nil end
+	local tip = self.scan
+	if not tip then
+		tip = CreateFrame("GameTooltip", ADDON .. "TrackingScan", nil, "GameTooltipTemplate")
+		self.scan = tip
+	end
+	if not tip.SetTrackingSpell then return nil end
+	tip:SetOwner(UIParent, "ANCHOR_NONE")
+	local ok = pcall(tip.SetTrackingSpell, tip)
+	local line = _G[ADDON .. "TrackingScanTextLeft1"]
+	local name = ok and line and line:GetText() or nil
+	tip:Hide()
+	return (type(name) == "string" and name ~= "") and name or nil
+end
+
+--- Whether `spell` (a Known() entry) is the one on.
+function Track:IsOn(spell, tex, name)
+	if name and spell.name == name then return true end
+	return tex ~= nil and spell.icon ~= nil and tostring(spell.icon):lower() == tostring(tex):lower()
+end
+
+local function RowEnter(row)
+	row.hl:Show()
+	if not (GameTooltip and row.spell) then return end
+	GameTooltip:SetOwner(row, "ANCHOR_NONE")
+	GameTooltip:ClearAllPoints()
+	if (WorldTrunk().side or -1) < 0 then
+		GameTooltip:SetPoint("RIGHT", row, "LEFT", -TR_PAD, 0)
+	else
+		GameTooltip:SetPoint("LEFT", row, "RIGHT", TR_PAD, 0)
+	end
+	if GameTooltip.SetSpellByID then
+		pcall(GameTooltip.SetSpellByID, GameTooltip, row.spell.id)
+	else
+		GameTooltip:SetText(row.spell.name)
+	end
+	GameTooltip:Show()
+end
+
+local function RowLeave(row)
+	row.hl:Hide()
+	if GameTooltip then GameTooltip:Hide() end
+end
+
+--- A row: icon, name, a junction on the one that is on, a hover wash. Drawn
+--  in the panel; the click is the secure button laid over it.
+local function TrackRow(p)
+	local row = CreateFrame("Frame", nil, p)
+	row:SetSize(TR_WIDTH - TR_PAD * 2, TR_ROW)
+	row.hl = row:CreateTexture(nil, "BACKGROUND")
+	row.hl:SetTexture(Media.texture.flat)
+	row.hl:SetAllPoints(row)
+	row.hl:Hide()
+	row.icon = row:CreateTexture(nil, "ARTWORK")
+	row.icon:SetSize(TR_ICON, TR_ICON)
+	row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+	row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	row.name = W.Text(row, "tbCardTitle", "LEFT")
+	row.name:SetPoint("LEFT", row.icon, "RIGHT", 10, 0)
+	row.name:SetPoint("RIGHT", row, "RIGHT", -20, 0)
+	row.name:SetWordWrap(false)
+	row.on = row:CreateTexture(nil, "ARTWORK")
+	row.on:SetTexture(Media.texture.diamond)
+	row.on:SetSize(7, 7)
+	row.on:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+	return row
+end
+
+--- The secure button over row `i`, made out of a fight only.
+function Track:Button(i)
+	local b = self.buttons[i]
+	if b then return b end
+	b = CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
+	-- The branch's own, though not its child: a click here is not a click
+	-- elsewhere (Trunk's GLOBAL_MOUSE_DOWN), or the branch would shut under it.
+	b.__trunkOwned = true
+	-- Both phases: the secure handler acts on whichever the player's
+	-- cast-on-key-down setting asks for (as the quest items).
+	b:RegisterForClicks("AnyUp", "AnyDown")
+	b:SetScript("OnEnter", function(self_) if self_.row then RowEnter(self_.row) end end)
+	b:SetScript("OnLeave", function(self_) if self_.row then RowLeave(self_.row) end end)
+	b:Hide()
+	if A.Fader then A.Fader:Register(b) end
+	self.buttons[i] = b
+	return b
+end
+
+function Track:Build()
+	if self.panel then return self.panel end
+	local p = WorldTrunk():Branch("TrackingBranch", TR_WIDTH)
+	p.head = A.Trunk.Head(p)
+	p.head:SetPoint("TOPLEFT", p, "TOPLEFT", TR_PAD, -TR_PAD)
+	p.head:SetPoint("TOPRIGHT", p, "TOPRIGHT", -TR_PAD, -TR_PAD)
+	-- Stop tracking: an ordinary button, since cancelling is not protected.
+	p.stop = CreateFrame("Button", nil, p)
+	p.stop:SetSize(TR_WIDTH - TR_PAD * 2, TR_ROW)
+	p.stop.hl = p.stop:CreateTexture(nil, "BACKGROUND")
+	p.stop.hl:SetTexture(Media.texture.flat)
+	p.stop.hl:SetAllPoints(p.stop)
+	p.stop.hl:Hide()
+	p.stop.label = W.Text(p.stop, "tbLabel", "LEFT")
+	p.stop.label:SetPoint("LEFT", p.stop, "LEFT", 4 + TR_ICON + 10, 0)
+	p.stop.label:SetText(L.trunk.tracking_stop)
+	p.stop:SetScript("OnEnter", function(s) s.hl:Show() end)
+	p.stop:SetScript("OnLeave", function(s) s.hl:Hide() end)
+	p.stop:SetScript("OnClick", function()
+		if _G.CancelTrackingBuff then pcall(_G.CancelTrackingBuff) end
+	end)
+	-- Hidden however it goes - Escape included - the casting buttons go too.
+	p:HookScript("OnHide", function() Track:HideButtons() end)
+	self.panel = p
+	self:Skin()
+	return p
+end
+
+function Track:Skin()
+	local p = self.panel
+	if not p then return end
+	A.Trunk.SkinBranch(p)
+	local a = Palette.c.accent
+	for _, row in ipairs(self.rows) do
+		row.hl:SetVertexColor(a[1], a[2], a[3], 0.12)
+		W.Tint(row.on, a, 1)
+	end
+	p.stop.hl:SetVertexColor(a[1], a[2], a[3], 0.12)
+	W.Color(p.stop.label, Palette.c.textDim)
+	self:Fill()
+end
+
+--- Write the rows and the heading, and size the branch to them.
+function Track:Fill()
+	local p = self.panel
+	if not p then return end
+	local c = Palette.c
+	local known = self:Known()
+	local tex = self:Texture()
+	local name = tex and self:Name() or nil
+	local current
+	for i, spell in ipairs(known) do
+		local row = self.rows[i]
+		if not row then
+			row = TrackRow(p)
+			local a = c.accent
+			row.hl:SetVertexColor(a[1], a[2], a[3], 0.12)
+			self.rows[i] = row
+		end
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", p, "TOPLEFT", TR_PAD, -(TR_PAD + TR_HEAD + (i - 1) * (TR_ROW + TR_GAP)))
+		row.spell = spell
+		row.icon:SetTexture(spell.icon)
+		row.name:SetText(spell.name)
+		local on = self:IsOn(spell, tex, name)
+		if on then current = spell end
+		row.on:SetShown(on)
+		W.Tint(row.on, c.accent, 1)
+		-- Druid tracking outside Cat Form: there, but it will not cast.
+		local usable = true
+		if _G.IsUsableSpell then
+			local ok, u = pcall(_G.IsUsableSpell, spell.name)
+			usable = not ok or u and true or false
+		end
+		row.usable = usable
+		W.Color(row.name, on and c.accent or (usable and c.text or c.textDim))
+		row.icon:SetDesaturated(not usable)
+		row:Show()
+	end
+	for i = #known + 1, #self.rows do
+		self.rows[i]:Hide()
+		self.rows[i].spell = nil
+	end
+	self.count = #known
+	p.head:Set(L.trunk.tracking, current and current.name or name or L.trunk.tracking_none)
+	local y = TR_PAD + TR_HEAD + #known * (TR_ROW + TR_GAP)
+	p.stop:ClearAllPoints()
+	p.stop:SetPoint("TOPLEFT", p, "TOPLEFT", TR_PAD, -y)
+	p.stop:SetShown(tex ~= nil)
+	if tex then y = y + TR_ROW + TR_GAP end
+	p:SetHeight(y - TR_GAP + TR_PAD)
+end
+
+--- Lay a secure button over each row. Out of a fight, or in its first event.
+function Track:PlaceButtons()
+	if InCombatLockdown() and not self.window then
+		self.dirty = true
+		return
+	end
+	local p = self.panel
+	local s = p and (p:GetEffectiveScale() / UIParent:GetEffectiveScale()) or 1
+	for i = 1, math.max(self.count or 0, #self.buttons) do
+		local row = self.rows[i]
+		local spell = row and row:IsShown() and row.spell
+		local x, y
+		if spell and p:IsShown() then x, y = A.Movers.PointAt(row, "CENTER") end
+		if x and y then
+			local b = self:Button(i)
+			b.row = row
+			b:SetScale(s)
+			b:SetSize(row:GetWidth(), row:GetHeight())
+			b:SetFrameStrata(p:GetFrameStrata())
+			b:SetFrameLevel(p:GetFrameLevel() + 10)
+			b:ClearAllPoints()
+			b:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / s, y / s)
+			b:SetAttribute("type1", "spell")
+			b:SetAttribute("spell1", spell.name)
+			b:Show()
+		elseif self.buttons[i] then
+			local b = self.buttons[i]
+			b:Hide()
+			b:SetAttribute("type1", nil)
+			b:SetAttribute("spell1", nil)
+			b.row = nil
+		end
+	end
+end
+
+function Track:HideButtons()
+	if InCombatLockdown() and not self.window then
+		self.dirty = true
+		return
+	end
+	for _, b in ipairs(self.buttons) do
+		b:Hide()
+		if b.row then RowLeave(b.row) end
+		b.row = nil
+	end
+end
+
+function Track:Open()
+	-- No secure buttons can appear in a fight; the trunk is up then anyway.
+	if InCombatLockdown() then return end
+	local p = self:Build()
+	self:Fill()
+	if not WorldTrunk():Place("tracking", p) then return end
+	p:Show()
+	self:PlaceButtons()
+end
+
+function Track:Close()
+	if self.panel then self.panel:Hide() end
+end
+
+function Track:IsOpen()
+	return self.panel and self.panel:IsShown() and true or false
+end
+
+--- The node's tooltip: the client's own for the spell that is on.
+function Track:Tooltip(owner)
+	if self:IsOpen() or not (self:Branched() and self:Texture()) then return end
+	if not (GameTooltip and GameTooltip.SetTrackingSpell) then return end
+	GameTooltip:SetOwner(owner, "ANCHOR_NONE")
+	GameTooltip:ClearAllPoints()
+	if (WorldTrunk().side or -1) < 0 then
+		GameTooltip:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -8)
+	else
+		GameTooltip:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -8)
+	end
+	GameTooltip:SetTrackingSpell()
+	GameTooltip:Show()
+end
+
+--- Tracking changed, or what the character knows: the node, and the branch
+--  if it is open.
+function Track:Changed()
+	local t = WorldTrunk()
+	if not t.frame then return end
+	t:Refresh()
+	if self:IsOpen() then
+		self:Fill()
+		t:Place("tracking", self.panel)
+		self:PlaceButtons()
+	end
+end
+
+--- Whether there is any tracking to reach on this client. On Era, only for a
+--  character with a tracking spell, or one tracking something now.
+local function TrackingAvailable()
+	if ClientList() then return true end
+	if Track:Branched() then return Track:Texture() ~= nil or #Track:Known() > 0 end
+	return _G.CancelTrackingBuff ~= nil
+end
+
+--- A menu built by `generator`, opened off `stub`'s far end toward the middle
+--  of the screen, where a branch would be. MenuUtil.CreateContextMenu's own
+--  steps (MenuUtil.lua:151), with OpenMenu and an anchor in place of
+--  OpenContextMenu - which puts the menu AT THE CURSOR, and on a node at the
+--  screen's edge that left it pushed back against the edge (Joe, Forever).
+local function OpenAtStub(owner, generator, stub)
+	local M, MU, AU = _G.Menu, _G.MenuUtil, _G.AnchorUtil
+	if not (M and M.GetManager and M.PopulateDescription and MU and MU.CreateRootMenuDescription
+		and AU and AU.CreateAnchor) then
+		return false
+	end
+	local MV = _G.MenuVariants
+	local mixin = MV and MV.GetDefaultContextMenuMixin and MV.GetDefaultContextMenuMixin() or nil
+	-- A FRAME AT THE STUB'S END, not the stub: the menu asks what it is
+	-- anchored to for its window (Menu.lua:2220), and a texture has no
+	-- GetWindow - "attempt to call a nil value", in game (Joe).
+	local pin = MM.menuPin
+	if not pin then
+		pin = CreateFrame("Frame", nil, stub:GetParent())
+		pin:SetSize(1, 1)
+		MM.menuPin = pin
+	end
+	local left = (A.Trunk:Get("world").side or -1) < 0
+	pin:ClearAllPoints()
+	pin:SetPoint("CENTER", stub, left and "LEFT" or "RIGHT", 0, 0)
+	local anchor
+	if left then
+		anchor = AU.CreateAnchor("RIGHT", pin, "CENTER", -6, 0)
+	else
+		anchor = AU.CreateAnchor("LEFT", pin, "CENTER", 6, 0)
+	end
+	-- Recorded and said, not swallowed: falling back quietly to the cursor
+	-- menu hid this failing in game behind a green suite (Joe, twice).
+	local ok, err = pcall(function()
+		local desc = MU.CreateRootMenuDescription(mixin)
+		M.PopulateDescription(generator, owner, desc)
+		M.GetManager():OpenMenu(owner, desc, anchor)
+	end)
+	if not ok then
+		A.lastFailure = "tracking menu: " .. tostring(err)
+		A:Print(A.Bad(L.trunk.tracking_menu_failed) .. " " .. tostring(err))
+	end
+	return ok
 end
 
 --- Open the tracking menu at `anchor`: the client's own where it has one, ours
 --  from C_Minimap's list where that has entries, and otherwise what Era's
---  hidden frame did on a right-click - cancel the tracking buff.
-function MM:OpenTracking(anchor)
+--  hidden frame did on a right-click - cancel the tracking buff. `stub`, from
+--  the trunk's node, opens either list off the stub's end rather than at the
+--  cursor; the map's right-click passes none and keeps the cursor.
+function MM:OpenTracking(anchor, stub)
 	local menu = _G.MenuUtil and _G.MenuUtil.CreateContextMenu
 	local b = TrackingButton()
+	-- THE CLIENT'S BUTTON HAS A GENERATOR. SetupMenu stores it as
+	-- menuGenerator (Blizzard_Menu/DropdownButton.lua:239), and the tracking
+	-- button calls SetupMenu in its OnLoad - so on Forever it is the first
+	-- branch below that runs, not the parked OpenMenu.
+	local generator = (b and b.menuGenerator) or (TrackingCount() and TrackingMenu) or nil
+	if stub and generator and OpenAtStub(anchor, generator, stub) then return end
 	-- OpenMenu anchors the menu to the BUTTON, which is banished to a hidden
 	-- frame - so the list would open where nobody can see it. Park it on the
 	-- anchor first; position only, it stays hidden and mouse-off.
@@ -806,13 +1241,22 @@ function MM:OnEnable()
 		-- the map's own mouse: wheel zooms, right-click tracks
 		if _G.Minimap then
 			_G.Minimap:EnableMouseWheel(true)
+			-- THE LIMITS ARE OURS TO KEEP. Era's Minimap_ZoomOutClick does
+			-- SetZoom(GetZoom() - 1) unguarded, because its buttons grey out at
+			-- the ends; the wheel has no such button, and at zoom 0 it asked for
+			-- -1 and threw (Joe, Era). Past either end the wheel does nothing.
 			_G.Minimap:SetScript("OnMouseWheel", function(_, delta)
+				local map = _G.Minimap
+				local zoom = map:GetZoom() or 0
+				local top = (map.GetZoomLevels and map:GetZoomLevels() or 6) - 1
 				if delta > 0 then
+					if zoom >= top then return end
 					if _G.Minimap_ZoomInClick then _G.Minimap_ZoomInClick()
-					else _G.Minimap:SetZoom(math.min(5, _G.Minimap:GetZoom() + 1)) end
+					else map:SetZoom(zoom + 1) end
 				else
+					if zoom <= 0 then return end
 					if _G.Minimap_ZoomOutClick then _G.Minimap_ZoomOutClick()
-					else _G.Minimap:SetZoom(math.max(0, _G.Minimap:GetZoom() - 1)) end
+					else map:SetZoom(zoom - 1) end
 				end
 			end)
 			-- Tracking has no button any more: right-click here, or the World
@@ -849,13 +1293,47 @@ function MM:OnEnable()
 	A.Mail:Attach()
 	A.Trunk:Get("world"):AddNode("tracking", {
 		icon = "tracking", label = L.trunk.tracking, order = 500,
-		menu = true,
+		-- The client's own menu where it keeps a list; on Era our branch.
+		menu = function() return not Track:Branched() end,
+		-- On Era, lit and wearing the spell that is on (Joe: the node did
+		-- nothing he could see).
+		texture = function() return Track:Branched() and Track:Texture() or nil end,
+		active = function() return Track:Branched() and Track:Texture() ~= nil end,
 		-- The client's ability, and the player's switch (options map).
 		available = function()
 			return A.db.profile.world.tracking ~= false and TrackingAvailable()
 		end,
-		open = function(node) MM:OpenTracking(node.button) end,
+		transient = true,
+		isOpen = function() return Track:IsOpen() end,
+		open = function(node)
+			if Track:Branched() then Track:Open() else MM:OpenTracking(node.button, node.button.stub) end
+		end,
+		close = function() Track:Close() end,
+		onEnter = function(node) Track:Tooltip(node.button) end,
+		onLeave = function() if GameTooltip then GameTooltip:Hide() end end,
 	})
+	-- What is tracked, and what can be: a spell learned or a profession dropped.
+	for _, e in ipairs({ "MINIMAP_UPDATE_TRACKING", "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB" }) do
+		A:RegisterEvent(Track, e, function() Track:Changed() end)
+	end
+	-- The casting buttons go in the fight's first event, the one moment they
+	-- still can (Era answers InCombatLockdown false inside it); any a fight
+	-- left behind go when it ends.
+	A:RegisterEvent(Track, "PLAYER_REGEN_DISABLED", function()
+		Track.window = true
+		local ok, err = pcall(function()
+			Track:Close()
+			Track:HideButtons()
+		end)
+		Track.window = nil
+		if not ok then error(err, 0) end
+	end)
+	A:RegisterEvent(Track, "PLAYER_REGEN_ENABLED", function()
+		if Track.dirty then
+			Track.dirty = nil
+			if Track:IsOpen() then Track:PlaceButtons() else Track:HideButtons() end
+		end
+	end)
 	A.Trunk:Get("world"):AddNode("calendar", {
 		icon = "calendar", label = L.trunk.calendar, order = 900,
 		available = function()
@@ -908,6 +1386,7 @@ function MM:OnDisable()
 	if self._ticker then self._ticker:Cancel(); self._ticker = nil end
 	A.Movers:Unregister("minimap")
 	A.Mail:Detach()
+	Track:Close()
 	if A.IFEC and A.IFEC.Node then A.IFEC.Node:Detach() end
 	A.Trunk:Get("world"):SetRoot(nil)
 	if self.frame then
@@ -933,6 +1412,7 @@ function MM:OnSkinChanged()
 	self:UpdateZone()
 	A.Trunk:Get("world"):Paint()
 	A.Mail:Skin()
+	Track:Skin()
 	if A.IFEC and A.IFEC.Node then A.IFEC.Node:Skin() end
 end
 

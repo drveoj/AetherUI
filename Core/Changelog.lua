@@ -51,7 +51,7 @@ A.CHANGELOG = {
 			"Each bar has its own opacity at rest and in a fight, can show only on hover, and can show its keybinds on its buttons. Hide a bar by dragging it to the row along the bottom in unlock; click it there to bring it back.",
 			"Your whole layout is one line of text you can copy, share and paste back. Three starting layouts come with it: Rows, Block and Split.",
 			"The quest tracker is now the World trunk under the minimap: your quests with their item buttons, and Mail, Tracking, Calendar and the music player as nodes. In a fight it draws up out of the way and leaves your active quest showing.",
-			"The Toolbox is now the left trunk: Menu, Widgets, Addons, Settings, What's new, and Party while you're in a group. It can sit on the right instead, and the minimap swaps sides with it.",
+			"The Toolbox is now the left trunk: Menu, Widgets, Addons, Settings, What's new, and Party while you're in a group.",
 			"Eight new skins: Amethyst, Sapphire, Emerald and Ruby, and Winter, Spring, Summer and Autumn, alongside Midnight, Dawn, Noon and Dusk. Pick one under Theme or on the tour's first stop.",
 			"Cast bars are lanes on the line between you and your target, and breath and fatigue run along it too. Combo points and other class resources sit in a tray under your frame.",
 			"Shields such as Power Word: Shield now show on your unit and party health bars, with a switch and a colour picker under Unit frames.",
