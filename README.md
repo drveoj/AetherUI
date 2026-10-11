@@ -76,12 +76,16 @@ block. Each bar can rest dimmer out of a fight, show only on hover, and show its
 keybinds. `/lattice bind` puts you in keybind mode: hover over a button, press a
 key.
 
-![An action bar close up, one button counting down under its own icon](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/6-Bar.png)
+![You and your target, your pet's frames either side, and three bars joined
+into one block below](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/2-HUD.webp)
 
 **The Toolbox** — a trunk down the left of your screen. Everything you'd
 otherwise hunt for branches off it: a menu of the game's windows, useful widgets,
 your addon buttons, quick settings, what's new, and Party while you're in a
 group. Pin an addon's button and it sits on the trunk.
+
+![The Toolbox trunk with its Addons branch open, Questie and Leatrix_Plus
+pinned to the trunk](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/6-Toolbox.webp)
 
 **Bags** — all your bags in one panel, sorted into categories, with a automated
 junk sale and repair (configurable) and your equipped bags in a drawer at the edge.
@@ -89,6 +93,10 @@ junk sale and repair (configurable) and your equipped bags in a drawer at the ed
 **The World trunk** — hangs from the minimap. Your tracked quests sit on it with
 their item buttons, alongside Mail, Tracking, the Calendar and the music player.
 In a fight it draws up out of the way and leaves your active quest showing.
+
+![The World trunk under the minimap: the quest log node, ten tracked quests
+with one ready to turn in, then Mail, Tracking, the Calendar and the music
+player](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/WorldTrunk.webp)
 
 **Quest log** — a reimagined dual pane questlog rather than Blizzard's
 reskinned.
@@ -134,6 +142,9 @@ that one. Scroll a frame to nudge it a pixel at a time; hold shift to nudge
 sideways. Frames you can't normally see, like the pet bar, are held up while
 you're unlocked so you can put them somewhere.
 
+![Unlock mode: every frame labelled, the lines between them drawn, and the
+dot field to snap to](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/4-Unlock.webp)
+
 `/lattice lock` when you're done, or click the lock button.
 
 Your whole layout can be saved (and shared) as one line of text. `/lattice layout` opens it to copy,
@@ -145,6 +156,9 @@ share or paste someone else's back.
 want to change, or press `/` and search. Every setting has an explanation next to
 it; if something isn't behaving the way you expect, the description usually says
 why. You can also find it under Options → AddOns → Lattice.
+
+![The settings map: each frame where it sits on your screen, the two trunks,
+the bars in a row and the System strand along the bottom](https://raw.githubusercontent.com/drveoj/Lattice/main/docs/screenshots/3-OptionsMap.webp)
 
 The most useful ones from chat:
 
