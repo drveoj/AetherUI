@@ -91,14 +91,19 @@ OW.PAGES = {
 		title = L.options.map.chat.title, desc = L.options.map.chat.desc },
 	{ key = "bags", form = "square", module = "bags", groups = { "bags" },
 		title = L.options.map.bags.title, desc = L.options.map.bags.desc },
-	{ key = "toolbox", form = "diamond", module = "toolbox", groups = { "toolbox", "fader" },
+	{ key = "toolbox", form = "diamond", module = "toolbox", groups = { "toolbox", "fader", "zen" },
 		title = L.options.map.toolbox.title, desc = L.options.map.toolbox.desc },
 	{ key = "minimap", form = "circle", module = "minimap", groups = { "minimap" },
 		unlock = { "minimap" },
 		title = L.options.map.minimap.title, desc = L.options.map.minimap.desc },
-	-- THE WORLD TRUNK, a node each, as it is on the trunk (Joe, 2026-10-10).
-	{ key = "quests", form = "diamond", module = "questtracker", groups = { "quests" },
+	-- THE WORLD TRUNK, a node each, as it is on the trunk (Joe, 2026-10-10),
+	-- under a root of its own, as the Toolbox has (Joe, 2026-10-11). It hangs
+	-- from the minimap, so the minimap is what it needs and what Shift-click
+	-- unlocks.
+	{ key = "world", form = "diamond", module = "minimap", groups = { "world" },
 		unlock = { "minimap" },
+		title = L.options.map.world.title, desc = L.options.map.world.desc },
+	{ key = "quests", form = "diamond", module = "questtracker", groups = { "quests" },
 		title = L.options.map.quests.title, desc = L.options.map.quests.desc },
 	{ key = "mail", form = "diamond", groups = { "mail" }, world = "mail",
 		title = L.options.map.mail.title, desc = L.options.map.mail.desc },
@@ -311,12 +316,18 @@ function OW:Spec()
 	add({ key = "minimap", page = "minimap", label = L.options.map.minimap.title,
 		form = "circle", w = 60, h = 60, hop = 3, mover = "minimap", at = { 0.94, 0.79 } })
 	-- The World trunk's nodes, measured from their own buttons on the trunk;
-	-- stacked under the map where the trunk is not up.
+	-- stacked under the map where the trunk is not up. Its root first, where
+	-- the trunk starts.
 	local world = A.Trunk.list.world
 	local function WorldNode(trunkKey)
 		local n = world and world:Node(trunkKey)
 		return n and n.button and n.button:IsShown() and n.button or nil
 	end
+	local root = TrunkRoot("world")
+	root = root and root:IsShown() and root or nil
+	add({ key = "world", page = "world", label = L.options.map.world.title, form = "diamond",
+		w = 24, h = 24, hop = 3, trunk = true,
+		frame = root, near = not root and "minimap" or nil, dx = 0, dy = 60 })
 	for i, e in ipairs({
 		{ "quests", "questlog", L.options.map.quests.title },
 		{ "mail", "mail", L.options.map.mail.title },
@@ -326,7 +337,7 @@ function OW:Spec()
 	}) do
 		local real = WorldNode(e[2])
 		add({ key = e[1], page = e[1], label = e[3], form = "diamond",
-			w = i == 1 and 24 or 18, h = i == 1 and 24 or 18, hop = 3, trunk = true,
+			w = 18, h = 18, hop = 3, trunk = true,
 			frame = real, near = not real and "minimap" or nil, dx = 0, dy = 60 + 34 * i })
 	end
 	add({ key = "ifec", page = "ifec", label = L.options.map.ifec.title,
@@ -1495,11 +1506,12 @@ function OW:RealFrames(n)
 	if n.key == "player" then
 		return { MoverFrame("player"), MoverFrame("target") }
 	end
-	if n.real then return { n.real } end
-	if n.key == "quests" then
+	-- The root lights the whole trunk, not just the pill it is measured from.
+	if n.key == "world" then
 		local t = A.Trunk.list.world
 		return { t and t.frame }
 	end
+	if n.real then return { n.real } end
 	if n.key == "auras" then
 		local Au = A:GetModule("auras")
 		return { Au and Au.buffs, Au and Au.debuffs }
@@ -1563,7 +1575,7 @@ function OW:Index()
 					local name = C.Name(n)
 					out[#out + 1] = { page = p, sub = i, node = n, name = name,
 						where = (#self:Subs(p) > 1) and (p.title .. " \194\183 " .. s.label) or p.title,
-						text = (name .. " " .. (C.Desc(n) or "")):lower() }
+						text = (name .. " " .. (C.Desc(n) or "")):lower(), title = name:lower() }
 				end
 			end
 		end
@@ -1578,12 +1590,19 @@ function OW:Search(text)
 	local results = {}
 	local pages = {}
 	if text ~= "" then
+		-- A setting NAMED for what was typed before one that only mentions it
+		-- (Joe, 2026-10-11: "zen" led with a Chat setting, not the Zen switch).
+		local described = {}
 		for _, e in ipairs(self:Index()) do
-			if e.text:find(text, 1, true) then
+			if e.title:find(text, 1, true) then
 				results[#results + 1] = e
+				pages[e.page.key] = true
+			elseif e.text:find(text, 1, true) then
+				described[#described + 1] = e
 				pages[e.page.key] = true
 			end
 		end
+		for _, e in ipairs(described) do results[#results + 1] = e end
 	end
 	self.results = results
 	for _, n in ipairs(self.nodes or {}) do

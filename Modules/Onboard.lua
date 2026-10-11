@@ -1092,7 +1092,8 @@ local function BarsControl(slot)
 	local keys = P.order
 	local gap = 7
 	local w = (slot:GetWidth() - gap * (#keys - 1)) / #keys
-	local now = P:Current()
+	-- The spine held: stop 1 placed it, and the shapes leave it there.
+	local now = P:Current(P.SPINE)
 
 	for i, key in ipairs(keys) do
 		local preset = P.list[key]
@@ -1114,7 +1115,9 @@ local function BarsControl(slot)
 		card.label:SetText(preset.label or key)
 		Chosen(card, now == key)
 		card:SetScript("OnClick", function()
-			P:Apply(key)
+			-- The bars of this shape, under the spine where stop 1 put it
+			-- (Joe, 2026-10-11): the whole layout put the spine back too.
+			P:Apply(key, P.SPINE)
 			OB:Go(OB.index or 3)
 		end)
 	end
@@ -1696,7 +1699,7 @@ end
 --  skin.
 function OB:Recap()
 	local P = A.Presets
-	local preset = P and P:Current()
+	local preset = P and P:Current(P.SPINE)
 	local shape = (preset and P.list[preset] and P.list[preset].label)
 		or L.tour.finish.own_shape
 	local UF = Mod("unitframes")

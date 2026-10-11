@@ -131,13 +131,19 @@ end
 --  ANSWERED FROM THE STORE, not from a note somebody wrote down. A stored "you
 --  picked centre" goes stale the first time a frame is dragged, and then the
 --  tour re-opened would show a card ticked that no longer describes the screen.
-function Presets:Current()
+--- `hold` as for Apply: the tour asks with the spine held, which its bar
+--  shapes leave where the player put it.
+function Presets:Current(hold)
 	for _, key in ipairs(self.order) do
 		local preset = self.list[key]
-		if preset and A.Layout:Matches(preset.decoded) then return key end
+		if preset and A.Layout:Matches(preset.decoded, hold) then return key end
 	end
 	return nil
 end
+
+--- The nodes the tour's bar shapes leave alone: the spine, which stop 1 asked
+--  the player to place.
+Presets.SPINE = { player = true, target = true }
 
 --- The preset a player typed, whatever case and whichever spelling of centre.
 --
@@ -159,10 +165,11 @@ function Presets:Find(name)
 end
 
 --- Put an arrangement on screen, through the one path a pasted string takes.
-function Presets:Apply(key)
+--  `hold`, a set of node names to leave where they are (Layout:Apply).
+function Presets:Apply(key, hold)
 	local preset = self.list[key]
 	if not preset then return false end
-	return (A.Layout:Apply(preset.decoded))
+	return (A.Layout:Apply(preset.decoded, hold))
 end
 
 --- The current arrangement, as the bare readable string: the same thing the

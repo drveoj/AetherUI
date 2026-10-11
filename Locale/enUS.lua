@@ -1070,7 +1070,7 @@ L["options.map.settings_n"] = "%d settings"
 L["options.map.skins.desc"] = "The colours, the glass, and the game's own panels"
 L["options.map.skins.title"] = "Theme"
 L["options.map.system"] = "System"
-L["options.map.toolbox.desc"] = "The left trunk, and the idle fade"
+L["options.map.toolbox.desc"] = "The left trunk, the idle fade and Zen"
 L["options.map.toolbox.title"] = "Toolbox"
 L["options.map.target"] = "Target"
 L["options.map.tot"] = "Target of target"
@@ -1083,6 +1083,8 @@ L["options.map.unitframes.title"] = "Unit frames"
 L["options.map.unlock.desc"] = "Move anything on the screen"
 L["options.map.unlock.title"] = "Unlock frames"
 L["options.map.unlock_s"] = "Unlock %s"
+L["options.map.world.desc"] = "The right trunk, under the minimap"
+L["options.map.world.title"] = "World"
 
 L["options.minimap.blizz_header"] = "Blizzard's"
 L["options.minimap.border.name"] = "Border strength"
@@ -1239,6 +1241,9 @@ L["options.quest.which.desc"] =
 L["options.quest.which.name"] = "Show"
 L["options.quest.which.tracked"] = "Tracked only"
 
+L["options.world.desc"] =
+	"The trunk hanging from the minimap: your quests, Mail, Tracking, the Calendar "
+		.. "and N.I.F.E.C., each with a page of its own. It goes wherever the minimap goes."
 L["options.world.mail_dot.desc"] = "A small dot on the Mail node while mail is waiting."
 L["options.world.mail_dot.name"] = "Dot when mail arrives"
 L["options.world.nifec_note"] =
@@ -1251,6 +1256,9 @@ L["options.world.show.name"] = "Show on the trunk"
 L["options.world.tracking_note"] =
 	"Click the node to choose what the minimap tracks. On Classic Era it lists "
 		.. "the tracking spells you know, and the node wears the one that's on."
+
+L["options.zen.enabled"] = "Zen mode"
+L["options.zen.title"] = "Zen"
 
 L["options.resources.header"] = "Class resources"
 L["options.resources.display.name"] = "Show the resource tray"
@@ -1598,8 +1606,10 @@ L["tour.skin.name"] = "SKIN"
 L["tour.skip"] = "Skip — use the defaults"
 
 L["tour.spine.body"] =
-	"Drag the spine to where you want it. The two always sit level: your casts "
-		.. "run along it, and your bars (initially) hang from the middle."
+	"Drag the spine to where you want it: it snaps to the middle of your screen. "
+		.. "Ctrl-drag to stretch it, scroll to nudge it up or down (Shift-scroll for "
+		.. "sideways), and hold Shift while dragging to place it freely. The two always "
+		.. "sit level: your casts run along the spine, and your bars hang from its middle."
 L["tour.spine.head"] = "You and your target."
 L["tour.spine.name"] = "THE SPINE"
 

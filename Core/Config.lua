@@ -84,6 +84,12 @@ Config.defaults = {
 		-- taste, and a taste for one particular monitor at that.
 		--
 		-- Anyone who wants it smaller has a slider and /aether scale.
+		--
+		-- SINCE 2.0.0 a new profile is seeded from the screen instead, once,
+		-- at the fitted scale (Config:SeedScale): not a fixed number tuned to
+		-- one monitor, which is what 0.71 was, but the scale at which a design
+		-- pixel is a screen pixel on THIS one. 1.0 is what is left for a profile
+		-- that cannot be measured.
 		scale       = 1.0,
 		debug       = false,
 
@@ -1142,13 +1148,39 @@ function Config:Initialize()
 	-- folder, and the parent model's layout does not map onto 1.x positions.
 	A.db = AceDB:New("LatticeDB", Config.defaults, true)
 	Migrate(A.db)
+	Config:SeedScale()
 
 	-- All three through the one path. A copy and a reset rewrite the tables
 	-- under a module exactly as a switch does, so a module holding a
-	-- reference is just as wrong after either of them.
+	-- reference is just as wrong after either of them. A new or reset profile
+	-- is seeded first, so the reconfigure draws it at its scale.
+	A.db.RegisterCallback(A, "OnNewProfile",     function() Config:SeedScale() end)
 	A.db.RegisterCallback(A, "OnProfileChanged", function() A:ProfileChanged() end)
 	A.db.RegisterCallback(A, "OnProfileCopied",  function() A:ProfileChanged() end)
-	A.db.RegisterCallback(A, "OnProfileReset",   function() A:ProfileChanged() end)
+	A.db.RegisterCallback(A, "OnProfileReset",   function()
+		Config:SeedScale()
+		A:ProfileChanged()
+	end)
+end
+
+--- A NEW PROFILE STARTS AT THE FITTED SCALE (Joe, 2026-10-11), the one at
+--  which a design pixel is a screen pixel (A:FittedScale) - what the tour, the
+--  starting layouts and the trunks were all made at. At 1.0, the game's own
+--  units, a fresh profile on a tall screen drew everything about half again
+--  too big; 2.0 starting everybody fresh is when every player first sees it.
+--
+--  ONCE, and only where the player has not chosen: the flag stays with the
+--  profile, so a scale set afterwards - even 1.0 - is never seeded over.
+--  Still at the default is the test, not "unset": AceDB copies plain defaults
+--  into the profile table, so a new profile's scale is never nil, and the
+--  first version, which asked for nil, seeded nothing.
+function Config:SeedScale()
+	local p = A.db and A.db.profile
+	if not p or p.scaleSeeded then return end
+	p.scaleSeeded = true
+	if p.scale == nil or p.scale == Config.defaults.profile.scale then
+		p.scale = A:FittedScale()
+	end
 end
 
 --- Convenience accessor: A.Config:Module("unitframes")

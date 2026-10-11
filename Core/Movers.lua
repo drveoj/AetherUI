@@ -409,6 +409,17 @@ local function StretchPair(lead, partner, len, from)
 	return len
 end
 
+--- A stretched pair written down. The partner is MEASURED, not carried: saved
+--  only through SaveDescendants it is a node riding on the lead, which keeps
+--  the bond it already had - so only the first stretch on a profile, with no
+--  record to keep, was ever written, and every later one reverted at the next
+--  client start (Joe, 2026-10-11).
+local function SaveStretch(lead, partner)
+	SavePosition(lead)
+	SavePosition(partner)
+	SaveDescendants(lead.name)
+end
+
 --- Where a pair stands right now, for StretchPair.
 local function PairState(lead, partner)
 	local point, rel, relPoint, x, y = lead.frame:GetPoint(1)
@@ -433,8 +444,7 @@ function Movers:StretchPair(name, len)
 	local from = PairState(lead, partner)
 	if not from then return nil end
 	len = StretchPair(lead, partner, len, from)
-	SavePosition(lead)
-	SaveDescendants(lead.name)
+	SaveStretch(lead, partner)
 	return len
 end
 
@@ -1432,9 +1442,21 @@ local function CreateHandle(entry)
 				end
 			end
 
+			-- The pair: the spine's middle onto the screen's centre line first,
+			-- the strongest pull it has, as a child's parent is; then its outer
+			-- edges, the pair's whole width, like any frame's.
+			local midX, spineX = UIParent:GetWidth() / 2, false
+			if not onX and self._spineMid and math.abs(x + self._spineMid - midX) < dist then
+				x = midX - self._spineMid
+				gx = midX
+				spineX = true
+			end
+
 			local xs, ys = SnapTargets(self._skip or { [f] = true })
 			local step = (cfg.grid ~= false) and FieldStep() or nil
-			if not onX then x, gx = SnapAxis(x, w, xs, step, dist, UIParent:GetWidth() / 2) end
+			if not onX and not spineX then
+				x, gx = SnapAxis(x, self._pairSpan or w, xs, step, dist, midX)
+			end
 			if not onY then y, gy = SnapAxis(y, h2, ys, step, dist, UIParent:GetHeight() / 2) end
 
 			-- One axis lined up says where the child is from its parent. Both
@@ -1519,6 +1541,21 @@ local function CreateHandle(entry)
 		self._origX = f:GetLeft() * fs / us
 		self._origY = f:GetBottom() * fs / us
 
+		-- THE PAIR SNAPS AS ONE (Joe, 2026-10-11: the spine would not sit on
+		-- the screen's centre line). Measured once from the lead's left edge:
+		-- how wide the pair is to the partner's right edge, and where the
+		-- spine's middle is - between the lead's right edge and the partner's
+		-- left. Snapping used the lead alone, so no point of the pair could
+		-- ever line up on the middle of the screen.
+		self._pairSpan, self._spineMid = nil, nil
+		local pe = Partner(mover)
+		local pf = pe and pe ~= mover and pe.frame
+		if pf and pf:GetLeft() and f:GetRight() then
+			local ps = pf:GetEffectiveScale() or 1
+			self._pairSpan = pf:GetRight() * ps / us - self._origX
+			self._spineMid = (f:GetRight() * fs / us + pf:GetLeft() * ps / us) / 2 - self._origX
+		end
+
 		f:SetMovable(true)
 		self._dragging = true
 		self._park = nil
@@ -1538,8 +1575,7 @@ local function CreateHandle(entry)
 		local st = self._stretch
 		self._stretch = nil
 		if st then
-			SavePosition(st.lead)
-			SaveDescendants(st.lead.name)
+			SaveStretch(st.lead, st.partner)
 			RefreshJunctions()
 			return
 		end

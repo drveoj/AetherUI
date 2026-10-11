@@ -590,8 +590,13 @@ end
 --- Put a decoded layout on screen. WIPED, NOT MERGED: a layout is a whole
 --  arrangement, and merging one over another leaves whatever the last one
 --  moved that this one does not mention. Returns true, or false and why.
-function Layout:Apply(layout)
+--- `hold`, a set of node names, leaves those nodes where they are: their saved
+--  places survive the wipe and their records are not applied. The tour's bar
+--  shapes hold the player and the target (Joe, 2026-10-11: stop 3 undid where
+--  stop 1 had put the spine). Everything else in the layout applies as usual.
+function Layout:Apply(layout, hold)
 	if not layout or not A.db then return false, L.layout.err.empty end
+	hold = hold or {}
 	if InCombatLockdown() then return false, L.layout.err.combat end
 
 	-- SHAPES BEFORE THE BARS GO ON, so the one rebuild lays them out once. The
@@ -636,7 +641,7 @@ function Layout:Apply(layout)
 	end
 	local keep = {}
 	for name, a in pairs(anchors) do
-		if tostring(name):find("^__") then keep[name] = a end
+		if tostring(name):find("^__") or hold[name] then keep[name] = a end
 	end
 	wipe(anchors)
 	for name, a in pairs(keep) do anchors[name] = a end
@@ -646,7 +651,9 @@ function Layout:Apply(layout)
 	-- placed; a node whose module is off now is taken at its word as well.
 	local registry = A.Movers.registry
 	for name, r in pairs(layout.records) do
-		if r.parent == SCREEN then
+		if hold[name] then
+			-- Held where it is: see above.
+		elseif r.parent == SCREEN then
 			local e = registry[name]
 			anchors[name] = { point = r.point, relPoint = r.relPoint, x = r.x, y = r.y,
 				free = (not e or e.defaultParent) and true or nil }
@@ -679,7 +686,7 @@ function Layout:Apply(layout)
 	-- chat's is 113.6; 114 is 161).
 	for name in pairs(layout.records) do
 		local a, r = anchors[name], Ratio(name)
-		local h = a and (a.lat or a)
+		local h = (not hold[name]) and a and (a.lat or a)
 		if h then
 			local gx, gy = Glass(name, h.point)
 			h.x, h.y = h.x / r - gx, h.y / r - gy
@@ -696,8 +703,11 @@ end
 --- Is the layout on screen now this one? The tour and the preset list ask.
 --  Within a unit, because a bond measured back after placing can come back a
 --  rounding away.
-function Layout:Matches(layout)
+--- `hold` as for Apply: those nodes are not compared, so a layout applied with
+--  the spine held still reads as the one chosen.
+function Layout:Matches(layout, hold)
 	if not layout or not A.db then return false end
+	hold = hold or {}
 	local now = BarsNow()
 	if now then
 		for id, on in pairs(now) do
@@ -718,6 +728,9 @@ function Layout:Matches(layout)
 	for name, r in pairs(layout.records) do
 		named = named + 1
 		local b = anchors[name]
+		if hold[name] then
+			-- Not compared: held where the player put it.
+		else
 		-- The record as the string would write it: its bond, or the screen - or,
 		-- for a node with nothing saved, where it is measured to sit, the way
 		-- Encode writes an untouched bar.
@@ -761,6 +774,7 @@ function Layout:Matches(layout)
 		if r.w then
 			local w, h = NodeSize(name)
 			if not w or math.abs(w - r.w) > 2 or math.abs(h - r.h) > 2 then return false end
+		end
 		end
 	end
 

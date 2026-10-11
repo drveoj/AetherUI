@@ -7871,6 +7871,28 @@ section("which client the addon thinks it is on", function()
 	end
 end)
 
+section("a new profile starts at the fitted scale", function()
+	-- Joe, 2026-10-11: a fresh profile at 1.0 drew everything half again too
+	-- big on a tall screen. This mock's screen is 1440 tall.
+	local p = A.db.profile
+	local fit = A:FittedScale()
+	check(p.scaleSeeded == true and math.abs(p.scale - fit) < 0.001 and fit < 0.9,
+		"a fresh profile is seeded at the fitted scale for this screen ("
+		.. tostring(p.scale) .. ", fitted " .. tostring(fit) .. ")")
+	-- Never over a scale the player chose, even 1.0.
+	local was = p.scale
+	p.scale = 1.0
+	A.Config:SeedScale()
+	check(p.scale == 1.0, "a scale the player set is never seeded over, even 1.0")
+	-- A reset profile is new again.
+	p.scaleSeeded = nil
+	p.scale = nil
+	A.Config:SeedScale()
+	check(math.abs(p.scale - fit) < 0.001 and p.scaleSeeded == true,
+		"and a profile reset to its defaults is seeded again")
+	p.scale = was
+end)
+
 section("shared media: under Lattice's name, and the old names still resolve", function()
 	-- No LibSharedMedia is loaded here, so a stand-in under its name, kept
 	-- only for this section.
@@ -8686,12 +8708,15 @@ do
 	UF.player:SetGeom({ left = 100, right = 400, top = 300, bottom = 240 })
 	UF.target:SetGeom({ left = 520, right = 820, top = 300, bottom = 240 })
 	UF:MeasureSpine()
-	check(UF.spine:GetWidth() == 120,
+	-- Within a hundredth: at a fitted profile scale the arithmetic through the
+	-- frames' scales lands a float's width off a whole number.
+	check(math.abs(UF.spine:GetWidth() - 120) < 0.01,
 		"the spine runs from one capsule's edge to the other's ("
 		.. tostring(UF.spine:GetWidth()) .. ")")
 	UF.target:SetGeom({ left = 380, right = 680, top = 300, bottom = 240 })
 	UF:MeasureSpine()
-	check(UF.spine:GetWidth() == 40, "and never collapses, however the capsules are dragged")
+	check(math.abs(UF.spine:GetWidth() - 40) < 0.01,
+		"and never collapses, however the capsules are dragged")
 	UF.player:SetGeom(nil)
 	UF.target:SetGeom(nil)
 	UF:MeasureSpine()
@@ -9325,7 +9350,7 @@ do
 	-- first and the fade it is the second stage of never happened. One minute
 	-- is the floor for that reason, and the scale is what keeps the stored unit
 	-- from having to change with it.
-	local slider = A.Options:Build().args.fader.args.zenDelay
+	local slider = A.Options:Build().args.zen.args.zenDelay
 	check(slider.arg.scale == 60,
 		"the zen delay slider is scaled - it reads minutes over a value kept in"
 		.. " seconds")
@@ -10839,10 +10864,10 @@ do
 		"and it comes back with its movers - the come-back path used to skip them,"
 		.. " leaving the capsules unmovable for the rest of the session")
 
-	local zopt = tree.args.fader.args.zenEnabled
+	local zopt = tree.args.zen.args.zenEnabled
 	local zinfo = { arg = zopt.arg, type = "toggle" }
 	zopt.set(zinfo, false)
-	check(not A:GetModule("zen").enabled, "the same for zen, from the fader page")
+	check(not A:GetModule("zen").enabled, "the same for zen, from its own tab")
 	zopt.set(zinfo, true)
 	check(A:GetModule("zen").enabled, "and back")
 
@@ -12409,6 +12434,19 @@ do
 			.. string.format("%.1f -> %.1f", c0, centre()) .. ")")
 		check(A.db.profile.anchors.target and A.db.profile.anchors.target.lat
 			and A.db.profile.anchors.target.lat.x == len0 + 60, "and is kept")
+		-- KEPT ACROSS A RELOAD, AND THE SECOND TIME TOO (Joe, 2026-10-11: on
+		-- Era the stretch reverted at every client start). The first stretch
+		-- found no record and measured; every later one kept the record it
+		-- found, because the target was saved as a node carried by the player.
+		M:StretchPair("target", len0 + 90)
+		check(A.db.profile.anchors.target.lat.x == len0 + 90,
+			"a second stretch is kept as well (" .. tostring(A.db.profile.anchors.target.lat.x) .. ")")
+		UFm.target:ClearAllPoints()
+		UFm.target:SetPoint("LEFT", UFm.player, "RIGHT", len0, 0)
+		M:Restore("target")
+		check(select(4, UFm.target:GetPoint(1)) == len0 + 90,
+			"and comes back from the record, as at a client start ("
+			.. tostring(select(4, UFm.target:GetPoint(1))) .. ")")
 		check(M:StretchPair("player", 10) == 40, "never shorter than 40, from either half")
 		select(2, UFm.target:GetPoint(1))
 		local _, _, _, _, yy = UFm.target:GetPoint(1)
@@ -12445,8 +12483,57 @@ do
 		check(select(4, UFm.target:GetPoint(1)) > len0,
 			"Ctrl-dragging the target stretches the spine instead ("
 			.. tostring(len0) .. " -> " .. tostring(select(4, UFm.target:GetPoint(1))) .. ")")
+		check(A.db.profile.anchors.target.lat.x == select(4, UFm.target:GetPoint(1)),
+			"and the length the drag left is the one written down ("
+			.. tostring(A.db.profile.anchors.target.lat.x) .. ")")
 		M:Lock()
 		M:StretchPair("target", len0)
+	end
+
+	-- THE SPINE SNAPS TO THE MIDDLE OF THE SCREEN (Joe, 2026-10-11). Snapping
+	-- measured the player alone, so no point of the pair could line up there.
+	do
+		M:Unlock()
+		local h = reg.player.handle
+		-- Read mid-drag, where the snap is decided: the drop re-anchors. And in
+		-- the drag's own terms - edges as GetLeft gives them against lines from
+		-- UIParent's width - which agree in the client, where UIParent's left
+		-- is 0; this mock gives an unanchored frame a left of 100.
+		local function spineMid()
+			return ((at(UFm.player, "RIGHT")) + (at(UFm.target, "LEFT"))) / 2
+		end
+		local midX = UIParent:GetWidth() / 2
+		local p0 = { UFm.player:GetPoint(1) }
+		-- Drag by dx and hold it there: the answer, before the drop re-anchors.
+		-- The drag places against UIParent's corner, so the landing is read
+		-- from UIParent's left edge, as the drag computed it.
+		local function dragTo(dx)
+			__setCursor(500 * us, 300 * us)
+			h:GetScript("OnDragStart")(h)
+			__setCursor((500 + dx) * us, 300 * us)
+			local up = h:GetScript("OnUpdate")
+			if up then up(h, 0) end
+			local got = spineMid() - (UIParent:GetLeft() or 0)
+			h:GetScript("OnDragStop")(h)
+			return got
+		end
+		-- Six short of the centre line, inside the pull.
+		local got = dragTo(midX + 6 - spineMid())
+		check(math.abs(got - midX) < 0.6,
+			"dragged near it, the spine's middle snaps onto the screen's centre line ("
+			.. string.format("%.1f off", got - midX) .. ")")
+		-- Shift places freely, as for any frame.
+		UFm.player:ClearAllPoints()
+		UFm.player:SetPoint(unpack(p0))
+		_G.__shift = true
+		got = dragTo(midX + 6 - spineMid())
+		_G.__shift = nil
+		check(math.abs(got - midX - 6) < 0.6,
+			"and shift leaves it six off, where it was put ("
+			.. string.format("%.1f off", got - midX) .. ")")
+		M:Lock()
+		UFm.player:ClearAllPoints()
+		UFm.player:SetPoint(unpack(p0))
 	end
 
 	-- NO SNAPPING TO WHAT MOVES WITH YOU. Seen in game as judder (2026-10-07):
@@ -17454,6 +17541,54 @@ section("options window: the World trunk, a node each", function()
 	check(#OW:Subs(OW.page) == 1 and OW.page.title == "Quests",
 		"Quests is one page, the flight console no longer a tab under it")
 
+	-- THE TRUNK'S OWN ROOT (Joe, 2026-10-11: the trunk's settings sat under
+	-- Quests, and the trunk was called Quests on the map). World is the root,
+	-- as the Toolbox is; Quests is one node on it, like Mail.
+	local function HasPath(key)
+		for _, r in ipairs(OW.view.rows) do
+			local p = r.node.arg and r.node.arg.path
+			if p and p[#p] == key then return true end
+		end
+	end
+	check(not HasPath("labelsOnHover"), "the trunk's label choice is not on the Quests page")
+	local wn, qn, mmn = MapNode("world"), MapNode("quests"), MapNode("minimap")
+	check(wn and wn.label == "World" and wn.pageDef.key == "world" and wn.trunk and wn.w == 24,
+		"World is the trunk's root node, the Toolbox's size")
+	check(qn and qn.w == 18 and qn.w == MapNode("mail").w, "Quests is a node like Mail")
+	check(wn.y > mmn.y and wn.y < qn.y and wn.x == mmn.x,
+		"the root sits under the minimap, above Quests (" ..
+		string.format("%.0f, %.0f, %.0f", mmn.y, wn.y, qn.y) .. ")")
+	check(qn.y - wn.y >= 21,
+		"with room between the two diamonds (" .. string.format("%.0f", qn.y - wn.y) .. ")")
+	local wf = OW:RealFrames(wn)
+	check(wf[1] and wf[1] == A.Trunk:Get("world").frame, "hovering World lights the whole trunk")
+	local qf = OW:RealFrames(qn)
+	check(qf[1] and qf[1] == A.Trunk:Get("world"):Node("questlog").button,
+		"hovering Quests lights only its own node")
+	check(wn.pageDef.unlock and wn.pageDef.unlock[1] == "minimap" and not qn.pageDef.unlock,
+		"Shift-click on World unlocks the minimap it hangs from; Quests has nothing to move")
+	OW:Go("world")
+	OW:Finish()
+	check(OW.page.title == "World" and HasPath("labelsOnHover"), "the label choice is on the World page")
+	local qc = A.Config:Module("questtracker")
+	local wasL = qc.labelsOnHover
+	for _, r in ipairs(OW.view.rows) do
+		local p = r.node.arg and r.node.arg.path
+		if p and p[3] == "labelsOnHover" then
+			check(p[2] == "questtracker", "stored where it always was, so nobody's choice moves")
+			Click(r)
+		end
+	end
+	check(qc.labelsOnHover == not wasL and A.Trunk:Get("world"):LabelsOnHover() == not wasL,
+		"and switching it there switches the trunk's labels")
+	qc.labelsOnHover = wasL
+	A.Trunk:Get("world"):Extend()
+	local order = A.Options.PAGE_ORDER
+	check(order.minimap < order.world and order.world < order.quests and order.quests < order.mail,
+		"in search and the tree: Minimap, World, then Quests")
+	OW:Go("quests")
+	OW:Finish()
+
 	-- WHICH QUESTS is one choice, and the game's tracked list only means
 	-- anything with Tracked only.
 	local cfg = A.Config:Module("questtracker")
@@ -17491,6 +17626,43 @@ section("options window: the World trunk, a node each", function()
 	A.db.profile.world.nifecTrack = false
 	check(A.IFEC.Node:Title() == nil, "with what's playing switched off, the N.I.F.E.C. carries no title")
 	A.db.profile.world.nifecTrack = true
+	A.Options:Close()
+end)
+
+section("options window: Zen can be found", function()
+	-- Joe, 2026-10-11: "we appear to have lost Zen mode from the options".
+	-- It was a section halfway down Idle fade, its switch called "Enabled".
+	local OW, f = OpenMap()
+	local subs = {}
+	for _, s in ipairs(OW:Subs(OW:Page("toolbox"))) do subs[#subs + 1] = s.label end
+	check(table.concat(subs, ", ") == "Toolbox, Idle fade, Zen",
+		"the Toolbox page has a Zen tab of its own (" .. table.concat(subs, ", ") .. ")")
+	local function ZenRows()
+		local zen, sw = 0, nil
+		for _, r in ipairs(OW.view.rows) do
+			local p = r.node.arg and r.node.arg.path
+			if p and p[2] == "zen" then
+				zen = zen + 1
+				if p[3] == "enabled" then sw = r end
+			end
+		end
+		return zen, sw
+	end
+	OW:Go("toolbox", 2)
+	OW:Finish()
+	check(ZenRows() == 0, "Idle fade holds only the fade")
+	OW:Go("toolbox", 3)
+	OW:Finish()
+	local zen, sw = ZenRows()
+	check(zen > 20 and sw and sw.label:GetText() == "Zen mode",
+		"the Zen tab holds every Zen setting, its switch called Zen mode (" .. zen .. ", "
+		.. tostring(sw and sw.label:GetText()) .. ")")
+	OW:Search("zen")
+	local first = OW.results and OW.results[1]
+	check(first and first.name == "Zen mode" and first.page.key == "toolbox",
+		"searching zen finds the switch first (" .. tostring(first and first.name) .. ")")
+	check(OW:Page("toolbox").desc:find("Zen", 1, true), "and the Toolbox card says Zen is there")
+	OW:Search("")
 	A.Options:Close()
 end)
 
@@ -32863,7 +33035,24 @@ section("nifec: the mini-player, on the ground", function()
 	-- WHAT IS PLAYING, ON THE TRUNK (Joe): the title above the stub in place of
 	-- the name, the artist under it, the stub filling from the node out.
 	P.item.artist = P.item.artist or "Warlords Axe"
+	-- A new artist line is re-rastered, now and a moment later: after a cold
+	-- start it was laid out and never drawn (Joe, 2026-10-11), and written only
+	-- on a change nothing drew it again.
+	-- The moment-later pass is caught and run here rather than left on the
+	-- clock: draining timers would move the music on under the checks after.
+	node.button.sub:SetText("")
+	local subSteps, subUnwrap = _G.__fontSteps(node.button.sub)
+	local realAfter, later = C_Timer.After, {}
+	C_Timer.After = function(_, fn) later[#later + 1] = fn end
 	wt:Decorate("nowplaying")
+	C_Timer.After = realAfter
+	subUnwrap()
+	local subLater, subUnwrap2 = _G.__fontSteps(node.button.sub)
+	for _, fn in ipairs(later) do fn() end
+	subUnwrap2()
+	check(#subSteps >= 2 and #subLater >= 2,
+		"the artist line is re-rastered when written, and again a moment later ("
+		.. #subSteps .. ", " .. #subLater .. " font steps)")
 	check(node.button.label:GetText() == P.item.title and not node.button.mark:IsShown(),
 		"the track's title is above the stub, in place of the name (" .. tostring(node.button.label:GetText()) .. ")")
 	check(node.button.sub:IsShown() and node.button.sub:GetText() == P.item.artist,
@@ -35901,9 +36090,20 @@ do
 	do
 		local cards = OB.callout.slot.__aetherKids.layout or {}
 		check(#cards == #A.Presets.order, "a card per shape (" .. #cards .. ")")
+		-- The spine as stop 1 left it, which the shape must not move (Joe,
+		-- 2026-10-11: the whole layout put it back).
+		local sp0 = { UF.player:GetPoint(1) }
+		local sa0 = A.db.profile.anchors.player
 		cards[2]:GetScript("OnClick")(cards[2])
-		check(A.Presets:Current() == A.Presets.order[2],
-			"and tapping one moves the real bars (" .. tostring(A.Presets:Current()) .. ")")
+		check(A.Presets:Current(A.Presets.SPINE) == A.Presets.order[2],
+			"and tapping one moves the real bars ("
+			.. tostring(A.Presets:Current(A.Presets.SPINE)) .. ")")
+		local sp1 = { UF.player:GetPoint(1) }
+		check(sp1[1] == sp0[1] and sp1[2] == sp0[2] and sp1[3] == sp0[3]
+			and math.abs((sp1[4] or 0) - (sp0[4] or 0)) < 0.5
+			and math.abs((sp1[5] or 0) - (sp0[5] or 0)) < 0.5
+			and A.db.profile.anchors.player == sa0,
+			"and leaves the spine where stop 1 put it")
 		cards = OB.callout.slot.__aetherKids.layout
 		cards[1]:GetScript("OnClick")(cards[1])
 	end
@@ -36490,9 +36690,9 @@ do
 		check(A.Presets:Current() == nil, "nothing is chosen before the card is tapped ("
 			.. tostring(A.Presets:Current()) .. ")")
 		cards[1]:GetScript("OnClick")(cards[1])
-		check(A.Presets:Current() == A.Presets.order[1],
-			"and tapping one moves the real frames on the spot (" ..
-			tostring(A.Presets:Current()) .. ")")
+		check(A.Presets:Current(A.Presets.SPINE) == A.Presets.order[1],
+			"and tapping one moves the real frames on the spot, the spine held (" ..
+			tostring(A.Presets:Current(A.Presets.SPINE)) .. ")")
 
 		-- AND EACH CONTROL HAS ITS OWN FRAMES, and nothing from the last stop is
 		-- still live. The controls share one slot and their frames are not

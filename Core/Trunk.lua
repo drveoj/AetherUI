@@ -62,7 +62,8 @@ Proto.__index = Proto
 
 -- Whose settings hold a trunk's label choice (Joe, 2026-10-10: an option for
 -- the labels to hide, each popping out while the cursor is over its node).
--- The World trunk is the quest tracker's page in the options map.
+-- The World trunk's is stored with the quest tracker's settings, where it began;
+-- its switch is on the World page of the options map.
 local LABEL_OWNER = { world = "questtracker", toolbox = "toolbox" }
 
 local function ByOrder(x, y) return (x.order or 0) < (y.order or 0) end
@@ -248,6 +249,17 @@ function Proto:Decorate(key)
 		b.sub:SetWidth(0)
 		b.sub:SetText(text or "")
 		b.sub:SetWidth(math.max(1, math.min(SUB_W, math.ceil(b.sub:GetStringWidth() or 0))))
+		-- AFTER A COLD START the line can be laid out and never drawn - the
+		-- N.I.F.E.C.'s artist went missing so (Joe, 2026-10-11), as your cast
+		-- lane's spell name once did - and written only on a change, nothing
+		-- draws it again. Re-rastered now and once more when the font has
+		-- loaded (W.Reraster, the cast lane's fix).
+		if text and text ~= "" then
+			W.Reraster(b.sub)
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0.1, function() W.Reraster(b.sub) end)
+			end
+		end
 	end
 	if b.subInk ~= Palette.c.textDim then
 		b.subInk = Palette.c.textDim

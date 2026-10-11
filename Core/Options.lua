@@ -361,9 +361,6 @@ local function ToolboxGroup()
 end
 
 local function FaderGroup()
-	-- The client's own auto-AFK delay, from Core\Fader.lua. Read here rather than
-	-- written twice so the slider and the state machine cannot drift apart.
-	local ZEN_MAX = (A.Fader and A.Fader.AFK_TIMEOUT) or 300
 	return group(L.options.fader.idle_fade, {
 		desc = note(L.options.fader.desc),
 		enabled = toggle(L.common.enabled, nil, { "fader", "enabled" }, { after = "none" }),
@@ -384,11 +381,21 @@ local function FaderGroup()
 			{ after = "none" }),
 		keepOnMouse = toggle(L.options.fader.keep_on_mouse.name, nil, { "fader", "keepOnMouse" },
 			{ after = "none" }),
+	})
+end
 
-		zenHeader = header("Zen"),
+--- ZEN, A TAB OF ITS OWN under the Toolbox, beside the idle fade it follows
+--  (Joe, 2026-10-11: "we appear to have lost Zen mode from the options"). It
+--  was a section halfway down Idle fade, its switch called only "Enabled", so
+--  searching for zen never found the switch.
+local function ZenGroup()
+	-- The client's own auto-AFK delay, from Core\Fader.lua. Read here rather than
+	-- written twice so the slider and the state machine cannot drift apart.
+	local ZEN_MAX = (A.Fader and A.Fader.AFK_TIMEOUT) or 300
+	return group(L.options.zen.title, {
 		zenNote = note(A.F(L.options.fader.zen_note,
 			A.Hi(L.options.fader.only_hard_signals_hold))),
-		zenEnabled = toggle(L.common.enabled, nil, { "modules", "zen", "enabled" },
+		zenEnabled = toggle(L.options.zen.enabled, nil, { "modules", "zen", "enabled" },
 			{ after = "none" }),
 		zenOnAFK = toggle(L.options.fader.zen_on_a_f_k.name,
 			L.options.fader.client_flags_away_itself,
@@ -823,9 +830,6 @@ local function QuestGroup()
 		-- On the World trunk: how many before the rest fold into "+n". The
 		-- screen's own height cuts it shorter where it must.
 		max = range(L.options.quest.max.name, L.options.quest.max.desc, at("max"), 1, 20, 1),
-		labelsOnHover = toggle(L.options.trunk.labels_on_hover.name,
-			L.options.trunk.labels_on_hover.desc, at("labelsOnHover"),
-			{ after = "none", onSet = function() A.Trunk:Get("world"):Extend() end }),
 
 		-- WHICH QUESTS, as one choice rather than a switch whose meaning the
 		-- next switch depended on (Joe: "follow Blizzard's tracked quests" did
@@ -858,6 +862,19 @@ local function QuestGroup()
 		return A.Config:Module("questtracker").autoTrack ~= false
 	end
 	return g
+end
+
+--- THE WORLD TRUNK ITSELF, its root node on the map, as the Toolbox has
+--  (Joe, 2026-10-11: the trunk's own settings sat under Quests). The label
+--  choice is still stored on the quest tracker's settings, where it always
+--  was, so nobody's choice moves; only the control does.
+local function WorldGroup()
+	return group(L.options.map.world.title, {
+		desc = note(L.options.world.desc),
+		labelsOnHover = toggle(L.options.trunk.labels_on_hover.name,
+			L.options.trunk.labels_on_hover.desc, { "modules", "questtracker", "labelsOnHover" },
+			{ after = "none", onSet = function() A.Trunk:Get("world"):Extend() end }),
+	})
 end
 
 --- The World trunk's other nodes, each a page of its own on the options map
@@ -1232,9 +1249,9 @@ local function ThreatGroup()
 end
 local PAGE_ORDER = {
 	general = 1, skins = 1.5, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
-	minimap = 6, quests = 7, mail = 7.1, tracking = 7.2, calendar = 7.3, nifec = 7.4,
+	minimap = 6, world = 6.5, quests = 7, mail = 7.1, tracking = 7.2, calendar = 7.3, nifec = 7.4,
 	bags = 8, chat = 9, tooltips = 10,
-	toolbox = 11, fader = 12, xpbar = 13, nameplates = 14, ifec = 15,
+	toolbox = 11, fader = 12, zen = 12.5, xpbar = 13, nameplates = 14, ifec = 15,
 	threat = 15.5,
 	conveniences = 16, gameown = 17,
 	onboard = 17.5,   -- after the modules it introduces, before the changelog
@@ -1357,6 +1374,7 @@ function Options:Build()
 			auras = AurasGroup(),
 			minimap = MinimapGroup(),
 			actionbars = ActionBarsGroup(),
+			world = WorldGroup(),
 			quests = QuestGroup(),
 			mail = MailGroup(),
 			tracking = TrackingGroup(),
@@ -1368,6 +1386,7 @@ function Options:Build()
 			toolbox = ToolboxGroup(),
 			onboard = OnboardGroup(),
 			fader = FaderGroup(),
+			zen = ZenGroup(),
 			xpbar = XPGroup(),
 			ifec = IFECGroup(),
 			nameplates = NameplatesGroup(),
