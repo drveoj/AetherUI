@@ -1291,7 +1291,7 @@ local function SetBindingTo(overlay, keyString)
 	-- one the client picks is not the one you meant.
 	local previous = GetBindingAction and GetBindingAction(keyString)
 	if previous and previous ~= "" and previous ~= name then
-		A:Print((A.Dim("%s taken from %s")):format(ShortKey(keyString), previous))
+		A:Print(A.Dim(A.F(L.bars.bind.taken_from, ShortKey(keyString), previous)))
 	end
 
 	if not SetBinding(keyString, name) then
@@ -1360,9 +1360,9 @@ local function BuildBindOverlay(button, bindingName)
 		Swallow(self)
 		self:SetEdgeColor({ c.accentDeep[1], c.accentDeep[2], c.accentDeep[3], 1 })
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:SetText(self.bindingName or "no binding", 1, 1, 1)
-		GameTooltip:AddLine("Press a key to bind it here.", 0.8, 0.8, 0.8)
-		GameTooltip:AddLine("Escape clears it. Right-click leaves bind mode.", 0.6, 0.6, 0.6)
+		GameTooltip:SetText(self.bindingName or L.bars.bind.no_binding, 1, 1, 1)
+		GameTooltip:AddLine(L.bars.bind.press_key, 0.8, 0.8, 0.8)
+		GameTooltip:AddLine(L.bars.bind.escape_clears, 0.6, 0.6, 0.6)
 		GameTooltip:Show()
 	end)
 	o:SetScript("OnLeave", function(self)
@@ -2105,7 +2105,7 @@ local function DressParked(n, c)
 
 	local gw = cols * PARK_CELL + (cols - 1) * PARK_GAP
 	local gh = rows * PARK_CELL + (rows - 1) * PARK_GAP
-	n.label:SetText(tostring(c.label or ("Bar " .. id)):upper())
+	n.label:SetText(A.Config:BarLabel({ id = id }):upper())
 	W.Color(n.label, col)
 	local lw, lh = math.ceil(n.label:GetStringWidth() or 0), math.ceil(n.label:GetStringHeight() or 10)
 	local w = PARK_PAD * 3 + gw + lw
@@ -2249,7 +2249,7 @@ local function ParkOpts(bar)
 	return {
 		start = function()
 			AB.parking, AB.parkLit = "bar" .. bar.id, nil
-			AB.parkLabel = tostring(bar.cfg.label or ("Bar " .. bar.id)):upper()
+			AB.parkLabel = A.Config:BarLabel({ id = bar.id }):upper()
 			AB:RefreshParked()
 		end,
 		over = function(mx, my)
@@ -2302,7 +2302,7 @@ function AB:ShowParked(id)
 		f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx * k, cy * k)
 		A.Movers:SetParent(name, e.parent)
 	end
-	A:Print(A.F(L.bars.parked.shown, tostring(cfg.label or ("Bar " .. id)):upper()))
+	A:Print(A.F(L.bars.parked.shown, A.Config:BarLabel({ id = id }):upper()))
 	return true
 end
 
@@ -2350,7 +2350,7 @@ function AB:OnEnable()
 			bar.dock:Show()
 		end
 		A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
-			bar.cfg.label or ("Bar " .. bar.id), MoverOpts(bar))
+			A.Config:BarLabel({ id = bar.id }), MoverOpts(bar))
 		WatchDock(bar)
 	end
 
@@ -2681,7 +2681,7 @@ function AB:OnConfigChanged()
 			ApplyPaging(bar)
 
 			A.Movers:Register("bar" .. bar.id, bar.dock, DefaultAnchor(bar),
-				bar.cfg.label or ("Bar " .. bar.id), MoverOpts(bar))
+				A.Config:BarLabel({ id = bar.id }), MoverOpts(bar))
 			-- Here as well as at login: a bar switched on later is built by
 			-- SyncBars, and was never faded at all.
 			WatchDock(bar)

@@ -17,6 +17,7 @@ local ADDON, A = ...
 local XP = A:NewModule("xpbar")
 
 local W, Media, Palette = A.Widgets, A.Media, A.Palette
+local L = A.L
 
 local function MaxLevel()
 	-- GetMaxPlayerLevel exists on modern clients; Classic Era also exposes
@@ -134,7 +135,7 @@ local function Update()
 		-- keeps the whole numbers whole; the epsilon covers everything else.
 		local left = math.ceil((max - cur) * 100 / max - 1e-9)
 		if left < 0 then left = 0 elseif left > 100 then left = 100 end
-		f.text:SetText(string.format("%d%% to Level %d", left, level + 1))
+		f.text:SetText(A.F(L.xp.to_level, left, level + 1))
 		W.Color(f.text, c.textDim)
 		f.text:Show()
 	else

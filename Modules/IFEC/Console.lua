@@ -20,6 +20,7 @@ local IF = A:NewModule("ifec")
 
 local W, Media, Palette = A.Widgets, A.Media, A.Palette
 local Glass = A.Glass
+local L = A.L
 
 A.IFEC = A.IFEC or {}
 local Route, Taxi = A.IFEC.Route, A.IFEC.Taxi
@@ -213,9 +214,7 @@ local function Build()
 		IF:PaintLibraryButton()
 	end)
 	lib:SetScript("OnEnter", function(self)
-		W.Tooltip(self, "ANCHOR_LEFT", "Library",
-			"Everything in season. Click a row to add it to the programme, or to"
-			.. " take it back out.")
+		W.Tooltip(self, "ANCHOR_LEFT", L.console.library.name, L.console.library.desc)
 	end)
 	lib:SetScript("OnLeave", W.HideTooltip)
 	lib:Hide()
@@ -267,7 +266,7 @@ function IF:Refresh()
 	if flight.from and flight.to then
 		f.route:SetText(flight.from .. ROUTE_SEP .. flight.to)
 	else
-		f.route:SetText(UNKNOWN or "In flight")
+		f.route:SetText(UNKNOWN or L.console.in_flight)
 	end
 
 	-- "elapsed 2:01 - lands 4:12 - 2 legs". The middle clause needs an
@@ -631,11 +630,11 @@ function IF:UpdateJumpOff(flight)
 		b:SetScript("OnClick", function() IF:RequestJumpOff() end)
 		b:SetScript("OnEnter", function(self)
 			if IF._jumpAsked then
-				W.Tooltip(self, "ANCHOR_RIGHT", "Exit requested",
-					"Exiting early at the next available flight master.")
+				W.Tooltip(self, "ANCHOR_RIGHT", L.console.jump.asked,
+					L.console.jump.asked_desc)
 			else
-				W.Tooltip(self, "ANCHOR_RIGHT", "Jump Off",
-					"Request exit at the next flight master.")
+				W.Tooltip(self, "ANCHOR_RIGHT", L.console.jump.name,
+					L.console.jump.desc)
 			end
 		end)
 		b:SetScript("OnLeave", W.HideTooltip)
@@ -661,11 +660,11 @@ function IF:PaintJumpOff()
 	local c = Palette.c
 
 	if self._jumpAsked then
-		b:SetPillLabel("Exit requested")
+		b:SetPillLabel(L.console.jump.asked)
 		W.Color(b.label, c.textDim)
 		b.glyph:SetVertexColor(c.textDim[1], c.textDim[2], c.textDim[3], 0.55)
 	else
-		b:SetPillLabel("Jump Off")
+		b:SetPillLabel(L.console.jump.name)
 		W.Color(b.label, c.accent)
 		b.glyph:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 	end
@@ -722,7 +721,7 @@ function IF:OnEnable()
 	if not self.frame then
 		self.frame = Build()
 		A.Movers:Register("ifec", self.frame,
-			{ point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 260 }, "In-flight console")
+			{ point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 260 }, L.console.mover)
 		self:Restyle()
 	end
 

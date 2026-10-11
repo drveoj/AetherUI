@@ -1187,3 +1187,13 @@ function Config:Module(name)
 	end
 	return m
 end
+
+--- A bar's name as the player reads it. The `label` saved in a bar's config is
+--  an English word kept for older profiles; what is drawn comes from here.
+function Config:BarLabel(barCfg)
+	local id = barCfg and tostring(barCfg.id or "") or ""
+	if id == "stance" then return L.core.bar_label.stances end
+	if id == "pet" then return L.core.bar_label.pet end
+	if id == "extra" then return L.core.bar_label.extra end
+	return A.F(L.core.bar_label.bar_n, id)
+end

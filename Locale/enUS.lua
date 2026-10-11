@@ -45,6 +45,53 @@ L["bags.diagnose.bags"] = "bags:"
 
 L["bags.slot_info.trade_goods"] = "TRADE GOODS"
 
+-- The grid's section names, and what a section's note says.
+L["bags.section.equipment"] = "EQUIPMENT"
+L["bags.section.consumables"] = "CONSUMABLES"
+L["bags.section.quest"] = "QUEST"
+L["bags.section.misc"] = "MISCELLANEOUS"
+L["bags.section.junk"] = "JUNK"
+L["bags.section.free"] = "FREE"
+L["bags.section.auto_sell"] = "auto-sell"
+L["bags.section.n_free"] = "%d free"
+
+-- What a specialist bag takes, as the footer and the flyout name it.
+L["bags.family.quiver"] = "quiver"
+L["bags.family.ammo"] = "ammo"
+L["bags.family.soul_shards"] = "soul shards"
+L["bags.family.leatherworking"] = "leatherworking"
+L["bags.family.inscription"] = "inscription"
+L["bags.family.herbs"] = "herbs"
+L["bags.family.enchanting"] = "enchanting"
+L["bags.family.engineering"] = "engineering"
+L["bags.family.keys"] = "keys"
+L["bags.family.gems"] = "gems"
+L["bags.family.mining"] = "mining"
+L["bags.family.fishing"] = "fishing"
+L["bags.family.cooking"] = "cooking"
+L["bags.family.restricted"] = "restricted"
+
+L["bags.sort.name"] = "Combine"
+L["bags.sort.desc"] =
+	"Stack what can be stacked and move everything up, so the empty slots "
+		.. "end up together at the bottom."
+L["bags.search.items"] = "Search items\226\128\166"
+L["bags.search.bank"] = "Search bank\226\128\166"
+
+L["bags.foot.bank_tabs"] = "BANK TABS"
+L["bags.foot.bank_bags"] = "BANK BAGS"
+L["bags.foot.one_free"] = "1 slot free"
+L["bags.foot.n_free"] = "%d slots free"
+L["bags.foot.n_special"] = "%d %s"
+
+L["bags.fly.equipped"] = "EQUIPPED BAGS"
+L["bags.fly.keyring"] = "KEYRING"
+L["bags.fly.n_slots"] = "%d slots"
+L["bags.fly.only"] = "%s only"
+
+L["bags.sell.sold_one"] = "sold %s junk item for %s."
+L["bags.sell.sold_many"] = "sold %s junk items for %s."
+
 L["bags.sort_pass.stopped_compacting_after_40"] =
 	"stopped compacting after 40 passes - run it again if there is "
 		.. "still work to do."
@@ -69,6 +116,12 @@ L["bars.parked.park"] = "HIDE · %s"
 L["bars.parked.shown"] = "%s shown. Drag it into place."
 
 L["bars.set_binding_to.key_can_t_bound"] = "that key can't be bound."
+
+-- Keybind mode's tooltip over a button, and the note when a key moves.
+L["bars.bind.no_binding"] = "no binding"
+L["bars.bind.press_key"] = "Press a key to bind it here."
+L["bars.bind.escape_clears"] = "Escape clears it. Right-click leaves bind mode."
+L["bars.bind.taken_from"] = "%s taken from %s"
 
 -- chat --------------------------------------------------------------------
 
@@ -115,6 +168,8 @@ L["cmd.bags.junk_auto_sell_s2"] = "junk auto-sell %s."
 L["cmd.bags.junk_sell"] = "no junk to sell."
 
 L["cmd.bar.bar_s"] = "no bar %s."
+L["cmd.bar.extra_no_shape"] =
+	"the extra-action button is Blizzard's, and has no shape to change."
 
 L["cmd.bar_list.bars"] = "bars:"
 
@@ -346,12 +401,25 @@ L["common.zen_s_s_s"] = "zen %s -> %s  ·  %s"
 
 L["conveniences.repair.enough_repairs"] = "not enough for repairs:"
 L["conveniences.repair.repaired_s"] = "repaired for %s"
+L["conveniences.repair.needed_on_you"] = "%s needed, %s on you"
 
 -- core --------------------------------------------------------------------
 
 L["core.boot.init_s"] = "init '%s':"
 
-L["core.enable_module.full_picture"] = "for the full picture."
+-- The two lines in chat at login.
+L["core.greet.loaded"] = "v%s loaded  \194\183  skin %s"
+L["core.greet.commands"] =
+	"%s settings  \194\183  %s commands  \194\183  %s bug report  \194\183  "
+		.. "Please join discord at %s for support"
+
+-- A bar's name wherever it is drawn: its page, its outline, the unlock label.
+L["core.bar_label.bar_n"] = "Bar %s"
+L["core.bar_label.stances"] = "Stances"
+L["core.bar_label.pet"] = "Pet"
+L["core.bar_label.extra"] = "Extra"
+
+L["core.enable_module.run_diag"] = "run %s for the full picture."
 L["core.enable_module.module_s_failed_enable"] =
 	"module '%s' failed to enable:"
 
@@ -384,6 +452,10 @@ L["core.rename.switch_off"] = "Switch it off"
 -- errors ------------------------------------------------------------------
 
 L["errors.build.errors"] = "Errors"
+L["errors.text.none"] = "No errors caught since login."
+L["errors.export.done"] =
+	"exported %d characters as %s - /reload, then open %s and look under %s"
+L["errors.copy_box.size"] = "copy box: %d characters, %d lines"
 L["errors.build.export"] = "Export"
 L["errors.build.export_writes_savedvariables_aetherui"] =
 	"Export writes it to SavedVariables\\%s.lua. Escape closes."
@@ -412,6 +484,7 @@ L["layout.window.title"] = "Layout"
 L["library.build.library"] = "LIBRARY"
 
 L["library.paint.d_pages"] = "%d pages"
+L["library.paint.heard_s"] = "heard  \194\183  %s"
 L["library.paint.nothing_kind_season"] = "Nothing of that kind this season."
 L["library.paint.page_d_d"] = "page %d of %d"
 L["library.paint.playing"] = "playing"
@@ -431,11 +504,73 @@ L["mail.unread_last_visit_d"] = "%d unread · last visit"
 -- mini --------------------------------------------------------------------
 
 L["mini.paint.nothing_playing"] = "Nothing playing"
+L["mini.press_play"] = "Press play for the season's music"
+L["mini.time_left"] = "%s left"
+L["mini.paused"] = "paused"
+L["mini.library.name"] = "Library"
+L["mini.library.desc"] =
+	"Everything in season. Click a row to add it, or to take it back out."
+L["mini.play.name"] = "Play"
+L["mini.play.desc"] =
+	"With nothing queued this starts the music, least recently heard first."
+L["mini.menu.stop"] = "Stop"
+L["mini.menu.previous"] = "Previous"
+L["mini.menu.next"] = "Next"
+
+-- console -----------------------------------------------------------------
+
+L["console.in_flight"] = "In flight"
+L["console.mover"] = "In-flight console"
+L["console.library.name"] = "Library"
+L["console.library.desc"] =
+	"Everything in season. Click a row to add it to the programme, or to "
+		.. "take it back out."
+L["console.jump.name"] = "Jump Off"
+L["console.jump.desc"] = "Request exit at the next flight master."
+L["console.jump.asked"] = "Exit requested"
+L["console.jump.asked_desc"] =
+	"Exiting early at the next available flight master."
+
+-- content -----------------------------------------------------------------
+
+L["content.none_installed"] = "No content installed"
+L["content.refused"] = "A content pack was refused  \194\183  %s"
+L["content.out_of_season"] = "Nothing in season right now"
+
+-- reader ------------------------------------------------------------------
+
+L["reader.title_air"] = "I.F.E.C. MEDIA READER"
+L["reader.title_ground"] = "N.I.F.E.C. MEDIA READER"
+
+-- registry ----------------------------------------------------------------
+-- Why a content pack was refused, as the settings page prints it.
+
+L["registry.reason.malformed"] = "manifest is malformed"
+L["registry.reason.no_id"] = "manifest declares no packId"
+L["registry.reason.duplicate"] =
+	"another pack is already registered under that name"
+L["registry.reason.too_old"] = "built for an older console"
+L["registry.reason.too_new"] = "needs a newer console"
+L["registry.reason.no_items"] = "manifest carries no items"
+
+-- nav ---------------------------------------------------------------------
+-- Why "Navigate with TomTom" did not put an arrow up.
+
+L["nav.route.no_tomtom"] = "TomTom isn't loaded."
+L["nav.route.no_location"] = "no location for that quest."
+L["nav.route.refused"] = "TomTom refused the waypoint."
+L["nav.route.quest"] = "Quest"
 
 -- now playing -------------------------------------------------------------
 
 L["nowplaying.binding"] = "Play / pause the N.I.F.E.C."
 L["nowplaying.heading"] = "NOW PLAYING"
+
+-- minimap -----------------------------------------------------------------
+-- What the zone pill says in place of the zone.
+
+L["minimap.pill.combat"] = "In combat"
+L["minimap.pill.flight"] = "In flight"
 
 -- movers ------------------------------------------------------------------
 
@@ -494,6 +629,22 @@ L["movers.snap.snap"] = "SNAP"
 L["movers.unlock.frames_unlocked_drag_move"] =
 	"frames unlocked - drag to move, scroll to nudge (hold shift for "
 		.. "horizontal). Press %s, or %s, when done."
+L["movers.unlock.how"] =
+	"A child snaps to its parent's centre lines first, then to other frames "
+		.. "and the field's dots; hold Shift while dragging to place freely. "
+		.. "Drop a node on another's junction to hang it from that one. Frames "
+		.. "that only appear when the game says so - the pet bar, the taxi "
+		.. "button - are held up so you can place them."
+
+-- Each frame's name on its label while unlocked.
+L["movers.name.player"] = "Player"
+L["movers.name.target"] = "Target"
+L["movers.name.pet"] = "Pet"
+L["movers.name.tot"] = "Target of Target"
+L["movers.name.party"] = "Party"
+L["movers.name.chat"] = "Chat"
+L["movers.name.minimap"] = "Minimap"
+L["movers.name.tooltip"] = "Tooltip"
 
 -- options -----------------------------------------------------------------
 
@@ -506,6 +657,10 @@ L["options.action_bars.hide_blizzard.desc"] =
 L["options.action_bars.lock_buttons.name"] = "Lock buttons"
 L["options.action_bars.padding.name"] = "Panel padding"
 L["options.action_bars.paging_note"] = "There is no paging."
+L["options.action_bars.paging_note_rest"] =
+	"Every bar names its own source once and never changes it. The page "
+		.. "Blizzard tracks is a number this addon does not own and could not "
+		.. "keep still, and following it is what made the dock empty itself."
 L["options.action_bars.points_added_keybind_count"] =
 	"Points added to the keybind, count and cooldown text."
 L["options.action_bars.require_modified_click_pick"] =
@@ -537,6 +692,18 @@ L["options.auras.takes_weapon_enchant_icons"] =
 L["options.auras.tile_header"] = "Tiles"
 L["options.auras.yourself_every_debuff_matters"] =
 	"On yourself every debuff matters whoever cast it."
+
+-- The two tiles that leave a mode running: each names what pressing it will do.
+L["options.bind_action.name"] = "Keybind mode"
+L["options.bind_action.leave"] = "Leave keybind mode"
+L["options.bind_action.desc"] =
+	"Hover a button and press a key. Keys go into Blizzard's own binding set, "
+		.. "so they survive this addon being disabled and show up in the "
+		.. "keybinding panel."
+L["options.unlock_action.name"] = "Unlock frames"
+L["options.unlock_action.lock"] = "Lock frames"
+L["options.unlock_action.desc"] =
+	"Drag to move, scroll to nudge. Also on a tile in the Toolbox."
 
 L["options.bags.bags"] = "Bags"
 L["options.bags.columns.name"] = "Columns"
@@ -583,6 +750,15 @@ L["options.bags.window_wide_grid_eight"] =
 		.. "default."
 
 L["options.bar_pages.backdrop.desc"] = "Off leaves the buttons bare."
+L["options.bar_pages.source_actions"] = "Actions %d-%d."
+L["options.bar_pages.source_extra"] =
+	"Blizzard's taxi and extra-action buttons, adopted rather than rebuilt - "
+		.. "they fire protected actions, so the real frames are the only ones "
+		.. "that work."
+L["options.bar_pages.source_pet"] =
+	"Sized by the game: however many pet slots you have."
+L["options.bar_pages.source_stance"] =
+	"Sized by the game: however many stance slots you have."
 L["options.bar_pages.backdrop.name"] = "Glass panel"
 L["options.bar_pages.bar_n_owns_page"] =
 	"Bar N owns page N. Pages 7-10 are the bonus bars a druid, rogue or "
@@ -629,6 +805,7 @@ L["options.bar_pages.wrap.down"] = "Down"
 L["options.bar_pages.wrap.name"] = "Wrap"
 
 L["options.changelog.major_minor_build"] = "major.minor.build"
+L["options.changelog.no_notes"] = "No notes."
 L["options.changelog.numbering_s_major_release"] =
 	"Numbering is %s - a major for a release with new features in it, a "
 		.. "minor for accumulated fixes and small enhancements, and a build "
@@ -667,6 +844,14 @@ L["options.chat.desc"] =
 		.. "as pills along the top with the zone beside them, and the edit box "
 		.. "inset into the bottom edge with a channel tag and a send glyph."
 L["options.chat.dim_system.name"] = "Dim system lines"
+L["options.chat.dim_system.desc"] =
+	"The concept draws these in italics. There is no italic escape sequence "
+		.. "in the game's markup and a chat frame draws every line in one font, "
+		.. "so dimming carries the same intent: this is not somebody talking."
+		.. "\n\nIt catches anything the game tags as a system line, not just "
+		.. "the system chat event - so \"/played\", a lost connection and most "
+		.. "addons' own output dim too. That is wider than the concept drew, "
+		.. "and it is the right reading of what the line is."
 L["options.chat.em_dash.name"] = "Em dash instead of \"says:\""
 L["options.chat.fade.name"] = "Breathes with the HUD"
 L["options.chat.fade_messages.name"] = "Fade old lines out"
@@ -713,6 +898,13 @@ L["options.chat.unlocks_blizzard_s_own"] =
 		.. "the client's default and it ignores both."
 L["options.chat.whisper_header"] = "Whispers"
 L["options.chat.whisper_tab.name"] = "Whispers get their own tab"
+L["options.chat.whisper_tab.desc"] =
+	"It opens a real Blizzard chat window and moves the whisper message "
+		.. "groups onto it, and Blizzard saves all of that - including with "
+		.. "Lattice turned off.\n\nIt is also the only answer to the concept's "
+		.. "\"whispers stay bright\" while the rest dims: a chat frame has one "
+		.. "alpha for the whole frame, so a different frame is the only way to "
+		.. "give them a different one."
 
 L["options.conveniences.auto_repair.name"] = "Repair at a vendor automatically"
 L["options.conveniences.conveniences"] = "Conveniences"
@@ -1097,6 +1289,10 @@ L["options.minimap.desc"] =
 		.. "the zone, your coordinates and the time - which swaps for a red "
 		.. "dot and %s in a fight."
 L["options.minimap.hide_blizzard.name"] = "Hide the minimap furniture"
+L["options.minimap.hide_blizzard.desc"] =
+	"Zoom, tracking, the day/night dial, the battleground eye, the border art "
+		.. "and the toggle tab. Zoom moves to the mouse wheel and tracking to "
+		.. "right-clicking the map, so nothing is actually lost."
 L["options.minimap.minimap"] = "Minimap"
 L["options.minimap.pill_header"] = "The pill"
 L["options.minimap.pill_offset.name"] = "Gap below the map"
@@ -1262,6 +1458,9 @@ L["options.zen.title"] = "Zen"
 
 L["options.resources.header"] = "Class resources"
 L["options.resources.display.name"] = "Show the resource tray"
+L["options.resources.display.always"] = "Always"
+L["options.resources.display.combat"] = "In combat only"
+L["options.resources.display.never"] = "Never"
 L["options.resources.display.desc"] =
 	"The shelf under your own frame carrying combo points and the like. In"
 	.. " combat only drops the three-second grace after a change and the"
@@ -1285,6 +1484,9 @@ L["options.threat.display.desc"] =
 	"Rings only keeps the ring and drops the warnings written on the "
 		.. "capsule - quieter, and it still tells you the number at a glance."
 L["options.threat.display.name"] = "Show"
+L["options.threat.display.full"] = "Rings and warnings"
+L["options.threat.display.rings"] = "Rings only"
+L["options.threat.display.off"] = "Nothing"
 L["options.threat.enabled.desc"] =
 	"The ring round your class pip, the warning on the capsule when a "
 		.. "state is about to flip, and the disposition colour on a hostile "
@@ -1296,6 +1498,9 @@ L["options.threat.role.desc"] =
 		.. "Automatic reads your stance, form or aura instead.However, you can "
 		.. "force this here."
 L["options.threat.role.name"] = "Your role"
+L["options.threat.role.auto"] = "Automatic"
+L["options.threat.role.tank"] = "Tank"
+L["options.threat.role.damage"] = "Damage or healing"
 L["options.threat.threat"] = "Threat"
 
 L["options.toolbox.addon_columns.name"] = "Addon list columns"
@@ -1322,6 +1527,10 @@ L["options.toolbox.widgets_note"] =
 
 L["options.tooltips.anchoring"] = "Anchoring"
 L["options.tooltips.caution"] = "These four change the tooltip's text"
+L["options.tooltips.caution_rest"] =
+	", not just its colour. Everything else on this page is styling. If a "
+		.. "tooltip ever reads oddly alongside MobInfo2 or another mob addon, "
+		.. "this is the group to turn off first."
 L["options.tooltips.class_color_names.desc"] =
 	"On by default, to agree with the unit frames. Off is the deck's "
 		.. "own treatment: one blue for every friendly player."
@@ -1333,6 +1542,11 @@ L["options.tooltips.cursor_items.name"] =
 	"Item and spell tooltips follow the cursor"
 L["options.tooltips.defer_to_level_readers.name"] =
 	"...unless an addon is reading that line"
+L["options.tooltips.defer_to_level_readers.desc"] =
+	"MobInfo2 finds a mob's extra info by looking for the level NUMBER in the "
+		.. "tooltip line. Move it into the badge and it finds nothing. Leave "
+		.. "this on and the badge stands down while MobInfo2 is running; "
+		.. "/lattice tooltips will tell you it has."
 L["options.tooltips.elite_chip.name"] = "Elite chip"
 L["options.tooltips.health_values.name"] = "Health numbers"
 L["options.tooltips.level_badge.desc"] =
@@ -1411,6 +1625,7 @@ L["options.x_p.xp_hairline"] = "XP hairline"
 -- party -------------------------------------------------------------------
 
 L["party.is_leader.key"] = "Role Check"
+L["party.controls.countdown"] = "Countdown"
 
 -- playback ----------------------------------------------------------------
 
@@ -1427,6 +1642,12 @@ L["player.paint.outlined_queued"] = "outlined = queued"
 L["player.paint.programme_fills_s_s"] = "programme fills %s of %s"
 
 L["player.paint_up_next.queued"] = "queued by you"
+
+-- The chips offered when a programme ends.
+L["player.done.shuffle"] = "Ambient shuffle"
+L["player.done.replay"] = "Replay"
+L["player.done.replay_s"] = "Replay %s"
+L["player.done.scenery"] = "Just scenery"
 
 -- presets -----------------------------------------------------------------
 
@@ -1467,6 +1688,17 @@ L["questlog.build_header.quest_log"] = "Quest Log"
 
 L["questlog.foot.focus"] = "Focus"
 L["questlog.foot.unfocus"] = "Unfocus"
+L["questlog.foot.track"] = "Track quest"
+L["questlog.foot.untrack"] = "Untrack"
+L["questlog.foot.share"] = "Share"
+L["questlog.foot.abandon"] = "Abandon"
+L["questlog.confirm.cancel"] = "Cancel"
+
+L["questlog.search"] = "Search quests\226\128\166"
+L["questlog.detail.description"] = "DESCRIPTION"
+L["questlog.detail.choose_reward"] = "CHOOSE A REWARD"
+L["questlog.detail.you_receive"] = "YOU WILL RECEIVE"
+L["questlog.detail.level_s"] = "Lv %s"
 
 L["questlog.build_panes.quest_selected"] = "No quest selected."
 
@@ -1485,6 +1717,14 @@ L["questtracker.behind_fold_d"] = "%d hidden by a folded zone in the quest log"
 
 L["questtracker.menu.focus"] = "Focus this quest"
 L["questtracker.menu.stop_focus"] = "Stop focusing"
+L["questtracker.menu.open_log"] = "Open quest log"
+L["questtracker.menu.untrack"] = "Stop tracking"
+L["questtracker.menu.share"] = "Share quest"
+L["questtracker.menu.navigate"] = "Navigate with TomTom"
+L["questtracker.menu.no_location"] = "No location known"
+L["questtracker.menu.abandon"] = "Abandon quest"
+
+L["questtracker.complete"] = "Complete"
 
 -- toolbox -----------------------------------------------------------------
 
@@ -1523,11 +1763,40 @@ L["toolbox.refresh_widgets.tip3"] =
 		.. "Blizzard's own binding set, so they survive this addon being "
 		.. "disabled and show up in the keybinding panel."
 L["toolbox.refresh_widgets.unlock_frames"] = "Unlock frames"
+L["toolbox.refresh_widgets.unlock_tip"] =
+	"Drag any part of the interface to move it, or scroll to nudge it a pixel "
+		.. "at a time - hold shift to nudge sideways. Locked again from here or "
+		.. "with /lattice lock."
+
+-- The widgets' own names, shown on the trunk and in broker displays.
+L["toolbox.provider.gold"] = "Gold"
+L["toolbox.provider.durability"] = "Durability"
+L["toolbox.provider.xp_hour"] = "XP / hr"
+L["toolbox.provider.latency"] = "Latency"
+L["toolbox.provider.fps"] = "FPS"
+
+-- The game's windows, as the Toolbox menu lists them.
+L["toolbox.micro.character"] = "Character"
+L["toolbox.micro.spellbook"] = "Spellbook"
+L["toolbox.micro.talents"] = "Talents"
+L["toolbox.micro.bags"] = "Bags"
+L["toolbox.micro.social"] = "Social"
+L["toolbox.micro.guild"] = "Guild"
+L["toolbox.micro.map"] = "Map"
+L["toolbox.micro.help"] = "Help"
 
 L["toolbox.root.combat"] = "can't swap the trunks in combat."
 L["toolbox.root.swap"] =
 	"Drag to the other side of the screen: the Toolbox and the World trunk "
 		.. "swap sides."
+
+-- threat ------------------------------------------------------------------
+-- The chip's words: 16c's copy, final design intent.
+
+L["threat.chip.losing"] = "LOSING AGGRO"
+L["threat.chip.lost"] = "LOST AGGRO"
+L["threat.chip.high"] = "HIGH THREAT"
+L["threat.chip.on_you"] = "AGGRO %s ON YOU"
 
 -- tooltips ----------------------------------------------------------------
 
@@ -1535,6 +1804,10 @@ L["tooltips.diagnose.absent_client_s"] = "absent on this client: %s"
 L["tooltips.diagnose.level_badge_s"] = "level badge %s"
 L["tooltips.diagnose.level_badge_s_override"] =
 	"level badge %s (override: %s is running and reads that line)"
+L["tooltips.diagnose.stood_down"] = "stood down"
+L["tooltips.diagnose.level_badge_stood_down"] =
+	"level badge %s - %s reads the level out of that line, and moving it "
+		.. "into the badge would blind it. %s, Tooltips, to override."
 
 -- tour --------------------------------------------------------------------
 
@@ -1652,7 +1925,18 @@ L["tracker.navigate.can_t_route_quest"] = "can't route to that quest."
 L["tracker.navigate.quest"] = "the quest"
 L["tracker.navigate.routing_s"] = "routing to %s."
 
+-- xp ----------------------------------------------------------------------
+
+L["xp.to_level"] = "%d%% to Level %d"
+
 -- zen ---------------------------------------------------------------------
 
 L["zen.tick.zen_failed_put_interface"] =
 	"zen failed and put the interface back:"
+L["zen.caption"] = "Zen mode. Move or press a key to cancel"
+
+L["zen.track.garden"] = "Garden"
+L["zen.track.ocean"] = "Ocean"
+L["zen.track.serenity"] = "Serenity"
+L["zen.track.stillness"] = "Stillness"
+L["zen.track.water"] = "Water"

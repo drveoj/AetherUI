@@ -2094,11 +2094,7 @@ function Movers:Unlock(only, quiet)
 	if quiet then return end
 	A:Print(A.F(L.movers.unlock.frames_unlocked_drag_move,
 		A.Hi(L.movers.pill.lock), A.Hi("/lattice lock")))
-	A:Print(A.Dim("A child snaps to its parent's centre lines first, then to other frames"
-		.. " and the field's dots; hold Shift while dragging to place freely. Drop a node"
-		.. " on another's junction to hang it from that one. Frames that only appear"
-		.. " when the game says so - the pet bar, the taxi button - are held up so you"
-		.. " can place them."))
+	A:Print(A.Dim(L.movers.unlock.how))
 	return true
 end
 

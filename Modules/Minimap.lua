@@ -331,11 +331,11 @@ end
 function MM:PillState()
 	local c = Palette.c
 	if InCombatLockdown() then
-		return { text = "In combat", colour = c.danger }
+		return { text = L.minimap.pill.combat, colour = c.danger }
 	end
 	if UnitOnTaxi and UnitOnTaxi("player") then
 		-- Accent, not danger: a red light says you are being attacked.
-		return { text = "In flight", colour = c.accent }
+		return { text = L.minimap.pill.flight, colour = c.accent }
 	end
 	return nil
 end
@@ -1277,7 +1277,7 @@ function MM:OnEnable()
 	-- unit clear of both edges past its rim (Joe, over 6a's 110, 230), with
 	-- the World trunk under its pill.
 	A.Movers:Register("minimap", self.frame,
-		{ point = "CENTER", relPoint = "TOPRIGHT", x = -124, y = -124 }, "Minimap",
+		{ point = "CENTER", relPoint = "TOPRIGHT", x = -124, y = -124 }, L.movers.name.minimap,
 		-- Dropped on the other half of the screen, the trunk's stubs turn round.
 		{ onPlaced = function() A.Trunk:Get("world"):Refresh() end })
 	A.Fader:Register(self.frame, {})

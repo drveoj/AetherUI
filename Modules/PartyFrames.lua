@@ -565,7 +565,7 @@ local ACTIONS = {
 		end,
 	},
 	{
-		key = "countdown", label = "Countdown", glyph = "zen", token = "text",
+		key = "countdown", label = L.party.controls.countdown, glyph = "zen", token = "text",
 		run = function(self)
 			local n = math.min(self.seconds or 10, MaxCountdown())
 			if C_PartyInfo and C_PartyInfo.DoCountdown then C_PartyInfo.DoCountdown(n) end
@@ -886,7 +886,7 @@ function PF:RegisterMovers()
 	-- 210 in from the left: clear of the Toolbox trunk's stubs and labels,
 	-- which run out to about 170 on that edge.
 	A.Movers:Register("party", self.stack,
-		{ point = "LEFT", relPoint = "LEFT", x = 210, y = 120 }, "Party")
+		{ point = "LEFT", relPoint = "LEFT", x = 210, y = 120 }, L.movers.name.party)
 end
 
 --- The 10 Hz refresh - absorbs among it, which have no event here. Started on

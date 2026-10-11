@@ -2639,7 +2639,7 @@ function Chat:OnEnable()
 	-- variables; this is the one that matches the rest of the addon, which is
 	-- what anyone would reach for first.
 	A.Movers:Register("chat", _G.ChatFrame1,
-		{ point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 34, y = 66 }, "Chat",
+		{ point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 34, y = 66 }, L.movers.name.chat,
 		{ onPlaced = SaveToBlizzard,
 		  -- Movers calls this on unlock and on lock. It exists for frames that
 		  -- are only on screen when the game says so; the grip is one that is

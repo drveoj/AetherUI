@@ -282,6 +282,29 @@ local function FamilyWord(family)
 	return "restricted"
 end
 
+-- What the player reads for each of those words. The word itself stays the
+-- key the code files things under; only this is translated.
+local FAMILY_LABEL = {
+	["quiver"]         = L.bags.family.quiver,
+	["ammo"]           = L.bags.family.ammo,
+	["soul shards"]    = L.bags.family.soul_shards,
+	["leatherworking"] = L.bags.family.leatherworking,
+	["inscription"]    = L.bags.family.inscription,
+	["herbs"]          = L.bags.family.herbs,
+	["enchanting"]     = L.bags.family.enchanting,
+	["engineering"]    = L.bags.family.engineering,
+	["keys"]           = L.bags.family.keys,
+	["gems"]           = L.bags.family.gems,
+	["mining"]         = L.bags.family.mining,
+	["fishing"]        = L.bags.family.fishing,
+	["cooking"]        = L.bags.family.cooking,
+	["restricted"]     = L.bags.family.restricted,
+}
+
+local function FamilyLabel(word)
+	return FAMILY_LABEL[word] or word
+end
+
 --- What a bag will take. 0 means anything.
 --
 --  The family bitmask is the SECOND return of GetContainerNumFreeSlots, which
@@ -339,12 +362,12 @@ local CLASS_CATEGORY = {
 -- classified this" and "this is worthless" are different statements and a
 -- player will look in the first for something they cannot find.
 local CATEGORIES = {
-	{ key = "equipment",  label = "EQUIPMENT"   },
-	{ key = "consumable", label = "CONSUMABLES" },
+	{ key = "equipment",  label = L.bags.section.equipment },
+	{ key = "consumable", label = L.bags.section.consumables },
 	{ key = "trade",      label = L.bags.slot_info.trade_goods },
-	{ key = "quest",      label = "QUEST"       },
-	{ key = "misc",       label = "MISCELLANEOUS" },
-	{ key = "junk",       label = "JUNK"        },
+	{ key = "quest",      label = L.bags.section.quest },
+	{ key = "misc",       label = L.bags.section.misc },
+	{ key = "junk",       label = L.bags.section.junk },
 }
 
 -- The bank uses the SAME categories, and that is deliberate.
@@ -874,7 +897,7 @@ local function BuildHeader(frame)
 
 	head.sort = BuildIconButton(head, "sort",
 		function() Bags:StartSort(frame) end,
-		{ "Combine", "Stack what can be stacked and move everything up, so the" .. " empty slots end up together at the bottom." })
+		{ L.bags.sort.name, L.bags.sort.desc })
 	head.sort:SetPoint("RIGHT", head.close, "LEFT", -6, 0)
 
 	-- THE HAIRLINE ALONG ITS FOOT, which is what makes this a header band
@@ -941,7 +964,7 @@ local function BuildSearch(frame)
 	search.placeholder = W.Text(search, "bagSearch", "LEFT")
 	search.placeholder:SetPoint("LEFT", box, "LEFT", 0, 0)
 	search.placeholder:SetText(frame.kind == "bank"
-		and "Search bank\226\128\166" or "Search items\226\128\166")   -- ellipsis
+		and L.bags.search.bank or L.bags.search.items)
 
 	search:EnableMouse(true)
 	search:SetScript("OnMouseDown", function() box:SetFocus() end)
@@ -966,7 +989,7 @@ local function BuildFooter(frame)
 		-- there are depends on what has been bought.
 		foot.label = W.Text(foot, "bagLabel", "LEFT")
 		foot.label:SetPoint("LEFT", foot, "LEFT", SEARCH_PAD_X, 0)
-		foot.label:SetText(Media:Track(TABS and "BANK TABS" or "BANK BAGS", 1))
+		foot.label:SetText(Media:Track(TABS and L.bags.foot.bank_tabs or L.bags.foot.bank_bags, 1))
 		foot.tiles = {}
 		return foot
 	end
@@ -1220,7 +1243,7 @@ local function BuildFlyout(frame)
 
 	fly.label = W.Text(fly, "bagLabel", "LEFT")
 	fly.label:SetPoint("TOPLEFT", fly, "TOPLEFT", FLY_CORNER + FLY_PAD + 4, -FLY_PAD)
-	fly.label:SetText(Media:Track("EQUIPPED BAGS", 1))
+	fly.label:SetText(Media:Track(L.bags.fly.equipped, 1))
 
 	fly.rows = {}
 	fly.keys = {}
@@ -1237,7 +1260,7 @@ local function BuildFlyout(frame)
 	fly.keyIcon:SetSize(11, 11)
 
 	fly.keyLabel = W.Text(fly, "bagLabel", "LEFT")
-	fly.keyLabel:SetText(Media:Track("KEYRING", 1))
+	fly.keyLabel:SetText(Media:Track(L.bags.fly.keyring, 1))
 
 	fly.keyCount = W.Text(fly, "bagCount", "RIGHT")
 
@@ -1714,7 +1737,7 @@ function Bags:Rebuild(frame)
 
 	for _, cat in ipairs(cats) do
 		local note = nil
-		if cat.key == "junk" and cfg.junkAutoSell then note = "auto-sell" end
+		if cat.key == "junk" and cfg.junkAutoSell then note = L.bags.section.auto_sell end
 		Section(cat.label, buckets[cat.key], note)
 	end
 	-- The specialist bags, each under its own name, BEFORE the free block - they
@@ -1730,14 +1753,14 @@ function Bags:Rebuild(frame)
 		if cfg.showEmpty then
 			for _, b in ipairs(s.empties) do list[#list + 1] = b end
 		end
-		Section(word:upper(), list,
-			#s.empties > 0 and (#s.empties .. " free") or nil)
+		Section(FamilyLabel(word):upper(), list,
+			#s.empties > 0 and A.F(L.bags.section.n_free, #s.empties) or nil)
 	end
 
 	-- FREE is the slots you can put ANYTHING in. A quiver's empty slots are not
 	-- those, and shown in the same block they read as room the player has not
 	-- got - which is why they went up there with the bag they belong to.
-	if cfg.showEmpty then Section("FREE", empties) end
+	if cfg.showEmpty then Section(L.bags.section.free, empties) end
 
 	frame.labels:HideFrom(labelN + 1)
 
@@ -1841,9 +1864,9 @@ function Bags:RefreshFooter(frame)
 		local free = frame.freeOpen
 			or math.max(0, (frame.total or 0) - (frame.used or 0))
 
-		local text = free == 1 and "1 slot free" or (free .. " slots free")
+		local text = free == 1 and L.bags.foot.one_free or A.F(L.bags.foot.n_free, free)
 		for _, entry in ipairs(frame.freeSpecial or {}) do
-			text = text .. " \194\183 " .. entry[2] .. " " .. entry[1]
+			text = text .. " \194\183 " .. A.F(L.bags.foot.n_special, entry[2], FamilyLabel(entry[1]))
 		end
 		foot.free:SetText(text)
 		W.Color(foot.free, c.textDim)
@@ -2123,7 +2146,7 @@ function Bags:RefreshFlyout(frame)
 		-- second return of GetContainerNumFreeSlots, which is the canonical way
 		-- to ask; 0 means it takes anything.
 		local slots = SlotsIn(bag)
-		local sub = slots .. " slots"
+		local sub = A.F(L.bags.fly.n_slots, slots)
 		local named = self:FamilyName(BagFamily(bag))
 		if named then sub = slots .. " \194\183 " .. named end
 		row.sub:SetText(sub)
@@ -2217,7 +2240,7 @@ function Bags:FamilyName(family)
 	-- "restricted only" is not a sentence. An unrecognised family says what it
 	-- can honestly say, which is that the bag will not take everything.
 	if not word then return nil end
-	return word == "restricted" and "restricted" or (word .. " only")
+	return word == "restricted" and FamilyLabel(word) or A.F(L.bags.fly.only, FamilyLabel(word))
 end
 
 -- ---------------------------------------------------------------------------
@@ -2799,10 +2822,10 @@ function Bags:FinishSelling()
 	-- which is a question worth being able to ask about something that spends
 	-- the player's items while they are looking somewhere else.
 	self.lastSale = { sold = s.sold, earned = s.earned, listed = s.worth }
-	A:Print(string.format("sold " .. A.Val("%d") .. " junk item%s for " .. A.Val("%s") .. ".",
-		s.sold, s.sold == 1 and "" or "s",
-		(_G.GetCoinTextureString and _G.GetCoinTextureString(s.earned))
-			or (s.earned .. "c")))
+	A:Print(A.F(s.sold == 1 and L.bags.sell.sold_one or L.bags.sell.sold_many,
+		A.Val(tostring(s.sold)),
+		A.Val((_G.GetCoinTextureString and _G.GetCoinTextureString(s.earned))
+			or (s.earned .. "c"))))
 	self:Invalidate()
 end
 

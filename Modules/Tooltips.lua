@@ -1412,7 +1412,7 @@ function TT:OnEnable()
 
 	A.Movers:Register("tooltip", self.anchor,
 		{ point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -48, y = 48 },
-		"Tooltip", { growsDown = false })
+		L.movers.name.tooltip, { growsDown = false })
 
 	-- Two late sweeps rather than one. The first catches an addon that built its
 	-- tooltips at load; the second catches LibExtraTip, which does not build one
@@ -1563,9 +1563,8 @@ function TT:Diagnose()
 	-- thing this whole diagnostic exists to prevent.
 	local reader = LevelReader()
 	if cfg().levelBadge and reader and cfg().deferToLevelReaders ~= false then
-		A:Print(("level badge " .. A.Dim("stood down") .. " - " .. A.Val("%s") .. " reads the level"
-			.. " out of that line, and moving it into the badge would blind it."
-			.. " " .. A.Hi("/lattice config") .. ", Tooltips, to override."):format(reader))
+		A:Print(A.F(L.tooltips.diagnose.level_badge_stood_down,
+			A.Dim(L.tooltips.diagnose.stood_down), A.Val(reader), A.Hi("/lattice config")))
 	elseif cfg().levelBadge then
 		A:Print(reader
 			and A.F(L.tooltips.diagnose.level_badge_s_override, A.Good(L.common.on), A.Val(reader))

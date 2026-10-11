@@ -27,6 +27,7 @@ local ADDON, A = ...
 local UF = A:NewModule("unitframes")
 
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
+local L = A.L
 
 UF.frames = {}
 
@@ -1319,13 +1320,13 @@ function UF:RegisterMovers()
 	-- `shape = "pill"` on every unit: unlocked, a unit is drawn as the pill
 	-- it is (Lattice board 4a).
 	A.Movers:Register("player", self.player,
-		{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 190 }, "Player",
+		{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 190 }, L.movers.name.player,
 		{ shape = "pill" })
 	-- THE PAIR. The target is the player's other half, level with it and the
 	-- spine between them: dragged with it, stretched apart with Ctrl, never
 	-- shorter than the spine's minimum (Joe, 2026-10-07).
 	A.Movers:Register("target", self.target,
-		{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 190 }, "Target",
+		{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 190 }, L.movers.name.target,
 		{ parent = "player", pairLead = "player", pairMin = SPINE_MIN, shape = "pill" })
 	-- The spine is a node in its own right - the bars hang from its centre -
 	-- measured first, so what hangs from it is bonded to where it really is.
@@ -1337,7 +1338,7 @@ function UF:RegisterMovers()
 		-- is one you end up turning off. Bonded to the player: it goes where
 		-- the player goes.
 		A.Movers:Register("pet", self.pet,
-			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, "Pet",
+			{ point = "BOTTOM", relPoint = "BOTTOM", x = -half, y = 140 }, L.movers.name.pet,
 			{ parent = "player", shape = "pill" })
 	end
 	if self.tot and not self.tot.off then
@@ -1346,7 +1347,7 @@ function UF:RegisterMovers()
 		-- thing above it. Bonded to the target.
 		A.Movers:Register("targettarget", self.tot,
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 140 },
-			"Target of Target", { parent = "target", shape = "pill" })
+			L.movers.name.tot, { parent = "target", shape = "pill" })
 	end
 end
 

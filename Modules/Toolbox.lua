@@ -442,14 +442,14 @@ local OLD_PREFIX = "AetherUI_"
 --- Our six. Latency and FPS are polled; the rest follow their events, and
 --  every one has PLAYER_ENTERING_WORLD so it is right at login.
 TB.PROVIDERS = {
-	{ key = "Gold",       label = "Gold",
+	{ key = "Gold",       label = L.toolbox.provider.gold,
 	  events = { "PLAYER_MONEY", "PLAYER_ENTERING_WORLD" } },
 	{ key = "BagSpace",   label = L.toolbox.on_config_changed.bag_space,  events = { "BAG_UPDATE", "PLAYER_ENTERING_WORLD" } },
-	{ key = "Durability", label = "Durability", events = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_ENTERING_WORLD" } },
-	{ key = "XPHour",     label = "XP / hr",
+	{ key = "Durability", label = L.toolbox.provider.durability, events = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_ENTERING_WORLD" } },
+	{ key = "XPHour",     label = L.toolbox.provider.xp_hour,
 	  events = { "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" } },
-	{ key = "Latency",    label = "Latency",    poll = true },
-	{ key = "FPS",        label = "FPS",        poll = true },
+	{ key = "Latency",    label = L.toolbox.provider.latency, poll = true },
+	{ key = "FPS",        label = L.toolbox.provider.fps,     poll = true },
 }
 
 local function Money()
@@ -704,7 +704,7 @@ end
 -- ---------------------------------------------------------------------------
 
 TB.TILES = {
-	{ kind = "setting", key = "zen", label = "Zen",
+	{ kind = "setting", key = "zen", label = L.options.zen.title,
 	  path = { "modules", "zen", "enabled" },
 	  tip = L.toolbox.refresh_widgets.tip },
 
@@ -722,9 +722,7 @@ TB.TILES = {
 		A.Movers:Lock()
 		return true
 	  end,
-	  tip = "Drag any part of the interface to move it, or scroll to nudge it a"
-	     .. " pixel at a time - hold shift to nudge sideways. Locked again from"
-	     .. " here or with /lattice lock." },
+	  tip = L.toolbox.refresh_widgets.unlock_tip },
 
 	{ kind = "mode", key = "keybinds", label = L.toolbox.refresh_widgets.keybind_mode,
 	  get = function()
@@ -1282,15 +1280,15 @@ local function Shown(...)
 end
 
 TB.MICRO = {
-	{ key = "character", label = "Character",
+	{ key = "character", label = L.toolbox.micro.character,
 	  fn = function() ToggleCharacter("PaperDollFrame") end,
 	  probe = function() return ToggleCharacter ~= nil end,
 	  open = function() return Shown("CharacterFrame") end },
-	{ key = "spellbook", label = "Spellbook",
+	{ key = "spellbook", label = L.toolbox.micro.spellbook,
 	  fn = function() ToggleSpellBook(BOOKTYPE_SPELL or "spell") end,
 	  probe = function() return ToggleSpellBook ~= nil end,
 	  open = function() return Shown("SpellBookFrame") end },
-	{ key = "talents",   label = "Talents",
+	{ key = "talents",   label = L.toolbox.micro.talents,
 	  fn = function() ToggleTalentFrame() end,
 	  probe = function() return ToggleTalentFrame ~= nil and CanUseTalents() end,
 	  open = function() return Shown("TalentFrame", "PlayerTalentFrame") end },
@@ -1301,26 +1299,26 @@ TB.MICRO = {
 		local QL = A:GetModule("questlog")
 		return Shown(QL and QL.win, "QuestLogFrame")
 	  end },
-	{ key = "bags",      label = "Bags",
+	{ key = "bags",      label = L.toolbox.micro.bags,
 	  fn = function() ToggleAllBags() end,
 	  probe = function() return ToggleAllBags ~= nil end,
 	  open = function()
 		local BG = A:GetModule("bags")
 		return Shown(BG and BG.frames and BG.frames.bags, "ContainerFrame1")
 	  end },
-	{ key = "social",    label = "Social",
+	{ key = "social",    label = L.toolbox.micro.social,
 	  fn = function() ToggleFriendsFrame() end,
 	  probe = function() return ToggleFriendsFrame ~= nil end,
 	  open = function() return Shown("FriendsFrame") end },
-	{ key = "guild",     label = "Guild",
+	{ key = "guild",     label = L.toolbox.micro.guild,
 	  fn = function() ToggleGuildFrame() end,
 	  probe = function() return ToggleGuildFrame ~= nil end,
 	  open = function() return Shown("GuildFrame", "CommunitiesFrame") end },
-	{ key = "map",       label = "Map",
+	{ key = "map",       label = L.toolbox.micro.map,
 	  fn = function() ToggleWorldMap() end,
 	  probe = function() return ToggleWorldMap ~= nil end,
 	  open = function() return Shown("WorldMapFrame") end },
-	{ key = "menu",      label = "Menu",
+	{ key = "menu",      label = L.toolbox.node.menu,
 	  -- NOT ToggleGameMenu, which is the Escape handler: it closes a window
 	  -- first and never reaches the menu. Shut the windows, then open the
 	  -- menu, as Blizzard's own button does.
@@ -1335,7 +1333,7 @@ TB.MICRO = {
 	  end,
 	  probe = function() return GameMenuFrame ~= nil and ShowUIPanel ~= nil end,
 	  open = function() return Shown("GameMenuFrame") end },
-	{ key = "help",      label = "Help",
+	{ key = "help",      label = L.toolbox.micro.help,
 	  fn = function() ToggleHelpFrame() end,
 	  probe = function() return ToggleHelpFrame ~= nil end,
 	  open = function() return Shown("HelpFrame") end },

@@ -18,6 +18,8 @@ A.IFEC = A.IFEC or {}
 local Registry = {}
 A.IFEC.Registry = Registry
 
+local L = A.L
+
 -- The versions of the content contract this build can serve. A range rather
 -- than a number: a season built against v1 and one built against v2 will be
 -- installed together, and refusing the older one because the engine moved on
@@ -31,12 +33,12 @@ Registry.dirty   = true
 
 --- Why a pack was refused, in words a settings page can print.
 local REASON = {
-	malformed = "manifest is malformed",
-	noId      = "manifest declares no packId",
-	duplicate = "another pack is already registered under that name",
-	tooOld    = "built for an older console",
-	tooNew    = "needs a newer console",
-	noItems   = "manifest carries no items",
+	malformed = L.registry.reason.malformed,
+	noId      = L.registry.reason.no_id,
+	duplicate = L.registry.reason.duplicate,
+	tooOld    = L.registry.reason.too_old,
+	tooNew    = L.registry.reason.too_new,
+	noItems   = L.registry.reason.no_items,
 }
 
 local function refuse(packId, reason)

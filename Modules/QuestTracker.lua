@@ -293,7 +293,7 @@ local function Collect()
 				-- that is ready to hand in has nothing else to show at all, and
 				-- "all my objectives read 10/10" is a slower read than "Complete".
 				if complete then
-					lines[#lines + 1] = { text = "Complete", finished = true, done = true }
+					lines[#lines + 1] = { text = L.questtracker.complete, finished = true, done = true }
 				end
 				out[#out + 1] = {
 					index = index, questID = questID, title = title, level = level,
@@ -483,7 +483,7 @@ local function RowClicked(row, button)
 
 	if button == "RightButton" then
 		local entries = {
-			{ text = "Open quest log", action = function() OpenLog(row.index, row.questID) end },
+			{ text = L.questtracker.menu.open_log, action = function() OpenLog(row.index, row.questID) end },
 		}
 
 		-- FOCUS, where the client has it (WoW Forever), worded and placed the
@@ -499,8 +499,8 @@ local function RowClicked(row, button)
 			}
 		end
 
-		entries[#entries + 1] = { text = "Stop tracking", action = function() Untrack(row.questID) end }
-		entries[#entries + 1] = { text = "Share quest",   action = function() ShareQuest(row.index) end }
+		entries[#entries + 1] = { text = L.questtracker.menu.untrack, action = function() Untrack(row.questID) end }
+		entries[#entries + 1] = { text = L.questtracker.menu.share,   action = function() ShareQuest(row.index) end }
 
 		-- Only when BOTH addons are actually there. A menu item that exists to
 		-- tell you an addon is missing is an advert, not a feature - and this
@@ -509,13 +509,13 @@ local function RowClicked(row, button)
 			local questID, title = row.questID, row.questTitle
 			local loc = A.Nav:Locate(questID)
 			entries[#entries + 1] = {
-				text = loc and "Navigate with TomTom" or "No location known",
+				text = loc and L.questtracker.menu.navigate or L.questtracker.menu.no_location,
 				disabled = (loc == nil),
 				action = function() Navigate(questID, title, loc) end,
 			}
 		end
 
-		entries[#entries + 1] = { text = "Abandon quest", danger = true,
+		entries[#entries + 1] = { text = L.questtracker.menu.abandon, danger = true,
 			action = function() AbandonQuestAt(row.index, row.questTitle) end }
 
 		W.Menu(row, entries)

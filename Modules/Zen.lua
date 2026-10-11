@@ -253,7 +253,7 @@ local CAP_GAP    = 18     -- between the caption and the bar capsule
 --- One full breath. Twelve a minute is roughly a resting adult, and it is slow
 --  enough that the row reads as drifting rather than blinking.
 local BREATH  = 5.0
-local CAPTION = "Zen mode. Move or press a key to cancel"
+local CAPTION = L.zen.caption
 
 --- Noise.tga's own size. The grain is tiled at 1:1 against physical pixels, so
 --  it is the same grain on a 1080p laptop and a 4K monitor rather than a
@@ -280,11 +280,11 @@ local AUDIO = [[Interface\AddOns\]] .. ADDON .. [[\Media\Audio\]]
 --  here breaks nothing that is already saved as long as the key survives; a key
 --  that no longer resolves falls back to the first track rather than to silence.
 Zen.TRACKS = {
-	{ key = "garden",    name = "Garden",    file = AUDIO .. "zen-garden.ogg"    },
-	{ key = "ocean",     name = "Ocean",     file = AUDIO .. "zen-ocean.ogg"     },
-	{ key = "serenity",  name = "Serenity",  file = AUDIO .. "zen-serenity.ogg"  },
-	{ key = "stillness", name = "Stillness", file = AUDIO .. "zen-stillness.ogg" },
-	{ key = "water",     name = "Water",     file = AUDIO .. "zen-water.ogg"     },
+	{ key = "garden",    name = L.zen.track.garden,    file = AUDIO .. "zen-garden.ogg"    },
+	{ key = "ocean",     name = L.zen.track.ocean,     file = AUDIO .. "zen-ocean.ogg"     },
+	{ key = "serenity",  name = L.zen.track.serenity,  file = AUDIO .. "zen-serenity.ogg"  },
+	{ key = "stillness", name = L.zen.track.stillness, file = AUDIO .. "zen-stillness.ogg" },
+	{ key = "water",     name = L.zen.track.water,     file = AUDIO .. "zen-water.ogg"     },
 }
 
 --- The channels zen ducks, and the profile key holding each one's ratio.

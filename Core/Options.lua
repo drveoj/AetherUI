@@ -245,11 +245,9 @@ local function BindAction()
 	return action(function()
 			local AB = A:GetModule("actionbars")
 			return (AB and AB.enabled and AB.bindMode)
-				and "Leave keybind mode" or "Keybind mode"
+				and L.options.bind_action.leave or L.options.bind_action.name
 		end,
-		"Hover a button and press a key. Keys go into Blizzard's own binding"
-		.. " set, so they survive this addon being disabled and show up in the"
-		.. " keybinding panel.",
+		L.options.bind_action.desc,
 		function()
 			local AB = A:GetModule("actionbars")
 			if AB and AB.enabled then A.Options:Close(); AB:ToggleBindMode() end
@@ -258,9 +256,9 @@ end
 
 local function UnlockAction()
 	return action(function()
-			return A.Movers.unlocked and "Lock frames" or "Unlock frames"
+			return A.Movers.unlocked and L.options.unlock_action.lock or L.options.unlock_action.name
 		end,
-		"Drag to move, scroll to nudge. Also on a tile in the Toolbox.",
+		L.options.unlock_action.desc,
 		function() A.Options:Close(); A.Movers:Toggle() end)
 end
 
@@ -574,9 +572,9 @@ local function UnitFramesGroup()
 		resourceDisplay = choice(L.options.resources.display.name,
 			L.options.resources.display.desc,
 			{ "modules", "resources", "display" }, {
-				on     = "Always",
-				combat = "In combat only",
-				off    = "Never",
+				on     = L.options.resources.display.always,
+				combat = L.options.resources.display.combat,
+				off    = L.options.resources.display.never,
 			}),
 		resourceEnabled = toggle(L.options.resources.enabled.name,
 			L.options.resources.enabled.desc,
@@ -641,9 +639,7 @@ local function MinimapGroup()
 		showClock = toggle(L.options.minimap.show_clock.name, nil, at("showClock"), { defaultTrue = true }),
 		blizzHeader = header(L.options.minimap.blizz_header),
 		hideBlizzard = toggle(L.options.minimap.hide_blizzard.name,
-			"Zoom, tracking, the day/night dial, the battleground eye, the border"
-			.. " art and the toggle tab. Zoom moves to the mouse wheel and tracking"
-			.. " to right-clicking the map, so nothing is actually lost.",
+			L.options.minimap.hide_blizzard.desc,
 			at("hideBlizzard"), { defaultTrue = true }),
 
 		-- The button drawer's three controls used to live here. The drawer went
@@ -671,14 +667,11 @@ local function BarPages()
 			enabled = toggle(kind == "extra" and L.common.enabled or L.options.bar_pages.visible.name,
 				kind ~= "extra" and L.options.bar_pages.visible.desc or nil, at("enabled")),
 			source = note(kind == "action"
-				and ("Actions " .. (((barCfg.page or 1) - 1) * 12 + 1) .. "-"
-					.. ((barCfg.page or 1) * 12) .. ".")
-				or (kind == "extra"
-					and "Blizzard's taxi and extra-action buttons, adopted rather than"
-						.. " rebuilt - they fire protected actions, so the real frames"
-						.. " are the only ones that work."
-					or ("Sized by the game: however many " .. kind
-						.. " slots you have."))),
+				and A.F(L.options.bar_pages.source_actions,
+					((barCfg.page or 1) - 1) * 12 + 1, (barCfg.page or 1) * 12)
+				or (kind == "extra" and L.options.bar_pages.source_extra
+					or kind == "pet" and L.options.bar_pages.source_pet
+					or L.options.bar_pages.source_stance)),
 			scale = range(L.common.scale, L.common.top_global_scale, at("scale"), 0.4, 2.0, 0.05),
 			backdrop = toggle(L.options.bar_pages.backdrop.name, L.options.bar_pages.backdrop.desc,
 				at("backdrop"), { defaultTrue = true }),
@@ -771,7 +764,7 @@ local function BarPages()
 			end
 		end
 
-		pages[id] = group(barCfg.label or ("Bar " .. id), args)
+		pages[id] = group(A.Config:BarLabel(barCfg), args)
 	end
 
 	return pages
@@ -799,10 +792,8 @@ local function ActionBarsGroup()
 
 	local args = {
 		shared = group(L.options.action_bars.shared, shared, { inline = true }),
-		pagingNote = note(A.Hi(L.options.action_bars.paging_note) .. " Every bar names its own"
-			.. " source once and never changes it. The page Blizzard tracks is a"
-			.. " number this addon does not own and could not keep still, and"
-			.. " following it is what made the dock empty itself."),
+		pagingNote = note(A.Hi(L.options.action_bars.paging_note) .. " "
+			.. L.options.action_bars.paging_note_rest),
 	}
 
 	for id, page in pairs(BarPages()) do
@@ -997,25 +988,13 @@ local function ChatGroup()
 			L.options.chat.off_concept_badge_what,
 			at("channelPrefix")),
 		dimSystem = toggle(L.options.chat.dim_system.name,
-			"The concept draws these in italics. There is no italic escape"
-			.. " sequence in the game's markup and a chat frame draws every line"
-			.. " in one font, so dimming carries the same intent: this is not"
-			.. " somebody talking.\n\nIt catches anything the game tags as a"
-			.. " system line, not just the system chat event - so \"/played\","
-			.. " a lost connection and most addons' own output dim too. That is"
-			.. " wider than the concept drew, and it is the right reading of what"
-			.. " the line is.",
+			L.options.chat.dim_system.desc,
 			at("dimSystem"), { defaultTrue = true }),
 
 		whisperHeader = header(L.options.chat.whisper_header),
 		whisperTab = toggle(L.options.chat.whisper_tab.name,
-			A.Bad(L.options.chat.one_outlives_addon) .. " It opens a real Blizzard"
-			.. " chat window and moves the whisper message groups onto it, and"
-			.. " Blizzard saves all of that - including with Lattice turned off."
-			.. "\n\nIt is also the only answer to the concept's \"whispers stay"
-			.. " bright\" while the rest dims: a chat frame has one alpha for the"
-			.. " whole frame, so a different frame is the only way to give them a"
-			.. " different one.",
+			A.Bad(L.options.chat.one_outlives_addon) .. " "
+			.. L.options.chat.whisper_tab.desc,
 			at("whisperTab"), { after = "none", onSet = function(value)
 				local C = A:GetModule("chat")
 				if not C or not C.enabled then return false end
@@ -1175,16 +1154,11 @@ local function TooltipsGroup()
 			-- Named, not positional. An AceConfig args table is keyed by STRING;
 			-- a bare note() lands in the array part and the registry rejects the
 			-- whole tree, taking every page down with it.
-			caution = note(A.Hi(L.options.tooltips.caution) .. ", not just its"
-				.. " colour. Everything else on this page is styling. If a tooltip"
-				.. " ever reads oddly alongside MobInfo2 or another mob addon,"
-				.. " this is the group to turn off first."),
+			caution = note(A.Hi(L.options.tooltips.caution)
+				.. L.options.tooltips.caution_rest),
 			levelBadge = toggle(L.options.tooltips.level_badge.name, L.options.tooltips.level_badge.desc, at("levelBadge")),
 			deferToLevelReaders = toggle(L.options.tooltips.defer_to_level_readers.name,
-				"MobInfo2 finds a mob's extra info by looking for the level NUMBER in"
-				.. " the tooltip line. Move it into the badge and it finds nothing."
-				.. " Leave this on and the badge stands down while MobInfo2 is"
-				.. " running; /lattice tooltips will tell you it has.",
+				L.options.tooltips.defer_to_level_readers.desc,
 				at("deferToLevelReaders"), { defaultTrue = true }),
 			eliteChip = toggle(L.options.tooltips.elite_chip.name, nil, at("eliteChip")),
 			reactionWord = toggle(L.options.tooltips.reaction_word.name, L.options.tooltips.reaction_word.desc, at("reactionWord")),
@@ -1232,18 +1206,18 @@ local function ThreatGroup()
 	return group(L.options.threat.threat, {
 		enabled = toggle(L.common.enabled, L.options.threat.enabled.desc, at("enabled")),
 		display = choice(L.options.threat.display.name, L.options.threat.display.desc, at("display"), {
-				full  = "Rings and warnings",
-				rings = "Rings only",
-				off   = "Nothing",
+				full  = L.options.threat.display.full,
+				rings = L.options.threat.display.rings,
+				off   = L.options.threat.display.off,
 			}),
 		alarms = toggle(L.options.threat.alarms.name, L.options.threat.alarms.desc,
 			at("alarms")),
 
 		role = choice(L.options.threat.role.name, L.options.threat.role.desc,
 			at("role"), {
-				auto   = "Automatic",
-				tank   = "Tank",
-				damage = "Damage or healing",
+				auto   = L.options.threat.role.auto,
+				tank   = L.options.threat.role.tank,
+				damage = L.options.threat.role.damage,
 			}),
 	})
 end
@@ -1278,7 +1252,7 @@ local function ChangelogGroup()
 		-- Keyed by index rather than by version: a version string carries dots.
 		-- The date is the heading's hint, on the end of its strand.
 		args["rel" .. i] = group(entry.version or "?",
-			{ body = note(#body > 0 and table.concat(body, "\n") or "No notes.") },
+			{ body = note(#body > 0 and table.concat(body, "\n") or L.options.changelog.no_notes) },
 			{ inline = true })
 		args["rel" .. i].hint = entry.date
 	end

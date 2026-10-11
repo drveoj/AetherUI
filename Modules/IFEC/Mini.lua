@@ -168,10 +168,8 @@ function Mini:Wire()
 		end)
 		button:SetScript("OnLeave", W.HideTooltip)
 	end
-	tip(f.library, "Library", "Everything in season. Click a row to add it, or to"
-		.. " take it back out.")
-	tip(f.toggle, "Play", "With nothing queued this starts the music, least"
-		.. " recently heard first.")
+	tip(f.library, L.mini.library.name, L.mini.library.desc)
+	tip(f.toggle, L.mini.play.name, L.mini.play.desc)
 end
 
 -- ---------------------------------------------------------------------------
@@ -204,8 +202,8 @@ function Mini:Paint()
 		-- WHICH KIND OF NOTHING, when there is nothing: a pack refused and a
 		-- pack absent are different problems and only one of them is the
 		-- player's to fix.
-		f.meta:SetText(self:HasContent() and "Press play for the season's music"
-			or (Content and Content:DormantReason()) or "No content installed")
+		f.meta:SetText(self:HasContent() and L.mini.press_play
+			or (Content and Content:DormantReason()) or L.content.none_installed)
 		W.Color(f.meta, c.textFaint)
 		f.bar:SetPieces({}, 1)
 		return
@@ -222,8 +220,8 @@ function Mini:Paint()
 	local total   = item.duration or 0
 	local bits = {}
 	if item.artist and item.artist ~= "" then bits[#bits + 1] = item.artist end
-	bits[#bits + 1] = clock(math.max(total - elapsed, 0)) .. " left"
-	if Playback.state == "paused" then bits[#bits + 1] = "paused" end
+	bits[#bits + 1] = A.F(L.mini.time_left, clock(math.max(total - elapsed, 0)))
+	if Playback.state == "paused" then bits[#bits + 1] = L.mini.paused end
 	f.meta:SetText(table.concat(bits, "  \194\183  "))
 	W.Color(f.meta, tint)
 
@@ -261,16 +259,16 @@ function Mini:TransportEntries()
 	local queue = (Playback and Playback.queue) or {}
 
 	return {
-		{ text = "Stop", disabled = not playing,
+		{ text = L.mini.menu.stop, disabled = not playing,
 		  action = function()
 			if Playback then Playback:Stop(true) end
 			Mini:Paint()
 		  end },
-		{ text = "Previous", disabled = (Playback and (Playback.at or 1) or 1) <= 1,
+		{ text = L.mini.menu.previous, disabled = (Playback and (Playback.at or 1) or 1) <= 1,
 		  action = function()
 			if Playback then Playback:Previous() end
 		  end },
-		{ text = "Next", disabled = #queue == 0,
+		{ text = L.mini.menu.next, disabled = #queue == 0,
 		  action = function()
 			if Playback then Playback:Next() end
 		  end },

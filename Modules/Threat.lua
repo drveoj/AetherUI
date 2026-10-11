@@ -36,6 +36,7 @@
 local ADDON, A = ...
 
 local TH = A:NewModule("threat")
+local L = A.L
 
 local function cfg() return A.Config:Module("threat") end
 
@@ -756,9 +757,9 @@ end
 -- file is read by people in editors that are not all the same.
 local EM_DASH = "\226\128\148"
 local CHIP = {
-	tank   = { [TIER.WARN] = "LOSING AGGRO", [TIER.FAIL] = "LOST AGGRO" },
-	damage = { [TIER.WARN] = "HIGH THREAT",
-		[TIER.FAIL] = "AGGRO " .. EM_DASH .. " ON YOU" },
+	tank   = { [TIER.WARN] = L.threat.chip.losing, [TIER.FAIL] = L.threat.chip.lost },
+	damage = { [TIER.WARN] = L.threat.chip.high,
+		[TIER.FAIL] = A.F(L.threat.chip.on_you, EM_DASH) },
 }
 
 --- The chip's words for this unit, with the live figure where 16c asks for it.

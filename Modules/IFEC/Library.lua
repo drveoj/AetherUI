@@ -435,7 +435,7 @@ function Library:Paint()
 					row.meta:SetText(L.library.paint.queued)
 					W.Color(row.meta, tint)
 				elseif progress and progress.complete then
-					row.meta:SetText("heard  \194\183  " .. clock(item.duration))
+					row.meta:SetText(A.F(L.library.paint.heard_s, clock(item.duration)))
 					W.Color(row.meta, c.textFaint)
 				else
 					row.meta:SetText(clock(item.duration))

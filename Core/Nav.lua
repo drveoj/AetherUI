@@ -69,6 +69,8 @@
 
 local ADDON, A = ...
 
+local L = A.L
+
 local Nav = {}
 A.Nav = Nav
 
@@ -307,16 +309,16 @@ end
 --  in one click is both wasteful and racy - `GetNearestSpawn` ranks by distance
 --  to the player, so two calls a second apart can pick different spawns.
 function Nav:Route(questID, questTitle, loc)
-	if not HasTomTom() then return false, "TomTom isn't loaded." end
+	if not HasTomTom() then return false, L.nav.route.no_tomtom end
 
 	loc = loc or self:Locate(questID)
-	if not loc then return false, "no location for that quest." end
+	if not loc then return false, L.nav.route.no_location end
 
 	-- Ours goes first, always: AddWaypoint deduplicates on map/x/y/title and
 	-- would hand back the old uid without re-pointing the arrow (trap 3).
 	self:Clear()
 
-	local title = loc.name or questTitle or "Quest"
+	local title = loc.name or questTitle or L.nav.route.quest
 	local ok, uid = pcall(TomTom.AddWaypoint, TomTom, loc.map, loc.x, loc.y, {
 		title = title,
 		from  = ADDON,
@@ -325,7 +327,7 @@ function Nav:Route(questID, questTitle, loc)
 		-- Never written to TomTom's saved variables. See trap 2.
 		persistent = false,
 	})
-	if not ok or type(uid) ~= "table" then return false, "TomTom refused the waypoint." end
+	if not ok or type(uid) ~= "table" then return false, L.nav.route.refused end
 
 	-- The other half of trap 3, and the one that is easy to miss: the duplicate
 	-- AddWaypoint refuses to make may not be OURS. Questie builds its waypoints

@@ -35,6 +35,7 @@ A.IFEC.Reader = Reader
 local W, Media, Palette = A.Widgets, A.Media, A.Palette
 local Glass = A.Glass
 local Content = A.IFEC.Content
+local L = A.L
 
 -- The page's own size. Every issue is authored square at this, which is what
 -- lets the frame be square and the zoom be a single number.
@@ -71,8 +72,8 @@ local MARGIN = 48          -- the least the panel leaves of the screen
 -- griffin this is the in-flight console; on the ground it is the Not-In-Flight
 -- one, and a reader that called itself I.F.E.C. while you were stood in
 -- Orgrimmar would be the one place the joke did not run.
-local TITLE_AIR    = "I.F.E.C. MEDIA READER"
-local TITLE_GROUND = "N.I.F.E.C. MEDIA READER"
+local TITLE_AIR    = L.reader.title_air
+local TITLE_GROUND = L.reader.title_ground
 
 --- Which of the two, asked at the moment it is drawn.
 --

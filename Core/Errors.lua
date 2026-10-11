@@ -139,7 +139,7 @@ end
 --- Everything caught, oldest last, as one block of text.
 function Errors:Text()
 	if #log == 0 then
-		return self:Header() .. "No errors caught since login."
+		return self:Header() .. L.errors.text.none
 	end
 
 	local out = { self:Header() }
@@ -359,10 +359,9 @@ function Errors:Export(key, text)
 	A.db.global.export = A.db.global.export or {}
 	A.db.global.export[key or "last"] = tostring(text or "")
 
-	A:Print(("exported %d characters as %s - /reload, then open"):format(
-		#tostring(text or ""), A.Val(key or "last"))
-		.. " " .. A.Hi("WTF\\Account\\<account>\\SavedVariables\\"
-			.. A.name .. ".lua") .. " and look under " .. A.Val("export"))
+	A:Print(A.F(L.errors.export.done, #tostring(text or ""), A.Val(key or "last"),
+		A.Hi("WTF\\Account\\<account>\\SavedVariables\\" .. A.name .. ".lua"),
+		A.Val("export")))
 	return true
 end
 
@@ -393,8 +392,7 @@ function Errors:ShowText(text)
 	-- had one line in it, and telling those apart from the outside took two
 	-- builds. Now it is one line of chat.
 	local lines = 1 + select(2, tostring(text or ""):gsub("\n", ""))
-	A:Print(("copy box: %d characters, %d lines"):format(#(text or ""),
-		lines))
+	A:Print(A.F(L.errors.copy_box.size, #(text or ""), lines))
 	return f
 end
 

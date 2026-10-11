@@ -1117,7 +1117,7 @@ handlers.bar = function(arg, rest)
 
 	-- The shape goes through the bars module, which fits it to the buttons.
 	if (what == "wrap" or what == "rows" or what == "cols") and barCfg.kind == "extra" then
-		A:Print("the extra-action button is Blizzard's, and has no shape to change.")
+		A:Print(L.cmd.bar.extra_no_shape)
 		return
 	end
 	if what == "wrap" then

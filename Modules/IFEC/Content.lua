@@ -23,6 +23,7 @@ local Content = {}
 A.IFEC.Content = Content
 
 local Registry = A.IFEC.Registry
+local L = A.L
 
 --- Today as YYYYMMDD.
 --
@@ -129,19 +130,19 @@ end
 --
 --  The registry already knows all three; nothing here works anything out.
 function Content:DormantReason()
-	if not Registry then return "No content installed" end
+	if not Registry then return L.content.none_installed end
 
 	-- REFUSED FIRST, because it is the only one of the three that is a fault
 	-- rather than a state, and the only one with somewhere to go and read more.
 	local failed = Registry:Failures() or {}
 	if #failed > 0 then
-		return "A content pack was refused  ·  /lattice ifec"
+		return A.F(L.content.refused, "/lattice ifec")
 	end
 
-	if #Registry:Catalogue() == 0 then return "No content installed" end
+	if #Registry:Catalogue() == 0 then return L.content.none_installed end
 
 	-- Installed, registered, and not one item of it in season today.
-	return "Nothing in season right now"
+	return L.content.out_of_season
 end
 
 --- How long an item runs, for filling a programme.

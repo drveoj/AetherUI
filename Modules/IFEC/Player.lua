@@ -418,9 +418,9 @@ function Player:PaintComplete()
 	local title = last and last.title or ""
 	if #title > 20 then title = title:sub(1, 19) .. "..." end
 
-	f.chips[1]:SetChip("Ambient shuffle", true)
-	f.chips[2]:SetChip(title ~= "" and ("Replay " .. title) or "Replay")
-	f.chips[3]:SetChip("Just scenery")
+	f.chips[1]:SetChip(L.player.done.shuffle, true)
+	f.chips[2]:SetChip(title ~= "" and A.F(L.player.done.replay_s, title) or L.player.done.replay)
+	f.chips[3]:SetChip(L.player.done.scenery)
 
 	-- Nothing to replay is a chip that does nothing, so it simply is not there.
 	f.chips[2]:SetShown(last ~= nil)
@@ -607,7 +607,7 @@ function Player:PaintNowPlaying()
 	-- the same thing, with a duration and a channel mark this row has no space
 	-- for - and on any real route the extra clause ran under the landing label.
 	local left = (item.duration or 0) - (Playback:Elapsed() or 0)
-	local meta = clock(left) .. " left"
+	local meta = A.F(L.mini.time_left, clock(left))
 	if item.artist and item.artist ~= "" then
 		meta = item.artist .. "  \194\183  " .. meta
 	end

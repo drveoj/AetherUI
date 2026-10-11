@@ -877,7 +877,7 @@ local function EnableModule(name, module)
 			module.lastError = tostring(err)
 			A:Print(A.Bad(A.F(L.core.enable_module.module_s_failed_enable, name))
 				.. " " .. tostring(err))
-			A:Print(A.Bad("run") .. " /lattice diag " .. A.Bad(L.core.enable_module.full_picture))
+			A:Print(A.F(L.core.enable_module.run_diag, "/lattice diag"))
 		end
 	end
 end
@@ -1092,14 +1092,12 @@ function A:Greet()
 	if A.__greeted then return end
 	A.__greeted = true
 
-	A:Print("v" .. (A.version or "?") .. " loaded  ·  skin "
-		.. A.Val((A.Palette and A.Palette.current) or "?"))
+	A:Print(A.F(L.core.greet.loaded, A.version or "?",
+		A.Val((A.Palette and A.Palette.current) or "?")))
 	-- Bare /aether opens the settings panel, so pointing at it "for commands"
 	-- sends people somewhere that does not list any.
-	A:Print(A.Hi("/lattice") .. " settings  ·  " .. A.Hi("/lattice help") .. " commands"
-		.. "  ·  " .. A.Hi("/lattice errors") .. " bug report"
-		.. "  ·  Please join discord at " .. A.Gold("discord.gg/drveoj")
-		.. " for support")
+	A:Print(A.F(L.core.greet.commands, A.Hi("/lattice"), A.Hi("/lattice help"),
+		A.Hi("/lattice errors"), A.Gold("discord.gg/drveoj")))
 	-- WHERE TO ASK, on the same line rather than a third. Two lines is the
 	-- whole budget - a greeting long enough to scroll the chat frame is one
 	-- people turn off - and the suite holds us to it.

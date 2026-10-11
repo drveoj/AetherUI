@@ -100,8 +100,8 @@ function CV:Repair()
 	-- repaired and leave you in a fight with a broken weapon.
 	local purse = GetMoney and GetMoney() or 0
 	if purse < cost then
-		A:Print(A.Bad(L.conveniences.repair.enough_repairs) .. " " .. Coins(cost)
-			.. " needed, " .. Coins(purse) .. " on you")
+		A:Print(A.Bad(L.conveniences.repair.enough_repairs) .. " "
+			.. A.F(L.conveniences.repair.needed_on_you, Coins(cost), Coins(purse)))
 		return "broke"
 	end
 

@@ -289,7 +289,7 @@ function OW:Spec()
 		local cell = math.max(1, math.min(4, math.floor((BAR_BOX_W - 8) / cols) - 1,
 			math.floor((BAR_BOX_H - 8) / rows) - 1))
 		strands[#strands + 1] = add({ key = "bar" .. id, page = "actionbars", subKey = "bar" .. id,
-			label = (bar.label or ("Bar " .. id)):upper(), form = "strand",
+			label = A.Config:BarLabel({ id = id }):upper(), form = "strand",
 			cols = cols, rows = rows, cell = cell,
 			w = cols * (cell + 1) + 7, h = rows * (cell + 1) + 7, hop = 2, mover = "bar" .. id,
 			hollow = bar.enabled == false, row = true })

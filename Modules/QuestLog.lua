@@ -700,7 +700,7 @@ local function BuildHeader(win)
 
 	search.placeholder = W.Text(search, "qlSearch", "LEFT")
 	search.placeholder:SetPoint("LEFT", box, "LEFT", 0, 0)
-	search.placeholder:SetText("Search quests\226\128\166")   -- ellipsis
+	search.placeholder:SetText(L.questlog.search)
 
 	search:EnableMouse(true)
 	search:SetScript("OnMouseDown", function() box:SetFocus() end)
@@ -965,7 +965,7 @@ local function BuildPanes(win)
 	detail.card = card
 
 	detail.descLabel = W.Text(body, "qlLabel", "LEFT")
-	detail.descLabel:SetText(Media:Track("DESCRIPTION", 1))
+	detail.descLabel:SetText(Media:Track(L.questlog.detail.description, 1))
 
 	detail.desc = W.Text(body, "qlBody", "LEFT")
 	detail.desc:SetWidth(dw)
@@ -992,11 +992,11 @@ local function BuildPanes(win)
 	-- sliver between them - a stray hairline across the foot of the pane.
 	-- The well's bottom edge is the separation.
 
-	foot.track = BuildButton(foot, "filled", "Track quest")
+	foot.track = BuildButton(foot, "filled", L.questlog.foot.track)
 	foot.track:SetPoint("LEFT", foot, "LEFT", 0, 0)
 	foot.track:SetAction(function() QL:ToggleTracked() end)
 
-	foot.share = BuildButton(foot, "outline", "Share")
+	foot.share = BuildButton(foot, "outline", L.questlog.foot.share)
 	foot.share:SetPoint("LEFT", foot.track, "RIGHT", BTN_GAP, 0)
 	foot.share:SetAction(function() QL:ShareQuest() end)
 
@@ -1007,7 +1007,7 @@ local function BuildPanes(win)
 	foot.focus:SetAction(function() QL:ToggleFocus() end)
 	if not A.Quest.CanFocus() then foot.focus:Hide() end
 
-	foot.abandon = BuildButton(foot, "danger", "Abandon")
+	foot.abandon = BuildButton(foot, "danger", L.questlog.foot.abandon)
 	foot.abandon:SetPoint("RIGHT", foot, "RIGHT", 0, 0)
 	foot.abandon:SetAction(function() QL:AskAbandon() end)
 
@@ -1270,10 +1270,10 @@ local function BuildConfirm()
 	if box.text.SetWordWrap then box.text:SetWordWrap(true) end
 	if box.text.SetSpacing then box.text:SetSpacing(4) end
 
-	box.yes = BuildButton(box, "danger", "Abandon")
+	box.yes = BuildButton(box, "danger", L.questlog.foot.abandon)
 	box.yes:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -CONFIRM_PAD, 22)
 
-	box.no = BuildButton(box, "outline", "Cancel")
+	box.no = BuildButton(box, "outline", L.questlog.confirm.cancel)
 	box.no:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", CONFIRM_PAD, 22)
 
 	box.no:SetAction(function() QL:CloseConfirm() end)
@@ -1565,7 +1565,7 @@ function QL:RefreshDetail()
 	d.title:Show()
 
 	local band = c.questDiff[quest.band] or c.questDiff.difficult
-	d.levelPill:SetLabel("Lv " .. tostring(quest.level or "?"))
+	d.levelPill:SetLabel(A.F(L.questlog.detail.level_s, tostring(quest.level or "?")))
 	d.levelPill:SetColors(band.bg, band.text)
 	d.levelPill:SetEdgeColor({ band.text[1], band.text[2], band.text[3], 0.35 })
 	d.levelPill:ClearAllPoints()
@@ -1755,8 +1755,8 @@ function QL:RefreshDetail()
 		y = rowTop + CARD_H + DET_GAP
 	end
 
-	drawCards(d.rewardCards, rw.choices, d.rewardLabel, "CHOOSE A REWARD")
-	drawCards(d.giveCards,  gives,       d.giveLabel,   "YOU WILL RECEIVE")
+	drawCards(d.rewardCards, rw.choices, d.rewardLabel, L.questlog.detail.choose_reward)
+	drawCards(d.giveCards,  gives,       d.giveLabel,   L.questlog.detail.you_receive)
 
 	local moneyText = Money(rw.money)
 	if moneyText then
@@ -1823,7 +1823,7 @@ function QL:RefreshFooter()
 	local QT = A:GetModule("questtracker")
 	local tracked = QT and QT.IsTracked and quest.questID
 		and QT.IsTracked(quest.questID)
-	d.foot.track:SetLabel(tracked and "Untrack" or "Track quest")
+	d.foot.track:SetLabel(tracked and L.questlog.foot.untrack or L.questlog.foot.track)
 	d.foot.track:SetDisabled(false)
 
 	-- The old client's pushable check is selection-scoped, and this runs from
