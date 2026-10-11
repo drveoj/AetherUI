@@ -252,9 +252,7 @@ L["cmd.resources.no_maximum"] = "nothing reports a maximum"
 L["cmd.scale.scale_2f"] = "scale -> %.2f"
 L["cmd.scale.scale_takes_0_6"] =
 	"scale takes 0.6 - 1.6 (currently %.2f). 1.0 is the default; 0.71 "
-		.. "is what maps the concept deck's own 1920px measurements onto WoW's "
-		.. "virtual space one-for-one, if you want everything at exactly the "
-		.. "size it was drawn."
+		.. "draws everything at exactly the size it was designed at."
 
 L["cmd.shadow.shadow_takes_0_1"] =
 	"shadow takes 0 - 1 (currently %s). It is an opacity, not a "
@@ -845,13 +843,12 @@ L["options.chat.desc"] =
 		.. "inset into the bottom edge with a channel tag and a send glyph."
 L["options.chat.dim_system.name"] = "Dim system lines"
 L["options.chat.dim_system.desc"] =
-	"The concept draws these in italics. There is no italic escape sequence "
-		.. "in the game's markup and a chat frame draws every line in one font, "
-		.. "so dimming carries the same intent: this is not somebody talking."
+	"Dimmed rather than italic: the game's markup has no italics and a chat "
+		.. "frame draws every line in one font, so dimming says the same thing - "
+		.. "this is not somebody talking."
 		.. "\n\nIt catches anything the game tags as a system line, not just "
 		.. "the system chat event - so \"/played\", a lost connection and most "
-		.. "addons' own output dim too. That is wider than the concept drew, "
-		.. "and it is the right reading of what the line is."
+		.. "addons' own output dim too."
 L["options.chat.em_dash.name"] = "Em dash instead of \"says:\""
 L["options.chat.fade.name"] = "Breathes with the HUD"
 L["options.chat.fade_messages.name"] = "Fade old lines out"
@@ -871,7 +868,7 @@ L["options.chat.master_switch_everything_below"] =
 		.. "neither Blizzard's nor ours."
 L["options.chat.none_rewrites_author"] = "None of this rewrites the author."
 L["options.chat.off_concept_badge_what"] =
-	"Off is the concept: the badge is what replaces it. Blizzard builds "
+	"Off is how it is meant to look: the badge replaces the bracket. Blizzard builds "
 		.. "that bracket after the line is formatted, so it comes off the "
 		.. "finished string rather than through a filter."
 L["options.chat.one_outlives_addon"] = "This one outlives the addon."
@@ -901,10 +898,9 @@ L["options.chat.whisper_tab.name"] = "Whispers get their own tab"
 L["options.chat.whisper_tab.desc"] =
 	"It opens a real Blizzard chat window and moves the whisper message "
 		.. "groups onto it, and Blizzard saves all of that - including with "
-		.. "Lattice turned off.\n\nIt is also the only answer to the concept's "
-		.. "\"whispers stay bright\" while the rest dims: a chat frame has one "
-		.. "alpha for the whole frame, so a different frame is the only way to "
-		.. "give them a different one."
+		.. "Lattice turned off.\n\nIt is also the only way to keep whispers "
+		.. "bright while the rest dims: a chat frame has one opacity for the "
+		.. "whole frame, so whispers need a frame of their own."
 
 L["options.conveniences.auto_repair.name"] = "Repair at a vendor automatically"
 L["options.conveniences.conveniences"] = "Conveniences"
@@ -1532,8 +1528,8 @@ L["options.tooltips.caution_rest"] =
 		.. "tooltip ever reads oddly alongside MobInfo2 or another mob addon, "
 		.. "this is the group to turn off first."
 L["options.tooltips.class_color_names.desc"] =
-	"On by default, to agree with the unit frames. Off is the deck's "
-		.. "own treatment: one blue for every friendly player."
+	"On by default, to agree with the unit frames. Off gives every friendly "
+		.. "player the same blue."
 L["options.tooltips.class_color_names.name"] = "Class-colour player names"
 L["options.tooltips.colour"] = "Colour"
 L["options.tooltips.content"] = "Unit header"
@@ -1594,7 +1590,7 @@ L["options.unit_frames.classic_era_does_report"] =
 L["options.unit_frames.gap.name"] = "Gap between player and target"
 L["options.unit_frames.hide_blizzard.name"] = "Hide Blizzard's frames"
 L["options.unit_frames.off_draws_class_tinted"] =
-	"Off draws the class-tinted level disc the concept uses."
+	"Off draws the level disc tinted by class instead."
 L["options.unit_frames.orb_size.name"] = "Orb size"
 L["options.unit_frames.pet_scale.desc"] =
 	"On top of the interface scale, the way the console and the "
