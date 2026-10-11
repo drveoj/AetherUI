@@ -156,8 +156,6 @@ L["cmd.health.health_bar_colour_s"] =
 	"health bar colour is %s. 'class' colours players by class; 'deck' "
 		.. "uses green and reserves colour for reaction."
 L["cmd.health.health_bar_colour_s2"] = "health bar colour -> %s"
-L["cmd.health.s_s_tune_two"] =
-	"%s and %s tune the two ends of a class-coloured bar."
 
 L["cmd.ifec.absent"] = "absent"
 L["cmd.ifec.attached"] = "attached"

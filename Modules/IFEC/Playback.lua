@@ -663,12 +663,14 @@ end
 
 --- Music, least recently heard first. The one-press default everywhere it is
 --  offered: the complete state's first chip, and the mini-player's play button
---  with nothing queued.
-function Playback:Shuffle()
+--  with nothing queued. `queue` is the player's own when it asks, so the two
+--  share one table as boarding does: built twice, the player topped up its
+--  copy and this played the other, and UP NEXT listed tracks that never came.
+function Playback:Shuffle(queue)
 	local Content = A.IFEC.Content
 	if not Content then return false end
 
-	local queue = Content:MusicQueue()
+	queue = queue or Content:MusicQueue()
 	if #queue == 0 then return false end
 
 	self.picked = {}

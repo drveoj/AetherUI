@@ -784,6 +784,14 @@ end
 local function LayoutBar(bar)
 	local cfg = A.Config:Module("actionbars")
 	local n = ShownCount(bar)
+	-- THE EXTRA BAR'S BUTTONS SHARE ONE SLOT. They are alternatives - the
+	-- leave button for a taxi or vehicle, and the extra action - and laid out
+	-- side by side the one that was up had a blank beside it. The leave button
+	-- sits over the extra action: on Forever the extra action's button stays
+	-- shown, see-through, and must never be over a button you can see.
+	local stack = bar.kind == "extra"
+	local placed = n
+	if stack and n > 1 then n = 1 end
 	if n == 0 then
 		-- A bar with nothing in it still needs a body while you are placing it -
 		-- the mover handle takes its size from the frame, and you cannot grab a
@@ -801,9 +809,10 @@ local function LayoutBar(bar)
 	local size = ButtonSize(bar)
 	local gap, pad = cfg.spacing, cfg.padding
 
-	for i = 1, n do
+	for i = 1, (stack and placed or n) do
 		local b = bar.buttons[i]
-		local col, row = Cell(i - 1, cols, rows, wrap)
+		local col, row = 0, 0
+		if not stack then col, row = Cell(i - 1, cols, rows, wrap) end
 		-- An adopted Blizzard button is protected; moving it mid-fight is not
 		-- ours to do. It keeps its last position until the fight ends.
 		if not (b.__aetherAdopted and InCombatLockdown()) then
@@ -811,6 +820,11 @@ local function LayoutBar(bar)
 			pcall(b.ClearAllPoints, b)
 			pcall(b.SetPoint, b, "TOPLEFT", bar.header, "TOPLEFT",
 				col * (size + gap), -row * (size + gap))
+			if stack then
+				local spec = bar.specs and bar.specs[i]
+				local over = (spec and spec.label == "extra") and 1 or 3
+				pcall(b.SetFrameLevel, b, bar.header:GetFrameLevel() + over)
+			end
 		end
 		if b.glow then b.glow:SetSize(size * 2, size * 2) end
 		if not b.__aetherAdopted then ApplyButtonFonts(b, size) end
@@ -855,7 +869,11 @@ local ADOPTED = {
 		label = "extra",
 		names = { "ExtraActionButton1" },
 		relevant = function()
-			return HasExtraActionBar and HasExtraActionBar() or false
+			-- C_ActionBar's first: on Forever the global is only the
+			-- deprecation shim's (Blizzard_DeprecatedActionBar), and Blizzard's
+			-- own ExtraActionBar_Update asks C_ActionBar on both clients.
+			local has = (C_ActionBar and C_ActionBar.HasExtraActionBar) or HasExtraActionBar
+			return has and has() or false
 		end,
 	},
 }
@@ -1035,12 +1053,65 @@ local function BuildBar(barCfg)
 	-- combat - so it is a secure visibility driver rather than a Lua Show/Hide.
 	if bar.kind == "pet" and RegisterStateDriver then
 		pcall(RegisterStateDriver, bar.dock, "visibility", "[pet] show; hide")
-		bar.visibilityDriven = true
+		-- The driver itself, as DriveVisibility records it.
+		bar.visibilityDriven = "[pet] show; hide"
 	end
 
 	LayoutBar(bar)
 	ApplyPaging(bar)
 	return bar
+end
+
+--- THE EXTRA BAR'S DRIVER, where the client's secure conditions know extra
+--  actions and vehicles. On WoW Forever they do: in game, 2026-10-11,
+--  SecureCmdOptionParse answered `[extrabar]` and `[canexitvehicle]` and
+--  reported a made-up option as unknown. Shown from Lua, as it was, an extra
+--  action that turned up mid-fight could not come up at all - showing the
+--  dock is protected.
+--
+--  Era stays on the Lua path: it has no extra-action content, and whether its
+--  parser knows these is unchecked - an unknown option in a driver would be
+--  reported on every pass. A flavour test, because asking the parser is the
+--  very thing that prints.
+--
+--  The leave button's jobs - a taxi, a vehicle you can leave - are swapped in
+--  as a plain show, out of a fight (UpdateExtraBars): a taxi is no condition a
+--  driver can see, and the leave button is shown from Lua, so a vehicle the
+--  driver brought up mid-fight would be an empty dock. A vehicle entered in a
+--  fight therefore still waits for its end, as it always has.
+local EXTRA_DRIVER = "[extrabar] show; hide"
+AB.EXTRA_DRIVER = EXTRA_DRIVER
+
+local function ExtraDriven()
+	return A.isCamelot and RegisterStateDriver ~= nil
+end
+AB.ExtraDriven = ExtraDriven
+
+local function VisibilityDriver(bar)
+	if bar.kind == "pet" then return "[pet] show; hide" end
+	if bar.kind == "extra" and ExtraDriven() then
+		local leave = (UnitOnTaxi and UnitOnTaxi("player"))
+			or (CanExitVehicle and CanExitVehicle())
+		return leave and "show" or EXTRA_DRIVER
+	end
+	return nil
+end
+
+--- Put a bar's secure visibility driver on - or the one it should have now,
+--  for the extra bar on a taxi - or take it off. Out of a fight only.
+local function DriveVisibility(bar, on)
+	if not RegisterStateDriver or InCombatLockdown() then return end
+	local driver = VisibilityDriver(bar)
+	if not driver then return end
+	if on then
+		if bar.visibilityDriven ~= driver then
+			pcall(RegisterStateDriver, bar.dock, "visibility", driver)
+			bar.visibilityDriven = driver
+		end
+	elseif bar.visibilityDriven then
+		pcall(UnregisterStateDriver, bar.dock, "visibility")
+		bar.visibilityDriven = false
+	end
 end
 
 --- The adopted buttons decide for themselves when they are relevant - Blizzard
@@ -1074,14 +1145,38 @@ local function UpdateExtraBars()
 
 			-- `if not preview`, not an early return: this loop has other bars to
 			-- get to, and Lua 5.1 has no continue.
-			if not bar.__preview then
+			if not bar.__preview and ExtraDriven() then
+				-- FOREVER: the driver owns the dock, so nothing here shows it.
+				-- The extra button stays shown and is see-through until there is
+				-- an extra action - alpha is not protected, so it comes up in a
+				-- fight. The leave button sits over it in the same slot and is
+				-- shown and hidden as before, so a see-through one never takes a
+				-- click meant for the extra action. The driver is refreshed for
+				-- a taxi or vehicle starting or ending.
+				local fight = InCombatLockdown()
+				for i, b in ipairs(bar.buttons) do
+					local spec = bar.specs and bar.specs[i]
+					local want = (spec and spec.relevant) and spec.relevant() or false
+					if spec and spec.label == "extra" then
+						if not fight and not b:IsShown() then pcall(b.Show, b) end
+						local a = want and 1 or 0
+						if b:GetAlpha() ~= a then b:SetAlpha(a) end
+					elseif b.__aetherWanted ~= want and not fight then
+						b.__aetherWanted = want
+						if want then pcall(b.Show, b) else pcall(b.Hide, b) end
+					end
+				end
+				if not fight then DriveVisibility(bar, bar.cfg.enabled ~= false) end
+			elseif not bar.__preview then
 				-- Ask the game, not the frame. And only act on a change: this runs
 				-- ten times a second and Show/Hide is not free on a protected frame.
 				local any = false
 				for i, b in ipairs(bar.buttons) do
 					local spec = bar.specs and bar.specs[i]
 					local want = (spec and spec.relevant) and spec.relevant() or false
-					if want then any = true end
+					-- A bar switched off never comes up for the game's say-so:
+					-- the next taxi or extra action put it back on screen.
+					if want and bar.cfg.enabled ~= false then any = true end
 					if b.__aetherWanted ~= want and not InCombatLockdown() then
 						b.__aetherWanted = want
 						if want then pcall(b.Show, b) else pcall(b.Hide, b) end
@@ -1806,7 +1901,9 @@ local function RebuildDynamicBars()
 				if i <= want then bar.buttons[i]:Show() else bar.buttons[i]:Hide() end
 			end
 			bar.shown = want
-			if want == 0 and not bar.__preview then
+			-- Switched off stays off: this ran straight after SyncBars hid it,
+			-- and on every form change, and showed it again.
+			if (want == 0 or bar.cfg.enabled == false) and not bar.__preview then
 				bar.dock:Hide()
 			else
 				bar.dock:Show()
@@ -1832,16 +1929,7 @@ AB.RebuildDynamicBars = RebuildDynamicBars
 --  pet-less character whenever any bar was switched on, and a pet bar switched
 --  off came back with the pet. So switching off takes the driver off first,
 --  and switching on puts it back, which shows or hides the bar at once.
-local function DriveVisibility(bar, on)
-	if bar.kind ~= "pet" or not RegisterStateDriver or InCombatLockdown() then return end
-	if on and not bar.visibilityDriven then
-		pcall(RegisterStateDriver, bar.dock, "visibility", "[pet] show; hide")
-		bar.visibilityDriven = true
-	elseif not on and bar.visibilityDriven then
-		pcall(UnregisterStateDriver, bar.dock, "visibility")
-		bar.visibilityDriven = false
-	end
-end
+-- (DriveVisibility and the extra bar's driver are above UpdateExtraBars.)
 
 --- Hold a conditionally-visible bar up while its position is being set.
 --
@@ -2252,7 +2340,10 @@ function AB:OnEnable()
 		-- An extra bar's visibility is derived, not ours to assert. Showing it
 		-- here and letting the ticker sort it out later is how it ended up on
 		-- screen with nothing in it.
-		if bar.kind == "extra" then
+		if bar.kind == "extra" and ExtraDriven() and not bar.__preview then
+			-- Forever: its driver decides, in a fight too.
+			DriveVisibility(bar, true)
+		elseif bar.kind == "extra" then
 			bar.dock:Hide()
 			bar.__shown = nil    -- nil, so the first tick always decides
 		elseif bar.kind == "pet" and RegisterStateDriver and not bar.__preview then
@@ -2537,10 +2628,11 @@ local function SyncBars()
 			-- An extra bar decides its own visibility, and so does the pet bar's
 			-- driver unless a preview is holding it up; everything else is
 			-- simply on. See DriveVisibility.
-			if bar and bar.kind ~= "extra" then
-				if bar.kind == "pet" and RegisterStateDriver and not bar.__preview then
+			if bar and (bar.kind ~= "extra" or ExtraDriven()) then
+				if (bar.kind == "pet" or bar.kind == "extra") and RegisterStateDriver
+					and not bar.__preview then
 					DriveVisibility(bar, true)
-				else
+				elseif bar.kind ~= "extra" or bar.__preview then
 					bar.dock:Show()
 				end
 			end

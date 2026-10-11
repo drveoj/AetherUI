@@ -2710,6 +2710,10 @@ end
 function Chat:UnregisterFader()
 	if self.panel then A.Fader:Unregister(self.panel) end
 	EachFrame(function(f) A.Fader:Unregister(f) end)
+	-- The composer's pill too: RegisterFader takes it, and left registered it
+	-- went on fading with chat fade switched off.
+	local eb = _G.ChatFrame1 and (_G.ChatFrame1.editBox or _G.ChatFrame1EditBox)
+	if eb and eb._pill then A.Fader:Unregister(eb._pill) end
 	A.Fader:Refresh()
 end
 
@@ -2740,8 +2744,10 @@ function Chat:OnSkinChanged()
 		self.panel:ApplySkin("glassStrong")
 		self.panel:SetFillColor(ChatFill(c))
 		W.Color(self.panel.zone, c.textFaint)
-		self.panel.divider:SetVertexColor(c.glassEdge[1], c.glassEdge[2],
-			c.glassEdge[3], 0.5)
+		-- The shared hairline ink, as AnchorPanel paints it: a second rule
+		-- here at half strength meant the line changed weight with whichever
+		-- of the two had run last.
+		W.PaintHairline(self.panel.divider)
 	end
 	self:SkinAllTabs()
 	EachFrame(function(f)

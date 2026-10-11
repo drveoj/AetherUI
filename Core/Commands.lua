@@ -1043,8 +1043,6 @@ handlers.health = function(arg, rest)
 		-- type.
 		A:Print(A.F(L.cmd.health.health_bar_colour_s,
 			A.Val(A.db.profile.classColorHealth and "class" or "deck")))
-		A:Print(A.F(L.cmd.health.s_s_tune_two,
-			A.Dim("/lattice health lift N"), A.Dim("depth N")))
 		return
 	end
 	A.db.profile.classColorHealth = (arg == "class")

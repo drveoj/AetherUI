@@ -1052,8 +1052,10 @@ function CreateFrame(kind, name, parent, template)
 	-- guard would silently cost every visibility script in the suite.
 	local baseShow, baseHide = f.Show, f.Hide
 
+	-- __secureExec: the client's own secure code (a state driver's pass) may
+	-- show and hide a protected frame in a fight; only an addon's call may not.
 	function f:Hide()
-		if _G.__locked() then
+		if _G.__locked() and not _G.__secureExec then
 			local p = ProtectedInFamily(self)
 			if p then
 				fail(("ADDON BLOCKED: Hide() on %s, which a protected frame"
@@ -1065,7 +1067,7 @@ function CreateFrame(kind, name, parent, template)
 		baseHide(self)
 	end
 	function f:Show()
-		if _G.__locked() then
+		if _G.__locked() and not _G.__secureExec then
 			local p = ProtectedInFamily(self)
 			if p and not self.__shown then
 				fail(("ADDON BLOCKED: Show() on %s, which a protected frame"
@@ -2489,11 +2491,24 @@ local function resolveVisibility(frame, values)
 	for clause in (values .. ";"):gmatch("([^;]*);") do
 		local cond, verb = clause:match("^%s*%[(.-)%]%s*(%S+)")
 		if not cond then verb = clause:match("^%s*(%S+)") end
+		-- The client reports an option it does not know ("Unknown macro
+		-- option", seen on Forever 2026-10-11), and does so on every pass of a
+		-- driver - so an unknown one here is a failure, not a quiet false.
+		-- Era's parser is not known to have the extra-action pair, so they are
+		-- understood on the Forever run only.
+		local known = { pet = true, nopet = true }
+		if _G.__flavour == "camelot" then known.extrabar, known.canexitvehicle = true, true end
+		if cond and not known[cond] then fail("unknown macro option in a driver: " .. cond) end
 		local hit = (cond == nil)
 			or (cond == "pet" and UnitExists("pet"))
 			or (cond == "nopet" and not UnitExists("pet"))
+			or (cond == "extrabar" and C_ActionBar.HasExtraActionBar())
+			or (cond == "canexitvehicle" and CanExitVehicle())
 		if verb and hit then
+			-- The manager's pass is secure code: allowed in a fight.
+			_G.__secureExec = true
 			if verb == "show" then frame:Show() else frame:Hide() end
+			_G.__secureExec = nil
 			return
 		end
 	end
@@ -3313,7 +3328,25 @@ _G.__taxiButton = CreateFrame("Button", "MainMenuBarVehicleLeaveButton", UIParen
 _G.__taxiButton:Show()
 _G.__onTaxi = false
 function UnitOnTaxi(u) return u == "player" and _G.__onTaxi or false end
-function HasExtraActionBar() return false end
+
+-- THE EXTRA ACTION BUTTON, on both clients: Blizzard_ActionBar's Classic and
+-- Mainline .tocs both load Shared/ExtraActionBar.xml. Missing from this mock
+-- until 2026-10-11, so the extra bar was tested holding the taxi button
+-- alone. Blizzard shows and hides the BAR frame, never the button, which stays
+-- shown (ExtraActionBar.lua: bar:Show / bar:Hide). Asked through C_ActionBar,
+-- as Blizzard's own code asks on both; Forever's global is only the
+-- deprecation shim's, so it is not given to the Forever run.
+ExtraActionBarFrame = CreateFrame("Frame", "ExtraActionBarFrame", UIParent)
+_G.__extraButton = CreateFrame("Button", "ExtraActionButton1", ExtraActionBarFrame)
+_G.__extraButton:Show()
+_G.__extraBar = false
+C_ActionBar = C_ActionBar or {}
+function C_ActionBar.HasExtraActionBar() return _G.__extraBar == true end
+if _G.__flavour ~= "camelot" then
+	function HasExtraActionBar() return _G.__extraBar == true end
+end
+_G.__canExitVehicle = false
+function CanExitVehicle() return _G.__canExitVehicle == true end
 
 -- auras ---------------------------------------------------------------------
 -- Classic Era 1.15 signature, no `rank`: name, texture, count, auraType,
@@ -3656,6 +3689,18 @@ MenuVariants = { GetDefaultContextMenuMixin = function() return {} end }
 -- What the cursor is over, as a list (both clients have GetMouseFoci). A test
 -- sets __mouseFoci before firing GLOBAL_MOUSE_DOWN.
 function GetMouseFoci() return _G.__mouseFoci or {} end
+
+-- BLIZZARD'S QUEST TRACKER, which the tracker module hides and has to give back:
+-- QuestWatchFrame on Era (Vanilla/QuestLogFrame.xml, laid out by
+-- QuestWatch_Update), ObjectiveTrackerFrame on Forever
+-- (Blizzard_ObjectiveTracker.xml). Unmocked until 2026-10-11, so the hide - and
+-- the hook that could never be undone - had never run here.
+if _G.__flavour == "camelot" then
+	CreateFrame("Frame", "ObjectiveTrackerFrame", UIParent)
+else
+	CreateFrame("Frame", "QuestWatchFrame", UIParent)
+	function QuestWatch_Update() _G.__questWatchUpdated = (_G.__questWatchUpdated or 0) + 1 end
+end
 Menu = {
 	-- Kept, not run, so a test can run it into a root of its own, as it does
 	-- the context menu's.
@@ -7824,6 +7869,75 @@ section("which client the addon thinks it is on", function()
 	end
 end)
 
+section("shared media: under Lattice's name, and the old names still resolve", function()
+	-- No LibSharedMedia is loaded here, so a stand-in under its name, kept
+	-- only for this section.
+	local regs = {}
+	local fake = { Register = function(_, kind, name, path)
+		regs[kind .. ":" .. name] = path
+	end }
+	local realGet = LibStub.GetLibrary
+	LibStub.GetLibrary = function(self, major, silent)
+		if major == "LibSharedMedia-3.0" then return fake end
+		return realGet(self, major, silent)
+	end
+	local mt = getmetatable(LibStub)
+	local realCall = mt and mt.__call
+	if mt then mt.__call = LibStub.GetLibrary end
+	A.Media:Initialize()
+	LibStub.GetLibrary = realGet
+	if mt then mt.__call = realCall end
+	A.Media.LSM = nil
+	check(regs["statusbar:Lattice Smooth"] == A.Media.texture.bar
+		and regs["border:Lattice Rim"] == A.Media.texture.panelEdge,
+		"our textures are offered to other addons under Lattice's name")
+	check(regs["statusbar:Aether Smooth"] == A.Media.texture.bar
+		and regs["background:Aether Glass"] == A.Media.texture.panel,
+		"and the 1.x names still resolve, so a WeakAura that saved one keeps it")
+end)
+
+section("the shared ticker: a ticker added mid-pass costs nobody theirs", function()
+	-- THE PARTY FRAMES' REFRESH STARTS A BAR'S GLIDE, and the glide is a
+	-- ticker: a key added to the table the loop is walking with `pairs`, which
+	-- Lua leaves undefined. Fifty added at once forces the table to grow mid-
+	-- walk, where an existing ticker is skipped or run twice that pass.
+	local runs, owners, added = {}, {}, {}
+	local function count(self) runs[self] = (runs[self] or 0) + 1 end
+	for i = 1, 40 do
+		owners[i] = { i = i }
+		A:RegisterTicker(owners[i], count)
+	end
+	local spawner = {}
+	A:RegisterTicker(spawner, function()
+		A:UnregisterTicker(spawner)
+		for j = 1, 50 do
+			added[j] = {}
+			A:RegisterTicker(added[j], count)
+		end
+	end)
+	-- One whole pass of the shared loop.
+	tick(0.11)
+	local wrong = 0
+	for _, o in ipairs(owners) do
+		if runs[o] ~= 1 then wrong = wrong + 1 end
+	end
+	check(wrong == 0, "every ticker already there ran exactly once that pass ("
+		.. wrong .. " of 40 did not)")
+	local early = 0
+	for _, o in ipairs(added) do
+		if runs[o] then early = early + 1 end
+	end
+	check(early == 0, "and the ones added mid-pass start on the next (" .. early .. " ran early)")
+	tick(0.11)
+	local later = 0
+	for _, o in ipairs(added) do
+		if runs[o] == 1 then later = later + 1 end
+	end
+	check(later == 50, "which they do (" .. later .. " of 50)")
+	for _, o in ipairs(owners) do A:UnregisterTicker(o) end
+	for _, o in ipairs(added) do A:UnregisterTicker(o) end
+end)
+
 section("the source itself: nothing under space that should not be", function()
 	-- NO STRAY CONTROL BYTES IN OUR OWN SOURCE.
 	--
@@ -8504,6 +8618,30 @@ do  -- the bug this replaced: it only ever showed up mid-fight
 		"losing a target in combat hides the glass without a blocked call")
 	_G.__inCombat = false
 end
+
+section("unit frames: switched off, no invisible buttons; back on, clickable", function()
+	_G.__units.target.exists = true
+	fire("PLAYER_TARGET_CHANGED")
+	UF.target.click:Show()
+	A:SetModuleEnabled("unitframes", false)
+	check(not UF.target.click:IsShown() and not UF.player.click:IsShown()
+		and not _G.__unitWatched[UF.target.click],
+		"off, the click buttons go with the watch - no invisible patch that still targets")
+	A:SetModuleEnabled("unitframes", true)
+	check(_G.__unitWatched[UF.target.click] and _G.__unitWatched[UF.player.click],
+		"back on, they are watched again, so the target's can be clicked")
+	-- In a fight the secure part waits, and the fight's end does it.
+	_G.__inCombat = true
+	A:SetModuleEnabled("unitframes", false)
+	check(_G.__unitWatched[UF.target.click] ~= nil,
+		"switched off in a fight, the secure buttons wait rather than be blocked")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(not _G.__unitWatched[UF.target.click] and not UF.target.click:IsShown(),
+		"and go when the fight ends")
+	A:SetModuleEnabled("unitframes", true)
+	check(_G.__unitWatched[UF.target.click], "and come back with the module")
+end)
 _G.__units.target.exists = true
 fire("PLAYER_TARGET_CHANGED")
 check(UF.target:IsShown() and UF.target.name:GetText() == "Savannah Prowler",
@@ -9973,6 +10111,21 @@ do
 	-- Blizzard's own anchor puts it below the frame at a negative one.
 	local eb = _G.ChatFrame1EditBox
 	check(eb._pill ~= nil, "the edit box gets its own capsule")
+	-- Chat fade off takes the composer's pill out of the fader too: it was
+	-- registered with the rest and never let go, so it went on fading.
+	do
+		local cfg = A.Config:Module("chat")
+		local was = cfg.fade
+		cfg.fade = true
+		C:OnConfigChanged()
+		local had = A.Fader.watched[eb._pill] ~= nil
+		cfg.fade = false
+		C:OnConfigChanged()
+		check(had and A.Fader.watched[eb._pill] == nil and A.Fader.watched[C.panel] == nil,
+			"chat fade switched off lets the composer's pill go with the panel")
+		cfg.fade = was
+		C:OnConfigChanged()
+	end
 	local point, rel, relPoint, _, y = eb._pill:GetPoint(1)
 	check(point == "BOTTOMLEFT" and rel == C.panel and relPoint == "BOTTOMLEFT" and y > 0,
 		"anchored inside the panel rather than below it (got " .. tostring(point)
@@ -10700,6 +10853,17 @@ end
 print("== health bar colour ==")
 do
 	local UFm = A:GetModule("unitframes")
+	-- The bare command's help names only what exists: it advertised `lift`
+	-- and `depth`, which no handler ever took.
+	do
+		local realPrint, said = A.Print, {}
+		A.Print = function(_, m) said[#said + 1] = tostring(m or "") end
+		SlashCmdList["AETHERUI"]("health")
+		A.Print = realPrint
+		local all = table.concat(said, "\n")
+		check(#said > 0 and not all:find("lift", 1, true) and not all:find("depth", 1, true),
+			"/lattice health offers no commands that do not exist")
+	end
 	A.db.profile.classColorHealth = true
 	SlashCmdList["AETHERUI"]("health class")
 	local classPair = A.Palette:HealthColor("player")
@@ -10820,6 +10984,19 @@ do
 		_G.__units.target.reaction = 4
 		check(A.Palette:OrbBaseColor("target")[3] < 0.6,
 			"and a neutral one the amber")
+		-- AND IT FOLLOWS A CHANGE OF HEART without a retarget: UNIT_FACTION.
+		-- The orb's handler was registered twice under one owner, and the
+		-- second replaced it, so the disc kept the old colour.
+		do
+			local UFm = A:GetModule("unitframes")
+			local rim = function() return { UFm.target.orb.disc:GetVertexColor() } end
+			local before = rim()
+			fire("UNIT_FACTION", "target")
+			local after = rim()
+			check(math.abs(after[1] - before[1]) + math.abs(after[2] - before[2])
+				+ math.abs(after[3] - before[3]) > 0.01,
+				"a target turning neutral repaints its orb at once (UNIT_FACTION)")
+		end
 
 		_G.__units.player.classToken = was
 		_G.__units.target.isPlayer = true
@@ -11161,6 +11338,22 @@ do
 			.. " than Edit Mode's override (" .. (_G.__editModeDirty - before)
 			.. " tolds) - otherwise every restore marks somebody else's saved"
 			.. " layout dirty and the player gets asked about it")
+	end
+	-- Nor dragging it: the drag placed the window with the plain SetPoint on
+	-- every frame of the move, which is the override.
+	do
+		local wasUnlocked = A.Movers.unlocked
+		if not wasUnlocked then A.Movers:Unlock(nil, true) end
+		local ch = A.Movers.registry.chat.handle
+		ch:GetScript("OnDragStart")(ch)
+		local before = _G.__editModeDirty
+		local upd = ch:GetScript("OnUpdate")
+		if upd then upd(ch, 0.016) upd(ch, 0.016) end
+		check(upd ~= nil and _G.__editModeDirty == before,
+			"dragging it does not tell Edit Mode either ("
+			.. (_G.__editModeDirty - before) .. " tolds)")
+		ch:GetScript("OnDragStop")(ch)
+		if not wasUnlocked then A.Movers:Lock(true) end
 	end
 
 	_G.__stack = ""
@@ -12045,6 +12238,36 @@ local h = entry.handle
 h:GetScript("OnDragStart")(h)
 h:GetScript("OnDragStop")(h)
 check(A.db.profile.anchors.player ~= nil, "drag persisted a position")
+
+section("movers: unlock refuses a fight, and lock waits for it", function()
+	-- Unlocking previews bars that hold secure buttons, which is protected.
+	A.Movers:Lock(true)
+	_G.__inCombat = true
+	local ok = A.Movers:Unlock(nil, true)
+	check(ok == false and not A.Movers.unlocked, "unlock is refused in a fight")
+	_G.__inCombat = false
+	-- Locking is the way out and is never refused; only the previews' ending,
+	-- which puts secure drivers back, waits for the fight to end.
+	A.Movers:Unlock(nil, true)
+	local calls, saved = {}, {}
+	for name, e in pairs(A.Movers.registry) do
+		if e.preview then
+			saved[name] = e.preview
+			e.preview = function(show) calls[#calls + 1] = show return saved[name](show) end
+		end
+	end
+	_G.__inCombat = true
+	A.Movers:Lock(true)
+	check(not A.Movers.unlocked and #calls == 0,
+		"locking in a fight works, and the previews wait (" .. #calls .. " ended)")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	local allOff = #calls > 0
+	for _, c in ipairs(calls) do if c ~= false then allOff = false end end
+	check(allOff, "and end when the fight does (" .. #calls .. ")")
+	for name, fn in pairs(saved) do A.Movers.registry[name].preview = fn end
+	SlashCmdList["AETHERUI"]("unlock")
+end)
 
 -- THE WAY OUT OF UNLOCK MODE. Unlocking puts a handle over everything -
 -- including the Toolbox, which is exactly what you would reach for to lock
@@ -13092,6 +13315,16 @@ do
 	_G.__forms[3] = nil
 	fire("UPDATE_SHAPESHIFT_FORMS")
 	check(stance.shown == 2, "and unlearning shrinks it back")
+	-- Switched off stays off, through the reconfigure and a form change: the
+	-- rebuild that runs after both showed it again.
+	AB:SetBarEnabled("stance", false)
+	A:Reconfigure()
+	check(not stance.dock:IsShown(), "a switched-off stance bar stays off")
+	fire("UPDATE_SHAPESHIFT_FORMS")
+	check(not stance.dock:IsShown(), "and stays off through a form change")
+	AB:SetBarEnabled("stance", true)
+	A:Reconfigure()
+	check(stance.dock:IsShown(), "switched on again, it is back")
 	-- THE PAD TOO. The third button is kept, hidden - frames cannot be
 	-- destroyed - and LayoutBar counted it, so the pad stayed three wide with
 	-- a blank where the unlearned form had been.
@@ -13151,7 +13384,9 @@ do
 		"and an empty slot names nothing (" .. tostring(pet.buttons[5].tooltipName) .. ")")
 
 	-- the pet bar's visibility is secure, because a pet can be dismissed in combat
-	check(_G.__stateDrivers.visibility and _G.__stateDrivers.visibility:find("%[pet%]"),
+	-- The pet dock's OWN driver: the global record holds whichever bar
+	-- registered last, which on Forever is the extra bar's.
+	check(_G.__visDrivers[pet.dock] and _G.__visDrivers[pet.dock]:find("%[pet%]"),
 		"pet bar visibility is a secure driver - a pet comes and goes mid-fight")
 
 	-- THE DRIVER OWNS IT, and nothing else may show it (Joe, 2026-10-07: "when
@@ -13179,7 +13414,7 @@ do
 	check(not pet.dock:IsShown(),
 		"the pet bar switched off stays down with a pet out, through a driver pass")
 	AB:SetBarEnabled("pet", true)
-	check(pet.dock:IsShown() and pet.visibilityDriven == true,
+	check(pet.dock:IsShown() and pet.visibilityDriven == "[pet] show; hide",
 		"and switched back on it is up with the pet, driver restored")
 	_G.__units.pet.exists = savedPet
 	tick(0.2)
@@ -13190,8 +13425,10 @@ do
 	local extra
 	for _, b in ipairs(AB.bars) do if b.kind == "extra" then extra = b end end
 	check(extra ~= nil, "the extra bar exists")
-	check(#extra.buttons == 1 and extra.buttons[1] == _G.MainMenuBarVehicleLeaveButton,
+	check(extra.buttons[1] == _G.MainMenuBarVehicleLeaveButton,
 		"and has adopted Blizzard's own taxi button rather than building one")
+	check(#extra.buttons == 2 and extra.buttons[2] == _G.ExtraActionButton1,
+		"and the extra action button, which both clients load")
 	check(extra.buttons[1]:GetParent() == extra.header, "it is reparented onto our dock")
 	check(extra.buttons[1].__aetherAdopted, "and marked, so layout leaves it alone in combat")
 
@@ -13214,6 +13451,80 @@ do
 	tick(0.1)
 	check(not extra.dock:IsShown() and not _G.__taxiButton:IsShown(),
 		"and landing puts them away again")
+
+	-- Switched off, a taxi does not bring it back: the 10 Hz check showed it
+	-- for the game's say-so whatever the switch said.
+	AB:SetBarEnabled("extra", false)
+	A:Reconfigure()
+	_G.__onTaxi = true
+	tick(0.1)
+	check(not extra.dock:IsShown(), "a switched-off extra bar stays down on a taxi")
+	_G.__onTaxi = false
+	tick(0.1)
+	AB:SetBarEnabled("extra", true)
+	A:Reconfigure()
+
+	-- ONE SLOT, the leave button over the extra action: alternatives, and side
+	-- by side the one that was up had a blank beside it.
+	do
+		local taxiB, extraB = extra.buttons[1], extra.buttons[2]
+		local _, _, _, tx, ty = taxiB:GetPoint(1)
+		local _, _, _, ex, ey = extraB:GetPoint(1)
+		check(tx == ex and ty == ey and taxiB:GetFrameLevel() > extraB:GetFrameLevel(),
+			"the extra bar's two buttons share one slot, the leave button on top")
+		check(math.abs(extra.dock:GetWidth() - extra.dock:GetHeight()) < 0.5,
+			"so its dock is one button square, not two wide")
+	end
+
+	-- FOREVER: the dock is the game's to show, so an extra action that turns
+	-- up mid-fight comes up (it could not, shown from Lua: protected).
+	if AB.ExtraDriven() then
+		local eb = _G.ExtraActionButton1
+		tick(0.3)
+		check(extra.visibilityDriven == AB.EXTRA_DRIVER and not extra.dock:IsShown(),
+			"on Forever a secure driver owns the extra bar, down with nothing to do")
+		check(eb:IsShown() and eb:GetAlpha() == 0,
+			"and the extra button stays shown, see-through until it has a job")
+		_G.__inCombat = true
+		_G.__extraBar = true
+		tick(0.3)
+		check(extra.dock:IsShown() and eb:GetAlpha() == 1,
+			"an extra action that turns up mid-fight comes up")
+		_G.__extraBar = false
+		tick(0.3)
+		check(not extra.dock:IsShown() and eb:GetAlpha() == 0,
+			"and goes when it ends, still in the fight")
+		_G.__inCombat = false
+		-- A taxi or a vehicle to leave: no condition a driver sees, so a
+		-- plain show, out of a fight.
+		_G.__onTaxi = true
+		tick(0.3)
+		check(extra.visibilityDriven == "show" and extra.dock:IsShown()
+			and _G.__taxiButton:IsShown(),
+			"on a taxi the driver is a plain show, with the leave button up")
+		_G.__onTaxi = false
+		tick(0.3)
+		check(extra.visibilityDriven == AB.EXTRA_DRIVER and not extra.dock:IsShown(),
+			"and landing puts the condition back")
+		_G.__canExitVehicle = true
+		tick(0.3)
+		check(extra.dock:IsShown() and _G.__taxiButton:IsShown(),
+			"a vehicle you can leave brings the leave button up the same way")
+		_G.__canExitVehicle = false
+		tick(0.3)
+		-- Switched off: no driver, and no extra action brings it back.
+		AB:SetBarEnabled("extra", false)
+		A:Reconfigure()
+		_G.__extraBar = true
+		tick(0.3)
+		check(not extra.dock:IsShown() and not extra.visibilityDriven,
+			"switched off, the driver comes off and an extra action stays down")
+		_G.__extraBar = false
+		AB:SetBarEnabled("extra", true)
+		A:Reconfigure()
+		tick(0.3)
+		check(extra.visibilityDriven == AB.EXTRA_DRIVER, "back on, the driver is back")
+	end
 
 	-- a shown-but-irrelevant button must not drag the dock up with it
 	_G.__taxiButton:Show()
@@ -13243,7 +13554,7 @@ do
 		"previewing the pet bar takes its secure visibility driver off rather than"
 		.. " arguing with it")
 	SlashCmdList["AETHERUI"]("lock")
-	check(pet.visibilityDriven == true, "and puts it back on lock")
+	check(pet.visibilityDriven == "[pet] show; hide", "and puts it back on lock")
 
 	-- and it parks beside bar 1 rather than in the middle of the screen
 	local d = AB.DefaultAnchor(extra)
@@ -13392,6 +13703,21 @@ check(PD.active == 2, "two player debuffs (got " .. PD.active .. ")")
 check(TB.active == 2, "target buffs are shown at all now (got " .. TB.active .. ")")
 check(TD.active == 3,
 	"and only the player's own target debuffs (got " .. TD.active .. ")")
+-- A tray switched off stays empty through a skin change: the restyle filled
+-- every tray it repainted, on or off.
+do
+	local side = A.db.profile.modules.auras.buffs
+	side.target = false
+	AU:OnConfigChanged()
+	local off = TB.active
+	AU:OnSkinChanged()
+	check(off == 0 and TB.active == 0,
+		"a switched-off tray stays empty through a skin change (" .. TB.active .. ")")
+	side.target = nil
+	AU:OnConfigChanged()
+	AU:OnSkinChanged()
+	check(TB.active == 2, "and an on one is still filled after it (" .. TB.active .. ")")
+end
 end
 
 if TILES then  -- the handoff's looks, per aura (Joe: Era as Forever)
@@ -14649,6 +14975,38 @@ print("== quest tracker ==")
 local QT = A:GetModule("questtracker")
 check(QT and QT.enabled, "questtracker module enabled"
 	.. (QT and QT.lastError and ("  -- " .. QT.lastError) or ""))
+
+section("quest tracker: Blizzard's own is hidden, and given back", function()
+	local blz = _G.ObjectiveTrackerFrame or _G.QuestWatchFrame
+	local cfg = A.Config:Module("questtracker")
+	blz:Show()
+	QT:HideBlizzard()
+	check(not blz:IsShown(), "Blizzard's tracker is hidden while ours is up")
+	blz:Show()
+	check(not blz:IsShown(), "and stays hidden when Blizzard shows it again")
+	-- The setting off: back without a reload, and the hook stands aside.
+	cfg.hideBlizzard = false
+	_G.__questWatchUpdated = 0
+	QT:OnConfigChanged()
+	check(blz:IsShown(), "\"hide Blizzard's tracker\" off brings it back at once")
+	if _G.QuestWatch_Update then
+		check(_G.__questWatchUpdated > 0, "and on Era asks it to lay itself out again")
+	end
+	blz:Hide()
+	blz:Show()
+	check(blz:IsShown(), "and the hook no longer hides it - a hook cannot be taken off")
+	cfg.hideBlizzard = true
+	QT:OnConfigChanged()
+	check(not blz:IsShown(), "on again, it goes again")
+	-- Our tracker off gives it back too.
+	A:SetModuleEnabled("questtracker", false)
+	check(blz:IsShown(), "switching our tracker off gives Blizzard's back")
+	blz:Hide()
+	blz:Show()
+	check(blz:IsShown(), "and lets it stay")
+	A:SetModuleEnabled("questtracker", true)
+	check(not blz:IsShown(), "and switching ours back on takes it away again")
+end)
 
 --- The text beside the i-th quest node on the World trunk, while it holds a
 --  quest: what a row of the old floating panel was, and carrying the same
@@ -17305,6 +17663,12 @@ section("conveniences: instant quest text is the client's own setting", function
 	check(GetCVar("instantQuestText") == "1",
 		"turning it on sets the client's own variable (" ..
 		tostring(GetCVar("instantQuestText")) .. ")")
+	-- And the value it found is kept where a reload cannot lose it: a plain
+	-- local was gone after one, the next session recorded our own "1", and
+	-- switching off left quest text instant.
+	check(A.db.global.questTextWas == "0",
+		"what it was is kept in saved variables, account-wide ("
+		.. tostring(A.db.global.questTextWas) .. ")")
 
 	-- AND IT IS IDEMPOTENT. Every write to a CVar is a write the client logs,
 	-- and a config change runs this again.
@@ -20053,6 +20417,20 @@ do
 	T.q.button:GetScript("OnClick")(T.q.button)
 	_G.__mouseFoci = nil
 
+	-- 4e. NO COORDINATES TO HAVE (an instance): the misses are counted, so the
+	-- ticker backs off asking. The count was read and never written.
+	T.map, T.pos = _G.__uiMap, _G.__playerPos
+	_G.__uiMap, _G.__playerPos = 1, nil
+	for _ = 1, 5 do T.MM:UpdateZone() end
+	check((T.MM._coordFails or 0) >= 4, "a run of missing coordinates is counted ("
+		.. tostring(T.MM._coordFails) .. "), so the ticker backs off")
+	_G.__playerPos = { 0.42, 0.61 }
+	T.MM:UpdateZone()
+	check(T.MM._coordFails == 0 and T.MM.pill.coords:GetText() == "42 · 61",
+		"and the first coordinates back reset it")
+	_G.__uiMap, _G.__playerPos = T.map, T.pos
+	T.MM:UpdateZone()
+
 	-- 5. Dropped on the left half, the stubs turn round.
 	T.MM.frame:ClearAllPoints()
 	T.MM.frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 24, -24)
@@ -21391,10 +21769,13 @@ do
 	local WP = TBm.panels.widgets
 
 	-- Published, so anybody displaying LDB gets them. That is the point: a
-	-- player running Titan sees AetherUI's XP/hr without us doing anything.
+	-- player running Titan sees Lattice's XP/hr without us doing anything.
+	-- Under Lattice's name: the 1.x prefix showed the old name in every
+	-- broker display's plugin list.
 	local missing = {}
 	for _, p in ipairs(TBm.PROVIDERS) do
-		if not ldb:GetDataObjectByName("AetherUI_" .. p.key) then
+		if not ldb:GetDataObjectByName("Lattice_" .. p.key)
+			or ldb:GetDataObjectByName("AetherUI_" .. p.key) then
 			missing[#missing + 1] = p.key
 		end
 	end
@@ -21404,7 +21785,7 @@ do
 		.. " and somebody else can write a seventh in ten lines (missing: "
 		.. (#missing > 0 and table.concat(missing, ",") or "none") .. ")")
 
-	local gold = ldb:GetDataObjectByName("AetherUI_Gold")
+	local gold = ldb:GetDataObjectByName("Lattice_Gold")
 	check(gold and gold.type == "data source",
 		"and as `data source`, not `launcher` - they are readouts, and a"
 		.. " launcher is a thing you click")
@@ -21457,8 +21838,12 @@ do
 		_G.__makeLDB("ThirdParty_Widget", "data source", { text = "99", label = "Theirs" })
 		local c = A.db.char.toolbox
 		local was = c.widgets
+		-- Saved under the 1.x name: read as the new one, not as a widget
+		-- that no longer exists.
 		c.widgets = { "AetherUI_Gold", "ThirdParty_Widget" }
 		TBm:RefreshWidgets()
+		check(c.widgets[1] == "Lattice_Gold" and WP.cells[1].label:GetText() == "Gold",
+			"a widget list saved under the old name carries over to the new one")
 		check(WP.cells[2].label:GetText() == "Theirs"
 			and WP.cells[2].value:GetText() == "99",
 			"somebody else's data source draws in the branch with no wiring at"
@@ -27427,6 +27812,13 @@ do
 	local bagsWin = A:GetModule("bags").frames.bags
 	ink(bagsWin.head.rule, "the bags header")
 	ink(bagsWin.foot.rule, "the bags footer")
+	-- After a skin change, which painted the chat's line at half strength
+	-- over the shared ink.
+	local chatMod = A:GetModule("chat")
+	if chatMod.enabled and chatMod.panel then
+		chatMod:OnSkinChanged()
+		ink(chatMod.panel.divider, "the chat divider after a skin change")
+	end
 	check(#faint == 0,
 		"every hairline in the interface is drawn in the same ink (" ..
 		(#faint > 0 and table.concat(faint, ", ") or "all at " ..
@@ -33017,6 +33409,23 @@ section("nifec: the mini-player, on the ground", function()
 	check(NPn:Available(), "the mini-player is unaffected - it is not in flight")
 	cfg.player = true
 
+	-- AMBIENT SHUFFLE KEEPS ONE QUEUE. It built a second alike, so the
+	-- console topped up its copy and playback played the other.
+	-- Asked of playback directly, and the console's repaint held off, so
+	-- nothing plays and nothing on screen moves for the sections after.
+	do
+		local PLr = A.IFEC.Player
+		local was = { PLr.queue, PLr.at, PLr.complete }
+		local realShuffle, realRefresh, handed = P.Shuffle, PLr.Refresh, nil
+		P.Shuffle = function(_, q) handed = q return true end
+		PLr.Refresh = function() end
+		PLr:Shuffle()
+		P.Shuffle, PLr.Refresh = realShuffle, realRefresh
+		check(handed ~= nil and handed == PLr.queue,
+			"Ambient shuffle hands playback the console's own queue, not a copy")
+		PLr.queue, PLr.at, PLr.complete = was[1], was[2], was[3]
+	end
+
 	A.IFEC.Taxi:Stop()
 	P:Stop()
 	NPn:Close()
@@ -33283,6 +33692,33 @@ section("party: the stack is an ordinary placed frame", function()
 	local resetAt, _, _, xReset = PF.stack:GetPoint()
 	check(resetAt == "LEFT" and xReset == 210,
 		"and puts it back at its default (" .. tostring(resetAt) .. ")")
+end)
+section("party: the count is who is online, and the refresh survives off/on", function()
+	local PF = A:GetModule("partyframes")
+	if not PF.panel then PF:OpenPanel() PF.panel:Hide() end
+	-- The heading read n/n, the same number twice.
+	local saved = {}
+	for i = 1, 4 do
+		local u = "party" .. i
+		saved[u] = _G.__units[u]
+		_G.__units[u] = { exists = i <= 3, offline = (i == 2), hp = 1, hpMax = 1 }
+	end
+	PF:RefreshPanel()
+	check(PF.panel.head.hint:GetText() == "3/4",
+		"the party heading counts who is online of the group ("
+		.. tostring(PF.panel.head.hint:GetText()) .. ")")
+	for u, d in pairs(saved) do _G.__units[u] = d end
+	PF:RefreshPanel()
+	-- Absorbs have no event here and ride the 10 Hz refresh, which one off/on
+	-- used to stop for the session.
+	A:SetModuleEnabled("partyframes", false)
+	A:SetModuleEnabled("partyframes", true)
+	local ran = 0
+	local real = PF.frames[1].health.UpdateAbsorb
+	PF.frames[1].health.UpdateAbsorb = function(...) ran = ran + 1 return real(...) end
+	tick(0.11)
+	PF.frames[1].health.UpdateAbsorb = real
+	check(ran > 0, "the 10 Hz refresh runs again after an off/on (" .. ran .. ")")
 end)
 section("party controls: what a member may press", function()
 	local PF = A:GetModule("partyframes")
@@ -36162,6 +36598,13 @@ do
 			"which counts what is left, including the one they were on (" ..
 			tostring(OB.toast.label:GetText()) .. ")")
 	end
+
+	-- NOT IN A FIGHT: the tour dims the world. The toast stays for later.
+	_G.__inCombat = true
+	OB.toast:GetScript("OnClick")(OB.toast)
+	_G.__inCombat = false
+	check(not OB.index and OB.toast:IsShown(),
+		"clicked in a fight, the toast waits rather than start the tour")
 
 	-- AND IT RESUMES WHERE THEY WERE.
 	OB.toast:GetScript("OnClick")(OB.toast)

@@ -1457,8 +1457,10 @@ local function CreateHandle(entry)
 		if gy then DrawGuide(2, false, gy) end
 		ShowSnap(snap)
 
-		f:ClearAllPoints()
-		f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x * us / fs, y * us / fs)
+		-- Through Place, as the drop is: the chat window is Edit Mode's, and
+		-- its overridden SetPoint marks the layout changed on every frame of
+		-- the drag.
+		Place(f, "BOTTOMLEFT", UIParent, "BOTTOMLEFT", x * us / fs, y * us / fs)
 
 		-- Over the parked row, a drop hides it; nothing else is offered.
 		self._park = mover.park and mover.park.over(mx, my) or nil
@@ -1863,6 +1865,15 @@ end
 
 -- Replay anything RestorePosition had to skip because it landed mid-fight.
 A:RegisterEvent(Movers, "PLAYER_REGEN_ENABLED", function()
+	-- Previews a lock in the fight could not end, unless unlocked again since.
+	if Movers._previewsOff then
+		Movers._previewsOff = nil
+		if not Movers.unlocked then
+			for _, entry in pairs(Movers.registry) do
+				if entry.preview then pcall(entry.preview, false) end
+			end
+		end
+	end
 	if not Movers._pending then return end
 	for name in pairs(Movers._pending) do
 		local entry = Movers.registry[name]
@@ -2017,6 +2028,13 @@ Movers.ShowLockButton = ShowLockButton
 --  `quiet` is the first-run tour's: no chat lines, and no pill - the tour
 --  carries its own way on, and a LOCK there would end its stop under it.
 function Movers:Unlock(only, quiet)
+	-- Not in a fight: the previews lay out and show bars that hold secure
+	-- buttons, which is protected - every caller but the options map's
+	-- Shift-click reached here unguarded.
+	if InCombatLockdown() then
+		A:Print(A.Bad(L.movers.create_handle.can_t_move_frames))
+		return false
+	end
 	Movers.unlocked = true
 	Movers.only = only
 	ShowGrid(true)
@@ -2045,6 +2063,7 @@ function Movers:Unlock(only, quiet)
 		.. " on another's junction to hang it from that one. Frames that only appear"
 		.. " when the game says so - the pet bar, the taxi button - are held up so you"
 		.. " can place them."))
+	return true
 end
 
 function Movers:Lock(quiet)
@@ -2059,9 +2078,19 @@ function Movers:Lock(quiet)
 	ShowInspector(nil)
 	if A.Braids then A.Braids:ShowEdge(nil) end
 	ShowLockButton(false)
+	-- Locking is the way out, so it is never refused; but ending a preview
+	-- puts secure drivers back and lays bars out, so in a fight that part
+	-- waits for the fight to end. The handles are plain frames and go now.
+	local fight = InCombatLockdown()
 	for _, entry in pairs(Movers.registry) do
 		if entry.handle then entry.handle:Hide() end
-		if entry.preview then pcall(entry.preview, false) end
+		if entry.preview then
+			if fight then
+				Movers._previewsOff = true
+			else
+				pcall(entry.preview, false)
+			end
+		end
 	end
 	Announce()
 	if not quiet then A:Print(L.movers.lock.frames_locked) end

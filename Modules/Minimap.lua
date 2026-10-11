@@ -399,9 +399,14 @@ function MM:UpdateZone()
 
 		if cfg.showCoords == false then
 			self.pill.coords:SetText("")
+			self._coordFails = 0
 		else
 			local x, y = Coords()
 			self.pill.coords:SetText(x and ("%d · %d"):format(x, y) or "")
+			-- Counted, so the ticker can back off where there are none to
+			-- have (an instance): it read this and nothing ever wrote it. A
+			-- zone change asks again at once, so leaving puts it right.
+			self._coordFails = x and 0 or (self._coordFails or 0) + 1
 		end
 	end
 

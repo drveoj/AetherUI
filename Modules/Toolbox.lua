@@ -433,7 +433,11 @@ end
 -- ChocolateBar for free.
 -- ---------------------------------------------------------------------------
 
-local PREFIX = "AetherUI_"
+-- The published names carry the addon's name: broker displays (Titan,
+-- Bazooka, ChocolateBar) list them. Lattice since 2.0.0; a widget list saved
+-- under the old prefix is read as the new one (WidgetList).
+local PREFIX = "Lattice_"
+local OLD_PREFIX = "AetherUI_"
 
 --- Our six. Latency and FPS are polled; the rest follow their events, and
 --  every one has PLAYER_ENTERING_WORLD so it is right at login.
@@ -602,7 +606,16 @@ end
 --  third party's can be added and the order is the player's.
 function TB:WidgetList()
 	local c = Char()
-	if c and type(c.widgets) == "table" and #c.widgets > 0 then return c.widgets end
+	if c and type(c.widgets) == "table" and #c.widgets > 0 then
+		-- Ours under their 1.x names, renamed in place: otherwise a list saved
+		-- before 2.0.0 names widgets that no longer exist.
+		for i, name in ipairs(c.widgets) do
+			if type(name) == "string" and name:sub(1, #OLD_PREFIX) == OLD_PREFIX then
+				c.widgets[i] = PREFIX .. name:sub(#OLD_PREFIX + 1)
+			end
+		end
+		return c.widgets
+	end
 	local out = {}
 	for _, p in ipairs(self.PROVIDERS) do out[#out + 1] = PREFIX .. p.key end
 	return out
@@ -704,7 +717,9 @@ TB.TILES = {
 	  get = function() return A.Movers and A.Movers.unlocked or false end,
 	  set = function(want)
 		if not A.Movers then return false end
-		if want then A.Movers:Unlock() else A.Movers:Lock() end
+		-- Unlock refuses in a fight, and the tile says so by not turning on.
+		if want then return A.Movers:Unlock() and true or false end
+		A.Movers:Lock()
 		return true
 	  end,
 	  tip = "Drag any part of the interface to move it, or scroll to nudge it a"

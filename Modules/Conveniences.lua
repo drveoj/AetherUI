@@ -29,8 +29,12 @@ local CV = A:NewModule("conveniences")
 local function cfg() return A.Config:Module("conveniences") end
 
 -- What `instantQuestText` was before we touched it, so switching off is a
--- restore rather than a guess. Recorded once, on the first change.
-local questTextWas
+-- restore rather than a guess. Recorded once, on the first change, and KEPT
+-- IN SAVED VARIABLES: a plain local was gone after a reload, the next one
+-- recorded our own "1", and switching off left quest text instant. Account-
+-- wide, as the CVar is, not per profile.
+local function QuestTextWas() return A.db and A.db.global and A.db.global.questTextWas end
+local function SetQuestTextWas(v) if A.db and A.db.global then A.db.global.questTextWas = v end end
 
 -- ---------------------------------------------------------------------------
 -- instant quest text
@@ -46,17 +50,17 @@ function CV:ApplyQuestText()
 	local want = cfg().instantQuestText and "1" or nil
 
 	if want then
-		if questTextWas == nil then
-			questTextWas = GetCVar("instantQuestText") or "0"
+		if QuestTextWas() == nil then
+			SetQuestTextWas(GetCVar("instantQuestText") or "0")
 		end
 		if GetCVar("instantQuestText") ~= "1" then
 			pcall(SetCVar, "instantQuestText", "1")
 		end
-	elseif questTextWas ~= nil then
+	elseif QuestTextWas() ~= nil then
 		-- Back to what it was, once. A restore that runs twice would record our
 		-- own value the second time and have nothing to put back.
-		pcall(SetCVar, "instantQuestText", questTextWas)
-		questTextWas = nil
+		pcall(SetCVar, "instantQuestText", QuestTextWas())
+		SetQuestTextWas(nil)
 	end
 end
 

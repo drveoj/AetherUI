@@ -802,6 +802,8 @@ end
 -- ---------------------------------------------------------------------------
 
 local tickers, tickAccum = {}, 0
+-- Reused each pass, so a tick makes no garbage.
+local tickOrder = {}
 local TICK = 0.1
 
 pump:SetScript("OnUpdate", function(_, elapsed)
@@ -818,19 +820,38 @@ pump:SetScript("OnUpdate", function(_, elapsed)
 	-- by the module itself, so the same fault presented differently from one
 	-- run to the next.
 	--
-	-- That is what the suite's threat check has been catching about once in
-	-- twenty: the alarm is cleared from TH:Pulse, which runs on this loop, so
-	-- a throw upstream of it left the warning on screen for ever. It looked
-	-- like a flake because the ORDER was the random part, not the fault.
+	-- (This was first blamed for the suite's threat flake; the real cause is
+	-- below.)
 	--
 	-- Recorded rather than swallowed, for the same reason as above: silence
 	-- here is a module that has quietly stopped animating.
-	for owner, fn in pairs(tickers) do
-		local ok, err = pcall(fn, owner, dt)
-		if not ok then
-			A.lastFailure = "ticker: " .. tostring(err)
-			if type(owner) == "table" then owner.lastError = tostring(err) end
-			A:Print(A.Bad(L.core.pump.ticker) .. " " .. tostring(err))
+	--
+	-- OVER A SNAPSHOT, NOT THE LIVE TABLE. A ticker can register another from
+	-- inside its tick - the fader, finding you idle, starts Zen's; the party
+	-- frames' refresh starts a health bar's glide - and adding a key to a table
+	-- during `pairs` over it is undefined in Lua: the table can grow and
+	-- re-hash mid-walk, and an existing ticker is skipped or run twice that
+	-- pass. THAT was the suite's threat flake (2026-10-11, traced): Zen added
+	-- mid-pass, TH:Pulse skipped, the alarm never cleared. The isolation
+	-- above was right, and not the cause. Removing is safe, so each is looked
+	-- up again before it runs, and one unregistered earlier in the pass is
+	-- passed over. One added mid-pass runs from the next.
+	local n = 0
+	for owner in pairs(tickers) do
+		n = n + 1
+		tickOrder[n] = owner
+	end
+	for i = 1, n do
+		local owner = tickOrder[i]
+		tickOrder[i] = nil
+		local fn = tickers[owner]
+		if fn then
+			local ok, err = pcall(fn, owner, dt)
+			if not ok then
+				A.lastFailure = "ticker: " .. tostring(err)
+				if type(owner) == "table" then owner.lastError = tostring(err) end
+				A:Print(A.Bad(L.core.pump.ticker) .. " " .. tostring(err))
+			end
 		end
 	end
 end)

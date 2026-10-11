@@ -344,7 +344,8 @@ function Player:Shuffle()
 
 	self.queue, self.at, self.complete = queue, 1, nil
 	self:Refresh()
-	return Playback:Shuffle()
+	-- The same table, not a second one built alike: see Playback:Shuffle.
+	return Playback:Shuffle(queue)
 end
 
 --- Play the last thing again.

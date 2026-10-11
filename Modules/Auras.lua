@@ -790,7 +790,6 @@ function Display:ApplySkin()
 		t.stack.chip:SetColorTexture(c.auraStack[1], c.auraStack[2], c.auraStack[3], c.auraStack[4] or 1)
 		if t._look then Look(t, t._look, t._trayAlpha) end
 	end
-	self:Update()
 end
 
 -- ---------------------------------------------------------------------------
@@ -1564,7 +1563,12 @@ end
 
 function Aur:OnSkinChanged()
 	if self.forever then self:RestyleForever() return end
-	for _, t in ipairs(self.trays or {}) do t.display:ApplySkin() end
+	-- Inks on every tray; filled only where the tray is on. ApplySkin used to
+	-- fill as well, which put a switched-off tray's auras back on screen.
+	for _, t in ipairs(self.trays or {}) do
+		t.display:ApplySkin()
+		if t.enabled then t.display:Update() end
+	end
 	-- The tiles need nothing here. A buff tile is dressed by token and a debuff
 	-- tile by its school, which is semantic and the same in all four skins - so
 	-- between the central sweep and the palette there is nothing left for this

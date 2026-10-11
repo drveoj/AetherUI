@@ -611,15 +611,28 @@ Media.style = {
 -- LibSharedMedia
 -- ---------------------------------------------------------------------------
 
+--- What we share with other addons: kind, the name after the brand, and our
+--  texture key.
+Media.LSM_NAMES = {
+	{ "statusbar",  "Smooth", "bar" },
+	{ "statusbar",  "Flat",   "flat" },
+	{ "background", "Glass",  "panel" },
+	{ "background", "Noise",  "noise" },
+	{ "border",     "Rim",    "panelEdge" },
+}
+
 function Media:Initialize()
 	local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 	if not LSM then return end
 
-	LSM:Register("statusbar", "Aether Smooth",  Media.texture.bar)
-	LSM:Register("statusbar", "Aether Flat",    Media.texture.flat)
-	LSM:Register("background", "Aether Glass",  Media.texture.panel)
-	LSM:Register("background", "Aether Noise",  Media.texture.noise)
-	LSM:Register("border",     "Aether Rim",    Media.texture.panelEdge)
+	-- Under Lattice's name since 2.0.0, which is what other addons' pickers
+	-- show. The 1.x names stay registered too: WeakAuras, Details and the rest
+	-- save the NAME, and a name that no longer resolves falls back to their
+	-- default - a player's setup quietly changed by our rename.
+	for _, m in ipairs(Media.LSM_NAMES) do
+		LSM:Register(m[1], "Lattice " .. m[2], Media.texture[m[3]])
+		LSM:Register(m[1], "Aether " .. m[2], Media.texture[m[3]])
+	end
 
 	LSM:Register("font", "Outfit Light",    Media.font.light)
 	LSM:Register("font", "Outfit",          Media.font.regular)

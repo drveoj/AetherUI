@@ -341,19 +341,43 @@ QT.Collect = Collect
 -- Blizzard frame removal
 -- ---------------------------------------------------------------------------
 
+local BLIZZARD_TRACKERS = { "QuestWatchFrame", "ObjectiveTrackerFrame" }
+
+--- Whether Blizzard's tracker should be kept down: our tracker on, and the
+--  setting asking for it.
+local function KeepBlizzardDown()
+	return QT.enabled and A.Config:Module("questtracker").hideBlizzard and true or false
+end
+
 function QT:HideBlizzard()
-	local cfg = A.Config:Module("questtracker")
-	if not cfg.hideBlizzard then return end
-	for _, name in ipairs({ "QuestWatchFrame", "ObjectiveTrackerFrame" }) do
+	if not KeepBlizzardDown() then return end
+	for _, name in ipairs(BLIZZARD_TRACKERS) do
 		local f = _G[name]
 		if f and not (f.IsForbidden and f:IsForbidden()) then
 			pcall(f.Hide, f)
+			-- A hook cannot be taken off, so it asks each time: with our tracker
+			-- off, or the setting off, Blizzard's shows again as it would. It
+			-- used to hide unconditionally, until a /reload.
 			if f.HookScript and not f.__aetherHooked then
 				f.__aetherHooked = true
-				pcall(f.HookScript, f, "OnShow", function(self) self:Hide() end)
+				pcall(f.HookScript, f, "OnShow", function(self)
+					if KeepBlizzardDown() then self:Hide() end
+				end)
 			end
 		end
 	end
+end
+
+--- Give Blizzard's tracker back: shown, and on Era told to lay itself out
+--  again, which decides whether it has anything to show.
+function QT:ShowBlizzard()
+	for _, name in ipairs(BLIZZARD_TRACKERS) do
+		local f = _G[name]
+		if f and f.__aetherHooked and not (f.IsForbidden and f:IsForbidden()) then
+			pcall(f.Show, f)
+		end
+	end
+	if _G.QuestWatch_Update then pcall(_G.QuestWatch_Update) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1255,6 +1279,7 @@ function QT:OnDisable()
 	Tail.Draw()
 	Trunk():Refresh()
 	Trunk():SetRetracted(false, true)
+	self:ShowBlizzard()
 end
 
 function QT:OnSkinChanged()
@@ -1262,5 +1287,7 @@ function QT:OnSkinChanged()
 end
 
 function QT:OnConfigChanged()
+	-- The "hide Blizzard's tracker" setting, either way, without a reload.
+	if KeepBlizzardDown() then self:HideBlizzard() else self:ShowBlizzard() end
 	self:Refresh()
 end

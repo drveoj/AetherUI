@@ -759,8 +759,18 @@ function PF:RefreshPanel()
 	if not p then return end
 	local c = A.Palette.c
 
+	-- Online of the whole group: it read n/n, the same number twice, whoever
+	-- had gone offline.
 	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-	p.head:Set(_G.PARTY or "Party", n > 0 and (n .. "/" .. n) or "")
+	local online = 0
+	if n > 0 then
+		local raid = IsInRaid and IsInRaid()
+		for i = 1, n do
+			local unit = raid and ("raid" .. i) or (i == 1 and "player" or ("party" .. (i - 1)))
+			if not UnitIsConnected or UnitIsConnected(unit) then online = online + 1 end
+		end
+	end
+	p.head:Set(_G.PARTY or "Party", n > 0 and (online .. "/" .. n) or "")
 
 	-- THE WELLS FOLLOW YOUR TARGET, not the party. Inert with nothing
 	-- targeted, because SetRaidTarget has no unit to act on - and a well that
@@ -879,10 +889,18 @@ function PF:RegisterMovers()
 		{ point = "LEFT", relPoint = "LEFT", x = 210, y = 120 }, "Party")
 end
 
+--- The 10 Hz refresh - absorbs among it, which have no event here. Started on
+--  every enable: DisableModule stops a module's ticker, and only the first
+--  build used to start it, so one off/on stopped it for the session.
+local function Tick()
+	for _, f in ipairs(PF.frames) do UpdateAll(f) end
+end
+
 function PF:OnEnable()
 	local c = cfg()
 
 	if self.stack then
+		A:RegisterTicker(self, Tick)
 		self.stack:Show()
 		self:HideBlizzard()
 		self:Layout()
@@ -914,9 +932,7 @@ function PF:OnEnable()
 	self:RegisterEvents()
 	self:HideBlizzard()
 	self:AttachNode()
-	A:RegisterTicker(self, function()
-		for _, f in ipairs(PF.frames) do UpdateAll(f) end
-	end)
+	A:RegisterTicker(self, Tick)
 
 	for _, f in ipairs(self.frames) do UpdateAll(f) end
 end

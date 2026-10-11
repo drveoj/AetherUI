@@ -1499,6 +1499,12 @@ local function BuildToast()
 	end)
 
 	t:SetScript("OnClick", function()
+		-- Not in a fight, as OB:Start refuses one: the tour dims the world and
+		-- takes the HUD back to a partial one. The toast stays to click after.
+		if InCombatLockdown() then
+			A:Print(L.tour.start.during_fight_try_again)
+			return
+		end
 		OB:Hush()
 		local at = (Store() and Store().stopIndex) or 1
 		OB:Go(at)

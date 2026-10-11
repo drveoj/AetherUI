@@ -1162,7 +1162,6 @@ function UF:RegisterEvents()
 	A:RegisterEvent(self, "UNIT_DISPLAYPOWER", unitEvent(UpdatePower))
 	A:RegisterEvent(self, "UNIT_NAME_UPDATE",  unitEvent(UpdateName))
 	A:RegisterEvent(self, "UNIT_LEVEL",        unitEvent(UpdateName))
-	A:RegisterEvent(self, "UNIT_FACTION",      unitEvent(UpdateOrb))
 
 	-- A PET COMES AND GOES, and neither arrival nor dismissal is a unit event on
 	-- the pet itself - UNIT_PET fires on the OWNER. Without this the capsule sat
@@ -1208,7 +1207,17 @@ function UF:RegisterEvents()
 	end
 	A:RegisterEvent(self, "PARTY_LEADER_CHANGED", leaders)
 	A:RegisterEvent(self, "RAID_TARGET_UPDATE",   leaders)
-	A:RegisterEvent(self, "UNIT_FACTION",         leaders)
+	-- ONE HANDLER FOR BOTH JOBS. A second registration under the same owner
+	-- replaces the first, so the orb's own one was lost to this and an NPC
+	-- turning hostile kept its old orb and edge until you retargeted.
+	local orbAndEdge = unitEvent(function(f)
+		UpdateOrb(f)
+		UpdateSkin(f)
+	end)
+	A:RegisterEvent(self, "UNIT_FACTION", function(owner, event, unit)
+		leaders()
+		orbAndEdge(owner, event, unit)
+	end)
 	-- A ROLE CHECK HAS ITS OWN EVENT. Nothing was listening, so the answer
 	-- to a poll landed and no frame moved until something unrelated
 	-- happened to refresh it.
@@ -1389,6 +1398,47 @@ function UF:SatelliteOn(which)
 	return (f ~= nil and not f.off) and true or false
 end
 
+--- The module's secure parts, up or taken away: the click buttons, watched
+--  and shown or not, and the spine, which action bar 1 hangs from. Out of a
+--  fight; in one, done when it ends - under an owner of its own, because
+--  switching the module off clears the module's events straight after
+--  OnDisable.
+--
+--  Turning off only the watch left the buttons where they were: invisible,
+--  still targeting on a click. Coming back never watched again, so the
+--  target's could not be clicked until a /reload. And hiding the spine in a
+--  fight is refused: a protected bar hangs off it.
+local clickWatch = {}
+local function SetClicksWatched(on)
+	if InCombatLockdown() then
+		clickWatch.want = on
+		A:RegisterEvent(clickWatch, "PLAYER_REGEN_ENABLED", function()
+			A:UnregisterEvent(clickWatch, "PLAYER_REGEN_ENABLED")
+			SetClicksWatched(clickWatch.want)
+		end)
+		return
+	end
+	A:UnregisterEvent(clickWatch, "PLAYER_REGEN_ENABLED")
+	if UF.spine then UF.spine:SetShown(on and true or false) end
+	for _, f in ipairs(UF.frames or {}) do
+		if f.click then
+			if on and not f.off then
+				if not f.unitWatched and RegisterUnitWatch then
+					RegisterUnitWatch(f.click)
+					f.unitWatched = true
+				end
+			else
+				if f.unitWatched and UnregisterUnitWatch then
+					UnregisterUnitWatch(f.click)
+					f.unitWatched = nil
+				end
+				f.click:Hide()
+			end
+		end
+	end
+end
+UF.SetClicksWatched = SetClicksWatched
+
 function UF:OnEnable()
 	local cfg = A.Config:Module("unitframes")
 
@@ -1398,7 +1448,8 @@ function UF:OnEnable()
 	if self.player then
 		for _, f in ipairs(self.frames) do SetVisible(f, true) end
 		if self.cast then self.cast:Hide() end
-		if self.spine then self.spine:Show() end
+		-- The spine and the click buttons, first, as the spine always was.
+		SetClicksWatched(true)
 		self:OnConfigChanged()
 		-- OnDisable took these away, so coming back has to put them back. This
 		-- used to live only in the first-build path below, which meant the very
@@ -1479,17 +1530,13 @@ function UF:OnDisable()
 	A:UnregisterTicker(self)
 	for _, f in ipairs(self.frames or {}) do
 		A.Fader:Unregister(f)
-		if f.unitWatched and UnregisterUnitWatch then
-			UnregisterUnitWatch(f.click)
-			f.unitWatched = nil
-		end
 		-- The glass, not the core - see SetVisible. Disabling a module mid-fight
 		-- is unusual but perfectly possible from the options panel.
 		SetVisible(f, false)
 	end
+	SetClicksWatched(false)
 	if self.cast then CastStop(self.cast) end
 	if self.targetCast then CastStop(self.targetCast) end
-	if self.spine then self.spine:Hide() end
 	A.Movers:Unregister("player")
 	A.Movers:Unregister("target")
 	A.Movers:Unregister("pet")
