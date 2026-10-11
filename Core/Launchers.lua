@@ -95,7 +95,7 @@ do
 	RawGetName        = probe.GetName
 end
 L.RawSetParent, L.RawClearAllPoints = RawSetParent, RawClearAllPoints
-L.RawSetPoint, L.RawSetSize, L.RawGetName = RawSetPoint, RawSetSize, RawGetName
+L.RawSetPoint, L.RawSetSize = RawSetPoint, RawSetSize
 
 local function Forbidden(f)
 	if not f or not f.IsForbidden then return false end
@@ -355,9 +355,7 @@ function L:Prepare(entry)
 	-- happen inside the minimap drawer's Collect, which meant retiring the
 	-- drawer would have left every button on the rail wearing whatever bevel
 	-- its own addon shipped.
-	if L.skinButtons ~= false then
-		pcall(L.SkinButton, entry.button)
-	end
+	pcall(L.SkinButton, entry.button)
 end
 
 -- ---------------------------------------------------------------------------
@@ -854,20 +852,6 @@ function L:Release(entry, owner)
 	self:Changed()
 end
 
-function L:ReleaseAll(owner)
-	local any = false
-	for entry, held in pairs(self.owners) do
-		if held == owner then
-			self.owners[entry] = nil
-			self:Park(entry)
-			any = true
-		end
-	end
-	-- Announced once at the end rather than per entry: a listener that rescans
-	-- would otherwise do it once for every button on the machine.
-	if any then self:Changed() end
-end
-
 function L:OwnerOf(entry)
 	return entry and self.owners[entry]
 end
@@ -876,7 +860,6 @@ end
 -- consumers
 -- ---------------------------------------------------------------------------
 
-L.skinButtons = true
 L.listeners = {}
 
 function L:OnChanged(key, fn)

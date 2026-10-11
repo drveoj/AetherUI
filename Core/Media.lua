@@ -95,7 +95,6 @@ Media.texture = {
 	divider     = TEX .. "Divider",
 	chevron     = TEX .. "Chevron",
 	send        = TEX .. "Send",             -- the edit box's paper plane
-	badges      = TEX .. "Chat-Badges",      -- the chat line pills, one per row
 
 	-- THE BRAND. Not drawn by generate_textures.py like everything above it -
 	-- Tools/generate_brand_textures.py draws these from the Lattice handoff's
@@ -405,8 +404,6 @@ Media.style = {
 	unitValue    = { "semibold", 11, "" },
 	unitValueAlt = { "regular",  10, "" },
 	level        = { "bold",     12, "OUTLINE" },
-	castName     = { "semibold", 13, "" },
-	castTime     = { "medium",   11, "" },
 	keybind      = { "semibold",  9, "OUTLINE" },
 	-- The key chip at a button's top left: the strands brief's 9/700, white,
 	-- on a dark text-shadow rather than an outline.
@@ -414,9 +411,6 @@ Media.style = {
 	stack        = { "bold",      11, "OUTLINE" },
 	label        = { "semibold", 11, "" },   -- letter-spaced section headings
 	tiny         = { "light",    10, "" },
-	-- Aura timers sit under the icon on open background rather than on glass,
-	-- so this one is outlined where `tiny` is not.
-	auraTime     = { "medium",   10, "OUTLINE" },
 	-- A lane's label, cast and mirror alike: the handoff's 11/600, set at the
 	-- lane's origin - "FROSTBOLT 1.6", "BREATH 0:38".
 	laneLabel    = { "semibold", 11, "" },
@@ -437,20 +431,6 @@ Media.style = {
 	-- are the content. The composer's channel capsule does NOT inherit this - it
 	-- is re-sized from Chat:FontSize so the code reads at the size you type at.
 	chatTab      = { "semibold", 10, "" },
-	chatBadge    = { "bold",      8, "" },   -- the channel tag, uppercase
-	-- The messages the game throws at the middle of the screen: an error, a
-	-- zone banner, a raid warning. All of them are drawn over the WORLD with
-	-- nothing behind them, so the outlines the client uses are load-bearing
-	-- and are kept exactly as it has them - a zone name in our lettering with
-	-- the thick outline dropped is unreadable over snow.
-	--
-	-- The sizes here are only fallbacks: Reskin.Font keeps whatever size the
-	-- client's own font object was using, so this is a change of FACE and
-	-- nothing else. Nothing on screen moves or reflows.
-	errMessage   = { "semibold", 16, "" },            -- "You can't do that yet"
-	zoneName     = { "semibold", 32, "THICKOUTLINE" },
-	zoneSub      = { "medium",   26, "THICKOUTLINE" },
-	raidNotice   = { "bold",     20, "" },
 
 	questTitle   = { "medium",   12, "" },
 	questLine    = { "light",    11, "" },   -- objective lines under a quest
@@ -516,7 +496,6 @@ Media.style = {
 	ttName       = { "semibold", 15, "" },   -- unit / spell / item name
 	ttBody       = { "light",    13, "" },   -- everything the client writes
 	ttSmall      = { "light",    12, "" },
-	ttSub        = { "light",    12, "" },   -- "Humanoid - Hostile"
 	ttBadge      = { "semibold", 12, "" },   -- the number in the level badge
 
 	-- Toolbox. The deck's own sizes: 18 header, 14 card title, 12.5 body,
@@ -540,9 +519,6 @@ Media.style = {
 
 	-- Our panels' own roles.
 	--
-	-- 16 AND NEVER LARGER, which is the panel package's one hard number for
-	-- type: one title size for every panel in the interface.
-	pnTitle      = { "semibold", 16, "" },
 	-- The way out. Its own role because the cross is drawn at one size
 	-- everywhere, and hanging it off the title role made it grow and shrink
 	-- with a heading it has nothing to do with.
@@ -552,9 +528,7 @@ Media.style = {
 	-- is a number for a browser at 1:1; everything here is drawn at the
 	-- profile's scale, so 14 lands at ten physical pixels of thin type.
 	pnClose      = { "semibold", 16, "" },
-	-- Body type inside one. Reskin.Font draws at whatever size the client
-	-- already gave a string, so its own layout still measures out - only the
-	-- family and the outline are ours.
+	-- Body type inside a panel.
 	pnBody       = { "medium",   12, "" },
 
 	-- Nameplates (concept 7a / 7b). Their own roles rather than the tooltip's,

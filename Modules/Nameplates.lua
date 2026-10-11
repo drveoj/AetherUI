@@ -1354,7 +1354,6 @@ NP.plateFor = PlateFor
 NP.plates = plates
 NP.step = Step
 NP.moving = moving
-NP.updateChips = UpdateChips
 NP.castStart = CastStart
 NP.applyCVars = ApplyCVars
 NP.applyEmphasis = ApplyEmphasis

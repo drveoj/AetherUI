@@ -209,12 +209,6 @@ local function Left(tip, i)
 	return _G[name .. "TextLeft" .. i]
 end
 
-local function Right(tip, i)
-	local name = tip.GetName and tip:GetName()
-	if not name then return nil end
-	return _G[name .. "TextRight" .. i]
-end
-
 local function Ink(fs, c)
 	if fs and c then fs:SetTextColor(c[1], c[2], c[3], c[4] or 1) end
 end

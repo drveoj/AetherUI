@@ -430,9 +430,3 @@ function Reader:Close()
 	if self.frame then self.frame:Hide() end
 	self.item = nil
 end
-
---- Kept for the library, which shuts whatever it opened when it closes itself.
-function Reader:CloseFor()
-	self:Close()
-	return true
-end

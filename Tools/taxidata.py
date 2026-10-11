@@ -147,9 +147,6 @@ def emit(tables):
     w("")
     w("local ADDON, A = ...")
     w("")
-    # Recorded rather than used: the durations below are already baked.
-    w("A.IFEC_TAXI_SPEED  = %.3f" % TAXI_SPEED)
-    w("")
     w("local ROUTES = {}")
 
     for flavour, build_id, legs, fuzzy in tables:

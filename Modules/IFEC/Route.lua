@@ -122,29 +122,3 @@ function Route:Learn(nodes, seconds)
 	learned[from][to] = seconds
 	return true
 end
-
---- What the shipped table said before we learned better, for the divergence
---  report. The brief asks for this: correct the table between releases.
-function Route:Divergence()
-	local learned, out = learnedStore(), {}
-	if not learned then return out end
-
-	for from, row in pairs(learned) do
-		for to, secs in pairs(row) do
-			local shipped = A.IFEC_LEGS and A.IFEC_LEGS[from] and A.IFEC_LEGS[from][to]
-			if shipped then
-				out[#out + 1] = {
-					from = from, to = to,
-					measured = secs, shipped = shipped,
-					delta = secs - shipped,
-					fuzzy = self:IsFuzzy(from, to),
-				}
-			end
-		end
-	end
-
-	table.sort(out, function(a, b)
-		return math.abs(a.delta) > math.abs(b.delta)
-	end)
-	return out
-end

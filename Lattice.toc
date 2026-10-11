@@ -48,7 +48,6 @@ Core\Palette.lua
 Core\Glass.lua
 Core\Widgets.lua
 Core\Errors.lua
-Core\Reskin.lua
 Core\Config.lua
 Core\Movers.lua
 # Strands fused into one block. After Movers, whose bonds a braid is.

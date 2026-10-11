@@ -19,8 +19,6 @@
 
 local ADDON, A = ...
 
-A.IFEC_TAXI_SPEED  = 30.122
-
 local ROUTES = {}
 
 ROUTES.era = {

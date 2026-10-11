@@ -60,8 +60,6 @@ local MN = A:NewModule("menus")
 
 local Glass, Palette = A.Glass, A.Palette
 
-local function cfg() return A.Config:Module("menus") end
-
 --- Every menu frame we have dressed, so a skin change can reach them.
 --
 --  A plain list. The pool is small and a frame is never destroyed, so nothing

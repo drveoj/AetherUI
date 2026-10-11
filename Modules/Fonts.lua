@@ -43,8 +43,6 @@ local FT = A:NewModule("fonts")
 
 local Media = A.Media
 
-local function cfg() return A.Config:Module("fonts") end
-
 --- Which of ours each of the client's wears.
 --
 --  Grouped by what the type is FOR rather than by name, because the client's

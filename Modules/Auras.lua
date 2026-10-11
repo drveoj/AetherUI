@@ -808,7 +808,6 @@ local TRAYS = {
 	{ key = "targetDebuffs", unit = "target", filter = "HARMFUL", debuff = true,
 	  above = false },
 }
-Aur.TRAYS = TRAYS
 
 --- The square, and the rest and fight counts, for the harness.
 function Aur:TileWidth() return TileWidth() end

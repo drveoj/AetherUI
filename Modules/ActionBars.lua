@@ -595,10 +595,8 @@ local function UpdateStanceButton(b)
 		local start, duration, enable = GetShapeshiftFormCooldown(id)
 		if start and duration and duration > 0 and enable and enable > 0 then
 			b.cd:SetCooldown(start, duration)
-			b._cdEnd = start + duration
 		else
 			b.cd:SetCooldown(0, 0)
-			b._cdEnd = nil
 			b.cdText:SetText("")
 		end
 	end
@@ -676,10 +674,8 @@ local function UpdatePetButton(b)
 		local start, duration, enable = GetPetActionCooldown(id)
 		if start and duration and duration > 0 and enable and enable > 0 then
 			b.cd:SetCooldown(start, duration)
-			b._cdEnd = start + duration
 		else
 			b.cd:SetCooldown(0, 0)
-			b._cdEnd = nil
 			b.cdText:SetText("")
 		end
 	end

@@ -16,7 +16,7 @@
 	  accent                 the skin's signature hue (xp bar, highlights)
 	  health / power / rage / energy / focus
 	  hostile / neutral / friendly
-	  cast / castGlow        spell cast bar
+	  cast / castEdge        spell cast bar
 	  danger                 in-combat markers
 	  shadow                 ambient drop shadow
 ----------------------------------------------------------------------------]]
@@ -293,11 +293,9 @@ local SEMANTIC = {
 
 	-- the target capsule reads as the thing it is pointed at
 	targetGlass = C( 24,  10,  20, 0.55),
-	targetEdge  = C(255, 138, 138, 0.35),
 	targetText  = C(255, 217, 196),
 
 	castEdge = C(150, 200, 255, 0.45),
-	castGlow = C(140, 200, 255, 0.55),
 
 	-- MIRROR LANES: what the world is doing to you, on the lane that leaves the
 	-- player capsule's left edge. The Lattice handoff's own values (Cast lanes,
@@ -342,7 +340,6 @@ local SEMANTIC = {
 
 	-- the bank, which is a blue place
 	bankAccent = C(142, 200, 255),
-	bankBg     = C(140, 200, 255, 0.16),
 	bankEdge   = C(140, 200, 255, 0.34),
 
 	-- The grey a chat line is dimmed to. Its own token rather than a tinted white
@@ -350,19 +347,8 @@ local SEMANTIC = {
 	-- textFaint would come back out at full strength and not be faint at all.
 	dim = C(136, 136, 136),
 
-	-- Debuff schools, so "Chilled" reads as frost rather than as generic
-	-- red. The client's own numbers: an aura ring that disagreed with the
-	-- rest of the game about what a curse looks like would be worse than no
-	-- ring at all.
-	debuffSchool = {
-		Magic   = F(0.55, 0.78, 1.00),
-		Curse   = F(0.70, 0.50, 1.00),
-		Disease = F(0.70, 0.60, 0.35),
-		Poison  = F(0.55, 0.85, 0.45),
-	},
-
-	-- And zone type, likewise - a contested zone reads the same amber here
-	-- as it does on the world map.
+	-- Zone type, in the client's own numbers - a contested zone reads the same
+	-- amber here as it does on the world map.
 	zonePvP = {
 		sanctuary = F(0.41, 0.80, 0.94),
 		arena     = F(1.00, 0.10, 0.10),
@@ -490,12 +476,11 @@ local SEMANTIC = {
 --  site and this test is somewhere else as well, which is the whole thing it
 --  exists to prevent.
 local GOLD      = C(240, 217, 168)   -- #f0d9a8
-local GOLD_DIM  = C(232, 200, 106)   -- #e8c86a, its companion tint
 local DUSK_GOLD = C(255, 207, 102)   -- #ffcf66
 
 local function Gold(skin)
-	if skin == "dusk" or skin == "summer" then return DUSK_GOLD, DUSK_GOLD end
-	return GOLD, GOLD_DIM
+	if skin == "dusk" or skin == "summer" then return DUSK_GOLD end
+	return GOLD
 end
 
 --- The trouble reds, and THE OTHER PLACE A SKIN NAME IS TESTED.
@@ -528,7 +513,7 @@ local function Soft(k)
 end
 
 local function Compose(name, k)
-	local gold, goldDim = Gold(name)
+	local gold = Gold(name)
 	local lift = k.lift or 0
 	k.soft = Soft(k)
 	local c = {
@@ -559,7 +544,6 @@ local function Compose(name, k)
 		text      = A_(k.bright, 1),
 		textDim   = A_(k.soft, 0.55),
 		textFaint = A_(k.soft, 0.38),
-		junkText  = A_(k.soft, 0.38),
 		ttTitle   = A_(k.bright, 1),
 
 		accent     = A_(k.accent, 1),
@@ -582,8 +566,6 @@ local function Compose(name, k)
 
 		-- the reserved gold, which only Dusk and Summer move
 		semanticGold    = A_(gold, 1),
-		semanticGoldDim = A_(goldDim, 1),
-
 
 		-- the console's dial: the accent on a near-black disc, over a white track
 		ifecDial  = A_(k.accent, 1),
@@ -609,7 +591,6 @@ local function Compose(name, k)
 		ttBadgeInk   = A_(k.accent, 1),
 		ttBadgeBg    = A_(k.border, 0.18),
 		ttBadgeEdge  = A_(k.border, 0.35),
-		ttDivider    = A_(k.border, 0.18),
 		ttEliteInk   = A_(k.disc, 1),
 		ttHealthBg   = A_(k.track, 0.08),
 	}

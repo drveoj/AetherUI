@@ -224,7 +224,6 @@ local function stopHandle()
 		for _, h in ipairs(Playback.handles) do pcall(StopSound, h) end
 	end
 	Playback.handles = {}
-	Playback.handle = nil
 end
 
 --- Silence everything EXCEPT the one just handed over from.
@@ -289,7 +288,6 @@ local function playSegment(index, handover)
 	Playback.lastFail = nil
 
 	Playback.handles[#Playback.handles + 1] = handle
-	Playback.handle   = handle
 	Playback.index    = index
 	Playback.segStart = now()
 	Playback.state    = "playing"
@@ -616,15 +614,6 @@ function Playback:Ahead(item)
 		if q.key == item.key and i > from then found = i end
 	end
 	return found
-end
-
---- Where `item` sits in the queue at all, ahead or behind.
-function Playback:Queued(item)
-	if not item or not self.queue then return nil end
-	for i, q in ipairs(self.queue) do
-		if q.key == item.key then return i end
-	end
-	return nil
 end
 
 --- Add an item to the programme, or take it back out. Says which it did.

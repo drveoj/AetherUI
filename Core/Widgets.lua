@@ -806,10 +806,6 @@ function Orb:SetColors(face, rim, ink, faceHi, rimHi)
 	if ink then W.Color(self.label, ink) end
 end
 
-function Orb:SetRingColor(c)
-	self.ring:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
-end
-
 function Orb:SetLabel(text)
 	self.label:SetText(text or "")
 end
@@ -836,27 +832,6 @@ function Orb:Resize(size)
 	-- texture already draws, so the two together read as one thick ring.
 	self.ring:ClearAllPoints()
 	self.ring:SetAllPoints(self)
-	if self.glow then self.glow:SetSize(size * 2, size * 2) end
-end
-
-function Orb:SetGlow(shown, c)
-	if not self.glow then
-		if not shown then return end
-		local g = self:CreateTexture(nil, "BACKGROUND", nil, -1)
-		g:SetTexture(Media.texture.ringGlow)
-		g:SetBlendMode("ADD")
-		g:SetPoint("CENTER")
-		self.glow = g
-	end
-	if shown then
-		local s = self:GetWidth() * 2
-		self.glow:SetSize(s, s)
-		c = c or A.Palette.c.accent
-		self.glow:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
-		self.glow:Show()
-	else
-		self.glow:Hide()
-	end
 end
 
 --- opts: { size = 46, portrait = false }
@@ -1164,19 +1139,15 @@ end
 -- ---------------------------------------------------------------------------
 
 W.PANEL_CORNER   = 20   -- every framed panel, no per-panel variations
-W.PANEL_HEAD_H   = 54   -- ...64 when the header carries a subtitle line
-W.PANEL_HEAD_SUB = 64
+W.PANEL_HEAD_H   = 54
 W.PANEL_PAD      = 18   -- body padding, all four sides
 W.PANEL_GAP      = 14   -- between one block in the body and the next
-W.PANEL_FOOT_H   = 52   -- a footer strip, where a panel has one
 
 -- The way out. One hit target, one radius, one inset, everywhere.
 local CLOSE_HIT    = 28
 local CLOSE_CORNER = 9
 local CLOSE_INSET  = 13
 local CLOSE_GLYPH  = 14
-
-W.PANEL_CLOSE_INSET = CLOSE_INSET
 
 --- The way out of a panel.
 --
@@ -1829,16 +1800,6 @@ end
 -- change on its own.
 -- ---------------------------------------------------------------------------
 
--- The deck's numbers. A rail is FIXED: tabs give way, the frame never grows.
-W.TAB_RAIL_H = 38          -- a horizontal rail's height; tabs fill it
-W.TAB_RAIL_W = 52          -- a vertical icon rail's width
-
--- What gives, and in what order, when a row stops fitting: the padding either
--- side first, then a point off the lettering, and only then the words
--- themselves. A label shortened to three dots tells you less than the word did,
--- so it goes last and never without a tooltip carrying the whole of it.
-W.TAB_PADS = { 16, 14, 10 }
-
 -- TWO WASHES, and the whole point is that they are not the same wash.
 --
 -- `rowHover` is this interface's you-are-over-this fill, and both of these are
@@ -2267,7 +2228,6 @@ end
 -- ---------------------------------------------------------------------------
 
 W.WELL_CORNER = 14
-W.WELL_PAD    = 16   -- 15b: the padding inside a well, on all four sides
 
 -- How far short of the panel's border every hairline in it stops. A rail and
 -- the rim are drawn in the same ink, so where one meets the other the alphas

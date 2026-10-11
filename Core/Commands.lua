@@ -64,23 +64,6 @@ local function say(fmt, ...)
 	DEFAULT_CHAT_FRAME:AddMessage(select("#", ...) > 0 and string.format(fmt, ...) or fmt)
 end
 
---- Walk a frame up to UIParent. This is the useful one: Blizzard has reshuffled
---  the action bar hierarchy across versions, so rather than trusting a list of
---  container names, ask a button what it is actually parented to.
-local function ancestry(name)
-	local f = _G[name]
-	if not f then return A.Dim("absent") end
-	local parts, cur, depth = {}, f, 0
-	while cur and depth < 8 do
-		local n = (cur.GetName and cur:GetName()) or "<anon>"
-		local shown = cur.IsShown and cur:IsShown()
-		parts[#parts + 1] = (shown and A.Bad or A.Good)(n)
-		cur = cur.GetParent and cur:GetParent()
-		depth = depth + 1
-	end
-	return table.concat(parts, " < ")
-end
-
 --- Where the chat window is, where it should be, and who last argued about it.
 --
 --  Its own function because it is wanted in two places: on its own from
@@ -136,8 +119,7 @@ local DUMP_DEPTH = 2
 --  reach a frame you cannot name.
 --
 --  What they have instead is a parentKey, which the client assigns as a plain
---  field on the parent, so the field is what has to be reported. That is also
---  the key Reskin.Element takes, which makes the answer directly usable.
+--  field on the parent, so the field is what has to be reported.
 local function KeyOf(parent, part)
 	if type(parent) ~= "table" then return nil end
 	local ok, key = pcall(function()
@@ -275,7 +257,7 @@ function A:DumpFrame(name)
 		-- that is running.
 		say("%s  ·  Lattice %s  ·  %s", name, tostring(A.version or "?"),
 			date and date("%Y-%m-%d %H:%M") or "")
-		say("a leading dot is a parentKey, which is what Reskin.Element takes")
+		say("a leading dot is a parentKey, a field on the parent rather than a global name")
 		DumpFrame(frame, "", DUMP_DEPTH, frame.GetParent and frame:GetParent())
 	end)
 	A.Errors:ShowText(text)
@@ -1468,33 +1450,6 @@ end
 -- selected.
 -- ---------------------------------------------------------------------------
 
--- HAS THE SERVER EVER SENT A THREAT TABLE. This is the decisive signal and a
--- readout taken after the fact cannot have it, so it is counted from load.
---
--- UNIT_THREAT_LIST_UPDATE is what the server fires when a mob's threat table
--- changes, and it is what NKThreat registers - unit-filtered on "target",
--- alongside a polling loop, because the event alone does not cover a target
--- change. If that event never fires during a fight then the API is a stub on
--- this client whatever it answers, and the ring needs a threat meter of our
--- own rather than a display onto somebody else's number.
---
--- TEMPORARY. This belongs to Phase 0 of docs/PLAN-Threat.md and goes when the
--- threat module lands and owns the event properly.
-local threatSeen = { list = 0, situation = 0, unit = nil }
-do
-	local watch = CreateFrame("Frame")
-	watch:RegisterEvent("UNIT_THREAT_LIST_UPDATE")
-	watch:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
-	watch:SetScript("OnEvent", function(_, event, unit)
-		if event == "UNIT_THREAT_LIST_UPDATE" then
-			threatSeen.list = threatSeen.list + 1
-		else
-			threatSeen.situation = threatSeen.situation + 1
-		end
-		threatSeen.unit = unit or threatSeen.unit
-	end)
-end
-
 --- Every mob we can ask ABOUT, and what to call it in the readout.
 --
 --  Threat is queried per unit PER MOB, and the mob has to be a unit TOKEN -
@@ -1591,13 +1546,6 @@ local function ThreatProbe()
 	local okc, cvar = pcall(GetCVar, "threatWarning")
 	say("IsThreatWarningEnabled=" .. tostring(okw and warn) ..
 		"  cvar threatWarning=" .. tostring(okc and cvar))
-
-	-- COUNTED SINCE LOGIN, not asked for now. If the server has never sent a
-	-- threat table then nothing else in this readout matters.
-	say("UNIT_THREAT_LIST_UPDATE fired " .. tostring(threatSeen.list) ..
-		"x  UNIT_THREAT_SITUATION_UPDATE " .. tostring(threatSeen.situation) ..
-		"x  last unit=" .. tostring(threatSeen.unit) ..
-		(threatSeen.list == 0 and "   <- never, so far" or ""))
 	say("")
 	say("role, every route the plan considers:")
 	ThreatRole(say)

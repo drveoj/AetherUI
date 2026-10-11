@@ -534,12 +534,6 @@ function A:FittedScale()
 	return math.max(0.4, math.min(2.0, math.floor(s * 100 + 0.5) / 100))
 end
 
---- Snap a virtual-unit value onto the physical pixel grid.
-function A:Snap(v)
-	local p = A.pixel
-	return math.floor(v / p + 0.5) * p
-end
-
 --- Convert a count of real screen pixels into virtual units.
 -- ---------------------------------------------------------------------------
 -- getting one of the client's frames out of the way
@@ -895,8 +889,6 @@ local function DisableModule(name, module)
 	A:UnregisterAllEvents(module)
 	A:UnregisterTicker(module)
 end
-
-A.EnableModule, A.DisableModule = EnableModule, DisableModule
 
 function A:SetModuleEnabled(name, on)
 	local m = A.modules[name]

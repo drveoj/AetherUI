@@ -35,18 +35,6 @@ local MM = A:NewModule("minimap")
 local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 local L = A.L
 
--- Widget methods captured unbound, so a collected button that has stomped its
--- own `SetPoint` (some do, to keep themselves welded to the ring) can still be
--- placed. Called as plain functions with the frame as the first argument.
--- Captured once, in Core/Launchers.lua, and shared: this module and the Toolbox
--- both place borrowed frames and there is no reason for two copies.
-local Launchers = A.Launchers
-local RawSetParent      = Launchers.RawSetParent
-local RawClearAllPoints = Launchers.RawClearAllPoints
-local RawSetPoint       = Launchers.RawSetPoint
-local RawSetSize        = Launchers.RawSetSize
-local RawGetName        = Launchers.RawGetName
-
 -- ---------------------------------------------------------------------------
 -- Blizzard's furniture
 -- ---------------------------------------------------------------------------
@@ -1388,7 +1376,6 @@ end
 
 function MM:OnDisable()
 	A:UnregisterTicker(self)
-	if self._ticker then self._ticker:Cancel(); self._ticker = nil end
 	A.Movers:Unregister("minimap")
 	A.Mail:Detach()
 	Track:Close()

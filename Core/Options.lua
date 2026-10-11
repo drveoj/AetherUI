@@ -1484,7 +1484,3 @@ end
 function Options:IsOpen()
 	return A.OptionsWindow and A.OptionsWindow:IsOpen() or false
 end
-
-function Options:Toggle(section)
-	if self:IsOpen() then self:Close() else self:Open(section) end
-end

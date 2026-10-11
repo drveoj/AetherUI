@@ -7627,7 +7627,7 @@ local FILES = {
 	"Locale/zhTW.lua",
 	"Core/Core.lua", "Core/Changelog.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
-	"Core/Widgets.lua", "Core/Errors.lua", "Core/Reskin.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Braids.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
+	"Core/Widgets.lua", "Core/Errors.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Braids.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
 	"Core/Trunk.lua", "Core/Mail.lua", "Core/Nav.lua", "Core/Launchers.lua",
 	"Core/Commands.lua", "Core/Options.lua", "Core/OptionsControls.lua", "Core/OptionsWindow.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
@@ -11404,7 +11404,6 @@ local MIDNIGHT_FROZEN = {
 	accent = { 0.803922, 0.737255, 1, 1 },
 	accentDeep = { 0.72549, 0.643137, 0.960784, 1 },
 	bankAccent = { 0.556863, 0.784314, 1, 1 },
-	bankBg = { 0.54902, 0.784314, 1, 0.16 },
 	bankEdge = { 0.54902, 0.784314, 1, 0.34 },
 	btnEdge = { 0.588235, 0.509804, 0.921569, 0.32 },
 	btnFill = { 0.803922, 0.737255, 1, 1 },
@@ -11419,7 +11418,6 @@ local MIDNIGHT_FROZEN = {
 		[2] = { 0.831373, 0.92549, 1, 1 },
 	},
 	castEdge = { 0.588235, 0.784314, 1, 0.45 },
-	castGlow = { 0.54902, 0.784314, 1, 0.55 },
 	danger = { 1, 0.541176, 0.541176, 1 },
 	dangerEdge = { 1, 0.541176, 0.470588, 0.3 },
 	dangerHover = { 1, 0.541176, 0.470588, 0.12 },
@@ -11481,7 +11479,6 @@ local MIDNIGHT_FROZEN = {
 			glow = { 1, 0.658824, 0.360784, 0.45 },
 		},
 	},
-	junkText = { 0.862745, 0.823529, 1, 0.38 },
 	junkTint = { 0.588235, 0.588235, 0.588235, 0.42 },
 	neutral = { 0.941176, 0.705882, 0.415686, 1 },
 	npChipInk = { 0.74902, 0.890196, 1, 1 },
@@ -11526,7 +11523,6 @@ local MIDNIGHT_FROZEN = {
 	semanticGold = { 0.941176, 0.85098, 0.658824, 1 },
 	scrim = { 0, 0, 0, 0.45 },
 	shadow = { 0, 0, 0, 0.5 },
-	targetEdge = { 1, 0.541176, 0.541176, 0.35 },
 	targetGlass = { 0.094118, 0.039216, 0.078431, 0.55 },
 	targetText = { 1, 0.85098, 0.768627, 1 },
 	text = { 0.941176, 0.92549, 1, 1 },
@@ -11535,7 +11531,6 @@ local MIDNIGHT_FROZEN = {
 	ttBadgeBg = { 0.588235, 0.509804, 0.921569, 0.18 },
 	ttBadgeEdge = { 0.588235, 0.509804, 0.921569, 0.35 },
 	ttBadgeInk = { 0.803922, 0.737255, 1, 1 },
-	ttDivider = { 0.588235, 0.509804, 0.921569, 0.18 },
 	ttElite = { 0.909804, 0.784314, 0.415686, 1 },
 	ttEliteInk = { 0.082353, 0.066667, 0.160784, 1 },
 	ttFriendly = { 0.556863, 0.784314, 1, 1 },
@@ -11655,8 +11650,8 @@ section("palette: semantic gold, one shade deeper in Dusk", function()
 	check(hex(P.skins.dusk.semanticGold) == "#ffcf66",
 		"and Dusk takes it one shade deeper (" ..
 		hex(P.skins.dusk.semanticGold) .. ")")
-	check(hex(P.skins.summer.semanticGold) == "#ffcf66" and hex(P.skins.summer.semanticGoldDim) == "#ffcf66",
-		"and so does Summer, both weights (" .. hex(P.skins.summer.semanticGold) .. ")")
+	check(hex(P.skins.summer.semanticGold) == "#ffcf66",
+		"and so does Summer (" .. hex(P.skins.summer.semanticGold) .. ")")
 
 	-- Which is the whole point, so it is worth saying on its own.
 	check(hex(P.skins.dusk.semanticGold) ~= hex(P.skins.dusk.accent),
@@ -27868,90 +27863,6 @@ do
 	end
 end
 
-print("== reskin: taking a client frame apart, reversibly ==")
-do
-	local R = A.Reskin
-
-	-- Element, under both conventions. The reworked frames are MIXIN objects
-	-- and resolve their parts through __index, so rawget finds a frame and none
-	-- of its pieces - which shipped once as a dialog with untouched buttons.
-	local mixin = CreateFrame("Frame", "AetherTestMixinFrame", UIParent)
-	local part = CreateFrame("Button", nil, mixin)
-	setmetatable(mixin, { __index = function(_, k) return k == "Button1" and part or nil end })
-	check(R.Element(mixin, "Button1") == part,
-		"a part reached through __index is found - rawget would answer nil for"
-		.. " every one of them")
-
-	local named = CreateFrame("Frame", "AetherTestNamedFrame", UIParent)
-	local far = CreateFrame("Button", "AetherTestNamedFrameButton1", named)
-	check(R.Element(named, "Button1") == far,
-		"and a part that only exists as a global name is found too")
-	check(R.Element(named, "Nothing") == nil, "with nothing invented for a part that is absent")
-
-	-- Strip: regions, and the art hiding in child frames.
-	local host = CreateFrame("Frame", nil, UIParent)
-	local own = host:CreateTexture(nil, "BACKGROUND")
-	own:SetTexture("stone")
-	local hiddenArt = host:CreateTexture(nil, "OVERLAY")
-	hiddenArt:SetTexture("glow")
-	hiddenArt:Hide()
-
-	host.NineSlice = CreateFrame("Frame", nil, host)
-	local backdrop = host.NineSlice:CreateTexture(nil, "BACKGROUND")
-	backdrop:SetTexture("dialog-background")
-
-	local store = {}
-	R.Strip(host, store)
-	check(own:GetTexture() == 0 and not own:IsShown(),
-		"a texture is CLEARED, not merely hidden - a hidden one is one the"
-		.. " client can show again, and does")
-	check(backdrop:GetTexture() == 0,
-		"and the backdrop in a child frame goes with it, which GetRegions never"
-		.. " returns and is the whole reason a stripped dialog stayed opaque")
-
-	hiddenArt:Show()
-	R.Strip(host, store)
-	check(not hiddenArt:IsShown(),
-		"art revealed later is taken down on the next pass, rather than being"
-		.. " left because it was down when we first looked")
-
-	R.Restore(store)
-	check(own:GetTexture() == "stone" and own:IsShown(), "and it all goes back")
-	check(backdrop:GetTexture() == "dialog-background", "including the child frame's")
-	check(not hiddenArt:IsShown(),
-		"except what the client had hidden itself, which stays hidden - putting"
-		.. " everything back means as it WAS, not as much of it as possible")
-
-	-- Buttons: the four state textures, through the setters.
-	local btn = CreateFrame("Button", nil, UIParent)
-	btn:SetNormalTexture("up")
-	btn:SetPushedTexture("down")
-	R.ClearButton(btn)
-	check(btn:GetNormalTexture():GetTexture() == 0
-		and btn:GetPushedTexture():GetTexture() == 0,
-		"cleared through the setters - the client shows the pushed one on"
-		.. " mousedown and there is no moment of ours in between")
-	R.RestoreButton(btn)
-	check(btn:GetNormalTexture():GetTexture() == "up"
-		and btn:GetPushedTexture():GetTexture() == "down",
-		"and restored by name, because clearing is not undone by showing")
-
-	-- ORDER-INDEPENDENT. A caller may strip a button's regions before clearing
-	-- its state textures - both orders are reasonable and each has been written
-	-- once already. Clearing second must not record the emptied value as though
-	-- it were the client's, or the restore puts "cleared" back.
-	local either = CreateFrame("Button", nil, UIParent)
-	either:SetNormalTexture("up")
-	local st = {}
-	R.Strip(either, st)
-	R.ClearButton(either)
-	R.Restore(st)
-	R.RestoreButton(either)
-	check(either:GetNormalTexture():GetTexture() == "up",
-		"whichever order the caller strips and clears in, the button gets its"
-		.. " own art back")
-end
-
 print("== panels: one set of numbers, one ink ==")
 do
 	local W = A.Widgets
@@ -27960,13 +27871,11 @@ do
 	-- is 54 and 64 with a subtitle, the body is 18 in on all four sides and 14
 	-- between blocks. These were 50/58/16/12 - close enough to look right on
 	-- their own and wrong against every measurement in the document.
-	check(W.PANEL_HEAD_H == 54 and W.PANEL_HEAD_SUB == 64
-		and W.PANEL_PAD == 18 and W.PANEL_GAP == 14,
+	check(W.PANEL_HEAD_H == 54 and W.PANEL_PAD == 18 and W.PANEL_GAP == 14,
 		"the panel metrics are the handoff's own (" .. W.PANEL_HEAD_H .. "/" ..
-		W.PANEL_HEAD_SUB .. "/" .. W.PANEL_PAD .. "/" .. W.PANEL_GAP .. ")")
-	check(W.WELL_CORNER == 14 and W.WELL_PAD == 16,
-		"and so are the well's - 15b: radius 14, padding 16 (" ..
-		W.WELL_CORNER .. "/" .. W.WELL_PAD .. ")")
+		W.PANEL_PAD .. "/" .. W.PANEL_GAP .. ")")
+	check(W.WELL_CORNER == 14,
+		"and so is the well's - 15b: radius 14 (" .. W.WELL_CORNER .. ")")
 
 	-- AND EVERY HAIRLINE IS THE SAME INK. The quest log's two dividers were
 	-- 0.55 and 0.5 of glassEdge while other rules took it whole, which on
@@ -28327,12 +28236,7 @@ do
 	cb:GetScript("OnLeave")(cb)
 	check(cb.__aetherCloseWash:GetAlpha() == 0, "and goes again")
 
-	-- ONE TITLE SIZE for every panel, and 16 is the ceiling. It was 18.
-	local titleSize = (A.Media.style["pnTitle"] or {})[2]
-	check(titleSize == 16,
-		"a panel title is 16 and never larger (" .. tostring(titleSize) .. ")")
-
-	-- AND THE CROSS IS ITS OWN ROLE, drawn at its own size. Hung off the title
+	-- THE CROSS IS ITS OWN ROLE, drawn at its own size. Hung off a title
 	-- role it grew and shrank with a heading it has nothing to do with - so
 	-- the size is what is read here, not the name: a role that does not exist
 	-- still leaves the name recorded on the string.
@@ -28693,14 +28597,10 @@ do
 	-- nothing about the value - move the token and the check moves with it.
 	--
 	-- These are the client's own numbers and the whole point of them is that
-	-- they MATCH THE GAME: a curse that is one purple on an aura ring and
-	-- another on Blizzard's own frames is worse than no colour at all. So the
-	-- expected values live here, spelled out, and drift fails.
+	-- they MATCH THE GAME: a contested zone that is one amber on the minimap and
+	-- another on the world map is worse than no colour at all. So the expected
+	-- values live here, spelled out, and drift fails.
 	local WANT = {
-		{ "debuffSchool", "Magic",     0.55, 0.78, 1.00 },
-		{ "debuffSchool", "Curse",     0.70, 0.50, 1.00 },
-		{ "debuffSchool", "Disease",   0.70, 0.60, 0.35 },
-		{ "debuffSchool", "Poison",    0.55, 0.85, 0.45 },
 		{ "zonePvP",      "sanctuary", 0.41, 0.80, 0.94 },
 		{ "zonePvP",      "arena",     1.00, 0.10, 0.10 },
 		{ "zonePvP",      "friendly",  0.10, 1.00, 0.10 },
@@ -28741,21 +28641,19 @@ do
 		end
 	end
 	check(#moved == 0,
-		"the schools, the zone types, the button states and the money gold are"
+		"the zone types, the button states and the money gold are"
 		.. " exactly the values they shipped as ("
 		.. table.concat(moved, ", ") .. ")")
 
 	-- And they are the same on every skin, because they are not ours to remap.
 	local drifted = {}
-	for _, group in ipairs({ "debuffSchool", "zonePvP" }) do
-		for _, name in ipairs(SKINS) do
-			if A.Palette.skins[name][group] ~= A.Palette.skins.midnight[group] then
-				drifted[#drifted + 1] = name .. "." .. group
-			end
+	for _, name in ipairs(SKINS) do
+		if A.Palette.skins[name].zonePvP ~= A.Palette.skins.midnight.zonePvP then
+			drifted[#drifted + 1] = name .. ".zonePvP"
 		end
 	end
 	check(#drifted == 0,
-		"and one table shared by all four skins, not four copies to keep in"
+		"and one table shared by every skin, not copies to keep in"
 		.. " step (" .. table.concat(drifted, ", ") .. ")")
 end
 
@@ -31201,10 +31099,6 @@ section("ifec: the route table, against flights that were actually flown", funct
 		"a multi-hop flight is not learned from, having no visible boundaries")
 	check(not Route:Learn({ "A", "B" }, 3),
 		"and neither is a blip too short to have been a flight")
-
-	local div = Route:Divergence()
-	check(#div >= 1 and div[1].from == "Gadgetzan, Tanaris",
-		"divergence reports what we measured against what shipped")
 end)
 
 section("ifec: boarding, flying and landing", function()
@@ -34218,28 +34112,6 @@ section("threat: the probe reads the client rather than the plan", function()
 	check(shown and shown:find("simple=", 1, true),
 		"with the simple call beside the detailed one, to place where the"
 		.. " wiring stops")
-
-	-- AND WHETHER THE SERVER HAS EVER SENT A THREAT TABLE, counted from load
-	-- rather than asked for now - a readout taken after the fight cannot ask.
-	-- UNIT_THREAT_LIST_UPDATE is what NKThreat registers and it is the
-	-- decisive signal: no firings during a fight and the API is a stub here,
-	-- whatever the calls answer.
-	check(shown and shown:find("UNIT_THREAT_LIST_UPDATE fired", 1, true),
-		"and how many times the server has sent a threat table since login")
-	check(shown and shown:find("never, so far", 1, true),
-		"saying plainly when the answer is never")
-
-	-- NOT DRIVEN FROM HERE, and worth saying why. `fire` delivers an event to
-	-- the shared pump frame only; the client delivers it to EVERY frame that
-	-- registered for it, and this mock records the registration and then
-	-- dispatches to one frame. So a module with a listener of its own is deaf
-	-- in here and looks correct - which is a real gap, not a small one, and
-	-- it is its own piece of work: widening the dispatch wakes handlers across
-	-- the suite that have never run once.
-	--
-	-- Recorded rather than fixed in passing. Until then the counter is checked
-	-- by its presence and its wording, and the number itself is only ever read
-	-- off a live client.
 
 	-- AND IT ASKS ABOUT THE MOB, not about the unit. Threat is per unit PER
 	-- MOB and the mob has to be a unit TOKEN - the generated docs call that

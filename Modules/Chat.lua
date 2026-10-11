@@ -1329,8 +1329,6 @@ local function UnstickVoiceText(eb)
 	eb._unsticking = false
 end
 
-Chat.UnstickVoiceText = UnstickVoiceText
-
 --- UpdateHeader is not the only path that writes Blizzard's transient labels.
 --  Neutralising the FontString itself closes the remaining race with the native
 --  `SAY` header without hiding the edit box's actual typed text renderer.

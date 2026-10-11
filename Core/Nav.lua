@@ -384,14 +384,6 @@ function Nav:Clear()
 	routed = nil
 end
 
---- Drop ours only if it belongs to this quest. Called when a quest leaves the
---  tracker - turned in, abandoned, or dismissed - because an arrow still
---  pointing at the boars of a quest you handed in twenty minutes ago is the
---  kind of thing you stop trusting the arrow over.
-function Nav:ClearFor(questID)
-	if questID and routed == questID then self:Clear() end
-end
-
 --- Which quest the live waypoint belongs to, or nil.
 function Nav:Routed() return routed end
 

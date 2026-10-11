@@ -481,11 +481,6 @@ Config.defaults = {
 				-- scrolls on the wheel -- there is no bar, the concept has none.
 				maxHeight    = 720,
 
-				-- Which physical bag holds an item is invisible by design. This
-				-- puts it back for anyone who wants to see it, at the cost of the
-				-- whole idea.
-				grouped      = false,
-
 				showSearch   = true,
 				qualityRim   = true,
 				dimJunk      = true,

@@ -1484,18 +1484,13 @@ function Zen:SetCamera(a)
 	local ok, current = pcall(GetCameraZoom)
 	if not ok or type(current) ~= "number" then return end
 
-	local cam = { zoom = current, pitch = 0 }
+	local cam = { zoom = current }
 
 	local goal = math.max(0, tonumber(cfg.cameraZoom) or 3)
 	local diff = current - goal
 	if math.abs(diff) > 0.05 then
 		if diff > 0 then pcall(CameraZoomIn, diff) else pcall(CameraZoomOut, -diff) end
 	end
-
-	-- Every camera value zen touches goes through the same borrow/give-back, so
-	-- it is handed back by the paths that already exist - including the
-	-- PLAYER_LOGOUT one.
-	cam.store = {}
 
 	self._cam = cam
 end
@@ -1516,8 +1511,6 @@ function Zen:RestoreCamera()
 	local cam = self._cam
 	if not cam then return end
 	self._cam = nil
-
-	if cam.store then GiveBack(cam.store) end
 
 	if cam.zoom and GetCameraZoom then
 		local ok, now = pcall(GetCameraZoom)

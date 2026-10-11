@@ -212,32 +212,7 @@ local function ExpandAll()
 	end)
 	expanding = false
 
-	QL._collapsedZones = collapsed
 	return true
-end
-
---- Kept, unused by the window, because the state it restores is still the
---  player's and a future setting may want to hand it back. Nothing calls it.
-local function RestoreHeaders()
-	local zones = QL._collapsedZones
-	-- Cleared *after* the guard, not before: a re-entrant call that bailed out
-	-- would otherwise throw the pending restore away and leave the player's zones
-	-- expanded for good.
-	if not zones or #zones == 0 or not CollapseQuestHeader or expanding then return end
-	QL._collapsedZones = nil
-
-	local wanted = {}
-	for _, name in pairs(zones) do wanted[name] = true end
-
-	expanding = true
-	pcall(function()
-		local entries = NumEntries()
-		for index = entries, 1, -1 do
-			local title, _, _, isHeader = LogTitle(index)
-			if isHeader and wanted[title] then pcall(CollapseQuestHeader, index) end
-		end
-	end)
-	expanding = false
 end
 
 --- What identifies a quest across a rebuild.
