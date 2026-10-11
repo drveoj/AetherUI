@@ -28236,6 +28236,18 @@ do
 	cb:GetScript("OnLeave")(cb)
 	check(cb.__aetherCloseWash:GetAlpha() == 0, "and goes again")
 
+	-- ONE TITLE SIZE for every panel, and it is 16 (Joe, 2026-10-11). Read off
+	-- the roles the panels' headers actually use - the quest log, the bags and
+	-- bank, the errors and layout windows and the tour cards, and the options
+	-- window's wordmark. The check this replaces read a role no panel used.
+	local titles = {}
+	for _, role in ipairs({ "qlHeading", "bagTitle", "tbTitle", "opBrand" }) do
+		local size = (A.Media.style[role] or {})[2]
+		if size ~= 16 then titles[#titles + 1] = role .. "=" .. tostring(size) end
+	end
+	check(#titles == 0,
+		"every panel title is 16 (" .. table.concat(titles, ", ") .. ")")
+
 	-- THE CROSS IS ITS OWN ROLE, drawn at its own size. Hung off a title
 	-- role it grew and shrank with a heading it has nothing to do with - so
 	-- the size is what is read here, not the name: a role that does not exist

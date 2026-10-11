@@ -444,7 +444,9 @@ Media.style = {
 	-- the glyph rasteriser rounds anyway and a half point is invisible at this
 	-- scale, so each is rounded to the nearest whole point here rather than
 	-- carrying a fraction through the layout arithmetic.
-	qlHeading    = { "semibold", 19, "" },   -- "Quest Log"
+	-- PANEL TITLES ARE 16, every one (Joe, 2026-10-11): this, bagTitle, tbTitle
+	-- and opBrand. The panel package's one hard number for type.
+	qlHeading    = { "semibold", 16, "" },   -- "Quest Log"
 	qlTitle      = { "semibold", 24, "" },   -- the selected quest's name
 	qlCount      = { "medium",   13, "" },   -- the 17 / 20 chip
 	qlSearch     = { "light",    13, "" },
@@ -468,7 +470,7 @@ Media.style = {
 	-- None of them carry OUTLINE. The stack count does, and it uses the shared
 	-- `stack` role for exactly that reason: it is the only string here that has
 	-- to stay legible on top of an arbitrary item icon.
-	bagTitle     = { "semibold", 18, "" },   -- "Bags" / "Bank"
+	bagTitle     = { "semibold", 16, "" },   -- "Bags" / "Bank"
 	bagChip      = { "bold",     11, "" },   -- the 58 / 80 capacity chip
 	bagLabel     = { "semibold", 11, "" },   -- letter-spaced EQUIPMENT / JUNK
 	bagCount     = { "medium",   10, "" },   -- the count trailing a section label
@@ -498,7 +500,7 @@ Media.style = {
 	ttSmall      = { "light",    12, "" },
 	ttBadge      = { "semibold", 12, "" },   -- the number in the level badge
 
-	-- Toolbox. The deck's own sizes: 18 header, 14 card title, 12.5 body,
+	-- Toolbox. The deck's own sizes: 18 header (16 now, as every panel title), 14 card title, 12.5 body,
 	-- 14.5 widget value, 11 label, 11 section heading. The section headings are
 	-- letter-spaced in the deck; the client has no letter-spacing, so those are
 	-- drawn with the spacing baked into the string instead (see Toolbox.lua).
@@ -506,7 +508,7 @@ Media.style = {
 	-- body is a web weight at a web size; drawn at profile.scale 0.71 it is a
 	-- nine-pixel Light, which is spidery rather than quiet and reads as the
 	-- text being badly rendered rather than as a light weight.
-	tbTitle      = { "semibold", 18, "" },
+	tbTitle      = { "semibold", 16, "" },
 	tbChip       = { "bold",     11, "" },
 	tbCardTitle  = { "semibold", 14, "" },
 	tbCardBody   = { "regular",  13, "" },
@@ -549,7 +551,7 @@ Media.style = {
 	-- The options window (options handoff). Its sizes rounded, and nothing
 	-- lighter than Regular for the same reason the Toolbox gives: Light at
 	-- these sizes reads as badly drawn rather than quiet.
-	opBrand      = { "regular",  18, "" },   -- L A T T I C E
+	opBrand      = { "regular",  16, "" },   -- L A T T I C E
 	opChip       = { "bold",     11, "" },   -- the version chip, the `/` key
 	opSearch     = { "regular",  13, "" },
 	opProfile    = { "medium",   12, "" },   -- Profiles - Dusk
