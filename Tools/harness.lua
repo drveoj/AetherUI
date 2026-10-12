@@ -17773,7 +17773,9 @@ section("options window: one page in view at a time", function()
 	OW:Go("changelog")
 	OW:Finish()
 	local first = OW.view.heads[1]
-	check(first and first.label:GetText():find("2 . 0 . 0", 1, true) == 1,
+	-- The newest entry's own version, not a written one, which failed every
+	-- release until somebody edited the test (2.0.1).
+	check(first and first.label:GetText():find(A.Trunk.Spaced(A.CHANGELOG[1].version), 1, true) == 1,
 		"the newest release heads the page (" .. tostring(first and first.label:GetText()) .. ")")
 	check(first.hint:GetText() == A.CHANGELOG[1].date, "dated on its strand's end")
 	local xs = {}

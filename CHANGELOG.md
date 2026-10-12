@@ -1,5 +1,20 @@
 # Lattice
 
+## 2.0.1 - 2026-10-12
+
+- The Toolbox can sit on the right. Pick Left or Right under Settings > Toolbox, or in unlock mode drag the Lattice glyph at the top of the Toolbox to the other half of the screen. The minimap and the World trunk move to the other side. While you drag, the screen shows where each one will land.
+- The side is saved with your profile, so every character on it shares it, and a layout you copy or paste keeps it.
+- On WoW Forever, the Toolbox Menu has the same buttons as the game's own menu, in the same order. A button the game greys out is greyed out here too, and says why.
+- Buttons look the same everywhere. The main action is filled, the others are outlined, and on/off switches are the diamond from the settings window.
+- Enter presses the main button in the tour, the bank bag confirmation and the layout window.
+- Panel titles are all one size, and the settings, layout and error windows have the same border as the rest.
+- Every piece of text a player sees can now be translated.
+- Fixed on WoW Forever: opening Edit Mode from the game menu showed errors, and dragging a frame in Edit Mode near Lattice's frames could show hundreds of them. The frames Lattice replaces no longer appear in Edit Mode.
+- Fixed on WoW Forever: the preview under Settings > Unit frames showed an error.
+- Fixed: picking a countdown time in the Party branch did nothing and closed the branch.
+- Fixed: some addons' minimap buttons (SmartBuff, for one) came back on the minimap instead of staying in the Toolbox's Addons branch.
+- Fixed: after a full restart of the game, some button labels could come up blank until a /reload.
+
 ## 2.0.0 - 2026-10-11
 
 - AetherUI is now called Lattice. Same addon, new name. Your settings start fresh, and /lattice tour sets everything up again in about a minute.
