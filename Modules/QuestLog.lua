@@ -104,8 +104,11 @@ local SCROLL_STEP      = 42          -- pixels per wheel click
 local CONFIRM_W, CONFIRM_MIN_H, CONFIRM_PAD = 420, 170, 24
 local CARD_H, CARD_ICON = 50, 34
 local CARD_GAP, CARD_RADIUS = 10, 14
-local FOOT_H, FOOT_PAD, BTN_H = 34, 14, 34
+local FOOT_H, FOOT_PAD, BTN_H = 34, 14, W.COMMAND_H
 local BTN_GAP = 10
+-- Between the two toggles: wider than between buttons, because a toggle has
+-- no box of its own to separate it from the next.
+local TOGGLE_GAP = 22
 
 -- ---------------------------------------------------------------------------
 -- quest log adapter
@@ -705,9 +708,13 @@ local function BuildHeader(win)
 	search:EnableMouse(true)
 	search:SetScript("OnMouseDown", function() box:SetFocus() end)
 
+	-- Clear of the rim (W.InsetRule): the same ink as the rim, so where they
+	-- met the alphas added into a bright spot at each end (Joe, 2026-10-12).
 	head.rule = BuildHairline(head)
-	head.rule:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", 0, 0)
-	head.rule:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", 0, 0)
+	W.InsetRule(head.rule, win, function(gap)
+		head.rule:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", gap, 0)
+		head.rule:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", -gap, 0)
+	end)
 
 	return head
 end
@@ -807,83 +814,12 @@ local function BuildRewardCard(parent)
 	return card
 end
 
---- A footer button. `style` is "filled", "outline" or "danger"; the three the
---  concept draws, and the only three.
-local function BuildButton(parent, style, label)
-	-- W.CreateButton, not CreatePill. A capsule's two caps come out of a
-	-- 256-texel texture, so at this height they are minified more than ten
-	-- times and the client does not mipmap - the same crunch the tooltip badge
-	-- and the check box both had. And it is the shape every other pressable
-	-- thing in this interface uses, which is the point of it living in one place.
-	local b = W.CreateButton(parent, {})
-	b:SetHeight(BTN_H)
-	b._style = style
-
-	b.label = W.Text(b, style == "filled" and "qlBtn" or "qlBtnAlt", "CENTER")
-	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
-
-	function b:Restyle()
-		local c = Palette.c
-		if self._style == "filled" then
-			self:SetFillColor(self._over and c.btnFillHi or c.btnFill)
-			self:SetEdgeShown(false)
-			W.Color(self.label, c.btnFillText)
-		elseif self._style == "danger" then
-			self:SetFillColor(self._over and c.dangerHover or { 0, 0, 0, 0 })
-			self:SetEdgeShown(true)
-			self:SetEdgeColor(c.dangerEdge)
-			W.Color(self.label, c.dangerText)
-		else
-			self:SetFillColor(self._over and c.btnHover or { 0, 0, 0, 0 })
-			self:SetEdgeShown(true)
-			self:SetEdgeColor(c.btnEdge)
-			W.Color(self.label, c.text)
-		end
-
-		-- A BUTTON YOU CANNOT PRESS IS STILL A BUTTON YOU CAN READ. This dimmed
-		-- the whole frame to 0.4, which multiplies the LABEL as well - and an
-		-- outline button's label is already the dim ink, so 0.55 by 0.4 is 0.22
-		-- and Share simply vanished over anything bright. Share is off more
-		-- often than it is on: you have to be grouped for it.
-		--
-		-- So the frame stays at full strength and the INK goes quiet instead -
-		-- one step down the ladder, not two. It went to textFaint, which is the
-		-- soft ink at 0.38, and over the footer's own glass that is a button
-		-- with a border and no word in it. Enabled is the bright ink and
-		-- disabled is the dim one: still a word, plainly not for pressing.
-		if self._disabled then W.Color(self.label, c.textDim) end
-	end
-
-	function b:SetLabel(text)
-		self.label:SetText(text or "")
-		self:SetWidth(math.ceil(self.label:GetStringWidth() or 0) + 44)
-	end
-
-	function b:SetDisabled(off)
-		self._disabled = off and true or false
-		if self.Disable then
-			if off then self:Disable() else self:Enable() end
-		end
-		self:Restyle()
-	end
-
-	--- Clicks go through here rather than through SetScript directly, so the
-	--  disabled state is enforced by us. Relying on the client to suppress
-	--  OnClick means the guard lives somewhere this codebase cannot test.
-	function b:SetAction(fn)
-		self._action = fn
-		self:SetScript("OnClick", function(self2)
-			if self2._disabled then return end
-			if self2._action then self2._action(self2) end
-		end)
-	end
-
-	b:SetScript("OnEnter", function(self) self._over = true self:Restyle() end)
-	b:SetScript("OnLeave", function(self) self._over = false self:Restyle() end)
-
-	b:SetLabel(label)
-	b:Restyle()
-	return b
+--- A footer command: W.Command, the one pressable shape (Lattice Polish Pass).
+--  `variant` is "standard" or "destructive". The quest log used to carry its
+--  own builder in three styles, and a filled Track button that read as
+--  already pressed.
+local function BuildButton(parent, variant, label)
+	return W.Command(parent, { variant = variant, label = label })
 end
 
 -- Defined further down with the rest of the list rows; the pane owning their
@@ -898,9 +834,13 @@ local function BuildPanes(win)
 	win.list = list
 
 	-- UPRIGHT, so the shared one knows which way to be a pixel thick.
+	-- Short of the header's rule at the top and the rim at the foot, for the
+	-- same reason: one ink, and a join doubles it into a bright dot.
 	list.rule = BuildHairline(list, true)
-	list.rule:SetPoint("TOPRIGHT", list, "TOPRIGHT", 0, 0)
-	list.rule:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", 0, 0)
+	W.InsetRule(list.rule, win, function(gap)
+		list.rule:SetPoint("TOPRIGHT", list, "TOPRIGHT", 0, -W.RULE_GAP)
+		list.rule:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", 0, gap)
+	end)
 
 	-- Six, because this column has only twelve to its right before the
 	-- divider between the list and the detail.
@@ -992,24 +932,27 @@ local function BuildPanes(win)
 	-- sliver between them - a stray hairline across the foot of the pane.
 	-- The well's bottom edge is the separation.
 
-	foot.track = BuildButton(foot, "filled", L.questlog.foot.track)
+	-- STATES ON THE LEFT, COMMANDS ON THE RIGHT (Joe, 2026-10-12). Tracked
+	-- and focused are things a quest IS, so they are diamonds with ON / OFF,
+	-- the same as every options toggle - not buttons whose label flips.
+	foot.track = W.Toggle(foot, { label = L.questlog.foot.track,
+		onClick = function() QL:ToggleTracked() end })
 	foot.track:SetPoint("LEFT", foot, "LEFT", 0, 0)
-	foot.track:SetAction(function() QL:ToggleTracked() end)
-
-	foot.share = BuildButton(foot, "outline", L.questlog.foot.share)
-	foot.share:SetPoint("LEFT", foot.track, "RIGHT", BTN_GAP, 0)
-	foot.share:SetAction(function() QL:ShareQuest() end)
 
 	-- FOCUS, only where the client super-tracks (WoW Forever). Built either way
-	-- and hidden on Classic Era, so the footer's other three never move.
-	foot.focus = BuildButton(foot, "outline", L.questlog.foot.focus)
-	foot.focus:SetPoint("LEFT", foot.share, "RIGHT", BTN_GAP, 0)
-	foot.focus:SetAction(function() QL:ToggleFocus() end)
+	-- and hidden on Classic Era.
+	foot.focus = W.Toggle(foot, { label = L.questlog.foot.focus,
+		onClick = function() QL:ToggleFocus() end })
+	foot.focus:SetPoint("LEFT", foot.track, "RIGHT", TOGGLE_GAP, 0)
 	if not A.Quest.CanFocus() then foot.focus:Hide() end
 
-	foot.abandon = BuildButton(foot, "danger", L.questlog.foot.abandon)
+	foot.abandon = BuildButton(foot, "destructive", L.questlog.foot.abandon)
 	foot.abandon:SetPoint("RIGHT", foot, "RIGHT", 0, 0)
 	foot.abandon:SetAction(function() QL:AskAbandon() end)
+
+	foot.share = BuildButton(foot, "standard", L.questlog.foot.share)
+	foot.share:SetPoint("RIGHT", foot.abandon, "LEFT", -BTN_GAP, 0)
+	foot.share:SetAction(function() QL:ShareQuest() end)
 
 	detail.empty = W.Text(body, "qlSummary", "CENTER")
 	detail.empty:SetWidth(dw)
@@ -1270,10 +1213,10 @@ local function BuildConfirm()
 	if box.text.SetWordWrap then box.text:SetWordWrap(true) end
 	if box.text.SetSpacing then box.text:SetSpacing(4) end
 
-	box.yes = BuildButton(box, "danger", L.questlog.foot.abandon)
+	box.yes = BuildButton(box, "destructive", L.questlog.foot.abandon)
 	box.yes:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -CONFIRM_PAD, 22)
 
-	box.no = BuildButton(box, "outline", L.questlog.confirm.cancel)
+	box.no = BuildButton(box, "standard", L.questlog.confirm.cancel)
 	box.no:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", CONFIRM_PAD, 22)
 
 	box.no:SetAction(function() QL:CloseConfirm() end)
@@ -1367,8 +1310,8 @@ function QL:AskAbandon()
 
 	local sc2 = Palette.c.scrim
 	self.confirm.scrim:SetVertexColor(sc2[1], sc2[2], sc2[3], sc2[4] or 0.45)
-	box.yes:Restyle()
-	box.no:Restyle()
+	box.yes:Repaint()
+	box.no:Repaint()
 	self.confirm:Show()
 end
 
@@ -1813,7 +1756,7 @@ function QL:RefreshFooter()
 
 	if A.Quest.CanFocus() then
 		local focused = quest.questID and A.Quest.FocusedID() == quest.questID
-		d.foot.focus:SetLabel(focused and L.questlog.foot.unfocus or L.questlog.foot.focus)
+		d.foot.focus:SetOn(focused)
 		d.foot.focus:SetDisabled(not quest.questID)
 		d.foot.focus:Show()
 	else
@@ -1823,7 +1766,7 @@ function QL:RefreshFooter()
 	local QT = A:GetModule("questtracker")
 	local tracked = QT and QT.IsTracked and quest.questID
 		and QT.IsTracked(quest.questID)
-	d.foot.track:SetLabel(tracked and L.questlog.foot.untrack or L.questlog.foot.track)
+	d.foot.track:SetOn(tracked)
 	d.foot.track:SetDisabled(false)
 
 	-- The old client's pushable check is selection-scoped, and this runs from
@@ -2089,7 +2032,7 @@ function QL:OnSkinChanged()
 	W.RepaintClose(win.head.close)
 	W.Color(win.head.search.placeholder, c.textFaint)
 	for _, b in pairs({ win.detail.foot.track, win.detail.foot.share,
-		win.detail.foot.focus, win.detail.foot.abandon }) do b:Restyle() end
+		win.detail.foot.focus, win.detail.foot.abandon }) do b:Repaint() end
 	win.head.mark:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
 	ColorHairline(win.head.rule)
 	ColorHairline(win.list.rule)

@@ -462,13 +462,10 @@ local function BuildHeader(f)
 	h.close = W.CloseButton(h, { onClick = function() OW:Close() end })
 	h.close:SetPoint("RIGHT", h, "RIGHT", -18, 0)
 
-	-- Profiles · <active>: the Profiles page.
-	h.profile = A.Glass.CreatePanel(h, { frameType = "Button", corner = 14 })
-	h.profile:SetHeight(28)
+	-- Profiles · <active>: the Profiles page. A command - it takes you
+	-- somewhere - so the command shape, not the handoff's pill.
+	h.profile = W.Command(h, { onClick = function() OW:Go("profiles") end })
 	h.profile:SetPoint("RIGHT", h.close, "LEFT", -14, 0)
-	h.profile.text = W.Text(h.profile, "opProfile", "CENTER")
-	h.profile.text:SetPoint("CENTER", h.profile, "CENTER", 0, 0)
-	h.profile:SetScript("OnClick", function() OW:Go("profiles") end)
 
 	-- The search field, with its `/` chip.
 	local s = A.Glass.CreatePanel(h, { frameType = "Button", corner = 14 })
@@ -506,8 +503,12 @@ local function BuildHeader(f)
 	h.search = s
 
 	h.rule = Hairline(f)
-	h.rule:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -HEAD_H)
-	h.rule:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -HEAD_H)
+	-- Clear of the rim (W.InsetRule): the two are the same ink, and where they
+	-- met the alphas added into a bright spot at each end (Joe, 2026-10-12).
+	W.InsetRule(h.rule, f, function(gap)
+		h.rule:SetPoint("TOPLEFT", f, "TOPLEFT", gap, -HEAD_H)
+		h.rule:SetPoint("TOPRIGHT", f, "TOPRIGHT", -gap, -HEAD_H)
+	end)
 	return h
 end
 
@@ -1096,24 +1097,13 @@ local function BuildPageFrame(f)
 	pg.foot:SetPoint("BOTTOMLEFT", pg, "BOTTOMLEFT", PAD_L, PAD_B + 8)
 	pg.foot:SetPoint("BOTTOMRIGHT", pg, "BOTTOMRIGHT", -PAD_R, PAD_B + 8)
 
-	local function Pill(text, fn)
-		local b = A.Glass.CreatePanel(pg.foot, { frameType = "Button", corner = 15 })
-		b:SetHeight(30)
-		b.text = W.Text(b, "opButton", "CENTER")
-		b.text:SetPoint("CENTER", b, "CENTER", 6, 0)
-		b:SetScript("OnClick", fn)
-		b:SetScript("OnEnter", function(self) self.over = true OW:PaintPage() end)
-		b:SetScript("OnLeave", function(self) self.over = nil OW:PaintPage() end)
-		return b
-	end
-	pg.unlock = Pill("", function() OW:UnlockPage(OW.page) end)
-	pg.unlock.icon = pg.unlock:CreateTexture(nil, "OVERLAY")
-	pg.unlock.icon:SetTexture(Media.texture.diamondRim)
-	pg.unlock.icon:SetSize(9, 9)
-	pg.unlock.icon:SetPoint("RIGHT", pg.unlock.text, "LEFT", -8, 0)
+	-- COMMANDS, not pills (Joe, 2026-10-12): a pill is information here, a
+	-- unit or a chip. Unlock has no diamond on it any more - a diamond is an
+	-- on/off state - and Reset page is destructive: it throws settings away.
+	pg.unlock = W.Command(pg.foot, { onClick = function() OW:UnlockPage(OW.page) end })
 	pg.unlock:SetPoint("LEFT", pg.foot, "LEFT", 0, 0)
-	pg.reset = Pill(L.options.map.reset_page, function() OW:ResetPage() end)
-	pg.reset.text:SetPoint("CENTER", pg.reset, "CENTER", 0, 0)
+	pg.reset = W.Command(pg.foot, { variant = "destructive",
+		label = L.options.map.reset_page, onClick = function() OW:ResetPage() end })
 end
 
 --- The preview: the player and the target as they are, with the bond and a
@@ -1305,16 +1295,14 @@ function OW:ShowPage(page, i)
 	sc:Clamp()
 
 	pg.unlock:SetShown(page.unlock ~= nil or page.bars == true)
-	pg.unlock.text:SetText(A.F(L.options.map.unlock_s, page.title))
-	pg.unlock:SetWidth(math.ceil(pg.unlock.text:GetStringWidth() or 80) + 50)
+	pg.unlock:SetLabel(A.F(L.options.map.unlock_s, page.title))
 	pg.reset:ClearAllPoints()
 	if pg.unlock:IsShown() then
 		pg.reset:SetPoint("LEFT", pg.unlock, "RIGHT", 10, 0)
 	else
 		pg.reset:SetPoint("LEFT", pg.foot, "LEFT", 0, 0)
 	end
-	pg.reset.text:SetText(L.options.map.reset_page)
-	pg.reset:SetWidth(math.ceil(pg.reset.text:GetStringWidth() or 80) + 36)
+	pg.reset:SetLabel(L.options.map.reset_page)
 
 	if page.news then self:MarkNewsRead() end
 	self:PaintPage()
@@ -1344,17 +1332,10 @@ function OW:PaintPage()
 			t.on = on
 		end
 	end
-	for _, b in ipairs({ pg.unlock, pg.reset }) do
-		b:SetFillColor(b.over and { a[1], a[2], a[3], 0.12 } or { 1, 1, 1, 0.02 })
-		b:SetEdgeColor({ a[1], a[2], a[3], b == pg.unlock and 0.35 or 0.2 })
-	end
-	W.Color(pg.unlock.text, c.text)
-	W.Color(pg.reset.text, { c.text[1], c.text[2], c.text[3], 0.6 })
-	-- Live only when there is something to put back.
-	local dirty = self:PageDirty()
-	pg.reset:SetAlpha(dirty and 1 or 0.35)
-	pg.reset:EnableMouse(dirty)
-	W.Tint(pg.unlock.icon, a, 1)
+	-- Live only when there is something to put back. Disabled, not faded out:
+	-- the word stays readable, plainly not for pressing.
+	pg.reset:SetDisabled(not self:PageDirty())
+	pg.unlock:Repaint()
 	if self.page.preview then self:PaintPreview() end
 end
 
@@ -1987,8 +1968,14 @@ end
 
 function OW:Build()
 	if self.frame then return self.frame end
-	local f = A.Glass.CreatePanel(UIParent, { name = ADDON .. "Options", corner = 28,
-		shadow = 1 })
+	-- BUILT LIKE EVERY OTHER WINDOW. This had its own corner of 28 from the
+	-- options handoff, and the glass rim is a 9-slice whose stroke scales with
+	-- the corner - so beside the quest log or the bags (W.PANEL_CORNER, 20) its
+	-- border drew about 1.4 times as heavy, and on the default fill it read as
+	-- a different border altogether (Joe, 2026-10-12).
+	local f = A.Glass.CreatePanel(UIParent, { name = ADDON .. "Options",
+		corner = W.PANEL_CORNER, fill = "glassStrong",
+		shadow = A.db.profile.glass.shadow })
 	f:SetSize(WIN_W, WIN_H)
 	f:SetFrameStrata("DIALOG")
 	f:SetToplevel(true)
@@ -2076,11 +2063,8 @@ function OW:PaintHeader()
 	h.version:SetWidth(math.ceil(h.version.text:GetStringWidth() or 30) + 18)
 	W.Color(h.version.text, { 20 / 255, 16 / 255, 31 / 255, 1 })
 	local name = A.db.GetCurrentProfile and A.db:GetCurrentProfile() or "?"
-	h.profile.text:SetText(A.F(L.options.map.profile_s, name))
-	h.profile:SetWidth(math.ceil(h.profile.text:GetStringWidth() or 80) + 28)
-	h.profile:SetFillColor({ 0, 0, 0, 0 })
-	h.profile:SetEdgeColor({ a[1], a[2], a[3], 0.3 })
-	W.Color(h.profile.text, { c.text[1], c.text[2], c.text[3], 0.7 })
+	h.profile:SetLabel(A.F(L.options.map.profile_s, name))
+	h.profile:Repaint()
 	W.RepaintClose(h.close)
 	W.PaintHairline(h.rule)
 	local foot = self.frame.foot
@@ -2093,9 +2077,12 @@ end
 function OW:Repaint()
 	local f = self.frame
 	if not f then return end
-	local a = Palette.c.accent
+	-- THE QUEST LOG'S OWN TWO LINES, so the two windows cannot drift: the
+	-- rim on the glassEdge token, then the reading fill. The rim here was the
+	-- accent at .35 - a different colour from every other window's border as
+	-- well as, with its old corner, a heavier one (Joe, 2026-10-12).
+	f:ApplySkin("glassStrong")
 	f:SetFillColor(Palette:ReadingFill())
-	f:SetEdgeColor({ a[1], a[2], a[3], 0.35 })
 	self:PaintHeader()
 	for _, n in ipairs(self.nodes or {}) do self:PaintNode(n) end
 	self:PaintSystem()

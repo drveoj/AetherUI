@@ -15431,7 +15431,7 @@ do
 		C_SuperTrack.SetSuperTrackedQuestID(TRow(1).questID)
 		check(TActive(1), "focus set from anywhere else is shown too - SUPER_TRACKING_CHANGED")
 
-		-- The log's Focus button: present, worded by state, and it toggles.
+		-- The log's Focus toggle: present, showing the state, and it toggles.
 		-- Opening the log selects its first QUEST by itself (EnsureSelection);
 		-- entry 1 is a zone heading, which shows nothing.
 		QL:Show()
@@ -15442,9 +15442,9 @@ do
 		C_SuperTrack.SetSuperTrackedQuestID(0)
 		QL:ToggleFocus()
 		check(C_SuperTrack.__id == shownID, "Focus focuses the shown quest")
-		check(foot.focus.label:GetText() == "Unfocus", "and the button then offers Unfocus")
+		check(foot.focus:IsOn(), "and the Focus toggle then reads ON")
 		QL:ToggleFocus()
-		check(C_SuperTrack.__id == 0, "and Unfocus stops")
+		check(C_SuperTrack.__id == 0 and not foot.focus:IsOn(), "and toggling again stops, OFF")
 		QL:Hide()
 	else
 		-- Classic Era: no super-tracking, so nothing anywhere offers it, and with
@@ -17427,8 +17427,9 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	Click(sw.chips[4])
 	check(A.db.profile.skin == sw.chips[4].key and sw.chips[4].on and not sw.chips[1].on,
 		"clicking one is the skin, live, and the mark moves")
-	local acc = A.Palette.c.accent
-	check(math.abs(select(1, unpack(f._edgeColor)) - acc[1]) < 0.001, "and the window itself takes it")
+	-- The skin's border colour, as on every other window (Joe, 2026-10-12).
+	local ge = A.Palette.c.glassEdge
+	check(math.abs(select(1, unpack(f._edgeColor)) - ge[1]) < 0.001, "and the window itself takes it")
 	Click(sw.chips[1])
 
 	-- A BUTTON THAT CANNOT BE UNDONE ASKS TWICE.
@@ -17688,17 +17689,168 @@ section("options window: one page in view at a time", function()
 	check(xs[0] and not xs[OW.view.colW + 36], "in one column")
 	check(A.Trunk.Spaced("a|cff112233b|r") == "A|cff112233 B|r",
 		"a colour code passes through the letter-spacing whole")
-	check(not f.pageFrame.reset:IsMouseEnabled(), "Reset page is dimmed: nothing here to reset")
+	check(f.pageFrame.reset:IsDisabled(), "Reset page is disabled: nothing here to reset")
 	OW:Go("chat")
 	OW:Finish()
 	local cc = A.Config:Module("chat")
-	check(not f.pageFrame.reset:IsMouseEnabled(), "and on a page at its defaults")
+	check(f.pageFrame.reset:IsDisabled(), "and on a page at its defaults")
+	check(f.pageFrame.reset.label:GetText() == A.L.options.map.reset_page,
+		"disabled, it still shows its word - not faded to nothing")
 	local fd = cc.fontDelta
 	cc.fontDelta = (fd or 0) + 2
 	OW:AfterWrite()
-	check(f.pageFrame.reset:IsMouseEnabled(), "and lit once something on it has changed")
+	check(not f.pageFrame.reset:IsDisabled(), "and live once something on it has changed")
+
+	-- ONE SHAPE PER MEANING (Lattice Polish Pass, 2026-10-12): the footer
+	-- and the Profiles chip are commands, not the handoff's pills.
+	check(f.pageFrame.reset.__command and f.pageFrame.unlock.__command
+		and f.head.profile.__command,
+		"Reset page, Unlock and the Profiles chip are commands - a pill here is"
+		.. " information, never something to press")
+	check(f.pageFrame.reset._variant == "destructive",
+		"Reset page is destructive: it throws settings away")
+	check(f.pageFrame.unlock.icon == nil,
+		"Unlock carries no diamond - a diamond is an on/off state")
+
+	-- A SKIN CHANGE REACHES THEM. A command paints by hand, so the palette's
+	-- token sweep cannot; the controls registry repaints it.
+	local wasSkin = A.db.profile.skin
+	A.db.profile.skin = (wasSkin == "ruby") and "dusk" or "ruby"
+	A:Restyle()
+	local edge = f.pageFrame.reset._edgeColor
+	local d = A.Palette.c.danger
+	check(edge and math.abs(edge[1] - d[1]) < 0.01 and math.abs(edge[2] - d[2]) < 0.01,
+		"a command repaints itself on a skin change (edge "
+		.. tostring(edge and edge[1]) .. " vs danger " .. tostring(d[1]) .. ")")
+	A.db.profile.skin = wasSkin
+	A:Restyle()
 	cc.fontDelta = fd
 	A.Options:Close()
+end)
+
+section("commands and toggles: repainted on a skin change by nobody but themselves", function()
+	-- No owner to repaint them: a command or toggle in a module that forgot
+	-- its OnSkinChanged must still follow the skin, through W.controls.
+	local cmd = A.Widgets.Command(UIParent, { variant = "destructive", label = "x" })
+	local tog = A.Widgets.Toggle(UIParent, { label = "y" })
+	tog:SetOn(true)
+	local wasSkin = A.db.profile.skin
+	A.db.profile.skin = (wasSkin == "ruby") and "dusk" or "ruby"
+	A:Restyle()
+	local d, e = A.Palette.c.danger, cmd._edgeColor
+	check(e and math.abs(e[1] - d[1]) < 0.01 and math.abs(e[3] - d[3]) < 0.01,
+		"a command with no owner follows the skin")
+	local acc = A.Palette.c.accent
+	local tr, tg, tb = tog.d.fill:GetVertexColor()
+	check(math.abs(tr - acc[1]) < 0.01 and math.abs(tb - acc[3]) < 0.01,
+		"and so does a lit toggle's diamond")
+	A.db.profile.skin = wasSkin
+	A:Restyle()
+
+	-- THE ART FOR THE SIZE (Joe, 2026-10-12: "grainy, brighter at the
+	-- corners"). A command's corner is a few physical pixels, so it wears the
+	-- small art; a window's is not, so it keeps the frosted art.
+	local Mt = A.Media.texture
+	check(cmd._art == "small" and cmd._fill[1]:GetTexture() == Mt.panelSmall
+		and cmd._edge[1]:GetTexture() == Mt.panelSmallEdge,
+		"a command wears the small rounded-rectangle art (" .. tostring(cmd._art) .. ")")
+	local OWa, fa = OpenMap()
+	check(fa._art == "big" and fa._fill[1]:GetTexture() == Mt.panel,
+		"and a window keeps the frosted art")
+	A.Options:Close()
+	-- A COLD START draws nothing for a string written before its font loaded,
+	-- and a label written once at build time was never drawn again: Share was
+	-- an empty box after a full restart (Joe, 2026-10-12). Coming into view
+	-- re-rasters it.
+	local Wd, real, hits = A.Widgets, A.Widgets.Reraster, {}
+	Wd.Reraster = function(fs) hits[fs] = (hits[fs] or 0) + 1 return real(fs) end
+	cmd:Hide() cmd:Show()
+	tog:Hide() tog:Show()
+	Wd.Reraster = real
+	check((hits[cmd.label] or 0) > 0 and (hits[tog.label] or 0) > 0 and (hits[tog.state] or 0) > 0,
+		"a command's and a toggle's words are drawn again when they come into view")
+
+	local ul, ur = cmd._fill[2]:GetTexCoord()
+	check(ul and math.abs(ul - (0.25 + 0.5 / 64)) < 1e-6,
+		"with the slice inset for the small art's own size, not the big one's"
+		.. " (" .. tostring(ul) .. ")")
+	cmd:Hide() tog:Hide()
+end)
+
+section("options window: built like every other window", function()
+	local OW, f = OpenMap()
+	-- The glass rim is a 9-slice whose stroke scales with the corner, so a
+	-- window with its own corner draws its own border (Joe, 2026-10-12).
+	local PANEL = A.Widgets.PANEL_CORNER
+	check(f._corner == PANEL,
+		"the options window takes the shared panel corner (" .. tostring(f._corner)
+		.. " vs " .. tostring(PANEL) .. "), so its rim matches the quest"
+		.. " log's and the bags'")
+	check(f._edgeToken == "glassEdge",
+		"its rim is the skin's border colour, as on the quest log and the bags -"
+		.. " not the accent at .35, which drew a different border")
+	local rf, fc = A.Palette:ReadingFill(), f._fillColor
+	check(fc and math.abs(fc[4] - rf[4]) < 0.001,
+		"and the same reading fill as the quest log")
+
+	-- NO HAIRLINE MEETS THE RIM. They are the same ink, and where one touched
+	-- the other the alphas added into a bright spot - the options and quest
+	-- log header rules had one at each end (Joe, 2026-10-12).
+	-- CLEAR OF THE RIM AS DRAWN. A fixed 2-unit gap still met it (Joe, the
+	-- same day, with the spots ringed): the rim is in the edge art and grows
+	-- with the corner. The gap is the rim's measured depth plus two pixels.
+	local depth = A.Glass.RimDepth(f)
+	local gap = A.Widgets.RimGap(f)
+	check(depth > 0 and gap > depth and gap > A.Widgets.RULE_GAP,
+		"a window's rule gap clears its rim's own depth (rim " .. tostring(depth)
+		.. ", gap " .. tostring(gap) .. ")")
+	local function xs(t)
+		local _, _, _, x1 = t:GetPoint(1)
+		local _, _, _, x2 = t:GetPoint(2)
+		return x1, x2
+	end
+	local function ys(t)
+		local _, _, _, _, y1 = t:GetPoint(1)
+		local _, _, _, _, y2 = t:GetPoint(2)
+		return y1, y2
+	end
+	local a1, a2 = xs(f.head.rule)
+	check(a1 == gap and a2 == -gap,
+		"the options header rule stops short of the rim at both ends ("
+		.. tostring(a1) .. ", " .. tostring(a2) .. ")")
+	A.Options:Close()
+	local QLm = A:GetModule("questlog")
+	QLm:Show()
+	local qgap = A.Widgets.RimGap(QLm.win)
+	local q1, q2 = xs(QLm.win.head.rule)
+	check(q1 == qgap and q2 == -qgap, "and so does the quest log's")
+	local v1, v2 = ys(QLm.win.list.rule)
+	check(v1 == -A.Widgets.RULE_GAP and v2 == qgap,
+		"and its list divider stops short of the header rule and the bottom rim")
+	QLm:Hide()
+	local BGm = A:GetModule("bags")
+	local bag = BGm and BGm.frames and BGm.frames.bags
+	if bag and bag.foot and bag.foot.rule then
+		local bgap = A.Widgets.RimGap(bag)
+		local b1, b2 = xs(bag.foot.rule)
+		local h1, h2 = xs(bag.head.rule)
+		check(b1 == bgap and b2 == -bgap and h1 == bgap and h2 == -bgap,
+			"and the bags' footer and header rules")
+	end
+	-- THE CORNER MOVES THE RIM. A bigger Theme corner draws a deeper rim, and
+	-- the rule has to follow it on the restyle, not wait for a reopen.
+	local cornerWas = A.db.profile.glass.corner
+	A.db.profile.glass.corner = 24
+	A:Restyle()
+	local OW2, f2 = OpenMap()
+	local g2 = A.Widgets.RimGap(f2)
+	local c1 = xs(f2.head.rule)
+	check(g2 > gap and c1 == g2,
+		"a bigger corner moves the rule further in with the rim (" .. tostring(gap)
+		.. " -> " .. tostring(c1) .. ")")
+	A.Options:Close()
+	A.db.profile.glass.corner = cornerWas
+	A:Restyle()
 end)
 
 section("options window: a strand's page has Size and Unbraid", function()
@@ -21601,13 +21753,19 @@ do
 		check(not fade.showOnMouseover,
 			"adopting a button clears it - alpha alone would lose to the next"
 			.. " fadeOut, and the flag is the only thing gating that call")
-		check(fade:GetAlpha() == 1, "and the button is visible now")
+
+		-- Shown where it is shown: on the trunk, pinned. (Unpinned, the Toolbox
+		-- holds it parked, and a parked button stays hidden - 2026-10-12.)
+		local TBf = A:GetModule("toolbox")
+		TBf:TogglePin(fe.key)
+		check(fade:GetAlpha() == 1, "and pinned, the button is visible")
 
 		ldbi:__mouseLeftEverything()
 		check(fade:GetAlpha() == 1,
 			"so the cursor leaving something else entirely no longer takes it"
 			.. " away - the library fades every button it knows about, not the"
 			.. " one being hovered")
+		TBf:TogglePin(fe.key)
 
 		LN:Release(fe)
 	end
@@ -23348,6 +23506,39 @@ do
 		.. " beside its own row in the Addons branch")
 	check(real:GetPoint(1) == "TOPLEFT" and real:GetNumPoints() == 1,
 		"parked off screen, not anchored to the minimap")
+
+	-- PARKING HOLDS (Forever, 2026-10-12, after a reload): LibDBIcon's Show and
+	-- Refresh put a button back on the ring with its own SetPoint, and the
+	-- addon then makes it visible. Whoever does it, the park comes back.
+	real:SetPoint("CENTER", Minimap, "CENTER", 80, 20)   -- what updatePosition does
+	real:SetAlpha(1)
+	real:EnableMouse(true)
+	check(e._parked and real:GetAlpha() == 0 and not real:IsMouseEnabled()
+		and real:GetPoint(1) == "TOPLEFT" and real:GetNumPoints() == 1,
+		"a parked button that somebody re-anchors to the minimap and shows goes"
+		.. " straight back off screen, invisible and unclickable")
+	check(LN.escapes["LateIcon"] and LN.escapes["LateIcon"]:find("SetPoint") ~= nil,
+		"and who did it is kept for /lattice toolbox (" .. tostring(LN.escapes["LateIcon"]) .. ")")
+
+	-- Pinning still works with the watch on: the button leaves the park and
+	-- stays on the trunk; unpinning parks it again.
+	TBm:TogglePin("LateIcon")
+	check(TBm:IsPinned("LateIcon") and not e._parked and real:GetAlpha() == 1
+		and real:IsMouseEnabled(),
+		"pinned, it leaves the park and is shown on the trunk - the watch does not"
+		.. " take its own placement for an escape")
+	local _, host = real:GetPoint(1)
+	-- PINNED AND HELD (Forever, 2026-10-12): a pinned SmartBuff sat on the
+	-- minimap ring, because LibDBIcon's Show re-anchored it after we placed it.
+	real:SetPoint("CENTER", Minimap, "CENTER", 80, 20)   -- what updatePosition does
+	local p, rel = real:GetPoint(1)
+	check(host and host ~= Minimap and rel == host and real:GetNumPoints() == 1
+		and real:GetAlpha() == 1,
+		"and re-anchored to the minimap while pinned, it goes straight back to its"
+		.. " trunk node (" .. tostring(rel == Minimap and "Minimap" or rel) .. ")")
+	TBm:TogglePin("LateIcon")
+	check(not TBm:IsPinned("LateIcon") and e._parked and real:GetAlpha() == 0,
+		"and unpinned, it is parked again")
 end
 
 print("== toolbox: pins survive a reload ==")
@@ -24911,8 +25102,16 @@ do
 	check(QT2.IsTracked(4901) ~= before, "Track flips the tracker's own set")
 	check(GetNumQuestWatches() == watchesBefore,
 		"and never touches Blizzard's capped watch list to do it")
-	check(d.foot.track.label:GetText() == (QT2.IsTracked(4901) and "Untrack" or "Track quest"),
-		"the button says which way it goes")
+	check(d.foot.track:IsOn() == (QT2.IsTracked(4901) and true or false)
+		and d.foot.track.state:GetText() == (QT2.IsTracked(4901) and "ON" or "OFF"),
+		"Tracked is a toggle showing the quest's state, ON or OFF - not a button"
+		.. " whose word flips between Track and Untrack")
+	check(d.foot.track.__toggle and not d.foot.track.__command
+		and d.foot.share.__command and d.foot.abandon.__command,
+		"states are diamonds and commands are the command shape - one meaning"
+		.. " per shape (Lattice Polish Pass, 2026-10-12)")
+	check(d.foot.abandon._variant == "destructive" and d.foot.share._variant == "standard",
+		"Abandon is the destructive command and Share the standard one")
 	d.foot.track:GetScript("OnClick")(d.foot.track)
 
 	-- Share: pushable AND in a group. GetQuestLogPushable alone answers "can this

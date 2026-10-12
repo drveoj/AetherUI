@@ -553,6 +553,7 @@ function Glass.MakePanel(f, opts)
 
 	f._edge = Build9(f, Media.texture.panelEdge, "BORDER", 0)
 	ApplyTexCoords(f._edge, Media.slice.panel, Media.textureSize.panel)
+	f._art = "big"
 
 	--- THE CORNER, SNAPPED TO WHOLE PHYSICAL PIXELS.
 	--
@@ -572,6 +573,7 @@ function Glass.MakePanel(f, opts)
 	local function layout(self)
 		local c = SnapIn(self, CornerOf(self))
 		if c <= 0 then return end
+		self:_PickPanelArt(c)
 		Layout9(self._fill, self, c, 0)
 		Layout9(self._edge, self, c, 0)
 		if self._backing then Layout9(self._backing, self, c, 0) end
@@ -587,6 +589,61 @@ function Glass.MakePanel(f, opts)
 	if opts.shadow then f:SetShadow(opts.shadow) end
 
 	return f
+end
+
+--- THE CORNER BELOW WHICH THE PANEL ART CANNOT BE DRAWN, in physical pixels.
+--
+--  The same line Glass.PILL_ART_MIN draws for capsules, found the same way.
+--  Glass-Panel's corner is 64 texels; a command button's corner lands on about
+--  eight physical pixels (3840x1600, scale 0.85 x 0.85), an eightfold
+--  minification with no mipmap - the frost grain came back as sparkle and the
+--  rim fell to a fifth of a pixel along the sides while the corners kept it
+--  (Joe, 2026-10-12: "grainy, brighter at the corners"). Below this the panel
+--  wears Glass-Panel-Small: the same shape on the same 0.25 slice, 16-texel
+--  corner, flat fill, even rim. Above it, the frosted art as before.
+Glass.PANEL_ART_MIN = 16
+
+--- HOW DEEP A PANEL'S RIM REACHES, in the frame's own units.
+--
+--  The rim is part of the edge art, so it scales with the drawn corner: a fixed
+--  gap cannot clear it everywhere. A header rule stopping W.RULE_GAP short still
+--  ran into the rim of the options window and the quest log (Joe, 2026-10-12),
+--  and at a bigger corner it reaches further in. Measured from the art, the last
+--  texel with alpha over 2% along a side: 6 of Glass-Panel-Edge's 64, 5 of
+--  Glass-Panel-Small-Edge's 16. Re-run tools/generate_textures.py and re-measure
+--  if the rim changes.
+local RIM_DEPTH = { big = 6 / 64, small = 5 / 16 }
+
+function Glass.RimDepth(f)
+	if not f or not f._kind then return 0 end
+	local c = SnapIn(f, CornerOf(f))
+	return c * (RIM_DEPTH[f._art or "big"] or RIM_DEPTH.big)
+end
+
+--- Physical pixels in a length given in a frame's own units.
+local function PhysicalOf(frame, v)
+	local us = UIParent:GetEffectiveScale() or 1
+	local fs = (frame.GetEffectiveScale and frame:GetEffectiveScale()) or us
+	local step = (A.pixel or 1) * us / (fs > 0 and fs or 1)
+	if not step or step <= 0 or step ~= step then return v end
+	return v / step
+end
+
+--- Which art a panel wears, from its corner as drawn. Swapped with the
+--  half-texel inset, which is computed from the source size - the small art
+--  sampled with the big one's inset would pull a neighbour in at every seam.
+function Surface:_PickPanelArt(c)
+	local want = (PhysicalOf(self, c) < Glass.PANEL_ART_MIN) and "small" or "big"
+	if want == self._art then return end
+	self._art = want
+	local small = (want == "small")
+	local fill = small and Media.texture.panelSmall or Media.texture.panel
+	local edge = small and Media.texture.panelSmallEdge or Media.texture.panelEdge
+	local size = small and Media.textureSize.panelSmall or Media.textureSize.panel
+	for i = 1, #self._fill do self._fill[i]:SetTexture(fill) end
+	for i = 1, #self._edge do self._edge[i]:SetTexture(edge) end
+	ApplyTexCoords(self._fill, Media.slice.panel, size)
+	ApplyTexCoords(self._edge, Media.slice.panel, size)
 end
 
 --- Rounded rectangle panel, on a frame of its own.

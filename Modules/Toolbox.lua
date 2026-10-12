@@ -1232,14 +1232,22 @@ function TB:LayoutPins()
 			-- level, and a button left at MEDIUM 8 draws behind the trunk.
 			e._prepared = nil
 			LA:Prepare(e)
-			pcall(LA.RawSetParent, b, host)
-			pcall(LA.RawClearAllPoints, b)
-			pcall(LA.RawSetPoint, b, "CENTER", host, "CENTER", 0, 0)
-			pcall(LA.RawSetSize, b, PIN, PIN)
-			if b.SetFrameStrata then pcall(b.SetFrameStrata, b, host:GetFrameStrata()) end
-			if b.SetFrameLevel then pcall(b.SetFrameLevel, b, host:GetFrameLevel() + 5) end
-			if b.SetAlpha then pcall(b.SetAlpha, b, 1) end
-			if b.EnableMouse then pcall(b.EnableMouse, b, true) end
+			-- Out of the park FIRST: a parked button is watched, and placing
+			-- one still marked parked would be taken for an escape.
+			LA:Unpark(e)
+			-- PLACED AND HELD: LibDBIcon's Show re-anchors a button to the
+			-- minimap ring, and a pinned SmartBuff left its node that way
+			-- (2026-10-12). LA:Place puts it back whenever that happens.
+			LA:Place(e, function()
+				pcall(LA.RawSetParent, b, host)
+				pcall(LA.RawClearAllPoints, b)
+				pcall(LA.RawSetPoint, b, "CENTER", host, "CENTER", 0, 0)
+				pcall(LA.RawSetSize, b, PIN, PIN)
+				if b.SetFrameStrata then pcall(b.SetFrameStrata, b, host:GetFrameStrata()) end
+				if b.SetFrameLevel then pcall(b.SetFrameLevel, b, host:GetFrameLevel() + 5) end
+				if b.SetAlpha then pcall(b.SetAlpha, b, 1) end
+				if b.EnableMouse then pcall(b.EnableMouse, b, true) end
+			end)
 		end
 	end
 	for e in LA:Iterate() do

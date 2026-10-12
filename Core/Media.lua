@@ -30,6 +30,11 @@ Media.texture = {
 	-- and a reading surface asked for solid could not get there. This goes
 	-- behind one when it is asked for more than the art can carry.
 	panelSolid  = TEX .. "Glass-Panel-Solid",
+	-- THE SAME ROUNDED RECTANGLE, AUTHORED SMALL: 64x64, corner 16, the same
+	-- 0.25 slice. Flat fill, even rim. For buttons and chips, whose corners land
+	-- on a few physical pixels; Core/Glass.lua picks it below PANEL_ART_MIN.
+	panelSmall     = TEX .. "Glass-Panel-Small",
+	panelSmallEdge = TEX .. "Glass-Panel-Small-Edge",
 	pill        = TEX .. "Glass-Pill",        -- 512x256, 3-slice, cap 128 (0.25)
 	pillEdge    = TEX .. "Glass-Pill-Edge",
 	-- THE SAME CAPSULE, AUTHORED SMALL. 128x64, the same 0.25 slice, so the
@@ -378,6 +383,7 @@ Media.textureSize = {
 	-- there; minified 2x, bilinear averages four samples per pixel and the edge
 	-- comes out smooth. See Tools/generate_textures.py.
 	panel      = { 256, 256 },
+	panelSmall = { 64, 64 },
 	pill       = { 512, 256 },
 	pillSmall  = { 128, 64 },
 	shadow     = { 256, 256 },
@@ -399,6 +405,13 @@ Media.font = {
 --- Named roles, so modules never hard-code a weight/size pair.
 --  { fontKey, size, outline }
 Media.style = {
+	-- EVERY COMMAND BUTTON, in every window (W.Command). One role, because a
+	-- button that is 14 in the quest log and 12 in the options is two buttons.
+	button       = { "medium",   13, "" },
+	-- A toggle outside the options window (W.Toggle), at the options' sizes.
+	toggle       = { "regular",  13, "" },
+	toggleTag    = { "semibold", 10, "" },
+
 	unitName     = { "semibold", 14, "" },
 	unitSub      = { "light",    11, "" },
 	unitValue    = { "semibold", 11, "" },
@@ -554,7 +567,6 @@ Media.style = {
 	opBrand      = { "regular",  16, "" },   -- L A T T I C E
 	opChip       = { "bold",     11, "" },   -- the version chip, the `/` key
 	opSearch     = { "regular",  13, "" },
-	opProfile    = { "medium",   12, "" },   -- Profiles - Dusk
 	opTitle      = { "semibold", 20, "" },   -- a page's name
 	opDesc       = { "regular",  12, "" },   -- and its line beside it
 	opNode       = { "medium",   11, "" },   -- a map node's label
@@ -566,7 +578,6 @@ Media.style = {
 	opHelp       = { "regular",  11, "" },   -- its help line
 	opHelpOn     = { "semibold", 11, "" },   -- a chosen node's name
 	opTag        = { "semibold", 10, "" },   -- ON / OFF, SYSTEM, MAP
-	opButton     = { "medium",   12, "" },
 	opNote       = { "regular",  12, "" },
 	opFoot       = { "regular",  11, "" },
 

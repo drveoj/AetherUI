@@ -1299,6 +1299,10 @@ handlers.toolbox = function(arg, rest)
 				owner == TB and A.Good("trunk")
 					or owner and A.Dim("other") or A.Dim("unclaimed"),
 				TB:IsPinned(e.key) and "  " .. A.Hi("pinned") or "")
+			-- Who pulled it back out of its park, if anybody did (2026-10-12).
+			if LA.escapes[e.key] then
+				say("         " .. A.Dim(L.cmd.toolbox.escaped_s), LA.escapes[e.key])
+			end
 		end
 	end
 

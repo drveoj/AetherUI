@@ -835,11 +835,82 @@ end
 function L:Park(entry)
 	local b = entry and entry.button
 	if not b then return end
+	self._parking = true
 	if b.SetAlpha then pcall(b.SetAlpha, b, 0) end
 	if b.EnableMouse then pcall(b.EnableMouse, b, false) end
 	pcall(RawClearAllPoints, b)
 	pcall(RawSetPoint, b, "TOPLEFT", UIParent, "TOPLEFT", -10000, 0)
+	self._parking = nil
 	entry._parked = true
+	entry._place = nil
+	if not entry.owned then self:Watch(b) end
+end
+
+--- Put a borrowed button where its owner wants it, and HOLD it there.
+--
+--  `fn` does the placing - unbound Raw* calls, so it never trips the watch -
+--  and is kept: when anybody else re-anchors the button, it runs again. A
+--  pinned SmartBuff sat on the minimap ring instead of its trunk node (Forever,
+--  2026-10-12): placed on the pin, then LibDBIcon's Show re-anchored it to the
+--  ring with its own SetPoint. Parking had been held since that morning; a
+--  placement was not.
+function L:Place(entry, fn)
+	local b = entry and entry.button
+	if not b or not fn then return end
+	entry._place = fn
+	self._parking = true
+	pcall(fn)
+	self._parking = nil
+	if not entry.owned then self:Watch(b) end
+end
+
+--- PARKING HOLDS. A borrowed button that anything moves, or makes visible or
+--  clickable again, while it is parked goes straight back.
+--
+--  Parking used to be done once and trusted, and other people's code does not
+--  know it happened: LibDBIcon's Show and Refresh re-anchor a button to the
+--  minimap ring, and an addon is entitled to call them whenever it likes.
+--  SmartBuff's button came back on the ring after a reload that way (Forever,
+--  2026-10-12), beside its own row in the Addons branch. Chasing each caller
+--  is a list that never ends; holding the park is one rule.
+--
+--  Hooked on the button's own methods, which is exactly what every outside
+--  caller goes through. Park itself places with the unbound Raw* functions,
+--  so it never trips its own watch. The first escape per button is kept, with
+--  the line that did it, for `/lattice toolbox` to report.
+L.watched = {}
+L.escapes = {}
+
+function L:Watch(b)
+	if self.watched[b] or not hooksecurefunc then return end
+	self.watched[b] = true
+	local function escaped(what)
+		if L._parking then return end
+		local e = L.seen[b]
+		if not (e and e.button == b) then return end
+		-- Parked: any move or reveal is undone. Placed: only a move is - the
+		-- placement shows the button itself, so a reveal is not an escape.
+		local placed = e._place and what == "SetPoint"
+		if not (e._parked or placed) then return end
+		if not L.escapes[e.key] then
+			local where = debugstack and debugstack(3, 1, 0) or "?"
+			L.escapes[e.key] = what .. " · " .. (tostring(where):gsub("\n.*", ""))
+		end
+		if e._parked then
+			L:Park(e)
+		else
+			L._parking = true
+			pcall(e._place)
+			L._parking = nil
+		end
+	end
+	pcall(hooksecurefunc, b, "SetPoint", function() escaped("SetPoint") end)
+	pcall(hooksecurefunc, b, "SetAlpha", function(_, a)
+		if a and a > 0 then escaped("SetAlpha") end
+	end)
+	pcall(hooksecurefunc, b, "EnableMouse", function(_, on)
+		if on then escaped("EnableMouse") end
+	end)
 end
 
 --- Releasing does NOT just forget the owner.

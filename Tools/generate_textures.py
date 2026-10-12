@@ -363,6 +363,40 @@ def glass_panel_edge():
     return rgba_lum(1.0, _rim(size, 64, width=3.6) * vgrad(size, 1.0, 0.55, gamma=0.9))
 
 
+def glass_panel_small():
+    """The rounded rectangle, authored for the sizes buttons and chips draw at.
+
+    64x64, corner 16: the same 0.25 slice as glass_panel, so the geometry in
+    Core/Glass.lua is identical and only the texture changes - the same move
+    glass_pill_small made for capsules.
+
+    A command button's corner is 8 units; at the Theme's corner scale and the
+    profile scale that is about eight physical pixels on a 3840x1600 display,
+    drawn out of glass_panel's 64-texel corner: an eightfold minification with
+    no mipmap. The frost grain turned to sparkle and the rim fell to a fifth of
+    a pixel along the sides (Joe, 2026-10-12: "grainy, brighter at the
+    corners"). At 16 texels the same corner is the 2x this file authors for.
+
+    FLAT, on purpose. No grain - at this size it is noise, not frost - and no
+    top-light falloff: a nine-slice stretches the middle of a gradient across
+    its sides and keeps the ends in its corners, so a falloff on a small shape
+    is corners that do not match their own edges.
+    """
+    size = (64, 64)
+    return rgba_lum(1.0, rrect_mask(size, 16))
+
+
+def glass_panel_small_edge():
+    """Its rim: even all the way round, about one physical pixel at 2x.
+
+    No vgrad, for the reason above - the top-light falloff on the big rim is
+    what put brighter corners on a small one. A distance field, so the band is
+    the same width at every angle.
+    """
+    size = (64, 64)
+    return rgba_lum(1.0, _rim(size, 16, width=2.0))
+
+
 def glass_pill():
     """3-slice horizontal capsule. 512x256: caps occupy x 0..128 and 384..512.
 
@@ -1770,6 +1804,8 @@ ASSETS = {
     "Glass-Panel": glass_panel,
     "Glass-Panel-Solid": glass_panel_solid,
     "Glass-Panel-Edge": glass_panel_edge,
+    "Glass-Panel-Small": glass_panel_small,
+    "Glass-Panel-Small-Edge": glass_panel_small_edge,
     "Glass-Pill": glass_pill,
     "Glass-Pill-Edge": glass_pill_edge,
     "Glass-Pill-Small": glass_pill_small,

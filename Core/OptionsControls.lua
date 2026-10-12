@@ -209,37 +209,10 @@ end
 -- painting
 -- ---------------------------------------------------------------------------
 
-local function Diamond(parent, size, layer)
-	local d = {}
-	d.glow = parent:CreateTexture(nil, "BACKGROUND")
-	d.glow:SetTexture(Media.texture.glow)
-	d.glow:SetSize(size * 2.2, size * 2.2)
-	d.fill = parent:CreateTexture(nil, layer or "ARTWORK")
-	d.fill:SetTexture(Media.texture.diamond)
-	d.fill:SetSize(size, size)
-	d.rim = parent:CreateTexture(nil, layer or "ARTWORK", nil, 1)
-	d.rim:SetTexture(Media.texture.diamondRim)
-	d.rim:SetAllPoints(d.fill)
-	d.glow:SetPoint("CENTER", d.fill, "CENTER")
-	return d
-end
-C.Diamond = Diamond
-
---- On: accent with a glow. Off: node glass with a rim at `rim` (45 %).
-local function PaintDiamond(d, on, rim)
-	local a = Palette.c.accent
-	if on then
-		W.Tint(d.fill, a, 1)
-		W.Tint(d.rim, a, 1)
-		W.Tint(d.glow, a, 0.7)
-		d.glow:Show()
-	else
-		W.Tint(d.fill, C.NODE_FILL, 0.9)
-		W.Tint(d.rim, a, rim or 0.45)
-		d.glow:Hide()
-	end
-end
-C.PaintDiamond = PaintDiamond
+-- The diamond lives in Core/Widgets.lua now, so a toggle outside this window
+-- (the quest log's Track and Focus) is the same diamond rather than a copy.
+local Diamond, PaintDiamond = W.Diamond, W.PaintDiamond
+C.Diamond, C.PaintDiamond = Diamond, PaintDiamond
 
 local function Strand(parent, alpha, thick)
 	local t = parent:CreateTexture(nil, "ARTWORK")
@@ -744,46 +717,37 @@ end
 
 local function ExecuteRow(parent, node, w)
 	local r = Base(parent, node, w)
-	r:SetHeight(30)
-	local b = A.Glass.CreatePanel(r, { frameType = "Button", corner = 15 })
-	b:SetHeight(30)
+	r:SetHeight(W.COMMAND_H)
+	-- A COMMAND (Lattice Polish Pass): the one pressable shape. One that asks
+	-- for a second press goes destructive while it waits, because that is
+	-- what the second press is for.
+	local b = W.Command(r, {
+		onClick = function()
+			if r.disabled then return end
+			if node.confirm and not (r.armed and GetTime() - r.armed < CONFIRM_WAIT) then
+				r.armed = GetTime()
+				r:Refresh()
+				return
+			end
+			r.armed = nil
+			if node.func then node.func(C.Info(node)) end
+			if C.onChange then C.onChange(node) end
+		end,
+		onEnter = function(self)
+			local d = C.Desc(node)
+			if d then W.Tooltip(self, "ANCHOR_RIGHT", C.Name(node), d) end
+		end,
+		onLeave = function() W.HideTooltip() end,
+	})
 	b:SetPoint("LEFT", r, "LEFT", 0, 0)
-	b.text = W.Text(b, "opButton", "CENTER")
-	b.text:SetPoint("CENTER", b, "CENTER", 0, 0)
+	b.text = b.label
 	r.button = b
-	b:SetScript("OnClick", function()
-		if r.disabled then return end
-		if node.confirm and not (r.armed and GetTime() - r.armed < CONFIRM_WAIT) then
-			r.armed = GetTime()
-			r:Refresh()
-			return
-		end
-		r.armed = nil
-		if node.func then node.func(C.Info(node)) end
-		if C.onChange then C.onChange(node) end
-	end)
-	b:SetScript("OnEnter", function(self)
-		self.over = true
-		r:Refresh()
-		local d = C.Desc(node)
-		if d then W.Tooltip(self, "ANCHOR_RIGHT", C.Name(node), d) end
-	end)
-	b:SetScript("OnLeave", function(self)
-		self.over = nil
-		r:Refresh()
-		W.HideTooltip()
-	end)
 	function r:Refresh()
 		self:Live()
-		local c = Palette.c
 		local armed = node.confirm and self.armed and GetTime() - self.armed < CONFIRM_WAIT
 		if not armed then self.armed = nil end
-		b.text:SetText(armed and L.options.map.confirm or C.Name(node))
-		b:SetWidth(math.ceil(b.text:GetStringWidth() or 60) + 36)
-		local a = c.accent
-		b:SetFillColor(b.over and { a[1], a[2], a[3], 0.12 } or { 1, 1, 1, 0.03 })
-		b:SetEdgeColor(armed and c.danger or { a[1], a[2], a[3], 0.35 })
-		W.Color(b.text, armed and c.danger or c.text)
+		b:SetLabel(armed and L.options.map.confirm or C.Name(node))
+		b:SetVariant(armed and "destructive" or "standard")
 	end
 	return r
 end

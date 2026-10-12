@@ -904,9 +904,12 @@ local function BuildHeader(frame)
 	-- rather than a row of controls floating over the grid. Every panel in the
 	-- interface wears one; this window had one under its FOOTER and nothing
 	-- under its head.
+	-- Clear of the rim, which grows with the corner (W.InsetRule).
 	head.rule = BuildHairline(head)
-	head.rule:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", W.RULE_GAP, 0)
-	head.rule:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", -W.RULE_GAP, 0)
+	W.InsetRule(head.rule, head:GetParent(), function(gap)
+		head.rule:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", gap, 0)
+		head.rule:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", -gap, 0)
+	end)
 
 	return head
 end
@@ -979,9 +982,12 @@ local function BuildFooter(frame)
 	foot:SetHeight(FOOT_H)
 	frame.foot = foot
 
+	-- Clear of the rim, as the header's is: one ink, and a join blooms.
 	foot.rule = BuildHairline(foot)
-	foot.rule:SetPoint("TOPLEFT", foot, "TOPLEFT", 0, 0)
-	foot.rule:SetPoint("TOPRIGHT", foot, "TOPRIGHT", 0, 0)
+	W.InsetRule(foot.rule, frame, function(gap)
+		foot.rule:SetPoint("TOPLEFT", foot, "TOPLEFT", gap, 0)
+		foot.rule:SetPoint("TOPRIGHT", foot, "TOPRIGHT", -gap, 0)
+	end)
 
 	if frame.kind == "bank" then
 		-- BANK BAGS: the label, then the owned bag tiles, then the purchasable

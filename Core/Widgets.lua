@@ -1076,6 +1076,247 @@ function W.CreateButton(parent, opts)
 	return b
 end
 
+--- A COMMAND: press it and something happens, once.
+--
+--  ONE SHAPE PER MEANING (Joe, 2026-10-12; Lattice Polish Pass). A pill is
+--  information - a unit, the minimap's info pill, a count chip - and is never
+--  pressed. A diamond is an on/off state, as every options toggle draws it.
+--  A command is this: a rounded square, the action family of the handoff's
+--  shape rule. The older handoffs drew buttons as pills in three styles, and
+--  the result was four kinds of button on two windows.
+--
+--  Three variants and no more:
+--    standard     glass, an accent edge, the label at full ink
+--    primary      accent fill and dark ink; at most one per panel, and only
+--                 where there is an obvious next step
+--    destructive  standard in red: Abandon, Reset page
+--
+--  BRIGHT AT REST. A dim label reads as disabled, which is how Share came to
+--  look like an empty box. Disabled is its own state: the edge at 45 %, the
+--  label one step down the ink ladder - still a word, plainly not for pressing.
+--
+--  opts: label, variant, onClick, onEnter(self), onLeave(self)
+W.COMMAND_H = 28
+local COMMAND_PAD = 18
+
+--- A control's words, drawn for certain. A COLD CLIENT START lays a string out
+--  and never draws it when it was written before the font had loaded, and a
+--  control's label is written once at build time and then only recoloured -
+--  which is how the quest log's Share came up as an empty box after a full
+--  restart and fine after a /reload (Joe, 2026-10-12). W.Reraster now, and
+--  again a moment later, as the cast lane and the trunk already do. Looked up
+--  through W, so a test can count it.
+local function Fresh(fs)
+	if not fs then return end
+	W.Reraster(fs)
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0.1, function() W.Reraster(fs) end)
+	end
+end
+
+local Command = {}
+
+function Command:SetLabel(text)
+	if self.label:GetText() ~= (text or "") then
+		self.label:SetText(text or "")
+		Fresh(self.label)
+	end
+	self:SetWidth(math.ceil(self.label:GetStringWidth() or 0) + COMMAND_PAD * 2)
+end
+
+function Command:SetVariant(variant)
+	self._variant = variant or "standard"
+	self:Repaint()
+end
+
+function Command:SetDisabled(off)
+	self._disabled = off and true or false
+	if off then self._over = false end
+	self:Repaint()
+end
+
+function Command:IsDisabled() return self._disabled end
+
+--- Clicks go through here, so the disabled state is ours to enforce rather
+--  than the client's to suppress somewhere this codebase cannot test.
+function Command:SetAction(fn)
+	self._action = fn
+end
+
+function Command:Repaint()
+	local c = A.Palette.c
+	local a, v = c.accent, self._variant
+	local over = self._over and not self._disabled
+	self:SetEdgeShown(true)
+	if v == "primary" and not self._disabled then
+		self:SetFillColor(over and c.btnFillHi or c.btnFill)
+		self:SetEdgeShown(false)
+		W.Color(self.label, c.btnFillText)
+	elseif v == "destructive" then
+		local d = c.danger
+		self:SetFillColor(over and c.dangerHover or c.glass)
+		self:SetEdgeColor({ d[1], d[2], d[3], self._disabled and 0.2 or (over and 0.75 or 0.45) })
+		W.Color(self.label, self._disabled and c.textDim or c.dangerText)
+	else
+		self:SetFillColor(over and c.btnHover or c.glass)
+		self:SetEdgeColor({ a[1], a[2], a[3], self._disabled and 0.2 or (over and 0.8 or 0.45) })
+		W.Color(self.label, self._disabled and c.textDim or c.text)
+	end
+end
+
+-- Every command and toggle, repainted on a skin change. They paint by hand
+-- (an edge at 45 % of the accent is no palette token), so Glass.RestyleAll
+-- cannot reach them; frames are never destroyed, so a plain list is enough.
+W.controls = {}
+A:OnSkinChanged(function()
+	for i = 1, #W.controls do W.controls[i]:Repaint() end
+end)
+
+--- The diamond: a node on a strand, and the on/off of every toggle.
+--  Moved here from Core/OptionsControls.lua so the options window and the
+--  quest log draw one diamond, not two that drift.
+function W.Diamond(parent, size, layer)
+	local d = {}
+	d.glow = parent:CreateTexture(nil, "BACKGROUND")
+	d.glow:SetTexture(Media.texture.glow)
+	d.glow:SetSize(size * 2.2, size * 2.2)
+	d.fill = parent:CreateTexture(nil, layer or "ARTWORK")
+	d.fill:SetTexture(Media.texture.diamond)
+	d.fill:SetSize(size, size)
+	d.rim = parent:CreateTexture(nil, layer or "ARTWORK", nil, 1)
+	d.rim:SetTexture(Media.texture.diamondRim)
+	d.rim:SetAllPoints(d.fill)
+	d.glow:SetPoint("CENTER", d.fill, "CENTER")
+	return d
+end
+
+--- On: accent with a glow. Off: node glass with a rim at `rim` (45 %).
+function W.PaintDiamond(d, on, rim)
+	local c = A.Palette.c
+	local a = c.accent
+	if on then
+		W.Tint(d.fill, a, 1)
+		W.Tint(d.rim, a, 1)
+		W.Tint(d.glow, a, 0.7)
+		d.glow:Show()
+	else
+		W.Tint(d.fill, c.nodeFill, 0.9)
+		W.Tint(d.rim, a, rim or 0.45)
+		d.glow:Hide()
+	end
+end
+
+--- A TOGGLE outside the options window: the same diamond, the same ON / OFF.
+--
+--  For a state you switch, where the footer of a panel used to put a button
+--  whose label flipped between Track and Untrack - a command pretending to be a
+--  state, and a filled one, so it read as already pressed (Joe, 2026-10-12).
+--
+--  opts: label, onClick(self), size (22)
+local Toggle = {}
+
+function Toggle:SetLabel(text)
+	self.label:SetText(text or "")
+	self:Layout()
+end
+
+function Toggle:SetOn(on)
+	self._on = on and true or false
+	self:Repaint()
+end
+
+function Toggle:IsOn() return self._on end
+
+function Toggle:SetDisabled(off)
+	self._disabled = off and true or false
+	self:Repaint()
+end
+
+function Toggle:IsDisabled() return self._disabled end
+
+function Toggle:Layout()
+	self.state:SetText((self._on and A.L.common.on or A.L.common.off):upper())
+	local w = self._size + 10 + math.ceil(self.label:GetStringWidth() or 0)
+		+ 8 + math.ceil(self.state:GetStringWidth() or 0)
+	self:SetWidth(w)
+end
+
+function Toggle:Repaint()
+	local c = A.Palette.c
+	local a = c.accent
+	W.PaintDiamond(self.d, self._on)
+	W.Color(self.label, (self._disabled and c.textDim) or c.text)
+	W.Color(self.state, self._on and a or { a[1], a[2], a[3], 0.4 })
+	-- The whole control quiet when it cannot be used, as an options row is.
+	self:SetAlpha(self._disabled and 0.4 or 1)
+	self:Layout()
+end
+
+function W.Toggle(parent, opts)
+	opts = opts or {}
+	local size = opts.size or 22
+	local t = CreateFrame("Button", nil, parent)
+	for k, fn in pairs(Toggle) do t[k] = fn end
+	t._size, t._on = size, false
+	t:SetHeight(size)
+	t.d = W.Diamond(t, size)
+	t.d.fill:SetPoint("LEFT", t, "LEFT", 0, 0)
+	t.label = W.Text(t, "toggle", "LEFT")
+	t.label:SetPoint("LEFT", t, "LEFT", size + 10, 0)
+	t.label:SetWordWrap(false)
+	t.state = W.Text(t, "toggleTag", "LEFT")
+	t.state:SetPoint("LEFT", t.label, "RIGHT", 8, 0)
+	t:RegisterForClicks("LeftButtonUp")
+	t:SetScript("OnClick", function(self)
+		if self._disabled then return end
+		if opts.onClick then opts.onClick(self) end
+	end)
+	t:SetLabel(opts.label)
+	t:Repaint()
+	-- Drawn again whenever it comes into view; see Fresh.
+	t:HookScript("OnShow", function(self) Fresh(self.label) Fresh(self.state) end)
+	t.__toggle = true
+	W.controls[#W.controls + 1] = t
+	return t
+end
+
+function W.Command(parent, opts)
+	opts = opts or {}
+	local b = W.CreateButton(parent, {})
+	-- Not a selectable button: W.SetButtonState's filled-means-here is the tab
+	-- rail's language, and a command painted by it would read as selected.
+	b.__aetherSkin = nil
+	for k, fn in pairs(Command) do b[k] = fn end
+	b:SetHeight(W.COMMAND_H)
+	b.label = W.Text(b, "button", "CENTER")
+	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
+	b.label:SetWordWrap(false)
+	b._variant = opts.variant or "standard"
+	b._action = opts.onClick
+	b:RegisterForClicks("LeftButtonUp")
+	b:SetScript("OnClick", function(self, button)
+		if self._disabled or not self._action then return end
+		self._action(self, button)
+	end)
+	b:SetScript("OnEnter", function(self)
+		self._over = true
+		self:Repaint()
+		if opts.onEnter then opts.onEnter(self) end
+	end)
+	b:SetScript("OnLeave", function(self)
+		self._over = false
+		self:Repaint()
+		if opts.onLeave then opts.onLeave(self) end
+	end)
+	b:SetLabel(opts.label)
+	b:Repaint()
+	-- Drawn again whenever it comes into view; see Fresh.
+	b:HookScript("OnShow", function(self) Fresh(self.label) end)
+	b.__command = true
+	W.controls[#W.controls + 1] = b
+	return b
+end
+
 --- Put our surface behind a button, whoever made the button.
 --
 --  The button itself is untouched beyond this: not resized, not reparented, not
@@ -2233,6 +2474,32 @@ W.WELL_CORNER = 14
 -- the rim are drawn in the same ink, so where one meets the other the alphas
 -- add and the join lights up.
 W.RULE_GAP    = 2
+
+--- ...and how far short of a WINDOW'S rim, which is not a constant: the rim
+--  is in the edge art and grows with the drawn corner, so the fixed gap above
+--  still met it (Joe, 2026-10-12, with the spots ringed). The rim's own depth
+--  plus two physical pixels of clear dark. Re-anchor with it on every repaint,
+--  since the Theme's corner and the scale move it. RULE_GAP stays for a rule
+--  meeting another rule, or a well's edge.
+function W.RimGap(panel)
+	return A.Glass.RimDepth(panel) + 2 * (A:PxIn(panel) or 1)
+end
+
+--- Anchor a rule that runs to a window's rim, and keep it clear of it.
+--  `place(gap)` sets the rule's points with `gap` wherever it meets the rim.
+--  Re-run on show, on a resize and after every restyle - the Theme's corner
+--  moves the rim - so no caller has to remember to.
+function W.InsetRule(rule, panel, place)
+	local function apply()
+		rule:ClearAllPoints()
+		place(W.RimGap(panel))
+	end
+	panel:HookScript("OnShow", apply)
+	panel:HookScript("OnSizeChanged", apply)
+	A:OnSkinChanged(apply)
+	apply()
+	rule.__insetRule = apply
+end
 
 --- One hairline: one ink, and one physical pixel of it.
 --
