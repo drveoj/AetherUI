@@ -37634,6 +37634,51 @@ do
 	end
 end
 
+print("== the errors box and the layout window: built like every other window ==")
+do
+	-- Lattice Polish Pass: one window border. Both had corner 16 on the dialog
+	-- fill with the bright rim - a border of their own beside the quest log's.
+	local W = A.Widgets
+	-- At Joe's own Lattice scale, so a window left at 1.0 shows.
+	local scaleWas = A.db.profile.scale
+	A.db.profile.scale = 0.85
+	A.Errors:ShowText("x")
+	A.Layout:Show()
+	local wins = { { "the errors box", A.Errors.frame }, { "the layout window", A.Layout.frame } }
+	local function odd()
+		local out = {}
+		local rf = A.Palette:ReadingFill()
+		for _, pair in ipairs(wins) do
+			local p = pair[2].panel
+			local fc = p._fillColor
+			if p._corner ~= W.PANEL_CORNER then out[#out + 1] = pair[1] .. " corner " .. tostring(p._corner) end
+			if p._edgeToken ~= "glassEdge" then out[#out + 1] = pair[1] .. " rim " .. tostring(p._edgeToken) end
+			if not (fc and math.abs(fc[4] - rf[4]) < 0.001 and math.abs(fc[1] - rf[1]) < 0.001) then
+				out[#out + 1] = pair[1] .. " fill"
+			end
+			local r = pair[2].title:GetTextColor()
+			if math.abs(r - A.Palette.c.text[1]) > 0.001 then out[#out + 1] = pair[1] .. " title ink" end
+			-- AT THE PROFILE'S SCALE, as the quest log: the errors box was the one
+			-- window at 1.0, and its rim drew thin and faint beside theirs (Joe,
+			-- 2026-10-12) though corner, rim colour and fill all matched.
+			if math.abs((pair[2]:GetScale() or 1) - (A.db.profile.scale or 1)) > 0.001 then
+				out[#out + 1] = pair[1] .. " scale " .. tostring(pair[2]:GetScale())
+			end
+		end
+		return table.concat(out, ", ")
+	end
+	local now = odd()
+	check(now == "", "the shared corner, the glassEdge rim and the reading fill (" .. now .. ")")
+	local skin = A.db.profile.skin
+	A:Restyle(skin == "ruby" and "midnight" or "ruby")
+	local after = odd()
+	check(after == "", "and still, with the right inks, after a skin change (" .. after .. ")")
+	A:Restyle()
+	A.Errors.frame:Hide()
+	A.Layout.frame:Hide()
+	A.db.profile.scale = scaleWas
+end
+
 print("== Enter presses the primary, and only a live one ==")
 do
 	local W = A.Widgets

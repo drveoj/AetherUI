@@ -888,9 +888,15 @@ local function Build()
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
 	f:Hide()
 
-	local panel = A.Glass.CreatePanel(f, { corner = 16, fill = "dialogFill", edge = "glassEdgeHi" })
+	-- BUILT LIKE EVERY OTHER WINDOW (Lattice Polish Pass): the shared corner,
+	-- the strong fill deepened to the reading fill, the glassEdge rim, the
+	-- profile's shadow. It was corner 16 on the dialog fill with the bright rim.
+	local panel = A.Glass.CreatePanel(f, { corner = W.PANEL_CORNER, fill = "glassStrong",
+		shadow = A.db.profile.glass.shadow })
 	panel:SetAllPoints(f)
 	panel:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1))
+	panel:SetFillColor(Palette:ReadingFill())
+	f.panel = panel
 
 	f.title = W.Text(f, "tbTitle", "CENTER")
 	f.title:SetPoint("TOP", f, "TOP", 0, -14)
@@ -944,6 +950,18 @@ local function Build()
 	Layout.frame = f
 	return f
 end
+
+--- A skin change: the window's two lines again (the Quest Log's), and its
+--  words and cross, which were inked once at build and kept the old skin.
+A:OnSkinChanged(function()
+	local f = Layout.frame
+	if not f then return end
+	f.panel:ApplySkin("glassStrong")
+	f.panel:SetFillColor(Palette:ReadingFill())
+	W.Color(f.title, Palette.c.text)
+	W.Color(f.hint, Palette.c.textDim)
+	W.RepaintClose(f.close)
+end)
 
 local function Say(text, good)
 	local f = Layout.frame

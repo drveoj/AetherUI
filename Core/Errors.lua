@@ -180,21 +180,29 @@ local function Build()
 	f:SetScript("OnDragStart", f.StartMoving)
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
 
-	local panel = A.Glass.CreatePanel(f, { corner = 16, fill = "dialogFill", edge = "glassEdgeHi" })
+	-- BUILT LIKE EVERY OTHER WINDOW (Lattice Polish Pass): the shared corner,
+	-- the strong fill deepened to the reading fill, the glassEdge rim, the
+	-- profile's shadow - the Quest Log's and the options window's lines. It was
+	-- corner 16 on the dialog fill with the bright rim, a border of its own.
+	local panel = A.Glass.CreatePanel(f, { corner = W.PANEL_CORNER, fill = "glassStrong",
+		shadow = A.db and A.db.profile.glass.shadow })
 	panel:SetAllPoints(f)
 	panel:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1))
+	panel:SetFillColor(Palette:ReadingFill())
 	f.panel = panel
 
 	local title = W.Text(f, "tbTitle", "CENTER")
 	title:SetPoint("TOP", f, "TOP", 0, -14)
 	title:SetText(L.errors.build.errors)
 	W.Color(title, Palette.c.text)
+	f.title = title
 
 	local hint = W.Text(f, "tbCardSub", "CENTER")
 	hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
 	-- The file is named after the addon's folder, so ask rather than spell it.
 	hint:SetText(A.F(L.errors.build.export_writes_savedvariables_aetherui, A.name))
 	W.Color(hint, Palette.c.textDim)
+	f.hint = hint
 
 	-- A SCROLL FRAME AROUND IT, because a diag runs to eighty lines.
 	--
@@ -330,6 +338,21 @@ local function Build()
 	return f
 end
 
+--- A skin change: the window's two lines again (the Quest Log's), and its
+--  words, cross and rail, which were inked once at build and kept the old skin.
+A:OnSkinChanged(function()
+	local f = Errors.frame
+	if not f then return end
+	f.panel:ApplySkin("glassStrong")
+	f.panel:SetFillColor(Palette:ReadingFill())
+	local c = Palette.c
+	W.Color(f.title, c.text)
+	W.Color(f.hint, c.textDim)
+	W.RepaintClose(f.close)
+	W.Tint(f.track, c.textFaint, 0.22)
+	W.Tint(f.thumb, c.text, 0.45)
+end)
+
 --- Put text where it can be read from outside the game.
 --
 --  THE SAVED VARIABLES FILE, because nothing else in this client works. See
@@ -360,6 +383,15 @@ function Errors:ShowText(text)
 	-- line and, depending on the run, a great many empty ones after it. Two
 	-- captures were reported that way before this was the suspect, and the
 	-- string handed over was verified correct both times.
+	-- AT THE PROFILE'S SCALE, as the quest log and the layout window are. It
+	-- was the one window of ours at 1.0, and with the shared window build its
+	-- rim still drew a third as bright and thinner than theirs beside it (Joe,
+	-- 2026-10-12, in game): the rim is art, and its weight on screen follows the
+	-- scale it is drawn at. Scale was the only thing left between this and the
+	-- layout window, which drew right.
+	f:SetScale((A.db and A.db.profile and A.db.profile.scale) or 1)
+	-- Its corner is snapped to whole pixels at the scale it is drawn at.
+	if f.panel._Relayout then f.panel:_Relayout() end
 	f:Show()
 	-- KEPT AS HANDED, for the Copy button. What is in the box after this is
 	-- the box's version of it, and the two turned out not to be the same.

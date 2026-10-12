@@ -13,8 +13,8 @@ Out:  Tools/preview.png
 """
 
 import os
-import re
 import struct
+import subprocess
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -127,76 +127,65 @@ def C(r, g, b, a=1.0):
 # --------------------------------------------------------------------------
 # skins
 #
-# Parsed straight out of Core/Palette.lua rather than duplicated here. The two
-# were hand-kept copies of each other until 2026-08-11, which meant the preview
-# could render a skin the game does not have - and it did: every quest-log token
-# added that day was missing from this file, so the preview was quietly a
-# generation behind whenever a colour changed.
+# ASKED OF THE PALETTE, NOT PARSED OUT OF IT. A skin is no longer written out
+# token by token: Core/Palette.lua composes it from eight chrome values and the
+# shared semantic colours when it loads. This file parsed the old token tables
+# and stopped working when they went (it looked for a `daylight` skin, which is
+# gone). Tools/palette_dump.lua loads the palette in LuaJIT - the harness's
+# interpreter - and prints what the game actually gets, so this cannot fall a
+# generation behind again.
 #
-# Only what the painters below actually use is extracted, and a missing token is
-# a hard error rather than a silent black.
+# Only what the painters below actually use is taken, and a missing token is a
+# hard error rather than a silent black.
 # --------------------------------------------------------------------------
 
-PALETTE_LUA = os.path.join(ROOT, "Core", "Palette.lua")
+# Rendered one above the other: the default, and Joe's own.
+SCENE_SKINS = ("midnight", "winter")
 
 
-def parse_palette():
-    """Read Core/Palette.lua and return {Skin: {token: colour or pair}}."""
-    src = open(PALETTE_LUA, encoding="utf-8").read()
-
-    call = re.compile(r"C\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)")
-    entry = re.compile(r"^\t\t(\w+)\s*=\s*(\{\s*C\([^}]*\}|C\([^)]*\))", re.M)
-
-    def to_c(r, g, b, a):
-        return C(int(r), int(g), int(b), float(a) if a else 1.0)
-
+def parse_palette(names=SCENE_SKINS):
+    """Ask Core/Palette.lua for its skins: {name: {token: colour or tuple}}."""
+    out = subprocess.run(["luajit", os.path.join(ROOT, "Tools", "palette_dump.lua")]
+                         + list(names), capture_output=True, text=True, check=True).stdout
     skins = {}
-    for name in ("midnight", "daylight"):
-        head = src.index("\n\t%s = {" % name)
-        depth, i = 0, head
-        while True:
-            if src[i] == "{":
-                depth += 1
-            elif src[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            i += 1
-        body = src[head:i]
-
-        table = {"_light": re.search(r"light\s*=\s*true", body) is not None}
-        for tok, raw in entry.findall(body):
-            cols = [to_c(*m) for m in call.findall(raw)]
-            if not cols:
-                continue
-            table[tok] = tuple(cols) if raw.lstrip().startswith("{") else cols[0]
-        skins[name.capitalize()] = table
+    for line in out.splitlines():
+        name, tok, raw = line.split("\t")
+        if raw in ("true", "false"):
+            continue
+        cols = [tuple(float(x) for x in part.split(",")) for part in raw.split(";")]
+        skins.setdefault(name, {})[tok] = tuple(cols) if len(cols) > 1 else cols[0]
     return skins
 
 
 def build_skins():
     """Map Palette.lua's vocabulary onto the names the painters below use."""
     out = {}
-    for label, t in parse_palette().items():
-        def need(tok, _t=t, _l=label):
+    for name, t in parse_palette().items():
+        def need(tok, _t=t, _n=name):
             if tok not in _t:
                 raise KeyError("%s: Palette.lua has no '%s' - preview.py and the "
-                               "palette have drifted apart" % (_l, tok))
+                               "palette have drifted apart" % (_n, tok))
             return _t[tok]
 
-        out[label] = dict(
+        hostile = need("hostile")
+        cast = need("cast")
+        out[name.capitalize()] = dict(
             glass=need("glass"), glassStrong=need("glassStrong"),
             edge=need("glassEdge"), shadow=need("shadow"),
             noise=C(255, 255, 255, 0.05),
             text=need("text"), textDim=need("textDim"),
             health=need("health"), power=need("power"),
             hostileBar=need("hostileBar"),
-            targetGlass=need("targetGlass"), targetEdge=need("targetEdge"),
+            targetGlass=need("targetGlass"),
+            # There is no targetEdge token any more: the game builds the target's
+            # rim from its reaction (Palette:ReactionEdge), hostile at .55 - and
+            # the scene's target is a hostile mob.
+            targetEdge=hostile[:3] + (0.55,),
             targetText=need("targetText"),
-            cast=need("cast"), castEdge=need("castEdge"), castGlow=need("castGlow"),
+            # Nor a castGlow: the bright end of the cast gradient stands in.
+            cast=cast, castEdge=need("castEdge"), castGlow=cast[-1],
             accent=need("accent"), xp=need("xp"),
-            light=t["_light"],
-            # The orb is pulled toward a dark base on both skins by
+            # The orb is pulled toward a dark base on every skin by
             # Palette:OrbColor, so these stay fixed rather than tracking `text`.
             classOrb=(C(78, 139, 167), C(36, 66, 87)),
             mobOrb=(C(161, 124, 84), C(77, 59, 47)),
@@ -440,7 +429,9 @@ def backdrop(w, h, warm=True):
 def scene(skin_name, width=1060):
     skin = SKINS[skin_name]
     H = 620
-    canvas = backdrop(width, H, warm=(skin_name == "Daylight"))
+    # The second skin over the bright savanna: glass is judged against a busy,
+    # sunlit world as well as a dim one.
+    canvas = backdrop(width, H, warm=(skin_name != "Midnight"))
     d = ImageDraw.Draw(canvas)
 
     d.text((28, 22), skin_name, font=font("SemiBold", 22), fill=rgb255(skin["text"]))
@@ -689,8 +680,7 @@ def scene(skin_name, width=1060):
 
 def main():
     load_all()
-    a = scene("Midnight")
-    b = scene("Daylight")
+    a, b = (scene(n.capitalize()) for n in SCENE_SKINS)
     out = Image.new("RGBA", (a.width, a.height + b.height + 8), (10, 10, 12, 255))
     out.paste(a, (0, 0))
     out.paste(b, (0, a.height + 8))
