@@ -141,17 +141,12 @@ function OB:Others()
 	return bestKey, (bestKey:match("^(.-) %- ") or bestKey)
 end
 
---- "Keep my layout" on an alt: the layout, the bars and the skin are in the
---  shared profile already, so the one thing to carry over is the Toolbox's
---  side, which is stored per character.
+--- "Keep my layout" on an alt: the layout, the bars, the skin and now the
+--  Toolbox's side (Joe, 2026-10-12) are all in the shared profile already, so
+--  there is nothing to carry over - it only has to be a character that exists.
 function OB:AdoptFrom(key)
 	local sv = A.db and A.db.sv and A.db.sv.char
-	local them = key and sv and sv[key]
-	if not them then return false end
-	local edge = them.toolbox and them.toolbox.docked
-	local TB = A.GetModule and A:GetModule("toolbox")
-	if edge and TB and TB.SetDock then TB:SetDock(edge) end
-	return true
+	return (key and sv and sv[key]) ~= nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -376,8 +371,8 @@ OB.stops = {
 		-- The sides as they are: the Toolbox can be docked right, and then the
 		-- world is on the left.
 		body = function()
-			local docked = A.db and A.db.char and A.db.char.toolbox
-				and A.db.char.toolbox.docked
+			local TB = Mod("toolbox")
+			local docked = TB and TB.Dock and TB:Dock()
 			return docked == "RIGHT" and L.tour.trunks.body_right or L.tour.trunks.body_left
 		end,
 		kind = "show",

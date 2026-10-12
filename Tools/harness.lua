@@ -12365,6 +12365,27 @@ do
 		and lock.chip.__command and lock.chip._variant == "primary",
 		"the pill is information you can drag; LOCK on it is the shared primary command")
 
+	-- LOCK SITS INSIDE THE PILL'S ROUND END (Joe, 2026-10-12: "LOCK button too
+	-- big for the capsule"). At 34 tall with LOCK 3 in from the end, the
+	-- command's corners stood out past the arc. Each corner's circle has to lie
+	-- inside the end's circle with room to spare.
+	do
+		local H, h = lock:GetHeight(), lock.chip:GetHeight()
+		local _, _, _, x = lock.chip:GetPoint(1)
+		local R, r = H / 2, A.Glass.CornerOf(lock.chip)
+		local dx = math.max(0, R - (-x) - r)
+		local dy = math.max(0, R - (H - h) / 2 - r)
+		local gap = (R - r) - math.sqrt(dx * dx + dy * dy)
+		check(gap >= 4, ("LOCK's corners clear the pill's round end (by %.1f, want 4)"):format(gap))
+
+		-- AND ITS WORDS AT LOCK'S SIZE (Joe, 2026-10-12): at 11 beside LOCK's
+		-- 13 the pill read unbalanced.
+		local lockSize = select(2, lock.chip.label:GetFont())
+		check(lockSize and select(2, lock.label:GetFont()) == lockSize
+			and select(2, lock.hint:GetFont()) == lockSize,
+			"the pill's title and hint are the size of LOCK beside them")
+	end
+
 	-- AND IT LOCKS. That is the whole job.
 	lock.chip:GetScript("OnClick")(lock.chip)
 	check(not A.Movers.unlocked, "pressing it locks the frames")
@@ -21484,13 +21505,56 @@ do
 	K.open, K.opened = A.Options.Open, 0
 	A.Options.Open = function() K.opened = K.opened + 1 return true end
 	A.Movers:Unlock()
+
+	-- AND YOU SEE IT COMING (Joe, 2026-10-12: "no visible changes until the
+	-- sides flip"). A ghost of the glyph follows the cursor; past the centre
+	-- line, the half it would take is washed and an outline stands where each
+	-- trunk would land. Back over its own half, that all goes.
+	K.us = UIParent:GetEffectiveScale()
+	function K.move(x, y)
+		__setCursor(x * K.us, y * K.us)
+		local pv = TBm.swapPreview
+		pv:GetScript("OnUpdate")(pv, 0.016)
+	end
+	__setCursor(300 * K.us, 700 * K.us)
 	TBm.root:GetScript("OnDragStart")(TBm.root)
-	__setCursor(1500 * UIParent:GetEffectiveScale(), 500)
+	K.pv = TBm.swapPreview
+	check(K.pv and K.pv:IsShown() and not K.pv:IsMouseEnabled(),
+		"picking the glyph up shows the preview, which takes no clicks of its own")
+	K.move(400, 650)
+	K.p, K.rel, K.relP, K.hx, K.hy = K.pv.held:GetPoint(1)
+	check(K.pv.held:IsShown() and K.relP == "BOTTOMLEFT" and K.near(K.hx, 400) and K.near(K.hy, 650),
+		"the glyph in your hand follows the cursor (" .. tostring(K.hx) .. ", " .. tostring(K.hy) .. ")")
+	check(TBm.root.glyph:GetAlpha() < 1, "and the docked glyph fades back while you hold it")
+	check(not K.pv.swapping and not K.pv.wash:IsShown() and not K.pv.world:IsShown()
+		and not K.pv.toolbox:IsShown(), "over its own half, nothing says swap")
+	K.move(1500, 500)
+	K.p, K.rel, K.relP, K.wx = K.pv.wash:GetPoint(1)
+	check(K.pv.swapping and K.pv.wash:IsShown() and K.wx and K.wx > 0 and K.pv.centre:IsShown(),
+		"past the centre line, the right half is washed and the centre line is lit")
+	K.p, K.rel, K.relP, K.tx, K.ty = K.pv.toolbox:GetPoint(1)
+	check(K.pv.toolbox:IsShown() and K.relP == "TOPRIGHT" and K.near(K.tx, -40) and K.near(K.ty, -300)
+		and K.pv.toolboxLabel:GetText() == A.L.common.toolbox,
+		"the Toolbox's outline stands at its new edge, named")
+	check(K.pv.world:IsShown() and K.near(K.at(K.pv.world), 1920 - K.mx)
+		and K.pv.worldLabel:GetText() == A.L.options.map.world.title,
+		"and World's stands where the minimap would be mirrored to, named ("
+			.. tostring(K.at(K.pv.world)) .. ", want " .. tostring(1920 - K.mx) .. ")")
+	K.move(300, 500)
+	check(not K.pv.wash:IsShown() and not K.pv.world:IsShown() and not K.pv.toolbox:IsShown(),
+		"back over its own half, the swap preview goes")
+	K.move(1500, 500)
 	TBm.root:GetScript("OnDragStop")(TBm.root)
+	check(not K.pv:IsShown() and K.pv:GetScript("OnUpdate") == nil and TBm.root.glyph:GetAlpha() == 1,
+		"let go, the preview is gone and stops ticking, and the glyph is whole again")
 	check(TBm:Dock() == "RIGHT", "dragging the glyph to the right half docks it right")
 	TBm.root:GetScript("OnClick")(TBm.root)
 	check(K.opened == 0, "and the release is not taken for a click")
+	-- Locked with the glyph still in hand: the preview goes with the mode.
+	TBm.root:GetScript("OnDragStart")(TBm.root)
 	A.Movers:Lock()
+	check(not K.pv:IsShown() and not TBm.root.__dragging and TBm.root.glyph:GetAlpha() == 1,
+		"locking mid-drag takes the preview away and drops nothing")
 	TBm.root:GetScript("OnDragStart")(TBm.root)
 	__setCursor(200 * UIParent:GetEffectiveScale(), 500)
 	TBm.root:GetScript("OnDragStop")(TBm.root)
@@ -22091,12 +22155,36 @@ do
 	A.db.profile.scale = 0.71
 	A:Reconfigure()
 
-	-- The side persists per character; the drawer's top and bottom come back
-	-- on the left (decision 4c).
-	check(A.db.char.toolbox.docked == "LEFT", "the side is the character's")
-	A.db.char.toolbox.docked = "BOTTOM"
-	check(TBm:Dock() == "LEFT" and A.db.char.toolbox.docked == "LEFT",
-		"a character docked at the bottom under the drawer comes back on the left")
+	-- THE SIDE IS THE PROFILE'S (Joe, 2026-10-12: "put it in the profile").
+	-- It was per character while the minimap it swaps with is in the profile,
+	-- so a swap on one character left an alt with both trunks on one side.
+	do
+		local cfg = A.Config:Module("toolbox")
+		check(cfg.dock == "LEFT" and A.db.char.toolbox.docked == nil,
+			"the side is stored in the profile, not per character")
+		TBm:SetDock("RIGHT")
+		local mine = A.db.char
+		A.db.char = { toolbox = {} }          -- another character, same profile
+		check(TBm:Dock() == "RIGHT" and TBm.MinimapSide() == "LEFT",
+			"so another character on the profile sees the Toolbox right and the minimap left")
+		A.db.char = mine
+		-- A PROFILE THAT HAS NEVER SAID takes the side its minimap leaves free:
+		-- what is on screen, not any one character's old setting.
+		cfg.dock = nil
+		check(TBm:Dock() == "RIGHT" and cfg.dock == "RIGHT",
+			"a profile with no side yet takes the one its minimap leaves free")
+		-- A LAYOUT STRING carries the minimap and not the side; applying a
+		-- right-handed one onto a left-handed screen brings the side with it.
+		local right = A.Layout:Pack(A.Layout:Encode())
+		TBm:SetDock("LEFT")
+		check(TBm.MinimapSide() == "RIGHT", "(swapped back: Toolbox left, minimap right)")
+		A.Layout:ApplyText(right)
+		check(TBm:Dock() == "RIGHT" and TBm.MinimapSide() == "LEFT",
+			"a pasted right-handed layout puts the Toolbox right, opposite its minimap ("
+			.. tostring(TBm:Dock()) .. ", minimap " .. tostring(TBm.MinimapSide()) .. ")")
+		TBm:SetDock("LEFT")
+		if A.Layout.frame then A.Layout.frame:Hide() end
+	end
 	check(not TBm:SetDock("SIDEWAYS") and TBm:Dock() == "LEFT", "an edge that is not a side is refused")
 	_G.__inCombat = true
 	check(not TBm:SetDock("RIGHT") and TBm:Dock() == "LEFT",
@@ -37540,11 +37628,11 @@ do
 		fresh()
 		A.db.sv.char["Padreamuerto - Nek'Rosh"] = {
 			onboard = { completed = true, completedAt = 100 },
-			toolbox = { docked = "RIGHT" },
+			toolbox = {},
 		}
 		A.db.sv.char["Olderalt - Nek'Rosh"] = {
 			onboard = { completed = true, completedAt = 50 },
-			toolbox = { docked = "LEFT" },
+			toolbox = {},
 		}
 
 		local key, who = OB:Others()
@@ -37560,15 +37648,14 @@ do
 			"an alt's welcome leads with Keep my layout, says the profile is "
 			.. "shared, and still offers Configure it")
 
-		-- KEEPING IT copies the one thing that IS per character - the Toolbox's
-		-- side - and asks nothing more.
+		-- KEEPING IT has nothing to copy: the Toolbox's side is the profile's
+		-- now (Joe, 2026-10-12), so it is the same side the profile already has.
 		local TB = A:GetModule("toolbox")
-		TB:SetDock("LEFT")
+		TB:SetDock("RIGHT")
 		OB.card.go:GetScript("OnClick")(OB.card.go)
-		check(OB:Completed() and not OB.card:IsShown()
-			and A.db.char.toolbox.docked == "RIGHT",
-			"Keep my layout marks this character done and takes the Toolbox's "
-			.. "side (" .. tostring(A.db.char.toolbox.docked) .. ")")
+		check(OB:Completed() and not OB.card:IsShown() and TB:Dock() == "RIGHT",
+			"Keep my layout marks this character done, the profile's side unchanged ("
+			.. tostring(TB:Dock()) .. ")")
 		TB:SetDock("LEFT")
 
 		-- CONFIGURE IT on an alt is the ordinary growth.

@@ -12,9 +12,9 @@
 
 	IT DOCKS LEFT OR RIGHT, and the World trunk takes the other side (Joe,
 	2026-10-07, decision 4c): docked right, the minimap is mirrored to the
-	left. A character docked top or bottom under the drawer comes back on the
 	left. In unlock, drag the glyph to the other half of the screen to swap.
-	Per character, as the drawer's edge was.
+	In the PROFILE, beside the minimap it swaps with (Joe, 2026-10-12); a
+	layout or a preset puts it on the side its minimap leaves free.
 
 	IN A FIGHT the trunk keeps its nodes, drops its labels and closes the open
 	branch (README "Two energies for trunks").
@@ -53,15 +53,66 @@ local function Trunk() return A.Trunk:Get("toolbox") end
 local function Char()
 	if not A.db or not A.db.char then return nil end
 	A.db.char.toolbox = A.db.char.toolbox or {}
-	local t = A.db.char.toolbox
-	-- Top and bottom were the drawer's; the trunk docks left or right.
-	if not SIDES[t.docked] then t.docked = "LEFT" end
-	return t
+	return A.db.char.toolbox
 end
 
+--- Which side the minimap is on, LEFT or RIGHT: where it is drawn if it is,
+--  else where the profile says it goes (Movers:Mirror flips LEFT and RIGHT in
+--  its point), else its default, on the right. Nil with no minimap module.
+local function MinimapSide()
+	local MMm = A:GetModule("minimap")
+	-- ITS SETTING, not whether it has started: the side is first worked out as
+	-- the Toolbox starts, and that must not hang on which module went first.
+	local cfg = A.Config and A.Config:Module("minimap")
+	if not (MMm and (MMm.enabled or (cfg and cfg.enabled))) then return nil end
+	if MMm.frame and MMm.frame:IsShown() and A.Movers and A.Movers.PointAt then
+		local x = A.Movers.PointAt(MMm.frame, "CENTER")
+		if x then return (x < (UIParent:GetWidth() or 0) / 2) and "LEFT" or "RIGHT" end
+	end
+	local a = A.db and A.db.profile.anchors and A.db.profile.anchors.minimap
+	local p = a and not a.lat and a.point
+	if p and p:find("LEFT") then return "LEFT" end
+	if p and p:find("RIGHT") then return "RIGHT" end
+	if p and a.x then return (a.x < 0) and "LEFT" or "RIGHT" end
+	return "RIGHT"
+end
+TB.MinimapSide = MinimapSide
+
+local function Other(side) return side == "LEFT" and "RIGHT" or "LEFT" end
+
+--- THE SIDE IS THE PROFILE'S (Joe, 2026-10-12: "put it in the profile").
+--
+--  It was per character while the minimap it swaps with is in the profile, so
+--  a swap on one character left an alt on the same profile with both trunks on
+--  one side, and a layout string carried the minimap but not the Toolbox.
+--  A profile that has never said takes the side the minimap leaves free -
+--  what is on screen now - not any one character's old setting.
 function TB:Dock()
-	local c = Char()
-	return (c and c.docked) or "LEFT"
+	local cfg = A.db and A.Config:Module("toolbox")
+	if not cfg then return "LEFT" end
+	if not SIDES[cfg.dock] then
+		local mm = MinimapSide()
+		cfg.dock = mm and Other(mm) or "LEFT"
+	end
+	return cfg.dock
+end
+
+--- After a layout or a preset: the Toolbox on the side the minimap leaves
+--  free, so the two trunks can never end up on one side. Returns the side.
+function TB:MatchMinimap()
+	local mm = MinimapSide()
+	if not mm then return self:Dock() end
+	local side = Other(mm)
+	local cfg = A.Config:Module("toolbox")
+	if cfg.dock ~= side then
+		cfg.dock = side
+		if self.enabled then
+			self:CloseAll()
+			self:PlaceRoot()
+			self:LayoutPins()
+		end
+	end
+	return side
 end
 
 local function Cols(key, fallback)
@@ -117,11 +168,13 @@ function TB:BuildRoot()
 			return
 		end
 		self2.__dragging = true
+		TB:StartSwapPreview()
 	end)
 	r:SetScript("OnDragStop", function(self2)
 		if not self2.__dragging then return end
 		self2.__dragging = nil
 		self2.__dragged = true
+		TB:EndSwapPreview()
 		local us = UIParent:GetEffectiveScale() or 1
 		local mx = GetCursorPosition()
 		TB:DropAt((mx or 0) / us)
@@ -139,6 +192,142 @@ function TB:DropAt(x)
 	return true
 end
 
+-- ---------------------------------------------------------------------------
+-- the swap, shown while it is dragged
+--
+-- Joe, 2026-10-12: "no visible changes until the sides flip". A ghost of the
+-- glyph follows the cursor - a ghost, not the glyph, because the whole trunk
+-- hangs from the glyph and would be dragged across the screen with it. Past
+-- the centre line the half it would dock to is washed, the centre line is
+-- lit, and an outline stands where each trunk would land: Toolbox at its new
+-- edge, World where the minimap would be mirrored to. Back over its own half,
+-- all of that goes. Nothing here takes the mouse, so the drop is the glyph's.
+-- ---------------------------------------------------------------------------
+
+local function UIUnits(f)
+	return (f:GetEffectiveScale() or 1) / (UIParent:GetEffectiveScale() or 1)
+end
+
+function TB:BuildSwapPreview()
+	if self.swapPreview then return self.swapPreview end
+	local p = CreateFrame("Frame", nil, UIParent)
+	p:SetAllPoints(UIParent)
+	p:SetFrameStrata("DIALOG")
+	p:EnableMouse(false)
+	p:Hide()
+
+	p.wash = p:CreateTexture(nil, "BACKGROUND")
+	p.wash:SetTexture(Media.texture.flat)
+	p.centre = p:CreateTexture(nil, "ARTWORK")
+	p.centre:SetTexture(Media.texture.flat)
+
+	-- Where the Toolbox would land: its glyph, faint, and its name.
+	p.toolbox = p:CreateTexture(nil, "ARTWORK")
+	p.toolbox:SetTexture(Media.texture.icon)
+	p.toolboxLabel = W.Text(p, "modePill", "CENTER")
+	p.toolboxLabel:SetPoint("TOP", p.toolbox, "BOTTOM", 0, -8)
+	p.toolboxLabel:SetText(L.common.toolbox)
+
+	-- Where the World trunk would land: the minimap's outline, mirrored.
+	p.world = Glass.CreatePanel(p, { corner = 12 })
+	p.world:EnableMouse(false)
+	p.worldLabel = W.Text(p.world, "modePill", "CENTER")
+	p.worldLabel:SetPoint("CENTER", p.world, "CENTER")
+	p.worldLabel:SetText(L.options.map.world.title)
+
+	-- The glyph in your hand.
+	p.held = p:CreateTexture(nil, "OVERLAY")
+	p.held:SetTexture(Media.texture.icon)
+
+	self.swapPreview = p
+	return p
+end
+
+--- Lay the preview out for the cursor at `cx, cy` (UIParent units).
+function TB:PaintSwapPreview(cx, cy)
+	local p = self.swapPreview
+	if not p then return end
+	local c = Palette.c
+	local a = c.accent
+	local w, h = UIParent:GetWidth() or 0, UIParent:GetHeight() or 0
+	local scale = A.db.profile.scale or 1
+
+	local size = ROOT * scale
+	p.held:SetSize(size, size)
+	p.held:ClearAllPoints()
+	p.held:SetPoint("CENTER", p, "BOTTOMLEFT", cx, cy)
+	p.held:SetVertexColor(1, 1, 1, 0.9)
+
+	local side = (cx > w / 2) and "RIGHT" or "LEFT"
+	local swapping = side ~= self:Dock()
+	p.swapping = swapping
+	p.wash:SetShown(swapping)
+	p.centre:SetShown(swapping)
+	p.toolbox:SetShown(swapping)
+	p.toolboxLabel:SetShown(swapping)
+	p.world:Hide()
+	if not swapping then return end
+
+	local left = side == "LEFT"
+	p.wash:ClearAllPoints()
+	p.wash:SetPoint("TOP", p, "TOP", left and -w / 4 or w / 4, 0)
+	p.wash:SetSize(w / 2, h)
+	p.wash:SetVertexColor(a[1], a[2], a[3], 0.08)
+
+	p.centre:ClearAllPoints()
+	p.centre:SetPoint("TOP", p, "TOP", 0, 0)
+	p.centre:SetSize(2, h)
+	p.centre:SetVertexColor(a[1], a[2], a[3], 0.8)
+
+	p.toolbox:SetSize(size, size)
+	p.toolbox:ClearAllPoints()
+	p.toolbox:SetPoint("CENTER", p, left and "TOPLEFT" or "TOPRIGHT",
+		(left and EDGE_X or -EDGE_X) * scale, -TOP_Y * scale)
+	p.toolbox:SetVertexColor(1, 1, 1, 0.45)
+	W.Color(p.toolboxLabel, a)
+
+	-- The minimap moves only when it is on the side the Toolbox is taking, as
+	-- SetDock has it; otherwise the World trunk stays put and has no outline.
+	local MMm = A:GetModule("minimap")
+	local f = MMm and MMm.enabled and MMm.frame
+	if f and f:IsShown() and A.Movers and A.Movers.PointAt then
+		local l, b = A.Movers.PointAt(f, "BOTTOMLEFT")
+		local r, t = A.Movers.PointAt(f, "TOPRIGHT")
+		if l and r and ((l + r) / 2 < w / 2) == left then
+			p.world:ClearAllPoints()
+			p.world:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", w - r, b)
+			p.world:SetSize(r - l, t - b)
+			p.world:SetFillColor({ a[1], a[2], a[3], 0.10 })
+			p.world:SetEdgeColor({ a[1], a[2], a[3], 0.8 })
+			W.Color(p.worldLabel, a)
+			p.world:Show()
+		end
+	end
+end
+
+function TB:StartSwapPreview()
+	local p = self:BuildSwapPreview()
+	local r = self.root
+	if r then r.glyph:SetAlpha(0.35) end
+	local function track()
+		local us = UIParent:GetEffectiveScale() or 1
+		local mx, my = GetCursorPosition()
+		TB:PaintSwapPreview((mx or 0) / us, (my or 0) / us)
+	end
+	p:SetScript("OnUpdate", track)
+	track()
+	p:Show()
+end
+
+function TB:EndSwapPreview()
+	local p = self.swapPreview
+	if p then
+		p:SetScript("OnUpdate", nil)
+		p:Hide()
+	end
+	if self.root then self.root.glyph:SetAlpha(1) end
+end
+
 --- The glyph is the trunk's anchor, always there, and only SEEN in unlock,
 --  where it is the handle you drag to swap sides. Locked, it floated over the
 --  strand's top unconnected to anything (Joe); the way to the settings is the
@@ -150,6 +339,11 @@ function TB:PaintRoot()
 	-- The texture, not the frame: the frame's alpha is the fader's.
 	r.glyph:SetShown(on)
 	r:EnableMouse(on)
+	-- Locked mid-drag: nothing is dropped, and the preview goes with the mode.
+	if not on and r.__dragging then
+		r.__dragging = nil
+		self:EndSwapPreview()
+	end
 end
 
 function TB:PlaceRoot()
@@ -172,8 +366,7 @@ end
 function TB:SetDock(edge)
 	edge = edge and tostring(edge):upper()
 	if not SIDES[edge] or InCombatLockdown() then return false end
-	local c = Char()
-	if c then c.docked = edge end
+	A.Config:Module("toolbox").dock = edge
 	self:CloseAll()
 	self:PlaceRoot()
 	local MMm = A:GetModule("minimap")

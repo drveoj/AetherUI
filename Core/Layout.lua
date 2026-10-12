@@ -697,6 +697,11 @@ function Layout:Apply(layout, hold)
 	-- and only now is every bar its size and on its parent.
 	if A.Braids then A.Braids:Refresh() end
 	if cornerChanged then A:Restyle() end
+	-- THE TOOLBOX ON THE SIDE THIS LAYOUT'S MINIMAP LEAVES FREE. A string
+	-- carries the minimap and not the Toolbox's side, so a right-handed layout
+	-- pasted onto a left-handed one put both trunks on one side.
+	local TB = A.GetModule and A:GetModule("toolbox")
+	if TB and TB.MatchMinimap then TB:MatchMinimap() end
 	return true
 end
 

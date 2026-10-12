@@ -39,10 +39,10 @@ Config.defaults = {
 	-- A quest log belongs to a character, not to a profile. Tracked quest IDs
 	-- shared across an alt would just be noise in everybody's tracker.
 	char = {
-		-- Which edge the Toolbox is docked to and whether it is open. Per
-		-- character rather than per profile, per the handoff: a drawer edge is a
-		-- habit somebody forms on one character, the way tracked quests are.
-		toolbox   = { docked = "LEFT", open = false },
+		-- Whether the Toolbox is open. Its SIDE is the profile's now
+		-- (modules.toolbox.dock, Joe 2026-10-12), beside the minimap it swaps
+		-- with; per character, a swap left an alt with both trunks on one side.
+		toolbox   = { open = false },
 
 		-- The chat window's size, in ITS own units. Per character for the same
 		-- reason Blizzard keeps its own copy per character, and ours exists
@@ -423,6 +423,8 @@ Config.defaults = {
 				addonColumns  = 2,
 				-- The trunk's labels only while the cursor is over their node.
 				labelsOnHover = false,
+				-- `dock`, LEFT or RIGHT, has NO default on purpose: a profile that
+				-- has never said takes the side its minimap leaves free (TB:Dock).
 			},
 
 			questtracker = {

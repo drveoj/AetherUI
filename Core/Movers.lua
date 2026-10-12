@@ -1953,7 +1953,12 @@ end
 -- LOCK chip, at the top of the screen. The whole pill locks when pressed.
 -- ---------------------------------------------------------------------------
 
-local LOCK_H = 34
+-- 40, NOT 34 (Joe, 2026-10-12: "LOCK button too big for the capsule"). LOCK
+-- is the shared 28 command with square-ish corners, and at 34 with 3 to spare
+-- its corners stood out past the pill's round end. At 40, inset LOCK_INSET
+-- from the end and 6 from top and bottom, a corner of 8 clears the arc by 6.
+local LOCK_H = 40
+local LOCK_INSET = 12
 
 local function LockSpot()
 	A.db.profile.anchors = A.db.profile.anchors or {}
@@ -1972,7 +1977,7 @@ local function LayLockButton(b)
 
 	local chipW = math.ceil(b.chip:GetWidth() or 0)
 	local w = 16 + 9 + 10 + (b.label:GetStringWidth() or 0) + 6
-		+ (b.hint:GetStringWidth() or 0) + 14 + chipW + 3
+		+ (b.hint:GetStringWidth() or 0) + 14 + chipW + LOCK_INSET
 	b:SetSize(math.ceil(w), LOCK_H)
 end
 
@@ -1999,17 +2004,17 @@ local function BuildLockButton()
 	b.glyph:SetSize(9, 9)
 	b.glyph:SetPoint("LEFT", b, "LEFT", 16, 0)
 
-	b.label = A.Widgets.Text(b, "label", "LEFT")
+	b.label = A.Widgets.Text(b, "modePill", "LEFT")
 	b.label:SetPoint("LEFT", b.glyph, "RIGHT", 10, 0)
 	b.label:SetText(L.movers.pill.unlocked)
 
-	b.hint = A.Widgets.Text(b, "label", "LEFT")
+	b.hint = A.Widgets.Text(b, "modePill", "LEFT")
 	b.hint:SetPoint("LEFT", b.label, "RIGHT", 6, 0)
 	b.hint:SetText(L.movers.pill.hint)
 
 	b.chip = A.Widgets.Command(b, { label = L.movers.pill.lock, variant = "primary",
 		onClick = function() Movers:Lock() end })
-	b.chip:SetPoint("RIGHT", b, "RIGHT", -3, 0)
+	b.chip:SetPoint("RIGHT", b, "RIGHT", -LOCK_INSET, 0)
 	b.chipText = b.chip.label
 
 	-- DRAGGED BY THE PILL, pressed at the command: the drag is the pill's, so it

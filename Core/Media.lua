@@ -414,6 +414,9 @@ Media.style = {
 	-- A toggle outside the options window (W.Toggle), at the options' sizes.
 	toggle       = { "regular",  13, "" },
 	toggleTag    = { "semibold", 10, "" },
+	-- Unlock mode's pill: "Lattice unlocked" and its hint, at LOCK's size beside
+	-- them (Joe, 2026-10-12: at 11 next to LOCK's 13 it read unbalanced).
+	modePill     = { "semibold", 13, "" },
 
 	unitName     = { "semibold", 14, "" },
 	unitSub      = { "light",    11, "" },
