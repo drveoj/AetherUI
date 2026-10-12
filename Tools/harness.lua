@@ -23322,6 +23322,34 @@ do
 	mcfg.drawer = was
 end
 
+print("== toolbox: a button adopted on a later scan is parked ==")
+do
+	local TBm = A:GetModule("toolbox")
+	local LN  = A.Launchers
+
+	-- Seen on WoW Forever (2026-10-12): SmartBuff's LibDBIcon button sat on the
+	-- minimap ring while its row was in the Addons branch. Its broker object
+	-- arrives first, so the entry starts with a proxy, which the Toolbox claims
+	-- and parks. The real button registers a moment later and is adopted onto
+	-- that entry - and an adoption counted as nothing found, so no change was
+	-- announced, nobody laid out again, and the real button was never parked.
+	_G.__makeLDB("LateIcon", "launcher", { label = "Late Icon" })
+	LN:Scan()
+	local e = LN.byKey["LateIcon"]
+	check(e and e.owned and e._parked and LN:OwnerOf(e) == TBm,
+		"the broker object alone gets a proxy, owned by the Toolbox and parked")
+
+	local real = _G.__makeDBIcon("LateIcon")
+	LN:Scan()
+	check(e.button == real, "the real button is adopted onto the same entry")
+	check(real:GetAlpha() == 0 and not real:IsMouseEnabled(),
+		"and the adoption is announced, so the Toolbox parks the real button too"
+		.. " - left alone it stays on the minimap ring, visible and clickable,"
+		.. " beside its own row in the Addons branch")
+	check(real:GetPoint(1) == "TOPLEFT" and real:GetNumPoints() == 1,
+		"parked off screen, not anchored to the minimap")
+end
+
 print("== toolbox: pins survive a reload ==")
 do
 	local TBm = A:GetModule("toolbox")

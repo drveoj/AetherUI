@@ -517,18 +517,26 @@ end
 --- Attach a real minimap button to an entry that so far only had an object.
 --  The button always wins over a proxy: it is what the addon actually made, and
 --  it is the one carrying that addon's own click behaviour.
+--
+--  Answers true when it took the button, and the caller must count that as
+--  something found. An adoption announced as nothing is how SmartBuff's button
+--  stayed on the minimap ring (Forever, 2026-10-12): the Toolbox had parked
+--  the proxy, never heard the entry had a new frame, and never parked it.
 local function AdoptButton(entry, button, ldbiName)
-	if entry.button and not entry.owned then return end
+	if entry.button and not entry.owned then return false end
 	if entry.button and entry.owned then
 		-- Drop the proxy. It is ours, so this is free and safe anywhere.
 		pcall(entry.button.Hide, entry.button)
 		L.seen[entry.button] = nil
 		entry._prepared = nil
 	end
+	-- Parking was done to the proxy, not to this frame.
+	entry._parked  = nil
 	entry.button   = button
 	entry.owned    = false
 	entry.ldbiName = ldbiName or entry.ldbiName
 	L.seen[button] = entry
+	return true
 end
 
 --- LDB launchers. `data source` objects are deliberately skipped: they are
@@ -584,7 +592,7 @@ function L:ScanDBIcon()
 		if b then
 			local entry = self.byKey[name]
 			if entry then
-				AdoptButton(entry, b, name)
+				if AdoptButton(entry, b, name) then found = found + 1 end
 			else
 				entry = Add({
 					key      = name,
