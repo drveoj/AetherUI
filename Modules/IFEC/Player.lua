@@ -142,35 +142,19 @@ local function BuildUpNextRow(parent)
 	return row
 end
 
-local CHIP_H, CHIP_PAD = 24, 13
-
 --- One of the three choices on the complete state.
 --
---  The shared button and the shared selected-fill, not a shape of its own: the
---  default action is "filled, with dark type on it", which is the same signal a
---  selected chat tab makes and is already written down once in SetButtonState.
+--  THE SHARED COMMAND (Lattice Polish Pass), the first one primary. They were
+--  buttons painted by SetButtonState, the tab rail's "filled means the one you
+--  are on" - so the default action read as already chosen, which is the
+--  confusion the command exists to end.
 local function BuildChip(parent)
-	local b = W.CreateButton(parent, {})
-	b:SetHeight(CHIP_H)
-	b:EnableMouse(true)
-
-	b.label = W.Text(b, "ifecChip", "CENTER", "OVERLAY")
-	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
-	b.__aetherLabel = b.label
-
-	b:HookScript("OnEnter", function(self)
-		W.SetButtonState(self, self.__aetherSelected, true)
-	end)
-	b:HookScript("OnLeave", function(self)
-		W.SetButtonState(self, self.__aetherSelected, false)
-	end)
+	local b = W.Command(parent, {})
 
 	--- `primary` is the design's one-press default action, drawn filled.
 	function b:SetChip(text, primary)
-		self.label:SetText(text or "")
-		self:SetWidth(math.ceil(self.label:GetStringWidth() or 0) + CHIP_PAD * 2)
-		self.__aetherSelected = primary and true or nil
-		W.SetButtonState(self, self.__aetherSelected, false)
+		self:SetLabel(text)
+		self:SetVariant(primary and "primary" or "standard")
 	end
 
 	return b
@@ -291,9 +275,9 @@ function Player:Wire()
 
 	-- AMBIENT SHUFFLE, REPLAY, JUST SCENERY. The design's three, in its order,
 	-- with the first as the one-press default.
-	f.chips[1]:SetScript("OnClick", function() Player:Shuffle() end)
-	f.chips[2]:SetScript("OnClick", function() Player:Replay() end)
-	f.chips[3]:SetScript("OnClick", function()
+	f.chips[1]:SetAction(function() Player:Shuffle() end)
+	f.chips[2]:SetAction(function() Player:Replay() end)
+	f.chips[3]:SetAction(function()
 		local IFmod = A:GetModule("ifec")
 		if IFmod then IFmod:SetCollapsed(true) end
 	end)

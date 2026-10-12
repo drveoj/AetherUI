@@ -592,7 +592,6 @@ Media.style = {
 	ifecUpNext   = { "regular",  13, "" },
 	ifecCaption  = { "light",    11, "" },   -- programme fills 5:52 of 6:04
 	ifecSection  = { "semibold", 11, "" },   -- UP NEXT
-	ifecChip     = { "medium",   12, "" },
 }
 
 -- ---------------------------------------------------------------------------

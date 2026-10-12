@@ -553,13 +553,14 @@ local function BuildNav(c)
 	back:SetScript("OnClick", function() OB:Back() end)
 	nav.back = back
 
-	local next_ = W.CreateButton(nav, { corner = 12 })
-	next_:SetSize(64, 24)
+	-- NEXT IS THE ONE PRIMARY COMMAND: the shared button, filled, because a
+	-- tour has an obvious next step (Lattice Polish Pass). Sized by its word.
+	local next_ = W.Command(nav, {
+		-- Enter presses it, ahead of the layout window stop 8 opens beside it.
+		label = L.tour.nav.next, variant = "primary", enter = 2,
+		onClick = function() OB:Next() end,
+	})
 	next_:SetPoint("RIGHT", nav, "RIGHT", 0, 0)
-	next_.label = W.Text(next_, "tbLabel", "CENTER")
-	next_.label:SetPoint("CENTER")
-	next_.label:SetText(L.tour.nav.next)
-	next_:SetScript("OnClick", function() OB:Next() end)
 	nav.next = next_
 
 	nav.dots = {}
@@ -588,7 +589,7 @@ local function PaintNav(nav, index)
 	local first = index <= 1
 	W.Color(nav.back.label, first and c.textFaint or c.textDim)
 	nav.back:EnableMouse(not first)
-	nav.next.label:SetText(index >= OB.COUNT and L.tour.nav.finish or L.tour.nav.next)
+	nav.next:SetLabel(index >= OB.COUNT and L.tour.nav.finish or L.tour.nav.next)
 end
 
 -- ---------------------------------------------------------------------------
@@ -862,8 +863,12 @@ function OB:ClearSlot(slot)
 			f:ClearAllPoints()
 			-- ASKED FIRST: the client throws on SetScript for a script the type
 			-- has not got, clearing one as much as setting one.
-			if f.HasScript and f:HasScript("OnClick") then f:SetScript("OnClick", nil) end
-			if f.HasScript and f:HasScript("OnEnter") then
+			-- NOT A SHARED CONTROL'S: a W.Toggle or W.Command sets its own
+			-- scripts once, at build, and its hover and click are its own. Cleared
+			-- here, the hangers' toggles came back from a pool dead.
+			local shared = f.__toggle or f.__command
+			if not shared and f.HasScript and f:HasScript("OnClick") then f:SetScript("OnClick", nil) end
+			if not shared and f.HasScript and f:HasScript("OnEnter") then
 				f:SetScript("OnEnter", nil)
 				f:SetScript("OnLeave", nil)
 			end
@@ -943,58 +948,48 @@ local function Lean(name, d)
 	h:SetPoint("BOTTOMRIGHT", entry.frame, "BOTTOMRIGHT", dx * d, dy * d)
 end
 
-local TOGGLE_H = 24
+local TOGGLE_H = 22
 
 --- Two switches, Target of target and Pet, writing the capsules live - and
 --  the lesson: drag the spine and the callout notices; leave it four seconds
 --  and the two hangers lean toward their parents once.
+--
+--  THE SHARED TOGGLE (Lattice Polish Pass): an on/off is a diamond with ON or
+--  OFF, the same control as the options window and the quest log. These drew
+--  their own - a 14 px diamond, the word on the far right - a third version.
 local function HangersControl(slot)
-	local UF = Mod("unitframes")
 	local rows = {
 		{ key = "targettarget", label = L.tour.hangers.tot },
 		{ key = "pet", label = L.tour.hangers.pet, note = L.tour.hangers.pet_note },
 	}
 	for i, row in ipairs(rows) do
 		local b = Kid(slot, "hangers", i, function(parent)
-			local f = CreateFrame("Button", nil, parent)
-			f:SetHeight(TOGGLE_H)
-			f.d = f:CreateTexture(nil, "ARTWORK")
-			f.d:SetTexture(Media.texture.diamond)
-			f.d:SetSize(14, 14)
-			f.d:SetPoint("LEFT", f, "LEFT", 2, 0)
-			f.label = W.Text(f, "tbCardBody", "LEFT")
-			f.label:SetPoint("LEFT", f.d, "RIGHT", 10, 0)
-			f.note = W.Text(f, "tbLabel", "LEFT")
-			f.note:SetPoint("LEFT", f.label, "RIGHT", 6, 0)
-			f.state = W.Text(f, "tbLabel", "RIGHT")
-			f.state:SetPoint("RIGHT", f, "RIGHT", 0, 0)
-			return f
+			local t = W.Toggle(parent, { label = row.label, onClick = function(self)
+				local UF = Mod("unitframes")
+				if UF and UF.SetSatellite and UF:SetSatellite(row.key, not self:IsOn()) then
+					-- Part of what this stop has grown: a capsule switched on here
+					-- arrives lit, not held.
+					local f = (row.key == "pet") and UF.pet or UF.tot
+					if f and OB.veil and OB.veil[f] then
+						Release(f, OB.veil[f])
+						OB.veil[f] = nil
+					end
+					OB:Go(OB.index or 2)
+				end
+			end })
+			-- "when you have one", after the toggle's own ON / OFF.
+			t.note = W.Text(t, "tbLabel", "LEFT")
+			t.note:SetPoint("LEFT", t.state, "RIGHT", 8, 0)
+			return t
 		end)
 		b:ClearAllPoints()
 		b:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -(i - 1) * (TOGGLE_H + 6))
-		b:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+		local UF = Mod("unitframes")
 		local on = UF and UF.SatelliteOn and UF:SatelliteOn(row.key) or false
-		local c = Palette.c
-		W.Tint(b.d, c.accent, on and 1 or 0.3)
-		b.label:SetText(row.label)
-		W.Color(b.label, on and c.text or c.textDim)
+		b:SetOn(on)
 		b.note:SetText(row.note or "")
-		W.Color(b.note, c.textFaint)
-		b.state:SetText(on and L.tour.hangers.on or L.tour.hangers.off)
-		W.Color(b.state, on and c.accent or c.textFaint)
-		b.key, b.on = row.key, on
-		b:SetScript("OnClick", function()
-			if UF and UF.SetSatellite and UF:SetSatellite(row.key, not on) then
-				-- Part of what this stop has grown: a capsule switched on here
-				-- arrives lit, not held.
-				local f = (row.key == "pet") and UF.pet or UF.tot
-				if f and OB.veil and OB.veil[f] then
-					Release(f, OB.veil[f])
-					OB.veil[f] = nil
-				end
-				OB:Go(OB.index or 2)
-			end
-		end)
+		W.Color(b.note, Palette.c.textFaint)
+		b.key = row.key
 	end
 	slot:SetHeight(#rows * TOGGLE_H + (#rows - 1) * 6)
 
@@ -1480,20 +1475,21 @@ end
 local function BuildToast()
 	if OB.toast then return OB.toast end
 
+	-- A NOTICE WITH A COMMAND IN IT, not a panel you press: the whole toast
+	-- was a button with an accent word on it, a fourth look for "do this"
+	-- (Lattice Polish Pass). Resume is the shared command, primary, since it
+	-- is the toast's one next step; the cross is the shared way out.
 	local t = Glass.CreatePanel(UIParent, {
-		frameType = "Button", corner = 14,
-		fill = "dialogFill", edge = "glassEdgeHi", shadow = 0.5,
+		corner = 14, fill = "dialogFill", edge = "glassEdgeHi", shadow = 0.5,
 	})
 	t:SetFrameStrata("HIGH")
 	t:SetHeight(TOAST_H)
 	t:SetPoint("TOP", UIParent, "TOP", 0, -120)
+	t:EnableMouse(true)
 	t:Hide()
 
 	t.label = W.Text(t, "tbLabel", "LEFT")
 	t.label:SetPoint("LEFT", t, "LEFT", 14, 0)
-
-	t.go = W.Text(t, "tbLabel", "RIGHT")
-	t.go:SetText(L.tour.build_toast.resume)
 
 	t.close = W.CloseButton(t)
 	t.close:SetScript("OnClick", function()
@@ -1501,17 +1497,19 @@ local function BuildToast()
 		OB:Finish()
 	end)
 
-	t:SetScript("OnClick", function()
-		-- Not in a fight, as OB:Start refuses one: the tour dims the world and
-		-- takes the HUD back to a partial one. The toast stays to click after.
-		if InCombatLockdown() then
-			A:Print(L.tour.start.during_fight_try_again)
-			return
-		end
-		OB:Hush()
-		local at = (Store() and Store().stopIndex) or 1
-		OB:Go(at)
-	end)
+	t.go = W.Command(t, { label = L.tour.build_toast.resume, variant = "primary",
+		onClick = function()
+			-- Not in a fight, as OB:Start refuses one: the tour dims the world
+			-- and takes the HUD back to a partial one. The toast stays to click
+			-- after.
+			if InCombatLockdown() then
+				A:Print(L.tour.start.during_fight_try_again)
+				return
+			end
+			OB:Hush()
+			local at = (Store() and Store().stopIndex) or 1
+			OB:Go(at)
+		end })
 
 	OB.toast = t
 	return t
@@ -1532,13 +1530,12 @@ function OB:ShowResume(at)
 	t.label:SetText(left == 1 and L.tour.build_toast.one_left
 		or L.tour.build_toast.n_left:format(left))
 	W.Color(t.label, Palette.c.text)
-	W.Color(t.go, Palette.c.accent)
 
 	W.PlaceClose(t.close, t)
 	t.go:ClearAllPoints()
-	t.go:SetPoint("RIGHT", t.close, "LEFT", -4, 0)
+	t.go:SetPoint("RIGHT", t.close, "LEFT", -6, 0)
 	t:SetWidth(14 + math.ceil(t.label:GetStringWidth() or 0) + 16
-		+ math.ceil(t.go:GetStringWidth() or 0) + 30)
+		+ math.ceil(t.go:GetWidth() or 0) + 6 + 30)
 
 	t:Show()
 	t:SetAlpha(0)
@@ -1593,10 +1590,9 @@ local function BuildCard()
 		c.lines[i] = t
 	end
 
-	c.go = W.CreateButton(c, { corner = 12 })
-	c.go:SetSize(150, 28)
-	c.go.label = W.Text(c.go, "tbLabel", "CENTER")
-	c.go.label:SetPoint("CENTER")
+	-- THE CARD'S ONE PRIMARY COMMAND (Lattice Polish Pass): the shared
+	-- button, sized by its word. Its action is set per card (SetAction).
+	c.go = W.Command(c, { variant = "primary", enter = 2 })
 
 	-- THE QUIET HALF OF THE PAIR: a plain Button with a label, no surface.
 	c.alt = CreateFrame("Button", nil, c)
@@ -1672,8 +1668,8 @@ function OB:ShowWelcome()
 	W.Color(c.alt.label, Palette.c.textDim)
 	if key then
 		LayCard(c, { L.tour.welcome.shared })
-		c.go.label:SetText(L.tour.welcome.keep)
-		c.go:SetScript("OnClick", function()
+		c.go:SetLabel(L.tour.welcome.keep)
+		c.go:SetAction(function()
 			OB:AdoptFrom(key)
 			OB:Finish()
 		end)
@@ -1681,12 +1677,11 @@ function OB:ShowWelcome()
 		c.alt:SetScript("OnClick", function() OB:Go(1) end)
 	else
 		LayCard(c, nil)
-		c.go.label:SetText(L.tour.welcome.go)
-		c.go:SetScript("OnClick", function() OB:Go(1) end)
+		c.go:SetLabel(L.tour.welcome.go)
+		c.go:SetAction(function() OB:Go(1) end)
 		c.alt.label:SetText(L.tour.skip)
 		c.alt:SetScript("OnClick", function() OB:Skip() end)
 	end
-	W.Color(c.go.label, Palette.c.text)
 	c.alt.label:SetWidth(0)
 	c.alt:SetWidth(math.ceil(c.alt.label:GetStringWidth() or 0) + 4)
 
@@ -1735,9 +1730,8 @@ function OB:ShowFinish()
 	W.Color(c.body, Palette.c.textDim)
 	LayCard(c, { self:Recap(), L.tour.finish.hint })
 
-	c.go.label:SetText(L.tour.finish.done)
-	W.Color(c.go.label, Palette.c.text)
-	c.go:SetScript("OnClick", function() OB:Finish() end)
+	c.go:SetLabel(L.tour.finish.done)
+	c.go:SetAction(function() OB:Finish() end)
 	c.alt:Hide()
 	PlaceCard(c)
 	c:Show()

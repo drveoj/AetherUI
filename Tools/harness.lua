@@ -12359,8 +12359,14 @@ do
 	check(A.db.profile.anchors.__lockButton ~= nil,
 		"dragging it is remembered, so it stays out of the way next time")
 
+	-- THE PILL IS NEVER PRESSED (Lattice Polish Pass): it says what mode you
+	-- are in. LOCK on it is the shared command, primary.
+	check(not (lock.HasScript and lock:HasScript("OnClick"))
+		and lock.chip.__command and lock.chip._variant == "primary",
+		"the pill is information you can drag; LOCK on it is the shared primary command")
+
 	-- AND IT LOCKS. That is the whole job.
-	lock:GetScript("OnClick")(lock)
+	lock.chip:GetScript("OnClick")(lock.chip)
 	check(not A.Movers.unlocked, "pressing it locks the frames")
 	check(not lock:IsShown(), "and takes itself away with them")
 
@@ -31514,6 +31520,14 @@ do
 	Errors:ShowText("copy me")
 	check(Errors.frame:IsShown() and Errors.frame.box:GetText() == "copy me",
 		"and any text at all can be put in it")
+	-- THE SHARED BUTTONS (Lattice Polish Pass): Export a standard command,
+	-- the way out the shared cross, and the cross shuts it.
+	check(Errors.frame.copy.__command and Errors.frame.copy._variant == "standard"
+		and Errors.frame.close.__aetherClose ~= nil,
+		"the errors box: Export a standard command, the shared way out")
+	Errors.frame.close:GetScript("OnClick")(Errors.frame.close)
+	check(not Errors.frame:IsShown(), "and the cross shuts it")
+	Errors:ShowText("copy me")
 
 	-- AND IT GIVES THE KEYBOARD BACK, however it is closed. The box takes focus
 	-- on the way in so that Ctrl+A works the moment you look at it, and Escape
@@ -32081,15 +32095,18 @@ section("ifec: cut to its contents, and the map you still want", function()
 
 	check(IF.jump.label:GetText() == "Jump Off", "reading Jump Off")
 
-	-- NOT WHITE. It sits just under the pill's clock, and two white readouts
-	-- stacked read as one block of text - the colour is what says they are
-	-- different things.
-	check(IF.jump.label:GetTextColor() == A.Palette.c.accent[1],
-		"in accent rather than white, so it does not compete with the clock")
+	-- A COMMAND, NOT A PILL (Lattice Polish Pass): a pill is information and
+	-- this is pressed. The shared button, at full ink like every command at
+	-- rest; its glass edge is what sets it apart from the clock above it.
+	check(IF.jump.__command and IF.jump._variant == "standard"
+		and IF.jump.label:GetTextColor() == A.Palette.c.text[1],
+		"the shared command, bright at rest - not the zone pill made pressable")
+	check(IF.jump:GetWidth() >= 10 + 14 + 10 + IF.jump.label:GetStringWidth(),
+		"wide enough for its icon and its word")
 
 	-- ITS OWN GLYPH. The chevron means "this opens" everywhere else in the
 	-- interface, so borrowing it here would promise a window.
-	check(IF.jump.glyph:GetTexture() == A.Media.icons.file,
+	check(IF.jump.icon:GetTexture() == A.Media.icons.file,
 		"with a mark of its own rather than the chevron")
 
 	-- The tooltip says what the thing DOES, not what it is called again.
@@ -32104,8 +32121,8 @@ section("ifec: cut to its contents, and the map you still want", function()
 	-- ASKING CANNOT BE TAKEN BACK - the client has no "actually, carry on" - so
 	-- the control becomes a readout rather than staying a button that lies.
 	check(IF.jump.label:GetText() == "Exit requested", "after which it says so")
-	check(IF.jump.label:GetTextColor() == A.Palette.c.textDim[1],
-		"and dims, being a readout rather than a control")
+	check(IF.jump:IsDisabled() and IF.jump.label:GetTextColor() == A.Palette.c.textDim[1],
+		"and is disabled, keeping its word, being a readout rather than a control")
 	IF.jump:GetScript("OnClick")(IF.jump)
 	check(_G.__taxi.earlyLandings == before + 1, "and asking twice asks once")
 
@@ -33200,8 +33217,12 @@ section("ifec: the player region, on the flight's own axis", function()
 	check(f.chips[1]:IsShown() and f.chips[1].label:GetText() == "Ambient shuffle",
 		"with the default action first ("
 		.. tostring(f.chips[1].label:GetText()) .. ")")
-	check(f.chips[1].__aetherSelected and not f.chips[3].__aetherSelected,
-		"drawn filled, the way a selected tab is, and only that one")
+	-- THE SHARED COMMAND (Lattice Polish Pass): primary for the default, not a
+	-- tab's selected fill, which read as already chosen.
+	check(f.chips[1].__command and f.chips[1]._variant == "primary"
+		and f.chips[2]._variant == "standard" and f.chips[3]._variant == "standard"
+		and not f.chips[1].__aetherSelected,
+		"the default is the one primary command, the others standard")
 	check(f.chips[2].label:GetText():find("Replay", 1, true) ~= nil,
 		"replay names what it would replay (" .. tostring(f.chips[2].label:GetText()) .. ")")
 	check(not f.now:IsShown() and not f.transport:IsShown(),
@@ -33290,6 +33311,20 @@ section("ifec: the player region, on the flight's own axis", function()
 	local LB = A.IFEC.Library
 	check(LB ~= nil, "the library loaded")
 	check(IF.frame.library:IsShown(), "and the console carries the control that opens it")
+	-- HEADER CHROME (Lattice Polish Pass): the close button's design - one
+	-- 28 px target, nothing at rest, the soft square on hover.
+	do
+		local lib, chev = IF.frame.library, IF.frame.chevron
+		local ok = true
+		for _, b in ipairs({ lib, chev }) do
+			if not (b:GetWidth() == A.Widgets.CHROME_HIT and b.wash and b.wash:GetAlpha() == 0) then ok = false end
+			b:GetScript("OnEnter")(b)
+			if b.wash:GetAlpha() ~= 1 then ok = false end
+			b:GetScript("OnLeave")(b)
+			if b.wash:GetAlpha() ~= 0 then ok = false end
+		end
+		check(ok, "the library and fold controls are header chrome: a 28 px target, the soft square on hover only")
+	end
 	check(not LB:IsOpen(), "shut to begin with")
 
 	IF.frame.library:GetScript("OnClick")(IF.frame.library)
@@ -33843,6 +33878,17 @@ section("nifec: the mini-player, on the ground", function()
 		                     RD.frame.zoom, RD.frame.close }) do
 			check(b.glyph ~= nil and b.glyph:GetTexture() == A.Media.icons.file,
 				"the reader's controls all come off the shared sheet")
+		end
+		-- ITS CLOSE IS HEADER CHROME (Lattice Polish Pass): the shared 28 px
+		-- target with the soft square on hover only.
+		do
+			local x = RD.frame.close
+			local rest = x.wash and x.wash:GetAlpha() == 0
+			x:GetScript("OnEnter")(x)
+			local lit = x.wash:GetAlpha() == 1
+			x:GetScript("OnLeave")(x)
+			check(x:GetWidth() == A.Widgets.CHROME_HIT and rest and lit and x.wash:GetAlpha() == 0,
+				"the reader's close is header chrome, the soft square on hover only")
 		end
 		-- WHAT THE WINDOW IS, not what is in it. It used to caption itself with
 		-- the issue's own title, which every page already carries in letters an
@@ -36462,6 +36508,9 @@ do
 	check(OB.card.go.label:GetText() == A.L.tour.welcome.go
 		and OB.card.alt.label:GetText() == A.L.tour.skip,
 		"with Configure it, and Skip beside it (" .. tostring(OB.card.go.label:GetText()) .. ")")
+	check(OB.card.go.__command and OB.card.go._variant == "primary"
+		and OB.card.go:GetWidth() > OB.card.go.label:GetStringWidth(),
+		"the card's button is the shared primary command, sized to its word")
 	check(OB.scrim:IsShown() and OB.scrim:GetFrameStrata() == "BACKGROUND"
 		and math.abs((OB.scrim.dim or 0) - 0.78) < 0.001,
 		"over a world dimmed to .78, under every frame of ours (" ..
@@ -36560,6 +36609,15 @@ do
 		local rows = slot.__aetherKids.hangers
 		check(rows and #rows == 2 and rows[1].key == "targettarget" and rows[2].key == "pet",
 			"two switches: Target of target, then Pet")
+		-- THE SHARED TOGGLE (Lattice Polish Pass), not a third diamond of its
+		-- own, and still wired after the slot has been cleared and refilled -
+		-- OB:ClearSlot wiped a pooled control's scripts.
+		check(rows[1].__toggle and rows[2].__toggle
+			and rows[1]:IsOn() == (UF:SatelliteOn("targettarget") and true or false)
+			and rows[1]:GetScript("OnClick") ~= nil,
+			"both are the shared diamond toggle, showing the real state, still wired after a refill")
+		check(OB.callout.nav.next.__command and OB.callout.nav.next._variant == "primary",
+			"Next is the shared command, primary - the tour's one obvious next step")
 		rows[1]:GetScript("OnClick")(rows[1])
 		check(UF.tot and UF.tot.off and A.Config:Module("unitframes").showToT == false
 			and not A.Movers.registry.targettarget,
@@ -36688,12 +36746,57 @@ do
 	check(A.Layout.frame and A.Layout.frame:IsShown()
 		and A.Layout.frame.box:GetText() == A.Layout:Pack(A.Layout:Encode()),
 		"stop 8 opens the layout window with your layout in it")
+	-- ITS BUTTONS ARE THE SHARED ONES (Lattice Polish Pass): Apply primary,
+	-- Export standard, and the shared cross in the corner for the way out.
+	do
+		local LF = A.Layout.frame
+		check(LF.apply.__command and LF.apply._variant == "primary"
+			and LF.export.__command and LF.export._variant == "standard"
+			and LF.close.__aetherClose ~= nil,
+			"the layout window: Apply primary, Export standard, the shared way out")
+		LF.close:GetScript("OnClick")(LF.close)
+		check(not LF:IsShown(), "and the cross shuts it")
+		LF:Show()
+	end
 	check(OB.callout.nav.next.label:GetText() == A.L.tour.nav.finish,
 		"and Next says Finish")
 
+	-- ENTER PRESSES THE PRIMARY (Joe, 2026-10-12). Here both the tour's Next
+	-- and the layout window's Apply are on screen; the tour outranks it, so
+	-- Enter moves the tour on rather than re-applying your layout.
+	local catcher = _G[ADDON .. "EnterCatcher"]
+	-- THE CLIENT'S ORDER: the layout window opened after the callout, and the
+	-- client fires its Apply's OnShow then (this mock fires OnShow only on the
+	-- frame shown, not its children). So Apply is the most recent here, and
+	-- only the tour's rank can put Next first.
+	A.Layout.frame.apply:GetScript("OnShow")(A.Layout.frame.apply)
+	check(A.Widgets.enterStack[#A.Widgets.enterStack] == A.Layout.frame.apply,
+		"the layout window's Apply is the most recently shown primary")
+	-- A frame's worth of time, as the client would give it.
+	catcher:GetScript("OnUpdate")(catcher, 0.2)
+	check(catcher and catcher:IsShown() and catcher:IsKeyboardEnabled(),
+		"with a primary that takes Enter on screen, Enter is listened for")
+	local key = catcher:GetScript("OnKeyDown")
+	local idx = OB.index
+	key(catcher, "W")
+	check(OB.index == idx and catcher.__propagating == true,
+		"any other key goes straight through and presses nothing")
+	_G.__inCombat = true
+	key(catcher, "ENTER")
+	_G.__inCombat = false
+	check(OB.index == idx, "in a fight Enter stands aside, as chat's")
+	local applied = 0
+	local realApply = A.Layout.ApplyText
+	A.Layout.ApplyText = function(...) applied = applied + 1 return realApply(...) end
+
 	-- THE FINISH: the whole lattice, in colour, and a recap read back out of
-	-- the systems that own it.
-	OB:Next()
+	-- the systems that own it - reached with Enter.
+	key(catcher, "ENTER")
+	A.Layout.ApplyText = realApply
+	check(applied == 0 and catcher.__propagating == false,
+		"Enter pressed the tour's Finish, not the layout window's Apply, and was kept from chat")
+	_G.__drainTimers(1)
+	check(catcher.__propagating == true, "then the keyboard is handed straight back")
 	grow()
 	check(not A.Layout.frame:IsShown(), "the layout window shuts")
 	check(OB.card:IsShown() and not OB.callout:IsShown()
@@ -36710,8 +36813,13 @@ do
 			and (not preset or recap:find(preset.label, 1, true)),
 			"the recap names the shape and the skin you have (" .. recap .. ")")
 	end
+	catcher:GetScript("OnUpdate")(catcher, 0.2)
+	check(catcher:IsKeyboardEnabled(), "the finish card's Done takes Enter too")
 	OB.card.go:GetScript("OnClick")(OB.card.go)
 	check(OB:Completed() and not OB.scrim:IsShown(), "Done marks the character done")
+	catcher:GetScript("OnUpdate")(catcher, 0.2)
+	check(not catcher:IsKeyboardEnabled(),
+		"and with no primary on screen the keyboard is let go entirely - chat has Enter back")
 	do
 		local stuck = 0
 		for _, entry in pairs(A.Fader.watched) do if entry.hold then stuck = stuck + 1 end end
@@ -37291,15 +37399,22 @@ do
 			tostring(OB.toast.label:GetText()) .. ")")
 	end
 
+	-- A NOTICE WITH A COMMAND IN IT (Lattice Polish Pass): Resume is the
+	-- shared button, primary; the toast itself is not a button.
+	check(OB.toast.go.__command and OB.toast.go._variant == "primary"
+		and OB.toast.go.label:GetText() == A.L.tour.build_toast.resume
+		and not (OB.toast.HasScript and OB.toast:HasScript("OnClick")),
+		"the toast is a notice, and Resume is the shared primary command")
+
 	-- NOT IN A FIGHT: the tour dims the world. The toast stays for later.
 	_G.__inCombat = true
-	OB.toast:GetScript("OnClick")(OB.toast)
+	OB.toast.go:GetScript("OnClick")(OB.toast.go)
 	_G.__inCombat = false
 	check(not OB.index and OB.toast:IsShown(),
 		"clicked in a fight, the toast waits rather than start the tour")
 
 	-- AND IT RESUMES WHERE THEY WERE.
-	OB.toast:GetScript("OnClick")(OB.toast)
+	OB.toast.go:GetScript("OnClick")(OB.toast.go)
 	check(OB.index == At("skin") and OB.callout:IsShown()
 		and not OB.toast:IsShown(),
 		"clicking it picks the tour up on the stop they left (" ..
@@ -37517,6 +37632,74 @@ do
 		p:SetParent(nil)
 		_G["QuestieFrame" .. i] = nil
 	end
+end
+
+print("== Enter presses the primary, and only a live one ==")
+do
+	local W = A.Widgets
+	local host = CreateFrame("Frame", nil, UIParent)
+	local pressed = 0
+	local b = W.Command(host, { label = "Yes", variant = "primary", enter = true,
+		onClick = function() pressed = pressed + 1 end })
+	local catcher = _G[ADDON .. "EnterCatcher"]
+	local tick = catcher:GetScript("OnUpdate")
+	local key = catcher:GetScript("OnKeyDown")
+
+	-- Greyed - the bank bag you cannot afford - it never answers to Enter.
+	b:SetDisabled(true)
+	tick(catcher, 0.2)
+	key(catcher, "ENTER")
+	check(pressed == 0 and not catcher:IsKeyboardEnabled(),
+		"a greyed primary does not take Enter, and the keyboard is left alone")
+	b:SetDisabled(false)
+	tick(catcher, 0.2)
+	key(catcher, "ENTER")
+	check(pressed == 1 and catcher:IsKeyboardEnabled(), "live, Enter presses it once")
+	host:Hide()
+	tick(catcher, 0.2)
+	key(catcher, "ENTER")
+	check(pressed == 1 and not catcher:IsKeyboardEnabled(),
+		"gone from the screen, Enter is chat's again")
+	_G.__drainTimers(1)
+	for i = #W.enterStack, 1, -1 do
+		if W.enterStack[i] == b then table.remove(W.enterStack, i) end
+	end
+end
+
+print("== nothing pressable is a pill ==")
+do
+	-- ONE SHAPE PER MEANING (Joe, 2026-10-12; Lattice Polish Pass): a pill is
+	-- information - a unit, the minimap's pill, a count chip - and is never
+	-- pressed. Commands are the shared rounded square, on/off the diamond.
+	-- Every glass surface the whole run made is here, so a pill that takes a
+	-- click anywhere in the addon is caught, however it was built.
+	local found = {}
+	for _, s in ipairs(A.Glass.surfaces) do
+		if s._kind == "pill" and s.GetScript then
+			for _, script in ipairs({ "OnClick", "OnMouseDown", "OnMouseUp" }) do
+				local ok, fn = pcall(s.GetScript, s, script)
+				if ok and fn then
+					-- Named so it can be found: its own name, else its parent's
+					-- and the first words on it.
+					local okN, name = pcall(s.GetName, s)
+					if not (okN and name) then
+						local p = s.GetParent and s:GetParent()
+						local okP, pn = pcall(function() return p and p:GetName() end)
+						local words
+						for _, r in ipairs({ s:GetRegions() }) do
+							if r.GetText and r:GetText() and r:GetText() ~= "" then words = r:GetText() break end
+						end
+						name = "pill on " .. tostring(okP and pn or "?") .. ' "' .. tostring(words or "") .. '"'
+					end
+					found[#found + 1] = name .. " " .. script
+					break
+				end
+			end
+		end
+	end
+	check(#found == 0, #found == 0
+		and ("no pill takes a press, across " .. #A.Glass.surfaces .. " surfaces")
+		or ("a pill takes a press: " .. table.concat(found, ", ")))
 end
 
 print("== Edit Mode leaves the frames we put away alone ==")

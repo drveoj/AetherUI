@@ -131,8 +131,16 @@ function Reader:Build()
 	-- type. Whether a font has U+00D7 is the font's business - Outfit does not
 	-- carry it in every weight, and the one it landed in drew the notdef box
 	-- followed by the digits of the escape.
+	-- HEADER CHROME (Lattice Polish Pass): the shared way out's 28 px target and
+	-- soft square on hover, around this cross. It was a 22 px glyph with none.
+	-- Centred where the old one was.
 	f.close = glyphButton(f, "close", 11)
-	f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD - 2, -PAD)
+	f.close:SetSize(W.CHROME_HIT, W.CHROME_HIT)
+	f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD - 2 + (W.CHROME_HIT - 22) / 2,
+		-PAD + (W.CHROME_HIT - 22) / 2)
+	f.close.wash = W.ChromeWash(f.close)
+	f.close:SetScript("OnEnter", function(self) self.wash:SetAlpha(1) end)
+	f.close:SetScript("OnLeave", function(self) self.wash:SetAlpha(0) end)
 	f.close:SetScript("OnClick", function() Reader:Close() end)
 
 	-- THE PAGE, INSIDE A SCROLLFRAME. There is no reliable way to clip a plain

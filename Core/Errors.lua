@@ -295,15 +295,10 @@ local function Build()
 	scroll:SetScript("OnScrollRangeChanged", UpdateRail)
 	scroll:SetScript("OnVerticalScroll", UpdateRail)
 
-	local close = W.Text(f, "tbCardTitle", "CENTER")
-	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -14)
-	close:SetText("\195\151")
-	W.Color(close, Palette.c.textDim)
-
-	local hit = CreateFrame("Button", nil, f)
-	hit:SetSize(24, 24)
-	hit:SetPoint("CENTER", close, "CENTER", 0, 0)
-	hit:SetScript("OnClick", function() f:Hide() end)
+	-- THE SHARED WAY OUT (Lattice Polish Pass): it was a bare cross with a
+	-- 24 px hit square over it and no hover.
+	f.close = W.CloseButton(f, { onClick = function() f:Hide() end })
+	W.PlaceClose(f.close, f)
 
 	-- EXPORT, WHICH DOES NOT GO THROUGH THE CLIPBOARD.
 	--
@@ -324,21 +319,11 @@ local function Build()
 	-- What is left is the saved variables file: a text file on the disk that
 	-- holds what it is given, flushed on /reload or logout. Slower than a
 	-- clipboard and the only one of the three that works.
-	local copy = W.CreateButton(f, { corner = 8 })
-	copy:SetSize(84, 22)
+	-- THE SHARED COMMAND (Lattice Polish Pass), standard: it was a 22 px
+	-- button of its own.
+	local copy = W.Command(f, { label = L.errors.build.export,
+		onClick = function() Errors:Export("last", f.__text or "") end })
 	copy:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -12)
-
-	local copyText = W.Text(copy, "tbCardSub", "CENTER")
-	copyText:SetPoint("CENTER")
-	copyText:SetText(L.errors.build.export)
-	W.Color(copyText, Palette.c.text)
-	copy.__label = copyText
-
-	copy:SetScript("OnEnter", function(self) W.SetButtonState(self, false, true) end)
-	copy:SetScript("OnLeave", function(self) W.SetButtonState(self, false, false) end)
-	copy:SetScript("OnClick", function()
-		Errors:Export("last", f.__text or "")
-	end)
 	f.copy = copy
 
 	Errors.frame = f

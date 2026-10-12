@@ -1968,18 +1968,23 @@ local function LayLockButton(b)
 	Tint(b.glyph, c.accent, 1)
 	A.Widgets.Color(b.label, c.text)
 	A.Widgets.Color(b.hint, c.textDim)
-	b.chip:SetFillColor(c.btnFill)
-	A.Widgets.Color(b.chipText, c.btnFillText)
+	b.chip:Repaint()
 
-	local chipW = math.ceil(b.chipText:GetStringWidth() or 0) + 24
-	b.chip:SetSize(chipW, LOCK_H - 10)
+	local chipW = math.ceil(b.chip:GetWidth() or 0)
 	local w = 16 + 9 + 10 + (b.label:GetStringWidth() or 0) + 6
-		+ (b.hint:GetStringWidth() or 0) + 14 + chipW + 5
+		+ (b.hint:GetStringWidth() or 0) + 14 + chipW + 3
 	b:SetSize(math.ceil(w), LOCK_H)
 end
 
+--- The mode pill and its LOCK command.
+--
+--  ONE SHAPE PER MEANING (Lattice Polish Pass): the pill says what mode you are
+--  in, which is information, and it is never pressed; it can still be dragged
+--  out of the way. LOCK is the shared command, primary - leaving unlock mode is
+--  the one obvious next step. The whole pill used to be the button, with a
+--  filled pill chip inside it drawn to look like one.
 local function BuildLockButton()
-	local b = A.Glass.CreatePanel(UIParent, { frameType = "Button", corner = LOCK_H / 2 })
+	local b = A.Glass.CreatePanel(UIParent, { corner = LOCK_H / 2 })
 	b:SetSize(LOCK_H * 8, LOCK_H)
 	b:SetFrameStrata("FULLSCREEN_DIALOG")
 	b:SetToplevel(true)
@@ -2002,17 +2007,13 @@ local function BuildLockButton()
 	b.hint:SetPoint("LEFT", b.label, "RIGHT", 6, 0)
 	b.hint:SetText(L.movers.pill.hint)
 
-	b.chip = A.Glass.CreatePanel(b, { corner = (LOCK_H - 10) / 2 })
-	b.chip:SetPoint("RIGHT", b, "RIGHT", -5, 0)
-	b.chip:EnableMouse(false)
-	b.chipText = A.Widgets.Text(b.chip, "label", "CENTER")
-	b.chipText:SetPoint("CENTER", b.chip, "CENTER", 0, 0)
-	b.chipText:SetText(L.movers.pill.lock)
+	b.chip = A.Widgets.Command(b, { label = L.movers.pill.lock, variant = "primary",
+		onClick = function() Movers:Lock() end })
+	b.chip:SetPoint("RIGHT", b, "RIGHT", -3, 0)
+	b.chipText = b.chip.label
 
-	-- DRAG AND CLICK ON ONE BUTTON. RegisterForDrag takes the button that
-	-- starts a drag out of the click path only once the drag actually starts,
-	-- so a press that does not move still fires OnClick - which is what makes
-	-- this both a button and a thing you can push out of the way.
+	-- DRAGGED BY THE PILL, pressed at the command: the drag is the pill's, so it
+	-- can be pushed out of the way of the frame you are arranging.
 	b:SetScript("OnDragStart", function(self) self:StartMoving() end)
 	b:SetScript("OnDragStop", function(self)
 		self:StopMovingOrSizing()
@@ -2024,7 +2025,6 @@ local function BuildLockButton()
 			}
 		end
 	end)
-	b:SetScript("OnClick", function() Movers:Lock() end)
 
 	return b
 end

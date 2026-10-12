@@ -1335,7 +1335,112 @@ function W.Command(parent, opts)
 	b:HookScript("OnShow", function(self) Fresh(self.label) end)
 	b.__command = true
 	W.controls[#W.controls + 1] = b
+	if opts.enter then W.TakeEnter(b, opts.enter) end
 	return b
+end
+
+-- ---------------------------------------------------------------------------
+-- Enter presses the primary (Joe, 2026-10-12: "make Enter press it")
+--
+-- OPT-IN, ON A PANEL WAITING FOR AN ANSWER: the tour, a confirmation, the
+-- layout window. Enter is also the chat key, and a panel that sits on screen
+-- while you play - the resume toast at login, the flight console, unlock mode's
+-- LOCK - would take it from chat for as long as it showed. Only a primary:
+-- a destructive command never answers to Enter.
+--
+-- ONE CATCHER for all of them, keyboard-enabled only while one is on screen,
+-- every other key passed straight through, so no key is held that nobody asked
+-- for. Two showing at once: the higher rank wins (`enter = 2`, the tour, which
+-- dims everything else and opens the layout window at its stop 8 - Enter there
+-- must move the tour on, not re-apply your layout), then the one shown last,
+-- as the one in front. In a fight it stands aside: a change of
+-- propagation is refused there (A:SetPropagate), and Enter would reach chat
+-- and press the button both.
+-- ---------------------------------------------------------------------------
+
+W.enterStack = {}
+local catcher
+
+local function EnterTop()
+	local best
+	for i = #W.enterStack, 1, -1 do
+		local b = W.enterStack[i]
+		if b:IsVisible() and not b._disabled and b._action
+			and (not best or (b._enterRank or 1) > (best._enterRank or 1)) then
+			best = b
+		end
+	end
+	return best
+end
+
+--- Keyboard on while a primary that takes Enter is on screen, off otherwise.
+--  The frame itself stays shown; only the keyboard is switched, and only on a
+--  change.
+local function SyncCatcher()
+	if not catcher then return end
+	local want = EnterTop() ~= nil
+	if want == catcher.__wantKeys then return end
+	catcher.__wantKeys = want
+	if want then
+		catcher:EnableKeyboard(A:SetPropagate(catcher, true))
+	else
+		catcher:EnableKeyboard(false)
+	end
+end
+W.SyncEnter = SyncCatcher
+
+local function Catcher()
+	if catcher then return catcher end
+	catcher = CreateFrame("Frame", ADDON .. "EnterCatcher", UIParent)
+	catcher:SetSize(1, 1)
+	catcher:SetPoint("TOPLEFT")
+	catcher:SetFrameStrata("FULLSCREEN_DIALOG")
+	catcher:EnableKeyboard(false)
+	-- LOOKED AT TEN TIMES A SECOND, as well as on the buttons' own show and
+	-- hide. A button that appears because its PARENT was shown is the usual
+	-- case here, and leaning on the child's OnShow for that alone is one
+	-- client behaviour away from Enter silently doing nothing. A loop over a
+	-- handful of buttons.
+	local since = 0
+	catcher:SetScript("OnUpdate", function(_, elapsed)
+		since = since + (elapsed or 0)
+		if since < 0.1 then return end
+		since = 0
+		SyncCatcher()
+	end)
+	catcher:SetScript("OnKeyDown", function(self, key)
+		local b = (key == "ENTER" or key == "NUMPADENTER") and EnterTop()
+		if not b or (InCombatLockdown and InCombatLockdown()) then
+			A:SetPropagate(self, true)
+			return
+		end
+		A:SetPropagate(self, false)
+		b._action(b, "LeftButton")
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0.1, function() A:SetPropagate(self, true) end)
+		else
+			A:SetPropagate(self, true)
+		end
+		SyncCatcher()
+	end)
+	return catcher
+end
+
+--- Let Enter press this command while it is on screen: highest rank, then
+--  most recent, on top.
+function W.TakeEnter(b, rank)
+	b._enterRank = tonumber(rank) or 1
+	Catcher()
+	local function front(self)
+		for i = #W.enterStack, 1, -1 do
+			if W.enterStack[i] == self then table.remove(W.enterStack, i) end
+		end
+		W.enterStack[#W.enterStack + 1] = self
+		SyncCatcher()
+	end
+	front(b)
+	b:HookScript("OnShow", front)
+	b:HookScript("OnHide", SyncCatcher)
 end
 
 --- Put our surface behind a button, whoever made the button.

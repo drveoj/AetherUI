@@ -874,19 +874,6 @@ end
 
 local WIN_W, WIN_H = 640, 168
 
-local function Button(parent, text, w)
-	local b = W.CreateButton(parent, { corner = 8 })
-	b:SetSize(w, 24)
-	local label = W.Text(b, "tbCardSub", "CENTER")
-	label:SetPoint("CENTER")
-	label:SetText(text)
-	W.Color(label, Palette.c.text)
-	b.__aetherLabel = label
-	b:SetScript("OnEnter", function(self) W.SetButtonState(self, false, true) end)
-	b:SetScript("OnLeave", function(self) W.SetButtonState(self, false, false) end)
-	return b
-end
-
 local function Build()
 	if Layout.frame then return Layout.frame end
 
@@ -938,19 +925,21 @@ local function Build()
 	f.status:SetPoint("TOPLEFT", well, "BOTTOMLEFT", 2, -10)
 	f.status:SetPoint("RIGHT", f, "RIGHT", -18, 0)
 
-	f.apply = Button(f, L.layout.window.apply, 120)
+	-- THE SHARED COMMANDS (Lattice Polish Pass), sized by their words. Apply
+	-- is primary: pasting a string and applying it is what the window is for.
+	-- They were a private builder of their own at 24 px.
+	f.apply = W.Command(f, { label = L.layout.window.apply, variant = "primary", enter = true,
+		onClick = function() Layout:ApplyText(box:GetText()) end })
 	f.apply:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 16)
-	f.apply:SetScript("OnClick", function() Layout:ApplyText(box:GetText()) end)
 
-	f.export = Button(f, L.layout.window.export, 140)
+	f.export = W.Command(f, { label = L.layout.window.export,
+		onClick = function() A.Errors:Export("layout", Layout:Pack(Layout:Encode())) end })
 	f.export:SetPoint("RIGHT", f.apply, "LEFT", -8, 0)
-	f.export:SetScript("OnClick", function()
-		A.Errors:Export("layout", Layout:Pack(Layout:Encode()))
-	end)
 
-	f.close = Button(f, L.layout.window.close, 90)
-	f.close:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 16)
-	f.close:SetScript("OnClick", function() f:Hide() end)
+	-- THE SHARED WAY OUT, in the corner, as on every other window - not a
+	-- "Close" command at the foot.
+	f.close = W.CloseButton(f, { onClick = function() f:Hide() end })
+	W.PlaceClose(f.close, f)
 
 	Layout.frame = f
 	return f

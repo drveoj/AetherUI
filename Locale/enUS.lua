@@ -472,7 +472,6 @@ L["layout.err.version"] = "That isn't a layout string this version reads (it sta
 
 L["layout.window.applied"] = "Layout applied."
 L["layout.window.apply"] = "Apply"
-L["layout.window.close"] = "Close"
 L["layout.window.export"] = "Export to file"
 L["layout.window.hint"] =
 	"Your arrangement as one line. Paste someone else's in and press Apply."
@@ -1850,8 +1849,6 @@ L["tour.hangers.body"] =
 L["tour.hangers.head"] = "Some frames hang off others."
 L["tour.hangers.head_dragged"] = "See? They came with you."
 L["tour.hangers.name"] = "HANGERS-ON"
-L["tour.hangers.off"] = "OFF"
-L["tour.hangers.on"] = "ON"
 L["tour.hangers.pet"] = "Pet"
 L["tour.hangers.pet_note"] = "(when you have one)"
 L["tour.hangers.tot"] = "Target of target"

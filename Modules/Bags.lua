@@ -2873,7 +2873,8 @@ local function BuildConfirm()
 	-- COMMANDS (Lattice Polish Pass): buying the bag is the obvious next step,
 	-- so Yes is the panel's one primary; No is standard, at full ink - it
 	-- used to rest at the dim ink, which is the look of a disabled button.
-	box.yes = W.Command(box, { variant = "primary", label = _G.YES or "Yes" })
+	-- Enter buys it too, unless Yes is greyed (too little gold).
+	box.yes = W.Command(box, { variant = "primary", label = _G.YES or "Yes", enter = true })
 	box.yes:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -CONFIRM_PAD, 22)
 
 	box.no = W.Command(box, { label = _G.NO or "No" })

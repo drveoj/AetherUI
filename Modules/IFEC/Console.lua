@@ -45,8 +45,13 @@ local GAP     = 12
 -- cannot bleed into each other, so the frame is a little larger than the ring.
 local DIAL    = 44
 local DIAL_FRAME = DIAL / (Media.dialSheet and Media.dialSheet.ring or 1)
-local CHEV    = 18                     -- the fold control's box
-local GLYPH_ROOM = 17                  -- the exit mark plus its gap, inside a pill
+local CHEV    = 18                     -- the fold control's glyph
+-- HEADER CHROME (Lattice Polish Pass): the fold and library controls are the
+-- close button's design - one 28 px target, nothing at rest, the soft square on
+-- hover. They were 18 px glyphs with no hover. The right inset is cut by the
+-- target's overhang so the chevron's glyph stays where it was.
+local HIT     = W.CHROME_HIT
+local CHROME_R = HIT + HIT + PAD_R - (HIT - CHEV) / 2
 local DISC    = 35
 local RIM     = 2
 
@@ -58,7 +63,7 @@ local HEIGHT  = PAD_T + DIAL + PAD_B
 -- is showing or not, the way the chevron already was: the two forms are meant
 -- to lay out identically, and a header that got narrower when the drawer
 -- control went away would move the route every time content came and went.
-local CHROME    = PAD_L + DIAL_FRAME + GAP + GAP + CHEV + 8 + CHEV + PAD_R
+local CHROME    = PAD_L + DIAL_FRAME + GAP + GAP + CHROME_R
 local TEXT_MAX  = WIDTH_MAX - CHROME
 
 -- NOT AN ARROW. The design draws one, and Outfit has no U+2192 - it renders the
@@ -184,13 +189,17 @@ local function Build()
 	-- would say the console had a hidden half, which is the opposite of "nothing
 	-- reads as missing".
 	local chev = CreateFrame("Button", nil, head)
-	chev:SetSize(CHEV, CHEV)
-	chev:SetPoint("RIGHT", head, "RIGHT", -PAD_R, 0)
+	chev:SetSize(HIT, HIT)
+	chev:SetPoint("RIGHT", head, "RIGHT", -(PAD_R - (HIT - CHEV) / 2), 0)
 	chev:EnableMouse(true)
+	chev.wash = W.ChromeWash(chev)
 	chev.glyph = chev:CreateTexture(nil, "ARTWORK")
 	chev.glyph:SetTexture(Media.texture.chevron)
-	chev.glyph:SetAllPoints(chev)
+	chev.glyph:SetSize(CHEV, CHEV)
+	chev.glyph:SetPoint("CENTER")
 	chev:SetScript("OnClick", function() IF:SetCollapsed(not IF.collapsed) end)
+	chev:SetScript("OnEnter", function(self) self.wash:SetAlpha(1) end)
+	chev:SetScript("OnLeave", function(self) self.wash:SetAlpha(0) end)
 	chev:Hide()
 	f.chevron = chev
 
@@ -202,9 +211,10 @@ local function Build()
 	-- everywhere in the interface and the one next door already uses it for
 	-- folding, so two of them in one header at two rotations would be a puzzle.
 	local lib = CreateFrame("Button", nil, head)
-	lib:SetSize(CHEV, CHEV)
-	lib:SetPoint("RIGHT", chev, "LEFT", -8, 0)
+	lib:SetSize(HIT, HIT)
+	lib:SetPoint("RIGHT", chev, "LEFT", 0, 0)
 	lib:EnableMouse(true)
+	lib.wash = W.ChromeWash(lib)
 	lib.glyph = lib:CreateTexture(nil, "ARTWORK")
 	lib.glyph:SetSize(13, 13)
 	lib.glyph:SetPoint("CENTER")
@@ -214,9 +224,13 @@ local function Build()
 		IF:PaintLibraryButton()
 	end)
 	lib:SetScript("OnEnter", function(self)
+		self.wash:SetAlpha(1)
 		W.Tooltip(self, "ANCHOR_LEFT", L.console.library.name, L.console.library.desc)
 	end)
-	lib:SetScript("OnLeave", W.HideTooltip)
+	lib:SetScript("OnLeave", function(self)
+		self.wash:SetAlpha(0)
+		W.HideTooltip()
+	end)
 	lib:Hide()
 	f.library = lib
 
@@ -590,16 +604,27 @@ function IF:UpdateJumpOff(flight)
 		local host = MM and MM.frame
 		if not host then return end
 
-		-- THE SAME PILL THE MAP ALREADY USES, as a Button. A second capsule of
-		-- our own would only ever be a near-copy of this one, and it was landing
-		-- on top of it.
-		local b = W.Pill(host, "pnBody", { height = 24, padX = 12,
-			frameType = "Button" })
+		-- A COMMAND, NOT A PILL (Lattice Polish Pass): a pill is information,
+		-- and this is pressed. It was the zone pill's capsule made a Button; it
+		-- is now the shared command, with its own glyph as the row icon. Once
+		-- asked it is disabled and keeps its word ("Exit requested").
+		local b = W.Command(host, {
+			row = true, icon = "exit", iconToken = "accent",
+			onClick = function() IF:RequestJumpOff() end,
+			onEnter = function(self)
+				if IF._jumpAsked then
+					W.Tooltip(self, "ANCHOR_RIGHT", L.console.jump.asked,
+						L.console.jump.asked_desc)
+				else
+					W.Tooltip(self, "ANCHOR_RIGHT", L.console.jump.name,
+						L.console.jump.desc)
+				end
+			end,
+			onLeave = function() W.HideTooltip() end,
+		})
 		-- UNDER THE ZONE PILL, not under the map: the pill is anchored there
 		-- already, so anchoring to the map put the two in the same place.
 		b:SetPoint("TOP", MM.pill or host, "BOTTOM", 0, -6)
-		b:EnableMouse(true)
-		if b.RegisterForClicks then b:RegisterForClicks("AnyUp") end
 
 		-- ABOVE THE INTERFACE WE JUST HID. Alpha does not stop a frame taking
 		-- the mouse: everything under UIParent is still sitting there at zero
@@ -612,32 +637,12 @@ function IF:UpdateJumpOff(flight)
 		-- ITS OWN GLYPH, not the chevron. The chevron means "this opens"
 		-- everywhere else in the interface - the toolbox rail, every dropdown -
 		-- and borrowing it here would promise a window. This is an arrow onto a
-		-- ground line: alight here.
-		b.glyph = b:CreateTexture(nil, "ARTWORK")
-		b.glyph:SetSize(11, 11)
-		b.glyph:SetPoint("RIGHT", b.text, "LEFT", -6, 0)
-		Media:SetIcon(b.glyph, "exit")
-
-		-- The pill sizes itself to its text, so the glyph has to be paid for.
-		b.label = b.text
-		b.SetPillLabel = function(self, text)
+		-- ground line: alight here. A row command's width is its caller's: the
+		-- icon's inset, the icon, its gap, the word and the command's pad.
+		b.SetJumpLabel = function(self, text)
 			self:SetLabel(text)
-			self:SetWidth((self:GetWidth() or 0) + GLYPH_ROOM)
-			self.text:ClearAllPoints()
-			self.text:SetPoint("CENTER", self, "CENTER", GLYPH_ROOM / 2, 0)
+			self:SetWidth(10 + 14 + 10 + math.ceil(self.label:GetStringWidth() or 0) + 18)
 		end
-
-		b:SetScript("OnClick", function() IF:RequestJumpOff() end)
-		b:SetScript("OnEnter", function(self)
-			if IF._jumpAsked then
-				W.Tooltip(self, "ANCHOR_RIGHT", L.console.jump.asked,
-					L.console.jump.asked_desc)
-			else
-				W.Tooltip(self, "ANCHOR_RIGHT", L.console.jump.name,
-					L.console.jump.desc)
-			end
-		end)
-		b:SetScript("OnLeave", W.HideTooltip)
 
 		self.jump = b
 	end
@@ -654,21 +659,12 @@ function IF:PaintJumpOff()
 	local b = self.jump
 	if not b then return end
 
-	-- ACCENT, NOT WHITE. It sits a few pixels under the pill's clock, and two
-	-- white readouts stacked read as one block of text - the colour is what
-	-- says these are different things.
-	local c = Palette.c
-
-	if self._jumpAsked then
-		b:SetPillLabel(L.console.jump.asked)
-		W.Color(b.label, c.textDim)
-		b.glyph:SetVertexColor(c.textDim[1], c.textDim[2], c.textDim[3], 0.55)
-	else
-		b:SetPillLabel(L.console.jump.name)
-		W.Color(b.label, c.accent)
-		b.glyph:SetVertexColor(c.accent[1], c.accent[2], c.accent[3], 1)
-	end
-	b:EnableMouse(true)              -- hoverable either way, for the tooltip
+	-- A command at rest is bright, and its glass edge is what sets it apart
+	-- from the pill's clock above it now, not an accent word. Asked, it is
+	-- disabled and keeps its word; still hoverable, for the tooltip.
+	b:SetJumpLabel(self._jumpAsked and L.console.jump.asked or L.console.jump.name)
+	b:SetDisabled(self._jumpAsked and true or false)
+	b:EnableMouse(true)
 end
 
 --- Ask to be put down at the next stop.
