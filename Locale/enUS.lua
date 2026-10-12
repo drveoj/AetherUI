@@ -1505,8 +1505,15 @@ L["options.toolbox.desc"] =
 		.. "Widgets, Addons, Settings and What's new, each opening its own "
 		.. "branch, with your pinned addons hanging below.\n\nIt docks left or "
 		.. "right, and the World trunk under the minimap takes the other side. "
-		.. "To swap them, %s and drag the Lattice glyph at the top of the trunk "
-		.. "to the other half of the screen. The side is remembered per %s."
+		.. "Pick the side below, or %s and drag the Lattice glyph at the top of "
+		.. "the trunk to the other half of the screen. The side is part of your "
+		.. "profile, so every character on it shares it."
+L["options.toolbox.side.name"] = "Side"
+L["options.toolbox.side.desc"] =
+	"Which edge the Toolbox docks to. The minimap and the World trunk move "
+		.. "to the other side."
+L["options.toolbox.side.left"] = "Left"
+L["options.toolbox.side.right"] = "Right"
 L["options.toolbox.grid_header"] = "Grids"
 L["options.toolbox.libdatabroker_data_sources"] = "LibDataBroker data sources"
 L["options.toolbox.only_latency_fps_polled"] =

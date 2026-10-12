@@ -23405,6 +23405,35 @@ do
 		TBm:SetOpen(false)
 	end
 
+	-- THE SIDE ON THE PAGE (handoff "Trunk sides"; Joe, 2026-10-12: "yes, add
+	-- it"). Picking it is the drag's swap - minimap and all - not a value
+	-- written for somebody to read later, which is the silent no-op a plain
+	-- path would have been.
+	do
+		local OC = A.OptionsControls
+		local side = tree.args.toolbox.args.dock
+		TBm:SetDock("LEFT")
+		check(side and side.type == "select" and OC.Value(side) == "LEFT",
+			"the Toolbox page has a Side choice, reading the side it is on")
+		-- In French, where the alphabet would put Droite first.
+		local ch = side and OC.Choices({ type = "select", sorting = side.sorting,
+			values = { LEFT = "Gauche", RIGHT = "Droite" } }) or {}
+		check(#ch == 2 and ch[1].key == "LEFT" and ch[2].key == "RIGHT",
+			"Left, then Right - an order, not an alphabet, even as Gauche and Droite")
+		OC.Write(side, "RIGHT")
+		check(TBm:Dock() == "RIGHT" and TBm.MinimapSide() == "LEFT" and OC.Value(side) == "RIGHT",
+			"picking Right docks it right and sends the minimap left ("
+				.. tostring(TBm:Dock()) .. ", minimap " .. tostring(TBm.MinimapSide()) .. ")")
+		_G.__inCombat = true
+		OC.Write(side, "LEFT")
+		_G.__inCombat = false
+		check(TBm:Dock() == "RIGHT" and OC.Value(side) == "RIGHT",
+			"in a fight it is refused, and the page still reads the side it is on")
+		OC.Write(side, "LEFT")
+		check(TBm:Dock() == "LEFT" and TBm.MinimapSide() == "RIGHT", "and Left puts both back")
+		check(not OC.Disabled(side), "it can be used while the Toolbox is on")
+	end
+
 	-- The command.
 	run("toolbox dock right")
 	check(TBm:Dock() == "RIGHT", "/lattice toolbox dock moves it")

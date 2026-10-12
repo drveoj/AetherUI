@@ -164,10 +164,18 @@ function C.Sections(group)
 end
 
 --- A select's choices as { key, label }: the palette's order for the skins,
---  otherwise by label.
+--  a leaf's own `sorting` (AceConfig's) where it has one, otherwise by label.
+--  Left before Right is an order, not an alphabet: in French it would read
+--  Droite, Gauche.
 function C.Choices(node)
 	local values = Call(node.values, node) or {}
 	local list = {}
+	if type(node.sorting) == "table" then
+		for _, key in ipairs(node.sorting) do
+			if values[key] then list[#list + 1] = { key = key, label = tostring(values[key]) } end
+		end
+		return list
+	end
 	if node.control == "swatches" then
 		local seen = {}
 		for _, key in ipairs(Palette.order or {}) do

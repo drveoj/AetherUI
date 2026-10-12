@@ -334,10 +334,32 @@ end
 
 local function ToolboxGroup()
 	return group(L.common.toolbox, {
-		desc = note(A.F(L.options.toolbox.desc,
-			A.Hi(L.options.toolbox.unlock_frames), A.Hi(L.common.character))),
+		desc = note(A.F(L.options.toolbox.desc, A.Hi(L.options.toolbox.unlock_frames))),
 		enabled = toggle(L.common.enabled, nil, { "modules", "toolbox", "enabled" },
 			{ defaultTrue = true }),
+		-- THE SIDE, as the unlock drag sets it (handoff "Trunk sides"; Joe,
+		-- 2026-10-12). Its own get and set rather than a path: picking a side
+		-- is TB:SetDock - the minimap mirrored across, the trunk placed again -
+		-- not a value somebody reads later, and a refusal (a fight) must leave
+		-- the stored side alone.
+		dock = {
+			type = "select", order = next_(),
+			name = L.options.toolbox.side.name, desc = L.options.toolbox.side.desc,
+			values = { LEFT = L.options.toolbox.side.left, RIGHT = L.options.toolbox.side.right },
+			sorting = { "LEFT", "RIGHT" },
+			get = function()
+				local TB = A:GetModule("toolbox")
+				return TB and TB:Dock() or "LEFT"
+			end,
+			set = function(_, side)
+				local TB = A:GetModule("toolbox")
+				if TB and TB.enabled then TB:SetDock(side) end
+			end,
+			disabled = function()
+				local TB = A:GetModule("toolbox")
+				return not (TB and TB.enabled)
+			end,
+		},
 		labelsOnHover = toggle(L.options.trunk.labels_on_hover.name,
 			L.options.trunk.labels_on_hover.desc, { "modules", "toolbox", "labelsOnHover" },
 			{ after = "none", onSet = function() A.Trunk:Get("toolbox"):Extend() end }),
