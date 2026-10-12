@@ -190,8 +190,11 @@ end
 -- branches
 -- ---------------------------------------------------------------------------
 
+-- MENU IS 380, not the handoff's 300 (Joe's yes, 2026-10-12): at 300 a tile is
+-- about 49 units and "Character" alone is 51, so three names came out cut and
+-- touching the tile's rim. 380 gives every name room with MENU_INSET either side.
 TB.BRANCHES = {
-	{ key = "menu",     icon = "menu",     order = 100, width = 300 },
+	{ key = "menu",     icon = "menu",     order = 100, width = 380 },
 	{ key = "widgets",  icon = "widgets",  order = 200, width = 360 },
 	{ key = "addons",   icon = "addons",   order = 300, width = 360 },
 	{ key = "settings", icon = "gear",     order = 400, width = 300 },
@@ -1347,8 +1350,255 @@ TB.MICRO = {
 	  open = function() return Shown("HelpFrame") end },
 }
 
+--- WoW Forever's doors, by Blizzard's micro button (Joe, 2026-10-12).
+--
+--  THE LIST ABOVE IS ERA'S. On Forever it showed eight doors where the game's
+--  own micro menu has eleven: ToggleSpellBook and ToggleTalentFrame do not
+--  exist there (spells and talents are one panel), so those two probed away,
+--  and Professions, Legacy, Group finder and Collections were never listed.
+--
+--  So on Forever the Menu MIRRORS Blizzard's: the same doors in the same
+--  order, present exactly when MicroMenu would add them (its own
+--  GenerateButtonInfos and game rules), each pressing Blizzard's own button so
+--  it opens exactly what that button opens. Greyed when Blizzard's is (Talents
+--  before the level, Legacy before it unlocks), with Blizzard's reason on
+--  hover. Quest log keeps OUR door, which opens our log. The game menu is
+--  Blizzard's like the rest: opened from our code it ran tainted (see Lend
+--  below), and Blizzard's button shuts the windows first itself. No Bags door: Forever's menu has
+--  none, and Blizzard's own twelve (Shop included, greyed or not) already
+--  make a 4 x 3 grid. Bags was added once and made thirteen, one door alone on
+--  a fourth row (Joe, 2026-10-12: "drop bags"). B still opens them.
+-- Labels written out, not looked up by key: the locale check reads them here.
+TB.FOREVER_MICRO = {
+	CharacterMicroButton   = { key = "character",   label = L.toolbox.micro.character },
+	ProfessionMicroButton  = { key = "professions", label = L.toolbox.micro.professions },
+	SpellbookMicroButton   = { key = "spellbook",   label = L.toolbox.micro.spellbook },
+	TalentMicroButton      = { key = "talents",     label = L.toolbox.micro.talents },
+	LegacyMicroButton      = { key = "legacy",      label = L.toolbox.micro.legacy },
+	QuestLogMicroButton    = { key = "quests", ours = true },
+	HousingMicroButton     = { key = "housing",     label = L.toolbox.micro.housing },
+	GuildMicroButton       = { key = "guild",       label = L.toolbox.micro.guild },
+	LFDMicroButton         = { key = "groupfinder", label = L.toolbox.micro.groupfinder },
+	CollectionsMicroButton = { key = "collections", label = L.toolbox.micro.collections },
+	EJMicroButton          = { key = "journal",     label = L.toolbox.micro.journal },
+	-- OURS, NOT BLIZZARD'S: Blizzard's Shop hides Help on every refresh (the
+	-- two share a slot in its bar, MainMenuBarMicroButtons.lua:1932), and the
+	-- Help window's own OnShow and OnHide refresh, so a lent Help button was
+	-- hidden more often than not and the press fell through (Joe, 2026-10-12:
+	-- "Help doesn't"). Ours calls ToggleHelpFrame; nothing in the Help window
+	-- is protected, so opening it from our code costs nothing.
+	HelpMicroButton        = { key = "help", ours = true },
+	StoreMicroButton       = { key = "shop",        label = L.toolbox.micro.shop },
+	MainMenuMicroButton    = { key = "menu",        label = L.toolbox.node.menu },
+}
+
+local function MicroByKey(key)
+	for _, m in ipairs(TB.MICRO) do
+		if m.key == key then return m end
+	end
+end
+
+--- Blizzard's own buttons, in its order, filtered by its own rule - or nil,
+--  where there is no such menu (Era) and the list above stands.
+local function BlizzardMicro()
+	local menu = _G.MicroMenu
+	if A.flavour ~= "camelot" or not (menu and menu.GenerateButtonInfos) then return nil end
+	local ok, infos = pcall(menu.GenerateButtonInfos, menu)
+	if not ok or type(infos) ~= "table" then return nil end
+	local rules = _G.C_GameRules
+	local out = {}
+	for _, info in ipairs(infos) do
+		local b = info.button
+		local skip = false
+		if info.gameRule and rules and rules.IsGameRuleActive then
+			local okR, on = pcall(rules.IsGameRuleActive, info.gameRule)
+			skip = okR and on
+		end
+		if not skip and info.callback then
+			local okC, off = pcall(info.callback)
+			skip = okC and off
+		end
+		local okN, name = pcall(function() return b and b:GetName() end)
+		local spec = okN and name and TB.FOREVER_MICRO[name]
+		if not skip and spec then out[#out + 1] = { button = b, spec = spec } end
+	end
+	return out
+end
+
+--- One of Blizzard's doors, as an entry in our list.
+local function BlizzardDoor(b, spec)
+	return {
+		key = spec.key,
+		label = spec.label,
+		blizzard = b,
+		-- Blizzard's own logic decides, recomputed now: Lattice silences the
+		-- micro buttons' events (ActionBars' Banish), so their last state can
+		-- be stale. UpdateMicroButton is how Blizzard refreshes one itself.
+		refresh = function() if b.UpdateMicroButton then pcall(b.UpdateMicroButton, b) end end,
+		enabled = function() return not b.IsEnabled or b:IsEnabled() end,
+		open = function() return b.GetButtonState and b:GetButtonState() == "PUSHED" end,
+		tip = function() return b.disabledTooltip or b.tooltipText end,
+		fn = function()
+			local h = b.GetScript and b:GetScript("OnClick")
+			if h then h(b, "LeftButton", false) end
+		end,
+		probe = function() return true end,
+	}
+end
+
+--- Blizzard's own button, invisible, over our door: THE CLICK IS THEIRS.
+--
+--  Pressing a micro button from our code opens its window from our code, and
+--  on WoW Forever that runs the window tainted. The game menu is the plain
+--  case: it builds its buttons' callbacks in its OnShow (GameMenuFrame.lua:
+--  164-170), so shown by us every one of them was ours, and Edit Mode opened
+--  from it threw "Lattice tried to call the protected function ClearTarget()"
+--  and a secret compare in CompactUnitFrame.lua:699 (Joe, 2026-10-12). Pressing
+--  it by proxy is no way round it: Blizzard's Menu button acts only when the
+--  mouse is over it (MainMenuMicroButtonMixin:OnClick), and the secure "click"
+--  action broke in 12.1 (EllesmereUI_Kick.lua:165).
+--
+--  So while the branch is up each Blizzard door has the real button laid over
+--  it at alpha 0, and the player's click lands on it as on Blizzard's micro
+--  menu. Our tile still draws the door; hover and the tooltip are forwarded to
+--  it, and a click repaints after Blizzard's handler has run. When the branch
+--  goes the button goes home - parent, anchors, alpha and shown, as it was -
+--  and A.lent keeps ActionBars from taking it back while it is out. Micro
+--  buttons are not protected, so this is allowed in a fight too.
+local lent = {}
+
+local function Forward(script)
+	return function(b)
+		local r = lent[b]
+		local cell = r and r.cell
+		if cell and cell:IsShown() then
+			local h = cell:GetScript(script)
+			if h then h(cell) end
+		end
+	end
+end
+
+local function Lend(cell, b)
+	local r = lent[b]
+	if not r then
+		r = { points = {} }
+		lent[b] = r
+		for _, s in ipairs({ "OnEnter", "OnLeave" }) do
+			if b.HasScript and b:HasScript(s) then pcall(b.HookScript, b, s, Forward(s)) end
+		end
+		-- What a press did, for /lattice toolbox: whether the mouse reached
+		-- Blizzard's button at all, whether its click ran, and whether the
+		-- door's window was open a moment later.
+		--
+		-- HELD STILL WHILE IT IS PRESSED. The branch repaints ten times a
+		-- second, and each pass had Blizzard refresh the button (SetNormal, its
+		-- button state) and re-laid it. Pressed in between, the press never
+		-- became a click: Joe's report read "mouse down true, click false" on
+		-- Character (2026-10-12). r.pressed stops both until the button is up.
+		--
+		-- AND NOBODY ELSE'S REFRESH EITHER: Blizzard's Shop and Menu refreshes
+		-- call EnableMicroButtons, which refreshes every micro button
+		-- (MainMenuBarMicroButtons.lua:130-180), the held one included. So one
+		-- press holds every refresh (TB._held) until the button is up.
+		r.hooked = {}
+		if b.HasScript and b:HasScript("OnMouseDown") then
+			r.hooked.down = pcall(b.HookScript, b, "OnMouseDown", function(self)
+				if lent[self] then lent[self].pressed = true end
+				TB._held = self
+				TB._doorLog = { name = self:GetName(), down = GetTime(),
+					enabled = self:IsEnabled() }
+			end)
+		end
+		if b.HasScript and b:HasScript("OnMouseUp") then
+			r.hooked.up = pcall(b.HookScript, b, "OnMouseUp", function(self)
+				if lent[self] then lent[self].pressed = nil end
+				if TB._held == self then TB._held = nil end
+				-- What the press came to, read from the up rather than from a
+				-- click hook, so a click that never fires still says why.
+				local log = TB._doorLog
+				if log and log.name == self:GetName() then
+					log.up, log.over, log.state = true, self:IsMouseOver(), self:GetButtonState()
+					local m = lent[self] and lent[self].cell and lent[self].cell.__micro
+					C_Timer.After(0.3, function()
+						local ok, open = pcall(m and m.open or function() return nil end)
+						log.openAfter = ok and open
+						local p = TB.panels and TB.panels.menu
+						log.branch = p and p:IsShown() or false
+						log.stillLent = A.lent[self] and true or false
+					end)
+				end
+			end)
+		end
+		if b.HasScript and b:HasScript("OnClick") then
+			r.hooked.click = pcall(b.HookScript, b, "OnClick", function(self)
+				local log = TB._doorLog
+				if not (log and log.name == self:GetName()) then
+					log = { name = self:GetName() }
+					TB._doorLog = log
+				end
+				log.click = (log.click or 0) + 1
+				if lent[self] then lent[self].pressed = nil end
+				if TB._held == self then TB._held = nil end
+				TB:PaintMenu()
+			end)
+		end
+	end
+	if not A.lent[b] then
+		r.home, r.alpha, r.shown = b:GetParent(), b:GetAlpha(), b:IsShown()
+		r.points = {}
+		for i = 1, b:GetNumPoints() do r.points[i] = { b:GetPoint(i) } end
+		A.lent[b] = true
+	end
+	r.cell = cell
+	-- Only what has drifted is written: this runs every repaint.
+	if b:GetParent() ~= cell then b:SetParent(cell) end
+	local _, rel = b:GetPoint(1)
+	if rel ~= cell or b:GetNumPoints() ~= 2 then
+		b:ClearAllPoints()
+		b:SetAllPoints(cell)
+	end
+	local level = cell:GetFrameLevel() + 10
+	if b:GetFrameLevel() ~= level then b:SetFrameLevel(level) end
+	-- Blizzard's OnDisable sets 0.5 and OnEnable 1, so a greyed door showed
+	-- Blizzard's own art at half over ours; this runs after the refresh.
+	if b:GetAlpha() ~= 0 then b:SetAlpha(0) end
+	if not b:IsMouseEnabled() then b:EnableMouse(true) end
+	if not b:IsShown() then b:Show() end
+end
+
+local function Return(b)
+	local r = lent[b]
+	if not (r and A.lent[b]) then return end
+	r.cell, r.pressed = nil, nil
+	if TB._held == b then TB._held = nil end
+	b:SetParent(r.home)
+	b:ClearAllPoints()
+	for _, p in ipairs(r.points) do b:SetPoint(unpack(p)) end
+	b:SetAlpha(r.alpha or 1)
+	A.lent[b] = nil
+	b:SetShown(r.shown and true or false)
+end
+
+--- Every button out on loan comes home: the branch is shutting.
+function TB:ReturnMicro()
+	for b in pairs(lent) do Return(b) end
+end
+TB._lent = lent
+
 function TB:MicroList()
 	local out = {}
+	local blizz = BlizzardMicro()
+	if blizz then
+		for _, d in ipairs(blizz) do
+			if d.spec.ours then
+				local m = MicroByKey(d.spec.key)
+				if m then out[#out + 1] = m end
+			else
+				out[#out + 1] = BlizzardDoor(d.button, d.spec)
+			end
+		end
+		return out
+	end
 	for _, m in ipairs(self.MICRO) do
 		local ok, present = pcall(m.probe)
 		if ok and present then out[#out + 1] = m end
@@ -1357,6 +1607,9 @@ function TB:MicroList()
 end
 
 local MENU_PER, MENU_H, MENU_GAP = 5, 50, 6
+-- A tile's name stops this far short of its sides, clear of the rim; a name
+-- longer than that (another language) is cut inside the inset, not on the rim.
+local MENU_INSET = 6
 
 BUILD.menu = function(self, p)
 	p.cells = {}
@@ -1364,14 +1617,20 @@ BUILD.menu = function(self, p)
 	p:HookScript("OnShow", function()
 		A:RegisterTicker(TB._menuToken, function() TB:PaintMenu() end)
 	end)
-	p:HookScript("OnHide", function() A:UnregisterTicker(TB._menuToken) end)
+	p:HookScript("OnHide", function()
+		A:UnregisterTicker(TB._menuToken)
+		TB:ReturnMicro()
+	end)
 end
 
 FILL.menu = function(self, p)
 	local list = self:MicroList()
 	self._microList = list
+	-- Five across for Era's ten, four for Forever's twelve: two even rows, or
+	-- three, rather than a lone door on a row of its own.
+	local per = (#list > 10) and 4 or MENU_PER
 	local avail = p:GetWidth() - PAD * 2
-	local cw = (avail - MENU_GAP * (MENU_PER - 1)) / MENU_PER
+	local cw = (avail - MENU_GAP * (per - 1)) / per
 	for i, m in ipairs(list) do
 		local b = p.cells[i]
 		if not b then
@@ -1380,12 +1639,26 @@ FILL.menu = function(self, p)
 			b.glyph:SetSize(20, 20)
 			b.glyph:SetPoint("TOP", b, "TOP", 0, -8)
 			b.name = W.Text(b, "tbLabel", "CENTER")
-			b.name:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 2, 7)
-			b.name:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 7)
+			b.name:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", MENU_INSET, 7)
+			b.name:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -MENU_INSET, 7)
 			b.name:SetWordWrap(false)
 			b.__aetherLabel = b.name
 			b:SetScript("OnClick", function(self2)
-				if self2.__micro then pcall(self2.__micro.fn) end
+				-- A greyed door does nothing, as Blizzard's does not.
+				local m = self2.__micro
+				local ok, err = true, nil
+				if m and not self2.__off then ok, err = pcall(m.fn) end
+				-- Logged for /lattice toolbox like a lent button's press: a
+				-- press that lands on our tile says so, and what it came to.
+				local log = { name = m and m.key or "?", via = "tile", click = 1,
+					off = self2.__off and true or false, err = (not ok) and tostring(err) or nil }
+				TB._doorLog = log
+				C_Timer.After(0.3, function()
+					local okO, open = pcall(m and m.open or function() return nil end)
+					log.openAfter = okO and open
+					local p = TB.panels and TB.panels.menu
+					log.branch = p and p:IsShown() or false
+				end)
 				TB:PaintMenu()
 			end)
 			b:SetScript("OnEnter", function(self2)
@@ -1394,6 +1667,14 @@ FILL.menu = function(self, p)
 				if GameTooltip and self2.__micro then
 					GameTooltip:SetOwner(self2, "ANCHOR_RIGHT")
 					GameTooltip:SetText(self2.__micro.label)
+					-- Blizzard's own line where there is one: its keybinding,
+					-- or why the door is shut (Legacy before it unlocks).
+					local m = self2.__micro
+					local okT, tip = pcall(m.tip or function() end)
+					if okT and type(tip) == "string" and tip ~= "" and tip ~= m.label then
+						local c = Palette.c.textDim
+						GameTooltip:AddLine(tip, c[1], c[2], c[3], true)
+					end
 					GameTooltip:Show()
 				end
 			end)
@@ -1408,11 +1689,16 @@ FILL.menu = function(self, p)
 		b.glyph:SetShown(Media:SetIcon(b.glyph, m.key) and true or false)
 		b.name:SetText(m.label or "")
 		b:SetSize(cw, MENU_H)
-		GridPlace(p, b, i, PAD, PAD + HEAD_H, MENU_PER, cw, MENU_H, MENU_GAP, MENU_GAP)
+		GridPlace(p, b, i, PAD, PAD + HEAD_H, per, cw, MENU_H, MENU_GAP, MENU_GAP)
 		b:Show()
 	end
 	for i = #list + 1, #p.cells do p.cells[i]:Hide() end
-	local rows = RowsFor(#list, MENU_PER)
+	-- A Blizzard button no door wants any more goes home; PaintMenu lends the rest.
+	for b, r in pairs(lent) do
+		local m = r.cell and r.cell:IsShown() and r.cell.__micro
+		if not (m and m.blizzard == b) then Return(b) end
+	end
+	local rows = RowsFor(#list, per)
 	p:SetHeight(PAD + HEAD_H + rows * MENU_H + math.max(0, rows - 1) * MENU_GAP + PAD)
 	self:PaintMenu()
 end
@@ -1422,12 +1708,38 @@ function TB:PaintMenu()
 	local p = self.panels and self.panels.menu
 	if not p then return end
 	local c = Palette.c
+	-- EVERY REFRESH FIRST, then every door. One button's refresh writes to
+	-- another's: Blizzard's Shop hides Help each time (they share a slot in its
+	-- bar, MainMenuBarMicroButtons.lua:1932), so lending Help before Shop's
+	-- refresh left it hidden, and Help's door fell through to ours. Not a
+	-- button that is held down (see Lend).
+	if not TB._held then
+		for _, b in ipairs(p.cells) do
+			local m = b:IsShown() and b.__micro
+			if m and m.refresh then pcall(m.refresh) end
+		end
+	end
 	for _, b in ipairs(p.cells) do
 		if b:IsShown() and b.__micro then
-			local ok, lit = pcall(b.__micro.open or function() return false end)
-			lit = ok and lit and true or false
+			local m = b.__micro
+			-- The loan re-asserted over Blizzard's refreshes (above): cheap when
+			-- nothing moved, and it puts back an anchor, an alpha or a Hide
+			-- Blizzard wrote. Not while the button is held down (see Lend).
+			local r = m.blizzard and lent[m.blizzard]
+			if m.blizzard and p:IsShown() and not (r and r.pressed) then
+				pcall(Lend, b, m.blizzard)
+			end
+			local okE, on = pcall(m.enabled or function() return true end)
+			local off = okE and on == false
+			b.__off = off
+			local ok, lit = pcall(m.open or function() return false end)
+			lit = (not off) and ok and lit and true or false
 			b.__lit = lit
-			W.SetButtonState(b, lit, b.__hover)
+			W.SetButtonState(b, lit, b.__hover and not off)
+			-- GREYED, AS BLIZZARD'S IS: the whole tile quiet, the door still
+			-- there to say it exists and why it is shut. Set after the state,
+			-- which writes the surface's alpha too.
+			b:SetAlpha(off and 0.4 or 1)
 			local g = lit and c.btnFillText or c.text
 			b.glyph:SetVertexColor(g[1], g[2], g[3], lit and 1 or 0.85)
 		end

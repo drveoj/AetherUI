@@ -1483,10 +1483,7 @@ end
 
 local hider
 local function GetHider()
-	if not hider then
-		hider = CreateFrame("Frame", ADDON .. "ActionHider", UIParent)
-		hider:Hide()
-	end
+	if not hider then hider = A:ParkingFrame(ADDON .. "ActionHider") end
 	return hider
 end
 
@@ -1592,6 +1589,11 @@ local function Banish(frameName)
 	local f = _G[frameName]
 	if not f then return "absent" end
 	if Forbidden(f) then return "forbidden" end
+	-- Out on loan to the Toolbox Menu: it comes back when the branch shuts.
+	if A.lent[f] then return "lent to the menu" end
+	-- Kept-parent frames too: they are hidden, not parked, and Edit Mode would
+	-- still offer them (see A:QuietEditModeOutlines).
+	A.banished[f] = true
 
 	-- One pcall each, not one around the lot. Bundling them meant a throw on the
 	-- first call silently skipped the other two, which is exactly how a frame
@@ -1609,7 +1611,7 @@ local function Banish(frameName)
 	if not f.__aetherHooked and f.HookScript then
 		f.__aetherHooked = true
 		pcall(f.HookScript, f, "OnShow", function(self)
-			if not InCombatLockdown() then self:Hide() end
+			if not InCombatLockdown() and not A.lent[self] then self:Hide() end
 		end)
 	end
 

@@ -1095,7 +1095,10 @@ end
 --  look like an empty box. Disabled is its own state: the edge at 45 %, the
 --  label one step down the ink ladder - still a word, plainly not for pressing.
 --
---  opts: label, variant, onClick, onEnter(self), onLeave(self)
+--  opts: label, variant, onClick, onEnter(self), onLeave(self), and for a
+--  command that is a row in a list (the party controls): `icon` (a Media icon
+--  key) with `iconToken` (its palette ink), and `row = true` - the label sits
+--  left after the icon and the caller sets the width by anchoring both sides.
 W.COMMAND_H = 28
 local COMMAND_PAD = 18
 
@@ -1121,6 +1124,8 @@ function Command:SetLabel(text)
 		self.label:SetText(text or "")
 		Fresh(self.label)
 	end
+	-- A row's width is its caller's, from two anchors.
+	if self._row then return end
 	self:SetWidth(math.ceil(self.label:GetStringWidth() or 0) + COMMAND_PAD * 2)
 end
 
@@ -1161,6 +1166,9 @@ function Command:Repaint()
 		self:SetFillColor(over and c.btnHover or c.glass)
 		self:SetEdgeColor({ a[1], a[2], a[3], self._disabled and 0.2 or (over and 0.8 or 0.45) })
 		W.Color(self.label, self._disabled and c.textDim or c.text)
+	end
+	if self.icon then
+		W.Tint(self.icon, c[self._iconToken or "text"] or c.text, self._disabled and 0.4 or 1)
 	end
 end
 
@@ -1288,8 +1296,21 @@ function W.Command(parent, opts)
 	b.__aetherSkin = nil
 	for k, fn in pairs(Command) do b[k] = fn end
 	b:SetHeight(W.COMMAND_H)
-	b.label = W.Text(b, "button", "CENTER")
-	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
+	b._row = opts.row and true or nil
+	if opts.icon then
+		b.icon = b:CreateTexture(nil, "OVERLAY")
+		b.icon:SetSize(14, 14)
+		b.icon:SetPoint("LEFT", b, "LEFT", 10, 0)
+		Media:SetIcon(b.icon, opts.icon)
+		b._iconToken = opts.iconToken
+	end
+	b.label = W.Text(b, "button", b._row and "LEFT" or "CENTER")
+	if b._row then
+		b.label:SetPoint("LEFT", b.icon or b, b.icon and "RIGHT" or "LEFT",
+			b.icon and 10 or COMMAND_PAD, 0)
+	else
+		b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
+	end
 	b.label:SetWordWrap(false)
 	b._variant = opts.variant or "standard"
 	b._action = opts.onClick
@@ -1390,6 +1411,35 @@ local CLOSE_CORNER = 9
 local CLOSE_INSET  = 13
 local CLOSE_GLYPH  = 14
 
+--- CHROME: a panel's own controls in its header - the way out, the bags'
+--  sort. Not a command (Lattice Polish Pass): nothing at rest, a soft square
+--  on hover, one hit target. The close button had it alone; the bags' sort
+--  drew its own 22 px version with no hover at all.
+W.CHROME_HIT = CLOSE_HIT
+
+--- The hover wash, behind the glyph and no bigger than the hit target.
+--  Starts hidden; the owner sets its alpha on enter and leave.
+function W.ChromeWash(btn)
+	local wash = A.Glass.CreatePanel(btn, {
+		corner = CLOSE_CORNER, fill = "glassSoft", edge = "glassEdge",
+	})
+	wash:SetAllPoints(btn)
+	wash:SetEdgeShown(false)
+
+	-- BEHIND, and a level below is not enough on its own: a button we make
+	-- ourselves can land at level 0, math.max clamps the wash to 0 as well,
+	-- and a child at its parent's level draws OVER the parent's regions - so
+	-- the wash would sit on top of the glyph rather than under it. Lift the
+	-- button first so there is a level below it to use.
+	if (btn:GetFrameLevel() or 0) < 1 and btn.SetFrameLevel then
+		btn:SetFrameLevel(1)
+	end
+	wash:SetFrameLevel(math.max(0, (btn:GetFrameLevel() or 1) - 1))
+	if wash.EnableMouse then wash:EnableMouse(false) end
+	wash:SetAlpha(0)
+	return wash
+end
+
 --- The way out of a panel.
 --
 --  ONE DESIGN, on ours and on the client's. There were four: a bare
@@ -1416,26 +1466,7 @@ function W.CloseButton(host, opts)
 
 	btn:SetSize(CLOSE_HIT, CLOSE_HIT)
 	if btn.EnableMouse then btn:EnableMouse(true) end
-
-	-- The hover wash, behind the cross and no bigger than the hit target.
-	local wash = A.Glass.CreatePanel(btn, {
-		corner = CLOSE_CORNER, fill = "glassSoft", edge = "glassEdge",
-	})
-	wash:SetAllPoints(btn)
-	wash:SetEdgeShown(false)
-
-	-- BEHIND, and a level below is not enough on its own: a button we make
-	-- ourselves can land at level 0, math.max clamps the wash to 0 as well,
-	-- and a child at its parent's level draws OVER the parent's regions - so
-	-- the wash would sit on top of the cross rather than under it. Lift the
-	-- button first so there is a level below it to use.
-	if (btn:GetFrameLevel() or 0) < 1 and btn.SetFrameLevel then
-		btn:SetFrameLevel(1)
-	end
-	wash:SetFrameLevel(math.max(0, (btn:GetFrameLevel() or 1) - 1))
-	if wash.EnableMouse then wash:EnableMouse(false) end
-	wash:SetAlpha(0)
-	btn.__aetherCloseWash = wash
+	btn.__aetherCloseWash = W.ChromeWash(btn)
 
 	-- U+00D7, at one size in one weight. A drawn cross would be two textures
 	-- rotated forty-five degrees, which at this size resolves to two grey

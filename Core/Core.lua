@@ -544,6 +544,24 @@ end
 -- becomes a shared one rather than a second copy that drifts.
 -- ---------------------------------------------------------------------------
 
+--- Every hidden parent we park the client's frames under, and every frame we
+--  have put away, keyed by frame. ActionBars and Minimap keep their own
+--  parents but register them here, so one walk can tell whether any frame is
+--  one of ours to keep down. Weak keys: nothing here should outlive the frame.
+A.parking = A.parking or {}
+A.banished = A.banished or setmetatable({}, { __mode = "k" })
+-- Put-away frames out on loan, for now under one of ours: the Toolbox Menu
+-- lays Blizzard's own micro buttons over its doors on WoW Forever. Nothing
+-- that keeps the put-away down may take one of these back while it is out.
+A.lent = A.lent or setmetatable({}, { __mode = "k" })
+
+function A:ParkingFrame(name)
+	local f = CreateFrame("Frame", name, UIParent)
+	f:Hide()
+	A.parking[f] = true
+	return f
+end
+
 local hider
 
 --- A frame the client can show all it likes, off screen and off events.
@@ -560,16 +578,84 @@ local hider
 function A:Banish(frame)
 	if not frame then return false end
 	if InCombatLockdown and InCombatLockdown() then return false end
-	if not hider then
-		hider = CreateFrame("Frame", ADDON .. "Hider", UIParent)
-		hider:Hide()
-	end
+	if not hider then hider = A:ParkingFrame(ADDON .. "Hider") end
+	A.banished[frame] = true
 	local ok = pcall(function()
 		frame:UnregisterAllEvents()
 		frame:Hide()
 		frame:SetParent(hider)
 	end)
 	return ok
+end
+
+-- ---------------------------------------------------------------------------
+-- Blizzard's Edit Mode, kept off the frames we put away
+--
+-- A frame we park is still an Edit Mode system on WoW Forever, and Edit Mode
+-- still shows its outline and lets it be picked and dragged. Under a hidden
+-- parent it is never laid out, so it has no rect, and Edit Mode's snapping
+-- does sums on that rect. The frame being dragged is held as the snap preview
+-- until a clean drag stop, and the preview is redrawn every frame, so one bad
+-- drag threw "attempt to perform arithmetic on a nil value" from
+-- GetScaledSelectionSides (EditModeSystemTemplates.lua:578) 162 times in a
+-- player's report. Edit Mode also moves frames under ours by itself: locking
+-- the cast bar to the player frame parents it to PlayerFrame, which we hide.
+--
+-- So on every Edit Mode open, each system that is ours to keep down - put away
+-- by name, or sitting under one of our parking frames - gets its outline made
+-- invisible and deaf to the mouse. Blizzard never sets either back (it only
+-- Shows the outline), so one pass per open holds. Deferred one frame: the
+-- open runs inside Blizzard's secure pass over the systems, and we write
+-- nothing there. EllesmereUI does the same for the cast bar it replaces
+-- (EllesmereUI_SharedHelpers.lua:315-337). Our own frames move with
+-- /lattice unlock, not Edit Mode.
+-- ---------------------------------------------------------------------------
+
+local quieted = setmetatable({}, { __mode = "k" })
+
+local function KeptDown(f)
+	if A.banished[f] then return true end
+	local ok, p = pcall(f.GetParent, f)
+	while ok and p do
+		if A.parking[p] then return true end
+		ok, p = pcall(p.GetParent, p)
+	end
+	return false
+end
+
+function A:QuietEditModeOutlines()
+	local mgr = _G.EditModeManagerFrame
+	local systems = mgr and mgr.registeredSystemFrames
+	if type(systems) ~= "table" then return 0 end
+	local n = 0
+	for _, f in ipairs(systems) do
+		local sel = type(f) == "table" and f.Selection
+		if sel and sel.SetAlpha and sel.EnableMouse then
+			if KeptDown(f) then
+				if not quieted[sel] then
+					quieted[sel] = { alpha = sel:GetAlpha(), mouse = sel:IsMouseEnabled() }
+				end
+				pcall(sel.SetAlpha, sel, 0)
+				pcall(sel.EnableMouse, sel, false)
+				n = n + 1
+			elseif quieted[sel] then
+				local was = quieted[sel]
+				quieted[sel] = nil
+				pcall(sel.SetAlpha, sel, was.alpha or 1)
+				pcall(sel.EnableMouse, sel, was.mouse ~= false)
+			end
+		end
+	end
+	return n
+end
+
+function A:WatchEditMode()
+	local mgr = _G.EditModeManagerFrame
+	if A._editModeWatched or not (mgr and mgr.HookScript) then return end
+	A._editModeWatched = true
+	mgr:HookScript("OnShow", function()
+		C_Timer.After(0, function() A:QuietEditModeOutlines() end)
+	end)
 end
 function A:Px(n)
 	return (n or 1) * A.pixel
@@ -1162,6 +1248,8 @@ A:RegisterEvent(A, "PLAYER_LOGIN", function()
 	-- that wants the handler has had its chance to take it and we chain to it
 	-- rather than over it.
 	if A.Errors then A.Errors:Install() end
+
+	A:WatchEditMode()
 
 	A:Greet()
 	A:RenameNotice()

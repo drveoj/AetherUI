@@ -559,7 +559,7 @@ end
 local ACTIONS = {
 	{
 		key = "ready", label = READY_CHECK or "Ready Check",
-		glyph = "tick", token = "friendly", primary = true, leader = true,
+		glyph = "tick", token = "friendly", leader = true,
 		run = function()
 			if C_PartyInfo and C_PartyInfo.DoReadyCheck then C_PartyInfo.DoReadyCheck() end
 		end,
@@ -641,24 +641,19 @@ local function BuildWell(panel, index)
 	return b
 end
 
---- One action row.
+--- One action row: a COMMAND (Lattice Polish Pass), in a list.
+--
+--  Each row drew its own box - its own corner, edge and font - and Ready Check
+--  wore the selected-row tint, which reads as already on, not as press me
+--  (the same misread as the quest log's filled Untrack, 2026-10-12). All four
+--  are standard commands now: a utility panel has no one obvious next step.
 local function BuildRow(panel, spec)
-	local b = W.CreateButton(panel, { corner = 12,
-		fill = spec.primary and "rowSel" or "glassSoft", edge = "cardEdge" })
+	local b = W.Command(panel, { row = true, label = spec.label,
+		icon = spec.glyph, iconToken = spec.token,
+		onClick = function(self) spec.run(self) end })
 	b:SetHeight(ROW_H)
 	b.spec = spec
-
-	local glyph = b:CreateTexture(nil, "OVERLAY")
-	glyph:SetSize(14, 14)
-	glyph:SetPoint("LEFT", b, "LEFT", 10, 0)
-	A.Media:SetIcon(glyph, spec.glyph)
-	W.Tint(glyph, A.Palette.c[spec.token] or A.Palette.c.text)
-	b.glyph = glyph
-
-	local label = W.Text(b, "qlRow", "LEFT")
-	label:SetPoint("LEFT", glyph, "RIGHT", 10, 0)
-	label:SetText(spec.label)
-	b.label = label
+	b.glyph = b.icon
 
 	-- The inline duration picker, on the countdown row only. A picker rather
 	-- than four rows: the number is a preference you set once.
@@ -680,7 +675,9 @@ local function BuildRow(panel, spec)
 				if n <= MaxCountdown() then
 					entries[#entries + 1] = {
 						text = n .. "s",
-						func = function() b.seconds = n; PF:RefreshPanel() end,
+						-- `action`, which is what W.Menu runs. This said `func`, so
+						-- every pick other than the default did nothing at all.
+						action = function() b.seconds = n; PF:RefreshPanel() end,
 					}
 				end
 			end
@@ -689,9 +686,6 @@ local function BuildRow(panel, spec)
 		b.pick = pick
 	end
 
-	b:SetScript("OnClick", function(self) spec.run(self) end)
-	b:SetScript("OnEnter", function(self) W.SetButtonState(self, false, true) end)
-	b:SetScript("OnLeave", function(self) W.SetButtonState(self, false, false) end)
 	return b
 end
 
@@ -807,7 +801,8 @@ function PF:RefreshPanel()
 			shown = shown + 1
 			if b.pick then
 				b.pick.text:SetText((b.seconds or 10) .. "s")
-				W.Color(b.pick.text, c.textDim)
+				-- Full ink: a value you can change rests bright, not dim.
+				W.Color(b.pick.text, c.text)
 			end
 		end
 	end

@@ -4504,6 +4504,54 @@ end
 function ToggleFriendsFrame() _G.__toggled.social = true end
 function ToggleGuildFrame() _G.__toggled.guild = true end
 function ToggleWorldMap() _G.__toggled.map = true end
+
+-- WOW FOREVER'S MICRO MENU, as Blizzard_MicroMenu/Camelot declares it: its
+-- MicroMenu:GenerateButtonInfos, fourteen buttons each behind a game rule (or
+-- for the Adventure Guide a callback), and the buttons themselves - an OnClick
+-- that records the press, an enabled state, a pushed state for "its window is
+-- open", and UpdateMicroButton, which is what refreshes them. Rules: Housing,
+-- the Adventure Guide and the Shop are off, which is how the game shows eleven.
+if _G.__flavour == "camelot" then
+	-- Shop shows, as on Joe's client (2026-10-12): twelve doors.
+	_G.__microClicked, _G.__rulesOn = {}, { housing = true }
+	_G.__ejOff = true
+	C_GameRules = _G.C_GameRules or {}
+	C_GameRules.IsGameRuleActive = function(rule) return _G.__rulesOn[rule] == true end
+	local function micro(name, tip)
+		local b = CreateFrame("Button", name, UIParent)
+		b.tooltipText = tip
+		b.__enabled, b.__pushed = true, false
+		b.IsEnabled = function(self) return self.__enabled end
+		b.GetButtonState = function(self) return self.__pushed and "PUSHED" or "NORMAL" end
+		b.UpdateMicroButton = function(self) self.__updated = (self.__updated or 0) + 1 end
+		b:SetScript("OnClick", function() _G.__microClicked[name] = (_G.__microClicked[name] or 0) + 1 end)
+		return b
+	end
+	local spec = {
+		{ "CharacterMicroButton", "Character Info (C)", "character" },
+		{ "ProfessionMicroButton", "Professions (K)", "professions" },
+		{ "SpellbookMicroButton", "Spellbook (P)", "spellbook" },
+		{ "TalentMicroButton", "Talents (N)", "talents" },
+		{ "LegacyMicroButton", "Legacy (Y)", "legacy" },
+		{ "QuestLogMicroButton", "Quest Log (L)", "questlog" },
+		{ "HousingMicroButton", "Housing", "housing" },
+		{ "GuildMicroButton", "Guild & Communities (J)", "guild" },
+		{ "LFDMicroButton", "Group Finder (I)", "lfd" },
+		{ "CollectionsMicroButton", "Collections (Shift-P)", "collections" },
+		{ "EJMicroButton", "Adventure Guide", nil },
+		{ "HelpMicroButton", "Customer Support", "help" },
+		{ "StoreMicroButton", "Shop", "store" },
+		{ "MainMenuMicroButton", "Game Menu", nil },
+	}
+	local infos = {}
+	for _, s in ipairs(spec) do
+		local b = micro(s[1], s[2])
+		infos[#infos + 1] = { button = b, gameRule = s[3],
+			callback = (s[1] == "EJMicroButton") and function() return _G.__ejOff end or nil }
+	end
+	_G.MicroMenu = _G.MicroMenu or CreateFrame("Frame", "MicroMenu", UIParent)
+	_G.MicroMenu.GenerateButtonInfos = function() return infos end
+end
 -- HOW MANY THINGS THE ESCAPE CHAIN WOULD FIND TO CLOSE BEFORE THE MENU.
 -- A check sets this to stand something in the chain's way.
 _G.__escClosable = 0
@@ -17331,6 +17379,23 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	check(OW.page.key == "unitframes" and v and #v.rows > 10, "the Unit frames page has its settings (" .. #v.rows .. ")")
 	check(f.pageFrame.preview:IsShown(), "under a live preview strip")
 
+	-- SECRET HEALTH AND POWER (WoW Forever, a player report 2026-10-11): the
+	-- preview sized its bars by dividing them, and a secret cannot be divided.
+	if _G.__flavour == "camelot" then
+		local rH, rHM, rP, rPM = UnitHealth, UnitHealthMax, UnitPower, UnitPowerMax
+		UnitHealth = function() return _G.__SecretStandIn() end
+		UnitHealthMax = function() return _G.__SecretStandIn() end
+		UnitPower = function() return _G.__SecretStandIn() end
+		UnitPowerMax = function() return _G.__SecretStandIn() end
+		local ok, err = pcall(OW.PaintPreview, OW)
+		UnitHealth, UnitHealthMax, UnitPower, UnitPowerMax = rH, rHM, rP, rPM
+		check(ok, "the preview paints with secret health and power rather than"
+			.. " throwing (" .. tostring(err) .. ")")
+		check(ok and f.pageFrame.preview.player.health:GetWidth() > 200,
+			"and draws a value it cannot read as full")
+		OW:PaintPreview()
+	end
+
 	local function RowAt(path)
 		for _, r in ipairs(OW.view.rows) do
 			local p = r.node.arg and r.node.arg.path
@@ -20727,6 +20792,14 @@ do
 	fire("GLOBAL_MOUSE_DOWN", "LeftButton")
 	check(T.m.isOpen(), "nor is one while a client menu is open: that click is the menu's")
 	_G.__menuOpen = nil
+	-- NOR OUR OWN (Joe, 2026-10-12): W.Menu floats over UIParent, and a click
+	-- on the party countdown's 15s shut the Party branch before it landed.
+	local wm = A.Widgets.Menu(T.m.button, { { text = "15s", action = function() end } })
+	_G.__mouseFoci = { wm.items[1] }
+	fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+	check(T.m.isOpen(), "nor one on an item of our own menu: that click is the menu's too")
+	A.Widgets.CloseMenu()
+	_G.__mouseFoci = { UIParent }
 	_G.__mouseFoci = {}
 	fire("GLOBAL_MOUSE_DOWN", "RightButton")
 	check(not T.m.isOpen() and not T.m.lit,
@@ -22719,6 +22792,33 @@ do
 	local list = TBm:MicroList()
 	check(#list >= 6, "the row is built (" .. #list .. " buttons)")
 
+	-- EVERY NAME WHOLE, CLEAR OF THE RIM (Joe, 2026-10-12): at 300 wide the
+	-- tiles were ~49 units and "Chara...", "Spellb..." and "Quest..." ran into
+	-- their borders. Each name is measured unclamped against the room inside
+	-- its tile's insets.
+	do
+		local probe, tight = A.Widgets.Text(UIParent, "tbLabel", "CENTER"), {}
+		for _, b in ipairs(MP.cells) do
+			if b:IsShown() then
+				probe:SetText(b.name:GetText() or "")
+				local _, _, _, inset = b.name:GetPoint(1)
+				local room = b:GetWidth() - 2 * (inset or 0)
+				if (inset or 0) < 6 or probe:GetStringWidth() > room then
+					tight[#tight + 1] = (b.name:GetText() or "?") .. " "
+						.. string.format("%.1f/%.1f", probe:GetStringWidth(), room)
+				end
+			end
+		end
+		probe:Hide()
+		check(#tight == 0, "every Menu name fits its tile whole, inset clear of the rim ("
+			.. table.concat(tight, ", ") .. ")")
+	end
+
+	-- ERA'S DOORS. Forever's menu is Blizzard's own, mirrored, and is checked
+	-- in its own block below; everything from here to the lit Map door is the
+	-- fixed Era list.
+	if _G.__flavour ~= "camelot" then
+
 	-- BOTH SOCIAL AND GUILD, AND A BAG. TEN, IN TWO FIVES.
 	--
 	-- Blizzard's two are mutually exclusive - each mixin reads
@@ -22915,6 +23015,205 @@ do
 		check(MP:GetScript("OnShow") ~= nil, "a ticker follows windows opened any other way while the branch is up")
 	end
 
+	else
+
+	-- WOW FOREVER MIRRORS BLIZZARD'S MICRO MENU (Joe, 2026-10-12). Ours showed
+	-- eight doors where the game has eleven: ToggleSpellBook and
+	-- ToggleTalentFrame do not exist there, and Professions, Legacy, Group
+	-- finder and Collections were never listed.
+	do
+		TBm:RefreshMicro()
+		local keys = {}
+		for i, m in ipairs(TBm._microList) do keys[i] = m.key end
+		local want = "character,professions,spellbook,talents,legacy,quests,guild,"
+			.. "groupfinder,collections,help,shop,menu"
+		check(table.concat(keys, ",") == want,
+			"Blizzard's doors in Blizzard's order, Housing and the Adventure Guide"
+			.. " left out by their game rules (" .. table.concat(keys, ",") .. ")")
+		-- NO BAGS (Joe, 2026-10-12: "drop bags"). Added, it made thirteen on his
+		-- client, one door alone on a fourth row.
+		check(#keys == 12, "twelve doors, Blizzard's own, and no Bags")
+
+		-- FOUR ACROSS, THREE DOWN: twelve make a grid, not a lone door.
+		local rows = {}
+		for i = 1, #TBm._microList do
+			local _, _, _, _, y = MP.cells[i]:GetPoint(1)
+			local k = string.format("%.0f", y or 0)
+			rows[k] = (rows[k] or 0) + 1
+		end
+		local n, sizes = 0, {}
+		for _, count in pairs(rows) do n = n + 1; sizes[#sizes + 1] = count end
+		check(n == 3 and sizes[1] == 4 and sizes[2] == 4 and sizes[3] == 4,
+			"laid out four, four and four (" .. table.concat(sizes, "+") .. ")")
+
+		local function cell(key)
+			for i, m in ipairs(TBm._microList) do if m.key == key then return MP.cells[i], m end end
+		end
+
+		-- A DOOR PRESSES BLIZZARD'S OWN BUTTON, so it opens what that opens.
+		local leg = cell("legacy")
+		_G.__microClicked = {}
+		leg:GetScript("OnClick")(leg)
+		check(_G.__microClicked.LegacyMicroButton == 1,
+			"the Legacy door presses Blizzard's Legacy button")
+
+		-- GREYED WHEN BLIZZARD'S IS, and then it does nothing - but it stays,
+		-- with Blizzard's reason on hover.
+		_G.LegacyMicroButton.__enabled = false
+		_G.LegacyMicroButton.disabledTooltip = "Reach renown 1 with the Legacy to unlock."
+		TBm:PaintMenu()
+		check(leg.__off and leg:GetAlpha() < 1, "a door Blizzard has greyed is greyed here")
+		_G.__microClicked = {}
+		leg:GetScript("OnClick")(leg)
+		check(_G.__microClicked.LegacyMicroButton == nil, "and pressing it does nothing")
+		local said
+		local realAdd = GameTooltip.AddLine
+		GameTooltip.AddLine = function(self, text, ...) said = text return realAdd(self, text, ...) end
+		leg:GetScript("OnEnter")(leg)
+		GameTooltip.AddLine = realAdd
+		leg:GetScript("OnLeave")(leg)
+		check(said == _G.LegacyMicroButton.disabledTooltip,
+			"with Blizzard's reason on hover (" .. tostring(said) .. ")")
+		check((_G.LegacyMicroButton.__updated or 0) > 0,
+			"its state recomputed by Blizzard's own UpdateMicroButton - Lattice"
+			.. " silences the button's events, so the last state can be stale")
+		_G.LegacyMicroButton.__enabled = true
+		_G.LegacyMicroButton.disabledTooltip = nil
+
+		-- LIT WHEN ITS WINDOW IS OPEN: Blizzard pushes its button then.
+		_G.CollectionsMicroButton.__pushed = true
+		TBm:PaintMenu()
+		check(cell("collections").__lit, "a door whose window is open is lit")
+		_G.CollectionsMicroButton.__pushed = false
+		TBm:PaintMenu()
+		check(not cell("collections").__lit, "and idle when it is shut")
+
+		-- A RULE THAT CHANGES, CHANGES THE MENU.
+		_G.__rulesOn.housing = nil
+		TBm:RefreshMicro()
+		local hasHousing = false
+		for _, m in ipairs(TBm._microList) do if m.key == "housing" then hasHousing = true end end
+		check(hasHousing, "and when the game turns Housing on, the door appears")
+		_G.__rulesOn.housing = true
+		TBm:RefreshMicro()
+
+		-- THE CLICK IS BLIZZARD'S (Joe, 2026-10-12). The game menu opened from
+		-- our code built its buttons tainted, and Edit Mode from there threw
+		-- ClearTarget() forbidden. Each Blizzard door has the real button over it.
+		TBm:PaintMenu()
+		local menuCell, menuDoor = cell("menu")
+		local mb = _G.MainMenuMicroButton
+		check(menuDoor and menuDoor.blizzard == mb,
+			"the Menu door is Blizzard's own Game Menu button, not ours")
+		local allLent, odd = true, nil
+		for i, m in ipairs(TBm._microList) do
+			local c, bb = MP.cells[i], m.blizzard
+			if bb then
+				local _, rel = bb:GetPoint(1)
+				if not (bb:GetParent() == c and rel == c and bb:GetAlpha() == 0 and bb:IsShown()
+					and bb:IsMouseEnabled() and bb:GetFrameLevel() > c:GetFrameLevel()) then
+					allLent, odd = false, m.key
+				end
+			end
+		end
+		check(allLent, "with the branch up, every Blizzard door has Blizzard's real button over"
+			.. " it, invisible, taking the click (" .. tostring(odd) .. ")")
+		local qc = cell("quests")
+		check(qc.__micro.blizzard == nil and _G.QuestLogMicroButton:GetParent() ~= qc,
+			"the Quest log door stays ours")
+
+		local legC = cell("legacy")
+		local LB = _G.LegacyMicroButton
+		LB:GetScript("OnEnter")(LB)
+		check(legC.__hover, "hovering Blizzard's button lights our door under it")
+		LB:GetScript("OnLeave")(LB)
+		check(not legC.__hover, "and leaving it lets the door go")
+
+		-- ActionBars keeps the put-away down; not one that is out on loan.
+		local AB = A:GetModule("actionbars")
+		local wasMB = _G.MICRO_BUTTONS
+		_G.MICRO_BUTTONS = { "MainMenuMicroButton" }
+		AB:HideBlizzard()
+		_G.MICRO_BUTTONS = wasMB
+		check(mb:GetParent() == menuCell and mb:IsShown(),
+			"Lattice's own bar sweep leaves a lent button where it is")
+		mb:Hide()
+		mb:Show()
+		check(mb:IsShown(), "and its keep-hidden hook lets it show")
+
+		TBm:SetOpen(false)
+		local home = true
+		for b in pairs(TBm._lent) do
+			if A.lent[b] or b:GetParent() == menuCell or b:GetAlpha() == 0 then home = false end
+		end
+		local rec = TBm._lent[mb]
+		check(home and mb:GetParent() == rec.home and mb:IsShown() == (rec.shown and true or false),
+			"with the branch shut every button goes home: its parent, its alpha, shown or hidden as it was")
+		TBm:SetOpen(true, nil, "menu")
+		TBm:PaintMenu()
+		check(mb:GetParent() == cell("menu"), "and opening the branch lends them again")
+
+		-- THE DOOR REPORT GOES WHERE IT CAN BE COPIED (Joe, 2026-10-12: "Can't
+		-- cut/copy from chat"): /lattice toolbox opens in the errors box, with
+		-- each lent button and what the last press did.
+		LB:GetScript("OnMouseDown")(LB)
+		LB:GetScript("OnClick")(LB, "LeftButton", false)
+		if A.Errors.frame then A.Errors.frame:Hide() end
+		SlashCmdList["AETHERUI"]("toolbox")
+		local txt = A.Errors.frame and A.Errors.frame.__text or ""
+		check(A.Errors.frame and A.Errors.frame:IsShown() and txt:find("micro:", 1, true) ~= nil,
+			"/lattice toolbox opens its report in the errors box, ready to copy")
+		check(txt:find("LegacyMicroButton%s+lent true%s+over true") ~= nil
+			and txt:find("last press: LegacyMicroButton  down true", 1, true) ~= nil
+			and txt:find("clicks 1", 1, true) ~= nil
+			and txt:find("its hooks: down true  up true  click true", 1, true) ~= nil,
+			"listing each lent button and what the last press reached")
+		A.Errors.frame:Hide()
+
+		-- HELD STILL WHILE PRESSED. Joe's report (2026-10-12): Character's
+		-- "mouse down true, click false" - the ten-a-second repaint refreshed
+		-- and re-laid the button mid-press.
+		LB:GetScript("OnMouseDown")(LB)
+		LB.__updated = 0
+		local lvl = LB:GetFrameLevel()
+		LB:SetFrameLevel(lvl + 3)
+		TBm:PaintMenu()
+		check(LB.__updated == 0 and LB:GetFrameLevel() == lvl + 3,
+			"a button held down is not refreshed or re-laid by the repaint")
+		-- Nor by ANOTHER button's refresh: Shop's and Menu's call
+		-- EnableMicroButtons, which refreshes every micro button.
+		local SBu = _G.StoreMicroButton
+		SBu.__updated = 0
+		TBm:PaintMenu()
+		check(SBu.__updated == 0, "and while it is held, no other door is refreshed either")
+		LB:GetScript("OnMouseUp")(LB)
+		TBm:PaintMenu()
+		check(LB.__updated > 0 and LB:GetFrameLevel() == lvl and SBu.__updated > 0,
+			"and once it is up, both resume")
+
+		-- Blizzard's OnDisable sets a greyed button's alpha to 0.5, and Shop's
+		-- refresh hides Help (MainMenuBarMicroButtons.lua:1932).
+		local SB, HB = _G.StoreMicroButton, _G.HelpMicroButton
+		local realUpd = SB.UpdateMicroButton
+		SB.UpdateMicroButton = function(self) self:SetAlpha(0.5) HB:Hide() end
+		TBm:PaintMenu()
+		check(SB:GetAlpha() == 0,
+			"a button Blizzard greys at half alpha is still invisible over its door (" .. SB:GetAlpha() .. ")")
+		SB.UpdateMicroButton = realUpd
+
+		-- HELP IS OURS: Shop's refresh hides Blizzard's Help, so a lent one was
+		-- hidden more often than not (Joe, 2026-10-12: "Help doesn't").
+		local hc, hm = cell("help")
+		check(hm and hm.blizzard == nil and HB:GetParent() ~= hc,
+			"the Help door is ours, with no Blizzard button over it")
+		_G.__toggled.help = nil
+		hc:GetScript("OnClick")(hc)
+		check(_G.__toggled.help == true and TBm._doorLog.via == "tile",
+			"and pressing it opens Help, logged as a press on our own door")
+	end
+
+	end
+
 	-- AND THE TWO THAT DO NOT GO THROUGH A Toggle GLOBAL.
 	do
 		TBm:RefreshMicro()
@@ -22930,11 +23229,16 @@ do
 
 		-- BAGS opens ours, because ToggleAllBags is the global our own module
 		-- hooks - so this one line of wiring covers the module being on and off.
+		-- Era only: Forever's menu has no Bags door.
 		local Bg = A:GetModule("bags")
 		Bg:Hide()
-		press("bags")
-		check(Bg.frames and Bg.frames.bags and Bg.frames.bags:IsShown(),
-			"the Bags entry opens our bag window through the hooked global")
+		if _G.__flavour ~= "camelot" then
+			press("bags")
+			check(Bg.frames and Bg.frames.bags and Bg.frames.bags:IsShown(),
+				"the Bags entry opens our bag window through the hooked global")
+		else
+			check(press("bags") == nil, "Forever's menu has no Bags door")
+		end
 		Bg:Hide()
 
 		-- MENU OPENS THE MENU, EVEN WITH A WINDOW OPEN.
@@ -22945,20 +23249,23 @@ do
 		-- something instead and the menu never appeared - which from a drawer
 		-- full of buttons is most of the time. Reported from the game as the
 		-- Menu button doing nothing.
-		_G.GameMenuFrame:Hide()
-		_G.__escClosable = 1
-		press("menu")
-		check(_G.GameMenuFrame:IsShown(),
-			"the Menu entry opens the game menu with a window still open, rather "
-			.. "than behaving as Escape and closing that instead")
-		check(_G.__escClosable == 0,
-			"and shuts the windows on the way, the way Blizzard's own Menu button "
-			.. "does")
+		-- Era only: on Forever the Menu door is Blizzard's own button (above).
+		if _G.__flavour ~= "camelot" then
+			_G.GameMenuFrame:Hide()
+			_G.__escClosable = 1
+			press("menu")
+			check(_G.GameMenuFrame:IsShown(),
+				"the Menu entry opens the game menu with a window still open, rather "
+				.. "than behaving as Escape and closing that instead")
+			check(_G.__escClosable == 0,
+				"and shuts the windows on the way, the way Blizzard's own Menu button "
+				.. "does")
 
-		-- AND CLOSES IT AGAIN, because it is one button and not two.
-		press("menu")
-		check(not _G.GameMenuFrame:IsShown(),
-			"and closes it again on a second press")
+			-- AND CLOSES IT AGAIN, because it is one button and not two.
+			press("menu")
+			check(not _G.GameMenuFrame:IsShown(),
+				"and closes it again on a second press")
+		end
 	end
 
 	TBm:SetOpen(false)
@@ -26720,8 +27027,46 @@ do
 	check(box._shadowOpacity == 1,
 		"with the full shadow whatever the profile says - that setting governs"
 		.. " ambient chrome, not modals")
+
+	-- ONE SHAPE PER MEANING (Lattice Polish Pass, 2026-10-12). Buying is the
+	-- obvious next step, so Yes is the primary; No used to rest at the dim
+	-- ink, the look of a disabled button.
+	check(box.yes.__command and box.yes._variant == "primary"
+		and box.no.__command and box.no._variant == "standard",
+		"Yes is the primary command and No a standard one")
+	Bg:CloseConfirm()
+
+	-- Not affordable, not pressable.
+	local realMoney, realCost = _G.GetMoney, _G.GetBankSlotCost
+	_G.GetMoney = function() return 10 end
+	_G.GetBankSlotCost = function() return 100000 end
+	Bg:AskBuyBankSlot()
+	check(box.yes:IsDisabled() and box.yes.label:GetText() ~= "",
+		"a bag you cannot afford leaves Yes disabled - still showing its word")
+	Bg:CloseConfirm()
+	_G.GetMoney = function() return 100000 end
+	_G.GetBankSlotCost = function() return 10 end
+	Bg:AskBuyBankSlot()
+	check(not box.yes:IsDisabled(), "and one you can afford leaves it live")
+	_G.GetMoney, _G.GetBankSlotCost = realMoney, realCost
 	Bg:CloseConfirm()
 	_G.__atBank = false
+	Bg:Hide()
+end
+
+print("== bags: the sort control is chrome, like the close beside it ==")
+do
+	Bg:Show()
+	local head = Bg.frames.bags.head
+	local sort = head.sort
+	check(sort:GetWidth() == A.Widgets.CHROME_HIT and sort:GetHeight() == A.Widgets.CHROME_HIT
+		and head.close:GetWidth() == A.Widgets.CHROME_HIT,
+		"sort and close share one hit target (" .. tostring(sort:GetWidth()) .. ")")
+	check(sort.wash and sort.wash:GetAlpha() == 0, "nothing behind sort at rest")
+	sort:GetScript("OnEnter")(sort)
+	check(sort.wash:GetAlpha() == 1, "and the close button's soft square on hover")
+	sort:GetScript("OnLeave")(sort)
+	check(sort.wash:GetAlpha() == 0, "gone again on leave")
 	Bg:Hide()
 end
 
@@ -34105,6 +34450,40 @@ section("party controls: what a member may press", function()
 		tostring(calls.seconds) .. ")")
 	p.rows[2].seconds = 10
 
+	-- PICKING ANOTHER TIME WORKS (Joe, 2026-10-12): the picker's entries said
+	-- `func`, and W.Menu runs `action`, so 5s, 15s and 30s did nothing.
+	local pick = p.rows[2].pick
+	pick:GetScript("OnClick")(pick)
+	local wm, item15 = A.Widgets.MenuFrame(), nil
+	for _, it in ipairs(wm.items) do
+		if it:IsShown() and it.text:GetText() == "15s" then item15 = it end
+	end
+	check(item15 ~= nil, "the picker offers 15s")
+	if item15 then item15:GetScript("OnClick")(item15) end
+	check(p.rows[2].seconds == 15 and pick.text:GetText() == "15s",
+		"and picking it sets the countdown to 15 (" .. tostring(p.rows[2].seconds) .. ")")
+	p.rows[2]:GetScript("OnClick")(p.rows[2])
+	check(calls.seconds == 15, "which is what the countdown then runs for")
+	p.rows[2].seconds = 10
+
+	-- ONE SHAPE PER MEANING (Lattice Polish Pass, 2026-10-12): the four rows
+	-- are commands, every one standard - Ready Check wore the selected-row
+	-- tint, which reads as already on.
+	local allCommands, allStandard = true, true
+	for _, b in ipairs(p.rows) do
+		if not (b.__command and b._row and b.icon) then allCommands = false end
+		if b._variant ~= "standard" then allStandard = false end
+	end
+	check(allCommands, "the party rows are commands, each with its icon")
+	check(allStandard, "and all standard - none filled as if already pressed")
+	local gold, ir, ig = A.Palette.c.semanticGold, p.rows[4].icon:GetVertexColor()
+	check(gold and math.abs(ir - gold[1]) < 0.01 and math.abs(ig - gold[2]) < 0.01,
+		"Convert to Raid keeps its gold icon - it changes the group's shape")
+	PF:RefreshPanel()
+	local tr, tg = p.rows[2].pick.text:GetTextColor()
+	check(math.abs(tr - A.Palette.c.text[1]) < 0.01 and math.abs(tg - A.Palette.c.text[2]) < 0.01,
+		"and the countdown's number rests at full ink, not dim")
+
 	PF.panel:Hide()
 end)
 section("party: a diagnostic that answers the question", function()
@@ -37138,6 +37517,76 @@ do
 		p:SetParent(nil)
 		_G["QuestieFrame" .. i] = nil
 	end
+end
+
+print("== Edit Mode leaves the frames we put away alone ==")
+do
+	-- A player's report from WoW Forever, 2026-10-12: Edit Mode threw
+	-- "attempt to perform arithmetic on a nil value" from GetScaledSelectionSides
+	-- 162 times during one drag. A system frame under one of our hidden parents
+	-- has no rect, and its outline could still be picked up and dragged.
+	local realMgr = _G.EditModeManagerFrame
+
+	-- Era has no Edit Mode at all: nothing to do, and nothing thrown.
+	_G.EditModeManagerFrame = nil
+	A._editModeWatched = nil
+	A:WatchEditMode()
+	check(A:QuietEditModeOutlines() == 0 and not A._editModeWatched,
+		"with no Edit Mode in the client, the outline pass does nothing")
+
+	local function system(name, parent)
+		local f = CreateFrame("Frame", name, parent or UIParent)
+		f.Selection = CreateFrame("Frame", nil, f)
+		f.Selection:EnableMouse(true)
+		return f
+	end
+	local putAway = system("LatticeTestEMPutAway")
+	A:Banish(putAway)
+	local carrier = CreateFrame("Frame", "LatticeTestEMCarrier", UIParent)
+	A:Banish(carrier)
+	-- The cast bar's route: Edit Mode itself parents it to a frame we hid.
+	local riding = system("LatticeTestEMRiding", carrier)
+	local park = A:ParkingFrame("LatticeTestEMPark")
+	local parked = system("LatticeTestEMParked", park)
+	local free = system("LatticeTestEMFree")
+
+	local mgr = CreateFrame("Frame", "EditModeManagerFrame", UIParent)
+	mgr:Hide()
+	mgr.registeredSystemFrames = { putAway, riding, parked, free }
+	_G.EditModeManagerFrame = mgr
+	A._editModeWatched = nil
+	A:WatchEditMode()
+
+	local function quiet(f) return f.Selection:GetAlpha() == 0 and not f.Selection:IsMouseEnabled() end
+	local function live(f) return f.Selection:GetAlpha() == 1 and f.Selection:IsMouseEnabled() end
+
+	mgr:Show()
+	check(live(putAway),
+		"opening Edit Mode writes nothing during Blizzard's own pass over the systems")
+	_G.__drainTimers(1)
+	check(quiet(putAway),
+		"a frame we put away shows no outline in Edit Mode and can't be picked or dragged")
+	check(quiet(riding),
+		"nor can one Edit Mode moved under a frame we hid (the cast bar locked to the player frame)")
+	check(quiet(parked), "nor one under any of our parking frames")
+	check(live(free), "a frame we never touched keeps its outline and the mouse")
+
+	-- Blizzard re-shows outlines but never sets alpha or mouse back; a second
+	-- open must still hold, and a frame that came back out gets its outline back.
+	mgr:Hide()
+	riding:SetParent(UIParent)
+	mgr:Show()
+	_G.__drainTimers(1)
+	check(quiet(putAway) and quiet(parked), "the next open holds them down again")
+	check(live(riding), "and a frame moved back out from under ours has its outline again")
+
+	mgr:Hide()
+	_G.EditModeManagerFrame = realMgr
+	A._editModeWatched = nil
+	for _, f in ipairs({ putAway, riding, parked, free, carrier }) do f:SetParent(nil) end
+	for _, n in ipairs({ "LatticeTestEMPutAway", "LatticeTestEMCarrier", "LatticeTestEMRiding",
+		"LatticeTestEMPark", "LatticeTestEMParked", "LatticeTestEMFree" }) do _G[n] = nil end
+	A.parking[park] = nil
 end
 
 print("== no pcall answered past the client's stack ==")

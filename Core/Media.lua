@@ -196,6 +196,9 @@ Media.icons = {
 		"tracking",
 		-- The Toolbox trunk's Widgets and Addons nodes.
 		"widgets", "addons",
+		-- WoW Forever's micro menu: the doors Era does not have.
+		"professions", "legacy", "groupfinder", "collections",
+		"journal", "housing", "shop",
 	},
 
 	--- One drawing, more than one name for it.
@@ -473,8 +476,6 @@ Media.style = {
 	qlLabel      = { "semibold", 12, "" },   -- letter-spaced DESCRIPTION
 	qlObjName    = { "medium",   14, "" },
 	qlObjCount   = { "semibold", 13, "" },
-	qlBtn        = { "semibold", 14, "" },   -- the filled Track button
-	qlBtnAlt     = { "medium",   14, "" },   -- Share / Abandon outlines
 
 	-- Bags. The deck's sizes are a point or two under the quest log's at every
 	-- role, because a bag panel is a dense grid rather than a page of prose, so

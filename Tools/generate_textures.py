@@ -1171,6 +1171,9 @@ ICON_ORDER = [
     "tracking",
     # the Toolbox trunk's Widgets and Addons nodes
     "widgets", "addons",
+    # WoW Forever's micro menu, the doors Era does not have (2026-10-12)
+    "professions", "legacy", "groupfinder", "collections",
+    "journal", "housing", "shop",
 ]
 
 
@@ -1599,6 +1602,58 @@ def _glyph(name, cell):
         # Four tiles in a square (board 5b's Addons node).
         return U(rect(20, 20, 58, 58), rect(70, 20, 108, 58),
                  rect(20, 70, 58, 108), rect(70, 70, 108, 108))
+
+    # ---- WoW Forever's micro menu (2026-10-12) ---------------------------
+    #
+    # The doors Forever has and Era does not. Each is a silhouette that differs
+    # from its neighbours on the sheet in PROPORTION, not in detail - at the
+    # twenty pixels a Menu tile draws them, detail is gone.
+
+    if name == "professions":
+        # A hammer, tilted: a handle up to a head set square across it. The
+        # head is four strokes round a rotated box, because a filled head at
+        # this size is a blob and an axis-aligned one reads as a T.
+        hx = [(105.5, 61.9), (89.9, 77.5), (54.5, 42.1), (70.1, 26.5)]
+        head = U(*[seg(*hx[k], *hx[(k + 1) % 4]) for k in range(4)])
+        return U(head, seg(30, 102, 72, 60))
+
+    if name == "legacy":
+        # An hourglass: two bars and the crossing that pinches between them.
+        # Time carried forward, which is what a legacy is.
+        return U(seg(36, 24, 92, 24), seg(36, 104, 92, 104),
+                 seg(42, 24, 86, 104), seg(86, 24, 42, 104))
+
+    if name == "groupfinder":
+        # Three heads in a triangle - a group. `social` is two figures with
+        # shoulders; three bare heads is a different count AND a different
+        # shape, which is what keeps them apart at a glance.
+        return U(circ(64, 38, 15), circ(36, 86, 15), circ(92, 86, 15))
+
+    if name == "collections":
+        # A horseshoe, open side down: mounts are most of what is collected.
+        # An arc over the top three quarters, with its two heels.
+        return U(arc(64, 62, 34, 330, 210),
+                 seg(34.6, 79, 30, 100), seg(93.4, 79, 98, 100))
+
+    if name == "journal":
+        # A compass: a ring and a diamond needle. The Adventure Guide is where
+        # you go to find your way, and the needle keeps it apart from
+        # `tracking`, whose ticks cross its ring.
+        return U(circ(64, 64, 40),
+                 seg(64, 32, 76, 64), seg(76, 64, 64, 96),
+                 seg(64, 96, 52, 64), seg(52, 64, 64, 32))
+
+    if name == "housing":
+        # A house: a roof, two walls, a floor and a door.
+        return U(seg(20, 62, 64, 24), seg(64, 24, 108, 62),
+                 seg(32, 52, 32, 104), seg(96, 52, 96, 104), seg(32, 104, 96, 104),
+                 rect(54, 76, 74, 104))
+
+    if name == "shop":
+        # A price tag: a pointed card with a hole. Not a bag - `bags` is one,
+        # and the shop is not your inventory.
+        return U(seg(26, 40, 74, 40), seg(74, 40, 102, 64), seg(102, 64, 74, 88),
+                 seg(74, 88, 26, 88), seg(26, 88, 26, 40), circ(78, 64, 6))
 
     return INF
 

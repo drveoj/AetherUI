@@ -1153,6 +1153,18 @@ function OW:PaintPreview()
 	local c = Palette.c
 	local cfg = A.Config:Module("unitframes")
 	local a = c.accent
+	-- A FRACTION THAT MAY BE SECRET. On WoW Forever health and power come back
+	-- as secret values an addon cannot divide or compare, and this preview sizes
+	-- its bars by arithmetic - so the options window threw on opening Unit
+	-- frames (a player report, 2026-10-11, x2). The real frames write the
+	-- secret straight into a status bar; a preview has no need to, so a value
+	-- it cannot read draws full rather than throwing.
+	local function Ratio(cur, max)
+		if A.IsSecret(cur, max) then return 1 end
+		cur, max = tonumber(cur) or 0, tonumber(max) or 0
+		if max <= 0 then return 0 end
+		return math.max(0, math.min(1, cur / max))
+	end
 	local function fill(cap, unit, right)
 		local exists = UnitExists(unit)
 		cap:SetAlpha(exists and 1 or 0.4)
@@ -1170,14 +1182,13 @@ function OW:PaintPreview()
 		cap.level:SetShown(portrait)
 		local oc = Flat(exists and (Palette:OrbBaseColor(unit) or a) or a)
 		cap.orb:SetVertexColor(oc[1], oc[2], oc[3], 1)
-		local hp = exists and (UnitHealthMax(unit) or 0) > 0 and UnitHealth(unit) / UnitHealthMax(unit) or 0
+		local hp = exists and Ratio(UnitHealth(unit), UnitHealthMax(unit)) or 0
 		local hc = Flat(exists and (Palette:HealthColor(unit) or c.friendly) or c.friendly)
 		cap.track:SetVertexColor(1, 1, 1, 0.13)
 		cap.health:SetWidth(math.max(0.01, 220 * hp))
 		cap.health:SetVertexColor(hc[1], hc[2], hc[3], 1)
 		local showPower = cfg.showPower ~= false
-		local pm = exists and (UnitPowerMax(unit) or 0) or 0
-		local pp = pm > 0 and (UnitPower(unit) or 0) / pm or 0
+		local pp = exists and Ratio(UnitPower(unit), UnitPowerMax(unit)) or 0
 		local pc = Flat(exists and Palette:PowerColor(unit) or c.info or a)
 		cap.ptrack:SetShown(showPower)
 		cap.power:SetShown(showPower and pp > 0)

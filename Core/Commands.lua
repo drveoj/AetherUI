@@ -1199,6 +1199,7 @@ end
 --  frames it does not own, alongside other addons that are doing the same thing,
 --  so "which frames did you actually find" and "is the stone border really off"
 --  are the two questions worth being able to answer without a screenshot.
+local capturingToolbox = false
 handlers.toolbox = function(arg, rest)
 	local TB = A:GetModule("toolbox")
 	if not TB or not TB.enabled then
@@ -1257,7 +1258,17 @@ handlers.toolbox = function(arg, rest)
 		return
 	end
 
-	-- the diagnostic
+	-- the diagnostic, INTO THE ERRORS BOX: chat can't be copied from, and the
+	-- whole point of this report is to be pasted (Joe, 2026-10-12). The same
+	-- capture /lattice dump and /lattice errors diag use; the handler runs
+	-- again inside it and prints to the capture.
+	if not capturingToolbox and A.Errors and A.Errors.ShowText then
+		capturingToolbox = true
+		local body = A.Errors:Capture(function() handlers.toolbox(arg, rest) end)
+		capturingToolbox = false
+		A.Errors:ShowText(A.Errors:Header() .. body)
+		return
+	end
 	A:Print(A.F(L.cmd.toolbox.toolbox_docked_s_s,
 		A.Val(TB:Dock():lower()),
 		TB:OpenKey() and A.Val(TB:OpenKey()) or L.cmd.toolbox.shut))
@@ -1320,6 +1331,38 @@ handlers.toolbox = function(arg, rest)
 	say("   micro: %d of %d  ·  %s", #micro, #TB.MICRO, table.concat(names, " "))
 	say("      " .. A.Dim("Social and Guild are exclusive on useClassicGuildUI (%s)"),
 		tostring(GetCVarBool and GetCVarBool("useClassicGuildUI")))
+
+	-- WoW Forever: Blizzard's own buttons lent over the doors, and what the
+	-- last press did. Read with the Menu branch open.
+	local p = TB.panels and TB.panels.menu
+	for _, cell in ipairs(p and p.cells or {}) do
+		local m = cell:IsShown() and cell.__micro
+		local b = m and m.blizzard
+		if b then
+			local _, rel = b:GetPoint(1)
+			say("      %-22s lent %s  over %s  visible %s  mouse %s  alpha %.2f  %s %d / door %s %d",
+				tostring(b:GetName()), tostring(A.lent[b] and true or false),
+				tostring(b:GetParent() == cell and rel == cell), tostring(b:IsVisible()),
+				tostring(b:IsMouseEnabled()), b:GetAlpha(), b:GetFrameStrata(), b:GetFrameLevel(),
+				cell:GetFrameStrata(), cell:GetFrameLevel())
+		end
+	end
+	local log = TB._doorLog
+	if log and log.via == "tile" then
+		say("      last press: %s on our own door  greyed %s  window open after %s  branch open %s%s",
+			tostring(log.name), tostring(log.off), tostring(log.openAfter), tostring(log.branch),
+			log.err and ("  error: " .. log.err) or "")
+	elseif log then
+		say("      last press: %s  down %s (enabled %s)  up %s (over %s, state %s)  clicks %s"
+			.. "  window open after %s  branch open %s  still lent %s",
+			tostring(log.name), tostring(log.down ~= nil), tostring(log.enabled),
+			tostring(log.up), tostring(log.over), tostring(log.state), tostring(log.click or 0),
+			tostring(log.openAfter), tostring(log.branch), tostring(log.stillLent))
+		local r = TB._lent and _G[log.name or ""] and TB._lent[_G[log.name]]
+		local h = r and r.hooked or {}
+		say("      its hooks: down %s  up %s  click %s",
+			tostring(h.down), tostring(h.up), tostring(h.click))
+	end
 end
 
 --- `/aether dump <FrameName>`. The dispatcher lowers the first word, which

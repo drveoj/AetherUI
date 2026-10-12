@@ -621,6 +621,12 @@ function Trunk:ClickedAt(button)
 		local ok, open = pcall(function() return M.GetManager():IsAnyMenuOpen() end)
 		if ok and open then return end
 	end
+	-- AND OUR OWN MENU, the same way. W.Menu floats over UIParent, not over the
+	-- branch, so a click on one of its items read as a click away: the party
+	-- countdown's 5s / 15s / 30s shut the whole Party branch before the pick
+	-- could land (Joe, 2026-10-12). It closes itself on a click outside it.
+	local wm = A.Widgets and A.Widgets.MenuFrame and A.Widgets.MenuFrame()
+	if wm and wm:IsShown() then return end
 	for _, f in ipairs(UnderMouse()) do
 		if OnTrunk(f) then return end
 	end

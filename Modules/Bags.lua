@@ -137,7 +137,7 @@ local KEY_COLS      = 5
 local CONFIRM_W       = 360
 local CONFIRM_MIN_H   = 150
 local CONFIRM_PAD     = 26
-local BTN_H           = 30
+local BTN_H           = W.COMMAND_H
 
 -- Sorting and selling both move real items, and both are paced rather than
 -- fired in a loop: the server locks a slot until it confirms a move, and a
@@ -811,44 +811,37 @@ end
 -- window chrome
 -- ---------------------------------------------------------------------------
 
---- An icon drawn out of the atlas we have rather than one we do not.
+--- The sort control: header CHROME, the close button's design (W.ChromeWash -
+--  one hit target, nothing at rest, a soft square on hover), drawn out of the
+--  atlas we have rather than one we do not.
 --
 --  The deck's header icons are lucide line drawings and there is no vector
---  drawing in the WoW UI. Rather than commission a texture per glyph, the sort
---  control is three descending rules -- which is what the lucide icon is, minus
---  the arrow -- and the close is the multiplication sign, as everywhere else in
---  this UI.
-local function BuildIconButton(parent, kind, onClick, tip)
+--  drawing in the WoW UI, so the glyph is three descending rules -- which is
+--  what the lucide icon is, minus the arrow. It was a 22 px button of its own
+--  with no hover at all, beside a close button that had one (2026-10-12).
+local function BuildSortButton(parent, onClick, tip)
 	local b = CreateFrame("Button", nil, parent)
-	b:SetSize(22, 22)
-	b._kind = kind
+	b:SetSize(W.CHROME_HIT, W.CHROME_HIT)
+	b.wash = W.ChromeWash(b)
 	b.bars = {}
 
-	if kind == "close" then
-		b.label = W.Text(b, "bagTitle", "CENTER")
-		b.label:SetPoint("CENTER", b, "CENTER", 0, 1)
-		b.label:SetText("\195\151")            -- U+00D7 MULTIPLICATION SIGN
-	else
-		for i = 1, 3 do
-			local t = b:CreateTexture(nil, "ARTWORK")
-			t:SetTexture(Media.texture.flat)
-			t:SetHeight(A:Px(2))
-			t:SetWidth(ICON_SIZE - (i - 1) * 4)
-			t:SetPoint("LEFT", b, "LEFT", 3, 6 - (i - 1) * 5)
-			b.bars[i] = t
-		end
+	local left = (W.CHROME_HIT - ICON_SIZE) / 2
+	for i = 1, 3 do
+		local t = b:CreateTexture(nil, "ARTWORK")
+		t:SetTexture(Media.texture.flat)
+		t:SetHeight(A:Px(2))
+		t:SetWidth(ICON_SIZE - (i - 1) * 4)
+		t:SetPoint("LEFT", b, "LEFT", left, 5 - (i - 1) * 5)
+		b.bars[i] = t
 	end
 
 	function b:Restyle(over)
 		local c = Palette.c
 		local col = over and c.text or c.textDim
-		if self.label then
-			W.Color(self.label, col)
-		else
-			for _, t in ipairs(self.bars) do
-				t:SetVertexColor(col[1], col[2], col[3], (col[4] or 1) * 0.9)
-			end
+		for _, t in ipairs(self.bars) do
+			t:SetVertexColor(col[1], col[2], col[3], (col[4] or 1) * 0.9)
 		end
+		self.wash:SetAlpha(over and 1 or 0)
 	end
 
 	-- AND IT SAYS WHAT IT DOES. Three bars in a header is a picture of a
@@ -895,7 +888,7 @@ local function BuildHeader(frame)
 	})
 	head.close:SetPoint("RIGHT", head, "RIGHT", -HEAD_PAD_X, 0)
 
-	head.sort = BuildIconButton(head, "sort",
+	head.sort = BuildSortButton(head,
 		function() Bags:StartSort(frame) end,
 		{ L.bags.sort.name, L.bags.sort.desc })
 	head.sort:SetPoint("RIGHT", head.close, "LEFT", -6, 0)
@@ -2844,48 +2837,6 @@ end
 -- regardless of the profile setting.
 -- ---------------------------------------------------------------------------
 
-local function BuildButton(parent, style, label)
-	-- The shared button shape, for the reason the quest log's says: a capsule's
-	-- caps are drawn from a 256-texel texture and come back crunchy at button
-	-- height, and one shape in one place beats three that drifted apart.
-	local b = W.CreateButton(parent, {})
-	b:SetHeight(BTN_H)
-	b._style = style
-
-	b.label = W.Text(b, style == "filled" and "qlBtn" or "qlBtnAlt", "CENTER")
-	b.label:SetPoint("CENTER", b, "CENTER", 0, 0)
-
-	function b:Restyle()
-		local c = Palette.c
-		if self._style == "filled" then
-			self:SetFillColor(self._over and c.btnFillHi or c.btnFill)
-			self:SetEdgeShown(false)
-			W.Color(self.label, c.btnFillText)
-		else
-			self:SetFillColor(self._over and c.btnHover or { 0, 0, 0, 0 })
-			self:SetEdgeShown(true)
-			self:SetEdgeColor(c.btnEdge)
-			W.Color(self.label, c.textDim)
-		end
-	end
-
-	function b:SetLabel(text)
-		self.label:SetText(text or "")
-		self:SetWidth(math.ceil(self.label:GetStringWidth() or 0) + 44)
-	end
-
-	function b:SetAction(fn)
-		self._action = fn
-		self:SetScript("OnClick", function(s) if s._action then s._action(s) end end)
-	end
-
-	b:SetScript("OnEnter", function(self) self._over = true self:Restyle() end)
-	b:SetScript("OnLeave", function(self) self._over = false self:Restyle() end)
-	b:SetLabel(label)
-	b:Restyle()
-	return b
-end
-
 local function BuildConfirm()
 	local dim = CreateFrame("Frame", nil, UIParent)
 	dim:SetAllPoints(UIParent)
@@ -2919,10 +2870,13 @@ local function BuildConfirm()
 	if box.text.SetWordWrap then box.text:SetWordWrap(true) end
 	if box.text.SetSpacing then box.text:SetSpacing(4) end
 
-	box.yes = BuildButton(box, "filled", _G.YES or "Yes")
+	-- COMMANDS (Lattice Polish Pass): buying the bag is the obvious next step,
+	-- so Yes is the panel's one primary; No is standard, at full ink - it
+	-- used to rest at the dim ink, which is the look of a disabled button.
+	box.yes = W.Command(box, { variant = "primary", label = _G.YES or "Yes" })
 	box.yes:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -CONFIRM_PAD, 22)
 
-	box.no = BuildButton(box, "outline", _G.NO or "No")
+	box.no = W.Command(box, { label = _G.NO or "No" })
 	box.no:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", CONFIRM_PAD, 22)
 
 	box.no:SetAction(function() Bags:CloseConfirm() end)
@@ -2973,6 +2927,9 @@ function Bags:AskBuyBankSlot()
 	W.Color(box.text, c.text)
 	box.yes:SetLabel(_G.YES or "Yes")
 	box.no:SetLabel(_G.NO or "No")
+	-- Not affordable, not pressable: the body already says so in red, and a
+	-- live Yes would only hand the client a purchase it will refuse.
+	box.yes:SetDisabled(money < cost)
 
 	local textH = math.ceil(box.text:GetStringHeight() or 0)
 	box:SetSize(CONFIRM_W, math.max(CONFIRM_MIN_H, 26 + textH + 24 + BTN_H + 22))
@@ -2989,8 +2946,8 @@ function Bags:AskBuyBankSlot()
 
 	local s = c.scrim
 	self.confirm.scrim:SetVertexColor(s[1], s[2], s[3], s[4] or 0.45)
-	box.yes:Restyle()
-	box.no:Restyle()
+	box.yes:Repaint()
+	box.no:Repaint()
 
 	self.pendingSlot = owned + 1
 	self.confirm:Show()

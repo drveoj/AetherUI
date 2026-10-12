@@ -118,10 +118,7 @@ end
 
 local hider
 local function GetHider()
-	if not hider then
-		hider = CreateFrame("Frame", ADDON .. "MinimapHider", UIParent)
-		hider:Hide()
-	end
+	if not hider then hider = A:ParkingFrame(ADDON .. "MinimapHider") end
 	return hider
 end
 

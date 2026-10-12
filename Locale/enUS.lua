@@ -1779,6 +1779,13 @@ L["toolbox.micro.social"] = "Social"
 L["toolbox.micro.guild"] = "Guild"
 L["toolbox.micro.map"] = "Map"
 L["toolbox.micro.help"] = "Help"
+L["toolbox.micro.professions"] = "Professions"
+L["toolbox.micro.legacy"] = "Legacy"
+L["toolbox.micro.groupfinder"] = "Group finder"
+L["toolbox.micro.collections"] = "Collections"
+L["toolbox.micro.journal"] = "Journal"
+L["toolbox.micro.housing"] = "Housing"
+L["toolbox.micro.shop"] = "Shop"
 
 L["toolbox.root.combat"] = "can't swap the trunks in combat."
 L["toolbox.root.swap"] =
