@@ -567,8 +567,18 @@ local function UnitFramesGroup()
 				local UF = A:GetModule("unitframes")
 				return UF and UF.SetSatellite and UF:SetSatellite("targettarget", v) or false
 			end, after = "none" }),
+		-- WoW Forever only: Era has no focus. Nil is no row at all.
+		showFocus = A.isCamelot and toggle(L.options.unit_frames.show_focus.name,
+			L.options.unit_frames.show_focus.desc, at("showFocus"),
+			{ onSet = function(v)
+				local UF = A:GetModule("unitframes")
+				return UF and UF.SetSatellite and UF:SetSatellite("focus", v) or false
+			end, after = "none" }) or nil,
 		petScale = range(L.options.unit_frames.pet_scale.name, L.options.unit_frames.pet_scale.desc,
 			at("petScale"), 0.6, 1.2, 0.05, { after = "both" }),
+		focusScale = A.isCamelot and range(L.options.unit_frames.focus_scale.name,
+			L.options.unit_frames.pet_scale.desc,
+			at("focusScale"), 0.6, 1.2, 0.05, { after = "both" }) or nil,
 
 		showCastBar = toggle(L.options.unit_frames.show_cast_bar.name, nil, at("showCastBar")),
 		showTargetCastBar = toggle(L.options.unit_frames.show_target_cast_bar.name,
@@ -626,12 +636,14 @@ local function AurasGroup()
 			enabled = toggle(L.common.enabled, nil, at("buffs", "enabled")),
 			player = toggle(L.common.player, nil, at("buffs", "player")),
 			target = toggle(L.common.target, nil, at("buffs", "target")),
+			focus = A.isCamelot and toggle(L.common.focus, nil, at("buffs", "focus")) or nil,
 		}, { inline = true }),
 
 		debuffs = group(L.options.auras.debuffs, {
 			enabled = toggle(L.common.enabled, nil, at("debuffs", "enabled")),
 			player = toggle(L.common.player, nil, at("debuffs", "player")),
 			target = toggle(L.common.target, nil, at("debuffs", "target")),
+			focus = A.isCamelot and toggle(L.common.focus, nil, at("debuffs", "focus")) or nil,
 			onlyMine = toggle(L.options.auras.only_mine.name,
 				L.options.auras.yourself_every_debuff_matters,
 				at("debuffs", "onlyMine")),

@@ -364,6 +364,7 @@ local function diag()
 				d.active, d.opts.perRow or 0, d.opts.max or 0)
 		end
 	end
+	if AU and AU.EnchantReport then say("   " .. AU:EnchantReport()) end
 	if AU and AU.playerBuffs then
 		local wired, failed, named = 0, 0, 0
 		for _, p in ipairs(AU.playerBuffs.tiles) do

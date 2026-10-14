@@ -1204,12 +1204,96 @@ local function SetJunction(entry, on)
 	entry.handle.onLattice = on and true or false
 end
 
---- Every shown node's junction, filled or hollow, after anything has moved.
+-- ---------------------------------------------------------------------------
+-- which handle is on top
+--
+-- Joe, 2026-10-12: a 1x10 pet bar bonded onto a 1x12 bar 1 could not be picked
+-- up again. Every handle was in DIALOG at one level, so where two overlapped
+-- the client chose, and bar 1's covered the whole of the smaller pet bar.
+--
+-- THE SMALLER ON TOP: a handle's level follows its size, so a small frame is
+-- always reachable over a big one, and the big one around its edges. ALT-CLICK
+-- SENDS ONE BEHIND, for the case size cannot settle - two the same size in the
+-- same place: the last sent back goes lowest, and sending the other back
+-- brings the first up again. Forgotten on lock, so every unlock starts from
+-- size alone.
+-- ---------------------------------------------------------------------------
+
+local STACK_BASE, STACK_STEP = 10, 10
+Movers.backSerial = 0
+
+--- Lay every shown handle's level: those sent back lowest, the most recent at
+--  the bottom; then the biggest lowest. Its child frames (the tag, the shape
+--  grip) keep their places above it.
+local function StackHandles()
+	local list = {}
+	for _, e in pairs(Movers.registry) do
+		local h = e.handle
+		if h and h:IsShown() then
+			list[#list + 1] = { e = e, area = (h:GetWidth() or 0) * (h:GetHeight() or 0) }
+		end
+	end
+	table.sort(list, function(a, b)
+		local ba, bb = a.e._back or math.huge, b.e._back or math.huge
+		if ba ~= bb then return ba < bb end
+		if a.area ~= b.area then return a.area > b.area end
+		return a.e.name < b.e.name
+	end)
+	for i, it in ipairs(list) do
+		local h = it.e.handle
+		-- Each child's offset above the handle, measured once, while the client
+		-- still has them where it put them.
+		if not h._kids then
+			h._kids = {}
+			local base = h:GetFrameLevel() or 0
+			for _, kid in ipairs(A.Children(h)) do
+				h._kids[#h._kids + 1] = { f = kid, d = math.max(1, (kid:GetFrameLevel() or base + 1) - base) }
+			end
+		end
+		local level = STACK_BASE + (i - 1) * STACK_STEP
+		h:SetFrameLevel(level)
+		for _, k in ipairs(h._kids) do k.f:SetFrameLevel(level + k.d) end
+	end
+end
+Movers.StackHandles = StackHandles
+
+--- Does another shown handle overlap this one?
+local function Stacked(entry)
+	local h = entry.handle
+	local l, r, b, t = h:GetLeft(), h:GetRight(), h:GetBottom(), h:GetTop()
+	if not l then return false end
+	for _, e in pairs(Movers.registry) do
+		local o = e ~= entry and e.handle
+		if o and o:IsShown() and o:GetLeft() then
+			if o:GetLeft() < r and o:GetRight() > l and o:GetBottom() < t and o:GetTop() > b then
+				return true
+			end
+		end
+	end
+	return false
+end
+Movers.Stacked = Stacked
+
+--- Alt-click: this handle behind every other.
+function Movers:SendBehind(name)
+	local entry = Movers.registry[name]
+	if not (entry and entry.handle and entry.handle:IsShown()) then return false end
+	Movers.backSerial = Movers.backSerial - 1
+	entry._back = Movers.backSerial
+	StackHandles()
+	return true
+end
+
+--- Every shown node's junction, filled or hollow, after anything has moved -
+--  and the handles stacked again, since a move or a reshape changes which
+--  covers which.
 local function RefreshJunctions()
 	for _, e in pairs(Movers.registry) do
 		if e.handle and e.handle:IsShown() then SetJunction(e, OnLattice(e)) end
 	end
+	StackHandles()
 end
+Movers.RefreshJunctions = RefreshJunctions
 
 -- ---------------------------------------------------------------------------
 
@@ -1354,6 +1438,10 @@ local function CreateHandle(entry)
 		or A.Glass.CreatePanel(UIParent, { corner = 8 })
 	h:SetFrameStrata("DIALOG")
 	h:SetAllPoints(entry.frame)
+	-- A frame's own outline in unlock, a pill for a unit: dragged, and
+	-- Alt-clicked to send it behind. Not the "pill is information" pill of the
+	-- one-shape rule; the harness's sweep knows it by this.
+	h.__moverHandle = true
 	h:EnableMouse(true)
 	h:SetMovable(true)
 	h:RegisterForDrag("LeftButton")
@@ -1651,6 +1739,27 @@ local function CreateHandle(entry)
 		RefreshJunctions()
 	end)
 	h:EnableMouseWheel(true)
+
+	-- ALT-CLICK SENDS IT BEHIND (see StackHandles). A click, not a drag: the
+	-- release that ends a drag is no request to reorder anything.
+	h:SetScript("OnMouseDown", function(self) self._wasDragged = false end)
+	h:HookScript("OnDragStart", function(self)
+		self._wasDragged = true
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+	h:SetScript("OnMouseUp", function(self, button)
+		if button ~= "LeftButton" or self._wasDragged or not IsAltKeyDown() then return end
+		if Movers:SendBehind(entry.name) and GameTooltip then GameTooltip:Hide() end
+	end)
+	-- Said where it is needed: over a handle that another one overlaps.
+	h:SetScript("OnEnter", function(self)
+		if self._dragging or not GameTooltip or not Stacked(entry) then return end
+		GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+		GameTooltip:SetText(NodeLabel(entry.name))
+		GameTooltip:AddLine(L.movers.stack.send_behind, 0.8, 0.8, 0.85, true)
+		GameTooltip:Show()
+	end)
+	h:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
 	entry.handle = h
 	DressHandle(entry)
@@ -2119,7 +2228,10 @@ function Movers:Lock(quiet)
 	-- puts secure drivers back and lays bars out, so in a fight that part
 	-- waits for the fight to end. The handles are plain frames and go now.
 	local fight = InCombatLockdown()
+	-- Who was sent behind is this unlock's business; the next starts from size.
+	Movers.backSerial = 0
 	for _, entry in pairs(Movers.registry) do
+		entry._back = nil
 		if entry.handle then entry.handle:Hide() end
 		if entry.preview then
 			if fight then

@@ -108,7 +108,7 @@ Layout.VERSION = "LAT1"
 --  A layout naming anything else is refused: it was made by something that is
 --  not this addon, or by a version of it with nodes this one does not have.
 local NODES = {
-	"player", "target", "pet", "targettarget", "party", "chat", "minimap",
+	"player", "target", "pet", "targettarget", "focus", "party", "chat", "minimap",
 	"quests", "tooltip", "ifec", "barstance", "barpet", "barextra",
 	"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8", "bar9",
 }

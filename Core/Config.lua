@@ -234,6 +234,11 @@ Config.defaults = {
 				-- than being welded under the target.
 				showToT  = true,
 				totScale = 0.85,
+				-- THE FOCUS, on WoW Forever only - Era has no focus to show. On
+				-- by default because Blizzard's is: it shows the moment you
+				-- /focus something (Joe, 2026-10-14). The target's look, smaller.
+				showFocus  = true,
+				focusScale = 0.85,
 				enabled  = true,
 				-- 10 pad + 46 orb + 13 + 200 bars + 12 + 40 readout + 24 pad
 				width    = 345,
@@ -393,11 +398,13 @@ Config.defaults = {
 					enabled = true,
 					player  = true,
 					target  = true,
+					focus   = true,   -- WoW Forever only
 				},
 				debuffs = {
 					enabled = true,
 					player  = true,
 					target  = true,
+					focus   = true,   -- WoW Forever only
 					-- Target only. On yourself every debuff matters whoever cast it;
 					-- on the target, yours are the ones you act on.
 					onlyMine = true,

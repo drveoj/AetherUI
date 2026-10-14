@@ -76,7 +76,8 @@ end
 OW.PAGES = {
 	{ key = "unitframes", form = "pill", module = "unitframes", groups = { "unitframes" },
 		title = L.options.map.unitframes.title, desc = L.options.map.unitframes.desc,
-		unlock = { "player", "target", "pet", "targettarget" }, preview = true },
+		unlock = A.isCamelot and { "player", "target", "pet", "targettarget", "focus" }
+			or { "player", "target", "pet", "targettarget" }, preview = true },
 	{ key = "auras", form = "square", module = "auras", groups = { "auras" },
 		title = L.options.map.auras.title, desc = L.options.map.auras.desc },
 	{ key = "actionbars", form = "square", module = "actionbars", groups = { "actionbars" },
@@ -272,6 +273,11 @@ function OW:Spec()
 		form = "pill", w = 86, h = 26, hop = 1, mover = "targettarget", at = { 0.72, 0.28 } })
 	add({ key = "pet", page = "unitframes", label = L.options.map.pet,
 		form = "pill", w = 60, h = 26, hop = 1, mover = "pet", at = { 0.28, 0.28 } })
+	-- WoW Forever's alone: Era has no focus.
+	if A.isCamelot then
+		add({ key = "focus", page = "unitframes", label = L.options.map.focus,
+			form = "pill", w = 70, h = 26, hop = 1, mover = "focus", at = { 0.8, 0.3 } })
+	end
 	add({ key = "auras", page = "auras", label = L.options.map.auras.title,
 		form = "auras", w = 92, h = 14, hop = 2, near = "player", dx = 22, dy = -28 })
 
@@ -377,6 +383,7 @@ function OW:Spec()
 	end
 	if byKey.pet and not byKey.pet.parent then byKey.pet.parent = "player" end
 	if byKey.targettarget and not byKey.targettarget.parent then byKey.targettarget.parent = "target" end
+	if byKey.focus and not byKey.focus.parent then byKey.focus.parent = "target" end
 	self.byKey = byKey
 	return list
 end

@@ -2623,7 +2623,15 @@ end
 
 function GameTooltip:SetInventoryItem(unit, slot)
 	self.__shows = slot and { "invitem", unit, slot } or nil
+	-- Forever's item tooltip opens the "Equipped" one beside it when
+	-- alwaysCompareItems is on, unless told not to (TooltipUtil.lua:4-7).
+	self.__compared = (_G.__alwaysCompare and not self.suppressAutomaticCompareItem) or false
 	return slot and true or nil
+end
+if _G.__flavour == "camelot" then
+	function GameTooltip_SuppressAutomaticCompareItem(tooltip)
+		tooltip.suppressAutomaticCompareItem = true
+	end
 end
 function GameTooltip:SetHyperlink(link) self.__shows = link and { "link", link } or nil end
 
@@ -5124,6 +5132,46 @@ if _G.__flavour == "camelot" then
 end
 
 function GetInventoryItemTexture(_, slot) return "bag" .. tostring(slot) .. ".tga" end
+
+--- What is on each weapon: nothing, until a test sets `_G.__enchants` to
+--  { mh = { msLeft, charges }, oh = { msLeft, charges } }. The client answers
+--  in MILLISECONDS LEFT, not an expiry time, and the mock keeps that - a mock
+--  in seconds would agree with a reader that forgot to divide.
+_G.__enchants = {}
+function GetWeaponEnchantInfo()
+	local mh, oh = _G.__enchants.mh, _G.__enchants.oh
+	return mh ~= nil, mh and mh[1], mh and mh[2] or 0, mh and 1 or nil,
+		oh ~= nil, oh and oh[1], oh and oh[2] or 0, oh and 2 or nil
+end
+
+--- Forever's own question, which Blizzard's BuffFrame asks
+--  (Blizzard_BuffFrame/BuffFrame.lua:763): per Enum.WeaponSlot, a LIST of
+--  every enchant on the weapon. `_G.__imbues` is the same shape as
+--  `__enchants` and is the part the global above never sees - there the global
+--  is a 12.1 shim over GetTemporaryEnchantmentInfo
+--  (Blizzard_Deprecated/Shared/Deprecated_12_1_0.lua:44), and an Imbue
+--  (Enum.ItemEnchantType 3) is not a Temporary one (2). Forever's Rockbiter is
+--  an hour on the weapon and the shim said "none".
+_G.__imbues = {}
+if _G.__flavour == "camelot" then
+	Enum = Enum or {}
+	Enum.WeaponSlot = { MainHand = 0, OffHand = 1, Ranged = 2 }
+	function C_Item.GetWeaponEnchantInfo(weaponSlot)
+		local key = (weaponSlot == 0 and "mh") or (weaponSlot == 1 and "oh") or nil
+		local out = {}
+		if not key then return out end
+		local temp, imbue = _G.__enchants[key], _G.__imbues[key]
+		if temp then
+			out[#out + 1] = { hasEnchant = true, enchantType = 2, timeLeft = temp[1],
+				charges = temp[2] or 0, enchantID = 1, enchantIconID = 1 }
+		end
+		if imbue then
+			out[#out + 1] = { hasEnchant = true, enchantType = 3, timeLeft = imbue[1],
+				charges = imbue[2] or 0, enchantID = 2, enchantIconID = 2 }
+		end
+		return out
+	end
+end
 function GetInventoryItemLink(_, slot) return "|Hitem:1|h[Traveler's Pack]|h" end
 function GetInventoryItemID() return 1 end
 function IsInventoryItemLocked() return false end
@@ -5463,13 +5511,15 @@ end
 -- CastingBarFrame is Era's and is GONE on camelot - Mainline declares
 -- PlayerCastingBarFrame instead. TargetFrameToT exists on both, though on
 -- camelot it is built at runtime as self:GetName().."ToT" rather than declared.
+-- FocusFrame on BOTH: Era declares one too (Classic/TargetFrame.xml:562) and
+-- has no focus to show in it - which is why it must be left alone there.
 _G.__blizzUnitFrames = {}
 for _, n in ipairs(_G.__flavour == "camelot" and {
 	"PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame", "TargetFrameToT",
-	"PlayerCastingBarFrame",
+	"PlayerCastingBarFrame", "FocusFrame",
 } or {
 	"PlayerFrame", "TargetFrame", "ComboFrame", "PetFrame", "TargetFrameToT",
-	"CastingBarFrame",
+	"CastingBarFrame", "FocusFrame",
 }) do
 	_G.__blizzUnitFrames[n] = CreateFrame("Frame", n, UIParent)
 end
@@ -5764,7 +5814,9 @@ _G.__addons = {
 	{ name = "Questie",     title = "Questie",        icon = "Interface\\Icons\\INV_Misc_Map01" },
 	{ name = "TomTom",      title = "TomTom" },
 	{ name = "PlainAddon",  title = "Plain Addon" },
-	{ name = "OtherPlain",  title = "Other Plain" },
+	-- Coloured in its .toc, as plenty are: the addon list shows the colour, a
+	-- panel of ours must not.
+	{ name = "OtherPlain",  title = "|cff33ff99Other|r Plain" },
 }
 
 --- The version, read from the REAL Lattice.toc.
@@ -8893,6 +8945,22 @@ do  -- an interrupt flashes red for 200ms, then goes
 	check(not UF.cast:IsShown() and not UF.cast.flash:IsShown(), "then the lane goes")
 end
 
+do  -- "Opening - No Text": the client's name for opening a chest, minus the note
+	-- Joe, 2026-10-14, a screenshot: OPENING - NO TEXT on the lane.
+	castState = { name = "Opening - No Text", icon = 1, channel = false,
+		startTime = time * 1000, endTime = (time + 5) * 1000 }
+	fire("UNIT_SPELLCAST_START", "player")
+	check(UF.cast.spellName:GetText() == "OPENING",
+		"opening a chest reads OPENING, without the client's \"- No Text\" ("
+		.. tostring(UF.cast.spellName:GetText()) .. ")")
+	castState = nil
+	fire("UNIT_SPELLCAST_STOP", "player")
+	_G.__drainTimers()
+	check(UF.CastLabel("No Text Ward") == "NO TEXT WARD"
+		and UF.CastLabel("Opening") == "OPENING",
+		"and only the trailing note goes: a name merely containing the words keeps them")
+end
+
 print("== casts: which source delivered somebody else's ==")
 do
 	-- THE QUESTION THE COUNTER EXISTS TO ANSWER.
@@ -8985,6 +9053,156 @@ do
 	end
 	_G.__nativeCasts.target = nil
 	fire("UNIT_SPELLCAST_STOP", "target")
+end
+
+print("== the focus: WoW Forever's alone ==")
+-- Joe, 2026-10-14: on by default as Blizzard's is, hung off the target below
+-- and to the right, the target's look at 0.85, the target's aura rows, a cast
+-- lane, and nothing of ours to set a focus with.
+do
+	local UFm = A:GetModule("unitframes")
+	local cfgU = A.db.profile.modules.unitframes
+	local FF = _G.FocusFrame
+	if _G.__flavour ~= "camelot" then
+		check(UFm.focus == nil and UFm.focusCast == nil,
+			"Era builds no focus capsule - it has no focus to put in one")
+		check(A.Movers.registry.focus == nil, "nor a focus mover")
+		check(FF ~= nil and FF:GetParent() == UIParent and not A.banished[FF],
+			"and leaves Blizzard's FocusFrame, which Era declares too, where it is"
+				.. " - asked of the flavour, not of whether the frame exists")
+		check(UFm:SetSatellite("focus", true) == false and UFm.focus == nil,
+			"and switching it on does nothing")
+	else
+		local F = UFm.focus
+		check(F ~= nil and F.unit == "focus" and F.mirror == true,
+			"a focus capsule, mirrored like the target")
+		check(F.click and F.click:GetName():find("FocusFrame$") ~= nil
+			and F.click:GetAttribute("unit") == "focus",
+			"clickable under a name of its own (" .. tostring(F.click and F.click:GetName()) .. ")")
+		check(math.abs(F:GetScale() - A.db.profile.scale * cfgU.focusScale) < 1e-6,
+			("at the profile's scale times focusScale (%.3f)"):format(F:GetScale()))
+		check(A.banished[FF] == true, "and Blizzard's FocusFrame is put away")
+
+		-- No focus: nothing showing.
+		_G.__units.focus = nil
+		fire("PLAYER_FOCUS_CHANGED")
+		check(not F.glass:IsShown(), "with no focus set, the capsule's glass is down")
+
+		_G.__units.focus = { exists = true, name = "Defias Pillager", level = 12,
+			creature = "Humanoid", reaction = 2, hp = 300, hpMax = 600,
+			power = 200, powerMax = 400, powerType = 0, powerToken = "MANA" }
+		fire("PLAYER_FOCUS_CHANGED")
+		check(F.glass:IsShown() and F.name:GetText() == "Defias Pillager",
+			"/focus, and it shows, named (" .. tostring(F.name:GetText()) .. ")")
+		check(F.hpText:GetText() == "50%", "a percentage, as the target reads (" ..
+			tostring(F.hpText:GetText()) .. ")")
+		_G.__units.focus.hp = 150
+		fire("UNIT_HEALTH", "focus")
+		check(F.hpText:GetText() == "25%", "and the focus's own health events move it (" ..
+			tostring(F.hpText:GetText()) .. ")")
+		_G.__units.focus.hp, _G.__units.focus.hpMax = _G.__MakeSecret(4251), _G.__MakeSecret(4252)
+		local okSecret = pcall(fire, "UNIT_HEALTH", "focus")
+		check(okSecret and F.hpText:GetText() == "",
+			"secret health draws the bar and leaves the number out, without an error")
+		_G.__units.focus.hp, _G.__units.focus.hpMax = 150, 600
+
+		-- Where it sits: off the target, below and to the right. Measured from
+		-- the player and target on their own defaults - earlier sections leave
+		-- them wherever their tests did, off the bottom of the screen included,
+		-- and a default the screen clamps is not the one being checked.
+		check(A.Movers:ParentOf("focus") == "target", "hung off the target (" ..
+			tostring(A.Movers:ParentOf("focus")) .. ")")
+		local anchors = A.db.profile.anchors
+		local keep = { player = anchors.player, target = anchors.target, focus = anchors.focus }
+		anchors.player, anchors.target, anchors.focus = nil, nil, nil
+		UFm:RegisterMovers()
+		local T = UFm.target
+		local te, fe = T:GetEffectiveScale(), F:GetEffectiveScale()
+		local gap = (F:GetLeft() * fe - T:GetRight() * te) / te
+		local drop = (T:GetBottom() * te - F:GetTop() * fe) / te
+		check(math.abs(gap - UFm.FOCUS_GAP) < 1 and math.abs(drop - UFm.FOCUS_DROP) < 1,
+			("to the right of the target and under it, as the default UI has it"
+				.. " (gap %.1f, drop %.1f)"):format(gap, drop))
+
+		-- And from wherever the target has been put, not from its default. The
+		-- target is the player's pair, so a layout moves it by moving the player.
+		local before = T:GetBottom()
+		anchors.player = { point = "BOTTOM", relPoint = "BOTTOM", x = -181.5, y = 420 }
+		anchors.focus = nil
+		UFm:RegisterMovers()
+		gap = (F:GetLeft() * fe - T:GetRight() * te) / te
+		drop = (T:GetBottom() * te - F:GetTop() * fe) / te
+		check(T:GetBottom() - before > 100
+			and math.abs(gap - UFm.FOCUS_GAP) < 1 and math.abs(drop - UFm.FOCUS_DROP) < 1,
+			("a target moved by its layout takes its focus with it (moved up %.0f; gap %.1f, drop %.1f)")
+				:format(T:GetBottom() - before, gap, drop))
+		anchors.player, anchors.target, anchors.focus = keep.player, keep.target, keep.focus
+		UFm:RegisterMovers()
+
+		-- Its casts, on its own lane.
+		local L2 = UFm.focusCast
+		local now = GetTime()
+		check(L2 ~= nil and L2.host:GetParent() == F, "a cast lane hangs off it")
+		_G.__nativeCasts.focus = { name = "Fireball", icon = 1, channel = false,
+			startTime = now * 1000, endTime = (now + 2) * 1000, notInterruptible = false }
+		fire("UNIT_SPELLCAST_START", "focus")
+		check(L2:IsShown() and L2.spellName:GetText() == "FIREBALL",
+			"the focus casts, and its lane says what (" .. tostring(L2.spellName:GetText()) .. ")")
+		check(not UFm.targetCast:IsShown(), "on its lane, not the target's")
+		local lp, lrel, lrelPt = L2.host:GetPoint(1)
+		check(lp == "RIGHT" and lrel == F and lrelPt == "LEFT",
+			"out of its left edge, clear of the aura rows above and below")
+
+		-- A new focus mid-cast: the old cast goes; one already casting starts.
+		_G.__nativeCasts.focus = nil
+		_G.__units.focus = nil
+		fire("PLAYER_FOCUS_CHANGED")
+		check(not L2:IsShown() and not F.glass:IsShown(),
+			"focus cleared mid-cast: the lane and the capsule go")
+		_G.__units.focus = { exists = true, name = "Riverpaw Mystic", level = 14,
+			creature = "Humanoid", reaction = 2, hp = 400, hpMax = 400,
+			power = 300, powerMax = 300, powerType = 0, powerToken = "MANA" }
+		_G.__nativeCasts.focus = { name = "Healing Wave", icon = 1, channel = false,
+			startTime = now * 1000, endTime = (now + 3) * 1000, notInterruptible = false }
+		fire("PLAYER_FOCUS_CHANGED")
+		check(L2:IsShown() and L2.spellName:GetText() == "HEALING WAVE",
+			"and a new focus already casting shows it at once")
+		_G.__nativeCasts.focus = nil
+		fire("UNIT_SPELLCAST_STOP", "focus")
+		check(not L2:IsShown(), "until it stops")
+
+		-- The target's two aura rows, on the focus.
+		local AU = A:GetModule("auras")
+		local FB = AU.forever and AU.forever.focusBuffs
+		local FD = AU.forever and AU.forever.focusDebuffs
+		check(FB and FD and FB.host:GetParent() == F and FD.host:GetParent() == F
+			and FB.mirror and FD.mirror and FB.enabled and FD.enabled,
+			"its buffs and debuffs hang off the focus capsule, mirrored as the target's")
+
+		-- Switched off, live, and back.
+		_G.__inCombat = true
+		check(UFm:SetSatellite("focus", false) == false and not F.off,
+			"not in a fight: the unit watch is secure")
+		_G.__inCombat = false
+		check(UFm:SetSatellite("focus", false) and F.off and not F.glass:IsShown()
+			and A.Movers.registry.focus == nil and cfgU.showFocus == false,
+			"switched off: the glass, the mover and the setting go")
+		check(not FB.enabled and not FB.host:IsShown() and not FD.host:IsShown(),
+			"and its aura rows go with it")
+		_G.__nativeCasts.focus = { name = "Fireball", icon = 1, channel = false,
+			startTime = now * 1000, endTime = (now + 2) * 1000, notInterruptible = false }
+		fire("UNIT_SPELLCAST_START", "focus")
+		check(not L2:IsShown(), "and a cast from a switched-off focus draws nothing")
+		_G.__nativeCasts.focus = nil
+		check(UFm:SetSatellite("focus", true) and not F.off and F.glass:IsShown()
+			and A.Movers.registry.focus ~= nil and FB.enabled and FB.host:IsShown()
+			and cfgU.showFocus == true,
+			"and back on, all of it")
+		check(A.Layout.KNOWN.focus == true, "a layout may name it")
+
+		_G.__units.focus = nil
+		fire("PLAYER_FOCUS_CHANGED")
+	end
 end
 
 print("== idle fader ==")
@@ -12398,6 +12616,125 @@ do
 end
 
 SlashCmdList["AETHERUI"]("lock")
+
+-- WHICH HANDLE IS ON TOP (Joe, 2026-10-12): a 1x10 pet bar bonded onto a 1x12
+-- bar 1 could not be picked up again - every handle sat at one level, and the
+-- bigger one covered the smaller whole. The smaller is on top now, and
+-- Alt-click sends one behind for two the same size.
+print("== movers: the smaller handle on top ==")
+do
+	local M = A.Movers
+	local function panel(name, w, hgt)
+		local f = _G["AetherUITest" .. name] or CreateFrame("Frame", "AetherUITest" .. name, UIParent)
+		f:SetSize(w, hgt)
+		return M:Register(name, f, { point = "CENTER", relPoint = "CENTER", x = 5000, y = 5000 }, name)
+	end
+	-- Far off the screen, where no frame of the HUD's can overlap them, and
+	-- placed after unlocking, which puts every frame where its record says.
+	local function put(e, y)
+		e.frame:ClearAllPoints()
+		e.frame:SetPoint("CENTER", UIParent, "CENTER", 5000, y)
+	end
+	-- Registered smaller first, so creation order would put the bigger on top.
+	local small = panel("__stackSmall", 200, 20)
+	local big = panel("__stackBig", 240, 20)
+	SlashCmdList["AETHERUI"]("unlock")
+	-- Through the refresh every drop, reshape and nudge runs.
+	put(small, 5000)
+	put(big, 5000)
+	M.RefreshJunctions()
+	local hs, hb = small.handle, big.handle
+	check(hs:GetFrameLevel() > hb:GetFrameLevel(),
+		("the smaller frame's handle is over the bigger one's (%d over %d)")
+			:format(hs:GetFrameLevel(), hb:GetFrameLevel()))
+	check(hs.tag:GetFrameLevel() > hs:GetFrameLevel() and hs.tag:GetFrameLevel() < hs:GetFrameLevel() + 10,
+		"and its name tag stays on it, under the next handle up")
+	check(M.Stacked(small) and M.Stacked(big), "both know they are stacked")
+
+	-- And across the whole HUD: no handle lies wholly inside a bigger one that
+	-- sits over it. Joe's case laid out first - a smaller bar dropped onto the
+	-- middle of bar 1 - through the refresh a drop runs.
+	do
+		local b1, over = M.registry.bar1, M.registry.barpet
+		check(over and over.handle:IsShown()
+			and over.handle:GetWidth() * over.handle:GetHeight()
+				< b1.handle:GetWidth() * b1.handle:GetHeight(),
+			"the pet bar's handle is up, and smaller than bar 1's")
+		over.frame:ClearAllPoints()
+		over.frame:SetPoint("CENTER", b1.frame, "CENTER", 0, 0)
+		M.RefreshJunctions()
+		check(over.handle:GetFrameLevel() > b1.handle:GetFrameLevel(),
+			over.name .. " dropped on the middle of bar 1 is still on top, so it can be picked up")
+
+		local buried = {}
+		for na, ea in pairs(M.registry) do
+			local a = ea.handle
+			for nb, eb in pairs(M.registry) do
+				local b = eb.handle
+				if a ~= b and a and b and a:IsShown() and b:IsShown() and a:GetLeft() and b:GetLeft()
+					and b:GetLeft() >= a:GetLeft() and b:GetRight() <= a:GetRight()
+					and b:GetBottom() >= a:GetBottom() and b:GetTop() <= a:GetTop()
+					and b:GetWidth() * b:GetHeight() < a:GetWidth() * a:GetHeight()
+					-- A tie is no better: the client picks either.
+					and b:GetFrameLevel() <= a:GetFrameLevel() then
+					buried[#buried + 1] = nb .. " under " .. na
+				end
+			end
+		end
+		check(#buried == 0, #buried == 0 and "no handle in the HUD is buried under a bigger one"
+			or ("buried: " .. table.concat(buried, ", ")))
+		-- Back where its record says, for the tests after.
+		M:Restore(over.name)
+		M.RefreshJunctions()
+	end
+
+	-- The hint says so, over a stacked handle only.
+	hs:GetScript("OnEnter")(hs)
+	check(GameTooltip:IsShown(), "hovering a stacked handle says Alt-click sends it behind")
+	hs:GetScript("OnLeave")(hs)
+
+	-- Alt-click the top one: the one underneath comes up.
+	_G.__alt = true
+	hs:GetScript("OnMouseDown")(hs, "LeftButton")
+	hs:GetScript("OnMouseUp")(hs, "LeftButton")
+	check(hb:GetFrameLevel() > hs:GetFrameLevel(), "Alt-click sends the top handle behind")
+	hb:GetScript("OnMouseDown")(hb, "LeftButton")
+	hb:GetScript("OnMouseUp")(hb, "LeftButton")
+	check(hs:GetFrameLevel() > hb:GetFrameLevel(), "and Alt-clicking the other brings the first back up")
+	-- The release that ends a drag reorders nothing.
+	hs:GetScript("OnMouseDown")(hs, "LeftButton")
+	hs:GetScript("OnDragStart")(hs)
+	hs:GetScript("OnDragStop")(hs)
+	hs:GetScript("OnMouseUp")(hs, "LeftButton")
+	check(hs:GetFrameLevel() > hb:GetFrameLevel(), "an Alt-drag's release does not send it behind")
+	_G.__alt = nil
+	hb:GetScript("OnMouseDown")(hb, "LeftButton")
+	hb:GetScript("OnMouseUp")(hb, "LeftButton")
+	check(hs:GetFrameLevel() > hb:GetFrameLevel(), "and a plain click does nothing")
+
+	-- Forgotten on lock: the next unlock starts from size alone.
+	_G.__alt = true
+	hs:GetScript("OnMouseDown")(hs, "LeftButton")
+	hs:GetScript("OnMouseUp")(hs, "LeftButton")
+	_G.__alt = nil
+	SlashCmdList["AETHERUI"]("lock")
+	SlashCmdList["AETHERUI"]("unlock")
+	put(small, 5000)
+	put(big, 5000)
+	M.RefreshJunctions()
+	check(hs:GetFrameLevel() > hb:GetFrameLevel(), "and the next unlock starts from size again")
+
+	-- Moved apart, neither is stacked, and nothing is said.
+	put(big, 6000)
+	check(not M.Stacked(small), "apart, a handle is not stacked")
+	hs:GetScript("OnEnter")(hs)
+	check(not GameTooltip:IsShown(), "and hovering it says nothing")
+
+	SlashCmdList["AETHERUI"]("lock")
+	M:Unregister("__stackSmall")
+	M:Unregister("__stackBig")
+	A.db.profile.anchors.__stackSmall, A.db.profile.anchors.__stackBig = nil, nil
+end
 check(not A.Movers.unlocked, "movers locked")
 SlashCmdList["AETHERUI"]("reset")
 check(next(A.db.profile.anchors) == nil, "reset cleared saved anchors")
@@ -12736,12 +13073,13 @@ for _, cmd in ipairs({ "", "status", "diag", "hide", "scale 1.2", "shadow 14", "
 	if not ok then fail("/aether " .. cmd .. ": " .. tostring(err)) end
 end
 check(A:GetModule("unitframes").enabled, "module toggled back on cleanly")
--- FOUR NOW: player, target, pet and the target's target. The count is the
--- point of the check - a rebuild would leak a second set, because WoW has no
--- way to destroy a frame.
-check(UF.player == A:GetModule("unitframes").player and #UF.frames == 4,
+-- FOUR NOW: player, target, pet and the target's target - and on Forever the
+-- focus, five. The count is the point of the check - a rebuild would leak a
+-- second set, because WoW has no way to destroy a frame.
+local wantFrames = (_G.__flavour == "camelot") and 5 or 4
+check(UF.player == A:GetModule("unitframes").player and #UF.frames == wantFrames,
 	"toggling the module reuses its frames instead of leaking a second set ("
-	.. #UF.frames .. ")")
+	.. #UF.frames .. " of " .. wantFrames .. ")")
 check(UF.pet ~= nil and UF.pet.unit == "pet", "and the pet capsule is one of them")
 
 do
@@ -13951,6 +14289,152 @@ if TILES then
 			:format(rowW, UF.player:GetWidth()))
 end
 
+print("== auras: weapon enchants, where Blizzard's frame showed them ==")
+-- A shaman's report, 2026-10-14: Rockbiter on the weapon and nothing on
+-- screen. Not an aura, so the scan never saw it, and the frame that did show it
+-- is one we hide. Both clients: on Forever the game draws the buffs, not this.
+do
+	local E = AU.enchants
+	check(E ~= nil and E.enabled, "an enchant row is built, and on")
+
+	_G.__enchants = {}
+	tick(0.2)
+	check(E.active == 0 and E.tiles[1]._parked, "no enchant, no square")
+
+	-- Rockbiter: five minutes on the main hand.
+	_G.__enchants = { mh = { 300000, 0 } }
+	tick(0.2)
+	local t1 = E.tiles[1]
+	check(E.active == 1 and not t1._parked and t1.slot == 16
+		and t1.art.icon:GetTexture() == "bag16.tga",
+		"Rockbiter shows, as the main hand's own icon (" .. E.active .. ")")
+	check(t1.time:GetText() == "" and t1.count:GetText() == "",
+		"five minutes left and no charges: no tags - read as milliseconds, or"
+		.. " it would claim five hours")
+	local pt, rel, relPt, x = t1:GetPoint(1)
+	check(pt == "BOTTOMRIGHT" and rel == E.frame and x == 0,
+		"one weapon sits flush with the end of the row")
+	local fp, frel, frelPt = E.frame:GetPoint(1)
+	check(fp == "BOTTOMRIGHT" and frel == UF.player and frelPt == "TOPRIGHT",
+		"at the far end of the player capsule, level with the buffs")
+	local inset = UF.BarsInset and UF:BarsInset() or 0
+	local rowEnd = inset + AU.COMBAT * AU.SQ_STEP - 4
+	check(UF.player:GetWidth() - E.frame:GetWidth() >= rowEnd,
+		("and clear of a fight's eight buffs (row ends %d, enchants start %d)")
+			:format(rowEnd, UF.player:GetWidth() - E.frame:GetWidth()))
+
+	GameTooltip.__shows = nil
+	t1:GetScript("OnEnter")(t1)
+	check(GameTooltip.__shows and GameTooltip.__shows[1] == "invitem"
+		and GameTooltip.__shows[3] == 16,
+		"its tooltip is the weapon's, which names the enchant")
+
+	-- Joe, 2026-10-14, Forever: the weapon's tooltip and an "Equipped" one of
+	-- the very same weapon beside it.
+	_G.__alwaysCompare = true
+	GameTooltip.suppressAutomaticCompareItem = false
+	t1:GetScript("OnEnter")(t1)
+	if _G.__flavour == "camelot" then
+		check(GameTooltip.__compared == false,
+			"with alwaysCompareItems on, no comparison - it would be the weapon"
+				.. " compared with itself")
+	else
+		check(GameTooltip.__shows and GameTooltip.__shows[3] == 16,
+			"Era has no comparison switch, and the tooltip shows without one")
+	end
+	_G.__alwaysCompare = nil
+	GameTooltip.suppressAutomaticCompareItem = nil
+
+	-- Both hands, one running out, one with charges.
+	_G.__enchants = { mh = { 20000, 0 }, oh = { 600000, 40 } }
+	tick(0.2)
+	local t2 = E.tiles[2]
+	check(E.active == 2 and t1.slot == 16 and t2.slot == 17,
+		"main hand then off hand")
+	check(t1.time:GetText() == " 20 ", "under thirty seconds, a timer (" .. t1.time:GetText() .. ")")
+	check(t2.count:GetText() == " 40 ", "charges on the stack tag (" .. t2.count:GetText() .. ")")
+	check(select(4, t2:GetPoint(1)) == 0 and select(4, t1:GetPoint(1)) == -AU.SQ_STEP,
+		"the off hand at the end, the main hand one square in")
+
+	-- In a fight: no secure button anywhere in the row, so it lays out.
+	_G.__inCombat = true
+	fire("PLAYER_REGEN_DISABLED")
+	_G.__enchants = { mh = { 20000, 0 } }
+	tick(0.2)
+	check(E.active == 1 and t2._parked and select(4, t1:GetPoint(1)) == 0,
+		"an enchant gone mid-fight goes, and the other moves up to the end")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+
+	-- Blizzard's frame back up: ours would be the same icon twice.
+	local cfg = A.db.profile.modules.auras
+	cfg.hideBlizzard = false
+	AU:OnConfigChanged()
+	check(not E.enabled and not E.frame:IsShown(),
+		"with Blizzard's buff row kept, the enchant row stands down")
+	cfg.hideBlizzard = true
+	AU:OnConfigChanged()
+	check(E.enabled and E.frame:IsShown() and E.active == 1, "and comes back with it hidden")
+
+	check(AU:EnchantReport():find("main hand 20s, 0 charges", 1, true) ~= nil,
+		"the diagnostic says what the client said (" .. AU:EnchantReport() .. ")")
+	check(pcall(AU.Diagnose, AU) and pcall(AU.OnSkinChanged, AU),
+		"and /lattice auras and a skin change both take it in their stride")
+
+	_G.__enchants = {}
+	tick(0.2)
+	check(E.active == 0 and t1._parked and t1.slot == nil,
+		"run out, and the square goes - with nothing left for a tooltip to name")
+
+	if _G.__flavour == "camelot" then
+		-- Joe, 2026-10-14, Forever: Rockbiter on the weapon, "Rockbiter 1 (56 min)"
+		-- in its tooltip, and the diag said "main hand none". The global is a
+		-- shim that sees temporary enchants only; an imbue is not one.
+		_G.__imbues = { mh = { 3360000, 0 } }
+		local globalHas = GetWeaponEnchantInfo()
+		check(globalHas == false,
+			"the mock is the client: the global says nothing on the weapon")
+		tick(0.2)
+		check(E.active == 1 and not t1._parked and t1.slot == 16,
+			"and Rockbiter, an imbue, shows all the same - read through C_Item,"
+				.. " as Blizzard's own BuffFrame reads it (" .. E.active .. ")")
+		check(t1.time:GetText() == "",
+			"56 minutes left: read as milliseconds, so no timer tag")
+		local report = AU:EnchantReport()
+		check(report:find("main hand 3360s", 1, true) ~= nil
+			and report:find("via C_Item", 1, true) ~= nil,
+			"the diagnostic names the time and which call answered (" .. report .. ")")
+
+		-- An imbue and a temporary enchant on one hand: one square, the
+		-- weapon's tooltip names both.
+		_G.__enchants = { mh = { 20000, 5 } }
+		tick(0.2)
+		check(E.active == 1 and t1.count:GetText() == " 5 ",
+			"one hand, two enchants: still one square, the first enchant's"
+				.. " charges on it (" .. t1.count:GetText() .. ")")
+
+		-- In a fight the client may hand back secrets: nothing, not an error.
+		local real = C_Item.GetWeaponEnchantInfo
+		C_Item.GetWeaponEnchantInfo = function()
+			-- Stand-ins, not __MakeSecret: that marks a VALUE, and marking `true`
+			-- or 1 makes every true and 1 in the rest of the run secret.
+			return { { hasEnchant = _G.__SecretStandIn(), timeLeft = _G.__SecretStandIn(),
+				charges = 0, enchantType = 3 } }
+		end
+		local okTick = pcall(tick, 0.2)
+		check(okTick and E.active == 0,
+			"secret answers show nothing and throw nothing")
+		C_Item.GetWeaponEnchantInfo = real
+
+		_G.__imbues, _G.__enchants = {}, {}
+		tick(0.2)
+		check(E.active == 0, "and all gone, no square")
+	else
+		check(AU:EnchantReport():find("via GetWeaponEnchantInfo", 1, true) ~= nil,
+			"Era has no C_Item answer, and asks the global (" .. AU:EnchantReport() .. ")")
+	end
+end
+
 if _G.__flavour == "camelot" then
 section("secret values are drawn, never read", function()
 	-- THE BUG THIS EXISTS FOR: 260 errors off one tooltip, all
@@ -14110,8 +14594,9 @@ section("WoW Forever: aura trays the game fills", function()
 	local cfg = A.db.profile.modules.auras
 	local P = A.Palette.c
 
-	check(#F.trays == 4 and F.initError == nil,
-		"four trays, and no square's setup failed (" .. tostring(F.initError) .. ")")
+	check(#F.trays == 6 and F.initError == nil,
+		"six trays - the focus has the target's two - and no square's setup"
+			.. " failed (" .. #F.trays .. ", " .. tostring(F.initError) .. ")")
 	for _, t in ipairs(F.trays) do
 		check(t.container and #t.failed == 0,
 			t.key .. " has its container and every group (" .. table.concat(t.failed, "; ") .. ")")
@@ -18898,6 +19383,10 @@ do
 			tooltip = true,
 			-- The music deck: not on the board either.
 			ifec = true,
+			-- WoW Forever's focus (2026-10-14): hung off the target on a default
+			-- of its own. The presets are shared with Era, which has no focus,
+			-- and a preset naming one could never match there.
+			focus = true,
 		}
 
 		local named = {}
@@ -22715,6 +23204,29 @@ do
 		.. " you can REACH, and the Blizzard addon list is where the rest lives")
 	check(byName["Questie"] and byName["Questie"].entry ~= nil,
 		"and one with a launcher is, carrying its entry")
+
+	-- Names. The title lookup read `local name, title = f and f(i)`, which keeps
+	-- the first return only, so every title was nil - and the label was taken
+	-- before the lookup anyway, so a minimap button showed its folder name.
+	do
+		_G.__makeDBIcon("PlainAddon")
+		_G.__makeDBIcon("OtherPlain")
+		_G.__makeLDB("TomTom", "launcher", { label = "Tom's Arrow" })
+		LN:Scan()
+		TBm:ClaimPins()
+		TBm:RefreshAddons()
+		local named = {}
+		for _, r in ipairs(TBm:AddonRows()) do named[r.name] = r.label end
+		check(named["PlainAddon"] == "Plain Addon",
+			"a minimap button is listed under its addon's title, not its folder"
+				.. " name (" .. tostring(named["PlainAddon"]) .. ")")
+		check(named["OtherPlain"] == "Other Plain",
+			"without the colour codes the addon list draws it in ("
+				.. tostring(named["OtherPlain"]) .. ")")
+		check(named["TomTom"] == "Tom's Arrow",
+			"and an LDB launcher keeps the label its addon gave it ("
+				.. tostring(named["TomTom"]) .. ")")
+	end
 
 	do
 		local bad = 0
@@ -31616,6 +32128,28 @@ do
 		"and the version is at the top of it (" .. A.version .. ") - the first"
 		.. " question about any report is which build it came from")
 
+	-- And what else is running, which is the second. A report with no error in
+	-- it is usually an interaction, and nothing in it says with what.
+	check(text:find("addons (4): ", 1, true) ~= nil
+		and text:find("TomTom " .. A.version, 1, true) ~= nil,
+		"and every other loaded addon is listed under it, with its version")
+	table.insert(_G.__addons, { name = A.name, title = A.name })
+	local unloaded = { name = "SwitchedOff", title = "Switched Off" }
+	table.insert(_G.__addons, unloaded)
+	local realLoaded = C_AddOns.IsAddOnLoaded
+	C_AddOns.IsAddOnLoaded = function(i)
+		return _G.__addons[i] ~= nil and _G.__addons[i] ~= unloaded
+	end
+	local listed = Errors:Header():match("addons %(%d+%): [^\n]*") or ""
+	C_AddOns.IsAddOnLoaded = realLoaded
+	table.remove(_G.__addons)
+	table.remove(_G.__addons)
+	check(listed:find("addons (4): ", 1, true) ~= nil
+		and not listed:find(A.name .. " ", 1, true)
+		and not listed:find("SwitchedOff", 1, true),
+		"leaving out Lattice itself and anything installed but not loaded ("
+		.. listed .. ")")
+
 	-- /aether diag answers into the chat frame, the one place its answer cannot
 	-- be selected.
 	local grabbed = Errors:Capture(function()
@@ -37838,7 +38372,9 @@ do
 	-- click anywhere in the addon is caught, however it was built.
 	local found = {}
 	for _, s in ipairs(A.Glass.surfaces) do
-		if s._kind == "pill" and s.GetScript then
+		-- Except unlock's handles: a unit's outline is pill-shaped because the
+		-- unit is, and it is dragged and Alt-clicked (send behind), not pressed.
+		if s._kind == "pill" and s.GetScript and not s.__moverHandle then
 			for _, script in ipairs({ "OnClick", "OnMouseDown", "OnMouseUp" }) do
 				local ok, fn = pcall(s.GetScript, s, script)
 				if ok and fn then

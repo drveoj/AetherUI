@@ -53,6 +53,11 @@ function UF:HideBlizzard()
 	-- asking to be left with the client's, not with neither.
 	if cfg.showPet ~= false then Banish(_G.PetFrame) end
 	if cfg.showToT ~= false then Banish(_G.TargetFrameToT) end
+	-- THE FLAVOUR, NOT THE FRAME. Era declares a FocusFrame too
+	-- (Blizzard_UnitFrame/Classic/TargetFrame.xml:562) and has no focus to put
+	-- in it; asking whether the frame exists would say yes on both clients.
+	-- Its spell bar and its focus-of-target go with it: both are its children.
+	if A.isCamelot and cfg.showFocus ~= false then Banish(_G.FocusFrame) end
 
 	if cfg.showCastBar then
 		Banish(_G.CastingBarFrame)
@@ -110,7 +115,7 @@ end
 -- because a binding that click-casts on a frame names it.
 local CLICK_NAME = {
 	player = "PlayerFrame", target = "TargetFrame", pet = "PetFrame",
-	targettarget = "TargetOfTargetFrame",
+	targettarget = "TargetOfTargetFrame", focus = "FocusFrame",
 }
 
 --- mirror = true builds the target variant: orb on the right, text right-aligned.
@@ -434,6 +439,23 @@ local function BuildLane(spine, unit)
 	end
 
 	f:Hide()
+	return f
+end
+
+--- The focus's lane: out of its left edge on its centre line, the way the
+--  target's comes back along the spine. Not under the capsule, where the
+--  handoff hangs its debuff row; not above, where its buffs are. A fixed
+--  length - there is no second capsule to measure to.
+local FOCUS_LANE = 100
+local function BuildFocusLane(focus)
+	local host = CreateFrame("Frame", nil, focus)
+	host:SetPoint("RIGHT", focus, "LEFT", 0, 0)
+	host:SetSize(FOCUS_LANE, (SPINE_OFF + LANE_H) * 2)
+	local f = BuildLane(host, "focus")
+	f:ClearAllPoints()
+	f:SetPoint("LEFT", host, "LEFT", 0, 0)
+	f:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+	f.host = host
 	return f
 end
 
@@ -990,6 +1012,19 @@ local function Countdown(f, duration)
 	f.binding:SetEnabled(true)
 end
 
+--- A cast's name as the lane shows it, in capitals as the handoff sets it.
+--
+--  "Opening - No Text" is the client's real name for opening a chest or a
+--  node, and the suffix is a note to Blizzard's own UI, not a word for the
+--  player (Joe, 2026-10-14: "It's not needed and just looks ugly"). English
+--  clients only: other locales word it their own way. A secret name cannot be
+--  changed, only shown, so it is handed back untouched.
+local function CastLabel(name)
+	if A.IsSecret(name) then return name end
+	return string.upper((tostring(name):gsub("%s*%-%s*No Text$", "")))
+end
+UF.CastLabel = CastLabel
+
 local function CastStart(f, channel)
 	if not f then return end
 
@@ -1008,11 +1043,10 @@ local function CastStart(f, channel)
 	local c = Palette.c
 	local mine = (f.unit == "player")
 	local col = mine and c.laneCast or c.laneTarget
-	-- In capitals, as the handoff sets it - unless the name is secret, which
-	-- cannot be changed, only shown. Re-rastered first: after a cold client
-	-- start your lane's name was laid out and never drawn. See W.Reraster.
+	-- See CastLabel. Re-rastered first: after a cold client start your lane's
+	-- name was laid out and never drawn. See W.Reraster.
 	W.Reraster(f.spellName)
-	f.spellName:SetText(A.IsSecret(name) and name or string.upper(name))
+	f.spellName:SetText(CastLabel(name))
 	-- AND AGAIN A MOMENT LATER. On the very first cast after a cold start the
 	-- first pass is too early - the draw is what asks for the font - so the
 	-- name stayed blank for that one cast (Joe, 2026-10-07). By 0.1s the
@@ -1187,20 +1221,32 @@ function UF:RegisterEvents()
 		if UF.tot and unit == "target" then UpdateAll(UF.tot) end
 	end)
 
+	--- A new unit in a lane: what it was casting goes, and what it is already
+	--  casting - a target may be mid-cast when you click it - starts.
+	local function CastPickup(f)
+		if not f then return end
+		CastStop(f)
+		if UnitExists(f.unit) then
+			-- By type: the name may be secret, and a secret has no truth.
+			if type((CastInfo(f.unit, false))) ~= "nil" then CastStart(f, false)
+			elseif type((CastInfo(f.unit, true))) ~= "nil" then CastStart(f, true) end
+		end
+	end
+
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
 		UpdateAll(UF.target)
 		if UF.tot then UpdateAll(UF.tot) end
 		UF:SpineTarget()
-		if UF.targetCast then
-			CastStop(UF.targetCast)
-			-- a target may already be mid-cast when you click it
-			if UnitExists("target") then
-				-- By type: the name may be secret, and a secret has no truth.
-				if type((CastInfo("target", false))) ~= "nil" then CastStart(UF.targetCast, false)
-				elseif type((CastInfo("target", true))) ~= "nil" then CastStart(UF.targetCast, true) end
-			end
-		end
+		CastPickup(UF.targetCast)
 	end)
+	-- THE FOCUS, which Era does not have - nor this event.
+	if A.isCamelot then
+		A:RegisterEvent(self, "PLAYER_FOCUS_CHANGED", function()
+			if not UF.focus then return end
+			UpdateAll(UF.focus)
+			if UF.focus.off then CastStop(UF.focusCast) else CastPickup(UF.focusCast) end
+		end)
+	end
 	-- WHO LEADS is not a unit event. Both of these change it, and neither
 	-- fires on the unit whose crown moves.
 	local function leaders()
@@ -1232,6 +1278,7 @@ function UF:RegisterEvents()
 		UF:HideBlizzard()
 		UpdateAll(UF.player)
 		UpdateAll(UF.target)
+		if UF.focus then UpdateAll(UF.focus) end
 		UF:MeasureSpine()
 		UF:SpineTarget()
 	end)
@@ -1240,10 +1287,13 @@ function UF:RegisterEvents()
 	-- Classic Era; LibClassicCasterino re-broadcasts the same event names for
 	-- everyone else through its own callback registry, so the handlers are shared
 	-- and just get pointed at two different sources.
-	if self.cast or self.targetCast then
+	if self.cast or self.targetCast or self.focusCast then
 		local function barFor(unit)
 			if unit == "player" then return UF.cast end
 			if unit == "target" then return UF.targetCast end
+			-- Not while it is switched off: its glass is down, and a lane
+			-- hanging off nothing is a cast from nowhere.
+			if unit == "focus" and UF.focus and not UF.focus.off then return UF.focusCast end
 		end
 
 		local function onStart(_, _, unit)
@@ -1312,6 +1362,10 @@ end
 -- module lifecycle
 -- ---------------------------------------------------------------------------
 
+-- Where the focus sits by default, from the target: see RegisterMovers.
+local FOCUS_GAP, FOCUS_DROP = 120, 18
+UF.FOCUS_GAP, UF.FOCUS_DROP = FOCUS_GAP, FOCUS_DROP
+
 --- The capsules' movers, plus whichever cast bars exist. Idempotent, because
 --  both the first-build path and the come-back-from-disabled path call it.
 function UF:RegisterMovers()
@@ -1349,24 +1403,93 @@ function UF:RegisterMovers()
 			{ point = "BOTTOM", relPoint = "BOTTOM", x = half, y = 140 },
 			L.movers.name.tot, { parent = "target", shape = "pill" })
 	end
+	if self.focus and not self.focus.off then
+		A.Movers:Register("focus", self.focus, self:FocusDefault(half),
+			L.movers.name.focus, { parent = "target", shape = "pill" })
+	end
 end
 
---- The pet's capsule or the target's target's (`which` "pet" or
---  "targettarget"), on or off, live - the first-run tour's switches, and the
---  setting with them. Built if it never was; switched off, its glass goes,
---  its unit watch is let go and it leaves the movers and the fader. Out of
---  combat only: the unit watch is secure.
+--- BELOW THE TARGET AND WELL OUT TO ITS RIGHT, which is where the default UI
+--  puts its focus frame (Joe, 2026-10-14, with a screenshot). Measured off that
+--  screenshot and centred on where Blizzard's sits: FOCUS_GAP from the target's
+--  right edge, its top FOCUS_DROP under the target's bottom, both in the
+--  target's units.
+--
+--  FROM WHERE THE TARGET IS, NOT WHERE ITS DEFAULT IS. A layout that has moved
+--  the target - most of them - would otherwise put the focus beside a target
+--  that is not there. The movers place the target before this is asked; the
+--  arithmetic default below is for a target with no position yet.
+function UF:FocusDefault(half)
+	local cfg = A.Config:Module("unitframes")
+	local width = math.max(cfg.width, MinWidth(cfg))
+	local T, F = self.target, self.focus
+	local tr, tb = T and T:GetRight(), T and T:GetBottom()
+	local ul, ur, ub = UIParent:GetLeft(), UIParent:GetRight(), UIParent:GetBottom()
+	if tr and tb and F and ul and ur and ub then
+		local te, fe = T:GetEffectiveScale(), F:GetEffectiveScale()
+		local us = UIParent:GetEffectiveScale()
+		-- In screen pixels, then into the focus's own units from the screen's
+		-- bottom centre, which is what the default is measured from.
+		local cx = tr * te + FOCUS_GAP * te + width * fe / 2
+		local by = tb * te - FOCUS_DROP * te - cfg.height * fe
+		return { point = "BOTTOM", relPoint = "BOTTOM",
+			x = (cx - (ul + ur) / 2 * us) / fe, y = (by - ub * us) / fe }
+	end
+	local own = cfg.focusScale or 0.85
+	return { point = "BOTTOM", relPoint = "BOTTOM",
+		x = (half + width / 2 + FOCUS_GAP) / own + width / 2,
+		y = (190 - FOCUS_DROP) / own - cfg.height }
+end
+
+--- The capsules that can be switched off, by mover name: the setting, the
+--  field on UF, and whether it wears the target's look. The focus is WoW
+--  Forever's alone.
+local SATELLITES = {
+	pet          = { key = "showPet",   field = "pet",   unit = "pet",          mirror = false },
+	targettarget = { key = "showToT",   field = "tot",   unit = "targettarget", mirror = true },
+	focus        = { key = "showFocus", field = "focus", unit = "focus",        mirror = true,
+	                 forever = true },
+}
+UF.SATELLITES = SATELLITES
+
+--- Is this capsule one this client can have at all?
+local function SatelliteHere(s)
+	return s ~= nil and (not s.forever or A.isCamelot)
+end
+
+--- Build one, with what hangs off it.
+function UF:BuildSatellite(which)
+	local s = SATELLITES[which]
+	local f = BuildCapsule(s.unit, s.mirror)
+	self[s.field] = f
+	self.frames[#self.frames + 1] = f
+	-- The focus's lane, if lanes are on: the enemy-cast setting, because a
+	-- focus is a second target and its casts are the ones you interrupt.
+	local cfg = A.Config:Module("unitframes")
+	if which == "focus" and cfg.showCastBar and cfg.showTargetCastBar then
+		self.focusCast = BuildFocusLane(f)
+	end
+	return f
+end
+
+--- The pet's capsule, the target's target's or the focus's (`which` "pet",
+--  "targettarget" or "focus"), on or off, live - the first-run tour's
+--  switches, and the setting with them. Built if it never was; switched off,
+--  its glass goes, its unit watch is let go and it leaves the movers and the
+--  fader. Out of combat only: the unit watch is secure.
 function UF:SetSatellite(which, on)
 	if InCombatLockdown() or not self.player then return false end
+	local s = SATELLITES[which]
+	if not SatelliteHere(s) then return false end
 	local cfg = A.Config:Module("unitframes")
-	local isPet = (which == "pet")
-	cfg[isPet and "showPet" or "showToT"] = on and true or false
-	local f = isPet and self.pet or self.tot
+	cfg[s.key] = on and true or false
+	local f = self[s.field]
 	if on then
 		if not f then
-			f = BuildCapsule(isPet and "pet" or "targettarget", not isPet)
-			if isPet then self.pet = f else self.tot = f end
-			self.frames[#self.frames + 1] = f
+			f = self:BuildSatellite(which)
+			-- The cast events only know about lanes that existed when they
+			-- were registered.
+			if self.focusCast and which == "focus" then self:RegisterEvents() end
 			self:OnConfigChanged()
 		else
 			f.off = nil
@@ -1378,6 +1501,9 @@ function UF:SetSatellite(which, on)
 		self:RegisterMovers()
 		A.Fader:Register(f, {})
 		A.Fader:Refresh()
+		-- Blizzard's own goes now, not at the next loading screen: that is
+		-- when it would otherwise, and until then there would be two.
+		self:HideBlizzard()
 		UpdateAll(f)
 	elseif f then
 		f.off = true
@@ -1387,15 +1513,22 @@ function UF:SetSatellite(which, on)
 		end
 		if f.click then f.click:Hide() end
 		SetVisible(f, false)
+		if which == "focus" then CastStop(self.focusCast) end
 		A.Fader:Unregister(f)
-		A.Movers:Unregister(isPet and "pet" or "targettarget")
+		A.Movers:Unregister(which)
+	end
+	-- The focus's aura rows hang off its capsule, so they follow it.
+	if which == "focus" then
+		local AU = A:GetModule("auras")
+		if AU and AU.enabled and AU.Reanchor then AU:Reanchor() end
 	end
 	return true
 end
 
 --- Whether that capsule is on.
 function UF:SatelliteOn(which)
-	local f = (which == "pet") and self.pet or self.tot
+	local s = SATELLITES[which]
+	local f = s and self[s.field]
 	return (f ~= nil and not f.off) and true or false
 end
 
@@ -1461,6 +1594,7 @@ function UF:OnEnable()
 		A.Fader:Register(self.target, {})
 		if self.pet then A.Fader:Register(self.pet, {}) end
 		if self.tot then A.Fader:Register(self.tot, {}) end
+		if self.focus then A.Fader:Register(self.focus, {}) end
 		A.Fader:Refresh()
 		self:RegisterEvents()
 		A:RegisterTicker(self, Reconcile)
@@ -1468,6 +1602,7 @@ function UF:OnEnable()
 		UpdateAll(self.target)
 		if self.pet then UpdateAll(self.pet) end
 		if self.tot then UpdateAll(self.tot) end
+		if self.focus then UpdateAll(self.focus) end
 		return
 	end
 
@@ -1496,6 +1631,9 @@ function UF:OnEnable()
 		self.frames[#self.frames + 1] = self.tot
 	end
 
+	-- AND THE FOCUS, on WoW Forever: a second target, so the target's look.
+	if A.isCamelot and cfg.showFocus ~= false then self:BuildSatellite("focus") end
+
 	-- The spine between the two capsules, and a cast lane on each of its lines.
 	self.spine = BuildSpine(self.player)
 	if cfg.showCastBar then
@@ -1515,6 +1653,7 @@ function UF:OnEnable()
 	A.Fader:Register(self.target, {})
 	if self.pet then A.Fader:Register(self.pet, {}) end
 	if self.tot then A.Fader:Register(self.tot, {}) end
+	if self.focus then A.Fader:Register(self.focus, {}) end
 	A.Fader:Refresh()
 
 	self:RegisterEvents()
@@ -1525,6 +1664,7 @@ function UF:OnEnable()
 	UpdateAll(self.target)
 	if self.pet then UpdateAll(self.pet) end
 	if self.tot then UpdateAll(self.tot) end
+	if self.focus then UpdateAll(self.focus) end
 end
 
 function UF:OnDisable()
@@ -1538,10 +1678,12 @@ function UF:OnDisable()
 	SetClicksWatched(false)
 	if self.cast then CastStop(self.cast) end
 	if self.targetCast then CastStop(self.targetCast) end
+	if self.focusCast then CastStop(self.focusCast) end
 	A.Movers:Unregister("player")
 	A.Movers:Unregister("target")
 	A.Movers:Unregister("pet")
 	A.Movers:Unregister("targettarget")
+	A.Movers:Unregister("focus")
 end
 
 function UF:OnSkinChanged()
@@ -1573,6 +1715,7 @@ function UF:OnConfigChanged()
 		local own = 1
 		if f == self.pet then own = cfg.petScale or 0.85 end
 		if f == self.tot then own = cfg.totScale or 0.85 end
+		if f == self.focus then own = cfg.focusScale or 0.85 end
 		f:SetScale(scale * own)
 		f:SetSize(width, cfg.height)
 		-- The glass fills the core, so resizing the core has already resized it;

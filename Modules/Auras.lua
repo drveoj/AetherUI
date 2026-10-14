@@ -814,10 +814,14 @@ function Aur:TileWidth() return TileWidth() end
 function Aur:TileHeight() return TileHeight() end
 Aur.REST, Aur.COMBAT, Aur.SQ_STEP = REST, COMBAT, SQ_STEP
 
---- The capsule a tray belongs to, or nil if unit frames are off.
+--- The capsule a tray belongs to, or nil if unit frames are off - or, for
+--  the focus, if its capsule is switched off or was never built.
 local function CapsuleFor(unit)
 	local UFm = A:GetModule("unitframes")
 	if not UFm or not UFm.enabled then return nil end
+	if unit == "focus" then
+		return (UFm.focus and not UFm.focus.off) and UFm.focus or nil
+	end
 	return (unit == "target") and UFm.target or UFm.player
 end
 
@@ -838,10 +842,9 @@ end
 --  simply forgot it - so the stock icons sat above the glass tiles showing the
 --  same auras twice.
 --
---  TemporaryEnchantFrame goes with it. That does mean weapon enchant timers
---  disappear and we do not yet replace them, which is a real gap; leaving the
---  frame up on its own puts three orphaned icons in the corner instead, which is
---  worse. `auras.hideBlizzard = false` brings the lot back.
+--  TemporaryEnchantFrame goes with it: leaving it up on its own puts orphaned
+--  icons in the corner. Its job is done by the enchant row below.
+--  `auras.hideBlizzard = false` brings the lot back, and takes ours away.
 Aur.blizzardFrames = {
 	"BuffFrame", "DebuffFrame", "TemporaryEnchantFrame",
 }
@@ -872,6 +875,217 @@ function Aur:HideBlizzard()
 			self.hideReport[name] = (f.IsShown and f:IsShown()) and "STILL SHOWN" or "hidden"
 		end
 	end
+end
+
+-- ---------------------------------------------------------------------------
+-- weapon enchants: what TemporaryEnchantFrame showed
+-- ---------------------------------------------------------------------------
+
+--[[
+	Rockbiter, poisons, sharpening stones, wizard oil. None of them is an aura -
+	the aura scan never sees them - and the frame that did show them is hidden
+	above, so for as long as that was all there was they were simply gone
+	(a shaman's report, 2026-10-14: "when I buff with rockbiter weapon it
+	doesn't show up").
+
+	Two squares at most, main hand then off hand, at the far end of the
+	player's buff row: the 52 px past where eight buffs end, on the capsule's
+	default width. A fixed place on purpose. The buff tiles cannot move in a
+	fight (see ParkTile), and on Forever the client draws that row and never
+	says how long it is, so "right after the last buff" is not a place either
+	client can find in combat.
+
+	Their own frame, never the buff tray's: no secure button anywhere in it,
+	so it lays out in a fight like the target's trays do, and the buff tray's
+	rule that tile N is aura N is left alone.
+
+	No right-click to remove one. CancelItemTempEnchantment may be refused to
+	an addon, and a forbidden call is reported even from inside a pcall - the
+	same trap CopyToClipboard is, in Core/Errors.lua. Until that is known from
+	the client, the square shows and does not act.
+
+	Polled on the module's tick. Nothing fires when an enchant runs out, and
+	Blizzard's own frame polls for the same reason.
+]]
+
+-- INVSLOT_MAINHAND, INVSLOT_OFFHAND.
+local ENCHANT_SLOTS = { 16, 17 }
+
+--- One hand off Forever's C_Item.GetWeaponEnchantInfo, into `r`. That call
+--  answers with a list per weapon - every enchant on it, temporary or imbue -
+--  and the first one that is there gives the time and charges; the weapon's
+--  tooltip names them all. False on a secret, which shows nothing.
+local function ReadHand(weaponSlot, r)
+	local ok, list = pcall(C_Item.GetWeaponEnchantInfo, weaponSlot)
+	if not ok or type(list) ~= "table" then return false end
+	r.has, r.left, r.charges = false, 0, 0
+	for _, e in ipairs(list) do
+		if A.IsSecret(e.hasEnchant, e.timeLeft, e.charges) then return false end
+		if e.hasEnchant then
+			r.has, r.left, r.charges = true, (e.timeLeft or 0) / 1000, e.charges or 0
+			return true
+		end
+	end
+	return true
+end
+
+--- Both hands, read into `out` - per hand: has, seconds left, charges. False
+--  when the client will not say, which shows nothing rather than guessing.
+--  Into a table kept for the purpose: this runs every tick.
+--
+--  Forever asks C_Item first, as Blizzard's own BuffFrame does
+--  (Blizzard_BuffFrame/BuffFrame.lua:763). There the global
+--  GetWeaponEnchantInfo is a 12.1 shim over GetTemporaryEnchantmentInfo
+--  (Blizzard_Deprecated/Shared/Deprecated_12_1_0.lua:44), which sees temporary
+--  enchants and not imbues - and Forever's Rockbiter, an hour on the weapon,
+--  came back "none" from it (Joe, 2026-10-14). Era has only the global.
+local function ReadEnchants(out)
+	local W = Enum and Enum.WeaponSlot
+	if C_Item and C_Item.GetWeaponEnchantInfo and W then
+		out.source = "C_Item"
+		return ReadHand(W.MainHand, out[1]) and ReadHand(W.OffHand, out[2])
+	end
+	out.source = "GetWeaponEnchantInfo"
+	if not GetWeaponEnchantInfo then return false end
+	local ok, hasMH, mhLeft, mhCharges, _, hasOH, ohLeft, ohCharges = pcall(GetWeaponEnchantInfo)
+	if not ok then return false end
+	local mh, oh = out[1], out[2]
+	mh.has, mh.left, mh.charges = hasMH and true or false, (mhLeft or 0) / 1000, mhCharges or 0
+	oh.has, oh.left, oh.charges = hasOH and true or false, (ohLeft or 0) / 1000, ohCharges or 0
+	return true
+end
+
+--- The weapon's own tooltip, which names the enchant and its time.
+--
+--  Without comparison. On Forever every item tooltip opens the "Equipped" one
+--  beside it while alwaysCompareItems is on (TooltipUtil.lua:4-7,
+--  TooltipDataRules.lua:168), and this item IS the equipped one - the weapon
+--  shown twice (Joe, 2026-10-14). Blizzard's own switch for it; the tooltip
+--  clears the flag itself when it is next cleared (GameTooltip.lua:435), and
+--  Shift still compares. Era has no such function, and no such tooltip.
+local function EnchantEnter(self)
+	if self._parked or not self.slot then return end
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	if GameTooltip_SuppressAutomaticCompareItem then
+		pcall(GameTooltip_SuppressAutomaticCompareItem, GameTooltip)
+	end
+	pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", self.slot)
+	GameTooltip:Show()
+end
+
+function Aur:BuildEnchants()
+	if self.enchants then return self.enchants end
+	local E = { tiles = {}, active = 0, read = { {}, {} } }
+	E.frame = CreateFrame("Frame", nil, UIParent)
+	E.frame:SetSize(#ENCHANT_SLOTS * SQ_STEP - SQ_GAP, SQ)
+	for i = 1, #ENCHANT_SLOTS do
+		local t = CreateTile(E.frame)
+		t:SetScript("OnEnter", EnchantEnter)
+		Look(t, "plain")
+		ParkTile(t)
+		E.tiles[i] = t
+	end
+	self.enchants = E
+	return E
+end
+
+--- Hang the row off the far end of the player capsule, level with the buffs,
+--  and decide whether it is on: with the player's buffs, and only while
+--  Blizzard's enchant frame is the one hidden - with it up, ours would be the
+--  same icons twice.
+function Aur:AnchorEnchants()
+	local E = self.enchants
+	if not E then return end
+	local cfg = A.Config:Module("auras")
+	E.enabled = cfg.hideBlizzard ~= false and TrayEnabled(cfg, { unit = "player" })
+
+	local f = E.frame
+	local capsule = CapsuleFor("player")
+	f:ClearAllPoints()
+	if capsule then
+		if f:GetParent() ~= capsule then
+			f:SetParent(capsule)
+			f:SetFrameLevel(capsule:GetFrameLevel() + 6)
+		end
+		f:SetScale(1)
+		f:SetPoint("BOTTOMRIGHT", capsule, "TOPRIGHT", 0, (cfg.offset or 6) + TAG_DROP)
+		A.Fader:Unregister(f)
+	else
+		-- Unit frames off: just past where a fight's row of buffs ends, in the
+		-- free-standing block both paths fall back to.
+		if f:GetParent() ~= UIParent then f:SetParent(UIParent) end
+		f:SetScale(A.db.profile.scale)
+		f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", -200 + COMBAT * SQ_STEP / 2 + SQ_GAP, 300)
+		A.Fader:Register(f, {})
+	end
+	f:SetShown(E.enabled)
+	self:UpdateEnchants()
+end
+
+--- What is on each weapon, onto the squares. Flush to the capsule's end, so
+--  the usual case - one weapon - sits where the row stops.
+function Aur:UpdateEnchants()
+	local E = self.enchants
+	if not E then return end
+	local read = E.enabled and ReadEnchants(E.read)
+	local cfg = A.Config:Module("auras")
+	local now = GetTime()
+
+	local shown = 0
+	if read then
+		for hand = 1, #ENCHANT_SLOTS do
+			local r = E.read[hand]
+			if r.has then
+				shown = shown + 1
+				local t = E.tiles[shown]
+				t.slot = ENCHANT_SLOTS[hand]
+				local icon = GetInventoryItemTexture and GetInventoryItemTexture("player", t.slot)
+				if icon ~= t._icon then
+					t._icon = icon
+					t.art.icon:SetTexture(icon)
+				end
+				t.timer:SetShown(cfg.showTime ~= false)
+				t.stack:SetShown(cfg.showCount ~= false)
+				t.time:SetText(TimerWords(now + r.left))
+				t.count:SetText(r.charges > 1 and (" %d "):format(r.charges) or "")
+			end
+		end
+	end
+
+	if shown ~= E.active then
+		for i = 1, shown do
+			local t = E.tiles[i]
+			t:ClearAllPoints()
+			t:SetPoint("BOTTOMRIGHT", E.frame, "BOTTOMRIGHT", -(shown - i) * SQ_STEP, 0)
+			UnparkTile(t)
+		end
+		for i = shown + 1, #E.tiles do
+			E.tiles[i].slot = nil
+			ParkTile(E.tiles[i])
+		end
+		E.active = shown
+	end
+end
+
+--- For /lattice auras and /lattice diag: what the client says is on each
+--  weapon, beside how many squares are up.
+function Aur:EnchantReport()
+	local E = self.enchants
+	if not E then return "weapon enchants: not built" end
+	local hands = { "main hand", "off hand" }
+	local parts = {}
+	if ReadEnchants(E.read) then
+		for hand = 1, #ENCHANT_SLOTS do
+			local r = E.read[hand]
+			parts[#parts + 1] = hands[hand] .. " " .. (r.has
+				and ("%ds, %d charges"):format(r.left, r.charges) or "none")
+		end
+	else
+		parts[1] = "the client would not say"
+	end
+	return ("weapon enchants: %s, %d shown  ·  %s  ·  via %s"):format(
+		E.enabled and "on" or "off", E.active, table.concat(parts, "  ·  "),
+		E.read.source or "?")
 end
 
 -- ---------------------------------------------------------------------------
@@ -922,6 +1136,14 @@ local FOREVER_TRAYS = {
 	{ key = "targetBuffs", unit = "target", above = true, alpha = 0.6,
 	  groups = { { key = "buffs", filter = "HELPFUL", look = "faint" } } },
 	{ key = "targetDebuffs", unit = "target", debuff = true,
+	  groups = { { key = "mine", filter = "HARMFUL|PLAYER", look = "mine" },
+	             { key = "theirs", filter = "HARMFUL|!PLAYER", look = "theirs",
+	               theirs = true } } },
+	-- The focus: a second target, so the target's two rows and looks (Joe,
+	-- 2026-10-14). Forever only, as this whole table is.
+	{ key = "focusBuffs", unit = "focus", above = true, alpha = 0.6, mirror = true,
+	  groups = { { key = "buffs", filter = "HELPFUL", look = "faint" } } },
+	{ key = "focusDebuffs", unit = "focus", debuff = true, mirror = true,
 	  groups = { { key = "mine", filter = "HARMFUL|PLAYER", look = "mine" },
 	             { key = "theirs", filter = "HARMFUL|!PLAYER", look = "theirs",
 	               theirs = true } } },
@@ -1072,7 +1294,7 @@ end
 local function BuildTray(def, F)
 	local t = { key = def.key, unit = def.unit, above = def.above,
 		debuff = def.debuff, cancel = def.cancel, groups = def.groups,
-		mirror = (def.unit == "target"), failed = {} }
+		mirror = def.mirror or (def.unit == "target"), failed = {} }
 	t.corner = (t.above and "BOTTOM" or "TOP") .. (t.mirror and "RIGHT" or "LEFT")
 
 	local host = CreateFrame("Frame", nil, UIParent)
@@ -1171,6 +1393,11 @@ function Aur:AnchorForever()
 				or -(off + TrayRoom(t) - CLIP_PAD)
 			host:SetPoint(t.corner, capsule, (t.above and "TOP" or "BOTTOM") .. edge, x, y)
 			A.Fader:Unregister(host)
+		elseif t.unit == "focus" then
+			-- No focus capsule, no focus row: a row of a focus's auras
+			-- standing on its own in the middle of the screen is not one
+			-- anybody asked for. Down, and with it the listening.
+			t.enabled = false
 		else
 			-- Unit frames off: a free-standing row, where the Era trays go.
 			if host:GetParent() ~= UIParent then host:SetParent(UIParent) end
@@ -1192,6 +1419,7 @@ function Aur:AnchorForever()
 			end
 		end
 	end
+	self:AnchorEnchants()
 end
 
 --- Rest or combat: three squares a row, or eight. Only the container's own
@@ -1237,12 +1465,22 @@ end
 
 function Aur:EnableForever()
 	if not self.forever then self:BuildForever() end
+	self:BuildEnchants()
+	-- The containers need no tick. The enchant row does: nothing fires when
+	-- one runs out.
+	A:RegisterTicker(self, function() Aur:UpdateEnchants() end)
 
 	-- The containers follow UNIT_AURA themselves. A new target is not an aura
 	-- event, so that one is ours to pass on.
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
 		Aur:UpdateUnit("target")
 	end)
+	-- Nor is a new focus.
+	if A.isCamelot then
+		A:RegisterEvent(self, "PLAYER_FOCUS_CHANGED", function()
+			Aur:UpdateUnit("focus")
+		end)
+	end
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
 		Aur:HideBlizzard()
 		Aur:UpdateAll()
@@ -1298,6 +1536,7 @@ function Aur:OnEnable()
 			self[t.key] = d
 		end
 	end
+	self:BuildEnchants()
 
 	A:RegisterEvent(self, "UNIT_AURA", function(_, _, unit)
 		Aur:UpdateUnit(unit)
@@ -1343,6 +1582,7 @@ function Aur:OnEnable()
 		for _, t in ipairs(Aur.trays) do
 			if t.enabled then t.display:Tick() end
 		end
+		Aur:UpdateEnchants()
 	end)
 
 	self:HideBlizzard()
@@ -1413,6 +1653,7 @@ function Aur:Diagnose()
 				t.key, tostring(t.enabled), tostring(t.container ~= nil), #t.groups,
 				#t.failed > 0 and table.concat(t.failed, "; ") or "none"))
 		end
+		DEFAULT_CHAT_FRAME:AddMessage("   " .. self:EnchantReport())
 		return
 	end
 
@@ -1445,6 +1686,7 @@ function Aur:Diagnose()
 				tostring(t.time and t.time:GetText())))
 		end
 	end
+	DEFAULT_CHAT_FRAME:AddMessage("   " .. self:EnchantReport())
 end
 
 function Aur:UpdateUnit(unit)
@@ -1543,9 +1785,14 @@ function Aur:AnchorTrays()
 
 		if not t.enabled then d:Clear() end
 	end
+	self:AnchorEnchants()
 end
 
 function Aur:OnDisable()
+	if self.enchants then
+		self.enchants.frame:Hide()
+		A.Fader:Unregister(self.enchants.frame)
+	end
 	if self.forever then
 		for _, t in ipairs(self.forever.trays) do
 			t.host:Hide()
@@ -1561,6 +1808,9 @@ function Aur:OnDisable()
 end
 
 function Aur:OnSkinChanged()
+	-- The enchant squares are plain tiles of ours on both clients, so a tray's
+	-- repaint does for them: it reads nothing but the tiles.
+	if self.enchants then Display.ApplySkin(self.enchants) end
 	if self.forever then self:RestyleForever() return end
 	-- Inks on every tray; filled only where the tray is on. ApplySkin used to
 	-- fill as well, which put a switched-off tray's auras back on screen.

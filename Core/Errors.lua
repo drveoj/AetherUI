@@ -79,6 +79,38 @@ function Errors:Install()
 	return true
 end
 
+--- Every other addon that is loaded, with its version.
+--
+--  A report with no error in it is, more often than not, a report about an
+--  interaction - something else hooking the same frame or drawing over ours -
+--  and "what else are you running" is the next question after "which build".
+--  Loaded only: one installed and switched off cannot be the cause.
+local function OtherAddons()
+	local AO = C_AddOns or {}
+	local count = AO.GetNumAddOns or _G.GetNumAddOns
+	local info = AO.GetAddOnInfo or _G.GetAddOnInfo
+	local loaded = AO.IsAddOnLoaded or _G.IsAddOnLoaded
+	local meta = AO.GetAddOnMetadata or _G.GetAddOnMetadata
+	if not (count and info) then return "addons: ?" end
+
+	local out = {}
+	for i = 1, count() or 0 do
+		local name = info(i)
+		if name and name ~= ADDON and (not loaded or loaded(i)) then
+			local version
+			if meta then
+				local ok, v = pcall(meta, name, "Version")
+				if ok and v and v ~= "" then version = v end
+			end
+			out[#out + 1] = version and (name .. " " .. version) or name
+		end
+	end
+	table.sort(out, function(x, y) return x:lower() < y:lower() end)
+
+	return ("addons (%d): %s"):format(#out,
+		#out > 0 and table.concat(out, ", ") or "none")
+end
+
 --- Who and what, at the top of anything copied out of here.
 --
 --  A bug report without a version is a bug report about some build or other.
@@ -102,6 +134,7 @@ function Errors:Header()
 		("client %s (interface %s)  ·  %s"):format(
 			tostring(build), tostring(iface),
 			(date and date("%Y-%m-%d %H:%M")) or "?"),
+		OtherAddons(),
 		"",
 	}, "\n")
 end

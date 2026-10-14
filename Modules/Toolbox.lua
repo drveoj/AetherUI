@@ -1168,20 +1168,35 @@ function TB:AddonRows()
 	-- `LA`, not `L`: L is the phrase table.
 	local LA = A.Launchers
 	if not LA then return rows end
+	-- Each addon's own title, by folder name. Spelt out rather than
+	-- `local name, title = f and f(i)`: an and/or keeps only the FIRST return,
+	-- so the title was always nil (the trap Core/Errors.lua's Header names).
+	-- Without its colour codes: plenty of addons colour their name in the
+	-- addon list, and the panel's text has a colour of its own.
 	local titles = {}
 	local api = C_AddOns or _G
 	local count = (api.GetNumAddOns and api.GetNumAddOns()) or 0
 	for i = 1, count do
-		local name, title = api.GetAddOnInfo and api.GetAddOnInfo(i)
-		if name then titles[name:lower()] = (title ~= "" and title) or name end
+		local name, title
+		if api.GetAddOnInfo then name, title = api.GetAddOnInfo(i) end
+		if type(name) == "string" and type(title) == "string" then
+			title = title:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+			title = title:gsub("^%s*(.-)%s*$", "%1")
+			if title ~= "" then titles[name:lower()] = title end
+		end
 	end
 	self._addonsLoaded = count
 	for entry in LA:Iterate() do
-		rows[#rows + 1] = {
-			name  = entry.key,
-			label = entry.label or titles[tostring(entry.key):lower()] or PrettyName(entry.key),
-			entry = entry,
-		}
+		-- An LDB launcher names itself, and that is the addon's choice. A
+		-- LibDBIcon or loose minimap button only has the name it was registered
+		-- or built under, so the addon's title goes first, then that name
+		-- tidied, looked up both ways.
+		local key = tostring(entry.key)
+		local pretty = PrettyName(entry.key)
+		local label
+		if entry.source == "ldb" then label = entry.label end
+		label = label or titles[key:lower()] or titles[pretty:lower()] or pretty
+		rows[#rows + 1] = { name = entry.key, label = label, entry = entry }
 	end
 	table.sort(rows, function(x, y)
 		return tostring(x.label):lower() < tostring(y.label):lower()

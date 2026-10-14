@@ -346,6 +346,8 @@ L["common.click_target"] = "Click to target"
 
 L["common.enabled"] = "Enabled"
 
+L["common.focus"] = "On the focus"
+
 L["common.height"] = "Height"
 
 L["common.height_budget"] = "Height budget"
@@ -616,6 +618,9 @@ L["movers.pill.unlocked"] = "Lattice unlocked"
 L["movers.pill.hint"] = "· drag a node · hold Shift for free placement"
 L["movers.pill.lock"] = "LOCK"
 
+-- Over a node another one overlaps, in unlock: the way to the one underneath.
+L["movers.stack.send_behind"] = "Alt-click to send it behind and reach the one underneath."
+
 L["movers.reset_all.frame_positions_reset"] = "frame positions reset."
 
 -- The labels on a drag's green signals.
@@ -639,6 +644,7 @@ L["movers.name.player"] = "Player"
 L["movers.name.target"] = "Target"
 L["movers.name.pet"] = "Pet"
 L["movers.name.tot"] = "Target of Target"
+L["movers.name.focus"] = "Focus"
 L["movers.name.party"] = "Party"
 L["movers.name.chat"] = "Chat"
 L["movers.name.minimap"] = "Minimap"
@@ -1226,6 +1232,7 @@ L["options.map.chat.title"] = "Chat"
 L["options.map.confirm"] = "Click again to confirm"
 L["options.map.conveniences.desc"] = "Small things the game makes you wait for"
 L["options.map.conveniences.title"] = "Conveniences"
+L["options.map.focus"] = "Focus"
 L["options.map.general.desc"] = "Scale, motion, placement and the XP hairline"
 L["options.map.general.title"] = "General"
 L["options.map.hint"] = "Click to unfold"
@@ -1594,6 +1601,7 @@ L["options.unit_frames.cast_note"] =
 		.. "it, grey if not. They are as long as the gap between the two frames."
 L["options.unit_frames.classic_era_does_report"] =
 	"Classic Era now reports other units' casts natively."
+L["options.unit_frames.focus_scale.name"] = "Focus frame size"
 L["options.unit_frames.gap.name"] = "Gap between player and target"
 L["options.unit_frames.hide_blizzard.name"] = "Hide Blizzard's frames"
 L["options.unit_frames.off_draws_class_tinted"] =
@@ -1610,6 +1618,11 @@ L["options.unit_frames.show_absorb.desc"] =
 		.. "back over the bar from the far end."
 L["options.unit_frames.show_absorb.name"] = "Show shields"
 L["options.unit_frames.show_cast_bar.name"] = "Player cast bar"
+L["options.unit_frames.show_focus.desc"] =
+	"Shows whenever you have a focus - /focus, or Set Focus on a unit's "
+		.. "right-click menu. Its casts run out of its left edge, gold if you "
+		.. "can interrupt them."
+L["options.unit_frames.show_focus.name"] = "Focus frame"
 L["options.unit_frames.show_pet.name"] = "Pet frame"
 L["options.unit_frames.show_portrait.name"] = "Portrait in the orb"
 L["options.unit_frames.show_tot.name"] = "Target of target frame"
