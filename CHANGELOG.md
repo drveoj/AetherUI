@@ -1,5 +1,14 @@
 # Lattice
 
+## 2.0.2 - 2026-10-14
+
+- Weapon enchants show again: Rockbiter, poisons, sharpening stones, oils and fishing lures each appear as a square at the right-hand end of your buff row, one per weapon. Hover it for the weapon's tooltip, which names the enchant and how long is left.
+- On WoW Forever, a Focus frame. Use /focus, or Set Focus from a unit's right-click menu, and a smaller frame in the target's look appears below and to the right of your target, with its buffs, debuffs and casts. Switch it off or resize it under Settings > Unit frames.
+- In unlock mode, a frame dropped on top of another can be picked up again. The smaller one sits on top, and Alt-click sends one behind so you can reach the one underneath.
+- Opening a chest, a node or a door reads OPENING on the cast bar, not "OPENING - NO TEXT".
+- Error reports (/lattice errors) list your other addons and their versions, so a report says what else was running.
+- Fixed: in the Toolbox's Addons branch, some addons showed their folder name instead of their own name.
+
 ## 2.0.1 - 2026-10-12
 
 - The Toolbox can sit on the right. Pick Left or Right under Settings > Toolbox, or in unlock mode drag the Lattice glyph at the top of the Toolbox to the other half of the screen. The minimap and the World trunk move to the other side. While you drag, the screen shows where each one will land.
